@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+# Django
+*.log
+db.sqlite3
+*.sqlite3
+media/
+staticfiles/
+static/
+
+# Environment
+.env
+.env.*
+.envrc
+.env.local
+.env.production
+venv/
+app_venv/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Python build
+build/
+dist/
+*.egg-info/
+
+# Celery
+celerybeat-schedule
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Type checking
+.mypy_cache/
+
+# Logs
+logs/
+
+# Node (future)
+node_modules/
