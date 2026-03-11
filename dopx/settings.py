@@ -43,8 +43,6 @@ INSTALLED_APPS = [
     'analytics',
     'api',
     'referees',
-    'parsers',
-    
 ]
 
 MIDDLEWARE = [
