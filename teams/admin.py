@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Team
+from .models import Team, TeamSeason
 
 
 @admin.register(Team)
@@ -7,8 +7,8 @@ class TeamAdmin(admin.ModelAdmin):
 
     list_display = (
         "name",
-        "league",
         "city",
+        "external_id",
     )
 
     search_fields = (
@@ -16,6 +16,19 @@ class TeamAdmin(admin.ModelAdmin):
         "city",
     )
 
+
+@admin.register(TeamSeason)
+class TeamSeasonAdmin(admin.ModelAdmin):
+
+    list_display = (
+        "team",
+        "season",
+    )
+
     list_filter = (
-        "league",
+        "season",
+    )
+
+    search_fields = (
+        "team__name",
     )
