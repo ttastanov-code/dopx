@@ -1,0 +1,96 @@
+# 1.1 Реализовать 6 моделей в evaluations/models.py
+# 1.2 Добавить UniqueConstraint для предотвращения дублей
+# 1.3 Создать и применить миграции
+# 1.4 Написать тесты на уникальность оценок
+
+# Пример реализации PlayerEvaluation:
+class PlayerEvaluation(BaseModel):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    match = models.ForeignKey(Match, on_delete=models.CASCADE)
+    player = models.ForeignKey(Player, on_delete=models.CASCADE)
+    
+    contribution = models.IntegerField(validators=[MinValueValidator(1), MaxValueValidator(10)])
+    risk = models.IntegerField(validators=[MinValueValidator(1), MaxValueValidator(10)])
+    potential = models.IntegerField(validators=[MinValueValidator(1), MaxValueValidator(10)])
+    
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['user', 'match', 'player'], name='unique_player_eval')
+        ]
+
+# 2.1 Создать модели агрегатов в aggregates/models.py
+# 2.2 Реализовать расчёт индексов:
+#     - Performance Score = avg_contribution
+#     - Risk Index = avg_risk  
+#     - Maturity Score = contribution - risk
+#     - Stability Index = 1 / std_dev(contribution)
+#     - Clutch Index = contribution * drama_index
+
+# 2.3 Реализовать вес голоса пользователя:
+def calculate_user_weight(user: User, context_eval: ContextEvaluation) -> float:
+    weight = 1.0
+    if context_eval.watched_type == 'full': weight += 0.2
+    if user.trust_score > 1.2: weight += 0.2
+    # TODO: детекция "фанатской системности"
+    return weight
+
+# 3.1 Создать serializers для всех моделей оценок
+# 3.2 Реализовать ViewSets с:
+#     - POST для создания оценок (с валидацией 48ч и уникальности)
+#     - GET для получения аналитики
+# 3.3 Настроить permissions: IsAuthenticated, throttle classes
+# 3.4 Добавить роутинг в api/urls.py
+
+# Пример валидации в serializer:
+def validate_match(self, value):
+    if timezone.now() > value.voting_open_until:
+        raise ValidationError("Voting is closed for this match")
+    return value
+
+# 4.1 Настроить Celery в dopx/celery.py
+# 4.2 Создать задачи:
+#     - recalculate_player_aggregates(match_id)
+#     - recalculate_all_aggregates()  # periodic
+# 4.3 Настроить Celery Beat для periodics (каждые 10 мин)
+# 4.4 Триггер задачи при изменении voting_open_until
+
+# Пример задачи:
+@shared_task
+def recalculate_player_aggregates(match_id: uuid.UUID):
+    evaluations = PlayerEvaluation.objects.filter(match_id=match_id)
+    for player_id in evaluations.values_list('player_id', flat=True).distinct():
+        player_evals = evaluations.filter(player_id=player_id)
+        weights = [calculate_user_weight(e.user, e.match.context) for e in player_evals]
+        # ... расчёт взвешенных средних ...
+        PlayerMatchAggregate.objects.update_or_create(...)
+
+# 5.1 Протестировать импорт матча 898 (live, есть lineup/events)
+# 5.2 Проверить корректность external_id связей:
+#     - Team.external_id ↔ KFF team.id
+#     - Player.external_id ↔ KFF player_id
+# 5.3 Убедиться, что импорт не создаёт дубликаты
+# 5.4 Добавить логирование ошибок импорта
+
+# Команда для теста:
+python manage.py sync_kff --match-id 898
+
+# 6.1 Добавить индексы в модели:
+#     - Match: [league, season, start_time]
+#     - PlayerEvaluation: [match, player, user]
+#     - PlayerMatchAggregate: [player, match]
+
+# 6.2 Использовать select_related/prefetch_related в запросах
+# 6.3 Добавить кэширование агрегатов (Redis, 5-10 мин TTL)
+# 6.4 Протестировать время ответа API (<800ms)
+
+# 7.1 Создать базовые шаблоны с HTMX:
+#     - match_detail.html (с формой оценок)
+#     - player_analytics.html (графики индексов)
+# 7.2 Реализовать HTMX формы для пошаговой оценки (6 шагов)
+# 7.3 Добавить TailwindCSS стили
+# 7.4 Реализовать отображение агрегированной аналитики
+
+# 8.1 Настроить Gunicorn + Nginx
+# 8.2 Настроить HTTPS через Let's Encrypt
+# 8.3 Добавить мониторинг (Sentry, health checks)
+# 8.4 Настроить backup БД

@@ -6,6 +6,7 @@ from seasons.models import Season
 from teams.models import Team
 from coaches.models import Coach
 from referees.models import Referee
+from core.models_stadium import Stadium
 
 
 class Match(BaseModel):
@@ -61,13 +62,20 @@ class Match(BaseModel):
         default="scheduled"
     )
 
-    home_score = models.IntegerField(default=0)
-    away_score = models.IntegerField(default=0)
+    home_score = models.IntegerField(null=True, blank=True)
+    away_score = models.IntegerField(null=True, blank=True)
 
+    has_lineup = models.BooleanField(default=False)
     voting_open_until = models.DateTimeField()
     external_id = models.CharField(
         max_length=100,
         unique=True,
+        null=True,
+        blank=True
+    )
+    stadium = models.ForeignKey(
+        Stadium,
+        on_delete=models.SET_NULL,
         null=True,
         blank=True
     )

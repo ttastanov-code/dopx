@@ -1,0 +1,605 @@
+Полный разбор API сайта kffleague.kz
+
+(документ для разработки парсера)
+
+1. Общая архитектура
+
+Сайт использует REST API версии v1.
+
+Базовый URL:
+
+https://kffleague.kz/api/v1
+
+Все данные страницы матча загружаются через API.
+HTML страницы фактически только оболочка.
+
+Страница матча:
+
+https://kffleague.kz/matches/{match_id}
+
+данные для неё приходят из нескольких endpoints.
+
+2. Основные сущности API
+
+Система состоит из следующих основных сущностей:
+
+Season
+Tournament
+Team
+Game (Match)
+Lineup
+Player
+Coach
+Referee
+Event
+Match Stats
+Player Stats
+3. Основные endpoints
+3.1 Матч
+
+Endpoint:
+
+GET /api/v1/games/{match_id}
+
+Пример:
+
+/api/v1/games/898
+
+Возвращает общую информацию о матче.
+
+Основные поля
+поле	описание
+id	ID матча
+date	дата
+time	время
+tour	тур
+season_id	сезон
+stage_name	стадия
+status	scheduled / live / finished
+home_score	голы хозяев
+away_score	голы гостей
+minute	текущая минута
+half	тайм
+Команды
+home_team
+away_team
+
+Структура:
+
+id
+name
+logo_url
+score
+Стадион
+stadium
+id
+name
+city
+field_type
+Судья
+
+В game возвращается только главный судья строкой
+
+referee
+
+Полный список судей приходит из другого endpoint.
+
+4. Составы матча (lineup)
+
+Endpoint:
+
+GET /api/v1/games/{match_id}/lineup
+
+Пример:
+
+/api/v1/games/898/lineup
+
+Этот endpoint содержит:
+
+referees
+coaches
+lineups
+5. Судьи (referees)
+
+Структура:
+
+referees[]
+
+Каждый объект:
+
+id
+first_name
+last_name
+role
+country
+photo_url
+
+Типы ролей:
+
+main
+first_assistant
+second_assistant
+fourth_referee
+var_main
+var_assistant
+match_inspector
+6. Тренеры (coaches)
+
+Структура:
+
+coaches
+home_team[]
+away_team[]
+
+Каждый тренер:
+
+id
+first_name
+last_name
+role
+country
+photo_url
+7. Составы команд (lineups)
+
+Структура:
+
+lineups
+home_team
+away_team
+
+Каждая команда содержит:
+
+team_id
+team_name
+formation
+kit_color
+starters
+substitutes
+Игрок
+
+Каждый игрок:
+
+player_id
+first_name
+last_name
+country
+shirt_number
+is_captain
+position
+amplua
+field_position
+photo_url
+
+Игроки разделены на:
+
+starters
+substitutes
+8. События матча
+
+Endpoint:
+
+GET /api/v1/live/events/{match_id}
+
+Пример:
+
+/api/v1/live/events/898
+
+Структура:
+
+events[]
+
+Каждый event:
+
+id
+half
+minute
+event_type
+team_id
+player_id
+player2_id
+assist_player_id
+
+Типы событий:
+
+goal
+yellow_card
+red_card
+substitution
+9. Замены (substitutions)
+
+Замены хранятся как event:
+
+event_type = substitution
+
+Поля:
+
+minute
+player_id   (player_out)
+player2_id  (player_in)
+10. Minute In / Minute Out
+
+Minute in/out не хранится напрямую.
+
+Оно вычисляется из событий.
+
+Алгоритм:
+
+стартовые игроки
+minute_in = 0
+если игрок заменён
+minute_out = substitution.minute
+игрок вышел на замену
+minute_in = substitution.minute
+11. Статистика матча
+
+Endpoint:
+
+GET /api/v1/games/{match_id}/stats
+Командная статистика
+team_stats[]
+
+поля:
+
+possession
+shots
+shots_on_goal
+fouls
+yellow_cards
+red_cards
+corners
+offsides
+saves
+
+Дополнительные:
+
+extra_stats
+
+включает статистику по таймам.
+
+Статистика игроков
+player_stats[]
+
+поля:
+
+player_id
+team_id
+position
+goals
+assists
+shots
+passes
+yellow_cards
+red_cards
+minutes_played
+12. Новости матча
+
+Endpoint:
+
+GET /api/v1/games/{match_id}/news
+
+используется для новостей на странице матча.
+
+Для парсера обычно не нужен.
+
+13. Таблица турнира
+
+Endpoint:
+
+/api/v1/seasons/{season_id}/table
+
+пример:
+
+/api/v1/seasons/200/table
+14. Список матчей
+
+Используется endpoint:
+
+/api/v1/championships/front-map
+
+или
+
+/matches?tournament=pl&season=200
+15. Полная схема загрузки страницы матча
+
+Когда пользователь открывает страницу матча:
+
+/matches/{id}
+
+сайт делает запросы:
+
+games/{id}
+games/{id}/lineup
+live/events/{id}
+games/{id}/stats
+games/{id}/news
+16. Архитектура данных матча
+
+Фактическая модель:
+
+Game
+ ├── Teams
+ ├── Stadium
+ ├── Referees
+ ├── Coaches
+ ├── Lineups
+ │      ├── Starters
+ │      └── Substitutes
+ ├── Events
+ │      ├── Goals
+ │      ├── Cards
+ │      └── Substitutions
+ └── Stats
+        ├── Team Stats
+        └── Player Stats
+17. Минимальный набор API для парсера
+
+Чтобы полностью собрать матч достаточно 4 endpoints:
+
+/games/{id}
+/games/{id}/lineup
+/live/events/{id}
+/games/{id}/stats
+
+Это покрывает 100% информации страницы.
+
+18. Как писать парсер
+
+Алгоритм:
+
+for match_id in season_matches:
+
+    game = /games/{id}
+
+    lineup = /games/{id}/lineup
+
+    events = /live/events/{id}
+
+    stats = /games/{id}/stats
+
+Затем:
+
+build lineups
+process substitutions
+calculate minute_in minute_out
+save events
+save stats
+19. Главная проблема API
+
+Minute In / Minute Out не хранится в API.
+
+Его нужно вычислять.
+
+Это единственная логика.
+
+
+ER-модель базы данных KFF League
+Главная идея
+
+Центральная сущность системы:
+
+GAME (MATCH)
+
+Все остальные данные связаны с матчем.
+
+Полная структура базы
+Season
+   │
+   ├── Stage
+   │      │
+   │      └── Game
+   │              │
+   │              ├── Game_Team
+   │              │        └── Team
+   │              │
+   │              ├── Game_Lineup
+   │              │        └── Player
+   │              │
+   │              ├── Game_Event
+   │              │        └── Player
+   │              │
+   │              ├── Game_Stats
+   │              │
+   │              ├── Player_Stats
+   │              │
+   │              ├── Game_Coach
+   │              │        └── Coach
+   │              │
+   │              └── Game_Referee
+   │                       └── Referee
+Таблицы
+1. Season
+season
+поле	тип
+id	int
+name	string
+year	int
+
+пример:
+
+Премьер-Лига 2026
+2. Stage
+stage
+поле	тип
+id	int
+season_id	FK
+name	string
+
+пример:
+
+1 тур
+2 тур
+3. Team
+team
+поле	тип
+id	int
+name	string
+logo_url	string
+primary_color	string
+secondary_color	string
+accent_color	string
+4. Player
+player
+поле	тип
+id	int
+first_name	string
+last_name	string
+country_id	FK
+photo_url	string
+5. Coach
+coach
+поле	тип
+id	int
+first_name	string
+last_name	string
+country_id	FK
+photo_url	string
+6. Referee
+referee
+поле	тип
+id	int
+first_name	string
+last_name	string
+role	string
+country_id	FK
+7. Stadium
+stadium
+поле	тип
+id	int
+name	string
+city	string
+capacity	int
+field_type	string
+8. Game (Match)
+game
+поле	тип
+id	int
+season_id	FK
+stage_id	FK
+stadium_id	FK
+date	date
+time	time
+status	string
+home_team_id	FK
+away_team_id	FK
+home_score	int
+away_score	int
+9. Game Coaches
+game_coach
+поле	тип
+id	int
+game_id	FK
+coach_id	FK
+team_id	FK
+role	string
+10. Game Referees
+game_referee
+поле	тип
+id	int
+game_id	FK
+referee_id	FK
+role	string
+11. Lineups
+game_lineup
+поле	тип
+id	int
+game_id	FK
+team_id	FK
+player_id	FK
+shirt_number	int
+position	string
+starter	bool
+captain	bool
+minute_in	int
+minute_out	int
+12. Match Events
+game_event
+поле	тип
+id	int
+game_id	FK
+minute	int
+half	int
+event_type	string
+team_id	FK
+player_id	FK
+player2_id	FK
+assist_player_id	FK
+13. Team Stats
+game_team_stats
+поле	тип
+id	int
+game_id	FK
+team_id	FK
+possession	float
+shots	int
+shots_on_goal	int
+fouls	int
+yellow_cards	int
+red_cards	int
+corners	int
+offsides	int
+saves	int
+14. Player Stats
+player_stats
+поле	тип
+id	int
+game_id	FK
+player_id	FK
+team_id	FK
+position	string
+goals	int
+assists	int
+shots	int
+passes	int
+yellow_cards	int
+red_cards	int
+minutes_played	int
+Как вычисляется minute_in / minute_out
+
+Это важно.
+
+В API они не приходят.
+
+Они вычисляются из:
+
+game_event
+event_type = substitution
+
+пример:
+
+63' substitution
+player_out = 7
+player_in = 14
+
+значит
+
+player_out minute_out = 63
+player_in minute_in = 63
+Итоговая схема связей
+Season
+   │
+Stage
+   │
+Game
+ ├── Stadium
+ ├── Team
+ ├── Game_Coach
+ ├── Game_Referee
+ ├── Game_Lineup
+ │       └── Player
+ ├── Game_Event
+ │       └── Player
+ ├── Team_Stats
+ └── Player_Stats
+Минимальный набор API для заполнения БД
+
+Нужно всего 4 endpoints
+
+/api/v1/games/{id}
+
+/api/v1/games/{id}/lineup
+
+/api/v1/live/events/{id}
+
+/api/v1/games/{id}/stats
+
+Они дают 100% данных страницы матча.

@@ -43,6 +43,9 @@ INSTALLED_APPS = [
     'analytics',
     'api',
     'referees',
+    'parsers',
+    'events',
+    'lineups',
 ]
 
 MIDDLEWARE = [
