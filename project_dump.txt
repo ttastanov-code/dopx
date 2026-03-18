@@ -7,9 +7,16 @@ aggregates
   __init__.py
   admin.py
   apps.py
+  management
+    commands
+      recalculate_aggregates.py
   migrations
+    0001_initial.py
     __init__.py
   models.py
+  services.py
+  signals.py
+  tasks.py
   tests.py
   views.py
 analytics
@@ -28,7 +35,10 @@ api
   migrations
     __init__.py
   models.py
+  permissions.py
+  serializers.py
   tests.py
+  urls.py
   views.py
 coaches
   __init__.py
@@ -55,6 +65,7 @@ core
 dopx
   __init__.py
   asgi.py
+  celery.py
   requirements.txt
   settings.py
   urls.py
@@ -65,6 +76,7 @@ evaluations
   admin.py
   apps.py
   migrations
+    0001_initial.py
     __init__.py
   models.py
   tests.py
@@ -135,6 +147,7 @@ parsers
   models.py
   tests.py
   views.py
+plan.txt
 players
   __init__.py
   admin.py
@@ -225,21 +238,207 @@ FILE: aggregates/__init__.py
 FILE: aggregates/admin.py
 ================================================================================
 
+# aggregates/admin.py
 from django.contrib import admin
+from .models import PlayerMatchAggregate, CoachMatchAggregate, MatchAggregate
 
-# Register your models here.
 
+@admin.register(PlayerMatchAggregate)
+class PlayerMatchAggregateAdmin(admin.ModelAdmin):
+    list_display = (
+        'player', 'match', 'performance_score', 'maturity_score',
+        'stability_index', 'clutch_index', 'total_votes'
+    )
+    list_filter = ('match', 'player__team')
+    search_fields = ('player__first_name', 'player__last_name')
+    readonly_fields = (
+        'performance_score', 'risk_index', 'maturity_score',
+        'stability_index', 'clutch_index'
+    )
+
+
+@admin.register(CoachMatchAggregate)
+class CoachMatchAggregateAdmin(admin.ModelAdmin):
+    list_display = (
+        'coach', 'match', 'average_score', 'total_votes'
+    )
+    list_filter = ('match', 'coach__team')
+    search_fields = ('coach__first_name', 'coach__last_name')
+
+
+@admin.register(MatchAggregate)
+class MatchAggregateAdmin(admin.ModelAdmin):
+    list_display = (
+        'match', 'drama_index', 'avg_entertainment',
+        'avg_tension', 'total_votes'
+    )
+    list_filter = ('match__league', 'match__season')
+    readonly_fields = ('drama_index',)
 
 
 ================================================================================
 FILE: aggregates/apps.py
 ================================================================================
 
+# aggregates/apps.py
 from django.apps import AppConfig
 
-
 class AggregatesConfig(AppConfig):
+    default_auto_field = 'django.db.models.BigAutoField'
     name = 'aggregates'
+    
+    def ready(self):
+        # Импортируем сигналы при готовности приложения
+        import aggregates.signals
+
+
+================================================================================
+FILE: aggregates/management/commands/recalculate_aggregates.py
+================================================================================
+
+# aggregates/management/commands/recalculate_aggregates.py
+from django.core.management.base import BaseCommand
+from django.utils import timezone
+from datetime import timedelta
+from matches.models import Match
+from aggregates.tasks import recalculate_all_aggregates_for_match
+import logging
+
+logger = logging.getLogger(__name__)
+
+class Command(BaseCommand):
+    help = 'Пересчитать агрегаты для матчей'
+    
+    def add_arguments(self, parser):
+        parser.add_argument(
+            '--match-id',
+            type=str,
+            help='Пересчитать для конкретного матча (UUID)'
+        )
+        parser.add_argument(
+            '--all-active',
+            action='store_true',
+            help='Пересчитать для всех активных матчей'
+        )
+        parser.add_argument(
+            '--hours',
+            type=int,
+            default=24,
+            help='Период в часах для поиска активных матчей (по умолчанию 24)'
+        )
+    
+    def handle(self, *args, **options):
+        match_id = options.get('match_id')
+        all_active = options.get('all_active')
+        hours = options.get('hours')
+        
+        if match_id:
+            self.stdout.write(f"Recalculating aggregates for match {match_id}...")
+            recalculate_all_aggregates_for_match.delay(match_id)
+            self.stdout.write(self.style.SUCCESS("Task queued!"))
+        elif all_active:
+            now = timezone.now()
+            active_matches = Match.objects.filter(
+                voting_open_until__gte=now - timedelta(hours=hours)
+            )
+            
+            self.stdout.write(f"Found {active_matches.count()} active matches")
+            
+            count = 0
+            for match in active_matches:
+                recalculate_all_aggregates_for_match.delay(str(match.id))
+                count += 1
+            
+            self.stdout.write(self.style.SUCCESS(f"Queued {count} tasks!"))
+        else:
+            self.stdout.write(self.style.WARNING(
+                "Specify --match-id or --all-active"
+            ))
+
+
+================================================================================
+FILE: aggregates/migrations/0001_initial.py
+================================================================================
+
+# Generated by Django 6.0.3 on 2026-03-18 03:48
+
+import django.db.models.deletion
+import uuid
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+
+    initial = True
+
+    dependencies = [
+        ('coaches', '0002_coach_external_id'),
+        ('matches', '0005_match_has_lineup'),
+        ('players', '0002_player_external_id'),
+    ]
+
+    operations = [
+        migrations.CreateModel(
+            name='MatchAggregate',
+            fields=[
+                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ('updated_at', models.DateTimeField(auto_now=True)),
+                ('avg_entertainment', models.FloatField(default=0.0)),
+                ('avg_tension', models.FloatField(default=0.0)),
+                ('avg_fairness', models.FloatField(default=0.0)),
+                ('turning_point_ratio', models.FloatField(default=0.0)),
+                ('total_votes', models.IntegerField(default=0)),
+                ('drama_index', models.FloatField(default=0.0)),
+                ('match', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='aggregate', to='matches.match')),
+            ],
+            options={
+                'abstract': False,
+            },
+        ),
+        migrations.CreateModel(
+            name='CoachMatchAggregate',
+            fields=[
+                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ('updated_at', models.DateTimeField(auto_now=True)),
+                ('avg_tactics', models.FloatField(default=0.0)),
+                ('avg_substitutions', models.FloatField(default=0.0)),
+                ('avg_management', models.FloatField(default=0.0)),
+                ('avg_impact', models.FloatField(default=0.0)),
+                ('total_votes', models.IntegerField(default=0)),
+                ('coach', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='match_aggregates', to='coaches.coach')),
+                ('match', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='coach_aggregates', to='matches.match')),
+            ],
+            options={
+                'indexes': [models.Index(fields=['coach', 'match'], name='aggregates__coach_i_d626e6_idx')],
+                'constraints': [models.UniqueConstraint(fields=('coach', 'match'), name='unique_coach_match_aggregate')],
+            },
+        ),
+        migrations.CreateModel(
+            name='PlayerMatchAggregate',
+            fields=[
+                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ('updated_at', models.DateTimeField(auto_now=True)),
+                ('avg_contribution', models.FloatField(default=0.0)),
+                ('avg_risk', models.FloatField(default=0.0)),
+                ('avg_potential', models.FloatField(default=0.0)),
+                ('total_votes', models.IntegerField(default=0)),
+                ('performance_score', models.FloatField(default=0.0)),
+                ('risk_index', models.FloatField(default=0.0)),
+                ('maturity_score', models.FloatField(default=0.0)),
+                ('stability_index', models.FloatField(default=0.0)),
+                ('clutch_index', models.FloatField(default=0.0)),
+                ('match', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='player_aggregates', to='matches.match')),
+                ('player', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='match_aggregates', to='players.player')),
+            ],
+            options={
+                'indexes': [models.Index(fields=['player', 'match'], name='aggregates__player__f6911c_idx'), models.Index(fields=['match', 'player'], name='aggregates__match_i_1102a1_idx')],
+                'constraints': [models.UniqueConstraint(fields=('player', 'match'), name='unique_player_match_aggregate')],
+            },
+        ),
+    ]
 
 
 
@@ -254,20 +453,1063 @@ FILE: aggregates/migrations/__init__.py
 FILE: aggregates/models.py
 ================================================================================
 
+# aggregates/models.py
 from django.db import models
+from django.db.models import Avg, StdDev, Count
+from core.models import BaseModel
+from evaluations.models import PlayerEvaluation, CoachEvaluation, MatchEvaluation
 
-# Create your models here.
 
+class PlayerMatchAggregate(BaseModel):
+    """Агрегированные оценки игрока за матч"""
+    player = models.ForeignKey(
+        'players.Player',
+        on_delete=models.CASCADE,
+        related_name='match_aggregates'
+    )
+    match = models.ForeignKey(
+        'matches.Match',
+        on_delete=models.CASCADE,
+        related_name='player_aggregates'
+    )
+    
+    # Базовые метрики
+    avg_contribution = models.FloatField(default=0.0)
+    avg_risk = models.FloatField(default=0.0)
+    avg_potential = models.FloatField(default=0.0)
+    total_votes = models.IntegerField(default=0)
+    
+    # Вычисляемые индексы
+    performance_score = models.FloatField(default=0.0)  # avg_contribution
+    risk_index = models.FloatField(default=0.0)  # avg_risk
+    maturity_score = models.FloatField(default=0.0)  # contribution - risk
+    stability_index = models.FloatField(default=0.0)  # 1 / std_dev(contribution)
+    clutch_index = models.FloatField(default=0.0)  # contribution * drama_index
+    
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['player', 'match'],
+                name='unique_player_match_aggregate'
+            )
+        ]
+        indexes = [
+            models.Index(fields=['player', 'match']),
+            models.Index(fields=['match', 'player']),
+        ]
+    
+    def __str__(self):
+        return f"{self.player} - {self.match}"
+    
+    @property
+    def potential_index(self):
+        return self.avg_potential
+
+
+class CoachMatchAggregate(BaseModel):
+    """Агрегированные оценки тренера за матч"""
+    coach = models.ForeignKey(
+        'coaches.Coach',
+        on_delete=models.CASCADE,
+        related_name='match_aggregates'
+    )
+    match = models.ForeignKey(
+        'matches.Match',
+        on_delete=models.CASCADE,
+        related_name='coach_aggregates'
+    )
+    
+    avg_tactics = models.FloatField(default=0.0)
+    avg_substitutions = models.FloatField(default=0.0)
+    avg_management = models.FloatField(default=0.0)
+    avg_impact = models.FloatField(default=0.0)
+    total_votes = models.IntegerField(default=0)
+    
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['coach', 'match'],
+                name='unique_coach_match_aggregate'
+            )
+        ]
+        indexes = [
+            models.Index(fields=['coach', 'match']),
+        ]
+    
+    def __str__(self):
+        return f"{self.coach} - {self.match}"
+    
+    @property
+    def average_score(self):
+        if self.total_votes == 0:
+            return 0.0
+        return (self.avg_tactics + self.avg_substitutions + 
+                self.avg_management + self.avg_impact) / 4
+
+
+class MatchAggregate(BaseModel):
+    """Агрегированные оценки матча"""
+    match = models.OneToOneField(
+        'matches.Match',
+        on_delete=models.CASCADE,
+        related_name='aggregate'
+    )
+    
+    avg_entertainment = models.FloatField(default=0.0)
+    avg_tension = models.FloatField(default=0.0)
+    avg_fairness = models.FloatField(default=0.0)
+    turning_point_ratio = models.FloatField(default=0.0)
+    total_votes = models.IntegerField(default=0)
+    
+    # Вычисляемые индексы
+    drama_index = models.FloatField(default=0.0)  # entertainment * tension
+    
+    def __str__(self):
+        return f"Aggregate - {self.match}"
+    
+    def calculate_drama_index(self):
+        """Drama Index = entertainment * tension"""
+        return self.avg_entertainment * self.avg_tension
+
+
+================================================================================
+FILE: aggregates/services.py
+================================================================================
+
+# aggregates/services.py
+from django.db.models import Avg, StdDev, Count, F
+from django.utils import timezone
+from evaluations.models import PlayerEvaluation, CoachEvaluation, MatchEvaluation
+from .models import PlayerMatchAggregate, CoachMatchAggregate, MatchAggregate
+from users.models import User
+from evaluations.models import ContextEvaluation
+import math
+
+
+def calculate_user_weight(user: User, context_eval: ContextEvaluation) -> float:
+    """
+    Расчёт веса голоса пользователя
+    
+    Формула:
+    - 1.0 базовый
+    - +0.2 если watched_type == full
+    - +0.2 если trust_score > 1.2
+    - -0.3 если выявлена фанатская системность
+    """
+    weight = 1.0
+    
+    if context_eval and context_eval.watched_type == 'full':
+        weight += 0.2
+    
+    if user.trust_score > 1.2:
+        weight += 0.2
+    
+    # TODO: Детекция фанатской системности
+    # if detect_fan_bias(user, match):
+    #     weight -= 0.3
+    
+    return max(0.5, weight)  # Минимальный вес 0.5
+
+
+def detect_fan_bias(user: User, match) -> bool:
+    """
+    Детекция систематической предвзятости (фанатизма)
+    TODO: Реализовать на основе истории оценок
+    """
+    # Пример: если пользователь всегда ставит макс. оценки одной команде
+    return False
+
+
+def calculate_weighted_average(evaluations, field_name, context_evals_map):
+    """
+    Расчёт взвешенного среднего значения
+    
+    Args:
+        evaluations: QuerySet оценок
+        field_name: имя поля для усреднения
+        context_evals_map: dict {user_id: ContextEvaluation}
+    """
+    total_weight = 0.0
+    weighted_sum = 0.0
+    
+    for eval_obj in evaluations:
+        user = eval_obj.user
+        context_eval = context_evals_map.get(user.id)
+        weight = calculate_user_weight(user, context_eval)
+        
+        value = getattr(eval_obj, field_name, 0)
+        weighted_sum += value * weight
+        total_weight += weight
+    
+    if total_weight == 0:
+        return 0.0
+    
+    return weighted_sum / total_weight
+
+
+def calculate_std_dev(values):
+    """Расчёт стандартного отклонения"""
+    if len(values) < 2:
+        return 0.0
+    
+    mean = sum(values) / len(values)
+    variance = sum((x - mean) ** 2 for x in values) / len(values)
+    return math.sqrt(variance)
+
+
+def recalculate_player_aggregate(player, match):
+    """Пересчёт агрегатов для игрока за матч"""
+    evaluations = PlayerEvaluation.objects.filter(
+        player=player,
+        match=match
+    ).select_related('user', 'match')
+    
+    if not evaluations.exists():
+        return None
+    
+    # Получаем context evaluations для всех пользователей
+    user_ids = evaluations.values_list('user_id', flat=True)
+    context_evals = ContextEvaluation.objects.filter(
+        user_id__in=user_ids,
+        match=match
+    )
+    context_evals_map = {ce.user_id: ce for ce in context_evals}
+    
+    # Расчёт взвешенных средних
+    avg_contribution = calculate_weighted_average(
+        evaluations, 'contribution', context_evals_map
+    )
+    avg_risk = calculate_weighted_average(
+        evaluations, 'risk', context_evals_map
+    )
+    avg_potential = calculate_weighted_average(
+        evaluations, 'potential', context_evals_map
+    )
+    
+    # Расчёт стандартного отклонения для stability index
+    contributions = [e.contribution for e in evaluations]
+    std_dev = calculate_std_dev(contributions)
+    stability_index = 1.0 / std_dev if std_dev > 0 else 10.0
+    
+    # Получаем drama index из матча
+    match_agg = MatchAggregate.objects.filter(match=match).first()
+    drama_index = match_agg.drama_index if match_agg else 5.0
+    
+    # Вычисляемые индексы
+    performance_score = avg_contribution
+    risk_index = avg_risk
+    maturity_score = avg_contribution - avg_risk
+    clutch_index = avg_contribution * (drama_index / 10.0)  # Нормализация
+    
+    aggregate, _ = PlayerMatchAggregate.objects.update_or_create(
+        player=player,
+        match=match,
+        defaults={
+            'avg_contribution': round(avg_contribution, 2),
+            'avg_risk': round(avg_risk, 2),
+            'avg_potential': round(avg_potential, 2),
+            'total_votes': evaluations.count(),
+            'performance_score': round(performance_score, 2),
+            'risk_index': round(risk_index, 2),
+            'maturity_score': round(maturity_score, 2),
+            'stability_index': round(stability_index, 2),
+            'clutch_index': round(clutch_index, 2),
+        }
+    )
+    
+    return aggregate
+
+
+def recalculate_coach_aggregate(coach, match):
+    """Пересчёт агрегатов для тренера за матч"""
+    evaluations = CoachEvaluation.objects.filter(
+        coach=coach,
+        match=match
+    ).select_related('user')
+    
+    if not evaluations.exists():
+        return None
+    
+    user_ids = evaluations.values_list('user_id', flat=True)
+    context_evals = ContextEvaluation.objects.filter(
+        user_id__in=user_ids,
+        match=match
+    )
+    context_evals_map = {ce.user_id: ce for ce in context_evals}
+    
+    avg_tactics = calculate_weighted_average(evaluations, 'tactics', context_evals_map)
+    avg_substitutions = calculate_weighted_average(evaluations, 'substitutions', context_evals_map)
+    avg_management = calculate_weighted_average(evaluations, 'game_management', context_evals_map)
+    avg_impact = calculate_weighted_average(evaluations, 'impact', context_evals_map)
+    
+    aggregate, _ = CoachMatchAggregate.objects.update_or_create(
+        coach=coach,
+        match=match,
+        defaults={
+            'avg_tactics': round(avg_tactics, 2),
+            'avg_substitutions': round(avg_substitutions, 2),
+            'avg_management': round(avg_management, 2),
+            'avg_impact': round(avg_impact, 2),
+            'total_votes': evaluations.count(),
+        }
+    )
+    
+    return aggregate
+
+
+def recalculate_match_aggregate(match):
+    """Пересчёт агрегатов для матча"""
+    evaluations = MatchEvaluation.objects.filter(
+        match=match
+    ).select_related('user')
+    
+    if not evaluations.exists():
+        return None
+    
+    user_ids = evaluations.values_list('user_id', flat=True)
+    context_evals = ContextEvaluation.objects.filter(
+        user_id__in=user_ids,
+        match=match
+    )
+    context_evals_map = {ce.user_id: ce for ce in context_evals}
+    
+    avg_entertainment = calculate_weighted_average(evaluations, 'entertainment', context_evals_map)
+    avg_tension = calculate_weighted_average(evaluations, 'tension', context_evals_map)
+    avg_fairness = calculate_weighted_average(evaluations, 'fairness', context_evals_map)
+    
+    turning_point_count = evaluations.filter(turning_point=True).count()
+    turning_point_ratio = turning_point_count / evaluations.count() if evaluations.count() > 0 else 0.0
+    
+    drama_index = avg_entertainment * avg_tension
+    
+    aggregate, _ = MatchAggregate.objects.update_or_create(
+        match=match,
+        defaults={
+            'avg_entertainment': round(avg_entertainment, 2),
+            'avg_tension': round(avg_tension, 2),
+            'avg_fairness': round(avg_fairness, 2),
+            'turning_point_ratio': round(turning_point_ratio, 2),
+            'total_votes': evaluations.count(),
+            'drama_index': round(drama_index, 2),
+        }
+    )
+    
+    return aggregate
+
+
+def recalculate_all_aggregates_for_match(match):
+    """Пересчёт всех агрегатов для матча"""
+    # 1. Сначала матч (нужен для drama_index)
+    match_agg = recalculate_match_aggregate(match)
+    
+    # 2. Игроки
+    player_ids = PlayerEvaluation.objects.filter(
+        match=match
+    ).values_list('player_id', flat=True).distinct()
+    
+    for player_id in player_ids:
+        from players.models import Player
+        player = Player.objects.get(id=player_id)
+        recalculate_player_aggregate(player, match)
+    
+    # 3. Тренеры
+    if match.home_coach:
+        recalculate_coach_aggregate(match.home_coach, match)
+    if match.away_coach:
+        recalculate_coach_aggregate(match.away_coach, match)
+    
+    return True
+
+
+================================================================================
+FILE: aggregates/signals.py
+================================================================================
+
+# aggregates/signals.py
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from django.utils import timezone
+from matches.models import Match
+from evaluations.models import PlayerEvaluation, MatchEvaluation, CoachEvaluation
+from aggregates.tasks import trigger_aggregate_recalculation
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+@receiver(post_save, sender=PlayerEvaluation)
+def on_player_evaluation_saved(sender, instance, created, **kwargs):
+    """
+    При создании/обновлении оценки игрока запускаем пересчёт агрегатов
+    """
+    match_id = str(instance.match.id)
+    logger.info(f"PlayerEvaluation saved, triggering recalculation for match {match_id}")
+    
+    # Откладываем задачу на 30 секунд чтобы собрать больше изменений
+    trigger_aggregate_recalculation.apply_async(
+        args=[match_id],
+        countdown=30
+    )
+
+
+@receiver(post_save, sender=MatchEvaluation)
+def on_match_evaluation_saved(sender, instance, created, **kwargs):
+    """
+    При создании/обновлении оценки матча запускаем пересчёт агрегатов
+    """
+    match_id = str(instance.match.id)
+    logger.info(f"MatchEvaluation saved, triggering recalculation for match {match_id}")
+    
+    trigger_aggregate_recalculation.apply_async(
+        args=[match_id],
+        countdown=30
+    )
+
+
+@receiver(post_save, sender=CoachEvaluation)
+def on_coach_evaluation_saved(sender, instance, created, **kwargs):
+    """
+    При создании/обновлении оценки тренера запускаем пересчёт агрегатов
+    """
+    match_id = str(instance.match.id)
+    logger.info(f"CoachEvaluation saved, triggering recalculation for match {match_id}")
+    
+    trigger_aggregate_recalculation.apply_async(
+        args=[match_id],
+        countdown=30
+    )
+
+
+@receiver(post_save, sender=Match)
+def on_match_voting_deadline_changed(sender, instance, updated_fields, **kwargs):
+    """
+    При изменении voting_open_until запускаем пересчёт
+    """
+    if updated_fields and 'voting_open_until' in updated_fields:
+        match_id = str(instance.id)
+        logger.info(f"Match voting deadline changed, triggering recalculation for {match_id}")
+        
+        # Если голосование закрылось - немедленный пересчёт
+        if instance.voting_open_until <= timezone.now():
+            trigger_aggregate_recalculation.delay(match_id)
+        else:
+            trigger_aggregate_recalculation.apply_async(
+                args=[match_id],
+                countdown=60
+            )
+
+
+================================================================================
+FILE: aggregates/tasks.py
+================================================================================
+
+# aggregates/tasks.py
+from celery import shared_task
+from django.db.models import Avg, Count, F
+from django.utils import timezone
+from django.core.cache import cache
+import logging
+import math
+from datetime import timedelta
+
+from evaluations.models import (
+    PlayerEvaluation,
+    CoachEvaluation,
+    MatchEvaluation,
+    ContextEvaluation
+)
+from matches.models import Match
+from aggregates.models import (
+    PlayerMatchAggregate,
+    CoachMatchAggregate,
+    MatchAggregate
+)
+from users.models import User
+
+logger = logging.getLogger(__name__)
+
+
+def calculate_user_weight(user: User, context_eval: ContextEvaluation) -> float:
+    """
+    Расчёт веса голоса пользователя
+    
+    Формула:
+    - 1.0 базовый
+    - +0.2 если watched_type == full
+    - +0.2 если trust_score > 1.2
+    - -0.3 если выявлена фанатская системность
+    """
+    weight = 1.0
+    
+    if context_eval and context_eval.watched_type == 'full':
+        weight += 0.2
+    
+    if user.trust_score > 1.2:
+        weight += 0.2
+    
+    # TODO: Детекция фанатской системности
+    # if detect_fan_bias(user, match):
+    #     weight -= 0.3
+    
+    return max(0.5, weight)  # Минимальный вес 0.5
+
+
+def calculate_std_dev(values):
+    """Расчёт стандартного отклонения"""
+    if len(values) < 2:
+        return 0.0
+    
+    mean = sum(values) / len(values)
+    variance = sum((x - mean) ** 2 for x in values) / len(values)
+    return math.sqrt(variance)
+
+
+@shared_task(bind=True, max_retries=3)
+def recalculate_player_aggregates(self, match_id: str):
+    """
+    Пересчёт агрегатов для всех игроков конкретного матча
+    
+    Args:
+        match_id: UUID матча в строковом формате
+    """
+    try:
+        from uuid import UUID
+        match_uuid = UUID(match_id)
+    except (ValueError, AttributeError):
+        logger.error(f"Invalid match_id: {match_id}")
+        return False
+    
+    match = Match.objects.filter(id=match_uuid).first()
+    if not match:
+        logger.error(f"Match not found: {match_id}")
+        return False
+    
+    logger.info(f"Starting player aggregate recalculation for match {match_id}")
+    
+    # Получаем все оценки игроков для этого матча
+    evaluations = PlayerEvaluation.objects.filter(
+        match_id=match_uuid
+    ).select_related('user', 'player', 'match')
+    
+    if not evaluations.exists():
+        logger.info(f"No player evaluations for match {match_id}")
+        return True
+    
+    # Группируем по игрокам
+    player_ids = evaluations.values_list('player_id', flat=True).distinct()
+    
+    updated_count = 0
+    for player_id in player_ids:
+        player_evals = evaluations.filter(player_id=player_id)
+        
+        if not player_evals.exists():
+            continue
+        
+        # Получаем context evaluations для всех пользователей
+        user_ids = player_evals.values_list('user_id', flat=True)
+        context_evals = ContextEvaluation.objects.filter(
+            user_id__in=user_ids,
+            match_id=match_uuid
+        )
+        context_evals_map = {ce.user_id: ce for ce in context_evals}
+        
+        # Расчёт взвешенных средних
+        total_weight = 0.0
+        weighted_contribution = 0.0
+        weighted_risk = 0.0
+        weighted_potential = 0.0
+        contributions = []
+        
+        for eval_obj in player_evals:
+            user = eval_obj.user
+            context_eval = context_evals_map.get(user.id)
+            weight = calculate_user_weight(user, context_eval)
+            
+            weighted_contribution += eval_obj.contribution * weight
+            weighted_risk += eval_obj.risk * weight
+            weighted_potential += eval_obj.potential * weight
+            total_weight += weight
+            contributions.append(eval_obj.contribution)
+        
+        if total_weight == 0:
+            continue
+        
+        avg_contribution = weighted_contribution / total_weight
+        avg_risk = weighted_risk / total_weight
+        avg_potential = weighted_potential / total_weight
+        
+        # Расчёт стандартного отклонения для stability index
+        std_dev = calculate_std_dev(contributions)
+        stability_index = 1.0 / std_dev if std_dev > 0 else 10.0
+        
+        # Получаем drama index из матча
+        match_agg = MatchAggregate.objects.filter(match_id=match_uuid).first()
+        drama_index = match_agg.drama_index if match_agg else 5.0
+        
+        # Вычисляемые индексы
+        performance_score = avg_contribution
+        risk_index = avg_risk
+        maturity_score = avg_contribution - avg_risk
+        clutch_index = avg_contribution * (drama_index / 10.0)  # Нормализация
+        
+        # Обновляем или создаём агрегат
+        aggregate, created = PlayerMatchAggregate.objects.update_or_create(
+            player_id=player_id,
+            match_id=match_uuid,
+            defaults={
+                'avg_contribution': round(avg_contribution, 2),
+                'avg_risk': round(avg_risk, 2),
+                'avg_potential': round(avg_potential, 2),
+                'total_votes': player_evals.count(),
+                'performance_score': round(performance_score, 2),
+                'risk_index': round(risk_index, 2),
+                'maturity_score': round(maturity_score, 2),
+                'stability_index': round(stability_index, 2),
+                'clutch_index': round(clutch_index, 2),
+            }
+        )
+        
+        updated_count += 1
+        
+        # Инвалидация кэша для этого игрока
+        cache.delete(f'player_aggregate_{player_id}_{match_id}')
+    
+    logger.info(f"Updated {updated_count} player aggregates for match {match_id}")
+    return True
+
+
+@shared_task(bind=True, max_retries=3)
+def recalculate_coach_aggregates(self, match_id: str):
+    """Пересчёт агрегатов для тренеров матча"""
+    try:
+        from uuid import UUID
+        match_uuid = UUID(match_id)
+    except (ValueError, AttributeError):
+        logger.error(f"Invalid match_id: {match_id}")
+        return False
+    
+    match = Match.objects.filter(id=match_uuid).first()
+    if not match:
+        return False
+    
+    evaluations = CoachEvaluation.objects.filter(
+        match_id=match_uuid
+    ).select_related('user', 'coach')
+    
+    if not evaluations.exists():
+        return True
+    
+    coach_ids = evaluations.values_list('coach_id', flat=True).distinct()
+    
+    for coach_id in coach_ids:
+        coach_evals = evaluations.filter(coach_id=coach_id)
+        
+        user_ids = coach_evals.values_list('user_id', flat=True)
+        context_evals = ContextEvaluation.objects.filter(
+            user_id__in=user_ids,
+            match_id=match_uuid
+        )
+        context_evals_map = {ce.user_id: ce for ce in context_evals}
+        
+        total_weight = 0.0
+        weighted_tactics = 0.0
+        weighted_substitutions = 0.0
+        weighted_management = 0.0
+        weighted_impact = 0.0
+        
+        for eval_obj in coach_evals:
+            user = eval_obj.user
+            context_eval = context_evals_map.get(user.id)
+            weight = calculate_user_weight(user, context_eval)
+            
+            weighted_tactics += eval_obj.tactics * weight
+            weighted_substitutions += eval_obj.substitutions * weight
+            weighted_management += eval_obj.game_management * weight
+            weighted_impact += eval_obj.impact * weight
+            total_weight += weight
+        
+        if total_weight == 0:
+            continue
+        
+        aggregate, _ = CoachMatchAggregate.objects.update_or_create(
+            coach_id=coach_id,
+            match_id=match_uuid,
+            defaults={
+                'avg_tactics': round(weighted_tactics / total_weight, 2),
+                'avg_substitutions': round(weighted_substitutions / total_weight, 2),
+                'avg_management': round(weighted_management / total_weight, 2),
+                'avg_impact': round(weighted_impact / total_weight, 2),
+                'total_votes': coach_evals.count(),
+            }
+        )
+        
+        cache.delete(f'coach_aggregate_{coach_id}_{match_id}')
+    
+    return True
+
+
+@shared_task(bind=True, max_retries=3)
+def recalculate_match_aggregate(self, match_id: str):
+    """Пересчёт агрегатов для матча"""
+    try:
+        from uuid import UUID
+        match_uuid = UUID(match_id)
+    except (ValueError, AttributeError):
+        logger.error(f"Invalid match_id: {match_id}")
+        return False
+    
+    match = Match.objects.filter(id=match_uuid).first()
+    if not match:
+        return False
+    
+    evaluations = MatchEvaluation.objects.filter(
+        match_id=match_uuid
+    ).select_related('user')
+    
+    if not evaluations.exists():
+        # Создаём пустой агрегат
+        MatchAggregate.objects.update_or_create(
+            match_id=match_uuid,
+            defaults={
+                'avg_entertainment': 0.0,
+                'avg_tension': 0.0,
+                'avg_fairness': 0.0,
+                'turning_point_ratio': 0.0,
+                'total_votes': 0,
+                'drama_index': 0.0,
+            }
+        )
+        return True
+    
+    user_ids = evaluations.values_list('user_id', flat=True)
+    context_evals = ContextEvaluation.objects.filter(
+        user_id__in=user_ids,
+        match_id=match_uuid
+    )
+    context_evals_map = {ce.user_id: ce for ce in context_evals}
+    
+    total_weight = 0.0
+    weighted_entertainment = 0.0
+    weighted_tension = 0.0
+    weighted_fairness = 0.0
+    turning_point_count = 0
+    
+    for eval_obj in evaluations:
+        user = eval_obj.user
+        context_eval = context_evals_map.get(user.id)
+        weight = calculate_user_weight(user, context_eval)
+        
+        weighted_entertainment += eval_obj.entertainment * weight
+        weighted_tension += eval_obj.tension * weight
+        weighted_fairness += eval_obj.fairness * weight
+        total_weight += weight
+        
+        if eval_obj.turning_point:
+            turning_point_count += 1
+    
+    if total_weight == 0:
+        return True
+    
+    avg_entertainment = weighted_entertainment / total_weight
+    avg_tension = weighted_tension / total_weight
+    avg_fairness = weighted_fairness / total_weight
+    turning_point_ratio = turning_point_count / evaluations.count()
+    drama_index = avg_entertainment * avg_tension
+    
+    aggregate, _ = MatchAggregate.objects.update_or_create(
+        match_id=match_uuid,
+        defaults={
+            'avg_entertainment': round(avg_entertainment, 2),
+            'avg_tension': round(avg_tension, 2),
+            'avg_fairness': round(avg_fairness, 2),
+            'turning_point_ratio': round(turning_point_ratio, 2),
+            'total_votes': evaluations.count(),
+            'drama_index': round(drama_index, 2),
+        }
+    )
+    
+    cache.delete(f'match_aggregate_{match_id}')
+    
+    # После пересчёта матча нужно пересчитать игроков (нужен drama_index)
+    recalculate_player_aggregates.delay(match_id)
+    
+    return True
+
+
+@shared_task(bind=True, max_retries=3)
+def recalculate_all_aggregates_for_match(self, match_id: str):
+    """
+    Полный пересчёт всех агрегатов для матча
+    Порядок: Match -> Coach -> Player
+    """
+    logger.info(f"Starting full aggregate recalculation for match {match_id}")
+    
+    # 1. Сначала матч (нужен для drama_index)
+    recalculate_match_aggregate.delay(match_id)
+    
+    # 2. Тренеры
+    recalculate_coach_aggregates.delay(match_id)
+    
+    # 3. Игроки (будут запущены после match aggregate из recalculate_match_aggregate)
+    
+    logger.info(f"Queued aggregate recalculation tasks for match {match_id}")
+    return True
+
+
+@shared_task
+def recalculate_all_aggregates():
+    """
+    Периодическая задача: пересчёт агрегатов для всех активных матчей
+    Запускается каждые 10 минут через Celery Beat
+    """
+    logger.info("Starting periodic aggregate recalculation")
+    
+    # Находим матчи, где голосование ещё открыто или недавно закрылось
+    now = timezone.now()
+    active_matches = Match.objects.filter(
+        voting_open_until__gte=now - timedelta(hours=24)
+    ).values_list('id', flat=True)
+    
+    if not active_matches:
+        logger.info("No active matches for aggregate recalculation")
+        return 0
+    
+    count = 0
+    for match_id in active_matches:
+        recalculate_all_aggregates_for_match.delay(str(match_id))
+        count += 1
+    
+    logger.info(f"Queued {count} match aggregate recalculation tasks")
+    return count
+
+
+@shared_task
+def cleanup_old_sessions():
+    """Очистка старых данных (кэш, сессии)"""
+    logger.info("Running cleanup task")
+    # Можно добавить очистку старых логов, кэша и т.д.
+    return True
+
+
+@shared_task(bind=True, max_retries=3)
+def trigger_aggregate_recalculation(self, match_id: str):
+    """
+    Триггер для пересчёта агрегатов при изменении voting_open_until
+    Используется в сигналах Django
+    """
+    try:
+        recalculate_all_aggregates_for_match.delay(match_id)
+        logger.info(f"Triggered aggregate recalculation for match {match_id}")
+        return True
+    except Exception as exc:
+        logger.error(f"Error triggering recalculation: {exc}")
+        raise self.retry(exc=exc, countdown=60)
 
 
 ================================================================================
 FILE: aggregates/tests.py
 ================================================================================
 
+# aggregates/tests.py
 from django.test import TestCase
+from django.contrib.auth import get_user_model
+from django.utils import timezone
+from datetime import timedelta
+from evaluations.models import (
+    PlayerEvaluation, ContextEvaluation, MatchEvaluation
+)
+from matches.models import Match
+from teams.models import Team
+from players.models import Player
+from seasons.models import Season
+from leagues.models import League
+from .models import PlayerMatchAggregate, MatchAggregate
+from .services import (
+    calculate_user_weight,
+    recalculate_player_aggregate,
+    recalculate_match_aggregate,
+    recalculate_all_aggregates_for_match
+)
 
-# Create your tests here.
+User = get_user_model()
 
+
+class UserWeightTests(TestCase):
+    """Тесты расчёта веса голоса пользователя"""
+    
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='testuser',
+            email='test@example.com',
+            password='testpass123',
+            trust_score=1.0
+        )
+        self.league = League.objects.create(name='Test League', country='KZ')
+        self.season = Season.objects.create(league=self.league, year='2026')
+        self.team1 = Team.objects.create(name='Team 1')
+        self.team2 = Team.objects.create(name='Team 2')
+        self.match = Match.objects.create(
+            league=self.league,
+            season=self.season,
+            home_team=self.team1,
+            away_team=self.team2,
+            start_time=timezone.now(),
+            voting_open_until=timezone.now() + timedelta(hours=48)
+        )
+    
+    def test_base_weight(self):
+        """Базовый вес = 1.0"""
+        context = ContextEvaluation.objects.create(
+            user=self.user,
+            match=self.match,
+            watched_type='partial'
+        )
+        weight = calculate_user_weight(self.user, context)
+        self.assertEqual(weight, 1.0)
+    
+    def test_full_match_bonus(self):
+        """Бонус +0.2 за полный матч"""
+        context = ContextEvaluation.objects.create(
+            user=self.user,
+            match=self.match,
+            watched_type='full'
+        )
+        weight = calculate_user_weight(self.user, context)
+        self.assertEqual(weight, 1.2)
+    
+    def test_trust_score_bonus(self):
+        """Бонус +0.2 за trust_score > 1.2"""
+        self.user.trust_score = 1.3
+        self.user.save()
+        context = ContextEvaluation.objects.create(
+            user=self.user,
+            match=self.match,
+            watched_type='partial'
+        )
+        weight = calculate_user_weight(self.user, context)
+        self.assertEqual(weight, 1.2)
+    
+    def test_combined_bonuses(self):
+        """Комбинированные бонусы"""
+        self.user.trust_score = 1.3
+        self.user.save()
+        context = ContextEvaluation.objects.create(
+            user=self.user,
+            match=self.match,
+            watched_type='full'
+        )
+        weight = calculate_user_weight(self.user, context)
+        self.assertEqual(weight, 1.4)
+
+
+class AggregateCalculationTests(TestCase):
+    """Тесты расчёта агрегатов"""
+    
+    def setUp(self):
+        self.user1 = User.objects.create_user(
+            username='user1',
+            email='user1@example.com',
+            password='pass123',
+            trust_score=1.0
+        )
+        self.user2 = User.objects.create_user(
+            username='user2',
+            email='user2@example.com',
+            password='pass123',
+            trust_score=1.3  # Высокий trust
+        )
+        
+        self.league = League.objects.create(name='Test League', country='KZ')
+        self.season = Season.objects.create(league=self.league, year='2026')
+        self.team1 = Team.objects.create(name='Team 1')
+        self.team2 = Team.objects.create(name='Team 2')
+        self.match = Match.objects.create(
+            league=self.league,
+            season=self.season,
+            home_team=self.team1,
+            away_team=self.team2,
+            start_time=timezone.now(),
+            voting_open_until=timezone.now() + timedelta(hours=48)
+        )
+        self.player = Player.objects.create(
+            first_name='Test',
+            last_name='Player',
+            team=self.team1
+        )
+    
+    def test_player_aggregate_calculation(self):
+        """Расчёт агрегатов игрока"""
+        # Создаём context evaluations
+        ContextEvaluation.objects.create(
+            user=self.user1, match=self.match, watched_type='partial'
+        )
+        ContextEvaluation.objects.create(
+            user=self.user2, match=self.match, watched_type='full'
+        )
+        
+        # Создаём оценки игроков
+        PlayerEvaluation.objects.create(
+            user=self.user1, match=self.match, player=self.player,
+            contribution=7, risk=3, potential=8
+        )
+        PlayerEvaluation.objects.create(
+            user=self.user2, match=self.match, player=self.player,
+            contribution=9, risk=2, potential=9
+        )
+        
+        # Пересчитываем агрегаты
+        aggregate = recalculate_player_aggregate(self.player, self.match)
+        
+        self.assertIsNotNone(aggregate)
+        self.assertEqual(aggregate.total_votes, 2)
+        # Взвешенное среднее: user1 (weight=1.0), user2 (weight=1.4)
+        # contribution: (7*1.0 + 9*1.4) / 2.4 = 19.6/2.4 = 8.17
+        self.assertAlmostEqual(aggregate.avg_contribution, 8.17, places=1)
+        self.assertEqual(aggregate.performance_score, aggregate.avg_contribution)
+        self.assertGreater(aggregate.maturity_score, 0)  # contribution - risk
+    
+    def test_match_aggregate_drama_index(self):
+        """Расчёт drama index матча"""
+        ContextEvaluation.objects.create(
+            user=self.user1, match=self.match, watched_type='full'
+        )
+        
+        MatchEvaluation.objects.create(
+            user=self.user1, match=self.match,
+            entertainment=8, tension=9, fairness=7
+        )
+        
+        aggregate = recalculate_match_aggregate(self.match)
+        
+        self.assertIsNotNone(aggregate)
+        # drama_index = entertainment * tension = 8 * 9 = 72
+        self.assertEqual(aggregate.drama_index, 72.0)
+    
+    def test_recalculate_all_aggregates(self):
+        """Пересчёт всех агрегатов для матча"""
+        ContextEvaluation.objects.create(
+            user=self.user1, match=self.match, watched_type='full'
+        )
+        
+        PlayerEvaluation.objects.create(
+            user=self.user1, match=self.match, player=self.player,
+            contribution=8, risk=3, potential=7
+        )
+        
+        MatchEvaluation.objects.create(
+            user=self.user1, match=self.match,
+            entertainment=8, tension=7, fairness=8
+        )
+        
+        result = recalculate_all_aggregates_for_match(self.match)
+        
+        self.assertTrue(result)
+        self.assertTrue(PlayerMatchAggregate.objects.filter(
+            player=self.player, match=self.match
+        ).exists())
+        self.assertTrue(MatchAggregate.objects.filter(
+            match=self.match
+        ).exists())
 
 
 ================================================================================
@@ -393,6 +1635,444 @@ from django.db import models
 
 
 ================================================================================
+FILE: api/permissions.py
+================================================================================
+
+# api/permissions.py
+from rest_framework import permissions
+from django.utils import timezone
+
+
+class IsOwnerOrReadOnly(permissions.BasePermission):
+    """Разрешение: владелец или только чтение"""
+    
+    def has_object_permission(self, request, view, obj):
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        return hasattr(obj, 'user') and obj.user == request.user
+
+
+class VotingOpenPermission(permissions.BasePermission):
+    """Проверка: голосование открыто (48 часов)"""
+    message = "Голосование для этого матча закрыто"
+    
+    def has_object_permission(self, request, view, obj):
+        # Безопасные методы всегда разрешены
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        
+        # Проверка voting_open_until
+        if hasattr(obj, 'voting_open_until'):
+            return timezone.now() <= obj.voting_open_until
+        
+        # Если у объекта есть match
+        if hasattr(obj, 'match') and hasattr(obj.match, 'voting_open_until'):
+            return timezone.now() <= obj.match.voting_open_until
+        
+        return True
+
+
+class IsAuthenticatedAndVerified(permissions.BasePermission):
+    """Только авторизованные и верифицированные пользователи"""
+    message = "Требуется верифицированный аккаунт"
+    
+    def has_permission(self, request, view):
+        return request.user and request.user.is_authenticated and request.user.is_verified
+
+
+================================================================================
+FILE: api/serializers.py
+================================================================================
+
+# api/serializers.py
+from rest_framework import serializers
+from django.utils import timezone
+from django.core.exceptions import ValidationError
+from evaluations.models import (
+    ContextEvaluation,
+    TeamEvaluation,
+    PlayerEvaluation,
+    CoachEvaluation,
+    RefereeEvaluation,
+    MatchEvaluation
+)
+from matches.models import Match
+from players.models import Player
+from coaches.models import Coach
+from teams.models import Team
+from referees.models import Referee
+from aggregates.models import PlayerMatchAggregate, CoachMatchAggregate, MatchAggregate
+
+
+class MatchSerializer(serializers.ModelSerializer):
+    """Сериалайзер матча для вложенных данных"""
+    home_team_name = serializers.CharField(source='home_team.name', read_only=True)
+    away_team_name = serializers.CharField(source='away_team.name', read_only=True)
+    home_score = serializers.IntegerField(read_only=True)
+    away_score = serializers.IntegerField(read_only=True)
+    status = serializers.CharField(read_only=True)
+    
+    class Meta:
+        model = Match
+        fields = [
+            'id', 'home_team_name', 'away_team_name', 
+            'home_score', 'away_score', 'status', 
+            'start_time', 'voting_open_until'
+        ]
+
+
+class ContextEvaluationSerializer(serializers.ModelSerializer):
+    """Сериалайзер контекста просмотра матча"""
+    match_details = MatchSerializer(source='match', read_only=True)
+    supported_team_name = serializers.CharField(
+        source='supported_team.name', 
+        read_only=True, 
+        allow_null=True
+    )
+    
+    class Meta:
+        model = ContextEvaluation
+        fields = [
+            'id', 'match', 'match_details', 'supported_team', 
+            'supported_team_name', 'watched_type', 'attended_stadium',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+    
+    def validate_match(self, value):
+        """Проверка: голосование открыто"""
+        if timezone.now() > value.voting_open_until:
+            raise serializers.ValidationError(
+                "Голосование для этого матча закрыто"
+            )
+        if timezone.now() < value.start_time:
+            raise serializers.ValidationError(
+                "Голосование откроется после начала матча"
+            )
+        return value
+    
+    def validate(self, data):
+        """Проверка уникальности: user + match"""
+        user = self.context.get('request').user if self.context.get('request') else None
+        match = data.get('match')
+        
+        if user and match:
+            existing = ContextEvaluation.objects.filter(
+                user=user, 
+                match=match
+            ).exists()
+            if existing and not self.instance:
+                raise serializers.ValidationError(
+                    "Вы уже оценили контекст этого матча"
+                )
+        return data
+
+
+class PlayerEvaluationSerializer(serializers.ModelSerializer):
+    """Сериалайзер оценки игрока"""
+    player_name = serializers.CharField(
+        source='player.first_name', 
+        read_only=True
+    )
+    player_last_name = serializers.CharField(
+        source='player.last_name', 
+        read_only=True
+    )
+    player_number = serializers.IntegerField(
+        source='player.number', 
+        read_only=True,
+        allow_null=True
+    )
+    match_details = MatchSerializer(source='match', read_only=True)
+    maturity_score = serializers.IntegerField(read_only=True)
+    
+    class Meta:
+        model = PlayerEvaluation
+        fields = [
+            'id', 'match', 'match_details', 'player', 
+            'player_name', 'player_last_name', 'player_number',
+            'contribution', 'risk', 'potential', 'maturity_score',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at', 'maturity_score']
+    
+    def validate_match(self, value):
+        """Проверка: голосование открыто"""
+        if timezone.now() > value.voting_open_until:
+            raise serializers.ValidationError(
+                "Голосование для этого матча закрыто"
+            )
+        return value
+    
+    def validate(self, data):
+        """Проверка уникальности и контекста"""
+        user = self.context.get('request').user if self.context.get('request') else None
+        match = data.get('match')
+        player = data.get('player')
+        
+        if user and match:
+            # Проверка уникальности
+            existing = PlayerEvaluation.objects.filter(
+                user=user, 
+                match=match, 
+                player=player
+            ).exists()
+            if existing and not self.instance:
+                raise serializers.ValidationError(
+                    "Вы уже оценили этого игрока в данном матче"
+                )
+            
+            # Проверка: контекст должен быть создан
+            context_exists = ContextEvaluation.objects.filter(
+                user=user, 
+                match=match
+            ).exists()
+            if not context_exists and not self.instance:
+                raise serializers.ValidationError(
+                    "Сначала укажите контекст просмотра матча"
+                )
+        
+        # Валидация диапазонов
+        contribution = data.get('contribution')
+        risk = data.get('risk')
+        potential = data.get('potential')
+        
+        for field_name, field_value in [
+            ('contribution', contribution),
+            ('risk', risk),
+            ('potential', potential)
+        ]:
+            if field_value is not None:
+                if field_value < 1 or field_value > 10:
+                    raise serializers.ValidationError(
+                        f"{field_name} должен быть от 1 до 10"
+                    )
+        
+        return data
+
+
+class TeamEvaluationSerializer(serializers.ModelSerializer):
+    """Сериалайзер оценки команды"""
+    team_name = serializers.CharField(source='team.name', read_only=True)
+    match_details = MatchSerializer(source='match', read_only=True)
+    average_score = serializers.FloatField(read_only=True)
+    
+    class Meta:
+        model = TeamEvaluation
+        fields = [
+            'id', 'match', 'match_details', 'team', 'team_name',
+            'tactics', 'effort', 'organization', 'mentality',
+            'average_score', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at', 'average_score']
+    
+    def validate_match(self, value):
+        if timezone.now() > value.voting_open_until:
+            raise serializers.ValidationError(
+                "Голосование для этого матча закрыто"
+            )
+        return value
+    
+    def validate(self, data):
+        user = self.context.get('request').user if self.context.get('request') else None
+        match = data.get('match')
+        team = data.get('team')
+        
+        if user and match:
+            existing = TeamEvaluation.objects.filter(
+                user=user, 
+                match=match, 
+                team=team
+            ).exists()
+            if existing and not self.instance:
+                raise serializers.ValidationError(
+                    "Вы уже оценили эту команду в данном матче"
+                )
+            
+            context_exists = ContextEvaluation.objects.filter(
+                user=user, 
+                match=match
+            ).exists()
+            if not context_exists and not self.instance:
+                raise serializers.ValidationError(
+                    "Сначала укажите контекст просмотра матча"
+                )
+        
+        return data
+
+
+class CoachEvaluationSerializer(serializers.ModelSerializer):
+    """Сериалайзер оценки тренера"""
+    coach_name = serializers.CharField(
+        source='coach.first_name', 
+        read_only=True
+    )
+    coach_last_name = serializers.CharField(
+        source='coach.last_name', 
+        read_only=True
+    )
+    match_details = MatchSerializer(source='match', read_only=True)
+    average_score = serializers.FloatField(read_only=True)
+    
+    class Meta:
+        model = CoachEvaluation
+        fields = [
+            'id', 'match', 'match_details', 'coach',
+            'coach_name', 'coach_last_name',
+            'tactics', 'substitutions', 'game_management', 'impact',
+            'average_score', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at', 'average_score']
+    
+    def validate_match(self, value):
+        if timezone.now() > value.voting_open_until:
+            raise serializers.ValidationError(
+                "Голосование для этого матча закрыто"
+            )
+        return value
+    
+    def validate(self, data):
+        user = self.context.get('request').user if self.context.get('request') else None
+        match = data.get('match')
+        coach = data.get('coach')
+        
+        if user and match:
+            existing = CoachEvaluation.objects.filter(
+                user=user, 
+                match=match, 
+                coach=coach
+            ).exists()
+            if existing and not self.instance:
+                raise serializers.ValidationError(
+                    "Вы уже оценили этого тренера в данном матче"
+                )
+        
+        return data
+
+
+class RefereeEvaluationSerializer(serializers.ModelSerializer):
+    """Сериалайзер оценки судейства"""
+    match_details = MatchSerializer(source='match', read_only=True)
+    
+    class Meta:
+        model = RefereeEvaluation
+        fields = [
+            'id', 'match', 'match_details',
+            'influence_score', 'decision_quality',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+    
+    def validate_match(self, value):
+        if timezone.now() > value.voting_open_until:
+            raise serializers.ValidationError(
+                "Голосование для этого матча закрыто"
+            )
+        return value
+    
+    def validate(self, data):
+        user = self.context.get('request').user if self.context.get('request') else None
+        match = data.get('match')
+        
+        if user and match:
+            existing = RefereeEvaluation.objects.filter(
+                user=user, 
+                match=match
+            ).exists()
+            if existing and not self.instance:
+                raise serializers.ValidationError(
+                    "Вы уже оценили судейство этого матча"
+                )
+        
+        influence_score = data.get('influence_score')
+        if influence_score is not None:
+            if influence_score < 0 or influence_score > 100:
+                raise serializers.ValidationError(
+                    "influence_score должен быть от 0 до 100"
+                )
+        
+        return data
+
+
+class MatchEvaluationSerializer(serializers.ModelSerializer):
+    """Сериалайзер общей оценки матча"""
+    match_details = MatchSerializer(source='match', read_only=True)
+    drama_index = serializers.IntegerField(read_only=True)
+    
+    class Meta:
+        model = MatchEvaluation
+        fields = [
+            'id', 'match', 'match_details',
+            'entertainment', 'tension', 'turning_point', 'fairness',
+            'drama_index', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at', 'drama_index']
+    
+    def validate_match(self, value):
+        if timezone.now() > value.voting_open_until:
+            raise serializers.ValidationError(
+                "Голосование для этого матча закрыто"
+            )
+        return value
+    
+    def validate(self, data):
+        user = self.context.get('request').user if self.context.get('request') else None
+        match = data.get('match')
+        
+        if user and match:
+            existing = MatchEvaluation.objects.filter(
+                user=user, 
+                match=match
+            ).exists()
+            if existing and not self.instance:
+                raise serializers.ValidationError(
+                    "Вы уже оценили этот матч"
+                )
+        
+        return data
+
+
+# === Агрегаты ===
+
+class PlayerMatchAggregateSerializer(serializers.ModelSerializer):
+    """Сериалайзер агрегатов игрока"""
+    player_name = serializers.CharField(
+        source='player.first_name', 
+        read_only=True
+    )
+    player_last_name = serializers.CharField(
+        source='player.last_name', 
+        read_only=True
+    )
+    match_details = MatchSerializer(source='match', read_only=True)
+    
+    class Meta:
+        model = PlayerMatchAggregate
+        fields = [
+            'id', 'player', 'player_name', 'player_last_name',
+            'match', 'match_details',
+            'avg_contribution', 'avg_risk', 'avg_potential',
+            'total_votes', 'performance_score', 'risk_index',
+            'maturity_score', 'stability_index', 'clutch_index'
+        ]
+        read_only_fields = '__all__'
+
+
+class MatchAggregateSerializer(serializers.ModelSerializer):
+    """Сериалайзер агрегатов матча"""
+    match_details = MatchSerializer(source='match', read_only=True)
+    
+    class Meta:
+        model = MatchAggregate
+        fields = [
+            'id', 'match', 'match_details',
+            'avg_entertainment', 'avg_tension', 'avg_fairness',
+            'turning_point_ratio', 'total_votes', 'drama_index'
+        ]
+        read_only_fields = '__all__'
+
+
+================================================================================
 FILE: api/tests.py
 ================================================================================
 
@@ -403,13 +2083,297 @@ from django.test import TestCase
 
 
 ================================================================================
+FILE: api/urls.py
+================================================================================
+
+# api/urls.py
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from .views import (
+    ContextEvaluationViewSet,
+    TeamEvaluationViewSet,
+    PlayerEvaluationViewSet,
+    CoachEvaluationViewSet,
+    RefereeEvaluationViewSet,
+    MatchEvaluationViewSet,
+    MatchAggregateViewSet,
+    PlayerAggregateViewSet
+)
+
+router = DefaultRouter()
+
+# Оценки
+router.register(r'context', ContextEvaluationViewSet, basename='context-eval')
+router.register(r'team', TeamEvaluationViewSet, basename='team-eval')
+router.register(r'player', PlayerEvaluationViewSet, basename='player-eval')
+router.register(r'coach', CoachEvaluationViewSet, basename='coach-eval')
+router.register(r'referee', RefereeEvaluationViewSet, basename='referee-eval')
+router.register(r'match-eval', MatchEvaluationViewSet, basename='match-eval')
+
+# Агрегаты (только чтение)
+router.register(r'match-aggregate', MatchAggregateViewSet, basename='match-aggregate')
+router.register(r'player-aggregate', PlayerAggregateViewSet, basename='player-aggregate')
+
+urlpatterns = [
+    path('', include(router.urls)),
+]
+
+
+================================================================================
 FILE: api/views.py
 ================================================================================
 
-from django.shortcuts import render
+# api/views.py
+from rest_framework import viewsets, status, permissions, throttling
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from django.utils import timezone
+from django.db.models import Avg, Count
+from django.shortcuts import get_object_or_404
 
-# Create your views here.
+from evaluations.models import (
+    ContextEvaluation,
+    TeamEvaluation,
+    PlayerEvaluation,
+    CoachEvaluation,
+    RefereeEvaluation,
+    MatchEvaluation
+)
+from matches.models import Match
+from aggregates.models import PlayerMatchAggregate, MatchAggregate
 
+from .serializers import (
+    ContextEvaluationSerializer,
+    TeamEvaluationSerializer,
+    PlayerEvaluationSerializer,
+    CoachEvaluationSerializer,
+    RefereeEvaluationSerializer,
+    MatchEvaluationSerializer,
+    PlayerMatchAggregateSerializer,
+    MatchAggregateSerializer
+)
+
+
+class VotingOpenPermission(permissions.BasePermission):
+    """Проверка: голосование открыто"""
+    message = "Голосование для этого матча закрыто"
+    
+    def has_object_permission(self, request, view, obj):
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        if hasattr(obj, 'voting_open_until'):
+            return timezone.now() <= obj.voting_open_until
+        return True
+
+
+class UserRateThrottle(throttling.UserRateThrottle):
+    rate = '100/hour'
+
+
+class BurstRateThrottle(throttling.BurstRateThrottle):
+    rate = '20/minute'
+
+
+class ContextEvaluationViewSet(viewsets.ModelViewSet):
+    """ViewSet для контекста просмотра"""
+    queryset = ContextEvaluation.objects.all()
+    serializer_class = ContextEvaluationSerializer
+    permission_classes = [permissions.IsAuthenticated, VotingOpenPermission]
+    throttle_classes = [UserRateThrottle, BurstRateThrottle]
+    
+    def get_queryset(self):
+        user = self.request.user
+        return ContextEvaluation.objects.filter(user=user).select_related(
+            'match', 'supported_team'
+        )
+    
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+
+class PlayerEvaluationViewSet(viewsets.ModelViewSet):
+    """ViewSet для оценок игроков"""
+    queryset = PlayerEvaluation.objects.all()
+    serializer_class = PlayerEvaluationSerializer
+    permission_classes = [permissions.IsAuthenticated, VotingOpenPermission]
+    throttle_classes = [UserRateThrottle, BurstRateThrottle]
+    
+    def get_queryset(self):
+        user = self.request.user
+        return PlayerEvaluation.objects.filter(user=user).select_related(
+            'match', 'player', 'player__team'
+        )
+    
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+    
+    @action(detail=False, methods=['get'])
+    def by_match(self, request):
+        """Получить все оценки игроков для матча"""
+        match_id = request.query_params.get('match_id')
+        if not match_id:
+            return Response(
+                {'error': 'match_id required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        evaluations = PlayerEvaluation.objects.filter(
+            match_id=match_id
+        ).select_related('player', 'user').order_by('-contribution')
+        
+        serializer = self.get_serializer(evaluations, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'])
+    def analytics(self, request):
+        """Аналитика по игроку за сезон"""
+        player_id = request.query_params.get('player_id')
+        if not player_id:
+            return Response(
+                {'error': 'player_id required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        aggregates = PlayerMatchAggregate.objects.filter(
+            player_id=player_id
+        ).select_related('match', 'match__league').order_by('-match__start_time')
+        
+        serializer = PlayerMatchAggregateSerializer(aggregates, many=True)
+        
+        # Сводная статистика
+        total_votes = aggregates.aggregate(total=Count('total_votes'))['total'] or 0
+        avg_performance = aggregates.aggregate(avg=Avg('performance_score'))['avg'] or 0
+        
+        return Response({
+            'aggregates': serializer.data,
+            'summary': {
+                'total_matches': aggregates.count(),
+                'total_votes': total_votes,
+                'avg_performance_score': round(avg_performance, 2)
+            }
+        })
+
+
+class TeamEvaluationViewSet(viewsets.ModelViewSet):
+    """ViewSet для оценок команд"""
+    queryset = TeamEvaluation.objects.all()
+    serializer_class = TeamEvaluationSerializer
+    permission_classes = [permissions.IsAuthenticated, VotingOpenPermission]
+    throttle_classes = [UserRateThrottle, BurstRateThrottle]
+    
+    def get_queryset(self):
+        user = self.request.user
+        return TeamEvaluation.objects.filter(user=user).select_related(
+            'match', 'team'
+        )
+    
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+
+class CoachEvaluationViewSet(viewsets.ModelViewSet):
+    """ViewSet для оценок тренеров"""
+    queryset = CoachEvaluation.objects.all()
+    serializer_class = CoachEvaluationSerializer
+    permission_classes = [permissions.IsAuthenticated, VotingOpenPermission]
+    throttle_classes = [UserRateThrottle, BurstRateThrottle]
+    
+    def get_queryset(self):
+        user = self.request.user
+        return CoachEvaluation.objects.filter(user=user).select_related(
+            'match', 'coach'
+        )
+    
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+
+class RefereeEvaluationViewSet(viewsets.ModelViewSet):
+    """ViewSet для оценок судейства"""
+    queryset = RefereeEvaluation.objects.all()
+    serializer_class = RefereeEvaluationSerializer
+    permission_classes = [permissions.IsAuthenticated, VotingOpenPermission]
+    throttle_classes = [UserRateThrottle, BurstRateThrottle]
+    
+    def get_queryset(self):
+        user = self.request.user
+        return RefereeEvaluation.objects.filter(user=user).select_related('match')
+    
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+
+class MatchEvaluationViewSet(viewsets.ModelViewSet):
+    """ViewSet для общих оценок матча"""
+    queryset = MatchEvaluation.objects.all()
+    serializer_class = MatchEvaluationSerializer
+    permission_classes = [permissions.IsAuthenticated, VotingOpenPermission]
+    throttle_classes = [UserRateThrottle, BurstRateThrottle]
+    
+    def get_queryset(self):
+        user = self.request.user
+        return MatchEvaluation.objects.filter(user=user).select_related('match')
+    
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+    
+    @action(detail=False, methods=['get'])
+    def summary(self, request):
+        """Сводка по матчу"""
+        match_id = request.query_params.get('match_id')
+        if not match_id:
+            return Response(
+                {'error': 'match_id required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        match = get_object_or_404(Match, id=match_id)
+        
+        # Агрегаты
+        match_agg = MatchAggregate.objects.filter(match=match).first()
+        
+        # Количество оценок
+        total_evals = MatchEvaluation.objects.filter(match=match).count()
+        player_evals = PlayerEvaluation.objects.filter(match=match).count()
+        
+        return Response({
+            'match': MatchEvaluationSerializer(match).data,
+            'aggregate': MatchAggregateSerializer(match_agg).data if match_agg else None,
+            'stats': {
+                'total_match_evaluations': total_evals,
+                'total_player_evaluations': player_evals
+            }
+        })
+
+
+class MatchAggregateViewSet(viewsets.ReadOnlyModelViewSet):
+    """ViewSet для агрегатов матча (только чтение)"""
+    queryset = MatchAggregate.objects.all()
+    serializer_class = MatchAggregateSerializer
+    permission_classes = [permissions.AllowAny]
+    
+    def get_queryset(self):
+        return MatchAggregate.objects.select_related('match').order_by('-match__start_time')
+
+
+class PlayerAggregateViewSet(viewsets.ReadOnlyModelViewSet):
+    """ViewSet для агрегатов игроков (только чтение)"""
+    queryset = PlayerMatchAggregate.objects.all()
+    serializer_class = PlayerMatchAggregateSerializer
+    permission_classes = [permissions.AllowAny]
+    
+    def get_queryset(self):
+        return PlayerMatchAggregate.objects.select_related(
+            'player', 'match'
+        ).order_by('-performance_score')
+    
+    @action(detail=False, methods=['get'])
+    def top_players(self, request):
+        """Топ игроков по Performance Score"""
+        limit = int(request.query_params.get('limit', 10))
+        top_players = self.get_queryset()[:limit]
+        serializer = self.get_serializer(top_players, many=True)
+        return Response(serializer.data)
 
 
 ================================================================================
@@ -726,7 +2690,11 @@ from django.shortcuts import render
 FILE: dopx/__init__.py
 ================================================================================
 
+# dopx/__init__.py
+# Это гарантирует, что Celery app загружается при старте Django
+from .celery import app as celery_app
 
+__all__ = ('celery_app',)
 
 
 ================================================================================
@@ -750,6 +2718,52 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dopx.settings')
 
 application = get_asgi_application()
 
+
+
+================================================================================
+FILE: dopx/celery.py
+================================================================================
+
+# dopx/celery.py
+import os
+from celery import Celery
+from celery.schedules import crontab
+
+# Устанавливаем переменную окружения для Django
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dopx.settings')
+
+# Создаём экземпляр Celery
+app = Celery('dopx')
+
+# Загружаем конфигурацию из Django settings
+app.config_from_object('django.conf:settings', namespace='CELERY')
+
+# Автообнаружение задач во всех приложениях
+app.autodiscover_tasks()
+
+# Настройка расписания периодических задач
+app.conf.beat_schedule = {
+    # Пересчёт всех агрегатов каждые 10 минут
+    'recalculate-all-aggregates-every-10-minutes': {
+        'task': 'aggregates.tasks.recalculate_all_aggregates',
+        'schedule': crontab(minute='*/10'),
+    },
+    # Очистка старых сессий каждый день в 3:00
+    'cleanup-old-sessions-daily': {
+        'task': 'aggregates.tasks.cleanup_old_sessions',
+        'schedule': crontab(hour=3, minute=0),
+    },
+    # Обновление статусов матчей каждый час
+    'update-match-statuses-hourly': {
+        'task': 'matches.tasks.update_match_statuses',
+        'schedule': crontab(minute=0),
+    },
+}
+
+@app.task(bind=True)
+def debug_task(self):
+    print(f'Request: {self.request!r}')
+    return 'OK'
 
 
 ================================================================================
@@ -923,6 +2937,97 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+
+REST_FRAMEWORK = {
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.SessionAuthentication',
+        'rest_framework.authentication.BasicAuthentication',
+    ],
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '100/hour',
+        'user': '1000/hour',
+        'burst': '20/minute',
+    },
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 20,
+    'DEFAULT_FILTER_BACKENDS': [
+        'django_filters.rest_framework.DjangoFilterBackend',
+        'rest_framework.filters.SearchFilter',
+        'rest_framework.filters.OrderingFilter',
+    ],
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+        'rest_framework.renderers.BrowsableAPIRenderer',
+    ],
+}
+
+
+# ===========================================
+# CELERY CONFIGURATION
+# ===========================================
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 минут максимум на задачу
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_TASK_ACKS_LATE = True
+
+# Кэширование (для агрегатов)
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': os.getenv('REDIS_URL', 'redis://localhost:6379/1'),
+        'KEY_PREFIX': 'dopx',
+        'TIMEOUT': 600,  # 10 минут TTL
+    }
+}
+
+# Логирование Celery
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'celery_file': {
+            'level': 'INFO',
+            'class': 'logging.FileHandler',
+            'filename': 'logs/celery.log',
+            'formatter': 'verbose',
+        },
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        'celery': {
+            'handlers': ['celery_file', 'console'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+        'aggregates.tasks': {
+            'handlers': ['celery_file', 'console'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+    },
+}
 
 
 ================================================================================
@@ -1110,9 +3215,56 @@ FILE: evaluations/admin.py
 ================================================================================
 
 from django.contrib import admin
+from .models import (
+    ContextEvaluation,
+    TeamEvaluation,
+    PlayerEvaluation,
+    CoachEvaluation,
+    RefereeEvaluation,
+    MatchEvaluation
+)
 
-# Register your models here.
 
+@admin.register(ContextEvaluation)
+class ContextEvaluationAdmin(admin.ModelAdmin):
+    list_display = ('user', 'match', 'watched_type', 'attended_stadium', 'created_at')
+    list_filter = ('watched_type', 'attended_stadium')
+    search_fields = ('user__username', 'match__home_team__name', 'match__away_team__name')
+
+
+@admin.register(TeamEvaluation)
+class TeamEvaluationAdmin(admin.ModelAdmin):
+    list_display = ('user', 'match', 'team', 'average_score', 'created_at')
+    list_filter = ('team',)
+    search_fields = ('user__username', 'team__name')
+
+
+@admin.register(PlayerEvaluation)
+class PlayerEvaluationAdmin(admin.ModelAdmin):
+    list_display = ('user', 'match', 'player', 'contribution', 'risk', 'potential', 'maturity_score')
+    list_filter = ('match', 'player')
+    search_fields = ('user__username', 'player__first_name', 'player__last_name')
+
+
+@admin.register(CoachEvaluation)
+class CoachEvaluationAdmin(admin.ModelAdmin):
+    list_display = ('user', 'match', 'coach', 'average_score', 'created_at')
+    list_filter = ('coach',)
+    search_fields = ('user__username', 'coach__first_name', 'coach__last_name')
+
+
+@admin.register(RefereeEvaluation)
+class RefereeEvaluationAdmin(admin.ModelAdmin):
+    list_display = ('user', 'match', 'influence_score', 'decision_quality', 'created_at')
+    list_filter = ('match',)
+    search_fields = ('user__username',)
+
+
+@admin.register(MatchEvaluation)
+class MatchEvaluationAdmin(admin.ModelAdmin):
+    list_display = ('user', 'match', 'entertainment', 'tension', 'drama_index', 'created_at')
+    list_filter = ('match', 'turning_point')
+    search_fields = ('user__username',)
 
 
 ================================================================================
@@ -1128,6 +3280,138 @@ class EvaluationsConfig(AppConfig):
 
 
 ================================================================================
+FILE: evaluations/migrations/0001_initial.py
+================================================================================
+
+# Generated by Django 6.0.3 on 2026-03-18 03:34
+
+import django.core.validators
+import django.db.models.deletion
+import uuid
+from django.conf import settings
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+
+    initial = True
+
+    dependencies = [
+        ('coaches', '0002_coach_external_id'),
+        ('matches', '0005_match_has_lineup'),
+        ('players', '0002_player_external_id'),
+        ('teams', '0004_remove_team_league_teamseason'),
+        migrations.swappable_dependency(settings.AUTH_USER_MODEL),
+    ]
+
+    operations = [
+        migrations.CreateModel(
+            name='CoachEvaluation',
+            fields=[
+                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ('updated_at', models.DateTimeField(auto_now=True)),
+                ('tactics', models.IntegerField(validators=[django.core.validators.MinValueValidator(1), django.core.validators.MaxValueValidator(10)])),
+                ('substitutions', models.IntegerField(validators=[django.core.validators.MinValueValidator(1), django.core.validators.MaxValueValidator(10)])),
+                ('game_management', models.IntegerField(validators=[django.core.validators.MinValueValidator(1), django.core.validators.MaxValueValidator(10)])),
+                ('impact', models.IntegerField(validators=[django.core.validators.MinValueValidator(1), django.core.validators.MaxValueValidator(10)])),
+                ('coach', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='coach_evaluations', to='coaches.coach')),
+                ('match', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='coach_evaluations', to='matches.match')),
+                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='coach_evaluations', to=settings.AUTH_USER_MODEL)),
+            ],
+            options={
+                'constraints': [models.UniqueConstraint(fields=('user', 'match', 'coach'), name='unique_coach_evaluation')],
+            },
+        ),
+        migrations.CreateModel(
+            name='ContextEvaluation',
+            fields=[
+                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ('updated_at', models.DateTimeField(auto_now=True)),
+                ('watched_type', models.CharField(choices=[('full', 'Full Match'), ('highlights', 'Highlights'), ('partial', 'Partial')], default='full', max_length=20)),
+                ('attended_stadium', models.BooleanField(default=False)),
+                ('match', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='context_evaluations', to='matches.match')),
+                ('supported_team', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='supported_by_users', to='teams.team')),
+                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='context_evaluations', to=settings.AUTH_USER_MODEL)),
+            ],
+            options={
+                'constraints': [models.UniqueConstraint(fields=('user', 'match'), name='unique_context_evaluation')],
+            },
+        ),
+        migrations.CreateModel(
+            name='MatchEvaluation',
+            fields=[
+                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ('updated_at', models.DateTimeField(auto_now=True)),
+                ('entertainment', models.IntegerField(validators=[django.core.validators.MinValueValidator(1), django.core.validators.MaxValueValidator(10)])),
+                ('tension', models.IntegerField(validators=[django.core.validators.MinValueValidator(1), django.core.validators.MaxValueValidator(10)])),
+                ('turning_point', models.BooleanField(default=False)),
+                ('fairness', models.IntegerField(validators=[django.core.validators.MinValueValidator(1), django.core.validators.MaxValueValidator(10)])),
+                ('match', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='match_evaluations', to='matches.match')),
+                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='match_evaluations', to=settings.AUTH_USER_MODEL)),
+            ],
+            options={
+                'constraints': [models.UniqueConstraint(fields=('user', 'match'), name='unique_match_evaluation')],
+            },
+        ),
+        migrations.CreateModel(
+            name='PlayerEvaluation',
+            fields=[
+                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ('updated_at', models.DateTimeField(auto_now=True)),
+                ('contribution', models.IntegerField(help_text='Вклад в игру (1-10)', validators=[django.core.validators.MinValueValidator(1), django.core.validators.MaxValueValidator(10)])),
+                ('risk', models.IntegerField(help_text='Риск/ошибки (1-10)', validators=[django.core.validators.MinValueValidator(1), django.core.validators.MaxValueValidator(10)])),
+                ('potential', models.IntegerField(help_text='Потенциал (1-10)', validators=[django.core.validators.MinValueValidator(1), django.core.validators.MaxValueValidator(10)])),
+                ('match', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='player_evaluations', to='matches.match')),
+                ('player', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='player_evaluations', to='players.player')),
+                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='player_evaluations', to=settings.AUTH_USER_MODEL)),
+            ],
+            options={
+                'indexes': [models.Index(fields=['match', 'player'], name='evaluations_match_i_e27e6a_idx'), models.Index(fields=['player', 'match'], name='evaluations_player__2a0e48_idx')],
+                'constraints': [models.UniqueConstraint(fields=('user', 'match', 'player'), name='unique_player_evaluation')],
+            },
+        ),
+        migrations.CreateModel(
+            name='RefereeEvaluation',
+            fields=[
+                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ('updated_at', models.DateTimeField(auto_now=True)),
+                ('influence_score', models.IntegerField(help_text='Влияние на матч (0-100)', validators=[django.core.validators.MinValueValidator(0), django.core.validators.MaxValueValidator(100)])),
+                ('decision_quality', models.IntegerField(help_text='Качество решений (1-10)', validators=[django.core.validators.MinValueValidator(1), django.core.validators.MaxValueValidator(10)])),
+                ('match', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='referee_evaluations', to='matches.match')),
+                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='referee_evaluations', to=settings.AUTH_USER_MODEL)),
+            ],
+            options={
+                'constraints': [models.UniqueConstraint(fields=('user', 'match'), name='unique_referee_evaluation')],
+            },
+        ),
+        migrations.CreateModel(
+            name='TeamEvaluation',
+            fields=[
+                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ('updated_at', models.DateTimeField(auto_now=True)),
+                ('tactics', models.IntegerField(validators=[django.core.validators.MinValueValidator(1), django.core.validators.MaxValueValidator(10)])),
+                ('effort', models.IntegerField(validators=[django.core.validators.MinValueValidator(1), django.core.validators.MaxValueValidator(10)])),
+                ('organization', models.IntegerField(validators=[django.core.validators.MinValueValidator(1), django.core.validators.MaxValueValidator(10)])),
+                ('mentality', models.IntegerField(validators=[django.core.validators.MinValueValidator(1), django.core.validators.MaxValueValidator(10)])),
+                ('match', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='team_evaluations', to='matches.match')),
+                ('team', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='team_evaluations', to='teams.team')),
+                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='team_evaluations', to=settings.AUTH_USER_MODEL)),
+            ],
+            options={
+                'constraints': [models.UniqueConstraint(fields=('user', 'match', 'team'), name='unique_team_evaluation')],
+            },
+        ),
+    ]
+
+
+
+================================================================================
 FILE: evaluations/migrations/__init__.py
 ================================================================================
 
@@ -1139,9 +3423,289 @@ FILE: evaluations/models.py
 ================================================================================
 
 from django.db import models
+from django.conf import settings
+from django.core.validators import MinValueValidator, MaxValueValidator
+from django.utils import timezone
+from core.models import BaseModel
 
-# Create your models here.
 
+class ContextEvaluation(BaseModel):
+    """
+    Контекст просмотра матча пользователем.
+    Первый шаг оценки — собираем контекст перед основными оценками.
+    """
+    WATCHED_TYPE_CHOICES = [
+        ('full', 'Full Match'),
+        ('highlights', 'Highlights'),
+        ('partial', 'Partial'),
+    ]
+    
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='context_evaluations'
+    )
+    match = models.ForeignKey(
+        'matches.Match',
+        on_delete=models.CASCADE,
+        related_name='context_evaluations'
+    )
+    supported_team = models.ForeignKey(
+        'teams.Team',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='supported_by_users'
+    )
+    watched_type = models.CharField(
+        max_length=20,
+        choices=WATCHED_TYPE_CHOICES,
+        default='full'
+    )
+    attended_stadium = models.BooleanField(default=False)
+    
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'match'],
+                name='unique_context_evaluation'
+            )
+        ]
+    
+    def __str__(self):
+        return f"{self.user.username} - {self.match}"
+
+
+class TeamEvaluation(BaseModel):
+    """
+    Оценка команды пользователем (4 оси).
+    """
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='team_evaluations'
+    )
+    match = models.ForeignKey(
+        'matches.Match',
+        on_delete=models.CASCADE,
+        related_name='team_evaluations'
+    )
+    team = models.ForeignKey(
+        'teams.Team',
+        on_delete=models.CASCADE,
+        related_name='team_evaluations'
+    )
+    
+    tactics = models.IntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(10)]
+    )
+    effort = models.IntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(10)]
+    )
+    organization = models.IntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(10)]
+    )
+    mentality = models.IntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(10)]
+    )
+    
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'match', 'team'],
+                name='unique_team_evaluation'
+            )
+        ]
+    
+    def __str__(self):
+        return f"{self.user.username} - {self.team} ({self.match})"
+    
+    @property
+    def average_score(self):
+        """Средний балл по всем осям"""
+        return (self.tactics + self.effort + self.organization + self.mentality) / 4
+
+
+class PlayerEvaluation(BaseModel):
+    """
+    Оценка игрока пользователем (3 оси — ключевая модель).
+    """
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='player_evaluations'
+    )
+    match = models.ForeignKey(
+        'matches.Match',
+        on_delete=models.CASCADE,
+        related_name='player_evaluations'
+    )
+    player = models.ForeignKey(
+        'players.Player',
+        on_delete=models.CASCADE,
+        related_name='player_evaluations'
+    )
+    
+    contribution = models.IntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(10)],
+        help_text="Вклад в игру (1-10)"
+    )
+    risk = models.IntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(10)],
+        help_text="Риск/ошибки (1-10)"
+    )
+    potential = models.IntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(10)],
+        help_text="Потенциал (1-10)"
+    )
+    
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'match', 'player'],
+                name='unique_player_evaluation'
+            )
+        ]
+        indexes = [
+            models.Index(fields=['match', 'player']),
+            models.Index(fields=['player', 'match']),
+        ]
+    
+    def __str__(self):
+        return f"{self.user.username} - {self.player} ({self.match})"
+    
+    @property
+    def maturity_score(self):
+        """Maturity Score = contribution - risk"""
+        return self.contribution - self.risk
+
+
+class CoachEvaluation(BaseModel):
+    """
+    Оценка тренера пользователем (4 оси).
+    """
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='coach_evaluations'
+    )
+    match = models.ForeignKey(
+        'matches.Match',
+        on_delete=models.CASCADE,
+        related_name='coach_evaluations'
+    )
+    coach = models.ForeignKey(
+        'coaches.Coach',
+        on_delete=models.CASCADE,
+        related_name='coach_evaluations'
+    )
+    
+    tactics = models.IntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(10)]
+    )
+    substitutions = models.IntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(10)]
+    )
+    game_management = models.IntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(10)]
+    )
+    impact = models.IntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(10)]
+    )
+    
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'match', 'coach'],
+                name='unique_coach_evaluation'
+            )
+        ]
+    
+    def __str__(self):
+        return f"{self.user.username} - {self.coach} ({self.match})"
+    
+    @property
+    def average_score(self):
+        return (self.tactics + self.substitutions + self.game_management + self.impact) / 4
+
+
+class RefereeEvaluation(BaseModel):
+    """
+    Оценка судейства пользователем.
+    """
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='referee_evaluations'
+    )
+    match = models.ForeignKey(
+        'matches.Match',
+        on_delete=models.CASCADE,
+        related_name='referee_evaluations'
+    )
+    
+    influence_score = models.IntegerField(
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        help_text="Влияние на матч (0-100)"
+    )
+    decision_quality = models.IntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(10)],
+        help_text="Качество решений (1-10)"
+    )
+    
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'match'],
+                name='unique_referee_evaluation'
+            )
+        ]
+    
+    def __str__(self):
+        return f"{self.user.username} - Referee ({self.match})"
+
+
+class MatchEvaluation(BaseModel):
+    """
+    Общая оценка матча пользователем.
+    """
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='match_evaluations'
+    )
+    match = models.ForeignKey(
+        'matches.Match',
+        on_delete=models.CASCADE,
+        related_name='match_evaluations'
+    )
+    
+    entertainment = models.IntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(10)]
+    )
+    tension = models.IntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(10)]
+    )
+    turning_point = models.BooleanField(default=False)
+    fairness = models.IntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(10)]
+    )
+    
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'match'],
+                name='unique_match_evaluation'
+            )
+        ]
+    
+    def __str__(self):
+        return f"{self.user.username} - Match ({self.match})"
+    
+    @property
+    def drama_index(self):
+        """Drama Index = entertainment * tension"""
+        return self.entertainment * self.tension
 
 
 ================================================================================
@@ -1149,9 +3713,308 @@ FILE: evaluations/tests.py
 ================================================================================
 
 from django.test import TestCase
+from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
+from django.db import IntegrityError
+from django.utils import timezone
+from datetime import timedelta
 
-# Create your tests here.
+from matches.models import Match
+from teams.models import Team
+from players.models import Player
+from seasons.models import Season
+from leagues.models import League
 
+from .models import (
+    ContextEvaluation,
+    TeamEvaluation,
+    PlayerEvaluation,
+    CoachEvaluation,
+    RefereeEvaluation,
+    MatchEvaluation
+)
+
+User = get_user_model()
+
+
+class EvaluationUniqueConstraintTests(TestCase):
+    """Тесты на уникальность оценок"""
+    
+    def setUp(self):
+        # Создаём тестовые данные
+        self.user = User.objects.create_user(
+            username='testuser',
+            email='test@example.com',
+            password='testpass123'
+        )
+        
+        self.league = League.objects.create(
+            name='Test League',
+            country='Kazakhstan'
+        )
+        
+        self.season = Season.objects.create(
+            league=self.league,
+            year='2026',
+            is_active=True
+        )
+        
+        self.team1 = Team.objects.create(name='Team 1')
+        self.team2 = Team.objects.create(name='Team 2')
+        
+        self.match = Match.objects.create(
+            league=self.league,
+            season=self.season,
+            home_team=self.team1,
+            away_team=self.team2,
+            start_time=timezone.now(),
+            voting_open_until=timezone.now() + timedelta(hours=48)
+        )
+        
+        self.player = Player.objects.create(
+            first_name='Test',
+            last_name='Player'
+        )
+    
+    def test_context_evaluation_unique(self):
+        """Один пользователь может оценить контекст матча только один раз"""
+        ContextEvaluation.objects.create(
+            user=self.user,
+            match=self.match,
+            watched_type='full'
+        )
+        
+        with self.assertRaises(IntegrityError):
+            ContextEvaluation.objects.create(
+                user=self.user,
+                match=self.match,
+                watched_type='highlights'
+            )
+    
+    def test_player_evaluation_unique(self):
+        """Один пользователь может оценить игрока в матче только один раз"""
+        PlayerEvaluation.objects.create(
+            user=self.user,
+            match=self.match,
+            player=self.player,
+            contribution=8,
+            risk=3,
+            potential=7
+        )
+        
+        with self.assertRaises(IntegrityError):
+            PlayerEvaluation.objects.create(
+                user=self.user,
+                match=self.match,
+                player=self.player,
+                contribution=5,
+                risk=5,
+                potential=5
+            )
+    
+    def test_team_evaluation_unique(self):
+        """Один пользователь может оценить команду в матче только один раз"""
+        TeamEvaluation.objects.create(
+            user=self.user,
+            match=self.match,
+            team=self.team1,
+            tactics=8,
+            effort=7,
+            organization=6,
+            mentality=7
+        )
+        
+        with self.assertRaises(IntegrityError):
+            TeamEvaluation.objects.create(
+                user=self.user,
+                match=self.match,
+                team=self.team1,
+                tactics=5,
+                effort=5,
+                organization=5,
+                mentality=5
+            )
+    
+    def test_match_evaluation_unique(self):
+        """Один пользователь может оценить матч только один раз"""
+        MatchEvaluation.objects.create(
+            user=self.user,
+            match=self.match,
+            entertainment=8,
+            tension=7,
+            fairness=8
+        )
+        
+        with self.assertRaises(IntegrityError):
+            MatchEvaluation.objects.create(
+                user=self.user,
+                match=self.match,
+                entertainment=5,
+                tension=5,
+                fairness=5
+            )
+
+
+class EvaluationValidationTests(TestCase):
+    """Тесты на валидацию оценок"""
+    
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='testuser',
+            email='test@example.com',
+            password='testpass123'
+        )
+        
+        self.league = League.objects.create(name='Test League', country='Kazakhstan')
+        self.season = Season.objects.create(league=self.league, year='2026')
+        self.team1 = Team.objects.create(name='Team 1')
+        self.team2 = Team.objects.create(name='Team 2')
+        
+        self.match = Match.objects.create(
+            league=self.league,
+            season=self.season,
+            home_team=self.team1,
+            away_team=self.team2,
+            start_time=timezone.now(),
+            voting_open_until=timezone.now() + timedelta(hours=48)
+        )
+        
+        self.player = Player.objects.create(first_name='Test', last_name='Player')
+    
+    def test_player_evaluation_min_max_values(self):
+        """Проверка валидации мин/макс значений"""
+        # Должно работать (в пределах 1-10)
+        eval_valid = PlayerEvaluation(
+            user=self.user,
+            match=self.match,
+            player=self.player,
+            contribution=1,
+            risk=10,
+            potential=5
+        )
+        eval_valid.full_clean()  # Не должно выбросить исключение
+        
+        # Должно выбросить исключение (< 1)
+        eval_invalid = PlayerEvaluation(
+            user=self.user,
+            match=self.match,
+            player=self.player,
+            contribution=0,  # < 1
+            risk=5,
+            potential=5
+        )
+        with self.assertRaises(ValidationError):
+            eval_invalid.full_clean()
+        
+        # Должно выбросить исключение (> 10)
+        eval_invalid2 = PlayerEvaluation(
+            user=self.user,
+            match=self.match,
+            player=self.player,
+            contribution=11,  # > 10
+            risk=5,
+            potential=5
+        )
+        with self.assertRaises(ValidationError):
+            eval_invalid2.full_clean()
+    
+    def test_referee_evaluation_influence_score_range(self):
+        """Проверка валидации influence_score (0-100)"""
+        from coaches.models import Coach
+        self.coach = Coach.objects.create(first_name='Test', last_name='Coach')
+        
+        # Должно работать (0-100)
+        eval_valid = RefereeEvaluation(
+            user=self.user,
+            match=self.match,
+            influence_score=0,
+            decision_quality=5
+        )
+        eval_valid.full_clean()
+        
+        eval_valid2 = RefereeEvaluation(
+            user=self.user,
+            match=self.match,
+            influence_score=100,
+            decision_quality=5
+        )
+        eval_valid2.full_clean()
+        
+        # Должно выбросить исключение
+        eval_invalid = RefereeEvaluation(
+            user=self.user,
+            match=self.match,
+            influence_score=101,  # > 100
+            decision_quality=5
+        )
+        with self.assertRaises(ValidationError):
+            eval_invalid.full_clean()
+
+
+class EvaluationPropertyTests(TestCase):
+    """Тесты на вычисляемые свойства"""
+    
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='testuser',
+            email='test@example.com',
+            password='testpass123'
+        )
+        
+        self.league = League.objects.create(name='Test League', country='Kazakhstan')
+        self.season = Season.objects.create(league=self.league, year='2026')
+        self.team1 = Team.objects.create(name='Team 1')
+        self.team2 = Team.objects.create(name='Team 2')
+        
+        self.match = Match.objects.create(
+            league=self.league,
+            season=self.season,
+            home_team=self.team1,
+            away_team=self.team2,
+            start_time=timezone.now(),
+            voting_open_until=timezone.now() + timedelta(hours=48)
+        )
+        
+        self.player = Player.objects.create(first_name='Test', last_name='Player')
+    
+    def test_player_evaluation_maturity_score(self):
+        """Maturity Score = contribution - risk"""
+        evaluation = PlayerEvaluation.objects.create(
+            user=self.user,
+            match=self.match,
+            player=self.player,
+            contribution=8,
+            risk=3,
+            potential=7
+        )
+        
+        self.assertEqual(evaluation.maturity_score, 5)  # 8 - 3 = 5
+    
+    def test_team_evaluation_average_score(self):
+        """Средний балл команды"""
+        evaluation = TeamEvaluation.objects.create(
+            user=self.user,
+            match=self.match,
+            team=self.team1,
+            tactics=8,
+            effort=7,
+            organization=6,
+            mentality=7
+        )
+        
+        self.assertEqual(evaluation.average_score, 7.0)  # (8+7+6+7)/4 = 7.0
+    
+    def test_match_evaluation_drama_index(self):
+        """Drama Index = entertainment * tension"""
+        evaluation = MatchEvaluation.objects.create(
+            user=self.user,
+            match=self.match,
+            entertainment=8,
+            tension=9,
+            fairness=7
+        )
+        
+        self.assertEqual(evaluation.drama_index, 72)  # 8 * 9 = 72
 
 
 ================================================================================
@@ -12376,6 +15239,108 @@ from django.shortcuts import render
 
 
 ================================================================================
+FILE: plan.txt
+================================================================================
+
+# 1.1 Реализовать 6 моделей в evaluations/models.py
+# 1.2 Добавить UniqueConstraint для предотвращения дублей
+# 1.3 Создать и применить миграции
+# 1.4 Написать тесты на уникальность оценок
+
+# Пример реализации PlayerEvaluation:
+class PlayerEvaluation(BaseModel):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    match = models.ForeignKey(Match, on_delete=models.CASCADE)
+    player = models.ForeignKey(Player, on_delete=models.CASCADE)
+    
+    contribution = models.IntegerField(validators=[MinValueValidator(1), MaxValueValidator(10)])
+    risk = models.IntegerField(validators=[MinValueValidator(1), MaxValueValidator(10)])
+    potential = models.IntegerField(validators=[MinValueValidator(1), MaxValueValidator(10)])
+    
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['user', 'match', 'player'], name='unique_player_eval')
+        ]
+
+# 2.1 Создать модели агрегатов в aggregates/models.py
+# 2.2 Реализовать расчёт индексов:
+#     - Performance Score = avg_contribution
+#     - Risk Index = avg_risk  
+#     - Maturity Score = contribution - risk
+#     - Stability Index = 1 / std_dev(contribution)
+#     - Clutch Index = contribution * drama_index
+
+# 2.3 Реализовать вес голоса пользователя:
+def calculate_user_weight(user: User, context_eval: ContextEvaluation) -> float:
+    weight = 1.0
+    if context_eval.watched_type == 'full': weight += 0.2
+    if user.trust_score > 1.2: weight += 0.2
+    # TODO: детекция "фанатской системности"
+    return weight
+
+# 3.1 Создать serializers для всех моделей оценок
+# 3.2 Реализовать ViewSets с:
+#     - POST для создания оценок (с валидацией 48ч и уникальности)
+#     - GET для получения аналитики
+# 3.3 Настроить permissions: IsAuthenticated, throttle classes
+# 3.4 Добавить роутинг в api/urls.py
+
+# Пример валидации в serializer:
+def validate_match(self, value):
+    if timezone.now() > value.voting_open_until:
+        raise ValidationError("Voting is closed for this match")
+    return value
+
+# 4.1 Настроить Celery в dopx/celery.py
+# 4.2 Создать задачи:
+#     - recalculate_player_aggregates(match_id)
+#     - recalculate_all_aggregates()  # periodic
+# 4.3 Настроить Celery Beat для periodics (каждые 10 мин)
+# 4.4 Триггер задачи при изменении voting_open_until
+
+# Пример задачи:
+@shared_task
+def recalculate_player_aggregates(match_id: uuid.UUID):
+    evaluations = PlayerEvaluation.objects.filter(match_id=match_id)
+    for player_id in evaluations.values_list('player_id', flat=True).distinct():
+        player_evals = evaluations.filter(player_id=player_id)
+        weights = [calculate_user_weight(e.user, e.match.context) for e in player_evals]
+        # ... расчёт взвешенных средних ...
+        PlayerMatchAggregate.objects.update_or_create(...)
+
+# 5.1 Протестировать импорт матча 898 (live, есть lineup/events)
+# 5.2 Проверить корректность external_id связей:
+#     - Team.external_id ↔ KFF team.id
+#     - Player.external_id ↔ KFF player_id
+# 5.3 Убедиться, что импорт не создаёт дубликаты
+# 5.4 Добавить логирование ошибок импорта
+
+# Команда для теста:
+python manage.py sync_kff --match-id 898
+
+# 6.1 Добавить индексы в модели:
+#     - Match: [league, season, start_time]
+#     - PlayerEvaluation: [match, player, user]
+#     - PlayerMatchAggregate: [player, match]
+
+# 6.2 Использовать select_related/prefetch_related в запросах
+# 6.3 Добавить кэширование агрегатов (Redis, 5-10 мин TTL)
+# 6.4 Протестировать время ответа API (<800ms)
+
+# 7.1 Создать базовые шаблоны с HTMX:
+#     - match_detail.html (с формой оценок)
+#     - player_analytics.html (графики индексов)
+# 7.2 Реализовать HTMX формы для пошаговой оценки (6 шагов)
+# 7.3 Добавить TailwindCSS стили
+# 7.4 Реализовать отображение агрегированной аналитики
+
+# 8.1 Настроить Gunicorn + Nginx
+# 8.2 Настроить HTTPS через Let's Encrypt
+# 8.3 Добавить мониторинг (Sentry, health checks)
+# 8.4 Настроить backup БД
+
+
+================================================================================
 FILE: players/__init__.py
 ================================================================================
 
@@ -12722,9 +15687,13 @@ from django.shortcuts import render
 FILE: requirements.txt
 ================================================================================
 
+aiohappyeyeballs==2.6.1
+aiohttp==3.13.3
+aiosignal==1.4.0
 amqp==5.3.1
 anyio==4.12.1
 asgiref==3.11.1
+attrs==25.4.0
 beautifulsoup4==4.12.3
 billiard==4.2.4
 celery==5.6.2
@@ -12739,6 +15708,7 @@ cryptography==46.0.5
 Django==6.0.3
 django-filter==25.2
 djangorestframework==3.16.1
+frozenlist==1.8.0
 greenlet==3.3.2
 h11==0.16.0
 h2==4.3.0
@@ -12748,12 +15718,14 @@ hyperframe==6.1.0
 idna==3.11
 kombu==5.6.2
 lxml==5.2.2
+multidict==6.7.1
 packaging==26.0
 pdfminer.six==20251230
 pdfplumber==0.11.9
 pillow==12.1.1
 playwright==1.58.0
 prompt_toolkit==3.0.52
+propcache==0.4.1
 psycopg==3.3.3
 pycparser==3.0
 pyee==13.0.1
@@ -12772,6 +15744,7 @@ urllib3==2.6.3
 uuid==1.30
 vine==5.1.0
 wcwidth==0.6.0
+yarl==1.23.0
 
 
 
