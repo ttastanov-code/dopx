@@ -39,9 +39,11 @@ class PlayerMatchAggregate(BaseModel):
             )
         ]
         indexes = [
-            models.Index(fields=['player', 'match']),
-            models.Index(fields=['match', 'player']),
-        ]
+                    models.Index(fields=['player', 'match']),
+                    models.Index(fields=['match', 'player']),
+                    models.Index(fields=['-performance_score']),
+                    models.Index(fields=['match', '-performance_score']),
+                ]
     
     def __str__(self):
         return f"{self.player} - {self.match}"
@@ -109,6 +111,11 @@ class MatchAggregate(BaseModel):
     # Вычисляемые индексы
     drama_index = models.FloatField(default=0.0)  # entertainment * tension
     
+    class Meta:
+        indexes = [
+            models.Index(fields=['match']),
+        ]
+        
     def __str__(self):
         return f"Aggregate - {self.match}"
     

@@ -1,65 +1,95 @@
 # aggregates/services.py
-from django.db.models import Avg, StdDev, Count, F
+from django.db.models import Avg, StdDev, Count, F, Sum, FloatField
+from django.db.models.functions import Cast
 from django.utils import timezone
-from evaluations.models import PlayerEvaluation, CoachEvaluation, MatchEvaluation
+from django.core.cache import cache
+from evaluations.models import PlayerEvaluation, CoachEvaluation, MatchEvaluation, ContextEvaluation
 from .models import PlayerMatchAggregate, CoachMatchAggregate, MatchAggregate
 from users.models import User
-from evaluations.models import ContextEvaluation
 import math
+import logging
+
+logger = logging.getLogger(__name__)
 
 
-def calculate_user_weight(user: User, context_eval: ContextEvaluation) -> float:
+def calculate_user_weight_cached(user_id: int, context_eval_id: int) -> float:
     """
-    Расчёт веса голоса пользователя
-    
-    Формула:
-    - 1.0 базовый
-    - +0.2 если watched_type == full
-    - +0.2 если trust_score > 1.2
-    - -0.3 если выявлена фанатская системность
+    OPTIMIZATION: Кэширование веса пользователя
     """
-    weight = 1.0
+    cache_key = f'user_weight_{user_id}_{context_eval_id}'
+    cached_weight = cache.get(cache_key)
     
-    if context_eval and context_eval.watched_type == 'full':
-        weight += 0.2
+    if cached_weight is not None:
+        return cached_weight
     
-    if user.trust_score > 1.2:
-        weight += 0.2
-    
-    # TODO: Детекция фанатской системности
-    # if detect_fan_bias(user, match):
-    #     weight -= 0.3
-    
-    return max(0.5, weight)  # Минимальный вес 0.5
+    try:
+        user = User.objects.only('trust_score').get(id=user_id)
+        context_eval = ContextEvaluation.objects.only('watched_type').get(id=context_eval_id)
+        
+        weight = 1.0
+        if context_eval and context_eval.watched_type == 'full':
+            weight += 0.2
+        if user.trust_score > 1.2:
+            weight += 0.2
+        
+        weight = max(0.5, weight)
+        
+        # Кэширование на 1 час
+        cache.set(cache_key, weight, timeout=3600)
+        
+        return weight
+    except (User.DoesNotExist, ContextEvaluation.DoesNotExist):
+        return 1.0
 
 
-def detect_fan_bias(user: User, match) -> bool:
+def calculate_weighted_average_optimized(evaluations_queryset, field_name: str, match_id: str) -> float:
     """
-    Детекция систематической предвзятости (фанатизма)
-    TODO: Реализовать на основе истории оценок
+    OPTIMIZATION: 
+    - Вычисление взвешенного среднего на уровне БД где возможно
+    - Минимизация Python-обработок
+    - Batch загрузка context evaluations
     """
-    # Пример: если пользователь всегда ставит макс. оценки одной команде
-    return False
-
-
-def calculate_weighted_average(evaluations, field_name, context_evals_map):
-    """
-    Расчёт взвешенного среднего значения
+    evaluations = list(evaluations_queryset.select_related('user').only(
+        'user_id', field_name
+    ))
     
-    Args:
-        evaluations: QuerySet оценок
-        field_name: имя поля для усреднения
-        context_evals_map: dict {user_id: ContextEvaluation}
-    """
+    if not evaluations:
+        return 0.0
+    
+    # Batch загрузка всех context evaluations одним запросом
+    user_ids = [e.user_id for e in evaluations]
+    context_evals = ContextEvaluation.objects.filter(
+        user_id__in=user_ids,
+        match_id=match_id
+    ).only('user_id', 'watched_type')
+    
+    context_map = {ce.user_id: ce for ce in context_evals}
+    
+    # Получаем trust_score всех пользователей одним запросом
+    users = User.objects.filter(
+        id__in=user_ids
+    ).only('id', 'trust_score')
+    user_trust_map = {u.id: u.trust_score for u in users}
+    
     total_weight = 0.0
     weighted_sum = 0.0
     
     for eval_obj in evaluations:
-        user = eval_obj.user
-        context_eval = context_evals_map.get(user.id)
-        weight = calculate_user_weight(user, context_eval)
+        user_id = eval_obj.user_id
+        context_eval = context_map.get(user_id)
         
-        value = getattr(eval_obj, field_name, 0)
+        # Расчёт веса без дополнительных запросов
+        weight = 1.0
+        if context_eval and context_eval.watched_type == 'full':
+            weight += 0.2
+        
+        trust_score = user_trust_map.get(user_id, 1.0)
+        if trust_score > 1.2:
+            weight += 0.2
+        
+        weight = max(0.5, weight)
+        
+        value = getattr(eval_obj, field_name, 0) or 0
         weighted_sum += value * weight
         total_weight += weight
     
@@ -69,59 +99,73 @@ def calculate_weighted_average(evaluations, field_name, context_evals_map):
     return weighted_sum / total_weight
 
 
-def calculate_std_dev(values):
-    """Расчёт стандартного отклонения"""
-    if len(values) < 2:
+def calculate_std_dev_optimized(values: list) -> float:
+    """
+    OPTIMIZATION: Быстрый расчёт стандартного отклонения
+    """
+    n = len(values)
+    if n < 2:
         return 0.0
     
-    mean = sum(values) / len(values)
-    variance = sum((x - mean) ** 2 for x in values) / len(values)
-    return math.sqrt(variance)
+    # Используем math.fsum для лучшей точности
+    mean = math.fsum(values) / n
+    variance = math.fsum((x - mean) ** 2 for x in values) / n
+    
+    return math.sqrt(variance) if variance > 0 else 0.0
 
 
 def recalculate_player_aggregate(player, match):
-    """Пересчёт агрегатов для игрока за матч"""
+    """
+    OPTIMIZATION: 
+    - Минимизация запросов к БД
+    - Кэширование промежуточных результатов
+    - Batch operations
+    """
+    match_id = str(match.id)
+    cache_key = f'player_agg_calc_{player.id}_{match_id}'
+    
+    # Проверка кэша расчёта
+    cached_result = cache.get(cache_key)
+    if cached_result:
+        return cached_result
+    
     evaluations = PlayerEvaluation.objects.filter(
         player=player,
         match=match
-    ).select_related('user', 'match')
+    ).select_related('user')
     
     if not evaluations.exists():
         return None
     
-    # Получаем context evaluations для всех пользователей
-    user_ids = evaluations.values_list('user_id', flat=True)
-    context_evals = ContextEvaluation.objects.filter(
-        user_id__in=user_ids,
-        match=match
+    # Оптимизированный расчёт взвешенных средних
+    avg_contribution = calculate_weighted_average_optimized(
+        evaluations, 'contribution', match_id
     )
-    context_evals_map = {ce.user_id: ce for ce in context_evals}
-    
-    # Расчёт взвешенных средних
-    avg_contribution = calculate_weighted_average(
-        evaluations, 'contribution', context_evals_map
+    avg_risk = calculate_weighted_average_optimized(
+        evaluations, 'risk', match_id
     )
-    avg_risk = calculate_weighted_average(
-        evaluations, 'risk', context_evals_map
-    )
-    avg_potential = calculate_weighted_average(
-        evaluations, 'potential', context_evals_map
+    avg_potential = calculate_weighted_average_optimized(
+        evaluations, 'potential', match_id
     )
     
-    # Расчёт стандартного отклонения для stability index
-    contributions = [e.contribution for e in evaluations]
-    std_dev = calculate_std_dev(contributions)
+    # Расчёт стандартного отклонения
+    contributions = [e.contribution for e in evaluations if e.contribution]
+    std_dev = calculate_std_dev_optimized(contributions)
     stability_index = 1.0 / std_dev if std_dev > 0 else 10.0
     
-    # Получаем drama index из матча
-    match_agg = MatchAggregate.objects.filter(match=match).first()
-    drama_index = match_agg.drama_index if match_agg else 5.0
+    # Получаем drama index из матча (с кэшем)
+    match_agg_cache = cache.get(f'match_aggregate_{match_id}')
+    if match_agg_cache:
+        drama_index = match_agg_cache.get('drama_index', 5.0)
+    else:
+        match_agg = MatchAggregate.objects.filter(match=match).only('drama_index').first()
+        drama_index = match_agg.drama_index if match_agg else 5.0
     
     # Вычисляемые индексы
     performance_score = avg_contribution
     risk_index = avg_risk
     maturity_score = avg_contribution - avg_risk
-    clutch_index = avg_contribution * (drama_index / 10.0)  # Нормализация
+    clutch_index = avg_contribution * (drama_index / 10.0)
     
     aggregate, _ = PlayerMatchAggregate.objects.update_or_create(
         player=player,
@@ -139,11 +183,23 @@ def recalculate_player_aggregate(player, match):
         }
     )
     
+    # Кэширование результата расчёта
+    result = {
+        'id': str(aggregate.id),
+        'performance_score': aggregate.performance_score,
+        'total_votes': aggregate.total_votes
+    }
+    cache.set(cache_key, result, timeout=300)
+    
     return aggregate
 
 
 def recalculate_coach_aggregate(coach, match):
-    """Пересчёт агрегатов для тренера за матч"""
+    """
+    OPTIMIZATION: Оптимизированный расчёт агрегатов тренера
+    """
+    match_id = str(match.id)
+    
     evaluations = CoachEvaluation.objects.filter(
         coach=coach,
         match=match
@@ -155,23 +211,50 @@ def recalculate_coach_aggregate(coach, match):
     user_ids = evaluations.values_list('user_id', flat=True)
     context_evals = ContextEvaluation.objects.filter(
         user_id__in=user_ids,
-        match=match
-    )
-    context_evals_map = {ce.user_id: ce for ce in context_evals}
+        match_id=match_id
+    ).only('user_id', 'watched_type')
+    context_map = {ce.user_id: ce for ce in context_evals}
     
-    avg_tactics = calculate_weighted_average(evaluations, 'tactics', context_evals_map)
-    avg_substitutions = calculate_weighted_average(evaluations, 'substitutions', context_evals_map)
-    avg_management = calculate_weighted_average(evaluations, 'game_management', context_evals_map)
-    avg_impact = calculate_weighted_average(evaluations, 'impact', context_evals_map)
+    users = User.objects.filter(id__in=user_ids).only('id', 'trust_score')
+    user_trust_map = {u.id: u.trust_score for u in users}
+    
+    total_weight = 0.0
+    weighted_tactics = 0.0
+    weighted_substitutions = 0.0
+    weighted_management = 0.0
+    weighted_impact = 0.0
+    
+    for eval_obj in evaluations:
+        user_id = eval_obj.user_id
+        context_eval = context_map.get(user_id)
+        
+        weight = 1.0
+        if context_eval and context_eval.watched_type == 'full':
+            weight += 0.2
+        
+        trust_score = user_trust_map.get(user_id, 1.0)
+        if trust_score > 1.2:
+            weight += 0.2
+        
+        weight = max(0.5, weight)
+        
+        weighted_tactics += eval_obj.tactics * weight
+        weighted_substitutions += eval_obj.substitutions * weight
+        weighted_management += eval_obj.game_management * weight
+        weighted_impact += eval_obj.impact * weight
+        total_weight += weight
+    
+    if total_weight == 0:
+        return None
     
     aggregate, _ = CoachMatchAggregate.objects.update_or_create(
         coach=coach,
         match=match,
         defaults={
-            'avg_tactics': round(avg_tactics, 2),
-            'avg_substitutions': round(avg_substitutions, 2),
-            'avg_management': round(avg_management, 2),
-            'avg_impact': round(avg_impact, 2),
+            'avg_tactics': round(weighted_tactics / total_weight, 2),
+            'avg_substitutions': round(weighted_substitutions / total_weight, 2),
+            'avg_management': round(weighted_management / total_weight, 2),
+            'avg_impact': round(weighted_impact / total_weight, 2),
             'total_votes': evaluations.count(),
         }
     )
@@ -180,28 +263,75 @@ def recalculate_coach_aggregate(coach, match):
 
 
 def recalculate_match_aggregate(match):
-    """Пересчёт агрегатов для матча"""
+    """
+    OPTIMIZATION: Оптимизированный расчёт агрегатов матча
+    """
+    match_id = str(match.id)
+    
     evaluations = MatchEvaluation.objects.filter(
         match=match
     ).select_related('user')
     
     if not evaluations.exists():
-        return None
+        # Создаём пустой агрегат
+        aggregate, _ = MatchAggregate.objects.update_or_create(
+            match=match,
+            defaults={
+                'avg_entertainment': 0.0,
+                'avg_tension': 0.0,
+                'avg_fairness': 0.0,
+                'turning_point_ratio': 0.0,
+                'total_votes': 0,
+                'drama_index': 0.0,
+            }
+        )
+        return aggregate
     
     user_ids = evaluations.values_list('user_id', flat=True)
     context_evals = ContextEvaluation.objects.filter(
         user_id__in=user_ids,
-        match=match
-    )
-    context_evals_map = {ce.user_id: ce for ce in context_evals}
+        match_id=match_id
+    ).only('user_id', 'watched_type')
+    context_map = {ce.user_id: ce for ce in context_evals}
     
-    avg_entertainment = calculate_weighted_average(evaluations, 'entertainment', context_evals_map)
-    avg_tension = calculate_weighted_average(evaluations, 'tension', context_evals_map)
-    avg_fairness = calculate_weighted_average(evaluations, 'fairness', context_evals_map)
+    users = User.objects.filter(id__in=user_ids).only('id', 'trust_score')
+    user_trust_map = {u.id: u.trust_score for u in users}
     
-    turning_point_count = evaluations.filter(turning_point=True).count()
-    turning_point_ratio = turning_point_count / evaluations.count() if evaluations.count() > 0 else 0.0
+    total_weight = 0.0
+    weighted_entertainment = 0.0
+    weighted_tension = 0.0
+    weighted_fairness = 0.0
+    turning_point_count = 0
     
+    for eval_obj in evaluations:
+        user_id = eval_obj.user_id
+        context_eval = context_map.get(user_id)
+        
+        weight = 1.0
+        if context_eval and context_eval.watched_type == 'full':
+            weight += 0.2
+        
+        trust_score = user_trust_map.get(user_id, 1.0)
+        if trust_score > 1.2:
+            weight += 0.2
+        
+        weight = max(0.5, weight)
+        
+        weighted_entertainment += eval_obj.entertainment * weight
+        weighted_tension += eval_obj.tension * weight
+        weighted_fairness += eval_obj.fairness * weight
+        total_weight += weight
+        
+        if eval_obj.turning_point:
+            turning_point_count += 1
+    
+    if total_weight == 0:
+        return None
+    
+    avg_entertainment = weighted_entertainment / total_weight
+    avg_tension = weighted_tension / total_weight
+    avg_fairness = weighted_fairness / total_weight
+    turning_point_ratio = turning_point_count / evaluations.count()
     drama_index = avg_entertainment * avg_tension
     
     aggregate, _ = MatchAggregate.objects.update_or_create(
@@ -216,22 +346,33 @@ def recalculate_match_aggregate(match):
         }
     )
     
+    # Кэширование результата
+    cache.set(f'match_aggregate_{match_id}', {
+        'drama_index': drama_index,
+        'avg_entertainment': avg_entertainment,
+        'avg_tension': avg_tension,
+    }, timeout=600)
+    
     return aggregate
 
 
 def recalculate_all_aggregates_for_match(match):
-    """Пересчёт всех агрегатов для матча"""
+    """
+    OPTIMIZATION: 
+    - Правильный порядок расчёта (Match -> Player)
+    - Минимизация запросов
+    """
     # 1. Сначала матч (нужен для drama_index)
-    match_agg = recalculate_match_aggregate(match)
+    recalculate_match_aggregate(match)
     
-    # 2. Игроки
+    # 2. Игроки — batch загрузка всех оценок
     player_ids = PlayerEvaluation.objects.filter(
         match=match
     ).values_list('player_id', flat=True).distinct()
     
     for player_id in player_ids:
         from players.models import Player
-        player = Player.objects.get(id=player_id)
+        player = Player.objects.only('id').get(id=player_id)
         recalculate_player_aggregate(player, match)
     
     # 3. Тренеры
