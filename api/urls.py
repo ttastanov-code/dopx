@@ -9,7 +9,8 @@ from .views import (
     RefereeEvaluationViewSet,
     MatchEvaluationViewSet,
     MatchAggregateViewSet,
-    PlayerAggregateViewSet
+    PlayerAggregateViewSet,
+    CoachAggregateViewSet,
 )
 
 router = DefaultRouter()
@@ -25,6 +26,7 @@ router.register(r'match-eval', MatchEvaluationViewSet, basename='match-eval')
 # Агрегаты (только чтение)
 router.register(r'match-aggregate', MatchAggregateViewSet, basename='match-aggregate')
 router.register(r'player-aggregate', PlayerAggregateViewSet, basename='player-aggregate')
+router.register(r'coach-aggregate', CoachAggregateViewSet, basename='coach-aggregate')
 
 urlpatterns = [
     path('', include(router.urls)),

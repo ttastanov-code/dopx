@@ -56,6 +56,9 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    # OPTIMIZATION: Performance middleware
+    'dopx.middleware.QueryCountMiddleware',
+    'dopx.middleware.CacheHitMiddleware',
 ]
 
 ROOT_URLCONF = 'dopx.urls'
@@ -89,6 +92,13 @@ DATABASES = {
         "PASSWORD": os.getenv("DB_PASSWORD"),
         "HOST": os.getenv("DB_HOST"),
         "PORT": os.getenv("DB_PORT"),
+        # OPTIMIZATION: Connection pooling
+        "CONN_MAX_AGE": 600,  # 10 минут
+        "CONN_HEALTH_CHECKS": True,
+        "OPTIONS": {
+            "connect_timeout": 10,
+            "options": "-c statement_timeout=30000"  # 30 сек таймаут
+        },
     }
 }
 
@@ -158,8 +168,9 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
-        'rest_framework.renderers.BrowsableAPIRenderer',
+        #'rest_framework.renderers.BrowsableAPIRenderer',
     ],
+    'URL_FIELD_NAME': 'id',
 }
 
 
@@ -173,9 +184,13 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_TRACK_STARTED = True
-CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 минут максимум на задачу
+CELERY_TASK_TIME_LIMIT = 30 * 60
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_TASK_ACKS_LATE = True
+CELERY_TASK_REJECT_ON_WORKER_LOST = True
+CELERY_WORKER_MAX_TASKS_PER_CHILD = 1000
+CELERY_BROKER_POOL_LIMIT = 10
+CELERY_REDIS_MAX_CONNECTIONS = 50
 
 # Кэширование (для агрегатов)
 CACHES = {
@@ -183,9 +198,27 @@ CACHES = {
         'BACKEND': 'django.core.cache.backends.redis.RedisCache',
         'LOCATION': os.getenv('REDIS_URL', 'redis://localhost:6379/1'),
         'KEY_PREFIX': 'dopx',
-        'TIMEOUT': 600,  # 10 минут TTL
+        'TIMEOUT': 600,
+        # OPTIMIZATION: Redis connection pool
+        'OPTIONS': {
+            'max_connections': 50,
+            'socket_connect_timeout': 5,
+            'socket_timeout': 5,
+            'retry_on_timeout': True,
+        }
+    },
+    # OPTIMIZATION: Отдельный кэш для агрегатов
+    'aggregates': {
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': os.getenv('REDIS_URL', 'redis://localhost:6379/2'),
+        'KEY_PREFIX': 'dopx_agg',
+        'TIMEOUT': 300,
+        'OPTIONS': {
+            'max_connections': 30,
+        }
     }
 }
+
 
 LOGS_DIR = BASE_DIR / 'logs'
 LOGS_DIR.mkdir(exist_ok=True)
@@ -225,3 +258,10 @@ LOGGING = {
         },
     },
 }
+
+if not DEBUG:
+    LOGGING['loggers']['django.db.backends'] = {
+        'handlers': ['celery_file'],
+        'level': 'DEBUG',
+        'propagate': False,
+    }

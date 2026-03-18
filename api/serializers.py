@@ -29,8 +29,8 @@ class MatchSerializer(serializers.ModelSerializer):
     class Meta:
         model = Match
         fields = [
-            'id', 'home_team_name', 'away_team_name', 
-            'home_score', 'away_score', 'status', 
+            'id', 'home_team_name', 'away_team_name',
+            'home_score', 'away_score', 'status',
             'start_time', 'voting_open_until'
         ]
 
@@ -39,15 +39,15 @@ class ContextEvaluationSerializer(serializers.ModelSerializer):
     """Сериалайзер контекста просмотра матча"""
     match_details = MatchSerializer(source='match', read_only=True)
     supported_team_name = serializers.CharField(
-        source='supported_team.name', 
-        read_only=True, 
+        source='supported_team.name',
+        read_only=True,
         allow_null=True
     )
     
     class Meta:
         model = ContextEvaluation
         fields = [
-            'id', 'match', 'match_details', 'supported_team', 
+            'id', 'match', 'match_details', 'supported_team',
             'supported_team_name', 'watched_type', 'attended_stadium',
             'created_at', 'updated_at'
         ]
@@ -69,10 +69,9 @@ class ContextEvaluationSerializer(serializers.ModelSerializer):
         """Проверка уникальности: user + match"""
         user = self.context.get('request').user if self.context.get('request') else None
         match = data.get('match')
-        
         if user and match:
             existing = ContextEvaluation.objects.filter(
-                user=user, 
+                user=user,
                 match=match
             ).exists()
             if existing and not self.instance:
@@ -84,26 +83,16 @@ class ContextEvaluationSerializer(serializers.ModelSerializer):
 
 class PlayerEvaluationSerializer(serializers.ModelSerializer):
     """Сериалайзер оценки игрока"""
-    player_name = serializers.CharField(
-        source='player.first_name', 
-        read_only=True
-    )
-    player_last_name = serializers.CharField(
-        source='player.last_name', 
-        read_only=True
-    )
-    player_number = serializers.IntegerField(
-        source='player.number', 
-        read_only=True,
-        allow_null=True
-    )
+    player_name = serializers.CharField(source='player.first_name', read_only=True)
+    player_last_name = serializers.CharField(source='player.last_name', read_only=True)
+    player_number = serializers.IntegerField(source='player.number', read_only=True, allow_null=True)
     match_details = MatchSerializer(source='match', read_only=True)
     maturity_score = serializers.IntegerField(read_only=True)
     
     class Meta:
         model = PlayerEvaluation
         fields = [
-            'id', 'match', 'match_details', 'player', 
+            'id', 'match', 'match_details', 'player',
             'player_name', 'player_last_name', 'player_number',
             'contribution', 'risk', 'potential', 'maturity_score',
             'created_at', 'updated_at'
@@ -123,45 +112,34 @@ class PlayerEvaluationSerializer(serializers.ModelSerializer):
         user = self.context.get('request').user if self.context.get('request') else None
         match = data.get('match')
         player = data.get('player')
-        
         if user and match:
             # Проверка уникальности
             existing = PlayerEvaluation.objects.filter(
-                user=user, 
-                match=match, 
+                user=user,
+                match=match,
                 player=player
             ).exists()
             if existing and not self.instance:
                 raise serializers.ValidationError(
                     "Вы уже оценили этого игрока в данном матче"
                 )
-            
             # Проверка: контекст должен быть создан
             context_exists = ContextEvaluation.objects.filter(
-                user=user, 
+                user=user,
                 match=match
             ).exists()
             if not context_exists and not self.instance:
                 raise serializers.ValidationError(
                     "Сначала укажите контекст просмотра матча"
                 )
-        
-        # Валидация диапазонов
-        contribution = data.get('contribution')
-        risk = data.get('risk')
-        potential = data.get('potential')
-        
-        for field_name, field_value in [
-            ('contribution', contribution),
-            ('risk', risk),
-            ('potential', potential)
-        ]:
-            if field_value is not None:
-                if field_value < 1 or field_value > 10:
-                    raise serializers.ValidationError(
-                        f"{field_name} должен быть от 1 до 10"
-                    )
-        
+            # Валидация диапазонов
+            for field_name in ['contribution', 'risk', 'potential']:
+                field_value = data.get(field_name)
+                if field_value is not None:
+                    if field_value < 1 or field_value > 10:
+                        raise serializers.ValidationError(
+                            f"{field_name} должен быть от 1 до 10"
+                        )
         return data
 
 
@@ -191,40 +169,31 @@ class TeamEvaluationSerializer(serializers.ModelSerializer):
         user = self.context.get('request').user if self.context.get('request') else None
         match = data.get('match')
         team = data.get('team')
-        
         if user and match:
             existing = TeamEvaluation.objects.filter(
-                user=user, 
-                match=match, 
+                user=user,
+                match=match,
                 team=team
             ).exists()
             if existing and not self.instance:
                 raise serializers.ValidationError(
                     "Вы уже оценили эту команду в данном матче"
                 )
-            
             context_exists = ContextEvaluation.objects.filter(
-                user=user, 
+                user=user,
                 match=match
             ).exists()
             if not context_exists and not self.instance:
                 raise serializers.ValidationError(
                     "Сначала укажите контекст просмотра матча"
                 )
-        
         return data
 
 
 class CoachEvaluationSerializer(serializers.ModelSerializer):
     """Сериалайзер оценки тренера"""
-    coach_name = serializers.CharField(
-        source='coach.first_name', 
-        read_only=True
-    )
-    coach_last_name = serializers.CharField(
-        source='coach.last_name', 
-        read_only=True
-    )
+    coach_name = serializers.CharField(source='coach.first_name', read_only=True)
+    coach_last_name = serializers.CharField(source='coach.last_name', read_only=True)
     match_details = MatchSerializer(source='match', read_only=True)
     average_score = serializers.FloatField(read_only=True)
     
@@ -249,18 +218,16 @@ class CoachEvaluationSerializer(serializers.ModelSerializer):
         user = self.context.get('request').user if self.context.get('request') else None
         match = data.get('match')
         coach = data.get('coach')
-        
         if user and match:
             existing = CoachEvaluation.objects.filter(
-                user=user, 
-                match=match, 
+                user=user,
+                match=match,
                 coach=coach
             ).exists()
             if existing and not self.instance:
                 raise serializers.ValidationError(
                     "Вы уже оценили этого тренера в данном матче"
                 )
-        
         return data
 
 
@@ -287,24 +254,21 @@ class RefereeEvaluationSerializer(serializers.ModelSerializer):
     def validate(self, data):
         user = self.context.get('request').user if self.context.get('request') else None
         match = data.get('match')
-        
         if user and match:
             existing = RefereeEvaluation.objects.filter(
-                user=user, 
+                user=user,
                 match=match
             ).exists()
             if existing and not self.instance:
                 raise serializers.ValidationError(
                     "Вы уже оценили судейство этого матча"
                 )
-        
-        influence_score = data.get('influence_score')
-        if influence_score is not None:
-            if influence_score < 0 or influence_score > 100:
-                raise serializers.ValidationError(
-                    "influence_score должен быть от 0 до 100"
-                )
-        
+            influence_score = data.get('influence_score')
+            if influence_score is not None:
+                if influence_score < 0 or influence_score > 100:
+                    raise serializers.ValidationError(
+                        "influence_score должен быть от 0 до 100"
+                    )
         return data
 
 
@@ -332,32 +296,26 @@ class MatchEvaluationSerializer(serializers.ModelSerializer):
     def validate(self, data):
         user = self.context.get('request').user if self.context.get('request') else None
         match = data.get('match')
-        
         if user and match:
             existing = MatchEvaluation.objects.filter(
-                user=user, 
+                user=user,
                 match=match
             ).exists()
             if existing and not self.instance:
                 raise serializers.ValidationError(
                     "Вы уже оценили этот матч"
                 )
-        
         return data
 
 
-# === Агрегаты ===
+# ============================================================================
+# === АГРЕГАТЫ ===
+# ============================================================================
 
 class PlayerMatchAggregateSerializer(serializers.ModelSerializer):
     """Сериалайзер агрегатов игрока"""
-    player_name = serializers.CharField(
-        source='player.first_name', 
-        read_only=True
-    )
-    player_last_name = serializers.CharField(
-        source='player.last_name', 
-        read_only=True
-    )
+    player_name = serializers.CharField(source='player.first_name', read_only=True)
+    player_last_name = serializers.CharField(source='player.last_name', read_only=True)
     match_details = MatchSerializer(source='match', read_only=True)
     
     class Meta:
@@ -369,7 +327,11 @@ class PlayerMatchAggregateSerializer(serializers.ModelSerializer):
             'total_votes', 'performance_score', 'risk_index',
             'maturity_score', 'stability_index', 'clutch_index'
         ]
-        read_only_fields = '__all__'
+        # ✅ FIX: read_only_fields должен быть списком/кортежем
+        read_only_fields = ['id', 'player', 'match', 'player_name', 'player_last_name',
+                           'match_details', 'avg_contribution', 'avg_risk', 'avg_potential',
+                           'total_votes', 'performance_score', 'risk_index',
+                           'maturity_score', 'stability_index', 'clutch_index']
 
 
 class MatchAggregateSerializer(serializers.ModelSerializer):
@@ -383,4 +345,27 @@ class MatchAggregateSerializer(serializers.ModelSerializer):
             'avg_entertainment', 'avg_tension', 'avg_fairness',
             'turning_point_ratio', 'total_votes', 'drama_index'
         ]
-        read_only_fields = '__all__'
+        # ✅ FIX: read_only_fields должен быть списком/кортежем
+        read_only_fields = ['id', 'match', 'match_details',
+                           'avg_entertainment', 'avg_tension', 'avg_fairness',
+                           'turning_point_ratio', 'total_votes', 'drama_index']
+
+
+class CoachMatchAggregateSerializer(serializers.ModelSerializer):
+    """Сериалайзер агрегатов тренера"""
+    coach_name = serializers.CharField(source='coach.first_name', read_only=True)
+    coach_last_name = serializers.CharField(source='coach.last_name', read_only=True)
+    match_details = MatchSerializer(source='match', read_only=True)
+    
+    class Meta:
+        model = CoachMatchAggregate
+        fields = [
+            'id', 'coach', 'coach_name', 'coach_last_name',
+            'match', 'match_details',
+            'avg_tactics', 'avg_substitutions',
+            'avg_management', 'avg_impact', 'total_votes'
+        ]
+        # ✅ FIX: read_only_fields должен быть списком/кортежем
+        read_only_fields = ['id', 'coach', 'match', 'coach_name', 'coach_last_name',
+                           'match_details', 'avg_tactics', 'avg_substitutions',
+                           'avg_management', 'avg_impact', 'total_votes']
