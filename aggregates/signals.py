@@ -54,11 +54,16 @@ def on_coach_evaluation_saved(sender, instance, created, **kwargs):
 
 
 @receiver(post_save, sender=Match)
-def on_match_voting_deadline_changed(sender, instance, updated_fields, **kwargs):
+def on_match_voting_deadline_changed(sender, instance, created=False, update_fields=None, **kwargs):
     """
     При изменении voting_open_until запускаем пересчёт
     """
-    if updated_fields and 'voting_open_until' in updated_fields:
+    # Пропускаем при создании объекта
+    if created:
+        return
+    
+    # update_fields может быть None, если save() вызван без этого параметра
+    if update_fields and 'voting_open_until' in update_fields:
         match_id = str(instance.id)
         logger.info(f"Match voting deadline changed, triggering recalculation for {match_id}")
         

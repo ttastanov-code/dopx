@@ -20,6 +20,7 @@ from aggregates.models import (
     MatchAggregate
 )
 from users.models import User
+from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
@@ -168,6 +169,7 @@ def recalculate_player_aggregates(self, match_id: str):
         
         # Инвалидация кэша для этого игрока
         cache.delete(f'player_aggregate_{player_id}_{match_id}')
+        cache.delete(f'match_player_aggregates_{match_id}')
     
     logger.info(f"Updated {updated_count} player aggregates for match {match_id}")
     return True

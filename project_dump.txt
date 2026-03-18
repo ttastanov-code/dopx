@@ -9,6 +9,7 @@ aggregates
   apps.py
   management
     commands
+      create_test_evaluations.py
       recalculate_aggregates.py
   migrations
     0001_initial.py
@@ -40,6 +41,7 @@ api
   tests.py
   urls.py
   views.py
+celerybeat-schedule.db
 coaches
   __init__.py
   admin.py
@@ -71,6 +73,7 @@ dopx
   urls.py
   wsgi.py
 dump.py
+dump.rdb
 evaluations
   __init__.py
   admin.py
@@ -114,6 +117,10 @@ lineups
   models.py
   tests.py
   views.py
+logs
+  .gitkeep
+  .gitkeep 
+  celery.log
 manage.py
 matches
   __init__.py
@@ -290,6 +297,141 @@ class AggregatesConfig(AppConfig):
     def ready(self):
         # Импортируем сигналы при готовности приложения
         import aggregates.signals
+
+
+================================================================================
+FILE: aggregates/management/commands/create_test_evaluations.py
+================================================================================
+
+# aggregates/management/commands/create_test_evaluations.py
+from django.core.management.base import BaseCommand
+from django.contrib.auth import get_user_model
+from django.utils import timezone
+from datetime import timedelta
+import random
+import uuid
+from matches.models import Match
+from players.models import Player
+from evaluations.models import (
+    ContextEvaluation,
+    PlayerEvaluation,
+    MatchEvaluation,
+    CoachEvaluation,
+    TeamEvaluation,
+    RefereeEvaluation
+)
+
+User = get_user_model()
+
+class Command(BaseCommand):
+    help = 'Создать тестовые оценки для матча'
+
+    def add_arguments(self, parser):
+        parser.add_argument('--match-id', type=str, required=True, help='UUID матча')
+        parser.add_argument('--users', type=int, default=5, help='Количество тестовых пользователей')
+
+    def handle(self, *args, **options):
+        match_id = options['match_id']
+        num_users = options['users']
+
+        try:
+            match = Match.objects.get(id=uuid.UUID(match_id))
+        except (Match.DoesNotExist, ValueError):
+            self.stdout.write(self.style.ERROR(f"Матч {match_id} не найден"))
+            return
+
+        self.stdout.write(f"Матч: {match.home_team} vs {match.away_team}")
+        self.stdout.write(f"Статус: {match.status}")
+        self.stdout.write(f"Счёт: {match.home_score}:{match.away_score}")
+
+        # Создаём тестовых пользователей
+        self.stdout.write(f"Создание {num_users} тестовых пользователей...")
+        test_users = []
+        for i in range(num_users):
+            username = f"test_user_{match_id[:8]}_{i}"
+            user, created = User.objects.get_or_create(
+                username=username,
+                defaults={
+                    'email': f'{username}@test.com',
+                    'trust_score': 1.0 + (i * 0.1),  # Разный trust_score
+                    'is_verified': True,
+                }
+            )
+            test_users.append(user)
+            if created:
+                user.set_password('testpass123')
+                user.save()
+        self.stdout.write(self.style.SUCCESS(f"Пользователи созданы: {len(test_users)}"))
+
+        # Получаем игроков матча из lineup
+        players = Player.objects.filter(
+            matchlineupplayer__lineup__match=match
+        ).distinct()
+        self.stdout.write(f"Игроков для оценки: {players.count()}")
+
+        # Создаём оценки для каждого пользователя
+        for user in test_users:
+            # ✅ FIX: Преобразуем UUID в int для модуля
+            user_hash = user.id.int % 100
+            
+            # Context
+            watched_types = ['full', 'highlights', 'partial']
+            context, _ = ContextEvaluation.objects.update_or_create(
+                user=user,
+                match=match,
+                defaults={
+                    'watched_type': watched_types[user_hash % 3],
+                    'attended_stadium': user_hash % 4 == 0,
+                }
+            )
+
+            # Match Evaluation
+            MatchEvaluation.objects.update_or_create(
+                user=user,
+                match=match,
+                defaults={
+                    'entertainment': random.randint(6, 10),
+                    'tension': random.randint(5, 10),
+                    'fairness': random.randint(6, 10),
+                    'turning_point': user_hash % 5 == 0,
+                }
+            )
+
+            # Player Evaluations
+            for player in players:
+                contribution = random.randint(5, 10)
+                risk = random.randint(1, 5)
+                potential = random.randint(6, 10)
+                
+                PlayerEvaluation.objects.update_or_create(
+                    user=user,
+                    match=match,
+                    player=player,
+                    defaults={
+                        'contribution': contribution,
+                        'risk': risk,
+                        'potential': potential,
+                    }
+                )
+
+            # Coach Evaluations (если есть тренеры)
+            for coach in [match.home_coach, match.away_coach]:
+                if coach:
+                    CoachEvaluation.objects.update_or_create(
+                        user=user,
+                        match=match,
+                        coach=coach,
+                        defaults={
+                            'tactics': random.randint(6, 10),
+                            'substitutions': random.randint(5, 10),
+                            'game_management': random.randint(6, 10),
+                            'impact': random.randint(5, 10),
+                        }
+                    )
+
+        self.stdout.write(self.style.SUCCESS("✅ Тестовые оценки созданы!"))
+        self.stdout.write("Теперь запустите пересчёт агрегатов:")
+        self.stdout.write(f"  python manage.py recalculate_aggregates --match-id {match_id}")
 
 
 ================================================================================
@@ -881,11 +1023,16 @@ def on_coach_evaluation_saved(sender, instance, created, **kwargs):
 
 
 @receiver(post_save, sender=Match)
-def on_match_voting_deadline_changed(sender, instance, updated_fields, **kwargs):
+def on_match_voting_deadline_changed(sender, instance, created=False, update_fields=None, **kwargs):
     """
     При изменении voting_open_until запускаем пересчёт
     """
-    if updated_fields and 'voting_open_until' in updated_fields:
+    # Пропускаем при создании объекта
+    if created:
+        return
+    
+    # update_fields может быть None, если save() вызван без этого параметра
+    if update_fields and 'voting_open_until' in update_fields:
         match_id = str(instance.id)
         logger.info(f"Match voting deadline changed, triggering recalculation for {match_id}")
         
@@ -2993,6 +3140,9 @@ CACHES = {
     }
 }
 
+LOGS_DIR = BASE_DIR / 'logs'
+LOGS_DIR.mkdir(exist_ok=True)
+
 # Логирование Celery
 LOGGING = {
     'version': 1,
@@ -3007,7 +3157,7 @@ LOGGING = {
         'celery_file': {
             'level': 'INFO',
             'class': 'logging.FileHandler',
-            'filename': 'logs/celery.log',
+            'filename': LOGS_DIR / 'celery.log',  # Используем Path
             'formatter': 'verbose',
         },
         'console': {
@@ -14964,6 +15114,7 @@ def import_stats(match: Match, stats_data: Dict):
 FILE: parsers/kff/pipeline.py
 ================================================================================
 
+# parsers/kff/pipeline.py
 from .client import KFFClient
 from .importers import (
     import_match_core,
@@ -14973,109 +15124,231 @@ from .importers import (
     get_or_create_season
 )
 import logging
+from django.db import connection
+from django.db.utils import IntegrityError
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
-
 def import_full_match(match_id: int, season_id: int = None) -> bool:
-    """Полный импорт одного матча"""
-    print(f"  → Processing match {match_id}...")
+    """Полный импорт одного матча с детальным логированием"""
+    logger.info(f"🔄 Начало импорта матча #{match_id}")
+    start_time = timezone.now()
     
     client = KFFClient()
-    
-    # 1. Основная информация
-    game_resp = client.get_game_details(match_id)
-    
-    if game_resp is None:
-        logger.error(f"❌ API returned None for match {match_id}")
-        return False
-    
-    if not isinstance(game_resp, dict):
-        logger.error(f"❌ Unexpected response type for match {match_id}: {type(game_resp)}")
-        return False
-    
-    if "id" not in game_resp and "home_team" not in game_resp:
-        logger.error(f"❌ Response missing required fields for match {match_id}. Keys: {list(game_resp.keys())[:10]}")
-        return False
-    
-    game_data = game_resp
-    
-    if not season_id:
-        season_id = game_data.get("season_id")
+    stats = {
+        'match_id': match_id,
+        'start_time': start_time,
+        'end_time': None,
+        'duration': None,
+        'success': False,
+        'errors': [],
+        'created': {},
+        'updated': {}
+    }
     
     try:
-        match = import_match_core(game_data, season_id)
-        print(f"    ✓ Match: {match.home_team} vs {match.away_team} ({game_data.get('status')})")
-        print(f"    ✓ Start: {match.start_time}, End: {match.end_time}")
-        print(f"    ✓ Voting until: {match.voting_open_until}")
-        print(f"    ✓ Referee: {match.referee}")
-    except Exception as e:
-        logger.error(f"❌ Error importing match core: {type(e).__name__}: {e}", exc_info=True)
-        return False
-    
-    # 2. Составы
-    if game_data.get("has_lineup"):
-        lineup_resp = client.get_lineup(match_id)
-        if lineup_resp and isinstance(lineup_resp, dict):
-            lineup_data = lineup_resp.get("data", lineup_resp)
-            try:
-                import_lineups(match, lineup_data)
-                print(f"    ✓ Lineups imported")
-            except Exception as e:
-                logger.warning(f"⚠ Lineup import warning: {e}")
+        # 1. Основная информация
+        logger.info(f"  📊 Загрузка данных матча...")
+        game_resp = client.get_game_details(match_id)
+        
+        if not game_resp:
+            error = f"API вернул None для матча {match_id}"
+            logger.error(f"  ❌ {error}")
+            stats['errors'].append(error)
+            return False
+        
+        if not isinstance(game_resp, dict):
+            error = f"Неожиданный тип ответа: {type(game_resp)}"
+            logger.error(f"  ❌ {error}")
+            stats['errors'].append(error)
+            return False
+        
+        game_data = game_resp
+        if not season_id:
+            season_id = game_data.get("season_id")
+        
+        # Импорт ядра матча
+        try:
+            match, created = import_match_core_with_tracking(game_data, season_id)
+            if created:
+                stats['created']['match'] = str(match.id)
+                logger.info(f"  ✅ Матч создан: {match.id}")
+            else:
+                stats['updated']['match'] = str(match.id)
+                logger.info(f"  🔄 Матч обновлён: {match.id}")
+            
+            logger.info(f"  ⚽ {match.home_team} vs {match.away_team} ({match.status})")
+            logger.info(f"  📅 Start: {match.start_time}, End: {match.end_time}")
+            logger.info(f"  🗳️  Voting until: {match.voting_open_until}")
+            logger.info(f"  🟨 Referee: {match.referee}")
+        except IntegrityError as e:
+            error = f"IntegrityError при импорте матча: {e}"
+            logger.error(f"  ❌ {error}")
+            stats['errors'].append(error)
+            return False
+        except Exception as e:
+            error = f"Ошибка импорта матча: {type(e).__name__}: {e}"
+            logger.error(f"  ❌ {error}", exc_info=True)
+            stats['errors'].append(error)
+            return False
+        
+        # 2. Составы
+        if game_data.get("has_lineup"):
+            logger.info(f"  👥 Загрузка составов...")
+            lineup_resp = client.get_lineup(match_id)
+            if lineup_resp and isinstance(lineup_resp, dict):
+                lineup_data = lineup_resp.get("data", lineup_resp)
+                try:
+                    result = import_lineups(match, lineup_data)
+                    if result:
+                        logger.info(f"  ✅ Составы импортированы")
+                        stats['created']['lineups'] = True
+                    else:
+                        logger.warning(f"  ⚠️  Нет данных составов")
+                except Exception as e:
+                    error = f"Ошибка импорта составов: {e}"
+                    logger.warning(f"  ⚠️  {error}")
+                    stats['errors'].append(error)
+            else:
+                logger.warning(f"  ⚠️  No lineup data available")
         else:
-            print(f"    ⚠ No lineup data available")
+            logger.info(f"  ℹ️  Матч без составов (has_lineup=False)")
+        
+        # 3. События
+        logger.info(f"  ⚡ Загрузка событий...")
+        events_resp = client.get_events(match_id)
+        if events_resp and isinstance(events_resp, dict):
+            events_data = events_resp.get("data", events_resp)
+            if events_data.get("events"):
+                try:
+                    import_events_and_minutes(match, events_data)
+                    event_count = len(events_data["events"])
+                    logger.info(f"  ✅ События импортированы ({event_count} events)")
+                    stats['created']['events'] = event_count
+                except Exception as e:
+                    error = f"Ошибка импорта событий: {e}"
+                    logger.warning(f"  ⚠️  {error}")
+                    stats['errors'].append(error)
+            else:
+                logger.info(f"  ℹ️  Нет событий")
+        else:
+            logger.warning(f"  ⚠️  No events data available")
+        
+        # 4. Статистика
+        logger.info(f"  📈 Загрузка статистики...")
+        stats_resp = client.get_stats(match_id)
+        if stats_resp and isinstance(stats_resp, dict):
+            stats_data = stats_resp.get("data", stats_resp)
+            if stats_data:
+                try:
+                    import_stats(match, stats_data)
+                    logger.info(f"  ✅ Статистика импортирована")
+                    stats['created']['stats'] = True
+                except Exception as e:
+                    error = f"Ошибка импорта статистики: {e}"
+                    logger.warning(f"  ⚠️  {error}")
+                    stats['errors'].append(error)
+        else:
+            logger.info(f"  ℹ️  Нет статистики")
+        
+        stats['success'] = True
+        logger.info(f"✅ Импорт матча #{match_id} заверён успешно")
+        
+    except Exception as e:
+        error = f"Критическая ошибка импорта: {type(e).__name__}: {e}"
+        logger.error(f"❌ {error}", exc_info=True)
+        stats['errors'].append(error)
+        stats['success'] = False
     
-    # 3. События
-    events_resp = client.get_events(match_id)
-    if events_resp and isinstance(events_resp, dict):
-        events_data = events_resp.get("data", events_resp)
-        if events_data.get("events"):
-            try:
-                import_events_and_minutes(match, events_data)
-                event_count = len(events_data["events"])
-                print(f"    ✓ Events imported ({event_count} events)")
-            except Exception as e:
-                logger.warning(f"⚠ Events import warning: {e}")
+    finally:
+        stats['end_time'] = timezone.now()
+        stats['duration'] = (stats['end_time'] - stats['start_time']).total_seconds()
+        log_import_stats(stats)
     
-    # 4. Статистика
-    stats_resp = client.get_stats(match_id)
-    if stats_resp and isinstance(stats_resp, dict):
-        stats_data = stats_resp.get("data", stats_resp)
-        if stats_data:
-            try:
-                import_stats(match, stats_data)
-                print(f"    ✓ Stats imported")
-            except Exception as e:
-                logger.warning(f"⚠ Stats import warning: {e}")
+    return stats['success']
+
+
+def import_match_core_with_tracking(game_data: dict, season_id: int = None):
+    """Обёртка над import_match_core с отслеживанием created/updated"""
+    from parsers.kff.importers import import_match_core
     
-    return True
+    # Проверяем существует ли матч
+    from matches.models import Match
+    existing = Match.objects.filter(external_id=str(game_data["id"])).first()
+    
+    match = import_match_core(game_data, season_id)
+    
+    return match, existing is None
+
+
+def log_import_stats(stats: dict):
+    """Логирование статистики импорта"""
+    logger.info("=" * 60)
+    logger.info(f"📊 СТАТИСТИКА ИМПОРТА")
+    logger.info("=" * 60)
+    logger.info(f"Матч ID: {stats['match_id']}")
+    logger.info(f"Успех: {stats['success']}")
+    logger.info(f"Длительность: {stats['duration']:.2f} сек")
+    
+    if stats['created']:
+        logger.info(f"Создано: {stats['created']}")
+    
+    if stats['updated']:
+        logger.info(f"Обновлено: {stats['updated']}")
+    
+    if stats['errors']:
+        logger.warning(f"Ошибки: {stats['errors']}")
+    
+    logger.info("=" * 60)
 
 
 def sync_season(season_id: int, match_ids: list = None) -> dict:
-    """Синхронизация всего сезона"""
+    """Синхронизация всего сезона с логированием"""
+    logger.info(f"🚀 Начало синхронизации сезона {season_id}")
+    start_time = timezone.now()
+    
     client = KFFClient()
-    
     if not match_ids:
-        print(f"Discovering matches for season {season_id}...")
+        logger.info(f"🔍 Поиск матчей сезона...")
         match_ids = client.get_season_matches(season_id)
-        print(f"Found {len(match_ids)} matches")
+        logger.info(f"✅ Найдено матчей: {len(match_ids)}")
     
     if not match_ids:
+        logger.warning(f"⚠️  Матчи не найдены")
         return {"success": 0, "failed": 0, "total": 0}
     
     results = {"success": 0, "failed": 0, "total": len(match_ids)}
+    failed_matches = []
     
     for i, mid in enumerate(match_ids, 1):
-        print(f"[{i}/{len(match_ids)}] Match #{mid}")
+        logger.info(f"[{i}/{len(match_ids)}] Матч #{mid}")
         try:
             if import_full_match(mid, season_id):
                 results["success"] += 1
             else:
                 results["failed"] += 1
+                failed_matches.append(mid)
         except Exception as e:
-            logger.error(f"❌ Critical error for match {mid}: {type(e).__name__}: {e}", exc_info=True)
+            logger.error(f"❌ Критическая ошибка для матча {mid}: {type(e).__name__}: {e}", exc_info=True)
             results["failed"] += 1
+            failed_matches.append(mid)
+    
+    # Итоговая статистика
+    duration = (timezone.now() - start_time).total_seconds()
+    logger.info("=" * 60)
+    logger.info(f"🏁 СИНХРОНИЗАЦИЯ СЕЗОНА ЗАВЕРШЕНА")
+    logger.info("=" * 60)
+    logger.info(f"Всего: {results['total']}")
+    logger.info(f"✅ Успешно: {results['success']}")
+    logger.info(f"❌ Ошибки: {results['failed']}")
+    logger.info(f"⏱️  Длительность: {duration:.2f} сек")
+    logger.info(f"📊 Средняя скорость: {duration/len(match_ids):.2f} сек/матч")
+    
+    if failed_matches:
+        logger.warning(f"⚠️  Неудачные матчи: {failed_matches}")
+    
+    logger.info("=" * 60)
     
     return results
 
