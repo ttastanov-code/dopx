@@ -7,6 +7,7 @@ import random
 import uuid
 from matches.models import Match
 from players.models import Player
+from teams.models import Team
 from evaluations.models import (
     ContextEvaluation,
     PlayerEvaluation,
@@ -97,6 +98,30 @@ class Command(BaseCommand):
                     'tension': random.randint(5, 10),
                     'fairness': random.randint(6, 10),
                     'turning_point': user_hash % 5 == 0,
+                }
+            )
+
+            # 🆕 Team Evaluations (для обеих команд)
+            for team in [match.home_team, match.away_team]:
+                TeamEvaluation.objects.update_or_create(
+                    user=user,
+                    match=match,
+                    team=team,
+                    defaults={
+                        'tactics': random.randint(6, 10),
+                        'effort': random.randint(6, 10),
+                        'organization': random.randint(5, 10),
+                        'mentality': random.randint(6, 10),
+                    }
+                )
+
+            # 🆕 Referee Evaluation
+            RefereeEvaluation.objects.update_or_create(
+                user=user,
+                match=match,
+                defaults={
+                    'influence_score': random.randint(40, 90),  # 0-100
+                    'decision_quality': random.randint(6, 10),   # 1-10
                 }
             )
 
