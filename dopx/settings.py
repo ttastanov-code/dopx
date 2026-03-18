@@ -29,6 +29,8 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     
     'rest_framework',
+    'drf_spectacular',
+    'django_filters',
 
     'core',
     'users',
@@ -156,6 +158,7 @@ REST_FRAMEWORK = {
         'rest_framework.throttling.AnonRateThrottle',
         'rest_framework.throttling.UserRateThrottle',
     ],
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema', 
     'DEFAULT_THROTTLE_RATES': {
         'anon': '100/hour',
         'user': '1000/hour',
@@ -175,6 +178,12 @@ REST_FRAMEWORK = {
     'URL_FIELD_NAME': 'id',
 }
 
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'DOPX API',
+    'DESCRIPTION': 'API для платформы оценки футбольных матчей',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+}
 
 # ===========================================
 # CELERY CONFIGURATION
