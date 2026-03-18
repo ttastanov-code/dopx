@@ -241,7 +241,7 @@ class PlayerAggregateViewSet(viewsets.ReadOnlyModelViewSet):
     
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
-        cache_key = f'player_aggregate_{instance.id}'
+        cache_key = f'player_aggregate_{player_id}_{match_id}'
         
         # Проверка кэша
         cached_data = cache.get(cache_key)

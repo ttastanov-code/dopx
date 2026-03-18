@@ -11,8 +11,10 @@ aggregates
     commands
       create_test_evaluations.py
       recalculate_aggregates.py
+      test_api_performance.py
   migrations
     0001_initial.py
+    0002_add_indexes.py
     __init__.py
   models.py
   services.py
@@ -80,6 +82,8 @@ evaluations
   apps.py
   migrations
     0001_initial.py
+    0002_add_indexes.py
+    0003_remove_matchevaluation_evaluations_match_us_11111_idx_and_more.py
     __init__.py
   models.py
   tests.py
@@ -132,6 +136,8 @@ matches
     0003_match_stadium.py
     0004_alter_match_away_score_alter_match_home_score.py
     0005_match_has_lineup.py
+    0006_add_indexes.py
+    0007_remove_match_matches_match_league_sea_12345_idx_and_more.py
     __init__.py
   models.py
   tests.py
@@ -333,12 +339,20 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         match_id = options['match_id']
         num_users = options['users']
-
+        
+        # 🔧 Поиск по UUID или external_id
+        match = None
         try:
-            match = Match.objects.get(id=uuid.UUID(match_id))
-        except (Match.DoesNotExist, ValueError):
-            self.stdout.write(self.style.ERROR(f"Матч {match_id} не найден"))
-            return
+            # Сначала пробуем как UUID
+            from uuid import UUID
+            match = Match.objects.get(id=UUID(match_id))
+        except (ValueError, Match.DoesNotExist):
+            # Если не получилось — ищем по external_id
+            try:
+                match = Match.objects.get(external_id=match_id)
+            except Match.DoesNotExist:
+                self.stdout.write(self.style.ERROR(f"Матч {match_id} не найден"))
+                return
 
         self.stdout.write(f"Матч: {match.home_team} vs {match.away_team}")
         self.stdout.write(f"Статус: {match.status}")
@@ -499,6 +513,87 @@ class Command(BaseCommand):
 
 
 ================================================================================
+FILE: aggregates/management/commands/test_api_performance.py
+================================================================================
+
+# aggregates/management/commands/test_api_performance.py
+from django.core.management.base import BaseCommand
+from django.test import Client
+from django.contrib.auth import get_user_model
+import time
+import statistics
+
+User = get_user_model()
+
+class Command(BaseCommand):
+    help = 'Тестирование производительности API'
+    
+    def handle(self, *args, **options):
+        client = Client()
+        
+        # Создаём тестового пользователя
+        user, _ = User.objects.get_or_create(
+            username='perf_test_user',
+            defaults={'email': 'perf@dopx.kz'}
+        )
+        user.set_password('testpass123')
+        user.save()
+        
+        # Логинимся
+        client.login(username='perf_test_user', password='testpass123')
+        
+        endpoints = [
+            '/api/player-aggregate/',
+            '/api/player-aggregate/top_players/?limit=10',
+            '/api/match-aggregate/',
+        ]
+        
+        results = {}
+        
+        for endpoint in endpoints:
+            self.stdout.write(f'Тестирование {endpoint}...')
+            times = []
+            
+            for i in range(10):
+                start = time.time()
+                response = client.get(endpoint)
+                end = time.time()
+                
+                times.append((end - start) * 1000)  # ms
+                
+                if response.status_code != 200:
+                    self.stdout.write(self.style.ERROR(f'  ❌ Status: {response.status_code}'))
+                    break
+            
+            if len(times) == 10:
+                avg = statistics.mean(times)
+                p95 = sorted(times)[9]
+                results[endpoint] = {'avg': avg, 'p95': p95}
+                
+                status = '✅' if avg < 800 else '⚠️'
+                self.stdout.write(f'  {status} Avg: {avg:.2f}ms, P95: {p95:.2f}ms')
+            else:
+                self.stdout.write(self.style.ERROR(f'  ❌ Тест не завершён'))
+        
+        # Итоги
+        self.stdout.write('\n' + '=' * 60)
+        self.stdout.write('📊 РЕЗУЛЬТАТЫ ТЕСТИРОВАНИЯ')
+        self.stdout.write('=' * 60)
+        
+        all_pass = True
+        for endpoint, data in results.items():
+            status = '✅ PASS' if data['avg'] < 800 else '⚠️  SLOW'
+            if data['avg'] >= 800:
+                all_pass = False
+            self.stdout.write(f'{endpoint}: {status} ({data["avg"]:.2f}ms)')
+        
+        if all_pass:
+            self.stdout.write(self.style.SUCCESS('\n✅ Все эндпоинты < 800ms'))
+        else:
+            self.stdout.write(self.style.WARNING('\n⚠️  Некоторые эндпоинты медленные'))
+
+
+================================================================================
 FILE: aggregates/migrations/0001_initial.py
 ================================================================================
 
@@ -582,6 +677,31 @@ class Migration(migrations.Migration):
         ),
     ]
 
+
+
+================================================================================
+FILE: aggregates/migrations/0002_add_indexes.py
+================================================================================
+
+# aggregates/migrations/0002_add_indexes.py
+from django.db import migrations, models
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ('aggregates', '0001_initial'),
+    ]
+
+    operations = [
+        migrations.AddIndex(
+            model_name='playermatchaggregate',
+            index=models.Index(fields=['player', 'match', 'performance_score'], name='aggregates_player__22222_idx'),
+        ),
+        migrations.AddIndex(
+            model_name='playermatchaggregate',
+            index=models.Index(fields=['match', 'performance_score'], name='aggregates_match_p_33333_idx'),
+        ),
+    ]
 
 
 ================================================================================
@@ -1072,6 +1192,7 @@ from aggregates.models import (
     MatchAggregate
 )
 from users.models import User
+from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
@@ -1220,6 +1341,7 @@ def recalculate_player_aggregates(self, match_id: str):
         
         # Инвалидация кэша для этого игрока
         cache.delete(f'player_aggregate_{player_id}_{match_id}')
+        cache.delete(f'match_player_aggregates_{match_id}')
     
     logger.info(f"Updated {updated_count} player aggregates for match {match_id}")
     return True
@@ -2278,6 +2400,12 @@ from django.utils import timezone
 from django.db.models import Avg, Count
 from django.shortcuts import get_object_or_404
 
+
+from django.core.cache import cache
+from django.views.decorators.cache import cache_page
+from django.utils.decorators import method_decorator
+
+
 from evaluations.models import (
     ContextEvaluation,
     TeamEvaluation,
@@ -2348,7 +2476,7 @@ class PlayerEvaluationViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         return PlayerEvaluation.objects.filter(user=user).select_related(
-            'match', 'player', 'player__team'
+            'match', 'player', 'player__team', 'match__home_team', 'match__away_team'
         )
     
     def perform_create(self, serializer):
@@ -2356,17 +2484,13 @@ class PlayerEvaluationViewSet(viewsets.ModelViewSet):
     
     @action(detail=False, methods=['get'])
     def by_match(self, request):
-        """Получить все оценки игроков для матча"""
         match_id = request.query_params.get('match_id')
         if not match_id:
-            return Response(
-                {'error': 'match_id required'}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({'error': 'match_id required'}, status=status.HTTP_400_BAD_REQUEST)
         
         evaluations = PlayerEvaluation.objects.filter(
             match_id=match_id
-        ).select_related('player', 'user').order_by('-contribution')
+        ).select_related('player', 'user', 'player__team').order_by('-contribution')
         
         serializer = self.get_serializer(evaluations, many=True)
         return Response(serializer.data)
@@ -2509,17 +2633,40 @@ class PlayerAggregateViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = PlayerMatchAggregateSerializer
     permission_classes = [permissions.AllowAny]
     
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        cache_key = f'player_aggregate_{player_id}_{match_id}'
+        
+        # Проверка кэша
+        cached_data = cache.get(cache_key)
+        if cached_data:
+            return Response(cached_data)
+        
+        # Если нет в кэше - сериализуем и сохраняем
+        serializer = self.get_serializer(instance)
+        cache.set(cache_key, serializer.data, timeout=600)  # 10 минут
+        
+        return Response(serializer.data)
+    
     def get_queryset(self):
         return PlayerMatchAggregate.objects.select_related(
-            'player', 'match'
+            'player', 'match', 'player__team', 'match__league', 'match__season'
         ).order_by('-performance_score')
     
     @action(detail=False, methods=['get'])
     def top_players(self, request):
-        """Топ игроков по Performance Score"""
         limit = int(request.query_params.get('limit', 10))
+        cache_key = f'top_players_{limit}'
+        
+        cached_data = cache.get(cache_key)
+        if cached_data:
+            return Response(cached_data)
+        
         top_players = self.get_queryset()[:limit]
         serializer = self.get_serializer(top_players, many=True)
+        
+        cache.set(cache_key, serializer.data, timeout=300)
+        
         return Response(serializer.data)
 
 
@@ -2968,7 +3115,7 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 
 DEBUG = os.getenv("DEBUG") == "True"
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['testserver']
 
 
 # Application definition
@@ -3556,6 +3703,67 @@ class Migration(migrations.Migration):
             options={
                 'constraints': [models.UniqueConstraint(fields=('user', 'match', 'team'), name='unique_team_evaluation')],
             },
+        ),
+    ]
+
+
+
+================================================================================
+FILE: evaluations/migrations/0002_add_indexes.py
+================================================================================
+
+# evaluations/migrations/0002_add_indexes.py
+from django.db import migrations, models
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ('evaluations', '0001_initial'),
+    ]
+
+    operations = [
+        migrations.AddIndex(
+            model_name='playerevaluation',
+            index=models.Index(fields=['match', 'player', 'user'], name='evaluations_match_pla_12345_idx'),
+        ),
+        migrations.AddIndex(
+            model_name='playerevaluation',
+            index=models.Index(fields=['user', 'match'], name='evaluations_user_ma_67890_idx'),
+        ),
+        migrations.AddIndex(
+            model_name='matchevaluation',
+            index=models.Index(fields=['match', 'user'], name='evaluations_match_us_11111_idx'),
+        ),
+    ]
+
+
+================================================================================
+FILE: evaluations/migrations/0003_remove_matchevaluation_evaluations_match_us_11111_idx_and_more.py
+================================================================================
+
+# Generated by Django 6.0.3 on 2026-03-18 05:05
+
+from django.db import migrations
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ('evaluations', '0002_add_indexes'),
+    ]
+
+    operations = [
+        migrations.RemoveIndex(
+            model_name='matchevaluation',
+            name='evaluations_match_us_11111_idx',
+        ),
+        migrations.RemoveIndex(
+            model_name='playerevaluation',
+            name='evaluations_match_pla_12345_idx',
+        ),
+        migrations.RemoveIndex(
+            model_name='playerevaluation',
+            name='evaluations_user_ma_67890_idx',
         ),
     ]
 
@@ -14302,6 +14510,59 @@ class Migration(migrations.Migration):
             model_name='match',
             name='has_lineup',
             field=models.BooleanField(default=False),
+        ),
+    ]
+
+
+
+================================================================================
+FILE: matches/migrations/0006_add_indexes.py
+================================================================================
+
+# matches/migrations/0006_add_indexes.py
+from django.db import migrations, models
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ('matches', '0005_match_has_lineup'),
+    ]
+
+    operations = [
+        migrations.AddIndex(
+            model_name='match',
+            index=models.Index(fields=['league', 'season', 'start_time'], name='matches_match_league_sea_12345_idx'),
+        ),
+        migrations.AddIndex(
+            model_name='match',
+            index=models.Index(fields=['status', 'start_time'], name='matches_match_status__67890_idx'),
+        ),
+    ]
+
+
+================================================================================
+FILE: matches/migrations/0007_remove_match_matches_match_league_sea_12345_idx_and_more.py
+================================================================================
+
+# Generated by Django 6.0.3 on 2026-03-18 05:05
+
+from django.db import migrations
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ('matches', '0006_add_indexes'),
+    ]
+
+    operations = [
+        migrations.RemoveIndex(
+            model_name='match',
+            name='matches_match_league_sea_12345_idx',
+        ),
+        migrations.RemoveIndex(
+            model_name='match',
+            name='matches_match_status__67890_idx',
         ),
     ]
 
