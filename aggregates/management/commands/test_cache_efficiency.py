@@ -4,6 +4,7 @@ from django.core.management.base import BaseCommand
 from django.core.cache import cache
 from django.test import Client
 from django.contrib.auth import get_user_model
+from django.db import connection
 import time
 
 User = get_user_model()
@@ -15,6 +16,15 @@ class Command(BaseCommand):
         self.stdout.write('\n' + '=' * 60)
         self.stdout.write('📦 CACHE EFFICIENCY TEST')
         self.stdout.write('=' * 60 + '\n')
+        
+        # ✅ Проверка подключения к БД
+        try:
+            connection.ensure_connection()
+            self.stdout.write(self.style.SUCCESS('✅ PostgreSQL connection OK'))
+        except Exception as e:
+            self.stdout.write(self.style.ERROR(f'❌ PostgreSQL connection failed: {e}'))
+            self.stdout.write(self.style.WARNING('Перезапустите PostgreSQL: brew services restart postgresql'))
+            return
         
         client = Client()
         user, _ = User.objects.get_or_create(
