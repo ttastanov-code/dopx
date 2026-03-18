@@ -1,5 +1,5 @@
 # api/permissions.py
-from rest_framework import permissions
+from rest_framework import permissions, throttling
 from django.utils import timezone
 
 
@@ -38,3 +38,12 @@ class IsAuthenticatedAndVerified(permissions.BasePermission):
     
     def has_permission(self, request, view):
         return request.user and request.user.is_authenticated and request.user.is_verified
+    
+    
+class DocsNoThrottle(throttling.AnonRateThrottle):
+    """Отключает throttle для эндпоинтов документации"""
+    def allow_request(self, request, view):
+        # Проверяем, что это эндпоинт документации
+        if request.path in ['/api/docs/', '/api/docs.json', '/api/schema/']:
+            return True
+        return super().allow_request(request, view)
