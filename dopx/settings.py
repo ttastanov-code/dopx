@@ -92,9 +92,11 @@ DATABASES = {
         "PASSWORD": os.getenv("DB_PASSWORD"),
         "HOST": os.getenv("DB_HOST"),
         "PORT": os.getenv("DB_PORT"),
-        # OPTIMIZATION: Connection pooling
-        "CONN_MAX_AGE": 600,  # 10 минут
-        "CONN_HEALTH_CHECKS": True,
+        
+        # ✅ OPTIMIZATION: Connection pooling settings
+        "CONN_MAX_AGE": 600,  # 10 минут - переиспользование соединений
+        "CONN_HEALTH_CHECKS": True,  # Проверка здоровья перед использованием
+        
         "OPTIONS": {
             "connect_timeout": 10,
             "options": "-c statement_timeout=30000"  # 30 сек таймаут
@@ -265,7 +267,33 @@ if not DEBUG:
         'level': 'DEBUG',
         'propagate': False,
     }
+
+if DEBUG:
+    INSTALLED_APPS += ['debug_toolbar']
+    MIDDLEWARE += ['debug_toolbar.middleware.DebugToolbarMiddleware']
     
-INSTALLED_APPS += ['debug_toolbar']
-MIDDLEWARE += ['debug_toolbar.middleware.DebugToolbarMiddleware']
+    # ✅ Добавь это:
+    DEBUG_TOOLBAR_CONFIG = {
+        'SHOW_TOOLBAR_CALLBACK': lambda request: (
+            request.META.get('HTTP_ACCEPT') != 'application/json'
+        ),
+    }
+    
+    # ✅ Исключи API endpoints из debug toolbar
+    DEBUG_TOOLBAR_PANELS = [
+        'debug_toolbar.panels.history.HistoryPanel',
+        'debug_toolbar.panels.versions.VersionsPanel',
+        'debug_toolbar.panels.timer.TimerPanel',
+        'debug_toolbar.panels.settings.SettingsPanel',
+        'debug_toolbar.panels.headers.HeadersPanel',
+        'debug_toolbar.panels.request.RequestPanel',
+        'debug_toolbar.panels.sql.SQLPanel',
+        'debug_toolbar.panels.staticfiles.StaticFilesPanel',
+        'debug_toolbar.panels.templates.TemplatesPanel',
+        'debug_toolbar.panels.cache.CachePanel',
+        'debug_toolbar.panels.signals.SignalsPanel',
+        'debug_toolbar.panels.logging.LoggingPanel',
+        'debug_toolbar.panels.redirects.RedirectsPanel',
+        'debug_toolbar.panels.profiling.ProfilingPanel',
+    ] 
 INTERNAL_IPS = ['127.0.0.1']
