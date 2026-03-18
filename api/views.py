@@ -6,6 +6,12 @@ from django.utils import timezone
 from django.db.models import Avg, Count
 from django.shortcuts import get_object_or_404
 
+
+from django.core.cache import cache
+from django.views.decorators.cache import cache_page
+from django.utils.decorators import method_decorator
+
+
 from evaluations.models import (
     ContextEvaluation,
     TeamEvaluation,
@@ -76,7 +82,7 @@ class PlayerEvaluationViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         return PlayerEvaluation.objects.filter(user=user).select_related(
-            'match', 'player', 'player__team'
+            'match', 'player', 'player__team', 'match__home_team', 'match__away_team'
         )
     
     def perform_create(self, serializer):
@@ -84,17 +90,13 @@ class PlayerEvaluationViewSet(viewsets.ModelViewSet):
     
     @action(detail=False, methods=['get'])
     def by_match(self, request):
-        """Получить все оценки игроков для матча"""
         match_id = request.query_params.get('match_id')
         if not match_id:
-            return Response(
-                {'error': 'match_id required'}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({'error': 'match_id required'}, status=status.HTTP_400_BAD_REQUEST)
         
         evaluations = PlayerEvaluation.objects.filter(
             match_id=match_id
-        ).select_related('player', 'user').order_by('-contribution')
+        ).select_related('player', 'user', 'player__team').order_by('-contribution')
         
         serializer = self.get_serializer(evaluations, many=True)
         return Response(serializer.data)
@@ -237,15 +239,38 @@ class PlayerAggregateViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = PlayerMatchAggregateSerializer
     permission_classes = [permissions.AllowAny]
     
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        cache_key = f'player_aggregate_{instance.id}'
+        
+        # Проверка кэша
+        cached_data = cache.get(cache_key)
+        if cached_data:
+            return Response(cached_data)
+        
+        # Если нет в кэше - сериализуем и сохраняем
+        serializer = self.get_serializer(instance)
+        cache.set(cache_key, serializer.data, timeout=600)  # 10 минут
+        
+        return Response(serializer.data)
+    
     def get_queryset(self):
         return PlayerMatchAggregate.objects.select_related(
-            'player', 'match'
+            'player', 'match', 'player__team', 'match__league', 'match__season'
         ).order_by('-performance_score')
     
     @action(detail=False, methods=['get'])
     def top_players(self, request):
-        """Топ игроков по Performance Score"""
         limit = int(request.query_params.get('limit', 10))
+        cache_key = f'top_players_{limit}'
+        
+        cached_data = cache.get(cache_key)
+        if cached_data:
+            return Response(cached_data)
+        
         top_players = self.get_queryset()[:limit]
         serializer = self.get_serializer(top_players, many=True)
+        
+        cache.set(cache_key, serializer.data, timeout=300)
+        
         return Response(serializer.data)
