@@ -1,0 +1,139 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+
+<!-- === HEADER === -->
+<div class="flex items-center justify-between mb-8">
+    <div>
+        <h1 class="text-3xl font-bold mb-2">
+            <i class="ti ti-bell mr-2"></i>
+            Уведомления
+        </h1>
+        <p class="opacity-60">{{ unread_count }} непрочитанных</p>
+    </div>
+    
+    <form method="post" action="{% url 'notifications:read-all' %}">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-ghost">
+            <i class="ti ti-checks"></i>
+            Прочитать все
+        </button>
+    </form>
+</div>
+
+<!-- === СПИСОК УВЕДОМЛЕНИЙ === -->
+<div class="space-y-3">
+    {% for notification in notifications %}
+    <div class="card bg-base-100 border border-base-300 {% if not notification.is_read %}border-primary bg-primary/5{% endif %}">
+        <div class="card-body p-4">
+            <div class="flex items-start justify-between gap-4">
+                <div class="flex items-start gap-3 flex-1">
+                    <!-- Иконка типа -->
+                    <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0
+                        {% if notification.notification_type == 'match_finished' %}bg-success/10 text-success
+                        {% elif notification.notification_type == 'voting_open' %}bg-primary/10 text-primary
+                        {% elif notification.notification_type == 'voting_closing' %}bg-warning/10 text-warning
+                        {% elif notification.notification_type == 'top_performance' %}bg-accent/10 text-accent
+                        {% elif notification.notification_type == 'new_badge' %}bg-info/10 text-info
+                        {% elif notification.notification_type == 'level_up' %}bg-warning/10 text-warning
+                        {% else %}bg-base-200 text-base-content{% endif %}">
+                        {% if notification.notification_type == 'match_finished' %}
+                        <i class="ti ti-check"></i>
+                        {% elif notification.notification_type == 'voting_open' %}
+                        <i class="ti ti-star"></i>
+                        {% elif notification.notification_type == 'voting_closing' %}
+                        <i class="ti ti-clock"></i>
+                        {% elif notification.notification_type == 'top_performance' %}
+                        <i class="ti ti-medal"></i>
+                        {% elif notification.notification_type == 'new_badge' %}
+                        <i class="ti ti-award"></i>
+                        {% elif notification.notification_type == 'level_up' %}
+                        <i class="ti ti-trending-up"></i>
+                        {% else %}
+                        <i class="ti ti-info-circle"></i>
+                        {% endif %}
+                    </div>
+                    
+                    <!-- Контент -->
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2 mb-1">
+                            <h3 class="font-semibold {% if not notification.is_read %}text-primary{% endif %}">
+                                {{ notification.title }}
+                            </h3>
+                            {% if not notification.is_read %}
+                            <span class="w-2 h-2 rounded-full bg-primary"></span>
+                            {% endif %}
+                        </div>
+                        <p class="text-sm opacity-70 mb-2">{{ notification.message }}</p>
+                        <div class="flex items-center gap-4 text-xs opacity-50">
+                            <span>
+                                <i class="ti ti-clock"></i>
+                                {{ notification.created_at|timesince }} назад
+                            </span>
+                            {% if notification.related_match %}
+                            <a href="{% url 'matches:detail' notification.related_match.id %}" class="hover:text-primary">
+                                <i class="ti ti-trophy"></i>
+                                {{ notification.related_match.home_team.name }} vs {{ notification.related_match.away_team.name }}
+                            </a>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Действия -->
+                <div class="flex flex-col gap-2">
+                    {% if notification.action_url %}
+                    <a href="{{ notification.action_url }}" class="btn btn-sm btn-primary">
+                        Перейти
+                    </a>
+                    {% endif %}
+                    {% if not notification.is_read %}
+                    <form method="post" action="{% url 'notifications:read' notification.id %}">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-ghost">
+                            <i class="ti ti-check"></i>
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% empty %}
+    <div class="text-center py-16 opacity-60">
+        <i class="ti ti-bell-off text-6xl mb-4"></i>
+        <h3 class="text-xl font-semibold mb-2">Нет уведомлений</h3>
+        <p>Когда появятся новые уведомления, они появятся здесь</p>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- === PAGINATION === -->
+{% if is_paginated %}
+<div class="flex justify-center mt-8">
+    <div class="join">
+        {% if page_obj.has_previous %}
+        <a href="?page={{ page_obj.previous_page_number }}" class="join-item btn btn-sm">
+            <i class="ti ti-chevron-left"></i>
+        </a>
+        {% endif %}
+        
+        {% for num in page_obj.paginator.page_range %}
+        {% if page_obj.number == num %}
+        <button class="join-item btn btn-sm btn-active">{{ num }}</button>
+        {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+        <a href="?page={{ num }}" class="join-item btn btn-sm">{{ num }}</a>
+        {% endif %}
+        {% endfor %}
+        
+        {% if page_obj.has_next %}
+        <a href="?page={{ page_obj.next_page_number }}" class="join-item btn btn-sm">
+            <i class="ti ti-chevron-right"></i>
+        </a>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}

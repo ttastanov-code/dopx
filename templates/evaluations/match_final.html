@@ -1,0 +1,155 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+
+<!-- === PROGRESS BAR === -->
+<div class="mb-8">
+    <div class="flex items-center justify-between mb-2">
+        <span class="text-sm font-medium">Шаг {{ step }} из {{ total_steps }}</span>
+        <span class="text-sm opacity-60">{{ progress }}% завершено</span>
+    </div>
+    <div class="w-full bg-base-200 rounded-full h-2">
+        <div class="bg-primary h-2 rounded-full transition-all duration-300" 
+             style="width: {{ progress }}%"></div>
+    </div>
+</div>
+
+<!-- === MATCH INFO === -->
+<div class="card bg-base-100 border border-base-300 mb-6">
+    <div class="card-body p-4">
+        <div class="text-center">
+            <h2 class="text-xl font-bold">
+                {{ match.home_team.name }} vs {{ match.away_team.name }}
+            </h2>
+            <div class="text-2xl font-bold font-mono mt-2">
+                {{ match.home_score|default:"-" }} : {{ match.away_score|default:"-" }}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- === FORM CARD === -->
+<div class="card bg-base-100 border border-base-300">
+    <div class="card-body p-6">
+        <h2 class="text-2xl font-bold mb-2">
+            <i class="ti ti-star mr-2"></i>
+            Общая оценка матча
+        </h2>
+        <p class="opacity-60 mb-6">Финальные впечатления от игры</p>
+        
+        <form method="post" class="space-y-8">
+            {% csrf_token %}
+            
+            <!-- Зрелищность (1-10) -->
+            <div class="form-control">
+                <label class="label">
+                    <span class="label-text font-medium text-lg">
+                        <i class="ti ti-stars mr-2"></i>
+                        Зрелищность
+                    </span>
+                    <span class="label-text-alt font-mono text-lg" id="entertainment_value">5</span>
+                </label>
+                <input type="range" 
+                       name="entertainment" 
+                       min="1" 
+                       max="10" 
+                       value="5"
+                       class="range range-primary range-lg"
+                       oninput="document.getElementById('entertainment_value').textContent = this.value">
+                <div class="flex justify-between text-xs opacity-50 mt-2">
+                    <span>1<br>Скучно</span>
+                    <span>5<br>Нормально</span>
+                    <span>10<br>Шоу</span>
+                </div>
+            </div>
+            
+            <!-- Напряжение (1-10) -->
+            <div class="form-control">
+                <label class="label">
+                    <span class="label-text font-medium text-lg">
+                        <i class="ti ti-lightning mr-2"></i>
+                        Напряжение
+                    </span>
+                    <span class="label-text-alt font-mono text-lg" id="tension_value">5</span>
+                </label>
+                <input type="range" 
+                       name="tension" 
+                       min="1" 
+                       max="10" 
+                       value="5"
+                       class="range range-primary range-lg"
+                       oninput="document.getElementById('tension_value').textContent = this.value">
+                <div class="flex justify-between text-xs opacity-50 mt-2">
+                    <span>1<br>Спокойно</span>
+                    <span>5<br>Интересно</span>
+                    <span>10<br>Драма</span>
+                </div>
+            </div>
+            
+            <!-- Справедливость (1-10) -->
+            <div class="form-control">
+                <label class="label">
+                    <span class="label-text font-medium text-lg">
+                        <i class="ti ti-scale mr-2"></i>
+                        Справедливость
+                    </span>
+                    <span class="label-text-alt font-mono text-lg" id="fairness_value">5</span>
+                </label>
+                <input type="range" 
+                       name="fairness" 
+                       min="1" 
+                       max="10" 
+                       value="5"
+                       class="range range-primary range-lg"
+                       oninput="document.getElementById('fairness_value').textContent = this.value">
+                <div class="flex justify-between text-xs opacity-50 mt-2">
+                    <span>1<br>Не согласен</span>
+                    <span>5<br>Нормально</span>
+                    <span>10<br>По заслугам</span>
+                </div>
+            </div>
+            
+            <!-- Переломный момент -->
+            <div class="form-control">
+                <label class="label cursor-pointer gap-4">
+                    <div>
+                        <div class="font-medium text-lg">
+                            <i class="ti ti-refresh mr-2"></i>
+                            Был переломный момент?
+                        </div>
+                        <div class="text-sm opacity-60">Гол, пенальти, удаление, которые изменили ход игры</div>
+                    </div>
+                    <input type="checkbox" 
+                           name="turning_point" 
+                           class="toggle toggle-primary toggle-lg">
+                </label>
+            </div>
+            
+            <!-- Info Alert -->
+            <div class="alert alert-success">
+                <i class="ti ti-confetti"></i>
+                <div>
+                    <h3 class="font-bold">Почти готово!</h3>
+                    <div class="text-xs">
+                        После отправки вы получите +10 XP и ваша оценка будет учтена в рейтингах
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Navigation Buttons -->
+            <div class="flex justify-between gap-4 mt-6">
+                <a href="{% url 'evaluations:referee' match.id %}" class="btn btn-ghost">
+                    <i class="ti ti-arrow-left"></i>
+                    Назад
+                </a>
+                <button type="submit" class="btn btn-primary btn-lg">
+                    <i class="ti ti-check"></i>
+                    Завершить оценку
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% endblock %}

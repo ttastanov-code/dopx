@@ -1,25 +1,17 @@
+# dopx/settings.py
 import os
 from dotenv import load_dotenv
-
-load_dotenv()
 from pathlib import Path
 
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
+load_dotenv()
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
-
-SECRET_KEY = os.getenv("SECRET_KEY")
-
-DEBUG = os.getenv("DEBUG") == "True"
-
-ALLOWED_HOSTS = ['*']
-
+SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-dev-key-change-in-prod")
+DEBUG = os.getenv("DEBUG", "True") == "True"
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "*").split(",")
 
 # Application definition
-
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -28,10 +20,12 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     
+    # Third party
     'rest_framework',
     'drf_spectacular',
     'django_filters',
-
+    
+    # Local apps
     'core',
     'users',
     'leagues',
@@ -48,6 +42,7 @@ INSTALLED_APPS = [
     'parsers',
     'events',
     'lineups',
+    'notifications',
 ]
 
 MIDDLEWARE = [
@@ -58,17 +53,21 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    # OPTIMIZATION: Performance middleware
-    'dopx.middleware.QueryCountMiddleware',
-    'dopx.middleware.CacheHitMiddleware',
 ]
+
+# Performance middleware только в DEBUG
+if DEBUG:
+    MIDDLEWARE += [
+        'dopx.middleware.QueryCountMiddleware',
+        'dopx.middleware.CacheHitMiddleware',
+    ]
 
 ROOT_URLCONF = 'dopx.urls'
 
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -82,73 +81,53 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'dopx.wsgi.application'
 
-
 # Database
-# https://docs.djangoproject.com/en/6.0/ref/settings/#databases
-
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.getenv("DB_NAME"),
-        "USER": os.getenv("DB_USER"),
-        "PASSWORD": os.getenv("DB_PASSWORD"),
-        "HOST": os.getenv("DB_HOST"),
-        "PORT": os.getenv("DB_PORT"),
-        
-        # ✅ OPTIMIZATION: Connection pooling settings
-        "CONN_MAX_AGE": 600,  # 10 минут - переиспользование соединений
-        "CONN_HEALTH_CHECKS": True,  # Проверка здоровья перед использованием
-        
+        "NAME": os.getenv("DB_NAME", "dopx"),
+        "USER": os.getenv("DB_USER", "postgres"),
+        "PASSWORD": os.getenv("DB_PASSWORD", "postgres"),
+        "HOST": os.getenv("DB_HOST", "localhost"),
+        "PORT": os.getenv("DB_PORT", "5432"),
+        "CONN_MAX_AGE": 600,
+        "CONN_HEALTH_CHECKS": True,
         "OPTIONS": {
             "connect_timeout": 10,
-            "options": "-c statement_timeout=30000"  # 30 сек таймаут
+            "options": "-c statement_timeout=30000"
         },
     }
 }
 
-
 # Password validation
-# https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
-
 AUTH_PASSWORD_VALIDATORS = [
-    {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
-    },
+    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
-
 
 AUTH_USER_MODEL = "users.User"
 
 # Internationalization
-# https://docs.djangoproject.com/en/6.0/topics/i18n/
-
 LANGUAGE_CODE = 'ru'
-
 TIME_ZONE = "Asia/Almaty"
-
 USE_I18N = True
-
 USE_TZ = True
 
-
-# Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/6.0/howto/static-files/
-
+# Static files
 STATIC_URL = 'static/'
+STATICFILES_DIRS = [BASE_DIR / 'static']
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
+# Media files
+MEDIA_URL = 'media/'
+MEDIA_ROOT = BASE_DIR / 'media'
 
+# REST Framework
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticated',
+        'rest_framework.permissions.IsAuthenticatedOrReadOnly',
     ],
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework.authentication.SessionAuthentication',
@@ -158,12 +137,11 @@ REST_FRAMEWORK = {
         'rest_framework.throttling.AnonRateThrottle',
         'rest_framework.throttling.UserRateThrottle',
     ],
-    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema', 
     'DEFAULT_THROTTLE_RATES': {
         'anon': '100/hour',
         'user': '1000/hour',
-        'burst': '20/minute',
     },
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
     'DEFAULT_FILTER_BACKENDS': [
@@ -173,9 +151,7 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
-        #'rest_framework.renderers.BrowsableAPIRenderer',
     ],
-    'URL_FIELD_NAME': 'id',
 }
 
 SPECTACULAR_SETTINGS = {
@@ -185,9 +161,7 @@ SPECTACULAR_SETTINGS = {
     'SERVE_INCLUDE_SCHEMA': False,
 }
 
-# ===========================================
-# CELERY CONFIGURATION
-# ===========================================
+# Celery
 CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
 CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
 CELERY_ACCEPT_CONTENT = ['json']
@@ -196,45 +170,32 @@ CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
-CELERY_WORKER_PREFETCH_MULTIPLIER = 1
-CELERY_TASK_ACKS_LATE = True
-CELERY_TASK_REJECT_ON_WORKER_LOST = True
-CELERY_WORKER_MAX_TASKS_PER_CHILD = 1000
-CELERY_BROKER_POOL_LIMIT = 10
-CELERY_REDIS_MAX_CONNECTIONS = 50
 
-# Кэширование (для агрегатов)
+# Cache
 CACHES = {
     'default': {
         'BACKEND': 'django.core.cache.backends.redis.RedisCache',
         'LOCATION': os.getenv('REDIS_URL', 'redis://localhost:6379/1'),
         'KEY_PREFIX': 'dopx',
         'TIMEOUT': 600,
-        # OPTIMIZATION: Redis connection pool
         'OPTIONS': {
             'max_connections': 50,
             'socket_connect_timeout': 5,
             'socket_timeout': 5,
-            'retry_on_timeout': True,
         }
     },
-    # OPTIMIZATION: Отдельный кэш для агрегатов
     'aggregates': {
         'BACKEND': 'django.core.cache.backends.redis.RedisCache',
         'LOCATION': os.getenv('REDIS_URL', 'redis://localhost:6379/2'),
         'KEY_PREFIX': 'dopx_agg',
         'TIMEOUT': 300,
-        'OPTIONS': {
-            'max_connections': 30,
-        }
     }
 }
 
-
+# Logging
 LOGS_DIR = BASE_DIR / 'logs'
 LOGS_DIR.mkdir(exist_ok=True)
 
-# Логирование Celery
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -248,7 +209,7 @@ LOGGING = {
         'celery_file': {
             'level': 'INFO',
             'class': 'logging.FileHandler',
-            'filename': LOGS_DIR / 'celery.log',  # Используем Path
+            'filename': LOGS_DIR / 'celery.log',
             'formatter': 'verbose',
         },
         'console': {
@@ -270,39 +231,11 @@ LOGGING = {
     },
 }
 
-if not DEBUG:
-    LOGGING['loggers']['django.db.backends'] = {
-        'handlers': ['celery_file'],
-        'level': 'DEBUG',
-        'propagate': False,
-    }
-
+# Debug Toolbar
 if DEBUG:
     INSTALLED_APPS += ['debug_toolbar']
     MIDDLEWARE += ['debug_toolbar.middleware.DebugToolbarMiddleware']
-    
-    # ✅ Добавь это:
+    INTERNAL_IPS = ['127.0.0.1']
     DEBUG_TOOLBAR_CONFIG = {
-        'SHOW_TOOLBAR_CALLBACK': lambda request: (
-            request.META.get('HTTP_ACCEPT') != 'application/json'
-        ),
+        'SHOW_TOOLBAR_CALLBACK': lambda request: request.META.get('HTTP_ACCEPT') != 'application/json',
     }
-    
-    # ✅ Исключи API endpoints из debug toolbar
-    DEBUG_TOOLBAR_PANELS = [
-        'debug_toolbar.panels.history.HistoryPanel',
-        'debug_toolbar.panels.versions.VersionsPanel',
-        'debug_toolbar.panels.timer.TimerPanel',
-        'debug_toolbar.panels.settings.SettingsPanel',
-        'debug_toolbar.panels.headers.HeadersPanel',
-        'debug_toolbar.panels.request.RequestPanel',
-        'debug_toolbar.panels.sql.SQLPanel',
-        'debug_toolbar.panels.staticfiles.StaticFilesPanel',
-        'debug_toolbar.panels.templates.TemplatesPanel',
-        'debug_toolbar.panels.cache.CachePanel',
-        'debug_toolbar.panels.signals.SignalsPanel',
-        'debug_toolbar.panels.logging.LoggingPanel',
-        'debug_toolbar.panels.redirects.RedirectsPanel',
-        'debug_toolbar.panels.profiling.ProfilingPanel',
-    ] 
-INTERNAL_IPS = ['127.0.0.1']

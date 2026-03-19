@@ -1,0 +1,204 @@
+{% load static %}
+
+<footer class="bg-base-200 border-t border-base-300 mt-auto">
+    <div class="container mx-auto px-4 py-12">
+        
+        <!-- === ВЕРХНЯЯ ЧАСТЬ: Колонки === -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-8">
+            
+            <!-- Колонка 1: О проекте -->
+            <div>
+                <div class="flex items-center gap-2 mb-4">
+                    <img src="{% static 'img/DOPX_logo.png' %}" alt="DOPX" class="h-8 w-auto">
+                    <span class="font-bold text-lg">DOPX</span>
+                </div>
+                <p class="text-sm opacity-70 mb-4">
+                    Голос трибун измеряем. Платформа объективной оценки футбольных матчей на основе мнения болельщиков.
+                </p>
+                
+                <!-- Соцсети -->
+                <div class="flex gap-3">
+                    <a href="#" class="btn btn-ghost btn-circle btn-sm" aria-label="Telegram">
+                        <i class="ti ti-brand-telegram text-lg"></i>
+                    </a>
+                    <a href="#" class="btn btn-ghost btn-circle btn-sm" aria-label="Instagram">
+                        <i class="ti ti-brand-instagram text-lg"></i>
+                    </a>
+                    <a href="#" class="btn btn-ghost btn-circle btn-sm" aria-label="YouTube">
+                        <i class="ti ti-brand-youtube text-lg"></i>
+                    </a>
+                    <a href="#" class="btn btn-ghost btn-circle btn-sm" aria-label="VK">
+                        <i class="ti ti-brand-vk text-lg"></i>
+                    </a>
+                </div>
+            </div>
+            
+            <!-- Колонка 2: Навигация -->
+            <div>
+                <h4 class="font-semibold mb-4">Навигация</h4>
+                <ul class="space-y-2 text-sm">
+                    <li>
+                        <a href="{% url 'core:home' %}" class="hover:text-primary transition-colors">
+                            Главная
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'matches:list' %}" class="hover:text-primary transition-colors">
+                            Матчи
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'teams:list' %}" class="hover:text-primary transition-colors">
+                            Команды
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'players:list' %}" class="hover:text-primary transition-colors">
+                            Игроки
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'users:leaderboard' %}" class="hover:text-primary transition-colors">
+                            Рейтинг
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Колонка 3: Аналитика -->
+            <div>
+                <h4 class="font-semibold mb-4">Аналитика</h4>
+                <ul class="space-y-2 text-sm">
+                    <li>
+                        <a href="{% url 'teams:list' %}" class="hover:text-primary transition-colors">
+                            Команды
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'players:list' %}" class="hover:text-primary transition-colors">
+                            Игроки
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'coaches:list' %}" class="hover:text-primary transition-colors">
+                            Тренеры
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'referees:list' %}" class="hover:text-primary transition-colors">
+                            Судьи
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'leagues:list' %}" class="hover:text-primary transition-colors">
+                            Лиги
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Колонка 4: Информация -->
+            <div>
+                <h4 class="font-semibold mb-4">Информация</h4>
+                <ul class="space-y-2 text-sm">
+                    <li>
+                        <a href="{% url 'core:rules' %}" class="hover:text-primary transition-colors">
+                            Правила платформы
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'core:contacts' %}" class="hover:text-primary transition-colors">
+                            Контакты
+                        </a>
+                    </li>
+                    <li>
+                        <a href="/api/docs/" class="hover:text-primary transition-colors" target="_blank">
+                            API Документация
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#" class="hover:text-primary transition-colors">
+                            Политика конфиденциальности
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+        
+        <!-- === РАЗДЕЛИТЕЛЬ === -->
+        <div class="border-t border-base-300 pt-8">
+            
+            <!-- === НИЖНЯЯ ЧАСТЬ: Копирайт + Статус === -->
+            <div class="flex flex-col md:flex-row justify-between items-center gap-4">
+                
+                <!-- Копирайт -->
+                <div class="text-sm opacity-60">
+                    © {% now 'Y' %} DOPX. Все права защищены.
+                </div>
+                
+                <!-- Статус системы -->
+                <div class="flex items-center gap-4 text-sm">
+                    <div class="flex items-center gap-2 opacity-60">
+                        <span class="w-2 h-2 rounded-full bg-success animate-pulse"></span>
+                        <span>Система работает</span>
+                    </div>
+                    <div class="opacity-60">
+                        v1.0.0
+                    </div>
+                </div>
+                
+                <!-- Язык (заглушка) -->
+                <div class="dropdown dropdown-top">
+                    <label tabindex="0" class="btn btn-ghost btn-sm">
+                        <i class="ti ti-language"></i>
+                        <span>RU</span>
+                        <i class="ti ti-chevron-up text-xs"></i>
+                    </label>
+                    <ul tabindex="0" class="dropdown-content z-[100] menu p-2 shadow-lg bg-base-100 rounded-box w-32 border border-base-300">
+                        <li><a class="active">Русский</a></li>
+                        <li><a class="opacity-50">Қазақша (soon)</a></li>
+                        <li><a class="opacity-50">English (soon)</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        
+        <!-- === ТЕХНИЧЕСКАЯ ИНФОРМАЦИЯ (для dev) === -->
+        {% if debug %}
+        <div class="border-t border-base-300 mt-8 pt-4">
+            <div class="text-xs opacity-40 font-mono">
+                <div class="flex flex-wrap gap-4">
+                    <span>Django {{ django_version|default:'6.0.3' }}</span>
+                    <span>•</span>
+                    <span>Python 3.12</span>
+                    <span>•</span>
+                    <span>PostgreSQL</span>
+                    <span>•</span>
+                    <span>Redis</span>
+                    <span>•</span>
+                    <span>Celery</span>
+                    <span>•</span>
+                    <span>HTMX 2.0.4</span>
+                    <span>•</span>
+                    <span>DaisyUI 4.12</span>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</footer>
+
+<!-- === Scroll to Top Button === -->
+<button 
+    id="scroll-to-top"
+    class="fixed bottom-6 right-6 btn btn-circle btn-primary btn-sm shadow-lg opacity-0 pointer-events-none transition-all duration-300 z-40"
+    aria-label="Наверх"
+    x-data="{ visible: false }"
+    x-init="window.addEventListener('scroll', () => {
+        visible = window.scrollY > 300;
+        $el.classList.toggle('opacity-0', !visible);
+        $el.classList.toggle('pointer-events-none', !visible);
+    })"
+    @click="window.scrollTo({ top: 0, behavior: 'smooth' })">
+    <i class="ti ti-arrow-up"></i>
+</button>

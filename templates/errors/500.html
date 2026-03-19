@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="min-h-[60vh] flex items-center justify-center">
+    <div class="text-center max-w-lg">
+        <!-- Иконка -->
+        <div class="w-32 h-32 rounded-full bg-error/10 flex items-center justify-center mx-auto mb-6">
+            <i class="ti ti-alert-triangle text-6xl text-error"></i>
+        </div>
+        
+        <!-- Заголовок -->
+        <h1 class="text-6xl font-bold mb-4 text-error">500</h1>
+        <h2 class="text-2xl font-semibold mb-4">Ошибка сервера</h2>
+        <p class="text-lg opacity-60 mb-8">
+            Что-то пошло не так на нашей стороне. Пожалуйста, попробуйте позже.
+        </p>
+        
+        <!-- Кнопки -->
+        <div class="flex flex-col sm:flex-row gap-4 justify-center">
+            <a href="{% url 'core:home' %}" class="btn btn-primary btn-lg">
+                <i class="ti ti-home"></i>
+                На главную
+            </a>
+            <a href="{% url 'core:contacts' %}" class="btn btn-ghost btn-lg">
+                <i class="ti ti-mail"></i>
+                Сообщить об ошибке
+            </a>
+        </div>
+        
+        <!-- Тех. информация (только DEBUG) -->
+        {% if debug %}
+        <div class="mt-8 p-4 bg-base-200 rounded-lg text-left">
+            <p class="text-sm font-mono opacity-60">
+                <strong>Error:</strong> Server Error<br>
+                <strong>Time:</strong> {% now "d.m.Y H:i:s" %}<br>
+                <strong>Path:</strong> {{ request.path }}
+            </p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

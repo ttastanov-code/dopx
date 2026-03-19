@@ -1,0 +1,56 @@
+{% comment %}
+Карточка игрока для списков
+Использование: {% include 'components/_player_card.html' with player=player show_stats=True %}
+{% endcomment %}
+
+<div class="card bg-base-100 border border-base-300 hover:border-primary transition-all">
+    <div class="card-body p-4">
+        <div class="flex items-center gap-4">
+            <!-- Фото/Аватар -->
+            <div class="avatar">
+                <div class="w-16 h-16 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2">
+                    {% if player.photo %}
+                    <img src="{{ player.photo.url }}" alt="{{ player.first_name }}" />
+                    {% else %}
+                    <div class="w-full h-full bg-primary flex items-center justify-center text-primary-content font-bold text-xl">
+                        {{ player.first_name|first|upper }}{{ player.last_name|first|upper }}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <!-- Информация -->
+            <div class="flex-1 min-w-0">
+                <a href="{% url 'players:detail' player.id %}" class="hover:text-primary transition-colors">
+                    <h3 class="font-bold text-lg truncate">{{ player.first_name }} {{ player.last_name }}</h3>
+                </a>
+                
+                {% if player.team %}
+                <a href="{% url 'teams:detail' player.team.id %}" class="text-sm opacity-60 hover:text-primary">
+                    <i class="ti ti-users"></i>
+                    {{ player.team.name }}
+                </a>
+                {% endif %}
+                
+                <div class="flex flex-wrap gap-2 mt-2">
+                    {% if player.position %}
+                    <span class="badge badge-sm badge-ghost">{{ player.position }}</span>
+                    {% endif %}
+                    {% if player.number %}
+                    <span class="badge badge-sm badge-ghost">#{{ player.number }}</span>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <!-- Статистика (если включена) -->
+            {% if show_stats and player.match_aggregates.first %}
+            <div class="text-right">
+                <div class="text-2xl font-bold text-success">
+                    {{ player.match_aggregates.first.performance_score|floatformat:1 }}
+                </div>
+                <div class="text-xs opacity-60">рейтинг</div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>

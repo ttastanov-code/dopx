@@ -22,15 +22,25 @@ app.conf.beat_schedule = {
         'task': 'aggregates.tasks.recalculate_all_aggregates',
         'schedule': crontab(minute='*/10'),
     },
-    # Очистка старых сессий каждый день в 3:00
-    'cleanup-old-sessions-daily': {
-        'task': 'aggregates.tasks.cleanup_old_sessions',
-        'schedule': crontab(hour=3, minute=0),
+    # Синхронизация KFF каждые 30 минут
+    'sync-kff-recent-matches': {
+        'task': 'parsers.tasks.sync_recent_matches',
+        'schedule': crontab(minute='*/30'),
     },
     # Обновление статусов матчей каждый час
     'update-match-statuses-hourly': {
-        'task': 'matches.tasks.update_match_statuses',
+        'task': 'parsers.tasks.update_match_statuses',
         'schedule': crontab(minute=0),
+    },
+    # Очистка уведомлений ежедневно в 3:00
+    'cleanup-old-sessions-daily': {
+        'task': 'notifications.tasks.cleanup_old_notifications',
+        'schedule': crontab(hour=3, minute=0),
+    },
+    # Напоминания о голосовании каждые 6 часов
+    'voting-reminders': {
+        'task': 'notifications.tasks.send_match_finished_notifications',
+        'schedule': crontab(hour='*/6'),
     },
 }
 

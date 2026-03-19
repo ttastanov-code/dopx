@@ -1,0 +1,135 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+
+<!-- === PROGRESS BAR === -->
+<div class="mb-8">
+    <div class="flex items-center justify-between mb-2">
+        <span class="text-sm font-medium">Шаг {{ step }} из {{ total_steps }}</span>
+        <span class="text-sm opacity-60">{{ progress }}% завершено</span>
+    </div>
+    <div class="w-full bg-base-200 rounded-full h-2">
+        <div class="bg-primary h-2 rounded-full transition-all duration-300" 
+             style="width: {{ progress }}%"></div>
+    </div>
+</div>
+
+<!-- === INFO ALERT === -->
+<div class="alert alert-info mb-6">
+    <i class="ti ti-info-circle"></i>
+    <div>
+        <h3 class="font-bold">Оценивайте только тех, кого запомнили</h3>
+        <div class="text-xs">
+            Не обязательно оценивать всех игроков. Выберите тех, кто ярко проявил себя.
+        </div>
+    </div>
+</div>
+
+<!-- === PLAYERS LIST === -->
+<form method="post" action="{% url 'evaluations:players' match.id %}" class="space-y-4">
+    {% csrf_token %}
+    
+    {% for lp in lineup_players %}
+    <div class="card bg-base-100 border border-base-300 player-card" 
+         x-data="{ 
+             evaluate: false, 
+             contribution: 5, 
+             risk: 5, 
+             potential: 5 
+         }"
+         :class="evaluate ? 'border-primary bg-primary/5' : ''">
+        <div class="card-body p-4">
+            <div class="flex flex-col md:flex-row md:items-center gap-4">
+                <!-- Player Info -->
+                <div class="flex items-center gap-3 flex-1">
+                    <div class="w-10 h-10 rounded-full bg-base-200 flex items-center justify-center font-bold text-sm">
+                        {{ lp.shirt_number|default:"?" }}
+                    </div>
+                    <div>
+                        <div class="font-semibold">{{ lp.player.first_name }} {{ lp.player.last_name }}</div>
+                        <div class="text-xs opacity-60">
+                            {{ lp.player.team.name }}
+                            {% if lp.position %} • {{ lp.position }}{% endif %}
+                            {% if lp.is_starting %} • Старт{% else %} • Замена{% endif %}
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Toggle Evaluate -->
+                <div class="flex items-center gap-4">
+                    <label class="label cursor-pointer gap-2">
+                        <span class="label-text">Оценить</span>
+                        <input type="checkbox" 
+                               name="player_{{ lp.player.id }}_evaluate" 
+                               class="toggle toggle-primary"
+                               x-model="evaluate">
+                    </label>
+                </div>
+            </div>
+            
+            <!-- Rating Sliders (shown when evaluate is true) -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4" 
+                 x-show="evaluate"
+                 x-transition>
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text text-sm">Вклад</span>
+                        <span class="label-text-alt font-mono" x-text="contribution"></span>
+                    </label>
+                    <input type="range" 
+                           name="player_{{ lp.player.id }}_contribution" 
+                           min="1" 
+                           max="10" 
+                           value="5"
+                           :disabled="!evaluate"
+                           class="range range-primary range-xs"
+                           x-model="contribution">
+                </div>
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text text-sm">Риск</span>
+                        <span class="label-text-alt font-mono" x-text="risk"></span>
+                    </label>
+                    <input type="range" 
+                           name="player_{{ lp.player.id }}_risk" 
+                           min="1" 
+                           max="10" 
+                           value="5"
+                           :disabled="!evaluate"
+                           class="range range-primary range-xs"
+                           x-model="risk">
+                </div>
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text text-sm">Потенциал</span>
+                        <span class="label-text-alt font-mono" x-text="potential"></span>
+                    </label>
+                    <input type="range" 
+                           name="player_{{ lp.player.id }}_potential" 
+                           min="1" 
+                           max="10" 
+                           value="5"
+                           :disabled="!evaluate"
+                           class="range range-primary range-xs"
+                           x-model="potential">
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+    
+    <!-- Navigation -->
+    <div class="flex justify-between gap-4 mt-6">
+        <a href="{% url 'evaluations:teams' match.id %}" class="btn btn-ghost">
+            <i class="ti ti-arrow-left"></i>
+            Назад
+        </a>
+        <button type="submit" class="btn btn-primary btn-lg">
+            Далее
+            <i class="ti ti-arrow-right"></i>
+        </button>
+    </div>
+</form>
+
+{% endblock %}

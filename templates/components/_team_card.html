@@ -1,0 +1,43 @@
+{% comment %}
+Карточка команды для списков
+Использование: {% include 'components/_team_card.html' with team=team show_stats=True %}
+{% endcomment %}
+
+<div class="card bg-base-100 border border-base-300 hover:border-primary transition-all">
+    <div class="card-body p-4">
+        <div class="flex items-center gap-4">
+            <!-- Логотип -->
+            <div class="w-16 h-16 rounded-lg bg-base-200 flex items-center justify-center overflow-hidden">
+                {% if team.logo_url %}
+                <img src="{{ team.logo_url }}" alt="{{ team.name }}" class="w-full h-full object-contain p-2">
+                {% else %}
+                <div class="w-full h-full flex items-center justify-center font-bold text-primary text-2xl">
+                    {{ team.name|first|upper }}
+                </div>
+                {% endif %}
+            </div>
+            
+            <!-- Информация -->
+            <div class="flex-1 min-w-0">
+                <a href="{% url 'teams:detail' team.id %}" class="hover:text-primary transition-colors">
+                    <h3 class="font-bold text-lg truncate">{{ team.name }}</h3>
+                </a>
+                
+                {% if team.city %}
+                <p class="text-sm opacity-60">
+                    <i class="ti ti-map-pin"></i>
+                    {{ team.city }}
+                </p>
+                {% endif %}
+            </div>
+            
+            <!-- Статистика (если включена) -->
+            {% if show_stats %}
+            <div class="text-right">
+                <div class="text-sm opacity-60">Игроков</div>
+                <div class="text-xl font-bold">{{ team.players.count|default:0 }}</div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>

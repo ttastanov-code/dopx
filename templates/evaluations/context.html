@@ -1,0 +1,246 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+
+<!-- === PROGRESS BAR === -->
+<div class="mb-8">
+    <div class="flex items-center justify-between mb-2">
+        <span class="text-sm font-medium">Шаг {{ step }} из {{ total_steps }}</span>
+        <span class="text-sm opacity-60">{{ progress }}% завершено</span>
+    </div>
+    <div class="w-full bg-base-200 rounded-full h-2">
+        <div class="bg-primary h-2 rounded-full transition-all duration-300" 
+             style="width: {{ progress }}%"></div>
+    </div>
+    
+    <!-- Steps Indicator -->
+    <div class="flex justify-between mt-4">
+        {% for i in "123456"|make_list %}
+        <div class="flex flex-col items-center">
+            <div class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold
+                {% if i|stringformat:"s" == step|stringformat:"s" %}
+                    bg-primary text-primary-content
+                {% elif i|stringformat:"s" < step|stringformat:"s" %}
+                    bg-success text-success-content
+                {% else %}
+                    bg-base-300 opacity-50
+                {% endif %}">
+                {% if i|stringformat:"s" < step|stringformat:"s" %}
+                <i class="ti ti-check"></i>
+                {% else %}
+                {{ i }}
+                {% endif %}
+            </div>
+            <span class="text-xs mt-1 opacity-60 hidden md:block">
+                {% if forloop.counter == 1 %}Контекст
+                {% elif forloop.counter == 2 %}Команды
+                {% elif forloop.counter == 3 %}Игроки
+                {% elif forloop.counter == 4 %}Тренеры
+                {% elif forloop.counter == 5 %}Судья
+                {% else %}Финал{% endif %}
+            </span>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- === MATCH INFO CARD === -->
+<div class="card bg-base-100 border border-base-300 mb-6">
+    <div class="card-body p-4">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                {% if match.home_team.logo_url %}
+                <img src="{{ match.home_team.logo_url }}" alt="{{ match.home_team.name }}" class="w-10 h-10 object-contain">
+                {% else %}
+                <div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary">
+                    {{ match.home_team.name|first|upper }}
+                </div>
+                {% endif %}
+                <span class="font-semibold">{{ match.home_team.name }}</span>
+            </div>
+            
+            <div class="text-center">
+                <div class="text-2xl font-bold font-mono">
+                    {% if match.home_score is not None and match.away_score is not None %}
+                    {{ match.home_score }} : {{ match.away_score }}
+                    {% else %}
+                    - : -
+                    {% endif %}
+                </div>
+                <div class="text-xs opacity-60">{{ match.start_time|date:"d.m.Y" }}</div>
+            </div>
+            
+            <div class="flex items-center gap-3">
+                <span class="font-semibold">{{ match.away_team.name }}</span>
+                {% if match.away_team.logo_url %}
+                <img src="{{ match.away_team.logo_url }}" alt="{{ match.away_team.name }}" class="w-10 h-10 object-contain">
+                {% else %}
+                <div class="w-10 h-10 rounded-full bg-secondary/10 flex items-center justify-center font-bold text-secondary">
+                    {{ match.away_team.name|first|upper }}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- === FORM CARD === -->
+<div class="card bg-base-100 border border-base-300">
+    <div class="card-body p-6">
+        <h2 class="text-2xl font-bold mb-2">
+            <i class="ti ti-context mr-2"></i>
+            Контекст просмотра
+        </h2>
+        <p class="opacity-60 mb-6">Расскажите, как вы смотрели этот матч</p>
+        
+        <form method="post" action="{% url 'evaluations:context' match.id %}" 
+              class="space-y-6"
+              x-data="{ 
+                  supportedTeam: '{{ form.supported_team.value|default:'' }}',
+                  watchedType: '{{ form.watched_type.value|default:'full' }}',
+                  attendedStadium: {{ form.attended_stadium.value|default:'false' }}
+              }">
+            {% csrf_token %}
+            
+            <!-- За какую команду болеете? -->
+            <div class="form-control">
+                <label class="label">
+                    <span class="label-text font-medium">
+                        <i class="ti ti-heart mr-2"></i>
+                        За какую команду болеете?
+                    </span>
+                </label>
+                <select name="supported_team" 
+                        class="select select-bordered w-full"
+                        x-model="supportedTeam">
+                    <option value="">Не болею ни за кого</option>
+                    <option value="{{ match.home_team.id }}" 
+                            {% if form.supported_team.value == match.home_team.id|stringformat:"s" %}selected{% endif %}>
+                        {{ match.home_team.name }}
+                    </option>
+                    <option value="{{ match.away_team.id }}" 
+                            {% if form.supported_team.value == match.away_team.id|stringformat:"s" %}selected{% endif %}>
+                        {{ match.away_team.name }}
+                    </option>
+                </select>
+                <label class="label">
+                    <span class="label-text-alt opacity-60">
+                        Это поможет нам учесть возможную предвзятость
+                    </span>
+                </label>
+                {% if form.supported_team.errors %}
+                <label class="label">
+                    <span class="label-text-alt text-error">{{ form.supported_team.errors.0 }}</span>
+                </label>
+                {% endif %}
+            </div>
+            
+            <!-- Как вы смотрели матч? -->
+            <div class="form-control">
+                <label class="label">
+                    <span class="label-text font-medium">
+                        <i class="ti ti-eye mr-2"></i>
+                        Как вы смотрели матч?
+                    </span>
+                </label>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <label class="cursor-pointer">
+                        <input type="radio" 
+                               name="watched_type" 
+                               value="full" 
+                               class="radio radio-primary radio-lg"
+                               x-model="watchedType"
+                               {% if form.watched_type.value == 'full' %}checked{% endif %}>
+                        <div class="card border border-base-300 mt-2 p-4 hover:border-primary transition-all
+                                    {% if form.watched_type.value == 'full' %}border-primary bg-primary/5{% endif %}">
+                            <i class="ti ti-player-play text-2xl mb-2"></i>
+                            <div class="font-semibold">Полный матч</div>
+                            <div class="text-xs opacity-60">От начала до конца</div>
+                        </div>
+                    </label>
+                    
+                    <label class="cursor-pointer">
+                        <input type="radio" 
+                               name="watched_type" 
+                               value="highlights" 
+                               class="radio radio-primary radio-lg"
+                               x-model="watchedType"
+                               {% if form.watched_type.value == 'highlights' %}checked{% endif %}>
+                        <div class="card border border-base-300 mt-2 p-4 hover:border-primary transition-all
+                                    {% if form.watched_type.value == 'highlights' %}border-primary bg-primary/5{% endif %}">
+                            <i class="ti ti-stars text-2xl mb-2"></i>
+                            <div class="font-semibold">Только голы</div>
+                            <div class="text-xs opacity-60">Лучшие моменты</div>
+                        </div>
+                    </label>
+                    
+                    <label class="cursor-pointer">
+                        <input type="radio" 
+                               name="watched_type" 
+                               value="partial" 
+                               class="radio radio-primary radio-lg"
+                               x-model="watchedType"
+                               {% if form.watched_type.value == 'partial' %}checked{% endif %}>
+                        <div class="card border border-base-300 mt-2 p-4 hover:border-primary transition-all
+                                    {% if form.watched_type.value == 'partial' %}border-primary bg-primary/5{% endif %}">
+                            <i class="ti ti-clock-pause text-2xl mb-2"></i>
+                            <div class="font-semibold">Фрагменты</div>
+                            <div class="text-xs opacity-60">Часть матча</div>
+                        </div>
+                    </label>
+                </div>
+                {% if form.watched_type.errors %}
+                <label class="label">
+                    <span class="label-text-alt text-error">{{ form.watched_type.errors.0 }}</span>
+                </label>
+                {% endif %}
+            </div>
+            
+            <!-- Были на стадионе? -->
+            <div class="form-control">
+                <label class="label cursor-pointer gap-4">
+                    <div>
+                        <div class="font-medium">
+                            <i class="ti ti-ticket mr-2"></i>
+                            Были на стадионе?
+                        </div>
+                        <div class="text-sm opacity-60">Посещали матч лично</div>
+                    </div>
+                    <input type="checkbox" 
+                           name="attended_stadium" 
+                           class="toggle toggle-primary toggle-lg"
+                           x-model="attendedStadium"
+                           {% if form.attended_stadium.value %}checked{% endif %}>
+                </label>
+                {% if form.attended_stadium.errors %}
+                <label class="label">
+                    <span class="label-text-alt text-error">{{ form.attended_stadium.errors.0 }}</span>
+                </label>
+                {% endif %}
+            </div>
+            
+            <!-- Info Alert -->
+            <div class="alert alert-info">
+                <i class="ti ti-info-circle"></i>
+                <div>
+                    <h3 class="font-bold">Зачем это нужно?</h3>
+                    <div class="text-xs">
+                        Контекст просмотра влияет на вес вашей оценки. 
+                        Полные матчи и посещения стадиона имеют больший вес.
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Navigation Buttons -->
+            <div class="flex justify-end gap-4 mt-6">
+                <button type="submit" class="btn btn-primary btn-lg">
+                    Далее
+                    <i class="ti ti-arrow-right"></i>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% endblock %}

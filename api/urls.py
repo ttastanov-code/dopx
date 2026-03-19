@@ -13,6 +13,7 @@ from .views import (
     CoachAggregateViewSet,
 )
 
+app_name = 'api'
 router = DefaultRouter()
 
 # Оценки
