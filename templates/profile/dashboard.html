@@ -1,0 +1,241 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+
+<!-- === HEADER === -->
+<div class="mb-8">
+    <h1 class="text-3xl font-bold mb-2">
+        <i class="ti ti-user mr-2"></i>
+        Профиль
+    </h1>
+    <p class="opacity-60">{{ user.username }} — Личный кабинет</p>
+</div>
+
+<!-- === ДВЕ КОЛОНКИ === -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+    
+    <!-- === ЛЕВАЯ КОЛОНКА: Инфо === -->
+    <div class="space-y-6">
+        
+        <!-- Карточка пользователя -->
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-6 text-center">
+                <!-- Аватар -->
+                <div class="avatar mb-4">
+                    <div class="w-24 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2">
+                        {% if user.avatar %}
+                        <img src="{{ user.avatar.url }}" alt="{{ user.username }}" />
+                        {% else %}
+                        <div class="w-full h-full bg-primary flex items-center justify-center text-primary-content font-bold text-3xl">
+                            {{ user.username|first|upper }}
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <h2 class="text-2xl font-bold">{{ user.username }}</h2>
+                <p class="opacity-60">{{ user.email }}</p>
+                
+                {% if user.city %}
+                <div class="flex items-center justify-center gap-1 mt-2 text-sm opacity-60">
+                    <i class="ti ti-map-pin"></i>
+                    <span>{{ user.city }}</span>
+                </div>
+                {% endif %}
+                
+                <!-- Trust Score Badge -->
+                <div class="mt-4">
+                    <div class="text-sm opacity-60 mb-1">Trust Score</div>
+                    <div class="text-3xl font-bold {% if stats.trust_score >= 1.5 %}text-success{% elif stats.trust_score >= 1.2 %}text-warning{% else %}text-base-content{% endif %}">
+                        {{ stats.trust_score }}
+                    </div>
+                    <div class="badge badge-sm mt-1 {% if stats.trust_level.0 == 'expert' %}badge-success{% elif stats.trust_level.0 == 'reliable' %}badge-warning{% else %}badge-ghost{% endif %}">
+                        {{ stats.trust_level.1 }}
+                    </div>
+                </div>
+                
+                <!-- Level & XP -->
+                {% if xp %}
+                <div class="mt-4 pt-4 border-t border-base-300">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-sm">Уровень {{ xp.level }}</span>
+                        <span class="text-sm font-mono">{{ xp.total_xp }} XP</span>
+                    </div>
+                    <div class="w-full bg-base-200 rounded-full h-2">
+                        <div class="bg-primary h-2 rounded-full" style="width: {{ xp.total_xp|add:100|div:100 }}%"></div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Быстрые статистики -->
+        <div class="grid grid-cols-2 gap-4">
+            <div class="stat bg-base-100 border border-base-300 p-4">
+                <div class="stat-title text-xs">Оценок</div>
+                <div class="stat-value text-2xl">{{ stats.total_evaluations }}</div>
+            </div>
+            <div class="stat bg-base-100 border border-base-300 p-4">
+                <div class="stat-title text-xs">Игроков</div>
+                <div class="stat-value text-2xl">{{ stats.total_players }}</div>
+            </div>
+            <div class="stat bg-base-100 border border-base-300 p-4">
+                <div class="stat-title text-xs">Матчей</div>
+                <div class="stat-value text-2xl">{{ stats.total_matches }}</div>
+            </div>
+            <div class="stat bg-base-100 border border-base-300 p-4">
+                <div class="stat-title text-xs">Серия</div>
+                <div class="stat-value text-2xl text-accent">{{ stats.evaluation_streak }}</div>
+            </div>
+        </div>
+        
+        <!-- Достижения -->
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-4">
+                <h3 class="font-bold text-lg mb-4">
+                    <i class="ti ti-medal mr-2"></i>
+                    Достижения
+                </h3>
+                
+                <div class="flex flex-wrap gap-2">
+                    {% for badge in badges %}
+                    <div class="tooltip" data-tip="{{ badge.get_badge_type_display }}">
+                        <div class="w-12 h-12 rounded-lg bg-accent/10 flex items-center justify-center">
+                            <i class="ti ti-medal text-accent text-xl"></i>
+                        </div>
+                    </div>
+                    {% empty %}
+                    <div class="text-sm opacity-60">Пока нет достижений</div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- === ПРАВАЯ КОЛОНКА: Активность === -->
+    <div class="lg:col-span-2 space-y-6">
+        
+        <!-- Активные сессии -->
+        {% if active_sessions %}
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-4">
+                <h3 class="font-bold text-lg mb-4">
+                    <i class="ti ti-clock mr-2"></i>
+                    Активные оценки
+                </h3>
+                
+                <div class="space-y-3">
+                    {% for session in active_sessions %}
+                    <div class="flex items-center justify-between p-3 bg-base-200 rounded-lg">
+                        <div>
+                            <div class="font-medium">{{ session.match.home_team.name }} vs {{ session.match.away_team.name }}</div>
+                            <div class="text-xs opacity-60">
+                                Шаг {{ session.completed_steps|length }} из 6 • 
+                                {{ session.get_status_display }}
+                            </div>
+                        </div>
+                        <a href="{% url 'evaluations:context' session.match.id %}" class="btn btn-sm btn-primary">
+                            Продолжить
+                        </a>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+        
+        <!-- Последние оценки -->
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-4">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="font-bold text-lg">
+                        <i class="ti ti-history mr-2"></i>
+                        Последние оценки
+                    </h3>
+                    <a href="{% url 'matches:list' %}" class="btn btn-ghost btn-sm">
+                        Все матчи
+                    </a>
+                </div>
+                
+                <div class="overflow-x-auto">
+                    <table class="table table-zebra">
+                        <thead>
+                            <tr>
+                                <th>Матч</th>
+                                <th>Лига</th>
+                                <th>Дата</th>
+                                <th>Статус</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for eval in recent_evaluations %}
+                            <tr>
+                                <td>
+                                    <div class="font-medium">
+                                        {{ eval.match.home_team.name }} vs {{ eval.match.away_team.name }}
+                                    </div>
+                                </td>
+                                <td class="opacity-60">{{ eval.match.league.name }}</td>
+                                <td class="font-mono text-sm">{{ eval.created_at|date:"d.m.Y" }}</td>
+                                <td>
+                                    <span class="badge badge-success badge-sm">
+                                        <i class="ti ti-check"></i>
+                                        Завершено
+                                    </span>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="4" class="text-center opacity-60 py-8">
+                                    <i class="ti ti-evaluation-off text-3xl mb-2"></i>
+                                    <p>Пока нет оценок</p>
+                                    <a href="{% url 'matches:list' %}?status=finished" class="btn btn-sm btn-ghost mt-2">
+                                        Оценить матч
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Настройки профиля -->
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-4">
+                <h3 class="font-bold text-lg mb-4">
+                    <i class="ti ti-settings mr-2"></i>
+                    Настройки
+                </h3>
+                
+                <div class="space-y-3">
+                    <a href="#" class="flex items-center justify-between p-3 bg-base-200 rounded-lg hover:bg-base-300 transition-all">
+                        <div class="flex items-center gap-3">
+                            <i class="ti ti-lock"></i>
+                            <span>Изменить пароль</span>
+                        </div>
+                        <i class="ti ti-chevron-right opacity-60"></i>
+                    </a>
+                    <a href="#" class="flex items-center justify-between p-3 bg-base-200 rounded-lg hover:bg-base-300 transition-all">
+                        <div class="flex items-center gap-3">
+                            <i class="ti ti-mail"></i>
+                            <span>Email уведомления</span>
+                        </div>
+                        <i class="ti ti-chevron-right opacity-60"></i>
+                    </a>
+                    <a href="#" class="flex items-center justify-between p-3 bg-base-200 rounded-lg hover:bg-base-300 transition-all">
+                        <div class="flex items-center gap-3">
+                            <i class="ti ti-user-edit"></i>
+                            <span>Редактировать профиль</span>
+                        </div>
+                        <i class="ti ti-chevron-right opacity-60"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,175 @@
+{% load static %}
+{% load match_extras %}
+<!DOCTYPE html>
+<html lang="ru" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="DOPX — Голос трибун измеряем">
+    <meta name="theme-color" content="#000000">
+    
+    <title>{% block title %}{{ page_title|default:'DOPX' }}{% endblock %}</title>
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="{% static 'favicons/favicon-32x32.png' %}" sizes="32x32">
+    <link rel="icon" type="image/png" href="{% static 'favicons/favicon-16x16.png' %}" sizes="16x16">
+    
+    <!-- Tailwind CSS + DaisyUI -->
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@2.0.4" integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OCjTtGOC+Z++" crossorigin="anonymous"></script>
+    
+    <!-- Alpine.js -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.3/dist/cdn.min.js"></script>
+    
+    <!-- Tabler Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/tabler-icons.min.css">
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Настройка Tailwind -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#000000',
+                        secondary: '#ffffff',
+                        accent: '#3b82f6',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    }
+                }
+            },
+            daisyui: {
+                themes: [
+                    {
+                        light: {
+                            ...require("daisyui/src/theming/themes")["light"],
+                            primary: "#000000",
+                            secondary: "#ffffff",
+                            accent: "#3b82f6",
+                            neutral: "#1a1a1a",
+                            "base-100": "#ffffff",
+                            "base-200": "#f5f5f5",
+                            "base-300": "#e5e5e5",
+                        },
+                    },
+                    {
+                        dark: {
+                            ...require("daisyui/src/theming/themes")["dark"],
+                            primary: "#ffffff",
+                            secondary: "#000000",
+                            accent: "#60a5fa",
+                            neutral: "#e5e5e5",
+                            "base-100": "#0a0a0a",
+                            "base-200": "#171717",
+                            "base-300": "#262626",
+                        },
+                    },
+                ],
+            },
+        }
+    </script>
+    
+    <style>
+        * {
+            font-family: 'Inter', system-ui, sans-serif;
+        }
+        
+        body {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .auth-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        /* Плавные переходы */
+        .transition-all {
+            transition-property: all;
+            transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+            transition-duration: 150ms;
+        }
+        
+        {% block extra_style %}{% endblock %}
+    </style>
+</head>
+<body class="bg-base-100 text-base-content antialiased"
+      x-data="{ 
+          theme: localStorage.getItem('theme') || 'light',
+          toggleTheme() {
+              this.theme = this.theme === 'light' ? 'dark' : 'light';
+              document.documentElement.setAttribute('data-theme', this.theme);
+              localStorage.setItem('theme', this.theme);
+          }
+      }"
+      x-init="$watch('theme', value => document.documentElement.setAttribute('data-theme', value));
+               document.documentElement.setAttribute('data-theme', theme)">
+
+    <!-- Messages -->
+    {% if messages %}
+    <div class="fixed top-4 right-4 z-50 space-y-2" 
+         x-data="{ show: true }"
+         x-show="show"
+         x-transition>
+        {% for message in messages %}
+        <div class="alert alert-{{ message.tags|default:'info' }} shadow-lg max-w-md"
+             role="alert">
+            <i class="ti ti-{{ message.tags|default:'info' }}"></i>
+            <span>{{ message }}</span>
+            <button @click="show = false" class="btn btn-sm btn-ghost">✕</button>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Auth Container -->
+    <div class="auth-container">
+        {% block content %}{% endblock %}
+    </div>
+
+    <!-- Footer (упрощённый) -->
+    <footer class="py-6 text-center text-sm opacity-60">
+        <div class="flex items-center justify-center gap-4 mb-2">
+            <a href="{% url 'core:home' %}" class="hover:text-primary transition-colors">Главная</a>
+            <span>•</span>
+            <a href="{% url 'core:rules' %}" class="hover:text-primary transition-colors">Правила</a>
+            <span>•</span>
+            <a href="{% url 'core:contacts' %}" class="hover:text-primary transition-colors">Контакты</a>
+        </div>
+        <p>© {% now 'Y' %} DOPX. Все права защищены.</p>
+    </footer>
+
+    <!-- Скрипты -->
+    <script>
+        // Показать/скрыть пароль
+        function togglePassword(inputId) {
+            const input = document.getElementById(inputId);
+            const icon = input.nextElementSibling;
+            if (input.type === 'password') {
+                input.type = 'text';
+                icon.classList.remove('ti-eye');
+                icon.classList.add('ti-eye-off');
+            } else {
+                input.type = 'password';
+                icon.classList.remove('ti-eye-off');
+                icon.classList.add('ti-eye');
+            }
+        }
+        
+        {% block extra_script %}{% endblock %}
+    </script>
+</body>
+</html>

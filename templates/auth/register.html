@@ -1,0 +1,241 @@
+{% extends 'base_auth.html' %}
+{% load static %}
+
+{% block title %}Регистрация — DOPX{% endblock %}
+
+{% block content %}
+<div class="w-full max-w-md px-4">
+    
+    <!-- Карточка регистрации -->
+    <div class="card bg-base-100 border border-base-300 shadow-xl">
+        <div class="card-body p-8">
+            
+            <!-- Логотип -->
+            <div class="text-center mb-6">
+                <img src="{% static 'img/DOPX_logo.png' %}" alt="DOPX" class="h-12 w-auto mx-auto mb-3">
+                <h1 class="text-2xl font-bold">Создать аккаунт</h1>
+                <p class="text-sm opacity-60 mt-1">Присоединяйся к DOPX</p>
+            </div>
+            
+            <!-- Форма -->
+            <form method="post" action="{% url 'users:register' %}" 
+                  class="space-y-4"
+                  x-data="{ 
+                      showPassword1: false,
+                      showPassword2: false,
+                      password: '',
+                      confirmPassword: '',
+                      passwordsMatch: true
+                  }"
+                  @submit="passwordsMatch = password === confirmPassword">
+                {% csrf_token %}
+                
+                <!-- Username -->
+                <div class="form-control">
+                    <label class="label" for="id_username">
+                        <span class="label-text font-medium">Имя пользователя</span>
+                    </label>
+                    <div class="relative">
+                        <input type="text" 
+                               id="id_username" 
+                               name="username" 
+                               required
+                               autocomplete="username"
+                               class="input input-bordered w-full pl-10 {% if form.username.errors %}input-error{% endif %}"
+                               placeholder="username"
+                               value="{{ form.username.value|default:'' }}">
+                        <i class="ti ti-user absolute left-3 top-1/2 -translate-y-1/2 opacity-40"></i>
+                    </div>
+                    {% if form.username.errors %}
+                    <label class="label">
+                        <span class="label-text-alt text-error">{{ form.username.errors.0 }}</span>
+                    </label>
+                    {% endif %}
+                    <label class="label">
+                        <span class="label-text-alt opacity-50">Только буквы, цифры и @/./+/-/_</span>
+                    </label>
+                </div>
+                
+                <!-- Email -->
+                <div class="form-control">
+                    <label class="label" for="id_email">
+                        <span class="label-text font-medium">Email</span>
+                    </label>
+                    <div class="relative">
+                        <input type="email" 
+                               id="id_email" 
+                               name="email" 
+                               required
+                               autocomplete="email"
+                               class="input input-bordered w-full pl-10 {% if form.email.errors %}input-error{% endif %}"
+                               placeholder="email@example.com"
+                               value="{{ form.email.value|default:'' }}">
+                        <i class="ti ti-mail absolute left-3 top-1/2 -translate-y-1/2 opacity-40"></i>
+                    </div>
+                    {% if form.email.errors %}
+                    <label class="label">
+                        <span class="label-text-alt text-error">{{ form.email.errors.0 }}</span>
+                    </label>
+                    {% endif %}
+                </div>
+                
+                <!-- City (optional) -->
+                <div class="form-control">
+                    <label class="label" for="id_city">
+                        <span class="label-text font-medium">Город <span class="opacity-50">(необязательно)</span></span>
+                    </label>
+                    <div class="relative">
+                        <input type="text" 
+                               id="id_city" 
+                               name="city" 
+                               autocomplete="address-level2"
+                               class="input input-bordered w-full pl-10 {% if form.city.errors %}input-error{% endif %}"
+                               placeholder="Алматы"
+                               value="{{ form.city.value|default:'' }}">
+                        <i class="ti ti-map-pin absolute left-3 top-1/2 -translate-y-1/2 opacity-40"></i>
+                    </div>
+                    {% if form.city.errors %}
+                    <label class="label">
+                        <span class="label-text-alt text-error">{{ form.city.errors.0 }}</span>
+                    </label>
+                    {% endif %}
+                </div>
+                
+                <!-- Password 1 -->
+                <div class="form-control">
+                    <label class="label" for="id_password1">
+                        <span class="label-text font-medium">Пароль</span>
+                    </label>
+                    <div class="relative">
+                        <input type="password" 
+                               id="id_password1" 
+                               name="password1" 
+                               required
+                               autocomplete="new-password"
+                               x-model="password"
+                               class="input input-bordered w-full pl-10 {% if form.password1.errors %}input-error{% endif %}"
+                               placeholder="••••••••">
+                        <i class="ti ti-lock absolute left-3 top-1/2 -translate-y-1/2 opacity-40"></i>
+                        <button type="button" 
+                                @click="togglePassword('id_password1')"
+                                class="absolute right-3 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-100 transition-opacity">
+                            <i class="ti ti-eye"></i>
+                        </button>
+                    </div>
+                    {% if form.password1.errors %}
+                    <label class="label">
+                        <span class="label-text-alt text-error">{{ form.password1.errors.0 }}</span>
+                    </label>
+                    {% endif %}
+                </div>
+                
+                <!-- Password 2 -->
+                <div class="form-control">
+                    <label class="label" for="id_password2">
+                        <span class="label-text font-medium">Подтверждение пароля</span>
+                    </label>
+                    <div class="relative">
+                        <input type="password" 
+                               id="id_password2" 
+                               name="password2" 
+                               required
+                               autocomplete="new-password"
+                               x-model="confirmPassword"
+                               class="input input-bordered w-full pl-10 {% if form.password2.errors %}input-error{% endif %}"
+                               placeholder="••••••••">
+                        <i class="ti ti-lock-check absolute left-3 top-1/2 -translate-y-1/2 opacity-40"></i>
+                        <button type="button" 
+                                @click="togglePassword('id_password2')"
+                                class="absolute right-3 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-100 transition-opacity">
+                            <i class="ti ti-eye"></i>
+                        </button>
+                    </div>
+                    {% if form.password2.errors %}
+                    <label class="label">
+                        <span class="label-text-alt text-error">{{ form.password2.errors.0 }}</span>
+                    </label>
+                    {% endif %}
+                    <!-- Password match indicator -->
+                    <label class="label" x-show="confirmPassword && password !== confirmPassword">
+                        <span class="label-text-alt text-error">Пароли не совпадают</span>
+                    </label>
+                </div>
+                
+                <!-- Terms -->
+                <div class="form-control">
+                    <label class="label cursor-pointer gap-2">
+                        <input type="checkbox" required class="checkbox checkbox-sm checkbox-primary">
+                        <span class="label-text text-sm">
+                            Я согласен с 
+                            <a href="{% url 'core:rules' %}" class="link link-primary hover:no-underline" target="_blank">правилами платформы</a>
+                        </span>
+                    </label>
+                </div>
+                
+                <!-- Submit Button -->
+                <button type="submit" 
+                        class="btn btn-primary w-full"
+                        :disabled="password !== confirmPassword">
+                    <i class="ti ti-user-plus"></i>
+                    Зарегистрироваться
+                </button>
+                
+                <!-- Non-field errors -->
+                {% if form.non_field_errors %}
+                <div class="alert alert-error text-sm py-2">
+                    <i class="ti ti-alert-circle"></i>
+                    {{ form.non_field_errors.0 }}
+                </div>
+                {% endif %}
+            </form>
+            
+            <!-- Divider -->
+            <div class="divider text-xs opacity-60">или</div>
+            
+            <!-- Login Link -->
+            <div class="text-center">
+                <p class="text-sm opacity-70">
+                    Уже есть аккаунт?
+                    <a href="{% url 'users:login' %}" class="link link-primary font-medium hover:no-underline">
+                        Войти
+                    </a>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Преимущества -->
+    <div class="mt-8 grid grid-cols-3 gap-4 text-center">
+        <div class="flex flex-col items-center">
+            <div class="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-2">
+                <i class="ti ti-shield-check text-primary text-xl"></i>
+            </div>
+            <span class="text-xs opacity-60">Бесплатно</span>
+        </div>
+        <div class="flex flex-col items-center">
+            <div class="w-12 h-12 rounded-full bg-secondary/10 flex items-center justify-center mb-2">
+                <i class="ti ti-clock text-secondary text-xl"></i>
+            </div>
+            <span class="text-xs opacity-60">2 минуты</span>
+        </div>
+        <div class="flex flex-col items-center">
+            <div class="w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center mb-2">
+                <i class="ti ti-users text-accent text-xl"></i>
+            </div>
+            <span class="text-xs opacity-60">Сообщество</span>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_script %}
+<script>
+    // Автофокус на поле username
+    document.addEventListener('DOMContentLoaded', () => {
+        const usernameInput = document.getElementById('id_username');
+        if (usernameInput && !usernameInput.value) {
+            usernameInput.focus();
+        }
+    });
+</script>
+{% endblock %}

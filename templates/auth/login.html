@@ -1,0 +1,158 @@
+{% extends 'base_auth.html' %}
+{% load static %}
+
+{% block title %}Вход — DOPX{% endblock %}
+
+{% block content %}
+<div class="w-full max-w-md px-4">
+    
+    <!-- Карточка входа -->
+    <div class="card bg-base-100 border border-base-300 shadow-xl">
+        <div class="card-body p-8">
+            
+            <!-- Логотип -->
+            <div class="text-center mb-6">
+                <img src="{% static 'img/DOPX_logo.png' %}" alt="DOPX" class="h-12 w-auto mx-auto mb-3">
+                <h1 class="text-2xl font-bold">С возвращением!</h1>
+                <p class="text-sm opacity-60 mt-1">Войдите для продолжения</p>
+            </div>
+            
+            <!-- Форма -->
+            <form method="post" action="{% url 'users:login' %}" 
+                  class="space-y-4"
+                  x-data="{ 
+                      showPassword: false,
+                      email: '',
+                      username: ''
+                  }">
+                {% csrf_token %}
+                
+                <!-- Username / Email -->
+                <div class="form-control">
+                    <label class="label" for="id_username">
+                        <span class="label-text font-medium">Имя пользователя или Email</span>
+                    </label>
+                    <div class="relative">
+                        <input type="text" 
+                               id="id_username" 
+                               name="username" 
+                               required
+                               autocomplete="username"
+                               class="input input-bordered w-full pl-10 {% if form.username.errors %}input-error{% endif %}"
+                               placeholder="username или email"
+                               value="{{ form.username.value|default:'' }}">
+                        <i class="ti ti-user absolute left-3 top-1/2 -translate-y-1/2 opacity-40"></i>
+                    </div>
+                    {% if form.username.errors %}
+                    <label class="label">
+                        <span class="label-text-alt text-error">{{ form.username.errors.0 }}</span>
+                    </label>
+                    {% endif %}
+                </div>
+                
+                <!-- Password -->
+                <div class="form-control">
+                    <label class="label" for="id_password">
+                        <span class="label-text font-medium">Пароль</span>
+                    </label>
+                    <div class="relative">
+                        <input type="password" 
+                               id="id_password" 
+                               name="password" 
+                               required
+                               autocomplete="current-password"
+                               class="input input-bordered w-full pl-10 {% if form.password.errors %}input-error{% endif %}"
+                               placeholder="••••••••">
+                        <i class="ti ti-lock absolute left-3 top-1/2 -translate-y-1/2 opacity-40"></i>
+                        <button type="button" 
+                                @click="togglePassword('id_password')"
+                                class="absolute right-3 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-100 transition-opacity">
+                            <i class="ti ti-eye"></i>
+                        </button>
+                    </div>
+                    {% if form.password.errors %}
+                    <label class="label">
+                        <span class="label-text-alt text-error">{{ form.password.errors.0 }}</span>
+                    </label>
+                    {% endif %}
+                </div>
+                
+                <!-- Remember & Forgot -->
+                <div class="flex items-center justify-between text-sm">
+                    <label class="label cursor-pointer gap-2">
+                        <input type="checkbox" name="remember" class="checkbox checkbox-sm checkbox-primary">
+                        <span class="label-text">Запомнить</span>
+                    </label>
+                    <a href="#" class="link link-primary hover:no-underline">Забыли пароль?</a>
+                </div>
+                
+                <!-- Submit Button -->
+                <button type="submit" 
+                        class="btn btn-primary w-full"
+                        hx-post="{% url 'users:login' %}"
+                        hx-include="closest form"
+                        hx-target="closest .card"
+                        hx-swap="outerHTML">
+                    <i class="ti ti-login"></i>
+                    Войти
+                </button>
+                
+                <!-- Non-field errors -->
+                {% if form.non_field_errors %}
+                <div class="alert alert-error text-sm py-2">
+                    <i class="ti ti-alert-circle"></i>
+                    {{ form.non_field_errors.0 }}
+                </div>
+                {% endif %}
+            </form>
+            
+            <!-- Divider -->
+            <div class="divider text-xs opacity-60">или</div>
+            
+            <!-- Register Link -->
+            <div class="text-center">
+                <p class="text-sm opacity-70">
+                    Нет аккаунта?
+                    <a href="{% url 'users:register' %}" class="link link-primary font-medium hover:no-underline">
+                        Зарегистрироваться
+                    </a>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Преимущества -->
+    <div class="mt-8 grid grid-cols-3 gap-4 text-center">
+        <div class="flex flex-col items-center">
+            <div class="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-2">
+                <i class="ti ti-trophy text-primary text-xl"></i>
+            </div>
+            <span class="text-xs opacity-60">Оценивай матчи</span>
+        </div>
+        <div class="flex flex-col items-center">
+            <div class="w-12 h-12 rounded-full bg-secondary/10 flex items-center justify-center mb-2">
+                <i class="ti ti-chart-bar text-secondary text-xl"></i>
+            </div>
+            <span class="text-xs opacity-60">Получай XP</span>
+        </div>
+        <div class="flex flex-col items-center">
+            <div class="w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center mb-2">
+                <i class="ti ti-medal text-accent text-xl"></i>
+            </div>
+            <span class="text-xs opacity-60">Рейтинг</span>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_script %}
+<script>
+    // Автофокус на поле username
+    document.addEventListener('DOMContentLoaded', () => {
+        const usernameInput = document.getElementById('id_username');
+        if (usernameInput && !usernameInput.value) {
+            usernameInput.focus();
+        }
+    });
+</script>
+{% endblock %}

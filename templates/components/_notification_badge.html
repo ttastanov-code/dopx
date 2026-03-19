@@ -1,0 +1,14 @@
+{% comment %}
+Бейдж уведомлений для navbar
+Использование: {% include 'components/_notification_badge.html' with count=unread_count %}
+{% endcomment %}
+
+{% if count > 0 %}
+<span class="badge badge-sm badge-error absolute -top-1 -right-1 text-white min-w-[1.25rem] h-5 flex items-center justify-center animate-pulse">
+    {% if count > 99 %}
+    99+
+    {% else %}
+    {{ count }}
+    {% endif %}
+</span>
+{% endif %}

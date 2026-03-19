@@ -1,0 +1,9 @@
+{% comment %}
+Спиннер загрузки для HTMX запросов
+Использование: {% include 'components/_loading_spinner.html' with size="md" %}
+{% endcomment %}
+
+<div class="flex items-center justify-center py-8">
+    <span class="loading loading-spinner loading-{{ size|default:'md' }} text-primary"></span>
+    <span class="ml-3 opacity-60">Загрузка...</span>
+</div>

@@ -1,0 +1,336 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+
+<!-- === HEADER === -->
+<div class="mb-8">
+    <h1 class="text-3xl font-bold mb-2">
+        <i class="ti ti-mail mr-2"></i>
+        Контакты
+    </h1>
+    <p class="opacity-60">Свяжитесь с нами по любым вопросам</p>
+</div>
+
+<!-- === CONTENT === -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+    
+    <!-- === КОНТАКТНАЯ ИНФОРМАЦИЯ === -->
+    <div class="space-y-6">
+        
+        <!-- Основная информация -->
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-6">
+                <h2 class="text-xl font-bold mb-4">Контактная информация</h2>
+                
+                <div class="space-y-4">
+                    <div class="flex items-start gap-4">
+                        <div class="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                            <i class="ti ti-mail text-primary text-xl"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-semibold">Email</h3>
+                            <a href="mailto:support@dopx.kz" class="text-primary hover:underline">
+                                support@dopx.kz
+                            </a>
+                            <p class="text-xs opacity-60 mt-1">Ответ в течение 24 часов</p>
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-start gap-4">
+                        <div class="w-12 h-12 rounded-lg bg-secondary/10 flex items-center justify-center flex-shrink-0">
+                            <i class="ti ti-brand-telegram text-secondary text-xl"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-semibold">Telegram</h3>
+                            <a href="https://t.me/dopx_kz" target="_blank" class="text-primary hover:underline">
+                                @dopx_kz
+                            </a>
+                            <p class="text-xs opacity-60 mt-1">Новости и обновления</p>
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-start gap-4">
+                        <div class="w-12 h-12 rounded-lg bg-accent/10 flex items-center justify-center flex-shrink-0">
+                            <i class="ti ti-brand-instagram text-accent text-xl"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-semibold">Instagram</h3>
+                            <a href="https://instagram.com/dopx.kz" target="_blank" class="text-primary hover:underline">
+                                @dopx.kz
+                            </a>
+                            <p class="text-xs opacity-60 mt-1">Фото и видео контент</p>
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-start gap-4">
+                        <div class="w-12 h-12 rounded-lg bg-warning/10 flex items-center justify-center flex-shrink-0">
+                            <i class="ti ti-clock text-warning text-xl"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-semibold">Время работы</h3>
+                            <p class="text-sm opacity-80">Пн-Пт: 10:00 - 19:00 (ALMT)</p>
+                            <p class="text-sm opacity-80">Сб-Вс: Выходной</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Команда -->
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-6">
+                <h2 class="text-xl font-bold mb-4">Команда DOPX</h2>
+                
+                <div class="space-y-4">
+                    <div class="flex items-center gap-4 p-3 bg-base-200 rounded-lg">
+                        <div class="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center font-bold text-primary">
+                            PM
+                        </div>
+                        <div>
+                            <div class="font-semibold">Product Manager</div>
+                            <div class="text-xs opacity-60">Развитие продукта</div>
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-center gap-4 p-3 bg-base-200 rounded-lg">
+                        <div class="w-12 h-12 rounded-full bg-secondary/20 flex items-center justify-center font-bold text-secondary">
+                            DEV
+                        </div>
+                        <div>
+                            <div class="font-semibold">Разработка</div>
+                            <div class="text-xs opacity-60">Backend & Frontend</div>
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-center gap-4 p-3 bg-base-200 rounded-lg">
+                        <div class="w-12 h-12 rounded-full bg-accent/20 flex items-center justify-center font-bold text-accent">
+                            DATA
+                        </div>
+                        <div>
+                            <div class="font-semibold">Аналитика</div>
+                            <div class="text-xs opacity-60">Data Science</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- FAQ -->
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-6">
+                <h2 class="text-xl font-bold mb-4">Частые вопросы</h2>
+                
+                <div class="space-y-4">
+                    <div class="collapse collapse-arrow border border-base-300">
+                        <input type="checkbox" />
+                        <div class="collapse-title font-semibold">
+                            Как начать оценивать матчи?
+                        </div>
+                        <div class="collapse-content text-sm opacity-80">
+                            <p>Зарегистрируйтесь, войдите в аккаунт и выберите завершённый матч со статусом "Голосование открыто".</p>
+                        </div>
+                    </div>
+                    
+                    <div class="collapse collapse-arrow border border-base-300">
+                        <input type="checkbox" />
+                        <div class="collapse-title font-semibold">
+                            Сколько времени занимает оценка?
+                        </div>
+                        <div class="collapse-content text-sm opacity-80">
+                            <p>Полная оценка матча занимает 5-10 минут в зависимости от количества игроков и деталей.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="collapse collapse-arrow border border-base-300">
+                        <input type="checkbox" />
+                        <div class="collapse-title font-semibold">
+                            Можно ли изменить оценку?
+                        </div>
+                        <div class="collapse-content text-sm opacity-80">
+                            <p>Да, вы можете изменить свою оценку до закрытия голосования (48 часов после матча).</p>
+                        </div>
+                    </div>
+                    
+                    <div class="collapse collapse-arrow border border-base-300">
+                        <input type="checkbox" />
+                        <div class="collapse-title font-semibold">
+                            Как работает Trust Score?
+                        </div>
+                        <div class="collapse-content text-sm opacity-80">
+                            <p>Trust Score рассчитывается на основе соответствия ваших оценок средним оценкам сообщества.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- === ФОРМА ОБРАТНОЙ СВЯЗИ === -->
+    <div class="space-y-6">
+        
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-6">
+                <h2 class="text-xl font-bold mb-4">Напишите нам</h2>
+                
+                <form method="post" class="space-y-4" 
+                      hx-post="/api/contact/"
+                      hx-swap="outerHTML"
+                      x-data="{ 
+                          subject: 'general',
+                          message: '',
+                          email: '',
+                          submitting: false,
+                          success: false
+                      }">
+                    {% csrf_token %}
+                    
+                    <!-- Тема -->
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text font-medium">Тема обращения</span>
+                        </label>
+                        <select name="subject" 
+                                x-model="subject"
+                                class="select select-bordered w-full">
+                            <option value="general">Общий вопрос</option>
+                            <option value="technical">Техническая проблема</option>
+                            <option value="partnership">Сотрудничество</option>
+                            <option value="feedback">Обратная связь</option>
+                            <option value="abuse">Нарушение правил</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Email -->
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text font-medium">Ваш Email</span>
+                        </label>
+                        <input type="email" 
+                               name="email"
+                               x-model="email"
+                               required
+                               placeholder="email@example.com"
+                               class="input input-bordered w-full">
+                    </div>
+                    
+                    <!-- Сообщение -->
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text font-medium">Сообщение</span>
+                        </label>
+                        <textarea name="message" 
+                                  x-model="message"
+                                  required
+                                  rows="6"
+                                  placeholder="Опишите ваш вопрос подробно..."
+                                  class="textarea textarea-bordered w-full"></textarea>
+                        <label class="label">
+                            <span class="label-text-alt opacity-60">Минимум 20 символов</span>
+                        </label>
+                    </div>
+                    
+                    <!-- Прикрепить файл -->
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text font-medium">Прикрепить файл (опционально)</span>
+                        </label>
+                        <input type="file" 
+                               name="attachment"
+                               accept="image/*,.pdf,.doc,.docx"
+                               class="file-input file-input-bordered w-full">
+                        <label class="label">
+                            <span class="label-text-alt opacity-60">Макс. 5MB</span>
+                        </label>
+                    </div>
+                    
+                    <!-- Согласие -->
+                    <div class="form-control">
+                        <label class="label cursor-pointer gap-3">
+                            <input type="checkbox" required class="checkbox checkbox-sm checkbox-primary">
+                            <span class="label-text text-sm">
+                                Я согласен на обработку персональных данных
+                            </span>
+                        </label>
+                    </div>
+                    
+                    <!-- Кнопка -->
+                    <button type="submit" 
+                            class="btn btn-primary w-full"
+                            :disabled="submitting || message.length < 20">
+                        <span x-show="!submitting">
+                            <i class="ti ti-send"></i>
+                            Отправить
+                        </span>
+                        <span x-show="submitting" class="flex items-center gap-2">
+                            <span class="loading loading-spinner loading-sm"></span>
+                            Отправка...
+                        </span>
+                    </button>
+                    
+                    <!-- Успех -->
+                    <div x-show="success" 
+                         x-transition
+                         class="alert alert-success">
+                        <i class="ti ti-check-circle"></i>
+                        <span>Сообщение отправлено! Мы ответим в течение 24 часов.</span>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Соцсети -->
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-6">
+                <h2 class="text-xl font-bold mb-4">Мы в соцсетях</h2>
+                
+                <div class="grid grid-cols-2 gap-3">
+                    <a href="https://t.me/dopx_kz" target="_blank" 
+                       class="flex items-center gap-3 p-3 bg-[#229ED9]/10 rounded-lg hover:bg-[#229ED9]/20 transition-colors">
+                        <i class="ti ti-brand-telegram text-[#229ED9] text-xl"></i>
+                        <span class="font-medium">Telegram</span>
+                    </a>
+                    
+                    <a href="https://instagram.com/dopx.kz" target="_blank" 
+                       class="flex items-center gap-3 p-3 bg-[#E4405F]/10 rounded-lg hover:bg-[#E4405F]/20 transition-colors">
+                        <i class="ti ti-brand-instagram text-[#E4405F] text-xl"></i>
+                        <span class="font-medium">Instagram</span>
+                    </a>
+                    
+                    <a href="https://youtube.com/@dopx" target="_blank" 
+                       class="flex items-center gap-3 p-3 bg-[#FF0000]/10 rounded-lg hover:bg-[#FF0000]/20 transition-colors">
+                        <i class="ti ti-brand-youtube text-[#FF0000] text-xl"></i>
+                        <span class="font-medium">YouTube</span>
+                    </a>
+                    
+                    <a href="https://vk.com/dopx" target="_blank" 
+                       class="flex items-center gap-3 p-3 bg-[#0077FF]/10 rounded-lg hover:bg-[#0077FF]/20 transition-colors">
+                        <i class="ti ti-brand-vk text-[#0077FF] text-xl"></i>
+                        <span class="font-medium">VK</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Карта (заглушка) -->
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-6">
+                <h2 class="text-xl font-bold mb-4">Офис</h2>
+                
+                <div class="rounded-lg overflow-hidden bg-base-200 h-48 flex items-center justify-center">
+                    <div class="text-center opacity-60">
+                        <i class="ti ti-map-pin text-3xl mb-2"></i>
+                        <p>Алматы, Казахстан</p>
+                        <p class="text-xs">Улица Примерная, 123</p>
+                    </div>
+                </div>
+                
+                <p class="text-xs opacity-60 mt-3 text-center">
+                    Офис работает по предварительной записи
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

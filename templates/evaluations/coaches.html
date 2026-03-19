@@ -1,0 +1,177 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+
+<!-- === PROGRESS BAR === -->
+<div class="mb-8">
+    <div class="flex items-center justify-between mb-2">
+        <span class="text-sm font-medium">Шаг {{ step }} из {{ total_steps }}</span>
+        <span class="text-sm opacity-60">{{ progress }}% завершено</span>
+    </div>
+    <div class="w-full bg-base-200 rounded-full h-2">
+        <div class="bg-primary h-2 rounded-full transition-all duration-300" 
+             style="width: {{ progress }}%"></div>
+    </div>
+</div>
+
+<!-- === MATCH INFO === -->
+<div class="card bg-base-100 border border-base-300 mb-6">
+    <div class="card-body p-4">
+        <div class="text-center">
+            <h2 class="text-xl font-bold">
+                {{ match.home_team.name }} vs {{ match.away_team.name }}
+            </h2>
+            <div class="text-2xl font-bold font-mono mt-2">
+                {{ match.home_score|default:"-" }} : {{ match.away_score|default:"-" }}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- === INFO ALERT === -->
+<div class="alert alert-info mb-6">
+    <i class="ti ti-info-circle"></i>
+    <div>
+        <h3 class="font-bold">Оценивайте работу тренеров</h3>
+        <div class="text-xs">
+            Тактика, замены, управление игрой и общее влияние на результат
+        </div>
+    </div>
+</div>
+
+<!-- === FORM === -->
+<form method="post" action="{% url 'evaluations:coaches' match.id %}" class="space-y-6">
+    {% csrf_token %}
+    
+    {% for coach in coaches %}
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-6">
+            <div class="flex items-center gap-3 mb-6">
+                <div class="w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center">
+                    <i class="ti ti-whistle text-accent text-xl"></i>
+                </div>
+                <div>
+                    <h3 class="text-xl font-bold">{{ coach.first_name }} {{ coach.last_name }}</h3>
+                    <p class="text-sm opacity-60">
+                        {% if coach == match.home_coach %}{{ match.home_team.name }}{% else %}{{ match.away_team.name }}{% endif %}
+                    </p>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Тактика -->
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text font-medium">
+                            <i class="ti ti-chess mr-2"></i>
+                            Тактика
+                        </span>
+                        <span class="label-text-alt font-mono" id="coach_{{ coach.id }}_tactics_value">5</span>
+                    </label>
+                    <input type="range" 
+                           name="coach_{{ coach.id }}_tactics" 
+                           min="1" 
+                           max="10" 
+                           value="5"
+                           class="range range-primary range-xs"
+                           oninput="document.getElementById('coach_{{ coach.id }}_tactics_value').textContent = this.value">
+                    <div class="flex justify-between text-xs opacity-50 mt-1">
+                        <span>1</span>
+                        <span>5</span>
+                        <span>10</span>
+                    </div>
+                </div>
+                
+                <!-- Замены -->
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text font-medium">
+                            <i class="ti ti-refresh mr-2"></i>
+                            Замены
+                        </span>
+                        <span class="label-text-alt font-mono" id="coach_{{ coach.id }}_substitutions_value">5</span>
+                    </label>
+                    <input type="range" 
+                           name="coach_{{ coach.id }}_substitutions" 
+                           min="1" 
+                           max="10" 
+                           value="5"
+                           class="range range-primary range-xs"
+                           oninput="document.getElementById('coach_{{ coach.id }}_substitutions_value').textContent = this.value">
+                    <div class="flex justify-between text-xs opacity-50 mt-1">
+                        <span>1</span>
+                        <span>5</span>
+                        <span>10</span>
+                    </div>
+                </div>
+                
+                <!-- Управление -->
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text font-medium">
+                            <i class="ti ti-control mr-2"></i>
+                            Управление
+                        </span>
+                        <span class="label-text-alt font-mono" id="coach_{{ coach.id }}_management_value">5</span>
+                    </label>
+                    <input type="range" 
+                           name="coach_{{ coach.id }}_management" 
+                           min="1" 
+                           max="10" 
+                           value="5"
+                           class="range range-primary range-xs"
+                           oninput="document.getElementById('coach_{{ coach.id }}_management_value').textContent = this.value">
+                    <div class="flex justify-between text-xs opacity-50 mt-1">
+                        <span>1</span>
+                        <span>5</span>
+                        <span>10</span>
+                    </div>
+                </div>
+                
+                <!-- Влияние -->
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text font-medium">
+                            <i class="ti ti-impact mr-2"></i>
+                            Влияние
+                        </span>
+                        <span class="label-text-alt font-mono" id="coach_{{ coach.id }}_impact_value">5</span>
+                    </label>
+                    <input type="range" 
+                           name="coach_{{ coach.id }}_impact" 
+                           min="1" 
+                           max="10" 
+                           value="5"
+                           class="range range-primary range-xs"
+                           oninput="document.getElementById('coach_{{ coach.id }}_impact_value').textContent = this.value">
+                    <div class="flex justify-between text-xs opacity-50 mt-1">
+                        <span>1</span>
+                        <span>5</span>
+                        <span>10</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% empty %}
+    <div class="alert alert-ghost">
+        <i class="ti ti-user-off"></i>
+        <span>Данные о тренерах недоступны для этого матча</span>
+    </div>
+    {% endfor %}
+    
+    <!-- Navigation -->
+    <div class="flex justify-between gap-4 mt-6">
+        <a href="{% url 'evaluations:players' match.id %}" class="btn btn-ghost">
+            <i class="ti ti-arrow-left"></i>
+            Назад
+        </a>
+        <button type="submit" class="btn btn-primary btn-lg">
+            Далее
+            <i class="ti ti-arrow-right"></i>
+        </button>
+    </div>
+</form>
+
+{% endblock %}

@@ -1,0 +1,93 @@
+{% comment %}
+HTMX partial для событий матча
+Использование: hx-get="{% url 'matches:events' match.id %}" hx-target="#events-container"
+{% endcomment %}
+
+<div id="events-container" class="card bg-base-100 border border-base-300">
+    <div class="card-body p-4">
+        <h3 class="font-bold text-lg mb-4">
+            <i class="ti ti-clock-play mr-2"></i>
+            События матча
+        </h3>
+        
+        {% if events %}
+        <div class="space-y-2">
+            {% for event in events %}
+            <div class="flex items-center gap-3 p-2 rounded-lg hover:bg-base-200 transition-all">
+                <!-- Минута -->
+                <div class="font-mono text-sm opacity-60 w-12 text-right">
+                    {{ event.minute }}'
+                </div>
+                
+                <!-- Иконка события -->
+                <div class="w-8 h-8 rounded-full flex items-center justify-center
+                    {% if event.event_type == 'goal' %}bg-success/20 text-success
+                    {% elif event.event_type == 'yellow_card' %}bg-warning/20 text-warning
+                    {% elif event.event_type == 'red_card' %}bg-error/20 text-error
+                    {% elif event.event_type == 'substitution' %}bg-info/20 text-info
+                    {% elif event.event_type == 'penalty' %}bg-warning/20 text-warning
+                    {% elif event.event_type == 'own_goal' %}bg-error/20 text-error
+                    {% else %}bg-base-300{% endif %}">
+                    {% if event.event_type == 'goal' %}
+                    <i class="ti ti-ball"></i>
+                    {% elif event.event_type == 'yellow_card' %}
+                    <i class="ti ti-square-rounded"></i>
+                    {% elif event.event_type == 'red_card' %}
+                    <i class="ti ti-square-rounded-filled"></i>
+                    {% elif event.event_type == 'substitution' %}
+                    <i class="ti ti-refresh"></i>
+                    {% elif event.event_type == 'penalty' %}
+                    <i class="ti ti-whistle"></i>
+                    {% elif event.event_type == 'own_goal' %}
+                    <i class="ti ti-arrow-back"></i>
+                    {% else %}
+                    <i class="ti ti-star"></i>
+                    {% endif %}
+                </div>
+                
+                <!-- Информация -->
+                <div class="flex-1">
+                    {% if event.player %}
+                    <a href="{% url 'players:detail' event.player.id %}" 
+                       class="font-medium text-sm hover:text-primary transition-colors">
+                        {{ event.player.first_name }} {{ event.player.last_name }}
+                    </a>
+                    {% else %}
+                    <span class="font-medium text-sm opacity-60">—</span>
+                    {% endif %}
+                    
+                    <div class="text-xs opacity-60">
+                        {{ event.get_event_type_display }}
+                    </div>
+                </div>
+                
+                <!-- Сторона -->
+                <div class="text-xs opacity-60">
+                    {% if event.team_side == 'home' %}
+                    <span class="badge badge-sm badge-primary">Д</span>
+                    {% else %}
+                    <span class="badge badge-sm badge-secondary">Г</span>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <!-- Кнопка обновления (HTMX) -->
+        <div class="mt-4 text-center">
+            <button class="btn btn-ghost btn-sm"
+                    hx-get="{% url 'matches:events' match.id %}"
+                    hx-target="#events-container"
+                    hx-swap="outerHTML">
+                <i class="ti ti-refresh"></i>
+                Обновить
+            </button>
+        </div>
+        {% else %}
+        <div class="text-center py-8 opacity-60">
+            <i class="ti ti-clock-off text-3xl mb-2"></i>
+            <p class="text-sm">События матча ещё не добавлены</p>
+        </div>
+        {% endif %}
+    </div>
+</div>

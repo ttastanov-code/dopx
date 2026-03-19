@@ -1,0 +1,279 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+
+<!-- === НАВИГАЦИЯ === -->
+<div class="mb-6">
+    <a href="{% url 'teams:list' %}" class="btn btn-ghost btn-sm">
+        <i class="ti ti-arrow-left"></i>
+        Назад к командам
+    </a>
+</div>
+
+<!-- === HEADER КОМАНДЫ === -->
+<div class="card bg-base-100 border border-base-300 mb-6">
+    <div class="card-body p-6">
+        <div class="flex flex-col md:flex-row items-center gap-6">
+            <!-- Логотип -->
+            {% if team.logo_url %}
+            <img src="{{ team.logo_url }}" alt="{{ team.name }}" class="w-32 h-32 object-contain">
+            {% else %}
+            <div class="w-32 h-32 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-5xl">
+                {{ team.name|first|upper }}
+            </div>
+            {% endif %}
+            
+            <!-- Информация -->
+            <div class="flex-1 text-center md:text-left">
+                <h1 class="text-3xl font-bold mb-2">{{ team.name }}</h1>
+                {% if team.city %}
+                <p class="text-lg opacity-60 mb-4">
+                    <i class="ti ti-map-pin"></i>
+                    {{ team.city }}
+                </p>
+                {% endif %}
+                
+                <!-- Быстрые статистики -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div class="stat bg-base-200 rounded-lg p-3">
+                        <div class="stat-title text-xs">Матчей</div>
+                        <div class="stat-value text-xl">{{ total_matches }}</div>
+                    </div>
+                    <div class="stat bg-base-200 rounded-lg p-3">
+                        <div class="stat-title text-xs">Побед</div>
+                        <div class="stat-value text-xl text-success">{{ wins }}</div>
+                    </div>
+                    <div class="stat bg-base-200 rounded-lg p-3">
+                        <div class="stat-title text-xs">Забито</div>
+                        <div class="stat-value text-xl text-primary">{{ goals_scored }}</div>
+                    </div>
+                    <div class="stat bg-base-200 rounded-lg p-3">
+                        <div class="stat-title text-xs">Пропущено</div>
+                        <div class="stat-value text-xl text-error">{{ goals_conceded }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- === ДВЕ КОЛОНКИ === -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    
+    <!-- === ЛЕВАЯ КОЛОНКА (2/3) === -->
+    <div class="lg:col-span-2 space-y-6">
+        
+        <!-- === СОСТАВ КОМАНДЫ === -->
+        {% if players %}
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-4">
+                <h3 class="font-bold text-lg mb-4">
+                    <i class="ti ti-users mr-2"></i>
+                    Состав команды
+                </h3>
+                
+                <div class="overflow-x-auto">
+                    <table class="table table-zebra">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Игрок</th>
+                                <th>Позиция</th>
+                                <th class="text-right">Рейтинг</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for player in players %}
+                            <tr>
+                                <td class="font-mono">{{ player.number|default:"-" }}</td>
+                                <td>
+                                    <a href="{% url 'players:detail' player.id %}" class="hover:text-primary transition-colors">
+                                        {{ player.first_name }} {{ player.last_name }}
+                                    </a>
+                                </td>
+                                <td class="opacity-60">{{ player.position|default:"-" }}</td>
+                                <td class="text-right">
+                                    {% with player_agg=player.match_aggregates.first %}
+                                    {% if player_agg %}
+                                    <span class="font-bold text-success">{{ player_agg.performance_score|floatformat:1 }}</span>
+                                    {% else %}
+                                    <span class="opacity-40">-</span>
+                                    {% endif %}
+                                    {% endwith %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+        
+        <!-- === ПОСЛЕДНИЕ МАТЧИ === -->
+        {% if recent_matches %}
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-4">
+                <h3 class="font-bold text-lg mb-4">
+                    <i class="ti ti-clock mr-2"></i>
+                    Последние матчи
+                </h3>
+                
+                <div class="space-y-3">
+                    {% for match in recent_matches %}
+                    <a href="{% url 'matches:detail' match.id %}" 
+                       class="flex items-center justify-between p-3 bg-base-200 rounded-lg hover:bg-base-300 transition-all">
+                        <div class="flex items-center gap-3">
+                            <span class="text-sm opacity-60 w-20 font-mono">
+                                {{ match.start_time|date:"d.m.Y" }}
+                            </span>
+                            <span class="font-medium">
+                                {{ match.home_team.name }} vs {{ match.away_team.name }}
+                            </span>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            {% if match.status == 'finished' %}
+                            <span class="font-bold font-mono">
+                                {{ match.home_score|default:"-" }} : {{ match.away_score|default:"-" }}
+                            </span>
+                            <span class="badge badge-success badge-sm">
+                                <i class="ti ti-check"></i>
+                            </span>
+                            {% elif match.status == 'live' %}
+                            <span class="badge badge-error badge-sm animate-pulse">LIVE</span>
+                            {% else %}
+                            <span class="badge badge-ghost badge-sm">
+                                <i class="ti ti-calendar"></i>
+                            </span>
+                            {% endif %}
+                        </div>
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+        
+        <!-- === БЛИЖАЙШИЕ МАТЧИ === -->
+        {% if upcoming_matches %}
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-4">
+                <h3 class="font-bold text-lg mb-4">
+                    <i class="ti ti-calendar mr-2"></i>
+                    Ближайшие матчи
+                </h3>
+                
+                <div class="space-y-3">
+                    {% for match in upcoming_matches %}
+                    <a href="{% url 'matches:detail' match.id %}" 
+                       class="flex items-center justify-between p-3 bg-base-200 rounded-lg hover:bg-base-300 transition-all">
+                        <div class="flex items-center gap-3">
+                            <span class="text-sm opacity-60 w-20 font-mono">
+                                {{ match.start_time|date:"d.m" }}
+                            </span>
+                            <span class="font-medium">
+                                {{ match.home_team.name }} vs {{ match.away_team.name }}
+                            </span>
+                        </div>
+                        <div class="text-sm opacity-60">
+                            {{ match.start_time|time:"H:i" }}
+                        </div>
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    
+    <!-- === ПРАВАЯ КОЛОНКА (1/3) === -->
+    <div class="space-y-6">
+        
+        <!-- === ОЦЕНКИ КОМАНДЫ === -->
+        {% if team_evals.total %}
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-4">
+                <h3 class="font-bold text-lg mb-4">
+                    <i class="ti ti-star mr-2"></i>
+                    Оценки болельщиков
+                </h3>
+                
+                <div class="space-y-3">
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm opacity-60">Тактика</span>
+                        <span class="font-bold">{{ team_evals.avg_tactics|floatformat:1 }}</span>
+                    </div>
+                    <div class="w-full bg-base-200 rounded-full h-2">
+                        <div class="bg-primary h-2 rounded-full" 
+                             style="width: {{ team_evals.avg_tactics|floatformat:0 }}%"></div>
+                    </div>
+                    
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm opacity-60">Самоотдача</span>
+                        <span class="font-bold">{{ team_evals.avg_effort|floatformat:1 }}</span>
+                    </div>
+                    <div class="w-full bg-base-200 rounded-full h-2">
+                        <div class="bg-success h-2 rounded-full" 
+                             style="width: {{ team_evals.avg_effort|floatformat:0 }}%"></div>
+                    </div>
+                    
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm opacity-60">Организация</span>
+                        <span class="font-bold">{{ team_evals.avg_organization|floatformat:1 }}</span>
+                    </div>
+                    <div class="w-full bg-base-200 rounded-full h-2">
+                        <div class="bg-info h-2 rounded-full" 
+                             style="width: {{ team_evals.avg_organization|floatformat:0 }}%"></div>
+                    </div>
+                    
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm opacity-60">Менталитет</span>
+                        <span class="font-bold">{{ team_evals.avg_mentality|floatformat:1 }}</span>
+                    </div>
+                    <div class="w-full bg-base-200 rounded-full h-2">
+                        <div class="bg-warning h-2 rounded-full" 
+                             style="width: {{ team_evals.avg_mentality|floatformat:0 }}%"></div>
+                    </div>
+                </div>
+                
+                <div class="text-center mt-4 pt-4 border-t border-base-300">
+                    <span class="text-xs opacity-60">Всего оценок: {{ team_evals.total }}</span>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+        
+        <!-- === ТОП ИГРОКИ === -->
+        {% if top_players %}
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-4">
+                <h3 class="font-bold text-lg mb-4">
+                    <i class="ti ti-medal mr-2"></i>
+                    Топ игроки
+                </h3>
+                
+                <div class="space-y-3">
+                    {% for agg in top_players %}
+                    <a href="{% url 'players:detail' agg.player.id %}" 
+                       class="flex items-center gap-3 p-2 rounded-lg hover:bg-base-200 transition-all">
+                        <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-sm">
+                            {{ forloop.counter }}
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="font-medium truncate">{{ agg.player.first_name }} {{ agg.player.last_name }}</div>
+                            <div class="text-xs opacity-60">{{ agg.match.start_time|date:"d.m" }}</div>
+                        </div>
+                        <div class="text-right">
+                            <div class="font-bold text-success">{{ agg.performance_score|floatformat:1 }}</div>
+                        </div>
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="min-h-[60vh] flex items-center justify-center">
+    <div class="text-center max-w-lg">
+        <!-- Иконка -->
+        <div class="w-32 h-32 rounded-full bg-base-200 flex items-center justify-center mx-auto mb-6">
+            <i class="ti ti-error-404 text-6xl opacity-50"></i>
+        </div>
+        
+        <!-- Заголовок -->
+        <h1 class="text-6xl font-bold mb-4">404</h1>
+        <h2 class="text-2xl font-semibold mb-4">Страница не найдена</h2>
+        <p class="text-lg opacity-60 mb-8">
+            К сожалению, страница которую вы ищете, не существует или была перемещена.
+        </p>
+        
+        <!-- Кнопки -->
+        <div class="flex flex-col sm:flex-row gap-4 justify-center">
+            <a href="{% url 'core:home' %}" class="btn btn-primary btn-lg">
+                <i class="ti ti-home"></i>
+                На главную
+            </a>
+            <a href="{% url 'matches:list' %}" class="btn btn-ghost btn-lg">
+                <i class="ti ti-trophy"></i>
+                К матчам
+            </a>
+        </div>
+        
+        <!-- Поиск -->
+        <div class="mt-8 p-4 bg-base-200 rounded-lg">
+            <p class="text-sm opacity-60 mb-3">Или попробуйте поискать:</p>
+            <form action="{% url 'matches:list' %}" class="flex gap-2">
+                <input type="text" name="q" placeholder="Поиск матча..." class="input input-bordered input-sm flex-1">
+                <button type="submit" class="btn btn-primary btn-sm">
+                    <i class="ti ti-search"></i>
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

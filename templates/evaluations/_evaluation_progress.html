@@ -1,0 +1,48 @@
+{% comment %}
+HTMX partial для прогресс-бара wizard-оценки
+Использование: hx-get="{% url 'evaluations:context' match.id %}" hx-target="#progress-container"
+{% endcomment %}
+
+<div id="progress-container">
+    <!-- Progress Bar -->
+    <div class="mb-8">
+        <div class="flex items-center justify-between mb-2">
+            <span class="text-sm font-medium">Шаг {{ step }} из {{ total_steps }}</span>
+            <span class="text-sm opacity-60">{{ progress }}% завершено</span>
+        </div>
+        <div class="w-full bg-base-200 rounded-full h-2">
+            <div class="bg-primary h-2 rounded-full transition-all duration-300" 
+                 style="width: {{ progress }}%"></div>
+        </div>
+        
+        <!-- Steps Indicator -->
+        <div class="flex justify-between mt-4">
+            {% for i in "123456"|make_list %}
+            <div class="flex flex-col items-center">
+                <div class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold
+                    {% if i|stringformat:"s" == step|stringformat:"s" %}
+                        bg-primary text-primary-content
+                    {% elif i|stringformat:"s" < step|stringformat:"s" %}
+                        bg-success text-success-content
+                    {% else %}
+                        bg-base-300 opacity-50
+                    {% endif %}">
+                    {% if i|stringformat:"s" < step|stringformat:"s" %}
+                    <i class="ti ti-check"></i>
+                    {% else %}
+                    {{ i }}
+                    {% endif %}
+                </div>
+                <span class="text-xs mt-1 opacity-60 hidden md:block">
+                    {% if forloop.counter == 1 %}Контекст
+                    {% elif forloop.counter == 2 %}Команды
+                    {% elif forloop.counter == 3 %}Игроки
+                    {% elif forloop.counter == 4 %}Тренеры
+                    {% elif forloop.counter == 5 %}Судья
+                    {% else %}Финал{% endif %}
+                </span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>

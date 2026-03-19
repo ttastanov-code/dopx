@@ -1,0 +1,132 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+
+<!-- === HEADER === -->
+<div class="mb-8">
+    <h1 class="text-3xl font-bold mb-2">
+        <i class="ti ti-player mr-2"></i>
+        Рейтинг игроков
+    </h1>
+    <p class="opacity-60">Топ футболистов по Performance Score</p>
+</div>
+
+<!-- === TABS === -->
+<div class="tabs tabs-boxed mb-6">
+    <a href="{% url 'users:leaderboard' %}" class="tab">
+        <i class="ti ti-users"></i>
+        Пользователи
+    </a>
+    <a href="{% url 'users:player_leaderboard' %}" class="tab tab-active">
+        <i class="ti ti-player"></i>
+        Игроки
+    </a>
+</div>
+
+<!-- === ТАБЛИЦА === -->
+<div class="card bg-base-100 border border-base-300">
+    <div class="card-body p-0">
+        <div class="overflow-x-auto">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th class="w-16">#</th>
+                        <th>Игрок</th>
+                        <th class="text-center">Команда</th>
+                        <th class="text-center">Performance</th>
+                        <th class="text-center">Матчей</th>
+                        <th class="text-right">Оценок</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for player in players %}
+                    <tr class="hover {% if forloop.counter <= 3 %}bg-warning/10{% endif %}">
+                        <td>
+                            {% if forloop.counter == 1 %}
+                            <span class="text-2xl">🥇</span>
+                            {% elif forloop.counter == 2 %}
+                            <span class="text-2xl">🥈</span>
+                            {% elif forloop.counter == 3 %}
+                            <span class="text-2xl">🥉</span>
+                            {% else %}
+                            <span class="font-bold">{{ forloop.counter }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a href="{% url 'players:detail' player.id %}" class="flex items-center gap-3 hover:text-primary transition-colors">
+                                <div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary">
+                                    {{ player.first_name|first|upper }}{{ player.last_name|first|upper }}
+                                </div>
+                                <div>
+                                    <div class="font-medium">{{ player.first_name }} {{ player.last_name }}</div>
+                                    {% if player.position %}
+                                    <div class="text-xs opacity-60">{{ player.position }}</div>
+                                    {% endif %}
+                                </div>
+                            </a>
+                        </td>
+                        <td class="text-center">
+                            {% if player.team %}
+                            <a href="{% url 'teams:detail' player.team.id %}" class="text-sm hover:text-primary">
+                                {{ player.team.name }}
+                            </a>
+                            {% else %}
+                            <span class="opacity-60">Без команды</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            <span class="font-bold text-lg text-success">
+                                {{ player.avg_performance|floatformat:2 }}
+                            </span>
+                        </td>
+                        <td class="text-center">
+                            <span class="font-mono">{{ player.total_matches }}</span>
+                        </td>
+                        <td class="text-right">
+                            <span class="font-mono opacity-60">{{ player.total_votes }}</span>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" class="text-center py-16 opacity-60">
+                            <i class="ti ti-player-off text-6xl mb-4"></i>
+                            <h3 class="text-xl font-semibold mb-2">Нет данных</h3>
+                            <p>Оцените матчи чтобы появился рейтинг</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- === PAGINATION === -->
+{% if is_paginated %}
+<div class="flex justify-center mt-8">
+    <div class="join">
+        {% if page_obj.has_previous %}
+        <a href="?page={{ page_obj.previous_page_number }}" class="join-item btn btn-sm">
+            <i class="ti ti-chevron-left"></i>
+        </a>
+        {% endif %}
+        
+        {% for num in page_obj.paginator.page_range %}
+        {% if page_obj.number == num %}
+        <button class="join-item btn btn-sm btn-active">{{ num }}</button>
+        {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+        <a href="?page={{ num }}" class="join-item btn btn-sm">{{ num }}</a>
+        {% endif %}
+        {% endfor %}
+        
+        {% if page_obj.has_next %}
+        <a href="?page={{ page_obj.next_page_number }}" class="join-item btn btn-sm">
+            <i class="ti ti-chevron-right"></i>
+        </a>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}
