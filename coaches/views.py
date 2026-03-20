@@ -1,6 +1,6 @@
 # coaches/views.py
 from django.views.generic import ListView, DetailView
-from django.db.models import Count, Avg
+from django.db.models import Count, Avg, Q
 from coaches.models import Coach
 from aggregates.models import CoachMatchAggregate
 from matches.models import Match
@@ -12,13 +12,25 @@ class CoachListView(ListView):
     paginate_by = 20
     
     def get_queryset(self):
-        return Coach.objects.filter(is_active=True).order_by('last_name')
+        # ✅ FIX: Считаем фактические матчи из Match, а не агрегаты
+        return Coach.objects.filter(
+            is_active=True
+        ).annotate(
+            match_count=Count(
+                'home_coached_matches', 
+                filter=Q(home_coached_matches__status='finished'),
+                distinct=True
+            ) + Count(
+                'away_coached_matches',
+                filter=Q(away_coached_matches__status='finished'),
+                distinct=True
+            )
+        ).order_by('last_name')
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Все тренеры — DOPX'
         return context
-
 
 class CoachDetailView(DetailView):
     model = Coach
@@ -29,26 +41,37 @@ class CoachDetailView(DetailView):
         context = super().get_context_data(**kwargs)
         coach = self.object
         
-        # Матчи тренера
+        # Матчи тренера — считаем из Match, а не из агрегатов!
         matches = Match.objects.filter(
-            home_coach=coach
+            Q(home_coach=coach) | Q(away_coach=coach)
         ).select_related(
             'home_team', 'away_team', 'league', 'season'
         ).order_by('-start_time')[:20]
         
-        # Агрегаты
+        # Агрегаты (для оценок)
         aggregates = CoachMatchAggregate.objects.filter(
             coach=coach
         ).select_related('match').order_by('-match__start_time')[:10]
         
-        # Статистика
-        stats = CoachMatchAggregate.objects.filter(coach=coach).aggregate(
-            avg_tactics=Avg('avg_tactics'),
-            avg_substitutions=Avg('avg_substitutions'),
-            avg_management=Avg('avg_management'),
-            avg_impact=Avg('avg_impact'),
-            total_matches=Count('id'),
-        )
+        # ✅ Статистика: матчи считаем из Match, оценки — из агрегатов
+        stats = {
+            'total_matches': Match.objects.filter(  # ✅ ВСЕ матчи тренера
+                Q(home_coach=coach) | Q(away_coach=coach)
+            ).count(),
+            'total_evaluations': CoachMatchAggregate.objects.filter(coach=coach).count(),
+            'avg_tactics': CoachMatchAggregate.objects.filter(coach=coach).aggregate(
+                avg=Avg('avg_tactics')
+            )['avg'],
+            'avg_substitutions': CoachMatchAggregate.objects.filter(coach=coach).aggregate(
+                avg=Avg('avg_substitutions')
+            )['avg'],
+            'avg_management': CoachMatchAggregate.objects.filter(coach=coach).aggregate(
+                avg=Avg('avg_management')
+            )['avg'],
+            'avg_impact': CoachMatchAggregate.objects.filter(coach=coach).aggregate(
+                avg=Avg('avg_impact')
+            )['avg'],
+        }
         
         context.update({
             'matches': matches,

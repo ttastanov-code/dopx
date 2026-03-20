@@ -1,93 +1,161 @@
 {% comment %}
-HTMX partial для событий матча
+HTMX partial для событий матча с детализацией
 Использование: hx-get="{% url 'matches:events' match.id %}" hx-target="#events-container"
 {% endcomment %}
 
-<div id="events-container" class="card bg-base-100 border border-base-300">
-    <div class="card-body p-4">
-        <h3 class="font-bold text-lg mb-4">
-            <i class="ti ti-clock-play mr-2"></i>
-            События матча
-        </h3>
-        
-        {% if events %}
-        <div class="space-y-2">
-            {% for event in events %}
-            <div class="flex items-center gap-3 p-2 rounded-lg hover:bg-base-200 transition-all">
-                <!-- Минута -->
-                <div class="font-mono text-sm opacity-60 w-12 text-right">
-                    {{ event.minute }}'
-                </div>
+<div id="events-container" class="space-y-2">
+    {% for event in events %}
+        <div class="flex items-start gap-3 p-3 rounded-lg bg-base-100 border border-base-200 hover:border-primary/50 transition-all group">
+            
+            <!-- Минута -->
+            <div class="font-mono font-bold text-primary text-lg w-14 text-right shrink-0">
+                {{ event.display_minute }}'
+            </div>
+            
+            <!-- Иконка события -->
+            <div class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0
+                {% if event.event_type == 'goal' %}bg-success/10 text-success
+                {% elif event.event_type == 'penalty' %}bg-warning/10 text-warning
+                {% elif event.event_type == 'own_goal' %}bg-error/10 text-error
+                {% elif event.event_type == 'yellow_card' %}bg-amber-100 text-amber-700
+                {% elif event.event_type == 'red_card' %}bg-red-100 text-red-700
+                {% elif event.event_type == 'substitution' %}bg-info/10 text-info
+                {% elif event.event_type == 'var_check' %}bg-neutral/10 text-neutral
+                {% else %}bg-base-200 text-base-content
+                {% endif %}">
                 
-                <!-- Иконка события -->
-                <div class="w-8 h-8 rounded-full flex items-center justify-center
-                    {% if event.event_type == 'goal' %}bg-success/20 text-success
-                    {% elif event.event_type == 'yellow_card' %}bg-warning/20 text-warning
-                    {% elif event.event_type == 'red_card' %}bg-error/20 text-error
-                    {% elif event.event_type == 'substitution' %}bg-info/20 text-info
-                    {% elif event.event_type == 'penalty' %}bg-warning/20 text-warning
-                    {% elif event.event_type == 'own_goal' %}bg-error/20 text-error
-                    {% else %}bg-base-300{% endif %}">
-                    {% if event.event_type == 'goal' %}
-                    <i class="ti ti-ball"></i>
-                    {% elif event.event_type == 'yellow_card' %}
-                    <i class="ti ti-square-rounded"></i>
-                    {% elif event.event_type == 'red_card' %}
-                    <i class="ti ti-square-rounded-filled"></i>
-                    {% elif event.event_type == 'substitution' %}
-                    <i class="ti ti-refresh"></i>
-                    {% elif event.event_type == 'penalty' %}
-                    <i class="ti ti-whistle"></i>
-                    {% elif event.event_type == 'own_goal' %}
-                    <i class="ti ti-arrow-back"></i>
-                    {% else %}
-                    <i class="ti ti-star"></i>
-                    {% endif %}
-                </div>
-                
-                <!-- Информация -->
-                <div class="flex-1">
+                {% if event.event_type == 'goal' %}
+                    <i class="ti ti-ball text-xl"></i>
+                {% elif event.event_type == 'penalty' %}
+                    <i class="ti ti-whistle text-xl"></i>
+                {% elif event.event_type == 'own_goal' %}
+                    <i class="ti ti-arrow-back text-xl"></i>
+                {% elif event.event_type == 'yellow_card' %}
+                    <i class="ti ti-square-rounded text-xl"></i>
+                {% elif event.event_type == 'red_card' %}
+                    <i class="ti ti-square-rounded-filled text-xl"></i>
+                {% elif event.event_type == 'substitution' %}
+                    <i class="ti ti-refresh text-xl"></i>
+                {% elif event.event_type == 'var_check' %}
+                    <i class="ti ti-screen-share text-xl"></i>
+                {% else %}
+                    <i class="ti ti-star text-xl"></i>
+                {% endif %}
+            </div>
+            
+            <!-- Информация о событии -->
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 flex-wrap">
+                    <!-- Игрок -->
                     {% if event.player %}
-                    <a href="{% url 'players:detail' event.player.id %}" 
-                       class="font-medium text-sm hover:text-primary transition-colors">
-                        {{ event.player.first_name }} {{ event.player.last_name }}
-                    </a>
-                    {% else %}
-                    <span class="font-medium text-sm opacity-60">—</span>
+                        <a href="{% url 'players:detail' event.player.id %}" 
+                           class="font-semibold hover:text-primary transition-colors truncate">
+                            {{ event.player.first_name }} {{ event.player.last_name }}
+                        </a>
                     {% endif %}
                     
-                    <div class="text-xs opacity-60">
+                    <!-- Тип события -->
+                    <span class="text-sm opacity-60">
                         {{ event.get_event_type_display }}
-                    </div>
+                    </span>
+                    
+                    <!-- Сторона команды -->
+                    <span class="badge badge-xs badge-ghost">
+                        {% if event.team_side == 'home' %}{{ match.home_team.name|truncatechars:10 }}{% else %}{{ match.away_team.name|truncatechars:10 }}{% endif %}
+                    </span>
                 </div>
                 
-                <!-- Сторона -->
-                <div class="text-xs opacity-60">
-                    {% if event.team_side == 'home' %}
-                    <span class="badge badge-sm badge-primary">Д</span>
-                    {% else %}
-                    <span class="badge badge-sm badge-secondary">Г</span>
+                <!-- 🔥 Детальная информация по типам -->
+                <div class="mt-1 text-sm opacity-70">
+                    
+                    {% if event.event_type in 'goal,penalty,own_goal' %}
+                        <!-- ГОЛ -->
+                        <div class="flex flex-wrap items-center gap-2">
+                            {% if event.assist_player %}
+                                <span class="flex items-center gap-1">
+                                    <i class="ti ti-arrow-narrow-right"></i>
+                                    <a href="{% url 'players:detail' event.assist_player.id %}" 
+                                       class="hover:text-info transition-colors">
+                                        ассист: {{ event.assist_player.first_name }}
+                                    </a>
+                                </span>
+                            {% endif %}
+                            {% if event.score_after %}
+                                <span class="badge badge-sm badge-success font-mono">
+                                    Счёт: {{ event.score_after }}
+                                </span>
+                            {% endif %}
+                        </div>
+                        
+                    {% elif event.event_type == 'substitution' %}
+                        <!-- ЗАМЕНА -->
+                        <div class="flex items-center gap-2">
+                            <span class="text-error">↓</span>
+                            {% if event.player_out %}
+                                <a href="{% url 'players:detail' event.player_out.id %}" 
+                                   class="hover:text-error transition-colors">
+                                    {{ event.player_out.first_name }}
+                                </a>
+                            {% else %}
+                                <span class="opacity-50">неизвестен</span>
+                            {% endif %}
+                            <span class="text-success">↑</span>
+                            {% if event.player %}
+                                <a href="{% url 'players:detail' event.player.id %}" 
+                                   class="hover:text-success transition-colors">
+                                    {{ event.player.first_name }}
+                                </a>
+                            {% endif %}
+                        </div>
+                        
+                    {% elif event.event_type in 'yellow_card,red_card' %}
+                        <!-- КАРТОЧКА -->
+                        {% if event.card_reason %}
+                            <span class="italic">
+                                {% if event.card_reason == 'unsporting' %}Неспортивное поведение
+                                {% elif event.card_reason == 'dissent' %}Диссидентство
+                                {% elif event.card_reason == 'persistent_fouling' %}Систематические нарушения
+                                {% elif event.card_reason == 'delaying_restart' %}Задержка игры
+                                {% else %}{{ event.get_card_reason_display }}{% endif %}
+                            </span>
+                        {% endif %}
+                        
+                    {% elif event.event_type == 'var_check' %}
+                        <!-- VAR -->
+                        {% if event.var_decision %}
+                            <span class="text-warning">{{ event.var_decision }}</span>
+                        {% else %}
+                            <span class="text-neutral">Проверка VAR...</span>
+                        {% endif %}
+                        
                     {% endif %}
                 </div>
             </div>
-            {% endfor %}
+            
+            <!-- Счёт после события (для голов) -->
+            {% if event.score_after and event.event_type in 'goal,penalty,own_goal' %}
+                <div class="font-mono font-bold text-lg text-primary shrink-0">
+                    {{ event.score_after }}
+                </div>
+            {% endif %}
         </div>
-        
-        <!-- Кнопка обновления (HTMX) -->
-        <div class="mt-4 text-center">
-            <button class="btn btn-ghost btn-sm"
-                    hx-get="{% url 'matches:events' match.id %}"
-                    hx-target="#events-container"
-                    hx-swap="outerHTML">
-                <i class="ti ti-refresh"></i>
-                Обновить
-            </button>
-        </div>
-        {% else %}
+    {% empty %}
         <div class="text-center py-8 opacity-60">
-            <i class="ti ti-clock-off text-3xl mb-2"></i>
-            <p class="text-sm">События матча ещё не добавлены</p>
+            <i class="ti ti-clock-off text-4xl mb-3"></i>
+            <p>События матча ещё не добавлены</p>
         </div>
-        {% endif %}
-    </div>
+    {% endfor %}
 </div>
+
+<!-- Кнопка обновления -->
+{% if events %}
+<div class="mt-4 text-center">
+    <button class="btn btn-ghost btn-sm btn-circle"
+            hx-get="{% url 'matches:events' match.id %}"
+            hx-target="#events-container"
+            hx-swap="outerHTML"
+            title="Обновить события">
+        <i class="ti ti-refresh"></i>
+    </button>
+</div>
+{% endif %}

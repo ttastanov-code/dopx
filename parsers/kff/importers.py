@@ -1,491 +1,466 @@
+# parsers/kff/importers.py
 from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional
+from typing import Dict, Optional, Union, List
 from django.db import transaction, IntegrityError
 from django.utils import timezone
+from matches.models import Match, Stadium
+from teams.models import Team, TeamSeason
+from seasons.models import Season
+from players.models import Player
+from coaches.models import Coach
+from lineups.models import MatchLineup, MatchLineupPlayer
+from events.models import MatchEvent
+from referees.models import Referee
+from leagues.models import League
 import logging
 import re
 
 logger = logging.getLogger(__name__)
 
-from teams.models import Team, TeamSeason
-from players.models import Player
-from matches.models import Match
-from events.models import MatchEvent
-from lineups.models import MatchLineup, MatchLineupPlayer
-from coaches.models import Coach
-from referees.models import Referee
-from core.models_stadium import Stadium
-from seasons.models import Season
-from leagues.models import League
+STATUS_MAP = {
+    "upcoming": "scheduled",
+    "scheduled": "scheduled",
+    "live": "live",
+    "finished": "finished",
+    "postponed": "scheduled",
+    "cancelled": "finished",
+    "interrupted": "finished",
+}
+
+EVENT_TYPE_MAP = {
+    "goal": "goal",
+    "penalty_goal": "penalty",
+    "own_goal": "own_goal",
+    "yellow_card": "yellow_card",
+    "red_card": "red_card",
+    "second_yellow_card": "red_card",
+    "substitution": "substitution",
+    "var": "var_check",
+}
 
 
-# --- Helpers ---
+def parse_match_datetime(date_str: str, time_str: Optional[str], tz=None) -> datetime:
+    if not date_str:
+        return timezone.now()
+    time_part = time_str or "19:00:00"
+    try:
+        dt_str = f"{date_str}T{time_part}"
+        naive_dt = datetime.fromisoformat(dt_str)
+        if tz is None:
+            tz = timezone.get_current_timezone()
+        return timezone.make_aware(naive_dt, tz)
+    except (ValueError, TypeError) as e:
+        logger.warning(f"⚠️ Не распарсил дату {date_str} {time_str}: {e}")
+        return timezone.now()
 
-def get_or_create_stadium(data: Dict) -> Optional[Stadium]:
-    """Создаёт или обновляет стадион по external_id"""
-    if not data:
-        return None
-    ext_id = str(data.get("id"))
-    stadium, _ = Stadium.objects.update_or_create(
-        external_id=ext_id,
+
+def get_or_create_team(team_data: Dict) -> Team:
+    if not team_data:
+        raise ValueError("team_data is empty")
+    team_ext_id = str(team_data.get("id"))
+    if not team_ext_id:
+        raise ValueError(f"No team id in {team_data}")
+    
+    team, created = Team.objects.update_or_create(
+        external_id=team_ext_id,
         defaults={
-            "name": data.get("name", "Unknown")[:255],
-            "city": data.get("city", "")[:255],
-            "capacity": data.get("capacity"),
+            "name": team_data.get("name", "")[:255],
+            "logo_url": team_data.get("logo_url", ""),
+            "is_active": True,
         }
     )
-    return stadium
-
-
-def get_or_create_team(data: Dict) -> Team:
-    """Создаёт или обновляет команду по external_id"""
-    ext_id = str(data["id"])
-    team, _ = Team.objects.update_or_create(
-        external_id=ext_id,
-        defaults={
-            "name": data.get("name", "Unknown")[:255],
-            "logo_url": data.get("logo_url"),
-            "city": data.get("city", "")[:120],
-        }
-    )
+    if created:
+        logger.info(f"Created team: {team.name} (ID: {team_ext_id})")
     return team
 
 
-def get_or_create_player(data: Dict, team: Optional[Team] = None) -> Player:
-    """Создаёт или обновляет игрока по external_id"""
-    p_id = data.get("player_id") or data.get("id")
-    if not p_id:
-        raise ValueError("No player ID provided")
-    
-    ext_id = str(p_id)
-    first_name = data.get("first_name", "") or ""
-    last_name = data.get("last_name", "") or ""
-    
-    defaults = {
-        "first_name": first_name[:120],
-        "last_name": last_name[:120],
-    }
-    
-    # Заполняем team, position, number если переданы
-    if team:
-        defaults["team"] = team
-    if data.get("position") or data.get("amplua"):
-        defaults["position"] = (data.get("amplua") or data.get("position") or "")[:50]
-    if data.get("shirt_number") is not None:
-        defaults["number"] = data.get("shirt_number")
-    
-    player, _ = Player.objects.update_or_create(
-        external_id=ext_id,
-        defaults=defaults
-    )
-    return player
-
-
-def get_or_create_coach(data: Dict, team: Optional[Team] = None) -> Coach:
-    """Создаёт или обновляет тренера с привязкой к команде"""
-    ext_id = str(data["id"])
-    defaults = {
-        "first_name": data.get("first_name", "")[:120],
-        "last_name": data.get("last_name", "")[:120],
-        "is_active": True,
-    }
-    if team:
-        defaults["team"] = team
-    
-    coach, _ = Coach.objects.update_or_create(
-        external_id=ext_id,
-        defaults=defaults
-    )
-    return coach
-
-
-def get_or_create_referee(data: Dict) -> Referee:
-    """Создаёт или обновляет судью по external_id из lineup endpoint"""
-    ext_id = str(data["id"])
-    ref, _ = Referee.objects.update_or_create(
-        external_id=ext_id,
-        defaults={
-            "first_name": data.get("first_name", "")[:120],
-            "last_name": data.get("last_name", "")[:120],
-            "country": data.get("country", {}).get("name", "") if data.get("country") else "",
-            "is_active": True,
-        }
-    )
-    return ref
-
-
-def get_or_create_referee_by_name(referee_name: str) -> Optional[Referee]:
-    """
-    Создаёт или находит судью по имени из game endpoint.
-    Формат имени: "Бағдат Абдуллаев" или "Санжар Ысқақов"
-    """
-    if not referee_name:
+def get_or_create_stadium(stadium_data: Union[str, Dict, None]) -> Optional[Stadium]:
+    if not stadium_data:
         return None
-    
-    # Очищаем имя от лишних пробелов
-    referee_name = referee_name.strip()
-    
-    # Разделяем на имя и фамилию (последнее слово - фамилия)
-    parts = referee_name.split()
-    if len(parts) >= 2:
-        first_name = " ".join(parts[:-1])[:120]
-        last_name = parts[-1][:120]
-    elif len(parts) == 1:
-        first_name = parts[0][:120]
-        last_name = ""
-    else:
-        return None
-    
-    # Пытаемся найти существующего судью
-    referee = Referee.objects.filter(
-        first_name=first_name,
-        last_name=last_name
-    ).first()
-    
-    if not referee:
-        # Создаём нового
-        referee = Referee.objects.create(
-            first_name=first_name,
-            last_name=last_name,
-            is_active=True
+    if isinstance(stadium_data, str):
+        name = stadium_data.strip()[:255]
+        if not name:
+            return None
+        stadium, _ = Stadium.objects.get_or_create(
+            name=name, defaults={"city": "", "capacity": None}
         )
-        logger.info(f"Created new referee: {first_name} {last_name}")
-    
-    return referee
+        return stadium
+    elif isinstance(stadium_data, dict):
+        ext_id = stadium_data.get("id")
+        name = stadium_data.get("name", "Unknown")[:255]
+        city = stadium_data.get("city", "")[:255]
+        capacity = stadium_data.get("capacity")
+        if ext_id:
+            stadium, _ = Stadium.objects.update_or_create(
+                external_id=str(ext_id),
+                defaults={"name": name, "city": city, "capacity": capacity}
+            )
+        else:
+            stadium, _ = Stadium.objects.get_or_create(
+                name=name, defaults={"city": city, "capacity": capacity}
+            )
+        return stadium
+    return None
 
 
-def get_or_create_season(season_id: int, season_name: str = "") -> Season:
-    """Создаёт или получает сезон, привязывая к лиге"""
-    ext_id = str(season_id)
-    
-    # Получаем или создаём лигу Премьер-Лига
-    league, _ = League.objects.get_or_create(
+def get_or_create_default_league() -> League:
+    league, created = League.objects.get_or_create(
         external_id="pl_kz",
-        defaults={
-            "name": "Премьер-Лига Казахстан",
-            "country": "Kazakhstan",
-        }
+        defaults={"name": "Премьер-Лига Казахстан", "country": "Казахстан"}
     )
-    
-    # Извлекаем год из названия сезона
-    year = "2026"
-    if season_name and "2026" in season_name:
-        year = "2026"
-    
-    season, _ = Season.objects.update_or_create(
-        external_id=ext_id,
+    if created:
+        logger.info(f"✅ Created default league: {league.name}")
+    return league
+
+
+def get_or_create_season(season_id: int, league=None) -> Season:
+    if league is None:
+        league = get_or_create_default_league()
+    season, created = Season.objects.get_or_create(
+        external_id=str(season_id),
         defaults={
+            "year": f"20{str(season_id)[-2:]}" if season_id >= 100 else str(season_id),
             "league": league,
-            "year": year,
             "is_active": True,
         }
     )
+    if created:
+        logger.info(f"✅ Created season: {season.year}")
     return season
 
 
-# --- Main Importers ---
+def get_or_create_referee_by_name(name: str) -> Optional[Referee]:
+    if not name:
+        return None
+    name_parts = name.strip().split()
+    if len(name_parts) >= 2:
+        first_name, last_name = name_parts[0], " ".join(name_parts[1:])
+    else:
+        first_name, last_name = name, ""
+    referee, _ = Referee.objects.update_or_create(
+        first_name=first_name, last_name=last_name,
+        defaults={"is_active": True}
+    )
+    return referee
+
+
+def get_or_create_coach(coach_data: Dict, team: Optional[Team] = None) -> Optional[Coach]:
+    if not coach_data:
+        return None
+    first_name = coach_data.get("first_name", "")
+    last_name = coach_data.get("last_name", "")
+    coach_ext_id = coach_data.get("id")
+    if not first_name:
+        return None
+    defaults = {"last_name": last_name, "is_active": True}
+    if team:
+        defaults["team"] = team
+    if coach_ext_id:
+        defaults["external_id"] = str(coach_ext_id)
+    coach, _ = Coach.objects.update_or_create(first_name=first_name, defaults=defaults)
+    return coach
+
 
 @transaction.atomic
 def import_match_core(game_data: Dict, season_id: int = None) -> Match:
-    """
-    Импортирует основную информацию о матче.
-    
-    Устанавливает:
-    - referee (из game_data)
-    - end_time (start_time + 2 часа)
-    - voting_open_until (start_time + 48 часов)
-    """
-    home_team = get_or_create_team(game_data["home_team"])
-    away_team = get_or_create_team(game_data["away_team"])
-    stadium = get_or_create_stadium(game_data.get("stadium"))
-    
-    # Парсинг даты и времени с timezone
-    date_str = game_data.get("date")
-    time_str = game_data.get("time")
-    start_time = None
-    if date_str and time_str:
-        try:
-            naive_dt = datetime.fromisoformat(f"{date_str}T{time_str}")
-            start_time = timezone.make_aware(naive_dt)
-        except (ValueError, TypeError):
-            start_time = timezone.now()
-    
-    # ⚽ РАСЧЁТ end_time (матч длится ~2 часа)
-    end_time = None
-    if start_time:
-        end_time = start_time + timedelta(hours=2)
-    
-    # 🗳️ РАСЧЁТ voting_open_until (48 часов после начала матча)
-    voting_open_until = None
-    if start_time:
-        voting_open_until = start_time + timedelta(hours=48)
-    else:
-        voting_open_until = timezone.now() + timedelta(hours=48)
-    
-    # Маппинг статусов
-    status_map = {
-        "scheduled": "scheduled",
-        "live": "live",
-        "finished": "finished",
-        "upcoming": "scheduled",
-        "postponed": "scheduled",
-        "cancelled": "finished",
-    }
-    raw_status = game_data.get("status", "scheduled")
-    status = status_map.get(raw_status, "scheduled")
-    
-    # Счета могут быть null
-    home_score = game_data.get("home_score")
-    away_score = game_data.get("away_score")
-    
-    # Получаем сезон (ОБЯЗАТЕЛЬНО)
-    season = None
-    league = None
-    actual_season_id = season_id or game_data.get("season_id")
-    
-    if actual_season_id:
-        try:
-            season = get_or_create_season(actual_season_id, game_data.get("season_name", ""))
-            league = season.league
-        except Exception as e:
-            logger.warning(f"Could not create season: {e}")
-            league, _ = League.objects.get_or_create(
-                external_id="pl_kz",
-                defaults={"name": "Премьер-Лига Казахстан", "country": "Kazakhstan"}
-            )
-            season, _ = Season.objects.get_or_create(
-                external_id=str(actual_season_id),
-                defaults={"league": league, "year": "2026", "is_active": True}
-            )
-    else:
-        league, _ = League.objects.get_or_create(
-            external_id="pl_kz",
-            defaults={"name": "Премьер-Лига Казахстан", "country": "Kazakhstan"}
+    logger.debug(f"Importing match {game_data.get('id')}...")
+    try:
+        start_time = parse_match_datetime(
+            game_data.get("date"), game_data.get("time"),
+            tz=timezone.get_current_timezone()
         )
-        season, _ = Season.objects.get_or_create(
-            external_id="200",
-            defaults={"league": league, "year": "2026", "is_active": True}
-        )
-    
-    # 🟨 ОБРАБОТКА СУДЬИ из game endpoint (строка имени)
-    referee = None
-    referee_name = game_data.get("referee")
-    if referee_name:
-        try:
+        raw_status = game_data.get("status", "upcoming")
+        status = STATUS_MAP.get(raw_status, "scheduled")
+        home_score = game_data.get("home_score")
+        away_score = game_data.get("away_score")
+        
+        end_time = voting_open_until = None
+        if start_time:
+            end_time = start_time + timedelta(hours=2)
+            voting_open_until = start_time + timedelta(hours=48 if status == "finished" else 48)
+        
+        home_team_data = game_data.get("home_team", {})
+        away_team_data = game_data.get("away_team", {})
+        if not home_team_data or not away_team_data:
+            raise ValueError(f"Missing team data for match {game_data.get('id')}")
+        home_team = get_or_create_team(home_team_data)
+        away_team = get_or_create_team(away_team_data)
+        
+        stadium = get_or_create_stadium(game_data.get("stadium"))
+        
+        if not season_id:
+            season_id = game_data.get("season_id")
+        season = get_or_create_season(season_id) if season_id else None
+        
+        referee = None
+        referee_name = game_data.get("referee")
+        if referee_name and isinstance(referee_name, str):
             referee = get_or_create_referee_by_name(referee_name)
-            logger.info(f"Referee for match {game_data.get('id')}: {referee_name}")
-        except Exception as e:
-            logger.warning(f"Error processing referee '{referee_name}': {e}")
-    
-    # Создаём/обновляем матч со всеми полями
-    match, created = Match.objects.update_or_create(
-        external_id=str(game_data["id"]),
-        defaults={
-            "home_team": home_team,
-            "away_team": away_team,
-            "stadium": stadium,
-            "start_time": start_time,
-            "end_time": end_time,  # ⚽ +2 часа от start_time
-            "status": status,
-            "home_score": home_score,
-            "away_score": away_score,
-            "has_lineup": game_data.get("has_lineup", False),
-            "voting_open_until": voting_open_until,  # 🗳️ +48 часов от start_time
-            "league": league,
-            "season": season,
-            "referee": referee,  # 🟨 Судья из game endpoint
-        }
-    )
-    
-    # Привязываем команды к сезону
-    TeamSeason.objects.get_or_create(team=home_team, season=season)
-    TeamSeason.objects.get_or_create(team=away_team, season=season)
-    
-    logger.info(
-        f"Match {match.id} created/updated: "
-        f"start={start_time}, end={end_time}, voting_until={voting_open_until}, "
-        f"referee={referee}"
-    )
-    
-    return match
+        
+        match, created = Match.objects.update_or_create(
+            external_id=str(game_data["id"]),
+            defaults={
+                "home_team": home_team, "away_team": away_team,
+                "stadium": stadium, "start_time": start_time,
+                "end_time": end_time, "status": status,
+                "home_score": home_score, "away_score": away_score,
+                "has_lineup": game_data.get("has_lineup", False),
+                "voting_open_until": voting_open_until,
+                "league": season.league if season else None,
+                "season": season, "referee": referee,
+            }
+        )
+        
+        if season:
+            TeamSeason.objects.get_or_create(team=home_team, season=season)
+            TeamSeason.objects.get_or_create(team=away_team, season=season)
+        
+        logger.info(f"Match {match.id} {'created' if created else 'updated'}: {home_team} vs {away_team}")
+        return match
+    except IntegrityError as e:
+        logger.error(f"❌ IntegrityError: {e}")
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error: {type(e).__name__}: {e}", exc_info=True)
+        raise
 
 
 @transaction.atomic
-def import_lineups(match: Match, lineup_data: Dict):
-    """Импортирует составы, тренеров и судей из lineup endpoint"""
-    if not lineup_data or not lineup_data.get("has_lineup"):
+def import_coaches(match: Match, lineup_data: Dict) -> bool:
+    if not lineup_data:
+        return False
+    coaches_data = lineup_data.get("coaches", {})
+    if not coaches_data:
         return False
     
-    # 1. Судьи из lineup endpoint (с ID и ролями)
-    # Сохраняем только главного судью (role = "main")
-    for ref_info in lineup_data.get("referees", []):
-        if ref_info.get("role") == "main":
-            try:
-                referee = get_or_create_referee(ref_info)
-                # Обновляем судью в матче если ещё не установлен
-                if not match.referee:
-                    match.referee = referee
-                    match.save(update_fields=["referee"])
-            except Exception as e:
-                logger.warning(f"Error importing referee: {e}")
+    home_coaches = coaches_data.get("home_team", [])
+    away_coaches = coaches_data.get("away_team", [])
     
-    # 2. Тренеры с привязкой к команде
-    coaches = lineup_data.get("coaches", {})
-    home_coaches = coaches.get("home_team", [])
-    away_coaches = coaches.get("away_team", [])
+    for coach_data in home_coaches:
+        role = coach_data.get("role", "").lower()
+        if "бас бапкер" in role or "main" in role or "главный" in role:
+            coach = get_or_create_coach(coach_data, match.home_team)
+            if coach:
+                match.home_coach = coach
+                match.save(update_fields=["home_coach", "updated_at"])
+                logger.info(f"✅ Linked home coach: {coach}")
+            break
     
-    if home_coaches:
-        head_coach = next(
-            (c for c in home_coaches if "Бас бапкер" in c.get("role", "")),
-            home_coaches[0]
-        )
-        match.home_coach = get_or_create_coach(head_coach, team=match.home_team)
-    
-    if away_coaches:
-        head_coach = next(
-            (c for c in away_coaches if "Бас бапкер" in c.get("role", "")),
-            away_coaches[0]
-        )
-        match.away_coach = get_or_create_coach(head_coach, team=match.away_team)
-    
-    if match.home_coach or match.away_coach:
-        match.save(update_fields=["home_coach", "away_coach"])
-    
-    # 3. Составы команд
-    lineups_info = lineup_data.get("lineups", {})
-    
-    for side_key, db_side, team_obj in [
-        ("home_team", "home", match.home_team),
-        ("away_team", "away", match.away_team)
-    ]:
-        team_data = lineups_info.get(side_key)
-        if not team_data:
-            continue
-        
-        lineup_obj, _ = MatchLineup.objects.update_or_create(
-            match=match,
-            team=team_obj,
-            side=db_side,
-            defaults={"formation": team_data.get("formation") or ""}
-        )
-        
-        # Очищаем старых игроков состава
-        lineup_obj.players.all().delete()
-        
-        # Стартовый состав
-        for p in team_data.get("starters", []):
-            try:
-                player = get_or_create_player(p, team=team_obj)
-                MatchLineupPlayer.objects.create(
-                    lineup=lineup_obj,
-                    player=player,
-                    is_starting=True,
-                    shirt_number=p.get("shirt_number"),
-                    position=(p.get("amplua") or p.get("position") or "")[:20],
-                    minute_in=0,
-                    minute_out=None
-                )
-            except Exception as e:
-                logger.warning(f"Error importing starter {p}: {e}")
-        
-        # Запасные
-        for p in team_data.get("substitutes", []):
-            try:
-                player = get_or_create_player(p, team=team_obj)
-                MatchLineupPlayer.objects.create(
-                    lineup=lineup_obj,
-                    player=player,
-                    is_starting=False,
-                    shirt_number=p.get("shirt_number"),
-                    position=(p.get("amplua") or p.get("position") or "")[:20],
-                    minute_in=None,
-                    minute_out=None
-                )
-            except Exception as e:
-                logger.warning(f"Error importing substitute {p}: {e}")
-    
+    for coach_data in away_coaches:
+        role = coach_data.get("role", "").lower()
+        if "бас бапкер" in role or "main" in role or "главный" in role:
+            coach = get_or_create_coach(coach_data, match.away_team)
+            if coach:
+                match.away_coach = coach
+                match.save(update_fields=["away_coach", "updated_at"])
+                logger.info(f"✅ Linked away coach: {coach}")
+            break
     return True
 
 
 @transaction.atomic
-def import_events_and_minutes(match: Match, events_data: Dict):
-    """Импортирует события и вычисляет minute_in/minute_out для замен"""
+def import_lineups(match: Match, lineup_data: Dict) -> bool:
+    if not lineup_data:
+        return False
+    
+    lineups = lineup_data.get("lineups", {})
+    if not lineups:
+        return False
+    
+    home_lineup_data = lineups.get("home_team", {})
+    away_lineup_data = lineups.get("away_team", {})
+    
+    def process_team_lineup(team_side: str, lineup: Dict, team: Team):
+        if not lineup:
+            return
+        formation = lineup.get("formation", "")
+        starters = lineup.get("starters", [])
+        substitutes = lineup.get("substitutes", [])
+        
+        match_lineup, _ = MatchLineup.objects.update_or_create(
+            match=match, team=team, side=team_side,
+            defaults={"formation": formation}
+        )
+        
+        def get_or_create_player(player_data: Dict, target_team: Team) -> Optional[Player]:
+            player_ext_id = player_data.get("player_id") or player_data.get("id")
+            if not player_ext_id:
+                return None
+            first_name = player_data.get("first_name", "")
+            last_name = player_data.get("last_name", "")
+            position = player_data.get("amplua") or player_data.get("position", "")
+            if len(position) > 20:
+                position = position[:20]
+            shirt_number = player_data.get("shirt_number")
+            
+            player, _ = Player.objects.update_or_create(
+                external_id=str(player_ext_id),
+                defaults={
+                    "first_name": first_name, "last_name": last_name,
+                    "team": target_team, "position": position or "",
+                    "number": shirt_number, "is_active": True,
+                }
+            )
+            return player
+        
+        for player_data in starters:
+            player = get_or_create_player(player_data, team)
+            if not player:
+                continue
+            MatchLineupPlayer.objects.update_or_create(
+                lineup=match_lineup, player=player,
+                defaults={
+                    "is_starting": True,
+                    "position": (player_data.get("amplua") or player_data.get("position", ""))[:20],
+                    "shirt_number": player_data.get("shirt_number"),
+                    "minute_in": 0, "minute_out": None,
+                }
+            )
+        
+        for player_data in substitutes:
+            player = get_or_create_player(player_data, team)
+            if not player:
+                continue
+            MatchLineupPlayer.objects.update_or_create(
+                lineup=match_lineup, player=player,
+                defaults={
+                    "is_starting": False,
+                    "position": (player_data.get("amplua") or player_data.get("position", ""))[:20],
+                    "shirt_number": player_data.get("shirt_number"),
+                    "minute_in": None, "minute_out": None,
+                }
+            )
+    
+    process_team_lineup("home", home_lineup_data, match.home_team)
+    process_team_lineup("away", away_lineup_data, match.away_team)
+    
+    if not match.has_lineup:
+        match.has_lineup = True
+        match.save(update_fields=["has_lineup", "updated_at"])
+    logger.info(f"✅ Imported lineups for match {match.id}")
+    return True
+
+
+@transaction.atomic
+def import_events_and_minutes(match: Match, events_data: Dict) -> bool:
+    """Импортирует события матча — ИСПРАВЛЕННАЯ ВЕРСИЯ"""
     if not events_data:
         return False
     
-    events_list = events_data.get("events", [])
-    if not events_list:
+    events = events_data.get("events", [])
+    if not events:
         return False
     
-    subs_out = {}
-    subs_in = {}
+    # Очищаем старые события
+    deleted_count, _ = match.events.all().delete()
+    if deleted_count > 0:
+        logger.info(f"🗑️ Deleted {deleted_count} old events for match {match.id}")
     
-    for ev in events_list:
-        ev_type = ev.get("event_type")
-        minute = ev.get("minute")
-        team_id = ev.get("team_id")
-        
-        # Определяем сторону матча
-        if match.home_team.external_id and str(team_id) == str(match.home_team.external_id):
-            team_side = "home"
-        elif match.away_team.external_id and str(team_id) == str(match.away_team.external_id):
-            team_side = "away"
-        else:
-            team_side = "home" if team_id == match.home_team_id else "away"
-        
-        player = None
-        player_ext_id = str(ev["player_id"]) if ev.get("player_id") else None
-        if player_ext_id:
-            try:
-                player = Player.objects.get(external_id=player_ext_id)
-            except Player.DoesNotExist:
-                player = Player.objects.create(
-                    external_id=player_ext_id,
-                    first_name=ev.get("player_name", "Unknown").split()[0] if ev.get("player_name") else "Unknown",
-                    last_name=""
-                )
-        
+    created_count = 0
+    
+    for evt in events:
         try:
-            MatchEvent.objects.update_or_create(
-                external_id=str(ev["id"]),
-                defaults={
-                    "match": match,
-                    "player": player,
-                    "minute": minute,
-                    "event_type": ev_type,
-                    "team_side": team_side,
-                }
+            # === 1. Базовые поля ===
+            minute = evt.get("minute")
+            if not minute:
+                continue
+            
+            event_type_raw = evt.get("event_type", "").lower()
+            team_id = evt.get("team_id")
+            
+            # Определяем сторону
+            if team_id and match.home_team.external_id and str(team_id) == str(match.home_team.external_id):
+                team_side = "home"
+            else:
+                team_side = "away"
+            
+            event_type = EVENT_TYPE_MAP.get(event_type_raw, event_type_raw)
+            valid_types = [et[0] for et in MatchEvent.EVENT_TYPES]
+            if event_type not in valid_types:
+                event_type = "goal"
+            
+            # === 2. Игрок ===
+            player = None
+            player_id = evt.get("player_id")
+            player_name_full = evt.get("player_name", "").strip()
+            
+            if player_id:
+                player = Player.objects.filter(external_id=str(player_id)).first()
+                if not player and player_name_full:
+                    name_parts = player_name_full.split()
+                    first_name = name_parts[0] if name_parts else ""
+                    from lineups.models import MatchLineupPlayer
+                    lp = MatchLineupPlayer.objects.filter(
+                        lineup__match=match,
+                        player__first_name__icontains=first_name
+                    ).select_related('player').first()
+                    if lp:
+                        player = lp.player
+            
+            # === 3. 🔥 ИСПРАВЛЕНИЕ: инициализируем ПРАВИЛЬНО ===
+            assist_player = None          # 🔥 НЕ "", а None!
+            player_out = None             # 🔥 НЕ "", а None!
+            score_after = ""              # строка — ок
+            card_reason = None            # может быть строка или None
+            var_decision = ""             # строка — ок
+            
+            # === 4. Детализация по типам ===
+            if event_type in ("goal", "penalty", "own_goal"):
+                assist_id = evt.get("assist_player_id")
+                if assist_id:
+                    assist_player = Player.objects.filter(external_id=str(assist_id)).first()
+                if match.status == "finished" and match.home_score is not None:
+                    score_after = f"{match.home_score}-{match.away_score}"
+            
+            elif event_type == "substitution":
+                player_out_id = evt.get("player_id")
+                player_in_id = evt.get("player2_id")
+                if player_out_id:
+                    player_out = Player.objects.filter(external_id=str(player_out_id)).first()
+                if player_in_id:
+                    from lineups.models import MatchLineupPlayer
+                    MatchLineupPlayer.objects.filter(
+                        lineup__match=match,
+                        player__external_id=str(player_in_id)
+                    ).update(minute_in=minute, is_starting=False)
+            
+            elif event_type in ("yellow_card", "red_card"):
+                reason = evt.get("reason", "")
+                if reason:
+                    card_reason = "unsporting" if "unsporting" in reason.lower() else "other"
+            
+            elif event_type == "var_check":
+                var_decision = evt.get("decision", "")
+            
+            # === 5. Создание события ===
+            MatchEvent.objects.create(
+                match=match,
+                player=player,
+                minute=minute,
+                added_time=evt.get("added_time", 0),
+                event_type=event_type,
+                team_side=team_side,
+                assist_player=assist_player,
+                score_after=score_after,
+                player_out=player_out,
+                card_reason=card_reason,
+                var_decision=var_decision,
+                extra_data=evt,
             )
-        except IntegrityError:
-            pass
-        
-        # Логика замен
-        if ev_type == "substitution":
-            player_out_id = str(ev["player_id"]) if ev.get("player_id") else None
-            player_in_id = str(ev.get("player2_id")) if ev.get("player2_id") else None
-            if player_out_id:
-                subs_out[player_out_id] = minute
-            if player_in_id:
-                subs_in[player_in_id] = minute
+            created_count += 1
+                
+        except Exception as e:
+            logger.error(f"⚠️ Ошибка события: {e} | Data: {evt}", exc_info=True)
+            continue
     
-    # Обновляем minute_in/minute_out
-    for lineup in match.lineups.all():
-        for lp in lineup.players.all():
-            p_ext_id = lp.player.external_id
-            if p_ext_id in subs_out:
-                lp.minute_out = subs_out[p_ext_id]
-            if p_ext_id in subs_in:
-                lp.minute_in = subs_in[p_ext_id]
-                lp.is_starting = False
-            lp.save()
-    
+    event_count = MatchEvent.objects.filter(match=match).count()
+    logger.info(f"✅ Imported {created_count} events for match {match.id} (total in DB: {event_count})")
     return True
 
 
 @transaction.atomic
-def import_stats(match: Match, stats_data: Dict):
-    """Импортирует статистику матча"""
+def import_stats(match: Match, stats_data: Dict) -> bool:
     if not stats_data:
         return False
-    # Здесь можно добавить сохранение team_stats и player_stats
+    logger.info(f"Stats imported for match {match.id}")
     return True

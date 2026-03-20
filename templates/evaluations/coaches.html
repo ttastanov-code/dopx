@@ -1,177 +1,214 @@
 {% extends 'base.html' %}
 {% load static %}
+{% load match_extras %}
 
 {% block content %}
-
 <!-- === PROGRESS BAR === -->
-<div class="mb-8">
-    <div class="flex items-center justify-between mb-2">
-        <span class="text-sm font-medium">Шаг {{ step }} из {{ total_steps }}</span>
-        <span class="text-sm opacity-60">{{ progress }}% завершено</span>
+<div class="max-w-4xl mx-auto mb-8">
+    <div class="flex items-center justify-between mb-3">
+        <span class="text-sm font-semibold text-base-content/70">
+            Шаг {{ step }} из {{ total_steps }}
+        </span>
+        <span class="text-sm font-medium text-primary">{{ progress }}% завершено</span>
     </div>
-    <div class="w-full bg-base-200 rounded-full h-2">
-        <div class="bg-primary h-2 rounded-full transition-all duration-300" 
+    <div class="w-full bg-base-200 rounded-full h-2.5">
+        <div class="bg-gradient-to-r from-primary to-primary/70 h-2.5 rounded-full transition-all duration-500"
              style="width: {{ progress }}%"></div>
     </div>
 </div>
 
 <!-- === MATCH INFO === -->
-<div class="card bg-base-100 border border-base-300 mb-6">
-    <div class="card-body p-4">
-        <div class="text-center">
-            <h2 class="text-xl font-bold">
-                {{ match.home_team.name }} vs {{ match.away_team.name }}
-            </h2>
-            <div class="text-2xl font-bold font-mono mt-2">
-                {{ match.home_score|default:"-" }} : {{ match.away_score|default:"-" }}
+<div class="max-w-4xl mx-auto mb-8">
+    <div class="card bg-base-100 border border-base-200 shadow-sm">
+        <div class="card-body p-5">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    {% if match.home_team.logo_url %}
+                        <img src="{{ match.home_team.logo_url }}" alt="{{ match.home_team.name }}" class="w-12 h-12 object-contain">
+                    {% else %}
+                        <div class="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary">
+                            {{ match.home_team.name|first|upper }}
+                        </div>
+                    {% endif %}
+                    <span class="font-semibold">{{ match.home_team.name }}</span>
+                </div>
+                <div class="text-center px-6">
+                    <div class="text-2xl font-bold font-mono">
+                        {% render_score match.home_score match.away_score %}
+                    </div>
+                    <div class="text-xs text-base-content/50">{{ match.start_time|date:"d.m.Y" }}</div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span class="font-semibold">{{ match.away_team.name }}</span>
+                    {% if match.away_team.logo_url %}
+                        <img src="{{ match.away_team.logo_url }}" alt="{{ match.away_team.name }}" class="w-12 h-12 object-contain">
+                    {% else %}
+                        <div class="w-12 h-12 rounded-full bg-secondary/10 flex items-center justify-center font-bold text-secondary">
+                            {{ match.away_team.name|first|upper }}
+                        </div>
+                    {% endif %}
+                </div>
             </div>
         </div>
     </div>
 </div>
 
 <!-- === INFO ALERT === -->
-<div class="alert alert-info mb-6">
-    <i class="ti ti-info-circle"></i>
-    <div>
-        <h3 class="font-bold">Оценивайте работу тренеров</h3>
-        <div class="text-xs">
-            Тактика, замены, управление игрой и общее влияние на результат
+<div class="max-w-4xl mx-auto mb-6">
+    <div class="alert alert-info rounded-xl">
+        <i class="ti ti-info-circle"></i>
+        <div>
+            <h3 class="font-bold">Оценивайте работу тренеров</h3>
+            <div class="text-xs">
+                Тактика, замены, управление игрой и общее влияние на результат
+            </div>
         </div>
     </div>
 </div>
 
 <!-- === FORM === -->
-<form method="post" action="{% url 'evaluations:coaches' match.id %}" class="space-y-6">
-    {% csrf_token %}
-    
-    {% for coach in coaches %}
-    <div class="card bg-base-100 border border-base-300">
-        <div class="card-body p-6">
-            <div class="flex items-center gap-3 mb-6">
-                <div class="w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center">
-                    <i class="ti ti-whistle text-accent text-xl"></i>
-                </div>
-                <div>
-                    <h3 class="text-xl font-bold">{{ coach.first_name }} {{ coach.last_name }}</h3>
-                    <p class="text-sm opacity-60">
-                        {% if coach == match.home_coach %}{{ match.home_team.name }}{% else %}{{ match.away_team.name }}{% endif %}
-                    </p>
+<div class="max-w-4xl mx-auto">
+    <form method="post" action="{% url 'evaluations:coaches' match.id %}" class="space-y-6">
+        {% csrf_token %}
+        
+        {% for coach in coaches %}
+            <div class="card bg-base-100 border-2 border-accent/20 shadow-lg">
+                <div class="card-body p-6">
+                    <div class="flex items-center gap-4 mb-6 pb-4 border-b border-base-200">
+                        <div class="w-14 h-14 rounded-full bg-accent/10 flex items-center justify-center">
+                            <i class="ti ti-whistle text-accent text-2xl"></i>
+                        </div>
+                        <div class="flex-1">
+                            <h3 class="text-xl font-bold">{{ coach.first_name }} {{ coach.last_name }}</h3>
+                            <p class="text-sm text-base-content/50">
+                                {% if coach == match.home_coach %}
+                                    {{ match.home_team.name }}
+                                {% else %}
+                                    {{ match.away_team.name }}
+                                {% endif %}
+                            </p>
+                        </div>
+                        <div class="badge badge-accent badge-lg">Тренер</div>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <!-- Тактика -->
+                        <div class="form-control">
+                            <label class="label mb-2">
+                                <span class="label-text font-semibold tooltip"
+                                      data-tip="{{ INDICATOR_TOOLTIPS.coach.tactics|default:'Тактика: выбор схемы, адаптация под соперника' }}">
+                                    <i class="ti ti-chess text-accent mr-2"></i>
+                                    Тактика
+                                </span>
+                                <span class="label-text-alt font-mono font-bold text-lg" 
+                                      id="coach_{{ coach.id }}_tactics_value">5</span>
+                            </label>
+                            <input type="range"
+                                   name="coach_{{ coach.id }}_tactics"
+                                   min="1"
+                                   max="10"
+                                   value="5"
+                                   class="range range-accent range-lg"
+                                   oninput="document.getElementById('coach_{{ coach.id }}_tactics_value').textContent = this.value">
+                            <div class="flex justify-between text-xs text-base-content/40 mt-2 px-1">
+                                <span>1</span>
+                                <span>5</span>
+                                <span>10</span>
+                            </div>
+                        </div>
+                        <!-- Замены -->
+                        <div class="form-control">
+                            <label class="label mb-2">
+                                <span class="label-text font-semibold tooltip"
+                                      data-tip="{{ INDICATOR_TOOLTIPS.coach.substitutions|default:'Замены: своевременность и эффективность замен' }}">
+                                    <i class="ti ti-refresh text-accent mr-2"></i>
+                                    Замены
+                                </span>
+                                <span class="label-text-alt font-mono font-bold text-lg" 
+                                      id="coach_{{ coach.id }}_substitutions_value">5</span>
+                            </label>
+                            <input type="range"
+                                   name="coach_{{ coach.id }}_substitutions"
+                                   min="1"
+                                   max="10"
+                                   value="5"
+                                   class="range range-accent range-lg"
+                                   oninput="document.getElementById('coach_{{ coach.id }}_substitutions_value').textContent = this.value">
+                            <div class="flex justify-between text-xs text-base-content/40 mt-2 px-1">
+                                <span>1</span>
+                                <span>5</span>
+                                <span>10</span>
+                            </div>
+                        </div>
+                        <!-- Управление -->
+                        <div class="form-control">
+                            <label class="label mb-2">
+                                <span class="label-text font-semibold tooltip"
+                                      data-tip="{{ INDICATOR_TOOLTIPS.coach.game_management|default:'Управление: контроль темпа, переломные решения' }}">
+                                    <i class="ti ti-control text-accent mr-2"></i>
+                                    Управление
+                                </span>
+                                <span class="label-text-alt font-mono font-bold text-lg" 
+                                      id="coach_{{ coach.id }}_management_value">5</span>
+                            </label>
+                            <input type="range"
+                                   name="coach_{{ coach.id }}_management"
+                                   min="1"
+                                   max="10"
+                                   value="5"
+                                   class="range range-accent range-lg"
+                                   oninput="document.getElementById('coach_{{ coach.id }}_management_value').textContent = this.value">
+                            <div class="flex justify-between text-xs text-base-content/40 mt-2 px-1">
+                                <span>1</span>
+                                <span>5</span>
+                                <span>10</span>
+                            </div>
+                        </div>
+                        <!-- Влияние -->
+                        <div class="form-control">
+                            <label class="label mb-2">
+                                <span class="label-text font-semibold tooltip"
+                                      data-tip="{{ INDICATOR_TOOLTIPS.coach.impact|default:'Влияние: общий вклад тренера в результат' }}">
+                                    <i class="ti ti-impact text-accent mr-2"></i>
+                                    Влияние
+                                </span>
+                                <span class="label-text-alt font-mono font-bold text-lg" 
+                                      id="coach_{{ coach.id }}_impact_value">5</span>
+                            </label>
+                            <input type="range"
+                                   name="coach_{{ coach.id }}_impact"
+                                   min="1"
+                                   max="10"
+                                   value="5"
+                                   class="range range-accent range-lg"
+                                   oninput="document.getElementById('coach_{{ coach.id }}_impact_value').textContent = this.value">
+                            <div class="flex justify-between text-xs text-base-content/40 mt-2 px-1">
+                                <span>1</span>
+                                <span>5</span>
+                                <span>10</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
-            
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <!-- Тактика -->
-                <div class="form-control">
-                    <label class="label">
-                        <span class="label-text font-medium">
-                            <i class="ti ti-chess mr-2"></i>
-                            Тактика
-                        </span>
-                        <span class="label-text-alt font-mono" id="coach_{{ coach.id }}_tactics_value">5</span>
-                    </label>
-                    <input type="range" 
-                           name="coach_{{ coach.id }}_tactics" 
-                           min="1" 
-                           max="10" 
-                           value="5"
-                           class="range range-primary range-xs"
-                           oninput="document.getElementById('coach_{{ coach.id }}_tactics_value').textContent = this.value">
-                    <div class="flex justify-between text-xs opacity-50 mt-1">
-                        <span>1</span>
-                        <span>5</span>
-                        <span>10</span>
-                    </div>
-                </div>
-                
-                <!-- Замены -->
-                <div class="form-control">
-                    <label class="label">
-                        <span class="label-text font-medium">
-                            <i class="ti ti-refresh mr-2"></i>
-                            Замены
-                        </span>
-                        <span class="label-text-alt font-mono" id="coach_{{ coach.id }}_substitutions_value">5</span>
-                    </label>
-                    <input type="range" 
-                           name="coach_{{ coach.id }}_substitutions" 
-                           min="1" 
-                           max="10" 
-                           value="5"
-                           class="range range-primary range-xs"
-                           oninput="document.getElementById('coach_{{ coach.id }}_substitutions_value').textContent = this.value">
-                    <div class="flex justify-between text-xs opacity-50 mt-1">
-                        <span>1</span>
-                        <span>5</span>
-                        <span>10</span>
-                    </div>
-                </div>
-                
-                <!-- Управление -->
-                <div class="form-control">
-                    <label class="label">
-                        <span class="label-text font-medium">
-                            <i class="ti ti-control mr-2"></i>
-                            Управление
-                        </span>
-                        <span class="label-text-alt font-mono" id="coach_{{ coach.id }}_management_value">5</span>
-                    </label>
-                    <input type="range" 
-                           name="coach_{{ coach.id }}_management" 
-                           min="1" 
-                           max="10" 
-                           value="5"
-                           class="range range-primary range-xs"
-                           oninput="document.getElementById('coach_{{ coach.id }}_management_value').textContent = this.value">
-                    <div class="flex justify-between text-xs opacity-50 mt-1">
-                        <span>1</span>
-                        <span>5</span>
-                        <span>10</span>
-                    </div>
-                </div>
-                
-                <!-- Влияние -->
-                <div class="form-control">
-                    <label class="label">
-                        <span class="label-text font-medium">
-                            <i class="ti ti-impact mr-2"></i>
-                            Влияние
-                        </span>
-                        <span class="label-text-alt font-mono" id="coach_{{ coach.id }}_impact_value">5</span>
-                    </label>
-                    <input type="range" 
-                           name="coach_{{ coach.id }}_impact" 
-                           min="1" 
-                           max="10" 
-                           value="5"
-                           class="range range-primary range-xs"
-                           oninput="document.getElementById('coach_{{ coach.id }}_impact_value').textContent = this.value">
-                    <div class="flex justify-between text-xs opacity-50 mt-1">
-                        <span>1</span>
-                        <span>5</span>
-                        <span>10</span>
-                    </div>
-                </div>
+        {% empty %}
+            <div class="alert alert-ghost rounded-xl">
+                <i class="ti ti-user-off"></i>
+                <span>Данные о тренерах недоступны для этого матча</span>
             </div>
-        </div>
-    </div>
-    {% empty %}
-    <div class="alert alert-ghost">
-        <i class="ti ti-user-off"></i>
-        <span>Данные о тренерах недоступны для этого матча</span>
-    </div>
-    {% endfor %}
-    
-    <!-- Navigation -->
-    <div class="flex justify-between gap-4 mt-6">
-        <a href="{% url 'evaluations:players' match.id %}" class="btn btn-ghost">
-            <i class="ti ti-arrow-left"></i>
-            Назад
-        </a>
-        <button type="submit" class="btn btn-primary btn-lg">
-            Далее
-            <i class="ti ti-arrow-right"></i>
-        </button>
-    </div>
-</form>
+        {% endfor %}
 
+        <!-- Navigation -->
+        <div class="flex justify-between gap-4 mt-6 pt-4 border-t border-base-200">
+            <a href="{% url 'evaluations:players' match.id %}" class="btn btn-ghost btn-lg">
+                <i class="ti ti-arrow-left"></i>
+                Назад
+            </a>
+            <button type="submit" class="btn btn-primary btn-lg px-8">
+                Далее
+                <i class="ti ti-arrow-right"></i>
+            </button>
+        </div>
+    </form>
+</div>
 {% endblock %}

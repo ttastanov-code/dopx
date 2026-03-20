@@ -1,133 +1,173 @@
 {% extends 'base.html' %}
 {% load static %}
+{% load match_extras %}
+{% load math_extras %}
 
 {% block content %}
-
 <!-- === PROGRESS BAR === -->
-<div class="mb-8">
-    <div class="flex items-center justify-between mb-2">
-        <span class="text-sm font-medium">Шаг {{ step }} из {{ total_steps }}</span>
-        <span class="text-sm opacity-60">{{ progress }}% завершено</span>
+<div class="max-w-6xl mx-auto mb-8">
+    <div class="flex items-center justify-between mb-3">
+        <span class="text-sm font-semibold text-base-content/70">
+            Шаг {{ step }} из {{ total_steps }}
+        </span>
+        <span class="text-sm font-medium text-primary">{{ progress }}% завершено</span>
     </div>
-    <div class="w-full bg-base-200 rounded-full h-2">
-        <div class="bg-primary h-2 rounded-full transition-all duration-300" 
+    <div class="w-full bg-base-200 rounded-full h-2.5">
+        <div class="bg-gradient-to-r from-primary to-primary/70 h-2.5 rounded-full transition-all duration-500"
              style="width: {{ progress }}%"></div>
     </div>
 </div>
 
 <!-- === MATCH INFO === -->
-<div class="card bg-base-100 border border-base-300 mb-6">
-    <div class="card-body p-4">
-        <div class="text-center">
-            <h2 class="text-xl font-bold">
-                {{ match.home_team.name }} vs {{ match.away_team.name }}
-            </h2>
-            <div class="text-2xl font-bold font-mono mt-2">
-                {{ match.home_score|default:"-" }} : {{ match.away_score|default:"-" }}
+<div class="max-w-6xl mx-auto mb-8">
+    <div class="card bg-base-100 border border-base-200 shadow-sm">
+        <div class="card-body p-5">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    {% if match.home_team.logo_url %}
+                        <img src="{{ match.home_team.logo_url }}" alt="{{ match.home_team.name }}" class="w-12 h-12 object-contain">
+                    {% else %}
+                        <div class="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary">
+                            {{ match.home_team.name|first|upper }}
+                        </div>
+                    {% endif %}
+                    <span class="font-semibold">{{ match.home_team.name }}</span>
+                </div>
+                <div class="text-center px-6">
+                    <div class="text-2xl font-bold font-mono">
+                        {% render_score match.home_score match.away_score %}
+                    </div>
+                    <div class="text-xs text-base-content/50">{{ match.start_time|date:"d.m.Y" }}</div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span class="font-semibold">{{ match.away_team.name }}</span>
+                    {% if match.away_team.logo_url %}
+                        <img src="{{ match.away_team.logo_url }}" alt="{{ match.away_team.name }}" class="w-12 h-12 object-contain">
+                    {% else %}
+                        <div class="w-12 h-12 rounded-full bg-secondary/10 flex items-center justify-center font-bold text-secondary">
+                            {{ match.away_team.name|first|upper }}
+                        </div>
+                    {% endif %}
+                </div>
             </div>
         </div>
     </div>
 </div>
 
 <!-- === FORM === -->
-<form method="post" action="{% url 'evaluations:teams' match.id %}" class="space-y-6">
-    {% csrf_token %}
-    
-    <!-- Домашняя команда -->
-    <div class="card bg-base-100 border border-base-300">
-        <div class="card-body p-6">
-            <div class="flex items-center gap-3 mb-6">
-                {% if match.home_team.logo_url %}
-                <img src="{{ match.home_team.logo_url }}" alt="{{ match.home_team.name }}" class="w-12 h-12 object-contain">
-                {% else %}
-                <div class="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-xl">
-                    {{ match.home_team.name|first|upper }}
-                </div>
-                {% endif %}
-                <h3 class="text-xl font-bold">{{ match.home_team.name }}</h3>
-            </div>
-            
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {% for field in evaluation_fields %}
-                <div class="form-control">
-                    <label class="label">
-                        <span class="label-text font-medium">
-                            <i class="ti {{ field.icon }} mr-2"></i>
-                            {{ field.label }}
-                        </span>
-                        <span class="label-text-alt font-mono" id="home_{{ field.name }}_value">5</span>
-                    </label>
-                    <input type="range" 
-                           name="team_{{ match.home_team.id }}_{{ field.name }}" 
-                           min="1" 
-                           max="10" 
-                           value="5"
-                           class="range range-primary range-xs"
-                           oninput="document.getElementById('home_{{ field.name }}_value').textContent = this.value">
-                    <div class="flex justify-between text-xs opacity-50 mt-1">
-                        <span>1</span>
-                        <span>5</span>
-                        <span>10</span>
+<div class="max-w-6xl mx-auto">
+    <form method="post" action="{% url 'evaluations:teams' match.id %}" class="space-y-8">
+        {% csrf_token %}
+        
+        <!-- Домашняя команда -->
+        <div class="card bg-base-100 border-2 border-primary/20 shadow-lg">
+            <div class="card-body p-6">
+                <div class="flex items-center gap-4 mb-6 pb-4 border-b border-base-200">
+                    {% if match.home_team.logo_url %}
+                        <img src="{{ match.home_team.logo_url }}" alt="{{ match.home_team.name }}" class="w-14 h-14 object-contain">
+                    {% else %}
+                        <div class="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center font-bold text-primary text-2xl">
+                            {{ match.home_team.name|first|upper }}
+                        </div>
+                    {% endif %}
+                    <div>
+                        <h3 class="text-xl font-bold">{{ match.home_team.name }}</h3>
+                        <p class="text-sm text-base-content/50">Домашняя команда</p>
                     </div>
+                    <div class="ml-auto badge badge-primary badge-lg">Шаг 1</div>
                 </div>
-                {% endfor %}
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {% for field in evaluation_fields %}
+                        <div class="form-control">
+                            <label class="label mb-2">
+                                <span class="label-text font-semibold tooltip"
+                                      data-tip="{{ INDICATOR_TOOLTIPS.team|get_item:field.name|default:'Оценка по критерию' }}">
+                                    <i class="ti {{ field.icon }} text-primary mr-2"></i>
+                                    {{ field.label }}
+                                </span>
+                                <span class="label-text-alt font-mono font-bold text-lg" 
+                                      id="home_{{ field.name }}_value">5</span>
+                            </label>
+                            <input type="range"
+                                   name="team_{{ match.home_team.id }}_{{ field.name }}"
+                                   min="1"
+                                   max="10"
+                                   value="5"
+                                   class="range range-primary range-lg"
+                                   step="1"
+                                   oninput="document.getElementById('home_{{ field.name }}_value').textContent = this.value">
+                            <div class="flex justify-between text-xs text-base-content/40 mt-2 px-1">
+                                <span>1</span>
+                                <span>5</span>
+                                <span>10</span>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
             </div>
         </div>
-    </div>
-    
-    <!-- Гостевая команда -->
-    <div class="card bg-base-100 border border-base-300">
-        <div class="card-body p-6">
-            <div class="flex items-center gap-3 mb-6">
-                {% if match.away_team.logo_url %}
-                <img src="{{ match.away_team.logo_url }}" alt="{{ match.away_team.name }}" class="w-12 h-12 object-contain">
-                {% else %}
-                <div class="w-12 h-12 rounded-full bg-secondary/10 flex items-center justify-center font-bold text-secondary text-xl">
-                    {{ match.away_team.name|first|upper }}
-                </div>
-                {% endif %}
-                <h3 class="text-xl font-bold">{{ match.away_team.name }}</h3>
-            </div>
-            
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {% for field in evaluation_fields %}
-                <div class="form-control">
-                    <label class="label">
-                        <span class="label-text font-medium">
-                            <i class="ti {{ field.icon }} mr-2"></i>
-                            {{ field.label }}
-                        </span>
-                        <span class="label-text-alt font-mono" id="away_{{ field.name }}_value">5</span>
-                    </label>
-                    <input type="range" 
-                           name="team_{{ match.away_team.id }}_{{ field.name }}" 
-                           min="1" 
-                           max="10" 
-                           value="5"
-                           class="range range-primary range-xs"
-                           oninput="document.getElementById('away_{{ field.name }}_value').textContent = this.value">
-                    <div class="flex justify-between text-xs opacity-50 mt-1">
-                        <span>1</span>
-                        <span>5</span>
-                        <span>10</span>
-                    </div>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
-    </div>
-    
-    <!-- Navigation -->
-    <div class="flex justify-between gap-4">
-        <a href="{% url 'evaluations:context' match.id %}" class="btn btn-ghost">
-            <i class="ti ti-arrow-left"></i>
-            Назад
-        </a>
-        <button type="submit" class="btn btn-primary btn-lg">
-            Далее
-            <i class="ti ti-arrow-right"></i>
-        </button>
-    </div>
-</form>
 
+        <!-- Гостевая команда -->
+        <div class="card bg-base-100 border-2 border-secondary/20 shadow-lg">
+            <div class="card-body p-6">
+                <div class="flex items-center gap-4 mb-6 pb-4 border-b border-base-200">
+                    {% if match.away_team.logo_url %}
+                        <img src="{{ match.away_team.logo_url }}" alt="{{ match.away_team.name }}" class="w-14 h-14 object-contain">
+                    {% else %}
+                        <div class="w-14 h-14 rounded-xl bg-secondary/10 flex items-center justify-center font-bold text-secondary text-2xl">
+                            {{ match.away_team.name|first|upper }}
+                        </div>
+                    {% endif %}
+                    <div>
+                        <h3 class="text-xl font-bold">{{ match.away_team.name }}</h3>
+                        <p class="text-sm text-base-content/50">Гостевая команда</p>
+                    </div>
+                    <div class="ml-auto badge badge-secondary badge-lg">Шаг 2</div>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {% for field in evaluation_fields %}
+                        <div class="form-control">
+                            <label class="label mb-2">
+                                <span class="label-text font-semibold tooltip"
+                                      data-tip="{{ INDICATOR_TOOLTIPS.team|get_item:field.name|default:'Оценка по критерию' }}">
+                                    <i class="ti {{ field.icon }} text-secondary mr-2"></i>
+                                    {{ field.label }}
+                                </span>
+                                <span class="label-text-alt font-mono font-bold text-lg" 
+                                      id="away_{{ field.name }}_value">5</span>
+                            </label>
+                            <input type="range"
+                                   name="team_{{ match.away_team.id }}_{{ field.name }}"
+                                   min="1"
+                                   max="10"
+                                   value="5"
+                                   class="range range-secondary range-lg"
+                                   step="1"
+                                   oninput="document.getElementById('away_{{ field.name }}_value').textContent = this.value">
+                            <div class="flex justify-between text-xs text-base-content/40 mt-2 px-1">
+                                <span>1</span>
+                                <span>5</span>
+                                <span>10</span>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Navigation -->
+        <div class="flex justify-between gap-4 pt-4">
+            <a href="{% url 'evaluations:context' match.id %}" class="btn btn-ghost btn-lg">
+                <i class="ti ti-arrow-left"></i>
+                Назад
+            </a>
+            <button type="submit" class="btn btn-primary btn-lg px-8">
+                Далее
+                <i class="ti ti-arrow-right"></i>
+            </button>
+        </div>
+    </form>
+</div>
 {% endblock %}

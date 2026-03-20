@@ -5,6 +5,7 @@ from .importers import (
     import_lineups,
     import_events_and_minutes,
     import_stats,
+    import_coaches,
     get_or_create_season
 )
 import logging
@@ -13,6 +14,7 @@ from django.db.utils import IntegrityError
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
+
 
 def import_full_match(match_id: int, season_id: int = None) -> bool:
     """Полный импорт одного матча с детальным логированием"""
@@ -32,7 +34,7 @@ def import_full_match(match_id: int, season_id: int = None) -> bool:
     }
     
     try:
-        # 1. Основная информация
+        # === 1. Основная информация о матче ===
         logger.info(f"  📊 Загрузка данных матча...")
         game_resp = client.get_game_details(match_id)
         
@@ -54,7 +56,7 @@ def import_full_match(match_id: int, season_id: int = None) -> bool:
         
         # Импорт ядра матча
         try:
-            match, created = import_match_core_with_tracking(game_data, season_id)
+            match, created = _import_match_with_tracking(game_data, season_id)
             if created:
                 stats['created']['match'] = str(match.id)
                 logger.info(f"  ✅ Матч создан: {match.id}")
@@ -65,7 +67,9 @@ def import_full_match(match_id: int, season_id: int = None) -> bool:
             logger.info(f"  ⚽ {match.home_team} vs {match.away_team} ({match.status})")
             logger.info(f"  📅 Start: {match.start_time}, End: {match.end_time}")
             logger.info(f"  🗳️  Voting until: {match.voting_open_until}")
-            logger.info(f"  🟨 Referee: {match.referee}")
+            if match.referee:
+                logger.info(f"  🟨 Referee: {match.referee}")
+                
         except IntegrityError as e:
             error = f"IntegrityError при импорте матча: {e}"
             logger.error(f"  ❌ {error}")
@@ -77,51 +81,67 @@ def import_full_match(match_id: int, season_id: int = None) -> bool:
             stats['errors'].append(error)
             return False
         
-        # 2. Составы
+        # === 2. Составы + Тренеры ===
         if game_data.get("has_lineup"):
-            logger.info(f"  👥 Загрузка составов...")
+            logger.info(f"  👥 Загрузка составов и тренеров...")
             lineup_resp = client.get_lineup(match_id)
+            
             if lineup_resp and isinstance(lineup_resp, dict):
+                # 🔥 API возвращает данные в ключе "data" или напрямую
                 lineup_data = lineup_resp.get("data", lineup_resp)
+                
                 try:
-                    result = import_lineups(match, lineup_data)
-                    if result:
+                    # Импорт составов
+                    if import_lineups(match, lineup_data):
                         logger.info(f"  ✅ Составы импортированы")
                         stats['created']['lineups'] = True
                     else:
                         logger.warning(f"  ⚠️  Нет данных составов")
+                    
+                    # 🔥 Импорт тренеров из того же ответа
+                    if import_coaches(match, lineup_data):
+                        logger.info(f"  ✅ Тренеры импортированы")
+                        stats['created']['coaches'] = True
+                        
                 except Exception as e:
-                    error = f"Ошибка импорта составов: {e}"
-                    logger.warning(f"  ⚠️  {error}")
+                    error = f"Ошибка импорта составов/тренеров: {e}"
+                    logger.warning(f"  ⚠️  {error}", exc_info=True)
                     stats['errors'].append(error)
             else:
                 logger.warning(f"  ⚠️  No lineup data available")
         else:
             logger.info(f"  ℹ️  Матч без составов (has_lineup=False)")
         
-        # 3. События
+        # === 3. События матча ===
         logger.info(f"  ⚡ Загрузка событий...")
         events_resp = client.get_events(match_id)
+        
         if events_resp and isinstance(events_resp, dict):
+            # 🔥 API возвращает события в ключе "data" или напрямую
             events_data = events_resp.get("data", events_resp)
-            if events_data.get("events"):
+            
+            # 🔥 События находятся в ключе "events"
+            events_list = events_data.get("events", []) if isinstance(events_data, dict) else []
+            
+            if events_list:
                 try:
                     import_events_and_minutes(match, events_data)
-                    event_count = len(events_data["events"])
+                    event_count = len(events_list)
                     logger.info(f"  ✅ События импортированы ({event_count} events)")
                     stats['created']['events'] = event_count
                 except Exception as e:
                     error = f"Ошибка импорта событий: {e}"
-                    logger.warning(f"  ⚠️  {error}")
+                    logger.warning(f"  ⚠️  {error}", exc_info=True)
                     stats['errors'].append(error)
             else:
                 logger.info(f"  ℹ️  Нет событий")
         else:
             logger.warning(f"  ⚠️  No events data available")
         
-        # 4. Статистика
+        # === 4. Статистика матча ===
         logger.info(f"  📈 Загрузка статистики...")
         stats_resp = client.get_stats(match_id)
+        
         if stats_resp and isinstance(stats_resp, dict):
             stats_data = stats_resp.get("data", stats_resp)
             if stats_data:
@@ -131,13 +151,13 @@ def import_full_match(match_id: int, season_id: int = None) -> bool:
                     stats['created']['stats'] = True
                 except Exception as e:
                     error = f"Ошибка импорта статистики: {e}"
-                    logger.warning(f"  ⚠️  {error}")
+                    logger.warning(f"  ⚠️  {error}", exc_info=True)
                     stats['errors'].append(error)
         else:
             logger.info(f"  ℹ️  Нет статистики")
         
         stats['success'] = True
-        logger.info(f"✅ Импорт матча #{match_id} заверён успешно")
+        logger.info(f"✅ Импорт матча #{match_id} завершён успешно")
         
     except Exception as e:
         error = f"Критическая ошибка импорта: {type(e).__name__}: {e}"
@@ -148,25 +168,22 @@ def import_full_match(match_id: int, season_id: int = None) -> bool:
     finally:
         stats['end_time'] = timezone.now()
         stats['duration'] = (stats['end_time'] - stats['start_time']).total_seconds()
-        log_import_stats(stats)
+        _log_import_stats(stats)
     
     return stats['success']
 
 
-def import_match_core_with_tracking(game_data: dict, season_id: int = None):
-    """Обёртка над import_match_core с отслеживанием created/updated"""
-    from parsers.kff.importers import import_match_core
-    
-    # Проверяем существует ли матч
+def _import_match_with_tracking(game_data: dict, season_id: int = None):
+    """Внутренняя обёртка: проверяет существование матча до импорта"""
     from matches.models import Match
-    existing = Match.objects.filter(external_id=str(game_data["id"])).first()
     
+    existing = Match.objects.filter(external_id=str(game_data.get("id"))).first()
     match = import_match_core(game_data, season_id)
     
     return match, existing is None
 
 
-def log_import_stats(stats: dict):
+def _log_import_stats(stats: dict):
     """Логирование статистики импорта"""
     logger.info("=" * 60)
     logger.info(f"📊 СТАТИСТИКА ИМПОРТА")
@@ -193,6 +210,7 @@ def sync_season(season_id: int, match_ids: list = None) -> dict:
     start_time = timezone.now()
     
     client = KFFClient()
+    
     if not match_ids:
         logger.info(f"🔍 Поиск матчей сезона...")
         match_ids = client.get_season_matches(season_id)
@@ -227,7 +245,9 @@ def sync_season(season_id: int, match_ids: list = None) -> dict:
     logger.info(f"✅ Успешно: {results['success']}")
     logger.info(f"❌ Ошибки: {results['failed']}")
     logger.info(f"⏱️  Длительность: {duration:.2f} сек")
-    logger.info(f"📊 Средняя скорость: {duration/len(match_ids):.2f} сек/матч")
+    
+    if match_ids:
+        logger.info(f"📊 Средняя скорость: {duration/len(match_ids):.2f} сек/матч")
     
     if failed_matches:
         logger.warning(f"⚠️  Неудачные матчи: {failed_matches}")

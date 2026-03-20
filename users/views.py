@@ -167,16 +167,17 @@ class PlayerLeaderboardView(ListView):
     def get_queryset(self):
         from players.models import Player
         from aggregates.models import PlayerMatchAggregate
-        from django.db.models import Avg, Count
+        from django.db.models import Avg, Count, Sum, Q
         
         return Player.objects.filter(
             is_active=True
         ).annotate(
             avg_performance=Avg('match_aggregates__performance_score'),
             total_matches=Count('match_aggregates', distinct=True),
-            total_votes=Count('match_aggregates__total_votes')
+            total_votes=Sum('match_aggregates__total_votes')  # ✅ FIX: Sum вместо Count
         ).filter(
-            total_matches__gte=3 
+            avg_performance__isnull=False,  # ✅ FIX: исключаем игроков без оценок
+            total_matches__gte=1  # ✅ FIX: уменьшаем порог до 1 матча для отображения
         ).order_by('-avg_performance')
 
     def get_context_data(self, **kwargs):

@@ -1,8 +1,7 @@
 {% extends 'base.html' %}
 {% load static %}
-
+{% load math_extras %}
 {% block content %}
-
 <!-- === НАВИГАЦИЯ === -->
 <div class="mb-6">
     <a href="{% url 'players:list' %}" class="btn btn-ghost btn-sm">
@@ -17,35 +16,37 @@
         <div class="flex flex-col md:flex-row items-center gap-6">
             <!-- Фото -->
             {% if player.photo %}
-            <img src="{{ player.photo.url }}" alt="{{ player.first_name }}" class="w-32 h-32 rounded-full object-cover ring ring-primary ring-offset-base-100 ring-offset-2">
+                <img src="{{ player.photo.url }}" alt="{{ player.first_name }}" 
+                     class="w-32 h-32 rounded-full object-cover ring ring-primary ring-offset-base-100 ring-offset-2">
             {% else %}
-            <div class="w-32 h-32 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-5xl ring ring-primary ring-offset-base-100 ring-offset-2">
-                {{ player.first_name|first|upper }}{{ player.last_name|first|upper }}
-            </div>
+                <div class="w-32 h-32 rounded-full bg-primary/10 flex items-center justify-center 
+                            font-bold text-primary text-5xl ring ring-primary ring-offset-base-100 ring-offset-2">
+                    {{ player.first_name|first|upper }}{{ player.last_name|first|upper }}
+                </div>
             {% endif %}
             
             <!-- Информация -->
             <div class="flex-1 text-center md:text-left">
                 <h1 class="text-3xl font-bold mb-2">{{ player.first_name }} {{ player.last_name }}</h1>
-                
                 <div class="flex flex-wrap justify-center md:justify-start gap-4 mb-4">
                     {% if player.team %}
-                    <a href="{% url 'teams:detail' player.team.id %}" class="badge badge-lg hover:bg-primary hover:text-primary-content transition-colors">
-                        <i class="ti ti-users"></i>
-                        {{ player.team.name }}
-                    </a>
+                        <a href="{% url 'teams:detail' player.team.id %}" 
+                           class="badge badge-lg hover:bg-primary hover:text-primary-content transition-colors">
+                            <i class="ti ti-users"></i>
+                            {{ player.team.name }}
+                        </a>
                     {% endif %}
                     {% if player.position %}
-                    <span class="badge badge-lg badge-outline">
-                        <i class="ti ti-badge"></i>
-                        {{ player.position }}
-                    </span>
+                        <span class="badge badge-lg badge-outline">
+                            <i class="ti ti-badge"></i>
+                            {{ player.position }}
+                        </span>
                     {% endif %}
                     {% if player.number %}
-                    <span class="badge badge-lg badge-ghost">
-                        <i class="ti ti-shirt"></i>
-                        #{{ player.number }}
-                    </span>
+                        <span class="badge badge-lg badge-ghost">
+                            <i class="ti ti-shirt"></i>
+                            #{{ player.number }}
+                        </span>
                     {% endif %}
                 </div>
                 
@@ -55,16 +56,19 @@
                         <div class="stat-title text-xs">Матчей</div>
                         <div class="stat-value text-xl">{{ stats.total_matches }}</div>
                     </div>
-                    <div class="stat bg-base-200 rounded-lg p-3">
-                        <div class="stat-title text-xs">Performance</div>
+                    <div class="stat bg-base-200 rounded-lg p-3 tooltip" 
+                         data-tip="{{ INDICATOR_TOOLTIPS.player.performance_score }}">
+                        <div class="stat-title text-xs">Рейтинг выступления</div>
                         <div class="stat-value text-xl text-success">{{ stats.avg_performance }}</div>
                     </div>
-                    <div class="stat bg-base-200 rounded-lg p-3">
-                        <div class="stat-title text-xs">Риск</div>
+                    <div class="stat bg-base-200 rounded-lg p-3 tooltip" 
+                         data-tip="{{ INDICATOR_TOOLTIPS.player.risk }}">
+                        <div class="stat-title text-xs">Индекс риска</div>
                         <div class="stat-value text-xl text-error">{{ stats.avg_risk }}</div>
                     </div>
-                    <div class="stat bg-base-200 rounded-lg p-3">
-                        <div class="stat-title text-xs">Зрелость</div>
+                    <div class="stat bg-base-200 rounded-lg p-3 tooltip" 
+                         data-tip="{{ INDICATOR_TOOLTIPS.player.maturity_score }}">
+                        <div class="stat-title text-xs">Индекс зрелости</div>
                         <div class="stat-value text-xl text-info">{{ stats.avg_maturity }}</div>
                     </div>
                 </div>
@@ -75,10 +79,8 @@
 
 <!-- === ДВЕ КОЛОНКИ === -->
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    
     <!-- === ЛЕВАЯ КОЛОНКА (2/3) === -->
     <div class="lg:col-span-2 space-y-6">
-        
         <!-- === ИСТОРИЯ ВЫСТУПЛЕНИЙ === -->
         {% if aggregates %}
         <div class="card bg-base-100 border border-base-300">
@@ -87,24 +89,24 @@
                     <i class="ti ti-history mr-2"></i>
                     История выступлений
                 </h3>
-                
                 <div class="overflow-x-auto">
                     <table class="table table-zebra">
                         <thead>
                             <tr>
                                 <th>Матч</th>
                                 <th>Дата</th>
-                                <th class="text-center">Performance</th>
+                                <th class="text-center">Рейтинг выступления</th>
                                 <th class="text-center">Вклад</th>
                                 <th class="text-center">Риск</th>
-                                <th class="text-center">Clutch</th>
+                                <th class="text-center">Клатч</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for agg in aggregates %}
                             <tr>
                                 <td>
-                                    <a href="{% url 'matches:detail' agg.match.id %}" class="hover:text-primary transition-colors">
+                                    <a href="{% url 'matches:detail' agg.match.id %}" 
+                                       class="hover:text-primary transition-colors">
                                         {{ agg.match.home_team.name }} vs {{ agg.match.away_team.name }}
                                     </a>
                                     <div class="text-xs opacity-60">{{ agg.match.league.name }}</div>
@@ -126,7 +128,7 @@
             </div>
         </div>
         {% endif %}
-        
+
         <!-- === ЛУЧШИЕ МАТЧИ === -->
         {% if best_matches %}
         <div class="card bg-base-100 border border-base-300">
@@ -135,10 +137,9 @@
                     <i class="ti ti-medal mr-2"></i>
                     Лучшие матчи
                 </h3>
-                
                 <div class="space-y-3">
                     {% for agg in best_matches %}
-                    <a href="{% url 'matches:detail' agg.match.id %}" 
+                    <a href="{% url 'matches:detail' agg.match.id %}"
                        class="flex items-center justify-between p-3 bg-base-200 rounded-lg hover:bg-base-300 transition-all">
                         <div>
                             <div class="font-medium">{{ agg.match.home_team.name }} vs {{ agg.match.away_team.name }}</div>
@@ -155,10 +156,9 @@
         </div>
         {% endif %}
     </div>
-    
+
     <!-- === ПРАВАЯ КОЛОНКА (1/3) === -->
     <div class="space-y-6">
-        
         <!-- === РАДАР МЕТРИК === -->
         <div class="card bg-base-100 border border-base-300">
             <div class="card-body p-4">
@@ -166,55 +166,58 @@
                     <i class="ti ti-chart-radar mr-2"></i>
                     Профиль игрока
                 </h3>
-                
                 <div class="space-y-4">
+                    <!-- Вклад -->
                     <div>
                         <div class="flex justify-between text-sm mb-1">
                             <span>Вклад</span>
                             <span class="font-bold">{{ stats.avg_performance }}</span>
                         </div>
                         <div class="w-full bg-base-200 rounded-full h-2">
-                            <div class="bg-primary h-2 rounded-full" 
-                                 style="width: {{ stats.avg_performance|floatformat:0 }}%"></div>
+                            <div class="bg-primary h-2 rounded-full"
+                                 style="width: {% widthratio stats.avg_performance 10 100 %}%"></div>
                         </div>
                     </div>
                     
+                    <!-- Риск -->
                     <div>
                         <div class="flex justify-between text-sm mb-1">
                             <span>Риск</span>
                             <span class="font-bold">{{ stats.avg_risk }}</span>
                         </div>
                         <div class="w-full bg-base-200 rounded-full h-2">
-                            <div class="bg-error h-2 rounded-full" 
-                                 style="width: {{ stats.avg_risk|floatformat:0 }}%"></div>
+                            <div class="bg-error h-2 rounded-full"
+                                 style="width: {% widthratio stats.avg_risk 10 100 %}%"></div>
                         </div>
                     </div>
                     
+                    <!-- Зрелость -->
                     <div>
                         <div class="flex justify-between text-sm mb-1">
                             <span>Зрелость</span>
                             <span class="font-bold">{{ stats.avg_maturity }}</span>
                         </div>
                         <div class="w-full bg-base-200 rounded-full h-2">
-                            <div class="bg-info h-2 rounded-full" 
-                                 style="width: {{ stats.avg_maturity|floatformat:0 }}%"></div>
+                            <div class="bg-info h-2 rounded-full"
+                                 style="width: {% widthratio stats.avg_maturity 10 100 %}%"></div>
                         </div>
                     </div>
                     
+                    <!-- Потенциал -->
                     <div>
                         <div class="flex justify-between text-sm mb-1">
                             <span>Потенциал</span>
                             <span class="font-bold">{{ stats.avg_potential }}</span>
                         </div>
                         <div class="w-full bg-base-200 rounded-full h-2">
-                            <div class="bg-warning h-2 rounded-full" 
-                                 style="width: {{ stats.avg_potential|floatformat:0 }}%"></div>
+                            <div class="bg-warning h-2 rounded-full"
+                                 style="width: {% widthratio stats.avg_potential 10 100 %}%"></div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
-        
+
         <!-- === СТАТИСТИКА === -->
         <div class="card bg-base-100 border border-base-300">
             <div class="card-body p-4">
@@ -222,7 +225,6 @@
                     <i class="ti ti-chart-bar mr-2"></i>
                     Статистика
                 </h3>
-                
                 <div class="space-y-3 text-sm">
                     <div class="flex justify-between">
                         <span class="opacity-60">Всего голосов</span>
@@ -241,5 +243,4 @@
         </div>
     </div>
 </div>
-
 {% endblock %}

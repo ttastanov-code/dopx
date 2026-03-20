@@ -48,36 +48,14 @@
                 }
             },
             daisyui: {
-                themes: [
-                    {
-                        light: {
-                            ...require("daisyui/src/theming/themes")["light"],
-                            primary: "#000000",
-                            secondary: "#ffffff",
-                            accent: "#3b82f6",
-                            neutral: "#1a1a1a",
-                            "base-100": "#ffffff",
-                            "base-200": "#f5f5f5",
-                            "base-300": "#e5e5e5",
-                        },
-                    },
-                    {
-                        dark: {
-                            ...require("daisyui/src/theming/themes")["dark"],
-                            primary: "#ffffff",
-                            secondary: "#000000",
-                            accent: "#60a5fa",
-                            neutral: "#e5e5e5",
-                            "base-100": "#0a0a0a",
-                            "base-200": "#171717",
-                            "base-300": "#262626",
-                        },
-                    },
-                ],
+                themes: ["light", "dark"],
             },
         }
     </script>
-    
+    <script>
+        const savedTheme = localStorage.getItem('theme') || 'light';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+    </script>
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -89,58 +67,82 @@
         * {
             font-family: 'Inter', system-ui, sans-serif;
         }
-        
         body {
             min-height: 100vh;
             display: flex;
             flex-direction: column;
         }
-        
         main {
             flex: 1;
         }
-        
         /* HTMX индикатор загрузки */
         .htmx-indicator {
             display: none;
         }
-        
         .htmx-request .htmx-indicator {
             display: block;
         }
-        
         .htmx-request.htmx-indicator {
             display: block;
         }
-        
         /* Плавные переходы */
         .transition-all {
             transition-property: all;
             transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
             transition-duration: 150ms;
         }
-        
         /* Скроллбар */
         ::-webkit-scrollbar {
             width: 8px;
             height: 8px;
         }
-        
         ::-webkit-scrollbar-track {
             background: #f5f5f5;
         }
-        
         ::-webkit-scrollbar-thumb {
             background: #d4d4d4;
             border-radius: 4px;
         }
-        
         ::-webkit-scrollbar-thumb:hover {
             background: #a3a3a3;
         }
-        
+        /* Tooltip стили для подсказок */
+        .tooltip {
+            position: relative;
+            display: inline-block;
+            cursor: help;
+        }
+        .tooltip:hover::after {
+            content: attr(data-tip);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 0.5rem 0.75rem;
+            background: #1f2937;
+            color: #fff;
+            font-size: 0.75rem;
+            border-radius: 0.375rem;
+            white-space: nowrap;
+            z-index: 1000;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            max-width: 280px;
+            text-wrap: balance;
+        }
+        .tooltip:hover::before {
+            content: '';
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 6px solid transparent;
+            border-top-color: #1f2937;
+            margin-bottom: -6px;
+            z-index: 1000;
+        }
         {% block extra_style %}{% endblock %}
     </style>
+    
 </head>
 
 <body 
@@ -201,13 +203,19 @@
         });
         
         document.body.addEventListener('htmx:beforeRequest', () => {
-            document.getElementById('global-loader')?.classList.add('htmx-indicator');
+            document.body.classList.add('htmx-request');
         });
-        
         document.body.addEventListener('htmx:afterRequest', () => {
-            document.getElementById('global-loader')?.classList.remove('htmx-indicator');
+            document.body.classList.remove('htmx-request');
         });
-        
+
+        document.body.addEventListener('htmx:responseError', () => {
+            document.body.classList.remove('htmx-request');
+        });
+        document.body.addEventListener('htmx:timeout', () => {
+            document.body.classList.remove('htmx-request');
+        });
+                
         // DaisyUI toast helper
         function showToast(message, type = 'info') {
             const toast = document.getElementById('toast-container');

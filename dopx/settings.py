@@ -74,6 +74,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'core.context_processors.indicator_tooltips',
             ],
         },
     },
@@ -170,6 +171,47 @@ CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
+
+from celery.schedules import crontab
+
+CELERY_BEAT_SCHEDULE = {
+    # Синхронизация матчей каждые 30 минут
+    'sync-kff-recent-matches': {
+        'task': 'parsers.tasks.sync_recent_matches',
+        'schedule': crontab(minute='*/30'),  # ✅ crontab отсюда
+    },
+    
+    # Обновление статусов матчей каждый час
+    'update-match-statuses-hourly': {
+        'task': 'parsers.tasks.update_match_statuses',
+        'schedule': crontab(minute=0),  # Каждый час в 00 мин
+    },
+    
+    # Пересчёт турнирных таблиц каждые 10 минут
+    'recalculate-standings': {
+        'task': 'aggregates.tasks.recalculate_season_standings',
+        'schedule': crontab(minute='*/10'),
+        'kwargs': {'season_id': 200},  # Актуальный сезон
+    },
+    
+    # Пересчёт агрегатов оценок каждые 10 минут
+    'recalculate-aggregates': {
+        'task': 'aggregates.tasks.recalculate_pending_aggregates',
+        'schedule': crontab(minute='*/10'),
+    },
+    
+    # Напоминания о голосовании каждые 6 часов
+    'voting-reminders': {
+        'task': 'notifications.tasks.send_voting_reminders',
+        'schedule': crontab(minute=0, hour='*/6'),
+    },
+    
+    # Очистка старых сессий ежедневно в 3:00
+    'cleanup-old-sessions-daily': {
+        'task': 'notifications.tasks.cleanup_old_sessions',
+        'schedule': crontab(hour=3, minute=0),
+    },
+}
 
 # Cache
 CACHES = {

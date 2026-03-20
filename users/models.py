@@ -79,6 +79,11 @@ class User(AbstractUser, BaseModel):
         ).aggregate(avg=Avg('contribution'))['avg'] or 0
         
         return own_team_evals - opponent_evals
+    
+    @property
+    def unread_notifications_count(self):
+        """Количество непрочитанных уведомлений"""
+        return self.notifications.filter(is_read=False).count()
 
 
 class UserBadge(BaseModel):

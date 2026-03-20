@@ -25,7 +25,7 @@ class PlayerMatchAggregate(BaseModel):
     total_votes = models.IntegerField(_('Всего голосов'), default=0)
     
     # Вычисляемые индексы
-    performance_score = models.FloatField(_('Оценка выступления'), default=0.0)
+    performance_score = models.FloatField(_('Рейтинг выступления'), default=0.0)
     risk_index = models.FloatField(_('Индекс риска'), default=0.0)
     maturity_score = models.FloatField(_('Индекс зрелости'), default=0.0)
     stability_index = models.FloatField(_('Индекс стабильности'), default=0.0)

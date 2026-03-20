@@ -74,7 +74,7 @@
             <!-- Статистика -->
             <div class="grid grid-cols-3 gap-2 text-center text-sm">
                 <div class="bg-base-200 rounded-lg p-2">
-                    <div class="font-bold text-lg">{{ team.home_matches.count|default:0 }}</div>
+                    <div class="font-bold text-lg">{{ team.home_matches_count|add:team.away_matches_count|default:0 }}</div>
                     <div class="text-xs opacity-60">Матчей</div>
                 </div>
                 <div class="bg-base-200 rounded-lg p-2">

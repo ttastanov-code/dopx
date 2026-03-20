@@ -1,10 +1,11 @@
 # matches/urls.py
 from django.urls import path
-from .views import MatchListView, MatchDetailView
+from .views import MatchListView, MatchDetailView, match_events_partial
 
 app_name = 'matches'
 
 urlpatterns = [
     path('', MatchListView.as_view(), name='list'),
     path('<uuid:pk>/', MatchDetailView.as_view(), name='detail'),
+    path('<uuid:match_id>/events/', match_events_partial, name='events'),
 ]

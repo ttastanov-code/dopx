@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% load static %}
-
+{% load math_extras %}
 {% block content %}
 
 <!-- === HEADER === -->
@@ -63,7 +63,7 @@
                         <span class="text-sm font-mono">{{ xp.total_xp }} XP</span>
                     </div>
                     <div class="w-full bg-base-200 rounded-full h-2">
-                        <div class="bg-primary h-2 rounded-full" style="width: {{ xp.total_xp|add:100|div:100 }}%"></div>
+                        <div class="bg-primary h-2 rounded-full" style="width: {% widthratio xp.total_xp 100 1 %}%"></div>
                     </div>
                 </div>
                 {% endif %}

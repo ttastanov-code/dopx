@@ -3,14 +3,16 @@ from django.shortcuts import render
 from django.views.generic import TemplateView
 from django.http import HttpResponse
 from django.utils import timezone
-from django.db.models import Count, Q, F, ExpressionWrapper, IntegerField
+from django.db.models import F, Avg
 from django.template.loader import render_to_string
 from matches.models import Match
-from teams.models import Team, TeamSeason
+from teams.models import Team
 from seasons.models import Season
 from aggregates.models import MatchAggregate, PlayerMatchAggregate
 from evaluations.models import EvaluationSession
 import logging
+from evaluations.models import MatchEvaluation, TeamEvaluation, PlayerEvaluation
+from users.models import User
 
 logger = logging.getLogger(__name__)
 
@@ -23,45 +25,73 @@ class HomeView(TemplateView):
         context = super().get_context_data(**kwargs)
         now = timezone.now()
         
-        # Последние матчи
+        # === Существующие данные ===
         recent_matches = Match.objects.filter(
-            status='finished',
-            start_time__lte=now
-        ).select_related(
-            'home_team', 'away_team', 'league', 'season'
+            status='finished', start_time__lte=now
+        ).select_related('home_team', 'away_team', 'league', 'season'
         ).prefetch_related('aggregate').order_by('-start_time')[:6]
         
-        # Ближайшие матчи
         upcoming_matches = Match.objects.filter(
-            status='scheduled',
-            start_time__gte=now
-        ).select_related(
-            'home_team', 'away_team', 'league', 'season'
+            status='scheduled', start_time__gte=now
+        ).select_related('home_team', 'away_team', 'league', 'season'
         ).order_by('start_time')[:4]
         
-        # Топ игроки
         top_players = PlayerMatchAggregate.objects.select_related(
             'player', 'player__team'
         ).order_by('-performance_score')[:5]
         
-        # Статистика
+        # === НОВАЯ СТАТИСТИКА ===
+        
+        # Всего оценок (все типы)
+        total_evals = (
+            MatchEvaluation.objects.count() +
+            TeamEvaluation.objects.count() + 
+            PlayerEvaluation.objects.count()
+        )
+        
+        # Активные пользователи (оценивали за последние 7 дней)
+        from datetime import timedelta
+        active_users = User.objects.filter(
+            context_evaluations__created_at__gte=now - timedelta(days=7)
+        ).distinct().count()
+        
+        # Метрики матча (исправленный расчёт)
+        match_aggs = MatchAggregate.objects.all()
+        avg_entertainment = match_aggs.aggregate(
+            avg=Avg('avg_entertainment')
+        )['avg'] or 0
+        avg_drama = match_aggs.aggregate(
+            avg=Avg('drama_index')
+        )['avg'] or 0
+        
+        metrics = {
+            'avg_entertainment': round(avg_entertainment, 1),
+            'avg_drama': round(avg_drama, 0),
+        }
+        
         stats = {
             'total_matches': Match.objects.count(),
             'active_voting': Match.objects.filter(
-                voting_open_until__gte=now,
-                status='finished'
+                voting_open_until__gte=now, status='finished'
             ).count(),
+            'total_evaluations': total_evals,
+            'active_users': active_users,
         }
         
-        # Метрики
-        match_aggs = MatchAggregate.objects.all()
-        metrics = {
-            'avg_drama': match_aggs.aggregate(Count('id'))['id__count'] and 
-                        match_aggs.aggregate(Count('id'))['id__count'] > 0 and 
-                        sum(m.drama_index for m in match_aggs[:10]) / min(match_aggs.count(), 10) or 0,
-            'avg_entertainment': 0,
-        }
+        # === ТОП КОМАНД ПО ОЦЕНКАМ ===
+        top_teams = Team.objects.annotate(
+            avg_rating=Avg(
+                (F('team_evaluations__tactics') + 
+                F('team_evaluations__effort') + 
+                F('team_evaluations__organization') + 
+                F('team_evaluations__mentality')) / 4.0
+            )
+        ).filter(
+            avg_rating__isnull=False,
+            is_active=True
+        ).order_by('-avg_rating')[:5]
         
+        # === Активная сессия пользователя ===
         active_match_id = None
         if self.request.user.is_authenticated:
             active_session = EvaluationSession.objects.filter(
@@ -75,6 +105,7 @@ class HomeView(TemplateView):
             'recent_matches': recent_matches,
             'upcoming_matches': upcoming_matches,
             'top_players': top_players,
+            'top_teams': top_teams,
             'stats': stats,
             'metrics': metrics,
             'active_match_id': active_match_id,

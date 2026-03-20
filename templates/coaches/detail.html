@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% load static %}
-
+{% load match_extras %}
 {% block content %}
 
 <!-- === НАВИГАЦИЯ === -->
@@ -84,7 +84,7 @@
                         <div class="flex items-center gap-3">
                             {% if match.status == 'finished' %}
                             <span class="font-bold font-mono">
-                                {{ match.home_score|default:"-" }} : {{ match.away_score|default:"-" }}
+                                {% render_score match.home_score match.away_score %}
                             </span>
                             <span class="badge badge-success badge-sm">
                                 <i class="ti ti-check"></i>
