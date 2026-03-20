@@ -318,55 +318,57 @@
             </div>
         </section>
         
-        <!-- === CTA: ОЦЕНИ МАТЧ === -->
-        {% if user.is_authenticated %}
-        <section class="card bg-gradient-to-br from-primary to-primary/80 text-primary-content border-none">
-            <div class="card-body p-6 text-center">
-                <i class="ti ti-star text-4xl mb-3"></i>
-                <h3 class="font-bold text-xl mb-2">Оцени последний матч!</h3>
-                <p class="text-sm opacity-90 mb-4">
-                    Получи +10 XP и подними свой Trust Score
-                </p>
-                <a href="{% url 'matches:list' %}?status=finished" class="btn btn-secondary btn-sm w-full">
-                    <i class="ti ti-trophy"></i>
-                    Выбрать матч
-                </a>
-            </div>
-        </section>
-        {% endif %}
-        
-        <!-- === БЫСТРЫЕ ССЫЛКИ === -->
+        <!-- === НОВАЯ АНАЛИТИКА === -->
         <section class="card bg-base-100 border border-base-300">
             <div class="card-body p-4">
-                <h3 class="font-bold text-lg mb-3">
-                    <i class="ti ti-link mr-2"></i>
-                    Быстрый доступ
+                <h3 class="font-bold text-lg mb-4">
+                    <i class="ti ti-chart-line mr-2"></i>
+                    Статистика сезона
                 </h3>
-                <div class="grid grid-cols-2 gap-2">
-                    <a href="{% url 'matches:list' %}" class="btn btn-ghost btn-sm justify-start">
-                        <i class="ti ti-trophy"></i>
-                        Матчи
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="stat bg-base-200 rounded-lg p-3">
+                        <div class="stat-title text-xs">Средняя зрелищность</div>
+                        <div class="stat-value text-xl text-warning">
+                            {{ metrics.avg_entertainment|floatformat:1|default:"-" }}
+                        </div>
+                    </div>
+                    <div class="stat bg-base-200 rounded-lg p-3">
+                        <div class="stat-title text-xs">Средняя драма</div>
+                        <div class="stat-value text-xl text-error">
+                            {{ metrics.avg_drama|floatformat:0|default:"-" }}
+                        </div>
+                    </div>
+                    <div class="stat bg-base-200 rounded-lg p-3">
+                        <div class="stat-title text-xs">Всего оценок</div>
+                        <div class="stat-value text-xl">
+                            {{ stats.total_evaluations|default:0 }}
+                        </div>
+                    </div>
+                    <div class="stat bg-base-200 rounded-lg p-3">
+                        <div class="stat-title text-xs">Активных пользователей</div>
+                        <div class="stat-value text-xl text-success">
+                            {{ stats.active_users|default:0 }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- === ТОП КОМАНД ПО ОЦЕНКАМ === -->
+        <section class="card bg-base-100 border border-base-300">
+            <div class="card-body p-4">
+                <h3 class="font-bold text-lg mb-4">
+                    <i class="ti ti-users mr-2"></i>
+                    Топ команд по оценкам
+                </h3>
+                <div class="space-y-2">
+                    {% for team in top_teams %}
+                    <a href="{% url 'teams:detail' team.id %}"
+                    class="flex items-center justify-between p-2 rounded-lg hover:bg-base-200">
+                        <span class="font-medium">{{ team.name }}</span>
+                        <span class="badge badge-primary">{{ team.avg_rating|floatformat:1 }}</span>
                     </a>
-                    <a href="{% url 'teams:list' %}" class="btn btn-ghost btn-sm justify-start">
-                        <i class="ti ti-users"></i>
-                        Команды
-                    </a>
-                    <a href="{% url 'players:list' %}" class="btn btn-ghost btn-sm justify-start">
-                        <i class="ti ti-player"></i>
-                        Игроки
-                    </a>
-                    <a href="{% url 'users:leaderboard' %}" class="btn btn-ghost btn-sm justify-start">
-                        <i class="ti ti-chart-bar"></i>
-                        Рейтинг
-                    </a>
-                    <a href="{% url 'core:rules' %}" class="btn btn-ghost btn-sm justify-start">
-                        <i class="ti ti-file-text"></i>
-                        Правила
-                    </a>
-                    <a href="{% url 'core:contacts' %}" class="btn btn-ghost btn-sm justify-start">
-                        <i class="ti ti-mail"></i>
-                        Контакты
-                    </a>
+                    {% endfor %}
                 </div>
             </div>
         </section>

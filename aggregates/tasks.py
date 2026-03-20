@@ -1,6 +1,6 @@
 # aggregates/tasks.py
 from celery import shared_task
-from django.db.models import Avg, Count, F, Sum
+from django.db.models import Avg, Count, F, Sum, Q
 from django.utils import timezone
 from django.core.cache import cache
 from django.db import connection, transaction
@@ -11,6 +11,9 @@ from evaluations.models import PlayerEvaluation, CoachEvaluation, MatchEvaluatio
 from matches.models import Match
 from aggregates.models import PlayerMatchAggregate, CoachMatchAggregate, MatchAggregate
 from users.models import User
+from teams.models import TeamSeasonStats, Team, TeamSeason
+from seasons.models import Season
+
 
 logger = logging.getLogger(__name__)
 
@@ -347,3 +350,75 @@ def trigger_aggregate_recalculation(self, match_id: str):
     except Exception as exc:
         logger.error(f"Error triggering recalculation: {exc}")
         raise self.retry(exc=exc, countdown=60)
+    
+    
+@shared_task
+def recalculate_season_standings(season_id):
+    """Пересчитывает таблицу для сезона"""
+    from django.db import transaction
+    
+    season = Season.objects.get(id=season_id)
+    teams = Team.objects.filter(teamseason__season=season, is_active=True)
+    
+    with transaction.atomic():
+        for team in teams:
+            # ✅ Один SQL запрос вместо 6+
+            stats = Match.objects.filter(
+                season=season,
+                status='finished'
+            ).aggregate(
+                played=Count('id', filter=Q(home_team=team) | Q(away_team=team)),
+                wins=Count('id', filter=(
+                    (Q(home_team=team) & Q(home_score__gt=F('away_score'))) |
+                    (Q(away_team=team) & Q(away_score__gt=F('home_score')))
+                )),
+                draws=Count('id', filter=(
+                    (Q(home_team=team) & Q(home_score=F('away_score'))) |
+                    (Q(away_team=team) & Q(away_score=F('home_score')))
+                )),
+                goals_scored=Sum(
+                    F('home_score'), filter=Q(home_team=team)
+                ) + Sum(
+                    F('away_score'), filter=Q(away_team=team)
+                ),
+                goals_conceded=Sum(
+                    F('away_score'), filter=Q(home_team=team)
+                ) + Sum(
+                    F('home_score'), filter=Q(away_team=team)
+                ),
+            )
+            
+            played = stats['played'] or 0
+            wins = stats['wins'] or 0
+            draws = stats['draws'] or 0
+            losses = played - wins - draws
+            goals_scored = (stats['goals_scored'] or 0)
+            goals_conceded = (stats['goals_conceded'] or 0)
+            goal_diff = goals_scored - goals_conceded
+            points = wins * 3 + draws
+            
+            TeamSeasonStats.objects.update_or_create(
+                team=team,
+                season=season,
+                defaults={
+                    'played': played,
+                    'wins': wins,
+                    'draws': draws,
+                    'losses': losses,
+                    'goals_scored': goals_scored,
+                    'goals_conceded': goals_conceded,
+                    'goal_diff': goal_diff,
+                    'points': points,
+                }
+            )
+        
+        # Обновляем позиции
+        standings = TeamSeasonStats.objects.filter(
+            season=season
+        ).order_by('-points', '-goal_diff', '-goals_scored')
+        
+        for pos, stat in enumerate(standings, 1):
+            stat.position = pos
+            stat.save(update_fields=['position'])
+    
+    return {'success': True, 'teams': teams.count()}

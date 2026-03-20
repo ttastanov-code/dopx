@@ -345,16 +345,17 @@ class EvaluateRefereeView(LoginRequiredMixin, FormView, EvaluationWizardMixin):
 
     def form_valid(self, form):
         session = self.get_or_create_session()
-        
         with transaction.atomic():
-            evaluation = form.save(commit=False)
-            evaluation.user = self.request.user
-            evaluation.match = self.match
-            evaluation.save()
-            
+            RefereeEvaluation.objects.update_or_create(
+                user=self.request.user,
+                match=self.match,
+                defaults={
+                    'influence_score': form.cleaned_data.get('influence_score', 50),
+                    'decision_quality': form.cleaned_data.get('decision_quality', 5),
+                }
+            )
             self.update_session(session, 'referee')
             messages.success(self.request, '✅ Оценка судейства сохранена')
-        
         return redirect('evaluations:match_eval', match_id=self.match.id)
 
     def get_context_data(self, **kwargs):
@@ -458,6 +459,7 @@ class EvaluationCompleteView(LoginRequiredMixin, TemplateView):
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+
         match_id = self.kwargs.get('match_id')
         if match_id:
             context['match'] = get_object_or_404(Match, id=match_id)

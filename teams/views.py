@@ -13,6 +13,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+# teams/views.py
 class TeamListView(ListView):
     """Список всех команд"""
     model = Team
@@ -32,6 +33,20 @@ class TeamListView(ListView):
         city = self.request.GET.get('city')
         if city:
             queryset = queryset.filter(city__icontains=city)
+        
+        # 🔥 FIX: Считаем ОБА типа матчей (дома + в гостях)
+        queryset = queryset.annotate(
+            home_matches_count=Count(
+                'home_matches',
+                filter=Q(home_matches__status='finished'),
+                distinct=True
+            ),
+            away_matches_count=Count(
+                'away_matches',
+                filter=Q(away_matches__status='finished'),
+                distinct=True
+            )
+        )
         
         return queryset.order_by('name')
 
@@ -57,42 +72,44 @@ class TeamDetailView(DetailView):
         team = self.object
         now = timezone.now()
         
+        # 🔥 FIX: Получаем активный сезон для фильтрации
+        current_season = Season.objects.filter(is_active=True).first()
+        
         # Матчи команды
         home_matches = Match.objects.filter(home_team=team)
         away_matches = Match.objects.filter(away_team=team)
         
-        # Статистика матчей
-        total_matches = Match.objects.filter(
-            Q(home_team=team) | Q(away_team=team)
-        ).count()
+        # 🔥 FIX: Фильтруем матчи по сезону (если есть) и статусу
+        if current_season:
+            matches_filter = Q(
+                Q(home_team=team) | Q(away_team=team),
+                season=current_season,
+                status='finished'
+            )
+        else:
+            matches_filter = Q(
+                Q(home_team=team) | Q(away_team=team),
+                status='finished'
+            )
         
-        # Подсчёт побед (упрощённо)
+        # Статистика матчей — ТОЛЬКО текущий сезон + finished
+        total_matches = Match.objects.filter(matches_filter).count()
+
         wins = 0
-        for match in Match.objects.filter(
-            Q(home_team=team) | Q(away_team=team),
-            status='finished'
-        ):
+        goals_scored = 0
+        goals_conceded = 0
+
+        for match in Match.objects.filter(matches_filter):
             if match.home_team == team and match.home_score and match.away_score:
                 if match.home_score > match.away_score:
                     wins += 1
+                goals_scored += match.home_score or 0
+                goals_conceded += match.away_score or 0
             elif match.away_team == team and match.home_score and match.away_score:
                 if match.away_score > match.home_score:
                     wins += 1
-        
-        # Забитые/пропущенные голы
-        goals_scored = 0
-        goals_conceded = 0
-        for match in Match.objects.filter(
-            Q(home_team=team) | Q(away_team=team),
-            status='finished'
-        ):
-            if match.home_score is not None and match.away_score is not None:
-                if match.home_team == team:
-                    goals_scored += match.home_score or 0
-                    goals_conceded += match.away_score or 0
-                else:
-                    goals_scored += match.away_score or 0
-                    goals_conceded += match.home_score or 0
+                goals_scored += match.away_score or 0
+                goals_conceded += match.home_score or 0
         
         # Игроки команды
         players = Player.objects.filter(
@@ -119,15 +136,28 @@ class TeamDetailView(DetailView):
             total=Count('id'),
         )
         
-        # Последние матчи
-        recent_matches = Match.objects.filter(
-            Q(home_team=team) | Q(away_team=team)
-        ).select_related(
-            'home_team', 
-            'away_team', 
-            'league', 
-            'season'
-        ).order_by('-start_time')[:10]
+        # Последние матчи — ТОЛЬКО текущий сезон + finished
+        if current_season:
+            recent_matches = Match.objects.filter(
+                Q(home_team=team) | Q(away_team=team),
+                season=current_season,
+                status='finished'
+            ).select_related(
+                'home_team', 
+                'away_team', 
+                'league', 
+                'season'
+            ).order_by('-start_time')[:10]
+        else:
+            recent_matches = Match.objects.filter(
+                Q(home_team=team) | Q(away_team=team),
+                status='finished'
+            ).select_related(
+                'home_team', 
+                'away_team', 
+                'league', 
+                'season'
+            ).order_by('-start_time')[:10]
         
         # Ближайшие матчи
         upcoming_matches = Match.objects.filter(
@@ -142,7 +172,7 @@ class TeamDetailView(DetailView):
         ).order_by('start_time')[:5]
         
         # Текущий сезон
-        current_season = Season.objects.filter(
+        current_season_obj = Season.objects.filter(
             is_active=True,
             teamseason__team=team
         ).first()
@@ -157,7 +187,7 @@ class TeamDetailView(DetailView):
             'team_evals': team_evals,
             'recent_matches': recent_matches,
             'upcoming_matches': upcoming_matches,
-            'current_season': current_season,
+            'current_season': current_season_obj,
             'page_title': f'{team.name} — DOPX',
         })
         return context

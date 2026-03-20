@@ -1,87 +1,85 @@
 {% extends 'base.html' %}
 {% load static %}
+{% load match_extras %}
 
 {% block content %}
-
-<div class="min-h-[60vh] flex items-center justify-center">
-    <div class="text-center max-w-lg">
-        
+<div class="min-h-[70vh] flex items-center justify-center">
+    <div class="max-w-2xl w-full px-4">
         <!-- Success Animation -->
-        <div class="mb-8">
-            <div class="w-24 h-24 rounded-full bg-success/20 flex items-center justify-center mx-auto mb-4 animate-bounce">
+        <div class="text-center mb-8">
+            <div class="w-24 h-24 rounded-full bg-success/20 flex items-center justify-center mx-auto mb-6 animate-bounce">
                 <i class="ti ti-check text-5xl text-success"></i>
             </div>
             <h1 class="text-4xl font-bold mb-2">Спасибо!</h1>
-            <p class="text-lg opacity-60">Ваша оценка успешно сохранена</p>
+            <p class="text-lg text-base-content/60">Ваша оценка успешно сохранена</p>
         </div>
-        
+
         <!-- Rewards Card -->
-        <div class="card bg-base-100 border border-base-300 mb-6">
+        <div class="card bg-base-100 border border-base-200 shadow-xl mb-6">
             <div class="card-body p-6">
-                <h3 class="font-bold text-lg mb-4">🎁 Ваши награды</h3>
-                
+                <h3 class="font-bold text-lg mb-4 text-center">🎁 Ваши награды</h3>
                 <div class="grid grid-cols-2 gap-4">
-                    <div class="flex flex-col items-center p-4 bg-primary/5 rounded-lg">
-                        <i class="ti ti-star text-3xl text-primary mb-2"></i>
-                        <span class="font-bold text-2xl text-primary">+10</span>
-                        <span class="text-xs opacity-60">XP</span>
+                    <div class="flex flex-col items-center p-5 bg-gradient-to-br from-primary/10 to-primary/5 rounded-2xl">
+                        <i class="ti ti-star text-4xl text-primary mb-3"></i>
+                        <span class="font-bold text-3xl text-primary">+10</span>
+                        <span class="text-xs text-base-content/50 mt-1">XP</span>
                     </div>
-                    <div class="flex flex-col items-center p-4 bg-secondary/5 rounded-lg">
-                        <i class="ti ti-shield-check text-3xl text-secondary mb-2"></i>
-                        <span class="font-bold text-2xl text-secondary">+0.05</span>
-                        <span class="text-xs opacity-60">Trust Score</span>
+                    <div class="flex flex-col items-center p-5 bg-gradient-to-br from-secondary/10 to-secondary/5 rounded-2xl">
+                        <i class="ti ti-shield-check text-4xl text-secondary mb-3"></i>
+                        <span class="font-bold text-3xl text-secondary">+0.05</span>
+                        <span class="text-xs text-base-content/50 mt-1">Trust Score</span>
                     </div>
                 </div>
             </div>
         </div>
-        
+
         <!-- Match Info -->
         {% if match %}
-        <div class="card bg-base-100 border border-base-300 mb-6">
-            <div class="card-body p-4">
-                <div class="text-center">
-                    <div class="font-bold text-lg">
-                        {{ match.home_team.name }} vs {{ match.away_team.name }}
-                    </div>
-                    <div class="text-2xl font-mono font-bold mt-2">
-                        {{ match.home_score|default:"-" }} : {{ match.away_score|default:"-" }}
-                    </div>
-                    <div class="text-xs opacity-60 mt-2">
-                        {{ match.start_time|date:"d.m.Y" }}
+            <div class="card bg-base-100 border border-base-200 shadow-lg mb-6">
+                <div class="card-body p-5">
+                    <div class="text-center">
+                        <div class="font-bold text-lg">
+                            {{ match.home_team.name }} vs {{ match.away_team.name }}
+                        </div>
+                        <div class="text-3xl font-mono font-bold mt-3">
+                            {% render_score match.home_score match.away_score %}
+                        </div>
+                        <div class="text-sm text-base-content/50 mt-2">
+                            {{ match.start_time|date:"d.m.Y" }}
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
         {% endif %}
-        
+
         <!-- Action Buttons -->
-        <div class="flex flex-col gap-3">
-            <a href="{% url 'matches:list' %}" class="btn btn-primary btn-lg">
+        <div class="space-y-3">
+            <a href="{% url 'matches:list' %}" class="btn btn-primary btn-lg w-full">
                 <i class="ti ti-trophy"></i>
                 Оценить ещё матчи
             </a>
-            <a href="{% url 'core:home' %}" class="btn btn-ghost btn-lg">
+            <a href="{% url 'core:home' %}" class="btn btn-ghost btn-lg w-full">
                 <i class="ti ti-home"></i>
                 На главную
             </a>
-            <a href="{% url 'users:profile' %}" class="btn btn-ghost">
+            <a href="{% url 'users:profile' %}" class="btn btn-ghost w-full">
                 <i class="ti ti-user"></i>
                 Мой профиль
             </a>
         </div>
-        
+
         <!-- Progress Stats -->
-        <div class="mt-8 p-4 bg-base-200 rounded-lg">
-            <div class="text-sm opacity-60 mb-2">Ваш прогресс</div>
-            <div class="flex justify-between items-center">
+        <div class="mt-8 p-5 bg-base-200 rounded-2xl">
+            <div class="text-sm text-base-content/50 mb-3">Ваш прогресс</div>
+            <div class="flex justify-between items-center mb-2">
                 <span class="font-bold">{{ user.total_evaluations|default:0 }} оценок</span>
-                <span class="text-xs opacity-60">Серия: {{ user.evaluation_streak|default:0 }}</span>
+                <span class="text-xs text-base-content/50">Серия: {{ user.evaluation_streak|default:0 }}</span>
             </div>
-            <div class="w-full bg-base-300 rounded-full h-2 mt-2">
-                <div class="bg-primary h-2 rounded-full" style="width: {{ user.total_evaluations|default:0|add:10 }}%"></div>
+            <div class="w-full bg-base-300 rounded-full h-3">
+                <div class="bg-gradient-to-r from-primary to-primary/70 h-3 rounded-full" 
+                     style="width: {{ user.total_evaluations|default:0|add:10 }}%"></div>
             </div>
         </div>
     </div>
 </div>
-
 {% endblock %}

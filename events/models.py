@@ -5,8 +5,10 @@ from core.models import BaseModel
 from matches.models import Match
 from players.models import Player
 
+
 class MatchEvent(BaseModel):
-    """Событие матча (гол, карточка, замена)"""
+    """Событие матча с расширенной информацией"""
+    
     EVENT_TYPES = [
         ("goal", _("Гол")),
         ("yellow_card", _("Жёлтая карточка")),
@@ -14,50 +16,106 @@ class MatchEvent(BaseModel):
         ("substitution", _("Замена")),
         ("penalty", _("Пенальти")),
         ("own_goal", _("Автогол")),
+        ("var_check", _("VAR проверка")),
     ]
-
+    
     TEAM_SIDES = [
         ("home", _("Домашние")),
         ("away", _("Гостевые")),
     ]
-
+    
+    CARD_REASONS = [
+        ("unsporting", "Неспортивное поведение"),
+        ("dissent", "Диссидентство"),
+        ("persistent_fouling", "Систематические нарушения"),
+        ("delaying_restart", "Задержка возобновления"),
+        ("entering_field", "Незаконный выход на поле"),
+        ("other", "Другое"),
+    ]
+    
+    # Основные поля
     match = models.ForeignKey(
-        Match,
+        'matches.Match',
         on_delete=models.CASCADE,
-        related_name="events",
-        verbose_name=_('Матч')
+        related_name='events'
     )
+    minute = models.PositiveSmallIntegerField(help_text="Минута события")
+    added_time = models.PositiveSmallIntegerField(
+        default=0,
+        help_text="Добавленное время (+1, +2...)"
+    )
+    event_type = models.CharField(max_length=20, choices=EVENT_TYPES)
+    team_side = models.CharField(max_length=4, choices=TEAM_SIDES)
+    
+    # Игрок, к которому относится событие
     player = models.ForeignKey(
-        Player,
+        'players.Player',
         on_delete=models.SET_NULL,
         null=True,
-        verbose_name=_('Игрок')
+        blank=True,
+        related_name='events'
     )
-    minute = models.IntegerField(_('Минута'))
-    event_type = models.CharField(
-        _('Тип события'),
+    
+    # 🔥 НОВЫЕ ПОЛЯ для детализации:
+    
+    # Для голов: кто отдал пас
+    assist_player = models.ForeignKey(
+        'players.Player',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='assists'
+    )
+    
+    # Для голов: счёт после гола
+    score_after = models.CharField(
+        max_length=5,
+        blank=True,
+        help_text="Например: 2-1"
+    )
+    
+    # Для замен: игрок, который ушёл с поля
+    player_out = models.ForeignKey(
+        'players.Player',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='substitutions_out'
+    )
+    
+    # Для карточек: причина (опционально)
+    card_reason = models.CharField(
         max_length=30,
-        choices=EVENT_TYPES
+        choices=CARD_REASONS,
+        blank=True,
+        null=True
     )
-    team_side = models.CharField(
-        _('Сторона'),
-        max_length=10,
-        choices=TEAM_SIDES
+    
+    # Для VAR: результат проверки
+    var_decision = models.CharField(
+        max_length=50,
+        blank=True,
+        help_text="Решение после VAR"
     )
-    external_id = models.CharField(
-        _('Внешний ID'),
-        max_length=100,
-        unique=True
+    
+    # Дополнительные данные из API (JSON)
+    extra_data = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Сырые данные из API"
     )
-
+    
     class Meta:
-        verbose_name = _('Событие матча')
-        verbose_name_plural = _('События матчей')
-        ordering = ['minute']
-        indexes = [
-            models.Index(fields=['match', 'minute']),
-            models.Index(fields=['player', 'event_type']),
-        ]
-
+        ordering = ['minute', 'added_time', 'id']
+        verbose_name = "Событие матча"
+        verbose_name_plural = "События матча"
+    
     def __str__(self):
-        return f"{self.get_event_type_display()} — {self.minute}'"
+        return f"{self.minute}' {self.get_event_type_display()} - {self.player}"
+    
+    @property
+    def display_minute(self):
+        """Форматирует минуту с добавлением времени"""
+        if self.added_time:
+            return f"{self.minute}+{self.added_time}"
+        return str(self.minute)

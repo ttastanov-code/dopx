@@ -68,11 +68,10 @@ class KFFClient:
         """Получает список ID матчей для сезона"""
         match_ids = set()
         
-        # Способ 1: Пробуем stages -> games
+        # === Способ 1: stages -> games ===
         stages_data = self._get(f"/seasons/{season_id}")
         if stages_data:
             data = stages_data.get("data", stages_data) if isinstance(stages_data, dict) else stages_data
-            
             if isinstance(data, dict):
                 stages = data.get("stages", [])
                 for stage in stages:
@@ -86,28 +85,39 @@ class KFFClient:
                                     if isinstance(game, dict) and game.get("id"):
                                         match_ids.add(game["id"])
         
-        # Способ 2: Прямой endpoint матчей сезона
+        # === Способ 2: Прямой endpoint /seasons/{id}/games ===
         if not match_ids:
             games_data = self._get(f"/seasons/{season_id}/games")
             if games_data:
                 data = games_data.get("data", games_data) if isinstance(games_data, dict) else games_data
+                
                 if isinstance(data, list):
+                    # Прямой список
                     for game in data:
                         if isinstance(game, dict) and game.get("id"):
                             match_ids.add(game["id"])
-                elif isinstance(data, dict) and "games" in data:
-                    for game in data["games"]:
-                        if isinstance(game, dict) and game.get("id"):
-                            match_ids.add(game["id"])
+                
+                elif isinstance(data, dict):
+                    # ✅ FIX: Проверяем ключ 'items' (новый формат API)
+                    if "items" in data and isinstance(data["items"], list):
+                        for game in data["items"]:
+                            if isinstance(game, dict) and game.get("id"):
+                                match_ids.add(game["id"])
+                    # Старый формат
+                    elif "games" in data and isinstance(data["games"], list):
+                        for game in data["games"]:
+                            if isinstance(game, dict) and game.get("id"):
+                                match_ids.add(game["id"])
         
-        # Способ 3: HTML scraping fallback
+        # === Способ 3: HTML scraping fallback ===
         if not match_ids:
             match_ids = self._scrape_match_ids_from_html(season_id)
         
-        # Способ 4: Хардкод для тестов (сезон 200)
-        if not match_ids and season_id == 200:
-            logger.info("Using fallback match IDs for season 200 (test mode)")
-            match_ids = {894, 895, 896, 897, 898, 899, 900, 901, 902, 903}
+        # === Способ 4: Хардкод — ЗАКОММЕНТИРОВАТЬ ДЛЯ ПРОДАКШЕНА ===
+        # ❌ УДАЛИТЕ или закомментируйте этот блок, иначе всегда будет 10 матчей:
+        # if not match_ids and season_id == 200:
+        #     logger.info("Using fallback match IDs for season 200 (test mode)")
+        #     match_ids = {894, 895, 896, 897, 898, 899, 900, 901, 902, 903}
         
         logger.info(f"Found {len(match_ids)} match IDs for season {season_id}")
         return list(match_ids)

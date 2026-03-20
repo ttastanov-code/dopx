@@ -1,8 +1,7 @@
+<!-- templates/referees/list.html -->
 {% extends 'base.html' %}
 {% load static %}
-
 {% block content %}
-
 <!-- === HEADER === -->
 <div class="mb-8">
     <h1 class="text-3xl font-bold mb-2">
@@ -18,14 +17,13 @@
         <form method="get" class="flex flex-wrap gap-4">
             <!-- Поиск -->
             <div class="form-control flex-1 min-w-[200px]">
-                <input type="text" 
-                       name="q" 
-                       value="{{ search_query }}"
-                       placeholder="Поиск судьи..." 
-                       class="input input-bordered input-sm w-full">
+                <input type="text"
+                    name="q"
+                    value="{{ search_query }}"
+                    placeholder="Поиск судьи..."
+                    class="input input-bordered input-sm w-full">
             </div>
-            
-            <!-- Страна -->
+            {% comment %} <!-- Страна -->
             <select name="country" class="select select-bordered select-sm w-full md:w-48">
                 <option value="">Все страны</option>
                 {% for country in countries %}
@@ -33,8 +31,7 @@
                     {{ country }}
                 </option>
                 {% endfor %}
-            </select>
-            
+            </select> {% endcomment %}
             <!-- Кнопка -->
             <button type="submit" class="btn btn-primary btn-sm">
                 <i class="ti ti-search"></i>
@@ -51,7 +48,7 @@
             <tr>
                 <th>#</th>
                 <th>Судья</th>
-                <th>Страна</th>
+                {% comment %} <th>Страна</th> {% endcomment %}
                 <th class="text-center">Матчей</th>
                 <th class="text-center">Качество</th>
                 <th class="text-center">Влияние</th>
@@ -63,36 +60,38 @@
             <tr class="hover">
                 <td class="font-mono opacity-60">{{ forloop.counter }}</td>
                 <td>
-                    <a href="{% url 'referees:detail' referee.id %}" class="flex items-center gap-3 hover:text-primary transition-colors">
+                    <a href="{% url 'referees:detail' referee.id %}" 
+                       class="flex items-center gap-3 hover:text-primary transition-colors">
                         <div class="w-10 h-10 rounded-full bg-neutral/10 flex items-center justify-center font-bold text-neutral">
                             {{ referee.first_name|first|upper }}{{ referee.last_name|first|upper }}
                         </div>
                         <span class="font-medium">{{ referee.first_name }} {{ referee.last_name }}</span>
                     </a>
                 </td>
-                <td class="opacity-60">{{ referee.country|default:"—" }}</td>
+                {% comment %} <td class="opacity-60">{{ referee.country|default:"—" }}</td> {% endcomment %}
                 <td class="text-center">
-                    {% with match_count=referee.match_set.count %}
-                    <span class="font-mono">{{ match_count|default:0 }}</span>
-                    {% endwith %}
+                    <!-- ✅ FIX: Используем total_matches из аннотации -->
+                    <span class="font-mono">{{ referee.total_matches|default:0 }}</span>
                 </td>
                 <td class="text-center">
-                    {% with evals=referee.referee_evaluations.all %}
-                    {% if evals %}
-                    <span class="font-bold text-success">{{ evals|length }}</span>
+                    <!-- ✅ FIX: Используем avg_decision_quality из аннотации (1-10) -->
+                    {% if referee.avg_decision_quality %}
+                    <span class="font-bold {% if referee.avg_decision_quality >= 7 %}text-success{% elif referee.avg_decision_quality >= 5 %}text-warning{% else %}text-error{% endif %}">
+                        {{ referee.avg_decision_quality|floatformat:1 }}
+                    </span>
                     {% else %}
                     <span class="opacity-40">-</span>
                     {% endif %}
-                    {% endwith %}
                 </td>
                 <td class="text-center">
-                    {% with evals=referee.referee_evaluations.all %}
-                    {% if evals %}
-                    <span class="font-mono">{{ evals.first.influence_score|default:"-" }}</span>
+                    <!-- ✅ FIX: Используем avg_influence из аннотации (0-100) -->
+                    {% if referee.avg_influence %}
+                    <span class="font-mono {% if referee.avg_influence < 40 %}text-success{% elif referee.avg_influence < 70 %}text-warning{% else %}text-error{% endif %}">
+                        {{ referee.avg_influence|floatformat:0 }}
+                    </span>
                     {% else %}
                     <span class="opacity-40">-</span>
                     {% endif %}
-                    {% endwith %}
                 </td>
                 <td class="text-right">
                     <a href="{% url 'referees:detail' referee.id %}" class="btn btn-ghost btn-xs">
@@ -118,29 +117,26 @@
 <div class="flex justify-center mt-8">
     <div class="join">
         {% if page_obj.has_previous %}
-        <a href="?page={{ page_obj.previous_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}{% if request.GET.country %}&country={{ request.GET.country }}{% endif %}" 
-           class="join-item btn btn-sm">
+        <a href="?page={{ page_obj.previous_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}{% if request.GET.country %}&country={{ request.GET.country }}{% endif %}"
+            class="join-item btn btn-sm">
             <i class="ti ti-chevron-left"></i>
         </a>
         {% endif %}
-        
         {% for num in page_obj.paginator.page_range %}
         {% if page_obj.number == num %}
         <button class="join-item btn btn-sm btn-active">{{ num }}</button>
         {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
-        <a href="?page={{ num }}{% if search_query %}&q={{ search_query }}{% endif %}{% if request.GET.country %}&country={{ request.GET.country }}{% endif %}" 
-           class="join-item btn btn-sm">{{ num }}</a>
+        <a href="?page={{ num }}{% if search_query %}&q={{ search_query }}{% endif %}{% if request.GET.country %}&country={{ request.GET.country }}{% endif %}"
+            class="join-item btn btn-sm">{{ num }}</a>
         {% endif %}
         {% endfor %}
-        
         {% if page_obj.has_next %}
-        <a href="?page={{ page_obj.next_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}{% if request.GET.country %}&country={{ request.GET.country }}{% endif %}" 
-           class="join-item btn btn-sm">
+        <a href="?page={{ page_obj.next_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}{% if request.GET.country %}&country={{ request.GET.country }}{% endif %}"
+            class="join-item btn btn-sm">
             <i class="ti ti-chevron-right"></i>
         </a>
         {% endif %}
     </div>
 </div>
 {% endif %}
-
 {% endblock %}

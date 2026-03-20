@@ -265,29 +265,28 @@
                     <i class="ti ti-chart-bar mr-2"></i>
                     Результаты оценок
                 </h3>
-                
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div class="stat bg-base-200 rounded-lg p-4">
+                    <div class="stat bg-base-200 rounded-lg p-4 tooltip" data-tip="{{ INDICATOR_TOOLTIPS.match.entertainment }}">
                         <div class="stat-title text-xs">Зрелищность</div>
                         <div class="stat-value text-2xl text-warning">{{ match_aggregate.avg_entertainment|floatformat:1 }}</div>
                     </div>
-                    <div class="stat bg-base-200 rounded-lg p-4">
+                    <div class="stat bg-base-200 rounded-lg p-4 tooltip" data-tip="{{ INDICATOR_TOOLTIPS.match.tension }}">
                         <div class="stat-title text-xs">Напряжение</div>
                         <div class="stat-value text-2xl text-info">{{ match_aggregate.avg_tension|floatformat:1 }}</div>
                     </div>
-                    <div class="stat bg-base-200 rounded-lg p-4">
-                        <div class="stat-title text-xs">Драма</div>
+                    <div class="stat bg-base-200 rounded-lg p-4 tooltip" data-tip="{{ INDICATOR_TOOLTIPS.match.drama_index }}">
+                        <div class="stat-title text-xs">Индекс драмы</div>
                         <div class="stat-value text-2xl text-error">{{ match_aggregate.drama_index|floatformat:0 }}</div>
                     </div>
-                    <div class="stat bg-base-200 rounded-lg p-4">
-                        <div class="stat-title text-xs">Оценок</div>
+                    <div class="stat bg-base-200 rounded-lg p-4 tooltip" data-tip="{{ INDICATOR_TOOLTIPS.aggregate.total_votes }}">
+                        <div class="stat-title text-xs">Всего оценок</div>
                         <div class="stat-value text-2xl">{{ match_aggregate.total_votes }}</div>
                     </div>
                 </div>
             </div>
         </div>
         {% endif %}
-        
+
         <!-- === ТОП ИГРОКИ === -->
         {% if top_players %}
         <div class="card bg-base-100 border border-base-300">
@@ -296,11 +295,10 @@
                     <i class="ti ti-star mr-2"></i>
                     Топ игроков матча
                 </h3>
-                
                 <div class="space-y-3">
                     {% for agg in top_players %}
-                    <a href="{% url 'players:detail' agg.player.id %}" 
-                       class="flex items-center gap-4 p-3 rounded-lg hover:bg-base-200 transition-all">
+                    <a href="{% url 'players:detail' agg.player.id %}"
+                    class="flex items-center gap-4 p-3 rounded-lg hover:bg-base-200 transition-all">
                         <div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary">
                             {{ forloop.counter }}
                         </div>
@@ -308,9 +306,9 @@
                             <div class="font-medium">{{ agg.player }}</div>
                             <div class="text-xs opacity-60">{{ agg.player.team.name }}</div>
                         </div>
-                        <div class="text-right">
+                        <div class="text-right tooltip" data-tip="{{ INDICATOR_TOOLTIPS.aggregate.performance_score }}">
                             <div class="font-bold text-primary text-lg">{{ agg.performance_score|floatformat:1 }}</div>
-                            <div class="text-xs opacity-60">рейтинг</div>
+                            <div class="text-xs opacity-60">рейтинг выступления</div>
                         </div>
                     </a>
                     {% endfor %}

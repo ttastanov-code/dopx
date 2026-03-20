@@ -2,7 +2,6 @@
 Карточка игрока для списков
 Использование: {% include 'components/_player_card.html' with player=player show_stats=True %}
 {% endcomment %}
-
 <div class="card bg-base-100 border border-base-300 hover:border-primary transition-all">
     <div class="card-body p-4">
         <div class="flex items-center gap-4">
@@ -24,14 +23,12 @@
                 <a href="{% url 'players:detail' player.id %}" class="hover:text-primary transition-colors">
                     <h3 class="font-bold text-lg truncate">{{ player.first_name }} {{ player.last_name }}</h3>
                 </a>
-                
                 {% if player.team %}
                 <a href="{% url 'teams:detail' player.team.id %}" class="text-sm opacity-60 hover:text-primary">
                     <i class="ti ti-users"></i>
                     {{ player.team.name }}
                 </a>
                 {% endif %}
-                
                 <div class="flex flex-wrap gap-2 mt-2">
                     {% if player.position %}
                     <span class="badge badge-sm badge-ghost">{{ player.position }}</span>
@@ -42,13 +39,13 @@
                 </div>
             </div>
             
-            <!-- Статистика (если включена) -->
+            <!-- Статистика (если включена) с подсказкой -->
             {% if show_stats and player.match_aggregates.first %}
-            <div class="text-right">
+            <div class="text-right tooltip" data-tip="{{ INDICATOR_TOOLTIPS.player.performance_score }}">
                 <div class="text-2xl font-bold text-success">
                     {{ player.match_aggregates.first.performance_score|floatformat:1 }}
                 </div>
-                <div class="text-xs opacity-60">рейтинг</div>
+                <div class="text-xs opacity-60">рейтинг выступления</div>
             </div>
             {% endif %}
         </div>

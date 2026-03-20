@@ -10,6 +10,7 @@ from lineups.models import MatchLineup
 from seasons.models import Season
 from leagues.models import League
 import logging
+from django.views.decorators.http import require_http_methods
 
 logger = logging.getLogger(__name__)
 
@@ -200,3 +201,17 @@ class MatchDetailView(DetailView):
             'now': now,
         })
         return context
+    
+
+@require_http_methods(["GET"])
+def match_events_partial(request, match_id):
+    """HTMX partial для событий матча"""
+    match = get_object_or_404(Match, id=match_id)
+    events = match.events.select_related(
+        'player', 'assist_player', 'player_out'
+    ).order_by('minute', 'added_time', 'id')
+    
+    return render(request, 'matches/_match_events.html', {
+        'match': match,
+        'events': events,
+    })

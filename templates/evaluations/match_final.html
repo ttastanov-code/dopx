@@ -1,155 +1,212 @@
 {% extends 'base.html' %}
 {% load static %}
+{% load match_extras %}
 
 {% block content %}
-
 <!-- === PROGRESS BAR === -->
-<div class="mb-8">
-    <div class="flex items-center justify-between mb-2">
-        <span class="text-sm font-medium">Шаг {{ step }} из {{ total_steps }}</span>
-        <span class="text-sm opacity-60">{{ progress }}% завершено</span>
+<div class="max-w-4xl mx-auto mb-8">
+    <div class="flex items-center justify-between mb-3">
+        <span class="text-sm font-semibold text-base-content/70">
+            Шаг {{ step }} из {{ total_steps }}
+        </span>
+        <span class="text-sm font-medium text-primary">{{ progress }}% завершено</span>
     </div>
-    <div class="w-full bg-base-200 rounded-full h-2">
-        <div class="bg-primary h-2 rounded-full transition-all duration-300" 
+    <div class="w-full bg-base-200 rounded-full h-2.5">
+        <div class="bg-gradient-to-r from-primary to-primary/70 h-2.5 rounded-full transition-all duration-500"
              style="width: {{ progress }}%"></div>
     </div>
 </div>
 
 <!-- === MATCH INFO === -->
-<div class="card bg-base-100 border border-base-300 mb-6">
-    <div class="card-body p-4">
-        <div class="text-center">
-            <h2 class="text-xl font-bold">
-                {{ match.home_team.name }} vs {{ match.away_team.name }}
-            </h2>
-            <div class="text-2xl font-bold font-mono mt-2">
-                {{ match.home_score|default:"-" }} : {{ match.away_score|default:"-" }}
+<div class="max-w-4xl mx-auto mb-8">
+    <div class="card bg-base-100 border border-base-200 shadow-sm">
+        <div class="card-body p-5">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    {% if match.home_team.logo_url %}
+                        <img src="{{ match.home_team.logo_url }}" alt="{{ match.home_team.name }}" class="w-12 h-12 object-contain">
+                    {% else %}
+                        <div class="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary">
+                            {{ match.home_team.name|first|upper }}
+                        </div>
+                    {% endif %}
+                    <span class="font-semibold">{{ match.home_team.name }}</span>
+                </div>
+                <div class="text-center px-6">
+                    <div class="text-2xl font-bold font-mono">
+                        {% render_score match.home_score match.away_score %}
+                    </div>
+                    <div class="text-xs text-base-content/50">{{ match.start_time|date:"d.m.Y" }}</div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span class="font-semibold">{{ match.away_team.name }}</span>
+                    {% if match.away_team.logo_url %}
+                        <img src="{{ match.away_team.logo_url }}" alt="{{ match.away_team.name }}" class="w-12 h-12 object-contain">
+                    {% else %}
+                        <div class="w-12 h-12 rounded-full bg-secondary/10 flex items-center justify-center font-bold text-secondary">
+                            {{ match.away_team.name|first|upper }}
+                        </div>
+                    {% endif %}
+                </div>
             </div>
         </div>
     </div>
 </div>
 
 <!-- === FORM CARD === -->
-<div class="card bg-base-100 border border-base-300">
-    <div class="card-body p-6">
-        <h2 class="text-2xl font-bold mb-2">
-            <i class="ti ti-star mr-2"></i>
-            Общая оценка матча
-        </h2>
-        <p class="opacity-60 mb-6">Финальные впечатления от игры</p>
-        
-        <form method="post" class="space-y-8">
-            {% csrf_token %}
-            
-            <!-- Зрелищность (1-10) -->
-            <div class="form-control">
-                <label class="label">
-                    <span class="label-text font-medium text-lg">
-                        <i class="ti ti-stars mr-2"></i>
-                        Зрелищность
-                    </span>
-                    <span class="label-text-alt font-mono text-lg" id="entertainment_value">5</span>
-                </label>
-                <input type="range" 
-                       name="entertainment" 
-                       min="1" 
-                       max="10" 
-                       value="5"
-                       class="range range-primary range-lg"
-                       oninput="document.getElementById('entertainment_value').textContent = this.value">
-                <div class="flex justify-between text-xs opacity-50 mt-2">
-                    <span>1<br>Скучно</span>
-                    <span>5<br>Нормально</span>
-                    <span>10<br>Шоу</span>
+<div class="max-w-4xl mx-auto">
+    <div class="card bg-base-100 border border-base-200 shadow-lg">
+        <div class="card-body p-8">
+            <div class="text-center mb-8">
+                <div class="w-16 h-16 rounded-2xl bg-warning/10 flex items-center justify-center mx-auto mb-4">
+                    <i class="ti ti-star text-3xl text-warning"></i>
                 </div>
+                <h2 class="text-2xl font-bold mb-2">Общая оценка матча</h2>
+                <p class="text-base-content/60">Финальные впечатления от игры</p>
             </div>
-            
-            <!-- Напряжение (1-10) -->
-            <div class="form-control">
-                <label class="label">
-                    <span class="label-text font-medium text-lg">
-                        <i class="ti ti-lightning mr-2"></i>
-                        Напряжение
-                    </span>
-                    <span class="label-text-alt font-mono text-lg" id="tension_value">5</span>
-                </label>
-                <input type="range" 
-                       name="tension" 
-                       min="1" 
-                       max="10" 
-                       value="5"
-                       class="range range-primary range-lg"
-                       oninput="document.getElementById('tension_value').textContent = this.value">
-                <div class="flex justify-between text-xs opacity-50 mt-2">
-                    <span>1<br>Спокойно</span>
-                    <span>5<br>Интересно</span>
-                    <span>10<br>Драма</span>
-                </div>
-            </div>
-            
-            <!-- Справедливость (1-10) -->
-            <div class="form-control">
-                <label class="label">
-                    <span class="label-text font-medium text-lg">
-                        <i class="ti ti-scale mr-2"></i>
-                        Справедливость
-                    </span>
-                    <span class="label-text-alt font-mono text-lg" id="fairness_value">5</span>
-                </label>
-                <input type="range" 
-                       name="fairness" 
-                       min="1" 
-                       max="10" 
-                       value="5"
-                       class="range range-primary range-lg"
-                       oninput="document.getElementById('fairness_value').textContent = this.value">
-                <div class="flex justify-between text-xs opacity-50 mt-2">
-                    <span>1<br>Не согласен</span>
-                    <span>5<br>Нормально</span>
-                    <span>10<br>По заслугам</span>
-                </div>
-            </div>
-            
-            <!-- Переломный момент -->
-            <div class="form-control">
-                <label class="label cursor-pointer gap-4">
-                    <div>
-                        <div class="font-medium text-lg">
-                            <i class="ti ti-refresh mr-2"></i>
-                            Был переломный момент?
+
+            <form method="post" class="space-y-8">
+                {% csrf_token %}
+                
+                <!-- Зрелищность (1-10) -->
+                <div class="form-control">
+                    <label class="label mb-3">
+                        <span class="label-text font-semibold text-lg tooltip"
+                              data-tip="{{ INDICATOR_TOOLTIPS.match.entertainment|default:'Зрелищность: атаки, голы, моменты — было ли интересно?' }}">
+                            <i class="ti ti-stars text-warning mr-2"></i>
+                            Зрелищность
+                        </span>
+                        <span class="label-text-alt font-mono font-bold text-2xl" id="entertainment_value">5</span>
+                    </label>
+                    <input type="range"
+                           name="entertainment"
+                           min="1"
+                           max="10"
+                           value="5"
+                           class="range range-warning range-xl"
+                           oninput="document.getElementById('entertainment_value').textContent = this.value">
+                    <div class="flex justify-between text-xs text-base-content/40 mt-3 px-1">
+                        <div class="text-center">
+                            <span>1</span>
+                            <div class="text-xs mt-1">Скучно</div>
                         </div>
-                        <div class="text-sm opacity-60">Гол, пенальти, удаление, которые изменили ход игры</div>
-                    </div>
-                    <input type="checkbox" 
-                           name="turning_point" 
-                           class="toggle toggle-primary toggle-lg">
-                </label>
-            </div>
-            
-            <!-- Info Alert -->
-            <div class="alert alert-success">
-                <i class="ti ti-confetti"></i>
-                <div>
-                    <h3 class="font-bold">Почти готово!</h3>
-                    <div class="text-xs">
-                        После отправки вы получите +10 XP и ваша оценка будет учтена в рейтингах
+                        <div class="text-center">
+                            <span>5</span>
+                            <div class="text-xs mt-1">Нормально</div>
+                        </div>
+                        <div class="text-center">
+                            <span>10</span>
+                            <div class="text-xs mt-1">Шоу</div>
+                        </div>
                     </div>
                 </div>
-            </div>
-            
-            <!-- Navigation Buttons -->
-            <div class="flex justify-between gap-4 mt-6">
-                <a href="{% url 'evaluations:referee' match.id %}" class="btn btn-ghost">
-                    <i class="ti ti-arrow-left"></i>
-                    Назад
-                </a>
-                <button type="submit" class="btn btn-primary btn-lg">
-                    <i class="ti ti-check"></i>
-                    Завершить оценку
-                </button>
-            </div>
-        </form>
+
+                <!-- Напряжение (1-10) -->
+                <div class="form-control">
+                    <label class="label mb-3">
+                        <span class="label-text font-semibold text-lg tooltip"
+                              data-tip="{{ INDICATOR_TOOLTIPS.match.tension|default:'Напряжение: интрига, борьба, драма до последней минуты' }}">
+                            <i class="ti ti-lightning text-info mr-2"></i>
+                            Напряжение
+                        </span>
+                        <span class="label-text-alt font-mono font-bold text-2xl" id="tension_value">5</span>
+                    </label>
+                    <input type="range"
+                           name="tension"
+                           min="1"
+                           max="10"
+                           value="5"
+                           class="range range-info range-xl"
+                           oninput="document.getElementById('tension_value').textContent = this.value">
+                    <div class="flex justify-between text-xs text-base-content/40 mt-3 px-1">
+                        <div class="text-center">
+                            <span>1</span>
+                            <div class="text-xs mt-1">Спокойно</div>
+                        </div>
+                        <div class="text-center">
+                            <span>5</span>
+                            <div class="text-xs mt-1">Интересно</div>
+                        </div>
+                        <div class="text-center">
+                            <span>10</span>
+                            <div class="text-xs mt-1">Драма</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Справедливость (1-10) -->
+                <div class="form-control">
+                    <label class="label mb-3">
+                        <span class="label-text font-semibold text-lg tooltip"
+                              data-tip="{{ INDICATOR_TOOLTIPS.match.fairness|default:'Справедливость: соответствует ли счёт игре' }}">
+                            <i class="ti ti-scale text-accent mr-2"></i>
+                            Справедливость
+                        </span>
+                        <span class="label-text-alt font-mono font-bold text-2xl" id="fairness_value">5</span>
+                    </label>
+                    <input type="range"
+                           name="fairness"
+                           min="1"
+                           max="10"
+                           value="5"
+                           class="range range-accent range-xl"
+                           oninput="document.getElementById('fairness_value').textContent = this.value">
+                    <div class="flex justify-between text-xs text-base-content/40 mt-3 px-1">
+                        <div class="text-center">
+                            <span>1</span>
+                            <div class="text-xs mt-1">Не согласен</div>
+                        </div>
+                        <div class="text-center">
+                            <span>5</span>
+                            <div class="text-xs mt-1">Нормально</div>
+                        </div>
+                        <div class="text-center">
+                            <span>10</span>
+                            <div class="text-xs mt-1">По заслугам</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Переломный момент -->
+                <div class="form-control">
+                    <label class="cursor-pointer label p-4 rounded-xl border-2 border-base-200 hover:border-primary/50 transition-all">
+                        <div class="flex items-center gap-4 flex-1">
+                            <div class="w-12 h-12 rounded-xl bg-error/10 flex items-center justify-center">
+                                <i class="ti ti-refresh text-2xl text-error"></i>
+                            </div>
+                            <div class="flex-1">
+                                <div class="font-semibold text-base">Был переломный момент?</div>
+                                <div class="text-sm text-base-content/50">Гол, пенальти, удаление, которые изменили ход игры</div>
+                            </div>
+                        </div>
+                        <input type="checkbox" name="turning_point" class="toggle toggle-primary toggle-lg">
+                    </label>
+                </div>
+
+                <!-- Info Alert -->
+                <div class="alert alert-success rounded-xl">
+                    <i class="ti ti-confetti"></i>
+                    <div>
+                        <h3 class="font-bold">Почти готово!</h3>
+                        <div class="text-xs">
+                            После отправки вы получите +10 XP и ваша оценка будет учтена в рейтингах
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Navigation Buttons -->
+                <div class="flex justify-between gap-4 pt-4 border-t border-base-200">
+                    <a href="{% url 'evaluations:referee' match.id %}" class="btn btn-ghost btn-lg">
+                        <i class="ti ti-arrow-left"></i>
+                        Назад
+                    </a>
+                    <button type="submit" class="btn btn-primary btn-lg px-8">
+                        <i class="ti ti-check"></i>
+                        Завершить оценку
+                    </button>
+                </div>
+            </form>
+        </div>
     </div>
 </div>
-
 {% endblock %}

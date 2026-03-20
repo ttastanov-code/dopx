@@ -4,11 +4,21 @@ from django.dispatch import receiver
 from django.utils import timezone
 from matches.models import Match
 from evaluations.models import PlayerEvaluation, MatchEvaluation, CoachEvaluation
-from aggregates.tasks import trigger_aggregate_recalculation
+from aggregates.tasks import trigger_aggregate_recalculation, recalculate_season_standings
 import logging
 
 logger = logging.getLogger(__name__)
 
+
+@receiver(post_save, sender=Match)
+def on_match_status_changed(sender, instance, **kwargs):
+    """При изменении статуса матча → пересчёт таблицы"""
+    if instance.status == 'finished' and instance.season:
+        # Откладываем на 1 минуту чтобы собрать несколько изменений
+        recalculate_season_standings.apply_async(
+            args=[instance.season.id],
+            countdown=60
+        )
 
 @receiver(post_save, sender=PlayerEvaluation)
 def on_player_evaluation_saved(sender, instance, created, **kwargs):

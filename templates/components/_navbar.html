@@ -1,8 +1,8 @@
 {% load static %}
 {% load notification_extras %}
 
-<div class="navbar bg-base-100/95 backdrop-blur-sm border-b border-base-300 sticky top-0 z-40">
-    <div class="container mx-auto px-4">
+<div class="navbar bg-base-100/95 backdrop-blur-sm border-b border-base-300 sticky top-0 z-40 w-full">
+    <div class="w-full flex items-center justify-between px-4">
         
         <!-- === ЛЕВАЯ ЧАСТЬ: Лого + Мобильное меню === -->
         <div class="navbar-start">
@@ -66,13 +66,12 @@
                     </a>
                 </li>
                 
-                <!-- Аналитика Dropdown -->
+                <!-- Статистика Dropdown -->
                 <li>
                     <details>
                         <summary class="flex items-center gap-2 {% if request.resolver_match.app_name in 'teams,players,coaches,referees' %}active font-semibold{% endif %}">
                             <i class="ti ti-chart-bar"></i>
-                            <span>Аналитика</span>
-                            <i class="ti ti-chevron-down text-xs opacity-70"></i>
+                            <span>Статистика</span>
                         </summary>
                         <ul class="p-2 w-56 bg-base-100 rounded-box shadow-xl border border-base-300 mt-2">
                             <li>
@@ -93,7 +92,7 @@
                                     </div>
                                     <div>
                                         <div class="font-medium">Игроки</div>
-                                        <div class="text-xs opacity-60">Топ performances</div>
+                                        <div class="text-xs opacity-60">Топ выступлений</div>
                                     </div>
                                 </a>
                             </li>
@@ -141,16 +140,20 @@
         </div>
         
         <!-- === ПРАВАЯ ЧАСТЬ: Auth + Тема + Уведомления === -->
-        <div class="navbar-end gap-2">
+        <div class="navbar-end gap-2 items-center flex">
             
             <!-- Уведомления (только для авторизованных) -->
             {% if user.is_authenticated %}
             <div class="dropdown dropdown-end">
-                <label tabindex="0" class="btn btn-ghost btn-circle relative" 
-                       hx-get="{% url 'notifications:list' %}"
-                       hx-trigger="load, every 30s"
-                       hx-swap="none">
-                    <i class="ti ti-bell text-xl"></i>
+                <!-- Уведомления -->
+                <label tabindex="0" 
+                    class="btn btn-ghost btn-circle relative flex items-center justify-center w-10 h-10"
+                    hx-get="{% url 'notifications:list' %}"
+                    hx-trigger="load, every 30s"
+                    hx-swap="none">
+                    
+                    <i class="ti ti-bell text-xl leading-none"></i>
+
                     {% with unread=user.notifications|unread_count %}
                     {% if unread %}
                     <span class="badge badge-sm badge-error absolute -top-1 -right-1 text-white min-w-[1.25rem] h-5 flex items-center justify-center">
@@ -196,20 +199,21 @@
             {% endif %}
             
             <!-- Переключатель темы -->
-            <label class="swap swap-rotate btn btn-ghost btn-circle" 
-                   x-data 
-                   @click="toggleTheme()">
-                <input type="checkbox" :checked="theme === 'dark'" />
-                <i class="ti ti-sun swap-on text-xl"></i>
-                <i class="ti ti-moon swap-off text-xl"></i>
-            </label>
+            <button 
+                class="btn btn-ghost btn-circle flex items-center justify-center w-10 h-10"
+                @click="toggleTheme()"
+            >
+                <i x-show="theme === 'light'" class="ti ti-moon text-xl leading-none"></i>
+                <i x-show="theme === 'dark'" class="ti ti-sun text-xl leading-none"></i>
+            </button>
             
             <!-- Auth кнопки -->
             {% if user.is_authenticated %}
             <!-- Профиль Dropdown -->
             <div class="dropdown dropdown-end">
-                <label tabindex="0" class="btn btn-ghost btn-circle avatar">
-                    <div class="w-10 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2">
+                <!-- Аватар -->
+                <label tabindex="0" class="btn btn-ghost btn-circle avatar flex items-center justify-center w-10 h-10">
+                    <div class="w-10 h-10 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2 overflow-hidden">
                         {% if user.avatar %}
                         <img src="{{ user.avatar.url }}" alt="{{ user.username }}" />
                         {% else %}

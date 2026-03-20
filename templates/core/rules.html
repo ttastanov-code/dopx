@@ -294,7 +294,7 @@
                                 </span>
                                 <span class="tooltip" data-tip="10 матчей подряд">
                                     <div class="w-12 h-12 rounded-lg bg-success/10 flex items-center justify-center">
-                                        <i class="ti ti-fire text-success"></i>
+                                        <i class="ti ti-flame text-success"></i>
                                     </div>
                                 </span>
                                 <span class="tooltip" data-tip="50 матчей подряд">
@@ -409,12 +409,11 @@
         </section>
         
         <!-- CTA -->
-        <div class="card bg-gradient-to-br from-primary to-primary/80 text-primary-content">
+        <div class="card bg-gradient-to-br from-primary to-primary/80">
             <div class="card-body p-6 text-center">
                 <h3 class="text-2xl font-bold mb-2">Готовы начать?</h3>
                 <p class="opacity-90 mb-4">Оцените свой первый матч и получите +10 XP</p>
-                <a href="{% url 'matches:list' %}?status=finished" class="btn btn-secondary btn-lg">
-                    <i class="ti ti-trophy"></i>
+                <a href="{% url 'matches:list' %}?status=finished" class="btn btn-primary btn-lg">
                     К матчам
                 </a>
             </div>

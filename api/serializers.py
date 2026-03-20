@@ -314,24 +314,75 @@ class MatchEvaluationSerializer(serializers.ModelSerializer):
 
 class PlayerMatchAggregateSerializer(serializers.ModelSerializer):
     """Сериалайзер агрегатов игрока"""
+    
+    # ✅ Вложенные данные — source НУЖЕН (другой путь к данным)
     player_name = serializers.CharField(source='player.first_name', read_only=True)
     player_last_name = serializers.CharField(source='player.last_name', read_only=True)
     match_details = MatchSerializer(source='match', read_only=True)
     
+    # ✅ Поля модели — source НЕ НУЖЕН (имя совпадает с моделью)
+    performance_score = serializers.FloatField(
+        read_only=True,
+        label='Рейтинг выступления',
+        help_text='Общая оценка выступления игрока в матче'
+    )
+    risk_index = serializers.FloatField(
+        read_only=True,
+        label='Индекс риска',
+        help_text='Индекс рискованных действий игрока'
+    )
+    maturity_score = serializers.FloatField(
+        read_only=True,
+        label='Индекс зрелости',
+        help_text='Индекс зрелости игрока'
+    )
+    stability_index = serializers.FloatField(
+        read_only=True,
+        label='Индекс стабильности',
+        help_text='Индекс стабильности выступлений'
+    )
+    clutch_index = serializers.FloatField(
+        read_only=True,
+        label='Индекс решающих моментов',
+        help_text='Эффективность в ключевых моментах'
+    )
+    
     class Meta:
         model = PlayerMatchAggregate
         fields = [
-            'id', 'player', 'player_name', 'player_last_name',
-            'match', 'match_details',
-            'avg_contribution', 'avg_risk', 'avg_potential',
-            'total_votes', 'performance_score', 'risk_index',
-            'maturity_score', 'stability_index', 'clutch_index'
+            'id', 
+            'player', 
+            'player_name', 
+            'player_last_name',
+            'match', 
+            'match_details',
+            'avg_contribution', 
+            'avg_risk', 
+            'avg_potential',
+            'total_votes', 
+            'performance_score', 
+            'risk_index',
+            'maturity_score', 
+            'stability_index', 
+            'clutch_index'
         ]
-        # ✅ FIX: read_only_fields должен быть списком/кортежем
-        read_only_fields = ['id', 'player', 'match', 'player_name', 'player_last_name',
-                           'match_details', 'avg_contribution', 'avg_risk', 'avg_potential',
-                           'total_votes', 'performance_score', 'risk_index',
-                           'maturity_score', 'stability_index', 'clutch_index']
+        read_only_fields = [
+            'id', 
+            'player', 
+            'match', 
+            'player_name', 
+            'player_last_name',
+            'match_details', 
+            'avg_contribution', 
+            'avg_risk', 
+            'avg_potential',
+            'total_votes', 
+            'performance_score', 
+            'risk_index',
+            'maturity_score', 
+            'stability_index', 
+            'clutch_index'
+        ]
 
 
 class MatchAggregateSerializer(serializers.ModelSerializer):
