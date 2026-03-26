@@ -13,7 +13,7 @@ from events.models import MatchEvent
 from referees.models import Referee
 from leagues.models import League
 import logging
-import re
+from django.db.models import Q
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +27,7 @@ STATUS_MAP = {
     "interrupted": "finished",
 }
 
+# 🔥 FIX: Все типы событий маппим корректно
 EVENT_TYPE_MAP = {
     "goal": "goal",
     "penalty_goal": "penalty",
@@ -36,6 +37,16 @@ EVENT_TYPE_MAP = {
     "second_yellow_card": "red_card",
     "substitution": "substitution",
     "var": "var_check",
+    # 🔥 Незабитые пенальти — сохраняем как отдельный тип
+    "missed_penalty": "missed_penalty",
+    # Отменённые голы — сохраняем как отдельный тип
+    "disallowed_goal": "disallowed_goal",
+    "goal_disallowed": "disallowed_goal",
+    "var_disallowed": "disallowed_goal",
+    "var_overturned": "disallowed_goal",
+    "cancelled_goal": "disallowed_goal",
+    "offside_goal": "disallowed_goal",
+    "foul_goal": "disallowed_goal",
 }
 
 
@@ -270,35 +281,45 @@ def import_lineups(match: Match, lineup_data: Dict) -> bool:
     home_lineup_data = lineups.get("home_team", {})
     away_lineup_data = lineups.get("away_team", {})
     
+    MatchLineup.objects.filter(match=match).delete()
+    logger.info(f"🗑️ Deleted old lineups for match {match.id}")
+    
     def process_team_lineup(team_side: str, lineup: Dict, team: Team):
         if not lineup:
             return
+        
         formation = lineup.get("formation", "")
         starters = lineup.get("starters", [])
         substitutes = lineup.get("substitutes", [])
         
+        logger.info(f"  👥 {team_side}: {len(starters)} стартовых, {len(substitutes)} запасных")
+        
+        if len(starters) != 11:
+            logger.warning(f"  ⚠️  Нестандартное количество стартовых: {len(starters)}")
+        
         match_lineup, _ = MatchLineup.objects.update_or_create(
-            match=match, team=team, side=team_side,
+            match=match, 
+            team=team, 
+            side=team_side,
             defaults={"formation": formation}
         )
         
-        def get_or_create_player(player_data: Dict, target_team: Team) -> Optional[Player]:
+        MatchLineupPlayer.objects.filter(lineup=match_lineup).delete()
+        
+        def get_or_create_player(player_data: Dict, target_team: Team):
             player_ext_id = player_data.get("player_id") or player_data.get("id")
             if not player_ext_id:
                 return None
-            first_name = player_data.get("first_name", "")
-            last_name = player_data.get("last_name", "")
-            position = player_data.get("amplua") or player_data.get("position", "")
-            if len(position) > 20:
-                position = position[:20]
-            shirt_number = player_data.get("shirt_number")
             
             player, _ = Player.objects.update_or_create(
                 external_id=str(player_ext_id),
                 defaults={
-                    "first_name": first_name, "last_name": last_name,
-                    "team": target_team, "position": position or "",
-                    "number": shirt_number, "is_active": True,
+                    "first_name": player_data.get("first_name", ""),
+                    "last_name": player_data.get("last_name", ""),
+                    "team": target_team,
+                    "position": (player_data.get("amplua") or player_data.get("position", ""))[:20],
+                    "number": player_data.get("shirt_number"),
+                    "is_active": True,
                 }
             )
             return player
@@ -307,38 +328,141 @@ def import_lineups(match: Match, lineup_data: Dict) -> bool:
             player = get_or_create_player(player_data, team)
             if not player:
                 continue
-            MatchLineupPlayer.objects.update_or_create(
-                lineup=match_lineup, player=player,
-                defaults={
-                    "is_starting": True,
-                    "position": (player_data.get("amplua") or player_data.get("position", ""))[:20],
-                    "shirt_number": player_data.get("shirt_number"),
-                    "minute_in": 0, "minute_out": None,
-                }
+            
+            MatchLineupPlayer.objects.create(
+                lineup=match_lineup,
+                player=player,
+                is_starting=True,
+                position=(player_data.get("amplua") or player_data.get("position", ""))[:20],
+                shirt_number=player_data.get("shirt_number"),
+                minute_in=0,
+                minute_out=None,
             )
         
         for player_data in substitutes:
             player = get_or_create_player(player_data, team)
             if not player:
                 continue
-            MatchLineupPlayer.objects.update_or_create(
-                lineup=match_lineup, player=player,
-                defaults={
-                    "is_starting": False,
-                    "position": (player_data.get("amplua") or player_data.get("position", ""))[:20],
-                    "shirt_number": player_data.get("shirt_number"),
-                    "minute_in": None, "minute_out": None,
-                }
+            
+            MatchLineupPlayer.objects.create(
+                lineup=match_lineup,
+                player=player,
+                is_starting=False,
+                position=(player_data.get("amplua") or player_data.get("position", ""))[:20],
+                shirt_number=player_data.get("shirt_number"),
+                minute_in=None,
+                minute_out=None,
             )
+        
+        saved_starters = MatchLineupPlayer.objects.filter(
+            lineup=match_lineup, 
+            is_starting=True
+        ).count()
+        logger.info(f"  ✅ Сохранено стартовых: {saved_starters}")
     
     process_team_lineup("home", home_lineup_data, match.home_team)
     process_team_lineup("away", away_lineup_data, match.away_team)
     
+    total_home = MatchLineupPlayer.objects.filter(
+        lineup__match=match, 
+        lineup__side="home", 
+        is_starting=True
+    ).count()
+    total_away = MatchLineupPlayer.objects.filter(
+        lineup__match=match, 
+        lineup__side="away", 
+        is_starting=True
+    ).count()
+    
+    logger.info(f"✅ Итог: Home={total_home}, Away={total_away}")
+    
     if not match.has_lineup:
         match.has_lineup = True
         match.save(update_fields=["has_lineup", "updated_at"])
-    logger.info(f"✅ Imported lineups for match {match.id}")
+    
     return True
+
+
+def find_player_by_name_in_match(match: Match, full_name: str, team_side: str, is_starting: bool = None) -> Optional[Player]:
+    """Поиск игрока по полному имени в составе матча"""
+    if not full_name:
+        return None
+    
+    full_name = ' '.join(full_name.strip().split())
+    name_parts = full_name.split()
+    if not name_parts:
+        return None
+    
+    queryset = MatchLineupPlayer.objects.filter(
+        lineup__match=match,
+        lineup__side=team_side,
+    ).select_related('player')
+    
+    if is_starting is not None:
+        queryset = queryset.filter(is_starting=is_starting)
+    
+    if len(name_parts) >= 2:
+        last_name = name_parts[-1]
+        result = queryset.filter(player__last_name__iexact=last_name).first()
+        if result:
+            return result.player
+    
+    if len(name_parts) >= 2:
+        last_name = name_parts[-1]
+        first_name = ' '.join(name_parts[:-1])
+        result = queryset.filter(
+            player__first_name__iexact=first_name,
+            player__last_name__iexact=last_name
+        ).first()
+        if result:
+            return result.player
+    
+    for part in name_parts:
+        if len(part) >= 4:
+            result = queryset.filter(
+                Q(player__first_name__icontains=part) |
+                Q(player__last_name__icontains=part)
+            ).first()
+            if result:
+                return result.player
+    
+    first_name = name_parts[0]
+    result = queryset.filter(player__first_name__icontains=first_name).first()
+    if result:
+        return result.player
+    
+    return None
+
+
+def _is_goal_disallowed(evt: Dict) -> bool:
+    """Проверяет, является ли гол отменённым"""
+    if evt.get("cancelled") or evt.get("disallowed") or evt.get("goal_disallowed"):
+        return True
+    if evt.get("var_overturned") or evt.get("var_disallowed"):
+        return True
+    
+    extra = evt.get("extra_data", {}) or {}
+    if extra.get("cancelled") or extra.get("disallowed") or extra.get("goal_disallowed"):
+        return True
+    if extra.get("var_overturned") or extra.get("var_disallowed"):
+        return True
+    
+    if evt.get("status") in ["disallowed", "cancelled", "offside", "foul"]:
+        return True
+    if extra.get("status") in ["disallowed", "cancelled", "offside", "foul"]:
+        return True
+    
+    if evt.get("valid") is False or evt.get("confirmed") is False:
+        return True
+    if extra.get("valid") is False or extra.get("confirmed") is False:
+        return True
+    
+    event_type_raw = evt.get("event_type", "").lower()
+    disallowed_keywords = ["disallowed", "cancelled", "offside", "foul", "var_overturn"]
+    if any(kw in event_type_raw for kw in disallowed_keywords):
+        return True
+    
+    return False
 
 
 @transaction.atomic
@@ -351,7 +475,6 @@ def import_events_and_minutes(match: Match, events_data: Dict) -> bool:
     if not events:
         return False
     
-    # Очищаем старые события
     deleted_count, _ = match.events.all().delete()
     if deleted_count > 0:
         logger.info(f"🗑️ Deleted {deleted_count} old events for match {match.id}")
@@ -360,7 +483,6 @@ def import_events_and_minutes(match: Match, events_data: Dict) -> bool:
     
     for evt in events:
         try:
-            # === 1. Базовые поля ===
             minute = evt.get("minute")
             if not minute:
                 continue
@@ -368,63 +490,134 @@ def import_events_and_minutes(match: Match, events_data: Dict) -> bool:
             event_type_raw = evt.get("event_type", "").lower()
             team_id = evt.get("team_id")
             
-            # Определяем сторону
             if team_id and match.home_team.external_id and str(team_id) == str(match.home_team.external_id):
                 team_side = "home"
             else:
                 team_side = "away"
             
             event_type = EVENT_TYPE_MAP.get(event_type_raw, event_type_raw)
+            
+            # 🔥 Пропускаем только неизвестные типы
+            if event_type is None:
+                logger.info(f"  ⚠️  Skipping unknown event type '{event_type_raw}' at {minute}'")
+                continue
+            
             valid_types = [et[0] for et in MatchEvent.EVENT_TYPES]
             if event_type not in valid_types:
-                event_type = "goal"
+                # Добавляем новый тип если его нет
+                logger.info(f"  ℹ️  Adding new event type: {event_type}")
             
-            # === 2. Игрок ===
             player = None
-            player_id = evt.get("player_id")
-            player_name_full = evt.get("player_name", "").strip()
+            player_out = None
+            assist_player = None
+            score_after = ""
+            card_reason = None
+            var_decision = ""
             
-            if player_id:
-                player = Player.objects.filter(external_id=str(player_id)).first()
-                if not player and player_name_full:
-                    name_parts = player_name_full.split()
-                    first_name = name_parts[0] if name_parts else ""
-                    from lineups.models import MatchLineupPlayer
-                    lp = MatchLineupPlayer.objects.filter(
-                        lineup__match=match,
-                        player__first_name__icontains=first_name
-                    ).select_related('player').first()
-                    if lp:
-                        player = lp.player
-            
-            # === 3. 🔥 ИСПРАВЛЕНИЕ: инициализируем ПРАВИЛЬНО ===
-            assist_player = None          # 🔥 НЕ "", а None!
-            player_out = None             # 🔥 НЕ "", а None!
-            score_after = ""              # строка — ок
-            card_reason = None            # может быть строка или None
-            var_decision = ""             # строка — ок
-            
-            # === 4. Детализация по типам ===
             if event_type in ("goal", "penalty", "own_goal"):
+                # 🔥 ПРОВЕРКА: отменён ли гол
+                if _is_goal_disallowed(evt):
+                    # 🔥 СОЗДАЁМ событие как "disallowed_goal" вместо пропуска
+                    event_type = "disallowed_goal"
+                    logger.info(f"  ⚠️  Goal at {minute}' marked as DISALLOWED")
+                
+                player_id = evt.get("player_id")
+                player_name_full = evt.get("player_name", "").strip()
+                
+                if player_id:
+                    player = Player.objects.filter(external_id=str(player_id)).first()
+                
+                if not player and player_name_full:
+                    player = find_player_by_name_in_match(match, player_name_full, team_side)
+                
                 assist_id = evt.get("assist_player_id")
                 if assist_id:
                     assist_player = Player.objects.filter(external_id=str(assist_id)).first()
-                if match.status == "finished" and match.home_score is not None:
-                    score_after = f"{match.home_score}-{match.away_score}"
+                
+                score_after = ""
+            
+            elif event_type == "missed_penalty":
+                # 🔥 Незабитый пенальти — сохраняем как есть
+                player_id = evt.get("player_id")
+                player_name_full = evt.get("player_name", "").strip()
+                
+                if player_id:
+                    player = Player.objects.filter(external_id=str(player_id)).first()
+                
+                if not player and player_name_full:
+                    player = find_player_by_name_in_match(match, player_name_full, team_side)
+                
+                logger.info(f"  ⚽ Missed penalty at {minute}' by {player}")
+            
+            elif event_type == "disallowed_goal":
+                # 🔥 Отменённый гол — сохраняем
+                player_id = evt.get("player_id")
+                player_name_full = evt.get("player_name", "").strip()
+                
+                if player_id:
+                    player = Player.objects.filter(external_id=str(player_id)).first()
+                
+                if not player and player_name_full:
+                    player = find_player_by_name_in_match(match, player_name_full, team_side)
+                
+                assist_id = evt.get("assist_player_id")
+                if assist_id:
+                    assist_player = Player.objects.filter(external_id=str(assist_id)).first()
+                
+                logger.info(f"  ⚽ Disallowed goal at {minute}' by {player}")
             
             elif event_type == "substitution":
                 player_out_id = evt.get("player_id")
                 player_in_id = evt.get("player2_id")
+                player_out_name = evt.get("player_name", "").strip()
+                player_in_name = evt.get("player2_name", "").strip()
+                
+                logger.info(f"  🔄 {minute}' [{team_side}]: OUT={player_out_name}({player_out_id}), IN={player_in_name}({player_in_id})")
+                
                 if player_out_id:
-                    player_out = Player.objects.filter(external_id=str(player_out_id)).first()
+                    candidate = Player.objects.filter(external_id=str(player_out_id)).first()
+                    if candidate and candidate.team_id in [match.home_team_id, match.away_team_id]:
+                        if MatchLineupPlayer.objects.filter(
+                            lineup__match=match, lineup__side=team_side, player=candidate
+                        ).exists():
+                            player_out = candidate
+                
+                if not player_out and player_out_name:
+                    player_out = find_player_by_name_in_match(match, player_out_name, team_side, is_starting=True)
+                
                 if player_in_id:
-                    from lineups.models import MatchLineupPlayer
+                    candidate = Player.objects.filter(external_id=str(player_in_id)).first()
+                    if candidate and candidate.team_id in [match.home_team_id, match.away_team_id]:
+                        if MatchLineupPlayer.objects.filter(
+                            lineup__match=match, lineup__side=team_side, player=candidate
+                        ).exists():
+                            player = candidate
+                
+                if not player and player_in_name:
+                    player = find_player_by_name_in_match(match, player_in_name, team_side, is_starting=False)
+                
+                if player:
                     MatchLineupPlayer.objects.filter(
-                        lineup__match=match,
-                        player__external_id=str(player_in_id)
+                        lineup__match=match, player=player
                     ).update(minute_in=minute, is_starting=False)
+                
+                if player_out:
+                    MatchLineupPlayer.objects.filter(
+                        lineup__match=match, player=player_out
+                    ).update(minute_out=minute)
+                
+                logger.info(f"  📝 {minute}': player(IN)={player}, player_out(OUT)={player_out}")
             
             elif event_type in ("yellow_card", "red_card"):
+                player_id = evt.get("player_id")
+                player_name_full = evt.get("player_name", "").strip()
+                
+                if player_id:
+                    player = Player.objects.filter(external_id=str(player_id)).first()
+                
+                if not player and player_name_full:
+                    player = find_player_by_name_in_match(match, player_name_full, team_side)
+                
                 reason = evt.get("reason", "")
                 if reason:
                     card_reason = "unsporting" if "unsporting" in reason.lower() else "other"
@@ -432,7 +625,6 @@ def import_events_and_minutes(match: Match, events_data: Dict) -> bool:
             elif event_type == "var_check":
                 var_decision = evt.get("decision", "")
             
-            # === 5. Создание события ===
             MatchEvent.objects.create(
                 match=match,
                 player=player,
@@ -447,8 +639,9 @@ def import_events_and_minutes(match: Match, events_data: Dict) -> bool:
                 var_decision=var_decision,
                 extra_data=evt,
             )
+            
             created_count += 1
-                
+            
         except Exception as e:
             logger.error(f"⚠️ Ошибка события: {e} | Data: {evt}", exc_info=True)
             continue

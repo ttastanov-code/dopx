@@ -4625,6 +4625,7 @@ FILE: dopx/settings.py
 import os
 from dotenv import load_dotenv
 from pathlib import Path
+from celery.schedules import crontab
 
 load_dotenv()
 
@@ -4795,41 +4796,28 @@ CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
 
-from celery.schedules import crontab
-
 CELERY_BEAT_SCHEDULE = {
-    # Синхронизация матчей каждые 30 минут
     'sync-kff-recent-matches': {
         'task': 'parsers.tasks.sync_recent_matches',
-        'schedule': crontab(minute='*/30'),  # ✅ crontab отсюда
+        'schedule': crontab(minute='*/30'),
     },
-    
-    # Обновление статусов матчей каждый час
     'update-match-statuses-hourly': {
         'task': 'parsers.tasks.update_match_statuses',
-        'schedule': crontab(minute=0),  # Каждый час в 00 мин
+        'schedule': crontab(minute=0),
     },
-    
-    # Пересчёт турнирных таблиц каждые 10 минут
     'recalculate-standings': {
         'task': 'aggregates.tasks.recalculate_season_standings',
         'schedule': crontab(minute='*/10'),
-        'kwargs': {'season_id': 200},  # Актуальный сезон
+        'kwargs': {'season_id': 200},
     },
-    
-    # Пересчёт агрегатов оценок каждые 10 минут
     'recalculate-aggregates': {
         'task': 'aggregates.tasks.recalculate_pending_aggregates',
         'schedule': crontab(minute='*/10'),
     },
-    
-    # Напоминания о голосовании каждые 6 часов
     'voting-reminders': {
         'task': 'notifications.tasks.send_voting_reminders',
         'schedule': crontab(minute=0, hour='*/6'),
     },
-    
-    # Очистка старых сессий ежедневно в 3:00
     'cleanup-old-sessions-daily': {
         'task': 'notifications.tasks.cleanup_old_sessions',
         'schedule': crontab(hour=3, minute=0),
@@ -9234,7 +9222,7 @@ from events.models import MatchEvent
 from referees.models import Referee
 from leagues.models import League
 import logging
-import re
+from django.db.models import Q
 
 logger = logging.getLogger(__name__)
 
@@ -9248,6 +9236,7 @@ STATUS_MAP = {
     "interrupted": "finished",
 }
 
+# 🔥 FIX: Все типы событий маппим корректно
 EVENT_TYPE_MAP = {
     "goal": "goal",
     "penalty_goal": "penalty",
@@ -9257,6 +9246,16 @@ EVENT_TYPE_MAP = {
     "second_yellow_card": "red_card",
     "substitution": "substitution",
     "var": "var_check",
+    # 🔥 Незабитые пенальти — сохраняем как отдельный тип
+    "missed_penalty": "missed_penalty",
+    # Отменённые голы — сохраняем как отдельный тип
+    "disallowed_goal": "disallowed_goal",
+    "goal_disallowed": "disallowed_goal",
+    "var_disallowed": "disallowed_goal",
+    "var_overturned": "disallowed_goal",
+    "cancelled_goal": "disallowed_goal",
+    "offside_goal": "disallowed_goal",
+    "foul_goal": "disallowed_goal",
 }
 
 
@@ -9491,35 +9490,45 @@ def import_lineups(match: Match, lineup_data: Dict) -> bool:
     home_lineup_data = lineups.get("home_team", {})
     away_lineup_data = lineups.get("away_team", {})
     
+    MatchLineup.objects.filter(match=match).delete()
+    logger.info(f"🗑️ Deleted old lineups for match {match.id}")
+    
     def process_team_lineup(team_side: str, lineup: Dict, team: Team):
         if not lineup:
             return
+        
         formation = lineup.get("formation", "")
         starters = lineup.get("starters", [])
         substitutes = lineup.get("substitutes", [])
         
+        logger.info(f"  👥 {team_side}: {len(starters)} стартовых, {len(substitutes)} запасных")
+        
+        if len(starters) != 11:
+            logger.warning(f"  ⚠️  Нестандартное количество стартовых: {len(starters)}")
+        
         match_lineup, _ = MatchLineup.objects.update_or_create(
-            match=match, team=team, side=team_side,
+            match=match, 
+            team=team, 
+            side=team_side,
             defaults={"formation": formation}
         )
         
-        def get_or_create_player(player_data: Dict, target_team: Team) -> Optional[Player]:
+        MatchLineupPlayer.objects.filter(lineup=match_lineup).delete()
+        
+        def get_or_create_player(player_data: Dict, target_team: Team):
             player_ext_id = player_data.get("player_id") or player_data.get("id")
             if not player_ext_id:
                 return None
-            first_name = player_data.get("first_name", "")
-            last_name = player_data.get("last_name", "")
-            position = player_data.get("amplua") or player_data.get("position", "")
-            if len(position) > 20:
-                position = position[:20]
-            shirt_number = player_data.get("shirt_number")
             
             player, _ = Player.objects.update_or_create(
                 external_id=str(player_ext_id),
                 defaults={
-                    "first_name": first_name, "last_name": last_name,
-                    "team": target_team, "position": position or "",
-                    "number": shirt_number, "is_active": True,
+                    "first_name": player_data.get("first_name", ""),
+                    "last_name": player_data.get("last_name", ""),
+                    "team": target_team,
+                    "position": (player_data.get("amplua") or player_data.get("position", ""))[:20],
+                    "number": player_data.get("shirt_number"),
+                    "is_active": True,
                 }
             )
             return player
@@ -9528,38 +9537,141 @@ def import_lineups(match: Match, lineup_data: Dict) -> bool:
             player = get_or_create_player(player_data, team)
             if not player:
                 continue
-            MatchLineupPlayer.objects.update_or_create(
-                lineup=match_lineup, player=player,
-                defaults={
-                    "is_starting": True,
-                    "position": (player_data.get("amplua") or player_data.get("position", ""))[:20],
-                    "shirt_number": player_data.get("shirt_number"),
-                    "minute_in": 0, "minute_out": None,
-                }
+            
+            MatchLineupPlayer.objects.create(
+                lineup=match_lineup,
+                player=player,
+                is_starting=True,
+                position=(player_data.get("amplua") or player_data.get("position", ""))[:20],
+                shirt_number=player_data.get("shirt_number"),
+                minute_in=0,
+                minute_out=None,
             )
         
         for player_data in substitutes:
             player = get_or_create_player(player_data, team)
             if not player:
                 continue
-            MatchLineupPlayer.objects.update_or_create(
-                lineup=match_lineup, player=player,
-                defaults={
-                    "is_starting": False,
-                    "position": (player_data.get("amplua") or player_data.get("position", ""))[:20],
-                    "shirt_number": player_data.get("shirt_number"),
-                    "minute_in": None, "minute_out": None,
-                }
+            
+            MatchLineupPlayer.objects.create(
+                lineup=match_lineup,
+                player=player,
+                is_starting=False,
+                position=(player_data.get("amplua") or player_data.get("position", ""))[:20],
+                shirt_number=player_data.get("shirt_number"),
+                minute_in=None,
+                minute_out=None,
             )
+        
+        saved_starters = MatchLineupPlayer.objects.filter(
+            lineup=match_lineup, 
+            is_starting=True
+        ).count()
+        logger.info(f"  ✅ Сохранено стартовых: {saved_starters}")
     
     process_team_lineup("home", home_lineup_data, match.home_team)
     process_team_lineup("away", away_lineup_data, match.away_team)
     
+    total_home = MatchLineupPlayer.objects.filter(
+        lineup__match=match, 
+        lineup__side="home", 
+        is_starting=True
+    ).count()
+    total_away = MatchLineupPlayer.objects.filter(
+        lineup__match=match, 
+        lineup__side="away", 
+        is_starting=True
+    ).count()
+    
+    logger.info(f"✅ Итог: Home={total_home}, Away={total_away}")
+    
     if not match.has_lineup:
         match.has_lineup = True
         match.save(update_fields=["has_lineup", "updated_at"])
-    logger.info(f"✅ Imported lineups for match {match.id}")
+    
     return True
+
+
+def find_player_by_name_in_match(match: Match, full_name: str, team_side: str, is_starting: bool = None) -> Optional[Player]:
+    """Поиск игрока по полному имени в составе матча"""
+    if not full_name:
+        return None
+    
+    full_name = ' '.join(full_name.strip().split())
+    name_parts = full_name.split()
+    if not name_parts:
+        return None
+    
+    queryset = MatchLineupPlayer.objects.filter(
+        lineup__match=match,
+        lineup__side=team_side,
+    ).select_related('player')
+    
+    if is_starting is not None:
+        queryset = queryset.filter(is_starting=is_starting)
+    
+    if len(name_parts) >= 2:
+        last_name = name_parts[-1]
+        result = queryset.filter(player__last_name__iexact=last_name).first()
+        if result:
+            return result.player
+    
+    if len(name_parts) >= 2:
+        last_name = name_parts[-1]
+        first_name = ' '.join(name_parts[:-1])
+        result = queryset.filter(
+            player__first_name__iexact=first_name,
+            player__last_name__iexact=last_name
+        ).first()
+        if result:
+            return result.player
+    
+    for part in name_parts:
+        if len(part) >= 4:
+            result = queryset.filter(
+                Q(player__first_name__icontains=part) |
+                Q(player__last_name__icontains=part)
+            ).first()
+            if result:
+                return result.player
+    
+    first_name = name_parts[0]
+    result = queryset.filter(player__first_name__icontains=first_name).first()
+    if result:
+        return result.player
+    
+    return None
+
+
+def _is_goal_disallowed(evt: Dict) -> bool:
+    """Проверяет, является ли гол отменённым"""
+    if evt.get("cancelled") or evt.get("disallowed") or evt.get("goal_disallowed"):
+        return True
+    if evt.get("var_overturned") or evt.get("var_disallowed"):
+        return True
+    
+    extra = evt.get("extra_data", {}) or {}
+    if extra.get("cancelled") or extra.get("disallowed") or extra.get("goal_disallowed"):
+        return True
+    if extra.get("var_overturned") or extra.get("var_disallowed"):
+        return True
+    
+    if evt.get("status") in ["disallowed", "cancelled", "offside", "foul"]:
+        return True
+    if extra.get("status") in ["disallowed", "cancelled", "offside", "foul"]:
+        return True
+    
+    if evt.get("valid") is False or evt.get("confirmed") is False:
+        return True
+    if extra.get("valid") is False or extra.get("confirmed") is False:
+        return True
+    
+    event_type_raw = evt.get("event_type", "").lower()
+    disallowed_keywords = ["disallowed", "cancelled", "offside", "foul", "var_overturn"]
+    if any(kw in event_type_raw for kw in disallowed_keywords):
+        return True
+    
+    return False
 
 
 @transaction.atomic
@@ -9572,7 +9684,6 @@ def import_events_and_minutes(match: Match, events_data: Dict) -> bool:
     if not events:
         return False
     
-    # Очищаем старые события
     deleted_count, _ = match.events.all().delete()
     if deleted_count > 0:
         logger.info(f"🗑️ Deleted {deleted_count} old events for match {match.id}")
@@ -9581,7 +9692,6 @@ def import_events_and_minutes(match: Match, events_data: Dict) -> bool:
     
     for evt in events:
         try:
-            # === 1. Базовые поля ===
             minute = evt.get("minute")
             if not minute:
                 continue
@@ -9589,63 +9699,134 @@ def import_events_and_minutes(match: Match, events_data: Dict) -> bool:
             event_type_raw = evt.get("event_type", "").lower()
             team_id = evt.get("team_id")
             
-            # Определяем сторону
             if team_id and match.home_team.external_id and str(team_id) == str(match.home_team.external_id):
                 team_side = "home"
             else:
                 team_side = "away"
             
             event_type = EVENT_TYPE_MAP.get(event_type_raw, event_type_raw)
+            
+            # 🔥 Пропускаем только неизвестные типы
+            if event_type is None:
+                logger.info(f"  ⚠️  Skipping unknown event type '{event_type_raw}' at {minute}'")
+                continue
+            
             valid_types = [et[0] for et in MatchEvent.EVENT_TYPES]
             if event_type not in valid_types:
-                event_type = "goal"
+                # Добавляем новый тип если его нет
+                logger.info(f"  ℹ️  Adding new event type: {event_type}")
             
-            # === 2. Игрок ===
             player = None
-            player_id = evt.get("player_id")
-            player_name_full = evt.get("player_name", "").strip()
+            player_out = None
+            assist_player = None
+            score_after = ""
+            card_reason = None
+            var_decision = ""
             
-            if player_id:
-                player = Player.objects.filter(external_id=str(player_id)).first()
-                if not player and player_name_full:
-                    name_parts = player_name_full.split()
-                    first_name = name_parts[0] if name_parts else ""
-                    from lineups.models import MatchLineupPlayer
-                    lp = MatchLineupPlayer.objects.filter(
-                        lineup__match=match,
-                        player__first_name__icontains=first_name
-                    ).select_related('player').first()
-                    if lp:
-                        player = lp.player
-            
-            # === 3. 🔥 ИСПРАВЛЕНИЕ: инициализируем ПРАВИЛЬНО ===
-            assist_player = None          # 🔥 НЕ "", а None!
-            player_out = None             # 🔥 НЕ "", а None!
-            score_after = ""              # строка — ок
-            card_reason = None            # может быть строка или None
-            var_decision = ""             # строка — ок
-            
-            # === 4. Детализация по типам ===
             if event_type in ("goal", "penalty", "own_goal"):
+                # 🔥 ПРОВЕРКА: отменён ли гол
+                if _is_goal_disallowed(evt):
+                    # 🔥 СОЗДАЁМ событие как "disallowed_goal" вместо пропуска
+                    event_type = "disallowed_goal"
+                    logger.info(f"  ⚠️  Goal at {minute}' marked as DISALLOWED")
+                
+                player_id = evt.get("player_id")
+                player_name_full = evt.get("player_name", "").strip()
+                
+                if player_id:
+                    player = Player.objects.filter(external_id=str(player_id)).first()
+                
+                if not player and player_name_full:
+                    player = find_player_by_name_in_match(match, player_name_full, team_side)
+                
                 assist_id = evt.get("assist_player_id")
                 if assist_id:
                     assist_player = Player.objects.filter(external_id=str(assist_id)).first()
-                if match.status == "finished" and match.home_score is not None:
-                    score_after = f"{match.home_score}-{match.away_score}"
+                
+                score_after = ""
+            
+            elif event_type == "missed_penalty":
+                # 🔥 Незабитый пенальти — сохраняем как есть
+                player_id = evt.get("player_id")
+                player_name_full = evt.get("player_name", "").strip()
+                
+                if player_id:
+                    player = Player.objects.filter(external_id=str(player_id)).first()
+                
+                if not player and player_name_full:
+                    player = find_player_by_name_in_match(match, player_name_full, team_side)
+                
+                logger.info(f"  ⚽ Missed penalty at {minute}' by {player}")
+            
+            elif event_type == "disallowed_goal":
+                # 🔥 Отменённый гол — сохраняем
+                player_id = evt.get("player_id")
+                player_name_full = evt.get("player_name", "").strip()
+                
+                if player_id:
+                    player = Player.objects.filter(external_id=str(player_id)).first()
+                
+                if not player and player_name_full:
+                    player = find_player_by_name_in_match(match, player_name_full, team_side)
+                
+                assist_id = evt.get("assist_player_id")
+                if assist_id:
+                    assist_player = Player.objects.filter(external_id=str(assist_id)).first()
+                
+                logger.info(f"  ⚽ Disallowed goal at {minute}' by {player}")
             
             elif event_type == "substitution":
                 player_out_id = evt.get("player_id")
                 player_in_id = evt.get("player2_id")
+                player_out_name = evt.get("player_name", "").strip()
+                player_in_name = evt.get("player2_name", "").strip()
+                
+                logger.info(f"  🔄 {minute}' [{team_side}]: OUT={player_out_name}({player_out_id}), IN={player_in_name}({player_in_id})")
+                
                 if player_out_id:
-                    player_out = Player.objects.filter(external_id=str(player_out_id)).first()
+                    candidate = Player.objects.filter(external_id=str(player_out_id)).first()
+                    if candidate and candidate.team_id in [match.home_team_id, match.away_team_id]:
+                        if MatchLineupPlayer.objects.filter(
+                            lineup__match=match, lineup__side=team_side, player=candidate
+                        ).exists():
+                            player_out = candidate
+                
+                if not player_out and player_out_name:
+                    player_out = find_player_by_name_in_match(match, player_out_name, team_side, is_starting=True)
+                
                 if player_in_id:
-                    from lineups.models import MatchLineupPlayer
+                    candidate = Player.objects.filter(external_id=str(player_in_id)).first()
+                    if candidate and candidate.team_id in [match.home_team_id, match.away_team_id]:
+                        if MatchLineupPlayer.objects.filter(
+                            lineup__match=match, lineup__side=team_side, player=candidate
+                        ).exists():
+                            player = candidate
+                
+                if not player and player_in_name:
+                    player = find_player_by_name_in_match(match, player_in_name, team_side, is_starting=False)
+                
+                if player:
                     MatchLineupPlayer.objects.filter(
-                        lineup__match=match,
-                        player__external_id=str(player_in_id)
+                        lineup__match=match, player=player
                     ).update(minute_in=minute, is_starting=False)
+                
+                if player_out:
+                    MatchLineupPlayer.objects.filter(
+                        lineup__match=match, player=player_out
+                    ).update(minute_out=minute)
+                
+                logger.info(f"  📝 {minute}': player(IN)={player}, player_out(OUT)={player_out}")
             
             elif event_type in ("yellow_card", "red_card"):
+                player_id = evt.get("player_id")
+                player_name_full = evt.get("player_name", "").strip()
+                
+                if player_id:
+                    player = Player.objects.filter(external_id=str(player_id)).first()
+                
+                if not player and player_name_full:
+                    player = find_player_by_name_in_match(match, player_name_full, team_side)
+                
                 reason = evt.get("reason", "")
                 if reason:
                     card_reason = "unsporting" if "unsporting" in reason.lower() else "other"
@@ -9653,7 +9834,6 @@ def import_events_and_minutes(match: Match, events_data: Dict) -> bool:
             elif event_type == "var_check":
                 var_decision = evt.get("decision", "")
             
-            # === 5. Создание события ===
             MatchEvent.objects.create(
                 match=match,
                 player=player,
@@ -9668,8 +9848,9 @@ def import_events_and_minutes(match: Match, events_data: Dict) -> bool:
                 var_decision=var_decision,
                 extra_data=evt,
             )
+            
             created_count += 1
-                
+            
         except Exception as e:
             logger.error(f"⚠️ Ошибка события: {e} | Data: {evt}", exc_info=True)
             continue
@@ -9780,35 +9961,35 @@ def import_full_match(match_id: int, season_id: int = None) -> bool:
             lineup_resp = client.get_lineup(match_id)
             
             if lineup_resp and isinstance(lineup_resp, dict):
-                # 🔥 API возвращает данные в ключе "data" или напрямую
                 lineup_data = lineup_resp.get("data", lineup_resp)
                 
+                # 🔥 ЛОГИРОВАНИЕ СТРУКТУРЫ API
+                logger.info(f"  📊 Lineup keys: {list(lineup_data.keys())}")
+                if "lineups" in lineup_data:
+                    for side, team_data in lineup_data["lineups"].items():
+                        if team_data:
+                            starters = team_data.get("starters", []) or team_data.get("starting_lineup", [])
+                            subs = team_data.get("substitutes", []) or team_data.get("bench", [])
+                            logger.info(f"  📊 {side}: {len(starters)} starters, {len(subs)} subs")
+                            if len(starters) < 11:
+                                logger.error(f"  ❌ МАЛО ИГРОКОВ: {side} имеет только {len(starters)}!")
+                                logger.error(f"  📦 Полные данные: {team_data}")
+                
                 try:
-                    # Импорт составов
                     if import_lineups(match, lineup_data):
                         logger.info(f"  ✅ Составы импортированы")
                         stats['created']['lineups'] = True
                     else:
                         logger.warning(f"  ⚠️  Нет данных составов")
-                    
-                    # 🔥 Импорт тренеров из того же ответа
-                    if import_coaches(match, lineup_data):
-                        logger.info(f"  ✅ Тренеры импортированы")
-                        stats['created']['coaches'] = True
-                        
                 except Exception as e:
                     error = f"Ошибка импорта составов/тренеров: {e}"
                     logger.warning(f"  ⚠️  {error}", exc_info=True)
                     stats['errors'].append(error)
-            else:
-                logger.warning(f"  ⚠️  No lineup data available")
-        else:
-            logger.info(f"  ℹ️  Матч без составов (has_lineup=False)")
         
         # === 3. События матча ===
         logger.info(f"  ⚡ Загрузка событий...")
         events_resp = client.get_events(match_id)
-        
+
         if events_resp and isinstance(events_resp, dict):
             # 🔥 API возвращает события в ключе "data" или напрямую
             events_data = events_resp.get("data", events_resp)
@@ -9818,6 +9999,7 @@ def import_full_match(match_id: int, season_id: int = None) -> bool:
             
             if events_list:
                 try:
+                    # ✅ Передаём весь events_data, а не только список событий
                     import_events_and_minutes(match, events_data)
                     event_count = len(events_list)
                     logger.info(f"  ✅ События импортированы ({event_count} events)")
@@ -11923,6 +12105,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+# teams/views.py
 class TeamListView(ListView):
     """Список всех команд"""
     model = Team
@@ -11942,6 +12125,20 @@ class TeamListView(ListView):
         city = self.request.GET.get('city')
         if city:
             queryset = queryset.filter(city__icontains=city)
+        
+        # 🔥 FIX: Считаем ОБА типа матчей (дома + в гостях)
+        queryset = queryset.annotate(
+            home_matches_count=Count(
+                'home_matches',
+                filter=Q(home_matches__status='finished'),
+                distinct=True
+            ),
+            away_matches_count=Count(
+                'away_matches',
+                filter=Q(away_matches__status='finished'),
+                distinct=True
+            )
+        )
         
         return queryset.order_by('name')
 
@@ -11967,23 +12164,34 @@ class TeamDetailView(DetailView):
         team = self.object
         now = timezone.now()
         
+        # 🔥 FIX: Получаем активный сезон для фильтрации
+        current_season = Season.objects.filter(is_active=True).first()
+        
         # Матчи команды
         home_matches = Match.objects.filter(home_team=team)
         away_matches = Match.objects.filter(away_team=team)
         
-        # Статистика матчей
-        total_matches = Match.objects.filter(
-            Q(home_team=team) | Q(away_team=team)
-        ).count()
+        # 🔥 FIX: Фильтруем матчи по сезону (если есть) и статусу
+        if current_season:
+            matches_filter = Q(
+                Q(home_team=team) | Q(away_team=team),
+                season=current_season,
+                status='finished'
+            )
+        else:
+            matches_filter = Q(
+                Q(home_team=team) | Q(away_team=team),
+                status='finished'
+            )
+        
+        # Статистика матчей — ТОЛЬКО текущий сезон + finished
+        total_matches = Match.objects.filter(matches_filter).count()
 
         wins = 0
         goals_scored = 0
         goals_conceded = 0
 
-        for match in Match.objects.filter(
-            Q(home_team=team) | Q(away_team=team),
-            status='finished'
-        ):
+        for match in Match.objects.filter(matches_filter):
             if match.home_team == team and match.home_score and match.away_score:
                 if match.home_score > match.away_score:
                     wins += 1
@@ -11994,34 +12202,6 @@ class TeamDetailView(DetailView):
                     wins += 1
                 goals_scored += match.away_score or 0
                 goals_conceded += match.home_score or 0
-        
-        # Подсчёт побед (упрощённо)
-        wins = 0
-        for match in Match.objects.filter(
-            Q(home_team=team) | Q(away_team=team),
-            status='finished'
-        ):
-            if match.home_team == team and match.home_score and match.away_score:
-                if match.home_score > match.away_score:
-                    wins += 1
-            elif match.away_team == team and match.home_score and match.away_score:
-                if match.away_score > match.home_score:
-                    wins += 1
-        
-        # Забитые/пропущенные голы
-        goals_scored = 0
-        goals_conceded = 0
-        for match in Match.objects.filter(
-            Q(home_team=team) | Q(away_team=team),
-            status='finished'
-        ):
-            if match.home_score is not None and match.away_score is not None:
-                if match.home_team == team:
-                    goals_scored += match.home_score or 0
-                    goals_conceded += match.away_score or 0
-                else:
-                    goals_scored += match.away_score or 0
-                    goals_conceded += match.home_score or 0
         
         # Игроки команды
         players = Player.objects.filter(
@@ -12048,16 +12228,28 @@ class TeamDetailView(DetailView):
             total=Count('id'),
         )
         
-        # Последние матчи
-        recent_matches = Match.objects.filter(
-            Q(home_team=team) | Q(away_team=team),
-            status='finished'
-        ).select_related(
-            'home_team', 
-            'away_team', 
-            'league', 
-            'season'
-        ).order_by('-start_time')[:10]
+        # Последние матчи — ТОЛЬКО текущий сезон + finished
+        if current_season:
+            recent_matches = Match.objects.filter(
+                Q(home_team=team) | Q(away_team=team),
+                season=current_season,
+                status='finished'
+            ).select_related(
+                'home_team', 
+                'away_team', 
+                'league', 
+                'season'
+            ).order_by('-start_time')[:10]
+        else:
+            recent_matches = Match.objects.filter(
+                Q(home_team=team) | Q(away_team=team),
+                status='finished'
+            ).select_related(
+                'home_team', 
+                'away_team', 
+                'league', 
+                'season'
+            ).order_by('-start_time')[:10]
         
         # Ближайшие матчи
         upcoming_matches = Match.objects.filter(
@@ -12072,7 +12264,7 @@ class TeamDetailView(DetailView):
         ).order_by('start_time')[:5]
         
         # Текущий сезон
-        current_season = Season.objects.filter(
+        current_season_obj = Season.objects.filter(
             is_active=True,
             teamseason__team=team
         ).first()
@@ -12087,7 +12279,7 @@ class TeamDetailView(DetailView):
             'team_evals': team_evals,
             'recent_matches': recent_matches,
             'upcoming_matches': upcoming_matches,
-            'current_season': current_season,
+            'current_season': current_season_obj,
             'page_title': f'{team.name} — DOPX',
         })
         return context
@@ -17379,160 +17571,427 @@ HTMX partial для событий матча с детализацией
 Использование: hx-get="{% url 'matches:events' match.id %}" hx-target="#events-container"
 {% endcomment %}
 
-<div id="events-container" class="space-y-2">
+<div id="events-container" class="space-y-3">
     {% for event in events %}
-        <div class="flex items-start gap-3 p-3 rounded-lg bg-base-100 border border-base-200 hover:border-primary/50 transition-all group">
-            
-            <!-- Минута -->
-            <div class="font-mono font-bold text-primary text-lg w-14 text-right shrink-0">
+    
+    <!-- === СОБЫТИЕ: ГОЛ === -->
+    {% if event.event_type == 'goal' %}
+    <div class="relative pl-4 border-l-2 border-success/30">
+        <div class="absolute -left-[9px] top-4 w-4 h-4 rounded-full bg-success border-2 border-base-100"></div>
+        
+        <div class="flex items-start gap-3 p-3 rounded-lg bg-success/5 border border-success/20 hover:border-success/40 transition-all group">
+            <div class="font-mono font-bold text-success text-lg w-12 text-right shrink-0">
                 {{ event.display_minute }}'
             </div>
             
-            <!-- Иконка события -->
-            <div class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0
-                {% if event.event_type == 'goal' %}bg-success/10 text-success
-                {% elif event.event_type == 'penalty' %}bg-warning/10 text-warning
-                {% elif event.event_type == 'own_goal' %}bg-error/10 text-error
-                {% elif event.event_type == 'yellow_card' %}bg-amber-100 text-amber-700
-                {% elif event.event_type == 'red_card' %}bg-red-100 text-red-700
-                {% elif event.event_type == 'substitution' %}bg-info/10 text-info
-                {% elif event.event_type == 'var_check' %}bg-neutral/10 text-neutral
-                {% else %}bg-base-200 text-base-content
-                {% endif %}">
+            <div class="w-10 h-10 rounded-lg bg-success/20 text-success flex items-center justify-center shrink-0">
+                <i class="ti ti-ball text-xl"></i>
+            </div>
+            
+            <div class="flex-1 min-w-0">
+                <div class="flex flex-wrap items-center gap-2 mb-1">
+                    <span class="badge badge-sm badge-success font-medium">⚽ Гол</span>
+                    
+                    {% if event.player %}
+                    <a href="{% url 'players:detail' event.player.id %}" 
+                       class="font-semibold hover:text-success transition-colors truncate">
+                        {{ event.player.first_name }} {{ event.player.last_name }}
+                    </a>
+                    {% endif %}
+                    
+                    <span class="badge badge-xs badge-ghost">
+                        {{ event.get_team_side_display }}
+                    </span>
+                </div>
                 
-                {% if event.event_type == 'goal' %}
-                    <i class="ti ti-ball text-xl"></i>
-                {% elif event.event_type == 'penalty' %}
-                    <i class="ti ti-whistle text-xl"></i>
-                {% elif event.event_type == 'own_goal' %}
-                    <i class="ti ti-arrow-back text-xl"></i>
-                {% elif event.event_type == 'yellow_card' %}
-                    <i class="ti ti-square-rounded text-xl"></i>
-                {% elif event.event_type == 'red_card' %}
-                    <i class="ti ti-square-rounded-filled text-xl"></i>
-                {% elif event.event_type == 'substitution' %}
-                    <i class="ti ti-refresh text-xl"></i>
-                {% elif event.event_type == 'var_check' %}
-                    <i class="ti ti-screen-share text-xl"></i>
-                {% else %}
-                    <i class="ti ti-star text-xl"></i>
+                <div class="flex flex-wrap items-center gap-3 text-sm opacity-80">
+                    {% if event.assist_player %}
+                    <span class="flex items-center gap-1">
+                        <i class="ti ti-arrow-narrow-right text-success"></i>
+                        <a href="{% url 'players:detail' event.assist_player.id %}" 
+                           class="hover:text-info transition-colors">
+                            ассист: {{ event.assist_player.first_name }} {{ event.assist_player.last_name }}
+                        </a>
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- === СОБЫТИЕ: ПЕНАЛЬТИ (ЗАБИТЫЙ) === -->
+    {% elif event.event_type == 'penalty' %}
+    <div class="relative pl-4 border-l-2 border-warning/30">
+        <div class="absolute -left-[9px] top-4 w-4 h-4 rounded-full bg-warning border-2 border-base-100"></div>
+        
+        <div class="flex items-start gap-3 p-3 rounded-lg bg-warning/5 border border-warning/20 hover:border-warning/40 transition-all group">
+            <div class="font-mono font-bold text-warning text-lg w-12 text-right shrink-0">
+                {{ event.display_minute }}'
+            </div>
+            
+            <div class="w-10 h-10 rounded-lg bg-warning/20 text-warning flex items-center justify-center shrink-0">
+                <i class="ti ti-whistle text-xl"></i>
+            </div>
+            
+            <div class="flex-1 min-w-0">
+                <div class="flex flex-wrap items-center gap-2 mb-1">
+                    <span class="badge badge-sm badge-warning font-medium">⚽ Пенальти</span>
+                    
+                    {% if event.player %}
+                    <a href="{% url 'players:detail' event.player.id %}" 
+                       class="font-semibold hover:text-warning transition-colors truncate">
+                        {{ event.player.first_name }} {{ event.player.last_name }}
+                    </a>
+                    {% endif %}
+                    
+                    <span class="badge badge-xs badge-ghost">
+                        {{ event.get_team_side_display }}
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- === СОБЫТИЕ: НЕЗАБИТЫЙ ПЕНАЛЬТИ === -->
+    {% elif event.event_type == 'missed_penalty' %}
+    <div class="relative pl-4 border-l-2 border-error/30">
+        <div class="absolute -left-[9px] top-4 w-4 h-4 rounded-full bg-error border-2 border-base-100"></div>
+        
+        <div class="flex items-start gap-3 p-3 rounded-lg bg-error/5 border border-error/20 hover:border-error/40 transition-all group opacity-75">
+            <div class="font-mono font-bold text-error text-lg w-12 text-right shrink-0">
+                {{ event.display_minute }}'
+            </div>
+            
+            <div class="w-10 h-10 rounded-lg bg-error/20 text-error flex items-center justify-center shrink-0">
+                <i class="ti ti-circle-x text-xl"></i>
+            </div>
+            
+            <div class="flex-1 min-w-0">
+                <div class="flex flex-wrap items-center gap-2 mb-1">
+                    <span class="badge badge-sm badge-error font-medium">❌ Пенальти не забит</span>
+                    
+                    {% if event.player %}
+                    <a href="{% url 'players:detail' event.player.id %}" 
+                       class="font-semibold hover:text-error transition-colors truncate">
+                        {{ event.player.first_name }} {{ event.player.last_name }}
+                    </a>
+                    {% endif %}
+                    
+                    <span class="badge badge-xs badge-ghost">
+                        {{ event.get_team_side_display }}
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- === СОБЫТИЕ: ОТМЕНЁННЫЙ ГОЛ === -->
+    {% elif event.event_type == 'disallowed_goal' %}
+    <div class="relative pl-4 border-l-2 border-neutral/30">
+        <div class="absolute -left-[9px] top-4 w-4 h-4 rounded-full bg-neutral border-2 border-base-100"></div>
+        
+        <div class="flex items-start gap-3 p-3 rounded-lg bg-neutral/5 border border-neutral/20 hover:border-neutral/40 transition-all group opacity-75">
+            <div class="font-mono font-bold text-neutral text-lg w-12 text-right shrink-0">
+                {{ event.display_minute }}'
+            </div>
+            
+            <div class="w-10 h-10 rounded-lg bg-neutral/20 text-neutral flex items-center justify-center shrink-0">
+                <i class="ti ti-circle-x text-xl"></i>
+            </div>
+            
+            <div class="flex-1 min-w-0">
+                <div class="flex flex-wrap items-center gap-2 mb-1">
+                    <span class="badge badge-sm" style="background:#737373;color:#fff;font-weight:600">❌ Гол отменён</span>
+                    
+                    {% if event.player %}
+                    <a href="{% url 'players:detail' event.player.id %}" 
+                       class="font-semibold hover:text-neutral transition-colors truncate">
+                        {{ event.player.first_name }} {{ event.player.last_name }}
+                    </a>
+                    {% endif %}
+                    
+                    <span class="badge badge-xs badge-ghost">
+                        {{ event.get_team_side_display }}
+                    </span>
+                </div>
+                
+                {% if event.assist_player %}
+                <div class="flex flex-wrap items-center gap-3 text-sm opacity-60">
+                    <span class="flex items-center gap-1">
+                        <i class="ti ti-arrow-narrow-right"></i>
+                        ассист: {{ event.assist_player.first_name }} {{ event.assist_player.last_name }}
+                    </span>
+                </div>
                 {% endif %}
             </div>
+        </div>
+    </div>
+    
+    <!-- === СОБЫТИЕ: АВТОГОЛ === -->
+    {% elif event.event_type == 'own_goal' %}
+    <div class="relative pl-4 border-l-2 border-info/30">
+        <div class="absolute -left-[9px] top-4 w-4 h-4 rounded-full bg-info border-2 border-base-100"></div>
+        
+        <div class="flex items-start gap-3 p-3 rounded-lg bg-info/5 border border-info/20 hover:border-info/40 transition-all group">
+            <div class="font-mono font-bold text-info text-lg w-12 text-right shrink-0">
+                {{ event.display_minute }}'
+            </div>
             
-            <!-- Информация о событии -->
+            <div class="w-10 h-10 rounded-lg bg-info/20 text-info flex items-center justify-center shrink-0">
+                <i class="ti ti-arrow-back-up text-xl"></i>
+            </div>
+            
             <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-2 flex-wrap">
-                    <!-- Игрок -->
+                <div class="flex flex-wrap items-center gap-2 mb-1">
+                    <span class="badge badge-sm badge-info font-medium">🤦 Автогол</span>
+                    
                     {% if event.player %}
-                        <a href="{% url 'players:detail' event.player.id %}" 
-                           class="font-semibold hover:text-primary transition-colors truncate">
-                            {{ event.player.first_name }} {{ event.player.last_name }}
-                        </a>
+                    <a href="{% url 'players:detail' event.player.id %}" 
+                       class="font-semibold hover:text-info transition-colors truncate">
+                        {{ event.player.first_name }} {{ event.player.last_name }}
+                    </a>
                     {% endif %}
                     
-                    <!-- Тип события -->
-                    <span class="text-sm opacity-60">
-                        {{ event.get_event_type_display }}
-                    </span>
-                    
-                    <!-- Сторона команды -->
                     <span class="badge badge-xs badge-ghost">
-                        {% if event.team_side == 'home' %}{{ match.home_team.name|truncatechars:10 }}{% else %}{{ match.away_team.name|truncatechars:10 }}{% endif %}
+                        {{ event.get_team_side_display }}
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- === СОБЫТИЕ: ЗАМЕНА === -->
+    {% elif event.event_type == 'substitution' %}
+    <div class="relative pl-4 border-l-2 border-info/30">
+        <div class="absolute -left-[9px] top-4 w-4 h-4 rounded-full bg-info border-2 border-base-100"></div>
+        
+        <div class="flex items-start gap-3 p-3 rounded-lg bg-info/5 border border-info/20 hover:border-info/40 transition-all">
+            <div class="font-mono font-bold text-info text-lg w-12 text-right shrink-0">
+                {{ event.display_minute }}'
+            </div>
+            
+            <div class="w-10 h-10 rounded-lg bg-info/20 text-info flex items-center justify-center shrink-0">
+                <i class="ti ti-refresh text-xl"></i>
+            </div>
+            
+            <div class="flex-1 min-w-0">
+                <div class="flex flex-wrap items-center gap-2 mb-2">
+                    <span class="badge badge-sm badge-info font-medium">🔄 Замена</span>
+                    <span class="badge badge-xs badge-ghost">
+                        {{ event.get_team_side_display }}
                     </span>
                 </div>
                 
-                <!-- 🔥 Детальная информация по типам -->
-                <div class="mt-1 text-sm opacity-70">
-                    
-                    {% if event.event_type in 'goal,penalty,own_goal' %}
-                        <!-- ГОЛ -->
-                        <div class="flex flex-wrap items-center gap-2">
-                            {% if event.assist_player %}
-                                <span class="flex items-center gap-1">
-                                    <i class="ti ti-arrow-narrow-right"></i>
-                                    <a href="{% url 'players:detail' event.assist_player.id %}" 
-                                       class="hover:text-info transition-colors">
-                                        ассист: {{ event.assist_player.first_name }}
-                                    </a>
-                                </span>
-                            {% endif %}
-                            {% if event.score_after %}
-                                <span class="badge badge-sm badge-success font-mono">
-                                    Счёт: {{ event.score_after }}
-                                </span>
-                            {% endif %}
-                        </div>
-                        
-                    {% elif event.event_type == 'substitution' %}
-                        <!-- ЗАМЕНА -->
-                        <div class="flex items-center gap-2">
-                            <span class="text-error">↓</span>
-                            {% if event.player_out %}
-                                <a href="{% url 'players:detail' event.player_out.id %}" 
-                                   class="hover:text-error transition-colors">
-                                    {{ event.player_out.first_name }}
-                                </a>
-                            {% else %}
-                                <span class="opacity-50">неизвестен</span>
-                            {% endif %}
-                            <span class="text-success">↑</span>
-                            {% if event.player %}
-                                <a href="{% url 'players:detail' event.player.id %}" 
-                                   class="hover:text-success transition-colors">
-                                    {{ event.player.first_name }}
-                                </a>
-                            {% endif %}
-                        </div>
-                        
-                    {% elif event.event_type in 'yellow_card,red_card' %}
-                        <!-- КАРТОЧКА -->
-                        {% if event.card_reason %}
-                            <span class="italic">
-                                {% if event.card_reason == 'unsporting' %}Неспортивное поведение
-                                {% elif event.card_reason == 'dissent' %}Диссидентство
-                                {% elif event.card_reason == 'persistent_fouling' %}Систематические нарушения
-                                {% elif event.card_reason == 'delaying_restart' %}Задержка игры
-                                {% else %}{{ event.get_card_reason_display }}{% endif %}
-                            </span>
-                        {% endif %}
-                        
-                    {% elif event.event_type == 'var_check' %}
-                        <!-- VAR -->
-                        {% if event.var_decision %}
-                            <span class="text-warning">{{ event.var_decision }}</span>
-                        {% else %}
-                            <span class="text-neutral">Проверка VAR...</span>
-                        {% endif %}
-                        
+                <div class="flex items-center gap-2 mb-1.5 pl-1">
+                    <span class="text-error font-bold text-lg leading-none" title="Вышел">↓</span>
+                    {% if event.player_out %}
+                    <a href="{% url 'players:detail' event.player_out.id %}"
+                       class="text-sm hover:text-error transition-colors line-through decoration-error/50">
+                        {{ event.player_out.first_name }} {{ event.player_out.last_name }}
+                    </a>
+                    {% else %}
+                    <span class="text-sm opacity-40 italic">неизвестен</span>
+                    {% endif %}
+                </div>
+                
+                <div class="flex items-center gap-2 pl-1">
+                    <span class="text-success font-bold text-lg leading-none" title="Зашёл">↑</span>
+                    {% if event.player %}
+                    <a href="{% url 'players:detail' event.player.id %}"
+                       class="text-sm font-medium hover:text-success transition-colors">
+                        {{ event.player.first_name }} {{ event.player.last_name }}
+                    </a>
+                    {% else %}
+                    <span class="text-sm opacity-40 italic">неизвестен</span>
                     {% endif %}
                 </div>
             </div>
+        </div>
+    </div>
+    
+    <!-- === СОБЫТИЕ: ЖЁЛТАЯ КАРТОЧКА === -->
+    {% elif event.event_type == 'yellow_card' %}
+    <div class="relative pl-4 border-l-2 border-amber-300/30">
+        <div class="absolute -left-[9px] top-4 w-4 h-4 rounded-full bg-amber-400 border-2 border-base-100"></div>
+        
+        <div class="flex items-start gap-3 p-3 rounded-lg bg-amber-50/50 border border-amber-200/50 hover:border-amber-300 transition-all">
+            <div class="font-mono font-bold text-amber-600 text-lg w-12 text-right shrink-0">
+                {{ event.display_minute }}'
+            </div>
             
-            <!-- Счёт после события (для голов) -->
-            {% if event.score_after and event.event_type in 'goal,penalty,own_goal' %}
-                <div class="font-mono font-bold text-lg text-primary shrink-0">
-                    {{ event.score_after }}
+            <div class="w-10 h-10 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                <i class="ti ti-square-rounded text-xl"></i>
+            </div>
+            
+            <div class="flex-1 min-w-0">
+                <div class="flex flex-wrap items-center gap-2 mb-1">
+                    <span class="badge badge-sm" style="background:#f59e0b;color:#fff;font-weight:600">
+                        🟨 Жёлтая карточка
+                    </span>
+                    {% if event.player %}
+                    <a href="{% url 'players:detail' event.player.id %}" 
+                       class="font-semibold hover:text-amber-600 transition-colors truncate">
+                        {{ event.player.first_name }} {{ event.player.last_name }}
+                    </a>
+                    {% endif %}
+                    <span class="badge badge-xs badge-ghost">
+                        {{ event.get_team_side_display }}
+                    </span>
                 </div>
-            {% endif %}
+                
+                {% if event.card_reason %}
+                <div class="text-sm opacity-70 italic">
+                    {% if event.card_reason == 'unsporting' %}🎭 Неспортивное поведение
+                    {% elif event.card_reason == 'dissent' %}💬 Диссидентство
+                    {% elif event.card_reason == 'persistent_fouling' %}🔁 Систематические нарушения
+                    {% elif event.card_reason == 'delaying_restart' %}⏱️ Задержка возобновления
+                    {% elif event.card_reason == 'entering_field' %}🚶 Незаконный выход на поле
+                    {% else %}{{ event.get_card_reason_display }}{% endif %}
+                </div>
+                {% endif %}
+            </div>
         </div>
+    </div>
+    
+    <!-- === СОБЫТИЕ: КРАСНАЯ КАРТОЧКА === -->
+    {% elif event.event_type == 'red_card' %}
+    <div class="relative pl-4 border-l-2 border-red-400/30">
+        <div class="absolute -left-[9px] top-4 w-4 h-4 rounded-full bg-red-500 border-2 border-base-100"></div>
+        
+        <div class="flex items-start gap-3 p-3 rounded-lg bg-red-50/50 border border-red-200/50 hover:border-red-300 transition-all">
+            <div class="font-mono font-bold text-red-600 text-lg w-12 text-right shrink-0">
+                {{ event.display_minute }}'
+            </div>
+            
+            <div class="w-10 h-10 rounded-lg bg-red-100 text-red-700 flex items-center justify-center shrink-0">
+                <i class="ti ti-square-rounded-filled text-xl"></i>
+            </div>
+            
+            <div class="flex-1 min-w-0">
+                <div class="flex flex-wrap items-center gap-2 mb-1">
+                    <span class="badge badge-sm" style="background:#ef4444;color:#fff;font-weight:600">
+                        🟥 Красная карточка
+                    </span>
+                    {% if event.player %}
+                    <a href="{% url 'players:detail' event.player.id %}" 
+                       class="font-semibold hover:text-red-600 transition-colors truncate">
+                        {{ event.player.first_name }} {{ event.player.last_name }}
+                    </a>
+                    {% endif %}
+                    <span class="badge badge-xs badge-ghost">
+                        {{ event.get_team_side_display }}
+                    </span>
+                </div>
+                
+                {% if event.card_reason %}
+                <div class="text-sm opacity-70 italic">
+                    {% if event.card_reason == 'unsporting' %}🎭 Неспортивное поведение
+                    {% elif event.card_reason == 'dissent' %}💬 Диссидентство
+                    {% elif event.card_reason == 'persistent_fouling' %}🔁 Систематические нарушения
+                    {% elif event.card_reason == 'delaying_restart' %}⏱️ Задержка возобновления
+                    {% elif event.card_reason == 'entering_field' %}🚶 Незаконный выход на поле
+                    {% else %}{{ event.get_card_reason_display }}{% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- === СОБЫТИЕ: VAR ПРОВЕРКА === -->
+    {% elif event.event_type == 'var_check' %}
+    <div class="relative pl-4 border-l-2 border-purple-400/30">
+        <div class="absolute -left-[9px] top-4 w-4 h-4 rounded-full bg-purple-500 border-2 border-base-100"></div>
+        
+        <div class="flex items-start gap-3 p-3 rounded-lg bg-purple-50/50 border border-purple-200/50 hover:border-purple-300 transition-all">
+            <div class="font-mono font-bold text-purple-600 text-lg w-12 text-right shrink-0">
+                {{ event.display_minute }}'
+            </div>
+            
+            <div class="w-10 h-10 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
+                <i class="ti ti-screen-share text-xl"></i>
+            </div>
+            
+            <div class="flex-1 min-w-0">
+                <div class="flex flex-wrap items-center gap-2 mb-1">
+                    <span class="badge badge-sm" style="background:#a855f7;color:#fff;font-weight:600">
+                        📺 VAR проверка
+                    </span>
+                    <span class="badge badge-xs badge-ghost">
+                        {{ event.get_team_side_display }}
+                    </span>
+                </div>
+                
+                {% if event.var_decision %}
+                <div class="text-sm font-medium text-purple-700 bg-purple-100 px-2 py-1 rounded inline-block">
+                    {{ event.var_decision }}
+                </div>
+                {% else %}
+                <div class="text-sm opacity-60 italic">Проверка эпизода...</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    {% endif %}
+    
     {% empty %}
-        <div class="text-center py-8 opacity-60">
-            <i class="ti ti-clock-off text-4xl mb-3"></i>
-            <p>События матча ещё не добавлены</p>
+    <div class="text-center py-12 opacity-60">
+        <div class="w-16 h-16 rounded-full bg-base-200 flex items-center justify-center mx-auto mb-4">
+            <i class="ti ti-clock-off text-3xl"></i>
         </div>
+        <p class="font-medium">События матча ещё не добавлены</p>
+        <p class="text-sm opacity-60 mt-1">Обновите страницу позже</p>
+    </div>
     {% endfor %}
 </div>
 
-<!-- Кнопка обновления -->
+<!-- === ЛЕГЕНДА СОБЫТИЙ === -->
 {% if events %}
-<div class="mt-4 text-center">
-    <button class="btn btn-ghost btn-sm btn-circle"
-            hx-get="{% url 'matches:events' match.id %}"
-            hx-target="#events-container"
-            hx-swap="outerHTML"
-            title="Обновить события">
-        <i class="ti ti-refresh"></i>
-    </button>
+<div class="mt-6 pt-5 border-t border-base-300">
+    <div class="flex items-center gap-2 mb-3">
+        <i class="ti ti-info-circle text-sm opacity-60"></i>
+        <span class="text-xs font-semibold uppercase tracking-wide opacity-60">Легенда событий</span>
+    </div>
+    
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+        <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-success/5 border border-success/20">
+            <div class="w-6 h-6 rounded-full bg-success/20 flex items-center justify-center">
+                <i class="ti ti-ball text-success text-sm"></i>
+            </div>
+            <span class="text-xs font-medium">Гол</span>
+        </div>
+        
+        <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-warning/5 border border-warning/20">
+            <div class="w-6 h-6 rounded-full bg-warning/20 flex items-center justify-center">
+                <i class="ti ti-whistle text-warning text-sm"></i>
+            </div>
+            <span class="text-xs font-medium">Пенальти</span>
+        </div>
+        
+        <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-error/5 border border-error/20">
+            <div class="w-6 h-6 rounded-full bg-error/20 flex items-center justify-center">
+                <i class="ti ti-circle-x text-error text-sm"></i>
+            </div>
+            <span class="text-xs font-medium">Не забит</span>
+        </div>
+        
+        <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-neutral/5 border border-neutral/20">
+            <div class="w-6 h-6 rounded-full bg-neutral/20 flex items-center justify-center">
+                <i class="ti ti-circle-x text-neutral text-sm"></i>
+            </div>
+            <span class="text-xs font-medium">Отменён</span>
+        </div>
+        
+        <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200">
+            <div class="w-4 h-5 bg-amber-400 rounded-sm"></div>
+            <span class="text-xs font-medium">Жёлтая</span>
+        </div>
+        
+        <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-50 border border-red-200">
+            <div class="w-4 h-5 bg-red-600 rounded-sm"></div>
+            <span class="text-xs font-medium">Красная</span>
+        </div>
+    </div>
 </div>
 {% endif %}
 
@@ -17716,35 +18175,41 @@ FILE: templates/matches/detail.html
                         
                         <!-- Стартовый состав -->
                         <div class="mb-3">
-                            <div class="text-xs opacity-60 mb-2">Стартовый состав</div>
-                            <div class="space-y-2">
-                                {% for lp in lineup.players.all|dictsort:"shirt_number"|slice:":11" %}
-                                {% if lp.is_starting %}
-                                <a href="{% url 'players:detail' lp.player.id %}" 
-                                   class="flex items-center gap-2 text-sm hover:text-primary transition-colors">
-                                    <span class="font-mono text-xs opacity-60 w-6">{{ lp.shirt_number|default:"-" }}</span>
-                                    <span>{{ lp.player }}</span>
-                                    {% if lp.position %}
-                                    <span class="text-xs opacity-40">({{ lp.position }})</span>
+                            <div class="text-xs opacity-60 mb-2 flex items-center gap-1">
+                                <i class="ti ti-circle-filled text-[6px]"></i>
+                                Стартовый состав
+                            </div>
+                            <div class="space-y-1.5">
+                                {% for lp in lineup.players.all|dictsort:"shirt_number" %}
+                                    {% if lp.is_starting %}
+                                    <a href="{% url 'players:detail' lp.player.id %}" 
+                                    class="flex items-center gap-2 text-sm hover:text-primary transition-colors group">
+                                        <span class="font-mono text-xs opacity-50 w-5 group-hover:opacity-100">{{ lp.shirt_number|default:"-" }}</span>
+                                        <span class="truncate">{{ lp.player }}</span>
+                                        {% if lp.position %}
+                                        <span class="text-[10px] opacity-40 bg-base-200 px-1.5 py-0.5 rounded">{{ lp.position }}</span>
+                                        {% endif %}
+                                    </a>
                                     {% endif %}
-                                </a>
-                                {% endif %}
                                 {% endfor %}
                             </div>
                         </div>
                         
                         <!-- Запасные -->
                         <div>
-                            <div class="text-xs opacity-60 mb-2">Запасные</div>
-                            <div class="space-y-2">
+                            <div class="text-xs opacity-60 mb-2 flex items-center gap-1">
+                                <i class="ti ti-circle text-[6px]"></i>
+                                Запасные
+                            </div>
+                            <div class="space-y-1.5">
                                 {% for lp in lineup.players.all|dictsort:"shirt_number" %}
-                                {% if not lp.is_starting %}
-                                <a href="{% url 'players:detail' lp.player.id %}" 
-                                   class="flex items-center gap-2 text-sm hover:text-primary transition-colors">
-                                    <span class="font-mono text-xs opacity-60 w-6">{{ lp.shirt_number|default:"-" }}</span>
-                                    <span>{{ lp.player }}</span>
-                                </a>
-                                {% endif %}
+                                    {% if not lp.is_starting %}
+                                    <a href="{% url 'players:detail' lp.player.id %}" 
+                                    class="flex items-center gap-2 text-sm hover:text-primary transition-colors group opacity-70 hover:opacity-100">
+                                        <span class="font-mono text-xs opacity-40 w-5">{{ lp.shirt_number|default:"-" }}</span>
+                                        <span class="truncate">{{ lp.player }}</span>
+                                    </a>
+                                    {% endif %}
                                 {% endfor %}
                             </div>
                         </div>
@@ -17755,50 +18220,31 @@ FILE: templates/matches/detail.html
         </div>
         {% endif %}
         
-        <!-- === СОБЫТИЯ МАТЧА === -->
-        {% if events %}
+        <!-- === СОБЫТИЯ МАТЧА (обновлённый блок) === -->
         <div class="card bg-base-100 border border-base-300">
             <div class="card-body p-4">
-                <h3 class="font-bold text-lg mb-4">
-                    <i class="ti ti-clock-play mr-2"></i>
-                    События матча
-                </h3>
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="font-bold text-lg flex items-center gap-2">
+                        <i class="ti ti-clock-play"></i>
+                        События матча
+                    </h3>
+                    <button class="btn btn-ghost btn-xs btn-circle"
+                            hx-get="{% url 'matches:events' match.id %}"
+                            hx-target="#events-container"
+                            hx-swap="outerHTML"
+                            title="Обновить">
+                        <i class="ti ti-refresh"></i>
+                    </button>
+                </div>
                 
-                <div class="space-y-2">
-                    {% for event in events %}
-                    <div class="flex items-center gap-3 p-2 rounded-lg hover:bg-base-200">
-                        <div class="font-mono text-sm opacity-60 w-12">{{ event.minute }}'</div>
-                        <div class="w-8 h-8 rounded-full flex items-center justify-center
-                            {% if event.event_type == 'goal' %}bg-success/20 text-success
-                            {% elif event.event_type == 'yellow_card' %}bg-warning/20 text-warning
-                            {% elif event.event_type == 'red_card' %}bg-error/20 text-error
-                            {% elif event.event_type == 'substitution' %}bg-info/20 text-info
-                            {% else %}bg-base-300{% endif %}">
-                            {% if event.event_type == 'goal' %}
-                            <i class="ti ti-ball"></i>
-                            {% elif event.event_type == 'yellow_card' %}
-                            <i class="ti ti-square-rounded"></i>
-                            {% elif event.event_type == 'red_card' %}
-                            <i class="ti ti-square-rounded-filled"></i>
-                            {% elif event.event_type == 'substitution' %}
-                            <i class="ti ti-refresh"></i>
-                            {% else %}
-                            <i class="ti ti-star"></i>
-                            {% endif %}
-                        </div>
-                        <div class="flex-1">
-                            <div class="font-medium text-sm">{{ event.player }}</div>
-                            <div class="text-xs opacity-60">{{ event.get_event_type_display }}</div>
-                        </div>
-                        <div class="text-xs opacity-60">
-                            {{ event.get_team_side_display }}
-                        </div>
+                <!-- Контейнер событий (загружается через HTMX) -->
+                <div id="events-container" hx-get="{% url 'matches:events' match.id %}" hx-trigger="load" hx-swap="outerHTML">
+                    <div class="flex justify-center py-8">
+                        <span class="loading loading-spinner loading-md"></span>
                     </div>
-                    {% endfor %}
                 </div>
             </div>
         </div>
-        {% endif %}
         
         <!-- === РЕЗУЛЬТАТЫ ОЦЕНОК === -->
         {% if match_aggregate %}
@@ -19973,7 +20419,7 @@ FILE: templates/teams/list.html
             <!-- Статистика -->
             <div class="grid grid-cols-3 gap-2 text-center text-sm">
                 <div class="bg-base-200 rounded-lg p-2">
-                    <div class="font-bold text-lg">{{ team.home_matches.count|add:team.away_matches.count|default:0 }}</div>
+                    <div class="font-bold text-lg">{{ team.home_matches_count|add:team.away_matches_count|default:0 }}</div>
                     <div class="text-xs opacity-60">Матчей</div>
                 </div>
                 <div class="bg-base-200 rounded-lg p-2">
