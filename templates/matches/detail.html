@@ -173,35 +173,41 @@
                         
                         <!-- Стартовый состав -->
                         <div class="mb-3">
-                            <div class="text-xs opacity-60 mb-2">Стартовый состав</div>
-                            <div class="space-y-2">
-                                {% for lp in lineup.players.all|dictsort:"shirt_number"|slice:":11" %}
-                                {% if lp.is_starting %}
-                                <a href="{% url 'players:detail' lp.player.id %}" 
-                                   class="flex items-center gap-2 text-sm hover:text-primary transition-colors">
-                                    <span class="font-mono text-xs opacity-60 w-6">{{ lp.shirt_number|default:"-" }}</span>
-                                    <span>{{ lp.player }}</span>
-                                    {% if lp.position %}
-                                    <span class="text-xs opacity-40">({{ lp.position }})</span>
+                            <div class="text-xs opacity-60 mb-2 flex items-center gap-1">
+                                <i class="ti ti-circle-filled text-[6px]"></i>
+                                Стартовый состав
+                            </div>
+                            <div class="space-y-1.5">
+                                {% for lp in lineup.players.all|dictsort:"shirt_number" %}
+                                    {% if lp.is_starting %}
+                                    <a href="{% url 'players:detail' lp.player.id %}" 
+                                    class="flex items-center gap-2 text-sm hover:text-primary transition-colors group">
+                                        <span class="font-mono text-xs opacity-50 w-5 group-hover:opacity-100">{{ lp.shirt_number|default:"-" }}</span>
+                                        <span class="truncate">{{ lp.player }}</span>
+                                        {% if lp.position %}
+                                        <span class="text-[10px] opacity-40 bg-base-200 px-1.5 py-0.5 rounded">{{ lp.position }}</span>
+                                        {% endif %}
+                                    </a>
                                     {% endif %}
-                                </a>
-                                {% endif %}
                                 {% endfor %}
                             </div>
                         </div>
                         
                         <!-- Запасные -->
                         <div>
-                            <div class="text-xs opacity-60 mb-2">Запасные</div>
-                            <div class="space-y-2">
+                            <div class="text-xs opacity-60 mb-2 flex items-center gap-1">
+                                <i class="ti ti-circle text-[6px]"></i>
+                                Запасные
+                            </div>
+                            <div class="space-y-1.5">
                                 {% for lp in lineup.players.all|dictsort:"shirt_number" %}
-                                {% if not lp.is_starting %}
-                                <a href="{% url 'players:detail' lp.player.id %}" 
-                                   class="flex items-center gap-2 text-sm hover:text-primary transition-colors">
-                                    <span class="font-mono text-xs opacity-60 w-6">{{ lp.shirt_number|default:"-" }}</span>
-                                    <span>{{ lp.player }}</span>
-                                </a>
-                                {% endif %}
+                                    {% if not lp.is_starting %}
+                                    <a href="{% url 'players:detail' lp.player.id %}" 
+                                    class="flex items-center gap-2 text-sm hover:text-primary transition-colors group opacity-70 hover:opacity-100">
+                                        <span class="font-mono text-xs opacity-40 w-5">{{ lp.shirt_number|default:"-" }}</span>
+                                        <span class="truncate">{{ lp.player }}</span>
+                                    </a>
+                                    {% endif %}
                                 {% endfor %}
                             </div>
                         </div>
@@ -212,50 +218,31 @@
         </div>
         {% endif %}
         
-        <!-- === СОБЫТИЯ МАТЧА === -->
-        {% if events %}
+        <!-- === СОБЫТИЯ МАТЧА (обновлённый блок) === -->
         <div class="card bg-base-100 border border-base-300">
             <div class="card-body p-4">
-                <h3 class="font-bold text-lg mb-4">
-                    <i class="ti ti-clock-play mr-2"></i>
-                    События матча
-                </h3>
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="font-bold text-lg flex items-center gap-2">
+                        <i class="ti ti-clock-play"></i>
+                        События матча
+                    </h3>
+                    <button class="btn btn-ghost btn-xs btn-circle"
+                            hx-get="{% url 'matches:events' match.id %}"
+                            hx-target="#events-container"
+                            hx-swap="outerHTML"
+                            title="Обновить">
+                        <i class="ti ti-refresh"></i>
+                    </button>
+                </div>
                 
-                <div class="space-y-2">
-                    {% for event in events %}
-                    <div class="flex items-center gap-3 p-2 rounded-lg hover:bg-base-200">
-                        <div class="font-mono text-sm opacity-60 w-12">{{ event.minute }}'</div>
-                        <div class="w-8 h-8 rounded-full flex items-center justify-center
-                            {% if event.event_type == 'goal' %}bg-success/20 text-success
-                            {% elif event.event_type == 'yellow_card' %}bg-warning/20 text-warning
-                            {% elif event.event_type == 'red_card' %}bg-error/20 text-error
-                            {% elif event.event_type == 'substitution' %}bg-info/20 text-info
-                            {% else %}bg-base-300{% endif %}">
-                            {% if event.event_type == 'goal' %}
-                            <i class="ti ti-ball"></i>
-                            {% elif event.event_type == 'yellow_card' %}
-                            <i class="ti ti-square-rounded"></i>
-                            {% elif event.event_type == 'red_card' %}
-                            <i class="ti ti-square-rounded-filled"></i>
-                            {% elif event.event_type == 'substitution' %}
-                            <i class="ti ti-refresh"></i>
-                            {% else %}
-                            <i class="ti ti-star"></i>
-                            {% endif %}
-                        </div>
-                        <div class="flex-1">
-                            <div class="font-medium text-sm">{{ event.player }}</div>
-                            <div class="text-xs opacity-60">{{ event.get_event_type_display }}</div>
-                        </div>
-                        <div class="text-xs opacity-60">
-                            {{ event.get_team_side_display }}
-                        </div>
+                <!-- Контейнер событий (загружается через HTMX) -->
+                <div id="events-container" hx-get="{% url 'matches:events' match.id %}" hx-trigger="load" hx-swap="outerHTML">
+                    <div class="flex justify-center py-8">
+                        <span class="loading loading-spinner loading-md"></span>
                     </div>
-                    {% endfor %}
                 </div>
             </div>
         </div>
-        {% endif %}
         
         <!-- === РЕЗУЛЬТАТЫ ОЦЕНОК === -->
         {% if match_aggregate %}

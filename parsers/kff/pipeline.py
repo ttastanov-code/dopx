@@ -87,35 +87,35 @@ def import_full_match(match_id: int, season_id: int = None) -> bool:
             lineup_resp = client.get_lineup(match_id)
             
             if lineup_resp and isinstance(lineup_resp, dict):
-                # 🔥 API возвращает данные в ключе "data" или напрямую
                 lineup_data = lineup_resp.get("data", lineup_resp)
                 
+                # 🔥 ЛОГИРОВАНИЕ СТРУКТУРЫ API
+                logger.info(f"  📊 Lineup keys: {list(lineup_data.keys())}")
+                if "lineups" in lineup_data:
+                    for side, team_data in lineup_data["lineups"].items():
+                        if team_data:
+                            starters = team_data.get("starters", []) or team_data.get("starting_lineup", [])
+                            subs = team_data.get("substitutes", []) or team_data.get("bench", [])
+                            logger.info(f"  📊 {side}: {len(starters)} starters, {len(subs)} subs")
+                            if len(starters) < 11:
+                                logger.error(f"  ❌ МАЛО ИГРОКОВ: {side} имеет только {len(starters)}!")
+                                logger.error(f"  📦 Полные данные: {team_data}")
+                
                 try:
-                    # Импорт составов
                     if import_lineups(match, lineup_data):
                         logger.info(f"  ✅ Составы импортированы")
                         stats['created']['lineups'] = True
                     else:
                         logger.warning(f"  ⚠️  Нет данных составов")
-                    
-                    # 🔥 Импорт тренеров из того же ответа
-                    if import_coaches(match, lineup_data):
-                        logger.info(f"  ✅ Тренеры импортированы")
-                        stats['created']['coaches'] = True
-                        
                 except Exception as e:
                     error = f"Ошибка импорта составов/тренеров: {e}"
                     logger.warning(f"  ⚠️  {error}", exc_info=True)
                     stats['errors'].append(error)
-            else:
-                logger.warning(f"  ⚠️  No lineup data available")
-        else:
-            logger.info(f"  ℹ️  Матч без составов (has_lineup=False)")
         
         # === 3. События матча ===
         logger.info(f"  ⚡ Загрузка событий...")
         events_resp = client.get_events(match_id)
-        
+
         if events_resp and isinstance(events_resp, dict):
             # 🔥 API возвращает события в ключе "data" или напрямую
             events_data = events_resp.get("data", events_resp)
@@ -125,6 +125,7 @@ def import_full_match(match_id: int, season_id: int = None) -> bool:
             
             if events_list:
                 try:
+                    # ✅ Передаём весь events_data, а не только список событий
                     import_events_and_minutes(match, events_data)
                     event_count = len(events_list)
                     logger.info(f"  ✅ События импортированы ({event_count} events)")
