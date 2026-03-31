@@ -24,10 +24,10 @@
                         <details>
                             <summary><i class="ti ti-chart-bar"></i> Аналитика</summary>
                             <ul class="p-2">
-                                <li><a href="{% url 'teams:list' %}"><i class="ti ti-users"></i> Команды</a></li>
-                                <li><a href="{% url 'players:list' %}"><i class="ti ti-player"></i> Игроки</a></li>
-                                <li><a href="{% url 'coaches:list' %}"><i class="ti ti-whistle"></i> Тренеры</a></li>
-                                <li><a href="{% url 'referees:list' %}"><i class="ti ti-referee"></i> Судьи</a></li>
+                                <li><a href="{% url 'teams:list' %}"><i class="ti ti-shirt-sport"></i> Команды</a></li>
+                                <li><a href="{% url 'players:list' %}"><i class="ti ti-play-football"></i> Игроки</a></li>
+                                <li><a href="{% url 'coaches:list' %}"><i class="ti ti-building-stadium"></i> Тренеры</a></li>
+                                <li><a href="{% url 'referees:list' %}"><i class="ti ti-gavel"></i> Судьи</a></li>
                             </ul>
                         </details>
                     </li>
@@ -77,7 +77,7 @@
                             <li>
                                 <a href="{% url 'teams:list' %}" class="flex items-center gap-3">
                                     <div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                                        <i class="ti ti-users text-primary"></i>
+                                        <i class="ti ti-shirt-sport text-primary"></i>
                                     </div>
                                     <div>
                                         <div class="font-medium">Команды</div>
@@ -88,7 +88,7 @@
                             <li>
                                 <a href="{% url 'players:list' %}" class="flex items-center gap-3">
                                     <div class="w-8 h-8 rounded-lg bg-secondary/10 flex items-center justify-center">
-                                        <i class="ti ti-player text-secondary"></i>
+                                        <i class="ti ti-play-football text-secondary"></i>
                                     </div>
                                     <div>
                                         <div class="font-medium">Игроки</div>
@@ -99,7 +99,7 @@
                             <li>
                                 <a href="{% url 'coaches:list' %}" class="flex items-center gap-3">
                                     <div class="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center">
-                                        <i class="ti ti-whistle text-accent"></i>
+                                        <i class="ti ti-building-stadium text-accent"></i>
                                     </div>
                                     <div>
                                         <div class="font-medium">Тренеры</div>
@@ -110,7 +110,7 @@
                             <li>
                                 <a href="{% url 'referees:list' %}" class="flex items-center gap-3">
                                     <div class="w-8 h-8 rounded-lg bg-neutral/10 flex items-center justify-center">
-                                        <i class="ti ti-referee text-neutral"></i>
+                                        <i class="ti ti-gavel text-neutral"></i>
                                     </div>
                                     <div>
                                         <div class="font-medium">Судьи</div>
@@ -304,19 +304,19 @@
             <div class="pt-2">
                 <div class="text-sm font-semibold opacity-60 mb-2 px-3">Аналитика</div>
                 <a href="{% url 'teams:list' %}" class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200">
-                    <i class="ti ti-users text-xl"></i>
+                    <i class="ti ti-shirt-sport text-xl"></i>
                     <span>Команды</span>
                 </a>
                 <a href="{% url 'players:list' %}" class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200">
-                    <i class="ti ti-player text-xl"></i>
+                    <i class="ti ti-play-football text-xl"></i>
                     <span>Игроки</span>
                 </a>
                 <a href="{% url 'coaches:list' %}" class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200">
-                    <i class="ti ti-whistle text-xl"></i>
+                    <i class="ti ti-building-stadium text-xl"></i>
                     <span>Тренеры</span>
                 </a>
                 <a href="{% url 'referees:list' %}" class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200">
-                    <i class="ti ti-referee text-xl"></i>
+                    <i class="ti ti-gavel text-xl"></i>
                     <span>Судьи</span>
                 </a>
             </div>

@@ -1,18 +1,26 @@
 # core/views.py
-from django.shortcuts import render
-from django.views.generic import TemplateView
-from django.http import HttpResponse
-from django.utils import timezone
-from django.db.models import F, Avg
-from django.template.loader import render_to_string
-from matches.models import Match
-from teams.models import Team
-from seasons.models import Season
-from aggregates.models import MatchAggregate, PlayerMatchAggregate
-from evaluations.models import EvaluationSession
 import logging
-from evaluations.models import MatchEvaluation, TeamEvaluation, PlayerEvaluation
+import os
+from datetime import timedelta
+from django.conf import settings
+from django.contrib import messages
+from django.db.models import Avg, F
+from django.http import HttpResponse
+from django.shortcuts import redirect, render, get_object_or_404
+from django.template.loader import render_to_string
+from django.utils import timezone
+from django.views.generic import TemplateView, View
+from django.core.mail import send_mail, EmailMultiAlternatives
+from django.core.files.storage import default_storage
+
+from aggregates.models import MatchAggregate, PlayerMatchAggregate
+from evaluations.models import EvaluationSession, MatchEvaluation, PlayerEvaluation, TeamEvaluation
+from matches.models import Match
+from seasons.models import Season
+from teams.models import Team
 from users.models import User
+
+from notifications.models import ContactSubmission
 
 logger = logging.getLogger(__name__)
 
@@ -41,21 +49,16 @@ class HomeView(TemplateView):
         ).order_by('-performance_score')[:5]
         
         # === НОВАЯ СТАТИСТИКА ===
-        
-        # Всего оценок (все типы)
         total_evals = (
             MatchEvaluation.objects.count() +
-            TeamEvaluation.objects.count() + 
+            TeamEvaluation.objects.count() +
             PlayerEvaluation.objects.count()
         )
         
-        # Активные пользователи (оценивали за последние 7 дней)
-        from datetime import timedelta
         active_users = User.objects.filter(
             context_evaluations__created_at__gte=now - timedelta(days=7)
         ).distinct().count()
         
-        # Метрики матча (исправленный расчёт)
         match_aggs = MatchAggregate.objects.all()
         avg_entertainment = match_aggs.aggregate(
             avg=Avg('avg_entertainment')
@@ -81,10 +84,10 @@ class HomeView(TemplateView):
         # === ТОП КОМАНД ПО ОЦЕНКАМ ===
         top_teams = Team.objects.annotate(
             avg_rating=Avg(
-                (F('team_evaluations__tactics') + 
-                F('team_evaluations__effort') + 
-                F('team_evaluations__organization') + 
-                F('team_evaluations__mentality')) / 4.0
+                (F('team_evaluations__tactics') +
+                 F('team_evaluations__effort') +
+                 F('team_evaluations__organization') +
+                 F('team_evaluations__mentality')) / 4.0
             )
         ).filter(
             avg_rating__isnull=False,
@@ -116,78 +119,53 @@ class HomeView(TemplateView):
 
 
 def standings_preview(request):
-    """
-    HTMX partial для превью турнирной таблицы
-    Показывает топ-10 команд активного сезона
-    """
-    # Получаем активный сезон
+    """HTMX partial для превью турнирной таблицы"""
     season = Season.objects.filter(is_active=True).first()
-    
     if not season:
         return HttpResponse('''
-            <div class="text-center py-8 opacity-60">
-                <i class="ti ti-trophy-off text-3xl mb-2"></i>
-                <p class="text-sm">Нет активного сезона</p>
-            </div>
+        <div class="text-center py-8 opacity-60">
+            <i class="ti ti-trophy-off text-3xl mb-2"></i>
+            <p class="text-sm">Нет активного сезона</p>
+        </div>
         ''')
     
-    # Получаем все команды в сезоне
     teams = Team.objects.filter(
         teamseason__season=season,
         is_active=True
     ).distinct()
     
     standings_list = []
-    
     for team in teams:
-        # Домашние матчи
         home_matches = Match.objects.filter(
             home_team=team,
             season=season,
             status='finished'
         )
-        
-        # Гостевые матчи
         away_matches = Match.objects.filter(
             away_team=team,
             season=season,
             status='finished'
         )
         
-        # Подсчёт статистики
         played = home_matches.count() + away_matches.count()
-        
-        # Победы (дома: home_score > away_score, в гостях: away_score > home_score)
         wins = (
             home_matches.filter(home_score__gt=F('away_score')).count() +
             away_matches.filter(away_score__gt=F('home_score')).count()
         )
-        
-        # Ничьи
         draws = (
             home_matches.filter(home_score=F('away_score')).count() +
             away_matches.filter(away_score=F('home_score')).count()
         )
-        
-        # Поражения
         losses = played - wins - draws
-        
-        # Забитые голы
         goals_scored = (
             sum(m.home_score or 0 for m in home_matches) +
             sum(m.away_score or 0 for m in away_matches)
         )
-        
-        # Пропущенные голы
         goals_conceded = (
             sum(m.away_score or 0 for m in home_matches) +
             sum(m.home_score or 0 for m in away_matches)
         )
-        
-        # Разница мячей
         goal_diff = goals_scored - goals_conceded
-        
-        # Очки (3 за победу, 1 за ничью)
         points = wins * 3 + draws
         
         standings_list.append({
@@ -202,17 +180,13 @@ def standings_preview(request):
             'points': points,
         })
     
-    # Сортировка: очки → разница мячей → забитые голы
     standings_list.sort(key=lambda x: (-x['points'], -x['goal_diff'], -x['goals_scored']))
-    
-    # Берём топ-10 для превью
     standings_list = standings_list[:10]
     
     html = render_to_string('components/_standings_preview.html', {
         'standings': standings_list,
         'season': season,
     })
-    
     return HttpResponse(html)
 
 
@@ -227,13 +201,188 @@ class RulesView(TemplateView):
 
 
 class ContactsView(TemplateView):
-    """Страница с контактами"""
+    """Страница обратной связи"""
     template_name = 'core/contacts.html'
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Контакты — DOPX'
+        now = timezone.now()
+        context['stats'] = {
+            'total_matches': Match.objects.count(),
+            'total_evaluations': (
+                MatchEvaluation.objects.count() +
+                PlayerEvaluation.objects.count() +
+                TeamEvaluation.objects.count()
+            ),
+            'active_users': User.objects.filter(
+                context_evaluations__created_at__gte=now - timedelta(days=7)
+            ).distinct().count(),
+            'avg_drama': MatchAggregate.objects.aggregate(
+                avg=Avg('drama_index')
+            )['avg'] or 0,
+        }
         return context
+    
+    def post(self, request, *args, **kwargs):
+        """Обработка формы обратной связи"""
+        category = request.POST.get('category', 'general')
+        email = request.POST.get('email', '').strip()
+        subject = request.POST.get('subject', 'Обращение через сайт').strip()
+        message = request.POST.get('message', '').strip()
+        screenshot = request.FILES.get('screenshot')
+        
+        # Валидация
+        if len(message) < 20:
+            messages.error(request, 'Сообщение слишком короткое (мин. 20 символов)')
+            return redirect('core:contacts')
+        
+        user = request.user if request.user.is_authenticated else None
+        
+        if not user and not email:
+            messages.error(request, 'Укажите email для связи')
+            return redirect('core:contacts')
+        
+        # Проверка размера файла (макс. 5MB)
+        if screenshot and screenshot.size > 5 * 1024 * 1024:
+            messages.error(request, 'Файл слишком большой (макс. 5MB)')
+            return redirect('core:contacts')
+        
+        try:
+            # Создаём обращение
+            submission = ContactSubmission.objects.create(
+                user=user,
+                guest_email=email if not user else '',
+                category=category,
+                subject=subject,
+                message=message,
+                ip_address=self.get_client_ip(request),
+                user_agent=request.META.get('HTTP_USER_AGENT', '')[:500],
+            )
+            
+            # ✅ СОХРАНЯЕМ ФАЙЛ
+            if screenshot:
+                submission.attachment.save(
+                    screenshot.name,
+                    screenshot,
+                    save=True
+                )
+                logger.info(f"✅ Файл сохранён: {submission.attachment.name}")
+            
+            # Отправка email админу
+            self.send_admin_notification(submission)
+            
+            # Уведомление пользователя
+            if user and user.is_verified:
+                self.send_user_confirmation(submission)
+            
+            messages.success(request, '✅ Сообщение отправлено! Мы ответим в течение 24 часов.')
+            logger.info(
+                f"Contact submission #{submission.id} from {submission.contact_email} "
+                f"(category: {category}, has_attachment: {bool(submission.attachment)})"
+            )
+            
+        except Exception as e:
+            logger.error(f"Contact form error: {type(e).__name__}: {e}", exc_info=True)
+            messages.error(
+                request,
+                f'❌ Ошибка отправки: {str(e)}. Напишите на support@dopx.kz'
+            )
+            return redirect('core:contacts')
+        
+        return redirect('core:contacts')
+    
+    def get_client_ip(self, request):
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            ip = x_forwarded_for.split(',')[0]
+        else:
+            ip = request.META.get('REMOTE_ADDR')
+        return ip
+    
+    def send_admin_notification(self, submission):
+        """Отправка уведомления админу"""
+        admin_email = getattr(settings, 'CONTACT_EMAIL', 'admin@dopx.kz')
+        from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@dopx.kz')
+        site_url = getattr(settings, 'SITE_URL', 'https://dopx.kz')
+        
+        subject = f"📬 Новое обращение #{str(submission.id)[:8]} ({submission.get_category_display()})"
+        
+        html_message = render_to_string('emails/contact_form.html', {
+            'submission': submission,
+            'category': submission.get_category_display(),
+            'email': submission.contact_email,
+            'username': submission.user.username if submission.user else 'Гость',
+            'message': submission.message,
+            'has_attachment': bool(submission.attachment),
+            'site_name': 'DOPX',
+            'site_url': site_url,
+        })
+        
+        email = EmailMultiAlternatives(
+            subject=subject,
+            body='',
+            from_email=from_email,
+            to=[admin_email],
+        )
+        email.attach_alternative(html_message, "text/html")
+        
+        # Прикрепляем файл к письму
+        if submission.attachment:
+            try:
+                submission.attachment.open('rb')
+                email.attach(
+                    os.path.basename(submission.attachment.name),
+                    submission.attachment.read(),
+                    submission.attachment.content_type or 'application/octet-stream'
+                )
+                submission.attachment.close()
+                logger.info(f"Attached file to admin email: {submission.attachment.name}")
+            except Exception as e:
+                logger.error(f"Failed to attach file to admin email: {e}")
+        
+        email.send(fail_silently=False)
+        logger.info(f"✅ Admin notification sent to {admin_email}")
+    
+    def send_user_confirmation(self, submission):
+        """Подтверждение пользователю"""
+        if not submission.user or not submission.user.email:
+            return
+        
+        from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@dopx.kz')
+        site_url = getattr(settings, 'SITE_URL', 'https://dopx.kz')
+        
+        subject = f"✅ Ваше обращение #{str(submission.id)[:8]} принято"
+        
+        html_message = render_to_string('emails/contact_confirmation.html', {
+            'submission': submission,
+            'username': submission.user.username,
+            'site_name': 'DOPX',
+            'site_url': site_url,
+        })
+        
+        send_mail(
+            subject=subject,
+            message='',
+            from_email=from_email,
+            recipient_list=[submission.user.email],
+            html_message=html_message,
+            fail_silently=False,
+        )
+
+
+class ContactSubmissionDetailView(View):
+    """Просмотр обращения (для пользователя)"""
+    def get(self, request, pk):
+        submission = get_object_or_404(
+            ContactSubmission,
+            pk=pk,
+            user=request.user if request.user.is_authenticated else None
+        )
+        return render(request, 'core/contact_detail.html', {
+            'submission': submission,
+            'page_title': f'Обращение #{str(submission.id)[:8]}',
+        })
 
 
 def handler_404(request, exception):

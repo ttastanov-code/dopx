@@ -1,14 +1,236 @@
+<!-- ============================================================================
+FILE: templates/components/_notification_badge.html (ENTERPRISE - v2.0)
+============================================================================ -->
 {% comment %}
 Бейдж уведомлений для navbar
-Использование: {% include 'components/_notification_badge.html' with count=unread_count %}
+✅ HTMX polling каждые 30 секунд
+✅ Анимация пульсации для новых уведомлений
+✅ Счётчик с ограничением (99+)
+✅ Работает для авторизованных пользователей
 {% endcomment %}
 
-{% if count > 0 %}
-<span class="badge badge-sm badge-error absolute -top-1 -right-1 text-white min-w-[1.25rem] h-5 flex items-center justify-center animate-pulse">
-    {% if count > 99 %}
-    99+
-    {% else %}
-    {{ count }}
+<div class="relative"
+     id="notification-badge-container"
+     hx-get="{% url 'notifications:badge_partial' %}"
+     hx-trigger="every 30s"
+     hx-swap="outerHTML"
+     data-unread-count="{{ count|default:0 }}">
+
+    <!-- === ИКОНКА КОЛОКОЛЬЧИКА === -->
+    <div class="btn btn-ghost btn-circle relative flex items-center justify-center w-10 h-10
+                {% if count > 0 %}hover:bg-base-200{% endif %}"
+         role="button"
+         tabindex="0"
+         aria-label="Уведомления"
+         title="{{ count }} непрочитанных уведомлений">
+        
+        <i class="ti ti-bell text-xl leading-none
+                  {% if count > 0 %}text-primary{% else %}opacity-70{% endif %}"></i>
+        
+        <!-- === БЕЙДЖ С КОЛИЧЕСТВОМ === -->
+        {% if count > 0 %}
+        <span class="badge badge-sm badge-error absolute -top-1 -right-1 
+                     text-white min-w-[1.25rem] h-5 flex items-center justify-center
+                     {% if count > 0 %}animate-pulse{% endif %}"
+              title="{{ count }} непрочитанных уведомлений"
+              data-count="{{ count }}">
+            
+            {% if count > 99 %}
+                99+
+            {% else %}
+                {{ count }}
+            {% endif %}
+            
+        </span>
+        {% endif %}
+    </div>
+
+    <!-- === DROPDOWN СПИСОК УВЕДОМЛЕНИЙ (превью) === -->
+    {% if count > 0 %}
+    <div class="dropdown-content-container hidden absolute top-full right-0 mt-2 z-[100]">
+        <div class="card bg-base-100 border border-base-300 shadow-2xl w-80 max-h-96 overflow-hidden">
+            
+            <!-- Заголовок -->
+            <div class="p-3 border-b border-base-300 flex items-center justify-between">
+                <div>
+                    <div class="font-semibold text-sm">Уведомления</div>
+                    <div class="text-xs opacity-60">{{ count }} непрочитанных</div>
+                </div>
+                <a href="{% url 'notifications:list' %}" 
+                   class="text-xs text-primary hover:underline">
+                    Все
+                </a>
+            </div>
+            
+            <!-- Список (превью 5 последних) -->
+            <div class="overflow-y-auto max-h-64">
+                {% for notification in user.notifications.all|slice:":5" %}
+                <a href="{{ notification.action_url|default:'#' }}"
+                   class="flex items-start gap-3 p-3 hover:bg-base-200 transition-colors
+                          {% if not notification.is_read %}bg-base-200/50{% endif %}">
+                    
+                    <!-- Индикатор прочтения -->
+                    <div class="w-2 h-2 rounded-full mt-2 flex-shrink-0
+                                {% if not notification.is_read %}bg-primary{% else %}bg-base-300{% endif %}">
+                    </div>
+                    
+                    <!-- Контент -->
+                    <div class="flex-1 min-w-0">
+                        <div class="font-medium text-sm truncate">{{ notification.title }}</div>
+                        <div class="text-xs opacity-70 mt-1 line-clamp-2">
+                            {{ notification.message|truncatechars:60 }}
+                        </div>
+                        <div class="text-xs opacity-50 mt-2">
+                            {{ notification.created_at|timesince }} назад
+                        </div>
+                    </div>
+                </a>
+                {% empty %}
+                <div class="p-6 text-center opacity-60">
+                    <i class="ti ti-bell-off text-3xl mb-2"></i>
+                    <div class="text-sm">Нет уведомлений</div>
+                </div>
+                {% endfor %}
+            </div>
+            
+            <!-- Футер -->
+            <div class="p-2 border-t border-base-300">
+                <a href="{% url 'notifications:list' %}" 
+                   class="btn btn-sm btn-ghost w-full">
+                    <i class="ti ti-list"></i>
+                    Все уведомления
+                </a>
+            </div>
+        </div>
+    </div>
     {% endif %}
-</span>
-{% endif %}
+
+</div>
+
+<!-- ============================================================================
+=== СКРИПТ ДЛЯ ДИНАМИЧЕСКОГО ОБНОВЛЕНИЯ ===
+============================================================================ -->
+<script>
+(function() {
+    // === ГЛОБАЛЬНОЕ СОСТОЯНИЕ ===
+    let lastKnownCount = {{ count|default:0 }};
+    let notificationPermissionRequested = false;
+    
+    // === ЗАПРОС РАЗРЕШЕНИЯ НА УВЕДОМЛЕНИЯ БРАУЗЕРА ===
+    function requestNotificationPermission() {
+        if (!('Notification' in window)) return;
+        if (Notification.permission === 'granted') return;
+        if (Notification.permission === 'denied') return;
+        if (notificationPermissionRequested) return;
+        
+        notificationPermissionRequested = true;
+        Notification.requestPermission().then(permission => {
+            console.log('Notification permission:', permission);
+        });
+    }
+    
+    // === ПОКАЗАТЬ УВЕДОМЛЕНИЕ БРАУЗЕРА ===
+    function showBrowserNotification(newCount) {
+        if (!('Notification' in window)) return;
+        if (Notification.permission !== 'granted') return;
+        if (document.visibilityState === 'visible') return; // Не показывать если вкладка активна
+        
+        // Дебаунс: не чаще 1 раза в 10 секунд
+        if (window._lastNotificationTime && 
+            Date.now() - window._lastNotificationTime < 10000) {
+            return;
+        }
+        
+        new Notification('DOPX — Новые уведомления', {
+            body: `У вас ${newCount} непрочитанных уведомлений`,
+            icon: '/static/img/DOPX_logo.png',
+            tag: 'dopx-notification',
+            requireInteraction: false,
+            silent: false
+        });
+        
+        window._lastNotificationTime = Date.now();
+    }
+    
+    // === ОБНОВЛЕНИЕ БЕЙДЖА ПОСЛЕ HTMX SWAP ===
+    function onHtmxAfterSwap(event) {
+        const target = event.detail.target;
+        if (!target || target.id !== 'notification-badge-container') return;
+        
+        // Получаем новый счётчик из data-атрибута
+        const newCount = parseInt(target.dataset.unreadCount || '0', 10);
+        
+        // Если появились новые уведомления → показываем браузерное уведомление
+        if (newCount > lastKnownCount && newCount > 0) {
+            showBrowserNotification(newCount);
+        }
+        
+        // Обновляем последний известный счётчик
+        lastKnownCount = newCount;
+        
+        // Обновляем title страницы если есть непрочитанные
+        if (newCount > 0) {
+            const currentTitle = document.title.replace(/^\(\d+\)\s*/, '');
+            document.title = `(${newCount}) ${currentTitle}`;
+        } else {
+            const currentTitle = document.title.replace(/^\(\d+\)\s*/, '');
+            document.title = currentTitle;
+        }
+    }
+    
+    // === ОБРАБОТКА КЛИКА ПО БЕЙДЖУ ===
+    function setupBadgeClick() {
+        const badgeContainer = document.getElementById('notification-badge-container');
+        if (!badgeContainer) return;
+        
+        const icon = badgeContainer.querySelector('.btn');
+        if (!icon) return;
+        
+        icon.addEventListener('click', function(e) {
+            // Если есть dropdown → toggling
+            const dropdown = badgeContainer.querySelector('.dropdown-content-container');
+            if (dropdown) {
+                dropdown.classList.toggle('hidden');
+            }
+        });
+        
+        // Закрыть dropdown при клике вне
+        document.addEventListener('click', function(e) {
+            if (!badgeContainer.contains(e.target)) {
+                const dropdown = badgeContainer.querySelector('.dropdown-content-container');
+                if (dropdown) {
+                    dropdown.classList.add('hidden');
+                }
+            }
+        });
+    }
+    
+    // === ИНИЦИАЛИЗАЦИЯ ===
+    function init() {
+        // Запрос разрешения на уведомления
+        requestNotificationPermission();
+        
+        // Настройка клика
+        setupBadgeClick();
+        
+        // Слушаем HTMX события
+        document.body.addEventListener('htmx:afterSwap', onHtmxAfterSwap);
+        
+        // Обновляем при возврате на вкладку
+        document.addEventListener('visibilitychange', function() {
+            if (document.visibilityState === 'visible') {
+                // Сбрасываем title
+                const currentTitle = document.title.replace(/^\(\d+\)\s*/, '');
+                document.title = currentTitle;
+            }
+        });
+    }
+    
+    // Запуск после загрузки DOM
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();
+</script>

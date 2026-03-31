@@ -1,0 +1,62 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<div class="module">
+    <h1>Обращение #{{ ticket.id }} — {{ ticket.subject }}</h1>
+    
+    <table class="aligned">
+        <tr><th>Статус:</th><td>{{ ticket.get_status_display }}</td></tr>
+        <tr><th>Категория:</th><td>{{ ticket.get_category_display }}</td></tr>
+        <tr><th>Приоритет:</th><td>{{ ticket.get_priority_display }}</td></tr>
+        <tr><th>Пользователь:</th><td>{{ ticket.user|default:ticket.guest_email }}</td></tr>
+        <tr><th>Назначен:</th><td>{{ ticket.assigned_to|default:"—" }}</td></tr>
+        <tr><th>Создано:</th><td>{{ ticket.created_at }}</td></tr>
+    </table>
+    
+    <h3>Описание</h3>
+    <p>{{ ticket.description }}</p>
+    {% if ticket.screenshot %}
+    <p><a href="{{ ticket.screenshot.url }}" target="_blank">📎 Скриншот</a></p>
+    {% endif %}
+    
+    <h3>Переписка</h3>
+    <div style="max-height: 400px; overflow-y: auto; border: 1px solid #ccc; padding: 10px;">
+        {% for msg in messages %}
+        <div style="margin: 10px 0; padding: 10px; background: {% if msg.is_admin_message %}#e8f4fd{% else %}#f5f5f5{% endif %}; border-radius: 4px;">
+            <strong>{% if msg.is_system_note %}⚙️ Система{% elif msg.is_admin_message %}🔧 {{ msg.sender.username }}{% else %}👤 {% if ticket.user %}{{ ticket.user.username }}{% else %}Гость{% endif %}{% endif %}</strong>
+            <small style="color: #666;">{{ msg.created_at|date:"d.m.Y H:i" }}</small>
+            <p>{{ msg.message|linebreaks }}</p>
+            {% if msg.attachment %}
+            <p><a href="{{ msg.attachment.url }}">📎 Вложение</a></p>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    
+    {% if ticket.status not in 'closed,resolved' %}
+    <h3>Действия</h3>
+    <form method="post" style="margin-top: 20px;">
+        {% csrf_token %}
+        
+        {% if not ticket.assigned_to %}
+        <button type="submit" name="action" value="claim" class="button default">
+            🔧 Взять в работу
+        </button>
+        {% endif %}
+        
+        <textarea name="message" rows="3" placeholder="Ваш ответ..." style="width: 100%; margin: 10px 0;"></textarea>
+        <button type="submit" name="action" value="reply" class="button default">
+            💬 Отправить ответ
+        </button>
+        
+        <hr style="margin: 20px 0;">
+        
+        <button type="submit" name="action" value="resolve" class="button" style="background: #4caf50;">
+            ✅ Пометить как решённое
+        </button>
+        <button type="submit" name="action" value="close" class="button" style="background: #9e9e9e;">
+            🔒 Закрыть обращение
+        </button>
+    </form>
+    {% endif %}
+</div>
+{% endblock %}

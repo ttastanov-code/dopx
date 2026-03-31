@@ -230,5 +230,8 @@
         
         {% block extra_script %}{% endblock %}
     </script>
+    {% if request.resolver_match.app_name == 'notifications' %}
+    <script src="{% static 'js/tickets.js' %}"></script>
+    {% endif %}
 </body>
 </html>

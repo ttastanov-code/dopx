@@ -1,110 +1,306 @@
+<!-- ============================================================================
+FILE: templates/notifications/list.html (ENTERPRISE - v2.0)
+============================================================================ -->
 {% extends 'base.html' %}
 {% load static %}
-
 {% block content %}
+{% load math_extras %}
 
-<!-- === HEADER === -->
-<div class="flex items-center justify-between mb-8">
+<!-- === ЗАГОЛОВОК === -->
+<div class="mb-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
     <div>
-        <h1 class="text-3xl font-bold mb-2">
-            <i class="ti ti-bell mr-2"></i>
+        <h1 class="text-3xl font-bold flex items-center gap-2">
+            <i class="ti ti-bell text-primary"></i>
             Уведомления
         </h1>
-        <p class="opacity-60">{{ unread_count }} непрочитанных</p>
+        <p class="text-sm opacity-60 mt-1">
+            {{ unread_count }} непрочитанных • {{ notifications.count }} всего
+        </p>
     </div>
     
-    <form method="post" action="{% url 'notifications:read-all' %}">
-        {% csrf_token %}
-        <button type="submit" class="btn btn-ghost">
-            <i class="ti ti-checks"></i>
-            Прочитать все
+    <!-- Массовые действия -->
+    <div class="flex gap-2">
+        <form method="post" action="{% url 'notifications:read-all' %}" class="inline">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-ghost btn-sm">
+                <i class="ti ti-checks"></i>
+                Прочитать все
+            </button>
+        </form>
+        <button class="btn btn-ghost btn-sm" onclick="window.location.reload()">
+            <i class="ti ti-refresh"></i>
+            Обновить
         </button>
-    </form>
+    </div>
+</div>
+
+<!-- === СТАТИСТИКА (карточки) === -->
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+    <!-- Все уведомления -->
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                    <i class="ti ti-bell text-primary"></i>
+                </div>
+                <div>
+                    <div class="text-xs opacity-60">Всего</div>
+                    <div class="text-xl font-bold">{{ notifications.paginator.count|default:0 }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Непрочитанные -->
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg bg-warning/10 flex items-center justify-center">
+                    <i class="ti ti-circle text-warning"></i>
+                </div>
+                <div>
+                    <div class="text-xs opacity-60">Непрочитанные</div>
+                    <div class="text-xl font-bold text-warning">{{ unread_count }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Прочитанные -->
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg bg-success/10 flex items-center justify-center">
+                    <i class="ti ti-check text-success"></i>
+                </div>
+                <div>
+                    <div class="text-xs opacity-60">Прочитанные</div>
+                    <div class="text-xl font-bold text-success">
+                        {{ notifications.paginator.count|add:0|subtract:unread_count|default:0 }}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- За неделю -->
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg bg-info/10 flex items-center justify-center">
+                    <i class="ti ti-clock text-info"></i>
+                </div>
+                <div>
+                    <div class="text-xs opacity-60">За неделю</div>
+                    <div class="text-xl font-bold text-info">
+                        {{ notifications|length }}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- === ФИЛЬТРЫ === -->
+<div class="card bg-base-100 border border-base-300 mb-6">
+    <div class="card-body p-4">
+        <div class="flex flex-wrap gap-2">
+            <!-- Все -->
+            <a href="?" 
+               class="btn btn-sm {% if not request.GET.type %}btn-primary{% else %}btn-ghost{% endif %}">
+                <i class="ti ti-list"></i>
+                Все
+            </a>
+            
+            <!-- Матчи -->
+            <a href="?type=match" 
+               class="btn btn-sm {% if request.GET.type == 'match' %}btn-primary{% else %}btn-ghost{% endif %}">
+                <i class="ti ti-trophy"></i>
+                Матчи
+            </a>
+            
+            <!-- Голосование -->
+            <a href="?type=voting" 
+               class="btn btn-sm {% if request.GET.type == 'voting' %}btn-primary{% else %}btn-ghost{% endif %}">
+                <i class="ti ti-star"></i>
+                Голосование
+            </a>
+            
+            <!-- Достижения -->
+            <a href="?type=badge" 
+               class="btn btn-sm {% if request.GET.type == 'badge' %}btn-primary{% else %}btn-ghost{% endif %}">
+                <i class="ti ti-medal"></i>
+                Достижения
+            </a>
+            
+            <!-- Разделитель -->
+            <div class="divider divider-horizontal mx-2"></div>
+            
+            <!-- Непрочитанные -->
+            <a href="?status=unread" 
+               class="btn btn-sm {% if request.GET.status == 'unread' %}btn-primary{% else %}btn-ghost{% endif %}">
+                <i class="ti ti-circle"></i>
+                Непрочитанные
+            </a>
+            
+            <!-- Прочитанные -->
+            <a href="?status=read" 
+               class="btn btn-sm {% if request.GET.status == 'read' %}btn-primary{% else %}btn-ghost{% endif %}">
+                <i class="ti ti-check"></i>
+                Прочитанные
+            </a>
+        </div>
+    </div>
 </div>
 
 <!-- === СПИСОК УВЕДОМЛЕНИЙ === -->
 <div class="space-y-3">
     {% for notification in notifications %}
-    <div class="card bg-base-100 border border-base-300 {% if not notification.is_read %}border-primary bg-primary/5{% endif %}">
+    <div class="card bg-base-100 border border-base-300 
+                {% if not notification.is_read %}border-primary bg-primary/5 shadow-md{% else %}opacity-80{% endif %}
+                hover:shadow-lg transition-all duration-200"
+         id="notification-{{ notification.id }}"
+         data-notification-id="{{ notification.id }}"
+         data-is-read="{{ notification.is_read|lower }}">
+        
         <div class="card-body p-4">
             <div class="flex items-start justify-between gap-4">
-                <div class="flex items-start gap-3 flex-1">
-                    <!-- Иконка типа -->
-                    <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0
-                        {% if notification.notification_type == 'match_finished' %}bg-success/10 text-success
-                        {% elif notification.notification_type == 'voting_open' %}bg-primary/10 text-primary
-                        {% elif notification.notification_type == 'voting_closing' %}bg-warning/10 text-warning
-                        {% elif notification.notification_type == 'top_performance' %}bg-accent/10 text-accent
-                        {% elif notification.notification_type == 'new_badge' %}bg-info/10 text-info
-                        {% elif notification.notification_type == 'level_up' %}bg-warning/10 text-warning
-                        {% else %}bg-base-200 text-base-content{% endif %}">
+                <!-- Левая часть: иконка + контент -->
+                <div class="flex items-start gap-3 flex-1 min-w-0">
+                    <!-- Иконка типа уведомления -->
+                    <div class="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0
+                                {% if notification.notification_type == 'match_finished' %}bg-success/10 text-success
+                                {% elif notification.notification_type == 'voting_open' %}bg-primary/10 text-primary
+                                {% elif notification.notification_type == 'voting_closing' %}bg-warning/10 text-warning
+                                {% elif notification.notification_type == 'top_performance' %}bg-accent/10 text-accent
+                                {% elif notification.notification_type == 'new_badge' %}bg-info/10 text-info
+                                {% elif notification.notification_type == 'level_up' %}bg-warning/10 text-warning
+                                {% elif notification.notification_type == 'system' %}bg-base-200 text-base-content
+                                {% elif 'ticket' in notification.notification_type %}bg-primary/10 text-primary
+                                {% else %}bg-base-200 text-base-content{% endif %}">
+                        
                         {% if notification.notification_type == 'match_finished' %}
-                        <i class="ti ti-check"></i>
+                            <i class="ti ti-check text-xl"></i>
                         {% elif notification.notification_type == 'voting_open' %}
-                        <i class="ti ti-star"></i>
+                            <i class="ti ti-star text-xl"></i>
                         {% elif notification.notification_type == 'voting_closing' %}
-                        <i class="ti ti-clock"></i>
+                            <i class="ti ti-clock text-xl"></i>
                         {% elif notification.notification_type == 'top_performance' %}
-                        <i class="ti ti-medal"></i>
+                            <i class="ti ti-medal text-xl"></i>
                         {% elif notification.notification_type == 'new_badge' %}
-                        <i class="ti ti-award"></i>
+                            <i class="ti ti-award text-xl"></i>
                         {% elif notification.notification_type == 'level_up' %}
-                        <i class="ti ti-trending-up"></i>
+                            <i class="ti ti-trending-up text-xl"></i>
+                        {% elif notification.notification_type == 'system' %}
+                            <i class="ti ti-info-circle text-xl"></i>
+                        {% elif notification.notification_type == 'new_ticket' %}
+                            <i class="ti ti-ticket text-xl"></i>
+                        {% elif notification.notification_type == 'admin_reply' %}
+                            <i class="ti ti-message text-xl"></i>
+                        {% elif notification.notification_type == 'ticket_resolved' %}
+                            <i class="ti ti-check-circle text-xl"></i>
+                        {% elif notification.notification_type == 'ticket_closed' %}
+                            <i class="ti ti-lock text-xl"></i>
                         {% else %}
-                        <i class="ti ti-info-circle"></i>
+                            <i class="ti ti-bell text-xl"></i>
                         {% endif %}
                     </div>
                     
-                    <!-- Контент -->
+                    <!-- Контент уведомления -->
                     <div class="flex-1 min-w-0">
+                        <!-- Заголовок + индикатор непрочитанного -->
                         <div class="flex items-center gap-2 mb-1">
-                            <h3 class="font-semibold {% if not notification.is_read %}text-primary{% endif %}">
+                            <h3 class="font-semibold {% if not notification.is_read %}text-primary{% endif %} truncate">
                                 {{ notification.title }}
                             </h3>
                             {% if not notification.is_read %}
-                            <span class="w-2 h-2 rounded-full bg-primary"></span>
+                                <span class="w-2 h-2 rounded-full bg-primary flex-shrink-0"
+                                      title="Непрочитанное"></span>
                             {% endif %}
                         </div>
-                        <p class="text-sm opacity-70 mb-2">{{ notification.message }}</p>
-                        <div class="flex items-center gap-4 text-xs opacity-50">
-                            <span>
+                        
+                        <!-- Текст сообщения -->
+                        <p class="text-sm opacity-70 mb-2 line-clamp-2">
+                            {{ notification.message }}
+                        </p>
+                        
+                        <!-- Мета-информация -->
+                        <div class="flex flex-wrap items-center gap-3 text-xs opacity-50">
+                            <!-- Время -->
+                            <span class="flex items-center gap-1">
                                 <i class="ti ti-clock"></i>
                                 {{ notification.created_at|timesince }} назад
                             </span>
+                            
+                            <!-- Дата -->
+                            <span class="font-mono">
+                                {{ notification.created_at|date:"d.m.Y H:i" }}
+                            </span>
+                            
+                            <!-- Связанный матч -->
                             {% if notification.related_match %}
-                            <a href="{% url 'matches:detail' notification.related_match.id %}" class="hover:text-primary">
-                                <i class="ti ti-trophy"></i>
-                                {{ notification.related_match.home_team.name }} vs {{ notification.related_match.away_team.name }}
-                            </a>
+                                <a href="{% url 'matches:detail' notification.related_match.id %}" 
+                                   class="flex items-center gap-1 hover:text-primary transition-colors">
+                                    <i class="ti ti-trophy"></i>
+                                    {{ notification.related_match.home_team.name }} vs {{ notification.related_match.away_team.name }}
+                                </a>
                             {% endif %}
                         </div>
                     </div>
                 </div>
                 
-                <!-- Действия -->
-                <div class="flex flex-col gap-2">
+                <!-- Правая часть: действия -->
+                <div class="flex flex-col gap-2 flex-shrink-0">
+                    <!-- Кнопка перехода -->
                     {% if notification.action_url %}
-                    <a href="{{ notification.action_url }}" class="btn btn-sm btn-primary">
-                        Перейти
-                    </a>
+                        <a href="{{ notification.action_url }}" 
+                           class="btn btn-sm btn-primary"
+                           {% if not notification.is_read %}
+                           hx-post="{% url 'notifications:read' notification.id %}"
+                           hx-trigger="click"
+                           hx-swap="none"
+                           {% endif %}>
+                            <i class="ti ti-arrow-right"></i>
+                            Перейти
+                        </a>
                     {% endif %}
+                    
+                    <!-- Кнопка отметить прочитанным -->
                     {% if not notification.is_read %}
-                    <form method="post" action="{% url 'notifications:read' notification.id %}">
-                        {% csrf_token %}
-                        <button type="submit" class="btn btn-sm btn-ghost">
-                            <i class="ti ti-check"></i>
-                        </button>
-                    </form>
+                        <form method="post" action="{% url 'notifications:read' notification.id %}" class="inline">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-sm btn-ghost" title="Отметить прочитанным">
+                                <i class="ti ti-check"></i>
+                            </button>
+                        </form>
                     {% endif %}
                 </div>
             </div>
         </div>
     </div>
+    
     {% empty %}
-    <div class="text-center py-16 opacity-60">
-        <i class="ti ti-bell-off text-6xl mb-4"></i>
-        <h3 class="text-xl font-semibold mb-2">Нет уведомлений</h3>
-        <p>Когда появятся новые уведомления, они появятся здесь</p>
+    <!-- Пустой список -->
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-12 text-center">
+            <div class="w-20 h-20 rounded-full bg-base-200 flex items-center justify-center mx-auto mb-4">
+                <i class="ti ti-bell-off text-4xl opacity-40"></i>
+            </div>
+            <h3 class="text-xl font-bold mb-2">Нет уведомлений</h3>
+            <p class="opacity-60 mb-4">
+                {% if request.GET.status or request.GET.type %}
+                    Попробуйте изменить фильтры
+                {% else %}
+                    Когда появятся новые уведомления, они появятся здесь
+                {% endif %}
+            </p>
+            {% if request.GET.status or request.GET.type %}
+                <a href="?" class="btn btn-ghost btn-sm">
+                    <i class="ti ti-x"></i>
+                    Сбросить фильтры
+                </a>
+            {% endif %}
+        </div>
     </div>
     {% endfor %}
 </div>
@@ -114,26 +310,158 @@
 <div class="flex justify-center mt-8">
     <div class="join">
         {% if page_obj.has_previous %}
-        <a href="?page={{ page_obj.previous_page_number }}" class="join-item btn btn-sm">
-            <i class="ti ti-chevron-left"></i>
-        </a>
+            <a href="?page={{ page_obj.previous_page_number }}{% if request.GET.type %}&type={{ request.GET.type }}{% endif %}{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}"
+               class="join-item btn btn-sm">
+                <i class="ti ti-chevron-left"></i>
+            </a>
         {% endif %}
         
         {% for num in page_obj.paginator.page_range %}
-        {% if page_obj.number == num %}
-        <button class="join-item btn btn-sm btn-active">{{ num }}</button>
-        {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
-        <a href="?page={{ num }}" class="join-item btn btn-sm">{{ num }}</a>
-        {% endif %}
+            {% if page_obj.number == num %}
+                <button class="join-item btn btn-sm btn-active">{{ num }}</button>
+            {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                <a href="?page={{ num }}{% if request.GET.type %}&type={{ request.GET.type }}{% endif %}{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}"
+                   class="join-item btn btn-sm">{{ num }}</a>
+            {% endif %}
         {% endfor %}
         
         {% if page_obj.has_next %}
-        <a href="?page={{ page_obj.next_page_number }}" class="join-item btn btn-sm">
-            <i class="ti ti-chevron-right"></i>
-        </a>
+            <a href="?page={{ page_obj.next_page_number }}{% if request.GET.type %}&type={{ request.GET.type }}{% endif %}{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}"
+               class="join-item btn btn-sm">
+                <i class="ti ti-chevron-right"></i>
+            </a>
         {% endif %}
     </div>
 </div>
+
+<!-- Инфо о странице -->
+<div class="text-center text-sm opacity-60 mt-3">
+    Страница {{ page_obj.number }} из {{ page_obj.paginator.num_pages }}
+    ({{ page_obj.paginator.count }} всего)
+</div>
 {% endif %}
+
+<!-- === HTMX POLLING ДЛЯ ОБНОВЛЕНИЯ СЧЁТЧИКОВ === -->
+<div id="notifications-refresh"
+     class="hidden"
+     hx-get="{% url 'notifications:badge_partial' %}"
+     hx-trigger="every 30s"
+     hx-swap="none">
+</div>
+
+<!-- === СКРИПТ ДЛЯ УВЕДОМЛЕНИЙ БРАУЗЕРА === -->
+<script>
+(function() {
+    // === ГЛОБАЛЬНОЕ СОСТОЯНИЕ ===
+    let lastKnownCount = {{ unread_count|default:0 }};
+    let notificationPermissionRequested = false;
+    
+    // === ЗАПРОС РАЗРЕШЕНИЯ НА УВЕДОМЛЕНИЯ БРАУЗЕРА ===
+    function requestNotificationPermission() {
+        if (!('Notification' in window)) return;
+        if (Notification.permission === 'granted') return;
+        if (Notification.permission === 'denied') return;
+        if (notificationPermissionRequested) return;
+        
+        notificationPermissionRequested = true;
+        Notification.requestPermission().then(permission => {
+            console.log('Notification permission:', permission);
+        });
+    }
+    
+    // === ПОКАЗАТЬ УВЕДОМЛЕНИЕ БРАУЗЕРА ===
+    function showBrowserNotification(newCount) {
+        if (!('Notification' in window)) return;
+        if (Notification.permission !== 'granted') return;
+        if (document.visibilityState === 'visible') return;
+        
+        // Дебаунс: не чаще 1 раза в 10 секунд
+        if (window._lastNotificationTime && 
+            Date.now() - window._lastNotificationTime < 10000) {
+            return;
+        }
+        
+        new Notification('DOPX — Новые уведомления', {
+            body: `У вас ${newCount} непрочитанных уведомлений`,
+            icon: '/static/img/DOPX_logo.png',
+            tag: 'dopx-notification',
+            requireInteraction: false,
+            silent: false
+        });
+        
+        window._lastNotificationTime = Date.now();
+    }
+    
+    // === ОБНОВЛЕНИЕ ПРИ HTMX SWAP ===
+    function onHtmxAfterSwap(event) {
+        const target = event.detail.target;
+        if (!target || target.id !== 'notification-badge-container') return;
+        
+        // Получаем новый счётчик из data-атрибута
+        const newCount = parseInt(target.dataset.unreadCount || '0', 10);
+        
+        // Если появились новые уведомления → показываем браузерное уведомление
+        if (newCount > lastKnownCount && newCount > 0) {
+            showBrowserNotification(newCount);
+        }
+        
+        // Обновляем последний известный счётчик
+        lastKnownCount = newCount;
+        
+        // Обновляем title страницы если есть непрочитанные
+        if (newCount > 0) {
+            const currentTitle = document.title.replace(/^\(\d+\)\s*/, '');
+            document.title = `(${newCount}) ${currentTitle}`;
+        } else {
+            const currentTitle = document.title.replace(/^\(\d+\)\s*/, '');
+            document.title = currentTitle;
+        }
+    }
+    
+    // === ОБРАБОТКА КЛИКА ПО УВЕДОМЛЕНИЮ ===
+    function setupNotificationClicks() {
+        document.querySelectorAll('[id^="notification-"]').forEach(card => {
+            card.addEventListener('click', function(e) {
+                // Если клик не по кнопке/ссылке
+                if (e.target.tagName !== 'A' && e.target.tagName !== 'BUTTON' && 
+                    !e.target.closest('form') && !e.target.closest('a')) {
+                    const actionUrl = this.querySelector('a.btn-primary');
+                    if (actionUrl) {
+                        actionUrl.click();
+                    }
+                }
+            });
+        });
+    }
+    
+    // === ИНИЦИАЛИЗАЦИЯ ===
+    function init() {
+        // Запрос разрешения на уведомления
+        requestNotificationPermission();
+        
+        // Настройка кликов по карточкам
+        setupNotificationClicks();
+        
+        // Слушаем HTMX события
+        document.body.addEventListener('htmx:afterSwap', onHtmxAfterSwap);
+        
+        // Обновляем при возврате на вкладку
+        document.addEventListener('visibilitychange', function() {
+            if (document.visibilityState === 'visible') {
+                // Сбрасываем title
+                const currentTitle = document.title.replace(/^\(\d+\)\s*/, '');
+                document.title = currentTitle;
+            }
+        });
+    }
+    
+    // Запуск после загрузки DOM
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();
+</script>
 
 {% endblock %}

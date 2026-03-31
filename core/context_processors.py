@@ -1,7 +1,9 @@
 # core/context_processors.py
+
+
 def indicator_tooltips(request):
     """Глобальный контекст с подсказками для всех индикаторов"""
-    return {
+    context = {
         'INDICATOR_TOOLTIPS': {
             # === ИГРОКИ ===
             'player': {
@@ -57,3 +59,5 @@ def indicator_tooltips(request):
             },
         }
     }
+    
+    return context
