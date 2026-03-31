@@ -1,0 +1,74 @@
+<!-- templates/emails/contact_confirmation.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: #ffffff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        .header {
+            background: linear-gradient(135deg, #000000 0%, #333333 100%);
+            color: #ffffff;
+            padding: 30px 20px;
+            text-align: center;
+        }
+        .content {
+            padding: 30px 20px;
+        }
+        .info-box {
+            background-color: #f9fafb;
+            border-left: 4px solid #000000;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 0 4px 4px 0;
+        }
+        .footer {
+            background-color: #f5f5f5;
+            padding: 20px;
+            text-align: center;
+            font-size: 12px;
+            color: #999;
+            border-top: 1px solid #e0e0e0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>✅ Обращение принято</h1>
+            <p>Спасибо за ваше сообщение!</p>
+        </div>
+        <div class="content">
+            <p>Здравствуйте, {{ username }}!</p>
+            <div class="info-box">
+                <p><strong>Номер обращения:</strong> #{{ submission.id|truncatechars:8 }}</p>
+                <p><strong>Категория:</strong> {{ submission.get_category_display }}</p>
+                <p><strong>Дата:</strong> {{ submission.created_at|date:"d.m.Y H:i" }}</p>
+            </div>
+            <p>Мы получили ваше обращение и ответим в течение 24 часов.</p>
+            <p style="margin-top: 20px; font-size: 14px; color: #666;">
+                <strong>Нужна срочная помощь?</strong><br>
+                Напишите напрямую на support@dopx.kz
+            </p>
+        </div>
+        <div class="footer">
+            <p>Это автоматическое уведомление от платформы DOPX.</p>
+            <p><a href="{{ site_url }}">Перейти на сайт</a></p>
+            <p style="margin-top: 15px;">© {% now "Y" %} {{ site_name }}. Все права защищены.</p>
+        </div>
+    </div>
+</body>
+</html>

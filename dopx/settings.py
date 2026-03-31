@@ -56,7 +56,6 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-# Performance middleware только в DEBUG
 if DEBUG:
     MIDDLEWARE += [
         'dopx.middleware.QueryCountMiddleware',
@@ -83,7 +82,6 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'dopx.wsgi.application'
 
-# Database
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
@@ -101,7 +99,6 @@ DATABASES = {
     }
 }
 
-# Password validation
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
@@ -111,22 +108,18 @@ AUTH_PASSWORD_VALIDATORS = [
 
 AUTH_USER_MODEL = "users.User"
 
-# Internationalization
 LANGUAGE_CODE = 'ru'
 TIME_ZONE = "Asia/Almaty"
 USE_I18N = True
 USE_TZ = True
 
-# Static files
 STATIC_URL = 'static/'
 STATICFILES_DIRS = [BASE_DIR / 'static']
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
-# Media files
-MEDIA_URL = 'media/'
+MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
-# REST Framework
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticatedOrReadOnly',
@@ -155,7 +148,7 @@ REST_FRAMEWORK = {
         'rest_framework.renderers.JSONRenderer',
     ],
 }
-
+CSRF_COOKIE_HTTPONLY = False 
 SPECTACULAR_SETTINGS = {
     'TITLE': 'DOPX API',
     'DESCRIPTION': 'API для платформы оценки футбольных матчей',
@@ -163,7 +156,9 @@ SPECTACULAR_SETTINGS = {
     'SERVE_INCLUDE_SCHEMA': False,
 }
 
-# Celery
+# =============================================================================
+# Celery Configuration
+# =============================================================================
 CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
 CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
 CELERY_ACCEPT_CONTENT = ['json']
@@ -189,20 +184,26 @@ CELERY_BEAT_SCHEDULE = {
         'kwargs': {'season_id': 200},
     },
     'recalculate-aggregates': {
-        'task': 'aggregates.tasks.recalculate_pending_aggregates',
+        'task': 'aggregates.tasks.recalculate_all_aggregates',
         'schedule': crontab(minute='*/10'),
     },
     'voting-reminders': {
-        'task': 'notifications.tasks.send_voting_reminders',
+        'task': 'notifications.tasks.cleanup_old_notifications',
         'schedule': crontab(minute=0, hour='*/6'),
     },
     'cleanup-old-sessions-daily': {
-        'task': 'notifications.tasks.cleanup_old_sessions',
+        'task': 'notifications.tasks.cleanup_old_notifications',
+        'schedule': crontab(hour=3, minute=0),
+    },
+        'cleanup-old-notifications-daily': {
+        'task': 'notifications.tasks.cleanup_old_notifications',
         'schedule': crontab(hour=3, minute=0),
     },
 }
 
-# Cache
+# =============================================================================
+# Cache Configuration
+# =============================================================================
 CACHES = {
     'default': {
         'BACKEND': 'django.core.cache.backends.redis.RedisCache',
@@ -223,7 +224,9 @@ CACHES = {
     }
 }
 
+# =============================================================================
 # Logging
+# =============================================================================
 LOGS_DIR = BASE_DIR / 'logs'
 LOGS_DIR.mkdir(exist_ok=True)
 
@@ -262,7 +265,6 @@ LOGGING = {
     },
 }
 
-# Debug Toolbar
 if DEBUG:
     INSTALLED_APPS += ['debug_toolbar']
     MIDDLEWARE += ['debug_toolbar.middleware.DebugToolbarMiddleware']
@@ -270,3 +272,19 @@ if DEBUG:
     DEBUG_TOOLBAR_CONFIG = {
         'SHOW_TOOLBAR_CALLBACK': lambda request: request.META.get('HTTP_ACCEPT') != 'application/json',
     }
+    
+
+# === Contact Form Settings ===
+CONTACT_EMAIL = os.getenv('CONTACT_EMAIL')
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL')
+
+# Email backend (для продакшена настроить SMTP)
+CONTACT_EMAIL = os.getenv('CONTACT_EMAIL', 'admin@dopx.kz')
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@dopx.kz')
+EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
+EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
+SITE_URL = os.getenv('SITE_URL', 'http://127.0.0.1:8000')
