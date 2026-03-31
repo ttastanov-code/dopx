@@ -170,34 +170,65 @@ CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
 
 CELERY_BEAT_SCHEDULE = {
-    'sync-kff-recent-matches': {
+    # === БЫСТРАЯ синхронизация последних ЗАВЕРШЁННЫХ матчей Премьер-Лиги (каждые 30 мин) ===
+    'sync-kff-recent-premier': {
         'task': 'parsers.tasks.sync_recent_matches',
         'schedule': crontab(minute='*/30'),
+        'kwargs': {
+            'tournament_code': 'pl',  # ✅ Жёстко указываем Премьер-Лигу
+            'limit': 10,  # ✅ Последние 10 завершённых
+        },
+        'options': {'queue': 'default'}
     },
+    
+    # === ПОЛНАЯ синхронизация Премьер-Лиги (раз в сутки в 03:00) ===
+    'sync-kff-premier-league-full': {
+        'task': 'parsers.tasks.sync_kff_premier_league',
+        'schedule': crontab(hour=3, minute=0),
+        'options': {'queue': 'default'}
+    },
+    
+    # === Обновление статусов матчей (каждый час) ===
     'update-match-statuses-hourly': {
         'task': 'parsers.tasks.update_match_statuses',
         'schedule': crontab(minute=0),
+        'options': {'queue': 'default'}
     },
+    
+    # === Пересчёт таблицы (каждые 10 минут) ===
     'recalculate-standings': {
         'task': 'aggregates.tasks.recalculate_season_standings',
         'schedule': crontab(minute='*/10'),
-        'kwargs': {'season_id': 200},
+        'kwargs': {'season_id': 200},  # ⚠️ Замените на актуальный season_id или уберите для авто-поиска
+        'options': {'queue': 'default'}
     },
+    
+    # === Пересчёт агрегатов (каждые 10 минут) ===
     'recalculate-aggregates': {
         'task': 'aggregates.tasks.recalculate_all_aggregates',
         'schedule': crontab(minute='*/10'),
+        'options': {'queue': 'default'}
     },
+    
+    # === Уведомления (каждые 6 часов) ===
     'voting-reminders': {
         'task': 'notifications.tasks.cleanup_old_notifications',
         'schedule': crontab(minute=0, hour='*/6'),
+        'options': {'queue': 'default'}
     },
+    
+    # === Очистка старых данных (каждый день в 03:00) ===
     'cleanup-old-sessions-daily': {
-        'task': 'notifications.tasks.cleanup_old_notifications',
+        'task': 'notifications.tasks.cleanup_old_sessions',
         'schedule': crontab(hour=3, minute=0),
+        'options': {'queue': 'default'}
     },
-        'cleanup-old-notifications-daily': {
-        'task': 'notifications.tasks.cleanup_old_notifications',
-        'schedule': crontab(hour=3, minute=0),
+    
+    # === Проверка здоровья API (каждые 2 часа) ===
+    'health-check-kff-api': {
+        'task': 'parsers.tasks.health_check_kff_api',
+        'schedule': crontab(minute=0, hour='*/2'),
+        'options': {'queue': 'default'}
     },
 }
 

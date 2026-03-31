@@ -1,8 +1,8 @@
 # teams/views.py
 from django.views.generic import ListView, DetailView
-from django.db.models import Count, Avg, Sum, Q
+from django.db.models import Count, Avg, Sum, Q, F
 from django.utils import timezone
-from teams.models import Team, TeamSeason
+from teams.models import Team, TeamSeason, TeamSeasonStats
 from players.models import Player
 from matches.models import Match
 from aggregates.models import PlayerMatchAggregate, MatchAggregate
@@ -12,29 +12,21 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-
-# teams/views.py
 class TeamListView(ListView):
     """Список всех команд"""
     model = Team
     template_name = 'teams/list.html'
     context_object_name = 'teams'
     paginate_by = 20
-
+    
     def get_queryset(self):
         queryset = Team.objects.all()
-        
-        # Поиск по названию
         search = self.request.GET.get('q')
         if search:
             queryset = queryset.filter(name__icontains=search)
-        
-        # Фильтр по городу
         city = self.request.GET.get('city')
         if city:
             queryset = queryset.filter(city__icontains=city)
-        
-        # 🔥 FIX: Считаем ОБА типа матчей (дома + в гостях)
         queryset = queryset.annotate(
             home_matches_count=Count(
                 'home_matches',
@@ -47,9 +39,8 @@ class TeamListView(ListView):
                 distinct=True
             )
         )
-        
         return queryset.order_by('name')
-
+    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Все команды — DOPX'
@@ -57,29 +48,24 @@ class TeamListView(ListView):
         context['cities'] = Team.objects.values_list('city', flat=True).distinct().exclude(city='')[:10]
         return context
 
-
 class TeamDetailView(DetailView):
-    """Детальная страница команды со статистикой"""
+    """✅ ИСПРАВЛЕНО: Детальная страница команды с правильной статистикой за ТЕКУЩИЙ СЕЗОН"""
     model = Team
     template_name = 'teams/detail.html'
     context_object_name = 'team'
-
+    
     def get_queryset(self):
         return Team.objects.all()
-
+    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         team = self.object
         now = timezone.now()
         
-        # 🔥 FIX: Получаем активный сезон для фильтрации
+        # ✅ ПОЛУЧАЕМ ТЕКУЩИЙ АКТИВНЫЙ СЕЗОН
         current_season = Season.objects.filter(is_active=True).first()
         
-        # Матчи команды
-        home_matches = Match.objects.filter(home_team=team)
-        away_matches = Match.objects.filter(away_team=team)
-        
-        # 🔥 FIX: Фильтруем матчи по сезону (если есть) и статусу
+        # ✅ ФИЛЬТР МАТЧЕЙ: только текущий сезон + завершённые
         if current_season:
             matches_filter = Q(
                 Q(home_team=team) | Q(away_team=team),
@@ -87,33 +73,47 @@ class TeamDetailView(DetailView):
                 status='finished'
             )
         else:
+            # Если нет активного сезона, берём все завершённые
             matches_filter = Q(
                 Q(home_team=team) | Q(away_team=team),
                 status='finished'
             )
         
-        # Статистика матчей — ТОЛЬКО текущий сезон + finished
-        total_matches = Match.objects.filter(matches_filter).count()
-
-        wins = 0
-        goals_scored = 0
-        goals_conceded = 0
-
-        for match in Match.objects.filter(matches_filter):
-            if match.home_team == team and match.home_score and match.away_score:
-                if match.home_score > match.away_score:
-                    wins += 1
-                goals_scored += match.home_score or 0
-                goals_conceded += match.away_score or 0
-            elif match.away_team == team and match.home_score and match.away_score:
-                if match.away_score > match.home_score:
-                    wins += 1
-                goals_scored += match.away_score or 0
-                goals_conceded += match.home_score or 0
+        # ✅ СТАТИСТИКА ЧЕРЕЗ AGGREGATE (эффективно и правильно)
+        stats_data = Match.objects.filter(matches_filter).aggregate(
+            played=Count('id'),
+            wins=Count('id', filter=(
+                (Q(home_team=team) & Q(home_score__gt=F('away_score'))) |
+                (Q(away_team=team) & Q(away_score__gt=F('home_score')))
+            )),
+            draws=Count('id', filter=(
+                (Q(home_team=team) & Q(home_score=F('away_score'))) |
+                (Q(away_team=team) & Q(away_score=F('home_score')))
+            )),
+            goals_scored=Sum(
+                F('home_score'), filter=Q(home_team=team)
+            ) + Sum(
+                F('away_score'), filter=Q(away_team=team)
+            ),
+            goals_conceded=Sum(
+                F('away_score'), filter=Q(home_team=team)
+            ) + Sum(
+                F('home_score'), filter=Q(away_team=team)
+            ),
+        )
+        
+        # ✅ ОБРАБОТКА NULL ЗНАЧЕНИЙ
+        total_matches = stats_data['played'] or 0
+        wins = stats_data['wins'] or 0
+        goals_scored = (stats_data['goals_scored'] or 0)
+        goals_conceded = (stats_data['goals_conceded'] or 0)
+        
+        logger.info(f"📊 Team {team.name} stats (season {current_season.year if current_season else 'N/A'}): "
+                   f"Matches={total_matches}, Wins={wins}, Scored={goals_scored}, Conceded={goals_conceded}")
         
         # Игроки команды
         players = Player.objects.filter(
-            team=team, 
+            team=team,
             is_active=True
         ).order_by('number')[:25]
         
@@ -121,7 +121,7 @@ class TeamDetailView(DetailView):
         top_players = PlayerMatchAggregate.objects.filter(
             player__team=team
         ).select_related(
-            'player', 
+            'player',
             'match'
         ).order_by('-performance_score')[:5]
         
@@ -143,9 +143,9 @@ class TeamDetailView(DetailView):
                 season=current_season,
                 status='finished'
             ).select_related(
-                'home_team', 
-                'away_team', 
-                'league', 
+                'home_team',
+                'away_team',
+                'league',
                 'season'
             ).order_by('-start_time')[:10]
         else:
@@ -153,9 +153,9 @@ class TeamDetailView(DetailView):
                 Q(home_team=team) | Q(away_team=team),
                 status='finished'
             ).select_related(
-                'home_team', 
-                'away_team', 
-                'league', 
+                'home_team',
+                'away_team',
+                'league',
                 'season'
             ).order_by('-start_time')[:10]
         
@@ -165,9 +165,9 @@ class TeamDetailView(DetailView):
             start_time__gte=now,
             status='scheduled'
         ).select_related(
-            'home_team', 
-            'away_team', 
-            'league', 
+            'home_team',
+            'away_team',
+            'league',
             'season'
         ).order_by('start_time')[:5]
         
