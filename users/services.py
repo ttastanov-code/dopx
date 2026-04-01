@@ -1,4 +1,5 @@
-# === НОВЫЙ ФАЙЛ: users/services.py ===
+# users/services.py — ПОЛНОСТЬЮ ИСПРАВЛЕННЫЙ ФАЙЛ
+
 from django.utils import timezone
 from datetime import timedelta
 from django.db.models import Count, Avg, Q, F
@@ -8,10 +9,11 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 def check_and_award_badges(user):
     """
     Проверяет и выдаёт достижения пользователю.
-    Возвращает список выданных бейджей.
+    Возвращает список объектов UserBadge, которые были СОЗДАНЫ (не существовали ранее).
     """
     awarded = []
     
@@ -47,7 +49,6 @@ def check_and_award_badges(user):
     
     # === 4. Точный аналитик: средняя оценка близка к сообществу ===
     if user.total_evaluations >= 20:
-        # Проверяем последние 20 оценок
         recent_matches = ContextEvaluation.objects.filter(
             user=user
         ).select_related('match').order_by('-created_at')[:20]
@@ -55,24 +56,17 @@ def check_and_award_badges(user):
         accurate_count = 0
         for ctx in recent_matches:
             match = ctx.match
-            # Средняя оценка сообщества за матч
             community_avg = PlayerEvaluation.objects.filter(
                 match=match
             ).aggregate(avg=Avg('contribution'))['avg']
-            
             if not community_avg:
                 continue
-                
-            # Средняя оценка пользователя за матч
             user_avg = PlayerEvaluation.objects.filter(
-                user=user,
-                match=match
+                user=user, match=match
             ).aggregate(avg=Avg('contribution'))['avg']
-            
             if user_avg and abs(user_avg - community_avg) <= 1.0:
                 accurate_count += 1
         
-        # Если 80%+ оценок точные
         if accurate_count >= 16:  # 80% от 20
             badge, created = UserBadge.objects.get_or_create(
                 user=user,
@@ -84,10 +78,8 @@ def check_and_award_badges(user):
     
     # === 5. Без предвзятости: низкий bias_score ===
     if user.total_evaluations >= 15:
-        # Проверяем предвзятость в последних 15 матчах с поддержкой команды
         biased_count = 0
         total_checked = 0
-        
         contexts = ContextEvaluation.objects.filter(
             user=user,
             supported_team__isnull=False
@@ -96,31 +88,22 @@ def check_and_award_badges(user):
         for ctx in contexts:
             match = ctx.match
             supported = ctx.supported_team
-            
             if not supported:
                 continue
             total_checked += 1
             
-            # Оценки своей команды
             own_avg = PlayerEvaluation.objects.filter(
-                user=user,
-                match=match,
-                player__team=supported
+                user=user, match=match, player__team=supported
             ).aggregate(avg=Avg('contribution'))['avg'] or 0
             
-            # Оценки соперника
             opponent = match.away_team if match.home_team == supported else match.home_team
             opp_avg = PlayerEvaluation.objects.filter(
-                user=user,
-                match=match,
-                player__team=opponent
+                user=user, match=match, player__team=opponent
             ).aggregate(avg=Avg('contribution'))['avg'] or 0
             
-            # Если разница > 4 — предвзятость
             if abs(own_avg - opp_avg) > 4:
                 biased_count += 1
         
-        # Если предвзятость в < 20% случаев
         if total_checked >= 10 and biased_count <= 2:
             badge, created = UserBadge.objects.get_or_create(
                 user=user,
@@ -135,7 +118,6 @@ def check_and_award_badges(user):
         user=user,
         created_at__lte=F('match__end_time') + timedelta(hours=2)
     ).count()
-    
     if early_evals >= 5:
         badge, created = UserBadge.objects.get_or_create(
             user=user,
@@ -165,12 +147,11 @@ def check_and_award_badges(user):
             awarded.append(badge)
             logger.info(f"Badge awarded: streak_30 to {user.username}")
     
-    return awarded
+    return awarded  # Возвращаем объекты UserBadge, а не строки!
 
 
 def calculate_level_xp_threshold(level):
     """XP, необходимый для перехода на следующий уровень"""
-    # Формула: 100 * level
     return 100 * level
 
 
@@ -178,7 +159,7 @@ def get_level_progress(user):
     """Возвращает прогресс до следующего уровня"""
     xp = getattr(user, 'xp', None)
     if not xp:
-        return {'current': 0, 'next': 100, 'percent': 0}
+        return {'current': 0, 'next': 100, 'percent': 0, 'level': 1}
     
     next_threshold = calculate_level_xp_threshold(xp.level)
     current_in_level = xp.total_xp - (100 * (xp.level - 1))
