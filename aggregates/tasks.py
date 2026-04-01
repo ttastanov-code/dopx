@@ -7,6 +7,7 @@ from django.db import connection, transaction
 import logging
 import math
 from datetime import timedelta
+
 from evaluations.models import PlayerEvaluation, CoachEvaluation, MatchEvaluation, ContextEvaluation
 from matches.models import Match
 from aggregates.models import PlayerMatchAggregate, CoachMatchAggregate, MatchAggregate
@@ -14,9 +15,7 @@ from users.models import User
 from teams.models import TeamSeasonStats, Team, TeamSeason
 from seasons.models import Season
 
-
 logger = logging.getLogger(__name__)
-
 
 def calculate_user_weight(user: User, context_eval: ContextEvaluation) -> float:
     """
@@ -34,7 +33,6 @@ def calculate_user_weight(user: User, context_eval: ContextEvaluation) -> float:
         weight += 0.2
     return max(0.5, weight)  # Минимальный вес 0.5
 
-
 def calculate_std_dev(values):
     """Расчёт стандартного отклонения"""
     if len(values) < 2:
@@ -42,7 +40,6 @@ def calculate_std_dev(values):
     mean = sum(values) / len(values)
     variance = sum((x - mean) ** 2 for x in values) / len(values)
     return math.sqrt(variance)
-
 
 @shared_task(bind=True, max_retries=3, rate_limit='10/m')
 def recalculate_player_aggregates(self, match_id: str):
@@ -134,7 +131,6 @@ def recalculate_player_aggregates(self, match_id: str):
                 'clutch_index': round(clutch_index, 2),
             }
         )
-        
         updated_count += 1
     
     # Инвалидация кэша
@@ -142,7 +138,6 @@ def recalculate_player_aggregates(self, match_id: str):
     
     logger.info(f"Updated {updated_count} player aggregates for match {match_id}")
     return True
-
 
 @shared_task(bind=True, max_retries=3)
 def recalculate_coach_aggregates(self, match_id: str):
@@ -209,7 +204,6 @@ def recalculate_coach_aggregates(self, match_id: str):
     
     return True
 
-
 @shared_task(bind=True, max_retries=3)
 def recalculate_match_aggregate(self, match_id: str):
     """Пересчёт агрегатов для матча"""
@@ -250,10 +244,8 @@ def recalculate_match_aggregate(self, match_id: str):
     avg_entertainment = sum(e.entertainment for e in eval_list) / len(eval_list)
     avg_tension = sum(e.tension for e in eval_list) / len(eval_list)
     avg_fairness = sum(e.fairness for e in eval_list) / len(eval_list)
-    
     turning_point_count = sum(1 for e in eval_list if e.turning_point)
     turning_point_ratio = turning_point_count / len(eval_list)
-    
     drama_index = avg_entertainment * avg_tension
     
     aggregate, _ = MatchAggregate.objects.update_or_create(
@@ -280,7 +272,6 @@ def recalculate_match_aggregate(self, match_id: str):
     
     return True
 
-
 @shared_task(bind=True, max_retries=3)
 def recalculate_all_aggregates_for_match(self, match_id: str):
     """
@@ -299,11 +290,10 @@ def recalculate_all_aggregates_for_match(self, match_id: str):
     logger.info(f"Queued aggregate recalculation tasks for match {match_id}")
     return True
 
-
 @shared_task
 def recalculate_all_aggregates():
     """
-    OPTIMIZATION: 
+    OPTIMIZATION:
     - Периодическая задача с ограничением по времени
     - Batch processing матчей
     """
@@ -328,14 +318,12 @@ def recalculate_all_aggregates():
     logger.info(f"Queued {count} match aggregate recalculation tasks")
     return count
 
-
 @shared_task
 def cleanup_old_sessions():
     """Очистка старых данных (кэш, сессии)"""
     logger.info("Running cleanup task")
     # Можно добавить очистку старых логов, кэша и т.д.
     return True
-
 
 @shared_task(bind=True, max_retries=3)
 def trigger_aggregate_recalculation(self, match_id: str):
@@ -350,14 +338,30 @@ def trigger_aggregate_recalculation(self, match_id: str):
     except Exception as exc:
         logger.error(f"Error triggering recalculation: {exc}")
         raise self.retry(exc=exc, countdown=60)
-    
-    
+
 @shared_task
-def recalculate_season_standings(season_id):
-    """Пересчитывает таблицу для сезона"""
+def recalculate_season_standings(season_id=None):
+    """
+    ✅ ИЗМЕНЕНО: Пересчитывает таблицу для сезона
+    Теперь season_id опционален — если не указан, ищем активный сезон
+    """
     from django.db import transaction
     
-    season = Season.objects.get(id=season_id)
+    # ✅ АВТО-ДЕТЕКЦИЯ СЕЗОНА
+    if season_id is None:
+        season = Season.objects.filter(is_active=True).first()
+        if not season:
+            logger.warning("⚠️  No active season found for standings recalculation")
+            return {'success': False, 'error': 'No active season'}
+        season_id = season.id
+        logger.info(f"✅ Auto-detected active season: {season_id}")
+    else:
+        try:
+            season = Season.objects.get(id=season_id)
+        except Season.DoesNotExist:
+            logger.error(f"❌ Season {season_id} not found")
+            return {'success': False, 'error': 'Season not found'}
+    
     teams = Team.objects.filter(teamseason__season=season, is_active=True)
     
     with transaction.atomic():
@@ -421,4 +425,5 @@ def recalculate_season_standings(season_id):
             stat.position = pos
             stat.save(update_fields=['position'])
     
-    return {'success': True, 'teams': teams.count()}
+    logger.info(f"✅ Standings recalculated for season {season_id}: {teams.count()} teams")
+    return {'success': True, 'teams': teams.count(), 'season_id': season_id}
