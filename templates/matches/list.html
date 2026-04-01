@@ -1,9 +1,7 @@
 {% extends 'base.html' %}
 {% load static %}
 {% load match_extras %}
-
 {% block content %}
-
 <!-- === HEADER === -->
 <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
     <div>
@@ -13,7 +11,6 @@
         </h1>
         <p class="opacity-60">Все матчи платформы с результатами оценок</p>
     </div>
-    
     <!-- Быстрые фильтры -->
     <div class="flex gap-2">
         <a href="{% url 'matches:list' %}" class="btn btn-sm {% if not current_status %}btn-primary{% else %}btn-ghost{% endif %}">
@@ -37,8 +34,7 @@
 <!-- === ФИЛЬТРЫ === -->
 <div class="card bg-base-100 border border-base-300 mb-6">
     <div class="card-body p-4">
-        <form method="get" class="flex flex-wrap gap-4" hx-get="{% url 'matches:list' %}" hx-trigger="change" hx-swap="outerHTML">
-            
+        <form method="get" class="flex flex-wrap items-end gap-4" hx-get="{% url 'matches:list' %}" hx-trigger="change" hx-swap="outerHTML">
             <!-- Статус -->
             <div class="form-control w-full md:w-48">
                 <label class="label">
@@ -83,11 +79,8 @@
             </div>
             
             <!-- Кнопка сброса -->
-            <div class="form-control w-full md:w-auto">
-                <label class="label">
-                    <span class="label-text text-sm">&nbsp;</span>
-                </label>
-                <a href="{% url 'matches:list' %}" class="btn btn-ghost btn-sm">
+            <div class="form-control w-full md:w-auto pb-2">
+                <a href="{% url 'matches:list' %}" class="btn btn-ghost btn-sm w-full md:w-auto">
                     <i class="ti ti-x"></i>
                     Сброс
                 </a>
@@ -103,7 +96,6 @@
          onclick="window.location='{% url 'matches:detail' match.id %}'">
         <div class="card-body p-4">
             <div class="flex flex-col md:flex-row items-center gap-4">
-                
                 <!-- Домашняя команда -->
                 <div class="flex items-center gap-3 flex-1 w-full md:w-auto">
                     {% if match.home_team.logo_url %}
@@ -189,10 +181,9 @@
                     </span>
                     {% endif %}
                 </div>
-                
                 <div class="flex items-center gap-2">
                     {% if match.status == 'finished' and match.is_voting_open %}
-                    <a href="{% url 'evaluations:context' match.id %}" 
+                    <a href="{% url 'evaluations:context' match.id %}"
                        class="btn btn-sm btn-primary"
                        onclick="event.stopPropagation()">
                         <i class="ti ti-star"></i>
@@ -204,7 +195,6 @@
                         Оценки закрыты
                     </span>
                     {% endif %}
-                    
                     {% if match.aggregate %}
                     <span class="badge badge-sm badge-outline">
                         <i class="ti ti-users"></i>
@@ -233,25 +223,23 @@
 <div class="flex justify-center mt-8">
     <div class="join">
         {% if page_obj.has_previous %}
-        <a href="?page={{ page_obj.previous_page_number }}{% if current_status %}&status={{ current_status }}{% endif %}{% if current_league %}&league={{ current_league }}{% endif %}{% if current_season %}&season={{ current_season }}{% endif %}" 
+        <a href="?page={{ page_obj.previous_page_number }}{% if current_status %}&status={{ current_status }}{% endif %}{% if current_league %}&league={{ current_league }}{% endif %}{% if current_season %}&season={{ current_season }}{% endif %}"
            class="join-item btn btn-sm">
             <i class="ti ti-chevron-left"></i>
         </a>
         {% endif %}
-        
         {% for num in page_obj.paginator.page_range %}
         {% if page_obj.number == num %}
         <button class="join-item btn btn-sm btn-active">{{ num }}</button>
         {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
-        <a href="?page={{ num }}{% if current_status %}&status={{ current_status }}{% endif %}{% if current_league %}&league={{ current_league }}{% endif %}{% if current_season %}&season={{ current_season }}{% endif %}" 
+        <a href="?page={{ num }}{% if current_status %}&status={{ current_status }}{% endif %}{% if current_league %}&league={{ current_league }}{% endif %}{% if current_season %}&season={{ current_season }}{% endif %}"
            class="join-item btn btn-sm">
             {{ num }}
         </a>
         {% endif %}
         {% endfor %}
-        
         {% if page_obj.has_next %}
-        <a href="?page={{ page_obj.next_page_number }}{% if current_status %}&status={{ current_status }}{% endif %}{% if current_league %}&league={{ current_league }}{% endif %}{% if current_season %}&season={{ current_season }}{% endif %}" 
+        <a href="?page={{ page_obj.next_page_number }}{% if current_status %}&status={{ current_status }}{% endif %}{% if current_league %}&league={{ current_league }}{% endif %}{% if current_season %}&season={{ current_season }}{% endif %}"
            class="join-item btn btn-sm">
             <i class="ti ti-chevron-right"></i>
         </a>
@@ -259,5 +247,4 @@
     </div>
 </div>
 {% endif %}
-
 {% endblock %}

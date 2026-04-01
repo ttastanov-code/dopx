@@ -40,7 +40,6 @@ NOTIFICATION_MESSAGES = {
     'system': 'Важное обновление платформы. Проверьте информацию в личном кабинете.',
 }
 
-
 # ============================================================================
 # === ЗАДАЧИ ДЛЯ МАТЧЕЙ И ОЦЕНОК ===
 # ============================================================================
@@ -66,6 +65,11 @@ def send_match_finished_notifications(self, match_id: str):
     match_name = f"{match.home_team.name} vs {match.away_team.name}"
     
     for session in sessions:
+        # Проверяем настройки уведомлений пользователя
+        user_settings = session.user.notification_settings
+        if not user_settings.get('email_match_finished', True):
+            continue
+        
         title = NOTIFICATION_TITLES.get('match_finished', '🏁 Матч завершён')
         message = NOTIFICATION_MESSAGES['match_finished'].format(match=match_name)
         
@@ -81,7 +85,6 @@ def send_match_finished_notifications(self, match_id: str):
     
     logger.info(f"Sent {count} match finished notifications for match {match_id}")
     return count
-
 
 @shared_task(bind=True, max_retries=3)
 def send_voting_open_notifications(self, match_id: str):
@@ -104,6 +107,11 @@ def send_voting_open_notifications(self, match_id: str):
     match_name = f"{match.home_team.name} vs {match.away_team.name}"
     
     for user in users:
+        # Проверяем настройки уведомлений пользователя
+        user_settings = user.notification_settings
+        if not user_settings.get('email_voting_open', True):
+            continue
+        
         title = NOTIFICATION_TITLES.get('voting_open', '🎯 Голосование открыто')
         message = NOTIFICATION_MESSAGES['voting_open'].format(match=match_name)
         
@@ -119,7 +127,6 @@ def send_voting_open_notifications(self, match_id: str):
     Notification.objects.bulk_create(notifications)
     logger.info(f"Sent {len(notifications)} voting open notifications for match {match_id}")
     return len(notifications)
-
 
 @shared_task(bind=True, max_retries=3)
 def send_top_player_notifications(self, match_id: str, player_id: str):
@@ -154,6 +161,12 @@ def send_top_player_notifications(self, match_id: str, player_id: str):
     player_name = f"{player.first_name} {player.last_name}"
     
     for user_id in eval_users:
+        user = User.objects.get(id=user_id)
+        # Проверяем настройки уведомлений пользователя
+        user_settings = user.notification_settings
+        if not user_settings.get('email_top_performance', True):
+            continue
+        
         title = NOTIFICATION_TITLES.get('top_performance', '🏆 Ваш игрок в топ-3!')
         message = NOTIFICATION_MESSAGES['top_performance'].format(
             player=player_name,
@@ -173,7 +186,6 @@ def send_top_player_notifications(self, match_id: str, player_id: str):
     logger.info(f"Sent {len(notifications)} top player notifications for match {match_id}")
     return len(notifications)
 
-
 # ============================================================================
 # === УТИЛИТЫ: ОЧИСТКА И ОБСЛУЖИВАНИЕ ===
 # ============================================================================
@@ -188,12 +200,10 @@ def cleanup_old_notifications():
     logger.info(f"Cleaned up {deleted_count} old notifications")
     return deleted_count
 
-
 @shared_task
 def cleanup_old_sessions():
     """Очистка старых сессий оценки (старше 7 дней)"""
     from evaluations.models import EvaluationSession
-    
     cutoff = timezone.now() - timedelta(days=7)
     deleted_count, _ = EvaluationSession.objects.filter(
         status='started',
@@ -202,13 +212,13 @@ def cleanup_old_sessions():
     logger.info(f"Cleaned up {deleted_count} old evaluation sessions")
     return deleted_count
 
-
 @shared_task
 def send_notification_digest():
     """Ежедневная рассылка дайджеста уведомлений"""
     from django.db.models import Count
     
     cutoff = timezone.now() - timedelta(hours=24)
+    
     users_with_notifications = Notification.objects.filter(
         is_read=False,
         created_at__gte=cutoff
@@ -217,9 +227,15 @@ def send_notification_digest():
     ).filter(count__gte=5)
     
     sent_count = 0
+    
     for user_data in users_with_notifications:
         user = User.objects.get(id=user_data['user_id'])
         if not user.email or not user.is_verified:
+            continue
+        
+        # Проверяем настройки уведомлений
+        user_settings = user.notification_settings
+        if not user_settings.get('email_system', True):
             continue
         
         notifications = Notification.objects.filter(
@@ -251,7 +267,6 @@ def send_notification_digest():
     
     logger.info(f"Sent {sent_count} notification digests")
     return sent_count
-
 
 @shared_task
 def health_check():

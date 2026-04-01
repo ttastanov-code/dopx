@@ -1,39 +1,208 @@
 {% extends 'base.html' %}
 {% load static %}
 {% block content %}
-<div class="max-w-2xl mx-auto">
-    <div class="mb-6">
-        <a href="{% url 'users:profile' %}" class="btn btn-ghost btn-sm">
+<div class="max-w-4xl mx-auto">
+    <!-- Header -->
+    <div class="mb-8">
+        <a href="{% url 'users:profile' %}" class="btn btn-ghost btn-sm mb-4">
             <i class="ti ti-arrow-left"></i>
             Назад к профилю
         </a>
+        <div class="flex items-center gap-4">
+            <div class="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center">
+                <i class="ti ti-bell-ringing text-primary text-2xl"></i>
+            </div>
+            <div>
+                <h1 class="text-3xl font-bold">Настройки уведомлений</h1>
+                <p class="text-sm opacity-60 mt-1">Управляйте тем, какие уведомления вы хотите получать</p>
+            </div>
+        </div>
     </div>
-    
-    <div class="card bg-base-100 border border-base-300">
-        <div class="card-body p-6">
-            <h1 class="text-2xl font-bold mb-6">Настройки уведомлений</h1>
-            
-            <form method="post" class="space-y-4">
-                {% csrf_token %}
-                
-                {% for field in form %}
-                <div class="form-control">
-                    <label class="label cursor-pointer gap-4 p-4 rounded-lg border border-base-300 hover:bg-base-200 transition-all">
-                        <div class="flex-1">
-                            <span class="label-text font-medium">{{ field.label }}</span>
+
+    <form method="post" class="space-y-6">
+        {% csrf_token %}
+
+        <!-- Матчи -->
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-6">
+                <div class="flex items-center gap-3 mb-6 pb-4 border-b border-base-300">
+                    <div class="w-10 h-10 rounded-xl bg-success/10 flex items-center justify-center">
+                        <i class="ti ti-trophy text-success text-xl"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-bold">Матчи</h2>
+                        <p class="text-xs opacity-60">Уведомления о событиях матча</p>
+                    </div>
+                </div>
+
+                <div class="space-y-4">
+                    <!-- Матч завершён -->
+                    <label class="flex items-center justify-between gap-4 p-4 rounded-xl border border-base-300 hover:bg-base-200 transition-all cursor-pointer">
+                        <div class="flex items-center gap-4 flex-1">
+                            <div class="w-12 h-12 rounded-xl bg-success/10 flex items-center justify-center flex-shrink-0">
+                                <i class="ti ti-check text-success text-xl"></i>
+                            </div>
+                            <div class="flex-1">
+                                <div class="font-semibold">{{ form.email_match_finished.label }}</div>
+                                <p class="text-xs opacity-60 mt-1">Когда матч завершён и открыто голосование</p>
+                            </div>
                         </div>
-                        {{ field }}
+                        {{ form.email_match_finished }}
+                    </label>
+
+                    <!-- Голосование открыто -->
+                    <label class="flex items-center justify-between gap-4 p-4 rounded-xl border border-base-300 hover:bg-base-200 transition-all cursor-pointer">
+                        <div class="flex items-center gap-4 flex-1">
+                            <div class="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
+                                <i class="ti ti-star text-primary text-xl"></i>
+                            </div>
+                            <div class="flex-1">
+                                <div class="font-semibold">{{ form.email_voting_open.label }}</div>
+                                <p class="text-xs opacity-60 mt-1">Когда голосование открыто</p>
+                            </div>
+                        </div>
+                        {{ form.email_voting_open }}
+                    </label>
+
+                    <!-- Голосование закрывается -->
+                    <label class="flex items-center justify-between gap-4 p-4 rounded-xl border border-base-300 hover:bg-base-200 transition-all cursor-pointer">
+                        <div class="flex items-center gap-4 flex-1">
+                            <div class="w-12 h-12 rounded-xl bg-warning/10 flex items-center justify-center flex-shrink-0">
+                                <i class="ti ti-clock text-warning text-xl"></i>
+                            </div>
+                            <div class="flex-1">
+                                <div class="font-semibold">{{ form.email_voting_closing.label }}</div>
+                                <p class="text-xs opacity-60 mt-1">Напоминание когда голосование скоро закроется</p>
+                            </div>
+                        </div>
+                        {{ form.email_voting_closing }}
                     </label>
                 </div>
-                {% endfor %}
-                
-                <div class="pt-4">
-                    <button type="submit" class="btn btn-primary w-full">
-                        <i class="ti ti-check"></i>
-                        Сохранить настройки
-                    </button>
+            </div>
+        </div>
+
+        <!-- Достижения -->
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-6">
+                <div class="flex items-center gap-3 mb-6 pb-4 border-b border-base-300">
+                    <div class="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center">
+                        <i class="ti ti-medal text-accent text-xl"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-bold">Достижения</h2>
+                        <p class="text-xs opacity-60">Награды за успехи</p>
+                    </div>
                 </div>
-            </form>
+
+                <div class="space-y-4">
+                    <!-- Игрок в топ-3 -->
+                    <label class="flex items-center justify-between gap-4 p-4 rounded-xl border border-base-300 hover:bg-base-200 transition-all cursor-pointer">
+                        <div class="flex items-center gap-4 flex-1">
+                            <div class="w-12 h-12 rounded-xl bg-accent/10 flex items-center justify-center flex-shrink-0">
+                                <i class="ti ti-medal-star text-accent text-xl"></i>
+                            </div>
+                            <div class="flex-1">
+                                <div class="font-semibold">{{ form.email_top_performance.label }}</div>
+                                <p class="text-xs opacity-60 mt-1">Когда ваш игрок входит в топ-3 матча</p>
+                            </div>
+                        </div>
+                        {{ form.email_top_performance }}
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Системные -->
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-6">
+                <div class="flex items-center gap-3 mb-6 pb-4 border-b border-base-300">
+                    <div class="w-10 h-10 rounded-xl bg-neutral/10 flex items-center justify-center">
+                        <i class="ti ti-settings text-neutral text-xl"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-bold">Системные</h2>
+                        <p class="text-xs opacity-60">Важные обновления платформы</p>
+                    </div>
+                </div>
+
+                <div class="space-y-4">
+                    <!-- Системные уведомления -->
+                    <label class="flex items-center justify-between gap-4 p-4 rounded-xl border border-base-300 hover:bg-base-200 transition-all cursor-pointer">
+                        <div class="flex items-center gap-4 flex-1">
+                            <div class="w-12 h-12 rounded-xl bg-neutral/10 flex items-center justify-center flex-shrink-0">
+                                <i class="ti ti-info-circle text-neutral text-xl"></i>
+                            </div>
+                            <div class="flex-1">
+                                <div class="font-semibold">{{ form.email_system.label }}</div>
+                                <p class="text-xs opacity-60 mt-1">Важные обновления платформы и новости</p>
+                            </div>
+                        </div>
+                        {{ form.email_system }}
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Кнопка сохранения -->
+        <div class="card bg-gradient-to-r from-primary/10 to-primary/5 border border-primary/20">
+            <div class="card-body p-6">
+                <button type="submit" class="btn btn-primary btn-lg w-full">
+                    <i class="ti ti-check"></i>
+                    Сохранить настройки
+                </button>
+                <p class="text-xs opacity-60 text-center mt-3">
+                    <i class="ti ti-info-circle"></i>
+                    Настройки применяются сразу после сохранения
+                </p>
+            </div>
+        </div>
+    </form>
+
+    <!-- Info Card -->
+    <div class="card bg-base-100 border border-base-300 mt-6">
+        <div class="card-body p-6">
+            <h3 class="font-bold text-lg mb-4 flex items-center gap-2">
+                <i class="ti ti-question-mark text-primary"></i>
+                Как это работает?
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <div class="flex items-start gap-3">
+                    <div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                        <i class="ti ti-mail text-primary text-sm"></i>
+                    </div>
+                    <div>
+                        <div class="font-semibold">Email уведомления</div>
+                        <div class="opacity-60 mt-1">Уведомления отправляются на email из профиля</div>
+                    </div>
+                </div>
+                <div class="flex items-start gap-3">
+                    <div class="w-8 h-8 rounded-lg bg-success/10 flex items-center justify-center flex-shrink-0">
+                        <i class="ti ti-toggle-left text-success text-sm"></i>
+                    </div>
+                    <div>
+                        <div class="font-semibold">Вкл/Выкл</div>
+                        <div class="opacity-60 mt-1">Можно включить или выключить любой тип</div>
+                    </div>
+                </div>
+                <div class="flex items-start gap-3">
+                    <div class="w-8 h-8 rounded-lg bg-warning/10 flex items-center justify-center flex-shrink-0">
+                        <i class="ti ti-clock text-warning text-sm"></i>
+                    </div>
+                    <div>
+                        <div class="font-semibold">Моментально</div>
+                        <div class="opacity-60 mt-1">Настройки применяются сразу</div>
+                    </div>
+                </div>
+                <div class="flex items-start gap-3">
+                    <div class="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center flex-shrink-0">
+                        <i class="ti ti-shield-check text-accent text-sm"></i>
+                    </div>
+                    <div>
+                        <div class="font-semibold">Без спама</div>
+                        <div class="opacity-60 mt-1">Только важные уведомления</div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </div>

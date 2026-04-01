@@ -273,6 +273,7 @@ templates
   emails
     contact_confirmation.html
     contact_form.html
+    notification_digest.html
     password_reset_email.html
     password_reset_email.txt
     password_reset_subject.txt
@@ -4931,15 +4932,17 @@ if DEBUG:
         'SHOW_TOOLBAR_CALLBACK': lambda request: request.META.get('HTTP_ACCEPT') != 'application/json',
     }
 
-# === Contact Form Settings ===
-CONTACT_EMAIL = os.getenv('CONTACT_EMAIL', 'admin@dopx.kz')
-DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@dopx.kz')
+# === Email Settings ===
 EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
 EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
 EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
 EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@dopx.kz')
+CONTACT_EMAIL = os.getenv('CONTACT_EMAIL', 'admin@dopx.kz')
+ADMIN_ALERT_EMAIL = os.getenv('ADMIN_ALERT_EMAIL', CONTACT_EMAIL)
+ENABLE_SYNC_ERROR_ALERTS = os.getenv('ENABLE_SYNC_ERROR_ALERTS', 'True') == 'True'
 SITE_URL = os.getenv('SITE_URL', 'http://127.0.0.1:8000')
 
 # === Admin Alert Settings ===
@@ -8223,7 +8226,7 @@ FILE: matches/views.py
 from django.shortcuts import render, get_object_or_404
 from django.views.generic import ListView, DetailView
 from django.utils import timezone
-from django.db.models import Avg, Count, Q, Prefetch, Sum
+from django.db.models import Avg, Count, Q, Prefetch, Sum, F
 from matches.models import Match
 from aggregates.models import MatchAggregate, PlayerMatchAggregate
 from evaluations.models import TeamEvaluation, PlayerEvaluation, MatchEvaluation, ContextEvaluation, EvaluationSession
@@ -8235,29 +8238,39 @@ from django.views.decorators.http import require_http_methods
 
 logger = logging.getLogger(__name__)
 
-
 class MatchListView(ListView):
     """Список всех матчей с фильтрами"""
     model = Match
     template_name = 'matches/list.html'
     context_object_name = 'matches'
     paginate_by = 20
-
+    
     def get_queryset(self):
         queryset = Match.objects.select_related(
-            'home_team', 
-            'away_team', 
-            'league', 
+            'home_team',
+            'away_team',
+            'league',
             'season',
             'stadium'
         ).prefetch_related(
             'aggregate'
-        ).order_by('-start_time')
+        )
         
         # Фильтр по статусу
         status = self.request.GET.get('status')
-        if status in ['scheduled', 'live', 'finished']:
-            queryset = queryset.filter(status=status)
+        
+        if status == 'scheduled':
+            # Запланированные - от начала года до конца
+            queryset = queryset.filter(status='scheduled').order_by('start_time')
+        elif status == 'live':
+            # Live - сначала матчи, которые раньше начались
+            queryset = queryset.filter(status='live').order_by('start_time')
+        elif status == 'finished':
+            # Завершенные - ближе к сегодняшнему дню сначала
+            queryset = queryset.filter(status='finished').order_by('-start_time')
+        else:
+            # Все - от начала года до конца
+            queryset = queryset.order_by('start_time')
         
         # Фильтр по лиге
         league_id = self.request.GET.get('league')
@@ -8270,7 +8283,7 @@ class MatchListView(ListView):
             queryset = queryset.filter(season_id=season_id)
         
         return queryset
-
+    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Все матчи — DOPX'
@@ -8282,22 +8295,21 @@ class MatchListView(ListView):
         context['now'] = timezone.now()
         return context
 
-
 class MatchDetailView(DetailView):
     """Детальная страница матча + результаты оценок"""
     model = Match
     template_name = 'matches/detail.html'
     context_object_name = 'match'
-
+    
     def get_queryset(self):
         return Match.objects.select_related(
-            'home_team', 
-            'away_team', 
-            'league', 
+            'home_team',
+            'away_team',
+            'league',
             'season',
-            'home_coach', 
-            'away_coach', 
-            'referee', 
+            'home_coach',
+            'away_coach',
+            'referee',
             'stadium'
         ).prefetch_related(
             'lineups__players__player',
@@ -8308,7 +8320,7 @@ class MatchDetailView(DetailView):
             'events',
             'coach_aggregates__coach',
         )
-
+    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         match = self.object
@@ -8316,7 +8328,7 @@ class MatchDetailView(DetailView):
         
         # Проверка: голосование открыто?
         voting_open = (
-            match.voting_open_until > now and 
+            match.voting_open_until > now and
             match.status == 'finished'
         )
         
@@ -8336,7 +8348,7 @@ class MatchDetailView(DetailView):
         top_players = PlayerMatchAggregate.objects.filter(
             match=match
         ).select_related(
-            'player', 
+            'player',
             'player__team'
         ).order_by('-performance_score')[:5]
         
@@ -8344,13 +8356,13 @@ class MatchDetailView(DetailView):
         worst_players = PlayerMatchAggregate.objects.filter(
             match=match
         ).select_related(
-            'player', 
+            'player',
             'player__team'
         ).order_by('performance_score')[:3]
         
         # Оценки домашней команды
         home_team_evals = TeamEvaluation.objects.filter(
-            match=match, 
+            match=match,
             team=match.home_team
         ).aggregate(
             avg_tactics=Avg('tactics'),
@@ -8362,7 +8374,7 @@ class MatchDetailView(DetailView):
         
         # Оценки гостевой команды
         away_team_evals = TeamEvaluation.objects.filter(
-            match=match, 
+            match=match,
             team=match.away_team
         ).aggregate(
             avg_tactics=Avg('tactics'),
@@ -8384,7 +8396,7 @@ class MatchDetailView(DetailView):
         lineups = MatchLineup.objects.filter(
             match=match
         ).prefetch_related(
-            'players__player', 
+            'players__player',
             'players__player__team'
         ).order_by('side')
         
@@ -8422,7 +8434,6 @@ class MatchDetailView(DetailView):
             'now': now,
         })
         return context
-    
 
 @require_http_methods(["GET"])
 def match_events_partial(request, match_id):
@@ -8431,7 +8442,6 @@ def match_events_partial(request, match_id):
     events = match.events.select_related(
         'player', 'assist_player', 'player_out'
     ).order_by('minute', 'added_time', 'id')
-    
     return render(request, 'matches/_match_events.html', {
         'match': match,
         'events': events,
@@ -8949,7 +8959,6 @@ NOTIFICATION_MESSAGES = {
     'system': 'Важное обновление платформы. Проверьте информацию в личном кабинете.',
 }
 
-
 # ============================================================================
 # === ЗАДАЧИ ДЛЯ МАТЧЕЙ И ОЦЕНОК ===
 # ============================================================================
@@ -8975,6 +8984,11 @@ def send_match_finished_notifications(self, match_id: str):
     match_name = f"{match.home_team.name} vs {match.away_team.name}"
     
     for session in sessions:
+        # Проверяем настройки уведомлений пользователя
+        user_settings = session.user.notification_settings
+        if not user_settings.get('email_match_finished', True):
+            continue
+        
         title = NOTIFICATION_TITLES.get('match_finished', '🏁 Матч завершён')
         message = NOTIFICATION_MESSAGES['match_finished'].format(match=match_name)
         
@@ -8990,7 +9004,6 @@ def send_match_finished_notifications(self, match_id: str):
     
     logger.info(f"Sent {count} match finished notifications for match {match_id}")
     return count
-
 
 @shared_task(bind=True, max_retries=3)
 def send_voting_open_notifications(self, match_id: str):
@@ -9013,6 +9026,11 @@ def send_voting_open_notifications(self, match_id: str):
     match_name = f"{match.home_team.name} vs {match.away_team.name}"
     
     for user in users:
+        # Проверяем настройки уведомлений пользователя
+        user_settings = user.notification_settings
+        if not user_settings.get('email_voting_open', True):
+            continue
+        
         title = NOTIFICATION_TITLES.get('voting_open', '🎯 Голосование открыто')
         message = NOTIFICATION_MESSAGES['voting_open'].format(match=match_name)
         
@@ -9028,7 +9046,6 @@ def send_voting_open_notifications(self, match_id: str):
     Notification.objects.bulk_create(notifications)
     logger.info(f"Sent {len(notifications)} voting open notifications for match {match_id}")
     return len(notifications)
-
 
 @shared_task(bind=True, max_retries=3)
 def send_top_player_notifications(self, match_id: str, player_id: str):
@@ -9063,6 +9080,12 @@ def send_top_player_notifications(self, match_id: str, player_id: str):
     player_name = f"{player.first_name} {player.last_name}"
     
     for user_id in eval_users:
+        user = User.objects.get(id=user_id)
+        # Проверяем настройки уведомлений пользователя
+        user_settings = user.notification_settings
+        if not user_settings.get('email_top_performance', True):
+            continue
+        
         title = NOTIFICATION_TITLES.get('top_performance', '🏆 Ваш игрок в топ-3!')
         message = NOTIFICATION_MESSAGES['top_performance'].format(
             player=player_name,
@@ -9082,7 +9105,6 @@ def send_top_player_notifications(self, match_id: str, player_id: str):
     logger.info(f"Sent {len(notifications)} top player notifications for match {match_id}")
     return len(notifications)
 
-
 # ============================================================================
 # === УТИЛИТЫ: ОЧИСТКА И ОБСЛУЖИВАНИЕ ===
 # ============================================================================
@@ -9097,12 +9119,10 @@ def cleanup_old_notifications():
     logger.info(f"Cleaned up {deleted_count} old notifications")
     return deleted_count
 
-
 @shared_task
 def cleanup_old_sessions():
     """Очистка старых сессий оценки (старше 7 дней)"""
     from evaluations.models import EvaluationSession
-    
     cutoff = timezone.now() - timedelta(days=7)
     deleted_count, _ = EvaluationSession.objects.filter(
         status='started',
@@ -9111,13 +9131,13 @@ def cleanup_old_sessions():
     logger.info(f"Cleaned up {deleted_count} old evaluation sessions")
     return deleted_count
 
-
 @shared_task
 def send_notification_digest():
     """Ежедневная рассылка дайджеста уведомлений"""
     from django.db.models import Count
     
     cutoff = timezone.now() - timedelta(hours=24)
+    
     users_with_notifications = Notification.objects.filter(
         is_read=False,
         created_at__gte=cutoff
@@ -9126,9 +9146,15 @@ def send_notification_digest():
     ).filter(count__gte=5)
     
     sent_count = 0
+    
     for user_data in users_with_notifications:
         user = User.objects.get(id=user_data['user_id'])
         if not user.email or not user.is_verified:
+            continue
+        
+        # Проверяем настройки уведомлений
+        user_settings = user.notification_settings
+        if not user_settings.get('email_system', True):
             continue
         
         notifications = Notification.objects.filter(
@@ -9160,7 +9186,6 @@ def send_notification_digest():
     
     logger.info(f"Sent {sent_count} notification digests")
     return sent_count
-
 
 @shared_task
 def health_check():
@@ -13502,16 +13527,12 @@ FILE: templates/auth/register.html
 
 {% extends 'base_auth.html' %}
 {% load static %}
-
 {% block title %}Регистрация — DOPX{% endblock %}
-
 {% block content %}
 <div class="w-full max-w-md px-4">
-    
     <!-- Карточка регистрации -->
     <div class="card bg-base-100 border border-base-300 shadow-xl">
         <div class="card-body p-8">
-            
             <!-- Логотип -->
             <div class="text-center mb-6">
                 <img src="{% static 'img/DOPX_logo.png' %}" alt="DOPX" class="h-12 w-auto mx-auto mb-3">
@@ -13520,9 +13541,9 @@ FILE: templates/auth/register.html
             </div>
             
             <!-- Форма -->
-            <form method="post" action="{% url 'users:register' %}" 
+            <form method="post" action="{% url 'users:register' %}"
                   class="space-y-4"
-                  x-data="{ 
+                  x-data="{
                       showPassword1: false,
                       showPassword2: false,
                       password: '',
@@ -13538,9 +13559,9 @@ FILE: templates/auth/register.html
                         <span class="label-text font-medium">Имя пользователя</span>
                     </label>
                     <div class="relative">
-                        <input type="text" 
-                               id="id_username" 
-                               name="username" 
+                        <input type="text"
+                               id="id_username"
+                               name="username"
                                required
                                autocomplete="username"
                                class="input input-bordered w-full pl-10 {% if form.username.errors %}input-error{% endif %}"
@@ -13564,9 +13585,9 @@ FILE: templates/auth/register.html
                         <span class="label-text font-medium">Email</span>
                     </label>
                     <div class="relative">
-                        <input type="email" 
-                               id="id_email" 
-                               name="email" 
+                        <input type="email"
+                               id="id_email"
+                               name="email"
                                required
                                autocomplete="email"
                                class="input input-bordered w-full pl-10 {% if form.email.errors %}input-error{% endif %}"
@@ -13587,9 +13608,9 @@ FILE: templates/auth/register.html
                         <span class="label-text font-medium">Город <span class="opacity-50">(необязательно)</span></span>
                     </label>
                     <div class="relative">
-                        <input type="text" 
-                               id="id_city" 
-                               name="city" 
+                        <input type="text"
+                               id="id_city"
+                               name="city"
                                autocomplete="address-level2"
                                class="input input-bordered w-full pl-10 {% if form.city.errors %}input-error{% endif %}"
                                placeholder="Алматы"
@@ -13609,16 +13630,16 @@ FILE: templates/auth/register.html
                         <span class="label-text font-medium">Пароль</span>
                     </label>
                     <div class="relative">
-                        <input type="password" 
-                               id="id_password1" 
-                               name="password1" 
+                        <input type="password"
+                               id="id_password1"
+                               name="password1"
                                required
                                autocomplete="new-password"
                                x-model="password"
                                class="input input-bordered w-full pl-10 {% if form.password1.errors %}input-error{% endif %}"
                                placeholder="••••••••">
                         <i class="ti ti-lock absolute left-3 top-1/2 -translate-y-1/2 opacity-40"></i>
-                        <button type="button" 
+                        <button type="button"
                                 @click="togglePassword('id_password1')"
                                 class="absolute right-3 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-100 transition-opacity">
                             <i class="ti ti-eye"></i>
@@ -13637,16 +13658,16 @@ FILE: templates/auth/register.html
                         <span class="label-text font-medium">Подтверждение пароля</span>
                     </label>
                     <div class="relative">
-                        <input type="password" 
-                               id="id_password2" 
-                               name="password2" 
+                        <input type="password"
+                               id="id_password2"
+                               name="password2"
                                required
                                autocomplete="new-password"
                                x-model="confirmPassword"
                                class="input input-bordered w-full pl-10 {% if form.password2.errors %}input-error{% endif %}"
                                placeholder="••••••••">
                         <i class="ti ti-lock-check absolute left-3 top-1/2 -translate-y-1/2 opacity-40"></i>
-                        <button type="button" 
+                        <button type="button"
                                 @click="togglePassword('id_password2')"
                                 class="absolute right-3 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-100 transition-opacity">
                             <i class="ti ti-eye"></i>
@@ -13665,18 +13686,18 @@ FILE: templates/auth/register.html
                 
                 <!-- Terms -->
                 <div class="form-control">
-                    <label class="label cursor-pointer gap-2">
-                        <input type="checkbox" required class="checkbox checkbox-sm checkbox-primary">
+                    <label class="label cursor-pointer gap-3 p-4 rounded-lg border border-base-300 hover:bg-base-200 transition-colors">
+                        <input type="checkbox" required class="checkbox checkbox-primary checkbox-lg">
                         <span class="label-text text-sm">
-                            Я согласен с 
+                            Я согласен с
                             <a href="{% url 'core:rules' %}" class="link link-primary hover:no-underline" target="_blank">правилами платформы</a>
                         </span>
                     </label>
                 </div>
                 
                 <!-- Submit Button -->
-                <button type="submit" 
-                        class="btn btn-primary w-full"
+                <button type="submit"
+                        class="btn btn-primary btn-lg w-full"
                         :disabled="password !== confirmPassword">
                     <i class="ti ti-user-plus"></i>
                     Зарегистрироваться
@@ -13732,13 +13753,13 @@ FILE: templates/auth/register.html
 
 {% block extra_script %}
 <script>
-    // Автофокус на поле username
-    document.addEventListener('DOMContentLoaded', () => {
-        const usernameInput = document.getElementById('id_username');
-        if (usernameInput && !usernameInput.value) {
-            usernameInput.focus();
-        }
-    });
+// Автофокус на поле username
+document.addEventListener('DOMContentLoaded', () => {
+    const usernameInput = document.getElementById('id_username');
+    if (usernameInput && !usernameInput.value) {
+        usernameInput.focus();
+    }
+});
 </script>
 {% endblock %}
 
@@ -17460,6 +17481,99 @@ FILE: templates/emails/contact_form.html
 
 
 ================================================================================
+FILE: templates/emails/notification_digest.html
+================================================================================
+
+<!-- templates/emails/notification_digest.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: #ffffff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        .header {
+            background: linear-gradient(135deg, #000000 0%, #333333 100%);
+            color: #ffffff;
+            padding: 30px 20px;
+            text-align: center;
+        }
+        .content {
+            padding: 30px 20px;
+        }
+        .notification-item {
+            background-color: #f9fafb;
+            border-left: 4px solid #000000;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 0 4px 4px 0;
+        }
+        .footer {
+            background-color: #f5f5f5;
+            padding: 20px;
+            text-align: center;
+            font-size: 12px;
+            color: #999;
+            border-top: 1px solid #e0e0e0;
+        }
+        .button {
+            display: inline-block;
+            padding: 10px 20px;
+            background: #000000;
+            color: #ffffff;
+            text-decoration: none;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📬 Дайджест уведомлений</h1>
+            <p>Ваши уведомления за последние 24 часа</p>
+        </div>
+        <div class="content">
+            <p>Здравствуйте, {{ user.username }}!</p>
+            <p>У вас {{ count }} новых уведомлений:</p>
+            
+            {% for notification in notifications %}
+            <div class="notification-item">
+                <h3>{{ notification.title }}</h3>
+                <p>{{ notification.message }}</p>
+                <p style="font-size: 12px; color: #666;">{{ notification.created_at|date:"d.m.Y H:i" }}</p>
+            </div>
+            {% endfor %}
+            
+            <p style="margin-top: 20px; text-align: center;">
+                <a href="{{ site_url }}/notifications/" class="button">
+                    Перейти к уведомлениям
+                </a>
+            </p>
+        </div>
+        <div class="footer">
+            <p>Это автоматическое уведомление от платформы DOPX.</p>
+            <p><a href="{{ site_url }}">Перейти на сайт</a></p>
+            <p style="margin-top: 15px;">© {% now "Y" %} {{ site_name }}. Все права защищены.</p>
+        </div>
+    </div>
+</body>
+</html>
+
+
+================================================================================
 FILE: templates/emails/password_reset_email.html
 ================================================================================
 
@@ -20539,9 +20653,7 @@ FILE: templates/matches/list.html
 {% extends 'base.html' %}
 {% load static %}
 {% load match_extras %}
-
 {% block content %}
-
 <!-- === HEADER === -->
 <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
     <div>
@@ -20551,7 +20663,6 @@ FILE: templates/matches/list.html
         </h1>
         <p class="opacity-60">Все матчи платформы с результатами оценок</p>
     </div>
-    
     <!-- Быстрые фильтры -->
     <div class="flex gap-2">
         <a href="{% url 'matches:list' %}" class="btn btn-sm {% if not current_status %}btn-primary{% else %}btn-ghost{% endif %}">
@@ -20575,8 +20686,7 @@ FILE: templates/matches/list.html
 <!-- === ФИЛЬТРЫ === -->
 <div class="card bg-base-100 border border-base-300 mb-6">
     <div class="card-body p-4">
-        <form method="get" class="flex flex-wrap gap-4" hx-get="{% url 'matches:list' %}" hx-trigger="change" hx-swap="outerHTML">
-            
+        <form method="get" class="flex flex-wrap items-end gap-4" hx-get="{% url 'matches:list' %}" hx-trigger="change" hx-swap="outerHTML">
             <!-- Статус -->
             <div class="form-control w-full md:w-48">
                 <label class="label">
@@ -20621,11 +20731,8 @@ FILE: templates/matches/list.html
             </div>
             
             <!-- Кнопка сброса -->
-            <div class="form-control w-full md:w-auto">
-                <label class="label">
-                    <span class="label-text text-sm">&nbsp;</span>
-                </label>
-                <a href="{% url 'matches:list' %}" class="btn btn-ghost btn-sm">
+            <div class="form-control w-full md:w-auto pb-2">
+                <a href="{% url 'matches:list' %}" class="btn btn-ghost btn-sm w-full md:w-auto">
                     <i class="ti ti-x"></i>
                     Сброс
                 </a>
@@ -20641,7 +20748,6 @@ FILE: templates/matches/list.html
          onclick="window.location='{% url 'matches:detail' match.id %}'">
         <div class="card-body p-4">
             <div class="flex flex-col md:flex-row items-center gap-4">
-                
                 <!-- Домашняя команда -->
                 <div class="flex items-center gap-3 flex-1 w-full md:w-auto">
                     {% if match.home_team.logo_url %}
@@ -20727,10 +20833,9 @@ FILE: templates/matches/list.html
                     </span>
                     {% endif %}
                 </div>
-                
                 <div class="flex items-center gap-2">
                     {% if match.status == 'finished' and match.is_voting_open %}
-                    <a href="{% url 'evaluations:context' match.id %}" 
+                    <a href="{% url 'evaluations:context' match.id %}"
                        class="btn btn-sm btn-primary"
                        onclick="event.stopPropagation()">
                         <i class="ti ti-star"></i>
@@ -20742,7 +20847,6 @@ FILE: templates/matches/list.html
                         Оценки закрыты
                     </span>
                     {% endif %}
-                    
                     {% if match.aggregate %}
                     <span class="badge badge-sm badge-outline">
                         <i class="ti ti-users"></i>
@@ -20771,25 +20875,23 @@ FILE: templates/matches/list.html
 <div class="flex justify-center mt-8">
     <div class="join">
         {% if page_obj.has_previous %}
-        <a href="?page={{ page_obj.previous_page_number }}{% if current_status %}&status={{ current_status }}{% endif %}{% if current_league %}&league={{ current_league }}{% endif %}{% if current_season %}&season={{ current_season }}{% endif %}" 
+        <a href="?page={{ page_obj.previous_page_number }}{% if current_status %}&status={{ current_status }}{% endif %}{% if current_league %}&league={{ current_league }}{% endif %}{% if current_season %}&season={{ current_season }}{% endif %}"
            class="join-item btn btn-sm">
             <i class="ti ti-chevron-left"></i>
         </a>
         {% endif %}
-        
         {% for num in page_obj.paginator.page_range %}
         {% if page_obj.number == num %}
         <button class="join-item btn btn-sm btn-active">{{ num }}</button>
         {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
-        <a href="?page={{ num }}{% if current_status %}&status={{ current_status }}{% endif %}{% if current_league %}&league={{ current_league }}{% endif %}{% if current_season %}&season={{ current_season }}{% endif %}" 
+        <a href="?page={{ num }}{% if current_status %}&status={{ current_status }}{% endif %}{% if current_league %}&league={{ current_league }}{% endif %}{% if current_season %}&season={{ current_season }}{% endif %}"
            class="join-item btn btn-sm">
             {{ num }}
         </a>
         {% endif %}
         {% endfor %}
-        
         {% if page_obj.has_next %}
-        <a href="?page={{ page_obj.next_page_number }}{% if current_status %}&status={{ current_status }}{% endif %}{% if current_league %}&league={{ current_league }}{% endif %}{% if current_season %}&season={{ current_season }}{% endif %}" 
+        <a href="?page={{ page_obj.next_page_number }}{% if current_status %}&status={{ current_status }}{% endif %}{% if current_league %}&league={{ current_league }}{% endif %}{% if current_season %}&season={{ current_season }}{% endif %}"
            class="join-item btn btn-sm">
             <i class="ti ti-chevron-right"></i>
         </a>
@@ -20797,7 +20899,6 @@ FILE: templates/matches/list.html
     </div>
 </div>
 {% endif %}
-
 {% endblock %}
 
 
@@ -21828,7 +21929,6 @@ FILE: templates/profile/dashboard.html
 {% load static %}
 {% load math_extras %}
 {% block content %}
-
 <!-- === HEADER === -->
 <div class="mb-8">
     <h1 class="text-3xl font-bold mb-2">
@@ -21840,36 +21940,31 @@ FILE: templates/profile/dashboard.html
 
 <!-- === ДВЕ КОЛОНКИ === -->
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-    
     <!-- === ЛЕВАЯ КОЛОНКА: Инфо === -->
     <div class="space-y-6">
-        
         <!-- Карточка пользователя -->
         <div class="card bg-base-100 border border-base-300">
             <div class="card-body p-6 text-center">
                 <!-- Аватар -->
-                <div class="avatar mb-4">
-                    <div class="w-24 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2">
+                <div class="avatar mb-4 flex justify-center">
+                    <div class="w-24 h-24 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2 overflow-hidden">
                         {% if user.avatar %}
-                        <img src="{{ user.avatar.url }}" alt="{{ user.username }}" />
+                            <img src="{{ user.avatar.url }}" alt="{{ user.username }}" class="object-cover w-full h-full" />
                         {% else %}
-                        <div class="w-full h-full bg-primary flex items-center justify-center text-primary-content font-bold text-3xl">
-                            {{ user.username|first|upper }}
-                        </div>
+                            <div class="w-full h-full bg-primary flex items-center justify-center text-primary-content font-bold text-3xl">
+                                {{ user.username|first|upper }}
+                            </div>
                         {% endif %}
                     </div>
                 </div>
-                
                 <h2 class="text-2xl font-bold">{{ user.username }}</h2>
                 <p class="opacity-60">{{ user.email }}</p>
-                
                 {% if user.city %}
                 <div class="flex items-center justify-center gap-1 mt-2 text-sm opacity-60">
                     <i class="ti ti-map-pin"></i>
                     <span>{{ user.city }}</span>
                 </div>
                 {% endif %}
-                
                 <!-- Trust Score Badge -->
                 <div class="mt-4">
                     <div class="text-sm opacity-60 mb-1">Trust Score</div>
@@ -21880,7 +21975,6 @@ FILE: templates/profile/dashboard.html
                         {{ stats.trust_level.1 }}
                     </div>
                 </div>
-                
                 <!-- Level & XP -->
                 {% if xp %}
                 <div class="mt-4 pt-4 border-t border-base-300">
@@ -21895,7 +21989,6 @@ FILE: templates/profile/dashboard.html
                 {% endif %}
             </div>
         </div>
-        
         <!-- Быстрые статистики -->
         <div class="grid grid-cols-2 gap-4">
             <div class="stat bg-base-100 border border-base-300 p-4">
@@ -21915,7 +22008,6 @@ FILE: templates/profile/dashboard.html
                 <div class="stat-value text-2xl text-accent">{{ stats.evaluation_streak }}</div>
             </div>
         </div>
-        
         <!-- Достижения -->
         <div class="card bg-base-100 border border-base-300">
             <div class="card-body p-4">
@@ -21923,7 +22015,6 @@ FILE: templates/profile/dashboard.html
                     <i class="ti ti-medal mr-2"></i>
                     Достижения
                 </h3>
-                
                 <div class="flex flex-wrap gap-2">
                     {% for badge in badges %}
                     <div class="tooltip" data-tip="{{ badge.get_badge_type_display }}">
@@ -21938,10 +22029,8 @@ FILE: templates/profile/dashboard.html
             </div>
         </div>
     </div>
-    
     <!-- === ПРАВАЯ КОЛОНКА: Активность === -->
     <div class="lg:col-span-2 space-y-6">
-        
         <!-- Активные сессии -->
         {% if active_sessions %}
         <div class="card bg-base-100 border border-base-300">
@@ -21950,14 +22039,13 @@ FILE: templates/profile/dashboard.html
                     <i class="ti ti-clock mr-2"></i>
                     Активные оценки
                 </h3>
-                
                 <div class="space-y-3">
                     {% for session in active_sessions %}
                     <div class="flex items-center justify-between p-3 bg-base-200 rounded-lg">
                         <div>
                             <div class="font-medium">{{ session.match.home_team.name }} vs {{ session.match.away_team.name }}</div>
                             <div class="text-xs opacity-60">
-                                Шаг {{ session.completed_steps|length }} из 6 • 
+                                Шаг {{ session.completed_steps|length }} из 6 •
                                 {{ session.get_status_display }}
                             </div>
                         </div>
@@ -21970,7 +22058,6 @@ FILE: templates/profile/dashboard.html
             </div>
         </div>
         {% endif %}
-        
         <!-- Последние оценки -->
         <div class="card bg-base-100 border border-base-300">
             <div class="card-body p-4">
@@ -21983,7 +22070,6 @@ FILE: templates/profile/dashboard.html
                         Все матчи
                     </a>
                 </div>
-                
                 <div class="overflow-x-auto">
                     <table class="table table-zebra">
                         <thead>
@@ -22027,7 +22113,6 @@ FILE: templates/profile/dashboard.html
                 </div>
             </div>
         </div>
-        
         <!-- Настройки профиля -->
         <div class="card bg-base-100 border border-base-300">
             <div class="card-body p-4">
@@ -22035,7 +22120,6 @@ FILE: templates/profile/dashboard.html
                     <i class="ti ti-settings mr-2"></i>
                     Настройки
                 </h3>
-                
                 <div class="space-y-3">
                     <a href="{% url 'users:password_change' %}" class="flex items-center justify-between p-3 bg-base-200 rounded-lg hover:bg-base-300 transition-all">
                         <div class="flex items-center gap-3">
@@ -22063,7 +22147,6 @@ FILE: templates/profile/dashboard.html
         </div>
     </div>
 </div>
-
 {% endblock %}
 
 
@@ -23069,39 +23152,208 @@ FILE: templates/users/notification_settings.html
 {% extends 'base.html' %}
 {% load static %}
 {% block content %}
-<div class="max-w-2xl mx-auto">
-    <div class="mb-6">
-        <a href="{% url 'users:profile' %}" class="btn btn-ghost btn-sm">
+<div class="max-w-4xl mx-auto">
+    <!-- Header -->
+    <div class="mb-8">
+        <a href="{% url 'users:profile' %}" class="btn btn-ghost btn-sm mb-4">
             <i class="ti ti-arrow-left"></i>
             Назад к профилю
         </a>
+        <div class="flex items-center gap-4">
+            <div class="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center">
+                <i class="ti ti-bell-ringing text-primary text-2xl"></i>
+            </div>
+            <div>
+                <h1 class="text-3xl font-bold">Настройки уведомлений</h1>
+                <p class="text-sm opacity-60 mt-1">Управляйте тем, какие уведомления вы хотите получать</p>
+            </div>
+        </div>
     </div>
-    
-    <div class="card bg-base-100 border border-base-300">
-        <div class="card-body p-6">
-            <h1 class="text-2xl font-bold mb-6">Настройки уведомлений</h1>
-            
-            <form method="post" class="space-y-4">
-                {% csrf_token %}
-                
-                {% for field in form %}
-                <div class="form-control">
-                    <label class="label cursor-pointer gap-4 p-4 rounded-lg border border-base-300 hover:bg-base-200 transition-all">
-                        <div class="flex-1">
-                            <span class="label-text font-medium">{{ field.label }}</span>
+
+    <form method="post" class="space-y-6">
+        {% csrf_token %}
+
+        <!-- Матчи -->
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-6">
+                <div class="flex items-center gap-3 mb-6 pb-4 border-b border-base-300">
+                    <div class="w-10 h-10 rounded-xl bg-success/10 flex items-center justify-center">
+                        <i class="ti ti-trophy text-success text-xl"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-bold">Матчи</h2>
+                        <p class="text-xs opacity-60">Уведомления о событиях матча</p>
+                    </div>
+                </div>
+
+                <div class="space-y-4">
+                    <!-- Матч завершён -->
+                    <label class="flex items-center justify-between gap-4 p-4 rounded-xl border border-base-300 hover:bg-base-200 transition-all cursor-pointer">
+                        <div class="flex items-center gap-4 flex-1">
+                            <div class="w-12 h-12 rounded-xl bg-success/10 flex items-center justify-center flex-shrink-0">
+                                <i class="ti ti-check text-success text-xl"></i>
+                            </div>
+                            <div class="flex-1">
+                                <div class="font-semibold">{{ form.email_match_finished.label }}</div>
+                                <p class="text-xs opacity-60 mt-1">Когда матч завершён и открыто голосование</p>
+                            </div>
                         </div>
-                        {{ field }}
+                        {{ form.email_match_finished }}
+                    </label>
+
+                    <!-- Голосование открыто -->
+                    <label class="flex items-center justify-between gap-4 p-4 rounded-xl border border-base-300 hover:bg-base-200 transition-all cursor-pointer">
+                        <div class="flex items-center gap-4 flex-1">
+                            <div class="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
+                                <i class="ti ti-star text-primary text-xl"></i>
+                            </div>
+                            <div class="flex-1">
+                                <div class="font-semibold">{{ form.email_voting_open.label }}</div>
+                                <p class="text-xs opacity-60 mt-1">Когда голосование открыто</p>
+                            </div>
+                        </div>
+                        {{ form.email_voting_open }}
+                    </label>
+
+                    <!-- Голосование закрывается -->
+                    <label class="flex items-center justify-between gap-4 p-4 rounded-xl border border-base-300 hover:bg-base-200 transition-all cursor-pointer">
+                        <div class="flex items-center gap-4 flex-1">
+                            <div class="w-12 h-12 rounded-xl bg-warning/10 flex items-center justify-center flex-shrink-0">
+                                <i class="ti ti-clock text-warning text-xl"></i>
+                            </div>
+                            <div class="flex-1">
+                                <div class="font-semibold">{{ form.email_voting_closing.label }}</div>
+                                <p class="text-xs opacity-60 mt-1">Напоминание когда голосование скоро закроется</p>
+                            </div>
+                        </div>
+                        {{ form.email_voting_closing }}
                     </label>
                 </div>
-                {% endfor %}
-                
-                <div class="pt-4">
-                    <button type="submit" class="btn btn-primary w-full">
-                        <i class="ti ti-check"></i>
-                        Сохранить настройки
-                    </button>
+            </div>
+        </div>
+
+        <!-- Достижения -->
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-6">
+                <div class="flex items-center gap-3 mb-6 pb-4 border-b border-base-300">
+                    <div class="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center">
+                        <i class="ti ti-medal text-accent text-xl"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-bold">Достижения</h2>
+                        <p class="text-xs opacity-60">Награды за успехи</p>
+                    </div>
                 </div>
-            </form>
+
+                <div class="space-y-4">
+                    <!-- Игрок в топ-3 -->
+                    <label class="flex items-center justify-between gap-4 p-4 rounded-xl border border-base-300 hover:bg-base-200 transition-all cursor-pointer">
+                        <div class="flex items-center gap-4 flex-1">
+                            <div class="w-12 h-12 rounded-xl bg-accent/10 flex items-center justify-center flex-shrink-0">
+                                <i class="ti ti-medal-star text-accent text-xl"></i>
+                            </div>
+                            <div class="flex-1">
+                                <div class="font-semibold">{{ form.email_top_performance.label }}</div>
+                                <p class="text-xs opacity-60 mt-1">Когда ваш игрок входит в топ-3 матча</p>
+                            </div>
+                        </div>
+                        {{ form.email_top_performance }}
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Системные -->
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-6">
+                <div class="flex items-center gap-3 mb-6 pb-4 border-b border-base-300">
+                    <div class="w-10 h-10 rounded-xl bg-neutral/10 flex items-center justify-center">
+                        <i class="ti ti-settings text-neutral text-xl"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-bold">Системные</h2>
+                        <p class="text-xs opacity-60">Важные обновления платформы</p>
+                    </div>
+                </div>
+
+                <div class="space-y-4">
+                    <!-- Системные уведомления -->
+                    <label class="flex items-center justify-between gap-4 p-4 rounded-xl border border-base-300 hover:bg-base-200 transition-all cursor-pointer">
+                        <div class="flex items-center gap-4 flex-1">
+                            <div class="w-12 h-12 rounded-xl bg-neutral/10 flex items-center justify-center flex-shrink-0">
+                                <i class="ti ti-info-circle text-neutral text-xl"></i>
+                            </div>
+                            <div class="flex-1">
+                                <div class="font-semibold">{{ form.email_system.label }}</div>
+                                <p class="text-xs opacity-60 mt-1">Важные обновления платформы и новости</p>
+                            </div>
+                        </div>
+                        {{ form.email_system }}
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Кнопка сохранения -->
+        <div class="card bg-gradient-to-r from-primary/10 to-primary/5 border border-primary/20">
+            <div class="card-body p-6">
+                <button type="submit" class="btn btn-primary btn-lg w-full">
+                    <i class="ti ti-check"></i>
+                    Сохранить настройки
+                </button>
+                <p class="text-xs opacity-60 text-center mt-3">
+                    <i class="ti ti-info-circle"></i>
+                    Настройки применяются сразу после сохранения
+                </p>
+            </div>
+        </div>
+    </form>
+
+    <!-- Info Card -->
+    <div class="card bg-base-100 border border-base-300 mt-6">
+        <div class="card-body p-6">
+            <h3 class="font-bold text-lg mb-4 flex items-center gap-2">
+                <i class="ti ti-question-mark text-primary"></i>
+                Как это работает?
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <div class="flex items-start gap-3">
+                    <div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                        <i class="ti ti-mail text-primary text-sm"></i>
+                    </div>
+                    <div>
+                        <div class="font-semibold">Email уведомления</div>
+                        <div class="opacity-60 mt-1">Уведомления отправляются на email из профиля</div>
+                    </div>
+                </div>
+                <div class="flex items-start gap-3">
+                    <div class="w-8 h-8 rounded-lg bg-success/10 flex items-center justify-center flex-shrink-0">
+                        <i class="ti ti-toggle-left text-success text-sm"></i>
+                    </div>
+                    <div>
+                        <div class="font-semibold">Вкл/Выкл</div>
+                        <div class="opacity-60 mt-1">Можно включить или выключить любой тип</div>
+                    </div>
+                </div>
+                <div class="flex items-start gap-3">
+                    <div class="w-8 h-8 rounded-lg bg-warning/10 flex items-center justify-center flex-shrink-0">
+                        <i class="ti ti-clock text-warning text-sm"></i>
+                    </div>
+                    <div>
+                        <div class="font-semibold">Моментально</div>
+                        <div class="opacity-60 mt-1">Настройки применяются сразу</div>
+                    </div>
+                </div>
+                <div class="flex items-start gap-3">
+                    <div class="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center flex-shrink-0">
+                        <i class="ti ti-shield-check text-accent text-sm"></i>
+                    </div>
+                    <div>
+                        <div class="font-semibold">Без спама</div>
+                        <div class="opacity-60 mt-1">Только важные уведомления</div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -23171,26 +23423,59 @@ FILE: templates/users/profile_edit.html
             Назад к профилю
         </a>
     </div>
-    
     <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-6">
             <h1 class="text-2xl font-bold mb-6">Редактирование профиля</h1>
-            
             <form method="post" enctype="multipart/form-data" class="space-y-4">
                 {% csrf_token %}
                 
+                <!-- Текущая аватарка -->
+                {% if user.avatar %}
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text font-medium">Текущая аватарка</span>
+                    </label>
+                    <div class="flex items-center gap-4 p-4 bg-base-200 rounded-lg">
+                        <div class="avatar">
+                            <div class="w-20 h-20 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2 overflow-hidden">
+                                <img src="{{ user.avatar.url }}" alt="{{ user.username }}" class="object-cover w-full h-full" />
+                            </div>
+                        </div>
+                        <div class="flex-1">
+                            <p class="text-sm opacity-60">Текущее изображение</p>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+                
                 {% for field in form %}
                 <div class="form-control">
+                    {% if field.name != 'delete_avatar' %}
                     <label class="label">
                         <span class="label-text font-medium">{{ field.label }}</span>
                     </label>
+                    {% endif %}
+                    
+                    {% if field.name == 'delete_avatar' and user.avatar %}
+                    <label class="label cursor-pointer gap-4 p-4 rounded-lg border border-base-300 hover:bg-base-200 transition-all">
+                        <div class="flex-1">
+                            <span class="label-text font-medium text-error">{{ field.label }}</span>
+                            {% if field.help_text %}
+                            <p class="text-xs opacity-60 mt-1">{{ field.help_text }}</p>
+                            {% endif %}
+                        </div>
+                        {{ field }}
+                    </label>
+                    {% elif field.name != 'delete_avatar' %}
                     {{ field }}
+                    {% endif %}
+                    
                     {% if field.errors %}
                     <label class="label">
                         <span class="label-text-alt text-error">{{ field.errors.0 }}</span>
                     </label>
                     {% endif %}
-                    {% if field.help_text %}
+                    {% if field.help_text and field.name != 'delete_avatar' %}
                     <label class="label">
                         <span class="label-text-alt opacity-60">{{ field.help_text }}</span>
                     </label>
@@ -23288,7 +23573,7 @@ class UserRegistrationForm(UserCreationForm):
             'autocomplete': 'address-level2',
         })
     )
-
+    
     class Meta:
         model = User
         fields = ['username', 'email', 'city', 'password1', 'password2']
@@ -23314,13 +23599,12 @@ class UserRegistrationForm(UserCreationForm):
                 'autocomplete': 'new-password',
             }),
         }
-
+    
     def clean_email(self):
         email = self.cleaned_data.get('email')
         if User.objects.filter(email=email).exists():
             raise forms.ValidationError('Этот email уже зарегистрирован')
         return email
-
 
 class UserLoginForm(AuthenticationForm):
     """Форма входа пользователя"""
@@ -23341,17 +23625,22 @@ class UserLoginForm(AuthenticationForm):
         })
     )
 
-
 class UserProfileForm(forms.ModelForm):
     """Форма редактирования профиля"""
+    delete_avatar = forms.BooleanField(
+        required=False,
+        label='Удалить текущую аватарку',
+        help_text='Отметьте, чтобы удалить текущую аватарку'
+    )
+    
     class Meta:
         model = User
-        fields = ['email', 'city', 'bio', 'avatar']
+        fields = ['email', 'city', 'bio', 'avatar', 'delete_avatar']
         labels = {
             'email': 'Email',
             'city': 'Город',
             'bio': 'О себе',
-            'avatar': 'Аватар',
+            'avatar': 'Новая аватарка',
         }
         widgets = {
             'email': forms.EmailInput(attrs={
@@ -23369,8 +23658,16 @@ class UserProfileForm(forms.ModelForm):
             'avatar': forms.FileInput(attrs={
                 'class': 'file-input file-input-bordered w-full',
             }),
+            'delete_avatar': forms.CheckboxInput(attrs={
+                'class': 'checkbox checkbox-primary',
+            }),
         }
-
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Если аватарки нет, скрываем опцию удаления
+        if not self.instance.avatar:
+            self.fields['delete_avatar'].widget = forms.HiddenInput()
 
 class CustomPasswordChangeForm(PasswordChangeForm):
     """Форма изменения пароля"""
@@ -23399,7 +23696,6 @@ class CustomPasswordChangeForm(PasswordChangeForm):
         })
     )
 
-
 class CustomPasswordResetForm(PasswordResetForm):
     """Форма сброса пароля"""
     email = forms.EmailField(
@@ -23410,35 +23706,49 @@ class CustomPasswordResetForm(PasswordResetForm):
         })
     )
 
-
 class NotificationSettingsForm(forms.Form):
     """Форма настроек уведомлений"""
     email_match_finished = forms.BooleanField(
         required=False,
         label='Матч завершён',
-        initial=True
+        initial=True,
+        widget=forms.CheckboxInput(attrs={
+            'class': 'toggle toggle-primary',
+        })
     )
     email_voting_open = forms.BooleanField(
         required=False,
         label='Голосование открыто',
-        initial=True
+        initial=True,
+        widget=forms.CheckboxInput(attrs={
+            'class': 'toggle toggle-primary',
+        })
     )
     email_voting_closing = forms.BooleanField(
         required=False,
         label='Голосование закрывается',
-        initial=True
+        initial=True,
+        widget=forms.CheckboxInput(attrs={
+            'class': 'toggle toggle-primary',
+        })
     )
     email_top_performance = forms.BooleanField(
         required=False,
         label='Игрок в топ-3',
-        initial=True
+        initial=True,
+        widget=forms.CheckboxInput(attrs={
+            'class': 'toggle toggle-primary',
+        })
     )
     email_system = forms.BooleanField(
         required=False,
         label='Системные уведомления',
-        initial=True
+        initial=True,
+        widget=forms.CheckboxInput(attrs={
+            'class': 'toggle toggle-primary',
+        })
     )
-
+    
     def __init__(self, *args, **kwargs):
         user = kwargs.pop('user', None)
         super().__init__(*args, **kwargs)
@@ -23815,14 +24125,13 @@ import json
 
 logger = logging.getLogger(__name__)
 
-
 class RegisterView(CreateView):
     """Регистрация нового пользователя"""
     model = User
     form_class = UserRegistrationForm
     template_name = 'auth/register.html'
     success_url = reverse_lazy('core:home')
-
+    
     def form_valid(self, form):
         response = super().form_valid(form)
         user = self.object
@@ -23836,18 +24145,17 @@ class RegisterView(CreateView):
         login(self.request, user)
         messages.success(self.request, '✅ Аккаунт создан! Добро пожаловать в DOPX.')
         return response
-
+    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Регистрация — DOPX'
         return context
 
-
 class LoginView(AuthLoginView):
     """Вход в аккаунт"""
     template_name = 'auth/login.html'
     authentication_form = UserLoginForm
-
+    
     def form_valid(self, form):
         response = super().form_valid(form)
         # Обработка "Запомнить меня"
@@ -23856,21 +24164,19 @@ class LoginView(AuthLoginView):
             self.request.session.set_expiry(0)  # Сессия истекает при закрытии браузера
         else:
             self.request.session.set_expiry(1209600)  # 2 недели
-        
         messages.success(self.request, f'👋 С возвращением, {self.request.user.username}!')
         return response
-
+    
     def get_success_url(self):
         next_url = self.request.GET.get('next')
         if next_url:
             return next_url
         return reverse_lazy('core:home')
-
+    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Вход — DOPX'
         return context
-
 
 class LogoutView(LoginRequiredMixin, TemplateView):
     """Выход из аккаунта"""
@@ -23879,11 +24185,10 @@ class LogoutView(LoginRequiredMixin, TemplateView):
         messages.info(self.request, '👋 Вы вышли из аккаунта')
         return redirect('core:home')
 
-
 class ProfileView(LoginRequiredMixin, TemplateView):
     """Профиль пользователя с полной статистикой"""
     template_name = 'profile/dashboard.html'
-
+    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         user = self.request.user
@@ -23935,93 +24240,90 @@ class ProfileView(LoginRequiredMixin, TemplateView):
         })
         return context
 
-
 class ProfileEditView(LoginRequiredMixin, UpdateView):
     """Редактирование профиля"""
     model = User
     form_class = UserProfileForm
     template_name = 'users/profile_edit.html'
     success_url = reverse_lazy('users:profile')
-
+    
     def get_object(self):
         return self.request.user
-
+    
     def form_valid(self, form):
+        # Обработка удаления аватарки
+        if form.cleaned_data.get('delete_avatar'):
+            if self.object.avatar:
+                self.object.avatar.delete(save=False)
+                self.object.avatar = None
+        
         messages.success(self.request, '✅ Профиль успешно обновлён')
         return super().form_valid(form)
-
+    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Редактирование профиля — DOPX'
         return context
-
 
 class PasswordChangeViewCustom(LoginRequiredMixin, FormView):
     """Изменение пароля"""
     template_name = 'users/password_change.html'
     form_class = CustomPasswordChangeForm
     success_url = reverse_lazy('users:profile')
-
+    
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs['user'] = self.request.user
         return kwargs
-
+    
     def form_valid(self, form):
         form.save()
         update_session_auth_hash(self.request, form.user)
         messages.success(self.request, '✅ Пароль успешно изменён')
         return super().form_valid(form)
-
+    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Изменить пароль — DOPX'
         return context
 
-
 class PasswordResetViewCustom(PasswordResetView):
     """Сброс пароля"""
     template_name = 'auth/password_reset.html'
-    
     email_template_name = 'emails/password_reset_email.txt'  # Текстовая версия
     html_email_template_name = 'emails/password_reset_email.html'  # HTML версия
-    
     subject_template_name = 'emails/password_reset_subject.txt'
     success_url = reverse_lazy('users:password_reset_done')
     form_class = CustomPasswordResetForm
-
+    
     def form_valid(self, form):
         messages.success(self.request, '✅ Инструкция по сбросу пароля отправлена на email')
         return super().form_valid(form)
 
-
 class PasswordResetDoneViewCustom(PasswordResetDoneView):
     """Страница после запроса сброса пароля"""
     template_name = 'auth/password_reset_done.html'
-
 
 class PasswordResetConfirmViewCustom(PasswordResetConfirmView):
     """Подтверждение сброса пароля"""
     template_name = 'auth/password_reset_confirm.html'
     success_url = reverse_lazy('users:password_reset_complete')
 
-
 class PasswordResetCompleteViewCustom(PasswordResetCompleteView):
     """Завершение сброса пароля"""
     template_name = 'auth/password_reset_complete.html'
-
 
 class NotificationSettingsView(LoginRequiredMixin, FormView):
     """Настройки уведомлений"""
     template_name = 'users/notification_settings.html'
     form_class = NotificationSettingsForm
     success_url = reverse_lazy('users:profile')
-
+    
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs['user'] = self.request.user
         return kwargs
-
+    
     def form_valid(self, form):
         # Сохраняем настройки в JSON поле
         settings_data = {
@@ -24031,19 +24333,16 @@ class NotificationSettingsView(LoginRequiredMixin, FormView):
             'email_top_performance': form.cleaned_data.get('email_top_performance', False),
             'email_system': form.cleaned_data.get('email_system', False),
         }
-        
-        # Сохраняем в профиль пользователя (нужно добавить поле в модель или использовать JSON)
+        # Сохраняем в профиль пользователя
         self.request.user.notification_settings = settings_data
         self.request.user.save(update_fields=['notification_settings'])
-        
         messages.success(self.request, '✅ Настройки уведомлений сохранены')
         return super().form_valid(form)
-
+    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Настройки уведомлений — DOPX'
         return context
-
 
 class UserLeaderboardView(ListView):
     """Таблица лидеров пользователей по Trust Score"""
@@ -24051,7 +24350,7 @@ class UserLeaderboardView(ListView):
     template_name = 'users/leaderboard.html'
     context_object_name = 'users'
     paginate_by = 20
-
+    
     def get_queryset(self):
         return User.objects.filter(
             is_active=True,
@@ -24061,25 +24360,23 @@ class UserLeaderboardView(ListView):
         ).filter(
             eval_count__gte=1
         ).order_by('-trust_score', '-eval_count', '-total_evaluations')
-
+    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Рейтинг пользователей — DOPX'
         context['leaderboard_type'] = 'users'
         return context
 
-
 class PlayerLeaderboardView(ListView):
     """Таблица лидеров игроков по Performance Score"""
     template_name = 'players/leaderboard.html'
     context_object_name = 'players'
     paginate_by = 20
-
+    
     def get_queryset(self):
         from players.models import Player
         from aggregates.models import PlayerMatchAggregate
         from django.db.models import Avg, Count, Sum, Q
-        
         return Player.objects.filter(
             is_active=True
         ).annotate(
@@ -24090,7 +24387,7 @@ class PlayerLeaderboardView(ListView):
             avg_performance__isnull=False,
             total_matches__gte=1
         ).order_by('-avg_performance')
-
+    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Рейтинг игроков — DOPX'

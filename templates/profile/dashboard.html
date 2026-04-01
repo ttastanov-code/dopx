@@ -2,7 +2,6 @@
 {% load static %}
 {% load math_extras %}
 {% block content %}
-
 <!-- === HEADER === -->
 <div class="mb-8">
     <h1 class="text-3xl font-bold mb-2">
@@ -14,36 +13,31 @@
 
 <!-- === ДВЕ КОЛОНКИ === -->
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-    
     <!-- === ЛЕВАЯ КОЛОНКА: Инфо === -->
     <div class="space-y-6">
-        
         <!-- Карточка пользователя -->
         <div class="card bg-base-100 border border-base-300">
             <div class="card-body p-6 text-center">
                 <!-- Аватар -->
-                <div class="avatar mb-4">
-                    <div class="w-24 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2">
+                <div class="avatar mb-4 flex justify-center">
+                    <div class="w-24 h-24 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2 overflow-hidden">
                         {% if user.avatar %}
-                        <img src="{{ user.avatar.url }}" alt="{{ user.username }}" />
+                            <img src="{{ user.avatar.url }}" alt="{{ user.username }}" class="object-cover w-full h-full" />
                         {% else %}
-                        <div class="w-full h-full bg-primary flex items-center justify-center text-primary-content font-bold text-3xl">
-                            {{ user.username|first|upper }}
-                        </div>
+                            <div class="w-full h-full bg-primary flex items-center justify-center text-primary-content font-bold text-3xl">
+                                {{ user.username|first|upper }}
+                            </div>
                         {% endif %}
                     </div>
                 </div>
-                
                 <h2 class="text-2xl font-bold">{{ user.username }}</h2>
                 <p class="opacity-60">{{ user.email }}</p>
-                
                 {% if user.city %}
                 <div class="flex items-center justify-center gap-1 mt-2 text-sm opacity-60">
                     <i class="ti ti-map-pin"></i>
                     <span>{{ user.city }}</span>
                 </div>
                 {% endif %}
-                
                 <!-- Trust Score Badge -->
                 <div class="mt-4">
                     <div class="text-sm opacity-60 mb-1">Trust Score</div>
@@ -54,7 +48,6 @@
                         {{ stats.trust_level.1 }}
                     </div>
                 </div>
-                
                 <!-- Level & XP -->
                 {% if xp %}
                 <div class="mt-4 pt-4 border-t border-base-300">
@@ -69,7 +62,6 @@
                 {% endif %}
             </div>
         </div>
-        
         <!-- Быстрые статистики -->
         <div class="grid grid-cols-2 gap-4">
             <div class="stat bg-base-100 border border-base-300 p-4">
@@ -89,7 +81,6 @@
                 <div class="stat-value text-2xl text-accent">{{ stats.evaluation_streak }}</div>
             </div>
         </div>
-        
         <!-- Достижения -->
         <div class="card bg-base-100 border border-base-300">
             <div class="card-body p-4">
@@ -97,7 +88,6 @@
                     <i class="ti ti-medal mr-2"></i>
                     Достижения
                 </h3>
-                
                 <div class="flex flex-wrap gap-2">
                     {% for badge in badges %}
                     <div class="tooltip" data-tip="{{ badge.get_badge_type_display }}">
@@ -112,10 +102,8 @@
             </div>
         </div>
     </div>
-    
     <!-- === ПРАВАЯ КОЛОНКА: Активность === -->
     <div class="lg:col-span-2 space-y-6">
-        
         <!-- Активные сессии -->
         {% if active_sessions %}
         <div class="card bg-base-100 border border-base-300">
@@ -124,14 +112,13 @@
                     <i class="ti ti-clock mr-2"></i>
                     Активные оценки
                 </h3>
-                
                 <div class="space-y-3">
                     {% for session in active_sessions %}
                     <div class="flex items-center justify-between p-3 bg-base-200 rounded-lg">
                         <div>
                             <div class="font-medium">{{ session.match.home_team.name }} vs {{ session.match.away_team.name }}</div>
                             <div class="text-xs opacity-60">
-                                Шаг {{ session.completed_steps|length }} из 6 • 
+                                Шаг {{ session.completed_steps|length }} из 6 •
                                 {{ session.get_status_display }}
                             </div>
                         </div>
@@ -144,7 +131,6 @@
             </div>
         </div>
         {% endif %}
-        
         <!-- Последние оценки -->
         <div class="card bg-base-100 border border-base-300">
             <div class="card-body p-4">
@@ -157,7 +143,6 @@
                         Все матчи
                     </a>
                 </div>
-                
                 <div class="overflow-x-auto">
                     <table class="table table-zebra">
                         <thead>
@@ -201,7 +186,6 @@
                 </div>
             </div>
         </div>
-        
         <!-- Настройки профиля -->
         <div class="card bg-base-100 border border-base-300">
             <div class="card-body p-4">
@@ -209,7 +193,6 @@
                     <i class="ti ti-settings mr-2"></i>
                     Настройки
                 </h3>
-                
                 <div class="space-y-3">
                     <a href="{% url 'users:password_change' %}" class="flex items-center justify-between p-3 bg-base-200 rounded-lg hover:bg-base-300 transition-all">
                         <div class="flex items-center gap-3">
@@ -237,5 +220,4 @@
         </div>
     </div>
 </div>
-
 {% endblock %}

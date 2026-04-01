@@ -2,7 +2,7 @@
 from django.shortcuts import render, get_object_or_404
 from django.views.generic import ListView, DetailView
 from django.utils import timezone
-from django.db.models import Avg, Count, Q, Prefetch, Sum
+from django.db.models import Avg, Count, Q, Prefetch, Sum, F
 from matches.models import Match
 from aggregates.models import MatchAggregate, PlayerMatchAggregate
 from evaluations.models import TeamEvaluation, PlayerEvaluation, MatchEvaluation, ContextEvaluation, EvaluationSession
@@ -14,29 +14,39 @@ from django.views.decorators.http import require_http_methods
 
 logger = logging.getLogger(__name__)
 
-
 class MatchListView(ListView):
     """Список всех матчей с фильтрами"""
     model = Match
     template_name = 'matches/list.html'
     context_object_name = 'matches'
     paginate_by = 20
-
+    
     def get_queryset(self):
         queryset = Match.objects.select_related(
-            'home_team', 
-            'away_team', 
-            'league', 
+            'home_team',
+            'away_team',
+            'league',
             'season',
             'stadium'
         ).prefetch_related(
             'aggregate'
-        ).order_by('-start_time')
+        )
         
         # Фильтр по статусу
         status = self.request.GET.get('status')
-        if status in ['scheduled', 'live', 'finished']:
-            queryset = queryset.filter(status=status)
+        
+        if status == 'scheduled':
+            # Запланированные - от начала года до конца
+            queryset = queryset.filter(status='scheduled').order_by('start_time')
+        elif status == 'live':
+            # Live - сначала матчи, которые раньше начались
+            queryset = queryset.filter(status='live').order_by('start_time')
+        elif status == 'finished':
+            # Завершенные - ближе к сегодняшнему дню сначала
+            queryset = queryset.filter(status='finished').order_by('-start_time')
+        else:
+            # Все - от начала года до конца
+            queryset = queryset.order_by('start_time')
         
         # Фильтр по лиге
         league_id = self.request.GET.get('league')
@@ -49,7 +59,7 @@ class MatchListView(ListView):
             queryset = queryset.filter(season_id=season_id)
         
         return queryset
-
+    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Все матчи — DOPX'
@@ -61,22 +71,21 @@ class MatchListView(ListView):
         context['now'] = timezone.now()
         return context
 
-
 class MatchDetailView(DetailView):
     """Детальная страница матча + результаты оценок"""
     model = Match
     template_name = 'matches/detail.html'
     context_object_name = 'match'
-
+    
     def get_queryset(self):
         return Match.objects.select_related(
-            'home_team', 
-            'away_team', 
-            'league', 
+            'home_team',
+            'away_team',
+            'league',
             'season',
-            'home_coach', 
-            'away_coach', 
-            'referee', 
+            'home_coach',
+            'away_coach',
+            'referee',
             'stadium'
         ).prefetch_related(
             'lineups__players__player',
@@ -87,7 +96,7 @@ class MatchDetailView(DetailView):
             'events',
             'coach_aggregates__coach',
         )
-
+    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         match = self.object
@@ -95,7 +104,7 @@ class MatchDetailView(DetailView):
         
         # Проверка: голосование открыто?
         voting_open = (
-            match.voting_open_until > now and 
+            match.voting_open_until > now and
             match.status == 'finished'
         )
         
@@ -115,7 +124,7 @@ class MatchDetailView(DetailView):
         top_players = PlayerMatchAggregate.objects.filter(
             match=match
         ).select_related(
-            'player', 
+            'player',
             'player__team'
         ).order_by('-performance_score')[:5]
         
@@ -123,13 +132,13 @@ class MatchDetailView(DetailView):
         worst_players = PlayerMatchAggregate.objects.filter(
             match=match
         ).select_related(
-            'player', 
+            'player',
             'player__team'
         ).order_by('performance_score')[:3]
         
         # Оценки домашней команды
         home_team_evals = TeamEvaluation.objects.filter(
-            match=match, 
+            match=match,
             team=match.home_team
         ).aggregate(
             avg_tactics=Avg('tactics'),
@@ -141,7 +150,7 @@ class MatchDetailView(DetailView):
         
         # Оценки гостевой команды
         away_team_evals = TeamEvaluation.objects.filter(
-            match=match, 
+            match=match,
             team=match.away_team
         ).aggregate(
             avg_tactics=Avg('tactics'),
@@ -163,7 +172,7 @@ class MatchDetailView(DetailView):
         lineups = MatchLineup.objects.filter(
             match=match
         ).prefetch_related(
-            'players__player', 
+            'players__player',
             'players__player__team'
         ).order_by('side')
         
@@ -201,7 +210,6 @@ class MatchDetailView(DetailView):
             'now': now,
         })
         return context
-    
 
 @require_http_methods(["GET"])
 def match_events_partial(request, match_id):
@@ -210,7 +218,6 @@ def match_events_partial(request, match_id):
     events = match.events.select_related(
         'player', 'assist_player', 'player_out'
     ).order_by('minute', 'added_time', 'id')
-    
     return render(request, 'matches/_match_events.html', {
         'match': match,
         'events': events,
