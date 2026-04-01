@@ -20,14 +20,13 @@ import json
 
 logger = logging.getLogger(__name__)
 
-
 class RegisterView(CreateView):
     """Регистрация нового пользователя"""
     model = User
     form_class = UserRegistrationForm
     template_name = 'auth/register.html'
     success_url = reverse_lazy('core:home')
-
+    
     def form_valid(self, form):
         response = super().form_valid(form)
         user = self.object
@@ -41,18 +40,17 @@ class RegisterView(CreateView):
         login(self.request, user)
         messages.success(self.request, '✅ Аккаунт создан! Добро пожаловать в DOPX.')
         return response
-
+    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Регистрация — DOPX'
         return context
 
-
 class LoginView(AuthLoginView):
     """Вход в аккаунт"""
     template_name = 'auth/login.html'
     authentication_form = UserLoginForm
-
+    
     def form_valid(self, form):
         response = super().form_valid(form)
         # Обработка "Запомнить меня"
@@ -61,21 +59,19 @@ class LoginView(AuthLoginView):
             self.request.session.set_expiry(0)  # Сессия истекает при закрытии браузера
         else:
             self.request.session.set_expiry(1209600)  # 2 недели
-        
         messages.success(self.request, f'👋 С возвращением, {self.request.user.username}!')
         return response
-
+    
     def get_success_url(self):
         next_url = self.request.GET.get('next')
         if next_url:
             return next_url
         return reverse_lazy('core:home')
-
+    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Вход — DOPX'
         return context
-
 
 class LogoutView(LoginRequiredMixin, TemplateView):
     """Выход из аккаунта"""
@@ -84,11 +80,10 @@ class LogoutView(LoginRequiredMixin, TemplateView):
         messages.info(self.request, '👋 Вы вышли из аккаунта')
         return redirect('core:home')
 
-
 class ProfileView(LoginRequiredMixin, TemplateView):
     """Профиль пользователя с полной статистикой"""
     template_name = 'profile/dashboard.html'
-
+    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         user = self.request.user
@@ -140,93 +135,90 @@ class ProfileView(LoginRequiredMixin, TemplateView):
         })
         return context
 
-
 class ProfileEditView(LoginRequiredMixin, UpdateView):
     """Редактирование профиля"""
     model = User
     form_class = UserProfileForm
     template_name = 'users/profile_edit.html'
     success_url = reverse_lazy('users:profile')
-
+    
     def get_object(self):
         return self.request.user
-
+    
     def form_valid(self, form):
+        # Обработка удаления аватарки
+        if form.cleaned_data.get('delete_avatar'):
+            if self.object.avatar:
+                self.object.avatar.delete(save=False)
+                self.object.avatar = None
+        
         messages.success(self.request, '✅ Профиль успешно обновлён')
         return super().form_valid(form)
-
+    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Редактирование профиля — DOPX'
         return context
-
 
 class PasswordChangeViewCustom(LoginRequiredMixin, FormView):
     """Изменение пароля"""
     template_name = 'users/password_change.html'
     form_class = CustomPasswordChangeForm
     success_url = reverse_lazy('users:profile')
-
+    
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs['user'] = self.request.user
         return kwargs
-
+    
     def form_valid(self, form):
         form.save()
         update_session_auth_hash(self.request, form.user)
         messages.success(self.request, '✅ Пароль успешно изменён')
         return super().form_valid(form)
-
+    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Изменить пароль — DOPX'
         return context
 
-
 class PasswordResetViewCustom(PasswordResetView):
     """Сброс пароля"""
     template_name = 'auth/password_reset.html'
-    
     email_template_name = 'emails/password_reset_email.txt'  # Текстовая версия
     html_email_template_name = 'emails/password_reset_email.html'  # HTML версия
-    
     subject_template_name = 'emails/password_reset_subject.txt'
     success_url = reverse_lazy('users:password_reset_done')
     form_class = CustomPasswordResetForm
-
+    
     def form_valid(self, form):
         messages.success(self.request, '✅ Инструкция по сбросу пароля отправлена на email')
         return super().form_valid(form)
 
-
 class PasswordResetDoneViewCustom(PasswordResetDoneView):
     """Страница после запроса сброса пароля"""
     template_name = 'auth/password_reset_done.html'
-
 
 class PasswordResetConfirmViewCustom(PasswordResetConfirmView):
     """Подтверждение сброса пароля"""
     template_name = 'auth/password_reset_confirm.html'
     success_url = reverse_lazy('users:password_reset_complete')
 
-
 class PasswordResetCompleteViewCustom(PasswordResetCompleteView):
     """Завершение сброса пароля"""
     template_name = 'auth/password_reset_complete.html'
-
 
 class NotificationSettingsView(LoginRequiredMixin, FormView):
     """Настройки уведомлений"""
     template_name = 'users/notification_settings.html'
     form_class = NotificationSettingsForm
     success_url = reverse_lazy('users:profile')
-
+    
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs['user'] = self.request.user
         return kwargs
-
+    
     def form_valid(self, form):
         # Сохраняем настройки в JSON поле
         settings_data = {
@@ -236,19 +228,16 @@ class NotificationSettingsView(LoginRequiredMixin, FormView):
             'email_top_performance': form.cleaned_data.get('email_top_performance', False),
             'email_system': form.cleaned_data.get('email_system', False),
         }
-        
-        # Сохраняем в профиль пользователя (нужно добавить поле в модель или использовать JSON)
+        # Сохраняем в профиль пользователя
         self.request.user.notification_settings = settings_data
         self.request.user.save(update_fields=['notification_settings'])
-        
         messages.success(self.request, '✅ Настройки уведомлений сохранены')
         return super().form_valid(form)
-
+    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Настройки уведомлений — DOPX'
         return context
-
 
 class UserLeaderboardView(ListView):
     """Таблица лидеров пользователей по Trust Score"""
@@ -256,7 +245,7 @@ class UserLeaderboardView(ListView):
     template_name = 'users/leaderboard.html'
     context_object_name = 'users'
     paginate_by = 20
-
+    
     def get_queryset(self):
         return User.objects.filter(
             is_active=True,
@@ -266,25 +255,23 @@ class UserLeaderboardView(ListView):
         ).filter(
             eval_count__gte=1
         ).order_by('-trust_score', '-eval_count', '-total_evaluations')
-
+    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Рейтинг пользователей — DOPX'
         context['leaderboard_type'] = 'users'
         return context
 
-
 class PlayerLeaderboardView(ListView):
     """Таблица лидеров игроков по Performance Score"""
     template_name = 'players/leaderboard.html'
     context_object_name = 'players'
     paginate_by = 20
-
+    
     def get_queryset(self):
         from players.models import Player
         from aggregates.models import PlayerMatchAggregate
         from django.db.models import Avg, Count, Sum, Q
-        
         return Player.objects.filter(
             is_active=True
         ).annotate(
@@ -295,7 +282,7 @@ class PlayerLeaderboardView(ListView):
             avg_performance__isnull=False,
             total_matches__gte=1
         ).order_by('-avg_performance')
-
+    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Рейтинг игроков — DOPX'

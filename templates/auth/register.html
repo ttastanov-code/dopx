@@ -1,15 +1,11 @@
 {% extends 'base_auth.html' %}
 {% load static %}
-
 {% block title %}Регистрация — DOPX{% endblock %}
-
 {% block content %}
 <div class="w-full max-w-md px-4">
-    
     <!-- Карточка регистрации -->
     <div class="card bg-base-100 border border-base-300 shadow-xl">
         <div class="card-body p-8">
-            
             <!-- Логотип -->
             <div class="text-center mb-6">
                 <img src="{% static 'img/DOPX_logo.png' %}" alt="DOPX" class="h-12 w-auto mx-auto mb-3">
@@ -18,9 +14,9 @@
             </div>
             
             <!-- Форма -->
-            <form method="post" action="{% url 'users:register' %}" 
+            <form method="post" action="{% url 'users:register' %}"
                   class="space-y-4"
-                  x-data="{ 
+                  x-data="{
                       showPassword1: false,
                       showPassword2: false,
                       password: '',
@@ -36,9 +32,9 @@
                         <span class="label-text font-medium">Имя пользователя</span>
                     </label>
                     <div class="relative">
-                        <input type="text" 
-                               id="id_username" 
-                               name="username" 
+                        <input type="text"
+                               id="id_username"
+                               name="username"
                                required
                                autocomplete="username"
                                class="input input-bordered w-full pl-10 {% if form.username.errors %}input-error{% endif %}"
@@ -62,9 +58,9 @@
                         <span class="label-text font-medium">Email</span>
                     </label>
                     <div class="relative">
-                        <input type="email" 
-                               id="id_email" 
-                               name="email" 
+                        <input type="email"
+                               id="id_email"
+                               name="email"
                                required
                                autocomplete="email"
                                class="input input-bordered w-full pl-10 {% if form.email.errors %}input-error{% endif %}"
@@ -85,9 +81,9 @@
                         <span class="label-text font-medium">Город <span class="opacity-50">(необязательно)</span></span>
                     </label>
                     <div class="relative">
-                        <input type="text" 
-                               id="id_city" 
-                               name="city" 
+                        <input type="text"
+                               id="id_city"
+                               name="city"
                                autocomplete="address-level2"
                                class="input input-bordered w-full pl-10 {% if form.city.errors %}input-error{% endif %}"
                                placeholder="Алматы"
@@ -107,16 +103,16 @@
                         <span class="label-text font-medium">Пароль</span>
                     </label>
                     <div class="relative">
-                        <input type="password" 
-                               id="id_password1" 
-                               name="password1" 
+                        <input type="password"
+                               id="id_password1"
+                               name="password1"
                                required
                                autocomplete="new-password"
                                x-model="password"
                                class="input input-bordered w-full pl-10 {% if form.password1.errors %}input-error{% endif %}"
                                placeholder="••••••••">
                         <i class="ti ti-lock absolute left-3 top-1/2 -translate-y-1/2 opacity-40"></i>
-                        <button type="button" 
+                        <button type="button"
                                 @click="togglePassword('id_password1')"
                                 class="absolute right-3 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-100 transition-opacity">
                             <i class="ti ti-eye"></i>
@@ -135,16 +131,16 @@
                         <span class="label-text font-medium">Подтверждение пароля</span>
                     </label>
                     <div class="relative">
-                        <input type="password" 
-                               id="id_password2" 
-                               name="password2" 
+                        <input type="password"
+                               id="id_password2"
+                               name="password2"
                                required
                                autocomplete="new-password"
                                x-model="confirmPassword"
                                class="input input-bordered w-full pl-10 {% if form.password2.errors %}input-error{% endif %}"
                                placeholder="••••••••">
                         <i class="ti ti-lock-check absolute left-3 top-1/2 -translate-y-1/2 opacity-40"></i>
-                        <button type="button" 
+                        <button type="button"
                                 @click="togglePassword('id_password2')"
                                 class="absolute right-3 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-100 transition-opacity">
                             <i class="ti ti-eye"></i>
@@ -163,18 +159,18 @@
                 
                 <!-- Terms -->
                 <div class="form-control">
-                    <label class="label cursor-pointer gap-2">
-                        <input type="checkbox" required class="checkbox checkbox-sm checkbox-primary">
+                    <label class="label cursor-pointer gap-3 p-4 rounded-lg border border-base-300 hover:bg-base-200 transition-colors">
+                        <input type="checkbox" required class="checkbox checkbox-primary checkbox-lg">
                         <span class="label-text text-sm">
-                            Я согласен с 
+                            Я согласен с
                             <a href="{% url 'core:rules' %}" class="link link-primary hover:no-underline" target="_blank">правилами платформы</a>
                         </span>
                     </label>
                 </div>
                 
                 <!-- Submit Button -->
-                <button type="submit" 
-                        class="btn btn-primary w-full"
+                <button type="submit"
+                        class="btn btn-primary btn-lg w-full"
                         :disabled="password !== confirmPassword">
                     <i class="ti ti-user-plus"></i>
                     Зарегистрироваться
@@ -230,12 +226,12 @@
 
 {% block extra_script %}
 <script>
-    // Автофокус на поле username
-    document.addEventListener('DOMContentLoaded', () => {
-        const usernameInput = document.getElementById('id_username');
-        if (usernameInput && !usernameInput.value) {
-            usernameInput.focus();
-        }
-    });
+// Автофокус на поле username
+document.addEventListener('DOMContentLoaded', () => {
+    const usernameInput = document.getElementById('id_username');
+    if (usernameInput && !usernameInput.value) {
+        usernameInput.focus();
+    }
+});
 </script>
 {% endblock %}

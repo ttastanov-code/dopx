@@ -26,7 +26,7 @@ class UserRegistrationForm(UserCreationForm):
             'autocomplete': 'address-level2',
         })
     )
-
+    
     class Meta:
         model = User
         fields = ['username', 'email', 'city', 'password1', 'password2']
@@ -52,13 +52,12 @@ class UserRegistrationForm(UserCreationForm):
                 'autocomplete': 'new-password',
             }),
         }
-
+    
     def clean_email(self):
         email = self.cleaned_data.get('email')
         if User.objects.filter(email=email).exists():
             raise forms.ValidationError('Этот email уже зарегистрирован')
         return email
-
 
 class UserLoginForm(AuthenticationForm):
     """Форма входа пользователя"""
@@ -79,17 +78,22 @@ class UserLoginForm(AuthenticationForm):
         })
     )
 
-
 class UserProfileForm(forms.ModelForm):
     """Форма редактирования профиля"""
+    delete_avatar = forms.BooleanField(
+        required=False,
+        label='Удалить текущую аватарку',
+        help_text='Отметьте, чтобы удалить текущую аватарку'
+    )
+    
     class Meta:
         model = User
-        fields = ['email', 'city', 'bio', 'avatar']
+        fields = ['email', 'city', 'bio', 'avatar', 'delete_avatar']
         labels = {
             'email': 'Email',
             'city': 'Город',
             'bio': 'О себе',
-            'avatar': 'Аватар',
+            'avatar': 'Новая аватарка',
         }
         widgets = {
             'email': forms.EmailInput(attrs={
@@ -107,8 +111,16 @@ class UserProfileForm(forms.ModelForm):
             'avatar': forms.FileInput(attrs={
                 'class': 'file-input file-input-bordered w-full',
             }),
+            'delete_avatar': forms.CheckboxInput(attrs={
+                'class': 'checkbox checkbox-primary',
+            }),
         }
-
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Если аватарки нет, скрываем опцию удаления
+        if not self.instance.avatar:
+            self.fields['delete_avatar'].widget = forms.HiddenInput()
 
 class CustomPasswordChangeForm(PasswordChangeForm):
     """Форма изменения пароля"""
@@ -137,7 +149,6 @@ class CustomPasswordChangeForm(PasswordChangeForm):
         })
     )
 
-
 class CustomPasswordResetForm(PasswordResetForm):
     """Форма сброса пароля"""
     email = forms.EmailField(
@@ -148,35 +159,49 @@ class CustomPasswordResetForm(PasswordResetForm):
         })
     )
 
-
 class NotificationSettingsForm(forms.Form):
     """Форма настроек уведомлений"""
     email_match_finished = forms.BooleanField(
         required=False,
         label='Матч завершён',
-        initial=True
+        initial=True,
+        widget=forms.CheckboxInput(attrs={
+            'class': 'toggle toggle-primary',
+        })
     )
     email_voting_open = forms.BooleanField(
         required=False,
         label='Голосование открыто',
-        initial=True
+        initial=True,
+        widget=forms.CheckboxInput(attrs={
+            'class': 'toggle toggle-primary',
+        })
     )
     email_voting_closing = forms.BooleanField(
         required=False,
         label='Голосование закрывается',
-        initial=True
+        initial=True,
+        widget=forms.CheckboxInput(attrs={
+            'class': 'toggle toggle-primary',
+        })
     )
     email_top_performance = forms.BooleanField(
         required=False,
         label='Игрок в топ-3',
-        initial=True
+        initial=True,
+        widget=forms.CheckboxInput(attrs={
+            'class': 'toggle toggle-primary',
+        })
     )
     email_system = forms.BooleanField(
         required=False,
         label='Системные уведомления',
-        initial=True
+        initial=True,
+        widget=forms.CheckboxInput(attrs={
+            'class': 'toggle toggle-primary',
+        })
     )
-
+    
     def __init__(self, *args, **kwargs):
         user = kwargs.pop('user', None)
         super().__init__(*args, **kwargs)
