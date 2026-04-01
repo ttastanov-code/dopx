@@ -12,7 +12,10 @@ aggregates
       benchmark_full.py
       benchmark_performance.py
       create_test_evaluations.py
+      full_system_test.py
+      open_voting_for_past_matches.py
       recalculate_aggregates.py
+      simulate_evaluations.py
       test_api_performance.py
       test_cache_efficiency.py
   migrations
@@ -271,8 +274,10 @@ templates
     privacy.html
     rules.html
   emails
+    badge_earned.html
     contact_confirmation.html
     contact_form.html
+    level_up.html
     notification_digest.html
     password_reset_email.html
     password_reset_email.txt
@@ -322,11 +327,20 @@ users
   admin.py
   apps.py
   forms.py
+  management
+    commands
+      create_test_users.py
+      fix_xp_and_notifications.py
+      test_xp_notifications.py
   migrations
     0001_initial.py
     0002_add_notification_settings.py
+    0003_remove_user_notification_settings.py
     __init__.py
   models.py
+  services.py
+  signals.py
+  tasks.py
   tests.py
   urls.py
   views.py
@@ -853,6 +867,291 @@ class Command(BaseCommand):
 
 
 ================================================================================
+FILE: aggregates/management/commands/full_system_test.py
+================================================================================
+
+# aggregates/management/commands/full_system_test.py
+from django.core.management.base import BaseCommand
+from django.test import Client
+from django.contrib.auth import get_user_model
+from django.core.cache import cache
+from django.db import connection
+from django.utils import timezone
+from datetime import timedelta
+import time
+import json
+import logging
+
+from matches.models import Match
+from evaluations.models import ContextEvaluation, MatchEvaluation, PlayerEvaluation
+from aggregates.models import MatchAggregate, PlayerMatchAggregate
+
+User = get_user_model()
+logger = logging.getLogger(__name__)
+
+class Command(BaseCommand):
+    help = 'Полное системное тестирование всего функционала'
+    
+    def add_arguments(self, parser):
+        parser.add_argument('--users', type=int, default=20)
+        parser.add_argument('--matches', type=int, default=3)
+        parser.add_argument('--output', type=str, default='test_report.json')
+    
+    def handle(self, *args, **options):
+        self.stdout.write('\n' + '=' * 80)
+        self.stdout.write('🚀 DOPX FULL SYSTEM TEST')
+        self.stdout.write('=' * 80 + '\n')
+        
+        report = {
+            'timestamp': timezone.now().isoformat(),
+            'tests': {},
+            'summary': {}
+        }
+        
+        # === ТЕСТ 1: Проверка БД и кэша ===
+        self.stdout.write('\n📍 ТЕСТ 1: Подключение к БД и кэшу')
+        try:
+            connection.ensure_connection()
+            cache.set('test_key', 'test_value', 10)
+            assert cache.get('test_key') == 'test_value'
+            self.stdout.write(self.style.SUCCESS('   ✅ БД и кэш работают'))
+            report['tests']['database_cache'] = 'PASS'
+        except Exception as e:
+            self.stdout.write(self.style.ERROR(f'   ❌ Ошибка: {e}'))
+            report['tests']['database_cache'] = 'FAIL'
+        
+        # === ТЕСТ 2: Создание тестовых пользователей ===
+        self.stdout.write('\n📍 ТЕСТ 2: Создание пользователей')
+        users_count = options['users']
+        users = []
+        for i in range(users_count):
+            username = f'fulltest_user_{i}_{int(time.time())}'
+            try:
+                user = User.objects.create_user(
+                    username=username,
+                    email=f'{username}@test.dopx.kz',
+                    password='testpass123',
+                    is_verified=True,
+                    trust_score=1.0 + (i * 0.05)
+                )
+                from users.models import UserXP
+                UserXP.objects.get_or_create(user=user)
+                users.append(user)
+            except Exception as e:
+                self.stdout.write(self.style.ERROR(f'   ❌ {username}: {e}'))
+        
+        self.stdout.write(self.style.SUCCESS(f'   ✅ Создано {len(users)} пользователей'))
+        report['tests']['user_creation'] = f'{len(users)}/{users_count}'
+        
+        # === ТЕСТ 3: Открытие голосования ===
+        self.stdout.write('\n📍 ТЕСТ 3: Открытие голосования для матчей')
+        now = timezone.now()
+        matches = list(Match.objects.filter(
+            status='finished',
+            voting_open_until__lt=now
+        ).order_by('-start_time')[:options['matches']])
+        
+        for match in matches:
+            match.voting_open_until = now + timedelta(hours=48)
+            match.save(update_fields=['voting_open_until'])
+        
+        self.stdout.write(self.style.SUCCESS(f'   ✅ Открыто {len(matches)} матчей'))
+        report['tests']['voting_open'] = len(matches)
+        
+        # === ТЕСТ 4: Симуляция оценок ===
+        self.stdout.write('\n📍 ТЕСТ 4: Симуляция оценок')
+        from aggregates.management.commands.simulate_evaluations import Command as SimulateCommand
+        from io import StringIO
+        
+        total_evals = 0
+        for match in matches[:2]:  # Тестируем на 2 матчах
+            for user in users[:10]:  # 10 пользователей на матч
+                try:
+                    # Context
+                    ContextEvaluation.objects.update_or_create(
+                        user=user, match=match,
+                        defaults={'watched_type': 'full'}
+                    )
+                    # Match
+                    MatchEvaluation.objects.update_or_create(
+                        user=user, match=match,
+                        defaults={
+                            'entertainment': 8,
+                            'tension': 7,
+                            'fairness': 8,
+                        }
+                    )
+                    # Players
+                    from players.models import Player
+                    from lineups.models import MatchLineupPlayer
+                    players = list(Player.objects.filter(
+                        matchlineupplayer__lineup__match=match
+                    )[:5])
+                    for player in players:
+                        PlayerEvaluation.objects.update_or_create(
+                            user=user, match=match, player=player,
+                            defaults={
+                                'contribution': 7,
+                                'risk': 3,
+                                'potential': 8,
+                            }
+                        )
+                    total_evals += 1
+                except Exception as e:
+                    self.stdout.write(self.style.ERROR(f'   ❌ {user.username}: {e}'))
+        
+        self.stdout.write(self.style.SUCCESS(f'   ✅ Создано {total_evals} оценок'))
+        report['tests']['evaluations'] = total_evals
+        
+        # === ТЕСТ 5: Пересчёт агрегатов ===
+        self.stdout.write('\n📍 ТЕСТ 5: Пересчёт агрегатов')
+        from aggregates.tasks import recalculate_all_aggregates_for_match
+        for match in matches[:2]:
+            recalculate_all_aggregates_for_match.delay(str(match.id))
+        time.sleep(3)  # Ждём выполнения задач
+        
+        aggregates_created = MatchAggregate.objects.filter(
+            match__in=matches[:2]
+        ).count()
+        self.stdout.write(self.style.SUCCESS(f'   ✅ Создано {aggregates_created} агрегатов'))
+        report['tests']['aggregates'] = aggregates_created
+        
+        # === ТЕСТ 6: API тестирование ===
+        self.stdout.write('\n📍 ТЕСТ 6: Тестирование API')
+        client = Client()
+        if users:
+            client.login(username=users[0].username, password='testpass123')
+        
+        api_tests = []
+        endpoints = [
+            ('/api/match-aggregate/', 'Match Aggregates'),
+            ('/api/player-aggregate/', 'Player Aggregates'),
+            ('/api/player-aggregate/top_players/?limit=5', 'Top Players'),
+        ]
+        
+        for endpoint, name in endpoints:
+            start = time.time()
+            response = client.get(endpoint)
+            duration = (time.time() - start) * 1000
+            status = '✅' if response.status_code == 200 else '❌'
+            self.stdout.write(f'   {status} {name}: {duration:.0f}ms ({response.status_code})')
+            api_tests.append({
+                'endpoint': endpoint,
+                'name': name,
+                'status': response.status_code,
+                'duration_ms': round(duration, 2)
+            })
+        
+        report['tests']['api'] = api_tests
+        
+        # === ТЕСТ 7: Проверка уведомлений ===
+        self.stdout.write('\n📍 ТЕСТ 7: Проверка уведомлений')
+        from notifications.models import Notification
+        notif_count = Notification.objects.count()
+        self.stdout.write(self.style.SUCCESS(f'   ✅ В системе {notif_count} уведомлений'))
+        report['tests']['notifications'] = notif_count
+        
+        # === ИТОГИ ===
+        self.stdout.write('\n' + '=' * 80)
+        self.stdout.write('📊 ИТОГОВЫЙ ОТЧЁТ')
+        self.stdout.write('=' * 80)
+        
+        passed = sum(1 for v in report['tests'].values() 
+                    if v == 'PASS' or (isinstance(v, int) and v > 0))
+        total = len(report['tests'])
+        
+        report['summary'] = {
+            'total_tests': total,
+            'passed': passed,
+            'success_rate': f'{(passed/total)*100:.1f}%'
+        }
+        
+        self.stdout.write(f'Пройдено тестов: {passed}/{total}')
+        self.stdout.write(f'Успешность: {(passed/total)*100:.1f}%')
+        
+        # Сохранение отчёта
+        with open(options['output'], 'w', encoding='utf-8') as f:
+            json.dump(report, f, indent=2, ensure_ascii=False, default=str)
+        
+        self.stdout.write(self.style.SUCCESS(f'\n📄 Отчёт сохранён: {options["output"]}'))
+        self.stdout.write('=' * 80 + '\n')
+
+
+================================================================================
+FILE: aggregates/management/commands/open_voting_for_past_matches.py
+================================================================================
+
+# aggregates/management/commands/open_voting_for_past_matches.py
+from django.core.management.base import BaseCommand
+from django.utils import timezone
+from datetime import timedelta
+from matches.models import Match
+import logging
+
+logger = logging.getLogger(__name__)
+
+class Command(BaseCommand):
+    help = 'Открыть голосование для всех завершённых матчей'
+    
+    def add_arguments(self, parser):
+        parser.add_argument(
+            '--hours',
+            type=int,
+            default=48,
+            help='На сколько часов открыть голосование (по умолчанию 48)'
+        )
+        parser.add_argument(
+            '--all',
+            action='store_true',
+            help='Открыть для ВСЕХ завершённых матчей'
+        )
+        parser.add_argument(
+            '--days',
+            type=int,
+            default=7,
+            help='За сколько дней брать матчи (по умолчанию 7)'
+        )
+    
+    def handle(self, *args, **options):
+        hours = options['hours']
+        all_matches = options['all']
+        days = options['days']
+        
+        now = timezone.now()
+        voting_until = now + timedelta(hours=hours)
+        
+        if all_matches:
+            matches = Match.objects.filter(
+                status='finished',
+                voting_open_until__lt=now
+            )
+        else:
+            matches = Match.objects.filter(
+                status='finished',
+                start_time__gte=now - timedelta(days=days),
+                voting_open_until__lt=now
+            )
+        
+        count = matches.count()
+        self.stdout.write(f'📊 Найдено матчей для обновления: {count}')
+        
+        if count == 0:
+            self.stdout.write(self.style.WARNING('⚠️  Матчей не найдено'))
+            return
+        
+        updated = 0
+        for match in matches:
+            match.voting_open_until = voting_until
+            match.save(update_fields=['voting_open_until', 'updated_at'])
+            updated += 1
+        
+        self.stdout.write(self.style.SUCCESS(
+            f'✅ Открыто голосование для {updated} матчей до {voting_until}'
+        ))
+        self.stdout.write(f'   Теперь можно тестировать оценки!')
+
+
+================================================================================
 FILE: aggregates/management/commands/recalculate_aggregates.py
 ================================================================================
 
@@ -914,6 +1213,236 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING(
                 "Specify --match-id or --all-active"
             ))
+
+
+================================================================================
+FILE: aggregates/management/commands/simulate_evaluations.py
+================================================================================
+
+# aggregates/management/commands/simulate_evaluations.py
+from django.core.management.base import BaseCommand
+from django.contrib.auth import get_user_model
+from django.utils import timezone
+from datetime import timedelta
+import random
+from uuid import UUID
+
+from matches.models import Match
+from players.models import Player
+from teams.models import Team
+from coaches.models import Coach
+from evaluations.models import (
+    ContextEvaluation,
+    PlayerEvaluation,
+    MatchEvaluation,
+    TeamEvaluation,
+    CoachEvaluation,
+    RefereeEvaluation,
+    EvaluationSession
+)
+from aggregates.tasks import recalculate_all_aggregates_for_match
+
+User = get_user_model()
+
+class Command(BaseCommand):
+    help = 'Симулировать оценки от множества пользователей'
+    
+    def add_arguments(self, parser):
+        parser.add_argument(
+            '--users',
+            type=int,
+            default=50,
+            help='Количество пользователей для симуляции'
+        )
+        parser.add_argument(
+            '--matches',
+            type=int,
+            default=5,
+            help='Количество матчей для оценки'
+        )
+        parser.add_argument(
+            '--match-ids',
+            type=str,
+            help='Конкретные ID матчей (через запятую)'
+        )
+        parser.add_argument(
+            '--recalculate',
+            action='store_true',
+            help='Пересчитать агрегаты после оценок'
+        )
+    
+    def handle(self, *args, **options):
+        users_count = options['users']
+        matches_count = options['matches']
+        match_ids = options.get('match_ids')
+        recalculate = options['recalculate']
+        
+        # Получаем пользователей
+        users = list(User.objects.filter(
+            is_verified=True,
+            username__startswith='test_user'
+        )[:users_count])
+        
+        if len(users) < users_count:
+            self.stdout.write(self.style.WARNING(
+                f'⚠️  Найдено только {len(users)} тестовых пользователей'
+            ))
+        
+        # Получаем матчи с открытым голосованием
+        now = timezone.now()
+        if match_ids:
+            match_id_list = [mid.strip() for mid in match_ids.split(',')]
+            matches = Match.objects.filter(
+                id__in=match_id_list,
+                voting_open_until__gte=now,
+                status='finished'
+            )
+        else:
+            matches = list(Match.objects.filter(
+                voting_open_until__gte=now,
+                status='finished'
+            ).order_by('-start_time')[:matches_count])
+        
+        if not matches:
+            self.stdout.write(self.style.ERROR(
+                '❌ Нет матчей с открытым голосованием!'
+            ))
+            self.stdout.write('   Запустите: python manage.py open_voting_for_past_matches')
+            return
+        
+        self.stdout.write(f'📊 Матчей для оценки: {len(matches)}')
+        self.stdout.write(f'📊 Пользователей: {len(users)}')
+        
+        total_evaluations = 0
+        
+        for match in matches:
+            self.stdout.write(f'\n📍 Матч: {match.home_team} vs {match.away_team}')
+            
+            # Получаем игроков матча
+            from lineups.models import MatchLineupPlayer
+            lineup_players = list(Player.objects.filter(
+                matchlineupplayer__lineup__match=match
+            ).distinct()[:11])
+            
+            match_evaluations = 0
+            
+            for user in users:
+                try:
+                    # 1. Context Evaluation
+                    watched_types = ['full', 'highlights', 'partial']
+                    context, _ = ContextEvaluation.objects.update_or_create(
+                        user=user,
+                        match=match,
+                        defaults={
+                            'watched_type': random.choice(watched_types),
+                            'attended_stadium': random.random() < 0.2,
+                            'supported_team': random.choice([
+                                None,
+                                match.home_team,
+                                match.away_team
+                            ]),
+                        }
+                    )
+                    
+                    # 2. Match Evaluation
+                    MatchEvaluation.objects.update_or_create(
+                        user=user,
+                        match=match,
+                        defaults={
+                            'entertainment': random.randint(6, 10),
+                            'tension': random.randint(5, 10),
+                            'fairness': random.randint(6, 10),
+                            'turning_point': random.random() < 0.3,
+                        }
+                    )
+                    
+                    # 3. Team Evaluations
+                    for team in [match.home_team, match.away_team]:
+                        TeamEvaluation.objects.update_or_create(
+                            user=user,
+                            match=match,
+                            team=team,
+                            defaults={
+                                'tactics': random.randint(6, 10),
+                                'effort': random.randint(6, 10),
+                                'organization': random.randint(5, 10),
+                                'mentality': random.randint(6, 10),
+                            }
+                        )
+                    
+                    # 4. Player Evaluations (оцениваем 5-7 игроков случайно)
+                    players_to_eval = random.sample(
+                        lineup_players,
+                        min(len(lineup_players), random.randint(5, 7))
+                    )
+                    for player in players_to_eval:
+                        PlayerEvaluation.objects.update_or_create(
+                            user=user,
+                            match=match,
+                            player=player,
+                            defaults={
+                                'contribution': random.randint(5, 10),
+                                'risk': random.randint(1, 5),
+                                'potential': random.randint(6, 10),
+                            }
+                        )
+                    
+                    # 5. Coach Evaluations
+                    for coach in [match.home_coach, match.away_coach]:
+                        if coach:
+                            CoachEvaluation.objects.update_or_create(
+                                user=user,
+                                match=match,
+                                coach=coach,
+                                defaults={
+                                    'tactics': random.randint(6, 10),
+                                    'substitutions': random.randint(5, 10),
+                                    'game_management': random.randint(6, 10),
+                                    'impact': random.randint(5, 10),
+                                }
+                            )
+                    
+                    # 6. Referee Evaluation
+                    RefereeEvaluation.objects.update_or_create(
+                        user=user,
+                        match=match,
+                        defaults={
+                            'influence_score': random.randint(40, 90),
+                            'decision_quality': random.randint(6, 10),
+                        }
+                    )
+                    
+                    # Обновляем сессию
+                    EvaluationSession.objects.update_or_create(
+                        user=user,
+                        match=match,
+                        defaults={
+                            'status': 'completed',
+                            'current_step': 'complete',
+                            'completed_steps': ['context', 'teams', 'players', 
+                                               'coaches', 'referee', 'match_eval'],
+                            'completed_at': timezone.now(),
+                        }
+                    )
+                    
+                    match_evaluations += 1
+                    total_evaluations += 1
+                    
+                except Exception as e:
+                    self.stdout.write(self.style.ERROR(
+                        f'   ❌ Ошибка для пользователя {user.username}: {e}'
+                    ))
+            
+            self.stdout.write(f'   ✅ Оценок для матча: {match_evaluations}')
+            
+            # Пересчёт агрегатов
+            if recalculate:
+                self.stdout.write(f'   🔄 Пересчёт агрегатов...')
+                recalculate_all_aggregates_for_match.delay(str(match.id))
+        
+        self.stdout.write(self.style.SUCCESS(
+            f'\n🎉 Всего создано оценок: {total_evaluations}'
+        ))
 
 
 ================================================================================
@@ -6967,10 +7496,8 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
 
     def form_valid(self, form):
         session = self.get_or_create_session()
-        
         with transaction.atomic():
-            # ✅ FIX: Используем update_or_create вместо save()
-            # Это предотвращает IntegrityError при повторной отправке
+            # ✅ 1. Сначала сохраняем оценку матча
             MatchEvaluation.objects.update_or_create(
                 user=self.request.user,
                 match=self.match,
@@ -6982,35 +7509,61 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
                 }
             )
             
+            # ✅ 2. Завершаем сессию
             self.complete_session(session)
             
-            # Обновляем trust_score пользователя
+            # ✅ 3. Обновляем trust_score (ВАЖНО: до начисления XP)
             adjustment = calculate_user_trust_adjustment(self.request.user, self.match)
+            old_trust = self.request.user.trust_score
             self.request.user.trust_score = max(0.5, min(2.0, self.request.user.trust_score + adjustment))
             self.request.user.save(update_fields=['trust_score', 'updated_at'])
             
-            # Обновляем статистику пользователя
+            # ✅ 4. Обновляем статистику оценок (total_evaluations и т.д.)
             self.request.user.update_evaluation_stats()
             
-            # Выдаём XP
+            # ✅ 5. Начисляем XP (ПОСЛЕ обновления статистики!)
             from users.models import UserXP, UserBadge
             xp, _ = UserXP.objects.get_or_create(user=self.request.user)
-            xp.add_xp(10)
+            xp.add_xp(10)  # +10 XP за завершение оценки
             
-            # Проверяем достижения
-            if self.request.user.total_evaluations == 1:
-                UserBadge.objects.get_or_create(
-                    user=self.request.user,
-                    badge_type='first_evaluation'
+            # ✅ 6. Проверяем достижения (ПОСЛЕ начисления XP и обновления статистики)
+            from users.services import check_and_award_badges
+            awarded_badges = check_and_award_badges(self.request.user)
+            
+            # ✅ 7. Создаём уведомления о достижениях
+            if awarded_badges:
+                from notifications.tasks import send_badge_earned_notification
+                for badge in awarded_badges:
+                    send_badge_earned_notification.delay(
+                        user_id=str(self.request.user.id),
+                        badge_type=badge.badge_type,
+                        badge_name=badge.get_badge_type_display()
+                    )
+            
+            # ✅ 8. Уведомление о повышении уровня (если произошло)
+            if xp.level > (getattr(self.request.user, '_old_level', 1)):
+                from notifications.tasks import send_level_up_notification
+                send_level_up_notification.delay(
+                    user_id=str(self.request.user.id),
+                    new_level=xp.level,
+                    total_xp=xp.total_xp
                 )
             
-            # Запускаем пересчёт агрегатов
+            # ✅ 9. Уведомление об изменении trust_score (если значимое)
+            if abs(self.request.user.trust_score - old_trust) >= 0.1:
+                from notifications.tasks import send_trust_score_updated_notification
+                send_trust_score_updated_notification.delay(
+                    user_id=str(self.request.user.id),
+                    old_score=round(old_trust, 2),
+                    new_score=round(self.request.user.trust_score, 2)
+                )
+            
+            # ✅ 10. Запускаем пересчёт агрегатов (в конце, чтобы не блокировать)
             from aggregates.tasks import recalculate_all_aggregates_for_match
             recalculate_all_aggregates_for_match.delay(str(self.match.id))
             
             messages.success(self.request, '🎉 Оценка завершена! Спасибо за вклад.')
-        
-        return redirect('evaluations:complete', match_id=self.match.id)
+            return redirect('evaluations:complete', match_id=self.match.id)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -8984,26 +9537,57 @@ def send_match_finished_notifications(self, match_id: str):
     match_name = f"{match.home_team.name} vs {match.away_team.name}"
     
     for session in sessions:
-        # Проверяем настройки уведомлений пользователя
-        user_settings = session.user.notification_settings
-        if not user_settings.get('email_match_finished', True):
+        user = session.user
+        
+        # ✅ ПРОВЕРКА НАСТРОЕК УВЕДОМЛЕНИЙ
+        if not user.get_notification_setting('email_match_finished', True):
             continue
         
-        title = NOTIFICATION_TITLES.get('match_finished', '🏁 Матч завершён')
-        message = NOTIFICATION_MESSAGES['match_finished'].format(match=match_name)
-        
+        # Создаём in-app уведомление
+        from notifications.models import Notification
         Notification.objects.create(
-            user=session.user,
+            user=user,
             notification_type='match_finished',
-            title=title,
-            message=message,
+            title='🏁 Матч завершён',
+            message=f'Матч {match_name} завершён. Успейте оценить, пока открыто голосование!',
             action_url=f'/evaluations/match/{match_id}/context/',
             related_match=match,
         )
+        
+        # ✅ ОТПРАВКА EMAIL (если включено)
+        if user.is_verified and user.email and user.get_notification_setting('email_match_finished', True):
+            try:
+                self._send_email_notification(
+                    user=user,
+                    subject=f'🏁 Матч завершён: {match_name}',
+                    template='emails/match_finished.html',
+                    context={'match': match, 'match_name': match_name, 'user': user}
+                )
+            except Exception as e:
+                logger.error(f"Failed to send email to {user.email}: {e}")
+        
         count += 1
     
     logger.info(f"Sent {count} match finished notifications for match {match_id}")
     return count
+
+
+def _send_email_notification(self, user, subject, template, context):
+    """Вспомогательный метод отправки email"""
+    from django.core.mail import EmailMultiAlternatives
+    from django.template.loader import render_to_string
+    from django.conf import settings
+    
+    html_content = render_to_string(template, context)
+    
+    email = EmailMultiAlternatives(
+        subject=subject,
+        body='',  # Текстовая версия опционально
+        from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@dopx.kz'),
+        to=[user.email],
+    )
+    email.attach_alternative(html_content, "text/html")
+    email.send(fail_silently=False)
 
 @shared_task(bind=True, max_retries=3)
 def send_voting_open_notifications(self, match_id: str):
@@ -9221,6 +9805,195 @@ def health_check():
     logger.info(f"Health check: {result['status']}")
     return result
 
+# === ДОБАВЬТЕ В КОНЕЦ ФАЙЛА: notifications/tasks.py ===
+
+@shared_task(bind=True, max_retries=3)
+def send_badge_earned_notification(self, user_id: str, badge_type: str, badge_name: str):
+    """Отправка уведомления о получении достижения"""
+    from users.models import User
+    from notifications.models import Notification
+    
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        logger.error(f"User {user_id} not found for badge notification")
+        return False
+    
+    # Проверяем настройки уведомлений
+    user_settings = getattr(user, 'notification_settings', {})
+    if not user_settings.get('email_system', True):
+        return True  # Не отправляем, но задача успешна
+    
+    # Создаём in-app уведомление
+    Notification.objects.create(
+        user=user,
+        notification_type='new_badge',
+        title='🎖️ Новое достижение!',
+        message=f'Вы получили достижение: {badge_name}',
+        action_url='/users/profile/',
+    )
+    
+    # Отправляем email если включено
+    if user.is_verified and user.email:
+        _send_badge_email.delay(user_id, badge_type, badge_name)
+    
+    logger.info(f"Badge notification sent to {user.username}: {badge_name}")
+    return True
+
+
+@shared_task(bind=True, max_retries=3)
+def _send_badge_email(self, user_id: str, badge_type: str, badge_name: str):
+    """Внутренняя задача: отправка email о достижении"""
+    from users.models import User
+    from django.core.mail import EmailMultiAlternatives
+    from django.template.loader import render_to_string
+    from django.conf import settings
+    
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return False
+    
+    if not user.email or not user.is_verified:
+        return False
+    
+    site_url = getattr(settings, 'SITE_URL', 'https://dopx.kz')
+    
+    html_message = render_to_string('emails/badge_earned.html', {
+        'user': user,
+        'badge_name': badge_name,
+        'badge_type': badge_type,
+        'site_url': site_url,
+        'site_name': 'DOPX',
+    })
+    
+    email = EmailMultiAlternatives(
+        subject=f'🎖️ Новое достижение: {badge_name} | DOPX',
+        body='',
+        from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@dopx.kz'),
+        to=[user.email],
+    )
+    email.attach_alternative(html_message, "text/html")
+    
+    try:
+        email.send(fail_silently=True)
+        logger.info(f"Badge email sent to {user.email}")
+    except Exception as e:
+        logger.error(f"Failed to send badge email: {e}")
+    
+    return True
+
+
+@shared_task(bind=True, max_retries=3)
+def send_level_up_notification(self, user_id: str, new_level: int, total_xp: int):
+    """Отправка уведомления о повышении уровня"""
+    from users.models import User
+    from notifications.models import Notification
+    
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        logger.error(f"User {user_id} not found for level up notification")
+        return False
+    
+    # In-app уведомление
+    Notification.objects.create(
+        user=user,
+        notification_type='level_up',
+        title=f'⬆️ Новый уровень {new_level}!',
+        message=f'Поздравляем! Вы достигли уровня {new_level} с {total_xp} XP. Продолжайте в том же духе!',
+        action_url='/users/profile/',
+    )
+    
+    # Email если включено
+    user_settings = getattr(user, 'notification_settings', {})
+    if user.is_verified and user.email and user_settings.get('email_system', True):
+        _send_level_up_email.delay(user_id, new_level, total_xp)
+    
+    logger.info(f"Level up notification sent to {user.username}: level {new_level}")
+    return True
+
+
+@shared_task(bind=True, max_retries=3)
+def _send_level_up_email(self, user_id: str, new_level: int, total_xp: int):
+    """Внутренняя задача: отправка email о повышении уровня"""
+    from users.models import User
+    from django.core.mail import EmailMultiAlternatives
+    from django.template.loader import render_to_string
+    from django.conf import settings
+    
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return False
+    
+    if not user.email or not user.is_verified:
+        return False
+    
+    site_url = getattr(settings, 'SITE_URL', 'https://dopx.kz')
+    
+    html_message = render_to_string('emails/level_up.html', {
+        'user': user,
+        'new_level': new_level,
+        'total_xp': total_xp,
+        'next_threshold': 100 * new_level,
+        'site_url': site_url,
+        'site_name': 'DOPX',
+    })
+    
+    email = EmailMultiAlternatives(
+        subject=f'⬆️ Вы достигли уровня {new_level}! | DOPX',
+        body='',
+        from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@dopx.kz'),
+        to=[user.email],
+    )
+    email.attach_alternative(html_message, "text/html")
+    
+    try:
+        email.send(fail_silently=True)
+        logger.info(f"Level up email sent to {user.email}")
+    except Exception as e:
+        logger.error(f"Failed to send level up email: {e}")
+    
+    return True
+
+
+@shared_task(bind=True, max_retries=3)
+def send_trust_score_updated_notification(self, user_id: str, old_score: float, new_score: float):
+    """Отправка уведомления об изменении Trust Score"""
+    from users.models import User
+    from notifications.models import Notification
+    
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return False
+    
+    # Определяем уровень доверия
+    def get_trust_label(score):
+        if score >= 1.8:
+            return 'Эксперт', 'success'
+        elif score >= 1.4:
+            return 'Надёжный', 'warning'
+        elif score >= 1.0:
+            return 'Стандартный', 'info'
+        else:
+            return 'Новичок', 'error'
+    
+    old_label, old_color = get_trust_label(old_score)
+    new_label, new_color = get_trust_label(new_score)
+    
+    # Только если уровень изменился
+    if old_label != new_label:
+        Notification.objects.create(
+            user=user,
+            notification_type='system',
+            title=f'🛡️ Ваш Trust Score обновлён',
+            message=f'Ваш уровень доверия: {old_label} → {new_label} ({new_score})',
+            action_url='/users/profile/',
+        )
+        
+
 
 ================================================================================
 FILE: notifications/tests.py
@@ -9266,29 +10039,62 @@ from django.contrib import messages
 from django.utils import timezone
 from django.http import HttpResponse
 from django.template.loader import render_to_string
+from django.db.models import Q
+from urllib.parse import urlencode
 from .models import Notification
+
 
 class NotificationListView(LoginRequiredMixin, ListView):
     model = Notification
     template_name = 'notifications/list.html'
     context_object_name = 'notifications'
     paginate_by = 20
-    
+
     def get_queryset(self):
-        return Notification.objects.filter(
+        queryset = Notification.objects.filter(
             user=self.request.user
         ).select_related(
             'related_match__home_team',
             'related_match__away_team'
-        ).order_by('-created_at')
-    
+        )
+        
+        # === ФИЛЬТР ПО ТИПУ УВЕДОМЛЕНИЯ ===
+        notification_type = self.request.GET.get('type')
+        if notification_type:
+            type_map = {
+                'match': ['match_finished', 'voting_open', 'voting_closing', 'aggregate_updated', 'top_performance'],
+                'voting': ['voting_open', 'voting_closing'],
+                'badge': ['new_badge', 'level_up'],
+                'system': ['system', 'verification_required'],
+            }
+            if notification_type in type_map:
+                queryset = queryset.filter(notification_type__in=type_map[notification_type])
+        
+        # === ФИЛЬТР ПО СТАТУСУ ПРОЧТЕНИЯ ===
+        status = self.request.GET.get('status')
+        if status == 'unread':
+            queryset = queryset.filter(is_read=False)
+        elif status == 'read':
+            queryset = queryset.filter(is_read=True)
+        
+        return queryset.order_by('-created_at')
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        
+        # Сохраняем параметры фильтров для пагинации
+        query_params = self.request.GET.copy()
+        if 'page' in query_params:
+            del query_params['page']
+        context['query_params'] = f"&{query_params.urlencode()}" if query_params else ''
+        
         context['unread_count'] = Notification.objects.filter(
             user=self.request.user,
             is_read=False
         ).count()
         context['page_title'] = 'Уведомления — DOPX'
+        context['current_type'] = self.request.GET.get('type', '')
+        context['current_status'] = self.request.GET.get('status', '')
         return context
 
 
@@ -9298,8 +10104,14 @@ class MarkAsReadView(LoginRequiredMixin, View):
         if not notification.is_read:
             notification.is_read = True
             notification.save(update_fields=['is_read', 'updated_at'])
+        
         if request.headers.get('HX-Request'):
             return HttpResponse('')
+        
+        # Возвращаемся с сохранением фильтров
+        referer = request.META.get('HTTP_REFERER', '')
+        if 'notifications' in referer:
+            return redirect(referer)
         return redirect('notifications:list')
 
 
@@ -17260,6 +18072,50 @@ FILE: templates/core/rules.html
 
 
 ================================================================================
+FILE: templates/emails/badge_earned.html
+================================================================================
+
+<!-- templates/emails/badge_earned.html -->
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; background: #f5f5f5; }
+.container { background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+.header { background: linear-gradient(135deg, #000 0%, #333 100%); color: #fff; padding: 30px 20px; text-align: center; }
+.content { padding: 30px 20px; }
+.badge-box { background: #f9fafb; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0; border-radius: 0 4px 4px 0; }
+.footer { background: #f5f5f5; padding: 20px; text-align: center; font-size: 12px; color: #999; border-top: 1px solid #e0e0e0; }
+.button { display: inline-block; padding: 10px 20px; background: #000; color: #fff; text-decoration: none; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div class="container">
+<div class="header">
+<h1>🎖️ Новое достижение!</h1>
+<p>Поздравляем, {{ user.username }}!</p>
+</div>
+<div class="content">
+<div class="badge-box">
+<h2 style="margin: 0 0 10px 0;">{{ badge_name }}</h2>
+<p style="margin: 0; color: #666;">Вы получили это достижение за активность на платформе DOPX</p>
+</div>
+<p>Продолжайте оценивать матчи честно и получайте новые награды!</p>
+<p style="text-align: center; margin-top: 30px;">
+<a href="{{ site_url }}/users/profile/" class="button">Посмотреть профиль</a>
+</p>
+</div>
+<div class="footer">
+<p>© {% now "Y" %} {{ site_name }}. Все права защищены.</p>
+<p><a href="{{ site_url }}">Перейти на сайт</a></p>
+</div>
+</div>
+</body>
+</html>
+
+
+================================================================================
 FILE: templates/emails/contact_confirmation.html
 ================================================================================
 
@@ -17476,6 +18332,63 @@ FILE: templates/emails/contact_form.html
             <p style="margin-top: 15px;">© {% now "Y" %} {{ site_name }}. Все права защищены.</p>
         </div>
     </div>
+</body>
+</html>
+
+
+================================================================================
+FILE: templates/emails/level_up.html
+================================================================================
+
+<!-- templates/emails/level_up.html -->
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; background: #f5f5f5; }
+.container { background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+.header { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: #fff; padding: 30px 20px; text-align: center; }
+.content { padding: 30px 20px; }
+.level-box { text-align: center; padding: 20px; background: #eff6ff; border-radius: 8px; margin: 20px 0; }
+.level-number { font-size: 48px; font-weight: bold; color: #1d4ed8; margin: 10px 0; }
+.progress-bar { width: 100%; height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; margin: 15px 0; }
+.progress-fill { height: 100%; background: #3b82f6; border-radius: 4px; }
+.footer { background: #f5f5f5; padding: 20px; text-align: center; font-size: 12px; color: #999; border-top: 1px solid #e0e0e0; }
+.button { display: inline-block; padding: 10px 20px; background: #3b82f6; color: #fff; text-decoration: none; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div class="container">
+<div class="header">
+<h1>⬆️ Новый уровень!</h1>
+<p>Поздравляем, {{ user.username }}!</p>
+</div>
+<div class="content">
+<div class="level-box">
+<div style="font-size: 14px; color: #666;">Ваш новый уровень</div>
+<div class="level-number">{{ new_level }}</div>
+<div style="font-size: 14px; color: #666;">Всего опыта: {{ total_xp }} XP</div>
+<div class="progress-bar">
+<div class="progress-fill" style="width: {{ total_xp|floatformat:0 }}%"></div>
+</div>
+<div style="font-size: 12px; color: #666;">До следующего уровня: {{ next_threshold|subtract:total_xp }} XP</div>
+</div>
+<p>Каждый уровень открывает новые возможности:</p>
+<ul style="padding-left: 20px;">
+<li>✨ Больший вес ваших оценок</li>
+<li>🏆 Эксклюзивные достижения</li>
+<li>📊 Расширенная статистика</li>
+</ul>
+<p style="text-align: center; margin-top: 30px;">
+<a href="{{ site_url }}/users/profile/" class="button">Мой профиль</a>
+</p>
+</div>
+<div class="footer">
+<p>© {% now "Y" %} {{ site_name }}. Все права защищены.</p>
+<p><a href="{{ site_url }}">Перейти на сайт</a></p>
+</div>
+</div>
 </body>
 </html>
 
@@ -21218,26 +22131,25 @@ FILE: templates/notifications/list.html (ENTERPRISE - v2.0)
 <div class="flex justify-center mt-8">
     <div class="join">
         {% if page_obj.has_previous %}
-            <a href="?page={{ page_obj.previous_page_number }}{% if request.GET.type %}&type={{ request.GET.type }}{% endif %}{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}"
-               class="join-item btn btn-sm">
-                <i class="ti ti-chevron-left"></i>
-            </a>
+        <a href="?page={{ page_obj.previous_page_number }}{{ query_params }}"
+           class="join-item btn btn-sm">
+            <i class="ti ti-chevron-left"></i>
+        </a>
         {% endif %}
         
         {% for num in page_obj.paginator.page_range %}
             {% if page_obj.number == num %}
-                <button class="join-item btn btn-sm btn-active">{{ num }}</button>
+            <button class="join-item btn btn-sm btn-active">{{ num }}</button>
             {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
-                <a href="?page={{ num }}{% if request.GET.type %}&type={{ request.GET.type }}{% endif %}{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}"
-                   class="join-item btn btn-sm">{{ num }}</a>
+            <a href="?page={{ num }}{{ query_params }}" class="join-item btn btn-sm">{{ num }}</a>
             {% endif %}
         {% endfor %}
         
         {% if page_obj.has_next %}
-            <a href="?page={{ page_obj.next_page_number }}{% if request.GET.type %}&type={{ request.GET.type }}{% endif %}{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}"
-               class="join-item btn btn-sm">
-                <i class="ti ti-chevron-right"></i>
-            </a>
+        <a href="?page={{ page_obj.next_page_number }}{{ query_params }}"
+           class="join-item btn btn-sm">
+            <i class="ti ti-chevron-right"></i>
+        </a>
         {% endif %}
     </div>
 </div>
@@ -21983,7 +22895,7 @@ FILE: templates/profile/dashboard.html
                         <span class="text-sm font-mono">{{ xp.total_xp }} XP</span>
                     </div>
                     <div class="w-full bg-base-200 rounded-full h-2">
-                        <div class="bg-primary h-2 rounded-full" style="width: {% widthratio xp.total_xp 100 1 %}%"></div>
+                        <div class="bg-primary h-2 rounded-full" style="width: {{ xp.progress_percent }}%"></div>
                     </div>
                 </div>
                 {% endif %}
@@ -23533,12 +24445,14 @@ class UserAdmin(admin.ModelAdmin):
 FILE: users/apps.py
 ================================================================================
 
+# === В файле: users/apps.py ===
 from django.apps import AppConfig
-
 
 class UsersConfig(AppConfig):
     name = 'users'
-
+    
+    def ready(self):
+        import users.signals
 
 
 ================================================================================
@@ -23762,6 +24676,338 @@ class NotificationSettingsForm(forms.Form):
 
 
 ================================================================================
+FILE: users/management/commands/create_test_users.py
+================================================================================
+
+# users/management/commands/create_test_users.py
+from django.core.management.base import BaseCommand
+from django.contrib.auth import get_user_model
+from django.utils import timezone
+import random
+import string
+
+User = get_user_model()
+
+class Command(BaseCommand):
+    help = 'Создать тестовых пользователей для нагрузочного тестирования'
+    
+    def add_arguments(self, parser):
+        parser.add_argument(
+            '--count',
+            type=int,
+            default=100,
+            help='Количество пользователей (по умолчанию 100)'
+        )
+        parser.add_argument(
+            '--verified',
+            action='store_true',
+            help='Создать верифицированных пользователей'
+        )
+        parser.add_argument(
+            '--prefix',
+            type=str,
+            default='test_user',
+            help='Префикс для имён пользователей'
+        )
+    
+    def handle(self, *args, **options):
+        count = options['count']
+        verified = options['verified']
+        prefix = options['prefix']
+        
+        self.stdout.write(f'📊 Создание {count} тестовых пользователей...')
+        
+        created = 0
+        for i in range(count):
+            username = f'{prefix}_{i}_{timezone.now().strftime("%Y%m%d%H%M%S")}'
+            email = f'{username}@test.dopx.kz'
+            
+            try:
+                user = User.objects.create_user(
+                    username=username,
+                    email=email,
+                    password='testpass123',
+                    is_verified=verified,
+                    trust_score=1.0 + random.uniform(0, 0.5),
+                    city=random.choice(['Алматы', 'Астана', 'Шымкент', 'Караганда']),
+                )
+                
+                # Создаём XP профиль
+                from users.models import UserXP
+                UserXP.objects.get_or_create(user=user)
+                
+                created += 1
+                
+                if created % 10 == 0:
+                    self.stdout.write(f'   Создано: {created}/{count}')
+                    
+            except Exception as e:
+                self.stdout.write(self.style.ERROR(f'   ❌ Ошибка для {username}: {e}'))
+        
+        self.stdout.write(self.style.SUCCESS(
+            f'✅ Создано {created} пользователей'
+        ))
+        self.stdout.write(f'   Логин: {prefix}_X_*')
+        self.stdout.write(f'   Пароль: testpass123')
+
+
+================================================================================
+FILE: users/management/commands/fix_xp_and_notifications.py
+================================================================================
+
+# users/management/commands/fix_xp_and_notifications.py
+from django.core.management.base import BaseCommand
+from django.contrib.auth import get_user_model
+from users.models import UserXP, UserBadge
+from notifications.models import Notification
+from evaluations.models import ContextEvaluation
+from django.db.models import Count
+
+User = get_user_model()
+
+class Command(BaseCommand):
+    help = 'Исправить XP и уведомления для существующих пользователей'
+    
+    def handle(self, *args, **options):
+        self.stdout.write('\n🔧 Исправление XP и уведомлений...\n')
+        
+        # === 1. Создаём UserXP для всех пользователей ===
+        users_without_xp = User.objects.filter(xp__isnull=True)
+        created_count = 0
+        for user in users_without_xp:
+            UserXP.objects.get_or_create(user=user)
+            created_count += 1
+        
+        self.stdout.write(self.style.SUCCESS(f'✅ Создано {created_count} UserXP профилей'))
+        
+        # === 2. Пересчитываем XP на основе оценок ===
+        self.stdout.write('\n📊 Пересчёт XP на основе оценок...')
+        for user in User.objects.all():
+            xp, _ = UserXP.objects.get_or_create(user=user)
+            evaluation_count = ContextEvaluation.objects.filter(user=user).count()
+            expected_xp = evaluation_count * 10
+            
+            if xp.total_xp < expected_xp:
+                old_xp = xp.total_xp
+                xp.total_xp = expected_xp
+                xp.level = (xp.total_xp // 100) + 1
+                xp.save()
+                self.stdout.write(f'   {user.username}: {old_xp} → {xp.total_xp} XP')
+        
+        # === 3. Создаём уведомления для достижений ===
+        self.stdout.write('\n🔔 Создание уведомлений для достижений...')
+        badges_without_notification = 0
+        for badge in UserBadge.objects.all():
+            exists = Notification.objects.filter(
+                user=badge.user,
+                notification_type='new_badge',
+                message__icontains=badge.get_badge_type_display()
+            ).exists()
+            
+            if not exists:
+                Notification.objects.create(
+                    user=badge.user,
+                    notification_type='new_badge',
+                    title='🎖️ Новое достижение!',
+                    message=f'Вы получили достижение "{badge.get_badge_type_display()}"',
+                    action_url='/users/profile/',
+                    is_read=False,
+                    created_at=badge.awarded_at
+                )
+                badges_without_notification += 1
+        
+        self.stdout.write(self.style.SUCCESS(f'✅ Создано {badges_without_notification} уведомлений о достижениях'))
+        
+        self.stdout.write('\n✨ Исправление завершено!\n')
+
+
+================================================================================
+FILE: users/management/commands/test_xp_notifications.py
+================================================================================
+
+# users/management/commands/test_xp_notifications.py
+from django.core.management.base import BaseCommand
+from django.contrib.auth import get_user_model
+from django.utils import timezone
+from users.models import UserXP, UserBadge
+from notifications.models import Notification
+import logging
+
+User = get_user_model()
+logger = logging.getLogger(__name__)
+
+class Command(BaseCommand):
+    help = 'Тестирование системы XP и уведомлений'
+    
+    def add_arguments(self, parser):
+        parser.add_argument('--username', type=str, help='Имя пользователя для теста')
+        parser.add_argument('--xp-amount', type=int, default=10, help='Количество XP для теста')
+        parser.add_argument('--create-badge', action='store_true', help='Создать тестовое достижение')
+        parser.add_argument('--send-notification', action='store_true', help='Отправить тестовое уведомление')
+    
+    def handle(self, *args, **options):
+        username = options.get('username')
+        xp_amount = options.get('xp_amount')
+        create_badge = options.get('create_badge')
+        send_notification = options.get('send_notification')
+        
+        self.stdout.write('\n' + '=' * 80)
+        self.stdout.write('🧪 ТЕСТ XP И УВЕДОМЛЕНИЙ')
+        self.stdout.write('=' * 80 + '\n')
+        
+        # Получаем пользователя
+        if username:
+            try:
+                user = User.objects.get(username=username)
+            except User.DoesNotExist:
+                self.stdout.write(self.style.ERROR(f'❌ Пользователь {username} не найден'))
+                return
+        else:
+            user = User.objects.filter(is_verified=True).first()
+            if not user:
+                self.stdout.write(self.style.ERROR('❌ Нет верифицированных пользователей'))
+                return
+        
+        self.stdout.write(f'👤 Тестируем на пользователе: {user.username}')
+        self.stdout.write(f'   Email: {user.email}')
+        self.stdout.write(f'   Текущий XP: {getattr(user, "xp", None).total_xp if hasattr(user, "xp") else 0}')
+        self.stdout.write(f'   Уровень: {getattr(user, "xp", None).level if hasattr(user, "xp") else 1}\n')
+        
+        # === ТЕСТ 1: Проверка UserXP ===
+        self.stdout.write('📍 ТЕСТ 1: Проверка UserXP')
+        xp, created = UserXP.objects.get_or_create(user=user)
+        if created:
+            self.stdout.write(self.style.WARNING(f'   ⚠️  UserXP создан заново (был удалён?)'))
+        else:
+            self.stdout.write(self.style.SUCCESS('   ✅ UserXP существует'))
+        self.stdout.write(f'   XP до: {xp.total_xp} | Уровень: {xp.level}')
+        
+        # === ТЕСТ 2: Начисление XP ===
+        self.stdout.write(f'\n📍 ТЕСТ 2: Начисление {xp_amount} XP')
+        old_xp = xp.total_xp
+        old_level = xp.level
+        xp.add_xp(xp_amount)
+        xp.refresh_from_db()
+        
+        if xp.total_xp == old_xp + xp_amount:
+            self.stdout.write(self.style.SUCCESS(f'   ✅ XP начислен: {old_xp} → {xp.total_xp}'))
+        else:
+            self.stdout.write(self.style.ERROR(f'   ❌ XP НЕ начислен: {old_xp} → {xp.total_xp}'))
+        
+        if xp.level > old_level:
+            self.stdout.write(self.style.SUCCESS(f'   ✅ Уровень повышен: {old_level} → {xp.level}'))
+        
+        # === ТЕСТ 3: Создание достижения ===
+        if create_badge:
+            self.stdout.write(f'\n📍 ТЕСТ 3: Создание достижения')
+            badge, created = UserBadge.objects.get_or_create(
+                user=user,
+                badge_type='first_evaluation'
+            )
+            if created:
+                self.stdout.write(self.style.SUCCESS('   ✅ Достижение создано'))
+            else:
+                self.stdout.write(self.style.WARNING(f'   ⚠️  Достижение уже существовало'))
+            
+            # === ТЕСТ 4: Создание уведомления о достижении ===
+            self.stdout.write(f'\n📍 ТЕСТ 4: Создание уведомления о достижении')
+            notification = Notification.objects.create(
+                user=user,
+                notification_type='new_badge',
+                title='🎖️ Новое достижение!',
+                message='Вы получили достижение "Первая оценка"',
+                action_url='/users/profile/',
+                is_read=False
+            )
+            self.stdout.write(self.style.SUCCESS(f'   ✅ Уведомление создано (ID: {str(notification.id)[:8]})'))
+        
+        # === ТЕСТ 5: Проверка уведомлений ===
+        self.stdout.write(f'\n📍 ТЕСТ 5: Проверка уведомлений пользователя')
+        total_notifications = Notification.objects.filter(user=user).count()
+        unread_notifications = Notification.objects.filter(user=user, is_read=False).count()
+        self.stdout.write(f'   Всего уведомлений: {total_notifications}')
+        self.stdout.write(f'   Непрочитанных: {unread_notifications}')
+        
+        if total_notifications > 0:
+            self.stdout.write(f'\n   Последние 5 уведомлений:')
+            for notif in Notification.objects.filter(user=user).order_by('-created_at')[:5]:
+                status = '🔴' if not notif.is_read else '🟢'
+                self.stdout.write(f'   {status} [{notif.notification_type}] {notif.title[:50]}')
+        
+        # === ТЕСТ 6: Настройки уведомлений ===
+        self.stdout.write(f'\n📍 ТЕСТ 6: Настройки уведомлений')
+        notif_settings = user.notification_settings or {}
+        self.stdout.write(f'   email_match_finished: {notif_settings.get("email_match_finished", True)}')
+        self.stdout.write(f'   email_voting_open: {notif_settings.get("email_voting_open", True)}')
+        self.stdout.write(f'   email_top_performance: {notif_settings.get("email_top_performance", True)}')
+        self.stdout.write(f'   email_system: {notif_settings.get("email_system", True)}')
+        
+        # === ТЕСТ 7: Проверка Celery ===
+        self.stdout.write(f'\n📍 ТЕСТ 7: Проверка Celery')
+        from django.core.cache import cache
+        from celery import current_app
+        try:
+            inspect = current_app.control.inspect()
+            active = inspect.active()
+            if active:
+                self.stdout.write(self.style.SUCCESS('   ✅ Celery воркеры активны'))
+            else:
+                self.stdout.write(self.style.WARNING('   ⚠️  Celery воркеры не отвечают'))
+        except Exception as e:
+            self.stdout.write(self.style.ERROR(f'   ❌ Ошибка подключения к Celery: {e}'))
+        
+        # === ТЕСТ 8: Email конфигурация ===
+        self.stdout.write(f'\n📍 ТЕСТ 8: Email конфигурация')
+        from django.conf import settings
+        self.stdout.write(f'   EMAIL_HOST: {settings.EMAIL_HOST}')
+        self.stdout.write(f'   EMAIL_PORT: {settings.EMAIL_PORT}')
+        self.stdout.write(f'   EMAIL_USE_TLS: {settings.EMAIL_USE_TLS}')
+        self.stdout.write(f'   DEFAULT_FROM_EMAIL: {settings.DEFAULT_FROM_EMAIL}')
+        
+        if settings.EMAIL_HOST_USER:
+            self.stdout.write(self.style.SUCCESS('   ✅ EMAIL_HOST_USER настроен'))
+        else:
+            self.stdout.write(self.style.WARNING('   ⚠️  EMAIL_HOST_USER не настроен'))
+        
+        # === ТЕСТ 9: Отправка тестового email ===
+        if send_notification:
+            self.stdout.write(f'\n📍 ТЕСТ 9: Отправка тестового email')
+            try:
+                from django.core.mail import send_mail
+                from django.template.loader import render_to_string
+                
+                html_message = render_to_string('emails/notification_digest.html', {
+                    'user': user,
+                    'notifications': Notification.objects.filter(user=user)[:3],
+                    'count': 1,
+                    'site_name': 'DOPX',
+                    'site_url': getattr(settings, 'SITE_URL', 'http://127.0.0.1:8000'),
+                })
+                
+                send_mail(
+                    subject='🧪 Тестовое уведомление DOPX',
+                    message='Это тестовое уведомление от системы DOPX',
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=[user.email],
+                    html_message=html_message,
+                    fail_silently=False,
+                )
+                self.stdout.write(self.style.SUCCESS(f'   ✅ Email отправлен на {user.email}'))
+            except Exception as e:
+                self.stdout.write(self.style.ERROR(f'   ❌ Ошибка отправки email: {e}'))
+        
+        # === ИТОГИ ===
+        self.stdout.write('\n' + '=' * 80)
+        self.stdout.write('📊 ИТОГИ ТЕСТА')
+        self.stdout.write('=' * 80)
+        self.stdout.write(f'Пользователь: {user.username}')
+        self.stdout.write(f'XP: {xp.total_xp} (Уровень {xp.level})')
+        self.stdout.write(f'Достижений: {UserBadge.objects.filter(user=user).count()}')
+        self.stdout.write(f'Уведомлений: {total_notifications} ({unread_notifications} непрочитанных)')
+        self.stdout.write('=' * 80 + '\n')
+
+
+================================================================================
 FILE: users/migrations/0001_initial.py
 ================================================================================
 
@@ -23885,6 +25131,30 @@ class Migration(migrations.Migration):
 
 
 ================================================================================
+FILE: users/migrations/0003_remove_user_notification_settings.py
+================================================================================
+
+# Generated by Django 6.0.3 on 2026-04-01 10:22
+
+from django.db import migrations
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ('users', '0002_add_notification_settings'),
+    ]
+
+    operations = [
+        migrations.RemoveField(
+            model_name='user',
+            name='notification_settings',
+        ),
+    ]
+
+
+
+================================================================================
 FILE: users/migrations/__init__.py
 ================================================================================
 
@@ -23925,7 +25195,156 @@ class User(AbstractUser, BaseModel):
     total_evaluations = models.IntegerField(_('Всего оценок'), default=0)
     evaluation_streak = models.IntegerField(_('Серия оценок'), default=0)
     last_evaluation_date = models.DateField(_('Последняя оценка'), null=True, blank=True)
-
+    DEFAULT_NOTIFICATION_SETTINGS = {
+        'email_match_finished': True,
+        'email_voting_open': True,
+        'email_voting_closing': True,
+        'email_top_performance': True,
+        'email_system': True,
+    }
+    
+    @property
+    def notification_settings(self):
+        """Безопасное получение настроек уведомлений"""
+        if not hasattr(self, '_notification_settings_cache'):
+            raw = getattr(self, '_raw_notification_settings', {})
+            if isinstance(raw, str):
+                import json
+                try:
+                    raw = json.loads(raw)
+                except:
+                    raw = {}
+            self._notification_settings_cache = {**self.DEFAULT_NOTIFICATION_SETTINGS, **raw}
+        return self._notification_settings_cache
+    
+    @notification_settings.setter
+    def notification_settings(self, value):
+        """Сохранение настроек уведомлений"""
+        self._raw_notification_settings = value
+        if hasattr(self, '_notification_settings_cache'):
+            delattr(self, '_notification_settings_cache')
+    
+    def get_notification_setting(self, key, default=None):
+        """Получить конкретную настройку уведомления"""
+        settings = self.notification_settings
+        return settings.get(key, default if default is not None else self.DEFAULT_NOTIFICATION_SETTINGS.get(key, False))
+    
+    def check_and_award_badges(self):
+        """Проверка и выдача достижений пользователю"""
+        from .models import UserBadge
+        
+        badges_to_award = []
+        
+        # 🔹 Первая оценка (уже выдаётся при регистрации, но проверяем)
+        if self.total_evaluations >= 1:
+            badges_to_award.append('first_evaluation')
+        
+        # 🔹 Активный фанат: 10+ оценок
+        if self.total_evaluations >= 10:
+            badges_to_award.append('active_fan_10')
+        
+        # 🔹 Хардкор фанат: 50+ оценок
+        if self.total_evaluations >= 50:
+            badges_to_award.append('active_fan_50')
+        
+        # 🔹 Серия: 7 дней подряд
+        if self.evaluation_streak >= 7:
+            badges_to_award.append('streak_7')
+        
+        # 🔹 Серия: 30 дней подряд
+        if self.evaluation_streak >= 30:
+            badges_to_award.append('streak_30')
+        
+        # 🔹 Точный аналитик: trust_score >= 1.5
+        if self.trust_score >= 1.5:
+            badges_to_award.append('accurate_analyst')
+        
+        # 🔹 Без предвзятости: проверка по последним 10 матчам
+        if self._check_bias_free():
+            badges_to_award.append('bias_free')
+        
+        # 🔹 Ранняя пташка: оценка отправлена до 10:00 утра (проверяется в evaluate view)
+        # Это выдаётся в момент оценки, не здесь
+        
+        # Создаём достижения (get_or_create предотвращает дубликаты)
+        awarded = []
+        for badge_type in badges_to_award:
+            badge, created = UserBadge.objects.get_or_create(
+                user=self,
+                badge_type=badge_type
+            )
+            if created:
+                awarded.append(badge_type)
+        
+        return awarded
+    
+    def _check_bias_free(self):
+        """Проверка на отсутствие предвзятости"""
+        from evaluations.models import ContextEvaluation, PlayerEvaluation
+        from django.db.models import Avg
+        
+        # Берем последние 10 матчей с оценками
+        contexts = ContextEvaluation.objects.filter(
+            user=self,
+            supported_team__isnull=False
+        ).select_related('match').order_by('-created_at')[:10]
+        
+        if contexts.count() < 5:  # Нужно минимум 5 матчей для оценки
+            return False
+        
+        bias_scores = []
+        for ctx in contexts:
+            match = ctx.match
+            supported = ctx.supported_team
+            
+            # Оценки своей команды
+            own_avg = PlayerEvaluation.objects.filter(
+                user=self, match=match, player__team=supported
+            ).aggregate(avg=Avg('contribution'))['avg']
+            
+            # Оценки соперника
+            opponent = match.away_team if match.home_team == supported else match.home_team
+            opp_avg = PlayerEvaluation.objects.filter(
+                user=self, match=match, player__team=opponent
+            ).aggregate(avg=Avg('contribution'))['avg']
+            
+            if own_avg and opp_avg:
+                bias = abs(own_avg - opp_avg)
+                bias_scores.append(bias)
+        
+        if not bias_scores:
+            return False
+        
+        # Если средняя предвзятость < 2.0 — пользователь объективен
+        avg_bias = sum(bias_scores) / len(bias_scores)
+        return avg_bias < 2.0
+    
+    def update_evaluation_stats(self):
+        """Обновление статистики оценок + проверка достижений"""
+        from django.utils import timezone
+        today = timezone.now().date()
+        
+        self.total_evaluations += 1
+        
+        if self.last_evaluation_date:
+            days_diff = (today - self.last_evaluation_date).days
+            if days_diff == 1:
+                self.evaluation_streak += 1
+            elif days_diff > 1:
+                self.evaluation_streak = 1
+            # days_diff == 0: streak не меняем (уже оценил сегодня)
+        else:
+            self.evaluation_streak = 1
+        
+        self.last_evaluation_date = today
+        
+        # 🎁 Проверяем и выдаём достижения
+        awarded_badges = self.check_and_award_badges()
+        
+        self.save(update_fields=['total_evaluations', 'evaluation_streak', 'last_evaluation_date', 'updated_at'])
+        
+        return awarded_badges
+    
     class Meta:
         verbose_name = _('Пользователь')
         verbose_name_plural = _('Пользователи')
@@ -23933,23 +25352,6 @@ class User(AbstractUser, BaseModel):
 
     def __str__(self):
         return self.username
-
-    def update_evaluation_stats(self):
-        """Обновление статистики оценок пользователя"""
-        today = timezone.now().date()
-        self.total_evaluations += 1
-        if self.last_evaluation_date:
-            days_diff = (today - self.last_evaluation_date).days
-            if days_diff == 1:
-                self.evaluation_streak += 1
-            elif days_diff > 1:
-                self.evaluation_streak = 1
-            else:
-                self.evaluation_streak = 1
-        else:
-            self.evaluation_streak = 1
-        self.last_evaluation_date = today
-        self.save(update_fields=['total_evaluations', 'evaluation_streak', 'last_evaluation_date', 'updated_at'])
 
     def get_trust_level(self):
         """Уровень доверия"""
@@ -24041,15 +25443,326 @@ class UserXP(BaseModel):
         verbose_name_plural = _('Опыт пользователей')
 
     def add_xp(self, amount):
-        """Добавить опыт"""
+        """Добавить опыт и проверить повышение уровня"""
+        old_level = self.level
+        
         self.total_xp += amount
+        
+        # Пересчитываем уровень
         new_level = (self.total_xp // 100) + 1
+        
         if new_level > self.level:
             self.level = new_level
-            self.save()
+            # Сохраняем старый уровень для проверки в view
+            self._level_increased = True
+        
+        self.save()
+        
+        # Возвращаем информацию об изменении
+        return {
+            'level_increased': new_level > old_level,
+            'old_level': old_level,
+            'new_level': new_level,
+            'xp_added': amount,
+            'total_xp': self.total_xp
+        }
 
+    @property
+    def progress_percent(self):
+        """Процент прогресса до следующего уровня (0-100)"""
+        return self.total_xp % 100
+    
     def __str__(self):
         return f"{self.user} — Уровень {self.level}"
+
+
+================================================================================
+FILE: users/services.py
+================================================================================
+
+# === НОВЫЙ ФАЙЛ: users/services.py ===
+from django.utils import timezone
+from datetime import timedelta
+from django.db.models import Count, Avg, Q, F
+from users.models import UserBadge, UserXP
+from evaluations.models import ContextEvaluation, PlayerEvaluation
+import logging
+
+logger = logging.getLogger(__name__)
+
+def check_and_award_badges(user):
+    """
+    Проверяет и выдаёт достижения пользователю.
+    Возвращает список выданных бейджей.
+    """
+    awarded = []
+    
+    # === 1. Первая оценка ===
+    if user.total_evaluations == 1:
+        badge, created = UserBadge.objects.get_or_create(
+            user=user,
+            badge_type='first_evaluation'
+        )
+        if created:
+            awarded.append(badge)
+            logger.info(f"Badge awarded: first_evaluation to {user.username}")
+    
+    # === 2. Активный фанат: 10 матчей ===
+    if user.total_evaluations >= 10:
+        badge, created = UserBadge.objects.get_or_create(
+            user=user,
+            badge_type='active_fan_10'
+        )
+        if created:
+            awarded.append(badge)
+            logger.info(f"Badge awarded: active_fan_10 to {user.username}")
+    
+    # === 3. Хардкор фанат: 50 матчей ===
+    if user.total_evaluations >= 50:
+        badge, created = UserBadge.objects.get_or_create(
+            user=user,
+            badge_type='active_fan_50'
+        )
+        if created:
+            awarded.append(badge)
+            logger.info(f"Badge awarded: active_fan_50 to {user.username}")
+    
+    # === 4. Точный аналитик: средняя оценка близка к сообществу ===
+    if user.total_evaluations >= 20:
+        # Проверяем последние 20 оценок
+        recent_matches = ContextEvaluation.objects.filter(
+            user=user
+        ).select_related('match').order_by('-created_at')[:20]
+        
+        accurate_count = 0
+        for ctx in recent_matches:
+            match = ctx.match
+            # Средняя оценка сообщества за матч
+            community_avg = PlayerEvaluation.objects.filter(
+                match=match
+            ).aggregate(avg=Avg('contribution'))['avg']
+            
+            if not community_avg:
+                continue
+                
+            # Средняя оценка пользователя за матч
+            user_avg = PlayerEvaluation.objects.filter(
+                user=user,
+                match=match
+            ).aggregate(avg=Avg('contribution'))['avg']
+            
+            if user_avg and abs(user_avg - community_avg) <= 1.0:
+                accurate_count += 1
+        
+        # Если 80%+ оценок точные
+        if accurate_count >= 16:  # 80% от 20
+            badge, created = UserBadge.objects.get_or_create(
+                user=user,
+                badge_type='accurate_analyst'
+            )
+            if created:
+                awarded.append(badge)
+                logger.info(f"Badge awarded: accurate_analyst to {user.username}")
+    
+    # === 5. Без предвзятости: низкий bias_score ===
+    if user.total_evaluations >= 15:
+        # Проверяем предвзятость в последних 15 матчах с поддержкой команды
+        biased_count = 0
+        total_checked = 0
+        
+        contexts = ContextEvaluation.objects.filter(
+            user=user,
+            supported_team__isnull=False
+        ).select_related('match').order_by('-created_at')[:15]
+        
+        for ctx in contexts:
+            match = ctx.match
+            supported = ctx.supported_team
+            
+            if not supported:
+                continue
+            total_checked += 1
+            
+            # Оценки своей команды
+            own_avg = PlayerEvaluation.objects.filter(
+                user=user,
+                match=match,
+                player__team=supported
+            ).aggregate(avg=Avg('contribution'))['avg'] or 0
+            
+            # Оценки соперника
+            opponent = match.away_team if match.home_team == supported else match.home_team
+            opp_avg = PlayerEvaluation.objects.filter(
+                user=user,
+                match=match,
+                player__team=opponent
+            ).aggregate(avg=Avg('contribution'))['avg'] or 0
+            
+            # Если разница > 4 — предвзятость
+            if abs(own_avg - opp_avg) > 4:
+                biased_count += 1
+        
+        # Если предвзятость в < 20% случаев
+        if total_checked >= 10 and biased_count <= 2:
+            badge, created = UserBadge.objects.get_or_create(
+                user=user,
+                badge_type='bias_free'
+            )
+            if created:
+                awarded.append(badge)
+                logger.info(f"Badge awarded: bias_free to {user.username}")
+    
+    # === 6. Ранняя пташка: оценка в первые 2 часа после матча ===
+    early_evals = ContextEvaluation.objects.filter(
+        user=user,
+        created_at__lte=F('match__end_time') + timedelta(hours=2)
+    ).count()
+    
+    if early_evals >= 5:
+        badge, created = UserBadge.objects.get_or_create(
+            user=user,
+            badge_type='early_bird'
+        )
+        if created:
+            awarded.append(badge)
+            logger.info(f"Badge awarded: early_bird to {user.username}")
+    
+    # === 7. Серия: 7 дней подряд ===
+    if user.evaluation_streak >= 7:
+        badge, created = UserBadge.objects.get_or_create(
+            user=user,
+            badge_type='streak_7'
+        )
+        if created:
+            awarded.append(badge)
+            logger.info(f"Badge awarded: streak_7 to {user.username}")
+    
+    # === 8. Серия: 30 дней подряд ===
+    if user.evaluation_streak >= 30:
+        badge, created = UserBadge.objects.get_or_create(
+            user=user,
+            badge_type='streak_30'
+        )
+        if created:
+            awarded.append(badge)
+            logger.info(f"Badge awarded: streak_30 to {user.username}")
+    
+    return awarded
+
+
+def calculate_level_xp_threshold(level):
+    """XP, необходимый для перехода на следующий уровень"""
+    # Формула: 100 * level
+    return 100 * level
+
+
+def get_level_progress(user):
+    """Возвращает прогресс до следующего уровня"""
+    xp = getattr(user, 'xp', None)
+    if not xp:
+        return {'current': 0, 'next': 100, 'percent': 0}
+    
+    next_threshold = calculate_level_xp_threshold(xp.level)
+    current_in_level = xp.total_xp - (100 * (xp.level - 1))
+    percent = min(100, int((current_in_level / next_threshold) * 100))
+    
+    return {
+        'current': current_in_level,
+        'next': next_threshold,
+        'percent': percent,
+        'level': xp.level
+    }
+
+
+================================================================================
+FILE: users/signals.py
+================================================================================
+
+# === НОВЫЙ ФАЙЛ: users/signals.py ===
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from django.utils import timezone
+from evaluations.models import ContextEvaluation
+from users.models import User, UserBadge, UserXP
+from users.services import check_and_award_badges
+import logging
+
+logger = logging.getLogger(__name__)
+
+@receiver(post_save, sender=ContextEvaluation)
+def on_context_evaluation_created(sender, instance, created, **kwargs):
+    """
+    При создании новой оценки контекста:
+    - Проверяем и выдаём достижения
+    - Обновляем статистику
+    """
+    if not created:
+        return
+    
+    user = instance.user
+    
+    # Проверяем достижения асинхронно (чтобы не замедлять запрос)
+    from users.tasks import check_badges_async
+    check_badges_async.delay(str(user.id))
+
+
+# === НОВЫЙ ФАЙЛ: users/tasks.py ===
+from celery import shared_task
+from users.models import User
+from users.services import check_and_award_badges
+import logging
+
+logger = logging.getLogger(__name__)
+
+@shared_task(bind=True, max_retries=3)
+def check_badges_async(self, user_id: str):
+    """Асинхронная проверка достижений"""
+    try:
+        user = User.objects.get(id=user_id)
+        awarded = check_and_award_badges(user)
+        
+        if awarded:
+            logger.info(f"Awarded {len(awarded)} badges to {user.username}")
+            # Отправляем уведомления о каждом достижении
+            from notifications.tasks import send_badge_earned_notification
+            for badge in awarded:
+                send_badge_earned_notification.delay(
+                    user_id=user_id,
+                    badge_type=badge.badge_type,
+                    badge_name=badge.get_badge_type_display()
+                )
+        
+        return {'awarded': len(awarded)}
+    except User.DoesNotExist:
+        logger.error(f"User {user_id} not found")
+        return {'error': 'User not found'}
+    except Exception as e:
+        logger.error(f"Error checking badges: {e}", exc_info=True)
+        raise self.retry(exc=e, countdown=60)
+
+
+================================================================================
+FILE: users/tasks.py
+================================================================================
+
+# users/tasks.py
+from celery import shared_task
+from .services import check_and_award_badges
+from django.contrib.auth import get_user_model
+import logging
+
+logger = logging.getLogger(__name__)
+User = get_user_model()
+
+@shared_task(bind=True, max_retries=3)
+def check_badges_async(self, user_id: str):
+    """Асинхронная проверка достижений пользователя"""
+    try:
+        user = User.objects.get(id=user_id)
+        return check_and_award_badges(user)
+    except User.DoesNotExist:
+        logger.error(f"User {user_id} not found")
+        return None
 
 
 ================================================================================

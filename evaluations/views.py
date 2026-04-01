@@ -394,10 +394,8 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
 
     def form_valid(self, form):
         session = self.get_or_create_session()
-        
         with transaction.atomic():
-            # ✅ FIX: Используем update_or_create вместо save()
-            # Это предотвращает IntegrityError при повторной отправке
+            # ✅ 1. Сначала сохраняем оценку матча
             MatchEvaluation.objects.update_or_create(
                 user=self.request.user,
                 match=self.match,
@@ -409,35 +407,61 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
                 }
             )
             
+            # ✅ 2. Завершаем сессию
             self.complete_session(session)
             
-            # Обновляем trust_score пользователя
+            # ✅ 3. Обновляем trust_score (ВАЖНО: до начисления XP)
             adjustment = calculate_user_trust_adjustment(self.request.user, self.match)
+            old_trust = self.request.user.trust_score
             self.request.user.trust_score = max(0.5, min(2.0, self.request.user.trust_score + adjustment))
             self.request.user.save(update_fields=['trust_score', 'updated_at'])
             
-            # Обновляем статистику пользователя
+            # ✅ 4. Обновляем статистику оценок (total_evaluations и т.д.)
             self.request.user.update_evaluation_stats()
             
-            # Выдаём XP
+            # ✅ 5. Начисляем XP (ПОСЛЕ обновления статистики!)
             from users.models import UserXP, UserBadge
             xp, _ = UserXP.objects.get_or_create(user=self.request.user)
-            xp.add_xp(10)
+            xp.add_xp(10)  # +10 XP за завершение оценки
             
-            # Проверяем достижения
-            if self.request.user.total_evaluations == 1:
-                UserBadge.objects.get_or_create(
-                    user=self.request.user,
-                    badge_type='first_evaluation'
+            # ✅ 6. Проверяем достижения (ПОСЛЕ начисления XP и обновления статистики)
+            from users.services import check_and_award_badges
+            awarded_badges = check_and_award_badges(self.request.user)
+            
+            # ✅ 7. Создаём уведомления о достижениях
+            if awarded_badges:
+                from notifications.tasks import send_badge_earned_notification
+                for badge in awarded_badges:
+                    send_badge_earned_notification.delay(
+                        user_id=str(self.request.user.id),
+                        badge_type=badge.badge_type,
+                        badge_name=badge.get_badge_type_display()
+                    )
+            
+            # ✅ 8. Уведомление о повышении уровня (если произошло)
+            if xp.level > (getattr(self.request.user, '_old_level', 1)):
+                from notifications.tasks import send_level_up_notification
+                send_level_up_notification.delay(
+                    user_id=str(self.request.user.id),
+                    new_level=xp.level,
+                    total_xp=xp.total_xp
                 )
             
-            # Запускаем пересчёт агрегатов
+            # ✅ 9. Уведомление об изменении trust_score (если значимое)
+            if abs(self.request.user.trust_score - old_trust) >= 0.1:
+                from notifications.tasks import send_trust_score_updated_notification
+                send_trust_score_updated_notification.delay(
+                    user_id=str(self.request.user.id),
+                    old_score=round(old_trust, 2),
+                    new_score=round(self.request.user.trust_score, 2)
+                )
+            
+            # ✅ 10. Запускаем пересчёт агрегатов (в конце, чтобы не блокировать)
             from aggregates.tasks import recalculate_all_aggregates_for_match
             recalculate_all_aggregates_for_match.delay(str(self.match.id))
             
             messages.success(self.request, '🎉 Оценка завершена! Спасибо за вклад.')
-        
-        return redirect('evaluations:complete', match_id=self.match.id)
+            return redirect('evaluations:complete', match_id=self.match.id)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
