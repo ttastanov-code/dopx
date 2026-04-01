@@ -4,7 +4,7 @@ from django.utils import timezone
 from datetime import timedelta
 from django.conf import settings
 from django.template.loader import render_to_string
-from django.core.mail import send_mail
+from django.core.mail import send_mail, EmailMultiAlternatives
 from django.db.models import Q
 import logging
 from notifications.models import Notification
@@ -40,186 +40,218 @@ NOTIFICATION_MESSAGES = {
     'system': 'Важное обновление платформы. Проверьте информацию в личном кабинете.',
 }
 
+
 # ============================================================================
-# === ЗАДАЧИ ДЛЯ МАТЧЕЙ И ОЦЕНОК ===
+# === ЗАДАЧИ ДЛЯ ДОСТИЖЕНИЙ И УРОВНЕЙ ===
 # ============================================================================
+
 @shared_task(bind=True, max_retries=3)
-def send_match_finished_notifications(self, match_id: str):
-    """Уведомить пользователей о завершении матча"""
-    from uuid import UUID
-    from matches.models import Match
-    from evaluations.models import EvaluationSession
+def send_badge_earned_notification(self, user_id: str, badge_type: str, badge_name: str):
+    """
+    Отправка уведомления о получении достижения
+    ✅ ИСПРАВЛЕНО: Создаёт in-app уведомление + email
+    """
+    from users.models import User
+    from notifications.models import Notification
     
     try:
-        match = Match.objects.get(id=UUID(match_id))
-    except (ValueError, Match.DoesNotExist):
-        logger.error(f"Match {match_id} not found")
-        return 0
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        logger.error(f"User {user_id} not found for badge notification")
+        return False
     
-    sessions = EvaluationSession.objects.filter(
-        match=match,
-        status='in_progress'
-    ).select_related('user')
-    
-    count = 0
-    match_name = f"{match.home_team.name} vs {match.away_team.name}"
-    
-    for session in sessions:
-        user = session.user
-        
-        # ✅ ПРОВЕРКА НАСТРОЕК УВЕДОМЛЕНИЙ
-        if not user.get_notification_setting('email_match_finished', True):
-            continue
-        
+    # ✅ ПРОВЕРКА НАСТРОЕК: используем метод модели
+    if not user.get_notification_setting('email_system', True):
+        logger.info(f"Email notifications disabled for user {user_id}")
+        # Всё равно создаём in-app уведомление
+    else:
         # Создаём in-app уведомление
-        from notifications.models import Notification
         Notification.objects.create(
             user=user,
-            notification_type='match_finished',
-            title='🏁 Матч завершён',
-            message=f'Матч {match_name} завершён. Успейте оценить, пока открыто голосование!',
-            action_url=f'/evaluations/match/{match_id}/context/',
-            related_match=match,
+            notification_type='new_badge',
+            title='🎖️ Новое достижение!',
+            message=f'Вы получили достижение: {badge_name}',
+            action_url='/users/profile/',
+            is_read=False,
         )
+        logger.info(f"In-app notification created for badge: {badge_name}")
         
-        # ✅ ОТПРАВКА EMAIL (если включено)
-        if user.is_verified and user.email and user.get_notification_setting('email_match_finished', True):
-            try:
-                self._send_email_notification(
-                    user=user,
-                    subject=f'🏁 Матч завершён: {match_name}',
-                    template='emails/match_finished.html',
-                    context={'match': match, 'match_name': match_name, 'user': user}
-                )
-            except Exception as e:
-                logger.error(f"Failed to send email to {user.email}: {e}")
-        
-        count += 1
+        # ✅ ОТПРАВКА EMAIL если включено и пользователь верифицирован
+        if user.is_verified and user.email:
+            _send_badge_email.delay(user_id, badge_type, badge_name)
     
-    logger.info(f"Sent {count} match finished notifications for match {match_id}")
-    return count
+    logger.info(f"Badge notification processed for {user.username}: {badge_name}")
+    return True
 
 
-def _send_email_notification(self, user, subject, template, context):
-    """Вспомогательный метод отправки email"""
+@shared_task(bind=True, max_retries=3)
+def _send_badge_email(self, user_id: str, badge_type: str, badge_name: str):
+    """Внутренняя задача: отправка email о достижении"""
+    from users.models import User
     from django.core.mail import EmailMultiAlternatives
     from django.template.loader import render_to_string
     from django.conf import settings
     
-    html_content = render_to_string(template, context)
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return False
+    
+    if not user.email or not user.is_verified:
+        return False
+    
+    site_url = getattr(settings, 'SITE_URL', 'https://dopx.kz')
+    
+    html_message = render_to_string('emails/badge_earned.html', {
+        'user': user,
+        'badge_name': badge_name,
+        'badge_type': badge_type,
+        'site_url': site_url,
+        'site_name': 'DOPX',
+    })
     
     email = EmailMultiAlternatives(
-        subject=subject,
+        subject=f'🎖️ Новое достижение: {badge_name} | DOPX',
         body='',  # Текстовая версия опционально
         from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@dopx.kz'),
         to=[user.email],
     )
-    email.attach_alternative(html_content, "text/html")
-    email.send(fail_silently=False)
-
-@shared_task(bind=True, max_retries=3)
-def send_voting_open_notifications(self, match_id: str):
-    """Уведомить об открытии голосования"""
-    from uuid import UUID
-    from matches.models import Match
+    email.attach_alternative(html_message, "text/html")
     
     try:
-        match = Match.objects.get(id=UUID(match_id))
-    except (ValueError, Match.DoesNotExist):
-        logger.error(f"Match {match_id} not found")
-        return 0
+        email.send(fail_silently=False)
+        logger.info(f"✅ Badge email sent to {user.email}")
+    except Exception as e:
+        logger.error(f"❌ Failed to send badge email: {e}")
+        # Не поднимаем исключение, чтобы не ретраить бесконечно
     
-    users = User.objects.filter(
-        is_active=True,
-        is_verified=True
-    )[:500]
-    
-    notifications = []
-    match_name = f"{match.home_team.name} vs {match.away_team.name}"
-    
-    for user in users:
-        # Проверяем настройки уведомлений пользователя
-        user_settings = user.notification_settings
-        if not user_settings.get('email_voting_open', True):
-            continue
-        
-        title = NOTIFICATION_TITLES.get('voting_open', '🎯 Голосование открыто')
-        message = NOTIFICATION_MESSAGES['voting_open'].format(match=match_name)
-        
-        notifications.append(Notification(
-            user=user,
-            notification_type='voting_open',
-            title=title,
-            message=message,
-            action_url=f'/matches/{match_id}/',
-            related_match=match,
-        ))
-    
-    Notification.objects.bulk_create(notifications)
-    logger.info(f"Sent {len(notifications)} voting open notifications for match {match_id}")
-    return len(notifications)
+    return True
+
 
 @shared_task(bind=True, max_retries=3)
-def send_top_player_notifications(self, match_id: str, player_id: str):
-    """Уведомить если игрок пользователя в топе"""
-    from uuid import UUID
-    from players.models import Player
-    from aggregates.models import PlayerMatchAggregate
-    from evaluations.models import PlayerEvaluation
+def send_level_up_notification(self, user_id: str, new_level: int, total_xp: int):
+    """Отправка уведомления о повышении уровня"""
+    from users.models import User
+    from notifications.models import Notification
     
     try:
-        match = Match.objects.get(id=UUID(match_id))
-        player = Player.objects.get(id=UUID(player_id))
-    except (ValueError, Match.DoesNotExist, Player.DoesNotExist):
-        logger.error(f"Match {match_id} or Player {player_id} not found")
-        return 0
-    
-    top_players = PlayerMatchAggregate.objects.filter(
-        match=match
-    ).order_by('-performance_score')[:3]
-    
-    if player not in [p.player for p in top_players]:
-        logger.debug(f"Player {player_id} not in top 3 for match {match_id}")
-        return 0
-    
-    eval_users = PlayerEvaluation.objects.filter(
-        match=match,
-        player=player
-    ).values_list('user_id', flat=True).distinct()
-    
-    notifications = []
-    match_name = f"{match.home_team.name} vs {match.away_team.name}"
-    player_name = f"{player.first_name} {player.last_name}"
-    
-    for user_id in eval_users:
         user = User.objects.get(id=user_id)
-        # Проверяем настройки уведомлений пользователя
-        user_settings = user.notification_settings
-        if not user_settings.get('email_top_performance', True):
-            continue
-        
-        title = NOTIFICATION_TITLES.get('top_performance', '🏆 Ваш игрок в топ-3!')
-        message = NOTIFICATION_MESSAGES['top_performance'].format(
-            player=player_name,
-            match=match_name
-        )
-        
-        notifications.append(Notification(
-            user_id=user_id,
-            notification_type='top_performance',
-            title=title,
-            message=message,
-            action_url=f'/players/{player_id}/',
-            related_match=match,
-        ))
+    except User.DoesNotExist:
+        logger.error(f"User {user_id} not found for level up notification")
+        return False
     
-    Notification.objects.bulk_create(notifications)
-    logger.info(f"Sent {len(notifications)} top player notifications for match {match_id}")
-    return len(notifications)
+    # ✅ ПРОВЕРКА НАСТРОЕК
+    if not user.get_notification_setting('email_system', True):
+        logger.info(f"Email notifications disabled for level up: {user_id}")
+    else:
+        # Создаём in-app уведомление
+        Notification.objects.create(
+            user=user,
+            notification_type='level_up',
+            title=f'⬆️ Новый уровень {new_level}!',
+            message=f'Поздравляем! Вы достигли уровня {new_level} с {total_xp} XP. Продолжайте в том же духе!',
+            action_url='/users/profile/',
+            is_read=False,
+        )
+        logger.info(f"In-app notification created for level up: {new_level}")
+        
+        # ✅ ОТПРАВКА EMAIL
+        if user.is_verified and user.email:
+            _send_level_up_email.delay(user_id, new_level, total_xp)
+    
+    logger.info(f"Level up notification processed for {user.username}: level {new_level}")
+    return True
+
+
+@shared_task(bind=True, max_retries=3)
+def _send_level_up_email(self, user_id: str, new_level: int, total_xp: int):
+    """Внутренняя задача: отправка email о повышении уровня"""
+    from users.models import User
+    from django.core.mail import EmailMultiAlternatives
+    from django.template.loader import render_to_string
+    from django.conf import settings
+    
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return False
+    
+    if not user.email or not user.is_verified:
+        return False
+    
+    site_url = getattr(settings, 'SITE_URL', 'https://dopx.kz')
+    next_threshold = 100 * new_level
+    
+    html_message = render_to_string('emails/level_up.html', {
+        'user': user,
+        'new_level': new_level,
+        'total_xp': total_xp,
+        'next_threshold': next_threshold,
+        'site_url': site_url,
+        'site_name': 'DOPX',
+    })
+    
+    email = EmailMultiAlternatives(
+        subject=f'⬆️ Вы достигли уровня {new_level}! | DOPX',
+        body='',
+        from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@dopx.kz'),
+        to=[user.email],
+    )
+    email.attach_alternative(html_message, "text/html")
+    
+    try:
+        email.send(fail_silently=False)
+        logger.info(f"✅ Level up email sent to {user.email}")
+    except Exception as e:
+        logger.error(f"❌ Failed to send level up email: {e}")
+    
+    return True
+
+
+@shared_task(bind=True, max_retries=3)
+def send_trust_score_updated_notification(self, user_id: str, old_score: float, new_score: float):
+    """Отправка уведомления об изменении Trust Score"""
+    from users.models import User
+    from notifications.models import Notification
+    
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return False
+    
+    # Определяем уровень доверия
+    def get_trust_label(score):
+        if score >= 1.8:
+            return 'Эксперт', 'success'
+        elif score >= 1.4:
+            return 'Надёжный', 'warning'
+        elif score >= 1.0:
+            return 'Стандартный', 'info'
+        else:
+            return 'Новичок', 'error'
+    
+    old_label, old_color = get_trust_label(old_score)
+    new_label, new_color = get_trust_label(new_score)
+    
+    # Только если уровень изменился
+    if old_label != new_label:
+        Notification.objects.create(
+            user=user,
+            notification_type='system',
+            title=f'🛡️ Ваш Trust Score обновлён',
+            message=f'Ваш уровень доверия: {old_label} → {new_label} ({new_score})',
+            action_url='/users/profile/',
+            is_read=False,
+        )
+        logger.info(f"Trust score notification created for {user.username}")
+    
+    return True
+
 
 # ============================================================================
 # === УТИЛИТЫ: ОЧИСТКА И ОБСЛУЖИВАНИЕ ===
 # ============================================================================
+
 @shared_task
 def cleanup_old_notifications():
     """Очистка старых уведомлений (старше 30 дней)"""
@@ -230,6 +262,7 @@ def cleanup_old_notifications():
     ).delete()
     logger.info(f"Cleaned up {deleted_count} old notifications")
     return deleted_count
+
 
 @shared_task
 def cleanup_old_sessions():
@@ -243,11 +276,11 @@ def cleanup_old_sessions():
     logger.info(f"Cleaned up {deleted_count} old evaluation sessions")
     return deleted_count
 
+
 @shared_task
 def send_notification_digest():
     """Ежедневная рассылка дайджеста уведомлений"""
     from django.db.models import Count
-    
     cutoff = timezone.now() - timedelta(hours=24)
     
     users_with_notifications = Notification.objects.filter(
@@ -258,15 +291,13 @@ def send_notification_digest():
     ).filter(count__gte=5)
     
     sent_count = 0
-    
     for user_data in users_with_notifications:
         user = User.objects.get(id=user_data['user_id'])
         if not user.email or not user.is_verified:
             continue
         
         # Проверяем настройки уведомлений
-        user_settings = user.notification_settings
-        if not user_settings.get('email_system', True):
+        if not user.get_notification_setting('email_system', True):
             continue
         
         notifications = Notification.objects.filter(
@@ -298,6 +329,7 @@ def send_notification_digest():
     
     logger.info(f"Sent {sent_count} notification digests")
     return sent_count
+
 
 @shared_task
 def health_check():
@@ -340,6 +372,8 @@ def send_badge_earned_notification(self, user_id: str, badge_type: str, badge_na
     """Отправка уведомления о получении достижения"""
     from users.models import User
     from notifications.models import Notification
+    from django.utils import timezone
+    from datetime import timedelta
     
     try:
         user = User.objects.get(id=user_id)
@@ -347,10 +381,14 @@ def send_badge_earned_notification(self, user_id: str, badge_type: str, badge_na
         logger.error(f"User {user_id} not found for badge notification")
         return False
     
-    # Проверяем настройки уведомлений
-    user_settings = getattr(user, 'notification_settings', {})
-    if not user_settings.get('email_system', True):
-        return True  # Не отправляем, но задача успешна
+    # ✅ Дедупликация: не спамить одинаковыми уведомлениями в течение часа
+    if Notification.objects.filter(
+        user=user,
+        notification_type='new_badge',
+        created_at__gte=timezone.now() - timedelta(hours=1)
+    ).exists():
+        logger.debug(f"Badge notification recently sent to {user.username}")
+        return True
     
     # Создаём in-app уведомление
     Notification.objects.create(
@@ -361,7 +399,12 @@ def send_badge_earned_notification(self, user_id: str, badge_type: str, badge_na
         action_url='/users/profile/',
     )
     
-    # Отправляем email если включено
+    # ✅ Проверка настроек через метод модели
+    if not user.get_notification_setting('email_system', True):
+        logger.info(f"Email notifications disabled for user {user.username}")
+        return True
+    
+    # Отправляем email если пользователь верифицирован
     if user.is_verified and user.email:
         _send_badge_email.delay(user_id, badge_type, badge_name)
     
@@ -385,29 +428,38 @@ def _send_badge_email(self, user_id: str, badge_type: str, badge_name: str):
     if not user.email or not user.is_verified:
         return False
     
+    # ✅ Проверка настроек email
+    if not getattr(settings, 'EMAIL_HOST_USER', None):
+        logger.warning(f"Email not configured: EMAIL_HOST_USER is empty. Badge {badge_name} for {user.email}")
+        return False
+    
     site_url = getattr(settings, 'SITE_URL', 'https://dopx.kz')
     
-    html_message = render_to_string('emails/badge_earned.html', {
-        'user': user,
-        'badge_name': badge_name,
-        'badge_type': badge_type,
-        'site_url': site_url,
-        'site_name': 'DOPX',
-    })
-    
-    email = EmailMultiAlternatives(
-        subject=f'🎖️ Новое достижение: {badge_name} | DOPX',
-        body='',
-        from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@dopx.kz'),
-        to=[user.email],
-    )
-    email.attach_alternative(html_message, "text/html")
-    
     try:
-        email.send(fail_silently=True)
-        logger.info(f"Badge email sent to {user.email}")
+        html_message = render_to_string('emails/badge_earned.html', {
+            'user': user,
+            'badge_name': badge_name,
+            'badge_type': badge_type,
+            'site_url': site_url,
+            'site_name': 'DOPX',
+        })
+        
+        email = EmailMultiAlternatives(
+            subject=f'🎖️ Новое достижение: {badge_name} | DOPX',
+            body='',
+            from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@dopx.kz'),
+            to=[user.email],
+        )
+        email.attach_alternative(html_message, "text/html")
+        
+        # ✅ Отправляем с fail_silently=False для отладки, но с обработкой ошибок
+        email.send(fail_silently=False)
+        logger.info(f"✅ Badge email sent to {user.email}: {badge_name}")
+        
     except Exception as e:
-        logger.error(f"Failed to send badge email: {e}")
+        logger.error(f"❌ Failed to send badge email to {user.email}: {type(e).__name__}: {e}")
+        # Не поднимаем исключение, чтобы не ломать основной поток
+        return False
     
     return True
 
@@ -417,12 +469,22 @@ def send_level_up_notification(self, user_id: str, new_level: int, total_xp: int
     """Отправка уведомления о повышении уровня"""
     from users.models import User
     from notifications.models import Notification
+    from django.conf import settings
     
     try:
         user = User.objects.get(id=user_id)
     except User.DoesNotExist:
         logger.error(f"User {user_id} not found for level up notification")
         return False
+    
+    # ✅ ДЕДУПЛИКАЦИЯ: проверяем, не было ли уже уведомления об этом уровне
+    if Notification.objects.filter(
+        user=user,
+        notification_type='level_up',
+        message__icontains=f'уровня {new_level}'
+    ).exists():
+        logger.debug(f"Level up notification already exists for {user.username}: level {new_level}")
+        return True
     
     # In-app уведомление
     Notification.objects.create(
@@ -435,6 +497,13 @@ def send_level_up_notification(self, user_id: str, new_level: int, total_xp: int
     
     # Email если включено
     user_settings = getattr(user, 'notification_settings', {})
+    if isinstance(user_settings, str):
+        import json
+        try:
+            user_settings = json.loads(user_settings)
+        except:
+            user_settings = {}
+    
     if user.is_verified and user.email and user_settings.get('email_system', True):
         _send_level_up_email.delay(user_id, new_level, total_xp)
     
@@ -458,66 +527,36 @@ def _send_level_up_email(self, user_id: str, new_level: int, total_xp: int):
     if not user.email or not user.is_verified:
         return False
     
-    site_url = getattr(settings, 'SITE_URL', 'https://dopx.kz')
-    
-    html_message = render_to_string('emails/level_up.html', {
-        'user': user,
-        'new_level': new_level,
-        'total_xp': total_xp,
-        'next_threshold': 100 * new_level,
-        'site_url': site_url,
-        'site_name': 'DOPX',
-    })
-    
-    email = EmailMultiAlternatives(
-        subject=f'⬆️ Вы достигли уровня {new_level}! | DOPX',
-        body='',
-        from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@dopx.kz'),
-        to=[user.email],
-    )
-    email.attach_alternative(html_message, "text/html")
-    
-    try:
-        email.send(fail_silently=True)
-        logger.info(f"Level up email sent to {user.email}")
-    except Exception as e:
-        logger.error(f"Failed to send level up email: {e}")
-    
-    return True
-
-
-@shared_task(bind=True, max_retries=3)
-def send_trust_score_updated_notification(self, user_id: str, old_score: float, new_score: float):
-    """Отправка уведомления об изменении Trust Score"""
-    from users.models import User
-    from notifications.models import Notification
-    
-    try:
-        user = User.objects.get(id=user_id)
-    except User.DoesNotExist:
+    # ✅ Проверка настроек email
+    if not getattr(settings, 'EMAIL_HOST_USER', None):
+        logger.warning(f"Email not configured: EMAIL_HOST_USER is empty. Level up {new_level} for {user.email}")
         return False
     
-    # Определяем уровень доверия
-    def get_trust_label(score):
-        if score >= 1.8:
-            return 'Эксперт', 'success'
-        elif score >= 1.4:
-            return 'Надёжный', 'warning'
-        elif score >= 1.0:
-            return 'Стандартный', 'info'
-        else:
-            return 'Новичок', 'error'
+    site_url = getattr(settings, 'SITE_URL', 'https://dopx.kz')
     
-    old_label, old_color = get_trust_label(old_score)
-    new_label, new_color = get_trust_label(new_score)
-    
-    # Только если уровень изменился
-    if old_label != new_label:
-        Notification.objects.create(
-            user=user,
-            notification_type='system',
-            title=f'🛡️ Ваш Trust Score обновлён',
-            message=f'Ваш уровень доверия: {old_label} → {new_label} ({new_score})',
-            action_url='/users/profile/',
-        )
+    try:
+        html_message = render_to_string('emails/level_up.html', {
+            'user': user,
+            'new_level': new_level,
+            'total_xp': total_xp,
+            'next_threshold': 100 * new_level,
+            'site_url': site_url,
+            'site_name': 'DOPX',
+        })
         
+        email = EmailMultiAlternatives(
+            subject=f'⬆️ Вы достигли уровня {new_level}! | DOPX',
+            body='',
+            from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@dopx.kz'),
+            to=[user.email],
+        )
+        email.attach_alternative(html_message, "text/html")
+        
+        email.send(fail_silently=False)
+        logger.info(f"✅ Level up email sent to {user.email}: level {new_level}")
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to send level up email to {user.email}: {type(e).__name__}: {e}")
+        return False
+    
+    return True
