@@ -53,7 +53,7 @@
     <!-- === ЛЕВАЯ КОЛОНКА (2/3) === -->
     <div class="lg:col-span-2 space-y-6">
         
-        <!-- === ТУРНИРНАЯ ТАБЛИЦА (НОВОЕ!) === -->
+        <!-- === ТУРНИРНАЯ ТАБЛИЦА === -->
         {% if standings %}
             <div class="card bg-base-100 border border-base-300">
                 <div class="card-body p-4">
@@ -100,18 +100,20 @@
                                             {% endif %}
                                         </td>
                                         <td>
-                                            <a href="{% url 'teams:detail' row.team.id %}" 
+                                            <!-- ✅ FIX: Используем team_id вместо team.id -->
+                                            <a href="{% url 'teams:detail' row.team_id %}" 
                                                class="flex items-center gap-2 hover:text-primary transition-colors">
-                                                {% if row.team.logo_url %}
-                                                    <img src="{{ row.team.logo_url }}" 
-                                                         alt="{{ row.team.name }}" 
+                                                {% if row.team_logo_url %}
+                                                    <img src="{{ row.team_logo_url }}" 
+                                                         alt="{{ row.team_name }}" 
                                                          class="w-6 h-6 object-contain">
                                                 {% else %}
                                                     <div class="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary">
-                                                        {{ row.team.name|first|upper }}
+                                                        {{ row.team_name|first|upper }}
                                                     </div>
                                                 {% endif %}
-                                                <span class="truncate font-medium">{{ row.team.name }}</span>
+                                                <!-- ✅ FIX: Используем team_name вместо team.name -->
+                                                <span class="truncate font-medium">{{ row.team_name }}</span>
                                             </a>
                                         </td>
                                         <td class="text-center opacity-70">{{ row.played }}</td>

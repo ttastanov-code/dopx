@@ -4,7 +4,8 @@ import os
 from datetime import timedelta
 from django.conf import settings
 from django.contrib import messages
-from django.db.models import Avg, F
+from django.db.models import Count, Avg, F, Q, Sum
+from django.core.cache import cache
 from django.http import HttpResponse
 from django.shortcuts import redirect, render, get_object_or_404
 from django.template.loader import render_to_string
@@ -129,6 +130,13 @@ def standings_preview(request):
         </div>
         ''')
     
+    # ✅ КЭШИРОВАНИЕ (используем тот же ключ что в LeagueDetailView)
+    cache_key = f'league_{season.league.id}_season_{season.id}_standings_preview'
+    cached_html = cache.get(cache_key)
+    
+    if cached_html:
+        return HttpResponse(cached_html)
+    
     teams = Team.objects.filter(
         teamseason__season=season,
         is_active=True
@@ -136,40 +144,38 @@ def standings_preview(request):
     
     standings_list = []
     for team in teams:
-        home_matches = Match.objects.filter(
-            home_team=team,
+        # ✅ ОПТИМИЗАЦИЯ: один SQL запрос вместо 6+
+        stats = Match.objects.filter(
             season=season,
             status='finished'
-        )
-        away_matches = Match.objects.filter(
-            away_team=team,
-            season=season,
-            status='finished'
+        ).aggregate(
+            home_played=Count('id', filter=Q(home_team=team)),
+            away_played=Count('id', filter=Q(away_team=team)),
+            home_wins=Count('id', filter=Q(home_team=team) & Q(home_score__gt=F('away_score'))),
+            away_wins=Count('id', filter=Q(away_team=team) & Q(away_score__gt=F('home_score'))),
+            home_draws=Count('id', filter=Q(home_team=team) & Q(home_score=F('away_score'))),
+            away_draws=Count('id', filter=Q(away_team=team) & Q(away_score=F('home_score'))),
+            home_goals_scored=Sum('home_score', filter=Q(home_team=team)),
+            away_goals_scored=Sum('away_score', filter=Q(away_team=team)),
+            home_goals_conceded=Sum('away_score', filter=Q(home_team=team)),
+            away_goals_conceded=Sum('home_score', filter=Q(away_team=team)),
         )
         
-        played = home_matches.count() + away_matches.count()
-        wins = (
-            home_matches.filter(home_score__gt=F('away_score')).count() +
-            away_matches.filter(away_score__gt=F('home_score')).count()
-        )
-        draws = (
-            home_matches.filter(home_score=F('away_score')).count() +
-            away_matches.filter(away_score=F('home_score')).count()
-        )
+        played = (stats['home_played'] or 0) + (stats['away_played'] or 0)
+        wins = (stats['home_wins'] or 0) + (stats['away_wins'] or 0)
+        draws = (stats['home_draws'] or 0) + (stats['away_draws'] or 0)
         losses = played - wins - draws
-        goals_scored = (
-            sum(m.home_score or 0 for m in home_matches) +
-            sum(m.away_score or 0 for m in away_matches)
-        )
-        goals_conceded = (
-            sum(m.away_score or 0 for m in home_matches) +
-            sum(m.home_score or 0 for m in away_matches)
-        )
+        
+        goals_scored = ((stats['home_goals_scored'] or 0) + (stats['away_goals_scored'] or 0))
+        goals_conceded = ((stats['home_goals_conceded'] or 0) + (stats['away_goals_conceded'] or 0))
         goal_diff = goals_scored - goals_conceded
         points = wins * 3 + draws
         
+        # ✅ ТОТ ЖЕ ФОРМАТ что в LeagueDetailView
         standings_list.append({
-            'team': team,
+            'team_id': str(team.id),
+            'team_name': team.name,
+            'team_logo_url': team.logo_url,
             'played': played,
             'wins': wins,
             'draws': draws,
@@ -187,6 +193,10 @@ def standings_preview(request):
         'standings': standings_list,
         'season': season,
     })
+    
+    # ✅ КЭШИРУЕМ HTML (не данные, а готовый HTML)
+    cache.set(cache_key, html, 300)
+    
     return HttpResponse(html)
 
 

@@ -108,8 +108,10 @@ class LeagueDetailView(DetailView):
                     goal_diff = goals_scored - goals_conceded
                     points = wins * 3 + draws
                     
-                    standings.append({  # ✅ Теперь standings — список, .append() работает
-                        'team': team,
+                    standings.append({
+                        'team_id': str(team.id),      # ← UUID как строка
+                        'team_name': team.name,        # ← Только строка
+                        'team_logo_url': team.logo_url,
                         'played': played,
                         'wins': wins,
                         'draws': draws,
