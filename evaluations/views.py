@@ -422,7 +422,7 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
             # ✅ 5. Начисляем XP (ПОСЛЕ обновления статистики!)
             from users.models import UserXP, UserBadge
             xp, _ = UserXP.objects.get_or_create(user=self.request.user)
-            xp.add_xp(10)  # +10 XP за завершение оценки
+            xp_result = xp.add_xp(10)  # +10 XP за завершение оценки
             
             # ✅ 6. Проверяем достижения (ПОСЛЕ начисления XP и обновления статистики)
             from users.services import check_and_award_badges
@@ -432,6 +432,7 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
             if awarded_badges:
                 from notifications.tasks import send_badge_earned_notification
                 for badge in awarded_badges:
+                    # ✅ badge — это объект UserBadge, а не строка!
                     send_badge_earned_notification.delay(
                         user_id=str(self.request.user.id),
                         badge_type=badge.badge_type,
@@ -439,7 +440,7 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
                     )
             
             # ✅ 8. Уведомление о повышении уровня (если произошло)
-            if xp.level > (getattr(self.request.user, '_old_level', 1)):
+            if xp_result.get('level_increased', False):
                 from notifications.tasks import send_level_up_notification
                 send_level_up_notification.delay(
                     user_id=str(self.request.user.id),
