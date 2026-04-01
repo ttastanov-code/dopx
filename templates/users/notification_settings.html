@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <div class="mb-6">
+        <a href="{% url 'users:profile' %}" class="btn btn-ghost btn-sm">
+            <i class="ti ti-arrow-left"></i>
+            Назад к профилю
+        </a>
+    </div>
+    
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-6">
+            <h1 class="text-2xl font-bold mb-6">Настройки уведомлений</h1>
+            
+            <form method="post" class="space-y-4">
+                {% csrf_token %}
+                
+                {% for field in form %}
+                <div class="form-control">
+                    <label class="label cursor-pointer gap-4 p-4 rounded-lg border border-base-300 hover:bg-base-200 transition-all">
+                        <div class="flex-1">
+                            <span class="label-text font-medium">{{ field.label }}</span>
+                        </div>
+                        {{ field }}
+                    </label>
+                </div>
+                {% endfor %}
+                
+                <div class="pt-4">
+                    <button type="submit" class="btn btn-primary w-full">
+                        <i class="ti ti-check"></i>
+                        Сохранить настройки
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

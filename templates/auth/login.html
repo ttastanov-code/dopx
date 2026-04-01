@@ -1,15 +1,11 @@
 {% extends 'base_auth.html' %}
 {% load static %}
-
 {% block title %}Вход — DOPX{% endblock %}
-
 {% block content %}
 <div class="w-full max-w-md px-4">
-    
     <!-- Карточка входа -->
     <div class="card bg-base-100 border border-base-300 shadow-xl">
         <div class="card-body p-8">
-            
             <!-- Логотип -->
             <div class="text-center mb-6">
                 <img src="{% static 'img/DOPX_logo.png' %}" alt="DOPX" class="h-12 w-auto mx-auto mb-3">
@@ -18,12 +14,10 @@
             </div>
             
             <!-- Форма -->
-            <form method="post" action="{% url 'users:login' %}" 
+            <form method="post" action="{% url 'users:login' %}"
                   class="space-y-4"
-                  x-data="{ 
+                  x-data="{
                       showPassword: false,
-                      email: '',
-                      username: ''
                   }">
                 {% csrf_token %}
                 
@@ -33,9 +27,9 @@
                         <span class="label-text font-medium">Имя пользователя или Email</span>
                     </label>
                     <div class="relative">
-                        <input type="text" 
-                               id="id_username" 
-                               name="username" 
+                        <input type="text"
+                               id="id_username"
+                               name="username"
                                required
                                autocomplete="username"
                                class="input input-bordered w-full pl-10 {% if form.username.errors %}input-error{% endif %}"
@@ -56,18 +50,18 @@
                         <span class="label-text font-medium">Пароль</span>
                     </label>
                     <div class="relative">
-                        <input type="password" 
-                               id="id_password" 
-                               name="password" 
+                        <input type="password"
+                               id="id_password"
+                               name="password"
                                required
                                autocomplete="current-password"
                                class="input input-bordered w-full pl-10 {% if form.password.errors %}input-error{% endif %}"
                                placeholder="••••••••">
                         <i class="ti ti-lock absolute left-3 top-1/2 -translate-y-1/2 opacity-40"></i>
-                        <button type="button" 
-                                @click="togglePassword('id_password')"
+                        <button type="button"
+                                @click="showPassword = !showPassword; $el.previousElementSibling.type = showPassword ? 'text' : 'password'"
                                 class="absolute right-3 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-100 transition-opacity">
-                            <i class="ti ti-eye"></i>
+                            <i class="ti" :class="showPassword ? 'ti-eye-off' : 'ti-eye'"></i>
                         </button>
                     </div>
                     {% if form.password.errors %}
@@ -83,16 +77,13 @@
                         <input type="checkbox" name="remember" class="checkbox checkbox-sm checkbox-primary">
                         <span class="label-text">Запомнить</span>
                     </label>
-                    <a href="#" class="link link-primary hover:no-underline">Забыли пароль?</a>
+                    <a href="{% url 'users:password_reset' %}" class="link link-primary hover:no-underline">
+                        Забыли пароль?
+                    </a>
                 </div>
                 
                 <!-- Submit Button -->
-                <button type="submit" 
-                        class="btn btn-primary w-full"
-                        hx-post="{% url 'users:login' %}"
-                        hx-include="closest form"
-                        hx-target="closest .card"
-                        hx-swap="outerHTML">
+                <button type="submit" class="btn btn-primary w-full">
                     <i class="ti ti-login"></i>
                     Войти
                 </button>
@@ -143,16 +134,4 @@
         </div>
     </div>
 </div>
-{% endblock %}
-
-{% block extra_script %}
-<script>
-    // Автофокус на поле username
-    document.addEventListener('DOMContentLoaded', () => {
-        const usernameInput = document.getElementById('id_username');
-        if (usernameInput && !usernameInput.value) {
-            usernameInput.focus();
-        }
-    });
-</script>
 {% endblock %}
