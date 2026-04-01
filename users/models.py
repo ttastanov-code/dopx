@@ -28,7 +28,156 @@ class User(AbstractUser, BaseModel):
     total_evaluations = models.IntegerField(_('Всего оценок'), default=0)
     evaluation_streak = models.IntegerField(_('Серия оценок'), default=0)
     last_evaluation_date = models.DateField(_('Последняя оценка'), null=True, blank=True)
-
+    DEFAULT_NOTIFICATION_SETTINGS = {
+        'email_match_finished': True,
+        'email_voting_open': True,
+        'email_voting_closing': True,
+        'email_top_performance': True,
+        'email_system': True,
+    }
+    
+    @property
+    def notification_settings(self):
+        """Безопасное получение настроек уведомлений"""
+        if not hasattr(self, '_notification_settings_cache'):
+            raw = getattr(self, '_raw_notification_settings', {})
+            if isinstance(raw, str):
+                import json
+                try:
+                    raw = json.loads(raw)
+                except:
+                    raw = {}
+            self._notification_settings_cache = {**self.DEFAULT_NOTIFICATION_SETTINGS, **raw}
+        return self._notification_settings_cache
+    
+    @notification_settings.setter
+    def notification_settings(self, value):
+        """Сохранение настроек уведомлений"""
+        self._raw_notification_settings = value
+        if hasattr(self, '_notification_settings_cache'):
+            delattr(self, '_notification_settings_cache')
+    
+    def get_notification_setting(self, key, default=None):
+        """Получить конкретную настройку уведомления"""
+        settings = self.notification_settings
+        return settings.get(key, default if default is not None else self.DEFAULT_NOTIFICATION_SETTINGS.get(key, False))
+    
+    def check_and_award_badges(self):
+        """Проверка и выдача достижений пользователю"""
+        from .models import UserBadge
+        
+        badges_to_award = []
+        
+        # 🔹 Первая оценка (уже выдаётся при регистрации, но проверяем)
+        if self.total_evaluations >= 1:
+            badges_to_award.append('first_evaluation')
+        
+        # 🔹 Активный фанат: 10+ оценок
+        if self.total_evaluations >= 10:
+            badges_to_award.append('active_fan_10')
+        
+        # 🔹 Хардкор фанат: 50+ оценок
+        if self.total_evaluations >= 50:
+            badges_to_award.append('active_fan_50')
+        
+        # 🔹 Серия: 7 дней подряд
+        if self.evaluation_streak >= 7:
+            badges_to_award.append('streak_7')
+        
+        # 🔹 Серия: 30 дней подряд
+        if self.evaluation_streak >= 30:
+            badges_to_award.append('streak_30')
+        
+        # 🔹 Точный аналитик: trust_score >= 1.5
+        if self.trust_score >= 1.5:
+            badges_to_award.append('accurate_analyst')
+        
+        # 🔹 Без предвзятости: проверка по последним 10 матчам
+        if self._check_bias_free():
+            badges_to_award.append('bias_free')
+        
+        # 🔹 Ранняя пташка: оценка отправлена до 10:00 утра (проверяется в evaluate view)
+        # Это выдаётся в момент оценки, не здесь
+        
+        # Создаём достижения (get_or_create предотвращает дубликаты)
+        awarded = []
+        for badge_type in badges_to_award:
+            badge, created = UserBadge.objects.get_or_create(
+                user=self,
+                badge_type=badge_type
+            )
+            if created:
+                awarded.append(badge_type)
+        
+        return awarded
+    
+    def _check_bias_free(self):
+        """Проверка на отсутствие предвзятости"""
+        from evaluations.models import ContextEvaluation, PlayerEvaluation
+        from django.db.models import Avg
+        
+        # Берем последние 10 матчей с оценками
+        contexts = ContextEvaluation.objects.filter(
+            user=self,
+            supported_team__isnull=False
+        ).select_related('match').order_by('-created_at')[:10]
+        
+        if contexts.count() < 5:  # Нужно минимум 5 матчей для оценки
+            return False
+        
+        bias_scores = []
+        for ctx in contexts:
+            match = ctx.match
+            supported = ctx.supported_team
+            
+            # Оценки своей команды
+            own_avg = PlayerEvaluation.objects.filter(
+                user=self, match=match, player__team=supported
+            ).aggregate(avg=Avg('contribution'))['avg']
+            
+            # Оценки соперника
+            opponent = match.away_team if match.home_team == supported else match.home_team
+            opp_avg = PlayerEvaluation.objects.filter(
+                user=self, match=match, player__team=opponent
+            ).aggregate(avg=Avg('contribution'))['avg']
+            
+            if own_avg and opp_avg:
+                bias = abs(own_avg - opp_avg)
+                bias_scores.append(bias)
+        
+        if not bias_scores:
+            return False
+        
+        # Если средняя предвзятость < 2.0 — пользователь объективен
+        avg_bias = sum(bias_scores) / len(bias_scores)
+        return avg_bias < 2.0
+    
+    def update_evaluation_stats(self):
+        """Обновление статистики оценок + проверка достижений"""
+        from django.utils import timezone
+        today = timezone.now().date()
+        
+        self.total_evaluations += 1
+        
+        if self.last_evaluation_date:
+            days_diff = (today - self.last_evaluation_date).days
+            if days_diff == 1:
+                self.evaluation_streak += 1
+            elif days_diff > 1:
+                self.evaluation_streak = 1
+            # days_diff == 0: streak не меняем (уже оценил сегодня)
+        else:
+            self.evaluation_streak = 1
+        
+        self.last_evaluation_date = today
+        
+        # 🎁 Проверяем и выдаём достижения
+        awarded_badges = self.check_and_award_badges()
+        
+        self.save(update_fields=['total_evaluations', 'evaluation_streak', 'last_evaluation_date', 'updated_at'])
+        
+        return awarded_badges
+    
     class Meta:
         verbose_name = _('Пользователь')
         verbose_name_plural = _('Пользователи')
@@ -36,23 +185,6 @@ class User(AbstractUser, BaseModel):
 
     def __str__(self):
         return self.username
-
-    def update_evaluation_stats(self):
-        """Обновление статистики оценок пользователя"""
-        today = timezone.now().date()
-        self.total_evaluations += 1
-        if self.last_evaluation_date:
-            days_diff = (today - self.last_evaluation_date).days
-            if days_diff == 1:
-                self.evaluation_streak += 1
-            elif days_diff > 1:
-                self.evaluation_streak = 1
-            else:
-                self.evaluation_streak = 1
-        else:
-            self.evaluation_streak = 1
-        self.last_evaluation_date = today
-        self.save(update_fields=['total_evaluations', 'evaluation_streak', 'last_evaluation_date', 'updated_at'])
 
     def get_trust_level(self):
         """Уровень доверия"""
@@ -144,12 +276,34 @@ class UserXP(BaseModel):
         verbose_name_plural = _('Опыт пользователей')
 
     def add_xp(self, amount):
-        """Добавить опыт"""
+        """Добавить опыт и проверить повышение уровня"""
+        old_level = self.level
+        
         self.total_xp += amount
+        
+        # Пересчитываем уровень
         new_level = (self.total_xp // 100) + 1
+        
         if new_level > self.level:
             self.level = new_level
-            self.save()
+            # Сохраняем старый уровень для проверки в view
+            self._level_increased = True
+        
+        self.save()
+        
+        # Возвращаем информацию об изменении
+        return {
+            'level_increased': new_level > old_level,
+            'old_level': old_level,
+            'new_level': new_level,
+            'xp_added': amount,
+            'total_xp': self.total_xp
+        }
 
+    @property
+    def progress_percent(self):
+        """Процент прогресса до следующего уровня (0-100)"""
+        return self.total_xp % 100
+    
     def __str__(self):
         return f"{self.user} — Уровень {self.level}"
