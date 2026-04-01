@@ -211,21 +211,21 @@
                 </h3>
                 
                 <div class="space-y-3">
-                    <a href="#" class="flex items-center justify-between p-3 bg-base-200 rounded-lg hover:bg-base-300 transition-all">
+                    <a href="{% url 'users:password_change' %}" class="flex items-center justify-between p-3 bg-base-200 rounded-lg hover:bg-base-300 transition-all">
                         <div class="flex items-center gap-3">
                             <i class="ti ti-lock"></i>
                             <span>Изменить пароль</span>
                         </div>
                         <i class="ti ti-chevron-right opacity-60"></i>
                     </a>
-                    <a href="#" class="flex items-center justify-between p-3 bg-base-200 rounded-lg hover:bg-base-300 transition-all">
+                    <a href="{% url 'users:notification_settings' %}" class="flex items-center justify-between p-3 bg-base-200 rounded-lg hover:bg-base-300 transition-all">
                         <div class="flex items-center gap-3">
                             <i class="ti ti-mail"></i>
                             <span>Email уведомления</span>
                         </div>
                         <i class="ti ti-chevron-right opacity-60"></i>
                     </a>
-                    <a href="#" class="flex items-center justify-between p-3 bg-base-200 rounded-lg hover:bg-base-300 transition-all">
+                    <a href="{% url 'users:profile_edit' %}" class="flex items-center justify-between p-3 bg-base-200 rounded-lg hover:bg-base-300 transition-all">
                         <div class="flex items-center gap-3">
                             <i class="ti ti-user-edit"></i>
                             <span>Редактировать профиль</span>

@@ -244,6 +244,10 @@ templates
       ticket_detail.html
   auth
     login.html
+    password_reset.html
+    password_reset_complete.html
+    password_reset_confirm.html
+    password_reset_done.html
     register.html
   base.html
   base_auth.html
@@ -264,10 +268,14 @@ templates
   core
     contacts.html
     home.html
+    privacy.html
     rules.html
   emails
     contact_confirmation.html
     contact_form.html
+    password_reset_email.html
+    password_reset_email.txt
+    password_reset_subject.txt
     sync_error_alert.html
     ticket_status_change.html
   errors
@@ -305,6 +313,9 @@ templates
     list.html
   users
     leaderboard.html
+    notification_settings.html
+    password_change.html
+    profile_edit.html
 users
   __init__.py
   admin.py
@@ -312,6 +323,7 @@ users
   forms.py
   migrations
     0001_initial.py
+    0002_add_notification_settings.py
     __init__.py
   models.py
   tests.py
@@ -4003,13 +4015,14 @@ FILE: core/urls.py
 
 # core/urls.py
 from django.urls import path
-from .views import HomeView, RulesView, ContactsView, standings_preview, handler_404, handler_500
+from .views import HomeView, RulesView, ContactsView, PrivacyPolicyView, standings_preview, handler_404, handler_500
 
 app_name = 'core'
 
 urlpatterns = [
     path('', HomeView.as_view(), name='home'),
     path('rules/', RulesView.as_view(), name='rules'),
+    path('privacy/', PrivacyPolicyView.as_view(), name='privacy'),
     path('contacts/', ContactsView.as_view(), name='contacts'),
     path('api/standings-preview/', standings_preview, name='standings_preview'),
 ]
@@ -4416,6 +4429,16 @@ class ContactSubmissionDetailView(View):
         })
 
 
+class PrivacyPolicyView(TemplateView):
+    """Страница Политики конфиденциальности"""
+    template_name = 'core/privacy.html'
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['page_title'] = 'Политика конфиденциальности — DOPX'
+        return context
+    
+    
 def handler_404(request, exception):
     return render(request, 'errors/404.html', status=404)
 
@@ -13130,16 +13153,12 @@ FILE: templates/auth/login.html
 
 {% extends 'base_auth.html' %}
 {% load static %}
-
 {% block title %}Вход — DOPX{% endblock %}
-
 {% block content %}
 <div class="w-full max-w-md px-4">
-    
     <!-- Карточка входа -->
     <div class="card bg-base-100 border border-base-300 shadow-xl">
         <div class="card-body p-8">
-            
             <!-- Логотип -->
             <div class="text-center mb-6">
                 <img src="{% static 'img/DOPX_logo.png' %}" alt="DOPX" class="h-12 w-auto mx-auto mb-3">
@@ -13148,12 +13167,10 @@ FILE: templates/auth/login.html
             </div>
             
             <!-- Форма -->
-            <form method="post" action="{% url 'users:login' %}" 
+            <form method="post" action="{% url 'users:login' %}"
                   class="space-y-4"
-                  x-data="{ 
+                  x-data="{
                       showPassword: false,
-                      email: '',
-                      username: ''
                   }">
                 {% csrf_token %}
                 
@@ -13163,9 +13180,9 @@ FILE: templates/auth/login.html
                         <span class="label-text font-medium">Имя пользователя или Email</span>
                     </label>
                     <div class="relative">
-                        <input type="text" 
-                               id="id_username" 
-                               name="username" 
+                        <input type="text"
+                               id="id_username"
+                               name="username"
                                required
                                autocomplete="username"
                                class="input input-bordered w-full pl-10 {% if form.username.errors %}input-error{% endif %}"
@@ -13186,18 +13203,18 @@ FILE: templates/auth/login.html
                         <span class="label-text font-medium">Пароль</span>
                     </label>
                     <div class="relative">
-                        <input type="password" 
-                               id="id_password" 
-                               name="password" 
+                        <input type="password"
+                               id="id_password"
+                               name="password"
                                required
                                autocomplete="current-password"
                                class="input input-bordered w-full pl-10 {% if form.password.errors %}input-error{% endif %}"
                                placeholder="••••••••">
                         <i class="ti ti-lock absolute left-3 top-1/2 -translate-y-1/2 opacity-40"></i>
-                        <button type="button" 
-                                @click="togglePassword('id_password')"
+                        <button type="button"
+                                @click="showPassword = !showPassword; $el.previousElementSibling.type = showPassword ? 'text' : 'password'"
                                 class="absolute right-3 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-100 transition-opacity">
-                            <i class="ti ti-eye"></i>
+                            <i class="ti" :class="showPassword ? 'ti-eye-off' : 'ti-eye'"></i>
                         </button>
                     </div>
                     {% if form.password.errors %}
@@ -13213,16 +13230,13 @@ FILE: templates/auth/login.html
                         <input type="checkbox" name="remember" class="checkbox checkbox-sm checkbox-primary">
                         <span class="label-text">Запомнить</span>
                     </label>
-                    <a href="#" class="link link-primary hover:no-underline">Забыли пароль?</a>
+                    <a href="{% url 'users:password_reset' %}" class="link link-primary hover:no-underline">
+                        Забыли пароль?
+                    </a>
                 </div>
                 
                 <!-- Submit Button -->
-                <button type="submit" 
-                        class="btn btn-primary w-full"
-                        hx-post="{% url 'users:login' %}"
-                        hx-include="closest form"
-                        hx-target="closest .card"
-                        hx-swap="outerHTML">
+                <button type="submit" class="btn btn-primary w-full">
                     <i class="ti ti-login"></i>
                     Войти
                 </button>
@@ -13275,16 +13289,210 @@ FILE: templates/auth/login.html
 </div>
 {% endblock %}
 
-{% block extra_script %}
-<script>
-    // Автофокус на поле username
-    document.addEventListener('DOMContentLoaded', () => {
-        const usernameInput = document.getElementById('id_username');
-        if (usernameInput && !usernameInput.value) {
-            usernameInput.focus();
-        }
-    });
-</script>
+
+================================================================================
+FILE: templates/auth/password_reset.html
+================================================================================
+
+{% extends 'base_auth.html' %}
+{% load static %}
+{% block title %}Сброс пароля — DOPX{% endblock %}
+{% block content %}
+<div class="w-full max-w-md px-4">
+    <div class="card bg-base-100 border border-base-300 shadow-xl">
+        <div class="card-body p-8">
+            <div class="text-center mb-6">
+                <div class="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
+                    <i class="ti ti-lock text-3xl text-primary"></i>
+                </div>
+                <h1 class="text-2xl font-bold">Сброс пароля</h1>
+                <p class="text-sm opacity-60 mt-1">Введите email для восстановления</p>
+            </div>
+            
+            <form method="post" class="space-y-4">
+                {% csrf_token %}
+                
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text font-medium">Email</span>
+                    </label>
+                    <input type="email" name="email" required
+                           class="input input-bordered w-full"
+                           placeholder="email@example.com">
+                </div>
+                
+                <button type="submit" class="btn btn-primary w-full">
+                    <i class="ti ti-send"></i>
+                    Отправить инструкцию
+                </button>
+            </form>
+            
+            <div class="text-center mt-4">
+                <a href="{% url 'users:login' %}" class="link link-primary">
+                    Вернуться ко входу
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+
+================================================================================
+FILE: templates/auth/password_reset_complete.html
+================================================================================
+
+{% extends 'base_auth.html' %}
+{% load static %}
+{% block title %}Пароль изменён — DOPX{% endblock %}
+{% block content %}
+<div class="w-full max-w-md px-4">
+    <div class="card bg-base-100 border border-base-300 shadow-xl">
+        <div class="card-body p-8 text-center">
+            <div class="w-16 h-16 rounded-full bg-success/20 flex items-center justify-center mx-auto mb-4">
+                <i class="ti ti-check text-3xl text-success"></i>
+            </div>
+            <h1 class="text-2xl font-bold mb-2">Пароль изменён!</h1>
+            <p class="text-sm opacity-60 mb-6">
+                Ваш пароль успешно изменён. Теперь вы можете войти
+            </p>
+            <a href="{% url 'users:login' %}" class="btn btn-primary w-full">
+                Войти
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+
+================================================================================
+FILE: templates/auth/password_reset_confirm.html
+================================================================================
+
+{% extends 'base_auth.html' %}
+{% load static %}
+{% block title %}Новый пароль — DOPX{% endblock %}
+{% block content %}
+<div class="w-full max-w-md px-4">
+    <div class="card bg-base-100 border border-base-300 shadow-xl">
+        <div class="card-body p-8">
+            <div class="text-center mb-6">
+                <div class="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
+                    <i class="ti ti-lock text-3xl text-primary"></i>
+                </div>
+                <h1 class="text-2xl font-bold">Новый пароль</h1>
+                <p class="text-sm opacity-60 mt-1">Придумайте новый пароль</p>
+            </div>
+            
+            <form method="post" class="space-y-4" x-data="{ showPassword: false, showPassword2: false }">
+                {% csrf_token %}
+                
+                <!-- Новый пароль -->
+                <div class="form-control">
+                    <label class="label" for="id_new_password1">
+                        <span class="label-text font-medium">Новый пароль</span>
+                    </label>
+                    <div class="relative">
+                        <input type="password"
+                               id="id_new_password1"
+                               name="new_password1"
+                               required
+                               autocomplete="new-password"
+                               class="input input-bordered w-full pl-10 {% if form.new_password1.errors %}input-error{% endif %}"
+                               placeholder="••••••••">
+                        <i class="ti ti-lock absolute left-3 top-1/2 -translate-y-1/2 opacity-40"></i>
+                        <button type="button"
+                                @click="showPassword = !showPassword; $el.previousElementSibling.type = showPassword ? 'text' : 'password'"
+                                class="absolute right-3 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-100 transition-opacity">
+                            <i class="ti" :class="showPassword ? 'ti-eye-off' : 'ti-eye'"></i>
+                        </button>
+                    </div>
+                    {% if form.new_password1.errors %}
+                    <label class="label">
+                        <span class="label-text-alt text-error">{{ form.new_password1.errors.0 }}</span>
+                    </label>
+                    {% endif %}
+                    <label class="label">
+                        <span class="label-text-alt opacity-60">
+                            Минимум 8 символов, не только цифры
+                        </span>
+                    </label>
+                </div>
+                
+                <!-- Подтверждение пароля -->
+                <div class="form-control">
+                    <label class="label" for="id_new_password2">
+                        <span class="label-text font-medium">Подтверждение пароля</span>
+                    </label>
+                    <div class="relative">
+                        <input type="password"
+                               id="id_new_password2"
+                               name="new_password2"
+                               required
+                               autocomplete="new-password"
+                               class="input input-bordered w-full pl-10 {% if form.new_password2.errors %}input-error{% endif %}"
+                               placeholder="••••••••">
+                        <i class="ti ti-lock-check absolute left-3 top-1/2 -translate-y-1/2 opacity-40"></i>
+                        <button type="button"
+                                @click="showPassword2 = !showPassword2; $el.previousElementSibling.type = showPassword2 ? 'text' : 'password'"
+                                class="absolute right-3 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-100 transition-opacity">
+                            <i class="ti" :class="showPassword2 ? 'ti-eye-off' : 'ti-eye'"></i>
+                        </button>
+                    </div>
+                    {% if form.new_password2.errors %}
+                    <label class="label">
+                        <span class="label-text-alt text-error">{{ form.new_password2.errors.0 }}</span>
+                    </label>
+                    {% endif %}
+                </div>
+                
+                <!-- Password requirements -->
+                <div class="alert alert-info text-xs">
+                    <i class="ti ti-info-circle"></i>
+                    <div>
+                        <ul class="space-y-1 mt-1">
+                            <li>• Минимум 8 символов</li>
+                            <li>• Не только цифры</li>
+                            <li>• Не слишком простой</li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary w-full">
+                    <i class="ti ti-check"></i>
+                    Установить пароль
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+
+================================================================================
+FILE: templates/auth/password_reset_done.html
+================================================================================
+
+{% extends 'base_auth.html' %}
+{% load static %}
+{% block title %}Сброс пароля — DOPX{% endblock %}
+{% block content %}
+<div class="w-full max-w-md px-4">
+    <div class="card bg-base-100 border border-base-300 shadow-xl">
+        <div class="card-body p-8 text-center">
+            <div class="w-16 h-16 rounded-full bg-success/20 flex items-center justify-center mx-auto mb-4">
+                <i class="ti ti-check text-3xl text-success"></i>
+            </div>
+            <h1 class="text-2xl font-bold mb-2">Проверьте email</h1>
+            <p class="text-sm opacity-60 mb-6">
+                Если аккаунт с таким email существует, вы получите инструкцию по сбросу пароля
+            </p>
+            <a href="{% url 'users:login' %}" class="btn btn-primary w-full">
+                Вернуться ко входу
+            </a>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 
@@ -14453,7 +14661,7 @@ FILE: templates/components/_footer.html
                         </a>
                     </li>
                     <li>
-                        <a href="#" class="hover:text-primary transition-colors">
+                        <a href="{% url 'core:privacy' %}" class="hover:text-primary transition-colors">
                             Политика конфиденциальности
                         </a>
                     </li>
@@ -16315,6 +16523,174 @@ FILE: templates/core/home.html
 
 
 ================================================================================
+FILE: templates/core/privacy.html
+================================================================================
+
+{% extends 'base.html' %}
+{% load static %}
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold mb-2">
+            <i class="ti ti-shield-lock mr-2"></i>
+            Политика конфиденциальности
+        </h1>
+        <p class="opacity-60">Последнее обновление: {% now "d.m.Y" %}</p>
+    </div>
+    
+    <div class="space-y-8">
+        <!-- Введение -->
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-6">
+                <h2 class="text-2xl font-bold mb-4">1. Введение</h2>
+                <p class="opacity-80">
+                    Платформа DOPX (далее — «Платформа») уважает вашу конфиденциальность и стремится защитить 
+                    ваши персональные данные. Эта Политика конфиденциальности описывает, как мы собираем, 
+                    используем и защищаем вашу информацию.
+                </p>
+            </div>
+        </div>
+        
+        <!-- Сбор данных -->
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-6">
+                <h2 class="text-2xl font-bold mb-4">2. Какие данные мы собираем</h2>
+                <div class="space-y-4">
+                    <div>
+                        <h3 class="font-semibold mb-2">2.1. При регистрации</h3>
+                        <ul class="list-disc list-inside opacity-80 text-sm space-y-1">
+                            <li>Имя пользователя</li>
+                            <li>Email адрес</li>
+                            <li>Город (опционально)</li>
+                            <li>Пароль (хэшируется)</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold mb-2">2.2. При использовании</h3>
+                        <ul class="list-disc list-inside opacity-80 text-sm space-y-1">
+                            <li>Оценки матчей, игроков, команд</li>
+                            <li>Контекст просмотра матчей</li>
+                            <li>Настройки уведомлений</li>
+                            <li>Технические данные (IP, browser, device)</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold mb-2">2.3. Автоматически</h3>
+                        <ul class="list-disc list-inside opacity-80 text-sm space-y-1">
+                            <li>Cookie для сессий</li>
+                            <li>Логи доступа</li>
+                            <li>Данные об использовании платформы</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Использование данных -->
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-6">
+                <h2 class="text-2xl font-bold mb-4">3. Как мы используем данные</h2>
+                <ul class="list-disc list-inside opacity-80 text-sm space-y-2">
+                    <li>Предоставление доступа к платформе</li>
+                    <li>Расчёт рейтингов и агрегатов</li>
+                    <li>Отправка уведомлений (с возможностью отписки)</li>
+                    <li>Улучшение работы платформы</li>
+                    <li>Защита от мошенничества</li>
+                    <li>Выполнение требований законодательства</li>
+                </ul>
+            </div>
+        </div>
+        
+        <!-- Защита данных -->
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-6">
+                <h2 class="text-2xl font-bold mb-4">4. Защита данных</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="p-4 bg-base-200 rounded-lg">
+                        <h3 class="font-semibold mb-2">🔐 Технические меры</h3>
+                        <ul class="text-sm opacity-70 space-y-1">
+                            <li>• HTTPS шифрование</li>
+                            <li>• Хэширование паролей</li>
+                            <li>• Защита от CSRF</li>
+                            <li>• Регулярные бэкапы</li>
+                        </ul>
+                    </div>
+                    <div class="p-4 bg-base-200 rounded-lg">
+                        <h3 class="font-semibold mb-2">👥 Организационные меры</h3>
+                        <ul class="text-sm opacity-70 space-y-1">
+                            <li>• Ограниченный доступ</li>
+                            <li>• Обучение сотрудников</li>
+                            <li>• Политика безопасности</li>
+                            <li>• Мониторинг доступа</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Права пользователей -->
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-6">
+                <h2 class="text-2xl font-bold mb-4">5. Ваши права</h2>
+                <div class="space-y-3">
+                    <div class="flex items-start gap-3">
+                        <i class="ti ti-check text-success mt-1"></i>
+                        <div>
+                            <strong>Доступ:</strong>
+                            <span class="opacity-80 text-sm"> Запросить копию ваших данных</span>
+                        </div>
+                    </div>
+                    <div class="flex items-start gap-3">
+                        <i class="ti ti-check text-success mt-1"></i>
+                        <div>
+                            <strong>Исправление:</strong>
+                            <span class="opacity-80 text-sm"> Исправить неточную информацию</span>
+                        </div>
+                    </div>
+                    <div class="flex items-start gap-3">
+                        <i class="ti ti-check text-success mt-1"></i>
+                        <div>
+                            <strong>Удаление:</strong>
+                            <span class="opacity-80 text-sm"> Удалить аккаунт и данные</span>
+                        </div>
+                    </div>
+                    <div class="flex items-start gap-3">
+                        <i class="ti ti-check text-success mt-1"></i>
+                        <div>
+                            <strong>Перенос:</strong>
+                            <span class="opacity-80 text-sm"> Экспортировать данные в машиночитаемом формате</span>
+                        </div>
+                    </div>
+                    <div class="flex items-start gap-3">
+                        <i class="ti ti-check text-success mt-1"></i>
+                        <div>
+                            <strong>Возражение:</strong>
+                            <span class="opacity-80 text-sm"> Отказаться от обработки данных</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Контакты -->
+        <div class="card bg-gradient-to-br from-primary to-primary/80">
+            <div class="card-body p-6 text-center">
+                <h3 class="text-2xl font-bold mb-2">Контакты для вопросов</h3>
+                <p class="opacity-90 mb-4">По вопросам конфиденциальности пишите:</p>
+                <div class="flex flex-wrap gap-4 justify-center">
+                    <a href="mailto:support@dopx.kz" class="btn btn-ghost btn-lg">
+                        <i class="ti ti-headphones"></i>
+                        support@dopx.kz
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+
+================================================================================
 FILE: templates/core/rules.html
 ================================================================================
 
@@ -16683,50 +17059,168 @@ FILE: templates/core/rules.html
                 </div>
             </div>
         </section>
-        
-        <!-- Конфиденциальность -->
+ 
+        <!-- Политика конфиденциальности -->
         <section id="privacy" class="scroll-mt-24">
             <div class="card bg-base-100 border border-base-300">
                 <div class="card-body p-6">
                     <h2 class="text-2xl font-bold mb-4 flex items-center gap-2">
                         <i class="ti ti-lock text-neutral"></i>
-                        Конфиденциальность
+                        Конфиденциальность и защита данных
                     </h2>
-                    
                     <div class="space-y-4 text-sm opacity-80">
-                        <p>
-                            Мы уважаем вашу приватность. Ваши персональные данные защищены и не передаются третьим лицам.
-                        </p>
+                        <div class="alert alert-info">
+                            <i class="ti ti-info-circle"></i>
+                            <div>
+                                <h3 class="font-bold">Мы уважаем вашу приватность</h3>
+                                <p class="text-sm mt-1">
+                                    Ваши персональные данные защищены и не передаются третьим лицам без вашего согласия.
+                                </p>
+                            </div>
+                        </div>
                         
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div class="p-4 bg-base-200 rounded-lg">
-                                <h3 class="font-semibold mb-2">Публичные данные</h3>
+                                <h3 class="font-semibold mb-2">📤 Публичные данные</h3>
                                 <ul class="space-y-1 text-xs opacity-70">
                                     <li>• Имя пользователя</li>
                                     <li>• Trust Score</li>
                                     <li>• Количество оценок</li>
                                     <li>• Достижения</li>
+                                    <li>• Уровень</li>
                                 </ul>
                             </div>
-                            
                             <div class="p-4 bg-base-200 rounded-lg">
-                                <h3 class="font-semibold mb-2">Приватные данные</h3>
+                                <h3 class="font-semibold mb-2">🔒 Приватные данные</h3>
                                 <ul class="space-y-1 text-xs opacity-70">
                                     <li>• Email</li>
-                                    <li>• Пароль</li>
+                                    <li>• Пароль (хэшируется)</li>
                                     <li>• IP адрес</li>
                                     <li>• История сессий</li>
+                                    <li>• Настройки уведомлений</li>
                                 </ul>
                             </div>
                         </div>
                         
-                        <p class="text-xs opacity-60">
-                            Для удаления аккаунта напишите на <a href="mailto:support@dopx.kz" class="link link-primary">support@dopx.kz</a>
-                        </p>
+                        <div class="p-4 bg-base-200 rounded-lg">
+                            <h3 class="font-semibold mb-2">📋 Сбор данных</h3>
+                            <ul class="space-y-1 text-xs opacity-70">
+                                <li>• Данные оценок матчей (для расчёта рейтингов)</li>
+                                <li>• Контекст просмотра (для учёта веса голоса)</li>
+                                <li>• Технические данные (browser, device) для безопасности</li>
+                                <li>• Cookie для работы сессий</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="p-4 bg-base-200 rounded-lg">
+                            <h3 class="font-semibold mb-2">🛡️ Безопасность</h3>
+                            <ul class="space-y-1 text-xs opacity-70">
+                                <li>• Пароли хэшируются алгоритмом PBKDF2</li>
+                                <li>• HTTPS шифрование всех соединений</li>
+                                <li>• Защита от CSRF-атак</li>
+                                <li>• Регулярное резервное копирование</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="p-4 bg-base-200 rounded-lg">
+                            <h3 class="font-semibold mb-2">📧 Коммуникация</h3>
+                            <ul class="space-y-1 text-xs opacity-70">
+                                <li>• Email только для важных уведомлений</li>
+                                <li>• Возможность отписаться от рассылок</li>
+                                <li>• Спам не рассылается</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="p-4 bg-base-200 rounded-lg">
+                            <h3 class="font-semibold mb-2">🗑️ Удаление данных</h3>
+                            <p class="text-xs opacity-70">
+                                Для удаления аккаунта и всех персональных данных напишите на 
+                                <a href="mailto:support@dopx.kz" class="link link-primary">support@dopx.kz</a>
+                                Удаление выполняется в течение 30 дней.
+                            </p>
+                        </div>
+                        
+                        <div class="p-4 bg-base-200 rounded-lg">
+                            <h3 class="font-semibold mb-2">👶 Возраст</h3>
+                            <p class="text-xs opacity-70">
+                                Платформа предназначена для пользователей старше 16 лет. 
+                                Регистрация лиц младше 16 лет требует согласия родителей.
+                            </p>
+                        </div>
+                        
+                        <div class="p-4 bg-base-200 rounded-lg">
+                            <h3 class="font-semibold mb-2">📍 Юрисдикция</h3>
+                            <p class="text-xs opacity-70">
+                                Платформа работает в соответствии с законодательством Республики Казахстан.
+                                Все споры решаются в суде по месту регистрации компании.
+                            </p>
+                        </div>
                     </div>
                 </div>
             </div>
         </section>
+
+        <!-- Права пользователей -->
+        <section id="rights" class="scroll-mt-24">
+            <div class="card bg-base-100 border border-base-300">
+                <div class="card-body p-6">
+                    <h2 class="text-2xl font-bold mb-4 flex items-center gap-2">
+                        <i class="ti ti-scale text-info"></i>
+                        Права пользователей
+                    </h2>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="flex gap-3">
+                            <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                                <i class="ti ti-eye text-primary"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-semibold">Доступ к данным</h3>
+                                <p class="text-sm opacity-60">Право запросить копию всех ваших данных</p>
+                            </div>
+                        </div>
+                        <div class="flex gap-3">
+                            <div class="w-10 h-10 rounded-lg bg-secondary/10 flex items-center justify-center flex-shrink-0">
+                                <i class="ti ti-edit text-secondary"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-semibold">Исправление</h3>
+                                <p class="text-sm opacity-60">Право исправить неточные данные</p>
+                            </div>
+                        </div>
+                        <div class="flex gap-3">
+                            <div class="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center flex-shrink-0">
+                                <i class="ti ti-trash text-accent"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-semibold">Удаление</h3>
+                                <p class="text-sm opacity-60">Право на удаление аккаунта</p>
+                            </div>
+                        </div>
+                        <div class="flex gap-3">
+                            <div class="w-10 h-10 rounded-lg bg-warning/10 flex items-center justify-center flex-shrink-0">
+                                <i class="ti ti-download text-warning"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-semibold">Перенос</h3>
+                                <p class="text-sm opacity-60">Право экспортировать свои данные</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Контакты для вопросов по данным -->
+        <div class="card bg-gradient-to-br from-primary to-primary/80">
+            <div class="card-body p-6 text-center">
+                <h3 class="text-2xl font-bold mb-2">Вопросы по конфиденциальности?</h3>
+                <p class="opacity-90 mb-4">Напишите нам на email для защиты данных</p>
+                <a href="mailto:support@dopx.kz" class="btn btn-ghost btn-lg">
+                    <i class="ti ti-mail"></i>
+                    support@dopx.kz
+                </a>
+            </div>
+        </div>
         
         <!-- CTA -->
         <div class="card bg-gradient-to-br from-primary to-primary/80">
@@ -16963,6 +17457,82 @@ FILE: templates/emails/contact_form.html
     </div>
 </body>
 </html>
+
+
+================================================================================
+FILE: templates/emails/password_reset_email.html
+================================================================================
+
+<!-- templates/emails/password_reset_email.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+    <div style="background: linear-gradient(135deg, #000000 0%, #333333 100%); color: #ffffff; padding: 30px 20px; text-align: center; border-radius: 8px 8px 0 0;">
+        <h1>🔐 Сброс пароля DOPX</h1>
+    </div>
+    
+    <div style="background: #ffffff; padding: 30px 20px; border: 1px solid #e0e0e0;">
+        <p>Здравствуйте!</p>
+        
+        <p>Вы запросили сброс пароля для аккаунта DOPX. Нажмите на кнопку ниже, чтобы установить новый пароль:</p>
+        
+        <div style="text-align: center; margin: 30px 0;">
+            <a href="{{ protocol }}://{{ domain }}{% url 'users:password_reset_confirm' uidb64=uid token=token %}" 
+               style="background: #000000; color: #ffffff; padding: 12px 30px; text-decoration: none; border-radius: 4px; display: inline-block;">
+                Установить новый пароль
+            </a>
+        </div>
+        
+        <p style="font-size: 14px; color: #666;">
+            Или скопируйте эту ссылку в браузер:<br>
+            {{ protocol }}://{{ domain }}{% url 'users:password_reset_confirm' uidb64=uid token=token %}
+        </p>
+        
+        <p style="font-size: 14px; color: #666; margin-top: 20px;">
+            <strong>Важно:</strong> Эта ссылка действительна в течение 24 часов.<br>
+            Если вы не запрашивали сброс пароля, просто проигнорируйте это письмо.
+        </p>
+    </div>
+    
+    <div style="background: #f5f5f5; padding: 20px; text-align: center; font-size: 12px; color: #999; border-radius: 0 0 8px 8px;">
+        <p>© {% now "Y" %} DOPX. Все права защищены.</p>
+        <p>Это автоматическое уведомление, пожалуйста, не отвечайте на него.</p>
+    </div>
+</body>
+</html>
+
+
+================================================================================
+FILE: templates/emails/password_reset_email.txt
+================================================================================
+
+{% autoescape off %}
+Здравствуйте!
+
+Вы запросили сброс пароля для аккаунта DOPX.
+
+Чтобы установить новый пароль, перейдите по ссылке:
+{{ protocol }}://{{ domain }}{% url 'users:password_reset_confirm' uidb64=uid token=token %}
+
+Или скопируйте эту ссылку в браузер:
+{{ protocol }}://{{ domain }}{% url 'users:password_reset_confirm' uidb64=uid token=token %}
+
+Важно: Эта ссылка действительна в течение 24 часов.
+Если вы не запрашивали сброс пароля, просто проигнорируйте это письмо.
+
+© {% now "Y" %} DOPX. Все права защищены.
+Это автоматическое уведомление, пожалуйста, не отвечайте на него.
+{% endautoescape %}
+
+
+================================================================================
+FILE: templates/emails/password_reset_subject.txt
+================================================================================
+
+🔐 Сброс пароля DOPX
 
 
 ================================================================================
@@ -20979,7 +21549,7 @@ FILE: templates/players/leaderboard.html
             Пользователи
         </a>
         <a href="{% url 'users:player_leaderboard' %}" class="tab tab-active">
-            <i class="ti ti-user-star"></i>
+            <i class="ti ti ti-play-football"></i>
             Игроки
         </a>
     </div>
@@ -21467,21 +22037,21 @@ FILE: templates/profile/dashboard.html
                 </h3>
                 
                 <div class="space-y-3">
-                    <a href="#" class="flex items-center justify-between p-3 bg-base-200 rounded-lg hover:bg-base-300 transition-all">
+                    <a href="{% url 'users:password_change' %}" class="flex items-center justify-between p-3 bg-base-200 rounded-lg hover:bg-base-300 transition-all">
                         <div class="flex items-center gap-3">
                             <i class="ti ti-lock"></i>
                             <span>Изменить пароль</span>
                         </div>
                         <i class="ti ti-chevron-right opacity-60"></i>
                     </a>
-                    <a href="#" class="flex items-center justify-between p-3 bg-base-200 rounded-lg hover:bg-base-300 transition-all">
+                    <a href="{% url 'users:notification_settings' %}" class="flex items-center justify-between p-3 bg-base-200 rounded-lg hover:bg-base-300 transition-all">
                         <div class="flex items-center gap-3">
                             <i class="ti ti-mail"></i>
                             <span>Email уведомления</span>
                         </div>
                         <i class="ti ti-chevron-right opacity-60"></i>
                     </a>
-                    <a href="#" class="flex items-center justify-between p-3 bg-base-200 rounded-lg hover:bg-base-300 transition-all">
+                    <a href="{% url 'users:profile_edit' %}" class="flex items-center justify-between p-3 bg-base-200 rounded-lg hover:bg-base-300 transition-all">
                         <div class="flex items-center gap-3">
                             <i class="ti ti-user-edit"></i>
                             <span>Редактировать профиль</span>
@@ -22325,7 +22895,7 @@ FILE: templates/users/leaderboard.html
         Пользователи
     </a>
     <a href="{% url 'users:player_leaderboard' %}" class="tab">
-        <i class="ti ti-user-star"></i>
+        <i class="ti ti-play-football"></i>
         Игроки
     </a>
 </div>
@@ -22493,6 +23063,155 @@ FILE: templates/users/leaderboard.html
 
 
 ================================================================================
+FILE: templates/users/notification_settings.html
+================================================================================
+
+{% extends 'base.html' %}
+{% load static %}
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <div class="mb-6">
+        <a href="{% url 'users:profile' %}" class="btn btn-ghost btn-sm">
+            <i class="ti ti-arrow-left"></i>
+            Назад к профилю
+        </a>
+    </div>
+    
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-6">
+            <h1 class="text-2xl font-bold mb-6">Настройки уведомлений</h1>
+            
+            <form method="post" class="space-y-4">
+                {% csrf_token %}
+                
+                {% for field in form %}
+                <div class="form-control">
+                    <label class="label cursor-pointer gap-4 p-4 rounded-lg border border-base-300 hover:bg-base-200 transition-all">
+                        <div class="flex-1">
+                            <span class="label-text font-medium">{{ field.label }}</span>
+                        </div>
+                        {{ field }}
+                    </label>
+                </div>
+                {% endfor %}
+                
+                <div class="pt-4">
+                    <button type="submit" class="btn btn-primary w-full">
+                        <i class="ti ti-check"></i>
+                        Сохранить настройки
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+
+================================================================================
+FILE: templates/users/password_change.html
+================================================================================
+
+{% extends 'base.html' %}
+{% load static %}
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <div class="mb-6">
+        <a href="{% url 'users:profile' %}" class="btn btn-ghost btn-sm">
+            <i class="ti ti-arrow-left"></i>
+            Назад к профилю
+        </a>
+    </div>
+    
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-6">
+            <h1 class="text-2xl font-bold mb-6">Изменить пароль</h1>
+            
+            <form method="post" class="space-y-4">
+                {% csrf_token %}
+                
+                {% for field in form %}
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text font-medium">{{ field.label }}</span>
+                    </label>
+                    {{ field }}
+                    {% if field.errors %}
+                    <label class="label">
+                        <span class="label-text-alt text-error">{{ field.errors.0 }}</span>
+                    </label>
+                    {% endif %}
+                </div>
+                {% endfor %}
+                
+                <div class="pt-4">
+                    <button type="submit" class="btn btn-primary w-full">
+                        <i class="ti ti-check"></i>
+                        Изменить пароль
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+
+================================================================================
+FILE: templates/users/profile_edit.html
+================================================================================
+
+{% extends 'base.html' %}
+{% load static %}
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <div class="mb-6">
+        <a href="{% url 'users:profile' %}" class="btn btn-ghost btn-sm">
+            <i class="ti ti-arrow-left"></i>
+            Назад к профилю
+        </a>
+    </div>
+    
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-6">
+            <h1 class="text-2xl font-bold mb-6">Редактирование профиля</h1>
+            
+            <form method="post" enctype="multipart/form-data" class="space-y-4">
+                {% csrf_token %}
+                
+                {% for field in form %}
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text font-medium">{{ field.label }}</span>
+                    </label>
+                    {{ field }}
+                    {% if field.errors %}
+                    <label class="label">
+                        <span class="label-text-alt text-error">{{ field.errors.0 }}</span>
+                    </label>
+                    {% endif %}
+                    {% if field.help_text %}
+                    <label class="label">
+                        <span class="label-text-alt opacity-60">{{ field.help_text }}</span>
+                    </label>
+                    {% endif %}
+                </div>
+                {% endfor %}
+                
+                <div class="pt-4">
+                    <button type="submit" class="btn btn-primary w-full">
+                        <i class="ti ti-check"></i>
+                        Сохранить изменения
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+
+================================================================================
 FILE: users/__init__.py
 ================================================================================
 
@@ -22543,16 +23262,15 @@ FILE: users/forms.py
 
 # users/forms.py
 from django import forms
-from django.contrib.auth.forms import UserCreationForm, AuthenticationForm
+from django.contrib.auth.forms import UserCreationForm, AuthenticationForm, PasswordChangeForm, SetPasswordForm, PasswordResetForm
 from django.contrib.auth import password_validation
 from users.models import User
-
+from django.utils.translation import gettext_lazy as _
 
 class UserRegistrationForm(UserCreationForm):
     """Форма регистрации пользователя"""
-    
     email = forms.EmailField(
-        required=True, 
+        required=True,
         label='Email',
         widget=forms.EmailInput(attrs={
             'class': 'input-dopx w-full',
@@ -22560,9 +23278,8 @@ class UserRegistrationForm(UserCreationForm):
             'autocomplete': 'email',
         })
     )
-    
     city = forms.CharField(
-        max_length=120, 
+        max_length=120,
         required=False,
         label='Город',
         widget=forms.TextInput(attrs={
@@ -22571,7 +23288,7 @@ class UserRegistrationForm(UserCreationForm):
             'autocomplete': 'address-level2',
         })
     )
-    
+
     class Meta:
         model = User
         fields = ['username', 'email', 'city', 'password1', 'password2']
@@ -22607,7 +23324,6 @@ class UserRegistrationForm(UserCreationForm):
 
 class UserLoginForm(AuthenticationForm):
     """Форма входа пользователя"""
-    
     username = forms.CharField(
         label='Имя пользователя или Email',
         widget=forms.TextInput(attrs={
@@ -22616,7 +23332,6 @@ class UserLoginForm(AuthenticationForm):
             'autocomplete': 'username',
         })
     )
-    
     password = forms.CharField(
         label='Пароль',
         widget=forms.PasswordInput(attrs={
@@ -22625,6 +23340,115 @@ class UserLoginForm(AuthenticationForm):
             'autocomplete': 'current-password',
         })
     )
+
+
+class UserProfileForm(forms.ModelForm):
+    """Форма редактирования профиля"""
+    class Meta:
+        model = User
+        fields = ['email', 'city', 'bio', 'avatar']
+        labels = {
+            'email': 'Email',
+            'city': 'Город',
+            'bio': 'О себе',
+            'avatar': 'Аватар',
+        }
+        widgets = {
+            'email': forms.EmailInput(attrs={
+                'class': 'input input-bordered w-full',
+            }),
+            'city': forms.TextInput(attrs={
+                'class': 'input input-bordered w-full',
+                'placeholder': 'Алматы',
+            }),
+            'bio': forms.Textarea(attrs={
+                'class': 'textarea textarea-bordered w-full',
+                'rows': 4,
+                'placeholder': 'Расскажите о себе...',
+            }),
+            'avatar': forms.FileInput(attrs={
+                'class': 'file-input file-input-bordered w-full',
+            }),
+        }
+
+
+class CustomPasswordChangeForm(PasswordChangeForm):
+    """Форма изменения пароля"""
+    old_password = forms.CharField(
+        label='Текущий пароль',
+        widget=forms.PasswordInput(attrs={
+            'class': 'input input-bordered w-full',
+            'placeholder': '••••••••',
+            'autocomplete': 'current-password',
+        })
+    )
+    new_password1 = forms.CharField(
+        label='Новый пароль',
+        widget=forms.PasswordInput(attrs={
+            'class': 'input input-bordered w-full',
+            'placeholder': '••••••••',
+            'autocomplete': 'new-password',
+        })
+    )
+    new_password2 = forms.CharField(
+        label='Подтверждение нового пароля',
+        widget=forms.PasswordInput(attrs={
+            'class': 'input input-bordered w-full',
+            'placeholder': '••••••••',
+            'autocomplete': 'new-password',
+        })
+    )
+
+
+class CustomPasswordResetForm(PasswordResetForm):
+    """Форма сброса пароля"""
+    email = forms.EmailField(
+        label='Email',
+        widget=forms.EmailInput(attrs={
+            'class': 'input input-bordered w-full',
+            'placeholder': 'email@example.com',
+        })
+    )
+
+
+class NotificationSettingsForm(forms.Form):
+    """Форма настроек уведомлений"""
+    email_match_finished = forms.BooleanField(
+        required=False,
+        label='Матч завершён',
+        initial=True
+    )
+    email_voting_open = forms.BooleanField(
+        required=False,
+        label='Голосование открыто',
+        initial=True
+    )
+    email_voting_closing = forms.BooleanField(
+        required=False,
+        label='Голосование закрывается',
+        initial=True
+    )
+    email_top_performance = forms.BooleanField(
+        required=False,
+        label='Игрок в топ-3',
+        initial=True
+    )
+    email_system = forms.BooleanField(
+        required=False,
+        label='Системные уведомления',
+        initial=True
+    )
+
+    def __init__(self, *args, **kwargs):
+        user = kwargs.pop('user', None)
+        super().__init__(*args, **kwargs)
+        if user and hasattr(user, 'notification_settings'):
+            settings = user.notification_settings
+            self.fields['email_match_finished'].initial = settings.get('email_match_finished', True)
+            self.fields['email_voting_open'].initial = settings.get('email_voting_open', True)
+            self.fields['email_voting_closing'].initial = settings.get('email_voting_closing', True)
+            self.fields['email_top_performance'].initial = settings.get('email_top_performance', True)
+            self.fields['email_system'].initial = settings.get('email_system', True)
 
 
 ================================================================================
@@ -22725,6 +23549,32 @@ class Migration(migrations.Migration):
 
 
 ================================================================================
+FILE: users/migrations/0002_add_notification_settings.py
+================================================================================
+
+# users/migrations/0002_add_notification_settings.py
+from django.db import migrations, models
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ('users', '0001_initial'),
+    ]
+
+    operations = [
+        migrations.AddField(
+            model_name='user',
+            name='notification_settings',
+            field=models.JSONField(
+                blank=True,
+                default=dict,
+                verbose_name='Настройки уведомлений'
+            ),
+        ),
+    ]
+
+
+================================================================================
 FILE: users/migrations/__init__.py
 ================================================================================
 
@@ -22742,6 +23592,7 @@ from django.utils.translation import gettext_lazy as _
 from core.models import BaseModel
 from django.utils import timezone
 from datetime import timedelta
+import json
 
 class User(AbstractUser, BaseModel):
     """Пользователь платформы"""
@@ -22753,36 +23604,43 @@ class User(AbstractUser, BaseModel):
     trust_score = models.FloatField(_('Оценка доверия'), default=1.0)
     is_verified = models.BooleanField(_('Верифицирован'), default=False)
     
+    # Настройки уведомлений (JSON)
+    notification_settings = models.JSONField(
+        _('Настройки уведомлений'),
+        default=dict,
+        blank=True
+    )
+    
     # Геймификация
     total_evaluations = models.IntegerField(_('Всего оценок'), default=0)
     evaluation_streak = models.IntegerField(_('Серия оценок'), default=0)
     last_evaluation_date = models.DateField(_('Последняя оценка'), null=True, blank=True)
-    
+
     class Meta:
         verbose_name = _('Пользователь')
         verbose_name_plural = _('Пользователи')
         ordering = ['-trust_score', '-total_evaluations']
-    
+
     def __str__(self):
         return self.username
-    
+
     def update_evaluation_stats(self):
         """Обновление статистики оценок пользователя"""
         today = timezone.now().date()
         self.total_evaluations += 1
-        
         if self.last_evaluation_date:
             days_diff = (today - self.last_evaluation_date).days
             if days_diff == 1:
                 self.evaluation_streak += 1
             elif days_diff > 1:
                 self.evaluation_streak = 1
+            else:
+                self.evaluation_streak = 1
         else:
             self.evaluation_streak = 1
-        
         self.last_evaluation_date = today
         self.save(update_fields=['total_evaluations', 'evaluation_streak', 'last_evaluation_date', 'updated_at'])
-    
+
     def get_trust_level(self):
         """Уровень доверия"""
         if self.trust_score >= 1.8:
@@ -22793,7 +23651,7 @@ class User(AbstractUser, BaseModel):
             return 'standard', _('Стандартный')
         else:
             return 'new', _('Новичок')
-    
+
     def get_bias_score(self, match=None):
         """Расчёт предвзятости пользователя"""
         from evaluations.models import ContextEvaluation, PlayerEvaluation
@@ -22816,7 +23674,7 @@ class User(AbstractUser, BaseModel):
         ).aggregate(avg=Avg('contribution'))['avg'] or 0
         
         return own_team_evals - opponent_evals
-    
+
     @property
     def unread_notifications_count(self):
         """Количество непрочитанных уведомлений"""
@@ -22835,7 +23693,7 @@ class UserBadge(BaseModel):
         ('streak_7', _('Неделя подряд')),
         ('streak_30', _('Месяц подряд')),
     ]
-    
+
     user = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
@@ -22844,7 +23702,7 @@ class UserBadge(BaseModel):
     )
     badge_type = models.CharField(_('Тип достижения'), max_length=50, choices=BADGE_TYPES)
     awarded_at = models.DateTimeField(_('Дата получения'), auto_now_add=True)
-    
+
     class Meta:
         verbose_name = _('Достижение')
         verbose_name_plural = _('Достижения')
@@ -22852,7 +23710,7 @@ class UserBadge(BaseModel):
             models.UniqueConstraint(fields=['user', 'badge_type'], name='unique_user_badge')
         ]
         ordering = ['-awarded_at']
-    
+
     def __str__(self):
         return f"{self.user} - {self.get_badge_type_display()}"
 
@@ -22867,19 +23725,19 @@ class UserXP(BaseModel):
     )
     total_xp = models.IntegerField(_('Всего опыта'), default=0)
     level = models.IntegerField(_('Уровень'), default=1)
-    
+
     class Meta:
         verbose_name = _('Опыт пользователя')
         verbose_name_plural = _('Опыт пользователей')
-    
+
     def add_xp(self, amount):
         """Добавить опыт"""
         self.total_xp += amount
         new_level = (self.total_xp // 100) + 1
         if new_level > self.level:
             self.level = new_level
-        self.save()
-    
+            self.save()
+
     def __str__(self):
         return f"{self.user} — Уровень {self.level}"
 
@@ -22902,7 +23760,11 @@ FILE: users/urls.py
 from django.urls import path
 from .views import (
     RegisterView, LoginView, LogoutView, ProfileView,
-    UserLeaderboardView, PlayerLeaderboardView
+    UserLeaderboardView, PlayerLeaderboardView,
+    ProfileEditView, PasswordChangeViewCustom,
+    PasswordResetViewCustom, PasswordResetDoneViewCustom,
+    PasswordResetConfirmViewCustom, PasswordResetCompleteViewCustom,
+    NotificationSettingsView,
 )
 
 app_name = 'users'
@@ -22912,6 +23774,16 @@ urlpatterns = [
     path('login/', LoginView.as_view(), name='login'),
     path('logout/', LogoutView.as_view(), name='logout'),
     path('profile/', ProfileView.as_view(), name='profile'),
+    path('profile/edit/', ProfileEditView.as_view(), name='profile_edit'),
+    path('profile/password/', PasswordChangeViewCustom.as_view(), name='password_change'),
+    path('profile/notifications/', NotificationSettingsView.as_view(), name='notification_settings'),
+    
+    # Сброс пароля
+    path('password-reset/', PasswordResetViewCustom.as_view(), name='password_reset'),
+    path('password-reset/done/', PasswordResetDoneViewCustom.as_view(), name='password_reset_done'),
+    path('password-reset-confirm/<uidb64>/<token>/', PasswordResetConfirmViewCustom.as_view(), name='password_reset_confirm'),
+    path('password-reset-complete/', PasswordResetCompleteViewCustom.as_view(), name='password_reset_complete'),
+    
     path('leaderboard/', UserLeaderboardView.as_view(), name='leaderboard'),
     path('players/leaderboard/', PlayerLeaderboardView.as_view(), name='player_leaderboard'),
 ]
@@ -22923,19 +23795,23 @@ FILE: users/views.py
 
 # users/views.py — ИСПРАВЛЕННЫЙ ФАЙЛ
 from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth import login, logout, authenticate
+from django.contrib.auth import login, logout, authenticate, update_session_auth_hash
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.contrib.auth.views import LoginView as AuthLoginView
+from django.contrib.auth.views import LoginView as AuthLoginView, PasswordChangeView, PasswordResetView, PasswordResetDoneView, PasswordResetConfirmView, PasswordResetCompleteView
 from django.contrib import messages
-from django.views.generic import CreateView, TemplateView, ListView
+from django.views.generic import CreateView, TemplateView, ListView, UpdateView, FormView
 from django.urls import reverse_lazy
 from django.db.models import Count, Avg, Q
 from django.utils import timezone
+from django.core.mail import send_mail
+from django.template.loader import render_to_string
+from django.conf import settings
 from users.models import User, UserBadge, UserXP
-from users.forms import UserRegistrationForm, UserLoginForm
+from users.forms import UserRegistrationForm, UserLoginForm, UserProfileForm, CustomPasswordChangeForm, CustomPasswordResetForm, NotificationSettingsForm
 from evaluations.models import ContextEvaluation, PlayerEvaluation, EvaluationSession
 from matches.models import Match
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -22950,16 +23826,13 @@ class RegisterView(CreateView):
     def form_valid(self, form):
         response = super().form_valid(form)
         user = self.object
-        
         # Создаём XP профиль
         UserXP.objects.get_or_create(user=user)
-        
         # Выдаём достижение за регистрацию
         UserBadge.objects.get_or_create(
             user=user,
             badge_type='first_evaluation'
         )
-        
         login(self.request, user)
         messages.success(self.request, '✅ Аккаунт создан! Добро пожаловать в DOPX.')
         return response
@@ -22977,6 +23850,13 @@ class LoginView(AuthLoginView):
 
     def form_valid(self, form):
         response = super().form_valid(form)
+        # Обработка "Запомнить меня"
+        remember_me = self.request.POST.get('remember')
+        if not remember_me:
+            self.request.session.set_expiry(0)  # Сессия истекает при закрытии браузера
+        else:
+            self.request.session.set_expiry(1209600)  # 2 недели
+        
         messages.success(self.request, f'👋 С возвращением, {self.request.user.username}!')
         return response
 
@@ -23016,7 +23896,7 @@ class ProfileView(LoginRequiredMixin, TemplateView):
             'trust_level': user.get_trust_level(),
             'evaluation_streak': user.evaluation_streak,
             'total_matches': EvaluationSession.objects.filter(
-                user=user, 
+                user=user,
                 status='completed'
             ).count(),
         }
@@ -23025,7 +23905,7 @@ class ProfileView(LoginRequiredMixin, TemplateView):
         recent_evaluations = ContextEvaluation.objects.filter(
             user=user
         ).select_related(
-            'match__home_team', 
+            'match__home_team',
             'match__away_team',
             'match__league'
         ).order_by('-created_at')[:10]
@@ -23056,6 +23936,115 @@ class ProfileView(LoginRequiredMixin, TemplateView):
         return context
 
 
+class ProfileEditView(LoginRequiredMixin, UpdateView):
+    """Редактирование профиля"""
+    model = User
+    form_class = UserProfileForm
+    template_name = 'users/profile_edit.html'
+    success_url = reverse_lazy('users:profile')
+
+    def get_object(self):
+        return self.request.user
+
+    def form_valid(self, form):
+        messages.success(self.request, '✅ Профиль успешно обновлён')
+        return super().form_valid(form)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['page_title'] = 'Редактирование профиля — DOPX'
+        return context
+
+
+class PasswordChangeViewCustom(LoginRequiredMixin, FormView):
+    """Изменение пароля"""
+    template_name = 'users/password_change.html'
+    form_class = CustomPasswordChangeForm
+    success_url = reverse_lazy('users:profile')
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['user'] = self.request.user
+        return kwargs
+
+    def form_valid(self, form):
+        form.save()
+        update_session_auth_hash(self.request, form.user)
+        messages.success(self.request, '✅ Пароль успешно изменён')
+        return super().form_valid(form)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['page_title'] = 'Изменить пароль — DOPX'
+        return context
+
+
+class PasswordResetViewCustom(PasswordResetView):
+    """Сброс пароля"""
+    template_name = 'auth/password_reset.html'
+    
+    email_template_name = 'emails/password_reset_email.txt'  # Текстовая версия
+    html_email_template_name = 'emails/password_reset_email.html'  # HTML версия
+    
+    subject_template_name = 'emails/password_reset_subject.txt'
+    success_url = reverse_lazy('users:password_reset_done')
+    form_class = CustomPasswordResetForm
+
+    def form_valid(self, form):
+        messages.success(self.request, '✅ Инструкция по сбросу пароля отправлена на email')
+        return super().form_valid(form)
+
+
+class PasswordResetDoneViewCustom(PasswordResetDoneView):
+    """Страница после запроса сброса пароля"""
+    template_name = 'auth/password_reset_done.html'
+
+
+class PasswordResetConfirmViewCustom(PasswordResetConfirmView):
+    """Подтверждение сброса пароля"""
+    template_name = 'auth/password_reset_confirm.html'
+    success_url = reverse_lazy('users:password_reset_complete')
+
+
+class PasswordResetCompleteViewCustom(PasswordResetCompleteView):
+    """Завершение сброса пароля"""
+    template_name = 'auth/password_reset_complete.html'
+
+
+class NotificationSettingsView(LoginRequiredMixin, FormView):
+    """Настройки уведомлений"""
+    template_name = 'users/notification_settings.html'
+    form_class = NotificationSettingsForm
+    success_url = reverse_lazy('users:profile')
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['user'] = self.request.user
+        return kwargs
+
+    def form_valid(self, form):
+        # Сохраняем настройки в JSON поле
+        settings_data = {
+            'email_match_finished': form.cleaned_data.get('email_match_finished', False),
+            'email_voting_open': form.cleaned_data.get('email_voting_open', False),
+            'email_voting_closing': form.cleaned_data.get('email_voting_closing', False),
+            'email_top_performance': form.cleaned_data.get('email_top_performance', False),
+            'email_system': form.cleaned_data.get('email_system', False),
+        }
+        
+        # Сохраняем в профиль пользователя (нужно добавить поле в модель или использовать JSON)
+        self.request.user.notification_settings = settings_data
+        self.request.user.save(update_fields=['notification_settings'])
+        
+        messages.success(self.request, '✅ Настройки уведомлений сохранены')
+        return super().form_valid(form)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['page_title'] = 'Настройки уведомлений — DOPX'
+        return context
+
+
 class UserLeaderboardView(ListView):
     """Таблица лидеров пользователей по Trust Score"""
     model = User
@@ -23064,12 +24053,11 @@ class UserLeaderboardView(ListView):
     paginate_by = 20
 
     def get_queryset(self):
-        # ✅ FIX: related_name = 'context_evaluations' (с подчёркиванием!)
         return User.objects.filter(
             is_active=True,
             is_verified=True
         ).annotate(
-            eval_count=Count('context_evaluations', distinct=True)  # ✅ с подчёркиванием
+            eval_count=Count('context_evaluations', distinct=True)
         ).filter(
             eval_count__gte=1
         ).order_by('-trust_score', '-eval_count', '-total_evaluations')
@@ -23097,10 +24085,10 @@ class PlayerLeaderboardView(ListView):
         ).annotate(
             avg_performance=Avg('match_aggregates__performance_score'),
             total_matches=Count('match_aggregates', distinct=True),
-            total_votes=Sum('match_aggregates__total_votes')  # ✅ FIX: Sum вместо Count
+            total_votes=Sum('match_aggregates__total_votes')
         ).filter(
-            avg_performance__isnull=False,  # ✅ FIX: исключаем игроков без оценок
-            total_matches__gte=1  # ✅ FIX: уменьшаем порог до 1 матча для отображения
+            avg_performance__isnull=False,
+            total_matches__gte=1
         ).order_by('-avg_performance')
 
     def get_context_data(self, **kwargs):

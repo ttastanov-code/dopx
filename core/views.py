@@ -395,6 +395,16 @@ class ContactSubmissionDetailView(View):
         })
 
 
+class PrivacyPolicyView(TemplateView):
+    """Страница Политики конфиденциальности"""
+    template_name = 'core/privacy.html'
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['page_title'] = 'Политика конфиденциальности — DOPX'
+        return context
+    
+    
 def handler_404(request, exception):
     return render(request, 'errors/404.html', status=404)
 

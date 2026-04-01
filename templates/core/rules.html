@@ -363,50 +363,168 @@
                 </div>
             </div>
         </section>
-        
-        <!-- Конфиденциальность -->
+ 
+        <!-- Политика конфиденциальности -->
         <section id="privacy" class="scroll-mt-24">
             <div class="card bg-base-100 border border-base-300">
                 <div class="card-body p-6">
                     <h2 class="text-2xl font-bold mb-4 flex items-center gap-2">
                         <i class="ti ti-lock text-neutral"></i>
-                        Конфиденциальность
+                        Конфиденциальность и защита данных
                     </h2>
-                    
                     <div class="space-y-4 text-sm opacity-80">
-                        <p>
-                            Мы уважаем вашу приватность. Ваши персональные данные защищены и не передаются третьим лицам.
-                        </p>
+                        <div class="alert alert-info">
+                            <i class="ti ti-info-circle"></i>
+                            <div>
+                                <h3 class="font-bold">Мы уважаем вашу приватность</h3>
+                                <p class="text-sm mt-1">
+                                    Ваши персональные данные защищены и не передаются третьим лицам без вашего согласия.
+                                </p>
+                            </div>
+                        </div>
                         
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div class="p-4 bg-base-200 rounded-lg">
-                                <h3 class="font-semibold mb-2">Публичные данные</h3>
+                                <h3 class="font-semibold mb-2">📤 Публичные данные</h3>
                                 <ul class="space-y-1 text-xs opacity-70">
                                     <li>• Имя пользователя</li>
                                     <li>• Trust Score</li>
                                     <li>• Количество оценок</li>
                                     <li>• Достижения</li>
+                                    <li>• Уровень</li>
                                 </ul>
                             </div>
-                            
                             <div class="p-4 bg-base-200 rounded-lg">
-                                <h3 class="font-semibold mb-2">Приватные данные</h3>
+                                <h3 class="font-semibold mb-2">🔒 Приватные данные</h3>
                                 <ul class="space-y-1 text-xs opacity-70">
                                     <li>• Email</li>
-                                    <li>• Пароль</li>
+                                    <li>• Пароль (хэшируется)</li>
                                     <li>• IP адрес</li>
                                     <li>• История сессий</li>
+                                    <li>• Настройки уведомлений</li>
                                 </ul>
                             </div>
                         </div>
                         
-                        <p class="text-xs opacity-60">
-                            Для удаления аккаунта напишите на <a href="mailto:support@dopx.kz" class="link link-primary">support@dopx.kz</a>
-                        </p>
+                        <div class="p-4 bg-base-200 rounded-lg">
+                            <h3 class="font-semibold mb-2">📋 Сбор данных</h3>
+                            <ul class="space-y-1 text-xs opacity-70">
+                                <li>• Данные оценок матчей (для расчёта рейтингов)</li>
+                                <li>• Контекст просмотра (для учёта веса голоса)</li>
+                                <li>• Технические данные (browser, device) для безопасности</li>
+                                <li>• Cookie для работы сессий</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="p-4 bg-base-200 rounded-lg">
+                            <h3 class="font-semibold mb-2">🛡️ Безопасность</h3>
+                            <ul class="space-y-1 text-xs opacity-70">
+                                <li>• Пароли хэшируются алгоритмом PBKDF2</li>
+                                <li>• HTTPS шифрование всех соединений</li>
+                                <li>• Защита от CSRF-атак</li>
+                                <li>• Регулярное резервное копирование</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="p-4 bg-base-200 rounded-lg">
+                            <h3 class="font-semibold mb-2">📧 Коммуникация</h3>
+                            <ul class="space-y-1 text-xs opacity-70">
+                                <li>• Email только для важных уведомлений</li>
+                                <li>• Возможность отписаться от рассылок</li>
+                                <li>• Спам не рассылается</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="p-4 bg-base-200 rounded-lg">
+                            <h3 class="font-semibold mb-2">🗑️ Удаление данных</h3>
+                            <p class="text-xs opacity-70">
+                                Для удаления аккаунта и всех персональных данных напишите на 
+                                <a href="mailto:support@dopx.kz" class="link link-primary">support@dopx.kz</a>
+                                Удаление выполняется в течение 30 дней.
+                            </p>
+                        </div>
+                        
+                        <div class="p-4 bg-base-200 rounded-lg">
+                            <h3 class="font-semibold mb-2">👶 Возраст</h3>
+                            <p class="text-xs opacity-70">
+                                Платформа предназначена для пользователей старше 16 лет. 
+                                Регистрация лиц младше 16 лет требует согласия родителей.
+                            </p>
+                        </div>
+                        
+                        <div class="p-4 bg-base-200 rounded-lg">
+                            <h3 class="font-semibold mb-2">📍 Юрисдикция</h3>
+                            <p class="text-xs opacity-70">
+                                Платформа работает в соответствии с законодательством Республики Казахстан.
+                                Все споры решаются в суде по месту регистрации компании.
+                            </p>
+                        </div>
                     </div>
                 </div>
             </div>
         </section>
+
+        <!-- Права пользователей -->
+        <section id="rights" class="scroll-mt-24">
+            <div class="card bg-base-100 border border-base-300">
+                <div class="card-body p-6">
+                    <h2 class="text-2xl font-bold mb-4 flex items-center gap-2">
+                        <i class="ti ti-scale text-info"></i>
+                        Права пользователей
+                    </h2>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="flex gap-3">
+                            <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                                <i class="ti ti-eye text-primary"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-semibold">Доступ к данным</h3>
+                                <p class="text-sm opacity-60">Право запросить копию всех ваших данных</p>
+                            </div>
+                        </div>
+                        <div class="flex gap-3">
+                            <div class="w-10 h-10 rounded-lg bg-secondary/10 flex items-center justify-center flex-shrink-0">
+                                <i class="ti ti-edit text-secondary"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-semibold">Исправление</h3>
+                                <p class="text-sm opacity-60">Право исправить неточные данные</p>
+                            </div>
+                        </div>
+                        <div class="flex gap-3">
+                            <div class="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center flex-shrink-0">
+                                <i class="ti ti-trash text-accent"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-semibold">Удаление</h3>
+                                <p class="text-sm opacity-60">Право на удаление аккаунта</p>
+                            </div>
+                        </div>
+                        <div class="flex gap-3">
+                            <div class="w-10 h-10 rounded-lg bg-warning/10 flex items-center justify-center flex-shrink-0">
+                                <i class="ti ti-download text-warning"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-semibold">Перенос</h3>
+                                <p class="text-sm opacity-60">Право экспортировать свои данные</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Контакты для вопросов по данным -->
+        <div class="card bg-gradient-to-br from-primary to-primary/80">
+            <div class="card-body p-6 text-center">
+                <h3 class="text-2xl font-bold mb-2">Вопросы по конфиденциальности?</h3>
+                <p class="opacity-90 mb-4">Напишите нам на email для защиты данных</p>
+                <a href="mailto:support@dopx.kz" class="btn btn-ghost btn-lg">
+                    <i class="ti ti-mail"></i>
+                    support@dopx.kz
+                </a>
+            </div>
+        </div>
         
         <!-- CTA -->
         <div class="card bg-gradient-to-br from-primary to-primary/80">
