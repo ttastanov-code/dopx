@@ -1,3 +1,4 @@
+# parsers/kff/client.py
 import requests
 import time
 import logging
@@ -5,12 +6,12 @@ from typing import List, Dict, Optional, Any
 
 logger = logging.getLogger(__name__)
 
-
 class KFFClient:
     BASE_URL = "https://kffleague.kz"
     API_URL = "https://kffleague.kz/api/v1"
     
     # ✅ КОДЫ ТУРНИРОВ — используем frontend_code из API
+    # ✅ ЛЕГКО ВКЛЮЧИТЬ: добавьте код в этот список
     TOURNAMENT_CODES = {
         'pl': 'Премьер-Лига',
         '1l': 'Первая лига',
@@ -20,7 +21,8 @@ class KFFClient:
         'sc': 'Суперкубок',
     }
     
-    # ✅ ЦЕЛЕВОЙ ТУРНИР — только Премьер-Лига
+    # ✅ ЦЕЛЕВОЙ ТУРНИР — по умолчанию только Премьер-Лига
+    # ✅ ЧТОБЫ ВКЛЮЧИТЬ ДРУГИЕ: измените в settings.py PARSER_SETTINGS.ENABLED_TOURNAMENTS
     TARGET_TOURNAMENT = 'pl'
     
     # ✅ Известные сезон-иды для фоллбэка (только Премьер-Лига)
@@ -44,14 +46,17 @@ class KFFClient:
     def _get(self, endpoint: str, params: Optional[Dict] = None, retries: int = 3) -> Optional[Dict]:
         """GET-запрос с повторами"""
         url = f"{self.API_URL}{endpoint}"
+        
         for attempt in range(retries):
             try:
                 response = self.session.get(url, params=params, timeout=15)
+                
                 if response.status_code != 200:
                     logger.warning(f"HTTP {response.status_code} | Attempt {attempt+1} | {url}")
                     if attempt < retries - 1:
                         time.sleep(1 * (attempt + 1))
                     continue
+                
                 try:
                     result = response.json()
                     time.sleep(0.2)
@@ -59,6 +64,7 @@ class KFFClient:
                 except ValueError as e:
                     logger.error(f"JSON decode error: {e} | {url}")
                     return None
+                    
             except requests.exceptions.Timeout:
                 logger.warning(f"Timeout attempt {attempt+1} for {url}")
                 if attempt < retries - 1:
@@ -70,6 +76,7 @@ class KFFClient:
             except Exception as e:
                 logger.error(f"Unexpected error: {type(e).__name__}: {e}")
                 break
+        
         return None
     
     def get_tournament_seasons(self, tournament_code: str = None) -> List[Dict]:
@@ -81,12 +88,14 @@ class KFFClient:
         
         # Запрос /seasons с параметром tournament
         response = self._get("/seasons", params={"tournament": tournament_code})
+        
         if not response:
             logger.warning(f"Empty response for /seasons?tournament={tournament_code}")
             return seasons
         
         # ✅ API возвращает список в ключе 'items'
         items = response.get("items", [])
+        
         if not isinstance(items, list):
             logger.warning(f"Unexpected response format: {type(items)}")
             return seasons
@@ -138,11 +147,11 @@ class KFFClient:
                 if test_resp and test_resp.get("frontend_code", "").lower() == self.TARGET_TOURNAMENT:
                     logger.info(f"✅ Using fallback Premier League season ID: {sid}")
                     return sid
+            
             logger.error(f"❌ Could not find any Premier League season (frontend_code={self.TARGET_TOURNAMENT})")
             return None
         
         candidates = []
-        
         for s in seasons:
             season_id = s.get('id')
             season_year = s.get('year')
@@ -187,7 +196,6 @@ class KFFClient:
     def get_season_matches(self, season_id: int = None, tournament_code: str = None, auto_detect: bool = True) -> List[int]:
         """
         Получает список ID матчей сезона
-        
         Returns:
             Список ID: [1100, 1099, 1091, ...]
         """
@@ -212,7 +220,8 @@ class KFFClient:
                 for game in items:
                     if isinstance(game, dict) and game.get("id"):
                         match_ids.append(game["id"])  # ✅ Только ID
-                logger.info(f"✅ Found {len(match_ids)} match IDs via /seasons/{season_id}/games")
+            
+            logger.info(f"✅ Found {len(match_ids)} match IDs via /seasons/{season_id}/games")
         
         # === Способ 2: stages -> games (fallback) ===
         if not match_ids:
@@ -229,14 +238,15 @@ class KFFClient:
                                 for game in items:
                                     if isinstance(game, dict) and game.get("id"):
                                         match_ids.append(game["id"])
+                
                 if match_ids:
                     logger.info(f"✅ Found {len(match_ids)} match IDs via stages fallback")
         
         # === Способ 3: HTML scraping fallback ===
         if not match_ids:
             match_ids = list(self._scrape_match_ids_from_html(season_id, tournament_code))
+            logger.info(f"✅ Found {len(match_ids)} match IDs for season {season_id} (tournament={tournament_code})")
         
-        logger.info(f"✅ Found {len(match_ids)} match IDs for season {season_id} (tournament={tournament_code})")
         return match_ids  # ✅ Возвращаем [1100, 1099, ...], а не [{'id': 1100, ...}]
     
     def get_recent_finished_matches(self, season_id: int = None, limit: int = 10, tournament_code: str = None) -> List[int]:
@@ -301,7 +311,8 @@ class KFFClient:
                             'start_time': game.get("date") or game.get("start_time"),
                             'status': game.get("status", "scheduled"),
                         })
-                logger.info(f"✅ Found {len(matches)} matches with details via /seasons/{season_id}/games")
+            
+            logger.info(f"✅ Found {len(matches)} matches with details via /seasons/{season_id}/games")
         
         # === Способ 2: stages -> games (fallback) ===
         if not matches:
@@ -322,18 +333,21 @@ class KFFClient:
                                             'start_time': game.get("date") or game.get("start_time"),
                                             'status': game.get("status", "scheduled"),
                                         })
-                if matches:
-                    logger.info(f"✅ Found {len(matches)} matches with details via stages fallback")
+            
+            if matches:
+                logger.info(f"✅ Found {len(matches)} matches with details via stages fallback")
         
         return matches
     
     def _scrape_match_ids_from_html(self, season_id: int, tournament_code: str = None) -> set:
         """Fallback: парсинг HTML с параметром tournament"""
         import re
+        
         if tournament_code is None:
             tournament_code = self.TARGET_TOURNAMENT
         
         match_ids = set()
+        
         try:
             response = self.session.get(
                 f"{self.BASE_URL}/matches",
@@ -346,6 +360,7 @@ class KFFClient:
             logger.info(f"🔍 Scraped {len(match_ids)} match IDs from HTML (tournament={tournament_code})")
         except Exception as e:
             logger.warning(f"⚠️ HTML scraping failed: {e}")
+        
         return match_ids
     
     def get_game_details(self, match_id: int, tournament_code: str = None) -> Optional[Dict]:

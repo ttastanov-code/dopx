@@ -135,6 +135,7 @@ logs
   .gitkeep
   .gitkeep 
   celery.log
+  errors.log
 manage.py
 matches
   __init__.py
@@ -225,6 +226,7 @@ static
       favicon.ico
       site.webmanifest
   js
+sync_kff_commands.md
 teams
   __init__.py
   admin.py
@@ -266,6 +268,7 @@ templates
   emails
     contact_confirmation.html
     contact_form.html
+    sync_error_alert.html
     ticket_status_change.html
   errors
     404.html
@@ -1664,6 +1667,7 @@ from django.db import connection, transaction
 import logging
 import math
 from datetime import timedelta
+
 from evaluations.models import PlayerEvaluation, CoachEvaluation, MatchEvaluation, ContextEvaluation
 from matches.models import Match
 from aggregates.models import PlayerMatchAggregate, CoachMatchAggregate, MatchAggregate
@@ -1671,9 +1675,7 @@ from users.models import User
 from teams.models import TeamSeasonStats, Team, TeamSeason
 from seasons.models import Season
 
-
 logger = logging.getLogger(__name__)
-
 
 def calculate_user_weight(user: User, context_eval: ContextEvaluation) -> float:
     """
@@ -1691,7 +1693,6 @@ def calculate_user_weight(user: User, context_eval: ContextEvaluation) -> float:
         weight += 0.2
     return max(0.5, weight)  # Минимальный вес 0.5
 
-
 def calculate_std_dev(values):
     """Расчёт стандартного отклонения"""
     if len(values) < 2:
@@ -1699,7 +1700,6 @@ def calculate_std_dev(values):
     mean = sum(values) / len(values)
     variance = sum((x - mean) ** 2 for x in values) / len(values)
     return math.sqrt(variance)
-
 
 @shared_task(bind=True, max_retries=3, rate_limit='10/m')
 def recalculate_player_aggregates(self, match_id: str):
@@ -1791,7 +1791,6 @@ def recalculate_player_aggregates(self, match_id: str):
                 'clutch_index': round(clutch_index, 2),
             }
         )
-        
         updated_count += 1
     
     # Инвалидация кэша
@@ -1799,7 +1798,6 @@ def recalculate_player_aggregates(self, match_id: str):
     
     logger.info(f"Updated {updated_count} player aggregates for match {match_id}")
     return True
-
 
 @shared_task(bind=True, max_retries=3)
 def recalculate_coach_aggregates(self, match_id: str):
@@ -1866,7 +1864,6 @@ def recalculate_coach_aggregates(self, match_id: str):
     
     return True
 
-
 @shared_task(bind=True, max_retries=3)
 def recalculate_match_aggregate(self, match_id: str):
     """Пересчёт агрегатов для матча"""
@@ -1907,10 +1904,8 @@ def recalculate_match_aggregate(self, match_id: str):
     avg_entertainment = sum(e.entertainment for e in eval_list) / len(eval_list)
     avg_tension = sum(e.tension for e in eval_list) / len(eval_list)
     avg_fairness = sum(e.fairness for e in eval_list) / len(eval_list)
-    
     turning_point_count = sum(1 for e in eval_list if e.turning_point)
     turning_point_ratio = turning_point_count / len(eval_list)
-    
     drama_index = avg_entertainment * avg_tension
     
     aggregate, _ = MatchAggregate.objects.update_or_create(
@@ -1937,7 +1932,6 @@ def recalculate_match_aggregate(self, match_id: str):
     
     return True
 
-
 @shared_task(bind=True, max_retries=3)
 def recalculate_all_aggregates_for_match(self, match_id: str):
     """
@@ -1956,11 +1950,10 @@ def recalculate_all_aggregates_for_match(self, match_id: str):
     logger.info(f"Queued aggregate recalculation tasks for match {match_id}")
     return True
 
-
 @shared_task
 def recalculate_all_aggregates():
     """
-    OPTIMIZATION: 
+    OPTIMIZATION:
     - Периодическая задача с ограничением по времени
     - Batch processing матчей
     """
@@ -1985,14 +1978,12 @@ def recalculate_all_aggregates():
     logger.info(f"Queued {count} match aggregate recalculation tasks")
     return count
 
-
 @shared_task
 def cleanup_old_sessions():
     """Очистка старых данных (кэш, сессии)"""
     logger.info("Running cleanup task")
     # Можно добавить очистку старых логов, кэша и т.д.
     return True
-
 
 @shared_task(bind=True, max_retries=3)
 def trigger_aggregate_recalculation(self, match_id: str):
@@ -2007,14 +1998,30 @@ def trigger_aggregate_recalculation(self, match_id: str):
     except Exception as exc:
         logger.error(f"Error triggering recalculation: {exc}")
         raise self.retry(exc=exc, countdown=60)
-    
-    
+
 @shared_task
-def recalculate_season_standings(season_id):
-    """Пересчитывает таблицу для сезона"""
+def recalculate_season_standings(season_id=None):
+    """
+    ✅ ИЗМЕНЕНО: Пересчитывает таблицу для сезона
+    Теперь season_id опционален — если не указан, ищем активный сезон
+    """
     from django.db import transaction
     
-    season = Season.objects.get(id=season_id)
+    # ✅ АВТО-ДЕТЕКЦИЯ СЕЗОНА
+    if season_id is None:
+        season = Season.objects.filter(is_active=True).first()
+        if not season:
+            logger.warning("⚠️  No active season found for standings recalculation")
+            return {'success': False, 'error': 'No active season'}
+        season_id = season.id
+        logger.info(f"✅ Auto-detected active season: {season_id}")
+    else:
+        try:
+            season = Season.objects.get(id=season_id)
+        except Season.DoesNotExist:
+            logger.error(f"❌ Season {season_id} not found")
+            return {'success': False, 'error': 'Season not found'}
+    
     teams = Team.objects.filter(teamseason__season=season, is_active=True)
     
     with transaction.atomic():
@@ -2078,7 +2085,8 @@ def recalculate_season_standings(season_id):
             stat.position = pos
             stat.save(update_fields=['position'])
     
-    return {'success': True, 'teams': teams.count()}
+    logger.info(f"✅ Standings recalculated for season {season_id}: {teams.count()} teams")
+    return {'success': True, 'teams': teams.count(), 'season_id': season_id}
 
 
 ================================================================================
@@ -4017,7 +4025,8 @@ import os
 from datetime import timedelta
 from django.conf import settings
 from django.contrib import messages
-from django.db.models import Avg, F
+from django.db.models import Count, Avg, F, Q, Sum
+from django.core.cache import cache
 from django.http import HttpResponse
 from django.shortcuts import redirect, render, get_object_or_404
 from django.template.loader import render_to_string
@@ -4142,6 +4151,13 @@ def standings_preview(request):
         </div>
         ''')
     
+    # ✅ КЭШИРОВАНИЕ (используем тот же ключ что в LeagueDetailView)
+    cache_key = f'league_{season.league.id}_season_{season.id}_standings_preview'
+    cached_html = cache.get(cache_key)
+    
+    if cached_html:
+        return HttpResponse(cached_html)
+    
     teams = Team.objects.filter(
         teamseason__season=season,
         is_active=True
@@ -4149,40 +4165,38 @@ def standings_preview(request):
     
     standings_list = []
     for team in teams:
-        home_matches = Match.objects.filter(
-            home_team=team,
+        # ✅ ОПТИМИЗАЦИЯ: один SQL запрос вместо 6+
+        stats = Match.objects.filter(
             season=season,
             status='finished'
-        )
-        away_matches = Match.objects.filter(
-            away_team=team,
-            season=season,
-            status='finished'
+        ).aggregate(
+            home_played=Count('id', filter=Q(home_team=team)),
+            away_played=Count('id', filter=Q(away_team=team)),
+            home_wins=Count('id', filter=Q(home_team=team) & Q(home_score__gt=F('away_score'))),
+            away_wins=Count('id', filter=Q(away_team=team) & Q(away_score__gt=F('home_score'))),
+            home_draws=Count('id', filter=Q(home_team=team) & Q(home_score=F('away_score'))),
+            away_draws=Count('id', filter=Q(away_team=team) & Q(away_score=F('home_score'))),
+            home_goals_scored=Sum('home_score', filter=Q(home_team=team)),
+            away_goals_scored=Sum('away_score', filter=Q(away_team=team)),
+            home_goals_conceded=Sum('away_score', filter=Q(home_team=team)),
+            away_goals_conceded=Sum('home_score', filter=Q(away_team=team)),
         )
         
-        played = home_matches.count() + away_matches.count()
-        wins = (
-            home_matches.filter(home_score__gt=F('away_score')).count() +
-            away_matches.filter(away_score__gt=F('home_score')).count()
-        )
-        draws = (
-            home_matches.filter(home_score=F('away_score')).count() +
-            away_matches.filter(away_score=F('home_score')).count()
-        )
+        played = (stats['home_played'] or 0) + (stats['away_played'] or 0)
+        wins = (stats['home_wins'] or 0) + (stats['away_wins'] or 0)
+        draws = (stats['home_draws'] or 0) + (stats['away_draws'] or 0)
         losses = played - wins - draws
-        goals_scored = (
-            sum(m.home_score or 0 for m in home_matches) +
-            sum(m.away_score or 0 for m in away_matches)
-        )
-        goals_conceded = (
-            sum(m.away_score or 0 for m in home_matches) +
-            sum(m.home_score or 0 for m in away_matches)
-        )
+        
+        goals_scored = ((stats['home_goals_scored'] or 0) + (stats['away_goals_scored'] or 0))
+        goals_conceded = ((stats['home_goals_conceded'] or 0) + (stats['away_goals_conceded'] or 0))
         goal_diff = goals_scored - goals_conceded
         points = wins * 3 + draws
         
+        # ✅ ТОТ ЖЕ ФОРМАТ что в LeagueDetailView
         standings_list.append({
-            'team': team,
+            'team_id': str(team.id),
+            'team_name': team.name,
+            'team_logo_url': team.logo_url,
             'played': played,
             'wins': wins,
             'draws': draws,
@@ -4200,6 +4214,10 @@ def standings_preview(request):
         'standings': standings_list,
         'season': season,
     })
+    
+    # ✅ КЭШИРУЕМ HTML (не данные, а готовый HTML)
+    cache.set(cache_key, html, 300)
+    
     return HttpResponse(html)
 
 
@@ -4588,12 +4606,10 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    
     # Third party
     'rest_framework',
     'drf_spectacular',
     'django_filters',
-    
     # Local apps
     'core',
     'users',
@@ -4663,7 +4679,7 @@ DATABASES = {
         "OPTIONS": {
             "connect_timeout": 10,
             "options": "-c statement_timeout=30000"
-        },
+        }
     }
 }
 
@@ -4716,7 +4732,9 @@ REST_FRAMEWORK = {
         'rest_framework.renderers.JSONRenderer',
     ],
 }
-CSRF_COOKIE_HTTPONLY = False 
+
+CSRF_COOKIE_HTTPONLY = False
+
 SPECTACULAR_SETTINGS = {
     'TITLE': 'DOPX API',
     'DESCRIPTION': 'API для платформы оценки футбольных матчей',
@@ -4737,65 +4755,72 @@ CELERY_ENABLE_UTC = False
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
 
+# ✅ НОВОЕ: Настройки парсера (легко включать/выключать турниры)
+PARSER_SETTINGS = {
+    'ENABLED_TOURNAMENTS': ['pl'],  # ['pl', '1l', '2l', 'cup'] - добавить при необходимости
+    'DEFAULT_TOURNAMENT': 'pl',
+    'AUTO_CREATE_SEASONS': True,
+    'SYNC_RECENT_LIMIT': 10,
+}
+
 CELERY_BEAT_SCHEDULE = {
     # === БЫСТРАЯ синхронизация последних ЗАВЕРШЁННЫХ матчей Премьер-Лиги (каждые 30 мин) ===
     'sync-kff-recent-premier': {
         'task': 'parsers.tasks.sync_recent_matches',
         'schedule': crontab(minute='*/30'),
         'kwargs': {
-            'tournament_code': 'pl',  # ✅ Жёстко указываем Премьер-Лигу
-            'limit': 10,  # ✅ Последние 10 завершённых
+            'tournament_code': 'pl',
+            'limit': 10,
         },
         'options': {'queue': 'default'}
     },
-    
     # === ПОЛНАЯ синхронизация Премьер-Лиги (раз в сутки в 03:00) ===
     'sync-kff-premier-league-full': {
         'task': 'parsers.tasks.sync_kff_premier_league',
         'schedule': crontab(hour=3, minute=0),
         'options': {'queue': 'default'}
     },
-    
     # === Обновление статусов матчей (каждый час) ===
     'update-match-statuses-hourly': {
         'task': 'parsers.tasks.update_match_statuses',
         'schedule': crontab(minute=0),
         'options': {'queue': 'default'}
     },
-    
-    # === Пересчёт таблицы (каждые 10 минут) ===
+    # === Пересчёт таблицы (каждые 10 минут) — ✅ АВТО-СЕЗОН ===
     'recalculate-standings': {
         'task': 'aggregates.tasks.recalculate_season_standings',
         'schedule': crontab(minute='*/10'),
-        'kwargs': {'season_id': 200},  # ⚠️ Замените на актуальный season_id или уберите для авто-поиска
+        # ✅ Убрано kwargs с season_id — теперь авто-детекция
         'options': {'queue': 'default'}
     },
-    
     # === Пересчёт агрегатов (каждые 10 минут) ===
     'recalculate-aggregates': {
         'task': 'aggregates.tasks.recalculate_all_aggregates',
         'schedule': crontab(minute='*/10'),
         'options': {'queue': 'default'}
     },
-    
     # === Уведомления (каждые 6 часов) ===
     'voting-reminders': {
         'task': 'notifications.tasks.cleanup_old_notifications',
         'schedule': crontab(minute=0, hour='*/6'),
         'options': {'queue': 'default'}
     },
-    
     # === Очистка старых данных (каждый день в 03:00) ===
     'cleanup-old-sessions-daily': {
         'task': 'notifications.tasks.cleanup_old_sessions',
         'schedule': crontab(hour=3, minute=0),
         'options': {'queue': 'default'}
     },
-    
     # === Проверка здоровья API (каждые 2 часа) ===
     'health-check-kff-api': {
         'task': 'parsers.tasks.health_check_kff_api',
         'schedule': crontab(minute=0, hour='*/2'),
+        'options': {'queue': 'default'}
+    },
+    # === ✅ НОВОЕ: Мониторинг ошибок синхронизации (каждые 4 часа) ===
+    'sync-error-monitor': {
+        'task': 'parsers.tasks.check_sync_errors_and_alert',
+        'schedule': crontab(minute=0, hour='*/4'),
         'options': {'queue': 'default'}
     },
 }
@@ -4849,6 +4874,12 @@ LOGGING = {
             'class': 'logging.StreamHandler',
             'formatter': 'verbose',
         },
+        'error_file': {
+            'level': 'ERROR',
+            'class': 'logging.FileHandler',
+            'filename': LOGS_DIR / 'errors.log',
+            'formatter': 'verbose',
+        },
     },
     'loggers': {
         'celery': {
@@ -4858,6 +4889,11 @@ LOGGING = {
         },
         'aggregates.tasks': {
             'handlers': ['celery_file', 'console'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+        'parsers.tasks': {
+            'handlers': ['celery_file', 'console', 'error_file'],
             'level': 'INFO',
             'propagate': True,
         },
@@ -4871,13 +4907,8 @@ if DEBUG:
     DEBUG_TOOLBAR_CONFIG = {
         'SHOW_TOOLBAR_CALLBACK': lambda request: request.META.get('HTTP_ACCEPT') != 'application/json',
     }
-    
 
 # === Contact Form Settings ===
-CONTACT_EMAIL = os.getenv('CONTACT_EMAIL')
-DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL')
-
-# Email backend (для продакшена настроить SMTP)
 CONTACT_EMAIL = os.getenv('CONTACT_EMAIL', 'admin@dopx.kz')
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@dopx.kz')
 EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
@@ -4887,6 +4918,10 @@ EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
 SITE_URL = os.getenv('SITE_URL', 'http://127.0.0.1:8000')
+
+# === Admin Alert Settings ===
+ADMIN_ALERT_EMAIL = os.getenv('ADMIN_ALERT_EMAIL', CONTACT_EMAIL)
+ENABLE_SYNC_ERROR_ALERTS = os.getenv('ENABLE_SYNC_ERROR_ALERTS', 'True') == 'True'
 
 
 ================================================================================
@@ -7491,8 +7526,10 @@ class LeagueDetailView(DetailView):
                     goal_diff = goals_scored - goals_conceded
                     points = wins * 3 + draws
                     
-                    standings.append({  # ✅ Теперь standings — список, .append() работает
-                        'team': team,
+                    standings.append({
+                        'team_id': str(team.id),      # ← UUID как строка
+                        'team_name': team.name,        # ← Только строка
+                        'team_logo_url': team.logo_url,
                         'played': played,
                         'wins': wins,
                         'draws': draws,
@@ -9278,6 +9315,7 @@ FILE: parsers/kff/__init__.py
 FILE: parsers/kff/client.py
 ================================================================================
 
+# parsers/kff/client.py
 import requests
 import time
 import logging
@@ -9285,12 +9323,12 @@ from typing import List, Dict, Optional, Any
 
 logger = logging.getLogger(__name__)
 
-
 class KFFClient:
     BASE_URL = "https://kffleague.kz"
     API_URL = "https://kffleague.kz/api/v1"
     
     # ✅ КОДЫ ТУРНИРОВ — используем frontend_code из API
+    # ✅ ЛЕГКО ВКЛЮЧИТЬ: добавьте код в этот список
     TOURNAMENT_CODES = {
         'pl': 'Премьер-Лига',
         '1l': 'Первая лига',
@@ -9300,7 +9338,8 @@ class KFFClient:
         'sc': 'Суперкубок',
     }
     
-    # ✅ ЦЕЛЕВОЙ ТУРНИР — только Премьер-Лига
+    # ✅ ЦЕЛЕВОЙ ТУРНИР — по умолчанию только Премьер-Лига
+    # ✅ ЧТОБЫ ВКЛЮЧИТЬ ДРУГИЕ: измените в settings.py PARSER_SETTINGS.ENABLED_TOURNAMENTS
     TARGET_TOURNAMENT = 'pl'
     
     # ✅ Известные сезон-иды для фоллбэка (только Премьер-Лига)
@@ -9324,14 +9363,17 @@ class KFFClient:
     def _get(self, endpoint: str, params: Optional[Dict] = None, retries: int = 3) -> Optional[Dict]:
         """GET-запрос с повторами"""
         url = f"{self.API_URL}{endpoint}"
+        
         for attempt in range(retries):
             try:
                 response = self.session.get(url, params=params, timeout=15)
+                
                 if response.status_code != 200:
                     logger.warning(f"HTTP {response.status_code} | Attempt {attempt+1} | {url}")
                     if attempt < retries - 1:
                         time.sleep(1 * (attempt + 1))
                     continue
+                
                 try:
                     result = response.json()
                     time.sleep(0.2)
@@ -9339,6 +9381,7 @@ class KFFClient:
                 except ValueError as e:
                     logger.error(f"JSON decode error: {e} | {url}")
                     return None
+                    
             except requests.exceptions.Timeout:
                 logger.warning(f"Timeout attempt {attempt+1} for {url}")
                 if attempt < retries - 1:
@@ -9350,6 +9393,7 @@ class KFFClient:
             except Exception as e:
                 logger.error(f"Unexpected error: {type(e).__name__}: {e}")
                 break
+        
         return None
     
     def get_tournament_seasons(self, tournament_code: str = None) -> List[Dict]:
@@ -9361,12 +9405,14 @@ class KFFClient:
         
         # Запрос /seasons с параметром tournament
         response = self._get("/seasons", params={"tournament": tournament_code})
+        
         if not response:
             logger.warning(f"Empty response for /seasons?tournament={tournament_code}")
             return seasons
         
         # ✅ API возвращает список в ключе 'items'
         items = response.get("items", [])
+        
         if not isinstance(items, list):
             logger.warning(f"Unexpected response format: {type(items)}")
             return seasons
@@ -9418,11 +9464,11 @@ class KFFClient:
                 if test_resp and test_resp.get("frontend_code", "").lower() == self.TARGET_TOURNAMENT:
                     logger.info(f"✅ Using fallback Premier League season ID: {sid}")
                     return sid
+            
             logger.error(f"❌ Could not find any Premier League season (frontend_code={self.TARGET_TOURNAMENT})")
             return None
         
         candidates = []
-        
         for s in seasons:
             season_id = s.get('id')
             season_year = s.get('year')
@@ -9467,7 +9513,6 @@ class KFFClient:
     def get_season_matches(self, season_id: int = None, tournament_code: str = None, auto_detect: bool = True) -> List[int]:
         """
         Получает список ID матчей сезона
-        
         Returns:
             Список ID: [1100, 1099, 1091, ...]
         """
@@ -9492,7 +9537,8 @@ class KFFClient:
                 for game in items:
                     if isinstance(game, dict) and game.get("id"):
                         match_ids.append(game["id"])  # ✅ Только ID
-                logger.info(f"✅ Found {len(match_ids)} match IDs via /seasons/{season_id}/games")
+            
+            logger.info(f"✅ Found {len(match_ids)} match IDs via /seasons/{season_id}/games")
         
         # === Способ 2: stages -> games (fallback) ===
         if not match_ids:
@@ -9509,14 +9555,15 @@ class KFFClient:
                                 for game in items:
                                     if isinstance(game, dict) and game.get("id"):
                                         match_ids.append(game["id"])
+                
                 if match_ids:
                     logger.info(f"✅ Found {len(match_ids)} match IDs via stages fallback")
         
         # === Способ 3: HTML scraping fallback ===
         if not match_ids:
             match_ids = list(self._scrape_match_ids_from_html(season_id, tournament_code))
+            logger.info(f"✅ Found {len(match_ids)} match IDs for season {season_id} (tournament={tournament_code})")
         
-        logger.info(f"✅ Found {len(match_ids)} match IDs for season {season_id} (tournament={tournament_code})")
         return match_ids  # ✅ Возвращаем [1100, 1099, ...], а не [{'id': 1100, ...}]
     
     def get_recent_finished_matches(self, season_id: int = None, limit: int = 10, tournament_code: str = None) -> List[int]:
@@ -9581,7 +9628,8 @@ class KFFClient:
                             'start_time': game.get("date") or game.get("start_time"),
                             'status': game.get("status", "scheduled"),
                         })
-                logger.info(f"✅ Found {len(matches)} matches with details via /seasons/{season_id}/games")
+            
+            logger.info(f"✅ Found {len(matches)} matches with details via /seasons/{season_id}/games")
         
         # === Способ 2: stages -> games (fallback) ===
         if not matches:
@@ -9602,18 +9650,21 @@ class KFFClient:
                                             'start_time': game.get("date") or game.get("start_time"),
                                             'status': game.get("status", "scheduled"),
                                         })
-                if matches:
-                    logger.info(f"✅ Found {len(matches)} matches with details via stages fallback")
+            
+            if matches:
+                logger.info(f"✅ Found {len(matches)} matches with details via stages fallback")
         
         return matches
     
     def _scrape_match_ids_from_html(self, season_id: int, tournament_code: str = None) -> set:
         """Fallback: парсинг HTML с параметром tournament"""
         import re
+        
         if tournament_code is None:
             tournament_code = self.TARGET_TOURNAMENT
         
         match_ids = set()
+        
         try:
             response = self.session.get(
                 f"{self.BASE_URL}/matches",
@@ -9626,6 +9677,7 @@ class KFFClient:
             logger.info(f"🔍 Scraped {len(match_ids)} match IDs from HTML (tournament={tournament_code})")
         except Exception as e:
             logger.warning(f"⚠️ HTML scraping failed: {e}")
+        
         return match_ids
     
     def get_game_details(self, match_id: int, tournament_code: str = None) -> Optional[Dict]:
@@ -10310,6 +10362,7 @@ import logging
 from django.db import connection
 from django.db.utils import IntegrityError
 from django.utils import timezone
+from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
@@ -10319,9 +10372,10 @@ def import_full_match(match_id: int, season_id: int = None, tournament_code: str
         tournament_code = KFFClient.TARGET_TOURNAMENT
     
     logger.info(f"🔄 Начало импорта матча #{match_id} (tournament={tournament_code})")
-    start_time = timezone.now()
     
+    start_time = timezone.now()
     client = KFFClient()
+    
     stats = {
         'match_id': match_id,
         'start_time': start_time,
@@ -10337,6 +10391,7 @@ def import_full_match(match_id: int, season_id: int = None, tournament_code: str
         # === 1. Основная информация о матче ===
         logger.info(f"  📊 Загрузка данных матча...")
         game_resp = client.get_game_details(match_id, tournament_code=tournament_code)
+        
         if not game_resp:
             error = f"API вернул None для матча {match_id}"
             logger.error(f"  ❌ {error}")
@@ -10350,6 +10405,7 @@ def import_full_match(match_id: int, season_id: int = None, tournament_code: str
             return False
         
         game_data = game_resp
+        
         if not season_id:
             season_id = game_data.get("season_id")
         
@@ -10366,9 +10422,9 @@ def import_full_match(match_id: int, season_id: int = None, tournament_code: str
             logger.info(f"  ⚽ {match.home_team} vs {match.away_team} ({match.status})")
             logger.info(f"  📅 Start: {match.start_time}, End: {match.end_time}")
             logger.info(f"  🗳️  Voting until: {match.voting_open_until}")
+            
             if match.referee:
                 logger.info(f"  🟨 Referee: {match.referee}")
-                
         except IntegrityError as e:
             error = f"IntegrityError при импорте матча: {e}"
             logger.error(f"  ❌ {error}")
@@ -10384,9 +10440,9 @@ def import_full_match(match_id: int, season_id: int = None, tournament_code: str
         if game_data.get("has_lineup"):
             logger.info(f"  👥 Загрузка составов и тренеров...")
             lineup_resp = client.get_lineup(match_id, tournament_code=tournament_code)
+            
             if lineup_resp and isinstance(lineup_resp, dict):
                 lineup_data = lineup_resp.get("data", lineup_resp)
-                
                 logger.info(f"  📊 Lineup keys: {list(lineup_data.keys())}")
                 
                 if "lineups" in lineup_data:
@@ -10395,34 +10451,35 @@ def import_full_match(match_id: int, season_id: int = None, tournament_code: str
                             starters = team_data.get("starters", []) or team_data.get("starting_lineup", [])
                             subs = team_data.get("substitutes", []) or team_data.get("bench", [])
                             logger.info(f"  📊 {side}: {len(starters)} starters, {len(subs)} subs")
-                
-                # ✅ СОЗДАЁМ ТРЕНЕРОВ
-                try:
-                    if import_coaches(match, lineup_data):
-                        logger.info(f"  ✅ Тренеры импортированы")
-                        stats['created']['coaches'] = True
-                    else:
-                        logger.warning(f"  ⚠️  Нет данных тренеров")
-                except Exception as e:
-                    error = f"Ошибка импорта тренеров: {e}"
-                    logger.warning(f"  ⚠️  {error}", exc_info=True)
-                    stats['errors'].append(error)
-                
-                # Создаём составы
-                try:
-                    if import_lineups(match, lineup_data):
-                        logger.info(f"  ✅ Составы импортированы")
-                        stats['created']['lineups'] = True
-                    else:
-                        logger.warning(f"  ⚠️  Нет данных составов")
-                except Exception as e:
-                    error = f"Ошибка импорта составов: {e}"
-                    logger.warning(f"  ⚠️  {error}", exc_info=True)
-                    stats['errors'].append(error)
+                    
+                    # ✅ СОЗДАЁМ ТРЕНЕРОВ
+                    try:
+                        if import_coaches(match, lineup_data):
+                            logger.info(f"  ✅ Тренеры импортированы")
+                            stats['created']['coaches'] = True
+                        else:
+                            logger.warning(f"  ⚠️  Нет данных тренеров")
+                    except Exception as e:
+                        error = f"Ошибка импорта тренеров: {e}"
+                        logger.warning(f"  ⚠️  {error}", exc_info=True)
+                        stats['errors'].append(error)
+                    
+                    # Создаём составы
+                    try:
+                        if import_lineups(match, lineup_data):
+                            logger.info(f"  ✅ Составы импортированы")
+                            stats['created']['lineups'] = True
+                        else:
+                            logger.warning(f"  ⚠️  Нет данных составов")
+                    except Exception as e:
+                        error = f"Ошибка импорта составов: {e}"
+                        logger.warning(f"  ⚠️  {error}", exc_info=True)
+                        stats['errors'].append(error)
         
         # === 3. События матча ===
         logger.info(f"  ⚡ Загрузка событий...")
         events_resp = client.get_events(match_id, tournament_code=tournament_code)
+        
         if events_resp and isinstance(events_resp, dict):
             events_data = events_resp.get("data", events_resp)
             events_list = events_data.get("events", []) if isinstance(events_data, dict) else []
@@ -10445,6 +10502,7 @@ def import_full_match(match_id: int, season_id: int = None, tournament_code: str
         # === 4. Статистика матча ===
         logger.info(f"  📈 Загрузка статистики...")
         stats_resp = client.get_stats(match_id, tournament_code=tournament_code)
+        
         if stats_resp and isinstance(stats_resp, dict):
             stats_data = stats_resp.get("data", stats_resp)
             if stats_data:
@@ -10461,7 +10519,7 @@ def import_full_match(match_id: int, season_id: int = None, tournament_code: str
         
         stats['success'] = True
         logger.info(f"✅ Импорт матча #{match_id} завершён успешно")
-        
+    
     except Exception as e:
         error = f"Критическая ошибка импорта: {type(e).__name__}: {e}"
         logger.error(f"❌ {error}", exc_info=True)
@@ -10501,6 +10559,7 @@ def _log_import_stats(stats: dict):
 def sync_season(season_id: int = None, tournament_code: str = None, match_ids: list = None, auto_detect: bool = True) -> dict:
     """
     Синхронизация всего сезона с авто-определением
+    ✅ АВТО-СОЗДАНИЕ СЕЗОНА если не существует
     """
     if tournament_code is None:
         tournament_code = KFFClient.TARGET_TOURNAMENT
@@ -10521,16 +10580,17 @@ def sync_season(season_id: int = None, tournament_code: str = None, match_ids: l
             return {"success": 0, "failed": 0, "total": 0, "error": "Season not found"}
     
     logger.info(f"🚀 Начало синхронизации сезона {season_id} (tournament={tournament_code}, auto_detect={auto_detect})")
+    
     start_time = timezone.now()
     
     if not match_ids:
         logger.info(f"🔍 Поиск матчей сезона...")
         match_ids = client.get_season_matches(season_id, tournament_code=tournament_code, auto_detect=False)
         logger.info(f"✅ Найдено матчей: {len(match_ids)}")
-    
-    if not match_ids:
-        logger.warning(f"⚠️  Матчи не найдены для сезона {season_id} (tournament={tournament_code})")
-        return {"success": 0, "failed": 0, "total": 0}
+        
+        if not match_ids:
+            logger.warning(f"⚠️  Матчи не найдены для сезона {season_id} (tournament={tournament_code})")
+            return {"success": 0, "failed": 0, "total": 0}
     
     results = {"success": 0, "failed": 0, "total": len(match_ids)}
     failed_matches = []
@@ -10862,12 +10922,15 @@ FILE: parsers/tasks.py
 # parsers/tasks.py
 from celery import shared_task
 from django.utils import timezone
+from django.conf import settings
+from django.core.mail import send_mail
+from django.template.loader import render_to_string
 from parsers.kff.client import KFFClient
 from parsers.kff.pipeline import sync_season, import_full_match
 import logging
+from datetime import timedelta
 
 logger = logging.getLogger(__name__)
-
 
 @shared_task(bind=True, max_retries=3)
 def sync_kff_premier_league(self, year: int = None):
@@ -10880,6 +10943,7 @@ def sync_kff_premier_league(self, year: int = None):
     if not season_id:
         error_msg = f"❌ Could not find Premier League season (year={year})"
         logger.error(error_msg)
+        _send_sync_error_alert(error_msg, 'season_detection')
         return {'success': 0, 'failed': 0, 'error': error_msg}
     
     logger.info(f"✅ Syncing Premier League season {season_id} (year={year})")
@@ -10887,11 +10951,20 @@ def sync_kff_premier_league(self, year: int = None):
     try:
         result = sync_season(season_id=season_id, tournament_code='pl', auto_detect=False)
         logger.info(f"✅ Premier League sync completed: {result}")
+        
+        if result.get('failed', 0) > 0:
+            _send_sync_error_alert(
+                f"Синхронизация завершена с ошибками: {result['failed']} из {result['total']}",
+                'sync_errors',
+                extra_data=result
+            )
+        
         return result
     except Exception as e:
-        logger.error(f"❌ Premier League sync failed: {type(e).__name__}: {e}", exc_info=True)
+        error_msg = f"❌ Premier League sync failed: {type(e).__name__}: {e}"
+        logger.error(error_msg, exc_info=True)
+        _send_sync_error_alert(error_msg, 'sync_critical', extra_data={'exception': str(e)})
         return {'success': 0, 'failed': 0, 'error': str(e)}
-
 
 @shared_task(bind=True, max_retries=3)
 def sync_recent_matches(self, season_id: int = None, limit: int = 10, tournament_code: str = None):
@@ -10902,6 +10975,15 @@ def sync_recent_matches(self, season_id: int = None, limit: int = 10, tournament
     logger.info(f"🔄 Syncing recent finished matches (limit={limit}, season_id={season_id}, tournament={tournament_code})")
     
     client = KFFClient()
+    
+    # ✅ Авто-определение сезона если не указан
+    if season_id is None:
+        season_id = client.find_premier_league_season()
+        if not season_id:
+            error_msg = f"❌ Could not auto-detect season for tournament {tournament_code}"
+            logger.error(error_msg)
+            _send_sync_error_alert(error_msg, 'season_detection')
+            return {'success': 0, 'total': 0, 'error': error_msg}
     
     # ✅ Получаем последние N завершённых матчей (с сортировкой по дате)
     recent_ids = client.get_recent_finished_matches(
@@ -10915,16 +10997,37 @@ def sync_recent_matches(self, season_id: int = None, limit: int = 10, tournament
         return {'success': 0, 'total': 0, 'error': 'No finished matches'}
     
     success = 0
+    failed = 0
+    failed_matches = []
+    
     for mid in recent_ids:
         try:
             if import_full_match(mid, season_id, tournament_code=tournament_code):
                 success += 1
+            else:
+                failed += 1
+                failed_matches.append(mid)
         except Exception as e:
             logger.error(f"❌ Failed to import match {mid}: {type(e).__name__}: {e}")
+            failed += 1
+            failed_matches.append(mid)
     
     logger.info(f"✅ Synced {success}/{len(recent_ids)} recent finished matches")
-    return {'success': success, 'total': len(recent_ids), 'season_id': season_id, 'tournament_code': tournament_code}
-
+    
+    if failed > 0:
+        _send_sync_error_alert(
+            f"Ошибки при синхронизации {failed} матчей: {failed_matches[:5]}",
+            'sync_errors',
+            extra_data={'failed_matches': failed_matches, 'success': success}
+        )
+    
+    return {
+        'success': success,
+        'total': len(recent_ids),
+        'failed': failed,
+        'season_id': season_id,
+        'tournament_code': tournament_code
+    }
 
 @shared_task(bind=True, max_retries=3)
 def sync_full_season(self, season_id: int = None, tournament_code: str = None):
@@ -10945,22 +11048,34 @@ def sync_full_season(self, season_id: int = None, tournament_code: str = None):
             season_id = seasons[0]['id'] if seasons else None
         
         if not season_id:
-            logger.error(f"❌ Could not auto-detect season for tournament '{tournament_code}'")
+            error_msg = f"❌ Could not auto-detect season for tournament '{tournament_code}'"
+            logger.error(error_msg)
+            _send_sync_error_alert(error_msg, 'season_detection')
             return {'success': 0, 'failed': 0, 'error': 'Season not found'}
     
     try:
         result = sync_season(season_id=season_id, tournament_code=tournament_code, auto_detect=False)
         logger.info(f"✅ Full season sync completed: {result}")
+        
+        if result.get('failed', 0) > 0:
+            _send_sync_error_alert(
+                f"Полная синхронизация завершена с ошибками: {result['failed']} из {result['total']}",
+                'sync_errors',
+                extra_data=result
+            )
+        
         return result
     except Exception as e:
-        logger.error(f"❌ Full season sync failed: {type(e).__name__}: {e}", exc_info=True)
+        error_msg = f"❌ Full season sync failed: {type(e).__name__}: {e}"
+        logger.error(error_msg, exc_info=True)
+        _send_sync_error_alert(error_msg, 'sync_critical', extra_data={'exception': str(e)})
         return {'success': 0, 'failed': 0, 'error': str(e)}
-
 
 @shared_task
 def update_match_statuses():
     """Обновление статусов матчей (live/finished)"""
     from matches.models import Match
+    
     now = timezone.now()
     
     # Завершённые матчи
@@ -10978,13 +11093,14 @@ def update_match_statuses():
     logger.info(f"✅ Updated {finished} to finished, {scheduled} to live")
     return {'finished': finished, 'live': scheduled}
 
-
 @shared_task
 def health_check_kff_api():
     """Проверка доступности KFF API"""
     client = KFFClient()
+    
     try:
         response = client._get("/seasons", params={"tournament": client.TARGET_TOURNAMENT}, retries=1)
+        
         if response:
             logger.info("✅ KFF API is reachable")
             return {'status': 'ok', 'api': 'reachable'}
@@ -10992,8 +11108,124 @@ def health_check_kff_api():
             logger.warning("⚠️  KFF API returned empty response")
             return {'status': 'warning', 'api': 'empty_response'}
     except Exception as e:
-        logger.error(f"❌ KFF API health check failed: {e}")
+        error_msg = f"❌ KFF API health check failed: {e}"
+        logger.error(error_msg)
         return {'status': 'error', 'error': str(e)}
+
+@shared_task
+def check_sync_errors_and_alert():
+    """
+    ✅ НОВОЕ: Проверка ошибок синхронизации за последние 24 часа
+    и отправка алерта если критическое количество ошибок
+    """
+    from django.db.models import Count, Q
+    from matches.models import Match
+    
+    now = timezone.now()
+    cutoff = now - timedelta(hours=24)
+    
+    # Считаем матчи без составов (признак проблемы импорта)
+    matches_without_lineups = Match.objects.filter(
+        status='finished',
+        created_at__gte=cutoff,
+        has_lineup=False
+    ).count()
+    
+    # Считаем матчи без событий
+    from events.models import MatchEvent
+    matches_without_events = Match.objects.filter(
+        status='finished',
+        created_at__gte=cutoff
+    ).exclude(
+        id__in=MatchEvent.objects.filter(
+            created_at__gte=cutoff
+        ).values_list('match_id', flat=True)
+    ).count()
+    
+    threshold_lineups = 5  # Если больше 5 матчей без составов — алерт
+    threshold_events = 10  # Если больше 10 матчей без событий — алерт
+    
+    alerts = []
+    
+    if matches_without_lineups > threshold_lineups:
+        alerts.append(f"⚠️ {matches_without_lineups} матчей без составов за 24ч")
+    
+    if matches_without_events > threshold_events:
+        alerts.append(f"⚠️ {matches_without_events} матчей без событий за 24ч")
+    
+    if alerts:
+        error_msg = "Проблемы с синхронизацией:\n" + "\n".join(alerts)
+        logger.warning(error_msg)
+        _send_sync_error_alert(error_msg, 'sync_monitoring', extra_data={
+            'matches_without_lineups': matches_without_lineups,
+            'matches_without_events': matches_without_events
+        })
+        return {'status': 'alert_sent', 'alerts': alerts}
+    
+    logger.info("✅ Sync monitoring: No critical issues detected")
+    return {'status': 'ok'}
+
+def _send_sync_error_alert(error_message: str, alert_type: str, extra_data: dict = None):
+    """
+    ✅ НОВОЕ: Отправка email-алерта админу при критических ошибках
+    """
+    if not getattr(settings, 'ENABLE_SYNC_ERROR_ALERTS', True):
+        return
+    
+    admin_email = getattr(settings, 'ADMIN_ALERT_EMAIL', settings.CONTACT_EMAIL)
+    site_url = getattr(settings, 'SITE_URL', 'https://dopx.kz')
+    
+    subject = f"🚨 DOPX Sync Alert [{alert_type}]"
+    
+    html_message = render_to_string('emails/sync_error_alert.html', {
+        'error_message': error_message,
+        'alert_type': alert_type,
+        'extra_data': extra_data,
+        'timestamp': timezone.now(),
+        'site_url': site_url,
+    })
+    
+    try:
+        send_mail(
+            subject=subject,
+            message='',
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[admin_email],
+            html_message=html_message,
+            fail_silently=True,  # Не ломаем задачу если email не отправился
+        )
+        logger.info(f"✅ Sync error alert sent to {admin_email}")
+    except Exception as e:
+        logger.error(f"❌ Failed to send sync error alert: {e}")
+
+@shared_task
+def sync_all_enabled_tournaments():
+    """
+    ✅ НОВОЕ: Синхронизация всех включённых турниров из настроек
+    Чтобы включить другие лиги — добавьте их в PARSER_SETTINGS.ENABLED_TOURNAMENTS
+    """
+    enabled_tournaments = getattr(settings, 'PARSER_SETTINGS', {}).get(
+        'ENABLED_TOURNAMENTS',
+        ['pl']
+    )
+    
+    results = {}
+    
+    for tournament_code in enabled_tournaments:
+        logger.info(f"🔄 Starting sync for tournament: {tournament_code}")
+        
+        try:
+            if tournament_code == 'pl':
+                result = sync_kff_premier_league.delay()
+            else:
+                result = sync_full_season.delay(tournament_code=tournament_code)
+            
+            results[tournament_code] = {'status': 'queued', 'task_id': result.id}
+        except Exception as e:
+            logger.error(f"❌ Failed to queue sync for {tournament_code}: {e}")
+            results[tournament_code] = {'status': 'error', 'error': str(e)}
+    
+    return results
 
 
 ================================================================================
@@ -12001,6 +12233,250 @@ async def main():
 
 
 asyncio.run(main())
+
+
+================================================================================
+FILE: sync_kff_commands.md
+================================================================================
+
+# 📋 ПОЛНЫЙ СПРАВОЧНИК КОМАНД `sync_kff`
+
+Сохраните этот файл для будущего использования!
+
+---
+
+## 🎯 БАЗОВЫЕ КОМАНДЫ
+
+```bash
+# Базовая синхронизация (авто-поиск сезона Премьер-Лиги)
+python manage.py sync_kff
+
+# Синхронизация с указанием сезона
+python manage.py sync_kff --season 200
+
+# Синхронизация по году (авто-поиск сезона)
+python manage.py sync_kff --year 2025
+```
+
+---
+
+## 🏆 ТУРНИРЫ
+
+```bash
+# Премьер-Лига (по умолчанию)
+python manage.py sync_kff --tournament pl
+
+# Первая лига
+python manage.py sync_kff --tournament 1l
+
+# Вторая лига
+python manage.py sync_kff --tournament 2l
+
+# Кубок Казахстана
+python manage.py sync_kff --tournament cup
+
+# Женская лига
+python manage.py sync_kff --tournament el
+
+# Суперкубок
+python manage.py sync_kff --tournament sc
+```
+
+---
+
+## 📊 КОНКРЕТНЫЕ МАТЧИ
+
+```bash
+# Один конкретный матч
+python manage.py sync_kff --match-id 1100
+
+# Список матчей (через запятую, без пробелов)
+python manage.py sync_kff --match-ids 1100,1099,1091
+
+# С указанием сезона для конкретного матча
+python manage.py sync_kff --match-id 1100 --season 200
+```
+
+---
+
+## 🔄 ТИПЫ СИНХРОНИЗАЦИИ
+
+```bash
+# Только последние завершённые матчи (по умолчанию 10)
+python manage.py sync_kff --recent-only
+
+# Последние N завершённых матчей
+python manage.py sync_kff --recent-only --limit 5
+python manage.py sync_kff --recent-only --limit 20
+
+# Полная синхронизация сезона (все матчи)
+python manage.py sync_kff --full
+
+# Полная синхронизация с указанием сезона
+python manage.py sync_kff --season 200 --full
+
+# Полная синхронизация другого турнира
+python manage.py sync_kff --tournament 1l --full
+```
+
+---
+
+## 🔧 ОТЛАДКА И ТЕСТИРОВАНИЕ
+
+```bash
+# Dry-run (показать что будет импортировано без сохранения)
+python manage.py sync_kff --dry-run
+
+# Dry-run для конкретного матча
+python manage.py sync_kff --match-id 1100 --dry-run
+
+# Dry-run для полного сезона
+python manage.py sync_kff --full --dry-run
+
+# Debug API (вывод сырых ответов API)
+python manage.py sync_kff --debug-api
+
+# Debug API для конкретного турнира
+python manage.py sync_kff --tournament pl --debug-api
+
+# Комбинированный debug
+python manage.py sync_kff --full --debug-api --dry-run
+```
+
+---
+
+## ⚙️ НАСТРОЙКИ АВТО-ОПРЕДЕЛЕНИЯ
+
+```bash
+# Отключить авто-определение сезона (требует --season)
+python manage.py sync_kff --no-auto-detect --season 200
+
+# Авто-определение по году
+python manage.py sync_kff --year 2025
+
+# Авто-определение для другого турнира
+python manage.py sync_kff --tournament 1l --year 2025
+```
+
+---
+
+## 📦 КОМБИНИРОВАННЫЕ КОМАНДЫ
+
+```bash
+# === Быстрая синхронизация для разработки ===
+python manage.py sync_kff --recent-only --limit 5
+
+# === Полная синхронизация Премьер-Лиги ===
+python manage.py sync_kff --tournament pl --full
+
+# === Синхронизация конкретного матча с отладкой ===
+python manage.py sync_kff --match-id 1100 --debug-api
+
+# === Тест перед полным импортом ===
+python manage.py sync_kff --full --dry-run
+
+# === Синхронизация Первой лиги ===
+python manage.py sync_kff --tournament 1l --recent-only --limit 10
+
+# === Принудительная синхронизация сезона ===
+python manage.py sync_kff --season 200 --full --no-auto-detect
+
+# === Отладка API для конкретного турнира ===
+python manage.py sync_kff --tournament cup --debug-api --dry-run
+```
+
+---
+
+## 🆘 СПРАВКА
+
+```bash
+# Показать всю справку по команде
+python manage.py sync_kff --help
+```
+
+---
+
+## 📊 ВСЕ ДОСТУПНЫЕ ОПЦИИ
+
+| Опция | Тип | Описание | Пример |
+|-------|-----|----------|--------|
+| `--season` | int | ID сезона (если не указан — авто-поиск) | `--season 200` |
+| `--year` | int | Год для авто-поиска (2024, 2025, 2026) | `--year 2025` |
+| `--tournament` | str | Код турнира | `--tournament pl` |
+| `--match-id` | int | Синхронизировать один матч | `--match-id 1100` |
+| `--match-ids` | str | Список ID матчей через запятую | `--match-ids 1100,1099` |
+| `--limit` | int | Лимит для recent-матчей (по умолчанию 10) | `--limit 5` |
+| `--recent-only` | flag | Только последние завершённые матчи | `--recent-only` |
+| `--full` | flag | Полная синхронизация сезона | `--full` |
+| `--no-auto-detect` | flag | Отключить авто-определение сезона | `--no-auto-detect` |
+| `--dry-run` | flag | Показать что будет импортировано (без сохранения) | `--dry-run` |
+| `--debug-api` | flag | Вывод сырых ответов API для отладки | `--debug-api` |
+
+---
+
+## 🏟️ ДОСТУПНЫЕ ТУРНИРЫ
+
+| Код | Название | Описание |
+|-----|----------|----------|
+| `pl` | Премьер-Лига | Основной турнир (по умолчанию) |
+| `1l` | Первая лига | Второй дивизион |
+| `2l` | Вторая лига | Третий дивизион |
+| `cup` | Кубок Казахстана | Кубковый турнир |
+| `el` | Женская лига | Женский футбол |
+| `sc` | Суперкубок | Матч за суперкубок |
+
+---
+
+## 💡 РЕКОМЕНДУЕМЫЕ СЦЕНАРИИ
+
+### 🚀 Для ежедневного использования
+```bash
+# Утренняя проверка (последние матчи)
+python manage.py sync_kff --recent-only --limit 10
+
+# Проверка статуса API
+python manage.py sync_kff --dry-run
+```
+
+### 🔨 Для разработки
+```bash
+# Тест одного матча
+python manage.py sync_kff --match-id 1100 --debug-api
+
+# Тест без сохранения
+python manage.py sync_kff --recent-only --limit 3 --dry-run
+```
+
+### 📦 Для продакшена
+```bash
+# Полная синхронизация (ночью)
+python manage.py sync_kff --tournament pl --full
+
+# Синхронизация другого турнира
+python manage.py sync_kff --tournament 1l --full
+```
+
+### 🐛 Для отладки проблем
+```bash
+# Вывод сырых данных API
+python manage.py sync_kff --match-id 1100 --debug-api
+
+# Проверка без записи в БД
+python manage.py sync_kff --full --dry-run --debug-api
+```
+
+---
+
+## ⚠️ ВАЖНЫЕ ЗАМЕТКИ
+
+1. **По умолчанию** синхронизируется только **Премьер-Лига** (`pl`)
+2. **Авто-определение сезона** включено по умолчанию (можно отключить `--no-auto-detect`)
+3. **Dry-run** не сохраняет данные в БД — безопасно для тестов
+4. **Debug API** может выводить много данных — используйте с `--dry-run`
+5. **Match-ids** передаются через запятую **без пробелов**: `1100,1099,1091`
+
+---
+
 
 
 ================================================================================
@@ -14951,15 +15427,17 @@ FILE: templates/components/_standings_preview.html
                     {% endif %}
                 </td>
                 <td>
-                    <a href="{% url 'teams:detail' row.team.id %}" class="flex items-center gap-2 hover:text-primary transition-colors">
-                        {% if row.team.logo_url %}
-                        <img src="{{ row.team.logo_url }}" alt="{{ row.team.name }}" class="w-6 h-6 object-contain">
+                    <!-- ✅ FIX: Используем team_id вместо team.id -->
+                    <a href="{% url 'teams:detail' row.team_id %}" class="flex items-center gap-2 hover:text-primary transition-colors">
+                        {% if row.team_logo_url %}
+                        <img src="{{ row.team_logo_url }}" alt="{{ row.team_name }}" class="w-6 h-6 object-contain">
                         {% else %}
                         <div class="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary">
-                            {{ row.team.name|first|upper }}
+                            {{ row.team_name|first|upper }}
                         </div>
                         {% endif %}
-                        <span class="truncate font-medium">{{ row.team.name }}</span>
+                        <!-- ✅ FIX: Используем team_name вместо team.name -->
+                        <span class="truncate font-medium">{{ row.team_name }}</span>
                     </a>
                 </td>
                 <td class="text-center opacity-70">{{ row.played }}</td>
@@ -16481,6 +16959,131 @@ FILE: templates/emails/contact_form.html
             <p>Это автоматическое уведомление от платформы DOPX.</p>
             <p><a href="{{ site_url }}">Перейти на сайт</a> • <a href="{{ site_url }}/admin/">Админ-панель</a></p>
             <p style="margin-top: 15px;">© {% now "Y" %} {{ site_name }}. Все права защищены.</p>
+        </div>
+    </div>
+</body>
+</html>
+
+
+================================================================================
+FILE: templates/emails/sync_error_alert.html
+================================================================================
+
+<!-- templates/emails/sync_error_alert.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: #ffffff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        .header {
+            background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
+            color: #ffffff;
+            padding: 30px 20px;
+            text-align: center;
+        }
+        .content {
+            padding: 30px 20px;
+        }
+        .error-box {
+            background-color: #fef2f2;
+            border-left: 4px solid #dc2626;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 0 4px 4px 0;
+        }
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        .data-table td {
+            padding: 8px;
+            border-bottom: 1px solid #e5e5e5;
+        }
+        .data-table td:first-child {
+            font-weight: 600;
+            color: #666;
+            width: 150px;
+        }
+        .footer {
+            background-color: #f5f5f5;
+            padding: 20px;
+            text-align: center;
+            font-size: 12px;
+            color: #999;
+            border-top: 1px solid #e0e0e0;
+        }
+        .button {
+            display: inline-block;
+            padding: 10px 20px;
+            background: #dc2626;
+            color: #ffffff;
+            text-decoration: none;
+            border-radius: 4px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚨 Alert: Ошибка синхронизации</h1>
+            <p>DOPX Parser Monitoring</p>
+        </div>
+        <div class="content">
+            <div class="error-box">
+                <p><strong>Тип алерта:</strong> {{ alert_type }}</p>
+                <p><strong>Время:</strong> {{ timestamp|date:"d.m.Y H:i" }}</p>
+            </div>
+            
+            <h3>Сообщение об ошибке:</h3>
+            <p style="white-space: pre-wrap; background: #f9fafb; padding: 15px; border-radius: 4px;">{{ error_message }}</p>
+            
+            {% if extra_data %}
+            <h3>Дополнительные данные:</h3>
+            <table class="data-table">
+                {% for key, value in extra_data.items %}
+                <tr>
+                    <td>{{ key }}</td>
+                    <td>{{ value }}</td>
+                </tr>
+                {% endfor %}
+            </table>
+            {% endif %}
+            
+            <p style="margin-top: 20px; font-size: 14px; color: #666;">
+                <strong>Рекомендуемые действия:</strong><br>
+                1. Проверьте логи Celery: logs/celery.log<br>
+                2. Проверьте логи ошибок: logs/errors.log<br>
+                3. Проверьте доступность KFF API<br>
+                4. При необходимости перезапустите воркеры
+            </p>
+            
+            <p style="text-align: center;">
+                <a href="{{ site_url }}/admin/" class="button">
+                    📋 Открыть админ-панель
+                </a>
+            </p>
+        </div>
+        <div class="footer">
+            <p>Это автоматическое уведомление от системы мониторинга DOPX.</p>
+            <p><a href="{{ site_url }}">Перейти на сайт</a> • <a href="{{ site_url }}/admin/">Админ-панель</a></p>
+            <p style="margin-top: 15px;">© {% now "Y" %} DOPX. Все права защищены.</p>
         </div>
     </div>
 </body>
@@ -18146,7 +18749,7 @@ FILE: templates/leagues/detail.html
     <!-- === ЛЕВАЯ КОЛОНКА (2/3) === -->
     <div class="lg:col-span-2 space-y-6">
         
-        <!-- === ТУРНИРНАЯ ТАБЛИЦА (НОВОЕ!) === -->
+        <!-- === ТУРНИРНАЯ ТАБЛИЦА === -->
         {% if standings %}
             <div class="card bg-base-100 border border-base-300">
                 <div class="card-body p-4">
@@ -18193,18 +18796,20 @@ FILE: templates/leagues/detail.html
                                             {% endif %}
                                         </td>
                                         <td>
-                                            <a href="{% url 'teams:detail' row.team.id %}" 
+                                            <!-- ✅ FIX: Используем team_id вместо team.id -->
+                                            <a href="{% url 'teams:detail' row.team_id %}" 
                                                class="flex items-center gap-2 hover:text-primary transition-colors">
-                                                {% if row.team.logo_url %}
-                                                    <img src="{{ row.team.logo_url }}" 
-                                                         alt="{{ row.team.name }}" 
+                                                {% if row.team_logo_url %}
+                                                    <img src="{{ row.team_logo_url }}" 
+                                                         alt="{{ row.team_name }}" 
                                                          class="w-6 h-6 object-contain">
                                                 {% else %}
                                                     <div class="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary">
-                                                        {{ row.team.name|first|upper }}
+                                                        {{ row.team_name|first|upper }}
                                                     </div>
                                                 {% endif %}
-                                                <span class="truncate font-medium">{{ row.team.name }}</span>
+                                                <!-- ✅ FIX: Используем team_name вместо team.name -->
+                                                <span class="truncate font-medium">{{ row.team_name }}</span>
                                             </a>
                                         </td>
                                         <td class="text-center opacity-70">{{ row.played }}</td>

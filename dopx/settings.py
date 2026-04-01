@@ -20,12 +20,10 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    
     # Third party
     'rest_framework',
     'drf_spectacular',
     'django_filters',
-    
     # Local apps
     'core',
     'users',
@@ -95,7 +93,7 @@ DATABASES = {
         "OPTIONS": {
             "connect_timeout": 10,
             "options": "-c statement_timeout=30000"
-        },
+        }
     }
 }
 
@@ -148,7 +146,9 @@ REST_FRAMEWORK = {
         'rest_framework.renderers.JSONRenderer',
     ],
 }
-CSRF_COOKIE_HTTPONLY = False 
+
+CSRF_COOKIE_HTTPONLY = False
+
 SPECTACULAR_SETTINGS = {
     'TITLE': 'DOPX API',
     'DESCRIPTION': 'API для платформы оценки футбольных матчей',
@@ -169,65 +169,72 @@ CELERY_ENABLE_UTC = False
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
 
+# ✅ НОВОЕ: Настройки парсера (легко включать/выключать турниры)
+PARSER_SETTINGS = {
+    'ENABLED_TOURNAMENTS': ['pl'],  # ['pl', '1l', '2l', 'cup'] - добавить при необходимости
+    'DEFAULT_TOURNAMENT': 'pl',
+    'AUTO_CREATE_SEASONS': True,
+    'SYNC_RECENT_LIMIT': 10,
+}
+
 CELERY_BEAT_SCHEDULE = {
     # === БЫСТРАЯ синхронизация последних ЗАВЕРШЁННЫХ матчей Премьер-Лиги (каждые 30 мин) ===
     'sync-kff-recent-premier': {
         'task': 'parsers.tasks.sync_recent_matches',
         'schedule': crontab(minute='*/30'),
         'kwargs': {
-            'tournament_code': 'pl',  # ✅ Жёстко указываем Премьер-Лигу
-            'limit': 10,  # ✅ Последние 10 завершённых
+            'tournament_code': 'pl',
+            'limit': 10,
         },
         'options': {'queue': 'default'}
     },
-    
     # === ПОЛНАЯ синхронизация Премьер-Лиги (раз в сутки в 03:00) ===
     'sync-kff-premier-league-full': {
         'task': 'parsers.tasks.sync_kff_premier_league',
         'schedule': crontab(hour=3, minute=0),
         'options': {'queue': 'default'}
     },
-    
     # === Обновление статусов матчей (каждый час) ===
     'update-match-statuses-hourly': {
         'task': 'parsers.tasks.update_match_statuses',
         'schedule': crontab(minute=0),
         'options': {'queue': 'default'}
     },
-    
-    # === Пересчёт таблицы (каждые 10 минут) ===
+    # === Пересчёт таблицы (каждые 10 минут) — ✅ АВТО-СЕЗОН ===
     'recalculate-standings': {
         'task': 'aggregates.tasks.recalculate_season_standings',
         'schedule': crontab(minute='*/10'),
-        'kwargs': {'season_id': 200},  # ⚠️ Замените на актуальный season_id или уберите для авто-поиска
+        # ✅ Убрано kwargs с season_id — теперь авто-детекция
         'options': {'queue': 'default'}
     },
-    
     # === Пересчёт агрегатов (каждые 10 минут) ===
     'recalculate-aggregates': {
         'task': 'aggregates.tasks.recalculate_all_aggregates',
         'schedule': crontab(minute='*/10'),
         'options': {'queue': 'default'}
     },
-    
     # === Уведомления (каждые 6 часов) ===
     'voting-reminders': {
         'task': 'notifications.tasks.cleanup_old_notifications',
         'schedule': crontab(minute=0, hour='*/6'),
         'options': {'queue': 'default'}
     },
-    
     # === Очистка старых данных (каждый день в 03:00) ===
     'cleanup-old-sessions-daily': {
         'task': 'notifications.tasks.cleanup_old_sessions',
         'schedule': crontab(hour=3, minute=0),
         'options': {'queue': 'default'}
     },
-    
     # === Проверка здоровья API (каждые 2 часа) ===
     'health-check-kff-api': {
         'task': 'parsers.tasks.health_check_kff_api',
         'schedule': crontab(minute=0, hour='*/2'),
+        'options': {'queue': 'default'}
+    },
+    # === ✅ НОВОЕ: Мониторинг ошибок синхронизации (каждые 4 часа) ===
+    'sync-error-monitor': {
+        'task': 'parsers.tasks.check_sync_errors_and_alert',
+        'schedule': crontab(minute=0, hour='*/4'),
         'options': {'queue': 'default'}
     },
 }
@@ -281,6 +288,12 @@ LOGGING = {
             'class': 'logging.StreamHandler',
             'formatter': 'verbose',
         },
+        'error_file': {
+            'level': 'ERROR',
+            'class': 'logging.FileHandler',
+            'filename': LOGS_DIR / 'errors.log',
+            'formatter': 'verbose',
+        },
     },
     'loggers': {
         'celery': {
@@ -290,6 +303,11 @@ LOGGING = {
         },
         'aggregates.tasks': {
             'handlers': ['celery_file', 'console'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+        'parsers.tasks': {
+            'handlers': ['celery_file', 'console', 'error_file'],
             'level': 'INFO',
             'propagate': True,
         },
@@ -303,13 +321,8 @@ if DEBUG:
     DEBUG_TOOLBAR_CONFIG = {
         'SHOW_TOOLBAR_CALLBACK': lambda request: request.META.get('HTTP_ACCEPT') != 'application/json',
     }
-    
 
 # === Contact Form Settings ===
-CONTACT_EMAIL = os.getenv('CONTACT_EMAIL')
-DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL')
-
-# Email backend (для продакшена настроить SMTP)
 CONTACT_EMAIL = os.getenv('CONTACT_EMAIL', 'admin@dopx.kz')
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@dopx.kz')
 EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
@@ -319,3 +332,7 @@ EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
 SITE_URL = os.getenv('SITE_URL', 'http://127.0.0.1:8000')
+
+# === Admin Alert Settings ===
+ADMIN_ALERT_EMAIL = os.getenv('ADMIN_ALERT_EMAIL', CONTACT_EMAIL)
+ENABLE_SYNC_ERROR_ALERTS = os.getenv('ENABLE_SYNC_ERROR_ALERTS', 'True') == 'True'
