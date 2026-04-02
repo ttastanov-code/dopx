@@ -6,11 +6,10 @@ from .views import (
     ProfileEditView, PasswordChangeViewCustom,
     PasswordResetViewCustom, PasswordResetDoneViewCustom,
     PasswordResetConfirmViewCustom, PasswordResetCompleteViewCustom,
-    NotificationSettingsView,
+    NotificationSettingsView, VerifyEmailView, VerifyEmailSentView, VerifyEmailInvalidView
 )
 
 app_name = 'users'
-
 urlpatterns = [
     path('register/', RegisterView.as_view(), name='register'),
     path('login/', LoginView.as_view(), name='login'),
@@ -19,6 +18,11 @@ urlpatterns = [
     path('profile/edit/', ProfileEditView.as_view(), name='profile_edit'),
     path('profile/password/', PasswordChangeViewCustom.as_view(), name='password_change'),
     path('profile/notifications/', NotificationSettingsView.as_view(), name='notification_settings'),
+    
+    # Верификация
+    path('verify-email-sent/', VerifyEmailSentView.as_view(), name='verify_email_sent'),
+    path('verify-email/invalid/', VerifyEmailInvalidView.as_view(), name='verify_email_invalid'),
+    path('verify-email/<uuid:token>/', VerifyEmailView.as_view(), name='verify_email'),
     
     # Сброс пароля
     path('password-reset/', PasswordResetViewCustom.as_view(), name='password_reset'),

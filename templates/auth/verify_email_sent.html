@@ -1,0 +1,17 @@
+{% extends 'base_auth.html' %}
+{% block content %}
+<div class="card bg-base-100 shadow-xl max-w-md mx-auto">
+  <div class="card-body items-center text-center">
+    <div class="w-16 h-16 rounded-full bg-info/20 flex items-center justify-center mb-4">
+      <i class="ti ti-mail text-info text-3xl"></i>
+    </div>
+    <h2 class="card-title text-xl mb-2">Проверьте вашу почту</h2>
+    <p class="text-base-content/70 mb-6">Мы отправили ссылку для подтверждения аккаунта. Перейдите по ней, чтобы активировать профиль.</p>
+    <div class="alert alert-info">
+      <i class="ti ti-info-circle"></i>
+      <span>Письмо может попасть в папку "Спам"</span>
+    </div>
+    <a href="{% url 'users:login' %}" class="btn btn-primary w-full mt-4">Вернуться ко входу</a>
+  </div>
+</div>
+{% endblock %}
