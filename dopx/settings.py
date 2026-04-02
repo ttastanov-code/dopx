@@ -231,10 +231,16 @@ CELERY_BEAT_SCHEDULE = {
         'schedule': crontab(minute=0, hour='*/2'),
         'options': {'queue': 'default'}
     },
-    # === ✅ НОВОЕ: Мониторинг ошибок синхронизации (каждые 4 часа) ===
+    # === Мониторинг ошибок синхронизации (каждые 4 часа) ===
     'sync-error-monitor': {
         'task': 'parsers.tasks.check_sync_errors_and_alert',
         'schedule': crontab(minute=0, hour='*/4'),
+        'options': {'queue': 'default'}
+    },
+    # === НАПОМИНАНИЕ О ЗАКРЫТИИ ГОЛОСОВАНИЯ (каждые 30 минут) ===
+    'notify-voting-closing': {
+        'task': 'notifications.tasks.notify_voting_closing_soon',
+        'schedule': crontab(minute='*/30'),  # Проверять каждые 30 минут
         'options': {'queue': 'default'}
     },
 }

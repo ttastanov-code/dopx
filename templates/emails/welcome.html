@@ -1,0 +1,24 @@
+<!-- templates/emails/welcome.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: sans-serif; background: #f5f5f5; margin: 0; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .header { background: #000; color: #fff; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; margin: -30px -30px 30px -30px; }
+        .btn { display: inline-block; padding: 12px 24px; background: #000; color: #fff; text-decoration: none; border-radius: 4px; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header"><h1>Добро пожаловать в DOPX!</h1></div>
+        <p>Привет, {{ user.username }}!</p>
+        <p>Спасибо за регистрацию на нашей платформе. Теперь вы можете оценивать матчи, получать достижения и подниматься в рейтинге.</p>
+        <p>Чтобы начать, перейдите к списку матчей:</p>
+        <p style="text-align: center;"><a href="{{ site_url }}/matches/" class="btn">Начать оценивать</a></p>
+        <hr style="margin-top: 30px; border: 0; border-top: 1px solid #eee;">
+        <p style="font-size: 12px; color: #999;">Вы получили это письмо, так как зарегистрировались на DOPX.</p>
+    </div>
+</body>
+</html>

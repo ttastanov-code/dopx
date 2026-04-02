@@ -17,6 +17,7 @@ from evaluations.models import ContextEvaluation, PlayerEvaluation, EvaluationSe
 from matches.models import Match
 import logging
 import json
+from notifications.tasks import send_welcome_notification
 
 logger = logging.getLogger(__name__)
 
@@ -30,17 +31,16 @@ class RegisterView(CreateView):
     def form_valid(self, form):
         response = super().form_valid(form)
         user = self.object
-        # Создаём XP профиль
         UserXP.objects.get_or_create(user=user)
-        # Выдаём достижение за регистрацию
-        UserBadge.objects.get_or_create(
-            user=user,
-            badge_type='first_evaluation'
-        )
+        UserBadge.objects.get_or_create(user=user, badge_type='first_evaluation')
         login(self.request, user)
         messages.success(self.request, '✅ Аккаунт создан! Добро пожаловать в DOPX.')
+        
+        # 🔥 ОТПРАВЛЯЕМ ПРИВЕТСТВЕННОЕ УВЕДОМЛЕНИЕ (ВСЕГДА)
+        send_welcome_notification.delay(str(user.id))
+        
         return response
-    
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Регистрация — DOPX'
@@ -209,31 +209,29 @@ class PasswordResetCompleteViewCustom(PasswordResetCompleteView):
     template_name = 'auth/password_reset_complete.html'
 
 class NotificationSettingsView(LoginRequiredMixin, FormView):
-    """Настройки уведомлений"""
+    """Настройки уведомлений /users/profile/notifications/"""
     template_name = 'users/notification_settings.html'
     form_class = NotificationSettingsForm
     success_url = reverse_lazy('users:profile')
-    
+
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs['user'] = self.request.user
         return kwargs
-    
+
     def form_valid(self, form):
-        # Сохраняем настройки в JSON поле
         settings_data = {
             'email_match_finished': form.cleaned_data.get('email_match_finished', False),
-            'email_voting_open': form.cleaned_data.get('email_voting_open', False),
             'email_voting_closing': form.cleaned_data.get('email_voting_closing', False),
-            'email_top_performance': form.cleaned_data.get('email_top_performance', False),
+            'email_new_badge': form.cleaned_data.get('email_new_badge', False),
+            'email_level_up': form.cleaned_data.get('email_level_up', False),
             'email_system': form.cleaned_data.get('email_system', False),
         }
-        # Сохраняем в профиль пользователя
         self.request.user.notification_settings = settings_data
         self.request.user.save(update_fields=['notification_settings'])
         messages.success(self.request, '✅ Настройки уведомлений сохранены')
         return super().form_valid(form)
-    
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Настройки уведомлений — DOPX'
