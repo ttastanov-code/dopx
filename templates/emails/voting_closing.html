@@ -1,0 +1,25 @@
+<!-- templates/emails/voting_closing.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: sans-serif; background: #f5f5f5; margin: 0; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .header { background: #f59e0b; color: #fff; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; margin: -30px -30px 30px -30px; }
+        .match-info { background: #fff7ed; padding: 15px; border-radius: 6px; text-align: center; margin: 20px 0; border: 1px solid #f59e0b; }
+        .btn { display: inline-block; padding: 12px 24px; background: #000; color: #fff; text-decoration: none; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header"><h1>⏰ Голосование закрывается!</h1></div>
+        <p>Напоминаем, что голосование за матч скоро закроется.</p>
+        <div class="match-info">
+            <h3>{{ match.home_team.name }} vs {{ match.away_team.name }}</h3>
+        </div>
+        <p>Не упустите возможность повлиять на итоговые рейтинги.</p>
+        <p style="text-align: center;"><a href="{{ site_url }}/evaluations/match/{{ match.id }}/context/" class="btn">Оценить сейчас</a></p>
+    </div>
+</body>
+</html>
