@@ -89,7 +89,6 @@ dopx
   urls.py
   wsgi.py
 dump.py
-dump.rdb
 evaluations
   __init__.py
   admin.py
@@ -254,6 +253,8 @@ templates
     password_reset_confirm.html
     password_reset_done.html
     register.html
+    verify_email_invalid.html
+    verify_email_sent.html
   base.html
   base_auth.html
   coaches
@@ -286,6 +287,7 @@ templates
     password_reset_subject.txt
     sync_error_alert.html
     ticket_status_change.html
+    verify_email.html
     voting_closing.html
     voting_open.html
     welcome.html
@@ -327,7 +329,6 @@ templates
     notification_settings.html
     password_change.html
     profile_edit.html
-user_journey_admin2_report.json
 users
   __init__.py
   admin.py
@@ -343,6 +344,7 @@ users
     0002_add_notification_settings.py
     0003_remove_user_notification_settings.py
     0004_add_notification_settings_back.py
+    0005_user_verification_token_and_more.py
     __init__.py
   models.py
   services.py
@@ -7470,6 +7472,9 @@ from django.utils import timezone
 from django.views.generic import FormView, TemplateView
 from django.db import transaction
 from django.core.exceptions import PermissionDenied
+from django.db.models import Q
+from functools import partial
+
 from matches.models import Match
 from evaluations.models import (
     ContextEvaluation, MatchEvaluation, TeamEvaluation,
@@ -7480,43 +7485,38 @@ from evaluations.forms import (
     ContextEvaluationForm, MatchEvaluationForm,
     TeamEvaluationForm, CoachEvaluationForm, RefereeEvaluationForm
 )
+from notifications.models import Notification
 from aggregates.tasks import recalculate_all_aggregates_for_match
 from lineups.models import MatchLineupPlayer
 from aggregates.services import calculate_user_trust_adjustment
 from users.models import UserXP, UserBadge
-import logging
+from users.services import check_and_award_badges
+from notifications.tasks import send_badge_earned_notification, send_level_up_notification
 
+import logging
 logger = logging.getLogger(__name__)
 
 
 class EvaluationWizardMixin:
-    """Миксин для управления wizard-оценкой"""
-    
     def get_or_create_session(self):
-        """Получить или создать сессию оценки"""
         session, created = EvaluationSession.objects.get_or_create(
-            user=self.request.user,
-            match=self.match,
-            defaults={'status': 'started'}
+            user=self.request.user, match=self.match, defaults={'status': 'started'}
         )
         return session
-    
+
     def update_session(self, session, step_name):
-        """Обновить прогресс сессии"""
         if step_name not in session.completed_steps:
             session.completed_steps.append(step_name)
-        session.current_step = step_name
-        session.status = 'in_progress'
-        session.save(update_fields=['completed_steps', 'current_step', 'status', 'updated_at'])
-    
+            session.current_step = step_name
+            session.status = 'in_progress'
+            session.save(update_fields=['completed_steps', 'current_step', 'status', 'updated_at'])
+
     def complete_session(self, session):
-        """Завершить сессию"""
         session.status = 'completed'
         session.completed_at = timezone.now()
         session.save(update_fields=['status', 'completed_at', 'updated_at'])
-    
+
     def check_voting_access(self):
-        """Проверка доступа к голосованию"""
         now = timezone.now()
         if self.match.voting_open_until < now:
             return False, "Голосование для этого матча закрыто"
@@ -7526,26 +7526,18 @@ class EvaluationWizardMixin:
 
 
 class EvaluateContextView(LoginRequiredMixin, FormView, EvaluationWizardMixin):
-    """Шаг 1: Контекст просмотра матча"""
     template_name = 'evaluations/context.html'
     form_class = ContextEvaluationForm
 
     def dispatch(self, request, *args, **kwargs):
         self.match = get_object_or_404(Match, id=kwargs['match_id'])
-        
-        # Проверка доступа к голосованию
         can_vote, error_msg = self.check_voting_access()
         if not can_vote:
             messages.error(request, error_msg)
             return redirect('matches:detail', pk=self.match.id)
-        
-        # Проверка: уже завершённая сессия
-        if EvaluationSession.objects.filter(
-            user=request.user, match=self.match, status='completed'
-        ).exists():
+        if EvaluationSession.objects.filter(user=request.user, match=self.match, status='completed').exists():
             messages.info(request, 'Вы уже оценили этот матч')
             return redirect('matches:detail', pk=self.match.id)
-        
         return super().dispatch(request, *args, **kwargs)
 
     def get_form_kwargs(self):
@@ -7556,66 +7548,50 @@ class EvaluateContextView(LoginRequiredMixin, FormView, EvaluationWizardMixin):
     def form_valid(self, form):
         with transaction.atomic():
             session = self.get_or_create_session()
-            
-            # ✅ FIX: Используем update_or_create вместо save()
-            # Это предотвращает IntegrityError при повторной отправке формы
             ContextEvaluation.objects.update_or_create(
-                user=self.request.user,
-                match=self.match,
+                user=self.request.user, match=self.match,
                 defaults={
                     'supported_team': form.cleaned_data.get('supported_team'),
                     'watched_type': form.cleaned_data.get('watched_type'),
                     'attended_stadium': form.cleaned_data.get('attended_stadium'),
                 }
             )
-            
             self.update_session(session, 'context')
-            messages.success(self.request, '✅ Контекст сохранён')
-            
+        messages.success(self.request, '✅ Контекст сохранён')
         return redirect('evaluations:teams', match_id=self.match.id)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         session = self.get_or_create_session()
         context.update({
-            'match': self.match,
-            'page_title': 'Шаг 1: Контекст — DOPX',
-            'step': 1,
-            'total_steps': 6,
-            'progress': session.progress_percentage(),
+            'match': self.match, 'page_title': 'Шаг 1: Контекст — DOPX',
+            'step': 1, 'total_steps': 6, 'progress': session.progress_percentage(),
             'next_step': 'evaluations:teams',
         })
         return context
 
 
 class EvaluateTeamsView(LoginRequiredMixin, TemplateView, EvaluationWizardMixin):
-    """Шаг 2: Оценка команд"""
     template_name = 'evaluations/teams.html'
 
     def dispatch(self, request, *args, **kwargs):
         self.match = get_object_or_404(Match, id=kwargs['match_id'])
-        
         can_vote, error_msg = self.check_voting_access()
         if not can_vote:
             messages.error(request, error_msg)
             return redirect('matches:detail', pk=self.match.id)
-        
         session = self.get_or_create_session()
         if 'context' not in session.completed_steps:
             return redirect('evaluations:context', match_id=self.match.id)
-        
         return super().dispatch(request, *args, **kwargs)
 
     def post(self, request, *args, **kwargs):
         session = self.get_or_create_session()
-        
         with transaction.atomic():
             for team in [self.match.home_team, self.match.away_team]:
                 prefix = f'team_{team.id}'
                 TeamEvaluation.objects.update_or_create(
-                    user=request.user,
-                    match=self.match,
-                    team=team,
+                    user=request.user, match=self.match, team=team,
                     defaults={
                         'tactics': int(request.POST.get(f'{prefix}_tactics', 5)),
                         'effort': int(request.POST.get(f'{prefix}_effort', 5)),
@@ -7623,92 +7599,69 @@ class EvaluateTeamsView(LoginRequiredMixin, TemplateView, EvaluationWizardMixin)
                         'mentality': int(request.POST.get(f'{prefix}_mentality', 5)),
                     }
                 )
-            
             self.update_session(session, 'teams')
-            messages.success(request, '✅ Оценки команд сохранены')
-        
+        messages.success(request, '✅ Оценки команд сохранены')
         return redirect('evaluations:players', match_id=self.match.id)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         session = self.get_or_create_session()
-        
-        # ✅ FIX: Передаём поля оценки как список словарей (не кортежей!)
         evaluation_fields = [
             {'name': 'tactics', 'label': 'Тактика', 'icon': 'ti-chess'},
             {'name': 'effort', 'label': 'Самоотдача', 'icon': 'ti-flame'},
             {'name': 'organization', 'label': 'Организация', 'icon': 'ti-network'},
             {'name': 'mentality', 'label': 'Менталитет', 'icon': 'ti-brain'},
         ]
-        
         context.update({
-            'match': self.match,
-            'page_title': 'Шаг 2: Команды — DOPX',
-            'step': 2,
-            'total_steps': 6,
-            'progress': session.progress_percentage(),
-            'next_step': 'evaluations:players',
-            'prev_step': 'evaluations:context',
-            'evaluation_fields': evaluation_fields,  # ✅ Передаём в контекст
+            'match': self.match, 'page_title': 'Шаг 2: Команды — DOPX',
+            'step': 2, 'total_steps': 6, 'progress': session.progress_percentage(),
+            'next_step': 'evaluations:players', 'prev_step': 'evaluations:context',
+            'evaluation_fields': evaluation_fields,
         })
         return context
 
 
 class EvaluatePlayersView(LoginRequiredMixin, TemplateView, EvaluationWizardMixin):
-    """Шаг 3: Оценка игроков"""
     template_name = 'evaluations/players.html'
 
     def dispatch(self, request, *args, **kwargs):
         self.match = get_object_or_404(Match, id=kwargs['match_id'])
-        
         can_vote, error_msg = self.check_voting_access()
         if not can_vote:
             messages.error(request, error_msg)
             return redirect('matches:detail', pk=self.match.id)
-        
         session = self.get_or_create_session()
         if 'teams' not in session.completed_steps:
             return redirect('evaluations:teams', match_id=self.match.id)
-        
         return super().dispatch(request, *args, **kwargs)
 
     def post(self, request, *args, **kwargs):
         session = self.get_or_create_session()
-        lineup_players = MatchLineupPlayer.objects.filter(
-            lineup__match=self.match
-        ).select_related('player')
-        
+        lineup_players = MatchLineupPlayer.objects.filter(lineup__match=self.match).select_related('player')
         count = 0
         with transaction.atomic():
             for lp in lineup_players:
                 player = lp.player
                 prefix = f'player_{player.id}'
-                
-                # Сохраняем только если пользователь выбрал оценить игрока
                 if request.POST.get(f'{prefix}_evaluate') == 'on':
                     contribution = request.POST.get(f'{prefix}_contribution')
                     risk = request.POST.get(f'{prefix}_risk')
                     potential = request.POST.get(f'{prefix}_potential')
-                    
                     if all([contribution, risk, potential]):
                         try:
                             PlayerEvaluation.objects.update_or_create(
-                                user=request.user,
-                                match=self.match,
-                                player=player,
+                                user=request.user, match=self.match, player=player,
                                 defaults={
                                     'contribution': int(contribution),
                                     'risk': int(risk),
-                                    'potential': int(potential),
+                                    'potential': int(potential)
                                 }
                             )
                             count += 1
                         except (ValueError, TypeError) as e:
                             logger.warning(f"Ошибка валидации для {player}: {e}")
-            
             self.update_session(session, 'players')
-            messages.success(request, f'✅ Оценено игроков: {count}')
-        
+        messages.success(request, f'✅ Оценено игроков: {count}')
         return redirect('evaluations:coaches', match_id=self.match.id)
 
     def get_context_data(self, **kwargs):
@@ -7716,48 +7669,35 @@ class EvaluatePlayersView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
         session = self.get_or_create_session()
         context.update({
             'match': self.match,
-            'lineup_players': MatchLineupPlayer.objects.filter(
-                lineup__match=self.match
-            ).select_related('player__team').order_by('is_starting', 'shirt_number'),
-            'page_title': 'Шаг 3: Игроки — DOPX',
-            'step': 3,
-            'total_steps': 6,
-            'progress': session.progress_percentage(),
-            'next_step': 'evaluations:coaches',
-            'prev_step': 'evaluations:teams',
+            'lineup_players': MatchLineupPlayer.objects.filter(lineup__match=self.match).select_related('player__team').order_by('is_starting', 'shirt_number'),
+            'page_title': 'Шаг 3: Игроки — DOPX', 'step': 3, 'total_steps': 6,
+            'progress': session.progress_percentage(), 'next_step': 'evaluations:coaches', 'prev_step': 'evaluations:teams',
         })
         return context
 
 
 class EvaluateCoachesView(LoginRequiredMixin, TemplateView, EvaluationWizardMixin):
-    """Шаг 4: Оценка тренеров"""
     template_name = 'evaluations/coaches.html'
 
     def dispatch(self, request, *args, **kwargs):
         self.match = get_object_or_404(Match, id=kwargs['match_id'])
-        
         can_vote, error_msg = self.check_voting_access()
         if not can_vote:
             messages.error(request, error_msg)
             return redirect('matches:detail', pk=self.match.id)
-        
         session = self.get_or_create_session()
         if 'players' not in session.completed_steps:
             return redirect('evaluations:players', match_id=self.match.id)
-        
         return super().dispatch(request, *args, **kwargs)
 
     def post(self, request, *args, **kwargs):
         session = self.get_or_create_session()
-        
         with transaction.atomic():
             for coach in [self.match.home_coach, self.match.away_coach]:
                 if coach:
                     prefix = f'coach_{coach.id}'
                     CoachEvaluation.objects.update_or_create(
-                        user=request.user,
-                        match=self.match,
-                        coach=coach,
+                        user=request.user, match=self.match, coach=coach,
                         defaults={
                             'tactics': int(request.POST.get(f'{prefix}_tactics', 5)),
                             'substitutions': int(request.POST.get(f'{prefix}_substitutions', 5)),
@@ -7765,10 +7705,8 @@ class EvaluateCoachesView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
                             'impact': int(request.POST.get(f'{prefix}_impact', 5)),
                         }
                     )
-            
             self.update_session(session, 'coaches')
-            messages.success(request, '✅ Оценки тренеров сохранены')
-        
+        messages.success(request, '✅ Оценки тренеров сохранены')
         return redirect('evaluations:referee', match_id=self.match.id)
 
     def get_context_data(self, **kwargs):
@@ -7776,93 +7714,77 @@ class EvaluateCoachesView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
         session = self.get_or_create_session()
         coaches = [c for c in [self.match.home_coach, self.match.away_coach] if c]
         context.update({
-            'match': self.match,
-            'coaches': coaches,
-            'page_title': 'Шаг 4: Тренеры — DOPX',
-            'step': 4,
-            'total_steps': 6,
-            'progress': session.progress_percentage(),
-            'next_step': 'evaluations:referee',
-            'prev_step': 'evaluations:players',
+            'match': self.match, 'coaches': coaches, 'page_title': 'Шаг 4: Тренеры — DOPX',
+            'step': 4, 'total_steps': 6, 'progress': session.progress_percentage(),
+            'next_step': 'evaluations:referee', 'prev_step': 'evaluations:players',
         })
         return context
 
 
 class EvaluateRefereeView(LoginRequiredMixin, FormView, EvaluationWizardMixin):
-    """Шаг 5: Оценка судейства"""
     template_name = 'evaluations/referee.html'
     form_class = RefereeEvaluationForm
 
     def dispatch(self, request, *args, **kwargs):
         self.match = get_object_or_404(Match, id=kwargs['match_id'])
-        
         can_vote, error_msg = self.check_voting_access()
         if not can_vote:
             messages.error(request, error_msg)
             return redirect('matches:detail', pk=self.match.id)
-        
         session = self.get_or_create_session()
         if 'coaches' not in session.completed_steps:
             return redirect('evaluations:coaches', match_id=self.match.id)
-        
         return super().dispatch(request, *args, **kwargs)
 
     def form_valid(self, form):
         session = self.get_or_create_session()
         with transaction.atomic():
             RefereeEvaluation.objects.update_or_create(
-                user=self.request.user,
-                match=self.match,
+                user=self.request.user, match=self.match,
                 defaults={
                     'influence_score': form.cleaned_data.get('influence_score', 50),
-                    'decision_quality': form.cleaned_data.get('decision_quality', 5),
+                    'decision_quality': form.cleaned_data.get('decision_quality', 5)
                 }
             )
             self.update_session(session, 'referee')
-            messages.success(self.request, '✅ Оценка судейства сохранена')
+        messages.success(self.request, '✅ Оценка судейства сохранена')
         return redirect('evaluations:match_eval', match_id=self.match.id)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         session = self.get_or_create_session()
         context.update({
-            'match': self.match,
-            'page_title': 'Шаг 5: Судья — DOPX',
-            'step': 5,
-            'total_steps': 6,
-            'progress': session.progress_percentage(),
-            'next_step': 'evaluations:match_eval',
-            'prev_step': 'evaluations:coaches',
+            'match': self.match, 'page_title': 'Шаг 5: Судья — DOPX',
+            'step': 5, 'total_steps': 6, 'progress': session.progress_percentage(),
+            'next_step': 'evaluations:match_eval', 'prev_step': 'evaluations:coaches',
         })
         return context
 
 
 class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin):
-    """Шаг 6: Финальная оценка матча"""
     template_name = 'evaluations/match_final.html'
     form_class = MatchEvaluationForm
 
     def dispatch(self, request, *args, **kwargs):
         self.match = get_object_or_404(Match, id=kwargs['match_id'])
-        
         can_vote, error_msg = self.check_voting_access()
         if not can_vote:
             messages.error(request, error_msg)
             return redirect('matches:detail', pk=self.match.id)
-        
         session = self.get_or_create_session()
         if 'referee' not in session.completed_steps:
             return redirect('evaluations:referee', match_id=self.match.id)
-        
         return super().dispatch(request, *args, **kwargs)
 
     def form_valid(self, form):
         session = self.get_or_create_session()
+        user = self.request.user
+        old_trust = user.trust_score
+
         with transaction.atomic():
-            # ✅ 1. Сначала сохраняем оценку матча
+            # 1. Сохраняем финальную оценку матча
             MatchEvaluation.objects.update_or_create(
-                user=self.request.user,
-                match=self.match,
+                user=user, match=self.match,
                 defaults={
                     'entertainment': form.cleaned_data.get('entertainment', 5),
                     'tension': form.cleaned_data.get('tension', 5),
@@ -7870,85 +7792,108 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
                     'fairness': form.cleaned_data.get('fairness', 5),
                 }
             )
-            
-            # ✅ 2. Завершаем сессию
             self.complete_session(session)
-            
-            # ✅ 3. Обновляем trust_score (ВАЖНО: до начисления XP)
-            adjustment = calculate_user_trust_adjustment(self.request.user, self.match)
-            old_trust = self.request.user.trust_score
-            self.request.user.trust_score = max(0.5, min(2.0, self.request.user.trust_score + adjustment))
-            self.request.user.save(update_fields=['trust_score', 'updated_at'])
-            
-            # ✅ 4. Обновляем статистику оценок (total_evaluations и т.д.)
-            self.request.user.update_evaluation_stats()
-            
-            # ✅ 5. Начисляем XP (ПОСЛЕ обновления статистики!)
-            from users.models import UserXP, UserBadge
-            xp, _ = UserXP.objects.get_or_create(user=self.request.user)
-            xp_result = xp.add_xp(10)  # +10 XP за завершение оценки
-            
-            # ✅ 6. Проверяем достижения (ПОСЛЕ начисления XP и обновления статистики)
-            from users.services import check_and_award_badges
-            awarded_badges = check_and_award_badges(self.request.user)
-            
-            # ✅ 7. Создаём уведомления о достижениях
-            if awarded_badges:
-                from notifications.tasks import send_badge_earned_notification
-                for badge in awarded_badges:
-                    # ✅ badge — это объект UserBadge, а не строка!
-                    send_badge_earned_notification.delay(
-                        user_id=str(self.request.user.id),
-                        badge_type=badge.badge_type,
-                        badge_name=badge.get_badge_type_display()
-                    )
-            
-            # ✅ 8. Уведомление о повышении уровня (если произошло)
-            if xp_result.get('level_increased', False):
-                from notifications.tasks import send_level_up_notification
-                send_level_up_notification.delay(
-                    user_id=str(self.request.user.id),
-                    new_level=xp.level,
-                    total_xp=xp.total_xp
+
+            # 2. Обновляем статистику пользователя
+            user.update_evaluation_stats()
+            user.refresh_from_db()
+
+            # 3. Корректируем Trust Score
+            adjustment = calculate_user_trust_adjustment(user, self.match)
+            new_trust = max(0.5, min(2.0, user.trust_score + adjustment))
+            if abs(new_trust - user.trust_score) >= 0.01:
+                user.trust_score = new_trust
+                user.save(update_fields=['trust_score', 'updated_at'])
+
+            # 4. Проверяем и выдаём достижения
+            awarded_badges = check_and_award_badges(user)
+
+            # 5. Начисляем XP и обрабатываем уровни
+            xp, _ = UserXP.objects.get_or_create(user=user)
+            xp_result = xp.add_xp(10)
+
+            # 6. Создаём внутриигровые уведомления
+            notifications_to_create = []
+
+            # Уведомления о достижениях
+            for badge in awarded_badges:
+                notifications_to_create.append(Notification(
+                    user=user,
+                    notification_type='new_badge',
+                    title='🎖️ Новое достижение!',
+                    message=f'Вы получили достижение: {badge.get_badge_type_display()}',
+                    action_url='/users/profile/',
+                    is_read=False,
+                    related_match=self.match
+                ))
+
+            # Уведомления о повышении уровня (поддержка скачков через несколько уровней)
+            if xp_result.get('level_increased'):
+                for lvl in xp_result['levels_gained']:
+                    notifications_to_create.append(Notification(
+                        user=user,
+                        notification_type='level_up',
+                        title=f'⬆️ Новый уровень {lvl}!',
+                        message=f'Поздравляем! Вы достигли уровня {lvl} с {xp.total_xp} XP.',
+                        action_url='/users/profile/',
+                        is_read=False,
+                        related_match=self.match
+                    ))
+
+            # Уведомление об изменении Trust Score
+            if abs(user.trust_score - old_trust) >= 0.1:
+                notifications_to_create.append(Notification(
+                    user=user,
+                    notification_type='system',
+                    title='🛡️ Ваш Trust Score обновлён',
+                    message=f'Ваш уровень доверия: {round(old_trust, 2)} → {round(user.trust_score, 2)}',
+                    action_url='/users/profile/',
+                    is_read=False,
+                    related_match=self.match
+                ))
+
+            if notifications_to_create:
+                Notification.objects.bulk_create(notifications_to_create)
+
+        # 7. Отправляем email-уведомления ПОСЛЕ коммита транзакции
+        if awarded_badges:
+            for badge in awarded_badges:
+                transaction.on_commit(
+                    partial(send_badge_earned_notification.delay, user_id=str(user.id), badge_type=badge.badge_type, badge_name=badge.get_badge_type_display())
                 )
-            
-            # ✅ 9. Уведомление об изменении trust_score (если значимое)
-            if abs(self.request.user.trust_score - old_trust) >= 0.1:
-                from notifications.tasks import send_trust_score_updated_notification
-                send_trust_score_updated_notification.delay(
-                    user_id=str(self.request.user.id),
-                    old_score=round(old_trust, 2),
-                    new_score=round(self.request.user.trust_score, 2)
+
+        if xp_result.get('level_increased'):
+            for lvl in xp_result['levels_gained']:
+                transaction.on_commit(
+                    partial(send_level_up_notification.delay, user_id=str(user.id), new_level=lvl, total_xp=xp.total_xp)
                 )
-            
-            # ✅ 10. Запускаем пересчёт агрегатов (в конце, чтобы не блокировать)
-            from aggregates.tasks import recalculate_all_aggregates_for_match
-            recalculate_all_aggregates_for_match.delay(str(self.match.id))
-            
-            messages.success(self.request, '🎉 Оценка завершена! Спасибо за вклад.')
-            return redirect('evaluations:complete', match_id=self.match.id)
+
+        # 8. Запускаем пересчёт агрегатов
+        try:
+            transaction.on_commit(
+                lambda: recalculate_all_aggregates_for_match.delay(str(self.match.id))
+            )
+        except Exception as e:
+            logger.error(f"Ошибка постановки задачи агрегатов: {e}")
+
+        messages.success(self.request, '🎉 Оценка завершена! Спасибо за вклад.')
+        return redirect('evaluations:complete', match_id=self.match.id)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         session = self.get_or_create_session()
         context.update({
-            'match': self.match,
-            'page_title': 'Шаг 6: Финал — DOPX',
-            'step': 6,
-            'total_steps': 6,
-            'progress': 100,
-            'prev_step': 'evaluations:referee',
+            'match': self.match, 'page_title': 'Шаг 6: Финал — DOPX',
+            'step': 6, 'total_steps': 6, 'progress': 100, 'prev_step': 'evaluations:referee',
         })
         return context
 
 
 class EvaluationCompleteView(LoginRequiredMixin, TemplateView):
-    """Финальная страница завершения оценки"""
     template_name = 'evaluations/complete.html'
-    
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-
         match_id = self.kwargs.get('match_id')
         if match_id:
             context['match'] = get_object_or_404(Match, id=match_id)
@@ -9803,66 +9748,54 @@ class ContactSubmission(BaseModel):
 FILE: notifications/tasks.py
 ================================================================================
 
-# notifications/tasks.py — ПОЛНАЯ ВЕРСИЯ (гибридная)
+# notifications/tasks.py
 from celery import shared_task
 from django.utils import timezone
-from datetime import timedelta
 from django.conf import settings
 from django.template.loader import render_to_string
-from django.core.mail import send_mail, EmailMultiAlternatives
-from django.db.models import Q, Count
+from django.core.mail import EmailMultiAlternatives
 import logging
-from notifications.models import Notification
-from users.models import User
-from matches.models import Match
 
 logger = logging.getLogger(__name__)
 
-# ============================================================================
-# === КОНФИГУРАЦИЯ УВЕДОМЛЕНИЙ ===
-# ============================================================================
-NOTIFICATION_TITLES = {
-    'welcome': '👋 Добро пожаловать!',
-    'match_finished': '🏁 Матч завершён',
-    'voting_open': '🎯 Голосование открыто',
-    'voting_closing': '⏰ Голосование закрывается',
-    'aggregate_updated': '📊 Рейтинги обновлены',
-    'top_performance': '🏆 Ваш игрок в топ-3!',
-    'verification_required': '🔐 Требуется верификация',
-    'new_badge': '🎖️ Новое достижение!',
-    'level_up': '⬆️ Новый уровень!',
-    'system': '📢 Системное уведомление',
-}
 
-NOTIFICATION_MESSAGES = {
-    'welcome': 'Добро пожаловать в DOPX! Начните оценивать матчи.',
-    'match_finished': 'Матч {match} завершён. Успейте оценить, пока открыто голосование!',
-    'voting_open': 'Голосование за матч {match} открыто. Оцените и получите XP!',
-    'voting_closing': 'Голосование за матч {match} закроется через 24 часа.',
-    'aggregate_updated': 'Рейтинги игроков и команд обновлены по итогам матча {match}.',
-    'top_performance': '{player} вошёл в топ-3 лучших игроков матча {match}!',
-    'verification_required': 'Подтвердите ваш email для полного доступа к платформе.',
-    'new_badge': 'Вы получили новое достижение! Проверьте профиль.',
-    'level_up': 'Поздравляем! Вы достигли уровня {level}. Продолжайте в том же духе!',
-    'system': 'Важное обновление платформы. Проверьте информацию в личном кабинете.',
-}
-
-
-# ============================================================================
-# === ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ОТПРАВКИ EMAIL ===
-# ============================================================================
-def _send_email_to_user(user, subject, template_name, context):
+def _send_email_to_user(user, subject, template_name, context, force=False):
     """
-    Универсальная функция для отправки HTML email с проверками.
-    Возвращает True при успехе, False при ошибке (не поднимает исключение).
+    Безопасная отправка email.
+    force=True: игнорирует настройки пользователя (для верификации, сброса пароля и т.д.)
     """
-    if not user.email or not user.is_verified:
+    if not user or not user.email:
+        logger.warning(f"⚠️ Cannot send email: user or email is missing")
         return False
 
-    # ✅ Проверка: настроен ли email в проекте
-    if not getattr(settings, 'EMAIL_HOST_USER', None):
-        logger.warning(f"Email not configured: EMAIL_HOST_USER is empty. Skipping email to {user.email}")
-        return False
+    # Проверка настроек, если не форсируем
+    if not force:
+        try:
+            # Получаем актуальные настройки
+            notif_prefs = user.notification_settings
+            subject_lower = subject.lower()
+            
+            # Маппинг типов уведомлений на ключи настроек
+            if 'достижение' in subject_lower or 'badge' in subject_lower:
+                if not notif_prefs.get('email_new_badge', True): return False
+            elif 'уровень' in subject_lower or 'level' in subject_lower:
+                if not notif_prefs.get('email_level_up', True): return False
+            elif 'матч' in subject_lower or 'match' in subject_lower or 'голосование' in subject_lower:
+                if not notif_prefs.get('email_match_finished', True): return False
+            else:
+                # Системные/прочие
+                if not notif_prefs.get('email_system', True): return False
+        except Exception as e:
+            logger.error(f"❌ Error checking notification settings: {e}")
+            return False
+
+    backend = getattr(settings, 'EMAIL_BACKEND', '')
+    host_user = getattr(settings, 'EMAIL_HOST_USER', None)
+    
+    # Для разработки выводим в консоль, если SMTP не настроен
+    if backend.endswith('console.EmailBackend') or not host_user:
+        logger.info(f"[EMAIL CONSOLE] To: {user.email} | Subject: {subject}")
+        return True
 
     try:
         html_message = render_to_string(template_name, {
@@ -9871,6 +9804,7 @@ def _send_email_to_user(user, subject, template_name, context):
             'site_name': 'DOPX',
             **context
         })
+        
         email = EmailMultiAlternatives(
             subject=subject,
             body='',
@@ -9879,442 +9813,80 @@ def _send_email_to_user(user, subject, template_name, context):
         )
         email.attach_alternative(html_message, "text/html")
         email.send(fail_silently=False)
+        
+        logger.info(f"✅ Email sent successfully to {user.email}: {subject}")
         return True
     except Exception as e:
-        logger.error(f"Failed to send email to {user.email}: {type(e).__name__}: {e}")
-        return False  # ✅ Не поднимаем исключение — не ломаем поток
-
-
-# ============================================================================
-# === НОВЫЕ ЗАДАЧИ ===
-# ============================================================================
-
-@shared_task(bind=True, max_retries=3)
-def send_welcome_notification(self, user_id: str):
-    """
-    1. Приветственное письмо после регистрации
-    ✅ ОТПРАВЛЯЕТСЯ ВСЕМ ПО УМОЛЧАНИЮ (не проверяет настройки)
-    """
-    try:
-        user = User.objects.get(id=user_id)
-        
-        # ✅ Создаём in-app уведомление (всегда)
-        Notification.objects.create(
-            user=user,
-            notification_type='welcome',
-            title='👋 Добро пожаловать в DOPX!',
-            message='Спасибо за регистрацию! Теперь вы можете оценивать матчи, получать достижения и подниматься в рейтинге.',
-            action_url='/matches/',
-            is_read=False,
-        )
-        
-        # ✅ Отправляем email (всегда, если пользователь верифицирован)
-        if user.is_verified and user.email:
-            _send_email_to_user(user, 'Добро пожаловать в DOPX!', 'emails/welcome.html', {})
-            logger.info(f"Welcome email sent to {user.username}")
-        
-        logger.info(f"Welcome notification processed for {user.username}")
-        return True
-    except User.DoesNotExist:
-        logger.error(f"User {user_id} not found for welcome notification")
+        logger.error(f"❌ Failed to send email to {user.email}: {type(e).__name__}: {e}")
         return False
-    except Exception as e:
-        logger.error(f"Error in send_welcome_notification: {e}", exc_info=True)
-        raise self.retry(exc=e, countdown=60)
 
 
-@shared_task(bind=True, max_retries=3)
-def send_voting_open_notification(self, match_id: str):
-    """
-    2. Матч завершён / Голосование открыто
-    ✅ С проверкой настроек пользователя (можно отключить)
-    """
-    try:
-        match = Match.objects.get(id=match_id)
-        
-        # Отправляем всем верифицированным активным пользователям
-        users = User.objects.filter(is_verified=True, is_active=True)
-        
-        for user in users:
-            # ✅ Проверка настроек пользователя (можно отключить)
-            if not user.get_notification_setting('email_match_finished', True):
-                continue
-            
-            # Дедупликация: не отправлять дубли в течение 1 часа
-            if Notification.objects.filter(
-                user=user,
-                notification_type='match_finished',
-                related_match=match,
-                created_at__gte=timezone.now() - timedelta(hours=1)
-            ).exists():
-                continue
-            
-            # In-app уведомление
-            Notification.objects.create(
-                user=user,
-                notification_type='match_finished',
-                title='🏁 Матч завершён: Голосование открыто!',
-                message=f'Матч {match.home_team.name} vs {match.away_team.name} завершён. Успейте оценить игру!',
-                action_url=f'/evaluations/match/{match.id}/context/',
-                related_match=match,
-                is_read=False,
-            )
-            
-            # Email
-            _send_email_to_user(
-                user, 
-                f'Матч завершён: {match.home_team.name} vs {match.away_team.name}', 
-                'emails/voting_open.html', 
-                {'match': match}
-            )
-        
-        logger.info(f"Voting open notifications sent for match {match_id}")
-        return True
-    except Match.DoesNotExist:
-        logger.error(f"Match {match_id} not found")
-        return False
-    except Exception as e:
-        logger.error(f"Error in send_voting_open_notification: {e}", exc_info=True)
-        raise self.retry(exc=e, countdown=60)
-
-
-@shared_task
-def notify_voting_closing_soon():
-    """
-    3. Напоминание когда голосование скоро закроется (за час минимум)
-    ✅ С проверкой настроек пользователя
-    """
-    now = timezone.now()
-    # Ищем матчи, где голосование закроется в ближайший час (55-65 минут)
-    deadline_min = now + timedelta(minutes=55)
-    deadline_max = now + timedelta(minutes=65)
-    
-    matches = Match.objects.filter(
-        status='finished',
-        voting_open_until__gte=deadline_min,
-        voting_open_until__lte=deadline_max
-    )
-    
-    count = 0
-    for match in matches:
-        users = User.objects.filter(is_verified=True, is_active=True)
-        for user in users:
-            # ✅ Проверка настроек пользователя (можно отключить)
-            if not user.get_notification_setting('email_voting_closing', True):
-                continue
-
-            # Дедупликация
-            if Notification.objects.filter(
-                user=user,
-                notification_type='voting_closing',
-                related_match=match,
-                created_at__gte=timezone.now() - timedelta(hours=2)
-            ).exists():
-                continue
-
-            Notification.objects.create(
-                user=user,
-                notification_type='voting_closing',
-                title='⏰ Голосование скоро закроется!',
-                message=f'Осталось около часа, чтобы оценить матч {match.home_team.name} vs {match.away_team.name}.',
-                action_url=f'/evaluations/match/{match.id}/context/',
-                related_match=match,
-                is_read=False,
-            )
-            _send_email_to_user(
-                user,
-                f'Напоминание: голосование за матч {match.home_team.name} закрывается',
-                'emails/voting_closing.html',
-                {'match': match}
-            )
-            count += 1
-            
-    logger.info(f"Sent {count} voting closing reminders")
-    return f"Sent {count} closing reminders"
-
-
-@shared_task(bind=True, max_retries=3)
-def send_system_notification_to_all(self, title: str, message: str, action_url: str = '/core/'):
-    """
-    6. Системные уведомления (рассылка всем, с проверкой настроек)
-    """
-    users = User.objects.filter(is_active=True)
-    count = 0
-    
-    for user in users:
-        # ✅ Системные уведомления можно отключить (кроме критических)
-        if not user.get_notification_setting('email_system', True):
-            continue
-        
-        Notification.objects.create(
-            user=user,
-            notification_type='system',
-            title=title,
-            message=message,
-            action_url=action_url,
-            is_read=False,
-        )
-        count += 1
-        
-    logger.info(f"Sent system notification to {count} users")
-    return f"Sent system notification to {count} users"
-
-
-# ============================================================================
-# === УЛУЧШЕННЫЕ СУЩЕСТВУЮЩИЕ ЗАДАЧИ ===
-# ============================================================================
-
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=3, countdown=10)
 def send_badge_earned_notification(self, user_id: str, badge_type: str, badge_name: str):
-    """
-    4. Новые Достижения (с проверкой настроек и дедупликацией)
-    ✅ ИСПРАВЛЕНО: Создаёт in-app уведомление + email
-    """
+    """Отправка уведомления о получении достижения"""
     try:
+        from users.models import User
         user = User.objects.get(id=user_id)
-    except User.DoesNotExist:
-        logger.error(f"User {user_id} not found for badge notification")
-        return False
-    
-    # ✅ Проверка настроек пользователя (можно отключить)
-    if not user.get_notification_setting('email_new_badge', True):
-        logger.info(f"Badge email disabled for user {user.username}")
-        return True  # Не ошибка, просто пользователь отключил
-    
-    # ✅ Дедупликация: не спамить одинаковыми уведомлениями в течение часа
-    if Notification.objects.filter(
-        user=user,
-        notification_type='new_badge',
-        message__icontains=badge_name,
-        created_at__gte=timezone.now() - timedelta(hours=1)
-    ).exists():
-        logger.debug(f"Badge notification recently sent to {user.username}: {badge_name}")
+        logger.info(f"📤 Processing badge email for {user.username}: {badge_name}")
+        _send_email_to_user(user, f'🎖️ Новое достижение: {badge_name}', 'emails/badge_earned.html', {'badge_name': badge_name})
         return True
-
-    # Создаём in-app уведомление
-    Notification.objects.create(
-        user=user,
-        notification_type='new_badge',
-        title='🎖️ Новое достижение!',
-        message=f'Вы получили достижение: {badge_name}',
-        action_url='/users/profile/',
-        is_read=False,
-    )
-    
-    # Отправляем email если пользователь верифицирован
-    if user.is_verified and user.email:
-        _send_email_to_user(
-            user,
-            f'Новое достижение: {badge_name}',
-            'emails/badge_earned.html',
-            {'badge_name': badge_name}
-        )
-    
-    logger.info(f"Badge notification sent to {user.username}: {badge_name}")
-    return True
+    except User.DoesNotExist:
+        logger.error(f"❌ User {user_id} not found for badge notification")
+        return False
+    except Exception as e:
+        logger.error(f"❌ Error in send_badge_earned_notification: {e}", exc_info=True)
+        raise self.retry(exc=e, countdown=60)
 
 
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=3, countdown=10)
 def send_level_up_notification(self, user_id: str, new_level: int, total_xp: int):
-    """
-    5. Повышение уровня пользователя (с проверкой настроек и дедупликацией)
-    """
+    """Отправка уведомления о повышении уровня"""
     try:
+        from users.models import User
         user = User.objects.get(id=user_id)
-    except User.DoesNotExist:
-        logger.error(f"User {user_id} not found for level up notification")
-        return False
-    
-    # ✅ Проверка настроек пользователя (можно отключить)
-    if not user.get_notification_setting('email_level_up', True):
-        logger.info(f"Level up email disabled for user {user.username}")
+        logger.info(f"📤 Processing level up email for {user.username}: Level {new_level}")
+        _send_email_to_user(user, f'⬆️ Вы достигли уровня {new_level}!', 'emails/level_up.html', {'new_level': new_level, 'total_xp': total_xp})
         return True
-    
-    # ✅ Дедупликация: проверяем, не было ли уже уведомления об этом уровне
-    if Notification.objects.filter(
-        user=user,
-        notification_type='level_up',
-        message__icontains=f'уровня {new_level}',
-        created_at__gte=timezone.now() - timedelta(hours=1)
-    ).exists():
-        logger.debug(f"Level up notification already exists for {user.username}: level {new_level}")
-        return True
-
-    # In-app уведомление
-    Notification.objects.create(
-        user=user,
-        notification_type='level_up',
-        title=f'⬆️ Новый уровень {new_level}!',
-        message=f'Поздравляем! Вы достигли уровня {new_level} с {total_xp} XP.',
-        action_url='/users/profile/',
-        is_read=False,
-    )
-    
-    # Email
-    if user.is_verified and user.email:
-        _send_email_to_user(
-            user,
-            f'Вы достигли уровня {new_level}!',
-            'emails/level_up.html',
-            {'new_level': new_level, 'total_xp': total_xp}
-        )
-    
-    logger.info(f"Level up notification sent to {user.username}: level {new_level}")
-    return True
+    except User.DoesNotExist: return False
+    except Exception as e:
+        logger.error(f"❌ Error in send_level_up_notification: {e}", exc_info=True)
+        raise self.retry(exc=e, countdown=60)
 
 
-@shared_task(bind=True, max_retries=3)
-def send_trust_score_updated_notification(self, user_id: str, old_score: float, new_score: float):
-    """Отправка уведомления об изменении Trust Score"""
+@shared_task(bind=True, max_retries=3, countdown=5)
+def send_email_verification(self, user_id: str, token: str):
+    """Критическое письмо верификации (force=True)"""
     try:
+        from users.models import User
         user = User.objects.get(id=user_id)
-    except User.DoesNotExist:
-        return False
-    
-    # Определяем уровень доверия
-    def get_trust_label(score):
-        if score >= 1.8:
-            return 'Эксперт', 'success'
-        elif score >= 1.4:
-            return 'Надёжный', 'warning'
-        elif score >= 1.0:
-            return 'Стандартный', 'info'
-        else:
-            return 'Новичок', 'error'
-    
-    old_label, old_color = get_trust_label(old_score)
-    new_label, new_color = get_trust_label(new_score)
-    
-    # Только если уровень изменился
-    if old_label != new_label:
-        Notification.objects.create(
-            user=user,
-            notification_type='system',
-            title=f'🛡️ Ваш Trust Score обновлён',
-            message=f'Ваш уровень доверия: {old_label} → {new_label} ({new_score})',
-            action_url='/users/profile/',
-            is_read=False,
-        )
-        logger.info(f"Trust score notification created for {user.username}")
-    
-    return True
-
-
-# ============================================================================
-# === УТИЛИТЫ: ОЧИСТКА И ОБСЛУЖИВАНИЕ (без изменений) ===
-# ============================================================================
-
-@shared_task
-def cleanup_old_notifications():
-    """Очистка старых уведомлений (старше 30 дней)"""
-    cutoff = timezone.now() - timedelta(days=30)
-    deleted_count, _ = Notification.objects.filter(
-        is_read=True,
-        created_at__lt=cutoff
-    ).delete()
-    logger.info(f"Cleaned up {deleted_count} old notifications")
-    return deleted_count
-
-
-@shared_task
-def cleanup_old_sessions():
-    """Очистка старых сессий оценки (старше 7 дней)"""
-    from evaluations.models import EvaluationSession
-    cutoff = timezone.now() - timedelta(days=7)
-    deleted_count, _ = EvaluationSession.objects.filter(
-        status='started',
-        created_at__lt=cutoff
-    ).delete()
-    logger.info(f"Cleaned up {deleted_count} old evaluation sessions")
-    return deleted_count
-
-
-@shared_task
-def send_notification_digest():
-    """Ежедневная рассылка дайджеста уведомлений"""
-    cutoff = timezone.now() - timedelta(hours=24)
-    
-    users_with_notifications = Notification.objects.filter(
-        is_read=False,
-        created_at__gte=cutoff
-    ).values('user_id').annotate(
-        count=Count('id')
-    ).filter(count__gte=5)
-    
-    sent_count = 0
-    for user_data in users_with_notifications:
-        user = User.objects.get(id=user_data['user_id'])
-        if not user.email or not user.is_verified:
-            continue
+        site_url = getattr(settings, 'SITE_URL', 'https://dopx.kz')
+        verify_url = f"{site_url}/users/verify-email/{token}/"
         
-        # Проверяем настройки уведомлений
-        if not user.get_notification_setting('email_system', True):
-            continue
-        
-        notifications = Notification.objects.filter(
-            user=user,
-            is_read=False,
-            created_at__gte=cutoff
-        ).order_by('-created_at')[:10]
-        
-        try:
-            html = render_to_string('emails/notification_digest.html', {
-                'user': user,
-                'notifications': notifications,
-                'count': user_data['count'],
-                'site_name': 'DOPX',
-                'site_url': getattr(settings, 'SITE_URL', 'https://dopx.kz'),
-            })
-            
-            send_mail(
-                subject=f'📬 Дайджест уведомлений ({user_data["count"]}) | DOPX',
-                message='',
-                from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@dopx.kz'),
-                recipient_list=[user.email],
-                html_message=html,
-                fail_silently=False,
-            )
-            sent_count += 1
-        except Exception as e:
-            logger.error(f"Digest email error for user {user.id}: {e}")
-    
-    logger.info(f"Sent {sent_count} notification digests")
-    return sent_count
-
-
-@shared_task
-def health_check():
-    """Проверка работоспособности Celery"""
-    from django.db import connection
-    from django.core.cache import cache
-    
-    result = {
-        'status': 'OK',
-        'timestamp': timezone.now().isoformat(),
-        'checks': {}
-    }
-    
-    try:
-        connection.ensure_connection()
-        result['checks']['database'] = 'OK'
+        _send_email_to_user(user, '👋 Подтвердите email на DOPX', 'emails/verify_email.html', {'verify_url': verify_url}, force=True)
+        return True
     except Exception as e:
-        result['checks']['database'] = f'ERROR: {e}'
-        result['status'] = 'DEGRADED'
-    
+        logger.error(f"❌ Error in send_email_verification: {e}", exc_info=True)
+        raise self.retry(exc=e, countdown=60)
+
+
+@shared_task(bind=True, max_retries=3, countdown=5)
+def send_voting_open_notification(self, match_id: str):
+    """Оповещение о завершении матча и открытии голосования"""
     try:
-        cache.set('health_check', 'OK', timeout=10)
-        cache_value = cache.get('health_check')
-        if cache_value == 'OK':
-            result['checks']['cache'] = 'OK'
-        else:
-            result['checks']['cache'] = 'ERROR: Cache read failed'
-            result['status'] = 'DEGRADED'
+        from matches.models import Match
+        from users.models import User
+        match = Match.objects.get(id=match_id)
+        # Отправляем только тем, кто включил уведомления о матчах
+        users = User.objects.filter(is_verified=True, email__isnull=False)
+        count = 0
+        for user in users:
+            if _send_email_to_user(user, f'🏁 Матч завершён: {match.home_team.name} vs {match.away_team.name}', 'emails/voting_open.html', {'match': match}):
+                count += 1
+        logger.info(f"✅ Sent voting open emails to {count} users for match {match_id}")
+        return True
     except Exception as e:
-        result['checks']['cache'] = f'ERROR: {e}'
-        result['status'] = 'DEGRADED'
-    
-    logger.info(f"Health check: {result['status']}")
-    return result
+        logger.error(f"❌ Error in send_voting_open_notification: {e}", exc_info=True)
+        raise self.retry(exc=e, countdown=60)
 
 
 ================================================================================
@@ -14897,6 +14469,48 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
 ================================================================================
+FILE: templates/auth/verify_email_invalid.html
+================================================================================
+
+{% extends 'base_auth.html' %}
+{% block content %}
+<div class="card bg-base-100 shadow-xl max-w-md mx-auto">
+  <div class="card-body items-center text-center">
+    <div class="w-16 h-16 rounded-full bg-error/20 flex items-center justify-center mb-4">
+      <i class="ti ti-alert-triangle text-error text-3xl"></i>
+    </div>
+    <h2 class="card-title text-xl mb-2">Ссылка недействительна</h2>
+    <p class="text-base-content/70 mb-6">Возможно, срок действия ссылки истёк или аккаунт уже активирован.</p>
+    <a href="{% url 'users:register' %}" class="btn btn-outline w-full">Зарегистрироваться снова</a>
+  </div>
+</div>
+{% endblock %}
+
+
+================================================================================
+FILE: templates/auth/verify_email_sent.html
+================================================================================
+
+{% extends 'base_auth.html' %}
+{% block content %}
+<div class="card bg-base-100 shadow-xl max-w-md mx-auto">
+  <div class="card-body items-center text-center">
+    <div class="w-16 h-16 rounded-full bg-info/20 flex items-center justify-center mb-4">
+      <i class="ti ti-mail text-info text-3xl"></i>
+    </div>
+    <h2 class="card-title text-xl mb-2">Проверьте вашу почту</h2>
+    <p class="text-base-content/70 mb-6">Мы отправили ссылку для подтверждения аккаунта. Перейдите по ней, чтобы активировать профиль.</p>
+    <div class="alert alert-info">
+      <i class="ti ti-info-circle"></i>
+      <span>Письмо может попасть в папку "Спам"</span>
+    </div>
+    <a href="{% url 'users:login' %}" class="btn btn-primary w-full mt-4">Вернуться ко входу</a>
+  </div>
+</div>
+{% endblock %}
+
+
+================================================================================
 FILE: templates/base.html
 ================================================================================
 
@@ -15170,7 +14784,7 @@ FILE: templates/base_auth.html
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.3/dist/cdn.min.js"></script>
     
     <!-- Tabler Icons -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/tabler-icons.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
     
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -19057,6 +18671,20 @@ FILE: templates/emails/ticket_status_change.html
 
 
 ================================================================================
+FILE: templates/emails/verify_email.html
+================================================================================
+
+<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="font-family:sans-serif;background:#f5f5f5;padding:20px;">
+<div style="max-width:600px;margin:0 auto;background:#fff;padding:30px;border-radius:8px;">
+  <h1 style="color:#3b82f6;">👋 Подтвердите email</h1>
+  <p>Здравствуйте, {{ user.username }}!</p>
+  <p>Для активации аккаунта на DOPX перейдите по ссылке:</p>
+  <a href="{{ verify_url }}" style="display:inline-block;padding:12px 24px;background:#000;color:#fff;text-decoration:none;border-radius:4px;">Активировать аккаунт</a>
+  <p style="margin-top:20px;font-size:12px;color:#666;">Ссылка действительна 48 часов.</p>
+</div></body></html>
+
+
+================================================================================
 FILE: templates/emails/voting_closing.html
 ================================================================================
 
@@ -22206,345 +21834,316 @@ FILE: templates/notifications/list.html
 ================================================================================
 
 <!-- ============================================================================
-FILE: templates/notifications/list.html (ENTERPRISE - v2.0)
+FILE: templates/notifications/list.html (ENTERPRISE - v2.1 IMPROVED)
 ============================================================================ -->
 {% extends 'base.html' %}
 {% load static %}
 {% block content %}
 {% load math_extras %}
-
 <!-- === ЗАГОЛОВОК === -->
 <div class="mb-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-    <div>
-        <h1 class="text-3xl font-bold flex items-center gap-2">
-            <i class="ti ti-bell text-primary"></i>
-            Уведомления
-        </h1>
-        <p class="text-sm opacity-60 mt-1">
-            {{ unread_count }} непрочитанных • {{ notifications.count }} всего
-        </p>
-    </div>
-    
-    <!-- Массовые действия -->
-    <div class="flex gap-2">
-        <form method="post" action="{% url 'notifications:read-all' %}" class="inline">
-            {% csrf_token %}
-            <button type="submit" class="btn btn-ghost btn-sm">
-                <i class="ti ti-checks"></i>
-                Прочитать все
-            </button>
-        </form>
-        <button class="btn btn-ghost btn-sm" onclick="window.location.reload()">
-            <i class="ti ti-refresh"></i>
-            Обновить
-        </button>
-    </div>
+  <div>
+    <h1 class="text-3xl font-bold flex items-center gap-2">
+      <i class="ti ti-bell text-primary"></i>
+      Уведомления
+    </h1>
+    <p class="text-sm opacity-60 mt-1">
+      {{ unread_count }} непрочитанных • {{ notifications.count }} всего
+    </p>
+  </div>
+  <!-- Массовые действия -->
+  <div class="flex gap-2">
+    <form method="post" action="{% url 'notifications:read-all' %}" class="inline">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-ghost btn-sm">
+        <i class="ti ti-checks"></i>
+        Прочитать все
+      </button>
+    </form>
+    <button class="btn btn-ghost btn-sm" onclick="window.location.reload()">
+      <i class="ti ti-refresh"></i>
+      Обновить
+    </button>
+  </div>
 </div>
 
 <!-- === СТАТИСТИКА (карточки) === -->
 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-    <!-- Все уведомления -->
-    <div class="card bg-base-100 border border-base-300">
-        <div class="card-body p-4">
-            <div class="flex items-center gap-3">
-                <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                    <i class="ti ti-bell text-primary"></i>
-                </div>
-                <div>
-                    <div class="text-xs opacity-60">Всего</div>
-                    <div class="text-xl font-bold">{{ notifications.paginator.count|default:0 }}</div>
-                </div>
-            </div>
+  <!-- Все уведомления -->
+  <div class="card bg-base-100 border border-base-300">
+    <div class="card-body p-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+          <i class="ti ti-bell text-primary"></i>
         </div>
-    </div>
-    
-    <!-- Непрочитанные -->
-    <div class="card bg-base-100 border border-base-300">
-        <div class="card-body p-4">
-            <div class="flex items-center gap-3">
-                <div class="w-10 h-10 rounded-lg bg-warning/10 flex items-center justify-center">
-                    <i class="ti ti-circle text-warning"></i>
-                </div>
-                <div>
-                    <div class="text-xs opacity-60">Непрочитанные</div>
-                    <div class="text-xl font-bold text-warning">{{ unread_count }}</div>
-                </div>
-            </div>
+        <div>
+          <div class="text-xs opacity-60">Всего</div>
+          <div class="text-xl font-bold">{{ notifications.paginator.count|default:0 }}</div>
         </div>
+      </div>
     </div>
-    
-    <!-- Прочитанные -->
-    <div class="card bg-base-100 border border-base-300">
-        <div class="card-body p-4">
-            <div class="flex items-center gap-3">
-                <div class="w-10 h-10 rounded-lg bg-success/10 flex items-center justify-center">
-                    <i class="ti ti-check text-success"></i>
-                </div>
-                <div>
-                    <div class="text-xs opacity-60">Прочитанные</div>
-                    <div class="text-xl font-bold text-success">
-                        {{ notifications.paginator.count|add:0|subtract:unread_count|default:0 }}
-                    </div>
-                </div>
-            </div>
+  </div>
+  <!-- Непрочитанные -->
+  <div class="card bg-base-100 border border-base-300">
+    <div class="card-body p-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-lg bg-warning/10 flex items-center justify-center">
+          <i class="ti ti-circle text-warning"></i>
         </div>
-    </div>
-    
-    <!-- За неделю -->
-    <div class="card bg-base-100 border border-base-300">
-        <div class="card-body p-4">
-            <div class="flex items-center gap-3">
-                <div class="w-10 h-10 rounded-lg bg-info/10 flex items-center justify-center">
-                    <i class="ti ti-clock text-info"></i>
-                </div>
-                <div>
-                    <div class="text-xs opacity-60">За неделю</div>
-                    <div class="text-xl font-bold text-info">
-                        {{ notifications|length }}
-                    </div>
-                </div>
-            </div>
+        <div>
+          <div class="text-xs opacity-60">Непрочитанные</div>
+          <div class="text-xl font-bold text-warning">{{ unread_count }}</div>
         </div>
+      </div>
     </div>
+  </div>
+  <!-- Прочитанные -->
+  <div class="card bg-base-100 border border-base-300">
+    <div class="card-body p-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-lg bg-success/10 flex items-center justify-center">
+          <i class="ti ti-check text-success"></i>
+        </div>
+        <div>
+          <div class="text-xs opacity-60">Прочитанные</div>
+          <div class="text-xl font-bold text-success">
+            {{ notifications.paginator.count|add:0|subtract:unread_count|default:0 }}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- За неделю -->
+  <div class="card bg-base-100 border border-base-300">
+    <div class="card-body p-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-lg bg-info/10 flex items-center justify-center">
+          <i class="ti ti-clock text-info"></i>
+        </div>
+        <div>
+          <div class="text-xs opacity-60">За неделю</div>
+          <div class="text-xl font-bold text-info">
+            {{ notifications|length }}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- === ФИЛЬТРЫ === -->
 <div class="card bg-base-100 border border-base-300 mb-6">
-    <div class="card-body p-4">
-        <div class="flex flex-wrap gap-2">
-            <!-- Все -->
-            <a href="?" 
-               class="btn btn-sm {% if not request.GET.type %}btn-primary{% else %}btn-ghost{% endif %}">
-                <i class="ti ti-list"></i>
-                Все
-            </a>
-            
-            <!-- Матчи -->
-            <a href="?type=match" 
-               class="btn btn-sm {% if request.GET.type == 'match' %}btn-primary{% else %}btn-ghost{% endif %}">
-                <i class="ti ti-trophy"></i>
-                Матчи
-            </a>
-            
-            <!-- Голосование -->
-            <a href="?type=voting" 
-               class="btn btn-sm {% if request.GET.type == 'voting' %}btn-primary{% else %}btn-ghost{% endif %}">
-                <i class="ti ti-star"></i>
-                Голосование
-            </a>
-            
-            <!-- Достижения -->
-            <a href="?type=badge" 
-               class="btn btn-sm {% if request.GET.type == 'badge' %}btn-primary{% else %}btn-ghost{% endif %}">
-                <i class="ti ti-medal"></i>
-                Достижения
-            </a>
-            
-            <!-- Разделитель -->
-            <div class="divider divider-horizontal mx-2"></div>
-            
-            <!-- Непрочитанные -->
-            <a href="?status=unread" 
-               class="btn btn-sm {% if request.GET.status == 'unread' %}btn-primary{% else %}btn-ghost{% endif %}">
-                <i class="ti ti-circle"></i>
-                Непрочитанные
-            </a>
-            
-            <!-- Прочитанные -->
-            <a href="?status=read" 
-               class="btn btn-sm {% if request.GET.status == 'read' %}btn-primary{% else %}btn-ghost{% endif %}">
-                <i class="ti ti-check"></i>
-                Прочитанные
-            </a>
-        </div>
+  <div class="card-body p-4">
+    <div class="flex flex-wrap gap-2">
+      <!-- Все -->
+      <a href="?" class="btn btn-sm {% if not request.GET.type %}btn-primary{% else %}btn-ghost{% endif %}">
+        <i class="ti ti-list"></i>
+        Все
+      </a>
+      <!-- Матчи -->
+      <a href="?type=match" class="btn btn-sm {% if request.GET.type == 'match' %}btn-primary{% else %}btn-ghost{% endif %}">
+        <i class="ti ti-trophy"></i>
+        Матчи
+      </a>
+      <!-- Голосование -->
+      <a href="?type=voting" class="btn btn-sm {% if request.GET.type == 'voting' %}btn-primary{% else %}btn-ghost{% endif %}">
+        <i class="ti ti-star"></i>
+        Голосование
+      </a>
+      <!-- Достижения -->
+      <a href="?type=badge" class="btn btn-sm {% if request.GET.type == 'badge' %}btn-primary{% else %}btn-ghost{% endif %}">
+        <i class="ti ti-medal"></i>
+        Достижения
+      </a>
+      <!-- Разделитель -->
+      <div class="divider divider-horizontal mx-2"></div>
+      <!-- Непрочитанные -->
+      <a href="?status=unread" class="btn btn-sm {% if request.GET.status == 'unread' %}btn-primary{% else %}btn-ghost{% endif %}">
+        <i class="ti ti-circle"></i>
+        Непрочитанные
+      </a>
+      <!-- Прочитанные -->
+      <a href="?status=read" class="btn btn-sm {% if request.GET.status == 'read' %}btn-primary{% else %}btn-ghost{% endif %}">
+        <i class="ti ti-check"></i>
+        Прочитанные
+      </a>
     </div>
+  </div>
 </div>
 
 <!-- === СПИСОК УВЕДОМЛЕНИЙ === -->
 <div class="space-y-3">
-    {% for notification in notifications %}
-    <div class="card bg-base-100 border border-base-300 
-                {% if not notification.is_read %}border-primary bg-primary/5 shadow-md{% else %}opacity-80{% endif %}
-                hover:shadow-lg transition-all duration-200"
-         id="notification-{{ notification.id }}"
-         data-notification-id="{{ notification.id }}"
-         data-is-read="{{ notification.is_read|lower }}">
-        
-        <div class="card-body p-4">
-            <div class="flex items-start justify-between gap-4">
-                <!-- Левая часть: иконка + контент -->
-                <div class="flex items-start gap-3 flex-1 min-w-0">
-                    <!-- Иконка типа уведомления -->
-                    <div class="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0
-                                {% if notification.notification_type == 'match_finished' %}bg-success/10 text-success
-                                {% elif notification.notification_type == 'voting_open' %}bg-primary/10 text-primary
-                                {% elif notification.notification_type == 'voting_closing' %}bg-warning/10 text-warning
-                                {% elif notification.notification_type == 'top_performance' %}bg-accent/10 text-accent
-                                {% elif notification.notification_type == 'new_badge' %}bg-info/10 text-info
-                                {% elif notification.notification_type == 'level_up' %}bg-warning/10 text-warning
-                                {% elif notification.notification_type == 'system' %}bg-base-200 text-base-content
-                                {% elif 'ticket' in notification.notification_type %}bg-primary/10 text-primary
-                                {% else %}bg-base-200 text-base-content{% endif %}">
-                        
-                        {% if notification.notification_type == 'match_finished' %}
-                            <i class="ti ti-check text-xl"></i>
-                        {% elif notification.notification_type == 'voting_open' %}
-                            <i class="ti ti-star text-xl"></i>
-                        {% elif notification.notification_type == 'voting_closing' %}
-                            <i class="ti ti-clock text-xl"></i>
-                        {% elif notification.notification_type == 'top_performance' %}
-                            <i class="ti ti-medal text-xl"></i>
-                        {% elif notification.notification_type == 'new_badge' %}
-                            <i class="ti ti-award text-xl"></i>
-                        {% elif notification.notification_type == 'level_up' %}
-                            <i class="ti ti-trending-up text-xl"></i>
-                        {% elif notification.notification_type == 'system' %}
-                            <i class="ti ti-info-circle text-xl"></i>
-                        {% elif notification.notification_type == 'new_ticket' %}
-                            <i class="ti ti-ticket text-xl"></i>
-                        {% elif notification.notification_type == 'admin_reply' %}
-                            <i class="ti ti-message text-xl"></i>
-                        {% elif notification.notification_type == 'ticket_resolved' %}
-                            <i class="ti ti-check-circle text-xl"></i>
-                        {% elif notification.notification_type == 'ticket_closed' %}
-                            <i class="ti ti-lock text-xl"></i>
-                        {% else %}
-                            <i class="ti ti-bell text-xl"></i>
-                        {% endif %}
-                    </div>
-                    
-                    <!-- Контент уведомления -->
-                    <div class="flex-1 min-w-0">
-                        <!-- Заголовок + индикатор непрочитанного -->
-                        <div class="flex items-center gap-2 mb-1">
-                            <h3 class="font-semibold {% if not notification.is_read %}text-primary{% endif %} truncate">
-                                {{ notification.title }}
-                            </h3>
-                            {% if not notification.is_read %}
-                                <span class="w-2 h-2 rounded-full bg-primary flex-shrink-0"
-                                      title="Непрочитанное"></span>
-                            {% endif %}
-                        </div>
-                        
-                        <!-- Текст сообщения -->
-                        <p class="text-sm opacity-70 mb-2 line-clamp-2">
-                            {{ notification.message }}
-                        </p>
-                        
-                        <!-- Мета-информация -->
-                        <div class="flex flex-wrap items-center gap-3 text-xs opacity-50">
-                            <!-- Время -->
-                            <span class="flex items-center gap-1">
-                                <i class="ti ti-clock"></i>
-                                {{ notification.created_at|timesince }} назад
-                            </span>
-                            
-                            <!-- Дата -->
-                            <span class="font-mono">
-                                {{ notification.created_at|date:"d.m.Y H:i" }}
-                            </span>
-                            
-                            <!-- Связанный матч -->
-                            {% if notification.related_match %}
-                                <a href="{% url 'matches:detail' notification.related_match.id %}" 
-                                   class="flex items-center gap-1 hover:text-primary transition-colors">
-                                    <i class="ti ti-trophy"></i>
-                                    {{ notification.related_match.home_team.name }} vs {{ notification.related_match.away_team.name }}
-                                </a>
-                            {% endif %}
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Правая часть: действия -->
-                <div class="flex flex-col gap-2 flex-shrink-0">
-                    <!-- Кнопка перехода -->
-                    {% if notification.action_url %}
-                        <a href="{{ notification.action_url }}" 
-                           class="btn btn-sm btn-primary"
-                           {% if not notification.is_read %}
-                           hx-post="{% url 'notifications:read' notification.id %}"
-                           hx-trigger="click"
-                           hx-swap="none"
-                           {% endif %}>
-                            <i class="ti ti-arrow-right"></i>
-                            Перейти
-                        </a>
-                    {% endif %}
-                    
-                    <!-- Кнопка отметить прочитанным -->
-                    {% if not notification.is_read %}
-                        <form method="post" action="{% url 'notifications:read' notification.id %}" class="inline">
-                            {% csrf_token %}
-                            <button type="submit" class="btn btn-sm btn-ghost" title="Отметить прочитанным">
-                                <i class="ti ti-check"></i>
-                            </button>
-                        </form>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-    </div>
+  {% for notification in notifications %}
+  <div class="card bg-base-100 border border-base-300
+    {% if not notification.is_read %}border-primary bg-primary/5 shadow-md{% else %}opacity-80{% endif %}
+    hover:shadow-lg transition-all duration-200"
+    id="notification-{{ notification.id }}"
+    data-notification-id="{{ notification.id }}"
+    data-is-read="{{ notification.is_read|lower }}">
     
-    {% empty %}
+    <div class="card-body p-4">
+      <div class="flex items-start justify-between gap-4">
+        <!-- Левая часть: иконка + контент -->
+        <div class="flex items-start gap-3 flex-1 min-w-0">
+          <!-- Иконка типа уведомления -->
+          <div class="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0
+            {% if notification.notification_type == 'match_finished' %}bg-success/10 text-success
+            {% elif notification.notification_type == 'voting_open' %}bg-primary/10 text-primary
+            {% elif notification.notification_type == 'voting_closing' %}bg-warning/10 text-warning
+            {% elif notification.notification_type == 'top_performance' %}bg-accent/10 text-accent
+            {% elif notification.notification_type == 'new_badge' %}bg-info/10 text-info
+            {% elif notification.notification_type == 'level_up' %}bg-warning/10 text-warning
+            {% elif notification.notification_type == 'system' %}bg-base-200 text-base-content
+            {% elif 'ticket' in notification.notification_type %}bg-primary/10 text-primary
+            {% else %}bg-base-200 text-base-content{% endif %}">
+            {% if notification.notification_type == 'match_finished' %}
+              <i class="ti ti-check text-xl"></i>
+            {% elif notification.notification_type == 'voting_open' %}
+              <i class="ti ti-star text-xl"></i>
+            {% elif notification.notification_type == 'voting_closing' %}
+              <i class="ti ti-clock text-xl"></i>
+            {% elif notification.notification_type == 'top_performance' %}
+              <i class="ti ti-medal text-xl"></i>
+            {% elif notification.notification_type == 'new_badge' %}
+              <i class="ti ti-award text-xl"></i>
+            {% elif notification.notification_type == 'level_up' %}
+              <i class="ti ti-trending-up text-xl"></i>
+            {% elif notification.notification_type == 'system' %}
+              <i class="ti ti-info-circle text-xl"></i>
+            {% elif notification.notification_type == 'new_ticket' %}
+              <i class="ti ti-ticket text-xl"></i>
+            {% elif notification.notification_type == 'admin_reply' %}
+              <i class="ti ti-message text-xl"></i>
+            {% elif notification.notification_type == 'ticket_resolved' %}
+              <i class="ti ti-check-circle text-xl"></i>
+            {% elif notification.notification_type == 'ticket_closed' %}
+              <i class="ti ti-lock text-xl"></i>
+            {% else %}
+              <i class="ti ti-bell text-xl"></i>
+            {% endif %}
+          </div>
+          
+          <!-- Контент уведомления -->
+          <div class="flex-1 min-w-0">
+            <!-- Заголовок + индикатор непрочитанного -->
+            <div class="flex items-center gap-2 mb-1">
+              <h3 class="font-semibold {% if not notification.is_read %}text-primary{% endif %} truncate">
+                {{ notification.title }}
+              </h3>
+              {% if not notification.is_read %}
+                <span class="w-2 h-2 rounded-full bg-primary flex-shrink-0" title="Непрочитанное"></span>
+              {% endif %}
+            </div>
+            <!-- Текст сообщения -->
+            <p class="text-sm opacity-70 mb-2 line-clamp-2">
+              {{ notification.message }}
+            </p>
+            <!-- Мета-информация -->
+            <div class="flex flex-wrap items-center gap-3 text-xs opacity-50">
+              <!-- Время -->
+              <span class="flex items-center gap-1">
+                <i class="ti ti-clock"></i>
+                {{ notification.created_at|timesince }} назад
+              </span>
+              <!-- Дата -->
+              <span class="font-mono">
+                {{ notification.created_at|date:"d.m.Y H:i" }}
+              </span>
+              <!-- Связанный матч -->
+              {% if notification.related_match %}
+                <a href="{% url 'matches:detail' notification.related_match.id %}"
+                   class="flex items-center gap-1 hover:text-primary transition-colors">
+                  <i class="ti ti-trophy"></i>
+                  {{ notification.related_match.home_team.name }} vs {{ notification.related_match.away_team.name }}
+                </a>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+
+        <!-- === ПРАВАЯ ЧАСТЬ: ДЕЙСТВИЯ (УЛУЧШЕНО) === -->
+        <div class="flex flex-col gap-2 flex-shrink-0 w-32 sm:w-36">
+          {% if notification.action_url %}
+            <a href="{{ notification.action_url }}"
+               class="btn btn-sm btn-primary w-full justify-center"
+               {% if not notification.is_read %}
+               hx-post="{% url 'notifications:read' notification.id %}"
+               hx-trigger="click"
+               hx-swap="none"
+               {% endif %}>
+              <i class="ti ti-arrow-right"></i>
+              <span>Перейти</span>
+            </a>
+          {% endif %}
+          
+          {% if not notification.is_read %}
+            <form method="post" action="{% url 'notifications:read' notification.id %}" class="w-full">
+              {% csrf_token %}
+              <button type="submit" 
+                      class="btn btn-sm btn-outline btn-success w-full justify-center gap-2 transition-all duration-200 hover:scale-[1.02]">
+                <i class="ti ti-check text-lg"></i>
+                <span class="hidden sm:inline text-sm font-medium">Прочитано</span>
+              </button>
+            </form>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+  {% empty %}
     <!-- Пустой список -->
     <div class="card bg-base-100 border border-base-300">
-        <div class="card-body p-12 text-center">
-            <div class="w-20 h-20 rounded-full bg-base-200 flex items-center justify-center mx-auto mb-4">
-                <i class="ti ti-bell-off text-4xl opacity-40"></i>
-            </div>
-            <h3 class="text-xl font-bold mb-2">Нет уведомлений</h3>
-            <p class="opacity-60 mb-4">
-                {% if request.GET.status or request.GET.type %}
-                    Попробуйте изменить фильтры
-                {% else %}
-                    Когда появятся новые уведомления, они появятся здесь
-                {% endif %}
-            </p>
-            {% if request.GET.status or request.GET.type %}
-                <a href="?" class="btn btn-ghost btn-sm">
-                    <i class="ti ti-x"></i>
-                    Сбросить фильтры
-                </a>
-            {% endif %}
+      <div class="card-body p-12 text-center">
+        <div class="w-20 h-20 rounded-full bg-base-200 flex items-center justify-center mx-auto mb-4">
+          <i class="ti ti-bell-off text-4xl opacity-40"></i>
         </div>
+        <h3 class="text-xl font-bold mb-2">Нет уведомлений</h3>
+        <p class="opacity-60 mb-4">
+          {% if request.GET.status or request.GET.type %}
+            Попробуйте изменить фильтры
+          {% else %}
+            Когда появятся новые уведомления, они появятся здесь
+          {% endif %}
+        </p>
+        {% if request.GET.status or request.GET.type %}
+          <a href="?" class="btn btn-ghost btn-sm">
+            <i class="ti ti-x"></i>
+            Сбросить фильтры
+          </a>
+        {% endif %}
+      </div>
     </div>
-    {% endfor %}
+  {% endfor %}
 </div>
 
 <!-- === PAGINATION === -->
 {% if is_paginated %}
-<div class="flex justify-center mt-8">
+  <div class="flex justify-center mt-8">
     <div class="join">
-        {% if page_obj.has_previous %}
-        <a href="?page={{ page_obj.previous_page_number }}{{ query_params }}"
-           class="join-item btn btn-sm">
-            <i class="ti ti-chevron-left"></i>
+      {% if page_obj.has_previous %}
+        <a href="?page={{ page_obj.previous_page_number }}{{ query_params }}" class="join-item btn btn-sm">
+          <i class="ti ti-chevron-left"></i>
         </a>
+      {% endif %}
+      {% for num in page_obj.paginator.page_range %}
+        {% if page_obj.number == num %}
+          <button class="join-item btn btn-sm btn-active">{{ num }}</button>
+        {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+          <a href="?page={{ num }}{{ query_params }}" class="join-item btn btn-sm">{{ num }}</a>
         {% endif %}
-        
-        {% for num in page_obj.paginator.page_range %}
-            {% if page_obj.number == num %}
-            <button class="join-item btn btn-sm btn-active">{{ num }}</button>
-            {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
-            <a href="?page={{ num }}{{ query_params }}" class="join-item btn btn-sm">{{ num }}</a>
-            {% endif %}
-        {% endfor %}
-        
-        {% if page_obj.has_next %}
-        <a href="?page={{ page_obj.next_page_number }}{{ query_params }}"
-           class="join-item btn btn-sm">
-            <i class="ti ti-chevron-right"></i>
+      {% endfor %}
+      {% if page_obj.has_next %}
+        <a href="?page={{ page_obj.next_page_number }}{{ query_params }}" class="join-item btn btn-sm">
+          <i class="ti ti-chevron-right"></i>
         </a>
-        {% endif %}
+      {% endif %}
     </div>
-</div>
-
-<!-- Инфо о странице -->
-<div class="text-center text-sm opacity-60 mt-3">
+  </div>
+  <!-- Инфо о странице -->
+  <div class="text-center text-sm opacity-60 mt-3">
     Страница {{ page_obj.number }} из {{ page_obj.paginator.num_pages }}
     ({{ page_obj.paginator.count }} всего)
-</div>
+  </div>
 {% endif %}
 
 <!-- === HTMX POLLING ДЛЯ ОБНОВЛЕНИЯ СЧЁТЧИКОВ === -->
@@ -22558,118 +22157,92 @@ FILE: templates/notifications/list.html (ENTERPRISE - v2.0)
 <!-- === СКРИПТ ДЛЯ УВЕДОМЛЕНИЙ БРАУЗЕРА === -->
 <script>
 (function() {
-    // === ГЛОБАЛЬНОЕ СОСТОЯНИЕ ===
-    let lastKnownCount = {{ unread_count|default:0 }};
-    let notificationPermissionRequested = false;
-    
-    // === ЗАПРОС РАЗРЕШЕНИЯ НА УВЕДОМЛЕНИЯ БРАУЗЕРА ===
-    function requestNotificationPermission() {
-        if (!('Notification' in window)) return;
-        if (Notification.permission === 'granted') return;
-        if (Notification.permission === 'denied') return;
-        if (notificationPermissionRequested) return;
-        
-        notificationPermissionRequested = true;
-        Notification.requestPermission().then(permission => {
-            console.log('Notification permission:', permission);
-        });
+  // === ГЛОБАЛЬНОЕ СОСТОЯНИЕ ===
+  let lastKnownCount = {{ unread_count|default:0 }};
+  let notificationPermissionRequested = false;
+
+  // === ЗАПРОС РАЗРЕШЕНИЯ НА УВЕДОМЛЕНИЯ БРАУЗЕРА ===
+  function requestNotificationPermission() {
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'granted') return;
+    if (Notification.permission === 'denied') return;
+    if (notificationPermissionRequested) return;
+    notificationPermissionRequested = true;
+    Notification.requestPermission().then(permission => {
+      console.log('Notification permission:', permission);
+    });
+  }
+
+  // === ПОКАЗАТЬ УВЕДОМЛЕНИЕ БРАУЗЕРА ===
+  function showBrowserNotification(newCount) {
+    if (!('Notification' in window)) return;
+    if (Notification.permission !== 'granted') return;
+    if (document.visibilityState === 'visible') return;
+    // Дебаунс: не чаще 1 раза в 10 секунд
+    if (window._lastNotificationTime && Date.now() - window._lastNotificationTime < 10000) {
+      return;
     }
-    
-    // === ПОКАЗАТЬ УВЕДОМЛЕНИЕ БРАУЗЕРА ===
-    function showBrowserNotification(newCount) {
-        if (!('Notification' in window)) return;
-        if (Notification.permission !== 'granted') return;
-        if (document.visibilityState === 'visible') return;
-        
-        // Дебаунс: не чаще 1 раза в 10 секунд
-        if (window._lastNotificationTime && 
-            Date.now() - window._lastNotificationTime < 10000) {
-            return;
-        }
-        
-        new Notification('DOPX — Новые уведомления', {
-            body: `У вас ${newCount} непрочитанных уведомлений`,
-            icon: '/static/img/DOPX_logo.png',
-            tag: 'dopx-notification',
-            requireInteraction: false,
-            silent: false
-        });
-        
-        window._lastNotificationTime = Date.now();
+    new Notification('DOPX — Новые уведомления', {
+      body: `У вас ${newCount} непрочитанных уведомлений`,
+      icon: '/static/img/DOPX_logo.png',
+      tag: 'dopx-notification',
+      requireInteraction: false,
+      silent: false
+    });
+    window._lastNotificationTime = Date.now();
+  }
+
+  // === ОБНОВЛЕНИЕ ПРИ HTMX SWAP ===
+  function onHtmxAfterSwap(event) {
+    const target = event.detail.target;
+    if (!target || target.id !== 'notification-badge-container') return;
+    const newCount = parseInt(target.dataset.unreadCount || '0', 10);
+    if (newCount > lastKnownCount && newCount > 0) {
+      showBrowserNotification(newCount);
     }
-    
-    // === ОБНОВЛЕНИЕ ПРИ HTMX SWAP ===
-    function onHtmxAfterSwap(event) {
-        const target = event.detail.target;
-        if (!target || target.id !== 'notification-badge-container') return;
-        
-        // Получаем новый счётчик из data-атрибута
-        const newCount = parseInt(target.dataset.unreadCount || '0', 10);
-        
-        // Если появились новые уведомления → показываем браузерное уведомление
-        if (newCount > lastKnownCount && newCount > 0) {
-            showBrowserNotification(newCount);
-        }
-        
-        // Обновляем последний известный счётчик
-        lastKnownCount = newCount;
-        
-        // Обновляем title страницы если есть непрочитанные
-        if (newCount > 0) {
-            const currentTitle = document.title.replace(/^\(\d+\)\s*/, '');
-            document.title = `(${newCount}) ${currentTitle}`;
-        } else {
-            const currentTitle = document.title.replace(/^\(\d+\)\s*/, '');
-            document.title = currentTitle;
-        }
-    }
-    
-    // === ОБРАБОТКА КЛИКА ПО УВЕДОМЛЕНИЮ ===
-    function setupNotificationClicks() {
-        document.querySelectorAll('[id^="notification-"]').forEach(card => {
-            card.addEventListener('click', function(e) {
-                // Если клик не по кнопке/ссылке
-                if (e.target.tagName !== 'A' && e.target.tagName !== 'BUTTON' && 
-                    !e.target.closest('form') && !e.target.closest('a')) {
-                    const actionUrl = this.querySelector('a.btn-primary');
-                    if (actionUrl) {
-                        actionUrl.click();
-                    }
-                }
-            });
-        });
-    }
-    
-    // === ИНИЦИАЛИЗАЦИЯ ===
-    function init() {
-        // Запрос разрешения на уведомления
-        requestNotificationPermission();
-        
-        // Настройка кликов по карточкам
-        setupNotificationClicks();
-        
-        // Слушаем HTMX события
-        document.body.addEventListener('htmx:afterSwap', onHtmxAfterSwap);
-        
-        // Обновляем при возврате на вкладку
-        document.addEventListener('visibilitychange', function() {
-            if (document.visibilityState === 'visible') {
-                // Сбрасываем title
-                const currentTitle = document.title.replace(/^\(\d+\)\s*/, '');
-                document.title = currentTitle;
-            }
-        });
-    }
-    
-    // Запуск после загрузки DOM
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', init);
+    lastKnownCount = newCount;
+    if (newCount > 0) {
+      const currentTitle = document.title.replace(/^\(\d+\)\s*/, '');
+      document.title = `(${newCount}) ${currentTitle}`;
     } else {
-        init();
+      const currentTitle = document.title.replace(/^\(\d+\)\s*/, '');
+      document.title = currentTitle;
     }
+  }
+
+  // === ОБРАБОТКА КЛИКА ПО УВЕДОМЛЕНИЮ ===
+  function setupNotificationClicks() {
+    document.querySelectorAll('[id^="notification-"]').forEach(card => {
+      card.addEventListener('click', function(e) {
+        if (e.target.tagName !== 'A' && e.target.tagName !== 'BUTTON' &&
+            !e.target.closest('form') && !e.target.closest('a')) {
+          const actionUrl = this.querySelector('a.btn-primary');
+          if (actionUrl) actionUrl.click();
+        }
+      });
+    });
+  }
+
+  // === ИНИЦИАЛИЗАЦИЯ ===
+  function init() {
+    requestNotificationPermission();
+    setupNotificationClicks();
+    document.body.addEventListener('htmx:afterSwap', onHtmxAfterSwap);
+    document.addEventListener('visibilitychange', function() {
+      if (document.visibilityState === 'visible') {
+        const currentTitle = document.title.replace(/^\(\d+\)\s*/, '');
+        document.title = currentTitle;
+      }
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
 })();
 </script>
-
 {% endblock %}
 
 
@@ -24749,61 +24322,6 @@ FILE: templates/users/profile_edit.html
 
 
 ================================================================================
-FILE: user_journey_admin2_report.json
-================================================================================
-
-{
-  "evaluations_completed": 24,
-  "xp_gained": 0,
-  "badges_earned": [
-    "Первая оценка",
-    "Активный фанат (10 матчей)",
-    "Точный аналитик",
-    "Без предвзятости"
-  ],
-  "level_ups": [],
-  "notifications_created": 7,
-  "errors": [
-    "Match 1: Cannot resolve keyword 'match' into field. Choices are: action_url, created_at, id, is_read, message, notification_type, related_match, related_match_id, title, updated_at, user, user_id",
-    "Match 2: Cannot resolve keyword 'match' into field. Choices are: action_url, created_at, id, is_read, message, notification_type, related_match, related_match_id, title, updated_at, user, user_id",
-    "Match 3: Cannot resolve keyword 'match' into field. Choices are: action_url, created_at, id, is_read, message, notification_type, related_match, related_match_id, title, updated_at, user, user_id",
-    "Match 4: Cannot resolve keyword 'match' into field. Choices are: action_url, created_at, id, is_read, message, notification_type, related_match, related_match_id, title, updated_at, user, user_id",
-    "Match 5: Cannot resolve keyword 'match' into field. Choices are: action_url, created_at, id, is_read, message, notification_type, related_match, related_match_id, title, updated_at, user, user_id",
-    "Match 6: Cannot resolve keyword 'match' into field. Choices are: action_url, created_at, id, is_read, message, notification_type, related_match, related_match_id, title, updated_at, user, user_id",
-    "Match 7: Cannot resolve keyword 'match' into field. Choices are: action_url, created_at, id, is_read, message, notification_type, related_match, related_match_id, title, updated_at, user, user_id",
-    "Match 8: Cannot resolve keyword 'match' into field. Choices are: action_url, created_at, id, is_read, message, notification_type, related_match, related_match_id, title, updated_at, user, user_id",
-    "Match 9: Cannot resolve keyword 'match' into field. Choices are: action_url, created_at, id, is_read, message, notification_type, related_match, related_match_id, title, updated_at, user, user_id",
-    "Match 10: Cannot resolve keyword 'match' into field. Choices are: action_url, created_at, id, is_read, message, notification_type, related_match, related_match_id, title, updated_at, user, user_id",
-    "Match 11: Cannot resolve keyword 'match' into field. Choices are: action_url, created_at, id, is_read, message, notification_type, related_match, related_match_id, title, updated_at, user, user_id",
-    "Match 12: Cannot resolve keyword 'match' into field. Choices are: action_url, created_at, id, is_read, message, notification_type, related_match, related_match_id, title, updated_at, user, user_id",
-    "Match 13: Cannot resolve keyword 'match' into field. Choices are: action_url, created_at, id, is_read, message, notification_type, related_match, related_match_id, title, updated_at, user, user_id",
-    "Match 14: Cannot resolve keyword 'match' into field. Choices are: action_url, created_at, id, is_read, message, notification_type, related_match, related_match_id, title, updated_at, user, user_id",
-    "Match 15: Cannot resolve keyword 'match' into field. Choices are: action_url, created_at, id, is_read, message, notification_type, related_match, related_match_id, title, updated_at, user, user_id",
-    "Match 16: Cannot resolve keyword 'match' into field. Choices are: action_url, created_at, id, is_read, message, notification_type, related_match, related_match_id, title, updated_at, user, user_id",
-    "Match 17: Cannot resolve keyword 'match' into field. Choices are: action_url, created_at, id, is_read, message, notification_type, related_match, related_match_id, title, updated_at, user, user_id",
-    "Match 18: Cannot resolve keyword 'match' into field. Choices are: action_url, created_at, id, is_read, message, notification_type, related_match, related_match_id, title, updated_at, user, user_id",
-    "Match 19: Cannot resolve keyword 'match' into field. Choices are: action_url, created_at, id, is_read, message, notification_type, related_match, related_match_id, title, updated_at, user, user_id",
-    "Match 20: Cannot resolve keyword 'match' into field. Choices are: action_url, created_at, id, is_read, message, notification_type, related_match, related_match_id, title, updated_at, user, user_id",
-    "Match 21: Cannot resolve keyword 'match' into field. Choices are: action_url, created_at, id, is_read, message, notification_type, related_match, related_match_id, title, updated_at, user, user_id",
-    "Match 22: Cannot resolve keyword 'match' into field. Choices are: action_url, created_at, id, is_read, message, notification_type, related_match, related_match_id, title, updated_at, user, user_id",
-    "Match 23: Cannot resolve keyword 'match' into field. Choices are: action_url, created_at, id, is_read, message, notification_type, related_match, related_match_id, title, updated_at, user, user_id",
-    "Match 24: Cannot resolve keyword 'match' into field. Choices are: action_url, created_at, id, is_read, message, notification_type, related_match, related_match_id, title, updated_at, user, user_id"
-  ],
-  "final_state": {
-    "username": "admin2",
-    "email": "t.tastanov@gmail.com",
-    "trust_score": 2.0,
-    "total_evaluations": 24,
-    "evaluation_streak": 1,
-    "xp_total": 1000,
-    "xp_level": 10,
-    "badges_count": 4,
-    "notifications_count": 7
-  }
-}
-
-
-================================================================================
 FILE: users/__init__.py
 ================================================================================
 
@@ -25577,6 +25095,39 @@ class Migration(migrations.Migration):
 
 
 ================================================================================
+FILE: users/migrations/0005_user_verification_token_and_more.py
+================================================================================
+
+# Generated by Django 6.0.3 on 2026-04-02 11:18
+
+import django.utils.timezone
+import uuid
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ('users', '0004_add_notification_settings_back'),
+    ]
+
+    operations = [
+        migrations.AddField(
+            model_name='user',
+            name='verification_token',
+            field=models.UUIDField(blank=True, default=uuid.uuid4, editable=False, null=True, verbose_name='Токен верификации'),
+        ),
+        migrations.AddField(
+            model_name='user',
+            name='verification_token_created_at',
+            field=models.DateTimeField(auto_now_add=True, default=django.utils.timezone.now, verbose_name='Дата создания токена'),
+            preserve_default=False,
+        ),
+    ]
+
+
+
+================================================================================
 FILE: users/migrations/__init__.py
 ================================================================================
 
@@ -25593,7 +25144,7 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 from core.models import BaseModel
 from django.utils import timezone
-from datetime import timedelta
+import uuid
 import json
 
 
@@ -25606,128 +25157,48 @@ class User(AbstractUser, BaseModel):
     rating_power = models.FloatField(_('Сила рейтинга'), default=1.0)
     trust_score = models.FloatField(_('Оценка доверия'), default=1.0)
     is_verified = models.BooleanField(_('Верифицирован'), default=False)
+    verification_token = models.UUIDField(_('Токен верификации'), default=uuid.uuid4, editable=False, null=True, blank=True)
+    verification_token_created_at = models.DateTimeField(_('Дата создания токена'), auto_now_add=True)
     
-    # Настройки уведомлений (системные + пользовательские)
     _notification_settings = models.JSONField(
-        _('Настройки уведомлений'),
-        default=dict,
-        blank=True,
-        db_column='notification_settings'
+        _('Настройки уведомлений'), default=dict, blank=True, db_column='notification_settings'
     )
-
-    # Геймификация
+    
     total_evaluations = models.IntegerField(_('Всего оценок'), default=0)
     evaluation_streak = models.IntegerField(_('Серия оценок'), default=0)
     last_evaluation_date = models.DateField(_('Последняя оценка'), null=True, blank=True)
 
-    # ✅ Настройки по умолчанию (email_welcome НЕ в списке — он всегда включён)
     DEFAULT_NOTIFICATION_SETTINGS = {
-        'email_match_finished': True,       # Матч завершён / Голосование открыто
-        'email_voting_closing': True,       # Напоминание о закрытии голосования
-        'email_new_badge': True,            # Новые Достижения
-        'email_level_up': True,             # Повышение уровня
-        'email_system': True,               # Системные уведомления
+        'email_match_finished': True,
+        'email_voting_closing': True,
+        'email_new_badge': True,
+        'email_level_up': True,
+        'email_system': True,
     }
 
     @property
     def notification_settings(self):
-        """Безопасное получение настроек уведомлений"""
-        if not hasattr(self, '_notification_settings_cache'):
-            raw = self._notification_settings or {}
-            if isinstance(raw, str):
-                try:
-                    raw = json.loads(raw)
-                except:
-                    raw = {}
-            self._notification_settings_cache = {**self.DEFAULT_NOTIFICATION_SETTINGS, **raw}
-        return self._notification_settings_cache
+        raw = self._notification_settings or {}
+        if isinstance(raw, str):
+            try: raw = json.loads(raw)
+            except: raw = {}
+        if not isinstance(raw, dict): raw = {}
+        return {**self.DEFAULT_NOTIFICATION_SETTINGS, **raw}
 
     @notification_settings.setter
     def notification_settings(self, value):
-        """Сохранение настроек уведомлений"""
         self._notification_settings = value
-        if hasattr(self, '_notification_settings_cache'):
-            delattr(self, '_notification_settings_cache')
 
     def get_notification_setting(self, key, default=None):
-        """Получить конкретную настройку уведомления"""
-        settings = self.notification_settings
-        return settings.get(key, default if default is not None else self.DEFAULT_NOTIFICATION_SETTINGS.get(key, False))
-
-    def save(self, *args, **kwargs):
-        if hasattr(self, '_notification_settings_cache'):
-            delattr(self, '_notification_settings_cache')
-        super().save(*args, **kwargs)
-
-    def check_and_award_badges(self):
-        """Проверка и выдача достижений пользователю"""
-        from .models import UserBadge
-        badges_to_award = []
-        
-        if self.total_evaluations >= 1:
-            badges_to_award.append('first_evaluation')
-        if self.total_evaluations >= 10:
-            badges_to_award.append('active_fan_10')
-        if self.total_evaluations >= 50:
-            badges_to_award.append('active_fan_50')
-        if self.evaluation_streak >= 7:
-            badges_to_award.append('streak_7')
-        if self.evaluation_streak >= 30:
-            badges_to_award.append('streak_30')
-        if self.trust_score >= 1.5:
-            badges_to_award.append('accurate_analyst')
-        if self._check_bias_free():
-            badges_to_award.append('bias_free')
-
-        awarded = []
-        for badge_type in badges_to_award:
-            badge, created = UserBadge.objects.get_or_create(
-                user=self,
-                badge_type=badge_type
-            )
-            if created:
-                awarded.append(badge)
-        return awarded
-
-    def _check_bias_free(self):
-        """Проверка на отсутствие предвзятости"""
-        from evaluations.models import ContextEvaluation, PlayerEvaluation
-        from django.db.models import Avg
-        
-        contexts = ContextEvaluation.objects.filter(
-            user=self,
-            supported_team__isnull=False
-        ).select_related('match').order_by('-created_at')[:10]
-        
-        if contexts.count() < 5:
-            return False
-
-        bias_scores = []
-        for ctx in contexts:
-            match = ctx.match
-            supported = ctx.supported_team
-            own_avg = PlayerEvaluation.objects.filter(
-                user=self, match=match, player__team=supported
-            ).aggregate(avg=Avg('contribution'))['avg']
-            opponent = match.away_team if match.home_team == supported else match.home_team
-            opp_avg = PlayerEvaluation.objects.filter(
-                user=self, match=match, player__team=opponent
-            ).aggregate(avg=Avg('contribution'))['avg']
-            
-            if own_avg and opp_avg:
-                bias_scores.append(abs(own_avg - opp_avg))
-        
-        if not bias_scores:
-            return False
-        avg_bias = sum(bias_scores) / len(bias_scores)
-        return avg_bias < 2.0
+        """Безопасное получение настройки уведомления"""
+        return self.notification_settings.get(
+            key, default if default is not None else self.DEFAULT_NOTIFICATION_SETTINGS.get(key, False)
+        )
 
     def update_evaluation_stats(self):
-        """Обновление статистики оценок"""
-        from django.utils import timezone
+        """Обновляет статистику оценок. Достижения проверяются отдельно."""
         today = timezone.now().date()
         self.total_evaluations += 1
-        
         if self.last_evaluation_date:
             days_diff = (today - self.last_evaluation_date).days
             if days_diff == 1:
@@ -25735,14 +25206,22 @@ class User(AbstractUser, BaseModel):
             elif days_diff > 1:
                 self.evaluation_streak = 1
             else:
-                self.evaluation_streak = 1
+                # Оценка в тот же день - не меняем серию
+                pass
         else:
             self.evaluation_streak = 1
-            
         self.last_evaluation_date = today
-        awarded_badges = self.check_and_award_badges()
         self.save(update_fields=['total_evaluations', 'evaluation_streak', 'last_evaluation_date', 'updated_at'])
-        return awarded_badges
+
+    def get_trust_level(self):
+        if self.trust_score >= 1.8: return 'expert', _('Эксперт')
+        elif self.trust_score >= 1.4: return 'reliable', _('Надёжный')
+        elif self.trust_score >= 1.0: return 'standard', _('Стандартный')
+        else: return 'new', _('Новичок')
+
+    @property
+    def unread_notifications_count(self):
+        return self.notifications.filter(is_read=False).count()
 
     class Meta:
         verbose_name = _('Пользователь')
@@ -25751,22 +25230,6 @@ class User(AbstractUser, BaseModel):
 
     def __str__(self):
         return self.username
-
-    def get_trust_level(self):
-        """Уровень доверия"""
-        if self.trust_score >= 1.8:
-            return 'expert', _('Эксперт')
-        elif self.trust_score >= 1.4:
-            return 'reliable', _('Надёжный')
-        elif self.trust_score >= 1.0:
-            return 'standard', _('Стандартный')
-        else:
-            return 'new', _('Новичок')
-
-    @property
-    def unread_notifications_count(self):
-        """Количество непрочитанных уведомлений"""
-        return self.notifications.filter(is_read=False).count()
 
 
 class UserBadge(BaseModel):
@@ -25781,9 +25244,7 @@ class UserBadge(BaseModel):
         ('streak_7', _('Неделя подряд')),
         ('streak_30', _('Месяц подряд')),
     ]
-    user = models.ForeignKey(
-        User, on_delete=models.CASCADE, related_name='badges', verbose_name=_('Пользователь')
-    )
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='badges', verbose_name=_('Пользователь'))
     badge_type = models.CharField(_('Тип достижения'), max_length=50, choices=BADGE_TYPES)
     awarded_at = models.DateTimeField(_('Дата получения'), auto_now_add=True)
 
@@ -25799,9 +25260,7 @@ class UserBadge(BaseModel):
 
 class UserXP(BaseModel):
     """Опыт и рейтинг пользователя"""
-    user = models.OneToOneField(
-        User, on_delete=models.CASCADE, related_name='xp', verbose_name=_('Пользователь')
-    )
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='xp', verbose_name=_('Пользователь'))
     total_xp = models.IntegerField(_('Всего опыта'), default=0)
     level = models.IntegerField(_('Уровень'), default=1)
 
@@ -25810,12 +25269,12 @@ class UserXP(BaseModel):
         verbose_name_plural = _('Опыт пользователей')
 
     def add_xp(self, amount):
-        """Добавить опыт и проверить повышение уровня"""
         old_level = self.level
         old_total_xp = self.total_xp
-        self.total_xp += amount
         
+        self.total_xp += amount
         new_level = (self.total_xp // 100) + 1
+        
         level_increased = False
         levels_gained = []
         
@@ -25825,12 +25284,8 @@ class UserXP(BaseModel):
             self.level = new_level
             level_increased = True
             
-            self.save(update_fields=['level', 'total_xp', 'updated_at'])
-        else:
-            UserXP.objects.filter(pk=self.pk).update(
-                total_xp=self.total_xp, updated_at=timezone.now()
-            )
-            
+        self.save(update_fields=['level', 'total_xp', 'updated_at'])
+        
         return {
             'level_increased': level_increased,
             'levels_gained': levels_gained,
@@ -25853,12 +25308,11 @@ class UserXP(BaseModel):
 FILE: users/services.py
 ================================================================================
 
-# users/services.py — ПОЛНОСТЬЮ ИСПРАВЛЕННЫЙ ФАЙЛ
-
+# users/services.py
 from django.utils import timezone
 from datetime import timedelta
-from django.db.models import Count, Avg, Q, F
-from users.models import UserBadge, UserXP
+from django.db.models import Count, Avg, F, Q
+from users.models import UserBadge
 from evaluations.models import ContextEvaluation, PlayerEvaluation
 import logging
 
@@ -25867,172 +25321,92 @@ logger = logging.getLogger(__name__)
 
 def check_and_award_badges(user):
     """
-    Проверяет и выдаёт достижения пользователю.
-    Возвращает список объектов UserBadge, которые были СОЗДАНЫ (не существовали ранее).
+    Проверяет условия и выдаёт достижения.
+    Возвращает список только что созданных объектов UserBadge.
     """
     awarded = []
-    
-    # === 1. Первая оценка ===
-    if user.total_evaluations == 1:
-        badge, created = UserBadge.objects.get_or_create(
-            user=user,
-            badge_type='first_evaluation'
-        )
-        if created:
-            awarded.append(badge)
-            logger.info(f"Badge awarded: first_evaluation to {user.username}")
-    
-    # === 2. Активный фанат: 10 матчей ===
-    if user.total_evaluations >= 10:
-        badge, created = UserBadge.objects.get_or_create(
-            user=user,
-            badge_type='active_fan_10'
-        )
-        if created:
-            awarded.append(badge)
-            logger.info(f"Badge awarded: active_fan_10 to {user.username}")
-    
-    # === 3. Хардкор фанат: 50 матчей ===
-    if user.total_evaluations >= 50:
-        badge, created = UserBadge.objects.get_or_create(
-            user=user,
-            badge_type='active_fan_50'
-        )
-        if created:
-            awarded.append(badge)
-            logger.info(f"Badge awarded: active_fan_50 to {user.username}")
-    
-    # === 4. Точный аналитик: средняя оценка близка к сообществу ===
-    if user.total_evaluations >= 20:
-        recent_matches = ContextEvaluation.objects.filter(
-            user=user
-        ).select_related('match').order_by('-created_at')[:20]
-        
-        accurate_count = 0
-        for ctx in recent_matches:
-            match = ctx.match
-            community_avg = PlayerEvaluation.objects.filter(
-                match=match
-            ).aggregate(avg=Avg('contribution'))['avg']
-            if not community_avg:
-                continue
-            user_avg = PlayerEvaluation.objects.filter(
-                user=user, match=match
-            ).aggregate(avg=Avg('contribution'))['avg']
-            if user_avg and abs(user_avg - community_avg) <= 1.0:
-                accurate_count += 1
-        
-        if accurate_count >= 16:  # 80% от 20
-            badge, created = UserBadge.objects.get_or_create(
-                user=user,
-                badge_type='accurate_analyst'
-            )
-            if created:
-                awarded.append(badge)
-                logger.info(f"Badge awarded: accurate_analyst to {user.username}")
-    
-    # === 5. Без предвзятости: низкий bias_score ===
-    if user.total_evaluations >= 15:
-        biased_count = 0
-        total_checked = 0
-        contexts = ContextEvaluation.objects.filter(
-            user=user,
-            supported_team__isnull=False
-        ).select_related('match').order_by('-created_at')[:15]
-        
-        for ctx in contexts:
-            match = ctx.match
-            supported = ctx.supported_team
-            if not supported:
-                continue
-            total_checked += 1
-            
-            own_avg = PlayerEvaluation.objects.filter(
-                user=user, match=match, player__team=supported
-            ).aggregate(avg=Avg('contribution'))['avg'] or 0
-            
-            opponent = match.away_team if match.home_team == supported else match.home_team
-            opp_avg = PlayerEvaluation.objects.filter(
-                user=user, match=match, player__team=opponent
-            ).aggregate(avg=Avg('contribution'))['avg'] or 0
-            
-            if abs(own_avg - opp_avg) > 4:
-                biased_count += 1
-        
-        if total_checked >= 10 and biased_count <= 2:
-            badge, created = UserBadge.objects.get_or_create(
-                user=user,
-                badge_type='bias_free'
-            )
-            if created:
-                awarded.append(badge)
-                logger.info(f"Badge awarded: bias_free to {user.username}")
-    
-    # === 6. Ранняя пташка: оценка в первые 2 часа после матча ===
-    early_evals = ContextEvaluation.objects.filter(
-        user=user,
-        created_at__lte=F('match__end_time') + timedelta(hours=2)
-    ).count()
-    if early_evals >= 5:
-        badge, created = UserBadge.objects.get_or_create(
-            user=user,
-            badge_type='early_bird'
-        )
-        if created:
-            awarded.append(badge)
-            logger.info(f"Badge awarded: early_bird to {user.username}")
-    
-    # === 7. Серия: 7 дней подряд ===
-    if user.evaluation_streak >= 7:
-        badge, created = UserBadge.objects.get_or_create(
-            user=user,
-            badge_type='streak_7'
-        )
-        if created:
-            awarded.append(badge)
-            logger.info(f"Badge awarded: streak_7 to {user.username}")
-    
-    # === 8. Серия: 30 дней подряд ===
-    if user.evaluation_streak >= 30:
-        badge, created = UserBadge.objects.get_or_create(
-            user=user,
-            badge_type='streak_30'
-        )
-        if created:
-            awarded.append(badge)
-            logger.info(f"Badge awarded: streak_30 to {user.username}")
-    
-    return awarded  # Возвращаем объекты UserBadge, а не строки!
+    total = user.total_evaluations
+    streak = user.evaluation_streak
 
+    try:
+        # 1. Первая оценка
+        if total >= 1:
+            b, created = UserBadge.objects.get_or_create(user=user, badge_type='first_evaluation')
+            if created: awarded.append(b)
 
-def calculate_level_xp_threshold(level):
-    """XP, необходимый для перехода на следующий уровень"""
-    return 100 * level
+        # 2. Активный фанат (10)
+        if total >= 10:
+            b, created = UserBadge.objects.get_or_create(user=user, badge_type='active_fan_10')
+            if created: awarded.append(b)
 
+        # 3. Хардкор фанат (50)
+        if total >= 50:
+            b, created = UserBadge.objects.get_or_create(user=user, badge_type='active_fan_50')
+            if created: awarded.append(b)
 
-def get_level_progress(user):
-    """Возвращает прогресс до следующего уровня"""
-    xp = getattr(user, 'xp', None)
-    if not xp:
-        return {'current': 0, 'next': 100, 'percent': 0, 'level': 1}
-    
-    next_threshold = calculate_level_xp_threshold(xp.level)
-    current_in_level = xp.total_xp - (100 * (xp.level - 1))
-    percent = min(100, int((current_in_level / next_threshold) * 100))
-    
-    return {
-        'current': current_in_level,
-        'next': next_threshold,
-        'percent': percent,
-        'level': xp.level
-    }
+        # 4. Точный аналитик (отклонение < 1.0 в 80% из последних 20 матчей)
+        if total >= 20:
+            recent_matches = ContextEvaluation.objects.filter(user=user).select_related('match').order_by('-created_at')[:20]
+            accurate = 0
+            for ctx in recent_matches:
+                if not ctx.match_id: continue
+                comm_avg = PlayerEvaluation.objects.filter(match_id=ctx.match_id).aggregate(avg=Avg('contribution'))['avg']
+                user_avg = PlayerEvaluation.objects.filter(user=user, match_id=ctx.match_id).aggregate(avg=Avg('contribution'))['avg']
+                if comm_avg and user_avg and abs(user_avg - comm_avg) <= 1.0:
+                    accurate += 1
+            if accurate >= 16:
+                b, created = UserBadge.objects.get_or_create(user=user, badge_type='accurate_analyst')
+                if created: awarded.append(b)
+
+        # 5. Без предвзятости (разница оценок своей/чужой команды <= 4 в 80% матчей)
+        if total >= 15:
+            contexts = ContextEvaluation.objects.filter(user=user, supported_team__isnull=False).select_related('match').order_by('-created_at')[:15]
+            unbiased = 0
+            checked = 0
+            for ctx in contexts:
+                supported = ctx.supported_team
+                if not supported or not ctx.match_id: continue
+                checked += 1
+                own_avg = PlayerEvaluation.objects.filter(user=user, match_id=ctx.match_id, player__team=supported).aggregate(avg=Avg('contribution'))['avg'] or 0
+                opponent = ctx.match.away_team if ctx.match.home_team == supported else ctx.match.home_team
+                opp_avg = PlayerEvaluation.objects.filter(user=user, match_id=ctx.match_id, player__team=opponent).aggregate(avg=Avg('contribution'))['avg'] or 0
+                if abs(own_avg - opp_avg) <= 4:
+                    unbiased += 1
+            if checked >= 10 and unbiased >= 8:
+                b, created = UserBadge.objects.get_or_create(user=user, badge_type='bias_free')
+                if created: awarded.append(b)
+
+        # 6. Ранняя пташка (оценка в первые 2 часа после матча ≥ 5 раз)
+        if total >= 5:
+            early_count = ContextEvaluation.objects.filter(
+                user=user, match__end_time__isnull=False,
+                created_at__lte=F('match__end_time') + timedelta(hours=2)
+            ).count()
+            if early_count >= 5:
+                b, created = UserBadge.objects.get_or_create(user=user, badge_type='early_bird')
+                if created: awarded.append(b)
+
+        # 7. Серия 7 дней
+        if streak >= 7:
+            b, created = UserBadge.objects.get_or_create(user=user, badge_type='streak_7')
+            if created: awarded.append(b)
+
+        # 8. Серия 30 дней
+        if streak >= 30:
+            b, created = UserBadge.objects.get_or_create(user=user, badge_type='streak_30')
+            if created: awarded.append(b)
+
+    except Exception as e:
+        logger.error(f"Ошибка проверки достижений для {user.username}: {e}", exc_info=True)
+
+    return awarded
 
 
 ================================================================================
 FILE: users/signals.py
 ================================================================================
 
-# === НОВЫЙ ФАЙЛ: users/signals.py ===
+# === users/signals.py ===
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.utils import timezone
@@ -26043,56 +25417,13 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-@receiver(post_save, sender=ContextEvaluation)
-def on_context_evaluation_created(sender, instance, created, **kwargs):
-    """
-    При создании новой оценки контекста:
-    - Проверяем и выдаём достижения
-    - Обновляем статистику
-    """
-    if not created:
-        return
-    
-    user = instance.user
-    
-    # Проверяем достижения асинхронно (чтобы не замедлять запрос)
-    from users.tasks import check_badges_async
-    check_badges_async.delay(str(user.id))
-
-
-# === НОВЫЙ ФАЙЛ: users/tasks.py ===
-from celery import shared_task
-from users.models import User
-from users.services import check_and_award_badges
-import logging
-
-logger = logging.getLogger(__name__)
-
-@shared_task(bind=True, max_retries=3)
-def check_badges_async(self, user_id: str):
-    """Асинхронная проверка достижений"""
-    try:
-        user = User.objects.get(id=user_id)
-        awarded = check_and_award_badges(user)
-        
-        if awarded:
-            logger.info(f"Awarded {len(awarded)} badges to {user.username}")
-            # Отправляем уведомления о каждом достижении
-            from notifications.tasks import send_badge_earned_notification
-            for badge in awarded:
-                send_badge_earned_notification.delay(
-                    user_id=user_id,
-                    badge_type=badge.badge_type,
-                    badge_name=badge.get_badge_type_display()
-                )
-        
-        return {'awarded': len(awarded)}
-    except User.DoesNotExist:
-        logger.error(f"User {user_id} not found")
-        return {'error': 'User not found'}
-    except Exception as e:
-        logger.error(f"Error checking badges: {e}", exc_info=True)
-        raise self.retry(exc=e, countdown=60)
+# ✅ ИСПРАВЛЕНО: Убран post_save сигнал на ContextEvaluation.
+# Проверка достижений и уведомления теперь централизованно обрабатываются 
+# в evaluations/views.py после полного завершения оценки матча. 
+# Это предотвращает дубликаты уведомлений, race conditions и ошибки Celery.
+# 
+# Если вам нужна асинхронная проверка достижений в других местах,
+# используйте users.tasks.check_badges_async.delay(user_id) напрямую.
 
 
 ================================================================================
@@ -26110,13 +25441,22 @@ User = get_user_model()
 
 @shared_task(bind=True, max_retries=3)
 def check_badges_async(self, user_id: str):
-    """Асинхронная проверка достижений пользователя"""
+    """
+    Асинхронная проверка достижений пользователя.
+    ✅ ИСПРАВЛЕНО: Убрана дублирующая отправка email-уведомлений.
+    Теперь уведомления отправляются централизованно из evaluations/views.py после завершения оценки.
+    """
     try:
         user = User.objects.get(id=user_id)
-        return check_and_award_badges(user)
+        awarded = check_and_award_badges(user)
+        logger.info(f"Badge check completed for {user.username}. Awarded: {len(awarded)}")
+        return {'awarded': len(awarded)}
     except User.DoesNotExist:
         logger.error(f"User {user_id} not found")
         return None
+    except Exception as e:
+        logger.error(f"Error checking badges: {e}", exc_info=True)
+        raise self.retry(exc=e, countdown=60)
 
 
 ================================================================================
@@ -26141,11 +25481,10 @@ from .views import (
     ProfileEditView, PasswordChangeViewCustom,
     PasswordResetViewCustom, PasswordResetDoneViewCustom,
     PasswordResetConfirmViewCustom, PasswordResetCompleteViewCustom,
-    NotificationSettingsView,
+    NotificationSettingsView, VerifyEmailView, VerifyEmailSentView, VerifyEmailInvalidView
 )
 
 app_name = 'users'
-
 urlpatterns = [
     path('register/', RegisterView.as_view(), name='register'),
     path('login/', LoginView.as_view(), name='login'),
@@ -26154,6 +25493,11 @@ urlpatterns = [
     path('profile/edit/', ProfileEditView.as_view(), name='profile_edit'),
     path('profile/password/', PasswordChangeViewCustom.as_view(), name='password_change'),
     path('profile/notifications/', NotificationSettingsView.as_view(), name='notification_settings'),
+    
+    # Верификация
+    path('verify-email-sent/', VerifyEmailSentView.as_view(), name='verify_email_sent'),
+    path('verify-email/invalid/', VerifyEmailInvalidView.as_view(), name='verify_email_invalid'),
+    path('verify-email/<uuid:token>/', VerifyEmailView.as_view(), name='verify_email'),
     
     # Сброс пароля
     path('password-reset/', PasswordResetViewCustom.as_view(), name='password_reset'),
@@ -26170,132 +25514,189 @@ urlpatterns = [
 FILE: users/views.py
 ================================================================================
 
-# users/views.py — ИСПРАВЛЕННЫЙ ФАЙЛ
+# users/views.py
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import login, logout, authenticate, update_session_auth_hash
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.contrib.auth.views import LoginView as AuthLoginView, PasswordChangeView, PasswordResetView, PasswordResetDoneView, PasswordResetConfirmView, PasswordResetCompleteView
+from django.contrib.auth.views import (
+    LoginView as AuthLoginView,
+    PasswordResetView, PasswordResetDoneView,
+    PasswordResetConfirmView, PasswordResetCompleteView
+)
 from django.contrib import messages
-from django.views.generic import CreateView, TemplateView, ListView, UpdateView, FormView
+from django.views.generic import CreateView, TemplateView, ListView, UpdateView, FormView, View
 from django.urls import reverse_lazy
 from django.db.models import Count, Avg, Q
 from django.utils import timezone
-from django.core.mail import send_mail
-from django.template.loader import render_to_string
 from django.conf import settings
+from datetime import timedelta
 from users.models import User, UserBadge, UserXP
-from users.forms import UserRegistrationForm, UserLoginForm, UserProfileForm, CustomPasswordChangeForm, CustomPasswordResetForm, NotificationSettingsForm
-from evaluations.models import ContextEvaluation, PlayerEvaluation, EvaluationSession
-from matches.models import Match
+from users.forms import (
+    UserRegistrationForm, UserLoginForm, UserProfileForm,
+    CustomPasswordChangeForm, CustomPasswordResetForm, NotificationSettingsForm
+)
+from notifications.models import Notification
 import logging
-import json
-from notifications.tasks import send_welcome_notification
 
 logger = logging.getLogger(__name__)
 
+
 class RegisterView(CreateView):
-    """Регистрация нового пользователя"""
+    """Регистрация нового пользователя с обязательной верификацией почты"""
     model = User
     form_class = UserRegistrationForm
     template_name = 'auth/register.html'
-    success_url = reverse_lazy('core:home')
-    
+    success_url = reverse_lazy('users:verify_email_sent')
+
     def form_valid(self, form):
-        response = super().form_valid(form)
-        user = self.object
+        user = form.save(commit=False)
+        user.is_verified = False  # Аккаунт создан, но не активирован
+        user.set_password(form.cleaned_data['password1'])
+        user.save()
+        # Создаем базовые профили
         UserXP.objects.get_or_create(user=user)
-        UserBadge.objects.get_or_create(user=user, badge_type='first_evaluation')
-        login(self.request, user)
-        messages.success(self.request, '✅ Аккаунт создан! Добро пожаловать в DOPX.')
         
-        # 🔥 ОТПРАВЛЯЕМ ПРИВЕТСТВЕННОЕ УВЕДОМЛЕНИЕ (ВСЕГДА)
-        send_welcome_notification.delay(str(user.id))
-        
-        return response
+        # Отправляем письмо верификации (асинхронно, КРИТИЧЕСКОЕ - force=True)
+        try:
+            from notifications.tasks import send_email_verification
+            send_email_verification.delay(str(user.id), str(user.verification_token))
+            logger.info(f"Verification email queued for {user.email}")
+        except Exception as e:
+            logger.error(f"Failed to queue verification email: {e}")
+            # Фоллбэк: синхронно, чтобы не потерять пользователя
+            try:
+                from notifications.tasks import _send_email_to_user
+                site_url = getattr(settings, 'SITE_URL', 'http://127.0.0.1:8000')
+                verify_url = f"{site_url}/users/verify-email/{user.verification_token}/"
+                _send_email_to_user(user, '👋 Подтвердите email на DOPX', 'emails/verify_email.html', {'verify_url': verify_url}, force=True)
+            except Exception as fallback_e:
+                logger.critical(f"CRITICAL: Failed to send verification email synchronously: {fallback_e}")
+                
+        messages.success(self.request, '✅ Регистрация прошла успешно! Проверьте почту для активации.')
+        return super().form_valid(form)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Регистрация — DOPX'
         return context
 
+
+class VerifyEmailSentView(TemplateView):
+    template_name = 'auth/verify_email_sent.html'
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['page_title'] = 'Подтвердите email — DOPX'
+        return context
+
+
+class VerifyEmailView(View):
+    """Обработка клика по ссылке из письма для верификации"""
+    def get(self, request, token):
+        try:
+            user = User.objects.get(verification_token=token, is_verified=False)
+            # Проверка срока действия токена (48 часов)
+            token_age = timezone.now() - user.verification_token_created_at
+            if token_age > timedelta(hours=48):
+                messages.error(request, '❌ Ссылка для верификации устарела. Зарегистрируйтесь заново.')
+                return redirect('users:register')
+
+            # Активируем аккаунт
+            user.is_verified = True
+            user.save(update_fields=['is_verified', 'updated_at'])
+            
+            # Автоматический вход
+            login(request, user)
+            
+            # Приветственное уведомление (критическое, не отключается)
+            Notification.objects.create(
+                user=user,
+                notification_type='welcome',
+                title='👋 Добро пожаловать в DOPX!',
+                message='Ваш аккаунт активирован. Оценивайте матчи и получайте достижения!',
+                action_url='/matches/',
+                is_read=False,
+            )
+            messages.success(request, '🎉 Почта подтверждена! Добро пожаловать.')
+            return redirect('core:home')
+        except User.DoesNotExist:
+            messages.error(request, '❌ Неверная или уже использованная ссылка.')
+            return redirect('users:verify_email_invalid')
+
+
+class VerifyEmailInvalidView(TemplateView):
+    template_name = 'auth/verify_email_invalid.html'
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['page_title'] = 'Ошибка верификации — DOPX'
+        return context
+
+
 class LoginView(AuthLoginView):
-    """Вход в аккаунт"""
+    """Вход с проверкой верификации почты"""
     template_name = 'auth/login.html'
     authentication_form = UserLoginForm
-    
+
     def form_valid(self, form):
+        user = form.get_user()
+        # БЛОКИРОВКА: Если почта не подтверждена — не пускаем
+        if not user.is_verified:
+            try:
+                from notifications.tasks import send_email_verification
+                send_email_verification.delay(str(user.id), str(user.verification_token))
+            except Exception:
+                pass
+            messages.warning(self.request, '⚠️ Ваша почта не подтверждена. Мы отправили новое письмо.')
+            return redirect('users:login')
+            
         response = super().form_valid(form)
-        # Обработка "Запомнить меня"
         remember_me = self.request.POST.get('remember')
         if not remember_me:
-            self.request.session.set_expiry(0)  # Сессия истекает при закрытии браузера
+            self.request.session.set_expiry(0)
         else:
-            self.request.session.set_expiry(1209600)  # 2 недели
-        messages.success(self.request, f'👋 С возвращением, {self.request.user.username}!')
+            self.request.session.set_expiry(1209600)
+        messages.success(self.request, f'👋 С возвращением, {user.username}!')
         return response
-    
+
     def get_success_url(self):
         next_url = self.request.GET.get('next')
-        if next_url:
-            return next_url
-        return reverse_lazy('core:home')
-    
+        return next_url if next_url else reverse_lazy('core:home')
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Вход — DOPX'
         return context
 
-class LogoutView(LoginRequiredMixin, TemplateView):
-    """Выход из аккаунта"""
+
+class LogoutView(LoginRequiredMixin, View):
     def get(self, request, *args, **kwargs):
         logout(request)
-        messages.info(self.request, '👋 Вы вышли из аккаунта')
+        messages.info(request, '👋 Вы вышли из аккаунта')
         return redirect('core:home')
 
+
 class ProfileView(LoginRequiredMixin, TemplateView):
-    """Профиль пользователя с полной статистикой"""
     template_name = 'profile/dashboard.html'
-    
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         user = self.request.user
-        
-        # Статистика оценок
         stats = {
-            'total_evaluations': ContextEvaluation.objects.filter(user=user).count(),
-            'total_players': PlayerEvaluation.objects.filter(user=user).values('player').distinct().count(),
+            'total_evaluations': user.total_evaluations,
+            'total_players': user.player_evaluations.values('player').distinct().count(),
             'trust_score': round(user.trust_score, 2),
             'trust_level': user.get_trust_level(),
             'evaluation_streak': user.evaluation_streak,
-            'total_matches': EvaluationSession.objects.filter(
-                user=user,
-                status='completed'
-            ).count(),
+            'total_matches': user.evaluation_sessions.filter(status='completed').count(),
         }
-        
-        # Последние оценки
-        recent_evaluations = ContextEvaluation.objects.filter(
-            user=user
-        ).select_related(
-            'match__home_team',
-            'match__away_team',
-            'match__league'
+        recent_evaluations = user.context_evaluations.select_related(
+            'match__home_team', 'match__away_team'
         ).order_by('-created_at')[:10]
-        
-        # Достижения
         badges = UserBadge.objects.filter(user=user).order_by('-awarded_at')
-        
-        # XP
-        xp = getattr(user, 'xp', None)
-        if not xp:
-            xp, _ = UserXP.objects.get_or_create(user=user)
-        
-        # Активные сессии оценок
-        active_sessions = EvaluationSession.objects.filter(
-            user=user,
+        xp, _ = UserXP.objects.get_or_create(user=user)
+        active_sessions = user.evaluation_sessions.filter(
             status__in=['started', 'in_progress']
-        ).select_related('match__home_team', 'match__away_team').order_by('-created_at')[:5]
-        
+        ).select_related('match').order_by('-created_at')[:5]
+
         context.update({
             'user': user,
             'stats': stats,
@@ -26303,85 +25704,82 @@ class ProfileView(LoginRequiredMixin, TemplateView):
             'badges': badges,
             'xp': xp,
             'active_sessions': active_sessions,
-            'page_title': f'Профиль — {user.username}',
+            'page_title': f'Профиль — {user.username}'
         })
         return context
 
+
 class ProfileEditView(LoginRequiredMixin, UpdateView):
-    """Редактирование профиля"""
     model = User
     form_class = UserProfileForm
     template_name = 'users/profile_edit.html'
     success_url = reverse_lazy('users:profile')
-    
+
     def get_object(self):
         return self.request.user
-    
+
     def form_valid(self, form):
-        # Обработка удаления аватарки
-        if form.cleaned_data.get('delete_avatar'):
-            if self.object.avatar:
-                self.object.avatar.delete(save=False)
-                self.object.avatar = None
-        
-        messages.success(self.request, '✅ Профиль успешно обновлён')
+        if form.cleaned_data.get('delete_avatar') and self.object.avatar:
+            self.object.avatar.delete(save=False)
+            self.object.avatar = None
+        messages.success(self.request, '✅ Профиль обновлён')
         return super().form_valid(form)
-    
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Редактирование профиля — DOPX'
         return context
 
+
 class PasswordChangeViewCustom(LoginRequiredMixin, FormView):
-    """Изменение пароля"""
     template_name = 'users/password_change.html'
     form_class = CustomPasswordChangeForm
     success_url = reverse_lazy('users:profile')
-    
+
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs['user'] = self.request.user
         return kwargs
-    
+
     def form_valid(self, form):
         form.save()
         update_session_auth_hash(self.request, form.user)
-        messages.success(self.request, '✅ Пароль успешно изменён')
+        messages.success(self.request, '✅ Пароль изменён')
         return super().form_valid(form)
-    
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Изменить пароль — DOPX'
         return context
 
+
 class PasswordResetViewCustom(PasswordResetView):
-    """Сброс пароля"""
     template_name = 'auth/password_reset.html'
-    email_template_name = 'emails/password_reset_email.txt'  # Текстовая версия
-    html_email_template_name = 'emails/password_reset_email.html'  # HTML версия
+    email_template_name = 'emails/password_reset_email.txt'
+    html_email_template_name = 'emails/password_reset_email.html'
     subject_template_name = 'emails/password_reset_subject.txt'
     success_url = reverse_lazy('users:password_reset_done')
     form_class = CustomPasswordResetForm
-    
+
     def form_valid(self, form):
-        messages.success(self.request, '✅ Инструкция по сбросу пароля отправлена на email')
+        messages.success(self.request, '✅ Инструкция отправлена')
         return super().form_valid(form)
 
+
 class PasswordResetDoneViewCustom(PasswordResetDoneView):
-    """Страница после запроса сброса пароля"""
     template_name = 'auth/password_reset_done.html'
 
+
 class PasswordResetConfirmViewCustom(PasswordResetConfirmView):
-    """Подтверждение сброса пароля"""
     template_name = 'auth/password_reset_confirm.html'
     success_url = reverse_lazy('users:password_reset_complete')
 
+
 class PasswordResetCompleteViewCustom(PasswordResetCompleteView):
-    """Завершение сброса пароля"""
     template_name = 'auth/password_reset_complete.html'
 
+
 class NotificationSettingsView(LoginRequiredMixin, FormView):
-    """Настройки уведомлений /users/profile/notifications/"""
     template_name = 'users/notification_settings.html'
     form_class = NotificationSettingsForm
     success_url = reverse_lazy('users:profile')
@@ -26392,15 +25790,17 @@ class NotificationSettingsView(LoginRequiredMixin, FormView):
         return kwargs
 
     def form_valid(self, form):
-        settings_data = {
-            'email_match_finished': form.cleaned_data.get('email_match_finished', False),
-            'email_voting_closing': form.cleaned_data.get('email_voting_closing', False),
-            'email_new_badge': form.cleaned_data.get('email_new_badge', False),
-            'email_level_up': form.cleaned_data.get('email_level_up', False),
-            'email_system': form.cleaned_data.get('email_system', False),
+        user = self.request.user
+        # Явно сохраняем в JSON поле
+        user._notification_settings = {
+            'email_match_finished': form.cleaned_data.get('email_match_finished', True),
+            'email_voting_closing': form.cleaned_data.get('email_voting_closing', True),
+            'email_new_badge': form.cleaned_data.get('email_new_badge', True),
+            'email_level_up': form.cleaned_data.get('email_level_up', True),
+            'email_system': form.cleaned_data.get('email_system', True),
         }
-        self.request.user.notification_settings = settings_data
-        self.request.user.save(update_fields=['notification_settings'])
+        user.save(update_fields=['_notification_settings', 'updated_at'])
+        user.refresh_from_db()  # Сбрасываем кэш свойств
         messages.success(self.request, '✅ Настройки уведомлений сохранены')
         return super().form_valid(form)
 
@@ -26409,42 +25809,34 @@ class NotificationSettingsView(LoginRequiredMixin, FormView):
         context['page_title'] = 'Настройки уведомлений — DOPX'
         return context
 
+
 class UserLeaderboardView(ListView):
-    """Таблица лидеров пользователей по Trust Score"""
     model = User
     template_name = 'users/leaderboard.html'
     context_object_name = 'users'
     paginate_by = 20
-    
+
     def get_queryset(self):
-        return User.objects.filter(
-            is_active=True,
-            is_verified=True
-        ).annotate(
+        return User.objects.filter(is_active=True, is_verified=True).annotate(
             eval_count=Count('context_evaluations', distinct=True)
-        ).filter(
-            eval_count__gte=1
-        ).order_by('-trust_score', '-eval_count', '-total_evaluations')
-    
+        ).filter(eval_count__gte=1).order_by('-trust_score', '-eval_count')
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Рейтинг пользователей — DOPX'
-        context['leaderboard_type'] = 'users'
         return context
 
+
 class PlayerLeaderboardView(ListView):
-    """Таблица лидеров игроков по Performance Score"""
     template_name = 'players/leaderboard.html'
     context_object_name = 'players'
     paginate_by = 20
-    
+
     def get_queryset(self):
         from players.models import Player
         from aggregates.models import PlayerMatchAggregate
         from django.db.models import Avg, Count, Sum, Q
-        return Player.objects.filter(
-            is_active=True
-        ).annotate(
+        return Player.objects.filter(is_active=True).annotate(
             avg_performance=Avg('match_aggregates__performance_score'),
             total_matches=Count('match_aggregates', distinct=True),
             total_votes=Sum('match_aggregates__total_votes')
@@ -26452,10 +25844,9 @@ class PlayerLeaderboardView(ListView):
             avg_performance__isnull=False,
             total_matches__gte=1
         ).order_by('-avg_performance')
-    
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Рейтинг игроков — DOPX'
-        context['leaderboard_type'] = 'players'
         return context
 
