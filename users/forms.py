@@ -160,55 +160,55 @@ class CustomPasswordResetForm(PasswordResetForm):
     )
 
 class NotificationSettingsForm(forms.Form):
-    """Форма настроек уведомлений"""
+    """Форма настроек уведомлений (без welcome — он всегда включён)"""
+    
+    # ✅ Матч завершён / Голосование открыто
     email_match_finished = forms.BooleanField(
         required=False,
-        label='Матч завершён',
+        label='Матч завершён / Открытие голосования',
         initial=True,
-        widget=forms.CheckboxInput(attrs={
-            'class': 'toggle toggle-primary',
-        })
-    )
-    email_voting_open = forms.BooleanField(
-        required=False,
-        label='Голосование открыто',
-        initial=True,
-        widget=forms.CheckboxInput(attrs={
-            'class': 'toggle toggle-primary',
-        })
-    )
-    email_voting_closing = forms.BooleanField(
-        required=False,
-        label='Голосование закрывается',
-        initial=True,
-        widget=forms.CheckboxInput(attrs={
-            'class': 'toggle toggle-primary',
-        })
-    )
-    email_top_performance = forms.BooleanField(
-        required=False,
-        label='Игрок в топ-3',
-        initial=True,
-        widget=forms.CheckboxInput(attrs={
-            'class': 'toggle toggle-primary',
-        })
-    )
-    email_system = forms.BooleanField(
-        required=False,
-        label='Системные уведомления',
-        initial=True,
-        widget=forms.CheckboxInput(attrs={
-            'class': 'toggle toggle-primary',
-        })
+        widget=forms.CheckboxInput(attrs={'class': 'toggle toggle-primary'})
     )
     
+    # ✅ Напоминание о закрытии голосования
+    email_voting_closing = forms.BooleanField(
+        required=False,
+        label='Напоминание о закрытии голосования',
+        initial=True,
+        widget=forms.CheckboxInput(attrs={'class': 'toggle toggle-primary'})
+    )
+    
+    # ✅ Новые Достижения
+    email_new_badge = forms.BooleanField(
+        required=False,
+        label='Получение достижений',
+        initial=True,
+        widget=forms.CheckboxInput(attrs={'class': 'toggle toggle-primary'})
+    )
+    
+    # ✅ Повышение уровня
+    email_level_up = forms.BooleanField(
+        required=False,
+        label='Повышение уровня',
+        initial=True,
+        widget=forms.CheckboxInput(attrs={'class': 'toggle toggle-primary'})
+    )
+    
+    # ✅ Системные уведомления
+    email_system = forms.BooleanField(
+        required=False,
+        label='Системные новости платформы',
+        initial=True,
+        widget=forms.CheckboxInput(attrs={'class': 'toggle toggle-primary'})
+    )
+
     def __init__(self, *args, **kwargs):
         user = kwargs.pop('user', None)
         super().__init__(*args, **kwargs)
         if user and hasattr(user, 'notification_settings'):
             settings = user.notification_settings
             self.fields['email_match_finished'].initial = settings.get('email_match_finished', True)
-            self.fields['email_voting_open'].initial = settings.get('email_voting_open', True)
             self.fields['email_voting_closing'].initial = settings.get('email_voting_closing', True)
-            self.fields['email_top_performance'].initial = settings.get('email_top_performance', True)
+            self.fields['email_new_badge'].initial = settings.get('email_new_badge', True)
+            self.fields['email_level_up'].initial = settings.get('email_level_up', True)
             self.fields['email_system'].initial = settings.get('email_system', True)
