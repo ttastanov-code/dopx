@@ -1,542 +1,143 @@
 {% extends 'base.html' %}
 {% load static %}
-
 {% block content %}
-
 <!-- === HEADER === -->
-<div class="mb-8">
-    <h1 class="text-3xl font-bold mb-2">
-        <i class="ti ti-file-text mr-2"></i>
-        Правила платформы
-    </h1>
-    <p class="opacity-60">Принципы работы DOPX и правила оценки матчей</p>
+<div class="mb-6 md:mb-8 px-2 sm:px-0">
+  <h1 class="text-2xl md:text-3xl font-bold mb-2 flex items-center gap-2">
+    <i class="ti ti-file-text mr-2"></i> Правила платформы
+  </h1>
+  <p class="opacity-60 text-sm md:text-base">Принципы работы DOPX и правила оценки матчей</p>
 </div>
 
 <!-- === CONTENT === -->
-<div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
-    
-    <!-- === SIDEBAR: Навигация === -->
-    <div class="lg:col-span-1">
-        <div class="card bg-base-100 border border-base-300 sticky top-24">
-            <div class="card-body p-4">
-                <h3 class="font-bold mb-3">Содержание</h3>
-                <ul class="menu menu-sm">
-                    <li><a href="#principles" class="hover:text-primary">🎯 Принципы</a></li>
-                    <li><a href="#evaluation" class="hover:text-primary">⭐ Оценка матчей</a></li>
-                    <li><a href="#trust" class="hover:text-primary">🛡️ Trust Score</a></li>
-                    <li><a href="#gamification" class="hover:text-primary">🏆 Геймификация</a></li>
-                    <li><a href="#fairplay" class="hover:text-primary">⚖️ Fair Play</a></li>
-                    <li><a href="#privacy" class="hover:text-primary">🔒 Конфиденциальность</a></li>
-                </ul>
-            </div>
-        </div>
+<div class="grid grid-cols-1 lg:grid-cols-4 gap-4 md:gap-8 px-2 sm:px-0">
+  <!-- === SIDEBAR: Навигация (скрыт на мобильных) === -->
+  <div class="lg:col-span-1 hidden lg:block">
+    <div class="card bg-base-100 border border-base-300 sticky top-24">
+      <div class="card-body p-4">
+        <h3 class="font-bold mb-3">Содержание</h3>
+        <ul class="menu menu-sm">
+          <li><a href="#principles" class="hover:text-primary">🎯 Принципы</a></li>
+          <li><a href="#evaluation" class="hover:text-primary">⭐ Оценка матчей</a></li>
+          <li><a href="#trust" class="hover:text-primary">🛡️ Trust Score</a></li>
+          <li><a href="#gamification" class="hover:text-primary">🏆 Геймификация</a></li>
+          <li><a href="#fairplay" class="hover:text-primary">⚖️ Fair Play</a></li>
+          <li><a href="#privacy" class="hover:text-primary">🔒 Конфиденциальность</a></li>
+        </ul>
+      </div>
     </div>
-    
-    <!-- === MAIN CONTENT === -->
-    <div class="lg:col-span-3 space-y-12">
-        
-        <!-- Принципы -->
-        <section id="principles" class="scroll-mt-24">
-            <div class="card bg-base-100 border border-base-300">
-                <div class="card-body p-6">
-                    <h2 class="text-2xl font-bold mb-4 flex items-center gap-2">
-                        <i class="ti ti-target text-primary"></i>
-                        Принципы платформы
-                    </h2>
-                    
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div class="flex gap-3">
-                            <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                                <i class="ti ti-users text-primary"></i>
-                            </div>
-                            <div>
-                                <h3 class="font-semibold">Народная оценка</h3>
-                                <p class="text-sm opacity-60">Мнение болельщиков формирует объективную картину матча</p>
-                            </div>
-                        </div>
-                        
-                        <div class="flex gap-3">
-                            <div class="w-10 h-10 rounded-lg bg-secondary/10 flex items-center justify-center flex-shrink-0">
-                                <i class="ti ti-shield-check text-secondary"></i>
-                            </div>
-                            <div>
-                                <h3 class="font-semibold">Прозрачность</h3>
-                                <p class="text-sm opacity-60">Все агрегаты рассчитываются по открытым формулам</p>
-                            </div>
-                        </div>
-                        
-                        <div class="flex gap-3">
-                            <div class="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center flex-shrink-0">
-                                <i class="ti ti-scale text-accent"></i>
-                            </div>
-                            <div>
-                                <h3 class="font-semibold">Справедливость</h3>
-                                <p class="text-sm opacity-60">Система учитывает предвзятость и контекст просмотра</p>
-                            </div>
-                        </div>
-                        
-                        <div class="flex gap-3">
-                            <div class="w-10 h-10 rounded-lg bg-warning/10 flex items-center justify-center flex-shrink-0">
-                                <i class="ti ti-clock text-warning"></i>
-                            </div>
-                            <div>
-                                <h3 class="font-semibold">48 часов</h3>
-                                <p class="text-sm opacity-60">Голосование открыто 48 часов после завершения матча</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </section>
-        
-        <!-- Оценка матчей -->
-        <section id="evaluation" class="scroll-mt-24">
-            <div class="card bg-base-100 border border-base-300">
-                <div class="card-body p-6">
-                    <h2 class="text-2xl font-bold mb-4 flex items-center gap-2">
-                        <i class="ti ti-star text-warning"></i>
-                        Как оценивать матчи
-                    </h2>
-                    
-                    <div class="space-y-6">
-                        <!-- Шаг 1 -->
-                        <div class="flex gap-4">
-                            <div class="w-12 h-12 rounded-full bg-primary text-primary-content flex items-center justify-center font-bold flex-shrink-0">
-                                1
-                            </div>
-                            <div class="flex-1">
-                                <h3 class="font-semibold text-lg mb-2">Контекст просмотра</h3>
-                                <p class="opacity-60 mb-3">Укажите, как вы смотрели матч и за какую команду болеете</p>
-                                <div class="flex flex-wrap gap-2">
-                                    <span class="badge badge-sm badge-outline">Полный матч</span>
-                                    <span class="badge badge-sm badge-outline">Только голы</span>
-                                    <span class="badge badge-sm badge-outline">Фрагменты</span>
-                                    <span class="badge badge-sm badge-outline">На стадионе</span>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Шаг 2 -->
-                        <div class="flex gap-4">
-                            <div class="w-12 h-12 rounded-full bg-primary text-primary-content flex items-center justify-center font-bold flex-shrink-0">
-                                2
-                            </div>
-                            <div class="flex-1">
-                                <h3 class="font-semibold text-lg mb-2">Оценка команд</h3>
-                                <p class="opacity-60 mb-3">Оцените обе команды по 4 критериям (1-10)</p>
-                                <div class="grid grid-cols-2 gap-2 text-sm">
-                                    <div class="flex items-center gap-2">
-                                        <i class="ti ti-chess opacity-60"></i>
-                                        <span>Тактика</span>
-                                    </div>
-                                    <div class="flex items-center gap-2">
-                                        <i class="ti ti-flame opacity-60"></i>
-                                        <span>Самоотдача</span>
-                                    </div>
-                                    <div class="flex items-center gap-2">
-                                        <i class="ti ti-network opacity-60"></i>
-                                        <span>Организация</span>
-                                    </div>
-                                    <div class="flex items-center gap-2">
-                                        <i class="ti ti-brain opacity-60"></i>
-                                        <span>Менталитет</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Шаг 3 -->
-                        <div class="flex gap-4">
-                            <div class="w-12 h-12 rounded-full bg-primary text-primary-content flex items-center justify-center font-bold flex-shrink-0">
-                                3
-                            </div>
-                            <div class="flex-1">
-                                <h3 class="font-semibold text-lg mb-2">Оценка игроков</h3>
-                                <p class="opacity-60 mb-3">Оценивайте только тех игроков, которых запомнили</p>
-                                <div class="flex flex-wrap gap-2">
-                                    <span class="badge badge-sm badge-outline">Вклад (1-10)</span>
-                                    <span class="badge badge-sm badge-outline">Риск (1-10)</span>
-                                    <span class="badge badge-sm badge-outline">Потенциал (1-10)</span>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Шаг 4-6 -->
-                        <div class="flex gap-4">
-                            <div class="w-12 h-12 rounded-full bg-primary text-primary-content flex items-center justify-center font-bold flex-shrink-0">
-                                4-6
-                            </div>
-                            <div class="flex-1">
-                                <h3 class="font-semibold text-lg mb-2">Тренеры, Судья, Финал</h3>
-                                <p class="opacity-60 mb-3">Завершите оценку тренеров, судейства и общих впечатлений</p>
-                                <div class="flex flex-wrap gap-2">
-                                    <span class="badge badge-sm badge-outline">Тактика тренера</span>
-                                    <span class="badge badge-sm badge-outline">Влияние судьи</span>
-                                    <span class="badge badge-sm badge-outline">Зрелищность</span>
-                                    <span class="badge badge-sm badge-outline">Напряжение</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </section>
-        
-        <!-- Trust Score -->
-        <section id="trust" class="scroll-mt-24">
-            <div class="card bg-base-100 border border-base-300">
-                <div class="card-body p-6">
-                    <h2 class="text-2xl font-bold mb-4 flex items-center gap-2">
-                        <i class="ti ti-shield-check text-success"></i>
-                        Trust Score
-                    </h2>
-                    
-                    <p class="opacity-60 mb-6">
-                        Trust Score — показатель надёжности ваших оценок. Рассчитывается на основе 
-                        соответствия вашим оценкам и средним оценкам сообщества.
-                    </p>
-                    
-                    <div class="overflow-x-auto">
-                        <table class="table table-zebra">
-                            <thead>
-                                <tr>
-                                    <th>Диапазон</th>
-                                    <th>Уровень</th>
-                                    <th>Описание</th>
-                                    <th>Вес голоса</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr class="bg-success/10">
-                                    <td class="font-mono">≥ 1.8</td>
-                                    <td><span class="badge badge-success">Эксперт</span></td>
-                                    <td>Высокая точность оценок</td>
-                                    <td class="font-bold">+20%</td>
-                                </tr>
-                                <tr class="bg-warning/10">
-                                    <td class="font-mono">1.4 - 1.79</td>
-                                    <td><span class="badge badge-warning">Надёжный</span></td>
-                                    <td>Стабильные оценки</td>
-                                    <td class="font-bold">+10%</td>
-                                </tr>
-                                <tr>
-                                    <td class="font-mono">1.0 - 1.39</td>
-                                    <td><span class="badge badge-ghost">Стандарт</span></td>
-                                    <td>Базовый уровень</td>
-                                    <td class="font-bold">100%</td>
-                                </tr>
-                                <tr class="bg-error/10">
-                                    <td class="font-mono">&lt; 1.0</td>
-                                    <td><span class="badge badge-error">Новичок</span></td>
-                                    <td>Требуется больше оценок</td>
-                                    <td class="font-bold">-20%</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                    
-                    <div class="alert alert-info mt-6">
-                        <i class="ti ti-info-circle"></i>
-                        <div>
-                            <h3 class="font-bold">Как повысить Trust Score?</h3>
-                            <ul class="text-sm mt-2 space-y-1">
-                                <li>• Оценивайте больше матчей (минимум 10 для стабильности)</li>
-                                <li>• Смотрите матчи полностью (вес +20%)</li>
-                                <li>• Избегайте явной предвзятости к своей команде</li>
-                                <li>• Будьте последовательны в оценках</li>
-                            </ul>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </section>
-        
-        <!-- Геймификация -->
-        <section id="gamification" class="scroll-mt-24">
-            <div class="card bg-base-100 border border-base-300">
-                <div class="card-body p-6">
-                    <h2 class="text-2xl font-bold mb-4 flex items-center gap-2">
-                        <i class="ti ti-trophy text-warning"></i>
-                        Геймификация
-                    </h2>
-                    
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <!-- XP -->
-                        <div>
-                            <h3 class="font-semibold text-lg mb-3">Система опыта</h3>
-                            <div class="space-y-2 text-sm">
-                                <div class="flex justify-between p-2 bg-base-200 rounded">
-                                    <span>Оценка матча</span>
-                                    <span class="font-bold text-primary">+10 XP</span>
-                                </div>
-                                <div class="flex justify-between p-2 bg-base-200 rounded">
-                                    <span>Оценка игрока</span>
-                                    <span class="font-bold text-primary">+2 XP</span>
-                                </div>
-                                <div class="flex justify-between p-2 bg-base-200 rounded">
-                                    <span>Серия оценок</span>
-                                    <span class="font-bold text-primary">+5 XP</span>
-                                </div>
-                            </div>
-                            <div class="mt-4 text-sm opacity-60">
-                                Уровень = (Total XP ÷ 100) + 1
-                            </div>
-                        </div>
-                        
-                        <!-- Достижения -->
-                        <div>
-                            <h3 class="font-semibold text-lg mb-3">Достижения</h3>
-                            <div class="flex flex-wrap gap-2">
-                                <span class="tooltip" data-tip="Первая оценка матча">
-                                    <div class="w-12 h-12 rounded-lg bg-accent/10 flex items-center justify-center">
-                                        <i class="ti ti-star text-accent"></i>
-                                    </div>
-                                </span>
-                                <span class="tooltip" data-tip="10 матчей подряд">
-                                    <div class="w-12 h-12 rounded-lg bg-success/10 flex items-center justify-center">
-                                        <i class="ti ti-flame text-success"></i>
-                                    </div>
-                                </span>
-                                <span class="tooltip" data-tip="50 матчей подряд">
-                                    <div class="w-12 h-12 rounded-lg bg-warning/10 flex items-center justify-center">
-                                        <i class="ti ti-flame text-warning"></i>
-                                    </div>
-                                </span>
-                                <span class="tooltip" data-tip="Точный аналитик">
-                                    <div class="w-12 h-12 rounded-lg bg-info/10 flex items-center justify-center">
-                                        <i class="ti ti-chart-bar text-info"></i>
-                                    </div>
-                                </span>
-                                <span class="tooltip" data-tip="Без предвзятости">
-                                    <div class="w-12 h-12 rounded-lg bg-neutral/10 flex items-center justify-center">
-                                        <i class="ti ti-scale text-neutral"></i>
-                                    </div>
-                                </span>
-                                <span class="tooltip" data-tip="Ранняя пташка">
-                                    <div class="w-12 h-12 rounded-lg bg-error/10 flex items-center justify-center">
-                                        <i class="ti ti-clock text-error"></i>
-                                    </div>
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </section>
-        
-        <!-- Fair Play -->
-        <section id="fairplay" class="scroll-mt-24">
-            <div class="card bg-base-100 border border-base-300">
-                <div class="card-body p-6">
-                    <h2 class="text-2xl font-bold mb-4 flex items-center gap-2">
-                        <i class="ti ti-scale text-info"></i>
-                        Fair Play
-                    </h2>
-                    
-                    <div class="space-y-4">
-                        <div class="alert alert-warning">
-                            <i class="ti ti-alert-triangle"></i>
-                            <div>
-                                <h3 class="font-bold">Запрещено</h3>
-                                <ul class="text-sm mt-2 space-y-1">
-                                    <li>• Массовая накрутка оценок (боты)</li>
-                                    <li>• Координация оценок в чатах</li>
-                                    <li>• Использование скриптов для автоматизации</li>
-                                    <li>• Создание множественных аккаунтов</li>
-                                </ul>
-                            </div>
-                        </div>
-                        
-                        <div class="alert alert-success">
-                            <i class="ti ti-check"></i>
-                            <div>
-                                <h3 class="font-bold">Поощряется</h3>
-                                <ul class="text-sm mt-2 space-y-1">
-                                    <li>• Честные и объективные оценки</li>
-                                    <li>• Регулярное участие</li>
-                                    <li>• Просмотр полных матчей</li>
-                                    <li>• Оценка разных команд и игроков</li>
-                                </ul>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </section>
- 
-        <!-- Политика конфиденциальности -->
-        <section id="privacy" class="scroll-mt-24">
-            <div class="card bg-base-100 border border-base-300">
-                <div class="card-body p-6">
-                    <h2 class="text-2xl font-bold mb-4 flex items-center gap-2">
-                        <i class="ti ti-lock text-neutral"></i>
-                        Конфиденциальность и защита данных
-                    </h2>
-                    <div class="space-y-4 text-sm opacity-80">
-                        <div class="alert alert-info">
-                            <i class="ti ti-info-circle"></i>
-                            <div>
-                                <h3 class="font-bold">Мы уважаем вашу приватность</h3>
-                                <p class="text-sm mt-1">
-                                    Ваши персональные данные защищены и не передаются третьим лицам без вашего согласия.
-                                </p>
-                            </div>
-                        </div>
-                        
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div class="p-4 bg-base-200 rounded-lg">
-                                <h3 class="font-semibold mb-2">📤 Публичные данные</h3>
-                                <ul class="space-y-1 text-xs opacity-70">
-                                    <li>• Имя пользователя</li>
-                                    <li>• Trust Score</li>
-                                    <li>• Количество оценок</li>
-                                    <li>• Достижения</li>
-                                    <li>• Уровень</li>
-                                </ul>
-                            </div>
-                            <div class="p-4 bg-base-200 rounded-lg">
-                                <h3 class="font-semibold mb-2">🔒 Приватные данные</h3>
-                                <ul class="space-y-1 text-xs opacity-70">
-                                    <li>• Email</li>
-                                    <li>• Пароль (хэшируется)</li>
-                                    <li>• IP адрес</li>
-                                    <li>• История сессий</li>
-                                    <li>• Настройки уведомлений</li>
-                                </ul>
-                            </div>
-                        </div>
-                        
-                        <div class="p-4 bg-base-200 rounded-lg">
-                            <h3 class="font-semibold mb-2">📋 Сбор данных</h3>
-                            <ul class="space-y-1 text-xs opacity-70">
-                                <li>• Данные оценок матчей (для расчёта рейтингов)</li>
-                                <li>• Контекст просмотра (для учёта веса голоса)</li>
-                                <li>• Технические данные (browser, device) для безопасности</li>
-                                <li>• Cookie для работы сессий</li>
-                            </ul>
-                        </div>
-                        
-                        <div class="p-4 bg-base-200 rounded-lg">
-                            <h3 class="font-semibold mb-2">🛡️ Безопасность</h3>
-                            <ul class="space-y-1 text-xs opacity-70">
-                                <li>• Пароли хэшируются алгоритмом PBKDF2</li>
-                                <li>• HTTPS шифрование всех соединений</li>
-                                <li>• Защита от CSRF-атак</li>
-                                <li>• Регулярное резервное копирование</li>
-                            </ul>
-                        </div>
-                        
-                        <div class="p-4 bg-base-200 rounded-lg">
-                            <h3 class="font-semibold mb-2">📧 Коммуникация</h3>
-                            <ul class="space-y-1 text-xs opacity-70">
-                                <li>• Email только для важных уведомлений</li>
-                                <li>• Возможность отписаться от рассылок</li>
-                                <li>• Спам не рассылается</li>
-                            </ul>
-                        </div>
-                        
-                        <div class="p-4 bg-base-200 rounded-lg">
-                            <h3 class="font-semibold mb-2">🗑️ Удаление данных</h3>
-                            <p class="text-xs opacity-70">
-                                Для удаления аккаунта и всех персональных данных напишите на 
-                                <a href="mailto:support@dopx.kz" class="link link-primary">support@dopx.kz</a>
-                                Удаление выполняется в течение 30 дней.
-                            </p>
-                        </div>
-                        
-                        <div class="p-4 bg-base-200 rounded-lg">
-                            <h3 class="font-semibold mb-2">👶 Возраст</h3>
-                            <p class="text-xs opacity-70">
-                                Платформа предназначена для пользователей старше 16 лет. 
-                                Регистрация лиц младше 16 лет требует согласия родителей.
-                            </p>
-                        </div>
-                        
-                        <div class="p-4 bg-base-200 rounded-lg">
-                            <h3 class="font-semibold mb-2">📍 Юрисдикция</h3>
-                            <p class="text-xs opacity-70">
-                                Платформа работает в соответствии с законодательством Республики Казахстан.
-                                Все споры решаются в суде по месту регистрации компании.
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </section>
+  </div>
 
-        <!-- Права пользователей -->
-        <section id="rights" class="scroll-mt-24">
-            <div class="card bg-base-100 border border-base-300">
-                <div class="card-body p-6">
-                    <h2 class="text-2xl font-bold mb-4 flex items-center gap-2">
-                        <i class="ti ti-scale text-info"></i>
-                        Права пользователей
-                    </h2>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div class="flex gap-3">
-                            <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                                <i class="ti ti-eye text-primary"></i>
-                            </div>
-                            <div>
-                                <h3 class="font-semibold">Доступ к данным</h3>
-                                <p class="text-sm opacity-60">Право запросить копию всех ваших данных</p>
-                            </div>
-                        </div>
-                        <div class="flex gap-3">
-                            <div class="w-10 h-10 rounded-lg bg-secondary/10 flex items-center justify-center flex-shrink-0">
-                                <i class="ti ti-edit text-secondary"></i>
-                            </div>
-                            <div>
-                                <h3 class="font-semibold">Исправление</h3>
-                                <p class="text-sm opacity-60">Право исправить неточные данные</p>
-                            </div>
-                        </div>
-                        <div class="flex gap-3">
-                            <div class="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center flex-shrink-0">
-                                <i class="ti ti-trash text-accent"></i>
-                            </div>
-                            <div>
-                                <h3 class="font-semibold">Удаление</h3>
-                                <p class="text-sm opacity-60">Право на удаление аккаунта</p>
-                            </div>
-                        </div>
-                        <div class="flex gap-3">
-                            <div class="w-10 h-10 rounded-lg bg-warning/10 flex items-center justify-center flex-shrink-0">
-                                <i class="ti ti-download text-warning"></i>
-                            </div>
-                            <div>
-                                <h3 class="font-semibold">Перенос</h3>
-                                <p class="text-sm opacity-60">Право экспортировать свои данные</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </section>
+  <!-- === MAIN CONTENT === -->
+  <div class="lg:col-span-3 space-y-8 md:space-y-12">
+    <!-- Принципы -->
+    <section id="principles" class="scroll-mt-24">
+      <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4 md:p-6">
+          <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4 flex items-center gap-2"><i class="ti ti-target text-primary"></i> Принципы платформы</h2>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
+            <div class="flex gap-3"><div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0"><i class="ti ti-users text-primary"></i></div><div><h3 class="font-semibold text-sm md:text-base">Народная оценка</h3><p class="text-xs md:text-sm opacity-60">Мнение болельщиков формирует объективную картину матча</p></div></div>
+            <div class="flex gap-3"><div class="w-10 h-10 rounded-lg bg-secondary/10 flex items-center justify-center flex-shrink-0"><i class="ti ti-shield-check text-secondary"></i></div><div><h3 class="font-semibold text-sm md:text-base">Прозрачность</h3><p class="text-xs md:text-sm opacity-60">Все агрегаты рассчитываются по открытым формулам</p></div></div>
+            <div class="flex gap-3"><div class="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center flex-shrink-0"><i class="ti ti-scale text-accent"></i></div><div><h3 class="font-semibold text-sm md:text-base">Справедливость</h3><p class="text-xs md:text-sm opacity-60">Система учитывает предвзятость и контекст просмотра</p></div></div>
+            <div class="flex gap-3"><div class="w-10 h-10 rounded-lg bg-warning/10 flex items-center justify-center flex-shrink-0"><i class="ti ti-clock text-warning"></i></div><div><h3 class="font-semibold text-sm md:text-base">48 часов</h3><p class="text-xs md:text-sm opacity-60">Голосование открыто 48 часов после завершения матча</p></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
 
-        <!-- Контакты для вопросов по данным -->
-        <div class="card bg-gradient-to-br from-primary to-primary/80">
-            <div class="card-body p-6 text-center">
-                <h3 class="text-2xl font-bold mb-2">Вопросы по конфиденциальности?</h3>
-                <p class="opacity-90 mb-4">Напишите нам на email для защиты данных</p>
-                <a href="mailto:support@dopx.kz" class="btn btn-ghost btn-lg">
-                    <i class="ti ti-mail"></i>
-                    support@dopx.kz
-                </a>
-            </div>
+    <!-- Оценка матчей -->
+    <section id="evaluation" class="scroll-mt-24">
+      <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4 md:p-6">
+          <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4 flex items-center gap-2"><i class="ti ti-star text-warning"></i> Как оценивать матчи</h2>
+          <div class="space-y-4 md:space-y-6">
+            <div class="flex gap-3 md:gap-4"><div class="w-10 h-10 md:w-12 md:h-12 rounded-full bg-primary text-primary-content flex items-center justify-center font-bold flex-shrink-0">1</div><div class="flex-1"><h3 class="font-semibold text-base md:text-lg mb-1 md:mb-2">Контекст просмотра</h3><p class="opacity-60 text-xs md:text-sm mb-2 md:mb-3">Укажите, как вы смотрели матч и за какую команду болеете</p><div class="flex flex-wrap gap-2"><span class="badge badge-xs md:badge-sm badge-outline">Полный матч</span><span class="badge badge-xs md:badge-sm badge-outline">Только голы</span><span class="badge badge-xs md:badge-sm badge-outline">Фрагменты</span><span class="badge badge-xs md:badge-sm badge-outline">На стадионе</span></div></div></div>
+            <div class="flex gap-3 md:gap-4"><div class="w-10 h-10 md:w-12 md:h-12 rounded-full bg-primary text-primary-content flex items-center justify-center font-bold flex-shrink-0">2</div><div class="flex-1"><h3 class="font-semibold text-base md:text-lg mb-1 md:mb-2">Оценка команд</h3><p class="opacity-60 text-xs md:text-sm mb-2 md:mb-3">Оцените обе команды по 4 критериям (1-10)</p><div class="grid grid-cols-2 gap-2 text-xs md:text-sm"><div class="flex items-center gap-2"><i class="ti ti-chess opacity-60"></i><span>Тактика</span></div><div class="flex items-center gap-2"><i class="ti ti-flame opacity-60"></i><span>Самоотдача</span></div><div class="flex items-center gap-2"><i class="ti ti-network opacity-60"></i><span>Организация</span></div><div class="flex items-center gap-2"><i class="ti ti-brain opacity-60"></i><span>Менталитет</span></div></div></div></div>
+            <div class="flex gap-3 md:gap-4"><div class="w-10 h-10 md:w-12 md:h-12 rounded-full bg-primary text-primary-content flex items-center justify-center font-bold flex-shrink-0">3</div><div class="flex-1"><h3 class="font-semibold text-base md:text-lg mb-1 md:mb-2">Оценка игроков</h3><p class="opacity-60 text-xs md:text-sm mb-2 md:mb-3">Оценивайте только тех игроков, которых запомнили</p><div class="flex flex-wrap gap-2"><span class="badge badge-xs md:badge-sm badge-outline">Вклад (1-10)</span><span class="badge badge-xs md:badge-sm badge-outline">Риск (1-10)</span><span class="badge badge-xs md:badge-sm badge-outline">Потенциал (1-10)</span></div></div></div>
+            <div class="flex gap-3 md:gap-4"><div class="w-10 h-10 md:w-12 md:h-12 rounded-full bg-primary text-primary-content flex items-center justify-center font-bold flex-shrink-0">4-6</div><div class="flex-1"><h3 class="font-semibold text-base md:text-lg mb-1 md:mb-2">Тренеры, Судья, Финал</h3><p class="opacity-60 text-xs md:text-sm mb-2 md:mb-3">Завершите оценку тренеров, судейства и общих впечатлений</p><div class="flex flex-wrap gap-2"><span class="badge badge-xs md:badge-sm badge-outline">Тактика тренера</span><span class="badge badge-xs md:badge-sm badge-outline">Влияние судьи</span><span class="badge badge-xs md:badge-sm badge-outline">Зрелищность</span><span class="badge badge-xs md:badge-sm badge-outline">Напряжение</span></div></div></div>
+          </div>
         </div>
-        
-        <!-- CTA -->
-        <div class="card bg-gradient-to-br from-primary to-primary/80">
-            <div class="card-body p-6 text-center">
-                <h3 class="text-2xl font-bold mb-2">Готовы начать?</h3>
-                <p class="opacity-90 mb-4">Оцените свой первый матч и получите +10 XP</p>
-                <a href="{% url 'matches:list' %}?status=finished" class="btn btn-primary btn-lg">
-                    К матчам
-                </a>
-            </div>
+      </div>
+    </section>
+
+    <!-- Trust Score -->
+    <section id="trust" class="scroll-mt-24">
+      <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4 md:p-6">
+          <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4 flex items-center gap-2"><i class="ti ti-shield-check text-success"></i> Trust Score</h2>
+          <p class="opacity-60 mb-4 md:mb-6 text-sm md:text-base">Trust Score — показатель надёжности ваших оценок. Рассчитывается на основе соответствия вашим оценкам и средним оценкам сообщества.</p>
+          <div class="overflow-x-auto -mx-2 px-2 md:mx-0 md:px-0">
+            <table class="table table-zebra min-w-[600px]">
+              <thead><tr><th>Диапазон</th><th>Уровень</th><th>Описание</th><th>Вес голоса</th></tr></thead>
+              <tbody>
+                <tr class="bg-success/10"><td class="font-mono">≥ 1.8</td><td><span class="badge badge-sm md:badge-md badge-success">Эксперт</span></td><td>Высокая точность оценок</td><td class="font-bold">+20%</td></tr>
+                <tr class="bg-warning/10"><td class="font-mono">1.4 - 1.79</td><td><span class="badge badge-sm md:badge-md badge-warning">Надёжный</span></td><td>Стабильные оценки</td><td class="font-bold">+10%</td></tr>
+                <tr><td class="font-mono">1.0 - 1.39</td><td><span class="badge badge-sm md:badge-md badge-ghost">Стандарт</span></td><td>Базовый уровень</td><td class="font-bold">100%</td></tr>
+                <tr class="bg-error/10"><td class="font-mono">&lt; 1.0</td><td><span class="badge badge-sm md:badge-md badge-error">Новичок</span></td><td>Требуется больше оценок</td><td class="font-bold">-20%</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="alert alert-info mt-4 md:mt-6 text-xs md:text-sm"><i class="ti ti-info-circle"></i><div><h3 class="font-bold">Как повысить Trust Score?</h3><ul class="mt-2 space-y-1"><li>• Оценивайте больше матчей (минимум 10 для стабильности)</li><li>• Смотрите матчи полностью (вес +20%)</li><li>• Избегайте явной предвзятости к своей команде</li><li>• Будьте последовательны в оценках</li></ul></div></div>
         </div>
+      </div>
+    </section>
+
+    <!-- Геймификация -->
+    <section id="gamification" class="scroll-mt-24">
+      <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4 md:p-6">
+          <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4 flex items-center gap-2"><i class="ti ti-trophy text-warning"></i> Геймификация</h2>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+            <div><h3 class="font-semibold text-base md:text-lg mb-2 md:mb-3">Система опыта</h3><div class="space-y-2 text-xs md:text-sm"><div class="flex justify-between p-2 bg-base-200 rounded"><span>Оценка матча</span><span class="font-bold text-primary">+10 XP</span></div><div class="flex justify-between p-2 bg-base-200 rounded"><span>Оценка игрока</span><span class="font-bold text-primary">+2 XP</span></div><div class="flex justify-between p-2 bg-base-200 rounded"><span>Серия оценок</span><span class="font-bold text-primary">+5 XP</span></div></div><div class="mt-3 md:mt-4 text-xs md:text-sm opacity-60">Уровень = (Total XP ÷ 100) + 1</div></div>
+            <div><h3 class="font-semibold text-base md:text-lg mb-2 md:mb-3">Достижения</h3><div class="flex flex-wrap gap-2"><span class="tooltip" data-tip="Первая оценка оценка матча"><div class="w-10 h-10 md:w-12 md:h-12 rounded-lg bg-accent/10 flex items-center justify-center"><i class="ti ti-star text-accent"></i></div></span><span class="tooltip" data-tip="10 матчей подряд"><div class="w-10 h-10 md:w-12 md:h-12 rounded-lg bg-success/10 flex items-center justify-center"><i class="ti ti-flame text-success"></i></div></span><span class="tooltip" data-tip="50 матчей подряд"><div class="w-10 h-10 md:w-12 md:h-12 rounded-lg bg-warning/10 flex items-center justify-center"><i class="ti ti-flame text-warning"></i></div></span><span class="tooltip" data-tip="Точный аналитик"><div class="w-10 h-10 md:w-12 md:h-12 rounded-lg bg-info/10 flex items-center justify-center"><i class="ti ti-chart-bar text-info"></i></div></span><span class="tooltip" data-tip="Без предвзятости"><div class="w-10 h-10 md:w-12 md:h-12 rounded-lg bg-neutral/10 flex items-center justify-center"><i class="ti ti-scale text-neutral"></i></div></span><span class="tooltip" data-tip="Ранняя пташка"><div class="w-10 h-10 md:w-12 md:h-12 rounded-lg bg-error/10 flex items-center justify-center"><i class="ti ti-clock text-error"></i></div></span></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Fair Play -->
+    <section id="fairplay" class="scroll-mt-24">
+      <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4 md:p-6">
+          <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4 flex items-center gap-2"><i class="ti ti-scale text-info"></i> Fair Play</h2>
+          <div class="space-y-3 md:space-y-4">
+            <div class="alert alert-warning text-xs md:text-sm"><i class="ti ti-alert-triangle"></i><div><h3 class="font-bold">Запрещено</h3><ul class="mt-2 space-y-1"><li>• Массовая накрутка оценок (боты)</li><li>• Координация оценок в чатах</li><li>• Использование скриптов для автоматизации</li><li>• Создание множественных аккаунтов</li></ul></div></div>
+            <div class="alert alert-success text-xs md:text-sm"><i class="ti ti-check"></i><div><h3 class="font-bold">Поощряется</h3><ul class="mt-2 space-y-1"><li>• Честные и объективные оценки</li><li>• Регулярное участие</li><li>• Просмотр полных матчей</li><li>• Оценка разных команд и игроков</li></ul></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Политика конфиденциальности -->
+    <section id="privacy" class="scroll-mt-24">
+      <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4 md:p-6">
+          <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4 flex items-center gap-2"><i class="ti ti-lock text-neutral"></i> Конфиденциальность и защита данных</h2>
+          <div class="space-y-3 md:space-y-4 text-xs md:text-sm opacity-80">
+            <div class="alert alert-info"><i class="ti ti-info-circle"></i><div><h3 class="font-bold">Мы уважаем вашу приватность</h3><p class="mt-1">Ваши персональные данные защищены и не передаются третьим лицам без вашего согласия.</p></div></div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
+              <div class="p-3 md:p-4 bg-base-200 rounded-lg"><h3 class="font-semibold mb-2">📤 Публичные данные</h3><ul class="space-y-1 text-[10px] md:text-xs opacity-70"><li>• Имя пользователя</li><li>• Trust Score</li><li>• Количество оценок</li><li>• Достижения</li><li>• Уровень</li></ul></div>
+              <div class="p-3 md:p-4 bg-base-200 rounded-lg"><h3 class="font-semibold mb-2">🔒 Приватные данные</h3><ul class="space-y-1 text-[10px] md:text-xs opacity-70"><li>• Email</li><li>• Пароль (хэшируется)</li><li>• IP адрес</li><li>• История сессий</li><li>• Настройки уведомлений</li></ul></div>
+            </div>
+            <div class="p-3 md:p-4 bg-base-200 rounded-lg"><h3 class="font-semibold mb-2">📋 Сбор данных</h3><ul class="space-y-1 text-[10px] md:text-xs opacity-70"><li>• Данные оценок матчей (для расчёта рейтингов)</li><li>• Контекст просмотра (для учёта веса голоса)</li><li>• Технические данные (browser, device) для безопасности</li><li>• Cookie для работы сессий</li></ul></div>
+            <div class="p-3 md:p-4 bg-base-200 rounded-lg"><h3 class="font-semibold mb-2">🛡️ Безопасность</h3><ul class="space-y-1 text-[10px] md:text-xs opacity-70"><li>• Пароли хэшируются алгоритмом PBKDF2</li><li>• HTTPS шифрование всех соединений</li><li>• Защита от CSRF-атак</li><li>• Регулярное резервное копирование</li></ul></div>
+            <div class="p-3 md:p-4 bg-base-200 rounded-lg"><h3 class="font-semibold mb-2">📧 Коммуникация</h3><ul class="space-y-1 text-[10px] md:text-xs opacity-70"><li>• Email только для важных уведомлений</li><li>• Возможность отписаться от рассылок</li><li>• Спам не рассылается</li></ul></div>
+            <div class="p-3 md:p-4 bg-base-200 rounded-lg"><h3 class="font-semibold mb-2">🗑️ Удаление данных</h3><p class="text-[10px] md:text-xs opacity-70">Для удаления аккаунта и всех персональных данных напишите на <a href="mailto:support@dopx.kz" class="link link-primary">support@dopx.kz</a> Удаление выполняется в течение 30 дней.</p></div>
+            <div class="p-3 md:p-4 bg-base-200 rounded-lg"><h3 class="font-semibold mb-2">👶 Возраст</h3><p class="text-[10px] md:text-xs opacity-70">Платформа предназначена для пользователей старше 16 лет. Регистрация лиц младше 16 лет требует согласия родителей.</p></div>
+            <div class="p-3 md:p-4 bg-base-200 rounded-lg"><h3 class="font-semibold mb-2">📍 Юрисдикция</h3><p class="text-[10px] md:text-xs opacity-70">Платформа работает в соответствии с законодательством Республики Казахстан. Все споры решаются в суде по месту регистрации компании.</p></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CTA -->
+    <div class="card bg-gradient-to-br from-primary to-primary/80">
+      <div class="card-body p-4 md:p-6 text-center">
+        <h3 class="text-xl md:text-2xl font-bold mb-2">Готовы начать?</h3>
+        <p class="opacity-90 mb-3 md:mb-4 text-sm md:text-base">Оцените свой первый матч и получите +10 XP</p>
+        <a href="{% url 'matches:list' %}?status=finished" class="btn btn-primary btn-md md:btn-lg">К матчам</a>
+      </div>
     </div>
+  </div>
 </div>
-
 {% endblock %}

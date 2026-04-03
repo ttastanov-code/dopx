@@ -2,38 +2,36 @@
 HTMX partial для прогресс-бара wizard-оценки
 Использование: hx-get="{% url 'evaluations:context' match.id %}" hx-target="#progress-container"
 {% endcomment %}
-
-<div id="progress-container">
+<div id="progress-container" class="px-2 sm:px-0">
     <!-- Progress Bar -->
-    <div class="mb-8">
+    <div class="mb-6 sm:mb-8">
         <div class="flex items-center justify-between mb-2">
-            <span class="text-sm font-medium">Шаг {{ step }} из {{ total_steps }}</span>
-            <span class="text-sm opacity-60">{{ progress }}% завершено</span>
+            <span class="text-xs sm:text-sm font-medium text-base-content/70">Шаг {{ step }} из {{ total_steps }}</span>
+            <span class="text-xs sm:text-sm font-medium text-primary">{{ progress }}% завершено</span>
         </div>
-        <div class="w-full bg-base-200 rounded-full h-2">
-            <div class="bg-primary h-2 rounded-full transition-all duration-300" 
+        <div class="w-full bg-base-200 rounded-full h-2 sm:h-2.5">
+            <div class="bg-primary h-2 sm:h-2.5 rounded-full transition-all duration-300"
                  style="width: {{ progress }}%"></div>
         </div>
-        
         <!-- Steps Indicator -->
-        <div class="flex justify-between mt-4">
+        <div class="flex justify-between mt-3 sm:mt-4 px-1">
             {% for i in "123456"|make_list %}
-            <div class="flex flex-col items-center">
-                <div class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold
+            <div class="flex flex-col items-center flex-1">
+                <div class="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-xs sm:text-sm font-bold transition-all
                     {% if i|stringformat:"s" == step|stringformat:"s" %}
-                        bg-primary text-primary-content
+                    bg-primary text-primary-content scale-110
                     {% elif i|stringformat:"s" < step|stringformat:"s" %}
-                        bg-success text-success-content
+                    bg-success text-success-content
                     {% else %}
-                        bg-base-300 opacity-50
+                    bg-base-300 opacity-40
                     {% endif %}">
                     {% if i|stringformat:"s" < step|stringformat:"s" %}
-                    <i class="ti ti-check"></i>
+                    <i class="ti ti-check text-sm"></i>
                     {% else %}
                     {{ i }}
                     {% endif %}
                 </div>
-                <span class="text-xs mt-1 opacity-60 hidden md:block">
+                <span class="text-[10px] sm:text-xs mt-1 opacity-50 hidden sm:block truncate w-full text-center px-1">
                     {% if forloop.counter == 1 %}Контекст
                     {% elif forloop.counter == 2 %}Команды
                     {% elif forloop.counter == 3 %}Игроки
