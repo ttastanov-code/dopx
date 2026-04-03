@@ -4,48 +4,43 @@
 
 {% block content %}
 <!-- === PROGRESS BAR === -->
-<div class="max-w-4xl mx-auto mb-8">
-    <div class="flex items-center justify-between mb-3">
-        <span class="text-sm font-semibold text-base-content/70">
-            Шаг {{ step }} из {{ total_steps }}
-        </span>
-        <span class="text-sm font-medium text-primary">{{ progress }}% завершено</span>
-    </div>
-    <div class="w-full bg-base-200 rounded-full h-2.5">
-        <div class="bg-gradient-to-r from-primary to-primary/70 h-2.5 rounded-full transition-all duration-500"
-             style="width: {{ progress }}%"></div>
-    </div>
+<div class="max-w-4xl mx-auto mb-6 px-3">
+    {% include 'evaluations/_evaluation_progress.html' with step=1 total_steps=6 progress=progress %}
 </div>
 
 <!-- === MATCH INFO === -->
-<div class="max-w-4xl mx-auto mb-8">
+<div class="max-w-4xl mx-auto mb-6 px-3">
     <div class="card bg-base-100 border border-base-200 shadow-sm">
-        <div class="card-body p-5">
-            <div class="flex items-center justify-between">
-                <div class="flex items-center gap-3">
+        <div class="card-body p-3">
+            <div class="flex items-center justify-between gap-1">
+                <div class="flex flex-col items-center gap-0.5 flex-1 min-w-0">
                     {% if match.home_team.logo_url %}
-                        <img src="{{ match.home_team.logo_url }}" alt="{{ match.home_team.name }}" class="w-12 h-12 object-contain">
+                    <img src="{{ match.home_team.logo_url }}" alt="{{ match.home_team.name }}" class="w-8 h-8 object-contain">
                     {% else %}
-                        <div class="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary">
-                            {{ match.home_team.name|first|upper }}
-                        </div>
-                    {% endif %}
-                    <span class="font-semibold">{{ match.home_team.name }}</span>
-                </div>
-                <div class="text-center px-6">
-                    <div class="text-2xl font-bold font-mono">
-                        {% render_score match.home_score match.away_score %}
+                    <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-xs">
+                        {{ match.home_team.name|first|upper }}
                     </div>
-                    <div class="text-xs text-base-content/50">{{ match.start_time|date:"d.m.Y" }}</div>
+                    {% endif %}
+                    <span class="font-semibold text-[10px] text-center truncate w-full max-w-[80px]">
+                        {{ match.home_team.name|truncatechars:12 }}
+                    </span>
                 </div>
-                <div class="flex items-center gap-3">
-                    <span class="font-semibold">{{ match.away_team.name }}</span>
+
+                <div class="text-center px-2 py-1 bg-base-200 rounded-lg shrink-0 min-w-[65px]">
+                    <div class="text-sm font-bold font-mono">{% render_score match.home_score match.away_score %}</div>
+                    <div class="text-[8px] text-base-content/50">{{ match.start_time|date:"d.m" }}</div>
+                </div>
+
+                <div class="flex flex-col items-center gap-0.5 flex-1 min-w-0">
+                    <span class="font-semibold text-[10px] text-center truncate w-full max-w-[80px] order-2">
+                        {{ match.away_team.name|truncatechars:12 }}
+                    </span>
                     {% if match.away_team.logo_url %}
-                        <img src="{{ match.away_team.logo_url }}" alt="{{ match.away_team.name }}" class="w-12 h-12 object-contain">
+                    <img src="{{ match.away_team.logo_url }}" alt="{{ match.away_team.name }}" class="w-8 h-8 object-contain order-1">
                     {% else %}
-                        <div class="w-12 h-12 rounded-full bg-secondary/10 flex items-center justify-center font-bold text-secondary">
-                            {{ match.away_team.name|first|upper }}
-                        </div>
+                    <div class="w-8 h-8 rounded-full bg-secondary/10 flex items-center justify-center font-bold text-secondary text-xs order-1">
+                        {{ match.away_team.name|first|upper }}
+                    </div>
                     {% endif %}
                 </div>
             </div>
@@ -54,189 +49,140 @@
 </div>
 
 <!-- === FORM CARD === -->
-<div class="max-w-4xl mx-auto">
+<div class="max-w-4xl mx-auto px-3">
     <div class="card bg-base-100 border border-base-200 shadow-lg">
-        <div class="card-body p-8">
-            <div class="text-center mb-8">
-                <div class="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
-                    <i class="ti ti-context text-3xl text-primary"></i>
+        <div class="card-body p-4">
+            <div class="text-center mb-4">
+                <div class="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-2">
+                    <i class="ti ti-context text-xl text-primary"></i>
                 </div>
-                <h2 class="text-2xl font-bold mb-2">Контекст просмотра</h2>
-                <p class="text-base-content/60">Расскажите, как вы смотрели этот матч</p>
+                <h2 class="text-lg font-bold mb-1">Контекст просмотра</h2>
+                <p class="text-xs text-base-content/60">Расскажите, как вы смотрели этот матч</p>
             </div>
 
             <form method="post" action="{% url 'evaluations:context' match.id %}"
-                  class="space-y-8"
+                  class="space-y-5"
                   x-data="{
                       supportedTeam: '{{ form.supported_team.value|default:'' }}',
                       watchedType: '{{ form.watched_type.value|default:'full' }}',
-                      attendedStadium: {{ form.attended_stadium.value|default:'false' }}
+                      attendedStadium: {{ form.attended_stadium.value|default:'false'|lower }}
                   }">
                 {% csrf_token %}
 
                 <!-- За какую команду болеете? -->
-                <div class="form-control">
-                    <label class="label mb-3">
-                        <span class="label-text font-semibold text-base">
-                            <i class="ti ti-heart text-error mr-2"></i>
-                            За какую команду болеете?
-                        </span>
+                <div>
+                    <label class="text-xs font-semibold mb-2 block">
+                        <i class="ti ti-heart text-error mr-1"></i>За какую команду болеете?
                     </label>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div class="grid grid-cols-3 gap-1.5">
                         <label class="cursor-pointer">
                             <input type="radio" name="supported_team" value=""
-                                   class="radio radio-primary radio-lg sr-only"
-                                   x-model="supportedTeam"
-                                   {% if not form.supported_team.value %}checked{% endif %}>
-                            <div class="card border-2 border-base-200 p-4 text-center hover:border-primary/50 transition-all"
-                                 :class="supportedTeam === '' ? 'border-primary bg-primary/5' : ''">
-                                <i class="ti ti-hand-off text-2xl mb-2 text-base-content/50"></i>
-                                <div class="font-medium">Не болею</div>
-                                <div class="text-xs text-base-content/50">Нейтральный</div>
+                                   class="radio radio-primary sr-only"
+                                   x-model="supportedTeam">
+                            <div class="border-2 rounded-lg p-2 text-center transition-all"
+                                 :class="supportedTeam === '' ? 'border-primary bg-primary/5' : 'border-base-200'">
+                                <i class="ti ti-hand-off text-base text-base-content/50"></i>
+                                <div class="text-[10px] font-medium mt-0.5">Не болею</div>
                             </div>
                         </label>
                         <label class="cursor-pointer">
                             <input type="radio" name="supported_team" value="{{ match.home_team.id }}"
-                                   class="radio radio-primary radio-lg sr-only"
-                                   x-model="supportedTeam"
-                                   {% if form.supported_team.value == match.home_team.id|stringformat:"s" %}checked{% endif %}>
-                            <div class="card border-2 border-base-200 p-4 text-center hover:border-primary/50 transition-all"
-                                 :class="supportedTeam === '{{ match.home_team.id }}' ? 'border-primary bg-primary/5' : ''">
-                                <i class="ti ti-home text-2xl mb-2 text-primary"></i>
-                                <div class="font-medium">{{ match.home_team.name }}</div>
-                                <div class="text-xs text-base-content/50">Домашние</div>
+                                   class="radio radio-primary sr-only"
+                                   x-model="supportedTeam">
+                            <div class="border-2 rounded-lg p-2 text-center transition-all"
+                                 :class="supportedTeam === '{{ match.home_team.id }}' ? 'border-primary bg-primary/5' : 'border-base-200'">
+                                <i class="ti ti-home text-base text-primary"></i>
+                                <div class="text-[10px] font-medium truncate mt-0.5">{{ match.home_team.name|truncatechars:10 }}</div>
                             </div>
                         </label>
                         <label class="cursor-pointer">
                             <input type="radio" name="supported_team" value="{{ match.away_team.id }}"
-                                   class="radio radio-primary radio-lg sr-only"
-                                   x-model="supportedTeam"
-                                   {% if form.supported_team.value == match.away_team.id|stringformat:"s" %}checked{% endif %}>
-                            <div class="card border-2 border-base-200 p-4 text-center hover:border-primary/50 transition-all"
-                                 :class="supportedTeam === '{{ match.away_team.id }}' ? 'border-primary bg-primary/5' : ''">
-                                <i class="ti ti-plane text-2xl mb-2 text-secondary"></i>
-                                <div class="font-medium">{{ match.away_team.name }}</div>
-                                <div class="text-xs text-base-content/50">Гостевые</div>
+                                   class="radio radio-primary sr-only"
+                                   x-model="supportedTeam">
+                            <div class="border-2 rounded-lg p-2 text-center transition-all"
+                                 :class="supportedTeam === '{{ match.away_team.id }}' ? 'border-primary bg-primary/5' : 'border-base-200'">
+                                <i class="ti ti-plane text-base text-secondary"></i>
+                                <div class="text-[10px] font-medium truncate mt-0.5">{{ match.away_team.name|truncatechars:10 }}</div>
                             </div>
                         </label>
                     </div>
-                    <label class="label">
-                        <span class="label-text-alt text-base-content/50">
-                            <i class="ti ti-info-circle mr-1"></i>
-                            Это поможет учесть возможную предвзятость
-                        </span>
-                    </label>
-                    {% if form.supported_team.errors %}
-                        <label class="label">
-                            <span class="label-text-alt text-error">{{ form.supported_team.errors.0 }}</span>
-                        </label>
-                    {% endif %}
                 </div>
 
                 <!-- Как вы смотрели матч? -->
-                <div class="form-control">
-                    <label class="label mb-3">
-                        <span class="label-text font-semibold text-base">
-                            <i class="ti ti-eye text-info mr-2"></i>
-                            Как вы смотрели матч?
-                        </span>
+                <div>
+                    <label class="text-xs font-semibold mb-2 block">
+                        <i class="ti ti-eye text-info mr-1"></i>Как вы смотрели матч?
                     </label>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <label class="cursor-pointer tooltip" 
-                               data-tip="{{ INDICATOR_TOOLTIPS.match.watched_type_full|default:'Полный просмотр матча от начала до конца' }}">
+                    <div class="grid grid-cols-3 gap-1.5">
+                        <label class="cursor-pointer">
                             <input type="radio" name="watched_type" value="full"
-                                   class="radio radio-primary radio-lg sr-only"
-                                   x-model="watchedType"
-                                   {% if form.watched_type.value == 'full' %}checked{% endif %}>
-                            <div class="card border-2 p-5 hover:border-primary/50 transition-all group"
-                                 :class="watchedType === 'full' ? 'border-primary bg-gradient-to-br from-primary/10 to-primary/5' : 'border-base-200'">
-                                <div class="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                                    <i class="ti ti-player-play text-2xl text-primary"></i>
+                                   class="radio radio-primary sr-only"
+                                   x-model="watchedType">
+                            <div class="border-2 rounded-lg p-2 text-center transition-all"
+                                 :class="watchedType === 'full' ? 'border-primary bg-primary/5' : 'border-base-200'">
+                                <div class="w-6 h-6 rounded-lg bg-primary/10 flex items-center justify-center mx-auto">
+                                    <i class="ti ti-player-play text-primary text-sm"></i>
                                 </div>
-                                <div class="font-bold text-lg mb-1">Полный матч</div>
-                                <div class="text-sm text-base-content/50">От начала до конца</div>
-                                <div class="badge badge-sm badge-primary mt-3">+20% вес</div>
+                                <div class="text-[10px] font-medium mt-0.5">Полный</div>
+                                <div class="badge badge-xs badge-primary mt-0.5">+20%</div>
                             </div>
                         </label>
-                        <label class="cursor-pointer tooltip" 
-                               data-tip="{{ INDICATOR_TOOLTIPS.match.watched_type_highlights|default:'Только ключевые моменты и голы' }}">
+                        <label class="cursor-pointer">
                             <input type="radio" name="watched_type" value="highlights"
-                                   class="radio radio-primary radio-lg sr-only"
-                                   x-model="watchedType"
-                                   {% if form.watched_type.value == 'highlights' %}checked{% endif %}>
-                            <div class="card border-2 p-5 hover:border-primary/50 transition-all group"
-                                 :class="watchedType === 'highlights' ? 'border-primary bg-gradient-to-br from-primary/10 to-primary/5' : 'border-base-200'">
-                                <div class="w-12 h-12 rounded-xl bg-secondary/10 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                                    <i class="ti ti-stars text-2xl text-secondary"></i>
+                                   class="radio radio-primary sr-only"
+                                   x-model="watchedType">
+                            <div class="border-2 rounded-lg p-2 text-center transition-all"
+                                 :class="watchedType === 'highlights' ? 'border-primary bg-primary/5' : 'border-base-200'">
+                                <div class="w-6 h-6 rounded-lg bg-secondary/10 flex items-center justify-center mx-auto">
+                                    <i class="ti ti-stars text-secondary text-sm"></i>
                                 </div>
-                                <div class="font-bold text-lg mb-1">Только голы</div>
-                                <div class="text-sm text-base-content/50">Лучшие моменты</div>
-                                <div class="badge badge-sm badge-ghost mt-3">Стандарт</div>
+                                <div class="text-[10px] font-medium mt-0.5">Голы</div>
                             </div>
                         </label>
-                        <label class="cursor-pointer tooltip" 
-                               data-tip="{{ INDICATOR_TOOLTIPS.match.watched_type_partial|default:'Часть матча, не полный просмотр' }}">
+                        <label class="cursor-pointer">
                             <input type="radio" name="watched_type" value="partial"
-                                   class="radio radio-primary radio-lg sr-only"
-                                   x-model="watchedType"
-                                   {% if form.watched_type.value == 'partial' %}checked{% endif %}>
-                            <div class="card border-2 p-5 hover:border-primary/50 transition-all group"
-                                 :class="watchedType === 'partial' ? 'border-primary bg-gradient-to-br from-primary/10 to-primary/5' : 'border-base-200'">
-                                <div class="w-12 h-12 rounded-xl bg-accent/10 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                                    <i class="ti ti-clock-pause text-2xl text-accent"></i>
+                                   class="radio radio-primary sr-only"
+                                   x-model="watchedType">
+                            <div class="border-2 rounded-lg p-2 text-center transition-all"
+                                 :class="watchedType === 'partial' ? 'border-primary bg-primary/5' : 'border-base-200'">
+                                <div class="w-6 h-6 rounded-lg bg-accent/10 flex items-center justify-center mx-auto">
+                                    <i class="ti ti-clock-pause text-accent text-sm"></i>
                                 </div>
-                                <div class="font-bold text-lg mb-1">Фрагменты</div>
-                                <div class="text-sm text-base-content/50">Часть матча</div>
-                                <div class="badge badge-sm badge-ghost mt-3">Стандарт</div>
+                                <div class="text-[10px] font-medium mt-0.5">Фрагменты</div>
                             </div>
                         </label>
                     </div>
-                    {% if form.watched_type.errors %}
-                        <label class="label">
-                            <span class="label-text-alt text-error">{{ form.watched_type.errors.0 }}</span>
-                        </label>
-                    {% endif %}
                 </div>
 
                 <!-- Были на стадионе? -->
-                <div class="form-control">
-                    <label class="cursor-pointer label p-4 rounded-xl border-2 border-base-200 hover:border-primary/50 transition-all"
-                           :class="attendedStadium ? 'border-primary bg-primary/5' : ''">
-                        <div class="flex items-center gap-4 flex-1">
-                            <div class="w-12 h-12 rounded-xl bg-warning/10 flex items-center justify-center">
-                                <i class="ti ti-ticket text-2xl text-warning"></i>
+                <div class="w-full">
+                    <label class="cursor-pointer flex items-center justify-between p-3 rounded-xl border-2 transition-all"
+                           :class="attendedStadium ? 'border-primary bg-primary/5' : 'border-base-200'">
+                        <div class="flex items-center gap-2">
+                            <div class="w-8 h-8 rounded-lg bg-warning/10 flex items-center justify-center">
+                                <i class="ti ti-ticket text-warning text-base"></i>
                             </div>
-                            <div class="flex-1">
-                                <div class="font-semibold text-base">Были на стадионе?</div>
-                                <div class="text-sm text-base-content/50">Посещали матч лично</div>
+                            <div>
+                                <div class="font-semibold text-sm">Были на стадионе?</div>
+                                <div class="text-[10px] text-base-content/50">Посещали матч лично</div>
                             </div>
                         </div>
                         <input type="checkbox" name="attended_stadium"
-                               class="toggle toggle-primary toggle-lg"
-                               x-model="attendedStadium"
-                               {% if form.attended_stadium.value %}checked{% endif %}>
+                               class="toggle toggle-primary toggle-sm"
+                               x-model="attendedStadium">
                     </label>
-                    {% if form.attended_stadium.errors %}
-                        <label class="label">
-                            <span class="label-text-alt text-error">{{ form.attended_stadium.errors.0 }}</span>
-                        </label>
-                    {% endif %}
                 </div>
 
                 <!-- Info Alert -->
-                <div class="alert alert-info alert-sm rounded-xl">
-                    <i class="ti ti-info-circle text-lg"></i>
-                    <div class="text-sm">
-                        <span class="font-semibold">Зачем это нужно?</span><br>
-                        Контекст просмотра влияет на вес вашей оценки. Полные матчи и посещения стадиона имеют больший вес.
-                    </div>
+                <div class="alert alert-info rounded-xl py-2">
+                    <i class="ti ti-info-circle text-sm flex-shrink-0"></i>
+                    <span class="text-[10px]">Контекст влияет на вес вашей оценки</span>
                 </div>
 
-                <!-- Navigation Buttons -->
-                <div class="flex justify-end gap-4 pt-4 border-t border-base-200">
-                    <button type="submit" class="btn btn-primary btn-lg px-8">
-                        Далее
-                        <i class="ti ti-arrow-right"></i>
+                <!-- Navigation Buttons - ТОЛЬКО ДАЛЕЕ -->
+                <div class="pt-2">
+                    <button type="submit" class="btn btn-primary btn-sm w-full">
+                        Далее <i class="ti ti-arrow-right"></i>
                     </button>
                 </div>
             </form>

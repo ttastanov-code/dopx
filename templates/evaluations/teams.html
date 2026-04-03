@@ -5,48 +5,43 @@
 
 {% block content %}
 <!-- === PROGRESS BAR === -->
-<div class="max-w-6xl mx-auto mb-8">
-    <div class="flex items-center justify-between mb-3">
-        <span class="text-sm font-semibold text-base-content/70">
-            Шаг {{ step }} из {{ total_steps }}
-        </span>
-        <span class="text-sm font-medium text-primary">{{ progress }}% завершено</span>
-    </div>
-    <div class="w-full bg-base-200 rounded-full h-2.5">
-        <div class="bg-gradient-to-r from-primary to-primary/70 h-2.5 rounded-full transition-all duration-500"
-             style="width: {{ progress }}%"></div>
-    </div>
+<div class="max-w-4xl mx-auto mb-6 px-3">
+    {% include 'evaluations/_evaluation_progress.html' with step=2 total_steps=6 progress=progress %}
 </div>
 
 <!-- === MATCH INFO === -->
-<div class="max-w-6xl mx-auto mb-8">
+<div class="max-w-4xl mx-auto mb-6 px-3">
     <div class="card bg-base-100 border border-base-200 shadow-sm">
-        <div class="card-body p-5">
-            <div class="flex items-center justify-between">
-                <div class="flex items-center gap-3">
+        <div class="card-body p-3">
+            <div class="flex items-center justify-between gap-1">
+                <div class="flex flex-col items-center gap-0.5 flex-1 min-w-0">
                     {% if match.home_team.logo_url %}
-                        <img src="{{ match.home_team.logo_url }}" alt="{{ match.home_team.name }}" class="w-12 h-12 object-contain">
+                    <img src="{{ match.home_team.logo_url }}" alt="{{ match.home_team.name }}" class="w-8 h-8 object-contain">
                     {% else %}
-                        <div class="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary">
-                            {{ match.home_team.name|first|upper }}
-                        </div>
-                    {% endif %}
-                    <span class="font-semibold">{{ match.home_team.name }}</span>
-                </div>
-                <div class="text-center px-6">
-                    <div class="text-2xl font-bold font-mono">
-                        {% render_score match.home_score match.away_score %}
+                    <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-xs">
+                        {{ match.home_team.name|first|upper }}
                     </div>
-                    <div class="text-xs text-base-content/50">{{ match.start_time|date:"d.m.Y" }}</div>
+                    {% endif %}
+                    <span class="font-semibold text-[10px] text-center truncate w-full max-w-[80px]">
+                        {{ match.home_team.name|truncatechars:12 }}
+                    </span>
                 </div>
-                <div class="flex items-center gap-3">
-                    <span class="font-semibold">{{ match.away_team.name }}</span>
+
+                <div class="text-center px-2 py-1 bg-base-200 rounded-lg shrink-0 min-w-[65px]">
+                    <div class="text-sm font-bold font-mono">{% render_score match.home_score match.away_score %}</div>
+                    <div class="text-[8px] text-base-content/50">{{ match.start_time|date:"d.m" }}</div>
+                </div>
+
+                <div class="flex flex-col items-center gap-0.5 flex-1 min-w-0">
+                    <span class="font-semibold text-[10px] text-center truncate w-full max-w-[80px] order-2">
+                        {{ match.away_team.name|truncatechars:12 }}
+                    </span>
                     {% if match.away_team.logo_url %}
-                        <img src="{{ match.away_team.logo_url }}" alt="{{ match.away_team.name }}" class="w-12 h-12 object-contain">
+                    <img src="{{ match.away_team.logo_url }}" alt="{{ match.away_team.name }}" class="w-8 h-8 object-contain order-1">
                     {% else %}
-                        <div class="w-12 h-12 rounded-full bg-secondary/10 flex items-center justify-center font-bold text-secondary">
-                            {{ match.away_team.name|first|upper }}
-                        </div>
+                    <div class="w-8 h-8 rounded-full bg-secondary/10 flex items-center justify-center font-bold text-secondary text-xs order-1">
+                        {{ match.away_team.name|first|upper }}
+                    </div>
                     {% endif %}
                 </div>
             </div>
@@ -55,117 +50,101 @@
 </div>
 
 <!-- === FORM === -->
-<div class="max-w-6xl mx-auto">
-    <form method="post" action="{% url 'evaluations:teams' match.id %}" class="space-y-8">
+<div class="max-w-4xl mx-auto px-3 overflow-x-hidden">
+    <form method="post" action="{% url 'evaluations:teams' match.id %}" class="space-y-5">
         {% csrf_token %}
         
         <!-- Домашняя команда -->
-        <div class="card bg-base-100 border-2 border-primary/20 shadow-lg">
-            <div class="card-body p-6">
-                <div class="flex items-center gap-4 mb-6 pb-4 border-b border-base-200">
+        <div class="card bg-base-100 border-2 border-primary/20 shadow-sm">
+            <div class="card-body p-3">
+                <div class="flex items-center gap-2 mb-3 pb-2 border-b border-base-200">
                     {% if match.home_team.logo_url %}
-                        <img src="{{ match.home_team.logo_url }}" alt="{{ match.home_team.name }}" class="w-14 h-14 object-contain">
+                    <img src="{{ match.home_team.logo_url }}" class="w-8 h-8 object-contain flex-shrink-0">
                     {% else %}
-                        <div class="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center font-bold text-primary text-2xl">
-                            {{ match.home_team.name|first|upper }}
-                        </div>
-                    {% endif %}
-                    <div>
-                        <h3 class="text-xl font-bold">{{ match.home_team.name }}</h3>
-                        <p class="text-sm text-base-content/50">Домашняя команда</p>
+                    <div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center font-bold text-primary text-base flex-shrink-0">
+                        {{ match.home_team.name|first|upper }}
                     </div>
-                    <div class="ml-auto badge badge-primary badge-lg">Шаг 1</div>
+                    {% endif %}
+                    <div class="flex-1 min-w-0">
+                        <h3 class="font-bold text-sm truncate">{{ match.home_team.name }}</h3>
+                        <p class="text-[10px] text-base-content/50">Домашняя команда</p>
+                    </div>
                 </div>
-                
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="space-y-3">
                     {% for field in evaluation_fields %}
-                        <div class="form-control">
-                            <label class="label mb-2">
-                                <span class="label-text font-semibold tooltip"
-                                      data-tip="{{ INDICATOR_TOOLTIPS.team|get_item:field.name|default:'Оценка по критерию' }}">
-                                    <i class="ti {{ field.icon }} text-primary mr-2"></i>
-                                    {{ field.label }}
-                                </span>
-                                <span class="label-text-alt font-mono font-bold text-lg" 
-                                      id="home_{{ field.name }}_value">5</span>
+                    <div>
+                        <div class="flex justify-between mb-1">
+                            <label class="text-[10px] font-semibold tooltip flex items-center gap-0.5"
+                                   data-tip="{{ INDICATOR_TOOLTIPS.team|get_item:field.name }}">
+                                <i class="ti {{ field.icon }} text-primary text-xs"></i>
+                                {{ field.label }}
                             </label>
-                            <input type="range"
-                                   name="team_{{ match.home_team.id }}_{{ field.name }}"
-                                   min="1"
-                                   max="10"
-                                   value="5"
-                                   class="range range-primary range-lg"
-                                   step="1"
-                                   oninput="document.getElementById('home_{{ field.name }}_value').textContent = this.value">
-                            <div class="flex justify-between text-xs text-base-content/40 mt-2 px-1">
-                                <span>1</span>
-                                <span>5</span>
-                                <span>10</span>
-                            </div>
+                            <span class="text-xs font-bold text-primary" id="home_{{ field.name }}_value">5</span>
                         </div>
+                        <input type="range" 
+                               name="team_{{ match.home_team.id }}_{{ field.name }}" 
+                               min="1" max="10" value="5"
+                               class="range range-primary range-xs w-full"
+                               step="1"
+                               oninput="document.getElementById('home_{{ field.name }}_value').textContent = this.value">
+                        <div class="flex justify-between text-[8px] text-base-content/40 mt-0.5 px-1">
+                            <span>1</span><span>5</span><span>10</span>
+                        </div>
+                    </div>
                     {% endfor %}
                 </div>
             </div>
         </div>
 
         <!-- Гостевая команда -->
-        <div class="card bg-base-100 border-2 border-secondary/20 shadow-lg">
-            <div class="card-body p-6">
-                <div class="flex items-center gap-4 mb-6 pb-4 border-b border-base-200">
+        <div class="card bg-base-100 border-2 border-secondary/20 shadow-sm">
+            <div class="card-body p-3">
+                <div class="flex items-center gap-2 mb-3 pb-2 border-b border-base-200">
                     {% if match.away_team.logo_url %}
-                        <img src="{{ match.away_team.logo_url }}" alt="{{ match.away_team.name }}" class="w-14 h-14 object-contain">
+                    <img src="{{ match.away_team.logo_url }}" class="w-8 h-8 object-contain flex-shrink-0">
                     {% else %}
-                        <div class="w-14 h-14 rounded-xl bg-secondary/10 flex items-center justify-center font-bold text-secondary text-2xl">
-                            {{ match.away_team.name|first|upper }}
-                        </div>
-                    {% endif %}
-                    <div>
-                        <h3 class="text-xl font-bold">{{ match.away_team.name }}</h3>
-                        <p class="text-sm text-base-content/50">Гостевая команда</p>
+                    <div class="w-8 h-8 rounded-lg bg-secondary/10 flex items-center justify-center font-bold text-secondary text-base flex-shrink-0">
+                        {{ match.away_team.name|first|upper }}
                     </div>
-                    <div class="ml-auto badge badge-secondary badge-lg">Шаг 2</div>
+                    {% endif %}
+                    <div class="flex-1 min-w-0">
+                        <h3 class="font-bold text-sm truncate">{{ match.away_team.name }}</h3>
+                        <p class="text-[10px] text-base-content/50">Гостевая команда</p>
+                    </div>
                 </div>
-                
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="space-y-3">
                     {% for field in evaluation_fields %}
-                        <div class="form-control">
-                            <label class="label mb-2">
-                                <span class="label-text font-semibold tooltip"
-                                      data-tip="{{ INDICATOR_TOOLTIPS.team|get_item:field.name|default:'Оценка по критерию' }}">
-                                    <i class="ti {{ field.icon }} text-secondary mr-2"></i>
-                                    {{ field.label }}
-                                </span>
-                                <span class="label-text-alt font-mono font-bold text-lg" 
-                                      id="away_{{ field.name }}_value">5</span>
+                    <div>
+                        <div class="flex justify-between mb-1">
+                            <label class="text-[10px] font-semibold tooltip flex items-center gap-0.5"
+                                   data-tip="{{ INDICATOR_TOOLTIPS.team|get_item:field.name }}">
+                                <i class="ti {{ field.icon }} text-secondary text-xs"></i>
+                                {{ field.label }}
                             </label>
-                            <input type="range"
-                                   name="team_{{ match.away_team.id }}_{{ field.name }}"
-                                   min="1"
-                                   max="10"
-                                   value="5"
-                                   class="range range-secondary range-lg"
-                                   step="1"
-                                   oninput="document.getElementById('away_{{ field.name }}_value').textContent = this.value">
-                            <div class="flex justify-between text-xs text-base-content/40 mt-2 px-1">
-                                <span>1</span>
-                                <span>5</span>
-                                <span>10</span>
-                            </div>
+                            <span class="text-xs font-bold text-secondary" id="away_{{ field.name }}_value">5</span>
                         </div>
+                        <input type="range" 
+                               name="team_{{ match.away_team.id }}_{{ field.name }}" 
+                               min="1" max="10" value="5"
+                               class="range range-secondary range-xs w-full"
+                               step="1"
+                               oninput="document.getElementById('away_{{ field.name }}_value').textContent = this.value">
+                        <div class="flex justify-between text-[8px] text-base-content/40 mt-0.5 px-1">
+                            <span>1</span><span>5</span><span>10</span>
+                        </div>
+                    </div>
                     {% endfor %}
                 </div>
             </div>
         </div>
 
-        <!-- Navigation -->
-        <div class="flex justify-between gap-4 pt-4">
-            <a href="{% url 'evaluations:context' match.id %}" class="btn btn-ghost btn-lg">
-                <i class="ti ti-arrow-left"></i>
-                Назад
+        <!-- Navigation Buttons -->
+        <div class="flex gap-2 pt-2">
+            <a href="{% url 'evaluations:context' match.id %}" class="btn btn-ghost btn-sm flex-1">
+                <i class="ti ti-arrow-left"></i> Назад
             </a>
-            <button type="submit" class="btn btn-primary btn-lg px-8">
-                Далее
-                <i class="ti ti-arrow-right"></i>
+            <button type="submit" class="btn btn-primary btn-sm flex-1">
+                Далее <i class="ti ti-arrow-right"></i>
             </button>
         </div>
     </form>
