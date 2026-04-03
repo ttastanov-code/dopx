@@ -3,158 +3,108 @@
 {% load match_extras %}
 {% block content %}
 <!-- === HEADER === -->
-<div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-    <div>
-        <h1 class="text-3xl font-bold mb-2">
-            <i class="ti ti-trophy mr-2"></i>
-            Матчи
-        </h1>
-        <p class="opacity-60">Все матчи платформы с результатами оценок</p>
-    </div>
-    <!-- Быстрые фильтры -->
-    <div class="flex gap-2">
-        <a href="{% url 'matches:list' %}" class="btn btn-sm {% if not current_status %}btn-primary{% else %}btn-ghost{% endif %}">
-            Все
-        </a>
-        <a href="{% url 'matches:list' %}?status=scheduled" class="btn btn-sm {% if current_status == 'scheduled' %}btn-primary{% else %}btn-ghost{% endif %}">
-            <i class="ti ti-calendar"></i>
-            Запланированные
-        </a>
-        <a href="{% url 'matches:list' %}?status=live" class="btn btn-sm {% if current_status == 'live' %}btn-primary{% else %}btn-ghost{% endif %}">
-            <i class="ti ti-live-photo"></i>
-            Live
-        </a>
-        <a href="{% url 'matches:list' %}?status=finished" class="btn btn-sm {% if current_status == 'finished' %}btn-primary{% else %}btn-ghost{% endif %}">
-            <i class="ti ti-check"></i>
-            Завершённые
-        </a>
-    </div>
+<div class="mb-6 px-2 sm:px-0">
+    <h1 class="text-2xl md:text-3xl font-bold mb-2 flex items-center gap-2">
+        <i class="ti ti-trophy mr-2"></i>
+        Матчи
+    </h1>
+    <p class="opacity-60 text-sm md:text-base">Все матчи платформы с результатами оценок</p>
 </div>
 
 <!-- === ФИЛЬТРЫ === -->
-<div class="card bg-base-100 border border-base-300 mb-6">
-    <div class="card-body p-4">
-        <form method="get" class="flex flex-wrap items-end gap-4" hx-get="{% url 'matches:list' %}" hx-trigger="change" hx-swap="outerHTML">
+<div class="card bg-base-100 border border-base-300 mb-4 md:mb-6 px-2 sm:px-0">
+    <div class="card-body p-3 md:p-4">
+        <form method="get" class="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-4">
             <!-- Статус -->
-            <div class="form-control w-full md:w-48">
-                <label class="label">
-                    <span class="label-text text-sm">Статус</span>
-                </label>
-                <select name="status" class="select select-bordered select-sm">
-                    <option value="">Все</option>
-                    <option value="scheduled" {% if current_status == 'scheduled' %}selected{% endif %}>Запланированные</option>
-                    <option value="live" {% if current_status == 'live' %}selected{% endif %}>Live</option>
-                    <option value="finished" {% if current_status == 'finished' %}selected{% endif %}>Завершённые</option>
-                </select>
-            </div>
+            <select name="status" class="select select-bordered select-sm w-full sm:w-auto min-w-[140px]">
+                <option value="">Все статусы</option>
+                <option value="scheduled" {% if current_status == 'scheduled' %}selected{% endif %}>Запланированные</option>
+                <option value="live" {% if current_status == 'live' %}selected{% endif %}>Live</option>
+                <option value="finished" {% if current_status == 'finished' %}selected{% endif %}>Завершённые</option>
+            </select>
             
             <!-- Лига -->
-            <div class="form-control w-full md:w-48">
-                <label class="label">
-                    <span class="label-text text-sm">Лига</span>
-                </label>
-                <select name="league" class="select select-bordered select-sm">
-                    <option value="">Все</option>
-                    {% for league in leagues %}
-                    <option value="{{ league.id }}" {% if current_league == league.id|stringformat:"s" %}selected{% endif %}>
-                        {{ league.name }}
-                    </option>
-                    {% endfor %}
-                </select>
-            </div>
+            <select name="league" class="select select-bordered select-sm w-full sm:w-auto min-w-[140px]">
+                <option value="">Все лиги</option>
+                {% for league in leagues %}
+                <option value="{{ league.id }}" {% if current_league == league.id|stringformat:"s" %}selected{% endif %}>
+                    {{ league.name }}
+                </option>
+                {% endfor %}
+            </select>
             
             <!-- Сезон -->
-            <div class="form-control w-full md:w-48">
-                <label class="label">
-                    <span class="label-text text-sm">Сезон</span>
-                </label>
-                <select name="season" class="select select-bordered select-sm">
-                    <option value="">Все</option>
-                    {% for season in seasons %}
-                    <option value="{{ season.id }}" {% if current_season == season.id|stringformat:"s" %}selected{% endif %}>
-                        {{ season.year }}
-                    </option>
-                    {% endfor %}
-                </select>
-            </div>
+            <select name="season" class="select select-bordered select-sm w-full sm:w-auto min-w-[140px]">
+                <option value="">Все сезоны</option>
+                {% for season in seasons %}
+                <option value="{{ season.id }}" {% if current_season == season.id|stringformat:"s" %}selected{% endif %}>
+                    {{ season.year }}
+                </option>
+                {% endfor %}
+            </select>
             
-            <!-- Кнопка сброса -->
-            <div class="form-control w-full md:w-auto pb-2">
-                <a href="{% url 'matches:list' %}" class="btn btn-ghost btn-sm w-full md:w-auto">
-                    <i class="ti ti-x"></i>
-                    Сброс
-                </a>
-            </div>
+            <!-- Кнопка -->
+            <button type="submit" class="btn btn-primary btn-sm w-full sm:w-auto">
+                <i class="ti ti-search"></i>
+                <span class="hidden sm:inline">Найти</span>
+            </button>
         </form>
     </div>
 </div>
 
 <!-- === СПИСОК МАТЧЕЙ === -->
-<div class="space-y-4">
+<div class="space-y-3 md:space-y-4 px-2 sm:px-0">
     {% for match in matches %}
-    <div class="card bg-base-100 border border-base-300 hover:border-primary transition-all cursor-pointer"
-         onclick="window.location='{% url 'matches:detail' match.id %}'">
-        <div class="card-body p-4">
-            <div class="flex flex-col md:flex-row items-center gap-4">
+    <a href="{% url 'matches:detail' match.id %}" class="card bg-base-100 border border-base-300 hover:border-primary transition-all group block">
+        <div class="card-body p-3 md:p-4">
+            <!-- Основная строка: Команда - Счёт - Команда -->
+            <div class="flex items-center justify-between gap-2 md:gap-4">
                 <!-- Домашняя команда -->
-                <div class="flex items-center gap-3 flex-1 w-full md:w-auto">
+                <div class="flex items-center gap-2 flex-1 min-w-0">
                     {% if match.home_team.logo_url %}
-                    <img src="{{ match.home_team.logo_url }}" alt="{{ match.home_team.name }}" class="w-12 h-12 object-contain">
+                    <img src="{{ match.home_team.logo_url }}" alt="{{ match.home_team.name }}" class="w-8 h-8 md:w-10 md:h-10 object-contain flex-shrink-0">
                     {% else %}
-                    <div class="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-lg">
+                    <div class="w-8 h-8 md:w-10 md:h-10 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-xs md:text-sm flex-shrink-0">
                         {{ match.home_team.name|first|upper }}
                     </div>
                     {% endif %}
-                    <div>
-                        <div class="font-semibold {% if match.status == 'finished' and match.home_score > match.away_score %}text-success{% endif %}">
+                    <div class="flex-1 min-w-0">
+                        <div class="font-semibold text-xs md:text-sm truncate group-hover:text-primary transition-colors">
                             {{ match.home_team.name }}
                         </div>
-                        {% if match.status == 'finished' %}
-                        <div class="text-xs opacity-60">Дома</div>
-                        {% endif %}
                     </div>
                 </div>
                 
                 <!-- Счёт / Время -->
-                <div class="text-center px-4 py-2 bg-base-200 rounded-lg min-w-[120px]">
+                <div class="text-center px-2 md:px-4 py-1.5 bg-base-200 rounded-lg min-w-[80px] md:min-w-[120px] flex-shrink-0">
                     {% if match.status == 'finished' %}
-                    <div class="text-2xl font-bold font-mono">
+                    <div class="text-base md:text-2xl font-bold font-mono">
                         {% render_score match.home_score match.away_score %}
                     </div>
-                    {% if match.aggregate %}
-                    <div class="text-xs opacity-60 mt-1">
-                        <i class="ti ti-activity"></i>
-                        Драма: {{ match.aggregate.drama_index|floatformat:0 }}
-                    </div>
-                    {% endif %}
                     {% elif match.status == 'live' %}
-                    <div class="text-lg font-bold text-error animate-pulse">
-                        <i class="ti ti-circle-filled text-xs"></i>
-                        LIVE
+                    <div class="text-xs md:text-lg font-bold text-error animate-pulse">
+                        <i class="ti ti-circle-filled text-[8px]"></i> LIVE
                     </div>
-                    <div class="text-xs opacity-60 mt-1">
+                    <div class="text-[10px] md:text-xs opacity-60 mt-0.5">
                         {% render_score match.home_score match.away_score %}
                     </div>
                     {% else %}
-                    <div class="text-sm font-mono">{{ match.start_time|date:"d.m.Y" }}</div>
-                    <div class="text-xs opacity-60">{{ match.start_time|time:"H:i" }}</div>
+                    <div class="text-xs md:text-sm font-mono">{{ match.start_time|date:"d.m" }}</div>
+                    <div class="text-[10px] md:text-xs opacity-60">{{ match.start_time|time:"H:i" }}</div>
                     {% endif %}
                 </div>
                 
                 <!-- Гостевая команда -->
-                <div class="flex items-center gap-3 flex-1 w-full md:w-auto justify-end">
-                    <div class="text-right">
-                        <div class="font-semibold {% if match.status == 'finished' and match.away_score > match.home_score %}text-success{% endif %}">
+                <div class="flex items-center gap-2 flex-1 min-w-0 justify-end">
+                    <div class="flex-1 min-w-0 text-right">
+                        <div class="font-semibold text-xs md:text-sm truncate group-hover:text-primary transition-colors">
                             {{ match.away_team.name }}
                         </div>
-                        {% if match.status == 'finished' %}
-                        <div class="text-xs opacity-60">В гостях</div>
-                        {% endif %}
                     </div>
                     {% if match.away_team.logo_url %}
-                    <img src="{{ match.away_team.logo_url }}" alt="{{ match.away_team.name }}" class="w-12 h-12 object-contain">
+                    <img src="{{ match.away_team.logo_url }}" alt="{{ match.away_team.name }}" class="w-8 h-8 md:w-10 md:h-10 object-contain flex-shrink-0">
                     {% else %}
-                    <div class="w-12 h-12 rounded-full bg-secondary/10 flex items-center justify-center font-bold text-secondary text-lg">
+                    <div class="w-8 h-8 md:w-10 md:h-10 rounded-full bg-secondary/10 flex items-center justify-center font-bold text-secondary text-xs md:text-sm flex-shrink-0">
                         {{ match.away_team.name|first|upper }}
                     </div>
                     {% endif %}
@@ -162,55 +112,48 @@
             </div>
             
             <!-- Инфо строка -->
-            <div class="flex flex-wrap items-center justify-between gap-2 mt-3 pt-3 border-t border-base-300">
-                <div class="flex flex-wrap items-center gap-3 text-xs opacity-60">
-                    <span class="flex items-center gap-1">
-                        <i class="ti ti-trophy"></i>
-                        {{ match.league.name }}
+            <div class="flex flex-wrap items-center justify-between gap-2 mt-2 md:mt-3 pt-2 md:pt-3 border-t border-base-300">
+                <div class="flex flex-wrap items-center gap-1 md:gap-3 text-[10px] md:text-xs opacity-60">
+                    <span class="flex items-center gap-0.5 md:gap-1">
+                        <i class="ti ti-trophy flex-shrink-0"></i>
+                        <span class="truncate max-w-[80px] md:max-w-none">{{ match.league.name }}</span>
                     </span>
-                    <span>•</span>
-                    <span class="flex items-center gap-1">
-                        <i class="ti ti-calendar"></i>
+                    <span class="hidden sm:inline">•</span>
+                    <span class="flex items-center gap-0.5 md:gap-1">
+                        <i class="ti ti-calendar flex-shrink-0"></i>
                         {{ match.season.year }}
                     </span>
-                    {% if match.stadium %}
-                    <span>•</span>
-                    <span class="flex items-center gap-1">
-                        <i class="ti ti-map-pin"></i>
-                        {{ match.stadium.name }}
-                    </span>
-                    {% endif %}
                 </div>
-                <div class="flex items-center gap-2">
+                
+                <div class="flex items-center gap-1 md:gap-2">
                     {% if match.status == 'finished' and match.is_voting_open %}
                     <a href="{% url 'evaluations:context' match.id %}"
-                       class="btn btn-sm btn-primary"
+                       class="btn btn-xs btn-primary"
                        onclick="event.stopPropagation()">
                         <i class="ti ti-star"></i>
-                        Оценить
+                        <span class="hidden sm:inline">Оценить</span>
                     </a>
                     {% elif match.status == 'finished' %}
-                    <span class="badge badge-ghost badge-sm">
+                    <span class="badge badge-ghost badge-xs">
                         <i class="ti ti-check"></i>
-                        Оценки закрыты
                     </span>
                     {% endif %}
                     {% if match.aggregate %}
-                    <span class="badge badge-sm badge-outline">
+                    <span class="badge badge-xs md:badge-sm badge-outline">
                         <i class="ti ti-users"></i>
-                        {{ match.aggregate.total_votes }} оценок
+                        <span class="hidden sm:inline">{{ match.aggregate.total_votes }}</span>
                     </span>
                     {% endif %}
                 </div>
             </div>
         </div>
-    </div>
+    </a>
     {% empty %}
-    <div class="text-center py-16 opacity-60">
-        <i class="ti ti-trophy-off text-6xl mb-4"></i>
-        <h3 class="text-xl font-semibold mb-2">Матчи не найдены</h3>
-        <p>Попробуйте изменить фильтры или зайдите позже</p>
-        <a href="{% url 'matches:list' %}" class="btn btn-ghost mt-4">
+    <div class="text-center py-12 md:py-16 opacity-60 px-4">
+        <i class="ti ti-trophy-off text-4xl md:text-6xl mb-4"></i>
+        <h3 class="text-lg md:text-xl font-semibold mb-2">Матчи не найдены</h3>
+        <p class="text-sm">Попробуйте изменить фильтры или зайдите позже</p>
+        <a href="{% url 'matches:list' %}" class="btn btn-ghost btn-sm mt-4">
             <i class="ti ti-x"></i>
             Сбросить фильтры
         </a>
@@ -220,7 +163,7 @@
 
 <!-- === PAGINATION === -->
 {% if is_paginated %}
-<div class="flex justify-center mt-8">
+<div class="flex justify-center mt-6 md:mt-8 px-2">
     <div class="join">
         {% if page_obj.has_previous %}
         <a href="?page={{ page_obj.previous_page_number }}{% if current_status %}&status={{ current_status }}{% endif %}{% if current_league %}&league={{ current_league }}{% endif %}{% if current_season %}&season={{ current_season }}{% endif %}"

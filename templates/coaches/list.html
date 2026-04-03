@@ -1,30 +1,25 @@
-<!-- templates/coaches/list.html -->
 {% extends 'base.html' %}
 {% load static %}
 {% block content %}
 <!-- === HEADER === -->
-<div class="mb-8">
-    <h1 class="text-3xl font-bold mb-2">
+<div class="mb-6 md:mb-8 px-2 sm:px-0">
+    <h1 class="text-2xl md:text-3xl font-bold mb-2 flex items-center gap-2">
         <i class="ti ti-whistle mr-2"></i>
         Тренеры
     </h1>
-    <p class="opacity-60">Все тренеры платформы с аналитикой работы</p>
+    <p class="opacity-60 text-sm md:text-base">Все тренеры платформы с аналитикой работы</p>
 </div>
 
 <!-- === ФИЛЬТРЫ === -->
-<div class="card bg-base-100 border border-base-300 mb-6">
-    <div class="card-body p-4">
-        <form method="get" class="flex flex-wrap gap-4">
+<div class="card bg-base-100 border border-base-300 mb-4 md:mb-6 px-2 sm:px-0">
+    <div class="card-body p-3 md:p-4">
+        <form method="get" class="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-4">
             <!-- Поиск -->
             <div class="form-control flex-1 min-w-[200px]">
-                <input type="text"
-                    name="q"
-                    value="{{ search_query }}"
-                    placeholder="Поиск тренера..."
-                    class="input input-bordered input-sm w-full">
+                <input type="text" name="q" value="{{ search_query }}" placeholder="Поиск тренера..." class="input input-bordered input-sm w-full">
             </div>
             <!-- Команда -->
-            <select name="team" class="select select-bordered select-sm w-full md:w-48">
+            <select name="team" class="select select-bordered select-sm w-full sm:w-auto sm:min-w-[140px]">
                 <option value="">Все команды</option>
                 {% for team in teams %}
                 <option value="{{ team.id }}" {% if request.GET.team == team.id|stringformat:"s" %}selected{% endif %}>
@@ -33,70 +28,67 @@
                 {% endfor %}
             </select>
             <!-- Кнопка -->
-            <button type="submit" class="btn btn-primary btn-sm">
+            <button type="submit" class="btn btn-primary btn-sm w-full sm:w-auto">
                 <i class="ti ti-search"></i>
-                Найти
+                <span class="hidden sm:inline">Найти</span>
             </button>
         </form>
     </div>
 </div>
 
 <!-- === СПИСОК ТРЕНЕРОВ === -->
-<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-6 px-2 sm:px-0">
     {% for coach in coaches %}
     <a href="{% url 'coaches:detail' coach.id %}" class="card bg-base-100 border border-base-300 hover:border-accent transition-all group">
-        <div class="card-body p-6">
+        <div class="card-body p-3 sm:p-6">
             <!-- Иконка и имя -->
-            <div class="flex items-center gap-4 mb-4">
-                <div class="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center">
-                    <i class="ti ti-whistle text-accent text-2xl"></i>
+            <div class="flex items-center gap-2 sm:gap-4 mb-3 sm:mb-4">
+                <div class="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-accent/10 flex items-center justify-center flex-shrink-0">
+                    <i class="ti ti-whistle text-accent text-lg sm:text-2xl"></i>
                 </div>
                 <div class="flex-1 min-w-0">
-                    <h3 class="font-bold text-lg truncate group-hover:text-accent transition-colors">
+                    <h3 class="font-bold text-base sm:text-lg truncate group-hover:text-accent transition-colors">
                         {{ coach.first_name }} {{ coach.last_name }}
                     </h3>
                     {% if coach.team %}
-                    <p class="text-sm opacity-60">
-                        <i class="ti ti-users"></i>
-                        {{ coach.team.name }}
+                    <p class="text-xs sm:text-sm opacity-60 truncate">
+                        <i class="ti ti-users"></i> {{ coach.team.name }}
                     </p>
                     {% endif %}
                 </div>
             </div>
             <!-- Статистика -->
-            <div class="grid grid-cols-2 gap-2 text-center text-sm">
+            <div class="grid grid-cols-2 gap-2 text-center text-xs sm:text-sm">
                 <div class="bg-base-200 rounded-lg p-2">
-                    <!-- ✅ FIX: Используем match_count из аннотации -->
-                    <div class="font-bold text-lg">{{ coach.match_count|default:0 }}</div>
-                    <div class="text-xs opacity-60">Матчей</div>
+                    <div class="font-bold text-base sm:text-lg">{{ coach.match_count|default:0 }}</div>
+                    <div class="text-[10px] sm:text-xs opacity-60">Матчей</div>
                 </div>
                 <div class="bg-base-200 rounded-lg p-2">
-                    <div class="font-bold text-lg">
+                    <div class="font-bold text-base sm:text-lg">
                         {% with agg=coach.match_aggregates.first %}
                         {{ agg.avg_tactics|floatformat:1|default:"-" }}
                         {% endwith %}
                     </div>
-                    <div class="text-xs opacity-60">Тактика</div>
+                    <div class="text-[10px] sm:text-xs opacity-60">Тактика</div>
                 </div>
             </div>
         </div>
     </a>
     {% empty %}
-    <div class="col-span-full text-center py-16 opacity-60">
-        <i class="ti ti-whistle-off text-6xl mb-4"></i>
-        <h3 class="text-xl font-semibold mb-2">Тренеры не найдены</h3>
-        <p>Попробуйте изменить параметры поиска</p>
+    <div class="col-span-full text-center py-12 opacity-60 px-4">
+        <i class="ti ti-whistle-off text-4xl md:text-6xl mb-4"></i>
+        <h3 class="text-lg md:text-xl font-semibold mb-2">Тренеры не найдены</h3>
+        <p class="text-sm">Попробуйте изменить параметры поиска</p>
     </div>
     {% endfor %}
 </div>
 
 <!-- === PAGINATION === -->
 {% if is_paginated %}
-<div class="flex justify-center mt-8">
+<div class="flex justify-center mt-6 md:mt-8 px-2">
     <div class="join">
         {% if page_obj.has_previous %}
-        <a href="?page={{ page_obj.previous_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}{% if request.GET.team %}&team={{ request.GET.team }}{% endif %}"
-            class="join-item btn btn-sm">
+        <a href="?page={{ page_obj.previous_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}{% if request.GET.team %}&team={{ request.GET.team }}{% endif %}" class="join-item btn btn-sm">
             <i class="ti ti-chevron-left"></i>
         </a>
         {% endif %}
@@ -104,13 +96,11 @@
         {% if page_obj.number == num %}
         <button class="join-item btn btn-sm btn-active">{{ num }}</button>
         {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
-        <a href="?page={{ num }}{% if search_query %}&q={{ search_query }}{% endif %}{% if request.GET.team %}&team={{ request.GET.team }}{% endif %}"
-            class="join-item btn btn-sm">{{ num }}</a>
+        <a href="?page={{ num }}{% if search_query %}&q={{ search_query }}{% endif %}{% if request.GET.team %}&team={{ request.GET.team }}{% endif %}" class="join-item btn btn-sm">{{ num }}</a>
         {% endif %}
         {% endfor %}
         {% if page_obj.has_next %}
-        <a href="?page={{ page_obj.next_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}{% if request.GET.team %}&team={{ request.GET.team }}{% endif %}"
-            class="join-item btn btn-sm">
+        <a href="?page={{ page_obj.next_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}{% if request.GET.team %}&team={{ request.GET.team }}{% endif %}" class="join-item btn btn-sm">
             <i class="ti ti-chevron-right"></i>
         </a>
         {% endif %}
