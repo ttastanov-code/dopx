@@ -1,363 +1,179 @@
 {% load static %}
 {% load notification_extras %}
+<div class="navbar bg-base-100/95 backdrop-blur-sm border-b border-base-300 sticky top-0 z-40 w-full px-2 sm:px-4">
+    <!-- === ЛЕВАЯ ЧАСТЬ: Бургер + Лого === -->
+    <div class="navbar-start flex items-center gap-2 min-w-0">
+        <!-- Кнопка меню (только мобильные) -->
+        <button id="mobile-menu-btn" class="btn btn-ghost btn-sm p-2 lg:hidden" aria-label="Открыть меню">
+            <i class="ti ti-menu-2 text-xl"></i>
+        </button>
+        <!-- Логотип -->
+        <a href="{% url 'core:home' %}" class="btn btn-ghost normal-case text-lg sm:text-xl flex items-center gap-1 sm:gap-2 p-1 sm:p-2">
+            <img src="{% static 'img/DOPX_logo.png' %}" alt="DOPX" class="h-7 sm:h-8 w-auto shrink-0">
+            <span class="hidden sm:inline-block font-bold tracking-tight">DOPX</span>
+        </a>
+    </div>
 
-<div class="navbar bg-base-100/95 backdrop-blur-sm border-b border-base-300 sticky top-0 z-40 w-full">
-    <div class="w-full flex items-center justify-between px-4">
-        
-        <!-- === ЛЕВАЯ ЧАСТЬ: Лого + Мобильное меню === -->
-        <div class="navbar-start">
-            <!-- Hamburger для мобильных -->
-            <div class="dropdown">
-                <label tabindex="0" class="btn btn-ghost lg:hidden">
-                    <i class="ti ti-menu-2 text-xl"></i>
-                </label>
-                <ul tabindex="0" class="menu menu-sm dropdown-content mt-3 z-[100] p-2 shadow-lg bg-base-100 rounded-box w-64 border border-base-300">
-                    <li><a href="{% url 'core:home' %}" class="{% if request.resolver_match.url_name == 'home' %}active{% endif %}">
-                        <i class="ti ti-home"></i> Главная
-                    </a></li>
-                    <li><a href="{% url 'matches:list' %}" class="{% if request.resolver_match.app_name == 'matches' %}active{% endif %}">
-                        <i class="ti ti-trophy"></i> Матчи
-                    </a></li>
-                    
-                    <!-- Аналитика (mobile) -->
-                    <li>
-                        <details>
-                            <summary><i class="ti ti-chart-bar"></i> Аналитика</summary>
-                            <ul class="p-2">
-                                <li><a href="{% url 'teams:list' %}"><i class="ti ti-shirt-sport"></i> Команды</a></li>
-                                <li><a href="{% url 'players:list' %}"><i class="ti ti-play-football"></i> Игроки</a></li>
-                                <li><a href="{% url 'coaches:list' %}"><i class="ti ti-building-stadium"></i> Тренеры</a></li>
-                                <li><a href="{% url 'referees:list' %}"><i class="ti ti-gavel"></i> Судьи</a></li>
-                            </ul>
-                        </details>
-                    </li>
-                    
-                    <li><a href="{% url 'core:rules' %}">
-                        <i class="ti ti-file-text"></i> Правила
-                    </a></li>
-                    <li><a href="{% url 'core:contacts' %}">
-                        <i class="ti ti-mail"></i> Контакты
-                    </a></li>
-                </ul>
-            </div>
-            
-            <!-- Логотип -->
-            <a href="{% url 'core:home' %}" class="btn btn-ghost normal-case text-xl flex items-center gap-2">
-                <img src="{% static 'img/DOPX_logo.png' %}" alt="DOPX" class="h-8 w-auto">
-                <span class="hidden sm:inline-block font-bold tracking-tight">DOPX</span>
-            </a>
-        </div>
-        
-        <!-- === ЦЕНТР: Десктоп меню === -->
-        <div class="navbar-center hidden lg:flex">
-            <ul class="menu menu-horizontal px-1 gap-1">
-                <li>
-                    <a href="{% url 'core:home' %}" 
-                       class="flex items-center gap-2 {% if request.resolver_match.url_name == 'home' %}active font-semibold{% endif %}">
-                        <i class="ti ti-home"></i>
-                        <span>Главная</span>
-                    </a>
+    <!-- === ЦЕНТР: Десктоп меню === -->
+    <div class="navbar-center hidden lg:flex">
+        <ul class="menu menu-horizontal px-1 gap-1">
+            <li><a href="{% url 'core:home' %}" class="flex items-center gap-2 {% if request.resolver_match.url_name == 'home' %}active font-semibold{% endif %}"><i class="ti ti-home"></i><span>Главная</span></a></li>
+            <li><a href="{% url 'matches:list' %}" class="flex items-center gap-2 {% if request.resolver_match.app_name == 'matches' %}active font-semibold{% endif %}"><i class="ti ti-trophy"></i><span>Матчи</span></a></li>
+            <li>
+                <details>
+                    <summary class="flex items-center gap-2 {% if request.resolver_match.app_name in 'teams,players,coaches,referees' %}active font-semibold{% endif %}">
+                        <i class="ti ti-chart-bar"></i><span>Статистика</span>
+                    </summary>
+                    <ul class="p-2 w-56 bg-base-100 rounded-box shadow-xl border border-base-300 mt-2">
+                        <li><a href="{% url 'teams:list' %}" class="flex items-center gap-3"><div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center"><i class="ti ti-shirt-sport text-primary"></i></div><div><div class="font-medium">Команды</div><div class="text-xs opacity-60">Рейтинги и статистика</div></div></a></li>
+                        <li><a href="{% url 'players:list' %}" class="flex items-center gap-3"><div class="w-8 h-8 rounded-lg bg-secondary/10 flex items-center justify-center"><i class="ti ti-play-football text-secondary"></i></div><div><div class="font-medium">Игроки</div><div class="text-xs opacity-60">Топ выступлений</div></div></a></li>
+                        <li><a href="{% url 'coaches:list' %}" class="flex items-center gap-3"><div class="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center"><i class="ti ti-building-stadium text-accent"></i></div><div><div class="font-medium">Тренеры</div><div class="text-xs opacity-60">Тактика и замены</div></div></a></li>
+                        <li><a href="{% url 'referees:list' %}" class="flex items-center gap-3"><div class="w-8 h-8 rounded-lg bg-neutral/10 flex items-center justify-center"><i class="ti ti-gavel text-neutral"></i></div><div><div class="font-medium">Судьи</div><div class="text-xs opacity-60">Качество решений</div></div></a></li>
+                    </ul>
+                </details>
+            </li>
+            <li><a href="{% url 'core:rules' %}" class="flex items-center gap-2 {% if request.resolver_match.url_name == 'rules' %}active font-semibold{% endif %}"><i class="ti ti-file-text"></i><span>Правила</span></a></li>
+            <li><a href="{% url 'core:contacts' %}" class="flex items-center gap-2 {% if request.resolver_match.url_name == 'contacts' %}active font-semibold{% endif %}"><i class="ti ti-mail"></i><span>Контакты</span></a></li>
+        </ul>
+    </div>
+
+    <!-- === ПРАВАЯ ЧАСТЬ: Уведомления + Тема + Auth === -->
+    <div class="navbar-end flex items-center gap-1 sm:gap-2">
+        {% if user.is_authenticated %}
+            {% include 'components/_notification_badge.html' with count=user.notifications|unread_count %}
+        {% endif %}
+
+        <!-- Переключатель темы -->
+        <button class="btn btn-ghost btn-circle btn-sm flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10" @click="toggleTheme()">
+            <i x-show="theme === 'light'" class="ti ti-moon text-lg sm:text-xl leading-none"></i>
+            <i x-show="theme === 'dark'" class="ti ti-sun text-lg sm:text-xl leading-none"></i>
+        </button>
+
+        <!-- Auth кнопки -->
+        {% if user.is_authenticated %}
+        <div class="dropdown dropdown-end">
+            <label tabindex="0" class="btn btn-ghost btn-circle avatar flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 p-0">
+                <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-full ring ring-primary ring-offset-base-100 ring-offset-1 overflow-hidden">
+                    {% if user.avatar %}
+                    <img src="{{ user.avatar.url }}" alt="{{ user.username }}" />
+                    {% else %}
+                    <div class="w-full h-full bg-primary flex items-center justify-center text-primary-content font-bold text-sm">
+                        {{ user.username|first|upper }}
+                    </div>
+                    {% endif %}
+                </div>
+            </label>
+            <ul tabindex="0" class="menu menu-sm dropdown-content mt-2 z-[100] p-2 shadow-2xl bg-base-100 rounded-box w-56 border border-base-300">
+                <li class="p-3 border-b border-base-300">
+                    <div class="font-semibold truncate">{{ user.username }}</div>
+                    <div class="text-xs opacity-60 truncate">{{ user.email }}</div>
+                    {% if user.trust_score %}
+                    <div class="mt-2 flex items-center gap-2">
+                        <span class="text-xs">Trust Score:</span>
+                        <span class="badge badge-sm {% if user.trust_score >= 1.5 %}badge-success{% elif user.trust_score >= 1.2 %}badge-warning{% else %}badge-ghost{% endif %}">
+                            {{ user.trust_score|floatformat:2 }}
+                        </span>
+                    </div>
+                    {% endif %}
                 </li>
-                <li>
-                    <a href="{% url 'matches:list' %}" 
-                       class="flex items-center gap-2 {% if request.resolver_match.app_name == 'matches' %}active font-semibold{% endif %}">
-                        <i class="ti ti-trophy"></i>
-                        <span>Матчи</span>
-                    </a>
-                </li>
-                
-                <!-- Статистика Dropdown -->
-                <li>
-                    <details>
-                        <summary class="flex items-center gap-2 {% if request.resolver_match.app_name in 'teams,players,coaches,referees' %}active font-semibold{% endif %}">
-                            <i class="ti ti-chart-bar"></i>
-                            <span>Статистика</span>
-                        </summary>
-                        <ul class="p-2 w-56 bg-base-100 rounded-box shadow-xl border border-base-300 mt-2">
-                            <li>
-                                <a href="{% url 'teams:list' %}" class="flex items-center gap-3">
-                                    <div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                                        <i class="ti ti-shirt-sport text-primary"></i>
-                                    </div>
-                                    <div>
-                                        <div class="font-medium">Команды</div>
-                                        <div class="text-xs opacity-60">Рейтинги и статистика</div>
-                                    </div>
-                                </a>
-                            </li>
-                            <li>
-                                <a href="{% url 'players:list' %}" class="flex items-center gap-3">
-                                    <div class="w-8 h-8 rounded-lg bg-secondary/10 flex items-center justify-center">
-                                        <i class="ti ti-play-football text-secondary"></i>
-                                    </div>
-                                    <div>
-                                        <div class="font-medium">Игроки</div>
-                                        <div class="text-xs opacity-60">Топ выступлений</div>
-                                    </div>
-                                </a>
-                            </li>
-                            <li>
-                                <a href="{% url 'coaches:list' %}" class="flex items-center gap-3">
-                                    <div class="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center">
-                                        <i class="ti ti-building-stadium text-accent"></i>
-                                    </div>
-                                    <div>
-                                        <div class="font-medium">Тренеры</div>
-                                        <div class="text-xs opacity-60">Тактика и замены</div>
-                                    </div>
-                                </a>
-                            </li>
-                            <li>
-                                <a href="{% url 'referees:list' %}" class="flex items-center gap-3">
-                                    <div class="w-8 h-8 rounded-lg bg-neutral/10 flex items-center justify-center">
-                                        <i class="ti ti-gavel text-neutral"></i>
-                                    </div>
-                                    <div>
-                                        <div class="font-medium">Судьи</div>
-                                        <div class="text-xs opacity-60">Качество решений</div>
-                                    </div>
-                                </a>
-                            </li>
-                        </ul>
-                    </details>
-                </li>
-                
-                <li>
-                    <a href="{% url 'core:rules' %}" 
-                       class="flex items-center gap-2 {% if request.resolver_match.url_name == 'rules' %}active font-semibold{% endif %}">
-                        <i class="ti ti-file-text"></i>
-                        <span>Правила</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="{% url 'core:contacts' %}" 
-                       class="flex items-center gap-2 {% if request.resolver_match.url_name == 'contacts' %}active font-semibold{% endif %}">
-                        <i class="ti ti-mail"></i>
-                        <span>Контакты</span>
-                    </a>
-                </li>
+                <li><a href="{% url 'users:profile' %}"><i class="ti ti-user"></i> Профиль</a></li>
+                <li><a href="{% url 'users:leaderboard' %}"><i class="ti ti-trophy"></i> Рейтинг</a></li>
+                <li><a href="{% url 'notifications:list' %}"><i class="ti ti-bell"></i> Уведомления {% with unread=user.notifications|unread_count %}{% if unread %}<span class="badge badge-sm badge-error ml-auto">{{ unread }}</span>{% endif %}{% endwith %}</a></li>
+                <li class="border-t border-base-300"><a href="{% url 'users:logout' %}" class="text-error"><i class="ti ti-logout"></i> Выйти</a></li>
             </ul>
         </div>
-        
-        <!-- === ПРАВАЯ ЧАСТЬ: Auth + Тема + Уведомления === -->
-        <div class="navbar-end gap-2 items-center flex">
-            
-            <!-- Уведомления (только для авторизованных) -->
-            {% if user.is_authenticated %}
-            <div class="dropdown dropdown-end">
-                <!-- Уведомления -->
-                <label tabindex="0" 
-                    class="btn btn-ghost btn-circle relative flex items-center justify-center w-10 h-10"
-                    hx-get="{% url 'notifications:list' %}"
-                    hx-trigger="load, every 30s"
-                    hx-swap="none">
-                    
-                    <i class="ti ti-bell text-xl leading-none"></i>
-
-                    {% with unread=user.notifications|unread_count %}
-                    {% if unread %}
-                    <span class="badge badge-sm badge-error absolute -top-1 -right-1 text-white min-w-[1.25rem] h-5 flex items-center justify-center">
-                        {{ unread|truncatechars:2 }}
-                    </span>
-                    {% endif %}
-                    {% endwith %}
-                </label>
-                <div tabindex="0" class="dropdown-content z-[100] menu p-2 shadow-2xl bg-base-100 rounded-box w-80 border border-base-300 mt-2">
-                    <div class="p-3 border-b border-base-300">
-                        <div class="font-semibold text-lg">Уведомления</div>
-                        <div class="text-xs opacity-60">
-                            {% with unread=user.notifications|unread_count %}
-                            {{ unread }} непрочитанных
-                            {% endwith %}
-                        </div>
-                    </div>
-                    <div class="max-h-80 overflow-y-auto">
-                        {% for notification in user.notifications.all|slice:":5" %}
-                        <a href="{{ notification.action_url|default:'#' }}" 
-                           class="flex items-start gap-3 p-3 hover:bg-base-200 rounded-lg {% if not notification.is_read %}bg-base-200/50{% endif %}">
-                            <div class="w-2 h-2 rounded-full mt-2 {% if not notification.is_read %}bg-primary{% else %}bg-base-300{% endif %}"></div>
-                            <div class="flex-1">
-                                <div class="font-medium text-sm">{{ notification.title }}</div>
-                                <div class="text-xs opacity-70 mt-1">{{ notification.message|truncatechars:60 }}</div>
-                                <div class="text-xs opacity-50 mt-2">{{ notification.created_at|timesince }} назад</div>
-                            </div>
-                        </a>
-                        {% empty %}
-                        <div class="p-6 text-center opacity-60">
-                            <i class="ti ti-bell-off text-3xl mb-2"></i>
-                            <div class="text-sm">Нет уведомлений</div>
-                        </div>
-                        {% endfor %}
-                    </div>
-                    <div class="p-2 border-t border-base-300">
-                        <a href="{% url 'notifications:list' %}" class="btn btn-sm btn-ghost w-full">
-                            Все уведомления
-                        </a>
-                    </div>
-                </div>
-            </div>
-            {% endif %}
-            
-            <!-- Переключатель темы -->
-            <button 
-                class="btn btn-ghost btn-circle flex items-center justify-center w-10 h-10"
-                @click="toggleTheme()"
-            >
-                <i x-show="theme === 'light'" class="ti ti-moon text-xl leading-none"></i>
-                <i x-show="theme === 'dark'" class="ti ti-sun text-xl leading-none"></i>
-            </button>
-            
-            <!-- Auth кнопки -->
-            {% if user.is_authenticated %}
-            <!-- Профиль Dropdown -->
-            <div class="dropdown dropdown-end">
-                <!-- Аватар -->
-                <label tabindex="0" class="btn btn-ghost btn-circle avatar flex items-center justify-center w-10 h-10">
-                    <div class="w-10 h-10 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2 overflow-hidden">
-                        {% if user.avatar %}
-                        <img src="{{ user.avatar.url }}" alt="{{ user.username }}" />
-                        {% else %}
-                        <div class="w-full h-full bg-primary flex items-center justify-center text-primary-content font-bold">
-                            {{ user.username|first|upper }}
-                        </div>
-                        {% endif %}
-                    </div>
-                </label>
-                <ul tabindex="0" class="menu menu-sm dropdown-content mt-3 z-[100] p-2 shadow-2xl bg-base-100 rounded-box w-56 border border-base-300">
-                    <li class="p-3 border-b border-base-300">
-                        <div class="font-semibold">{{ user.username }}</div>
-                        <div class="text-xs opacity-60">{{ user.email }}</div>
-                        {% if user.trust_score %}
-                        <div class="mt-2 flex items-center gap-2">
-                            <span class="text-xs">Trust Score:</span>
-                            <span class="badge badge-sm {% if user.trust_score >= 1.5 %}badge-success{% elif user.trust_score >= 1.2 %}badge-warning{% else %}badge-ghost{% endif %}">
-                                {{ user.trust_score|floatformat:2 }}
-                            </span>
-                        </div>
-                        {% endif %}
-                    </li>
-                    <li>
-                        <a href="{% url 'users:profile' %}">
-                            <i class="ti ti-user"></i> Профиль
-                        </a>
-                    </li>
-                    <li>
-                        <a href="{% url 'users:leaderboard' %}">
-                            <i class="ti ti-trophy"></i> Рейтинг
-                        </a>
-                    </li>
-                    <li>
-                        <a href="{% url 'notifications:list' %}">
-                            <i class="ti ti-bell"></i> Уведомления
-                            {% with unread=user.notifications|unread_count %}
-                            {% if unread %}
-                            <span class="badge badge-sm badge-error">{{ unread }}</span>
-                            {% endif %}
-                            {% endwith %}
-                        </a>
-                    </li>
-                    <li class="border-t border-base-300">
-                        <a href="{% url 'users:logout' %}" class="text-error">
-                            <i class="ti ti-logout"></i> Выйти
-                        </a>
-                    </li>
-                </ul>
-            </div>
-            {% else %}
-            <!-- Кнопки входа/регистрации -->
-            <a href="{% url 'users:login' %}" class="btn btn-ghost btn-sm hidden sm:inline-flex">
-                <i class="ti ti-login"></i> Войти
-            </a>
-            <a href="{% url 'users:register' %}" class="btn btn-primary btn-sm">
-                <i class="ti ti-user-plus"></i> Регистрация
-            </a>
-            {% endif %}
-        </div>
+        {% else %}
+        <a href="{% url 'users:login' %}" class="btn btn-ghost btn-xs sm:btn-sm hidden sm:inline-flex"><i class="ti ti-login"></i> Войти</a>
+        <a href="{% url 'users:register' %}" class="btn btn-primary btn-xs sm:btn-sm"><i class="ti ti-user-plus"></i> <span class="hidden sm:inline">Регистрация</span></a>
+        {% endif %}
     </div>
 </div>
 
-<!-- === Мобильное меню (полноэкранное) === -->
-<div x-data="{ open: false }" 
-     x-show="open" 
-     x-transition
-     class="fixed inset-0 z-50 lg:hidden"
-     @click.self="open = false">
-    <div class="absolute inset-0 bg-black/50 backdrop-blur-sm"></div>
-    <div class="absolute right-0 top-0 h-full w-80 bg-base-100 shadow-2xl p-6 overflow-y-auto">
+<!-- === МОБИЛЬНОЕ МЕНЮ (Отдельный оверлей) === -->
+<div id="mobile-menu" class="fixed inset-0 z-50 lg:hidden hidden">
+    <!-- Затемнение фона -->
+    <div id="mobile-menu-backdrop" class="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+    <!-- Панель меню -->
+    <div class="absolute right-0 top-0 h-full w-[85vw] max-w-sm bg-base-100 shadow-2xl p-4 sm:p-6 overflow-y-auto">
         <div class="flex items-center justify-between mb-6">
             <div class="font-bold text-xl">Меню</div>
-            <button @click="open = false" class="btn btn-ghost btn-circle btn-sm">
-                <i class="ti ti-x"></i>
-            </button>
+            <button id="mobile-menu-close" class="btn btn-ghost btn-circle btn-sm"><i class="ti ti-x"></i></button>
         </div>
-        
-        <nav class="space-y-2">
-            <a href="{% url 'core:home' %}" class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200">
-                <i class="ti ti-home text-xl"></i>
-                <span>Главная</span>
+        <nav class="space-y-1">
+            <a href="{% url 'core:home' %}" class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200 {% if request.resolver_match.url_name == 'home' %}bg-base-200 font-medium{% endif %}">
+                <i class="ti ti-home text-xl"></i><span>Главная</span>
             </a>
-            <a href="{% url 'matches:list' %}" class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200">
-                <i class="ti ti-trophy text-xl"></i>
-                <span>Матчи</span>
+            <a href="{% url 'matches:list' %}" class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200 {% if request.resolver_match.app_name == 'matches' %}bg-base-200 font-medium{% endif %}">
+                <i class="ti ti-trophy text-xl"></i><span>Матчи</span>
             </a>
             
-            <div class="pt-2">
-                <div class="text-sm font-semibold opacity-60 mb-2 px-3">Аналитика</div>
-                <a href="{% url 'teams:list' %}" class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200">
-                    <i class="ti ti-shirt-sport text-xl"></i>
-                    <span>Команды</span>
-                </a>
-                <a href="{% url 'players:list' %}" class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200">
-                    <i class="ti ti-play-football text-xl"></i>
-                    <span>Игроки</span>
-                </a>
-                <a href="{% url 'coaches:list' %}" class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200">
-                    <i class="ti ti-building-stadium text-xl"></i>
-                    <span>Тренеры</span>
-                </a>
-                <a href="{% url 'referees:list' %}" class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200">
-                    <i class="ti ti-gavel text-xl"></i>
-                    <span>Судьи</span>
-                </a>
-            </div>
-            
+            <div class="divider my-2"></div>
+            <div class="px-3 text-xs font-semibold uppercase tracking-wide opacity-50 mb-2">Аналитика</div>
+            <a href="{% url 'teams:list' %}" class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200">
+                <i class="ti ti-shirt-sport text-xl"></i><span>Команды</span>
+            </a>
+            <a href="{% url 'players:list' %}" class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200">
+                <i class="ti ti-play-football text-xl"></i><span>Игроки</span>
+            </a>
+            <a href="{% url 'coaches:list' %}" class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200">
+                <i class="ti ti-building-stadium text-xl"></i><span>Тренеры</span>
+            </a>
+            <a href="{% url 'referees:list' %}" class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200">
+                <i class="ti ti-gavel text-xl"></i><span>Судьи</span>
+            </a>
+
+            <div class="divider my-2"></div>
             <a href="{% url 'core:rules' %}" class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200">
-                <i class="ti ti-file-text text-xl"></i>
-                <span>Правила</span>
+                <i class="ti ti-file-text text-xl"></i><span>Правила</span>
             </a>
             <a href="{% url 'core:contacts' %}" class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200">
-                <i class="ti ti-mail text-xl"></i>
-                <span>Контакты</span>
+                <i class="ti ti-mail text-xl"></i><span>Контакты</span>
             </a>
         </nav>
-        
+
         {% if user.is_authenticated %}
-        <div class="border-t border-base-300 mt-6 pt-6">
+        <div class="border-t border-base-300 mt-6 pt-4 space-y-1">
             <a href="{% url 'users:profile' %}" class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200">
-                <i class="ti ti-user text-xl"></i>
-                <span>Профиль</span>
+                <i class="ti ti-user text-xl"></i><span>Профиль</span>
             </a>
             <a href="{% url 'users:logout' %}" class="flex items-center gap-3 p-3 rounded-lg hover:bg-error/10 text-error">
-                <i class="ti ti-logout text-xl"></i>
-                <span>Выйти</span>
+                <i class="ti ti-logout text-xl"></i><span>Выйти</span>
             </a>
         </div>
         {% endif %}
     </div>
 </div>
 
-<!-- === Скрипт для мобильного меню === -->
+<!-- === Скрипт управления мобильным меню === -->
 <script>
-    // Открываем мобильное меню при клике на hamburger
-    document.addEventListener('DOMContentLoaded', function() {
-        const hamburgerBtn = document.querySelector('.navbar-start .dropdown > .btn');
-        if (hamburgerBtn) {
-            hamburgerBtn.addEventListener('click', function() {
-                const mobileMenu = document.querySelector('[x-data*="open"]');
-                if (mobileMenu && mobileMenu.__x) {
-                    mobileMenu.__x.$data.open = true;
-                }
-            });
-        }
-    });
+document.addEventListener('DOMContentLoaded', function() {
+    const menu = document.getElementById('mobile-menu');
+    const openBtn = document.getElementById('mobile-menu-btn');
+    const closeBtn = document.getElementById('mobile-menu-close');
+    const backdrop = document.getElementById('mobile-menu-backdrop');
+
+    function openMenu() {
+        if (!menu) return;
+        menu.classList.remove('hidden');
+        document.body.style.overflow = 'hidden'; // Блокируем скролл фона
+    }
+    function closeMenu() {
+        if (!menu) return;
+        menu.classList.add('hidden');
+        document.body.style.overflow = ''; // Возвращаем скролл
+    }
+
+    if (openBtn) openBtn.addEventListener('click', openMenu);
+    if (closeBtn) closeBtn.addEventListener('click', closeMenu);
+    if (backdrop) backdrop.addEventListener('click', closeMenu);
+
+    // Автозакрытие при клике на любую ссылку внутри меню
+    if (menu) {
+        menu.querySelectorAll('a').forEach(link => link.addEventListener('click', closeMenu));
+        // Закрытие по Escape
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') closeMenu();
+        });
+    }
+});
 </script>

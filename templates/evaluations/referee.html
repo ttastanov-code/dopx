@@ -4,48 +4,43 @@
 
 {% block content %}
 <!-- === PROGRESS BAR === -->
-<div class="max-w-4xl mx-auto mb-8">
-    <div class="flex items-center justify-between mb-3">
-        <span class="text-sm font-semibold text-base-content/70">
-            Шаг {{ step }} из {{ total_steps }}
-        </span>
-        <span class="text-sm font-medium text-primary">{{ progress }}% завершено</span>
-    </div>
-    <div class="w-full bg-base-200 rounded-full h-2.5">
-        <div class="bg-gradient-to-r from-primary to-primary/70 h-2.5 rounded-full transition-all duration-500"
-             style="width: {{ progress }}%"></div>
-    </div>
+<div class="max-w-4xl mx-auto mb-6 px-3">
+    {% include 'evaluations/_evaluation_progress.html' with step=5 total_steps=6 progress=progress %}
 </div>
 
 <!-- === MATCH INFO === -->
-<div class="max-w-4xl mx-auto mb-8">
+<div class="max-w-4xl mx-auto mb-6 px-3">
     <div class="card bg-base-100 border border-base-200 shadow-sm">
-        <div class="card-body p-5">
-            <div class="flex items-center justify-between">
-                <div class="flex items-center gap-3">
+        <div class="card-body p-3">
+            <div class="flex items-center justify-between gap-1">
+                <div class="flex flex-col items-center gap-0.5 flex-1 min-w-0">
                     {% if match.home_team.logo_url %}
-                        <img src="{{ match.home_team.logo_url }}" alt="{{ match.home_team.name }}" class="w-12 h-12 object-contain">
+                    <img src="{{ match.home_team.logo_url }}" alt="{{ match.home_team.name }}" class="w-8 h-8 object-contain">
                     {% else %}
-                        <div class="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary">
-                            {{ match.home_team.name|first|upper }}
-                        </div>
-                    {% endif %}
-                    <span class="font-semibold">{{ match.home_team.name }}</span>
-                </div>
-                <div class="text-center px-6">
-                    <div class="text-2xl font-bold font-mono">
-                        {% render_score match.home_score match.away_score %}
+                    <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-xs">
+                        {{ match.home_team.name|first|upper }}
                     </div>
-                    <div class="text-xs text-base-content/50">{{ match.start_time|date:"d.m.Y" }}</div>
+                    {% endif %}
+                    <span class="font-semibold text-[10px] text-center truncate w-full max-w-[80px]">
+                        {{ match.home_team.name|truncatechars:12 }}
+                    </span>
                 </div>
-                <div class="flex items-center gap-3">
-                    <span class="font-semibold">{{ match.away_team.name }}</span>
+
+                <div class="text-center px-2 py-1 bg-base-200 rounded-lg shrink-0 min-w-[65px]">
+                    <div class="text-sm font-bold font-mono">{% render_score match.home_score match.away_score %}</div>
+                    <div class="text-[8px] text-base-content/50">{{ match.start_time|date:"d.m" }}</div>
+                </div>
+
+                <div class="flex flex-col items-center gap-0.5 flex-1 min-w-0">
+                    <span class="font-semibold text-[10px] text-center truncate w-full max-w-[80px] order-2">
+                        {{ match.away_team.name|truncatechars:12 }}
+                    </span>
                     {% if match.away_team.logo_url %}
-                        <img src="{{ match.away_team.logo_url }}" alt="{{ match.away_team.name }}" class="w-12 h-12 object-contain">
+                    <img src="{{ match.away_team.logo_url }}" alt="{{ match.away_team.name }}" class="w-8 h-8 object-contain order-1">
                     {% else %}
-                        <div class="w-12 h-12 rounded-full bg-secondary/10 flex items-center justify-center font-bold text-secondary">
-                            {{ match.away_team.name|first|upper }}
-                        </div>
+                    <div class="w-8 h-8 rounded-full bg-secondary/10 flex items-center justify-center font-bold text-secondary text-xs order-1">
+                        {{ match.away_team.name|first|upper }}
+                    </div>
                     {% endif %}
                 </div>
             </div>
@@ -54,119 +49,67 @@
 </div>
 
 <!-- === FORM CARD === -->
-<div class="max-w-4xl mx-auto">
+<div class="max-w-4xl mx-auto px-3 overflow-x-hidden">
     <div class="card bg-base-100 border border-base-200 shadow-lg">
-        <div class="card-body p-8">
-            <div class="text-center mb-8">
-                <div class="w-16 h-16 rounded-2xl bg-neutral/10 flex items-center justify-center mx-auto mb-4">
-                    <i class="ti ti-referee text-3xl text-neutral"></i>
+        <div class="card-body p-4">
+            <div class="text-center mb-4">
+                <div class="w-12 h-12 rounded-2xl bg-neutral/10 flex items-center justify-center mx-auto mb-2">
+                    <i class="ti ti-referee text-xl text-neutral"></i>
                 </div>
-                <h2 class="text-2xl font-bold mb-2">Оценка судейства</h2>
-                <p class="text-base-content/60">Оцените работу главного судьи матча</p>
+                <h2 class="text-lg font-bold mb-1">Оценка судейства</h2>
+                <p class="text-xs text-base-content/60">Оцените работу главного судьи матча</p>
             </div>
 
-            <form method="post" class="space-y-8">
+            <form method="post" class="space-y-5">
                 {% csrf_token %}
-                
-                <!-- Влияние на матч (0-100) -->
-                <div class="form-control">
-                    <label class="label mb-3">
-                        <span class="label-text font-semibold text-lg tooltip"
-                              data-tip="{{ INDICATOR_TOOLTIPS.referee.influence_score|default:'Влияние на матч: 0=незаметен, 50=норма, 100=решил исход' }}">
-                            <i class="ti ti-scale text-neutral mr-2"></i>
-                            Влияние на матч
-                        </span>
-                        <span class="label-text-alt font-mono font-bold text-2xl" id="influence_value">50</span>
-                    </label>
-                    <input type="range"
-                           name="influence_score"
-                           min="0"
-                           max="100"
-                           value="50"
-                           class="range range-neutral range-xl"
-                           step="5"
-                           oninput="document.getElementById('influence_value').textContent = this.value">
-                    <div class="flex justify-between text-xs text-base-content/40 mt-3 px-1">
-                        <div class="text-center">
-                            <span>0</span>
-                            <div class="text-success text-xs mt-1">Не влиял</div>
-                        </div>
-                        <div class="text-center">
-                            <span>50</span>
-                            <div class="text-warning text-xs mt-1">Нормально</div>
-                        </div>
-                        <div class="text-center">
-                            <span>100</span>
-                            <div class="text-error text-xs mt-1">Решил исход</div>
-                        </div>
-                    </div>
-                    {% if form.influence_score.errors %}
-                        <label class="label">
-                            <span class="label-text-alt text-error">{{ form.influence_score.errors.0 }}</span>
+
+                <!-- Влияние на матч -->
+                <div>
+                    <div class="flex justify-between mb-1">
+                        <label class="text-xs font-semibold tooltip flex items-center gap-0.5"
+                               data-tip="Влияние на матч: 0=незаметен, 50=норма, 100=решил исход">
+                            <i class="ti ti-scale text-neutral text-sm"></i> Влияние на матч
                         </label>
-                    {% endif %}
+                        <span class="text-sm font-bold text-neutral" id="influence_value">50</span>
+                    </div>
+                    <input type="range" name="influence_score" min="0" max="100" value="50"
+                           class="range range-neutral range-xs w-full" step="5"
+                           oninput="document.getElementById('influence_value').textContent = this.value">
+                    <div class="flex justify-between text-[8px] text-base-content/40 mt-1 px-1">
+                        <span>0</span><span>50</span><span>100</span>
+                    </div>
                 </div>
 
-                <!-- Качество решений (1-10) -->
-                <div class="form-control">
-                    <label class="label mb-3">
-                        <span class="label-text font-semibold text-lg tooltip"
-                              data-tip="{{ INDICATOR_TOOLTIPS.referee.decision_quality|default:'Качество решений: точность свистков, работа с ВАР' }}">
-                            <i class="ti ti-checks text-success mr-2"></i>
-                            Качество решений
-                        </span>
-                        <span class="label-text-alt font-mono font-bold text-2xl" id="quality_value">5</span>
-                    </label>
-                    <input type="range"
-                           name="decision_quality"
-                           min="1"
-                           max="10"
-                           value="5"
-                           class="range range-success range-xl"
-                           oninput="document.getElementById('quality_value').textContent = this.value">
-                    <div class="flex justify-between text-xs text-base-content/40 mt-3 px-1">
-                        <div class="text-center">
-                            <span>1</span>
-                            <div class="text-error text-xs mt-1">Плохо</div>
-                        </div>
-                        <div class="text-center">
-                            <span>5</span>
-                            <div class="text-warning text-xs mt-1">Нормально</div>
-                        </div>
-                        <div class="text-center">
-                            <span>10</span>
-                            <div class="text-success text-xs mt-1">Отлично</div>
-                        </div>
-                    </div>
-                    {% if form.decision_quality.errors %}
-                        <label class="label">
-                            <span class="label-text-alt text-error">{{ form.decision_quality.errors.0 }}</span>
+                <!-- Качество решений -->
+                <div>
+                    <div class="flex justify-between mb-1">
+                        <label class="text-xs font-semibold tooltip flex items-center gap-0.5"
+                               data-tip="Качество решений: точность свистков, работа с ВАР">
+                            <i class="ti ti-checks text-success text-sm"></i> Качество решений
                         </label>
-                    {% endif %}
+                        <span class="text-sm font-bold text-success" id="quality_value">5</span>
+                    </div>
+                    <input type="range" name="decision_quality" min="1" max="10" value="5"
+                           class="range range-success range-xs w-full"
+                           oninput="document.getElementById('quality_value').textContent = this.value">
+                    <div class="flex justify-between text-[8px] text-base-content/40 mt-1 px-1">
+                        <span>1</span><span>5</span><span>10</span>
+                    </div>
                 </div>
 
                 <!-- Info Alert -->
-                <div class="alert alert-info rounded-xl">
-                    <i class="ti ti-info-circle"></i>
-                    <div>
-                        <h3 class="font-bold">Как оценивать?</h3>
-                        <ul class="text-xs space-y-1 mt-2">
-                            <li>• <strong>Влияние 0-30:</strong> Судья не заметен, игра течёт естественно</li>
-                            <li>• <strong>Влияние 31-70:</strong> Нормальная работа, есть спорные моменты</li>
-                            <li>• <strong>Влияние 71-100:</strong> Судья решил исход матча (пенальти, удаления)</li>
-                        </ul>
-                    </div>
+                <div class="alert alert-info rounded-xl py-2">
+                    <i class="ti ti-info-circle text-sm flex-shrink-0"></i>
+                    <span class="text-[10px]">Влияние 0-30: незаметен | 31-70: нормально | 71-100: решил исход</span>
                 </div>
 
                 <!-- Navigation Buttons -->
-                <div class="flex justify-between gap-4 pt-4 border-t border-base-200">
-                    <a href="{% url 'evaluations:coaches' match.id %}" class="btn btn-ghost btn-lg">
-                        <i class="ti ti-arrow-left"></i>
-                        Назад
+                <div class="flex gap-2 pt-2">
+                    <a href="{% url 'evaluations:coaches' match.id %}" class="btn btn-ghost btn-sm flex-1">
+                        <i class="ti ti-arrow-left"></i> Назад
                     </a>
-                    <button type="submit" class="btn btn-primary btn-lg px-8">
-                        Далее
-                        <i class="ti ti-arrow-right"></i>
+                    <button type="submit" class="btn btn-primary btn-sm flex-1">
+                        Далее <i class="ti ti-arrow-right"></i>
                     </button>
                 </div>
             </form>

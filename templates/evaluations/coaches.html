@@ -4,209 +4,148 @@
 
 {% block content %}
 <!-- === PROGRESS BAR === -->
-<div class="max-w-4xl mx-auto mb-8">
-    <div class="flex items-center justify-between mb-3">
-        <span class="text-sm font-semibold text-base-content/70">
-            Шаг {{ step }} из {{ total_steps }}
-        </span>
-        <span class="text-sm font-medium text-primary">{{ progress }}% завершено</span>
-    </div>
-    <div class="w-full bg-base-200 rounded-full h-2.5">
-        <div class="bg-gradient-to-r from-primary to-primary/70 h-2.5 rounded-full transition-all duration-500"
-             style="width: {{ progress }}%"></div>
-    </div>
+<div class="max-w-4xl mx-auto mb-6 px-3">
+    {% include 'evaluations/_evaluation_progress.html' with step=4 total_steps=6 progress=progress %}
 </div>
 
 <!-- === MATCH INFO === -->
-<div class="max-w-4xl mx-auto mb-8">
+<div class="max-w-4xl mx-auto mb-6 px-3">
     <div class="card bg-base-100 border border-base-200 shadow-sm">
-        <div class="card-body p-5">
-            <div class="flex items-center justify-between">
-                <div class="flex items-center gap-3">
+        <div class="card-body p-3">
+            <div class="flex items-center justify-between gap-1">
+                <div class="flex flex-col items-center gap-0.5 flex-1 min-w-0">
                     {% if match.home_team.logo_url %}
-                        <img src="{{ match.home_team.logo_url }}" alt="{{ match.home_team.name }}" class="w-12 h-12 object-contain">
+                    <img src="{{ match.home_team.logo_url }}" alt="{{ match.home_team.name }}" class="w-8 h-8 object-contain">
                     {% else %}
-                        <div class="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary">
-                            {{ match.home_team.name|first|upper }}
-                        </div>
-                    {% endif %}
-                    <span class="font-semibold">{{ match.home_team.name }}</span>
-                </div>
-                <div class="text-center px-6">
-                    <div class="text-2xl font-bold font-mono">
-                        {% render_score match.home_score match.away_score %}
+                    <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-xs">
+                        {{ match.home_team.name|first|upper }}
                     </div>
-                    <div class="text-xs text-base-content/50">{{ match.start_time|date:"d.m.Y" }}</div>
+                    {% endif %}
+                    <span class="font-semibold text-[10px] text-center truncate w-full max-w-[80px]">
+                        {{ match.home_team.name|truncatechars:12 }}
+                    </span>
                 </div>
-                <div class="flex items-center gap-3">
-                    <span class="font-semibold">{{ match.away_team.name }}</span>
+
+                <div class="text-center px-2 py-1 bg-base-200 rounded-lg shrink-0 min-w-[65px]">
+                    <div class="text-sm font-bold font-mono">{% render_score match.home_score match.away_score %}</div>
+                    <div class="text-[8px] text-base-content/50">{{ match.start_time|date:"d.m" }}</div>
+                </div>
+
+                <div class="flex flex-col items-center gap-0.5 flex-1 min-w-0">
+                    <span class="font-semibold text-[10px] text-center truncate w-full max-w-[80px] order-2">
+                        {{ match.away_team.name|truncatechars:12 }}
+                    </span>
                     {% if match.away_team.logo_url %}
-                        <img src="{{ match.away_team.logo_url }}" alt="{{ match.away_team.name }}" class="w-12 h-12 object-contain">
+                    <img src="{{ match.away_team.logo_url }}" alt="{{ match.away_team.name }}" class="w-8 h-8 object-contain order-1">
                     {% else %}
-                        <div class="w-12 h-12 rounded-full bg-secondary/10 flex items-center justify-center font-bold text-secondary">
-                            {{ match.away_team.name|first|upper }}
-                        </div>
+                    <div class="w-8 h-8 rounded-full bg-secondary/10 flex items-center justify-center font-bold text-secondary text-xs order-1">
+                        {{ match.away_team.name|first|upper }}
+                    </div>
                     {% endif %}
                 </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- === INFO ALERT === -->
-<div class="max-w-4xl mx-auto mb-6">
-    <div class="alert alert-info rounded-xl">
-        <i class="ti ti-info-circle"></i>
-        <div>
-            <h3 class="font-bold">Оценивайте работу тренеров</h3>
-            <div class="text-xs">
-                Тактика, замены, управление игрой и общее влияние на результат
             </div>
         </div>
     </div>
 </div>
 
 <!-- === FORM === -->
-<div class="max-w-4xl mx-auto">
-    <form method="post" action="{% url 'evaluations:coaches' match.id %}" class="space-y-6">
+<div class="max-w-4xl mx-auto px-3 overflow-x-hidden">
+    <form method="post" action="{% url 'evaluations:coaches' match.id %}" class="space-y-5">
         {% csrf_token %}
         
         {% for coach in coaches %}
-            <div class="card bg-base-100 border-2 border-accent/20 shadow-lg">
-                <div class="card-body p-6">
-                    <div class="flex items-center gap-4 mb-6 pb-4 border-b border-base-200">
-                        <div class="w-14 h-14 rounded-full bg-accent/10 flex items-center justify-center">
-                            <i class="ti ti-whistle text-accent text-2xl"></i>
-                        </div>
-                        <div class="flex-1">
-                            <h3 class="text-xl font-bold">{{ coach.first_name }} {{ coach.last_name }}</h3>
-                            <p class="text-sm text-base-content/50">
-                                {% if coach == match.home_coach %}
-                                    {{ match.home_team.name }}
-                                {% else %}
-                                    {{ match.away_team.name }}
-                                {% endif %}
-                            </p>
-                        </div>
-                        <div class="badge badge-accent badge-lg">Тренер</div>
+        <div class="card bg-base-100 border-2 border-accent/20 shadow-sm">
+            <div class="card-body p-3">
+                <div class="flex items-center gap-2 mb-3 pb-2 border-b border-base-200">
+                    <div class="w-8 h-8 rounded-full bg-accent/10 flex items-center justify-center flex-shrink-0">
+                        <i class="ti ti-whistle text-accent text-base"></i>
                     </div>
-                    
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <!-- Тактика -->
-                        <div class="form-control">
-                            <label class="label mb-2">
-                                <span class="label-text font-semibold tooltip"
-                                      data-tip="{{ INDICATOR_TOOLTIPS.coach.tactics|default:'Тактика: выбор схемы, адаптация под соперника' }}">
-                                    <i class="ti ti-chess text-accent mr-2"></i>
-                                    Тактика
-                                </span>
-                                <span class="label-text-alt font-mono font-bold text-lg" 
-                                      id="coach_{{ coach.id }}_tactics_value">5</span>
+                    <div class="flex-1 min-w-0">
+                        <h3 class="font-bold text-sm truncate">{{ coach.first_name }} {{ coach.last_name }}</h3>
+                        <p class="text-[10px] text-base-content/50 truncate">
+                            {% if coach == match.home_coach %}{{ match.home_team.name }}{% else %}{{ match.away_team.name }}{% endif %}
+                        </p>
+                    </div>
+                    <div class="badge badge-accent badge-xs flex-shrink-0">Тренер</div>
+                </div>
+                <div class="space-y-3">
+                    <div>
+                        <div class="flex justify-between mb-1">
+                            <label class="text-[10px] font-semibold tooltip flex items-center gap-0.5"
+                                   data-tip="{{ INDICATOR_TOOLTIPS.coach.tactics }}">
+                                <i class="ti ti-chess text-accent text-xs"></i> Тактика
                             </label>
-                            <input type="range"
-                                   name="coach_{{ coach.id }}_tactics"
-                                   min="1"
-                                   max="10"
-                                   value="5"
-                                   class="range range-accent range-lg"
-                                   oninput="document.getElementById('coach_{{ coach.id }}_tactics_value').textContent = this.value">
-                            <div class="flex justify-between text-xs text-base-content/40 mt-2 px-1">
-                                <span>1</span>
-                                <span>5</span>
-                                <span>10</span>
-                            </div>
+                            <span class="text-xs font-bold text-accent" id="coach_{{ coach.id }}_tactics_value">5</span>
                         </div>
-                        <!-- Замены -->
-                        <div class="form-control">
-                            <label class="label mb-2">
-                                <span class="label-text font-semibold tooltip"
-                                      data-tip="{{ INDICATOR_TOOLTIPS.coach.substitutions|default:'Замены: своевременность и эффективность замен' }}">
-                                    <i class="ti ti-refresh text-accent mr-2"></i>
-                                    Замены
-                                </span>
-                                <span class="label-text-alt font-mono font-bold text-lg" 
-                                      id="coach_{{ coach.id }}_substitutions_value">5</span>
-                            </label>
-                            <input type="range"
-                                   name="coach_{{ coach.id }}_substitutions"
-                                   min="1"
-                                   max="10"
-                                   value="5"
-                                   class="range range-accent range-lg"
-                                   oninput="document.getElementById('coach_{{ coach.id }}_substitutions_value').textContent = this.value">
-                            <div class="flex justify-between text-xs text-base-content/40 mt-2 px-1">
-                                <span>1</span>
-                                <span>5</span>
-                                <span>10</span>
-                            </div>
+                        <input type="range" name="coach_{{ coach.id }}_tactics" min="1" max="10" value="5"
+                               class="range range-accent range-xs w-full"
+                               oninput="document.getElementById('coach_{{ coach.id }}_tactics_value').textContent = this.value">
+                        <div class="flex justify-between text-[8px] text-base-content/40 mt-0.5 px-1">
+                            <span>1</span><span>5</span><span>10</span>
                         </div>
-                        <!-- Управление -->
-                        <div class="form-control">
-                            <label class="label mb-2">
-                                <span class="label-text font-semibold tooltip"
-                                      data-tip="{{ INDICATOR_TOOLTIPS.coach.game_management|default:'Управление: контроль темпа, переломные решения' }}">
-                                    <i class="ti ti-control text-accent mr-2"></i>
-                                    Управление
-                                </span>
-                                <span class="label-text-alt font-mono font-bold text-lg" 
-                                      id="coach_{{ coach.id }}_management_value">5</span>
+                    </div>
+                    <div>
+                        <div class="flex justify-between mb-1">
+                            <label class="text-[10px] font-semibold tooltip flex items-center gap-0.5"
+                                   data-tip="{{ INDICATOR_TOOLTIPS.coach.substitutions }}">
+                                <i class="ti ti-refresh text-accent text-xs"></i> Замены
                             </label>
-                            <input type="range"
-                                   name="coach_{{ coach.id }}_management"
-                                   min="1"
-                                   max="10"
-                                   value="5"
-                                   class="range range-accent range-lg"
-                                   oninput="document.getElementById('coach_{{ coach.id }}_management_value').textContent = this.value">
-                            <div class="flex justify-between text-xs text-base-content/40 mt-2 px-1">
-                                <span>1</span>
-                                <span>5</span>
-                                <span>10</span>
-                            </div>
+                            <span class="text-xs font-bold text-accent" id="coach_{{ coach.id }}_substitutions_value">5</span>
                         </div>
-                        <!-- Влияние -->
-                        <div class="form-control">
-                            <label class="label mb-2">
-                                <span class="label-text font-semibold tooltip"
-                                      data-tip="{{ INDICATOR_TOOLTIPS.coach.impact|default:'Влияние: общий вклад тренера в результат' }}">
-                                    <i class="ti ti-impact text-accent mr-2"></i>
-                                    Влияние
-                                </span>
-                                <span class="label-text-alt font-mono font-bold text-lg" 
-                                      id="coach_{{ coach.id }}_impact_value">5</span>
+                        <input type="range" name="coach_{{ coach.id }}_substitutions" min="1" max="10" value="5"
+                               class="range range-accent range-xs w-full"
+                               oninput="document.getElementById('coach_{{ coach.id }}_substitutions_value').textContent = this.value">
+                        <div class="flex justify-between text-[8px] text-base-content/40 mt-0.5 px-1">
+                            <span>1</span><span>5</span><span>10</span>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="flex justify-between mb-1">
+                            <label class="text-[10px] font-semibold tooltip flex items-center gap-0.5"
+                                   data-tip="{{ INDICATOR_TOOLTIPS.coach.game_management }}">
+                                <i class="ti ti-control text-accent text-xs"></i> Управление
                             </label>
-                            <input type="range"
-                                   name="coach_{{ coach.id }}_impact"
-                                   min="1"
-                                   max="10"
-                                   value="5"
-                                   class="range range-accent range-lg"
-                                   oninput="document.getElementById('coach_{{ coach.id }}_impact_value').textContent = this.value">
-                            <div class="flex justify-between text-xs text-base-content/40 mt-2 px-1">
-                                <span>1</span>
-                                <span>5</span>
-                                <span>10</span>
-                            </div>
+                            <span class="text-xs font-bold text-accent" id="coach_{{ coach.id }}_management_value">5</span>
+                        </div>
+                        <input type="range" name="coach_{{ coach.id }}_management" min="1" max="10" value="5"
+                               class="range range-accent range-xs w-full"
+                               oninput="document.getElementById('coach_{{ coach.id }}_management_value').textContent = this.value">
+                        <div class="flex justify-between text-[8px] text-base-content/40 mt-0.5 px-1">
+                            <span>1</span><span>5</span><span>10</span>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="flex justify-between mb-1">
+                            <label class="text-[10px] font-semibold tooltip flex items-center gap-0.5"
+                                   data-tip="{{ INDICATOR_TOOLTIPS.coach.impact }}">
+                                <i class="ti ti-impact text-accent text-xs"></i> Влияние
+                            </label>
+                            <span class="text-xs font-bold text-accent" id="coach_{{ coach.id }}_impact_value">5</span>
+                        </div>
+                        <input type="range" name="coach_{{ coach.id }}_impact" min="1" max="10" value="5"
+                               class="range range-accent range-xs w-full"
+                               oninput="document.getElementById('coach_{{ coach.id }}_impact_value').textContent = this.value">
+                        <div class="flex justify-between text-[8px] text-base-content/40 mt-0.5 px-1">
+                            <span>1</span><span>5</span><span>10</span>
                         </div>
                     </div>
                 </div>
             </div>
+        </div>
         {% empty %}
-            <div class="alert alert-ghost rounded-xl">
-                <i class="ti ti-user-off"></i>
-                <span>Данные о тренерах недоступны для этого матча</span>
-            </div>
+        <div class="alert alert-ghost rounded-xl py-3">
+            <i class="ti ti-user-off text-sm flex-shrink-0"></i>
+            <span class="text-xs">Данные о тренерах недоступны</span>
+        </div>
         {% endfor %}
 
-        <!-- Navigation -->
-        <div class="flex justify-between gap-4 mt-6 pt-4 border-t border-base-200">
-            <a href="{% url 'evaluations:players' match.id %}" class="btn btn-ghost btn-lg">
-                <i class="ti ti-arrow-left"></i>
-                Назад
+        <!-- Navigation Buttons -->
+        <div class="flex gap-2 pt-2">
+            <a href="{% url 'evaluations:players' match.id %}" class="btn btn-ghost btn-sm flex-1">
+                <i class="ti ti-arrow-left"></i> Назад
             </a>
-            <button type="submit" class="btn btn-primary btn-lg px-8">
-                Далее
-                <i class="ti ti-arrow-right"></i>
+            <button type="submit" class="btn btn-primary btn-sm flex-1">
+                Далее <i class="ti ti-arrow-right"></i>
             </button>
         </div>
     </form>
