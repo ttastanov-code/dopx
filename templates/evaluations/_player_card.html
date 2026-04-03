@@ -1,0 +1,139 @@
+{% comment %}
+Карточка игрока для оценки
+Использование: {% include 'evaluations/_player_card.html' with lp=lp prefix="player" %}
+{% endcomment %}
+
+<div x-data="{ 
+    evaluate: false, 
+    contribution: 5, 
+    risk: 5, 
+    potential: 5 
+}"
+     class="card bg-base-100 border-2 {% verbatim %}{{ evaluate ? 'border-primary bg-primary/5' : 'border-base-200' }}{% endverbatim %} transition-all duration-200 shadow-sm hover:shadow-md"
+     :class="evaluate ? 'border-primary bg-primary/5 shadow-md' : 'border-base-200'">
+  
+  <div class="card-body p-4">
+    <!-- Header: Player Info + Toggle -->
+    <div class="flex items-center justify-between gap-3">
+      <div class="flex items-center gap-3 flex-1 min-w-0">
+        <!-- Номер -->
+        <div class="w-10 h-10 rounded-lg bg-base-200 flex items-center justify-center font-bold text-base shrink-0">
+          {{ lp.shirt_number|default:"?" }}
+        </div>
+        
+        <!-- Инфо -->
+        <div class="min-w-0 flex-1">
+          <div class="font-semibold text-base truncate">
+            {{ lp.player.first_name }} {{ lp.player.last_name }}
+          </div>
+          <div class="flex flex-wrap items-center gap-2 text-xs text-base-content/60 mt-0.5">
+            <span>{{ lp.player.team.name }}</span>
+            {% if lp.position %}
+              <span class="badge badge-xs badge-ghost">{{ lp.position }}</span>
+            {% endif %}
+            {% if lp.is_starting %}
+              <span class="text-success font-medium flex items-center gap-1">
+                <i class="ti ti-circle-filled text-[6px]"></i>
+                Старт
+              </span>
+            {% else %}
+              <span class="text-info font-medium flex items-center gap-1">
+                <i class="ti ti-clock text-xs"></i>
+                Замена
+              </span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <!-- Toggle -->
+      <label class="cursor-pointer flex items-center shrink-0" @click.stop>
+        <input type="checkbox" 
+               name="{{ prefix }}_{{ lp.player.id }}_evaluate" 
+               value="on"
+               class="toggle toggle-primary toggle-sm"
+               x-model="evaluate"
+               @change="$parent.updateCounter($event)">
+      </label>
+    </div>
+
+    <!-- Sliders Section -->
+    <div x-show="evaluate" 
+         x-collapse
+         @click.stop
+         class="mt-4 pt-4 border-t border-base-200 space-y-4">
+      
+      <!-- Вклад -->
+      <div class="form-control">
+        <label class="label mb-1 py-0">
+          <span class="label-text text-xs font-semibold text-warning flex items-center gap-1">
+            <i class="ti ti-star"></i>
+            Вклад
+          </span>
+          <span class="label-text-alt font-bold text-warning text-lg" x-text="contribution">5</span>
+        </label>
+        <input type="range" 
+               name="{{ prefix }}_{{ lp.player.id }}_contribution" 
+               min="1" 
+               max="10" 
+               value="5" 
+               class="range range-warning range-xs" 
+               x-model.number="contribution" 
+               step="1">
+        <div class="flex justify-between text-[10px] text-base-content/40 mt-1 px-1">
+          <span>1</span>
+          <span>5</span>
+          <span>10</span>
+        </div>
+      </div>
+
+      <!-- Риск -->
+      <div class="form-control">
+        <label class="label mb-1 py-0">
+          <span class="label-text text-xs font-semibold text-error flex items-center gap-1">
+            <i class="ti ti-alert-triangle"></i>
+            Риск
+          </span>
+          <span class="label-text-alt font-bold text-error text-lg" x-text="risk">5</span>
+        </label>
+        <input type="range" 
+               name="{{ prefix }}_{{ lp.player.id }}_risk" 
+               min="1" 
+               max="10" 
+               value="5" 
+               class="range range-error range-xs" 
+               x-model.number="risk" 
+               step="1">
+        <div class="flex justify-between text-[10px] text-base-content/40 mt-1 px-1">
+          <span>1</span>
+          <span>5</span>
+          <span>10</span>
+        </div>
+      </div>
+
+      <!-- Потенциал -->
+      <div class="form-control">
+        <label class="label mb-1 py-0">
+          <span class="label-text text-xs font-semibold text-success flex items-center gap-1">
+            <i class="ti ti-trending-up"></i>
+            Потенциал
+          </span>
+          <span class="label-text-alt font-bold text-success text-lg" x-text="pot">5</span>
+        </label>
+        <input type="range" 
+               name="{{ prefix }}_{{ lp.player.id }}_potential" 
+               min="1" 
+               max="10" 
+               value="5" 
+               class="range range-success range-xs" 
+               x-model.number="pot" 
+               step="1">
+        <div class="flex justify-between text-[10px] text-base-content/40 mt-1 px-1">
+          <span>1</span>
+          <span>5</span>
+          <span>10</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
