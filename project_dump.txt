@@ -17939,39 +17939,39 @@ FILE: templates/evaluations/_evaluation_progress.html
 ================================================================================
 
 {% comment %}
-Компонент прогресс-бара для оценок
+HTMX partial для прогресс-бара wizard-оценки
+Использование: hx-get="{% url 'evaluations:context' match.id %}" hx-target="#progress-container"
 {% endcomment %}
-
-<div id="progress-container" class="w-full">
-    <div class="mb-3">
-        <div class="flex items-center justify-between mb-1.5">
-            <span class="text-[10px] font-semibold text-base-content/70">Шаг {{ step }} из {{ total_steps }}</span>
-            <span class="text-[10px] font-medium text-primary">{{ progress|default:0 }}%</span>
+<div id="progress-container" class="px-2 sm:px-0">
+    <!-- Progress Bar -->
+    <div class="mb-6 sm:mb-8">
+        <div class="flex items-center justify-between mb-2">
+            <span class="text-xs sm:text-sm font-medium text-base-content/70">Шаг {{ step }} из {{ total_steps }}</span>
+            <span class="text-xs sm:text-sm font-medium text-primary">{{ progress }}% завершено</span>
         </div>
-        <div class="w-full bg-base-200 rounded-full h-1.5 overflow-hidden">
-            <div class="bg-gradient-to-r from-primary to-primary/70 h-full rounded-full transition-all duration-500 ease-out"
-                 style="width: {{ progress|default:0 }}%"></div>
+        <div class="w-full bg-base-200 rounded-full h-2 sm:h-2.5">
+            <div class="bg-primary h-2 sm:h-2.5 rounded-full transition-all duration-300"
+                 style="width: {{ progress }}%"></div>
         </div>
-        
-        <!-- Steps Indicator (десктоп) -->
-        <div class="hidden md:flex justify-between mt-3">
+        <!-- Steps Indicator -->
+        <div class="flex justify-between mt-3 sm:mt-4 px-1">
             {% for i in "123456"|make_list %}
-            <div class="flex flex-col items-center">
-                <div class="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold
-                    {% if i|add:0 == step %}
-                        bg-primary text-primary-content shadow
-                    {% elif i|add:0 < step %}
-                        bg-success text-success-content
+            <div class="flex flex-col items-center flex-1">
+                <div class="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-xs sm:text-sm font-bold transition-all
+                    {% if i|stringformat:"s" == step|stringformat:"s" %}
+                    bg-primary text-primary-content scale-110
+                    {% elif i|stringformat:"s" < step|stringformat:"s" %}
+                    bg-success text-success-content
                     {% else %}
-                        bg-base-300 opacity-40
+                    bg-base-300 opacity-40
                     {% endif %}">
-                    {% if i|add:0 < step %}
-                    <i class="ti ti-check text-[8px]"></i>
+                    {% if i|stringformat:"s" < step|stringformat:"s" %}
+                    <i class="ti ti-check text-sm"></i>
                     {% else %}
                     {{ i }}
                     {% endif %}
                 </div>
-                <span class="text-[9px] mt-0.5 opacity-60">
+                <span class="text-[10px] sm:text-xs mt-1 opacity-50 hidden sm:block truncate w-full text-center px-1">
                     {% if forloop.counter == 1 %}Контекст
                     {% elif forloop.counter == 2 %}Команды
                     {% elif forloop.counter == 3 %}Игроки
@@ -17979,26 +17979,6 @@ FILE: templates/evaluations/_evaluation_progress.html
                     {% elif forloop.counter == 5 %}Судья
                     {% else %}Финал{% endif %}
                 </span>
-            </div>
-            {% endfor %}
-        </div>
-        
-        <!-- Steps Indicator (мобильные) -->
-        <div class="flex md:hidden justify-between mt-2">
-            {% for i in "123456"|make_list %}
-            <div class="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold
-                {% if i|add:0 == step %}
-                    bg-primary text-primary-content
-                {% elif i|add:0 < step %}
-                    bg-success text-success-content
-                {% else %}
-                    bg-base-300 opacity-40
-                {% endif %}">
-                {% if i|add:0 < step %}
-                <i class="ti ti-check text-[7px]"></i>
-                {% else %}
-                {{ i }}
-                {% endif %}
             </div>
             {% endfor %}
         </div>
@@ -18179,7 +18159,7 @@ FILE: templates/evaluations/coaches.html
 </div>
 
 <!-- === FORM === -->
-<div class="max-w-4xl mx-auto px-3">
+<div class="max-w-4xl mx-auto px-3 overflow-x-hidden">
     <form method="post" action="{% url 'evaluations:coaches' match.id %}" class="space-y-5">
         {% csrf_token %}
         
@@ -18645,7 +18625,7 @@ FILE: templates/evaluations/match_final.html
 </div>
 
 <!-- === FORM CARD === -->
-<div class="max-w-4xl mx-auto px-3">
+<div class="max-w-4xl mx-auto px-3 overflow-x-hidden">
     <div class="card bg-base-100 border border-base-200 shadow-lg">
         <div class="card-body p-4">
             <div class="text-center mb-4">
@@ -18988,7 +18968,7 @@ FILE: templates/evaluations/referee.html
 </div>
 
 <!-- === FORM CARD === -->
-<div class="max-w-4xl mx-auto px-3">
+<div class="max-w-4xl mx-auto px-3 overflow-x-hidden">
     <div class="card bg-base-100 border border-base-200 shadow-lg">
         <div class="card-body p-4">
             <div class="text-center mb-4">
@@ -19114,7 +19094,7 @@ FILE: templates/evaluations/teams.html
 </div>
 
 <!-- === FORM === -->
-<div class="max-w-4xl mx-auto px-3">
+<div class="max-w-4xl mx-auto px-3 overflow-x-hidden">
     <form method="post" action="{% url 'evaluations:teams' match.id %}" class="space-y-5">
         {% csrf_token %}
         
