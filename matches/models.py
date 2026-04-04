@@ -86,6 +86,7 @@ class Match(BaseModel):
         ordering = ['-start_time']
         indexes = [
             models.Index(fields=['status', 'start_time']),
+            models.Index(fields=['status', 'end_time']), 
             models.Index(fields=['league', 'season', 'start_time']),
         ]
     

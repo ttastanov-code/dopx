@@ -427,21 +427,30 @@ def import_lineups(match: Match, lineup_data: Dict) -> bool:
 def find_player_by_name_in_match(match: Match, full_name: str, team_side: str, is_starting: bool = None) -> Optional[Player]:
     if not full_name:
         return None
-    full_name = ' '.join(full_name.strip().split())
+    
+    # Нормализуем имя: убираем лишние пробелы, приводим к нижнему регистру
+    full_name = ' '.join(full_name.strip().split()).lower()
     name_parts = full_name.split()
+    
     if not name_parts:
         return None
+    
     queryset = MatchLineupPlayer.objects.filter(
         lineup__match=match,
         lineup__side=team_side,
     ).select_related('player')
+    
     if is_starting is not None:
         queryset = queryset.filter(is_starting=is_starting)
+    
+    # 1. Точное совпадение по фамилии (последнее слово)
     if len(name_parts) >= 2:
         last_name = name_parts[-1]
         result = queryset.filter(player__last_name__iexact=last_name).first()
         if result:
             return result.player
+    
+    # 2. Совпадение по имени + фамилии
     if len(name_parts) >= 2:
         last_name = name_parts[-1]
         first_name = ' '.join(name_parts[:-1])
@@ -451,18 +460,24 @@ def find_player_by_name_in_match(match: Match, full_name: str, team_side: str, i
         ).first()
         if result:
             return result.player
+    
+    # 3. 🔥 НОВОЕ: Поиск по частичному совпадению (для кириллицы/латиницы)
     for part in name_parts:
-        if len(part) >= 4:
+        if len(part) >= 4:  # Ищем только значимые части имени
             result = queryset.filter(
                 Q(player__first_name__icontains=part) |
                 Q(player__last_name__icontains=part)
             ).first()
             if result:
+                logger.info(f"  🔍 Found player by partial match: '{part}' -> {result.player}")
                 return result.player
+    
+    # 4. Фоллбэк: поиск только по первому имени
     first_name = name_parts[0]
     result = queryset.filter(player__first_name__icontains=first_name).first()
     if result:
         return result.player
+    
     return None
 
 def _is_goal_disallowed(evt: Dict) -> bool:
@@ -493,76 +508,94 @@ def _is_goal_disallowed(evt: Dict) -> bool:
 def import_events_and_minutes(match: Match, events_data: Dict) -> bool:
     if not events_data:
         return False
-    events = events_data.get("events", [])
+    
+    # ✅ Поддержка разных форматов: 'events' или 'data'->'events'
+    events = events_data.get("events") or (
+        events_data.get("data", {}).get("events") if isinstance(events_data.get("data"), dict) else []
+    )
+    
     if not events:
         return False
+    
+    # Очищаем старые события
     deleted_count, _ = match.events.all().delete()
     if deleted_count > 0:
         logger.info(f"🗑️ Deleted {deleted_count} old events for match {match.id}")
+    
     created_count = 0
+    
     for evt in events:
         try:
+            # ✅ Безопасное получение полей с дефолтами
             minute = evt.get("minute")
             if not minute:
                 continue
+                
             event_type_raw = evt.get("event_type", "").lower()
+            
+            # ✅ Определение команды: по team_id или team_name
             team_id = evt.get("team_id")
+            team_name = evt.get("team_name", "")
+            
             if team_id and match.home_team.external_id and str(team_id) == str(match.home_team.external_id):
+                team_side = "home"
+            elif team_name and team_name == match.home_team.name:
                 team_side = "home"
             else:
                 team_side = "away"
+            
+            # ✅ Маппинг типов событий с расширенными вариантами
             event_type = EVENT_TYPE_MAP.get(event_type_raw, event_type_raw)
             if event_type is None:
                 logger.info(f"  ⚠️  Skipping unknown event type '{event_type_raw}' at {minute}'")
                 continue
+            
             valid_types = [et[0] for et in MatchEvent.EVENT_TYPES]
             if event_type not in valid_types:
+                # Добавляем неизвестный тип если нужно
                 logger.info(f"  ℹ️  Adding new event type: {event_type}")
-            player = None
-            player_out = None
-            assist_player = None
+            
+            # ✅ Инициализация переменных
+            player = player_out = assist_player = None
             score_after = ""
             card_reason = None
             var_decision = ""
+            
+            # === ОБРАБОТКА ГОЛОВ ===
             if event_type in ("goal", "penalty", "own_goal"):
                 if _is_goal_disallowed(evt):
                     event_type = "disallowed_goal"
                     logger.info(f"  ⚠️  Goal at {minute}' marked as DISALLOWED")
+                
+                # ✅ Поиск игрока: по ID или по имени
                 player_id = evt.get("player_id")
                 player_name_full = evt.get("player_name", "").strip()
+                
                 if player_id:
                     player = Player.objects.filter(external_id=str(player_id)).first()
                 if not player and player_name_full:
                     player = find_player_by_name_in_match(match, player_name_full, team_side)
-                assist_id = evt.get("assist_player_id")
+                
+                # Ассист
+                assist_id = evt.get("assist_player_id") or evt.get("assist_id")
                 if assist_id:
                     assist_player = Player.objects.filter(external_id=str(assist_id)).first()
-                score_after = ""
-            elif event_type == "missed_penalty":
-                player_id = evt.get("player_id")
-                player_name_full = evt.get("player_name", "").strip()
-                if player_id:
-                    player = Player.objects.filter(external_id=str(player_id)).first()
-                if not player and player_name_full:
-                    player = find_player_by_name_in_match(match, player_name_full, team_side)
-                logger.info(f"  ⚽ Missed penalty at {minute}' by {player}")
-            elif event_type == "disallowed_goal":
-                player_id = evt.get("player_id")
-                player_name_full = evt.get("player_name", "").strip()
-                if player_id:
-                    player = Player.objects.filter(external_id=str(player_id)).first()
-                if not player and player_name_full:
-                    player = find_player_by_name_in_match(match, player_name_full, team_side)
-                assist_id = evt.get("assist_player_id")
-                if assist_id:
-                    assist_player = Player.objects.filter(external_id=str(assist_id)).first()
-                logger.info(f"  ⚽ Disallowed goal at {minute}' by {player}")
+                
+                # Счёт после гола
+                score_after = evt.get("score_after") or evt.get("home_score") and f"{evt.get('home_score')}:{evt.get('away_score')}"
+                
+            # === ОБРАБОТКА ЗАМЕН ===
             elif event_type == "substitution":
-                player_out_id = evt.get("player_id")
-                player_in_id = evt.get("player2_id")
-                player_out_name = evt.get("player_name", "").strip()
-                player_in_name = evt.get("player2_name", "").strip()
+                # ✅ Поддержка разных форматов: player_id/player2_id или player_in_id/player_out_id
+                player_out_id = evt.get("player_id") or evt.get("player_out_id")
+                player_in_id = evt.get("player2_id") or evt.get("player_in_id")
+                
+                player_out_name = evt.get("player_name", "").strip() or evt.get("player_out_name", "").strip()
+                player_in_name = evt.get("player2_name", "").strip() or evt.get("player_in_name", "").strip()
+                
                 logger.info(f"  🔄 {minute}' [{team_side}]: OUT={player_out_name}({player_out_id}), IN={player_in_name}({player_in_id})")
+                
+                # Поиск игрока, который ушёл
                 if player_out_id:
                     candidate = Player.objects.filter(external_id=str(player_out_id)).first()
                     if candidate and candidate.team_id in [match.home_team_id, match.away_team_id]:
@@ -570,8 +603,12 @@ def import_events_and_minutes(match: Match, events_data: Dict) -> bool:
                             lineup__match=match, lineup__side=team_side, player=candidate
                         ).exists():
                             player_out = candidate
-                    if not player_out and player_out_name:
-                        player_out = find_player_by_name_in_match(match, player_out_name, team_side, is_starting=True)
+                
+                # Фоллбэк: поиск по имени
+                if not player_out and player_out_name:
+                    player_out = find_player_by_name_in_match(match, player_out_name, team_side, is_starting=True)
+                
+                # Поиск игрока, который вышел
                 if player_in_id:
                     candidate = Player.objects.filter(external_id=str(player_in_id)).first()
                     if candidate and candidate.team_id in [match.home_team_id, match.away_team_id]:
@@ -579,34 +616,51 @@ def import_events_and_minutes(match: Match, events_data: Dict) -> bool:
                             lineup__match=match, lineup__side=team_side, player=candidate
                         ).exists():
                             player = candidate
-                    if not player and player_in_name:
-                        player = find_player_by_name_in_match(match, player_in_name, team_side, is_starting=False)
+                
+                # Фоллбэк: поиск по имени
+                if not player and player_in_name:
+                    player = find_player_by_name_in_match(match, player_in_name, team_side, is_starting=False)
+                
+                # ✅ Обновляем состав: игрок вышел на замену
                 if player:
                     MatchLineupPlayer.objects.filter(
                         lineup__match=match, player=player
                     ).update(minute_in=minute, is_starting=False)
+                
+                # ✅ Обновляем состав: игрок ушёл с поля
                 if player_out:
                     MatchLineupPlayer.objects.filter(
                         lineup__match=match, player=player_out
                     ).update(minute_out=minute)
+                
                 logger.info(f"  📝 {minute}': player(IN)={player}, player_out(OUT)={player_out}")
+                
+            # === ОБРАБОТКА КАРТОЧЕК ===
             elif event_type in ("yellow_card", "red_card"):
                 player_id = evt.get("player_id")
                 player_name_full = evt.get("player_name", "").strip()
+                
                 if player_id:
                     player = Player.objects.filter(external_id=str(player_id)).first()
                 if not player and player_name_full:
                     player = find_player_by_name_in_match(match, player_name_full, team_side)
-                reason = evt.get("reason", "")
+                
+                # Причина карточки
+                reason = evt.get("reason") or evt.get("card_reason")
                 if reason:
                     card_reason = "unsporting" if "unsporting" in reason.lower() else "other"
+            
+            # === VAR ===
             elif event_type == "var_check":
-                var_decision = evt.get("decision", "")
+                var_decision = evt.get("decision") or evt.get("var_decision", "")
+            
+            # === СОЗДАНИЕ СОБЫТИЯ ===
             MatchEvent.objects.create(
                 match=match,
                 player=player,
                 minute=minute,
-                added_time=evt.get("added_time", 0),
+                # ✅ Безопасное получение добавленного времени
+                added_time=evt.get("added_time") or evt.get("extra_time", 0),
                 event_type=event_type,
                 team_side=team_side,
                 assist_player=assist_player,
@@ -614,12 +668,15 @@ def import_events_and_minutes(match: Match, events_data: Dict) -> bool:
                 player_out=player_out,
                 card_reason=card_reason,
                 var_decision=var_decision,
+                # ✅ Сохраняем сырые данные для отладки
                 extra_data=evt,
             )
             created_count += 1
+            
         except Exception as e:
             logger.error(f"⚠️ Ошибка события: {e} | Data: {evt}", exc_info=True)
             continue
+    
     event_count = MatchEvent.objects.filter(match=match).count()
     logger.info(f"✅ Imported {created_count} events for match {match.id} (total in DB: {event_count})")
     return True

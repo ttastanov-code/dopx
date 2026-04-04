@@ -186,62 +186,69 @@ CELERY_BEAT_SCHEDULE = {
             'tournament_code': 'pl',
             'limit': 10,
         },
-        'options': {'queue': 'default'}
+        # 'options': {'queue': 'default'}
     },
     # === ПОЛНАЯ синхронизация Премьер-Лиги (раз в сутки в 03:00) ===
     'sync-kff-premier-league-full': {
         'task': 'parsers.tasks.sync_kff_premier_league',
         'schedule': crontab(hour=3, minute=0),
-        'options': {'queue': 'default'}
+        # 'options': {'queue': 'default'}
     },
-    # === Обновление статусов матчей (каждый час) ===
-    'update-match-statuses-hourly': {
+    # === Частое обновление для LIVE матчей ===
+    'update-live-matches': {
         'task': 'parsers.tasks.update_match_statuses',
-        'schedule': crontab(minute=0),
-        'options': {'queue': 'default'}
+        'schedule': crontab(minute='*/2'),  # Каждые 2 минуты для live
+        # 'options': {'queue': 'default'}
+    },
+    
+    # === Реже для scheduled матчей ===
+    'update-scheduled-matches': {
+        'task': 'parsers.tasks.update_match_statuses',
+        'schedule': crontab(minute='*/10'),  # Каждые 10 минут
+        # 'options': {'queue': 'default'}
     },
     # === Пересчёт таблицы (каждые 10 минут) — ✅ АВТО-СЕЗОН ===
     'recalculate-standings': {
         'task': 'aggregates.tasks.recalculate_season_standings',
         'schedule': crontab(minute='*/10'),
         # ✅ Убрано kwargs с season_id — теперь авто-детекция
-        'options': {'queue': 'default'}
+        # 'options': {'queue': 'default'}
     },
     # === Пересчёт агрегатов (каждые 10 минут) ===
     'recalculate-aggregates': {
         'task': 'aggregates.tasks.recalculate_all_aggregates',
         'schedule': crontab(minute='*/10'),
-        'options': {'queue': 'default'}
+        # 'options': {'queue': 'default'}
     },
     # === Уведомления (каждые 6 часов) ===
     'voting-reminders': {
         'task': 'notifications.tasks.cleanup_old_notifications',
         'schedule': crontab(minute=0, hour='*/6'),
-        'options': {'queue': 'default'}
+        # 'options': {'queue': 'default'}
     },
     # === Очистка старых данных (каждый день в 03:00) ===
     'cleanup-old-sessions-daily': {
         'task': 'notifications.tasks.cleanup_old_sessions',
         'schedule': crontab(hour=3, minute=0),
-        'options': {'queue': 'default'}
+        # 'options': {'queue': 'default'}
     },
     # === Проверка здоровья API (каждые 2 часа) ===
     'health-check-kff-api': {
         'task': 'parsers.tasks.health_check_kff_api',
         'schedule': crontab(minute=0, hour='*/2'),
-        'options': {'queue': 'default'}
+        # 'options': {'queue': 'default'}
     },
     # === Мониторинг ошибок синхронизации (каждые 4 часа) ===
     'sync-error-monitor': {
         'task': 'parsers.tasks.check_sync_errors_and_alert',
         'schedule': crontab(minute=0, hour='*/4'),
-        'options': {'queue': 'default'}
+        # 'options': {'queue': 'default'}
     },
     # === НАПОМИНАНИЕ О ЗАКРЫТИИ ГОЛОСОВАНИЯ (каждые 30 минут) ===
     'notify-voting-closing': {
         'task': 'notifications.tasks.notify_voting_closing_soon',
         'schedule': crontab(minute='*/30'),  # Проверять каждые 30 минут
-        'options': {'queue': 'default'}
+        # 'options': {'queue': 'default'}
     },
 }
 
