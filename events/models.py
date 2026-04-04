@@ -71,6 +71,7 @@ class MatchEvent(BaseModel):
     score_after = models.CharField(
         max_length=5,
         blank=True,
+        null=True,  # ← ДОБАВИТЬ эту строку
         help_text="Например: 2-1"
     )
     

@@ -150,27 +150,204 @@ def sync_full_season(self, season_id: int = None, tournament_code: str = None):
         _send_sync_error_alert(error_msg, 'sync_critical', extra_data={'exception': str(e)})
         return {'success': 0, 'failed': 0, 'error': str(e)}
 
-@shared_task
-def update_match_statuses():
-    """Обновление статусов матчей (live/finished)"""
+# parsers/tasks.py
+
+@shared_task(bind=True, max_retries=3, rate_limit='30/m')
+def update_match_statuses(self):
+    """
+    Полная синхронизация незавершённых матчей с внешним API.
+    
+    Что обновляется:
+    - Статус матча (scheduled → live → finished)
+    - Счёт (home_score, away_score)
+    - Время окончания (end_time)
+    - События матча (голы, карточки, замены, VAR)
+    - Составы (если ещё не загружены)
+    - Статистика матча
+    
+    Запускается каждые 2-5 минут для live-матчей, каждые 10-15 мин для scheduled.
+    """
     from matches.models import Match
+    from events.models import MatchEvent
+    from lineups.models import MatchLineup, MatchLineupPlayer
+    from players.models import Player
+    from teams.models import Team
+    from django.utils import timezone
+    from datetime import timedelta
+    from parsers.kff.client import KFFClient
+    from parsers.kff.importers import (
+        import_events_and_minutes,
+        import_lineups,
+        import_coaches,
+        import_stats,
+        STATUS_MAP,
+        EVENT_TYPE_MAP,
+    )
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    logger.info("🔄 Starting match status & data sync...")
     
     now = timezone.now()
+    client = KFFClient()
     
-    # Завершённые матчи
-    finished = Match.objects.filter(
-        status='live',
-        end_time__lt=now
-    ).update(status='finished')
+    # === ШАГ 1: Получаем все незавершённые матчи ===
+    active_matches = Match.objects.filter(
+        status__in=['scheduled', 'live']
+    ).select_related(
+        'home_team', 'away_team', 'season', 'league', 'stadium'
+    ).prefetch_related(
+        'events',
+        'lineups__players__player'
+    )
     
-    # Матчи которые должны начаться
-    scheduled = Match.objects.filter(
-        status='scheduled',
-        start_time__lte=now
-    ).update(status='live')
+    stats = {
+        'total': active_matches.count(),
+        'updated': 0,
+        'unchanged': 0,
+        'errors': 0,
+        'new_events': 0,
+        'status_changes': 0,
+    }
     
-    logger.info(f"✅ Updated {finished} to finished, {scheduled} to live")
-    return {'finished': finished, 'live': scheduled}
+    for match in active_matches:
+        try:
+            # Определяем tournament_code из сезона или используем дефолт
+            tournament_code = getattr(match.season, 'tournament_code', 'pl')
+            
+            # === ШАГ 2: Запрашиваем данные матча из API ===
+            game_data = client.get_game_details(match.external_id, tournament_code=tournament_code)
+            if not game_data:
+                logger.warning(f"⚠️ No data for match {match.external_id} from API")
+                stats['errors'] += 1
+                continue
+            
+            # === ШАГ 3: Обновляем базовые данные матча ===
+            updated_fields = []
+            
+            # Статус
+            api_status = game_data.get('status', 'scheduled')
+            new_status = STATUS_MAP.get(api_status, match.status)
+            if new_status != match.status:
+                match.status = new_status
+                updated_fields.append('status')
+                stats['status_changes'] += 1
+                logger.info(f"📊 Match {match.id}: {match.status} → {new_status}")
+            
+            # Счёт (важно: 0:0 — валидный счёт!)
+            api_home_score = game_data.get('home_score')
+            api_away_score = game_data.get('away_score')
+            
+            if api_home_score is not None and match.home_score != api_home_score:
+                match.home_score = api_home_score
+                updated_fields.append('home_score')
+            
+            if api_away_score is not None and match.away_score != api_away_score:
+                match.away_score = api_away_score
+                updated_fields.append('away_score')
+            
+            # Время окончания (если матч завершён)
+            if new_status == 'finished' and not match.end_time:
+                # Пытаемся получить из API или вычисляем
+                api_end_time = game_data.get('end_time') or game_data.get('finished_at')
+                if api_end_time:
+                    from parsers.kff.importers import parse_match_datetime
+                    match.end_time = parse_match_datetime(
+                        api_end_time.split('T')[0] if 'T' in str(api_end_time) else api_end_time,
+                        None,
+                        tz=timezone.get_current_timezone()
+                    )
+                else:
+                    match.end_time = match.start_time + timedelta(minutes=110)
+                updated_fields.append('end_time')
+            
+            # Голосование открывается только для finished матчей
+            if new_status == 'finished' and not match.voting_open_until:
+                match.voting_open_until = match.start_time + timedelta(hours=48)
+                updated_fields.append('voting_open_until')
+            
+            # has_lineup
+            if game_data.get('has_lineup') and not match.has_lineup:
+                match.has_lineup = True
+                updated_fields.append('has_lineup')
+            
+            # Сохраняем изменения, если есть
+            if updated_fields:
+                updated_fields.append('updated_at')
+                match.save(update_fields=updated_fields)
+                stats['updated'] += 1
+                logger.debug(f"✅ Match {match.id} updated: {updated_fields}")
+            else:
+                stats['unchanged'] += 1
+            
+            # === ШАГ 4: Синхронизация событий матча ===
+            events_data = client.get_events(match.external_id, tournament_code=tournament_code)
+            if events_data and events_data.get('events'):
+                # Проверяем, есть ли новые события
+                existing_event_ids = set(
+                    MatchEvent.objects.filter(match=match).values_list('id', flat=True)
+                )
+                api_events = events_data.get('events', [])
+                
+                # Фильтруем только новые события (по комбинации минут+тип+игрок)
+                new_events = []
+                for evt in api_events:
+                    minute = evt.get('minute')
+                    event_type = evt.get('event_type', '').lower()
+                    player_id = evt.get('player_id')
+                    
+                    # Простая проверка на дубликаты
+                    exists = MatchEvent.objects.filter(
+                        match=match,
+                        minute=minute,
+                        event_type__icontains=event_type.split('_')[0] if '_' in event_type else event_type,
+                    ).exists()
+                    
+                    if not exists:
+                        new_events.append(evt)
+                
+                if new_events:
+                    # Импортируем новые события
+                    if import_events_and_minutes(match, {'events': new_events}):
+                        stats['new_events'] += len(new_events)
+                        logger.info(f"⚡ Added {len(new_events)} new events for match {match.id}")
+            
+            # === ШАГ 5: Загрузка составов (если ещё нет) ===
+            if match.has_lineup and not match.lineups.exists():
+                lineup_data = client.get_lineup(match.external_id, tournament_code=tournament_code)
+                if lineup_data:
+                    if import_coaches(match, lineup_data):
+                        logger.info(f"👨‍💼 Coaches imported for match {match.id}")
+                    if import_lineups(match, lineup_data):
+                        logger.info(f"👥 Lineups imported for match {match.id}")
+            
+            # === ШАГ 6: Статистика матча (опционально) ===
+            if match.status == 'finished':
+                stats_data = client.get_stats(match.external_id, tournament_code=tournament_code)
+                if stats_data:
+                    import_stats(match, stats_data)
+                    match.stats_imported = True  # если добавите такое поле
+                    match.save(update_fields=['stats_imported', 'updated_at'])
+            
+        except Exception as e:
+            logger.error(f"❌ Error syncing match {match.id}: {type(e).__name__}: {e}", exc_info=True)
+            stats['errors'] += 1
+            # Не прерываем цикл — продолжаем с другими матчами
+            continue
+    
+    # === ФИНАЛЬНЫЙ ЛОГ ===
+    logger.info(f"🏁 Match sync completed: {stats}")
+    
+    # Если есть ошибки — можно отправить алерт
+    if stats['errors'] > stats['total'] * 0.3:  # >30% ошибок
+        from parsers.tasks import _send_sync_error_alert
+        _send_sync_error_alert(
+            f"Высокий процент ошибок при синхронизации матчей: {stats['errors']}/{stats['total']}",
+            'match_sync_errors',
+            extra_data=stats
+        )
+    
+    return stats
 
 @shared_task
 def health_check_kff_api():

@@ -137,3 +137,61 @@ def send_voting_open_notification(self, match_id: str):
     except Exception as e:
         logger.error(f"❌ Error in send_voting_open_notification: {e}", exc_info=True)
         raise self.retry(exc=e, countdown=60)
+    
+ # ============================================================================
+# === ЗАДАЧА: НАПОМИНАНИЕ О ЗАКРЫТИИ ГОЛОСОВАНИЯ ===
+# ============================================================================
+
+@shared_task(bind=True, max_retries=3)
+def notify_voting_closing_soon(self):
+    """
+    Задача для напоминания о скором закрытии голосования.
+    Запускается Celery Beat (настройте интервал в CELERY_BEAT_SCHEDULE).
+    Ищет матчи, голосование по которым закроется в течение следующего часа.
+    """
+    from matches.models import Match
+    from users.models import User
+    from django.utils import timezone
+    from datetime import timedelta
+    import logging
+
+    logger = logging.getLogger(__name__)
+    
+    now = timezone.now()
+    # Окно: голосование закроется в течение следующего часа
+    closing_threshold = now + timedelta(hours=1)
+    
+    # Ищем матчи, которые:
+    # 1. Завершены (finished)
+    # 2. Голосование ещё открыто (voting_open_until >= now)
+    # 3. Голосование скоро закроется (voting_open_until <= now + 1 час)
+    matches = Match.objects.filter(
+        status='finished',
+        voting_open_until__gte=now,
+        voting_open_until__lte=closing_threshold
+    ).select_related('home_team', 'away_team')
+    
+    if not matches.exists():
+        logger.info(f"✅ No matches closing voting in the next hour (now={now}, threshold={closing_threshold})")
+        return {'status': 'ok', 'matches_found': 0}
+
+    logger.info(f"🔍 Found {matches.count()} matches closing voting soon: {[str(m.id) for m in matches]}")
+
+    # Берём только верифицированных пользователей с email
+    users = User.objects.filter(is_verified=True, email__isnull=False)
+    emails_sent = 0
+
+    for match in matches:
+        subject = f'⏰ Голосование за матч {match.home_team.name} vs {match.away_team.name} скоро закроется!'
+        
+        for user in users:
+            # Проверяем настройки пользователя
+            if not user.notification_settings.get('email_voting_closing', True):
+                continue
+            
+            # Используем существующую безопасную функцию отправки
+            if _send_email_to_user(user, subject, 'emails/voting_closing.html', {'match': match}):
+                emails_sent += 1
+
+    logger.info(f"✅ Sent {emails_sent} voting closing reminders.")
+    return {'status': 'ok', 'matches_processed': matches.count(), 'emails_sent': emails_sent}
