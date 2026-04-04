@@ -375,54 +375,49 @@ HTMX partial для событий матча с детализацией
         <p class="text-sm opacity-60 mt-1">Обновите страницу позже</p>
     </div>
     {% endfor %}
-</div>
 
-<!-- === ЛЕГЕНДА СОБЫТИЙ === -->
-{% if events %}
-<div class="mt-6 pt-5 border-t border-base-300">
-    <div class="flex items-center gap-2 mb-3">
-        <i class="ti ti-info-circle text-sm opacity-60"></i>
-        <span class="text-xs font-semibold uppercase tracking-wide opacity-60">Легенда событий</span>
+    <!-- === ЛЕГЕНДА СОБЫТИЙ (внутри контейнера) === -->
+    {% if events %}
+    <div class="mt-6 pt-5 border-t border-base-300">
+        <div class="flex items-center gap-2 mb-3">
+            <i class="ti ti-info-circle text-sm opacity-60"></i>
+            <span class="text-xs font-semibold uppercase tracking-wide opacity-60">Легенда событий</span>
+        </div>
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+            <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-success/5 border border-success/20">
+                <div class="w-6 h-6 rounded-full bg-success/20 flex items-center justify-center">
+                    <i class="ti ti-ball text-success text-sm"></i>
+                </div>
+                <span class="text-xs font-medium">Гол</span>
+            </div>
+            <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-warning/5 border border-warning/20">
+                <div class="w-6 h-6 rounded-full bg-warning/20 flex items-center justify-center">
+                    <i class="ti ti-whistle text-warning text-sm"></i>
+                </div>
+                <span class="text-xs font-medium">Пенальти</span>
+            </div>
+            <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-error/5 border border-error/20">
+                <div class="w-6 h-6 rounded-full bg-error/20 flex items-center justify-center">
+                    <i class="ti ti-circle-x text-error text-sm"></i>
+                </div>
+                <span class="text-xs font-medium">Не забит</span>
+            </div>
+            <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-neutral/5 border border-neutral/20">
+                <div class="w-6 h-6 rounded-full bg-neutral/20 flex items-center justify-center">
+                    <i class="ti ti-circle-x text-neutral text-sm"></i>
+                </div>
+                <span class="text-xs font-medium">Отменён</span>
+            </div>
+            <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200">
+                <div class="w-4 h-5 bg-amber-400 rounded-sm"></div>
+                <span class="text-xs font-medium">Жёлтая</span>
+            </div>
+            <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-50 border border-red-200">
+                <div class="w-4 h-5 bg-red-600 rounded-sm"></div>
+                <span class="text-xs font-medium">Красная</span>
+            </div>
+        </div>
     </div>
+    {% endif %}
     
-    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
-        <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-success/5 border border-success/20">
-            <div class="w-6 h-6 rounded-full bg-success/20 flex items-center justify-center">
-                <i class="ti ti-ball text-success text-sm"></i>
-            </div>
-            <span class="text-xs font-medium">Гол</span>
-        </div>
-        
-        <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-warning/5 border border-warning/20">
-            <div class="w-6 h-6 rounded-full bg-warning/20 flex items-center justify-center">
-                <i class="ti ti-whistle text-warning text-sm"></i>
-            </div>
-            <span class="text-xs font-medium">Пенальти</span>
-        </div>
-        
-        <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-error/5 border border-error/20">
-            <div class="w-6 h-6 rounded-full bg-error/20 flex items-center justify-center">
-                <i class="ti ti-circle-x text-error text-sm"></i>
-            </div>
-            <span class="text-xs font-medium">Не забит</span>
-        </div>
-        
-        <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-neutral/5 border border-neutral/20">
-            <div class="w-6 h-6 rounded-full bg-neutral/20 flex items-center justify-center">
-                <i class="ti ti-circle-x text-neutral text-sm"></i>
-            </div>
-            <span class="text-xs font-medium">Отменён</span>
-        </div>
-        
-        <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200">
-            <div class="w-4 h-5 bg-amber-400 rounded-sm"></div>
-            <span class="text-xs font-medium">Жёлтая</span>
-        </div>
-        
-        <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-50 border border-red-200">
-            <div class="w-4 h-5 bg-red-600 rounded-sm"></div>
-            <span class="text-xs font-medium">Красная</span>
-        </div>
-    </div>
 </div>
-{% endif %}
