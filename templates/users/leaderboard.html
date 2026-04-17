@@ -36,7 +36,7 @@
                         <th class="text-center">Trust Score</th>
                         <th class="text-center">Оценок</th>
                         <th class="text-center">Уровень</th>
-                        <th class="text-right">Статус</th>
+                        <th class="text-center">Статус</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -94,7 +94,7 @@
                             <span class="opacity-60">1</span>
                             {% endif %}
                         </td>
-                        <td class="text-right">
+                        <td class="text-center">
                             {% if user.trust_score >= 1.8 %}
                             <span class="badge badge-success badge-sm">Эксперт</span>
                             {% elif user.trust_score >= 1.4 %}
