@@ -25,16 +25,16 @@
     <!-- === ТАБЛИЦА === -->
     <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-0">
-            <div>
+            <div class="overflow-x-auto">
                 <table class="table">
                     <thead>
                     <tr>
                         <th class="w-16">#</th>
                         <th>Игрок</th>
                         <th class="text-center">Команда</th>
-                        <th class="text-center tooltip" data-tip="{{ INDICATOR_TOOLTIPS.aggregate.performance_score|default:'Рейтинг выступления: взвешенная оценка на основе вклада и риска' }}">Рейтинг выступления</th>
+                        <th class="text-center">Рейтинг выступления</th>
                         <th class="text-center">Матчей</th>
-                        <th class="text-right tooltip" data-tip="{{ INDICATOR_TOOLTIPS.aggregate.total_votes|default:'Всего голосов: количество пользователей, оценивших этот объект' }}">Оценок</th>
+                        <th class="text-center" >Оценок</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -81,8 +81,8 @@
                             <td class="text-center">
                                 <span class="font-mono">{{ player.total_matches }}</span>
                             </td>
-                            <td class="text-right">
-                                <span class="font-mono opacity-60 tooltip" data-tip="{{ INDICATOR_TOOLTIPS.aggregate.total_votes|default:'Всего голосов: количество пользователей, оценивших этот объект' }}">
+                            <td class="text-center">
+                                <span class="font-mono opacity-60">
                                     {{ player.total_votes }}
                                 </span>
                             </td>
