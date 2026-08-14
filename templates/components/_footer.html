@@ -16,19 +16,13 @@
                     Голос трибун измеряем. Платформа объективной оценки футбольных матчей на основе мнения болельщиков.
                 </p>
                 
-                <!-- Соцсети -->
+                <!-- Соцсети: по запросу оставлены только Telegram и Threads -->
                 <div class="flex gap-3">
                     <a href="#" class="btn btn-ghost btn-circle btn-sm" aria-label="Telegram">
                         <i class="ti ti-brand-telegram text-lg"></i>
                     </a>
-                    <a href="#" class="btn btn-ghost btn-circle btn-sm" aria-label="Instagram">
-                        <i class="ti ti-brand-instagram text-lg"></i>
-                    </a>
-                    <a href="#" class="btn btn-ghost btn-circle btn-sm" aria-label="YouTube">
-                        <i class="ti ti-brand-youtube text-lg"></i>
-                    </a>
-                    <a href="#" class="btn btn-ghost btn-circle btn-sm" aria-label="VK">
-                        <i class="ti ti-brand-vk text-lg"></i>
+                    <a href="#" class="btn btn-ghost btn-circle btn-sm" aria-label="Threads">
+                        <i class="ti ti-brand-threads text-lg"></i>
                     </a>
                 </div>
             </div>
@@ -112,11 +106,6 @@
                         </a>
                     </li>
                     <li>
-                        <a href="/api/docs/" class="hover:text-primary transition-colors" target="_blank">
-                            API Документация
-                        </a>
-                    </li>
-                    <li>
                         <a href="{% url 'core:privacy' %}" class="hover:text-primary transition-colors">
                             Политика конфиденциальности
                         </a>
@@ -130,23 +119,12 @@
             
             <!-- === НИЖНЯЯ ЧАСТЬ: Копирайт + Статус === -->
             <div class="flex flex-col md:flex-row justify-between items-center gap-4">
-                
+
                 <!-- Копирайт -->
                 <div class="text-sm opacity-60">
                     © {% now 'Y' %} DOPX. Все права защищены.
                 </div>
-                
-                <!-- Статус системы -->
-                <div class="flex items-center gap-4 text-sm">
-                    <div class="flex items-center gap-2 opacity-60">
-                        <span class="w-2 h-2 rounded-full bg-success animate-pulse"></span>
-                        <span>Система работает</span>
-                    </div>
-                    <div class="opacity-60">
-                        v1.0.0
-                    </div>
-                </div>
-                
+
                 <!-- Язык (заглушка) -->
                 <div class="dropdown dropdown-top">
                     <label tabindex="0" class="btn btn-ghost btn-sm">
