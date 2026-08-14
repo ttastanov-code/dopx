@@ -1,0 +1,44 @@
+{% comment %}
+Витрина номинаций сезона (core/nominations.py::get_nominations).
+Переиспользуется на главной странице (без фильтра, вся платформа) и на
+странице лиги (с фильтром по активному сезону) — см. core/views.py и
+leagues/views.py.
+
+Контекст: `nominations` — список словарей (может быть пустым, если по
+всем критериям меньше MIN_VOTES оценок — тогда секция просто не рисует
+карточки, вызывающий шаблон решает, показывать ли обёртку вовсе).
+{% endcomment %}
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
+    {% for nom in nominations %}
+    <a href="{% url nom.entity_url_name nom.entity_id %}"
+       class="card border transition-all hover:-translate-y-0.5
+              {% if nom.sentiment == 'positive' %}bg-success/5 border-success/20 hover:border-success/50
+              {% elif nom.sentiment == 'negative' %}bg-error/5 border-error/20 hover:border-error/50
+              {% else %}bg-info/5 border-info/20 hover:border-info/50{% endif %}">
+        <div class="card-body p-3 md:p-4">
+            <div class="flex items-start justify-between gap-2 mb-2">
+                <div class="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0
+                            {% if nom.sentiment == 'positive' %}bg-success/15 text-success
+                            {% elif nom.sentiment == 'negative' %}bg-error/15 text-error
+                            {% else %}bg-info/15 text-info{% endif %}">
+                    <i class="ti {{ nom.icon }} text-lg"></i>
+                </div>
+                <span class="badge badge-sm font-bold flex-shrink-0
+                             {% if nom.sentiment == 'positive' %}badge-success
+                             {% elif nom.sentiment == 'negative' %}badge-error
+                             {% else %}badge-info{% endif %} badge-outline">
+                    {{ nom.value_label }}
+                </span>
+            </div>
+            <h4 class="font-bold text-sm leading-tight mb-0.5">{{ nom.title }}</h4>
+            <p class="text-xs opacity-60 mb-2 leading-snug">{{ nom.subtitle }}</p>
+            <div class="flex items-center justify-between gap-2 pt-2 border-t border-base-300/60">
+                <span class="text-sm font-semibold truncate">{{ nom.entity_name }}</span>
+                <span class="text-[10px] opacity-50 flex-shrink-0 flex items-center gap-1">
+                    <i class="ti ti-users"></i>{{ nom.votes }}
+                </span>
+            </div>
+        </div>
+    </a>
+    {% endfor %}
+</div>

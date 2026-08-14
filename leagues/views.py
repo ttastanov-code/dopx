@@ -9,6 +9,7 @@ from matches.models import Match
 from teams.models import Team, TeamSeason, TeamSeasonStats
 from aggregates.models import MatchAggregate
 from players.models import Player
+from core.nominations import get_nominations
 import logging
 
 logger = logging.getLogger(__name__)
@@ -207,6 +208,11 @@ class LeagueDetailView(DetailView):
                 best_attack = max(eligible, key=lambda r: r['goals_scored'])
                 best_defense = min(eligible, key=lambda r: r['goals_conceded'])
 
+        # === НОМИНАЦИИ СЕЗОНА ===
+        # Та же витрина, что и на главной (core/nominations.py), но с
+        # фильтром по конкретной лиге и активному сезону.
+        nominations = get_nominations(league=league, season=active_season) if active_season else []
+
         context.update({
             'seasons': seasons,
             'active_season': active_season,
@@ -218,6 +224,7 @@ class LeagueDetailView(DetailView):
             'best_attack': best_attack,
             'best_defense': best_defense,
             'avg_goals_per_match': avg_goals_per_match,
+            'nominations': nominations,
             'page_title': f'{league.name} — DOPX',
         })
         return context

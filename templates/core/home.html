@@ -404,4 +404,41 @@
         </section>
     </div>
 </div>
+
+<!-- === НОМИНАЦИИ СЕЗОНА === -->
+<section class="mt-6 md:mt-10 px-2 md:px-0">
+    <div class="flex items-center justify-between mb-3 md:mb-4">
+        <h2 class="text-xl md:text-2xl font-bold flex items-center gap-2">
+            <i class="ti ti-award"></i>
+            Номинации сезона
+        </h2>
+        {% if nominations %}
+        <a href="{% url 'leagues:list' %}" class="btn btn-ghost btn-xs sm:btn-sm">
+            По лигам
+            <i class="ti ti-chevron-right"></i>
+        </a>
+        {% endif %}
+    </div>
+    {% if nominations %}
+    {% include 'components/_nominations.html' %}
+    {% else %}
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-6 md:p-10 text-center">
+            <i class="ti ti-award text-3xl md:text-4xl opacity-40 mb-3"></i>
+            <h3 class="font-bold text-base md:text-lg mb-2">Номинаций пока нет</h3>
+            <p class="text-sm opacity-60 max-w-md mx-auto">
+                Здесь появятся звания сезона — самый честный судья, самая
+                организованная команда и другие — как только по каждому
+                критерию наберётся минимум {{ nomination_min_votes|default:3 }} оценки.
+            </p>
+            {% if user.is_authenticated %}
+            <a href="{% url 'matches:list' %}" class="btn btn-primary btn-sm mt-4 mx-auto">
+                <i class="ti ti-star"></i>
+                Оценить матч
+            </a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+</section>
 {% endblock %}

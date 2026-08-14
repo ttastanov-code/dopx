@@ -34,6 +34,7 @@ from django.core.mail import send_mail, EmailMultiAlternatives
 from django.core.files.storage import default_storage
 
 from aggregates.models import MatchAggregate, PlayerMatchAggregate
+from core.nominations import MIN_VOTES as NOMINATION_MIN_VOTES, get_nominations
 from core.utils import get_client_ip
 from evaluations.models import EvaluationSession, MatchEvaluation, PlayerEvaluation, TeamEvaluation
 from matches.models import Match
@@ -143,6 +144,12 @@ class HomeView(TemplateView):
             if active_session:
                 active_match_id = active_session.match.id
 
+        # === НОМИНАЦИИ СЕЗОНА ===
+        # Витрина "интересных фактов" по всей платформе (без фильтра по
+        # лиге/сезону) — см. core/nominations.py за полным объяснением
+        # идеи и статистической защиты (MIN_VOTES).
+        nominations = get_nominations()
+
         context.update({
             'recent_matches': recent_matches,
             'upcoming_matches': upcoming_matches,
@@ -151,6 +158,8 @@ class HomeView(TemplateView):
             'stats': stats,
             'metrics': metrics,
             'active_match_id': active_match_id,
+            'nominations': nominations,
+            'nomination_min_votes': NOMINATION_MIN_VOTES,
             'page_title': 'DOPX — Голос трибун измеряем',
             'now': now,
         })

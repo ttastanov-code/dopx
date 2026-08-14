@@ -46,6 +46,22 @@
     </div>
 </div>
 
+<!-- === НОМИНАЦИИ СЕЗОНА === -->
+{% if nominations %}
+<div class="mb-6 px-2 sm:px-0">
+    <div class="flex items-center justify-between mb-3 md:mb-4">
+        <h2 class="text-xl md:text-2xl font-bold flex items-center gap-2">
+            <i class="ti ti-award"></i>
+            Номинации сезона
+        </h2>
+        {% if active_season %}
+        <span class="badge badge-warning badge-sm">{{ active_season.year }}</span>
+        {% endif %}
+    </div>
+    {% include 'components/_nominations.html' %}
+</div>
+{% endif %}
+
 <!-- === ДВЕ КОЛОНКИ === -->
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6 px-2 sm:px-0 min-w-0">
     <!-- === ЛЕВАЯ КОЛОНКА (2/3) === -->

@@ -3,12 +3,22 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from rest_framework.permissions import IsAdminUser
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
 
+# ИЗМЕНЕНО: раньше /api/schema/, /api/docs/ (Swagger) и /api/redoc/ были
+# полностью публичными и без авторизации — ссылка "API Документация"
+# висела в футере для ЛЮБОГО посетителя сайта. Продукта с публичным API
+# для внешних интеграторов нет, а список эндпоинтов и форматов запросов
+# в свободном доступе — это просто готовая шпаргалка для ботов, которые
+# захотят автоматизировать накрутку голосов (см. антифрод-меры в
+# evaluations/views.py и users/views.py). Теперь схема/доки доступны
+# только сотрудникам с is_staff=True — сама документация никуда не делась,
+# ей просто нужно быть залогиненным в админку под staff-аккаунтом.
 schema_patterns = [
-    path('api/schema/', SpectacularAPIView.as_view(throttle_classes=[]), name='schema'),
-    path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema', throttle_classes=[]), name='swagger-ui'),
-    path('api/redoc/', SpectacularRedocView.as_view(url_name='schema', throttle_classes=[]), name='redoc'),
+    path('api/schema/', SpectacularAPIView.as_view(throttle_classes=[], permission_classes=[IsAdminUser]), name='schema'),
+    path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema', throttle_classes=[], permission_classes=[IsAdminUser]), name='swagger-ui'),
+    path('api/redoc/', SpectacularRedocView.as_view(url_name='schema', throttle_classes=[], permission_classes=[IsAdminUser]), name='redoc'),
 ]
 
 urlpatterns = [
