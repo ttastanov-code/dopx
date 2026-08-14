@@ -24,6 +24,10 @@ INSTALLED_APPS = [
     'rest_framework',
     'drf_spectacular',
     'django_filters',
+    # Self-hosted CAPTCHA (django-simple-captcha) — рисует картинку самим
+    # Pillow'ом, никакого внешнего сервиса/API-ключа не требует (в отличие
+    # от Cloudflare Turnstile/hCaptcha/reCAPTCHA). См. блок CAPTCHA_* ниже.
+    'captcha',
     # Local apps
     'core',
     'users',
@@ -247,13 +251,44 @@ CELERY_BEAT_SCHEDULE = {
         'schedule': crontab(minute=0, hour='*/4'),
         # 'options': {'queue': 'default'}
     },
-    # === НАПОМИНАНИЕ О ЗАКРЫТИИ ГОЛОСОВАНИЯ (каждые 30 минут) ===
-    'notify-voting-closing': {
-        'task': 'notifications.tasks.notify_voting_closing_soon',
-        'schedule': crontab(minute='*/30'),  # Проверять каждые 30 минут
-        # 'options': {'queue': 'default'}
+    # === Очистка просроченных CAPTCHA-записей (раз в час) ===
+    # django-simple-captcha сама не удаляет истёкшие челленджи — таблица
+    # captcha_captchastore росла бы бесконечно без этой задачи.
+    'cleanup-expired-captchas': {
+        'task': 'core.tasks.cleanup_expired_captchas',
+        'schedule': crontab(minute=15),  # раз в час, со сдвигом от дайджеста
+    },
+    # === Антифрод: поиск кластеров аккаунтов с одного IP (каждые 6 часов) ===
+    'detect-ip-clusters': {
+        'task': 'users.tasks.detect_ip_clusters_task',
+        'schedule': crontab(minute=30, hour='*/6'),
+    },
+    # === Бейдж «Чемпион месяца» — 1-го числа каждого месяца в 03:00 ===
+    'award-monthly-champion-badge': {
+        'task': 'users.tasks.award_monthly_champion_badge',
+        'schedule': crontab(hour=3, minute=0, day_of_month=1),
     },
 }
+
+# =============================================================================
+# CAPTCHA (django-simple-captcha) — self-hosted, без внешних API-ключей
+# =============================================================================
+# Почему не Cloudflare Turnstile/hCaptcha/reCAPTCHA: оба требуют регистрации
+# аккаунта у стороннего провайдера и получения API-ключей — сознательно
+# отказались от этого варианта (см. просьбу пользователя). django-simple-
+# captcha рисует картинку самим Pillow'ом (уже есть в requirements.txt)
+# прямо на сервере, без внешних сетевых вызовов и без передачи данных
+# пользователей третьей стороне.
+CAPTCHA_LENGTH = 5
+CAPTCHA_TIMEOUT = 5  # минут — сколько живёт сгенерированный челлендж
+CAPTCHA_FONT_SIZE = 26
+CAPTCHA_LETTER_ROTATION = (-35, 35)
+CAPTCHA_FOREGROUND_COLOR = '#001100'
+CAPTCHA_NOISE_FUNCTIONS = (
+    'captcha.helpers.noise_arcs',
+    'captcha.helpers.noise_dots',
+)
+CAPTCHA_CHALLENGE_FUNCT = 'captcha.helpers.random_char_challenge'
 
 # =============================================================================
 # Cache Configuration

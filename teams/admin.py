@@ -16,6 +16,11 @@ class TeamAdmin(admin.ModelAdmin):
         "city",
     )
 
+    # НОВОЕ: один раз проставить пары дерби-соперников для бейджа
+    # "derby_hunter" (users/badges.py) — удобный виджет "выбрать несколько
+    # из списка" вместо голого multiple-select.
+    filter_horizontal = ("rivals",)
+
 
 @admin.register(TeamSeason)
 class TeamSeasonAdmin(admin.ModelAdmin):

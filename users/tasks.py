@@ -23,6 +23,7 @@ EvaluateMatchFinalView.form_valid`, откуда теперь ставится �
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 
 from celery import shared_task
 from django.utils import timezone
@@ -34,6 +35,20 @@ logger = logging.getLogger(__name__)
 # игроков по 3 поля → тренеры → судья → финал). Меньше — сильный сигнал
 # скрипта/бота, а не редкого быстрого человека.
 MIN_HUMAN_WIZARD_SECONDS = 20
+
+# Антифрод: IP-кластерный анализ (продуктовый аудит, раздел 4, было
+# отложено — "требует отдельного периодического прогона на реальных
+# данных"). Сколько РАЗНЫХ аккаунтов, завершивших оценку ОДНОГО и того же
+# матча с ОДНОГО IP за LOOKBACK часов, считается подозрительным кластером
+# (не "минимум 2" — соседи по квартире/офис/студенческое общежитие вполне
+# законно оценивают матчи с одного IP, порог должен ловить именно фермы).
+IP_CLUSTER_LOOKBACK_HOURS = 24
+IP_CLUSTER_MIN_ACCOUNTS = 3
+
+# Бейдж «Чемпион месяца»: не выдаём тому, кто "занял первое место" с
+# одной-двумя оценками в мёртвом месяце — минимальная активность для
+# зачёта результата.
+MONTHLY_CHAMPION_MIN_EVALUATIONS = 5
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=30)
@@ -198,5 +213,167 @@ def flag_suspicious_wizard_speed_task(session_id: str) -> bool:
     logger.warning(
         "Suspicious wizard speed flagged: user=%s match=%s duration=%.2fs score=%.2f",
         session.user_id, session.match_id, duration, score,
+    )
+    return True
+
+
+@shared_task
+def detect_ip_clusters_task() -> int:
+    """
+    Антифрод-сигнал «кластер аккаунтов с одного IP» (продуктовый аудит,
+    раздел 4 — отложено при первом заходе как задача, требующая отдельного
+    периодического прогона, а не изменения в HTTP-запросе).
+
+    За последние `IP_CLUSTER_LOOKBACK_HOURS` часов ищет пары (матч, IP), с
+    которых оценку завершили ≥`IP_CLUSTER_MIN_ACCOUNTS` РАЗНЫХ аккаунтов —
+    сигнал накрутки голосования по конкретному матчу с фермы аккаунтов.
+    Данные для этого — `EvaluationSession.ip_address` — уже писались с
+    прошлого захода (см. `evaluations/views.py`), просто раньше никак не
+    анализировались.
+
+    ОДИН запрос ко всей таблице за окно + группировка в Python (не N
+    запросов на кластер) — тот же принцип, что и везде в проекте после
+    аудита N+1.
+
+    Как и `flag_suspicious_wizard_speed_task`, НИКОГО не блокирует — только
+    создаёт `SuspiciousActivityFlag(source="ip_cluster")` по каждому
+    аккаунту в кластере для ручного разбора модератором. Если по паре
+    (пользователь, матч) уже есть НЕразобранный (`status="pending"`) флаг —
+    новый не создаётся, чтобы периодический прогон не заспамил очередь
+    модерации дублями на каждый запуск.
+    """
+    from collections import defaultdict
+
+    from evaluations.models import EvaluationSession
+    from users.models import SuspiciousActivityFlag
+
+    since = timezone.now() - timedelta(hours=IP_CLUSTER_LOOKBACK_HOURS)
+
+    rows = EvaluationSession.objects.filter(
+        status="completed",
+        completed_at__gte=since,
+        ip_address__isnull=False,
+    ).values_list("match_id", "ip_address", "user_id")
+
+    clusters: dict[tuple, set] = defaultdict(set)
+    for match_id, ip_address, user_id in rows:
+        clusters[(match_id, ip_address)].add(user_id)
+
+    flagged = 0
+    for (match_id, ip_address), user_ids in clusters.items():
+        account_count = len(user_ids)
+        if account_count < IP_CLUSTER_MIN_ACCOUNTS:
+            continue
+
+        # Непрерывный скор: ровно на пороге — 0.5, дальше растёт до 1.0.
+        score = round(min(1.0, account_count / (IP_CLUSTER_MIN_ACCOUNTS * 2)), 2)
+
+        for user_id in user_ids:
+            already_pending = SuspiciousActivityFlag.objects.filter(
+                user_id=user_id, match_id=match_id, source="ip_cluster", status="pending"
+            ).exists()
+            if already_pending:
+                continue
+
+            SuspiciousActivityFlag.objects.create(
+                user_id=user_id,
+                match_id=match_id,
+                source="ip_cluster",
+                score=score,
+                details={
+                    "ip_address": ip_address,
+                    "account_count": account_count,
+                    "other_user_ids": [str(uid) for uid in user_ids if uid != user_id],
+                    "lookback_hours": IP_CLUSTER_LOOKBACK_HOURS,
+                },
+            )
+            flagged += 1
+
+    if flagged:
+        logger.warning(
+            "IP-cluster antifraud: flagged %d account(s) across suspicious IP cluster(s).", flagged
+        )
+    return flagged
+
+
+@shared_task
+def award_monthly_champion_badge() -> bool:
+    """
+    Бейдж «Чемпион месяца» (продуктовый аудит, раздел 7 — было отложено).
+
+    Разово (за всю жизнь аккаунта, как и `founder`) выдаётся тому, кто
+    завершил больше всех оценок за ПРОШЕДШИЙ календарный месяц. Запускается
+    1-го числа каждого месяца в 03:00 (см. `CELERY_BEAT_SCHEDULE` в
+    `dopx/settings.py`).
+
+    Метрика — количество завершённых `EvaluationSession` за месяц, а не
+    "XP за месяц": отдельного помесячного лога начисления XP в проекте нет
+    (`UserXP` хранит только текущий суммарный `total_xp`), заводить отдельную
+    таблицу-леджер ради одного ежемесячного подсчёта было бы избыточным
+    усложнением схемы ради одной метрики — количество завершённых оценок
+    отражает ту же активность и уже есть в данных без миграций.
+
+    Если лидер прошлого месяца уже получал этот бейдж раньше — новый не
+    выдаётся (это статусный бейдж "было хотя бы раз", а не помесячная
+    история побед — история потребовала бы отдельной модели, см. обсуждение
+    в продуктовом аудите).
+    """
+    from django.db.models import Count
+
+    from evaluations.models import EvaluationSession
+    from notifications.models import Notification
+    from notifications.tasks import send_badge_earned_notification
+    from users.models import User, UserBadge
+
+    now = timezone.now()
+    first_of_this_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    first_of_prev_month = (first_of_this_month - timedelta(days=1)).replace(day=1)
+
+    top = (
+        EvaluationSession.objects.filter(
+            status="completed",
+            completed_at__gte=first_of_prev_month,
+            completed_at__lt=first_of_this_month,
+        )
+        .values("user_id")
+        .annotate(cnt=Count("id"))
+        .filter(cnt__gte=MONTHLY_CHAMPION_MIN_EVALUATIONS)
+        .order_by("-cnt")
+        .first()
+    )
+
+    if not top:
+        logger.info("award_monthly_champion_badge: недостаточно активности за прошлый месяц, бейдж не выдан.")
+        return False
+
+    user = User.objects.filter(id=top["user_id"]).first()
+    if not user:
+        return False
+
+    badge, created = UserBadge.objects.get_or_create(user=user, badge_type="monthly_champion")
+    if not created:
+        logger.info(
+            "award_monthly_champion_badge: %s снова лидер месяца (%d оценок), но бейдж уже выдавался ранее.",
+            user.username, top["cnt"],
+        )
+        return False
+
+    digest_mode = user.get_notification_setting("email_digest_mode", True)
+    Notification.objects.create(
+        user=user,
+        notification_type="new_badge",
+        title="🏆 Чемпион месяца!",
+        message=f"Вы завершили больше всех оценок за прошлый месяц ({top['cnt']}) и получили достижение «Чемпион месяца»!",
+        action_url="/users/profile/",
+        is_read=False,
+        email_sent_at=timezone.now() if not digest_mode else None,
+    )
+    if not digest_mode:
+        send_badge_earned_notification.delay(
+            user_id=str(user.id), badge_type=badge.badge_type, badge_name=badge.get_badge_type_display()
+        )
+
+    logger.info(
+        "Чемпион месяца: %s (%d завершённых оценок за прошлый месяц).", user.username, top["cnt"]
     )
     return True
