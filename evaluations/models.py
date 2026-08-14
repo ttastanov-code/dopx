@@ -1,4 +1,12 @@
 # evaluations/models.py
+"""
+ИЗМЕНЕНИЕ: `EvaluationSession` — добавлено поле `ip_address` (антифрод,
+см. `evaluations/views.py::EvaluateMatchFinalView` и продуктовый аудит,
+раздел 4.3) и свойство `fill_duration_seconds`, вычисляющее, за сколько
+секунд пользователь прошёл вайзард целиком — основа сигнала "слишком
+быстрое заполнение — похоже на скрипт". Требует
+`python manage.py makemigrations evaluations` (новая колонка).
+"""
 from django.db import models
 from django.conf import settings
 from django.core.validators import MinValueValidator, MaxValueValidator
@@ -13,7 +21,7 @@ class ContextEvaluation(BaseModel):
         ('highlights', _('Только голы')),
         ('partial', _('Фрагменты')),
     ]
-    
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -41,7 +49,7 @@ class ContextEvaluation(BaseModel):
         default='full'
     )
     attended_stadium = models.BooleanField(_('Посещал стадион'), default=False)
-    
+
     class Meta:
         verbose_name = _('Контекст оценки')
         verbose_name_plural = _('Контексты оценок')
@@ -49,7 +57,7 @@ class ContextEvaluation(BaseModel):
             models.UniqueConstraint(fields=['user', 'match'], name='unique_context_evaluation')
         ]
         ordering = ['-created_at']
-    
+
     def __str__(self):
         return f"{self.user.username} - {self.match}"
 
@@ -78,7 +86,7 @@ class TeamEvaluation(BaseModel):
     effort = models.IntegerField(_('Самоотдача'), validators=[MinValueValidator(1), MaxValueValidator(10)])
     organization = models.IntegerField(_('Организация'), validators=[MinValueValidator(1), MaxValueValidator(10)])
     mentality = models.IntegerField(_('Менталитет'), validators=[MinValueValidator(1), MaxValueValidator(10)])
-    
+
     class Meta:
         verbose_name = _('Оценка команды')
         verbose_name_plural = _('Оценки команд')
@@ -86,10 +94,10 @@ class TeamEvaluation(BaseModel):
             models.UniqueConstraint(fields=['user', 'match', 'team'], name='unique_team_evaluation')
         ]
         ordering = ['-created_at']
-    
+
     def __str__(self):
         return f"{self.user.username} - {self.team} ({self.match})"
-    
+
     @property
     def average_score(self):
         return (self.tactics + self.effort + self.organization + self.mentality) / 4
@@ -130,7 +138,7 @@ class PlayerEvaluation(BaseModel):
         validators=[MinValueValidator(1), MaxValueValidator(10)],
         help_text=_("Потенциал (1-10)")
     )
-    
+
     class Meta:
         verbose_name = _('Оценка игрока')
         verbose_name_plural = _('Оценки игроков')
@@ -143,10 +151,10 @@ class PlayerEvaluation(BaseModel):
             models.Index(fields=['user', 'match']),
         ]
         ordering = ['-created_at']
-    
+
     def __str__(self):
         return f"{self.user.username} - {self.player} ({self.match})"
-    
+
     @property
     def maturity_score(self):
         return self.contribution - self.risk
@@ -176,7 +184,7 @@ class CoachEvaluation(BaseModel):
     substitutions = models.IntegerField(_('Замены'), validators=[MinValueValidator(1), MaxValueValidator(10)])
     game_management = models.IntegerField(_('Управление'), validators=[MinValueValidator(1), MaxValueValidator(10)])
     impact = models.IntegerField(_('Влияние'), validators=[MinValueValidator(1), MaxValueValidator(10)])
-    
+
     class Meta:
         verbose_name = _('Оценка тренера')
         verbose_name_plural = _('Оценки тренеров')
@@ -184,10 +192,10 @@ class CoachEvaluation(BaseModel):
             models.UniqueConstraint(fields=['user', 'match', 'coach'], name='unique_coach_evaluation')
         ]
         ordering = ['-created_at']
-    
+
     def __str__(self):
         return f"{self.user.username} - {self.coach} ({self.match})"
-    
+
     @property
     def average_score(self):
         return (self.tactics + self.substitutions + self.game_management + self.impact) / 4
@@ -217,7 +225,7 @@ class RefereeEvaluation(BaseModel):
         validators=[MinValueValidator(1), MaxValueValidator(10)],
         help_text=_("Качество решений (1-10)")
     )
-    
+
     class Meta:
         verbose_name = _('Оценка судейства')
         verbose_name_plural = _('Оценки судейства')
@@ -225,7 +233,7 @@ class RefereeEvaluation(BaseModel):
             models.UniqueConstraint(fields=['user', 'match'], name='unique_referee_evaluation')
         ]
         ordering = ['-created_at']
-    
+
     def __str__(self):
         return f"{self.user.username} - Судья ({self.match})"
 
@@ -248,7 +256,7 @@ class MatchEvaluation(BaseModel):
     tension = models.IntegerField(_('Напряжение'), validators=[MinValueValidator(1), MaxValueValidator(10)])
     turning_point = models.BooleanField(_('Переломный момент'), default=False)
     fairness = models.IntegerField(_('Справедливость'), validators=[MinValueValidator(1), MaxValueValidator(10)])
-    
+
     class Meta:
         verbose_name = _('Оценка матча')
         verbose_name_plural = _('Оценки матчей')
@@ -256,10 +264,10 @@ class MatchEvaluation(BaseModel):
             models.UniqueConstraint(fields=['user', 'match'], name='unique_match_evaluation')
         ]
         ordering = ['-created_at']
-    
+
     def __str__(self):
         return f"{self.user.username} - Матч ({self.match})"
-    
+
     @property
     def drama_index(self):
         return self.entertainment * self.tension
@@ -273,7 +281,7 @@ class EvaluationSession(BaseModel):
         ('completed', _('Завершено')),
         ('abandoned', _('Заброшено')),
     ]
-    
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -296,7 +304,10 @@ class EvaluationSession(BaseModel):
     current_step = models.CharField(_('Текущий шаг'), max_length=50, default='context')
     started_at = models.DateTimeField(_('Начато'), auto_now_add=True)
     completed_at = models.DateTimeField(_('Завершено'), null=True, blank=True)
-    
+    # НОВОЕ (антифрод): IP, с которого была ЗАВЕРШЕНА сессия оценки —
+    # см. evaluations/views.py::EvaluateMatchFinalView и продуктовый аудит.
+    ip_address = models.GenericIPAddressField(_('IP адрес завершения'), null=True, blank=True)
+
     class Meta:
         verbose_name = _('Сессия оценки')
         verbose_name_plural = _('Сессии оценок')
@@ -308,15 +319,15 @@ class EvaluationSession(BaseModel):
             models.Index(fields=['match', 'status']),
         ]
         ordering = ['-created_at']
-    
+
     def __str__(self):
         return f"{self.user} - {self.match} ({self.status})"
-    
+
     def progress_percentage(self):
         total_steps = 6
         completed = len(self.completed_steps)
         return int((completed / total_steps) * 100)
-    
+
     def next_step_url(self, match_id):
         steps = ['context', 'teams', 'players', 'coaches', 'referee', 'match_eval', 'complete']
         next_idx = len(self.completed_steps) + 1
@@ -326,3 +337,18 @@ class EvaluationSession(BaseModel):
         if step_name == 'complete':
             return f'/evaluations/complete/{match_id}/'
         return f'/evaluations/match/{match_id}/{step_name}/'
+
+    @property
+    def fill_duration_seconds(self) -> float | None:
+        """
+        Сколько секунд заняло прохождение вайзарда целиком (от `started_at`
+        до `completed_at`). `None`, если сессия ещё не завершена.
+
+        Используется как антифрод-сигнал: физически невозможно осмысленно
+        заполнить 6 шагов (контекст, команды, до 22+ игроков, тренеры, судья,
+        финал) за считаные секунды — см.
+        `evaluations/views.py::EvaluateMatchFinalView._flag_if_suspicious`.
+        """
+        if not self.completed_at:
+            return None
+        return (self.completed_at - self.started_at).total_seconds()

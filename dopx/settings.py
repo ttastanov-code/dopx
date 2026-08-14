@@ -221,16 +221,19 @@ CELERY_BEAT_SCHEDULE = {
         # 'options': {'queue': 'default'}
     },
     # === Уведомления (каждые 6 часов) ===
-    'voting-reminders': {
-        'task': 'notifications.tasks.cleanup_old_notifications',
-        'schedule': crontab(minute=0, hour='*/6'),
-        # 'options': {'queue': 'default'}
+    'voting-closing-reminders': {
+        'task': 'notifications.tasks.notify_voting_closing_soon',
+        'schedule': crontab(minute='*/30'),
     },
     # === Очистка старых данных (каждый день в 03:00) ===
-    'cleanup-old-sessions-daily': {
-        'task': 'notifications.tasks.cleanup_old_sessions',
-        'schedule': crontab(hour=3, minute=0),
-        # 'options': {'queue': 'default'}
+    'cleanup-old-notifications-daily': {
+        'task': 'notifications.tasks.cleanup_old_notifications',
+        'schedule': crontab(hour=4, minute=0),
+    },
+    # === Отправка дайджеста уведомлений (каждый час) ===
+    'notification-digest-hourly': {
+        'task': 'notifications.tasks.send_notification_digest',
+        'schedule': crontab(minute=0),  # раз в час, на весь час
     },
     # === Проверка здоровья API (каждые 2 часа) ===
     'health-check-kff-api': {

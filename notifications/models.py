@@ -1,18 +1,42 @@
 # notifications/models.py
+"""
+ИЗМЕНЕНИЯ (продуктовый аудит DOPX, часть 2):
+
+1. `Notification.email_sent_at` — НОВОЕ поле. Нужно дайджест-рассылке
+   (`notifications/tasks.py::send_notification_digest`), чтобы отличать
+   уведомления, по которым письмо УЖЕ отправлено (в составе дайджеста или
+   мгновенно), от тех, что ещё предстоит отправить — без этого поля дайджест
+   не может понять, что уже разослано, и либо дублировал бы письма, либо
+   пропускал их. `null=True` — для существующих уведомлений, у которых это
+   неизвестно (считаются "уже обработанными", чтобы не заспамить всех
+   разом историческими уведомлениями при первом запуске дайджеста после
+   деплоя — см. значение по умолчанию в миграции ниже).
+2. `NOTIFICATION_TYPES` расширен значениями, которые `notifications/views.py::
+   NotificationListView` уже ожидал видеть в фильтре (`voting_open`,
+   `aggregate_updated`, `top_performance`, `verification_required`), но
+   которые физически никогда не создавались — рассинхронизация между
+   UI-фильтром и моделью (см. продуктовый аудит, раздел 1.4).
+
+Требует `python manage.py makemigrations notifications` (новая колонка +
+расширение choices).
+"""
 from django.db import models
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 from core.models import BaseModel
-
 
 class Notification(BaseModel):
     """Модель уведомлений пользователей"""
     NOTIFICATION_TYPES = [
         ('welcome', _('Приветственное письмо')),
         ('match_finished', _('Матч завершён / Голосование открыто')),
+        ('voting_open', _('Голосование открыто')),
         ('voting_closing', _('Напоминание о закрытии голосования')),
         ('new_badge', _('Новое достижение')),
         ('level_up', _('Повышение уровня')),
+        ('aggregate_updated', _('Обновление рейтинга')),
+        ('top_performance', _('Топ-выступление')),
+        ('verification_required', _('Требуется подтверждение email')),
         ('system', _('Системное уведомление')),
     ]
 
@@ -29,6 +53,8 @@ class Notification(BaseModel):
     related_match = models.ForeignKey(
         'matches.Match', on_delete=models.CASCADE, null=True, blank=True, related_name='notifications', verbose_name=_('Матч')
     )
+    # НОВОЕ: см. пункт 1 докстринга модуля.
+    email_sent_at = models.DateTimeField(_('Email отправлен'), null=True, blank=True)
 
     class Meta:
         verbose_name = _('Уведомление')
@@ -37,6 +63,7 @@ class Notification(BaseModel):
         indexes = [
             models.Index(fields=['user', '-created_at']),
             models.Index(fields=['user', 'is_read']),
+            models.Index(fields=['email_sent_at']),
         ]
 
     def __str__(self):
