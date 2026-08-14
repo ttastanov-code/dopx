@@ -408,7 +408,7 @@ def update_match_statuses(self):
                 new_events = []
                 for evt in api_events:
                     minute = evt.get("minute")
-                    event_type = evt.get("event_type", "").lower()
+                    event_type = (evt.get("event_type") or "").lower()
                     normalized_type = (
                         event_type.split("_")[0] if "_" in event_type else event_type
                     )

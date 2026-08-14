@@ -260,10 +260,132 @@
                         <span class="opacity-60">Команд в сезоне</span>
                         <span class="font-medium">{{ standings|length }}</span>
                     </div>
+                    <div class="flex justify-between">
+                        <span class="opacity-60">Голов за матч</span>
+                        <span class="font-medium">{{ avg_goals_per_match|default:"—" }}</span>
+                    </div>
                     {% endif %}
                 </div>
             </div>
         </div>
+
+        {% comment %}
+        НОВОЕ (аналитика сезона): раньше сайдбар лиги ограничивался тремя
+        "бухгалтерскими" цифрами. Ниже — реальные метрики: бомбардиры (по
+        событиям матчей, events.MatchEvent), лучшая атака/защита (из уже
+        посчитанной турнирной таблицы) и "настроение" сезона по оценкам
+        болельщиков (те же метрики зрелищности/драмы, что и на главной
+        странице, но в разрезе именно этой лиги/сезона).
+        {% endcomment %}
+
+        <!-- === БОМБАРДИРЫ === -->
+        {% if top_scorers %}
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-3 md:p-4">
+                <h3 class="font-bold text-base md:text-lg mb-3 md:mb-4">
+                    <i class="ti ti-target-arrow mr-2"></i>
+                    Бомбардиры сезона
+                </h3>
+                <div class="space-y-1">
+                    {% for player in top_scorers %}
+                    <a href="{% url 'players:detail' player.id %}" class="flex items-center gap-2 p-2 rounded-lg hover:bg-base-200 transition-colors">
+                        <span class="w-5 text-center text-xs font-bold opacity-50">{{ forloop.counter }}</span>
+                        {% if player.photo %}
+                        <img src="{{ player.photo.url }}" alt="{{ player.full_name }}" class="w-7 h-7 rounded-full object-cover flex-shrink-0">
+                        {% else %}
+                        <div class="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary flex-shrink-0">
+                            {{ player.first_name|first|upper }}{{ player.last_name|first|upper }}
+                        </div>
+                        {% endif %}
+                        <div class="flex-1 min-w-0">
+                            <div class="text-sm font-medium truncate">{{ player.full_name }}</div>
+                            {% if player.team %}
+                            <div class="text-xs opacity-50 truncate">{{ player.team.name }}</div>
+                            {% endif %}
+                        </div>
+                        <span class="badge badge-sm badge-outline font-bold flex-shrink-0">
+                            <i class="ti ti-ball-football text-[10px]"></i>
+                            {{ player.goals }}
+                        </span>
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- === ЛУЧШАЯ АТАКА / ЗАЩИТА === -->
+        {% if best_attack or best_defense %}
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-3 md:p-4">
+                <h3 class="font-bold text-base md:text-lg mb-3 md:mb-4">
+                    <i class="ti ti-shield mr-2"></i>
+                    Атака и защита
+                </h3>
+                <div class="space-y-2">
+                    {% if best_attack %}
+                    <a href="{% url 'teams:detail' best_attack.team_id %}" class="flex items-center justify-between p-2 rounded-lg hover:bg-base-200 transition-colors">
+                        <span class="flex items-center gap-2 min-w-0">
+                            <i class="ti ti-flame text-error flex-shrink-0"></i>
+                            <span class="text-sm truncate">
+                                <span class="opacity-60">Лучшая атака:</span>
+                                <span class="font-medium">{{ best_attack.team_name }}</span>
+                            </span>
+                        </span>
+                        <span class="badge badge-sm badge-outline flex-shrink-0">{{ best_attack.goals_scored }}</span>
+                    </a>
+                    {% endif %}
+                    {% if best_defense %}
+                    <a href="{% url 'teams:detail' best_defense.team_id %}" class="flex items-center justify-between p-2 rounded-lg hover:bg-base-200 transition-colors">
+                        <span class="flex items-center gap-2 min-w-0">
+                            <i class="ti ti-shield-check text-success flex-shrink-0"></i>
+                            <span class="text-sm truncate">
+                                <span class="opacity-60">Лучшая защита:</span>
+                                <span class="font-medium">{{ best_defense.team_name }}</span>
+                            </span>
+                        </span>
+                        <span class="badge badge-sm badge-outline flex-shrink-0">{{ best_defense.goals_conceded }}</span>
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- === НАСТРОЕНИЕ СЕЗОНА (по оценкам болельщиков) === -->
+        {% if league_mood %}
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-3 md:p-4">
+                <h3 class="font-bold text-base md:text-lg mb-3 md:mb-4">
+                    <i class="ti ti-mood-smile mr-2"></i>
+                    Настроение сезона
+                </h3>
+                <div class="grid grid-cols-3 gap-2 text-center mb-3">
+                    <div>
+                        <div class="text-lg font-bold text-info">{{ league_mood.avg_entertainment }}</div>
+                        <div class="text-[10px] opacity-50">Зрелищность</div>
+                    </div>
+                    <div>
+                        <div class="text-lg font-bold text-warning">{{ league_mood.avg_tension }}</div>
+                        <div class="text-[10px] opacity-50">Напряжение</div>
+                    </div>
+                    <div>
+                        <div class="text-lg font-bold text-error">{{ league_mood.avg_drama }}</div>
+                        <div class="text-[10px] opacity-50">Драма</div>
+                    </div>
+                </div>
+                {% if most_dramatic_match %}
+                <a href="{% url 'matches:detail' most_dramatic_match.match.id %}" class="flex items-center justify-between p-2 rounded-lg bg-base-200 hover:bg-base-300 transition-colors text-sm">
+                    <span class="truncate min-w-0">
+                        <i class="ti ti-bolt text-warning mr-1"></i>
+                        {{ most_dramatic_match.match.home_team.name }} — {{ most_dramatic_match.match.away_team.name }}
+                    </span>
+                    <span class="badge badge-xs badge-warning flex-shrink-0 ml-2">самый драматичный</span>
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}

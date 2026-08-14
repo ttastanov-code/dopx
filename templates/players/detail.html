@@ -56,20 +56,17 @@
                         <div class="stat-title text-xs">Матчей</div>
                         <div class="stat-value text-xl">{{ stats.total_matches }}</div>
                     </div>
-                    <div class="stat bg-base-200 rounded-lg p-3 tooltip" 
-                         data-tip="{{ INDICATOR_TOOLTIPS.player.performance_score }}">
-                        <div class="stat-title text-xs">Рейтинг выступления</div>
-                        <div class="stat-value text-xl text-success">{{ stats.avg_performance }}</div>
+                    <div class="stat bg-base-200 rounded-lg p-3">
+                        <div class="stat-title text-xs flex items-center gap-1">Рейтинг выступления{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.player.performance_score %}</div>
+                        <div class="stat-value text-xl text-success">{{ stats.avg_performance|default_if_none:"—" }}</div>
                     </div>
-                    <div class="stat bg-base-200 rounded-lg p-3 tooltip" 
-                         data-tip="{{ INDICATOR_TOOLTIPS.player.risk }}">
-                        <div class="stat-title text-xs">Индекс риска</div>
-                        <div class="stat-value text-xl text-error">{{ stats.avg_risk }}</div>
+                    <div class="stat bg-base-200 rounded-lg p-3">
+                        <div class="stat-title text-xs flex items-center gap-1">Индекс риска{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.player.risk %}</div>
+                        <div class="stat-value text-xl text-error">{{ stats.avg_risk|default_if_none:"—" }}</div>
                     </div>
-                    <div class="stat bg-base-200 rounded-lg p-3 tooltip" 
-                         data-tip="{{ INDICATOR_TOOLTIPS.player.maturity_score }}">
-                        <div class="stat-title text-xs">Индекс зрелости</div>
-                        <div class="stat-value text-xl text-info">{{ stats.avg_maturity }}</div>
+                    <div class="stat bg-base-200 rounded-lg p-3">
+                        <div class="stat-title text-xs flex items-center gap-1">Индекс зрелости{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.player.maturity_score %}</div>
+                        <div class="stat-value text-xl text-info">{{ stats.avg_maturity|default_if_none:"—" }}</div>
                     </div>
                 </div>
             </div>
@@ -82,13 +79,20 @@
     <!-- === ЛЕВАЯ КОЛОНКА (2/3) === -->
     <div class="lg:col-span-2 space-y-6">
         <!-- === ИСТОРИЯ ВЫСТУПЛЕНИЙ === -->
-        {% if aggregates %}
+        {% comment %}
+        ИСПРАВЛЕНО: раньше карточка целиком пряталась через {% if aggregates %},
+        если у игрока ещё нет ни одной оценки болельщиков — пользователь просто
+        не понимал, есть ли у игрока история или страница не загрузилась. Теперь
+        карточка всегда видна, с понятным пустым состоянием и призывом к
+        действию (тот же паттерн, что и на странице команды).
+        {% endcomment %}
         <div class="card bg-base-100 border border-base-300">
             <div class="card-body p-4">
                 <h3 class="font-bold text-lg mb-4">
                     <i class="ti ti-history mr-2"></i>
                     История выступлений
                 </h3>
+                {% if aggregates %}
                 <div class="overflow-x-auto">
                     <table class="table table-zebra">
                         <thead>
@@ -105,7 +109,7 @@
                             {% for agg in aggregates %}
                             <tr>
                                 <td>
-                                    <a href="{% url 'matches:detail' agg.match.id %}" 
+                                    <a href="{% url 'matches:detail' agg.match.id %}"
                                        class="hover:text-primary transition-colors">
                                         {{ agg.match.home_team.name }} vs {{ agg.match.away_team.name }}
                                     </a>
@@ -125,9 +129,19 @@
                         </tbody>
                     </table>
                 </div>
+                {% else %}
+                <div class="text-center py-8 opacity-60">
+                    <i class="ti ti-history-off text-3xl mb-2"></i>
+                    <p class="text-sm">Пока никто не оценил выступления этого игрока</p>
+                    {% if votable_match %}
+                    <a href="{% url 'evaluations:context' votable_match.id %}" class="btn btn-primary btn-xs mt-3">
+                        Оценить последний матч
+                    </a>
+                    {% endif %}
+                </div>
+                {% endif %}
             </div>
         </div>
-        {% endif %}
 
         <!-- === ЛУЧШИЕ МАТЧИ === -->
         {% if best_matches %}
@@ -166,6 +180,7 @@
                     <i class="ti ti-chart-radar mr-2"></i>
                     Профиль игрока
                 </h3>
+                {% if has_evaluations %}
                 <div class="space-y-4">
                     <!-- Вклад -->
                     <div>
@@ -178,7 +193,7 @@
                                  style="width: {% widthratio stats.avg_performance 10 100 %}%"></div>
                         </div>
                     </div>
-                    
+
                     <!-- Риск -->
                     <div>
                         <div class="flex justify-between text-sm mb-1">
@@ -190,7 +205,7 @@
                                  style="width: {% widthratio stats.avg_risk 10 100 %}%"></div>
                         </div>
                     </div>
-                    
+
                     <!-- Зрелость -->
                     <div>
                         <div class="flex justify-between text-sm mb-1">
@@ -202,7 +217,7 @@
                                  style="width: {% widthratio stats.avg_maturity 10 100 %}%"></div>
                         </div>
                     </div>
-                    
+
                     <!-- Потенциал -->
                     <div>
                         <div class="flex justify-between text-sm mb-1">
@@ -215,6 +230,11 @@
                         </div>
                     </div>
                 </div>
+                {% else %}
+                <div class="text-center py-4 opacity-60">
+                    <p class="text-sm">Профиль появится после первых оценок болельщиков</p>
+                </div>
+                {% endif %}
             </div>
         </div>
 
@@ -232,11 +252,15 @@
                     </div>
                     <div class="flex justify-between">
                         <span class="opacity-60">Средний рейтинг</span>
-                        <span class="font-medium">{{ stats.avg_performance }}</span>
+                        <span class="font-medium">{{ stats.avg_performance|default_if_none:"—" }}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="opacity-60">Матчей сыграно</span>
+                        <span class="font-medium">{{ stats.total_matches }}</span>
                     </div>
                     <div class="flex justify-between">
                         <span class="opacity-60">Матчей оценено</span>
-                        <span class="font-medium">{{ stats.total_matches }}</span>
+                        <span class="font-medium">{{ stats.evaluated_matches }}</span>
                     </div>
                 </div>
             </div>

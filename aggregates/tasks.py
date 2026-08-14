@@ -392,21 +392,37 @@ def trigger_aggregate_recalculation(self, match_id: str) -> bool:
 
 @shared_task
 def recalculate_season_standings(season_id: int | None = None) -> dict:
-    """Пересчёт турнирной таблицы сезона (без изменений в логике — уже оптимизировано)."""
+    """
+    Пересчёт турнирной таблицы сезона.
+
+    ИСПРАВЛЕНО (продумано под несколько лиг): при `season_id=None` (именно
+    так эту задачу вызывает `CELERY_BEAT_SCHEDULE['recalculate-standings']`
+    каждые 10 минут — см. dopx/settings.py) раньше бралось РОВНО ОДНО
+    `Season.objects.filter(is_active=True).first()` НЕЗАВИСИМО ОТ ЛИГИ. Пока
+    в проекте одна лига (КПЛ) — не проявлялось, но при появлении второй лиги
+    её активный сезон просто никогда бы не пересчитывался в фоне. Теперь при
+    отсутствии season_id пересчитываются ВСЕ активные сезоны (по одному на
+    лигу — уникальность гарантирует `Season.save()`, см. seasons/models.py).
+    """
     if season_id is None:
-        season = Season.objects.filter(is_active=True).first()
-        if not season:
+        active_seasons = list(Season.objects.filter(is_active=True))
+        if not active_seasons:
             logger.warning("No active season found for standings recalculation")
             return {"success": False, "error": "No active season"}
-        season_id = season.id
-        logger.info("Auto-detected active season: %s", season_id)
-    else:
-        try:
-            season = Season.objects.get(id=season_id)
-        except Season.DoesNotExist:
-            logger.error("Season %s not found", season_id)
-            return {"success": False, "error": "Season not found"}
+        results = [_recalculate_standings_for_season(s) for s in active_seasons]
+        return {"success": all(r["success"] for r in results), "seasons": results}
 
+    try:
+        season = Season.objects.get(id=season_id)
+    except Season.DoesNotExist:
+        logger.error("Season %s not found", season_id)
+        return {"success": False, "error": "Season not found"}
+    return _recalculate_standings_for_season(season)
+
+
+def _recalculate_standings_for_season(season: Season) -> dict:
+    """Пересчёт турнирной таблицы ОДНОГО сезона (без изменений в логике — уже оптимизировано)."""
+    season_id = season.id
     teams = Team.objects.filter(teamseason__season=season, is_active=True)
 
     with transaction.atomic():

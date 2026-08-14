@@ -1,0 +1,48 @@
+{% comment %}
+templates/components/_tooltip_icon.html
+Переиспользуемая подсказка. Подключается директивой include с параметром
+text (имя переменной, содержащей текст подсказки).
+Это САМОСТОЯТЕЛЬНАЯ маленькая info-иконка — её нужно ставить РЯДОМ с
+текстом/лейблом, который она поясняет, а не оборачивать в неё сам
+лейбл (как было раньше через атрибут data-tip). Именно оборачивание было
+причиной поломки flex-вёрстки и обрезки подсказок по краю экрана — см.
+комментарий в base.html.
+ВАЖНО: не писать здесь как текст пример вызова этого же партиала внутри
+директив шаблонного языка — движок парсит такие конструкции даже внутри
+однострочного комментария, из-за чего партиал однажды уже включал сам
+себя рекурсивно (RecursionError). Не писать также буквальный текст,
+похожий на закрывающую директиву этого блока, где-либо внутри него.
+{% endcomment %}
+{% if text %}
+<span class="relative inline-flex align-middle"
+      x-data="tooltipTrigger('{{ text|escapejs }}')"
+      @click.outside="hide()">
+    <button type="button"
+            x-ref="trigger"
+            @mouseenter="show()"
+            @mouseleave="hide()"
+            @click.stop.prevent="show()"
+            @focus="show()"
+            @blur="hide()"
+            class="inline-flex items-center justify-center w-4 h-4 shrink-0 rounded-full opacity-50 hover:opacity-100 focus:opacity-100 transition-opacity"
+            aria-label="Подробнее">
+        <i class="ti ti-info-circle text-[13px] leading-none"></i>
+    </button>
+    <template x-teleport="body">
+        {% comment %}
+        Видимость управляется ВРУЧНУЮ через display в :style, а не через
+        x-show/x-transition. Причина: на телепортированном (x-teleport)
+        узле связка x-show + x-transition оказалась ненадёжной — display
+        молча залипал на block даже когда open становился false (проверено
+        вживую). Ручное управление через один и тот же реактивный
+        :style-объект работает предсказуемо.
+        {% endcomment %}
+        <div x-ref="bubble"
+             x-cloak
+             :style="{ position: 'fixed', top: pos.top + 'px', left: pos.left + 'px', display: open ? 'block' : 'none' }"
+             class="z-[9999] max-w-[240px] rounded-md bg-neutral text-neutral-content text-xs leading-snug px-2.5 py-1.5 shadow-lg pointer-events-none">
+            <span x-text="text"></span>
+        </div>
+    </template>
+</span>
+{% endif %}

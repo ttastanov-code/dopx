@@ -50,11 +50,16 @@
                 </div>
                 <div class="stat bg-base-100 rounded-lg md:rounded-xl p-2 md:p-4">
                     <div class="stat-title text-[10px] md:text-xs">Средняя драма</div>
-                    <div class="stat-value text-lg md:text-2xl text-warning">{{ metrics.avg_drama|floatformat:1|default:0 }}</div>
+                    {% comment %}
+                    ИСПРАВЛЕНО: |default:0 показывал "0,0" когда оценок ВООБЩЕ
+                    ещё нет (view теперь отдаёт None, а не 0, для этого случая) —
+                    выглядело как реальный (очень низкий) балл. "—" честнее.
+                    {% endcomment %}
+                    <div class="stat-value text-lg md:text-2xl text-warning">{{ metrics.avg_drama|floatformat:1|default:"—" }}</div>
                 </div>
                 <div class="stat bg-base-100 rounded-lg md:rounded-xl p-2 md:p-4">
                     <div class="stat-title text-[10px] md:text-xs">Зрелищность</div>
-                    <div class="stat-value text-lg md:text-2xl text-info">{{ metrics.avg_entertainment|floatformat:1|default:0 }}</div>
+                    <div class="stat-value text-lg md:text-2xl text-info">{{ metrics.avg_entertainment|floatformat:1|default:"—" }}</div>
                 </div>
             </div>
         </div>
@@ -205,11 +210,19 @@
                                 <div class="text-lg sm:text-xl font-bold font-mono leading-tight">
                                     {{ match.home_score|default:0 }} : {{ match.away_score|default:0 }}
                                 </div>
-                                {% if match.aggregate %}
+                                {% if match.aggregate and match.aggregate.total_votes > 0 %}
                                 <div class="text-[10px] sm:text-xs opacity-60 mt-1 flex items-center justify-center gap-1">
                                     <i class="ti ti-activity flex-shrink-0"></i>
                                     <span class="truncate">Драма: {{ match.aggregate.drama_index|floatformat:0 }}</span>
                                 </div>
+                                {% elif not match.is_voting_open %}
+                                {% comment %}
+                                ИСПРАВЛЕНО: "Драма: 0" при total_votes=0 читался как реальная
+                                оценка "0 из 100" (очень скучный матч), хотя на деле это просто
+                                отсутствие голосов — никто не оценил, а не "все поставили ноль".
+                                Раз голосование уже закрыто и оценок нет — говорим прямо.
+                                {% endcomment %}
+                                <div class="text-[10px] sm:text-xs opacity-40 mt-1 truncate">Нет оценок</div>
                                 {% endif %}
                                 {% else %}
                                 <div class="text-sm sm:text-base font-bold text-error animate-pulse flex items-center justify-center gap-1">

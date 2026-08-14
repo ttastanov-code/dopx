@@ -4,29 +4,28 @@
 {% endcomment %}
 
 {% if trust_score %}
-<div class="tooltip" data-tip="Trust Score — показатель надёжности оценок">
-    <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full 
-        {% if trust_score >= 1.8 %}
-            bg-success/10 text-success border border-success/20
-        {% elif trust_score >= 1.4 %}
-            bg-warning/10 text-warning border border-warning/20
-        {% elif trust_score >= 1.0 %}
-            bg-base-200 text-base-content border border-base-300
-        {% else %}
-            bg-error/10 text-error border border-error/20
-        {% endif %}">
-        <i class="ti ti-shield-check"></i>
-        <span class="font-bold text-sm">{{ trust_score|floatformat:2 }}</span>
-        
-        {% if trust_score >= 1.8 %}
-        <span class="text-xs opacity-70">Эксперт</span>
-        {% elif trust_score >= 1.4 %}
-        <span class="text-xs opacity-70">Надёжный</span>
-        {% elif trust_score >= 1.0 %}
-        <span class="text-xs opacity-70">Стандарт</span>
-        {% else %}
-        <span class="text-xs opacity-70">Новичок</span>
-        {% endif %}
-    </div>
+<div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full
+    {% if trust_score >= 1.8 %}
+        bg-success/10 text-success border border-success/20
+    {% elif trust_score >= 1.4 %}
+        bg-warning/10 text-warning border border-warning/20
+    {% elif trust_score >= 1.0 %}
+        bg-base-200 text-base-content border border-base-300
+    {% else %}
+        bg-error/10 text-error border border-error/20
+    {% endif %}">
+    <i class="ti ti-shield-check"></i>
+    <span class="font-bold text-sm">{{ trust_score|floatformat:2 }}</span>
+
+    {% if trust_score >= 1.8 %}
+    <span class="text-xs opacity-70">Эксперт</span>
+    {% elif trust_score >= 1.4 %}
+    <span class="text-xs opacity-70">Надёжный</span>
+    {% elif trust_score >= 1.0 %}
+    <span class="text-xs opacity-70">Стандарт</span>
+    {% else %}
+    <span class="text-xs opacity-70">Новичок</span>
+    {% endif %}
+    {% include 'components/_tooltip_icon.html' with text='Trust Score — показатель надёжности оценок' %}
 </div>
 {% endif %}

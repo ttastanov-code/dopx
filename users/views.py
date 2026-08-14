@@ -41,6 +41,7 @@ from django.conf import settings
 from datetime import timedelta
 
 from core.utils import get_client_ip, is_rate_limited
+from users.badges import BADGE_CATALOG, RARITY_ORDER
 from users.models import User, UserBadge, UserXP
 from users.forms import (
     UserRegistrationForm, UserLoginForm, UserProfileForm,
@@ -225,15 +226,34 @@ class ProfileView(LoginRequiredMixin, TemplateView):
             'evaluation_streak': user.evaluation_streak,
             'total_matches': user.evaluation_sessions.filter(status='completed').count(),
         }
-        recent_evaluations = user.context_evaluations.select_related(
-            'match__home_team', 'match__away_team'
-        ).order_by('-created_at')[:10]
+        # ИСПРАВЛЕНО: раньше источником была user.context_evaluations —
+        # ContextEvaluation создаётся на САМОМ ПЕРВОМ шаге вайзарда (см.
+        # evaluations/views.py::EvaluateContextView.form_valid), то есть
+        # существует и для оценок, брошенных на полпути. Шаблон при этом
+        # ВСЕГДА показывал бейдж "Завершено" — матч, который на самом деле
+        # ещё лежит в "Активные оценки" чуть выше на этой же странице, здесь
+        # одновременно значился как готовый. Берём реально завершённые
+        # сессии (EvaluationSession.status == 'completed'), для которых
+        # "Завершено" — не пустое слово.
+        recent_evaluations = user.evaluation_sessions.filter(
+            status='completed'
+        ).select_related(
+            'match__home_team', 'match__away_team', 'match__league'
+        ).order_by('-completed_at')[:10]
         # rarity/is_secret — properties поверх users/badges.py::BADGE_CATALOG,
         # доступны в шаблоне как badge.rarity / badge.is_secret / badge.description.
         badges = UserBadge.objects.filter(user=user).order_by('-awarded_at')
         xp, _ = UserXP.objects.get_or_create(user=user)
+        # ИСПРАВЛЕНО: та же проблема, что и на главной (core/views.py::
+        # HomeView) — сессия оставалась в "Активные оценки" даже после
+        # закрытия голосования по её матчу, хотя завершить её уже физически
+        # невозможно (EvaluationWizardMixin.check_voting_access заблокирует
+        # первый же шаг). Кнопка "Продолжить" вела в тупик. Показываем
+        # только те незавершённые сессии, где голосование ещё открыто.
         active_sessions = user.evaluation_sessions.filter(
-            status__in=['started', 'in_progress']
+            status__in=['started', 'in_progress'],
+            match__voting_open_until__gte=timezone.now(),
+            match__status='finished',
         ).select_related('match').order_by('-created_at')[:5]
 
         context.update({
@@ -244,6 +264,96 @@ class ProfileView(LoginRequiredMixin, TemplateView):
             'xp': xp,
             'active_sessions': active_sessions,
             'page_title': f'Профиль — {user.username}'
+        })
+        return context
+
+
+class BadgeCatalogView(LoginRequiredMixin, TemplateView):
+    """
+    Полный каталог достижений платформы с отметкой "получено/не получено".
+
+    НОВОЕ: раньше нигде на сайте нельзя было увидеть, какие вообще бывают
+    достижения — только уже полученные (в профиле). Пользователь не мог
+    понять, к чему стремиться, хотя весь каталог с описаниями и редкостью
+    (`users/badges.py::BADGE_CATALOG`) давно существует и используется для
+    начисления — просто ни разу не был отрендерен целиком. Секретные
+    достижения, которые пользователь ещё не получил, намеренно показываются
+    как "???" — иначе теряется смысл слова "секретное".
+    """
+    template_name = 'users/badge_catalog.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        earned = {
+            b.badge_type: b.awarded_at
+            for b in UserBadge.objects.filter(user=self.request.user)
+        }
+        catalog = []
+        for code, definition in BADGE_CATALOG.items():
+            is_earned = code in earned
+            catalog.append({
+                'code': code,
+                'name': definition.name if (is_earned or not definition.is_secret) else '???',
+                'description': definition.description if (is_earned or not definition.is_secret) else 'Секретное достижение — условия получения не раскрываются заранее.',
+                'rarity': definition.rarity,
+                'is_secret': definition.is_secret,
+                'earned': is_earned,
+                'awarded_at': earned.get(code),
+            })
+        catalog.sort(key=lambda b: (not b['earned'], -RARITY_ORDER.get(b['rarity'], 0), b['name']))
+        context.update({
+            'catalog': catalog,
+            'earned_count': len(earned),
+            'total_count': len(BADGE_CATALOG),
+            'page_title': 'Достижения — DOPX',
+        })
+        return context
+
+
+class PublicProfileView(TemplateView):
+    """
+    Публичный (только для чтения) профиль ЛЮБОГО пользователя по username.
+
+    НОВОЕ: раньше это была мёртвая функциональность — ссылка на пользователя
+    в рейтинге (`templates/users/leaderboard.html`) вела на `href="#"`,
+    потому что маршрута для просмотра ЧУЖОГО профиля просто не существовало
+    (`ProfileView` всегда рендерит только `request.user`, без параметра в
+    URL). Рейтинг, из которого нельзя перейти в профиль игрока рейтинга —
+    незаконченная фича, поэтому добавлен этот вью с минимально необходимым
+    набором данных и БЕЗ приватной информации (email, настройки, кнопки
+    редактирования — всё это только в `ProfileView`, только для себя).
+    """
+    template_name = 'users/public_profile.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        profile_user = get_object_or_404(User, username=kwargs['username'], is_active=True)
+        stats = {
+            'total_evaluations': profile_user.total_evaluations,
+            'total_players': profile_user.player_evaluations.values('player').distinct().count(),
+            'trust_score': round(profile_user.trust_score, 2),
+            'trust_level': profile_user.get_trust_level(),
+            'evaluation_streak': profile_user.evaluation_streak,
+            'total_matches': profile_user.evaluation_sessions.filter(status='completed').count(),
+        }
+        badges = list(UserBadge.objects.filter(user=profile_user).order_by('-awarded_at'))
+        # Секретные бейджи не палим до их получения посторонним — только
+        # владельцу профиля (см. UserBadge.is_secret / users/badges.py).
+        if self.request.user != profile_user:
+            badges = [b for b in badges if not b.is_secret]
+        xp, _ = UserXP.objects.get_or_create(user=profile_user)
+        recent_evaluations = profile_user.evaluation_sessions.filter(
+            status='completed'
+        ).select_related('match__home_team', 'match__away_team', 'match__league').order_by('-completed_at')[:10]
+
+        context.update({
+            'profile_user': profile_user,
+            'stats': stats,
+            'badges': badges,
+            'xp': xp,
+            'recent_evaluations': recent_evaluations,
+            'is_own_profile': self.request.user == profile_user,
+            'page_title': f'{profile_user.username} — DOPX',
         })
         return context
 
@@ -357,7 +467,10 @@ class UserLeaderboardView(ListView):
     paginate_by = 20
 
     def get_queryset(self):
-        return User.objects.filter(is_active=True, is_verified=True).annotate(
+        # ✅ select_related('xp') — шаблон читает user.xp.level для КАЖДОЙ
+        # строки (см. leaderboard.html), без этого это был N+1 (1 запрос на
+        # каждого из 20 пользователей на странице).
+        return User.objects.filter(is_active=True, is_verified=True).select_related('xp').annotate(
             eval_count=Count('context_evaluations', distinct=True)
         ).filter(eval_count__gte=1).order_by('-trust_score', '-eval_count')
 

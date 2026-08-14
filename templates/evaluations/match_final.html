@@ -66,9 +66,9 @@
                 <!-- Зрелищность -->
                 <div>
                     <div class="flex justify-between mb-1">
-                        <label class="text-xs font-semibold tooltip flex items-center gap-0.5"
-                               data-tip="Зрелищность: атаки, голы, моменты — было ли интересно?">
+                        <label class="text-xs font-semibold flex items-center gap-0.5">
                             <i class="ti ti-stars text-warning text-sm"></i> Зрелищность
+                            {% include 'components/_tooltip_icon.html' with text='Зрелищность: атаки, голы, моменты — было ли интересно?' %}
                         </label>
                         <span class="text-sm font-bold text-warning" id="entertainment_value">5</span>
                     </div>
@@ -83,9 +83,9 @@
                 <!-- Напряжение -->
                 <div>
                     <div class="flex justify-between mb-1">
-                        <label class="text-xs font-semibold tooltip flex items-center gap-0.5"
-                               data-tip="Напряжение: интрига, борьба, драма до последней минуты">
+                        <label class="text-xs font-semibold flex items-center gap-0.5">
                             <i class="ti ti-lightning text-info text-sm"></i> Напряжение
+                            {% include 'components/_tooltip_icon.html' with text='Напряжение: интрига, борьба, драма до последней минуты' %}
                         </label>
                         <span class="text-sm font-bold text-info" id="tension_value">5</span>
                     </div>
@@ -100,9 +100,9 @@
                 <!-- Справедливость -->
                 <div>
                     <div class="flex justify-between mb-1">
-                        <label class="text-xs font-semibold tooltip flex items-center gap-0.5"
-                               data-tip="Справедливость: соответствует ли счёт игре">
+                        <label class="text-xs font-semibold flex items-center gap-0.5">
                             <i class="ti ti-scale text-accent text-sm"></i> Справедливость
+                            {% include 'components/_tooltip_icon.html' with text='Справедливость: соответствует ли счёт игре' %}
                         </label>
                         <span class="text-sm font-bold text-accent" id="fairness_value">5</span>
                     </div>
@@ -131,9 +131,17 @@
                 </div>
 
                 <!-- Info Alert -->
+                {% comment %}
+                ИСПРАВЛЕНО: раньше здесь было жёстко "+10 XP" — это было верно
+                до рефакторинга XP-системы (см. докстринг evaluations/views.py,
+                пункт 1), когда все 10 XP начислялись одним куском именно на
+                этом шаге. Теперь XP распределён по всем 6 шагам (2+2+до
+                3+1+1+1=10 суммарно), и пользователь уже получил свою часть на
+                шагах 1-5 — этот финальный шаг даёт ещё +1 XP, а не +10.
+                {% endcomment %}
                 <div class="alert alert-success rounded-xl py-2">
                     <i class="ti ti-confetti text-sm flex-shrink-0"></i>
-                    <span class="text-[10px]">После отправки вы получите +10 XP</span>
+                    <span class="text-[10px]">Последний шаг: ещё +1 XP и оценка засчитана полностью</span>
                 </div>
 
                 <!-- Navigation Buttons -->

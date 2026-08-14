@@ -57,7 +57,19 @@
                     <i class="ti ti-gavel text-xl text-neutral"></i>
                 </div>
                 <h2 class="text-lg font-bold mb-1">Оценка судейства</h2>
+                {% comment %}
+                ИСПРАВЛЕНО: раньше страница просила оценить "главного судью
+                матча", ни разу не показав, кто это — пользователь оценивал
+                вслепую, хотя match.referee доступен (см. referees/views.py,
+                где то же поле используется). Теперь имя явно показано, как
+                на шаге "Тренеры".
+                {% endcomment %}
+                {% if match.referee %}
+                <p class="text-sm font-semibold">{{ match.referee.first_name }} {{ match.referee.last_name }}</p>
                 <p class="text-xs text-base-content/60">Оцените работу главного судьи матча</p>
+                {% else %}
+                <p class="text-xs text-base-content/60">Оцените работу главного судьи матча</p>
+                {% endif %}
             </div>
 
             <form method="post" class="space-y-5">
@@ -66,9 +78,9 @@
                 <!-- Влияние на матч -->
                 <div>
                     <div class="flex justify-between mb-1">
-                        <label class="text-xs font-semibold tooltip flex items-center gap-0.5"
-                               data-tip="Влияние на матч: 0=незаметен, 50=норма, 100=решил исход">
+                        <label class="text-xs font-semibold flex items-center gap-0.5">
                             <i class="ti ti-scale text-neutral text-sm"></i> Влияние на матч
+                            {% include 'components/_tooltip_icon.html' with text='Влияние на матч: 0=незаметен, 50=норма, 100=решил исход' %}
                         </label>
                         <span class="text-sm font-bold text-neutral" id="influence_value">50</span>
                     </div>
@@ -83,9 +95,9 @@
                 <!-- Качество решений -->
                 <div>
                     <div class="flex justify-between mb-1">
-                        <label class="text-xs font-semibold tooltip flex items-center gap-0.5"
-                               data-tip="Качество решений: точность свистков, работа с ВАР">
+                        <label class="text-xs font-semibold flex items-center gap-0.5">
                             <i class="ti ti-checks text-success text-sm"></i> Качество решений
+                            {% include 'components/_tooltip_icon.html' with text='Качество решений: точность свистков, работа с ВАР' %}
                         </label>
                         <span class="text-sm font-bold text-success" id="quality_value">5</span>
                     </div>

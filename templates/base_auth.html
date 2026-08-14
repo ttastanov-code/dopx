@@ -14,69 +14,34 @@
     <link rel="icon" type="image/png" href="{% static 'favicons/favicon-32x32.png' %}" sizes="32x32">
     <link rel="icon" type="image/png" href="{% static 'favicons/favicon-16x16.png' %}" sizes="16x16">
     
-    <!-- Tailwind CSS + DaisyUI -->
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
-    <script src="https://cdn.tailwindcss.com"></script>
-    
+    <!-- Tailwind CSS -->
+    <!-- ИСПРАВЛЕНО: раньше здесь стояли ДРУГИЕ версии Tailwind/DaisyUI/HTMX/
+         Alpine, чем в основном шаблоне `base.html` (Tailwind v3 Play CDN +
+         DaisyUI v4.12.14 vs v4/v5 в остальном сайте) — страницы входа и
+         регистрации фактически рендерились другим фреймворком, чем весь
+         остальной сайт, с риском визуальных расхождений. Плюс сам конфиг
+         был битый: `require("daisyui/src/theming/themes")` — вызов Node.js
+         `require()` в браузере не существует, падало с `ReferenceError:
+         require is not defined` на КАЖДОЙ странице входа/регистрации.
+         Теперь везде одна и та же связка — см. `base.html`. -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <!-- DaisyUI -->
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@5/themes.css" rel="stylesheet" type="text/css" />
+
     <!-- HTMX -->
-    <script src="https://unpkg.com/htmx.org@2.0.4" integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OCjTtGOC+Z++" crossorigin="anonymous"></script>
-    
+    <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.8/dist/htmx.min.js" integrity="sha384-/TgkGk7p307TH7EXJDuUlgG3Ce1UVolAOFopFekQkkXihi5u/6OCvVKyz1W+idaz" crossorigin="anonymous"></script>
+
     <!-- Alpine.js -->
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.3/dist/cdn.min.js"></script>
-    
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.15.8/dist/cdn.min.js"></script>
+
     <!-- Tabler Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
-    
+
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    
-    <!-- Настройка Tailwind -->
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        primary: '#000000',
-                        secondary: '#ffffff',
-                        accent: '#3b82f6',
-                    },
-                    fontFamily: {
-                        sans: ['Inter', 'system-ui', 'sans-serif'],
-                    }
-                }
-            },
-            daisyui: {
-                themes: [
-                    {
-                        light: {
-                            ...require("daisyui/src/theming/themes")["light"],
-                            primary: "#000000",
-                            secondary: "#ffffff",
-                            accent: "#3b82f6",
-                            neutral: "#1a1a1a",
-                            "base-100": "#ffffff",
-                            "base-200": "#f5f5f5",
-                            "base-300": "#e5e5e5",
-                        },
-                    },
-                    {
-                        dark: {
-                            ...require("daisyui/src/theming/themes")["dark"],
-                            primary: "#ffffff",
-                            secondary: "#000000",
-                            accent: "#60a5fa",
-                            neutral: "#e5e5e5",
-                            "base-100": "#0a0a0a",
-                            "base-200": "#171717",
-                            "base-300": "#262626",
-                        },
-                    },
-                ],
-            },
-        }
-    </script>
     
     <style>
         * {
@@ -168,8 +133,16 @@
                 icon.classList.add('ti-eye');
             }
         }
-        
-        {% block extra_script %}{% endblock %}
     </script>
+    <!-- ИСПРАВЛЕНО: блок extra_script раньше был объявлен ПРЯМО ВНУТРИ
+         этого script-тега (см. git-историю) — рассчитан только на голый JS
+         без тегов. Любой дочерний шаблон, вставляющий сюда HTML (комментарий,
+         свой script-тег, вывод form.media и т.д. — как register.html),
+         получал SyntaxError в браузере, потому что вся эта разметка
+         скармливалась JS-парсеру как код одного и того же тега. Теперь блок
+         независимый, вне какого-либо script-тега, как и в base.html;
+         дочерние шаблоны могут свободно писать сюда и HTML, и произвольные
+         свои script-теги без риска сломать разметку. -->
+    {% block extra_script %}{% endblock %}
 </body>
 </html>

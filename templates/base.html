@@ -21,29 +21,29 @@
     <!-- Tabler Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
     <!-- Alpine.js -->
+    {% comment %}
+    Плагин Collapse нужно подключать ДО ядра Alpine (таков порядок для всех
+    плагинов Alpine через CDN) — иначе директива x-collapse (используется в
+    evaluations/_player_card.html для плавного разворачивания слайдеров
+    оценки игрока) молча игнорируется и раскрытие происходит без анимации.
+    {% endcomment %}
+    <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/collapse@3.15.8/dist/cdn.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.15.8/dist/cdn.min.js"></script>
     <!-- HTMX -->
     <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.8/dist/htmx.min.js" integrity="sha384-/TgkGk7p307TH7EXJDuUlgG3Ce1UVolAOFopFekQkkXihi5u/6OCvVKyz1W+idaz" crossorigin="anonymous"></script>
-    <!-- Настройка Tailwind -->
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        primary: '#000000',
-                        secondary: '#ffffff',
-                        accent: '#3b82f6',
-                    },
-                    fontFamily: {
-                        sans: ['Inter', 'system-ui', 'sans-serif'],
-                    }
-                }
-            },
-            daisyui: {
-                themes: ["light", "dark"],
-            },
-        }
-    </script>
+    <!-- УДАЛЕНО: тут был `tailwind.config = {...}` в стиле Tailwind v3
+         Play CDN. Подключённый скрипт — `@tailwindcss/browser@4` (Tailwind
+         v4), а в v4 JS-конфига `tailwind.config` не существует вообще
+         (настройка темы там делается через CSS `@theme`, не через JS) —
+         глобального объекта `window.tailwind` v4-сборка не создаёт. Из-за
+         этого скрипт кидал `ReferenceError: tailwind is not defined` на
+         КАЖДОЙ странице сайта, а сам конфиг (кастомные цвета primary/
+         secondary/accent) никогда не применялся — то, что сайт всё это
+         время был правильно раскрашен, целиком заслуга тем DaisyUI
+         (light/dark), подключённых отдельными <link> ниже, а не этого
+         скрипта. Если нужно переопределить конкретные цвета темы DaisyUI —
+         это делается через её собственный API кастомных тем (CSS), а не
+         через удалённый отсюда JS-объект. -->
     <script>
         const savedTheme = localStorage.getItem('theme') || 'light';
         document.documentElement.setAttribute('data-theme', savedTheme);
@@ -70,36 +70,27 @@
             flex: 1;
             width: 100%;
         }
-        /* 🔧 FIX: Стабильные тултипы без зависаний */
-        .tooltip {
-            position: relative;
-            display: inline-block;
-            cursor: help;
-        }
-        .tooltip::after {
-            content: attr(data-tip);
-            position: absolute;
-            bottom: 100%;
-            left: 50%;
-            transform: translateX(-50%) translateY(4px);
-            padding: 0.5rem 0.75rem;
-            background: #1f2937;
-            color: #fff;
-            font-size: 0.75rem;
-            border-radius: 0.375rem;
-            white-space: nowrap;
-            z-index: 9999;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
-            max-width: 90vw;
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity 0.15s ease, transform 0.15s ease;
-            transform-origin: bottom center;
-        }
-        .tooltip:hover::after {
-            opacity: 1;
-            transform: translateX(-50%) translateY(0);
-        }
+        /* ИСПРАВЛЕНО: раньше здесь был кастомный `.tooltip`/`.tooltip::after`,
+           реализующий подсказки прямо через CSS-класс `tooltip`, повешенный
+           на сам лейбл/значение (`position:relative; display:inline-block`).
+           Проблема: этот же класс `tooltip` вешался на элементы, у которых
+           ОДНОВРЕМЕННО был Tailwind-класс `flex` (например
+           `class="... tooltip flex items-center gap-0.5"` в шаблонах
+           оценок) — при равной специфичности CSS побеждало то правило,
+           что подключено позже в каскаде, а этот блок объявлен НИЖЕ
+           Tailwind-рантайма в <head>, поэтому `display:inline-block` из
+           `.tooltip` перебивал `display:flex`, и лейблы с иконкой
+           разъезжались/переносились криво. Плюс `::after` с
+           `left:50%; white-space:nowrap` не умел уворачиваться от края
+           экрана — у элементов возле правого/левого края подсказка
+           обрезалась или вылезала за viewport.
+           Новая система подсказок — см. `components/_tooltip_icon.html` и
+           Alpine-компонент `tooltipTrigger` ниже: отдельная маленькая
+           info-иконка (не влияет на layout соседей) + сам "пузырь"
+           рендерится через `x-teleport="body"` с `position:fixed` и сам
+           пересчитывает своё положение (никогда не задевает контент
+           страницы и не обрезается по краю экрана). */
+        [x-cloak] { display: none !important; }
         /* Плавные переходы */
         .transition-all {
             transition-property: all;
@@ -171,6 +162,53 @@
         <span class="loading loading-spinner loading-lg text-primary"></span>
     </div>
     {% endblock %}
+    <!-- Подсказки (см. components/_tooltip_icon.html): маленькая info-
+         иконка, "пузырь" с текстом позиционируется через JS в
+         position:fixed и телепортируется в конец <body> (x-teleport) —
+         поэтому никогда не влияет на layout соседних элементов и не
+         ломает Tailwind-flex у родителя, в отличие от старого CSS-only
+         решения. На десктопе всплывает по наведению/фокусу, на мобильных —
+         по тапу; закрывается уходом курсора (десктоп) или тапом вне
+         подсказки (мобильные). Клик специально не переключает
+         открыто/закрыто (не toggle) — иначе на десктопе наведение
+         открывает подсказку, а следующий за ним клик тут же её закрывал
+         бы same-tick. -->
+    <script>
+        document.addEventListener('alpine:init', () => {
+            Alpine.data('tooltipTrigger', (text) => ({
+                text,
+                open: false,
+                pos: { top: 0, left: 0 },
+                show() {
+                    this.open = true;
+                    this.$nextTick(() => this.position());
+                },
+                hide() {
+                    this.open = false;
+                },
+                toggle() {
+                    this.open ? this.hide() : this.show();
+                },
+                position() {
+                    const trigger = this.$refs.trigger;
+                    const bubble = this.$refs.bubble;
+                    if (!trigger || !bubble) return;
+                    const margin = 8;
+                    const tRect = trigger.getBoundingClientRect();
+                    const bRect = bubble.getBoundingClientRect();
+                    // Вертикально: сверху от иконки, если не влезает — снизу
+                    let top = tRect.top - bRect.height - margin;
+                    if (top < margin) {
+                        top = tRect.bottom + margin;
+                    }
+                    // Горизонтально: центр по иконке, зажатый в границы экрана
+                    let left = tRect.left + tRect.width / 2 - bRect.width / 2;
+                    left = Math.max(margin, Math.min(left, window.innerWidth - bRect.width - margin));
+                    this.pos = { top, left };
+                },
+            }));
+        });
+    </script>
     <!-- Скрипты -->
     <script>
         // HTMX события

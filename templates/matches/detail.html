@@ -22,6 +22,13 @@
                     <span class="truncate">{{ match.league.name }}</span>
                     <span class="hidden sm:inline">•</span>
                     <span class="hidden sm:inline">Сезон {{ match.season.year }}</span>
+                    {% if match.is_derby %}
+                    <span class="hidden sm:inline">•</span>
+                    <span class="badge badge-error badge-sm gap-1 flex-shrink-0">
+                        <i class="ti ti-flame"></i>
+                        Дерби
+                    </span>
+                    {% endif %}
                 </div>
                 <div class="badge {% if match.status == 'live' %}badge-error animate-pulse{% elif match.status == 'finished' %}badge-success{% else %}badge-ghost{% endif %} text-xs">
                     {% if match.status == 'scheduled' %}
@@ -245,20 +252,20 @@
                         <span>Результаты оценок</span>
                     </h3>
                     <div class="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4">
-                        <div class="stat bg-base-200 rounded-lg p-2 md:p-4 tooltip" data-tip="{{ INDICATOR_TOOLTIPS.match.entertainment }}">
-                            <div class="stat-title text-[10px] md:text-xs">Зрелищность</div>
+                        <div class="stat bg-base-200 rounded-lg p-2 md:p-4">
+                            <div class="stat-title text-[10px] md:text-xs flex items-center gap-1">Зрелищность{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.match.entertainment %}</div>
                             <div class="stat-value text-lg md:text-2xl text-warning">{{ match_aggregate.avg_entertainment|floatformat:1 }}</div>
                         </div>
-                        <div class="stat bg-base-200 rounded-lg p-2 md:p-4 tooltip" data-tip="{{ INDICATOR_TOOLTIPS.match.tension }}">
-                            <div class="stat-title text-[10px] md:text-xs">Напряжение</div>
+                        <div class="stat bg-base-200 rounded-lg p-2 md:p-4">
+                            <div class="stat-title text-[10px] md:text-xs flex items-center gap-1">Напряжение{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.match.tension %}</div>
                             <div class="stat-value text-lg md:text-2xl text-info">{{ match_aggregate.avg_tension|floatformat:1 }}</div>
                         </div>
-                        <div class="stat bg-base-200 rounded-lg p-2 md:p-4 tooltip" data-tip="{{ INDICATOR_TOOLTIPS.match.drama_index }}">
-                            <div class="stat-title text-[10px] md:text-xs">Индекс драмы</div>
+                        <div class="stat bg-base-200 rounded-lg p-2 md:p-4">
+                            <div class="stat-title text-[10px] md:text-xs flex items-center gap-1">Индекс драмы{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.match.drama_index %}</div>
                             <div class="stat-value text-lg md:text-2xl text-error">{{ match_aggregate.drama_index|floatformat:0 }}</div>
                         </div>
-                        <div class="stat bg-base-200 rounded-lg p-2 md:p-4 tooltip" data-tip="{{ INDICATOR_TOOLTIPS.aggregate.total_votes }}">
-                            <div class="stat-title text-[10px] md:text-xs">Всего оценок</div>
+                        <div class="stat bg-base-200 rounded-lg p-2 md:p-4">
+                            <div class="stat-title text-[10px] md:text-xs flex items-center gap-1">Всего оценок{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.aggregate.total_votes %}</div>
                             <div class="stat-value text-lg md:text-2xl">{{ match_aggregate.total_votes }}</div>
                         </div>
                     </div>
@@ -285,8 +292,8 @@
                                 <div class="font-medium text-sm md:text-base truncate">{{ agg.player }}</div>
                                 <div class="text-[10px] md:text-xs opacity-60 truncate">{{ agg.player.team.name }}</div>
                             </div>
-                            <div class="text-right flex-shrink-0 tooltip" data-tip="{{ INDICATOR_TOOLTIPS.aggregate.performance_score }}">
-                                <div class="font-bold text-primary text-sm md:text-lg">{{ agg.performance_score|floatformat:1 }}</div>
+                            <div class="text-right flex-shrink-0">
+                                <div class="font-bold text-primary text-sm md:text-lg inline-flex items-center gap-1">{{ agg.performance_score|floatformat:1 }}{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.aggregate.performance_score %}</div>
                                 <div class="text-[10px] md:text-xs opacity-60 hidden sm:block">рейтинг выступления</div>
                             </div>
                         </a>

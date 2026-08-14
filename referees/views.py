@@ -43,26 +43,32 @@ class RefereeListView(ListView):
 
 
 class RefereeDetailView(DetailView):
+    # ИСПРАВЛЕНО: этот класс был продублирован в файле дважды (байт-в-байт
+    # идентичные определения) — вторая копия молча перекрывала первую в
+    # пространстве имён модуля (Python это разрешает без ошибки), поэтому
+    # рантайм-бага не было, но любое будущее редактирование "первой" версии
+    # было бы обречено — Django реально использует ту, что видна тут.
+    # Оставлена одна копия.
     model = Referee
     template_name = 'referees/detail.html'
     context_object_name = 'referee'
-    
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         referee = self.object
-        
+
         # ✅ Матчи судьи (по факту, а не по оценкам)
         matches = Match.objects.filter(
             referee=referee
         ).select_related(
             'home_team', 'away_team', 'league', 'season'
         ).order_by('-start_time')[:20]
-        
+
         # ✅ Оценки (отдельно)
         evaluations = RefereeEvaluation.objects.filter(
             match__referee=referee
         ).select_related('match').order_by('-match__start_time')[:10]
-        
+
         # ✅ Статистика: разделяем матчи и оценки
         stats = {
             # Матчи (факт)
@@ -78,54 +84,20 @@ class RefereeDetailView(DetailView):
                 match__referee=referee
             ).aggregate(avg=Avg('decision_quality'))['avg'],
         }
-        
+
+        # НОВОЕ: ближайший обслуженный матч, который ещё можно оценить —
+        # для CTA в пустых состояниях (тот же паттерн, что на страницах
+        # команды и игрока).
+        votable_match = next(
+            (m for m in matches if m.status == 'finished' and m.is_voting_open()),
+            None
+        )
+
         context.update({
             'matches': matches,
             'evaluations': evaluations,
             'stats': stats,
-            'page_title': f'{referee.first_name} {referee.last_name} — DOPX',
-        })
-        return context
-
-
-class RefereeDetailView(DetailView):
-    model = Referee
-    template_name = 'referees/detail.html'
-    context_object_name = 'referee'
-    
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        referee = self.object
-        
-        # ✅ Матчи судьи (по факту, а не по оценкам)
-        matches = Match.objects.filter(
-            referee=referee
-        ).select_related('home_team', 'away_team', 'league', 'season'
-        ).order_by('-start_time')[:20]
-        
-        # ✅ Оценки (отдельно)
-        evaluations = RefereeEvaluation.objects.filter(
-            match__referee=referee
-        ).select_related('match').order_by('-match__start_time')[:10]
-        
-        # ✅ Статистика: разделяем матчи и оценки
-        stats = {
-            # Матчи (факт)
-            'total_matches': Match.objects.filter(referee=referee).count(),
-            # Оценки (мнение)
-            'total_evaluations': RefereeEvaluation.objects.filter(match__referee=referee).count(),
-            'avg_influence': RefereeEvaluation.objects.filter(
-                match__referee=referee
-            ).aggregate(avg=Avg('influence_score'))['avg'],
-            'avg_decision_quality': RefereeEvaluation.objects.filter(
-                match__referee=referee
-            ).aggregate(avg=Avg('decision_quality'))['avg'],
-        }
-        
-        context.update({
-            'matches': matches,
-            'evaluations': evaluations,
-            'stats': stats,
+            'votable_match': votable_match,
             'page_title': f'{referee.first_name} {referee.last_name} — DOPX',
         })
         return context

@@ -176,7 +176,28 @@ class TeamDetailView(DetailView):
             is_active=True,
             teamseason__team=team
         ).first()
-        
+
+        # НОВОЕ: позиция в турнирной таблице текущего сезона — данные уже
+        # считаются планово (aggregates/tasks.py::recalculate_season_standings
+        # каждые 10 минут, см. комментарий в core/views.py), просто раньше
+        # эта готовая строка нигде не использовалась на странице команды.
+        season_stats = None
+        if current_season:
+            season_stats = TeamSeasonStats.objects.filter(
+                team=team, season=current_season
+            ).first()
+        total_teams_in_league = None
+        if season_stats:
+            total_teams_in_league = TeamSeasonStats.objects.filter(
+                season=current_season
+            ).count()
+
+        # Матч этой команды, который прямо сейчас можно оценить (для CTA
+        # в пустом состоянии карточки "Оценки болельщиков") — НЕ просто
+        # последний сыгранный, а именно тот, где voting_open_until ещё не
+        # истёк, иначе кнопка вела бы на уже закрытое голосование.
+        votable_match = next((m for m in recent_matches if m.is_voting_open), None)
+
         context.update({
             'total_matches': total_matches,
             'wins': wins,
@@ -188,6 +209,9 @@ class TeamDetailView(DetailView):
             'recent_matches': recent_matches,
             'upcoming_matches': upcoming_matches,
             'current_season': current_season_obj,
+            'season_stats': season_stats,
+            'total_teams_in_league': total_teams_in_league,
+            'votable_match': votable_match,
             'page_title': f'{team.name} — DOPX',
         })
         return context

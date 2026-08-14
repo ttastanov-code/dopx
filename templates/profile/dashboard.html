@@ -1,6 +1,7 @@
 {% extends 'base.html' %}
 {% load static %}
 {% load math_extras %}
+{% load tooltip_tags %}
 {% block content %}
 <!-- === HEADER === -->
 <div class="mb-8">
@@ -82,23 +83,47 @@
             </div>
         </div>
         <!-- Достижения -->
+        {% comment %}
+        ИСПРАВЛЕНО: badge.rarity/is_secret/description уже давно были готовы
+        как properties поверх users/badges.py::BADGE_CATALOG (см. докстринг
+        UserBadge), но дашборд их не использовал вообще — все достижения
+        рисовались одинаковым акцентным квадратом с одной и той же иконкой
+        медали, узнать редкость можно было только по тексту тултипа. Теперь
+        цвет иконки/рамки отражает реальную редкость (bronze/silver/gold/
+        platinum/secret), а под сеткой — название последнего полученного
+        достижения текстом, а не только в hover-тултипе.
+        {% endcomment %}
         <div class="card bg-base-100 border border-base-300">
             <div class="card-body p-4">
-                <h3 class="font-bold text-lg mb-4">
-                    <i class="ti ti-medal mr-2"></i>
-                    Достижения
+                <h3 class="font-bold text-lg mb-4 flex items-center justify-between">
+                    <span>
+                        <i class="ti ti-medal mr-2"></i>
+                        Достижения
+                        {% if badges %}<span class="text-sm font-normal opacity-50">({{ badges|length }})</span>{% endif %}
+                    </span>
+                    <a href="{% url 'users:badge_catalog' %}" class="text-xs font-normal text-primary hover:underline">Все достижения</a>
                 </h3>
                 <div class="flex flex-wrap gap-2">
                     {% for badge in badges %}
-                    <div class="tooltip" data-tip="{{ badge.get_badge_type_display }}">
-                        <div class="w-12 h-12 rounded-lg bg-accent/10 flex items-center justify-center">
-                            <i class="ti ti-medal text-accent text-xl"></i>
-                        </div>
+                    {% tooltip_wrap badge.get_badge_type_display %}
+                    <div class="w-12 h-12 rounded-lg flex items-center justify-center border-2
+                        {% if badge.rarity == 'platinum' %}bg-info/10 border-info/40 text-info
+                        {% elif badge.rarity == 'gold' %}bg-warning/10 border-warning/40 text-warning
+                        {% elif badge.rarity == 'silver' %}bg-base-300/60 border-base-content/20 text-base-content/70
+                        {% elif badge.rarity == 'secret' %}bg-secondary/10 border-secondary/40 text-secondary
+                        {% else %}bg-accent/10 border-accent/30 text-accent{% endif %}">
+                        <i class="ti {% if badge.is_secret %}ti-eye-off{% else %}ti-medal{% endif %} text-xl"></i>
                     </div>
+                    {% endtooltip_wrap %}
                     {% empty %}
                     <div class="text-sm opacity-60">Пока нет достижений</div>
                     {% endfor %}
                 </div>
+                {% if badges.0 %}
+                <div class="text-xs opacity-50 mt-3 pt-3 border-t border-base-300">
+                    Последнее: <span class="font-medium opacity-80">{{ badges.0.get_badge_type_display }}</span>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -154,15 +179,15 @@
                             </tr>
                         </thead>
                         <tbody>
-                            {% for eval in recent_evaluations %}
+                            {% for session in recent_evaluations %}
                             <tr>
                                 <td>
-                                    <div class="font-medium">
-                                        {{ eval.match.home_team.name }} vs {{ eval.match.away_team.name }}
-                                    </div>
+                                    <a href="{% url 'matches:detail' session.match.id %}" class="font-medium hover:text-primary transition-colors">
+                                        {{ session.match.home_team.name }} vs {{ session.match.away_team.name }}
+                                    </a>
                                 </td>
-                                <td class="opacity-60">{{ eval.match.league.name }}</td>
-                                <td class="font-mono text-sm">{{ eval.created_at|date:"d.m.Y" }}</td>
+                                <td class="opacity-60">{{ session.match.league.name }}</td>
+                                <td class="font-mono text-sm">{{ session.completed_at|date:"d.m.Y" }}</td>
                                 <td>
                                     <span class="badge badge-success badge-sm">
                                         <i class="ti ti-check"></i>

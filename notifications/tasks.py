@@ -370,8 +370,11 @@ def send_notification_digest():
         sent = _send_email_to_user(
             user,
             f'📋 Ваши обновления на DOPX ({len(notes)})',
-            'emails/digest.html',
-            {'notifications': notes},
+            # ИСПРАВЛЕНО: шаблон в проекте уже существовал под именем
+            # notification_digest.html — ссылались на несуществующий
+            # emails/digest.html, письмо падало с TemplateDoesNotExist.
+            'emails/notification_digest.html',
+            {'notifications': notes, 'count': len(notes)},
             notification_type='system',
         )
         if sent:

@@ -74,10 +74,10 @@
                     {% for field in evaluation_fields %}
                     <div>
                         <div class="flex justify-between mb-1">
-                            <label class="text-[10px] font-semibold tooltip flex items-center gap-0.5"
-                                   data-tip="{{ INDICATOR_TOOLTIPS.team|get_item:field.name }}">
+                            <label class="text-[10px] font-semibold flex items-center gap-0.5">
                                 <i class="ti {{ field.icon }} text-primary text-xs"></i>
                                 {{ field.label }}
+                                {% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.team|get_item:field.name %}
                             </label>
                             <span class="text-xs font-bold text-primary" id="home_{{ field.name }}_value">5</span>
                         </div>
@@ -116,10 +116,10 @@
                     {% for field in evaluation_fields %}
                     <div>
                         <div class="flex justify-between mb-1">
-                            <label class="text-[10px] font-semibold tooltip flex items-center gap-0.5"
-                                   data-tip="{{ INDICATOR_TOOLTIPS.team|get_item:field.name }}">
+                            <label class="text-[10px] font-semibold flex items-center gap-0.5">
                                 <i class="ti {{ field.icon }} text-secondary text-xs"></i>
                                 {{ field.label }}
+                                {% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.team|get_item:field.name %}
                             </label>
                             <span class="text-xs font-bold text-secondary" id="away_{{ field.name }}_value">5</span>
                         </div>

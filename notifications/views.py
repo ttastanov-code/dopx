@@ -1,4 +1,6 @@
 # notifications/views.py
+from datetime import timedelta
+
 from django.shortcuts import redirect, get_object_or_404
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.views.generic import ListView, View
@@ -59,6 +61,31 @@ class NotificationListView(LoginRequiredMixin, ListView):
             user=self.request.user,
             is_read=False
         ).count()
+
+        # ИСПРАВЛЕНО: карточка "Всего" в шаблоне раньше читала
+        # `notifications.paginator.count` — но `notifications` (context_object_name)
+        # это уже НАРЕЗАННЫЙ пагинацией QuerySet (список объектов текущей
+        # страницы), у него нет атрибута `.paginator` (он есть только у
+        # объекта `Paginator`/`Page`, отдельно кладущегося ListView'ом в
+        # контекст как ключ `paginator`). Обращение к несуществующему
+        # атрибуту в шаблоне Django молча резолвится в пустую строку —
+        # `|default:0` подхватывал именно эту пустую строку и рисовал "0",
+        # даже когда уведомления реально были. Настоящий общий счётчик по
+        # текущим фильтрам — `context['paginator'].count` (paginator уже
+        # положен в context базовым ListView.get_context_data() выше).
+        total_count = context['paginator'].count if context.get('paginator') else context['notifications'].count()
+        context['total_count'] = total_count
+        context['read_count'] = max(total_count - context['unread_count'], 0)
+
+        # ИСПРАВЛЕНО: карточка "За неделю" раньше показывала
+        # `{{ notifications|length }}` — это длина ТЕКУЩЕЙ СТРАНИЦЫ
+        # пагинации (максимум paginate_by=20), а не реальное количество
+        # уведомлений за последние 7 дней. Считаем честно от текущей даты.
+        context['week_count'] = Notification.objects.filter(
+            user=self.request.user,
+            created_at__gte=timezone.now() - timedelta(days=7)
+        ).count()
+
         context['page_title'] = 'Уведомления — DOPX'
         context['current_type'] = self.request.GET.get('type', '')
         context['current_status'] = self.request.GET.get('status', '')

@@ -175,8 +175,10 @@
 
                 <!-- CAPTCHA: self-hosted (django-simple-captcha), картинка
                      рисуется Pillow'ом на сервере, без внешних API-ключей.
-                     Клик по картинке обновляет её (JS из {{ form.media }}
-                     внизу шаблона). -->
+                     Клик по картинке обновляет её через встроенный AJAX-
+                     эндпоинт пакета (captcha-refresh) — см. JS в конце
+                     шаблона. Медиа-объект формы для этого поля в этой
+                     версии пакета пуст, полагаться на него было ошибкой. -->
                 <div class="form-control">
                     <label class="label" for="id_captcha_1">
                         <span class="label-text font-medium">Подтвердите, что вы не робот</span>
@@ -262,9 +264,6 @@
 {% endblock %}
 
 {% block extra_script %}
-<!-- JS обновления картинки капчи по клику — идёт из django-simple-captcha
-     (form.media), ничего вручную не пишем поверх их DOM-разметки. -->
-{{ form.media }}
 <script>
 // Автофокус на поле username
 document.addEventListener('DOMContentLoaded', () => {
@@ -272,6 +271,38 @@ document.addEventListener('DOMContentLoaded', () => {
     if (usernameInput && !usernameInput.value) {
         usernameInput.focus();
     }
+});
+
+// Обновление капчи по клику на картинку — виджет django-simple-captcha
+// сам по себе никакого JS не подключает (в этой версии пакета media
+// пуст), поэтому дёргаем официальный AJAX-эндпоинт captcha-refresh
+// напрямую и вручную подменяем src картинки + значение скрытого поля
+// с ключом (id_captcha_0). Обязательный заголовок X-Requested-With —
+// без него captcha.views.captcha_refresh отвечает 404 (см. исходник).
+document.addEventListener('DOMContentLoaded', () => {
+    const captchaImg = document.querySelector('img.captcha');
+    const captchaKeyInput = document.getElementById('id_captcha_0');
+    if (!captchaImg || !captchaKeyInput) {
+        return;
+    }
+    captchaImg.style.cursor = 'pointer';
+    captchaImg.title = 'Кликните, чтобы обновить картинку';
+    captchaImg.addEventListener('click', async () => {
+        try {
+            const response = await fetch('/captcha/refresh/', {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            });
+            if (!response.ok) {
+                return;
+            }
+            const data = await response.json();
+            captchaImg.src = data.image_url;
+            captchaKeyInput.value = data.key;
+        } catch (e) {
+            // Тихо игнорируем — пользователь просто не увидит новую картинку
+            // и попробует кликнуть ещё раз, форма при этом не ломается.
+        }
+    });
 });
 </script>
 {% endblock %}
