@@ -39,7 +39,20 @@ class Team(BaseModel):
         default=True,
         verbose_name=_('Активна')
     )
-    
+    # НОВОЕ: продуктовое решение (не автоматика) — какие пары команд
+    # считаются принципиальными соперниками ("дерби"), проставляется один
+    # раз вручную в админке (см. teams/admin.py::TeamAdmin.filter_horizontal).
+    # Используется бейджем "derby_hunter" (users/badges.py). Самоссылочное
+    # ManyToManyField по умолчанию симметрично: если A добавлен в rivals B,
+    # то B автоматически оказывается в rivals A — отдельный related_name не
+    # нужен.
+    rivals = models.ManyToManyField(
+        'self',
+        blank=True,
+        verbose_name=_('Принципиальные соперники'),
+        help_text=_('Команды, матчи с которыми считаются дерби для бейджа «Дерби-эксперт».'),
+    )
+
     class Meta:
         verbose_name = _('Команда')
         verbose_name_plural = _('Команды')

@@ -29,6 +29,16 @@
    `users/badges.py`). `founder` НЕ проверяется здесь — выдаётся один раз
    в момент верификации email (`users/views.py::VerifyEmailView`), это
    разовое событие, а не то, что нужно перепроверять на каждой оценке.
+5. **`derby_hunter`** (второй заход, было отложено в первом аудите — см.
+   `users/badges.py`) — количество ДЕРБИ-матчей среди оценённых пользователем
+   считается в Python по маленькому набору пар команд-соперников
+   (`Team.rivals`, проставляется вручную в админке), а не через ORM-join —
+   сравнение "домашняя/гостевая команда — пара соперников" по M2M напрямую
+   в `.filter()` затруднительно и вышло бы менее читаемым, чем прямой
+   Python-цикл по небольшому, заведомо ограниченному списку пар. `monthly_
+   champion` здесь НЕ проверяется — это отдельная периодическая задача
+   (`users/tasks.py::award_monthly_champion_badge`), а не событие,
+   привязанное к конкретной оценке пользователя.
 """
 from __future__ import annotations
 
@@ -55,6 +65,8 @@ FORESIGHT_MIN_TRUST_SCORE = 1.6
 
 JUDGE_OF_JUDGES_MIN_COUNT = 25
 POLYGLOT_MIN_TEAMS = 8
+
+DERBY_HUNTER_MIN_MATCHES = 5
 
 
 def check_and_award_badges(user) -> list[UserBadge]:
@@ -144,6 +156,9 @@ def check_and_award_badges(user) -> list[UserBadge]:
             if created:
                 awarded.append(b)
 
+        if total >= DERBY_HUNTER_MIN_MATCHES:
+            _maybe_award_derby_hunter(user, awarded)
+
     except Exception as e:
         logger.error("Ошибка проверки достижений для %s: %s", user.username, e, exc_info=True)
 
@@ -212,5 +227,44 @@ def _maybe_award_bias_free(user, awarded: list[UserBadge]) -> None:
     bias_score = compute_bias_score(user, latest_context.match, lookback=BIAS_FREE_LOOKBACK)
     if bias_score <= BIAS_FREE_MAX_SCORE:
         b, created = UserBadge.objects.get_or_create(user=user, badge_type="bias_free")
+        if created:
+            awarded.append(b)
+
+
+def _maybe_award_derby_hunter(user, awarded: list[UserBadge]) -> None:
+    """
+    Бейдж «Дерби-эксперт»: оценено ≥`DERBY_HUNTER_MIN_MATCHES` матчей между
+    командами, отмеченными друг у друга как соперники (`Team.rivals`,
+    проставляется вручную в админке — см. `teams/admin.py`). Список
+    соперничеств — продуктовое решение, не автоматика.
+
+    Список пар соперников в лиге заведомо маленький (десятки, не тысячи) —
+    поэтому сравнение "матч — это дерби?" делается один раз в Python по
+    множеству пар, а не через `.filter()` с M2M-джойном на каждый матч.
+    """
+    from matches.models import Match
+    from teams.models import Team
+
+    rival_pairs: set[frozenset] = {
+        frozenset((from_id, to_id))
+        for from_id, to_id in Team.rivals.through.objects.values_list("from_team_id", "to_team_id")
+    }
+    if not rival_pairs:
+        return
+
+    evaluated_matches = (
+        Match.objects.filter(context_evaluations__user=user)
+        .values_list("id", "home_team_id", "away_team_id")
+        .distinct()
+    )
+
+    derby_count = sum(
+        1
+        for _match_id, home_id, away_id in evaluated_matches
+        if frozenset((home_id, away_id)) in rival_pairs
+    )
+
+    if derby_count >= DERBY_HUNTER_MIN_MATCHES:
+        b, created = UserBadge.objects.get_or_create(user=user, badge_type="derby_hunter")
         if created:
             awarded.append(b)

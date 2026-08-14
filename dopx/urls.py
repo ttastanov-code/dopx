@@ -24,6 +24,8 @@ urlpatterns = [
     path('leagues/', include('leagues.urls')),
     path('notifications/', include('notifications.urls')),
     path('api/', include('api.urls')),
+    # Self-hosted CAPTCHA (django-simple-captcha) — картинка + refresh-эндпоинт.
+    path('captcha/', include('captcha.urls')),
 ] + schema_patterns
 
 if settings.DEBUG:

@@ -16,15 +16,19 @@
    читающего форму (регистрация требует минимум прочитать 5 полей и
    придумать пароль), верный признак скрипта, который сразу шлёт POST.
 
-Оба фильтра — мягкие первые барьеры против примитивного бот-фарминга
-аккаунтов, а не замена полноценной CAPTCHA/Turnstile (см. рекомендацию в
-продуктовом аудите — CAPTCHA стоит подключать отдельно, когда будут ключи
-провайдера). Ничего не меняют для обычных пользователей.
+3. **CAPTCHA** (`captcha` поле) — self-hosted `django-simple-captcha`:
+   искажённая картинка с текстом рисуется Pillow'ом прямо на сервере, без
+   внешнего провайдера и API-ключей (сознательно не Cloudflare Turnstile —
+   не хотим регистрацию/ключи стороннего сервиса). Это уже полноценный
+   барьер против скриптового бот-фарминга аккаунтов — honeypot и time-trap
+   выше остаются как дополнительные дешёвые фильтры для совсем примитивных
+   ботов, не доходящих до решения капчи вообще.
 """
 from __future__ import annotations
 
 import time
 
+from captcha.fields import CaptchaField, CaptchaTextInput
 from django import forms
 from django.contrib.auth.forms import (
     AuthenticationForm,
@@ -80,6 +84,22 @@ class UserRegistrationForm(UserCreationForm):
         ),
     )
     form_rendered_at = forms.FloatField(widget=forms.HiddenInput(), required=False)
+
+    # НОВОЕ: self-hosted капча (см. пункт 3 докстринга модуля). Рендерится
+    # отдельно в шаблоне (`{{ form.captcha }}`), как и остальные анти-бот
+    # поля выше, а не через Meta.fields — так уже устроены website/
+    # form_rendered_at, оставляем единый паттерн.
+    captcha = CaptchaField(
+        label="Введите текст с картинки",
+        error_messages={"invalid": "Неверный текст с картинки. Попробуйте ещё раз."},
+        widget=CaptchaTextInput(
+            attrs={
+                "class": "input input-bordered w-full",
+                "placeholder": "Текст с картинки",
+                "autocomplete": "off",
+            }
+        ),
+    )
 
     class Meta:
         model = User

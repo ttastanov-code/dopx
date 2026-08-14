@@ -173,6 +173,27 @@
                     </label>
                 </div>
 
+                <!-- CAPTCHA: self-hosted (django-simple-captcha), картинка
+                     рисуется Pillow'ом на сервере, без внешних API-ключей.
+                     Клик по картинке обновляет её (JS из {{ form.media }}
+                     внизу шаблона). -->
+                <div class="form-control">
+                    <label class="label" for="id_captcha_1">
+                        <span class="label-text font-medium">Подтвердите, что вы не робот</span>
+                    </label>
+                    <div class="flex items-center gap-3">
+                        {{ form.captcha }}
+                    </div>
+                    {% if form.captcha.errors %}
+                    <label class="label">
+                        <span class="label-text-alt text-error">{{ form.captcha.errors.0 }}</span>
+                    </label>
+                    {% endif %}
+                    <label class="label">
+                        <span class="label-text-alt opacity-50">Не видно текст? Кликните по картинке, чтобы обновить.</span>
+                    </label>
+                </div>
+
                 <!-- Terms -->
                 <div class="form-control">
                     <label class="label cursor-pointer gap-3 p-4 rounded-lg border border-base-300 hover:bg-base-200 transition-colors">
@@ -241,6 +262,9 @@
 {% endblock %}
 
 {% block extra_script %}
+<!-- JS обновления картинки капчи по клику — идёт из django-simple-captcha
+     (form.media), ничего вручную не пишем поверх их DOM-разметки. -->
+{{ form.media }}
 <script>
 // Автофокус на поле username
 document.addEventListener('DOMContentLoaded', () => {
