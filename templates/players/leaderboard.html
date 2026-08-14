@@ -32,7 +32,7 @@
                         <th class="w-16">#</th>
                         <th>Игрок</th>
                         <th class="text-center">Команда</th>
-                        <th class="text-center">Рейтинг выступления</th>
+                        <th class="text-center"><span class="inline-flex items-center gap-1 justify-center">Рейтинг выступления{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.aggregate.performance_score|default:'Рейтинг выступления: взвешенная оценка на основе вклада и риска' %}</span></th>
                         <th class="text-center">Матчей</th>
                         <th class="text-center" >Оценок</th>
                     </tr>
@@ -74,7 +74,7 @@
                                 {% endif %}
                             </td>
                             <td class="text-center">
-                                <span class="font-bold text-lg text-success tooltip" data-tip="{{ INDICATOR_TOOLTIPS.aggregate.performance_score|default:'Рейтинг выступления: взвешенная оценка на основе вклада и риска' }}">
+                                <span class="font-bold text-lg text-success">
                                     {{ player.avg_performance|floatformat:2 }}
                                 </span>
                             </td>

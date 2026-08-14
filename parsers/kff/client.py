@@ -105,7 +105,11 @@ class KFFClient:
                 continue
             
             # ✅ ФИЛЬТР: берём только сезоны с нужным frontend_code
-            frontend_code = item.get("frontend_code", "").lower()
+            # ИСПРАВЛЕНО: .get(key, "") подставляет дефолт только если ключа
+            # НЕТ вообще — если API вернул "frontend_code": null (ключ есть,
+            # значение None), .get() отдаёт None, и .lower() падает. `or ""`
+            # ловит оба случая — и отсутствие ключа, и null-значение.
+            frontend_code = (item.get("frontend_code") or "").lower()
             if frontend_code != tournament_code.lower():
                 continue
             
@@ -144,7 +148,7 @@ class KFFClient:
             # Фоллбэк: пробуем известные сезон-иды для Премьер-Лиги
             for sid in self.KNOWN_PL_SEASON_IDS:
                 test_resp = self._get(f"/seasons/{sid}")
-                if test_resp and test_resp.get("frontend_code", "").lower() == self.TARGET_TOURNAMENT:
+                if test_resp and (test_resp.get("frontend_code") or "").lower() == self.TARGET_TOURNAMENT:
                     logger.info(f"✅ Using fallback Premier League season ID: {sid}")
                     return sid
             

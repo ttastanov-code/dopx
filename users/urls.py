@@ -1,7 +1,7 @@
 # users/urls.py
 from django.urls import path
 from .views import (
-    RegisterView, LoginView, LogoutView, ProfileView,
+    RegisterView, LoginView, LogoutView, ProfileView, PublicProfileView, BadgeCatalogView,
     UserLeaderboardView, PlayerLeaderboardView,
     ProfileEditView, PasswordChangeViewCustom,
     PasswordResetViewCustom, PasswordResetDoneViewCustom,
@@ -18,6 +18,7 @@ urlpatterns = [
     path('profile/edit/', ProfileEditView.as_view(), name='profile_edit'),
     path('profile/password/', PasswordChangeViewCustom.as_view(), name='password_change'),
     path('profile/notifications/', NotificationSettingsView.as_view(), name='notification_settings'),
+    path('achievements/', BadgeCatalogView.as_view(), name='badge_catalog'),
     
     # Верификация
     path('verify-email-sent/', VerifyEmailSentView.as_view(), name='verify_email_sent'),
@@ -32,4 +33,9 @@ urlpatterns = [
     
     path('leaderboard/', UserLeaderboardView.as_view(), name='leaderboard'),
     path('players/leaderboard/', PlayerLeaderboardView.as_view(), name='player_leaderboard'),
+
+    # НОВОЕ: публичный профиль по username (только чтение) — см. докстринг
+    # PublicProfileView. Префикс 'u/', а не 'profile/<username>/', чтобы не
+    # пересекаться с уже занятыми 'profile/edit/', 'profile/password/' и т.д.
+    path('u/<str:username>/', PublicProfileView.as_view(), name='public_profile'),
 ]

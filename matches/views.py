@@ -2,7 +2,7 @@
 from django.shortcuts import render, get_object_or_404
 from django.views.generic import ListView, DetailView
 from django.utils import timezone
-from django.db.models import Avg, Count, Q, Prefetch, Sum, F
+from django.db.models import Avg, Count, Q, Prefetch, Sum, F, Value, Case, When, DateTimeField, DurationField
 from matches.models import Match
 from aggregates.models import MatchAggregate, PlayerMatchAggregate
 from evaluations.models import TeamEvaluation, PlayerEvaluation, MatchEvaluation, ContextEvaluation, EvaluationSession
@@ -29,7 +29,10 @@ class MatchListView(ListView):
             'season',
             'stadium'
         ).prefetch_related(
-            'aggregate'
+            'aggregate',
+            # ✅ для match.is_derby (matches/models.py) — без этого N+1 на
+            # каждой карточке списка.
+            'home_team__rivals',
         )
         
         # Фильтр по статусу
@@ -45,8 +48,31 @@ class MatchListView(ListView):
             # Завершенные - ближе к сегодняшнему дню сначала
             queryset = queryset.filter(status='finished').order_by('-start_time')
         else:
-            # Все - от начала года до конца
-            queryset = queryset.order_by('start_time')
+            # ИСПРАВЛЕНО: раньше здесь была сортировка по возрастанию даты
+            # (`order_by('start_time')`) — на базе из пары сотен матчей
+            # пользователю приходилось листать много страниц старых
+            # завершённых матчей, прежде чем добраться до сегодняшних/
+            # ближайших. Теперь сортируем по БЛИЗОСТИ к текущему моменту:
+            # только что прошедшие, live и ближайшие предстоящие матчи
+            # всегда наверху, вне зависимости от того, сколько всего
+            # матчей накопилось в базе.
+            # ИСПРАВЛЕНИЕ БАГА: первая версия использовала Abs() поверх
+            # интервала — Postgres не имеет функции abs(interval), падало
+            # с ProgrammingError. Тот же результат (расстояние до "сейчас")
+            # без ABS: CASE — для будущих матчей берём (start_time - now)
+            # положительным (сортировка по возрастанию = ближайшие сначала),
+            # для прошедших — (now - start_time), тоже положительным
+            # (сортировка по возрастанию = самые недавние сначала). Обе
+            # ветки используют только вычитание timestamp - timestamp,
+            # которое Postgres поддерживает нативно.
+            now = Value(timezone.now(), output_field=DateTimeField())
+            queryset = queryset.annotate(
+                time_distance=Case(
+                    When(start_time__gte=timezone.now(), then=F('start_time') - now),
+                    default=now - F('start_time'),
+                    output_field=DurationField(),
+                )
+            ).order_by('time_distance')
         
         # Фильтр по лиге
         league_id = self.request.GET.get('league')
@@ -95,6 +121,7 @@ class MatchDetailView(DetailView):
             'player_aggregates__player__team',
             'events',
             'coach_aggregates__coach',
+            'home_team__rivals',  # ✅ для match.is_derby
         )
     
     def get_context_data(self, **kwargs):

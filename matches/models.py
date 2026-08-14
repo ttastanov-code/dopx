@@ -98,7 +98,24 @@ class Match(BaseModel):
         home = self.home_score if self.home_score is not None else '-'
         away = self.away_score if self.away_score is not None else '-'
         return f"{home} : {away}"
-    
+
+    @property
+    def is_derby(self) -> bool:
+        """
+        НОВОЕ: матч между "принципиальными соперниками" (`Team.rivals`,
+        см. teams/models.py и teams/admin.py::TeamAdmin.filter_horizontal).
+        Раньше пары соперников можно было проставить только в админке, но
+        нигде на сайте это никак не отображалось — бейдж "Дерби-эксперт"
+        (users/badges.py) начислялся полностью незаметно для пользователя,
+        который не мог понять, какие матчи вообще считаются "дерби".
+        Используется в шаблонах списка/детали матча. Дёшево при
+        prefetch_related('home_team__rivals') в queryset вьюхи — иначе один
+        доп. запрос на матч (rivals редко больше 1-2 записей на команду).
+        """
+        if not self.home_team_id or not self.away_team_id:
+            return False
+        return any(r.id == self.away_team_id for r in self.home_team.rivals.all())
+
     def is_voting_open(self):
         """Проверка открыто ли голосование"""
         from django.utils import timezone

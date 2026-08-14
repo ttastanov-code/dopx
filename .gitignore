@@ -48,4 +48,5 @@ logs/*.log
 !logs/.gitkeep
 
 # Node (future)
-node_modules/
+node_modules/dump.rdb
+celerybeat-schedule.db

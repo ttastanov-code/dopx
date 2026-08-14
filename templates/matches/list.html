@@ -52,9 +52,28 @@
     </div>
 </div>
 
-<!-- === СПИСОК МАТЧЕЙ === -->
-<div class="space-y-3 md:space-y-4 px-2 sm:px-0">
-    {% for match in matches %}
+<!-- === СПИСОК МАТЧЕЙ (сгруппирован по игровому дню) === -->
+{% comment %}
+ИСПРАВЛЕНО/УЛУЧШЕНО: раньше это был плоский список из 20 карточек без
+какой-либо визуальной группировки — чтобы понять, какие матчи сегодня,
+а какие через неделю, приходилось читать дату в каждой карточке
+отдельно. Как в sofascore/fotmob — группируем по игровому дню с
+заголовком "Сегодня"/"Завтра"/"Вчера"/дата. Группировка идёт по строке
+даты (уже с поправкой на локальный часовой пояс через фильтр date —
+без этого группировка могла бы неправильно резать матчи около полуночи
+UTC), а сам текст заголовка берём через matchday_label.
+{% endcomment %}
+{% regroup matches by start_time|date:"d.m.Y" as date_groups %}
+<div class="space-y-4 md:space-y-6 px-2 sm:px-0">
+    {% for group in date_groups %}
+    <div>
+        <div class="flex items-center gap-2 mb-2 md:mb-3 px-1">
+            <i class="ti ti-calendar-event text-primary text-sm"></i>
+            <h3 class="font-bold text-sm md:text-base">{{ group.list.0.start_time|matchday_label }}</h3>
+            <span class="text-xs opacity-40">{{ group.grouper }}</span>
+        </div>
+        <div class="space-y-3 md:space-y-4">
+        {% for match in group.list %}
     <a href="{% url 'matches:detail' match.id %}" class="card bg-base-100 border border-base-300 hover:border-primary transition-all group block">
         <div class="card-body p-3 md:p-4">
             <!-- Основная строка: Команда - Счёт - Команда -->
@@ -123,8 +142,21 @@
                         <i class="ti ti-calendar flex-shrink-0"></i>
                         {{ match.season.year }}
                     </span>
+                    {% comment %}
+                    НОВОЕ: match.is_derby (matches/models.py) — пары
+                    соперников проставляются в админке (Team.rivals), но
+                    раньше нигде не отображались на сайте, хотя бейдж
+                    "Дерби-эксперт" (users/badges.py) уже начислялся по
+                    этому признаку "невидимо" для пользователя.
+                    {% endcomment %}
+                    {% if match.is_derby %}
+                    <span class="badge badge-error badge-xs gap-0.5">
+                        <i class="ti ti-flame flex-shrink-0"></i>
+                        <span class="hidden sm:inline">Дерби</span>
+                    </span>
+                    {% endif %}
                 </div>
-                
+
                 <div class="flex items-center gap-1 md:gap-2">
                     {% if match.status == 'finished' and match.is_voting_open %}
                     <a href="{% url 'evaluations:context' match.id %}"
@@ -148,6 +180,9 @@
             </div>
         </div>
     </a>
+        {% endfor %}
+        </div>
+    </div>
     {% empty %}
     <div class="text-center py-12 md:py-16 opacity-60 px-4">
         <i class="ti ti-trophy-off text-4xl md:text-6xl mb-4"></i>

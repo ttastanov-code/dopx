@@ -69,8 +69,8 @@ def get_or_create_team(team_data: Dict) -> Team:
     team, created = Team.objects.update_or_create(
         external_id=team_ext_id,
         defaults={
-            "name": team_data.get("name", "")[:255],
-            "logo_url": team_data.get("logo_url", ""),
+            "name": (team_data.get("name") or "")[:255],
+            "logo_url": team_data.get("logo_url") or "",
             "is_active": True,
         }
     )
@@ -91,8 +91,8 @@ def get_or_create_stadium(stadium_data: Union[str, Dict, None]) -> Optional[Stad
         return stadium
     elif isinstance(stadium_data, dict):
         ext_id = stadium_data.get("id")
-        name = stadium_data.get("name", "Unknown")[:255]
-        city = stadium_data.get("city", "")[:255]
+        name = (stadium_data.get("name") or "Unknown")[:255]
+        city = (stadium_data.get("city") or "")[:255]
         capacity = stadium_data.get("capacity")
         if ext_id:
             stadium, _ = Stadium.objects.update_or_create(
@@ -144,9 +144,32 @@ def get_or_create_referee_by_name(name: str) -> Optional[Referee]:
         first_name, last_name = name_parts[0], " ".join(name_parts[1:])
     else:
         first_name, last_name = name, ""
-    referee, _ = Referee.objects.update_or_create(
-        first_name=first_name, last_name=last_name,
-        defaults={"is_active": True}
+
+    # ИСПРАВЛЕНО: раньше матчинг судьи шёл строго по точному регистру
+    # (`update_or_create(first_name=..., last_name=...)`), а источник (KFF)
+    # присылает имя судьи произвольной строкой без стабильного ID — стоило
+    # ему хоть раз прислать то же имя в другом регистре ("Багдат" vs
+    # "багдат"), и в базе заводился ВТОРОЙ Referee на того же человека,
+    # с расколотой пополам статистикой матчей/оценок и дублем в списке
+    # судей. Теперь сначала ищем регистронезависимо и переиспользуем
+    # найденную запись; создаём новую, только если реально не нашли.
+    # ПРИМЕЧАНИЕ: это не спасает от случаев, когда источник присылает
+    # РАЗНЫЕ буквы казахского/русского алфавита для одного и того же имени
+    # (например "Сакен" и "Сэкен") — такие случаи выглядят как дубли, но
+    # автоматически объединять их рискованно (можно случайно склеить двух
+    # разных людей с похожими именами); такие дубли нужно сверять и
+    # объединять вручную через админку.
+    referee = Referee.objects.filter(
+        Q(first_name__iexact=first_name) & Q(last_name__iexact=last_name)
+    ).first()
+    if referee:
+        if not referee.is_active:
+            referee.is_active = True
+            referee.save(update_fields=["is_active"])
+        return referee
+
+    referee = Referee.objects.create(
+        first_name=first_name, last_name=last_name, is_active=True
     )
     return referee
 
@@ -162,7 +185,7 @@ def get_or_create_coach(coach_data: Dict, team: Optional[Team] = None) -> Option
     
     # Если имя не найдено, пробуем распарсить из полного имени
     if not first_name and coach_data.get("full_name"):
-        name_parts = coach_data.get("full_name", "").strip().split()
+        name_parts = (coach_data.get("full_name") or "").strip().split()
         if len(name_parts) >= 2:
             first_name = name_parts[0]
             last_name = " ".join(name_parts[1:])
@@ -174,21 +197,44 @@ def get_or_create_coach(coach_data: Dict, team: Optional[Team] = None) -> Option
         return None
     
     defaults = {
+        "first_name": first_name,
         "last_name": last_name,
         "is_active": True,
     }
-    
+
     if team:
         defaults["team"] = team
-    
+
     if coach_ext_id:
         defaults["external_id"] = str(coach_ext_id)
-    
-    coach, created = Coach.objects.update_or_create(
-        first_name=first_name,
-        defaults=defaults
-    )
-    
+
+    # ИСПРАВЛЕНО: раньше матчинг шёл СТРОГО по одному только `first_name`
+    # (`update_or_create(first_name=first_name, defaults=defaults)`) — то
+    # есть любые ДВА РАЗНЫХ тренера с одинаковым именем (а это очень частая
+    # ситуация: "Андрей", "Марат", "Виталий" и т.д.) физически не могли
+    # существовать как разные записи: второй импорт молча ПЕРЕЗАПИСЫВАЛ
+    # фамилию/команду/external_id первого, склеивая двух разных людей в
+    # одну строку БД. Правильный ключ матчинга — стабильный `external_id`
+    # источника, если он есть; если его нет — пара (first_name, last_name)
+    # регистронезависимо (тот же подход, что и для судей выше).
+    if coach_ext_id:
+        coach, created = Coach.objects.update_or_create(
+            external_id=str(coach_ext_id),
+            defaults=defaults
+        )
+    else:
+        coach = Coach.objects.filter(
+            Q(first_name__iexact=first_name) & Q(last_name__iexact=last_name)
+        ).first()
+        if coach:
+            for field, value in defaults.items():
+                setattr(coach, field, value)
+            coach.save(update_fields=list(defaults.keys()))
+            created = False
+        else:
+            coach = Coach.objects.create(**defaults)
+            created = True
+
     if created:
         logger.info(f"✅ Created coach: {coach.first_name} {coach.last_name}")
     else:
@@ -292,7 +338,7 @@ def import_coaches(match: Match, lineup_data: Dict) -> bool:
     for coach_data in home_coaches:
         if not coach_data:
             continue
-        role = coach_data.get("role", "").lower()
+        role = (coach_data.get("role") or "").lower()
         is_main = any(kw in role for kw in ["бас бапкер", "main", "главный", "head", "manager"])
         
         if is_main or not match.home_coach:
@@ -307,7 +353,7 @@ def import_coaches(match: Match, lineup_data: Dict) -> bool:
     for coach_data in away_coaches:
         if not coach_data:
             continue
-        role = coach_data.get("role", "").lower()
+        role = (coach_data.get("role") or "").lower()
         is_main = any(kw in role for kw in ["бас бапкер", "main", "главный", "head", "manager"])
         
         if is_main or not match.away_coach:
@@ -498,7 +544,7 @@ def _is_goal_disallowed(evt: Dict) -> bool:
         return True
     if extra.get("valid") is False or extra.get("confirmed") is False:
         return True
-    event_type_raw = evt.get("event_type", "").lower()
+    event_type_raw = (evt.get("event_type") or "").lower()
     disallowed_keywords = ["disallowed", "cancelled", "offside", "foul", "var_overturn"]
     if any(kw in event_type_raw for kw in disallowed_keywords):
         return True
@@ -531,7 +577,7 @@ def import_events_and_minutes(match: Match, events_data: Dict) -> bool:
             if not minute:
                 continue
                 
-            event_type_raw = evt.get("event_type", "").lower()
+            event_type_raw = (evt.get("event_type") or "").lower()
             
             # ✅ Определение команды: по team_id или team_name
             team_id = evt.get("team_id")
@@ -569,7 +615,7 @@ def import_events_and_minutes(match: Match, events_data: Dict) -> bool:
                 
                 # ✅ Поиск игрока: по ID или по имени
                 player_id = evt.get("player_id")
-                player_name_full = evt.get("player_name", "").strip()
+                player_name_full = (evt.get("player_name") or "").strip()
                 
                 if player_id:
                     player = Player.objects.filter(external_id=str(player_id)).first()
@@ -590,8 +636,8 @@ def import_events_and_minutes(match: Match, events_data: Dict) -> bool:
                 player_out_id = evt.get("player_id") or evt.get("player_out_id")
                 player_in_id = evt.get("player2_id") or evt.get("player_in_id")
                 
-                player_out_name = evt.get("player_name", "").strip() or evt.get("player_out_name", "").strip()
-                player_in_name = evt.get("player2_name", "").strip() or evt.get("player_in_name", "").strip()
+                player_out_name = (evt.get("player_name") or "").strip() or (evt.get("player_out_name") or "").strip()
+                player_in_name = (evt.get("player2_name") or "").strip() or (evt.get("player_in_name") or "").strip()
                 
                 logger.info(f"  🔄 {minute}' [{team_side}]: OUT={player_out_name}({player_out_id}), IN={player_in_name}({player_in_id})")
                 
@@ -638,7 +684,7 @@ def import_events_and_minutes(match: Match, events_data: Dict) -> bool:
             # === ОБРАБОТКА КАРТОЧЕК ===
             elif event_type in ("yellow_card", "red_card"):
                 player_id = evt.get("player_id")
-                player_name_full = evt.get("player_name", "").strip()
+                player_name_full = (evt.get("player_name") or "").strip()
                 
                 if player_id:
                     player = Player.objects.filter(external_id=str(player_id)).first()

@@ -21,6 +21,40 @@
     <form method="post" class="space-y-6">
         {% csrf_token %}
         
+        {% comment %}
+        ИСПРАВЛЕНО: у формы уже давно есть поле email_digest_mode (режим
+        дайджеста вместо письма на каждое мелкое событие — см. users/forms.py
+        и notifications/tasks.py::send_notification_digest), но эта страница
+        его никогда не рендерила. Пользователь физически не мог увидеть или
+        изменить эту настройку — она молча жила только в дефолтном значении
+        True. Добавлен блок "Способ доставки".
+        {% endcomment %}
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-6">
+                <div class="flex items-center gap-3 mb-6 pb-4 border-b border-base-300">
+                    <div class="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                        <i class="ti ti-mail-forward text-primary text-xl"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-bold">Способ доставки</h2>
+                        <p class="text-xs opacity-60">Как получать письма по включённым выше категориям</p>
+                    </div>
+                </div>
+                <label class="flex items-center justify-between gap-4 p-4 rounded-xl border border-base-300 hover:bg-base-200 transition-all cursor-pointer">
+                    <div class="flex items-center gap-4 flex-1">
+                        <div class="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
+                            <i class="ti ti-inbox text-primary text-xl"></i>
+                        </div>
+                        <div class="flex-1">
+                            <div class="font-semibold">{{ form.email_digest_mode.label }}</div>
+                            <p class="text-xs opacity-60 mt-1">{{ form.email_digest_mode.help_text }}</p>
+                        </div>
+                    </div>
+                    {{ form.email_digest_mode }}
+                </label>
+            </div>
+        </div>
+
         <!-- Матчи -->
         <div class="card bg-base-100 border border-base-300">
             <div class="card-body p-6">

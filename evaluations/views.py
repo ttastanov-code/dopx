@@ -89,7 +89,26 @@ XP_REFEREE_STEP = 1
 XP_FINAL_STEP = 1
 
 
-def _award_step_xp(user, base_amount: float) -> None:
+def _track_wizard_xp(request, amount: float) -> None:
+    """
+    Копит фактически начисленный XP за ТЕКУЩЕЕ прохождение вайзарда в сессии
+    пользователя, шаг за шагом.
+
+    ИСПРАВЛЕНО: страница 'Спасибо' (EvaluationCompleteView /
+    complete.html) раньше всегда показывала захардкоженное "+10 XP" —
+    цифра, верная только до перехода на компонентную схему начисления
+    (см. докстринг модуля, пункт 1). После перехода реальная сумма зависит
+    от `xp_multiplier()` пользователя (0.8..1.2 от trust_score) и от того,
+    скольких игроков он реально оценил на шаге 3 — то есть почти никогда не
+    равна ровно 10. Копим здесь, забираем и очищаем в
+    `EvaluateMatchFinalView.form_valid`, чтобы показать честное число.
+    """
+    if amount <= 0:
+        return
+    request.session['wizard_xp_earned'] = request.session.get('wizard_xp_earned', 0) + amount
+
+
+def _award_step_xp(request, base_amount: float) -> None:
     """
     Начисляет XP за прохождение одного шага вайзарда с учётом
     `user.xp_multiplier()`. Тихо не падает, если у пользователя почему-то
@@ -99,8 +118,11 @@ def _award_step_xp(user, base_amount: float) -> None:
     """
     if base_amount <= 0:
         return
+    user = request.user
     xp, _created = UserXP.objects.get_or_create(user=user)
-    xp.add_xp(base_amount * user.xp_multiplier())
+    gained = base_amount * user.xp_multiplier()
+    xp.add_xp(gained)
+    _track_wizard_xp(request, gained)
 
 
 class EvaluationWizardMixin:
@@ -166,7 +188,7 @@ class EvaluateContextView(LoginRequiredMixin, FormView, EvaluationWizardMixin):
             )
             self.update_session(session, 'context')
         if is_new_step:
-            _award_step_xp(self.request.user, XP_CONTEXT_STEP)
+            _award_step_xp(self.request, XP_CONTEXT_STEP)
         messages.success(self.request, '✅ Контекст сохранён')
         return redirect('evaluations:teams', match_id=self.match.id)
 
@@ -212,7 +234,7 @@ class EvaluateTeamsView(LoginRequiredMixin, TemplateView, EvaluationWizardMixin)
                 )
             self.update_session(session, 'teams')
         if is_new_step:
-            _award_step_xp(request.user, XP_TEAMS_STEP)
+            _award_step_xp(request, XP_TEAMS_STEP)
         messages.success(request, '✅ Оценки команд сохранены')
         return redirect('evaluations:players', match_id=self.match.id)
 
@@ -290,7 +312,7 @@ class EvaluatePlayersView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
         if is_new_step and lineup_total:
             # XP пропорционален доле реально оценённых игроков от состава —
             # не фиксированная сумма за формальное "прохождение" шага.
-            _award_step_xp(request.user, XP_PLAYERS_STEP_MAX * (count / lineup_total))
+            _award_step_xp(request, XP_PLAYERS_STEP_MAX * (count / lineup_total))
         messages.success(request, f'✅ Оценено игроков: {count}')
         return redirect('evaluations:coaches', match_id=self.match.id)
 
@@ -338,7 +360,7 @@ class EvaluateCoachesView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
                     )
             self.update_session(session, 'coaches')
         if is_new_step:
-            _award_step_xp(request.user, XP_COACHES_STEP)
+            _award_step_xp(request, XP_COACHES_STEP)
         messages.success(request, '✅ Оценки тренеров сохранены')
         return redirect('evaluations:referee', match_id=self.match.id)
 
@@ -382,7 +404,7 @@ class EvaluateRefereeView(LoginRequiredMixin, FormView, EvaluationWizardMixin):
             )
             self.update_session(session, 'referee')
         if is_new_step:
-            _award_step_xp(self.request.user, XP_REFEREE_STEP)
+            _award_step_xp(self.request, XP_REFEREE_STEP)
         messages.success(self.request, '✅ Оценка судейства сохранена')
         return redirect('evaluations:match_eval', match_id=self.match.id)
 
@@ -446,7 +468,22 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
             #    ПЕРЕЕХАЛА в асинхронную задачу (пункт 2) — не считаем и не
             #    уведомляем о бейджах здесь синхронно.
             xp, _ = UserXP.objects.get_or_create(user=user)
-            xp_result = xp.add_xp(XP_FINAL_STEP * user.xp_multiplier())
+            final_step_gained = XP_FINAL_STEP * user.xp_multiplier()
+            xp_result = xp.add_xp(final_step_gained)
+            _track_wizard_xp(self.request, final_step_gained)
+
+            # ИСПРАВЛЕНО: страница 'Спасибо' (complete.html) раньше всегда
+            # показывала захардкоженные "+10 XP" и "+0.05 Trust Score" —
+            # цифры, никак не связанные с тем, что реально произошло в этом
+            # прохождении вайзарда (см. докстринг `_track_wizard_xp` выше).
+            # Забираем накопленный за все 6 шагов XP из сессии (и сразу
+            # чистим её — иначе повторный визит на /complete/ без нового
+            # прохождения показал бы стухшие цифры) и реальную дельту
+            # Trust Score, посчитанную в пункте 3 выше.
+            self.request.session['last_evaluation_reward'] = {
+                'xp_gained': round(self.request.session.pop('wizard_xp_earned', 0), 1),
+                'trust_delta': round(new_trust - old_trust, 3),
+            }
 
             # 5. Уведомления о повышении уровня (поддержка скачков через
             #    несколько уровней сразу) и об изменении Trust Score.
@@ -544,5 +581,24 @@ class EvaluationCompleteView(LoginRequiredMixin, TemplateView):
         match_id = self.kwargs.get('match_id')
         if match_id:
             context['match'] = get_object_or_404(Match, id=match_id)
+
+        # ИСПРАВЛЕНО: реальные цифры награды за это прохождение вайзарда
+        # (см. `EvaluateMatchFinalView.form_valid`, п.4) вместо захардкоженных
+        # "+10 XP" / "+0.05 Trust Score", которые раньше показывались всегда,
+        # независимо от того, что пользователь реально заработал. pop(), а не
+        # get() — значение одноразовое, чтобы обновление страницы или прямой
+        # заход на /complete/<match_id>/ без свежего прохождения не показывал
+        # чужие/стухшие цифры.
+        reward = self.request.session.pop('last_evaluation_reward', None)
+        context['xp_gained'] = reward['xp_gained'] if reward else None
+        context['trust_delta'] = reward['trust_delta'] if reward else None
+
+        # Реальный прогресс до следующего уровня (UserXP.progress_percent
+        # уже правильно считает от границ текущего/следующего уровня — см.
+        # users/models.py) вместо бессмысленного total_evaluations+10.
+        user_xp = getattr(self.request.user, 'xp', None)
+        context['xp_progress_percent'] = user_xp.progress_percent if user_xp else 0
+        context['user_level'] = user_xp.level if user_xp else 1
+
         context['page_title'] = 'Спасибо! — DOPX'
         return context

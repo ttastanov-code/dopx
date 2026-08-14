@@ -1,6 +1,6 @@
 # players/views.py
 from django.views.generic import ListView, DetailView
-from django.db.models import Avg, Count, Q
+from django.db.models import Avg, Count, Q, Sum
 from django.utils import timezone
 from players.models import Player
 from teams.models import Team
@@ -100,27 +100,38 @@ class PlayerDetailView(DetailView):
         ).order_by('-match__start_time')[:20]
         
         # Общая статистика
-        stats = PlayerMatchAggregate.objects.filter(
+        stats_raw = PlayerMatchAggregate.objects.filter(
             player=player
         ).aggregate(
             avg_performance=Avg('performance_score'),
             avg_risk=Avg('risk_index'),
             avg_maturity=Avg('maturity_score'),
             avg_potential=Avg('avg_potential'),
-            total_matches=Count('id', distinct=True),
-            total_votes=Count('total_votes'),
+            evaluated_matches=Count('id', distinct=True),
+            # ✅ ИСПРАВЛЕНО: было Count('total_votes') — это считало количество
+            # СТРОК агрегата (у поля total_votes есть default=0, оно никогда
+            # не NULL, поэтому Count всегда равнялся числу оценённых матчей,
+            # а не реальному числу голосов). Нужна сумма голосов по матчам.
+            total_votes=Sum('total_votes'),
         )
-        
-        # Заполняем нулями если нет данных
+
+        # ✅ ИСПРАВЛЕНО: раньше при отсутствии оценок avg-поля тихо
+        # заполнялись нулём и шаблон показывал "0" неотличимо от
+        # реального низкого рейтинга (тот же класс бага, что и на
+        # странице команды/главной). Теперь отдельно храним признак
+        # has_evaluations, а сами avg-поля остаются None, если оценок
+        # нет — шаблон показывает "—" вместо обманчивого нуля.
+        has_evaluations = stats_raw['evaluated_matches'] > 0
         stats = {
-            'avg_performance': round(stats['avg_performance'] or 0, 2),
-            'avg_risk': round(stats['avg_risk'] or 0, 2),
-            'avg_maturity': round(stats['avg_maturity'] or 0, 2),
-            'avg_potential': round(stats['avg_potential'] or 0, 2),
-            'total_matches': actual_matches_count,  # 🔥 FIX: используем actual_matches_count
-            'total_votes': stats['total_votes'] or 0,
+            'avg_performance': round(stats_raw['avg_performance'], 2) if stats_raw['avg_performance'] is not None else None,
+            'avg_risk': round(stats_raw['avg_risk'], 2) if stats_raw['avg_risk'] is not None else None,
+            'avg_maturity': round(stats_raw['avg_maturity'], 2) if stats_raw['avg_maturity'] is not None else None,
+            'avg_potential': round(stats_raw['avg_potential'], 2) if stats_raw['avg_potential'] is not None else None,
+            'total_matches': actual_matches_count,  # реально сыгранные матчи (по составу)
+            'evaluated_matches': stats_raw['evaluated_matches'] or 0,  # из них оценено болельщиками
+            'total_votes': stats_raw['total_votes'] or 0,
         }
-        
+
         # Лучшие матчи игрока
         best_matches = PlayerMatchAggregate.objects.filter(
             player=player
@@ -128,15 +139,30 @@ class PlayerDetailView(DetailView):
             'match__home_team',
             'match__away_team'
         ).order_by('-performance_score')[:5]
-        
+
         # Команда игрока
         team = player.team
-        
+
+        # НОВОЕ: ближайший сыгранный матч этого игрока, который ещё можно
+        # оценить — используется для CTA в пустых состояниях ("История
+        # выступлений" / "Лучшие матчи"), чтобы не просто прятать карточки,
+        # а вести пользователя к действию, как на странице команды.
+        recent_lineups = MatchLineupPlayer.objects.filter(
+            player=player,
+            lineup__match__status='finished'
+        ).select_related('lineup__match').order_by('-lineup__match__start_time')[:5]
+        votable_match = next(
+            (lu.lineup.match for lu in recent_lineups if lu.lineup.match.is_voting_open()),
+            None
+        )
+
         context.update({
             'aggregates': aggregates,
             'stats': stats,
+            'has_evaluations': has_evaluations,
             'best_matches': best_matches,
             'team': team,
+            'votable_match': votable_match,
             'page_title': f'{player.first_name} {player.last_name} — DOPX',
         })
         return context

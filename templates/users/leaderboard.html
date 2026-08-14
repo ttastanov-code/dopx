@@ -54,7 +54,14 @@
                             {% endif %}
                         </td>
                         <td>
-                            <a href="#" class="flex items-center gap-3 hover:text-primary transition-colors">
+                            {% comment %}
+                            ИСПРАВЛЕНО: раньше ссылка вела на href="#" —
+                            маршрута для просмотра чужого профиля не
+                            существовало вообще (ProfileView знал только
+                            request.user). Теперь ведёт на новый
+                            users:public_profile.
+                            {% endcomment %}
+                            <a href="{% url 'users:public_profile' user.username %}" class="flex items-center gap-3 hover:text-primary transition-colors">
                                 <div class="avatar">
                                     <div class="w-10 rounded-full">
                                         {% if user.avatar %}

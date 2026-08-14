@@ -80,17 +80,24 @@ class HomeView(TemplateView):
             context_evaluations__created_at__gte=now - timedelta(days=7)
         ).distinct().count()
 
-        match_aggs = MatchAggregate.objects.all()
-        avg_entertainment = match_aggs.aggregate(
+        # ИСПРАВЛЕНО: раньше отсутствие данных (`Avg` вернул None, т.к. ни
+        # одной реальной оценки ещё нет) молча превращалось в 0 через
+        # `or 0` — на главной это рисовалось как "Средняя драма: 0,0",
+        # что читается как реальный (очень низкий) балл, а не как "оценок
+        # пока нет". Только матчи с реальными голосами (total_votes > 0)
+        # участвуют в среднем; если таких нет вообще — оставляем None,
+        # шаблон покажет это честно, а не выдуманным нулём.
+        match_aggs_with_votes = MatchAggregate.objects.filter(total_votes__gt=0)
+        avg_entertainment = match_aggs_with_votes.aggregate(
             avg=Avg('avg_entertainment')
-        )['avg'] or 0
-        avg_drama = match_aggs.aggregate(
+        )['avg']
+        avg_drama = match_aggs_with_votes.aggregate(
             avg=Avg('drama_index')
-        )['avg'] or 0
+        )['avg']
 
         metrics = {
-            'avg_entertainment': round(avg_entertainment, 1),
-            'avg_drama': round(avg_drama, 0),
+            'avg_entertainment': round(avg_entertainment, 1) if avg_entertainment is not None else None,
+            'avg_drama': round(avg_drama, 0) if avg_drama is not None else None,
         }
 
         stats = {
@@ -116,11 +123,22 @@ class HomeView(TemplateView):
         ).order_by('-avg_rating')[:5]
 
         # === Активная сессия пользователя ===
+        # ИСПРАВЛЕНО: раньше сюда попадала ЛЮБАЯ незавершённая сессия, даже
+        # если голосование по её матчу уже закрылось (voting_open_until в
+        # прошлом). Пользователь видел баннер "Продолжите оценку", жал
+        # "Продолжить" и упирался в редирект с сообщением "Голосование
+        # закрыто" — тупик, из которого баннер сам никак не убирался, потому
+        # что status сессии так и оставался 'started'/'in_progress' навсегда
+        # (см. также profile/dashboard: тот же паттерн в ProfileView).
+        # Добавлен фильтр по ещё открытому окну голосования — сессии по
+        # закрывшимся матчам просто перестают предлагаться к продолжению.
         active_match_id = None
         if self.request.user.is_authenticated:
             active_session = EvaluationSession.objects.filter(
                 user=self.request.user,
-                status__in=['started', 'in_progress']
+                status__in=['started', 'in_progress'],
+                match__voting_open_until__gte=now,
+                match__status='finished',
             ).select_related('match').first()
             if active_session:
                 active_match_id = active_session.match.id

@@ -32,8 +32,8 @@
             <tr>
                 <th>Судья</th>
                 <th class="text-center">Матчей</th>
-                <th class="text-center">Влияние</th>
-                <th class="text-center">Качество</th>
+                <th class="text-center"><span class="inline-flex items-center gap-1 justify-center">Влияние{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.referee.influence_score %}</span></th>
+                <th class="text-center"><span class="inline-flex items-center gap-1 justify-center">Качество{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.referee.decision_quality %}</span></th>
                 <th></th>
             </tr>
         </thead>
@@ -52,14 +52,12 @@
                     <span class="font-mono text-xs md:text-sm">{{ referee.total_matches|default:0 }}</span>
                 </td>
                 <td class="text-center">
-                    <span class="font-bold text-xs md:text-sm tooltip {% if referee.avg_influence > 70 %}text-error{% elif referee.avg_influence < 40 %}text-success{% else %}text-warning{% endif %}" 
-                          data-tip="{{ INDICATOR_TOOLTIPS.referee.influence_score }}">
+                    <span class="font-bold text-xs md:text-sm {% if referee.avg_influence > 70 %}text-error{% elif referee.avg_influence < 40 %}text-success{% else %}text-warning{% endif %}">
                         {{ referee.avg_influence|floatformat:0|default:"—" }}
                     </span>
                 </td>
                 <td class="text-center">
-                    <span class="font-bold text-xs md:text-sm tooltip {% if referee.avg_decision_quality >= 7 %}text-success{% elif referee.avg_decision_quality >= 5 %}text-warning{% else %}text-error{% endif %}" 
-                          data-tip="{{ INDICATOR_TOOLTIPS.referee.decision_quality }}">
+                    <span class="font-bold text-xs md:text-sm {% if referee.avg_decision_quality >= 7 %}text-success{% elif referee.avg_decision_quality >= 5 %}text-warning{% else %}text-error{% endif %}">
                         {{ referee.avg_decision_quality|floatformat:1|default:"—" }}
                     </span>
                 </td>

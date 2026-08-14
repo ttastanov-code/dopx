@@ -15,18 +15,27 @@
         </div>
 
         <!-- Rewards Card -->
+        {% comment %}
+        ИСПРАВЛЕНО: раньше здесь были захардкоженные "+10 XP" и "+0.05 Trust
+        Score" — показывались ВСЕГДА, независимо от того, что пользователь
+        реально заработал (множитель доверия, доля оценённых игроков,
+        фактическая корректировка Trust Score могла быть и отрицательной).
+        Теперь берём реальные цифры из EvaluationCompleteView.
+        {% endcomment %}
         <div class="card bg-base-100 border border-base-200 shadow-lg mb-4">
             <div class="card-body p-4">
                 <h3 class="font-bold text-sm mb-3 text-center">🎁 Ваши награды</h3>
                 <div class="grid grid-cols-2 gap-3">
                     <div class="flex flex-col items-center p-3 bg-gradient-to-br from-primary/10 to-primary/5 rounded-xl">
                         <i class="ti ti-star text-2xl text-primary mb-1"></i>
-                        <span class="font-bold text-xl text-primary">+10</span>
+                        <span class="font-bold text-xl text-primary">+{{ xp_gained|default:"—" }}</span>
                         <span class="text-[9px] text-base-content/50">XP</span>
                     </div>
                     <div class="flex flex-col items-center p-3 bg-gradient-to-br from-secondary/10 to-secondary/5 rounded-xl">
                         <i class="ti ti-shield-check text-2xl text-secondary mb-1"></i>
-                        <span class="font-bold text-xl text-secondary">+0.05</span>
+                        <span class="font-bold text-xl text-secondary">
+                            {% if trust_delta > 0 %}+{{ trust_delta }}{% elif trust_delta == 0 %}±0{% elif trust_delta %}{{ trust_delta }}{% else %}—{% endif %}
+                        </span>
                         <span class="text-[9px] text-base-content/50">Trust Score</span>
                     </div>
                 </div>
@@ -87,16 +96,26 @@
         </div>
 
         <!-- Progress Stats -->
+        {% comment %}
+        ИСПРАВЛЕНО: раньше ширина полосы считалась как
+        `total_evaluations + 10` в процентах — бессмысленное число без
+        привязки к какому-либо реальному максимуму (при >90 оценках полоса
+        просто вылезала за карточку). Теперь показываем реальный прогресс
+        до следующего уровня — `UserXP.progress_percent` уже корректно
+        считает это от границ текущего/следующего уровня (см.
+        users/models.py).
+        {% endcomment %}
         <div class="mt-5 p-3 bg-base-200 rounded-xl">
             <div class="text-[9px] text-base-content/50 mb-1">Ваш прогресс</div>
             <div class="flex justify-between items-center mb-1">
-                <span class="font-bold text-xs">{{ user.total_evaluations|default:0 }} оценок</span>
+                <span class="font-bold text-xs">Уровень {{ user_level }} · {{ user.total_evaluations|default:0 }} оценок</span>
                 <span class="text-[9px] text-base-content/50">Серия: {{ user.evaluation_streak|default:0 }}</span>
             </div>
             <div class="w-full bg-base-300 rounded-full h-1.5 overflow-hidden">
                 <div class="bg-gradient-to-r from-primary to-primary/70 h-full rounded-full"
-                     style="width: {{ user.total_evaluations|default:0|add:10 }}%"></div>
+                     style="width: {{ xp_progress_percent }}%"></div>
             </div>
+            <div class="text-[9px] text-base-content/40 mt-1">{{ xp_progress_percent }}% до уровня {{ user_level|add:1 }}</div>
         </div>
     </div>
 </div>

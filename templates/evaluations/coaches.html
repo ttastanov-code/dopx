@@ -71,9 +71,9 @@
                 <div class="space-y-3">
                     <div>
                         <div class="flex justify-between mb-1">
-                            <label class="text-[10px] font-semibold tooltip flex items-center gap-0.5"
-                                   data-tip="{{ INDICATOR_TOOLTIPS.coach.tactics }}">
+                            <label class="text-[10px] font-semibold flex items-center gap-0.5">
                                 <i class="ti ti-chess text-accent text-xs"></i> Тактика
+                                {% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.coach.tactics %}
                             </label>
                             <span class="text-xs font-bold text-accent" id="coach_{{ coach.id }}_tactics_value">5</span>
                         </div>
@@ -86,9 +86,9 @@
                     </div>
                     <div>
                         <div class="flex justify-between mb-1">
-                            <label class="text-[10px] font-semibold tooltip flex items-center gap-0.5"
-                                   data-tip="{{ INDICATOR_TOOLTIPS.coach.substitutions }}">
+                            <label class="text-[10px] font-semibold flex items-center gap-0.5">
                                 <i class="ti ti-refresh text-accent text-xs"></i> Замены
+                                {% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.coach.substitutions %}
                             </label>
                             <span class="text-xs font-bold text-accent" id="coach_{{ coach.id }}_substitutions_value">5</span>
                         </div>
@@ -101,9 +101,9 @@
                     </div>
                     <div>
                         <div class="flex justify-between mb-1">
-                            <label class="text-[10px] font-semibold tooltip flex items-center gap-0.5"
-                                   data-tip="{{ INDICATOR_TOOLTIPS.coach.game_management }}">
+                            <label class="text-[10px] font-semibold flex items-center gap-0.5">
                                 <i class="ti ti-control text-accent text-xs"></i> Управление
+                                {% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.coach.game_management %}
                             </label>
                             <span class="text-xs font-bold text-accent" id="coach_{{ coach.id }}_management_value">5</span>
                         </div>
@@ -116,9 +116,9 @@
                     </div>
                     <div>
                         <div class="flex justify-between mb-1">
-                            <label class="text-[10px] font-semibold tooltip flex items-center gap-0.5"
-                                   data-tip="{{ INDICATOR_TOOLTIPS.coach.impact }}">
+                            <label class="text-[10px] font-semibold flex items-center gap-0.5">
                                 <i class="ti ti-impact text-accent text-xs"></i> Влияние
+                                {% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.coach.impact %}
                             </label>
                             <span class="text-xs font-bold text-accent" id="coach_{{ coach.id }}_impact_value">5</span>
                         </div>

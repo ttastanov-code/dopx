@@ -1,0 +1,160 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load tooltip_tags %}
+{% block content %}
+{% comment %}
+templates/users/public_profile.html
+Публичная (только чтение) версия профиля — см. users/views.py::PublicProfileView.
+Сознательно НЕ показывает email и не даёт ссылок на смену пароля/настроек —
+это видит только владелец через users:profile. Секретные бейджи чужому
+посетителю не показываются (профиль_view уже отфильтровал их).
+{% endcomment %}
+<div class="mb-6">
+    <a href="{% url 'users:leaderboard' %}" class="btn btn-ghost btn-sm">
+        <i class="ti ti-arrow-left"></i>
+        Назад к рейтингу
+    </a>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+    <!-- === ЛЕВАЯ КОЛОНКА: Инфо === -->
+    <div class="space-y-6">
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-6 text-center">
+                <div class="avatar mb-4 flex justify-center">
+                    <div class="w-24 h-24 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2 overflow-hidden">
+                        {% if profile_user.avatar %}
+                            <img src="{{ profile_user.avatar.url }}" alt="{{ profile_user.username }}" class="object-cover w-full h-full" />
+                        {% else %}
+                            <div class="w-full h-full bg-primary flex items-center justify-center text-primary-content font-bold text-3xl">
+                                {{ profile_user.username|first|upper }}
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+                <h2 class="text-2xl font-bold">{{ profile_user.username }}</h2>
+                {% if is_own_profile %}
+                <span class="badge badge-ghost badge-sm mt-1">Это вы</span>
+                {% endif %}
+                {% if profile_user.city %}
+                <div class="flex items-center justify-center gap-1 mt-2 text-sm opacity-60">
+                    <i class="ti ti-map-pin"></i>
+                    <span>{{ profile_user.city }}</span>
+                </div>
+                {% endif %}
+                {% if profile_user.bio %}
+                <p class="text-sm opacity-70 mt-3">{{ profile_user.bio }}</p>
+                {% endif %}
+                <div class="mt-4">
+                    <div class="text-sm opacity-60 mb-1">Trust Score</div>
+                    <div class="text-3xl font-bold {% if stats.trust_score >= 1.5 %}text-success{% elif stats.trust_score >= 1.2 %}text-warning{% else %}text-base-content{% endif %}">
+                        {{ stats.trust_score }}
+                    </div>
+                    <div class="badge badge-sm mt-1 {% if stats.trust_level.0 == 'expert' %}badge-success{% elif stats.trust_level.0 == 'reliable' %}badge-warning{% else %}badge-ghost{% endif %}">
+                        {{ stats.trust_level.1 }}
+                    </div>
+                </div>
+                {% if xp %}
+                <div class="mt-4 pt-4 border-t border-base-300">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-sm">Уровень {{ xp.level }}</span>
+                        <span class="text-sm font-mono">{{ xp.total_xp }} XP</span>
+                    </div>
+                    <div class="w-full bg-base-200 rounded-full h-2">
+                        <div class="bg-primary h-2 rounded-full" style="width: {{ xp.progress_percent }}%"></div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+            <div class="stat bg-base-100 border border-base-300 p-4">
+                <div class="stat-title text-xs">Оценок</div>
+                <div class="stat-value text-2xl">{{ stats.total_evaluations }}</div>
+            </div>
+            <div class="stat bg-base-100 border border-base-300 p-4">
+                <div class="stat-title text-xs">Игроков</div>
+                <div class="stat-value text-2xl">{{ stats.total_players }}</div>
+            </div>
+            <div class="stat bg-base-100 border border-base-300 p-4">
+                <div class="stat-title text-xs">Матчей</div>
+                <div class="stat-value text-2xl">{{ stats.total_matches }}</div>
+            </div>
+            <div class="stat bg-base-100 border border-base-300 p-4">
+                <div class="stat-title text-xs">Серия</div>
+                <div class="stat-value text-2xl text-accent">{{ stats.evaluation_streak }}</div>
+            </div>
+        </div>
+
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-4">
+                <h3 class="font-bold text-lg mb-4">
+                    <i class="ti ti-medal mr-2"></i>
+                    Достижения
+                    {% if badges %}<span class="text-sm font-normal opacity-50">({{ badges|length }})</span>{% endif %}
+                </h3>
+                <div class="flex flex-wrap gap-2">
+                    {% for badge in badges %}
+                    {% tooltip_wrap badge.get_badge_type_display %}
+                    <div class="w-12 h-12 rounded-lg flex items-center justify-center border-2
+                        {% if badge.rarity == 'platinum' %}bg-info/10 border-info/40 text-info
+                        {% elif badge.rarity == 'gold' %}bg-warning/10 border-warning/40 text-warning
+                        {% elif badge.rarity == 'silver' %}bg-base-300/60 border-base-content/20 text-base-content/70
+                        {% elif badge.rarity == 'secret' %}bg-secondary/10 border-secondary/40 text-secondary
+                        {% else %}bg-accent/10 border-accent/30 text-accent{% endif %}">
+                        <i class="ti {% if badge.is_secret %}ti-eye-off{% else %}ti-medal{% endif %} text-xl"></i>
+                    </div>
+                    {% endtooltip_wrap %}
+                    {% empty %}
+                    <div class="text-sm opacity-60">Пока нет достижений</div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- === ПРАВАЯ КОЛОНКА: Активность === -->
+    <div class="lg:col-span-2 space-y-6">
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-4">
+                <h3 class="font-bold text-lg mb-4">
+                    <i class="ti ti-history mr-2"></i>
+                    Последние оценки
+                </h3>
+                <div class="overflow-x-auto">
+                    <table class="table table-zebra">
+                        <thead>
+                            <tr>
+                                <th>Матч</th>
+                                <th>Лига</th>
+                                <th>Дата</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for session in recent_evaluations %}
+                            <tr>
+                                <td>
+                                    <a href="{% url 'matches:detail' session.match.id %}" class="font-medium hover:text-primary transition-colors">
+                                        {{ session.match.home_team.name }} vs {{ session.match.away_team.name }}
+                                    </a>
+                                </td>
+                                <td class="opacity-60">{{ session.match.league.name }}</td>
+                                <td class="font-mono text-sm">{{ session.completed_at|date:"d.m.Y" }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="3" class="text-center opacity-60 py-8">
+                                    <i class="ti ti-evaluation-off text-3xl mb-2"></i>
+                                    <p>Пока нет завершённых оценок</p>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

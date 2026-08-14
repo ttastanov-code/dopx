@@ -13,7 +13,7 @@ FILE: templates/notifications/list.html (ENTERPRISE - v2.1 IMPROVED)
       Уведомления
     </h1>
     <p class="text-xs md:text-sm opacity-60 mt-1">
-      {{ unread_count }} непрочитанных • {{ notifications.count }} всего
+      {{ unread_count }} непрочитанных • {{ total_count|default:0 }} всего
     </p>
   </div>
   <!-- Массовые действия -->
@@ -42,7 +42,7 @@ FILE: templates/notifications/list.html (ENTERPRISE - v2.1 IMPROVED)
         </div>
         <div>
           <div class="text-[10px] md:text-xs opacity-60">Всего</div>
-          <div class="text-base md:text-xl font-bold">{{ notifications.paginator.count|default:0 }}</div>
+          <div class="text-base md:text-xl font-bold">{{ total_count|default:0 }}</div>
         </div>
       </div>
     </div>
@@ -71,7 +71,7 @@ FILE: templates/notifications/list.html (ENTERPRISE - v2.1 IMPROVED)
         <div>
           <div class="text-[10px] md:text-xs opacity-60">Прочитанные</div>
           <div class="text-base md:text-xl font-bold text-success">
-            {{ notifications.paginator.count|add:0|subtract:unread_count|default:0 }}
+            {{ read_count|default:0 }}
           </div>
         </div>
       </div>
@@ -87,7 +87,7 @@ FILE: templates/notifications/list.html (ENTERPRISE - v2.1 IMPROVED)
         <div>
           <div class="text-[10px] md:text-xs opacity-60">За неделю</div>
           <div class="text-base md:text-xl font-bold text-info">
-            {{ notifications|length }}
+            {{ week_count|default:0 }}
           </div>
         </div>
       </div>

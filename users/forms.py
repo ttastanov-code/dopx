@@ -165,7 +165,23 @@ class UserRegistrationForm(UserCreationForm):
 
 
 class UserLoginForm(AuthenticationForm):
-    """Форма входа пользователя."""
+    """
+    Форма входа пользователя.
+
+    ИСПРАВЛЕНО: лейбл поля обещал "Имя пользователя или Email", но раньше
+    здесь переопределялся только сам виджет/лейбл — метод clean() наследовался
+    от Django-шного AuthenticationForm без изменений, а он передаёт введённое
+    значение как есть в authenticate(username=..., password=...). Стандартный
+    ModelBackend ищет пользователя строго по полю username (USERNAME_FIELD),
+    без даже намёка на email — значит ввод почты гарантированно проваливал
+    вход, хотя сам email в базе (User.email, unique=True) существует.
+    Теперь clean_username() сначала пытается резолвить введённое значение как
+    email в реальный username, и только потом отдаёт его дальше в стандартный
+    flow аутентификации; если такого email нет — значение уходит как есть
+    (и вход закономерно не пройдёт, как и для несуществующего username —
+    мы намеренно не различаем эти два случая в ответе, чтобы не палить,
+    какие email вообще зарегистрированы).
+    """
 
     username = forms.CharField(
         label="Имя пользователя или Email",
@@ -187,6 +203,15 @@ class UserLoginForm(AuthenticationForm):
             }
         ),
     )
+
+    def clean_username(self):
+        identifier = (self.cleaned_data.get("username") or "").strip()
+        if "@" in identifier:
+            try:
+                return User.objects.get(email__iexact=identifier).username
+            except User.DoesNotExist:
+                pass
+        return identifier
 
 
 class UserProfileForm(forms.ModelForm):

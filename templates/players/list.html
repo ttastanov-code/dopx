@@ -49,7 +49,7 @@
         <th>Команда</th>
         <th>Позиция</th>
         <th class="text-center">Матчей</th>
-        <th class="text-center">Рейтинг выступления</th>
+        <th class="text-center"><span class="inline-flex items-center gap-1">Рейтинг выступления{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.aggregate.performance_score %}</span></th>
         <th></th>
       </tr>
     </thead>
@@ -81,7 +81,7 @@
         <td class="text-center">
           {% with player_agg=player.best_aggregate.0 %}
           {% if player_agg %}
-          <span class="font-bold text-success text-xs md:text-sm tooltip" data-tip="{{ INDICATOR_TOOLTIPS.aggregate.performance_score }}">{{ player_agg.performance_score|floatformat:1 }}</span>
+          <span class="font-bold text-success text-xs md:text-sm">{{ player_agg.performance_score|floatformat:1 }}</span>
           {% else %}
           <span class="opacity-40 text-xs md:text-sm">-</span>
           {% endif %}
