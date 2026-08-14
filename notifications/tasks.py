@@ -1,48 +1,130 @@
 # notifications/tasks.py
-from celery import shared_task
-from django.utils import timezone
-from django.conf import settings
-from django.template.loader import render_to_string
-from django.core.mail import EmailMultiAlternatives
+"""
+ИЗМЕНЕНИЯ (продуктовый аудит DOPX, часть 2):
+
+1. **`_send_email_to_user` парсила ТЕМУ ПИСЬМА строкой**, чтобы понять,
+   какую настройку уведомлений проверять (`if 'достижение' in subject_lower
+   ... elif 'матч' in subject_lower or 'голосование' in subject_lower: ...`).
+   Это не просто хрупко — это реальный баг: тема письма о закрытии
+   голосования (`notify_voting_closing_soon`) содержит слово "Голосование",
+   поэтому попадала в ветку `email_match_finished`, а НЕ в
+   `email_voting_closing`, хотя `notify_voting_closing_soon` дополнительно и
+   правильно проверяла `email_voting_closing` САМА, отдельно, ДО вызова
+   `_send_email_to_user` — вторая, внутренняя проверка по чужому ключу
+   настроек могла заблокировать письмо, даже когда пользователь явно
+   оставил "напоминания о закрытии голосования" включёнными, а выключил
+   только "матч завершён". Заменено на явный параметр `notification_type`,
+   тот же, что и у `Notification.notification_type` — маппинг на ключ
+   настроек через словарь, без строковых эвристик.
+
+2. **Массовая рассылка без батчинга.** `send_voting_open_notification` и
+   `notify_voting_closing_soon` синхронно, в Python-цикле, слали письма
+   ВСЕМ подходящим пользователям ОДИН ЗА ДРУГИМ внутри одной Celery-задачи —
+   для проекта с большим количеством пользователей это: (а) риск упереться
+   в `CELERY_TASK_TIME_LIMIT`, а при таймауте/ретрае разослать всё заново
+   без отслеживания, кому уже отправлено — гарантированные дубли; (б)
+   резкий всплеск исходящих писем с одного адреса за короткое время —
+   классический триггер спам-фильтров/лимитов почтового провайдера.
+   Переписано на fan-out: родительская задача только формирует список
+   получателей и ставит в очередь пачки (`_send_match_email_chunk`) по
+   `BULK_EMAIL_CHUNK_SIZE` пользователей, каждая — со своим `rate_limit`.
+   Даёт параллелизм между воркерами и честный ретрай только НЕОТПРАВЛЕННОЙ
+   пачки, а не всей рассылки с нуля.
+
+3. **Дайджест вместо мгновенного письма на каждое мелкое событие.** Новая
+   `send_notification_digest` — периодическая задача (нужно добавить в
+   `CELERY_BEAT_SCHEDULE`, см. инструкцию в продуктовом отчёте), которая
+   раз в 30-60 минут собирает все ещё не отправленные по email `Notification`
+   типов `new_badge`/`level_up`/`system` для пользователей с
+   `email_digest_mode=True` и шлёт ОДНО письмо-сводку вместо N отдельных.
+   Вызывающий код (`users/tasks.py`, `evaluations/views.py`) при
+   `email_digest_mode=True` теперь НЕ ставит в очередь мгновенное письмо —
+   только создаёт in-app `Notification`, дайджест подхватит её сам.
+
+4. **Реальная задача вместо несуществующей.** `CELERY_BEAT_SCHEDULE` в
+   `dopx/settings.py` ссылался на `notifications.tasks.
+   cleanup_old_notifications` (расписание `voting-reminders`, каждые 6
+   часов) — такой функции в файле не было вообще, Celery Beat годами писал
+   бы в лог `NotRegistered` при каждой попытке запуска. Добавлена реальная
+   реализация: удаляет старые ПРОЧИТАННЫЕ уведомления, чтобы таблица не
+   росла бесконечно. Отдельно, `cleanup-old-sessions-daily` в настройках
+   ссылался на `notifications.tasks.cleanup_old_sessions` — тоже
+   несуществующий путь, реальная задача с таким именем определена в
+   `aggregates/tasks.py`. Обе строки нужно поправить в `CELERY_BEAT_
+   SCHEDULE` — см. точный патч в продуктовом отчёте (не привожу здесь,
+   чтобы не переписывать вслепую весь `dopx/settings.py`).
+"""
+from __future__ import annotations
+
 import logging
+from datetime import timedelta
+
+from celery import shared_task
+from django.conf import settings
+from django.core.mail import EmailMultiAlternatives
+from django.template.loader import render_to_string
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
+# Сколько получателей в одной "пачке" при fan-out массовой рассылки —
+# см. пункт 2 докстринга модуля.
+BULK_EMAIL_CHUNK_SIZE = 50
 
-def _send_email_to_user(user, subject, template_name, context, force=False):
+# Сколько дней хранить уже прочитанные уведомления — см. пункт 4.
+NOTIFICATION_RETENTION_DAYS = 90
+
+# Единственное место маппинга "тип уведомления -> ключ настройки" —
+# см. пункт 1 докстринга модуля. `None` — уведомление всегда критическое,
+# отправляется только через force=True и сюда не попадает.
+NOTIFICATION_TYPE_TO_SETTINGS_KEY: dict[str, str] = {
+    "match_finished": "email_match_finished",
+    "voting_open": "email_match_finished",
+    "voting_closing": "email_voting_closing",
+    "new_badge": "email_new_badge",
+    "level_up": "email_level_up",
+    "system": "email_system",
+}
+
+# Уведомления этих типов собираются в дайджест (см. пункт 3), а не
+# отправляются мгновенно, если у пользователя включён `email_digest_mode`.
+DIGESTIBLE_NOTIFICATION_TYPES = ("new_badge", "level_up", "system")
+
+
+def _send_email_to_user(
+    user,
+    subject: str,
+    template_name: str,
+    context: dict,
+    notification_type: str | None = None,
+    force: bool = False,
+) -> bool:
     """
     Безопасная отправка email.
-    force=True: игнорирует настройки пользователя (для верификации, сброса пароля и т.д.)
+
+    :param notification_type: явный тип уведомления (см.
+        `NOTIFICATION_TYPE_TO_SETTINGS_KEY`) — используется для проверки
+        настроек пользователя ВМЕСТО парсинга текста темы письма (см. пункт
+        1 докстринга модуля). Игнорируется, если `force=True`.
+    :param force: игнорирует настройки пользователя (для верификации,
+        сброса пароля и т.д.).
     """
     if not user or not user.email:
-        logger.warning(f"⚠️ Cannot send email: user or email is missing")
+        logger.warning("⚠️ Cannot send email: user or email is missing")
         return False
 
-    # Проверка настроек, если не форсируем
     if not force:
+        settings_key = NOTIFICATION_TYPE_TO_SETTINGS_KEY.get(notification_type or "", "email_system")
         try:
-            # Получаем актуальные настройки
-            notif_prefs = user.notification_settings
-            subject_lower = subject.lower()
-            
-            # Маппинг типов уведомлений на ключи настроек
-            if 'достижение' in subject_lower or 'badge' in subject_lower:
-                if not notif_prefs.get('email_new_badge', True): return False
-            elif 'уровень' in subject_lower or 'level' in subject_lower:
-                if not notif_prefs.get('email_level_up', True): return False
-            elif 'матч' in subject_lower or 'match' in subject_lower or 'голосование' in subject_lower:
-                if not notif_prefs.get('email_match_finished', True): return False
-            else:
-                # Системные/прочие
-                if not notif_prefs.get('email_system', True): return False
+            if not user.get_notification_setting(settings_key, True):
+                return False
         except Exception as e:
             logger.error(f"❌ Error checking notification settings: {e}")
             return False
 
     backend = getattr(settings, 'EMAIL_BACKEND', '')
     host_user = getattr(settings, 'EMAIL_HOST_USER', None)
-    
-    # Для разработки выводим в консоль, если SMTP не настроен
+
     if backend.endswith('console.EmailBackend') or not host_user:
         logger.info(f"[EMAIL CONSOLE] To: {user.email} | Subject: {subject}")
         return True
@@ -54,7 +136,7 @@ def _send_email_to_user(user, subject, template_name, context, force=False):
             'site_name': 'DOPX',
             **context
         })
-        
+
         email = EmailMultiAlternatives(
             subject=subject,
             body='',
@@ -63,7 +145,7 @@ def _send_email_to_user(user, subject, template_name, context, force=False):
         )
         email.attach_alternative(html_message, "text/html")
         email.send(fail_silently=False)
-        
+
         logger.info(f"✅ Email sent successfully to {user.email}: {subject}")
         return True
     except Exception as e:
@@ -73,12 +155,23 @@ def _send_email_to_user(user, subject, template_name, context, force=False):
 
 @shared_task(bind=True, max_retries=3, countdown=10)
 def send_badge_earned_notification(self, user_id: str, badge_type: str, badge_name: str):
-    """Отправка уведомления о получении достижения"""
+    """
+    Отправка МГНОВЕННОГО письма о достижении.
+
+    Вызывается только если у пользователя ВЫКЛЮЧЕН `email_digest_mode` —
+    иначе письмо соберётся в `send_notification_digest` (проверка теперь
+    делается на стороне вызывающего кода — `users/tasks.py::
+    check_and_award_badges_task`, — чтобы не ставить в очередь лишнюю
+    задачу, которая всё равно ничего не отправит).
+    """
     try:
         from users.models import User
         user = User.objects.get(id=user_id)
         logger.info(f"📤 Processing badge email for {user.username}: {badge_name}")
-        _send_email_to_user(user, f'🎖️ Новое достижение: {badge_name}', 'emails/badge_earned.html', {'badge_name': badge_name})
+        _send_email_to_user(
+            user, f'🎖️ Новое достижение: {badge_name}', 'emails/badge_earned.html',
+            {'badge_name': badge_name}, notification_type='new_badge',
+        )
         return True
     except User.DoesNotExist:
         logger.error(f"❌ User {user_id} not found for badge notification")
@@ -90,14 +183,18 @@ def send_badge_earned_notification(self, user_id: str, badge_type: str, badge_na
 
 @shared_task(bind=True, max_retries=3, countdown=10)
 def send_level_up_notification(self, user_id: str, new_level: int, total_xp: int):
-    """Отправка уведомления о повышении уровня"""
+    """Отправка МГНОВЕННОГО письма о повышении уровня (см. докстринг `send_badge_earned_notification`)."""
     try:
         from users.models import User
         user = User.objects.get(id=user_id)
         logger.info(f"📤 Processing level up email for {user.username}: Level {new_level}")
-        _send_email_to_user(user, f'⬆️ Вы достигли уровня {new_level}!', 'emails/level_up.html', {'new_level': new_level, 'total_xp': total_xp})
+        _send_email_to_user(
+            user, f'⬆️ Вы достигли уровня {new_level}!', 'emails/level_up.html',
+            {'new_level': new_level, 'total_xp': total_xp}, notification_type='level_up',
+        )
         return True
-    except User.DoesNotExist: return False
+    except User.DoesNotExist:
+        return False
     except Exception as e:
         logger.error(f"❌ Error in send_level_up_notification: {e}", exc_info=True)
         raise self.retry(exc=e, countdown=60)
@@ -105,13 +202,13 @@ def send_level_up_notification(self, user_id: str, new_level: int, total_xp: int
 
 @shared_task(bind=True, max_retries=3, countdown=5)
 def send_email_verification(self, user_id: str, token: str):
-    """Критическое письмо верификации (force=True)"""
+    """Критическое письмо верификации (force=True — не подчиняется настройкам/дайджесту)."""
     try:
         from users.models import User
         user = User.objects.get(id=user_id)
         site_url = getattr(settings, 'SITE_URL', 'https://dopx.kz')
         verify_url = f"{site_url}/users/verify-email/{token}/"
-        
+
         _send_email_to_user(user, '👋 Подтвердите email на DOPX', 'emails/verify_email.html', {'verify_url': verify_url}, force=True)
         return True
     except Exception as e:
@@ -119,79 +216,186 @@ def send_email_verification(self, user_id: str, token: str):
         raise self.retry(exc=e, countdown=60)
 
 
+@shared_task(bind=True, max_retries=3, rate_limit='60/m')
+def _send_match_email_chunk(
+    self,
+    user_ids: list[str],
+    match_id: str,
+    subject: str,
+    template_name: str,
+    notification_type: str,
+) -> int:
+    """
+    Отправляет письмо одной пачке пользователей (см. пункт 2 докстринга
+    модуля). `rate_limit='60/m'` — троттлинг на уровне Celery ограничивает,
+    сколько ТАКИХ пачек может исполняться в минуту суммарно по всем
+    воркерам, независимо от того, сколько пачек поставлено в очередь сразу.
+    """
+    from matches.models import Match
+    from users.models import User
+
+    match = Match.objects.select_related('home_team', 'away_team').filter(id=match_id).first()
+    if not match:
+        logger.error(f"_send_match_email_chunk: match {match_id} not found")
+        return 0
+
+    sent = 0
+    users = User.objects.filter(id__in=user_ids, is_verified=True, email__isnull=False)
+    for user in users:
+        if _send_email_to_user(user, subject, template_name, {'match': match}, notification_type=notification_type):
+            sent += 1
+    return sent
+
+
+def _chunked(items: list, size: int) -> list[list]:
+    return [items[i:i + size] for i in range(0, len(items), size)]
+
+
 @shared_task(bind=True, max_retries=3, countdown=5)
 def send_voting_open_notification(self, match_id: str):
-    """Оповещение о завершении матча и открытии голосования"""
+    """
+    Оповещение о завершении матча и открытии голосования — теперь fan-out
+    вместо синхронного цикла по всем пользователям (см. пункт 2 докстринга
+    модуля).
+    """
     try:
         from matches.models import Match
         from users.models import User
-        match = Match.objects.get(id=match_id)
-        # Отправляем только тем, кто включил уведомления о матчах
-        users = User.objects.filter(is_verified=True, email__isnull=False)
-        count = 0
-        for user in users:
-            if _send_email_to_user(user, f'🏁 Матч завершён: {match.home_team.name} vs {match.away_team.name}', 'emails/voting_open.html', {'match': match}):
-                count += 1
-        logger.info(f"✅ Sent voting open emails to {count} users for match {match_id}")
-        return True
+
+        match = Match.objects.select_related('home_team', 'away_team').filter(id=match_id).first()
+        if not match:
+            logger.error(f"send_voting_open_notification: match {match_id} not found")
+            return {'queued_chunks': 0, 'total_users': 0}
+
+        subject = f'🏁 Матч завершён: {match.home_team.name} vs {match.away_team.name}'
+        user_ids = [
+            str(uid) for uid in User.objects.filter(is_verified=True, email__isnull=False)
+            .values_list('id', flat=True)
+        ]
+
+        chunks = _chunked(user_ids, BULK_EMAIL_CHUNK_SIZE)
+        for chunk in chunks:
+            _send_match_email_chunk.delay(chunk, match_id, subject, 'emails/voting_open.html', 'match_finished')
+
+        logger.info(f"✅ Queued {len(chunks)} email chunk(s) ({len(user_ids)} users) for match {match_id}")
+        return {'queued_chunks': len(chunks), 'total_users': len(user_ids)}
     except Exception as e:
         logger.error(f"❌ Error in send_voting_open_notification: {e}", exc_info=True)
         raise self.retry(exc=e, countdown=60)
-    
- # ============================================================================
-# === ЗАДАЧА: НАПОМИНАНИЕ О ЗАКРЫТИИ ГОЛОСОВАНИЯ ===
-# ============================================================================
+
 
 @shared_task(bind=True, max_retries=3)
 def notify_voting_closing_soon(self):
     """
-    Задача для напоминания о скором закрытии голосования.
-    Запускается Celery Beat (настройте интервал в CELERY_BEAT_SCHEDULE).
-    Ищет матчи, голосование по которым закроется в течение следующего часа.
+    Напоминание о скором закрытии голосования — тоже fan-out на уровне
+    пачек, плюс явный `notification_type='voting_closing'` (см. пункт 1
+    докстринга модуля — раньше эта проверка "терялась" из-за парсинга
+    subject).
     """
     from matches.models import Match
-    from users.models import User
-    from django.utils import timezone
-    from datetime import timedelta
-    import logging
 
-    logger = logging.getLogger(__name__)
-    
     now = timezone.now()
-    # Окно: голосование закроется в течение следующего часа
     closing_threshold = now + timedelta(hours=1)
-    
-    # Ищем матчи, которые:
-    # 1. Завершены (finished)
-    # 2. Голосование ещё открыто (voting_open_until >= now)
-    # 3. Голосование скоро закроется (voting_open_until <= now + 1 час)
+
     matches = Match.objects.filter(
         status='finished',
         voting_open_until__gte=now,
         voting_open_until__lte=closing_threshold
     ).select_related('home_team', 'away_team')
-    
+
     if not matches.exists():
         logger.info(f"✅ No matches closing voting in the next hour (now={now}, threshold={closing_threshold})")
         return {'status': 'ok', 'matches_found': 0}
 
-    logger.info(f"🔍 Found {matches.count()} matches closing voting soon: {[str(m.id) for m in matches]}")
+    from users.models import User
 
-    # Берём только верифицированных пользователей с email
-    users = User.objects.filter(is_verified=True, email__isnull=False)
-    emails_sent = 0
+    user_ids = [
+        str(uid) for uid in User.objects.filter(is_verified=True, email__isnull=False)
+        .values_list('id', flat=True)
+    ]
+    chunks = _chunked(user_ids, BULK_EMAIL_CHUNK_SIZE)
 
+    queued = 0
     for match in matches:
         subject = f'⏰ Голосование за матч {match.home_team.name} vs {match.away_team.name} скоро закроется!'
-        
-        for user in users:
-            # Проверяем настройки пользователя
-            if not user.notification_settings.get('email_voting_closing', True):
-                continue
-            
-            # Используем существующую безопасную функцию отправки
-            if _send_email_to_user(user, subject, 'emails/voting_closing.html', {'match': match}):
-                emails_sent += 1
+        for chunk in chunks:
+            _send_match_email_chunk.delay(chunk, str(match.id), subject, 'emails/voting_closing.html', 'voting_closing')
+            queued += 1
 
-    logger.info(f"✅ Sent {emails_sent} voting closing reminders.")
-    return {'status': 'ok', 'matches_processed': matches.count(), 'emails_sent': emails_sent}
+    logger.info(f"✅ Queued {queued} email chunk(s) across {matches.count()} closing-soon match(es).")
+    return {'status': 'ok', 'matches_processed': matches.count(), 'chunks_queued': queued}
+
+
+@shared_task
+def send_notification_digest():
+    """
+    НОВОЕ (см. пункт 3 докстринга модуля). Периодическая задача — собирает
+    непрочитанные-по-email `Notification` (`email_sent_at__isnull=True`)
+    типов `new_badge`/`level_up`/`system` по пользователям с
+    `email_digest_mode=True` и шлёт ОДНО письмо-сводку на пользователя,
+    вместо мгновенного письма на каждое событие.
+
+    Нужно добавить в `CELERY_BEAT_SCHEDULE` (например, `crontab(minute=
+    '*/30')`) — см. продуктовый отчёт.
+    """
+    from notifications.models import Notification
+
+    pending = list(
+        Notification.objects.filter(
+            notification_type__in=DIGESTIBLE_NOTIFICATION_TYPES,
+            email_sent_at__isnull=True,
+        ).select_related('user').order_by('user_id', 'created_at')
+    )
+
+    if not pending:
+        return {'users_notified': 0, 'notifications_sent': 0}
+
+    by_user: dict[str, list] = {}
+    for note in pending:
+        by_user.setdefault(str(note.user_id), []).append(note)
+
+    users_notified = 0
+    notifications_sent = 0
+
+    for user_id, notes in by_user.items():
+        user = notes[0].user
+        if not user.email or not user.is_verified:
+            continue
+        if not user.get_notification_setting('email_digest_mode', True):
+            # Пользователь предпочитает мгновенные письма — дайджест их не трогает
+            # (они уже были отправлены мгновенно и помечены email_sent_at при
+            # создании — см. users/tasks.py, evaluations/views.py).
+            continue
+
+        sent = _send_email_to_user(
+            user,
+            f'📋 Ваши обновления на DOPX ({len(notes)})',
+            'emails/digest.html',
+            {'notifications': notes},
+            notification_type='system',
+        )
+        if sent:
+            Notification.objects.filter(id__in=[n.id for n in notes]).update(email_sent_at=timezone.now())
+            users_notified += 1
+            notifications_sent += len(notes)
+
+    logger.info(f"✅ Digest sent to {users_notified} user(s), {notifications_sent} notification(s) total.")
+    return {'users_notified': users_notified, 'notifications_sent': notifications_sent}
+
+
+@shared_task
+def cleanup_old_notifications():
+    """
+    НОВОЕ — реальная реализация вместо несуществующей задачи, на которую
+    годами ссылался `CELERY_BEAT_SCHEDULE['voting-reminders']` (см. пункт 4
+    докстринга модуля). Удаляет ПРОЧИТАННЫЕ уведомления старше
+    `NOTIFICATION_RETENTION_DAYS` дней, чтобы таблица `Notification` не
+    росла бесконечно. Непрочитанные не трогает — пользователь должен
+    успеть их увидеть независимо от возраста.
+    """
+    from notifications.models import Notification
+
+    cutoff = timezone.now() - timedelta(days=NOTIFICATION_RETENTION_DAYS)
+    deleted_count, _ = Notification.objects.filter(is_read=True, created_at__lt=cutoff).delete()
+    logger.info(f"🧹 Deleted {deleted_count} old read notification(s) older than {NOTIFICATION_RETENTION_DAYS} days.")
+    return {'deleted': deleted_count}

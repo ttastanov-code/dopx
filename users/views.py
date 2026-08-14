@@ -1,4 +1,29 @@
 # users/views.py
+"""
+ИЗМЕНЕНИЯ (продуктовый аудит DOPX, часть 2):
+
+1. `RegisterView` — раньше регистрация была полностью открыта для
+   автоматического массового создания аккаунтов: ни rate-limit, ни IP/UA
+   логирования. Добавлено: rate-limit по IP через `core.utils.
+   is_rate_limited` (не более `REGISTER_RATE_LIMIT` регистраций с одного IP
+   за `REGISTER_RATE_LIMIT_WINDOW_SECONDS`), сохранение `registration_ip`/
+   `registration_user_agent` на созданном пользователе (антифрод-данные для
+   будущего кластерного анализа — см. продуктовый аудит, раздел 4.3).
+   Honeypot/time-trap проверяются самой формой (`users/forms.py`) —
+   `form_invalid` сработает автоматически через стандартный Django-флоу,
+   отдельного кода здесь не требует.
+2. `VerifyEmailView` — после успешной верификации ставится в очередь
+   `users.tasks.award_founder_badge_if_eligible` (бейдж «Первопроходец»,
+   разовая проверка, см. её докстринг).
+3. `NotificationSettingsView.form_valid` — раньше вручную перечислял 5
+   конкретных ключей настроек, из-за чего любое новое поле в форме (как
+   `email_digest_mode`, добавленный сейчас для дайджест-рассылки) молча
+   игнорировалось бы при сохранении. Переписано на генерацию словаря из
+   `User.DEFAULT_NOTIFICATION_SETTINGS.keys()` — новые настройки подхватываются
+   автоматически, если добавлено соответствующее поле в форме.
+"""
+from __future__ import annotations
+
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import login, logout, authenticate, update_session_auth_hash
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -14,6 +39,8 @@ from django.db.models import Count, Avg, Q
 from django.utils import timezone
 from django.conf import settings
 from datetime import timedelta
+
+from core.utils import get_client_ip, is_rate_limited
 from users.models import User, UserBadge, UserXP
 from users.forms import (
     UserRegistrationForm, UserLoginForm, UserProfileForm,
@@ -24,6 +51,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+REGISTER_RATE_LIMIT = 5
+REGISTER_RATE_LIMIT_WINDOW_SECONDS = 60 * 60  # 1 час
+
 
 class RegisterView(CreateView):
     """Регистрация нового пользователя с обязательной верификацией почты"""
@@ -32,14 +62,28 @@ class RegisterView(CreateView):
     template_name = 'auth/register.html'
     success_url = reverse_lazy('users:verify_email_sent')
 
+    def dispatch(self, request, *args, **kwargs):
+        # Rate-limit ДО обработки формы — не тратим время на валидацию
+        # (и не даём боту вообще понять, что его лимитировали по форме).
+        client_ip = get_client_ip(request)
+        if request.method == 'POST' and client_ip:
+            if is_rate_limited(f'register:{client_ip}', REGISTER_RATE_LIMIT, REGISTER_RATE_LIMIT_WINDOW_SECONDS):
+                logger.warning(f"⚠️ Registration rate limit exceeded for IP {client_ip}")
+                messages.error(request, '⚠️ Слишком много попыток регистрации. Попробуйте позже.')
+                return redirect('users:register')
+        return super().dispatch(request, *args, **kwargs)
+
     def form_valid(self, form):
         user = form.save(commit=False)
         user.is_verified = False  # Аккаунт создан, но не активирован
         user.set_password(form.cleaned_data['password1'])
+        # НОВОЕ: антифрод-данные регистрации (см. докстринг модуля, пункт 1).
+        user.registration_ip = get_client_ip(self.request)
+        user.registration_user_agent = self.request.META.get('HTTP_USER_AGENT', '')[:1000]
         user.save()
         # Создаем базовые профили
         UserXP.objects.get_or_create(user=user)
-        
+
         # Отправляем письмо верификации (асинхронно, КРИТИЧЕСКОЕ - force=True)
         try:
             from notifications.tasks import send_email_verification
@@ -55,7 +99,7 @@ class RegisterView(CreateView):
                 _send_email_to_user(user, '👋 Подтвердите email на DOPX', 'emails/verify_email.html', {'verify_url': verify_url}, force=True)
             except Exception as fallback_e:
                 logger.critical(f"CRITICAL: Failed to send verification email synchronously: {fallback_e}")
-                
+
         messages.success(self.request, '✅ Регистрация прошла успешно! Проверьте почту для активации.')
         return super().form_valid(form)
 
@@ -87,10 +131,10 @@ class VerifyEmailView(View):
             # Активируем аккаунт
             user.is_verified = True
             user.save(update_fields=['is_verified', 'updated_at'])
-            
+
             # Автоматический вход
             login(request, user)
-            
+
             # Приветственное уведомление (критическое, не отключается)
             Notification.objects.create(
                 user=user,
@@ -100,6 +144,15 @@ class VerifyEmailView(View):
                 action_url='/matches/',
                 is_read=False,
             )
+
+            # НОВОЕ: разовая проверка бейджа «Первопроходец» (users/tasks.py) —
+            # асинхронно, не блокирует ответ пользователю.
+            try:
+                from users.tasks import award_founder_badge_if_eligible
+                award_founder_badge_if_eligible.delay(str(user.id))
+            except Exception as e:
+                logger.error(f"Failed to queue founder badge check: {e}")
+
             messages.success(request, '🎉 Почта подтверждена! Добро пожаловать.')
             return redirect('core:home')
         except User.DoesNotExist:
@@ -131,7 +184,7 @@ class LoginView(AuthLoginView):
                 pass
             messages.warning(self.request, '⚠️ Ваша почта не подтверждена. Мы отправили новое письмо.')
             return redirect('users:login')
-            
+
         response = super().form_valid(form)
         remember_me = self.request.POST.get('remember')
         if not remember_me:
@@ -175,6 +228,8 @@ class ProfileView(LoginRequiredMixin, TemplateView):
         recent_evaluations = user.context_evaluations.select_related(
             'match__home_team', 'match__away_team'
         ).order_by('-created_at')[:10]
+        # rarity/is_secret — properties поверх users/badges.py::BADGE_CATALOG,
+        # доступны в шаблоне как badge.rarity / badge.is_secret / badge.description.
         badges = UserBadge.objects.filter(user=user).order_by('-awarded_at')
         xp, _ = UserXP.objects.get_or_create(user=user)
         active_sessions = user.evaluation_sessions.filter(
@@ -275,13 +330,14 @@ class NotificationSettingsView(LoginRequiredMixin, FormView):
 
     def form_valid(self, form):
         user = self.request.user
-        # Явно сохраняем в JSON поле
+        # ИСПРАВЛЕНО: раньше здесь были захардкожены 5 конкретных ключей —
+        # новое поле формы (например, `email_digest_mode`) молча
+        # игнорировалось бы при сохранении, пока кто-то не вспомнил бы
+        # добавить его в этот список вручную. Теперь ключи берутся из
+        # единого источника — `User.DEFAULT_NOTIFICATION_SETTINGS`.
         user._notification_settings = {
-            'email_match_finished': form.cleaned_data.get('email_match_finished', True),
-            'email_voting_closing': form.cleaned_data.get('email_voting_closing', True),
-            'email_new_badge': form.cleaned_data.get('email_new_badge', True),
-            'email_level_up': form.cleaned_data.get('email_level_up', True),
-            'email_system': form.cleaned_data.get('email_system', True),
+            key: form.cleaned_data.get(key, True)
+            for key in User.DEFAULT_NOTIFICATION_SETTINGS
         }
         user.save(update_fields=['_notification_settings', 'updated_at'])
         user.refresh_from_db()  # Сбрасываем кэш свойств

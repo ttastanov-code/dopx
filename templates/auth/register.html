@@ -12,7 +12,7 @@
                 <h1 class="text-2xl font-bold">Создать аккаунт</h1>
                 <p class="text-sm opacity-60 mt-1">Присоединяйся к DOPX</p>
             </div>
-            
+
             <!-- Форма -->
             <form method="post" action="{% url 'users:register' %}"
                   class="space-y-4"
@@ -25,7 +25,23 @@
                   }"
                   @submit="passwordsMatch = password === confirmPassword">
                 {% csrf_token %}
-                
+
+                <!-- АНТИ-БОТ: honeypot-поле, невидимое человеку (визуально
+                     скрыто и вынесено из потока табуляции), но доступное
+                     примитивному боту, слепо заполняющему все input'ы формы.
+                     Поле ОБЯЗАНО остаться пустым — см.
+                     users/forms.py::UserRegistrationForm.clean_website. -->
+                <div style="position:absolute; left:-9999px; top:-9999px;" aria-hidden="true">
+                    <label for="id_website">Website</label>
+                    <input type="text" id="id_website" name="website" tabindex="-1" autocomplete="off">
+                </div>
+
+                <!-- АНТИ-БОТ: time-trap — момент рендера формы, см.
+                     users/forms.py::UserRegistrationForm.clean_form_rendered_at.
+                     Отправка формы быстрее нескольких секунд после рендера
+                     физически невозможна для человека. -->
+                {{ form.form_rendered_at }}
+
                 <!-- Username -->
                 <div class="form-control">
                     <label class="label" for="id_username">
@@ -51,7 +67,7 @@
                         <span class="label-text-alt opacity-50">Только буквы, цифры и @/./+/-/_</span>
                     </label>
                 </div>
-                
+
                 <!-- Email -->
                 <div class="form-control">
                     <label class="label" for="id_email">
@@ -74,7 +90,7 @@
                     </label>
                     {% endif %}
                 </div>
-                
+
                 <!-- City (optional) -->
                 <div class="form-control">
                     <label class="label" for="id_city">
@@ -96,7 +112,7 @@
                     </label>
                     {% endif %}
                 </div>
-                
+
                 <!-- Password 1 -->
                 <div class="form-control">
                     <label class="label" for="id_password1">
@@ -124,7 +140,7 @@
                     </label>
                     {% endif %}
                 </div>
-                
+
                 <!-- Password 2 -->
                 <div class="form-control">
                     <label class="label" for="id_password2">
@@ -156,7 +172,7 @@
                         <span class="label-text-alt text-error">Пароли не совпадают</span>
                     </label>
                 </div>
-                
+
                 <!-- Terms -->
                 <div class="form-control">
                     <label class="label cursor-pointer gap-3 p-4 rounded-lg border border-base-300 hover:bg-base-200 transition-colors">
@@ -167,7 +183,7 @@
                         </span>
                     </label>
                 </div>
-                
+
                 <!-- Submit Button -->
                 <button type="submit"
                         class="btn btn-primary btn-lg w-full"
@@ -175,7 +191,7 @@
                     <i class="ti ti-user-plus"></i>
                     Зарегистрироваться
                 </button>
-                
+
                 <!-- Non-field errors -->
                 {% if form.non_field_errors %}
                 <div class="alert alert-error text-sm py-2">
@@ -184,10 +200,10 @@
                 </div>
                 {% endif %}
             </form>
-            
+
             <!-- Divider -->
             <div class="divider text-xs opacity-60">или</div>
-            
+
             <!-- Login Link -->
             <div class="text-center">
                 <p class="text-sm opacity-70">
@@ -199,7 +215,7 @@
             </div>
         </div>
     </div>
-    
+
     <!-- Преимущества -->
     <div class="mt-8 grid grid-cols-3 gap-4 text-center">
         <div class="flex flex-col items-center">

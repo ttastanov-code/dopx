@@ -1,0 +1,151 @@
+# users/badges.py
+"""
+Единый каталог достижений платформы — НОВЫЙ модуль.
+
+ПОЧЕМУ ОТДЕЛЬНЫЙ ФАЙЛ, А НЕ `BADGE_TYPES` ПРЯМО В `models.py`: раньше
+"каталог" достижений — это была одна строка `BADGE_TYPES = [(code, label),
+...]` в `UserBadge`, а вся смысловая начинка (описание для пользователя,
+редкость, секретность) нигде не хранилась — фронтенду было физически не из
+чего взять "золотое" или "бронзовое" оформление бейджа, кроме как хардкодить
+маппинг где-то в шаблоне и вручную дублировать список. Теперь один
+`BadgeDefinition` на достижение — единственный источник истины: и для
+`choices` модели, и для рендера в профиле, и для критерия начисления в
+`users/services.py`.
+
+`rarity`/`is_secret` НЕ хранятся как отдельные колонки в `UserBadge` —
+это осознанное решение, чтобы не тянуть миграцию под две колонки:
+`UserBadge.rarity`/`UserBadge.is_secret` — это properties, читающие
+метаданные из `BADGE_CATALOG` по уже существующему полю `badge_type`.
+Единственное, что действительно меняется в схеме БД — расширение списка
+`choices` у существующего `badge_type` (это не меняет тип/длину колонки,
+Django всё равно попросит миграцию state-файла — выполните
+`python manage.py makemigrations users` перед деплоем).
+
+НОВЫЕ ДОСТИЖЕНИЯ (6 новых поверх существовавших 8) отобраны по единственному
+критерию: их можно посчитать по данным, которые в проекте УЖЕ есть, без
+новых внешних пайплайнов данных (в отличие, например, от "дерби-эксперта",
+для которого сначала нужно завести признак `Match.is_rivalry_match` — такие
+идеи оставлены в продуктовом аудите как задел на будущее, а не реализованы
+здесь вслепую).
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Literal
+
+Rarity = Literal["bronze", "silver", "gold", "platinum", "secret"]
+
+RARITY_ORDER: dict[Rarity, int] = {
+    "bronze": 1,
+    "silver": 2,
+    "gold": 3,
+    "platinum": 4,
+    "secret": 5,
+}
+
+
+@dataclass(frozen=True)
+class BadgeDefinition:
+    code: str
+    name: str
+    description: str
+    rarity: Rarity
+    is_secret: bool = False
+
+
+BADGE_CATALOG: dict[str, BadgeDefinition] = {
+    # --- Вовлечённость ---
+    "first_evaluation": BadgeDefinition(
+        code="first_evaluation",
+        name="Первая оценка",
+        description="Оценили свой первый матч на DOPX.",
+        rarity="bronze",
+    ),
+    "active_fan_10": BadgeDefinition(
+        code="active_fan_10",
+        name="Активный фанат",
+        description="Оценили 10 матчей.",
+        rarity="bronze",
+    ),
+    "active_fan_50": BadgeDefinition(
+        code="active_fan_50",
+        name="Хардкор фанат",
+        description="Оценили 50 матчей.",
+        rarity="silver",
+    ),
+    "active_fan_150": BadgeDefinition(
+        code="active_fan_150",
+        name="Легенда трибун",
+        description="Оценили 150 матчей — вы часть истории платформы.",
+        rarity="gold",
+    ),
+    "streak_7": BadgeDefinition(
+        code="streak_7",
+        name="Неделя подряд",
+        description="Оценивали матчи 7 дней подряд.",
+        rarity="bronze",
+    ),
+    "streak_30": BadgeDefinition(
+        code="streak_30",
+        name="Месяц подряд",
+        description="Оценивали матчи 30 дней подряд.",
+        rarity="silver",
+    ),
+    "streak_100": BadgeDefinition(
+        code="streak_100",
+        name="Железная дисциплина",
+        description="Оценивали матчи 100 дней подряд.",
+        rarity="platinum",
+    ),
+    # --- Качество и точность ---
+    "accurate_analyst": BadgeDefinition(
+        code="accurate_analyst",
+        name="Точный аналитик",
+        description="Ваши оценки стабильно близки к консенсусу сообщества.",
+        rarity="silver",
+    ),
+    "foresight": BadgeDefinition(
+        code="foresight",
+        name="Провидец",
+        description="Высокий устойчивый trust score на большой выборке оценок.",
+        rarity="gold",
+    ),
+    "bias_free": BadgeDefinition(
+        code="bias_free",
+        name="Без предвзятости",
+        description="Оцениваете свою команду и соперника объективно.",
+        rarity="silver",
+    ),
+    "early_bird": BadgeDefinition(
+        code="early_bird",
+        name="Ранняя пташка",
+        description="Одними из первых оцениваете матчи после финального свистка.",
+        rarity="bronze",
+    ),
+    "judge_of_judges": BadgeDefinition(
+        code="judge_of_judges",
+        name="Судья судей",
+        description="Оценили судейство 25+ матчей.",
+        rarity="bronze",
+    ),
+    "polyglot": BadgeDefinition(
+        code="polyglot",
+        name="Полиглот лиги",
+        description="Оценили игроков 8+ разных команд КПЛ — широкий, непредвзятый взгляд.",
+        rarity="gold",
+    ),
+    # --- Секретные / статусные ---
+    "founder": BadgeDefinition(
+        code="founder",
+        name="Первопроходец",
+        description="Один из первых 500 пользователей DOPX.",
+        rarity="secret",
+        is_secret=True,
+    ),
+}
+
+BADGE_TYPE_CHOICES: list[tuple[str, str]] = [(code, d.name) for code, d in BADGE_CATALOG.items()]
+
+
+def get_badge_definition(code: str) -> BadgeDefinition | None:
+    return BADGE_CATALOG.get(code)

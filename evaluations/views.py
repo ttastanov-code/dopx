@@ -1,34 +1,106 @@
 # evaluations/views.py
-from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth.mixins import LoginRequiredMixin
-from django.contrib import messages
-from django.utils import timezone
-from django.views.generic import FormView, TemplateView
-from django.db import transaction
-from django.core.exceptions import PermissionDenied
-from django.db.models import Q
+"""
+ИЗМЕНЕНИЯ (продуктовый аудит DOPX, часть 2):
+
+1. **XP теперь начисляется по шагам, а не одним фиксированным +10 в конце.**
+   Раньше единственным источником XP было `xp.add_xp(10)` в
+   `EvaluateMatchFinalView` — тролль, наспамивший "5 всем" по всем 22
+   игрокам, получал ровно столько же XP, сколько внимательный аналитик.
+   Теперь: контекст +2, команды +2, игроки — до +3 ПРОПОРЦИОНАЛЬНО числу
+   реально оценённых игроков (не фиксированно), тренеры +1, судья +1,
+   финал +1 — сумма при полном прохождении та же (10), но начисление
+   отражает реальный объём работы. Каждое начисление домножается на
+   `user.xp_multiplier()` (0.8..1.2 от `trust_score`, см. `users/models.py`)
+   — чем точнее исторически оценки пользователя, тем быстрее растёт уровень.
+
+2. **`check_and_award_badges` вынесен из синхронного HTTP-запроса.** Раньше
+   вызывался прямо внутри `with transaction.atomic():` в
+   `EvaluateMatchFinalView.form_valid` и мог стоить до ~100 SQL-запросов на
+   КАЖДОЕ завершение оценки (см. докстринг `users/services.py`). Теперь —
+   `transaction.on_commit(lambda: check_and_award_badges_task.delay(...))`,
+   тем же паттерном, что уже был правильно применён рядом для
+   `recalculate_all_aggregates_for_match`. Уведомления о новых достижениях
+   (in-app + email) тоже переехали в задачу — см. `users/tasks.py`.
+
+3. **`EvaluatePlayersView` больше не позволяет молча пройти шаг с нулём
+   оценённых игроков**, если состав ещё не загружен парсером
+   (`match.has_lineup is False`). Раньше пользователь мог "пройти" шаг без
+   единой оценки и получить полный XP наравне с тем, кто оценил 15+
+   игроков — теперь вьюха вежливо объясняет, что составы ещё не загружены,
+   и не даёт зайти на шаг вообще (вместо того чтобы засчитывать пустой шаг).
+
+4. **Анти-фрод: IP завершения сессии + сигнал скорости заполнения.**
+   `EvaluateMatchFinalView` сохраняет IP в `EvaluationSession.ip_address`
+   (переиспользует `core.utils.get_client_ip`, см. её докстринг — раньше
+   такая функция была приватным методом ровно одной вьюхи) и ставит в
+   очередь `flag_suspicious_wizard_speed_task`, которая (асинхронно, не
+   блокируя ответ) сравнивает время прохождения вайзарда с разумным
+   минимумом для человека и, если оно подозрительно мало, создаёт запись в
+   очереди модерации `SuspiciousActivityFlag` — не блокирует отправку,
+   только помечает для проверки.
+"""
+from __future__ import annotations
+
 from functools import partial
 
-from matches.models import Match
-from evaluations.models import (
-    ContextEvaluation, MatchEvaluation, TeamEvaluation,
-    PlayerEvaluation, CoachEvaluation, RefereeEvaluation,
-    EvaluationSession
-)
-from evaluations.forms import (
-    ContextEvaluationForm, MatchEvaluationForm,
-    TeamEvaluationForm, CoachEvaluationForm, RefereeEvaluationForm
-)
-from notifications.models import Notification
-from aggregates.tasks import recalculate_all_aggregates_for_match
-from lineups.models import MatchLineupPlayer
+from django.contrib import messages
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.db import transaction
+from django.shortcuts import get_object_or_404, redirect
+from django.utils import timezone
+from django.views.generic import FormView, TemplateView
+
 from aggregates.services import calculate_user_trust_adjustment
-from users.models import UserXP, UserBadge
-from users.services import check_and_award_badges
-from notifications.tasks import send_badge_earned_notification, send_level_up_notification
+from aggregates.tasks import recalculate_all_aggregates_for_match
+from core.utils import get_client_ip
+from evaluations.forms import (
+    ContextEvaluationForm,
+    MatchEvaluationForm,
+    RefereeEvaluationForm,
+)
+from evaluations.models import (
+    CoachEvaluation,
+    ContextEvaluation,
+    EvaluationSession,
+    MatchEvaluation,
+    PlayerEvaluation,
+    RefereeEvaluation,
+    TeamEvaluation,
+)
+from lineups.models import MatchLineupPlayer
+from matches.models import Match
+from notifications.models import Notification
+from notifications.tasks import send_level_up_notification
+from users.models import UserXP
+from users.tasks import check_and_award_badges_task, flag_suspicious_wizard_speed_task
 
 import logging
+
 logger = logging.getLogger(__name__)
+
+# XP за каждый компонент вайзарда при ПОЛНОМ его прохождении (см. пункт 1
+# докстринга модуля). Итог при полном прохождении = 10, как и раньше, но
+# теперь распределён по шагам и домножается на xp_multiplier().
+XP_CONTEXT_STEP = 2
+XP_TEAMS_STEP = 2
+XP_PLAYERS_STEP_MAX = 3
+XP_COACHES_STEP = 1
+XP_REFEREE_STEP = 1
+XP_FINAL_STEP = 1
+
+
+def _award_step_xp(user, base_amount: float) -> None:
+    """
+    Начисляет XP за прохождение одного шага вайзарда с учётом
+    `user.xp_multiplier()`. Тихо не падает, если у пользователя почему-то
+    ещё нет `UserXP` (на практике создаётся при регистрации в
+    `users/views.py::RegisterView`, но защищаемся на случай рассинхронизации
+    данных у существующих аккаунтов, заведённых до этого изменения).
+    """
+    if base_amount <= 0:
+        return
+    xp, _created = UserXP.objects.get_or_create(user=user)
+    xp.add_xp(base_amount * user.xp_multiplier())
 
 
 class EvaluationWizardMixin:
@@ -48,7 +120,8 @@ class EvaluationWizardMixin:
     def complete_session(self, session):
         session.status = 'completed'
         session.completed_at = timezone.now()
-        session.save(update_fields=['status', 'completed_at', 'updated_at'])
+        session.ip_address = get_client_ip(self.request)
+        session.save(update_fields=['status', 'completed_at', 'ip_address', 'updated_at'])
 
     def check_voting_access(self):
         now = timezone.now()
@@ -82,6 +155,7 @@ class EvaluateContextView(LoginRequiredMixin, FormView, EvaluationWizardMixin):
     def form_valid(self, form):
         with transaction.atomic():
             session = self.get_or_create_session()
+            is_new_step = 'context' not in session.completed_steps
             ContextEvaluation.objects.update_or_create(
                 user=self.request.user, match=self.match,
                 defaults={
@@ -91,6 +165,8 @@ class EvaluateContextView(LoginRequiredMixin, FormView, EvaluationWizardMixin):
                 }
             )
             self.update_session(session, 'context')
+        if is_new_step:
+            _award_step_xp(self.request.user, XP_CONTEXT_STEP)
         messages.success(self.request, '✅ Контекст сохранён')
         return redirect('evaluations:teams', match_id=self.match.id)
 
@@ -121,6 +197,7 @@ class EvaluateTeamsView(LoginRequiredMixin, TemplateView, EvaluationWizardMixin)
 
     def post(self, request, *args, **kwargs):
         session = self.get_or_create_session()
+        is_new_step = 'teams' not in session.completed_steps
         with transaction.atomic():
             for team in [self.match.home_team, self.match.away_team]:
                 prefix = f'team_{team.id}'
@@ -134,6 +211,8 @@ class EvaluateTeamsView(LoginRequiredMixin, TemplateView, EvaluationWizardMixin)
                     }
                 )
             self.update_session(session, 'teams')
+        if is_new_step:
+            _award_step_xp(request.user, XP_TEAMS_STEP)
         messages.success(request, '✅ Оценки команд сохранены')
         return redirect('evaluations:players', match_id=self.match.id)
 
@@ -167,11 +246,24 @@ class EvaluatePlayersView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
         session = self.get_or_create_session()
         if 'teams' not in session.completed_steps:
             return redirect('evaluations:teams', match_id=self.match.id)
+        # ФИКС: раньше при отсутствующем составе (парсер ещё не загрузил
+        # lineup) пользователь молча "проходил" шаг с нулём оценённых
+        # игроков и получал полный XP наравне с тем, кто оценил 15+ игроков.
+        # Явно блокируем шаг до готовности состава вместо того, чтобы
+        # засчитывать пустой шаг как пройденный.
+        if not self.match.has_lineup:
+            messages.warning(
+                request,
+                '⚠️ Составы этого матча ещё не загружены. Попробуйте оценить игроков чуть позже.',
+            )
+            return redirect('matches:detail', pk=self.match.id)
         return super().dispatch(request, *args, **kwargs)
 
     def post(self, request, *args, **kwargs):
         session = self.get_or_create_session()
+        is_new_step = 'players' not in session.completed_steps
         lineup_players = MatchLineupPlayer.objects.filter(lineup__match=self.match).select_related('player')
+        lineup_total = lineup_players.count()
         count = 0
         with transaction.atomic():
             for lp in lineup_players:
@@ -195,6 +287,10 @@ class EvaluatePlayersView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
                         except (ValueError, TypeError) as e:
                             logger.warning(f"Ошибка валидации для {player}: {e}")
             self.update_session(session, 'players')
+        if is_new_step and lineup_total:
+            # XP пропорционален доле реально оценённых игроков от состава —
+            # не фиксированная сумма за формальное "прохождение" шага.
+            _award_step_xp(request.user, XP_PLAYERS_STEP_MAX * (count / lineup_total))
         messages.success(request, f'✅ Оценено игроков: {count}')
         return redirect('evaluations:coaches', match_id=self.match.id)
 
@@ -226,6 +322,7 @@ class EvaluateCoachesView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
 
     def post(self, request, *args, **kwargs):
         session = self.get_or_create_session()
+        is_new_step = 'coaches' not in session.completed_steps
         with transaction.atomic():
             for coach in [self.match.home_coach, self.match.away_coach]:
                 if coach:
@@ -240,6 +337,8 @@ class EvaluateCoachesView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
                         }
                     )
             self.update_session(session, 'coaches')
+        if is_new_step:
+            _award_step_xp(request.user, XP_COACHES_STEP)
         messages.success(request, '✅ Оценки тренеров сохранены')
         return redirect('evaluations:referee', match_id=self.match.id)
 
@@ -272,6 +371,7 @@ class EvaluateRefereeView(LoginRequiredMixin, FormView, EvaluationWizardMixin):
 
     def form_valid(self, form):
         session = self.get_or_create_session()
+        is_new_step = 'referee' not in session.completed_steps
         with transaction.atomic():
             RefereeEvaluation.objects.update_or_create(
                 user=self.request.user, match=self.match,
@@ -281,6 +381,8 @@ class EvaluateRefereeView(LoginRequiredMixin, FormView, EvaluationWizardMixin):
                 }
             )
             self.update_session(session, 'referee')
+        if is_new_step:
+            _award_step_xp(self.request.user, XP_REFEREE_STEP)
         messages.success(self.request, '✅ Оценка судейства сохранена')
         return redirect('evaluations:match_eval', match_id=self.match.id)
 
@@ -339,29 +441,26 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
                 user.trust_score = new_trust
                 user.save(update_fields=['trust_score', 'updated_at'])
 
-            # 4. Проверяем и выдаём достижения
-            awarded_badges = check_and_award_badges(user)
-
-            # 5. Начисляем XP и обрабатываем уровни
+            # 4. Начисляем XP за финальный шаг (компонентная схема — см.
+            #    докстринг модуля, пункт 1). Проверка и выдача достижений
+            #    ПЕРЕЕХАЛА в асинхронную задачу (пункт 2) — не считаем и не
+            #    уведомляем о бейджах здесь синхронно.
             xp, _ = UserXP.objects.get_or_create(user=user)
-            xp_result = xp.add_xp(10)
+            xp_result = xp.add_xp(XP_FINAL_STEP * user.xp_multiplier())
 
-            # 6. Создаём внутриигровые уведомления
+            # 5. Уведомления о повышении уровня (поддержка скачков через
+            #    несколько уровней сразу) и об изменении Trust Score.
+            #    ДАЙДЖЕСТ: если у пользователя включён `email_digest_mode`
+            #    (по умолчанию — да), мгновенное письмо НЕ ставится в
+            #    очередь ниже — только in-app уведомление с `email_sent_at
+            #    =None`, которое подхватит `notifications/tasks.py::
+            #    send_notification_digest`. Иначе письмо уходит мгновенно, и
+            #    `email_sent_at` проставляется сразу, чтобы дайджест не
+            #    отправил его повторно.
+            digest_mode = user.get_notification_setting('email_digest_mode', True)
+            notification_sent_at = None if digest_mode else timezone.now()
+
             notifications_to_create = []
-
-            # Уведомления о достижениях
-            for badge in awarded_badges:
-                notifications_to_create.append(Notification(
-                    user=user,
-                    notification_type='new_badge',
-                    title='🎖️ Новое достижение!',
-                    message=f'Вы получили достижение: {badge.get_badge_type_display()}',
-                    action_url='/users/profile/',
-                    is_read=False,
-                    related_match=self.match
-                ))
-
-            # Уведомления о повышении уровня (поддержка скачков через несколько уровней)
             if xp_result.get('level_increased'):
                 for lvl in xp_result['levels_gained']:
                     notifications_to_create.append(Notification(
@@ -371,10 +470,11 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
                         message=f'Поздравляем! Вы достигли уровня {lvl} с {xp.total_xp} XP.',
                         action_url='/users/profile/',
                         is_read=False,
-                        related_match=self.match
+                        related_match=self.match,
+                        email_sent_at=notification_sent_at,
                     ))
 
-            # Уведомление об изменении Trust Score
+            # 6. Уведомление об изменении Trust Score
             if abs(user.trust_score - old_trust) >= 0.1:
                 notifications_to_create.append(Notification(
                     user=user,
@@ -383,26 +483,39 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
                     message=f'Ваш уровень доверия: {round(old_trust, 2)} → {round(user.trust_score, 2)}',
                     action_url='/users/profile/',
                     is_read=False,
-                    related_match=self.match
+                    related_match=self.match,
+                    email_sent_at=notification_sent_at,
                 ))
 
             if notifications_to_create:
                 Notification.objects.bulk_create(notifications_to_create)
 
-        # 7. Отправляем email-уведомления ПОСЛЕ коммита транзакции
-        if awarded_badges:
-            for badge in awarded_badges:
-                transaction.on_commit(
-                    partial(send_badge_earned_notification.delay, user_id=str(user.id), badge_type=badge.badge_type, badge_name=badge.get_badge_type_display())
-                )
+        # 7. Достижения — асинхронно, ПОСЛЕ коммита транзакции (см. пункт 2
+        #    докстринга модуля). Уведомления о новых бейджах создаются и
+        #    рассылаются внутри самой задачи (users/tasks.py), а не здесь.
+        transaction.on_commit(
+            partial(check_and_award_badges_task.delay, user_id=str(user.id), match_id=str(self.match.id))
+        )
 
-        if xp_result.get('level_increased'):
+        # 8. Мгновенные письма о повышении уровня — ТОЛЬКО если у пользователя
+        #    выключен дайджест (см. пункт 5 выше); иначе уведомление уже
+        #    создано с email_sent_at=None и будет отправлено одним письмом
+        #    вместе с остальными через send_notification_digest.
+        if xp_result.get('level_increased') and not digest_mode:
             for lvl in xp_result['levels_gained']:
                 transaction.on_commit(
                     partial(send_level_up_notification.delay, user_id=str(user.id), new_level=lvl, total_xp=xp.total_xp)
                 )
 
-        # 8. Запускаем пересчёт агрегатов
+        # 9. Анти-фрод: асинхронная проверка скорости заполнения вайзарда
+        #    (см. докстринг модуля, пункт 4). Не блокирует ответ пользователю
+        #    и не отменяет уже сохранённые оценки — только помечает сессию
+        #    для ручной модерации при подозрительно быстром заполнении.
+        transaction.on_commit(
+            partial(flag_suspicious_wizard_speed_task.delay, session_id=str(session.id))
+        )
+
+        # 10. Запускаем пересчёт агрегатов
         try:
             transaction.on_commit(
                 lambda: recalculate_all_aggregates_for_match.delay(str(self.match.id))
