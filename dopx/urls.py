@@ -60,7 +60,24 @@ urlpatterns = [
     path('captcha/', include('captcha.urls')),
 ] + schema_patterns
 
-if settings.DEBUG:
+if 'debug_toolbar' in settings.INSTALLED_APPS:
+    # ИСПРАВЛЕНО (найдено при первом прогоне manage.py test с реальным HTTP-
+    # запросом через self.client): раньше здесь стояло `if settings.DEBUG:`
+    # — та же проверка, что и в dopx/settings.py при формировании
+    # INSTALLED_APPS/MIDDLEWARE, но выполняется она в СОВЕРШЕННО ДРУГОЙ
+    # момент времени. INSTALLED_APPS/MIDDLEWARE фиксируются один раз при
+    # первой загрузке settings.py (DEBUG там ещё True, как в .env). А
+    # dopx/urls.py Django импортирует ЛЕНИВО — при первом реальном
+    # разрешении URL, которое в тестах происходит УЖЕ ПОСЛЕ того, как
+    # `django.test.utils.setup_test_environment()` принудительно выставил
+    # settings.DEBUG=False. Итог: DebugToolbarMiddleware в MIDDLEWARE есть
+    # (решение принято раньше, пока DEBUG=True), а `__debug__/` с
+    # namespace 'djdt' в urlpatterns — нет (решение принято позже, когда
+    # DEBUG уже False) → рассинхрон, middleware пытается отрендерить
+    # тулбар и падает NoReverseMatch на 'djdt:...'. Проверка по
+    # INSTALLED_APPS вместо повторного settings.DEBUG устраняет расхождение:
+    # оба решения (добавлять ли middleware и добавлять ли urls) теперь
+    # опираются на ОДНО и то же состояние, зафиксированное в ОДИН момент.
     import debug_toolbar
     urlpatterns = [path('__debug__/', include('debug_toolbar.urls'))] + urlpatterns
 

@@ -13,6 +13,46 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-dev-key-change-in-prod")
 DEBUG = os.getenv("DEBUG", "True") == "True"
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "*").split(",")
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+
+# =============================================================================
+# Sentry — error tracking (продуктовый апгрейд: раньше единственным каналом
+# были email-алерты из parsers/tasks.py::_send_sync_error_alert — легко
+# пропустить, без стектрейса/контекста запроса, без дедупликации похожих
+# ошибок в одну карточку). Инициализация ДО импорта Django-приложений ниже —
+# sentry_sdk сам патчит логирование и умеет ловить ошибки, возникающие даже
+# на этапе загрузки INSTALLED_APPS.
+#
+# БЕЗОПАСНЫЙ NO-OP: если SENTRY_DSN не задан в .env — блок просто не
+# выполняется, проект работает как раньше. Ничего не ломается на локальной
+# разработке без Sentry-аккаунта.
+# =============================================================================
+SENTRY_DSN = os.getenv("SENTRY_DSN", "")
+if SENTRY_DSN:
+    import sentry_sdk
+    from sentry_sdk.integrations.celery import CeleryIntegration
+    from sentry_sdk.integrations.django import DjangoIntegration
+    from sentry_sdk.integrations.logging import LoggingIntegration
+
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        integrations=[
+            DjangoIntegration(),
+            CeleryIntegration(monitor_beat_tasks=True),
+            # breadcrumb с уровня WARNING (обычные логи-заметки для контекста),
+            # событие в Sentry — только с ERROR (не заваливаем проект каждым
+            # logger.warning() из парсера, их и так много в штатной работе).
+            LoggingIntegration(level=None, event_level="ERROR"),
+        ],
+        environment=ENVIRONMENT,
+        # 10% трейсов достаточно для профиля производительности при
+        # умеренном трафике staff-дашборда и матчей; не 100% — иначе на
+        # каждый HTTP-запрос идёт лишний исходящий вызов к Sentry.
+        traces_sample_rate=0.1,
+        # PII (email, IP) в события НЕ отправляем по умолчанию — те же
+        # соображения приватности, что и hash_ip() в analytics/services.py.
+        send_default_pii=False,
+    )
 
 # Application definition
 INSTALLED_APPS = [
@@ -689,6 +729,16 @@ if DEBUG:
     INTERNAL_IPS = ['127.0.0.1']
     DEBUG_TOOLBAR_CONFIG = {
         'SHOW_TOOLBAR_CALLBACK': lambda request: request.META.get('HTTP_ACCEPT') != 'application/json',
+        # ИСПРАВЛЕНО (найдено при первом прогоне manage.py test): Django
+        # test runner принудительно выставляет settings.DEBUG=False на
+        # время тестов — debug_toolbar.E001 видит "toolbar в INSTALLED_APPS,
+        # но DEBUG=False" и считает это ошибкой конфигурации (в проде
+        # тулбар быть включённым не должен). `manage.py test` НЕ равно
+        # "тулбар случайно остался включён в проде" — это ожидаемое
+        # поведение самого test runner'а, а не баг. IS_RUNNING_TESTS=False
+        # — официальный флаг django-debug-toolbar, отключающий именно этот
+        # check для тестовых прогонов.
+        'IS_RUNNING_TESTS': False,
     }
 
 # === Email Settings ===
