@@ -3,7 +3,51 @@
 {% block content %}
 {% include 'dashboard/_nav.html' %}
 
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+<div class="card bg-base-100 border border-base-300 mb-4">
+    <div class="card-body p-4">
+        <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
+            <i class="ti ti-search text-primary"></i> Поиск матча
+        </h3>
+        <p class="text-xs opacity-60 mb-3">По названию команды (домашней или гостевой) или по external_id (числовой KFF game id) — быстро найти UUID матча, не листая сотни строк в Django admin.</p>
+        <form method="get" action="{% url 'dashboard:parser_tools' %}" class="flex flex-wrap gap-2 items-center mb-3">
+            <input type="text" name="q" value="{{ search_query }}" placeholder="Название команды или external_id" class="input input-sm input-bordered w-72 max-w-full" autofocus>
+            <button type="submit" class="btn btn-sm btn-primary">Найти</button>
+        </form>
+        {% if search_query %}
+        <div class="overflow-x-auto">
+            <table class="table table-sm">
+                <thead>
+                    <tr><th>Матч</th><th>Дата</th><th>Статус</th><th>external_id</th><th>UUID</th><th></th></tr>
+                </thead>
+                <tbody>
+                    {% for match in search_results %}
+                    <tr>
+                        <td class="whitespace-nowrap">
+                            <a href="{% url 'admin:matches_match_change' match.id %}" class="link link-hover" target="_blank">{{ match.home_team }} — {{ match.away_team }}</a>
+                        </td>
+                        <td class="text-xs opacity-70 whitespace-nowrap">{{ match.start_time|date:"d.m.Y H:i" }}</td>
+                        <td><span class="badge badge-sm {% if match.status == 'live' %}badge-error{% else %}badge-ghost{% endif %}">{{ match.get_status_display }}</span></td>
+                        <td class="font-mono text-xs">{{ match.external_id }}</td>
+                        <td class="font-mono text-xs opacity-60">{{ match.id }}</td>
+                        <td class="whitespace-nowrap">
+                            <a href="{% url 'dashboard:parser_tools' %}?external_id={{ match.external_id }}&endpoint=events" class="btn btn-xs btn-outline">Сырой JSON</a>
+                            <form method="post" action="{% url 'dashboard:data_health_resync_match' match.id %}" class="inline">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-xs btn-outline"><i class="ti ti-refresh"></i> Ресинк</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="6" class="text-center opacity-50 py-4">Ничего не найдено</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
     <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4">
             <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
@@ -30,7 +74,7 @@
                 <i class="ti ti-api text-primary"></i> Сырой ответ KFF API
             </h3>
             <p class="text-xs opacity-60 mb-3">Синхронный запрос напрямую к kffleague.kz — полезно свериться с оригиналом, когда данные в нашей БД выглядят подозрительно.</p>
-            <form method="get" action="{% url 'dashboard:parser_tools' %}" class="flex flex-wrap gap-2 items-center">
+            <form method="get" action="{% url 'dashboard:parser_tools' %}" class="flex flex-wrap gap-2 items-center mb-4">
                 <input type="number" name="external_id" value="{{ raw_form.external_id }}" placeholder="external_id (KFF game id)" class="input input-sm input-bordered w-56 max-w-full" required>
                 <select name="endpoint" class="select select-sm select-bordered">
                     {% for key, meta in raw_endpoints.items %}
@@ -39,12 +83,21 @@
                 </select>
                 <button type="submit" class="btn btn-sm btn-primary">Запросить</button>
             </form>
+
+            <div class="border-t border-base-300 pt-3">
+                <h4 class="font-semibold text-xs uppercase opacity-60 mb-2">Доступность KFF API</h4>
+                <p class="text-xs opacity-60 mb-2">Живой пинг эндпоинта /seasons с замером времени ответа — быстрый ответ на "это мы или у них сломалось".</p>
+                <form method="post" action="{% url 'dashboard:parser_kff_health_check' %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-outline"><i class="ti ti-heartbeat"></i> Проверить доступность</button>
+                </form>
+            </div>
         </div>
     </div>
 </div>
 
 {% if raw_result %}
-<div class="card bg-base-100 border border-base-300">
+<div class="card bg-base-100 border border-base-300 mb-4">
     <div class="card-body p-4">
         {% if raw_result.error %}
         <div class="alert alert-error text-sm">
@@ -57,4 +110,59 @@
     </div>
 </div>
 {% endif %}
+
+<div class="card bg-base-100 border border-base-300">
+    <div class="card-body p-4">
+        <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
+            <i class="ti ti-list-check text-primary"></i> Очередь celery — что выполняется сейчас
+        </h3>
+        {% if not celery_tasks.ok %}
+        <div class="alert alert-warning text-sm">
+            <i class="ti ti-alert-triangle"></i> Не удалось опросить воркеров: {{ celery_tasks.error }}
+        </div>
+        {% elif not celery_tasks.active and not celery_tasks.reserved %}
+        <p class="text-sm opacity-50 py-2">Очередь пуста — ни активных, ни зарезервированных задач.</p>
+        {% else %}
+        <div class="overflow-x-auto">
+            <table class="table table-sm">
+                <thead>
+                    <tr><th>Статус</th><th>Задача</th><th>Аргументы</th><th>Воркер</th><th>ID</th><th></th></tr>
+                </thead>
+                <tbody>
+                    {% for t in celery_tasks.active %}
+                    <tr>
+                        <td><span class="badge badge-error badge-sm">выполняется</span></td>
+                        <td class="font-mono text-xs">{{ t.name }}</td>
+                        <td class="font-mono text-xs opacity-70 max-w-xs truncate">{{ t.args }}</td>
+                        <td class="text-xs opacity-70">{{ t.worker }}</td>
+                        <td class="font-mono text-xs opacity-60">{{ t.task_id }}</td>
+                        <td>
+                            <form method="post" action="{% url 'dashboard:parser_revoke_task' t.task_id %}" class="inline" onsubmit="return confirm('Остановить задачу {{ t.name }}?');">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-xs btn-outline btn-error">Отозвать</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% for t in celery_tasks.reserved %}
+                    <tr>
+                        <td><span class="badge badge-ghost badge-sm">в очереди</span></td>
+                        <td class="font-mono text-xs">{{ t.name }}</td>
+                        <td class="font-mono text-xs opacity-70 max-w-xs truncate">{{ t.args }}</td>
+                        <td class="text-xs opacity-70">{{ t.worker }}</td>
+                        <td class="font-mono text-xs opacity-60">{{ t.task_id }}</td>
+                        <td>
+                            <form method="post" action="{% url 'dashboard:parser_revoke_task' t.task_id %}" class="inline" onsubmit="return confirm('Отозвать задачу {{ t.name }}?');">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-xs btn-outline btn-error">Отозвать</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+</div>
 {% endblock %}

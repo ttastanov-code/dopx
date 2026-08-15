@@ -28,6 +28,8 @@ class AuditAction(models.TextChoices):
     MATCH_RESYNC = "match_resync", _("Ручной ресинк матча")
     CELERY_TASK_TRIGGERED = "celery_task_triggered", _("Запуск celery-задачи вручную")
     RAW_KFF_LOOKUP = "raw_kff_lookup", _("Просмотр сырого ответа KFF API")
+    CELERY_TASK_REVOKED = "celery_task_revoked", _("Отзыв/остановка celery-задачи")
+    KFF_HEALTH_CHECK = "kff_health_check", _("Проверка доступности KFF API")
 
 
 class StaffActionLog(models.Model):

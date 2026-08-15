@@ -151,20 +151,38 @@ def data_health_summary(recent_runs: int = 20) -> dict:
     # started_at здесь не проверяем отдельно, has_lineup — это ФЛАГ ОТ KFF
     # "состав опубликован", он появляется только когда реально есть что
     # тянуть, так что пересечение с отсутствием locale-записи уже точное.
-    matches_missing_lineups = (
-        Match.objects.filter(status__in=["live", "finished"], has_lineup=True, lineups__isnull=True)
-        .count()
+    #
+    # ИСПРАВЛЕНО: раньше отдавали только .count() — цифра на дашборде без
+    # возможности узнать, КАКОЙ именно это матч, вынуждала руками перебирать
+    # список из сотен матчей в Django admin. Теперь отдаём ещё и сам
+    # queryset (обрезанный до разумного топ-N — этих матчей штучно, но на
+    # всякий случай не грузим весь список без лимита), чтобы в шаблоне
+    # сразу дать ссылку на матч + кнопку ресинка одним кликом.
+    matches_missing_lineups_base = Match.objects.filter(
+        status__in=["live", "finished"], has_lineup=True, lineups__isnull=True
     )
-    matches_missing_events = (
-        Match.objects.filter(status__in=["live", "finished"], events__isnull=True)
-        .count()
+    matches_missing_events_base = Match.objects.filter(
+        status__in=["live", "finished"], events__isnull=True
+    )
+    # Точный счётчик — отдельный .count() (индексированный запрос, дешёвый),
+    # НЕ len() от обрезанного [:20]-списка ниже — иначе цифра на карточке
+    # молча занижалась бы, если проблемных матчей вдруг окажется больше 20.
+    matches_missing_lineups_count = matches_missing_lineups_base.count()
+    matches_missing_events_count = matches_missing_events_base.count()
+    matches_missing_lineups_list = list(
+        matches_missing_lineups_base.select_related("home_team", "away_team").order_by("-start_time")[:20]
+    )
+    matches_missing_events_list = list(
+        matches_missing_events_base.select_related("home_team", "away_team").order_by("-start_time")[:20]
     )
 
     return {
         "last_run": last_run,
         "recent_runs": runs,
-        "matches_missing_lineups": matches_missing_lineups,
-        "matches_missing_events": matches_missing_events,
+        "matches_missing_lineups": matches_missing_lineups_count,
+        "matches_missing_lineups_list": matches_missing_lineups_list,
+        "matches_missing_events": matches_missing_events_count,
+        "matches_missing_events_list": matches_missing_events_list,
         "recent_error_samples": (last_run.error_samples if last_run else [])[:10],
     }
 

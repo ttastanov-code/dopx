@@ -37,6 +37,62 @@
     </div>
 </div>
 
+{% if health.matches_missing_lineups_list or health.matches_missing_events_list %}
+<div class="card bg-base-100 border border-warning/30 mb-6">
+    <div class="card-body p-4">
+        <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
+            <i class="ti ti-alert-triangle text-warning"></i> Матчи с пропущенными данными
+        </h3>
+        <p class="text-xs opacity-60 mb-3">Список тех самых матчей из карточек выше — по клику «Ресинк» полная пересинхронизация с KFF прямо отсюда, без ручного поиска UUID в Django admin.</p>
+        <div class="overflow-x-auto">
+            <table class="table table-sm">
+                <thead>
+                    <tr><th>Матч</th><th>Дата</th><th>Статус</th><th>Проблема</th><th></th></tr>
+                </thead>
+                <tbody>
+                    {% for match in health.matches_missing_lineups_list %}
+                    <tr>
+                        <td class="whitespace-nowrap">
+                            <a href="{% url 'admin:matches_match_change' match.id %}" class="link link-hover" target="_blank">{{ match.home_team }} — {{ match.away_team }}</a>
+                        </td>
+                        <td class="text-xs opacity-70 whitespace-nowrap">{{ match.start_time|date:"d.m H:i" }}</td>
+                        <td><span class="badge badge-sm {% if match.status == 'live' %}badge-error{% else %}badge-ghost{% endif %}">{{ match.get_status_display }}</span></td>
+                        <td><span class="badge badge-warning badge-sm badge-outline">нет составов</span></td>
+                        <td>
+                            <form method="post" action="{% url 'dashboard:data_health_resync_match' match.id %}" class="inline">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-xs btn-outline">
+                                    <i class="ti ti-refresh"></i> Ресинк
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% for match in health.matches_missing_events_list %}
+                    <tr>
+                        <td class="whitespace-nowrap">
+                            <a href="{% url 'admin:matches_match_change' match.id %}" class="link link-hover" target="_blank">{{ match.home_team }} — {{ match.away_team }}</a>
+                        </td>
+                        <td class="text-xs opacity-70 whitespace-nowrap">{{ match.start_time|date:"d.m H:i" }}</td>
+                        <td><span class="badge badge-sm {% if match.status == 'live' %}badge-error{% else %}badge-ghost{% endif %}">{{ match.get_status_display }}</span></td>
+                        <td><span class="badge badge-warning badge-sm badge-outline">нет событий</span></td>
+                        <td>
+                            <form method="post" action="{% url 'dashboard:data_health_resync_match' match.id %}" class="inline">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-xs btn-outline">
+                                    <i class="ti ti-refresh"></i> Ресинк
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <div class="card bg-base-100 border border-base-300 mb-6">
     <div class="card-body p-4">
         <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
