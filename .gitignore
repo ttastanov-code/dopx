@@ -8,8 +8,17 @@ __pycache__/
 db.sqlite3
 *.sqlite3
 media/
+# staticfiles/ — это STATIC_ROOT (см. dopx/settings.py): выход
+# `collectstatic`, генерируется на сервере, в git не нужен.
 staticfiles/
-static/
+# ИСПРАВЛЕНО: строка `static/` здесь игнорировала ИСХОДНУЮ директорию
+# STATICFILES_DIRS (логотип, favicon, шрифты, JS, теперь ещё manifest.json/
+# sw.js/push.js/PWA-иконки) — не выход сборки, а РУЧНЫЕ файлы репозитория.
+# `git ls-files static/` до этой правки возвращал 0 файлов: весь каталог
+# никогда не попадал в git. При клонировании на отдельный сервер сайт
+# развернулся бы БЕЗ статики вообще (ни логотипа, ни JS, ни PWA-манифеста) —
+# именно тот класс проблем "на деплое", которого стоит избегать сейчас,
+# пока каталог static/ не разросся ещё больше.
 
 # Environment
 .env
@@ -17,6 +26,9 @@ static/
 .envrc
 .env.local
 .env.production
+# VAPID приватный ключ (core/management/commands/setup_push_keys.py) —
+# секрет уровня .env, но живёт отдельным .pem-файлом, а не переменной.
+.vapid/
 venv/
 app_venv/
 

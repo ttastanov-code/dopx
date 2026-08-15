@@ -1,0 +1,18 @@
+{
+  "name": "DOPX — Голос трибун измеряем",
+  "short_name": "DOPX",
+  "description": "Крауд-рейтинг матчей КПЛ: оценивайте игроков, команды и судейство.",
+  "start_url": "/?utm_source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#000000",
+  "orientation": "portrait-primary",
+  "lang": "ru",
+  "icons": [
+    { "src": "/static/pwa/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/static/pwa/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/static/pwa/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/static/pwa/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
