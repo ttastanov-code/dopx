@@ -36,11 +36,11 @@ from django.core.files.storage import default_storage
 from aggregates.models import MatchAggregate, PlayerMatchAggregate
 from core.nominations import MIN_VOTES as NOMINATION_MIN_VOTES, get_nominations
 from core.utils import get_client_ip
-from evaluations.models import EvaluationSession, MatchEvaluation, PlayerEvaluation, TeamEvaluation
+from evaluations.models import ContextEvaluation, EvaluationSession, MatchEvaluation, PlayerEvaluation, TeamEvaluation
 from matches.models import Match
 from seasons.models import Season
 from teams.models import Team, TeamSeasonStats
-from users.models import User
+from users.models import SuspiciousActivityFlag, User
 
 from notifications.models import ContactSubmission
 
@@ -226,12 +226,77 @@ def standings_preview(request):
 
 
 class RulesView(TemplateView):
-    """Страница с правилами платформы"""
+    """
+    Страница с правилами платформы.
+
+    ОБНОВЛЕНО (редизайн страницы правил): раньше XP-таблица и список
+    достижений были захардкожены в шаблоне и разъехались с реальной
+    механикой — плоские "+10/+2/+5 XP" и 6 примеров ачивок вместо
+    настоящих компонентных начислений (`evaluations/views.py`) и полного
+    каталога из 16 бейджей (`users/badges.py::BADGE_CATALOG`). Теперь
+    шаблон получает эти данные из кода — единственный источник истины,
+    страница больше не может "соврать" про механику при следующем
+    рефакторинге XP/бейджей.
+    """
     template_name = 'core/rules.html'
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Правила платформы — DOPX'
+
+        from evaluations.views import (
+            XP_CONTEXT_STEP, XP_TEAMS_STEP, XP_PLAYERS_STEP_MAX,
+            XP_COACHES_STEP, XP_REFEREE_STEP, XP_FINAL_STEP,
+        )
+        from users.badges import BADGE_CATALOG
+        from users.models import LEVEL_XP_BASE, cumulative_xp_for_level
+
+        context['xp_steps'] = {
+            'context': XP_CONTEXT_STEP,
+            'teams': XP_TEAMS_STEP,
+            'players': XP_PLAYERS_STEP_MAX,
+            'coaches': XP_COACHES_STEP,
+            'referee': XP_REFEREE_STEP,
+            'final': XP_FINAL_STEP,
+        }
+        context['xp_full_match_total'] = (
+            XP_CONTEXT_STEP + XP_TEAMS_STEP + XP_PLAYERS_STEP_MAX
+            + XP_COACHES_STEP + XP_REFEREE_STEP + XP_FINAL_STEP
+        )
+        # Пара примеров кумулятивного порога уровня — для наглядной иллюстрации
+        # растущего шага кривой `LEVEL_XP_BASE * N * (N-1)`, вместо словесного
+        # описания формулы.
+        context['level_examples'] = [
+            {'level': n, 'xp': cumulative_xp_for_level(n)} for n in (2, 3, 4, 5, 10)
+        ]
+
+        badge_categories = [
+            ('engagement', 'Вовлечённость', 'ti-flame', [
+                'first_evaluation', 'active_fan_10', 'active_fan_50', 'active_fan_150',
+                'streak_7', 'streak_30', 'streak_100',
+            ]),
+            ('quality', 'Качество и точность', 'ti-target-arrow', [
+                'accurate_analyst', 'foresight', 'bias_free', 'early_bird',
+                'judge_of_judges', 'polyglot',
+            ]),
+            ('status', 'Дерби и статусные', 'ti-crown', [
+                'derby_hunter', 'monthly_champion',
+            ]),
+            ('secret', 'Секретные', 'ti-lock-question', [
+                'founder',
+            ]),
+        ]
+        context['badge_categories'] = [
+            {
+                'key': key,
+                'title': title,
+                'icon': icon,
+                'badges': [BADGE_CATALOG[code] for code in codes if code in BADGE_CATALOG],
+            }
+            for key, title, icon, codes in badge_categories
+        ]
+        context['badge_total_count'] = len(BADGE_CATALOG)
+        context['nomination_min_votes'] = NOMINATION_MIN_VOTES
         return context
 
 
@@ -333,7 +398,11 @@ class ContactsView(TemplateView):
         from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@dopx.kz')
         site_url = getattr(settings, 'SITE_URL', 'https://dopx.kz')
 
-        subject = f"📬 Новое обращение #{str(submission.id)[:8]} ({submission.get_category_display()})"
+        # Право на ответ (продуктовый аудит, раздел 4) — юридически значимая
+        # категория, письмо должно выделяться в почте founder'а среди
+        # обычных багрепортов/фичереквестов, а не потеряться в общем потоке.
+        urgency_prefix = "🚨 ПРАВО НА ОТВЕТ" if submission.category == 'dispute' else "📬 Новое обращение"
+        subject = f"{urgency_prefix} #{str(submission.id)[:8]} ({submission.get_category_display()})"
 
         html_message = render_to_string('emails/contact_form.html', {
             'submission': submission,
@@ -420,6 +489,107 @@ class PrivacyPolicyView(TemplateView):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Политика конфиденциальности — DOPX'
         return context
+
+
+def robots_txt(request):
+    """
+    Отдельная FBV, без лишнего TemplateView ради 8 строк текста.
+    Явно закрываем то же самое, что уже не публично в UI (admin/api/
+    личный кабинет/DjDT) — от индексации это тоже должно быть спрятано,
+    иначе Google с радостью проиндексирует страницу входа в чужой профиль.
+    """
+    lines = [
+        "User-agent: *", "Allow: /",
+        "Disallow: /admin/", "Disallow: /api/", "Disallow: /users/profile/", "Disallow: /__debug__/",
+        "", f"Sitemap: {settings.SITE_URL}/sitemap.xml",
+    ]
+    return HttpResponse("\n".join(lines), content_type="text/plain")
+
+
+def service_worker(request):
+    """
+    Продуктовый аудит, раздел 5c ("PWA + Web Push"): отдаёт `static/sw.js`
+    с URL `/sw.js` (КОРЕНЬ сайта), а не `/static/sw.js`. Это НЕ косметика —
+    scope service worker'а по умолчанию равен директории, из которой он
+    был запрошен браузером: зарегистрированный с `/static/sw.js` контролировал
+    бы только `/static/*` и никогда не увидел бы навигацию по обычным
+    страницам сайта, а `manifest.json.start_url: "/"` требует, чтобы
+    именно `/` попадал под scope зарегистрированного воркера — иначе
+    браузер не посчитает сайт "installable" (условие PWA-манифеста).
+    Заголовок `Service-Worker-Allowed: /` — явное подтверждение того же
+    для браузеров, которые проверяют его строже, чем просто путь запроса.
+    """
+    sw_path = settings.BASE_DIR / 'static' / 'sw.js'
+    try:
+        with open(sw_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+    except FileNotFoundError:
+        return HttpResponse('', content_type='application/javascript', status=404)
+
+    response = HttpResponse(content, content_type='application/javascript')
+    response['Service-Worker-Allowed'] = '/'
+    response['Cache-Control'] = 'no-cache'
+    return response
+
+
+class AntiFraudView(TemplateView):
+    """
+    Публичная страница "Как мы боремся с накруткой" — продаёт trust_score/
+    SuspiciousActivityFlag как реальное отличие от "ещё одного форума
+    фанатов", а не маркетинговую фразу без данных. Живые цифры конвертят
+    скептиков лучше общих слов о честности.
+    """
+    template_name = "core/anti_fraud.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["page_title"] = "Как мы боремся с накруткой — DOPX"
+        context["meta_description"] = (
+            "Методология DOPX: взвешенное голосование по Trust Score, "
+            "анти-фрод очередь модерации, защита от накрутки оценок."
+        )
+        # Кэш 1ч: публичная страница, свежесть до часа более чем достаточна,
+        # не считаем агрегаты при каждом заходе бота/пользователя.
+        context["stats"] = cache.get_or_set("anti_fraud_public_stats", self._compute_stats, timeout=3600)
+        return context
+
+    @staticmethod
+    def _compute_stats() -> dict:
+        total_flags = SuspiciousActivityFlag.objects.count()
+        total_evaluations = ContextEvaluation.objects.count()
+        by_status = dict(
+            SuspiciousActivityFlag.objects.values_list("status").annotate(count=Count("id")).order_by()
+        )
+        return {
+            "total_flags": total_flags,
+            "total_evaluations": total_evaluations,
+            "flag_rate_percent": round(total_flags / total_evaluations * 100, 2) if total_evaluations else 0.0,
+            "pending_count": by_status.get("pending", 0),
+            "confirmed_count": by_status.get("confirmed", 0),
+            "dismissed_count": by_status.get("dismissed", 0),
+        }
+
+
+class MatchShareCardView(View):
+    """/share/match/<uuid:match_id>/card.png — редирект на закэшированную
+    карточку. Используется и как og:image страницы матча, и как прямая
+    ссылка при шеринге в Telegram/WhatsApp."""
+
+    def get(self, request, match_id):
+        from core.services.share_cards import build_match_share_card
+
+        match = get_object_or_404(Match.objects.select_related("home_team", "away_team"), pk=match_id)
+        top = (
+            PlayerMatchAggregate.objects.filter(match=match)
+            .select_related("player").order_by("-performance_score").first()
+        )
+        path = build_match_share_card(
+            home_team=match.home_team.name, away_team=match.away_team.name,
+            home_score=match.home_score or 0, away_score=match.away_score or 0,
+            top_player_name=f"{top.player.first_name} {top.player.last_name}" if top else "—",
+            top_player_score=top.performance_score if top else 0.0,
+        )
+        return redirect(default_storage.url(path))
 
 
 def handler_404(request, exception):

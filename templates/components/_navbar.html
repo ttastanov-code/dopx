@@ -8,9 +8,8 @@
             <i class="ti ti-menu-2 text-xl"></i>
         </button>
         <!-- Логотип -->
-        <a href="{% url 'core:home' %}" class="btn btn-ghost normal-case text-lg sm:text-xl flex items-center gap-1 sm:gap-2 p-1 sm:p-2">
-            <img src="{% static 'img/DOPX_logo.png' %}" alt="DOPX" class="h-7 sm:h-8 w-auto shrink-0">
-            <span class="hidden sm:inline-block font-bold tracking-tight">DOPX</span>
+        <a href="{% url 'core:home' %}" class="btn btn-ghost normal-case flex items-center p-1 sm:p-2 min-w-0" aria-label="DOPX — на главную">
+            {% include 'components/_brand.html' with variant='nav' %}
         </a>
     </div>
 
@@ -79,6 +78,9 @@
                 <li><a href="{% url 'users:profile' %}"><i class="ti ti-user"></i> Профиль</a></li>
                 <li><a href="{% url 'users:leaderboard' %}"><i class="ti ti-trophy"></i> Рейтинг</a></li>
                 <li><a href="{% url 'notifications:list' %}"><i class="ti ti-bell"></i> Уведомления {% with unread=user.notifications|unread_count %}{% if unread %}<span class="badge badge-sm badge-error ml-auto">{{ unread }}</span>{% endif %}{% endwith %}</a></li>
+                {% if user.is_staff %}
+                <li class="border-t border-base-300"><a href="{% url 'dashboard:overview' %}"><i class="ti ti-layout-dashboard"></i> Staff-дашборд</a></li>
+                {% endif %}
                 <li class="border-t border-base-300"><a href="{% url 'users:logout' %}" class="text-error"><i class="ti ti-logout"></i> Выйти</a></li>
             </ul>
         </div>

@@ -1,0 +1,98 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+<div class="flex justify-end mb-3">
+    <a href="{% url 'dashboard:antifraud_export_csv' %}" class="btn btn-outline btn-xs sm:btn-sm">
+        <i class="ti ti-file-spreadsheet"></i> Экспорт CSV
+    </a>
+</div>
+
+<div class="grid grid-cols-2 gap-3 md:gap-4 mb-6">
+    <div class="stat bg-base-100 border border-warning/30 rounded-lg p-3 md:p-4">
+        <div class="stat-title text-[10px] md:text-xs">Флагов в очереди (pending)</div>
+        <div class="stat-value text-lg md:text-2xl text-warning">{{ queue.pending_flags_count }}</div>
+    </div>
+    <div class="stat bg-base-100 border border-info/30 rounded-lg p-3 md:p-4">
+        <div class="stat-title text-[10px] md:text-xs">Диспутов по рейтингу (открытых)</div>
+        <div class="stat-value text-lg md:text-2xl text-info">{{ queue.pending_disputes_count }}</div>
+    </div>
+</div>
+
+<div class="card bg-base-100 border border-base-300 mb-6">
+    <div class="card-body p-4">
+        <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
+            <i class="ti ti-shield-exclamation text-warning"></i> Подозрительная активность — на рассмотрении
+        </h3>
+        {% if not queue.pending_flags %}
+        <p class="text-sm opacity-50 py-6 text-center">Очередь пуста — новых флагов нет.</p>
+        {% else %}
+        <div class="space-y-2">
+            {% for flag in queue.pending_flags %}
+            <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 p-3 rounded-lg bg-base-200/60">
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <span class="font-semibold">{{ flag.user.username }}</span>
+                        <span class="badge badge-sm badge-ghost">{{ flag.get_source_display }}</span>
+                        <span class="badge badge-sm {% if flag.score >= 0.7 %}badge-error{% elif flag.score >= 0.4 %}badge-warning{% else %}badge-ghost{% endif %}">
+                            score {{ flag.score|floatformat:2 }}
+                        </span>
+                        {% if flag.match %}<span class="text-xs opacity-50">· {{ flag.match }}</span>{% endif %}
+                    </div>
+                    {% if flag.details %}
+                    <div class="text-xs opacity-60 mt-1 flex flex-wrap gap-x-3">
+                        {% for key, value in flag.details.items %}
+                        <span>{{ key }}: {{ value }}</span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                    <div class="text-xs opacity-40 mt-1">{{ flag.created_at|timesince }} назад</div>
+                </div>
+                <div class="flex gap-2 shrink-0">
+                    <form method="post" action="{% url 'dashboard:antifraud_flag_action' flag.id %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="dismiss">
+                        <button type="submit" class="btn btn-ghost btn-sm">Отклонить</button>
+                    </form>
+                    <form method="post" action="{% url 'dashboard:antifraud_flag_action' flag.id %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="confirm">
+                        <button type="submit" class="btn btn-error btn-sm">Подтвердить</button>
+                    </form>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card bg-base-100 border border-base-300">
+    <div class="card-body p-4">
+        <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
+            <i class="ti ti-gavel text-info"></i> Диспуты по рейтингу («право на ответ»)
+        </h3>
+        <p class="text-xs opacity-50 mb-3">Обработка статуса и email-уведомление пользователю — в Django admin (там уже есть шаблон письма), здесь только очередь для контроля.</p>
+        {% if not queue.pending_disputes %}
+        <p class="text-sm opacity-50 py-6 text-center">Открытых диспутов нет.</p>
+        {% else %}
+        <div class="space-y-2">
+            {% for ticket in queue.pending_disputes %}
+            <a href="{% url 'admin:notifications_contactsubmission_change' ticket.id %}"
+               class="flex items-center gap-3 p-3 rounded-lg bg-base-200/60 hover:bg-base-200 transition-colors">
+                <div class="flex-1 min-w-0">
+                    <div class="font-medium truncate">{{ ticket.subject }}</div>
+                    <div class="text-xs opacity-60">{{ ticket.contact_email }} · {{ ticket.created_at|timesince }} назад</div>
+                </div>
+                <span class="badge badge-sm {% if ticket.status == 'new' %}badge-info{% else %}badge-warning{% endif %}">
+                    {{ ticket.get_status_display }}
+                </span>
+                <i class="ti ti-chevron-right opacity-40"></i>
+            </a>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

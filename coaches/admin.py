@@ -1,9 +1,13 @@
 from django.contrib import admin
+from unfold.admin import ModelAdmin
+
+from core.admin_actions import export_as_csv
+
 from .models import Coach
 
 
 @admin.register(Coach)
-class CoachAdmin(admin.ModelAdmin):
+class CoachAdmin(ModelAdmin):
 
     list_display = (
         "first_name",
@@ -20,3 +24,7 @@ class CoachAdmin(admin.ModelAdmin):
     list_filter = (
         "team",
     )
+
+    autocomplete_fields = ("team",)
+
+    actions = [export_as_csv]

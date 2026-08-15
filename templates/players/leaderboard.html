@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% load static %}
+{% load static rating_extras %}
 {% block content %}
     <!-- === HEADER === -->
     <div class="mb-8">
@@ -11,15 +11,35 @@
     </div>
 
     <!-- === TABS === -->
-    <div class="tabs tabs-boxed mb-6">
-        <a href="{% url 'users:leaderboard' %}" class="tab">
-            <i class="ti ti-users"></i>
-            Пользователи
-        </a>
-        <a href="{% url 'users:player_leaderboard' %}" class="tab tab-active">
-            <i class="ti ti ti-play-football"></i>
-            Игроки
-        </a>
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <div class="tabs tabs-boxed">
+            <a href="{% url 'users:leaderboard' %}" class="tab">
+                <i class="ti ti-users"></i>
+                Пользователи
+            </a>
+            <a href="{% url 'users:player_leaderboard' %}" class="tab tab-active">
+                <i class="ti ti ti-play-football"></i>
+                Игроки
+            </a>
+        </div>
+
+        <!-- НОВОЕ: рейтинг игроков в разрезе лиги — ?league= читается в
+             PlayerLeaderboardView.get_queryset() (фильтрует и агрегаты
+             performance_score именно по матчам этой лиги). -->
+        {% if available_leagues %}
+        <form method="get" class="flex items-center gap-2">
+            <label class="text-sm opacity-60 hidden sm:inline" for="league-filter"><i class="ti ti-trophy"></i></label>
+            <select id="league-filter" name="league" class="select select-bordered select-sm" onchange="this.form.submit()">
+                <option value="">Все лиги</option>
+                {% for league in available_leagues %}
+                <option value="{{ league.id }}" {% if league.id|stringformat:"s" == selected_league %}selected{% endif %}>{{ league.name }}</option>
+                {% endfor %}
+            </select>
+            {% if selected_league %}
+            <a href="{% url 'users:player_leaderboard' %}" class="btn btn-ghost btn-sm btn-circle" title="Сбросить фильтр"><i class="ti ti-x"></i></a>
+            {% endif %}
+        </form>
+        {% endif %}
     </div>
 
     <!-- === ТАБЛИЦА === -->
@@ -74,9 +94,15 @@
                                 {% endif %}
                             </td>
                             <td class="text-center">
-                                <span class="font-bold text-lg text-success">
-                                    {{ player.avg_performance|floatformat:2 }}
-                                </span>
+                                {% if player.total_votes|has_enough_votes %}
+                                    <span class="font-bold text-lg text-success">
+                                        {{ player.avg_performance|floatformat:2 }}
+                                    </span>
+                                {% else %}
+                                    <span class="badge badge-ghost badge-sm whitespace-nowrap" title="Меньше 5 голосов — рейтинг ещё не показателен">
+                                        Недостаточно данных
+                                    </span>
+                                {% endif %}
                             </td>
                             <td class="text-center">
                                 <span class="font-mono">{{ player.total_matches }}</span>

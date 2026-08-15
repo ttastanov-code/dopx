@@ -1,0 +1,72 @@
+{% comment %}
+Плашка о cookie — переиспользуемый компонент, подключается в base.html
+после футера.
+
+ЧТО РЕАЛЬНО СОБИРАЕМ: только `sessionid` (сессия Django — вход, мастер
+оценки матча, флеш-сообщения) и `csrftoken` (защита от CSRF). Оба —
+технически необходимые ("strictly necessary") cookie: без них сайт
+физически не может работать (нельзя ни войти, ни отправить форму).
+Никаких рекламных/трекинговых/аналитических cookie на платформе нет —
+поэтому это не classic GDPR opt-in баннер с переключателями категорий
+(его тут просто нечему включать/выключать), а компактное уведомление
+"мы честно предупреждаем" с кнопкой подтверждения + ссылкой на полный
+список в political конфиденциальности.
+
+ПОЧЕМУ ВЕРСИОНИРОВАННЫЙ КЛЮЧ (`dopx_cookie_notice_ack_v1`): если в
+будущем на платформе появятся НЕ строго необходимые cookie (аналитика,
+реклама) — баннер нужно будет показать заново всем, кто уже принял
+старую версию. Для этого достаточно поднять версию в ключе
+(`..._v2`) в этом файле и в скрипте ниже — старое согласие в
+localStorage перестанет совпадать с новым ключом, и баннер всплывёт
+снова автоматически, без миграций и без серверного состояния.
+
+Хранится в localStorage, а не в cookie — сознательный выбор: cookie для
+хранения "я согласен с cookie" была бы немного абсурдной (и увеличивала
+бы вес каждого запроса к серверу), а localStorage для этого назначения
+достаточно и проще.
+{% endcomment %}
+<div
+    x-data="{
+        show: false,
+        ackKey: 'dopx_cookie_notice_ack_v1',
+        init() {
+            this.show = !localStorage.getItem(this.ackKey);
+        },
+        accept() {
+            localStorage.setItem(this.ackKey, '1');
+            this.show = false;
+        }
+    }"
+    x-show="show"
+    x-cloak
+    x-transition:enter="transition ease-out duration-300"
+    x-transition:enter-start="opacity-0 translate-y-4"
+    x-transition:enter-end="opacity-100 translate-y-0"
+    x-transition:leave="transition ease-in duration-200"
+    x-transition:leave-start="opacity-100 translate-y-0"
+    x-transition:leave-end="opacity-0 translate-y-4"
+    class="fixed bottom-0 inset-x-0 z-50 p-3 sm:p-4"
+    role="region"
+    aria-label="Уведомление о cookie"
+>
+    <div class="max-w-3xl mx-auto bg-base-100 border border-base-300 rounded-2xl shadow-2xl p-4 sm:p-5">
+        <div class="flex items-start gap-3 sm:gap-4">
+            {% comment %}bg-gradient-to-br/from-primary — не работает в Tailwind v4 для daisyUI-цветов, см. комментарий в evaluations/complete.html{% endcomment %}
+            <div class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-primary-content" style="background-image: linear-gradient(to bottom right, var(--color-primary), var(--color-secondary));">
+                <i class="ti ti-whistle text-lg"></i>
+            </div>
+            <div class="flex-1 min-w-0">
+                <p class="text-sm sm:text-base font-semibold mb-1">Технический тайм-аут: немного о cookie</p>
+                <p class="text-xs sm:text-sm opacity-70 leading-relaxed">
+                    Используем только необходимые cookie — чтобы вы оставались в системе и чтобы формы (например, вайзард оценки матча) работали безопасно. Никакой рекламной слежки и аналитических трекеров.
+                </p>
+            </div>
+        </div>
+        <div class="flex flex-wrap items-center justify-end gap-2 mt-3 sm:mt-4">
+            <a href="{% url 'core:privacy' %}#cookies" class="btn btn-ghost btn-xs sm:btn-sm">Какие именно?</a>
+            <button type="button" @click="accept()" class="btn btn-primary btn-xs sm:btn-sm">
+                <i class="ti ti-check"></i> Понятно, играем дальше
+            </button>
+        </div>
+    </div>
+</div>

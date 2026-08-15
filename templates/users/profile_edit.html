@@ -35,12 +35,12 @@
                 
                 {% for field in form %}
                 <div class="form-control">
-                    {% if field.name != 'delete_avatar' %}
+                    {% if field.name != 'delete_avatar' and field.name != 'is_profile_public' %}
                     <label class="label">
                         <span class="label-text font-medium">{{ field.label }}</span>
                     </label>
                     {% endif %}
-                    
+
                     {% if field.name == 'delete_avatar' and user.avatar %}
                     <label class="label cursor-pointer gap-4 p-4 rounded-lg border border-base-300 hover:bg-base-200 transition-all">
                         <div class="flex-1">
@@ -51,16 +51,26 @@
                         </div>
                         {{ field }}
                     </label>
+                    {% elif field.name == 'is_profile_public' %}
+                    <label class="label cursor-pointer gap-4 p-4 rounded-lg border border-base-300 hover:bg-base-200 transition-all">
+                        <div class="flex-1">
+                            <span class="label-text font-medium flex items-center gap-1.5"><i class="ti ti-eye"></i> {{ field.label }}</span>
+                            {% if field.help_text %}
+                            <p class="text-xs opacity-60 mt-1">{{ field.help_text }}</p>
+                            {% endif %}
+                        </div>
+                        {{ field }}
+                    </label>
                     {% elif field.name != 'delete_avatar' %}
                     {{ field }}
                     {% endif %}
-                    
+
                     {% if field.errors %}
                     <label class="label">
                         <span class="label-text-alt text-error">{{ field.errors.0 }}</span>
                     </label>
                     {% endif %}
-                    {% if field.help_text and field.name != 'delete_avatar' %}
+                    {% if field.help_text and field.name != 'delete_avatar' and field.name != 'is_profile_public' %}
                     <label class="label">
                         <span class="label-text-alt opacity-60">{{ field.help_text }}</span>
                     </label>

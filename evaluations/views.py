@@ -52,6 +52,8 @@ from django.views.generic import FormView, TemplateView
 
 from aggregates.services import calculate_user_trust_adjustment
 from aggregates.tasks import recalculate_all_aggregates_for_match
+from analytics.models import EventName
+from analytics.services import track_event
 from core.utils import get_client_ip
 from evaluations.forms import (
     ContextEvaluationForm,
@@ -532,6 +534,19 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
         #    рассылаются внутри самой задачи (users/tasks.py), а не здесь.
         transaction.on_commit(
             partial(check_and_award_badges_task.delay, user_id=str(user.id), match_id=str(self.match.id))
+        )
+
+        # 7.1. Продуктовая аналитика — событие "оценка матча завершена".
+        #    on_commit: если транзакция откатится (редкий случай гонки с
+        #    IntegrityError и т.п.), событие не должно быть записано —
+        #    иначе воронка регистрирует оценки, которых на самом деле нет
+        #    в базе.
+        transaction.on_commit(
+            partial(
+                track_event, EventName.EVALUATION_COMPLETED,
+                request=self.request, user=user,
+                properties={"match_id": str(self.match.id)},
+            )
         )
 
         # 8. Мгновенные письма о повышении уровня — ТОЛЬКО если у пользователя

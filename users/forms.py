@@ -225,12 +225,16 @@ class UserProfileForm(forms.ModelForm):
 
     class Meta:
         model = User
-        fields = ["email", "city", "bio", "avatar", "delete_avatar"]
+        fields = ["email", "city", "bio", "avatar", "delete_avatar", "is_profile_public"]
         labels = {
             "email": "Email",
             "city": "Город",
             "bio": "О себе",
             "avatar": "Новая аватарка",
+            "is_profile_public": "Публичный профиль",
+        }
+        help_texts = {
+            "is_profile_public": "Если выключить — ваш профиль по ссылке /u/<username>/ смогут видеть только вы сами (лидерборд и агрегаты работают как раньше).",
         }
         widgets = {
             "email": forms.EmailInput(attrs={"class": "input input-bordered w-full"}),
@@ -246,6 +250,7 @@ class UserProfileForm(forms.ModelForm):
             ),
             "avatar": forms.FileInput(attrs={"class": "file-input file-input-bordered w-full"}),
             "delete_avatar": forms.CheckboxInput(attrs={"class": "checkbox checkbox-primary"}),
+            "is_profile_public": forms.CheckboxInput(attrs={"class": "checkbox checkbox-primary"}),
         }
 
     def __init__(self, *args, **kwargs):

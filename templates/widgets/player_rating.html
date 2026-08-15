@@ -1,0 +1,50 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ru" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ player.first_name }} {{ player.last_name }} — рейтинг DOPX</title>
+    {% comment %}
+    Продуктовый аудит, раздел 5 ("Рост"): изолированный документ БЕЗ
+    base.html — намеренно НЕ переиспользуем сайт-шаблон, потому что этот
+    HTML грузится внутри <iframe> шириной ~320px на СТОРОННЕМ сайте, а не
+    как отдельная страница dopx.kz. Полный набор шапки/футера/меню в таком
+    контейнере выглядел бы сломанным, а не "виджетом".
+    {% endcomment %}
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@5/themes.css" rel="stylesheet" type="text/css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+    <style>html,body{margin:0;padding:0;background:transparent}</style>
+</head>
+<body class="p-2">
+    <a href="{% url 'players:detail' player.id %}" target="_blank" rel="noopener"
+       class="card bg-base-100 border border-base-300 shadow-sm hover:shadow-md transition-shadow no-underline text-inherit"
+       style="width:300px">
+        <div class="card-body p-3 gap-2">
+            <div class="flex items-center gap-3">
+                <div class="w-11 h-11 rounded-full bg-primary/10 flex items-center justify-center text-primary flex-shrink-0">
+                    <i class="ti ti-shirt-sport text-xl"></i>
+                </div>
+                <div class="min-w-0">
+                    <div class="font-bold text-sm truncate">{{ player.first_name }} {{ player.last_name }}</div>
+                    <div class="text-xs opacity-60 truncate">{% if player.team %}{{ player.team.name }}{% else %}Без команды{% endif %}</div>
+                </div>
+            </div>
+            <div class="flex items-center justify-between pt-1 border-t border-base-200">
+                <span class="text-xs opacity-60">Рейтинг выступлений</span>
+                {% if has_enough_votes %}
+                    <span class="font-bold text-lg text-success">{{ avg_performance }}</span>
+                {% else %}
+                    <span class="badge badge-ghost badge-sm">н/д</span>
+                {% endif %}
+            </div>
+            <div class="flex items-center justify-between text-[10px] opacity-50">
+                <span>{{ total_votes }} голос(ов)</span>
+                <span class="flex items-center gap-1 font-semibold"><i class="ti ti-external-link"></i> DOPX</span>
+            </div>
+        </div>
+    </a>
+</body>
+</html>

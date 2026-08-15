@@ -30,7 +30,7 @@
               class="space-y-4 md:space-y-5"
               x-data="{
                 submitting: false,
-                category: 'general',
+                category: '{{ request.GET.category|default:"general" }}',
                 subject: '',
                 message: '',
                 email: '{{ user.email|default:"" }}',
@@ -80,8 +80,12 @@
               <option value="feature">✨ Предложение функции</option>
               <option value="evaluation">⭐ Проблема с оценкой матча</option>
               <option value="account">👤 Вопрос по аккаунту</option>
+              <option value="dispute">⚖️ Оспорить рейтинг / право на ответ</option>
               <option value="other">📦 Другое</option>
             </select>
+            <p x-show="category === 'dispute'" x-cloak class="text-xs opacity-60 mt-2">
+              Укажите, пожалуйста, ссылку на страницу (игрока/матча) и что именно вы оспариваете. Такие обращения рассматриваются приоритетно.
+            </p>
           </div>
 
           <!-- Тема -->
@@ -210,7 +214,8 @@
     </div>
 
     <!-- Контакты -->
-    <div class="card bg-gradient-to-br from-primary/10 to-primary/5 border border-primary/20">
+    {% comment %}bg-gradient-to-br/from-primary — не работает в Tailwind v4 для daisyUI-цветов, см. комментарий в evaluations/complete.html{% endcomment %}
+    <div class="card border border-primary/20" style="background-image: linear-gradient(to bottom right, color-mix(in oklab, var(--color-primary) 10%, transparent), color-mix(in oklab, var(--color-primary) 5%, transparent));">
       <div class="card-body p-4 md:p-5">
         <h3 class="font-bold text-base md:text-lg mb-2 md:mb-3 flex items-center gap-2">
           <i class="ti ti-lifebuoy text-primary"></i> Другие способы связи

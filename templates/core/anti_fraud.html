@@ -1,0 +1,113 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block content %}
+<!-- === HEADER === -->
+<div class="mb-6 md:mb-8 px-2 sm:px-0">
+  <h1 class="text-2xl md:text-3xl font-bold mb-2 flex items-center gap-2">
+    <i class="ti ti-shield-check mr-2"></i> Как мы боремся с накруткой
+  </h1>
+  <p class="opacity-60 text-sm md:text-base max-w-2xl">DOPX — не ещё один форум фанатов с голосованием "как бог на душу положит". Ниже — реальная методология и живые цифры, а не общие слова о честности.</p>
+  <p class="opacity-50 text-xs md:text-sm max-w-2xl mt-2">Всё это — про целостность СТАТИСТИКИ МНЕНИЙ, а не заявление о профессиональной компетенции конкретных людей. Подробнее — в разделе <a href="{% url 'core:rules' %}#disclaimer" class="link link-primary">«Что такое рейтинг DOPX»</a>.</p>
+</div>
+
+<!-- === ЖИВЫЕ ЦИФРЫ === -->
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-6 md:mb-10 px-2 sm:px-0">
+  <div class="card bg-base-100 border border-base-300">
+    <div class="card-body p-4 md:p-5 text-center">
+      <div class="text-2xl md:text-3xl font-bold text-primary">{{ stats.total_evaluations }}</div>
+      <div class="text-xs md:text-sm opacity-60 mt-1">Оценок контекста просмотра</div>
+    </div>
+  </div>
+  <div class="card bg-base-100 border border-base-300">
+    <div class="card-body p-4 md:p-5 text-center">
+      <div class="text-2xl md:text-3xl font-bold text-warning">{{ stats.total_flags }}</div>
+      <div class="text-xs md:text-sm opacity-60 mt-1">Сигналов в очереди модерации</div>
+    </div>
+  </div>
+  <div class="card bg-base-100 border border-base-300">
+    <div class="card-body p-4 md:p-5 text-center">
+      <div class="text-2xl md:text-3xl font-bold">{{ stats.flag_rate_percent }}%</div>
+      <div class="text-xs md:text-sm opacity-60 mt-1">Доля оценок под наблюдением</div>
+    </div>
+  </div>
+  <div class="card bg-base-100 border border-base-300">
+    <div class="card-body p-4 md:p-5 text-center">
+      <div class="text-2xl md:text-3xl font-bold text-success">{{ stats.confirmed_count }}</div>
+      <div class="text-xs md:text-sm opacity-60 mt-1">Подтверждённых накруток</div>
+    </div>
+  </div>
+</div>
+
+<div class="space-y-6 md:space-y-10 px-2 sm:px-0 max-w-3xl">
+  <!-- Вес голоса -->
+  <div class="card bg-base-100 border border-base-300">
+    <div class="card-body p-4 md:p-6">
+      <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4 flex items-center gap-2"><i class="ti ti-scale text-primary"></i> Не все голоса весят одинаково</h2>
+      <p class="opacity-70 text-sm md:text-base mb-4">Средние оценки на DOPX — не простое арифметическое среднее. У каждого голоса есть вес (0.5–2.0), который считается автоматически по каждой оценке:</p>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 md:gap-3">
+        <div class="flex items-center justify-between gap-2 p-3 bg-base-200 rounded-lg"><span class="text-xs md:text-sm opacity-70">Базовый вес</span><span class="font-mono font-bold text-sm">1.0</span></div>
+        <div class="flex items-center justify-between gap-2 p-3 bg-base-200 rounded-lg"><span class="text-xs md:text-sm opacity-70">Смотрели полный матч</span><span class="font-mono font-bold text-sm text-success">+0.2</span></div>
+        <div class="flex items-center justify-between gap-2 p-3 bg-base-200 rounded-lg"><span class="text-xs md:text-sm opacity-70">Высокий Trust Score</span><span class="font-mono font-bold text-sm text-success">+0.2</span></div>
+        <div class="flex items-center justify-between gap-2 p-3 bg-base-200 rounded-lg"><span class="text-xs md:text-sm opacity-70">Признаки предвзятости</span><span class="font-mono font-bold text-sm text-error">−0.3</span></div>
+      </div>
+      <p class="text-xs opacity-50 mt-4">Подробности о Trust Score и полная таблица уровней — на <a href="{% url 'core:rules' %}#trust" class="link link-primary">странице правил</a>.</p>
+    </div>
+  </div>
+
+  <!-- Скорость заполнения -->
+  <div class="card bg-base-100 border border-base-300">
+    <div class="card-body p-4 md:p-6">
+      <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4 flex items-center gap-2"><i class="ti ti-gauge text-warning"></i> Скорость — сигнал, а не приговор</h2>
+      <p class="opacity-70 text-sm md:text-base">6-шаговый вайзард оценки матча физически требует времени на честное прохождение: контекст, оценка обеих команд, игроков, тренеров, судьи и финальные впечатления. Если аккаунт проходит все шаги подозрительно быстро для человека — это не блокируется молча и не засчитывается тихо. Сигнал уходит в очередь ручной модерации, а оценка помечается для проверки.</p>
+    </div>
+  </div>
+
+  <!-- XP-множитель -->
+  <div class="card bg-base-100 border border-base-300">
+    <div class="card-body p-4 md:p-6">
+      <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4 flex items-center gap-2"><i class="ti ti-trending-up text-info"></i> Прокачка уровня встроенно завязана на доверие</h2>
+      <p class="opacity-70 text-sm md:text-base">Весь получаемый XP умножается на коэффициент 0.8–1.2, зависящий от Trust Score. Это не штраф, наложенный постфактум модератором — это часть формулы начисления с самого начала: аккаунт с низким доверием прокачивается медленнее, даже если продолжает активно голосовать. Спам не даёт короткого пути к высокому уровню.</p>
+    </div>
+  </div>
+
+  <!-- Что происходит с флагом -->
+  <div class="card bg-base-100 border border-base-300">
+    <div class="card-body p-4 md:p-6">
+      <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4 flex items-center gap-2"><i class="ti ti-list-check text-secondary"></i> Что происходит с сигналом дальше</h2>
+      <p class="opacity-70 text-sm md:text-base mb-4">Каждый сигнал (слишком быстрое прохождение, кластер аккаунтов с одного IP, экстремальная историческая предвзятость) попадает в очередь и получает один из трёх статусов:</p>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-3">
+        <div class="p-3 md:p-4 bg-base-200 rounded-lg text-center">
+          <div class="text-xl md:text-2xl font-bold">{{ stats.pending_count }}</div>
+          <div class="text-xs opacity-60 mt-1">Ожидает проверки</div>
+        </div>
+        <div class="p-3 md:p-4 bg-success/10 rounded-lg text-center">
+          <div class="text-xl md:text-2xl font-bold text-success">{{ stats.confirmed_count }}</div>
+          <div class="text-xs opacity-60 mt-1">Подтверждено — накрутка</div>
+        </div>
+        <div class="p-3 md:p-4 bg-base-200 rounded-lg text-center">
+          <div class="text-xl md:text-2xl font-bold opacity-70">{{ stats.dismissed_count }}</div>
+          <div class="text-xs opacity-60 mt-1">Отклонено — ложное срабатывание</div>
+        </div>
+      </div>
+      <p class="text-xs opacity-50 mt-4">Не каждый сигнал — это подтверждённая накрутка: система намеренно ошибается в сторону "лучше проверить лишний раз", чем "пропустить бота".</p>
+    </div>
+  </div>
+
+  <!-- CTA -->
+  {% comment %}
+  ИСПРАВЛЕНО: см. аналогичный комментарий в rules.html — фиолетовая
+  карточка без явного text-primary-content сливала тёмный текст с фоном
+  на светлой теме, а btn-ghost наследует свой собственный цвет текста
+  (не currentColor), поэтому тоже "пропадал" на primary-фоне.
+  {% endcomment %}
+  <div class="card" style="background-image: linear-gradient(to bottom right, var(--color-primary), color-mix(in oklab, var(--color-primary) 80%, transparent));">
+    <div class="card-body p-4 md:p-6 text-center text-primary-content">
+      <h3 class="text-xl md:text-2xl font-bold mb-2">Хотите разобраться глубже?</h3>
+      <p class="opacity-90 mb-3 md:mb-4 text-sm md:text-base">Полные правила платформы и Trust Score — на одной странице</p>
+      <a href="{% url 'core:rules' %}" class="btn btn-md md:btn-lg bg-primary-content text-primary border-none hover:opacity-90">
+        <i class="ti ti-file-text"></i> Правила платформы
+      </a>
+    </div>
+  </div>
+</div>
+{% endblock %}

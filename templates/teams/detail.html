@@ -22,7 +22,10 @@
       </div>
       {% endif %}
       <div class="flex-1 text-center md:text-left w-full min-w-0">
-        <h1 class="text-xl md:text-3xl font-bold mb-2 truncate">{{ team.name }}</h1>
+        <div class="flex flex-wrap items-center justify-center md:justify-start gap-2 mb-2">
+          <h1 class="text-xl md:text-3xl font-bold truncate">{{ team.name }}</h1>
+          {% include 'users/_follow_button.html' with target_type='team' target_id=team.id following=is_following %}
+        </div>
         {% if team.city %}
         <p class="text-sm md:text-lg opacity-60 mb-3 md:mb-4 truncate">
           <i class="ti ti-map-pin"></i> {{ team.city }}

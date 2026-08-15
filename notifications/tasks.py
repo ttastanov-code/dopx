@@ -402,3 +402,87 @@ def cleanup_old_notifications():
     deleted_count, _ = Notification.objects.filter(is_read=True, created_at__lt=cutoff).delete()
     logger.info(f"🧹 Deleted {deleted_count} old read notification(s) older than {NOTIFICATION_RETENTION_DAYS} days.")
     return {'deleted': deleted_count}
+
+
+@shared_task(bind=True, max_retries=3, countdown=5)
+def notify_followers_match_activity(self, match_id: str):
+    """
+    Продуктовый аудит, раздел 5b ("Follow-граф"): адресное уведомление
+    ТОЛЬКО тем, кто подписан на одну из играющих команд или на игрока в
+    составе этого матча — в отличие от `send_voting_open_notification`
+    (широковещательная рассылка ВСЕМ верифицированным пользователям, email).
+    Ставится в очередь из `parsers/tasks.py::update_match_statuses` через
+    `transaction.on_commit` в момент первого перехода матча в 'finished'.
+
+    Намеренно только in-app `Notification`, БЕЗ email: follow-граф — новая,
+    лёгкая фича без отдельного email-шаблона; если завести здесь ещё один
+    email-канал, при будущем включении широковещательной `send_voting_
+    open_notification` в `CELERY_BEAT_SCHEDULE` подписчики получили бы ДВА
+    письма про один и тот же матч. In-app уведомление — самодостаточный
+    MVP; email можно добавить отдельным шагом, когда решится, как
+    дедуплицировать оба канала.
+    """
+    from django.db.models import Q
+    from django.urls import reverse
+
+    from lineups.models import MatchLineupPlayer
+    from matches.models import Match
+    from notifications.models import Notification
+    from users.models import Follow
+
+    match = Match.objects.select_related('home_team', 'away_team').filter(id=match_id).first()
+    if not match:
+        logger.error(f"notify_followers_match_activity: match {match_id} not found")
+        return {'notified': 0}
+
+    player_ids = list(
+        MatchLineupPlayer.objects.filter(lineup__match=match)
+        .values_list('player_id', flat=True)
+        .distinct()
+    )
+
+    follower_user_ids = set(
+        Follow.objects.filter(
+            Q(team_id__in=[match.home_team_id, match.away_team_id]) | Q(player_id__in=player_ids)
+        ).values_list('user_id', flat=True)
+    )
+
+    if not follower_user_ids:
+        return {'notified': 0}
+
+    title = f"{match.home_team.name} {match.get_score_display()} {match.away_team.name}"
+    message = (
+        "Матч с командой или игроком, за которыми вы следите, завершён. "
+        "Голосование открыто 48 часов — поделитесь своим мнением."
+    )
+    action_url = reverse('matches:detail', args=[match.id])
+
+    Notification.objects.bulk_create([
+        Notification(
+            user_id=uid,
+            notification_type='voting_open',
+            title=title,
+            message=message,
+            action_url=action_url,
+            related_match=match,
+        )
+        for uid in follower_user_ids
+    ])
+
+    # Push — лучшее из двух миров с in-app: следящий за игроком пользователь
+    # часто НЕ сидит на сайте в момент финального свистка. Best-effort:
+    # ошибка одного пользователя (устаревшая подписка и т.д.) не должна
+    # прерывать рассылку остальным — см. try/except внутри send_push_to_user
+    # самого по себе; здесь дополнительно оборачиваем весь цикл на случай
+    # отсутствия pywebpush/VAPID-ключей в окружении.
+    try:
+        from notifications.services import send_push_to_user
+        from users.models import User
+
+        for user in User.objects.filter(id__in=follower_user_ids):
+            send_push_to_user(user, title=title, body=message, url=action_url)
+    except Exception as exc:
+        logger.warning(f"notify_followers_match_activity: push fan-out skipped: {exc}")
+
+    logger.info(f"✅ Notified {len(follower_user_ids)} follower(s) about match {match.id}")
+    return {'notified': len(follower_user_ids)}

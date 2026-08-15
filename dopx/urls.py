@@ -1,10 +1,20 @@
 # dopx/urls.py
 from django.contrib import admin
+from django.contrib.sitemaps.views import sitemap
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from django.views.decorators.cache import cache_page
 from rest_framework.permissions import IsAdminUser
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
+
+from core.sitemaps import MatchSitemap, PlayerSitemap, TeamSitemap, CoachSitemap, StaticViewSitemap
+from core.views import robots_txt
+
+sitemaps = {
+    "matches": MatchSitemap, "players": PlayerSitemap,
+    "teams": TeamSitemap, "coaches": CoachSitemap, "static": StaticViewSitemap,
+}
 
 # ИЗМЕНЕНО: раньше /api/schema/, /api/docs/ (Swagger) и /api/redoc/ были
 # полностью публичными и без авторизации — ссылка "API Документация"
@@ -34,6 +44,18 @@ urlpatterns = [
     path('leagues/', include('leagues.urls')),
     path('notifications/', include('notifications.urls')),
     path('api/', include('api.urls')),
+    path('analytics/', include('analytics.urls')),
+    # Live-пульс (продуктовый аудит, раздел 2) — отдельный namespace 'events',
+    # не путать с matches:events (match_events_partial, лента ВСЕХ событий).
+    path('events/', include('events.urls')),
+    # Staff-дашборд (метрики продукта, здоровье KFF-синка, антифрод-очередь).
+    # Доступ — staff_member_required на каждой вьюхе (dashboard/views.py),
+    # не на уровне URL-конфига, чтобы поведение было явным и тестируемым.
+    path('staff/dashboard/', include('dashboard.urls')),
+    # SEO: sitemap кэшируется на 12ч — пересчитывать на каждый заход бота
+    # бессмысленно, список завершённых матчей/игроков не меняется поминутно.
+    path('sitemap.xml', cache_page(60 * 60 * 12)(sitemap), {'sitemaps': sitemaps}, name='sitemap'),
+    path('robots.txt', robots_txt, name='robots'),
     # Self-hosted CAPTCHA (django-simple-captcha) — картинка + refresh-эндпоинт.
     path('captcha/', include('captcha.urls')),
 ] + schema_patterns

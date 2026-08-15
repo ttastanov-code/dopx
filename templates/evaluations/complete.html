@@ -21,17 +21,30 @@
         реально заработал (множитель доверия, доля оценённых игроков,
         фактическая корректировка Trust Score могла быть и отрицательной).
         Теперь берём реальные цифры из EvaluationCompleteView.
+
+        ИСПРАВЛЕНО (2): фон карточек и полоса прогресса ниже раньше были на
+        классах `bg-gradient-to-* from-primary to-primary/70` — в Tailwind
+        v4 эти классы ПОЛНОСТЬЮ не работали (не только переименование в
+        bg-linear-to-*: `from-*`/`to-*` для daisyUI-цветов primary/secondary
+        не генерируются вообще, потому что Tailwind не знает эти цвета как
+        свои theme-токены — bg-primary/text-primary работают только потому,
+        что это готовые классы самого daisyUI, а не Tailwind-утилиты). В
+        компилированном CSS класс `.from-primary` отсутствовал полностью →
+        `--tw-gradient-stops` не собирался → итоговый `background-image`
+        резолвился в `none`, элемент был полностью прозрачным. Заменено на
+        инлайновый `linear-gradient(..., var(--color-primary), ...)` —
+        напрямую по CSS-переменной, без зависимости от Tailwind-генератора.
         {% endcomment %}
         <div class="card bg-base-100 border border-base-200 shadow-lg mb-4">
             <div class="card-body p-4">
                 <h3 class="font-bold text-sm mb-3 text-center">🎁 Ваши награды</h3>
                 <div class="grid grid-cols-2 gap-3">
-                    <div class="flex flex-col items-center p-3 bg-gradient-to-br from-primary/10 to-primary/5 rounded-xl">
+                    <div class="flex flex-col items-center p-3 rounded-xl" style="background-image: linear-gradient(to bottom right, color-mix(in oklab, var(--color-primary) 10%, transparent), color-mix(in oklab, var(--color-primary) 5%, transparent));">
                         <i class="ti ti-star text-2xl text-primary mb-1"></i>
                         <span class="font-bold text-xl text-primary">+{{ xp_gained|default:"—" }}</span>
                         <span class="text-[9px] text-base-content/50">XP</span>
                     </div>
-                    <div class="flex flex-col items-center p-3 bg-gradient-to-br from-secondary/10 to-secondary/5 rounded-xl">
+                    <div class="flex flex-col items-center p-3 rounded-xl" style="background-image: linear-gradient(to bottom right, color-mix(in oklab, var(--color-secondary) 10%, transparent), color-mix(in oklab, var(--color-secondary) 5%, transparent));">
                         <i class="ti ti-shield-check text-2xl text-secondary mb-1"></i>
                         <span class="font-bold text-xl text-secondary">
                             {% if trust_delta > 0 %}+{{ trust_delta }}{% elif trust_delta == 0 %}±0{% elif trust_delta %}{{ trust_delta }}{% else %}—{% endif %}
@@ -112,8 +125,8 @@
                 <span class="text-[9px] text-base-content/50">Серия: {{ user.evaluation_streak|default:0 }}</span>
             </div>
             <div class="w-full bg-base-300 rounded-full h-1.5 overflow-hidden">
-                <div class="bg-gradient-to-r from-primary to-primary/70 h-full rounded-full"
-                     style="width: {{ xp_progress_percent }}%"></div>
+                <div class="h-full rounded-full"
+                     style="width: {{ xp_progress_percent }}%; background-image: linear-gradient(to right, var(--color-primary), color-mix(in oklab, var(--color-primary) 70%, transparent));"></div>
             </div>
             <div class="text-[9px] text-base-content/40 mt-1">{{ xp_progress_percent }}% до уровня {{ user_level|add:1 }}</div>
         </div>

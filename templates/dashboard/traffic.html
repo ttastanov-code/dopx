@@ -1,0 +1,167 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+<div class="flex justify-end mb-3">
+    <div role="tablist" class="tabs tabs-boxed tabs-xs sm:tabs-sm w-fit">
+        {% for preset in day_presets %}
+        <a role="tab" href="?days={{ preset }}" class="tab {% if preset == selected_days %}tab-active{% endif %}">{{ preset }}д</a>
+        {% endfor %}
+    </div>
+</div>
+
+<div class="grid grid-cols-2 gap-3 md:gap-4 mb-6">
+    <div class="stat bg-base-100 border border-base-300 rounded-lg p-3 md:p-4">
+        <div class="stat-title text-[10px] md:text-xs">Просмотров страниц</div>
+        <div class="stat-value text-lg md:text-2xl">{{ traffic.total_page_views }}</div>
+        <div class="stat-desc text-[10px] md:text-xs">за {{ selected_days }} дней</div>
+    </div>
+    <div class="stat bg-base-100 border border-base-300 rounded-lg p-3 md:p-4">
+        <div class="stat-title text-[10px] md:text-xs">Уникальных визитов</div>
+        <div class="stat-value text-lg md:text-2xl text-info">{{ traffic.unique_visitors }}</div>
+        <div class="stat-desc text-[10px] md:text-xs">по anonymous_id, вкл. анонимных</div>
+    </div>
+</div>
+
+<div class="card bg-base-100 border border-base-300 mb-6">
+    <div class="card-body p-4">
+        <h3 class="font-bold text-sm md:text-base mb-2">Просмотры страниц по дням</h3>
+        <canvas id="pvChart" height="90"></canvas>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4">
+            <h3 class="font-bold text-sm md:text-base mb-3">Топ страниц</h3>
+            <div class="overflow-x-auto">
+                <table class="table table-sm">
+                    <thead><tr><th>Страница</th><th class="text-right">Просмотров</th></tr></thead>
+                    <tbody>
+                        {% for row in traffic.top_pages %}
+                        <tr><td class="text-xs font-mono truncate max-w-xs">{{ row.url_path }}</td><td class="text-right">{{ row.views }}</td></tr>
+                        {% empty %}
+                        <tr><td colspan="2" class="text-center opacity-50 py-4">Нет данных</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4">
+            <h3 class="font-bold text-sm md:text-base mb-3">Топ рефереров</h3>
+            <div class="overflow-x-auto">
+                <table class="table table-sm">
+                    <thead><tr><th>Источник</th><th class="text-right">Переходов</th></tr></thead>
+                    <tbody>
+                        {% for row in traffic.top_referrers %}
+                        <tr><td class="text-xs font-mono truncate max-w-xs">{{ row.referrer }}</td><td class="text-right">{{ row.count }}</td></tr>
+                        {% empty %}
+                        <tr><td colspan="2" class="text-center opacity-50 py-4">Прямые заходы / нет рефереров</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4">
+            <h3 class="font-bold text-sm md:text-base mb-3">Устройства</h3>
+            <canvas id="deviceChart" height="140"></canvas>
+        </div>
+    </div>
+
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4">
+            <h3 class="font-bold text-sm md:text-base mb-3">Браузеры</h3>
+            <div class="overflow-x-auto">
+                <table class="table table-sm">
+                    <thead><tr><th>Браузер</th><th class="text-right">Просмотров</th></tr></thead>
+                    <tbody>
+                        {% for row in traffic.top_browsers %}
+                        <tr><td>{{ row.browser }}</td><td class="text-right">{{ row.count }}</td></tr>
+                        {% empty %}
+                        <tr><td colspan="2" class="text-center opacity-50 py-4">Нет данных</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    {% if traffic.utm_sources %}
+    <div class="card bg-base-100 border border-base-300 lg:col-span-2">
+        <div class="card-body p-4">
+            <h3 class="font-bold text-sm md:text-base mb-3">UTM-источники</h3>
+            <div class="overflow-x-auto">
+                <table class="table table-sm">
+                    <thead><tr><th>utm_source</th><th class="text-right">Переходов</th></tr></thead>
+                    <tbody>
+                        {% for row in traffic.utm_sources %}
+                        <tr><td>{{ row.utm_source }}</td><td class="text-right">{{ row.count }}</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{{ traffic.pageviews_by_day|json_script:"pv-data" }}
+{{ traffic.devices|json_script:"device-data" }}
+{% endblock %}
+
+{% block extra_script %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+    const pvEl = document.getElementById('pvChart');
+    if (pvEl) {
+        const points = JSON.parse(document.getElementById('pv-data').textContent);
+        new Chart(pvEl.getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: points.map((p) => p.period),
+                datasets: [{
+                    label: 'Просмотры',
+                    data: points.map((p) => p.count),
+                    borderColor: '#6366f1',
+                    backgroundColor: '#6366f133',
+                    tension: 0.3,
+                    fill: true,
+                    pointRadius: 2,
+                }],
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+            },
+        });
+    }
+
+    const deviceEl = document.getElementById('deviceChart');
+    if (deviceEl) {
+        const devices = JSON.parse(document.getElementById('device-data').textContent);
+        const labels = Object.keys(devices);
+        const values = Object.values(devices);
+        new Chart(deviceEl.getContext('2d'), {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: values,
+                    backgroundColor: ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#94a3b8'],
+                }],
+            },
+            options: { responsive: true, plugins: { legend: { position: 'bottom' } } },
+        });
+    }
+})();
+</script>
+{% endblock %}

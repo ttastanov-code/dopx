@@ -1,0 +1,112 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+<div class="flex justify-end mb-3">
+    <div role="tablist" class="tabs tabs-boxed tabs-xs sm:tabs-sm w-fit">
+        {% for preset in day_presets %}
+        <a role="tab" href="?days={{ preset }}" class="tab {% if preset == selected_days %}tab-active{% endif %}">{{ preset }}д</a>
+        {% endfor %}
+    </div>
+</div>
+
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-6">
+    <div class="stat bg-base-100 border border-base-300 rounded-lg p-3 md:p-4">
+        <div class="stat-title text-[10px] md:text-xs">Пользователей всего</div>
+        <div class="stat-value text-lg md:text-2xl">{{ metrics.total_users }}</div>
+        <div class="stat-desc text-[10px] md:text-xs">+{{ metrics.new_users_period }} за {{ selected_days }} дней</div>
+    </div>
+    <div class="stat bg-base-100 border border-base-300 rounded-lg p-3 md:p-4">
+        <div class="stat-title text-[10px] md:text-xs">Верификация email</div>
+        <div class="stat-value text-lg md:text-2xl text-success">{{ metrics.verification_rate_percent }}%</div>
+        <div class="stat-desc text-[10px] md:text-xs">{{ metrics.verified_users }} из {{ metrics.total_users }}</div>
+    </div>
+    <div class="stat bg-base-100 border border-base-300 rounded-lg p-3 md:p-4">
+        <div class="stat-title text-[10px] md:text-xs">Оценок всего</div>
+        <div class="stat-value text-lg md:text-2xl">{{ metrics.total_evaluations }}</div>
+        <div class="stat-desc text-[10px] md:text-xs">+{{ metrics.evaluations_period }} за {{ selected_days }} дней</div>
+    </div>
+    <div class="stat bg-base-100 border border-base-300 rounded-lg p-3 md:p-4">
+        <div class="stat-title text-[10px] md:text-xs">Матчи сейчас</div>
+        <div class="stat-value text-lg md:text-2xl">
+            <span class="text-error">{{ metrics.live_matches }}</span> <span class="text-sm opacity-40">live</span>
+        </div>
+        <div class="stat-desc text-[10px] md:text-xs">{{ metrics.scheduled_matches }} запланировано</div>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4">
+            <h3 class="font-bold text-sm md:text-base mb-2">Активные пользователи по дням (DAU)</h3>
+            <canvas id="dauChart" height="120"></canvas>
+        </div>
+    </div>
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4">
+            <h3 class="font-bold text-sm md:text-base mb-2">Активные пользователи по неделям (WAU)</h3>
+            <canvas id="wauChart" height="120"></canvas>
+        </div>
+    </div>
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4">
+            <h3 class="font-bold text-sm md:text-base mb-2">Регистрации по дням</h3>
+            <canvas id="regChart" height="120"></canvas>
+        </div>
+    </div>
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4">
+            <h3 class="font-bold text-sm md:text-base mb-2">Оценки по дням</h3>
+            <canvas id="evalChart" height="120"></canvas>
+        </div>
+    </div>
+</div>
+
+{{ metrics.dau|json_script:"dau-data" }}
+{{ metrics.wau|json_script:"wau-data" }}
+{{ metrics.registrations_by_day|json_script:"reg-data" }}
+{{ metrics.evaluations_by_day|json_script:"eval-data" }}
+{% endblock %}
+
+{% block extra_script %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+    function lineChart(canvasId, dataId, label, color) {
+        const el = document.getElementById(canvasId);
+        if (!el) return;
+        const points = JSON.parse(document.getElementById(dataId).textContent);
+        const isActivity = Object.prototype.hasOwnProperty.call(points[0] || {}, 'active_users');
+        const labels = points.map((p) => p.period);
+        const values = points.map((p) => isActivity ? p.active_users : p.count);
+        new Chart(el.getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: label,
+                    data: values,
+                    borderColor: color,
+                    backgroundColor: color + '33',
+                    tension: 0.3,
+                    fill: true,
+                    pointRadius: 2,
+                }],
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+            },
+        });
+    }
+
+    lineChart('dauChart', 'dau-data', 'DAU', '#6366f1');
+    lineChart('wauChart', 'wau-data', 'WAU', '#8b5cf6');
+    lineChart('regChart', 'reg-data', 'Регистрации', '#10b981');
+    lineChart('evalChart', 'eval-data', 'Оценки', '#f59e0b');
+})();
+</script>
+{% endblock %}

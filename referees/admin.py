@@ -1,9 +1,13 @@
 from django.contrib import admin
+from unfold.admin import ModelAdmin
+
+from core.admin_actions import export_as_csv
+
 from .models import Referee
 
 
 @admin.register(Referee)
-class RefereeAdmin(admin.ModelAdmin):
+class RefereeAdmin(ModelAdmin):
 
     list_display = (
         "first_name",
@@ -16,3 +20,5 @@ class RefereeAdmin(admin.ModelAdmin):
         "first_name",
         "last_name",
     )
+
+    actions = [export_as_csv]

@@ -1,13 +1,50 @@
 {% extends 'base.html' %}
-{% load static %}
+{% load static rating_extras %}
 {% load math_extras %}
+{% block schema %}
+{% if schema_json %}
+<script type="application/ld+json">{{ schema_json|safe }}</script>
+{% endif %}
+{% endblock %}
 {% block content %}
 <!-- === НАВИГАЦИЯ === -->
-<div class="mb-6">
+<div class="mb-6 flex items-center justify-between flex-wrap gap-2">
     <a href="{% url 'players:list' %}" class="btn btn-ghost btn-sm">
         <i class="ti ti-arrow-left"></i>
         Назад к игрокам
     </a>
+    {% comment %}
+    Продуктовый аудит, раздел 5 ("Рост"): embeddable-виджет. Модалка с
+    готовым <iframe>-кодом и кнопкой копирования — фан-паблики/клубные
+    сайты вставляют рейтинг игрока к себе без интеграции с DOPX API.
+    {% endcomment %}
+    <div class="flex items-center gap-2">
+    <a href="{% url 'players:season_recap' player.id %}" class="btn btn-outline btn-sm">
+        <i class="ti ti-sparkles"></i> Итоги сезона
+    </a>
+    <div x-data="{ open: false, copied: false, copy() { navigator.clipboard.writeText($refs.embedCode.value); this.copied = true; setTimeout(() => this.copied = false, 2000) } }">
+        <button type="button" @click="open = true" class="btn btn-outline btn-sm">
+            <i class="ti ti-code"></i> Получить embed-код
+        </button>
+        <div x-show="open" x-cloak class="modal modal-open" @keydown.escape.window="open = false">
+            <div class="modal-box max-w-lg" @click.outside="open = false">
+                <h3 class="font-bold text-lg mb-2"><i class="ti ti-code mr-1"></i> Виджет рейтинга {{ player.first_name }} {{ player.last_name }}</h3>
+                <p class="text-sm opacity-60 mb-3">Вставьте этот код на свой сайт — виджет обновляется автоматически, без интеграции с DOPX API.</p>
+                <div class="mb-3 p-2 bg-base-200 rounded-lg flex justify-center">
+                    <iframe src="{% url 'players:widget' player.id %}" width="300" height="150" style="border:none;border-radius:12px" title="Превью виджета"></iframe>
+                </div>
+                <textarea x-ref="embedCode" readonly onclick="this.select()" class="textarea textarea-bordered w-full font-mono text-xs" rows="3">{{ widget_embed_code }}</textarea>
+                <div class="modal-action">
+                    <button type="button" @click="copy()" class="btn btn-primary btn-sm" :class="copied && 'btn-success'">
+                        <i class="ti" :class="copied ? 'ti-check' : 'ti-copy'"></i>
+                        <span x-text="copied ? 'Скопировано!' : 'Копировать код'"></span>
+                    </button>
+                    <button type="button" @click="open = false" class="btn btn-ghost btn-sm">Закрыть</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    </div>
 </div>
 
 <!-- === HEADER ИГРОКА === -->
@@ -27,7 +64,10 @@
             
             <!-- Информация -->
             <div class="flex-1 text-center md:text-left">
-                <h1 class="text-3xl font-bold mb-2">{{ player.first_name }} {{ player.last_name }}</h1>
+                <div class="flex flex-wrap items-center justify-center md:justify-start gap-2 mb-2">
+                    <h1 class="text-3xl font-bold">{{ player.first_name }} {{ player.last_name }}</h1>
+                    {% include 'users/_follow_button.html' with target_type='player' target_id=player.id following=is_following %}
+                </div>
                 <div class="flex flex-wrap justify-center md:justify-start gap-4 mb-4">
                     {% if player.team %}
                         <a href="{% url 'teams:detail' player.team.id %}" 
@@ -58,7 +98,9 @@
                     </div>
                     <div class="stat bg-base-200 rounded-lg p-3">
                         <div class="stat-title text-xs flex items-center gap-1">Рейтинг выступления{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.player.performance_score %}</div>
-                        <div class="stat-value text-xl text-success">{{ stats.avg_performance|default_if_none:"—" }}</div>
+                        <div class="stat-value text-xl text-success">
+                            {% if stats.total_votes|has_enough_votes %}{{ stats.avg_performance|default_if_none:"—" }}{% else %}н/д{% endif %}
+                        </div>
                     </div>
                     <div class="stat bg-base-200 rounded-lg p-3">
                         <div class="stat-title text-xs flex items-center gap-1">Индекс риска{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.player.risk %}</div>
@@ -117,9 +159,15 @@
                                 </td>
                                 <td class="font-mono text-sm">{{ agg.match.start_time|date:"d.m.Y" }}</td>
                                 <td class="text-center">
-                                    <span class="font-bold {% if agg.performance_score >= 7 %}text-success{% elif agg.performance_score >= 5 %}text-warning{% else %}text-error{% endif %}">
-                                        {{ agg.performance_score|floatformat:1 }}
-                                    </span>
+                                    {% if agg.total_votes|has_enough_votes %}
+                                        <span class="font-bold {% if agg.performance_score >= 7 %}text-success{% elif agg.performance_score >= 5 %}text-warning{% else %}text-error{% endif %}">
+                                            {{ agg.performance_score|floatformat:1 }}
+                                        </span>
+                                        {% bias_segment_text agg as segment_text %}
+                                        {% if segment_text %}{% include 'components/_tooltip_icon.html' with text=segment_text %}{% endif %}
+                                    {% else %}
+                                        <span class="badge badge-ghost badge-xs whitespace-nowrap" title="Меньше 5 голосов">н/д</span>
+                                    {% endif %}
                                 </td>
                                 <td class="text-center">{{ agg.avg_contribution|floatformat:1 }}</td>
                                 <td class="text-center">{{ agg.risk_index|floatformat:1 }}</td>
@@ -160,8 +208,12 @@
                             <div class="text-xs opacity-60">{{ agg.match.start_time|date:"d.m.Y" }}</div>
                         </div>
                         <div class="text-right">
-                            <div class="font-bold text-success text-lg">{{ agg.performance_score|floatformat:1 }}</div>
-                            <div class="text-xs opacity-60">рейтинг</div>
+                            {% if agg.total_votes|has_enough_votes %}
+                                <div class="font-bold text-success text-lg">{{ agg.performance_score|floatformat:1 }}</div>
+                                <div class="text-xs opacity-60">рейтинг</div>
+                            {% else %}
+                                <div class="badge badge-ghost badge-sm">н/д</div>
+                            {% endif %}
                         </div>
                     </a>
                     {% endfor %}

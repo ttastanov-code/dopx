@@ -65,6 +65,7 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import timedelta
+from functools import partial
 
 from celery import shared_task
 from django.conf import settings
@@ -270,9 +271,11 @@ def update_match_statuses(self):
         import_lineups,
         import_stats,
     )
+    from parsers.models import ParserSyncRun
 
     logger.info("🔄 Starting match status & data sync...")
 
+    started_at = timezone.now()
     client = KFFClient()
     worker_token = self.request.id or str(uuid.uuid4())
 
@@ -289,6 +292,12 @@ def update_match_statuses(self):
         "status_changes": 0,
         "skipped_locked": 0,
     }
+    # Дашборд ("Здоровье данных") показывает ПОСЛЕДНИЕ N ошибок с именем
+    # матча, не только счётчик — иначе "5 ошибок" ничего не говорит о том,
+    # что чинить. Капаем список, чтобы не раздувать JSONField при плохом
+    # прогоне (100 ошибок за раз всё равно нечитаемы на дашборде).
+    error_samples: list[dict] = []
+    MAX_ERROR_SAMPLES = 20
 
     for match in active_matches:
         # === УРОВЕНЬ A: распределённый лок на весь цикл синхронизации матча,
@@ -346,7 +355,15 @@ def update_match_statuses(self):
                     field_values["end_time"] = match.start_time + timedelta(minutes=110)
                 updated_fields.append("end_time")
 
-            if new_status == "finished" and not match.voting_open_until:
+            # `just_finished` — этот матч ИМЕННО СЕЙЧАС первый раз получает
+            # voting_open_until, то есть переходит в 'finished' первый раз
+            # (voting_open_until больше никогда не переустанавливается —
+            # см. `not match.voting_open_until` в условии ниже). Используется
+            # ниже, чтобы поставить в очередь `notify_followers_match_
+            # activity` РОВНО ОДИН раз на матч, а не при каждой последующей
+            # синхронизации уже завершённого матча.
+            just_finished = new_status == "finished" and not match.voting_open_until
+            if just_finished:
                 field_values["voting_open_until"] = match.start_time + timedelta(hours=48)
                 updated_fields.append("voting_open_until")
 
@@ -365,6 +382,22 @@ def update_match_statuses(self):
                         for field_name, value in field_values.items():
                             setattr(locked_match, field_name, value)
                         locked_match.save(update_fields=[*updated_fields, "updated_at"])
+                        if just_finished:
+                            # Продуктовый аудит, раздел 5b ("Follow-граф"):
+                            # уведомляем ТОЛЬКО подписчиков команд/игроков
+                            # этого матча — в отличие от `send_voting_open_
+                            # notification` (широковещательная рассылка ВСЕМ
+                            # верифицированным пользователям), это адресный
+                            # канал. on_commit — чтобы не поставить задачу в
+                            # очередь раньше, чем реально закоммитится смена
+                            # статуса (иначе воркер уведомлений мог бы
+                            # прочитать матч ДО commit и получить старый
+                            # статус).
+                            from notifications.tasks import notify_followers_match_activity
+
+                            transaction.on_commit(
+                                partial(notify_followers_match_activity.delay, str(match.id))
+                            )
                     stats["updated"] += 1
                     logger.debug(f"✅ Match {match.id} updated: {updated_fields}")
                 except OperationalError:
@@ -420,10 +453,22 @@ def update_match_statuses(self):
                         new_events.append(evt)
 
                 if new_events:
-                    # Лок уровня A уже держится на match.id, поэтому конкурентный
-                    # delete+recreate внутри import_events_and_minutes для ЭТОГО
-                    # матча другим воркером в этот момент исключён.
-                    if import_events_and_minutes(match, {"events": new_events}):
+                    # Лок уровня A уже держится на match.id, поэтому конкурентная
+                    # запись в этот момент другим воркером исключена.
+                    #
+                    # ИСПРАВЛЕНО: сюда передаётся только ДЕЛЬТА (события,
+                    # которых ещё нет в БД — см. дедупликацию выше по
+                    # existing_types_by_minute), а не полный список с API.
+                    # `import_events_and_minutes` раньше БЕЗУСЛОВНО удаляла
+                    # ВСЕ существующие события матча перед вставкой того, что
+                    # ей передали — при вызове с дельтой это на каждом цикле
+                    # стирало уже сохранённые события прошлых циклов и
+                    # оставляло только последнюю дельту. Именно поэтому лента
+                    # у живых матчей "замирала" на событиях первых ~50 минут:
+                    # это была дельта ПОСЛЕДНЕГО цикла, который реально дошёл
+                    # до сохранения. `replace_existing=False` — только
+                    # добавить, ничего не удаляя.
+                    if import_events_and_minutes(match, {"events": new_events}, replace_existing=False):
                         stats["new_events"] += len(new_events)
                         logger.info(f"⚡ Added {len(new_events)} new events for match {match.id}")
 
@@ -445,6 +490,14 @@ def update_match_statuses(self):
         except Exception as e:
             logger.error(f"❌ Error syncing match {match.id}: {type(e).__name__}: {e}", exc_info=True)
             stats["errors"] += 1
+            if len(error_samples) < MAX_ERROR_SAMPLES:
+                error_samples.append({
+                    "match_id": str(match.id),
+                    "match": f"{match.home_team.name} — {match.away_team.name}",
+                    "error_type": type(e).__name__,
+                    "error": str(e)[:300],
+                    "at": timezone.now().isoformat(),
+                })
             continue
         finally:
             # Лок ОБЯЗАТЕЛЬНО снимается в finally — иначе матч останется
@@ -452,6 +505,25 @@ def update_match_statuses(self):
             _release_match_sync_lock(match.id)
 
     logger.info(f"🏁 Match sync completed: {stats}")
+
+    # Персистим итог ОДНОЙ строкой на весь запуск (не на матч) — см.
+    # parsers/models.py::ParserSyncRun. Обёрнуто в try — сбой записи метрики
+    # НЕ должен ронять уже выполненную синхронизацию через retry задачи.
+    try:
+        ParserSyncRun.objects.create(
+            task_name="update_match_statuses",
+            started_at=started_at,
+            total=stats["total"],
+            updated=stats["updated"],
+            unchanged=stats["unchanged"],
+            errors=stats["errors"],
+            new_events=stats["new_events"],
+            status_changes=stats["status_changes"],
+            skipped_locked=stats["skipped_locked"],
+            error_samples=error_samples,
+        )
+    except Exception:
+        logger.error("⚠️ Не удалось записать ParserSyncRun", exc_info=True)
 
     if stats["total"] and stats["errors"] > stats["total"] * 0.3:
         _send_sync_error_alert(

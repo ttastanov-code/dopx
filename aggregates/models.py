@@ -30,7 +30,36 @@ class PlayerMatchAggregate(BaseModel):
     maturity_score = models.FloatField(_('Индекс зрелости'), default=0.0)
     stability_index = models.FloatField(_('Индекс стабильности'), default=0.0)
     clutch_index = models.FloatField(_('Индекс решающих моментов'), default=0.0)
-    
+
+    # НОВОЕ (продуктовый аудит, раздел 1: bias-adjusted score): performance_score
+    # выше — это ОДНО взвешенное число по ВСЕМ зрителям сразу, где вклад
+    # предвзятых голосов уже приглушён весом (-0.3 за fan-bias в
+    # aggregates/services.py::calculate_user_weight), но само число не
+    # показывает пользователю, НАСКОЛЬКО разошлись мнения "своих" и
+    # "чужих" — а это ровно то, что подрывает доверие к рейтингу игрока
+    # в дерби. Три поля ниже — сегментация ТОЙ ЖЕ базовой метрики
+    # (contribution) по `ContextEvaluation.supported_team` относительно
+    # команды игрока, БЕЗ изменения формулы performance_score (чтобы не
+    # сломать сортировку леерубордов и historical данные) — чисто
+    # информационный разрез "что говорят разные лагеря" плюс страховка
+    # от скрытого спора ("почему рейтинг ниже, чем я думал — потому что
+    # фанаты соперника массово ставят низкие оценки, и это видно").
+    # `null=True` — не у каждого матча есть хотя бы 1 голос в каждом
+    # сегменте (например, товарищеский матч без фанатов на трибунах);
+    # None ≠ 0, шаблон обязан отличать "нет данных" от "оценили на 0".
+    own_fans_avg = models.FloatField(
+        _('Средняя оценка от фанатов игрока'), null=True, blank=True,
+        help_text=_('avg(contribution) от зрителей, поддержавших команду игрока'),
+    )
+    rival_fans_avg = models.FloatField(
+        _('Средняя оценка от фанатов соперника'), null=True, blank=True,
+        help_text=_('avg(contribution) от зрителей, поддержавших команду-соперника'),
+    )
+    neutral_avg = models.FloatField(
+        _('Средняя оценка от нейтральных зрителей'), null=True, blank=True,
+        help_text=_('avg(contribution) от зрителей без выбранной стороны/контекста'),
+    )
+
     class Meta:
         verbose_name = _('Агрегат игрока')
         verbose_name_plural = _('Агрегаты игроков')

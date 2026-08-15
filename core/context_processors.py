@@ -1,4 +1,16 @@
 # core/context_processors.py
+from django.conf import settings
+
+
+def pwa_settings(request):
+    """
+    Продуктовый аудит, раздел 5c ("PWA + Web Push"): публичный VAPID-ключ
+    нужен в JS на КАЖДОЙ странице (base.html кладёт его в data-атрибут
+    <body>, static/js/push.js читает оттуда) — публичный ключ безопасно
+    светить в HTML по определению (в отличие от VAPID_PRIVATE_KEY, который
+    никогда не покидает settings.py/notifications/services.py).
+    """
+    return {'VAPID_PUBLIC_KEY': settings.VAPID_PUBLIC_KEY}
 
 
 def indicator_tooltips(request):

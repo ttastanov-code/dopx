@@ -198,7 +198,15 @@ class TeamDetailView(DetailView):
         # истёк, иначе кнопка вела бы на уже закрытое голосование.
         votable_match = next((m for m in recent_matches if m.is_voting_open), None)
 
+        # Follow-граф (продуктовый аудит, раздел 5b) — см. аналогичный
+        # комментарий в players/views.py::PlayerDetailView.
+        is_following = False
+        if self.request.user.is_authenticated:
+            from users.models import Follow
+            is_following = Follow.objects.filter(user=self.request.user, team=team).exists()
+
         context.update({
+            'is_following': is_following,
             'total_matches': total_matches,
             'wins': wins,
             'goals_scored': goals_scored,

@@ -1,9 +1,13 @@
 from django.contrib import admin
+from unfold.admin import ModelAdmin
+
+from core.admin_actions import export_as_csv
+
 from .models import Team, TeamSeason
 
 
 @admin.register(Team)
-class TeamAdmin(admin.ModelAdmin):
+class TeamAdmin(ModelAdmin):
 
     list_display = (
         "name",
@@ -21,9 +25,11 @@ class TeamAdmin(admin.ModelAdmin):
     # из списка" вместо голого multiple-select.
     filter_horizontal = ("rivals",)
 
+    actions = [export_as_csv]
+
 
 @admin.register(TeamSeason)
-class TeamSeasonAdmin(admin.ModelAdmin):
+class TeamSeasonAdmin(ModelAdmin):
 
     list_display = (
         "team",
@@ -37,3 +43,7 @@ class TeamSeasonAdmin(admin.ModelAdmin):
     search_fields = (
         "team__name",
     )
+
+    autocomplete_fields = ("team", "season")
+
+    actions = [export_as_csv]

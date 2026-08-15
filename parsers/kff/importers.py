@@ -383,7 +383,13 @@ def import_lineups(match: Match, lineup_data: Dict) -> bool:
     def process_team_lineup(team_side: str, lineup: Dict, team: Team):
         if not lineup:
             return
-        formation = lineup.get("formation", "")
+        # ИСПРАВЛЕНО: `.get("formation", "")` подставляет дефолт ТОЛЬКО если
+        # ключ отсутствует — а KFF для матчей без официально объявленного
+        # состава отдаёт ключ со значением `null` (Python None), и тогда
+        # `.get` возвращает именно None, а не "". `formation` в БД — NOT
+        # NULL (см. lineups/models.py), поэтому update_or_create падал с
+        # IntegrityError на КАЖДОМ цикле синхронизации для такого матча.
+        formation = lineup.get("formation") or ""
         starters = lineup.get("starters", []) or lineup.get("starting_lineup", [])
         substitutes = lineup.get("substitutes", []) or lineup.get("bench", [])
         
@@ -551,22 +557,46 @@ def _is_goal_disallowed(evt: Dict) -> bool:
     return False
 
 @transaction.atomic
-def import_events_and_minutes(match: Match, events_data: Dict) -> bool:
+def import_events_and_minutes(match: Match, events_data: Dict, replace_existing: bool = True) -> bool:
+    """
+    ИСПРАВЛЕНО (найдено при разборе бага "живые события не обновляются"):
+    раньше функция БЕЗУСЛОВНО удаляла ВСЕ существующие MatchEvent матча перед
+    вставкой того, что ей передали — это корректно для `pipeline.py::
+    import_full_match` (туда всегда приходит ПОЛНЫЙ список событий с API,
+    delete+recreate — простой и надёжный способ привести БД к соответствию
+    источнику). Но `parsers/tasks.py::update_match_statuses` вызывает эту же
+    функцию с `{"events": new_events}` — то есть только с ДЕЛЬТОЙ (события,
+    которых ещё нет в БД, см. дедупликацию по `existing_types_by_minute`
+    чуть выше по стеку). При безусловном delete+recreate это означало: КАЖДЫЙ
+    цикл живого опроса (раз в 2 минуты) стирал ВСЕ ранее сохранённые события
+    матча и записывал заново только последнюю дельту — необратимая потеря
+    данных, воспроизводимая детерминированно, без всякой гонки потоков.
+    Симптом, с которым это было найдено: DOPX показывал только события ПЕРВЫХ
+    ~50 минут матча, хотя реальный счёт (и лента KFF) ушли на 90+' — потому
+    что именно эта дельта была последней, после которой delete+recreate либо
+    не вызывался, либо каждый следующий вызов уже сам себя стирал.
+
+    `replace_existing=True` (по умолчанию) — старое поведение, для полного
+    ресинка. `replace_existing=False` — только ДОБАВИТЬ переданные события,
+    ничего не удаляя; вызывающий код уже гарантировал, что это не дубликаты.
+    """
     if not events_data:
         return False
-    
+
     # ✅ Поддержка разных форматов: 'events' или 'data'->'events'
     events = events_data.get("events") or (
         events_data.get("data", {}).get("events") if isinstance(events_data.get("data"), dict) else []
     )
-    
+
     if not events:
         return False
-    
-    # Очищаем старые события
-    deleted_count, _ = match.events.all().delete()
-    if deleted_count > 0:
-        logger.info(f"🗑️ Deleted {deleted_count} old events for match {match.id}")
+
+    if replace_existing:
+        # Очищаем старые события — уместно ТОЛЬКО когда `events` содержит
+        # ПОЛНЫЙ список с API (см. docstring выше), иначе см. `replace_existing=False`.
+        deleted_count, _ = match.events.all().delete()
+        if deleted_count > 0:
+            logger.info(f"🗑️ Deleted {deleted_count} old events for match {match.id}")
     
     created_count = 0
     
