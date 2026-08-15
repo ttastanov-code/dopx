@@ -1,0 +1,36 @@
+{% comment %}
+Общая табная навигация для трёх staff-дашбордов. `active_tab` приходит из
+context каждой вьюхи (dashboard/views.py) — простая строка вместо
+url_name-сравнения, чтобы не завязываться на резолвер лишний раз.
+{% endcomment %}
+<div class="flex items-center justify-between mb-4 md:mb-6">
+    <div>
+        <h1 class="text-xl md:text-2xl font-bold flex items-center gap-2">
+            <i class="ti ti-layout-dashboard text-primary"></i> Staff-дашборд
+        </h1>
+        <p class="text-xs md:text-sm opacity-60">Только для сотрудников — данные не кэшируются агрессивно, могут отставать на пару минут.</p>
+    </div>
+    <a href="{% url 'admin:index' %}" class="btn btn-ghost btn-xs sm:btn-sm hidden sm:inline-flex">
+        <i class="ti ti-settings"></i> Django admin
+    </a>
+</div>
+<div role="tablist" class="tabs tabs-boxed mb-4 md:mb-6 w-fit">
+    <a role="tab" href="{% url 'dashboard:overview' %}" class="tab {% if active_tab == 'overview' %}tab-active{% endif %}">
+        <i class="ti ti-chart-line mr-1.5"></i> Обзор
+    </a>
+    <a role="tab" href="{% url 'dashboard:traffic' %}" class="tab {% if active_tab == 'traffic' %}tab-active{% endif %}">
+        <i class="ti ti-world mr-1.5"></i> Трафик
+    </a>
+    <a role="tab" href="{% url 'dashboard:data_health' %}" class="tab {% if active_tab == 'data_health' %}tab-active{% endif %}">
+        <i class="ti ti-activity-heartbeat mr-1.5"></i> Здоровье данных
+    </a>
+    <a role="tab" href="{% url 'dashboard:antifraud' %}" class="tab {% if active_tab == 'antifraud' %}tab-active{% endif %}">
+        <i class="ti ti-shield-exclamation mr-1.5"></i> Антифрод
+    </a>
+    <a role="tab" href="{% url 'dashboard:parser_tools' %}" class="tab {% if active_tab == 'parser_tools' %}tab-active{% endif %}">
+        <i class="ti ti-server-cog mr-1.5"></i> Парсер
+    </a>
+    <a role="tab" href="{% url 'dashboard:audit_log' %}" class="tab {% if active_tab == 'audit' %}tab-active{% endif %}">
+        <i class="ti ti-history mr-1.5"></i> Аудит
+    </a>
+</div>

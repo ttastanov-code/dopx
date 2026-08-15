@@ -6,7 +6,8 @@ from .views import (
     ProfileEditView, PasswordChangeViewCustom,
     PasswordResetViewCustom, PasswordResetDoneViewCustom,
     PasswordResetConfirmViewCustom, PasswordResetCompleteViewCustom,
-    NotificationSettingsView, VerifyEmailView, VerifyEmailSentView, VerifyEmailInvalidView
+    NotificationSettingsView, VerifyEmailView, VerifyEmailSentView, VerifyEmailInvalidView,
+    toggle_follow, push_subscribe, push_unsubscribe,
 )
 
 app_name = 'users'
@@ -33,6 +34,14 @@ urlpatterns = [
     
     path('leaderboard/', UserLeaderboardView.as_view(), name='leaderboard'),
     path('players/leaderboard/', PlayerLeaderboardView.as_view(), name='player_leaderboard'),
+
+    # Follow-граф (продуктовый аудит, раздел 5b) — один эндпоинт на оба типа
+    # цели, см. docstring toggle_follow.
+    path('follow/<str:target_type>/<uuid:target_id>/', toggle_follow, name='toggle_follow'),
+
+    # Web Push (продуктовый аудит, раздел 5c) — см. static/js/push.js.
+    path('push/subscribe/', push_subscribe, name='push_subscribe'),
+    path('push/unsubscribe/', push_unsubscribe, name='push_unsubscribe'),
 
     # НОВОЕ: публичный профиль по username (только чтение) — см. докстринг
     # PublicProfileView. Префикс 'u/', а не 'profile/<username>/', чтобы не

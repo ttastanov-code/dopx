@@ -1,0 +1,43 @@
+{% comment %}
+Логотип DOPX — переиспользуемый компонент (навбар + футер), см.
+templates/components/_navbar.html и templates/components/_footer.html.
+
+ЗАМЕНЕНО: раньше логотипом был растровый PNG (1536×1024) — абстрактное
+"неоновое" свечение без разборчивых очертаний на прозрачном фоне.
+На маленьких размерах (28px в мобильном навбаре) свечение превращалось
+в нечитаемое пятно, а на десктопе картинку тянули до h-20 (80px) —
+она банально не помещалась по высоте в обычный навбар. Плюс текст
+"DOPX" рядом с ней был вообще скрыт на мобильных (`hidden
+sm:inline-block`) — в мобильной версии бренд не читался никак, именно
+на это и была жалоба.
+
+Теперь — простой чёткий SVG-значок (три "полосы уровня громкости",
+образ в духе "голос трибун измеряем") + текстовый wordmark. Оба
+элемента ВСЕГДА видны на любом экране, просто в разном масштабе — как
+у SofaScore/FotMob и подобных продуктов: логотип никогда не пропадает
+и не превращается в нечитаемое пятно, потому что это векторная
+геометрия и настоящий текст, а не растровое свечение.
+
+Параметры (передаются через {% include %} with):
+- variant (обязателен) — 'nav' / 'footer' / любой уникальный суффикс
+  для id SVG-градиента. Нужен потому что навбар и футер присутствуют
+  на одной странице ОДНОВРЕМЕННО — id в SVG обязаны быть уникальны в
+  рамках документа, иначе browsers могут рассинхронить градиенты.
+- icon_size, text_size — Tailwind-классы размера (опционально,
+  дефолты подобраны под навбар).
+{% endcomment %}
+<div class="flex items-center gap-2 min-w-0">
+    <svg viewBox="0 0 32 32" class="{{ icon_size|default:'h-7 w-7 sm:h-8 sm:w-8' }} shrink-0" aria-hidden="true">
+        <rect width="32" height="32" rx="9" fill="url(#dopxGradient-{{ variant }})"></rect>
+        <rect x="7.4" y="14" width="3.6" height="10.5" rx="1.8" fill="white" fill-opacity="0.95"></rect>
+        <rect x="14.2" y="7.4" width="3.6" height="17.1" rx="1.8" fill="white"></rect>
+        <rect x="21" y="11" width="3.6" height="13.5" rx="1.8" fill="white" fill-opacity="0.95"></rect>
+        <defs>
+            <linearGradient id="dopxGradient-{{ variant }}" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+                <stop offset="0" stop-color="#4F6BFF"></stop>
+                <stop offset="1" stop-color="#9333EA"></stop>
+            </linearGradient>
+        </defs>
+    </svg>
+    <span class="{{ text_size|default:'text-base sm:text-lg' }} font-extrabold tracking-tight leading-none whitespace-nowrap">DOPX</span>
+</div>

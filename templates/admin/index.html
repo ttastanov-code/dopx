@@ -1,0 +1,178 @@
+{% extends "admin/index.html" %}
+{% comment %}
+Кастомная сводка на главной /admin/ — данные приходят через
+UNFOLD["DASHBOARD_CALLBACK"] = dashboard.admin_callback.dashboard_callback
+(см. dopx/settings.py и dashboard/admin_callback.py), который добавляет
+`dopx_kpi` (список карточек) и `dopx_last_sync` в контекст.
+
+Безопасность переопределения: `{% extends "admin/index.html" %}` внутри
+файла, который САМ называется "admin/index.html" — НЕ бесконечная
+рекурсия. Django передаёт `skip` дальше по цепочке загрузчиков шаблонов
+(см. django.template.loaders.base.Loader.get_template), поэтому extends
+находит СЛЕДУЮЩЕЕ совпадение (шаблон unfold/django.contrib.admin), а не
+этот же файл — официально документированный паттерн Django/Unfold для
+переопределения admin-шаблонов.
+
+Стандартный список приложений/моделей (unfold/helpers/app_list_default.html,
+он же родительский `{{ block.super }}`) сюда НЕ включаем — это дублирует
+наш бизнес-сгруппированный сайдбар (UNFOLD["SIDEBAR"] в settings.py) и
+превращает главную страницу в барахолку. Виджет "Recent actions" (история
+последних изменений через django_admin_log) — полезен сам по себе и не
+дублирует сайдбар, поэтому оставляем его через прямой include, в обход
+блока целиком.
+{% endcomment %}
+
+{% block content %}
+{% if dopx_kpi %}
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    {% for card in dopx_kpi %}
+    <div class="rounded-default border border-base-200 bg-white dark:bg-base-900 dark:border-base-700 p-4">
+        <div class="text-font-subtle-light dark:text-font-subtle-dark text-xs uppercase tracking-wide">{{ card.title }}</div>
+        <div class="text-2xl font-semibold text-font-important-light dark:text-font-important-dark mt-1">{{ card.metric }}</div>
+        <div class="text-xs text-font-subtle-light dark:text-font-subtle-dark mt-1">{{ card.footer }}</div>
+    </div>
+    {% endfor %}
+</div>
+<div class="mb-6 flex flex-wrap gap-3">
+    <a href="{% url 'dashboard:overview' %}" class="inline-flex items-center gap-2 rounded-default bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium px-4 py-2 transition-colors">
+        <span class="material-symbols-outlined text-base">dashboard</span> Полный дашборд
+    </a>
+    <a href="{% url 'dashboard:data_health' %}" class="inline-flex items-center gap-2 rounded-default border border-base-200 dark:border-base-700 text-sm font-medium px-4 py-2 hover:bg-base-50 dark:hover:bg-base-800 transition-colors">
+        <span class="material-symbols-outlined text-base">monitor_heart</span>
+        {% if dopx_last_sync %}Синк {{ dopx_last_sync.created_at|timesince }} назад{% else %}Здоровье данных{% endif %}
+    </a>
+    <a href="{% url 'dashboard:antifraud' %}" class="inline-flex items-center gap-2 rounded-default border border-base-200 dark:border-base-700 text-sm font-medium px-4 py-2 hover:bg-base-50 dark:hover:bg-base-800 transition-colors">
+        <span class="material-symbols-outlined text-base">shield_moon</span> Антифрод-очередь
+    </a>
+</div>
+
+{# Графики — те же данные, что на /staff/dashboard/ (dashboard/admin_callback.py передаёт их через dashboard_callback) #}
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+    <div class="rounded-default border border-base-200 dark:border-base-700 bg-white dark:bg-base-900 p-4">
+        <h3 class="text-sm font-semibold text-font-important-light dark:text-font-important-dark mb-2">Активные пользователи по дням (DAU)</h3>
+        <canvas id="dopxDauChart" height="110"></canvas>
+    </div>
+    <div class="rounded-default border border-base-200 dark:border-base-700 bg-white dark:bg-base-900 p-4">
+        <h3 class="text-sm font-semibold text-font-important-light dark:text-font-important-dark mb-2">Активные пользователи по неделям (WAU)</h3>
+        <canvas id="dopxWauChart" height="110"></canvas>
+    </div>
+    <div class="rounded-default border border-base-200 dark:border-base-700 bg-white dark:bg-base-900 p-4">
+        <h3 class="text-sm font-semibold text-font-important-light dark:text-font-important-dark mb-2">Регистрации по дням</h3>
+        <canvas id="dopxRegChart" height="110"></canvas>
+    </div>
+    <div class="rounded-default border border-base-200 dark:border-base-700 bg-white dark:bg-base-900 p-4">
+        <h3 class="text-sm font-semibold text-font-important-light dark:text-font-important-dark mb-2">Оценки по дням</h3>
+        <canvas id="dopxEvalChart" height="110"></canvas>
+    </div>
+</div>
+
+{# Контентные метрики — что именно оценивают пользователи #}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+    <div class="rounded-default border border-base-200 dark:border-base-700 bg-white dark:bg-base-900 p-4">
+        <h3 class="text-sm font-semibold text-font-important-light dark:text-font-important-dark mb-3">Топ матчей по числу оценок</h3>
+        {% if dopx_top_matches %}
+        <ol class="text-sm space-y-1.5">
+            {% for row in dopx_top_matches %}
+            <li class="flex justify-between gap-2">
+                <span class="truncate">{{ forloop.counter }}. {{ row.label }}</span>
+                <span class="font-semibold shrink-0">{{ row.evals }}</span>
+            </li>
+            {% endfor %}
+        </ol>
+        {% else %}
+        <p class="text-xs opacity-50">Нет данных</p>
+        {% endif %}
+    </div>
+    <div class="rounded-default border border-base-200 dark:border-base-700 bg-white dark:bg-base-900 p-4">
+        <h3 class="text-sm font-semibold text-font-important-light dark:text-font-important-dark mb-3">Топ игроков по числу оценок</h3>
+        {% if dopx_top_players %}
+        <ol class="text-sm space-y-1.5">
+            {% for row in dopx_top_players %}
+            <li class="flex justify-between gap-2">
+                <span class="truncate">{{ forloop.counter }}. {{ row.label }}</span>
+                <span class="font-semibold shrink-0">{{ row.evals }}</span>
+            </li>
+            {% endfor %}
+        </ol>
+        {% else %}
+        <p class="text-xs opacity-50">Нет данных</p>
+        {% endif %}
+    </div>
+    <div class="rounded-default border border-base-200 dark:border-base-700 bg-white dark:bg-base-900 p-4">
+        <h3 class="text-sm font-semibold text-font-important-light dark:text-font-important-dark mb-2">Распределение оценок игроков</h3>
+        <canvas id="dopxRatingChart" height="140"></canvas>
+        <p class="text-xs opacity-50 mt-2">Матчей без единой оценки: <b>{{ dopx_matches_without_evaluations }}</b></p>
+    </div>
+</div>
+{% endif %}
+{% include "unfold/helpers/history.html" %}
+{% endblock %}
+
+{% block extrahead %}
+{{ block.super }}
+{% if dopx_kpi %}
+{{ dopx_dau|json_script:"dopx-dau-data" }}
+{{ dopx_wau|json_script:"dopx-wau-data" }}
+{{ dopx_registrations_by_day|json_script:"dopx-reg-data" }}
+{{ dopx_evaluations_by_day|json_script:"dopx-eval-data" }}
+{{ dopx_rating_distribution|json_script:"dopx-rating-data" }}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    function lineChart(canvasId, dataId, label, color) {
+        const el = document.getElementById(canvasId);
+        if (!el || typeof Chart === 'undefined') return;
+        const points = JSON.parse(document.getElementById(dataId).textContent);
+        const isActivity = Object.prototype.hasOwnProperty.call(points[0] || {}, 'active_users');
+        new Chart(el.getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: points.map((p) => p.period),
+                datasets: [{
+                    label: label,
+                    data: points.map((p) => isActivity ? p.active_users : p.count),
+                    borderColor: color,
+                    backgroundColor: color + '33',
+                    tension: 0.3,
+                    fill: true,
+                    pointRadius: 2,
+                }],
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+            },
+        });
+    }
+
+    lineChart('dopxDauChart', 'dopx-dau-data', 'DAU', '#6366f1');
+    lineChart('dopxWauChart', 'dopx-wau-data', 'WAU', '#8b5cf6');
+    lineChart('dopxRegChart', 'dopx-reg-data', 'Регистрации', '#10b981');
+    lineChart('dopxEvalChart', 'dopx-eval-data', 'Оценки', '#f59e0b');
+
+    const ratingEl = document.getElementById('dopxRatingChart');
+    if (ratingEl && typeof Chart !== 'undefined') {
+        const distribution = JSON.parse(document.getElementById('dopx-rating-data').textContent);
+        new Chart(ratingEl.getContext('2d'), {
+            type: 'bar',
+            data: {
+                labels: Object.keys(distribution),
+                datasets: [{
+                    label: 'Оценок',
+                    data: Object.values(distribution),
+                    backgroundColor: '#6366f1',
+                    borderRadius: 4,
+                }],
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+            },
+        });
+    }
+});
+</script>
+{% endif %}
+{% endblock %}

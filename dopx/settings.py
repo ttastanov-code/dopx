@@ -3,6 +3,8 @@ import os
 from dotenv import load_dotenv
 from pathlib import Path
 from celery.schedules import crontab
+from django.urls import reverse_lazy
+from django.utils.translation import gettext_lazy as _
 
 load_dotenv()
 
@@ -14,12 +16,20 @@ ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "*").split(",")
 
 # Application definition
 INSTALLED_APPS = [
+    # django-unfold ДОЛЖЕН стоять ПЕРЕД django.contrib.admin — его шаблоны
+    # (admin/base.html и т.д.) переопределяют стандартные через APP_DIRS,
+    # порядок INSTALLED_APPS определяет приоритет поиска шаблонов между
+    # приложениями. Существующие ModelAdmin-классы (30+ по проекту) не
+    # требуют переписывания — Unfold работает поверх django.contrib.admin
+    # без миграции, тема применяется даже без замены base admin.ModelAdmin.
+    'unfold',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.sitemaps',
     # Third party
     'rest_framework',
     'drf_spectacular',
@@ -46,7 +56,198 @@ INSTALLED_APPS = [
     'events',
     'lineups',
     'notifications',
+    'dashboard',
+    # Security-стек (продуктовый апгрейд, "защита на высшем уровне" для
+    # staff): axes — брутфорс-лок логина, django_otp — 2FA (TOTP + backup-коды).
+    'axes',
+    'django_otp',
+    'django_otp.plugins.otp_totp',
+    'django_otp.plugins.otp_static',
 ]
+
+# ============================================================
+# django-unfold — тема Django admin (продуктовый апгрейд, "оба: admin +
+# ссылка на dashboard" → полноценный редизайн). Работает ПОВЕРХ обычного
+# django.contrib.admin, существующие ModelAdmin-классы (30+ по проекту)
+# не требуют переписывания под unfold.admin.ModelAdmin — тема применяется
+# автоматически. SIDEBAR ниже — официальный способ Unfold добавлять свои
+# пункты меню, вместо кастомного templates/admin/base_site.html (убран —
+# конфликтовал бы с шаблонами unfold, см. git-историю этого файла).
+# ============================================================
+UNFOLD = {
+    "SITE_TITLE": "DOPX — администрирование",
+    "SITE_HEADER": "DOPX",
+    "SITE_SUBHEADER": "Крауд-рейтинг Премьер-Лиги Казахстана",
+    "SITE_SYMBOL": "sports_soccer",
+    "SHOW_HISTORY": True,
+    "SHOW_VIEW_ON_SITE": True,
+    "SHOW_BACK_BUTTON": True,
+    # Палитра под daisyUI-тему сайта (primary — indigo/violet), см.
+    # templates/base.html / daisyui@5 CDN. Формат — RGB-триплеты без
+    # запятых, как того требует Unfold (CSS-переменные rgb(var(--c) / a)).
+    "COLORS": {
+        "primary": {
+            "50": "238 242 255",
+            "100": "224 231 255",
+            "200": "199 210 254",
+            "300": "165 180 252",
+            "400": "129 140 248",
+            "500": "99 102 241",
+            "600": "79 70 229",
+            "700": "67 56 202",
+            "800": "55 48 163",
+            "900": "49 46 129",
+            "950": "30 27 75",
+        },
+    },
+    "SIDEBAR": {
+        "show_search": True,
+        # show_all_applications=False — раньше был True, показывал ПОД
+        # нашей кастомной навигацией ещё и сырой автосгенерированный список
+        # Django-приложений (тот самый "Aggregates, Analytics, Axes,
+        # Coaches..." по алфавиту) — теперь у каждой модели есть осмысленное
+        # место в бизнес-группах ниже, дублировать его плоским списком
+        # приложений незачем (продуктовый апгрейд — "переиграть отображение
+        # apps в админке более понятно").
+        "show_all_applications": False,
+        "navigation": [
+            {
+                "title": _("Staff-инструменты"),
+                "separator": True,
+                "items": [
+                    {
+                        "title": _("Дашборд — обзор"),
+                        "icon": "dashboard",
+                        "link": reverse_lazy("dashboard:overview"),
+                    },
+                    {
+                        "title": _("Трафик"),
+                        "icon": "language",
+                        "link": reverse_lazy("dashboard:traffic"),
+                    },
+                    {
+                        "title": _("Здоровье данных"),
+                        "icon": "monitor_heart",
+                        "link": reverse_lazy("dashboard:data_health"),
+                    },
+                    {
+                        "title": _("Антифрод"),
+                        "icon": "shield_moon",
+                        "link": reverse_lazy("dashboard:antifraud"),
+                    },
+                    {
+                        "title": _("Парсер KFF"),
+                        "icon": "cable",
+                        "link": reverse_lazy("dashboard:parser_tools"),
+                    },
+                    {
+                        "title": _("Аудит-лог"),
+                        "icon": "history",
+                        "link": reverse_lazy("dashboard:audit_log"),
+                    },
+                    {
+                        "title": _("На сайт"),
+                        "icon": "open_in_new",
+                        "link": reverse_lazy("core:home"),
+                    },
+                ],
+            },
+            # ------------------------------------------------------------
+            # Дальше — бизнес-группировка Django-моделей (продуктовый
+            # апгрейд). Раньше сайдбар admin показывал сырой список
+            # Django-приложений в алфавитном порядке (Aggregates, Analytics,
+            # Axes, Coaches...) — технически корректно, но staff приходится
+            # знать НАЗВАНИЕ ПРИЛОЖЕНИЯ, чтобы найти нужную модель. Ниже —
+            # те же ~30 моделей, сгруппированные по СМЫСЛУ использования.
+            # collapsible=True — группы свёрнуты по умолчанию, разворачивать
+            # по мере надобности, а не листать длинный список каждый раз.
+            # ------------------------------------------------------------
+            {
+                "title": _("Справочники"),
+                "icon": "category",
+                "collapsible": True,
+                "items": [
+                    {"title": _("Лиги"), "icon": "emoji_events", "link": reverse_lazy("admin:leagues_league_changelist")},
+                    {"title": _("Сезоны"), "icon": "calendar_month", "link": reverse_lazy("admin:seasons_season_changelist")},
+                    {"title": _("Команды"), "icon": "groups", "link": reverse_lazy("admin:teams_team_changelist")},
+                    {"title": _("Команды в сезоне"), "icon": "table_rows", "link": reverse_lazy("admin:teams_teamseason_changelist")},
+                    {"title": _("Игроки"), "icon": "sports", "link": reverse_lazy("admin:players_player_changelist")},
+                    {"title": _("Тренеры"), "icon": "assignment_ind", "link": reverse_lazy("admin:coaches_coach_changelist")},
+                    {"title": _("Судьи"), "icon": "sports_score", "link": reverse_lazy("admin:referees_referee_changelist")},
+                    {"title": _("Стадионы"), "icon": "stadium", "link": reverse_lazy("admin:core_stadium_changelist")},
+                ],
+            },
+            {
+                "title": _("Матчи и данные"),
+                "icon": "scoreboard",
+                "collapsible": True,
+                "items": [
+                    {"title": _("Матчи"), "icon": "sports_soccer", "link": reverse_lazy("admin:matches_match_changelist")},
+                    {"title": _("Составы"), "icon": "assignment", "link": reverse_lazy("admin:lineups_matchlineup_changelist")},
+                    {"title": _("События матчей"), "icon": "bolt", "link": reverse_lazy("admin:events_matchevent_changelist")},
+                    {"title": _("Реакции на события"), "icon": "mood", "link": reverse_lazy("admin:events_eventreaction_changelist")},
+                ],
+            },
+            {
+                "title": _("Оценки и вовлечённость"),
+                "icon": "star_rate",
+                "collapsible": True,
+                "items": [
+                    {"title": _("Контекст оценки"), "icon": "visibility", "link": reverse_lazy("admin:evaluations_contextevaluation_changelist")},
+                    {"title": _("Оценки команд"), "icon": "shield", "link": reverse_lazy("admin:evaluations_teamevaluation_changelist")},
+                    {"title": _("Оценки игроков"), "icon": "person", "link": reverse_lazy("admin:evaluations_playerevaluation_changelist")},
+                    {"title": _("Оценки тренеров"), "icon": "badge", "link": reverse_lazy("admin:evaluations_coachevaluation_changelist")},
+                    {"title": _("Оценки судей"), "icon": "gavel", "link": reverse_lazy("admin:evaluations_refereeevaluation_changelist")},
+                    {"title": _("Оценки матча"), "icon": "reviews", "link": reverse_lazy("admin:evaluations_matchevaluation_changelist")},
+                ],
+            },
+            {
+                "title": _("Пользователи"),
+                "icon": "group",
+                "collapsible": True,
+                "items": [
+                    {"title": _("Пользователи"), "icon": "person", "link": reverse_lazy("admin:users_user_changelist")},
+                    {"title": _("Бейджи"), "icon": "military_tech", "link": reverse_lazy("admin:users_userbadge_changelist")},
+                    {"title": _("XP и уровни"), "icon": "trending_up", "link": reverse_lazy("admin:users_userxp_changelist")},
+                    {"title": _("Подписки (follow)"), "icon": "favorite", "link": reverse_lazy("admin:users_follow_changelist")},
+                    {"title": _("Push-подписки"), "icon": "notifications_active", "link": reverse_lazy("admin:users_pushsubscription_changelist")},
+                ],
+            },
+            {
+                "title": _("Антифрод и обращения"),
+                "icon": "gpp_maybe",
+                "collapsible": True,
+                "items": [
+                    {"title": _("Подозрительная активность"), "icon": "warning", "link": reverse_lazy("admin:users_suspiciousactivityflag_changelist")},
+                    {"title": _("Обращения"), "icon": "mail", "link": reverse_lazy("admin:notifications_contactsubmission_changelist")},
+                    {"title": _("Уведомления"), "icon": "notifications", "link": reverse_lazy("admin:notifications_notification_changelist")},
+                ],
+            },
+            {
+                "title": _("Аналитика и агрегаты"),
+                "icon": "monitoring",
+                "collapsible": True,
+                "items": [
+                    {"title": _("Агрегаты игроков"), "icon": "query_stats", "link": reverse_lazy("admin:aggregates_playermatchaggregate_changelist")},
+                    {"title": _("Агрегаты тренеров"), "icon": "query_stats", "link": reverse_lazy("admin:aggregates_coachmatchaggregate_changelist")},
+                    {"title": _("Агрегаты матчей"), "icon": "query_stats", "link": reverse_lazy("admin:aggregates_matchaggregate_changelist")},
+                    {"title": _("События аналитики"), "icon": "insights", "link": reverse_lazy("admin:analytics_analyticsevent_changelist")},
+                ],
+            },
+            {
+                "title": _("Системное"),
+                "icon": "dns",
+                "collapsible": True,
+                "items": [
+                    {"title": _("Запуски синка KFF"), "icon": "sync", "link": reverse_lazy("admin:parsers_parsersyncrun_changelist")},
+                    {"title": _("Аудит-лог staff (полный)"), "icon": "manage_history", "link": reverse_lazy("admin:dashboard_staffactionlog_changelist")},
+                    {"title": _("Попытки входа (axes)"), "icon": "lock_clock", "link": reverse_lazy("admin:axes_accessattempt_changelist")},
+                ],
+            },
+        ],
+    },
+    "DASHBOARD_CALLBACK": "dashboard.admin_callback.dashboard_callback",
+}
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -54,6 +255,17 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    # django-axes — блокировка брутфорса логина. Обязательно ПОСЛЕ
+    # AuthenticationMiddleware (нужен request.user для отслеживания попыток).
+    'axes.middleware.AxesMiddleware',
+    # django-otp — прикрепляет OTP-состояние (request.user.is_verified())
+    # к сессии. ПОСЛЕ AuthenticationMiddleware, ДО нашей проверки ниже.
+    'django_otp.middleware.OTPMiddleware',
+    # Принудительная OTP-проверка для /admin/ и /staff/dashboard/ + sliding
+    # idle-таймаут сессии staff — см. dopx/middleware.py. ПОСЛЕДНИЙ из
+    # security-мидлварей: должен видеть и request.user, и is_verified().
+    'dashboard.middleware.StaffTwoFactorEnforcementMiddleware',
+    'dopx.middleware.StaffSessionSecurityMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -77,6 +289,7 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 'core.context_processors.indicator_tooltips',
+                'core.context_processors.pwa_settings',
             ],
         },
     },
@@ -110,6 +323,42 @@ AUTH_PASSWORD_VALIDATORS = [
 
 AUTH_USER_MODEL = "users.User"
 
+# LOGIN_URL не был задан НИГДЕ в проекте — Django молча падал на дефолт
+# '/accounts/login/', которого в проекте не существует (сайт использует
+# кастомный логин на /users/login/, см. users/urls.py). Это означало, что
+# ЛЮБОЙ @login_required-вью (не только новые 2FA-страницы) для неавторизованного
+# пользователя отдавал 404 вместо редиректа на форму входа — найдено при
+# отладке 2FA (dashboard/views_2fa.py), но баг системный, чинится здесь один раз.
+LOGIN_URL = 'users:login'
+
+# =============================================================================
+# django-axes — блокировка брутфорса логина (продуктовый апгрейд, "высший
+# уровень" защиты staff-доступа). AxesStandaloneBackend ОБЯЗАТЕЛЬНО ПЕРВЫМ —
+# он перехватывает попытку аутентификации ДО ModelBackend и отклоняет её,
+# если по этому username/IP уже превышен лимит неудачных попыток, независимо
+# от того, правильный пароль или нет. ModelBackend ниже — стандартный
+# бэкенд, до сих пор неявно применявшийся по умолчанию (AUTHENTICATION_BACKENDS
+# не был задан явно нигде в проекте) — явно перечисляем, чтобы не потерять.
+# =============================================================================
+AUTHENTICATION_BACKENDS = [
+    'axes.backends.AxesStandaloneBackend',
+    'django.contrib.auth.backends.ModelBackend',
+]
+
+# 5 неудачных попыток за 1 час → блокировка на 1 час. Блокируем по паре
+# username+IP (COOLOFF применяется к комбинации) — так один скомпрометированный
+# пароль не блокирует легитимного сотрудника с другого IP, но и не даёт
+# атакующему перебирать пароли с одного IP по разным username бесконечно.
+AXES_FAILURE_LIMIT = 5
+AXES_COOLOFF_TIME = 1  # часы
+AXES_LOCKOUT_PARAMETERS = ['username', 'ip_address']
+AXES_RESET_COOLOFF_ON_FAILURE_DURING_LOCKOUT = True
+# Сбрасывать счётчик попыток при успешном входе — иначе одна забытая старая
+# неудачная попытка месяц назад тихо накапливалась бы к следующей блокировке.
+AXES_RESET_ON_SUCCESS = True
+AXES_LOCKOUT_TEMPLATE = None  # используем дефолтный ответ axes (403 + сообщение), без кастомного шаблона
+
+
 LANGUAGE_CODE = 'ru'
 TIME_ZONE = "Asia/Almaty"
 USE_I18N = True
@@ -137,6 +386,11 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'anon': '100/hour',
         'user': '1000/hour',
+        # Отдельный, более щедрый лимит для событийной аналитики
+        # (analytics/views.py::ClientEventThrottle) — на 6-шаговом
+        # вайзарде легитимный юзер легко даёт 15-20 событий за визит,
+        # глобального anon-лимита в 100/hour ему не хватит.
+        'analytics_events': '300/hour',
     },
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
@@ -152,6 +406,55 @@ REST_FRAMEWORK = {
 }
 
 CSRF_COOKIE_HTTPONLY = False
+
+# =============================================================================
+# Security hardening (продуктовый апгрейд — "защита на высшем уровне" для
+# staff-доступа). Django НЕ включает Secure/SameSite-флаги на cookie по
+# умолчанию — их приходится выставлять явно. `not DEBUG` — на локальной
+# разработке (HTTP, без TLS) Secure-cookie просто не отправлялся бы браузером
+# вообще, залогиниться было бы невозможно; в проде (DEBUG=False, обязательно
+# за HTTPS) это критичный минимум.
+# =============================================================================
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SAMESITE = 'Lax'
+# Обычная сессия — 2 недели (типичный UX сайта с оценками матчей, никто не
+# хочет логиниться каждый день). Для staff — отдельный, СИЛЬНО более короткий
+# sliding-таймаут накладывается через StaffSessionSecurityMiddleware ниже
+# (dopx/middleware.py), а не через этот глобальный SESSION_COOKIE_AGE — он
+# бьёт по ВСЕМ пользователям одинаково, укорачивать его ради staff нельзя.
+SESSION_COOKIE_AGE = 60 * 60 * 24 * 14
+SESSION_SAVE_EVERY_REQUEST = True  # нужно, чтобы sliding-таймаут ниже реально скользил
+
+X_FRAME_OPTIONS = 'DENY'
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = 'same-origin'
+if not DEBUG:
+    # HSTS и proxy-заголовок SSL — только в проде за реальным TLS-терминатором
+    # (nginx/ALB), на DEBUG-окружении без сертификата это уронит локальный сервер.
+    SECURE_SSL_REDIRECT = os.getenv('SECURE_SSL_REDIRECT', 'True') == 'True'
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+# Idle-таймаут сессии ТОЛЬКО для staff (is_staff=True) — обычные пользователи
+# сайта под этот лимит не попадают. См. dopx/middleware.py::StaffSessionSecurityMiddleware.
+STAFF_SESSION_IDLE_TIMEOUT_SECONDS = int(os.getenv('STAFF_SESSION_IDLE_TIMEOUT_SECONDS', 30 * 60))
+
+# Feature-флаг для 2FA (dashboard/middleware.py::StaffTwoFactorEnforcementMiddleware).
+# По умолчанию ВКЛЮЧЕНО — таково явное требование задачи. Флаг существует
+# как аварийный рубильник: если после деплоя что-то пойдёт не так с QR/TOTP
+# и staff массово не может зайти, можно временно выставить
+# STAFF_2FA_ENFORCED=False в .env и перезапустить сервер БЕЗ отката кода,
+# пока разбираемся — типовая enterprise-практика для рискованных security-фич.
+STAFF_2FA_ENFORCED = os.getenv('STAFF_2FA_ENFORCED', 'True') == 'True'
+
+# Название, которое увидит staff в приложении-аутентификаторе (Google
+# Authenticator/Authy) рядом с кодом — иначе там был бы generic "unknown".
+OTP_TOTP_ISSUER = 'DOPX'
 
 SPECTACULAR_SETTINGS = {
     'TITLE': 'DOPX API',
@@ -172,6 +475,21 @@ CELERY_TIMEZONE = TIME_ZONE
 CELERY_ENABLE_UTC = False
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
+
+# =============================================================================
+# Web Push (продуктовый аудит, раздел 5c "PWA + Web Push")
+# =============================================================================
+# Ключи генерируются ОДИН РАЗ на проект (не на пользователя!) командой
+# `vapid --gen` из пакета `py-vapid` (устанавливается автоматически как
+# зависимость `pywebpush`, см. requirements.txt) и кладутся в переменные
+# окружения — как и CELERY_BROKER_URL выше, НЕ хардкодятся в settings.py.
+# Пока переменные не заданы, `notifications/services.py::send_push_to_user`
+# логирует предупреждение и no-op'ает вместо падения — фича должна
+# деградировать мягко на окружениях, где push ещё не настроен (например,
+# локальная разработка), а не ронять весь `notify_followers_match_activity`.
+VAPID_PUBLIC_KEY = os.getenv('VAPID_PUBLIC_KEY', '')
+VAPID_PRIVATE_KEY = os.getenv('VAPID_PRIVATE_KEY', '')
+VAPID_ADMIN_EMAIL = os.getenv('VAPID_ADMIN_EMAIL', 'admin@dopx.kz')
 
 # ✅ НОВОЕ: Настройки парсера (легко включать/выключать турниры)
 PARSER_SETTINGS = {

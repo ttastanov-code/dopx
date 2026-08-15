@@ -1,5 +1,8 @@
 # matches/views.py
+import json
+
 from django.shortcuts import render, get_object_or_404
+from django.urls import reverse
 from django.views.generic import ListView, DetailView
 from django.utils import timezone
 from django.db.models import Avg, Count, Q, Prefetch, Sum, F, Value, Case, When, DateTimeField, DurationField
@@ -137,27 +140,47 @@ class MatchDetailView(DetailView):
         
         # Проверка: пользователь уже оценил этот матч?
         user_has_evaluated = False
+        # НОВОЕ (продуктовый аудит, раздел 2 "Live-слой" — конвертация
+        # live-пульса в полный вайзард): если пользователь тапал реакции
+        # во время трансляции, но матч завершился, а он ещё не прошёл
+        # полную оценку — самый тёплый момент показать CTA "вы уже начали,
+        # закончите оценку" вместо нейтрального приглашения с нуля.
+        user_has_pulse_reactions = False
         if self.request.user.is_authenticated:
             user_has_evaluated = EvaluationSession.objects.filter(
                 user=self.request.user,
                 match=match,
                 status='completed'
             ).exists()
+            if not user_has_evaluated and match.status == 'finished':
+                from events.models import EventReaction
+                user_has_pulse_reactions = EventReaction.objects.filter(
+                    user=self.request.user, match_event__match=match
+                ).exists()
         
         # Агрегаты матча
         match_agg = getattr(match, 'aggregate', None)
         
         # Топ 5 игроков матча
+        # ИСПРАВЛЕНО (продуктовый аудит, раздел 1): раньше сортировка шла по
+        # performance_score БЕЗ учёта total_votes — один голос "10/10 от
+        # друга" мог вытолкнуть игрока с 1 оценкой выше игрока с 40
+        # оценками и честным 8.5. `total_votes__gte=MIN_VOTES_FOR_DISPLAY`
+        # делает "топ игроков матча" статистически представительным, а не
+        # просто самым высоким единичным числом.
+        from aggregates.services import MIN_VOTES_FOR_DISPLAY
+
         top_players = PlayerMatchAggregate.objects.filter(
-            match=match
+            match=match, total_votes__gte=MIN_VOTES_FOR_DISPLAY
         ).select_related(
             'player',
             'player__team'
         ).order_by('-performance_score')[:5]
-        
-        # Худшие 3 игрока матча
+
+        # Худшие 3 игрока матча — та же логика: не топить игрока в
+        # антирейтинге на основании 1-2 предвзятых оценок.
         worst_players = PlayerMatchAggregate.objects.filter(
-            match=match
+            match=match, total_votes__gte=MIN_VOTES_FOR_DISPLAY
         ).select_related(
             'player',
             'player__team'
@@ -221,6 +244,7 @@ class MatchDetailView(DetailView):
         context.update({
             'voting_open': voting_open,
             'user_has_evaluated': user_has_evaluated,
+            'user_has_pulse_reactions': user_has_pulse_reactions,
             'match_aggregate': match_agg,
             'top_players': top_players,
             'worst_players': worst_players,
@@ -236,6 +260,40 @@ class MatchDetailView(DetailView):
             'page_title': f'{match.home_team.name} vs {match.away_team.name} — DOPX',
             'now': now,
         })
+
+        # SEO: meta_description + schema.org (SportsEvent) — используются в
+        # <head> базового шаблона (см. templates/base.html) и в
+        # templates/matches/detail.html через {% block schema %}. Через
+        # json.dumps, а не ручную интерполяцию Django-переменных внутри
+        # <script> — сырая подстановка имени команды/игрока со спецсимволами
+        # (кавычки, </script>) могла бы сломать JSON или открыть XSS.
+        context['meta_description'] = (
+            f"Оценка матча {match.home_team.name} {match.get_score_display()} "
+            f"{match.away_team.name} от болельщиков DOPX. Рейтинги игроков, тренеров и судьи."
+        )
+        # Шер-карточка (core/services/share_cards.py) — абсолютный URL,
+        # соцсети-скрейперы (Telegram/WhatsApp) не резолвят относительные
+        # og:image. Тот же путь используется и на кнопках "Поделиться" ниже.
+        context['og_image'] = self.request.build_absolute_uri(
+            reverse('core:match_share_card', args=[match.id])
+        )
+        context['share_text'] = (
+            f"{match.home_team.name} {match.get_score_display()} {match.away_team.name} — "
+            f"смотрите оценки болельщиков на DOPX"
+        )
+        schema = {
+            "@context": "https://schema.org",
+            "@type": "SportsEvent",
+            "name": f"{match.home_team.name} vs {match.away_team.name}",
+            "startDate": match.start_time.isoformat(),
+            "location": {"@type": "Place", "name": match.stadium.name if match.stadium else (match.home_team.city or "Казахстан")},
+            "competitor": [
+                {"@type": "SportsTeam", "name": match.home_team.name},
+                {"@type": "SportsTeam", "name": match.away_team.name},
+            ],
+            "description": context['meta_description'],
+        }
+        context['schema_json'] = json.dumps(schema, ensure_ascii=False)
         return context
 
 @require_http_methods(["GET"])

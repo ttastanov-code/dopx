@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-md mx-auto py-10 px-4">
+    <h1 class="text-xl font-bold mb-2 flex items-center gap-2">
+        <i class="ti ti-key text-warning"></i> Backup-коды
+    </h1>
+    <div class="alert alert-warning text-sm mb-4">
+        <i class="ti ti-alert-triangle"></i>
+        Эти коды показываются ОДИН РАЗ. Сохраните их в менеджере паролей —
+        каждый код можно использовать один раз вместо кода из приложения,
+        если телефон недоступен.
+    </div>
+
+    <div class="card bg-base-100 border border-base-300 mb-6">
+        <div class="card-body p-4">
+            <div class="grid grid-cols-2 gap-2 font-mono text-sm">
+                {% for token in tokens %}
+                <div class="bg-base-200 rounded px-3 py-2 text-center">{{ token }}</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <a href="{% url 'dashboard:overview' %}" class="btn btn-primary w-full">Я сохранил коды — продолжить</a>
+</div>
+{% endblock %}

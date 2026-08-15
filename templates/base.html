@@ -5,10 +5,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="description" content="DOPX — Голос трибун измеряем">
     <meta name="theme-color" content="#000000">
     <!-- SEO -->
     <title>{% block title %}{{ page_title|default:'DOPX' }}{% endblock %}</title>
+    <!-- ИЗМЕНЕНО: description/OG раньше был один статичный тег на ВСЕ
+         страницы сайта ("DOPX — Голос трибун измеряем") — страница матча
+         и профиль игрока в поиске/при шеринге выглядели неотличимо друг
+         от друга. Теперь читаем `meta_description`/`og_image` из
+         контекста конкретной вьюхи (см. matches/views.py,
+         players/views.py), с этим же текстом как дефолтом для страниц,
+         которые его ещё не задают. -->
+    <meta name="description" content="{{ meta_description|default:'DOPX — Голос трибун измеряем' }}">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="{{ page_title|default:'DOPX' }}">
+    <meta property="og:description" content="{{ meta_description|default:'DOPX — Голос трибун измеряем' }}">
+    <meta property="og:image" content="{% if og_image %}{{ og_image }}{% else %}{{ request.scheme }}://{{ request.get_host }}{% static 'img/dopx-logo.png' %}{% endif %}">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="{{ request.build_absolute_uri }}">
+    {% block schema %}{% endblock %}
+    <!-- PWA (продуктовый аудит, раздел 5c) — манифест грузится из /static/,
+         но регистрируется service worker'ом с /sw.js (см. core/views.py::
+         service_worker про то, почему это разные пути и зачем). -->
+    <link rel="manifest" href="{% static 'manifest.json' %}">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="DOPX">
     <!-- Favicon -->
     <link rel="icon" type="image/png" href="{% static 'favicons/favicon-32x32.png' %}" sizes="32x32">
     <link rel="icon" type="image/png" href="{% static 'favicons/favicon-16x16.png' %}" sizes="16x16">
@@ -118,6 +138,7 @@
 <body
     class="bg-base-100 text-base-content antialiased"
     hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+    data-vapid-public-key="{{ VAPID_PUBLIC_KEY|default:'' }}"
     x-data="{
         theme: localStorage.getItem('theme') || 'light',
         toggleTheme() {
@@ -157,6 +178,8 @@
     </main>
     <!-- Footer -->
     {% include 'components/_footer.html' %}
+    <!-- Плашка о cookie (строго необходимые: sessionid + csrftoken) -->
+    {% include 'components/_cookie_banner.html' %}
     <!-- Loading Indicator (глобальный) -->
     <div id="global-loader" class="htmx-indicator fixed inset-0 bg-base-100/80 z-[100] flex items-center justify-center">
         <span class="loading loading-spinner loading-lg text-primary"></span>
@@ -238,10 +261,29 @@
                 setTimeout(() => alert.remove(), 3000);
             }
         }
-        {% block extra_script %}{% endblock %}
     </script>
+    {% comment %}
+    ИСПРАВЛЕНО: `extra_script` раньше был ВНУТРИ предыдущего <script>...</script>
+    (см. git history/предыдущую итерацию) — рабочий, пока дочерние шаблоны
+    клали туда голый JS без собственных <script> тегов. Как только
+    dashboard/overview.html положил туда <script src="..."> (Chart.js) +
+    свой <script>...</script>, HTML-парсер закрыл ВНЕШНИЙ script по ПЕРВОМУ
+    попавшемуся </script> (от вложенного тега) — весь текст до этой точки,
+    включая буквальный `<script src="...">`, пытался выполниться как JS:
+    "SyntaxError: Unexpected token '<'". Вложенные <script> в HTML в принципе
+    не работают, поэтому блок нужно держать СНАРУЖИ, как отдельный слот —
+    дочерние шаблоны сами оборачивают свой JS в <script> где нужно.
+    {% endcomment %}
+    {% block extra_script %}{% endblock %}
     {% if request.resolver_match.app_name == 'notifications' %}
     <script src="{% static 'js/tickets.js' %}"></script>
     {% endif %}
+    <!-- Событийная аналитика продукта (analytics/views.py) — sendBeacon,
+         не блокирует ничего на странице. -->
+    <script src="{% static 'js/analytics.js' %}"></script>
+    <!-- PWA + Web Push (продуктовый аудит, раздел 5c) — регистрирует
+         /sw.js на каждой странице; сама подписка на push — по явному
+         действию пользователя, см. static/js/push.js. -->
+    <script src="{% static 'js/push.js' %}"></script>
 </body>
 </html>

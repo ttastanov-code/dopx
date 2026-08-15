@@ -78,6 +78,15 @@ FAN_BIAS_EXTREME_TEAM_SCORE = 9
 FAN_BIAS_EXTREME_OPPONENT_SCORE = 3
 FAN_BIAS_THRESHOLD_RATIO = 0.7
 
+# Продуктовый аудит, раздел 1: единый порог голосов, ниже которого рейтинг
+# игрока не считается статистически представительным. Используется и для
+# ФИЛЬТРАЦИИ выборок (matches/views.py::top_players/worst_players — не
+# должен ли один голос "10/10 от друга" попасть в топ матча), и для
+# ОТОБРАЖЕНИЯ (core/templatetags/rating_extras.py — "Недостаточно данных"
+# вместо числа). Один источник истины: см. `rating_extras.MIN_VOTES_FOR_DISPLAY`,
+# который импортирует именно это значение.
+MIN_VOTES_FOR_DISPLAY = 5
+
 
 def calculate_user_weight(
     user: User, context_eval: ContextEvaluation | None, match=None
@@ -268,6 +277,65 @@ def calculate_std_dev(values: Iterable[float]) -> float:
     return math.sqrt(variance)
 
 
+def _segment_by_fan_side(
+    evaluations: list[PlayerEvaluation], player, match
+) -> tuple[float | None, float | None, float | None]:
+    """
+    Продуктовый аудит, раздел 1 ("Целостность данных важнее новых фич"):
+    сегментирует уже загруженные оценки `contribution` по тому, за кого
+    болел зритель (`ContextEvaluation.supported_team`) ОТНОСИТЕЛЬНО команды
+    оцениваемого игрока — "свои" (совпадает с командой игрока), "чужие"
+    (совпадает с командой соперника в этом матче) и "нейтральные" (нет
+    ContextEvaluation, либо `supported_team` не задан/не участвует в матче).
+
+    НАМЕРЕННО НЕ ВЛИЯЕТ на `performance_score`/leaderboard-сортировку — это
+    read-only разрез поверх уже посчитанных данных, а не альтернативная
+    формула рейтинга. Использует НЕвзвешенное среднее (простой mean) — цель
+    сегментов не "ещё точнее посчитать итог", а честно показать разброс
+    мнений между лагерями; применение веса пользователя здесь запутало бы
+    интерпретацию (тогда "разница между сегментами" была бы смесью двух
+    эффектов: fan-bias по сторонам И trust-веса, а нужен только первый).
+
+    Один SQL-запрос на всех зрителей игрока (а не по одному на evaluation) —
+    те же ID пользователей, что уже пришли в `evaluations`, поэтому карта
+    supported_team строится за один IN-запрос, как в `_build_user_weight_map`.
+    """
+    if not evaluations:
+        return None, None, None
+
+    player_team_id = player.team_id
+    opponent_team_id = (
+        match.away_team_id if match.home_team_id == player_team_id else match.home_team_id
+    )
+
+    user_ids = {e.user_id for e in evaluations}
+    supported_team_map: dict[uuid.UUID, uuid.UUID | None] = {
+        ce["user_id"]: ce["supported_team_id"]
+        for ce in ContextEvaluation.objects.filter(
+            match_id=match.id, user_id__in=user_ids
+        ).values("user_id", "supported_team_id")
+    }
+
+    own_values: list[float] = []
+    rival_values: list[float] = []
+    neutral_values: list[float] = []
+    for eval_obj in evaluations:
+        if not eval_obj.contribution:
+            continue
+        supported_team_id = supported_team_map.get(eval_obj.user_id)
+        if supported_team_id == player_team_id:
+            own_values.append(eval_obj.contribution)
+        elif supported_team_id == opponent_team_id:
+            rival_values.append(eval_obj.contribution)
+        else:
+            neutral_values.append(eval_obj.contribution)
+
+    def _mean(values: list[float]) -> float | None:
+        return sum(values) / len(values) if values else None
+
+    return _mean(own_values), _mean(rival_values), _mean(neutral_values)
+
+
 def recalculate_player_aggregate(player, match):
     """
     Пересчёт агрегатов конкретного игрока за конкретный матч с учётом весов.
@@ -296,6 +364,8 @@ def recalculate_player_aggregate(player, match):
     avg_risk = calculate_weighted_average(evaluations, "risk", weight_map)
     avg_potential = calculate_weighted_average(evaluations, "potential", weight_map)
 
+    own_fans_avg, rival_fans_avg, neutral_avg = _segment_by_fan_side(evaluations, player, match)
+
     contributions = [e.contribution for e in evaluations if e.contribution]
     std_dev = calculate_std_dev(contributions)
     stability_index = 1.0 / std_dev if std_dev > 0 else 10.0
@@ -323,6 +393,9 @@ def recalculate_player_aggregate(player, match):
             "maturity_score": round(maturity_score, 2),
             "stability_index": round(stability_index, 2),
             "clutch_index": round(clutch_index, 2),
+            "own_fans_avg": round(own_fans_avg, 2) if own_fans_avg is not None else None,
+            "rival_fans_avg": round(rival_fans_avg, 2) if rival_fans_avg is not None else None,
+            "neutral_avg": round(neutral_avg, 2) if neutral_avg is not None else None,
         },
     )
 

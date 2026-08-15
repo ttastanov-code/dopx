@@ -24,6 +24,7 @@
 """
 from __future__ import annotations
 
+from django.http import JsonResponse
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import login, logout, authenticate, update_session_auth_hash
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -40,9 +41,14 @@ from django.utils import timezone
 from django.conf import settings
 from datetime import timedelta
 
+from django.contrib.auth.decorators import login_required
+from django.views.decorators.http import require_POST
+
+from analytics.models import EventName
+from analytics.services import track_event
 from core.utils import get_client_ip, is_rate_limited
 from users.badges import BADGE_CATALOG, RARITY_ORDER
-from users.models import User, UserBadge, UserXP
+from users.models import Follow, User, UserBadge, UserXP
 from users.forms import (
     UserRegistrationForm, UserLoginForm, UserProfileForm,
     CustomPasswordChangeForm, CustomPasswordResetForm, NotificationSettingsForm
@@ -84,6 +90,12 @@ class RegisterView(CreateView):
         user.save()
         # Создаем базовые профили
         UserXP.objects.get_or_create(user=user)
+
+        # Продуктовая аналитика: первый шаг воронки "визит → регистрация →
+        # первая оценка" (см. analytics/selectors.py::registration_funnel).
+        # Здесь без transaction.on_commit — у RegisterView нет обёртывающего
+        # transaction.atomic(), user.save() уже закоммичен к этому моменту.
+        track_event(EventName.USER_REGISTERED, request=self.request, user=user)
 
         # Отправляем письмо верификации (асинхронно, КРИТИЧЕСКОЕ - force=True)
         try:
@@ -328,6 +340,20 @@ class PublicProfileView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         profile_user = get_object_or_404(User, username=kwargs['username'], is_active=True)
+        # НОВОЕ: уважаем is_profile_public — но НЕ для владельца профиля
+        # (он должен видеть свою собственную страницу даже с выключенной
+        # видимостью, чтобы проверить, как она выглядела до отключения).
+        # 404, а не редирект на логин — не палим гостю разницу в поведении
+        # между "профиля не существует" и "профиль скрыт владельцем".
+        if not profile_user.is_profile_public and self.request.user != profile_user:
+            from django.http import Http404
+            raise Http404("Профиль скрыт владельцем")
+        # Продуктовая аналитика: кто-то открыл публичный профиль — вход в
+        # воронку "лидерборд/шер → чужой профиль → регистрация".
+        track_event(
+            EventName.PROFILE_VIEWED, request=self.request,
+            properties={"viewed_username": profile_user.username},
+        )
         stats = {
             'total_evaluations': profile_user.total_evaluations,
             'total_players': profile_user.player_evaluations.values('player').distinct().count(),
@@ -457,6 +483,17 @@ class NotificationSettingsView(LoginRequiredMixin, FormView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Настройки уведомлений — DOPX'
+        # ИСПРАВЛЕНО: кнопка "Включить push-уведомления" (templates/users/
+        # notification_settings.html) инициализировала Alpine-стейт
+        # `status: 'idle'` БЕЗУСЛОВНО на каждой загрузке страницы — сама
+        # подписка сохранялась в БД (`PushSubscription`) корректно, но UI
+        # никогда не проверял, есть ли она уже, и после обновления страницы
+        # всегда показывал "Включить" заново, будто ничего не произошло.
+        # `has_push_subscription` — есть ли у пользователя АКТИВНАЯ
+        # подписка хоть с одного устройства/браузера (namespace одного
+        # пользователя, не текущего браузера конкретно — см. комментарий в
+        # шаблоне).
+        context['has_push_subscription'] = self.request.user.push_subscriptions.exists()
         return context
 
 
@@ -470,13 +507,30 @@ class UserLeaderboardView(ListView):
         # ✅ select_related('xp') — шаблон читает user.xp.level для КАЖДОЙ
         # строки (см. leaderboard.html), без этого это был N+1 (1 запрос на
         # каждого из 20 пользователей на странице).
-        return User.objects.filter(is_active=True, is_verified=True).select_related('xp').annotate(
+        qs = User.objects.filter(is_active=True, is_verified=True).select_related('xp').annotate(
             eval_count=Count('context_evaluations', distinct=True)
         ).filter(eval_count__gte=1).order_by('-trust_score', '-eval_count')
+        # НОВОЕ: ?city= — локальный рейтинг "лучшие болельщики моего
+        # города". Точное совпадение (не icontains), т.к. фильтр приходит
+        # из выпадающего списка с уже существующими значениями city, а не
+        # из свободного текстового поля — так дешевле для БД и без риска
+        # случайных пересечений подстрок ("Актау" внутри "Октябрьск" и т.п.).
+        city = self.request.GET.get('city', '').strip()
+        if city:
+            qs = qs.filter(city__iexact=city)
+        return qs
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Рейтинг пользователей — DOPX'
+        context['selected_city'] = self.request.GET.get('city', '').strip()
+        # Список городов для выпадающего фильтра — только те, что реально
+        # встречаются у активных верифицированных пользователей (не пустой
+        # справочник административных единиц Казахстана "на будущее").
+        context['available_cities'] = (
+            User.objects.filter(is_active=True, is_verified=True)
+            .exclude(city='').values_list('city', flat=True).distinct().order_by('city')
+        )
         return context
 
 
@@ -489,7 +543,7 @@ class PlayerLeaderboardView(ListView):
         from players.models import Player
         from aggregates.models import PlayerMatchAggregate
         from django.db.models import Avg, Count, Sum, Q
-        return Player.objects.filter(is_active=True).annotate(
+        qs = Player.objects.filter(is_active=True).annotate(
             avg_performance=Avg('match_aggregates__performance_score'),
             total_matches=Count('match_aggregates', distinct=True),
             total_votes=Sum('match_aggregates__total_votes')
@@ -497,8 +551,116 @@ class PlayerLeaderboardView(ListView):
             avg_performance__isnull=False,
             total_matches__gte=1
         ).order_by('-avg_performance')
+        # НОВОЕ: ?league= — рейтинг игроков в разрезе лиги.
+        # ВАЖНО: у Player/Team нет прямого FK на League (лига — атрибут
+        # МАТЧА, не команды — команда может в теории участвовать в разных
+        # турнирах). Поэтому фильтруем через реально существующую связь
+        # `match_aggregates__match__league`, а не через несуществующий
+        # `team__league`. distinct() — игрок может встретиться в этой
+        # лиге по нескольким своим матчам, без него JOIN размножил бы
+        # строки и annotate()-агрегаты выше посчитались бы неверно.
+        league_id = self.request.GET.get('league', '').strip()
+        if league_id:
+            qs = qs.filter(match_aggregates__match__league_id=league_id).distinct()
+        return qs
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Рейтинг игроков — DOPX'
+        from leagues.models import League
+        context['selected_league'] = self.request.GET.get('league', '').strip()
+        context['available_leagues'] = League.objects.order_by('name')
         return context
+
+
+@require_POST
+@login_required
+def toggle_follow(request, target_type, target_id):
+    """
+    Продуктовый аудит, раздел 5b ("Follow-граф"): тап на кнопку "Подписаться"
+    на странице игрока/команды. Один эндпоинт на оба типа целей (а не
+    `toggle_player_follow`/`toggle_team_follow` дублирующимися вьюхами) —
+    логика идентична, различается только модель, на которую смотрим.
+    Возвращает HTMX-партиал с новым состоянием кнопки (та же схема, что
+    `events:react` — мгновенный свап без перезагрузки страницы).
+    """
+    from django.http import Http404
+
+    if target_type == 'player':
+        from players.models import Player
+        target = get_object_or_404(Player, id=target_id)
+        lookup = {'player': target}
+    elif target_type == 'team':
+        from teams.models import Team
+        target = get_object_or_404(Team, id=target_id)
+        lookup = {'team': target}
+    else:
+        raise Http404("Неизвестный тип подписки")
+
+    existing = Follow.objects.filter(user=request.user, **lookup).first()
+    if existing:
+        existing.delete()
+        following = False
+    else:
+        Follow.objects.create(user=request.user, **lookup)
+        following = True
+
+    return render(request, 'users/_follow_button.html', {
+        'target_type': target_type,
+        'target_id': target_id,
+        'following': following,
+    })
+
+
+@require_POST
+@login_required
+def push_subscribe(request):
+    """
+    Продуктовый аудит, раздел 5c ("PWA + Web Push"): сохраняет подписку,
+    присланную `static/js/push.js::dopxSubscribePush` (JSON-тело —
+    результат `PushSubscription.toJSON()` из Push API браузера).
+    `update_or_create` по `endpoint` — повторная подписка с того же
+    браузера (например, после очистки локальной БД воркера) обновляет
+    ключи, а не падает на UniqueConstraint.
+    """
+    import json
+
+    from users.models import PushSubscription
+
+    try:
+        data = json.loads(request.body)
+        endpoint = data['endpoint']
+        keys = data['keys']
+        p256dh = keys['p256dh']
+        auth = keys['auth']
+    except (json.JSONDecodeError, KeyError, TypeError):
+        return JsonResponse({'ok': False, 'error': 'invalid payload'}, status=400)
+
+    PushSubscription.objects.update_or_create(
+        endpoint=endpoint,
+        defaults={
+            'user': request.user,
+            'p256dh': p256dh,
+            'auth': auth,
+            'user_agent': request.META.get('HTTP_USER_AGENT', '')[:255],
+        },
+    )
+    return JsonResponse({'ok': True})
+
+
+@require_POST
+@login_required
+def push_unsubscribe(request):
+    """Удаляет подписку по endpoint (см. dopxUnsubscribePush)."""
+    import json
+
+    from users.models import PushSubscription
+
+    try:
+        data = json.loads(request.body)
+        endpoint = data['endpoint']
+    except (json.JSONDecodeError, KeyError, TypeError):
+        return JsonResponse({'ok': False, 'error': 'invalid payload'}, status=400)
+
+    PushSubscription.objects.filter(user=request.user, endpoint=endpoint).delete()
+    return JsonResponse({'ok': True})

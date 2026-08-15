@@ -52,6 +52,49 @@
         }
     };
 
+    // Продуктовый аудит, раздел 5c (дальнейшая правка): "подписан ли
+    // пользователь" (проверялось через has_push_subscription — есть ли
+    // ХОТЬ ОДНА запись PushSubscription в БД) и "подписан ли ИМЕННО ЭТОТ
+    // браузер" — разные вопросы. Пользователь, включивший push на
+    // телефоне, открывший настройки на ноутбуке, видел "Включено", хотя
+    // ноутбук не подписан — сервер физически не может это знать без
+    // участия браузера. `PushManager.getSubscription()` — единственный
+    // источник истины ИМЕННО для текущего браузера: если он вернул
+    // объект — значит push-подписка активна прямо здесь и сейчас.
+    window.dopxPushStatus = async function () {
+        if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+            return 'unsupported';
+        }
+        // ИСПРАВЛЕНО: `navigator.serviceWorker.ready` — это Promise, который
+        // резолвится ТОЛЬКО когда у страницы появится активный service
+        // worker, и никогда не реджектится сам по себе. Если регистрация
+        // (см. register() выше) по любой причине не завершилась успехом —
+        // сеть, ошибка внутри sw.js, браузер не считает страницу secure
+        // context и т.п. — это ожидание виснет НАВСЕГДА, и кнопка на
+        // странице настроек молча крутит спиннер бесконечно, без единой
+        // подсказки, что пошло не так. Гоним `.ready` наперегонки с
+        // таймаутом — если за 4 секунды service worker не готов, считаем
+        // это отдельным статусом 'timeout', а не бесконечным 'checking'.
+        const timeout = new Promise((resolve) => setTimeout(() => resolve('timeout'), 4000));
+        try {
+            const result = await Promise.race([
+                (async () => {
+                    const registration = await navigator.serviceWorker.ready;
+                    const subscription = await registration.pushManager.getSubscription();
+                    return subscription ? 'subscribed' : 'idle';
+                })(),
+                timeout,
+            ]);
+            if (result === 'timeout') {
+                console.warn('DOPX: service worker не стал active за 4с — проверьте вкладку Application > Service Workers и консоль на ошибки регистрации /sw.js');
+            }
+            return result;
+        } catch (err) {
+            console.warn('DOPX: push status check failed', err);
+            return 'idle';
+        }
+    };
+
     window.dopxUnsubscribePush = async function (csrfToken) {
         try {
             const registration = await navigator.serviceWorker.ready;

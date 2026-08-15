@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-md mx-auto py-10 px-4">
+    <h1 class="text-xl font-bold mb-2 flex items-center gap-2">
+        <i class="ti ti-shield-lock text-primary"></i> Настройка двухфакторной аутентификации
+    </h1>
+    <p class="text-sm opacity-70 mb-6">
+        Обязательный шаг для доступа в Django admin и staff-дашборд DOPX.
+        Отсканируйте QR-код в приложении-аутентификаторе (Google Authenticator,
+        Authy, 1Password, Яндекс Ключ) и введите 6-значный код для подтверждения.
+    </p>
+
+    {% if messages %}
+    {% for message in messages %}
+    <div class="alert {% if message.tags == 'error' %}alert-error{% else %}alert-success{% endif %} mb-4 text-sm">
+        {{ message }}
+    </div>
+    {% endfor %}
+    {% endif %}
+
+    <div class="card bg-base-100 border border-base-300 mb-4">
+        <div class="card-body p-4 items-center">
+            <img src="{{ qr_data_uri }}" alt="QR-код 2FA" class="rounded-lg border border-base-300 w-56 h-56">
+            <p class="text-xs opacity-50 text-center mt-3">
+                Не сканируется? Введите ключ вручную:<br>
+                <code class="font-mono text-xs break-all">{{ secret_key }}</code>
+            </p>
+        </div>
+    </div>
+
+    <form method="post" class="flex flex-col gap-3">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ next }}">
+        <input
+            type="text" name="token" placeholder="6-значный код" maxlength="6"
+            inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" autofocus required
+            class="input input-bordered w-full text-center text-lg tracking-[0.3em] font-mono">
+        <button type="submit" class="btn btn-primary">Подтвердить и включить 2FA</button>
+    </form>
+</div>
+{% endblock %}

@@ -1,74 +1,185 @@
 {% extends 'base.html' %}
 {% load static %}
 {% block content %}
-<div class="max-w-4xl mx-auto px-2 sm:px-4">
-  <div class="mb-6 md:mb-8">
-    <h1 class="text-2xl md:text-3xl font-bold mb-2 flex items-center gap-2"><i class="ti ti-shield-lock mr-2"></i> Политика конфиденциальности</h1>
-    <p class="opacity-60 text-sm">Последнее обновление: {% now "d.m.Y" %}</p>
+<!-- === HEADER === -->
+<div class="mb-6 md:mb-8 px-2 sm:px-0">
+  <div class="flex flex-wrap items-start justify-between gap-3 mb-2">
+    <h1 class="text-2xl md:text-3xl font-bold flex items-center gap-2">
+      <i class="ti ti-shield-lock mr-2"></i> Политика конфиденциальности
+    </h1>
+    <a href="{% url 'core:rules' %}" class="btn btn-ghost btn-xs sm:btn-sm"><i class="ti ti-arrow-left"></i> К правилам платформы</a>
   </div>
-  <div class="space-y-6 md:space-y-8">
-    <!-- Введение -->
-    <div class="card bg-base-100 border border-base-300">
-      <div class="card-body p-4 md:p-6">
-        <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4">1. Введение</h2>
-        <p class="opacity-80 text-sm md:text-base">Платформа DOPX (далее — «Платформа») уважает вашу конфиденциальность и стремится защитить ваши персональные данные. Эта Политика конфиденциальности описывает, как мы собираем, используем и защищаем вашу информацию.</p>
-      </div>
-    </div>
-    <!-- Сбор данных -->
-    <div class="card bg-base-100 border border-base-300">
-      <div class="card-body p-4 md:p-6">
-        <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4">2. Какие данные мы собираем</h2>
-        <div class="space-y-3 md:space-y-4">
-          <div><h3 class="font-semibold mb-2 text-sm md:text-base">2.1. При регистрации</h3><ul class="list-disc list-inside opacity-80 text-xs md:text-sm space-y-1"><li>Имя пользователя</li><li>Email адрес</li><li>Город (опционально)</li><li>Пароль (хэшируется)</li></ul></div>
-          <div><h3 class="font-semibold mb-2 text-sm md:text-base">2.2. При использовании</h3><ul class="list-disc list-inside opacity-80 text-xs md:text-sm space-y-1"><li>Оценки матчей, игроков, команд</li><li>Контекст просмотра матчей</li><li>Настройки уведомлений</li><li>Технические данные (IP, browser, device)</li></ul></div>
-          <div><h3 class="font-semibold mb-2 text-sm md:text-base">2.3. Автоматически</h3><ul class="list-disc list-inside opacity-80 text-xs md:text-sm space-y-1"><li>Cookie для сессий</li><li>Логи доступа</li><li>Данные об использовании платформы</li></ul></div>
-        </div>
-      </div>
-    </div>
-    <!-- Использование данных -->
-    <div class="card bg-base-100 border border-base-300">
-      <div class="card-body p-4 md:p-6">
-        <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4">3. Как мы используем данные</h2>
-        <ul class="list-disc list-inside opacity-80 text-xs md:text-sm space-y-2">
-          <li>Предоставление доступа к платформе</li>
-          <li>Расчёт рейтингов и агрегатов</li>
-          <li>Отправка уведомлений (с возможностью отписки)</li>
-          <li>Улучшение работы платформы</li>
-          <li>Защита от мошенничества</li>
-          <li>Выполнение требований законодательства</li>
+  <p class="opacity-60 text-sm md:text-base">Как DOPX собирает, использует и защищает ваши данные</p>
+  <p class="opacity-40 text-xs mt-1">Последнее обновление: {% now "d.m.Y" %}</p>
+</div>
+
+<!-- === CONTENT === -->
+<div class="grid grid-cols-1 lg:grid-cols-4 gap-4 md:gap-8 px-2 sm:px-0">
+  <!-- === SIDEBAR: Навигация (скрыт на мобильных) === -->
+  <div class="lg:col-span-1 hidden lg:block">
+    <div class="card bg-base-100 border border-base-300 sticky top-24">
+      <div class="card-body p-4">
+        <h3 class="font-bold mb-3">Содержание</h3>
+        <ul class="menu menu-sm">
+          <li><a href="#intro"><i class="ti ti-info-circle"></i> Введение</a></li>
+          <li><a href="#collect"><i class="ti ti-database"></i> Сбор данных</a></li>
+          <li><a href="#cookies"><i class="ti ti-cookie"></i> Cookie</a></li>
+          <li><a href="#use"><i class="ti ti-adjustments"></i> Использование</a></li>
+          <li><a href="#security"><i class="ti ti-shield-check"></i> Защита</a></li>
+          <li><a href="#rights"><i class="ti ti-user-check"></i> Ваши права</a></li>
+          <li><a href="#retention"><i class="ti ti-clock"></i> Хранение и удаление</a></li>
+          <li><a href="#contacts"><i class="ti ti-headphones"></i> Контакты</a></li>
         </ul>
       </div>
     </div>
+  </div>
+
+  <!-- === MAIN CONTENT === -->
+  <div class="lg:col-span-3 space-y-6 md:space-y-10">
+    <!-- Введение -->
+    <section id="intro" class="scroll-mt-24">
+      <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4 md:p-6">
+          <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4 flex items-center gap-2"><i class="ti ti-info-circle text-primary"></i> Введение</h2>
+          <p class="opacity-80 text-sm md:text-base">Платформа DOPX уважает вашу конфиденциальность и защищает персональные данные. Эта страница объясняет простым языком, какие данные мы собираем, зачем и как их защищаем.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Сбор данных -->
+    <section id="collect" class="scroll-mt-24">
+      <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4 md:p-6">
+          <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4 flex items-center gap-2"><i class="ti ti-database text-secondary"></i> Какие данные мы собираем</h2>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
+            <div class="p-3 md:p-4 bg-base-200 rounded-lg">
+              <h3 class="font-semibold mb-2 text-sm flex items-center gap-1.5"><i class="ti ti-user-plus opacity-60"></i> При регистрации</h3>
+              <ul class="list-disc list-inside opacity-70 text-xs space-y-1"><li>Имя пользователя</li><li>Email адрес</li><li>Город (опционально)</li><li>Пароль (хэшируется)</li></ul>
+            </div>
+            <div class="p-3 md:p-4 bg-base-200 rounded-lg">
+              <h3 class="font-semibold mb-2 text-sm flex items-center gap-1.5"><i class="ti ti-star opacity-60"></i> При использовании</h3>
+              <ul class="list-disc list-inside opacity-70 text-xs space-y-1"><li>Оценки матчей, игроков, команд</li><li>Контекст просмотра матчей</li><li>Настройки уведомлений</li><li>Технические данные (IP, браузер, устройство)</li></ul>
+            </div>
+            <div class="p-3 md:p-4 bg-base-200 rounded-lg">
+              <h3 class="font-semibold mb-2 text-sm flex items-center gap-1.5"><i class="ti ti-cookie opacity-60"></i> Автоматически</h3>
+              <ul class="list-disc list-inside opacity-70 text-xs space-y-1"><li>Cookie для сессий</li><li>Логи доступа</li><li>Данные об использовании платформы</li></ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Cookie -->
+    <section id="cookies" class="scroll-mt-24">
+      <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4 md:p-6">
+          <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4 flex items-center gap-2"><i class="ti ti-cookie text-warning"></i> Cookie</h2>
+          <div class="alert alert-success text-xs md:text-sm mb-4 md:mb-6"><i class="ti ti-shield-check"></i><span>Мы используем только технически необходимые cookie. Рекламных, аналитических и трекинговых cookie на платформе нет.</span></div>
+          <div class="overflow-x-auto -mx-2 px-2 md:mx-0 md:px-0">
+            <table class="table table-zebra min-w-[560px]">
+              <thead><tr><th>Cookie</th><th>Зачем нужен</th><th>Срок хранения</th><th>Категория</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td class="font-mono text-xs">sessionid</td>
+                  <td class="text-xs md:text-sm">Держит вас в системе: вход, прохождение вайзарда оценки матча, флеш-сообщения</td>
+                  <td class="text-xs whitespace-nowrap">14 дней</td>
+                  <td><span class="badge badge-success badge-xs md:badge-sm">Необходимый</span></td>
+                </tr>
+                <tr>
+                  <td class="font-mono text-xs">csrftoken</td>
+                  <td class="text-xs md:text-sm">Защищает формы и запросы от подделки (CSRF-атак)</td>
+                  <td class="text-xs whitespace-nowrap">1 год</td>
+                  <td><span class="badge badge-success badge-xs md:badge-sm">Необходимый</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="text-xs opacity-50 mt-3 md:mt-4">Тема оформления (светлая/тёмная) хранится в localStorage вашего браузера, а не в cookie, и никуда не передаётся. Так как все используемые cookie строго необходимы для работы сайта, отдельного согласия на них не требуется — но мы предпочитаем предупреждать об этом честно, а не молчать.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Использование данных -->
+    <section id="use" class="scroll-mt-24">
+      <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4 md:p-6">
+          <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4 flex items-center gap-2"><i class="ti ti-adjustments text-accent"></i> Как мы используем данные</h2>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 md:gap-3">
+            <div class="flex items-start gap-2 text-xs md:text-sm opacity-80"><i class="ti ti-check text-success mt-0.5"></i> Предоставление доступа к платформе</div>
+            <div class="flex items-start gap-2 text-xs md:text-sm opacity-80"><i class="ti ti-check text-success mt-0.5"></i> Расчёт рейтингов, весов голосов и агрегатов</div>
+            <div class="flex items-start gap-2 text-xs md:text-sm opacity-80"><i class="ti ti-check text-success mt-0.5"></i> Отправка уведомлений (с возможностью отписки)</div>
+            <div class="flex items-start gap-2 text-xs md:text-sm opacity-80"><i class="ti ti-check text-success mt-0.5"></i> Улучшение работы платформы</div>
+            <div class="flex items-start gap-2 text-xs md:text-sm opacity-80"><i class="ti ti-check text-success mt-0.5"></i> Защита от мошенничества и накрутки оценок</div>
+            <div class="flex items-start gap-2 text-xs md:text-sm opacity-80"><i class="ti ti-check text-success mt-0.5"></i> Выполнение требований законодательства</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- Защита данных -->
-    <div class="card bg-base-100 border border-base-300">
-      <div class="card-body p-4 md:p-6">
-        <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4">4. Защита данных</h2>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
-          <div class="p-3 md:p-4 bg-base-200 rounded-lg"><h3 class="font-semibold mb-2 text-sm md:text-base">🔐 Технические меры</h3><ul class="text-xs md:text-sm opacity-70 space-y-1"><li>• HTTPS шифрование</li><li>• Хэширование паролей</li><li>• Защита от CSRF</li><li>• Регулярные бэкапы</li></ul></div>
-          <div class="p-3 md:p-4 bg-base-200 rounded-lg"><h3 class="font-semibold mb-2 text-sm md:text-base">👥 Организационные меры</h3><ul class="text-xs md:text-sm opacity-70 space-y-1"><li>• Ограниченный доступ</li><li>• Обучение сотрудников</li><li>• Политика безопасности</li><li>• Мониторинг доступа</li></ul></div>
+    <section id="security" class="scroll-mt-24">
+      <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4 md:p-6">
+          <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4 flex items-center gap-2"><i class="ti ti-shield-check text-success"></i> Защита данных</h2>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
+            <div class="p-3 md:p-4 bg-base-200 rounded-lg"><h3 class="font-semibold mb-2 text-sm flex items-center gap-1.5"><i class="ti ti-lock opacity-60"></i> Технические меры</h3><ul class="text-xs opacity-70 space-y-1"><li>• HTTPS-шифрование</li><li>• Хэширование паролей (PBKDF2)</li><li>• Защита от CSRF-атак</li><li>• Регулярные резервные копии</li></ul></div>
+            <div class="p-3 md:p-4 bg-base-200 rounded-lg"><h3 class="font-semibold mb-2 text-sm flex items-center gap-1.5"><i class="ti ti-users-group opacity-60"></i> Организационные меры</h3><ul class="text-xs opacity-70 space-y-1"><li>• Ограниченный доступ к данным</li><li>• Обучение сотрудников</li><li>• Политика безопасности</li><li>• Мониторинг доступа</li></ul></div>
+          </div>
         </div>
       </div>
-    </div>
+    </section>
+
     <!-- Права пользователей -->
-    <div class="card bg-base-100 border border-base-300">
-      <div class="card-body p-4 md:p-6">
-        <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4">5. Ваши права</h2>
-        <div class="space-y-2 md:space-y-3">
-          <div class="flex items-start gap-2 md:gap-3"><i class="ti ti-check text-success mt-1"></i><div><strong class="text-sm md:text-base">Доступ:</strong><span class="opacity-80 text-xs md:text-sm"> Запросить копию ваших данных</span></div></div>
-          <div class="flex items-start gap-2 md:gap-3"><i class="ti ti-check text-success mt-1"></i><div><strong class="text-sm md:text-base">Исправление:</strong><span class="opacity-80 text-xs md:text-sm"> Исправить неточную информацию</span></div></div>
-          <div class="flex items-start gap-2 md:gap-3"><i class="ti ti-check text-success mt-1"></i><div><strong class="text-sm md:text-base">Удаление:</strong><span class="opacity-80 text-xs md:text-sm"> Удалить аккаунт и данные</span></div></div>
-          <div class="flex items-start gap-2 md:gap-3"><i class="ti ti-check text-success mt-1"></i><div><strong class="text-sm md:text-base">Перенос:</strong><span class="opacity-80 text-xs md:text-sm"> Экспортировать данные в машиночитаемом формате</span></div></div>
-          <div class="flex items-start gap-2 md:gap-3"><i class="ti ti-check text-success mt-1"></i><div><strong class="text-sm md:text-base">Возражение:</strong><span class="opacity-80 text-xs md:text-sm"> Отказаться от обработки данных</span></div></div>
+    <section id="rights" class="scroll-mt-24">
+      <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4 md:p-6">
+          <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4 flex items-center gap-2"><i class="ti ti-user-check text-info"></i> Ваши права</h2>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 md:gap-3">
+            <div class="flex items-start gap-2 md:gap-3 p-2"><i class="ti ti-check text-success mt-1"></i><div><strong class="text-sm">Доступ:</strong><span class="opacity-70 text-xs md:text-sm"> запросить копию ваших данных</span></div></div>
+            <div class="flex items-start gap-2 md:gap-3 p-2"><i class="ti ti-check text-success mt-1"></i><div><strong class="text-sm">Исправление:</strong><span class="opacity-70 text-xs md:text-sm"> исправить неточную информацию</span></div></div>
+            <div class="flex items-start gap-2 md:gap-3 p-2"><i class="ti ti-check text-success mt-1"></i><div><strong class="text-sm">Удаление:</strong><span class="opacity-70 text-xs md:text-sm"> удалить аккаунт и данные</span></div></div>
+            <div class="flex items-start gap-2 md:gap-3 p-2"><i class="ti ti-check text-success mt-1"></i><div><strong class="text-sm">Перенос:</strong><span class="opacity-70 text-xs md:text-sm"> экспорт в машиночитаемом формате</span></div></div>
+            <div class="flex items-start gap-2 md:gap-3 p-2 sm:col-span-2"><i class="ti ti-check text-success mt-1"></i><div><strong class="text-sm">Возражение:</strong><span class="opacity-70 text-xs md:text-sm"> отказаться от обработки данных</span></div></div>
+          </div>
         </div>
       </div>
-    </div>
+    </section>
+
+    <!-- Хранение, возраст, юрисдикция -->
+    <section id="retention" class="scroll-mt-24">
+      <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4 md:p-6">
+          <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4 flex items-center gap-2"><i class="ti ti-clock text-warning"></i> Хранение, возраст и юрисдикция</h2>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
+            <div class="p-3 md:p-4 bg-base-200 rounded-lg">
+              <h3 class="font-semibold mb-2 text-sm flex items-center gap-1.5"><i class="ti ti-trash opacity-60"></i> Удаление данных</h3>
+              <p class="text-xs opacity-70">По запросу на <a href="mailto:support@dopx.kz" class="link link-primary">support@dopx.kz</a> — аккаунт и персональные данные удаляются в течение 30 дней.</p>
+            </div>
+            <div class="p-3 md:p-4 bg-base-200 rounded-lg">
+              <h3 class="font-semibold mb-2 text-sm flex items-center gap-1.5"><i class="ti ti-cake opacity-60"></i> Возраст</h3>
+              <p class="text-xs opacity-70">Платформа — для пользователей от 16 лет. Регистрация младше 16 требует согласия родителей.</p>
+            </div>
+            <div class="p-3 md:p-4 bg-base-200 rounded-lg">
+              <h3 class="font-semibold mb-2 text-sm flex items-center gap-1.5"><i class="ti ti-map-pin opacity-60"></i> Юрисдикция</h3>
+              <p class="text-xs opacity-70">Работаем по законодательству Республики Казахстан; споры решаются по месту регистрации компании.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- Контакты -->
-    <div class="card bg-gradient-to-br from-primary to-primary/80">
-      <div class="card-body p-4 md:p-6 text-center">
-        <h3 class="text-xl md:text-2xl font-bold mb-2">Контакты для вопросов</h3>
-        <p class="opacity-90 mb-3 md:mb-4 text-sm md:text-base">По вопросам конфиденциальности пишите:</p>
-        <div class="flex flex-wrap gap-3 md:gap-4 justify-center">
-          <a href="mailto:support@dopx.kz" class="btn btn-ghost btn-md md:btn-lg"><i class="ti ti-headphones"></i> support@dopx.kz</a>
+    {% comment %}
+    ИСПРАВЛЕНО: см. аналогичный комментарий в rules.html/anti_fraud.html —
+    без text-primary-content текст и btn-ghost сливались с фиолетовым
+    фоном на светлой теме.
+    {% endcomment %}
+    <div id="contacts" class="card scroll-mt-24" style="background-image: linear-gradient(to bottom right, var(--color-primary), color-mix(in oklab, var(--color-primary) 80%, transparent));">
+      <div class="card-body p-4 md:p-6 text-center text-primary-content">
+        <h3 class="text-xl md:text-2xl font-bold mb-2">Вопросы по конфиденциальности?</h3>
+        <p class="opacity-90 mb-3 md:mb-4 text-sm md:text-base">Пишите напрямую — ответим лично</p>
+        <div class="flex flex-wrap gap-3 justify-center">
+          <a href="mailto:support@dopx.kz" class="btn btn-md md:btn-lg bg-primary-content text-primary border-none hover:opacity-90"><i class="ti ti-headphones"></i> support@dopx.kz</a>
         </div>
       </div>
     </div>

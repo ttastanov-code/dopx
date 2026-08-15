@@ -1,6 +1,11 @@
 {% extends 'base.html' %}
-{% load static %}
+{% load static rating_extras %}
 {% load match_extras %}
+{% block schema %}
+{% if schema_json %}
+<script type="application/ld+json">{{ schema_json|safe }}</script>
+{% endif %}
+{% endblock %}
 {% block content %}
 <!-- ✅ FIX: Главный контейнер с ограничением ширины и скрытием скролла -->
 <div class="w-full max-w-7xl mx-auto px-2 sm:px-4 overflow-hidden">
@@ -126,7 +131,15 @@
             <!-- Кнопки действий -->
             <div class="flex flex-wrap justify-center gap-2 sm:gap-4 mt-3 sm:mt-6">
                 {% if match.status == 'finished' %}
-                    {% if voting_open and not user_has_evaluated %}
+                    {% if voting_open and not user_has_evaluated and user_has_pulse_reactions %}
+                    <div class="w-full sm:w-auto flex flex-col items-center gap-1.5">
+                        <a href="{% url 'evaluations:context' match.id %}" class="btn btn-primary btn-sm md:btn-lg w-full sm:w-auto">
+                            <i class="ti ti-flame"></i>
+                            Вы уже реагировали в live — завершите оценку
+                        </a>
+                        <span class="text-xs opacity-60">Вы тапали реакции во время матча — полная оценка займёт ~2 минуты</span>
+                    </div>
+                    {% elif voting_open and not user_has_evaluated %}
                     <a href="{% url 'evaluations:context' match.id %}" class="btn btn-primary btn-sm md:btn-lg w-full sm:w-auto">
                         <i class="ti ti-star"></i>
                         Оценить матч
@@ -144,10 +157,25 @@
                     {% endif %}
                 {% endif %}
                 <button class="btn btn-ghost btn-sm w-full sm:w-auto"
-                        onclick="navigator.share({title: '{{ match.home_team }} vs {{ match.away_team }}', url: window.location.href})">
+                        onclick="if(window.dopxTrack){dopxTrack('share_clicked', {channel: 'native', match_id: '{{ match.id }}'})}; navigator.share({title: '{{ match.home_team }} vs {{ match.away_team }}', url: window.location.href})">
                     <i class="ti ti-share"></i>
                     <span class="hidden sm:inline">Поделиться</span>
                 </button>
+            </div>
+
+            <!-- Шеринг в конкретные каналы — Telegram/WhatsApp, а не X/Twitter,
+                 это правильный выбор под казахстанскую аудиторию. -->
+            <div class="flex flex-wrap justify-center gap-2 mt-2">
+                <a href="https://t.me/share/url?url={{ request.build_absolute_uri|urlencode }}&text={{ share_text|urlencode }}"
+                   target="_blank" rel="noopener" class="btn btn-sm btn-outline"
+                   onclick="if(window.dopxTrack){dopxTrack('share_clicked', {channel: 'telegram', match_id: '{{ match.id }}'})}">
+                    <i class="ti ti-brand-telegram"></i> Telegram
+                </a>
+                <a href="https://wa.me/?text={{ share_text|urlencode }}%20{{ request.build_absolute_uri|urlencode }}"
+                   target="_blank" rel="noopener" class="btn btn-sm btn-outline"
+                   onclick="if(window.dopxTrack){dopxTrack('share_clicked', {channel: 'whatsapp', match_id: '{{ match.id }}'})}">
+                    <i class="ti ti-brand-whatsapp"></i> WhatsApp
+                </a>
             </div>
         </div>
     </div>
@@ -213,6 +241,30 @@
                             </div>
                         </div>
                         {% endfor %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- === LIVE-ПУЛЬС === -->
+            {% if match.status == 'live' %}
+            <div class="card border border-error/30" style="background-image: linear-gradient(to bottom right, color-mix(in oklab, var(--color-error) 6%, transparent), transparent);">
+                <div class="card-body p-3 sm:p-4">
+                    <div class="flex items-center justify-between mb-2 md:mb-3">
+                        <h3 class="font-bold text-base md:text-lg flex items-center gap-2">
+                            <span class="badge badge-error badge-xs animate-pulse"></span>
+                            <span>Live-пульс</span>
+                        </h3>
+                        <span class="text-xs opacity-60">Обновляется автоматически</span>
+                    </div>
+                    <p class="text-xs opacity-60 mb-3">Реагируйте на моменты матча прямо сейчас — а полную оценку составов оставьте на после финального свистка.</p>
+                    <div id="live-pulse-container"
+                         hx-get="{% url 'events:pulse' match.id %}"
+                         hx-trigger="load, every 15s"
+                         hx-swap="innerHTML">
+                        <div class="flex justify-center py-4">
+                            <span class="loading loading-spinner loading-sm"></span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -293,7 +345,11 @@
                                 <div class="text-[10px] md:text-xs opacity-60 truncate">{{ agg.player.team.name }}</div>
                             </div>
                             <div class="text-right flex-shrink-0">
-                                <div class="font-bold text-primary text-sm md:text-lg inline-flex items-center gap-1">{{ agg.performance_score|floatformat:1 }}{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.aggregate.performance_score %}</div>
+                                <div class="font-bold text-primary text-sm md:text-lg inline-flex items-center gap-1">
+                                    {{ agg.performance_score|floatformat:1 }}{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.aggregate.performance_score %}
+                                    {% bias_segment_text agg as segment_text %}
+                                    {% if segment_text %}{% include 'components/_tooltip_icon.html' with text=segment_text %}{% endif %}
+                                </div>
                                 <div class="text-[10px] md:text-xs opacity-60 hidden sm:block">рейтинг выступления</div>
                             </div>
                         </a>

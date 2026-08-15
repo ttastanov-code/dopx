@@ -1,0 +1,30 @@
+{% load math_extras %}
+{% comment %}
+Пара кнопок 👍/👎 на ОДНО событие матча. Рендерится и внутри
+_live_pulse.html (батч на несколько событий), и как самостоятельный ответ
+на POST events:react (свап одного #reaction-<id> через hx-swap="outerHTML").
+Контекст: event, counts ({event_id: {'like':N,'dislike':N}}), user_reactions
+({event_id: 'like'|'dislike'}).
+{% endcomment %}
+{% with c=counts|get_item:event.id my_reaction=user_reactions|get_item:event.id %}
+<div id="reaction-{{ event.id }}" class="flex items-center gap-1.5 flex-shrink-0">
+    <button type="button"
+            hx-post="{% url 'events:react' event.id %}"
+            hx-vals='{"reaction": "like"}'
+            hx-target="#reaction-{{ event.id }}"
+            hx-swap="outerHTML"
+            class="btn btn-xs {% if my_reaction == 'like' %}btn-success{% else %}btn-ghost{% endif %} gap-1 px-2"
+            aria-pressed="{% if my_reaction == 'like' %}true{% else %}false{% endif %}">
+        <span>👍</span><span class="font-mono">{{ c.like|default:0 }}</span>
+    </button>
+    <button type="button"
+            hx-post="{% url 'events:react' event.id %}"
+            hx-vals='{"reaction": "dislike"}'
+            hx-target="#reaction-{{ event.id }}"
+            hx-swap="outerHTML"
+            class="btn btn-xs {% if my_reaction == 'dislike' %}btn-error{% else %}btn-ghost{% endif %} gap-1 px-2"
+            aria-pressed="{% if my_reaction == 'dislike' %}true{% else %}false{% endif %}">
+        <span>👎</span><span class="font-mono">{{ c.dislike|default:0 }}</span>
+    </button>
+</div>
+{% endwith %}

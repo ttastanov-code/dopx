@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4">
+            <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
+                <i class="ti ti-bolt text-primary"></i> Ручной запуск celery-задач
+            </h3>
+            <p class="text-xs opacity-60 mb-3">Дебаунс {{ '60' }}с на задачу — повторный клик по той же задаче раньше этого срока будет отклонён, чтобы не наспамить очередь.</p>
+            <div class="flex flex-col gap-2">
+                {% for task_name, task_label in triggerable_tasks.items %}
+                <form method="post" action="{% url 'dashboard:parser_trigger_task' %}" class="flex items-center gap-2">
+                    {% csrf_token %}
+                    <input type="hidden" name="task_name" value="{{ task_name }}">
+                    <button type="submit" class="btn btn-sm btn-outline flex-1 justify-start">
+                        <i class="ti ti-player-play mr-1"></i> {{ task_label }}
+                    </button>
+                </form>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4">
+            <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
+                <i class="ti ti-api text-primary"></i> Сырой ответ KFF API
+            </h3>
+            <p class="text-xs opacity-60 mb-3">Синхронный запрос напрямую к kffleague.kz — полезно свериться с оригиналом, когда данные в нашей БД выглядят подозрительно.</p>
+            <form method="get" action="{% url 'dashboard:parser_tools' %}" class="flex flex-wrap gap-2 items-center">
+                <input type="number" name="external_id" value="{{ raw_form.external_id }}" placeholder="external_id (KFF game id)" class="input input-sm input-bordered w-56 max-w-full" required>
+                <select name="endpoint" class="select select-sm select-bordered">
+                    {% for key, meta in raw_endpoints.items %}
+                    <option value="{{ key }}" {% if key == raw_form.endpoint %}selected{% endif %}>{{ meta.0 }}</option>
+                    {% endfor %}
+                </select>
+                <button type="submit" class="btn btn-sm btn-primary">Запросить</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% if raw_result %}
+<div class="card bg-base-100 border border-base-300">
+    <div class="card-body p-4">
+        {% if raw_result.error %}
+        <div class="alert alert-error text-sm">
+            <i class="ti ti-alert-triangle"></i> {{ raw_result.error }}
+        </div>
+        {% else %}
+        <h3 class="font-bold text-sm md:text-base mb-3">{{ raw_result.label }} — external_id={{ raw_form.external_id }}</h3>
+        <pre class="text-xs bg-base-200 rounded-lg p-3 overflow-x-auto max-h-[70vh]">{{ raw_result.pretty }}</pre>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}

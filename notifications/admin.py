@@ -1,5 +1,6 @@
 # notifications/admin.py
 from django.contrib import admin
+from unfold.admin import ModelAdmin
 from django.utils.html import format_html
 from django.urls import reverse
 from django.utils import timezone
@@ -9,17 +10,22 @@ from django.template.loader import render_to_string
 from django.conf import settings
 import logging
 import os
+
+from core.admin_actions import export_as_csv
+
 from .models import Notification, ContactSubmission
 
 logger = logging.getLogger(__name__)
 
 
 @admin.register(Notification)
-class NotificationAdmin(admin.ModelAdmin):
+class NotificationAdmin(ModelAdmin):
     list_display = ('id_short', 'user_link', 'title', 'notification_type', 'is_read_badge', 'created_at')
     list_filter = ('notification_type', 'is_read', 'created_at')
     search_fields = ('title', 'message', 'user__username', 'user__email')
     readonly_fields = ('created_at', 'updated_at')
+    autocomplete_fields = ('user', 'related_match')
+    actions = [export_as_csv]
     
     def id_short(self, obj):
         return format_html('<code>#{}</code>', str(obj.id)[:8])
@@ -59,7 +65,7 @@ class ContactSubmissionForm(forms.ModelForm):
 
 
 @admin.register(ContactSubmission)
-class ContactSubmissionAdmin(admin.ModelAdmin):
+class ContactSubmissionAdmin(ModelAdmin):
     form = ContactSubmissionForm
     
     list_display = (
@@ -190,7 +196,7 @@ class ContactSubmissionAdmin(admin.ModelAdmin):
         except Exception as e:
             logger.error(f"❌ Status change email error: {type(e).__name__}: {e}", exc_info=True)
     
-    actions = ['mark_as_in_progress', 'mark_as_resolved', 'mark_as_closed']
+    actions = ['mark_as_in_progress', 'mark_as_resolved', 'mark_as_closed', export_as_csv]
     
     def mark_as_in_progress(self, request, queryset):
         updated = queryset.update(status='in_progress')

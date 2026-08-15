@@ -33,5 +33,7 @@
     }
   };
 
-  document.addEventListener("DOMContentLoaded", () => window.dopxTrack("page_view", { path: location.pathname }));
+  document.addEventListener("DOMContentLoaded", () =>
+    window.dopxTrack("page_view", { path: location.pathname, referrer: document.referrer })
+  );
 })();

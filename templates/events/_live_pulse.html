@@ -1,0 +1,39 @@
+{% comment %}
+Live-пульс — отдельная лента "крупных" событий (гол/пенальти/карточки/VAR)
+с тапами 👍/👎, независимая от полной ленты `matches/_match_events.html`.
+Рендерится и как ответ на GET events:pulse (первая загрузка + опрос
+каждые 15с через hx-trigger на обёртке в matches/detail.html), и содержит
+внутри себя отдельные HTMX-острова `_reaction_buttons.html` на каждое
+событие (тап по кнопке не должен дожидаться следующего 15-секундного
+опроса всей ленты — обновляется мгновенно, локально).
+{% endcomment %}
+<div class="space-y-2">
+    {% for event in events %}
+    <div class="flex items-center gap-2 md:gap-3 p-2 md:p-3 rounded-lg bg-base-200/60">
+        <div class="font-mono font-bold text-sm w-9 text-right shrink-0 opacity-70">
+            {{ event.display_minute }}'
+        </div>
+        <div class="flex-1 min-w-0 text-sm">
+            <span class="font-medium">{{ event.get_event_type_display }}</span>
+            {% if event.player %}
+                <a href="{% url 'players:detail' event.player.id %}" class="hover:text-primary transition-colors">
+                    {{ event.player.first_name }} {{ event.player.last_name }}
+                </a>
+            {% endif %}
+            <span class="opacity-50 text-xs">· {{ event.get_team_side_display }}</span>
+        </div>
+        {% include 'events/_reaction_buttons.html' with event=event %}
+        <button type="button"
+                class="btn btn-ghost btn-xs btn-circle flex-shrink-0"
+                title="Поделиться моментом"
+                onclick="if(window.dopxTrack){dopxTrack('share_clicked', {channel: 'native', context: 'live_pulse', match_id: '{{ event.match_id }}'})}; if(navigator.share){navigator.share({title: '{{ event.get_event_type_display }} {{ event.display_minute }}\'', text: '{{ event.get_event_type_display }} на {{ event.display_minute }}\' — смотрю на DOPX', url: window.location.href})}">
+            <i class="ti ti-share text-xs"></i>
+        </button>
+    </div>
+    {% empty %}
+    <div class="text-center py-6 opacity-50 text-sm">
+        <i class="ti ti-bolt-off text-2xl mb-1 block"></i>
+        Пока нет крупных событий для реакции
+    </div>
+    {% endfor %}
+</div>

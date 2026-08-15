@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+<div class="card bg-base-100 border border-base-300">
+    <div class="card-body p-4">
+        <h3 class="font-bold text-sm md:text-base mb-1 flex items-center gap-2">
+            <i class="ti ti-history text-primary"></i> Журнал действий staff
+        </h3>
+        <p class="text-xs opacity-50 mb-3">
+            Только кастомные экшены staff-дашборда (антифрод, ресинк, ручной запуск задач).
+            Обычные изменения через Django admin смотрите в
+            <a href="{% url 'admin:index' %}" class="link">истории объекта</a> в самом admin.
+        </p>
+        <div class="overflow-x-auto">
+            <table class="table table-sm">
+                <thead>
+                    <tr><th>Когда</th><th>Кто</th><th>Действие</th><th>Объект</th><th>IP</th></tr>
+                </thead>
+                <tbody>
+                    {% for entry in entries %}
+                    <tr>
+                        <td class="whitespace-nowrap text-xs">{{ entry.created_at|date:"d.m H:i:s" }}</td>
+                        <td class="whitespace-nowrap">{{ entry.actor_username|default:"—" }}</td>
+                        <td><span class="badge badge-sm badge-ghost">{{ entry.get_action_display }}</span></td>
+                        <td class="text-xs opacity-70 max-w-xs truncate" title="{{ entry.target }}">{{ entry.target|default:"—" }}</td>
+                        <td class="text-xs opacity-50 font-mono">{{ entry.ip_address|default:"—" }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5" class="text-center opacity-50 py-6">Пока нет ни одной записи</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

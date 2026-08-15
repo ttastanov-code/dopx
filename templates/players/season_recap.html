@@ -1,0 +1,77 @@
+{% extends 'base.html' %}
+{% load static rating_extras %}
+{% block content %}
+<div class="max-w-2xl mx-auto px-2 sm:px-0">
+  <div class="mb-4">
+    <a href="{% url 'players:detail' player.id %}" class="btn btn-ghost btn-sm">
+      <i class="ti ti-arrow-left"></i> Профиль игрока
+    </a>
+  </div>
+
+  {% if not season %}
+  <div class="card bg-base-100 border border-base-300">
+    <div class="card-body text-center py-12 opacity-60">
+      <i class="ti ti-calendar-off text-4xl mb-3"></i>
+      <p>Нет активного сезона для итогов.</p>
+    </div>
+  </div>
+  {% else %}
+  {% comment %}
+  Продуктовый аудит, раздел 5d ("Автогенерируемый season recap") —
+  "DOPX Wrapped" для одного игрока. Тот же фикс градиента, что и на
+  rules.html/anti_fraud.html/privacy.html: text-primary-content на
+  card-body, иначе текст сливается с фоном на светлой теме.
+  {% endcomment %}
+  <div class="card mb-6" style="background-image: linear-gradient(to bottom right, var(--color-primary), color-mix(in oklab, var(--color-secondary) 70%, var(--color-primary)));">
+    <div class="card-body p-6 text-center text-primary-content">
+      <p class="uppercase tracking-wide text-xs opacity-80 mb-1">Итоги сезона {{ season.year }}</p>
+      <h1 class="text-3xl font-bold mb-1">{{ player.first_name }} {{ player.last_name }}</h1>
+      <p class="opacity-80 mb-6">{% if player.team %}{{ player.team.name }}{% else %}Без команды{% endif %} · {{ season.league.name }}</p>
+
+      <div class="grid grid-cols-3 gap-3">
+        <div>
+          <div class="text-3xl font-bold">{{ matches_played }}</div>
+          <div class="text-xs opacity-80 mt-1">Матчей сыграно</div>
+        </div>
+        <div>
+          {% if has_enough_votes %}
+            <div class="text-3xl font-bold">{{ avg_performance }}</div>
+          {% else %}
+            <div class="text-2xl font-bold opacity-70">н/д</div>
+          {% endif %}
+          <div class="text-xs opacity-80 mt-1">Средний рейтинг</div>
+        </div>
+        <div>
+          <div class="text-3xl font-bold">{{ goals }}</div>
+          <div class="text-xs opacity-80 mt-1">Голов</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% if best_match %}
+  <div class="card bg-base-100 border border-base-300 mb-6">
+    <div class="card-body p-4">
+      <h3 class="font-bold text-sm opacity-60 mb-2"><i class="ti ti-medal mr-1"></i> Лучший матч сезона</h3>
+      <a href="{% url 'matches:detail' best_match.match.id %}" class="flex items-center justify-between hover:text-primary transition-colors">
+        <span>{{ best_match.match.home_team.name }} vs {{ best_match.match.away_team.name }}</span>
+        <span class="font-bold text-success">{{ best_match.performance_score|floatformat:1 }}</span>
+      </a>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="flex flex-wrap gap-2 justify-center">
+    <button class="btn btn-primary btn-sm"
+            onclick="if(window.dopxTrack){dopxTrack('share_clicked', {channel: 'native', context: 'season_recap', player_id: '{{ player.id }}'})}; navigator.share ? navigator.share({title: 'Итоги сезона {{ season.year }} — {{ player.first_name }} {{ player.last_name }}', url: window.location.href}) : window.open('{{ recap_card_url }}', '_blank')">
+      <i class="ti ti-share"></i> Поделиться
+    </button>
+    <a href="https://t.me/share/url?url={{ request.build_absolute_uri|urlencode }}&text={{ player.first_name|urlencode }}%20{{ player.last_name|urlencode }}%20—%20итоги%20сезона%20на%20DOPX"
+       target="_blank" rel="noopener" class="btn btn-outline btn-sm"
+       onclick="if(window.dopxTrack){dopxTrack('share_clicked', {channel: 'telegram', context: 'season_recap', player_id: '{{ player.id }}'})}">
+      <i class="ti ti-brand-telegram"></i> Telegram
+    </a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

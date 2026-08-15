@@ -8,9 +8,8 @@
             
             <!-- Колонка 1: О проекте -->
             <div>
-                <div class="flex items-center gap-2 mb-4">
-                    <img src="{% static 'img/DOPX_logo.png' %}" alt="DOPX" class="h-8 w-auto">
-                    <span class="font-bold text-lg">DOPX</span>
+                <div class="mb-4">
+                    {% include 'components/_brand.html' with variant='footer' icon_size='h-9 w-9' text_size='text-xl' %}
                 </div>
                 <p class="text-sm opacity-70 mb-4">
                     Голос трибун измеряем. Платформа объективной оценки футбольных матчей на основе мнения болельщиков.
@@ -98,6 +97,11 @@
                     <li>
                         <a href="{% url 'core:rules' %}" class="hover:text-primary transition-colors">
                             Правила платформы
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'core:anti_fraud' %}" class="hover:text-primary transition-colors">
+                            Как мы боремся с накруткой
                         </a>
                     </li>
                     <li>
