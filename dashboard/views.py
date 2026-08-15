@@ -168,9 +168,14 @@ def antifraud_export_csv(request):
 
 @staff_member_required
 def parser_tools_view(request):
-    """Единая страница трёх инструментов (задача #91/#92/#93):
+    """Единая страница инструментов парсера (задача #91/#92/#93, расширено
+    задачей "польза для решения проблем проекта" — добавлены поиск матча,
+    live-проверка KFF API и инспекция очереди celery):
+      - поиск матча по названию команд/external_id → UUID и быстрые ссылки;
       - форма просмотра сырого JSON от KFF API по external_id + эндпоинту;
-      - кнопки ручного запуска celery-задач синка (с дебаунсом);
+      - живая (синхронная) проверка доступности внешнего KFF API;
+      - список активных/зарезервированных celery-задач с revoke;
+      - кнопки ручного запуска celery-задач синка (с дебаунсом).
     Ресинк конкретного матча живёт на вкладке data-health (там есть список
     матчей под рукой), сюда вынесены только "безадресные" инструменты."""
     raw_result = None
@@ -191,6 +196,11 @@ def parser_tools_view(request):
                 details={"external_id": ext_id, "endpoint": raw_form["endpoint"], "error": raw_result.get("error")},
             )
 
+    # Поиск матча — не логируем в аудит (read-only просмотр, тот же
+    # уровень чувствительности, что и обычный список в Django admin).
+    search_query = request.GET.get("q", "").strip()
+    search_results = parser_tools.search_matches(search_query) if search_query else []
+
     context = {
         "page_title": "Парсер — DOPX Staff",
         "active_tab": "parser_tools",
@@ -198,6 +208,9 @@ def parser_tools_view(request):
         "raw_form": raw_form,
         "raw_result": raw_result,
         "triggerable_tasks": parser_tools.TRIGGERABLE_TASKS,
+        "search_query": search_query,
+        "search_results": search_results,
+        "celery_tasks": parser_tools.list_active_celery_tasks(),
     }
     return render(request, "dashboard/parser_tools.html", context)
 
@@ -211,6 +224,41 @@ def parser_trigger_task(request):
     log_staff_action(
         request, AuditAction.CELERY_TASK_TRIGGERED,
         target=task_name, details={"success": success, "message": message},
+    )
+    return redirect("dashboard:parser_tools")
+
+
+@staff_member_required
+@require_POST
+def parser_kff_health_check(request):
+    """Живая проверка "это мы или у них API лежит" — синхронный вызов,
+    результат сразу в messages, без ожидания celery-цикла и без захода в
+    логи сервера."""
+    result = parser_tools.kff_api_health_check()
+    if result["ok"]:
+        messages.success(request, f"KFF API доступен ({result['elapsed_ms']}мс)")
+    else:
+        messages.error(request, f"KFF API недоступен: {result['status']} ({result['elapsed_ms']}мс)")
+    log_staff_action(
+        request, AuditAction.KFF_HEALTH_CHECK,
+        target="KFF API", details=result,
+    )
+    return redirect("dashboard:parser_tools")
+
+
+@staff_member_required
+@require_POST
+def parser_revoke_task(request, task_id):
+    """Отзыв/остановка конкретной celery-задачи по id (из таблицы "Активные
+    задачи" на этой же странице). terminate=True — только по явному чекбоксу
+    в форме, см. комментарий в parser_tools.py::revoke_celery_task про риск
+    SIGKILL посреди транзакции."""
+    terminate = request.POST.get("terminate") == "1"
+    success, message = parser_tools.revoke_celery_task(task_id, terminate=terminate)
+    (messages.success if success else messages.error)(request, message)
+    log_staff_action(
+        request, AuditAction.CELERY_TASK_REVOKED,
+        target=task_id, details={"success": success, "message": message, "terminate": terminate},
     )
     return redirect("dashboard:parser_tools")
 

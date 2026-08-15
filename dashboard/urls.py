@@ -15,6 +15,8 @@ urlpatterns = [
     path("antifraud/flags/<uuid:flag_id>/action/", views.antifraud_flag_action, name="antifraud_flag_action"),
     path("parser/", views.parser_tools_view, name="parser_tools"),
     path("parser/trigger/", views.parser_trigger_task, name="parser_trigger_task"),
+    path("parser/kff-health-check/", views.parser_kff_health_check, name="parser_kff_health_check"),
+    path("parser/tasks/<str:task_id>/revoke/", views.parser_revoke_task, name="parser_revoke_task"),
     path("audit/", views.audit_log, name="audit_log"),
     # 2FA (security-стек) — ЭТИ пути освобождены от самой OTP-проверки в
     # EXEMPT_PATH_PREFIXES (dashboard/middleware.py), иначе замкнутый круг.
