@@ -87,6 +87,9 @@ redis==7.3.0
 referencing==0.37.0
 requests==2.32.3
 rpds-py==0.30.0
+# Sentry error tracking (dopx/settings.py::SENTRY_DSN) — no-op без ключа в
+# .env, см. комментарий в settings.py про переход с email-алертов.
+sentry-sdk==2.62.0
 simple-websocket==1.1.0
 six==1.17.0
 soupsieve==2.8.3
