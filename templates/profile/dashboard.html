@@ -84,14 +84,9 @@
         </div>
         <!-- Достижения -->
         {% comment %}
-        ИСПРАВЛЕНО: badge.rarity/is_secret/description уже давно были готовы
-        как properties поверх users/badges.py::BADGE_CATALOG (см. докстринг
-        UserBadge), но дашборд их не использовал вообще — все достижения
-        рисовались одинаковым акцентным квадратом с одной и той же иконкой
-        медали, узнать редкость можно было только по тексту тултипа. Теперь
-        цвет иконки/рамки отражает реальную редкость (bronze/silver/gold/
-        platinum/secret), а под сеткой — название последнего полученного
-        достижения текстом, а не только в hover-тултипе.
+        badge.rarity/is_secret — properties поверх users/badges.py::
+        BADGE_CATALOG (см. докстринг UserBadge). Цвет иконки/рамки отражает
+        редкость (bronze/silver/gold/platinum/secret).
         {% endcomment %}
         <div class="card bg-base-100 border border-base-300">
             <div class="card-body p-4">

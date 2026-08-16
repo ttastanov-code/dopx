@@ -71,33 +71,34 @@ class CacheHitMiddleware:
 
 
 class StaffSessionSecurityMiddleware:
-    """Sliding idle-таймаут сессии ТОЛЬКО для staff (is_staff=True) —
-    продуктовый аудит "защита на высшем уровне". Обычный посетитель сайта
-    держит сессию все SESSION_COOKIE_AGE (2 недели, см. settings.py) — это
-    нормальный UX. Но сотрудник с открытой вкладкой /admin/ или
-    /staff/dashboard/, отошедший от компьютера, не должен оставлять живую
-    сессию с доступом к антифроду/парсеру/PII на сколько угодно долго.
+    """
+    Sliding idle-таймаут сессии для staff, но ТОЛЬКО на /admin/ и
+    /staff/dashboard/ — обычный посетитель (и staff вне панелей управления)
+    живёт весь SESSION_COOKIE_AGE (2 недели). Раньше проверка срабатывала на
+    ЛЮБОЙ странице сайта: staff-аккаунт, зашедший на публичную страницу
+    матча и не слав запросов 30+ минут (задний план вкладки на телефоне,
+    экран заблокирован — HTMX-поллинг в фоне браузеры глушат), при
+    следующем действии получал logout() + редирект вместо обработки самого
+    запроса — например, тап по реакции на событие молча пропадал вместо
+    сохранения в БД. Метка активности пишется в сессию (_staff_last_activity)
+    на каждый запрос к панелям; простой дольше
+    STAFF_SESSION_IDLE_TIMEOUT_SECONDS (30 мин по умолчанию) — logout() и
+    редирект на вход.
 
-    Механика: при КАЖДОМ запросе от staff пишем метку последней активности в
-    саму сессию (`_staff_last_activity`). Если между запросами прошло больше
-    STAFF_SESSION_IDLE_TIMEOUT_SECONDS (по умолчанию 30 минут,
-    dopx/settings.py) — сессия принудительно убивается через logout() и
-    редирект на страницу входа. НЕ используем глобальный SESSION_COOKIE_AGE
-    для этого: он бьёт по ВСЕМ пользователям одинаково, а не только по staff.
-
-    ВАЖНО: должен стоять В MIDDLEWARE ПОСЛЕ AuthenticationMiddleware (нужен
-    request.user) и ПОСЛЕ OTPMiddleware, если 2FA включена — иначе logout()
-    здесь может конфликтовать с OTP-состоянием сессии.
+    Должен стоять в MIDDLEWARE после AuthenticationMiddleware (нужен
+    request.user) и после OTPMiddleware, если включена 2FA.
     """
 
     SESSION_KEY = '_staff_last_activity'
+    ENFORCED_PATH_PREFIXES = ('/admin/', '/staff/dashboard/')
 
     def __init__(self, get_response):
         self.get_response = get_response
 
     def __call__(self, request):
         user = getattr(request, 'user', None)
-        if user is not None and getattr(user, 'is_authenticated', False) and getattr(user, 'is_staff', False):
+        is_enforced_path = request.path.startswith(self.ENFORCED_PATH_PREFIXES)
+        if is_enforced_path and user is not None and getattr(user, 'is_authenticated', False) and getattr(user, 'is_staff', False):
             timeout = getattr(settings, 'STAFF_SESSION_IDLE_TIMEOUT_SECONDS', 1800)
             now = timezone.now()
             last_activity_iso = request.session.get(self.SESSION_KEY)

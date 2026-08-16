@@ -9,10 +9,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# ✅ ИСПРАВЛЕНО: Убран post_save сигнал на ContextEvaluation.
-# Проверка достижений и уведомления теперь централизованно обрабатываются 
-# в evaluations/views.py после полного завершения оценки матча. 
-# Это предотвращает дубликаты уведомлений, race conditions и ошибки Celery.
-# 
-# Если вам нужна асинхронная проверка достижений в других местах,
-# используйте users.tasks.check_badges_async.delay(user_id) напрямую.
+# Проверка достижений — централизованно в evaluations/views.py после
+# полного завершения оценки матча, не через post_save-сигнал (дубликаты
+# уведомлений/race conditions при частичном сохранении вайзарда).
+# Для асинхронной проверки в других местах: users.tasks.check_badges_async.delay(user_id).

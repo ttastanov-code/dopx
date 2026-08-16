@@ -9,9 +9,7 @@ app_name = 'core'
 
 urlpatterns = [
     path('', HomeView.as_view(), name='home'),
-    # PWA (продуктовый аудит, раздел 5c) — см. docstring service_worker
-    # про то, почему это /sw.js, а не /static/sw.js.
-    path('sw.js', service_worker, name='service_worker'),
+    path('sw.js', service_worker, name='service_worker'),  # не /static/sw.js — см. docstring view
     path('rules/', RulesView.as_view(), name='rules'),
     path('privacy/', PrivacyPolicyView.as_view(), name='privacy'),
     path('contacts/', ContactsView.as_view(), name='contacts'),

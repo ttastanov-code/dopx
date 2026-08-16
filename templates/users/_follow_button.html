@@ -1,7 +1,6 @@
 {% comment %}
-Кнопка подписки на игрока/команду (Follow-граф, продуктовый аудит раздел
-5b). Рендерится и при первой загрузке страницы игрока/команды, и как
-HTMX-ответ на POST users:toggle_follow (свап outerHTML).
+Кнопка подписки на игрока/команду (Follow-граф). Рендерится и при первой
+загрузке страницы, и как HTMX-ответ на POST users:toggle_follow (outerHTML).
 Контекст: target_type ('player'|'team'), target_id, following (bool).
 {% endcomment %}
 {% if request.user.is_authenticated %}

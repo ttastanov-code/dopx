@@ -1,9 +1,6 @@
 {% comment %}
-Компонент уведомлений: триггер + дропдаун
-✅ FIX: Исправлен клик — теперь используется Alpine.js (x-data) для мгновенного отклика
-✅ FIX: Мобильная версия — окно отцентровано, не улетает за край
-✅ FIX: Десктоп — классическое выпадающее меню справа
-✅ Сохранена вся логика HTMX polling и обновления title
+Компонент уведомлений: триггер + дропдаун. Клик — через Alpine (x-data), не
+HTMX. На мобильных дропдаун fixed по центру, на десктопе absolute справа.
 {% endcomment %}
 <div class="dropdown dropdown-end relative" id="notification-wrapper" x-data="{ open: false }" @click.outside="open = false">
     

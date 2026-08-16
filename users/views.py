@@ -1,26 +1,18 @@
 # users/views.py
 """
-ИЗМЕНЕНИЯ (продуктовый аудит DOPX, часть 2):
+RegisterView: rate-limit по IP через `core.utils.is_rate_limited` (не более
+REGISTER_RATE_LIMIT регистраций с одного IP за REGISTER_RATE_LIMIT_WINDOW_
+SECONDS), сохранение registration_ip/registration_user_agent на созданном
+пользователе — антифрод-данные для IP-кластерного анализа (users/tasks.py::
+detect_ip_clusters_task). Honeypot/time-trap проверяются самой формой
+(users/forms.py) через стандартный form_invalid.
 
-1. `RegisterView` — раньше регистрация была полностью открыта для
-   автоматического массового создания аккаунтов: ни rate-limit, ни IP/UA
-   логирования. Добавлено: rate-limit по IP через `core.utils.
-   is_rate_limited` (не более `REGISTER_RATE_LIMIT` регистраций с одного IP
-   за `REGISTER_RATE_LIMIT_WINDOW_SECONDS`), сохранение `registration_ip`/
-   `registration_user_agent` на созданном пользователе (антифрод-данные для
-   будущего кластерного анализа — см. продуктовый аудит, раздел 4.3).
-   Honeypot/time-trap проверяются самой формой (`users/forms.py`) —
-   `form_invalid` сработает автоматически через стандартный Django-флоу,
-   отдельного кода здесь не требует.
-2. `VerifyEmailView` — после успешной верификации ставится в очередь
-   `users.tasks.award_founder_badge_if_eligible` (бейдж «Первопроходец»,
-   разовая проверка, см. её докстринг).
-3. `NotificationSettingsView.form_valid` — раньше вручную перечислял 5
-   конкретных ключей настроек, из-за чего любое новое поле в форме (как
-   `email_digest_mode`, добавленный сейчас для дайджест-рассылки) молча
-   игнорировалось бы при сохранении. Переписано на генерацию словаря из
-   `User.DEFAULT_NOTIFICATION_SETTINGS.keys()` — новые настройки подхватываются
-   автоматически, если добавлено соответствующее поле в форме.
+VerifyEmailView: после верификации ставит в очередь
+users.tasks.award_founder_badge_if_eligible (бейдж «Первопроходец»).
+
+NotificationSettingsView.form_valid: словарь настроек строится из
+User.DEFAULT_NOTIFICATION_SETTINGS.keys(), не хардкодом — новое поле в форме
+подхватывается без правки этого метода.
 """
 from __future__ import annotations
 
@@ -84,7 +76,7 @@ class RegisterView(CreateView):
         user = form.save(commit=False)
         user.is_verified = False  # Аккаунт создан, но не активирован
         user.set_password(form.cleaned_data['password1'])
-        # НОВОЕ: антифрод-данные регистрации (см. докстринг модуля, пункт 1).
+        # Антифрод-данные регистрации, см. докстринг модуля.
         user.registration_ip = get_client_ip(self.request)
         user.registration_user_agent = self.request.META.get('HTTP_USER_AGENT', '')[:1000]
         user.save()
@@ -158,8 +150,7 @@ class VerifyEmailView(View):
                 is_read=False,
             )
 
-            # НОВОЕ: разовая проверка бейджа «Первопроходец» (users/tasks.py) —
-            # асинхронно, не блокирует ответ пользователю.
+            # Разовая проверка бейджа «Первопроходец», асинхронно.
             try:
                 from users.tasks import award_founder_badge_if_eligible
                 award_founder_badge_if_eligible.delay(str(user.id))
@@ -238,15 +229,10 @@ class ProfileView(LoginRequiredMixin, TemplateView):
             'evaluation_streak': user.evaluation_streak,
             'total_matches': user.evaluation_sessions.filter(status='completed').count(),
         }
-        # ИСПРАВЛЕНО: раньше источником была user.context_evaluations —
-        # ContextEvaluation создаётся на САМОМ ПЕРВОМ шаге вайзарда (см.
-        # evaluations/views.py::EvaluateContextView.form_valid), то есть
-        # существует и для оценок, брошенных на полпути. Шаблон при этом
-        # ВСЕГДА показывал бейдж "Завершено" — матч, который на самом деле
-        # ещё лежит в "Активные оценки" чуть выше на этой же странице, здесь
-        # одновременно значился как готовый. Берём реально завершённые
-        # сессии (EvaluationSession.status == 'completed'), для которых
-        # "Завершено" — не пустое слово.
+        # user.context_evaluations не годится источником: ContextEvaluation
+        # создаётся уже на первом шаге вайзарда (evaluations/views.py::
+        # EvaluateContextView.form_valid), т.е. существует и для брошенных
+        # на полпути оценок. Берём только реально завершённые сессии.
         recent_evaluations = user.evaluation_sessions.filter(
             status='completed'
         ).select_related(
@@ -256,12 +242,10 @@ class ProfileView(LoginRequiredMixin, TemplateView):
         # доступны в шаблоне как badge.rarity / badge.is_secret / badge.description.
         badges = UserBadge.objects.filter(user=user).order_by('-awarded_at')
         xp, _ = UserXP.objects.get_or_create(user=user)
-        # ИСПРАВЛЕНО: та же проблема, что и на главной (core/views.py::
-        # HomeView) — сессия оставалась в "Активные оценки" даже после
-        # закрытия голосования по её матчу, хотя завершить её уже физически
-        # невозможно (EvaluationWizardMixin.check_voting_access заблокирует
-        # первый же шаг). Кнопка "Продолжить" вела в тупик. Показываем
-        # только те незавершённые сессии, где голосование ещё открыто.
+        # Та же логика, что и на главной (core/views.py::HomeView): не
+        # показываем сессии, чью voting_open_until уже прошло — Continue
+        # вёл бы в тупик, EvaluationWizardMixin.check_voting_access всё
+        # равно заблокирует первый шаг.
         active_sessions = user.evaluation_sessions.filter(
             status__in=['started', 'in_progress'],
             match__voting_open_until__gte=timezone.now(),
@@ -282,15 +266,9 @@ class ProfileView(LoginRequiredMixin, TemplateView):
 
 class BadgeCatalogView(LoginRequiredMixin, TemplateView):
     """
-    Полный каталог достижений платформы с отметкой "получено/не получено".
-
-    НОВОЕ: раньше нигде на сайте нельзя было увидеть, какие вообще бывают
-    достижения — только уже полученные (в профиле). Пользователь не мог
-    понять, к чему стремиться, хотя весь каталог с описаниями и редкостью
-    (`users/badges.py::BADGE_CATALOG`) давно существует и используется для
-    начисления — просто ни разу не был отрендерен целиком. Секретные
-    достижения, которые пользователь ещё не получил, намеренно показываются
-    как "???" — иначе теряется смысл слова "секретное".
+    Полный каталог достижений (`users/badges.py::BADGE_CATALOG`) с отметкой
+    "получено/не получено". Секретные достижения, которые пользователь ещё
+    не получил, показываются как "???" — иначе теряется смысл секретности.
     """
     template_name = 'users/badge_catalog.html'
 
@@ -326,25 +304,19 @@ class PublicProfileView(TemplateView):
     """
     Публичный (только для чтения) профиль ЛЮБОГО пользователя по username.
 
-    НОВОЕ: раньше это была мёртвая функциональность — ссылка на пользователя
-    в рейтинге (`templates/users/leaderboard.html`) вела на `href="#"`,
-    потому что маршрута для просмотра ЧУЖОГО профиля просто не существовало
-    (`ProfileView` всегда рендерит только `request.user`, без параметра в
-    URL). Рейтинг, из которого нельзя перейти в профиль игрока рейтинга —
-    незаконченная фича, поэтому добавлен этот вью с минимально необходимым
-    набором данных и БЕЗ приватной информации (email, настройки, кнопки
-    редактирования — всё это только в `ProfileView`, только для себя).
+    ProfileView всегда рендерит только request.user — для перехода в чужой
+    профиль (со страницы рейтинга) нужен отдельный маршрут без параметров.
+    Набор данных минимальный и без приватной информации (email, настройки,
+    кнопки редактирования — только в ProfileView, только для себя).
     """
     template_name = 'users/public_profile.html'
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         profile_user = get_object_or_404(User, username=kwargs['username'], is_active=True)
-        # НОВОЕ: уважаем is_profile_public — но НЕ для владельца профиля
-        # (он должен видеть свою собственную страницу даже с выключенной
-        # видимостью, чтобы проверить, как она выглядела до отключения).
-        # 404, а не редирект на логин — не палим гостю разницу в поведении
-        # между "профиля не существует" и "профиль скрыт владельцем".
+        # is_profile_public не применяется к владельцу — он видит свою
+        # страницу даже при выключенной видимости. 404, а не редирект на
+        # логин — не палим гостю разницу между "не существует" и "скрыт".
         if not profile_user.is_profile_public and self.request.user != profile_user:
             from django.http import Http404
             raise Http404("Профиль скрыт владельцем")
@@ -466,11 +438,8 @@ class NotificationSettingsView(LoginRequiredMixin, FormView):
 
     def form_valid(self, form):
         user = self.request.user
-        # ИСПРАВЛЕНО: раньше здесь были захардкожены 5 конкретных ключей —
-        # новое поле формы (например, `email_digest_mode`) молча
-        # игнорировалось бы при сохранении, пока кто-то не вспомнил бы
-        # добавить его в этот список вручную. Теперь ключи берутся из
-        # единого источника — `User.DEFAULT_NOTIFICATION_SETTINGS`.
+        # Ключи берутся из User.DEFAULT_NOTIFICATION_SETTINGS, не хардкодом —
+        # новое поле формы подхватывается без правки этого метода.
         user._notification_settings = {
             key: form.cleaned_data.get(key, True)
             for key in User.DEFAULT_NOTIFICATION_SETTINGS
@@ -483,16 +452,9 @@ class NotificationSettingsView(LoginRequiredMixin, FormView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Настройки уведомлений — DOPX'
-        # ИСПРАВЛЕНО: кнопка "Включить push-уведомления" (templates/users/
-        # notification_settings.html) инициализировала Alpine-стейт
-        # `status: 'idle'` БЕЗУСЛОВНО на каждой загрузке страницы — сама
-        # подписка сохранялась в БД (`PushSubscription`) корректно, но UI
-        # никогда не проверял, есть ли она уже, и после обновления страницы
-        # всегда показывал "Включить" заново, будто ничего не произошло.
-        # `has_push_subscription` — есть ли у пользователя АКТИВНАЯ
-        # подписка хоть с одного устройства/браузера (namespace одного
-        # пользователя, не текущего браузера конкретно — см. комментарий в
-        # шаблоне).
+        # has_push_subscription питает Alpine-стейт кнопки в шаблоне
+        # (notification_settings.html) — есть ли активная подписка хоть с
+        # одного устройства пользователя, не только текущего браузера.
         context['has_push_subscription'] = self.request.user.push_subscriptions.exists()
         return context
 
@@ -504,17 +466,14 @@ class UserLeaderboardView(ListView):
     paginate_by = 20
 
     def get_queryset(self):
-        # ✅ select_related('xp') — шаблон читает user.xp.level для КАЖДОЙ
-        # строки (см. leaderboard.html), без этого это был N+1 (1 запрос на
-        # каждого из 20 пользователей на странице).
+        # select_related('xp') — шаблон читает user.xp.level на каждой
+        # строке (leaderboard.html), иначе N+1 на 20 пользователей страницы.
         qs = User.objects.filter(is_active=True, is_verified=True).select_related('xp').annotate(
             eval_count=Count('context_evaluations', distinct=True)
         ).filter(eval_count__gte=1).order_by('-trust_score', '-eval_count')
-        # НОВОЕ: ?city= — локальный рейтинг "лучшие болельщики моего
-        # города". Точное совпадение (не icontains), т.к. фильтр приходит
-        # из выпадающего списка с уже существующими значениями city, а не
-        # из свободного текстового поля — так дешевле для БД и без риска
-        # случайных пересечений подстрок ("Актау" внутри "Октябрьск" и т.п.).
+        # ?city= — локальный рейтинг "лучшие болельщики моего города".
+        # Точное совпадение, не icontains: фильтр приходит из выпадающего
+        # списка существующих значений city, не из свободного текста.
         city = self.request.GET.get('city', '').strip()
         if city:
             qs = qs.filter(city__iexact=city)
@@ -551,14 +510,11 @@ class PlayerLeaderboardView(ListView):
             avg_performance__isnull=False,
             total_matches__gte=1
         ).order_by('-avg_performance')
-        # НОВОЕ: ?league= — рейтинг игроков в разрезе лиги.
-        # ВАЖНО: у Player/Team нет прямого FK на League (лига — атрибут
-        # МАТЧА, не команды — команда может в теории участвовать в разных
-        # турнирах). Поэтому фильтруем через реально существующую связь
-        # `match_aggregates__match__league`, а не через несуществующий
-        # `team__league`. distinct() — игрок может встретиться в этой
-        # лиге по нескольким своим матчам, без него JOIN размножил бы
-        # строки и annotate()-агрегаты выше посчитались бы неверно.
+        # ?league= — рейтинг игроков в разрезе лиги. У Player/Team нет
+        # прямого FK на League (лига — атрибут матча, не команды), поэтому
+        # фильтруем через match_aggregates__match__league, не team__league.
+        # distinct() — игрок может встретиться в лиге по нескольким матчам,
+        # без него JOIN размножил бы строки и annotate() выше считал бы неверно.
         league_id = self.request.GET.get('league', '').strip()
         if league_id:
             qs = qs.filter(match_aggregates__match__league_id=league_id).distinct()

@@ -1,11 +1,5 @@
 # notifications/services.py
-"""
-Web Push (продуктовый аудит DOPX, раздел 5c "PWA + Web Push").
-
-Отдельный сервисный модуль, а не метод на PushSubscription/встроенный код
-в tasks.py — по той же причине, что и `aggregates/services.py`: чистая
-функция, легко тестируемая изолированно от Celery-обвязки.
-"""
+"""Web Push: чистые функции, тестируемые отдельно от Celery-обвязки в tasks.py."""
 from __future__ import annotations
 
 import json

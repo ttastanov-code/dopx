@@ -12,12 +12,9 @@ class CoachListView(ListView):
     paginate_by = 20
 
     def get_queryset(self):
-        # ✅ FIX: Считаем фактические матчи из Match, а не агрегаты
-        # ✅ ИСПРАВЛЕНО: шаблон обращается к coach.match_aggregates.first для
-        # карточки "Тактика" — без prefetch это был N+1 (по доп. запросу на
-        # каждого из 20 тренеров на странице). CoachMatchAggregate.Meta.ordering
-        # = ['-match__start_time'], поэтому prefetch без явного order_by даёт
-        # тот же самый "последний матч", что и .first() без него.
+        # Prefetch для coach.match_aggregates.first (карточка "Тактика" в
+        # шаблоне) — без него N+1 на каждого тренера. Ordering модели
+        # (-match__start_time) даёт тот же "последний матч", что и без prefetch.
         return Coach.objects.filter(
             is_active=True
         ).prefetch_related(
@@ -84,12 +81,9 @@ class CoachDetailView(DetailView):
             'avg_management': agg_totals['avg_management'],
             'avg_impact': agg_totals['avg_impact'],
         }
-        # ✅ ИСПРАВЛЕНО: карточка "Средние оценки" раньше показывалась при
-        # stats.total_matches (все матчи тренера), хотя данные в ней берутся
-        # из CoachMatchAggregate (оценки болельщиков). Если тренер отработал
-        # матчи, но их ещё никто не оценил, avg_* были None, а width: %
-        # в прогресс-барах получал пустую строку — визуально сломанные бары.
-        # Правильное условие — есть ли вообще оценки.
+        # Условие видимости карточки "Средние оценки" — есть ли оценки
+        # (total_evaluations), а не total_matches: без оценок avg_* = None,
+        # и width: % в прогресс-барах ломается на пустой строке.
         has_evaluations = stats['total_evaluations'] > 0
 
         context.update({

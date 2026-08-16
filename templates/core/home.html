@@ -20,12 +20,8 @@
             <div class="flex flex-wrap gap-2 md:gap-4 justify-center">
                 {% if user.is_authenticated %}
                 {% comment %}
-                ИСПРАВЛЕНО: ведёт на status=votable (status='finished' +
-                voting_open_until >= now) — тот же фильтр, что и в подсчёте
-                stats.active_voting ниже (core/views.py) и в
-                Match.is_voting_open() (matches/models.py). Без этого
-                параметра пользователь попадал на список ВСЕХ матчей вместо
-                тех, что реально можно оценить.
+                status=votable — тот же фильтр, что в stats.active_voting
+                (core/views.py) и Match.is_voting_open() (matches/models.py).
                 {% endcomment %}
                 <a href="{% url 'matches:list' %}?status=votable" class="btn btn-primary btn-sm md:btn-lg">
                     <i class="ti ti-trophy"></i>
@@ -59,9 +55,8 @@
                 <div class="stat bg-base-100 rounded-lg md:rounded-xl p-2 md:p-4">
                     <div class="stat-title text-[10px] md:text-xs">Средняя драма</div>
                     {% comment %}
-                    ИСПРАВЛЕНО: |default:0 показывал "0,0" когда оценок ВООБЩЕ
-                    ещё нет (view теперь отдаёт None, а не 0, для этого случая) —
-                    выглядело как реальный (очень низкий) балл. "—" честнее.
+                    view отдаёт None, когда оценок ещё нет — "—" честнее,
+                    чем |default:0, который читался бы как реальный низкий балл.
                     {% endcomment %}
                     <div class="stat-value text-lg md:text-2xl text-warning">{{ metrics.avg_drama|floatformat:1|default:"—" }}</div>
                 </div>
@@ -116,7 +111,7 @@
             </div>
             <div class="space-y-2 md:space-y-3">
                 {% for match in upcoming_matches %}
-                <!-- ✅ FIX: Карточка матча (строго в одну линию) -->
+                <!-- flex-nowrap ниже держит команды/счёт строго в одну линию -->
                 <div class="card bg-base-100 border border-base-300 hover:border-primary transition-all cursor-pointer h-full"
                      onclick="window.location='{% url 'matches:detail' match.id %}'">
                     <div class="card-body p-3 md:p-4">
@@ -192,7 +187,7 @@
             </div>
             <div class="space-y-2 md:space-y-3">
                 {% for match in recent_matches %}
-                <!-- ✅ FIX: Карточка матча (строго в одну линию) -->
+                <!-- flex-nowrap ниже держит команды/счёт строго в одну линию -->
                 <div class="card bg-base-100 border border-base-300 hover:border-primary transition-all cursor-pointer h-full"
                      onclick="window.location='{% url 'matches:detail' match.id %}'">
                     <div class="card-body p-3 md:p-4">
@@ -225,10 +220,8 @@
                                 </div>
                                 {% elif not match.is_voting_open %}
                                 {% comment %}
-                                ИСПРАВЛЕНО: "Драма: 0" при total_votes=0 читался как реальная
-                                оценка "0 из 100" (очень скучный матч), хотя на деле это просто
-                                отсутствие голосов — никто не оценил, а не "все поставили ноль".
-                                Раз голосование уже закрыто и оценок нет — говорим прямо.
+                                "Драма: 0" при total_votes=0 читалось бы как реальная оценка,
+                                а не отсутствие голосов — говорим прямо.
                                 {% endcomment %}
                                 <div class="text-[10px] sm:text-xs opacity-40 mt-1 truncate">Нет оценок</div>
                                 {% endif %}

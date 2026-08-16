@@ -1,58 +1,15 @@
 # notifications/tasks.py
 """
-ИЗМЕНЕНИЯ (продуктовый аудит DOPX, часть 2):
-
-1. **`_send_email_to_user` парсила ТЕМУ ПИСЬМА строкой**, чтобы понять,
-   какую настройку уведомлений проверять (`if 'достижение' in subject_lower
-   ... elif 'матч' in subject_lower or 'голосование' in subject_lower: ...`).
-   Это не просто хрупко — это реальный баг: тема письма о закрытии
-   голосования (`notify_voting_closing_soon`) содержит слово "Голосование",
-   поэтому попадала в ветку `email_match_finished`, а НЕ в
-   `email_voting_closing`, хотя `notify_voting_closing_soon` дополнительно и
-   правильно проверяла `email_voting_closing` САМА, отдельно, ДО вызова
-   `_send_email_to_user` — вторая, внутренняя проверка по чужому ключу
-   настроек могла заблокировать письмо, даже когда пользователь явно
-   оставил "напоминания о закрытии голосования" включёнными, а выключил
-   только "матч завершён". Заменено на явный параметр `notification_type`,
-   тот же, что и у `Notification.notification_type` — маппинг на ключ
-   настроек через словарь, без строковых эвристик.
-
-2. **Массовая рассылка без батчинга.** `send_voting_open_notification` и
-   `notify_voting_closing_soon` синхронно, в Python-цикле, слали письма
-   ВСЕМ подходящим пользователям ОДИН ЗА ДРУГИМ внутри одной Celery-задачи —
-   для проекта с большим количеством пользователей это: (а) риск упереться
-   в `CELERY_TASK_TIME_LIMIT`, а при таймауте/ретрае разослать всё заново
-   без отслеживания, кому уже отправлено — гарантированные дубли; (б)
-   резкий всплеск исходящих писем с одного адреса за короткое время —
-   классический триггер спам-фильтров/лимитов почтового провайдера.
-   Переписано на fan-out: родительская задача только формирует список
-   получателей и ставит в очередь пачки (`_send_match_email_chunk`) по
-   `BULK_EMAIL_CHUNK_SIZE` пользователей, каждая — со своим `rate_limit`.
-   Даёт параллелизм между воркерами и честный ретрай только НЕОТПРАВЛЕННОЙ
-   пачки, а не всей рассылки с нуля.
-
-3. **Дайджест вместо мгновенного письма на каждое мелкое событие.** Новая
-   `send_notification_digest` — периодическая задача (нужно добавить в
-   `CELERY_BEAT_SCHEDULE`, см. инструкцию в продуктовом отчёте), которая
-   раз в 30-60 минут собирает все ещё не отправленные по email `Notification`
-   типов `new_badge`/`level_up`/`system` для пользователей с
-   `email_digest_mode=True` и шлёт ОДНО письмо-сводку вместо N отдельных.
-   Вызывающий код (`users/tasks.py`, `evaluations/views.py`) при
-   `email_digest_mode=True` теперь НЕ ставит в очередь мгновенное письмо —
-   только создаёт in-app `Notification`, дайджест подхватит её сам.
-
-4. **Реальная задача вместо несуществующей.** `CELERY_BEAT_SCHEDULE` в
-   `dopx/settings.py` ссылался на `notifications.tasks.
-   cleanup_old_notifications` (расписание `voting-reminders`, каждые 6
-   часов) — такой функции в файле не было вообще, Celery Beat годами писал
-   бы в лог `NotRegistered` при каждой попытке запуска. Добавлена реальная
-   реализация: удаляет старые ПРОЧИТАННЫЕ уведомления, чтобы таблица не
-   росла бесконечно. Отдельно, `cleanup-old-sessions-daily` в настройках
-   ссылался на `notifications.tasks.cleanup_old_sessions` — тоже
-   несуществующий путь, реальная задача с таким именем определена в
-   `aggregates/tasks.py`. Обе строки нужно поправить в `CELERY_BEAT_
-   SCHEDULE` — см. точный патч в продуктовом отчёте (не привожу здесь,
-   чтобы не переписывать вслепую весь `dopx/settings.py`).
+_send_email_to_user проверяет настройку через явный notification_type
+(маппинг на ключ настроек словарём), не парсит тему письма строкой — иначе
+письмо о закрытии голосования содержит слово "Голосование" и попадает не
+в ту ветку. Массовые рассылки (send_voting_open_notification,
+notify_voting_closing_soon) — fan-out: родительская задача ставит в очередь
+пачки по BULK_EMAIL_CHUNK_SIZE через _send_match_email_chunk, каждая со
+своим rate_limit — иначе риск упереться в CELERY_TASK_TIME_LIMIT и при
+ретрае разослать всё заново. send_notification_digest — периодическая
+задача, собирает не отправленные по email Notification для пользователей
+с email_digest_mode=True в одно письмо вместо N отдельных.
 """
 from __future__ import annotations
 
@@ -288,9 +245,7 @@ def send_voting_open_notification(self, match_id: str):
 def notify_voting_closing_soon(self):
     """
     Напоминание о скором закрытии голосования — тоже fan-out на уровне
-    пачек, плюс явный `notification_type='voting_closing'` (см. пункт 1
-    докстринга модуля — раньше эта проверка "терялась" из-за парсинга
-    subject).
+    пачек, плюс явный notification_type='voting_closing'.
     """
     from matches.models import Match
 
@@ -329,14 +284,9 @@ def notify_voting_closing_soon(self):
 @shared_task
 def send_notification_digest():
     """
-    НОВОЕ (см. пункт 3 докстринга модуля). Периодическая задача — собирает
-    непрочитанные-по-email `Notification` (`email_sent_at__isnull=True`)
-    типов `new_badge`/`level_up`/`system` по пользователям с
-    `email_digest_mode=True` и шлёт ОДНО письмо-сводку на пользователя,
-    вместо мгновенного письма на каждое событие.
-
-    Нужно добавить в `CELERY_BEAT_SCHEDULE` (например, `crontab(minute=
-    '*/30')`) — см. продуктовый отчёт.
+    Периодическая задача: собирает Notification (email_sent_at__isnull=True)
+    типов new_badge/level_up/system по пользователям с email_digest_mode=True
+    и шлёт одно письмо-сводку вместо N мгновенных.
     """
     from notifications.models import Notification
 
@@ -370,9 +320,6 @@ def send_notification_digest():
         sent = _send_email_to_user(
             user,
             f'📋 Ваши обновления на DOPX ({len(notes)})',
-            # ИСПРАВЛЕНО: шаблон в проекте уже существовал под именем
-            # notification_digest.html — ссылались на несуществующий
-            # emails/digest.html, письмо падало с TemplateDoesNotExist.
             'emails/notification_digest.html',
             {'notifications': notes, 'count': len(notes)},
             notification_type='system',

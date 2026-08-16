@@ -1,0 +1,171 @@
+{% load match_extras %}
+{% comment %}
+Шапка матча (счёт/статус/CTA), вынесена из detail.html под live-поллинг.
+hx-атрибуты на корне живут только при status=live и пропадают из ответа
+после финального свистка — поллинг гасится сам, без JS.
+{% endcomment %}
+<div id="match-header" class="card bg-base-100 border border-base-300 mb-3 sm:mb-6"
+     {% if match.status == 'live' %}
+     hx-get="{% url 'matches:header' match.id %}"
+     hx-trigger="every 20s"
+     hx-swap="outerHTML"
+     {% endif %}>
+    <div class="card-body p-3 sm:p-6">
+        <!-- Лига и статус -->
+        <div class="flex items-center justify-between mb-3 sm:mb-4 flex-wrap gap-2">
+            <div class="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm opacity-60 truncate min-w-0">
+                <i class="ti ti-trophy flex-shrink-0"></i>
+                <span class="truncate">{{ match.league.name }}</span>
+                <span class="hidden sm:inline">•</span>
+                <span class="hidden sm:inline">Сезон {{ match.season.year }}</span>
+                {% if match.is_derby %}
+                <span class="hidden sm:inline">•</span>
+                <span class="badge badge-error badge-sm gap-1 flex-shrink-0">
+                    <i class="ti ti-flame"></i>
+                    Дерби
+                </span>
+                {% endif %}
+            </div>
+            <div class="badge {% if match.status == 'live' %}badge-error animate-pulse{% elif match.status == 'finished' %}badge-success{% else %}badge-ghost{% endif %} text-xs">
+                {% if match.status == 'scheduled' %}
+                <i class="ti ti-calendar"></i>
+                <span class="hidden sm:inline">Запланирован</span>
+                {% elif match.status == 'live' %}
+                <i class="ti ti-circle-filled"></i>
+                LIVE
+                {% else %}
+                <i class="ti ti-check"></i>
+                <span class="hidden sm:inline">Завершён</span>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Команды и счёт -->
+        <div class="flex flex-col md:flex-row items-center justify-between gap-3 sm:gap-6">
+            <!-- Домашняя команда -->
+            <div class="flex flex-col items-center flex-1 text-center md:text-left w-full min-w-0">
+                {% if match.home_team.logo_url %}
+                <img src="{{ match.home_team.logo_url }}" alt="{{ match.home_team.name }}" class="w-16 h-16 md:w-24 md:h-24 object-contain mb-2 md:mb-3">
+                {% else %}
+                <div class="w-16 h-16 md:w-24 md:h-24 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-2xl md:text-3xl mb-2 md:mb-3">
+                    {{ match.home_team.name|first|upper }}
+                </div>
+                {% endif %}
+                <h2 class="text-lg md:text-xl font-bold truncate w-full">{{ match.home_team.name }}</h2>
+                {% if match.home_coach %}
+                <p class="text-xs md:text-sm opacity-60 truncate w-full">Тренер: {{ match.home_coach }}</p>
+                {% endif %}
+            </div>
+
+            <!-- Счёт -->
+            <div class="text-center px-3 py-2 md:px-8 md:py-4 bg-base-200 rounded-xl order-first md:order-none w-full md:w-auto mb-3 md:mb-0 shrink-0">
+                {% if match.status == 'finished' %}
+                <div class="text-3xl md:text-5xl font-bold font-mono mb-1 md:mb-2 leading-tight">
+                    {% render_score match.home_score match.away_score %}
+                </div>
+                <div class="text-xs md:text-sm opacity-60 flex items-center justify-center gap-1">
+                    <i class="ti ti-clock flex-shrink-0"></i>
+                    <span class="truncate">{{ match.start_time|date:"d.m.Y" }} в {{ match.start_time|time:"H:i" }}</span>
+                </div>
+                {% elif match.status == 'live' %}
+                <div class="text-2xl md:text-3xl font-bold font-mono mb-1 md:mb-2 text-error animate-pulse flex items-center justify-center gap-1">
+                    <i class="ti ti-circle-filled text-xs flex-shrink-0"></i>
+                    LIVE
+                </div>
+                <div class="text-xl md:text-2xl font-mono">
+                    {% render_score match.home_score match.away_score %}
+                </div>
+                {% else %}
+                <div class="text-xl md:text-2xl font-mono mb-1 md:mb-2 opacity-60">VS</div>
+                <div class="text-sm">
+                    <i class="ti ti-calendar flex-shrink-0"></i>
+                    <span class="truncate">{{ match.start_time|date:"d.m.Y" }}</span>
+                </div>
+                <div class="text-xs md:text-sm opacity-60">
+                    {{ match.start_time|time:"H:i" }}
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Гостевая команда -->
+            <div class="flex flex-col items-center flex-1 text-center md:text-right w-full min-w-0">
+                {% if match.away_team.logo_url %}
+                <img src="{{ match.away_team.logo_url }}" alt="{{ match.away_team.name }}" class="w-16 h-16 md:w-24 md:h-24 object-contain mb-2 md:mb-3">
+                {% else %}
+                <div class="w-16 h-16 md:w-24 md:h-24 rounded-full bg-secondary/10 flex items-center justify-center font-bold text-secondary text-2xl md:text-3xl mb-2 md:mb-3">
+                    {{ match.away_team.name|first|upper }}
+                </div>
+                {% endif %}
+                <h2 class="text-lg md:text-xl font-bold truncate w-full">{{ match.away_team.name }}</h2>
+                {% if match.away_coach %}
+                <p class="text-xs md:text-sm opacity-60 truncate w-full">Тренер: {{ match.away_coach }}</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Стадион и судья -->
+        <div class="flex flex-wrap justify-center gap-2 sm:gap-6 mt-3 sm:mt-6 pt-3 sm:pt-6 border-t border-base-300 text-xs sm:text-sm">
+            {% if match.stadium %}
+            <div class="flex items-center gap-1 md:gap-2 opacity-60">
+                <i class="ti ti-map-pin flex-shrink-0"></i>
+                <span class="truncate max-w-[140px] sm:max-w-none">{{ match.stadium.name }}{% if match.stadium.city %}, {{ match.stadium.city }}{% endif %}</span>
+            </div>
+            {% endif %}
+            {% if match.referee %}
+            <div class="flex items-center gap-1 md:gap-2 opacity-60">
+                <i class="ti ti-whistle flex-shrink-0"></i>
+                <span class="truncate">Судья: {{ match.referee }}</span>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Кнопки действий -->
+        <div class="flex flex-wrap justify-center gap-2 sm:gap-4 mt-3 sm:mt-6">
+            {% if match.status == 'finished' %}
+                {% if voting_open and not user_has_evaluated and user_has_pulse_reactions %}
+                <div class="w-full sm:w-auto flex flex-col items-center gap-1.5">
+                    <a href="{% url 'evaluations:context' match.id %}" class="btn btn-primary btn-sm md:btn-lg w-full sm:w-auto">
+                        <i class="ti ti-flame"></i>
+                        Вы уже реагировали в live — завершите оценку
+                    </a>
+                    <span class="text-xs opacity-60">Вы тапали реакции во время матча — полная оценка займёт ~2 минуты</span>
+                </div>
+                {% elif voting_open and not user_has_evaluated %}
+                <a href="{% url 'evaluations:context' match.id %}" class="btn btn-primary btn-sm md:btn-lg w-full sm:w-auto">
+                    <i class="ti ti-star"></i>
+                    Оценить матч
+                </a>
+                {% elif user_has_evaluated %}
+                <div class="alert alert-success alert-sm py-2 w-full sm:w-auto">
+                    <i class="ti ti-check-circle"></i>
+                    <span class="text-sm">Вы уже оценили этот матч</span>
+                </div>
+                {% else %}
+                <div class="alert alert-ghost alert-sm py-2 w-full sm:w-auto">
+                    <i class="ti ti-clock-off"></i>
+                    <span class="text-sm">Голосование закрыто</span>
+                </div>
+                {% endif %}
+            {% endif %}
+            <button class="btn btn-ghost btn-sm w-full sm:w-auto"
+                    onclick="if(window.dopxTrack){dopxTrack('share_clicked', {channel: 'native', match_id: '{{ match.id }}'})}; navigator.share({title: '{{ match.home_team }} vs {{ match.away_team }}', url: window.location.href})">
+                <i class="ti ti-share"></i>
+                <span class="hidden sm:inline">Поделиться</span>
+            </button>
+        </div>
+
+        <!-- Telegram/WhatsApp вместо X/Twitter — под казахстанскую аудиторию -->
+        <div class="flex flex-wrap justify-center gap-2 mt-2">
+            <a href="https://t.me/share/url?url={{ request.build_absolute_uri|urlencode }}&text={{ share_text|urlencode }}"
+               target="_blank" rel="noopener" class="btn btn-sm btn-outline"
+               onclick="if(window.dopxTrack){dopxTrack('share_clicked', {channel: 'telegram', match_id: '{{ match.id }}'})}">
+                <i class="ti ti-brand-telegram"></i> Telegram
+            </a>
+            <a href="https://wa.me/?text={{ share_text|urlencode }}%20{{ request.build_absolute_uri|urlencode }}"
+               target="_blank" rel="noopener" class="btn btn-sm btn-outline"
+               onclick="if(window.dopxTrack){dopxTrack('share_clicked', {channel: 'whatsapp', match_id: '{{ match.id }}'})}">
+                <i class="ti ti-brand-whatsapp"></i> WhatsApp
+            </a>
+        </div>
+    </div>
+</div>

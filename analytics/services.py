@@ -48,19 +48,10 @@ def track_event(
     if request is not None:
         from core.utils import get_client_ip  # локальный импорт — избегаем циклических зависимостей
 
-        # ИСПРАВЛЕНО: `request` здесь — запрос К /analytics/track/ (см.
-        # analytics/views.py::TrackClientEventView), а НЕ запрос к странице,
-        # на которой произошло событие. `request.path` ВСЕГДА равен
-        # "/analytics/track/" для любого события — раньше это писалось в
-        # url_path напрямую, из-за чего "топ страниц" в трафике всегда
-        # показывал один и тот же путь трекинг-эндпоинта. Реальный путь
-        # страницы клиент кладёт в properties.path (см. static/js/analytics.js,
-        # dopxTrack шлёт location.pathname). Аналогично document.referrer
-        # (откуда РЕАЛЬНО пришёл визит) подменяли на HTTP_REFERER заголовка
-        # самого fetch/sendBeacon-запроса — а он всегда указывает на текущую
-        # страницу (same-origin), то есть дублировал url_path вместо
-        # настоящего внешнего реферера. HTTP_REFERER оставляем как fallback
-        # для событий, где клиент properties.path/referrer не передал.
+        # request — это запрос К /analytics/track/, не к странице события,
+        # поэтому request.path/HTTP_REFERER всегда указывают на сам трекинг-
+        # эндпоинт. Реальные path/referrer клиент кладёт в properties
+        # (см. static/js/analytics.js), request.* — только fallback.
         session_id = request.session.session_key or ""
         payload["session_id"] = session_id
         properties_in = payload["properties"]

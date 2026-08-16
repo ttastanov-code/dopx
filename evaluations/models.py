@@ -1,12 +1,5 @@
 # evaluations/models.py
-"""
-ИЗМЕНЕНИЕ: `EvaluationSession` — добавлено поле `ip_address` (антифрод,
-см. `evaluations/views.py::EvaluateMatchFinalView` и продуктовый аудит,
-раздел 4.3) и свойство `fill_duration_seconds`, вычисляющее, за сколько
-секунд пользователь прошёл вайзард целиком — основа сигнала "слишком
-быстрое заполнение — похоже на скрипт". Требует
-`python manage.py makemigrations evaluations` (новая колонка).
-"""
+"""Модели вайзарда оценки матча. EvaluationSession.fill_duration_seconds — основа антифрод-сигнала "слишком быстрое заполнение"."""
 from django.db import models
 from django.conf import settings
 from django.core.validators import MinValueValidator, MaxValueValidator
@@ -304,9 +297,7 @@ class EvaluationSession(BaseModel):
     current_step = models.CharField(_('Текущий шаг'), max_length=50, default='context')
     started_at = models.DateTimeField(_('Начато'), auto_now_add=True)
     completed_at = models.DateTimeField(_('Завершено'), null=True, blank=True)
-    # НОВОЕ (антифрод): IP, с которого была ЗАВЕРШЕНА сессия оценки —
-    # см. evaluations/views.py::EvaluateMatchFinalView и продуктовый аудит.
-    ip_address = models.GenericIPAddressField(_('IP адрес завершения'), null=True, blank=True)
+    ip_address = models.GenericIPAddressField(_('IP адрес завершения'), null=True, blank=True)  # антифрод-сигнал
 
     class Meta:
         verbose_name = _('Сессия оценки')

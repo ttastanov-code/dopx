@@ -1,7 +1,6 @@
 {% comment %}
-Карточка матча для списков
+Карточка матча для списков.
 Использование: {% include 'components/_match_card.html' with match=match %}
-ИСПРАВЛЕНО: Идеальная структура на всех экранах, без вертикального "разъезжания"
 {% endcomment %}
 <div class="card bg-base-100 border border-base-300 hover:border-primary transition-all cursor-pointer h-full shadow-sm"
      onclick="window.location='{% url 'matches:detail' match.id %}'">

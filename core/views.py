@@ -1,22 +1,10 @@
 # core/views.py
 """
-ИЗМЕНЕНИЯ (продуктовый аудит DOPX, часть 2):
-
-1. `standings_preview` пересчитывал турнирную таблицу С НУЛЯ на каждый
-   промах кэша: цикл по всем командам лиги, на каждую — отдельный
-   `.aggregate()` по всем матчам сезона (N запросов на N команд), хотя
-   `aggregates/tasks.py::recalculate_season_standings` уже считает РОВНО ТО
-   ЖЕ САМОЕ по расписанию Celery Beat каждые 10 минут и сохраняет готовый
-   результат в `TeamSeasonStats` (с уже посчитанной `position`). Два места
-   считали одно и то же по-разному — при изменении формулы очков в одном
-   месте (например, добавят бонус за буллиты) второе тихо разъедется.
-   Переписано на чтение уже готового `TeamSeasonStats` — один простой
-   запрос вместо N агрегатных.
-2. `ContactsView.get_client_ip` — убран локальный дубликат, теперь
-   переиспользует `core.utils.get_client_ip` (та же функция, что теперь
-   используется в `users/views.py::RegisterView` и `evaluations/views.py`
-   для антифрод-сигналов — единственная реализация на проект, см. докстринг
-   `core/utils.py`).
+standings_preview читает уже готовый TeamSeasonStats (считает
+aggregates/tasks.py::recalculate_season_standings по расписанию Celery Beat),
+а не пересчитывает таблицу заново на каждый промах кэша — иначе формула
+очков могла бы разъехаться между двумя местами.
+IP клиента — через core.utils.get_client_ip, единая реализация на проект.
 """
 import logging
 import os
@@ -81,13 +69,8 @@ class HomeView(TemplateView):
             context_evaluations__created_at__gte=now - timedelta(days=7)
         ).distinct().count()
 
-        # ИСПРАВЛЕНО: раньше отсутствие данных (`Avg` вернул None, т.к. ни
-        # одной реальной оценки ещё нет) молча превращалось в 0 через
-        # `or 0` — на главной это рисовалось как "Средняя драма: 0,0",
-        # что читается как реальный (очень низкий) балл, а не как "оценок
-        # пока нет". Только матчи с реальными голосами (total_votes > 0)
-        # участвуют в среднем; если таких нет вообще — оставляем None,
-        # шаблон покажет это честно, а не выдуманным нулём.
+        # Только матчи с реальными голосами — иначе Avg=None превращается в
+        # "0,0" на главной, что читается как низкий балл, а не как "нет данных".
         match_aggs_with_votes = MatchAggregate.objects.filter(total_votes__gt=0)
         avg_entertainment = match_aggs_with_votes.aggregate(
             avg=Avg('avg_entertainment')
@@ -124,15 +107,9 @@ class HomeView(TemplateView):
         ).order_by('-avg_rating')[:5]
 
         # === Активная сессия пользователя ===
-        # ИСПРАВЛЕНО: раньше сюда попадала ЛЮБАЯ незавершённая сессия, даже
-        # если голосование по её матчу уже закрылось (voting_open_until в
-        # прошлом). Пользователь видел баннер "Продолжите оценку", жал
-        # "Продолжить" и упирался в редирект с сообщением "Голосование
-        # закрыто" — тупик, из которого баннер сам никак не убирался, потому
-        # что status сессии так и оставался 'started'/'in_progress' навсегда
-        # (см. также profile/dashboard: тот же паттерн в ProfileView).
-        # Добавлен фильтр по ещё открытому окну голосования — сессии по
-        # закрывшимся матчам просто перестают предлагаться к продолжению.
+        # Фильтр по voting_open_until — незавершённая сессия по уже
+        # закрывшемуся голосованию не должна предлагаться к продолжению
+        # (тот же паттерн в profile/dashboard::ProfileView).
         active_match_id = None
         if self.request.user.is_authenticated:
             active_session = EvaluationSession.objects.filter(
@@ -167,16 +144,7 @@ class HomeView(TemplateView):
 
 
 def standings_preview(request):
-    """
-    HTMX partial для превью турнирной таблицы.
-
-    ПЕРЕПИСАНО: раньше здесь заново пересчитывались все матчи сезона на
-    каждую команду отдельным `.aggregate()` — см. докстринг модуля, пункт 1.
-    Теперь используется уже готовая, посчитанная `aggregates.tasks.
-    recalculate_season_standings` (Celery Beat, каждые 10 минут) таблица
-    `TeamSeasonStats` — один простой индексированный запрос вместо N
-    агрегатных.
-    """
+    """HTMX partial превью турнирной таблицы — читает готовую TeamSeasonStats, не пересчитывает на лету."""
     season = Season.objects.filter(is_active=True).first()
     if not season:
         return HttpResponse('''
@@ -226,18 +194,7 @@ def standings_preview(request):
 
 
 class RulesView(TemplateView):
-    """
-    Страница с правилами платформы.
-
-    ОБНОВЛЕНО (редизайн страницы правил): раньше XP-таблица и список
-    достижений были захардкожены в шаблоне и разъехались с реальной
-    механикой — плоские "+10/+2/+5 XP" и 6 примеров ачивок вместо
-    настоящих компонентных начислений (`evaluations/views.py`) и полного
-    каталога из 16 бейджей (`users/badges.py::BADGE_CATALOG`). Теперь
-    шаблон получает эти данные из кода — единственный источник истины,
-    страница больше не может "соврать" про механику при следующем
-    рефакторинге XP/бейджей.
-    """
+    """Страница правил платформы. XP-таблица и бейджи приходят из кода (evaluations/views.py, users/badges.py::BADGE_CATALOG), не захардкожены в шаблоне."""
     template_name = 'core/rules.html'
 
     def get_context_data(self, **kwargs):
@@ -398,9 +355,8 @@ class ContactsView(TemplateView):
         from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@dopx.kz')
         site_url = getattr(settings, 'SITE_URL', 'https://dopx.kz')
 
-        # Право на ответ (продуктовый аудит, раздел 4) — юридически значимая
-        # категория, письмо должно выделяться в почте founder'а среди
-        # обычных багрепортов/фичереквестов, а не потеряться в общем потоке.
+        # "Право на ответ" — юридически значимая категория, письмо должно
+        # выделяться в почте founder'а среди обычных багрепортов.
         urgency_prefix = "🚨 ПРАВО НА ОТВЕТ" if submission.category == 'dispute' else "📬 Новое обращение"
         subject = f"{urgency_prefix} #{str(submission.id)[:8]} ({submission.get_category_display()})"
 

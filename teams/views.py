@@ -49,7 +49,7 @@ class TeamListView(ListView):
         return context
 
 class TeamDetailView(DetailView):
-    """✅ ИСПРАВЛЕНО: Детальная страница команды с правильной статистикой за ТЕКУЩИЙ СЕЗОН"""
+    """Детальная страница команды со статистикой за текущий сезон."""
     model = Team
     template_name = 'teams/detail.html'
     context_object_name = 'team'
@@ -177,10 +177,8 @@ class TeamDetailView(DetailView):
             teamseason__team=team
         ).first()
 
-        # НОВОЕ: позиция в турнирной таблице текущего сезона — данные уже
-        # считаются планово (aggregates/tasks.py::recalculate_season_standings
-        # каждые 10 минут, см. комментарий в core/views.py), просто раньше
-        # эта готовая строка нигде не использовалась на странице команды.
+        # Позиция в турнирной таблице — читает готовую TeamSeasonStats
+        # (recalculate_season_standings, Celery Beat каждые 10 минут).
         season_stats = None
         if current_season:
             season_stats = TeamSeasonStats.objects.filter(
@@ -198,8 +196,6 @@ class TeamDetailView(DetailView):
         # истёк, иначе кнопка вела бы на уже закрытое голосование.
         votable_match = next((m for m in recent_matches if m.is_voting_open), None)
 
-        # Follow-граф (продуктовый аудит, раздел 5b) — см. аналогичный
-        # комментарий в players/views.py::PlayerDetailView.
         is_following = False
         if self.request.user.is_authenticated:
             from users.models import Follow

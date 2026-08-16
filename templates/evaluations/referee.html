@@ -58,11 +58,8 @@
                 </div>
                 <h2 class="text-lg font-bold mb-1">Оценка судейства</h2>
                 {% comment %}
-                ИСПРАВЛЕНО: раньше страница просила оценить "главного судью
-                матча", ни разу не показав, кто это — пользователь оценивал
-                вслепую, хотя match.referee доступен (см. referees/views.py,
-                где то же поле используется). Теперь имя явно показано, как
-                на шаге "Тренеры".
+                match.referee показывается явно, как на шаге "Тренеры" — не
+                просим оценить "главного судью" вслепую.
                 {% endcomment %}
                 {% if match.referee %}
                 <p class="text-sm font-semibold">{{ match.referee.first_name }} {{ match.referee.last_name }}</p>
