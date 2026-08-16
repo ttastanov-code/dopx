@@ -95,10 +95,7 @@
 
   <!-- CTA -->
   {% comment %}
-  ИСПРАВЛЕНО: см. аналогичный комментарий в rules.html — фиолетовая
-  карточка без явного text-primary-content сливала тёмный текст с фоном
-  на светлой теме, а btn-ghost наследует свой собственный цвет текста
-  (не currentColor), поэтому тоже "пропадал" на primary-фоне.
+  text-primary-content — см. аналогичный комментарий в rules.html.
   {% endcomment %}
   <div class="card" style="background-image: linear-gradient(to bottom right, var(--color-primary), color-mix(in oklab, var(--color-primary) 80%, transparent));">
     <div class="card-body p-4 md:p-6 text-center text-primary-content">

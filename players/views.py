@@ -26,18 +26,17 @@ class PlayerListView(ListView):
     paginate_by = 20
     
     def get_queryset(self):
-        # ✅ FIX: filter() ДО select_related(), и только для Player
         queryset = Player.objects.filter(is_active=True).select_related('team').prefetch_related(
-            # ✅ Prefetch с ограничением: подгружаем только 1 лучший агрегат на игрока
+            # Prefetch с [:1] — подгружаем только лучший агрегат на игрока, не все
             models.Prefetch(
                 'match_aggregates',
                 queryset=PlayerMatchAggregate.objects.order_by('-performance_score').only(
                     'id', 'performance_score', 'player_id'
                 )[:1],
-                to_attr='best_aggregate'  # ✅ Сохраняем в отдельный атрибут
+                to_attr='best_aggregate'
             )
         ).annotate(
-            # ✅ FIX: Считаем фактические матчи через lineup, а не агрегаты
+            # Через lineup, не через агрегаты — агрегат считается не для всех матчей
             total_matches=Count(
                 'matchlineupplayer__lineup__match',
                 filter=Q(matchlineupplayer__lineup__match__status='finished'),
@@ -69,7 +68,7 @@ class PlayerListView(ListView):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Все игроки — DOPX'
         context['search_query'] = self.request.GET.get('q', '')
-        # ✅ FIX: Team не имеет is_active, поэтому просто берём все
+        # Team не имеет is_active — берём все
         context['teams'] = Team.objects.all()[:20]
         context['positions'] = Player.objects.values_list('position', flat=True).distinct()[:10]
         return context
@@ -114,19 +113,13 @@ class PlayerDetailView(DetailView):
             avg_maturity=Avg('maturity_score'),
             avg_potential=Avg('avg_potential'),
             evaluated_matches=Count('id', distinct=True),
-            # ✅ ИСПРАВЛЕНО: было Count('total_votes') — это считало количество
-            # СТРОК агрегата (у поля total_votes есть default=0, оно никогда
-            # не NULL, поэтому Count всегда равнялся числу оценённых матчей,
-            # а не реальному числу голосов). Нужна сумма голосов по матчам.
+            # Sum, не Count — total_votes всегда не NULL (default=0), Count
+            # считал бы число строк агрегата, а не сумму голосов по матчам.
             total_votes=Sum('total_votes'),
         )
 
-        # ✅ ИСПРАВЛЕНО: раньше при отсутствии оценок avg-поля тихо
-        # заполнялись нулём и шаблон показывал "0" неотличимо от
-        # реального низкого рейтинга (тот же класс бага, что и на
-        # странице команды/главной). Теперь отдельно храним признак
-        # has_evaluations, а сами avg-поля остаются None, если оценок
-        # нет — шаблон показывает "—" вместо обманчивого нуля.
+        # has_evaluations отдельно от avg-полей — без оценок avg остаётся
+        # None (не 0), чтобы шаблон показал "—", а не обманчивый ноль.
         has_evaluations = stats_raw['evaluated_matches'] > 0
         stats = {
             'avg_performance': round(stats_raw['avg_performance'], 2) if stats_raw['avg_performance'] is not None else None,
@@ -162,8 +155,7 @@ class PlayerDetailView(DetailView):
             None
         )
 
-        # Follow-граф (продуктовый аудит, раздел 5b) — подписан ли ТЕКУЩИЙ
-        # пользователь на этого игрока, для начального состояния кнопки
+        # Подписан ли текущий пользователь — начальное состояние кнопки
         # (templates/users/_follow_button.html).
         is_following = False
         if self.request.user.is_authenticated:
@@ -198,9 +190,7 @@ class PlayerDetailView(DetailView):
         }
         context['schema_json'] = json.dumps({k: v for k, v in schema.items() if v is not None}, ensure_ascii=False)
 
-        # Embed-код для виджета (продуктовый аудит, раздел 5 "Рост"):
-        # готовая строка <iframe>, которую можно скопировать одной кнопкой —
-        # см. kнопку "Получить embed-код" ниже на странице.
+        # Готовая строка <iframe> для кнопки "Получить embed-код" на странице.
         widget_url = self.request.build_absolute_uri(
             reverse('players:widget', args=[player.id])
         )

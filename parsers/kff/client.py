@@ -104,11 +104,8 @@ class KFFClient:
             if not isinstance(item, dict):
                 continue
             
-            # ✅ ФИЛЬТР: берём только сезоны с нужным frontend_code
-            # ИСПРАВЛЕНО: .get(key, "") подставляет дефолт только если ключа
-            # НЕТ вообще — если API вернул "frontend_code": null (ключ есть,
-            # значение None), .get() отдаёт None, и .lower() падает. `or ""`
-            # ловит оба случая — и отсутствие ключа, и null-значение.
+            # `or ""`, не .get(key, "") — API иногда отдаёт "frontend_code": null
+            # (ключ есть, значение None), а .get() дефолтит только на ОТСУТСТВИЕ ключа.
             frontend_code = (item.get("frontend_code") or "").lower()
             if frontend_code != tournament_code.lower():
                 continue

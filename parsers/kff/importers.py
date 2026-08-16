@@ -145,20 +145,10 @@ def get_or_create_referee_by_name(name: str) -> Optional[Referee]:
     else:
         first_name, last_name = name, ""
 
-    # ИСПРАВЛЕНО: раньше матчинг судьи шёл строго по точному регистру
-    # (`update_or_create(first_name=..., last_name=...)`), а источник (KFF)
-    # присылает имя судьи произвольной строкой без стабильного ID — стоило
-    # ему хоть раз прислать то же имя в другом регистре ("Багдат" vs
-    # "багдат"), и в базе заводился ВТОРОЙ Referee на того же человека,
-    # с расколотой пополам статистикой матчей/оценок и дублем в списке
-    # судей. Теперь сначала ищем регистронезависимо и переиспользуем
-    # найденную запись; создаём новую, только если реально не нашли.
-    # ПРИМЕЧАНИЕ: это не спасает от случаев, когда источник присылает
-    # РАЗНЫЕ буквы казахского/русского алфавита для одного и того же имени
-    # (например "Сакен" и "Сэкен") — такие случаи выглядят как дубли, но
-    # автоматически объединять их рискованно (можно случайно склеить двух
-    # разных людей с похожими именами); такие дубли нужно сверять и
-    # объединять вручную через админку.
+    # Регистронезависимый поиск — KFF шлёт имя судьи произвольной строкой без
+    # стабильного ID, при смене регистра ("Багдат"/"багдат") иначе завёлся бы
+    # дубль-Referee. Разные буквы каз./рус. алфавита ("Сакен"/"Сэкен") этим
+    # не ловятся — такие дубли объединяются вручную через админку.
     referee = Referee.objects.filter(
         Q(first_name__iexact=first_name) & Q(last_name__iexact=last_name)
     ).first()
@@ -174,7 +164,7 @@ def get_or_create_referee_by_name(name: str) -> Optional[Referee]:
     return referee
 
 def get_or_create_coach(coach_data: Dict, team: Optional[Team] = None) -> Optional[Coach]:
-    """✅ ИСПРАВЛЕНО: Создание тренера с правильной логикой"""
+    """Создание/поиск тренера по external_id, либо по имени регистронезависимо."""
     if not coach_data:
         return None
     
@@ -208,15 +198,9 @@ def get_or_create_coach(coach_data: Dict, team: Optional[Team] = None) -> Option
     if coach_ext_id:
         defaults["external_id"] = str(coach_ext_id)
 
-    # ИСПРАВЛЕНО: раньше матчинг шёл СТРОГО по одному только `first_name`
-    # (`update_or_create(first_name=first_name, defaults=defaults)`) — то
-    # есть любые ДВА РАЗНЫХ тренера с одинаковым именем (а это очень частая
-    # ситуация: "Андрей", "Марат", "Виталий" и т.д.) физически не могли
-    # существовать как разные записи: второй импорт молча ПЕРЕЗАПИСЫВАЛ
-    # фамилию/команду/external_id первого, склеивая двух разных людей в
-    # одну строку БД. Правильный ключ матчинга — стабильный `external_id`
-    # источника, если он есть; если его нет — пара (first_name, last_name)
-    # регистронезависимо (тот же подход, что и для судей выше).
+    # Ключ матчинга — external_id, если есть; иначе (first_name, last_name)
+    # регистронезависимо. Матчинг по одному только first_name склеивал бы
+    # разных тренеров с одинаковым именем ("Андрей", "Марат"...) в одну запись.
     if coach_ext_id:
         coach, created = Coach.objects.update_or_create(
             external_id=str(coach_ext_id),
@@ -310,7 +294,7 @@ def import_match_core(game_data: Dict, season_id: int = None) -> Match:
 
 @transaction.atomic
 def import_coaches(match: Match, lineup_data: Dict) -> bool:
-    """✅ ИСПРАВЛЕНО: Надёжное создание тренеров"""
+    """Импорт тренеров обеих команд из lineup_data."""
     if not lineup_data:
         logger.warning(f"⚠️ No lineup data for match {match.id}")
         return False
@@ -383,12 +367,8 @@ def import_lineups(match: Match, lineup_data: Dict) -> bool:
     def process_team_lineup(team_side: str, lineup: Dict, team: Team):
         if not lineup:
             return
-        # ИСПРАВЛЕНО: `.get("formation", "")` подставляет дефолт ТОЛЬКО если
-        # ключ отсутствует — а KFF для матчей без официально объявленного
-        # состава отдаёт ключ со значением `null` (Python None), и тогда
-        # `.get` возвращает именно None, а не "". `formation` в БД — NOT
-        # NULL (см. lineups/models.py), поэтому update_or_create падал с
-        # IntegrityError на КАЖДОМ цикле синхронизации для такого матча.
+        # `or ""`, не .get(key, "") — KFF отдаёт "formation": null (не
+        # отсутствие ключа), а поле в БД NOT NULL (lineups/models.py).
         formation = lineup.get("formation") or ""
         starters = lineup.get("starters", []) or lineup.get("starting_lineup", [])
         substitutes = lineup.get("substitutes", []) or lineup.get("bench", [])
@@ -559,26 +539,13 @@ def _is_goal_disallowed(evt: Dict) -> bool:
 @transaction.atomic
 def import_events_and_minutes(match: Match, events_data: Dict, replace_existing: bool = True) -> bool:
     """
-    ИСПРАВЛЕНО (найдено при разборе бага "живые события не обновляются"):
-    раньше функция БЕЗУСЛОВНО удаляла ВСЕ существующие MatchEvent матча перед
-    вставкой того, что ей передали — это корректно для `pipeline.py::
-    import_full_match` (туда всегда приходит ПОЛНЫЙ список событий с API,
-    delete+recreate — простой и надёжный способ привести БД к соответствию
-    источнику). Но `parsers/tasks.py::update_match_statuses` вызывает эту же
-    функцию с `{"events": new_events}` — то есть только с ДЕЛЬТОЙ (события,
-    которых ещё нет в БД, см. дедупликацию по `existing_types_by_minute`
-    чуть выше по стеку). При безусловном delete+recreate это означало: КАЖДЫЙ
-    цикл живого опроса (раз в 2 минуты) стирал ВСЕ ранее сохранённые события
-    матча и записывал заново только последнюю дельту — необратимая потеря
-    данных, воспроизводимая детерминированно, без всякой гонки потоков.
-    Симптом, с которым это было найдено: DOPX показывал только события ПЕРВЫХ
-    ~50 минут матча, хотя реальный счёт (и лента KFF) ушли на 90+' — потому
-    что именно эта дельта была последней, после которой delete+recreate либо
-    не вызывался, либо каждый следующий вызов уже сам себя стирал.
-
-    `replace_existing=True` (по умолчанию) — старое поведение, для полного
-    ресинка. `replace_existing=False` — только ДОБАВИТЬ переданные события,
-    ничего не удаляя; вызывающий код уже гарантировал, что это не дубликаты.
+    Импорт событий матча. `replace_existing=True` (полный ресинк, вызывается
+    из pipeline.py::import_full_match с полным списком с API) удаляет старые
+    события перед вставкой. `replace_existing=False` — только добавляет
+    переданное, ничего не удаляя: используется в parsers/tasks.py::
+    update_match_statuses, куда приходит только ДЕЛЬТА новых событий —
+    безусловный delete+recreate на дельте стирал бы всю ранее сохранённую
+    историю на каждом цикле живого опроса.
     """
     if not events_data:
         return False

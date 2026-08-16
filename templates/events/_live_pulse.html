@@ -1,13 +1,16 @@
 {% comment %}
-Live-пульс — отдельная лента "крупных" событий (гол/пенальти/карточки/VAR)
-с тапами 👍/👎, независимая от полной ленты `matches/_match_events.html`.
-Рендерится и как ответ на GET events:pulse (первая загрузка + опрос
-каждые 15с через hx-trigger на обёртке в matches/detail.html), и содержит
-внутри себя отдельные HTMX-острова `_reaction_buttons.html` на каждое
-событие (тап по кнопке не должен дожидаться следующего 15-секундного
-опроса всей ленты — обновляется мгновенно, локально).
+Live-пульс: крупные события (гол/пенальти/карточки/VAR) с реакциями 👍/👎,
+отдельно от полной ленты `_match_events.html`. Кнопки реакций —
+HTMX-острова (`_reaction_buttons.html`), обновляются мгновенно, не
+дожидаясь следующего опроса ленты. Поллинг самозавершающийся, как в
+_match_header.html — атрибуты на корне живут только пока матч live.
 {% endcomment %}
-<div class="space-y-2">
+<div id="live-pulse-container" class="space-y-2"
+     {% if match.status == 'live' %}
+     hx-get="{% url 'events:pulse' match.id %}"
+     hx-trigger="every 15s"
+     hx-swap="outerHTML"
+     {% endif %}>
     {% for event in events %}
     <div class="flex items-center gap-2 md:gap-3 p-2 md:p-3 rounded-lg bg-base-200/60">
         <div class="font-mono font-bold text-sm w-9 text-right shrink-0 opacity-70">

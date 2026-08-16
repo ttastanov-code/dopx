@@ -1,10 +1,5 @@
 # events/services.py
-"""
-Сервисный слой live-пульса (продуктовый аудит, раздел 2). Держим логику
-тапа/подсчёта отдельно от views.py по той же причине, что и в
-`aggregates/services.py` — views должны оставаться тонкими диспетчерами
-HTTP, а не местом, где живёт бизнес-логика подсчёта.
-"""
+"""Сервисный слой live-пульса: тап/подсчёт реакций, отдельно от views.py."""
 from __future__ import annotations
 
 from django.db.models import Count, Q

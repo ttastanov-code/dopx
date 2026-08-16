@@ -1,9 +1,15 @@
 {% comment %}
-HTMX partial для событий матча с детализацией
-Использование: hx-get="{% url 'matches:events' match.id %}" hx-target="#events-container"
+Партиал событий матча. Пока матч live — сам себя переопрашивает (15с),
+как _match_header.html: hx-атрибуты на корне пропадают из ответа после
+финального свистка, и поллинг останавливается сам.
 {% endcomment %}
 
-<div id="events-container" class="space-y-3">
+<div id="events-container" class="space-y-3"
+     {% if match.status == 'live' %}
+     hx-get="{% url 'matches:events' match.id %}"
+     hx-trigger="every 15s"
+     hx-swap="outerHTML"
+     {% endif %}>
     {% for event in events %}
     
     <!-- === СОБЫТИЕ: ГОЛ === -->

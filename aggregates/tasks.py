@@ -2,25 +2,10 @@
 """
 Celery-задачи модуля aggregates.
 
-КЛЮЧЕВОЕ ИЗМЕНЕНИЕ (аудит производительности БД):
---------------------------------------------------
-`recalculate_player_aggregates` и `recalculate_coach_aggregates` раньше
-дергали `Model.objects.update_or_create(...)` внутри Python-цикла по каждому
-игроку/тренеру матча. Каждый вызов `update_or_create` — это МИНИМУМ 2 запроса
-к БД (SELECT для проверки существования + INSERT либо UPDATE), а при гонках
-(race condition) между параллельными воркерами Celery — потенциально 3
-(SELECT, неудачный INSERT из-за UniqueViolation, повторный UPDATE).
-
-Для матча с 22+ игроками это давало ДО 30+ последовательных запросов на
-КАЖДЫЙ вызов задачи, а задача триггерится на каждое сохранение оценки
-(см. aggregates/signals.py). При активном голосовании после матча это прямой
-путь к деградации пула соединений PostgreSQL.
-
-РЕШЕНИЕ: одна атомарная batch-операция `bulk_create(..., update_conflicts=True)`
-поверх уникального ограничения `unique_player_match_aggregate` на
-`(player, match)`. PostgreSQL сам решает "вставить или обновить" на уровне
-`INSERT ... ON CONFLICT (...) DO UPDATE SET ...` — это ОДИН SQL-запрос
-независимо от количества игроков в матче.
+Пересчёт агрегатов игроков/тренеров идёт через bulk_create(update_conflicts=True)
+поверх unique_player_match_aggregate/unique_coach_match_aggregate — один
+upsert-запрос на весь матч вместо update_or_create в цикле по каждому игроку
+(critически важно: задача триггерится на каждое сохранение оценки, см. signals.py).
 """
 from __future__ import annotations
 
@@ -72,15 +57,7 @@ COACH_AGGREGATE_UPDATE_FIELDS: tuple[str, ...] = (
 
 
 def calculate_user_weight(user: User, context_eval: ContextEvaluation | None) -> float:
-    """
-    Расчёт веса голоса пользователя.
-
-    Формула:
-        - 1.0 базовый вес;
-        - +0.2, если пользователь смотрел матч полностью (`watched_type == 'full'`);
-        - +0.2, если `trust_score` пользователя выше 1.2;
-        - итоговый вес ограничен снизу значением 0.5.
-    """
+    """Вес голоса: 1.0 база, +0.2 за полный просмотр, +0.2 за trust_score > 1.2, снизу ограничен 0.5."""
     weight = 1.0
     if context_eval and context_eval.watched_type == "full":
         weight += 0.2
@@ -102,14 +79,11 @@ def calculate_std_dev(values: Iterable[float]) -> float:
 @shared_task(bind=True, max_retries=3, rate_limit="10/m")
 def recalculate_player_aggregates(self, match_id: str) -> bool:
     """
-    Пересчитывает агрегированные показатели ВСЕХ игроков матча.
+    Пересчитывает агрегаты всех игроков матча: 1 запрос на выборку оценок +
+    1 batch-upsert, независимо от числа игроков.
 
-    ДО РЕФАКТОРИНГА: N игроков → до 2*N запросов (update_or_create в цикле).
-    ПОСЛЕ РЕФАКТОРИНГА: 1 запрос на выборку оценок + 1 batch-upsert запрос,
-    независимо от количества игроков.
-
-    :param match_id: UUID матча строкой (Celery не умеет сериализовать UUID напрямую).
-    :return: True при успехе, False — если матч/оценки не найдены или match_id невалиден.
+    :param match_id: UUID строкой (Celery не сериализует UUID напрямую).
+    :return: True при успехе, False — матч/оценки не найдены или match_id невалиден.
     """
     try:
         match_uuid = uuid.UUID(match_id)
@@ -128,8 +102,7 @@ def recalculate_player_aggregates(self, match_id: str) -> bool:
         "user", "player"
     ).only("user_id", "player_id", "contribution", "risk", "potential")
 
-    # Группируем оценки по игроку одним проходом по уже загруженному в память
-    # QuerySet (list() форсирует один SQL-запрос вместо N).
+    # Группируем оценки по игроку одним проходом по QuerySet.
     player_eval_map: dict[uuid.UUID, list[PlayerEvaluation]] = {}
     for eval_obj in evaluations:
         player_eval_map.setdefault(eval_obj.player_id, []).append(eval_obj)
@@ -138,9 +111,7 @@ def recalculate_player_aggregates(self, match_id: str) -> bool:
         logger.info("No player evaluations for match %s", match_id)
         return True
 
-    # drama_index читается один раз для всего матча (а не на каждой итерации цикла,
-    # как было раньше) — экономим лишние обращения к кэшу.
-    drama_index = _get_match_drama_index(match_id, match_uuid)
+    drama_index = _get_match_drama_index(match_id, match_uuid)  # раз на весь матч, не на каждого игрока
 
     now = timezone.now()
     aggregates_to_upsert: list[PlayerMatchAggregate] = []
@@ -160,9 +131,8 @@ def recalculate_player_aggregates(self, match_id: str) -> bool:
 
         aggregates_to_upsert.append(
             PlayerMatchAggregate(
-                # id генерируется клиентски (uuid4) — используется ТОЛЬКО если
-                # строки для (player, match) ещё не существует. При конфликте
-                # Postgres сохраняет id уже существующей строки без изменений.
+                # id используется только при INSERT; при конфликте Postgres
+                # сохраняет id существующей строки.
                 id=uuid.uuid4(),
                 player_id=player_id,
                 match_id=match_uuid,
@@ -211,12 +181,7 @@ def _get_match_drama_index(match_id: str, match_uuid: uuid.UUID) -> float:
 
 @shared_task(bind=True, max_retries=3)
 def recalculate_coach_aggregates(self, match_id: str) -> bool:
-    """
-    Пересчитывает агрегаты тренеров матча тем же batch-upsert подходом,
-    что и `recalculate_player_aggregates` — по аналогичным соображениям
-    производительности (тренеров в матче меньше, чем игроков, но принцип
-    "1 SQL-запрос вместо N" остаётся верным).
-    """
+    """Пересчёт агрегатов тренеров матча тем же batch-upsert подходом, что и recalculate_player_aggregates."""
     try:
         match_uuid = uuid.UUID(match_id)
     except (ValueError, AttributeError, TypeError):
@@ -393,16 +358,11 @@ def trigger_aggregate_recalculation(self, match_id: str) -> bool:
 @shared_task
 def recalculate_season_standings(season_id: int | None = None) -> dict:
     """
-    Пересчёт турнирной таблицы сезона.
-
-    ИСПРАВЛЕНО (продумано под несколько лиг): при `season_id=None` (именно
-    так эту задачу вызывает `CELERY_BEAT_SCHEDULE['recalculate-standings']`
-    каждые 10 минут — см. dopx/settings.py) раньше бралось РОВНО ОДНО
-    `Season.objects.filter(is_active=True).first()` НЕЗАВИСИМО ОТ ЛИГИ. Пока
-    в проекте одна лига (КПЛ) — не проявлялось, но при появлении второй лиги
-    её активный сезон просто никогда бы не пересчитывался в фоне. Теперь при
-    отсутствии season_id пересчитываются ВСЕ активные сезоны (по одному на
-    лигу — уникальность гарантирует `Season.save()`, см. seasons/models.py).
+    Пересчёт турнирной таблицы сезона. При season_id=None (вызов из
+    CELERY_BEAT_SCHEDULE каждые 10 минут) пересчитываются ВСЕ активные
+    сезоны, а не только первый попавшийся — на случай нескольких лиг
+    одновременно (уникальность активного сезона на лигу гарантирует
+    Season.save(), см. seasons/models.py).
     """
     if season_id is None:
         active_seasons = list(Season.objects.filter(is_active=True))

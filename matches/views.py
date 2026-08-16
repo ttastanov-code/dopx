@@ -33,9 +33,7 @@ class MatchListView(ListView):
             'stadium'
         ).prefetch_related(
             'aggregate',
-            # ✅ для match.is_derby (matches/models.py) — без этого N+1 на
-            # каждой карточке списка.
-            'home_team__rivals',
+            'home_team__rivals',  # для match.is_derby — иначе N+1 на каждой карточке
         )
         
         # Фильтр по статусу
@@ -51,38 +49,19 @@ class MatchListView(ListView):
             # Завершенные - ближе к сегодняшнему дню сначала
             queryset = queryset.filter(status='finished').order_by('-start_time')
         elif status == 'votable':
-            # ИСПРАВЛЕНО: кнопка "Оценить матчи" и число в карточке
-            # "Активное голосование" на главной вели на ВЕСЬ список матчей
-            # без фильтра — пользователь видел сотни запланированных и уже
-            # закрытых для голосования матчей вместо тех, что реально можно
-            # оценить прямо сейчас. Условие — то же самое, что и в
-            # `Match.is_voting_open()` (matches/models.py) и в подсчёте
-            # `stats.active_voting` на главной (core/views.py), чтобы число
-            # на карточке и список за ней всегда совпадали 1:1.
-            # Сортировка — по МЕНЬШЕМУ остатку времени до закрытия
-            # голосования: матчи, которые вот-вот закроются, показываем
-            # первыми, чтобы пользователь не пропустил дедлайн.
+            # Матчи, доступные для оценки прямо сейчас — то же условие, что
+            # и Match.is_voting_open() и stats.active_voting (core/views.py),
+            # чтобы число на карточке и список за ней совпадали 1:1.
+            # Сортировка по остатку времени — те, что вот-вот закроются, первыми.
             queryset = queryset.filter(
                 status='finished', voting_open_until__gte=timezone.now()
             ).order_by('voting_open_until')
         else:
-            # ИСПРАВЛЕНО: раньше здесь была сортировка по возрастанию даты
-            # (`order_by('start_time')`) — на базе из пары сотен матчей
-            # пользователю приходилось листать много страниц старых
-            # завершённых матчей, прежде чем добраться до сегодняшних/
-            # ближайших. Теперь сортируем по БЛИЗОСТИ к текущему моменту:
-            # только что прошедшие, live и ближайшие предстоящие матчи
-            # всегда наверху, вне зависимости от того, сколько всего
-            # матчей накопилось в базе.
-            # ИСПРАВЛЕНИЕ БАГА: первая версия использовала Abs() поверх
-            # интервала — Postgres не имеет функции abs(interval), падало
-            # с ProgrammingError. Тот же результат (расстояние до "сейчас")
-            # без ABS: CASE — для будущих матчей берём (start_time - now)
-            # положительным (сортировка по возрастанию = ближайшие сначала),
-            # для прошедших — (now - start_time), тоже положительным
-            # (сортировка по возрастанию = самые недавние сначала). Обе
-            # ветки используют только вычитание timestamp - timestamp,
-            # которое Postgres поддерживает нативно.
+            # Сортировка по близости к текущему моменту (не по дате по
+            # возрастанию) — недавние/live/ближайшие матчи всегда наверху.
+            # Postgres не умеет abs(interval), поэтому расстояние считаем
+            # через CASE: для будущих — (start_time - now), для прошедших —
+            # (now - start_time), обе ветки всегда положительны.
             now = Value(timezone.now(), output_field=DateTimeField())
             queryset = queryset.annotate(
                 time_distance=Case(
@@ -142,50 +121,25 @@ class MatchDetailView(DetailView):
             'player_aggregates__player__team',
             'events',
             'coach_aggregates__coach',
-            'home_team__rivals',  # ✅ для match.is_derby
+            'home_team__rivals',  # для match.is_derby
         )
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         match = self.object
         now = timezone.now()
-        
-        # Проверка: голосование открыто?
-        voting_open = (
-            match.voting_open_until > now and
-            match.status == 'finished'
-        )
-        
-        # Проверка: пользователь уже оценил этот матч?
-        user_has_evaluated = False
-        # НОВОЕ (продуктовый аудит, раздел 2 "Live-слой" — конвертация
-        # live-пульса в полный вайзард): если пользователь тапал реакции
-        # во время трансляции, но матч завершился, а он ещё не прошёл
-        # полную оценку — самый тёплый момент показать CTA "вы уже начали,
-        # закончите оценку" вместо нейтрального приглашения с нуля.
-        user_has_pulse_reactions = False
-        if self.request.user.is_authenticated:
-            user_has_evaluated = EvaluationSession.objects.filter(
-                user=self.request.user,
-                match=match,
-                status='completed'
-            ).exists()
-            if not user_has_evaluated and match.status == 'finished':
-                from events.models import EventReaction
-                user_has_pulse_reactions = EventReaction.objects.filter(
-                    user=self.request.user, match_event__match=match
-                ).exists()
-        
+
+        # voting_open / user_has_evaluated / user_has_pulse_reactions / share_text —
+        # общая функция match_action_context, используется и здесь, и в
+        # match_header_partial (live-поллинг шапки), чтобы обе точки входа
+        # считали CTA одинаково.
+        action_context = match_action_context(self.request, match)
+
         # Агрегаты матча
         match_agg = getattr(match, 'aggregate', None)
         
-        # Топ 5 игроков матча
-        # ИСПРАВЛЕНО (продуктовый аудит, раздел 1): раньше сортировка шла по
-        # performance_score БЕЗ учёта total_votes — один голос "10/10 от
-        # друга" мог вытолкнуть игрока с 1 оценкой выше игрока с 40
-        # оценками и честным 8.5. `total_votes__gte=MIN_VOTES_FOR_DISPLAY`
-        # делает "топ игроков матча" статистически представительным, а не
-        # просто самым высоким единичным числом.
+        # Топ 5 игроков матча. total_votes__gte=MIN_VOTES_FOR_DISPLAY — иначе
+        # один голос "10/10 от друга" обходит игрока с 40 честными оценками.
         from aggregates.services import MIN_VOTES_FOR_DISPLAY
 
         top_players = PlayerMatchAggregate.objects.filter(
@@ -195,8 +149,7 @@ class MatchDetailView(DetailView):
             'player__team'
         ).order_by('-performance_score')[:5]
 
-        # Худшие 3 игрока матча — та же логика: не топить игрока в
-        # антирейтинге на основании 1-2 предвзятых оценок.
+        # Худшие 3 игрока — та же логика: не топить в антирейтинге по 1-2 предвзятым оценкам.
         worst_players = PlayerMatchAggregate.objects.filter(
             match=match, total_votes__gte=MIN_VOTES_FOR_DISPLAY
         ).select_related(
@@ -259,10 +212,8 @@ class MatchDetailView(DetailView):
         # События матча
         events = match.events.select_related('player').order_by('minute')[:20]
         
+        context.update(action_context)
         context.update({
-            'voting_open': voting_open,
-            'user_has_evaluated': user_has_evaluated,
-            'user_has_pulse_reactions': user_has_pulse_reactions,
             'match_aggregate': match_agg,
             'top_players': top_players,
             'worst_players': worst_players,
@@ -295,10 +246,6 @@ class MatchDetailView(DetailView):
         context['og_image'] = self.request.build_absolute_uri(
             reverse('core:match_share_card', args=[match.id])
         )
-        context['share_text'] = (
-            f"{match.home_team.name} {match.get_score_display()} {match.away_team.name} — "
-            f"смотрите оценки болельщиков на DOPX"
-        )
         schema = {
             "@context": "https://schema.org",
             "@type": "SportsEvent",
@@ -325,3 +272,43 @@ def match_events_partial(request, match_id):
         'match': match,
         'events': events,
     })
+
+
+def match_action_context(request, match):
+    """CTA-флаги матча (голосование/оценка/пульс). Общий код для MatchDetailView и match_header_partial."""
+    voting_open = match.voting_open_until > timezone.now() and match.status == 'finished'
+    user_has_evaluated = False
+    user_has_pulse_reactions = False
+    if request.user.is_authenticated:
+        user_has_evaluated = EvaluationSession.objects.filter(
+            user=request.user, match=match, status='completed'
+        ).exists()
+        if not user_has_evaluated and match.status == 'finished':
+            from events.models import EventReaction
+            user_has_pulse_reactions = EventReaction.objects.filter(
+                user=request.user, match_event__match=match
+            ).exists()
+    return {
+        'voting_open': voting_open,
+        'user_has_evaluated': user_has_evaluated,
+        'user_has_pulse_reactions': user_has_pulse_reactions,
+        'share_text': (
+            f"{match.home_team.name} {match.get_score_display()} {match.away_team.name} — "
+            f"смотрите оценки болельщиков на DOPX"
+        ),
+    }
+
+
+@require_http_methods(["GET"])
+def match_header_partial(request, match_id):
+    """Live-partial шапки матча: счёт, статус, CTA. Опрашивается каждые 20с, пока матч live."""
+    match = get_object_or_404(
+        Match.objects.select_related(
+            'home_team', 'away_team', 'league', 'season',
+            'home_coach', 'away_coach', 'referee', 'stadium',
+        ).prefetch_related('home_team__rivals'),  # rivals нужен для match.is_derby
+        id=match_id,
+    )
+    context = match_action_context(request, match)
+    context['match'] = match
+    return render(request, 'matches/_match_header.html', context)

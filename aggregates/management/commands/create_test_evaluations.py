@@ -75,7 +75,7 @@ class Command(BaseCommand):
 
         # Создаём оценки для каждого пользователя
         for user in test_users:
-            # ✅ FIX: Преобразуем UUID в int для модуля
+            # user.id — UUID, не int; % нужен int
             user_hash = user.id.int % 100
             
             # Context

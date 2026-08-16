@@ -15,18 +15,8 @@ DEBUG = os.getenv("DEBUG", "True") == "True"
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "*").split(",")
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 
-# =============================================================================
-# Sentry — error tracking (продуктовый апгрейд: раньше единственным каналом
-# были email-алерты из parsers/tasks.py::_send_sync_error_alert — легко
-# пропустить, без стектрейса/контекста запроса, без дедупликации похожих
-# ошибок в одну карточку). Инициализация ДО импорта Django-приложений ниже —
-# sentry_sdk сам патчит логирование и умеет ловить ошибки, возникающие даже
-# на этапе загрузки INSTALLED_APPS.
-#
-# БЕЗОПАСНЫЙ NO-OP: если SENTRY_DSN не задан в .env — блок просто не
-# выполняется, проект работает как раньше. Ничего не ломается на локальной
-# разработке без Sentry-аккаунта.
-# =============================================================================
+# Sentry — инициализация до импорта Django-приложений, чтобы ловить ошибки
+# даже на этапе загрузки INSTALLED_APPS. Без SENTRY_DSN блок — no-op.
 SENTRY_DSN = os.getenv("SENTRY_DSN", "")
 if SENTRY_DSN:
     import sentry_sdk
@@ -142,13 +132,9 @@ UNFOLD = {
     },
     "SIDEBAR": {
         "show_search": True,
-        # show_all_applications=False — раньше был True, показывал ПОД
-        # нашей кастомной навигацией ещё и сырой автосгенерированный список
-        # Django-приложений (тот самый "Aggregates, Analytics, Axes,
-        # Coaches..." по алфавиту) — теперь у каждой модели есть осмысленное
-        # место в бизнес-группах ниже, дублировать его плоским списком
-        # приложений незачем (продуктовый апгрейд — "переиграть отображение
-        # apps в админке более понятно").
+        # False — не дублировать автосгенерированный алфавитный список apps
+        # под кастомной навигацией: у каждой модели уже есть место в
+        # бизнес-группах ниже.
         "show_all_applications": False,
         "navigation": [
             {
@@ -516,22 +502,14 @@ CELERY_ENABLE_UTC = False
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
 
-# =============================================================================
-# Web Push (продуктовый аудит, раздел 5c "PWA + Web Push")
-# =============================================================================
-# Ключи генерируются ОДИН РАЗ на проект (не на пользователя!) командой
-# `vapid --gen` из пакета `py-vapid` (устанавливается автоматически как
-# зависимость `pywebpush`, см. requirements.txt) и кладутся в переменные
-# окружения — как и CELERY_BROKER_URL выше, НЕ хардкодятся в settings.py.
-# Пока переменные не заданы, `notifications/services.py::send_push_to_user`
-# логирует предупреждение и no-op'ает вместо падения — фича должна
-# деградировать мягко на окружениях, где push ещё не настроен (например,
-# локальная разработка), а не ронять весь `notify_followers_match_activity`.
+# Web Push. Ключи — одни на проект (не на пользователя), генерируются
+# командой `vapid --gen` (py-vapid). Без них send_push_to_user
+# (notifications/services.py) логирует и no-op'ает, а не роняет вызывающий код.
 VAPID_PUBLIC_KEY = os.getenv('VAPID_PUBLIC_KEY', '')
 VAPID_PRIVATE_KEY = os.getenv('VAPID_PRIVATE_KEY', '')
 VAPID_ADMIN_EMAIL = os.getenv('VAPID_ADMIN_EMAIL', 'admin@dopx.kz')
 
-# ✅ НОВОЕ: Настройки парсера (легко включать/выключать турниры)
+# Настройки парсера — какие турниры включены
 PARSER_SETTINGS = {
     'ENABLED_TOURNAMENTS': ['pl'],  # ['pl', '1l', '2l', 'cup'] - добавить при необходимости
     'DEFAULT_TOURNAMENT': 'pl',
@@ -729,15 +707,10 @@ if DEBUG:
     INTERNAL_IPS = ['127.0.0.1']
     DEBUG_TOOLBAR_CONFIG = {
         'SHOW_TOOLBAR_CALLBACK': lambda request: request.META.get('HTTP_ACCEPT') != 'application/json',
-        # ИСПРАВЛЕНО (найдено при первом прогоне manage.py test): Django
-        # test runner принудительно выставляет settings.DEBUG=False на
-        # время тестов — debug_toolbar.E001 видит "toolbar в INSTALLED_APPS,
-        # но DEBUG=False" и считает это ошибкой конфигурации (в проде
-        # тулбар быть включённым не должен). `manage.py test` НЕ равно
-        # "тулбар случайно остался включён в проде" — это ожидаемое
-        # поведение самого test runner'а, а не баг. IS_RUNNING_TESTS=False
-        # — официальный флаг django-debug-toolbar, отключающий именно этот
-        # check для тестовых прогонов.
+        # test runner форсит DEBUG=False на время тестов, из-за чего
+        # debug_toolbar.E001 путает это с "тулбар остался в проде".
+        # IS_RUNNING_TESTS=False — штатный флаг django-debug-toolbar,
+        # отключающий именно эту проверку под manage.py test.
         'IS_RUNNING_TESTS': False,
     }
 

@@ -35,16 +35,15 @@ urlpatterns = [
     path('leaderboard/', UserLeaderboardView.as_view(), name='leaderboard'),
     path('players/leaderboard/', PlayerLeaderboardView.as_view(), name='player_leaderboard'),
 
-    # Follow-граф (продуктовый аудит, раздел 5b) — один эндпоинт на оба типа
-    # цели, см. docstring toggle_follow.
+    # Follow-граф — один эндпоинт на оба типа цели, см. docstring toggle_follow.
     path('follow/<str:target_type>/<uuid:target_id>/', toggle_follow, name='toggle_follow'),
 
-    # Web Push (продуктовый аудит, раздел 5c) — см. static/js/push.js.
+    # Web Push — см. static/js/push.js.
     path('push/subscribe/', push_subscribe, name='push_subscribe'),
     path('push/unsubscribe/', push_unsubscribe, name='push_unsubscribe'),
 
-    # НОВОЕ: публичный профиль по username (только чтение) — см. докстринг
-    # PublicProfileView. Префикс 'u/', а не 'profile/<username>/', чтобы не
-    # пересекаться с уже занятыми 'profile/edit/', 'profile/password/' и т.д.
+    # Публичный профиль по username (только чтение), см. докстринг
+    # PublicProfileView. Префикс 'u/', а не 'profile/<username>/' — иначе
+    # пересечётся с 'profile/edit/', 'profile/password/' и т.д.
     path('u/<str:username>/', PublicProfileView.as_view(), name='public_profile'),
 ]

@@ -18,19 +18,13 @@ class ClientEventThrottle(AnonRateThrottle):
 
 class TrackClientEventView(APIView):
     """
-    Публичный (AllowAny) — события идут и от анонимов ДО регистрации,
-    иначе не посчитать конверсию "визит → регистрация".
+    Публичный (AllowAny) — события идут и от анонимов до регистрации, иначе
+    не посчитать конверсию "визит → регистрация".
 
-    ИСПРАВЛЕНО: `authentication_classes = []` — без этого DRF наследует
-    глобальный default (включает SessionAuthentication), которая для
-    залогиненных пользователей ПРИНУДИТЕЛЬНО проверяет CSRF-токен ещё ДО
-    permission_classes — независимо от AllowAny. `static/js/analytics.js`
-    шлёт события через `navigator.sendBeacon`/`fetch(keepalive)`, которые
-    физически не могут приложить X-CSRFToken (sendBeacon не поддерживает
-    кастомные заголовки вообще), поэтому КАЖДЫЙ трек от залогиненного
-    юзера падал 403 (см. лог: "Forbidden: /analytics/track/" на каждой
-    загрузке страницы). Отключаем аутентификацию целиком для этого вью —
-    он и не должен знать, кто звонит через сессию, у него свой anonymous_id.
+    authentication_classes = [] — иначе DRF наследует SessionAuthentication,
+    которая требует CSRF-токен даже при AllowAny. sendBeacon (см.
+    static/js/analytics.js) не умеет слать кастомные заголовки, так что с
+    аутентификацией по умолчанию каждый трек от залогиненного юзера падал 403.
     """
     permission_classes = [AllowAny]
     authentication_classes = []

@@ -8,13 +8,8 @@
     <meta name="theme-color" content="#000000">
     <!-- SEO -->
     <title>{% block title %}{{ page_title|default:'DOPX' }}{% endblock %}</title>
-    <!-- ИЗМЕНЕНО: description/OG раньше был один статичный тег на ВСЕ
-         страницы сайта ("DOPX — Голос трибун измеряем") — страница матча
-         и профиль игрока в поиске/при шеринге выглядели неотличимо друг
-         от друга. Теперь читаем `meta_description`/`og_image` из
-         контекста конкретной вьюхи (см. matches/views.py,
-         players/views.py), с этим же текстом как дефолтом для страниц,
-         которые его ещё не задают. -->
+    <!-- meta_description/og_image приходят из контекста конкретной вьюхи
+         (matches/views.py, players/views.py) с этим текстом как дефолтом. -->
     <meta name="description" content="{{ meta_description|default:'DOPX — Голос трибун измеряем' }}">
     <meta property="og:type" content="website">
     <meta property="og:title" content="{{ page_title|default:'DOPX' }}">
@@ -23,9 +18,8 @@
     <meta name="twitter:card" content="summary_large_image">
     <link rel="canonical" href="{{ request.build_absolute_uri }}">
     {% block schema %}{% endblock %}
-    <!-- PWA (продуктовый аудит, раздел 5c) — манифест грузится из /static/,
-         но регистрируется service worker'ом с /sw.js (см. core/views.py::
-         service_worker про то, почему это разные пути и зачем). -->
+    <!-- Манифест грузится из /static/, но регистрируется service worker'ом
+         с /sw.js — см. core/views.py::service_worker про разницу путей. -->
     <link rel="manifest" href="{% static 'manifest.json' %}">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="DOPX">
@@ -51,19 +45,10 @@
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.15.8/dist/cdn.min.js"></script>
     <!-- HTMX -->
     <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.8/dist/htmx.min.js" integrity="sha384-/TgkGk7p307TH7EXJDuUlgG3Ce1UVolAOFopFekQkkXihi5u/6OCvVKyz1W+idaz" crossorigin="anonymous"></script>
-    <!-- УДАЛЕНО: тут был `tailwind.config = {...}` в стиле Tailwind v3
-         Play CDN. Подключённый скрипт — `@tailwindcss/browser@4` (Tailwind
-         v4), а в v4 JS-конфига `tailwind.config` не существует вообще
-         (настройка темы там делается через CSS `@theme`, не через JS) —
-         глобального объекта `window.tailwind` v4-сборка не создаёт. Из-за
-         этого скрипт кидал `ReferenceError: tailwind is not defined` на
-         КАЖДОЙ странице сайта, а сам конфиг (кастомные цвета primary/
-         secondary/accent) никогда не применялся — то, что сайт всё это
-         время был правильно раскрашен, целиком заслуга тем DaisyUI
-         (light/dark), подключённых отдельными <link> ниже, а не этого
-         скрипта. Если нужно переопределить конкретные цвета темы DaisyUI —
-         это делается через её собственный API кастомных тем (CSS), а не
-         через удалённый отсюда JS-объект. -->
+    <!-- Без tailwind.config — это Tailwind v4 (@tailwindcss/browser@4),
+         JS-конфига в v4 не существует (тема настраивается через CSS
+         @theme), window.tailwind не создаётся. Цвета берутся из тем DaisyUI
+         (<link> ниже); переопределять их — через API кастомных тем DaisyUI. -->
     <script>
         const savedTheme = localStorage.getItem('theme') || 'light';
         document.documentElement.setAttribute('data-theme', savedTheme);
@@ -90,26 +75,10 @@
             flex: 1;
             width: 100%;
         }
-        /* ИСПРАВЛЕНО: раньше здесь был кастомный `.tooltip`/`.tooltip::after`,
-           реализующий подсказки прямо через CSS-класс `tooltip`, повешенный
-           на сам лейбл/значение (`position:relative; display:inline-block`).
-           Проблема: этот же класс `tooltip` вешался на элементы, у которых
-           ОДНОВРЕМЕННО был Tailwind-класс `flex` (например
-           `class="... tooltip flex items-center gap-0.5"` в шаблонах
-           оценок) — при равной специфичности CSS побеждало то правило,
-           что подключено позже в каскаде, а этот блок объявлен НИЖЕ
-           Tailwind-рантайма в <head>, поэтому `display:inline-block` из
-           `.tooltip` перебивал `display:flex`, и лейблы с иконкой
-           разъезжались/переносились криво. Плюс `::after` с
-           `left:50%; white-space:nowrap` не умел уворачиваться от края
-           экрана — у элементов возле правого/левого края подсказка
-           обрезалась или вылезала за viewport.
-           Новая система подсказок — см. `components/_tooltip_icon.html` и
-           Alpine-компонент `tooltipTrigger` ниже: отдельная маленькая
-           info-иконка (не влияет на layout соседей) + сам "пузырь"
-           рендерится через `x-teleport="body"` с `position:fixed` и сам
-           пересчитывает своё положение (никогда не задевает контент
-           страницы и не обрезается по краю экрана). */
+        /* Подсказки — components/_tooltip_icon.html + Alpine-компонент
+           tooltipTrigger ниже: отдельная info-иконка не влияет на layout
+           соседей, "пузырь" рендерится через x-teleport="body" с
+           position:fixed и сам пересчитывает позицию у края экрана. */
         [x-cloak] { display: none !important; }
         /* Плавные переходы */
         .transition-all {
@@ -185,17 +154,11 @@
         <span class="loading loading-spinner loading-lg text-primary"></span>
     </div>
     {% endblock %}
-    <!-- Подсказки (см. components/_tooltip_icon.html): маленькая info-
-         иконка, "пузырь" с текстом позиционируется через JS в
-         position:fixed и телепортируется в конец <body> (x-teleport) —
-         поэтому никогда не влияет на layout соседних элементов и не
-         ломает Tailwind-flex у родителя, в отличие от старого CSS-only
-         решения. На десктопе всплывает по наведению/фокусу, на мобильных —
-         по тапу; закрывается уходом курсора (десктоп) или тапом вне
-         подсказки (мобильные). Клик специально не переключает
-         открыто/закрыто (не toggle) — иначе на десктопе наведение
-         открывает подсказку, а следующий за ним клик тут же её закрывал
-         бы same-tick. -->
+    <!-- tooltipTrigger для components/_tooltip_icon.html. На десктопе —
+         по наведению/фокусу, на мобильных — по тапу; закрывается уходом
+         курсора или тапом вне подсказки. Клик не toggle — иначе на
+         десктопе наведение открывает, а следующий клик тут же закрывает
+         same-tick. -->
     <script>
         document.addEventListener('alpine:init', () => {
             Alpine.data('tooltipTrigger', (text) => ({
@@ -263,16 +226,9 @@
         }
     </script>
     {% comment %}
-    ИСПРАВЛЕНО: `extra_script` раньше был ВНУТРИ предыдущего <script>...</script>
-    (см. git history/предыдущую итерацию) — рабочий, пока дочерние шаблоны
-    клали туда голый JS без собственных <script> тегов. Как только
-    dashboard/overview.html положил туда <script src="..."> (Chart.js) +
-    свой <script>...</script>, HTML-парсер закрыл ВНЕШНИЙ script по ПЕРВОМУ
-    попавшемуся </script> (от вложенного тега) — весь текст до этой точки,
-    включая буквальный `<script src="...">`, пытался выполниться как JS:
-    "SyntaxError: Unexpected token '<'". Вложенные <script> в HTML в принципе
-    не работают, поэтому блок нужно держать СНАРУЖИ, как отдельный слот —
-    дочерние шаблоны сами оборачивают свой JS в <script> где нужно.
+    extra_script держится СНАРУЖИ предыдущего <script>, не внутри — вложенные
+    <script> в HTML не работают (парсер закрывает внешний тег по первому
+    попавшемуся </script>). Дочерние шаблоны сами оборачивают свой JS.
     {% endcomment %}
     {% block extra_script %}{% endblock %}
     {% if request.resolver_match.app_name == 'notifications' %}
@@ -281,9 +237,8 @@
     <!-- Событийная аналитика продукта (analytics/views.py) — sendBeacon,
          не блокирует ничего на странице. -->
     <script src="{% static 'js/analytics.js' %}"></script>
-    <!-- PWA + Web Push (продуктовый аудит, раздел 5c) — регистрирует
-         /sw.js на каждой странице; сама подписка на push — по явному
-         действию пользователя, см. static/js/push.js. -->
+    <!-- Регистрирует /sw.js на каждой странице; подписка на push — по
+         явному действию пользователя, см. static/js/push.js. -->
     <script src="{% static 'js/push.js' %}"></script>
 </body>
 </html>

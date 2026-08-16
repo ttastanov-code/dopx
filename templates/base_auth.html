@@ -14,16 +14,8 @@
     <link rel="icon" type="image/png" href="{% static 'favicons/favicon-32x32.png' %}" sizes="32x32">
     <link rel="icon" type="image/png" href="{% static 'favicons/favicon-16x16.png' %}" sizes="16x16">
     
-    <!-- Tailwind CSS -->
-    <!-- ИСПРАВЛЕНО: раньше здесь стояли ДРУГИЕ версии Tailwind/DaisyUI/HTMX/
-         Alpine, чем в основном шаблоне `base.html` (Tailwind v3 Play CDN +
-         DaisyUI v4.12.14 vs v4/v5 в остальном сайте) — страницы входа и
-         регистрации фактически рендерились другим фреймворком, чем весь
-         остальной сайт, с риском визуальных расхождений. Плюс сам конфиг
-         был битый: `require("daisyui/src/theming/themes")` — вызов Node.js
-         `require()` в браузере не существует, падало с `ReferenceError:
-         require is not defined` на КАЖДОЙ странице входа/регистрации.
-         Теперь везде одна и та же связка — см. `base.html`. -->
+    <!-- Та же связка версий Tailwind/DaisyUI/HTMX/Alpine, что и в base.html —
+         страницы входа/регистрации не должны рендериться другим стеком. -->
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <!-- DaisyUI -->
     <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
@@ -134,15 +126,9 @@
             }
         }
     </script>
-    <!-- ИСПРАВЛЕНО: блок extra_script раньше был объявлен ПРЯМО ВНУТРИ
-         этого script-тега (см. git-историю) — рассчитан только на голый JS
-         без тегов. Любой дочерний шаблон, вставляющий сюда HTML (комментарий,
-         свой script-тег, вывод form.media и т.д. — как register.html),
-         получал SyntaxError в браузере, потому что вся эта разметка
-         скармливалась JS-парсеру как код одного и того же тега. Теперь блок
-         независимый, вне какого-либо script-тега, как и в base.html;
-         дочерние шаблоны могут свободно писать сюда и HTML, и произвольные
-         свои script-теги без риска сломать разметку. -->
+    <!-- extra_script вне script-тега, как и в base.html — дочерние шаблоны
+         (register.html с form.media) могут писать сюда HTML и свои
+         <script> без риска сломать разметку вложенным тегом. -->
     {% block extra_script %}{% endblock %}
     <!-- Событийная аналитика (analytics/views.py) — страницы входа/
          регистрации это первый шаг воронки "визит → регистрация", без

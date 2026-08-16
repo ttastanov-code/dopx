@@ -2,82 +2,14 @@
 """
 DRF ViewSets.
 
-АУДИТ select_related / prefetch_related / only() — НАЙДЕННЫЕ ПРОБЛЕМЫ:
-
-1. СИСТЕМНАЯ ошибка во ВСЕХ ViewSet'ах: `.only(...)` перечисляла ТОЛЬКО
-   собственные поля корневой модели (например, PlayerEvaluation), но ни
-   один `.only()` НЕ включал поля связанных объектов, которые реально
-   читает сериалайзер через `source='match.start_time'`,
-   `source='player.first_name'` и т.п. Согласно документации Django: если
-   вместе с `select_related()` используется `only()`, и вы не указали явно
-   поля связанной модели через `related__field`, эти поля связанной модели
-   ДЕФЕРЯТСЯ (deferred) — обращение к ним сериалайзером вызывает ОТДЕЛЬНЫЙ
-   SQL-запрос НА КАЖДЫЙ объект. Т.е. select_related() физически выполнял
-   JOIN, но `only()` тут же "выбрасывал" все полученные через JOIN колонки,
-   и Django повторно ходил в БД за каждой из них поштучно — классический
-   замаскированный N+1, который легко пропустить при код-ревью, потому что
-   select_related() в коде выглядит "правильно".
-
-2. `PlayerAggregateViewSet.get_queryset()` и `PlayerEvaluationViewSet.
-   analytics()` — `.only(...)` даже не включал `avg_contribution`,
-   `avg_risk`, `avg_potential`, которые сериализуются
-   `PlayerMatchAggregateSerializer` — то есть ЭТИ поля дефердились ВСЕГДА,
-   независимо от связанных объектов.
-
-3. В нескольких местах (`analytics`, `PlayerAggregateViewSet.get_queryset`,
-   `by_season`, `CoachAggregateViewSet.get_queryset`) select_related вообще
-   не включал `match__home_team` / `match__away_team`, при этом
-   `MatchSerializer`, используемый как `match_details`, обращается именно к
-   `home_team.name` / `away_team.name` — гарантированный N+1 (2 запроса на
-   каждую строку списка).
-
-4. Одновременно в select_related присутствовали `match__league`,
-   `match__season`, `match__stadium` — JOIN'ы, которые НИКЕМ не читаются
-   (`MatchSerializer` их не сериализует). Это не N+1, но лишняя нагрузка на
-   Postgres и лишний трафик — убраны там, где не используются никаким
-   сериалайзером в этом файле.
-
-5. `MatchEvaluationViewSet.summary()` — РЕАЛЬНЫЙ БАГ, не связанный с
-   производительностью: в ответ клался
-   `MatchEvaluationSerializer(match).data`, где `match` — экземпляр модели
-   `Match`, а `MatchEvaluationSerializer.Meta.model = MatchEvaluation`.
-   У `Match` нет полей `entertainment/tension/turning_point/fairness/
-   drama_index` — сериализация падала бы с `AttributeError` при первом же
-   реальном вызове эндпоинта. Заменено на `MatchSerializer(match).data`.
-
-6. Именование: локальный класс `class UserRateThrottle(throttling.
-   UserRateThrottle)` был объявлен ПОСЛЕ `from rest_framework.throttling
-   import UserRateThrottle` и молча "перезатирал" импортированное имя в
-   модульном неймспейсе. Код работал только благодаря порядку объявления
-   классов сверху вниз (EvaluationRateThrottle успевала связаться с
-   оригинальным DRF-классом ДО переопределения) — крайне хрупкая
-   конструкция. Переименовано в `StandardUserRateThrottle`.
-
-`MatchAggregateViewSet` (единственный явно указанный в задаче) уже был
-частично исправлен предыдущим автором (убран срез `[:11]` из Prefetch —
-это верно, слайсинг ВНУТРИ Prefetch-querysetа некорректен и либо падает,
-либо возвращает только 11 записей суммарно на ВСЕ матчи, а не по 11 на
-каждый). Проверено дополнительно: `.only()` там не хватало полей
-`match__home_team__name/away_team__name` и т.д. — дополнено ниже.
-
-7. АНТИ-ФРОД ДЫРА (найдена при продуктовом аудите): все evaluation-ViewSet'ы
-   использовали `permissions.IsAuthenticated` — то есть ЛЮБОЙ вошедший в
-   систему пользователь мог голосовать через API. Но в `api/permissions.py`
-   уже существует класс `IsAuthenticatedAndVerified`, который никогда не
-   импортировался и не использовался в этом файле — ни здесь, ни где-либо
-   ещё в проекте. HTML-визард (`evaluations/views.py`) недоступен
-   неверифицированным пользователям ТОЛЬКО потому, что `LoginView` вручную
-   блокирует вход для `is_verified=False` — но `REST_FRAMEWORK[
-   'DEFAULT_AUTHENTICATION_CLASSES']` включает `BasicAuthentication`,
-   которая аутентифицирует по логину/паролю на каждый запрос через
-   стандартный `authenticate()`, вообще не знающий про кастомное поле
-   `is_verified`. Итог: неверифицированный (в том числе ботом
-   зарегистрированный, но так и не подтвердивший email) аккаунт мог слать
-   голоса напрямую в API, минуя гейт верификации почты целиком. Ниже
-   `permissions.IsAuthenticated` заменён на `IsAuthenticatedAndVerified` во
-   всех write-эндпоинтах, а локальный дубликат `VotingOpenPermission`
-   убран в пользу уже существующего класса из `api/permissions.py` (тот же
-   класс, что определён здесь раньше, слово в слово — чистый дубль).
+only() на всех ViewSet'ах явно перечисляет поля связанных моделей
+(`related__field`) — без этого Django дефердит колонки, полученные через
+select_related(), и сериалайзер бьёт по БД отдельным запросом на каждый
+объект (маскированный N+1, select_related() в коде при этом выглядит
+корректно). Write-эндпоинты используют IsAuthenticatedAndVerified
+(api/permissions.py), а не голый IsAuthenticated — иначе неверифицированный
+(в т.ч. не подтвердивший email) аккаунт может голосовать через API в обход
+гейта, которым html-визард (evaluations/views.py) прикрыт на уровне LoginView.
 """
 from __future__ import annotations
 
@@ -143,18 +75,11 @@ class AggregateRateThrottle(AnonRateThrottle):
 
 
 class StandardUserRateThrottle(throttling.UserRateThrottle):
-    """
-    ПЕРЕИМЕНОВАНО из `UserRateThrottle` — старое имя дублировало и молча
-    затирало класс, импортированный из `rest_framework.throttling` (см.
-    докстринг модуля, пункт 6). Функционально не изменилось.
-    """
+    """Не называть UserRateThrottle — затирает одноимённый импорт из rest_framework.throttling."""
 
     rate = "100/hour"
 
 
-# `VotingOpenPermission` ранее дублировалась здесь же — удалён дубль,
-# используется класс из `api/permissions.py` (импортирован выше), логика
-# идентична слово в слово.
 
 
 # ============================================================================
@@ -463,10 +388,6 @@ class MatchEvaluationViewSet(viewsets.ModelViewSet):
         player_evals_count = PlayerEvaluation.objects.filter(match=match).count()
 
         response_data = {
-            # ИСПРАВЛЕН БАГ: раньше здесь стоял MatchEvaluationSerializer(match) —
-            # сериалайзер оценки МАТЧА применялся к объекту МАТЧА. У Match нет
-            # полей entertainment/tension/turning_point/fairness/drama_index,
-            # это гарантированно падало с AttributeError. Нужен MatchSerializer.
             "match": MatchSerializer(match).data,
             "aggregate": MatchAggregateSerializer(match_agg).data if match_agg else None,
             "stats": {

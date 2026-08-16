@@ -16,24 +16,13 @@
 
         <!-- Rewards Card -->
         {% comment %}
-        ИСПРАВЛЕНО: раньше здесь были захардкоженные "+10 XP" и "+0.05 Trust
-        Score" — показывались ВСЕГДА, независимо от того, что пользователь
-        реально заработал (множитель доверия, доля оценённых игроков,
-        фактическая корректировка Trust Score могла быть и отрицательной).
-        Теперь берём реальные цифры из EvaluationCompleteView.
+        xp_gained/trust_delta — реальные цифры из EvaluationCompleteView, не
+        захардкоженные.
 
-        ИСПРАВЛЕНО (2): фон карточек и полоса прогресса ниже раньше были на
-        классах `bg-gradient-to-* from-primary to-primary/70` — в Tailwind
-        v4 эти классы ПОЛНОСТЬЮ не работали (не только переименование в
-        bg-linear-to-*: `from-*`/`to-*` для daisyUI-цветов primary/secondary
-        не генерируются вообще, потому что Tailwind не знает эти цвета как
-        свои theme-токены — bg-primary/text-primary работают только потому,
-        что это готовые классы самого daisyUI, а не Tailwind-утилиты). В
-        компилированном CSS класс `.from-primary` отсутствовал полностью →
-        `--tw-gradient-stops` не собирался → итоговый `background-image`
-        резолвился в `none`, элемент был полностью прозрачным. Заменено на
-        инлайновый `linear-gradient(..., var(--color-primary), ...)` —
-        напрямую по CSS-переменной, без зависимости от Tailwind-генератора.
+        Градиенты — инлайновый linear-gradient(var(--color-primary), ...),
+        не bg-gradient-to-*/from-primary: в Tailwind v4 from-*/to-* не
+        генерируются для daisyUI-цветов (primary — не Tailwind theme-токен),
+        класс .from-primary отсутствовал в CSS, фон резолвился в none.
         {% endcomment %}
         <div class="card bg-base-100 border border-base-200 shadow-lg mb-4">
             <div class="card-body p-4">
@@ -110,13 +99,8 @@
 
         <!-- Progress Stats -->
         {% comment %}
-        ИСПРАВЛЕНО: раньше ширина полосы считалась как
-        `total_evaluations + 10` в процентах — бессмысленное число без
-        привязки к какому-либо реальному максимуму (при >90 оценках полоса
-        просто вылезала за карточку). Теперь показываем реальный прогресс
-        до следующего уровня — `UserXP.progress_percent` уже корректно
-        считает это от границ текущего/следующего уровня (см.
-        users/models.py).
+        xp_progress_percent = UserXP.progress_percent — реальный прогресс до
+        следующего уровня, от границ текущего/следующего (users/models.py).
         {% endcomment %}
         <div class="mt-5 p-3 bg-base-200 rounded-xl">
             <div class="text-[9px] text-base-content/50 mb-1">Ваш прогресс</div>
