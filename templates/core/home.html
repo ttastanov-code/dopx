@@ -19,7 +19,15 @@
             </p>
             <div class="flex flex-wrap gap-2 md:gap-4 justify-center">
                 {% if user.is_authenticated %}
-                <a href="{% url 'matches:list' %}" class="btn btn-primary btn-sm md:btn-lg">
+                {% comment %}
+                ИСПРАВЛЕНО: ведёт на status=votable (status='finished' +
+                voting_open_until >= now) — тот же фильтр, что и в подсчёте
+                stats.active_voting ниже (core/views.py) и в
+                Match.is_voting_open() (matches/models.py). Без этого
+                параметра пользователь попадал на список ВСЕХ матчей вместо
+                тех, что реально можно оценить.
+                {% endcomment %}
+                <a href="{% url 'matches:list' %}?status=votable" class="btn btn-primary btn-sm md:btn-lg">
                     <i class="ti ti-trophy"></i>
                     Оценить матчи
                 </a>
@@ -44,10 +52,10 @@
                     <div class="stat-title text-[10px] md:text-xs">Всего матчей</div>
                     <div class="stat-value text-lg md:text-2xl">{{ stats.total_matches|default:0 }}</div>
                 </div>
-                <div class="stat bg-base-100 rounded-lg md:rounded-xl p-2 md:p-4">
+                <a href="{% url 'matches:list' %}?status=votable" class="stat bg-base-100 rounded-lg md:rounded-xl p-2 md:p-4 hover:bg-base-200 transition-colors">
                     <div class="stat-title text-[10px] md:text-xs">Активное голосование</div>
                     <div class="stat-value text-lg md:text-2xl text-success">{{ stats.active_voting|default:0 }}</div>
-                </div>
+                </a>
                 <div class="stat bg-base-100 rounded-lg md:rounded-xl p-2 md:p-4">
                     <div class="stat-title text-[10px] md:text-xs">Средняя драма</div>
                     {% comment %}
@@ -432,7 +440,7 @@
                 критерию наберётся минимум {{ nomination_min_votes|default:3 }} оценки.
             </p>
             {% if user.is_authenticated %}
-            <a href="{% url 'matches:list' %}" class="btn btn-primary btn-sm mt-4 mx-auto">
+            <a href="{% url 'matches:list' %}?status=votable" class="btn btn-primary btn-sm mt-4 mx-auto">
                 <i class="ti ti-star"></i>
                 Оценить матч
             </a>

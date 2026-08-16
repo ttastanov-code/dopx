@@ -199,7 +199,12 @@ def parser_tools_view(request):
     # Поиск матча — не логируем в аудит (read-only просмотр, тот же
     # уровень чувствительности, что и обычный список в Django admin).
     search_query = request.GET.get("q", "").strip()
-    search_results = parser_tools.search_matches(search_query) if search_query else []
+    search_year_param = request.GET.get("year", "")
+    search_year = int(search_year_param) if search_year_param.isdigit() else None
+    search = (
+        parser_tools.search_matches(search_query, year=search_year) if search_query
+        else {"results": [], "total_count": 0, "year": search_year or timezone.now().year}
+    )
 
     context = {
         "page_title": "Парсер — DOPX Staff",
@@ -209,7 +214,10 @@ def parser_tools_view(request):
         "raw_result": raw_result,
         "triggerable_tasks": parser_tools.TRIGGERABLE_TASKS,
         "search_query": search_query,
-        "search_results": search_results,
+        "search_results": search["results"],
+        "search_total_count": search["total_count"],
+        "search_year": search["year"],
+        "search_available_years": parser_tools.available_search_years(),
         "celery_tasks": parser_tools.list_active_celery_tasks(),
     }
     return render(request, "dashboard/parser_tools.html", context)
