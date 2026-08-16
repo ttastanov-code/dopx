@@ -8,9 +8,14 @@
         <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
             <i class="ti ti-search text-primary"></i> Поиск матча
         </h3>
-        <p class="text-xs opacity-60 mb-3">По названию команды (домашней или гостевой) или по external_id (числовой KFF game id) — быстро найти UUID матча, не листая сотни строк в Django admin.</p>
+        <p class="text-xs opacity-60 mb-3">По названию команды (домашней или гостевой) или по external_id (числовой KFF game id) — быстро найти UUID матча, не листая сотни строк в Django admin. Поиск по названию ограничен выбранным годом (сезоном); если у команды много матчей — впишите ОБЕ команды через пробел (например «Қайрат Астана»), чтобы сразу найти конкретную встречу. Казахские буквы (Қ, Ә, Ө и т.д.) можно печатать обычными похожими русскими — поиск сам сопоставит. external_id ищется по всей базе, без ограничения по году.</p>
         <form method="get" action="{% url 'dashboard:parser_tools' %}" class="flex flex-wrap gap-2 items-center mb-3">
-            <input type="text" name="q" value="{{ search_query }}" placeholder="Название команды или external_id" class="input input-sm input-bordered w-72 max-w-full" autofocus>
+            <input type="text" name="q" value="{{ search_query }}" placeholder="Команда, обе команды или external_id" class="input input-sm input-bordered w-72 max-w-full" autofocus>
+            <select name="year" class="select select-sm select-bordered">
+                {% for y in search_available_years %}
+                <option value="{{ y }}" {% if y == search_year %}selected{% endif %}>{{ y }}</option>
+                {% endfor %}
+            </select>
             <button type="submit" class="btn btn-sm btn-primary">Найти</button>
         </form>
         {% if search_query %}
@@ -38,7 +43,7 @@
                         </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="6" class="text-center opacity-50 py-4">Ничего не найдено</td></tr>
+                    <tr><td colspan="6" class="text-center opacity-50 py-4">Ничего не найдено за {{ search_year }} год — попробуйте выбрать другой год выше</td></tr>
                     {% endfor %}
                 </tbody>
             </table>

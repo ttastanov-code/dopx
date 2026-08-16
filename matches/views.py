@@ -50,6 +50,21 @@ class MatchListView(ListView):
         elif status == 'finished':
             # Завершенные - ближе к сегодняшнему дню сначала
             queryset = queryset.filter(status='finished').order_by('-start_time')
+        elif status == 'votable':
+            # ИСПРАВЛЕНО: кнопка "Оценить матчи" и число в карточке
+            # "Активное голосование" на главной вели на ВЕСЬ список матчей
+            # без фильтра — пользователь видел сотни запланированных и уже
+            # закрытых для голосования матчей вместо тех, что реально можно
+            # оценить прямо сейчас. Условие — то же самое, что и в
+            # `Match.is_voting_open()` (matches/models.py) и в подсчёте
+            # `stats.active_voting` на главной (core/views.py), чтобы число
+            # на карточке и список за ней всегда совпадали 1:1.
+            # Сортировка — по МЕНЬШЕМУ остатку времени до закрытия
+            # голосования: матчи, которые вот-вот закроются, показываем
+            # первыми, чтобы пользователь не пропустил дедлайн.
+            queryset = queryset.filter(
+                status='finished', voting_open_until__gte=timezone.now()
+            ).order_by('voting_open_until')
         else:
             # ИСПРАВЛЕНО: раньше здесь была сортировка по возрастанию даты
             # (`order_by('start_time')`) — на базе из пары сотен матчей
@@ -91,8 +106,11 @@ class MatchListView(ListView):
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['page_title'] = 'Все матчи — DOPX'
-        context['current_status'] = self.request.GET.get('status', '')
+        current_status = self.request.GET.get('status', '')
+        context['page_title'] = (
+            'Матчи для оценки — DOPX' if current_status == 'votable' else 'Все матчи — DOPX'
+        )
+        context['current_status'] = current_status
         context['current_league'] = self.request.GET.get('league', '')
         context['current_season'] = self.request.GET.get('season', '')
         context['leagues'] = League.objects.all()[:10]
