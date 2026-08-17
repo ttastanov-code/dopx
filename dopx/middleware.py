@@ -3,6 +3,7 @@
 import time
 import logging
 from datetime import datetime
+from urllib.parse import urlencode
 
 from django.conf import settings
 from django.contrib.auth import logout
@@ -190,7 +191,20 @@ class StaffSessionSecurityMiddleware:
                         f"limit={timeout}s path={request.path}"
                     )
                     logout(request)
-                    return redirect(f"{reverse('admin:login')}?session_expired=1")
+                    # БАГ, КОТОРЫЙ ТУТ БЫЛ: редирект на admin:login нёс только
+                    # ?session_expired=1, без next= — в отличие от обычного
+                    # незалогиненного захода (тот next добавляет сам
+                    # staff_member_required через redirect_to_login). После
+                    # такого logout()+редиректа Django после успешного входа
+                    # брал ЖЁСТКИЙ дефолт settings.LOGIN_REDIRECT_URL
+                    # ("/accounts/profile/", которого в проекте нет) —
+                    # 404 вместо возврата на страницу, с которой юзера сняли
+                    # по простою. Симптом был неуловим именно потому, что
+                    # обычный вход (без предварительного idle-таймаута)
+                    # отрабатывал корректно — баг только в ЭТОЙ ветке.
+                    login_url = reverse('admin:login')
+                    next_qs = urlencode({'next': request.get_full_path()})
+                    return redirect(f"{login_url}?{next_qs}&session_expired=1")
 
             request.session[self.SESSION_KEY] = now.isoformat()
 
