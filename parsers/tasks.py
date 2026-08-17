@@ -6,10 +6,11 @@ update_match_statuses зарегистрирована в CELERY_BEAT_SCHEDULE �
 разными именами (update-live-matches */2m, update-scheduled-matches */10m),
 но фильтрует один и тот же набор матчей (status in scheduled/live) — на
 кратных 10 минутам отметках Celery Beat ставит в очередь два параллельных
-запуска. import_events_and_minutes (parsers/kff/importers.py) делает
-match.events.all().delete() + bulk-create внутри @transaction.atomic —
-атомарность одной транзакции не защищает от конкурентной второй: дубли
-событий, рост времени отклика или deadlock на уровне Postgres.
+запуска. import_events_and_minutes (parsers/kff/importers.py) пишет события
+матча (создаёт/обновляет по совпадению минута+тип+сторона) внутри
+@transaction.atomic — атомарность одной транзакции не защищает от
+конкурентной второй: дубли событий, рост времени отклика или deadlock на
+уровне Postgres.
 
 Защита в две линии:
   A. Redis-лок на КАЖДЫЙ матч (не на всю задачу — иначе воркеры не могли бы
