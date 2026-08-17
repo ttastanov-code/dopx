@@ -31,16 +31,23 @@
     {% comment %}
     Версии CDN-пакетов ниже закреплены точно (не @4/@5/@latest) — плавающий
     тег меняет отдаваемый файл без предупреждения, а SRI-хэш на такой тег
-    гарантированно рассинхронизируется с первым же апдейтом пакета и сломает
-    загрузку ресурса в браузере. integrity= проставлен вручную — см.
-    scripts/generate_sri.sh для перегенерации при обновлении версий.
+    гарантированно рассинхронизируется с первым же апдейтом пакета.
+
+    integrity= ВРЕМЕННО убран (был здесь плейсхолдером sha384-REPLACE_*,
+    который так и не заменили реальным хэшем — SRI-мисматч блокирует
+    загрузку ресурса ЦЕЛИКОМ, из-за чего сайт остался без стилей/Alpine/
+    иконок). CSP (dopx/middleware.py::ContentSecurityPolicyMiddleware)
+    по-прежнему ограничивает домены-источники — это не откат защиты, а
+    временный откат ОДНОГО слоя (защита от подмены файла на cdn.jsdelivr.net)
+    до тех пор, пока реальные хэши не будут посчитаны и вручную проверены
+    ДО деплоя (см. TODO в scripts/generate_sri.sh).
     {% endcomment %}
-    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.3" integrity="sha384-REPLACE_TAILWIND" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.3" crossorigin="anonymous"></script>
     <!-- DaisyUI -->
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@5.7.17" rel="stylesheet" type="text/css" integrity="sha384-REPLACE_DAISYUI" crossorigin="anonymous" />
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@5.7.17/themes.css" rel="stylesheet" type="text/css" integrity="sha384-REPLACE_DAISYUI_THEMES" crossorigin="anonymous" />
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@5.7.17" rel="stylesheet" type="text/css" crossorigin="anonymous" />
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@5.7.17/themes.css" rel="stylesheet" type="text/css" crossorigin="anonymous" />
     <!-- Tabler Icons -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.46.0/tabler-icons.min.css" integrity="sha384-REPLACE_TABLER" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.46.0/dist/tabler-icons.min.css" crossorigin="anonymous">
     <!-- Alpine.js -->
     {% comment %}
     Плагин Collapse нужно подключать ДО ядра Alpine (таков порядок для всех
@@ -48,8 +55,8 @@
     evaluations/_player_card.html для плавного разворачивания слайдеров
     оценки игрока) молча игнорируется и раскрытие происходит без анимации.
     {% endcomment %}
-    <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/collapse@3.15.8/dist/cdn.min.js" integrity="sha384-REPLACE_ALPINE_COLLAPSE" crossorigin="anonymous"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.15.8/dist/cdn.min.js" integrity="sha384-REPLACE_ALPINE" crossorigin="anonymous"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/collapse@3.15.8/dist/cdn.min.js" crossorigin="anonymous"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.15.8/dist/cdn.min.js" crossorigin="anonymous"></script>
     <!-- HTMX -->
     <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.8/dist/htmx.min.js" integrity="sha384-/TgkGk7p307TH7EXJDuUlgG3Ce1UVolAOFopFekQkkXihi5u/6OCvVKyz1W+idaz" crossorigin="anonymous"></script>
     <!-- Без tailwind.config — это Tailwind v4 (@tailwindcss/browser@4),

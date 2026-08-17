@@ -93,6 +93,23 @@ class ContentSecurityPolicyMiddleware:
     внешние <script src="evil.com/x.js">, инъекцию через <base>,
     встраивание сайта в чужой <iframe> и т.д.).
 
+    `'unsafe-eval'` в script-src — ОБЯЗАТЕЛЕН для Alpine.js в том виде, в
+    котором он используется в проекте (x-data="{...}" с inline-выражениями
+    прямо в HTML-атрибутах, без сборки). Alpine компилирует каждое
+    x-data/x-show/x-on/x-text выражение через `new AsyncFunction(...)`
+    (см. alpinejs/dist/cdn.min.js) — это ЕСТЬ eval с точки зрения CSP,
+    отдельно от inline-скриптов, которые покрывает 'unsafe-inline'. Без
+    'unsafe-eval' каждое Alpine-выражение на странице падает молча в
+    консоль (Alpine Expression Error) — тема/дропдаун уведомлений/
+    мобильное меню/scroll-to-top/cookie-баннер и любой x-show/@click
+    перестают работать целиком, при этом HTML рендерится нормально
+    (это и произошло при первом включении CSP — стили вернулись, но вся
+    Alpine-интерактивность отвалилась). Единственная альтернатива —
+    переход на CSP-safe сборку Alpine (@alpinejs/csp), которая запрещает
+    именно inline x-data-выражения и требует регистрировать компоненты
+    через Alpine.data(...) в обычном JS-файле — отдельный рефакторинг всех
+    шаблонов, не блокирующий этот шаг.
+
     CSP_REPORT_ONLY=True (settings.py) переключает заголовок на
     Content-Security-Policy-Report-Only — браузер логирует нарушения в
     консоль, но ничего не блокирует. Полезно перед первым включением на
@@ -101,7 +118,7 @@ class ContentSecurityPolicyMiddleware:
 
     POLICY = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; "
         "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
         "font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com; "
         "img-src 'self' data: https:; "
