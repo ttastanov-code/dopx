@@ -277,6 +277,9 @@ UNFOLD = {
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    # CSP-заголовок — чистая функция от response, не завязана на
+    # request.user/сессию, поэтому стоит рядом с SecurityMiddleware.
+    'dopx.middleware.ContentSecurityPolicyMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -457,6 +460,12 @@ SESSION_SAVE_EVERY_REQUEST = True  # нужно, чтобы sliding-таймау
 X_FRAME_OPTIONS = 'DENY'
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = 'same-origin'
+
+# True — заголовок уходит как Content-Security-Policy-Report-Only (браузер
+# только логирует нарушения в консоль, ничего не блокирует). См.
+# dopx/middleware.py::ContentSecurityPolicyMiddleware. Полезно включить на
+# первый прогон после изменения политики — прежде чем блокировать по-настоящему.
+CSP_REPORT_ONLY = os.getenv('CSP_REPORT_ONLY', 'False') == 'True'
 if not DEBUG:
     # HSTS и proxy-заголовок SSL — только в проде за реальным TLS-терминатором
     # (nginx/ALB), на DEBUG-окружении без сертификата это уронит локальный сервер.

@@ -23,10 +23,16 @@ from django.contrib.auth.forms import (
     PasswordResetForm,
     UserCreationForm,
 )
+from django.core.files.uploadedfile import UploadedFile
+from PIL import Image, UnidentifiedImageError
 
 from users.models import User
 
 MIN_FORM_FILL_SECONDS = 3
+
+# Аватарки: лимит размера + проверка реального содержимого файла.
+MAX_AVATAR_SIZE_BYTES = 5 * 1024 * 1024  # 5 МБ
+ALLOWED_AVATAR_FORMATS = {"JPEG", "PNG", "WEBP", "GIF"}
 
 
 class UserRegistrationForm(UserCreationForm):
@@ -235,6 +241,53 @@ class UserProfileForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         if not self.instance.avatar:
             self.fields["delete_avatar"].widget = forms.HiddenInput()
+
+    def clean_avatar(self):
+        """
+        Раньше avatar принимался без единой проверки: ImageField без
+        validators=, без clean_avatar(), без лимита размера — можно было
+        залить что угодно с расширением .jpg (вплоть до файла, который
+        Pillow потом уронит при генерации шер-карточки, или огромный файл,
+        забивающий диск).
+
+        Срабатывает только на свежую загрузку (UploadedFile) — если поле
+        не тронуто, cleaned_data содержит уже сохранённый ImageFieldFile
+        с диска, повторно валидировать (и заново читать в память) его не
+        нужно.
+
+        Два барьера:
+        1. Лимит размера — до чтения содержимого файла.
+        2. Image.verify() (Pillow, уже используется для шер-карточек) —
+           проверяет РЕАЛЬНУЮ структуру файла, а не расширение/content-type
+           из формы, которые легко подделать.
+        """
+        avatar = self.cleaned_data.get("avatar")
+        if not avatar or not isinstance(avatar, UploadedFile):
+            return avatar
+
+        if avatar.size > MAX_AVATAR_SIZE_BYTES:
+            raise forms.ValidationError(
+                f"Файл слишком большой ({avatar.size / 1024 / 1024:.1f} МБ). "
+                f"Максимум — {MAX_AVATAR_SIZE_BYTES // 1024 // 1024} МБ."
+            )
+
+        try:
+            avatar.seek(0)
+            image = Image.open(avatar)
+            image.verify()
+        except (UnidentifiedImageError, OSError, ValueError):
+            raise forms.ValidationError("Файл повреждён или не является изображением.")
+
+        if image.format not in ALLOWED_AVATAR_FORMATS:
+            raise forms.ValidationError(
+                f"Неподдерживаемый формат изображения: {image.format}. "
+                f"Разрешены: JPEG, PNG, WEBP, GIF."
+            )
+
+        # verify() потребляет файловый указатель — возвращаем в начало,
+        # иначе ImageField.save() запишет на диск пустой/обрезанный файл.
+        avatar.seek(0)
+        return avatar
 
 
 class CustomPasswordChangeForm(PasswordChangeForm):

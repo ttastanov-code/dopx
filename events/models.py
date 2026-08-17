@@ -111,6 +111,19 @@ class MatchEvent(BaseModel):
         ordering = ['minute', 'added_time', 'id']
         verbose_name = "Событие матча"
         verbose_name_plural = "События матча"
+        indexes = [
+            # match.events.filter(...).order_by('minute', ...) (страница
+            # матча, events/views.py::pulse_partial) и апсерт по
+            # (match, minute, event_type, team_side) в parsers/kff/
+            # importers.py::import_events_and_minutes раньше шли full scan —
+            # ни на match, ни на minute индекса не было (в отличие от
+            # EventReaction, у которой event_reaction_type_idx есть с самого
+            # начала). При росте базы матчей это первый кандидат на
+            # деградацию страницы матча. Явное имя — тот же принцип, что и
+            # у event_reaction_type_idx выше (ручные миграции без доступа
+            # к реальной БД для makemigrations).
+            models.Index(fields=['match', 'minute'], name='match_event_match_minute_idx'),
+        ]
     
     def __str__(self):
         return f"{self.minute}' {self.get_event_type_display()} - {self.player}"
