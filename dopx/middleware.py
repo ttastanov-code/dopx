@@ -70,6 +70,64 @@ class CacheHitMiddleware:
         return response
 
 
+class ContentSecurityPolicyMiddleware:
+    """
+    CSP как собственный middleware, не через django-csp — ради одного
+    заголовка тянуть отдельный пакет избыточно (тот же принцип, что и у
+    is_rate_limited в core/utils.py вместо django-ratelimit).
+
+    Источники ограничены явным списком доменов (CDN-провайдеры,
+    Google Fonts) — это блокирует загрузку скриптов/стилей с ЛЮБОГО
+    домена, кроме перечисленных, даже если атакующий найдёт способ
+    внедрить `<script src="...">` через XSS. Дополняет, а не заменяет
+    SRI на CDN-тегах (templates/base.html, base_auth.html) — SRI защищает
+    от подмены файла НА уже доверенном домене (компрометация CDN), CSP —
+    от загрузки С НЕДОверенного домена.
+
+    `'unsafe-inline'` в script-src/style-src — вынужденный компромисс:
+    проект держит инлайновые <script> и onclick=/x-data= по всем шаблонам
+    (HTMX-колбэки, Alpine-компоненты, инлайновые градиенты через style=).
+    Без него страницы посыпались бы массово. Полное закрытие потребовало
+    бы переписать все инлайн-скрипты на nonce/hash — отдельная задача,
+    не блокирующая этот шаг (сама по себе политика всё равно валит
+    внешние <script src="evil.com/x.js">, инъекцию через <base>,
+    встраивание сайта в чужой <iframe> и т.д.).
+
+    CSP_REPORT_ONLY=True (settings.py) переключает заголовок на
+    Content-Security-Policy-Report-Only — браузер логирует нарушения в
+    консоль, но ничего не блокирует. Полезно перед первым включением на
+    проде, чтобы отловить забытый домен, не уронив сайт.
+    """
+
+    POLICY = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
+        "font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com; "
+        "img-src 'self' data: https:; "
+        "connect-src 'self'; "
+        "worker-src 'self'; "
+        "manifest-src 'self'; "
+        "object-src 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'; "
+        "frame-ancestors 'self';"
+    )
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        header = (
+            'Content-Security-Policy-Report-Only'
+            if getattr(settings, 'CSP_REPORT_ONLY', False)
+            else 'Content-Security-Policy'
+        )
+        response[header] = self.POLICY
+        return response
+
+
 class StaffSessionSecurityMiddleware:
     """
     Sliding idle-таймаут сессии для staff, но ТОЛЬКО на /admin/ и

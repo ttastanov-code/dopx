@@ -16,7 +16,7 @@ User.DEFAULT_NOTIFICATION_SETTINGS.keys(), не хардкодом — ново�
 """
 from __future__ import annotations
 
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import login, logout, authenticate, update_session_auth_hash
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -52,6 +52,17 @@ logger = logging.getLogger(__name__)
 
 REGISTER_RATE_LIMIT = 5
 REGISTER_RATE_LIMIT_WINDOW_SECONDS = 60 * 60  # 1 час
+
+# password-reset, verify-email — по IP: анонимные эндпоинты, до request.user
+# добраться нельзя. toggle_follow, react_to_event — по user.id: за декоратором
+# @login_required, IP менее показателен (NAT/мобильные сети), а сам факт
+# аутентификации уже отсекает анонимный флуд.
+PASSWORD_RESET_RATE_LIMIT = 5
+PASSWORD_RESET_RATE_LIMIT_WINDOW_SECONDS = 60 * 60  # 1 час
+VERIFY_EMAIL_RATE_LIMIT = 20
+VERIFY_EMAIL_RATE_LIMIT_WINDOW_SECONDS = 60 * 10  # 10 минут
+FOLLOW_RATE_LIMIT = 30
+FOLLOW_RATE_LIMIT_WINDOW_SECONDS = 60
 
 
 class RegisterView(CreateView):
@@ -123,8 +134,23 @@ class VerifyEmailSentView(TemplateView):
 
 
 class VerifyEmailView(View):
-    """Обработка клика по ссылке из письма для верификации"""
+    """
+    Обработка клика по ссылке из письма для верификации.
+
+    Токен — непредсказуемый UUID, поэтому основная угроза не подбор
+    конкретного токена, а перебор случайных UUID с одного IP в расчёте
+    когда-нибудь попасть в чужой активный токен (или просто нагрузить
+    User.objects.get() запросами). Лимит по IP, а не по токену/юзеру —
+    до аутентификации никакого юзера ещё нет.
+    """
     def get(self, request, token):
+        client_ip = get_client_ip(request)
+        if client_ip and is_rate_limited(
+            f'verify_email:{client_ip}', VERIFY_EMAIL_RATE_LIMIT, VERIFY_EMAIL_RATE_LIMIT_WINDOW_SECONDS
+        ):
+            logger.warning(f"⚠️ Verify-email rate limit exceeded for IP {client_ip}")
+            messages.error(request, '⚠️ Слишком много попыток. Попробуйте позже.')
+            return redirect('users:verify_email_invalid')
         try:
             user = User.objects.get(verification_token=token, is_verified=False)
             # Проверка срока действия токена (48 часов)
@@ -404,12 +430,32 @@ class PasswordChangeViewCustom(LoginRequiredMixin, FormView):
 
 
 class PasswordResetViewCustom(PasswordResetView):
+    """
+    Django's PasswordResetForm молча "успешна" на несуществующий email (не
+    палит, зарегистрирован ли адрес) — это же свойство делает эндпоинт
+    удобной пушкой для флуда: без лимита можно было прогнать тысячи чужих
+    email через форму за минуты и завалить исходящую почтовую очередь
+    (Celery/notifications) чужими "инструкциями по сбросу".
+    """
     template_name = 'auth/password_reset.html'
     email_template_name = 'emails/password_reset_email.txt'
     html_email_template_name = 'emails/password_reset_email.html'
     subject_template_name = 'emails/password_reset_subject.txt'
     success_url = reverse_lazy('users:password_reset_done')
     form_class = CustomPasswordResetForm
+
+    def dispatch(self, request, *args, **kwargs):
+        # Тот же паттерн, что в RegisterView.dispatch — лимит ДО валидации
+        # формы.
+        client_ip = get_client_ip(request)
+        if request.method == 'POST' and client_ip:
+            if is_rate_limited(
+                f'password_reset:{client_ip}', PASSWORD_RESET_RATE_LIMIT, PASSWORD_RESET_RATE_LIMIT_WINDOW_SECONDS
+            ):
+                logger.warning(f"⚠️ Password reset rate limit exceeded for IP {client_ip}")
+                messages.error(request, '⚠️ Слишком много попыток. Попробуйте позже.')
+                return redirect('users:password_reset')
+        return super().dispatch(request, *args, **kwargs)
 
     def form_valid(self, form):
         messages.success(self.request, '✅ Инструкция отправлена')
@@ -542,8 +588,17 @@ def toggle_follow(request, target_type, target_id):
     логика идентична, различается только модель, на которую смотрим.
     Возвращает HTMX-партиал с новым состоянием кнопки (та же схема, что
     `events:react` — мгновенный свап без перезагрузки страницы).
+
+    Rate-limit по user.id (30/мин) — без него скрипт мог бы задиспэтчить
+    Follow.objects.create/delete по кругу без ограничений (дешёвый способ
+    засорить follow-граф и очередь персонализированных уведомлений,
+    users/tasks.py). 429 без тела — HTMX по умолчанию не свапает контент
+    вне 2xx, кнопка просто не обновится вместо падения страницы.
     """
     from django.http import Http404
+
+    if is_rate_limited(f'toggle_follow:{request.user.id}', FOLLOW_RATE_LIMIT, FOLLOW_RATE_LIMIT_WINDOW_SECONDS):
+        return HttpResponse(status=429)
 
     if target_type == 'player':
         from players.models import Player

@@ -6,10 +6,11 @@ HTML-фрагмент (пара кнопок), не всю страницу — 
 Опрос every 15s (templates/events/_live_pulse.html) вместо WebSocket/Channels
 — на таком интервале это избыточная инфраструктура.
 """
-from django.http import HttpResponseNotAllowed
+from django.http import HttpResponse, HttpResponseNotAllowed
 from django.shortcuts import get_object_or_404, render
 from django.views.decorators.http import require_GET, require_POST
 
+from core.utils import is_rate_limited
 from matches.models import Match
 
 from .models import EventReaction, MatchEvent
@@ -20,6 +21,11 @@ from .services import reaction_counts, toggle_reaction, user_reactions_map
 # реагировать на них 👍/👎 бессмысленно и засоряет ленту пульса.
 PULSE_EVENT_TYPES = ["goal", "penalty", "own_goal", "yellow_card", "red_card", "var_check"]
 PULSE_EVENTS_LIMIT = 12
+
+# По user.id, не по IP — react_to_event требует аутентификации (см. ниже),
+# так что user.id уже доступен и точнее IP (NAT/мобильные сети).
+REACT_RATE_LIMIT = 30
+REACT_RATE_LIMIT_WINDOW_SECONDS = 60
 
 
 @require_GET
@@ -45,7 +51,15 @@ def pulse_partial(request, match_id):
 
 @require_POST
 def react_to_event(request, event_id):
-    """Тап по 👍/👎. Возвращает обновлённую пару кнопок для ОДНОГО события."""
+    """
+    Тап по 👍/👎. Возвращает обновлённую пару кнопок для ОДНОГО события.
+
+    Rate-limit (30/мин на user.id) — без него `toggle_reaction` можно было
+    дёргать скриптом без ограничений на любое MatchEvent; сам toggle
+    идемпотентен по паре (user, event), но каждый вызов — это write в БД.
+    429 без тела: та же логика, что и в toggle_follow — HTMX не свапает
+    вне 2xx, кнопки просто не обновятся вместо падения partial'а.
+    """
     if not request.user.is_authenticated:
         # status=200, не 401 — HTMX по умолчанию swap'ает контент только на
         # 2xx (htmx.config.responseHandling), иначе призыв войти рендерится,
@@ -53,6 +67,9 @@ def react_to_event(request, event_id):
         return render(
             request, 'events/_reaction_login_prompt.html', {'event_id': event_id}, status=200
         )
+
+    if is_rate_limited(f'react_to_event:{request.user.id}', REACT_RATE_LIMIT, REACT_RATE_LIMIT_WINDOW_SECONDS):
+        return HttpResponse(status=429)
 
     reaction = request.POST.get('reaction')
     if reaction not in dict(EventReaction.REACTION_CHOICES):
