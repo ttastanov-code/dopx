@@ -137,8 +137,11 @@ class VerifyEmailView(View):
             user.is_verified = True
             user.save(update_fields=['is_verified', 'updated_at'])
 
-            # Автоматический вход
-            login(request, user)
+            # Автоматический вход по ссылке из письма, без вызова authenticate()
+            # (пароль тут не проверяется) — user.backend не выставлен сам, а
+            # AUTHENTICATION_BACKENDS содержит два бэкенда (axes + ModelBackend),
+            # так что login() без явного backend бросает ValueError.
+            login(request, user, backend='django.contrib.auth.backends.ModelBackend')
 
             # Приветственное уведомление (критическое, не отключается)
             Notification.objects.create(

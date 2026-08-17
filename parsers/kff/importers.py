@@ -539,13 +539,20 @@ def _is_goal_disallowed(evt: Dict) -> bool:
 @transaction.atomic
 def import_events_and_minutes(match: Match, events_data: Dict, replace_existing: bool = True) -> bool:
     """
-    Импорт событий матча. `replace_existing=True` (полный ресинк, вызывается
-    из pipeline.py::import_full_match с полным списком с API) удаляет старые
-    события перед вставкой. `replace_existing=False` — только добавляет
+    Импорт событий матча. `replace_existing=False` — только добавляет
     переданное, ничего не удаляя: используется в parsers/tasks.py::
-    update_match_statuses, куда приходит только ДЕЛЬТА новых событий —
-    безусловный delete+recreate на дельте стирал бы всю ранее сохранённую
-    историю на каждом цикле живого опроса.
+    update_match_statuses, куда приходит только ДЕЛЬТА новых событий.
+
+    `replace_existing=True` (полный ресинк, из pipeline.py::import_full_match
+    с полным списком с API) сверяет входящий список с уже сохранёнными
+    событиями по (минута, тип, сторона): совпавшие обновляются НА МЕСТЕ (id
+    не меняется), новые — создаются, а те, что реально пропали из ответа API,
+    — удаляются. НЕ blind delete-all-then-recreate: EventReaction висит на
+    MatchEvent через ON DELETE CASCADE, а sync_recent_matches (см.
+    CELERY_BEAT_SCHEDULE) гоняет этот путь для 10 последних завершённых
+    матчей каждые 30 минут — слепой снос всех событий на каждом таком цикле
+    стирал реакции пользователей на события, которые по факту никуда не
+    делись, просто пересоздавались с новым UUID.
     """
     if not events_data:
         return False
@@ -558,15 +565,18 @@ def import_events_and_minutes(match: Match, events_data: Dict, replace_existing:
     if not events:
         return False
 
+    # Пул уже сохранённых событий для сверки по (минута, тип, сторона) —
+    # см. докстринг выше про сохранение id/реакций при полном ресинке.
+    existing_pool: Optional[Dict[tuple, List]] = None
     if replace_existing:
-        # Очищаем старые события — уместно ТОЛЬКО когда `events` содержит
-        # ПОЛНЫЙ список с API (см. docstring выше), иначе см. `replace_existing=False`.
-        deleted_count, _ = match.events.all().delete()
-        if deleted_count > 0:
-            logger.info(f"🗑️ Deleted {deleted_count} old events for match {match.id}")
-    
+        existing_pool = {}
+        for existing_event in match.events.all():
+            key = (existing_event.minute, existing_event.event_type, existing_event.team_side)
+            existing_pool.setdefault(key, []).append(existing_event)
+
     created_count = 0
-    
+    updated_count = 0
+
     for evt in events:
         try:
             # ✅ Безопасное получение полей с дефолтами
@@ -697,31 +707,65 @@ def import_events_and_minutes(match: Match, events_data: Dict, replace_existing:
             elif event_type == "var_check":
                 var_decision = evt.get("decision") or evt.get("var_decision", "")
             
-            # === СОЗДАНИЕ СОБЫТИЯ ===
-            MatchEvent.objects.create(
-                match=match,
-                player=player,
-                minute=minute,
-                # ✅ Безопасное получение добавленного времени
-                added_time=evt.get("added_time") or evt.get("extra_time", 0),
-                event_type=event_type,
-                team_side=team_side,
-                assist_player=assist_player,
-                score_after=score_after,
-                player_out=player_out,
-                card_reason=card_reason,
-                var_decision=var_decision,
-                # ✅ Сохраняем сырые данные для отладки
-                extra_data=evt,
-            )
-            created_count += 1
-            
+            added_time = evt.get("added_time") or evt.get("extra_time", 0)
+
+            # === СОЗДАНИЕ / ОБНОВЛЕНИЕ СОБЫТИЯ ===
+            # Совпадение по (минута, тип, сторона) из пула existing_pool —
+            # обновляем поля на месте, id (и реакции на него) не трогаем.
+            matched_existing = None
+            if existing_pool is not None:
+                bucket = existing_pool.get((minute, event_type, team_side))
+                if bucket:
+                    matched_existing = bucket.pop(0)
+
+            if matched_existing is not None:
+                matched_existing.player = player
+                matched_existing.added_time = added_time
+                matched_existing.assist_player = assist_player
+                matched_existing.score_after = score_after
+                matched_existing.player_out = player_out
+                matched_existing.card_reason = card_reason
+                matched_existing.var_decision = var_decision
+                matched_existing.extra_data = evt
+                matched_existing.save()
+                updated_count += 1
+            else:
+                MatchEvent.objects.create(
+                    match=match,
+                    player=player,
+                    minute=minute,
+                    added_time=added_time,
+                    event_type=event_type,
+                    team_side=team_side,
+                    assist_player=assist_player,
+                    score_after=score_after,
+                    player_out=player_out,
+                    card_reason=card_reason,
+                    var_decision=var_decision,
+                    # Сырые данные с API — для отладки.
+                    extra_data=evt,
+                )
+                created_count += 1
+
         except Exception as e:
             logger.error(f"⚠️ Ошибка события: {e} | Data: {evt}", exc_info=True)
             continue
-    
+
+    stale_deleted = 0
+    if existing_pool is not None:
+        stale_ids = [e.id for bucket in existing_pool.values() for e in bucket]
+        if stale_ids:
+            stale_deleted, _ = MatchEvent.objects.filter(id__in=stale_ids).delete()
+            logger.info(
+                f"🗑️ Removed {stale_deleted} stale events for match {match.id} "
+                f"(no longer present in API response)"
+            )
+
     event_count = MatchEvent.objects.filter(match=match).count()
-    logger.info(f"✅ Imported {created_count} events for match {match.id} (total in DB: {event_count})")
+    logger.info(
+        f"✅ Synced events for match {match.id}: {created_count} new, "
+        f"{updated_count} updated, {stale_deleted} removed (total in DB: {event_count})"
+    )
     return True
 
 @transaction.atomic
