@@ -26,6 +26,12 @@ class Notification(BaseModel):
         ('top_performance', _('Топ-выступление')),
         ('verification_required', _('Требуется подтверждение email')),
         ('system', _('Системное уведомление')),
+        # НОВОЕ (4 петли удержания, 2026-08-21) — см. notifications/tasks.py
+        # NOTIFICATION_TYPE_TO_SETTINGS_KEY/DIGESTIBLE_NOTIFICATION_TYPES,
+        # там же полное описание задач, которые их создают.
+        ('prediction_closing', _('Скоро закроется приём прогнозов')),
+        ('weekly_digest', _('Персональная сводка недели')),
+        ('prediction_result', _('Прогноз vs результат матча')),
     ]
 
     user = models.ForeignKey(

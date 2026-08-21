@@ -150,3 +150,68 @@ class Match(BaseModel):
         """Проверка открыто ли голосование"""
         from django.utils import timezone
         return self.status == 'finished' and timezone.now() <= self.voting_open_until
+
+    # Сколько дней ДО стартового свистка открывается приём прогнозов 1X2.
+    # ИЗМЕНЕНО (2026-08-21, по прямому запросу продукта): раньше окно не
+    # имело нижней границы вообще — прогноз можно было отдать хоть за год
+    # вперёд, что бессмысленно (расписание может измениться, состав
+    # неизвестен и т.д.) и обесценивает саму механику "прогноз вслепую
+    # незадолго до игры". Значение подобрано как разумный баланс: достаточно
+    # заранее, чтобы прогноз пожил и набрал голосов сообщества к матчу, но
+    # не настолько рано, чтобы это было гаданием на кофейной гуще.
+    PREDICTION_WINDOW_DAYS = 5
+
+    def prediction_opens_at(self):
+        """Момент открытия окна прогноза — используется и в is_prediction_open(),
+        и в шаблоне виджета для сообщения "прогнозы откроются <дата>"."""
+        from datetime import timedelta
+        return self.start_time - timedelta(days=self.PREDICTION_WINDOW_DAYS)
+
+    def is_prediction_open(self):
+        """
+        Окно для краудсорс-прогноза 1X2 (predictions app, задача "Прогнозы
+        на матчи в стиле Sofascore") — симметрично `is_voting_open()`, но
+        для ПРОТИВОПОЛОЖНОГО края жизни матча: прогноз на исход имеет
+        смысл только ДО стартового свистка, тогда как оценка (evaluations)
+        возможна только ПОСЛЕ него.
+
+        Намеренно НЕ используем только `status == 'scheduled'` без проверки
+        верхней границы времени: `manual_override`-матч мог быть вручную
+        помечен 'scheduled' с устаревшей `start_time` в прошлом (см.
+        коммент у `manual_override` выше) — секундная проверка
+        `timezone.now() < self.start_time` подстраховывает от приёма
+        прогнозов на матч, который по факту уже должен был начаться, даже
+        если статус ещё не синхронизирован.
+
+        НИЖНЯЯ граница — `prediction_opens_at()` (см. `PREDICTION_WINDOW_DAYS`
+        выше) — добавлена 2026-08-21: без неё голосовать можно было хоть за
+        год вперёд.
+        """
+        from django.utils import timezone
+        now = timezone.now()
+        return self.status == 'scheduled' and self.prediction_opens_at() <= now < self.start_time
+
+    def prediction_window_not_yet_open(self):
+        """Отдельно от `is_prediction_open()` — виджету (_prediction_widget.html)
+        нужно различать ДВЕ разных причины "кнопки задизейблены": окно ещё не
+        наступило (этот метод) vs уже закрылось после старта матча. Разные
+        сообщения пользователю, поэтому не сворачиваем в одно bool-значение."""
+        from django.utils import timezone
+        return self.status == 'scheduled' and timezone.now() < self.prediction_opens_at()
+
+    @property
+    def final_result(self):
+        """
+        '1' (победа хозяев) / 'X' (ничья) / '2' (победа гостей) для сверки
+        с прогнозами пользователей, либо None, если матч ещё не завершён
+        или счёт по какой-то причине не заполнен (не должно происходить у
+        `finished`-матча в норме, но `home_score`/`away_score` формально
+        nullable — лучше явно вернуть None, чем уронить сравнение).
+        """
+        if self.status != 'finished' or self.home_score is None or self.away_score is None:
+            return None
+        if self.home_score > self.away_score:
+            return '1'
+        if self.home_score < self.away_score:
+            return '2'
+        return 'X'

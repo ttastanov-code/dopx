@@ -39,6 +39,12 @@ class EventName(models.TextChoices):
     SHARE_CLICKED = "share_clicked", _("Клик 'Поделиться'")
     PROFILE_VIEWED = "profile_viewed", _("Просмотр публичного профиля")
     LEADERBOARD_VIEWED = "leaderboard_viewed", _("Просмотр лидерборда")
+    # 2026-08-21: краудсорс-прогноз 1X2 (predictions app). Один choice —
+    # первая ставка И смена прогноза до старта матча (submit_prediction
+    # использует update_or_create) — воронке для MVP достаточно факта
+    # "пользователь взаимодействовал с прогнозами", не нужно различать эти
+    # два случая отдельными event_name.
+    PREDICTION_MADE = "prediction_made", _("Прогноз на матч сделан")
 
 
 class AnalyticsEvent(models.Model):

@@ -257,6 +257,10 @@ class ProfileView(LoginRequiredMixin, TemplateView):
             'trust_level': user.get_trust_level(),
             'evaluation_streak': user.evaluation_streak,
             'total_matches': user.evaluation_sessions.filter(status='completed').count(),
+            # НОВОЕ (retention loop "Серии", 2026-08-21) — прямой аналог
+            # evaluation_streak выше, для прогнозов 1X2 (predictions app).
+            'prediction_streak': user.prediction_streak,
+            'total_predictions': user.match_predictions.count(),
         }
         # user.context_evaluations не годится источником: ContextEvaluation
         # создаётся уже на первом шаге вайзарда (evaluations/views.py::
@@ -362,6 +366,8 @@ class PublicProfileView(TemplateView):
             'trust_level': profile_user.get_trust_level(),
             'evaluation_streak': profile_user.evaluation_streak,
             'total_matches': profile_user.evaluation_sessions.filter(status='completed').count(),
+            'prediction_streak': profile_user.prediction_streak,
+            'total_predictions': profile_user.match_predictions.count(),
         }
         badges = list(UserBadge.objects.filter(user=profile_user).order_by('-awarded_at'))
         # Секретные бейджи не палим до их получения посторонним — только

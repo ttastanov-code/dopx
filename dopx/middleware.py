@@ -94,32 +94,39 @@ class ContentSecurityPolicyMiddleware:
     внешние <script src="evil.com/x.js">, инъекцию через <base>,
     встраивание сайта в чужой <iframe> и т.д.).
 
-    `'unsafe-eval'` в script-src — ОБЯЗАТЕЛЕН для Alpine.js в том виде, в
-    котором он используется в проекте (x-data="{...}" с inline-выражениями
-    прямо в HTML-атрибутах, без сборки). Alpine компилирует каждое
-    x-data/x-show/x-on/x-text выражение через `new AsyncFunction(...)`
-    (см. alpinejs/dist/cdn.min.js) — это ЕСТЬ eval с точки зрения CSP,
-    отдельно от inline-скриптов, которые покрывает 'unsafe-inline'. Без
-    'unsafe-eval' каждое Alpine-выражение на странице падает молча в
-    консоль (Alpine Expression Error) — тема/дропдаун уведомлений/
-    мобильное меню/scroll-to-top/cookie-баннер и любой x-show/@click
-    перестают работать целиком, при этом HTML рендерится нормально
-    (это и произошло при первом включении CSP — стили вернулись, но вся
-    Alpine-интерактивность отвалилась). Единственная альтернатива —
-    переход на CSP-safe сборку Alpine (@alpinejs/csp), которая запрещает
-    именно inline x-data-выражения и требует регистрировать компоненты
-    через Alpine.data(...) в обычном JS-файле — отдельный рефакторинг всех
-    шаблонов, не блокирующий этот шаг.
+    `'unsafe-eval'` УБРАН из script-src (2026-08-21). Раньше был обязателен,
+    потому что Alpine.js компилировал каждое x-data/x-show/x-on/x-text
+    выражение через `new AsyncFunction(...)` (см. alpinejs/dist/cdn.min.js)
+    — это ЕСТЬ eval с точки зрения CSP, отдельно от инлайновых <script>,
+    которые покрывает 'unsafe-inline'. Устранено переходом на CSP-safe
+    сборку Alpine (@alpinejs/csp, см. templates/base.html/base_auth.html) —
+    она в принципе не использует new Function()/eval, но взамен НЕ
+    поддерживает инлайновые объектные литералы в x-data="{...}". Поэтому
+    ВСЕ x-data по шаблонам переведены на зарегистрированные компоненты
+    (Alpine.data(...) в static/js/alpine-components.js), а x-data в HTML
+    теперь везде выглядит как x-data="имяКомпонента" / x-data="имяКомпонента(аргумент)".
+    Если добавляете новый Alpine-компонент — регистрируйте его ТАМ, а не
+    инлайновым объектным литералом, иначе он молча не заработает под этой
+    сборкой (никакого "просто добавь unsafe-eval обратно" — это осознанный
+    откат небезопасного флага).
+
+    `'unsafe-inline'` в script-src/style-src остаётся — проект всё ещё
+    держит инлайновые <script> и style= по части шаблонов (HTMX-колбэки,
+    инлайновые градиенты). Полное закрытие требует nonce/hash-рефакторинга
+    каждого такого места — отдельная задача, см. docs/BACKLOG.md.
 
     CSP_REPORT_ONLY=True (settings.py) переключает заголовок на
     Content-Security-Policy-Report-Only — браузер логирует нарушения в
-    консоль, но ничего не блокирует. Полезно перед первым включением на
-    проде, чтобы отловить забытый домен, не уронив сайт.
+    консоль, но ничего не блокирует. ОБЯЗАТЕЛЬНО включить это перед первым
+    деплоем данного изменения и живьём в браузере убедиться, что ни один
+    Alpine-компонент не даёт "Alpine Expression Error" / CSP violation в
+    консоли — эта сборка не тестировалась в реальном браузере из песочницы,
+    в которой велась разработка (см. docs/BACKLOG.md).
     """
 
     POLICY = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; "
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
         "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
         "font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com; "
         "img-src 'self' data: https:; "

@@ -41,6 +41,9 @@ urlpatterns = [
     path('analytics/', include('analytics.urls')),
     # namespace 'events' — не путать с matches:events (лента ВСЕХ событий матча).
     path('events/', include('events.urls')),
+    # Краудсорс-прогноз 1X2 (Sofascore-style) — отдельное приложение
+    # predictions/, тот же принцип разделения, что и у events/.
+    path('predictions/', include('predictions.urls')),
     # Staff-дашборд (метрики продукта, здоровье KFF-синка, антифрод-очередь).
     # Доступ — staff_member_required на каждой вьюхе (dashboard/views.py),
     # не на уровне URL-конфига, чтобы поведение было явным и тестируемым.

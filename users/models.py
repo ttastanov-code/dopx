@@ -96,6 +96,21 @@ class User(AbstractUser, BaseModel):
     evaluation_streak = models.IntegerField(_("Серия оценок"), default=0)
     last_evaluation_date = models.DateField(_("Последняя оценка"), null=True, blank=True)
 
+    # НОВОЕ (retention loop "Серии", 2026-08-21): прямой аналог
+    # evaluation_streak/last_evaluation_date выше, но для прогнозов 1X2
+    # (predictions app), а НЕ расширение существующих полей — семантика
+    # "серия оценок" и "серия прогнозов" разная активность, у пользователя
+    # может быть длинная серия одного типа и нулевая другого; смешение в
+    # одно поле стёрло бы это различие и сломало бы уже начисленные бейджи
+    # streak_7/30/100 (users/badges.py), которые жёстко привязаны к
+    # evaluation_streak. Считается по КАЛЕНДАРНЫМ ДНЯМ ставки прогноза (тот
+    # же принцип, что и у update_evaluation_stats), не по "N матчей подряд
+    # без пропуска тура" — пересчёт по турам потребовал бы знать календарь
+    # лиги наперёд и отдельную модель отслеживания, непропорционально
+    # сложно для MVP этой петли удержания.
+    prediction_streak = models.IntegerField(_("Серия прогнозов"), default=0)
+    last_prediction_date = models.DateField(_("Последний прогноз"), null=True, blank=True)
+
     DEFAULT_NOTIFICATION_SETTINGS = {
         "email_match_finished": True,
         "email_voting_closing": True,
@@ -106,6 +121,11 @@ class User(AbstractUser, BaseModel):
         # Если True — badge/level_up/trust-письма собираются в периодический
         # дайджест вместо мгновенной отправки на каждое событие.
         "email_digest_mode": True,
+        # НОВОЕ (2026-08-21) — 4 петли удержания, см.
+        # docs/BACKLOG.md и notifications/tasks.py:
+        "email_prediction_closing": True,  # loop 1: скоро закроется приём прогнозов на матч
+        "email_weekly_summary": True,       # loop 2: персональная сводка недели
+        "email_prediction_result": True,    # loop 3: ваш прогноз vs исход/сообщество
     }
 
     @property
@@ -145,6 +165,30 @@ class User(AbstractUser, BaseModel):
             self.evaluation_streak = 1
         self.last_evaluation_date = today
         self.save(update_fields=["total_evaluations", "evaluation_streak", "last_evaluation_date", "updated_at"])
+
+    def update_prediction_stats(self) -> None:
+        """
+        Прямой аналог `update_evaluation_stats()` для прогнозов — см.
+        комментарий у `prediction_streak` выше. Вызывается ИЗ
+        `predictions/services.py::submit_prediction` только при ПЕРВОЙ
+        ставке на конкретный матч (не при смене выбора П1→Х до старта) —
+        иначе пользователь мог бы искусственно "подкручивать" серию,
+        многократно меняя прогноз в один день (не то чтобы это давало
+        реальную выгоду при посуточном шаге серии, но семантически смена
+        выбора — не новый акт активности).
+        """
+        today = timezone.now().date()
+        if self.last_prediction_date:
+            days_diff = (today - self.last_prediction_date).days
+            if days_diff == 1:
+                self.prediction_streak += 1
+            elif days_diff > 1:
+                self.prediction_streak = 1
+            # days_diff == 0 — та же дата, серию не меняем.
+        else:
+            self.prediction_streak = 1
+        self.last_prediction_date = today
+        self.save(update_fields=["prediction_streak", "last_prediction_date", "updated_at"])
 
     def get_trust_level(self) -> tuple[str, str]:
         if self.trust_score >= 1.8:

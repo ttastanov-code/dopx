@@ -1,25 +1,38 @@
 {% comment %}
 Компонент уведомлений: триггер + дропдаун. Клик — через Alpine (x-data), не
 HTMX. На мобильных дропдаун fixed по центру, на десктопе absolute справа.
+
+ПЕРЕСОБРАНО 2026-08-21 по прямому запросу пользователя после живого теста
+retention loops ("кнопки кривые, непонятно, нельзя прочитать уведомление
+сразу в дропдауне"). Что изменилось по сути:
+  1. Строки уведомлений теперь используют общий партиал
+     components/_notification_item.html (compact=True) — тот же, что и на
+     полной странице /notifications/, с рабочей кнопкой "отметить
+     прочитанным" ПРЯМО в дропдауне (раньше клик по строке просто уводил
+     на action_url, ничего не отмечая — исправлено).
+  2. Счётчик на колокольчике вынесен в отдельный самополлящийся партиал
+     components/_notification_unread_badge.html — раньше "живое"
+     обновление было мёртвым кодом (JS слушал htmx:afterSwap на элементе
+     #notification-badge-container, которого нигде не было в DOM). Теперь
+     число реально обновляется каждые 30с и мгновенно после любой отметки
+     прочитанным (out-of-band swap, см. notifications/views.py::
+     _oob_counters_html).
+  3. Добавлена кнопка "Прочитать все" прямо в шапке дропдауна (раньше была
+     только на отдельной полной странице).
 {% endcomment %}
-<div class="dropdown dropdown-end relative" id="notification-wrapper" x-data="{ open: false }" @click.outside="open = false">
-    
+<div class="dropdown dropdown-end relative" id="notification-wrapper" x-data="notificationDropdown" @click.outside="open = false">
+
     <!-- === ТРИГГЕР (Иконка) === -->
-    <div @click="open = !open" 
+    <div @click="open = !open"
          class="btn btn-ghost btn-circle relative flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 cursor-pointer"
-         :class="{ 'bg-base-200': open }">
+         :class="open ? 'bg-base-200' : ''">
         <i class="ti ti-bell text-lg sm:text-xl leading-none {% if count > 0 %}text-primary{% endif %}"></i>
-        
-        {% if count > 0 %}
-        <span class="badge badge-sm badge-error absolute -top-0.5 -right-0.5 text-white min-w-[1rem] h-4 flex items-center justify-center text-[10px] animate-pulse pointer-events-none">
-            {{ count|truncatechars:2 }}
-        </span>
-        {% endif %}
+        {% include 'components/_notification_unread_badge.html' with count=count %}
     </div>
 
     <!-- === BACKDROP (для мобильных, закрывает при клике вне) === -->
     <!-- На мобильных это затемняет экран, на десктопе скрыт -->
-    <div x-show="open" 
+    <div x-show="open"
          x-transition.opacity
          class="fixed inset-0 bg-black/30 z-[90] sm:hidden"
          @click="open = false"></div>
@@ -33,88 +46,39 @@ HTMX. На мобильных дропдаун fixed по центру, на д�
          x-transition:leave="transition ease-in duration-150"
          x-transition:leave-start="opacity-100 scale-100"
          x-transition:leave-end="opacity-0 scale-95"
-         
+
          class="z-[100] bg-base-100 border border-base-300 shadow-2xl rounded-box overflow-hidden
                 fixed inset-x-4 top-[60px] w-auto max-h-[70vh] sm:absolute sm:inset-auto sm:top-full sm:right-0 sm:mt-2 sm:w-80 sm:max-h-[80vh]">
-        
+
         <!-- Заголовок -->
         <div class="p-3 border-b border-base-300 flex items-center justify-between sticky top-0 bg-base-100 z-10">
             <div>
                 <div class="font-semibold text-sm">Уведомления</div>
                 <div class="text-xs opacity-60" id="notif-count-text">{{ count|default:0 }} непрочитанных</div>
             </div>
-            <div class="flex gap-2">
+            <div class="flex items-center gap-1">
                 {% if count > 0 %}
-                <a href="{% url 'notifications:list' %}" @click="open = false" class="text-xs text-primary hover:underline">Все</a>
+                <button type="button"
+                        title="Прочитать все"
+                        class="btn btn-ghost btn-xs"
+                        hx-post="{% url 'notifications:read-all' %}"
+                        hx-swap="outerHTML"
+                        hx-target="#notif-list-items">
+                    <i class="ti ti-checks"></i>
+                    <span class="hidden sm:inline">Все прочитано</span>
+                </button>
                 {% endif %}
+                <a href="{% url 'notifications:list' %}" @click="open = false" class="btn btn-ghost btn-xs">
+                    <i class="ti ti-external-link"></i>
+                    <span class="hidden sm:inline">Все</span>
+                </a>
                 <button @click="open = false" class="btn btn-ghost btn-xs btn-circle sm:hidden">
                     <i class="ti ti-x"></i>
                 </button>
             </div>
         </div>
-        
+
         <!-- Список -->
-        <div class="overflow-y-auto max-h-[60vh] sm:max-h-80" id="notif-list">
-            {% if count > 0 %}
-                {% for notification in user.notifications.all|slice:":5" %}
-                <a href="{{ notification.action_url|default:'#' }}" 
-                   @click="open = false"
-                   class="flex items-start gap-3 p-3 hover:bg-base-200 transition-colors border-b border-base-200 last:border-b-0 {% if not notification.is_read %}bg-base-200/50{% endif %}">
-                    <div class="w-2 h-2 rounded-full mt-2 flex-shrink-0 {% if not notification.is_read %}bg-primary{% else %}bg-base-300{% endif %}"></div>
-                    <div class="flex-1 min-w-0">
-                        <div class="font-medium text-sm truncate">{{ notification.title }}</div>
-                        <div class="text-xs opacity-70 mt-1 line-clamp-2">{{ notification.message|truncatechars:60 }}</div>
-                        <div class="text-xs opacity-50 mt-2">{{ notification.created_at|timesince }} назад</div>
-                    </div>
-                </a>
-                {% endfor %}
-                
-                <!-- Кнопка "Все уведомления" внизу списка -->
-                <div class="p-2 sticky bottom-0 bg-base-100 border-t border-base-300">
-                    <a href="{% url 'notifications:list' %}" @click="open = false" class="btn btn-sm btn-ghost w-full">
-                        <i class="ti ti-list"></i> Все уведомления
-                    </a>
-                </div>
-            {% else %}
-                <div class="p-8 text-center opacity-60">
-                    <i class="ti ti-bell-off text-4xl mb-3"></i>
-                    <div class="text-sm">Нет уведомлений</div>
-                </div>
-            {% endif %}
-        </div>
+        {% include 'components/_notification_dropdown_items.html' with notifications=user.notifications.all|slice:":5" count=count %}
     </div>
 </div>
-
-<script>
-(function() {
-    let lastKnownCount = {{ count|default:0 }};
-    const originalTitle = document.querySelector('meta[name="original-title"]')?.content || 'DOPX';
-
-    // Обновляем заголовок вкладки
-    function updateTitle(newCount) {
-        if (newCount > 0) {
-            document.title = `(${newCount}) ${originalTitle}`;
-        } else {
-            document.title = originalTitle;
-        }
-    }
-
-    // Слушаем HTMX обновления
-    document.body.addEventListener('htmx:afterSwap', function(event) {
-        if (event.detail.target?.id === 'notification-badge-container' || event.detail.target?.id === 'notification-wrapper') {
-            const wrapper = event.detail.target;
-            const badge = wrapper.querySelector('.badge-error');
-            const newCount = badge ? parseInt(badge.textContent) : 0;
-            if (newCount !== lastKnownCount) {
-                lastKnownCount = newCount;
-                updateTitle(newCount);
-                const countText = document.getElementById('notif-count-text');
-                if (countText) countText.textContent = `${newCount} непрочитанных`;
-            }
-        }
-    });
-
-    // Инициализация
-    updateTitle(lastKnownCount);
-})();
-</script>

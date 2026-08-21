@@ -133,6 +133,34 @@ def check_and_award_badges(user) -> list[UserBadge]:
         if total >= DERBY_HUNTER_MIN_MATCHES:
             _maybe_award_derby_hunter(user, awarded)
 
+        # НОВОЕ (retention loop "Серии", 2026-08-21): прогнозы 1X2 —
+        # ПАРАЛЛЕЛЬНЫЙ набор бейджей поверх user.prediction_streak (см.
+        # users/models.py::User.update_prediction_stats), тот же порог 7/30/100,
+        # что и у streak_7/30/100, но осознанно НЕ переиспользует их —
+        # прогноз и оценка разная активность, см. докстринг у поля.
+        # Не отдельный денормализованный счётчик на User (в отличие от
+        # total_evaluations) — прогнозов на порядки меньше оценок за один
+        # матч (одна запись MatchPrediction на пару user+match), COUNT()
+        # здесь дешёвый и не требует поддерживать ещё одно поле в синхроне.
+        if user.match_predictions.exists():
+            b, created = UserBadge.objects.get_or_create(user=user, badge_type="first_prediction")
+            if created:
+                awarded.append(b)
+
+        prediction_streak = user.prediction_streak
+        if prediction_streak >= 7:
+            b, created = UserBadge.objects.get_or_create(user=user, badge_type="prediction_streak_7")
+            if created:
+                awarded.append(b)
+        if prediction_streak >= 30:
+            b, created = UserBadge.objects.get_or_create(user=user, badge_type="prediction_streak_30")
+            if created:
+                awarded.append(b)
+        if prediction_streak >= 100:
+            b, created = UserBadge.objects.get_or_create(user=user, badge_type="prediction_streak_100")
+            if created:
+                awarded.append(b)
+
     except Exception as e:
         logger.error("Ошибка проверки достижений для %s: %s", user.username, e, exc_info=True)
 

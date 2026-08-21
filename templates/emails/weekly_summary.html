@@ -1,0 +1,54 @@
+<!-- templates/emails/weekly_summary.html -->
+<!-- Retention loop 2 ("персональная недельная сводка"), 2026-08-21.
+     Контекст собирается в notifications/tasks.py::send_weekly_summary на
+     каждого пользователя: evaluations_count, predictions_count,
+     accuracy_pct (None, если за неделю не было прогнозов со известным
+     исходом), top_match (Match или None — общий "матч недели" по
+     aggregates.MatchAggregate, одинаковый для всех писем этой рассылки). -->
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: sans-serif; background: #f5f5f5; margin: 0; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .header { background: linear-gradient(135deg, #111827, #374151); color: #fff; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; margin: -30px -30px 30px -30px; }
+        .stats { display: flex; gap: 12px; margin: 20px 0; }
+        .stat { flex: 1; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px; text-align: center; }
+        .stat .num { font-size: 24px; font-weight: bold; }
+        .stat .label { font-size: 12px; opacity: 0.6; margin-top: 4px; }
+        .match-info { background: #fff7ed; padding: 15px; border-radius: 6px; text-align: center; margin: 20px 0; border: 1px solid #f59e0b; }
+        .btn { display: inline-block; padding: 12px 24px; background: #000; color: #fff; text-decoration: none; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header"><h1>📊 Ваша неделя на DOPX</h1></div>
+        <p>Вот что вы успели за последние 7 дней:</p>
+        <div class="stats">
+            <div class="stat">
+                <div class="num">{{ evaluations_count }}</div>
+                <div class="label">оценок матчей</div>
+            </div>
+            <div class="stat">
+                <div class="num">{{ predictions_count }}</div>
+                <div class="label">прогнозов</div>
+            </div>
+            <div class="stat">
+                <div class="num">{% if accuracy_pct is not None %}{{ accuracy_pct }}%{% else %}—{% endif %}</div>
+                <div class="label">точность прогнозов</div>
+            </div>
+        </div>
+        {% if top_match %}
+        <div class="match-info">
+            <p style="margin: 0 0 6px; font-weight: 600;">🔥 Матч недели по мнению сообщества</p>
+            <h3 style="margin: 0;">{{ top_match.home_team.name }} {{ top_match.get_score_display }} {{ top_match.away_team.name }}</h3>
+        </div>
+        {% endif %}
+        <p style="text-align: center; margin-top: 24px;"><a href="{{ site_url }}/" class="btn">Открыть DOPX</a></p>
+        <p style="font-size: 12px; opacity: 0.5; margin-top: 24px; text-align: center;">
+            Отключить эти письма можно в <a href="{{ site_url }}/users/profile/notifications/">настройках уведомлений</a>.
+        </p>
+    </div>
+</body>
+</html>

@@ -23,7 +23,7 @@
     <a href="{% url 'players:season_recap' player.id %}" class="btn btn-outline btn-sm">
         <i class="ti ti-sparkles"></i> Итоги сезона
     </a>
-    <div x-data="{ open: false, copied: false, copy() { navigator.clipboard.writeText($refs.embedCode.value); this.copied = true; setTimeout(() => this.copied = false, 2000) } }">
+    <div x-data="embedModal">
         <button type="button" @click="open = true" class="btn btn-outline btn-sm">
             <i class="ti ti-code"></i> Получить embed-код
         </button>

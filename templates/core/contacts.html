@@ -24,49 +24,19 @@
           Написать сообщение
         </h2>
         
+        {% comment %}
+        Исходные значения — в data-атрибутах, не аргументами x-data(...).
+        Тот же класс бага, что "Дербии002Дэксперт" у tooltipTrigger (см.
+        core/templatetags/tooltip_tags.py): email с дефисом ловил бы порчу
+        через escapejs() внутри строкового литерала аргумента.
+        {% endcomment %}
         <form method="post"
               enctype="multipart/form-data"
               action="{% url 'core:contacts' %}"
               class="space-y-4 md:space-y-5"
-              x-data="{
-                submitting: false,
-                category: '{{ request.GET.category|default:"general" }}',
-                subject: '',
-                message: '',
-                email: '{{ user.email|default:"" }}',
-                screenshot: null,
-                screenshotPreview: null,
-                handleFileSelect(event) {
-                  const file = event.target.files[0];
-                  if (file) {
-                    if (file.size > 5 * 1024 * 1024) { 
-                      alert('⚠️ Файл слишком большой (макс. 5MB)'); 
-                      return; 
-                    }
-                    this.screenshot = file;
-                    const reader = new FileReader();
-                    reader.onload = (e) => {
-                      this.screenshotPreview = e.target.result;
-                    };
-                    reader.readAsDataURL(file);
-                  }
-                },
-                removeScreenshot() {
-                  this.screenshot = null;
-                  this.screenshotPreview = null;
-                  const input = document.getElementById('screenshot-input');
-                  if (input) input.value = '';
-                },
-                get characterCount() {
-                  return this.message.length;
-                },
-                get isMessageValid() {
-                  return this.message.length >= 20 && this.subject.length >= 5;
-                },
-                get canSubmit() {
-                  return !this.submitting && this.isMessageValid;
-                }
-              }">
+              x-data="contactForm"
+              data-initial-category="{{ request.GET.category|default:'general' }}"
+              data-initial-email="{{ user.email|default:'' }}">
           {% csrf_token %}
           
           <!-- Категория обращения -->

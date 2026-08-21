@@ -14,8 +14,15 @@ text (имя переменной, содержащей текст подска�
 похожий на закрывающую директиву этого блока, где-либо внутри него.
 {% endcomment %}
 {% if text %}
+{% comment %}
+Текст в data-tooltip-text, НЕ аргументом функции в x-data — см. подробное
+объяснение в core/templatetags/tooltip_tags.py (баг "Дербии002Дэксперт",
+2026-08-21): CSP-евалуатор Alpine не раскрывает \uXXXX-эскейпы escapejs()
+внутри строковых литералов x-data-выражения.
+{% endcomment %}
 <span class="relative inline-flex align-middle"
-      x-data="tooltipTrigger('{{ text|escapejs }}')"
+      x-data="tooltipTrigger"
+      data-tooltip-text="{{ text }}"
       @click.outside="hide()">
     <button type="button"
             x-ref="trigger"

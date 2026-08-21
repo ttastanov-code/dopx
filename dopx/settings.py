@@ -84,6 +84,7 @@ INSTALLED_APPS = [
     'referees',
     'parsers',
     'events',
+    'predictions',
     'lineups',
     'notifications',
     'dashboard',
@@ -475,6 +476,21 @@ if not DEBUG:
     SECURE_HSTS_PRELOAD = True
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
+# Сколько ДОВЕРЕННЫХ обратных прокси реально стоит перед Gunicorn — в
+# типовой схеме nginx -> gunicorn это 1. core.utils.get_client_ip берёт
+# IP-адрес на этой позиции С КОНЦА цепочки X-Forwarded-For, а не первый
+# элемент: nginx с `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`
+# ДОПИСЫВАЕТ реальный IP клиента в конец заголовка, а не заменяет его —
+# значит именно последний элемент нельзя подделать снаружи (всё, что
+# ЛЕВЕЕ него в списке, атакующий мог вписать сам). Раньше брался первый
+# элемент — целиком контролируется клиентом, обходит IP rate limit одной
+# строкой заголовка. Это не заменяет требование ЗАКРЫТЬ прямой доступ к
+# Gunicorn извне (файрвол/security group) — без этого шага даже правильный
+# разбор XFF не спасает: у атакующего, зашедшего напрямую в обход nginx,
+# в заголовке будет всего один (подделанный) элемент, и он и окажется
+# "последним". См. docs/BACKLOG.md.
+TRUSTED_PROXY_COUNT = int(os.getenv('TRUSTED_PROXY_COUNT', 1))
+
 # Idle-таймаут сессии ТОЛЬКО для staff (is_staff=True) — обычные пользователи
 # сайта под этот лимит не попадают. См. dopx/middleware.py::StaffSessionSecurityMiddleware.
 STAFF_SESSION_IDLE_TIMEOUT_SECONDS = int(os.getenv('STAFF_SESSION_IDLE_TIMEOUT_SECONDS', 30 * 60))
@@ -612,6 +628,29 @@ CELERY_BEAT_SCHEDULE = {
     'award-monthly-champion-badge': {
         'task': 'users.tasks.award_monthly_champion_badge',
         'schedule': crontab(hour=3, minute=0, day_of_month=1),
+    },
+    # === 4 петли удержания (2026-08-21) ===
+    # Loop 1: напоминание о закрытии приёма прогнозов — тот же интервал,
+    # что и у voting-closing-reminders выше (симметричная задача, окно
+    # закрытия «на другом конце» жизни матча — см. notify_prediction_closing_soon).
+    'prediction-closing-reminders': {
+        'task': 'notifications.tasks.notify_prediction_closing_soon',
+        'schedule': crontab(minute='*/30'),
+    },
+    # Loop 3: «ваш прогноз vs результат» — раз в 30 минут достаточно: окно
+    # дедупликации внутри задачи (Notification уже создан для пары
+    # match+user) не даёт дублей при более частых прогонах, а более редкие
+    # прогоны просто увеличили бы задержку между финальным свистком и письмом.
+    'prediction-results': {
+        'task': 'notifications.tasks.notify_prediction_results',
+        'schedule': crontab(minute='*/30'),
+    },
+    # Loop 2: персональная сводка недели — раз в неделю, понедельник в
+    # 10:00 (по аналогии с ежемесячным award-monthly-champion-badge выше,
+    # но чаще — недельный, а не месячный ритм активности).
+    'weekly-summary': {
+        'task': 'notifications.tasks.send_weekly_summary',
+        'schedule': crontab(day_of_week=1, hour=10, minute=0),
     },
 }
 

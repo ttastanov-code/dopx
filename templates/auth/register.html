@@ -18,14 +18,8 @@
             <!-- Форма -->
             <form method="post" action="{% url 'users:register' %}"
                   class="space-y-4"
-                  x-data="{
-                      showPassword1: false,
-                      showPassword2: false,
-                      password: '',
-                      confirmPassword: '',
-                      passwordsMatch: true
-                  }"
-                  @submit="passwordsMatch = password === confirmPassword">
+                  x-data="registerForm"
+                  @submit="checkMatch()">
                 {% csrf_token %}
 
                 <!-- АНТИ-БОТ: honeypot-поле, невидимое человеку (визуально

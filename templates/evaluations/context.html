@@ -60,13 +60,22 @@
                 <p class="text-xs text-base-content/60">Расскажите, как вы смотрели этот матч</p>
             </div>
 
+            {% comment %}
+            Исходные значения — в data-атрибутах, не аргументами x-data(...).
+            Раньше supported_team (UUID команды, содержит дефисы!) шёл через
+            escapejs() прямо в строковый литерал вызова matchContextForm(...) —
+            тот же класс бага, что "Дербии002Дэксперт" у tooltipTrigger (см.
+            core/templatetags/tooltip_tags.py): CSP-евалуатор Alpine не
+            раскрывает \uXXXX-эскейпы внутри строковых литералов аргументов,
+            из-за чего supportedTeam мог тихо не совпадать с value радиокнопок
+            и подсветка выбранной команды могла ломаться.
+            {% endcomment %}
             <form method="post" action="{% url 'evaluations:context' match.id %}"
                   class="space-y-5"
-                  x-data="{
-                      supportedTeam: '{{ form.supported_team.value|default:'' }}',
-                      watchedType: '{{ form.watched_type.value|default:'full' }}',
-                      attendedStadium: {{ form.attended_stadium.value|default:'false'|lower }}
-                  }">
+                  x-data="matchContextForm"
+                  data-supported-team="{{ form.supported_team.value|default:'' }}"
+                  data-watched-type="{{ form.watched_type.value|default:'full' }}"
+                  data-attended-stadium="{{ form.attended_stadium.value|yesno:'true,false' }}">
                 {% csrf_token %}
 
                 <!-- За какую команду болеете? -->

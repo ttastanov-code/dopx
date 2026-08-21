@@ -56,7 +56,7 @@ FILE: templates/notifications/list.html (ENTERPRISE - v2.1 IMPROVED)
         </div>
         <div>
           <div class="text-[10px] md:text-xs opacity-60">Непрочитанные</div>
-          <div class="text-base md:text-xl font-bold text-warning">{{ unread_count }}</div>
+          <div class="text-base md:text-xl font-bold text-warning" id="stat-unread-count">{{ unread_count }}</div>
         </div>
       </div>
     </div>
@@ -70,7 +70,7 @@ FILE: templates/notifications/list.html (ENTERPRISE - v2.1 IMPROVED)
         </div>
         <div>
           <div class="text-[10px] md:text-xs opacity-60">Прочитанные</div>
-          <div class="text-base md:text-xl font-bold text-success">
+          <div class="text-base md:text-xl font-bold text-success" id="stat-read-count">
             {{ read_count|default:0 }}
           </div>
         </div>
@@ -136,104 +136,13 @@ FILE: templates/notifications/list.html (ENTERPRISE - v2.1 IMPROVED)
 </div>
 
 <!-- === СПИСОК УВЕДОМЛЕНИЙ === -->
+<!-- Каждая карточка — общий партиал components/_notification_item.html
+     (compact=False), тот же, что используется в дропдауне колокольчика
+     (compact=True) — единая логика/стиль кнопок вместо двух разошедшихся
+     копий вёрстки, см. докстринг партиала. -->
 <div class="space-y-2 md:space-y-3 px-2 sm:px-0">
   {% for notification in notifications %}
-  <div class="card bg-base-100 border border-base-300
-    {% if not notification.is_read %}border-primary bg-primary/5 shadow-md{% else %}opacity-80{% endif %}
-    hover:shadow-lg transition-all duration-200"
-    id="notification-{{ notification.id }}"
-    data-notification-id="{{ notification.id }}"
-    data-is-read="{{ notification.is_read|lower }}">
-    <div class="card-body p-3 md:p-4">
-      <div class="flex flex-col sm:flex-row items-start justify-between gap-3 md:gap-4">
-        <!-- Левая часть: иконка + контент -->
-        <div class="flex items-start gap-2 md:gap-3 flex-1 min-w-0 w-full">
-          <!-- Иконка типа уведомления -->
-          <div class="w-10 h-10 md:w-12 md:h-12 rounded-xl flex items-center justify-center flex-shrink-0
-            {% if notification.notification_type == 'match_finished' %}bg-success/10 text-success
-            {% elif notification.notification_type == 'voting_open' %}bg-primary/10 text-primary
-            {% elif notification.notification_type == 'voting_closing' %}bg-warning/10 text-warning
-            {% elif notification.notification_type == 'top_performance' %}bg-accent/10 text-accent
-            {% elif notification.notification_type == 'new_badge' %}bg-info/10 text-info
-            {% elif notification.notification_type == 'level_up' %}bg-warning/10 text-warning
-            {% elif notification.notification_type == 'system' %}bg-base-200 text-base-content
-            {% elif 'ticket' in notification.notification_type %}bg-primary/10 text-primary
-            {% else %}bg-base-200 text-base-content{% endif %}">
-            {% if notification.notification_type == 'match_finished' %}<i class="ti ti-check text-lg md:text-xl"></i>
-            {% elif notification.notification_type == 'voting_open' %}<i class="ti ti-star text-lg md:text-xl"></i>
-            {% elif notification.notification_type == 'voting_closing' %}<i class="ti ti-clock text-lg md:text-xl"></i>
-            {% elif notification.notification_type == 'top_performance' %}<i class="ti ti-medal text-lg md:text-xl"></i>
-            {% elif notification.notification_type == 'new_badge' %}<i class="ti ti-award text-lg md:text-xl"></i>
-            {% elif notification.notification_type == 'level_up' %}<i class="ti ti-trending-up text-lg md:text-xl"></i>
-            {% elif notification.notification_type == 'system' %}<i class="ti ti-info-circle text-lg md:text-xl"></i>
-            {% elif notification.notification_type == 'new_ticket' %}<i class="ti ti-ticket text-lg md:text-xl"></i>
-            {% elif notification.notification_type == 'admin_reply' %}<i class="ti ti-message text-lg md:text-xl"></i>
-            {% elif notification.notification_type == 'ticket_resolved' %}<i class="ti ti-check-circle text-lg md:text-xl"></i>
-            {% elif notification.notification_type == 'ticket_closed' %}<i class="ti ti-lock text-lg md:text-xl"></i>
-            {% else %}<i class="ti ti-bell text-lg md:text-xl"></i>{% endif %}
-          </div>
-          <!-- Контент уведомления -->
-          <div class="flex-1 min-w-0">
-            <!-- Заголовок + индикатор непрочитанного -->
-            <div class="flex items-center gap-2 mb-1">
-              <h3 class="font-semibold text-sm md:text-base {% if not notification.is_read %}text-primary{% endif %} truncate">
-                {{ notification.title }}
-              </h3>
-              {% if not notification.is_read %}
-              <span class="w-2 h-2 rounded-full bg-primary flex-shrink-0" title="Непрочитанное"></span>
-              {% endif %}
-            </div>
-            <!-- Текст сообщения -->
-            <p class="text-xs md:text-sm opacity-70 mb-2 line-clamp-2">
-              {{ notification.message }}
-            </p>
-            <!-- Мета-информация -->
-            <div class="flex flex-wrap items-center gap-2 md:gap-3 text-[10px] md:text-xs opacity-50">
-              <span class="flex items-center gap-1">
-                <i class="ti ti-clock"></i>
-                {{ notification.created_at|timesince }} назад
-              </span>
-              <span class="font-mono hidden sm:inline">
-                {{ notification.created_at|date:"d.m.Y H:i" }}
-              </span>
-              {% if notification.related_match %}
-              <a href="{% url 'matches:detail' notification.related_match.id %}"
-                 class="flex items-center gap-1 hover:text-primary transition-colors truncate max-w-[150px] sm:max-w-none">
-                <i class="ti ti-trophy"></i>
-                {{ notification.related_match.home_team.name }} vs {{ notification.related_match.away_team.name }}
-              </a>
-              {% endif %}
-            </div>
-          </div>
-        </div>
-        <!-- === ПРАВАЯ ЧАСТЬ: ДЕЙСТВИЯ === -->
-        <div class="flex flex-col sm:flex-row gap-2 flex-shrink-0 w-full sm:w-auto">
-          {% if notification.action_url %}
-          <a href="{{ notification.action_url }}"
-             class="btn btn-sm btn-primary justify-center sm:w-28"
-             {% if not notification.is_read %}
-             hx-post="{% url 'notifications:read' notification.id %}"
-             hx-trigger="click"
-             hx-swap="none"
-             {% endif %}>
-            <i class="ti ti-arrow-right"></i>
-            <span class="hidden sm:inline">Перейти</span>
-          </a>
-          {% endif %}
-          {% if not notification.is_read %}
-          <form method="post" action="{% url 'notifications:read' notification.id %}" class="w-full sm:w-auto">
-            {% csrf_token %}
-            <button type="submit"
-                    class="btn btn-sm btn-outline btn-success justify-center w-full sm:w-28 gap-2 transition-all duration-200 hover:scale-[1.02]">
-              <i class="ti ti-check text-lg"></i>
-              <span class="hidden sm:inline text-sm font-medium">Прочитано</span>
-            </button>
-          </form>
-          {% endif %}
-        </div>
-      </div>
-    </div>
-  </div>
+    {% include 'components/_notification_item.html' with notification=notification compact=False %}
   {% empty %}
   <!-- Пустой список -->
   <div class="card bg-base-100 border border-base-300">
@@ -290,78 +199,28 @@ FILE: templates/notifications/list.html (ENTERPRISE - v2.1 IMPROVED)
 </div>
 {% endif %}
 
-<!-- === HTMX POLLING ДЛЯ ОБНОВЛЕНИЯ СЧЁТЧИКОВ === -->
-<div id="notifications-refresh"
-     class="hidden"
-     data-background-poll
-     hx-get="{% url 'notifications:badge_partial' %}"
-     hx-trigger="every 30s"
-     hx-swap="none">
-</div>
-
-<!-- === СКРИПТ ДЛЯ УВЕДОМЛЕНИЙ БРАУЗЕРА === -->
-<script>
-(function() {
-  let lastKnownCount = {{ unread_count|default:0 }};
-  let notificationPermissionRequested = false;
-  function requestNotificationPermission() {
-    if (!('Notification' in window)) return;
-    if (Notification.permission === 'granted') return;
-    if (Notification.permission === 'denied') return;
-    if (notificationPermissionRequested) return;
-    notificationPermissionRequested = true;
-    Notification.requestPermission().then(permission => { console.log('Notification permission:', permission); });
-  }
-  function showBrowserNotification(newCount) {
-    if (!('Notification' in window)) return;
-    if (Notification.permission !== 'granted') return;
-    if (document.visibilityState === 'visible') return;
-    if (window._lastNotificationTime && Date.now() - window._lastNotificationTime < 10000) return;
-    new Notification('DOPX — Новые уведомления', {
-      body: `У вас ${newCount} непрочитанных уведомлений`,
-      icon: '/static/img/DOPX_logo.png',
-      tag: 'dopx-notification',
-      requireInteraction: false,
-      silent: false
-    });
-    window._lastNotificationTime = Date.now();
-  }
-  function onHtmxAfterSwap(event) {
-    const target = event.detail.target;
-    if (!target || target.id !== 'notification-badge-container') return;
-    const newCount = parseInt(target.dataset.unreadCount || '0', 10);
-    if (newCount > lastKnownCount && newCount > 0) showBrowserNotification(newCount);
-    lastKnownCount = newCount;
-    if (newCount > 0) {
-      const currentTitle = document.title.replace(/^\(\d+\)\s*/, '');
-      document.title = `(${newCount}) ${currentTitle}`;
-    } else {
-      const currentTitle = document.title.replace(/^\(\d+\)\s*/, '');
-      document.title = currentTitle;
-    }
-  }
-  function setupNotificationClicks() {
-    document.querySelectorAll('[id^="notification-"]').forEach(card => {
-      card.addEventListener('click', function(e) {
-        if (e.target.tagName !== 'A' && e.target.tagName !== 'BUTTON' && !e.target.closest('form') && !e.target.closest('a')) {
-          const actionUrl = this.querySelector('a.btn-primary');
-          if (actionUrl) actionUrl.click();
-        }
-      });
-    });
-  }
-  function init() {
-    requestNotificationPermission();
-    setupNotificationClicks();
-    document.body.addEventListener('htmx:afterSwap', onHtmxAfterSwap);
-    document.addEventListener('visibilitychange', function() {
-      if (document.visibilityState === 'visible') {
-        const currentTitle = document.title.replace(/^\(\d+\)\s*/, '');
-        document.title = currentTitle;
-      }
-    });
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
-})();
-</script>
+{% comment %}
+УБРАНО 2026-08-21 (пересборка UI уведомлений): раньше здесь жили скрытый
+HTMX-поллер и большой инлайн-<script> — оба привязаны к элементу с id
+"notification-badge-container", которого никогда не было в DOM (мёртвый
+код, ничего не работало). Что стало с каждым куском:
+  - Поллинг счётчика — теперь у #notif-unread-badge внутри самого
+    колокольчика (components/_notification_unread_badge.html), он есть на
+    КАЖДОЙ странице сайта через _navbar.html, отдельный поллер на этой
+    конкретной странице был избыточен.
+  - Обновление заголовка вкладки — static/js/notifications.js, один
+    слушатель на всё приложение (base.html), не дублируется на каждой
+    странице.
+  - "Клик в любом месте карточки" (setupNotificationClicks) — костыль
+    вокруг того, что раньше действия жили в кликабельных <a>/<button> с
+    неочевидными зонами клика. components/_notification_item.html теперь
+    рендерит настоящие интерактивные элементы (форма/кнопка), обходной
+    JS не нужен.
+  - showBrowserNotification (Notification API) — сознательно НЕ перенесено:
+    дублировало уже существующий полноценный Web Push (VAPID, static/js/
+    push.js) — тот работает даже когда вкладка сайта вообще не открыта, а
+    не только "открыта, но не в фокусе". Два независимых механизма
+    "нативных" уведомлений создавали риск дублирующихся всплывающих
+    сообщений без дополнительной пользы.
+{% endcomment %}
 {% endblock %}

@@ -1,0 +1,162 @@
+{% comment %}
+templates/components/_notification_item.html
+Единая вёрстка ОДНОЙ строки уведомления — переиспользуется И в дропдауне
+колокольчика (_notification_dropdown_items.html, compact=True), И на
+полной странице /notifications/ (list.html, compact=False).
+
+ПОЧЕМУ ЭТОТ ФАЙЛ ПОЯВИЛСЯ (2026-08-21, по прямому запросу пользователя
+после живого теста retention loops — "кнопки кривые, непонятно, нельзя
+прочитать уведомление сразу в дропдауне"): раньше это были ДВЕ независимые
+вёрстки с разным поведением:
+  - в дропдауне клик по строке НЕ отмечал уведомление прочитанным вообще
+    (только переход по ссылке, без hx-post) — то есть колокольчик нельзя
+    было "разгрести" не уходя на отдельную страницу;
+  - на полной странице кнопки "Перейти"/"Прочитано" разъехались по
+    стилю/ширине/hover-эффекту (первая — filled primary, вторая — outline
+    success с лишним hover:scale-[1.02] и w-full/sm:w-28 через ДВА разных
+    родительских контейнера) — то, что пользователь описал как "кривые".
+Единый партиал устраняет расхождение НА УРОВНЕ РАЗМЕТКИ, а не точечными
+CSS-подгонками, которые опять разъедутся при следующей правке одного из
+двух старых файлов.
+
+Переход по уведомлению — ОБЫЧНАЯ HTML-форма (POST + редирект на next), не
+hx-post на <a href>: так надёжнее (см. подробности в notifications/views.py
+::MarkAsReadView) — работает гарантированно, без риска, что htmx
+перехватит клик по ссылке и отменит браузерную навигацию.
+
+Быстрая отметка "прочитано" (без перехода) — отдельная маленькая
+icon-кнопка, HTMX hx-post + hx-swap="outerHTML" на саму строку: ответ
+сервера — эта же строка в прочитанном виде + OOB-хвост счётчиков (см.
+notifications/views.py::_oob_counters_html). Именно эта кнопка чинит
+жалобу "нельзя прочитать сразу в дропдауне".
+
+Контекст:
+  notification — объект Notification.
+  compact — bool (default False) — влияет только на плотность вёрстки
+    (дропдаун ужат, без даты/матча вторым планом).
+{% endcomment %}
+<div id="notification-{{ notification.id }}"
+     class="flex items-start gap-2.5 sm:gap-3
+            {% if compact %}
+              p-3 border-b border-base-200 last:border-b-0 hover:bg-base-200/60 transition-colors
+              {% if not notification.is_read %}bg-primary/5{% endif %}
+            {% else %}
+              card bg-base-100 border p-3 md:p-4 rounded-2xl hover:shadow-md transition-shadow
+              {% if not notification.is_read %}border-primary/40 bg-primary/5{% else %}border-base-300{% endif %}
+            {% endif %}">
+
+    {% comment %} Иконка типа уведомления {% endcomment %}
+    <div class="{% if compact %}w-9 h-9{% else %}w-10 h-10 md:w-12 md:h-12{% endif %} rounded-xl flex items-center justify-center flex-shrink-0
+        {% if notification.notification_type == 'match_finished' %}bg-success/10 text-success
+        {% elif notification.notification_type == 'voting_open' %}bg-primary/10 text-primary
+        {% elif notification.notification_type == 'voting_closing' or notification.notification_type == 'prediction_closing' %}bg-warning/10 text-warning
+        {% elif notification.notification_type == 'top_performance' %}bg-accent/10 text-accent
+        {% elif notification.notification_type == 'new_badge' %}bg-info/10 text-info
+        {% elif notification.notification_type == 'level_up' %}bg-warning/10 text-warning
+        {% elif notification.notification_type == 'prediction_result' %}bg-accent/10 text-accent
+        {% elif notification.notification_type == 'weekly_digest' %}bg-info/10 text-info
+        {% elif notification.notification_type == 'system' or notification.notification_type == 'verification_required' %}bg-base-200 text-base-content
+        {% elif 'ticket' in notification.notification_type or notification.notification_type == 'admin_reply' %}bg-primary/10 text-primary
+        {% else %}bg-base-200 text-base-content{% endif %}">
+        <i class="ti {% if notification.notification_type == 'match_finished' %}ti-check
+            {% elif notification.notification_type == 'voting_open' %}ti-star
+            {% elif notification.notification_type == 'voting_closing' or notification.notification_type == 'prediction_closing' %}ti-clock
+            {% elif notification.notification_type == 'top_performance' %}ti-medal
+            {% elif notification.notification_type == 'new_badge' %}ti-award
+            {% elif notification.notification_type == 'level_up' %}ti-trending-up
+            {% elif notification.notification_type == 'prediction_result' %}ti-target-arrow
+            {% elif notification.notification_type == 'weekly_digest' %}ti-calendar-stats
+            {% elif notification.notification_type == 'system' or notification.notification_type == 'verification_required' %}ti-info-circle
+            {% elif notification.notification_type == 'new_ticket' %}ti-ticket
+            {% elif notification.notification_type == 'admin_reply' %}ti-message
+            {% elif notification.notification_type == 'ticket_resolved' %}ti-check-circle
+            {% elif notification.notification_type == 'ticket_closed' %}ti-lock
+            {% else %}ti-bell{% endif %} {% if compact %}text-base{% else %}text-lg md:text-xl{% endif %}"></i>
+    </div>
+
+    {% comment %} Контент — заголовок/текст/мета, кликабельный только если есть action_url {% endcomment %}
+    <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2">
+            <h3 class="font-semibold {% if compact %}text-sm{% else %}text-sm md:text-base{% endif %} truncate {% if not notification.is_read %}text-primary{% endif %}">
+                {{ notification.title }}
+            </h3>
+            {% if not notification.is_read %}
+            <span class="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0" title="Непрочитано"></span>
+            {% endif %}
+        </div>
+        <p class="{% if compact %}text-xs opacity-70 mt-0.5 line-clamp-2{% else %}text-xs md:text-sm opacity-70 mt-1 mb-2{% endif %} {% if not compact %}line-clamp-2{% endif %}">
+            {% if compact %}{{ notification.message|truncatechars:72 }}{% else %}{{ notification.message }}{% endif %}
+        </p>
+        <div class="flex flex-wrap items-center gap-2 md:gap-3 text-[10px] md:text-xs opacity-50">
+            <span class="flex items-center gap-1"><i class="ti ti-clock"></i>{{ notification.created_at|timesince }} назад</span>
+            {% if not compact %}
+            <span class="font-mono hidden sm:inline">{{ notification.created_at|date:"d.m.Y H:i" }}</span>
+            {% if notification.related_match %}
+            <a href="{% url 'matches:detail' notification.related_match.id %}"
+               class="flex items-center gap-1 hover:text-primary transition-colors truncate max-w-[150px] sm:max-w-none">
+                <i class="ti ti-trophy"></i>{{ notification.related_match.home_team.name }} vs {{ notification.related_match.away_team.name }}
+            </a>
+            {% endif %}
+            {% endif %}
+        </div>
+
+        {% comment %} На полной странице действия идут ПОД текстом, единой строкой — не отдельным правым столбцом, который на мобильном разъезжался в "кривые" разноширокие кнопки. {% endcomment %}
+        {% if not compact %}
+        <div class="flex items-center gap-2 mt-3">
+            {% if notification.action_url %}
+            <form method="post" action="{% url 'notifications:read' notification.id %}" class="inline">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ notification.action_url }}">
+                <button type="submit" class="btn btn-sm btn-primary gap-1.5">
+                    <i class="ti ti-arrow-right text-base"></i> Перейти
+                </button>
+            </form>
+            {% endif %}
+            {% if not notification.is_read %}
+            <button type="button"
+                    title="Отметить прочитанным"
+                    class="btn btn-sm btn-ghost btn-circle"
+                    hx-post="{% url 'notifications:read' notification.id %}"
+                    hx-swap="outerHTML"
+                    hx-target="#notification-{{ notification.id }}">
+                <i class="ti ti-check text-base"></i>
+            </button>
+            {% else %}
+            <span class="text-xs text-success/70 flex items-center gap-1">
+                <i class="ti ti-circle-check"></i> Прочитано
+            </span>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+
+    {% comment %} В дропдауне действие — маленькая иконка справа, компактно {% endcomment %}
+    {% if compact %}
+        {% if not notification.is_read %}
+        <button type="button"
+                title="Отметить прочитанным"
+                class="btn btn-ghost btn-xs btn-circle flex-shrink-0 opacity-60 hover:opacity-100 hover:text-success"
+                hx-post="{% url 'notifications:read' notification.id %}?compact=1"
+                hx-swap="outerHTML"
+                hx-target="#notification-{{ notification.id }}">
+            <i class="ti ti-check text-sm"></i>
+        </button>
+        {% endif %}
+        {% if notification.action_url %}
+        {% comment %}
+        ФОРМА, не <a href> — тот же паттерн "POST → mark-as-read →
+        редирект на next", что и на полной странице (см. докстринг вверху
+        файла): гарантирует и переход, и отметку прочитанным одним кликом,
+        без зависимости от того, как именно htmx обработал бы клик по
+        ссылке с hx-атрибутами.
+        {% endcomment %}
+        <form method="post" action="{% url 'notifications:read' notification.id %}" class="inline">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{{ notification.action_url }}">
+            <button type="submit" title="Перейти" class="btn btn-ghost btn-xs btn-circle flex-shrink-0 opacity-60 hover:opacity-100 hover:text-primary">
+                <i class="ti ti-arrow-right text-sm"></i>
+            </button>
+        </form>
+        {% endif %}
+    {% endif %}
+</div>
