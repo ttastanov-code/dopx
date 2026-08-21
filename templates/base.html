@@ -215,16 +215,31 @@
         document.body.addEventListener('htmx:configRequest', (event) => {
             event.detail.headers['X-CSRFToken'] = '{{ csrf_token }}';
         });
-        document.body.addEventListener('htmx:beforeRequest', () => {
+        // Фоновый поллинг (hx-trigger="every Ns", data-background-poll на
+        // корневом элементе — см. dashboard/data_health.html, parser_tools.html,
+        // matches/_match_header.html и т.д.) НЕ должен показывать глобальный
+        // full-screen лоадер: иначе на страницах с частым автообновлением
+        // (staff-дашборд) экран мигает полупрозрачным оверлеем каждые 10-15с
+        // и блокирует клики — реальная жалоба "невозможно работать в
+        // дашборде". Глобальный лоадер остаётся только для запросов,
+        // инициированных самим пользователем (клик/сабмит).
+        function isBackgroundPoll(event) {
+            return !!event.detail.elt.closest('[data-background-poll]');
+        }
+        document.body.addEventListener('htmx:beforeRequest', (event) => {
+            if (isBackgroundPoll(event)) return;
             document.body.classList.add('htmx-request');
         });
-        document.body.addEventListener('htmx:afterRequest', () => {
+        document.body.addEventListener('htmx:afterRequest', (event) => {
+            if (isBackgroundPoll(event)) return;
             document.body.classList.remove('htmx-request');
         });
-        document.body.addEventListener('htmx:responseError', () => {
+        document.body.addEventListener('htmx:responseError', (event) => {
+            if (isBackgroundPoll(event)) return;
             document.body.classList.remove('htmx-request');
         });
-        document.body.addEventListener('htmx:timeout', () => {
+        document.body.addEventListener('htmx:timeout', (event) => {
+            if (isBackgroundPoll(event)) return;
             document.body.classList.remove('htmx-request');
         });
         // DaisyUI toast helper

@@ -145,7 +145,12 @@ class HomeView(TemplateView):
 
 def standings_preview(request):
     """HTMX partial превью турнирной таблицы — читает готовую TeamSeasonStats, не пересчитывает на лету."""
-    season = Season.objects.filter(is_active=True).first()
+    # Раньше: Season.objects.filter(is_active=True).first() без фильтра
+    # по лиге — с одной лигой на сайте это случайно давало верный ответ,
+    # но как только появится вторая лига со своим активным сезоном (Кубок
+    # Казахстана и т.п.), выбор таблицы стал бы зависеть от Season.Meta.ordering,
+    # а не от осмысленного решения. См. docs/BACKLOG.md, находка 1.
+    season = Season.get_primary_active()
     if not season:
         return HttpResponse('''
         <div class="text-center py-8 opacity-60">

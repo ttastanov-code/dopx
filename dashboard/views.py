@@ -76,6 +76,20 @@ def data_health(request):
 
 
 @staff_member_required
+def data_health_partial(request):
+    """Той же контент, что и data_health(), но без base.html/_nav.html —
+    цель HTMX-поллинга (hx-get каждые 15с, см. templates/dashboard/
+    data_health.html). Тот же паттерн, что уже используется для
+    live-обновления шапки/событий матча (templates/matches/_match_header.html,
+    _match_events.html)."""
+    context = {
+        "health": services.data_health_summary(),
+        "infra": infra_services.infra_health(),
+    }
+    return render(request, "dashboard/_data_health_content.html", context)
+
+
+@staff_member_required
 @require_POST
 def data_health_resync_match(request, match_id):
     """Кнопка «Досинхронизировать» у конкретного матча в data-health —
@@ -221,6 +235,17 @@ def parser_tools_view(request):
         "celery_tasks": parser_tools.list_active_celery_tasks(),
     }
     return render(request, "dashboard/parser_tools.html", context)
+
+
+@staff_member_required
+def parser_tasks_partial(request):
+    """Карточка «Очередь celery» на странице parser_tools — цель
+    HTMX-поллинга (hx-get каждые 10с). Только этот кусок, а не вся
+    страница — иначе перетирались бы форма поиска и просмотр сырого
+    ответа KFF, которые staff мог только что заполнить (см. комментарий
+    в _celery_tasks_card.html)."""
+    context = {"celery_tasks": parser_tools.list_active_celery_tasks()}
+    return render(request, "dashboard/_celery_tasks_card.html", context)
 
 
 @staff_member_required

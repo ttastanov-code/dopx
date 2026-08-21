@@ -24,11 +24,7 @@
           <i class="ti ti-users"></i> {{ coach.team.name }}
         </a>
         {% endif %}
-        <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
-          <div class="stat bg-base-200 rounded-lg p-2 md:p-3">
-            <div class="stat-title text-xs">Матчей</div>
-            <div class="stat-value text-lg md:text-xl">{{ stats.total_matches|default:0 }}</div>
-          </div>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div class="stat bg-base-200 rounded-lg p-2 md:p-3">
             <div class="stat-title text-xs">Тактика</div>
             <div class="stat-value text-lg md:text-xl text-accent">{{ stats.avg_tactics|floatformat:1|default:"-" }}</div>
@@ -56,15 +52,24 @@
   <!-- === ЛЕВАЯ КОЛОНКА (2/3) === -->
   <div class="lg:col-span-2 space-y-4 md:space-y-6 min-w-0">
     
-    <!-- === ПОСЛЕДНИЕ МАТЧИ === -->
+    <!-- === ФОРМА КОМАНДЫ === -->
+    <!-- Раньше это был "матчи тренера" (Match.home_coach/away_coach) —
+         убрано намеренно: источник данных (KFF) не хранит историю смен
+         тренера, при смене старые матчи в их системе задним числом
+         переприкрепляются к новому тренеру. Показываем честно: это
+         результаты команды, а не персональная статистика тренера. -->
     <div class="card bg-base-100 border border-base-300">
       <div class="card-body p-3 md:p-4">
-        <h3 class="font-bold text-base md:text-lg mb-3 md:mb-4">
-          <i class="ti ti-clock mr-2"></i>Последние матчи
+        <h3 class="font-bold text-base md:text-lg mb-1 flex items-center gap-2">
+          <i class="ti ti-clock mr-2"></i>Форма команды{% if coach.team %} — {{ coach.team.name }}{% endif %}
         </h3>
-        {% if matches %}
+        <p class="text-xs opacity-50 mb-3 md:mb-4">
+          Последние матчи текущей команды тренера. Источник данных не хранит историю смен тренерского штаба,
+          поэтому это результаты клуба, а не обязательно матчи, которые вёл именно этот тренер.
+        </p>
+        {% if team_matches %}
         <div class="space-y-2 md:space-y-3">
-          {% for match in matches %}
+          {% for match in team_matches %}
           <a href="{% url 'matches:detail' match.id %}"
              class="group flex flex-col sm:flex-row sm:items-center gap-2 p-3 bg-base-200 rounded-lg hover:bg-base-300 transition-all">
             <div class="flex items-center gap-2 w-full sm:w-24 flex-shrink-0">
@@ -79,12 +84,8 @@
               </span>
             </div>
             <div class="flex items-center justify-between sm:justify-end gap-2 sm:gap-3 w-full sm:w-auto mt-1 sm:mt-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-base-300/50">
-              {% if match.status == 'finished' %}
               <span class="font-bold font-mono text-base sm:text-lg">{% render_score match.home_score match.away_score %}</span>
               <span class="badge badge-success badge-xs sm:badge-sm"><i class="ti ti-check"></i></span>
-              {% else %}
-              <span class="badge badge-ghost badge-xs sm:badge-sm"><i class="ti ti-calendar"></i></span>
-              {% endif %}
             </div>
           </a>
           {% endfor %}
@@ -92,7 +93,7 @@
         {% else %}
         <div class="text-center py-8 opacity-60">
           <i class="ti ti-calendar-off text-3xl mb-2"></i>
-          <p class="text-sm">У этого тренера пока нет матчей в базе</p>
+          <p class="text-sm">У команды пока нет завершённых матчей в базе</p>
         </div>
         {% endif %}
       </div>
@@ -167,7 +168,15 @@
               {% if coach.is_active %}Активен{% else %}Не активен{% endif %}
             </span>
           </div>
+          <div class="flex justify-between">
+            <span class="opacity-60">Оценок от болельщиков</span>
+            <span class="font-medium">{{ stats.total_evaluations|default:0 }}</span>
+          </div>
         </div>
+        <p class="text-xs opacity-40 mt-3">
+          Общий счётчик матчей тренера не показываем — источник данных (KFF) не хранит историю
+          назначений тренеров, эта цифра была бы недостоверной.
+        </p>
       </div>
     </div>
 

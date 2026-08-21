@@ -1,0 +1,19 @@
+<!-- templates/components/_season_scope_toggle.html
+     Переключатель "текущий сезон / показать всех" для списков команд,
+     игроков и тренеров (teams/players/coaches list.html) — контекст:
+     active_season (Season|None), show_all (bool). См. docs/BACKLOG.md,
+     находка 3. -->
+{% load querystring_extras %}
+{% if active_season %}
+<div class="flex items-center gap-2 text-xs sm:text-sm mb-4 md:mb-6 px-2 sm:px-0 opacity-80">
+    {% if show_all %}
+    <i class="ti ti-history"></i>
+    <span>Показаны все — включая прошлые сезоны</span>
+    <a href="?{% query_transform season=None %}" class="link link-primary font-medium">Только сезон {{ active_season.year }}</a>
+    {% else %}
+    <i class="ti ti-calendar-event"></i>
+    <span>Сезон {{ active_season.year }}</span>
+    <a href="?{% query_transform season='all' %}" class="link link-primary font-medium">Показать всех</a>
+    {% endif %}
+</div>
+{% endif %}

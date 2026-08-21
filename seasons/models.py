@@ -47,3 +47,18 @@ class Season(BaseModel):
             Season.objects.filter(
                 league_id=self.league_id, is_active=True
             ).exclude(pk=self.pk).update(is_active=False)
+
+    @classmethod
+    def get_primary_active(cls):
+        """Единая точка правды "какой сезон сейчас показываем по умолчанию"
+        — активный сезон ГЛАВНОЙ лиги сайта (League.is_primary). До этого
+        по всему проекту было разбросано Season.objects.filter(is_active=True)
+        .first() без фильтра по лиге, что молча ломалось бы при появлении
+        второй лиги со своим активным сезоном (см. docs/BACKLOG.md, находка 1).
+        Fallback на случай, если is_primary ещё не проставлен ни у одной
+        лиги (миграция данных не прогнана) — деградируем к старому
+        поведению вместо пустого результата."""
+        season = cls.objects.filter(is_active=True, league__is_primary=True).select_related('league').first()
+        if season:
+            return season
+        return cls.objects.filter(is_active=True).select_related('league').first()

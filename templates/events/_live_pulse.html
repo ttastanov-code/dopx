@@ -7,6 +7,7 @@ _match_header.html — атрибуты на корне живут только 
 {% endcomment %}
 <div id="live-pulse-container" class="space-y-2"
      {% if match.status == 'live' %}
+     data-background-poll
      hx-get="{% url 'events:pulse' match.id %}"
      hx-trigger="every 15s"
      hx-swap="outerHTML"

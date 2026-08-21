@@ -12,6 +12,8 @@ from lineups.models import MatchLineup, MatchLineupPlayer
 from events.models import MatchEvent
 from referees.models import Referee
 from leagues.models import League
+from players.positions import clean_position_code
+from core.utils import normalize_kz
 import logging
 from django.db.models import Q
 
@@ -22,8 +24,13 @@ STATUS_MAP = {
     "scheduled": "scheduled",
     "live": "live",
     "finished": "finished",
-    "postponed": "scheduled",
-    "cancelled": "finished",
+    # РАНЬШЕ оба схлопывались в scheduled/finished — из-за этого сайт не
+    # мог показать пользователю "матч перенесён" (KFF присылал postponed,
+    # а на сайте матч тихо оставался в статусе "Запланирован" со СТАРОЙ
+    # датой — update_match_statuses её не пересинхронизирует). Теперь оба
+    # статуса — свои значения в Match.STATUS_CHOICES (см. миграцию 0003).
+    "postponed": "postponed",
+    "cancelled": "cancelled",
     "interrupted": "finished",
 }
 
@@ -145,13 +152,19 @@ def get_or_create_referee_by_name(name: str) -> Optional[Referee]:
     else:
         first_name, last_name = name, ""
 
-    # Регистронезависимый поиск — KFF шлёт имя судьи произвольной строкой без
-    # стабильного ID, при смене регистра ("Багдат"/"багдат") иначе завёлся бы
-    # дубль-Referee. Разные буквы каз./рус. алфавита ("Сакен"/"Сэкен") этим
-    # не ловятся — такие дубли объединяются вручную через админку.
-    referee = Referee.objects.filter(
-        Q(first_name__iexact=first_name) & Q(last_name__iexact=last_name)
-    ).first()
+    # normalize_kz (см. core/utils.py) вместо простого __iexact — KFF шлёт
+    # имя судьи произвольной строкой без стабильного ID, и написание ФИО
+    # плывёт от матча к матчу ("Сакен"/"Сәкен" — разные Unicode-буквы,
+    # __iexact их не считал бы одинаковыми и плодил дубли). Судей немного
+    # (десятки) — фильтрация в Python приемлема.
+    target = normalize_kz(f"{first_name} {last_name}")
+    referee = next(
+        (
+            r for r in Referee.objects.only("id", "first_name", "last_name", "is_active")
+            if normalize_kz(f"{r.first_name} {r.last_name}") == target
+        ),
+        None,
+    )
     if referee:
         if not referee.is_active:
             referee.is_active = True
@@ -198,18 +211,43 @@ def get_or_create_coach(coach_data: Dict, team: Optional[Team] = None) -> Option
     if coach_ext_id:
         defaults["external_id"] = str(coach_ext_id)
 
-    # Ключ матчинга — external_id, если есть; иначе (first_name, last_name)
-    # регистронезависимо. Матчинг по одному только first_name склеивал бы
-    # разных тренеров с одинаковым именем ("Андрей", "Марат"...) в одну запись.
+    # Ключ матчинга — external_id, если есть; иначе normalize_kz(ФИО)
+    # (см. core/utils.py, тот же омограф-баг, что и у судей: "Сакен"/
+    # "Сәкен" — разные Unicode-буквы, __iexact их не склеивал). Матчинг
+    # по одному только first_name не используется — склеил бы разных
+    # тренеров с одинаковым именем ("Андрей", "Марат"...) в одну запись.
+    target = normalize_kz(f"{first_name} {last_name}")
     if coach_ext_id:
-        coach, created = Coach.objects.update_or_create(
-            external_id=str(coach_ext_id),
-            defaults=defaults
-        )
+        coach = Coach.objects.filter(external_id=str(coach_ext_id)).first()
+        if not coach:
+            # Тренер мог быть создан РАНЬШЕ через ветку без external_id
+            # (KFF не всегда присылает id тренера) — если по имени уже
+            # есть запись без external_id, дозаполняем её, а не плодим
+            # дубль с тем же именем.
+            coach = next(
+                (
+                    c for c in Coach.objects.filter(external_id__isnull=True)
+                    .only("id", "first_name", "last_name")
+                    if normalize_kz(f"{c.first_name} {c.last_name}") == target
+                ),
+                None,
+            )
+        if coach:
+            for field, value in defaults.items():
+                setattr(coach, field, value)
+            coach.save(update_fields=list(defaults.keys()))
+            created = False
+        else:
+            coach = Coach.objects.create(**defaults)
+            created = True
     else:
-        coach = Coach.objects.filter(
-            Q(first_name__iexact=first_name) & Q(last_name__iexact=last_name)
-        ).first()
+        coach = next(
+            (
+                c for c in Coach.objects.only("id", "first_name", "last_name")
+                if normalize_kz(f"{c.first_name} {c.last_name}") == target
+            ),
+            None,
+        )
         if coach:
             for field, value in defaults.items():
                 setattr(coach, field, value)
@@ -265,18 +303,54 @@ def import_match_core(game_data: Dict, season_id: int = None) -> Match:
         if referee_name and isinstance(referee_name, str):
             referee = get_or_create_referee_by_name(referee_name)
         
+        # KFF отдаёт номер тура прямо в ответе ("tour": 23) — раньше нигде
+        # не читался. В отличие от start_time, при переносе матча номер
+        # тура не меняется, поэтому это единственный устойчивый ориентир
+        # "какой это был/будет тур" (см. Match.tour, docs/BACKLOG.md).
+        tour = game_data.get("tour")
+
+        defaults = {
+            "home_team": home_team, "away_team": away_team,
+            "stadium": stadium,
+            "home_score": home_score, "away_score": away_score,
+            "has_lineup": game_data.get("has_lineup", False),
+            "league": season.league if season else None,
+            "season": season, "referee": referee,
+            "tour": tour,
+        }
+
+        # БАГ, КОТОРЫЙ ТУТ БЫЛ (2026-08-21): manual_override защищал статус/
+        # дату только в update_match_statuses (фоновая задача), но НЕ здесь
+        # — а именно через import_match_core идут "Полный синк сезона" и
+        # ручной ресинк одного матча из staff-дашборда. В итоге ЛЮБОЙ из
+        # этих путей молча стирал ручную пометку "Перенесён" обратно в
+        # "Запланирован" на первом же клике — ровно то, что и произошло.
+        # Тот же guard здесь: если существующий матч помечен вручную, статус
+        # и все производные от даты поля (start_time/end_time/voting_open_
+        # until) не трогаем, остальное (команды, стадион, судья, тур, счёт)
+        # обновляем как обычно — эти поля переносом не затронуты.
+        existing = Match.objects.filter(external_id=str(game_data["id"])).only(
+            "id", "manual_override", "status", "start_time", "end_time", "voting_open_until"
+        ).first()
+
+        if existing and existing.manual_override:
+            defaults["status"] = existing.status
+            defaults["start_time"] = existing.start_time
+            defaults["end_time"] = existing.end_time
+            defaults["voting_open_until"] = existing.voting_open_until
+            logger.info(
+                f"⏭️  Match external_id={game_data.get('id')}: manual_override=True — "
+                f"статус/дата не трогаются синком"
+            )
+        else:
+            defaults["status"] = status
+            defaults["start_time"] = start_time
+            defaults["end_time"] = end_time
+            defaults["voting_open_until"] = voting_open_until
+
         match, created = Match.objects.update_or_create(
             external_id=str(game_data["id"]),
-            defaults={
-                "home_team": home_team, "away_team": away_team,
-                "stadium": stadium, "start_time": start_time,
-                "end_time": end_time, "status": status,
-                "home_score": home_score, "away_score": away_score,
-                "has_lineup": game_data.get("has_lineup", False),
-                "voting_open_until": voting_open_until,
-                "league": season.league if season else None,
-                "season": season, "referee": referee,
-            }
+            defaults=defaults,
         )
         
         if season:
@@ -318,35 +392,57 @@ def import_coaches(match: Match, lineup_data: Dict) -> bool:
     
     logger.info(f"📊 Home coaches: {len(home_coaches) if home_coaches else 0}, Away coaches: {len(away_coaches) if away_coaches else 0}")
     
+    # ЗАЩИТА ОТ ПЕРЕЗАПИСИ ЗАДНИМ ЧИСЛОМ: parsers/kff/pipeline.py::import_full_match
+    # вызывает import_coaches БЕЗ проверки "уже обработано" — sync_recent_matches
+    # (parsers/tasks.py) периодически повторно импортирует последние N
+    # завершённых матчей, и КАЖДЫЙ раз это условие могло сработать заново
+    # (is_main распознаёт роль как главную) и переписать home_coach/away_coach
+    # на тренера из СВЕЖЕГО ответа KFF — даже если матч давно завершён и
+    # тренер там был другой. Итог был замечен на живом примере: у тренера,
+    # пришедшего в клуб на 2 матча, счётчик показывал 21 (весь сезон клуба),
+    # потому что он тихо "натягивался" на все прошлые матчи при каждом
+    # ресинке. См. docs/BACKLOG.md, находка 4. once матч 'finished' и поле
+    # уже заполнено — считаем его зафиксированным историческим фактом и
+    # больше не трогаем; для scheduled/live обновлять по-прежнему можно
+    # (состав ещё может уточняться).
+    already_locked_home = match.status == "finished" and match.home_coach_id is not None
+    already_locked_away = match.status == "finished" and match.away_coach_id is not None
+
     # Домашний тренер
-    for coach_data in home_coaches:
-        if not coach_data:
-            continue
-        role = (coach_data.get("role") or "").lower()
-        is_main = any(kw in role for kw in ["бас бапкер", "main", "главный", "head", "manager"])
-        
-        if is_main or not match.home_coach:
-            coach = get_or_create_coach(coach_data, match.home_team)
-            if coach:
-                match.home_coach = coach
-                match.save(update_fields=["home_coach", "updated_at"])
-                logger.info(f"✅ Linked home coach: {coach.first_name} {coach.last_name}")
-                break
-    
+    if already_locked_home:
+        logger.info(f"⏭️  Match {match.id}: home_coach уже зафиксирован (matched finished) — не трогаем")
+    else:
+        for coach_data in home_coaches:
+            if not coach_data:
+                continue
+            role = (coach_data.get("role") or "").lower()
+            is_main = any(kw in role for kw in ["бас бапкер", "main", "главный", "head", "manager"])
+
+            if is_main or not match.home_coach:
+                coach = get_or_create_coach(coach_data, match.home_team)
+                if coach:
+                    match.home_coach = coach
+                    match.save(update_fields=["home_coach", "updated_at"])
+                    logger.info(f"✅ Linked home coach: {coach.first_name} {coach.last_name}")
+                    break
+
     # Гостевой тренер
-    for coach_data in away_coaches:
-        if not coach_data:
-            continue
-        role = (coach_data.get("role") or "").lower()
-        is_main = any(kw in role for kw in ["бас бапкер", "main", "главный", "head", "manager"])
-        
-        if is_main or not match.away_coach:
-            coach = get_or_create_coach(coach_data, match.away_team)
-            if coach:
-                match.away_coach = coach
-                match.save(update_fields=["away_coach", "updated_at"])
-                logger.info(f"✅ Linked away coach: {coach.first_name} {coach.last_name}")
-                break
+    if already_locked_away:
+        logger.info(f"⏭️  Match {match.id}: away_coach уже зафиксирован (matched finished) — не трогаем")
+    else:
+        for coach_data in away_coaches:
+            if not coach_data:
+                continue
+            role = (coach_data.get("role") or "").lower()
+            is_main = any(kw in role for kw in ["бас бапкер", "main", "главный", "head", "manager"])
+
+            if is_main or not match.away_coach:
+                coach = get_or_create_coach(coach_data, match.away_team)
+                if coach:
+                    match.away_coach = coach
+                    match.save(update_fields=["away_coach", "updated_at"])
+                    logger.info(f"✅ Linked away coach: {coach.first_name} {coach.last_name}")
+                    break
     
     return True
 
@@ -395,7 +491,7 @@ def import_lineups(match: Match, lineup_data: Dict) -> bool:
                     "first_name": player_data.get("first_name", ""),
                     "last_name": player_data.get("last_name", ""),
                     "team": target_team,
-                    "position": (player_data.get("amplua") or player_data.get("position", ""))[:20],
+                    "position": clean_position_code((player_data.get("amplua") or player_data.get("position", ""))[:20]),
                     "number": player_data.get("shirt_number"),
                     "is_active": True,
                 }
@@ -410,7 +506,7 @@ def import_lineups(match: Match, lineup_data: Dict) -> bool:
                 lineup=match_lineup,
                 player=player,
                 is_starting=True,
-                position=(player_data.get("amplua") or player_data.get("position", ""))[:20],
+                position=clean_position_code((player_data.get("amplua") or player_data.get("position", ""))[:20]),
                 shirt_number=player_data.get("shirt_number"),
                 minute_in=0,
                 minute_out=None,
@@ -424,7 +520,7 @@ def import_lineups(match: Match, lineup_data: Dict) -> bool:
                 lineup=match_lineup,
                 player=player,
                 is_starting=False,
-                position=(player_data.get("amplua") or player_data.get("position", ""))[:20],
+                position=clean_position_code((player_data.get("amplua") or player_data.get("position", ""))[:20]),
                 shirt_number=player_data.get("shirt_number"),
                 minute_in=None,
                 minute_out=None,

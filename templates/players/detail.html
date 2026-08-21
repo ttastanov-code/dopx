@@ -1,6 +1,7 @@
 {% extends 'base.html' %}
 {% load static rating_extras %}
 {% load math_extras %}
+{% load position_extras %}
 {% block schema %}
 {% if schema_json %}
 <script type="application/ld+json">{{ schema_json|safe }}</script>
@@ -76,12 +77,14 @@
                             {{ player.team.name }}
                         </a>
                     {% endif %}
-                    {% if player.position %}
+                    {% with position=player.position|position_label %}
+                    {% if position %}
                         <span class="badge badge-lg badge-outline">
                             <i class="ti ti-badge"></i>
-                            {{ player.position }}
+                            {{ position }}
                         </span>
                     {% endif %}
+                    {% endwith %}
                     {% if player.number %}
                         <span class="badge badge-lg badge-ghost">
                             <i class="ti ti-shirt"></i>
@@ -187,6 +190,55 @@
                 {% endif %}
             </div>
         </div>
+
+        <!-- === ПО СЕЗОНАМ === -->
+        {% comment %}
+        task #148 (мультисезонность): в отличие от тренеров (docs/BACKLOG.md,
+        находка 4 — KFF не хранит историю назначений вообще), у игроков
+        команда-по-сезонам реально восстановима из MatchLineupPlayer, где
+        каждая запись жёстко привязана к факту участия в конкретном матче
+        конкретного сезона и не переписывается задним числом при трансфере.
+        Если игрок менял клуб в разгар сезона — увидит две отдельные строки
+        за один и тот же год, это корректное отображение, не баг.
+        {% endcomment %}
+        {% if career_by_season %}
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-4">
+                <h3 class="font-bold text-lg mb-4">
+                    <i class="ti ti-calendar-stats mr-2"></i>
+                    По сезонам
+                </h3>
+                <div class="overflow-x-auto">
+                    <table class="table table-zebra">
+                        <thead>
+                            <tr>
+                                <th>Сезон</th>
+                                <th>Команда</th>
+                                <th class="text-center">Матчей</th>
+                                <th class="text-center">Голов</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for stint in career_by_season %}
+                            <tr>
+                                <td class="font-mono text-sm">{{ stint.season.year }}</td>
+                                <td>
+                                    {% if stint.team %}
+                                    <a href="{% url 'teams:detail' stint.team.id %}" class="hover:text-primary transition-colors">{{ stint.team.name }}</a>
+                                    {% else %}
+                                    <span class="opacity-40">—</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center font-mono">{{ stint.matches_played }}</td>
+                                <td class="text-center font-mono">{{ stint.goals|default:0 }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
 
         <!-- === ЛУЧШИЕ МАТЧИ === -->
         {% if best_matches %}

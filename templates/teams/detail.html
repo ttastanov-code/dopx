@@ -1,6 +1,7 @@
 {% extends 'base.html' %}
 {% load static %}
 {% load match_extras %}
+{% load position_extras %}
 {% block content %}
 <!-- === НАВИГАЦИЯ === -->
 <div class="mb-4 md:mb-6 px-2 sm:px-0">
@@ -85,7 +86,7 @@
                     {{ player.first_name }} {{ player.last_name }}
                   </a>
                 </td>
-                <td class="opacity-60">{{ player.position|default:"-" }}</td>
+                <td class="opacity-60">{{ player.position|position_label|default:"—" }}</td>
                 <td class="text-right">
                   {% with player_agg=player.match_aggregates.first %}
                   {% if player_agg %}

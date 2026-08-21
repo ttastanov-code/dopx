@@ -21,6 +21,8 @@
                 <option value="scheduled" {% if current_status == 'scheduled' %}selected{% endif %}>Запланированные</option>
                 <option value="live" {% if current_status == 'live' %}selected{% endif %}>Live</option>
                 <option value="finished" {% if current_status == 'finished' %}selected{% endif %}>Завершённые</option>
+                <option value="postponed" {% if current_status == 'postponed' %}selected{% endif %}>Перенесённые</option>
+                <option value="cancelled" {% if current_status == 'cancelled' %}selected{% endif %}>Отменённые</option>
             </select>
             
             <!-- Лига -->
@@ -42,7 +44,19 @@
                 </option>
                 {% endfor %}
             </select>
-            
+
+            <!-- Тур — прямой ориентир, который не путается при переносе матча -->
+            {% if tours %}
+            <select name="tour" class="select select-bordered select-sm w-full sm:w-auto min-w-[120px]">
+                <option value="">Все туры</option>
+                {% for tour in tours %}
+                <option value="{{ tour }}" {% if current_tour == tour|stringformat:"s" %}selected{% endif %}>
+                    {{ tour }}-й тур
+                </option>
+                {% endfor %}
+            </select>
+            {% endif %}
+
             <!-- Кнопка -->
             <button type="submit" class="btn btn-primary btn-sm w-full sm:w-auto">
                 <i class="ti ti-search"></i>
@@ -103,6 +117,17 @@
                     <div class="text-[10px] md:text-xs opacity-60 mt-0.5">
                         {% render_score match.home_score match.away_score %}
                     </div>
+                    {% elif match.status == 'postponed' %}
+                    <div class="text-[10px] md:text-xs font-semibold text-warning flex items-center justify-center gap-1">
+                        <i class="ti ti-calendar-off flex-shrink-0"></i>
+                        <span class="hidden sm:inline">Перенесён</span>
+                    </div>
+                    <div class="text-[10px] md:text-xs opacity-40 line-through">{{ match.start_time|date:"d.m" }}</div>
+                    {% elif match.status == 'cancelled' %}
+                    <div class="text-[10px] md:text-xs font-semibold opacity-60 flex items-center justify-center gap-1">
+                        <i class="ti ti-ban flex-shrink-0"></i>
+                        <span class="hidden sm:inline">Отменён</span>
+                    </div>
                     {% else %}
                     <div class="text-xs md:text-sm font-mono">{{ match.start_time|date:"d.m" }}</div>
                     <div class="text-[10px] md:text-xs opacity-60">{{ match.start_time|time:"H:i" }}</div>
@@ -138,6 +163,10 @@
                         <i class="ti ti-calendar flex-shrink-0"></i>
                         {{ match.season.year }}
                     </span>
+                    {% if match.tour %}
+                    <span class="hidden sm:inline">•</span>
+                    <span class="flex-shrink-0">{{ match.tour }}-й тур</span>
+                    {% endif %}
                     {% comment %}
                     match.is_derby — пары соперников из админки (Team.rivals),
                     тот же признак, по которому начисляется бейдж
@@ -195,7 +224,7 @@
 <div class="flex justify-center mt-6 md:mt-8 px-2">
     <div class="join">
         {% if page_obj.has_previous %}
-        <a href="?page={{ page_obj.previous_page_number }}{% if current_status %}&status={{ current_status }}{% endif %}{% if current_league %}&league={{ current_league }}{% endif %}{% if current_season %}&season={{ current_season }}{% endif %}"
+        <a href="?page={{ page_obj.previous_page_number }}{% if current_status %}&status={{ current_status }}{% endif %}{% if current_league %}&league={{ current_league }}{% endif %}{% if current_season %}&season={{ current_season }}{% endif %}{% if current_tour %}&tour={{ current_tour }}{% endif %}"
            class="join-item btn btn-sm">
             <i class="ti ti-chevron-left"></i>
         </a>
@@ -204,14 +233,14 @@
         {% if page_obj.number == num %}
         <button class="join-item btn btn-sm btn-active">{{ num }}</button>
         {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
-        <a href="?page={{ num }}{% if current_status %}&status={{ current_status }}{% endif %}{% if current_league %}&league={{ current_league }}{% endif %}{% if current_season %}&season={{ current_season }}{% endif %}"
+        <a href="?page={{ num }}{% if current_status %}&status={{ current_status }}{% endif %}{% if current_league %}&league={{ current_league }}{% endif %}{% if current_season %}&season={{ current_season }}{% endif %}{% if current_tour %}&tour={{ current_tour }}{% endif %}"
            class="join-item btn btn-sm">
             {{ num }}
         </a>
         {% endif %}
         {% endfor %}
         {% if page_obj.has_next %}
-        <a href="?page={{ page_obj.next_page_number }}{% if current_status %}&status={{ current_status }}{% endif %}{% if current_league %}&league={{ current_league }}{% endif %}{% if current_season %}&season={{ current_season }}{% endif %}"
+        <a href="?page={{ page_obj.next_page_number }}{% if current_status %}&status={{ current_status }}{% endif %}{% if current_league %}&league={{ current_league }}{% endif %}{% if current_season %}&season={{ current_season }}{% endif %}{% if current_tour %}&tour={{ current_tour }}{% endif %}"
            class="join-item btn btn-sm">
             <i class="ti ti-chevron-right"></i>
         </a>

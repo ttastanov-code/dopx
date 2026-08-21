@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% load static rating_extras %}
+{% load position_extras %}
 {% block content %}
     <!-- === HEADER === -->
     <div class="mb-8">
@@ -78,9 +79,11 @@
                                     </div>
                                     <div>
                                         <div class="font-medium">{{ player.first_name }} {{ player.last_name }}</div>
-                                        {% if player.position %}
-                                            <div class="text-xs opacity-60">{{ player.position }}</div>
+                                        {% with position=player.position|position_label %}
+                                        {% if position %}
+                                            <div class="text-xs opacity-60">{{ position }}</div>
                                         {% endif %}
+                                        {% endwith %}
                                     </div>
                                 </a>
                             </td>

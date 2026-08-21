@@ -9,11 +9,41 @@ EvaluateMatchFinalView), контакты (core/views.py::ContactsView).
 is_rate_limited — лёгкий rate-limiter на Django cache (Redis, см.
 dopx/settings.py::CACHES), без зависимости от django-ratelimit — для
 точечных лимитов вроде "не больше 5 регистраций с одного IP в час" хватает.
+
+normalize_kz/KAZAKH_LOOKALIKE_MAP — раньше жили ТОЛЬКО в
+dashboard/parser_tools.py (поиск матча в staff-панели по названию команд),
+но тот же баг ("Кайрат" по-русски не находит "Қайрат") оказался и в
+поиске на страницах teams/players/coaches/referees — вынесено сюда как
+общую утилиту, чтобы не дублировать таблицу транслитерации в 5 местах.
 """
 from __future__ import annotations
 
 from django.core.cache import cache
 from django.http import HttpRequest
+
+# 9 казахских букв (Ә Ғ Қ Ң Ө Ұ Ү Һ І) — отдельные Unicode-символы, не
+# просто похожие на русские: "Қ" (U+049A) и "К" (U+041A) для icontains
+# полностью не связаны. У большинства пользователей нет казахской
+# раскладки — схлопываем оба варианта буквы в один канонический символ
+# перед сравнением строк.
+KAZAKH_LOOKALIKE_MAP = str.maketrans({
+    "ә": "а", "Ә": "А",
+    "ғ": "г", "Ғ": "Г",
+    "қ": "к", "Қ": "К",
+    "ң": "н", "Ң": "Н",
+    "ө": "о", "Ө": "О",
+    "ұ": "у", "Ұ": "У",
+    "ү": "у", "Ү": "У",
+    "һ": "х", "Һ": "Х",
+    "і": "и", "І": "И",
+})
+
+
+def normalize_kz(text: str) -> str:
+    """Казахская буква и её русский "омограф" после этой функции дают
+    ОДИНАКОВУЮ строку — сравнение перестаёт зависеть от того, какой
+    раскладкой набирали запрос/название."""
+    return (text or "").translate(KAZAKH_LOOKALIKE_MAP).lower()
 
 
 def get_client_ip(request: HttpRequest) -> str | None:

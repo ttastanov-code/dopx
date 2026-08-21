@@ -1,3 +1,4 @@
+{% load position_extras %}
 {% comment %}
 Карточка игрока для списков
 Использование: {% include 'components/_player_card.html' with player=player show_stats=True %}
@@ -30,9 +31,11 @@
                 </a>
                 {% endif %}
                 <div class="flex flex-wrap gap-2 mt-2">
-                    {% if player.position %}
-                    <span class="badge badge-sm badge-ghost">{{ player.position }}</span>
+                    {% with position=player.position|position_label %}
+                    {% if position %}
+                    <span class="badge badge-sm badge-ghost">{{ position }}</span>
                     {% endif %}
+                    {% endwith %}
                     {% if player.number %}
                     <span class="badge badge-sm badge-ghost">#{{ player.number }}</span>
                     {% endif %}

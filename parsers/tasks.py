@@ -236,6 +236,7 @@ def update_match_statuses(self):
         import_events_and_minutes,
         import_lineups,
         import_stats,
+        parse_match_datetime,
     )
     from parsers.models import ParserSyncRun
 
@@ -245,7 +246,10 @@ def update_match_statuses(self):
     client = KFFClient()
     worker_token = self.request.id or str(uuid.uuid4())
 
-    active_matches = Match.objects.filter(status__in=["scheduled", "live"]).select_related(
+    # "postponed" включён сюда же — иначе перенесённый матч навсегда
+    # выпадает из опроса и мы никогда не узнаем ни о новой дате, ни об
+    # окончательной отмене (см. STATUS_MAP выше и docs/BACKLOG.md).
+    active_matches = Match.objects.filter(status__in=["scheduled", "live", "postponed"]).select_related(
         "home_team", "away_team", "season", "league", "stadium"
     )
 
@@ -257,6 +261,7 @@ def update_match_statuses(self):
         "new_events": 0,
         "status_changes": 0,
         "skipped_locked": 0,
+        "skipped_manual_override": 0,
     }
     # Дашборд ("Здоровье данных") показывает ПОСЛЕДНИЕ N ошибок с именем
     # матча, не только счётчик — иначе "5 ошибок" ничего не говорит о том,
@@ -273,6 +278,19 @@ def update_match_statuses(self):
                 f"⏭️  Match {match.id}: синхронизация уже выполняется другим воркером — пропуск"
             )
             stats["skipped_locked"] += 1
+            continue
+
+        # === УРОВЕНЬ A.5: ручная пометка "не трогать" ===
+        # Матч, который staff поправил вручную (см. Match.manual_override) —
+        # KFF показывает баннер "перенесён" раньше, чем реально меняет свои
+        # структурные status/date, поэтому без этой проверки следующий же
+        # цикл увидел бы api_status="scheduled" и молча откатил бы ручную
+        # правку. Пропускаем ДО сетевого вызова — лишний смысл дёргать API
+        # за данными, которые мы всё равно проигнорируем.
+        if match.manual_override:
+            logger.info(f"⏭️  Match {match.id}: manual_override=True — пропуск автосинка статуса/даты")
+            stats["skipped_manual_override"] += 1
+            _release_match_sync_lock(match.id)
             continue
 
         try:
@@ -295,6 +313,32 @@ def update_match_statuses(self):
                 updated_fields.append("status")
                 stats["status_changes"] += 1
                 logger.info(f"📊 Match {match.id}: {match.status} → {new_status}")
+
+            # Backfill номера тура для матчей, импортированных до того, как
+            # мы начали его читать (см. Match.tour, matches/migrations/0005).
+            api_tour = game_data.get("tour")
+            if api_tour is not None and match.tour != api_tour:
+                field_values["tour"] = api_tour
+                updated_fields.append("tour")
+
+            # Дата/время матча РАНЬШЕ никогда не пересинхронизировались
+            # здесь (только на самом первом импорте) — если KFF переносит
+            # матч на другую дату, сайт продолжал показывать старую
+            # навсегда. Синкаем только для scheduled/postponed: у finished/
+            # live/cancelled start_time — уже свершившийся факт, трогать
+            # его задним числом (и тем самым тихо переписывать реальную
+            # историю) не нужно.
+            if new_status in ("scheduled", "postponed") and game_data.get("date"):
+                api_start_time = parse_match_datetime(
+                    game_data.get("date"), game_data.get("time"),
+                    tz=timezone.get_current_timezone(),
+                )
+                if abs((api_start_time - match.start_time).total_seconds()) > 60:
+                    field_values["start_time"] = api_start_time
+                    updated_fields.append("start_time")
+                    logger.info(
+                        f"📅 Match {match.id}: дата перенесена {match.start_time} → {api_start_time}"
+                    )
 
             api_home_score = game_data.get("home_score")
             api_away_score = game_data.get("away_score")

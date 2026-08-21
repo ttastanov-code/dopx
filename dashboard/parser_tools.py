@@ -13,6 +13,7 @@ import time
 
 from django.core.cache import cache
 
+from core.utils import normalize_kz
 from parsers.kff.client import KFFClient
 
 logger = logging.getLogger(__name__)
@@ -103,30 +104,6 @@ def trigger_task(task_name: str) -> tuple[bool, str]:
 # Поиск матча — найти UUID/external_id по названию команд
 # ============================================================
 
-# 9 казахских букв (Ә Ғ Қ Ң Ө Ұ Ү Һ І) — отдельные Unicode-символы, не
-# просто похожие на русские: "Қ" (U+049A) и "К" (U+041A) для icontains
-# полностью не связаны. У staff часто нет казахской раскладки — схлопываем
-# оба варианта буквы в один канонический символ перед сравнением.
-_KAZAKH_LOOKALIKE_MAP = str.maketrans({
-    "ә": "а", "Ә": "А",
-    "ғ": "г", "Ғ": "Г",
-    "қ": "к", "Қ": "К",
-    "ң": "н", "Ң": "Н",
-    "ө": "о", "Ө": "О",
-    "ұ": "у", "Ұ": "У",
-    "ү": "у", "Ү": "У",
-    "һ": "х", "Һ": "Х",
-    "і": "и", "І": "И",
-})
-
-
-def _normalize_kz(text: str) -> str:
-    """Казахская буква и её русский "омограф" после этой функции дают
-    ОДИНАКОВУЮ строку — сравнение перестаёт зависеть от того, какой
-    раскладкой набирали запрос/название команды."""
-    return text.translate(_KAZAKH_LOOKALIKE_MAP).lower()
-
-
 def available_search_years() -> list[int]:
     """Годы, за которые в базе вообще есть матчи — для выпадающего списка
     в форме поиска (самый свежий год первым)."""
@@ -146,7 +123,7 @@ def search_matches(query: str, year: int | None = None) -> dict:
     естественная граница, двухкруговой турнир не даёт сотен матчей одной
     команды за год, а лимит вида [:30] тихо резал старые матчи без намёка,
     что список обрезан. Каждое слово запроса — отдельное AND-условие
-    (совпадает с домашней или гостевой), матчинг идёт по _normalize_kz()
+    (совпадает с домашней или гостевой), матчинг идёт по normalize_kz()
     в Python (команд — десятки, дешевле, чем SQL TRANSLATE()/unaccent).
     """
     from django.db.models import Q
@@ -173,8 +150,8 @@ def search_matches(query: str, year: int | None = None) -> dict:
         # поведение "любая из команд"; несколько слов — сужение до
         # конкретной пары команд.
         for token in query.split():
-            normalized_token = _normalize_kz(token)
-            matching_ids = [t.id for t in all_teams if normalized_token in _normalize_kz(t.name)]
+            normalized_token = normalize_kz(token)
+            matching_ids = [t.id for t in all_teams if normalized_token in normalize_kz(t.name)]
             if not matching_ids:
                 # Ни одна команда не подходит под этот токен — результатов
                 # точно не будет, дальше можно не фильтровать.

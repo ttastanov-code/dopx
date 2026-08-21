@@ -2,6 +2,7 @@
 from django.views.generic import ListView, DetailView
 from django.db.models import Count, Avg, Sum, Q, F
 from django.utils import timezone
+from core.utils import normalize_kz
 from teams.models import Team, TeamSeason, TeamSeasonStats
 from players.models import Player
 from matches.models import Match
@@ -21,12 +22,32 @@ class TeamListView(ListView):
     
     def get_queryset(self):
         queryset = Team.objects.all()
+
+        # Дефолт: только команды текущего сезона главной лиги (через
+        # TeamSeason — реально заполняется на каждом импорте матча, см.
+        # parsers/kff/importers.py::import_match_core). Без этого список
+        # копил бы вперемешку команды разных сезонов/дивизионов без
+        # возможности отличить, кто играет сейчас. Переключатель ?season=all
+        # возвращает полный список — нужен, например, чтобы найти вылетевший
+        # клуб. См. docs/BACKLOG.md, находка 3.
+        self.active_season = Season.get_primary_active()
+        self.show_all = self.request.GET.get('season') == 'all'
+        if self.active_season and not self.show_all:
+            queryset = queryset.filter(teamseason__season=self.active_season)
+
         search = self.request.GET.get('q')
         if search:
-            queryset = queryset.filter(name__icontains=search)
-        city = self.request.GET.get('city')
-        if city:
-            queryset = queryset.filter(city__icontains=city)
+            # normalize_kz — казахские буквы (Қ/Ә/Ұ и т.д.) и их русские
+            # "омографы" дают одинаковую строку, "Кайрат" находит
+            # "Қайрат" независимо от раскладки (см. core/utils.py).
+            # Команд немного (десятки) — дешевле отфильтровать в Python,
+            # чем городить SQL TRANSLATE().
+            normalized_query = normalize_kz(search)
+            matching_ids = [
+                t.id for t in Team.objects.only('id', 'name')
+                if normalized_query in normalize_kz(t.name)
+            ]
+            queryset = queryset.filter(id__in=matching_ids)
         queryset = queryset.annotate(
             home_matches_count=Count(
                 'home_matches',
@@ -45,7 +66,12 @@ class TeamListView(ListView):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Все команды — DOPX'
         context['search_query'] = self.request.GET.get('q', '')
-        context['cities'] = Team.objects.values_list('city', flat=True).distinct().exclude(city='')[:10]
+        context['active_season'] = self.active_season
+        context['show_all'] = self.show_all
+        # Фильтр по городу убран: KFF не присылает city на уровне команды
+        # (парсер заполняет city только у Stadium — см. parsers/kff/importers.py),
+        # поле Team.city реально всегда пустое, показывать нерабочий
+        # dropdown было бы обманом пользователя.
         return context
 
 class TeamDetailView(DetailView):
