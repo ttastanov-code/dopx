@@ -1,0 +1,148 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+<!-- === ЧТО ТУТ === -->
+<div class="card bg-base-100 border border-base-300 mb-4">
+    <div class="card-body p-4">
+        <h3 class="font-bold text-sm md:text-base mb-2 flex items-center gap-2">
+            <i class="ti ti-info-circle text-primary"></i> Реклама и виджеты
+        </h3>
+        <p class="text-xs md:text-sm opacity-70 leading-relaxed">
+            Здесь всё, что связано с продвижением через DOPX, в одном месте. Баннер (см.
+            <a href="{% url 'admin:partners_banner_changelist' %}" class="link link-primary">/admin/partners/banner/</a>) — это чужая
+            реклама у НАС на сайте. Виджет — наоборот: кусок DOPX (рейтинг игрока, рейтинг команды или турнирная таблица), который
+            партнёр вставляет себе на сайт через <code class="text-xs">&lt;iframe&gt;</code>. Реферальная ссылка — способ отследить,
+            сколько людей партнёр привёл к нам сам. Ниже — готовые превью и коды для виджетов, а под ними — сводная статистика по
+            баннерам, рефералкам и виджетам за 30 дней.
+        </p>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+    <!-- === ВИДЖЕТ ИГРОКА === -->
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4">
+            <h3 class="font-bold text-sm md:text-base mb-1 flex items-center gap-2">
+                <i class="ti ti-user text-primary"></i> Виджет игрока
+            </h3>
+            <p class="text-xs opacity-60 mb-3">320×180 px. Показывает текущий рейтинг игрока и число оценок.</p>
+
+            <form method="get" class="flex gap-2 mb-3">
+                <input type="hidden" name="q_team" value="{{ q_team }}">
+                <input type="text" name="q_player" value="{{ q_player }}" placeholder="Имя или фамилия игрока" class="input input-sm input-bordered flex-1 min-w-0">
+                <button type="submit" class="btn btn-sm btn-primary">Найти</button>
+            </form>
+            {% if q_player and player_results %}
+            <div class="mb-3 flex flex-wrap gap-1">
+                {% for p in player_results %}
+                <a href="?q_player={{ q_player|urlencode }}&q_team={{ q_team|urlencode }}&player_id={{ p.id }}"
+                   class="badge badge-sm {% if p == preview_player %}badge-primary{% else %}badge-ghost{% endif %}">
+                    {{ p.first_name }} {{ p.last_name }}
+                </a>
+                {% endfor %}
+            </div>
+            {% elif q_player %}
+            <p class="text-xs opacity-50 mb-3">Игрок не найден</p>
+            {% endif %}
+
+            {% if preview_player %}
+            <div class="mb-3 p-2 bg-base-200 rounded-lg flex justify-center">
+                <iframe src="{% url 'players:widget' preview_player.id %}" width="280" height="160" style="border:none;border-radius:12px" title="Превью виджета игрока"></iframe>
+            </div>
+            <div x-data="copyBox">
+                <textarea x-ref="codeBox" readonly onclick="this.select()" class="textarea textarea-bordered w-full font-mono text-[10px]" rows="3">{{ player_embed }}</textarea>
+                <button type="button" @click="copy()" class="btn btn-xs btn-outline mt-2 w-full" :class="copied && 'btn-success'">
+                    <i class="ti" :class="copied ? 'ti-check' : 'ti-copy'"></i>
+                    <span x-text="copied ? 'Скопировано!' : 'Копировать код'"></span>
+                </button>
+            </div>
+            {% else %}
+            <p class="text-xs opacity-50 py-6 text-center">В базе пока нет игроков для превью</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- === ВИДЖЕТ КОМАНДЫ === -->
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4">
+            <h3 class="font-bold text-sm md:text-base mb-1 flex items-center gap-2">
+                <i class="ti ti-shield text-primary"></i> Виджет команды
+            </h3>
+            <p class="text-xs opacity-60 mb-3">320×180 px. Средняя оценка тактики/усилий/организации/настроя.</p>
+
+            <form method="get" class="flex gap-2 mb-3">
+                <input type="hidden" name="q_player" value="{{ q_player }}">
+                <input type="text" name="q_team" value="{{ q_team }}" placeholder="Название команды" class="input input-sm input-bordered flex-1 min-w-0">
+                <button type="submit" class="btn btn-sm btn-primary">Найти</button>
+            </form>
+            {% if q_team and team_results %}
+            <div class="mb-3 flex flex-wrap gap-1">
+                {% for t in team_results %}
+                <a href="?q_team={{ q_team|urlencode }}&q_player={{ q_player|urlencode }}&team_id={{ t.id }}"
+                   class="badge badge-sm {% if t == preview_team %}badge-primary{% else %}badge-ghost{% endif %}">
+                    {{ t.name }}
+                </a>
+                {% endfor %}
+            </div>
+            {% elif q_team %}
+            <p class="text-xs opacity-50 mb-3">Команда не найдена</p>
+            {% endif %}
+
+            {% if preview_team %}
+            <div class="mb-3 p-2 bg-base-200 rounded-lg flex justify-center">
+                <iframe src="{% url 'teams:widget' preview_team.id %}" width="280" height="160" style="border:none;border-radius:12px" title="Превью виджета команды"></iframe>
+            </div>
+            <div x-data="copyBox">
+                <textarea x-ref="codeBox" readonly onclick="this.select()" class="textarea textarea-bordered w-full font-mono text-[10px]" rows="3">{{ team_embed }}</textarea>
+                <button type="button" @click="copy()" class="btn btn-xs btn-outline mt-2 w-full" :class="copied && 'btn-success'">
+                    <i class="ti" :class="copied ? 'ti-check' : 'ti-copy'"></i>
+                    <span x-text="copied ? 'Скопировано!' : 'Копировать код'"></span>
+                </button>
+            </div>
+            {% else %}
+            <p class="text-xs opacity-50 py-6 text-center">В базе пока нет команд для превью</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- === ВИДЖЕТ ТУРНИРНОЙ ТАБЛИЦЫ === -->
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4">
+            <h3 class="font-bold text-sm md:text-base mb-1 flex items-center gap-2">
+                <i class="ti ti-table text-primary"></i> Виджет турнирной таблицы
+            </h3>
+            <p class="text-xs opacity-60 mb-3">340×360 px. Топ-10 текущего активного сезона, обновляется сам. Без поиска — таблица одна на весь сайт.</p>
+
+            <div class="mb-3 p-2 bg-base-200 rounded-lg flex justify-center">
+                <iframe src="{% url 'core:standings_widget' %}" width="280" height="300" style="border:none;border-radius:12px" title="Превью виджета таблицы"></iframe>
+            </div>
+            <div x-data="copyBox">
+                <textarea x-ref="codeBox" readonly onclick="this.select()" class="textarea textarea-bordered w-full font-mono text-[10px]" rows="3">{{ standings_embed }}</textarea>
+                <button type="button" @click="copy()" class="btn btn-xs btn-outline mt-2 w-full" :class="copied && 'btn-success'">
+                    <i class="ti" :class="copied ? 'ti-check' : 'ti-copy'"></i>
+                    <span x-text="copied ? 'Скопировано!' : 'Копировать код'"></span>
+                </button>
+            </div>
+            <p class="text-[10px] opacity-40 mt-2">Эта же кнопка есть и на самом сайте — на главной, у блока «Турнирная таблица».</p>
+        </div>
+    </div>
+</div>
+
+<!-- === СВОДНАЯ СТАТИСТИКА === -->
+<!-- Живое обновление — тот же паттерн, что и dashboard:data_health_partial
+     (hx-get каждые 20с, подменяет только этот блок). Теперь сюда же
+     подтянута статистика баннеров и партнёрских рефералок, раньше видная
+     только построчно в /admin/partners/. -->
+<div class="card bg-base-100 border border-base-300 mb-4">
+    <div class="card-body p-4">
+        <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
+            <i class="ti ti-chart-bar text-primary"></i> Статистика рекламы и виджетов за 30 дней
+        </h3>
+        <div id="ads-stats-content" data-background-poll hx-get="{% url 'dashboard:ads_stats_partial' %}" hx-trigger="every 20s" hx-swap="innerHTML">
+            {% include 'dashboard/_ads_stats_content.html' %}
+        </div>
+    </div>
+</div>
+{% endblock %}
