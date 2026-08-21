@@ -1,0 +1,58 @@
+{% comment %}
+templates/dashboard/_widgets_stats_content.html
+Содержимое карточки "Просмотры встроенных виджетов" без base.html/_nav.html —
+цель HTMX-поллинга (dashboard/views.py::widgets_stats_partial), тот же
+паттерн, что и dashboard/_data_health_content.html.
+{% endcomment %}
+<div class="grid grid-cols-3 gap-3 mb-4">
+    <div class="stat bg-base-200 rounded-lg p-3">
+        <div class="stat-title text-xs">Игроки</div>
+        <div class="stat-value text-xl">{{ widget_totals.player }}</div>
+    </div>
+    <div class="stat bg-base-200 rounded-lg p-3">
+        <div class="stat-title text-xs">Команды</div>
+        <div class="stat-value text-xl">{{ widget_totals.team }}</div>
+    </div>
+    <div class="stat bg-base-200 rounded-lg p-3">
+        <div class="stat-title text-xs">Таблица</div>
+        <div class="stat-value text-xl">{{ widget_totals.standings }}</div>
+    </div>
+</div>
+<p class="text-xs opacity-50 mb-3">Считается каждая загрузка &lt;iframe&gt; на чужом сайте (событие WIDGET_EMBED_VIEWED) — то есть это реальные показы у партнёров, а не заходы на dopx.kz.</p>
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div>
+        <h4 class="font-semibold text-xs uppercase opacity-60 mb-2">Топ игроков по встраиваниям</h4>
+        {% if top_players %}
+        <table class="table table-sm">
+            <tbody>
+                {% for row in top_players %}
+                <tr>
+                    <td><a href="{% url 'players:detail' row.entity.id %}" target="_blank" class="link link-hover">{{ row.entity.first_name }} {{ row.entity.last_name }}</a></td>
+                    <td class="text-right font-mono text-xs">{{ row.views }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="text-xs opacity-50 py-4">Пока никто не встраивал виджет игрока — покажется здесь, как только появятся первые просмотры.</p>
+        {% endif %}
+    </div>
+    <div>
+        <h4 class="font-semibold text-xs uppercase opacity-60 mb-2">Топ команд по встраиваниям</h4>
+        {% if top_teams %}
+        <table class="table table-sm">
+            <tbody>
+                {% for row in top_teams %}
+                <tr>
+                    <td><a href="{% url 'teams:detail' row.entity.id %}" target="_blank" class="link link-hover">{{ row.entity.name }}</a></td>
+                    <td class="text-right font-mono text-xs">{{ row.views }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="text-xs opacity-50 py-4">Пока никто не встраивал виджет команды — покажется здесь, как только появятся первые просмотры.</p>
+        {% endif %}
+    </div>
+</div>

@@ -88,6 +88,9 @@ INSTALLED_APPS = [
     'lineups',
     'notifications',
     'dashboard',
+    # Партнёрская инфраструктура (продуктовый аудит "канал привлечения",
+    # 2026-08-21): Partner + Banner, атрибуция рефералов, баннерная ротация.
+    'partners',
     # Security-стек (продуктовый апгрейд, "защита на высшем уровне" для
     # staff): axes — брутфорс-лок логина, django_otp — 2FA (TOTP + backup-коды).
     'axes',
@@ -156,6 +159,11 @@ UNFOLD = {
                         "title": _("Здоровье данных"),
                         "icon": "monitor_heart",
                         "link": reverse_lazy("dashboard:data_health"),
+                    },
+                    {
+                        "title": _("Виджеты"),
+                        "icon": "code",
+                        "link": reverse_lazy("dashboard:widgets"),
                     },
                     {
                         "title": _("Антифрод"),
@@ -259,6 +267,16 @@ UNFOLD = {
                     {"title": _("Агрегаты тренеров"), "icon": "query_stats", "link": reverse_lazy("admin:aggregates_coachmatchaggregate_changelist")},
                     {"title": _("Агрегаты матчей"), "icon": "query_stats", "link": reverse_lazy("admin:aggregates_matchaggregate_changelist")},
                     {"title": _("События аналитики"), "icon": "insights", "link": reverse_lazy("admin:analytics_analyticsevent_changelist")},
+                ],
+            },
+            {
+                "title": _("Партнёры и реклама"),
+                "icon": "handshake",
+                "collapsible": True,
+                "items": [
+                    {"title": _("Партнёры"), "icon": "business_center", "link": reverse_lazy("admin:partners_partner_changelist")},
+                    {"title": _("Баннеры"), "icon": "campaign", "link": reverse_lazy("admin:partners_banner_changelist")},
+                    {"title": _("Виджеты"), "icon": "code", "link": reverse_lazy("dashboard:widgets")},
                 ],
             },
             {

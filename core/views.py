@@ -15,8 +15,10 @@ from django.db.models import Count, Avg, F, Q, Sum
 from django.core.cache import cache
 from django.http import HttpResponse, Http404
 from django.shortcuts import redirect, render, get_object_or_404
+from django.urls import reverse
 from django.template.loader import render_to_string
 from django.utils import timezone
+from django.views.decorators.clickjacking import xframe_options_exempt
 from django.views.generic import TemplateView, View
 from django.core.mail import send_mail, EmailMultiAlternatives
 from django.core.files.storage import default_storage
@@ -127,6 +129,19 @@ class HomeView(TemplateView):
         # идеи и статистической защиты (MIN_VOTES).
         nominations = get_nominations()
 
+        # Готовая строка <iframe> для кнопки "Получить embed-код" у
+        # турнирной таблицы — тот же паттерн, что у players/teams (см.
+        # players/views.py::PlayerDetailView, teams/views.py::TeamDetailView).
+        # Раньше standings-виджет был доступен только по прямому URL
+        # /widget/standings/ без единой ссылки на сайте — партнёр физически
+        # не мог узнать, что он существует.
+        widget_url = self.request.build_absolute_uri(reverse('core:standings_widget'))
+        standings_widget_embed_code = (
+            f'<iframe src="{widget_url}" width="340" height="360" '
+            f'style="border:none;border-radius:12px;overflow:hidden" '
+            f'title="Турнирная таблица КПЛ на DOPX"></iframe>'
+        )
+
         context.update({
             'recent_matches': recent_matches,
             'upcoming_matches': upcoming_matches,
@@ -137,6 +152,7 @@ class HomeView(TemplateView):
             'active_match_id': active_match_id,
             'nominations': nominations,
             'nomination_min_votes': NOMINATION_MIN_VOTES,
+            'standings_widget_embed_code': standings_widget_embed_code,
             'page_title': 'DOPX — Голос трибун измеряем',
             'now': now,
         })
@@ -196,6 +212,50 @@ def standings_preview(request):
     cache.set(cache_key, html, 300)
 
     return HttpResponse(html)
+
+
+@xframe_options_exempt
+def standings_widget(request):
+    """
+    Embeddable-виджет турнирной таблицы (продуктовый аудит "канал
+    привлечения", 2026-08-21) — третий виджет после players/teams. Спортивные
+    медиа хотят таблицу тура на своей странице обзора тура, не отдельного
+    игрока/команды. Переиспользует те же TeamSeasonStats и Season.get_primary_active,
+    что и standings_preview (см. её докстринг про единый источник данных),
+    но НЕ тот же HTTP-эндпоинт — standings_preview это HTMX-partial ВНУТРИ
+    сайта (наследует CSP/X-Frame-Options сайта), а этот — отдельный
+    изолированный документ для чужого <iframe>, как players:widget.
+    """
+    season = Season.get_primary_active()
+    standings_list = []
+    if season:
+        stats_rows = (
+            TeamSeasonStats.objects.filter(season=season)
+            .select_related('team')
+            .order_by('position', '-points', '-goal_diff', '-goals_scored')[:10]
+        )
+        standings_list = [
+            {
+                'team_name': row.team.name,
+                'team_logo_url': row.team.logo_url,
+                'played': row.played,
+                'points': row.points,
+            }
+            for row in stats_rows
+        ]
+
+    from partners.services import track_widget_embed_view
+
+    track_widget_embed_view(
+        widget_type="standings",
+        entity_id=str(season.league_id) if season else "none",
+        request=request,
+    )
+
+    return render(request, 'widgets/standings.html', {
+        'season': season,
+        'standings': standings_list,
+    })
 
 
 class RulesView(TemplateView):
@@ -338,7 +398,7 @@ class ContactsView(TemplateView):
             if user and user.is_verified:
                 self.send_user_confirmation(submission)
 
-            messages.success(request, '✅ Сообщение отправлено! Мы ответим в течение 24 часов.')
+            messages.success(request, '✅ Сообщение отправлено! Разбираем обращения по очереди — ответим, как только дойдёт черёд.')
             logger.info(
                 f"Contact submission #{submission.id} from {submission.contact_email} "
                 f"(category: {category}, has_attachment: {bool(submission.attachment)})"

@@ -60,13 +60,9 @@
          результаты команды, а не персональная статистика тренера. -->
     <div class="card bg-base-100 border border-base-300">
       <div class="card-body p-3 md:p-4">
-        <h3 class="font-bold text-base md:text-lg mb-1 flex items-center gap-2">
+        <h3 class="font-bold text-base md:text-lg mb-3 md:mb-4 flex items-center gap-2">
           <i class="ti ti-clock mr-2"></i>Форма команды{% if coach.team %} — {{ coach.team.name }}{% endif %}
         </h3>
-        <p class="text-xs opacity-50 mb-3 md:mb-4">
-          Последние матчи текущей команды тренера. Источник данных не хранит историю смен тренерского штаба,
-          поэтому это результаты клуба, а не обязательно матчи, которые вёл именно этот тренер.
-        </p>
         {% if team_matches %}
         <div class="space-y-2 md:space-y-3">
           {% for match in team_matches %}
@@ -173,10 +169,6 @@
             <span class="font-medium">{{ stats.total_evaluations|default:0 }}</span>
           </div>
         </div>
-        <p class="text-xs opacity-40 mt-3">
-          Общий счётчик матчей тренера не показываем — источник данных (KFF) не хранит историю
-          назначений тренеров, эта цифра была бы недостоверной.
-        </p>
       </div>
     </div>
 

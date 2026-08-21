@@ -98,7 +98,17 @@ class RegisterView(CreateView):
         # первая оценка" (см. analytics/selectors.py::registration_funnel).
         # Здесь без transaction.on_commit — у RegisterView нет обёртывающего
         # transaction.atomic(), user.save() уже закоммичен к этому моменту.
-        track_event(EventName.USER_REGISTERED, request=self.request, user=user)
+        # ref — партнёрская атрибуция (partners/services.py::REFERRAL_COOKIE_NAME):
+        # если пользователь пришёл по /go/<slug>/ за последние 30 дней, здесь
+        # видно, что визит по партнёрской ссылке КОНВЕРТИРОВАЛСЯ в регистрацию,
+        # а не просто засчитался как переход.
+        from partners.services import REFERRAL_COOKIE_NAME
+
+        referral_slug = self.request.COOKIES.get(REFERRAL_COOKIE_NAME, "")
+        track_event(
+            EventName.USER_REGISTERED, request=self.request, user=user,
+            properties={"ref": referral_slug} if referral_slug else None,
+        )
 
         # Отправляем письмо верификации (асинхронно, КРИТИЧЕСКОЕ - force=True)
         try:

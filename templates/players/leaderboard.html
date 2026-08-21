@@ -1,6 +1,7 @@
 {% extends 'base.html' %}
 {% load static rating_extras %}
 {% load position_extras %}
+{% load partner_tags %}
 {% block content %}
     <!-- === HEADER === -->
     <div class="mb-8">
@@ -41,6 +42,13 @@
             {% endif %}
         </form>
         {% endif %}
+    </div>
+
+    <!-- Та же зона "leaderboard", что и на /users/leaderboard/ — раньше
+         баннер тут вообще не подключался, хотя это тот же продуктовый
+         раздел (рейтинг), просто другая вкладка/URL. -->
+    <div class="mb-6">
+        {% render_banner "leaderboard" %}
     </div>
 
     <!-- === ТАБЛИЦА === -->

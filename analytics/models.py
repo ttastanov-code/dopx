@@ -45,6 +45,16 @@ class EventName(models.TextChoices):
     # "пользователь взаимодействовал с прогнозами", не нужно различать эти
     # два случая отдельными event_name.
     PREDICTION_MADE = "prediction_made", _("Прогноз на матч сделан")
+    # 2026-08-21: партнёрская инфраструктура (partners app). Переиспользуем
+    # AnalyticsEvent вместо отдельных таблиц BannerImpression/BannerClick —
+    # тот же принцип, что и для остальной продуктовой воронки: один источник
+    # событий, а не параллельные таблицы счётчиков. partner_id/banner_id/zone
+    # кладутся в properties, см. partners/services.py.
+    WIDGET_EMBED_VIEWED = "widget_embed_viewed", _("Открытие embed-виджета")
+    PARTNER_REFERRAL_VISIT = "partner_referral_visit", _("Переход по партнёрской ссылке")
+    BANNER_IMPRESSION = "banner_impression", _("Показ баннера")
+    BANNER_CLICK = "banner_click", _("Клик по баннеру")
+    PARTNER_FEED_ACCESSED = "partner_feed_accessed", _("Запрос партнёрского контент-фида")
 
 
 class AnalyticsEvent(models.Model):

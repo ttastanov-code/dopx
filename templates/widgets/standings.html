@@ -1,0 +1,54 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ru" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Турнирная таблица — DOPX</title>
+    {% comment %}
+    Третий embed-виджет (продуктовый аудит "канал привлечения", 2026-08-21) —
+    для спортивных медиа, которые хотят таблицу тура на обзорной статье, а
+    не рейтинг конкретного игрока/команды. Тот же изолированный документ,
+    что и widgets/player_rating.html и widgets/team_rating.html.
+    {% endcomment %}
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@5/themes.css" rel="stylesheet" type="text/css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
+    <style>html,body{margin:0;padding:0;background:transparent}</style>
+</head>
+<body class="p-2">
+    <div class="card bg-base-100 border border-base-300 shadow-sm" style="width:340px">
+        <div class="card-body p-3 gap-2">
+            <div class="flex items-center justify-between">
+                <span class="font-bold text-sm flex items-center gap-1.5"><i class="ti ti-table text-primary"></i> Турнирная таблица</span>
+                <span class="flex items-center gap-1 text-[10px] opacity-50 font-semibold"><i class="ti ti-external-link"></i> DOPX</span>
+            </div>
+            {% if standings %}
+            <table class="table table-xs">
+                <thead>
+                    <tr class="text-[10px] opacity-60">
+                        <th class="w-6">#</th>
+                        <th>Команда</th>
+                        <th class="text-center w-8">И</th>
+                        <th class="text-center w-8">О</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in standings %}
+                    <tr>
+                        <td class="font-mono text-xs">{{ forloop.counter }}</td>
+                        <td class="text-xs truncate max-w-[140px]">{{ row.team_name }}</td>
+                        <td class="text-center text-xs">{{ row.played }}</td>
+                        <td class="text-center text-xs font-bold">{{ row.points }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="text-center py-6 opacity-50 text-xs">Нет активного сезона</div>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>
