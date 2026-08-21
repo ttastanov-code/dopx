@@ -18,9 +18,7 @@
             <!-- Форма -->
             <form method="post" action="{% url 'users:login' %}"
                   class="space-y-4"
-                  x-data="{
-                      showPassword: false,
-                  }">
+                  x-data="loginForm">
                 {% csrf_token %}
                 
                 <!-- Username / Email -->
@@ -61,7 +59,7 @@
                                placeholder="••••••••">
                         <i class="ti ti-lock absolute left-3 top-1/2 -translate-y-1/2 opacity-40"></i>
                         <button type="button"
-                                @click="showPassword = !showPassword; $el.previousElementSibling.type = showPassword ? 'text' : 'password'"
+                                @click="toggleVisibility($el)"
                                 class="absolute right-3 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-100 transition-opacity">
                             <i class="ti" :class="showPassword ? 'ti-eye-off' : 'ti-eye'"></i>
                         </button>

@@ -13,7 +13,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.db.models import Count, Avg, F, Q, Sum
 from django.core.cache import cache
-from django.http import HttpResponse
+from django.http import HttpResponse, Http404
 from django.shortcuts import redirect, render, get_object_or_404
 from django.template.loader import render_to_string
 from django.utils import timezone
@@ -550,6 +550,33 @@ class MatchShareCardView(View):
             top_player_name=f"{top.player.first_name} {top.player.last_name}" if top else "—",
             top_player_score=top.performance_score if top else 0.0,
         )
+        return redirect(default_storage.url(path))
+
+
+class StreakShareCardView(View):
+    """
+    /share/streak/<username>/<streak_type>/card.png — карточка "N дней
+    подряд" (retention loop "Серии", 2026-08-21), тот же редирект-на-
+    закэшированный-PNG паттерн, что и `MatchShareCardView` выше.
+
+    ВАЖНО: число дней БЕРЁТСЯ ИЗ БД (`user.evaluation_streak`/
+    `prediction_streak`), а не из URL — иначе кто угодно мог бы
+    сгенерировать (и закэшировать под чужим username) карточку "500 дней
+    подряд" простой подменой параметра в адресной строке.
+    """
+
+    def get(self, request, username, streak_type):
+        from core.services.share_cards import build_streak_share_card
+
+        if streak_type not in ("evaluation", "prediction"):
+            raise Http404("Unknown streak_type")
+
+        user = get_object_or_404(User, username=username, is_profile_public=True)
+        streak_count = user.evaluation_streak if streak_type == "evaluation" else user.prediction_streak
+        if streak_count <= 0:
+            raise Http404("No active streak")
+
+        path = build_streak_share_card(username=user.username, streak_type=streak_type, streak_count=streak_count)
         return redirect(default_storage.url(path))
 
 

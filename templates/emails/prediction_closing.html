@@ -1,0 +1,36 @@
+<!-- templates/emails/prediction_closing.html -->
+<!-- Retention loop 1 / приглашение к прогнозу в стиле Sofascore —
+     ПЕРЕПИСАНО 2026-08-21 по прямому запросу продукта: раньше текст был
+     чисто про срочность ("успейте, а то поздно"), теперь — приглашение
+     ("как думаете, кто победит?"), закрытие окна упомянуто вторым планом,
+     не как главный посыл письма. См. подробности выбора тона в докстринге
+     notifications/tasks.py::notify_prediction_closing_soon. Визуальный
+     стиль (оранжевый header) сохранён намеренно — тот же цвет уже
+     ассоциируется с "матч скоро", менять его ради смены тона текста
+     избыточно. Призыв к действию — /matches/<id>/ (виджет прогноза
+     встроен в шапку матча), не /evaluations/... -->
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: sans-serif; background: #f5f5f5; margin: 0; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .header { background: #f59e0b; color: #fff; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; margin: -30px -30px 30px -30px; }
+        .match-info { background: #fff7ed; padding: 15px; border-radius: 6px; text-align: center; margin: 20px 0; border: 1px solid #f59e0b; }
+        .btn { display: inline-block; padding: 12px 24px; background: #000; color: #fff; text-decoration: none; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header"><h1>⚽ Кто победит?</h1></div>
+        <p>Через час начинается матч — как вы думаете, кто возьмёт верх?</p>
+        <div class="match-info">
+            <h3>{{ match.home_team.name }} vs {{ match.away_team.name }}</h3>
+            <p style="margin: 4px 0 0; opacity: 0.7;">{{ match.start_time|date:"d.m.Y в H:i" }}</p>
+        </div>
+        <p style="opacity: 0.7;">Поставьте прогноз и сравните с мнением сообщества — приём открыт до стартового свистка.</p>
+        <p style="text-align: center;"><a href="{{ site_url }}/matches/{{ match.id }}/" class="btn">Поставить прогноз</a></p>
+    </div>
+</body>
+</html>

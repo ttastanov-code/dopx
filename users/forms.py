@@ -378,6 +378,29 @@ class NotificationSettingsForm(forms.Form):
         help_text="Рекомендуется — меньше писем, никакой потери информации.",
         widget=forms.CheckboxInput(attrs={"class": "toggle toggle-primary"}),
     )
+    # НОВОЕ (4 петли удержания, 2026-08-21) — см. users/models.py::User.
+    # DEFAULT_NOTIFICATION_SETTINGS и notifications/tasks.py.
+    email_prediction_closing = forms.BooleanField(
+        required=False,
+        label="Напоминание о закрытии приёма прогнозов",
+        initial=True,
+        help_text="Если вы ещё не поставили прогноз, а матч скоро начнётся.",
+        widget=forms.CheckboxInput(attrs={"class": "toggle toggle-primary"}),
+    )
+    email_weekly_summary = forms.BooleanField(
+        required=False,
+        label="Персональная сводка недели",
+        initial=True,
+        help_text="Сколько матчей оценили, точность ваших прогнозов, топ-матч недели.",
+        widget=forms.CheckboxInput(attrs={"class": "toggle toggle-primary"}),
+    )
+    email_prediction_result = forms.BooleanField(
+        required=False,
+        label="Ваш прогноз vs результат матча",
+        initial=True,
+        help_text="После финального свистка — совпал ли ваш прогноз и как проголосовало сообщество.",
+        widget=forms.CheckboxInput(attrs={"class": "toggle toggle-primary"}),
+    )
 
     def __init__(self, *args, **kwargs):
         user = kwargs.pop("user", None)

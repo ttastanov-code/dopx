@@ -50,13 +50,40 @@ def get_client_ip(request: HttpRequest) -> str | None:
     """
     Определяет реальный IP клиента с учётом обратного прокси.
 
-    Берёт первый адрес из `X-Forwarded-For` (стандартный заголовок,
-    который выставляет nginx/любой reverse-proxy перед Gunicorn/Uvicorn),
-    и только если его нет — падает обратно на `REMOTE_ADDR`.
+    БАГ, КОТОРЫЙ ТУТ БЫЛ: брался ПЕРВЫЙ адрес из `X-Forwarded-For` — эта
+    часть заголовка целиком под контролем клиента (curl -H "X-Forwarded-For:
+    1.2.3.4" ...), значит IP-based rate limit (регистрация, антифрод,
+    is_rate_limited) обходился одной строкой заголовка.
+
+    Правильно: `X-Forwarded-For` — это ЦЕПОЧКА "клиент, прокси1, прокси2,
+    ...", которая РАСТЁТ по мере прохождения запроса через каждый реальный
+    прокси (nginx с `proxy_set_header X-Forwarded-For
+    $proxy_add_x_forwarded_for;` ДОПИСЫВАЕТ IP в конец, не заменяет). Если
+    перед Gunicorn стоит РОВНО settings.TRUSTED_PROXY_COUNT доверенных
+    прокси, то последние TRUSTED_PROXY_COUNT записей — это IP самих
+    прокси (их нельзя подделать снаружи, их дописал наш же nginx), а
+    элемент ПЕРЕД ними — это и есть настоящий IP клиента. Всё, что левее —
+    контролируется атакующим и не заслуживает доверия.
+
+    ВАЖНО: это не замена сетевой защиты — если Gunicorn доступен извне
+    напрямую (в обход nginx), у атакующего в заголовке будет всего один
+    (поддельный) элемент, который и окажется "на нужной позиции". Прямой
+    доступ к Gunicorn должен быть закрыт файрволом/security group — см.
+    docs/BACKLOG.md.
     """
+    from django.conf import settings
+
     x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
     if x_forwarded_for:
-        return x_forwarded_for.split(",")[0].strip()
+        chain = [ip.strip() for ip in x_forwarded_for.split(",") if ip.strip()]
+        trusted_proxy_count = getattr(settings, "TRUSTED_PROXY_COUNT", 1)
+        if chain:
+            # Индекс с конца: -1 - N доверенных прокси. Если в цепочке
+            # меньше звеньев, чем ожидается доверенных прокси (заголовок
+            # подделан/укорочен), безопаснее откатиться на самый левый
+            # известный элемент, чем на REMOTE_ADDR самого nginx.
+            client_index = len(chain) - 1 - trusted_proxy_count
+            return chain[client_index] if client_index >= 0 else chain[0]
     return request.META.get("REMOTE_ADDR")
 
 

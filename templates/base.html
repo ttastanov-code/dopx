@@ -56,9 +56,38 @@
     оценки игрока) молча игнорируется и раскрытие происходит без анимации.
     {% endcomment %}
     <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/collapse@3.15.8/dist/cdn.min.js" integrity="sha384-NArNwzWsUSF+kY2lgW4YriEkjLqi+J+za6HrENUn/3nZqkBnWbxV22kCJEK5Uu6n" crossorigin="anonymous"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.15.8/dist/cdn.min.js" integrity="sha384-LXWjKwDZz29o7TduNe+r/UxaolHh5FsSvy2W7bDHSZ8jJeGgDeuNnsDNHoxpSgDi" crossorigin="anonymous"></script>
+    {% comment %}
+    static/js/alpine-components.js — регистрирует ВСЕ Alpine.data()-компоненты
+    (навешивает слушатель на 'alpine:init'). Обязан идти ДО ядра Alpine ниже:
+    несколько defer-скриптов выполняются строго в порядке появления в DOM, а
+    ядро само вызывает Alpine.start() (событие 'alpine:init' стреляет внутри
+    него) сразу после своего выполнения — если поменять порядок, компоненты
+    зарегистрируются слишком поздно и x-data="имяКомпонента" по всему сайту
+    упадёт с "Alpine Expression Error: имяКомпонента is not defined".
+    {% endcomment %}
+    <script defer src="{% static 'js/alpine-components.js' %}"></script>
+    {% comment %}
+    2026-08-21: заменено с обычной сборки alpinejs на @alpinejs/csp —
+    CSP-safe сборка, которая НЕ компилирует x-выражения через `new
+    Function(...)` (= не требует 'unsafe-eval' в CSP script-src, см.
+    dopx/middleware.py). Плата за это: инлайновые объектные литералы вида
+    x-data="{ ... }" больше не поддерживаются — ВСЕ x-data по сайту переведены
+    на зарегистрированные компоненты из static/js/alpine-components.js (см.
+    комментарий там же). integrity= пока не проставлен — пакет сменился,
+    старый хэш для alpinejs@3.15.8 сюда не подходит. ОБЯЗАТЕЛЬНО перед
+    деплоем: bash scripts/generate_sri.sh (уже обновлён под @alpinejs/csp).
+    {% endcomment %}
+    <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/csp@3.15.8/dist/cdn.min.js" crossorigin="anonymous"></script>
     <!-- HTMX -->
     <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.8/dist/htmx.min.js" crossorigin="anonymous"></script>
+    {% comment %}
+    Заголовок вкладки с числом непрочитанных уведомлений — единственный
+    слушатель htmx:afterSwap на #notif-unread-badge, см. подробный
+    докстринг в самом файле. defer — скрипт обращается к document.body
+    напрямую при выполнении, без defer он выполнился бы раньше, чем <body>
+    существует (этот <script> лежит в <head>).
+    {% endcomment %}
+    <script defer src="{% static 'js/notifications.js' %}"></script>
     <!-- Без tailwind.config — это Tailwind v4 (@tailwindcss/browser@4),
          JS-конфига в v4 не существует (тема настраивается через CSS
          @theme), window.tailwind не создаётся. Цвета берутся из тем DaisyUI
@@ -122,16 +151,7 @@
     class="bg-base-100 text-base-content antialiased"
     hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
     data-vapid-public-key="{{ VAPID_PUBLIC_KEY|default:'' }}"
-    x-data="{
-        theme: localStorage.getItem('theme') || 'light',
-        toggleTheme() {
-            this.theme = this.theme === 'light' ? 'dark' : 'light';
-            document.documentElement.setAttribute('data-theme', this.theme);
-            localStorage.setItem('theme', this.theme);
-        }
-    }"
-    x-init="$watch('theme', value => document.documentElement.setAttribute('data-theme', value));
-    document.documentElement.setAttribute('data-theme', theme)">
+    x-data="themeSwitcher">
     
     <!-- Сохраняем оригинальный title для JS уведомлений -->
     <meta name="original-title" content="{{ page_title|default:'DOPX' }}">
@@ -142,7 +162,7 @@
     <!-- Messages -->
     {% if messages %}
     <div class="fixed top-20 right-4 z-50 space-y-2 w-[calc(100%-2rem)] sm:w-auto max-w-sm"
-         x-data="{ show: true }"
+         x-data="dismissible"
          x-show="show"
          x-transition
          @click.outside="show = false">
@@ -168,47 +188,10 @@
         <span class="loading loading-spinner loading-lg text-primary"></span>
     </div>
     {% endblock %}
-    <!-- tooltipTrigger для components/_tooltip_icon.html. На десктопе —
-         по наведению/фокусу, на мобильных — по тапу; закрывается уходом
-         курсора или тапом вне подсказки. Клик не toggle — иначе на
-         десктопе наведение открывает, а следующий клик тут же закрывает
-         same-tick. -->
-    <script>
-        document.addEventListener('alpine:init', () => {
-            Alpine.data('tooltipTrigger', (text) => ({
-                text,
-                open: false,
-                pos: { top: 0, left: 0 },
-                show() {
-                    this.open = true;
-                    this.$nextTick(() => this.position());
-                },
-                hide() {
-                    this.open = false;
-                },
-                toggle() {
-                    this.open ? this.hide() : this.show();
-                },
-                position() {
-                    const trigger = this.$refs.trigger;
-                    const bubble = this.$refs.bubble;
-                    if (!trigger || !bubble) return;
-                    const margin = 8;
-                    const tRect = trigger.getBoundingClientRect();
-                    const bRect = bubble.getBoundingClientRect();
-                    // Вертикально: сверху от иконки, если не влезает — снизу
-                    let top = tRect.top - bRect.height - margin;
-                    if (top < margin) {
-                        top = tRect.bottom + margin;
-                    }
-                    // Горизонтально: центр по иконке, зажатый в границы экрана
-                    let left = tRect.left + tRect.width / 2 - bRect.width / 2;
-                    left = Math.max(margin, Math.min(left, window.innerWidth - bRect.width - margin));
-                    this.pos = { top, left };
-                },
-            }));
-        });
-    </script>
+    <!-- tooltipTrigger (components/_tooltip_icon.html) теперь регистрируется
+         в static/js/alpine-components.js вместе со всеми остальными
+         Alpine.data()-компонентами — см. комментарий в <head> про CSP-safe
+         сборку Alpine. -->
     <!-- Скрипты -->
     <script>
         // HTMX события

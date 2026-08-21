@@ -80,6 +80,52 @@ def build_match_share_card(
     return relative_path
 
 
+def build_streak_share_card(*, username: str, streak_type: str, streak_count: int) -> str:
+    """
+    Retention loop "Серии" (2026-08-21) — карточка "N дней подряд" для
+    шеринга в соцсети, тот же кэш-по-хэшу принцип, что у двух функций
+    выше. :param streak_type: 'evaluation' | 'prediction' — только для
+    подписи и цвета акцента, на сами данные не влияет.
+
+    :return: относительный путь в MEDIA к готовому PNG.
+    """
+    label_line1 = "дней подряд"
+    label_line2 = "оценок матчей" if streak_type == "evaluation" else "прогнозов на матчи"
+    accent = "#60a5fa" if streak_type == "evaluation" else "#a78bfa"
+
+    key = _cache_key(username, streak_type, str(streak_count))
+    relative_path = f"share-cards/streak_{key}.png"
+    if default_storage.exists(relative_path):
+        return relative_path
+
+    img = Image.new("RGB", CARD_SIZE, color="#0a0a0a")
+    draw = ImageDraw.Draw(img)
+    font_title = _font("bold", 40)
+    font_name = _font("bold", 46)
+    font_number = _font("bold", 160)
+    font_label = _font("regular", 32)
+    font_small = _font("regular", 22)
+
+    draw.text((60, 50), "DOPX", font=font_title, fill="#ffffff")
+    draw.text((60, 120), f"@{username}", font=font_name, fill="#a3a3a3")
+
+    # Без emoji ("🔥") — та же причина, что в build_match_share_card: у
+    # Liberation Sans нет emoji-глифов.
+    number_text = str(streak_count)
+    draw.text((60, 240), number_text, font=font_number, fill=accent)
+    number_width = draw.textlength(number_text, font=font_number)
+    draw.text((60 + number_width + 30, 320), label_line1, font=font_label, fill="#ffffff")
+    draw.text((60 + number_width + 30, 365), label_line2, font=font_label, fill="#ffffff")
+
+    draw.text((60, CARD_SIZE[1] - 50), "Голос трибун измеряем — dopx.kz", font=font_small, fill="#737373")
+
+    buffer = BytesIO()
+    img.save(buffer, format="PNG", optimize=True)
+    buffer.seek(0)
+    default_storage.save(relative_path, buffer)
+    return relative_path
+
+
 def build_player_season_recap_card(
     *, player_name: str, team_name: str, season_label: str,
     matches_played: int, avg_performance: float | None, goals: int,

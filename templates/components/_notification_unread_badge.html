@@ -1,0 +1,34 @@
+{% comment %}
+templates/components/_notification_unread_badge.html
+Счётчик непрочитанных на колокольчике — САМОСТОЯТЕЛЬНЫЙ маленький
+HTMX-виджет, добавлен 2026-08-21 (пересборка UI уведомлений по прямому
+запросу пользователя). Поллит сам себя каждые 30с через
+`notifications:unread_count_partial`.
+
+Выделен ОТДЕЛЬНО от всего дропдауна (_notification_badge.html) намеренно:
+раньше "автообновление" количества было мёртвым кодом — JS в
+_notification_badge.html слушал `htmx:afterSwap` на элементе с id
+`notification-badge-container`, которого не существовало НИГДЕ в DOM
+(колокольчик подключался в _navbar.html обычным `{% include %}`, без
+единого hx-get/hx-trigger вообще). Если поллить весь дропдаун целиком —
+каждые 30с пересоздавался бы DOM-узел с `x-data="notificationDropdown"`,
+и открытый в этот момент дропдаун схлопывался бы сам собой. Поллинг ТОЛЬКО
+этого маленького счётчика такой проблемы не создаёт — он вне поддерева
+Alpine-компонента (Alpine `open`-состояние живёт на родительском узле).
+
+Параметры:
+  count — сколько непрочитанных.
+  oob — bool, если True добавляет hx-swap-oob="true" — используется, когда
+    этот же партиал встраивается ХВОСТОМ в ответ на "отметить прочитанным"
+    (notifications/views.py::_oob_counters_html), чтобы число обновилось
+    МГНОВЕННО, не дожидаясь следующего 30-секундного тика поллинга.
+    hx-get/hx-trigger остаются в любом случае — иначе после первого же
+    oob-обновления новый узел, вставленный в DOM, потерял бы способность
+    поллиться дальше.
+{% endcomment %}
+<span id="notif-unread-badge"
+      {% if oob %}hx-swap-oob="true"{% endif %}
+      hx-get="{% url 'notifications:unread_count_partial' %}"
+      hx-trigger="every 30s"
+      hx-swap="outerHTML"
+      class="badge badge-sm badge-error absolute -top-0.5 -right-0.5 text-white min-w-[1rem] h-4 flex items-center justify-center text-[10px] pointer-events-none {% if not count %}hidden{% endif %}">{{ count|default:0|truncatechars:2 }}</span>

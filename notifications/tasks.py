@@ -41,6 +41,10 @@ NOTIFICATION_TYPE_TO_SETTINGS_KEY: dict[str, str] = {
     "new_badge": "email_new_badge",
     "level_up": "email_level_up",
     "system": "email_system",
+    # НОВОЕ (4 петли удержания, 2026-08-21):
+    "prediction_closing": "email_prediction_closing",
+    "prediction_result": "email_prediction_result",
+    "weekly_digest": "email_weekly_summary",
 }
 
 # Уведомления этих типов собираются в дайджест (см. пункт 3), а не
@@ -433,3 +437,315 @@ def notify_followers_match_activity(self, match_id: str):
 
     logger.info(f"✅ Notified {len(follower_user_ids)} follower(s) about match {match.id}")
     return {'notified': len(follower_user_ids)}
+
+
+# ============================================================
+# 4 петли удержания (retention loops), 2026-08-21 — задача пользователя:
+# "нужна регулярная причина вернуться: прогнозы, персональная недельная
+# сводка, «ваш прогноз/оценка против сообщества», серии". Ниже — loop 1
+# (дедлайн прогноза) и loop 3 (прогноз vs результат). Loop 2 (недельная
+# сводка) — тоже здесь, ниже. Loop 4 (серии) не требует отдельной задачи —
+# начисление стрика синхронное (users/models.py::User.update_prediction_
+# stats), а майлстоуны 7/30/100 идут через УЖЕ существующий пайплайн
+# бейджей (check_and_award_badges_task → notification_type='new_badge'),
+# см. users/badges.py и users/services.py.
+# ============================================================
+
+@shared_task(bind=True, max_retries=3)
+def notify_prediction_closing_soon(self):
+    """
+    Loop 1 / приглашение к прогнозу в стиле Sofascore — ПЕРЕОСМЫСЛЕНО
+    2026-08-21 по прямому запросу продукта (по мотивам того, как Sofascore
+    шлёт пуш за час до матча: "команда А играет с командой Б — как вы
+    думаете, кто победит?"). Раньше это письмо было чисто про срочность
+    ("закрывается через час, успевайте") и только по email — теперь это
+    ПРИГЛАШЕНИЕ поучаствовать, с тем же самым триггером по времени (~1 час
+    до `Match.start_time`, только для тех, кто ещё не предсказал — см.
+    `Match.is_prediction_open()`), но на два канала сразу: push (best-effort,
+    тот же паттерн, что `notify_followers_match_activity`) + in-app
+    `Notification`, ПЛЮС email с переписанным приглашающим текстом вместо
+    urgency-формулировки (см. templates/emails/prediction_closing.html).
+
+    С добавлением нижней границы окна прогноза (`Match.PREDICTION_WINDOW_DAYS`,
+    matches/models.py) этот час перед стартом — по сути последний реалистичный
+    момент напомнить: раньше — уже открыто и, скорее всего, увидено на
+    странице матча, позже — уже поздно, прогноз закрылся вместе со стартовым
+    свистком.
+
+    Дедупликация НЕ нужна (в отличие от `notify_prediction_results`, где
+    контент завязан на итоговый счёт и повтор был бы бессмысленным спамом):
+    `crontab(minute='*/30')` может застать один и тот же матч в пределах
+    часового окна дважды — оба раза увидит тех же ещё-не-предсказавших
+    пользователей и пришлёт приглашение повторно. Это осознанно (и было так
+    же у email-канала до этой правки) — короткое повторное напоминание в
+    узком окне ближе к Sofascore-паттерну, чем риск ни разу не достучаться
+    из-за пропущенного тика воркера.
+    """
+    from django.urls import reverse
+
+    from matches.models import Match
+    from notifications.models import Notification
+    from predictions.models import MatchPrediction
+
+    now = timezone.now()
+    closing_threshold = now + timedelta(hours=1)
+
+    matches = Match.objects.filter(
+        status='scheduled',
+        start_time__gte=now,
+        start_time__lte=closing_threshold,
+    ).select_related('home_team', 'away_team')
+
+    if not matches.exists():
+        logger.info(f"✅ No matches kicking off in the next hour (now={now}).")
+        return {'status': 'ok', 'matches_found': 0}
+
+    from users.models import User
+
+    queued = 0
+    notified_inapp = 0
+    for match in matches:
+        already_predicted = MatchPrediction.objects.filter(match=match).values('user_id')
+        user_ids = [
+            str(uid) for uid in User.objects.filter(is_verified=True, email__isnull=False)
+            .exclude(id__in=already_predicted)
+            .values_list('id', flat=True)
+        ]
+        if not user_ids:
+            continue
+
+        subject = f'⚽ {match.home_team.name} — {match.away_team.name}: как думаете, кто победит?'
+        for chunk in _chunked(user_ids, BULK_EMAIL_CHUNK_SIZE):
+            _send_match_email_chunk.delay(chunk, str(match.id), subject, 'emails/prediction_closing.html', 'prediction_closing')
+            queued += 1
+
+        title = f'{match.home_team.name} vs {match.away_team.name} — кто победит?'
+        message = 'Матч начинается через час. Успейте поставить прогноз на исход, пока приём открыт.'
+        action_url = reverse('matches:detail', args=[match.id])
+
+        Notification.objects.bulk_create([
+            Notification(
+                user_id=uid, notification_type='prediction_closing',
+                title=title, message=message, action_url=action_url, related_match=match,
+            )
+            for uid in user_ids
+        ])
+        notified_inapp += len(user_ids)
+
+        # Push — см. идентичный try/except-обёртку и обоснование в
+        # notify_followers_match_activity выше: best-effort, сбой одного
+        # пользователя/отсутствие VAPID-ключей не должен ронять всю задачу.
+        try:
+            from notifications.services import send_push_to_user
+
+            for user in User.objects.filter(id__in=user_ids):
+                send_push_to_user(user, title=title, body=message, url=action_url)
+        except Exception as exc:
+            logger.warning(f"notify_prediction_closing_soon: push fan-out skipped for match {match.id}: {exc}")
+
+    logger.info(
+        f"✅ Queued {queued} email chunk(s), {notified_inapp} in-app notification(s) "
+        f"across {matches.count()} match(es) starting soon."
+    )
+    return {
+        'status': 'ok', 'matches_processed': matches.count(),
+        'chunks_queued': queued, 'inapp_notified': notified_inapp,
+    }
+
+
+@shared_task(bind=True, max_retries=3)
+def notify_prediction_results(self):
+    """
+    Loop 3: «ваш прогноз vs сообщество/результат» — персонализированное
+    письмо+in-app уведомление КАЖДОМУ, кто ставил прогноз на матч, который
+    недавно завершился.
+
+    В отличие от `notify_followers_match_activity`/`send_voting_open_
+    notification` (одна и та же тема/шаблон для всех адресатов, fan-out
+    пачками), здесь контент у каждого получателя РАЗНЫЙ (свой выбор,
+    совпал/не совпал) — фан-аут пачками неприменим без готового шаблона
+    "письмо на пачку", поэтому цикл идёт по каждому предсказавшему
+    напрямую внутри задачи (тот же стиль, что и `send_notification_digest`
+    ниже — периодическая задача с прямым циклом рассылки, а не
+    delegation на суб-задачи).
+
+    Дедупликация БЕЗ отдельного булева флага на `MatchPrediction`: если
+    для пары (match, user) уже существует `Notification(notification_type=
+    'prediction_result', related_match=match, user=user)` — значит, письмо
+    уже отправлено, повторный прогон `crontab(minute='*/30')` эту пару
+    пропустит. `lookback` — 6 часов, не 1 — с запасом на случай простоя
+    воркера/деплоя между прогонами; повторный прогон в пределах окна не
+    дублирует уже обработанные пары благодаря дедупликации выше.
+    """
+    from django.urls import reverse
+
+    from matches.models import Match
+    from notifications.models import Notification
+    from predictions.models import MatchPrediction
+    from predictions.services import prediction_counts
+
+    now = timezone.now()
+    lookback = now - timedelta(hours=6)
+
+    matches = Match.objects.filter(
+        status='finished', end_time__isnull=False, end_time__gte=lookback, end_time__lte=now,
+    ).select_related('home_team', 'away_team')
+
+    result_labels = {'1': 'Победа хозяев', 'X': 'Ничья', '2': 'Победа гостей'}
+    notified = 0
+
+    for match in matches:
+        already_notified = Notification.objects.filter(
+            notification_type='prediction_result', related_match=match,
+        ).values('user_id')
+        predictions = list(
+            MatchPrediction.objects.filter(match=match)
+            .exclude(user_id__in=already_notified)
+            .select_related('user')
+        )
+        if not predictions:
+            continue
+
+        counts = prediction_counts(match)
+        action_url = reverse('matches:detail', args=[match.id])
+        your_choice_labels = {
+            '1': f'П1 ({match.home_team.name})',
+            'X': 'Х (ничья)',
+            '2': f'П2 ({match.away_team.name})',
+        }
+
+        notifications_to_create = []
+        for pred in predictions:
+            is_correct = pred.is_correct  # bool, т.к. match.final_result уже точно известен (status='finished')
+            title = "✅ Ваш прогноз сбылся!" if is_correct else "Прогноз не сбылся"
+            message = (
+                f"{match.home_team.name} {match.get_score_display()} {match.away_team.name} — "
+                f"{result_labels.get(match.final_result, '?')}. "
+                f"Ваш прогноз: {your_choice_labels.get(pred.choice, pred.choice)}."
+            )
+            digest_mode = pred.user.get_notification_setting('email_digest_mode', True)
+            notifications_to_create.append(Notification(
+                user=pred.user,
+                notification_type='prediction_result',
+                title=title,
+                message=message,
+                action_url=action_url,
+                related_match=match,
+                # НЕ участвует в DIGESTIBLE_NOTIFICATION_TYPES (см. ниже) —
+                # почтовая отправка идёт немедленно в этом же цикле, а не
+                # через send_notification_digest, поэтому email_sent_at
+                # проставляется сразу, а не по digest_mode пользователя.
+                email_sent_at=timezone.now(),
+            ))
+
+        Notification.objects.bulk_create(notifications_to_create)
+
+        for pred in predictions:
+            _send_email_to_user(
+                pred.user,
+                f'{"✅" if pred.is_correct else "📊"} Итог матча {match.home_team.name} vs {match.away_team.name}',
+                'emails/prediction_result.html',
+                {
+                    'match': match,
+                    'counts': counts,
+                    'is_correct': pred.is_correct,
+                    'your_choice_label': your_choice_labels.get(pred.choice, pred.choice),
+                },
+                notification_type='prediction_result',
+            )
+
+        notified += len(predictions)
+
+    logger.info(f"✅ notify_prediction_results: notified {notified} predictor(s) across {matches.count()} match(es).")
+    return {'notified': notified}
+
+
+@shared_task(bind=True, max_retries=3)
+def send_weekly_summary(self):
+    """
+    Loop 2: персональная недельная сводка — сколько оценок/прогнозов сделал
+    пользователь за последние 7 дней, точность прогнозов, "матч недели"
+    (общий для всех, по средней вовлечённости из `aggregates.MatchAggregate`).
+
+    Намеренно НЕ участвует в `send_notification_digest` (см. пункт 3
+    докстринга модуля) — это САМА ПО СЕБЕ агрегированная сводка raz в
+    неделю, оборачивать её ЕЩЁ раз в дайджест бессмысленно; письмо уходит
+    сразу всем, кто включил `email_weekly_summary`, независимо от
+    `email_digest_mode` (та же логика, что у мгновенных писем о
+    завершении матча).
+
+    Синхронный цикл по пользователям в одной задаче (не fan-out пачками)
+    — контент персонализирован на каждого, как и `notify_prediction_
+    results` выше; при росте базы пользователей на порядки это стоит
+    переделать на chunked sub-tasks, для текущего масштаба KPL-аудитории
+    один проход раз в неделю укладывается в `CELERY_TASK_TIME_LIMIT`.
+    """
+    from django.db.models import Count, Q
+
+    from evaluations.models import EvaluationSession
+    from matches.models import Match
+    from predictions.models import MatchPrediction
+    from users.models import User
+
+    now = timezone.now()
+    week_ago = now - timedelta(days=7)
+
+    # "Матч недели" — один и тот же для всех писем этой рассылки, поэтому
+    # считается ОДИН раз до цикла по пользователям, не на каждого.
+    top_match = (
+        Match.objects.filter(
+            status='finished', end_time__gte=week_ago, end_time__lte=now,
+            aggregate__isnull=False,
+        )
+        .select_related('home_team', 'away_team', 'aggregate')
+        .order_by('-aggregate__avg_entertainment')
+        .first()
+    )
+
+    users = User.objects.filter(is_verified=True, email__isnull=False)
+    sent = 0
+
+    for user in users:
+        if not user.get_notification_setting('email_weekly_summary', True):
+            continue
+
+        evaluations_count = EvaluationSession.objects.filter(
+            user=user, status='completed', completed_at__gte=week_ago, completed_at__lt=now,
+        ).count()
+
+        week_predictions = MatchPrediction.objects.filter(
+            user=user, created_at__gte=week_ago, created_at__lt=now,
+        ).select_related('match')
+        predictions_count = week_predictions.count()
+
+        # Точность считается только по прогнозам с УЖЕ известным исходом
+        # (match.final_result может быть None, если матч ещё не завершился
+        # к моменту рассылки) — иначе делитель включал бы прогнозы, которые
+        # физически не могли ни сбыться, ни провалиться.
+        decided = [p for p in week_predictions if p.match.final_result is not None]
+        accuracy_pct = None
+        if decided:
+            correct = sum(1 for p in decided if p.choice == p.match.final_result)
+            accuracy_pct = round(correct * 100 / len(decided))
+
+        if evaluations_count == 0 and predictions_count == 0:
+            # Ничего не произошло за неделю — письмо "у вас 0 всего" не
+            # несёт ценности и выглядит как упрёк, а не приглашение вернуться.
+            continue
+
+        if _send_email_to_user(
+            user,
+            '📊 Ваша неделя на DOPX',
+            'emails/weekly_summary.html',
+            {
+                'evaluations_count': evaluations_count,
+                'predictions_count': predictions_count,
+                'accuracy_pct': accuracy_pct,
+                'top_match': top_match,
+            },
+            notification_type='weekly_digest',
+        ):
+            sent += 1
+
+    logger.info(f"✅ send_weekly_summary: sent to {sent} user(s).")
+    return {'sent': sent}

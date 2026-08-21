@@ -1,0 +1,139 @@
+{% comment %}
+Виджет краудсорс-прогноза 1X2 (в стиле Sofascore) — три опции П1/Х/П2 с
+процентом голосов сообщества под каждой. Рендерится и как часть
+_match_header.html (первичная загрузка через hx-get="...widget/"
+hx-trigger="load"), и как ответ на сам POST predictions:predict — тот же
+партиал целиком заменяет себя через hx-swap="outerHTML", как
+events/_reaction_buttons.html.
+
+Контекст: match, counts (dict из predictions/services.py::prediction_counts
+— home/draw/away/total + home_pct/draw_pct/away_pct), my_prediction
+(MatchPrediction пользователя или None).
+
+Четыре состояния виджета (добавлено состояние 0 — 2026-08-21, окно прогноза
+получило нижнюю границу `Match.PREDICTION_WINDOW_DAYS`, раньше можно было
+голосовать хоть за год вперёд):
+0. match.prediction_window_not_yet_open() — матч ещё далеко, окно не
+   наступило: кнопки задизейблены, поясняем когда прогнозы откроются.
+1. match.is_prediction_open() — кнопки кликабельны (hx-post), можно менять
+   выбор до стартового свистка.
+2. Голосование закрыто, но матч ещё не завершён (live) — только проценты,
+   без кнопок, с пояснением "Голосование закрыто".
+3. Матч завершён (match.final_result не None) — опция, совпавшая с реальным
+   исходом, подсвечивается зелёной рамкой + иконкой, плюс если пользователь
+   голосовал — явный бейдж "Ваш прогноз совпал/не совпал".
+{% endcomment %}
+<div id="prediction-widget-{{ match.id }}" class="card bg-base-100 border border-base-300 mt-3 sm:mt-6">
+    <div class="card-body p-3 sm:p-4">
+        <div class="flex items-center justify-between mb-2 sm:mb-3">
+            <h3 class="font-bold text-sm sm:text-base flex items-center gap-2">
+                <i class="ti ti-chart-bar text-primary"></i>
+                <span>Прогноз на матч</span>
+            </h3>
+            {% if counts.total %}
+            {% comment %}Инвариантная форма "прогнозов" вместо согласования по числу — тот же упрощённый подход, что и у "{{ count }} непрочитанных" в components/_notification_badge.html.{% endcomment %}
+            <span class="text-[10px] sm:text-xs opacity-50">{{ counts.total }} прогнозов</span>
+            {% endif %}
+        </div>
+
+        <div class="grid grid-cols-3 gap-1.5 sm:gap-2">
+            {% comment %}Три блока прописаны явно (не циклом) — у каждого своя подпись команды/счёта и своя логика подсветки, цикл только усложнил бы читаемость ради сомнительного DRY.{% endcomment %}
+
+            <!-- П1: победа хозяев -->
+            <button type="button"
+                    {% if match.is_prediction_open %}
+                    hx-post="{% url 'predictions:predict' match.id %}"
+                    hx-vals='{"choice": "1"}'
+                    hx-target="#prediction-widget-{{ match.id }}"
+                    hx-swap="outerHTML"
+                    {% else %}
+                    disabled
+                    {% endif %}
+                    class="flex flex-col items-center gap-1 p-2 sm:p-3 rounded-xl border-2 transition-all
+                           {% if match.final_result == '1' %}border-success bg-success/10
+                           {% elif my_prediction.choice == '1' %}border-primary bg-primary/5
+                           {% else %}border-base-200{% endif %}
+                           {% if not match.is_prediction_open %}cursor-default{% endif %}">
+                <span class="text-[10px] sm:text-xs font-semibold opacity-70 truncate max-w-full">{{ match.home_team.name }}</span>
+                <span class="text-base sm:text-lg font-bold">{{ counts.home_pct }}%</span>
+                <div class="w-full h-1.5 bg-base-200 rounded-full overflow-hidden">
+                    <div class="h-full bg-primary rounded-full" style="width: {{ counts.home_pct }}%"></div>
+                </div>
+                {% if match.final_result == '1' %}
+                <i class="ti ti-check text-success text-xs"></i>
+                {% endif %}
+            </button>
+
+            <!-- Х: ничья -->
+            <button type="button"
+                    {% if match.is_prediction_open %}
+                    hx-post="{% url 'predictions:predict' match.id %}"
+                    hx-vals='{"choice": "X"}'
+                    hx-target="#prediction-widget-{{ match.id }}"
+                    hx-swap="outerHTML"
+                    {% else %}
+                    disabled
+                    {% endif %}
+                    class="flex flex-col items-center gap-1 p-2 sm:p-3 rounded-xl border-2 transition-all
+                           {% if match.final_result == 'X' %}border-success bg-success/10
+                           {% elif my_prediction.choice == 'X' %}border-primary bg-primary/5
+                           {% else %}border-base-200{% endif %}
+                           {% if not match.is_prediction_open %}cursor-default{% endif %}">
+                <span class="text-[10px] sm:text-xs font-semibold opacity-70">Ничья</span>
+                <span class="text-base sm:text-lg font-bold">{{ counts.draw_pct }}%</span>
+                <div class="w-full h-1.5 bg-base-200 rounded-full overflow-hidden">
+                    <div class="h-full bg-neutral rounded-full" style="width: {{ counts.draw_pct }}%"></div>
+                </div>
+                {% if match.final_result == 'X' %}
+                <i class="ti ti-check text-success text-xs"></i>
+                {% endif %}
+            </button>
+
+            <!-- П2: победа гостей -->
+            <button type="button"
+                    {% if match.is_prediction_open %}
+                    hx-post="{% url 'predictions:predict' match.id %}"
+                    hx-vals='{"choice": "2"}'
+                    hx-target="#prediction-widget-{{ match.id }}"
+                    hx-swap="outerHTML"
+                    {% else %}
+                    disabled
+                    {% endif %}
+                    class="flex flex-col items-center gap-1 p-2 sm:p-3 rounded-xl border-2 transition-all
+                           {% if match.final_result == '2' %}border-success bg-success/10
+                           {% elif my_prediction.choice == '2' %}border-primary bg-primary/5
+                           {% else %}border-base-200{% endif %}
+                           {% if not match.is_prediction_open %}cursor-default{% endif %}">
+                <span class="text-[10px] sm:text-xs font-semibold opacity-70 truncate max-w-full">{{ match.away_team.name }}</span>
+                <span class="text-base sm:text-lg font-bold">{{ counts.away_pct }}%</span>
+                <div class="w-full h-1.5 bg-base-200 rounded-full overflow-hidden">
+                    <div class="h-full bg-secondary rounded-full" style="width: {{ counts.away_pct }}%"></div>
+                </div>
+                {% if match.final_result == '2' %}
+                <i class="ti ti-check text-success text-xs"></i>
+                {% endif %}
+            </button>
+        </div>
+
+        {% if match.final_result and my_prediction %}
+        <div class="mt-2 sm:mt-3 text-[11px] sm:text-xs flex items-center gap-1.5 {% if my_prediction.choice == match.final_result %}text-success{% else %}text-error{% endif %}">
+            <i class="ti {% if my_prediction.choice == match.final_result %}ti-circle-check{% else %}ti-circle-x{% endif %}"></i>
+            {% if my_prediction.choice == match.final_result %}
+            Ваш прогноз совпал с результатом!
+            {% else %}
+            Ваш прогноз не совпал с результатом
+            {% endif %}
+        </div>
+        {% elif match.prediction_window_not_yet_open %}
+        <p class="mt-2 sm:mt-3 text-[11px] sm:text-xs opacity-50 flex items-center gap-1.5">
+            <i class="ti ti-hourglass-empty"></i> Прогнозы откроются {{ match.prediction_opens_at|date:"d.m в H:i" }}
+        </p>
+        {% elif not match.is_prediction_open and not match.final_result %}
+        <p class="mt-2 sm:mt-3 text-[11px] sm:text-xs opacity-50 flex items-center gap-1.5">
+            <i class="ti ti-lock"></i> Голосование закрыто — матч уже начался
+        </p>
+        {% elif not counts.total %}
+        <p class="mt-2 sm:mt-3 text-[11px] sm:text-xs opacity-50">Будьте первым, кто спрогнозирует исход!</p>
+        {% endif %}
+    </div>
+</div>

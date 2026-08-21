@@ -161,12 +161,7 @@
     id="scroll-to-top"
     class="fixed bottom-6 right-6 btn btn-circle btn-primary btn-sm shadow-lg opacity-0 pointer-events-none transition-all duration-300 z-40"
     aria-label="Наверх"
-    x-data="{ visible: false }"
-    x-init="window.addEventListener('scroll', () => {
-        visible = window.scrollY > 300;
-        $el.classList.toggle('opacity-0', !visible);
-        $el.classList.toggle('pointer-events-none', !visible);
-    })"
-    @click="window.scrollTo({ top: 0, behavior: 'smooth' })">
+    x-data="scrollToTopButton"
+    @click="scrollToTop()">
     <i class="ti ti-arrow-up"></i>
 </button>

@@ -82,7 +82,27 @@ TRIGGERABLE_TASKS = {
     "sync_recent_matches": "Досинхронизировать последние завершённые матчи",
     "check_sync_errors_and_alert": "Проверить ошибки синка за 24ч и отправить алерт при превышении порога",
     "sync_all_enabled_tournaments": "Синхронизировать все включённые турниры (PARSER_SETTINGS)",
+    # Retention loops (2026-08-21) — ручной прогон для тестирования без
+    # ожидания реального крон-тика (см. core/management/commands/
+    # simulate_match_timing.py — двигает существующий матч по времени,
+    # чтобы эти задачи нашли что обработать, затем жмём кнопку здесь).
+    "notify_prediction_closing_soon": "Прогнозы: приглашение за час до старта (push+email+in-app)",
+    "notify_prediction_results": "Прогнозы: «ваш прогноз vs результат» по завершённым матчам",
+    "send_weekly_summary": "Персональная недельная сводка активности",
 }
+
+# Модуль, откуда импортировать функцию задачи — раньше был жёстко захардкожен
+# как parsers.tasks для ВСЕХ задач в TRIGGERABLE_TASKS (единственный источник
+# на момент задачи #93). С добавлением задач из notifications.tasks выше
+# понадобилась явная маршрутизация по имени; TRIGGERABLE_TASKS сознательно
+# НЕ тронут по форме (по-прежнему name -> label), чтобы не менять шаблон
+# templates/dashboard/parser_tools.html, который просто выводит label.
+_TASK_MODULES = {
+    "notify_prediction_closing_soon": "notifications.tasks",
+    "notify_prediction_results": "notifications.tasks",
+    "send_weekly_summary": "notifications.tasks",
+}
+_DEFAULT_TASK_MODULE = "parsers.tasks"
 
 
 def trigger_task(task_name: str) -> tuple[bool, str]:
@@ -93,9 +113,10 @@ def trigger_task(task_name: str) -> tuple[bool, str]:
     if not cache.add(debounce_key, "1", timeout=TASK_DEBOUNCE_SECONDS):
         return False, f"Задача уже запускалась < {TASK_DEBOUNCE_SECONDS}с назад — подождите"
 
-    from parsers import tasks as parser_tasks
+    import importlib
 
-    task_fn = getattr(parser_tasks, task_name)
+    module = importlib.import_module(_TASK_MODULES.get(task_name, _DEFAULT_TASK_MODULE))
+    task_fn = getattr(module, task_name)
     task_fn.delay()
     return True, f"Задача «{TRIGGERABLE_TASKS[task_name]}» поставлена в очередь"
 

@@ -139,6 +139,31 @@ BADGE_CATALOG: dict[str, BadgeDefinition] = {
         description="Оценили игроков 8+ разных команд КПЛ — широкий, непредвзятый взгляд.",
         rarity="gold",
     ),
+    # --- Прогнозы (predictions app, retention loop "Серии", 2026-08-21) ---
+    "first_prediction": BadgeDefinition(
+        code="first_prediction",
+        name="Первый прогноз",
+        description="Поставили свой первый прогноз на исход матча.",
+        rarity="bronze",
+    ),
+    "prediction_streak_7": BadgeDefinition(
+        code="prediction_streak_7",
+        name="Аналитик недели",
+        description="Ставили прогнозы на матчи 7 дней подряд.",
+        rarity="bronze",
+    ),
+    "prediction_streak_30": BadgeDefinition(
+        code="prediction_streak_30",
+        name="Штатный прогнозист",
+        description="Ставили прогнозы на матчи 30 дней подряд.",
+        rarity="silver",
+    ),
+    "prediction_streak_100": BadgeDefinition(
+        code="prediction_streak_100",
+        name="Оракул трибун",
+        description="Ставили прогнозы на матчи 100 дней подряд.",
+        rarity="platinum",
+    ),
     # --- Дерби и статусные ---
     "derby_hunter": BadgeDefinition(
         code="derby_hunter",

@@ -12,7 +12,7 @@
 `data-tip`).
 """
 from django import template
-from django.utils.html import escapejs
+from django.utils.html import escape
 
 register = template.Library()
 
@@ -27,7 +27,19 @@ class TooltipWrapNode(template.Node):
         inner = self.nodelist.render(context)
         if not text:
             return inner
-        safe_text = escapejs(text)
+        # ВАЖНО (баг 2026-08-21, "Дербии002Дэксперт" вместо "Дерби-эксперт"):
+        # раньше текст шёл через escapejs() ПРЯМО в строковый литерал внутри
+        # x-data="tooltipTrigger('...')". escapejs() экранирует дефис как
+        # `-` (см. django.utils.html._js_escapes) — это валидный JS,
+        # но CSP-евалуатор @alpinejs/csp разбирает выражение x-data сам, не
+        # через настоящий JS-движок, и НЕ раскрывает \uXXXX-последовательности
+        # внутри строковых литералов аргумента — символы утекали в текст как
+        # есть. Правильный паттерн для CSP-сборки — вообще не передавать
+        # динамический текст аргументом функции в x-data, а класть его в
+        # обычный HTML data-атрибут (экранируется штатным HTML-escape(),
+        # никакого JS-парсинга) и читать в init() компонента через
+        # this.$el.dataset — см. tooltipTrigger в alpine-components.js.
+        safe_text = escape(text)
         # Видимость управляется вручную через display в :style (объектом),
         # а не через x-show/x-transition — на телепортированном (x-teleport)
         # узле эта связка оказалась ненадёжной: display молча "залипал" на
@@ -35,7 +47,7 @@ class TooltipWrapNode(template.Node):
         # и тот же реактивный :style-объект для позиции и display работает
         # предсказуемо. См. подробный комментарий в _tooltip_icon.html.
         return (
-            f'<span class="relative inline-flex" x-data="tooltipTrigger(\'{safe_text}\')" @click.outside="hide()">'
+            f'<span class="relative inline-flex" x-data="tooltipTrigger" data-tooltip-text="{safe_text}" @click.outside="hide()">'
             f'<span tabindex="0" x-ref="trigger" class="cursor-help outline-none" '
             f'@mouseenter="show()" @mouseleave="hide()" @click.stop.prevent="show()" '
             f'@focus="show()" @blur="hide()">{inner}</span>'

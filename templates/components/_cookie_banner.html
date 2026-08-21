@@ -26,17 +26,7 @@ localStorage перестанет совпадать с новым ключом,
 достаточно и проще.
 {% endcomment %}
 <div
-    x-data="{
-        show: false,
-        ackKey: 'dopx_cookie_notice_ack_v1',
-        init() {
-            this.show = !localStorage.getItem(this.ackKey);
-        },
-        accept() {
-            localStorage.setItem(this.ackKey, '1');
-            this.show = false;
-        }
-    }"
+    x-data="cookieBanner"
     x-show="show"
     x-cloak
     x-transition:enter="transition ease-out duration-300"

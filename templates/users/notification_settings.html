@@ -31,24 +31,8 @@
     и на других устройствах".
     {% endcomment %}
     <div class="card bg-base-100 border border-base-300 mb-6"
-         x-data="{
-            status: 'checking',
-            async init() {
-                this.status = await window.dopxPushStatus();
-            },
-            async subscribe() {
-                this.status = 'loading';
-                const vapidKey = document.body.dataset.vapidPublicKey;
-                if (!vapidKey) { this.status = 'unavailable'; return; }
-                const result = await window.dopxSubscribePush(vapidKey, '{{ csrf_token }}');
-                this.status = result.ok ? 'subscribed' : (result.reason || 'error');
-            },
-            async unsubscribe() {
-                this.status = 'loading';
-                const result = await window.dopxUnsubscribePush('{{ csrf_token }}');
-                this.status = result.ok ? 'idle' : 'error';
-            }
-         }">
+         x-data="pushSettings"
+         data-csrf-token="{{ csrf_token }}">
         <div class="card-body p-6">
             <div class="flex items-center gap-3 mb-3">
                 <div class="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
@@ -153,6 +137,59 @@
                             </div>
                         </div>
                         {{ form.email_voting_closing }}
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Прогнозы и активность (4 петли удержания, 2026-08-21) -->
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-6">
+                <div class="flex items-center gap-3 mb-6 pb-4 border-b border-base-300">
+                    <div class="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                        <i class="ti ti-chart-bar text-primary text-xl"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-bold">Прогнозы и активность</h2>
+                        <p class="text-xs opacity-60">Дедлайны прогнозов, итоги матчей, сводка недели</p>
+                    </div>
+                </div>
+                <div class="space-y-4">
+                    <label class="flex items-center justify-between gap-4 p-4 rounded-xl border border-base-300 hover:bg-base-200 transition-all cursor-pointer">
+                        <div class="flex items-center gap-4 flex-1">
+                            <div class="w-12 h-12 rounded-xl bg-warning/10 flex items-center justify-center flex-shrink-0">
+                                <i class="ti ti-hourglass text-warning text-xl"></i>
+                            </div>
+                            <div class="flex-1">
+                                <div class="font-semibold">{{ form.email_prediction_closing.label }}</div>
+                                <p class="text-xs opacity-60 mt-1">{{ form.email_prediction_closing.help_text }}</p>
+                            </div>
+                        </div>
+                        {{ form.email_prediction_closing }}
+                    </label>
+                    <label class="flex items-center justify-between gap-4 p-4 rounded-xl border border-base-300 hover:bg-base-200 transition-all cursor-pointer">
+                        <div class="flex items-center gap-4 flex-1">
+                            <div class="w-12 h-12 rounded-xl bg-success/10 flex items-center justify-center flex-shrink-0">
+                                <i class="ti ti-target-arrow text-success text-xl"></i>
+                            </div>
+                            <div class="flex-1">
+                                <div class="font-semibold">{{ form.email_prediction_result.label }}</div>
+                                <p class="text-xs opacity-60 mt-1">{{ form.email_prediction_result.help_text }}</p>
+                            </div>
+                        </div>
+                        {{ form.email_prediction_result }}
+                    </label>
+                    <label class="flex items-center justify-between gap-4 p-4 rounded-xl border border-base-300 hover:bg-base-200 transition-all cursor-pointer">
+                        <div class="flex items-center gap-4 flex-1">
+                            <div class="w-12 h-12 rounded-xl bg-info/10 flex items-center justify-center flex-shrink-0">
+                                <i class="ti ti-calendar-stats text-info text-xl"></i>
+                            </div>
+                            <div class="flex-1">
+                                <div class="font-semibold">{{ form.email_weekly_summary.label }}</div>
+                                <p class="text-xs opacity-60 mt-1">{{ form.email_weekly_summary.help_text }}</p>
+                            </div>
+                        </div>
+                        {{ form.email_weekly_summary }}
                     </label>
                 </div>
             </div>

@@ -78,10 +78,35 @@
                 <div class="stat-value text-2xl">{{ stats.total_matches }}</div>
             </div>
             <div class="stat bg-base-100 border border-base-300 p-4">
-                <div class="stat-title text-xs">Серия</div>
+                <div class="stat-title text-xs">Серия оценок</div>
                 <div class="stat-value text-2xl text-accent">{{ stats.evaluation_streak }}</div>
             </div>
+            <div class="stat bg-base-100 border border-base-300 p-4">
+                <div class="stat-title text-xs">Прогнозов</div>
+                <div class="stat-value text-2xl">{{ stats.total_predictions }}</div>
+            </div>
+            <div class="stat bg-base-100 border border-base-300 p-4">
+                <div class="stat-title text-xs">Серия прогнозов</div>
+                <div class="stat-value text-2xl text-secondary">{{ stats.prediction_streak }}</div>
+            </div>
         </div>
+        <!-- Поделиться серией (retention loop "Серии", 2026-08-21) —
+             показываем кнопку только для той серии, которая реально ≥1,
+             карточка на "0 дней подряд" никому не интересна делиться. -->
+        {% if stats.evaluation_streak > 0 or stats.prediction_streak > 0 %}
+        <div class="flex flex-wrap gap-2">
+            {% if stats.evaluation_streak > 0 %}
+            <a href="{% url 'core:streak_share_card' user.username 'evaluation' %}" target="_blank" class="btn btn-outline btn-xs sm:btn-sm">
+                <i class="ti ti-share"></i> Поделиться серией оценок ({{ stats.evaluation_streak }})
+            </a>
+            {% endif %}
+            {% if stats.prediction_streak > 0 %}
+            <a href="{% url 'core:streak_share_card' user.username 'prediction' %}" target="_blank" class="btn btn-outline btn-xs sm:btn-sm">
+                <i class="ti ti-share"></i> Поделиться серией прогнозов ({{ stats.prediction_streak }})
+            </a>
+            {% endif %}
+        </div>
+        {% endif %}
         <!-- Достижения -->
         {% comment %}
         badge.rarity/is_secret — properties поверх users/badges.py::
