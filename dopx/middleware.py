@@ -94,7 +94,30 @@ class ContentSecurityPolicyMiddleware:
     внешние <script src="evil.com/x.js">, инъекцию через <base>,
     встраивание сайта в чужой <iframe> и т.д.).
 
-    `'unsafe-eval'` УБРАН из script-src (2026-08-21). Раньше был обязателен,
+    `ADMIN_POLICY` (2026-08-21, живой баг-репорт пользователя: "зашёл в
+    админку, там окно [Available shortcuts] и оно не закрывается") —
+    Django `/admin/` (тема django-unfold) держит СОБСТВЕННЫЙ бандл htmx
+    (`unfold/static/unfold/js/htmx/htmx.js`, отдельный от `htmx.org@2.0.8`,
+    который сайт грузит в templates/base.html) — этот бандл использует
+    `new Function(...)`/`eval(...)` внутри себя (см. `hx-on:`-механизм
+    htmx — инлайновый JS-обработчик в атрибуте компилируется именно так).
+    Убранный ниже `'unsafe-eval'` ломает это в /admin/: клавиатурная
+    командная палитра Unfold (открывается на `?`, "Available shortcuts")
+    перестаёт закрываться по ESC/клику вне — обработчик молча не создаётся,
+    браузер тихо блокирует `new Function(...)` без видимого пользователю
+    сообщения об ошибке (в консоли DevTools при этом обычно ЕСТЬ
+    "Refused to evaluate a string... unsafe-eval", если открыть её).
+    Проверено статическим анализом (grep по всем unfold/static/**/*.js —
+    `alpine.js` от Unfold САМ по себе eval не использует, `chart.js` и
+    `htmx.js` — используют). Патчить бандлы третьей стороны (`app_venv/`)
+    неправильно — вместо этого /admin/ получает ОТДЕЛЬНУЮ, чуть более
+    мягкую политику с `'unsafe-eval'` обратно. `/staff/dashboard/` (наш
+    собственный staff-тулинг) сюда НЕ входит — те шаблоны наследуются от
+    ТОГО ЖЕ templates/base.html, что и публичный сайт (см. `{% extends
+    'base.html' %}` в templates/dashboard/*.html), используют ту же
+    CSP-safe сборку Alpine и НЕ нуждаются в послаблении.
+
+    `'unsafe-eval'` УБРАН из основной POLICY (2026-08-21). Раньше был обязателен,
     потому что Alpine.js компилировал каждое x-data/x-show/x-on/x-text
     выражение через `new AsyncFunction(...)` (см. alpinejs/dist/cdn.min.js)
     — это ЕСТЬ eval с точки зрения CSP, отдельно от инлайновых <script>,
@@ -139,6 +162,24 @@ class ContentSecurityPolicyMiddleware:
         "frame-ancestors 'self';"
     )
 
+    # Только для Django /admin/ (django-unfold) — см. докстринг выше про
+    # собственный бандл htmx у Unfold, которому нужен 'unsafe-eval'.
+    ADMIN_POLICY = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
+        "font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com; "
+        "img-src 'self' data: https:; "
+        "connect-src 'self'; "
+        "worker-src 'self'; "
+        "manifest-src 'self'; "
+        "object-src 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'; "
+        "frame-ancestors 'self';"
+    )
+    ADMIN_PATH_PREFIX = '/admin/'
+
     def __init__(self, get_response):
         self.get_response = get_response
 
@@ -149,7 +190,8 @@ class ContentSecurityPolicyMiddleware:
             if getattr(settings, 'CSP_REPORT_ONLY', False)
             else 'Content-Security-Policy'
         )
-        response[header] = self.POLICY
+        policy = self.ADMIN_POLICY if request.path.startswith(self.ADMIN_PATH_PREFIX) else self.POLICY
+        response[header] = policy
         return response
 
 

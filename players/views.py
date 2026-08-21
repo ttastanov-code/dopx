@@ -440,6 +440,15 @@ def player_rating_widget(request, pk):
     )
     has_enough_votes = (stats['total_votes'] or 0) >= MIN_VOTES_FOR_DISPLAY
 
+    # Продуктовый аудит "канал привлечения" (2026-08-21): до этого открытия
+    # виджета не отслеживались вообще — DOPX не мог сказать партнёру ни
+    # "сколько раз ваш паблик показал наш виджет", ни доказать ценность
+    # размещения. HTTP_REFERER на iframe-запросе — домен встраивающей
+    # страницы (partners/services.py::track_widget_embed_view).
+    from partners.services import track_widget_embed_view
+
+    track_widget_embed_view(widget_type="player", entity_id=str(player.id), request=request)
+
     return render(request, 'widgets/player_rating.html', {
         'player': player,
         'avg_performance': round(stats['avg_performance'], 1) if stats['avg_performance'] is not None else None,

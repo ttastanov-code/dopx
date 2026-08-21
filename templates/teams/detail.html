@@ -1,14 +1,41 @@
 {% extends 'base.html' %}
-{% load static %}
+{% load static rating_extras %}
 {% load match_extras %}
 {% load position_extras %}
 {% block content %}
 <!-- === НАВИГАЦИЯ === -->
-<div class="mb-4 md:mb-6 px-2 sm:px-0">
+<div class="mb-4 md:mb-6 px-2 sm:px-0 flex items-center justify-between flex-wrap gap-2">
   <a href="{% url 'teams:list' %}" class="btn btn-ghost btn-sm">
     <i class="ti ti-arrow-left"></i>
     <span class="hidden sm:inline">Назад к командам</span>
   </a>
+  {% comment %}
+  Embed-виджет команды (продуктовый аудит "канал привлечения", 2026-08-21) —
+  второй виджет после players/detail.html, тот же паттерн Alpine-модалки
+  embedModal (static/js/alpine-components.js).
+  {% endcomment %}
+  <div x-data="embedModal">
+    <button type="button" @click="open = true" class="btn btn-outline btn-sm">
+      <i class="ti ti-code"></i> Получить embed-код
+    </button>
+    <div x-show="open" x-cloak class="modal" :class="open && 'modal-open'" @keydown.escape.window="open = false">
+      <div class="modal-box max-w-lg" @click.outside="open = false">
+        <h3 class="font-bold text-lg mb-2"><i class="ti ti-code mr-1"></i> Виджет рейтинга {{ team.name }}</h3>
+        <p class="text-sm opacity-60 mb-3">Вставьте этот код на свой сайт — виджет обновляется автоматически, без интеграции с DOPX API.</p>
+        <div class="mb-3 p-2 bg-base-200 rounded-lg flex justify-center">
+          <iframe src="{% url 'teams:widget' team.id %}" width="300" height="150" style="border:none;border-radius:12px" title="Превью виджета"></iframe>
+        </div>
+        <textarea x-ref="embedCode" readonly onclick="this.select()" class="textarea textarea-bordered w-full font-mono text-xs" rows="3">{{ widget_embed_code }}</textarea>
+        <div class="modal-action">
+          <button type="button" @click="copy()" class="btn btn-primary btn-sm" :class="copied && 'btn-success'">
+            <i class="ti" :class="copied ? 'ti-check' : 'ti-copy'"></i>
+            <span x-text="copied ? 'Скопировано!' : 'Копировать код'"></span>
+          </button>
+          <button type="button" @click="open = false" class="btn btn-ghost btn-sm">Закрыть</button>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- === HEADER КОМАНДЫ === -->
@@ -290,10 +317,11 @@
             </div>
             <div class="flex-1 min-w-0">
               <div class="font-medium text-sm truncate">{{ agg.player.first_name }} {{ agg.player.last_name }}</div>
-              <div class="text-xs opacity-60">{{ agg.match.start_time|date:"d.m" }}</div>
+              <div class="text-xs opacity-60">{{ agg.match.start_time|date:"d.m" }} · {{ agg.total_votes }} голос(ов)</div>
             </div>
             <div class="text-right flex-shrink-0">
               <div class="font-bold text-success text-sm md:text-base">{{ agg.performance_score|floatformat:1 }}</div>
+              <div class="mt-0.5">{% confidence_badge agg %}</div>
             </div>
           </a>
           {% endfor %}

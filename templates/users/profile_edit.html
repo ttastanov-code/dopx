@@ -42,21 +42,21 @@
                     {% endif %}
 
                     {% if field.name == 'delete_avatar' and user.avatar %}
-                    <label class="label cursor-pointer gap-4 p-4 rounded-lg border border-base-300 hover:bg-base-200 transition-all">
-                        <div class="flex-1">
-                            <span class="label-text font-medium text-error">{{ field.label }}</span>
+                    <label class="label cursor-pointer gap-4 p-4 w-full rounded-lg border border-base-300 hover:bg-base-200 transition-all whitespace-normal">
+                        <div class="flex-1 min-w-0">
+                            <span class="label-text font-medium text-error whitespace-normal">{{ field.label }}</span>
                             {% if field.help_text %}
-                            <p class="text-xs opacity-60 mt-1">{{ field.help_text }}</p>
+                            <p class="text-xs opacity-60 mt-1 whitespace-normal">{{ field.help_text }}</p>
                             {% endif %}
                         </div>
                         {{ field }}
                     </label>
                     {% elif field.name == 'is_profile_public' %}
-                    <label class="label cursor-pointer gap-4 p-4 rounded-lg border border-base-300 hover:bg-base-200 transition-all">
-                        <div class="flex-1">
-                            <span class="label-text font-medium flex items-center gap-1.5"><i class="ti ti-eye"></i> {{ field.label }}</span>
+                    <label class="label cursor-pointer gap-4 p-4 w-full rounded-lg border border-base-300 hover:bg-base-200 transition-all whitespace-normal">
+                        <div class="flex-1 min-w-0">
+                            <span class="label-text font-medium flex items-center gap-1.5 whitespace-normal"><i class="ti ti-eye"></i> {{ field.label }}</span>
                             {% if field.help_text %}
-                            <p class="text-xs opacity-60 mt-1">{{ field.help_text }}</p>
+                            <p class="text-xs opacity-60 mt-1 whitespace-normal">{{ field.help_text }}</p>
                             {% endif %}
                         </div>
                         {{ field }}

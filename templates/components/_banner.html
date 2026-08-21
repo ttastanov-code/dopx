@@ -1,0 +1,37 @@
+{% comment %}
+templates/components/_banner.html
+Партиал для inclusion_tag {% render_banner "zone" %}
+(partners/templatetags/partner_tags.py). Клик всегда идёт через
+partners:banner_click — прямая ссылка на target_url лишает нас
+возможности посчитать клик (partners/selectors.py::banner_stats).
+rel="sponsored noopener" — sponsored, потому что это оплаченное/партнёрское
+размещение (SEO-корректность для поисковиков), noopener — переход в новой
+вкладке без доступа target-страницы к window.opener.
+{% endcomment %}
+{% if show %}
+<div class="relative">
+    <span class="absolute top-1 left-1 z-10 badge badge-xs bg-base-100/80 text-[10px] opacity-70 border-none">Реклама</span>
+    {% comment %}
+    max-height + object-fit:contain — подстраховка от случайно загруженной
+    картинки с "неправильными" для зоны пропорциями (например, квадратной
+    вместо широкой в зоне leaderboard): без этого w-full h-auto растягивает
+    её на всю ширину контейнера и высота может раздуться до сотен пикселей,
+    ломая вёрстку страницы вокруг баннера. bg-base-200 — видимый фон под
+    "письмами ящика" (letterbox), если пропорции всё же не совпадают с зоной.
+    {% endcomment %}
+    <a href="{% url 'partners:banner_click' banner.pk %}"
+       target="_blank" rel="sponsored noopener"
+       class="block rounded-lg overflow-hidden border border-base-300 hover:opacity-90 transition-opacity bg-base-200">
+        <img src="{{ banner.image.url }}" alt="{{ banner.title }}" class="w-full h-auto object-contain mx-auto" style="max-height:400px;" loading="lazy">
+    </a>
+    {% if banner.requires_age_disclaimer %}
+    {% comment %}
+    Нейтральная формулировка — requires_age_disclaimer нужен не только
+    букмекерам/гэмблингу (для них раньше был жёстко зашит текст про
+    "азартные игры"), но и любому другому контенту 18+ (алкоголь, табак и
+    т.д.), поэтому текст не привязан к конкретной категории.
+    {% endcomment %}
+    <p class="text-[10px] opacity-50 mt-1 text-center">18+ Материал предназначен для лиц старше 18 лет.</p>
+    {% endif %}
+</div>
+{% endif %}

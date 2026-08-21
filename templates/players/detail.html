@@ -27,7 +27,7 @@
         <button type="button" @click="open = true" class="btn btn-outline btn-sm">
             <i class="ti ti-code"></i> Получить embed-код
         </button>
-        <div x-show="open" x-cloak class="modal modal-open" @keydown.escape.window="open = false">
+        <div x-show="open" x-cloak class="modal" :class="open && 'modal-open'" @keydown.escape.window="open = false">
             <div class="modal-box max-w-lg" @click.outside="open = false">
                 <h3 class="font-bold text-lg mb-2"><i class="ti ti-code mr-1"></i> Виджет рейтинга {{ player.first_name }} {{ player.last_name }}</h3>
                 <p class="text-sm opacity-60 mb-3">Вставьте этот код на свой сайт — виджет обновляется автоматически, без интеграции с DOPX API.</p>
@@ -159,15 +159,16 @@
                                 </td>
                                 <td class="font-mono text-sm">{{ agg.match.start_time|date:"d.m.Y" }}</td>
                                 <td class="text-center">
-                                    {% if agg.total_votes|has_enough_votes %}
+                                    <div class="flex items-center justify-center gap-1.5 flex-wrap">
+                                        {% if agg.total_votes|has_enough_votes %}
                                         <span class="font-bold {% if agg.performance_score >= 7 %}text-success{% elif agg.performance_score >= 5 %}text-warning{% else %}text-error{% endif %}">
                                             {{ agg.performance_score|floatformat:1 }}
                                         </span>
-                                        {% bias_segment_text agg as segment_text %}
-                                        {% if segment_text %}{% include 'components/_tooltip_icon.html' with text=segment_text %}{% endif %}
-                                    {% else %}
-                                        <span class="badge badge-ghost badge-xs whitespace-nowrap" title="Меньше 5 голосов">н/д</span>
-                                    {% endif %}
+                                        {% else %}
+                                        <span class="badge badge-ghost badge-xs whitespace-nowrap">н/д</span>
+                                        {% endif %}
+                                        {% confidence_badge agg %}
+                                    </div>
                                 </td>
                                 <td class="text-center">{{ agg.avg_contribution|floatformat:1 }}</td>
                                 <td class="text-center">{{ agg.risk_index|floatformat:1 }}</td>
@@ -263,6 +264,7 @@
                             {% else %}
                                 <div class="badge badge-ghost badge-sm">н/д</div>
                             {% endif %}
+                            <div class="mt-1">{% confidence_badge agg %}</div>
                         </div>
                     </a>
                     {% endfor %}

@@ -252,6 +252,22 @@ document.addEventListener('alpine:init', () => {
         },
     }));
 
+    // === Копирование кода без модалки (dashboard/widgets.html) ===
+    // Та же идея, что у embedModal.copy(), но без open/modal-состояния —
+    // на странице "Виджеты" сразу три независимых блока с готовым кодом
+    // (игрок/команда/таблица), каждому нужна только кнопка "Скопировать"
+    // рядом с textarea, без модалки поверх.
+    Alpine.data('copyBox', () => ({
+        copied: false,
+        copy() {
+            navigator.clipboard.writeText(this.$refs.codeBox.value);
+            this.copied = true;
+            setTimeout(() => {
+                this.copied = false;
+            }, 2000);
+        },
+    }));
+
     // === Карточка push-уведомлений (users/notification_settings.html) ===
     // csrfToken раньше приходил аргументом фабрики через escapejs() — сам
     // токен Django генерирует из алфавита без спецсимволов, так что этот

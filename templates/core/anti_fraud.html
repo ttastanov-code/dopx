@@ -54,6 +54,35 @@
     </div>
   </div>
 
+  <!-- Доверие к рейтингу: бейдж, сегментация, поправка по точности -->
+  <div class="card bg-base-100 border border-base-300" id="rating-confidence">
+    <div class="card-body p-4 md:p-6">
+      <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4 flex items-center gap-2"><i class="ti ti-chart-histogram text-primary"></i> Как понять, можно ли доверять конкретному рейтингу</h2>
+      <p class="opacity-70 text-sm md:text-base mb-4">Рядом с числом рейтинга на странице игрока, матча и команды стоит один из трёх бейджей:</p>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-3 mb-4">
+        <div class="p-3 md:p-4 bg-base-200 rounded-lg">
+          <span class="badge badge-ghost badge-sm mb-2">Предварительно</span>
+          <p class="text-xs opacity-60">Меньше 5 голосов — число пока не показывается вообще, один зритель не может выдать себя за консенсус.</p>
+        </div>
+        <div class="p-3 md:p-4 bg-base-200 rounded-lg">
+          <span class="badge badge-info badge-outline badge-sm mb-2">Есть данные</span>
+          <p class="text-xs opacity-60">От 5 до 14 голосов — статистически уже не шум одного человека, но выборка ещё небольшая.</p>
+        </div>
+        <div class="p-3 md:p-4 bg-base-200 rounded-lg">
+          <span class="badge badge-success badge-outline badge-sm mb-2">Высокая надёжность</span>
+          <p class="text-xs opacity-60">15 и больше голосов — устоявшийся консенсус, случайный выброс на него почти не влияет.</p>
+        </div>
+      </div>
+      <p class="opacity-70 text-sm md:text-base mb-2">Под тем же бейджем — тултип с тремя вещами:</p>
+      <ul class="text-sm opacity-70 space-y-1.5 mb-4 pl-4" style="list-style: disc;">
+        <li><strong>Разброс мнений.</strong> «Мнения сходятся» значит, что зрители в целом ставят похожие оценки; «мнения расходятся» — что оценки разбросаны и итоговое число сглаживает реальный спор.</li>
+        <li><strong>Разбивка по лагерям.</strong> Отдельно средняя оценка от фанатов игрока, фанатов соперника и нейтральных зрителей — если своя команда ставит 9, а соперник — 2, общее среднее не должно восприниматься как непредвзятая оценка.</li>
+        <li><strong>Историческая предвзятость (bias-score).</strong> Голос пользователя, который систематически ставит своей команде экстремально высокие, а сопернику экстремально низкие оценки в последних матчах, весит меньше при подсчёте среднего (см. таблицу весов выше).</li>
+      </ul>
+      <p class="opacity-70 text-sm md:text-base">Дополнительно у каждого пользователя есть поправка Trust Score по точности прошлых оценок: если его оценки игроков стабильно близки к среднему по сообществу — доверие к нему растёт; если систематически отклоняются от консенсуса — снижается. Это отдельная, самокорректирующаяся петля, а не разовая проверка.</p>
+    </div>
+  </div>
+
   <!-- Скорость заполнения -->
   <div class="card bg-base-100 border border-base-300">
     <div class="card-body p-4 md:p-6">

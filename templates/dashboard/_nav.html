@@ -24,6 +24,9 @@ url_name-сравнения, чтобы не завязываться на ре�
     <a role="tab" href="{% url 'dashboard:data_health' %}" class="tab {% if active_tab == 'data_health' %}tab-active{% endif %}">
         <i class="ti ti-activity-heartbeat mr-1.5"></i> Здоровье данных
     </a>
+    <a role="tab" href="{% url 'dashboard:widgets' %}" class="tab {% if active_tab == 'widgets' %}tab-active{% endif %}">
+        <i class="ti ti-code mr-1.5"></i> Виджеты
+    </a>
     <a role="tab" href="{% url 'dashboard:antifraud' %}" class="tab {% if active_tab == 'antifraud' %}tab-active{% endif %}">
         <i class="ti ti-shield-exclamation mr-1.5"></i> Антифрод
     </a>

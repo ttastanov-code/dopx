@@ -1,12 +1,16 @@
 # teams/views.py
+from django.db.models import Avg, Count, ExpressionWrapper, F, FloatField, Q, Sum
+from django.shortcuts import get_object_or_404, render
+from django.urls import reverse
+from django.views.decorators.clickjacking import xframe_options_exempt
 from django.views.generic import ListView, DetailView
-from django.db.models import Count, Avg, Sum, Q, F
 from django.utils import timezone
 from core.utils import normalize_kz
 from teams.models import Team, TeamSeason, TeamSeasonStats
 from players.models import Player
 from matches.models import Match
 from aggregates.models import PlayerMatchAggregate, MatchAggregate
+from aggregates.services import MIN_VOTES_FOR_DISPLAY
 from evaluations.models import TeamEvaluation
 from seasons.models import Season
 import logging
@@ -143,9 +147,13 @@ class TeamDetailView(DetailView):
             is_active=True
         ).order_by('number')[:25]
         
-        # Агрегаты игроков (топ 5)
+        # Агрегаты игроков (топ 5). total_votes__gte=MIN_VOTES_FOR_DISPLAY —
+        # без этого гейта игрок с одним голосом "10/10 от друга" обходит
+        # игрока с честными 40 оценками (тот же баг, что был закрыт для
+        # matches/views.py, здесь оставался открытым — продуктовый аудит
+        # "доверие к рейтингу", 2026-08-21).
         top_players = PlayerMatchAggregate.objects.filter(
-            player__team=team
+            player__team=team, total_votes__gte=MIN_VOTES_FOR_DISPLAY
         ).select_related(
             'player',
             'match'
@@ -244,4 +252,54 @@ class TeamDetailView(DetailView):
             'votable_match': votable_match,
             'page_title': f'{team.name} — DOPX',
         })
+
+        # Готовая строка <iframe> для кнопки "Получить embed-код" — тот же
+        # паттерн, что у players/views.py::PlayerDetailView.
+        widget_url = self.request.build_absolute_uri(reverse('teams:widget', args=[team.id]))
+        context['widget_embed_code'] = (
+            f'<iframe src="{widget_url}" width="320" height="180" '
+            f'style="border:none;border-radius:12px;overflow:hidden" '
+            f'title="Рейтинг {team.name} на DOPX"></iframe>'
+        )
         return context
+
+
+@xframe_options_exempt
+def team_rating_widget(request, pk):
+    """
+    Embeddable-виджет команды (продуктовый аудит "канал привлечения",
+    2026-08-21) — второй виджет после players:widget. Клубный паблик хочет
+    виджет СВОЕЙ команды, не абстрактного игрока, поэтому расширение
+    embed-инфраструктуры начинается именно отсюда. @xframe_options_exempt —
+    тот же аргумент, что у players/views.py::player_rating_widget: страница
+    read-only, без форм и действий, снятие защиты не создаёт поверхность
+    для clickjacking.
+
+    Рейтинг — среднее по TeamEvaluation.average_score (тактика/самоотдача/
+    организация/менталитет), не PlayerMatchAggregate — это ОЦЕНКА КОМАНДЫ
+    целиком, а не агрегат по игрокам. Гейт MIN_VOTES_FOR_DISPLAY тот же
+    порог, что и везде на сайте — единообразие важнее точного числа голосов
+    именно на этом виджете.
+    """
+    team = get_object_or_404(Team, pk=pk)
+
+    avg_expr = ExpressionWrapper(
+        (F('tactics') + F('effort') + F('organization') + F('mentality')) / 4.0,
+        output_field=FloatField(),
+    )
+    evals_stats = TeamEvaluation.objects.filter(team=team).aggregate(
+        avg_score=Avg(avg_expr), total_votes=Count('id'),
+    )
+    total_votes = evals_stats['total_votes'] or 0
+    has_enough_votes = total_votes >= MIN_VOTES_FOR_DISPLAY
+
+    from partners.services import track_widget_embed_view
+
+    track_widget_embed_view(widget_type="team", entity_id=str(team.id), request=request)
+
+    return render(request, 'widgets/team_rating.html', {
+        'team': team,
+        'avg_score': round(evals_stats['avg_score'], 1) if evals_stats['avg_score'] is not None else None,
+        'total_votes': total_votes,
+        'has_enough_votes': has_enough_votes,
+    })

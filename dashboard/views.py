@@ -13,6 +13,7 @@ from django.contrib import messages
 from django.contrib.admin.views.decorators import staff_member_required
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
@@ -294,6 +295,159 @@ def parser_revoke_task(request, task_id):
         target=task_id, details={"success": success, "message": message, "terminate": terminate},
     )
     return redirect("dashboard:parser_tools")
+
+
+# ============================================================
+# Виджеты: единая staff-страница для канала "виджет = наш контент на чужом
+# сайте" (в отличие от баннеров, которые управляются в /admin/partners/banner/
+# и являются обратным каналом — чужая реклама у нас). До этой страницы
+# работа с виджетами была устроена так: код для игрока/команды можно было
+# получить только зайдя на страницу конкретного игрока/команды на сайте
+# (кнопка "Получить embed-код"), у standings-виджета такой кнопки не было
+# вообще, а статистика встраиваний (WIDGET_EMBED_VIEWED в AnalyticsEvent)
+# нигде не отображалась — задача "функционал работы с виджетами" закрывает
+# все три пробела на одной странице: инструкция, живое превью всех трёх
+# типов, генератор embed-кода по поиску игрока/команды и статистика топ-N
+# по просмотрам за 30 дней (partners/selectors.py::top_widget_entities).
+# ============================================================
+
+def _widgets_stats_context() -> dict:
+    """
+    Статистика встраиваний за 30 дней — вынесена из widgets() отдельно,
+    чтобы её могли считать И обычный рендер страницы (первая отрисовка),
+    И widgets_stats_partial() (HTMX-поллинг, тот же паттерн, что у
+    data_health_partial()/_data_health_content.html) без дублирования
+    логики batch-резолва entity_id → объект.
+    """
+    from partners.selectors import top_widget_entities, widget_embed_totals
+    from players.models import Player
+    from teams.models import Team
+
+    top_players_raw = top_widget_entities("player", days=30, limit=10)
+    top_teams_raw = top_widget_entities("team", days=30, limit=10)
+
+    players_by_id = {
+        str(p.id): p for p in Player.objects.filter(id__in=[r["entity_id"] for r in top_players_raw])
+    }
+    teams_by_id = {
+        str(t.id): t for t in Team.objects.filter(id__in=[r["entity_id"] for r in top_teams_raw])
+    }
+
+    return {
+        "top_players": [
+            {"entity": players_by_id[r["entity_id"]], "views": r["views"]}
+            for r in top_players_raw if r["entity_id"] in players_by_id
+        ],
+        "top_teams": [
+            {"entity": teams_by_id[r["entity_id"]], "views": r["views"]}
+            for r in top_teams_raw if r["entity_id"] in teams_by_id
+        ],
+        "widget_totals": widget_embed_totals(days=30),
+    }
+
+
+@staff_member_required
+def widgets(request):
+    """
+    /staff/dashboard/widgets/ — центральная страница по embed-виджетам.
+    q_player/q_team — независимые поля поиска (не один общий q, т.к. это
+    два разных типа сущностей с разным embed-кодом); выбранный результат
+    кладём в контекст, чтобы staff сразу видел готовый код и живое превью,
+    не уходя на сайт искать нужного игрока/команду вручную.
+    """
+    from core.utils import normalize_kz
+    from players.models import Player
+    from teams.models import Team
+
+    q_player = request.GET.get("q_player", "").strip()
+    q_team = request.GET.get("q_team", "").strip()
+    player_id = request.GET.get("player_id", "")
+    team_id = request.GET.get("team_id", "")
+
+    # normalize_kz — тот же паттерн, что уже используется в поиске команд/
+    # игроков/тренеров/судей на сайте и в парсер-тулинге staff-дашборда
+    # (core/utils.py): "Актобе" находит "Ақтөбе" независимо от того, какой
+    # раскладкой набирали название/фамилию. Раньше здесь был обычный
+    # icontains без нормализации — казахские названия по-русски не находились.
+    if q_player:
+        normalized_q = normalize_kz(q_player)
+        player_results = [
+            p for p in Player.objects.select_related("team").only("id", "first_name", "last_name", "team")
+            if normalized_q in normalize_kz(f"{p.first_name} {p.last_name}")
+        ][:10]
+    else:
+        player_results = []
+
+    if q_team:
+        normalized_q = normalize_kz(q_team)
+        team_results = [
+            t for t in Team.objects.only("id", "name")
+            if normalized_q in normalize_kz(t.name)
+        ][:10]
+    else:
+        team_results = []
+
+    # Превью по умолчанию (страница без поиска) — берём произвольного
+    # игрока/команду с данными, чтобы виджет не пустовал при первом заходе.
+    # player_id/team_id — явный выбор ОДНОГО конкретного результата из
+    # списка совпадений поиска (клик по бейджу в шаблоне), без него по
+    # умолчанию берётся первый найденный.
+    preview_player = None
+    if player_id:
+        preview_player = next((p for p in player_results if str(p.id) == player_id), None)
+    if not preview_player:
+        preview_player = player_results[0] if player_results else Player.objects.select_related("team").order_by("?").first()
+
+    preview_team = None
+    if team_id:
+        preview_team = next((t for t in team_results if str(t.id) == team_id), None)
+    if not preview_team:
+        preview_team = team_results[0] if team_results else Team.objects.filter(is_active=True).order_by("?").first()
+
+    def _embed_code(url: str, title: str, width: int = 320, height: int = 180) -> str:
+        return (
+            f'<iframe src="{url}" width="{width}" height="{height}" '
+            f'style="border:none;border-radius:12px;overflow:hidden" title="{title}"></iframe>'
+        )
+
+    player_embed = None
+    if preview_player:
+        url = request.build_absolute_uri(reverse("players:widget", args=[preview_player.id]))
+        player_embed = _embed_code(url, f"Рейтинг {preview_player.first_name} {preview_player.last_name} на DOPX")
+
+    team_embed = None
+    if preview_team:
+        url = request.build_absolute_uri(reverse("teams:widget", args=[preview_team.id]))
+        team_embed = _embed_code(url, f"Рейтинг {preview_team.name} на DOPX")
+
+    standings_url = request.build_absolute_uri(reverse("core:standings_widget"))
+    standings_embed = _embed_code(standings_url, "Турнирная таблица КПЛ на DOPX", width=340, height=360)
+
+    context = {
+        "page_title": "Виджеты — DOPX Staff",
+        "active_tab": "widgets",
+        "q_player": q_player,
+        "q_team": q_team,
+        "player_results": player_results,
+        "team_results": team_results,
+        "preview_player": preview_player,
+        "preview_team": preview_team,
+        "player_embed": player_embed,
+        "team_embed": team_embed,
+        "standings_embed": standings_embed,
+        **_widgets_stats_context(),
+    }
+    return render(request, "dashboard/widgets.html", context)
+
+
+@staff_member_required
+def widgets_stats_partial(request):
+    """Той же контент, что и статистический блок widgets(), без base.html/
+    _nav.html — цель HTMX-поллинга (hx-get каждые 20с на этом же блоке),
+    тот же паттерн, что и dashboard:data_health_partial. Поиск/превью
+    виджета НЕ в зоне автообновления — если staff начал набирать имя
+    игрока, очередной poll не должен затирать недопечатанное значение."""
+    return render(request, "dashboard/_widgets_stats_content.html", _widgets_stats_context())
 
 
 @staff_member_required
