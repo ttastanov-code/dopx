@@ -95,3 +95,88 @@ def widget_embed_totals(*, days: int = DEFAULT_WINDOW_DAYS) -> dict:
         if wtype in totals:
             totals[wtype] = row["views"]
     return totals
+
+
+# ============================================================
+# Ниже — то же самое, что banner_stats/partner_referral_visits выше, но
+# АГРЕГИРОВАННОЕ по всем баннерам/партнёрам сразу (а не по одному id на
+# вызов) — раньше эти суммарные цифры нигде не считались: в Django admin
+# показывалась статистика только конкретного баннера/партнёра в своей же
+# строке таблицы, без общей картины "сколько показов/кликов/визитов у нас
+# по рекламе за месяц в целом". Нужно для staff-страницы "Реклама и виджеты"
+# (dashboard/views.py::ads_view), куда объединили статистику баннеров,
+# партнёрских рефералок и embed-виджетов.
+# ============================================================
+
+def banner_totals(*, days: int = DEFAULT_WINDOW_DAYS) -> dict:
+    """{'impressions': N, 'clicks': N, 'ctr_percent': N} — сумма по ВСЕМ баннерам за N дней."""
+    since = _since(days)
+    impressions = AnalyticsEvent.objects.filter(event_name=EventName.BANNER_IMPRESSION, created_at__gte=since).count()
+    clicks = AnalyticsEvent.objects.filter(event_name=EventName.BANNER_CLICK, created_at__gte=since).count()
+    ctr = round(clicks / impressions * 100, 2) if impressions else 0.0
+    return {"impressions": impressions, "clicks": clicks, "ctr_percent": ctr}
+
+
+def top_banners(*, days: int = DEFAULT_WINDOW_DAYS, limit: int = 10) -> list[dict]:
+    """
+    Топ баннеров по показам за N дней — группировка по properties__banner_id,
+    клики досчитываются вторым запросом по тем же id (два GROUP BY дешевле,
+    чем JOIN показов и кликов внутри JSONField). Возвращает
+    [{'banner_id': str, 'impressions': int, 'clicks': int, 'ctr_percent': float}, ...],
+    отсортировано по показам убыв. Разрешение banner_id → объект Banner —
+    на вызывающей стороне, тот же паттерн, что и top_widget_entities.
+    """
+    since = _since(days)
+    impression_rows = (
+        AnalyticsEvent.objects.filter(event_name=EventName.BANNER_IMPRESSION, created_at__gte=since)
+        .values("properties__banner_id")
+        .annotate(impressions=Count("id"))
+        .order_by("-impressions")[:limit]
+    )
+    banner_ids = [row["properties__banner_id"] for row in impression_rows if row["properties__banner_id"]]
+    click_counts = dict(
+        AnalyticsEvent.objects.filter(
+            event_name=EventName.BANNER_CLICK, created_at__gte=since,
+            properties__banner_id__in=banner_ids,
+        )
+        .values("properties__banner_id")
+        .annotate(clicks=Count("id"))
+        .values_list("properties__banner_id", "clicks")
+    )
+    result = []
+    for row in impression_rows:
+        banner_id = row["properties__banner_id"]
+        if not banner_id:
+            continue
+        impressions = row["impressions"]
+        clicks = click_counts.get(banner_id, 0)
+        result.append({
+            "banner_id": banner_id,
+            "impressions": impressions,
+            "clicks": clicks,
+            "ctr_percent": round(clicks / impressions * 100, 2) if impressions else 0.0,
+        })
+    return result
+
+
+def partner_referral_totals(*, days: int = DEFAULT_WINDOW_DAYS) -> int:
+    """Сумма визитов по реферальным ссылкам ВСЕХ партнёров за N дней."""
+    return AnalyticsEvent.objects.filter(
+        event_name=EventName.PARTNER_REFERRAL_VISIT, created_at__gte=_since(days),
+    ).count()
+
+
+def top_partners_by_referral_visits(*, days: int = DEFAULT_WINDOW_DAYS, limit: int = 10) -> list[dict]:
+    """Топ партнёров по визитам с их реферальной ссылки за N дней.
+    Возвращает [{'partner_slug': str, 'visits': int}, ...]."""
+    rows = (
+        AnalyticsEvent.objects.filter(event_name=EventName.PARTNER_REFERRAL_VISIT, created_at__gte=_since(days))
+        .values("properties__partner_slug")
+        .annotate(visits=Count("id"))
+        .order_by("-visits")[:limit]
+    )
+    return [
+        {"partner_slug": row["properties__partner_slug"], "visits": row["visits"]}
+        for row in rows
+        if row["properties__partner_slug"]
+    ]

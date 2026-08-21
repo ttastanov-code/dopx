@@ -161,9 +161,9 @@ UNFOLD = {
                         "link": reverse_lazy("dashboard:data_health"),
                     },
                     {
-                        "title": _("Виджеты"),
+                        "title": _("Реклама и виджеты"),
                         "icon": "code",
-                        "link": reverse_lazy("dashboard:widgets"),
+                        "link": reverse_lazy("dashboard:ads"),
                     },
                     {
                         "title": _("Антифрод"),
@@ -276,7 +276,7 @@ UNFOLD = {
                 "items": [
                     {"title": _("Партнёры"), "icon": "business_center", "link": reverse_lazy("admin:partners_partner_changelist")},
                     {"title": _("Баннеры"), "icon": "campaign", "link": reverse_lazy("admin:partners_banner_changelist")},
-                    {"title": _("Виджеты"), "icon": "code", "link": reverse_lazy("dashboard:widgets")},
+                    {"title": _("Реклама и виджеты"), "icon": "code", "link": reverse_lazy("dashboard:ads")},
                 ],
             },
             {

@@ -298,28 +298,36 @@ def parser_revoke_task(request, task_id):
 
 
 # ============================================================
-# Виджеты: единая staff-страница для канала "виджет = наш контент на чужом
-# сайте" (в отличие от баннеров, которые управляются в /admin/partners/banner/
-# и являются обратным каналом — чужая реклама у нас). До этой страницы
-# работа с виджетами была устроена так: код для игрока/команды можно было
-# получить только зайдя на страницу конкретного игрока/команды на сайте
-# (кнопка "Получить embed-код"), у standings-виджета такой кнопки не было
-# вообще, а статистика встраиваний (WIDGET_EMBED_VIEWED в AnalyticsEvent)
-# нигде не отображалась — задача "функционал работы с виджетами" закрывает
-# все три пробела на одной странице: инструкция, живое превью всех трёх
-# типов, генератор embed-кода по поиску игрока/команды и статистика топ-N
-# по просмотрам за 30 дней (partners/selectors.py::top_widget_entities).
+# Реклама и виджеты: единая staff-страница по ВСЕЙ партнёрской монетизации —
+# и баннерам (чужая реклама у нас на сайте), и embed-виджетам (наш контент
+# на чужом сайте). Раньше это были две несвязанные истории: у виджетов не
+# было вообще никакой staff-страницы (код для игрока/команды можно было
+# получить только зайдя на его страницу на сайте, у standings-виджета не
+# было и этого), а статистика баннеров/партнёрских рефералок была видна
+# только построчно в Django admin — нигде не было общей картины "сколько
+# у нас показов/кликов/визитов по рекламе за месяц в целом". Эта страница
+# закрывает оба пробела сразу: инструкция + живое превью + генератор
+# embed-кода для виджетов, и сводные карточки + топ-N для баннеров и
+# партнёрских рефералок (partners/selectors.py).
 # ============================================================
 
-def _widgets_stats_context() -> dict:
+def _ads_stats_context() -> dict:
     """
-    Статистика встраиваний за 30 дней — вынесена из widgets() отдельно,
-    чтобы её могли считать И обычный рендер страницы (первая отрисовка),
-    И widgets_stats_partial() (HTMX-поллинг, тот же паттерн, что у
-    data_health_partial()/_data_health_content.html) без дублирования
-    логики batch-резолва entity_id → объект.
+    Вся статистика за 30 дней (виджеты + баннеры + рефералки) — вынесена
+    из ads() отдельно, чтобы её могли считать И обычный рендер страницы
+    (первая отрисовка), И ads_stats_partial() (HTMX-поллинг, тот же
+    паттерн, что у data_health_partial()/_data_health_content.html) без
+    дублирования логики batch-резолва id → объект.
     """
-    from partners.selectors import top_widget_entities, widget_embed_totals
+    from partners.selectors import (
+        banner_totals,
+        partner_referral_totals,
+        top_banners,
+        top_partners_by_referral_visits,
+        top_widget_entities,
+        widget_embed_totals,
+    )
+    from partners.models import Banner, Partner
     from players.models import Player
     from teams.models import Team
 
@@ -333,6 +341,16 @@ def _widgets_stats_context() -> dict:
         str(t.id): t for t in Team.objects.filter(id__in=[r["entity_id"] for r in top_teams_raw])
     }
 
+    top_banners_raw = top_banners(days=30, limit=10)
+    banners_by_id = {
+        str(b.id): b for b in Banner.objects.select_related("partner").filter(id__in=[r["banner_id"] for r in top_banners_raw])
+    }
+
+    top_partners_raw = top_partners_by_referral_visits(days=30, limit=10)
+    partners_by_slug = {
+        p.slug: p for p in Partner.objects.filter(slug__in=[r["partner_slug"] for r in top_partners_raw])
+    }
+
     return {
         "top_players": [
             {"entity": players_by_id[r["entity_id"]], "views": r["views"]}
@@ -343,13 +361,23 @@ def _widgets_stats_context() -> dict:
             for r in top_teams_raw if r["entity_id"] in teams_by_id
         ],
         "widget_totals": widget_embed_totals(days=30),
+        "banner_totals": banner_totals(days=30),
+        "top_banners": [
+            {"banner": banners_by_id[r["banner_id"]], "impressions": r["impressions"], "clicks": r["clicks"], "ctr_percent": r["ctr_percent"]}
+            for r in top_banners_raw if r["banner_id"] in banners_by_id
+        ],
+        "referral_visits_total": partner_referral_totals(days=30),
+        "top_partners": [
+            {"partner": partners_by_slug[r["partner_slug"]], "visits": r["visits"]}
+            for r in top_partners_raw if r["partner_slug"] in partners_by_slug
+        ],
     }
 
 
 @staff_member_required
-def widgets(request):
+def ads(request):
     """
-    /staff/dashboard/widgets/ — центральная страница по embed-виджетам.
+    /staff/dashboard/ads/ — центральная страница по рекламе и виджетам.
     q_player/q_team — независимые поля поиска (не один общий q, т.к. это
     два разных типа сущностей с разным embed-кодом); выбранный результат
     кладём в контекст, чтобы staff сразу видел готовый код и живое превью,
@@ -424,8 +452,8 @@ def widgets(request):
     standings_embed = _embed_code(standings_url, "Турнирная таблица КПЛ на DOPX", width=340, height=360)
 
     context = {
-        "page_title": "Виджеты — DOPX Staff",
-        "active_tab": "widgets",
+        "page_title": "Реклама и виджеты — DOPX Staff",
+        "active_tab": "ads",
         "q_player": q_player,
         "q_team": q_team,
         "player_results": player_results,
@@ -435,19 +463,19 @@ def widgets(request):
         "player_embed": player_embed,
         "team_embed": team_embed,
         "standings_embed": standings_embed,
-        **_widgets_stats_context(),
+        **_ads_stats_context(),
     }
-    return render(request, "dashboard/widgets.html", context)
+    return render(request, "dashboard/ads.html", context)
 
 
 @staff_member_required
-def widgets_stats_partial(request):
-    """Той же контент, что и статистический блок widgets(), без base.html/
+def ads_stats_partial(request):
+    """Тот же контент, что и статистический блок ads(), без base.html/
     _nav.html — цель HTMX-поллинга (hx-get каждые 20с на этом же блоке),
     тот же паттерн, что и dashboard:data_health_partial. Поиск/превью
     виджета НЕ в зоне автообновления — если staff начал набирать имя
     игрока, очередной poll не должен затирать недопечатанное значение."""
-    return render(request, "dashboard/_widgets_stats_content.html", _widgets_stats_context())
+    return render(request, "dashboard/_ads_stats_content.html", _ads_stats_context())
 
 
 @staff_member_required

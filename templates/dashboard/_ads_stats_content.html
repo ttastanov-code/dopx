@@ -1,0 +1,111 @@
+{% comment %}
+templates/dashboard/_ads_stats_content.html
+Вся статистика за 30 дней (баннеры + партнёрские рефералки + embed-виджеты)
+одним блоком — цель HTMX-поллинга (dashboard/views.py::ads_stats_partial),
+тот же паттерн, что и dashboard/_data_health_content.html. Раньше баннерная
+статистика была видна только построчно в /admin/partners/banner/ и
+/admin/partners/partner/ — здесь сводная картина по всей рекламе сразу.
+{% endcomment %}
+<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+    <div class="stat bg-base-200 rounded-lg p-3">
+        <div class="stat-title text-xs">Показы баннеров</div>
+        <div class="stat-value text-xl">{{ banner_totals.impressions }}</div>
+    </div>
+    <div class="stat bg-base-200 rounded-lg p-3">
+        <div class="stat-title text-xs">Клики по баннерам</div>
+        <div class="stat-value text-xl">{{ banner_totals.clicks }}</div>
+        <div class="stat-desc text-xs">CTR {{ banner_totals.ctr_percent }}%</div>
+    </div>
+    <div class="stat bg-base-200 rounded-lg p-3">
+        <div class="stat-title text-xs">Визиты по рефералкам</div>
+        <div class="stat-value text-xl">{{ referral_visits_total }}</div>
+    </div>
+    <div class="stat bg-base-200 rounded-lg p-3">
+        <div class="stat-title text-xs">Просмотры виджетов</div>
+        <div class="stat-value text-xl">{{ widget_totals.player|add:widget_totals.team|add:widget_totals.standings }}</div>
+        <div class="stat-desc text-xs">игрок {{ widget_totals.player }} · команда {{ widget_totals.team }} · таблица {{ widget_totals.standings }}</div>
+    </div>
+</div>
+<p class="text-xs opacity-50 mb-4">За последние 30 дней. Показы/клики баннеров и визиты по рефералкам считаются событиями BANNER_IMPRESSION/BANNER_CLICK/PARTNER_REFERRAL_VISIT, просмотры виджетов — WIDGET_EMBED_VIEWED (каждая загрузка &lt;iframe&gt; на чужом сайте).</p>
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+    <div>
+        <h4 class="font-semibold text-xs uppercase opacity-60 mb-2">Топ баннеров по показам</h4>
+        {% if top_banners %}
+        <table class="table table-sm">
+            <thead>
+                <tr><th>Баннер</th><th class="text-right">Показы</th><th class="text-right">Клики</th><th class="text-right">CTR</th></tr>
+            </thead>
+            <tbody>
+                {% for row in top_banners %}
+                <tr>
+                    <td>
+                        <a href="{% url 'admin:partners_banner_change' row.banner.id %}" target="_blank" class="link link-hover">{{ row.banner.title }}</a>
+                        <div class="text-[10px] opacity-50">{{ row.banner.get_zone_display }}{% if row.banner.partner %} · {{ row.banner.partner.name }}{% endif %}</div>
+                    </td>
+                    <td class="text-right font-mono text-xs">{{ row.impressions }}</td>
+                    <td class="text-right font-mono text-xs">{{ row.clicks }}</td>
+                    <td class="text-right font-mono text-xs">{{ row.ctr_percent }}%</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="text-xs opacity-50 py-4">Пока нет показов ни у одного баннера — появится здесь, как только баннеры начнут крутиться на сайте.</p>
+        {% endif %}
+    </div>
+    <div>
+        <h4 class="font-semibold text-xs uppercase opacity-60 mb-2">Топ партнёров по визитам с рефералки</h4>
+        {% if top_partners %}
+        <table class="table table-sm">
+            <tbody>
+                {% for row in top_partners %}
+                <tr>
+                    <td><a href="{% url 'admin:partners_partner_change' row.partner.id %}" target="_blank" class="link link-hover">{{ row.partner.name }}</a></td>
+                    <td class="text-right font-mono text-xs">{{ row.visits }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="text-xs opacity-50 py-4">Пока никто не переходил по реферальной ссылке — появится здесь, как только партнёр приведёт первый визит.</p>
+        {% endif %}
+    </div>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div>
+        <h4 class="font-semibold text-xs uppercase opacity-60 mb-2">Топ игроков по встраиваниям виджета</h4>
+        {% if top_players %}
+        <table class="table table-sm">
+            <tbody>
+                {% for row in top_players %}
+                <tr>
+                    <td><a href="{% url 'players:detail' row.entity.id %}" target="_blank" class="link link-hover">{{ row.entity.first_name }} {{ row.entity.last_name }}</a></td>
+                    <td class="text-right font-mono text-xs">{{ row.views }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="text-xs opacity-50 py-4">Пока никто не встраивал виджет игрока — покажется здесь, как только появятся первые просмотры.</p>
+        {% endif %}
+    </div>
+    <div>
+        <h4 class="font-semibold text-xs uppercase opacity-60 mb-2">Топ команд по встраиваниям виджета</h4>
+        {% if top_teams %}
+        <table class="table table-sm">
+            <tbody>
+                {% for row in top_teams %}
+                <tr>
+                    <td><a href="{% url 'teams:detail' row.entity.id %}" target="_blank" class="link link-hover">{{ row.entity.name }}</a></td>
+                    <td class="text-right font-mono text-xs">{{ row.views }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="text-xs opacity-50 py-4">Пока никто не встраивал виджет команды — покажется здесь, как только появятся первые просмотры.</p>
+        {% endif %}
+    </div>
+</div>
