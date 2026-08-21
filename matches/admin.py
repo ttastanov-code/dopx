@@ -35,6 +35,7 @@ class MatchAdmin(ModelAdmin):
         "away_team",
         "start_time",
         "status",
+        "manual_override",
         "home_score",
         "away_score",
     )
@@ -43,6 +44,7 @@ class MatchAdmin(ModelAdmin):
         "league",
         "season",
         "status",
+        "manual_override",
     )
 
     search_fields = (
@@ -64,7 +66,33 @@ class MatchAdmin(ModelAdmin):
 
     inlines = [MatchLineupInline, MatchEventInline]
 
-    actions = [export_as_csv, "resync_selected"]
+    actions = [export_as_csv, "resync_selected", "mark_postponed_manually", "clear_manual_override"]
+
+    @admin.action(description="⏸️ Пометить перенесённым вручную (снять с автосинка)")
+    def mark_postponed_manually(self, request, queryset):
+        """Для случаев вроде обнаруженного 2026-08-21: KFF показывает на
+        своей странице матча баннер "перенесён на неопределённый срок"
+        ЗАДОЛГО до того, как реально меняет структурные status/date в API —
+        update_match_statuses видит api_status="scheduled" ещё много дней
+        и молча откатывал бы ручную правку статуса обратно. Это действие
+        ставит status='postponed' И manual_override=True разом — второе
+        обязательно, иначе первое переживёт максимум один цикл автосинка
+        (10-15 минут). Снимается действием ниже, когда KFF наконец
+        опубликует настоящую новую дату."""
+        updated = queryset.update(status="postponed", manual_override=True)
+        self.message_user(
+            request,
+            f"Помечено «перенесён» вручную: {updated}. Автосинк не будет трогать статус/дату, "
+            f"пока не снимете пометку («Снять ручную пометку»)."
+        )
+
+    @admin.action(description="▶️ Снять ручную пометку — вернуть под автосинк")
+    def clear_manual_override(self, request, queryset):
+        """Снимает manual_override — используйте, когда KFF наконец
+        опубликовал реальную новую дату/статус (проверьте на kff.kz), и
+        матч можно снова доверить автосинку."""
+        updated = queryset.update(manual_override=False)
+        self.message_user(request, f"Ручная пометка снята: {updated}. Матч(и) снова под автосинком.")
 
     @admin.action(description="Пересинхронизировать выбранные матчи с KFF")
     def resync_selected(self, request, queryset):

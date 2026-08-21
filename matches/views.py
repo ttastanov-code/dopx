@@ -48,6 +48,16 @@ class MatchListView(ListView):
         elif status == 'finished':
             # Завершенные - ближе к сегодняшнему дню сначала
             queryset = queryset.filter(status='finished').order_by('-start_time')
+        elif status == 'postponed':
+            # Перенесённые — БАГ, КОТОРЫЙ ТУТ БЫЛ: значения 'postponed'/
+            # 'cancelled' не было ни в одной ветке elif, поэтому фильтр
+            # молча падал в else и показывал вообще все матчи без разбора
+            # статуса. Сортировка по дате: у перенесённых start_time —
+            # старая (ещё не подтверждённая) дата, но всё равно разумный
+            # порядок, пока KFF не пришлёт новую.
+            queryset = queryset.filter(status='postponed').order_by('-start_time')
+        elif status == 'cancelled':
+            queryset = queryset.filter(status='cancelled').order_by('-start_time')
         elif status == 'votable':
             # Матчи, доступные для оценки прямо сейчас — то же условие, что
             # и Match.is_voting_open() и stats.active_voting (core/views.py),
@@ -80,7 +90,16 @@ class MatchListView(ListView):
         season_id = self.request.GET.get('season')
         if season_id:
             queryset = queryset.filter(season_id=season_id)
-        
+
+        # Фильтр по туру — прямой ответ на "непонятно какой тур из-за
+        # переносов": группировка списка по дате (ниже, {% regroup %})
+        # разваливается для перенесённого матча — start_time может
+        # оказаться где угодно. Номер тура — устойчивый ориентир, не
+        # меняется вместе с датой (см. Match.tour, docs/BACKLOG.md).
+        tour = self.request.GET.get('tour')
+        if tour:
+            queryset = queryset.filter(tour=tour)
+
         return queryset
     
     def get_context_data(self, **kwargs):
@@ -92,8 +111,17 @@ class MatchListView(ListView):
         context['current_status'] = current_status
         context['current_league'] = self.request.GET.get('league', '')
         context['current_season'] = self.request.GET.get('season', '')
+        context['current_tour'] = self.request.GET.get('tour', '')
         context['leagues'] = League.objects.all()[:10]
         context['seasons'] = Season.objects.filter(is_active=True)[:5]
+        # Только туры активного сезона — иначе список рос бы вечно номерами
+        # из прошлых сезонов вперемешку. У матчей без tour (ещё не
+        # пересинканы после добавления поля) exclude(tour__isnull=True).
+        active_season = Season.objects.filter(is_active=True).first()
+        tours_qs = Match.objects.exclude(tour__isnull=True)
+        if active_season:
+            tours_qs = tours_qs.filter(season=active_season)
+        context['tours'] = tours_qs.values_list('tour', flat=True).distinct().order_by('tour')
         context['now'] = timezone.now()
         return context
 

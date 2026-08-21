@@ -1,6 +1,7 @@
 # referees/views.py
 from django.views.generic import ListView, DetailView
-from django.db.models import Count, Avg, OuterRef, Subquery
+from django.db.models import Count, Avg, OuterRef, Q, Subquery
+from core.utils import normalize_kz
 from referees.models import Referee
 from matches.models import Match
 from evaluations.models import RefereeEvaluation
@@ -11,7 +12,7 @@ class RefereeListView(ListView):
     template_name = 'referees/list.html'
     context_object_name = 'referees'
     paginate_by = 20
-    
+
     def get_queryset(self):
         # Подзапросы для средних оценок (чтобы не было дубликатов)
         avg_influence_subquery = RefereeEvaluation.objects.filter(
@@ -19,26 +20,39 @@ class RefereeListView(ListView):
         ).values('match__referee').annotate(
             avg_inf=Avg('influence_score')
         ).values('avg_inf')
-        
+
         avg_quality_subquery = RefereeEvaluation.objects.filter(
             match__referee=OuterRef('pk')
         ).values('match__referee').annotate(
             avg_qual=Avg('decision_quality')
         ).values('avg_qual')
-        
-        return Referee.objects.filter(
+
+        queryset = Referee.objects.filter(
             is_active=True
         ).annotate(
             # ✅ Имя аннотации должно совпадать с шаблоном!
             total_matches=Count('match', distinct=True),
             avg_influence=Subquery(avg_influence_subquery),
             avg_decision_quality=Subquery(avg_quality_subquery),
-        ).order_by('last_name')
-    
+        )
+
+        # БАГ, КОТОРЫЙ ТУТ БЫЛ: строка поиска в шаблоне рисовалась, но
+        # queryset её никогда не читал — поиск был чисто декоративным.
+        search = self.request.GET.get('q')
+        if search:
+            normalized_query = normalize_kz(search)
+            matching_ids = [
+                r.id for r in Referee.objects.only('id', 'first_name', 'last_name')
+                if normalized_query in normalize_kz(f"{r.first_name} {r.last_name}")
+            ]
+            queryset = queryset.filter(id__in=matching_ids)
+
+        return queryset.order_by('last_name')
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Все судьи — DOPX'
-        # countries можно убрать, если фильтр закомментирован
+        context['search_query'] = self.request.GET.get('q', '')
         return context
 
 

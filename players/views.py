@@ -11,8 +11,11 @@ from players.models import Player
 from teams.models import Team
 from aggregates.models import PlayerMatchAggregate
 from aggregates.services import MIN_VOTES_FOR_DISPLAY
+from core.utils import normalize_kz
 from evaluations.models import PlayerEvaluation
 from lineups.models import MatchLineupPlayer
+from players.positions import position_label, clean_position_code, LABEL_TO_CODES
+from seasons.models import Season
 import logging
 import django.db.models as models
 
@@ -26,6 +29,13 @@ class PlayerListView(ListView):
     paginate_by = 20
     
     def get_queryset(self):
+        # Дефолт: только игроки команд текущего сезона главной лиги — тот
+        # же паттерн, что и TeamListView (см. teams/views.py), через
+        # TeamSeason по team_id игрока. ?season=all снимает фильтр. См.
+        # docs/BACKLOG.md, находка 3.
+        self.active_season = Season.get_primary_active()
+        self.show_all = self.request.GET.get('season') == 'all'
+
         queryset = Player.objects.filter(is_active=True).select_related('team').prefetch_related(
             # Prefetch с [:1] — подгружаем только лучший агрегат на игрока, не все
             models.Prefetch(
@@ -43,34 +53,64 @@ class PlayerListView(ListView):
                 distinct=True
             )
         )
-        
-        # Поиск по имени
+
+        if self.active_season and not self.show_all:
+            queryset = queryset.filter(team__teamseason__season=self.active_season)
+
+        # Поиск по имени — тот же normalize_kz, что и в поиске команд/
+        # тренеров/судей (core/utils.py): "Кайрат" находит "Қайрат" и
+        # т.п. независимо от раскладки, которой набирали фамилию.
         search = self.request.GET.get('q')
         if search:
-            queryset = queryset.filter(
-                Q(first_name__icontains=search) |
-                Q(last_name__icontains=search)
-            )
+            normalized_query = normalize_kz(search)
+            matching_ids = [
+                p.id for p in Player.objects.only('id', 'first_name', 'last_name')
+                if normalized_query in normalize_kz(f"{p.first_name} {p.last_name}")
+            ]
+            queryset = queryset.filter(id__in=matching_ids)
         
         # Фильтр по команде
         team_id = self.request.GET.get('team')
         if team_id:
             queryset = queryset.filter(team_id=team_id)
         
-        # Фильтр по позиции
-        position = self.request.GET.get('position')
-        if position:
-            queryset = queryset.filter(position__icontains=position)
-        
+        # Фильтр по позиции — значение из <select> теперь ЧЕЛОВЕКОЧИТАЕМАЯ
+        # ПОДПИСЬ (label), а не сырой код (см. get_context_data): один
+        # label может соответствовать нескольким сырым кодам/регистрам в
+        # БД (LABEL_TO_CODES), поэтому фильтруем по всем сразу через
+        # __iexact + OR — устойчиво даже если бэкафилл-миграция ещё не
+        # прогнана и в БД остались разные регистры одного и того же кода.
+        position_label_selected = self.request.GET.get('position')
+        codes = LABEL_TO_CODES.get(position_label_selected, [])
+        if codes:
+            code_filter = Q()
+            for code in codes:
+                code_filter |= Q(position__iexact=code)
+            queryset = queryset.filter(code_filter)
+
         return queryset.order_by('last_name', 'first_name')
-    
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Все игроки — DOPX'
         context['search_query'] = self.request.GET.get('q', '')
+        context['active_season'] = self.active_season
+        context['show_all'] = self.show_all
         # Team не имеет is_active — берём все
         context['teams'] = Team.objects.all()[:20]
-        context['positions'] = Player.objects.values_list('position', flat=True).distinct()[:10]
+        # Список УНИКАЛЬНЫХ подписей, а не сырых кодов — иначе разные
+        # варианты регистра одного кода ("AM"/"am") или разные синонимы
+        # с одинаковым переводом дали бы дублирующиеся на вид пункты в
+        # выпадающем списке (баг, который тут был). Показываем только те
+        # подписи, для которых реально есть хотя бы один игрок в БД.
+        existing_codes = {
+            clean_position_code(p)
+            for p in Player.objects.exclude(position='').values_list('position', flat=True).distinct()
+        }
+        context['positions'] = sorted(
+            label for label, codes in LABEL_TO_CODES.items()
+            if existing_codes & set(codes)
+        )
         return context
 
 
@@ -142,6 +182,66 @@ class PlayerDetailView(DetailView):
         # Команда игрока
         team = player.team
 
+        # История по сезонам — task #148 (мультисезонность). В отличие от
+        # тренеров (docs/BACKLOG.md, находка 4 — KFF физически не хранит
+        # историю назначений), у игроков реальная история "команда по
+        # сезонам" ВОССТАНОВИМА: MatchLineupPlayer.lineup.team — это
+        # команда ИМЕННО НА ТОТ МАТЧ (не перезаписывается задним числом при
+        # трансфере), lineup.match.season — сезон конкретного матча.
+        # Группируем в Python, а не через .values().annotate() по двум
+        # моделям сразу (MatchLineupPlayer + MatchEvent) — так проще
+        # корректно посчитать голы на КАЖДЫЙ отрезок сезон+команда (в т.ч.
+        # редкий случай трансфера в разгар сезона — тогда игрок получает
+        # две отдельные строки, что и есть корректное отображение, а не
+        # баг). Данных на игрока — десятки матчей, не тысячи, Python-группировка
+        # дешевле, чем городить сложный ORM-запрос ради такой малой выгоды.
+        from collections import OrderedDict
+
+        lineup_entries = MatchLineupPlayer.objects.filter(
+            player=player, lineup__match__status='finished'
+        ).select_related(
+            'lineup__match__season__league', 'lineup__team'
+        ).order_by('-lineup__match__start_time')
+
+        stints = OrderedDict()  # (season_id, team_id) -> накопитель
+        match_ids_by_stint = {}
+        for entry in lineup_entries:
+            match = entry.lineup.match
+            season = match.season
+            if not season:
+                continue
+            key = (season.id, entry.lineup.team_id)
+            if key not in stints:
+                stints[key] = {
+                    'season': season,
+                    'team': entry.lineup.team,
+                    'matches_played': 0,
+                    'goals': 0,
+                }
+                match_ids_by_stint[key] = []
+            stints[key]['matches_played'] += 1
+            match_ids_by_stint[key].append(match.id)
+
+        if stints:
+            from events.models import MatchEvent
+            goals_by_match = dict(
+                MatchEvent.objects.filter(
+                    player=player,
+                    event_type__in=['goal', 'penalty'],
+                    match_id__in=[mid for ids in match_ids_by_stint.values() for mid in ids],
+                ).values('match_id').annotate(c=Count('id')).values_list('match_id', 'c')
+            )
+            for key, match_ids in match_ids_by_stint.items():
+                stints[key]['goals'] = sum(goals_by_match.get(mid, 0) for mid in match_ids)
+
+        # Сортировка: сначала свежие сезоны, внутри сезона — по кол-ву
+        # матчей (основной клуб сезона первым, если был трансфер).
+        career_by_season = sorted(
+            stints.values(),
+            key=lambda s: (s['season'].year, s['matches_played']),
+            reverse=True,
+        )
+
         # НОВОЕ: ближайший сыгранный матч этого игрока, который ещё можно
         # оценить — используется для CTA в пустых состояниях ("История
         # выступлений" / "Лучшие матчи"), чтобы не просто прятать карточки,
@@ -168,6 +268,7 @@ class PlayerDetailView(DetailView):
             'has_evaluations': has_evaluations,
             'best_matches': best_matches,
             'team': team,
+            'career_by_season': career_by_season,
             'votable_match': votable_match,
             'is_following': is_following,
             'page_title': f'{player.first_name} {player.last_name} — DOPX',

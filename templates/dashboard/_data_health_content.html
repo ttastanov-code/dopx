@@ -1,0 +1,212 @@
+<!-- templates/dashboard/_data_health_content.html -->
+<!-- Вынесено из data_health.html для realtime-обновления через HTMX
+     (см. dashboard/data_health.html — hx-get на dashboard:data_health_partial,
+     hx-trigger="every 15s"). Этот файл рендерится ОБА раза: при первой
+     загрузке страницы (через include-тег шаблона) и при каждом poll-запросе
+     (через dashboard/views.py::data_health_partial) — сам по себе, без
+     base.html/_nav.html, чтобы HTMX не задваивал шапку/навигацию при свапе. -->
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-6">
+    <div class="stat bg-base-100 border border-base-300 rounded-lg p-3 md:p-4">
+        <div class="stat-title text-[10px] md:text-xs">Последний синк</div>
+        {% if health.last_run %}
+        <div class="stat-value text-base md:text-xl">{{ health.last_run.created_at|timesince }} назад</div>
+        <div class="stat-desc text-[10px] md:text-xs">{{ health.last_run.total }} матчей, {{ health.last_run.duration_seconds|floatformat:1 }}с</div>
+        {% else %}
+        <div class="stat-value text-base md:text-xl opacity-40">нет данных</div>
+        <div class="stat-desc text-[10px] md:text-xs">ParserSyncRun ещё не писался</div>
+        {% endif %}
+    </div>
+    <div class="stat bg-base-100 border border-base-300 rounded-lg p-3 md:p-4">
+        <div class="stat-title text-[10px] md:text-xs">Ошибок в последнем запуске</div>
+        <div class="stat-value text-lg md:text-2xl {% if health.last_run.errors %}text-error{% else %}text-success{% endif %}">
+            {{ health.last_run.errors|default:0 }}
+        </div>
+        <div class="stat-desc text-[10px] md:text-xs">{{ health.last_run.error_rate_percent|default:0 }}% от {{ health.last_run.total|default:0 }}</div>
+    </div>
+    <div class="stat bg-base-100 border border-base-300 rounded-lg p-3 md:p-4">
+        <div class="stat-title text-[10px] md:text-xs">Матчи без составов</div>
+        <div class="stat-value text-lg md:text-2xl {% if health.matches_missing_lineups %}text-warning{% endif %}">
+            {{ health.matches_missing_lineups }}
+        </div>
+        <div class="stat-desc text-[10px] md:text-xs">live/finished, has_lineup=True, но пусто</div>
+    </div>
+    <div class="stat bg-base-100 border border-base-300 rounded-lg p-3 md:p-4">
+        <div class="stat-title text-[10px] md:text-xs">Матчи без событий</div>
+        <div class="stat-value text-lg md:text-2xl {% if health.matches_missing_events %}text-warning{% endif %}">
+            {{ health.matches_missing_events }}
+        </div>
+        <div class="stat-desc text-[10px] md:text-xs">live/finished, ни одного MatchEvent</div>
+    </div>
+</div>
+
+{% if health.matches_missing_lineups_list or health.matches_missing_events_list %}
+<div class="card bg-base-100 border border-warning/30 mb-6">
+    <div class="card-body p-4">
+        <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
+            <i class="ti ti-alert-triangle text-warning"></i> Матчи с пропущенными данными
+        </h3>
+        <p class="text-xs opacity-60 mb-3">Список тех самых матчей из карточек выше — по клику «Ресинк» полная пересинхронизация с KFF прямо отсюда, без ручного поиска UUID в Django admin.</p>
+        <div class="overflow-x-auto">
+            <table class="table table-sm">
+                <thead>
+                    <tr><th>Матч</th><th>Дата</th><th>Статус</th><th>Проблема</th><th></th></tr>
+                </thead>
+                <tbody>
+                    {% for match in health.matches_missing_lineups_list %}
+                    <tr>
+                        <td class="whitespace-nowrap">
+                            <a href="{% url 'admin:matches_match_change' match.id %}" class="link link-hover" target="_blank">{{ match.home_team }} — {{ match.away_team }}</a>
+                        </td>
+                        <td class="text-xs opacity-70 whitespace-nowrap">{{ match.start_time|date:"d.m H:i" }}</td>
+                        <td><span class="badge badge-sm {% if match.status == 'live' %}badge-error{% else %}badge-ghost{% endif %}">{{ match.get_status_display }}</span></td>
+                        <td><span class="badge badge-warning badge-sm badge-outline">нет составов</span></td>
+                        <td>
+                            <form method="post" action="{% url 'dashboard:data_health_resync_match' match.id %}" class="inline">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-xs btn-outline">
+                                    <i class="ti ti-refresh"></i> Ресинк
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% for match in health.matches_missing_events_list %}
+                    <tr>
+                        <td class="whitespace-nowrap">
+                            <a href="{% url 'admin:matches_match_change' match.id %}" class="link link-hover" target="_blank">{{ match.home_team }} — {{ match.away_team }}</a>
+                        </td>
+                        <td class="text-xs opacity-70 whitespace-nowrap">{{ match.start_time|date:"d.m H:i" }}</td>
+                        <td><span class="badge badge-sm {% if match.status == 'live' %}badge-error{% else %}badge-ghost{% endif %}">{{ match.get_status_display }}</span></td>
+                        <td><span class="badge badge-warning badge-sm badge-outline">нет событий</span></td>
+                        <td>
+                            <form method="post" action="{% url 'dashboard:data_health_resync_match' match.id %}" class="inline">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-xs btn-outline">
+                                    <i class="ti ti-refresh"></i> Ресинк
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="card bg-base-100 border border-base-300 mb-6">
+    <div class="card-body p-4">
+        <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
+            <i class="ti ti-server-2 text-primary"></i> Инфраструктура
+        </h3>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div class="rounded-lg border border-base-300 p-3">
+                <div class="text-xs opacity-60 mb-1 flex items-center gap-1">
+                    <span class="inline-block w-2 h-2 rounded-full {% if infra.redis.ok %}bg-success{% else %}bg-error{% endif %}"></span>
+                    Redis
+                </div>
+                {% if infra.redis.ok %}
+                <div class="text-sm">Память: <b>{{ infra.redis.used_memory_human }}</b></div>
+                <div class="text-sm">Клиентов: <b>{{ infra.redis.connected_clients }}</b></div>
+                <div class="text-sm">Очередь celery: <b class="{% if infra.redis.queue_depth > 50 %}text-warning{% endif %}">{{ infra.redis.queue_depth }}</b></div>
+                <div class="text-xs opacity-50 mt-1">uptime {{ infra.redis.uptime_days }}д</div>
+                {% else %}
+                <div class="text-xs text-error">{{ infra.redis.error }}</div>
+                {% endif %}
+            </div>
+            <div class="rounded-lg border border-base-300 p-3">
+                <div class="text-xs opacity-60 mb-1 flex items-center gap-1">
+                    <span class="inline-block w-2 h-2 rounded-full {% if infra.celery.ok and infra.celery.workers_online %}bg-success{% elif infra.celery.ok %}bg-warning{% else %}bg-error{% endif %}"></span>
+                    Celery
+                </div>
+                {% if infra.celery.ok %}
+                <div class="text-sm">Воркеров онлайн: <b class="{% if not infra.celery.workers_online %}text-warning{% endif %}">{{ infra.celery.workers_online }}</b></div>
+                <div class="text-sm">Активных задач: <b>{{ infra.celery.active_tasks }}</b></div>
+                {% if infra.celery.worker_names %}
+                <div class="text-xs opacity-50 mt-1 truncate">{{ infra.celery.worker_names|join:", " }}</div>
+                {% endif %}
+                {% else %}
+                <div class="text-xs text-error">{{ infra.celery.error }}</div>
+                {% endif %}
+            </div>
+            <div class="rounded-lg border border-base-300 p-3">
+                <div class="text-xs opacity-60 mb-1 flex items-center gap-1">
+                    <span class="inline-block w-2 h-2 rounded-full {% if infra.db.ok %}bg-success{% else %}bg-error{% endif %}"></span>
+                    PostgreSQL
+                </div>
+                {% if infra.db.ok %}
+                <div class="text-sm">Размер БД: <b>{{ infra.db.size_mb }} МБ</b></div>
+                <div class="text-sm">Соединений: <b>{{ infra.db.active_connections }}</b></div>
+                {% else %}
+                <div class="text-xs text-error">{{ infra.db.error }}</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if health.recent_error_samples %}
+<div class="card bg-base-100 border border-error/30 mb-6">
+    <div class="card-body p-4">
+        <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
+            <i class="ti ti-alert-triangle text-error"></i> Последние ошибки (из последнего запуска)
+        </h3>
+        <div class="overflow-x-auto">
+            <table class="table table-sm">
+                <thead>
+                    <tr><th>Матч</th><th>Тип ошибки</th><th>Сообщение</th><th></th></tr>
+                </thead>
+                <tbody>
+                    {% for err in health.recent_error_samples %}
+                    <tr>
+                        <td class="whitespace-nowrap">{{ err.match|default:err.match_id }}</td>
+                        <td><span class="badge badge-error badge-sm">{{ err.error_type }}</span></td>
+                        <td class="text-xs opacity-70 max-w-md truncate" title="{{ err.error }}">{{ err.error }}</td>
+                        <td>
+                            <form method="post" action="{% url 'dashboard:data_health_resync_match' err.match_id %}" class="inline">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-xs btn-outline">
+                                    <i class="ti ti-refresh"></i> Досинхронизировать
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="card bg-base-100 border border-base-300">
+    <div class="card-body p-4">
+        <h3 class="font-bold text-sm md:text-base mb-3">История запусков</h3>
+        <div class="overflow-x-auto">
+            <table class="table table-sm">
+                <thead>
+                    <tr>
+                        <th>Когда</th><th>Матчей</th><th>Обновлено</th><th>Новых событий</th>
+                        <th>Пропущено (лок)</th><th>Ошибок</th><th>Длительность</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for run in health.recent_runs %}
+                    <tr>
+                        <td class="whitespace-nowrap text-xs">{{ run.created_at|date:"d.m H:i" }}</td>
+                        <td>{{ run.total }}</td>
+                        <td>{{ run.updated }}</td>
+                        <td>{{ run.new_events }}</td>
+                        <td>{{ run.skipped_locked }}</td>
+                        <td class="{% if run.errors %}text-error font-semibold{% endif %}">{{ run.errors }}</td>
+                        <td class="text-xs opacity-60">{{ run.duration_seconds|floatformat:1 }}с</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="7" class="text-center opacity-50 py-6">Пока нет ни одного запуска — появится после первого срабатывания celery-задачи update_match_statuses</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

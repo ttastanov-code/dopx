@@ -293,6 +293,7 @@ FILE: templates/notifications/list.html (ENTERPRISE - v2.1 IMPROVED)
 <!-- === HTMX POLLING ДЛЯ ОБНОВЛЕНИЯ СЧЁТЧИКОВ === -->
 <div id="notifications-refresh"
      class="hidden"
+     data-background-poll
      hx-get="{% url 'notifications:badge_partial' %}"
      hx-trigger="every 30s"
      hx-swap="none">

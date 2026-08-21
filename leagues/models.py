@@ -15,6 +15,19 @@ class League(BaseModel):
         null=True,
         blank=True
     )
+    # Какая лига считается "главной" для сайта — используется вместо
+    # Season.objects.filter(is_active=True).first() (без фильтра по лиге)
+    # в core/views.py::standings_preview и core/views.py (главная страница):
+    # с одной лигой на сайте .first() случайно давал правильный ответ, но
+    # как только появится вторая лига с собственным активным сезоном
+    # (например, Кубок Казахстана), выбор таблицы на главной стал бы
+    # зависеть от Season.Meta.ordering, а не от осмысленного решения.
+    # См. docs/BACKLOG.md, находка 1.
+    is_primary = models.BooleanField(
+        _('Главная лига сайта'),
+        default=False,
+        help_text=_('Турнирная таблица какой лиги показывается на главной странице. Должна быть ровно одна.'),
+    )
 
     class Meta:
         verbose_name = _('Лига')
@@ -23,3 +36,12 @@ class League(BaseModel):
 
     def __str__(self):
         return self.name
+
+    def save(self, *args, **kwargs):
+        """При сохранении с is_primary=True все остальные лиги атомарно
+        снимаются с этого флага — гарантирует ровно одну главную лигу
+        сайта при любом пути создания (админка, миграция, скрипт), тот же
+        паттерн, что и Season.is_active (seasons/models.py)."""
+        super().save(*args, **kwargs)
+        if self.is_primary:
+            League.objects.filter(is_primary=True).exclude(pk=self.pk).update(is_primary=False)

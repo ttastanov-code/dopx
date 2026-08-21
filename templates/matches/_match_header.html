@@ -6,6 +6,7 @@ hx-атрибуты на корне живут только при status=live �
 {% endcomment %}
 <div id="match-header" class="card bg-base-100 border border-base-300 mb-3 sm:mb-6"
      {% if match.status == 'live' %}
+     data-background-poll
      hx-get="{% url 'matches:header' match.id %}"
      hx-trigger="every 20s"
      hx-swap="outerHTML"
@@ -18,6 +19,10 @@ hx-атрибуты на корне живут только при status=live �
                 <span class="truncate">{{ match.league.name }}</span>
                 <span class="hidden sm:inline">•</span>
                 <span class="hidden sm:inline">Сезон {{ match.season.year }}</span>
+                {% if match.tour %}
+                <span class="hidden sm:inline">•</span>
+                <span class="flex-shrink-0">{{ match.tour }}-й тур</span>
+                {% endif %}
                 {% if match.is_derby %}
                 <span class="hidden sm:inline">•</span>
                 <span class="badge badge-error badge-sm gap-1 flex-shrink-0">
@@ -26,19 +31,37 @@ hx-атрибуты на корне живут только при status=live �
                 </span>
                 {% endif %}
             </div>
-            <div class="badge {% if match.status == 'live' %}badge-error animate-pulse{% elif match.status == 'finished' %}badge-success{% else %}badge-ghost{% endif %} text-xs">
+            <div class="badge {% if match.status == 'live' %}badge-error animate-pulse{% elif match.status == 'finished' %}badge-success{% elif match.status == 'postponed' %}badge-warning{% elif match.status == 'cancelled' %}badge-neutral{% else %}badge-ghost{% endif %} text-xs">
                 {% if match.status == 'scheduled' %}
                 <i class="ti ti-calendar"></i>
                 <span class="hidden sm:inline">Запланирован</span>
                 {% elif match.status == 'live' %}
                 <i class="ti ti-circle-filled"></i>
                 LIVE
+                {% elif match.status == 'postponed' %}
+                <i class="ti ti-calendar-off"></i>
+                <span class="hidden sm:inline">Перенесён</span>
+                {% elif match.status == 'cancelled' %}
+                <i class="ti ti-ban"></i>
+                <span class="hidden sm:inline">Отменён</span>
                 {% else %}
                 <i class="ti ti-check"></i>
                 <span class="hidden sm:inline">Завершён</span>
                 {% endif %}
             </div>
         </div>
+
+        {% if match.status == 'postponed' %}
+        <div class="alert alert-warning text-sm mb-3 sm:mb-4">
+            <i class="ti ti-calendar-off"></i>
+            <span>Дата и время проведения матча перенесены. Новая дата появится здесь, как только КФФ её объявит.</span>
+        </div>
+        {% elif match.status == 'cancelled' %}
+        <div class="alert text-sm mb-3 sm:mb-4">
+            <i class="ti ti-ban"></i>
+            <span>Матч отменён и не состоится.</span>
+        </div>
+        {% endif %}
 
         <!-- Команды и счёт -->
         <div class="flex flex-col md:flex-row items-center justify-between gap-3 sm:gap-6">
@@ -75,6 +98,16 @@ hx-атрибуты на корне живут только при status=live �
                 <div class="text-xl md:text-2xl font-mono">
                     {% render_score match.home_score match.away_score %}
                 </div>
+                {% elif match.status == 'postponed' %}
+                <div class="text-xl md:text-2xl font-mono mb-1 md:mb-2 opacity-60">VS</div>
+                <div class="text-sm opacity-60 line-through">
+                    <i class="ti ti-calendar flex-shrink-0"></i>
+                    <span class="truncate">{{ match.start_time|date:"d.m.Y H:i" }}</span>
+                </div>
+                <div class="text-xs md:text-sm text-warning">дата уточняется</div>
+                {% elif match.status == 'cancelled' %}
+                <div class="text-xl md:text-2xl font-mono mb-1 md:mb-2 opacity-40">—</div>
+                <div class="text-xs md:text-sm opacity-60">не состоится</div>
                 {% else %}
                 <div class="text-xl md:text-2xl font-mono mb-1 md:mb-2 opacity-60">VS</div>
                 <div class="text-sm">

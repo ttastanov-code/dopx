@@ -1,0 +1,60 @@
+<!-- templates/dashboard/_celery_tasks_card.html -->
+<!-- Вынесено из parser_tools.html для realtime-обновления (см. этот же
+     блок в parser_tools.html — hx-get на dashboard:parser_tasks_partial,
+     hx-trigger="every 10s"). ТОЛЬКО эта карточка опрашивается, а не вся
+     страница — иначе poll стирал бы форму поиска/просмотра сырого
+     ответа KFF, которые staff мог только что заполнить. -->
+<div class="card bg-base-100 border border-base-300">
+    <div class="card-body p-4">
+        <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
+            <i class="ti ti-list-check text-primary"></i> Очередь celery — что выполняется сейчас
+        </h3>
+        {% if not celery_tasks.ok %}
+        <div class="alert alert-warning text-sm">
+            <i class="ti ti-alert-triangle"></i> Не удалось опросить воркеров: {{ celery_tasks.error }}
+        </div>
+        {% elif not celery_tasks.active and not celery_tasks.reserved %}
+        <p class="text-sm opacity-50 py-2">Очередь пуста — ни активных, ни зарезервированных задач.</p>
+        {% else %}
+        <div class="overflow-x-auto">
+            <table class="table table-sm">
+                <thead>
+                    <tr><th>Статус</th><th>Задача</th><th>Аргументы</th><th>Воркер</th><th>ID</th><th></th></tr>
+                </thead>
+                <tbody>
+                    {% for t in celery_tasks.active %}
+                    <tr>
+                        <td><span class="badge badge-error badge-sm">выполняется</span></td>
+                        <td class="font-mono text-xs">{{ t.name }}</td>
+                        <td class="font-mono text-xs opacity-70 max-w-xs truncate">{{ t.args }}</td>
+                        <td class="text-xs opacity-70">{{ t.worker }}</td>
+                        <td class="font-mono text-xs opacity-60">{{ t.task_id }}</td>
+                        <td>
+                            <form method="post" action="{% url 'dashboard:parser_revoke_task' t.task_id %}" class="inline" onsubmit="return confirm('Остановить задачу {{ t.name }}?');">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-xs btn-outline btn-error">Отозвать</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% for t in celery_tasks.reserved %}
+                    <tr>
+                        <td><span class="badge badge-ghost badge-sm">в очереди</span></td>
+                        <td class="font-mono text-xs">{{ t.name }}</td>
+                        <td class="font-mono text-xs opacity-70 max-w-xs truncate">{{ t.args }}</td>
+                        <td class="text-xs opacity-70">{{ t.worker }}</td>
+                        <td class="font-mono text-xs opacity-60">{{ t.task_id }}</td>
+                        <td>
+                            <form method="post" action="{% url 'dashboard:parser_revoke_task' t.task_id %}" class="inline" onsubmit="return confirm('Отозвать задачу {{ t.name }}?');">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-xs btn-outline btn-error">Отозвать</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+</div>

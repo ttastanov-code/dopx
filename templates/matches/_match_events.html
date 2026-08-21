@@ -6,6 +6,7 @@
 
 <div id="events-container" class="space-y-3"
      {% if match.status == 'live' %}
+     data-background-poll
      hx-get="{% url 'matches:events' match.id %}"
      hx-trigger="every 15s"
      hx-swap="outerHTML"
