@@ -35,7 +35,7 @@ from players.positions import (
     BEST_XI_SLOT_DISPLAY_ORDER,
     BEST_XI_SLOT_LABELS,
     SLOT_PROCESSING_ORDER,
-    clean_position_code,
+    resolve_lineup_codes,
 )
 from round_squad.models import RoundBestXI, RoundBestXISlot
 
@@ -143,13 +143,17 @@ def _build_round_player_data(season, tour: int):
         MatchLineupPlayer.objects
         .filter(lineup__match__season=season, lineup__match__tour=tour)
         .exclude(position="")
-        .values_list("player_id", "position", "lineup__team__name")
+        .values_list("player_id", "position", "field_position", "lineup__team__name")
     )
-    position_and_team: dict[str, tuple[str, str]] = {}
-    for player_id, position, team_name in lineup_rows:
+    # codes теперь список (см. resolve_lineup_codes) — обычно один элемент,
+    # но храним как список, чтобы pool_by_code мог зарегистрировать
+    # кандидата под всеми применимыми кодами без дублирования логики.
+    position_and_team: dict[str, tuple[list[str], str]] = {}
+    for player_id, position, field_position, team_name in lineup_rows:
         pid = str(player_id)
         if pid not in position_and_team:
-            position_and_team[pid] = (clean_position_code(position), team_name or '')
+            codes = resolve_lineup_codes(position, field_position)
+            position_and_team[pid] = (codes, team_name or '')
 
     players = {str(p.id): p for p in Player.objects.filter(is_active=True).select_related("team")}
 
@@ -160,7 +164,7 @@ def _build_round_player_data(season, tour: int):
         player = players.get(pid)
         if not player:
             continue
-        code, team_name = position_and_team.get(pid, ('', ''))
+        codes, team_name = position_and_team.get(pid, ([], ''))
         team_name = team_name or (player.team.name if player.team else "")
         candidate = RoundCandidate(
             content_type_id=ContentType.objects.get_for_model(Player).id,
@@ -171,10 +175,14 @@ def _build_round_player_data(season, tour: int):
             profile_url=reverse("players:detail", args=[player.id]),
             raw_avg=row["raw_avg"] or 0.0,
             votes=row["votes"] or 0,
-            position_code=code,
+            position_code=codes[0] if codes else '',
         )
         player_stats[pid] = candidate
-        if code:
+        # codes — список из resolve_lineup_codes(): обычно один элемент
+        # ("D:L" для новых записей с известным field_position, либо голый
+        # "D" для старых) — регистрируем под всеми, на случай если в
+        # будущем resolve_lineup_codes станет возвращать несколько.
+        for code in codes:
             pool_by_code[code].append(candidate)
 
     return player_stats, pool_by_code

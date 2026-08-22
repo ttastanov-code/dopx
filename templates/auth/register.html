@@ -98,7 +98,7 @@
                                name="city"
                                autocomplete="address-level2"
                                class="input input-bordered w-full pl-10 {% if form.city.errors %}input-error{% endif %}"
-                               placeholder="Алматы"
+                               placeholder="Например, Алматы"
                                value="{{ form.city.value|default:'' }}">
                         <i class="ti ti-map-pin absolute left-3 top-1/2 -translate-y-1/2 opacity-40"></i>
                     </div>
@@ -197,7 +197,7 @@
                     <label class="label cursor-pointer gap-3 p-4 rounded-lg border border-base-300 hover:bg-base-200 transition-colors">
                         <input type="checkbox" required class="checkbox checkbox-primary checkbox-lg">
                         <span class="label-text text-sm">
-                            Я согласен с
+                            Я принимаю
                             <a href="{% url 'core:rules' %}" class="link link-primary hover:no-underline" target="_blank">правилами платформы</a>
                         </span>
                     </label>
@@ -226,7 +226,7 @@
             <!-- Login Link -->
             <div class="text-center">
                 <p class="text-sm opacity-70">
-                    Уже есть аккаунт?
+                    Уже зарегистрированы?
                     <a href="{% url 'users:login' %}" class="link link-primary font-medium hover:no-underline">
                         Войти
                     </a>

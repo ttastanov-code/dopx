@@ -54,7 +54,7 @@ from players.positions import (
     BEST_XI_SLOT_DISPLAY_ORDER,
     BEST_XI_SLOT_LABELS,
     SLOT_PROCESSING_ORDER,
-    clean_position_code,
+    resolve_lineup_codes,
 )
 from referees.models import Referee
 from season_squad.models import SeasonBestXI, SeasonBestXISlot, SeasonPositionRanking
@@ -123,18 +123,29 @@ def _rank_pool(candidates: list[Candidate]) -> list[tuple[Candidate, float]]:
 
 
 def _player_season_position(season) -> dict[str, str]:
-    """player_id (строкой) -> самый частый (мода) сырой код позиции этого
-    игрока в сезоне, по фактическим составам (MatchLineupPlayer, включая
-    скамейку — амплуа не зависит от того, вышел человек с первых минут)."""
+    """player_id (строкой) -> самый частый (мода) КОД позиции этого игрока
+    в сезоне, по фактическим составам (MatchLineupPlayer, включая скамейку
+    — амплуа не зависит от того, вышел человек с первых минут).
+
+    2026-08-23: код теперь берётся через resolve_lineup_codes(position,
+    field_position) — там, где известна сторона поля (см.
+    players/positions.py), это комбинированный код "D:L", иначе — голый
+    амплуа-код, как раньше. Мода считается по этим кодам напрямую, а не
+    по голому амплуа: если игрок почти всегда выходил на левом фланге
+    защиты, его код сезона — "D:L", и он корректно конкурирует именно за
+    LB, а не размывается в общий пул CB1/CB2/RB/LB."""
     rows = (
         MatchLineupPlayer.objects
         .filter(lineup__match__season=season)
         .exclude(position="")
-        .values_list("player_id", "position")
+        .values_list("player_id", "position", "field_position")
     )
     counters: dict[str, Counter] = defaultdict(Counter)
-    for player_id, position in rows:
-        counters[str(player_id)][clean_position_code(position)] += 1
+    for player_id, position, field_position in rows:
+        codes = resolve_lineup_codes(position, field_position)
+        if not codes:
+            continue
+        counters[str(player_id)][codes[0]] += 1
     return {pid: counter.most_common(1)[0][0] for pid, counter in counters.items() if counter}
 
 

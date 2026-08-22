@@ -119,21 +119,21 @@ events/_reaction_buttons.html.
         <div class="mt-2 sm:mt-3 text-[11px] sm:text-xs flex items-center gap-1.5 {% if my_prediction.choice == match.final_result %}text-success{% else %}text-error{% endif %}">
             <i class="ti {% if my_prediction.choice == match.final_result %}ti-circle-check{% else %}ti-circle-x{% endif %}"></i>
             {% if my_prediction.choice == match.final_result %}
-            Ваш прогноз совпал с результатом!
+            Ваш прогноз оказался верным.
             {% else %}
-            Ваш прогноз не совпал с результатом
+            Прогноз не совпал с результатом.
             {% endif %}
         </div>
         {% elif match.prediction_window_not_yet_open %}
         <p class="mt-2 sm:mt-3 text-[11px] sm:text-xs opacity-50 flex items-center gap-1.5">
-            <i class="ti ti-hourglass-empty"></i> Прогнозы откроются {{ match.prediction_opens_at|date:"d.m в H:i" }}
+            <i class="ti ti-hourglass-empty"></i> Прогнозы откроются {{ match.prediction_opens_at|date:"d.m в H:i" }}.
         </p>
         {% elif not match.is_prediction_open and not match.final_result %}
         <p class="mt-2 sm:mt-3 text-[11px] sm:text-xs opacity-50 flex items-center gap-1.5">
-            <i class="ti ti-lock"></i> Голосование закрыто — матч уже начался
+            <i class="ti ti-lock"></i> Приём прогнозов закрыт: матч уже начался.
         </p>
         {% elif not counts.total %}
-        <p class="mt-2 sm:mt-3 text-[11px] sm:text-xs opacity-50">Будьте первым, кто спрогнозирует исход!</p>
+        <p class="mt-2 sm:mt-3 text-[11px] sm:text-xs opacity-50">Сделайте первый прогноз на этот матч.</p>
         {% endif %}
     </div>
 </div>

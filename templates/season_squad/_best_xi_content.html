@@ -60,13 +60,45 @@ NEW/↑N и цветной чип-фон под рейтингом убраны 
         <div class="grid gap-2 md:gap-4 justify-items-center" style="grid-template-columns: repeat({{ row.slots|length }}, minmax(0, 1fr));">
             {% for card in row.slots %}
             <div class="group flex flex-col items-center text-center w-full max-w-[110px] md:max-w-[130px]">
-                <div class="text-[8px] md:text-[10px] uppercase tracking-widest font-semibold text-white/40 mb-1.5">{{ card.label }}</div>
+                {% comment %}
+                Подпись слота (card.label — "ЛЕВЫЙ ВИНГЕР"/"ЦЕНТРАЛЬНЫЙ
+                ЗАЩИТНИК" и т.п.) убрана намеренно (2026-08-23): KFF присылает
+                всего 6 сырых кодов позиций без разделения по флангу
+                (см. players/positions.py) — сторона поля и точная роль в
+                формации подбираются приблизительным фолбэком, а не реальными
+                данными. Явная подпись "вингер"/"левый защитник" на карточке
+                конкретного игрока выглядела бы категоричным утверждением,
+                которое мы не можем подтвердить, и создавала риск
+                обоснованных претензий вида "я не вингер". Расположение на
+                поле (ряд/колонка) само по себе достаточно как визуальный
+                сигнал зоны, без текстового ярлыка с точной ролью.
+                {% endcomment %}
 
                 {% include 'components/_avatar.html' with photo_url=card.occupant_photo_url name=card.occupant_name size_classes='w-12 h-12 md:w-16 md:h-16 text-base md:text-lg' ring_style=card.ring_style %}
 
                 {% if card.filled %}
-                <div class="mt-2 flex items-center gap-1 max-w-full text-white/90">
-                    <a href="{{ card.occupant_profile_url }}" class="font-medium text-[11px] md:text-sm leading-tight truncate hover:opacity-70 transition-opacity">{{ card.occupant_name }}</a>
+                {% comment %}
+                Фикс 2026-08-23, попытка №3: №1 (truncate → line-clamp-2) и
+                №2 (min-w-0 + justify-center на flex-обёртке) не помогли —
+                перенесённый текст всё равно съезжал влево. Причина глубже:
+                `-webkit-line-clamp` — это legacy `display: -webkit-box`
+                (старый префиксный флексбокс из 2009-го), и когда такой
+                элемент сам оказывается ВНУТРИ современного flex-родителя
+                (`flex items-start`), центрирование текста внутри него
+                становится ненадёжным в разных браузерах — два разных
+                флекс-движка накладываются друг на друга.
+                Решение: убрать ОБА источника проблемы разом — никакого
+                `display:flex` на обёртке и никакого `-webkit-line-clamp`
+                на ссылке. Имя + иконка-подсказка — обычный инлайновый
+                текстовый поток (тултип из components/_tooltip_icon.html
+                сам по себе `inline-flex align-middle`, спокойно течёт
+                внутри текста). У обычного инлайнового контента
+                text-align:center (унаследован от text-center на карточке
+                выше) работает без исключений — ровно так же надёжно, как
+                центрирование обычного абзаца текста.
+                {% endcomment %}
+                <div class="mt-2 max-w-full text-white/90">
+                    <a href="{{ card.occupant_profile_url }}" class="font-medium text-[11px] md:text-sm leading-tight hover:opacity-70 transition-opacity">{{ card.occupant_name }}</a>
                     {% if card.explanation %}{% include 'components/_tooltip_icon.html' with text=card.explanation %}{% endif %}
                 </div>
                 <div class="text-[10px] md:text-xs font-semibold text-white/75 mt-0.5">{{ card.season_score|floatformat:1 }}</div>

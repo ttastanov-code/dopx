@@ -71,7 +71,7 @@
       <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4">
           <h3 class="font-bold mb-2 text-sm">Хотите оценить матч?</h3>
-          <p class="text-xs opacity-60 mb-3">Каждая ваша оценка сразу учитывается в следующем пересчёте состава.</p>
+          <p class="text-xs opacity-60 mb-3">Новые оценки учитываются при следующем пересчёте состава.</p>
           <a href="{% url 'matches:list' %}?status=finished" class="btn btn-primary btn-sm btn-block">К матчам</a>
         </div>
       </div>
@@ -96,7 +96,7 @@
 
           <div class="alert alert-warning text-xs md:text-sm mb-4 md:mb-6">
             <i class="ti ti-alert-triangle"></i>
-            <span>Мы намеренно НЕ берём просто максимальную среднюю оценку — иначе игрок с одним матчем на 10/10 обогнал бы того, кто стабильно отыграл весь сезон.</span>
+            <span>Мы учитываем не только среднюю оценку, но и объём данных: один яркий матч не должен опережать стабильный сезон.</span>
           </div>
 
           <div class="space-y-4 md:space-y-6">

@@ -65,6 +65,21 @@ class MatchLineupPlayer(BaseModel):
         max_length=20,
         blank=True
     )
+    field_position = models.CharField(
+        _('Сторона на поле'),
+        max_length=5,
+        blank=True,
+        help_text=_(
+            "Сырое значение 'field_position' из ответа KFF "
+            "(/games/<id>/lineup) — C/L/R/LC/RC, колонка формации "
+            "(не путать с амплуа в поле 'Позиция' выше). Найдено "
+            "2026-08-23: это поле присутствовало в ответе API у КАЖДОГО "
+            "игрока состава всё это время, но не импортировалось — "
+            "именно оно даёт сторону поля (левый/правый/центр), которой "
+            "не хватало для точного распределения слотов формации в "
+            "season_squad/round_squad (см. players/positions.py)."
+        )
+    )
     shirt_number = models.IntegerField(
         _('Номер'),
         null=True,

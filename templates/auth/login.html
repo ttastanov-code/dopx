@@ -33,7 +33,7 @@
                                required
                                autocomplete="username"
                                class="input input-bordered w-full pl-10 {% if form.username.errors %}input-error{% endif %}"
-                               placeholder="username или email"
+                               placeholder="Логин или email"
                                value="{{ form.username.value|default:'' }}">
                         <i class="ti ti-user absolute left-3 top-1/2 -translate-y-1/2 opacity-40"></i>
                     </div>
@@ -78,7 +78,7 @@
                         <span class="label-text">Запомнить</span>
                     </label>
                     <a href="{% url 'users:password_reset' %}" class="link link-primary hover:no-underline">
-                        Забыли пароль?
+                        Не помните пароль?
                     </a>
                 </div>
                 
@@ -103,7 +103,7 @@
             <!-- Register Link -->
             <div class="text-center">
                 <p class="text-sm opacity-70">
-                    Нет аккаунта?
+                    Впервые на DOPX?
                     <a href="{% url 'users:register' %}" class="link link-primary font-medium hover:no-underline">
                         Зарегистрироваться
                     </a>

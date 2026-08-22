@@ -556,6 +556,14 @@ def import_lineups(match: Match, lineup_data: Dict) -> bool:
             )
             return player
         
+        # `field_position` (C/L/R/LC/RC) — сторона поля/колонка формации.
+        # Найдено 2026-08-23: присутствует в ответе KFF у КАЖДОГО игрока
+        # состава (и в старте, и на скамейке), но раньше не читалось вообще
+        # — только `amplua`/`position` (общее амплуа, без стороны). Именно
+        # `field_position` даёт точное различие "левый защитник" vs
+        # "центральный защитник" и т.п., которого не хватало для
+        # season_squad/round_squad (см. players/positions.py и докстринг
+        # поля в lineups/models.py::MatchLineupPlayer.field_position).
         for player_data in starters:
             player = get_or_create_player(player_data, team)
             if not player:
@@ -565,11 +573,12 @@ def import_lineups(match: Match, lineup_data: Dict) -> bool:
                 player=player,
                 is_starting=True,
                 position=clean_position_code((player_data.get("amplua") or player_data.get("position", ""))[:20]),
+                field_position=clean_position_code((player_data.get("field_position") or "")[:5]),
                 shirt_number=player_data.get("shirt_number"),
                 minute_in=0,
                 minute_out=None,
             )
-        
+
         for player_data in substitutes:
             player = get_or_create_player(player_data, team)
             if not player:
@@ -579,6 +588,7 @@ def import_lineups(match: Match, lineup_data: Dict) -> bool:
                 player=player,
                 is_starting=False,
                 position=clean_position_code((player_data.get("amplua") or player_data.get("position", ""))[:20]),
+                field_position=clean_position_code((player_data.get("field_position") or "")[:5]),
                 shirt_number=player_data.get("shirt_number"),
                 minute_in=None,
                 minute_out=None,
