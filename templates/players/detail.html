@@ -52,15 +52,11 @@
 <div class="card bg-base-100 border border-base-300 mb-6">
     <div class="card-body p-6">
         <div class="flex flex-col md:flex-row items-center gap-6">
-            <!-- Фото -->
+            <!-- Фото / генеративный аватар -->
             {% if player.photo %}
-                <img src="{{ player.photo.url }}" alt="{{ player.first_name }}" 
-                     class="w-32 h-32 rounded-full object-cover ring ring-primary ring-offset-base-100 ring-offset-2">
+            {% include 'components/_avatar.html' with photo_url=player.photo.url name=player.full_name size_classes='w-32 h-32 text-5xl' ring_classes='ring ring-primary ring-offset-base-100 ring-offset-2' %}
             {% else %}
-                <div class="w-32 h-32 rounded-full bg-primary/10 flex items-center justify-center 
-                            font-bold text-primary text-5xl ring ring-primary ring-offset-base-100 ring-offset-2">
-                    {{ player.first_name|first|upper }}{{ player.last_name|first|upper }}
-                </div>
+            {% include 'components/_avatar.html' with name=player.full_name size_classes='w-32 h-32 text-5xl' ring_classes='ring ring-primary ring-offset-base-100 ring-offset-2' %}
             {% endif %}
             
             <!-- Информация -->
@@ -251,22 +247,38 @@
                 </h3>
                 <div class="space-y-3">
                     {% for agg in best_matches %}
-                    <a href="{% url 'matches:detail' agg.match.id %}"
-                       class="flex items-center justify-between p-3 bg-base-200 rounded-lg hover:bg-base-300 transition-all">
-                        <div>
+                    {% comment %}
+                    НЕ единый <a> вокруг всей карточки — {% confidence_badge %}
+                    сам рендерит <a> (ссылку "как считается"), а вложенный
+                    <a>/<button> внутри <a> — невалидный HTML5: браузер молча
+                    разрывает внешнюю ссылку на куски в точке вложенности, из-за
+                    чего flex-разметка разъезжается построчно (баг, пойманный
+                    вживую через Chrome DevTools, 2026-08-21, — "Лучшие матчи"
+                    рассыпались на 3 отдельных <a>). Паттерн "растянутая ссылка":
+                    пустая <a class="absolute inset-0"> под всей карточкой ловит
+                    клик по любому месту; видимый контент лежит поверх с
+                    pointer-events-none там, где сам не кликабелен, чтобы клик
+                    "проваливался" до растянутой ссылки — реально интерактивный
+                    {% confidence_badge %} pointer-events не трогаем, он и так
+                    рисуется поверх и ловит клик первым.
+                    {% endcomment %}
+                    <div class="relative flex items-center justify-between p-3 bg-base-200 rounded-lg hover:bg-base-300 transition-all">
+                        <a href="{% url 'matches:detail' agg.match.id %}" class="absolute inset-0 rounded-lg"
+                           aria-label="{{ agg.match.home_team.name }} vs {{ agg.match.away_team.name }}"></a>
+                        <div class="relative pointer-events-none">
                             <div class="font-medium">{{ agg.match.home_team.name }} vs {{ agg.match.away_team.name }}</div>
                             <div class="text-xs opacity-60">{{ agg.match.start_time|date:"d.m.Y" }}</div>
                         </div>
-                        <div class="text-right">
+                        <div class="relative text-right">
                             {% if agg.total_votes|has_enough_votes %}
-                                <div class="font-bold text-success text-lg">{{ agg.performance_score|floatformat:1 }}</div>
-                                <div class="text-xs opacity-60">рейтинг</div>
+                                <div class="font-bold text-success text-lg pointer-events-none">{{ agg.performance_score|floatformat:1 }}</div>
+                                <div class="text-xs opacity-60 pointer-events-none">рейтинг</div>
                             {% else %}
-                                <div class="badge badge-ghost badge-sm">н/д</div>
+                                <div class="badge badge-ghost badge-sm pointer-events-none">н/д</div>
                             {% endif %}
                             <div class="mt-1">{% confidence_badge agg %}</div>
                         </div>
-                    </a>
+                    </div>
                     {% endfor %}
                 </div>
             </div>

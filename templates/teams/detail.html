@@ -310,20 +310,27 @@
         {% if top_players %}
         <div class="space-y-2 md:space-y-3">
           {% for agg in top_players %}
-          <a href="{% url 'players:detail' agg.player.id %}"
-             class="flex items-center gap-2 md:gap-3 p-2 rounded-lg hover:bg-base-200 transition-all">
-            <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-sm flex-shrink-0">
+          {% comment %}
+          Растянутая ссылка вместо единого <a> вокруг карточки — см. подробный
+          комментарий в templates/players/detail.html у аналогичного блока
+          "Лучшие матчи": {% confidence_badge %} сам содержит <a>, вложенность
+          <a> в <a> невалидна и ломает flex-вёрстку в браузере.
+          {% endcomment %}
+          <div class="relative flex items-center gap-2 md:gap-3 p-2 rounded-lg hover:bg-base-200 transition-all">
+            <a href="{% url 'players:detail' agg.player.id %}" class="absolute inset-0 rounded-lg"
+               aria-label="{{ agg.player.first_name }} {{ agg.player.last_name }}"></a>
+            <div class="relative w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-sm flex-shrink-0 pointer-events-none">
               {{ forloop.counter }}
             </div>
-            <div class="flex-1 min-w-0">
+            <div class="relative flex-1 min-w-0 pointer-events-none">
               <div class="font-medium text-sm truncate">{{ agg.player.first_name }} {{ agg.player.last_name }}</div>
               <div class="text-xs opacity-60">{{ agg.match.start_time|date:"d.m" }} · {{ agg.total_votes }} голос(ов)</div>
             </div>
-            <div class="text-right flex-shrink-0">
-              <div class="font-bold text-success text-sm md:text-base">{{ agg.performance_score|floatformat:1 }}</div>
+            <div class="relative text-right flex-shrink-0">
+              <div class="font-bold text-success text-sm md:text-base pointer-events-none">{{ agg.performance_score|floatformat:1 }}</div>
               <div class="mt-0.5">{% confidence_badge agg %}</div>
             </div>
-          </a>
+          </div>
           {% endfor %}
         </div>
         {% else %}

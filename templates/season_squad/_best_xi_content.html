@@ -1,0 +1,92 @@
+{% load rating_extras %}
+{% comment %}
+templates/season_squad/_best_xi_content.html
+Партиал карточек "Живой сборной сезона" — вынесен отдельно от best_xi.html
+для HTMX-поллинга (см. best_xi.html: hx-trigger="every 60s" на корневом
+div). Рендерится ОБА раза: при первой загрузке страницы (через
+{% include %}) и при каждом poll-запросе (season_squad/views.py::
+best_xi_partial) — сам по себе, без base.html, чтобы HTMX не задваивал
+шапку сайта при свапе (тот же принцип, что у dashboard/_data_health_content.html).
+
+Редизайн 2026-08-22, проход №2 (продуктовый фидбек: первая версия всё ещё
+"недостаточно дорого", плюс текст бейджа "вошёл в состав" сам по себе
+непонятен без контекста рейтинга). Принцип прохода №2 — на карточке
+остаётся только то, что нужно для мгновенного считывания взглядом (кто,
+рейтинг, команда), а ВСЁ объясняющее (уверенность в оценке, изменение
+позиции в рейтинге, число матчей/голосов) собрано в ОДНО связное
+предложение под одной info-иконкой (см. season_squad/services.py::
+_build_explanation) — так у Apple/Google устроены плотные интерфейсы:
+не десять мелких ярлычков одновременно, а один явный сигнал (число) +
+один способ узнать больше по запросу (тултип). Отдельные корнер-бейджи
+NEW/↑N и цветной чип-фон под рейтингом убраны как раз потому, что дублировали
+то же самое текстом поверх цвета — тот самый "дешёвый" эффект. Кольцо
+аватара — единственный оставшийся цветовой сигнал (доверие к рейтингу),
+и оно намеренно тихое (не текст, не отдельный элемент).
+{% endcomment %}
+<div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+    <div class="flex items-center gap-2 text-xs md:text-sm opacity-60">
+        <i class="ti ti-refresh"></i>
+        {% if best_xi.last_computed_at %}
+            Обновлено {{ best_xi.last_computed_at|timesince }} назад · по оценкам сообщества DOPX
+        {% else %}
+            Пока не пересчитывалась — первый пересчёт запустится в ближайшие 15 минут
+        {% endif %}
+    </div>
+    {% if best_xi.is_final %}
+    <span class="badge badge-success gap-1"><i class="ti ti-lock"></i> Итоговая сборная DOPX сезона {{ season.year }}</span>
+    {% else %}
+    <span class="badge badge-warning badge-outline gap-1"><i class="ti ti-bolt"></i> Сборная DOPX — состав ещё может измениться</span>
+    {% endif %}
+</div>
+
+<!-- === ПОЛЕ: 4-3-3 === -->
+<div class="relative overflow-hidden rounded-3xl p-4 py-8 md:p-10 mb-6 shadow-lg"
+     style="background: repeating-linear-gradient(to bottom,
+                color-mix(in oklab, var(--color-success) 32%, #05341c) 0px,
+                color-mix(in oklab, var(--color-success) 32%, #05341c) 64px,
+                color-mix(in oklab, var(--color-success) 22%, #05341c) 64px,
+                color-mix(in oklab, var(--color-success) 22%, #05341c) 128px);">
+    {% comment %} Разметка поля — чисто декоративная, не мешает контенту/кликам {% endcomment %}
+    <svg class="absolute inset-0 w-full h-full pointer-events-none opacity-20" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        <line x1="0" y1="50" x2="100" y2="50" stroke="white" stroke-width="0.25" />
+        <circle cx="50" cy="50" r="9" fill="none" stroke="white" stroke-width="0.25" />
+        <rect x="22" y="0" width="56" height="10" fill="none" stroke="white" stroke-width="0.25" />
+        <rect x="22" y="90" width="56" height="10" fill="none" stroke="white" stroke-width="0.25" />
+        <rect x="0" y="0" width="100" height="100" fill="none" stroke="white" stroke-width="0.25" />
+    </svg>
+
+    <div class="relative space-y-7 md:space-y-12">
+        {% for row in pitch_rows %}
+        <div class="grid gap-2 md:gap-4 justify-items-center" style="grid-template-columns: repeat({{ row.slots|length }}, minmax(0, 1fr));">
+            {% for card in row.slots %}
+            <div class="group flex flex-col items-center text-center w-full max-w-[110px] md:max-w-[130px]">
+                <div class="text-[8px] md:text-[10px] uppercase tracking-widest font-semibold text-white/40 mb-1.5">{{ card.label }}</div>
+
+                {% include 'components/_avatar.html' with photo_url=card.occupant_photo_url name=card.occupant_name size_classes='w-12 h-12 md:w-16 md:h-16 text-base md:text-lg' ring_style=card.ring_style %}
+
+                {% if card.filled %}
+                <div class="mt-2 flex items-center gap-1 max-w-full text-white/90">
+                    <a href="{{ card.occupant_profile_url }}" class="font-medium text-[11px] md:text-sm leading-tight truncate hover:opacity-70 transition-opacity">{{ card.occupant_name }}</a>
+                    {% if card.explanation %}{% include 'components/_tooltip_icon.html' with text=card.explanation %}{% endif %}
+                </div>
+                <div class="text-[10px] md:text-xs font-semibold text-white/75 mt-0.5">{{ card.season_score|floatformat:1 }}</div>
+                <div class="text-[8px] md:text-[10px] text-white/35 mt-0.5 truncate max-w-full">{{ card.occupant_team_name|default:"—" }}</div>
+                {% else %}
+                <div class="mt-2 text-[9px] md:text-xs text-white/35 leading-tight">Пока недостаточно<br>оценённых матчей</div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- === ТРЕНЕР И СУДЬЯ — отдельные роли, не часть формации === -->
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
+    {% with card=coach_card icon="ti-clipboard-list" %}
+    {% include 'season_squad/_role_card.html' %}
+    {% endwith %}
+    {% with card=referee_card icon="ti-gavel" %}
+    {% include 'season_squad/_role_card.html' %}
+    {% endwith %}
+</div>

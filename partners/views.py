@@ -1,6 +1,7 @@
 # partners/views.py
 from __future__ import annotations
 
+from django.conf import settings
 from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
@@ -51,6 +52,15 @@ class PartnerReferralRedirectView(View):
             partner.slug,
             max_age=REFERRAL_COOKIE_MAX_AGE,
             samesite="Lax",
+            # httponly — эта cookie нужна только серверу (users/views.py::
+            # RegisterView читает её при регистрации), фронтенду её
+            # содержимое никогда не требуется читать через JS, значит нет
+            # причины оставлять её доступной для XSS. secure — тот же
+            # паттерн, что и SESSION_COOKIE_SECURE/CSRF_COOKIE_SECURE в
+            # settings.py (not DEBUG, а не жёсткий True, иначе cookie не
+            # ставится на локальном http-сервере разработки).
+            httponly=True,
+            secure=not settings.DEBUG,
         )
         return response
 
@@ -88,4 +98,12 @@ class PartnerContentFeedView(View):
 
         track_partner_feed_access(partner, request)
         items = build_content_feed(partner, request)
-        return JsonResponse({"partner": partner.name, "items": items})
+        response = JsonResponse({"partner": partner.name, "items": items})
+        # Токен доступа — часть URL (partners/services.py::build_content_feed
+        # докстринг объясняет, почему так удобнее партнёру). Минус — ссылка с
+        # токеном может осесть в истории браузера, логах прокси/CDN на
+        # СТОРОНЕ партнёра, системах веб-аналитики. no-store запрещает
+        # кэширование ответа где бы то ни было по цепочке — снижает шанс,
+        # что содержимое (пусть и не сверхсекретное) утечёт через чужой кэш.
+        response["Cache-Control"] = "no-store"
+        return response

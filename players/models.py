@@ -26,6 +26,16 @@ class Player(BaseModel):
         null=True,
         blank=True
     )
+    # Другой id, чем external_id (см. тот же комментарий в teams/models.py::
+    # Team.kff_website_id) — id ЭТОГО игрока на публичном сайте kffleague.kz
+    # (/ru/player/<id>), не совпадает с id из JSON API составов. Нужен
+    # только для сопоставления фото при повторных запусках скрапера, чтобы
+    # не парсить состав команды заново на каждый прогон.
+    kff_website_id = models.CharField(
+        _('ID игрока на сайте KFF'),
+        max_length=20, blank=True, null=True, unique=True,
+        help_text=_('Числовой id из URL kffleague.kz/ru/player/<id> — для скрапинга фото.'),
+    )
 
     class Meta:
         verbose_name = _('Игрок')

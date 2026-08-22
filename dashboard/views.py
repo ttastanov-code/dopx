@@ -228,6 +228,7 @@ def parser_tools_view(request):
         "raw_form": raw_form,
         "raw_result": raw_result,
         "triggerable_tasks": parser_tools.TRIGGERABLE_TASKS,
+        "task_descriptions": parser_tools.TASK_DESCRIPTIONS,
         "search_query": search_query,
         "search_results": search["results"],
         "search_total_count": search["total_count"],
@@ -451,6 +452,13 @@ def ads(request):
     standings_url = request.build_absolute_uri(reverse("core:standings_widget"))
     standings_embed = _embed_code(standings_url, "Турнирная таблица КПЛ на DOPX", width=340, height=360)
 
+    # Четвёртый виджет (продуктовый запрос 2026-08-22 — "дать возможность
+    # вставлять сборную DOPX на другие сайты"): season_id не передаём —
+    # widget всегда берёт активный сезон главной лиги (Season.get_primary_active),
+    # тот же принцип "без выбора", что и у standings_embed выше.
+    best_xi_url = request.build_absolute_uri(reverse("season_squad:widget"))
+    best_xi_embed = _embed_code(best_xi_url, "Сборная DOPX сезона на DOPX", width=320, height=420)
+
     context = {
         "page_title": "Реклама и виджеты — DOPX Staff",
         "active_tab": "ads",
@@ -463,6 +471,7 @@ def ads(request):
         "player_embed": player_embed,
         "team_embed": team_embed,
         "standings_embed": standings_embed,
+        "best_xi_embed": best_xi_embed,
         **_ads_stats_context(),
     }
     return render(request, "dashboard/ads.html", context)

@@ -1,0 +1,83 @@
+{% load avatar_extras name_extras %}
+<!DOCTYPE html>
+<html lang="ru" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Сборная DOPX{% if season %} {{ season.year }}{% endif %}</title>
+    {% comment %}
+    templates/widgets/best_xi.html
+    Четвёртый embed-виджет (продуктовый запрос 2026-08-22 — "дать
+    возможность вставлять этот модуль на другие сайты"), тот же
+    изолированный документ, что и widgets/standings.html,
+    widgets/player_rating.html, widgets/team_rating.html: своя CDN-загрузка
+    Tailwind/daisyUI, прозрачный фон, без наследования base.html (чужой
+    <iframe> не должен тянуть за собой шапку/меню сайта).
+    В отличие от трёх предыдущих виджетов (одна таблица/одна карточка) —
+    мини-версия поля 4-3-3 с 11 позициями, переиспользует season_squad/
+    views.py::_slot_to_card. БЕЗ Alpine.js — документ не подключает его
+    вообще, поэтому здесь нет тултипов-объяснений ("почему в XI"), только
+    рейтинг цифрой под именем — для беглого взгляда на чужом сайте этого
+    достаточно, а подробности — по клику на бренд-ссылку "DOPX" (ведёт на
+    полную страницу с объяснениями).
+
+    Правка 2026-08-22: полное "Имя Фамилия" (players/models.py::full_name)
+    не вмещалось в карточку шириной 60-90px — обрезалось на середине
+    фамилии или вылезало за края. Показываем только фамилию (core/
+    templatetags/name_extras.py::surname) — как подпись на футболке,
+    короче и привычнее для футбольного состава. Заодно расширили виджет
+    с 300 до 320px и убрали фиксированный max-w у имени (был 54px
+    независимо от того, 3 или 4 колонки в ряду) — теперь имя занимает
+    всю доступную ширину своей колонки сетки.
+    {% endcomment %}
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@5/themes.css" rel="stylesheet" type="text/css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
+    <style>html,body{margin:0;padding:0;background:transparent}</style>
+</head>
+<body class="p-2">
+    <div class="rounded-2xl overflow-hidden shadow-sm border border-base-300" style="width:320px">
+        <div class="p-2 flex items-center justify-between bg-base-100">
+            <span class="font-bold text-xs flex items-center gap-1.5 truncate">
+                <i class="ti ti-shirt-sport text-primary"></i>
+                Сборная DOPX{% if season %} {{ season.year }}{% endif %}
+            </span>
+            <a href="{{ season_url }}"
+               target="_blank" rel="noopener"
+               class="flex items-center gap-1 text-[9px] opacity-50 font-semibold hover:opacity-100 transition-opacity shrink-0">
+                <i class="ti ti-external-link"></i> DOPX
+            </a>
+        </div>
+
+        {% if pitch_rows %}
+        <div class="relative overflow-hidden p-3 py-5"
+             style="background: repeating-linear-gradient(to bottom,
+                        color-mix(in oklab, var(--color-success) 32%, #05341c) 0px,
+                        color-mix(in oklab, var(--color-success) 32%, #05341c) 26px,
+                        color-mix(in oklab, var(--color-success) 22%, #05341c) 26px,
+                        color-mix(in oklab, var(--color-success) 22%, #05341c) 52px);">
+            <div class="relative space-y-3">
+                {% for row in pitch_rows %}
+                <div class="grid gap-1 justify-items-center" style="grid-template-columns: repeat({{ row.slots|length }}, minmax(0, 1fr));">
+                    {% for card in row.slots %}
+                    <div class="flex flex-col items-center text-center w-full min-w-0">
+                        {% include 'components/_avatar.html' with photo_url=card.occupant_photo_url name=card.occupant_name size_classes='w-7 h-7 text-[9px]' %}
+                        {% if card.filled %}
+                        <div class="text-[9px] text-white/90 font-medium leading-tight mt-0.5 truncate w-full px-0.5" title="{{ card.occupant_name }}">{{ card.occupant_name|surname }}</div>
+                        <div class="text-[8px] text-white/60 font-semibold">{{ card.season_score|floatformat:1 }}</div>
+                        {% else %}
+                        <div class="text-[7px] text-white/35 mt-0.5">&mdash;</div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% else %}
+        <div class="text-center py-8 opacity-50 text-xs">Нет активного сезона</div>
+        {% endif %}
+    </div>
+</body>
+</html>

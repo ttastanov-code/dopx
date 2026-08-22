@@ -6,18 +6,12 @@
 <div class="card bg-base-100 border border-base-300 hover:border-primary transition-all">
     <div class="card-body p-4">
         <div class="flex items-center gap-4">
-            <!-- Фото/Аватар -->
-            <div class="avatar">
-                <div class="w-16 h-16 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2">
-                    {% if player.photo %}
-                    <img src="{{ player.photo.url }}" alt="{{ player.first_name }}" />
-                    {% else %}
-                    <div class="w-full h-full bg-primary flex items-center justify-center text-primary-content font-bold text-xl">
-                        {{ player.first_name|first|upper }}{{ player.last_name|first|upper }}
-                    </div>
-                    {% endif %}
-                </div>
-            </div>
+            <!-- Фото / генеративный аватар -->
+            {% if player.photo %}
+            {% include 'components/_avatar.html' with photo_url=player.photo.url name=player.full_name size_classes='w-16 h-16 text-xl' ring_classes='ring ring-primary ring-offset-base-100 ring-offset-2' %}
+            {% else %}
+            {% include 'components/_avatar.html' with name=player.full_name size_classes='w-16 h-16 text-xl' ring_classes='ring ring-primary ring-offset-base-100 ring-offset-2' %}
+            {% endif %}
             
             <!-- Информация -->
             <div class="flex-1 min-w-0">

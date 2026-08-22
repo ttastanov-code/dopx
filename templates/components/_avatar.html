@@ -1,0 +1,42 @@
+{% load avatar_extras %}
+{% comment %}
+templates/components/_avatar.html
+Единый генеративный аватар (градиент + инициалы) — замена автоматически
+импортированным фото (см. core/templatetags/avatar_extras.py — решение
+2026-08-21 отказаться от скрапинга фото с kffleague.kz). Параметры include:
+  name         — полное имя (обязательно, по нему считается цвет и буквы)
+  photo_url    — URL фото, ЕСЛИ оно есть; пусто/не передан → генеративный
+                 аватар. Фото по-прежнему поддерживается (например, staff
+                 вручную загрузил через админку) — просто больше ничего не
+                 подтягивает его автоматически.
+  size_classes — Tailwind-классы размера/шрифта, по умолчанию 'w-12 h-12 text-lg'
+  ring_classes — необязательные классы кольца (ring ring-primary ...)
+  ring_style   — необязательная СЫРАЯ CSS-строка для кольца через outline
+                 (например "outline: 2px solid var(--color-success);
+                 outline-offset: 2px;"), а не через Tailwind-класс
+                 ring-{цвет}. ПРИЧИНА: этот проект грузит Tailwind как
+                 отдельный браузерный рантайм (@tailwindcss/browser@4,
+                 см. base.html), а daisyUI — отдельным <link>-стилем, а
+                 не как Tailwind-плагин/@theme. Из-за этого Tailwind не
+                 знает про daisyUI-цвета "success"/"warning" и т.п. как
+                 ИМЕНА для генерации классов ring-success/bg-success/…:
+                 класс ring-success/80 тихо схлопывается в дефолтный
+                 нейтральный оттенок Tailwind — эту проблему поймали
+                 2026-08-22, когда кольцо доверия вокруг аватара в
+                 «Сборной DOPX» перестало визуально отличать success/
+                 warning (см. season_squad/views.py — там же raw CSS var()
+                 напрямую, а не Tailwind-имя цвета). outline вместо
+                 box-shadow-based ring — тоже сознательно: overflow-hidden
+                 на этом div обрезал бы box-shadow-кольцо, а outline
+                 рисуется поверх, вне зоны обрезки.
+Вызывать ТОЛЬКО через {% include %}, не напрямую — как и другие партиалы
+в этой папке (см. _confidence_badge.html).
+{% endcomment %}
+<div class="rounded-full overflow-hidden flex items-center justify-center font-bold text-white shrink-0 {{ size_classes|default:'w-12 h-12 text-lg' }} {{ ring_classes }}"
+     style="{% if not photo_url %}background: {{ name|avatar_gradient }};{% endif %}{{ ring_style }}">
+    {% if photo_url %}
+    <img src="{{ photo_url }}" alt="{{ name }}" class="w-full h-full object-cover" />
+    {% else %}
+    <span>{{ name|avatar_initials }}</span>
+    {% endif %}
+</div>

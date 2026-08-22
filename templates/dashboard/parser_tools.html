@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load math_extras %}
 
 {% block content %}
 {% include 'dashboard/_nav.html' %}
@@ -59,15 +60,22 @@
                 <i class="ti ti-bolt text-primary"></i> Ручной запуск celery-задач
             </h3>
             <p class="text-xs opacity-60 mb-3">Дебаунс {{ '60' }}с на задачу — повторный клик по той же задаче раньше этого срока будет отклонён, чтобы не наспамить очередь.</p>
-            <div class="flex flex-col gap-2">
+            <div class="flex flex-col gap-3">
                 {% for task_name, task_label in triggerable_tasks.items %}
-                <form method="post" action="{% url 'dashboard:parser_trigger_task' %}" class="flex items-center gap-2">
-                    {% csrf_token %}
-                    <input type="hidden" name="task_name" value="{{ task_name }}">
-                    <button type="submit" class="btn btn-sm btn-outline flex-1 justify-start">
-                        <i class="ti ti-player-play mr-1"></i> {{ task_label }}
-                    </button>
-                </form>
+                <div>
+                    <form method="post" action="{% url 'dashboard:parser_trigger_task' %}" class="flex items-center gap-2">
+                        {% csrf_token %}
+                        <input type="hidden" name="task_name" value="{{ task_name }}">
+                        <button type="submit" class="btn btn-sm btn-outline flex-1 justify-start">
+                            <i class="ti ti-player-play mr-1"></i> {{ task_label }}
+                        </button>
+                    </form>
+                    {% with description=task_descriptions|get_item:task_name %}
+                    {% if description %}
+                    <p class="text-xs opacity-60 mt-1 ml-1">{{ description }}</p>
+                    {% endif %}
+                    {% endwith %}
+                </div>
                 {% endfor %}
             </div>
         </div>

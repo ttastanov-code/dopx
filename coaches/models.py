@@ -15,6 +15,10 @@ class Coach(BaseModel):
         related_name="coaches",
         verbose_name=_('Команда')
     )
+    # KFF фото есть только у игроков (см. season_squad/photo_scraper.py) —
+    # у тренеров нет публичного источника фото, поле для ручной загрузки
+    # стаффом через админку (нужно карточке "Живой сборной сезона").
+    photo = models.ImageField(_('Фото'), upload_to="coaches/", null=True, blank=True)
     is_active = models.BooleanField(_('Активен'), default=True)
     external_id = models.CharField(
         _('Внешний ID'),

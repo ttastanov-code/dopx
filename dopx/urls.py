@@ -36,6 +36,9 @@ urlpatterns = [
     path('coaches/', include('coaches.urls')),
     path('referees/', include('referees.urls')),
     path('leagues/', include('leagues.urls')),
+    # «Живая сборная сезона» — /season/best-xi/ (активный сезон по
+    # умолчанию) и /season/<uuid>/best-xi/ (конкретный сезон/лига).
+    path('season/', include('season_squad.urls')),
     path('notifications/', include('notifications.urls')),
     path('api/', include('api.urls')),
     path('analytics/', include('analytics.urls')),
