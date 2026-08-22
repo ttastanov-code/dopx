@@ -126,6 +126,9 @@ class User(AbstractUser, BaseModel):
         "email_prediction_closing": True,  # loop 1: скоро закроется приём прогнозов на матч
         "email_weekly_summary": True,       # loop 2: персональная сводка недели
         "email_prediction_result": True,    # loop 3: ваш прогноз vs исход/сообщество
+        # НОВОЕ (2026-08-22): итоги «DOPX Лучшие тура» — письмо при
+        # автоматической финализации тура (round_squad/services.py).
+        "email_round_results": True,
     }
 
     @property

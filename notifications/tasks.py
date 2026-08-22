@@ -45,6 +45,9 @@ NOTIFICATION_TYPE_TO_SETTINGS_KEY: dict[str, str] = {
     "prediction_closing": "email_prediction_closing",
     "prediction_result": "email_prediction_result",
     "weekly_digest": "email_weekly_summary",
+    # НОВОЕ (2026-08-22): итоги «DOPX Лучшие тура», см. round_squad/tasks.py
+    # ::send_round_results_notification.
+    "round_results": "email_round_results",
 }
 
 # Уведомления этих типов собираются в дайджест (см. пункт 3), а не

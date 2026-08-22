@@ -32,6 +32,10 @@ class Notification(BaseModel):
         ('prediction_closing', _('Скоро закроется приём прогнозов')),
         ('weekly_digest', _('Персональная сводка недели')),
         ('prediction_result', _('Прогноз vs результат матча')),
+        # НОВОЕ (2026-08-22) — итоги «DOPX Лучшие тура» при автоматической
+        # финализации, см. round_squad/services.py::recompute_round и
+        # notifications/tasks.py::send_round_results_notification.
+        ('round_results', _('Итоги «DOPX Лучшие тура»')),
     ]
 
     user = models.ForeignKey(

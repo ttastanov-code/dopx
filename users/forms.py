@@ -401,6 +401,14 @@ class NotificationSettingsForm(forms.Form):
         help_text="После финального свистка — совпал ли ваш прогноз и как проголосовало сообщество.",
         widget=forms.CheckboxInput(attrs={"class": "toggle toggle-primary"}),
     )
+    # НОВОЕ (2026-08-22): см. users/models.py::User.DEFAULT_NOTIFICATION_SETTINGS.
+    email_round_results = forms.BooleanField(
+        required=False,
+        label="Итоги «DOPX Лучшие тура»",
+        initial=True,
+        help_text="Игрок тура, сборная тура и самый драматичный матч — когда голосование по туру закрывается.",
+        widget=forms.CheckboxInput(attrs={"class": "toggle toggle-primary"}),
+    )
 
     def __init__(self, *args, **kwargs):
         user = kwargs.pop("user", None)

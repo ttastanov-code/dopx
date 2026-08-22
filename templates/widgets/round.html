@@ -1,0 +1,76 @@
+{% load name_extras %}
+<!DOCTYPE html>
+<html lang="ru" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DOPX Лучшие{% if tour %} {{ tour }}-го{% endif %} тура</title>
+    {% comment %}
+    templates/widgets/round.html
+    Пятый embed-виджет (продуктовый запрос 2026-08-22 — "embed код нужен на
+    тур тоже"), тот же изолированный документ, что и widgets/best_xi.html:
+    своя CDN-загрузка Tailwind/daisyUI, прозрачный фон, без наследования
+    base.html, без Alpine.js (только рейтинг цифрой под именем, без
+    тултипов-объяснений — подробности по клику на бренд-ссылку "DOPX").
+    Только 11 полевых слотов (без тренера) — та же логика "без лишнего
+    веса на маленькой карточке", что у best_xi.html.
+    {% endcomment %}
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@5/themes.css" rel="stylesheet" type="text/css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
+    <style>html,body{margin:0;padding:0;background:transparent}</style>
+</head>
+<body class="p-2">
+    <div class="rounded-2xl overflow-hidden shadow-sm border border-base-300" style="width:320px">
+        <div class="p-2 flex items-center justify-between bg-base-100">
+            <span class="font-bold text-xs flex items-center gap-1.5 truncate">
+                <i class="ti ti-calendar-star text-info"></i>
+                DOPX Лучшие{% if tour %} {{ tour }}-го{% endif %} тура
+            </span>
+            <a href="{{ round_url }}"
+               target="_blank" rel="noopener"
+               class="flex items-center gap-1 text-[9px] opacity-50 font-semibold hover:opacity-100 transition-opacity shrink-0">
+                <i class="ti ti-external-link"></i> DOPX
+            </a>
+        </div>
+
+        {% if round_xi.player_of_round_name %}
+        <div class="px-2 py-1.5 bg-base-200/60 flex items-center gap-1.5 text-[9px]">
+            <i class="ti ti-award text-warning"></i>
+            <span class="opacity-60">Игрок тура:</span>
+            <span class="font-semibold truncate">{{ round_xi.player_of_round_name|surname }}</span>
+        </div>
+        {% endif %}
+
+        {% if pitch_rows %}
+        <div class="relative overflow-hidden p-3 py-5"
+             style="background: repeating-linear-gradient(to bottom,
+                        color-mix(in oklab, var(--color-info) 28%, #05202f) 0px,
+                        color-mix(in oklab, var(--color-info) 28%, #05202f) 26px,
+                        color-mix(in oklab, var(--color-info) 18%, #05202f) 26px,
+                        color-mix(in oklab, var(--color-info) 18%, #05202f) 52px);">
+            <div class="relative space-y-3">
+                {% for row in pitch_rows %}
+                <div class="grid gap-1 justify-items-center" style="grid-template-columns: repeat({{ row.slots|length }}, minmax(0, 1fr));">
+                    {% for card in row.slots %}
+                    <div class="flex flex-col items-center text-center w-full min-w-0">
+                        {% include 'components/_avatar.html' with photo_url=card.occupant_photo_url name=card.occupant_name size_classes='w-7 h-7 text-[9px]' %}
+                        {% if card.filled %}
+                        <div class="text-[9px] text-white/90 font-medium leading-tight mt-0.5 truncate w-full px-0.5" title="{{ card.occupant_name }}">{{ card.occupant_name|surname }}</div>
+                        <div class="text-[8px] text-white/60 font-semibold">{{ card.round_score|floatformat:1 }}</div>
+                        {% else %}
+                        <div class="text-[7px] text-white/35 mt-0.5">&mdash;</div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% else %}
+        <div class="text-center py-8 opacity-50 text-xs">Пока нет завершённых туров</div>
+        {% endif %}
+    </div>
+</body>
+</html>

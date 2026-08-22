@@ -1,0 +1,171 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}{{ round_xi.brand_title }} — {{ season.league.name }}{% endblock %}
+{% block content %}
+<!-- === HEADER === -->
+<div class="mb-6 md:mb-8 px-2 sm:px-0 flex flex-wrap items-start justify-between gap-3">
+  <div>
+    <h1 class="text-2xl md:text-3xl font-bold mb-2 flex items-center gap-2">
+      <i class="ti ti-calendar-star mr-2 text-info"></i> {{ round_xi.brand_title }}
+    </h1>
+    <p class="opacity-60 text-sm md:text-base">
+      {{ season.league.name }}, сезон {{ season.year }}: игрок тура, сборная тура и самый драматичный матч — по
+      оценкам сообщества DOPX.
+      {% if not round_xi.is_final %}Голосование ещё продолжается, данные могут измениться.{% else %}Тур зафиксирован — голосование по всем матчам закрыто.{% endif %}
+    </p>
+  </div>
+
+  {% comment %}
+  Embed-виджет «DOPX Лучшие тура» — тот же embedModal Alpine-компонент
+  (static/js/alpine-components.js), что у season_squad/best_xi.html и
+  players/teams detail. widget_embed_code собран в round_squad/views.py::round_of_week.
+  {% endcomment %}
+  <div x-data="embedModal" class="shrink-0">
+    <button type="button" @click="open = true" class="btn btn-outline btn-sm">
+      <i class="ti ti-code"></i> Получить embed-код
+    </button>
+    <div x-show="open" x-cloak class="modal" :class="open && 'modal-open'" @keydown.escape.window="open = false">
+      <div class="modal-box max-w-lg" @click.outside="open = false">
+        <h3 class="font-bold text-lg mb-2"><i class="ti ti-code mr-1"></i> Виджет «{{ round_xi.brand_title }}»</h3>
+        <p class="text-sm opacity-60 mb-3">Вставьте этот код на свой сайт — виджет обновляется автоматически, без интеграции с DOPX API.</p>
+        <div class="mb-3 p-2 bg-base-200 rounded-lg flex justify-center">
+          <iframe src="{% url 'round_squad:round_widget' season.id tour %}" width="300" height="380" style="border:none;border-radius:16px" title="Превью виджета тура"></iframe>
+        </div>
+        <textarea x-ref="embedCode" readonly onclick="this.select()" class="textarea textarea-bordered w-full font-mono text-xs" rows="3">{{ widget_embed_code }}</textarea>
+        <div class="modal-action">
+          <button type="button" @click="copy()" class="btn btn-primary btn-sm" :class="copied && 'btn-success'">
+            <i class="ti" :class="copied ? 'ti-check' : 'ti-copy'"></i>
+            <span x-text="copied ? 'Скопировано!' : 'Копировать код'"></span>
+          </button>
+          <button type="button" @click="open = false" class="btn btn-ghost btn-sm">Закрыть</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- === CONTENT === -->
+<div class="grid grid-cols-1 lg:grid-cols-4 gap-4 md:gap-8 px-2 sm:px-0">
+  <!-- === SIDEBAR === -->
+  <div class="hidden lg:block lg:col-span-1">
+    <div class="lg:sticky lg:top-24 space-y-4">
+      <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4">
+          <h3 class="font-bold mb-3 text-sm">На этой странице</h3>
+          <ul class="menu menu-sm p-0">
+            <li><a href="#round"><i class="ti ti-calendar-star"></i> Тур</a></li>
+            <li><a href="#methodology"><i class="ti ti-calculator"></i> Как считается?</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4">
+          <h3 class="font-bold mb-2 text-sm flex items-center gap-1.5"><i class="ti ti-info-circle text-info"></i> Как это связано со «Сборной DOPX»?</h3>
+          <p class="text-xs opacity-60">
+            «Сборная DOPX» — накопительный рейтинг за весь сезон. «{{ round_xi.brand_title }}» — снимок ОДНОГО
+            тура по его номеру (не по календарной неделе — из-за переносов в одну неделю могут играться матчи
+            разных туров). Игрок тура не обязан входить в сборную сезона, и наоборот.
+          </p>
+          <a href="{% url 'season_squad:best_xi' %}" class="link link-primary text-xs mt-2 inline-block">Смотреть сборную DOPX сезона →</a>
+        </div>
+      </div>
+      <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4">
+          <h3 class="font-bold mb-2 text-sm">Хотите оценить матч?</h3>
+          <p class="text-xs opacity-60 mb-3">Каждая ваша оценка сразу учитывается в следующем пересчёте тура.</p>
+          <a href="{% url 'matches:list' %}?status=finished" class="btn btn-primary btn-sm btn-block">К матчам</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- === MAIN === -->
+  <div class="lg:col-span-3 space-y-6 md:space-y-10">
+    <section id="round" class="scroll-mt-24">
+      <div id="round-content" data-background-poll
+           hx-get="{% if season %}{% url 'round_squad:round_partial' season.id tour %}{% endif %}"
+           hx-trigger="every 60s" hx-swap="innerHTML">
+        {% include 'round_squad/_round_content.html' %}
+      </div>
+    </section>
+
+    <!-- Как считается? -->
+    <section id="methodology" class="scroll-mt-24">
+      <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4 md:p-6">
+          <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4 flex items-center gap-2"><i class="ti ti-calculator text-primary"></i> Как считается?</h2>
+
+          <div class="alert alert-warning text-xs md:text-sm mb-4 md:mb-6">
+            <i class="ti ti-alert-triangle"></i>
+            <span>В отличие от «Сборной DOPX сезона», в туре у игрока почти всегда РОВНО один оценённый матч — поэтому здесь сглаживание идёт по числу ГОЛОСОВ, а не по числу матчей.</span>
+          </div>
+
+          <div class="space-y-4 md:space-y-6">
+            <div class="flex gap-3 md:gap-4">
+              <div class="w-10 h-10 md:w-12 md:h-12 rounded-full bg-primary text-primary-content flex items-center justify-center font-bold flex-shrink-0">1</div>
+              <div class="flex-1">
+                <h3 class="font-semibold text-base md:text-lg mb-1">Средняя оценка с поправкой на число голосов</h3>
+                <p class="opacity-60 text-xs md:text-sm">
+                  Чем больше людей оценили матч, тем больше доверия его результатам (эквивалент
+                  {{ round_vote_shrinkage_c|floatformat:0 }} «виртуальных» голосов) — рядовой матч буднего дня с
+                  5 голосами не выносит игрока в топ на одном всплеске, зрелищное дерби с 40+ голосами оценивается
+                  практически по фактическому результату.
+                </p>
+              </div>
+            </div>
+            <div class="flex gap-3 md:gap-4">
+              <div class="w-10 h-10 md:w-12 md:h-12 rounded-full bg-primary text-primary-content flex items-center justify-center font-bold flex-shrink-0">2</div>
+              <div class="flex-1">
+                <h3 class="font-semibold text-base md:text-lg mb-1">Сравнение только внутри своей позиции</h3>
+                <p class="opacity-60 text-xs md:text-sm">
+                  Вратарей сравниваем с вратарями, нападающих — с нападающими. «Игрок тура» — исключение: он
+                  сравнивается со всеми сразу, независимо от позиции, поэтому не обязан совпадать с occupant'ом
+                  своего слота в сборной тура.
+                </p>
+              </div>
+            </div>
+            <div class="flex gap-3 md:gap-4">
+              <div class="w-10 h-10 md:w-12 md:h-12 rounded-full bg-primary text-primary-content flex items-center justify-center font-bold flex-shrink-0">3</div>
+              <div class="flex-1">
+                <h3 class="font-semibold text-base md:text-lg mb-1">Тур — это номер тура, а не календарная неделя</h3>
+                <p class="opacity-60 text-xs md:text-sm">
+                  Из-за переносов матчей в одну календарную неделю могут играться матчи разных туров — состав
+                  считается строго по номеру тура (как его публикует KFF), а не по датам матчей.
+                </p>
+              </div>
+            </div>
+            <div class="flex gap-3 md:gap-4">
+              <div class="w-10 h-10 md:w-12 md:h-12 rounded-full bg-primary text-primary-content flex items-center justify-center font-bold flex-shrink-0">4</div>
+              <div class="flex-1">
+                <h3 class="font-semibold text-base md:text-lg mb-1">Фиксируется автоматически</h3>
+                <p class="opacity-60 text-xs md:text-sm">
+                  Как только голосование по всем матчам тура закрывается, состав фиксируется сам — донакручивать
+                  больше нечем. До этого момента состав живой и пересчитывается каждые 15 минут.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div class="divider my-4 md:my-6"></div>
+
+          <h3 class="font-semibold text-sm md:text-base mb-2 md:mb-3">Что означает кольцо вокруг аватара</h3>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 md:gap-3">
+            <div class="flex items-center gap-3 p-3 bg-base-200 rounded-lg">
+              <span class="w-7 h-7 rounded-full bg-base-300 shrink-0" style="outline: 2px solid var(--color-success); outline-offset: 2px;"></span>
+              <span class="text-xs opacity-60">Данных достаточно — от {{ round_confident_votes_threshold }} голосов, месту в составе можно доверять</span>
+            </div>
+            <div class="flex items-center gap-3 p-3 bg-base-200 rounded-lg">
+              <span class="w-7 h-7 rounded-full bg-base-300 shrink-0" style="outline: 2px solid var(--color-warning); outline-offset: 2px;"></span>
+              <span class="text-xs opacity-60">Голосов пока меньше {{ round_confident_votes_threshold }} — место может измениться</span>
+            </div>
+          </div>
+          <p class="text-xs opacity-50 mt-3">
+            Кандидат вообще появляется в подборе не раньше {{ round_min_votes_for_candidate }} голосов. Полная
+            расшифровка по каждому игроку — под иконкой <i class="ti ti-info-circle"></i> рядом с его именем.
+          </p>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}

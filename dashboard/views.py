@@ -459,6 +459,12 @@ def ads(request):
     best_xi_url = request.build_absolute_uri(reverse("season_squad:widget"))
     best_xi_embed = _embed_code(best_xi_url, "Сборная DOPX сезона на DOPX", width=320, height=420)
 
+    # Пятый виджет (продуктовый запрос 2026-08-22): "DOPX Лучшие тура" —
+    # season_id/tour не передаём, тот же принцип "без выбора" (активный
+    # сезон главной лиги + последний завершённый тур), что у best_xi_embed.
+    round_url = request.build_absolute_uri(reverse("round_squad:round_widget"))
+    round_embed = _embed_code(round_url, "DOPX Лучшие тура", width=320, height=420)
+
     context = {
         "page_title": "Реклама и виджеты — DOPX Staff",
         "active_tab": "ads",
@@ -472,6 +478,7 @@ def ads(request):
         "team_embed": team_embed,
         "standings_embed": standings_embed,
         "best_xi_embed": best_xi_embed,
+        "round_embed": round_embed,
         **_ads_stats_context(),
     }
     return render(request, "dashboard/ads.html", context)

@@ -191,6 +191,18 @@
                         </div>
                         {{ form.email_weekly_summary }}
                     </label>
+                    <label class="flex items-center justify-between gap-4 p-4 rounded-xl border border-base-300 hover:bg-base-200 transition-all cursor-pointer">
+                        <div class="flex items-center gap-4 flex-1">
+                            <div class="w-12 h-12 rounded-xl bg-info/10 flex items-center justify-center flex-shrink-0">
+                                <i class="ti ti-calendar-star text-info text-xl"></i>
+                            </div>
+                            <div class="flex-1">
+                                <div class="font-semibold">{{ form.email_round_results.label }}</div>
+                                <p class="text-xs opacity-60 mt-1">{{ form.email_round_results.help_text }}</p>
+                            </div>
+                        </div>
+                        {{ form.email_round_results }}
+                    </label>
                 </div>
             </div>
         </div>

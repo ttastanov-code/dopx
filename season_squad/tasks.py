@@ -14,25 +14,57 @@ from __future__ import annotations
 import logging
 
 from celery import shared_task
+from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
+
+# Максимальное время удержания лока — страховка на случай, если воркер
+# упадёт/будет убит посреди пересчёта и не дойдёт до cache.delete() в
+# finally: ключ сам протухнет через RECOMPUTE_LOCK_TIMEOUT секунд, а не
+# зависнет навечно. Значение с большим запасом от реального времени
+# пересчёта одного сезона (обычно единицы секунд).
+RECOMPUTE_LOCK_TIMEOUT = 300
 
 
 @shared_task
 def recompute_best_xi_task(season_id: str) -> None:
     """Пересчёт одного сезона — отдельная задача (не инлайн-цикл в
     recompute_all_active_best_xi), чтобы зависание/ошибка на одном сезоне
-    не блокировала пересчёт остальных и ретраилась Celery независимо."""
-    from seasons.models import Season
-    from season_squad.services import recompute_best_xi
+    не блокировала пересчёт остальных и ретраилась Celery независимо.
 
-    try:
-        season = Season.objects.select_related('league').get(pk=season_id)
-    except Season.DoesNotExist:
-        logger.warning("recompute_best_xi_task: сезон %s не найден (удалён?)", season_id)
+    Redis-lock (продуктовый ревью 2026-08-22): без него два пересчёта
+    ОДНОГО сезона могли выполниться параллельно — например, Celery Beat
+    сработал ровно в момент, когда staff вручную нажал "пересчитать
+    сейчас" в дашборде, или сообщение доставилось дважды (at-least-once
+    delivery). recompute_best_xi() внутри читает предыдущие ранги из
+    SeasonPositionRanking ДО того как записать новую партию — при гонке
+    два прогона могли прочитать одну и ту же "предыдущую" партию и оба
+    записать историю рангов, из-за чего rank_change/rank_change_delta
+    (стрелки ↑/"вошёл в состав" на карточках) считались бы некорректно.
+    cache.add() — тот же атомарный SETNX-паттерн, что и в
+    aggregates/signals.py::_schedule_recalculation для дебаунса пересчёта
+    агрегатов матча."""
+    lock_key = f"season_squad:recompute:{season_id}"
+    if not cache.add(lock_key, "1", timeout=RECOMPUTE_LOCK_TIMEOUT):
+        logger.info("recompute_best_xi_task: пересчёт сезона %s уже выполняется — пропускаем", season_id)
         return
 
-    recompute_best_xi(season)
+    try:
+        from seasons.models import Season
+        from season_squad.services import recompute_best_xi
+
+        try:
+            season = Season.objects.select_related('league').get(pk=season_id)
+        except Season.DoesNotExist:
+            logger.warning("recompute_best_xi_task: сезон %s не найден (удалён?)", season_id)
+            return
+
+        recompute_best_xi(season)
+    finally:
+        # Явное освобождение сразу по завершении — не ждём TTL, чтобы
+        # следующий легитимный пересчёт (ручной триггер сразу после
+        # планового) не блокировался лишние 5 минут.
+        cache.delete(lock_key)
 
 
 @shared_task
