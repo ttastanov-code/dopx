@@ -24,7 +24,7 @@ season_squad/services.py::_build_explanation) — раньше здесь сто
         </div>
         {% if card.filled %}
         <div class="flex items-center gap-1">
-            <a href="{{ card.occupant_profile_url }}" class="font-medium text-sm md:text-base hover:opacity-70 transition-opacity truncate">{{ card.occupant_name }}</a>
+            <a href="{{ card.occupant_profile_url }}" class="font-medium text-sm md:text-base hover:opacity-70 transition-opacity">{{ card.occupant_name }}</a>
             {% if card.explanation %}{% include 'components/_tooltip_icon.html' with text=card.explanation %}{% endif %}
         </div>
         <div class="flex items-baseline gap-2 mt-0.5">

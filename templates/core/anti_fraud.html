@@ -6,8 +6,8 @@
   <h1 class="text-2xl md:text-3xl font-bold mb-2 flex items-center gap-2">
     <i class="ti ti-shield-check mr-2"></i> Как мы боремся с накруткой
   </h1>
-  <p class="opacity-60 text-sm md:text-base max-w-2xl">Средний балл на DOPX не берётся «как есть» из всех голосов подряд. Ниже — как именно он считается и что происходит, если кто-то пытается его накрутить.</p>
-  <p class="opacity-50 text-xs md:text-sm max-w-2xl mt-2">Речь только о честности цифр в оценках зрителей — это не оценка профессиональных качеств судей, тренеров или игроков. Подробнее — в разделе <a href="{% url 'core:rules' %}#disclaimer" class="link link-primary">«Что такое рейтинг DOPX»</a>.</p>
+  <p class="opacity-60 text-sm md:text-base max-w-2xl">Рейтинг DOPX учитывает не только средний балл, но и качество выборки. Здесь рассказываем, как считаем оценки и противодействуем накрутке.</p>
+  <p class="opacity-50 text-xs md:text-sm max-w-2xl mt-2">Эти механизмы проверяют надёжность голосов, а не оценивают профессиональные качества игроков, тренеров и судей. Подробнее — в разделе <a href="{% url 'core:rules' %}#disclaimer" class="link link-primary">«Что такое рейтинг DOPX»</a>.</p>
 </div>
 
 <!-- === ЖИВЫЕ ЦИФРЫ (мобильный/планшет — полная ширина, на десктопе уходят в сайдбар ниже) === -->
@@ -82,7 +82,7 @@
       <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4">
           <h3 class="font-bold text-sm mb-2">Хотите подробнее?</h3>
-          <p class="text-xs opacity-60 mb-3">Полные правила платформы и таблица Trust Score</p>
+          <p class="text-xs opacity-60 mb-3">Правила платформы и принципы Trust Score.</p>
           <a href="{% url 'core:rules' %}" class="btn btn-sm btn-primary btn-block">
             <i class="ti ti-file-text"></i> Правила платформы
           </a>

@@ -6,8 +6,8 @@
         <i class="ti ti-shield-check text-primary"></i> Подтверждение входа
     </h1>
     <p class="text-sm opacity-70 mb-6">
-        Введите 6-значный код из приложения-аутентификатора, либо один из
-        сохранённых backup-кодов, если доступа к телефону нет.
+        Введите шестизначный код из приложения-аутентификатора или резервный код,
+        если телефон недоступен.
     </p>
 
     {% if messages %}
@@ -22,7 +22,7 @@
         {% csrf_token %}
         <input type="hidden" name="next" value="{{ next }}">
         <input
-            type="text" name="token" placeholder="Код из приложения или backup-код" maxlength="16"
+            type="text" name="token" placeholder="Код из приложения или резервный код" maxlength="16"
             autocomplete="one-time-code" autofocus required
             class="input input-bordered w-full text-center text-lg tracking-widest font-mono">
         <button type="submit" class="btn btn-primary">Подтвердить</button>
