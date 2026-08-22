@@ -1,5 +1,6 @@
 # dopx/middleware.py — Query Performance Middleware + Security
 
+import re
 import time
 import logging
 from datetime import datetime
@@ -180,6 +181,42 @@ class ContentSecurityPolicyMiddleware:
     )
     ADMIN_PATH_PREFIX = '/admin/'
 
+    # === WIDGET_POLICY (2026-08-21) ===
+    # Баг-репорт по итогам аудита: три embed-виджета для партнёров
+    # (players/views.py::player_rating_widget, teams/views.py::team_rating_widget,
+    # core/views.py::standings_widget) снимают X-Frame-Options через
+    # @xframe_options_exempt, но CSP выше всё равно шлёт "frame-ancestors 'self'"
+    # НА ВСЕ страницы без исключения — а frame-ancestors у современных браузеров
+    # главнее устаревшего X-Frame-Options. В итоге партнёр вставляет <iframe> к
+    # себе на сайт (embed-код есть, ссылки работают), а браузер молча рисует
+    # пустой прямоугольник — виджет физически не может показаться нигде, кроме
+    # dopx.kz. Раз виджеты по задумке публичные и встраиваемые куда угодно (нет
+    # модели "разрешённых доменов партнёра" — TODO завести, когда появятся
+    # первые крупные партнёры и будет что защищать), для ЭТИХ трёх путей
+    # используем "frame-ancestors *" вместо 'self'. Остальные директивы не
+    # ослабляем — виджет всё равно не должен грузить чужие скрипты.
+    WIDGET_POLICY = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
+        "font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com; "
+        "img-src 'self' data: https:; "
+        "connect-src 'self'; "
+        "worker-src 'self'; "
+        "manifest-src 'self'; "
+        "object-src 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'; "
+        "frame-ancestors *;"
+    )
+    # Три embeddable-роута ровно, никаких других "/widget/"-путей в проекте
+    # нет — сознательно точечный regex, а не общий startswith('/widget'),
+    # чтобы случайно не ослабить frame-ancestors на будущей странице, у
+    # которой в пути просто встретится слово "widget".
+    WIDGET_PATH_PATTERN = re.compile(
+        r'^/(players/[0-9a-f-]+/widget|teams/[0-9a-f-]+/widget|widget/standings)/$'
+    )
+
     def __init__(self, get_response):
         self.get_response = get_response
 
@@ -190,7 +227,12 @@ class ContentSecurityPolicyMiddleware:
             if getattr(settings, 'CSP_REPORT_ONLY', False)
             else 'Content-Security-Policy'
         )
-        policy = self.ADMIN_POLICY if request.path.startswith(self.ADMIN_PATH_PREFIX) else self.POLICY
+        if request.path.startswith(self.ADMIN_PATH_PREFIX):
+            policy = self.ADMIN_POLICY
+        elif self.WIDGET_PATH_PATTERN.match(request.path):
+            policy = self.WIDGET_POLICY
+        else:
+            policy = self.POLICY
         response[header] = policy
         return response
 

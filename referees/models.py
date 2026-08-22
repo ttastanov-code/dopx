@@ -8,6 +8,9 @@ class Referee(BaseModel):
     first_name = models.CharField(_('Имя'), max_length=120)
     last_name = models.CharField(_('Фамилия'), max_length=120)
     country = models.CharField(_('Страна'), max_length=120, blank=True)
+    # См. тот же комментарий в coaches/models.py::Coach.photo — у KFF нет
+    # публичных фото судей, поле для ручной загрузки стаффом.
+    photo = models.ImageField(_('Фото'), upload_to="referees/", null=True, blank=True)
     is_active = models.BooleanField(_('Активен'), default=True)
     external_id = models.CharField(
         _('Внешний ID'),

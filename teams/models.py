@@ -35,6 +35,18 @@ class Team(BaseModel):
         unique=True,
         verbose_name=_('Внешний ID')
     )
+    # ВАЖНО: это ДРУГОЙ id, чем external_id выше. external_id — id команды
+    # в JSON API KFF (parsers/kff/client.py, используется для импорта
+    # матчей). kff_website_id — id той же команды на публичном сайте
+    # kffleague.kz (URL вида /ru/team/{id}) — отдельная нумерация в другом
+    # бэкенде того же KFF, нужна ТОЛЬКО для скрапинга фото игроков
+    # (parsers/kff/photo_scraper.py), заполняется автоматически при первом
+    # запуске скрапера через сопоставление названий команд.
+    kff_website_id = models.CharField(
+        _('ID команды на сайте KFF'),
+        max_length=20, blank=True, null=True, unique=True,
+        help_text=_('Числовой id из URL kffleague.kz/ru/team/<id> — для скрапинга фото игроков.'),
+    )
     is_active = models.BooleanField(
         default=True,
         verbose_name=_('Активна')

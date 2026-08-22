@@ -88,6 +88,10 @@ INSTALLED_APPS = [
     'lineups',
     'notifications',
     'dashboard',
+    # "Живая сборная сезона" (продуктовая фича, 2026-08-21): расчёт лучшего
+    # состава 4-3-3 сезона на основе оценок пользователей (Байес-сглаживание
+    # по числу голосов) + скрапинг/обработка фото игроков с kffleague.kz.
+    'season_squad',
     # Партнёрская инфраструктура (продуктовый аудит "канал привлечения",
     # 2026-08-21): Partner + Banner, атрибуция рефералов, баннерная ротация.
     'partners',
@@ -669,6 +673,29 @@ CELERY_BEAT_SCHEDULE = {
     'weekly-summary': {
         'task': 'notifications.tasks.send_weekly_summary',
         'schedule': crontab(day_of_week=1, hour=10, minute=0),
+    },
+    # === «Сборная DOPX» — пересчёт лучшего XI (каждые 15 минут) ===
+    # Не привязан к сигналу "оценка сохранена" (как aggregates.signals) —
+    # пересчёт всего состава недёшев (несколько GROUP BY по сезону), гонять
+    # его на каждый голос — лишняя нагрузка. 15 минут — тот же порядок,
+    # что у recalculate-standings/recalculate-aggregates выше, достаточно
+    # часто, чтобы плашка "обновлено N минут назад" не выглядела мёртвой.
+    'recompute-live-best-xi': {
+        'task': 'season_squad.tasks.recompute_all_active_best_xi',
+        'schedule': crontab(minute='*/15'),
+    },
+    # === Синхронизация ID + позиции игроков с KFF (раз в 3 дня в 04:30) ===
+    # Переименовано из sync-kff-photos (2026-08-21) — от автоматического
+    # импорта ФОТО отказались (см. parsers/tasks.py::sync_kff_player_meta и
+    # core/templatetags/avatar_extras.py), но привязка Player.kff_website_id
+    # и бэкафилл пустой позиции по-прежнему полезны, поэтому задачу не
+    # выключаем целиком, а сузили до метаданных. Не чаще: сайт-источник
+    # чужой (вежливость + не хотим банов по UA), составы команд не меняются
+    # ежедневно. 04:30 — не пересекается с sync-kff-premier-league-full
+    # (03:00) и cleanup-old-notifications-daily (04:00).
+    'sync-kff-player-meta': {
+        'task': 'parsers.tasks.sync_kff_player_meta',
+        'schedule': crontab(hour=4, minute=30, day_of_month='*/3'),
     },
 }
 

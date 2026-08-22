@@ -1,6 +1,8 @@
 # parsers/kff/importers.py
+import time
 from datetime import datetime, timedelta
 from typing import Dict, Optional, Union, List
+from django.core.cache import cache
 from django.db import transaction, IntegrityError
 from django.utils import timezone
 from matches.models import Match, Stadium
@@ -18,6 +20,12 @@ import logging
 from django.db.models import Q
 
 logger = logging.getLogger(__name__)
+
+# get_or_create_referee_by_name: лок по нормализованному имени судьи —
+# см. докстринг внутри функции.
+REFEREE_CREATE_LOCK_TIMEOUT_SECONDS = 15
+REFEREE_CREATE_LOCK_RETRY_DELAY_SECONDS = 0.3
+REFEREE_CREATE_LOCK_MAX_WAIT_SECONDS = 10
 
 STATUS_MAP = {
     "upcoming": "scheduled",
@@ -144,6 +152,29 @@ def get_or_create_season(season_id: int, league=None, season_name: str = None) -
     return season
 
 def get_or_create_referee_by_name(name: str) -> Optional[Referee]:
+    """
+    normalize_kz (см. core/utils.py) вместо простого __iexact — KFF шлёт
+    имя судьи произвольной строкой без стабильного ID, и написание ФИО
+    плывёт от матча к матчу ("Сакен"/"Сәкен" — разные Unicode-буквы,
+    __iexact их не считал бы одинаковыми и плодил дубли). Судей немного
+    (десятки) — фильтрация в Python приемлема.
+
+    ЛОК ПО ИМЕНИ (2026-08-21, живой репорт: "после полной синхронизации
+    сезона снова дубли судей"). normalize_kz сам по себе работал верно —
+    проблема была в том, ЧТО с чем сравнивается: один и тот же судья
+    судит РАЗНЫЕ матчи, а разные матчи могут импортироваться ПАРАЛЛЕЛЬНО
+    двумя независимыми запусками синхронизации (например, sync_recent_matches
+    по расписанию каждые 30 мин и sync_full_season, запущенный вручную из
+    staff-дашборда, — см. parsers/tasks.py). Лок на сам матч
+    (pipeline.py::_acquire_import_lock) тут не помогает — это ДВА РАЗНЫХ
+    match_id, каждый со своим локом. Оба процесса читали "есть ли уже
+    такой судья" ДО того, как другой успевал закоммитить свою запись —
+    оба видели пустой результат и создавали свою строку. Лок ниже — по
+    НОРМАЛИЗОВАННОМУ имени судьи, а не по матчу: пока кто-то один создаёт
+    запись для "багдат абдуллаев", все остальные, кому тоже встретился
+    этот судья, ждут и перечитывают — вместо того, чтобы создать вторую
+    копию.
+    """
     if not name:
         return None
     name_parts = name.strip().split()
@@ -152,29 +183,56 @@ def get_or_create_referee_by_name(name: str) -> Optional[Referee]:
     else:
         first_name, last_name = name, ""
 
-    # normalize_kz (см. core/utils.py) вместо простого __iexact — KFF шлёт
-    # имя судьи произвольной строкой без стабильного ID, и написание ФИО
-    # плывёт от матча к матчу ("Сакен"/"Сәкен" — разные Unicode-буквы,
-    # __iexact их не считал бы одинаковыми и плодил дубли). Судей немного
-    # (десятки) — фильтрация в Python приемлема.
     target = normalize_kz(f"{first_name} {last_name}")
-    referee = next(
-        (
-            r for r in Referee.objects.only("id", "first_name", "last_name", "is_active")
-            if normalize_kz(f"{r.first_name} {r.last_name}") == target
-        ),
-        None,
-    )
-    if referee:
-        if not referee.is_active:
-            referee.is_active = True
-            referee.save(update_fields=["is_active"])
-        return referee
+    if not target:
+        return None
 
-    referee = Referee.objects.create(
-        first_name=first_name, last_name=last_name, is_active=True
-    )
-    return referee
+    def _find_existing() -> Optional[Referee]:
+        return next(
+            (
+                r for r in Referee.objects.only("id", "first_name", "last_name", "is_active")
+                if normalize_kz(f"{r.first_name} {r.last_name}") == target
+            ),
+            None,
+        )
+
+    def _reactivate_if_needed(r: Referee) -> Referee:
+        if not r.is_active:
+            r.is_active = True
+            r.save(update_fields=["is_active"])
+        return r
+
+    referee = _find_existing()
+    if referee:
+        return _reactivate_if_needed(referee)
+
+    lock_key = f"parsers:referee_create_lock:{target}"
+    if cache.add(lock_key, "1", timeout=REFEREE_CREATE_LOCK_TIMEOUT_SECONDS):
+        try:
+            # Пока брали лок, кто-то мог успеть создать запись — перепроверяем.
+            referee = _find_existing()
+            if referee:
+                return _reactivate_if_needed(referee)
+            return Referee.objects.create(first_name=first_name, last_name=last_name, is_active=True)
+        finally:
+            cache.delete(lock_key)
+
+    # Лок занят — для этого же судьи ПРЯМО СЕЙЧАС создаёт запись другой
+    # процесс. Ждём и перечитываем вместо немедленного создания дубля.
+    waited = 0.0
+    while waited < REFEREE_CREATE_LOCK_MAX_WAIT_SECONDS:
+        time.sleep(REFEREE_CREATE_LOCK_RETRY_DELAY_SECONDS)
+        waited += REFEREE_CREATE_LOCK_RETRY_DELAY_SECONDS
+        referee = _find_existing()
+        if referee:
+            return _reactivate_if_needed(referee)
+
+    # Не дождались за 10 секунд (другой процесс завис или упал, не успев
+    # закоммитить) — создаём сами. Риск редкого дубля тут предпочтительнее
+    # зависшей синхронизации; такой дубль поймает
+    # manage.py dedupe_referees_coaches при следующем запуске.
+    logger.warning(f"⏱️ get_or_create_referee_by_name: не дождались лока для \"{name}\", создаю без лока")
+    return Referee.objects.create(first_name=first_name, last_name=last_name, is_active=True)
 
 def get_or_create_coach(coach_data: Dict, team: Optional[Team] = None) -> Optional[Coach]:
     """Создание/поиск тренера по external_id, либо по имени регистронезависимо."""

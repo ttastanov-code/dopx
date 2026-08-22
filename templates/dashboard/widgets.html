@@ -127,6 +127,28 @@
             <p class="text-[10px] opacity-40 mt-2">Эта же кнопка есть и на самом сайте — на главной, у блока «Турнирная таблица».</p>
         </div>
     </div>
+
+    <!-- === ВИДЖЕТ СБОРНОЙ DOPX === -->
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4">
+            <h3 class="font-bold text-sm md:text-base mb-1 flex items-center gap-2">
+                <i class="ti ti-shirt-sport text-primary"></i> Виджет сборной DOPX
+            </h3>
+            <p class="text-xs opacity-60 mb-3">300×420 px. Мини-поле 4-3-3 текущего активного сезона, обновляется сам. Без поиска — сборная одна на весь сайт.</p>
+
+            <div class="mb-3 p-2 bg-base-200 rounded-lg flex justify-center">
+                <iframe src="{% url 'season_squad:widget' %}" width="280" height="380" style="border:none;border-radius:16px" title="Превью виджета сборной"></iframe>
+            </div>
+            <div x-data="copyBox">
+                <textarea x-ref="codeBox" readonly onclick="this.select()" class="textarea textarea-bordered w-full font-mono text-[10px]" rows="3">{{ best_xi_embed }}</textarea>
+                <button type="button" @click="copy()" class="btn btn-xs btn-outline mt-2 w-full" :class="copied && 'btn-success'">
+                    <i class="ti" :class="copied ? 'ti-check' : 'ti-copy'"></i>
+                    <span x-text="copied ? 'Скопировано!' : 'Копировать код'"></span>
+                </button>
+            </div>
+            <p class="text-[10px] opacity-40 mt-2">Эта же кнопка есть и на самом сайте — на странице «Сборная DOPX».</p>
+        </div>
+    </div>
 </div>
 
 <!-- === СТАТИСТИКА ВСТРАИВАНИЙ === -->

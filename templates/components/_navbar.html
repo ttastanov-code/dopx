@@ -28,6 +28,7 @@
                         <li><a href="{% url 'players:list' %}" class="flex items-center gap-3"><div class="w-8 h-8 rounded-lg bg-secondary/10 flex items-center justify-center"><i class="ti ti-play-football text-secondary"></i></div><div><div class="font-medium">Игроки</div><div class="text-xs opacity-60">Топ выступлений</div></div></a></li>
                         <li><a href="{% url 'coaches:list' %}" class="flex items-center gap-3"><div class="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center"><i class="ti ti-building-stadium text-accent"></i></div><div><div class="font-medium">Тренеры</div><div class="text-xs opacity-60">Тактика и замены</div></div></a></li>
                         <li><a href="{% url 'referees:list' %}" class="flex items-center gap-3"><div class="w-8 h-8 rounded-lg bg-neutral/10 flex items-center justify-center"><i class="ti ti-gavel text-neutral"></i></div><div><div class="font-medium">Судьи</div><div class="text-xs opacity-60">Качество решений</div></div></a></li>
+                        <li><a href="{% url 'season_squad:best_xi' %}" class="flex items-center gap-3"><div class="w-8 h-8 rounded-lg bg-warning/10 flex items-center justify-center"><i class="ti ti-shirt text-warning"></i></div><div><div class="font-medium">Сборная DOPX</div><div class="text-xs opacity-60">Лучший XI сезона онлайн</div></div></a></li>
                     </ul>
                 </details>
             </li>
@@ -122,6 +123,9 @@
             </a>
             <a href="{% url 'referees:list' %}" class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200">
                 <i class="ti ti-gavel text-xl"></i><span>Судьи</span>
+            </a>
+            <a href="{% url 'season_squad:best_xi' %}" class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200">
+                <i class="ti ti-shirt text-xl"></i><span>Сборная DOPX</span>
             </a>
 
             <div class="divider my-2"></div>

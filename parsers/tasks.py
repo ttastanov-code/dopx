@@ -636,6 +636,69 @@ def _send_sync_error_alert(error_message: str, alert_type: str, extra_data: dict
         logger.error(f"❌ Failed to send sync error alert: {e}")
 
 
+@shared_task(bind=True, max_retries=2)
+def sync_kff_player_meta(self):
+    """
+    Периодическая синхронизация МЕТАДАННЫХ игроков с kffleague.kz — ID
+    (Player.kff_website_id) и бэкафилл пустой позиции (см.
+    parsers/kff/photo_scraper.py, та же логика, что у management-команды
+    scrape_kff_photos --apply).
+
+    НЕ СКАЧИВАЕТ ФОТО (переименована из sync_kff_photos 2026-08-21) — от
+    автоматического импорта фото с KFF отказались: нестабильный источник,
+    кривой авто-кроп/компоновка лица в круге на живых данных. Вместо фото
+    везде, где его нет, показывается генеративный аватар (градиент +
+    инициалы, см. core/templatetags/avatar_extras.py) — так что фото-пайплайн
+    (season_squad/photo_processing.py) удалён вместе с этой веткой задачи.
+
+    ЗАЧЕМ ПЕРИОДИЧЕСКИ, А НЕ ОДИН РАЗ: база DOPX пополняется — трансферы,
+    новые заявленные игроки академий и т.п., — а разовый прогон скрапера
+    видит только тот срез состава, что был на момент запуска. Раз в
+    несколько дней достаточно: составы команд в межсезонье и по ходу
+    сезона меняются не ежедневно, а чаще, чем recompute-live-best-xi
+    (каждые 15 мин), гонять скрапинг чужого сайта незачем.
+
+    ОЖИДАЕМО НЕПОЛНОЕ ПОКРЫТИЕ — не считается ошибкой: у KFF на публичном
+    сайте не у каждого игрока DOPX есть карточка (воспитанники академий,
+    сыгравшие 1-2 матча, могут не попасть в публичный состав команды на
+    сайте вообще). Задача просто не находит пару и репортит это в
+    результатах — не исключение, не повод для алерта.
+    """
+    from teams.models import Team
+
+    from parsers.kff.photo_scraper import match_and_fetch_players_for_team, match_teams
+
+    logger.info("🔄 Starting periodic KFF player meta sync (ID + позиция, без фото)...")
+
+    try:
+        team_report = match_teams(dry_run=False)
+    except Exception as e:
+        logger.error(f"❌ sync_kff_player_meta: match_teams failed: {type(e).__name__}: {e}", exc_info=True)
+        raise self.retry(exc=e, countdown=300)
+
+    totals = {
+        "teams": 0, "matched": 0, "fuzzy_matched": 0, "positions_backfilled": 0,
+    }
+
+    teams_qs = Team.objects.filter(is_active=True, kff_website_id__isnull=False)
+    for team in teams_qs:
+        try:
+            report = match_and_fetch_players_for_team(team, dry_run=False)
+        except Exception as e:
+            logger.error(f"❌ sync_kff_player_meta: команда {team.name}: {type(e).__name__}: {e}", exc_info=True)
+            continue
+        if "error" in report:
+            logger.warning(f"⚠️ sync_kff_player_meta: {report['error']}")
+            continue
+        totals["teams"] += 1
+        totals["matched"] += len(report["matched"])
+        totals["fuzzy_matched"] += len(report["fuzzy_matched"])
+        totals["positions_backfilled"] += len(report["positions_backfilled"])
+
+    logger.info(f"✅ KFF player meta sync completed: teams_unmatched={len(team_report['unmatched_kff'])} {totals}")
+    return {**totals, "teams_unmatched_kff": team_report["unmatched_kff"]}
+
+
 @shared_task
 def sync_all_enabled_tournaments():
     """Синхронизация всех включённых турниров из настроек."""
