@@ -181,10 +181,10 @@ class ContentSecurityPolicyMiddleware:
     )
     ADMIN_PATH_PREFIX = '/admin/'
 
-    # === WIDGET_POLICY (2026-08-21) ===
-    # Баг-репорт по итогам аудита: три embed-виджета для партнёров
+    # === WIDGET_POLICY (2026-08-21, дополнено 2026-08-22) ===
+    # Баг-репорт по итогам аудита: embed-виджеты для партнёров
     # (players/views.py::player_rating_widget, teams/views.py::team_rating_widget,
-    # core/views.py::standings_widget) снимают X-Frame-Options через
+    # core/views.py::standings_widget, season_squad/views.py::best_xi_widget) снимают X-Frame-Options через
     # @xframe_options_exempt, но CSP выше всё равно шлёт "frame-ancestors 'self'"
     # НА ВСЕ страницы без исключения — а frame-ancestors у современных браузеров
     # главнее устаревшего X-Frame-Options. В итоге партнёр вставляет <iframe> к
@@ -209,12 +209,24 @@ class ContentSecurityPolicyMiddleware:
         "form-action 'self'; "
         "frame-ancestors *;"
     )
-    # Три embeddable-роута ровно, никаких других "/widget/"-путей в проекте
-    # нет — сознательно точечный regex, а не общий startswith('/widget'),
-    # чтобы случайно не ослабить frame-ancestors на будущей странице, у
-    # которой в пути просто встретится слово "widget".
+    # Пятый embeddable-роут (продуктовый аудит 2026-08-22, чётко указано в
+    # ревью проекта: "@xframe_options_exempt есть, а CSP-разрешение — нет" —
+    # season_squad/views.py::best_xi_widget добавили 2026-08-22, но забыли
+    # внести его пути сюда, из-за чего frame-ancestors 'self' у ВСЕХ
+    # остальных страниц бил и по нему тоже: iframe с embed-кодом виджета
+    # сборной физически не мог открыться ни на одном чужом сайте несмотря
+    # на рабочую ссылку и валидный @xframe_options_exempt на самой view.
+    # Сознательно точечный regex, а не общий startswith('/widget') или
+    # "/best-xi", чтобы случайно не ослабить frame-ancestors на будущей
+    # странице, у которой в пути просто встретится похожее слово.
+    # Шестой embeddable-роут (продуктовый запрос 2026-08-22): embed для
+    # round_squad/views.py::round_widget («DOPX Лучшие тура») — тот же
+    # паттерн, что у best-xi/widget выше, тем же способом добавляем ОБА
+    # варианта пути (с season_id и без).
     WIDGET_PATH_PATTERN = re.compile(
-        r'^/(players/[0-9a-f-]+/widget|teams/[0-9a-f-]+/widget|widget/standings)/$'
+        r'^/(players/[0-9a-f-]+/widget|teams/[0-9a-f-]+/widget|widget/standings'
+        r'|season/best-xi/widget|season/[0-9a-f-]+/best-xi/widget'
+        r'|season/round/widget|season/[0-9a-f-]+/round/\d+/widget)/$'
     )
 
     def __init__(self, get_response):

@@ -1,0 +1,146 @@
+{% comment %}
+templates/round_squad/_round_content.html
+Партиал «DOPX Лучшие тура» — вынесен для HTMX-поллинга, тот же принцип,
+что season_squad/_best_xi_content.html (без base.html, чтобы HTMX не
+задваивал шапку сайта при свапе).
+{% endcomment %}
+<div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+    <div class="flex items-center gap-2 text-xs md:text-sm opacity-60">
+        <i class="ti ti-refresh"></i>
+        {% if round_xi.last_computed_at %}
+            Обновлено {{ round_xi.last_computed_at|timesince }} назад
+        {% else %}
+            Пока не пересчитывался — первый пересчёт запустится в ближайшие 15 минут
+        {% endif %}
+    </div>
+    {% if round_xi.is_final %}
+    <span class="badge badge-success gap-1"><i class="ti ti-lock"></i> {{ round_xi.brand_title }} зафиксированы</span>
+    {% else %}
+    <span class="badge badge-warning badge-outline gap-1"><i class="ti ti-bolt"></i> Голосование ещё открыто</span>
+    {% endif %}
+</div>
+
+<!-- === ИГРОК ТУРА + САМЫЙ ДРАМАТИЧНЫЙ МАТЧ === -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 mb-6">
+    <div class="card bg-linear-to-br from-primary/15 to-transparent border border-primary/20">
+        <div class="card-body p-4 md:p-5">
+            <div class="flex items-center gap-1.5 text-[10px] md:text-xs uppercase tracking-wide opacity-60 font-semibold mb-2">
+                <i class="ti ti-award text-primary"></i> Игрок тура
+            </div>
+            {% if player_of_round_card %}
+            <div class="flex items-center gap-3">
+                {% include 'components/_avatar.html' with photo_url=player_of_round_card.occupant_photo_url name=player_of_round_card.occupant_name size_classes='w-14 h-14 md:w-16 md:h-16 text-lg' ring_style=player_of_round_card.ring_style %}
+                <div class="min-w-0">
+                    <div class="flex items-center gap-1">
+                        <a href="{{ player_of_round_card.occupant_profile_url }}" class="font-bold text-base md:text-lg hover:opacity-70 transition-opacity truncate">{{ player_of_round_card.occupant_name }}</a>
+                        {% if player_of_round_card.explanation %}{% include 'components/_tooltip_icon.html' with text=player_of_round_card.explanation %}{% endif %}
+                    </div>
+                    <div class="flex items-baseline gap-2">
+                        <span class="font-semibold text-primary">{{ player_of_round_card.round_score|floatformat:2 }}</span>
+                        <span class="text-xs opacity-50 truncate">{{ player_of_round_card.occupant_team_name|default:"—" }}</span>
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <div class="text-sm opacity-40 py-2">Пока недостаточно голосов в этом туре</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="card bg-linear-to-br from-secondary/15 to-transparent border border-secondary/20">
+        <div class="card-body p-4 md:p-5">
+            <div class="flex items-center gap-1.5 text-[10px] md:text-xs uppercase tracking-wide opacity-60 font-semibold mb-2">
+                <i class="ti ti-flame text-secondary"></i> Самый драматичный матч
+            </div>
+            {% if dramatic_match %}
+            <a href="{% url 'matches:detail' dramatic_match.id %}" class="block hover:opacity-70 transition-opacity">
+                <div class="font-bold text-base md:text-lg">
+                    {{ dramatic_match.home_team.name }} {{ dramatic_match.home_score }}:{{ dramatic_match.away_score }} {{ dramatic_match.away_team.name }}
+                </div>
+            </a>
+            <div class="text-xs opacity-60 mt-1">{{ dramatic_match_explanation }}</div>
+            {% else %}
+            <div class="text-sm opacity-40 py-2">Пока недостаточно оценок матчей в этом туре</div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- === ПОЛЕ: 4-3-3 (без вратаря/защиты — состав тура тот же принцип, что у сборной сезона) === -->
+<div class="relative overflow-hidden rounded-3xl p-4 py-8 md:p-10 mb-6 shadow-lg"
+     style="background: repeating-linear-gradient(to bottom,
+                color-mix(in oklab, var(--color-info) 28%, #05202f) 0px,
+                color-mix(in oklab, var(--color-info) 28%, #05202f) 64px,
+                color-mix(in oklab, var(--color-info) 18%, #05202f) 64px,
+                color-mix(in oklab, var(--color-info) 18%, #05202f) 128px);">
+    <svg class="absolute inset-0 w-full h-full pointer-events-none opacity-20" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        <line x1="0" y1="50" x2="100" y2="50" stroke="white" stroke-width="0.25" />
+        <circle cx="50" cy="50" r="9" fill="none" stroke="white" stroke-width="0.25" />
+        <rect x="22" y="0" width="56" height="10" fill="none" stroke="white" stroke-width="0.25" />
+        <rect x="22" y="90" width="56" height="10" fill="none" stroke="white" stroke-width="0.25" />
+        <rect x="0" y="0" width="100" height="100" fill="none" stroke="white" stroke-width="0.25" />
+    </svg>
+
+    <div class="relative space-y-7 md:space-y-12">
+        {% for row in pitch_rows %}
+        <div class="grid gap-2 md:gap-4 justify-items-center" style="grid-template-columns: repeat({{ row.slots|length }}, minmax(0, 1fr));">
+            {% for card in row.slots %}
+            <div class="group flex flex-col items-center text-center w-full max-w-[110px] md:max-w-[130px]">
+                <div class="text-[8px] md:text-[10px] uppercase tracking-widest font-semibold text-white/40 mb-1.5">{{ card.label }}</div>
+
+                {% include 'components/_avatar.html' with photo_url=card.occupant_photo_url name=card.occupant_name size_classes='w-12 h-12 md:w-16 md:h-16 text-base md:text-lg' ring_style=card.ring_style %}
+
+                {% if card.filled %}
+                <div class="mt-2 flex items-center gap-1 max-w-full text-white/90">
+                    <a href="{{ card.occupant_profile_url }}" class="font-medium text-[11px] md:text-sm leading-tight truncate hover:opacity-70 transition-opacity">{{ card.occupant_name }}</a>
+                    {% if card.explanation %}{% include 'components/_tooltip_icon.html' with text=card.explanation %}{% endif %}
+                </div>
+                <div class="text-[10px] md:text-xs font-semibold text-white/75 mt-0.5">{{ card.round_score|floatformat:1 }}</div>
+                <div class="text-[8px] md:text-[10px] text-white/35 mt-0.5 truncate max-w-full">{{ card.occupant_team_name|default:"—" }}</div>
+                {% else %}
+                <div class="mt-2 text-[9px] md:text-xs text-white/35 leading-tight">Пока недостаточно<br>голосов</div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- === ТРЕНЕР ТУРА === -->
+<div class="flex items-center gap-3 p-3 md:p-4 rounded-2xl bg-base-100 border border-base-300/50 mb-4">
+    <div class="flex-shrink-0">
+        {% include 'components/_avatar.html' with photo_url=coach_card.occupant_photo_url name=coach_card.occupant_name size_classes='w-12 h-12 md:w-14 md:h-14 text-base' ring_style=coach_card.ring_style %}
+    </div>
+    <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-1.5 text-[10px] md:text-xs uppercase tracking-wide opacity-45 font-semibold mb-0.5">
+            <i class="ti ti-clipboard-list"></i> Тренер тура
+        </div>
+        {% if coach_card.filled %}
+        <div class="flex items-center gap-1">
+            <a href="{{ coach_card.occupant_profile_url }}" class="font-medium text-sm md:text-base hover:opacity-70 transition-opacity truncate">{{ coach_card.occupant_name }}</a>
+            {% if coach_card.explanation %}{% include 'components/_tooltip_icon.html' with text=coach_card.explanation %}{% endif %}
+        </div>
+        <div class="flex items-baseline gap-2 mt-0.5">
+            <span class="font-semibold text-sm opacity-80">{{ coach_card.round_score|floatformat:2 }}</span>
+            <span class="text-xs opacity-45 truncate">{{ coach_card.occupant_team_name|default:"—" }}</span>
+        </div>
+        {% else %}
+        <div class="text-xs opacity-40 mt-0.5">Пока недостаточно голосов</div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Telegram/WhatsApp — тот же паттерн, что у matches/_match_header.html -->
+<div class="flex flex-wrap justify-center gap-2">
+    <a href="https://t.me/share/url?url={{ request.build_absolute_uri|urlencode }}&text={{ share_text|urlencode }}"
+       target="_blank" rel="noopener" class="btn btn-sm btn-outline"
+       onclick="if(window.dopxTrack){dopxTrack('share_clicked', {channel: 'telegram', round_tour: '{{ tour }}'})}">
+        <i class="ti ti-brand-telegram"></i> Telegram
+    </a>
+    <a href="https://wa.me/?text={{ share_text|urlencode }}%20{{ request.build_absolute_uri|urlencode }}"
+       target="_blank" rel="noopener" class="btn btn-sm btn-outline"
+       onclick="if(window.dopxTrack){dopxTrack('share_clicked', {channel: 'whatsapp', round_tour: '{{ tour }}'})}">
+        <i class="ti ti-brand-whatsapp"></i> WhatsApp
+    </a>
+</div>

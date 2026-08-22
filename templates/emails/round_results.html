@@ -1,0 +1,60 @@
+<!-- templates/emails/round_results.html -->
+<!-- Итоги «DOPX Лучшие тура» (продуктовый запрос 2026-08-22) — письмо
+     отправляется ОДИН раз, в момент автоматической финализации тура
+     (round_squad/services.py::recompute_round, когда голосование по всем
+     матчам тура закрылось). Контекст: round_xi (round_squad.models.
+     RoundBestXI, select_related season/most_dramatic_match/teams) —
+     см. round_squad/tasks.py::_send_round_results_email_chunk. Тот же
+     визуальный язык, что у weekly_summary.html/voting_open.html. -->
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: sans-serif; background: #f5f5f5; margin: 0; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .header { background: linear-gradient(135deg, #0c4a6e, #0369a1); color: #fff; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; margin: -30px -30px 30px -30px; }
+        .player-card { background: #eff6ff; border: 1px solid #60a5fa; border-radius: 8px; padding: 16px; text-align: center; margin: 20px 0; }
+        .player-card .label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: #2563eb; font-weight: 600; }
+        .player-card .name { font-size: 22px; font-weight: bold; margin: 6px 0 2px; }
+        .player-card .score { font-size: 14px; color: #6b7280; }
+        .match-info { background: #faf5ff; padding: 15px; border-radius: 6px; text-align: center; margin: 20px 0; border: 1px solid #a78bfa; }
+        .btn { display: inline-block; padding: 12px 24px; background: #000; color: #fff; text-decoration: none; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header"><h1>🏆 {{ round_xi.brand_title }}</h1></div>
+        <p>Голосование по туру {{ round_xi.tour }} закрыто — вот кто оказался лучшим:</p>
+
+        {% if round_xi.player_of_round_name %}
+        <div class="player-card">
+            <div class="label">Игрок тура</div>
+            <div class="name">{{ round_xi.player_of_round_name }}</div>
+            <div class="score">
+                {{ round_xi.player_of_round_team_name|default:"" }}
+                {% if round_xi.player_of_round_score %} · рейтинг {{ round_xi.player_of_round_score|floatformat:2 }}{% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        {% if round_xi.most_dramatic_match %}
+        <div class="match-info">
+            <p style="margin: 0 0 6px; font-weight: 600;">🔥 Самый драматичный матч тура</p>
+            <h3 style="margin: 0;">
+                {{ round_xi.most_dramatic_match.home_team.name }}
+                {{ round_xi.most_dramatic_match.home_score }}:{{ round_xi.most_dramatic_match.away_score }}
+                {{ round_xi.most_dramatic_match.away_team.name }}
+            </h3>
+        </div>
+        {% endif %}
+
+        <p style="text-align: center; margin-top: 24px;">
+            <a href="{{ site_url }}/season/{{ round_xi.season_id }}/round/{{ round_xi.tour }}/" class="btn">Смотреть полный состав тура</a>
+        </p>
+        <p style="font-size: 12px; opacity: 0.5; margin-top: 24px; text-align: center;">
+            Отключить эти письма можно в <a href="{{ site_url }}/users/profile/notifications/">настройках уведомлений</a>.
+        </p>
+    </div>
+</body>
+</html>

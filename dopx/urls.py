@@ -39,6 +39,11 @@ urlpatterns = [
     # «Живая сборная сезона» — /season/best-xi/ (активный сезон по
     # умолчанию) и /season/<uuid>/best-xi/ (конкретный сезон/лига).
     path('season/', include('season_squad.urls')),
+    # «DOPX Лучшие тура» — /season/round/ (последний завершённый тур
+    # активного сезона) и /season/<uuid>/round/<tour>/ — та же логика
+    # умолчания, отдельное приложение round_squad (см. докстринг
+    # round_squad/models.py про отличие от season_squad).
+    path('season/', include('round_squad.urls')),
     path('notifications/', include('notifications.urls')),
     path('api/', include('api.urls')),
     path('analytics/', include('analytics.urls')),

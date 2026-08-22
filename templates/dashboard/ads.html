@@ -150,6 +150,28 @@
             <p class="text-[10px] opacity-40 mt-2">Эта же кнопка есть и на самом сайте — на странице «Сборная DOPX».</p>
         </div>
     </div>
+
+    <!-- === ВИДЖЕТ «DOPX ЛУЧШИЕ ТУРА» === -->
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4">
+            <h3 class="font-bold text-sm md:text-base mb-1 flex items-center gap-2">
+                <i class="ti ti-calendar-star text-primary"></i> Виджет «DOPX Лучшие тура»
+            </h3>
+            <p class="text-xs opacity-60 mb-3">320×420 px. Мини-поле 4-3-3 последнего завершённого тура активного сезона, обновляется сам.</p>
+
+            <div class="mb-3 p-2 bg-base-200 rounded-lg flex justify-center">
+                <iframe src="{% url 'round_squad:round_widget' %}" width="300" height="380" style="border:none;border-radius:16px" title="Превью виджета тура"></iframe>
+            </div>
+            <div x-data="copyBox">
+                <textarea x-ref="codeBox" readonly onclick="this.select()" class="textarea textarea-bordered w-full font-mono text-[10px]" rows="3">{{ round_embed }}</textarea>
+                <button type="button" @click="copy()" class="btn btn-xs btn-outline mt-2 w-full" :class="copied && 'btn-success'">
+                    <i class="ti" :class="copied ? 'ti-check' : 'ti-copy'"></i>
+                    <span x-text="copied ? 'Скопировано!' : 'Копировать код'"></span>
+                </button>
+            </div>
+            <p class="text-[10px] opacity-40 mt-2">Эта же кнопка есть и на самом сайте — на странице «DOPX Лучшие тура».</p>
+        </div>
+    </div>
 </div>
 
 <!-- === СВОДНАЯ СТАТИСТИКА === -->

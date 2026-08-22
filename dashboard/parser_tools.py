@@ -92,6 +92,11 @@ TRIGGERABLE_TASKS = {
     # "Живая сборная сезона" (2026-08-21) — ручной пересчёт вне 15-минутного
     # крон-тика, полезно сразу после массового прогона оценок в тестах.
     "recompute_all_active_best_xi": "Сборная DOPX: пересчитать сейчас (все активные сезоны)",
+    # "DOPX Лучшие тура" (2026-08-22) — тот же принцип, что и у сборной
+    # сезона выше: не ждать 15-минутный крон-тик, полезно сразу после
+    # прогона тестовых голосований (see users/management/commands/
+    # create_test_users.py + aggregates/management/commands/simulate_evaluations.py).
+    "recompute_active_rounds": "DOPX Лучшие тура: пересчитать сейчас (все незакрытые туры)",
 }
 
 # Короткие пояснения под кнопками (2026-08-21, продуктовый фидбек: "не
@@ -147,6 +152,16 @@ TASK_DESCRIPTIONS: dict[str, str] = {
         "MIN_MATCHES_FOR_CANDIDATE) — это не баг задачи, а осознанный "
         "порог, чтобы один матч с оценкой 10/10 не выносил игрока в топ."
     ),
+    "recompute_active_rounds": (
+        "Находит все туры активных сезонов с хотя бы одним завершённым "
+        "матчем и ещё не зафиксированным составом (/season/round/) и "
+        "пересчитывает их прямо сейчас, не дожидаясь крон-тика раз в 15 "
+        "минут. Уже зафиксированные (is_final=True) туры пропускает — "
+        "донакручивать там больше нечем (см. round_squad/services.py::"
+        "_round_is_complete). Если тур закрывается ИМЕННО этим пересчётом, "
+        "автоматически ставится в очередь рассылка «Игрок/сборная тура» "
+        "всем верифицированным пользователям."
+    ),
 }
 
 # Модуль, откуда импортировать функцию задачи — раньше был жёстко захардкожен
@@ -160,6 +175,7 @@ _TASK_MODULES = {
     "notify_prediction_results": "notifications.tasks",
     "send_weekly_summary": "notifications.tasks",
     "recompute_all_active_best_xi": "season_squad.tasks",
+    "recompute_active_rounds": "round_squad.tasks",
 }
 _DEFAULT_TASK_MODULE = "parsers.tasks"
 

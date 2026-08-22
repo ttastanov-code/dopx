@@ -46,8 +46,9 @@ from django.utils import timezone
 from aggregates.models import CoachMatchAggregate, PlayerMatchAggregate
 from aggregates.services import CONFIDENT_VOTES_THRESHOLD
 from coaches.models import Coach
-from evaluations.models import RefereeEvaluation
+from evaluations.models import MatchEvaluation, RefereeEvaluation
 from lineups.models import MatchLineupPlayer
+from matches.models import Match
 from players.models import Player
 from players.positions import (
     BEST_XI_SLOT_DISPLAY_ORDER,
@@ -137,8 +138,62 @@ def _player_season_position(season) -> dict[str, str]:
     return {pid: counter.most_common(1)[0][0] for pid, counter in counters.items() if counter}
 
 
+def _player_season_team_name(season) -> dict[str, str]:
+    """player_id (строкой) -> название команды, за которую игрок выходил в
+    САМОМ ПОЗДНЕМ по дате матче этого сезона (MatchLineupPlayer, а не
+    player.team — текущая команда в справочнике). Продуктовое ревью
+    2026-08-22: игрок мог перейти в другой клуб в середине или сразу
+    после сезона — карточка "Сборной DOPX" должна показывать клуб, за
+    который он реально заработал этот рейтинг В ЭТОМ СЕЗОНЕ, а не куда
+    он сейчас числится в БД. order_by('player_id', '-...start_time') +
+    "первая встреченная строка на игрока" — тот же трюк, что мода в
+    _player_season_position, только вместо Counter берём просто самую
+    свежую запись (без доп. GROUP BY/window-function)."""
+    rows = (
+        MatchLineupPlayer.objects
+        .filter(lineup__match__season=season)
+        .order_by('player_id', '-lineup__match__start_time')
+        .values_list('player_id', 'lineup__team__name')
+    )
+    latest: dict[str, str] = {}
+    for player_id, team_name in rows:
+        pid = str(player_id)
+        if pid not in latest:
+            latest[pid] = team_name or ''
+    return latest
+
+
+def _coach_season_team_name(season) -> dict[str, str]:
+    """То же самое, что _player_season_team_name, но для тренеров — у них
+    нет отдельной модели "состав на матч", привязка тренер/команда идёт
+    прямо через Match.home_coach/away_coach + Match.home_team/away_team.
+    Именно поэтому Codex-ревью отдельно предупреждал "требует осторожности
+    из-за ограничений данных KFF": здесь привязка грубее (только на уровне
+    матча целиком, не факта присутствия), но источник для КОНКРЕТНОГО
+    матча всё равно надёжнее, чем текущее coach.team на момент пересчёта."""
+    rows = (
+        Match.objects
+        .filter(season=season)
+        .exclude(home_coach__isnull=True, away_coach__isnull=True)
+        .order_by('-start_time')
+        .values_list('home_coach_id', 'home_team__name', 'away_coach_id', 'away_team__name')
+    )
+    latest: dict[str, str] = {}
+    for home_coach_id, home_team_name, away_coach_id, away_team_name in rows:
+        if home_coach_id is not None:
+            key = str(home_coach_id)
+            if key not in latest:
+                latest[key] = home_team_name or ''
+        if away_coach_id is not None:
+            key = str(away_coach_id)
+            if key not in latest:
+                latest[key] = away_team_name or ''
+    return latest
+
+
 def _build_player_pool_by_code(season, player_ct: ContentType) -> dict[str, list[Candidate]]:
     position_by_player = _player_season_position(season)
+    team_name_by_player = _player_season_team_name(season)
     stats = (
         PlayerMatchAggregate.objects
         .filter(match__season=season)
@@ -160,7 +215,14 @@ def _build_player_pool_by_code(season, player_ct: ContentType) -> dict[str, list
             content_type_id=player_ct.id,
             object_id=pid,
             name=player.full_name,
-            team_name=player.team.name if player.team else "",
+            # Клуб В ЭТОМ СЕЗОНЕ (по факту составов), а не текущий
+            # player.team — см. докстринг _player_season_team_name.
+            # Фолбэк на player.team — на случай если у игрока есть
+            # PlayerMatchAggregate, но почему-то нет ни одной строки
+            # MatchLineupPlayer в этом сезоне (не должно происходить в
+            # норме, т.к. агрегаты считаются по составам, но не полагаемся
+            # на это молча).
+            team_name=team_name_by_player.get(pid) or (player.team.name if player.team else ""),
             photo_url=player.photo.url if player.photo else "",
             profile_url=reverse("players:detail", args=[player.id]),
             raw_avg=row["raw_avg"] or 0.0,
@@ -171,6 +233,7 @@ def _build_player_pool_by_code(season, player_ct: ContentType) -> dict[str, list
 
 
 def _build_coach_pool(season, coach_ct: ContentType) -> list[Candidate]:
+    team_name_by_coach = _coach_season_team_name(season)
     stats = (
         CoachMatchAggregate.objects
         .filter(match__season=season)
@@ -200,7 +263,7 @@ def _build_coach_pool(season, coach_ct: ContentType) -> list[Candidate]:
             content_type_id=coach_ct.id,
             object_id=cid,
             name=coach.full_name,
-            team_name=coach.team.name if coach.team else "",
+            team_name=team_name_by_coach.get(cid) or (coach.team.name if coach.team else ""),
             photo_url=coach.photo.url if coach.photo else "",
             profile_url=reverse("coaches:detail", args=[coach.id]),
             raw_avg=raw_avg,
@@ -211,24 +274,71 @@ def _build_coach_pool(season, coach_ct: ContentType) -> list[Candidate]:
 
 
 def _build_referee_pool(season, referee_ct: ContentType) -> list[Candidate]:
-    # У RefereeEvaluation нет собственного агрегата за матч (в отличие от
-    # игроков/тренеров) — считаем средний decision_quality за КАЖДЫЙ матч
-    # отдельно (match_avg), а потом усредняем по матчам, а не по голосам:
-    # так матч с 20 голосами не "перевешивает" матч с 3 голосами при
-    # подсчёте raw_avg, ровно как у PlayerMatchAggregate.
+    """Продуктовое ревью 2026-08-22: раньше "лучший судья" фактически
+    считался только по decision_quality ("качество решений") — по сути,
+    насколько зрителям понравились его свистки, без поправки на то, не
+    стал ли он сам источником скандала. У RefereeEvaluation ЕСТЬ ещё
+    influence_score ("влияние на матч", 0-100) — чем выше, тем заметнее
+    судья повлиял на исход, а хороший судья по общему футбольному
+    консенсусу должен быть "невидимым". Отдельного поля "справедливость"
+    у RefereeEvaluation НЕТ (Codex-ревью предполагало обратное) — зато
+    есть fairness ("Справедливость", 1-10) на MatchEvaluation — общей
+    оценке матча целиком (evaluations/models.py). На практике
+    воспринимаемая несправедливость матча почти всегда — про судейство,
+    поэтому используем её как второй сигнал, беря СРЕДНЕЕ ПО МАТЧУ (может
+    голосовать другой набор людей, чем ставившие оценку самому судье) —
+    это самое близкое, что есть в модели данных, без миграции нового поля.
+
+    Формула на матч (все три компонента приведены к шкале ~0-10):
+        0.6 * decision_quality + 0.3 * fairness + 0.1 * (10 - influence/10)
+    Так топ судьи — не просто высокие оценки решений, а ещё и матч без
+    ощущения несправедливости и без судьи как "героя/злодея" вечера.
+
+    У RefereeEvaluation нет собственного агрегата за матч (в отличие от
+    игроков/тренеров) — считаем среднее за КАЖДЫЙ матч отдельно
+    (match_avg), а потом усредняем по матчам, а не по голосам: так матч
+    с 20 голосами не "перевешивает" матч с 3 голосами при подсчёте
+    raw_avg, ровно как у PlayerMatchAggregate. votes (для порога
+    "достаточно данных") — по-прежнему число именно RefereeEvaluation,
+    а не MatchEvaluation — это оценки конкретно судейства, а не общий
+    вотум по матчу.
+    """
     match_level = (
         RefereeEvaluation.objects
         .filter(match__season=season, match__referee__isnull=False)
         .values("match__referee_id", "match_id")
-        .annotate(match_avg=Avg("decision_quality"), match_votes=Count("id"))
+        .annotate(
+            avg_decision=Avg("decision_quality"),
+            avg_influence=Avg("influence_score"),
+            match_votes=Count("id"),
+        )
     )
-    agg: dict[str, dict] = defaultdict(lambda: {"matches": 0, "votes": 0, "sum_avg": 0.0})
+    fairness_by_match = dict(
+        MatchEvaluation.objects
+        .filter(match__season=season)
+        .values("match_id")
+        .annotate(avg_fairness=Avg("fairness"))
+        .values_list("match_id", "avg_fairness")
+    )
+
+    agg: dict[str, dict] = defaultdict(lambda: {"matches": 0, "votes": 0, "sum_score": 0.0})
     for row in match_level:
         rid = str(row["match__referee_id"])
+        decision = row["avg_decision"] or 0.0
+        influence = row["avg_influence"] or 0.0
+        # Фолбэк на decision_quality, если по этому конкретному матчу
+        # вообще никто не оценил его "Справедливость" отдельной формой —
+        # не даём судье незаслуженный бонус/штраф просто от отсутствия
+        # данных по несвязанному вопросу.
+        fairness = fairness_by_match.get(row["match_id"])
+        if fairness is None:
+            fairness = decision
+        match_score = 0.6 * decision + 0.3 * fairness + 0.1 * (10 - influence / 10)
+
         bucket = agg[rid]
         bucket["matches"] += 1
         bucket["votes"] += row["match_votes"]
-        bucket["sum_avg"] += row["match_avg"]
+        bucket["sum_score"] += match_score
 
     referees = {str(r.id): r for r in Referee.objects.filter(is_active=True)}
     pool = []
@@ -243,7 +353,7 @@ def _build_referee_pool(season, referee_ct: ContentType) -> list[Candidate]:
             team_name="",
             photo_url=referee.photo.url if referee.photo else "",
             profile_url=reverse("referees:detail", args=[referee.id]),
-            raw_avg=bucket["sum_avg"] / bucket["matches"],
+            raw_avg=bucket["sum_score"] / bucket["matches"],
             matches=bucket["matches"],
             votes=bucket["votes"],
         ))

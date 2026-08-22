@@ -126,6 +126,57 @@ def build_streak_share_card(*, username: str, streak_type: str, streak_count: in
     return relative_path
 
 
+def build_round_squad_share_card(
+    *, season_year: str, tour: int, player_of_round_name: str,
+    player_of_round_score: float | None, dramatic_match_label: str,
+) -> str:
+    """
+    "DOPX Лучшие тура" (продуктовый запрос 2026-08-22, по мотивам ревью Codex) —
+    та же кэш-по-хэшу схема, что у трёх функций выше. Вызывается один раз
+    из round_squad/services.py::recompute_round, в момент когда тур
+    закрывается (is_final=True) — не по HTTP-запросу, как остальные
+    карточки, поэтому кэш по хэшу тут в первую очередь защита от лишней
+    перезаписи файла при повторных safety-вызовах recompute на
+    уже зафиксированном туре (recompute_round при is_final=True выходит
+    раньше, но кэш всё равно на месте для симметрии с остальными функциями).
+
+    :return: относительный путь в MEDIA к готовому PNG.
+    """
+    score_label = f"{player_of_round_score:.1f}/10" if player_of_round_score is not None else "—"
+    key = _cache_key(season_year, str(tour), player_of_round_name, score_label, dramatic_match_label)
+    relative_path = f"share-cards/round_{key}.png"
+    if default_storage.exists(relative_path):
+        return relative_path
+
+    img = Image.new("RGB", CARD_SIZE, color="#0a0a0a")
+    draw = ImageDraw.Draw(img)
+    font_title = _font("bold", 34)
+    font_tour = _font("bold", 50)
+    font_label = _font("regular", 26)
+    font_name = _font("bold", 50)
+    font_score = _font("bold", 40)
+    font_small = _font("regular", 22)
+
+    draw.text((60, 50), f"Сезон {season_year}", font=font_title, fill="#a3a3a3")
+    draw.text((60, 105), f"DOPX Лучшие {tour}-го тура", font=font_tour, fill="#ffffff")
+
+    draw.text((60, 240), "Игрок тура", font=font_label, fill="#60a5fa")
+    draw.text((60, 275), player_of_round_name, font=font_name, fill="#ffffff")
+    draw.text((60, 340), score_label, font=font_score, fill="#60a5fa")
+
+    if dramatic_match_label:
+        draw.text((60, 440), "Самый драматичный матч тура", font=font_label, fill="#a78bfa")
+        draw.text((60, 475), dramatic_match_label, font=font_name, fill="#ffffff")
+
+    draw.text((60, CARD_SIZE[1] - 50), "Голос трибун измеряем — dopx.kz", font=font_small, fill="#737373")
+
+    buffer = BytesIO()
+    img.save(buffer, format="PNG", optimize=True)
+    buffer.seek(0)
+    default_storage.save(relative_path, buffer)
+    return relative_path
+
+
 def build_player_season_recap_card(
     *, player_name: str, team_name: str, season_label: str,
     matches_played: int, avg_performance: float | None, goals: int,
