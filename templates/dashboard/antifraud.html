@@ -33,19 +33,36 @@
             <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 p-3 rounded-lg bg-base-200/60">
                 <div class="flex-1 min-w-0">
                     <div class="flex items-center gap-2 flex-wrap">
+                        {% if flag.user %}
                         <span class="font-semibold">{{ flag.user.username }}</span>
+                        {% else %}
+                        <span class="font-semibold">
+                            <i class="ti ti-affiliate opacity-60" title="Сущность, не пользователь"></i>
+                            {{ flag.content_object|default:"—" }}
+                        </span>
+                        {% endif %}
                         <span class="badge badge-sm badge-ghost">{{ flag.get_source_display }}</span>
                         <span class="badge badge-sm {% if flag.score >= 0.7 %}badge-error{% elif flag.score >= 0.4 %}badge-warning{% else %}badge-ghost{% endif %}">
                             score {{ flag.score|floatformat:2 }}
                         </span>
                         {% if flag.match %}<span class="text-xs opacity-50">· {{ flag.match }}</span>{% endif %}
                     </div>
-                    {% if flag.details %}
-                    <div class="text-xs opacity-60 mt-1 flex flex-wrap gap-x-3">
-                        {% for key, value in flag.details.items %}
-                        <span>{{ key }}: {{ value }}</span>
-                        {% endfor %}
+                    {% with summary=flag.human_summary %}
+                    <div class="text-sm mt-2 leading-snug">{{ summary.explanation }}</div>
+                    <div class="text-xs opacity-60 mt-2 space-y-0.5">
+                        <div><span class="font-semibold opacity-80">Отклонить</span> — {{ summary.dismiss_hint }}.</div>
+                        <div><span class="font-semibold opacity-80">Подтвердить</span> — {{ summary.confirm_hint }}.</div>
                     </div>
+                    {% endwith %}
+                    {% if flag.details %}
+                    <details class="mt-2">
+                        <summary class="text-[11px] opacity-40 cursor-pointer select-none">Технические детали</summary>
+                        <div class="text-[11px] opacity-50 mt-1 flex flex-wrap gap-x-3">
+                            {% for key, value in flag.details.items %}
+                            <span>{{ key }}: {{ value }}</span>
+                            {% endfor %}
+                        </div>
+                    </details>
                     {% endif %}
                     <div class="text-xs opacity-40 mt-1">{{ flag.created_at|timesince }} назад</div>
                 </div>

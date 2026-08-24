@@ -4,7 +4,14 @@ from unfold.admin import ModelAdmin
 
 from core.admin_actions import export_as_csv
 
-from .models import PlayerMatchAggregate, CoachMatchAggregate, MatchAggregate
+from .models import (
+    CoachMatchAggregate,
+    MatchAggregate,
+    PlayerMatchAggregate,
+    RefereeMatchAggregate,
+    TeamMatchAggregate,
+    TeamRatingCorrection,
+)
 
 
 @admin.register(PlayerMatchAggregate)
@@ -32,6 +39,52 @@ class CoachMatchAggregateAdmin(ModelAdmin):
     search_fields = ('coach__first_name', 'coach__last_name')
     autocomplete_fields = ('coach', 'match')
     actions = [export_as_csv]
+
+
+@admin.register(TeamMatchAggregate)
+class TeamMatchAggregateAdmin(ModelAdmin):
+    list_display = (
+        'team', 'match', 'performance_score', 'total_votes',
+        'own_fans_avg', 'rival_fans_avg', 'neutral_avg',
+    )
+    list_filter = ('match',)
+    search_fields = ('team__name',)
+    autocomplete_fields = ('team', 'match')
+    readonly_fields = ('performance_score',)
+    actions = [export_as_csv]
+
+
+@admin.register(RefereeMatchAggregate)
+class RefereeMatchAggregateAdmin(ModelAdmin):
+    list_display = (
+        'referee', 'match', 'performance_score', 'total_votes',
+        'home_fans_avg', 'away_fans_avg', 'neutral_avg',
+    )
+    list_filter = ('match',)
+    search_fields = ('referee__first_name', 'referee__last_name')
+    autocomplete_fields = ('referee', 'match')
+    readonly_fields = ('performance_score',)
+    actions = [export_as_csv]
+
+
+@admin.register(TeamRatingCorrection)
+class TeamRatingCorrectionAdmin(ModelAdmin):
+    """Текущие автопоправки от независимого внешнего сигнала (см. её
+    докстринг) — для наглядности и ручного override через действие ниже.
+    list_editable на correction: можно обнулить/поправить руками сразу,
+    не дожидаясь следующего ночного прогона detect_rating_stats_
+    divergence_task."""
+
+    list_display = ('team', 'correction', 'last_pattern', 'updated_at')
+    search_fields = ('team__name',)
+    list_editable = ('correction',)
+    autocomplete_fields = ('team',)
+    actions = ['reset_to_zero', export_as_csv]
+
+    @admin.action(description="Обнулить поправку (не корректировать команду)")
+    def reset_to_zero(self, request, queryset):
+        updated = queryset.update(correction=0.0, last_pattern='')
+        self.message_user(request, f"Поправка обнулена: {updated}")
 
 
 @admin.register(MatchAggregate)

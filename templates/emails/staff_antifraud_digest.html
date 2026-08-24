@@ -1,0 +1,59 @@
+<!-- templates/emails/staff_antifraud_digest.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: sans-serif; background: #f5f5f5; margin: 0; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .header { background: #b45309; color: #fff; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; margin: -30px -30px 30px -30px; }
+        .stat-box { background: #fffbeb; border-left: 4px solid #b45309; padding: 15px; margin: 20px 0; border-radius: 0 4px 4px 0; }
+        .source-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #eee; font-size: 14px; }
+        .flag-row { padding: 10px 0; border-bottom: 1px solid #eee; font-size: 14px; }
+        .flag-score { color: #b45309; font-weight: bold; }
+        .btn { display: inline-block; padding: 12px 24px; background: #000; color: #fff; text-decoration: none; border-radius: 4px; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header"><h1>🛡️ Антифрод — итоги недели</h1></div>
+
+        <div class="stat-box">
+            <p style="margin: 0; font-size: 18px;"><strong>{{ total_new }}</strong> новых сигнал{{ total_new|pluralize:"," }} за последние 7 дней</p>
+            {% if open_disputes %}
+            <p style="margin: 8px 0 0 0; color: #666;">Открытых диспутов по рейтингу: {{ open_disputes }}</p>
+            {% endif %}
+        </div>
+
+        <h3 style="margin-bottom: 4px;">По источникам</h3>
+        {% for source, count in by_source.items %}
+        <div class="source-row">
+            <span>{{ source }}</span>
+            <span><strong>{{ count }}</strong></span>
+        </div>
+        {% endfor %}
+
+        {% if top_flags %}
+        <h3 style="margin-top: 24px; margin-bottom: 4px;">Самое подозрительное</h3>
+        {% for flag in top_flags %}
+        <div class="flag-row">
+            <span class="flag-score">{{ flag.score|floatformat:2 }}</span>
+            — {{ flag.get_source_display }}
+            {% if flag.user %}· {{ flag.user.username }}{% elif flag.content_object %}· {{ flag.content_object }}{% endif %}
+            <div style="color: #666; margin-top: 4px;">{{ flag.human_summary.explanation }}</div>
+        </div>
+        {% endfor %}
+        {% endif %}
+
+        <p style="color: #666; font-size: 13px; margin-top: 20px;">
+            Большинство сигналов не требуют действия — пороги самокалибруются,
+            а расхождение со статистикой КФФ уже скорректировано автоматически.
+            Загляните только если что-то из списка выше выглядит подозрительно.
+        </p>
+
+        <p style="text-align: center; margin-top: 20px;">
+            <a href="{{ site_url }}/staff/dashboard/antifraud/" class="btn">Открыть очередь</a>
+        </p>
+    </div>
+</body>
+</html>

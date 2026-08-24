@@ -43,10 +43,9 @@ from django.db.models import Avg, Count, Sum
 from django.urls import reverse
 from django.utils import timezone
 
-from aggregates.models import CoachMatchAggregate, PlayerMatchAggregate
+from aggregates.models import CoachMatchAggregate, PlayerMatchAggregate, RefereeMatchAggregate
 from aggregates.services import CONFIDENT_VOTES_THRESHOLD
 from coaches.models import Coach
-from evaluations.models import MatchEvaluation, RefereeEvaluation
 from lineups.models import MatchLineupPlayer
 from matches.models import Match
 from players.models import Player
@@ -285,77 +284,41 @@ def _build_coach_pool(season, coach_ct: ContentType) -> list[Candidate]:
 
 
 def _build_referee_pool(season, referee_ct: ContentType) -> list[Candidate]:
-    """Продуктовое ревью 2026-08-22: раньше "лучший судья" фактически
-    считался только по decision_quality ("качество решений") — по сути,
-    насколько зрителям понравились его свистки, без поправки на то, не
-    стал ли он сам источником скандала. У RefereeEvaluation ЕСТЬ ещё
-    influence_score ("влияние на матч", 0-100) — чем выше, тем заметнее
-    судья повлиял на исход, а хороший судья по общему футбольному
-    консенсусу должен быть "невидимым". Отдельного поля "справедливость"
-    у RefereeEvaluation НЕТ (Codex-ревью предполагало обратное) — зато
-    есть fairness ("Справедливость", 1-10) на MatchEvaluation — общей
-    оценке матча целиком (evaluations/models.py). На практике
-    воспринимаемая несправедливость матча почти всегда — про судейство,
-    поэтому используем её как второй сигнал, беря СРЕДНЕЕ ПО МАТЧУ (может
-    голосовать другой набор людей, чем ставившие оценку самому судье) —
-    это самое близкое, что есть в модели данных, без миграции нового поля.
+    """Продуктовое ревью 2026-08-22: "лучший судья" не должен считаться
+    только по decision_quality ("качество решений") — формула учитывает
+    ещё influence_score ("влияние на матч": хороший судья по общему
+    футбольному консенсусу должен быть "невидимым") и fairness с
+    MatchEvaluation ("Справедливость" матча — воспринимаемая
+    несправедливость почти всегда именно про судейство):
 
-    Формула на матч (все три компонента приведены к шкале ~0-10):
         0.6 * decision_quality + 0.3 * fairness + 0.1 * (10 - influence/10)
-    Так топ судьи — не просто высокие оценки решений, а ещё и матч без
-    ощущения несправедливости и без судьи как "героя/злодея" вечера.
 
-    У RefereeEvaluation нет собственного агрегата за матч (в отличие от
-    игроков/тренеров) — считаем среднее за КАЖДЫЙ матч отдельно
-    (match_avg), а потом усредняем по матчам, а не по голосам: так матч
-    с 20 голосами не "перевешивает" матч с 3 голосами при подсчёте
-    raw_avg, ровно как у PlayerMatchAggregate. votes (для порога
-    "достаточно данных") — по-прежнему число именно RefereeEvaluation,
-    а не MatchEvaluation — это оценки конкретно судейства, а не общий
-    вотум по матчу.
+    2026-08-23: сама формула и её взвешенный/винзоризованный расчёт
+    ПЕРЕЕХАЛИ в aggregates/tasks.py::recalculate_referee_aggregates —
+    раньше она дублировалась ЗДЕСЬ (и второй раз ещё в referees/views.py)
+    заново на каждый пересчёт, каждый раз заново примитивным Avg() без
+    веса пользователя/винзоризации. Теперь читаем уже готовый
+    RefereeMatchAggregate.performance_score и просто усредняем по матчам
+    сезона (не по голосам — так матч с 20 голосами не "перевешивает" матч
+    с 3 голосами, тот же принцип, что у PlayerMatchAggregate).
     """
     match_level = (
-        RefereeEvaluation.objects
-        .filter(match__season=season, match__referee__isnull=False)
-        .values("match__referee_id", "match_id")
+        RefereeMatchAggregate.objects
+        .filter(match__season=season)
+        .values("referee_id")
         .annotate(
-            avg_decision=Avg("decision_quality"),
-            avg_influence=Avg("influence_score"),
-            match_votes=Count("id"),
+            avg_performance=Avg("performance_score"),
+            matches=Count("id"),
+            votes=Sum("total_votes"),
         )
     )
-    fairness_by_match = dict(
-        MatchEvaluation.objects
-        .filter(match__season=season)
-        .values("match_id")
-        .annotate(avg_fairness=Avg("fairness"))
-        .values_list("match_id", "avg_fairness")
-    )
-
-    agg: dict[str, dict] = defaultdict(lambda: {"matches": 0, "votes": 0, "sum_score": 0.0})
-    for row in match_level:
-        rid = str(row["match__referee_id"])
-        decision = row["avg_decision"] or 0.0
-        influence = row["avg_influence"] or 0.0
-        # Фолбэк на decision_quality, если по этому конкретному матчу
-        # вообще никто не оценил его "Справедливость" отдельной формой —
-        # не даём судье незаслуженный бонус/штраф просто от отсутствия
-        # данных по несвязанному вопросу.
-        fairness = fairness_by_match.get(row["match_id"])
-        if fairness is None:
-            fairness = decision
-        match_score = 0.6 * decision + 0.3 * fairness + 0.1 * (10 - influence / 10)
-
-        bucket = agg[rid]
-        bucket["matches"] += 1
-        bucket["votes"] += row["match_votes"]
-        bucket["sum_score"] += match_score
 
     referees = {str(r.id): r for r in Referee.objects.filter(is_active=True)}
     pool = []
-    for rid, bucket in agg.items():
+    for row in match_level:
+        rid = str(row["referee_id"])
         referee = referees.get(rid)
-        if not referee or bucket["matches"] == 0:
+        if not referee or not row["matches"]:
             continue
         pool.append(Candidate(
             content_type_id=referee_ct.id,
@@ -364,9 +327,9 @@ def _build_referee_pool(season, referee_ct: ContentType) -> list[Candidate]:
             team_name="",
             photo_url=referee.photo.url if referee.photo else "",
             profile_url=reverse("referees:detail", args=[referee.id]),
-            raw_avg=bucket["sum_score"] / bucket["matches"],
-            matches=bucket["matches"],
-            votes=bucket["votes"],
+            raw_avg=row["avg_performance"] or 0.0,
+            matches=row["matches"],
+            votes=row["votes"] or 0,
         ))
     return pool
 

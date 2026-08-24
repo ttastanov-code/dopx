@@ -1,5 +1,5 @@
 # teams/views.py
-from django.db.models import Avg, Count, ExpressionWrapper, F, FloatField, Q, Sum
+from django.db.models import Avg, Count, F, Q, Sum
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.views.decorators.clickjacking import xframe_options_exempt
@@ -9,9 +9,8 @@ from core.utils import normalize_kz
 from teams.models import Team, TeamSeason, TeamSeasonStats
 from players.models import Player
 from matches.models import Match
-from aggregates.models import PlayerMatchAggregate, MatchAggregate
+from aggregates.models import PlayerMatchAggregate, MatchAggregate, TeamMatchAggregate
 from aggregates.services import MIN_VOTES_FOR_DISPLAY
-from evaluations.models import TeamEvaluation
 from seasons.models import Season
 import logging
 
@@ -159,16 +158,29 @@ class TeamDetailView(DetailView):
             'match'
         ).order_by('-performance_score')[:5]
         
-        # Оценки команд (средние)
-        team_evals = TeamEvaluation.objects.filter(
-            team=team
-        ).aggregate(
-            avg_tactics=Avg('tactics'),
-            avg_effort=Avg('effort'),
-            avg_organization=Avg('organization'),
-            avg_mentality=Avg('mentality'),
-            total=Count('id'),
+        # Оценки команд (средние за карьеру) — 2026-08-23: раньше считались
+        # Avg() НАПРЯМУЮ по всей истории TeamEvaluation синхронно на каждый
+        # рендер страницы — без веса пользователя, без винзоризации, без
+        # защиты от сговора фан-базы. Теперь среднее берётся по уже
+        # готовым, взвешенным TeamMatchAggregate.performance_score за
+        # каждый матч (см. aggregates/tasks.py::recalculate_team_aggregates)
+        # — total считаем как СУММУ голосов по матчам, а не Count() по
+        # TeamEvaluation, чтобы гейт MIN_VOTES_FOR_DISPLAY остался
+        # осмысленным (число реальных оценок, а не число матчей).
+        team_match_aggs = TeamMatchAggregate.objects.filter(team=team).aggregate(
+            avg_tactics=Avg('avg_tactics'),
+            avg_effort=Avg('avg_effort'),
+            avg_organization=Avg('avg_organization'),
+            avg_mentality=Avg('avg_mentality'),
+            total=Sum('total_votes'),
         )
+        team_evals = {
+            'avg_tactics': team_match_aggs['avg_tactics'],
+            'avg_effort': team_match_aggs['avg_effort'],
+            'avg_organization': team_match_aggs['avg_organization'],
+            'avg_mentality': team_match_aggs['avg_mentality'],
+            'total': team_match_aggs['total'] or 0,
+        }
         
         # Последние матчи — ТОЛЬКО текущий сезон + finished
         if current_season:
@@ -275,20 +287,18 @@ def team_rating_widget(request, pk):
     read-only, без форм и действий, снятие защиты не создаёт поверхность
     для clickjacking.
 
-    Рейтинг — среднее по TeamEvaluation.average_score (тактика/самоотдача/
-    организация/менталитет), не PlayerMatchAggregate — это ОЦЕНКА КОМАНДЫ
-    целиком, а не агрегат по игрокам. Гейт MIN_VOTES_FOR_DISPLAY тот же
-    порог, что и везде на сайте — единообразие важнее точного числа голосов
-    именно на этом виджете.
+    Рейтинг — среднее по TeamMatchAggregate.performance_score (уже
+    взвешенное и винзоризованное per-match значение, не PlayerMatchAggregate
+    — это ОЦЕНКА КОМАНДЫ целиком, а не агрегат по игрокам). 2026-08-23:
+    раньше здесь тоже был live Avg() напрямую по TeamEvaluation — та же
+    дыра, что была на TeamDetailView, см. её докстринг выше. Гейт
+    MIN_VOTES_FOR_DISPLAY тот же порог, что и везде на сайте —
+    единообразие важнее точного числа голосов именно на этом виджете.
     """
     team = get_object_or_404(Team, pk=pk)
 
-    avg_expr = ExpressionWrapper(
-        (F('tactics') + F('effort') + F('organization') + F('mentality')) / 4.0,
-        output_field=FloatField(),
-    )
-    evals_stats = TeamEvaluation.objects.filter(team=team).aggregate(
-        avg_score=Avg(avg_expr), total_votes=Count('id'),
+    evals_stats = TeamMatchAggregate.objects.filter(team=team).aggregate(
+        avg_score=Avg('performance_score'), total_votes=Sum('total_votes'),
     )
     total_votes = evals_stats['total_votes'] or 0
     has_enough_votes = total_votes >= MIN_VOTES_FOR_DISPLAY

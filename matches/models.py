@@ -215,3 +215,128 @@ class Match(BaseModel):
         if self.home_score < self.away_score:
             return '2'
         return 'X'
+
+
+class MatchTeamStatistics(BaseModel):
+    """
+    Объективная статистика КОМАНДЫ за матч с KFF (не оценки пользователей —
+    факты игры: удары, владение, карточки и т.д.), источник —
+    GET /api/v1/games/{id}/stats (parsers/kff/client.py::get_stats).
+
+    2026-08-23, независимый внешний сигнал для антифрода: пользовательские
+    оценки (TeamMatchAggregate.performance_score) — субъективны и уязвимы к
+    координированной накрутке/занижению (см. aggregates/services.py —
+    градуированный штраф веса, нейтральный якорь, винзоризация). Эта
+    модель — единственный источник данных в проекте, который НЕ зависит
+    от голосов пользователей DOPX вообще: если сообщество массово занижает
+    команду, которая объективно доминировала по ударам/угловым (по данным
+    самой KFF), это конкретный, проверяемый признак предвзятости —
+    используется в aggregates/tasks.py::detect_rating_stats_divergence_task.
+
+    Поля намеренно nullable — реальный ответ KFF на разных матчах отдаёт
+    разный набор полей (например, у матча 1058 передачи/xG были null,
+    хотя удары/угловые/карточки — заполнены). Не все поля JSON вынесены
+    отдельными колонками — только те, что нужны для антифрод-сигнала и
+    отображения; полный сырой объект сохраняется в `raw` (тот же паттерн,
+    что events.models.MatchEvent.extra_data) на случай будущего расширения
+    без новой миграции.
+    """
+    match = models.ForeignKey(
+        Match,
+        on_delete=models.CASCADE,
+        related_name='team_statistics',
+        verbose_name=_('Матч'),
+    )
+    team = models.ForeignKey(
+        Team,
+        on_delete=models.CASCADE,
+        related_name='match_statistics',
+        verbose_name=_('Команда'),
+    )
+    possession_percent = models.FloatField(_('Владение мячом, %'), null=True, blank=True)
+    shots = models.IntegerField(_('Удары'), null=True, blank=True)
+    shots_on_goal = models.IntegerField(_('Удары в створ'), null=True, blank=True)
+    shots_on_bar = models.IntegerField(_('Удары в штангу'), null=True, blank=True)
+    shots_blocked = models.IntegerField(_('Удары заблокированы'), null=True, blank=True)
+    corners = models.IntegerField(_('Угловые'), null=True, blank=True)
+    offsides = models.IntegerField(_('Офсайды'), null=True, blank=True)
+    fouls = models.IntegerField(_('Фолы'), null=True, blank=True)
+    yellow_cards = models.IntegerField(_('Жёлтые карточки'), null=True, blank=True)
+    red_cards = models.IntegerField(_('Красные карточки'), null=True, blank=True)
+    penalties = models.IntegerField(_('Пенальти'), null=True, blank=True)
+    saves = models.IntegerField(_('Сейвы'), null=True, blank=True)
+    xg = models.FloatField(_('Ожидаемые голы (xG)'), null=True, blank=True)
+    passes = models.IntegerField(_('Передачи'), null=True, blank=True)
+    pass_accuracy = models.FloatField(_('Точность передач, %'), null=True, blank=True)
+    key_passes = models.IntegerField(_('Ключевые передачи'), null=True, blank=True)
+    crosses = models.IntegerField(_('Кроссы'), null=True, blank=True)
+    raw = models.JSONField(_('Сырые данные из API'), default=dict, blank=True)
+
+    class Meta:
+        verbose_name = _('Статистика команды за матч')
+        verbose_name_plural = _('Статистика команд за матч')
+        constraints = [
+            models.UniqueConstraint(fields=['match', 'team'], name='unique_match_team_statistics'),
+        ]
+
+    def __str__(self):
+        return f"{self.team} — статистика ({self.match})"
+
+
+class MatchPlayerStatistics(BaseModel):
+    """
+    Объективная статистика ИГРОКА за матч с KFF — тот же источник и то же
+    назначение, что MatchTeamStatistics выше (см. её докстринг), только
+    на уровне игрока. Набор полей у KFF на уровне игрока УЖЕ и стабильнее
+    заполнен, чем на уровне команды (пас/xG там почти всегда null) —
+    поэтому колонок меньше, все нужные поля почти всегда присутствуют.
+
+    `team` продублирован рядом с `player` (а не читается через
+    player.team) специально — состав игрока может смениться ПОСЛЕ матча
+    (трансфер), а статистика должна навсегда остаться привязана к той
+    команде, за которую он играл В ЭТОМ конкретном матче.
+    """
+    match = models.ForeignKey(
+        Match,
+        on_delete=models.CASCADE,
+        related_name='player_statistics',
+        verbose_name=_('Матч'),
+    )
+    player = models.ForeignKey(
+        'players.Player',
+        on_delete=models.CASCADE,
+        related_name='match_statistics',
+        verbose_name=_('Игрок'),
+    )
+    team = models.ForeignKey(
+        Team,
+        on_delete=models.CASCADE,
+        related_name='player_match_statistics',
+        verbose_name=_('Команда'),
+    )
+    fouls = models.IntegerField(_('Фолы'), null=True, blank=True)
+    saves = models.IntegerField(_('Сейвы'), null=True, blank=True)
+    shots = models.IntegerField(_('Удары'), null=True, blank=True)
+    shots_on_target = models.IntegerField(_('Удары в створ'), null=True, blank=True)
+    shots_missed = models.IntegerField(_('Удары мимо'), null=True, blank=True)
+    shots_on_bar = models.IntegerField(_('Удары в штангу'), null=True, blank=True)
+    shots_blocked = models.IntegerField(_('Удары заблокированы'), null=True, blank=True)
+    corners = models.IntegerField(_('Угловые'), null=True, blank=True)
+    offsides = models.IntegerField(_('Офсайды'), null=True, blank=True)
+    penalties = models.IntegerField(_('Пенальти'), null=True, blank=True)
+    missed_penalty = models.IntegerField(_('Незабитые пенальти'), null=True, blank=True)
+    possessions = models.IntegerField(_('Владения мячом'), null=True, blank=True)
+    raw = models.JSONField(_('Сырые данные из API'), default=dict, blank=True)
+
+    class Meta:
+        verbose_name = _('Статистика игрока за матч')
+        verbose_name_plural = _('Статистика игроков за матч')
+        constraints = [
+            models.UniqueConstraint(fields=['match', 'player'], name='unique_match_player_statistics'),
+        ]
+        indexes = [
+            models.Index(fields=['team', 'match']),
+        ]
+
+    def __str__(self):
+        return f"{self.player} — статистика ({self.match})"

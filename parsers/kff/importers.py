@@ -5,7 +5,7 @@ from typing import Dict, Optional, Union, List
 from django.core.cache import cache
 from django.db import transaction, IntegrityError
 from django.utils import timezone
-from matches.models import Match, Stadium
+from matches.models import Match, MatchPlayerStatistics, MatchTeamStatistics, Stadium
 from teams.models import Team, TeamSeason
 from seasons.models import Season
 from players.models import Player
@@ -932,9 +932,132 @@ def import_events_and_minutes(match: Match, events_data: Dict, replace_existing:
     )
     return True
 
+# Числовые поля статистики, которые сохраняем отдельными колонками (не всё,
+# что отдаёт KFF, — только то, что нужно для отображения и для
+# aggregates/tasks.py::detect_rating_stats_divergence_task; остальное живёт
+# в JSONField `raw`, см. докстрины MatchTeamStatistics/MatchPlayerStatistics).
+TEAM_STAT_INT_FIELDS = (
+    "shots", "shots_on_goal", "shots_on_bar", "shots_blocked", "corners",
+    "offsides", "fouls", "yellow_cards", "red_cards", "penalties", "saves",
+    "passes", "key_passes", "crosses",
+)
+TEAM_STAT_FLOAT_FIELDS = ("possession_percent", "xg", "pass_accuracy")
+
+PLAYER_STAT_INT_FIELDS = (
+    "fouls", "saves", "shots", "shots_on_target", "shots_missed",
+    "shots_on_bar", "shots_blocked", "corners", "offsides", "penalties",
+    "missed_penalty", "possessions",
+)
+
+
+def _stat_int(entry: Dict, key: str) -> Optional[int]:
+    """Достаёт числовое поле из ответа KFF, терпимо к None (у KFF МНОГО
+    полей статистики null на конкретных матчах — проверено вручную, см.
+    докстринг MatchTeamStatistics) и к числам-строкам (уже встречалось в
+    других эндпоинтах KFF)."""
+    value = entry.get(key)
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _stat_float(entry: Dict, key: str) -> Optional[float]:
+    value = entry.get(key)
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 @transaction.atomic
 def import_stats(match: Match, stats_data: Dict) -> bool:
+    """
+    Импортирует ОБЪЕКТИВНУЮ статистику матча с KFF (удары, владение,
+    карточки и т.д. — факты игры, а НЕ оценки пользователей DOPX) в
+    MatchTeamStatistics/MatchPlayerStatistics (matches/models.py). Это
+    независимый от голосов сигнал, используется в aggregates/tasks.py::
+    detect_rating_stats_divergence_task как внешняя проверка рейтинга
+    сообщества — см. докстринги обеих моделей.
+
+    2026-08-23: раньше эта функция была заглушкой (данные нигде не
+    сохранялись). Реальная форма ответа KFF (GET /games/{id}/stats,
+    проверено вручную на матче 1058) — {"game_id", "team_stats": [...],
+    "player_stats": [...]}, БЕЗ обёртки "data" — вызывающий код
+    (pipeline.py и parsers/tasks.py) уже передаёт сюда тело как есть.
+
+    Команды/игроки здесь НЕ создаются — только сопоставляются по
+    external_id (нумерация JSON API, та же, что у get_or_create_team/
+    get_or_create_player выше в этом файле, а НЕ kff_website_id, см.
+    предупреждение в teams/models.py::Team.kff_website_id). Если команда
+    или игрок не нашлись (ещё не импортированы, либо статистика опережает
+    состав) — строка просто пропускается с warning в лог, весь импорт
+    матча из-за одной строки не падает.
+    """
     if not stats_data:
         return False
-    logger.info(f"Stats imported for match {match.id}")
-    return True
+
+    team_stats = stats_data.get("team_stats") or []
+    player_stats = stats_data.get("player_stats") or []
+    if not team_stats and not player_stats:
+        logger.info(f"Нет статистики для матча {match.id}")
+        return False
+
+    teams_saved = 0
+    for entry in team_stats:
+        if not isinstance(entry, dict):
+            continue
+        team_ext_id = entry.get("team_id")
+        if team_ext_id is None:
+            continue
+        team = Team.objects.filter(external_id=str(team_ext_id)).first()
+        if team is None:
+            logger.warning(
+                f"Статистика: команда external_id={team_ext_id} не найдена (матч {match.id}), строка пропущена"
+            )
+            continue
+
+        defaults = {field: _stat_int(entry, field) for field in TEAM_STAT_INT_FIELDS}
+        defaults.update({field: _stat_float(entry, field) for field in TEAM_STAT_FLOAT_FIELDS})
+        defaults["raw"] = entry
+
+        MatchTeamStatistics.objects.update_or_create(match=match, team=team, defaults=defaults)
+        teams_saved += 1
+
+    players_saved = 0
+    for entry in player_stats:
+        if not isinstance(entry, dict):
+            continue
+        player_ext_id = entry.get("player_id") or entry.get("id")
+        if player_ext_id is None:
+            continue
+        player = Player.objects.filter(external_id=str(player_ext_id)).first()
+        if player is None:
+            logger.warning(
+                f"Статистика: игрок external_id={player_ext_id} не найден (матч {match.id}), строка пропущена"
+            )
+            continue
+
+        team_ext_id = entry.get("team_id")
+        team = Team.objects.filter(external_id=str(team_ext_id)).first() if team_ext_id is not None else None
+        if team is None:
+            team = player.team
+        if team is None:
+            logger.warning(
+                f"Статистика: не удалось определить команду для игрока {player.id} (матч {match.id}), строка пропущена"
+            )
+            continue
+
+        defaults = {field: _stat_int(entry, field) for field in PLAYER_STAT_INT_FIELDS}
+        defaults["team"] = team
+        defaults["raw"] = entry
+
+        MatchPlayerStatistics.objects.update_or_create(match=match, player=player, defaults=defaults)
+        players_saved += 1
+
+    logger.info(f"✅ Статистика матча {match.id}: {teams_saved} команд(ы), {players_saved} игрок(ов)")
+    return bool(teams_saved or players_saved)

@@ -18,6 +18,7 @@ import uuid
 
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
+from django.contrib.contenttypes.fields import GenericForeignKey
 from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
@@ -344,12 +345,37 @@ class SuspiciousActivityFlag(BaseModel):
     Очередь сигналов возможной накрутки/бот-активности для ручной модерации.
     По конкретному источнику (скорость заполнения вайзарда, IP-кластер и
     т.д.) — непрерывный score и статус ручного разбора.
+
+    2026-08-23, anti-brigading: добавлен источник "vote_spike" (см.
+    aggregates/tasks.py::detect_vote_velocity_anomalies_task) — сигнал не
+    про КОНКРЕТНОГО пользователя, а про АНОМАЛИЮ У СУЩНОСТИ (игрок/
+    команда/тренер получили статистически выбивающийся всплеск
+    экстремальных оценок в коротком окне — сигнатура координированного
+    призыва в соцсетях/телеграм-чате, а не бот-фермы или предвзятого
+    индивида). Поэтому:
+    - `user` стал nullable — entity-level флаги не привязаны к одному
+      пользователю (наоборот, к МНОЖЕСТВУ голосовавших).
+    - Добавлен generic FK (content_type/object_id/content_object) на
+      сущность — Player/Team/Coach (используется content_type-агностично,
+      как в round_squad.RoundCandidate, тот же паттерн в проекте).
+
+    2026-08-23, источник "stats_divergence" (aggregates/tasks.py::
+    detect_rating_stats_divergence_task): единственный источник этого
+    флага, который сравнивает рейтинг сообщества не с самим собой
+    (остальными голосами/историей пользователя), а с ОБЪЕКТИВНЫМИ фактами
+    матча от KFF (matches.models.MatchTeamStatistics) — не зависит от
+    голосов DOPX вообще, поэтому его нельзя обмануть, просто договорившись
+    ставить "умеренные" оценки (см. VOTE_SPIKE/extreme_bias/градуированный
+    штраф веса в aggregates/services.py — все они так или иначе смотрят на
+    сами голоса). Как и vote_spike — сущность (Team), не пользователь.
     """
 
     SOURCE_CHOICES = [
         ("fast_wizard", _("Слишком быстрое заполнение вайзарда оценки")),
         ("ip_cluster", _("Кластер аккаунтов с одного IP")),
         ("extreme_bias", _("Экстремальная историческая предвзятость")),
+        ("vote_spike", _("Аномальный всплеск голосования (возможный сговор)")),
+        ("stats_divergence", _("Рейтинг сообщества расходится с объективной статистикой KFF")),
         ("manual", _("Отмечено вручную модератором")),
     ]
     STATUS_CHOICES = [
@@ -358,8 +384,15 @@ class SuspiciousActivityFlag(BaseModel):
         ("dismissed", _("Отклонено — ложное срабатывание")),
     ]
 
+    # null=True — см. докстринг класса: entity-level флаги (vote_spike) не
+    # привязаны к одному пользователю.
     user = models.ForeignKey(
-        User, on_delete=models.CASCADE, related_name="suspicious_activity_flags", verbose_name=_("Пользователь")
+        User,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="suspicious_activity_flags",
+        verbose_name=_("Пользователь"),
     )
     match = models.ForeignKey(
         "matches.Match",
@@ -369,6 +402,18 @@ class SuspiciousActivityFlag(BaseModel):
         related_name="suspicious_activity_flags",
         verbose_name=_("Матч"),
     )
+    # Generic FK на сущность (Player/Team/Coach) — только для entity-level
+    # сигналов (vote_spike). Оба поля null=True/blank=True — user-level
+    # сигналы (fast_wizard/ip_cluster/extreme_bias) их не используют.
+    content_type = models.ForeignKey(
+        "contenttypes.ContentType",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        verbose_name=_("Тип сущности"),
+    )
+    object_id = models.CharField(_("ID сущности"), max_length=64, null=True, blank=True)
+    content_object = GenericForeignKey("content_type", "object_id")
     source = models.CharField(_("Источник сигнала"), max_length=30, choices=SOURCE_CHOICES)
     score = models.FloatField(_("Скор подозрительности"), default=0.0, help_text=_("0.0 (незначительно) .. 1.0 (крайне подозрительно)"))
     details = models.JSONField(_("Детали"), default=dict, blank=True)
@@ -389,11 +434,161 @@ class SuspiciousActivityFlag(BaseModel):
         indexes = [
             models.Index(fields=["status", "-created_at"]),
             models.Index(fields=["user", "-created_at"]),
+            models.Index(fields=["content_type", "object_id", "status"]),
         ]
         ordering = ["-score", "-created_at"]
 
     def __str__(self) -> str:
-        return f"{self.get_source_display()} — {self.user} ({self.score:.2f})"
+        subject = self.user or self.content_object or "—"
+        return f"{self.get_source_display()} — {subject} ({self.score:.2f})"
+
+    def human_summary(self) -> dict:
+        """
+        Человеко-читаемое объяснение флага — раньше дашборд просто дампил
+        сырой `details` dict построчно (`pattern: underrated_despite_
+        dominance`, `window_matches: 8`...). Живой фидбэк пользователя
+        2026-08-24: "если посадить человека со стороны и сказать модерируй,
+        он ничего не поймёт". Возвращает {"explanation", "confirm_hint",
+        "dismiss_hint"} — специфично для source, потому что смысл и РЕАЛЬНЫЕ
+        последствия кнопок разные у разных сигналов: например, у
+        stats_divergence "Отклонить" в самом деле снимает автопоправку
+        рейтинга (users/admin.py::mark_dismissed), а у остальных источников
+        решение рейтинг напрямую не трогает — только копится в статистике
+        для еженедельной самокалибровки порогов (recalibrate_antifraud_
+        thresholds). Явно говорим об этом в hint'ах, а не оставляем
+        человека додумывать.
+        """
+        d = self.details or {}
+
+        def pct(x):
+            return f"{x:.0%}" if isinstance(x, (int, float)) else "?"
+
+        def num(x, digits=1):
+            return round(x, digits) if isinstance(x, (int, float)) else "?"
+
+        subject = str(self.content_object) if self.content_object else (self.user.username if self.user else "—")
+
+        if self.source == "stats_divergence":
+            pattern = d.get("pattern")
+            window_matches = d.get("window_matches", "?")
+            window_rating = num(d.get("window_avg_rating"))
+            baseline_rating = num(d.get("baseline_avg_rating"))
+            dominance = pct(d.get("window_avg_dominance_share"))
+            correction = d.get("correction_applied")
+
+            if pattern == "underrated_despite_dominance":
+                explanation = (
+                    f"За последние {window_matches} матчей «{subject}» объективно доминировала по ударам "
+                    f"и угловым (в среднем {dominance} преимущества над соперником), но сообщество "
+                    f"оценивало её ниже обычного — {window_rating} против обычных {baseline_rating}. "
+                    f"Похоже, рейтинг занижают фанаты соперника."
+                )
+            elif pattern == "overrated_despite_poor_play":
+                explanation = (
+                    f"За последние {window_matches} матчей «{subject}» объективно уступала сопернику по "
+                    f"ударам и угловым, но рейтинг у сообщества выше обычного — {window_rating} против "
+                    f"обычных {baseline_rating}. Похоже, рейтинг завышают свои фанаты."
+                )
+            else:
+                explanation = f"Рейтинг «{subject}» у сообщества расходится с тем, как команда объективно играла."
+
+            if isinstance(correction, (int, float)) and correction:
+                explanation += f" Рейтинг уже автоматически скорректирован на {correction:+.2f} — можно ничего не делать."
+
+            return {
+                "explanation": explanation,
+                "confirm_hint": "просто фиксирует согласие с сигналом — поправка уже применена автоматически, это её не меняет",
+                "dismiss_hint": "если расхождение объяснимо (травмы, судейство и т.п.) — сразу уберёт автопоправку рейтинга этой команды",
+            }
+
+        if self.source == "vote_spike":
+            explanation = (
+                f"За последние {d.get('window_hours', '?')} ч у «{subject}» {d.get('window_votes', '?')} "
+                f"голосов, из них {pct(d.get('extreme_ratio'))} — крайние оценки (1-2 или 9-10). Заметно "
+                f"выделяется на фоне остальных участников этого же матча — похоже на координированный "
+                f"призыв проголосовать в соцсетях или чате."
+            )
+            return {
+                "explanation": explanation,
+                "confirm_hint": "фиксирует как реальную накрутку — рейтинг напрямую не меняет, но раз в неделю помогает системе точнее подстроить чувствительность этого детектора",
+                "dismiss_hint": "если это естественный всплеск эмоций (например, спорное судейское решение) — помечает как ложное срабатывание, тоже влияет на будущую чувствительность детектора",
+            }
+
+        if self.source == "ip_cluster":
+            explanation = (
+                f"{d.get('account_count', '?')} разных аккаунтов завершили оценку одного и того же матча "
+                f"с одного IP-адреса за последние {d.get('lookback_hours', '?')} ч — похоже на ферму "
+                f"аккаунтов или согласованную группу."
+            )
+            return {
+                "explanation": explanation,
+                "confirm_hint": "фиксирует как подтверждённую накрутку — помогает системе точнее калибровать чувствительность детектора на будущее",
+                "dismiss_hint": "если это объяснимо (например, семья или общежитие с одним IP) — помечает как ложное срабатывание",
+            }
+
+        if self.source == "fast_wizard":
+            explanation = (
+                f"Визард оценки матча заполнен за {num(d.get('duration_seconds'))} сек — заметно быстрее, "
+                f"чем физически успевает обычный человек (минимум — {d.get('threshold_seconds', '?')} сек). "
+                f"Похоже на автоматизированное или невнимательное заполнение."
+            )
+            return {
+                "explanation": explanation,
+                "confirm_hint": "фиксирует как подтверждённое подозрительное поведение этого пользователя",
+                "dismiss_hint": "если пользователь объяснил задержку (например, знал матч наизусть) — помечает как ложное срабатывание",
+            }
+
+        return {
+            "explanation": "Отмечено вручную модератором — подробности в технических деталях ниже.",
+            "confirm_hint": "подтверждает сигнал",
+            "dismiss_hint": "отклоняет сигнал как ложное срабатывание",
+        }
+
+
+class AntiFraudThreshold(BaseModel):
+    """
+    Самокалибрующиеся пороги детекторов накрутки — 2026-08-23, продуктовый
+    запрос "пороги не должны быть высечены в коде навечно — тот, кто
+    прочитает исходники, получает готовую инструкцию, как оставаться
+    чуть ниже границы обнаружения". Хранит ТЕКУЩЕЕ действующее значение
+    порога; еженедельная задача `users.tasks.recalibrate_antifraud_thresholds`
+    подстраивает его на основе РЕАЛЬНЫХ решений модератора (доля
+    подтверждённых накруток против отклонённых как ложная тревога у
+    сигналов этого источника) — не наугад и не "просто чтобы двигалось",
+    а по фактической точности сигнала.
+
+    Калибруется НЕ каждый порог в проекте: адаптация имеет смысл только
+    там, где есть земля под ногами — разобранные модератором флаги с
+    вердиктом confirmed/dismissed (`SuspiciousActivityFlag.status`). У
+    `vote_spike` и `ip_cluster` такая обратная связь есть. У
+    градуированного штрафа за предвзятость (`aggregates/services.py`)
+    её нет — штраф применяется молча, без очереди на модерацию, поэтому
+    подстраивать там нечего: эти константы остаются осознанно
+    фиксированными в коде.
+
+    `min_value`/`max_value` — жёсткие границы, за которые калибровка не
+    может выйти, даже если решения модератора массово смещены (случайно
+    или намеренно): без них порог можно было бы медленно сдвинуть,
+    систематически подсовывая модератору пограничные случаи.
+    """
+
+    key = models.CharField(_("Ключ порога"), max_length=64, unique=True)
+    value = models.FloatField(_("Текущее действующее значение"))
+    default_value = models.FloatField(_("Значение по умолчанию (старт калибровки)"))
+    min_value = models.FloatField(_("Нижняя граница калибровки"))
+    max_value = models.FloatField(_("Верхняя граница калибровки"))
+    last_note = models.CharField(
+        _("Причина последнего изменения"), max_length=255, blank=True,
+        help_text=_("Заполняется автоматически задачей пересчёта — для прозрачности в admin."),
+    )
+
+    class Meta:
+        verbose_name = _("Порог антифрода")
+        verbose_name_plural = _("Пороги антифрода (самокалибровка)")
+        ordering = ["key"]
+
+    def __str__(self) -> str:
+        return f"{self.key} = {self.value}"
 
 
 class Follow(BaseModel):

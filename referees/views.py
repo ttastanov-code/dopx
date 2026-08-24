@@ -1,10 +1,10 @@
 # referees/views.py
 from django.views.generic import ListView, DetailView
-from django.db.models import Count, Avg, OuterRef, Q, Subquery
+from django.db.models import Avg, Count, Sum
 from core.utils import normalize_kz
 from referees.models import Referee
 from matches.models import Match
-from evaluations.models import RefereeEvaluation
+from aggregates.models import RefereeMatchAggregate
 
 
 class RefereeListView(ListView):
@@ -14,26 +14,20 @@ class RefereeListView(ListView):
     paginate_by = 20
 
     def get_queryset(self):
-        # Подзапросы для средних оценок (чтобы не было дубликатов)
-        avg_influence_subquery = RefereeEvaluation.objects.filter(
-            match__referee=OuterRef('pk')
-        ).values('match__referee').annotate(
-            avg_inf=Avg('influence_score')
-        ).values('avg_inf')
-
-        avg_quality_subquery = RefereeEvaluation.objects.filter(
-            match__referee=OuterRef('pk')
-        ).values('match__referee').annotate(
-            avg_qual=Avg('decision_quality')
-        ).values('avg_qual')
-
+        # 2026-08-23: раньше здесь были Subquery по RefereeEvaluation
+        # НАПРЯМУЮ (сырые голоса, без веса пользователя, без винзоризации).
+        # Теперь просто Avg() по уже готовому, взвешенному
+        # RefereeMatchAggregate (related_name='match_aggregates', см.
+        # aggregates/tasks.py::recalculate_referee_aggregates) — не только
+        # честнее, но и проще: обычный Avg() через join вместо двух
+        # Subquery/OuterRef.
         queryset = Referee.objects.filter(
             is_active=True
         ).annotate(
             # ✅ Имя аннотации должно совпадать с шаблоном!
             total_matches=Count('match', distinct=True),
-            avg_influence=Subquery(avg_influence_subquery),
-            avg_decision_quality=Subquery(avg_quality_subquery),
+            avg_influence=Avg('match_aggregates__avg_influence'),
+            avg_decision_quality=Avg('match_aggregates__avg_decision_quality'),
         )
 
         # БАГ, КОТОРЫЙ ТУТ БЫЛ: строка поиска в шаблоне рисовалась, но
@@ -72,25 +66,31 @@ class RefereeDetailView(DetailView):
             'home_team', 'away_team', 'league', 'season'
         ).order_by('-start_time')[:20]
 
-        # ✅ Оценки (отдельно)
-        evaluations = RefereeEvaluation.objects.filter(
-            match__referee=referee
+        # ✅ Оценки — 2026-08-23: раньше это были СЫРЫЕ индивидуальные
+        # RefereeEvaluation (до 10 последних ГОЛОСОВ, не матчей — при
+        # нескольких оценивших один и тот же матч мог занять несколько
+        # строк таблицы, и любой отдельный непроверенный голос попадал в
+        # витрину как есть, без веса/винзоризации). Теперь — уже готовый,
+        # взвешенный агрегат ПО МАТЧУ (RefereeMatchAggregate, см.
+        # aggregates/tasks.py::recalculate_referee_aggregates): одна
+        # строка = один матч.
+        evaluations = RefereeMatchAggregate.objects.filter(
+            referee=referee
         ).select_related('match').order_by('-match__start_time')[:10]
 
         # ✅ Статистика: разделяем матчи и оценки
+        agg_totals = RefereeMatchAggregate.objects.filter(referee=referee).aggregate(
+            total_evaluations=Sum('total_votes'),
+            avg_influence=Avg('avg_influence'),
+            avg_decision_quality=Avg('avg_decision_quality'),
+        )
         stats = {
             # Матчи (факт)
             'total_matches': Match.objects.filter(referee=referee).count(),
-            # Оценки (мнение)
-            'total_evaluations': RefereeEvaluation.objects.filter(
-                match__referee=referee
-            ).count(),
-            'avg_influence': RefereeEvaluation.objects.filter(
-                match__referee=referee
-            ).aggregate(avg=Avg('influence_score'))['avg'],
-            'avg_decision_quality': RefereeEvaluation.objects.filter(
-                match__referee=referee
-            ).aggregate(avg=Avg('decision_quality'))['avg'],
+            # Оценки (мнение) — берём из готового агрегата, не RefereeEvaluation.
+            'total_evaluations': agg_totals['total_evaluations'] or 0,
+            'avg_influence': agg_totals['avg_influence'],
+            'avg_decision_quality': agg_totals['avg_decision_quality'],
         }
 
         # НОВОЕ: ближайший обслуженный матч, который ещё можно оценить —

@@ -43,6 +43,89 @@ IP_CLUSTER_MIN_ACCOUNTS = 3
 # зачёта результата.
 MONTHLY_CHAMPION_MIN_EVALUATIONS = 5
 
+# --- Самокалибрующиеся антифрод-пороги (см. users/models.py::AntiFraudThreshold) ---
+
+ANTIFRAUD_THRESHOLD_CACHE_TTL = 600  # секунд — не бить в БД на каждый вызов детектора
+
+# Сколько разобранных (confirmed/dismissed) флагов нужно накопить за
+# LOOKBACK, прежде чем на их основе вообще двигать порог — меньше
+# статистически ничего не значит, порог в этот раз просто не трогаем.
+ANTIFRAUD_RECALIBRATION_MIN_SAMPLE = 20
+ANTIFRAUD_RECALIBRATION_LOOKBACK_DAYS = 90
+# Ниже этой доли confirmed — сигнал в основном ложные тревоги, порог
+# ужесточаем (менее чувствителен). Выше верхней — сигнал явно надёжный,
+# порог смягчаем (ловим больше, раз почти всегда попадаем в цель).
+ANTIFRAUD_RECALIBRATION_LOW_CONFIRM_RATE = 0.2
+ANTIFRAUD_RECALIBRATION_HIGH_CONFIRM_RATE = 0.8
+
+# 2026-08-24, продуктовый запрос "модерация антифрода должна быть
+# максимально простой и не затратной по времени" — см.
+# expire_stale_low_score_flags() ниже. Источники, которые ВСЕГДА требуют
+# явного решения человека, никогда не авто-закрываются: vote_spike/
+# ip_cluster — единственные два сигнала, у которых решение модератора
+# ЕЩЁ И кормит самокалибровку выше (без решения calibration застаивается),
+# а "manual" — флаг, который человек и так завёл сам, тихо его закрыть
+# значило бы просто проигнорировать то, что сотрудник явно отметил.
+ANTIFRAUD_AUTO_EXPIRE_EXCLUDED_SOURCES = ("vote_spike", "ip_cluster", "manual")
+# "Низкий score" — тот же порог, что уже используется в UI очереди
+# (templates/dashboard/antifraud.html — ниже него бейдж серый/"ghost", не
+# жёлтый и не красный) — не придумываем новую границу, используем ту, что
+# сотрудник и так визуально считает "неважным".
+ANTIFRAUD_AUTO_EXPIRE_MAX_SCORE = 0.4
+ANTIFRAUD_AUTO_EXPIRE_AFTER_DAYS = 14
+
+# Реестр калибруемых порогов: ключ в БД -> источник флагов для обратной
+# связи, шаг одной корректировки и жёсткая вилка (min/max), за которую
+# калибровка не может выйти. default совпадает со старой константой,
+# которая жила здесь/в aggregates/tasks.py до самокалибровки — это
+# стартовая точка, а не потолок.
+ANTIFRAUD_CALIBRATED_THRESHOLDS = {
+    "vote_spike_mad_threshold": {
+        "source": "vote_spike",
+        "step": 0.25,
+        "min": 3.0,
+        "max": 5.0,
+        "default": 3.5,
+    },
+    "ip_cluster_min_accounts": {
+        "source": "ip_cluster",
+        "step": 1.0,
+        # Нижняя граница НЕ 2 — умышленно, см. докстринг IP_CLUSTER_MIN_ACCOUNTS
+        # выше: порог "минимум 2" ловит законных соседей по IP (общага/офис).
+        "min": 3.0,
+        "max": 6.0,
+        "default": float(IP_CLUSTER_MIN_ACCOUNTS),
+    },
+}
+
+
+def get_antifraud_threshold(key: str, default: float) -> float:
+    """
+    Текущее (возможно, уже откалиброванное) значение антифрод-порога.
+    Читает `AntiFraudThreshold` с коротким кэшем — вызывается на каждый
+    прогон детектора (`detect_ip_clusters_task`, `aggregates.tasks.
+    detect_vote_velocity_anomalies_task`), поэтому лишний SELECT на каждый
+    вызов был бы расточительным.
+
+    При отсутствии строки в БД (порог этого ключа ещё ни разу не
+    калибровался) возвращает `default`, ничего не создавая и не трогая
+    БД — инициализация строки принадлежит `recalibrate_antifraud_thresholds`
+    (или ручному вводу в admin), а не побочному эффекту чтения.
+    """
+    from django.core.cache import cache
+
+    cache_key = f"antifraud_threshold:{key}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    from users.models import AntiFraudThreshold
+
+    row = AntiFraudThreshold.objects.filter(key=key).only("value").first()
+    value = row.value if row else default
+    cache.set(cache_key, value, timeout=ANTIFRAUD_THRESHOLD_CACHE_TTL)
+    return value
+
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=30)
 def check_and_award_badges_task(self, user_id: str, match_id: str | None = None) -> bool:
@@ -230,6 +313,12 @@ def detect_ip_clusters_task() -> int:
     from users.models import SuspiciousActivityFlag
 
     since = timezone.now() - timedelta(hours=IP_CLUSTER_LOOKBACK_HOURS)
+    # Самокалибрующийся порог (см. recalibrate_antifraud_thresholds) —
+    # IP_CLUSTER_MIN_ACCOUNTS остаётся значением по умолчанию/нижней
+    # границей вилки калибровки, а не обязательным действующим числом.
+    min_accounts = get_antifraud_threshold(
+        "ip_cluster_min_accounts", ANTIFRAUD_CALIBRATED_THRESHOLDS["ip_cluster_min_accounts"]["default"]
+    )
 
     rows = EvaluationSession.objects.filter(
         status="completed",
@@ -244,11 +333,11 @@ def detect_ip_clusters_task() -> int:
     flagged = 0
     for (match_id, ip_address), user_ids in clusters.items():
         account_count = len(user_ids)
-        if account_count < IP_CLUSTER_MIN_ACCOUNTS:
+        if account_count < min_accounts:
             continue
 
         # Непрерывный скор: ровно на пороге — 0.5, дальше растёт до 1.0.
-        score = round(min(1.0, account_count / (IP_CLUSTER_MIN_ACCOUNTS * 2)), 2)
+        score = round(min(1.0, account_count / (min_accounts * 2)), 2)
 
         for user_id in user_ids:
             already_pending = SuspiciousActivityFlag.objects.filter(
@@ -267,6 +356,7 @@ def detect_ip_clusters_task() -> int:
                     "account_count": account_count,
                     "other_user_ids": [str(uid) for uid in user_ids if uid != user_id],
                     "lookback_hours": IP_CLUSTER_LOOKBACK_HOURS,
+                    "threshold_used": min_accounts,
                 },
             )
             flagged += 1
@@ -353,3 +443,126 @@ def award_monthly_champion_badge() -> bool:
         "Чемпион месяца: %s (%d завершённых оценок за прошлый месяц).", user.username, top["cnt"]
     )
     return True
+
+
+@shared_task
+def recalibrate_antifraud_thresholds() -> dict:
+    """
+    Еженедельная самокалибровка порогов vote_spike/ip_cluster на основе
+    ФАКТИЧЕСКИХ решений модератора (confirmed/dismissed за последние
+    `ANTIFRAUD_RECALIBRATION_LOOKBACK_DAYS` дней), см. докстринг
+    `users.models.AntiFraudThreshold`:
+
+    - Доля confirmed низкая (детектор в основном создаёт ложные тревоги)
+      → порог сдвигается в сторону "строже" (менее чувствительно).
+    - Доля confirmed высокая (сигнал явно надёжный) → порог сдвигается в
+      сторону "чувствительнее" (можно ловить больше, раз почти всегда
+      попадаем в цель).
+    - Решений меньше `ANTIFRAUD_RECALIBRATION_MIN_SAMPLE` — калибровка
+      этого порога в этот раз пропускается, ничего не трогаем: на
+      маленькой выборке confirm_rate статистически ничего не значит.
+
+    Жёсткие min/max в `ANTIFRAUD_CALIBRATED_THRESHOLDS` не дают уйти в
+    бессмысленную/опасную зону, даже если решения модератора смещены.
+    """
+    from users.models import AntiFraudThreshold, SuspiciousActivityFlag
+
+    since = timezone.now() - timedelta(days=ANTIFRAUD_RECALIBRATION_LOOKBACK_DAYS)
+    results: dict = {}
+
+    for key, cfg in ANTIFRAUD_CALIBRATED_THRESHOLDS.items():
+        resolved = SuspiciousActivityFlag.objects.filter(
+            source=cfg["source"], status__in=["confirmed", "dismissed"], reviewed_at__gte=since,
+        )
+        total = resolved.count()
+        if total < ANTIFRAUD_RECALIBRATION_MIN_SAMPLE:
+            results[key] = {"skipped": True, "reason": "insufficient_sample", "sample": total}
+            continue
+
+        confirmed = resolved.filter(status="confirmed").count()
+        confirm_rate = confirmed / total
+
+        row, _created = AntiFraudThreshold.objects.get_or_create(
+            key=key,
+            defaults={
+                "value": cfg["default"],
+                "default_value": cfg["default"],
+                "min_value": cfg["min"],
+                "max_value": cfg["max"],
+            },
+        )
+
+        old_value = row.value
+        if confirm_rate < ANTIFRAUD_RECALIBRATION_LOW_CONFIRM_RATE:
+            new_value = min(row.value + cfg["step"], row.max_value)
+            note = f"confirm_rate={confirm_rate:.2f} низкий (порог ужесточён)"
+        elif confirm_rate > ANTIFRAUD_RECALIBRATION_HIGH_CONFIRM_RATE:
+            new_value = max(row.value - cfg["step"], row.min_value)
+            note = f"confirm_rate={confirm_rate:.2f} высокий (порог смягчён)"
+        else:
+            new_value = row.value
+            note = f"confirm_rate={confirm_rate:.2f} в норме (без изменений)"
+
+        if new_value != old_value:
+            from django.core.cache import cache
+
+            row.value = new_value
+            row.last_note = note
+            row.save(update_fields=["value", "last_note", "updated_at"])
+            cache.delete(f"antifraud_threshold:{key}")
+            logger.info(
+                "Antifraud threshold recalibrated: %s %.2f -> %.2f (%s)", key, old_value, new_value, note,
+            )
+
+        results[key] = {
+            "sample": total, "confirm_rate": round(confirm_rate, 2), "old": old_value, "new": new_value,
+        }
+
+    return results
+
+
+@shared_task
+def expire_stale_low_score_flags() -> int:
+    """
+    2026-08-24, продуктовый запрос "модерация антифрода должна быть
+    максимально простой и не затратной по времени": очередь `pending`
+    иначе только растёт — старые слабые сигналы, на которые никто не
+    отреагировал, годами висят и создают ложное ощущение "накопился
+    большой долг", хотя реальной ценности в их разборе уже нет.
+
+    Раз в сутки автоматически закрывает флаги, которые ОДНОВРЕМЕННО:
+    - старше ANTIFRAUD_AUTO_EXPIRE_AFTER_DAYS дней;
+    - со score ниже ANTIFRAUD_AUTO_EXPIRE_MAX_SCORE (в UI такие и так
+      серые/"неважные", не жёлтые/красные);
+    - источник НЕ в ANTIFRAUD_AUTO_EXPIRE_EXCLUDED_SOURCES (vote_spike/
+      ip_cluster всегда ждут явного решения человека — оно ещё и кормит
+      самокалибровку; manual — человек завёл сам).
+
+    Статус становится "dismissed", но НЕ как решение модератора — reviewed_by
+    остаётся None, а в `details` добавляется явная пометка `auto_expired`,
+    чтобы в CSV-экспорте/аудите было видно: это была автоматическая уборка,
+    а не чья-то оценка "это ложное срабатывание".
+    """
+    from users.models import SuspiciousActivityFlag
+
+    cutoff = timezone.now() - timedelta(days=ANTIFRAUD_AUTO_EXPIRE_AFTER_DAYS)
+    stale = SuspiciousActivityFlag.objects.filter(
+        status="pending",
+        score__lt=ANTIFRAUD_AUTO_EXPIRE_MAX_SCORE,
+        created_at__lt=cutoff,
+    ).exclude(source__in=ANTIFRAUD_AUTO_EXPIRE_EXCLUDED_SOURCES)
+
+    expired = 0
+    for flag in stale:
+        details = dict(flag.details or {})
+        details["auto_expired"] = True
+        details["auto_expired_at"] = timezone.now().isoformat()
+        flag.details = details
+        flag.status = "dismissed"
+        flag.reviewed_at = timezone.now()
+        flag.save(update_fields=["status", "details", "reviewed_at", "updated_at"])
+        expired += 1
+
+    if expired:
+        logger.info("expire_stale_low_score_flags: auto-closed %d stale low-score flag(s).", expired)
+    return expired

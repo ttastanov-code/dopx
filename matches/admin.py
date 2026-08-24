@@ -5,7 +5,7 @@ from core.admin_actions import export_as_csv
 from events.models import MatchEvent
 from lineups.models import MatchLineup
 
-from .models import Match
+from .models import Match, MatchPlayerStatistics, MatchTeamStatistics
 
 
 class MatchEventInline(TabularInline):
@@ -24,6 +24,16 @@ class MatchLineupInline(TabularInline):
     model = MatchLineup
     extra = 0
     fields = ("team", "side", "formation")
+    show_change_link = True
+
+
+class MatchTeamStatisticsInline(TabularInline):
+    """Объективная статистика команд (KFF) прямо на странице матча —
+    для сверки "что видит staff" при разборе флагов stats_divergence
+    (dashboard/antifraud), не пересчитывается тут, только read-friendly."""
+    model = MatchTeamStatistics
+    extra = 0
+    fields = ("team", "possession_percent", "shots", "shots_on_goal", "corners", "fouls", "yellow_cards", "red_cards")
     show_change_link = True
 
 
@@ -64,7 +74,7 @@ class MatchAdmin(ModelAdmin):
         "home_coach", "away_coach", "referee", "stadium",
     )
 
-    inlines = [MatchLineupInline, MatchEventInline]
+    inlines = [MatchLineupInline, MatchEventInline, MatchTeamStatisticsInline]
 
     actions = [export_as_csv, "resync_selected", "mark_postponed_manually", "clear_manual_override"]
 
@@ -118,3 +128,25 @@ class MatchAdmin(ModelAdmin):
             details={"ok": ok_count, "failed": fail_count, "via": "admin_bulk_action"},
         )
         self.message_user(request, f"Ресинк завершён: успешно {ok_count}, с ошибкой {fail_count}")
+
+
+@admin.register(MatchTeamStatistics)
+class MatchTeamStatisticsAdmin(ModelAdmin):
+    """Отдельный список (не только инлайн на матче) — для точечного поиска
+    "какая команда/матч уже досинхронизированы объективной статистикой",
+    используется при разборе флагов stats_divergence."""
+
+    list_display = ("team", "match", "possession_percent", "shots", "shots_on_goal", "corners", "fouls", "yellow_cards")
+    list_filter = ("team",)
+    search_fields = ("team__name", "match__home_team__name", "match__away_team__name")
+    autocomplete_fields = ("match", "team")
+    actions = [export_as_csv]
+
+
+@admin.register(MatchPlayerStatistics)
+class MatchPlayerStatisticsAdmin(ModelAdmin):
+    list_display = ("player", "team", "match", "shots", "shots_on_target", "fouls", "saves")
+    list_filter = ("team",)
+    search_fields = ("player__first_name", "player__last_name", "team__name")
+    autocomplete_fields = ("match", "player", "team")
+    actions = [export_as_csv]

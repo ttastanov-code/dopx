@@ -4,7 +4,13 @@ from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.utils import timezone
 from matches.models import Match
-from evaluations.models import PlayerEvaluation, MatchEvaluation, CoachEvaluation
+from evaluations.models import (
+    CoachEvaluation,
+    MatchEvaluation,
+    PlayerEvaluation,
+    RefereeEvaluation,
+    TeamEvaluation,
+)
 from aggregates.tasks import trigger_aggregate_recalculation, recalculate_season_standings
 import logging
 
@@ -76,6 +82,34 @@ def on_coach_evaluation_saved(sender, instance, created, **kwargs):
     """
     match_id = str(instance.match.id)
     logger.info(f"CoachEvaluation saved, triggering recalculation for match {match_id}")
+
+    _schedule_recalculation(match_id, countdown=30)
+
+
+@receiver(post_save, sender=TeamEvaluation)
+def on_team_evaluation_saved(sender, instance, created, **kwargs):
+    """
+    2026-08-23, anti-brigading: до этой правки TeamEvaluation НЕ имела
+    своего сигнала вообще — TeamMatchAggregate пересчитывался только
+    "за компанию", если в том же матче попутно сохранялась
+    PlayerEvaluation/CoachEvaluation/MatchEvaluation (что почти всегда
+    так и происходит в рамках одного прохождения вайзарда, но это
+    неявная связь, на неё нельзя полагаться — например, при ручном
+    бэкафилле только TeamEvaluation через API/тест).
+    """
+    match_id = str(instance.match.id)
+    logger.info(f"TeamEvaluation saved, triggering recalculation for match {match_id}")
+
+    _schedule_recalculation(match_id, countdown=30)
+
+
+@receiver(post_save, sender=RefereeEvaluation)
+def on_referee_evaluation_saved(sender, instance, created, **kwargs):
+    """См. on_team_evaluation_saved — тот же пробел был у RefereeEvaluation:
+    RefereeMatchAggregate раньше не пересчитывался никаким сигналом
+    напрямую."""
+    match_id = str(instance.match.id)
+    logger.info(f"RefereeEvaluation saved, triggering recalculation for match {match_id}")
 
     _schedule_recalculation(match_id, countdown=30)
 
