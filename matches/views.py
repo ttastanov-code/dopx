@@ -7,8 +7,8 @@ from django.views.generic import ListView, DetailView
 from django.utils import timezone
 from django.db.models import Avg, Count, Q, Prefetch, Sum, F, Value, Case, When, DateTimeField, DurationField
 from matches.models import Match
-from aggregates.models import MatchAggregate, PlayerMatchAggregate
-from evaluations.models import TeamEvaluation, PlayerEvaluation, MatchEvaluation, ContextEvaluation, EvaluationSession
+from aggregates.models import MatchAggregate, PlayerMatchAggregate, TeamMatchAggregate
+from evaluations.models import PlayerEvaluation, MatchEvaluation, ContextEvaluation, EvaluationSession
 from lineups.models import MatchLineup
 from seasons.models import Season
 from leagues.models import League
@@ -185,29 +185,32 @@ class MatchDetailView(DetailView):
             'player__team'
         ).order_by('performance_score')[:3]
         
-        # Оценки домашней команды
-        home_team_evals = TeamEvaluation.objects.filter(
-            match=match,
-            team=match.home_team
-        ).aggregate(
-            avg_tactics=Avg('tactics'),
-            avg_effort=Avg('effort'),
-            avg_organization=Avg('organization'),
-            avg_mentality=Avg('mentality'),
-            total=Count('id'),
-        )
-        
-        # Оценки гостевой команды
-        away_team_evals = TeamEvaluation.objects.filter(
-            match=match,
-            team=match.away_team
-        ).aggregate(
-            avg_tactics=Avg('tactics'),
-            avg_effort=Avg('effort'),
-            avg_organization=Avg('organization'),
-            avg_mentality=Avg('mentality'),
-            total=Count('id'),
-        )
+        # Оценки команд за ЭТОТ матч — раньше считались Avg() напрямую по
+        # TeamEvaluation (без веса пользователя, без винзоризации, без
+        # защиты от сговора фан-базы). 2026-08-23: читаем уже готовый,
+        # взвешенный и винзоризованный TeamMatchAggregate (пересчитывается
+        # асинхронно, см. aggregates/tasks.py::recalculate_team_aggregates) —
+        # словарь с теми же ключами (avg_tactics/avg_effort/avg_organization/
+        # avg_mentality/total), чтобы не трогать шаблон.
+        team_aggs_by_team_id = {
+            agg.team_id: agg
+            for agg in TeamMatchAggregate.objects.filter(match=match)
+        }
+
+        def _team_evals_dict(team_id):
+            agg = team_aggs_by_team_id.get(team_id)
+            if not agg:
+                return {'avg_tactics': None, 'avg_effort': None, 'avg_organization': None, 'avg_mentality': None, 'total': 0}
+            return {
+                'avg_tactics': agg.avg_tactics,
+                'avg_effort': agg.avg_effort,
+                'avg_organization': agg.avg_organization,
+                'avg_mentality': agg.avg_mentality,
+                'total': agg.total_votes,
+            }
+
+        home_team_evals = _team_evals_dict(match.home_team_id)
+        away_team_evals = _team_evals_dict(match.away_team_id)
         
         # Оценки тренеров
         coach_aggregates = match.coach_aggregates.select_related('coach').all()[:2]

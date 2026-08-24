@@ -103,6 +103,8 @@ class Command(BaseCommand):
             self.stdout.write("Точных дублей не найдено.")
             return
 
+        affected_match_ids: set = set()
+
         for dupes in groups.values():
             canonical, others = self._rank_referees(dupes)
             summary = ", ".join(
@@ -112,8 +114,11 @@ class Command(BaseCommand):
             self.stdout.write(f"  Группа: {summary}")
             self.stdout.write(f"    -> канонический: \"{canonical.full_name}\" (id={canonical.id})")
             if apply_changes:
-                self._merge_referees(canonical, others)
+                affected_match_ids |= self._merge_referees(canonical, others)
                 self.stdout.write(self.style.SUCCESS("    Объединено."))
+
+        if apply_changes and affected_match_ids:
+            self._recalculate_referee_aggregates(affected_match_ids)
 
     def _dedupe_coaches(self, apply_changes: bool):
         self.stdout.write(self.style.MIGRATE_HEADING("\n=== Тренеры ==="))
@@ -176,7 +181,9 @@ class Command(BaseCommand):
         if ref1 and ref2:
             canonical, others = self._rank_referees([ref1, ref2])
             self.stdout.write(f'Объединяю "{ref1.full_name}" и "{ref2.full_name}" -> канонический id={canonical.id}')
-            self._merge_referees(canonical, others)
+            affected = self._merge_referees(canonical, others)
+            if affected:
+                self._recalculate_referee_aggregates(affected)
             self.stdout.write(self.style.SUCCESS("Готово."))
             return
 
@@ -230,12 +237,36 @@ class Command(BaseCommand):
     # Собственно перенос ссылок + удаление дубля
     # ============================================================
 
-    def _merge_referees(self, canonical, others):
+    def _merge_referees(self, canonical, others) -> set:
+        """
+        2026-08-23, anti-brigading: RefereeMatchAggregate (новая модель,
+        aggregates/tasks.py::recalculate_referee_aggregates) хранит прямую
+        FK на Referee с on_delete=CASCADE — `dup.delete()` ниже удалит её
+        агрегаты вместе с судьёй, оставляя переехавшие на canonical матчи
+        БЕЗ агрегата, пока не пересчитать заново (RefereeEvaluation не
+        привязана к судье напрямую, только через match.referee — сами
+        оценки не нужно переносить, в отличие от CoachEvaluation).
+        Возвращает affected_match_ids — тот же контракт, что и
+        _merge_coaches, чтобы handle()/_manual_merge могли пересчитать.
+        """
+        affected_match_ids: set = set()
         with transaction.atomic():
             for dup in others:
+                dup_match_ids = set(Match.objects.filter(referee=dup).values_list("id", flat=True))
+                affected_match_ids |= dup_match_ids
+
                 moved = Match.objects.filter(referee=dup).update(referee=canonical)
                 self.stdout.write(f"    id={dup.id}: перенесено матчей={moved}")
                 dup.delete()
+        return affected_match_ids
+
+    def _recalculate_referee_aggregates(self, affected_match_ids: set):
+        from aggregates.tasks import recalculate_referee_aggregates
+
+        self.stdout.write(f"\nПересчитываю агрегаты судейства для {len(affected_match_ids)} матчей...")
+        for match_id in affected_match_ids:
+            recalculate_referee_aggregates(str(match_id))
+        self.stdout.write(self.style.SUCCESS("Готово."))
 
     def _merge_coaches(self, canonical, others) -> set:
         affected_match_ids: set = set()

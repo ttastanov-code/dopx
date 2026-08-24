@@ -651,6 +651,44 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'users.tasks.detect_ip_clusters_task',
         'schedule': crontab(minute=30, hour='*/6'),
     },
+    # === Anti-brigading: детект аномальных всплесков голосования
+    # (сговор фан-базы), 2026-08-23 — чаще, чем IP-кластер (раз в 6 часов),
+    # т.к. окно детекта самого всплеска короткое (VOTE_SPIKE_WINDOW_HOURS=2
+    # в aggregates/tasks.py) — реже проверять означало бы пропускать
+    # всплески между прогонами. ===
+    'detect-vote-velocity-anomalies': {
+        'task': 'aggregates.tasks.detect_vote_velocity_anomalies_task',
+        'schedule': crontab(minute=45, hour='*/2'),
+    },
+    # === Самокалибровка порогов vote_spike/ip_cluster по решениям
+    # модератора, 2026-08-23 (см. users/models.py::AntiFraudThreshold) —
+    # раз в неделю: чаще бессмысленно (нужно накопить ANTIFRAUD_
+    # RECALIBRATION_MIN_SAMPLE новых разобранных флагов, это не
+    # событие одного дня), реже — калибровка отстаёт от реальности. ===
+    'recalibrate-antifraud-thresholds': {
+        'task': 'users.tasks.recalibrate_antifraud_thresholds',
+        'schedule': crontab(minute=0, hour=4, day_of_week=1),
+    },
+    # 2026-08-24, продуктовый запрос "модерация антифрода должна быть
+    # максимально простой и не затратной по времени" — раз в сутки чистит
+    # старые слабые флаги, чтобы очередь не копилась вечно (см. докстринг
+    # users.tasks.expire_stale_low_score_flags). До ежедневного
+    # detect-rating-stats-divergence (05:30) — независимые друг от друга
+    # задачи, порядок не важен, просто развели по времени.
+    'expire-stale-antifraud-flags': {
+        'task': 'users.tasks.expire_stale_low_score_flags',
+        'schedule': crontab(minute=20, hour=4),
+    },
+    # === Независимый внешний сигнал — расхождение рейтинга сообщества с
+    # объективной статистикой матчей от KFF (aggregates/tasks.py::
+    # detect_rating_stats_divergence_task, см. её докстринг), 2026-08-23.
+    # Раз в сутки: это МЕДЛЕННЫЙ трендовый сигнал (нужно несколько матчей
+    # команды), не привязан к конкретному свежему событию, как vote_spike —
+    # чаще пересчитывать бессмысленно. ===
+    'detect-rating-stats-divergence': {
+        'task': 'aggregates.tasks.detect_rating_stats_divergence_task',
+        'schedule': crontab(minute=30, hour=5),
+    },
     # === Бейдж «Чемпион месяца» — 1-го числа каждого месяца в 03:00 ===
     'award-monthly-champion-badge': {
         'task': 'users.tasks.award_monthly_champion_badge',
@@ -678,6 +716,16 @@ CELERY_BEAT_SCHEDULE = {
     'weekly-summary': {
         'task': 'notifications.tasks.send_weekly_summary',
         'schedule': crontab(day_of_week=1, hour=10, minute=0),
+    },
+    # 2026-08-24, продуктовый запрос "модерация антифрода должна быть
+    # максимально простой и не затратной по времени" — раз в неделю письмо
+    # с короткой сводкой новых сигналов, не нужно самому помнить зайти на
+    # /staff/dashboard/antifraud/. Понедельник в 09:00, до weekly-summary
+    # (10:00) и после ежесуточного detect-rating-stats-divergence (05:30) —
+    # цифры в письме успевают учесть свежий прогон.
+    'staff-antifraud-digest': {
+        'task': 'notifications.tasks.send_staff_antifraud_digest',
+        'schedule': crontab(day_of_week=1, hour=9, minute=0),
     },
     # === «Сборная DOPX» — пересчёт лучшего XI (каждые 15 минут) ===
     # Не привязан к сигналу "оценка сохранена" (как aggregates.signals) —

@@ -114,13 +114,13 @@
                                 </td>
                                 <td class="font-mono text-sm">{{ eval.match.start_time|date:"d.m.Y" }}</td>
                                 <td class="text-center">
-                                    <span class="{% if eval.influence_score > 70 %}text-error{% elif eval.influence_score < 40 %}text-success{% else %}text-warning{% endif %}">
-                                        {{ eval.influence_score|default:"—" }}
+                                    <span class="{% if eval.avg_influence > 70 %}text-error{% elif eval.avg_influence < 40 %}text-success{% else %}text-warning{% endif %}">
+                                        {{ eval.avg_influence|floatformat:0|default:"—" }}
                                     </span>
                                 </td>
                                 <td class="text-center">
-                                    <span class="font-bold {% if eval.decision_quality >= 7 %}text-success{% elif eval.decision_quality >= 5 %}text-warning{% else %}text-error{% endif %}">
-                                        {{ eval.decision_quality|default:"—" }}
+                                    <span class="font-bold {% if eval.avg_decision_quality >= 7 %}text-success{% elif eval.avg_decision_quality >= 5 %}text-warning{% else %}text-error{% endif %}">
+                                        {{ eval.avg_decision_quality|floatformat:1|default:"—" }}
                                     </span>
                                 </td>
                             </tr>

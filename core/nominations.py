@@ -30,18 +30,35 @@ best_attack/best_defense и "настроению сезона" на стран�
 участником (например, единственный оценённый судья одновременно
 оказывается и "лучшим", и "худшим" из-за MIN_VOTES=3 на пустой базе)
 исключается явной проверкой в `_best_worst_pair`.
+
+2026-08-23, ЗАЩИТА ОТ СГОВОРА: до этой даты модуль считал номинации
+напрямую по сырым `PlayerEvaluation`/`TeamEvaluation`/`CoachEvaluation`/
+`RefereeEvaluation`/`MatchEvaluation` через `Avg()` без единой защиты —
+пока весь остальной сайт (профили игроков/команд/тренеров/судей) уже
+перешёл на взвешенные и винзоризованные агрегаты из `aggregates/services.py`,
+эта витрина оставалась последней дырой: организованная группа могла
+не суметь испортить рейтинг игрока в его профиле (там защита есть), но
+могла бы выбить его в "антигерои сезона" на главной, если бы номинации
+продолжали читать сырые оценки. Модуль переписан на чтение из
+`aggregates.models.*MatchAggregate` — тех же таблиц, что показывают
+профили сущностей: `avg_contribution`/`risk_index`/`avg_potential`,
+`avg_tactics`/`avg_effort`/`avg_organization`/`avg_mentality`,
+`avg_influence`/`avg_decision_quality`, `avg_fairness` там уже посчитаны
+через `calculate_weighted_average` (вес голоса + винзоризация хвостов,
+см. `aggregates/services.py`) при пересчёте агрегата матча — номинации
+теперь наследуют ту же защиту автоматически, без дублирования логики.
 """
 from __future__ import annotations
 
 from django.core.cache import cache
-from django.db.models import Avg, Count, QuerySet
+from django.db.models import Avg, QuerySet, Sum
 
-from evaluations.models import (
-    CoachEvaluation,
-    MatchEvaluation,
-    PlayerEvaluation,
-    RefereeEvaluation,
-    TeamEvaluation,
+from aggregates.models import (
+    CoachMatchAggregate,
+    MatchAggregate,
+    PlayerMatchAggregate,
+    RefereeMatchAggregate,
+    TeamMatchAggregate,
 )
 
 MIN_VOTES = 3
@@ -57,12 +74,22 @@ def _scope(qs: QuerySet, league, season) -> QuerySet:
 
 
 def _aggregate(qs: QuerySet, group_field: str, metric: str, extra_values: tuple[str, ...]):
-    """Группирует по `group_field`, считает средний `metric` и число оценок."""
+    """
+    Группирует строки уже ПОСЧИТАННЫХ per-match агрегатов (взвешенных и
+    винзоризованных, см. `aggregates/services.py`) по `group_field`,
+    усредняет `metric` ПО МАТЧАМ и суммирует `total_votes` — это и есть
+    порог статистической значимости `n`.
+
+    `n = Sum('total_votes')`, а не `Count('id')` числа строк-агрегатов:
+    один матч с 20 голосами не должен весить как один матч с 3 голосами
+    при проверке `MIN_VOTES` — суммируем реальное число индивидуальных
+    оценок, из которых эти строки посчитаны.
+    """
     values = (group_field,) + extra_values
     return (
         qs.exclude(**{f'{group_field}__isnull': True})
         .values(*values)
-        .annotate(avg_value=Avg(metric), n=Count('id'))
+        .annotate(avg_value=Avg(metric), n=Sum('total_votes'))
         .filter(n__gte=MIN_VOTES)
     )
 
@@ -106,11 +133,11 @@ def get_nominations(*, league=None, season=None) -> list[dict]:
 
     nominations: list[dict] = []
 
-    # --- Судьи: качество решений (decision_quality, 1-10) ---
-    ref_qs = _scope(RefereeEvaluation.objects.all(), league, season)
+    # --- Судьи: качество решений (avg_decision_quality, 1-10) ---
+    ref_qs = _scope(RefereeMatchAggregate.objects.all(), league, season)
     best_ref, worst_ref = _best_worst_pair(
-        ref_qs, 'match__referee', 'decision_quality',
-        ('match__referee__first_name', 'match__referee__last_name'),
+        ref_qs, 'referee', 'avg_decision_quality',
+        ('referee__first_name', 'referee__last_name'),
     )
     if best_ref:
         nominations.append({
@@ -121,8 +148,8 @@ def get_nominations(*, league=None, season=None) -> list[dict]:
             'sentiment': 'positive',
             'entity_kind': 'referee',
             'entity_url_name': 'referees:detail',
-            'entity_id': best_ref['match__referee'],
-            'entity_name': f"{best_ref['match__referee__first_name']} {best_ref['match__referee__last_name']}",
+            'entity_id': best_ref['referee'],
+            'entity_name': f"{best_ref['referee__first_name']} {best_ref['referee__last_name']}",
             'entity_extra': '',
             'value_label': f"{round(best_ref['avg_value'], 1)}/10",
             'votes': best_ref['n'],
@@ -136,16 +163,16 @@ def get_nominations(*, league=None, season=None) -> list[dict]:
             'sentiment': 'negative',
             'entity_kind': 'referee',
             'entity_url_name': 'referees:detail',
-            'entity_id': worst_ref['match__referee'],
-            'entity_name': f"{worst_ref['match__referee__first_name']} {worst_ref['match__referee__last_name']}",
+            'entity_id': worst_ref['referee'],
+            'entity_name': f"{worst_ref['referee__first_name']} {worst_ref['referee__last_name']}",
             'entity_extra': '',
             'value_label': f"{round(worst_ref['avg_value'], 1)}/10",
             'votes': worst_ref['n'],
         })
 
-    # --- Судьи: влияние на исход матча (influence_score, 0-100) ---
-    top_influence = _best_only(ref_qs, 'match__referee', 'influence_score',
-                                ('match__referee__first_name', 'match__referee__last_name'))
+    # --- Судьи: влияние на исход матча (avg_influence, 0-100) ---
+    top_influence = _best_only(ref_qs, 'referee', 'avg_influence',
+                                ('referee__first_name', 'referee__last_name'))
     if top_influence:
         nominations.append({
             'key': 'influential_referee',
@@ -155,16 +182,16 @@ def get_nominations(*, league=None, season=None) -> list[dict]:
             'sentiment': 'neutral',
             'entity_kind': 'referee',
             'entity_url_name': 'referees:detail',
-            'entity_id': top_influence['match__referee'],
-            'entity_name': f"{top_influence['match__referee__first_name']} {top_influence['match__referee__last_name']}",
+            'entity_id': top_influence['referee'],
+            'entity_name': f"{top_influence['referee__first_name']} {top_influence['referee__last_name']}",
             'entity_extra': '',
             'value_label': f"{round(top_influence['avg_value'])}/100",
             'votes': top_influence['n'],
         })
 
-    # --- Команды: самоотдача (effort, 1-10) ---
-    team_qs = _scope(TeamEvaluation.objects.all(), league, season)
-    best_effort, worst_effort = _best_worst_pair(team_qs, 'team', 'effort', ('team__name',))
+    # --- Команды: самоотдача (avg_effort, 1-10) ---
+    team_qs = _scope(TeamMatchAggregate.objects.all(), league, season)
+    best_effort, worst_effort = _best_worst_pair(team_qs, 'team', 'avg_effort', ('team__name',))
     if best_effort:
         nominations.append({
             'key': 'fighting_team',
@@ -196,8 +223,8 @@ def get_nominations(*, league=None, season=None) -> list[dict]:
             'votes': worst_effort['n'],
         })
 
-    # --- Команды: организация игры (organization, 1-10) ---
-    best_org = _best_only(team_qs, 'team', 'organization', ('team__name',))
+    # --- Команды: организация игры (avg_organization, 1-10) ---
+    best_org = _best_only(team_qs, 'team', 'avg_organization', ('team__name',))
     if best_org:
         nominations.append({
             'key': 'organized_team',
@@ -214,9 +241,9 @@ def get_nominations(*, league=None, season=None) -> list[dict]:
             'votes': best_org['n'],
         })
 
-    # --- Тренеры: тактика (tactics, 1-10) ---
-    coach_qs = _scope(CoachEvaluation.objects.all(), league, season)
-    best_tactics = _best_only(coach_qs, 'coach', 'tactics',
+    # --- Тренеры: тактика (avg_tactics, 1-10) ---
+    coach_qs = _scope(CoachMatchAggregate.objects.all(), league, season)
+    best_tactics = _best_only(coach_qs, 'coach', 'avg_tactics',
                                ('coach__first_name', 'coach__last_name'))
     if best_tactics:
         nominations.append({
@@ -234,8 +261,8 @@ def get_nominations(*, league=None, season=None) -> list[dict]:
             'votes': best_tactics['n'],
         })
 
-    # --- Тренеры: работа с заменами (substitutions, 1-10) ---
-    best_subs = _best_only(coach_qs, 'coach', 'substitutions',
+    # --- Тренеры: работа с заменами (avg_substitutions, 1-10) ---
+    best_subs = _best_only(coach_qs, 'coach', 'avg_substitutions',
                             ('coach__first_name', 'coach__last_name'))
     if best_subs:
         nominations.append({
@@ -253,9 +280,14 @@ def get_nominations(*, league=None, season=None) -> list[dict]:
             'votes': best_subs['n'],
         })
 
-    # --- Игроки: риск/нестабильность (risk, 1-10) ---
-    player_qs = _scope(PlayerEvaluation.objects.all(), league, season)
-    top_risk = _best_only(player_qs, 'player', 'risk',
+    # --- Игроки: риск/нестабильность (risk_index, 1-10) ---
+    # risk_index, а не "сырое" avg_risk — risk_index уже утянут к
+    # нейтральному якорю (apply_neutral_anchor, aggregates/services.py),
+    # avg_risk остаётся незащищённым сырым средним. "Игрок на грани" —
+    # единственная НЕГАТИВНАЯ персональная номинация на сайте, ей нужна
+    # именно защищённая цифра.
+    player_qs = _scope(PlayerMatchAggregate.objects.all(), league, season)
+    top_risk = _best_only(player_qs, 'player', 'risk_index',
                            ('player__first_name', 'player__last_name'))
     if top_risk:
         nominations.append({
@@ -273,18 +305,12 @@ def get_nominations(*, league=None, season=None) -> list[dict]:
             'votes': top_risk['n'],
         })
 
-    # --- Игроки: потенциал (potential, 1-10) ---
-    top_potential = _best_only(player_qs, 'player', 'potential',
+    # --- Игроки: потенциал (avg_potential, 1-10) ---
+    top_potential = _best_only(player_qs, 'player', 'avg_potential',
                                 ('player__first_name', 'player__last_name'))
     if top_potential:
         nominations.append({
             'key': 'rising_talent',
-            # Было "Юное дарование" (2026-08-23: переименовано) — номинация
-            # никак не проверяет возраст игрока, только среднюю оценку поля
-            # `potential` ("потенциал роста" в визарде оценки матча).
-            # Ветеран с высокой оценкой потенциала мог выиграть номинацию,
-            # прямо противоречащую своему названию. "Скрытый потенциал"
-            # верно описывает именно то, что измеряется.
             'title': 'Скрытый потенциал',
             'subtitle': 'Самая высокая оценка потенциала роста',
             'icon': 'ti-rocket',
@@ -298,12 +324,19 @@ def get_nominations(*, league=None, season=None) -> list[dict]:
             'votes': top_potential['n'],
         })
 
-    # --- Матчи: честность игры (fairness, 1-10) ---
-    match_qs = _scope(MatchEvaluation.objects.all(), league, season)
-    best_fair, worst_fair = _best_worst_pair(
-        match_qs, 'match', 'fairness',
-        ('match__home_team__name', 'match__away_team__name'),
+    # --- Матчи: честность игры (avg_fairness, 1-10) ---
+    # MatchAggregate — OneToOne с матчем (не группируем несколько строк на
+    # одну сущность, как выше): каждая строка уже сама по себе один матч,
+    # порог MIN_VOTES проверяем прямо на её total_votes.
+    match_agg_qs = (
+        _scope(MatchAggregate.objects.all(), league, season)
+        .filter(total_votes__gte=MIN_VOTES)
+        .select_related('match__home_team', 'match__away_team')
     )
+    best_fair = match_agg_qs.order_by('-avg_fairness', '-total_votes').first()
+    worst_fair = match_agg_qs.order_by('avg_fairness', '-total_votes').first()
+    if best_fair and worst_fair and best_fair.match_id == worst_fair.match_id:
+        worst_fair = None
     if best_fair:
         nominations.append({
             'key': 'fair_match',
@@ -313,11 +346,11 @@ def get_nominations(*, league=None, season=None) -> list[dict]:
             'sentiment': 'positive',
             'entity_kind': 'match',
             'entity_url_name': 'matches:detail',
-            'entity_id': best_fair['match'],
-            'entity_name': f"{best_fair['match__home_team__name']} — {best_fair['match__away_team__name']}",
+            'entity_id': best_fair.match_id,
+            'entity_name': f"{best_fair.match.home_team.name} — {best_fair.match.away_team.name}",
             'entity_extra': '',
-            'value_label': f"{round(best_fair['avg_value'], 1)}/10",
-            'votes': best_fair['n'],
+            'value_label': f"{round(best_fair.avg_fairness, 1)}/10",
+            'votes': best_fair.total_votes,
         })
     if worst_fair:
         nominations.append({
@@ -328,11 +361,11 @@ def get_nominations(*, league=None, season=None) -> list[dict]:
             'sentiment': 'negative',
             'entity_kind': 'match',
             'entity_url_name': 'matches:detail',
-            'entity_id': worst_fair['match'],
-            'entity_name': f"{worst_fair['match__home_team__name']} — {worst_fair['match__away_team__name']}",
+            'entity_id': worst_fair.match_id,
+            'entity_name': f"{worst_fair.match.home_team.name} — {worst_fair.match.away_team.name}",
             'entity_extra': '',
-            'value_label': f"{round(worst_fair['avg_value'], 1)}/10",
-            'votes': worst_fair['n'],
+            'value_label': f"{round(worst_fair.avg_fairness, 1)}/10",
+            'votes': worst_fair.total_votes,
         })
 
     cache.set(cache_key, nominations, CACHE_TTL)

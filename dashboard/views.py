@@ -137,14 +137,20 @@ def antifraud_flag_action(request, flag_id):
     flag.reviewed_at = timezone.now()
     flag.save(update_fields=["status", "reviewed_by", "reviewed_at", "updated_at"])
 
+    # 2026-08-23, anti-brigading: flag.user может быть None у entity-level
+    # сигналов (source="vote_spike" — аномалия у игрока/команды/тренера,
+    # а не у конкретного пользователя, см. users/models.py::
+    # SuspiciousActivityFlag). target — content_object в этом случае.
+    flag_target = flag.user.username if flag.user else str(flag.content_object or flag.get_source_display())
+
     messages.success(
         request,
-        f"Флаг {'подтверждён' if action == 'confirm' else 'отклонён'}: {flag.user.username}",
+        f"Флаг {'подтверждён' if action == 'confirm' else 'отклонён'}: {flag_target}",
     )
     log_staff_action(
         request,
         AuditAction.ANTIFRAUD_FLAG_CONFIRMED if action == "confirm" else AuditAction.ANTIFRAUD_FLAG_DISMISSED,
-        target=flag.user.username,
+        target=flag_target,
         details={"flag_id": str(flag.id), "score": flag.score, "source": flag.source},
     )
     return redirect("dashboard:antifraud")
@@ -164,7 +170,10 @@ def antifraud_export_csv(request):
     writer = csv.writer(response)
     writer.writerow(["Тип", "ID", "Пользователь", "Источник/тема", "Создано"])
     for flag in queue["pending_flags"]:
-        writer.writerow(["Флаг", flag.id, flag.user.username, flag.get_source_display(), flag.created_at.isoformat()])
+        # flag.user может быть None у entity-level сигналов (vote_spike) —
+        # см. коммент в antifraud_flag_action выше.
+        who = flag.user.username if flag.user else f"[сущность] {flag.content_object or '—'}"
+        writer.writerow(["Флаг", flag.id, who, flag.get_source_display(), flag.created_at.isoformat()])
     for dispute in queue["pending_disputes"]:
         writer.writerow([
             "Диспут",

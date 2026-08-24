@@ -10,6 +10,7 @@ from django.conf import settings
 from django.contrib.auth import logout
 from django.db import connection
 from django.core.cache import cache
+from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils import timezone
@@ -266,6 +267,30 @@ class StaffSessionSecurityMiddleware:
 
     Должен стоять в MIDDLEWARE после AuthenticationMiddleware (нужен
     request.user) и после OTPMiddleware, если включена 2FA.
+
+    2026-08-24, живой баг-репорт пользователя: "когда происходит
+    автоматический логаут, экран остаётся как будто залогинен, потом
+    выходят разные ошибки, если оставил окно открытым в админке/
+    дашборде". Причина: и /staff/dashboard/, и unfold-тема /admin/
+    активно используют htmx (см. ContentSecurityPolicyMiddleware —
+    фоновый поллинг hx-trigger="every Ns" на data_health/parser_tools и
+    т.д., плюс собственный бандл htmx у unfold). htmx делает fetch()
+    САМ и просто получает финальный ответ после редиректа — обычный
+    Django redirect() на /admin/login/ превращался в HTML страницы
+    логина, который htmx ПОДМЕНЯЛ ВНУТРЬ фрагмента (таблицу/карточку),
+    ломая DOM (вложенный <html> внутри <div>, задвоенные id, CSRF-токен
+    вне контекста) — отсюда "разные ошибки" после. Раньше это
+    оставалось незамеченным, пока пользователь не кликал руками — а
+    фоновый поллинг срабатывает САМ каждые 10-15с независимо от клика,
+    так что дырка проявлялась быстро и без явного триггера от юзера.
+
+    Фикс: для htmx-запросов (заголовок HX-Request, его шлёт ЛЮБОЙ
+    htmx-бандл, включая собственный у unfold) отдаём НЕ redirect(), а
+    200 с заголовком HX-Redirect — это встроенный механизм htmx: браузер
+    делает ПОЛНУЮ навигацию (window.location), а не подмену фрагмента.
+    В худшем случае пользователь видит логин-страницу через ближайший
+    тик фонового поллинга (те самые 10-15с) вместо зависшего "как будто
+    залогинен" экрана навсегда.
     """
 
     SESSION_KEY = '_staff_last_activity'
@@ -307,7 +332,19 @@ class StaffSessionSecurityMiddleware:
                     # отрабатывал корректно — баг только в ЭТОЙ ветке.
                     login_url = reverse('admin:login')
                     next_qs = urlencode({'next': request.get_full_path()})
-                    return redirect(f"{login_url}?{next_qs}&session_expired=1")
+                    target = f"{login_url}?{next_qs}&session_expired=1"
+
+                    # htmx (наш /staff/dashboard/ поллинг И собственный
+                    # бандл unfold в /admin/) — HX-Redirect вместо обычного
+                    # редиректа, иначе htmx подменяет фрагмент на HTML
+                    # страницы логина вместо полной навигации (см.
+                    # докстринг класса выше).
+                    if request.headers.get('HX-Request') == 'true':
+                        response = HttpResponse(status=200)
+                        response['HX-Redirect'] = target
+                        return response
+
+                    return redirect(target)
 
             request.session[self.SESSION_KEY] = now.isoformat()
 

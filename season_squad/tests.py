@@ -4,9 +4,17 @@
 2026-08-22 отдельно указало на отсутствие tests.py у season_squad как
 главный технический риск (регрессии в байесовской логике/распределении
 слотов сложно поймать вручную). Фикстуры строятся напрямую через
-PlayerMatchAggregate/CoachMatchAggregate/RefereeEvaluation/MatchEvaluation/
+PlayerMatchAggregate/CoachMatchAggregate/RefereeMatchAggregate/
 MatchLineupPlayer — минуя полный wizard оценки (тот же подход, что и в
 aggregates/tests.py), это быстрее и точнее целится в конкретные числа.
+
+2026-08-23: RefereeScoreTests раньше строил фикстуры через
+RefereeEvaluation/MatchEvaluation и полагался на то, что _build_referee_pool
+сама считает формулу 0.6*decision+0.3*fairness+0.1*(10-influence/10) на
+лету. Формула переехала в aggregates/tasks.py::recalculate_referee_aggregates
+(anti-brigading — единый взвешенный движок теперь и для судей), поэтому
+тест обновлён строить RefereeMatchAggregate НАПРЯМУЮ — тот же приём, что
+add_player_aggregate уже использовал для игроков.
 """
 from datetime import timedelta
 
@@ -16,10 +24,9 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from aggregates.models import CoachMatchAggregate, PlayerMatchAggregate
+from aggregates.models import CoachMatchAggregate, PlayerMatchAggregate, RefereeMatchAggregate
 from aggregates.services import CONFIDENT_VOTES_THRESHOLD
 from coaches.models import Coach
-from evaluations.models import MatchEvaluation, RefereeEvaluation
 from leagues.models import League
 from lineups.models import MatchLineup, MatchLineupPlayer
 from matches.models import Match
@@ -227,23 +234,20 @@ class RefereeScoreTests(SeasonSquadTestCase):
     должны учитываться (см. докстринг _build_referee_pool)."""
 
     def _rate_referee_match(self, match, decision_quality, influence_score, fairness=None):
-        RefereeEvaluation.objects.create(
-            user=self._voter(), match=match,
-            decision_quality=decision_quality, influence_score=influence_score,
+        """Строит RefereeMatchAggregate НАПРЯМУЮ (тот же приём, что
+        add_player_aggregate) с той же формулой, что и
+        aggregates/tasks.py::recalculate_referee_aggregates — фолбэк
+        fairness=decision_quality при отсутствии отдельной оценки
+        справедливости, см. докстринг recalculate_referee_aggregates."""
+        if fairness is None:
+            fairness = decision_quality
+        performance_score = (
+            0.6 * decision_quality + 0.3 * fairness + 0.1 * (10 - influence_score / 10)
         )
-        if fairness is not None:
-            MatchEvaluation.objects.create(
-                user=self._voter(), match=match,
-                entertainment=5, tension=5, fairness=fairness,
-            )
-
-    def _voter(self):
-        from django.contrib.auth import get_user_model
-        User = get_user_model()
-        self._voter_seq = getattr(self, "_voter_seq", 0) + 1
-        return User.objects.create_user(
-            username=f"voter{self._voter_seq}", email=f"voter{self._voter_seq}@example.com",
-            password="pass12345",
+        RefereeMatchAggregate.objects.create(
+            referee=match.referee, match=match,
+            avg_decision_quality=decision_quality, avg_influence=influence_score,
+            avg_fairness=fairness, total_votes=1, performance_score=performance_score,
         )
 
     def test_high_decision_quality_but_high_influence_can_lose_to_fairer_invisible_referee(self):

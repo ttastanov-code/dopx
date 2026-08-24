@@ -198,9 +198,14 @@ def traffic_summary(days: int = 14) -> dict:
 
 
 def antifraud_queue(limit: int = 25) -> dict:
+    # select_related("content_type") — GenericForeignKey (content_object)
+    # сам по себе не поддерживает select_related, но подгрузка ContentType
+    # заранее убирает один из двух хопов, которые Django делает при первом
+    # обращении к flag.content_object в шаблоне (см. anti-brigading,
+    # source="vote_spike" — entity-level флаги без user).
     pending_flags = list(
         SuspiciousActivityFlag.objects.filter(status="pending")
-        .select_related("user", "match")
+        .select_related("user", "match", "content_type")
         .order_by("-score", "-created_at")[:limit]
     )
     pending_disputes = list(

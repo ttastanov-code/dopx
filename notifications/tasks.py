@@ -752,3 +752,73 @@ def send_weekly_summary(self):
 
     logger.info(f"✅ send_weekly_summary: sent to {sent} user(s).")
     return {'sent': sent}
+
+
+@shared_task(bind=True, max_retries=3)
+def send_staff_antifraud_digest(self):
+    """
+    2026-08-24, продуктовый запрос "хочу, чтобы модерация антифрода была
+    максимально простой и не затратной по времени": раньше единственный
+    способ узнать о новых флагах — самому не забыть зайти на
+    /staff/dashboard/antifraud/. Теперь раз в неделю письмо с короткой
+    сводкой само приходит на почту — не нужно ничего держать в голове.
+
+    Считает то, что РЕАЛЬНО появилось за последние 7 дней (не всю
+    вечно растущую очередь pending — иначе письмо распухнет и его
+    перестанут читать), группирует по источнику, отдельно — топ-3 по
+    score (самое подозрительное) и число открытых диспутов по рейтингу.
+    Если за неделю не появилось вообще ничего нового — письмо не
+    отправляется (см. `send_weekly_summary` выше — тот же принцип: "у вас
+    0 всего" не несёт ценности).
+
+    force=True — это операционное письмо для сотрудников, а не
+    предпочтение пользователя, которое можно выключить через
+    /notifications/settings/ (тех настроек для staff-ролей в проекте и
+    нет).
+    """
+    from django.contrib.contenttypes.models import ContentType
+
+    from users.models import SuspiciousActivityFlag, User
+
+    since = timezone.now() - timedelta(days=7)
+
+    new_flags = list(
+        SuspiciousActivityFlag.objects.filter(created_at__gte=since)
+        .select_related("user", "match", "content_type")
+        .order_by("-score", "-created_at")
+    )
+    if not new_flags:
+        logger.info("send_staff_antifraud_digest: за неделю новых флагов нет, письмо не отправляется.")
+        return {'sent': 0}
+
+    by_source: dict[str, int] = {}
+    for flag in new_flags:
+        by_source[flag.get_source_display()] = by_source.get(flag.get_source_display(), 0) + 1
+
+    top_flags = new_flags[:3]
+
+    from notifications.models import ContactSubmission
+
+    open_disputes = ContactSubmission.objects.filter(
+        category="dispute", status__in=["new", "in_progress"]
+    ).count()
+
+    recipients = User.objects.filter(is_staff=True, is_active=True).exclude(email="").exclude(email__isnull=True)
+    sent = 0
+    for staff_user in recipients:
+        if _send_email_to_user(
+            staff_user,
+            f'🛡️ Антифрод за неделю: {len(new_flags)} новых сигналов',
+            'emails/staff_antifraud_digest.html',
+            {
+                'total_new': len(new_flags),
+                'by_source': by_source,
+                'top_flags': top_flags,
+                'open_disputes': open_disputes,
+            },
+            force=True,
+        ):
+            sent += 1
+
+    logger.info(f"✅ send_staff_antifraud_digest: sent to {sent} staff member(s), {len(new_flags)} new flag(s) this week.")
+    return {'sent': sent, 'new_flags': len(new_flags)}

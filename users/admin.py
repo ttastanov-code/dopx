@@ -13,7 +13,7 @@ from django.utils import timezone
 
 from core.admin_actions import export_as_csv
 
-from .models import Follow, PushSubscription, SuspiciousActivityFlag, User, UserBadge, UserXP
+from .models import AntiFraudThreshold, Follow, PushSubscription, SuspiciousActivityFlag, User, UserBadge, UserXP
 
 
 @admin.register(User)
@@ -79,8 +79,54 @@ class SuspiciousActivityFlagAdmin(ModelAdmin):
 
     @admin.action(description="Отметить как ложное срабатывание")
     def mark_dismissed(self, request, queryset):
+        """
+        2026-08-24: для source="stats_divergence" (aggregates/tasks.py::
+        detect_rating_stats_divergence_task) отклонение флага ДОПОЛНИТЕЛЬНО
+        обнуляет TeamRatingCorrection сущности — в отличие от остальных
+        источников, у этого сигнала есть автоматическое последствие
+        (небольшая поправка к performance_score, см. докстринг модели в
+        aggregates/models.py), и "отклонить как ложное срабатывание" без
+        отмены самой поправки было бы половинчатым решением — расхождение
+        сочли объяснимым, значит компенсировать его не нужно. Поправка всё
+        равно сама через день-два начнёт затухать, если её не трогать, но
+        явный "Отклонить" должен снимать её сразу, а не ждать угасания.
+        """
+        from django.contrib.contenttypes.models import ContentType
+
+        from aggregates.models import TeamRatingCorrection
+        from teams.models import Team
+
+        team_content_type = ContentType.objects.get_for_model(Team)
+        divergence_team_ids = [
+            flag.object_id
+            for flag in queryset.filter(source="stats_divergence", content_type=team_content_type)
+        ]
+        if divergence_team_ids:
+            TeamRatingCorrection.objects.filter(team_id__in=divergence_team_ids).update(
+                correction=0.0, last_pattern=""
+            )
+
         updated = queryset.update(status="dismissed", reviewed_by=request.user, reviewed_at=timezone.now())
         self.message_user(request, f"Отклонено: {updated}")
+
+
+@admin.register(AntiFraudThreshold)
+class AntiFraudThresholdAdmin(ModelAdmin):
+    """
+    Текущие значения самокалибрующихся антифрод-порогов — см. докстринг
+    модели. list_editable на value/min_value/max_value: staff может
+    вручную переопределить значение (например, сразу после инцидента,
+    не дожидаясь еженедельного пересчёта), но не может задать его вне
+    вилки min_value/max_value — форма/clean этого не проверяет здесь
+    специально, полагаясь на то, что калибровка сама вернёт его в вилку
+    на следующем прогоне, если staff всё же поставит значение снаружи.
+    """
+
+    list_display = ("key", "value", "default_value", "min_value", "max_value", "last_note", "updated_at")
+    list_editable = ("value",)
+    readonly_fields = ("key", "default_value", "created_at", "updated_at")
+    search_fields = ("key",)
+    actions = [export_as_csv]
 
 
 @admin.register(Follow)
