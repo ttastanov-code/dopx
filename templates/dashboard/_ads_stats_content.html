@@ -26,7 +26,7 @@ templates/dashboard/_ads_stats_content.html
         <div class="stat-desc text-xs">игрок {{ widget_totals.player }} · команда {{ widget_totals.team }} · таблица {{ widget_totals.standings }}</div>
     </div>
 </div>
-<p class="text-xs opacity-50 mb-4">За последние 30 дней. Показы/клики баннеров и визиты по рефералкам считаются событиями BANNER_IMPRESSION/BANNER_CLICK/PARTNER_REFERRAL_VISIT, просмотры виджетов — WIDGET_EMBED_VIEWED (каждая загрузка &lt;iframe&gt; на чужом сайте).</p>
+<p class="text-xs opacity-50 mb-4">За последние 30 дней. Показы и клики баннеров, визиты по рефералкам считаются событиями BANNER_IMPRESSION, BANNER_CLICK и PARTNER_REFERRAL_VISIT. Просмотры виджетов считаются событием WIDGET_EMBED_VIEWED (каждая загрузка &lt;iframe&gt; на чужом сайте).</p>
 
 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
     <div>
@@ -51,7 +51,7 @@ templates/dashboard/_ads_stats_content.html
             </tbody>
         </table>
         {% else %}
-        <p class="text-xs opacity-50 py-4">Пока нет показов ни у одного баннера — появится здесь, как только баннеры начнут крутиться на сайте.</p>
+        <p class="text-xs opacity-50 py-4">Пока нет показов ни у одного баннера. Данные появятся, как только баннеры начнут показываться на сайте.</p>
         {% endif %}
     </div>
     <div>
@@ -68,7 +68,7 @@ templates/dashboard/_ads_stats_content.html
             </tbody>
         </table>
         {% else %}
-        <p class="text-xs opacity-50 py-4">Пока никто не переходил по реферальной ссылке — появится здесь, как только партнёр приведёт первый визит.</p>
+        <p class="text-xs opacity-50 py-4">Пока никто не переходил по реферальной ссылке. Данные появятся после первого визита от партнёра.</p>
         {% endif %}
     </div>
 </div>
@@ -88,7 +88,7 @@ templates/dashboard/_ads_stats_content.html
             </tbody>
         </table>
         {% else %}
-        <p class="text-xs opacity-50 py-4">Пока никто не встраивал виджет игрока — покажется здесь, как только появятся первые просмотры.</p>
+        <p class="text-xs opacity-50 py-4">Пока никто не встраивал виджет игрока. Данные появятся после первых просмотров.</p>
         {% endif %}
     </div>
     <div>
@@ -105,7 +105,7 @@ templates/dashboard/_ads_stats_content.html
             </tbody>
         </table>
         {% else %}
-        <p class="text-xs opacity-50 py-4">Пока никто не встраивал виджет команды — покажется здесь, как только появятся первые просмотры.</p>
+        <p class="text-xs opacity-50 py-4">Пока никто не встраивал виджет команды. Данные появятся после первых просмотров.</p>
         {% endif %}
     </div>
 </div>

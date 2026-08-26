@@ -12,11 +12,10 @@
     <div class="hero-content text-center relative z-10 py-6 md:py-10 w-full">
         <div class="max-w-3xl">
             <h1 class="text-3xl md:text-5xl font-bold mb-3 md:mb-4">
-                Голос трибун <span class="text-primary">измеряем</span>
+                Голос трибун — <span class="text-primary">измеряем в цифрах.</span>
             </h1>
             <p class="text-sm md:text-lg opacity-80 mb-6 md:mb-8 px-2">
-                Платформа объективной оценки футбольных матчей на основе мнения болельщиков.
-                Оценивай матчи, получай XP, поднимайся в рейтинге.
+                Оценивай матчи вместе с сообществом, получай опыт и поднимайся в рейтинге.
             </p>
             <div class="flex flex-wrap gap-2 md:gap-4 justify-center">
                 {% if user.is_authenticated %}
@@ -311,7 +310,7 @@
                             <div x-show="open" x-cloak class="modal" :class="open && 'modal-open'" @keydown.escape.window="open = false">
                                 <div class="modal-box max-w-lg" @click.outside="open = false">
                                     <h3 class="font-bold text-lg mb-2"><i class="ti ti-code mr-1"></i> Виджет турнирной таблицы КПЛ</h3>
-                                    <p class="text-sm opacity-60 mb-3">Вставьте этот код на свой сайт — таблица обновляется автоматически, без интеграции с DOPX API.</p>
+                                    <p class="text-sm opacity-60 mb-3">Вставьте этот код на свой сайт: таблица обновляется автоматически, интеграция с DOPX API не нужна.</p>
                                     <div class="mb-3 p-2 bg-base-200 rounded-lg flex justify-center">
                                         <iframe src="{% url 'core:standings_widget' %}" width="300" height="320" style="border:none;border-radius:12px" title="Превью виджета"></iframe>
                                     </div>
@@ -465,9 +464,9 @@
             <i class="ti ti-award text-3xl md:text-4xl opacity-40 mb-3"></i>
             <h3 class="font-bold text-base md:text-lg mb-2">Номинаций пока нет</h3>
             <p class="text-sm opacity-60 max-w-md mx-auto">
-                Здесь появятся звания сезона — самый честный судья, самая
-                организованная команда и другие — как только по каждому
-                критерию наберётся минимум {{ nomination_min_votes|default:3 }} оценки.
+                Скоро здесь появятся звания сезона: самый честный судья, самая
+                организованная команда и другие. Нужно минимум
+                {{ nomination_min_votes|default:3 }} оценки по каждому критерию.
             </p>
             {% if user.is_authenticated %}
             <a href="{% url 'matches:list' %}?status=votable" class="btn btn-primary btn-sm mt-4 mx-auto">

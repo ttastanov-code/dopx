@@ -347,6 +347,7 @@ TEMPLATES = [
                 'django.contrib.messages.context_processors.messages',
                 'core.context_processors.indicator_tooltips',
                 'core.context_processors.pwa_settings',
+                'core.context_processors.current_round_squad',
             ],
         },
     },

@@ -1,5 +1,4 @@
 # round_squad/views.py
-from django.db.models import Count, Q
 from django.http import Http404
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
@@ -10,9 +9,9 @@ from players.positions import BEST_XI_SLOT_LABELS
 from round_squad.models import RoundBestXI
 from round_squad.services import (
     ROUND_CONFIDENT_VOTES_THRESHOLD,
-    ROUND_CURRENT_TOUR_MIN_COMPLETION_RATIO,
     ROUND_MIN_VOTES_FOR_CANDIDATE,
     ROUND_VOTE_SHRINKAGE_C,
+    resolve_practically_closed_tour,
 )
 # Осознанно переиспользуем раскладку поля и стили кольца доверия из
 # season_squad.views — тот же визуальный язык на "DOPX Лучшие тура", что и
@@ -69,18 +68,14 @@ def _resolve_latest_tour(season):
         не блокирует, в отличие от строгих 100% фронтира;
       · так как сканируем сверху вниз, а не строим фронтир снизу вверх,
         одиночный "застрявший" ранний тур больше не может остановить
-        весь расчёт для всех туров выше него."""
-    tour_rows = (
-        Match.objects.filter(season=season, tour__isnull=False)
-        .values('tour')
-        .annotate(total=Count('id'), finished=Count('id', filter=Q(status='finished')))
-        .order_by('-tour')
-    )
-    for row in tour_rows:
-        total = row['total']
-        if total > 0 and (row['finished'] / total) >= ROUND_CURRENT_TOUR_MIN_COMPLETION_RATIO:
-            return row['tour']
-    return None
+        весь расчёт для всех туров выше него.
+
+    2026-08-26: сам расчёт вынесен в round_squad/services.py::
+    resolve_practically_closed_tour — понадобился ещё и в
+    core/context_processors.py для кнопки в шапке (см. докстринг там).
+    Эта функция оставлена как тонкая обёртка, чтобы не трогать вызовы
+    ниже по файлу."""
+    return resolve_practically_closed_tour(season)
 
 
 def _slot_to_card(slot, slot_code):

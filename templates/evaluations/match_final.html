@@ -57,7 +57,7 @@
                     <i class="ti ti-star text-xl text-warning"></i>
                 </div>
                 <h2 class="text-lg font-bold mb-1">Общая оценка матча</h2>
-                <p class="text-xs text-base-content/60">Поделитесь общим впечатлением от матча.</p>
+                <p class="text-xs text-base-content/60">Как вам матч в целом?</p>
             </div>
 
             <form method="post" class="space-y-5">
@@ -68,7 +68,7 @@
                     <div class="flex justify-between mb-1">
                         <label class="text-xs font-semibold flex items-center gap-0.5">
                             <i class="ti ti-stars text-warning text-sm"></i> Зрелищность
-                            {% include 'components/_tooltip_icon.html' with text='Зрелищность: атаки, голы, моменты — было ли интересно?' %}
+                            {% include 'components/_tooltip_icon.html' with text='Зрелищность: атаки, голы, моменты. Было ли интересно смотреть' %}
                         </label>
                         <span class="text-sm font-bold text-warning" id="entertainment_value">5</span>
                     </div>
@@ -85,7 +85,7 @@
                     <div class="flex justify-between mb-1">
                         <label class="text-xs font-semibold flex items-center gap-0.5">
                             <i class="ti ti-lightning text-info text-sm"></i> Напряжение
-                            {% include 'components/_tooltip_icon.html' with text='Напряжение: интрига, борьба, драма до последней минуты' %}
+                            {% include 'components/_tooltip_icon.html' with text='Напряжение: интрига и борьба до последней минуты' %}
                         </label>
                         <span class="text-sm font-bold text-info" id="tension_value">5</span>
                     </div>
@@ -102,7 +102,7 @@
                     <div class="flex justify-between mb-1">
                         <label class="text-xs font-semibold flex items-center gap-0.5">
                             <i class="ti ti-scale text-accent text-sm"></i> Справедливость
-                            {% include 'components/_tooltip_icon.html' with text='Справедливость: соответствует ли счёт игре' %}
+                            {% include 'components/_tooltip_icon.html' with text='Справедливость: отражает ли счёт ход игры' %}
                         </label>
                         <span class="text-sm font-bold text-accent" id="fairness_value">5</span>
                     </div>
@@ -123,7 +123,7 @@
                             </div>
                             <div class="flex-1 min-w-0">
                                 <div class="font-semibold text-sm">Был переломный момент?</div>
-                                <div class="text-[10px] text-base-content/50">Например, гол, пенальти или удаление.</div>
+                                <div class="text-[10px] text-base-content/50">Гол, пенальти, удаление, что угодно, что изменило ход игры</div>
                             </div>
                         </div>
                         <input type="checkbox" name="turning_point" class="toggle toggle-primary toggle-sm flex-shrink-0">
@@ -137,7 +137,7 @@
                 {% endcomment %}
                 <div class="alert alert-success rounded-xl py-2">
                     <i class="ti ti-confetti text-sm flex-shrink-0"></i>
-                    <span class="text-[10px]">Последний шаг. После отправки оценка будет сохранена.</span>
+                    <span class="text-[10px]">Последний шаг. Дальше оценка уйдёт в рейтинг матча</span>
                 </div>
 
                 <!-- Navigation Buttons -->

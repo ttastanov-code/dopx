@@ -1,7 +1,7 @@
 {% extends "admin/base_site.html" %}
 {% block content %}
 <div class="module">
-    <h1>Обращение #{{ ticket.id }} — {{ ticket.subject }}</h1>
+    <h1>Обращение #{{ ticket.id }}: {{ ticket.subject }}</h1>
     
     <table class="aligned">
         <tr><th>Статус:</th><td>{{ ticket.get_status_display }}</td></tr>

@@ -11,11 +11,11 @@
 
 <div class="grid grid-cols-2 gap-3 md:gap-4 mb-6">
     <div class="stat bg-base-100 border border-warning/30 rounded-lg p-3 md:p-4">
-        <div class="stat-title text-[10px] md:text-xs">Флагов в очереди (pending)</div>
+        <div class="stat-title text-[10px] md:text-xs">Флагов на проверке</div>
         <div class="stat-value text-lg md:text-2xl text-warning">{{ queue.pending_flags_count }}</div>
     </div>
     <div class="stat bg-base-100 border border-info/30 rounded-lg p-3 md:p-4">
-        <div class="stat-title text-[10px] md:text-xs">Диспутов по рейтингу (открытых)</div>
+        <div class="stat-title text-[10px] md:text-xs">Открытых диспутов по рейтингу</div>
         <div class="stat-value text-lg md:text-2xl text-info">{{ queue.pending_disputes_count }}</div>
     </div>
 </div>
@@ -23,10 +23,10 @@
 <div class="card bg-base-100 border border-base-300 mb-6">
     <div class="card-body p-4">
         <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
-            <i class="ti ti-shield-exclamation text-warning"></i> Подозрительная активность — на рассмотрении
+            <i class="ti ti-shield-exclamation text-warning"></i> Подозрительная активность на рассмотрении
         </h3>
         {% if not queue.pending_flags %}
-        <p class="text-sm opacity-50 py-6 text-center">Очередь пуста — новых флагов нет.</p>
+        <p class="text-sm opacity-50 py-6 text-center">Новых флагов нет.</p>
         {% else %}
         <div class="space-y-2">
             {% for flag in queue.pending_flags %}
@@ -50,8 +50,8 @@
                     {% with summary=flag.human_summary %}
                     <div class="text-sm mt-2 leading-snug">{{ summary.explanation }}</div>
                     <div class="text-xs opacity-60 mt-2 space-y-0.5">
-                        <div><span class="font-semibold opacity-80">Отклонить</span> — {{ summary.dismiss_hint }}.</div>
-                        <div><span class="font-semibold opacity-80">Подтвердить</span> — {{ summary.confirm_hint }}.</div>
+                        <div><span class="font-semibold opacity-80">Отклонить:</span> {{ summary.dismiss_hint }}.</div>
+                        <div><span class="font-semibold opacity-80">Подтвердить:</span> {{ summary.confirm_hint }}.</div>
                     </div>
                     {% endwith %}
                     {% if flag.details %}
@@ -90,7 +90,7 @@
         <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
             <i class="ti ti-gavel text-info"></i> Диспуты по рейтингу («право на ответ»)
         </h3>
-        <p class="text-xs opacity-50 mb-3">Обработка статуса и email-уведомление пользователю — в Django admin (там уже есть шаблон письма), здесь только очередь для контроля.</p>
+        <p class="text-xs opacity-50 mb-3">Статус обращения и email-уведомление пользователю обрабатываются в Django admin (там уже есть шаблон письма). Здесь только очередь для контроля.</p>
         {% if not queue.pending_disputes %}
         <p class="text-sm opacity-50 py-6 text-center">Открытых диспутов нет.</p>
         {% else %}

@@ -4,7 +4,7 @@
 <div class="max-w-2xl mx-auto px-2 sm:px-0">
   <div class="mb-4">
     <a href="{% url 'players:detail' player.id %}" class="btn btn-ghost btn-sm">
-      <i class="ti ti-arrow-left"></i> Профиль игрока
+      <i class="ti ti-arrow-left"></i> Назад к профилю
     </a>
   </div>
 
@@ -12,7 +12,7 @@
   <div class="card bg-base-100 border border-base-300">
     <div class="card-body text-center py-12 opacity-60">
       <i class="ti ti-calendar-off text-4xl mb-3"></i>
-      <p>Нет активного сезона для итогов.</p>
+      <p>Итоги сезона появятся здесь, когда начнётся новый сезон.</p>
     </div>
   </div>
   {% else %}
@@ -63,10 +63,10 @@
 
   <div class="flex flex-wrap gap-2 justify-center">
     <button class="btn btn-primary btn-sm"
-            onclick="if(window.dopxTrack){dopxTrack('share_clicked', {channel: 'native', context: 'season_recap', player_id: '{{ player.id }}'})}; navigator.share ? navigator.share({title: 'Итоги сезона {{ season.year }} — {{ player.first_name }} {{ player.last_name }}', url: window.location.href}) : window.open('{{ recap_card_url }}', '_blank')">
+            onclick="if(window.dopxTrack){dopxTrack('share_clicked', {channel: 'native', context: 'season_recap', player_id: '{{ player.id }}'})}; navigator.share ? navigator.share({title: 'Итоги сезона {{ season.year }}: {{ player.first_name }} {{ player.last_name }}', url: window.location.href}) : window.open('{{ recap_card_url }}', '_blank')">
       <i class="ti ti-share"></i> Поделиться
     </button>
-    <a href="https://t.me/share/url?url={{ request.build_absolute_uri|urlencode }}&text={{ player.first_name|urlencode }}%20{{ player.last_name|urlencode }}%20—%20итоги%20сезона%20на%20DOPX"
+    <a href="https://t.me/share/url?url={{ request.build_absolute_uri|urlencode }}&text={{ player.first_name|urlencode }}%20{{ player.last_name|urlencode }}%20-%20итоги%20сезона%20на%20DOPX"
        target="_blank" rel="noopener" class="btn btn-outline btn-sm"
        onclick="if(window.dopxTrack){dopxTrack('share_clicked', {channel: 'telegram', context: 'season_recap', player_id: '{{ player.id }}'})}">
       <i class="ti ti-brand-telegram"></i> Telegram

@@ -52,20 +52,20 @@
             <p>Спасибо за ваше сообщение!</p>
         </div>
         <div class="content">
-            <p>Здравствуйте, {{ username }}!</p>
+            <p>Привет, {{ username }}!</p>
             <div class="info-box">
                 <p><strong>Номер обращения:</strong> #{{ submission.id|truncatechars:8 }}</p>
                 <p><strong>Категория:</strong> {{ submission.get_category_display }}</p>
                 <p><strong>Дата:</strong> {{ submission.created_at|date:"d.m.Y H:i" }}</p>
             </div>
-            <p>Мы получили ваше обращение. Разбираем сообщения по очереди — фиксированных сроков ответа не даём, но ни одно обращение не остаётся без внимания.</p>
+            <p>Мы получили ваше обращение и разбираем сообщения по очереди. Точных сроков ответа не называем, но ни одно обращение не останется без внимания.</p>
             <p style="margin-top: 20px; font-size: 14px; color: #666;">
-                <strong>Есть что добавить?</strong><br>
-                Или напишите нам: support@dopx.kz
+                <strong>Хотите что-то уточнить?</strong><br>
+                Напишите нам: support@dopx.kz
             </p>
         </div>
         <div class="footer">
-            <p>Это автоматическое уведомление от платформы DOPX.</p>
+            <p>Автоматическое уведомление от DOPX.</p>
             <p><a href="{{ site_url }}">Перейти на сайт</a></p>
             <p style="margin-top: 15px;">© {% now "Y" %} {{ site_name }}. Все права защищены.</p>
         </div>

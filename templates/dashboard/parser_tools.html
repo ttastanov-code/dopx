@@ -9,7 +9,7 @@
         <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
             <i class="ti ti-search text-primary"></i> Поиск матча
         </h3>
-        <p class="text-xs opacity-60 mb-3">По названию команды (домашней или гостевой) или по external_id (числовой KFF game id) — быстро найти UUID матча, не листая сотни строк в Django admin. Поиск по названию ограничен выбранным годом (сезоном); если у команды много матчей — впишите ОБЕ команды через пробел (например «Қайрат Астана»), чтобы сразу найти конкретную встречу. Казахские буквы (Қ, Ә, Ө и т.д.) можно печатать обычными похожими русскими — поиск сам сопоставит. external_id ищется по всей базе, без ограничения по году.</p>
+        <p class="text-xs opacity-60 mb-3">Ищите по названию команды (домашней или гостевой) или по external_id (числовой KFF game id), чтобы быстро найти UUID матча, не листая сотни строк в Django admin. Поиск по названию ограничен выбранным годом (сезоном). Если у команды много матчей, впишите ОБЕ команды через пробел (например «Қайрат Астана»), чтобы сразу найти нужную встречу. Казахские буквы (Қ, Ә, Ө и т.д.) можно печатать похожими русскими: поиск сам сопоставит. external_id ищется по всей базе, без ограничения по году.</p>
         <form method="get" action="{% url 'dashboard:parser_tools' %}" class="flex flex-wrap gap-2 items-center mb-3">
             <input type="text" name="q" value="{{ search_query }}" placeholder="Команда, обе команды или external_id" class="input input-sm input-bordered w-72 max-w-full" autofocus>
             <select name="year" class="select select-sm select-bordered">
@@ -29,7 +29,7 @@
                     {% for match in search_results %}
                     <tr>
                         <td class="whitespace-nowrap">
-                            <a href="{% url 'admin:matches_match_change' match.id %}" class="link link-hover" target="_blank">{{ match.home_team }} — {{ match.away_team }}</a>
+                            <a href="{% url 'admin:matches_match_change' match.id %}" class="link link-hover" target="_blank">{{ match.home_team }} - {{ match.away_team }}</a>
                         </td>
                         <td class="text-xs opacity-70 whitespace-nowrap">{{ match.start_time|date:"d.m.Y H:i" }}</td>
                         <td><span class="badge badge-sm {% if match.status == 'live' %}badge-error{% else %}badge-ghost{% endif %}">{{ match.get_status_display }}</span></td>
@@ -44,7 +44,7 @@
                         </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="6" class="text-center opacity-50 py-4">Ничего не найдено за {{ search_year }} год — попробуйте выбрать другой год выше</td></tr>
+                    <tr><td colspan="6" class="text-center opacity-50 py-4">Ничего не найдено за {{ search_year }} год. Попробуйте выбрать другой год выше</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
@@ -59,7 +59,7 @@
             <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
                 <i class="ti ti-bolt text-primary"></i> Ручной запуск celery-задач
             </h3>
-            <p class="text-xs opacity-60 mb-3">Дебаунс {{ '60' }}с на задачу — повторный клик по той же задаче раньше этого срока будет отклонён, чтобы не наспамить очередь.</p>
+            <p class="text-xs opacity-60 mb-3">Дебаунс {{ '60' }} с на задачу: повторный клик по той же задаче до истечения этого времени будет отклонён, чтобы не перегружать очередь.</p>
             <div class="flex flex-col gap-3">
                 {% for task_name, task_label in triggerable_tasks.items %}
                 <div>
@@ -86,7 +86,7 @@
             <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
                 <i class="ti ti-api text-primary"></i> Сырой ответ KFF API
             </h3>
-            <p class="text-xs opacity-60 mb-3">Синхронный запрос напрямую к kffleague.kz — полезно свериться с оригиналом, когда данные в нашей БД выглядят подозрительно.</p>
+            <p class="text-xs opacity-60 mb-3">Синхронный запрос напрямую к kffleague.kz. Полезно свериться с оригиналом, если данные в нашей БД выглядят подозрительно.</p>
             <form method="get" action="{% url 'dashboard:parser_tools' %}" class="flex flex-wrap gap-2 items-center mb-4">
                 <input type="number" name="external_id" value="{{ raw_form.external_id }}" placeholder="external_id (KFF game id)" class="input input-sm input-bordered w-56 max-w-full" required>
                 <select name="endpoint" class="select select-sm select-bordered">
@@ -99,7 +99,7 @@
 
             <div class="border-t border-base-300 pt-3">
                 <h4 class="font-semibold text-xs uppercase opacity-60 mb-2">Доступность KFF API</h4>
-                <p class="text-xs opacity-60 mb-2">Живой пинг эндпоинта /seasons с замером времени ответа — быстрый ответ на "это мы или у них сломалось".</p>
+                <p class="text-xs opacity-60 mb-2">Живой пинг эндпоинта /seasons с замером времени ответа. Быстрый способ понять, сломалось у нас или у них.</p>
                 <form method="post" action="{% url 'dashboard:parser_kff_health_check' %}">
                     {% csrf_token %}
                     <button type="submit" class="btn btn-sm btn-outline"><i class="ti ti-heartbeat"></i> Проверить доступность</button>
@@ -117,7 +117,7 @@
             <i class="ti ti-alert-triangle"></i> {{ raw_result.error }}
         </div>
         {% else %}
-        <h3 class="font-bold text-sm md:text-base mb-3">{{ raw_result.label }} — external_id={{ raw_form.external_id }}</h3>
+        <h3 class="font-bold text-sm md:text-base mb-3">{{ raw_result.label }}: external_id={{ raw_form.external_id }}</h3>
         <pre class="text-xs bg-base-200 rounded-lg p-3 overflow-x-auto max-h-[70vh]">{{ raw_result.pretty }}</pre>
         {% endif %}
     </div>

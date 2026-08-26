@@ -13,7 +13,7 @@
             </div>
             <div>
                 <h1 class="text-3xl font-bold">Настройки уведомлений</h1>
-                <p class="text-sm opacity-60 mt-1">Управляйте тем, какие уведомления вы хотите получать</p>
+                <p class="text-sm opacity-60 mt-1">Выберите, какие уведомления вы хотите получать</p>
             </div>
         </div>
     </div>
@@ -40,7 +40,7 @@
                 </div>
                 <div>
                     <h2 class="text-xl font-bold">Push-уведомления в браузере</h2>
-                    <p class="text-sm opacity-60">Мгновенное уведомление на телефон/компьютер, даже если сайт не открыт — например, когда завершается матч команды, на которую вы подписаны</p>
+                    <p class="text-sm opacity-60">Мгновенное уведомление на телефон или компьютер, даже если сайт не открыт. Например, когда завершается матч команды, на которую вы подписаны</p>
                 </div>
             </div>
             <span x-show="status === 'checking'" class="loading loading-spinner loading-xs opacity-50"></span>
@@ -54,13 +54,13 @@
                 <button type="button" @click="unsubscribe()" class="btn btn-ghost btn-xs opacity-60">Отключить</button>
             </div>
             {% if has_push_subscription %}
-            <p x-show="status === 'idle'" x-cloak class="text-xs opacity-50 mt-2">Push включён на одном из ваших других устройств — здесь ещё не включали.</p>
+            <p x-show="status === 'idle'" x-cloak class="text-xs opacity-50 mt-2">Push включён на одном из ваших других устройств. Здесь пока не включали.</p>
             {% endif %}
-            <p x-show="status === 'denied'" x-cloak class="text-xs text-error mt-2">Уведомления заблокированы в настройках браузера — разрешите их вручную для этого сайта.</p>
+            <p x-show="status === 'denied'" x-cloak class="text-xs text-error mt-2">Уведомления заблокированы в настройках браузера. Разрешите их вручную для этого сайта.</p>
             <p x-show="status === 'unavailable'" x-cloak class="text-xs opacity-60 mt-2">Push пока не настроен на сервере.</p>
             <p x-show="status === 'unsupported'" x-cloak class="text-xs opacity-60 mt-2">Ваш браузер не поддерживает push-уведомления.</p>
             <p x-show="status === 'error'" x-cloak class="text-xs text-error mt-2">Не получилось. Попробуйте ещё раз.</p>
-            <p x-show="status === 'timeout'" x-cloak class="text-xs text-warning mt-2">Не удалось проверить статус service worker'а за 4 секунды — откройте консоль браузера (F12 → Application → Service Workers) и посмотрите, зарегистрировался ли /sw.js.</p>
+            <p x-show="status === 'timeout'" x-cloak class="text-xs text-warning mt-2">Не удалось проверить статус service worker'а за 4 секунды. Откройте консоль браузера (F12 → Application → Service Workers) и проверьте, зарегистрировался ли /sw.js.</p>
             <button type="button" @click="subscribe()" x-show="status === 'timeout'" x-cloak class="btn btn-outline btn-sm mt-1">Всё равно включить</button>
         </div>
     </div>
@@ -133,7 +133,7 @@
                             </div>
                             <div class="flex-1">
                                 <div class="font-semibold">{{ form.email_voting_closing.label }}</div>
-                                <p class="text-xs opacity-60 mt-1">Напоминание когда голосование скоро закроется (за час)</p>
+                                <p class="text-xs opacity-60 mt-1">Напомним за час до окончания голосования</p>
                             </div>
                         </div>
                         {{ form.email_voting_closing }}
@@ -297,8 +297,8 @@
             <div class="alert alert-info">
                 <i class="ti ti-mail"></i>
                 <div>
-                    <strong>Системные уведомления</strong> отправляются всем пользователям по необходимости. 
-                    Его нельзя отключить — это важная часть системы.
+                    <strong>Системные уведомления</strong> отправляются всем пользователям по необходимости.
+                    Их нельзя отключить: это важная часть системы.
                 </div>
             </div>
         </div>

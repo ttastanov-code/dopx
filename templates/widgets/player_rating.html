@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ player.first_name }} {{ player.last_name }} — рейтинг DOPX</title>
+    <title>{{ player.first_name }} {{ player.last_name }} · рейтинг DOPX</title>
     {% comment %}
     Продуктовый аудит, раздел 5 ("Рост"): изолированный документ БЕЗ
     base.html — намеренно НЕ переиспользуем сайт-шаблон, потому что этот
@@ -41,7 +41,7 @@
                 {% endif %}
             </div>
             <div class="flex items-center justify-between text-[10px] opacity-50">
-                <span>{{ total_votes }} голос(ов)</span>
+                <span>{{ total_votes }} голосов</span>
                 <span class="flex items-center gap-1 font-semibold"><i class="ti ti-external-link"></i> DOPX</span>
             </div>
         </div>

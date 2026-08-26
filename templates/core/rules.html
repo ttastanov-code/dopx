@@ -82,7 +82,7 @@
                   <h3 class="font-semibold text-base md:text-lg">Оценка игроков</h3>
                   <span class="badge badge-primary badge-outline badge-xs md:badge-sm whitespace-nowrap">до +{{ xp_steps.players }} XP</span>
                 </div>
-                <p class="opacity-60 text-xs md:text-sm mb-2 md:mb-3">Оценивайте только тех игроков, которых запомнили — XP этого шага пропорционален доле оценённого состава, а не фиксирован</p>
+                <p class="opacity-60 text-xs md:text-sm mb-2 md:mb-3">Оценивайте только тех игроков, которых запомнили. XP за этот шаг зависит от доли оценённого состава, а не фиксирован</p>
                 <div class="flex flex-wrap gap-2"><span class="badge badge-xs md:badge-sm badge-outline">Вклад (1-10)</span><span class="badge badge-xs md:badge-sm badge-outline">Риск (1-10)</span><span class="badge badge-xs md:badge-sm badge-outline">Потенциал (1-10)</span></div>
               </div>
             </div>
@@ -100,7 +100,7 @@
           </div>
           <div class="alert alert-info mt-4 md:mt-6 text-xs md:text-sm">
             <i class="ti ti-info-circle"></i>
-            <span>Полное прохождение всех шагов даёт до <strong>{{ xp_full_match_total }} XP</strong> за матч — умножается на ваш персональный коэффициент опыта (см. ниже).</span>
+            <span>Полное прохождение всех шагов даёт до <strong>{{ xp_full_match_total }} XP</strong> за матч. Итог умножается на ваш персональный коэффициент опыта (см. ниже).</span>
           </div>
         </div>
       </div>
@@ -111,7 +111,7 @@
       <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4 md:p-6">
           <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4 flex items-center gap-2"><i class="ti ti-shield-check text-success"></i> Trust Score и вес голоса</h2>
-          <p class="opacity-60 mb-4 md:mb-6 text-sm md:text-base">Trust Score — показатель надёжности ваших оценок: чем ближе они к консенсусу сообщества, тем он выше. От него зависит и вес вашего голоса в средних оценках, и скорость роста уровня.</p>
+          <p class="opacity-60 mb-4 md:mb-6 text-sm md:text-base">Trust Score показывает надёжность ваших оценок: чем ближе они к консенсусу сообщества, тем он выше. От него зависит вес вашего голоса в средних оценках и скорость роста уровня.</p>
 
           <div class="overflow-x-auto -mx-2 px-2 md:mx-0 md:px-0 mb-4 md:mb-6">
             <table class="table table-zebra min-w-[520px]">
@@ -119,7 +119,7 @@
               <tbody>
                 <tr class="bg-success/10"><td class="font-mono">≥ 1.8</td><td><span class="badge badge-sm md:badge-md badge-success">Эксперт</span></td><td class="text-xs md:text-sm">Стабильно высокая точность оценок</td></tr>
                 <tr class="bg-warning/10"><td class="font-mono">1.4 – 1.79</td><td><span class="badge badge-sm md:badge-md badge-warning">Надёжный</span></td><td class="text-xs md:text-sm">Стабильные, последовательные оценки</td></tr>
-                <tr><td class="font-mono">1.0 – 1.39</td><td><span class="badge badge-sm md:badge-md badge-ghost">Стандартный</span></td><td class="text-xs md:text-sm">Базовый уровень доверия</td></tr>
+                <tr><td class="font-mono">1.0 – 1.39</td><td><span class="badge badge-sm md:badge-md badge-ghost">Стандарт</span></td><td class="text-xs md:text-sm">Базовый уровень доверия</td></tr>
                 <tr class="bg-error/10"><td class="font-mono">&lt; 1.0</td><td><span class="badge badge-sm md:badge-md badge-error">Новичок</span></td><td class="text-xs md:text-sm">Пока недостаточно данных, чтобы судить о точности</td></tr>
               </tbody>
             </table>
@@ -132,7 +132,7 @@
             <div class="flex items-center justify-between gap-2 p-3 bg-base-200 rounded-lg"><span class="text-xs md:text-sm opacity-70">Trust Score &gt; 1.2</span><span class="font-mono font-bold text-sm text-success">+0.2</span></div>
             <div class="flex items-center justify-between gap-2 p-3 bg-base-200 rounded-lg"><span class="text-xs md:text-sm opacity-70">Признаки предвзятости к своей команде</span><span class="font-mono font-bold text-sm text-error">−0.3</span></div>
           </div>
-          <p class="text-xs opacity-50 mb-4 md:mb-6">Итоговый вес всегда ограничен диапазоном 0.5 – 2.0 — ни один голос не может ни занулиться, ни перевесить остальные в 10 раз.</p>
+          <p class="text-xs opacity-50 mb-4 md:mb-6">Итоговый вес всегда ограничен диапазоном 0.5 – 2.0. Ни один голос не может занулиться или перевесить остальные в 10 раз.</p>
 
           <div class="alert alert-info text-xs md:text-sm"><i class="ti ti-info-circle"></i><div><h3 class="font-bold">Как повысить Trust Score?</h3><ul class="mt-2 space-y-1"><li>• Оценивайте матчи регулярно: точность становится заметнее после 10 оценок.</li><li>• По возможности смотрите матч целиком.</li><li>• Не завышайте оценки своей команде и не занижайте сопернику.</li><li>• Оценивайте последовательно от матча к матчу.</li></ul></div></div>
         </div>
@@ -154,7 +154,7 @@
             <div class="flex justify-between p-2 bg-base-200 rounded"><span>Судья</span><span class="font-bold text-primary">+{{ xp_steps.referee }}</span></div>
             <div class="flex justify-between p-2 bg-base-200 rounded"><span>Финал</span><span class="font-bold text-primary">+{{ xp_steps.final }}</span></div>
           </div>
-          <p class="text-xs md:text-sm opacity-60 mb-4 md:mb-6">Итог за полностью пройденный матч — до <strong>{{ xp_full_match_total }} XP</strong>, домноженных на ваш коэффициент опыта: <strong>×0.8 – ×1.2</strong> в зависимости от Trust Score. Чем точнее ваши оценки, тем быстрее растёт уровень.</p>
+          <p class="text-xs md:text-sm opacity-60 mb-4 md:mb-6">Итог за полностью пройденный матч: до <strong>{{ xp_full_match_total }} XP</strong>, умноженных на ваш коэффициент опыта (<strong>×0.8 – ×1.2</strong> в зависимости от Trust Score). Чем точнее ваши оценки, тем быстрее растёт уровень.</p>
 
           <h3 class="font-semibold text-base md:text-lg mb-2 md:mb-3">Уровни</h3>
           <div class="overflow-x-auto -mx-2 px-2 md:mx-0 md:px-0 mb-2">
@@ -163,7 +163,7 @@
               <tbody><tr><td class="opacity-60">Суммарный XP</td>{% for ex in level_examples %}<td class="text-center font-mono">{{ ex.xp }}</td>{% endfor %}</tr></tbody>
             </table>
           </div>
-          <p class="text-xs opacity-50 mb-6 md:mb-8">Порог каждого уровня растёт — чтобы дойти до высоких уровней, нужна реальная многомесячная вовлечённость, а не разовый всплеск активности.</p>
+          <p class="text-xs opacity-50 mb-6 md:mb-8">Порог каждого уровня растёт. Чтобы дойти до высоких уровней, нужна реальная многомесячная вовлечённость, а не разовый всплеск активности.</p>
 
           <div class="flex items-center justify-between gap-2 mb-2 md:mb-3">
             <h3 class="font-semibold text-base md:text-lg">Достижения</h3>
@@ -190,7 +190,7 @@
             </div>
             {% endfor %}
           </div>
-          <p class="text-xs opacity-50 mt-3 md:mt-4">Наведите на значок, чтобы увидеть название. Полное описание условий — в вашем профиле.</p>
+          <p class="text-xs opacity-50 mt-3 md:mt-4">Наведите на значок, чтобы увидеть название. Полное описание условий смотрите в своём профиле.</p>
         </div>
       </div>
     </section>
@@ -217,9 +217,9 @@
           <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4 flex items-center gap-2"><i class="ti ti-info-circle text-neutral"></i> Что такое рейтинг DOPX (и чем он не является)</h2>
           <div class="alert alert-info text-xs md:text-sm mb-4">
             <i class="ti ti-info-circle"></i>
-            <span>Все оценки на DOPX — это агрегированное субъективное мнение зрительской аудитории, а не факт о профессиональной компетенции игрока, тренера или судьи. Цифра на странице игрока показывает "как матч увидели болельщики", а не официальную экспертную оценку клуба, лиги или федерации.</span>
+            <span>Оценки на DOPX: агрегированное субъективное мнение зрительской аудитории, а не факт о профессиональной компетенции игрока, тренера или судьи. Цифра на странице игрока показывает, как матч увидели болельщики, а не официальную экспертную оценку клуба, лиги или федерации.</span>
           </div>
-          <p class="opacity-70 text-sm md:text-base mb-3">Мы серьёзно относимся к точности данных (см. раздел выше и <a href="{% url 'core:anti_fraud' %}" class="link link-primary">страницу о борьбе с накруткой</a>), но методология DOPX — это статистика мнений, а не судейское или экспертное заключение. Если вы — упомянутый на платформе игрок, тренер, судья или представитель клуба и считаете, что рейтинг или данные о вас некорректны, у вас есть право на ответ.</p>
+          <p class="opacity-70 text-sm md:text-base mb-3">Мы серьёзно относимся к точности данных (см. раздел выше и <a href="{% url 'core:anti_fraud' %}" class="link link-primary">страницу о борьбе с накруткой</a>), но методология DOPX остаётся статистикой мнений, а не судейским или экспертным заключением. Если вы упомянуты на платформе как игрок, тренер, судья или представитель клуба и считаете, что рейтинг или данные о вас некорректны, у вас есть право на ответ.</p>
           <a href="{% url 'core:contacts' %}?category=dispute" class="btn btn-outline btn-sm">
             <i class="ti ti-message-report"></i> Оспорить рейтинг / написать нам
           </a>

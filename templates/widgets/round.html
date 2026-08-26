@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DOPX Лучшие{% if tour %} {{ tour }}-го{% endif %} тура</title>
+    <title>Сборная DOPX{% if tour %} {{ tour }}-го{% endif %} тура</title>
     {% comment %}
     templates/widgets/round.html
     Пятый embed-виджет (продуктовый запрос 2026-08-22 — "embed код нужен на
@@ -26,7 +26,7 @@
         <div class="p-2 flex items-center justify-between bg-base-100">
             <span class="font-bold text-xs flex items-center gap-1.5 truncate">
                 <i class="ti ti-calendar-star text-info"></i>
-                DOPX Лучшие{% if tour %} {{ tour }}-го{% endif %} тура
+                Сборная DOPX{% if tour %} {{ tour }}-го{% endif %} тура
             </span>
             <a href="{{ round_url }}"
                target="_blank" rel="noopener"

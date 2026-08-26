@@ -95,6 +95,31 @@ def _award_step_xp(request, base_amount: float) -> None:
 
 
 class EvaluationWizardMixin:
+    def require_login_or_redirect(self, request):
+        """
+        Ранняя проверка авторизации для переопределённого dispatch() каждого
+        шага вайзарда.
+
+        LoginRequiredMixin сам по себе здесь не спасает: каждый шаг
+        переопределяет dispatch() и обращается к self.get_or_create_session()
+        (запрос EvaluationSession с user=request.user) ДО вызова
+        super().dispatch() — то есть до того, как LoginRequiredMixin вообще
+        успевает сработать. Для анонимного пользователя request.user —
+        AnonymousUser, и ORM падает с ValidationError, пытаясь превратить его
+        в UUID для фильтра user=... (реальный краш: 500 вместо чистого
+        редиректа на логин).
+
+        Возвращает HttpResponse-редирект на логин с ?next=, если пользователь
+        не авторизован, иначе None — можно продолжать dispatch как обычно.
+        Используем self.handle_no_permission() из AccessMixin (родитель
+        LoginRequiredMixin) — тот же редирект, что дал бы штатный механизм,
+        просто вызванный на шаг раньше, до обращения к БД.
+        """
+        if request.user.is_authenticated:
+            return None
+        messages.info(request, 'Войдите, чтобы оценить матч.')
+        return self.handle_no_permission()
+
     def get_or_create_session(self):
         session, created = EvaluationSession.objects.get_or_create(
             user=self.request.user, match=self.match, defaults={'status': 'started'}
@@ -128,6 +153,9 @@ class EvaluateContextView(LoginRequiredMixin, FormView, EvaluationWizardMixin):
     form_class = ContextEvaluationForm
 
     def dispatch(self, request, *args, **kwargs):
+        redirect_response = self.require_login_or_redirect(request)
+        if redirect_response is not None:
+            return redirect_response
         self.match = get_object_or_404(Match, id=kwargs['match_id'])
         can_vote, error_msg = self.check_voting_access()
         if not can_vote:
@@ -176,6 +204,9 @@ class EvaluateTeamsView(LoginRequiredMixin, TemplateView, EvaluationWizardMixin)
     template_name = 'evaluations/teams.html'
 
     def dispatch(self, request, *args, **kwargs):
+        redirect_response = self.require_login_or_redirect(request)
+        if redirect_response is not None:
+            return redirect_response
         self.match = get_object_or_404(Match, id=kwargs['match_id'])
         can_vote, error_msg = self.check_voting_access()
         if not can_vote:
@@ -229,6 +260,9 @@ class EvaluatePlayersView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
     template_name = 'evaluations/players.html'
 
     def dispatch(self, request, *args, **kwargs):
+        redirect_response = self.require_login_or_redirect(request)
+        if redirect_response is not None:
+            return redirect_response
         self.match = get_object_or_404(Match, id=kwargs['match_id'])
         can_vote, error_msg = self.check_voting_access()
         if not can_vote:
@@ -299,6 +333,9 @@ class EvaluateCoachesView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
     template_name = 'evaluations/coaches.html'
 
     def dispatch(self, request, *args, **kwargs):
+        redirect_response = self.require_login_or_redirect(request)
+        if redirect_response is not None:
+            return redirect_response
         self.match = get_object_or_404(Match, id=kwargs['match_id'])
         can_vote, error_msg = self.check_voting_access()
         if not can_vote:
@@ -348,6 +385,9 @@ class EvaluateRefereeView(LoginRequiredMixin, FormView, EvaluationWizardMixin):
     form_class = RefereeEvaluationForm
 
     def dispatch(self, request, *args, **kwargs):
+        redirect_response = self.require_login_or_redirect(request)
+        if redirect_response is not None:
+            return redirect_response
         self.match = get_object_or_404(Match, id=kwargs['match_id'])
         can_vote, error_msg = self.check_voting_access()
         if not can_vote:
@@ -391,6 +431,9 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
     form_class = MatchEvaluationForm
 
     def dispatch(self, request, *args, **kwargs):
+        redirect_response = self.require_login_or_redirect(request)
+        if redirect_response is not None:
+            return redirect_response
         self.match = get_object_or_404(Match, id=kwargs['match_id'])
         can_vote, error_msg = self.check_voting_access()
         if not can_vote:

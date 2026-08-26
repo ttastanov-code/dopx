@@ -19,7 +19,7 @@
         <h3 class="font-bold text-sm md:text-base mb-2 flex items-center gap-2">
             <i class="ti ti-refresh-dot text-primary"></i> Ручной ресинк матча по ID
         </h3>
-        <p class="text-xs opacity-60 mb-3">Если знаете UUID проблемного матча (например, из ошибки выше или из Django admin) — полный ресинк здесь же, без ожидания следующего цикла celery.</p>
+        <p class="text-xs opacity-60 mb-3">Если знаете UUID проблемного матча (например, из ошибки выше или из Django admin), запустите полный ресинк прямо здесь, не дожидаясь следующего цикла celery.</p>
         <form method="post" action="{% url 'dashboard:data_health_resync_match' '00000000-0000-0000-0000-000000000000' %}" onsubmit="this.action = this.action.replace('00000000-0000-0000-0000-000000000000', this.match_id.value); return !!this.match_id.value;" class="flex flex-wrap gap-2 items-center">
             {% csrf_token %}
             <input type="text" name="match_id" placeholder="UUID матча" class="input input-sm input-bordered w-72 max-w-full font-mono text-xs" required>

@@ -38,7 +38,7 @@ from django.views.decorators.http import require_POST
 
 from analytics.models import EventName
 from analytics.services import track_event
-from core.utils import get_client_ip, is_rate_limited
+from core.utils import get_auth_panel_stats, get_client_ip, is_rate_limited
 from users.badges import BADGE_CATALOG, RARITY_ORDER
 from users.models import Follow, User, UserBadge, UserXP
 from users.forms import (
@@ -131,7 +131,8 @@ class RegisterView(CreateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['page_title'] = 'Регистрация — DOPX'
+        context['page_title'] = 'Регистрация · DOPX'
+        context['panel_stats'] = get_auth_panel_stats()
         return context
 
 
@@ -243,7 +244,8 @@ class LoginView(AuthLoginView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['page_title'] = 'Вход — DOPX'
+        context['page_title'] = 'Вход · DOPX'
+        context['panel_stats'] = get_auth_panel_stats()
         return context
 
 

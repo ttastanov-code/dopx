@@ -93,8 +93,8 @@
                                 <th class="text-center w-12" title="Победы">В</th>
                                 <th class="text-center w-12" title="Ничьи">Н</th>
                                 <th class="text-center w-12" title="Поражения">П</th>
-                                <th class="text-center w-12" title="Голы">ГЗ</th>
-                                <th class="text-center w-12" title="Голы">ГП</th>
+                                <th class="text-center w-12" title="Голы забиты">ГЗ</th>
+                                <th class="text-center w-12" title="Голы пропущены">ГП</th>
                                 <th class="text-center w-12" title="Разница">РМ</th>
                                 <th class="text-center w-12 font-bold" title="Очки">О</th>
                             </tr>
@@ -169,12 +169,12 @@
         <div class="card bg-base-100 border border-base-300">
             <div class="card-body p-4 md:p-8 text-center">
                 <i class="ti ti-table-off text-3xl md:text-4xl opacity-40 mb-3"></i>
-                <h3 class="font-bold text-lg md:text-xl mb-2">Турнирная таблица недоступна</h3>
+                <h3 class="font-bold text-lg md:text-xl mb-2">Турнирная таблица скоро появится</h3>
                 <p class="text-sm opacity-60">
                     {% if not active_season %}
-                    Нет активного сезона в этой лиге
+                    Сезон в этой лиге ещё не начался
                     {% else %}
-                    В активном сезоне ещё нет завершённых матчей
+                    Матчи активного сезона ещё не сыграны
                     {% endif %}
                 </p>
             </div>
@@ -384,14 +384,14 @@
                     </div>
                     <div>
                         <div class="text-lg font-bold text-error">{{ league_mood.avg_drama }}</div>
-                        <div class="text-[10px] opacity-50">Драма</div>
+                        <div class="text-[10px] opacity-50">Индекс драмы</div>
                     </div>
                 </div>
                 {% if most_dramatic_match %}
                 <a href="{% url 'matches:detail' most_dramatic_match.match.id %}" class="flex items-center justify-between p-2 rounded-lg bg-base-200 hover:bg-base-300 transition-colors text-sm">
                     <span class="truncate min-w-0">
                         <i class="ti ti-bolt text-warning mr-1"></i>
-                        {{ most_dramatic_match.match.home_team.name }} — {{ most_dramatic_match.match.away_team.name }}
+                        {{ most_dramatic_match.match.home_team.name }} vs {{ most_dramatic_match.match.away_team.name }}
                     </span>
                     <span class="badge badge-xs badge-warning flex-shrink-0 ml-2">самый драматичный</span>
                 </a>

@@ -8,8 +8,8 @@
       <i class="ti ti-shirt mr-2 text-warning"></i> Сборная DOPX сезона {{ season.year }}
     </h1>
     <p class="opacity-60 text-sm md:text-base">
-      {{ season.league.name }}: лучший состав 4-3-3 прямо сейчас — по оценкам сообщества DOPX. Голосования продолжаются,
-      состав пересчитывается автоматически и может ещё измениться.
+      {{ season.league.name }}: лучший состав 4-3-3 по оценкам болельщиков DOPX. Голосование продолжается,
+      состав пересчитывается автоматически и может измениться.
     </p>
   </div>
 
@@ -27,7 +27,7 @@
     <div x-show="open" x-cloak class="modal" :class="open && 'modal-open'" @keydown.escape.window="open = false">
       <div class="modal-box max-w-lg" @click.outside="open = false">
         <h3 class="font-bold text-lg mb-2"><i class="ti ti-code mr-1"></i> Виджет «Сборная DOPX {{ season.year }}»</h3>
-        <p class="text-sm opacity-60 mb-3">Вставьте этот код на свой сайт — виджет обновляется автоматически, без интеграции с DOPX API.</p>
+        <p class="text-sm opacity-60 mb-3">Вставьте код на свой сайт. Виджет обновляется автоматически, без интеграции с DOPX API.</p>
         <div class="mb-3 p-2 bg-base-200 rounded-lg flex justify-center">
           <iframe src="{% if season %}{% url 'season_squad:widget' season.id %}{% endif %}" width="300" height="380" style="border:none;border-radius:16px" title="Превью виджета сборной"></iframe>
         </div>
@@ -62,9 +62,9 @@
         <div class="card-body p-4">
           <h3 class="font-bold mb-2 text-sm flex items-center gap-1.5"><i class="ti ti-info-circle text-info"></i> Это не официальная сборная</h3>
           <p class="text-xs opacity-60">
-            Это не выбор клуба, лиги или федерации — это состав по оценкам болельщиков DOPX. Пока сезон {{ season.year }}
-            идёт, состав живой: каждая новая оценка может подвинуть игрока вверх или вниз, вплоть до замены в составе.
-            Когда сезон закончится, состав зафиксируется — таким он и останется как «Сборная DOPX сезона {{ season.year }}».
+            Это не выбор клуба, лиги или федерации. Это состав по оценкам болельщиков DOPX. Пока сезон {{ season.year }}
+            идёт, состав живой: любая новая оценка может поднять или опустить игрока, вплоть до замены в составе.
+            Когда сезон закончится, состав зафиксируется как «Сборная DOPX сезона {{ season.year }}».
           </p>
         </div>
       </div>
@@ -105,12 +105,11 @@
               <div class="flex-1">
                 <h3 class="font-semibold text-base md:text-lg mb-1">Средняя оценка с поправкой на объём выборки</h3>
                 <p class="opacity-60 text-xs md:text-sm">
-                  Каждому кандидату считаем средний рейтинг по всем его оценённым матчам сезона, а затем «подтягиваем»
-                  этот результат к среднему по всем игрокам на той же позиции — тем сильнее, чем меньше у него матчей
-                  (вес поправки эквивалентен {{ shrinkage_c|floatformat:0 }} «виртуальным» матчам). Игрок с
-                  {{ min_matches_for_candidate }}-3 матчами и супероценкой не выносится в топ на одном всплеске; игрок
-                  с 15+ матчами оценивается практически по своим фактическим результатам. Это тот же принцип, что у
-                  средневзвешенного рейтинга IMDB — публичная, воспроизводимая формула, а не чёрный ящик.
+                  Считаем средний рейтинг игрока по всем оценённым матчам сезона и подтягиваем его к среднему по
+                  позиции: чем меньше у игрока матчей, тем сильнее поправка (эквивалент {{ shrinkage_c|floatformat:0 }}
+                  «виртуальных» матчей). Игрок с {{ min_matches_for_candidate }}-3 матчами и одной суперигрой не
+                  попадёт в топ на одном всплеске. Игрок с 15+ матчами оценивается практически по факту. Тот же
+                  принцип, что у взвешенного рейтинга IMDB: формула открытая и воспроизводимая, без чёрного ящика.
                 </p>
               </div>
             </div>
@@ -119,18 +118,18 @@
               <div class="flex-1">
                 <h3 class="font-semibold text-base md:text-lg mb-1">Сравнение только внутри своей позиции</h3>
                 <p class="opacity-60 text-xs md:text-sm">
-                  Вратарей сравниваем с вратарями, нападающих — с нападающими: у каждой роли на поле своя «планка», и
-                  сравнивать их рейтинги напрямую было бы некорректно.
+                  Вратарей сравниваем с вратарями, нападающих с нападающими. У каждой позиции своя планка: сравнивать
+                  рейтинги напрямую было бы некорректно.
                 </p>
               </div>
             </div>
             <div class="flex gap-3 md:gap-4">
               <div class="w-10 h-10 md:w-12 md:h-12 rounded-full bg-primary text-primary-content flex items-center justify-center font-bold flex-shrink-0">3</div>
               <div class="flex-1">
-                <h3 class="font-semibold text-base md:text-lg mb-1">Один игрок — один слот</h3>
+                <h3 class="font-semibold text-base md:text-lg mb-1">Один игрок, один слот</h3>
                 <p class="opacity-60 text-xs md:text-sm">
-                  Слоты формации заполняются по очереди от самых узких амплуа к самым широким; как только игрок занял
-                  позицию, он больше не может занять другую — состав всегда состоит из 11 разных футболистов.
+                  Слоты формации заполняются по очереди, от самых узких амплуа к самым широким. Игрок, занявший
+                  позицию, не может занять другую: состав всегда состоит из 11 разных футболистов.
                 </p>
               </div>
             </div>
@@ -139,8 +138,8 @@
               <div class="flex-1">
                 <h3 class="font-semibold text-base md:text-lg mb-1">Пересчёт каждые 15 минут</h3>
                 <p class="opacity-60 text-xs md:text-sm">
-                  Состав автоматически пересчитывается по расписанию, не после каждого отдельного голоса — «обновлено N
-                  минут назад» вверху страницы показывает время последнего пересчёта.
+                  Состав пересчитывается по расписанию, а не после каждого голоса. Отметка «обновлено N минут назад»
+                  вверху страницы показывает время последнего пересчёта.
                 </p>
               </div>
             </div>
@@ -152,18 +151,18 @@
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 md:gap-3">
             <div class="flex items-center gap-3 p-3 bg-base-200 rounded-lg">
               <span class="w-7 h-7 rounded-full bg-base-300 shrink-0" style="outline: 2px solid var(--color-success); outline-offset: 2px;"></span>
-              <span class="text-xs opacity-60">Данных достаточно — от {{ confident_votes_threshold }} голосов, месту в составе можно доверять</span>
+              <span class="text-xs opacity-60">Данных достаточно: от {{ confident_votes_threshold }} голосов, месту в составе можно доверять</span>
             </div>
             <div class="flex items-center gap-3 p-3 bg-base-200 rounded-lg">
               <span class="w-7 h-7 rounded-full bg-base-300 shrink-0" style="outline: 2px solid var(--color-warning); outline-offset: 2px;"></span>
-              <span class="text-xs opacity-60">Голосов пока меньше {{ confident_votes_threshold }} — место может измениться</span>
+              <span class="text-xs opacity-60">Голосов пока меньше {{ confident_votes_threshold }}: место может измениться</span>
             </div>
           </div>
           <p class="text-xs opacity-50 mt-3">
-            Кандидат вообще появляется в подборе состава не раньше {{ min_matches_for_candidate }} оценённых матчей.
-            Полная расшифровка по каждому игроку (уверенность в оценке + изменение места в рейтинге) — под
+            Кандидат появляется в подборе не раньше {{ min_matches_for_candidate }} оценённых матчей. Полная
+            расшифровка по каждому игроку (уверенность в оценке и изменение места в рейтинге) доступна под
             иконкой <i class="ti ti-info-circle"></i> рядом с его именем в составе выше. Подробнее о доверии к
-            рейтингам см. <a href="{% url 'core:anti_fraud' %}#rating-confidence" class="link link-primary">страницу о борьбе с накруткой</a>.
+            рейтингам: <a href="{% url 'core:anti_fraud' %}#rating-confidence" class="link link-primary">страница о борьбе с накруткой</a>.
           </p>
         </div>
       </div>

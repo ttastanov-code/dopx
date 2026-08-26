@@ -1,0 +1,48 @@
+{% comment %}
+Брендовая панель для страниц входа/регистрации (auth/login.html,
+auth/register.html) — левая половина split-screen макета на десктопе,
+скрыта на мобильных (форма там на весь экран).
+
+Редизайн 2026-08-26, второй проход. Первая версия (радиальные
+фиолетово-синие "блобы" + точечная текстура + бордеры-карточки на
+статах) продуктовым фидбеком названа "детский сад" — визуальный шум
+шаблонного SaaS-конструктора, а не спокойная премиальная страница
+уровня Apple/Google. Принцип второго прохода: почти монохром (один
+плоский тёмный фон, без градиентных пятен и текстур), один акцентный
+цвет только там, где он несёт смысл (не декоративно), много воздуха,
+крупный лёгкий (не жирный) заголовок, статы — тихая строка с
+разделителями, а не отдельные карточки.
+
+Параметры:
+- panel_stats (обязателен) — dict из core/utils.py::get_auth_panel_stats
+- headline, subhead — заголовок и подзаголовок, разные для входа и
+  регистрации (передаются вызывающим шаблоном)
+{% endcomment %}
+<div class="hidden lg:flex flex-col justify-between p-12 xl:p-16 bg-neutral text-neutral-content">
+
+    <a href="{% url 'core:home' %}" class="inline-flex w-fit opacity-90 hover:opacity-100 transition-opacity">
+        {% include 'components/_brand.html' with variant='authpanel' icon_size='h-8 w-8' text_size='text-base' %}
+    </a>
+
+    <div class="max-w-md">
+        <h2 class="text-4xl xl:text-5xl font-medium leading-[1.15] tracking-tight mb-5">{{ headline }}</h2>
+        <p class="text-neutral-content/60 text-lg leading-relaxed font-light">{{ subhead }}</p>
+    </div>
+
+    <div class="flex items-center gap-8 text-sm">
+        <div>
+            <span class="font-semibold">{{ panel_stats.total_matches }}</span>
+            <span class="text-neutral-content/50"> матчей</span>
+        </div>
+        <div class="w-px h-4 bg-neutral-content/15"></div>
+        <div>
+            <span class="font-semibold">{{ panel_stats.total_evaluations }}</span>
+            <span class="text-neutral-content/50"> оценок</span>
+        </div>
+        <div class="w-px h-4 bg-neutral-content/15"></div>
+        <div>
+            <span class="font-semibold">{{ panel_stats.total_users }}</span>
+            <span class="text-neutral-content/50"> болельщиков</span>
+        </div>
+    </div>
+</div>
