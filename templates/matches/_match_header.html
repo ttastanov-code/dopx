@@ -59,7 +59,7 @@ hx-атрибуты на корне живут только при status=live �
         {% elif match.status == 'cancelled' %}
         <div class="alert text-sm mb-3 sm:mb-4">
             <i class="ti ti-ban"></i>
-            <span>Матч отменён и не состоится.</span>
+            <span>Матч отменён.</span>
         </div>
         {% endif %}
 
@@ -177,9 +177,9 @@ hx-атрибуты на корне живут только при status=live �
                 <div class="w-full sm:w-auto flex flex-col items-center gap-1.5">
                     <a href="{% url 'evaluations:context' match.id %}" class="btn btn-primary btn-sm md:btn-lg w-full sm:w-auto">
                         <i class="ti ti-flame"></i>
-                        Вы уже реагировали в live — завершите оценку
+                        Вы уже реагировали в live. Завершите оценку
                     </a>
-                    <span class="text-xs opacity-60">Вы тапали реакции во время матча — полная оценка займёт ~2 минуты</span>
+                    <span class="text-xs opacity-60">Вы тапали реакции во время матча. Полная оценка займёт ~2 минуты</span>
                 </div>
                 {% elif voting_open and not user_has_evaluated %}
                 <a href="{% url 'evaluations:context' match.id %}" class="btn btn-primary btn-sm md:btn-lg w-full sm:w-auto">

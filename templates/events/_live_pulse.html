@@ -30,7 +30,7 @@ _match_header.html — атрибуты на корне живут только 
         <button type="button"
                 class="btn btn-ghost btn-xs btn-circle flex-shrink-0"
                 title="Поделиться моментом"
-                onclick="if(window.dopxTrack){dopxTrack('share_clicked', {channel: 'native', context: 'live_pulse', match_id: '{{ event.match_id }}'})}; if(navigator.share){navigator.share({title: '{{ event.get_event_type_display }} {{ event.display_minute }}\'', text: '{{ event.get_event_type_display }} на {{ event.display_minute }}\' — смотрю на DOPX', url: window.location.href})}">
+                onclick="if(window.dopxTrack){dopxTrack('share_clicked', {channel: 'native', context: 'live_pulse', match_id: '{{ event.match_id }}'})}; if(navigator.share){navigator.share({title: '{{ event.get_event_type_display }} {{ event.display_minute }}\'', text: '{{ event.get_event_type_display }} на {{ event.display_minute }}\'. Смотрю на DOPX', url: window.location.href})}">
             <i class="ti ti-share text-xs"></i>
         </button>
     </div>

@@ -8,7 +8,7 @@
             <i class="ti ti-menu-2 text-xl"></i>
         </button>
         <!-- Логотип -->
-        <a href="{% url 'core:home' %}" class="btn btn-ghost normal-case flex items-center p-1 sm:p-2 min-w-0" aria-label="DOPX — на главную">
+        <a href="{% url 'core:home' %}" class="btn btn-ghost normal-case flex items-center p-1 sm:p-2 min-w-0" aria-label="DOPX: на главную">
             {% include 'components/_brand.html' with variant='nav' %}
         </a>
     </div>
@@ -23,13 +23,17 @@
                     <summary class="flex items-center gap-2 {% if request.resolver_match.app_name in 'teams,players,coaches,referees' %}active font-semibold{% endif %}">
                         <i class="ti ti-chart-bar"></i><span>Статистика</span>
                     </summary>
-                    <ul class="p-2 w-56 bg-base-100 rounded-box shadow-xl border border-base-300 mt-2">
-                        <li><a href="{% url 'teams:list' %}" class="flex items-center gap-3"><div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center"><i class="ti ti-shirt-sport text-primary"></i></div><div><div class="font-medium">Команды</div><div class="text-xs opacity-60">Рейтинги и статистика</div></div></a></li>
-                        <li><a href="{% url 'players:list' %}" class="flex items-center gap-3"><div class="w-8 h-8 rounded-lg bg-secondary/10 flex items-center justify-center"><i class="ti ti-play-football text-secondary"></i></div><div><div class="font-medium">Игроки</div><div class="text-xs opacity-60">Топ выступлений</div></div></a></li>
-                        <li><a href="{% url 'coaches:list' %}" class="flex items-center gap-3"><div class="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center"><i class="ti ti-building-stadium text-accent"></i></div><div><div class="font-medium">Тренеры</div><div class="text-xs opacity-60">Тактика и замены</div></div></a></li>
-                        <li><a href="{% url 'referees:list' %}" class="flex items-center gap-3"><div class="w-8 h-8 rounded-lg bg-neutral/10 flex items-center justify-center"><i class="ti ti-gavel text-neutral"></i></div><div><div class="font-medium">Судьи</div><div class="text-xs opacity-60">Качество решений</div></div></a></li>
-                        <li><a href="{% url 'season_squad:best_xi' %}" class="flex items-center gap-3"><div class="w-8 h-8 rounded-lg bg-warning/10 flex items-center justify-center"><i class="ti ti-shirt text-warning"></i></div><div><div class="font-medium">Сборная DOPX</div><div class="text-xs opacity-60">Лучший XI сезона онлайн</div></div></a></li>
-                        <li><a href="{% url 'round_squad:round' %}" class="flex items-center gap-3"><div class="w-8 h-8 rounded-lg bg-info/10 flex items-center justify-center"><i class="ti ti-calendar-star text-info"></i></div><div><div class="font-medium">Тур недели</div><div class="text-xs opacity-60">Игрок и сборная тура</div></div></a></li>
+                    <ul class="p-2 w-72 bg-base-100 rounded-box shadow-xl border border-base-300 mt-2">
+                        <li><a href="{% url 'teams:list' %}" class="flex items-center gap-3"><div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0"><i class="ti ti-shirt-sport text-primary"></i></div><div class="min-w-0"><div class="font-medium">Команды</div><div class="text-xs opacity-60">Рейтинги и статистика</div></div></a></li>
+                        <li><a href="{% url 'players:list' %}" class="flex items-center gap-3"><div class="w-8 h-8 rounded-lg bg-secondary/10 flex items-center justify-center flex-shrink-0"><i class="ti ti-play-football text-secondary"></i></div><div class="min-w-0"><div class="font-medium">Игроки</div><div class="text-xs opacity-60">Топ выступлений</div></div></a></li>
+                        <li><a href="{% url 'coaches:list' %}" class="flex items-center gap-3"><div class="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center flex-shrink-0"><i class="ti ti-building-stadium text-accent"></i></div><div class="min-w-0"><div class="font-medium">Тренеры</div><div class="text-xs opacity-60">Тактика и замены</div></div></a></li>
+                        <li><a href="{% url 'referees:list' %}" class="flex items-center gap-3"><div class="w-8 h-8 rounded-lg bg-neutral/10 flex items-center justify-center flex-shrink-0"><i class="ti ti-gavel text-neutral"></i></div><div class="min-w-0"><div class="font-medium">Судьи</div><div class="text-xs opacity-60">Качество решений</div></div></a></li>
+                        <li><a href="{% url 'season_squad:best_xi' %}" class="flex items-center gap-3"><div class="w-8 h-8 rounded-lg bg-warning/10 flex items-center justify-center flex-shrink-0"><i class="ti ti-shirt text-warning"></i></div><div class="min-w-0"><div class="font-medium">Сборная DOPX</div><div class="text-xs opacity-60">Лучший состав сезона</div></div></a></li>
+                        {% if nav_current_round %}
+                        <li><a href="{% url 'round_squad:round' season_id=nav_current_round.season_id tour=nav_current_round.tour %}" class="flex items-center gap-3"><div class="w-8 h-8 rounded-lg bg-info/10 flex items-center justify-center flex-shrink-0"><i class="ti ti-calendar-star text-info"></i></div><div class="min-w-0"><div class="font-medium leading-snug">{{ nav_current_round.brand_title }}</div><div class="text-xs opacity-60">Игрок и состав тура</div></div></a></li>
+                        {% else %}
+                        <li><a href="{% url 'round_squad:round' %}" class="flex items-center gap-3"><div class="w-8 h-8 rounded-lg bg-info/10 flex items-center justify-center flex-shrink-0"><i class="ti ti-calendar-star text-info"></i></div><div class="min-w-0"><div class="font-medium">Тур недели</div><div class="text-xs opacity-60">Игрок и состав тура</div></div></a></li>
+                        {% endif %}
                     </ul>
                 </details>
             </li>
@@ -70,7 +74,7 @@
                     <div class="text-xs opacity-60 truncate">{{ user.email }}</div>
                     {% if user.trust_score %}
                     <div class="mt-2 flex items-center gap-2">
-                        <span class="text-xs">Trust Score:</span>
+                        <span class="text-xs">Доверие:</span>
                         <span class="badge badge-sm {% if user.trust_score >= 1.5 %}badge-success{% elif user.trust_score >= 1.2 %}badge-warning{% else %}badge-ghost{% endif %}">
                             {{ user.trust_score|floatformat:2 }}
                         </span>
@@ -128,9 +132,15 @@
             <a href="{% url 'season_squad:best_xi' %}" class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200">
                 <i class="ti ti-shirt text-xl"></i><span>Сборная DOPX</span>
             </a>
+            {% if nav_current_round %}
+            <a href="{% url 'round_squad:round' season_id=nav_current_round.season_id tour=nav_current_round.tour %}" class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200">
+                <i class="ti ti-calendar-star text-xl"></i><span>{{ nav_current_round.brand_title }}</span>
+            </a>
+            {% else %}
             <a href="{% url 'round_squad:round' %}" class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200">
                 <i class="ti ti-calendar-star text-xl"></i><span>Тур недели</span>
             </a>
+            {% endif %}
 
             <div class="divider my-2"></div>
             <a href="{% url 'core:rules' %}" class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200">

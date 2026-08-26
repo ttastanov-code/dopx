@@ -10,8 +10,8 @@
             <div class="w-16 h-16 rounded-full bg-success/20 flex items-center justify-center mx-auto mb-3 animate-bounce">
                 <i class="ti ti-check text-3xl text-success"></i>
             </div>
-            <h1 class="text-2xl font-bold mb-1">Спасибо!</h1>
-            <p class="text-xs text-base-content/60">Ваша оценка успешно сохранена</p>
+            <h1 class="text-2xl font-bold mb-1">Матч оценён!</h1>
+            <p class="text-xs text-base-content/60">Оценка сохранена и учтена в рейтинге</p>
         </div>
 
         <!-- Rewards Card -->
@@ -87,7 +87,7 @@
         <!-- Action Buttons -->
         <div class="space-y-2">
             <a href="{% url 'matches:list' %}" class="btn btn-primary btn-sm w-full">
-                <i class="ti ti-trophy text-sm"></i> Оценить ещё матчи
+                <i class="ti ti-trophy text-sm"></i> Оценить другой матч
             </a>
             <a href="{% url 'core:home' %}" class="btn btn-ghost btn-sm w-full">
                 <i class="ti ti-home text-sm"></i> На главную

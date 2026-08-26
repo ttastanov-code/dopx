@@ -29,13 +29,13 @@ NEW/↑N и цветной чип-фон под рейтингом убраны 
         {% if best_xi.last_computed_at %}
             Обновлено {{ best_xi.last_computed_at|timesince }} назад · по оценкам сообщества DOPX
         {% else %}
-            Пока не пересчитывалась — первый пересчёт запустится в ближайшие 15 минут
+            Пока не пересчитывалась, первый пересчёт запустится в ближайшие 15 минут
         {% endif %}
     </div>
     {% if best_xi.is_final %}
     <span class="badge badge-success gap-1"><i class="ti ti-lock"></i> Итоговая сборная DOPX сезона {{ season.year }}</span>
     {% else %}
-    <span class="badge badge-warning badge-outline gap-1"><i class="ti ti-bolt"></i> Сборная DOPX — состав ещё может измениться</span>
+    <span class="badge badge-warning badge-outline gap-1"><i class="ti ti-bolt"></i> Сборная DOPX: состав ещё может измениться</span>
     {% endif %}
 </div>
 

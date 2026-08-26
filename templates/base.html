@@ -10,10 +10,10 @@
     <title>{% block title %}{{ page_title|default:'DOPX' }}{% endblock %}</title>
     <!-- meta_description/og_image приходят из контекста конкретной вьюхи
          (matches/views.py, players/views.py) с этим текстом как дефолтом. -->
-    <meta name="description" content="{{ meta_description|default:'DOPX — Голос трибун измеряем' }}">
+    <meta name="description" content="{{ meta_description|default:'DOPX: измеряем голос трибун казахстанского футбола' }}">
     <meta property="og:type" content="website">
     <meta property="og:title" content="{{ page_title|default:'DOPX' }}">
-    <meta property="og:description" content="{{ meta_description|default:'DOPX — Голос трибун измеряем' }}">
+    <meta property="og:description" content="{{ meta_description|default:'DOPX: измеряем голос трибун казахстанского футбола' }}">
     <meta property="og:image" content="{% if og_image %}{{ og_image }}{% else %}{{ request.scheme }}://{{ request.get_host }}{% static 'img/dopx-logo.png' %}{% endif %}">
     <meta name="twitter:card" content="summary_large_image">
     <link rel="canonical" href="{{ request.build_absolute_uri }}">

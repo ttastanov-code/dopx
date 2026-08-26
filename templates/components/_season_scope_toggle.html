@@ -8,7 +8,7 @@
 <div class="flex items-center gap-2 text-xs sm:text-sm mb-4 md:mb-6 px-2 sm:px-0 opacity-80">
     {% if show_all %}
     <i class="ti ti-history"></i>
-    <span>Показаны все — включая прошлые сезоны</span>
+    <span>Показаны все сезоны</span>
     <a href="?{% query_transform season=None %}" class="link link-primary font-medium">Только сезон {{ active_season.year }}</a>
     {% else %}
     <i class="ti ti-calendar-event"></i>

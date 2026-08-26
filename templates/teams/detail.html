@@ -21,7 +21,7 @@
     <div x-show="open" x-cloak class="modal" :class="open && 'modal-open'" @keydown.escape.window="open = false">
       <div class="modal-box max-w-lg" @click.outside="open = false">
         <h3 class="font-bold text-lg mb-2"><i class="ti ti-code mr-1"></i> Виджет рейтинга {{ team.name }}</h3>
-        <p class="text-sm opacity-60 mb-3">Вставьте этот код на свой сайт — виджет обновляется автоматически, без интеграции с DOPX API.</p>
+        <p class="text-sm opacity-60 mb-3">Вставьте этот код на свой сайт: виджет обновляется автоматически, интеграция с DOPX API не нужна.</p>
         <div class="mb-3 p-2 bg-base-200 rounded-lg flex justify-center">
           <iframe src="{% url 'teams:widget' team.id %}" width="300" height="150" style="border:none;border-radius:12px" title="Превью виджета"></iframe>
         </div>
@@ -324,7 +324,7 @@
             </div>
             <div class="relative flex-1 min-w-0 pointer-events-none">
               <div class="font-medium text-sm truncate">{{ agg.player.first_name }} {{ agg.player.last_name }}</div>
-              <div class="text-xs opacity-60">{{ agg.match.start_time|date:"d.m" }} · {{ agg.total_votes }} голос(ов)</div>
+              <div class="text-xs opacity-60">{{ agg.match.start_time|date:"d.m" }} · {{ agg.total_votes }} оценок</div>
             </div>
             <div class="relative text-right flex-shrink-0">
               <div class="font-bold text-success text-sm md:text-base pointer-events-none">{{ agg.performance_score|floatformat:1 }}</div>

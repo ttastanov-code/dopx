@@ -21,7 +21,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 
 from django.contrib.contenttypes.models import ContentType
-from django.db.models import Avg, Count, F, FloatField, Sum
+from django.db.models import Avg, Count, F, FloatField, Q, Sum
 from django.urls import reverse
 from django.utils import timezone
 
@@ -71,6 +71,40 @@ ROUND_CONFIDENT_VOTES_THRESHOLD = 10
 # случайная горстка (как у тура с одним заранее сыгранным перенесённым
 # матчем).
 ROUND_CURRENT_TOUR_MIN_COMPLETION_RATIO = 0.75
+
+
+def resolve_practically_closed_tour(season) -> int | None:
+    """
+    Номер тура, который на практике уже сыгран (см. докстринг константы
+    ROUND_CURRENT_TOUR_MIN_COMPLETION_RATIO выше и историю багов в
+    round_squad/views.py::_resolve_latest_tour, откуда эта функция
+    вынесена сюда как публичный селектор, 2026-08-26).
+
+    Используется в двух местах с разными требованиями к строгости:
+    1) round_squad/views.py — дефолтный тур для страницы без явного
+       номера в URL;
+    2) core/context_processors.py::current_round_squad — запасной вариант
+       для кнопки в шапке, когда ЕЩЁ НИ ОДИН тур не зафиксирован через
+       RoundBestXI.is_final (тот флаг взводит периодическая Celery-задача
+       раз в 15 минут — до её первого прогона после того, как тур
+       практически завершился, кнопка иначе застряла бы на дефолтном
+       "Тур недели", хотя реальный номер уже известен по данным Match).
+
+    Сканирует туры от большего к меньшему и возвращает первый, где доля
+    завершённых матчей проходит порог — см. полное обоснование алгоритма
+    в _resolve_latest_tour.
+    """
+    tour_rows = (
+        Match.objects.filter(season=season, tour__isnull=False)
+        .values('tour')
+        .annotate(total=Count('id'), finished=Count('id', filter=Q(status='finished')))
+        .order_by('-tour')
+    )
+    for row in tour_rows:
+        total = row['total']
+        if total > 0 and (row['finished'] / total) >= ROUND_CURRENT_TOUR_MIN_COMPLETION_RATIO:
+            return row['tour']
+    return None
 
 
 @dataclass

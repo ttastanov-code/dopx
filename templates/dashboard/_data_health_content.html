@@ -7,13 +7,13 @@
      base.html/_nav.html, чтобы HTMX не задваивал шапку/навигацию при свапе. -->
 <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-6">
     <div class="stat bg-base-100 border border-base-300 rounded-lg p-3 md:p-4">
-        <div class="stat-title text-[10px] md:text-xs">Последний синк</div>
+        <div class="stat-title text-[10px] md:text-xs">Последняя синхронизация</div>
         {% if health.last_run %}
         <div class="stat-value text-base md:text-xl">{{ health.last_run.created_at|timesince }} назад</div>
         <div class="stat-desc text-[10px] md:text-xs">{{ health.last_run.total }} матчей, {{ health.last_run.duration_seconds|floatformat:1 }}с</div>
         {% else %}
         <div class="stat-value text-base md:text-xl opacity-40">нет данных</div>
-        <div class="stat-desc text-[10px] md:text-xs">ParserSyncRun ещё не писался</div>
+        <div class="stat-desc text-[10px] md:text-xs">Синхронизация ещё не запускалась</div>
         {% endif %}
     </div>
     <div class="stat bg-base-100 border border-base-300 rounded-lg p-3 md:p-4">
@@ -45,7 +45,7 @@
         <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
             <i class="ti ti-alert-triangle text-warning"></i> Матчи с пропущенными данными
         </h3>
-        <p class="text-xs opacity-60 mb-3">Список тех самых матчей из карточек выше — по клику «Ресинк» полная пересинхронизация с KFF прямо отсюда, без ручного поиска UUID в Django admin.</p>
+        <p class="text-xs opacity-60 mb-3">Те же матчи, что в карточках выше. Кнопка «Ресинк» запускает полную пересинхронизацию с KFF прямо отсюда, без поиска UUID в Django admin.</p>
         <div class="overflow-x-auto">
             <table class="table table-sm">
                 <thead>
@@ -55,7 +55,7 @@
                     {% for match in health.matches_missing_lineups_list %}
                     <tr>
                         <td class="whitespace-nowrap">
-                            <a href="{% url 'admin:matches_match_change' match.id %}" class="link link-hover" target="_blank">{{ match.home_team }} — {{ match.away_team }}</a>
+                            <a href="{% url 'admin:matches_match_change' match.id %}" class="link link-hover" target="_blank">{{ match.home_team }} - {{ match.away_team }}</a>
                         </td>
                         <td class="text-xs opacity-70 whitespace-nowrap">{{ match.start_time|date:"d.m H:i" }}</td>
                         <td><span class="badge badge-sm {% if match.status == 'live' %}badge-error{% else %}badge-ghost{% endif %}">{{ match.get_status_display }}</span></td>
@@ -73,7 +73,7 @@
                     {% for match in health.matches_missing_events_list %}
                     <tr>
                         <td class="whitespace-nowrap">
-                            <a href="{% url 'admin:matches_match_change' match.id %}" class="link link-hover" target="_blank">{{ match.home_team }} — {{ match.away_team }}</a>
+                            <a href="{% url 'admin:matches_match_change' match.id %}" class="link link-hover" target="_blank">{{ match.home_team }} - {{ match.away_team }}</a>
                         </td>
                         <td class="text-xs opacity-70 whitespace-nowrap">{{ match.start_time|date:"d.m H:i" }}</td>
                         <td><span class="badge badge-sm {% if match.status == 'live' %}badge-error{% else %}badge-ghost{% endif %}">{{ match.get_status_display }}</span></td>
@@ -167,7 +167,7 @@
                             <form method="post" action="{% url 'dashboard:data_health_resync_match' err.match_id %}" class="inline">
                                 {% csrf_token %}
                                 <button type="submit" class="btn btn-xs btn-outline">
-                                    <i class="ti ti-refresh"></i> Досинхронизировать
+                                    <i class="ti ti-refresh"></i> Ресинк
                                 </button>
                             </form>
                         </td>
@@ -188,7 +188,7 @@
                 <thead>
                     <tr>
                         <th>Когда</th><th>Матчей</th><th>Обновлено</th><th>Новых событий</th>
-                        <th>Пропущено (лок)</th><th>Ошибок</th><th>Длительность</th>
+                        <th>Пропущено (заблокировано)</th><th>Ошибок</th><th>Длительность</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -203,7 +203,7 @@
                         <td class="text-xs opacity-60">{{ run.duration_seconds|floatformat:1 }}с</td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="7" class="text-center opacity-50 py-6">Пока нет ни одного запуска — появится после первого срабатывания celery-задачи update_match_statuses</td></tr>
+                    <tr><td colspan="7" class="text-center opacity-50 py-6">Запусков пока не было. Появятся после первого выполнения задачи update_match_statuses</td></tr>
                     {% endfor %}
                 </tbody>
             </table>

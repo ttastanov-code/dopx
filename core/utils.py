@@ -21,6 +21,44 @@ from __future__ import annotations
 from django.core.cache import cache
 from django.http import HttpRequest
 
+
+def get_auth_panel_stats() -> dict:
+    """
+    Лёгкая сводка реальных чисел платформы для брендовой панели на
+    страницах входа/регистрации (auth/login.html, auth/register.html,
+    templates/components/_auth_panel.html) — продуктовый запрос
+    2026-08-26: "хочу качественную страницу входа/регистрации, как у
+    крупных проектов". Раньше вместо этого показывались абстрактные
+    ярлыки "Бесплатно / 2 минуты / Сообщество" без реального содержания;
+    три настоящих числа платформы работают как социальное доказательство
+    (тот же приём, что у Stripe/Linear/Vercel на их страницах входа).
+
+    Кэш на 10 минут: страницы входа/регистрации открываются часто (в том
+    числе ботами и сканерами до всякой авторизации), точность до минуты
+    здесь не нужна — три COUNT-запроса на каждый заход того не стоят.
+
+    Импорты моделей внутри функции: get_client_ip и is_rate_limited в
+    этом модуле используются из users/forms.py и других мест, которые
+    сами могут импортироваться раньше полной инициализации app registry —
+    тот же осторожный паттерн, что и в core/context_processors.py.
+    """
+    cache_key = 'auth_panel_stats_v1'
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    from evaluations.models import MatchEvaluation
+    from matches.models import Match
+    from users.models import User
+
+    stats = {
+        'total_matches': Match.objects.filter(status='finished').count(),
+        'total_evaluations': MatchEvaluation.objects.count(),
+        'total_users': User.objects.filter(is_verified=True).count(),
+    }
+    cache.set(cache_key, stats, 600)
+    return stats
+
 # 9 казахских букв (Ә Ғ Қ Ң Ө Ұ Ү Һ І) — отдельные Unicode-символы, не
 # просто похожие на русские: "Қ" (U+049A) и "К" (U+041A) для icontains
 # полностью не связаны. У большинства пользователей нет казахской

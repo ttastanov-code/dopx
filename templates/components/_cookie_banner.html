@@ -46,16 +46,16 @@ localStorage перестанет совпадать с новым ключом,
                 <i class="ti ti-whistle text-lg"></i>
             </div>
             <div class="flex-1 min-w-0">
-                <p class="text-sm sm:text-base font-semibold mb-1">Технический тайм-аут: немного о cookie</p>
+                <p class="text-sm sm:text-base font-semibold mb-1">Мы используем cookie</p>
                 <p class="text-xs sm:text-sm opacity-70 leading-relaxed">
-                    Используем только необходимые cookie — чтобы вы оставались в системе и чтобы формы (например, вайзард оценки матча) работали безопасно. Никакой рекламной слежки и аналитических трекеров.
+                    Только необходимые: чтобы вы оставались в системе и формы, например оценка матча, работали корректно. Рекламы и трекеров здесь нет.
                 </p>
             </div>
         </div>
         <div class="flex flex-wrap items-center justify-end gap-2 mt-3 sm:mt-4">
             <a href="{% url 'core:privacy' %}#cookies" class="btn btn-ghost btn-xs sm:btn-sm">Какие именно?</a>
             <button type="button" @click="accept()" class="btn btn-primary btn-xs sm:btn-sm">
-                <i class="ti ti-check"></i> Понятно, играем дальше
+                <i class="ti ti-check"></i> Принять
             </button>
         </div>
     </div>

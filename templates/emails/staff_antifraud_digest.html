@@ -16,7 +16,7 @@
 </head>
 <body>
     <div class="container">
-        <div class="header"><h1>🛡️ Антифрод — итоги недели</h1></div>
+        <div class="header"><h1>🛡️ Антифрод: итоги недели</h1></div>
 
         <div class="stat-box">
             <p style="margin: 0; font-size: 18px;"><strong>{{ total_new }}</strong> новых сигнал{{ total_new|pluralize:"," }} за последние 7 дней</p>
@@ -38,7 +38,7 @@
         {% for flag in top_flags %}
         <div class="flag-row">
             <span class="flag-score">{{ flag.score|floatformat:2 }}</span>
-            — {{ flag.get_source_display }}
+            · {{ flag.get_source_display }}
             {% if flag.user %}· {{ flag.user.username }}{% elif flag.content_object %}· {{ flag.content_object }}{% endif %}
             <div style="color: #666; margin-top: 4px;">{{ flag.human_summary.explanation }}</div>
         </div>
@@ -46,7 +46,7 @@
         {% endif %}
 
         <p style="color: #666; font-size: 13px; margin-top: 20px;">
-            Большинство сигналов не требуют действия — пороги самокалибруются,
+            Большинство сигналов не требуют действия: пороги самокалибруются,
             а расхождение со статистикой КФФ уже скорректировано автоматически.
             Загляните только если что-то из списка выше выглядит подозрительно.
         </p>

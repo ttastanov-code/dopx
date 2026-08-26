@@ -7,14 +7,14 @@
 <div class="card bg-base-100 border border-base-300">
     <div class="card-body p-4">
         <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
-            <i class="ti ti-list-check text-primary"></i> Очередь celery — что выполняется сейчас
+            <i class="ti ti-list-check text-primary"></i> Очередь celery: что выполняется сейчас
         </h3>
         {% if not celery_tasks.ok %}
         <div class="alert alert-warning text-sm">
             <i class="ti ti-alert-triangle"></i> Не удалось опросить воркеров: {{ celery_tasks.error }}
         </div>
         {% elif not celery_tasks.active and not celery_tasks.reserved %}
-        <p class="text-sm opacity-50 py-2">Очередь пуста — ни активных, ни зарезервированных задач.</p>
+        <p class="text-sm opacity-50 py-2">Очередь пуста. Нет ни активных, ни зарезервированных задач.</p>
         {% else %}
         <div class="overflow-x-auto">
             <table class="table table-sm">

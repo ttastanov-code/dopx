@@ -24,12 +24,12 @@
 <body>
     <div class="container">
         <div class="header"><h1>⚽ Кто победит?</h1></div>
-        <p>Через час начинается матч — как вы думаете, кто возьмёт верх?</p>
+        <p>Через час стартует матч. Как думаете, кто победит?</p>
         <div class="match-info">
             <h3>{{ match.home_team.name }} vs {{ match.away_team.name }}</h3>
             <p style="margin: 4px 0 0; opacity: 0.7;">{{ match.start_time|date:"d.m.Y в H:i" }}</p>
         </div>
-        <p style="opacity: 0.7;">Поставьте прогноз и сравните с мнением сообщества — приём открыт до стартового свистка.</p>
+        <p style="opacity: 0.7;">Поставьте прогноз и сравните его с мнением сообщества. Приём открыт до стартового свистка.</p>
         <p style="text-align: center;"><a href="{{ site_url }}/matches/{{ match.id }}/" class="btn">Поставить прогноз</a></p>
     </div>
 </body>

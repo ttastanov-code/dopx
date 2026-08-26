@@ -10,7 +10,7 @@ templates/round_squad/_round_content.html
         {% if round_xi.last_computed_at %}
             Обновлено {{ round_xi.last_computed_at|timesince }} назад
         {% else %}
-            Пока не пересчитывался — первый пересчёт запустится в ближайшие 15 минут
+            Пока не пересчитывался. Первый пересчёт запустится в ближайшие 15 минут
         {% endif %}
     </div>
     {% if round_xi.is_final %}
@@ -60,7 +60,7 @@ templates/round_squad/_round_content.html
             </a>
             <div class="text-xs opacity-60 mt-1">{{ dramatic_match_explanation }}</div>
             {% else %}
-            <div class="text-sm opacity-40 py-2">Пока недостаточно оценок матчей в этом туре</div>
+            <div class="text-sm opacity-40 py-2">Пока недостаточно оценок в этом туре</div>
             {% endif %}
         </div>
     </div>

@@ -11,7 +11,7 @@ tier_label, badge_class, tooltip_text). Шаблон должен быть за�
 <span class="inline-flex items-center gap-1 align-middle">
     <a href="{% url 'core:anti_fraud' %}#rating-confidence"
        class="badge badge-xs md:badge-sm {{ badge_class }} whitespace-nowrap no-underline hover:opacity-80"
-       title="Как считается надёжность рейтинга — /anti-fraud/">{{ tier_label }}</a>
+       title="Как считается надёжность рейтинга">{{ tier_label }}</a>
     {% if tooltip_text %}{% include 'components/_tooltip_icon.html' with text=tooltip_text %}{% endif %}
 </span>
 {% endif %}

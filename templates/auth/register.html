@@ -1,261 +1,214 @@
 {% extends 'base_auth.html' %}
 {% load static %}
-{% block title %}Регистрация — DOPX{% endblock %}
+{% block title %}Регистрация · DOPX{% endblock %}
+
+{% block extra_style %}
+body {
+    background:
+        radial-gradient(60% 40% at 50% 0%, color-mix(in oklab, var(--color-primary) 7%, transparent), transparent 70%),
+        var(--color-base-100);
+}
+.auth-input {
+    height: 3.25rem;
+    border-radius: 0.875rem;
+    border: none;
+    background: var(--color-base-200);
+    padding: 0 1.125rem;
+    width: 100%;
+    font-size: 0.9375rem;
+    transition: box-shadow 120ms ease, background-color 120ms ease;
+}
+.auth-input::placeholder { color: color-mix(in oklab, var(--color-base-content) 35%, transparent); }
+.auth-input:focus {
+    outline: none;
+    background: var(--color-base-100);
+    box-shadow: 0 0 0 2px var(--color-primary);
+}
+.auth-input.auth-input-error {
+    box-shadow: 0 0 0 2px var(--color-error);
+}
+{% endblock %}
+
 {% block content %}
-<div class="w-full max-w-md px-4">
-    <!-- Карточка регистрации -->
-    <div class="card bg-base-100 border border-base-300 shadow-xl">
-        <div class="card-body p-8">
-            <!-- Логотип -->
-            <div class="text-center mb-6">
-                <div class="flex justify-center mb-3">
-                    {% include 'components/_brand.html' with variant='auth-register' icon_size='h-10 w-10' text_size='text-xl' %}
+<div class="w-full max-w-[400px] mx-auto px-6 py-14">
+
+    <div class="flex justify-center mb-8">
+        <a href="{% url 'core:home' %}">
+            {% include 'components/_brand.html' with variant='auth-register' icon_size='h-10 w-10' text_size='text-xl' %}
+        </a>
+    </div>
+
+    <div class="text-center mb-9">
+        <h1 class="text-[30px] leading-tight font-semibold tracking-tight">Создать аккаунт</h1>
+        <p class="text-base-content/55 mt-2.5 text-[15px]">
+            Присоединяйся к {{ panel_stats.total_users }}+ болельщикам, которые оценивают матчи КПЛ
+        </p>
+    </div>
+
+    <form method="post" action="{% url 'users:register' %}"
+          class="space-y-4"
+          x-data="registerForm"
+          @submit="checkMatch()">
+        {% csrf_token %}
+
+        <!-- АНТИ-БОТ: honeypot-поле, невидимое человеку (визуально
+             скрыто и вынесено из потока табуляции), но доступное
+             примитивному боту, слепо заполняющему все input'ы формы.
+             Поле ОБЯЗАНО остаться пустым — см.
+             users/forms.py::UserRegistrationForm.clean_website. -->
+        <div style="position:absolute; left:-9999px; top:-9999px;" aria-hidden="true">
+            <label for="id_website">Website</label>
+            <input type="text" id="id_website" name="website" tabindex="-1" autocomplete="off">
+        </div>
+
+        <!-- АНТИ-БОТ: time-trap — момент рендера формы, см.
+             users/forms.py::UserRegistrationForm.clean_form_rendered_at.
+             Отправка формы быстрее нескольких секунд после рендера
+             физически невозможна для человека. -->
+        {{ form.form_rendered_at }}
+
+        <!-- Username -->
+        <div>
+            <label for="id_username" class="block text-sm font-medium mb-1.5">Имя пользователя</label>
+            <input type="text"
+                   id="id_username"
+                   name="username"
+                   required
+                   autocomplete="username"
+                   class="auth-input {% if form.username.errors %}auth-input-error{% endif %}"
+                   placeholder="username"
+                   value="{{ form.username.value|default:'' }}">
+            {% if form.username.errors %}
+            <p class="text-xs text-error mt-1.5">{{ form.username.errors.0 }}</p>
+            {% else %}
+            <p class="text-xs text-base-content/40 mt-1.5">Только буквы, цифры и @/./+/-/_</p>
+            {% endif %}
+        </div>
+
+        <!-- Email -->
+        <div>
+            <label for="id_email" class="block text-sm font-medium mb-1.5">Email</label>
+            <input type="email"
+                   id="id_email"
+                   name="email"
+                   required
+                   autocomplete="email"
+                   class="auth-input {% if form.email.errors %}auth-input-error{% endif %}"
+                   placeholder="email@example.com"
+                   value="{{ form.email.value|default:'' }}">
+            {% if form.email.errors %}
+            <p class="text-xs text-error mt-1.5">{{ form.email.errors.0 }}</p>
+            {% endif %}
+        </div>
+
+        <!-- City (optional) -->
+        <div>
+            <label for="id_city" class="block text-sm font-medium mb-1.5">Город <span class="text-base-content/40 font-normal">(необязательно)</span></label>
+            <input type="text"
+                   id="id_city"
+                   name="city"
+                   autocomplete="address-level2"
+                   class="auth-input {% if form.city.errors %}auth-input-error{% endif %}"
+                   placeholder="Например, Алматы"
+                   value="{{ form.city.value|default:'' }}">
+            {% if form.city.errors %}
+            <p class="text-xs text-error mt-1.5">{{ form.city.errors.0 }}</p>
+            {% endif %}
+        </div>
+
+        <!-- Пароли: рядом на широких экранах, друг под другом на узких -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+                <label for="id_password1" class="block text-sm font-medium mb-1.5">Пароль</label>
+                <div class="relative">
+                    <input type="password"
+                           id="id_password1"
+                           name="password1"
+                           required
+                           autocomplete="new-password"
+                           x-model="password"
+                           class="auth-input pr-10 {% if form.password1.errors %}auth-input-error{% endif %}"
+                           placeholder="••••••••">
+                    <button type="button"
+                            @click="togglePassword('id_password1')"
+                            class="absolute right-2.5 top-1/2 -translate-y-1/2 text-base-content/35 hover:text-base-content transition-colors">
+                        <i class="ti ti-eye"></i>
+                    </button>
                 </div>
-                <h1 class="text-2xl font-bold">Создать аккаунт</h1>
-                <p class="text-sm opacity-60 mt-1">Присоединяйся к DOPX</p>
-            </div>
-
-            <!-- Форма -->
-            <form method="post" action="{% url 'users:register' %}"
-                  class="space-y-4"
-                  x-data="registerForm"
-                  @submit="checkMatch()">
-                {% csrf_token %}
-
-                <!-- АНТИ-БОТ: honeypot-поле, невидимое человеку (визуально
-                     скрыто и вынесено из потока табуляции), но доступное
-                     примитивному боту, слепо заполняющему все input'ы формы.
-                     Поле ОБЯЗАНО остаться пустым — см.
-                     users/forms.py::UserRegistrationForm.clean_website. -->
-                <div style="position:absolute; left:-9999px; top:-9999px;" aria-hidden="true">
-                    <label for="id_website">Website</label>
-                    <input type="text" id="id_website" name="website" tabindex="-1" autocomplete="off">
-                </div>
-
-                <!-- АНТИ-БОТ: time-trap — момент рендера формы, см.
-                     users/forms.py::UserRegistrationForm.clean_form_rendered_at.
-                     Отправка формы быстрее нескольких секунд после рендера
-                     физически невозможна для человека. -->
-                {{ form.form_rendered_at }}
-
-                <!-- Username -->
-                <div class="form-control">
-                    <label class="label" for="id_username">
-                        <span class="label-text font-medium">Имя пользователя</span>
-                    </label>
-                    <div class="relative">
-                        <input type="text"
-                               id="id_username"
-                               name="username"
-                               required
-                               autocomplete="username"
-                               class="input input-bordered w-full pl-10 {% if form.username.errors %}input-error{% endif %}"
-                               placeholder="username"
-                               value="{{ form.username.value|default:'' }}">
-                        <i class="ti ti-user absolute left-3 top-1/2 -translate-y-1/2 opacity-40"></i>
-                    </div>
-                    {% if form.username.errors %}
-                    <label class="label">
-                        <span class="label-text-alt text-error">{{ form.username.errors.0 }}</span>
-                    </label>
-                    {% endif %}
-                    <label class="label">
-                        <span class="label-text-alt opacity-50">Только буквы, цифры и @/./+/-/_</span>
-                    </label>
-                </div>
-
-                <!-- Email -->
-                <div class="form-control">
-                    <label class="label" for="id_email">
-                        <span class="label-text font-medium">Email</span>
-                    </label>
-                    <div class="relative">
-                        <input type="email"
-                               id="id_email"
-                               name="email"
-                               required
-                               autocomplete="email"
-                               class="input input-bordered w-full pl-10 {% if form.email.errors %}input-error{% endif %}"
-                               placeholder="email@example.com"
-                               value="{{ form.email.value|default:'' }}">
-                        <i class="ti ti-mail absolute left-3 top-1/2 -translate-y-1/2 opacity-40"></i>
-                    </div>
-                    {% if form.email.errors %}
-                    <label class="label">
-                        <span class="label-text-alt text-error">{{ form.email.errors.0 }}</span>
-                    </label>
-                    {% endif %}
-                </div>
-
-                <!-- City (optional) -->
-                <div class="form-control">
-                    <label class="label" for="id_city">
-                        <span class="label-text font-medium">Город <span class="opacity-50">(необязательно)</span></span>
-                    </label>
-                    <div class="relative">
-                        <input type="text"
-                               id="id_city"
-                               name="city"
-                               autocomplete="address-level2"
-                               class="input input-bordered w-full pl-10 {% if form.city.errors %}input-error{% endif %}"
-                               placeholder="Например, Алматы"
-                               value="{{ form.city.value|default:'' }}">
-                        <i class="ti ti-map-pin absolute left-3 top-1/2 -translate-y-1/2 opacity-40"></i>
-                    </div>
-                    {% if form.city.errors %}
-                    <label class="label">
-                        <span class="label-text-alt text-error">{{ form.city.errors.0 }}</span>
-                    </label>
-                    {% endif %}
-                </div>
-
-                <!-- Password 1 -->
-                <div class="form-control">
-                    <label class="label" for="id_password1">
-                        <span class="label-text font-medium">Пароль</span>
-                    </label>
-                    <div class="relative">
-                        <input type="password"
-                               id="id_password1"
-                               name="password1"
-                               required
-                               autocomplete="new-password"
-                               x-model="password"
-                               class="input input-bordered w-full pl-10 {% if form.password1.errors %}input-error{% endif %}"
-                               placeholder="••••••••">
-                        <i class="ti ti-lock absolute left-3 top-1/2 -translate-y-1/2 opacity-40"></i>
-                        <button type="button"
-                                @click="togglePassword('id_password1')"
-                                class="absolute right-3 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-100 transition-opacity">
-                            <i class="ti ti-eye"></i>
-                        </button>
-                    </div>
-                    {% if form.password1.errors %}
-                    <label class="label">
-                        <span class="label-text-alt text-error">{{ form.password1.errors.0 }}</span>
-                    </label>
-                    {% endif %}
-                </div>
-
-                <!-- Password 2 -->
-                <div class="form-control">
-                    <label class="label" for="id_password2">
-                        <span class="label-text font-medium">Подтверждение пароля</span>
-                    </label>
-                    <div class="relative">
-                        <input type="password"
-                               id="id_password2"
-                               name="password2"
-                               required
-                               autocomplete="new-password"
-                               x-model="confirmPassword"
-                               class="input input-bordered w-full pl-10 {% if form.password2.errors %}input-error{% endif %}"
-                               placeholder="••••••••">
-                        <i class="ti ti-lock-check absolute left-3 top-1/2 -translate-y-1/2 opacity-40"></i>
-                        <button type="button"
-                                @click="togglePassword('id_password2')"
-                                class="absolute right-3 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-100 transition-opacity">
-                            <i class="ti ti-eye"></i>
-                        </button>
-                    </div>
-                    {% if form.password2.errors %}
-                    <label class="label">
-                        <span class="label-text-alt text-error">{{ form.password2.errors.0 }}</span>
-                    </label>
-                    {% endif %}
-                    <!-- Password match indicator -->
-                    <label class="label" x-show="confirmPassword && password !== confirmPassword">
-                        <span class="label-text-alt text-error">Пароли не совпадают</span>
-                    </label>
-                </div>
-
-                <!-- CAPTCHA: self-hosted (django-simple-captcha), картинка
-                     рисуется Pillow'ом на сервере, без внешних API-ключей.
-                     Клик по картинке обновляет её через встроенный AJAX-
-                     эндпоинт пакета (captcha-refresh) — см. JS в конце
-                     шаблона. Медиа-объект формы для этого поля в этой
-                     версии пакета пуст, полагаться на него было ошибкой. -->
-                <div class="form-control">
-                    <label class="label" for="id_captcha_1">
-                        <span class="label-text font-medium">Подтвердите, что вы не робот</span>
-                    </label>
-                    <div class="flex items-center gap-3">
-                        {{ form.captcha }}
-                    </div>
-                    {% if form.captcha.errors %}
-                    <label class="label">
-                        <span class="label-text-alt text-error">{{ form.captcha.errors.0 }}</span>
-                    </label>
-                    {% endif %}
-                    <label class="label">
-                        <span class="label-text-alt opacity-50">Не видно текст? Кликните по картинке, чтобы обновить.</span>
-                    </label>
-                </div>
-
-                <!-- Terms -->
-                <div class="form-control">
-                    <label class="label cursor-pointer gap-3 p-4 rounded-lg border border-base-300 hover:bg-base-200 transition-colors">
-                        <input type="checkbox" required class="checkbox checkbox-primary checkbox-lg">
-                        <span class="label-text text-sm">
-                            Я принимаю
-                            <a href="{% url 'core:rules' %}" class="link link-primary hover:no-underline" target="_blank">правилами платформы</a>
-                        </span>
-                    </label>
-                </div>
-
-                <!-- Submit Button -->
-                <button type="submit"
-                        class="btn btn-primary btn-lg w-full"
-                        :disabled="password !== confirmPassword">
-                    <i class="ti ti-user-plus"></i>
-                    Зарегистрироваться
-                </button>
-
-                <!-- Non-field errors -->
-                {% if form.non_field_errors %}
-                <div class="alert alert-error text-sm py-2">
-                    <i class="ti ti-alert-circle"></i>
-                    {{ form.non_field_errors.0 }}
-                </div>
+                {% if form.password1.errors %}
+                <p class="text-xs text-error mt-1.5">{{ form.password1.errors.0 }}</p>
                 {% endif %}
-            </form>
+            </div>
+            <div>
+                <label for="id_password2" class="block text-sm font-medium mb-1.5">Повтор</label>
+                <div class="relative">
+                    <input type="password"
+                           id="id_password2"
+                           name="password2"
+                           required
+                           autocomplete="new-password"
+                           x-model="confirmPassword"
+                           class="auth-input pr-10 {% if form.password2.errors %}auth-input-error{% endif %}"
+                           placeholder="••••••••">
+                    <button type="button"
+                            @click="togglePassword('id_password2')"
+                            class="absolute right-2.5 top-1/2 -translate-y-1/2 text-base-content/35 hover:text-base-content transition-colors">
+                        <i class="ti ti-eye"></i>
+                    </button>
+                </div>
+                {% if form.password2.errors %}
+                <p class="text-xs text-error mt-1.5">{{ form.password2.errors.0 }}</p>
+                {% endif %}
+            </div>
+        </div>
+        <p class="text-xs text-base-content/40 -mt-2">Минимум 8 символов, не только цифры</p>
+        <p class="text-xs text-error -mt-2" x-show="confirmPassword && password !== confirmPassword">Пароли не совпадают</p>
 
-            <!-- Divider -->
-            <div class="divider text-xs opacity-60">или</div>
+        <!-- CAPTCHA: self-hosted (django-simple-captcha), картинка
+             рисуется Pillow'ом на сервере, без внешних API-ключей.
+             Клик по картинке обновляет её через встроенный AJAX-
+             эндпоинт пакета (captcha-refresh) — см. JS в конце
+             шаблона. Медиа-объект формы для этого поля в этой
+             версии пакета пуст, полагаться на него было ошибкой. -->
+        <div>
+            <label for="id_captcha_1" class="block text-sm font-medium mb-1.5">Подтвердите, что вы не робот</label>
+            <div class="flex items-center gap-3">
+                {{ form.captcha }}
+            </div>
+            {% if form.captcha.errors %}
+            <p class="text-xs text-error mt-1.5">{{ form.captcha.errors.0 }}</p>
+            {% endif %}
+            <p class="text-xs text-base-content/40 mt-1.5">Не видно текст? Кликните по картинке, чтобы обновить.</p>
+        </div>
 
-            <!-- Login Link -->
-            <div class="text-center">
-                <p class="text-sm opacity-70">
-                    Уже зарегистрированы?
-                    <a href="{% url 'users:login' %}" class="link link-primary font-medium hover:no-underline">
-                        Войти
-                    </a>
-                </p>
-            </div>
-        </div>
-    </div>
+        <!-- Terms -->
+        <label class="flex items-start gap-2.5 pt-1 cursor-pointer">
+            <input type="checkbox" required class="checkbox checkbox-sm checkbox-primary mt-0.5">
+            <span class="text-sm text-base-content/70">
+                Я принимаю
+                <a href="{% url 'core:rules' %}" class="text-base-content underline hover:no-underline" target="_blank">правила платформы</a>
+            </span>
+        </label>
 
-    <!-- Преимущества -->
-    <div class="mt-8 grid grid-cols-3 gap-4 text-center">
-        <div class="flex flex-col items-center">
-            <div class="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-2">
-                <i class="ti ti-shield-check text-primary text-xl"></i>
-            </div>
-            <span class="text-xs opacity-60">Бесплатно</span>
-        </div>
-        <div class="flex flex-col items-center">
-            <div class="w-12 h-12 rounded-full bg-secondary/10 flex items-center justify-center mb-2">
-                <i class="ti ti-clock text-secondary text-xl"></i>
-            </div>
-            <span class="text-xs opacity-60">2 минуты</span>
-        </div>
-        <div class="flex flex-col items-center">
-            <div class="w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center mb-2">
-                <i class="ti ti-users text-accent text-xl"></i>
-            </div>
-            <span class="text-xs opacity-60">Сообщество</span>
-        </div>
-    </div>
+        <!-- Non-field errors -->
+        {% if form.non_field_errors %}
+        <p class="text-sm text-error">{{ form.non_field_errors.0 }}</p>
+        {% endif %}
+
+        <!-- Submit Button -->
+        <button type="submit"
+                class="btn btn-primary w-full h-12 min-h-0 rounded-xl text-[15px] font-semibold shadow-none"
+                :disabled="password !== confirmPassword">
+            Зарегистрироваться
+        </button>
+    </form>
+
+    <p class="text-center text-sm text-base-content/55 mt-8">
+        Уже с нами?
+        <a href="{% url 'users:login' %}" class="text-base-content font-semibold hover:underline">
+            Войти
+        </a>
+    </p>
 </div>
 {% endblock %}
 

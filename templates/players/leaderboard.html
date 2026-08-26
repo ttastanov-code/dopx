@@ -9,7 +9,7 @@
             <i class="ti ti-player mr-2"></i>
             Рейтинг игроков
         </h1>
-        <p class="opacity-60">Топ футболистов по Рейтингу выступления</p>
+        <p class="opacity-60">Топ футболистов по рейтингу выступления</p>
     </div>
 
     <!-- === TABS === -->
@@ -110,7 +110,7 @@
                                         {{ player.avg_performance|floatformat:2 }}
                                     </span>
                                 {% else %}
-                                    <span class="badge badge-ghost badge-sm whitespace-nowrap" title="Меньше 5 голосов — рейтинг ещё не показателен">
+                                    <span class="badge badge-ghost badge-sm whitespace-nowrap" title="Меньше 5 оценок: рейтинг пока не показателен">
                                         Недостаточно данных
                                     </span>
                                 {% endif %}
@@ -129,7 +129,7 @@
                             <td colspan="6" class="text-center py-16 opacity-60">
                                 <i class="ti ti-player-off text-6xl mb-4"></i>
                                 <h3 class="text-xl font-semibold mb-2">Нет данных</h3>
-                                <p>Оцените матчи чтобы появился рейтинг</p>
+                                <p>Оцените матчи, чтобы появился рейтинг</p>
                             </td>
                         </tr>
                     {% endfor %}
