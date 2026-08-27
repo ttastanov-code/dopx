@@ -1,0 +1,53 @@
+# .dockerignore
+#
+# Что НЕ отправляется в Docker build context и не попадает в образ.
+# Держит образ маленьким и не даёт секретам/чужим окружениям (dev-venv,
+# дампы БД) случайно оказаться внутри контейнера.
+
+.git
+.gitignore
+.github
+
+# Локальные виртуальные окружения — в образе свой venv, этот не нужен
+venv/
+app_venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+
+# Секреты и локальные конфиги — попадают в контейнер через env_file:
+# в docker-compose.yml, а не через COPY внутрь образа
+.env
+.env.*
+!.env.example
+.vapid/
+
+# Генерируемое / рантайм-данные — живут в docker volume, не в образе
+media/
+staticfiles/
+logs/*.log
+celerybeat-schedule*
+celerybeat-schedule.db
+dump.rdb
+
+# Большие служебные дампы, не нужные для запуска приложения
+project_dump.txt
+dump.py
+spy.py
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Тесты / нагрузочное тестирование — не нужны в проде
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+loadtest/
+locustfile.py
+
+# Docker-файлы самого себя не должны триггерить пересборку контекста
+docker-compose*.yml
+Dockerfile

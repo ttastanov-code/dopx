@@ -15,6 +15,16 @@ DEBUG = os.getenv("DEBUG", "True") == "True"
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "*").split(",")
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 
+# CSRF_TRUSTED_ORIGINS нигде в проекте не был задан. На локальной разработке
+# (HTTP, DEBUG=True) это незаметно — Django сверяет CSRF только для HTTPS-
+# запросов. На проде за nginx/HTTPS без этой настройки ЛЮБОЙ POST (вход,
+# регистрация, отправка оценки матча, голосование) отвечал бы
+# "CSRF verification failed" из-за несовпадения Origin/Referer с ожидаемым
+# доменом. Формат — полные origin'ы через запятую в .env, например:
+# CSRF_TRUSTED_ORIGINS=https://dopx.kz,https://www.dopx.kz
+_csrf_trusted = os.getenv("CSRF_TRUSTED_ORIGINS", "")
+CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in _csrf_trusted.split(",") if origin.strip()]
+
 # Sentry — инициализация до импорта Django-приложений, чтобы ловить ошибки
 # даже на этапе загрузки INSTALLED_APPS. Без SENTRY_DSN блок — no-op.
 SENTRY_DSN = os.getenv("SENTRY_DSN", "")
@@ -429,6 +439,23 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
+# БАГ, найденный при аудите перед докеризацией: Django по умолчанию
+# режет тело запроса на DATA_UPLOAD_MAX_MEMORY_SIZE / FILE_UPLOAD_MAX_MEMORY_SIZE
+# = 2.5 МБ (собственный дефолт фреймворка, нигде в проекте раньше не
+# переопределялся). При этом users/forms.py::MAX_AVATAR_SIZE_BYTES
+# заявляет лимит на аватарку в 5 МБ — но любая аватарка размером от 2.5
+# до 5 МБ (а это почти любое нормальное фото с телефона) отклонялась бы
+# ДО того, как запрос вообще доходил до этой проверки, с общей ошибкой
+# "Request body exceeded settings.DATA_UPLOAD_MAX_MEMORY_SIZE" вместо
+# понятного сообщения формы. Поднимаем до 10 МБ — с запасом и под
+# аватарки, и под баннеры (partners/models.py), и под вложения формы
+# "право на ответ" (core), ни один из которых явного лимита не задавал
+# и молча упирался в те же 2.5 МБ. nginx (docker/nginx.conf,
+# client_max_body_size) стоит ещё выше — 20 МБ — так что именно это
+# значение, а не nginx, было реальным узким местом.
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
+FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
+
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticatedOrReadOnly',
@@ -797,7 +824,18 @@ CACHES = {
     },
     'aggregates': {
         'BACKEND': 'django.core.cache.backends.redis.RedisCache',
-        'LOCATION': os.getenv('REDIS_URL', 'redis://localhost:6379/2'),
+        # БАГ, найденный при аудите перед докеризацией: раньше здесь тоже
+        # стоял os.getenv('REDIS_URL', ...) — та же переменная, что и у
+        # 'default' выше, просто с другим дефолтным номером БД (/2 вместо
+        # /1). Пока REDIS_URL не был задан явно нигде, дефолты и правда
+        # расходились — но как только REDIS_URL присутствует в окружении
+        # (а в докер-стеке он ЗАДАН явно, см. docker-compose.yml), ОБА
+        # cache alias'а схлопывались на одну и ту же логическую БД Redis
+        # (/1). Ключи не пересекались (разные KEY_PREFIX), но два
+        # логически независимых кэша переставали быть физически
+        # изолированными — например, FLUSHDB на этой БД задел бы оба
+        # сразу. Отдельная переменная — правильное решение.
+        'LOCATION': os.getenv('REDIS_AGGREGATES_URL', 'redis://localhost:6379/2'),
         'KEY_PREFIX': 'dopx_agg',
         'TIMEOUT': 300,
     }
