@@ -20,7 +20,7 @@ click-plugins==1.1.1.2
 click-repl==0.3.0
 ConfigArgParse==1.7.5
 cryptography==46.0.5
-Django==6.0.3
+Django==6.0.8
 # Security-стек (продуктовый апгрейд, раздел "защита на высшем уровне"):
 # axes — брутфорс-лок логина; otp[qrcode] — 2FA (TOTP + QR-код enrollment,
 # extra "qrcode" тянет пакет qrcode для генерации PNG на лету).
@@ -37,6 +37,12 @@ flask-cors==6.0.2
 Flask-Login==0.6.3
 frozenlist==1.8.0
 gevent==25.9.1
+# gunicorn — production WSGI-сервер (docker/Dockerfile). До докеризации
+# проект запускался только через `manage.py runserver`, который сам Django
+# явно запрещает использовать в бою (однопоточный, не рассчитан на нагрузку,
+# без грациозного рестарта воркеров). gunicorn с несколькими воркерами —
+# минимальный стандарт для прод-WSGI, дальше это то, что стоит за nginx.
+gunicorn==23.0.0
 geventhttpclient==2.3.9
 greenlet==3.3.2
 h11==0.16.0
