@@ -43,12 +43,16 @@ class Command(BaseCommand):
             ))
             return
 
-        private_key_path, _ = generate_and_persist_vapid_keys()
+        # generate_and_persist_vapid_keys() возвращает (raw base64url
+        # приватный ключ, application server key) — первое значение НЕ
+        # выводим в консоль (это секрет, а не путь, см. БАГ в
+        # core/services/vapid.py::generate_and_persist_vapid_keys).
+        generate_and_persist_vapid_keys()
 
         self.stdout.write(self.style.SUCCESS(
-            f"Готово: приватный ключ сохранён в {private_key_path}, "
-            f"VAPID_PRIVATE_KEY/VAPID_PUBLIC_KEY записаны в "
-            f"{settings.BASE_DIR}/.env.\n"
+            f"Готово: VAPID_PRIVATE_KEY/VAPID_PUBLIC_KEY записаны в "
+            f"{settings.BASE_DIR}/.env (PEM-копия приватного ключа — в "
+            f"{settings.BASE_DIR}/.vapid/private_key.pem, для отладки/бэкапа).\n"
             "Перезапустите сервер (env-переменные читаются один раз при "
             "старте) — после этого push-уведомления заработают."
         ))

@@ -25,7 +25,8 @@ class PlayerMatchAggregateAdmin(ModelAdmin):
     autocomplete_fields = ('player', 'match')
     readonly_fields = (
         'performance_score', 'risk_index', 'maturity_score',
-        'stability_index', 'clutch_index'
+        'stability_index', 'clutch_index', 'total_votes',
+        'own_fans_avg', 'rival_fans_avg', 'neutral_avg',
     )
     actions = [export_as_csv]
 
@@ -38,6 +39,7 @@ class CoachMatchAggregateAdmin(ModelAdmin):
     list_filter = ('match', 'coach__team')
     search_fields = ('coach__first_name', 'coach__last_name')
     autocomplete_fields = ('coach', 'match')
+    readonly_fields = ('total_votes', 'own_fans_avg', 'rival_fans_avg', 'neutral_avg')
     actions = [export_as_csv]
 
 
@@ -50,7 +52,7 @@ class TeamMatchAggregateAdmin(ModelAdmin):
     list_filter = ('match',)
     search_fields = ('team__name',)
     autocomplete_fields = ('team', 'match')
-    readonly_fields = ('performance_score',)
+    readonly_fields = ('performance_score', 'total_votes', 'own_fans_avg', 'rival_fans_avg', 'neutral_avg')
     actions = [export_as_csv]
 
 
@@ -63,7 +65,7 @@ class RefereeMatchAggregateAdmin(ModelAdmin):
     list_filter = ('match',)
     search_fields = ('referee__first_name', 'referee__last_name')
     autocomplete_fields = ('referee', 'match')
-    readonly_fields = ('performance_score',)
+    readonly_fields = ('performance_score', 'total_votes', 'home_fans_avg', 'away_fans_avg', 'neutral_avg')
     actions = [export_as_csv]
 
 

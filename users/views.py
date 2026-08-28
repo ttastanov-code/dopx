@@ -102,9 +102,22 @@ class RegisterView(CreateView):
         # если пользователь пришёл по /go/<slug>/ за последние 30 дней, здесь
         # видно, что визит по партнёрской ссылке КОНВЕРТИРОВАЛСЯ в регистрацию,
         # а не просто засчитался как переход.
+        from django.core.signing import BadSignature
+
         from partners.services import REFERRAL_COOKIE_NAME
 
-        referral_slug = self.request.COOKIES.get(REFERRAL_COOKIE_NAME, "")
+        # БАГ, КОТОРЫЙ ТУТ БЫЛ: cookie читалась как обычная (COOKIES.get) —
+        # см. partners/views.py::PartnerReferralRedirectView, где её теперь
+        # ставят через set_signed_cookie(salt='partners.referral'). Здесь
+        # соответственно читаем через get_signed_cookie с тем же salt;
+        # BadSignature (кто-то подделал/отредактировал cookie вручную —
+        # значение не совпадает с подписью) просто игнорируем, как будто
+        # cookie не было — не должно ронять регистрацию из-за чужого мусора
+        # в cookies.
+        try:
+            referral_slug = self.request.get_signed_cookie(REFERRAL_COOKIE_NAME, salt='partners.referral', default="")
+        except BadSignature:
+            referral_slug = ""
         track_event(
             EventName.USER_REGISTERED, request=self.request, user=user,
             properties={"ref": referral_slug} if referral_slug else None,
@@ -413,11 +426,39 @@ class ProfileEditView(LoginRequiredMixin, UpdateView):
         return self.request.user
 
     def form_valid(self, form):
+        # БАГ, КОТОРЫЙ ТУТ БЫЛ (найден полным аудитом, август 2026): смена
+        # email в этой форме сохранялась без сброса is_verified — пользователь
+        # мог вписать чужой/недоступный ему адрес и его аккаунт остался бы
+        # помечен как "верифицирован" для НЕподтверждённого нового email
+        # (is_verified=True рассылки/публичный листинг is_verified=True
+        # используют этот флаг как сигнал доверия). Старый email берём
+        # из БД, а не из self.object — ModelForm уже переписал
+        # self.object.email новым значением на этапе form.is_valid()
+        # (_post_clean), до вызова form_valid().
+        old_email = User.objects.get(pk=self.object.pk).email
+        new_email = form.cleaned_data.get('email')
+        email_changed = new_email and new_email != old_email
+
         if form.cleaned_data.get('delete_avatar') and self.object.avatar:
             self.object.avatar.delete(save=False)
             self.object.avatar = None
-        messages.success(self.request, '✅ Профиль обновлён')
-        return super().form_valid(form)
+
+        if email_changed:
+            self.object.is_verified = False
+
+        response = super().form_valid(form)
+
+        if email_changed:
+            try:
+                from notifications.tasks import send_email_verification
+                send_email_verification.delay(str(self.object.id), str(self.object.verification_token))
+                logger.info(f"Re-verification email queued for {self.object.email} (email changed)")
+            except Exception as e:
+                logger.error(f"Failed to queue re-verification email after email change: {e}")
+            messages.success(self.request, '✅ Профиль обновлён. Новый email нужно подтвердить — мы отправили письмо со ссылкой.')
+        else:
+            messages.success(self.request, '✅ Профиль обновлён')
+        return response
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

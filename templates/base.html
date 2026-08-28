@@ -74,13 +74,21 @@
     dopx/middleware.py). Плата за это: инлайновые объектные литералы вида
     x-data="{ ... }" больше не поддерживаются — ВСЕ x-data по сайту переведены
     на зарегистрированные компоненты из static/js/alpine-components.js (см.
-    комментарий там же). integrity= пока не проставлен — пакет сменился,
-    старый хэш для alpinejs@3.15.8 сюда не подходит. ОБЯЗАТЕЛЬНО перед
-    деплоем: bash scripts/generate_sri.sh (уже обновлён под @alpinejs/csp).
+    комментарий там же).
+    integrity= для этого файла и htmx.min.js ниже — sha256 (не sha384, как у
+    остальных тегов): scripts/generate_sri.sh (curl+openssl) не смог достать
+    сеть в окружении, где считался этот хэш, а прямой curl к cdn.jsdelivr.net
+    был заблокирован allowlist'ом песочницы. Значения взяты из официального
+    API jsDelivr (https://data.jsdelivr.com/v1/packages/npm/@alpinejs/csp@3.15.8?structure=flat,
+    поле "hash" для /dist/cdn.min.js) — это тот же байт-в-байт SHA-256 файла,
+    что раздаёт CDN, просто в другом алгоритме. sha256 — валидный алгоритм
+    для integrity= по спецификации SRI наравне с sha384. ОБЯЗАТЕЛЬНО перед
+    деплоем: bash scripts/generate_sri.sh (пересчитает sha384 и приведёт к
+    единому алгоритму с остальными тегами, если сеть будет доступна).
     {% endcomment %}
-    <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/csp@3.15.8/dist/cdn.min.js" crossorigin="anonymous"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/csp@3.15.8/dist/cdn.min.js" integrity="sha256-h9+HB497OogOke73+whm9Qht5S+SibyWUDYIMRgQp/w=" crossorigin="anonymous"></script>
     <!-- HTMX -->
-    <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.8/dist/htmx.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.8/dist/htmx.min.js" integrity="sha256-Iig+9oy3VFkU8KiKG97cclanA9HVgMHSVSF9ClDTExM=" crossorigin="anonymous"></script>
     {% comment %}
     Заголовок вкладки с числом непрочитанных уведомлений — единственный
     слушатель htmx:afterSwap на #notif-unread-badge, см. подробный

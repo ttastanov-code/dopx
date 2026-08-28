@@ -308,16 +308,33 @@ class StaffSessionSecurityMiddleware:
             last_activity_iso = request.session.get(self.SESSION_KEY)
 
             if last_activity_iso:
+                # БАГ, КОТОРЫЙ ТУТ БЫЛ: при TypeError/ValueError от парсинга
+                # (повреждённое/подделанное значение _staff_last_activity в
+                # сессии) код тихо делал `last_activity = now` — то есть
+                # ПОДАРИВАЛ staff-пользователю с битой сессией свежий отсчёт
+                # простоя вместо разлогинивания. Fail-open там, где должен
+                # быть fail-closed: битые данные сессии обрабатываем так же,
+                # как истёкший idle-таймаут — logout() и редирект на вход,
+                # а не льготный сброс таймера.
                 try:
                     last_activity = datetime.fromisoformat(last_activity_iso)
+                    idle_seconds = (now - last_activity).total_seconds()
+                    is_timed_out = idle_seconds > timeout
                 except (TypeError, ValueError):
-                    last_activity = now
-                idle_seconds = (now - last_activity).total_seconds()
-                if idle_seconds > timeout:
-                    security_logger.warning(
-                        f"STAFF SESSION TIMEOUT: user={user.username} idle={idle_seconds:.0f}s "
-                        f"limit={timeout}s path={request.path}"
-                    )
+                    idle_seconds = None
+                    is_timed_out = True
+
+                if is_timed_out:
+                    if idle_seconds is None:
+                        security_logger.warning(
+                            f"STAFF SESSION TIMEOUT: user={user.username} "
+                            f"reason=corrupted_last_activity path={request.path}"
+                        )
+                    else:
+                        security_logger.warning(
+                            f"STAFF SESSION TIMEOUT: user={user.username} idle={idle_seconds:.0f}s "
+                            f"limit={timeout}s path={request.path}"
+                        )
                     logout(request)
                     # БАГ, КОТОРЫЙ ТУТ БЫЛ: редирект на admin:login нёс только
                     # ?session_expired=1, без next= — в отличие от обычного

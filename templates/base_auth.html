@@ -24,7 +24,7 @@
     <link href="https://cdn.jsdelivr.net/npm/daisyui@5.7.17/themes.css" rel="stylesheet" type="text/css" integrity="sha384-HhSoSsQclUlsqy8Gyz+E2oVSebHT4dv3MJ+NdUjV9mh1twUK4UPKQgmj0dHDKe0Y" crossorigin="anonymous" />
 
     <!-- HTMX -->
-    <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.8/dist/htmx.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.8/dist/htmx.min.js" integrity="sha256-Iig+9oy3VFkU8KiKG97cclanA9HVgMHSVSF9ClDTExM=" crossorigin="anonymous"></script>
 
     <!-- Alpine.js -->
     <!-- static/js/alpine-components.js ДО ядра Alpine — см. подробный
@@ -33,9 +33,14 @@
          события 'alpine:init'. -->
     <script defer src="{% static 'js/alpine-components.js' %}"></script>
     <!-- @alpinejs/csp вместо обычной сборки — CSP-safe, без 'unsafe-eval'.
-         integrity= не проставлен: пакет сменился, нужно заново посчитать
-         хэш через scripts/generate_sri.sh перед деплоем (см. base.html). -->
-    <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/csp@3.15.8/dist/cdn.min.js" crossorigin="anonymous"></script>
+         integrity= здесь и у HTMX выше — sha256 (не sha384, как у остальных
+         тегов в base.html): scripts/generate_sri.sh нужен доступ к сети
+         (curl), которого не было в момент расчёта — значения взяты из
+         официального API jsDelivr (data.jsdelivr.com, поле "hash" для
+         конкретного файла), sha256 валиден для integrity= по спецификации
+         SRI. Пересчитать в sha384 через scripts/generate_sri.sh при
+         следующем деплое с доступом к сети — см. подробности в base.html. -->
+    <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/csp@3.15.8/dist/cdn.min.js" integrity="sha256-h9+HB497OogOke73+whm9Qht5S+SibyWUDYIMRgQp/w=" crossorigin="anonymous"></script>
 
     <!-- Tabler Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.46.0/dist/tabler-icons.min.css" integrity="sha384-ND+q1IVc0KDElX60dZaqKc7Xl9cdxd2PpU2JfVUHcurCkFVtVLFdt9vJfxtHSL3p" crossorigin="anonymous">

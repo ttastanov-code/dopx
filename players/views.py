@@ -289,7 +289,13 @@ class PlayerDetailView(DetailView):
             "jobTitle": "Football Player",
             "affiliation": {"@type": "SportsTeam", "name": team.name} if team else None,
         }
-        context['schema_json'] = json.dumps({k: v for k, v in schema.items() if v is not None}, ensure_ascii=False)
+        # .replace('</', '<\/') — json.dumps НЕ экранирует '</', поэтому имя
+        # игрока/команды вида "</script><script>..." могло бы оборвать тег
+        # application/ld+json раньше конца JSON (шаблон рендерит эту строку
+        # через |safe, см. templates/players/detail.html).
+        context['schema_json'] = json.dumps(
+            {k: v for k, v in schema.items() if v is not None}, ensure_ascii=False
+        ).replace('</', '<\\/')
 
         # Готовая строка <iframe> для кнопки "Получить embed-код" на странице.
         widget_url = self.request.build_absolute_uri(

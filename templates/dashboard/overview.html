@@ -71,7 +71,9 @@
 {% endblock %}
 
 {% block extra_script %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<!-- dist/chart.umd.js вместо chart.umd.min.js + integrity= — см. подробный
+     комментарий в templates/admin/index.html. -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.js" integrity="sha256-/tanOfjQ8GhxdN5s0UdF/A/HgJFEqxE9IpCKJr8Nf+o=" crossorigin="anonymous"></script>
 <script>
 (function () {
     function lineChart(canvasId, dataId, label, color) {

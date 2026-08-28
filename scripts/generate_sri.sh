@@ -45,12 +45,20 @@ TABLER_HASH=$(sri "https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.46.0/dis
 # static/js/alpine-components.js — см. подробный коммент там же.
 ALPINE_HASH=$(sri "https://cdn.jsdelivr.net/npm/@alpinejs/csp@3.15.8/dist/cdn.min.js")
 ALPINE_COLLAPSE_HASH=$(sri "https://cdn.jsdelivr.net/npm/@alpinejs/collapse@3.15.8/dist/cdn.min.js")
+# 2026-08-28: раньше здесь не было HTMX вообще — integrity= на теге htmx.org
+# в base.html/base_auth.html так и не проставлялся ни разу. Временно (пока
+# сеть недоступна) на этих двух тегах стоит sha256-хэш, взятый из
+# data.jsdelivr.com — при первом же прогоне этого скрипта с доступом к сети
+# sed ниже заменит его на sha384, приведя к единому алгоритму с остальными
+# тегами (regex удаления захватывает и sha256-, и sha384-, см. ниже).
+HTMX_HASH=$(sri "https://cdn.jsdelivr.net/npm/htmx.org@2.0.8/dist/htmx.min.js")
 
 for f in templates/base.html templates/base_auth.html; do
     # Идемпотентно: сначала убираем integrity=, если он уже стоит (повторный
-    # запуск скрипта при обновлении версии), потом вставляем заново рядом
-    # с crossorigin="anonymous" — так не накапливаются дубли атрибута.
-    sed -i '' -E 's/ integrity="sha384-[A-Za-z0-9+/=]+"//g' "$f"
+    # запуск скрипта при обновлении версии, либо временный sha256-хэш из
+    # комментария выше), потом вставляем заново рядом с
+    # crossorigin="anonymous" — так не накапливаются дубли атрибута.
+    sed -i '' -E 's/ integrity="sha(256|384)-[A-Za-z0-9+/=]+"//g' "$f"
     sed -i '' \
         -e "s|@tailwindcss/browser@4.3.3\" crossorigin|@tailwindcss/browser@4.3.3\" integrity=\"sha384-${TAILWIND_HASH}\" crossorigin|" \
         -e "s|npm/daisyui@5.7.17\" rel=\"stylesheet\" type=\"text/css\" crossorigin|npm/daisyui@5.7.17\" rel=\"stylesheet\" type=\"text/css\" integrity=\"sha384-${DAISYUI_HASH}\" crossorigin|" \
@@ -58,11 +66,12 @@ for f in templates/base.html templates/base_auth.html; do
         -e "s|tabler-icons.min.css\" crossorigin|tabler-icons.min.css\" integrity=\"sha384-${TABLER_HASH}\" crossorigin|" \
         -e "s|@alpinejs/collapse@3.15.8/dist/cdn.min.js\" crossorigin|@alpinejs/collapse@3.15.8/dist/cdn.min.js\" integrity=\"sha384-${ALPINE_COLLAPSE_HASH}\" crossorigin|" \
         -e "s|npm/@alpinejs/csp@3.15.8/dist/cdn.min.js\" crossorigin|npm/@alpinejs/csp@3.15.8/dist/cdn.min.js\" integrity=\"sha384-${ALPINE_HASH}\" crossorigin|" \
+        -e "s|npm/htmx.org@2.0.8/dist/htmx.min.js\" crossorigin|npm/htmx.org@2.0.8/dist/htmx.min.js\" integrity=\"sha384-${HTMX_HASH}\" crossorigin|" \
         "$f"
     echo "  ✓ $f обновлён"
 done
 
 echo "Готово. Проверьте:"
 echo "  1. grep -rn 'REPLACE_' templates/   — должно быть пусто"
-echo "  2. grep -c 'integrity=' templates/base.html templates/base_auth.html   — по 6 совпадений в каждом"
-echo "  3. Откройте сайт локально — стили/иконки/Alpine должны грузиться без ошибок в консоли."
+echo "  2. grep -c 'integrity=' templates/base.html templates/base_auth.html   — по 7 совпадений в каждом"
+echo "  3. Откройте сайт локально — стили/иконки/Alpine/HTMX должны грузиться без ошибок в консоли."

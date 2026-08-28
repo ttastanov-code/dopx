@@ -740,40 +740,74 @@ def recalculate_season_standings(season_id: int | None = None) -> dict:
 
 
 def _recalculate_standings_for_season(season: Season) -> dict:
-    """Пересчёт турнирной таблицы ОДНОГО сезона (без изменений в логике — уже оптимизировано)."""
+    """Пересчёт турнирной таблицы ОДНОГО сезона.
+
+    БАГ, КОТОРЫЙ ТУТ БЫЛ: раньше на КАЖДУЮ команду сезона был отдельный
+    .aggregate()-запрос к Match (played/wins/draws/голы) внутри цикла — N
+    команд сезона = N запросов к БД на каждый вызов, а эта функция гоняется
+    по CELERY_BEAT_SCHEDULE каждые 10 минут по всем активным сезонам сразу.
+    Переписано на ОДИН запрос .values() по всем завершённым матчам сезона —
+    статистика по каждой команде считается одним проходом в Python вместо
+    отдельного SQL-запроса на команду. Числа считаются ТОЧНО так же, как и
+    раньше (включая обработку матчей с NULL home_score/away_score: played
+    считается всегда, а голы/победа/ничья — только если соответствующие
+    очки не NULL — так же вели себя Count(filter=...) и Sum(filter=...) в
+    прежней версии).
+    """
     season_id = season.id
-    teams = Team.objects.filter(teamseason__season=season, is_active=True)
+    teams = list(Team.objects.filter(teamseason__season=season, is_active=True))
+    team_ids = {team.id for team in teams}
 
     with transaction.atomic():
-        for team in teams:
-            stats = Match.objects.filter(season=season, status="finished").aggregate(
-                played=Count("id", filter=Q(home_team=team) | Q(away_team=team)),
-                wins=Count(
-                    "id",
-                    filter=(
-                        (Q(home_team=team) & Q(home_score__gt=F("away_score")))
-                        | (Q(away_team=team) & Q(away_score__gt=F("home_score")))
-                    ),
-                ),
-                draws=Count(
-                    "id",
-                    filter=(
-                        (Q(home_team=team) & Q(home_score=F("away_score")))
-                        | (Q(away_team=team) & Q(away_score=F("home_score")))
-                    ),
-                ),
-                goals_scored=Sum(F("home_score"), filter=Q(home_team=team))
-                + Sum(F("away_score"), filter=Q(away_team=team)),
-                goals_conceded=Sum(F("away_score"), filter=Q(home_team=team))
-                + Sum(F("home_score"), filter=Q(away_team=team)),
-            )
+        matches_qs = Match.objects.filter(season=season, status="finished").values(
+            "home_team_id", "away_team_id", "home_score", "away_score"
+        )
 
-            played = stats["played"] or 0
-            wins = stats["wins"] or 0
-            draws = stats["draws"] or 0
+        stats_by_team = {
+            team_id: {"played": 0, "wins": 0, "draws": 0, "goals_scored": 0, "goals_conceded": 0}
+            for team_id in team_ids
+        }
+
+        for m in matches_qs:
+            home_id = m["home_team_id"]
+            away_id = m["away_team_id"]
+            home_score = m["home_score"]
+            away_score = m["away_score"]
+
+            if home_id in stats_by_team:
+                s = stats_by_team[home_id]
+                s["played"] += 1
+                if home_score is not None:
+                    s["goals_scored"] += home_score
+                if away_score is not None:
+                    s["goals_conceded"] += away_score
+                if home_score is not None and away_score is not None:
+                    if home_score > away_score:
+                        s["wins"] += 1
+                    elif home_score == away_score:
+                        s["draws"] += 1
+
+            if away_id in stats_by_team:
+                s = stats_by_team[away_id]
+                s["played"] += 1
+                if away_score is not None:
+                    s["goals_scored"] += away_score
+                if home_score is not None:
+                    s["goals_conceded"] += home_score
+                if home_score is not None and away_score is not None:
+                    if away_score > home_score:
+                        s["wins"] += 1
+                    elif away_score == home_score:
+                        s["draws"] += 1
+
+        for team in teams:
+            s = stats_by_team[team.id]
+            played = s["played"]
+            wins = s["wins"]
+            draws = s["draws"]
             losses = played - wins - draws
-            goals_scored = stats["goals_scored"] or 0
-            goals_conceded = stats["goals_conceded"] or 0
+            goals_scored = s["goals_scored"]
+            goals_conceded = s["goals_conceded"]
 
             TeamSeasonStats.objects.update_or_create(
                 team=team,
@@ -797,8 +831,8 @@ def _recalculate_standings_for_season(season: Season) -> dict:
             stat.position = position
             stat.save(update_fields=["position"])
 
-    logger.info("Standings recalculated for season %s: %d teams", season_id, teams.count())
-    return {"success": True, "teams": teams.count(), "season_id": season_id}
+    logger.info("Standings recalculated for season %s: %d teams", season_id, len(teams))
+    return {"success": True, "teams": len(teams), "season_id": season_id}
 
 
 # ============================================================
@@ -1059,6 +1093,16 @@ STATS_DIVERGENCE_MAX_CORRECTION = 0.4
 STATS_DIVERGENCE_CORRECTION_DECAY = 0.5
 STATS_DIVERGENCE_CORRECTION_FLOOR = 0.02  # ниже этого значения поправка обнуляется, а не тлеет вечно
 
+# 2026-08-28: сколько дней держится "cooldown" после того, как модератор явно
+# отклонил флаг stats_divergence как объяснимый (users/admin.py::
+# SuspiciousActivityFlagAdmin.mark_dismissed) — до этого mark_dismissed просто
+# обнулял TeamRatingCorrection.correction, а следующий суточный прогон
+# detect_rating_stats_divergence_task заново находил тот же паттерн и заново
+# перезаписывал поправку, тихо отменяя решение модератора. suppressed_until
+# на TeamRatingCorrection (aggregates/models.py) не даёт задаче трогать эту
+# команду, пока cooldown не истёк.
+STATS_DIVERGENCE_DISMISS_COOLDOWN_DAYS = 30
+
 # Компоненты "доли доминирования" — намеренно ограничены двумя полями,
 # которые у KFF заполнены стабильнее всего на уровне команды (пас/xG
 # часто null, см. докстринг MatchTeamStatistics). Удары в створ — прямой
@@ -1154,16 +1198,38 @@ def _check_team_stats_divergence(team_id, content_type, SuspiciousActivityFlag) 
     докстринг в aggregates/models.py) и создаёт флаг для прозрачности; при
     отсутствии паттерна — затухает существующую поправку, если она была.
     См. докстринг задачи выше."""
+    # 2026-08-28: если модератор уже отклонил этот сигнал как объяснимый
+    # (users/admin.py::mark_dismissed), TeamRatingCorrection получает
+    # suppressed_until в будущем — не перезаписываем его решение, пока
+    # cooldown не истёк (иначе следующий суточный прогон тихо отменял
+    # "Отклонить", заново находя тот же паттерн).
+    existing_correction = TeamRatingCorrection.objects.filter(team_id=team_id).first()
+    if existing_correction and existing_correction.suppressed_until and existing_correction.suppressed_until > timezone.now():
+        return 0
+
     fetch_limit = max(STATS_DIVERGENCE_WINDOW_MATCHES, STATS_DIVERGENCE_BASELINE_MIN_MATCHES) * 3
     aggregates = list(
         TeamMatchAggregate.objects.filter(team_id=team_id, match__status="finished")
         .select_related("match")
         .order_by("-match__start_time")[:fetch_limit]
     )
-    if len(aggregates) < STATS_DIVERGENCE_BASELINE_MIN_MATCHES:
-        return 0  # недостаточно истории, чтобы вообще судить — поправку не трогаем
+    # БАГ, КОТОРЫЙ ТУТ БЫЛ: baseline считался по ТЕМ ЖЕ aggregates[:fetch_limit],
+    # из которых window_pairs ниже берёт первые STATS_DIVERGENCE_WINDOW_MATCHES —
+    # то есть window был подмножеством baseline, baseline подтягивался к window
+    # и реальное расхождение занижалось. Baseline теперь считается ТОЛЬКО по
+    # матчам СТАРШЕ окна (aggregates[WINDOW:]), не пересекаясь с ним.
+    #
+    # Остаточный риск (сознательно не трогаем — более широкий рефакторинг):
+    # baseline_scores берутся из performance_score, который уже может включать
+    # применённую на прошлых прогонах TeamRatingCorrection — то есть возможна
+    # обратная связь (поправка чуть смещает baseline следующего прогона).
+    # Полностью убрать это можно только пересчитав "сырой" performance_score
+    # без коррекции, для чего сейчас нет отдельного поля.
+    if len(aggregates) < STATS_DIVERGENCE_WINDOW_MATCHES + STATS_DIVERGENCE_BASELINE_MIN_MATCHES:
+        return 0  # недостаточно истории для baseline, не пересекающегося с window — поправку не трогаем
 
-    baseline_scores = [a.performance_score for a in aggregates]
+    baseline_pool = aggregates[STATS_DIVERGENCE_WINDOW_MATCHES:]
+    baseline_scores = [a.performance_score for a in baseline_pool]
     baseline_mean = sum(baseline_scores) / len(baseline_scores)
     baseline_std = calculate_std_dev(baseline_scores)
 

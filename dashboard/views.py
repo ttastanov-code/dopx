@@ -17,6 +17,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
+from core.admin_actions import _csv_safe
 from matches.models import Match
 from users.models import SuspiciousActivityFlag
 
@@ -173,15 +174,19 @@ def antifraud_export_csv(request):
         # flag.user может быть None у entity-level сигналов (vote_spike) —
         # см. коммент в antifraud_flag_action выше.
         who = flag.user.username if flag.user else f"[сущность] {flag.content_object or '—'}"
-        writer.writerow(["Флаг", flag.id, who, flag.get_source_display(), flag.created_at.isoformat()])
+        # _csv_safe — защита от CSV/formula injection (see core/admin_actions.py):
+        # who/subject приходят из пользовательского ввода (username, тема диспута).
+        writer.writerow([_csv_safe(v) for v in (
+            "Флаг", flag.id, who, flag.get_source_display(), flag.created_at.isoformat(),
+        )])
     for dispute in queue["pending_disputes"]:
-        writer.writerow([
+        writer.writerow([_csv_safe(v) for v in (
             "Диспут",
             dispute.id,
             dispute.user.username if dispute.user else dispute.contact_email,
             dispute.subject,
             dispute.created_at.isoformat(),
-        ])
+        )])
 
     return response
 

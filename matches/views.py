@@ -289,7 +289,11 @@ class MatchDetailView(DetailView):
             ],
             "description": context['meta_description'],
         }
-        context['schema_json'] = json.dumps(schema, ensure_ascii=False)
+        # .replace('</', '<\/') — json.dumps НЕ экранирует '</', поэтому
+        # название команды вида "</script><script>..." могло бы оборвать тег
+        # application/ld+json раньше конца JSON (шаблон рендерит эту строку
+        # через |safe, см. templates/matches/detail.html).
+        context['schema_json'] = json.dumps(schema, ensure_ascii=False).replace('</', '<\\/')
         return context
 
 @require_http_methods(["GET"])

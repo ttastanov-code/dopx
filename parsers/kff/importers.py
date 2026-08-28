@@ -1,6 +1,7 @@
 # parsers/kff/importers.py
 import time
 from datetime import datetime, timedelta
+from functools import partial
 from typing import Dict, Optional, Union, List
 from django.core.cache import cache
 from django.db import transaction, IntegrityError
@@ -26,6 +27,12 @@ logger = logging.getLogger(__name__)
 REFEREE_CREATE_LOCK_TIMEOUT_SECONDS = 15
 REFEREE_CREATE_LOCK_RETRY_DELAY_SECONDS = 0.3
 REFEREE_CREATE_LOCK_MAX_WAIT_SECONDS = 10
+
+# get_or_create_coach: тот же лок, симметрично get_or_create_referee_by_name —
+# см. докстринг внутри функции.
+COACH_CREATE_LOCK_TIMEOUT_SECONDS = 15
+COACH_CREATE_LOCK_RETRY_DELAY_SECONDS = 0.3
+COACH_CREATE_LOCK_MAX_WAIT_SECONDS = 10
 
 STATUS_MAP = {
     "upcoming": "scheduled",
@@ -235,15 +242,26 @@ def get_or_create_referee_by_name(name: str) -> Optional[Referee]:
     return Referee.objects.create(first_name=first_name, last_name=last_name, is_active=True)
 
 def get_or_create_coach(coach_data: Dict, team: Optional[Team] = None) -> Optional[Coach]:
-    """Создание/поиск тренера по external_id, либо по имени регистронезависимо."""
+    """Создание/поиск тренера по external_id, либо по имени регистронезависимо.
+
+    ЛОК ПРИ СОЗДАНИИ (2026-08-28) — тот же баг, что описан в докстринге
+    get_or_create_referee_by_name выше: два параллельных синка (например,
+    sync_recent_matches по расписанию и ручной "Полный синк сезона" из
+    staff-дашборда) могут одновременно импортировать РАЗНЫЕ матчи, где
+    встречается ОДИН И ТОТ ЖЕ тренер — оба процесса читают "есть ли уже
+    такой тренер" ДО того, как другой успевает закоммитить свою запись, и
+    оба создают дубль. Лок ниже — по external_id тренера, если KFF его
+    прислал, иначе по normalize_kz(ФИО) — пока один процесс создаёт запись,
+    остальные ждут и перечитывают вместо создания второй копии.
+    """
     if not coach_data:
         return None
-    
+
     # Пробуем разные форматы данных тренера
     first_name = coach_data.get("first_name") or coach_data.get("name") or ""
     last_name = coach_data.get("last_name") or ""
     coach_ext_id = coach_data.get("id")
-    
+
     # Если имя не найдено, пробуем распарсить из полного имени
     if not first_name and coach_data.get("full_name"):
         name_parts = (coach_data.get("full_name") or "").strip().split()
@@ -252,11 +270,11 @@ def get_or_create_coach(coach_data: Dict, team: Optional[Team] = None) -> Option
             last_name = " ".join(name_parts[1:])
         elif len(name_parts) == 1:
             first_name = name_parts[0]
-    
+
     if not first_name:
         logger.warning(f"⚠️ No coach name found in {coach_data}")
         return None
-    
+
     defaults = {
         "first_name": first_name,
         "last_name": last_name,
@@ -275,14 +293,17 @@ def get_or_create_coach(coach_data: Dict, team: Optional[Team] = None) -> Option
     # по одному только first_name не используется — склеил бы разных
     # тренеров с одинаковым именем ("Андрей", "Марат"...) в одну запись.
     target = normalize_kz(f"{first_name} {last_name}")
-    if coach_ext_id:
-        coach = Coach.objects.filter(external_id=str(coach_ext_id)).first()
-        if not coach:
+
+    def _find_existing() -> Optional[Coach]:
+        if coach_ext_id:
+            coach = Coach.objects.filter(external_id=str(coach_ext_id)).first()
+            if coach:
+                return coach
             # Тренер мог быть создан РАНЬШЕ через ветку без external_id
             # (KFF не всегда присылает id тренера) — если по имени уже
             # есть запись без external_id, дозаполняем её, а не плодим
             # дубль с тем же именем.
-            coach = next(
+            return next(
                 (
                     c for c in Coach.objects.filter(external_id__isnull=True)
                     .only("id", "first_name", "last_name")
@@ -290,36 +311,55 @@ def get_or_create_coach(coach_data: Dict, team: Optional[Team] = None) -> Option
                 ),
                 None,
             )
-        if coach:
-            for field, value in defaults.items():
-                setattr(coach, field, value)
-            coach.save(update_fields=list(defaults.keys()))
-            created = False
-        else:
-            coach = Coach.objects.create(**defaults)
-            created = True
-    else:
-        coach = next(
+        return next(
             (
                 c for c in Coach.objects.only("id", "first_name", "last_name")
                 if normalize_kz(f"{c.first_name} {c.last_name}") == target
             ),
             None,
         )
-        if coach:
-            for field, value in defaults.items():
-                setattr(coach, field, value)
-            coach.save(update_fields=list(defaults.keys()))
-            created = False
-        else:
-            coach = Coach.objects.create(**defaults)
-            created = True
 
-    if created:
-        logger.info(f"✅ Created coach: {coach.first_name} {coach.last_name}")
-    else:
+    def _update_existing(coach: Coach) -> Coach:
+        for field, value in defaults.items():
+            setattr(coach, field, value)
+        coach.save(update_fields=list(defaults.keys()))
         logger.info(f"🔄 Updated coach: {coach.first_name} {coach.last_name}")
-    
+        return coach
+
+    coach = _find_existing()
+    if coach:
+        return _update_existing(coach)
+
+    lock_key = f"parsers:coach_create_lock:{coach_ext_id or target}"
+    if cache.add(lock_key, "1", timeout=COACH_CREATE_LOCK_TIMEOUT_SECONDS):
+        try:
+            # Пока брали лок, кто-то мог успеть создать запись — перепроверяем.
+            coach = _find_existing()
+            if coach:
+                return _update_existing(coach)
+            coach = Coach.objects.create(**defaults)
+            logger.info(f"✅ Created coach: {coach.first_name} {coach.last_name}")
+            return coach
+        finally:
+            cache.delete(lock_key)
+
+    # Лок занят — для этого же тренера ПРЯМО СЕЙЧАС создаёт запись другой
+    # процесс. Ждём и перечитываем вместо немедленного создания дубля.
+    waited = 0.0
+    while waited < COACH_CREATE_LOCK_MAX_WAIT_SECONDS:
+        time.sleep(COACH_CREATE_LOCK_RETRY_DELAY_SECONDS)
+        waited += COACH_CREATE_LOCK_RETRY_DELAY_SECONDS
+        coach = _find_existing()
+        if coach:
+            return _update_existing(coach)
+
+    # Не дождались за 10 секунд (другой процесс завис или упал, не успев
+    # закоммитить) — создаём сами. Риск редкого дубля тут предпочтительнее
+    # зависшей синхронизации; такой дубль поймает
+    # manage.py dedupe_referees_coaches при следующем запуске.
+    logger.warning(f"⏱️ get_or_create_coach: не дождались лока для \"{first_name} {last_name}\", создаю без лока")
+    coach = Coach.objects.create(**defaults)
+    logger.info(f"✅ Created coach: {coach.first_name} {coach.last_name}")
     return coach
 
 @transaction.atomic
@@ -334,11 +374,30 @@ def import_match_core(game_data: Dict, season_id: int = None) -> Match:
         status = STATUS_MAP.get(raw_status, "scheduled")
         home_score = game_data.get("home_score")
         away_score = game_data.get("away_score")
+        # БАГ, КОТОРЫЙ ТУТ БЫЛ (найден полным аудитом, август 2026, см.
+        # AUDIT_2026-08.md раздел 3, Critical #1/#2): end_time/voting_open_until
+        # выставлялись ЗДЕСЬ БЕЗУСЛОВНО для ЛЮБОГО статуса — в т.ч. для матча,
+        # который ещё даже не начался (status='scheduled'). Из-за этого
+        # `voting_open_until` оказывался заполнен уже на первом импорте, а
+        # `parsers/tasks.py::update_match_statuses` определяет "матч ТОЛЬКО
+        # ЧТО завершился" именно по `not match.voting_open_until` — условие
+        # было ЛОЖНЫМ ВСЕГДА, follow-уведомления подписчикам команды
+        # ("голосование открыто") не отправлялись НИКОГДА. Плюс сама
+        # формула была мёртвым тернарником: `48 if status=='finished' else 48`
+        # — обе ветки давали одно и то же число, что и выдавало утрату
+        # исходного намерения при более ранней правке.
+        #
+        # Правильно: эти поля — производные от факта "матч завершён", а не
+        # от факта "у матча есть дата начала". Выставляем их здесь ТОЛЬКО
+        # если статус уже 'finished' на момент этого импорта (например,
+        # бэкафилл исторических матчей) — иначе оставляем None и даём
+        # `update_match_statuses` заполнить их РОВНО в момент реального
+        # перехода в 'finished', как и было задумано изначально.
         end_time = voting_open_until = None
-        if start_time:
+        if start_time and status == "finished":
             end_time = start_time + timedelta(hours=2)
-            voting_open_until = start_time + timedelta(hours=48 if status == "finished" else 48)
-        
+            voting_open_until = start_time + timedelta(hours=48)
+
         home_team_data = game_data.get("home_team", {})
         away_team_data = game_data.get("away_team", {})
         if not home_team_data or not away_team_data:
@@ -403,18 +462,46 @@ def import_match_core(game_data: Dict, season_id: int = None) -> Match:
         else:
             defaults["status"] = status
             defaults["start_time"] = start_time
-            defaults["end_time"] = end_time
-            defaults["voting_open_until"] = voting_open_until
+            if status == "finished":
+                defaults["end_time"] = end_time
+                defaults["voting_open_until"] = voting_open_until
+            elif existing:
+                # Матч ещё не завершён — не трогаем end_time/voting_open_until,
+                # чтобы не проставить их преждевременно (см. комментарий выше
+                # про `just_finished` в update_match_statuses). Для НОВОГО
+                # ещё не завершённого матча (existing is None) эти ключи
+                # просто не попадают в defaults — Match создастся с NULL,
+                # как и задумано моделью.
+                defaults["end_time"] = existing.end_time
+                defaults["voting_open_until"] = existing.voting_open_until
+
+        was_finished_before = bool(existing and existing.status == "finished")
 
         match, created = Match.objects.update_or_create(
             external_id=str(game_data["id"]),
             defaults=defaults,
         )
-        
+
         if season:
             TeamSeason.objects.get_or_create(team=home_team, season=season)
             TeamSeason.objects.get_or_create(team=away_team, season=season)
-        
+
+        # Подстраховка на случай, если ИМЕННО этот путь (а не более лёгкий
+        # `update_match_statuses`) первым увидел переход матча в 'finished' —
+        # `sync_recent_matches` (Celery Beat) гоняет `import_full_match`
+        # (который зовёт эту функцию) по недавно завершённым матчам, и в
+        # теории может обогнать более редкий опрос статусов. Триггерим
+        # follower-уведомление ("голосование открыто") здесь тоже, если
+        # существующий матч только что стал 'finished' — но НЕ для только
+        # что созданных записей (existing is None), это бэкафилл истории,
+        # а не реальное "матч только что закончился".
+        if existing and not was_finished_before and match.status == "finished":
+            from notifications.tasks import notify_followers_match_activity
+
+            transaction.on_commit(
+                partial(notify_followers_match_activity.delay, str(match.id))
+            )
+
         logger.info(f"Match {match.id} {'created' if created else 'updated'}: {home_team} vs {away_team}")
         return match
     except IntegrityError as e:
@@ -543,16 +630,51 @@ def import_lineups(match: Match, lineup_data: Dict) -> bool:
             player_ext_id = player_data.get("player_id") or player_data.get("id")
             if not player_ext_id:
                 return None
+
+            defaults = {
+                "first_name": player_data.get("first_name", ""),
+                "last_name": player_data.get("last_name", ""),
+                "position": clean_position_code((player_data.get("amplua") or player_data.get("position", ""))[:20]),
+                "number": player_data.get("shirt_number"),
+                "is_active": True,
+            }
+
+            # БАГ, КОТОРЫЙ ТУТ БЫЛ: Player.team безусловно перезаписывался на
+            # КАЖДОМ импорте состава, включая ресинк СТАРЫХ сезонов (полный
+            # ресинк сезона, ручной ресинк одного матча из staff-дашборда) —
+            # импорт состава матча полугодовой давности "откатывал" игрока
+            # обратно в команду, за которую он тогда играл, стирая более
+            # свежий трансфер. Обновляем team только если ЭТОТ матч новее
+            # последнего уже учтённого матча этого игрока (по MatchLineupPlayer
+            # других матчей, т.к. запись для текущего матча уже удалена
+            # чуть выше) — более старый импорт не может откатить актуальную
+            # команду игрока назад.
+            should_update_team = True
+            existing_player = Player.objects.filter(external_id=str(player_ext_id)).only("id", "team_id").first()
+            if existing_player is not None:
+                last_lineup_start = MatchLineupPlayer.objects.filter(
+                    player_id=existing_player.id
+                ).order_by("-lineup__match__start_time").values_list(
+                    "lineup__match__start_time", flat=True
+                ).first()
+                if (
+                    last_lineup_start is not None
+                    and match.start_time is not None
+                    and match.start_time < last_lineup_start
+                ):
+                    should_update_team = False
+                    logger.info(
+                        f"⏭️  Player external_id={player_ext_id}: матч {match.id} "
+                        f"({match.start_time}) старее последнего учтённого состава "
+                        f"({last_lineup_start}) — Player.team не трогаем"
+                    )
+
+            if should_update_team:
+                defaults["team"] = target_team
+
             player, _ = Player.objects.update_or_create(
                 external_id=str(player_ext_id),
-                defaults={
-                    "first_name": player_data.get("first_name", ""),
-                    "last_name": player_data.get("last_name", ""),
-                    "team": target_team,
-                    "position": clean_position_code((player_data.get("amplua") or player_data.get("position", ""))[:20]),
-                    "number": player_data.get("shirt_number"),
-                    "is_active": True,
-                }
+                defaults=defaults,
             )
             return player
         
@@ -732,11 +854,13 @@ def import_events_and_minutes(match: Match, events_data: Dict, replace_existing:
     # Пул уже сохранённых событий для сверки по (минута, тип, сторона) —
     # см. докстринг выше про сохранение id/реакций при полном ресинке.
     existing_pool: Optional[Dict[tuple, List]] = None
+    existing_total = 0
     if replace_existing:
         existing_pool = {}
         for existing_event in match.events.all():
             key = (existing_event.minute, existing_event.event_type, existing_event.team_side)
             existing_pool.setdefault(key, []).append(existing_event)
+        existing_total = sum(len(bucket) for bucket in existing_pool.values())
 
     created_count = 0
     updated_count = 0
@@ -745,7 +869,11 @@ def import_events_and_minutes(match: Match, events_data: Dict, replace_existing:
         try:
             # ✅ Безопасное получение полей с дефолтами
             minute = evt.get("minute")
-            if not minute:
+            # БАГ, КОТОРЫЙ ТУТ БЫЛ: `if not minute` пропускал событие с
+            # minute=0 — 0 falsy в Python, но это ВАЛИДНАЯ минута матча
+            # (событие на 0-й/самой первой минуте). Пропускать нужно только
+            # реальное отсутствие минуты (None), а не minute=0.
+            if minute is None:
                 continue
                 
             event_type_raw = (evt.get("event_type") or "").lower()
@@ -799,7 +927,19 @@ def import_events_and_minutes(match: Match, events_data: Dict, replace_existing:
                     assist_player = Player.objects.filter(external_id=str(assist_id)).first()
                 
                 # Счёт после гола
-                score_after = evt.get("score_after") or evt.get("home_score") and f"{evt.get('home_score')}:{evt.get('away_score')}"
+                # БАГ, КОТОРЫЙ ТУТ БЫЛ: приоритет `and` выше `or` в Python —
+                # `X or Y and Z` вычисляется как `X or (Y and Z)`. При
+                # home_score == 0 (или None) `evt.get("home_score") and ...`
+                # давал 0/None, и это (а не отформатированная строка счёта)
+                # записывалось в score_after. Явная логика без опоры на
+                # приоритет операторов:
+                home_score_evt = evt.get("home_score")
+                away_score_evt = evt.get("away_score")
+                score_after = evt.get("score_after") or (
+                    f"{home_score_evt}:{away_score_evt}"
+                    if home_score_evt is not None and away_score_evt is not None
+                    else ""
+                )
                 
             # === ОБРАБОТКА ЗАМЕН ===
             elif event_type == "substitution":
@@ -919,11 +1059,32 @@ def import_events_and_minutes(match: Match, events_data: Dict, replace_existing:
     if existing_pool is not None:
         stale_ids = [e.id for bucket in existing_pool.values() for e in bucket]
         if stale_ids:
-            stale_deleted, _ = MatchEvent.objects.filter(id__in=stale_ids).delete()
-            logger.info(
-                f"🗑️ Removed {stale_deleted} stale events for match {match.id} "
-                f"(no longer present in API response)"
-            )
+            # ЗАЩИТА ОТ НЕПОЛНОГО ОТВЕТА KFF (HTTP 200, но обрезанный/
+            # частичный список событий): если бы мы просто удаляли всё, чего
+            # нет в текущем ответе, такой "усечённый" ответ снёс бы РЕАЛЬНЫЕ
+            # события матча (и каскадно EventReaction — реакции
+            # пользователей). Явного признака "ответ неполный" API не даёт,
+            # поэтому эвристика — если новый набор событий от API СУЩЕСТВЕННО
+            # (менее чем наполовину) короче того, что уже есть в БД для этого
+            # матча, это подозрительно похоже на обрезанный ответ, а не на
+            # реальное исчезновение событий. В этом случае "устаревшие"
+            # события НЕ удаляем (остальной импорт — добавление/обновление
+            # новых событий из ответа — уже выполнен выше как обычно), только
+            # логируем warning для ручного разбора.
+            if len(events) < existing_total * 0.5:
+                logger.warning(
+                    f"⚠️ import_events_and_minutes: подозрительно короткий ответ API для "
+                    f"матча {match.id} — событий в ответе: {len(events)}, событий в БД "
+                    f"было: {existing_total}, к удалению как 'устаревшие' было бы: "
+                    f"{len(stale_ids)}. Пропускаю удаление 'устаревших' событий, чтобы "
+                    f"не снести реальные данные из-за неполного ответа KFF."
+                )
+            else:
+                stale_deleted, _ = MatchEvent.objects.filter(id__in=stale_ids).delete()
+                logger.info(
+                    f"🗑️ Removed {stale_deleted} stale events for match {match.id} "
+                    f"(no longer present in API response)"
+                )
 
     event_count = MatchEvent.objects.filter(match=match).count()
     logger.info(

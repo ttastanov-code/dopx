@@ -9,6 +9,7 @@ import uuid
 
 from django.contrib import admin
 from django.conf import settings
+from django.db.models import Count
 from django.templatetags.static import static
 from django.urls import reverse
 from django.utils.html import format_html
@@ -156,9 +157,20 @@ class PartnerAdmin(ModelAdmin):
     )
     actions = [export_as_csv, 'regenerate_feed_token']
 
+    def get_queryset(self, request):
+        # N+1: раньше banner_count() дёргал obj.banners.count() отдельным
+        # запросом НА КАЖДУЮ строку списка. banners — обычная FK-связь, тут
+        # annotate() безопасен (просто доп. колонка в том же SQL-запросе,
+        # ни на что другое не влияет). visits_30d/stats_30d (ниже, у Banner)
+        # так же одним annotate() не убрать — они считаются по AnalyticsEvent
+        # (другое приложение, группировка по JSONField properties), это уже
+        # требует более широкого рефакторинга selectors — оставлено как есть.
+        return super().get_queryset(request).annotate(_banner_count=Count('banners', distinct=True))
+
     def banner_count(self, obj):
-        return obj.banners.count()
+        return obj._banner_count
     banner_count.short_description = 'Баннеров'
+    banner_count.admin_order_field = '_banner_count'
 
     def referral_url_display(self, obj):
         # obj.pk у BaseModel — UUID с default=uuid.uuid4, он уже проставлен

@@ -38,7 +38,16 @@ def track_event(
     """
     payload: dict[str, Any] = {"event_name": str(event_name), "properties": properties or {}}
 
-    resolved_user = user or (getattr(request, "user", None) if request else None)
+    # 2026-08-28: TrackClientEventView (analytics/views.py) сознательно
+    # обнуляет authentication_classes у DRF APIView (иначе SessionAuthentication
+    # требует CSRF, которого sendBeacon дать не может) — но это же приводит
+    # к тому, что DRF `Request._authenticate()` с пустым списком authenticators
+    # никогда не пытается достать пользователя из сессии, и `request.user`
+    # (DRF-обёртка) всегда резолвится в AnonymousUser, даже для залогиненных.
+    # `request._request` — нижележащий Django HttpRequest (стабильный
+    # публичный атрибут DRF Request), у него `.user` берётся напрямую из
+    # AuthenticationMiddleware/сессии, минуя DRF-аутентификацию.
+    resolved_user = user or (getattr(getattr(request, "_request", request), "user", None) if request else None)
     if resolved_user is not None and getattr(resolved_user, "is_authenticated", False):
         payload["user_id"] = str(resolved_user.id)
 

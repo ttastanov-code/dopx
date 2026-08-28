@@ -116,7 +116,16 @@ UNFOLD["DASHBOARD_CALLBACK"] = dashboard.admin_callback.dashboard_callback
 {{ dopx_registrations_by_day|json_script:"dopx-reg-data" }}
 {{ dopx_evaluations_by_day|json_script:"dopx-eval-data" }}
 {{ dopx_rating_distribution|json_script:"dopx-rating-data" }}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<!-- dist/chart.umd.js (не chart.umd.min.js — этого файла нет в npm-пакете
+     chart.js@4.4.4, ".min.js" здесь был синтетическим URL, который jsDelivr
+     минифицирует на лету; такой файл не имеет фиксированного хэша в
+     метаданных пакета и не годится для integrity=. dist/chart.umd.js — это
+     реальный файл пакета, УЖЕ минифицированный сборкой (rollup-plugin-terser,
+     ~205KB), тот же browser-бандл, что был бы получен через ".min.js".
+     integrity= — sha256 из data.jsdelivr.com (см. комментарий про HTMX/
+     Alpine в base.html: сеть для curl+openssl/scripts/generate_sri.sh была
+     недоступна, значения взяты из официального API jsDelivr). -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.js" integrity="sha256-/tanOfjQ8GhxdN5s0UdF/A/HgJFEqxE9IpCKJr8Nf+o=" crossorigin="anonymous"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     function lineChart(canvasId, dataId, label, color) {

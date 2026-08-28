@@ -609,7 +609,17 @@ def recalculate_player_aggregate(player, match):
 
     contributions = [e.contribution for e in evaluations if e.contribution]
     std_dev = calculate_std_dev(contributions)
-    stability_index = 1.0 / std_dev if std_dev > 0 else 10.0
+    # БАГ, КОТОРЫЙ ТУТ БЫЛ: при выборке из одного голоса (или вообще без
+    # разброса) std_dev == 0, и stability_index выставлялся в максимум
+    # (10.0) — выглядело как "идеальная стабильность", хотя на деле это
+    # минимум данных, из которого дисперсии просто неоткуда взяться.
+    # Ниже MIN_VOTES_FOR_DISPLAY метрика вообще не должна претендовать на
+    # значимость — 0.0, а не искусственный максимум (поле NOT NULL,
+    # default 0.0, см. aggregates/models.py — None здесь не подходит).
+    if len(evaluations) < MIN_VOTES_FOR_DISPLAY:
+        stability_index = 0.0
+    else:
+        stability_index = 1.0 / std_dev if std_dev > 0 else 10.0
 
     drama_index = cache.get(f"match_agg_{match_id}")
     if drama_index is None:

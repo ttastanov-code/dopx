@@ -46,8 +46,28 @@ case "$1" in
         echo "[entrypoint] Применяю миграции..."
         python manage.py migrate --noinput
 
-        echo "[entrypoint] Собираю статику..."
-        python manage.py collectstatic --noinput --clear
+        # collectstatic гоняется на КАЖДОМ старте web-контейнера (не только
+        # при первом деплое) — иначе новая статика из свежего образа не
+        # подхватится после обновления. Но --clear нельзя гонять каждый
+        # раз: static_volume, который он чистит, в этот момент читает live
+        # nginx (тот же volume смонтирован туда read-only, см.
+        # docker-compose.yml) — рестарт web среди бела дня на секунду-две
+        # оставил бы nginx без статики (404 на CSS/JS у живых пользователей).
+        # Поэтому --clear только один раз (по маркеру внутри самого volume,
+        # он переживает рестарт контейнера, т.к. volume персистентный), а
+        # на всех следующих стартах — обычный collectstatic без --clear:
+        # он только добавляет/перезаписывает файлы, старые "осиротевшие"
+        # (от файлов, которые переименовали/удалили в коде) не подчищает,
+        # зато не создаёт окна с пустой статикой.
+        STATICFILES_MARKER="/app/staticfiles/.collectstatic_done"
+        if [ -f "$STATICFILES_MARKER" ]; then
+            echo "[entrypoint] Собираю статику (без --clear, маркер уже есть)..."
+            python manage.py collectstatic --noinput
+        else
+            echo "[entrypoint] Собираю статику (первый запуск, с --clear)..."
+            python manage.py collectstatic --noinput --clear
+            touch "$STATICFILES_MARKER"
+        fi
 
         # Необязательный автосоздание суперпользователя для первого деплоя.
         # Работает, только если заданы все три переменные — так что по

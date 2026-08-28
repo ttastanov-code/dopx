@@ -32,7 +32,24 @@
         {% endfor %}
     </div>
     
-    {% if ticket.status not in 'closed,resolved' %}
+    {% comment %}
+    Было: {% if ticket.status not in 'closed,resolved' %} — это Python-подобная
+    проверка ПОДСТРОКИ в строке (Django template 'in' на строковом литерале
+    делает in-membership по символам/подстрокам, не по списку), а не
+    членство в списке статусов. Случайно работала правильно только потому,
+    что ни один статус ContactSubmission (new/in_progress/resolved/closed —
+    notifications/models.py::ContactSubmission.STATUS_CHOICES) не является
+    подстрокой другого. Ниже — явные сравнения без этой ловушки.
+    Флаг can_respond из Python-контекста здесь не передать: этот шаблон не
+    рендерится НИ ОДНОЙ view в проекте (grep 'ticket_detail.html' по всему
+    репозиторию не находит ни одного render()) и описывает модель полей
+    (assigned_to, messages/is_admin_message/is_system_note), которых у
+    ContactSubmission вообще нет — похоже на не до конца перенесённую или
+    так и не подключённую фичу тикетов. Оставляем как есть до момента, когда
+    кто-то реально подключит эту страницу — тогда и добавить can_respond в
+    её view.
+    {% endcomment %}
+    {% if ticket.status != 'closed' and ticket.status != 'resolved' %}
     <h3>Действия</h3>
     <form method="post" style="margin-top: 20px;">
         {% csrf_token %}
