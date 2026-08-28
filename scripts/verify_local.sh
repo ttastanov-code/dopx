@@ -103,6 +103,16 @@ echo "" >>"$REPORT"
 # 2. Установленные зависимости не конфликтуют между собой.
 run_step "pip check (конфликты зависимостей)" pip check
 
+# 2b. Известные CVE в зависимостях (pip-audit сверяется с базой PyPA
+# Advisory Database/OSV по имени+версии пакета — нужен интернет). Опционально:
+# если pip-audit не установлен, шаг пропускается без ошибки, скрипт сам
+# ничего не ставит. Установка (один раз): pip install pip-audit
+if python -c "import pip_audit" >/dev/null 2>&1; then
+    run_step "pip-audit (известные CVE в зависимостях)" pip-audit -r requirements.txt
+else
+    skip_step "pip-audit (известные CVE в зависимостях)" "не установлен — pip install pip-audit, если нужен этот шаг"
+fi
+
 # 3. Django system check — базовая проверка конфигурации приложения.
 run_step "manage.py check" python manage.py check
 

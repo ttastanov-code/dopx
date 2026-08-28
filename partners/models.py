@@ -140,8 +140,28 @@ class Banner(BaseModel):
         return f"{self.title} ({self.get_zone_display()})"
 
     def is_currently_active(self) -> bool:
-        """is_active + внутри окна starts_at/ends_at (оба необязательны)."""
+        """
+        is_active + внутри окна starts_at/ends_at (оба необязательны) +
+        если баннер привязан к партнёру — партнёр тоже должен быть активен.
+
+        БАГ, КОТОРЫЙ ТУТ БЫЛ (найден при написании тестов на partners,
+        2026-08-28): метод проверял только собственные поля баннера —
+        Partner.is_active вообще не участвовал в решении. Деактивация
+        партнёра в админке (контракт закончился, партнёр нарушил условия
+        размещения, площадка попросила снять рекламу) НЕ останавливала уже
+        включённые баннеры: partners/services.py::get_active_banner_for_zone
+        продолжал их показывать (и накручивать показы/клики в статистике)
+        до тех пор, пока staff не находил и не выключал КАЖДЫЙ баннер
+        этого партнёра вручную по отдельности — единственный переключатель
+        "Активен" на самом Partner был чисто декоративным для уже
+        размещённой рекламы. partner=None (собственное промо DOPX без
+        привязки к партнёру, см. Banner.partner.help_text) этой проверкой
+        не затрагивается — устанавливать/снимать его может только staff
+        через Banner.is_active напрямую.
+        """
         if not self.is_active:
+            return False
+        if self.partner_id and not self.partner.is_active:
             return False
         now = timezone.now()
         if self.starts_at and now < self.starts_at:

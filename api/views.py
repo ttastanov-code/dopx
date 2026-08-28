@@ -125,10 +125,21 @@ class PlayerEvaluationViewSet(viewsets.ModelViewSet):
     throttle_classes = [EvaluationRateThrottle]
 
     def get_queryset(self):
+        # БАГ, КОТОРЫЙ ТУТ БЫЛ (найден тестами api.tests.PlayerEvaluationAPITests,
+        # 2026-08-28): select_related("user") тянул JOIN на users_user, но
+        # PlayerEvaluationSerializer (см. api/serializers.py) НЕ сериализует
+        # поле user вообще (сознательно — чтобы не утекал user_id/email других
+        # людей через публичный API). .only() ниже поэтому не перечислял ни
+        # одного user__* поля — а без них Django не может достроить JOIN,
+        # который сам же запросил select_related("user"), и падает с
+        # `Field PlayerEvaluation.user cannot be both deferred and traversed
+        # using select_related at the same time` на КАЖДОМ обращении к этому
+        # эндпоинту. Раз поле нигде не используется — просто убираем лишний
+        # JOIN, а не подгружаем ненужные данные о пользователе.
         user = self.request.user
         return (
             PlayerEvaluation.objects.filter(user=user)
-            .select_related("player", *MATCH_DETAIL_SELECT_RELATED, "user")
+            .select_related("player", *MATCH_DETAIL_SELECT_RELATED)
             .only(
                 "id",
                 "user_id",
@@ -164,7 +175,10 @@ class PlayerEvaluationViewSet(viewsets.ModelViewSet):
 
         evaluations = (
             PlayerEvaluation.objects.filter(match_id=match_id)
-            .select_related("player", *MATCH_DETAIL_SELECT_RELATED, "user")
+            # select_related("user") убран — та же причина, что в get_queryset()
+            # выше: поле не сериализуется, а без него в .only() JOIN не может
+            # быть достроен (см. докстринг там).
+            .select_related("player", *MATCH_DETAIL_SELECT_RELATED)
             .order_by("-contribution")
             .only(
                 "id",
@@ -492,9 +506,20 @@ class PlayerAggregateViewSet(viewsets.ReadOnlyModelViewSet):
     throttle_classes = [AggregateRateThrottle]
 
     def get_queryset(self):
+        # БАГ, КОТОРЫЙ ТУТ БЫЛ (найден тестами api.tests.AggregateViewSetsPublicAccessTests,
+        # 2026-08-28): select_related("player__team") тянул JOIN на teams_team
+        # через players_player, но PlayerMatchAggregateSerializer (см.
+        # api/serializers.py) вообще не сериализует команду игрока — только
+        # player_name/player_last_name. .only() ниже не перечислял ни одного
+        # player__team* поля, и Django не мог достроить JOIN, который сам же
+        # запросил select_related("player__team") — падение с `Field
+        # Player.team cannot be both deferred and traversed using
+        # select_related at the same time` на КАЖДОМ обращении к этому
+        # ПУБЛИЧНОМУ (AllowAny, встраивается на сторонние сайты как виджет)
+        # эндпоинту. Убран неиспользуемый JOIN.
         return (
             PlayerMatchAggregate.objects.select_related(
-                "player", "player__team", *MATCH_DETAIL_SELECT_RELATED
+                "player", *MATCH_DETAIL_SELECT_RELATED
             )
             .order_by("-performance_score")
             .only(
@@ -552,7 +577,9 @@ class PlayerAggregateViewSet(viewsets.ReadOnlyModelViewSet):
 
         aggregates = (
             PlayerMatchAggregate.objects.filter(match__season_id=season_id)
-            .select_related("player", "player__team", *MATCH_DETAIL_SELECT_RELATED)
+            # select_related("player__team") убран — та же причина, что в
+            # get_queryset() выше: команда игрока нигде не сериализуется.
+            .select_related("player", *MATCH_DETAIL_SELECT_RELATED)
             .order_by("-performance_score")[:limit]
         )
         serializer = self.get_serializer(aggregates, many=True)
@@ -570,9 +597,13 @@ class CoachAggregateViewSet(viewsets.ReadOnlyModelViewSet):
     throttle_classes = [AggregateRateThrottle]
 
     def get_queryset(self):
+        # БАГ, КОТОРЫЙ ТУТ БЫЛ: то же самое, что в PlayerAggregateViewSet
+        # выше — select_related("coach__team") тянул JOIN, которого нет в
+        # CoachMatchAggregateSerializer, и .only() не мог его закрыть.
+        # Публичный (AllowAny) эндпоинт падал на каждом обращении.
         return (
             CoachMatchAggregate.objects.select_related(
-                "coach", "coach__team", *MATCH_DETAIL_SELECT_RELATED
+                "coach", *MATCH_DETAIL_SELECT_RELATED
             )
             .order_by("-match__start_time")
             .only(
