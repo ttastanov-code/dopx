@@ -31,6 +31,7 @@ from evaluations.forms import (
     CoachEvaluationForm,
     ContextEvaluationForm,
     MatchEvaluationForm,
+    PlayerEvaluationForm,
     RefereeEvaluationForm,
     TeamEvaluationForm,
 )
@@ -307,6 +308,21 @@ class EvaluatePlayersView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
         return super().dispatch(request, *args, **kwargs)
 
     def post(self, request, *args, **kwargs):
+        # БАГ, КОТОРЫЙ ТУТ БЫЛ (найден повторным ручным разбором после
+        # AUDIT_2026-08.md — при первом проходе фикса этот шаг ошибочно
+        # сочли уже безопасным из-за try/except ниже): try/except (ValueError,
+        # TypeError) ловит только "не число", но НЕ диапазон — PlayerEvaluationForm
+        # уже описана в evaluations/forms.py с MinValueValidator(1)/
+        # MaxValueValidator(10), но не использовалась здесь. POST с
+        # player_X_contribution=999999 (или отрицательным) проходил
+        # int(...) без единой проверки границ и ломал performance_score
+        # игрока, особенно при малой выборке голосов. Теперь — через форму,
+        # как Teams/Coaches.
+        form = PlayerEvaluationForm(request.POST, match=self.match)
+        if not form.is_valid():
+            messages.error(request, 'Проверьте оценки игроков — что-то введено некорректно')
+            return self.render_to_response(self.get_context_data(form=form))
+
         session = self.get_or_create_session()
         lineup_players = MatchLineupPlayer.objects.filter(lineup__match=self.match).select_related('player')
         lineup_total = lineup_players.count()
@@ -319,23 +335,20 @@ class EvaluatePlayersView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
             for lp in lineup_players:
                 player = lp.player
                 prefix = f'player_{player.id}'
-                if request.POST.get(f'{prefix}_evaluate') == 'on':
-                    contribution = request.POST.get(f'{prefix}_contribution')
-                    risk = request.POST.get(f'{prefix}_risk')
-                    potential = request.POST.get(f'{prefix}_potential')
-                    if all([contribution, risk, potential]):
-                        try:
-                            PlayerEvaluation.objects.update_or_create(
-                                user=request.user, match=self.match, player=player,
-                                defaults={
-                                    'contribution': int(contribution),
-                                    'risk': int(risk),
-                                    'potential': int(potential)
-                                }
-                            )
-                            count += 1
-                        except (ValueError, TypeError) as e:
-                            logger.warning(f"Ошибка валидации для {player}: {e}")
+                if form.cleaned_data.get(f'{prefix}_evaluate'):
+                    contribution = form.cleaned_data.get(f'{prefix}_contribution')
+                    risk = form.cleaned_data.get(f'{prefix}_risk')
+                    potential = form.cleaned_data.get(f'{prefix}_potential')
+                    if contribution is not None and risk is not None and potential is not None:
+                        PlayerEvaluation.objects.update_or_create(
+                            user=request.user, match=self.match, player=player,
+                            defaults={
+                                'contribution': contribution,
+                                'risk': risk,
+                                'potential': potential,
+                            }
+                        )
+                        count += 1
             self.update_session(session, 'players')
             if is_new_step and lineup_total:
                 # XP пропорционален доле реально оценённых игроков от
@@ -500,9 +513,30 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
     def form_valid(self, form):
         session = self.get_or_create_session()
         user = self.request.user
-        old_trust = user.trust_score
 
         with transaction.atomic():
+            # БАГ, КОТОРЫЙ ТУТ БЫЛ (найден повторным ручным разбором после
+            # AUDIT_2026-08.md — при первом проходе фикса закрыли только
+            # половину гонки): проверка `session.status == 'completed'` в
+            # dispatch() защищает от ПОСЛЕДОВАТЕЛЬНОЙ повторной отправки
+            # (второй запрос приходит уже ПОСЛЕ коммита первого), но НЕ от
+            # ДВУХ ОДНОВРЕМЕННЫХ запросов (двойной клик/два таба) — оба
+            # проходят dispatch() параллельно, видя ещё не закоммиченный
+            # session.status='in_progress', и оба заходят сюда. Без лока
+            # строки session здесь ничего не мешает второму транзакции
+            # тоже начислить XP/скорректировать Trust Score/поставить
+            # анти-фрод и аналитику — тот же класс бага, что и у остальных
+            # 5 шагов, просто на последнем шаге дополнительных побочных
+            # эффектов больше. select_for_update() сериализует конкурентные
+            # транзакции, и повторная проверка статуса ПОСЛЕ получения
+            # лока ловит гонку, которую не поймал dispatch().
+            session = EvaluationSession.objects.select_for_update().get(pk=session.pk)
+            if session.status == 'completed':
+                messages.info(self.request, 'Вы уже оценили этот матч')
+                return redirect('matches:detail', pk=self.match.id)
+
+            old_trust = user.trust_score
+
             # 1. Сохраняем финальную оценку матча
             MatchEvaluation.objects.update_or_create(
                 user=user, match=self.match,

@@ -1,17 +1,23 @@
 # .github/workflows/deploy.yml
 #
-# Что делает: при пуше в main сначала проверяет, что Docker-образ вообще
-# собирается (та же проверка, которую мы недавно гоняли руками и ловили
-# на ней две реальные ошибки — несовпадение версии Python и битый пин
-# Django), и только если сборка прошла — заходит на сервер по SSH,
-# подтягивает свежий код и перезапускает стек.
+# Что делает: при пуше в main/dev — три независимые проверки параллельно
+# (сборка Docker-образа, реальный прогон manage.py test против настоящих
+# Postgres/Redis, deploy-чеклист Django), и только если ВСЕ прошли — на
+# push в main заходит на сервер по SSH, подтягивает свежий код и
+# перезапускает стек.
+#
+# ПОЧЕМУ ЭТО ЗДЕСЬ (2026-08-28): до этого единственным способом узнать,
+# что тесты вообще проходят, было вручную гонять `manage.py test` на
+# компьютере разработчика и присылать вывод — легко забыть сделать это
+# перед пушем, и тогда сломанный код тихо уезжает в main. Теперь это
+# происходит САМО на каждый push, без человека в цепочке.
 #
 # Пока в настройках репозитория (Settings → Secrets and variables →
 # Actions) не заданы секреты DEPLOY_HOST/DEPLOY_USER/DEPLOY_SSH_KEY/
 # DEPLOY_PATH — шаг деплоя просто пропускается с понятным сообщением,
-# сборка при этом всё равно проверяется. Как только сервер появится и
-# секреты будут добавлены — деплой на каждый push в main включится сам,
-# без единой правки этого файла.
+# остальные проверки при этом всё равно выполняются. Как только сервер
+# появится и секреты будут добавлены — деплой на каждый push в main
+# включится сам, без единой правки этого файла.
 
 name: Build check & deploy
 
@@ -33,9 +39,83 @@ jobs:
       - name: Собрать образ web (без запуска)
         run: docker build -t dopx-build-check .
 
+  test:
+    name: Тесты + Django deploy-чеклист
+    runs-on: ubuntu-latest
+    # Настоящие Postgres/Redis прямо на раннере (не докер-контейнер
+    # приложения) — быстрее собрать, чем гонять тесты внутри уже
+    # собранного образа, и этого достаточно: цель здесь — поймать
+    # логические ошибки в коде, а не проверить сам Dockerfile (это уже
+    # делает job build-check выше).
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: dopx_test
+          POSTGRES_USER: dopx_test
+          POSTGRES_PASSWORD: dopx_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dopx_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # Локальные тестовые значения — не секреты, не имеют отношения к
+      # реальному .env на сервере. ENVIRONMENT=development — чтобы не
+      # сработала проверка "SECRET_KEY обязателен в проде" из settings.py
+      # (см. AUDIT_2026-08.md, раздел 1) при отсутствии реального ключа.
+      ENVIRONMENT: development
+      DEBUG: "True"
+      SECRET_KEY: ci-test-secret-key-not-for-production-use
+      ALLOWED_HOSTS: "localhost,127.0.0.1"
+      DB_NAME: dopx_test
+      DB_USER: dopx_test
+      DB_PASSWORD: dopx_test
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      REDIS_URL: redis://localhost:6379/1
+      REDIS_AGGREGATES_URL: redis://localhost:6379/2
+      CELERY_BROKER_URL: redis://localhost:6379/0
+      CELERY_RESULT_BACKEND: redis://localhost:6379/0
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Установить зависимости
+        run: pip install -r requirements.txt
+
+      - name: Django system check
+        run: python manage.py check
+
+      - name: Проверка расхождения моделей и миграций
+        # Миграции в этом проекте местами пишутся вручную (см.
+        # docs/BACKLOG.md) — этот шаг ловит именно тот случай, когда
+        # модель поменяли, а миграцию — забыли.
+        run: python manage.py makemigrations --check --dry-run
+
+      - name: manage.py test
+        run: python manage.py test
+
   deploy:
     name: Деплой на сервер
-    needs: build-check
+    needs: [build-check, test]
     runs-on: ubuntu-latest
     # github.event_name != 'pull_request' раньше стояло тут как доп. защита,
     # но в блоке `on:` этого файла триггера pull_request вообще нет — сборка

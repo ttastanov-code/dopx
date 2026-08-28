@@ -44,11 +44,20 @@ class StatusMapTests(TestCase):
     отображение матча, и voting_open_until, и алерты дашборда."""
 
     def test_known_statuses_map_correctly(self):
+        # БАГ, КОТОРЫЙ ТУТ БЫЛ (найден через `manage.py test`, август 2026):
+        # тест проверял СТАРОЕ поведение (postponed/cancelled схлопывались
+        # в scheduled/finished), которое было намеренно заменено ещё в
+        # миграции 0003 — см. комментарий у STATUS_MAP в parsers/kff/
+        # importers.py про баг "перенесённый матч не показывался как
+        # перенесённый". Тест никогда не обновили вслед за кодом, из-за
+        # чего 137 других тестов маскировали регрессию — assertEqual
+        # останавливается на первой непройденной строке, так что вторая
+        # неверная проверка (cancelled) даже не успевала запуститься.
         self.assertEqual(STATUS_MAP["live"], "live")
         self.assertEqual(STATUS_MAP["finished"], "finished")
         self.assertEqual(STATUS_MAP["upcoming"], "scheduled")
-        self.assertEqual(STATUS_MAP["postponed"], "scheduled")
-        self.assertEqual(STATUS_MAP["cancelled"], "finished")
+        self.assertEqual(STATUS_MAP["postponed"], "postponed")
+        self.assertEqual(STATUS_MAP["cancelled"], "cancelled")
 
     def test_unknown_status_falls_back_to_current_status(self):
         """`parsers/tasks.py::update_match_statuses` вызывает

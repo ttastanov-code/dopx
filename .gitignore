@@ -58,6 +58,10 @@ celerybeat-schedule
 .pytest_cache/
 .coverage
 htmlcov/
+# Отчёты scripts/verify_local.sh — локальный вывод одного прогона на
+# конкретной машине разработчика, не артефакт для git (файл целиком
+# копируется в чат вручную, когда нужно поделиться результатом).
+scripts/verify_reports/
 
 # Type checking
 .mypy_cache/
