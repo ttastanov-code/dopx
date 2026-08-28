@@ -1,5 +1,5 @@
 aiohappyeyeballs==2.6.1
-aiohttp==3.13.3
+aiohttp==3.14.3
 aiosignal==1.4.0
 amqp==5.3.1
 anyio==4.12.1
@@ -14,11 +14,11 @@ celery==5.6.2
 certifi==2026.2.25
 cffi==2.0.0
 charset-normalizer==3.4.5
-click==8.3.1
+click==8.3.3
 click-didyoumean==0.3.1
 click-plugins==1.1.1.2
 click-repl==0.3.0
-cryptography==46.0.5
+cryptography==50.0.0
 Django==6.0.8
 # Security-стек (продуктовый апгрейд, раздел "защита на высшем уровне"):
 # axes — брутфорс-лок логина; otp[qrcode] — 2FA (TOTP + QR-код enrollment,
@@ -41,11 +41,11 @@ gevent==25.9.1
 gunicorn==23.0.0
 greenlet==3.3.2
 h11==0.16.0
-h2==4.3.0
-hpack==4.1.0
+h2==4.4.1
+hpack==4.2.0
 httpcore==1.0.9
 hyperframe==6.1.0
-idna==3.11
+idna==3.15
 inflection==0.5.1
 iniconfig==2.3.0
 itsdangerous==2.2.0
@@ -54,12 +54,12 @@ jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
 kombu==5.6.2
 locust==2.43.3
-lxml==5.2.2
+lxml==6.1.0
 MarkupSafe==3.0.3
-msgpack==1.1.2
+msgpack==1.2.1
 multidict==6.7.1
 packaging==26.0
-pillow==12.1.1
+pillow==12.3.0
 pluggy==1.6.0
 # Web Push (продуктовый аудит, раздел 5c) — используется в
 # notifications/services.py::send_push_to_user. Тянет py-vapid (VAPID-ключи,
@@ -72,30 +72,30 @@ psutil==7.2.2
 psycopg==3.3.3
 pycparser==3.0
 pyee==13.0.1
-Pygments==2.19.2
+Pygments==2.20.0
 pypdfium2==5.6.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.2
-python-engineio==4.13.1
-python-socketio==5.16.1
+python-engineio==4.13.2
+python-socketio==5.16.2
 PyYAML==6.0.3
 pyzmq==27.1.0
 redis==7.3.0
 referencing==0.37.0
-requests==2.32.3
+requests==2.33.0
 rpds-py==0.30.0
 # Sentry error tracking (dopx/settings.py::SENTRY_DSN) — no-op без ключа в
 # .env, см. комментарий в settings.py про переход с email-алертов.
 sentry-sdk==2.62.0
 simple-websocket==1.1.0
 six==1.17.0
-soupsieve==2.8.3
-sqlparse==0.5.5
+soupsieve==2.8.4
+sqlparse==0.6.0
 typing_extensions==4.15.0
 tzdata==2025.3
 tzlocal==5.3.1
 uritemplate==4.2.0
-urllib3==2.6.3
+urllib3==2.7.0
 # Парсинг User-Agent для разбивки трафика по устройствам/браузерам
 # (staff-дашборд, вкладка «Трафик») — тянет ua-parser как транзитивную
 # зависимость, PyYAML для его регекс-базы уже есть в requirements.txt выше.

@@ -113,6 +113,18 @@ jobs:
       - name: manage.py test
         run: python manage.py test
 
+      - name: pip-audit (известные уязвимости в зависимостях)
+        # continue-on-error: пока намеренно НЕ блокирует деплой — у pip-audit
+        # бывают ложные тревоги (advisory на код-путь, которым проект не
+        # пользуется) и находки без доступного фикса. Первый прогон нужно
+        # разобрать вручную (см. вывод в логе этого шага на вкладке Actions),
+        # и только после этого решить, стоит ли убирать continue-on-error и
+        # делать шаг блокирующим.
+        continue-on-error: true
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt
+
   deploy:
     name: Деплой на сервер
     needs: [build-check, test]
