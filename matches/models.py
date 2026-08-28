@@ -20,8 +20,13 @@ class Match(BaseModel):
         ("cancelled", _("Отменён")),
     ]
     
-    league = models.ForeignKey(League, on_delete=models.CASCADE, verbose_name=_('Лига'))
-    season = models.ForeignKey(Season, on_delete=models.CASCADE, verbose_name=_('Сезон'))
+    # БАГ, КОТОРЫЙ ТУТ БЫЛ: on_delete=CASCADE на справочных сущностях League/
+    # Season — удаление ОДНОЙ League/Season сносило ВСЕ матчи этой лиги/
+    # сезона (и каскадно всё, что висит на матчах: события, составы,
+    # статистику, оценки). PROTECT — Django не даст удалить League/Season,
+    # пока на них ссылаются матчи, что и требуется для справочных сущностей.
+    league = models.ForeignKey(League, on_delete=models.PROTECT, verbose_name=_('Лига'))
+    season = models.ForeignKey(Season, on_delete=models.PROTECT, verbose_name=_('Сезон'))
     home_team = models.ForeignKey(
         Team,
         on_delete=models.CASCADE,

@@ -1,0 +1,32 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+{% block content %}
+<div class="module">
+    <h1>Подтвердите ручную фиксацию тура</h1>
+    <p>
+        Будет зафиксировано туров: <strong>{{ objects|length }}</strong>.
+        Для каждого из них немедленно ставится в очередь рассылка уведомления
+        «Итоги тура» всем верифицированным подписанным пользователям —
+        отменить рассылку после подтверждения нельзя.
+    </p>
+    <ul>
+        {% for round_xi in objects %}
+        <li>
+            {{ round_xi.season }} — тур {{ round_xi.tour }}
+            {% if round_xi.player_of_round_name %} (игрок тура: {{ round_xi.player_of_round_name }}){% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+    <form method="post">
+        {% csrf_token %}
+        {% for id in selected_ids %}
+        <input type="hidden" name="{{ action_checkbox_name }}" value="{{ id }}">
+        {% endfor %}
+        <input type="hidden" name="select_across" value="{{ select_across }}">
+        <input type="hidden" name="action" value="{{ action }}">
+        <input type="hidden" name="confirm" value="yes">
+        <input type="submit" value="Да, зафиксировать и разослать" class="default" style="margin-right: 10px;">
+        <a href="." class="button cancel-link">Отмена</a>
+    </form>
+</div>
+{% endblock %}

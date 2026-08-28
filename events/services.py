@@ -2,6 +2,7 @@
 """Сервисный слой live-пульса: тап/подсчёт реакций, отдельно от views.py."""
 from __future__ import annotations
 
+from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
 
 from .models import EventReaction, MatchEvent
@@ -19,19 +20,36 @@ def toggle_reaction(*, user, match_event: MatchEvent, reaction: str) -> str | No
     Возвращает итоговую реакцию пользователя после тапа: 'like' / 'dislike'
     / None (если реакция была снята).
     """
-    existing = EventReaction.objects.filter(match_event=match_event, user=user).first()
+    # БАГ, КОТОРЫЙ ТУТ БЫЛ: gонка между filter(...).first() и .create() без
+    # select_for_update/get_or_create/обработки IntegrityError — два
+    # параллельных запроса (двойной тап на мобильном) оба видели
+    # existing=None и оба пытались create(); второй падал IntegrityError по
+    # unique_event_reaction наружу как 500 вместо нормального toggle.
+    with transaction.atomic():
+        existing = EventReaction.objects.select_for_update().filter(
+            match_event=match_event, user=user
+        ).first()
 
-    if existing is None:
-        EventReaction.objects.create(match_event=match_event, user=user, reaction=reaction)
+        if existing is None:
+            try:
+                # Savepoint: если параллельный запрос успел вставить строку
+                # первым, INSERT здесь упадёт IntegrityError-ом, но не должен
+                # сломать всю внешнюю транзакцию — только этот savepoint.
+                with transaction.atomic():
+                    EventReaction.objects.create(match_event=match_event, user=user, reaction=reaction)
+                return reaction
+            except IntegrityError:
+                existing = EventReaction.objects.select_for_update().get(
+                    match_event=match_event, user=user
+                )
+
+        if existing.reaction == reaction:
+            existing.delete()
+            return None
+
+        existing.reaction = reaction
+        existing.save(update_fields=['reaction', 'updated_at'])
         return reaction
-
-    if existing.reaction == reaction:
-        existing.delete()
-        return None
-
-    existing.reaction = reaction
-    existing.save(update_fields=['reaction', 'updated_at'])
-    return reaction
 
 
 def reaction_counts(match_event_ids: list) -> dict:

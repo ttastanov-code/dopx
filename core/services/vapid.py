@@ -34,7 +34,23 @@ def generate_and_persist_vapid_keys() -> tuple[str, str]:
     ответственность вызывающего кода (обе точки входа, `setup_push_keys`
     и `ensure_vapid_keys_on_startup`, сами решают, когда вызывать).
 
-    :return: (путь к private_key.pem, application server key для JS).
+    БАГ, КОТОРЫЙ ТУТ БЫЛ (найден полным аудитом, август 2026): в
+    VAPID_PRIVATE_KEY записывался ПУТЬ к private_key.pem на диске, а
+    `pywebpush`/`notifications/services.py::send_push_to_user` передают
+    это значение как есть в `pywebpush.webpush(vapid_private_key=...)`.
+    Да, py_vapid умеет читать путь к файлу (`Vapid.from_file`, если файл
+    существует локально) — но на любом деплое, где .env синхронизируется
+    отдельно от файловой системы приложения (секрет-менеджер, копия .env
+    на новый сервер/контейнер без .vapid/, повторный деплой в директорию
+    с очищенным диском), путь остаётся валидной строкой, а самого файла
+    по нему уже нет — push беззвучно перестаёт работать. Правильный
+    формат для VAPID_PRIVATE_KEY — САМ ключ (raw, base64url, 32 байта),
+    как и ожидает `Vapid.from_string` при длине декодированного значения
+    ровно 32 байта (py_vapid/__init__.py::Vapid01.from_string). PEM-файл
+    на диске оставляем как есть (для отладки/бэкапа), но .env больше на
+    него не ссылается.
+
+    :return: (raw base64url-encoded приватный ключ, application server key для JS).
     """
     env_path = Path(settings.BASE_DIR) / '.env'
     key_dir = Path(settings.BASE_DIR) / '.vapid'
@@ -55,12 +71,19 @@ def generate_and_persist_vapid_keys() -> tuple[str, str]:
     )
     application_server_key = base64.urlsafe_b64encode(public_point).rstrip(b'=').decode()
 
+    # raw-форма приватного ключа — то, что реально ожидает pywebpush/
+    # py_vapid в VAPID_PRIVATE_KEY: 32-байтовое big-endian представление
+    # private_value, base64url без паддинга (см. БАГ выше).
+    private_value = private_key.private_numbers().private_value
+    raw_private_key = private_value.to_bytes(32, 'big')
+    private_key_content = base64.urlsafe_b64encode(raw_private_key).rstrip(b'=').decode()
+
     _upsert_env(env_path, {
-        'VAPID_PRIVATE_KEY': str(private_key_path),
+        'VAPID_PRIVATE_KEY': private_key_content,
         'VAPID_PUBLIC_KEY': application_server_key,
     })
 
-    return str(private_key_path), application_server_key
+    return private_key_content, application_server_key
 
 
 def _upsert_env(env_path: Path, values: dict[str, str]) -> None:
@@ -104,14 +127,22 @@ def ensure_vapid_keys_on_startup(**kwargs) -> None:
         return
 
     try:
-        private_key_path, _ = generate_and_persist_vapid_keys()
+        generate_and_persist_vapid_keys()
     except Exception:
         logger.exception("ensure_vapid_keys_on_startup: не удалось сгенерировать VAPID-ключи")
         return
 
-    logger.info(
-        "VAPID-ключи для Web Push сгенерированы автоматически (%s) и "
-        "записаны в .env. Перезапустите сервер, чтобы push-уведомления "
-        "заработали.",
-        private_key_path,
+    # БАГ, КОТОРЫЙ ТУТ БЫЛ: это сообщение — не просто информационная
+    # заметка, а операционное действие ("перезапустите сервер"), без
+    # которого push молча не работает (уже запущенный процесс не
+    # подхватит новые переменные .env, см. докстринг класса выше;
+    # notifications/services.py::send_push_to_user в этом случае тихо
+    # логирует на уровне debug и просто ничего не отправляет). На
+    # logger.info это легко теряется в потоке обычных деплой-логов —
+    # на production поднимаем до warning, чтобы точно попало в
+    # мониторинг/алерты.
+    log = logger.warning if getattr(settings, 'ENVIRONMENT', '') == 'production' else logger.info
+    log(
+        "VAPID-ключи для Web Push сгенерированы автоматически и записаны "
+        "в .env. Перезапустите сервер, чтобы push-уведомления заработали."
     )

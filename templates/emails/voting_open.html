@@ -6,20 +6,26 @@
     <style>
         body { font-family: sans-serif; background: #f5f5f5; margin: 0; padding: 20px; }
         .container { max-width: 600px; margin: 0 auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .header { background: #10b981; color: #fff; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; margin: -30px -30px 30px -30px; }
-        .match-info { background: #f9fafb; padding: 15px; border-radius: 6px; text-align: center; margin: 20px 0; }
+        .header { background: #16a34a; color: #fff; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; margin: -30px -30px 30px -30px; }
+        .match-info { background: #f0fdf4; padding: 15px; border-radius: 6px; text-align: center; margin: 20px 0; border: 1px solid #16a34a; }
+        .score { font-size: 24px; font-weight: bold; margin: 8px 0; }
         .btn { display: inline-block; padding: 12px 24px; background: #000; color: #fff; text-decoration: none; border-radius: 4px; }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="header"><h1>🏁 Матч завершён!</h1></div>
-        <p>Матч закончился. Голосование открыто.</p>
+        <div class="header"><h1>⚽ Матч завершён — голосование открыто!</h1></div>
+        <p>Команда или игрок, за которыми вы следите, только что отыграли матч.</p>
         <div class="match-info">
             <h3>{{ match.home_team.name }} vs {{ match.away_team.name }}</h3>
+            <div class="score">{{ match.get_score_display }}</div>
         </div>
-        <p>Оцените игру, пока голосование открыто. Ваше мнение влияет на рейтинг.</p>
-        <p style="text-align: center;"><a href="{{ site_url }}/evaluations/match/{{ match.id }}/context/" class="btn">Оценить матч</a></p>
+        <p>Голосование открыто 48 часов — поделитесь своим мнением об игре, пока впечатления свежие.</p>
+        <p style="text-align: center;"><a href="{{ site_url }}/evaluations/match/{{ match.id }}/context/" class="btn">Оценить сейчас</a></p>
+        <p style="font-size: 12px; color: #999; margin-top: 24px;">
+            Вы получили это письмо, потому что подписаны на команду или игрока в этом матче.
+            Отключить эти письма можно в <a href="{{ site_url }}/users/settings/">настройках уведомлений</a>.
+        </p>
     </div>
 </body>
 </html>

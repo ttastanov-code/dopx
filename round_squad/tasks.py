@@ -21,6 +21,12 @@ logger = logging.getLogger(__name__)
 # страховка на случай, если воркер упадёт посреди пересчёта одного тура.
 ROUND_RECOMPUTE_LOCK_TIMEOUT = 300
 
+# Аналогичный лок для send_round_results_notification ниже — та задача не
+# пересчитывает данные, а ставит в очередь fan-out рассылку писем, поэтому
+# отдельная константа (не переиспользуем ROUND_RECOMPUTE_LOCK_TIMEOUT, чтобы
+# смысл имени в логах/коде был однозначным).
+ROUND_NOTIFY_LOCK_TIMEOUT = 600
+
 
 @shared_task
 def recompute_round_task(season_id: str, tour: int) -> None:
@@ -119,27 +125,50 @@ def send_round_results_notification(self, round_best_xi_id: str) -> dict:
     пользователям с email, не только тем, кто голосовал за этот тур —
     итоги тура релевантны всей аудитории платформы, а не только
     участвовавшим (те же получатели, что у "Матч завершён").
+
+    БАГ, КОТОРЫЙ ТУТ БЫЛ: без Redis-lock — задача вызывается и из
+    round_squad/services.py::recompute_round (автофиксация тура), и из
+    round_squad/admin.py::force_finalize (ручная фиксация стаффом); при
+    двойном триггере для одного и того же RoundBestXI (например, ретрай
+    Celery или клик стаффом одновременно с автофиксацией) fan-out пачки
+    ставились в очередь дважды — все верифицированные пользователи получали
+    письмо с итогами тура дважды. Лок — тот же cache.add()-паттерн, что у
+    recompute_round_task выше (по round_best_xi_id, т.к. задача
+    параметризована).
     """
     from notifications.tasks import BULK_EMAIL_CHUNK_SIZE, _chunked
     from round_squad.models import RoundBestXI
     from users.models import User
 
-    round_xi = RoundBestXI.objects.select_related('season').filter(id=round_best_xi_id).first()
-    if not round_xi:
-        logger.error("send_round_results_notification: RoundBestXI %s не найден", round_best_xi_id)
-        return {'queued_chunks': 0, 'total_users': 0}
+    lock_key = f"round_squad:notify:{round_best_xi_id}"
+    if not cache.add(lock_key, "1", timeout=ROUND_NOTIFY_LOCK_TIMEOUT):
+        logger.info(
+            "send_round_results_notification: рассылка для RoundBestXI %s уже поставлена в очередь — пропускаем",
+            round_best_xi_id,
+        )
+        return {'queued_chunks': 0, 'total_users': 0, 'skipped_locked': True}
 
-    subject = f'🏆 {round_xi.brand_title} готовы'
-    user_ids = [
-        str(uid) for uid in User.objects.filter(is_verified=True, email__isnull=False).values_list('id', flat=True)
-    ]
+    try:
+        round_xi = RoundBestXI.objects.select_related('season').filter(id=round_best_xi_id).first()
+        if not round_xi:
+            logger.error("send_round_results_notification: RoundBestXI %s не найден", round_best_xi_id)
+            return {'queued_chunks': 0, 'total_users': 0}
 
-    chunks = _chunked(user_ids, BULK_EMAIL_CHUNK_SIZE)
-    for chunk in chunks:
-        _send_round_results_email_chunk.delay(chunk, str(round_xi.id), subject)
+        subject = f'🏆 {round_xi.brand_title} готовы'
+        user_ids = [
+            str(uid) for uid in User.objects.filter(is_verified=True, email__isnull=False).values_list('id', flat=True)
+        ]
 
-    logger.info(
-        "send_round_results_notification: поставлено %d пачек (%d пользователей) для %s",
-        len(chunks), len(user_ids), round_xi.brand_title,
-    )
-    return {'queued_chunks': len(chunks), 'total_users': len(user_ids)}
+        chunks = _chunked(user_ids, BULK_EMAIL_CHUNK_SIZE)
+        for chunk in chunks:
+            _send_round_results_email_chunk.delay(chunk, str(round_xi.id), subject)
+
+        logger.info(
+            "send_round_results_notification: поставлено %d пачек (%d пользователей) для %s",
+            len(chunks), len(user_ids), round_xi.brand_title,
+        )
+        return {'queued_chunks': len(chunks), 'total_users': len(user_ids)}
+    finally:
+        # Не ждём TTL — следующая легитимная рассылка (другой тур) не должна
+        # блокироваться остатком лока текущей.
+        cache.delete(lock_key)

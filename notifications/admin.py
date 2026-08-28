@@ -197,18 +197,41 @@ class ContactSubmissionAdmin(ModelAdmin):
             logger.error(f"❌ Status change email error: {type(e).__name__}: {e}", exc_info=True)
     
     actions = ['mark_as_in_progress', 'mark_as_resolved', 'mark_as_closed', export_as_csv]
-    
+
+    def _bulk_set_status(self, request, queryset, new_status: str) -> int:
+        """
+        БАГ, КОТОРЫЙ ТУТ БЫЛ: экшены ниже делали queryset.update(status=...) —
+        это прямой UPDATE в БД в обход save_model()/obj.save(), поэтому
+        _send_status_change_email() (см. save_model выше) никогда не
+        вызывалась при массовой смене статуса из списка. Теперь идём по
+        queryset поштучно и сохраняем объект как обычно — та же логика
+        уведомления, что и при ручном изменении статуса в форме, только
+        без чекбокса send_status_email (в bulk-экшене формы нет, письмо
+        шлём всегда, если статус реально изменился).
+        """
+        updated = 0
+        for ticket in queryset:
+            old_status = ticket.status
+            if old_status == new_status:
+                continue
+            ticket.status = new_status
+            ticket.save(update_fields=['status', 'updated_at'])
+            if ticket.contact_email:
+                self._send_status_change_email(ticket, old_status, request)
+            updated += 1
+        return updated
+
     def mark_as_in_progress(self, request, queryset):
-        updated = queryset.update(status='in_progress')
+        updated = self._bulk_set_status(request, queryset, 'in_progress')
         self.message_user(request, f'✅ {updated} обращений взято в работу')
     mark_as_in_progress.short_description = 'Взять в работу'
-    
+
     def mark_as_resolved(self, request, queryset):
-        updated = queryset.update(status='resolved')
+        updated = self._bulk_set_status(request, queryset, 'resolved')
         self.message_user(request, f'✅ {updated} обращений решено')
     mark_as_resolved.short_description = 'Пометить как решённое'
-    
+
     def mark_as_closed(self, request, queryset):
-        updated = queryset.update(status='closed')
+        updated = self._bulk_set_status(request, queryset, 'closed')
         self.message_user(request, f'🔒 {updated} обращений закрыто')
     mark_as_closed.short_description = 'Закрыть обращения'

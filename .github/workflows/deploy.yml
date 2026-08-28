@@ -1,0 +1,91 @@
+# .github/workflows/deploy.yml
+#
+# Что делает: при пуше в main сначала проверяет, что Docker-образ вообще
+# собирается (та же проверка, которую мы недавно гоняли руками и ловили
+# на ней две реальные ошибки — несовпадение версии Python и битый пин
+# Django), и только если сборка прошла — заходит на сервер по SSH,
+# подтягивает свежий код и перезапускает стек.
+#
+# Пока в настройках репозитория (Settings → Secrets and variables →
+# Actions) не заданы секреты DEPLOY_HOST/DEPLOY_USER/DEPLOY_SSH_KEY/
+# DEPLOY_PATH — шаг деплоя просто пропускается с понятным сообщением,
+# сборка при этом всё равно проверяется. Как только сервер появится и
+# секреты будут добавлены — деплой на каждый push в main включится сам,
+# без единой правки этого файла.
+
+name: Build check & deploy
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+  workflow_dispatch: {}
+
+jobs:
+  build-check:
+    name: Проверка сборки Docker-образа
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Собрать образ web (без запуска)
+        run: docker build -t dopx-build-check .
+
+  deploy:
+    name: Деплой на сервер
+    needs: build-check
+    runs-on: ubuntu-latest
+    # github.event_name != 'pull_request' раньше стояло тут как доп. защита,
+    # но в блоке `on:` этого файла триггера pull_request вообще нет — сборка
+    # запускается только по push/workflow_dispatch, так что условие никогда
+    # не может стать ложным через этот путь. Оставляем только реальную
+    # проверку ветки.
+    if: github.ref == 'refs/heads/main'
+    # Таймаут на весь job, а не только на шаг: appleboy/ssh-action сам
+    # умеет ограничивать время SSH-команды (command_timeout), но если
+    # сервер недоступен ещё на этапе установления соединения, джоба иначе
+    # висела бы до дефолтного лимита GitHub (360 минут), впустую занимая
+    # раннер.
+    timeout-minutes: 10
+    steps:
+      - name: Проверить, настроены ли секреты деплоя
+        id: check
+        run: |
+          if [ -z "${{ secrets.DEPLOY_HOST }}" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Пропуск (сервер ещё не подключён)
+        if: steps.check.outputs.configured == 'false'
+        run: |
+          echo "DEPLOY_HOST не задан в секретах репозитория — деплой пропущен."
+          echo "Это ожидаемо, пока нет сервера. См. docs/DEPLOYMENT.md, раздел про CI/CD."
+
+      - name: Деплой по SSH
+        if: steps.check.outputs.configured == 'true'
+        uses: appleboy/ssh-action@v1.0.3
+        # DEPLOY_PATH идёт через env:/envs:, а не подставляется прямо в
+        # script: как ${{ secrets.DEPLOY_PATH }} — так значение секрета не
+        # попадает буквальным текстом в тело команды (которое иначе можно
+        # было бы случайно засветить в логах экшена или сломать инъекцией,
+        # если в секрете когда-нибудь окажется спецсимвол шелла). appleboy/
+        # ssh-action пробрасывает на удалённый хост только переменные,
+        # явно перечисленные в envs:.
+        env:
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          envs: DEPLOY_PATH
+          script: |
+            set -e
+            cd "$DEPLOY_PATH"
+            git pull origin main
+            docker compose up -d --build
+            docker image prune -f

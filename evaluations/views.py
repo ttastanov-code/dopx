@@ -28,9 +28,11 @@ from analytics.models import EventName
 from analytics.services import track_event
 from core.utils import get_client_ip
 from evaluations.forms import (
+    CoachEvaluationForm,
     ContextEvaluationForm,
     MatchEvaluationForm,
     RefereeEvaluationForm,
+    TeamEvaluationForm,
 )
 from evaluations.models import (
     CoachEvaluation,
@@ -173,7 +175,14 @@ class EvaluateContextView(LoginRequiredMixin, FormView, EvaluationWizardMixin):
 
     def form_valid(self, form):
         with transaction.atomic():
+            # БАГ, КОТОРЫЙ ТУТ БЫЛ: session читалась без блокировки строки —
+            # два параллельных POST (двойной клик/два таба) оба видели
+            # completed_steps ещё пустым до коммита первого и оба начисляли
+            # XP за один и тот же шаг. select_for_update() сериализует
+            # конкурентные запросы — второй ждёт коммита первого и уже видит
+            # обновлённый completed_steps.
             session = self.get_or_create_session()
+            session = EvaluationSession.objects.select_for_update().get(pk=session.pk)
             is_new_step = 'context' not in session.completed_steps
             ContextEvaluation.objects.update_or_create(
                 user=self.request.user, match=self.match,
@@ -184,8 +193,8 @@ class EvaluateContextView(LoginRequiredMixin, FormView, EvaluationWizardMixin):
                 }
             )
             self.update_session(session, 'context')
-        if is_new_step:
-            _award_step_xp(self.request, XP_CONTEXT_STEP)
+            if is_new_step:
+                _award_step_xp(self.request, XP_CONTEXT_STEP)
         messages.success(self.request, '✅ Контекст сохранён')
         return redirect('evaluations:teams', match_id=self.match.id)
 
@@ -218,23 +227,38 @@ class EvaluateTeamsView(LoginRequiredMixin, TemplateView, EvaluationWizardMixin)
         return super().dispatch(request, *args, **kwargs)
 
     def post(self, request, *args, **kwargs):
+        # БАГ, КОТОРЫЙ ТУТ БЫЛ: поля тактика/самоотдача/организация/
+        # менталитет читались напрямую через int(request.POST.get(...)),
+        # минуя TeamEvaluationForm (которая уже описана в evaluations/
+        # forms.py с MinValueValidator(1)/MaxValueValidator(10)) — сырой
+        # POST с произвольным числом (или вообще без числа) либо падал
+        # ValueError-ом наружу, либо тихо проходил валидацию 1..10 никак не
+        # проверенной. Теперь значения идут через form.cleaned_data.
+        form = TeamEvaluationForm(request.POST, match=self.match)
+        if not form.is_valid():
+            messages.error(request, 'Проверьте оценки команд — что-то введено некорректно')
+            return self.render_to_response(self.get_context_data(form=form))
+
         session = self.get_or_create_session()
-        is_new_step = 'teams' not in session.completed_steps
         with transaction.atomic():
+            # БАГ, КОТОРЫЙ ТУТ БЫЛ: см. EvaluateContextView.form_valid —
+            # та же гонка двойного POST без блокировки строки session.
+            session = EvaluationSession.objects.select_for_update().get(pk=session.pk)
+            is_new_step = 'teams' not in session.completed_steps
             for team in [self.match.home_team, self.match.away_team]:
                 prefix = f'team_{team.id}'
                 TeamEvaluation.objects.update_or_create(
                     user=request.user, match=self.match, team=team,
                     defaults={
-                        'tactics': int(request.POST.get(f'{prefix}_tactics', 5)),
-                        'effort': int(request.POST.get(f'{prefix}_effort', 5)),
-                        'organization': int(request.POST.get(f'{prefix}_organization', 5)),
-                        'mentality': int(request.POST.get(f'{prefix}_mentality', 5)),
+                        'tactics': form.cleaned_data[f'{prefix}_tactics'],
+                        'effort': form.cleaned_data[f'{prefix}_effort'],
+                        'organization': form.cleaned_data[f'{prefix}_organization'],
+                        'mentality': form.cleaned_data[f'{prefix}_mentality'],
                     }
                 )
             self.update_session(session, 'teams')
-        if is_new_step:
-            _award_step_xp(request, XP_TEAMS_STEP)
+            if is_new_step:
+                _award_step_xp(request, XP_TEAMS_STEP)
         messages.success(request, '✅ Оценки команд сохранены')
         return redirect('evaluations:players', match_id=self.match.id)
 
@@ -284,11 +308,14 @@ class EvaluatePlayersView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
 
     def post(self, request, *args, **kwargs):
         session = self.get_or_create_session()
-        is_new_step = 'players' not in session.completed_steps
         lineup_players = MatchLineupPlayer.objects.filter(lineup__match=self.match).select_related('player')
         lineup_total = lineup_players.count()
         count = 0
         with transaction.atomic():
+            # БАГ, КОТОРЫЙ ТУТ БЫЛ: см. EvaluateContextView.form_valid —
+            # та же гонка двойного POST без блокировки строки session.
+            session = EvaluationSession.objects.select_for_update().get(pk=session.pk)
+            is_new_step = 'players' not in session.completed_steps
             for lp in lineup_players:
                 player = lp.player
                 prefix = f'player_{player.id}'
@@ -310,10 +337,11 @@ class EvaluatePlayersView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
                         except (ValueError, TypeError) as e:
                             logger.warning(f"Ошибка валидации для {player}: {e}")
             self.update_session(session, 'players')
-        if is_new_step and lineup_total:
-            # XP пропорционален доле реально оценённых игроков от состава —
-            # не фиксированная сумма за формальное "прохождение" шага.
-            _award_step_xp(request, XP_PLAYERS_STEP_MAX * (count / lineup_total))
+            if is_new_step and lineup_total:
+                # XP пропорционален доле реально оценённых игроков от
+                # состава — не фиксированная сумма за формальное
+                # "прохождение" шага.
+                _award_step_xp(request, XP_PLAYERS_STEP_MAX * (count / lineup_total))
         messages.success(request, f'✅ Оценено игроков: {count}')
         return redirect('evaluations:coaches', match_id=self.match.id)
 
@@ -347,24 +375,36 @@ class EvaluateCoachesView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
         return super().dispatch(request, *args, **kwargs)
 
     def post(self, request, *args, **kwargs):
+        # БАГ, КОТОРЫЙ ТУТ БЫЛ: см. EvaluateTeamsView.post — поля тактика/
+        # замены/управление/влияние читались напрямую через
+        # int(request.POST.get(...)), минуя CoachEvaluationForm (уже
+        # описана в evaluations/forms.py с валидацией 1..10).
+        form = CoachEvaluationForm(request.POST, match=self.match)
+        if not form.is_valid():
+            messages.error(request, 'Проверьте оценки тренеров — что-то введено некорректно')
+            return self.render_to_response(self.get_context_data(form=form))
+
         session = self.get_or_create_session()
-        is_new_step = 'coaches' not in session.completed_steps
         with transaction.atomic():
+            # БАГ, КОТОРЫЙ ТУТ БЫЛ: см. EvaluateContextView.form_valid —
+            # та же гонка двойного POST без блокировки строки session.
+            session = EvaluationSession.objects.select_for_update().get(pk=session.pk)
+            is_new_step = 'coaches' not in session.completed_steps
             for coach in [self.match.home_coach, self.match.away_coach]:
                 if coach:
                     prefix = f'coach_{coach.id}'
                     CoachEvaluation.objects.update_or_create(
                         user=request.user, match=self.match, coach=coach,
                         defaults={
-                            'tactics': int(request.POST.get(f'{prefix}_tactics', 5)),
-                            'substitutions': int(request.POST.get(f'{prefix}_substitutions', 5)),
-                            'game_management': int(request.POST.get(f'{prefix}_management', 5)),
-                            'impact': int(request.POST.get(f'{prefix}_impact', 5)),
+                            'tactics': form.cleaned_data[f'{prefix}_tactics'],
+                            'substitutions': form.cleaned_data[f'{prefix}_substitutions'],
+                            'game_management': form.cleaned_data[f'{prefix}_management'],
+                            'impact': form.cleaned_data[f'{prefix}_impact'],
                         }
                     )
             self.update_session(session, 'coaches')
-        if is_new_step:
-            _award_step_xp(request, XP_COACHES_STEP)
+            if is_new_step:
+                _award_step_xp(request, XP_COACHES_STEP)
         messages.success(request, '✅ Оценки тренеров сохранены')
         return redirect('evaluations:referee', match_id=self.match.id)
 
@@ -400,8 +440,11 @@ class EvaluateRefereeView(LoginRequiredMixin, FormView, EvaluationWizardMixin):
 
     def form_valid(self, form):
         session = self.get_or_create_session()
-        is_new_step = 'referee' not in session.completed_steps
         with transaction.atomic():
+            # БАГ, КОТОРЫЙ ТУТ БЫЛ: см. EvaluateContextView.form_valid —
+            # та же гонка двойного POST без блокировки строки session.
+            session = EvaluationSession.objects.select_for_update().get(pk=session.pk)
+            is_new_step = 'referee' not in session.completed_steps
             RefereeEvaluation.objects.update_or_create(
                 user=self.request.user, match=self.match,
                 defaults={
@@ -410,8 +453,8 @@ class EvaluateRefereeView(LoginRequiredMixin, FormView, EvaluationWizardMixin):
                 }
             )
             self.update_session(session, 'referee')
-        if is_new_step:
-            _award_step_xp(self.request, XP_REFEREE_STEP)
+            if is_new_step:
+                _award_step_xp(self.request, XP_REFEREE_STEP)
         messages.success(self.request, '✅ Оценка судейства сохранена')
         return redirect('evaluations:match_eval', match_id=self.match.id)
 
@@ -442,6 +485,16 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
         session = self.get_or_create_session()
         if 'referee' not in session.completed_steps:
             return redirect('evaluations:referee', match_id=self.match.id)
+        # БАГ, КОТОРЫЙ ТУТ БЫЛ: проверялось только 'referee' in completed_steps
+        # — этого достаточно, чтобы пройти на страницу, но НЕ защищает от
+        # повторного POST на уже завершённую сессию (status == 'completed'):
+        # form_valid ниже заново начисляет XP, заново корректирует Trust
+        # Score и заново ставит анти-фрод/аналитику задачи. Тот же паттерн,
+        # что уже используется в EvaluateContextView.dispatch для входа в
+        # вайзард заново.
+        if session.status == 'completed':
+            messages.info(request, 'Вы уже оценили этот матч')
+            return redirect('matches:detail', pk=self.match.id)
         return super().dispatch(request, *args, **kwargs)
 
     def form_valid(self, form):

@@ -30,11 +30,28 @@ EXEMPT_PATH_PREFIXES = (
     "/staff/dashboard/security/",
 )
 
+# БАГ, КОТОРЫЙ ТУТ БЫЛ (найден полным аудитом, август 2026): схема/доки API
+# (dopx/urls.py::schema_patterns) защищены только permission_classes=[IsAdminUser]
+# (is_staff=True), но не входили в список путей, проверяемых этой мидлварью —
+# staff-аккаунт с украденным/угнанным паролем, но без пройденной 2FA, мог
+# получить SQL-структуру и всю карту API через /api/schema/, /api/docs/,
+# /api/redoc/, хотя тот же аккаунт был бы остановлен challenge/setup на
+# /admin/ и /staff/dashboard/. Добавлены в список принудительно проверяемых
+# префиксов наравне с админкой и дашбордом.
+ENFORCED_PATH_PREFIXES = (
+    "/admin/",
+    "/staff/dashboard/",
+    "/api/schema/",
+    "/api/docs/",
+    "/api/redoc/",
+)
+
 
 class StaffTwoFactorEnforcementMiddleware:
     """
-    Для каждого staff-запроса к /admin/ или /staff/dashboard/ (кроме
-    вьюх самой 2FA-подсистемы):
+    Для каждого staff-запроса к /admin/, /staff/dashboard/ или схеме/докам
+    API (/api/schema/, /api/docs/, /api/redoc/) — кроме вьюх самой
+    2FA-подсистемы:
       1. Если STAFF_2FA_ENFORCED=False (аварийный рубильник) — пропускаем.
       2. Если запрос не от аутентифицированного staff — пропускаем
          (авторизацией дальше по цепочке занимается staff_member_required
@@ -61,7 +78,7 @@ class StaffTwoFactorEnforcementMiddleware:
         if not getattr(settings, "STAFF_2FA_ENFORCED", True):
             return False
         path = request.path
-        if not (path.startswith("/admin/") or path.startswith("/staff/dashboard/")):
+        if not path.startswith(ENFORCED_PATH_PREFIXES):
             return False
         if any(path.startswith(prefix) for prefix in EXEMPT_PATH_PREFIXES):
             return False

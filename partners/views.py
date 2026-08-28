@@ -8,6 +8,8 @@ from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views import View
 
+from core.utils import get_client_ip, is_rate_limited
+
 from .models import Banner, Partner
 from .services import (
     REFERRAL_COOKIE_MAX_AGE,
@@ -18,6 +20,14 @@ from .services import (
     track_partner_feed_access,
     track_partner_referral_visit,
 )
+
+# Лимит на накрутку статистики переходов/кликов скриптом с одного IP по
+# одному slug/uuid — см. докстринги вьюх ниже. Redirect остаётся плавным
+# для пользователя в любом случае (не 429) — лимитируется только запись в
+# статистику (core/utils.py::is_rate_limited, тот же паттерн, что
+# users/views.py::RegisterView/VerifyEmailView).
+PARTNER_STATS_RATE_LIMIT = 30
+PARTNER_STATS_RATE_LIMIT_WINDOW_SECONDS = 60
 
 
 class PartnerReferralRedirectView(View):
@@ -44,12 +54,33 @@ class PartnerReferralRedirectView(View):
         else:
             redirect_to = reverse("core:home")
 
-        track_partner_referral_visit(partner, request, next_path=redirect_to)
+        # БАГ, КОТОРЫЙ ТУТ БЫЛ: без rate-limit скрипт мог долбить /go/<slug>/
+        # в цикле и накручивать track_partner_referral_visit — статистика
+        # партнёра (переходы) становилась недостоверной. Лимитируем именно
+        # запись в статистику, а не сам редирект: пользователь ничего не
+        # замечает (нет 429/ошибки), просто повторные визиты сверх лимита с
+        # одного IP по этому же slug не засчитываются как "новые".
+        client_ip = get_client_ip(request)
+        if not client_ip or not is_rate_limited(
+            f'partner_referral:{partner.slug}:{client_ip}',
+            PARTNER_STATS_RATE_LIMIT, PARTNER_STATS_RATE_LIMIT_WINDOW_SECONDS,
+        ):
+            track_partner_referral_visit(partner, request, next_path=redirect_to)
 
         response = redirect(redirect_to)
-        response.set_cookie(
+        # БАГ, КОТОРЫЙ ТУТ БЫЛ: cookie ставилась НЕподписанной (set_cookie) —
+        # любой мог вручную выставить себе `dopx_ref=<slug другого партнёра>`
+        # в браузере (или скриптом, минуя /go/<slug>/ вообще) и приписать
+        # свою регистрацию произвольному партнёру в обход track_partner_
+        # referral_visit — попадание в комиссионные/отчётность партнёра без
+        # реального перехода по его ссылке. set_signed_cookie подписывает
+        # значение секретом Django (SECRET_KEY + salt) — подделать его без
+        # знания секрета нельзя; users/views.py::RegisterView.form_valid
+        # соответственно читает её через get_signed_cookie (см. там же).
+        response.set_signed_cookie(
             REFERRAL_COOKIE_NAME,
             partner.slug,
+            salt="partners.referral",
             max_age=REFERRAL_COOKIE_MAX_AGE,
             samesite="Lax",
             # httponly — эта cookie нужна только серверу (users/views.py::
@@ -75,7 +106,14 @@ class BannerClickRedirectView(View):
 
     def get(self, request: HttpRequest, pk) -> HttpResponse:
         banner = get_object_or_404(Banner, pk=pk)
-        track_banner_click(banner, request)
+        # Тот же принцип, что в PartnerReferralRedirectView выше: лимит на
+        # накрутку клика по счётчику, редирект на target_url всегда плавный.
+        client_ip = get_client_ip(request)
+        if not client_ip or not is_rate_limited(
+            f'banner_click:{banner.pk}:{client_ip}',
+            PARTNER_STATS_RATE_LIMIT, PARTNER_STATS_RATE_LIMIT_WINDOW_SECONDS,
+        ):
+            track_banner_click(banner, request)
         return redirect(build_click_redirect_url(banner))
 
 

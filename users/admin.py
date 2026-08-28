@@ -28,6 +28,9 @@ class UserAdmin(ModelAdmin):
     )
     search_fields = ("username", "email", "registration_ip")
     list_filter = ("is_verified",)
+    # trust_score считается автоматически (антифрод-сигналы), ручное
+    # редактирование из формы могло бы разойтись с реальной историей флагов.
+    readonly_fields = ("trust_score",)
     actions = [export_as_csv, "verify_selected", "deactivate_selected"]
 
     @admin.action(description="Отметить как верифицированных")
@@ -58,6 +61,9 @@ class UserXPAdmin(ModelAdmin):
     list_display = ("user", "level", "total_xp", "progress_percent")
     search_fields = ("user__username", "user__email")
     autocomplete_fields = ("user",)
+    # total_xp/level начисляются только по событиям (XP-движок), ручная
+    # правка из формы разошлась бы с историей начислений.
+    readonly_fields = ("total_xp", "level")
     actions = [export_as_csv]
 
 
@@ -90,10 +96,21 @@ class SuspiciousActivityFlagAdmin(ModelAdmin):
         сочли объяснимым, значит компенсировать его не нужно. Поправка всё
         равно сама через день-два начнёт затухать, если её не трогать, но
         явный "Отклонить" должен снимать её сразу, а не ждать угасания.
+
+        БАГ, КОТОРЫЙ ТУТ БЫЛ: обнуление correction ничем не защищалось от
+        detect_rating_stats_divergence_task — следующий же суточный прогон
+        заново находил тот же паттерн (объективные факты матча не
+        изменились) и заново перезаписывал correction, тихо отменяя решение
+        модератора буквально на следующий день. Теперь дополнительно
+        проставляем suppressed_until на STATS_DIVERGENCE_DISMISS_COOLDOWN_DAYS
+        вперёд — _check_team_stats_divergence пропускает команду, пока
+        cooldown не истёк.
         """
         from django.contrib.contenttypes.models import ContentType
+        from datetime import timedelta
 
         from aggregates.models import TeamRatingCorrection
+        from aggregates.tasks import STATS_DIVERGENCE_DISMISS_COOLDOWN_DAYS
         from teams.models import Team
 
         team_content_type = ContentType.objects.get_for_model(Team)
@@ -103,7 +120,9 @@ class SuspiciousActivityFlagAdmin(ModelAdmin):
         ]
         if divergence_team_ids:
             TeamRatingCorrection.objects.filter(team_id__in=divergence_team_ids).update(
-                correction=0.0, last_pattern=""
+                correction=0.0,
+                last_pattern="",
+                suppressed_until=timezone.now() + timedelta(days=STATS_DIVERGENCE_DISMISS_COOLDOWN_DAYS),
             )
 
         updated = queryset.update(status="dismissed", reviewed_by=request.user, reviewed_at=timezone.now())

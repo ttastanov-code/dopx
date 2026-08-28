@@ -19,7 +19,7 @@ import uuid
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.contrib.contenttypes.fields import GenericForeignKey
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
@@ -294,17 +294,37 @@ class UserXP(BaseModel):
         :param amount: количество XP к начислению (может быть уже умножено
             на `User.xp_multiplier()` вызывающим кодом — см.
             `evaluations/views.py`).
+
+        БАГ, КОТОРЫЙ ТУТ БЫЛ: read-modify-write без блокировки — `self.total_xp`
+        читался из уже полученного (возможно устаревшего) инстанса и сразу
+        сохранялся обратно. При двух параллельных начислениях одному и тому же
+        пользователю (например, два шага вайзарда, обработанных гонкой
+        воркеров) оба процесса стартовали с одинакового total_xp и оба
+        сохраняли свой результат — выигрывал тот, кто сохранил последним, а
+        второе начисление молча терялось. Теперь фактическое
+        чтение+изменение+запись всегда идёт под `select_for_update()` внутри
+        `transaction.atomic()` по актуальной строке из БД, а не по тому, что
+        было в `self` на момент вызова.
         """
-        old_level = self.level
-        old_total_xp = self.total_xp
+        with transaction.atomic():
+            locked = UserXP.objects.select_for_update().get(pk=self.pk)
 
-        self.total_xp = max(0, self.total_xp + int(round(amount)))
-        new_level = level_for_total_xp(self.total_xp)
+            old_level = locked.level
+            old_total_xp = locked.total_xp
 
-        levels_gained = list(range(old_level + 1, new_level + 1)) if new_level > old_level else []
-        self.level = new_level
+            locked.total_xp = max(0, locked.total_xp + int(round(amount)))
+            new_level = level_for_total_xp(locked.total_xp)
 
-        self.save(update_fields=["level", "total_xp", "updated_at"])
+            levels_gained = list(range(old_level + 1, new_level + 1)) if new_level > old_level else []
+            locked.level = new_level
+
+            locked.save(update_fields=["level", "total_xp", "updated_at"])
+
+        # Синхронизируем текущий (возможно, устаревший) инстанс с тем, что
+        # реально сохранено в БД — вызывающий код читает self.total_xp/self.level
+        # сразу после add_xp() без явного refresh_from_db() (см. users/tests.py).
+        self.total_xp = locked.total_xp
+        self.level = locked.level
 
         return {
             "level_increased": bool(levels_gained),

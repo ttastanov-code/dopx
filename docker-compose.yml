@@ -5,9 +5,14 @@
 # друг друга по именам сервисов (db, redis, web...) — это и есть DNS
 # внутри Docker, отдельно настраивать ничего не нужно.
 #
-# Наружу (на хост) торчит только nginx (порт 80/443). Postgres, Redis и
-# сам Django-процесс (web:8000) снаружи недоступны напрямую — это
-# сознательное решение безопасности: единственная дверь в систему — nginx.
+# Наружу торчит только nginx, и только на 127.0.0.1:8080 (см. сервис nginx
+# ниже) — потому что на сервере отдельно стоит aaPanel со своим родным
+# веб-сервером, который сам занимает 80/443 и умеет reverse proxy + SSL
+# (см. docs/DEPLOYMENT.md, раздел "Деплой с aaPanel"). Если разворачиваешь
+# БЕЗ aaPanel, на голом VPS — поменяй порт nginx ниже на "80:80" (и
+# TRUSTED_PROXY_COUNT в .env обратно на 1, см. .env.example). Postgres,
+# Redis и сам Django-процесс (web:8000) снаружи недоступны напрямую в
+# любом случае — единственная дверь в систему — nginx.
 
 services:
   # ==========================================================================
@@ -91,7 +96,12 @@ services:
       interval: 10s
       timeout: 5s
       retries: 6
-      start_period: 30s
+      # 120s — с запасом на холодный старт: миграции по ~22 приложениям
+      # + collectstatic --clear на первом запуске могут занять больше
+      # исходных 30s, а провал healthcheck в этом окне валит nginx
+      # (depends_on: web: condition: service_healthy) при самом первом
+      # разворачивании.
+      start_period: 120s
     networks:
       - dopx_net
 
@@ -121,6 +131,12 @@ services:
       db:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      # Ждём не только БД, но и полностью готовый web (его healthcheck
+      # зелёный только ПОСЛЕ того, как gunicorn там прогнал миграции) —
+      # иначе воркер может стартовать раньше и начать разбирать задачи
+      # из очереди против схемы БД, которая ещё не накатана.
+      web:
         condition: service_healthy
     healthcheck:
       # Без -d (конкретного адресата) — просто "хоть кто-то из воркеров
@@ -162,6 +178,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      # Та же причина, что у celery_worker выше: beat не должен начать
+      # раскладывать задачи по расписанию, пока web ещё не завершил
+      # миграции — иначе первые же задачи упадут на несуществующих
+      # таблицах/колонках.
+      web:
+        condition: service_healthy
     networks:
       - dopx_net
 
@@ -174,10 +196,11 @@ services:
     image: nginx:1.27-alpine
     restart: unless-stopped
     ports:
-      - "80:80"
-      # После настройки SSL-сертификата (см. docs/DEPLOYMENT.md) —
-      # раскомментировать порт и HTTPS-блок в docker/nginx.conf:
-      # - "443:443"
+      # 127.0.0.1: только с самого сервера — снаружи этот порт недоступен,
+      # даже если файрвол открыт. Публично сайт отдаёт aaPanel-нжинкс,
+      # который проксирует сюда (Website → Reverse Proxy → http://127.0.0.1:8080).
+      # Без aaPanel (голый VPS) — верни "80:80" и "443:443" как раньше.
+      - "127.0.0.1:8080:80"
     volumes:
       - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - static_volume:/app/staticfiles:ro

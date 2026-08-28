@@ -341,6 +341,16 @@ class TeamRatingCorrection(BaseModel):
         _('Последний обнаруженный паттерн'), max_length=40, blank=True,
         help_text=_('underrated_despite_dominance / overrated_despite_poor_play / пусто, если сейчас идёт затухание.'),
     )
+    suppressed_until = models.DateTimeField(
+        _('Подавлено до'), null=True, blank=True,
+        help_text=_(
+            'БАГ, КОТОРЫЙ ТУТ БЫЛ: mark_dismissed в users/admin.py обнулял correction, '
+            'но не оставлял никакого cooldown — следующий суточный прогон '
+            'detect_rating_stats_divergence_task (aggregates/tasks.py) заново находил тот же '
+            'паттерн и заново перезаписывал correction, тихо отменяя решение модератора. '
+            'Пока это поле в будущем, _check_team_stats_divergence пропускает команду, не трогая поправку.'
+        ),
+    )
 
     class Meta:
         verbose_name = _('Поправка рейтинга команды (авто)')

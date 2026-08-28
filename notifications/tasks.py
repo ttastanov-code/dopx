@@ -18,6 +18,7 @@ from datetime import timedelta
 
 from celery import shared_task
 from django.conf import settings
+from django.core.cache import cache
 from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 from django.utils import timezone
@@ -27,6 +28,18 @@ logger = logging.getLogger(__name__)
 # Сколько получателей в одной "пачке" при fan-out массовой рассылки —
 # см. пункт 2 докстринга модуля.
 BULK_EMAIL_CHUNK_SIZE = 50
+
+# Redis-lock TTL для периодических задач ниже (notify_prediction_results,
+# send_notification_digest) — тот же cache.add()-паттерн (атомарный SETNX),
+# что в season_squad/tasks.py::RECOMPUTE_LOCK_TIMEOUT и
+# round_squad/tasks.py::ROUND_RECOMPUTE_LOCK_TIMEOUT: без лока два
+# параллельных прогона (плановый тик Celery Beat + повторная доставка
+# сообщения at-least-once) могли одновременно прочитать одну и ту же
+# "необработанную" партию ДО того, как первый прогон успеет проставить
+# признак обработки (создать Notification / выставить email_sent_at), и
+# оба разослать письма. Значение — с запасом от реальной длительности
+# одного прогона (обычно секунды-десятки секунд на текущих объёмах).
+NOTIFY_TASK_LOCK_TIMEOUT = 600
 
 # Сколько дней хранить уже прочитанные уведомления — см. пункт 4.
 NOTIFICATION_RETENTION_DAYS = 90
@@ -253,23 +266,52 @@ def notify_voting_closing_soon(self):
     """
     Напоминание о скором закрытии голосования — тоже fan-out на уровне
     пачек, плюс явный notification_type='voting_closing'.
+
+    Расписание (АКТУАЛЬНО): `crontab(minute='*/30')` — каждые 30 минут, см.
+    `dopx/settings.py::CELERY_BEAT_SCHEDULE['voting-closing-reminders']`.
+    Комментарий-заголовок секции рядом с этой записью в CELERY_BEAT_SCHEDULE
+    ("каждые 6 часов") устарел и реальному crontab не соответствует — здесь
+    эту цифру не повторяем, чтобы не тиражировать ту же ошибку дальше.
+
+    БАГ, КОТОРЫЙ ТУТ БЫЛ: окно выборки — 1 час (`closing_threshold`), а сама
+    задача гоняется каждые 30 минут → без дедупликации один и тот же
+    закрывающийся матч почти всегда попадал в выборку ДВАЖДЫ подряд (на двух
+    соседних тиках) и рассылка уходила всем пользователям дважды. Дедуп —
+    тот же принцип, что в `notify_prediction_results` выше: перед постановкой
+    email-чанков в очередь для конкретного матча проверяем, нет ли уже
+    `Notification(notification_type='voting_closing', related_match=match)`
+    — если есть, матч уже обработан прошлым тиком, пропускаем. Заодно теперь
+    создаём эти Notification (по одной на пользователя) — раньше это
+    напоминание существовало ТОЛЬКО как email, без in-app записи, хотя
+    `notification_type='voting_closing'` в `NOTIFICATION_TYPES`
+    (notifications/models.py) был заведён именно под него.
     """
+    from django.urls import reverse
+
     from matches.models import Match
 
     now = timezone.now()
     closing_threshold = now + timedelta(hours=1)
 
-    matches = Match.objects.filter(
+    matches = list(Match.objects.filter(
         status='finished',
         voting_open_until__gte=now,
         voting_open_until__lte=closing_threshold
-    ).select_related('home_team', 'away_team')
+    ).select_related('home_team', 'away_team'))
 
-    if not matches.exists():
+    if not matches:
         logger.info(f"✅ No matches closing voting in the next hour (now={now}, threshold={closing_threshold})")
         return {'status': 'ok', 'matches_found': 0}
 
+    from notifications.models import Notification
     from users.models import User
+
+    already_notified_match_ids = set(
+        Notification.objects.filter(
+            notification_type='voting_closing',
+            related_match_id__in=[m.id for m in matches],
+        ).values_list('related_match_id', flat=True).distinct()
+    )
 
     user_ids = [
         str(uid) for uid in User.objects.filter(is_verified=True, email__isnull=False)
@@ -278,14 +320,43 @@ def notify_voting_closing_soon(self):
     chunks = _chunked(user_ids, BULK_EMAIL_CHUNK_SIZE)
 
     queued = 0
+    skipped = 0
     for match in matches:
+        if match.id in already_notified_match_ids:
+            skipped += 1
+            continue
+
         subject = f'⏰ Голосование за матч {match.home_team.name} vs {match.away_team.name} скоро закроется!'
         for chunk in chunks:
             _send_match_email_chunk.delay(chunk, str(match.id), subject, 'emails/voting_closing.html', 'voting_closing')
             queued += 1
 
-    logger.info(f"✅ Queued {queued} email chunk(s) across {matches.count()} closing-soon match(es).")
-    return {'status': 'ok', 'matches_processed': matches.count(), 'chunks_queued': queued}
+        # Дедуп-маркер для будущих прогонов (см. докстринг выше) — заодно
+        # закрывает пробел с отсутствием in-app уведомления для этого типа.
+        action_url = reverse('matches:detail', args=[match.id])
+        Notification.objects.bulk_create([
+            Notification(
+                user_id=uid,
+                notification_type='voting_closing',
+                title=subject,
+                message='Голосование за этот матч закрывается в течение часа — успейте оценить, пока не поздно.',
+                action_url=action_url,
+                related_match=match,
+            )
+            for uid in user_ids
+        ])
+
+    matches_processed = len(matches) - skipped
+    logger.info(
+        f"✅ Queued {queued} email chunk(s) across {matches_processed} closing-soon match(es), "
+        f"{skipped} skipped as already notified earlier."
+    )
+    return {
+        'status': 'ok',
+        'matches_processed': matches_processed,
+        'chunks_queued': queued,
+        'skipped_already_notified': skipped,
+    }
 
 
 @shared_task
@@ -294,50 +365,67 @@ def send_notification_digest():
     Периодическая задача: собирает Notification (email_sent_at__isnull=True)
     типов new_badge/level_up/system по пользователям с email_digest_mode=True
     и шлёт одно письмо-сводку вместо N мгновенных.
+
+    БАГ, КОТОРЫЙ ТУТ БЫЛ: периодическая задача (`crontab(minute=0)`, раз в
+    час) без Redis-lock — при двух параллельных прогонах (плановый тик +
+    повторная доставка сообщения at-least-once) оба могли прочитать один и
+    тот же набор "ещё не отправленных" Notification ДО того, как первый
+    прогон успеет проставить `email_sent_at`, и разослать дублирующие
+    письма-сводки. Лок — тот же cache.add()-паттерн, что в
+    season_squad/tasks.py::recompute_best_xi_task и
+    notify_prediction_results выше.
     """
-    from notifications.models import Notification
+    lock_key = "notifications:lock:send_notification_digest"
+    if not cache.add(lock_key, "1", timeout=NOTIFY_TASK_LOCK_TIMEOUT):
+        logger.info("send_notification_digest: уже выполняется другим воркером — пропускаем")
+        return {'users_notified': 0, 'notifications_sent': 0, 'skipped_locked': True}
 
-    pending = list(
-        Notification.objects.filter(
-            notification_type__in=DIGESTIBLE_NOTIFICATION_TYPES,
-            email_sent_at__isnull=True,
-        ).select_related('user').order_by('user_id', 'created_at')
-    )
+    try:
+        from notifications.models import Notification
 
-    if not pending:
-        return {'users_notified': 0, 'notifications_sent': 0}
-
-    by_user: dict[str, list] = {}
-    for note in pending:
-        by_user.setdefault(str(note.user_id), []).append(note)
-
-    users_notified = 0
-    notifications_sent = 0
-
-    for user_id, notes in by_user.items():
-        user = notes[0].user
-        if not user.email or not user.is_verified:
-            continue
-        if not user.get_notification_setting('email_digest_mode', True):
-            # Пользователь предпочитает мгновенные письма — дайджест их не трогает
-            # (они уже были отправлены мгновенно и помечены email_sent_at при
-            # создании — см. users/tasks.py, evaluations/views.py).
-            continue
-
-        sent = _send_email_to_user(
-            user,
-            f'📋 Ваши обновления на DOPX ({len(notes)})',
-            'emails/notification_digest.html',
-            {'notifications': notes, 'count': len(notes)},
-            notification_type='system',
+        pending = list(
+            Notification.objects.filter(
+                notification_type__in=DIGESTIBLE_NOTIFICATION_TYPES,
+                email_sent_at__isnull=True,
+            ).select_related('user').order_by('user_id', 'created_at')
         )
-        if sent:
-            Notification.objects.filter(id__in=[n.id for n in notes]).update(email_sent_at=timezone.now())
-            users_notified += 1
-            notifications_sent += len(notes)
 
-    logger.info(f"✅ Digest sent to {users_notified} user(s), {notifications_sent} notification(s) total.")
-    return {'users_notified': users_notified, 'notifications_sent': notifications_sent}
+        if not pending:
+            return {'users_notified': 0, 'notifications_sent': 0}
+
+        by_user: dict[str, list] = {}
+        for note in pending:
+            by_user.setdefault(str(note.user_id), []).append(note)
+
+        users_notified = 0
+        notifications_sent = 0
+
+        for user_id, notes in by_user.items():
+            user = notes[0].user
+            if not user.email or not user.is_verified:
+                continue
+            if not user.get_notification_setting('email_digest_mode', True):
+                # Пользователь предпочитает мгновенные письма — дайджест их не трогает
+                # (они уже были отправлены мгновенно и помечены email_sent_at при
+                # создании — см. users/tasks.py, evaluations/views.py).
+                continue
+
+            sent = _send_email_to_user(
+                user,
+                f'📋 Ваши обновления на DOPX ({len(notes)})',
+                'emails/notification_digest.html',
+                {'notifications': notes, 'count': len(notes)},
+                notification_type='system',
+            )
+            if sent:
+                Notification.objects.filter(id__in=[n.id for n in notes]).update(email_sent_at=timezone.now())
+                users_notified += 1
+                notifications_sent += len(notes)
+
+        logger.info(f"✅ Digest sent to {users_notified} user(s), {notifications_sent} notification(s) total.")
+        return {'users_notified': users_notified, 'notifications_sent': notifications_sent}
+    finally:
+        cache.delete(lock_key)
 
 
 @shared_task
@@ -365,16 +453,23 @@ def notify_followers_match_activity(self, match_id: str):
     ТОЛЬКО тем, кто подписан на одну из играющих команд или на игрока в
     составе этого матча — в отличие от `send_voting_open_notification`
     (широковещательная рассылка ВСЕМ верифицированным пользователям, email).
-    Ставится в очередь из `parsers/tasks.py::update_match_statuses` через
+    Ставится в очередь из `parsers/tasks.py::update_match_statuses` (и,
+    подстраховкой, из `parsers/kff/importers.py::import_match_core`) через
     `transaction.on_commit` в момент первого перехода матча в 'finished'.
 
-    Намеренно только in-app `Notification`, БЕЗ email: follow-граф — новая,
-    лёгкая фича без отдельного email-шаблона; если завести здесь ещё один
-    email-канал, при будущем включении широковещательной `send_voting_
-    open_notification` в `CELERY_BEAT_SCHEDULE` подписчики получили бы ДВА
-    письма про один и тот же матч. In-app уведомление — самодостаточный
-    MVP; email можно добавить отдельным шагом, когда решится, как
-    дедуплицировать оба канала.
+    ИСПРАВЛЕНО (AUDIT_2026-08.md, раздел 4, находка про открытие/закрытие
+    голосования): раньше здесь были только in-app + push, БЕЗ email — при
+    этом пользователи получали email про ЗАКРЫТИЕ голосования
+    (`notify_voting_closing_soon`, всем верифицированным), но НИКОГДА про
+    ОТКРЫТИЕ, что било по удержанию (нет повода зайти и оценить матч сразу
+    по свежим впечатлениям). Дедуп-риск, из-за которого email был
+    сознательно пропущен, снят: `send_voting_open_notification`
+    (широковещательная рассылка) нигде не вызывается — она мёртвый код, не
+    висит ни в одном CELERY_BEAT_SCHEDULE и не вызывается из другого места
+    проекта, так что дублирования писем не будет. Email уважает
+    пользовательскую настройку `email_match_finished`
+    (см. NOTIFICATION_TYPE_TO_SETTINGS_KEY['voting_open']) — как и любой
+    другой канал в этом модуле.
     """
     from django.db.models import Q
     from django.urls import reverse
@@ -438,8 +533,27 @@ def notify_followers_match_activity(self, match_id: str):
     except Exception as exc:
         logger.warning(f"notify_followers_match_activity: push fan-out skipped: {exc}")
 
-    logger.info(f"✅ Notified {len(follower_user_ids)} follower(s) about match {match.id}")
-    return {'notified': len(follower_user_ids)}
+    # Email — см. изменение в докстринге выше: раньше сознательно
+    # пропускался из-за риска задвоения с `send_voting_open_notification`,
+    # но та рассылка нигде не вызывается (мёртвый код), так что дублирования
+    # нет. Аудитория здесь — только реальные подписчики конкретного матча
+    # (обычно единицы-десятки пользователей), поэтому шлём напрямую, без
+    # chunked fan-out паттерна, которым пользуются широковещательные рассылки.
+    from users.models import User as _UserModel
+
+    emailed = 0
+    for user in _UserModel.objects.filter(id__in=follower_user_ids, is_verified=True, email__isnull=False):
+        if _send_email_to_user(
+            user,
+            f'⚽ {title} — голосование открыто',
+            'emails/voting_open.html',
+            {'match': match, 'title': title},
+            notification_type='voting_open',
+        ):
+            emailed += 1
+
+    logger.info(f"✅ Notified {len(follower_user_ids)} follower(s) about match {match.id} ({emailed} email(s) sent)")
+    return {'notified': len(follower_user_ids), 'emailed': emailed}
 
 
 # ============================================================
@@ -579,88 +693,106 @@ def notify_prediction_results(self):
     пропустит. `lookback` — 6 часов, не 1 — с запасом на случай простоя
     воркера/деплоя между прогонами; повторный прогон в пределах окна не
     дублирует уже обработанные пары благодаря дедупликации выше.
+
+    БАГ, КОТОРЫЙ ТУТ БЫЛ: сама задача периодическая (`crontab(minute='*/30')`)
+    и без Redis-lock — дедупликация по `Notification` (см. выше) защищает от
+    задвоения ПОСЛЕ того, как `bulk_create` отработал, но не от гонки: два
+    параллельных прогона (плановый тик + повторная доставка сообщения
+    at-least-once) могли одновременно прочитать одну и ту же "ещё не
+    уведомлённую" пару (match, user) ДО того, как один из них успеет создать
+    Notification, и оба отправить письмо. Лок — тот же cache.add()-паттерн,
+    что в season_squad/tasks.py::recompute_best_xi_task /
+    round_squad/tasks.py::recompute_round_task.
     """
-    from django.urls import reverse
+    lock_key = "notifications:lock:notify_prediction_results"
+    if not cache.add(lock_key, "1", timeout=NOTIFY_TASK_LOCK_TIMEOUT):
+        logger.info("notify_prediction_results: уже выполняется другим воркером — пропускаем")
+        return {'notified': 0, 'skipped_locked': True}
 
-    from matches.models import Match
-    from notifications.models import Notification
-    from predictions.models import MatchPrediction
-    from predictions.services import prediction_counts
+    try:
+        from django.urls import reverse
 
-    now = timezone.now()
-    lookback = now - timedelta(hours=6)
+        from matches.models import Match
+        from notifications.models import Notification
+        from predictions.models import MatchPrediction
+        from predictions.services import prediction_counts
 
-    matches = Match.objects.filter(
-        status='finished', end_time__isnull=False, end_time__gte=lookback, end_time__lte=now,
-    ).select_related('home_team', 'away_team')
+        now = timezone.now()
+        lookback = now - timedelta(hours=6)
 
-    result_labels = {'1': 'Победа хозяев', 'X': 'Ничья', '2': 'Победа гостей'}
-    notified = 0
+        matches = Match.objects.filter(
+            status='finished', end_time__isnull=False, end_time__gte=lookback, end_time__lte=now,
+        ).select_related('home_team', 'away_team')
 
-    for match in matches:
-        already_notified = Notification.objects.filter(
-            notification_type='prediction_result', related_match=match,
-        ).values('user_id')
-        predictions = list(
-            MatchPrediction.objects.filter(match=match)
-            .exclude(user_id__in=already_notified)
-            .select_related('user')
-        )
-        if not predictions:
-            continue
+        result_labels = {'1': 'Победа хозяев', 'X': 'Ничья', '2': 'Победа гостей'}
+        notified = 0
 
-        counts = prediction_counts(match)
-        action_url = reverse('matches:detail', args=[match.id])
-        your_choice_labels = {
-            '1': f'П1 ({match.home_team.name})',
-            'X': 'Х (ничья)',
-            '2': f'П2 ({match.away_team.name})',
-        }
-
-        notifications_to_create = []
-        for pred in predictions:
-            is_correct = pred.is_correct  # bool, т.к. match.final_result уже точно известен (status='finished')
-            title = "✅ Ваш прогноз сбылся!" if is_correct else "Прогноз не сбылся"
-            message = (
-                f"{match.home_team.name} {match.get_score_display()} {match.away_team.name} — "
-                f"{result_labels.get(match.final_result, '?')}. "
-                f"Ваш прогноз: {your_choice_labels.get(pred.choice, pred.choice)}."
+        for match in matches:
+            already_notified = Notification.objects.filter(
+                notification_type='prediction_result', related_match=match,
+            ).values('user_id')
+            predictions = list(
+                MatchPrediction.objects.filter(match=match)
+                .exclude(user_id__in=already_notified)
+                .select_related('user')
             )
-            digest_mode = pred.user.get_notification_setting('email_digest_mode', True)
-            notifications_to_create.append(Notification(
-                user=pred.user,
-                notification_type='prediction_result',
-                title=title,
-                message=message,
-                action_url=action_url,
-                related_match=match,
-                # НЕ участвует в DIGESTIBLE_NOTIFICATION_TYPES (см. ниже) —
-                # почтовая отправка идёт немедленно в этом же цикле, а не
-                # через send_notification_digest, поэтому email_sent_at
-                # проставляется сразу, а не по digest_mode пользователя.
-                email_sent_at=timezone.now(),
-            ))
+            if not predictions:
+                continue
 
-        Notification.objects.bulk_create(notifications_to_create)
+            counts = prediction_counts(match)
+            action_url = reverse('matches:detail', args=[match.id])
+            your_choice_labels = {
+                '1': f'П1 ({match.home_team.name})',
+                'X': 'Х (ничья)',
+                '2': f'П2 ({match.away_team.name})',
+            }
 
-        for pred in predictions:
-            _send_email_to_user(
-                pred.user,
-                f'{"✅" if pred.is_correct else "📊"} Итог матча {match.home_team.name} vs {match.away_team.name}',
-                'emails/prediction_result.html',
-                {
-                    'match': match,
-                    'counts': counts,
-                    'is_correct': pred.is_correct,
-                    'your_choice_label': your_choice_labels.get(pred.choice, pred.choice),
-                },
-                notification_type='prediction_result',
-            )
+            notifications_to_create = []
+            for pred in predictions:
+                is_correct = pred.is_correct  # bool, т.к. match.final_result уже точно известен (status='finished')
+                title = "✅ Ваш прогноз сбылся!" if is_correct else "Прогноз не сбылся"
+                message = (
+                    f"{match.home_team.name} {match.get_score_display()} {match.away_team.name} — "
+                    f"{result_labels.get(match.final_result, '?')}. "
+                    f"Ваш прогноз: {your_choice_labels.get(pred.choice, pred.choice)}."
+                )
+                digest_mode = pred.user.get_notification_setting('email_digest_mode', True)
+                notifications_to_create.append(Notification(
+                    user=pred.user,
+                    notification_type='prediction_result',
+                    title=title,
+                    message=message,
+                    action_url=action_url,
+                    related_match=match,
+                    # НЕ участвует в DIGESTIBLE_NOTIFICATION_TYPES (см. ниже) —
+                    # почтовая отправка идёт немедленно в этом же цикле, а не
+                    # через send_notification_digest, поэтому email_sent_at
+                    # проставляется сразу, а не по digest_mode пользователя.
+                    email_sent_at=timezone.now(),
+                ))
 
-        notified += len(predictions)
+            Notification.objects.bulk_create(notifications_to_create)
 
-    logger.info(f"✅ notify_prediction_results: notified {notified} predictor(s) across {matches.count()} match(es).")
-    return {'notified': notified}
+            for pred in predictions:
+                _send_email_to_user(
+                    pred.user,
+                    f'{"✅" if pred.is_correct else "📊"} Итог матча {match.home_team.name} vs {match.away_team.name}',
+                    'emails/prediction_result.html',
+                    {
+                        'match': match,
+                        'counts': counts,
+                        'is_correct': pred.is_correct,
+                        'your_choice_label': your_choice_labels.get(pred.choice, pred.choice),
+                    },
+                    notification_type='prediction_result',
+                )
+
+            notified += len(predictions)
+
+        logger.info(f"✅ notify_prediction_results: notified {notified} predictor(s) across {matches.count()} match(es).")
+        return {'notified': notified}
+    finally:
+        cache.delete(lock_key)
 
 
 @shared_task(bind=True, max_retries=3)

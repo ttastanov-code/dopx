@@ -20,6 +20,19 @@ from django.http import HttpResponse
 from django.utils import timezone
 
 
+def _csv_safe(value):
+    """Защита от CSV/formula injection: если открыть экспортированный файл в
+    Excel/Google Sheets, строковое значение, начинающееся с `=`, `+`, `-`
+    или `@`, может быть интерпретировано как формула (в т.ч. вредоносная,
+    если значение пришло из пользовательского ввода — username, subject
+    обращения и т.п.). Ведущий апостроф заставляет Excel/Sheets показать
+    значение как обычный текст. Единая точка правды — используется и здесь,
+    и в `dashboard/views.py::antifraud_export_csv`."""
+    if isinstance(value, str) and value and value[0] in ("=", "+", "-", "@"):
+        return "'" + value
+    return value
+
+
 def export_as_csv(modeladmin, request, queryset):
     """Экспорт выбранных строк списка в CSV. Регистрируется как admin-экшен
     (принимает (modeladmin, request, queryset) — стандартная сигнатура
@@ -44,7 +57,7 @@ def export_as_csv(modeladmin, request, queryset):
     writer = csv.writer(response)
     writer.writerow([meta.get_field(f).verbose_name for f in export_fields])
     for obj in queryset:
-        writer.writerow([getattr(obj, f) for f in export_fields])
+        writer.writerow([_csv_safe(getattr(obj, f)) for f in export_fields])
 
     return response
 

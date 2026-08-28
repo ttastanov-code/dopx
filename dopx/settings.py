@@ -3,6 +3,7 @@ import os
 from dotenv import load_dotenv
 from pathlib import Path
 from celery.schedules import crontab
+from django.core.exceptions import ImproperlyConfigured
 from django.urls import reverse_lazy
 from django.utils.translation import gettext_lazy as _
 
@@ -10,10 +11,33 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-dev-key-change-in-prod")
-DEBUG = os.getenv("DEBUG", "True") == "True"
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "*").split(",")
+# БАГ, КОТОРЫЙ ТУТ БЫЛ: дефолты DEBUG/ALLOWED_HOSTS/SECRET_KEY были рассчитаны
+# на удобство локальной разработки, но срабатывают точно так же и на проде,
+# если .env по любой причине не подхватился (опечатка в пути, не тот systemd
+# unit, контейнер поднят без env_file) — сайт в этом случае молча стартует
+# в DEBUG=True, с ALLOWED_HOSTS="*" и с публично известным SECRET_KEY, что
+# полностью снимает защиту от CSRF/session-подделки и раскрывает трассировки
+# с кодом и переменными окружения любому посетителю. Найдено при аудите,
+# см. AUDIT_2026-08.md.
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+
+if ENVIRONMENT == "development":
+    # Только для локальной разработки без .env — небезопасный дефолт ОК.
+    SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-dev-key-change-in-prod")
+else:
+    SECRET_KEY = os.getenv("SECRET_KEY")
+    if not SECRET_KEY:
+        raise ImproperlyConfigured(
+            "SECRET_KEY не задан в окружении, а ENVIRONMENT != 'development'. "
+            "Небезопасный дефолт для не-development окружений запрещён — "
+            "задайте SECRET_KEY в .env/переменных окружения сервера."
+        )
+
+DEBUG = os.getenv("DEBUG", "False") == "True"
+# Дефолт "localhost,127.0.0.1", а не "*" — на проде ALLOWED_HOSTS ОБЯЗАН быть
+# задан явно (домен сайта); "*" отключает защиту Django от Host-заголовка
+# подделки (HTTP Host header attacks) и годится только для локальной отладки.
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 
 # CSRF_TRUSTED_ORIGINS нигде в проекте не был задан. На локальной разработке
 # (HTTP, DEBUG=True) это незаметно — Django сверяет CSRF только для HTTPS-
@@ -419,7 +443,15 @@ AUTHENTICATION_BACKENDS = [
 # атакующему перебирать пароли с одного IP по разным username бесконечно.
 AXES_FAILURE_LIMIT = 5
 AXES_COOLOFF_TIME = 1  # часы
-AXES_LOCKOUT_PARAMETERS = ['username', 'ip_address']
+# БАГ, КОТОРЫЙ ТУТ БЫЛ: единственное правило ['username', 'ip_address']
+# блокирует только конкретную пару — атакующий, перебирающий пароль одного
+# (в т.ч. staff) аккаунта и меняющий/ротирующий IP между попытками, никогда
+# не набирал 5 попыток на одну пару и не блокировался вовсе. Список из двух
+# правил в django-axes 8.3.1 (см. axes/helpers.get_lockout_parameters —
+# список списков возвращается как есть и правила проверяются как OR)
+# блокирует, если сработало ЛЮБОЕ из них: по паре username+IP (как раньше)
+# ИЛИ отдельно по одному username — так ротация IP больше не даёт обходить лимит.
+AXES_LOCKOUT_PARAMETERS = [['username'], ['username', 'ip_address']]
 AXES_RESET_COOLOFF_ON_FAILURE_DURING_LOCKOUT = True
 # Сбрасывать счётчик попыток при успешном входе — иначе одна забытая старая
 # неудачная попытка месяц назад тихо накапливалась бы к следующей блокировке.
@@ -615,16 +647,16 @@ CELERY_BEAT_SCHEDULE = {
         # 'options': {'queue': 'default'}
     },
     # === Частое обновление для LIVE матчей ===
+    # БАГ, КОТОРЫЙ ТУТ БЫЛ: раньше здесь было ДВЕ записи — эта (*/2) и
+    # 'update-scheduled-matches' (*/10), обе вызывали ОДНУ И ТУ ЖЕ задачу
+    # parsers.tasks.update_match_statuses с одинаковым внутренним фильтром
+    # (никаких разных kwargs, разделяющих live/scheduled, задаче не
+    # передавалось). */10 — строгое подмножество */2, вторая запись не
+    # покрывала ничего сверх первой — только лишняя нагрузка и гонки двух
+    # параллельных запусков одной и той же задачи. Удалена.
     'update-live-matches': {
         'task': 'parsers.tasks.update_match_statuses',
         'schedule': crontab(minute='*/2'),  # Каждые 2 минуты для live
-        # 'options': {'queue': 'default'}
-    },
-    
-    # === Реже для scheduled матчей ===
-    'update-scheduled-matches': {
-        'task': 'parsers.tasks.update_match_statuses',
-        'schedule': crontab(minute='*/10'),  # Каждые 10 минут
         # 'options': {'queue': 'default'}
     },
     # === Пересчёт таблицы (каждые 10 минут) — ✅ АВТО-СЕЗОН ===
@@ -898,7 +930,15 @@ if DEBUG:
     MIDDLEWARE += ['debug_toolbar.middleware.DebugToolbarMiddleware']
     INTERNAL_IPS = ['127.0.0.1']
     DEBUG_TOOLBAR_CONFIG = {
-        'SHOW_TOOLBAR_CALLBACK': lambda request: request.META.get('HTTP_ACCEPT') != 'application/json',
+        # БАГ, КОТОРЫЙ ТУТ БЫЛ: колбэк проверял только Accept-заголовок, из-за
+        # чего debug_toolbar (SQL-запросы, настройки, переменные окружения)
+        # рендерился ЛЮБОМУ посетителю с обычным браузерным Accept, а не
+        # только с localhost — вернули обратно проверку REMOTE_ADDR по
+        # INTERNAL_IPS, как и задумано штатным поведением django-debug-toolbar.
+        'SHOW_TOOLBAR_CALLBACK': lambda request: (
+            request.META.get('HTTP_ACCEPT') != 'application/json'
+            and request.META.get('REMOTE_ADDR') in INTERNAL_IPS
+        ),
         # test runner форсит DEBUG=False на время тестов, из-за чего
         # debug_toolbar.E001 путает это с "тулбар остался в проде".
         # IS_RUNNING_TESTS=False — штатный флаг django-debug-toolbar,

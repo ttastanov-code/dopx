@@ -1,8 +1,14 @@
 # round_squad/admin.py
+import logging
+
 from django.contrib import admin, messages
+from django.contrib.admin import helpers
+from django.template.response import TemplateResponse
 from unfold.admin import ModelAdmin, TabularInline
 
 from .models import RoundBestXI, RoundBestXISlot
+
+logger = logging.getLogger(__name__)
 
 
 class RoundBestXISlotInline(TabularInline):
@@ -40,7 +46,15 @@ class RoundBestXIAdmin(ModelAdmin):
 
     @admin.action(description='Пересчитать сейчас')
     def recompute_now(self, request, queryset):
-        from round_squad.services import recompute_round
+        # БАГ, КОТОРЫЙ ТУТ БЫЛ: recompute_round(round_xi.season, round_xi.tour)
+        # вызывалась напрямую, в обход Redis-lock из
+        # round_squad/tasks.py::recompute_round_task — при совпадении по
+        # времени с плановым прогоном Celery Beat (recompute_active_rounds)
+        # два пересчёта одного тура могли выполниться параллельно и испортить
+        # денормализованные карточки (см. докстринг round_squad/tasks.py).
+        # Теперь ставим ту же задачу в очередь — лок общий для admin-триггера
+        # и Celery Beat.
+        from round_squad.tasks import recompute_round_task
 
         done = 0
         for round_xi in queryset:
@@ -50,10 +64,10 @@ class RoundBestXIAdmin(ModelAdmin):
                     level=messages.WARNING,
                 )
                 continue
-            recompute_round(round_xi.season, round_xi.tour)
+            recompute_round_task.delay(str(round_xi.season_id), round_xi.tour)
             done += 1
         if done:
-            self.message_user(request, f"Пересчитано туров: {done}", level=messages.SUCCESS)
+            self.message_user(request, f"Поставлено на пересчёт туров: {done}", level=messages.SUCCESS)
 
     @admin.action(description='Зафиксировать вручную (без ожидания закрытия голосования)')
     def force_finalize(self, request, queryset):
@@ -63,13 +77,39 @@ class RoundBestXIAdmin(ModelAdmin):
         автоматическом пути, при первой фиксации собираем share-карточку и
         ставим в очередь рассылку итогов (round_squad/tasks.py::
         send_round_results_notification) — те же побочные эффекты, только
-        триггер другой."""
+        триггер другой.
+
+        2026-08-28: массовый выбор строк раньше рассылал письма ВСЕМ
+        верифицированным подписчикам без единого предупреждения — добавлен
+        промежуточный confirm-экран (стандартный паттерн Django admin
+        actions, см. django.contrib.admin.actions.delete_selected):
+        первый POST (без `confirm=yes`) только показывает, что будет
+        зафиксировано и разослано, реальное действие выполняется только
+        вторым POST с подтверждением."""
         from django.utils import timezone
 
         from core.services.share_cards import build_round_squad_share_card
         from round_squad.tasks import send_round_results_notification
 
         to_finalize = list(queryset.filter(is_final=False))
+
+        if not to_finalize:
+            self.message_user(request, "Нечего фиксировать — выбранные туры уже зафиксированы", level=messages.WARNING)
+            return
+
+        if request.POST.get('confirm') != 'yes':
+            context = {
+                **self.admin_site.each_context(request),
+                'title': 'Подтвердите ручную фиксацию тура',
+                'objects': to_finalize,
+                'opts': self.model._meta,
+                'action_checkbox_name': helpers.ACTION_CHECKBOX_NAME,
+                'selected_ids': request.POST.getlist(helpers.ACTION_CHECKBOX_NAME),
+                'select_across': request.POST.get('select_across', '0'),
+                'action': request.POST.get('action', 'force_finalize'),
+            }
+            return TemplateResponse(request, 'admin/round_squad/force_finalize_confirm.html', context)
+
         now = timezone.now()
         for round_xi in to_finalize:
             round_xi.is_final = True
@@ -87,16 +127,16 @@ class RoundBestXIAdmin(ModelAdmin):
                             f"{dramatic.away_team.name}" if dramatic else ""
                         ),
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(
+                        "Не удалось собрать share-карточку для тура %s (%s): %s",
+                        round_xi.tour, round_xi.season, e,
+                    )
             round_xi.save(update_fields=['is_final', 'finalized_at', 'share_card_path'])
             send_round_results_notification.delay(str(round_xi.id))
 
-        if to_finalize:
-            self.message_user(
-                request,
-                f"Зафиксировано вручную: {len(to_finalize)}. Рассылка итогов поставлена в очередь.",
-                level=messages.SUCCESS,
-            )
-        else:
-            self.message_user(request, "Нечего фиксировать — выбранные туры уже зафиксированы", level=messages.WARNING)
+        self.message_user(
+            request,
+            f"Зафиксировано вручную: {len(to_finalize)}. Рассылка итогов поставлена в очередь.",
+            level=messages.SUCCESS,
+        )

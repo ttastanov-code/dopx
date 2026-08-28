@@ -41,7 +41,15 @@ class SeasonBestXIAdmin(ModelAdmin):
 
     @admin.action(description='Пересчитать сейчас')
     def recompute_now(self, request, queryset):
-        from season_squad.services import recompute_best_xi
+        # БАГ, КОТОРЫЙ ТУТ БЫЛ: recompute_best_xi(best_xi.season) вызывалась
+        # напрямую, в обход Redis-lock из season_squad/tasks.py::recompute_best_xi_task
+        # — если стафф жал это действие ровно в момент планового прогона
+        # Celery Beat (recompute_all_active_best_xi, каждые 15 минут), два
+        # пересчёта одного сезона выполнялись параллельно и портили
+        # rank_change/rank_change_delta (см. докстринг recompute_best_xi_task).
+        # Теперь ставим ту же задачу в очередь — лок общий для admin-триггера
+        # и Celery Beat.
+        from season_squad.tasks import recompute_best_xi_task
 
         done = 0
         for best_xi in queryset:
@@ -52,10 +60,10 @@ class SeasonBestXIAdmin(ModelAdmin):
                     level=messages.WARNING,
                 )
                 continue
-            recompute_best_xi(best_xi.season)
+            recompute_best_xi_task.delay(str(best_xi.season_id))
             done += 1
         if done:
-            self.message_user(request, f"Пересчитано сборных: {done}", level=messages.SUCCESS)
+            self.message_user(request, f"Поставлено на пересчёт сборных: {done}", level=messages.SUCCESS)
 
     @admin.action(description='Зафиксировать как итоговую (сезон завершён)')
     def mark_as_final(self, request, queryset):

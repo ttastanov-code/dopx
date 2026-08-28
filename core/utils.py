@@ -116,11 +116,18 @@ def get_client_ip(request: HttpRequest) -> str | None:
         chain = [ip.strip() for ip in x_forwarded_for.split(",") if ip.strip()]
         trusted_proxy_count = getattr(settings, "TRUSTED_PROXY_COUNT", 1)
         if chain:
-            # Индекс с конца: -1 - N доверенных прокси. Если в цепочке
-            # меньше звеньев, чем ожидается доверенных прокси (заголовок
-            # подделан/укорочен), безопаснее откатиться на самый левый
-            # известный элемент, чем на REMOTE_ADDR самого nginx.
-            client_index = len(chain) - 1 - trusted_proxy_count
+            # БАГ, КОТОРЫЙ ТУТ БЫЛ (найден полным аудитом, август 2026):
+            # формула содержала лишний "-1" (`len(chain) - 1 - trusted_proxy_count`),
+            # из-за чего при TRUSTED_PROXY_COUNT=1 функция возвращала chain[0] —
+            # ПЕРВЫЙ, полностью подделываемый клиентом элемент — вместо
+            # последнего доверенного. Пример: клиент шлёт заголовок
+            # "X-Forwarded-For: 6.6.6.6", nginx дописывает свой $remote_addr
+            # (реальный IP клиента) → цепочка ["6.6.6.6", "9.9.9.9"]. Старая
+            # формула отдавала "6.6.6.6" (подделка), новая — "9.9.9.9" (правда).
+            # Каждый доверенный прокси добавляет РОВНО одну запись в конец
+            # цепочки, поэтому правильный индекс с начала — это просто
+            # len(chain) - trusted_proxy_count, без дополнительного сдвига.
+            client_index = len(chain) - trusted_proxy_count
             return chain[client_index] if client_index >= 0 else chain[0]
     return request.META.get("REMOTE_ADDR")
 
@@ -138,17 +145,31 @@ def is_rate_limited(key: str, limit: int, window_seconds: int) -> bool:
     подвержен "двойному всплеску" на границе окна) — для защиты от
     примитивного бот-фарминга регистраций этого достаточно; для более
     строгих гарантий стоит переходить на `django-ratelimit`/токен-бакет.
+
+    БАГ, КОТОРЫЙ ТУТ БЫЛ (найден полным аудитом, август 2026): между
+    cache.get() и последующим cache.set()/incr() было окно для гонки
+    (TOCTOU) — два параллельных запроса могли оба увидеть current=None
+    (или оба увидеть current < limit на последней разрешённой попытке) и
+    оба "проскочить" мимо лимита, прежде чем кто-то из них успевал
+    записать инкремент. Под нагрузкой (например, бот-фарминг регистраций
+    в несколько потоков с одного IP) это позволяло превысить limit на
+    число гоняющихся потоков. Переписано на cache.add() + cache.incr() —
+    обе операции атомарны на уровне бэкенда (у Redis — SETNX/INCR), гонка
+    исключена.
     """
     cache_key = f"ratelimit:{key}"
-    current = cache.get(cache_key)
-    if current is None:
-        cache.set(cache_key, 1, timeout=window_seconds)
-        return False
-    if current >= limit:
-        return True
+    # add() создаёт ключ со значением 0, только если его ещё нет
+    # (атомарно); если ключ уже существует — no-op. Затем incr()
+    # атомарно увеличивает счётчик и возвращает новое значение.
+    cache.add(cache_key, 0, timeout=window_seconds)
     try:
-        cache.incr(cache_key)
+        current = cache.incr(cache_key)
     except ValueError:
-        # Ключ протух между get() и incr() — считаем это новым окном.
-        cache.set(cache_key, 1, timeout=window_seconds)
-    return False
+        # Ключ протух между add() и incr() (окно истекло ровно в этот
+        # момент) — считаем это новым окном.
+        cache.add(cache_key, 0, timeout=window_seconds)
+        current = cache.incr(cache_key)
+    # Первый вызов в окне: add() создаёт 0, incr() возвращает 1 — это
+    # первая из `limit` разрешённых попыток, поэтому сравнение строго
+    # "больше", а не "больше или равно".
+    return current > limit
