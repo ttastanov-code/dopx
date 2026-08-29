@@ -271,6 +271,7 @@ UNFOLD = {
                 "icon": "star_rate",
                 "collapsible": True,
                 "items": [
+                    {"title": _("Сессии оценки"), "icon": "checklist", "link": reverse_lazy("admin:evaluations_evaluationsession_changelist")},
                     {"title": _("Контекст оценки"), "icon": "visibility", "link": reverse_lazy("admin:evaluations_contextevaluation_changelist")},
                     {"title": _("Оценки команд"), "icon": "shield", "link": reverse_lazy("admin:evaluations_teamevaluation_changelist")},
                     {"title": _("Оценки игроков"), "icon": "person", "link": reverse_lazy("admin:evaluations_playerevaluation_changelist")},

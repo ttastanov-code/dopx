@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.utils.translation import gettext_lazy as _
 from unfold.admin import ModelAdmin
 
 from core.admin_actions import export_as_csv
@@ -9,7 +10,8 @@ from .models import (
     PlayerEvaluation,
     CoachEvaluation,
     RefereeEvaluation,
-    MatchEvaluation
+    MatchEvaluation,
+    EvaluationSession,
 )
 
 
@@ -65,3 +67,35 @@ class MatchEvaluationAdmin(ModelAdmin):
     search_fields = ('user__username',)
     autocomplete_fields = ('user', 'match')
     actions = [export_as_csv]
+
+
+@admin.register(EvaluationSession)
+class EvaluationSessionAdmin(ModelAdmin):
+    """
+    БАГ, КОТОРЫЙ ТУТ БЫЛ: модель отслеживания прогресса вайзарда нигде не
+    была зарегистрирована в админке — были видны только шесть моделей с
+    самими оценками (ContextEvaluation/TeamEvaluation/...), а запись,
+    которая реально решает "уже оценил / ещё нет"
+    (status='completed' в EvaluationSession — см. gate в
+    evaluations/views.py::EvaluateContextView.dispatch()), нигде не
+    отображалась и не редактировалась. Из-за этого не было простого способа
+    сбросить свою тестовую оценку и пройти вайзард заново — приходилось
+    лезть напрямую в БД.
+    """
+    list_display = ('user', 'match', 'status', 'progress_percentage', 'started_at', 'completed_at', 'fill_duration_seconds')
+    list_filter = ('status',)
+    search_fields = (
+        'user__username', 'user__email',
+        'match__home_team__name', 'match__away_team__name',
+    )
+    autocomplete_fields = ('user', 'match')
+    readonly_fields = ('started_at', 'completed_at', 'ip_address')
+    actions = [export_as_csv]
+
+    @admin.display(description=_('Прогресс'))
+    def progress_percentage(self, obj):
+        return f"{obj.progress_percentage()}%"
+
+    @admin.display(description=_('Время заполнения (сек)'))
+    def fill_duration_seconds(self, obj):
+        return obj.fill_duration_seconds

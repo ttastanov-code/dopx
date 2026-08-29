@@ -181,7 +181,12 @@
                 </div>
 
                 <div class="flex items-center gap-1 md:gap-2">
-                    {% if match.status == 'finished' and match.is_voting_open %}
+                    {% if match.status == 'finished' and match.user_has_evaluated %}
+                    <span class="badge badge-success badge-xs gap-1" title="Вы уже оценили этот матч">
+                        <i class="ti ti-check"></i>
+                        <span class="hidden sm:inline">Оценено</span>
+                    </span>
+                    {% elif match.status == 'finished' and match.is_voting_open %}
                     <a href="{% url 'evaluations:context' match.id %}"
                        class="btn btn-xs btn-primary"
                        onclick="event.stopPropagation()">
@@ -201,6 +206,19 @@
                     {% endif %}
                 </div>
             </div>
+
+            {% comment %}
+            Инлайн-прогноз 1X2 прямо на карточке — без перехода на страницу
+            матча (запрос пользователя, 2026-08-29). list_prediction_counts
+            вешается на объект матча в matches/views.py::MatchListView.
+            get_context_data() bulk'ом только для матчей с открытым окном
+            прогноза — атрибута нет ни у одного другого матча, поэтому
+            {% if %} ниже одновременно и условие показа, и защита от
+            AttributeError.
+            {% endcomment %}
+            {% if match.list_prediction_counts %}
+            {% include 'predictions/_prediction_widget_compact.html' with counts=match.list_prediction_counts my_prediction=match.list_my_prediction %}
+            {% endif %}
         </div>
     </a>
         {% endfor %}

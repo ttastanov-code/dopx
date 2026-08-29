@@ -55,10 +55,22 @@ def predict(request, match_id):
     """
     match = get_object_or_404(Match, id=match_id)
 
+    # compact=1 — запрос с инлайн-виджета на карточке в списке матчей
+    # (см. templates/predictions/_prediction_widget_compact.html и
+    # matches/views.py::MatchListView) — ответ должен заменить себя таким
+    # же компактным партиалом, а не полноразмерным виджетом со страницы
+    # матча (иначе после первого клика карточка в списке "разбухала бы").
+    compact = request.POST.get('compact') == '1'
+    widget_template = 'predictions/_prediction_widget_compact.html' if compact else 'predictions/_prediction_widget.html'
+    login_template = (
+        'predictions/_prediction_login_prompt_compact.html' if compact
+        else 'predictions/_prediction_login_prompt.html'
+    )
+
     if not request.user.is_authenticated:
         # status=200, не 401 — HTMX по умолчанию свапает контент только на
         # 2xx, см. идентичный комментарий в events/views.py::react_to_event.
-        return render(request, 'predictions/_prediction_login_prompt.html', {'match': match}, status=200)
+        return render(request, login_template, {'match': match}, status=200)
 
     if is_rate_limited(
         f'predict:{request.user.id}', PREDICT_RATE_LIMIT, PREDICT_RATE_LIMIT_WINDOW_SECONDS
@@ -92,4 +104,4 @@ def predict(request, match_id):
     # страницы и кликом (гонка на старте матча) — виджет просто
     # перерисуется в закрытом состоянии, без ошибки пользователю.
 
-    return render(request, 'predictions/_prediction_widget.html', _widget_context(request, match))
+    return render(request, widget_template, _widget_context(request, match))

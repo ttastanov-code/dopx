@@ -46,10 +46,30 @@ class HomeView(TemplateView):
         now = timezone.now()
 
         # === Существующие данные ===
-        recent_matches = Match.objects.filter(
+        recent_matches = list(Match.objects.filter(
             status='finished', start_time__lte=now
         ).select_related('home_team', 'away_team', 'league', 'season'
-        ).prefetch_related('aggregate').order_by('-start_time')[:6]
+        ).prefetch_related('aggregate').order_by('-start_time')[:6])
+
+        # "Оценить" на карточке главной вело в тупик для тех, кто уже
+        # оценил этот матч (см. тот же фикс в matches/views.py::MatchListView) —
+        # тут та же карточка, но своя копия шаблона с собственной логикой
+        # кнопки, поэтому и флаг нужен отдельно. list() выше — иначе
+        # queryset[:6] пересчитывался бы дважды (сначала здесь для id, потом
+        # в шаблоне).
+        if self.request.user.is_authenticated and recent_matches:
+            evaluated_match_ids = set(
+                EvaluationSession.objects.filter(
+                    user=self.request.user,
+                    match_id__in=[m.id for m in recent_matches],
+                    status='completed',
+                ).values_list('match_id', flat=True)
+            )
+            for match in recent_matches:
+                match.user_has_evaluated = match.id in evaluated_match_ids
+        else:
+            for match in recent_matches:
+                match.user_has_evaluated = False
 
         upcoming_matches = Match.objects.filter(
             status='scheduled', start_time__gte=now

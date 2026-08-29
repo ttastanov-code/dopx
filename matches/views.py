@@ -5,13 +5,14 @@ from django.shortcuts import render, get_object_or_404
 from django.urls import reverse
 from django.views.generic import ListView, DetailView
 from django.utils import timezone
-from django.db.models import Avg, Count, Q, Prefetch, Sum, F, Value, Case, When, DateTimeField, DurationField
+from django.db.models import Count, Q
 from matches.models import Match
 from aggregates.models import MatchAggregate, PlayerMatchAggregate, TeamMatchAggregate
 from evaluations.models import PlayerEvaluation, MatchEvaluation, ContextEvaluation, EvaluationSession
 from lineups.models import MatchLineup
 from seasons.models import Season
 from leagues.models import League
+from predictions.services import bulk_prediction_data
 import logging
 from django.views.decorators.http import require_http_methods
 
@@ -67,19 +68,23 @@ class MatchListView(ListView):
                 status='finished', voting_open_until__gte=timezone.now()
             ).order_by('voting_open_until')
         else:
-            # Сортировка по близости к текущему моменту (не по дате по
-            # возрастанию) — недавние/live/ближайшие матчи всегда наверху.
-            # Postgres не умеет abs(interval), поэтому расстояние считаем
-            # через CASE: для будущих — (start_time - now), для прошедших —
-            # (now - start_time), обе ветки всегда положительны.
-            now = Value(timezone.now(), output_field=DateTimeField())
-            queryset = queryset.annotate(
-                time_distance=Case(
-                    When(start_time__gte=timezone.now(), then=F('start_time') - now),
-                    default=now - F('start_time'),
-                    output_field=DurationField(),
-                )
-            ).order_by('time_distance')
+            # БАГ, КОТОРЫЙ ТУТ БЫЛ: сортировка "по близости к текущему
+            # моменту" (симметричное расстояние |start_time - now|) вместо
+            # обычного хронологического порядка. Идея была разумной —
+            # показать самые актуальные матчи первыми, — но она ломала
+            # {% regroup %} по дате в шаблоне (matches/list.html): группа
+            # "будущее +2 дня" оказывалась БЛИЖЕ по этой метрике, чем
+            # "прошлое -1 день", поэтому в списке даты прыгали вперёд-назад
+            # (пользователь видел 31.08, потом 25.08 — уже сыгранный матч
+            # со счётом, — потом снова будущее 05.09). Обычный возрастающий
+            # порядок по start_time — единственный, при котором даты в
+            # списке идут монотонно и группы никогда не повторяются и не
+            # скачут. Чтобы не терять исходную идею "показать актуальное
+            # первым", стартовая страница вычисляется в paginate_queryset()
+            # ниже — рядом с сегодняшним днём, а не с первой страницы
+            # целиком отсортированного списка (иначе список открывался бы
+            # с самого начала истории сезона).
+            queryset = queryset.order_by('start_time')
         
         # Фильтр по лиге
         league_id = self.request.GET.get('league')
@@ -101,7 +106,29 @@ class MatchListView(ListView):
             queryset = queryset.filter(tour=tour)
 
         return queryset
-    
+
+    def paginate_queryset(self, queryset, page_size):
+        """
+        Дефолтный список (без ?status=) отсортирован хронологически по
+        возрастанию (см. get_queryset()) — без вмешательства первая
+        страница показывала бы самые старые матчи всего сезона, а не то,
+        что реально интересно пользователю прямо сейчас. Подбираем номер
+        страницы так, чтобы открыться рядом с сегодняшним днём: считаем,
+        сколько матчей уже прошло к моменту запроса, и с небольшим отступом
+        назад (несколько последних результатов тоже видны сразу, не только
+        будущее) переводим это в номер страницы паджинатора.
+
+        Работает только пока пользователь НЕ указал ни свою страницу, ни
+        фильтр по статусу явно — у статусных веток (scheduled/finished/…)
+        сортировка уже осмысленная сама по себе (ближайшие/самые свежие
+        сверху), там "прыжок" на нужную страницу не нужен.
+        """
+        page_requested = self.kwargs.get(self.page_kwarg) or self.request.GET.get(self.page_kwarg)
+        if not page_requested and not self.request.GET.get('status'):
+            anchor_index = max(queryset.filter(start_time__lt=timezone.now()).count() - 3, 0)
+            self.kwargs[self.page_kwarg] = anchor_index // page_size + 1
+        return super().paginate_queryset(queryset, page_size)
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         current_status = self.request.GET.get('status', '')
@@ -123,6 +150,42 @@ class MatchListView(ListView):
             tours_qs = tours_qs.filter(season=active_season)
         context['tours'] = tours_qs.values_list('tour', flat=True).distinct().order_by('tour')
         context['now'] = timezone.now()
+
+        # Инлайн-виджет прогноза 1X2 прямо на карточке (без перехода на
+        # страницу матча) — запрос пользователя 2026-08-29. Считаем bulk'ом
+        # на уже отпагинированную страницу (context[context_object_name] —
+        # только 20 матчей максимум), не на весь queryset, см. докстринг
+        # bulk_prediction_data(). Атрибуты вешаются прямо на объекты Match
+        # текущей страницы — так шаблон обращается к ним как к обычным
+        # полям (match.list_prediction_counts), без кастомного dict-lookup
+        # фильтра в Django templates.
+        page_matches = context.get(self.context_object_name) or []
+        prediction_data = bulk_prediction_data(page_matches, self.request.user)
+        for match in page_matches:
+            data = prediction_data.get(match.id)
+            if data:
+                match.list_prediction_counts = data['counts']
+                match.list_my_prediction = data['my_prediction']
+
+        # "Оценить" на карточке матча вело в тупик для тех, кто уже оценил
+        # этот матч — EvaluateContextView.dispatch() всё равно редиректит
+        # такого пользователя назад с "Вы уже оценили этот матч". Отражаем
+        # это в списке сразу, одним bulk-запросом на страницу (20 матчей),
+        # а не N запросами по одному на карточку.
+        if self.request.user.is_authenticated:
+            evaluated_match_ids = set(
+                EvaluationSession.objects.filter(
+                    user=self.request.user,
+                    match_id__in=[m.id for m in page_matches],
+                    status='completed',
+                ).values_list('match_id', flat=True)
+            )
+            for match in page_matches:
+                match.user_has_evaluated = match.id in evaluated_match_ids
+        else:
+            for match in page_matches:
+                match.user_has_evaluated = False
+
         return context
 
 class MatchDetailView(DetailView):
