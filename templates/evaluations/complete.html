@@ -86,7 +86,7 @@
 
         <!-- Action Buttons -->
         <div class="space-y-2">
-            <a href="{% url 'matches:list' %}" class="btn btn-primary btn-sm w-full">
+            <a href="{% url 'matches:list' %}?status=votable" class="btn btn-primary btn-sm w-full">
                 <i class="ti ti-trophy text-sm"></i> Оценить другой матч
             </a>
             <a href="{% url 'core:home' %}" class="btn btn-ghost btn-sm w-full">

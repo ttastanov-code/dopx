@@ -77,3 +77,62 @@ def user_prediction(user, match) -> MatchPrediction | None:
     if not user or not user.is_authenticated:
         return None
     return MatchPrediction.objects.filter(match=match, user=user).first()
+
+
+def bulk_prediction_data(matches, user) -> dict:
+    """
+    Bulk-версия prediction_counts()/user_prediction() выше — для встроенного
+    компактного виджета прогноза прямо на карточке матча в списке
+    (matches/views.py::MatchListView, задача "прогноз без перехода на
+    страницу матча"). Без неё каждая карточка страницы делала бы свои
+    2 запроса (agregate + прогноз пользователя) — до 40 лишних запросов на
+    страницу из 20 матчей. Здесь на всю страницу — максимум 2 запроса
+    суммарно, и только для матчей, где match.is_prediction_open() (обычно
+    считанные единицы — окно прогноза всего 5 дней, см.
+    Match.PREDICTION_WINDOW_DAYS).
+
+    Возвращает {match.id: {'counts': dict, 'my_prediction': MatchPrediction|None}}
+    — ключи ТОЛЬКО для матчей с открытым окном прогноза, остальные в списке
+    просто не должны рисовать виджет (см. шаблон).
+    """
+    open_matches = [m for m in matches if m.is_prediction_open()]
+    if not open_matches:
+        return {}
+    match_ids = [m.id for m in open_matches]
+
+    counts_by_match = {
+        m_id: {'home': 0, 'draw': 0, 'away': 0, 'total': 0, 'home_pct': 0, 'draw_pct': 0, 'away_pct': 0}
+        for m_id in match_ids
+    }
+    rows = (
+        MatchPrediction.objects.filter(match_id__in=match_ids)
+        .values('match_id', 'choice')
+        .annotate(n=Count('id'))
+    )
+    choice_key = {
+        MatchPrediction.CHOICE_HOME: 'home',
+        MatchPrediction.CHOICE_DRAW: 'draw',
+        MatchPrediction.CHOICE_AWAY: 'away',
+    }
+    for row in rows:
+        key = choice_key.get(row['choice'])
+        if key:
+            counts_by_match[row['match_id']][key] = row['n']
+    for counts in counts_by_match.values():
+        total = counts['home'] + counts['draw'] + counts['away']
+        counts['total'] = total
+        counts['home_pct'] = round(counts['home'] * 100 / total) if total else 0
+        counts['draw_pct'] = round(counts['draw'] * 100 / total) if total else 0
+        counts['away_pct'] = round(counts['away'] * 100 / total) if total else 0
+
+    my_predictions = {}
+    if user and user.is_authenticated:
+        my_predictions = {
+            p.match_id: p
+            for p in MatchPrediction.objects.filter(match_id__in=match_ids, user=user)
+        }
+
+    return {
+        m_id: {'counts': counts_by_match[m_id], 'my_prediction': my_predictions.get(m_id)}
+        for m_id in match_ids
+    }

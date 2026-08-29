@@ -1,0 +1,13 @@
+{% comment %}
+Компактный логин-промпт для инлайн-виджета прогноза на карточке в списке
+матчей — возвращается вместо _prediction_widget_compact.html, если
+проголосовал неавторизованный пользователь (см. predictions/views.py::
+predict). Тот же паттерн, что и полноразмерный _prediction_login_prompt.html.
+{% endcomment %}
+<div id="prediction-widget-{{ match.id }}"
+     class="mt-2 pt-2 border-t border-base-300"
+     onclick="event.stopPropagation()">
+    <a href="{% url 'users:login' %}" class="btn btn-primary btn-xs w-full">
+        <i class="ti ti-login"></i> Войти, чтобы спрогнозировать
+    </a>
+</div>

@@ -17,8 +17,10 @@ from functools import partial
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.core import signing
 from django.db import transaction
 from django.shortcuts import get_object_or_404, redirect
+from django.urls import reverse
 from django.utils import timezone
 from django.views.generic import FormView, TemplateView
 
@@ -569,10 +571,29 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
             xp_result = xp.add_xp(final_step_gained)
             _track_wizard_xp(self.request, final_step_gained)
 
-            self.request.session['last_evaluation_reward'] = {
-                'xp_gained': round(self.request.session.pop('wizard_xp_earned', 0), 1),
-                'trust_delta': round(new_trust - old_trust, 3),
-            }
+            # БАГ, КОТОРЫЙ ТУТ БЫЛ (жалоба пользователя, 2026-08-29): награда
+            # хранилась одноразовым session.pop() и читалась в
+            # EvaluationCompleteView.get_context_data() строго ОДНИМ
+            # следующим GET-запросом. На практике страница "Матч оценён!"
+            # показывала "+—" XP и "—" Trust Score, хотя оба реально
+            # начислились (прогресс-бар уровня ниже был не нулевой) — session
+            # ключ кто-то съедал раньше, чем рендерился видимый пользователю
+            # ответ: antivirus/браузерный prescan редиректа, повторный
+            # HEAD-запрос (Django сам маппит HEAD на get() у TemplateView),
+            # двойной сабмит формы и т.п. — ровно тот класс багов, для
+            # которого одноразовый session.pop() как канал передачи данных
+            # некорректен: он выживает ровно один конкретный HTTP-запрос,
+            # а не "один взгляд пользователя на страницу".
+            #
+            # Вместо сессии — подписанный токен в query-string самого
+            # редиректа (см. return ниже): идемпотентен (сколько раз ни
+            # открой этот URL — числа те же, ничего не "съедается"),
+            # подписан (signing.dumps, тот же паттерн, что get_signed_cookie
+            # у реферальной cookie в partners/views.py) — пользователь не
+            # может подделать цифры в адресной строке, чтобы похвастаться
+            # выдуманной наградой.
+            xp_gained = round(self.request.session.pop('wizard_xp_earned', 0), 1)
+            trust_delta = round(new_trust - old_trust, 3)
 
             # 5. Уведомления о повышении уровня (поддержка скачков через
             #    несколько уровней сразу) и об изменении Trust Score.
@@ -663,7 +684,15 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
             logger.error(f"Ошибка постановки задачи агрегатов: {e}")
 
         messages.success(self.request, '🎉 Оценка завершена! Спасибо за вклад.')
-        return redirect('evaluations:complete', match_id=self.match.id)
+
+        # Награду передаём подписанным токеном в query-string, а не через
+        # session — см. комментарий у объявления xp_gained/trust_delta выше.
+        reward_token = signing.dumps(
+            {'xp_gained': xp_gained, 'trust_delta': trust_delta},
+            salt='evaluations.reward',
+        )
+        complete_url = reverse('evaluations:complete', args=[self.match.id])
+        return redirect(f'{complete_url}?r={reward_token}')
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -684,10 +713,19 @@ class EvaluationCompleteView(LoginRequiredMixin, TemplateView):
         if match_id:
             context['match'] = get_object_or_404(Match, id=match_id)
 
-        # pop(), не get() — значение одноразовое: обновление страницы или
-        # прямой заход на /complete/<match_id>/ без свежего прохождения не
-        # должен показать чужие/стухшие цифры.
-        reward = self.request.session.pop('last_evaluation_reward', None)
+        # Подписанный токен в ?r= вместо одноразового session.pop() — см.
+        # комментарий в EvaluateMatchFinalView.form_valid(). Токен можно
+        # читать сколько угодно раз (обновление страницы больше не съедает
+        # цифры), но max_age=300 не даёт пользователю держать вкладку открытой
+        # неделями и показывать чужие/стухшие значения, а подпись не даёт
+        # подделать цифры руками через адресную строку.
+        reward = None
+        token = self.request.GET.get('r')
+        if token:
+            try:
+                reward = signing.loads(token, salt='evaluations.reward', max_age=300)
+            except (signing.BadSignature, signing.SignatureExpired):
+                reward = None
         context['xp_gained'] = reward['xp_gained'] if reward else None
         context['trust_delta'] = reward['trust_delta'] if reward else None
 

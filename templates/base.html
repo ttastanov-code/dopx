@@ -104,7 +104,15 @@
     <script>
         const savedTheme = localStorage.getItem('theme') || 'light';
         document.documentElement.setAttribute('data-theme', savedTheme);
+        // Берём восстановление scroll-позиции под свой контроль как можно
+        // раньше (до первой отрисовки) — см. static/js/scroll-restore.js
+        // про то, почему браузерное 'auto' здесь не срабатывает надёжно.
+        if ('scrollRestoration' in history) {
+            history.scrollRestoration = 'manual';
+        }
     </script>
+    <script defer src="{% static 'js/scroll-restore.js' %}"></script>
+    <script defer src="{% static 'js/smart-back-links.js' %}"></script>
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

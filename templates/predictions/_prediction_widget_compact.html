@@ -1,0 +1,69 @@
+{% comment %}
+Компактная версия виджета прогноза 1X2 (см. _prediction_widget.html) —
+встраивается прямо в карточку матча в списке (matches/list.html), чтобы
+прогноз можно было сделать не открывая страницу матча (запрос
+пользователя, 2026-08-29). Тот же id/hx-swap="outerHTML" паттерн, что и
+у полного виджета: predictions/views.py::predict получает compact=1 в
+POST (см. hx-vals у кнопок ниже) и в ответ рендерит именно этот партиал,
+а не полноразмерный.
+
+Контекст: match, counts, my_prediction — как у _prediction_widget.html.
+
+Вся карточка матча — это <a href="..."> (см. matches/list.html), поэтому
+контейнер виджета останавливает всплытие клика (onclick="event.
+stopPropagation()") — иначе клик по кнопке прогноза уводил бы на страницу
+матча вместо отправки голоса, тот же приём, что уже используется у кнопки
+"Оценить" на той же карточке.
+{% endcomment %}
+<div id="prediction-widget-{{ match.id }}"
+     class="grid grid-cols-3 gap-1 sm:gap-1.5 mt-2 pt-2 border-t border-base-300"
+     onclick="event.stopPropagation()">
+    <button type="button"
+            {% if match.is_prediction_open %}
+            hx-post="{% url 'predictions:predict' match.id %}"
+            hx-vals='{"choice": "1", "compact": "1"}'
+            hx-target="#prediction-widget-{{ match.id }}"
+            hx-swap="outerHTML"
+            {% else %}
+            disabled
+            {% endif %}
+            class="flex flex-col items-center gap-0.5 py-1 px-1 rounded-lg border transition-all
+                   {% if match.final_result == '1' %}border-success bg-success/10
+                   {% elif my_prediction.choice == '1' %}border-primary bg-primary/5
+                   {% else %}border-base-300{% endif %}">
+        <span class="text-[9px] font-semibold opacity-60 truncate max-w-full">П1</span>
+        <span class="text-xs font-bold">{{ counts.home_pct }}%</span>
+    </button>
+    <button type="button"
+            {% if match.is_prediction_open %}
+            hx-post="{% url 'predictions:predict' match.id %}"
+            hx-vals='{"choice": "X", "compact": "1"}'
+            hx-target="#prediction-widget-{{ match.id }}"
+            hx-swap="outerHTML"
+            {% else %}
+            disabled
+            {% endif %}
+            class="flex flex-col items-center gap-0.5 py-1 px-1 rounded-lg border transition-all
+                   {% if match.final_result == 'X' %}border-success bg-success/10
+                   {% elif my_prediction.choice == 'X' %}border-primary bg-primary/5
+                   {% else %}border-base-300{% endif %}">
+        <span class="text-[9px] font-semibold opacity-60">Х</span>
+        <span class="text-xs font-bold">{{ counts.draw_pct }}%</span>
+    </button>
+    <button type="button"
+            {% if match.is_prediction_open %}
+            hx-post="{% url 'predictions:predict' match.id %}"
+            hx-vals='{"choice": "2", "compact": "1"}'
+            hx-target="#prediction-widget-{{ match.id }}"
+            hx-swap="outerHTML"
+            {% else %}
+            disabled
+            {% endif %}
+            class="flex flex-col items-center gap-0.5 py-1 px-1 rounded-lg border transition-all
+                   {% if match.final_result == '2' %}border-success bg-success/10
+                   {% elif my_prediction.choice == '2' %}border-primary bg-primary/5
+                   {% else %}border-base-300{% endif %}">
+        <span class="text-[9px] font-semibold opacity-60 truncate max-w-full">П2</span>
+        <span class="text-xs font-bold">{{ counts.away_pct }}%</span>
+    </button>
+</div>
