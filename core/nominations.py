@@ -178,7 +178,7 @@ def get_nominations(*, league=None, season=None) -> list[dict]:
             'key': 'influential_referee',
             'title': 'Главный герой матчей',
             'subtitle': 'Болельщики считают, что этот судья сильнее всех влияет на исход',
-            'icon': 'ti-whistle',
+            'icon': 'ti-gavel',
             'sentiment': 'neutral',
             'entity_kind': 'referee',
             'entity_url_name': 'referees:detail',

@@ -7,24 +7,18 @@ def current_round_squad(request):
     Глобальный контекст для навбара: номер тура для кнопки
     "DOPX Лучшие N-го тура".
 
-    Два источника, по приоритету:
-    1) RoundBestXI.is_final=True — тур ОФИЦИАЛЬНО зафиксирован (взводится
-       периодической Celery-задачей round_squad.tasks.recompute_active_rounds,
-       раз в 15 минут, см. CELERY_BEAT_SCHEDULE). Самый надёжный источник:
-       номер уже не сдвинется, а RoundBestXI реально просчитан.
-    2) Если такого тура ещё нет — round_squad/services.py::
-       resolve_practically_closed_tour (та же 75%-эвристика "тур на
-       практике сыгран", что определяет дефолтный тур для страницы
-       /round/ без явного номера в URL). Без этого запасного варианта
-       кнопка простаивала бы на дефолтном "Тур недели" до первого прогона
-       Celery-задачи после того, как тур фактически завершился, — тур
-       УЖЕ закрыт по факту (по данным Match), просто RoundBestXI для него
-       ещё не создан/не зафиксирован.
+    Номер берётся из round_squad/services.py::resolve_current_tour — той
+    же общей функции, которую использует и страница /round/ без явного
+    номера тура в URL (round_squad/views.py::_resolve_latest_tour). До
+    2026-08-31 у этих двух мест были РАЗНЫЕ приоритеты (см. докстринг
+    resolve_current_tour про конкретный баг, пойманный на реальном
+    календаре с переносом целого тура) — кнопка в шапке могла показывать
+    один тур, а страница /round/ без номера — уже другой. Теперь оба места
+    отвечают на вопрос "какой тур сейчас" одинаково.
 
-    В обоих случаях ссылка в навбаре ведёт на этот тур ЯВНО (через
-    season_id/tour в URL), а не на round_squad:round без параметров —
-    иначе номер в кнопке и тур, который реально откроется по клику,
-    могли бы разойтись.
+    Ссылка в навбаре ведёт на этот тур ЯВНО (через season_id/tour в URL),
+    а не на round_squad:round без параметров — иначе номер в кнопке и тур,
+    который реально откроется по клику, могли бы разойтись.
 
     Импорты внутри функции, а не на уровне модуля — context_processors.py
     подключается в settings.py до полной инициализации app registry,
@@ -32,24 +26,14 @@ def current_round_squad(request):
     """
     from types import SimpleNamespace
 
-    from round_squad.models import RoundBestXI
-    from round_squad.services import resolve_practically_closed_tour
+    from round_squad.services import resolve_current_tour
     from seasons.models import Season
 
     season = Season.get_primary_active()
     if season is None:
         return {}
 
-    round_xi = (
-        RoundBestXI.objects
-        .filter(season=season, is_final=True)
-        .order_by('-tour')
-        .first()
-    )
-    if round_xi is not None:
-        return {'nav_current_round': round_xi}
-
-    tour = resolve_practically_closed_tour(season)
+    tour = resolve_current_tour(season)
     if tour is None:
         return {}
     return {

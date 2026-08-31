@@ -3,69 +3,36 @@
 {% load match_extras %}
 
 {% block content %}
-<!-- === PROGRESS BAR === -->
-<div class="max-w-4xl mx-auto mb-6 px-3">
+<!-- === PROGRESS === -->
+<div class="max-w-2xl mx-auto mb-5 px-3">
     {% include 'evaluations/_evaluation_progress.html' with step=5 total_steps=6 progress=progress %}
 </div>
 
-<!-- === MATCH INFO === -->
-<div class="max-w-4xl mx-auto mb-6 px-3">
-    <div class="card bg-base-100 border border-base-200 shadow-sm">
-        <div class="card-body p-3">
-            <div class="flex items-center justify-between gap-1">
-                <div class="flex flex-col items-center gap-0.5 flex-1 min-w-0">
-                    {% if match.home_team.logo_url %}
-                    <img src="{{ match.home_team.logo_url }}" alt="{{ match.home_team.name }}" class="w-8 h-8 object-contain">
-                    {% else %}
-                    <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-xs">
-                        {{ match.home_team.name|first|upper }}
-                    </div>
-                    {% endif %}
-                    <span class="font-semibold text-[10px] text-center truncate w-full max-w-[80px]">
-                        {{ match.home_team.name|truncatechars:12 }}
-                    </span>
-                </div>
-
-                <div class="text-center px-2 py-1 bg-base-200 rounded-lg shrink-0 min-w-[65px]">
-                    <div class="text-sm font-bold font-mono">{% render_score match.home_score match.away_score %}</div>
-                    <div class="text-[8px] text-base-content/50">{{ match.start_time|date:"d.m" }}</div>
-                </div>
-
-                <div class="flex flex-col items-center gap-0.5 flex-1 min-w-0">
-                    <span class="font-semibold text-[10px] text-center truncate w-full max-w-[80px] order-2">
-                        {{ match.away_team.name|truncatechars:12 }}
-                    </span>
-                    {% if match.away_team.logo_url %}
-                    <img src="{{ match.away_team.logo_url }}" alt="{{ match.away_team.name }}" class="w-8 h-8 object-contain order-1">
-                    {% else %}
-                    <div class="w-8 h-8 rounded-full bg-secondary/10 flex items-center justify-center font-bold text-secondary text-xs order-1">
-                        {{ match.away_team.name|first|upper }}
-                    </div>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
+<!-- === ШАПКА МАТЧА === -->
+<div class="max-w-2xl mx-auto mb-5 px-3">
+    <div class="wz-hero-card">
+        {% include 'evaluations/_wizard_match_header.html' with match=match %}
     </div>
 </div>
 
 <!-- === FORM CARD === -->
-<div class="max-w-4xl mx-auto px-3 overflow-x-hidden">
-    <div class="card bg-base-100 border border-base-200 shadow-lg">
-        <div class="card-body p-4">
-            <div class="text-center mb-4">
-                <div class="w-12 h-12 rounded-2xl bg-neutral/10 flex items-center justify-center mx-auto mb-2">
-                    <i class="ti ti-gavel text-xl text-neutral"></i>
+<div class="max-w-2xl mx-auto px-3">
+    <div class="wz-shell card bg-base-100 border border-base-200 shadow-sm">
+        <div class="card-body p-4 sm:p-6">
+            <div class="text-center mb-5 sm:mb-6">
+                <div class="w-14 h-14 rounded-2xl bg-neutral/10 flex items-center justify-center mx-auto mb-3">
+                    <i class="ti ti-gavel text-2xl text-neutral"></i>
                 </div>
-                <h2 class="text-lg font-bold mb-1">Оценка судейства</h2>
+                <h2 class="text-xl sm:text-2xl font-extrabold mb-1">Оценка судейства</h2>
                 {% comment %}
                 match.referee показывается явно, как на шаге "Тренеры" — не
                 просим оценить "главного судью" вслепую.
                 {% endcomment %}
                 {% if match.referee %}
                 <p class="text-sm font-semibold">{{ match.referee.first_name }} {{ match.referee.last_name }}</p>
-                <p class="text-xs text-base-content/60">Оцените работу главного судьи.</p>
+                <p class="text-xs text-base-content/60">Оцените работу главного судьи</p>
                 {% else %}
-                <p class="text-xs text-base-content/60">Оцените работу главного судьи.</p>
+                <p class="text-sm text-base-content/60">Оцените работу главного судьи</p>
                 {% endif %}
             </div>
 
@@ -73,51 +40,51 @@
                 {% csrf_token %}
 
                 <!-- Влияние на матч -->
-                <div>
-                    <div class="flex justify-between mb-1">
-                        <label class="text-xs font-semibold flex items-center gap-0.5">
-                            <i class="ti ti-scale text-neutral text-sm"></i> Влияние на матч
+                <div class="wz-accent-neutral wz-slider-card">
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="text-sm font-semibold flex items-center gap-1.5">
+                            <i class="ti ti-scale text-neutral"></i> Влияние на матч
                             {% include 'components/_tooltip_icon.html' with text='Влияние на матч: 0=незаметен, 50=норма, 100=решил исход' %}
                         </label>
-                        <span class="text-sm font-bold text-neutral" id="influence_value">50</span>
+                        <span class="wz-slider-card__value" id="influence_value">50</span>
                     </div>
                     <input type="range" name="influence_score" min="0" max="100" value="50"
-                           class="range range-neutral range-xs w-full" step="5"
+                           class="wizard-slider" step="5"
                            oninput="document.getElementById('influence_value').textContent = this.value">
-                    <div class="flex justify-between text-[8px] text-base-content/40 mt-1 px-1">
+                    <div class="flex justify-between text-[10px] text-base-content/40 mt-1.5 px-1">
                         <span>0</span><span>50</span><span>100</span>
                     </div>
                 </div>
 
                 <!-- Качество решений -->
-                <div>
-                    <div class="flex justify-between mb-1">
-                        <label class="text-xs font-semibold flex items-center gap-0.5">
-                            <i class="ti ti-checks text-success text-sm"></i> Качество решений
+                <div class="wz-accent-success wz-slider-card">
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="text-sm font-semibold flex items-center gap-1.5">
+                            <i class="ti ti-checks text-success"></i> Качество решений
                             {% include 'components/_tooltip_icon.html' with text='Качество решений: точность свистков, работа с ВАР' %}
                         </label>
-                        <span class="text-sm font-bold text-success" id="quality_value">5</span>
+                        <span class="wz-slider-card__value" id="quality_value">5</span>
                     </div>
                     <input type="range" name="decision_quality" min="1" max="10" value="5"
-                           class="range range-success range-xs w-full"
+                           class="wizard-slider"
                            oninput="document.getElementById('quality_value').textContent = this.value">
-                    <div class="flex justify-between text-[8px] text-base-content/40 mt-1 px-1">
+                    <div class="flex justify-between text-[10px] text-base-content/40 mt-1.5 px-1">
                         <span>1</span><span>5</span><span>10</span>
                     </div>
                 </div>
 
                 <!-- Info Alert -->
-                <div class="alert alert-info rounded-xl py-2">
-                    <i class="ti ti-info-circle text-sm flex-shrink-0"></i>
-                    <span class="text-[10px]">0–30: почти не влиял · 31–70: обычное влияние · 71–100: существенно повлиял на игру.</span>
+                <div class="alert alert-info rounded-xl">
+                    <i class="ti ti-info-circle flex-shrink-0"></i>
+                    <span class="text-xs">0–30: почти не влиял · 31–70: обычное влияние · 71–100: существенно повлиял на игру</span>
                 </div>
 
                 <!-- Navigation Buttons -->
-                <div class="flex gap-2 pt-2">
-                    <a href="{% url 'evaluations:coaches' match.id %}" class="btn btn-ghost btn-sm flex-1">
+                <div class="wz-sticky-nav flex gap-2">
+                    <a href="{% url 'evaluations:coaches' match.id %}" class="btn btn-ghost btn-lg flex-1">
                         <i class="ti ti-arrow-left"></i> Назад
                     </a>
-                    <button type="submit" class="btn btn-primary btn-sm flex-1">
+                    <button type="submit" class="btn btn-primary btn-lg flex-1">
                         Далее <i class="ti ti-arrow-right"></i>
                     </button>
                 </div>

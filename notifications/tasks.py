@@ -14,6 +14,8 @@ notify_voting_closing_soon) — fan-out: родительская задача �
 from __future__ import annotations
 
 import logging
+import smtplib
+import socket
 from datetime import timedelta
 
 from celery import shared_task
@@ -24,6 +26,50 @@ from django.template.loader import render_to_string
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
+
+# Сетевые/протокольные сбои при отправке письма — DNS не резолвится (ровно
+# `socket.gaierror: [Errno 8] nodename nor servname provided` из инцидента),
+# TCP оборвался (`ConnectionResetError`/`Errno 54` — подкласс ConnectionError),
+# сервер разорвал соединение. Всё это временно: та же попытка через
+# минуту-другую вполне может пройти (см. `_send_email_to_user`, параметр
+# `raise_on_transient`). Намеренно НЕ голый `OSError` — он перехватил бы и
+# файловые/прочие ошибки, никак не связанные с сетью (например, сбой при
+# рендеринге шаблона письма), и мы бы бессмысленно ретраили то, что не
+# починится повторной попыткой. И НЕ включает smtplib.SMTPRecipientsRefused/
+# SMTPSenderRefused/SMTPDataError — это ПОСТОЯННЫЕ отказы (несуществующий
+# адрес, письмо отклонено содержимым), повторная попытка с теми же данными
+# провалится точно так же, ретраить их бессмысленно.
+TRANSIENT_EMAIL_ERRORS = (
+    socket.gaierror,
+    ConnectionError,
+    TimeoutError,
+    smtplib.SMTPServerDisconnected,
+    smtplib.SMTPConnectError,
+    smtplib.SMTPHeloError,
+)
+
+
+class TransientEmailError(Exception):
+    """
+    Сетевой/протокольный сбой при отправке письма (см. `TRANSIENT_EMAIL_ERRORS`).
+
+    БАГ, КОТОРЫЙ ТУТ БЫЛ (Sentry, 2026-08-30 — see incident): `_send_email_
+    to_user` ловил ЛЮБОЕ исключение внутри себя и просто возвращал False —
+    ни одна вызывающая celery-задача не узнавала, что отправка сорвалась
+    из-за временного сбоя (ноутбук с dev-сервером заснул/потерял сеть на
+    ночь, пока Celery Beat продолжал тикать по расписанию), поэтому письмо
+    терялось насовсем, а не переоправлялось. Теперь `_send_email_to_user`
+    поднимает это исключение, если вызвана с `raise_on_transient=True`, —
+    вызывающая задача ловит его и ретраит через `self.retry(...)` с
+    backoff (см. `send_badge_earned_notification`, `_send_match_email_chunk`
+    и т.д.). Для мест, где нельзя безопасно ретраить целиком (циклы по
+    множеству пользователей в одной задаче — `notify_prediction_results` и
+    похожие), исключение НЕ поднимается (используется дефолт
+    `raise_on_transient=False`); там устойчивость к сбоям обеспечена иначе:
+    "email_sent_at" проставляется только после реального успеха отправки, и
+    непровалившиеся ранее адресаты естественным образом подхватываются
+    следующим плановым прогоном той же периодической задачи.
+    """
 
 # Сколько получателей в одной "пачке" при fan-out массовой рассылки —
 # см. пункт 2 докстринга модуля.
@@ -75,6 +121,7 @@ def _send_email_to_user(
     context: dict,
     notification_type: str | None = None,
     force: bool = False,
+    raise_on_transient: bool = False,
 ) -> bool:
     """
     Безопасная отправка email.
@@ -85,6 +132,12 @@ def _send_email_to_user(
         1 докстринга модуля). Игнорируется, если `force=True`.
     :param force: игнорирует настройки пользователя (для верификации,
         сброса пароля и т.д.).
+    :param raise_on_transient: True — при сетевом/протокольном сбое (см.
+        `TRANSIENT_EMAIL_ERRORS`) поднять `TransientEmailError` вместо того,
+        чтобы молча вернуть False. Включать там, где вызывающая
+        celery-задача обрабатывает ОДНОГО получателя (или небольшую пачку) и
+        может безопасно ретраить именно эту задачу — см. докстринг
+        `TransientEmailError`.
     """
     if not user or not user.email:
         logger.warning("⚠️ Cannot send email: user or email is missing")
@@ -125,6 +178,17 @@ def _send_email_to_user(
 
         logger.info(f"✅ Email sent successfully to {user.email}: {subject}")
         return True
+    except TRANSIENT_EMAIL_ERRORS as e:
+        # warning, не error — это ожидаемо восстанавливаемый сбой (см.
+        # TransientEmailError), а не баг в коде. logger.error() шёл бы в
+        # Sentry с тем же уровнем тревожности, что и настоящая поломка.
+        logger.warning(
+            f"⚠️ Временный сбой при отправке письма {user.email} (сеть/SMTP, "
+            f"похоже на обрыв соединения, а не ошибку в коде): {type(e).__name__}: {e}"
+        )
+        if raise_on_transient:
+            raise TransientEmailError(str(e)) from e
+        return False
     except Exception as e:
         logger.error(f"❌ Failed to send email to {user.email}: {type(e).__name__}: {e}")
         return False
@@ -147,7 +211,7 @@ def send_badge_earned_notification(self, user_id: str, badge_type: str, badge_na
         logger.info(f"📤 Processing badge email for {user.username}: {badge_name}")
         _send_email_to_user(
             user, f'🎖️ Новое достижение: {badge_name}', 'emails/badge_earned.html',
-            {'badge_name': badge_name}, notification_type='new_badge',
+            {'badge_name': badge_name}, notification_type='new_badge', raise_on_transient=True,
         )
         return True
     except User.DoesNotExist:
@@ -155,7 +219,7 @@ def send_badge_earned_notification(self, user_id: str, badge_type: str, badge_na
         return False
     except Exception as e:
         logger.error(f"❌ Error in send_badge_earned_notification: {e}", exc_info=True)
-        raise self.retry(exc=e, countdown=60)
+        raise self.retry(exc=e, countdown=60 * (2 ** self.request.retries))
 
 
 @shared_task(bind=True, max_retries=3, countdown=10)
@@ -168,13 +232,14 @@ def send_level_up_notification(self, user_id: str, new_level: int, total_xp: int
         _send_email_to_user(
             user, f'⬆️ Вы достигли уровня {new_level}!', 'emails/level_up.html',
             {'new_level': new_level, 'total_xp': total_xp}, notification_type='level_up',
+            raise_on_transient=True,
         )
         return True
     except User.DoesNotExist:
         return False
     except Exception as e:
         logger.error(f"❌ Error in send_level_up_notification: {e}", exc_info=True)
-        raise self.retry(exc=e, countdown=60)
+        raise self.retry(exc=e, countdown=60 * (2 ** self.request.retries))
 
 
 @shared_task(bind=True, max_retries=3, countdown=5)
@@ -186,11 +251,14 @@ def send_email_verification(self, user_id: str, token: str):
         site_url = getattr(settings, 'SITE_URL', 'https://dopx.kz')
         verify_url = f"{site_url}/users/verify-email/{token}/"
 
-        _send_email_to_user(user, '👋 Подтвердите email на DOPX', 'emails/verify_email.html', {'verify_url': verify_url}, force=True)
+        _send_email_to_user(
+            user, '👋 Подтвердите email на DOPX', 'emails/verify_email.html', {'verify_url': verify_url},
+            force=True, raise_on_transient=True,
+        )
         return True
     except Exception as e:
         logger.error(f"❌ Error in send_email_verification: {e}", exc_info=True)
-        raise self.retry(exc=e, countdown=60)
+        raise self.retry(exc=e, countdown=60 * (2 ** self.request.retries))
 
 
 @shared_task(bind=True, max_retries=3, rate_limit='60/m')
@@ -207,6 +275,20 @@ def _send_match_email_chunk(
     модуля). `rate_limit='60/m'` — троттлинг на уровне Celery ограничивает,
     сколько ТАКИХ пачек может исполняться в минуту суммарно по всем
     воркерам, независимо от того, сколько пачек поставлено в очередь сразу.
+
+    Ретраи при сетевых сбоях (см. `TransientEmailError`): это самый
+    высокообъёмный путь доставки писем в проекте — через него идут
+    voting_open/voting_closing/prediction_closing, то есть большинство
+    реальных email-уведомлений. `raise_on_transient=True` — при обрыве
+    DNS/TCP посреди цикла прерываем пачку и ретраим её целиком через
+    self.retry с экспоненциальным backoff, вместо того чтобы тихо потерять
+    письма всем, кто шёл в списке ПОСЛЕ сбойнувшего адреса (именно так
+    терялись письма в инциденте 2026-08-30 — Sentry поймал gaierror/
+    SMTPServerDisconnected, а задача просто продолжала цикл дальше, будто
+    ничего не случилось). Компромисс: получатели из ЭТОЙ пачки (≤50 chelovek,
+    см. BULK_EMAIL_CHUNK_SIZE), которым письмо уже ушло до обрыва, при
+    ретрае получат его повторно — безобидный дубль, не критичная операция,
+    дешевле, чем насовсем потерянные письма.
     """
     from matches.models import Match
     from users.models import User
@@ -218,9 +300,19 @@ def _send_match_email_chunk(
 
     sent = 0
     users = User.objects.filter(id__in=user_ids, is_verified=True, email__isnull=False)
-    for user in users:
-        if _send_email_to_user(user, subject, template_name, {'match': match}, notification_type=notification_type):
-            sent += 1
+    try:
+        for user in users:
+            if _send_email_to_user(
+                user, subject, template_name, {'match': match},
+                notification_type=notification_type, raise_on_transient=True,
+            ):
+                sent += 1
+    except TransientEmailError as e:
+        logger.warning(
+            f"_send_match_email_chunk: сетевой сбой, ретраим пачку целиком "
+            f"({sent} уже отправлено в этой попытке до обрыва): {e}"
+        )
+        raise self.retry(exc=e, countdown=60 * (2 ** self.request.retries))
     return sent
 
 
@@ -728,12 +820,27 @@ def notify_prediction_results(self):
         notified = 0
 
         for match in matches:
-            already_notified = Notification.objects.filter(
-                notification_type='prediction_result', related_match=match,
+            # БАГ, КОТОРЫЙ ТУТ БЫЛ (Sentry-инцидент 2026-08-30 — см.
+            # TransientEmailError): дедуп раньше смотрел на "есть ли ВООБЩЕ
+            # Notification(prediction_result) для этой пары" — а
+            # email_sent_at проставлялся сразу при bulk_create, ДО попытки
+            # реальной отправки письма. Если письмо срывалось из-за сетевого
+            # сбоя (DNS/обрыв соединения — ровно то, что поймал Sentry, пока
+            # ноутбук с dev-сервером спал), запись всё равно оставалась
+            # "уже уведомлён" навсегда — следующий прогон (через 30 минут)
+            # этого пользователя больше НИКОГДА не трогал. Письмо терялось
+            # без возможности когда-либо переотправиться. Теперь: дедуп — по
+            # УЖЕ ОТПРАВЛЕННЫМ (email_sent_at не пусто), а не по самому
+            # факту существования записи; уже созданная, но не отправленная
+            # (email_sent_at пуст) запись — переиспользуется, чтобы не
+            # плодить вторую in-app-строку на того же пользователя, и
+            # получает email_sent_at ТОЛЬКО после реального успеха отправки.
+            already_emailed = Notification.objects.filter(
+                notification_type='prediction_result', related_match=match, email_sent_at__isnull=False,
             ).values('user_id')
             predictions = list(
                 MatchPrediction.objects.filter(match=match)
-                .exclude(user_id__in=already_notified)
+                .exclude(user_id__in=already_emailed)
                 .select_related('user')
             )
             if not predictions:
@@ -747,6 +854,15 @@ def notify_prediction_results(self):
                 '2': f'П2 ({match.away_team.name})',
             }
 
+            existing_by_user = {
+                n.user_id: n
+                for n in Notification.objects.filter(
+                    notification_type='prediction_result', related_match=match,
+                    user_id__in=[pred.user_id for pred in predictions],
+                )
+            }
+
+            notif_by_user = {}
             notifications_to_create = []
             for pred in predictions:
                 is_correct = pred.is_correct  # bool, т.к. match.final_result уже точно известен (status='finished')
@@ -756,25 +872,31 @@ def notify_prediction_results(self):
                     f"{result_labels.get(match.final_result, '?')}. "
                     f"Ваш прогноз: {your_choice_labels.get(pred.choice, pred.choice)}."
                 )
-                digest_mode = pred.user.get_notification_setting('email_digest_mode', True)
-                notifications_to_create.append(Notification(
+                existing = existing_by_user.get(pred.user_id)
+                if existing:
+                    # Строка от прошлого прогона, которому не удалось отправить
+                    # письмо (email_sent_at пуст, иначе pred не попал бы сюда
+                    # через already_emailed выше) — просто пробуем письмо снова.
+                    notif_by_user[pred.user_id] = existing
+                    continue
+                notif = Notification(
                     user=pred.user,
                     notification_type='prediction_result',
                     title=title,
                     message=message,
                     action_url=action_url,
                     related_match=match,
-                    # НЕ участвует в DIGESTIBLE_NOTIFICATION_TYPES (см. ниже) —
-                    # почтовая отправка идёт немедленно в этом же цикле, а не
-                    # через send_notification_digest, поэтому email_sent_at
-                    # проставляется сразу, а не по digest_mode пользователя.
-                    email_sent_at=timezone.now(),
-                ))
+                    # email_sent_at НЕ проставляем здесь — только после
+                    # реального успеха отправки ниже (см. докстринг-блок
+                    # "БАГ, КОТОРЫЙ ТУТ БЫЛ" выше).
+                )
+                notifications_to_create.append(notif)
+                notif_by_user[pred.user_id] = notif
 
             Notification.objects.bulk_create(notifications_to_create)
 
             for pred in predictions:
-                _send_email_to_user(
+                sent_ok = _send_email_to_user(
                     pred.user,
                     f'{"✅" if pred.is_correct else "📊"} Итог матча {match.home_team.name} vs {match.away_team.name}',
                     'emails/prediction_result.html',
@@ -786,6 +908,10 @@ def notify_prediction_results(self):
                     },
                     notification_type='prediction_result',
                 )
+                if sent_ok:
+                    notif = notif_by_user[pred.user_id]
+                    notif.email_sent_at = timezone.now()
+                    notif.save(update_fields=['email_sent_at', 'updated_at'])
 
             notified += len(predictions)
 

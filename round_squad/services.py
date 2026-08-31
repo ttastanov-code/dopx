@@ -73,6 +73,43 @@ ROUND_CONFIDENT_VOTES_THRESHOLD = 10
 ROUND_CURRENT_TOUR_MIN_COMPLETION_RATIO = 0.75
 
 
+def resolve_current_tour(season) -> int | None:
+    """
+    Единая точка входа "какой тур сейчас показывать по умолчанию" — и для
+    кнопки в шапке (core/context_processors.py::current_round_squad), и
+    для страницы /round/ без явного номера тура в URL
+    (round_squad/views.py::_resolve_latest_tour), и для embed-виджета
+    (round_squad/views.py::round_widget).
+
+    БАГ, КОТОРЫЙ ТУТ БЫЛ (обнаружено 2026-08-31 на реальном календаре: тур
+    22 зафиксирован, тур 23 целиком перенесён на октябрь-ноябрь без единого
+    сыгранного матча, тур 24 сыгран на 7 из 8 матчей): эти два места
+    раньше решали вопрос порознь и расходились в приоритете.
+    core/context_processors.py сначала смотрел на RoundBestXI.is_final и
+    откатывался на resolve_practically_closed_tour() только если в сезоне
+    ВООБЩЕ нет ни одного зафиксированного тура. round_squad/views.py звал
+    resolve_practically_closed_tour() напрямую, вообще не глядя на
+    is_final. В описанной ситуации кнопка в шапке честно показывала «22-й
+    тур» (пока 24-й не зафиксируется — после закрытия окна голосования по
+    его последнему матчу), а страница /round/ без номера в URL уже тихо
+    показывала ПРЕДВАРИТЕЛЬНЫЙ, ещё не зафиксированный состав 24-го — два
+    разных ответа на один и тот же вопрос "какой тур сейчас". Общая
+    функция ниже убирает расхождение: оба места используют один и тот же
+    приоритет (сначала официально зафиксированный тур, и только при его
+    полном отсутствии — эвристика "практически сыгран").
+    """
+    tour = (
+        RoundBestXI.objects
+        .filter(season=season, is_final=True)
+        .order_by('-tour')
+        .values_list('tour', flat=True)
+        .first()
+    )
+    if tour is not None:
+        return tour
+    return resolve_practically_closed_tour(season)
+
+
 def resolve_practically_closed_tour(season) -> int | None:
     """
     Номер тура, который на практике уже сыгран (см. докстринг константы

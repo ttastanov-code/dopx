@@ -3,88 +3,52 @@
 {% load match_extras %}
 
 {% block content %}
-<!-- === PROGRESS BAR === -->
-<div class="max-w-7xl mx-auto mb-6 px-3">
+<!-- === PROGRESS === -->
+<div class="max-w-7xl mx-auto mb-5 px-3">
     {% include 'evaluations/_evaluation_progress.html' with step=3 total_steps=6 progress=progress %}
 </div>
 
-<!-- === MATCH INFO === -->
-<div class="max-w-7xl mx-auto mb-6 px-3">
-    <div class="card bg-base-100 border border-base-200 shadow-sm">
-        <div class="card-body p-3">
-            <div class="flex items-center justify-between gap-1">
-                <div class="flex flex-col items-center gap-0.5 flex-1 min-w-0">
-                    {% if match.home_team.logo_url %}
-                    <img src="{{ match.home_team.logo_url }}" alt="{{ match.home_team.name }}" class="w-8 h-8 object-contain">
-                    {% else %}
-                    <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-xs">
-                        {{ match.home_team.name|first|upper }}
-                    </div>
-                    {% endif %}
-                    <span class="font-semibold text-[10px] text-center truncate w-full max-w-[80px]">
-                        {{ match.home_team.name|truncatechars:12 }}
-                    </span>
-                </div>
-
-                <div class="text-center px-2 py-1 bg-base-200 rounded-lg shrink-0 min-w-[65px]">
-                    <div class="text-sm font-bold font-mono">{% render_score match.home_score match.away_score %}</div>
-                    <div class="text-[8px] text-base-content/50">{{ match.start_time|date:"d.m" }}</div>
-                </div>
-
-                <div class="flex flex-col items-center gap-0.5 flex-1 min-w-0">
-                    <span class="font-semibold text-[10px] text-center truncate w-full max-w-[80px] order-2">
-                        {{ match.away_team.name|truncatechars:12 }}
-                    </span>
-                    {% if match.away_team.logo_url %}
-                    <img src="{{ match.away_team.logo_url }}" alt="{{ match.away_team.name }}" class="w-8 h-8 object-contain order-1">
-                    {% else %}
-                    <div class="w-8 h-8 rounded-full bg-secondary/10 flex items-center justify-center font-bold text-secondary text-xs order-1">
-                        {{ match.away_team.name|first|upper }}
-                    </div>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
+<!-- === ШАПКА МАТЧА === -->
+<div class="max-w-7xl mx-auto mb-5 px-3">
+    <div class="wz-hero-card">
+        {% include 'evaluations/_wizard_match_header.html' with match=match %}
     </div>
 </div>
 
-<!-- === ALERT === -->
-<div class="max-w-7xl mx-auto mb-5 px-3">
-    <div class="alert alert-info rounded-xl py-2">
-        <i class="ti ti-info-circle text-sm flex-shrink-0"></i>
-        <span class="text-[10px]">Оценивайте только тех, кого запомнили</span>
-    </div>
+<div class="max-w-7xl mx-auto px-3 text-center mb-5">
+    <h2 class="text-xl sm:text-2xl font-extrabold mb-1">Оцените игроков</h2>
+    <p class="text-sm text-base-content/60">Оценивайте только тех, кого хорошо запомнили</p>
 </div>
 
 <!-- === FORM === -->
 <form method="post" action="{% url 'evaluations:players' match.id %}" class="max-w-7xl mx-auto px-3" id="players-form">
     {% csrf_token %}
-    
+
     <!-- Live Counter -->
-    <div class="sticky top-16 z-30 mb-4 bg-base-100/95 backdrop-blur border border-base-300 rounded-xl p-2 flex items-center justify-between">
-        <span class="text-xs font-medium flex items-center gap-1">
-            <i class="ti ti-checklist text-primary text-sm"></i>
-            Выбрано: <span class="font-bold" id="counter-value">0</span>
+    <div class="sticky top-16 z-30 mb-5 bg-base-100/95 backdrop-blur border border-base-300 rounded-2xl px-4 py-3 flex items-center justify-between shadow-sm">
+        <span class="text-sm font-bold flex items-center gap-2">
+            <i class="ti ti-checklist text-primary"></i>
+            Выбрано: <span class="text-primary" id="counter-value">0</span>
         </span>
-        <span class="text-[10px] opacity-60">Всего: {{ lineup_players|length }}</span>
+        <span class="text-xs opacity-50 font-medium">из {{ lineup_players|length }} игроков</span>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Домашняя команда -->
         <div class="space-y-4">
-            <h2 class="font-bold text-base flex items-center gap-2 pb-2 border-b border-base-200">
+            <h2 class="font-extrabold text-lg flex items-center gap-2.5 pb-3 border-b-2 border-primary/20">
                 {% if match.home_team.logo_url %}
-                <img src="{{ match.home_team.logo_url }}" class="w-5 h-5 object-contain">
+                <img src="{{ match.home_team.logo_url }}" class="w-6 h-6 object-contain">
                 {% endif %}
-                <span class="truncate text-sm">{{ match.home_team.name }}</span>
+                <span class="truncate">{{ match.home_team.name }}</span>
             </h2>
-            
+
             <!-- Старт -->
             <div>
-                <h3 class="text-[10px] font-bold uppercase tracking-wider text-base-content/50 mb-2 flex items-center gap-1">
-                    <i class="ti ti-circle-filled text-success text-[6px]"></i> Стартовый состав
+                <h3 class="text-xs font-bold uppercase tracking-wider text-success/80 mb-2.5 flex items-center gap-1.5">
+                    <i class="ti ti-circle-filled text-[7px]"></i> Стартовый состав
                 </h3>
-                <div class="space-y-2">
+                <div class="space-y-2.5">
                     {% for lp in lineup_players %}
                     {% if lp.is_starting and lp.lineup.side == 'home' %}
                     {% include 'evaluations/_player_card.html' with lp=lp prefix="player" %}
@@ -92,13 +56,13 @@
                     {% endfor %}
                 </div>
             </div>
-            
+
             <!-- Запас -->
             <div>
-                <h3 class="text-[10px] font-bold uppercase tracking-wider text-base-content/50 mb-2 flex items-center gap-1">
-                    <i class="ti ti-clock text-info text-[6px]"></i> Запасные
+                <h3 class="text-xs font-bold uppercase tracking-wider text-info/80 mb-2.5 flex items-center gap-1.5">
+                    <i class="ti ti-clock text-[11px]"></i> Запасные
                 </h3>
-                <div class="space-y-2">
+                <div class="space-y-2.5">
                     {% for lp in lineup_players %}
                     {% if not lp.is_starting and lp.lineup.side == 'home' %}
                     {% include 'evaluations/_player_card.html' with lp=lp prefix="player" %}
@@ -110,19 +74,19 @@
 
         <!-- Гостевая команда -->
         <div class="space-y-4">
-            <h2 class="font-bold text-base flex items-center gap-2 pb-2 border-b border-base-200">
+            <h2 class="font-extrabold text-lg flex items-center gap-2.5 pb-3 border-b-2 border-secondary/20">
                 {% if match.away_team.logo_url %}
-                <img src="{{ match.away_team.logo_url }}" class="w-5 h-5 object-contain">
+                <img src="{{ match.away_team.logo_url }}" class="w-6 h-6 object-contain">
                 {% endif %}
-                <span class="truncate text-sm">{{ match.away_team.name }}</span>
+                <span class="truncate">{{ match.away_team.name }}</span>
             </h2>
-            
+
             <!-- Старт -->
             <div>
-                <h3 class="text-[10px] font-bold uppercase tracking-wider text-base-content/50 mb-2 flex items-center gap-1">
-                    <i class="ti ti-circle-filled text-success text-[6px]"></i> Стартовый состав
+                <h3 class="text-xs font-bold uppercase tracking-wider text-success/80 mb-2.5 flex items-center gap-1.5">
+                    <i class="ti ti-circle-filled text-[7px]"></i> Стартовый состав
                 </h3>
-                <div class="space-y-2">
+                <div class="space-y-2.5">
                     {% for lp in lineup_players %}
                     {% if lp.is_starting and lp.lineup.side == 'away' %}
                     {% include 'evaluations/_player_card.html' with lp=lp prefix="player" %}
@@ -130,13 +94,13 @@
                     {% endfor %}
                 </div>
             </div>
-            
+
             <!-- Запас -->
             <div>
-                <h3 class="text-[10px] font-bold uppercase tracking-wider text-base-content/50 mb-2 flex items-center gap-1">
-                    <i class="ti ti-clock text-info text-[6px]"></i> Запасные
+                <h3 class="text-xs font-bold uppercase tracking-wider text-info/80 mb-2.5 flex items-center gap-1.5">
+                    <i class="ti ti-clock text-[11px]"></i> Запасные
                 </h3>
-                <div class="space-y-2">
+                <div class="space-y-2.5">
                     {% for lp in lineup_players %}
                     {% if not lp.is_starting and lp.lineup.side == 'away' %}
                     {% include 'evaluations/_player_card.html' with lp=lp prefix="player" %}
@@ -148,11 +112,11 @@
     </div>
 
     <!-- Navigation Buttons -->
-    <div class="flex gap-2 mt-6 pt-4 border-t border-base-200">
-        <a href="{% url 'evaluations:teams' match.id %}" class="btn btn-ghost btn-sm flex-1">
+    <div class="wz-sticky-nav flex gap-2">
+        <a href="{% url 'evaluations:teams' match.id %}" class="btn btn-ghost btn-lg flex-1">
             <i class="ti ti-arrow-left"></i> Назад
         </a>
-        <button type="submit" class="btn btn-primary btn-sm flex-1">
+        <button type="submit" class="btn btn-primary btn-lg flex-1">
             Далее <i class="ti ti-arrow-right"></i>
         </button>
     </div>
