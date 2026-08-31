@@ -181,6 +181,303 @@
         ::-webkit-scrollbar-thumb:hover {
             background: #a3a3a3;
         }
+        /* Кнопка "Назад к X" — единый премиальный стиль сразу на 12
+           страницах деталей (matches/teams/players/coaches/referees/
+           leagues + users:profile/leaderboard). Раньше — голый .btn
+           .btn-ghost.btn-sm, визуально неотличимый от любой другой
+           второстепенной кнопки, да ещё вразнобой: часть страниц
+           прятала текст на мобильных через .hidden.sm:inline, часть —
+           нет (2026-08-31, пользователь: "хочу чтобы кнопки назад были
+           красивее и на мобилке, и на пк"). Теперь единый .back-link:
+           стрелка в акцентном кружке слева, текст виден всегда (тексты
+           короткие — "Назад к матчам"/"Назад к профилю" — влезают и на
+           мобильном), при hover/focus кружок со стрелкой "уезжает"
+           влево на 3px — классический back-паттерн премиальных
+           интерфейсов (Apple/Linear/Stripe). data-back-link не трогаем —
+           умный history.back() (static/js/smart-back-links.js) висит на
+           атрибуте, а не на классах. */
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: .55rem;
+            padding: .35rem .9rem .35rem .35rem;
+            border-radius: 9999px;
+            background: var(--color-base-100);
+            border: 1px solid var(--color-base-300);
+            font-size: .8125rem;
+            font-weight: 700;
+            color: var(--color-base-content);
+            box-shadow: 0 1px 2px rgba(0,0,0,.04);
+            transition: border-color .25s ease, box-shadow .25s ease,
+                        background .25s ease, transform .2s cubic-bezier(.16,1,.3,1);
+        }
+        .back-link__icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 1.75rem;
+            height: 1.75rem;
+            border-radius: 9999px;
+            background: color-mix(in oklab, var(--color-primary) 12%, transparent);
+            color: var(--color-primary);
+            flex-shrink: 0;
+            font-size: .9rem;
+            transition: transform .3s cubic-bezier(.16,1,.3,1);
+        }
+        .back-link:hover, .back-link:focus-visible {
+            border-color: color-mix(in oklab, var(--color-primary) 40%, var(--color-base-300));
+            box-shadow: 0 6px 16px -8px color-mix(in oklab, var(--color-primary) 40%, transparent);
+            background: color-mix(in oklab, var(--color-primary) 4%, var(--color-base-100));
+            text-decoration: none;
+        }
+        .back-link:hover .back-link__icon, .back-link:focus-visible .back-link__icon {
+            transform: translateX(-3px);
+        }
+        .back-link:active { transform: scale(.97); }
+        .back-link:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+        @media (max-width: 480px) {
+            .back-link { font-size: .75rem; padding: .3rem .8rem .3rem .3rem; gap: .45rem; }
+            .back-link__icon { width: 1.5rem; height: 1.5rem; font-size: .8rem; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .back-link, .back-link__icon { transition: none !important; }
+            .back-link:hover .back-link__icon, .back-link:focus-visible .back-link__icon { transform: none !important; }
+        }
+
+        /* ============================================================
+           ГЛОБАЛЬНЫЕ КНОПКИ (2026-08-31) — пользователь: "надо все
+           кнопки и элементы по сайту обновить" после .back-link. Это
+           первый и самый заметный шаг: переопределяем daisyUI .btn/
+           .btn-primary/.btn-ghost/.btn-outline/.btn-success/.btn-error/
+           .btn-warning прямо здесь, в одном месте — эффект сразу на
+           весь сайт (145+ мест использования .btn), без правки каждого
+           шаблона. Загружается ПОСЛЕ <link> daisyUI в <head>, поэтому
+           при равной специфичности побеждает по порядку в каскаде —
+           переопределять daisyUI можно теми же селекторами, без
+           !important на фоне/тенях.
+
+           Приём тот же, что уже опробован в match-card/match-hero/
+           back-link: тонированная цветом варианта тень вместо плоской
+           серой, лёгкий подъём при hover (не просто смена цвета),
+           мягкое нажатие (scale) при клике — ощущение физической
+           кнопки, а не плоской веб-формы. */
+        .btn {
+            border-radius: .75rem;
+            font-weight: 700;
+            letter-spacing: -.005em;
+            transition: transform .2s cubic-bezier(.16,1,.3,1),
+                        box-shadow .25s ease,
+                        background .25s ease,
+                        border-color .25s ease,
+                        filter .25s ease;
+        }
+        .btn:not(.btn-circle):not(.btn-square):not(.btn-disabled):not(:disabled):hover {
+            transform: translateY(-1px);
+        }
+        .btn:not(.btn-disabled):not(:disabled):active { transform: translateY(0) scale(.97); }
+        .btn:focus-visible {
+            outline: 2px solid var(--color-primary);
+            outline-offset: 2px;
+        }
+        .btn-circle:not(.btn-disabled):not(:disabled):hover,
+        .btn-square:not(.btn-disabled):not(:disabled):hover {
+            transform: scale(1.06);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--color-primary), color-mix(in oklab, var(--color-primary) 78%, black));
+            border-color: transparent;
+            box-shadow: 0 6px 16px -6px color-mix(in oklab, var(--color-primary) 55%, transparent);
+        }
+        .btn-primary:not(.btn-disabled):not(:disabled):hover {
+            box-shadow: 0 12px 26px -8px color-mix(in oklab, var(--color-primary) 65%, transparent);
+            filter: brightness(1.05);
+        }
+        .btn-success {
+            background: linear-gradient(135deg, var(--color-success), color-mix(in oklab, var(--color-success) 78%, black));
+            border-color: transparent;
+            box-shadow: 0 6px 16px -6px color-mix(in oklab, var(--color-success) 55%, transparent);
+        }
+        .btn-success:not(.btn-disabled):not(:disabled):hover {
+            box-shadow: 0 12px 26px -8px color-mix(in oklab, var(--color-success) 65%, transparent);
+            filter: brightness(1.05);
+        }
+        .btn-error {
+            background: linear-gradient(135deg, var(--color-error), color-mix(in oklab, var(--color-error) 78%, black));
+            border-color: transparent;
+            box-shadow: 0 6px 16px -6px color-mix(in oklab, var(--color-error) 55%, transparent);
+        }
+        .btn-error:not(.btn-disabled):not(:disabled):hover {
+            box-shadow: 0 12px 26px -8px color-mix(in oklab, var(--color-error) 65%, transparent);
+            filter: brightness(1.05);
+        }
+        .btn-warning {
+            background: linear-gradient(135deg, var(--color-warning), color-mix(in oklab, var(--color-warning) 78%, black));
+            border-color: transparent;
+            box-shadow: 0 6px 16px -6px color-mix(in oklab, var(--color-warning) 55%, transparent);
+        }
+        .btn-warning:not(.btn-disabled):not(:disabled):hover {
+            box-shadow: 0 12px 26px -8px color-mix(in oklab, var(--color-warning) 65%, transparent);
+            filter: brightness(1.05);
+        }
+
+        .btn-ghost:not(.btn-disabled):not(:disabled):hover {
+            background: color-mix(in oklab, var(--color-base-content) 7%, transparent);
+        }
+        .btn-outline:not(.btn-disabled):not(:disabled):hover {
+            box-shadow: 0 6px 16px -8px color-mix(in oklab, currentColor 45%, transparent);
+        }
+        .btn.btn-disabled, .btn:disabled {
+            box-shadow: none !important;
+            filter: none !important;
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .btn { transition: none !important; }
+            .btn:hover, .btn:active { transform: none !important; }
+        }
+
+        /* ============================================================
+           ГЛОБАЛЬНЫЕ БЕЙДЖИ/ПИЛЮЛИ (2026-08-31, второй шаг того же
+           обновления). daisyUI .badge-success/-error/-warning/-primary
+           по умолчанию — плоская сплошная заливка. Переводим на тот же
+           язык "тонированная пилюля", что уже используется в
+           .match-card__pill / .md-hero__pill / .back-link: мягкий
+           тонированный фон + жирный цветной текст + тонкое кольцо —
+           читается не менее чётко, но выглядит цельно с остальным
+           сайтом, а не как чужеродный плоский daisyUI-компонент. */
+        .badge {
+            font-weight: 700;
+            letter-spacing: .01em;
+            border-width: 1px;
+        }
+        .badge-primary, .badge-success, .badge-error, .badge-warning,
+        .badge-info, .badge-accent, .badge-secondary, .badge-neutral {
+            background: color-mix(in oklab, var(--badge-tint, var(--color-primary)) 14%, var(--color-base-100));
+            border-color: color-mix(in oklab, var(--badge-tint, var(--color-primary)) 30%, transparent);
+            color: color-mix(in oklab, var(--badge-tint, var(--color-primary)) 75%, var(--color-base-content));
+        }
+        .badge-primary   { --badge-tint: var(--color-primary); }
+        .badge-success   { --badge-tint: var(--color-success); }
+        .badge-error     { --badge-tint: var(--color-error); }
+        .badge-warning   { --badge-tint: var(--color-warning); }
+        .badge-info      { --badge-tint: var(--color-info, var(--color-primary)); }
+        .badge-accent    { --badge-tint: var(--color-accent, var(--color-primary)); }
+        .badge-secondary { --badge-tint: var(--color-secondary, var(--color-primary)); }
+        .badge-neutral   { --badge-tint: var(--color-neutral, var(--color-base-content)); }
+        .badge-ghost {
+            background: color-mix(in oklab, var(--color-base-content) 6%, transparent);
+            border-color: transparent;
+            color: color-mix(in oklab, var(--color-base-content) 70%, transparent);
+        }
+        .badge-outline {
+            background: transparent;
+        }
+
+        /* ============================================================
+           ГЛОБАЛЬНЫЕ КАРТОЧКИ (2026-08-31, третий шаг). daisyUI .card —
+           плоский прямоугольник с ровной серой рамкой, используется на
+           56 страницах (карточки команд/игроков, панели фильтров,
+           дашборд). Даём всем картам мягкую многослойную тень вместо
+           плоской рамки — уже сам по себе более премиальный вид без
+           риска (не меняет разметку). Hover-подъём и подсветка рамки —
+           ТОЛЬКО для карточек-ссылок (<a class="card">), потому что
+           у карточек-контейнеров (панель фильтров, инфоблоки дашборда)
+           поднятие при наведении выглядело бы как баг — там нет клика. */
+        .card {
+            border-radius: 1.25rem;
+            box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 10px 22px -18px rgba(0,0,0,.16);
+            transition: box-shadow .3s ease, border-color .3s ease, transform .3s cubic-bezier(.16,1,.3,1), background .3s ease;
+        }
+        a.card:hover, a.card:focus-visible, .card.card--interactive:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 4px 10px rgba(0,0,0,.06), 0 22px 40px -20px rgba(0,0,0,.28);
+            border-color: color-mix(in oklab, var(--color-primary) 35%, var(--color-base-300));
+        }
+        a.card:active { transform: translateY(-1px) scale(.995); }
+        @media (prefers-reduced-motion: reduce) {
+            .card, a.card:hover { transition: none !important; transform: none !important; }
+        }
+
+        /* Медальон для лого/аватарки в карточках списков (команды,
+           игроки) — тот же приём, что и .match-card__crest-ring, вынесен
+           сюда как переиспользуемый класс, а не продублирован в каждом
+           CSS-файле. Мягкая внутренняя подсветка + внешняя тень вместо
+           голой картинки на пустом фоне. */
+        .entity-avatar-ring {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 9999px;
+            padding: 4px;
+            background: radial-gradient(circle at 32% 28%,
+                color-mix(in oklab, var(--color-base-100) 100%, transparent) 0%,
+                color-mix(in oklab, var(--color-primary) 8%, var(--color-base-100)) 100%);
+            box-shadow:
+                inset 0 1px 1px color-mix(in oklab, white 70%, transparent),
+                inset 0 -1px 2px color-mix(in oklab, black 8%, transparent),
+                0 2px 6px -2px rgba(0,0,0,.18);
+            transition: transform .3s cubic-bezier(.16,1,.3,1);
+        }
+        a:hover .entity-avatar-ring { transform: scale(1.06); }
+        @media (prefers-reduced-motion: reduce) {
+            .entity-avatar-ring { transition: none !important; }
+            a:hover .entity-avatar-ring { transform: none !important; }
+        }
+
+        /* ============================================================
+           ГЛОБАЛЬНЫЕ ПОЛЯ ВВОДА (2026-08-31, четвёртый и последний шаг
+           обновления кнопок/бейджей/карточек/форм). daisyUI .input/
+           .select/.textarea-bordered по умолчанию — плоская серая рамка
+           без какой-либо реакции на фокус, кроме смены цвета рамки.
+           Не трогаем .auth-input/.auth-input-error (login/register) —
+           у них уже свой премиальный вариант из более ранней задачи
+           (см. static/css/... докстринг auth-страниц), дублировать
+           тем же языком здесь не нужно — эти классы daisyUI не имеют
+           отношения к .input/.select/.textarea вообще, конфликта нет.
+
+           Приём тот же, что у .btn/.card: тонированная тень вместо
+           плоского синего аутлайна на focus, мягкий подъём рамки на
+           hover, чтобы поле "оживало" до клика, а не только после. */
+        .input, .select, .textarea {
+            border-radius: .65rem;
+            transition: border-color .2s ease, box-shadow .2s ease, background .2s ease;
+        }
+        .input:hover:not(:disabled):not(:focus),
+        .select:hover:not(:disabled):not(:focus),
+        .textarea:hover:not(:disabled):not(:focus) {
+            border-color: color-mix(in oklab, var(--color-base-content) 28%, var(--color-base-300));
+        }
+        .input:focus, .input:focus-within,
+        .select:focus, .select:focus-within,
+        .textarea:focus, .textarea:focus-within {
+            box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-primary) 18%, transparent);
+        }
+        .input-error:focus, .input-error:focus-within,
+        .select-error:focus, .select-error:focus-within,
+        .textarea-error:focus, .textarea-error:focus-within {
+            box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-error) 20%, transparent);
+        }
+        .input-primary:focus, .select-primary:focus, .textarea-primary:focus {
+            box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-primary) 20%, transparent);
+        }
+        /* checkbox/radio/toggle — только увеличенная область клика на
+           тач-устройствах и явный focus-ring; сами daisyUI-заливки
+           (checkbox-primary и т.д.) уже достаточно премиальны сами
+           по себе, трогать их фон/форму избыточно. */
+        .checkbox, .radio, .toggle {
+            transition: box-shadow .2s ease, transform .15s ease;
+        }
+        .checkbox:focus-visible, .radio:focus-visible, .toggle:focus-visible {
+            outline: 2px solid var(--color-primary);
+            outline-offset: 2px;
+        }
+        .checkbox:active:not(:disabled), .radio:active:not(:disabled) { transform: scale(.92); }
+        .toggle:active:not(:disabled) { transform: scale(.96); }
+        @media (prefers-reduced-motion: reduce) {
+            .input, .select, .textarea, .checkbox, .radio, .toggle { transition: none !important; }
+            .checkbox:active, .radio:active, .toggle:active { transform: none !important; }
+        }
         {% block extra_style %}{% endblock %}
     </style>
 </head>

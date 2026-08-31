@@ -82,15 +82,26 @@ def build_match_share_card(
 
 def build_streak_share_card(*, username: str, streak_type: str, streak_count: int) -> str:
     """
-    Retention loop "Серии" (2026-08-21) — карточка "N дней подряд" для
-    шеринга в соцсети, тот же кэш-по-хэшу принцип, что у двух функций
-    выше. :param streak_type: 'evaluation' | 'prediction' — только для
-    подписи и цвета акцента, на сами данные не влияет.
+    Retention loop "Серии" (2026-08-21, подписи ПЕРЕСМОТРЕНЫ 2026-08-31) —
+    карточка серии для шеринга в соцсети, тот же кэш-по-хэшу принцип, что у
+    двух функций выше. :param streak_type: 'evaluation' | 'prediction' —
+    подпись и цвет акцента РАЗНЫЕ и по смыслу, не только по цвету:
+
+    - 'evaluation': "туров подряд" — evaluation_streak считается по турам
+      чемпионата, а не по дням (см. докстринг User.evaluation_streak,
+      users/models.py) — матчи бывают 1–2 дня в неделю, дневная подпись
+      была бы неверна почти всегда.
+    - 'prediction': "угаданных подряд" — prediction_streak считается по
+      подряд идущим ВЕРНЫМ прогнозам 1X2, а не по дням активности (см.
+      докстринг User.prediction_streak) — "N дней подряд" тут вводило бы в
+      заблуждение (можно прогнозировать каждый день и всегда ошибаться).
 
     :return: относительный путь в MEDIA к готовому PNG.
     """
-    label_line1 = "дней подряд"
-    label_line2 = "оценок матчей" if streak_type == "evaluation" else "прогнозов на матчи"
+    if streak_type == "evaluation":
+        label_line1, label_line2 = "туров подряд", "оценили матч"
+    else:
+        label_line1, label_line2 = "прогнозов подряд", "угадали исход"
     accent = "#60a5fa" if streak_type == "evaluation" else "#a78bfa"
 
     key = _cache_key(username, streak_type, str(streak_count))

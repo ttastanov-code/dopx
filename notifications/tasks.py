@@ -320,6 +320,42 @@ def _chunked(items: list, size: int) -> list[list]:
     return [items[i:i + size] for i in range(0, len(items), size)]
 
 
+@shared_task(bind=True, max_retries=3, rate_limit='60/m')
+def _send_system_announcement_chunk(self, user_ids: list[str], subject: str, title: str, body: str) -> int:
+    """
+    Пачка писем для staff-broadcast (см. dashboard/views.py::announcements —
+    единственный вызывающий). Тот же fan-out-паттерн, что и
+    `_send_match_email_chunk` выше, просто без привязки к конкретному
+    матчу — контекст письма (`title`/`body`) один и тот же для всех пачек
+    одной рассылки, передаётся напрямую, а не читается заново из БД.
+
+    In-app-строки Notification создаются заранее, СИНХРОННО, одним
+    bulk_create в самой вьюхе (не здесь) — они должны появиться у
+    пользователя сразу после нажатия «Отправить», не ждать, пока Celery
+    разберёт очередь чанков. Здесь — только email, с уважением к тумблеру
+    `email_system` (см. `notification_type='system'` → `_send_email_to_user`
+    → `NOTIFICATION_TYPE_TO_SETTINGS_KEY`).
+    """
+    from users.models import User
+
+    sent = 0
+    users = User.objects.filter(id__in=user_ids, is_verified=True, email__isnull=False)
+    try:
+        for user in users:
+            if _send_email_to_user(
+                user, subject, 'emails/system_announcement.html', {'title': title, 'body': body},
+                notification_type='system', raise_on_transient=True,
+            ):
+                sent += 1
+    except TransientEmailError as e:
+        logger.warning(
+            f"_send_system_announcement_chunk: сетевой сбой, ретраим пачку целиком "
+            f"({sent} уже отправлено в этой попытке до обрыва): {e}"
+        )
+        raise self.retry(exc=e, countdown=60 * (2 ** self.request.retries))
+    return sent
+
+
 @shared_task(bind=True, max_retries=3, countdown=5)
 def send_voting_open_notification(self, match_id: str):
     """
@@ -808,13 +844,19 @@ def notify_prediction_results(self):
         from notifications.models import Notification
         from predictions.models import MatchPrediction
         from predictions.services import prediction_counts
+        from users.tasks import check_and_award_badges_task
 
         now = timezone.now()
         lookback = now - timedelta(hours=6)
 
+        # order_by('end_time') — ВАЖНО для серии прогнозов (см. блок ниже,
+        # User.update_prediction_stats): если у пользователя в ОДНОМ прогоне
+        # этой задачи сразу несколько свежезавершившихся матчей, +1/сброс
+        # серии должны применяться в том порядке, в котором матчи реально
+        # закончились, а не в произвольном порядке из БД.
         matches = Match.objects.filter(
             status='finished', end_time__isnull=False, end_time__gte=lookback, end_time__lte=now,
-        ).select_related('home_team', 'away_team')
+        ).select_related('home_team', 'away_team').order_by('end_time')
 
         result_labels = {'1': 'Победа хозяев', 'X': 'Ничья', '2': 'Победа гостей'}
         notified = 0
@@ -877,6 +919,10 @@ def notify_prediction_results(self):
                     # Строка от прошлого прогона, которому не удалось отправить
                     # письмо (email_sent_at пуст, иначе pred не попал бы сюда
                     # через already_emailed выше) — просто пробуем письмо снова.
+                    # Серию НЕ трогаем повторно — она уже обновлена ниже, в
+                    # ветке, где notification создаётся ВПЕРВЫЕ (см. коммент
+                    # у update_prediction_stats() чуть ниже): иначе ретрай
+                    # неудавшегося письма удвоил бы +1/сброс серии.
                     notif_by_user[pred.user_id] = existing
                     continue
                 notif = Notification(
@@ -892,6 +938,17 @@ def notify_prediction_results(self):
                 )
                 notifications_to_create.append(notif)
                 notif_by_user[pred.user_id] = notif
+
+                # Серия прогнозов (loop 4, "Серии") — обновляем РОВНО ОДИН
+                # раз на результат, привязано к первому созданию этой
+                # Notification (а не к успеху отправки письма — иначе
+                # ретрай сорвавшегося письма удвоил бы счётчик, см. коммент
+                # в ветке `if existing` выше). is_correct уже точно известен
+                # (match.status == 'finished'), поэтому это безопасное место
+                # для +1/сброса — единственный вызывающий
+                # User.update_prediction_stats() во всём проекте.
+                pred.user.update_prediction_stats(is_correct)
+                check_and_award_badges_task.delay(user_id=str(pred.user_id), match_id=str(match.id))
 
             Notification.objects.bulk_create(notifications_to_create)
 

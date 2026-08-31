@@ -5,7 +5,7 @@ from django.shortcuts import render, get_object_or_404
 from django.urls import reverse
 from django.views.generic import ListView, DetailView
 from django.utils import timezone
-from django.db.models import Count, Q
+from django.db.models import Count, Q, Case, When, Value, IntegerField
 from matches.models import Match
 from aggregates.models import MatchAggregate, PlayerMatchAggregate, TeamMatchAggregate
 from evaluations.models import PlayerEvaluation, MatchEvaluation, ContextEvaluation, EvaluationSession
@@ -283,13 +283,23 @@ class MatchDetailView(DetailView):
         total_player_evals = PlayerEvaluation.objects.filter(match=match).count()
         total_context_evals = ContextEvaluation.objects.filter(match=match).count()
         
-        # Составы
+        # Составы. side — CharField с choices "home"/"away" (lineups/models.py),
+        # обычный .order_by('side') сортирует по алфавиту строк, а "away" <
+        # "home" — гостевой состав всегда оказывался выше домашнего. Явно
+        # мапим порядок через Case/When: home=0, away=1.
         lineups = MatchLineup.objects.filter(
             match=match
         ).prefetch_related(
             'players__player',
             'players__player__team'
-        ).order_by('side')
+        ).annotate(
+            side_order=Case(
+                When(side='home', then=Value(0)),
+                When(side='away', then=Value(1)),
+                default=Value(2),
+                output_field=IntegerField(),
+            )
+        ).order_by('side_order')
         
         # Мнение большинства (за кого болели)
         fan_support = ContextEvaluation.objects.filter(

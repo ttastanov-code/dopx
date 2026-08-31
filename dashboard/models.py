@@ -30,6 +30,7 @@ class AuditAction(models.TextChoices):
     RAW_KFF_LOOKUP = "raw_kff_lookup", _("Просмотр сырого ответа KFF API")
     CELERY_TASK_REVOKED = "celery_task_revoked", _("Отзыв/остановка celery-задачи")
     KFF_HEALTH_CHECK = "kff_health_check", _("Проверка доступности KFF API")
+    SYSTEM_ANNOUNCEMENT_SENT = "system_announcement_sent", _("Отправлено системное объявление")
 
 
 class StaffActionLog(models.Model):

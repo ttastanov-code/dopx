@@ -7,7 +7,7 @@ from .views import (
     PasswordResetViewCustom, PasswordResetDoneViewCustom,
     PasswordResetConfirmViewCustom, PasswordResetCompleteViewCustom,
     NotificationSettingsView, VerifyEmailView, VerifyEmailSentView, VerifyEmailInvalidView,
-    toggle_follow, push_subscribe, push_unsubscribe,
+    toggle_follow, push_subscribe, push_unsubscribe, push_revoke_device,
 )
 
 app_name = 'users'
@@ -41,6 +41,7 @@ urlpatterns = [
     # Web Push — см. static/js/push.js.
     path('push/subscribe/', push_subscribe, name='push_subscribe'),
     path('push/unsubscribe/', push_unsubscribe, name='push_unsubscribe'),
+    path('push/devices/<uuid:subscription_id>/revoke/', push_revoke_device, name='push_revoke_device'),
 
     # Публичный профиль по username (только чтение), см. докстринг
     # PublicProfileView. Префикс 'u/', а не 'profile/<username>/' — иначе

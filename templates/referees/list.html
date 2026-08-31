@@ -26,58 +26,75 @@
 </div>
 
 <!-- === СПИСОК СУДЕЙ === -->
-<div class="overflow-x-auto">
-  <table class="table table-zebra min-w-[640px]">
-        <thead>
-            <tr>
-                <th>Судья</th>
-                <th class="text-center">Матчей</th>
-                <th class="text-center"><span class="inline-flex items-center gap-1 justify-center">Влияние{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.referee.influence_score %}</span></th>
-                <th class="text-center"><span class="inline-flex items-center gap-1 justify-center">Качество{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.referee.decision_quality %}</span></th>
-                <th></th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for referee in referees %}
-            <tr class="hover">
-                <td>
-                    <a href="{% url 'referees:detail' referee.id %}" class="flex items-center gap-2 md:gap-3 hover:text-primary transition-colors">
-                        <div class="w-8 h-8 md:w-10 md:h-10 rounded-full bg-neutral/10 flex items-center justify-center font-bold text-neutral text-xs md:text-sm flex-shrink-0">
-                            {{ referee.first_name|first|upper }}{{ referee.last_name|first|upper }}
-                        </div>
-                        <span class="font-medium text-sm md:text-base">{{ referee.first_name }} {{ referee.last_name }}</span>
-                    </a>
-                </td>
-                <td class="text-center">
-                    <span class="font-mono text-xs md:text-sm">{{ referee.total_matches|default:0 }}</span>
-                </td>
-                <td class="text-center">
-                    <span class="font-bold text-xs md:text-sm {% if referee.avg_influence > 70 %}text-error{% elif referee.avg_influence < 40 %}text-success{% else %}text-warning{% endif %}">
-                        {{ referee.avg_influence|floatformat:0|default:"—" }}
-                    </span>
-                </td>
-                <td class="text-center">
-                    <span class="font-bold text-xs md:text-sm {% if referee.avg_decision_quality >= 7 %}text-success{% elif referee.avg_decision_quality >= 5 %}text-warning{% else %}text-error{% endif %}">
-                        {{ referee.avg_decision_quality|floatformat:1|default:"—" }}
-                    </span>
-                </td>
-                <td class="text-right">
-                    <a href="{% url 'referees:detail' referee.id %}" class="btn btn-ghost btn-xs">
-                        <i class="ti ti-chevron-right"></i>
-                    </a>
-                </td>
-            </tr>
-            {% empty %}
-            <tr>
-                <td colspan="5" class="text-center py-12 md:py-16 opacity-60">
-                    <i class="ti ti-gavel-off text-4xl md:text-6xl mb-3 md:mb-4"></i>
-                    <h3 class="text-lg md:text-xl font-semibold mb-2">Судьи не найдены</h3>
-                    <p class="text-sm">Попробуйте изменить параметры поиска</p>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+{% comment %}
+ПРЕМИАЛЬНЫЙ РЕДИЗАЙН (2026-08-31): судьи — таблица (много числовых
+колонок), не карточки, в отличие от команд/игроков/тренеров — это
+осознанное решение, а не недосмотр. Раньше таблица была "голой", без
+.card-обёртки, из-за чего визуально выпадала из общего языка списков
+(команды/тренеры используют .card). Приводим к тому же паттерну, что и
+users/leaderboard.html: .card > .card-body p-0 > overflow-x-auto >
+table. Аватар-инициалы — в .entity-avatar-ring для согласованности с
+медальонами в карточках. Влияние/качество — переведены с голого
+text-* на мягкие тинт-пилюли (тот же приём, что у бейджей).
+{% endcomment %}
+<div class="card bg-base-100 border border-base-300">
+    <div class="card-body p-0">
+        <div class="overflow-x-auto">
+          <table class="table table-zebra min-w-[640px]">
+                <thead>
+                    <tr>
+                        <th>Судья</th>
+                        <th class="text-center">Матчей</th>
+                        <th class="text-center"><span class="inline-flex items-center gap-1 justify-center">Влияние{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.referee.influence_score %}</span></th>
+                        <th class="text-center"><span class="inline-flex items-center gap-1 justify-center">Качество{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.referee.decision_quality %}</span></th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for referee in referees %}
+                    <tr class="hover">
+                        <td>
+                            <a href="{% url 'referees:detail' referee.id %}" class="flex items-center gap-2 md:gap-3 hover:text-primary transition-colors group">
+                                <div class="entity-avatar-ring flex-shrink-0">
+                                    <div class="w-8 h-8 md:w-9 md:h-9 rounded-full bg-neutral/10 flex items-center justify-center font-bold text-neutral text-xs md:text-sm">
+                                        {{ referee.first_name|first|upper }}{{ referee.last_name|first|upper }}
+                                    </div>
+                                </div>
+                                <span class="font-medium text-sm md:text-base group-hover:text-primary transition-colors">{{ referee.first_name }} {{ referee.last_name }}</span>
+                            </a>
+                        </td>
+                        <td class="text-center">
+                            <span class="font-mono text-xs md:text-sm opacity-70">{{ referee.total_matches|default:0 }}</span>
+                        </td>
+                        <td class="text-center">
+                            <span class="badge badge-sm {% if referee.avg_influence > 70 %}badge-error{% elif referee.avg_influence < 40 %}badge-success{% else %}badge-warning{% endif %}">
+                                {{ referee.avg_influence|floatformat:0|default:"—" }}
+                            </span>
+                        </td>
+                        <td class="text-center">
+                            <span class="badge badge-sm {% if referee.avg_decision_quality >= 7 %}badge-success{% elif referee.avg_decision_quality >= 5 %}badge-warning{% else %}badge-error{% endif %}">
+                                {{ referee.avg_decision_quality|floatformat:1|default:"—" }}
+                            </span>
+                        </td>
+                        <td class="text-right">
+                            <a href="{% url 'referees:detail' referee.id %}" class="btn btn-ghost btn-xs">
+                                <i class="ti ti-chevron-right"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="5" class="text-center py-12 md:py-16 opacity-60">
+                            <i class="ti ti-gavel-off text-4xl md:text-6xl mb-3 md:mb-4"></i>
+                            <h3 class="text-lg md:text-xl font-semibold mb-2">Судьи не найдены</h3>
+                            <p class="text-sm">Попробуйте изменить параметры поиска</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
 </div>
 
 <!-- === PAGINATION === -->

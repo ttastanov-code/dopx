@@ -2,6 +2,7 @@
 from django.contrib import admin
 from unfold.admin import ModelAdmin
 from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 from django.urls import reverse
 from django.utils import timezone
 from django import forms
@@ -37,9 +38,19 @@ class NotificationAdmin(ModelAdmin):
         return '—'
     
     def is_read_badge(self, obj):
+        # БАГ, КОТОРЫЙ ТУТ БЫЛ: format_html() без единого аргумента/kwarg
+        # (строка — просто статичная разметка, подставлять нечего) — в
+        # Django 6 это TypeError "args or kwargs must be provided"
+        # (django/utils/html.py::format_html), а не молчаливый no-op, как
+        # было раньше. format_html специально требует хотя бы один
+        # экранируемый аргумент — иначе это неотличимо от случайного
+        # format_html(user_input), который выглядел бы "безопасным", но
+        # не экранировал бы ничего. Раз подставлять действительно нечего —
+        # используем mark_safe напрямую на статичной, целиком нашей же
+        # HTML-строке (без пользовательского ввода внутри).
         if obj.is_read:
-            return format_html('<span style="color:#10b981;">✓ Прочитано</span>')
-        return format_html('<span style="color:#f59e0b;">● Непрочитано</span>')
+            return mark_safe('<span style="color:#10b981;">✓ Прочитано</span>')
+        return mark_safe('<span style="color:#f59e0b;">● Непрочитано</span>')
 
 
 class ContactSubmissionForm(forms.ModelForm):

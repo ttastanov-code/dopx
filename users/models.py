@@ -20,7 +20,6 @@ from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.db import models, transaction
-from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from core.models import BaseModel
@@ -94,23 +93,40 @@ class User(AbstractUser, BaseModel):
     )
 
     total_evaluations = models.IntegerField(_("Всего оценок"), default=0)
-    evaluation_streak = models.IntegerField(_("Серия оценок"), default=0)
-    last_evaluation_date = models.DateField(_("Последняя оценка"), null=True, blank=True)
 
-    # НОВОЕ (retention loop "Серии", 2026-08-21): прямой аналог
-    # evaluation_streak/last_evaluation_date выше, но для прогнозов 1X2
-    # (predictions app), а НЕ расширение существующих полей — семантика
-    # "серия оценок" и "серия прогнозов" разная активность, у пользователя
-    # может быть длинная серия одного типа и нулевая другого; смешение в
-    # одно поле стёрло бы это различие и сломало бы уже начисленные бейджи
-    # streak_7/30/100 (users/badges.py), которые жёстко привязаны к
-    # evaluation_streak. Считается по КАЛЕНДАРНЫМ ДНЯМ ставки прогноза (тот
-    # же принцип, что и у update_evaluation_stats), не по "N матчей подряд
-    # без пропуска тура" — пересчёт по турам потребовал бы знать календарь
-    # лиги наперёд и отдельную модель отслеживания, непропорционально
-    # сложно для MVP этой петли удержания.
-    prediction_streak = models.IntegerField(_("Серия прогнозов"), default=0)
-    last_prediction_date = models.DateField(_("Последний прогноз"), null=True, blank=True)
+    # ПЕРЕСМОТРЕНО 2026-08-31 (жалоба пользователя): раньше evaluation_streak
+    # считался по КАЛЕНДАРНЫМ ДНЯМ подряд — на практике почти ни у кого не
+    # растёт, потому что матчи в лиге играются 1–2 дня в неделю (выходные),
+    # а не каждый день. Серия "по дням" почти гарантированно обрывается
+    # каждую неделю сама по себе, независимо от активности пользователя —
+    # метрика вводила в заблуждение, а не мотивировала.
+    #
+    # Новая единица серии — ТУР чемпионата (Match.tour), а не день:
+    # last_evaluation_season_id/last_evaluation_tour хранят (сезон, тур)
+    # последнего оценённого матча. Тот же тур повторно — серия не меняется
+    # (уже засчитан). Следующий тур ПОДРЯД в том же сезоне (tour+1) — +1.
+    # Разрыв (пропущенный тур, смена сезона, тур неизвестен у матча) —
+    # сброс в 1. См. update_evaluation_stats() ниже.
+    evaluation_streak = models.IntegerField(_("Серия оценок"), default=0)
+    last_evaluation_season_id = models.IntegerField(
+        _("Сезон последней оценки"), null=True, blank=True
+    )
+    last_evaluation_tour = models.PositiveSmallIntegerField(
+        _("Тур последней оценки"), null=True, blank=True
+    )
+
+    # ПЕРЕСМОТРЕНО 2026-08-31 (тот же запрос пользователя, что и выше):
+    # раньше prediction_streak считал подряд идущие ДНИ АКТИВНОСТИ (ставок
+    # прогноза) — но подряд идущие ПОПЫТКИ ничего не говорят о мастерстве:
+    # можно прогнозировать каждый день и каждый раз ошибаться, серия всё
+    # равно росла бы. Новая семантика — ТЕКУЩАЯ БЕСПРЕРЫВНАЯ серия УГАДАННЫХ
+    # исходов подряд (как "win streak" в спортивных прогнозах): +1 за каждый
+    # угаданный исход, сброс в 0 при первом же неверном. Считается НЕ в
+    # момент ставки (исход ещё не известен), а когда матч завершается и
+    # появляется final_result — см. update_prediction_stats() ниже и
+    # notifications/tasks.py::notify_prediction_results (единственный
+    # вызывающий).
+    prediction_streak = models.IntegerField(_("Серия угаданных прогнозов"), default=0)
 
     DEFAULT_NOTIFICATION_SETTINGS = {
         "email_match_finished": True,
@@ -154,45 +170,56 @@ class User(AbstractUser, BaseModel):
             key, default if default is not None else self.DEFAULT_NOTIFICATION_SETTINGS.get(key, False)
         )
 
-    def update_evaluation_stats(self) -> None:
-        """Обновляет статистику оценок. Достижения проверяются отдельно."""
-        today = timezone.now().date()
-        self.total_evaluations += 1
-        if self.last_evaluation_date:
-            days_diff = (today - self.last_evaluation_date).days
-            if days_diff == 1:
-                self.evaluation_streak += 1
-            elif days_diff > 1:
-                self.evaluation_streak = 1
-            # days_diff == 0 (та же дата) — серию не меняем.
-        else:
-            self.evaluation_streak = 1
-        self.last_evaluation_date = today
-        self.save(update_fields=["total_evaluations", "evaluation_streak", "last_evaluation_date", "updated_at"])
+    def update_evaluation_stats(self, match) -> None:
+        """
+        Обновляет статистику оценок. Достижения проверяются отдельно.
 
-    def update_prediction_stats(self) -> None:
+        `match` — матч, который только что оценили (нужны его `season_id`/
+        `tour` для серии по турам, см. докстринг `evaluation_streak` выше).
+        Если у матча не проставлен `tour` (бывает у кубковых/переносимых
+        матчей, ещё не досинхронизированных с KFF) — серию НЕ трогаем
+        вообще (ни +1, ни сброс): нет надёжной единицы сравнения, а молча
+        обнулять серию из-за дыры в данных парсера было бы несправедливо
+        по отношению к пользователю.
         """
-        Прямой аналог `update_evaluation_stats()` для прогнозов — см.
-        комментарий у `prediction_streak` выше. Вызывается ИЗ
-        `predictions/services.py::submit_prediction` только при ПЕРВОЙ
-        ставке на конкретный матч (не при смене выбора П1→Х до старта) —
-        иначе пользователь мог бы искусственно "подкручивать" серию,
-        многократно меняя прогноз в один день (не то чтобы это давало
-        реальную выгоду при посуточном шаге серии, но семантически смена
-        выбора — не новый акт активности).
+        self.total_evaluations += 1
+        tour = match.tour
+        if tour is not None:
+            if self.last_evaluation_season_id == match.season_id and self.last_evaluation_tour == tour:
+                pass  # тот же тур — уже засчитан, серию не трогаем
+            elif (
+                self.last_evaluation_season_id == match.season_id
+                and self.last_evaluation_tour is not None
+                and tour == self.last_evaluation_tour + 1
+            ):
+                self.evaluation_streak += 1  # следующий тур подряд в том же сезоне
+            else:
+                self.evaluation_streak = 1  # разрыв, смена сезона или первая оценка
+            self.last_evaluation_season_id = match.season_id
+            self.last_evaluation_tour = tour
+        self.save(update_fields=[
+            "total_evaluations", "evaluation_streak",
+            "last_evaluation_season_id", "last_evaluation_tour", "updated_at",
+        ])
+
+    def update_prediction_stats(self, is_correct: bool) -> None:
         """
-        today = timezone.now().date()
-        if self.last_prediction_date:
-            days_diff = (today - self.last_prediction_date).days
-            if days_diff == 1:
-                self.prediction_streak += 1
-            elif days_diff > 1:
-                self.prediction_streak = 1
-            # days_diff == 0 — та же дата, серию не меняем.
+        Обновляет `prediction_streak` — ТЕКУЩУЮ беспрерывную серию УГАДАННЫХ
+        прогнозов 1X2 подряд (см. докстринг `prediction_streak` выше).
+
+        Вызывается ТОЛЬКО из `notifications/tasks.py::notify_prediction_results`,
+        когда у матча уже точно известен исход (`status='finished'`) — НЕ из
+        `predictions/views.py` в момент самой ставки, там `is_correct` ещё
+        не может быть определён. Матчи в этой задаче обрабатываются в
+        порядке `end_time` — важно для правильного порядка +1/сброса, если
+        у пользователя в одном прогоне сразу несколько свежезавершённых
+        матчей.
+        """
+        if is_correct:
+            self.prediction_streak += 1
         else:
-            self.prediction_streak = 1
-        self.last_prediction_date = today
-        self.save(update_fields=["prediction_streak", "last_prediction_date", "updated_at"])
+            self.prediction_streak = 0
+        self.save(update_fields=["prediction_streak", "updated_at"])
 
     def get_trust_level(self) -> tuple[str, str]:
         if self.trust_score >= 1.8:
@@ -704,3 +731,41 @@ class PushSubscription(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.user.username} — {self.endpoint[:40]}..."
+
+    @property
+    def friendly_label(self) -> str:
+        """
+        Человекочитаемое "Chrome · macOS" вместо сырого user_agent — для
+        страницы настроек уведомлений (2026-08-31, по запросу пользователя
+        после реального инцидента: подписка с Chrome на Mac молча висела в
+        БД, пользователь зашёл через Safari на том же Mac и не мог понять,
+        откуда взялось "устройство подключено" на странице настроек — это
+        было не багом статуса текущего браузера (тот и так проверяется
+        честно через PushManager.getSubscription(), см. докстринг в
+        notification_settings.html), а отсутствием видимости СПИСКА чужих
+        подписок: пользователь не мог посмотреть, что именно подписано, и
+        отключить конкретное устройство, не трогая своё текущее.
+
+        Ленивый импорт `user_agents` — та же тяжёлая либа с regex-базой
+        ua-parser, что уже используется в analytics/selectors.py::
+        _device_breakdown для трафика, тот же паттерн (не грузим на каждый
+        импорт users/models.py, если админка/дашборд её не смотрит).
+        """
+        if not self.user_agent:
+            return 'Неизвестное устройство'
+        try:
+            from user_agents import parse as parse_ua
+            ua = parse_ua(self.user_agent)
+        except Exception:
+            return 'Неизвестное устройство'
+
+        browser = ua.browser.family or 'Браузер'
+        os_name = ua.os.family or ''
+        if ua.is_bot:
+            return 'Бот/скрипт'
+        label = f"{browser} · {os_name}" if os_name else browser
+        if ua.is_mobile:
+            label += ' (телефон)'
+        elif ua.is_tablet:
+            label += ' (планшет)'
+        return label

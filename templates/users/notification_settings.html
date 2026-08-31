@@ -4,8 +4,9 @@
 <div class="max-w-4xl mx-auto">
     <!-- Header -->
     <div class="mb-8">
-        <a href="{% url 'users:profile' %}" class="btn btn-ghost btn-sm mb-4" data-back-link>
-            <i class="ti ti-arrow-left"></i> Назад к профилю
+        <a href="{% url 'users:profile' %}" class="back-link mb-4" data-back-link>
+            <span class="back-link__icon"><i class="ti ti-arrow-left"></i></span>
+            <span>Назад к профилю</span>
         </a>
         <div class="flex items-center gap-4">
             <div class="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center">
@@ -64,6 +65,58 @@
             <button type="button" @click="subscribe()" x-show="status === 'timeout'" x-cloak class="btn btn-outline btn-sm mt-1">Всё равно включить</button>
         </div>
     </div>
+
+    {% comment %}
+    Карточка "Ваши устройства" (2026-08-31, по прямому запросу пользователя
+    после реального инцидента): "у меня была подписка на Chrome, а я зашёл
+    через Safari... написано что это устройство подключено, хотя Safari я
+    не подключал". Карточка выше показывает статус ТОЛЬКО текущего браузера
+    (это уже честно, см. её докстринг) — но раньше "другие устройства" были
+    вообще без деталей, одной строкой текста. Здесь — реальный список
+    push_subscriptions (users/views.py::NotificationSettingsView), с
+    человекочитаемой меткой браузер+ОС (PushSubscription.friendly_label,
+    парсит user_agent) и кнопкой отключить КОНКРЕТНУЮ запись — не только
+    текущий браузер, как раньше умела единственная кнопка "Отключить" в
+    карточке выше.
+    {% endcomment %}
+    {% if push_subscriptions %}
+    <div class="card bg-base-100 border border-base-300 mb-6">
+        <div class="card-body p-6">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                    <i class="ti ti-devices text-primary text-xl"></i>
+                </div>
+                <div>
+                    <h2 class="text-xl font-bold">Ваши устройства</h2>
+                    <p class="text-sm opacity-60">Все браузеры и устройства, подписанные на push-уведомления</p>
+                </div>
+            </div>
+            <div class="space-y-2">
+                {% for sub in push_subscriptions %}
+                <div class="flex items-center justify-between gap-3 p-3 rounded-xl border border-base-300">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <div class="w-9 h-9 rounded-lg bg-base-200 flex items-center justify-center flex-shrink-0">
+                            <i class="ti ti-device-desktop text-sm opacity-70"></i>
+                        </div>
+                        <div class="min-w-0">
+                            <div class="font-semibold text-sm truncate">{{ sub.friendly_label }}</div>
+                            <div class="text-xs opacity-50">Подключено {{ sub.created_at|date:"d.m.Y" }}</div>
+                        </div>
+                    </div>
+                    <form method="post" action="{% url 'users:push_revoke_device' sub.id %}"
+                          onsubmit="return confirm('Отключить это устройство от push-уведомлений?');">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-ghost btn-xs opacity-60 flex-shrink-0">
+                            <i class="ti ti-x"></i>
+                            <span class="hidden sm:inline">Отключить</span>
+                        </button>
+                    </form>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
 
     <form method="post" class="space-y-6">
         {% csrf_token %}

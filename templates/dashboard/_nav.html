@@ -36,4 +36,7 @@ url_name-сравнения, чтобы не завязываться на ре�
     <a role="tab" href="{% url 'dashboard:audit_log' %}" class="tab {% if active_tab == 'audit' %}tab-active{% endif %}">
         <i class="ti ti-history mr-1.5"></i> Аудит
     </a>
+    <a role="tab" href="{% url 'dashboard:announcements' %}" class="tab {% if active_tab == 'announcements' %}tab-active{% endif %}">
+        <i class="ti ti-speakerphone mr-1.5"></i> Объявления
+    </a>
 </div>

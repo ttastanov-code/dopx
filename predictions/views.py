@@ -88,15 +88,25 @@ def predict(request, match_id):
             properties={'match_id': str(match.id), 'choice': choice},
         )
         if created:
-            # Серия/бейджи считаются только на ПЕРВУЮ ставку на этот матч
-            # (см. docstring submit_prediction) — смена П1→Х до старта не
-            # должна давать повторный тик серии. update_prediction_stats()
-            # — синхронная запись (дешёвая, одна строка), а проверка
-            # бейджей — асинхронно через transaction.on_commit, тот же
-            # принцип, что и evaluations/views.py::EvaluateMatchFinalView
-            # (до ~15 запросов внутри check_and_award_badges, незачем
-            # держать ими HTTP-цикл).
-            request.user.update_prediction_stats()
+            # user.update_prediction_stats() ЗДЕСЬ БОЛЬШЕ НЕ ВЫЗЫВАЕТСЯ
+            # (было до 2026-08-31): серия прогнозов теперь означает
+            # "подряд угаданных исходов", а не "подряд дней активности" —
+            # is_correct физически не может быть известен в момент самой
+            # ставки, матч ещё не сыгран. Обновление серии переехало в
+            # notifications/tasks.py::notify_prediction_results, которая
+            # вызывается, когда матч уже завершён и известен final_result
+            # (см. докстринг User.update_prediction_stats).
+            #
+            # Проверку бейджей на "первую ставку" (first_prediction — она
+            # не зависит от серии) оставляем здесь же, асинхронно через
+            # transaction.on_commit, тот же принцип, что и
+            # evaluations/views.py::EvaluateMatchFinalView (до ~15
+            # запросов внутри check_and_award_badges, незачем держать ими
+            # HTTP-цикл). Бейджи prediction_streak_7/30/100 при этом
+            # вызове просто не сработают (streak ещё не обновлён) — их
+            # словит следующий вызов check_and_award_badges_task, который
+            # notify_prediction_results ставит сама после обновления
+            # серии.
             transaction.on_commit(
                 partial(check_and_award_badges_task.delay, user_id=str(request.user.id), match_id=str(match.id))
             )

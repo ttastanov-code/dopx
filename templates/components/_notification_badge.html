@@ -56,11 +56,23 @@ retention loops ("кнопки кривые, непонятно, нельзя п
                 <div class="font-semibold text-sm">Уведомления</div>
                 <div class="text-xs opacity-60" id="notif-count-text">{{ count|default:0 }} непрочитанных</div>
             </div>
+            <!-- 2026-08-31: было ДВЕ ссылки на один и тот же
+                 notifications:list — эта иконка-кнопка "Все" здесь в
+                 шапке, и полноразмерная "Все уведомления" внизу списка
+                 (_notification_dropdown_items.html). Дубль без причины
+                 (жалоба пользователя: "зачем две кнопки все
+                 уведомления?") — убрана шапочная, оставлена нижняя: она
+                 крупнее, с текстом всегда видимым (не прячется под
+                 .hidden.sm:inline) и стоит логично последней строкой
+                 после списка. Заодно "Прочитать все" переведена с
+                 btn-ghost на btn-outline — та же причина невидимости в
+                 состоянии покоя, что и на полной странице /notifications/
+                 (см. комментарий там). -->
             <div class="flex items-center gap-1">
                 {% if count > 0 %}
                 <button type="button"
                         title="Прочитать все"
-                        class="btn btn-ghost btn-xs"
+                        class="btn btn-outline btn-xs"
                         hx-post="{% url 'notifications:read-all' %}"
                         hx-swap="outerHTML"
                         hx-target="#notif-list-items">
@@ -68,10 +80,6 @@ retention loops ("кнопки кривые, непонятно, нельзя п
                     <span class="hidden sm:inline">Прочитать все</span>
                 </button>
                 {% endif %}
-                <a href="{% url 'notifications:list' %}" @click="open = false" class="btn btn-ghost btn-xs">
-                    <i class="ti ti-external-link"></i>
-                    <span class="hidden sm:inline">Все</span>
-                </a>
                 <button @click="open = false" class="btn btn-ghost btn-xs btn-circle sm:hidden">
                     <i class="ti ti-x"></i>
                 </button>

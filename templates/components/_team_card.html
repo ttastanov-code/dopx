@@ -1,28 +1,35 @@
 {% comment %}
 Карточка команды для списков
 Использование: {% include 'components/_team_card.html' with team=team show_stats=True %}
+
+ПРЕМИАЛЬНЫЙ РЕДИЗАЙН (2026-08-31, часть общего обновления кнопок/бейджей/
+карточек по сайту после .back-link): раньше вся карточка была голым
+<div> — кликабелен был только заголовок <a><h3>, что и мало (маленькая
+цель клика), и визуально не читалось как интерактивный элемент. Теперь
+вся карточка — <a class="card">, ловит hover/подъём из глобального
+.card-правила в base.html (только a.card поднимается при наведении —
+см. докстринг там). Лого — в медальоне с мягкой тенью
+(.entity-avatar-ring, base.html — переиспользуемый класс, тот же приём,
+что у .match-card__crest-ring).
 {% endcomment %}
 
-<div class="card bg-base-100 border border-base-300 hover:border-primary transition-all">
+<a href="{% url 'teams:detail' team.id %}" class="card bg-base-100 border border-base-300 group">
     <div class="card-body p-4">
         <div class="flex items-center gap-4">
-            <!-- Логотип -->
-            <div class="w-16 h-16 rounded-lg bg-base-200 flex items-center justify-center overflow-hidden">
+            <!-- Логотип в медальоне -->
+            <div class="entity-avatar-ring flex-shrink-0">
                 {% if team.logo_url %}
-                <img src="{{ team.logo_url }}" alt="{{ team.name }}" class="w-full h-full object-contain p-2">
+                <img src="{{ team.logo_url }}" alt="{{ team.name }}" class="w-12 h-12 object-contain">
                 {% else %}
-                <div class="w-full h-full flex items-center justify-center font-bold text-primary text-2xl">
+                <div class="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-xl">
                     {{ team.name|first|upper }}
                 </div>
                 {% endif %}
             </div>
-            
+
             <!-- Информация -->
             <div class="flex-1 min-w-0">
-                <a href="{% url 'teams:detail' team.id %}" class="hover:text-primary transition-colors">
-                    <h3 class="font-bold text-lg truncate">{{ team.name }}</h3>
-                </a>
-                
+                <h3 class="font-bold text-lg truncate group-hover:text-primary transition-colors">{{ team.name }}</h3>
                 {% if team.city %}
                 <p class="text-sm opacity-60">
                     <i class="ti ti-map-pin"></i>
@@ -30,14 +37,15 @@
                 </p>
                 {% endif %}
             </div>
-            
+
             <!-- Статистика (если включена) -->
             {% if show_stats %}
-            <div class="text-right">
+            <div class="text-right flex-shrink-0">
                 <div class="text-sm opacity-60">Игроков</div>
                 <div class="text-xl font-bold">{{ team.players.count|default:0 }}</div>
             </div>
             {% endif %}
+            <i class="ti ti-chevron-right opacity-0 group-hover:opacity-40 transition-opacity flex-shrink-0"></i>
         </div>
     </div>
-</div>
+</a>

@@ -635,14 +635,19 @@ class MatchShareCardView(View):
 
 class StreakShareCardView(View):
     """
-    /share/streak/<username>/<streak_type>/card.png — карточка "N дней
-    подряд" (retention loop "Серии", 2026-08-21), тот же редирект-на-
+    /share/streak/<username>/<streak_type>/card.png — карточка серии
+    (retention loop "Серии", 2026-08-21), тот же редирект-на-
     закэшированный-PNG паттерн, что и `MatchShareCardView` выше.
 
-    ВАЖНО: число дней БЕРЁТСЯ ИЗ БД (`user.evaluation_streak`/
+    С 2026-08-31 обе серии — НЕ "дней подряд" (см. докстринг
+    `build_streak_share_card`, core/services/share_cards.py):
+    `evaluation_streak` — туров подряд, `prediction_streak` — угаданных
+    прогнозов подряд.
+
+    ВАЖНО: число БЕРЁТСЯ ИЗ БД (`user.evaluation_streak`/
     `prediction_streak`), а не из URL — иначе кто угодно мог бы
-    сгенерировать (и закэшировать под чужим username) карточку "500 дней
-    подряд" простой подменой параметра в адресной строке.
+    сгенерировать (и закэшировать под чужим username) карточку с любым
+    числом простой подменой параметра в адресной строке.
     """
 
     def get(self, request, username, streak_type):

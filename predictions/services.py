@@ -25,10 +25,12 @@ def submit_prediction(*, user, match, choice: str) -> tuple[MatchPrediction, boo
     (views.py) решает, как это показать.
 
     Возвращает флаг `created` ОТДЕЛЬНО от самого прогноза — views.py должен
-    засчитать серию/проверить бейджи (`User.update_prediction_stats()` +
-    `check_and_award_badges_task`) только при ПЕРВОЙ ставке на этот матч, не
-    при каждой смене выбора (П1→Х до старта не должна давать повторный тик
-    серии за один день). Сама функция НЕ трогает `User`/Celery — это
+    проверить бейдж "первая ставка" (`check_and_award_badges_task`) только
+    при ПЕРВОЙ ставке на этот матч, не при каждой смене выбора. Серия
+    прогнозов (`User.update_prediction_stats()`) — БОЛЬШЕ НЕ здесь и не в
+    views.py: она означает "подряд угаданных исходов" и обновляется только
+    когда матч завершается, см. notifications/tasks.py::
+    notify_prediction_results. Сама функция НЕ трогает `User`/Celery — это
     HTTP-независимый сервисный слой, побочные эффекты уровня "пользователь
     + асинхронные задачи" остаются в views.py, как и у evaluations/events.
     """
