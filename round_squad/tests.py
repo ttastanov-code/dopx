@@ -43,6 +43,7 @@ from round_squad.services import (
     ROUND_MIN_VOTES_FOR_CANDIDATE,
     _round_bayes_score,
     recompute_round,
+    resolve_current_tour,
     resolve_practically_closed_tour,
 )
 from round_squad.tasks import recompute_round_task, send_round_results_notification
@@ -83,6 +84,15 @@ class RoundSquadTestCase(TestCase):
             tour=tour, status=status, start_time=start_time,
             voting_open_until=voting_open_until,
         )
+
+    def make_tour_matches(self, tour, total, finished):
+        """Быстрый хелпер "N матчей тура, M из них завершены" — общий для
+        ResolvePracticallyClosedTourTests и ResolveCurrentTourTests (обоим
+        нужен один и тот же способ построить тур с заданной долей
+        завершённости, не заботясь о голосах/составах)."""
+        for i in range(total):
+            status = 'finished' if i < finished else 'scheduled'
+            self.make_match(tour=tour, status=status)
 
     def add_to_lineup(self, match, player, team, side, position):
         lineup, _ = MatchLineup.objects.get_or_create(match=match, team=team, defaults={'side': side})
@@ -369,11 +379,6 @@ class ResolvePracticallyClosedTourTests(RoundSquadTestCase):
     докстринг функции и историю 4 версий в round_squad/views.py::
     _resolve_latest_tour, откуда алгоритм вынесен). Порог — 0.75."""
 
-    def make_tour_matches(self, tour, total, finished):
-        for i in range(total):
-            status = 'finished' if i < finished else 'scheduled'
-            self.make_match(tour=tour, status=status)
-
     def test_returns_none_when_no_tours_have_matches(self):
         self.assertIsNone(resolve_practically_closed_tour(self.season))
 
@@ -400,6 +405,52 @@ class ResolvePracticallyClosedTourTests(RoundSquadTestCase):
         self.make_tour_matches(tour=6, total=8, finished=4)
 
         self.assertEqual(resolve_practically_closed_tour(self.season), 10)
+
+
+class ResolveCurrentTourTests(RoundSquadTestCase):
+    """
+    resolve_current_tour — общая точка входа для кнопки в шапке и страницы
+    /round/ без явного номера тура (см. докстринг функции про баг
+    рассинхрона этих двух мест, пойманный 2026-08-31 на реальном
+    календаре: тур 22 зафиксирован, тур 23 целиком перенесён без единого
+    сыгранного матча, тур 24 сыгран на 7 из 8). make_tour_matches — общий
+    хелпер из RoundSquadTestCase (см. его докстринг)."""
+
+    def test_prefers_finalized_tour_over_practically_closed_heuristic(self):
+        """Тур 22 официально зафиксирован (is_final=True) — он и должен
+        победить, даже если более поздний тур 24 уже практически сыгран
+        (7 из 8 = 87.5% >= порога 0.75) но ещё НЕ зафиксирован."""
+        self.make_tour_matches(tour=22, total=8, finished=8)
+        RoundBestXI.objects.create(season=self.season, tour=22, is_final=True)
+        self.make_tour_matches(tour=24, total=8, finished=7)
+
+        self.assertEqual(resolve_current_tour(self.season), 22)
+
+    def test_skips_untouched_postponed_tour_between_finalized_and_practical(self):
+        """Ровно сценарий из инцидента: тур 23 целиком перенесён (0 сыгранных
+        матчей) между зафиксированным 22 и практически сыгранным 24 — не
+        должен ничего блокировать, тур 24 всё равно достижим через фолбэк
+        как только зафиксируется (здесь проверяем сам факт, что 23 не
+        мешает эвристике добраться до 24, когда 22 ЕЩЁ не зафиксирован)."""
+        self.make_tour_matches(tour=22, total=8, finished=8)
+        self.make_tour_matches(tour=23, total=8, finished=0)
+        self.make_tour_matches(tour=24, total=8, finished=7)
+
+        # Ни один тур ещё не зафиксирован (is_final=False у всех/нет записи) —
+        # эвристика "практически сыгран" сканирует сверху вниз: тур 24 (87.5%)
+        # проходит порог раньше, чем сканирование дойдёт до 23 или 22.
+        self.assertEqual(resolve_current_tour(self.season), 24)
+
+    def test_falls_back_to_practically_closed_when_nothing_finalized_yet(self):
+        """В сезоне ещё вообще нет зафиксированных туров — используется
+        обычная 75%-эвристика (resolve_practically_closed_tour)."""
+        self.make_tour_matches(tour=5, total=4, finished=4)
+
+        self.assertEqual(resolve_current_tour(self.season), resolve_practically_closed_tour(self.season))
+        self.assertEqual(resolve_current_tour(self.season), 5)
+
+    def test_returns_none_when_season_has_nothing_at_all(self):
+        self.assertIsNone(resolve_current_tour(self.season))
 
 
 @override_settings(CACHES=LOCMEM_CACHE)

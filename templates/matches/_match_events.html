@@ -2,379 +2,252 @@
 Партиал событий матча. Пока матч live — сам себя переопрашивает (15с),
 как _match_header.html: hx-атрибуты на корне пропадают из ответа после
 финального свистка, и поллинг останавливается сам.
+
+РЕДИЗАЙН (2026-08-31, третий проход — полный пересмотр страницы матча):
+раньше — плоский список карточек с цветной рамкой слева, все события в
+одну колонку независимо от команды. Теперь — .md-timeline: центральная
+"стрела" времени (как трансляционная графика ESPN/Sofascore), события
+домашней команды — слева от стрелы, гостевой — справа (event.team_side
+'home'/'away' решает сторону через модификатор .md-timeline__row--{side}),
+иконка события — узел прямо на стрелке. На мобильном (< 640px) стрелка
+уезжает к левому краю и всё схлопывается в одну колонку — сторона всё
+равно видна по цвету/бейджу карточки.
+
+ФИКС (2026-08-31, повторный проход — баг с "уезжающей" полосой):
+класс .md-timeline (со стрелкой на ::before, top:0/bottom:0 родителя)
+раньше висел на #events-container, а внутри — И ряды событий, И блок
+"Легенда событий" ниже. ::before растягивался на bottom:0 ВСЕГО
+контейнера, то есть проезжал сквозь легенду тоже — именно это
+пользователь увидел на скриншоте ("полоса уходит куда-то на буквы").
+Теперь .md-timeline — на отдельной внутренней обёртке ТОЛЬКО вокруг
+рядов событий, легенда — соседний блок снаружи неё, стрелка до неё
+не дотягивается.
 {% endcomment %}
 
-<div id="events-container" class="space-y-3"
+<div id="events-container"
      {% if match.status == 'live' %}
      data-background-poll
      hx-get="{% url 'matches:events' match.id %}"
      hx-trigger="every 15s"
      hx-swap="outerHTML"
      {% endif %}>
+<div class="md-timeline">
     {% for event in events %}
-    
+
     <!-- === СОБЫТИЕ: ГОЛ === -->
     {% if event.event_type == 'goal' %}
-    <div class="relative pl-4 border-l-2 border-success/30">
-        <div class="absolute -left-[9px] top-4 w-4 h-4 rounded-full bg-success border-2 border-base-100"></div>
-        
-        <div class="flex items-start gap-3 p-3 rounded-lg bg-success/5 border border-success/20 hover:border-success/40 transition-all group">
-            <div class="font-mono font-bold text-success text-lg w-12 text-right shrink-0">
-                {{ event.display_minute }}'
+    <div class="md-timeline__row md-timeline__row--{{ event.team_side }}">
+        <div class="md-timeline__node md-tl-goal"><i class="ti ti-ball"></i></div>
+        <div class="md-timeline__card md-tl-goal">
+            <div class="md-timeline__meta mb-1">
+                <span class="md-timeline__minute">{{ event.display_minute }}'</span>
+                <span class="badge badge-sm badge-success font-medium">⚽ Гол</span>
+                {% if event.player %}
+                <a href="{% url 'players:detail' event.player.id %}"
+                   class="font-semibold hover:text-success transition-colors truncate">
+                    {{ event.player.first_name }} {{ event.player.last_name }}
+                </a>
+                {% endif %}
             </div>
-            
-            <div class="w-10 h-10 rounded-lg bg-success/20 text-success flex items-center justify-center shrink-0">
-                <i class="ti ti-ball text-xl"></i>
+            {% if event.assist_player %}
+            <div class="text-sm opacity-75">
+                <i class="ti ti-arrow-narrow-right text-success"></i>
+                <a href="{% url 'players:detail' event.assist_player.id %}" class="hover:text-info transition-colors">
+                    ассист: {{ event.assist_player.first_name }} {{ event.assist_player.last_name }}
+                </a>
             </div>
-            
-            <div class="flex-1 min-w-0">
-                <div class="flex flex-wrap items-center gap-2 mb-1">
-                    <span class="badge badge-sm badge-success font-medium">⚽ Гол</span>
-                    
-                    {% if event.player %}
-                    <a href="{% url 'players:detail' event.player.id %}" 
-                       class="font-semibold hover:text-success transition-colors truncate">
-                        {{ event.player.first_name }} {{ event.player.last_name }}
-                    </a>
-                    {% endif %}
-                    
-                    <span class="badge badge-xs badge-ghost">
-                        {{ event.get_team_side_display }}
-                    </span>
-                </div>
-                
-                <div class="flex flex-wrap items-center gap-3 text-sm opacity-80">
-                    {% if event.assist_player %}
-                    <span class="flex items-center gap-1">
-                        <i class="ti ti-arrow-narrow-right text-success"></i>
-                        <a href="{% url 'players:detail' event.assist_player.id %}" 
-                           class="hover:text-info transition-colors">
-                            ассист: {{ event.assist_player.first_name }} {{ event.assist_player.last_name }}
-                        </a>
-                    </span>
-                    {% endif %}
-                </div>
-            </div>
+            {% endif %}
         </div>
     </div>
-    
+
     <!-- === СОБЫТИЕ: ПЕНАЛЬТИ (ЗАБИТЫЙ) === -->
     {% elif event.event_type == 'penalty' %}
-    <div class="relative pl-4 border-l-2 border-warning/30">
-        <div class="absolute -left-[9px] top-4 w-4 h-4 rounded-full bg-warning border-2 border-base-100"></div>
-        
-        <div class="flex items-start gap-3 p-3 rounded-lg bg-warning/5 border border-warning/20 hover:border-warning/40 transition-all group">
-            <div class="font-mono font-bold text-warning text-lg w-12 text-right shrink-0">
-                {{ event.display_minute }}'
-            </div>
-            
-            <div class="w-10 h-10 rounded-lg bg-warning/20 text-warning flex items-center justify-center shrink-0">
-                <i class="ti ti-whistle text-xl"></i>
-            </div>
-            
-            <div class="flex-1 min-w-0">
-                <div class="flex flex-wrap items-center gap-2 mb-1">
-                    <span class="badge badge-sm badge-warning font-medium">⚽ Пенальти</span>
-                    
-                    {% if event.player %}
-                    <a href="{% url 'players:detail' event.player.id %}" 
-                       class="font-semibold hover:text-warning transition-colors truncate">
-                        {{ event.player.first_name }} {{ event.player.last_name }}
-                    </a>
-                    {% endif %}
-                    
-                    <span class="badge badge-xs badge-ghost">
-                        {{ event.get_team_side_display }}
-                    </span>
-                </div>
+    <div class="md-timeline__row md-timeline__row--{{ event.team_side }}">
+        <div class="md-timeline__node md-tl-penalty"><i class="ti ti-gavel"></i></div>
+        <div class="md-timeline__card md-tl-penalty">
+            <div class="md-timeline__meta">
+                <span class="md-timeline__minute">{{ event.display_minute }}'</span>
+                <span class="badge badge-sm badge-warning font-medium">⚽ Пенальти</span>
+                {% if event.player %}
+                <a href="{% url 'players:detail' event.player.id %}"
+                   class="font-semibold hover:text-warning transition-colors truncate">
+                    {{ event.player.first_name }} {{ event.player.last_name }}
+                </a>
+                {% endif %}
             </div>
         </div>
     </div>
-    
+
     <!-- === СОБЫТИЕ: НЕЗАБИТЫЙ ПЕНАЛЬТИ === -->
     {% elif event.event_type == 'missed_penalty' %}
-    <div class="relative pl-4 border-l-2 border-error/30">
-        <div class="absolute -left-[9px] top-4 w-4 h-4 rounded-full bg-error border-2 border-base-100"></div>
-        
-        <div class="flex items-start gap-3 p-3 rounded-lg bg-error/5 border border-error/20 hover:border-error/40 transition-all group opacity-75">
-            <div class="font-mono font-bold text-error text-lg w-12 text-right shrink-0">
-                {{ event.display_minute }}'
-            </div>
-            
-            <div class="w-10 h-10 rounded-lg bg-error/20 text-error flex items-center justify-center shrink-0">
-                <i class="ti ti-circle-x text-xl"></i>
-            </div>
-            
-            <div class="flex-1 min-w-0">
-                <div class="flex flex-wrap items-center gap-2 mb-1">
-                    <span class="badge badge-sm badge-error font-medium">❌ Пенальти не забит</span>
-                    
-                    {% if event.player %}
-                    <a href="{% url 'players:detail' event.player.id %}" 
-                       class="font-semibold hover:text-error transition-colors truncate">
-                        {{ event.player.first_name }} {{ event.player.last_name }}
-                    </a>
-                    {% endif %}
-                    
-                    <span class="badge badge-xs badge-ghost">
-                        {{ event.get_team_side_display }}
-                    </span>
-                </div>
+    <div class="md-timeline__row md-timeline__row--{{ event.team_side }}">
+        <div class="md-timeline__node md-tl-missed-penalty"><i class="ti ti-circle-x"></i></div>
+        <div class="md-timeline__card md-tl-missed-penalty opacity-80">
+            <div class="md-timeline__meta">
+                <span class="md-timeline__minute">{{ event.display_minute }}'</span>
+                <span class="badge badge-sm badge-error font-medium">❌ Пенальти не забит</span>
+                {% if event.player %}
+                <a href="{% url 'players:detail' event.player.id %}"
+                   class="font-semibold hover:text-error transition-colors truncate">
+                    {{ event.player.first_name }} {{ event.player.last_name }}
+                </a>
+                {% endif %}
             </div>
         </div>
     </div>
-    
+
     <!-- === СОБЫТИЕ: ОТМЕНЁННЫЙ ГОЛ === -->
     {% elif event.event_type == 'disallowed_goal' %}
-    <div class="relative pl-4 border-l-2 border-neutral/30">
-        <div class="absolute -left-[9px] top-4 w-4 h-4 rounded-full bg-neutral border-2 border-base-100"></div>
-        
-        <div class="flex items-start gap-3 p-3 rounded-lg bg-neutral/5 border border-neutral/20 hover:border-neutral/40 transition-all group opacity-75">
-            <div class="font-mono font-bold text-neutral text-lg w-12 text-right shrink-0">
-                {{ event.display_minute }}'
-            </div>
-            
-            <div class="w-10 h-10 rounded-lg bg-neutral/20 text-neutral flex items-center justify-center shrink-0">
-                <i class="ti ti-circle-x text-xl"></i>
-            </div>
-            
-            <div class="flex-1 min-w-0">
-                <div class="flex flex-wrap items-center gap-2 mb-1">
-                    <span class="badge badge-sm" style="background:#737373;color:#fff;font-weight:600">❌ Гол отменён</span>
-                    
-                    {% if event.player %}
-                    <a href="{% url 'players:detail' event.player.id %}" 
-                       class="font-semibold hover:text-neutral transition-colors truncate">
-                        {{ event.player.first_name }} {{ event.player.last_name }}
-                    </a>
-                    {% endif %}
-                    
-                    <span class="badge badge-xs badge-ghost">
-                        {{ event.get_team_side_display }}
-                    </span>
-                </div>
-                
-                {% if event.assist_player %}
-                <div class="flex flex-wrap items-center gap-3 text-sm opacity-60">
-                    <span class="flex items-center gap-1">
-                        <i class="ti ti-arrow-narrow-right"></i>
-                        ассист: {{ event.assist_player.first_name }} {{ event.assist_player.last_name }}
-                    </span>
-                </div>
+    <div class="md-timeline__row md-timeline__row--{{ event.team_side }}">
+        <div class="md-timeline__node md-tl-disallowed"><i class="ti ti-circle-x"></i></div>
+        <div class="md-timeline__card md-tl-disallowed opacity-80">
+            <div class="md-timeline__meta mb-1">
+                <span class="md-timeline__minute">{{ event.display_minute }}'</span>
+                <span class="badge badge-sm" style="background:#737373;color:#fff;font-weight:600">❌ Гол отменён</span>
+                {% if event.player %}
+                <a href="{% url 'players:detail' event.player.id %}"
+                   class="font-semibold hover:text-neutral transition-colors truncate">
+                    {{ event.player.first_name }} {{ event.player.last_name }}
+                </a>
                 {% endif %}
             </div>
+            {% if event.assist_player %}
+            <div class="text-sm opacity-60">
+                <i class="ti ti-arrow-narrow-right"></i>
+                ассист: {{ event.assist_player.first_name }} {{ event.assist_player.last_name }}
+            </div>
+            {% endif %}
         </div>
     </div>
-    
+
     <!-- === СОБЫТИЕ: АВТОГОЛ === -->
     {% elif event.event_type == 'own_goal' %}
-    <div class="relative pl-4 border-l-2 border-info/30">
-        <div class="absolute -left-[9px] top-4 w-4 h-4 rounded-full bg-info border-2 border-base-100"></div>
-        
-        <div class="flex items-start gap-3 p-3 rounded-lg bg-info/5 border border-info/20 hover:border-info/40 transition-all group">
-            <div class="font-mono font-bold text-info text-lg w-12 text-right shrink-0">
-                {{ event.display_minute }}'
-            </div>
-            
-            <div class="w-10 h-10 rounded-lg bg-info/20 text-info flex items-center justify-center shrink-0">
-                <i class="ti ti-arrow-back-up text-xl"></i>
-            </div>
-            
-            <div class="flex-1 min-w-0">
-                <div class="flex flex-wrap items-center gap-2 mb-1">
-                    <span class="badge badge-sm badge-info font-medium">🤦 Автогол</span>
-                    
-                    {% if event.player %}
-                    <a href="{% url 'players:detail' event.player.id %}" 
-                       class="font-semibold hover:text-info transition-colors truncate">
-                        {{ event.player.first_name }} {{ event.player.last_name }}
-                    </a>
-                    {% endif %}
-                    
-                    <span class="badge badge-xs badge-ghost">
-                        {{ event.get_team_side_display }}
-                    </span>
-                </div>
+    <div class="md-timeline__row md-timeline__row--{{ event.team_side }}">
+        <div class="md-timeline__node md-tl-own-goal"><i class="ti ti-arrow-back-up"></i></div>
+        <div class="md-timeline__card md-tl-own-goal">
+            <div class="md-timeline__meta">
+                <span class="md-timeline__minute">{{ event.display_minute }}'</span>
+                <span class="badge badge-sm badge-info font-medium">🤦 Автогол</span>
+                {% if event.player %}
+                <a href="{% url 'players:detail' event.player.id %}"
+                   class="font-semibold hover:text-info transition-colors truncate">
+                    {{ event.player.first_name }} {{ event.player.last_name }}
+                </a>
+                {% endif %}
             </div>
         </div>
     </div>
-    
+
     <!-- === СОБЫТИЕ: ЗАМЕНА === -->
     {% elif event.event_type == 'substitution' %}
-    <div class="relative pl-4 border-l-2 border-info/30">
-        <div class="absolute -left-[9px] top-4 w-4 h-4 rounded-full bg-info border-2 border-base-100"></div>
-        
-        <div class="flex items-start gap-3 p-3 rounded-lg bg-info/5 border border-info/20 hover:border-info/40 transition-all">
-            <div class="font-mono font-bold text-info text-lg w-12 text-right shrink-0">
-                {{ event.display_minute }}'
+    <div class="md-timeline__row md-timeline__row--{{ event.team_side }}">
+        <div class="md-timeline__node md-tl-sub"><i class="ti ti-refresh"></i></div>
+        <div class="md-timeline__card md-tl-sub">
+            <div class="md-timeline__meta mb-1">
+                <span class="md-timeline__minute">{{ event.display_minute }}'</span>
+                <span class="badge badge-xs badge-info font-medium">🔄 Замена</span>
             </div>
-            
-            <div class="w-10 h-10 rounded-lg bg-info/20 text-info flex items-center justify-center shrink-0">
-                <i class="ti ti-refresh text-xl"></i>
-            </div>
-            
-            <div class="flex-1 min-w-0">
-                <div class="flex flex-wrap items-center gap-2 mb-2">
-                    <span class="badge badge-sm badge-info font-medium">🔄 Замена</span>
-                    <span class="badge badge-xs badge-ghost">
-                        {{ event.get_team_side_display }}
-                    </span>
-                </div>
-                
-                <div class="flex items-center gap-2 mb-1.5 pl-1">
-                    <span class="text-error font-bold text-lg leading-none" title="Вышел">↓</span>
-                    {% if event.player_out %}
-                    <a href="{% url 'players:detail' event.player_out.id %}"
-                       class="text-sm hover:text-error transition-colors line-through decoration-error/50">
-                        {{ event.player_out.first_name }} {{ event.player_out.last_name }}
-                    </a>
-                    {% else %}
-                    <span class="text-sm opacity-40 italic">неизвестен</span>
-                    {% endif %}
-                </div>
-                
-                <div class="flex items-center gap-2 pl-1">
-                    <span class="text-success font-bold text-lg leading-none" title="Зашёл">↑</span>
-                    {% if event.player %}
-                    <a href="{% url 'players:detail' event.player.id %}"
-                       class="text-sm font-medium hover:text-success transition-colors">
-                        {{ event.player.first_name }} {{ event.player.last_name }}
-                    </a>
-                    {% else %}
-                    <span class="text-sm opacity-40 italic">неизвестен</span>
-                    {% endif %}
-                </div>
+            <div class="flex items-center gap-1 flex-wrap text-sm {% if event.team_side == 'home' %}justify-end{% endif %}">
+                {% if event.player_out %}
+                <a href="{% url 'players:detail' event.player_out.id %}"
+                   class="hover:text-error transition-colors line-through decoration-error/50 truncate">
+                    {{ event.player_out.first_name }} {{ event.player_out.last_name }}
+                </a>
+                {% else %}
+                <span class="opacity-40 italic">неизвестен</span>
+                {% endif %}
+                <span class="text-error font-bold leading-none flex-shrink-0" title="Вышел">↓</span>
+                <i class="ti ti-arrow-narrow-right text-xs opacity-30 flex-shrink-0"></i>
+                {% if event.player %}
+                <a href="{% url 'players:detail' event.player.id %}"
+                   class="font-medium hover:text-success transition-colors truncate">
+                    {{ event.player.first_name }} {{ event.player.last_name }}
+                </a>
+                {% else %}
+                <span class="opacity-40 italic">неизвестен</span>
+                {% endif %}
+                <span class="text-success font-bold leading-none flex-shrink-0" title="Зашёл">↑</span>
             </div>
         </div>
     </div>
-    
+
     <!-- === СОБЫТИЕ: ЖЁЛТАЯ КАРТОЧКА === -->
     {% elif event.event_type == 'yellow_card' %}
-    <div class="relative pl-4 border-l-2 border-amber-300/30">
-        <div class="absolute -left-[9px] top-4 w-4 h-4 rounded-full bg-amber-400 border-2 border-base-100"></div>
-        
-        <div class="flex items-start gap-3 p-3 rounded-lg bg-amber-50/50 border border-amber-200/50 hover:border-amber-300 transition-all">
-            <div class="font-mono font-bold text-amber-600 text-lg w-12 text-right shrink-0">
-                {{ event.display_minute }}'
-            </div>
-            
-            <div class="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center shrink-0">
-                <div class="w-4 h-5 bg-amber-400 rounded-sm"></div>
-            </div>
-            
-            <div class="flex-1 min-w-0">
-                <div class="flex flex-wrap items-center gap-2 mb-1">
-                    <span class="badge badge-sm" style="background:#f59e0b;color:#fff;font-weight:600">
-                        🟨 Жёлтая карточка
-                    </span>
-                    {% if event.player %}
-                    <a href="{% url 'players:detail' event.player.id %}" 
-                       class="font-semibold hover:text-amber-600 transition-colors truncate">
-                        {{ event.player.first_name }} {{ event.player.last_name }}
-                    </a>
-                    {% endif %}
-                    <span class="badge badge-xs badge-ghost">
-                        {{ event.get_team_side_display }}
-                    </span>
-                </div>
-                
-                {% if event.card_reason %}
-                <div class="text-sm opacity-70 italic">
-                    {% if event.card_reason == 'unsporting' %}🎭 Неспортивное поведение
-                    {% elif event.card_reason == 'dissent' %}💬 Диссидентство
-                    {% elif event.card_reason == 'persistent_fouling' %}🔁 Систематические нарушения
-                    {% elif event.card_reason == 'delaying_restart' %}⏱️ Задержка возобновления
-                    {% elif event.card_reason == 'entering_field' %}🚶 Незаконный выход на поле
-                    {% else %}{{ event.get_card_reason_display }}{% endif %}
-                </div>
+    <div class="md-timeline__row md-timeline__row--{{ event.team_side }}">
+        <div class="md-timeline__node md-tl-yellow"><div class="w-3 h-4 rounded-sm" style="background:#f59e0b"></div></div>
+        <div class="md-timeline__card md-tl-yellow">
+            <div class="md-timeline__meta mb-1">
+                <span class="md-timeline__minute">{{ event.display_minute }}'</span>
+                <span class="badge badge-sm" style="background:#f59e0b;color:#fff;font-weight:600">🟨 Жёлтая</span>
+                {% if event.player %}
+                <a href="{% url 'players:detail' event.player.id %}"
+                   class="font-semibold hover:text-warning transition-colors truncate">
+                    {{ event.player.first_name }} {{ event.player.last_name }}
+                </a>
                 {% endif %}
             </div>
+            {% if event.card_reason %}
+            <div class="text-sm opacity-70 italic">
+                {% if event.card_reason == 'unsporting' %}🎭 Неспортивное поведение
+                {% elif event.card_reason == 'dissent' %}💬 Диссидентство
+                {% elif event.card_reason == 'persistent_fouling' %}🔁 Систематические нарушения
+                {% elif event.card_reason == 'delaying_restart' %}⏱️ Задержка возобновления
+                {% elif event.card_reason == 'entering_field' %}🚶 Незаконный выход на поле
+                {% else %}{{ event.get_card_reason_display }}{% endif %}
+            </div>
+            {% endif %}
         </div>
     </div>
-    
+
     <!-- === СОБЫТИЕ: КРАСНАЯ КАРТОЧКА === -->
     {% elif event.event_type == 'red_card' %}
-    <div class="relative pl-4 border-l-2 border-red-400/30">
-        <div class="absolute -left-[9px] top-4 w-4 h-4 rounded-full bg-red-500 border-2 border-base-100"></div>
-        
-        <div class="flex items-start gap-3 p-3 rounded-lg bg-red-50/50 border border-red-200/50 hover:border-red-300 transition-all">
-            <div class="font-mono font-bold text-red-600 text-lg w-12 text-right shrink-0">
-                {{ event.display_minute }}'
-            </div>
-            
-            <div class="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center shrink-0">
-                <div class="w-4 h-5 bg-red-600 rounded-sm"></div>
-            </div>
-            
-            <div class="flex-1 min-w-0">
-                <div class="flex flex-wrap items-center gap-2 mb-1">
-                    <span class="badge badge-sm" style="background:#ef4444;color:#fff;font-weight:600">
-                        🟥 Красная карточка
-                    </span>
-                    {% if event.player %}
-                    <a href="{% url 'players:detail' event.player.id %}" 
-                       class="font-semibold hover:text-red-600 transition-colors truncate">
-                        {{ event.player.first_name }} {{ event.player.last_name }}
-                    </a>
-                    {% endif %}
-                    <span class="badge badge-xs badge-ghost">
-                        {{ event.get_team_side_display }}
-                    </span>
-                </div>
-                
-                {% if event.card_reason %}
-                <div class="text-sm opacity-70 italic">
-                    {% if event.card_reason == 'unsporting' %}🎭 Неспортивное поведение
-                    {% elif event.card_reason == 'dissent' %}💬 Диссидентство
-                    {% elif event.card_reason == 'persistent_fouling' %}🔁 Систематические нарушения
-                    {% elif event.card_reason == 'delaying_restart' %}⏱️ Задержка возобновления
-                    {% elif event.card_reason == 'entering_field' %}🚶 Незаконный выход на поле
-                    {% else %}{{ event.get_card_reason_display }}{% endif %}
-                </div>
+    <div class="md-timeline__row md-timeline__row--{{ event.team_side }}">
+        <div class="md-timeline__node md-tl-red"><div class="w-3 h-4 rounded-sm" style="background:#ef4444"></div></div>
+        <div class="md-timeline__card md-tl-red">
+            <div class="md-timeline__meta mb-1">
+                <span class="md-timeline__minute">{{ event.display_minute }}'</span>
+                <span class="badge badge-sm" style="background:#ef4444;color:#fff;font-weight:600">🟥 Красная</span>
+                {% if event.player %}
+                <a href="{% url 'players:detail' event.player.id %}"
+                   class="font-semibold hover:text-red-600 transition-colors truncate">
+                    {{ event.player.first_name }} {{ event.player.last_name }}
+                </a>
                 {% endif %}
             </div>
+            {% if event.card_reason %}
+            <div class="text-sm opacity-70 italic">
+                {% if event.card_reason == 'unsporting' %}🎭 Неспортивное поведение
+                {% elif event.card_reason == 'dissent' %}💬 Диссидентство
+                {% elif event.card_reason == 'persistent_fouling' %}🔁 Систематические нарушения
+                {% elif event.card_reason == 'delaying_restart' %}⏱️ Задержка возобновления
+                {% elif event.card_reason == 'entering_field' %}🚶 Незаконный выход на поле
+                {% else %}{{ event.get_card_reason_display }}{% endif %}
+            </div>
+            {% endif %}
         </div>
     </div>
-    
+
     <!-- === СОБЫТИЕ: VAR ПРОВЕРКА === -->
     {% elif event.event_type == 'var_check' %}
-    <div class="relative pl-4 border-l-2 border-purple-400/30">
-        <div class="absolute -left-[9px] top-4 w-4 h-4 rounded-full bg-purple-500 border-2 border-base-100"></div>
-        
-        <div class="flex items-start gap-3 p-3 rounded-lg bg-purple-50/50 border border-purple-200/50 hover:border-purple-300 transition-all">
-            <div class="font-mono font-bold text-purple-600 text-lg w-12 text-right shrink-0">
-                {{ event.display_minute }}'
+    <div class="md-timeline__row md-timeline__row--{{ event.team_side }}">
+        <div class="md-timeline__node md-tl-var"><i class="ti ti-screen-share"></i></div>
+        <div class="md-timeline__card md-tl-var">
+            <div class="md-timeline__meta mb-1">
+                <span class="md-timeline__minute">{{ event.display_minute }}'</span>
+                <span class="badge badge-sm" style="background:#a855f7;color:#fff;font-weight:600">📺 VAR</span>
             </div>
-            
-            <div class="w-10 h-10 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
-                <i class="ti ti-screen-share text-xl"></i>
-            </div>
-            
-            <div class="flex-1 min-w-0">
-                <div class="flex flex-wrap items-center gap-2 mb-1">
-                    <span class="badge badge-sm" style="background:#a855f7;color:#fff;font-weight:600">
-                        📺 VAR проверка
-                    </span>
-                    <span class="badge badge-xs badge-ghost">
-                        {{ event.get_team_side_display }}
-                    </span>
-                </div>
-                
-                {% if event.var_decision %}
-                <div class="text-sm font-medium text-purple-700 bg-purple-100 px-2 py-1 rounded inline-block">
-                    {{ event.var_decision }}
-                </div>
-                {% else %}
-                <div class="text-sm opacity-60 italic">Проверка эпизода...</div>
-                {% endif %}
-            </div>
+            {% if event.var_decision %}
+            <div class="text-sm font-medium" style="color:#7e22ce">{{ event.var_decision }}</div>
+            {% else %}
+            <div class="text-sm opacity-60 italic">Проверка эпизода...</div>
+            {% endif %}
         </div>
     </div>
-    
+
     {% endif %}
-    
+
     {% empty %}
-    <div class="text-center py-12 opacity-60">
+    <div class="text-center py-14 opacity-60">
         <div class="w-16 h-16 rounded-full bg-base-200 flex items-center justify-center mx-auto mb-4">
             <i class="ti ti-clock-off text-3xl"></i>
         </div>
@@ -382,49 +255,50 @@
         <p class="text-sm opacity-60 mt-1">Загляните чуть позже</p>
     </div>
     {% endfor %}
+</div>
 
-    <!-- === ЛЕГЕНДА СОБЫТИЙ (внутри контейнера) === -->
+    <!-- === ЛЕГЕНДА СОБЫТИЙ (вне .md-timeline — иначе стрелка тянется и сюда) === -->
     {% if events %}
-    <div class="mt-6 pt-5 border-t border-base-300">
-        <div class="flex items-center gap-2 mb-3">
+    <div class="mt-5 pt-4 border-t border-base-300">
+        <div class="flex items-center gap-2 mb-2.5">
             <i class="ti ti-info-circle text-sm opacity-60"></i>
             <span class="text-xs font-semibold uppercase tracking-wide opacity-60">Легенда событий</span>
         </div>
-        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
-            <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-success/5 border border-success/20">
-                <div class="w-6 h-6 rounded-full bg-success/20 flex items-center justify-center">
-                    <i class="ti ti-ball text-success text-sm"></i>
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-1.5">
+            <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-success/5 border border-success/20">
+                <div class="w-5 h-5 rounded-full bg-success/20 flex items-center justify-center flex-shrink-0">
+                    <i class="ti ti-ball text-success text-xs"></i>
                 </div>
-                <span class="text-xs font-medium">Гол</span>
+                <span class="text-[11px] font-medium">Гол</span>
             </div>
-            <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-warning/5 border border-warning/20">
-                <div class="w-6 h-6 rounded-full bg-warning/20 flex items-center justify-center">
-                    <i class="ti ti-whistle text-warning text-sm"></i>
+            <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-warning/5 border border-warning/20">
+                <div class="w-5 h-5 rounded-full bg-warning/20 flex items-center justify-center flex-shrink-0">
+                    <i class="ti ti-gavel text-warning text-xs"></i>
                 </div>
-                <span class="text-xs font-medium">Пенальти</span>
+                <span class="text-[11px] font-medium">Пенальти</span>
             </div>
-            <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-error/5 border border-error/20">
-                <div class="w-6 h-6 rounded-full bg-error/20 flex items-center justify-center">
-                    <i class="ti ti-circle-x text-error text-sm"></i>
+            <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-error/5 border border-error/20">
+                <div class="w-5 h-5 rounded-full bg-error/20 flex items-center justify-center flex-shrink-0">
+                    <i class="ti ti-circle-x text-error text-xs"></i>
                 </div>
-                <span class="text-xs font-medium">Не забит</span>
+                <span class="text-[11px] font-medium">Не забит</span>
             </div>
-            <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-neutral/5 border border-neutral/20">
-                <div class="w-6 h-6 rounded-full bg-neutral/20 flex items-center justify-center">
-                    <i class="ti ti-circle-x text-neutral text-sm"></i>
+            <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-neutral/5 border border-neutral/20">
+                <div class="w-5 h-5 rounded-full bg-neutral/20 flex items-center justify-center flex-shrink-0">
+                    <i class="ti ti-circle-x text-neutral text-xs"></i>
                 </div>
-                <span class="text-xs font-medium">Отменён</span>
+                <span class="text-[11px] font-medium">Отменён</span>
             </div>
-            <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200">
-                <div class="w-4 h-5 bg-amber-400 rounded-sm"></div>
-                <span class="text-xs font-medium">Жёлтая</span>
+            <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-amber-50 border border-amber-200">
+                <div class="w-3.5 h-4.5 bg-amber-400 rounded-sm flex-shrink-0"></div>
+                <span class="text-[11px] font-medium">Жёлтая</span>
             </div>
-            <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-50 border border-red-200">
-                <div class="w-4 h-5 bg-red-600 rounded-sm"></div>
-                <span class="text-xs font-medium">Красная</span>
+            <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-red-50 border border-red-200">
+                <div class="w-3.5 h-4.5 bg-red-600 rounded-sm flex-shrink-0"></div>
+                <span class="text-[11px] font-medium">Красная</span>
             </div>
         </div>
     </div>
     {% endif %}
-    
+
 </div>

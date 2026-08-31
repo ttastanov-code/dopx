@@ -11,7 +11,7 @@ from round_squad.services import (
     ROUND_CONFIDENT_VOTES_THRESHOLD,
     ROUND_MIN_VOTES_FOR_CANDIDATE,
     ROUND_VOTE_SHRINKAGE_C,
-    resolve_practically_closed_tour,
+    resolve_current_tour,
 )
 # Осознанно переиспользуем раскладку поля и стили кольца доверия из
 # season_squad.views — тот же визуальный язык на "DOPX Лучшие тура", что и
@@ -74,8 +74,14 @@ def _resolve_latest_tour(season):
     resolve_practically_closed_tour — понадобился ещё и в
     core/context_processors.py для кнопки в шапке (см. докстринг там).
     Эта функция оставлена как тонкая обёртка, чтобы не трогать вызовы
-    ниже по файлу."""
-    return resolve_practically_closed_tour(season)
+    ниже по файлу.
+
+    2026-08-31: обёртка переключена на round_squad/services.py::
+    resolve_current_tour — см. её докстринг про баг рассинхрона с кнопкой
+    в шапке (эта страница показывала практически-сыгранный, но ещё НЕ
+    зафиксированный тур, пока кнопка держалась на последнем официально
+    зафиксированном — два разных ответа на "какой тур сейчас")."""
+    return resolve_current_tour(season)
 
 
 def _slot_to_card(slot, slot_code):

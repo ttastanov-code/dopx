@@ -4,146 +4,120 @@
 {% load math_extras %}
 
 {% block content %}
-<!-- === PROGRESS BAR === -->
-<div class="max-w-4xl mx-auto mb-6 px-3">
+<!-- === PROGRESS === -->
+<div class="max-w-4xl mx-auto mb-5 px-3">
     {% include 'evaluations/_evaluation_progress.html' with step=2 total_steps=6 progress=progress %}
 </div>
 
-<!-- === MATCH INFO === -->
-<div class="max-w-4xl mx-auto mb-6 px-3">
-    <div class="card bg-base-100 border border-base-200 shadow-sm">
-        <div class="card-body p-3">
-            <div class="flex items-center justify-between gap-1">
-                <div class="flex flex-col items-center gap-0.5 flex-1 min-w-0">
-                    {% if match.home_team.logo_url %}
-                    <img src="{{ match.home_team.logo_url }}" alt="{{ match.home_team.name }}" class="w-8 h-8 object-contain">
-                    {% else %}
-                    <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-xs">
-                        {{ match.home_team.name|first|upper }}
-                    </div>
-                    {% endif %}
-                    <span class="font-semibold text-[10px] text-center truncate w-full max-w-[80px]">
-                        {{ match.home_team.name|truncatechars:12 }}
-                    </span>
-                </div>
-
-                <div class="text-center px-2 py-1 bg-base-200 rounded-lg shrink-0 min-w-[65px]">
-                    <div class="text-sm font-bold font-mono">{% render_score match.home_score match.away_score %}</div>
-                    <div class="text-[8px] text-base-content/50">{{ match.start_time|date:"d.m" }}</div>
-                </div>
-
-                <div class="flex flex-col items-center gap-0.5 flex-1 min-w-0">
-                    <span class="font-semibold text-[10px] text-center truncate w-full max-w-[80px] order-2">
-                        {{ match.away_team.name|truncatechars:12 }}
-                    </span>
-                    {% if match.away_team.logo_url %}
-                    <img src="{{ match.away_team.logo_url }}" alt="{{ match.away_team.name }}" class="w-8 h-8 object-contain order-1">
-                    {% else %}
-                    <div class="w-8 h-8 rounded-full bg-secondary/10 flex items-center justify-center font-bold text-secondary text-xs order-1">
-                        {{ match.away_team.name|first|upper }}
-                    </div>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
+<!-- === ШАПКА МАТЧА === -->
+<div class="max-w-4xl mx-auto mb-5 px-3">
+    <div class="wz-hero-card">
+        {% include 'evaluations/_wizard_match_header.html' with match=match %}
     </div>
 </div>
 
+<div class="max-w-4xl mx-auto px-3 text-center mb-5">
+    <h2 class="text-xl sm:text-2xl font-extrabold mb-1">Оцените игру команд</h2>
+    <p class="text-sm text-base-content/60">По каждому пункту — от 1 до 10</p>
+</div>
+
 <!-- === FORM === -->
-<div class="max-w-4xl mx-auto px-3 overflow-x-hidden">
+<div class="max-w-4xl mx-auto px-3">
     <form method="post" action="{% url 'evaluations:teams' match.id %}" class="space-y-5">
         {% csrf_token %}
-        
-        <!-- Домашняя команда -->
-        <div class="card bg-base-100 border-2 border-primary/20 shadow-sm">
-            <div class="card-body p-3">
-                <div class="flex items-center gap-2 mb-3 pb-2 border-b border-base-200">
-                    {% if match.home_team.logo_url %}
-                    <img src="{{ match.home_team.logo_url }}" class="w-8 h-8 object-contain flex-shrink-0">
-                    {% else %}
-                    <div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center font-bold text-primary text-base flex-shrink-0">
-                        {{ match.home_team.name|first|upper }}
-                    </div>
-                    {% endif %}
-                    <div class="flex-1 min-w-0">
-                        <h3 class="font-bold text-sm truncate">{{ match.home_team.name }}</h3>
-                        <p class="text-[10px] text-base-content/50">Домашняя команда</p>
-                    </div>
-                </div>
-                <div class="space-y-3">
-                    {% for field in evaluation_fields %}
-                    <div>
-                        <div class="flex justify-between mb-1">
-                            <label class="text-[10px] font-semibold flex items-center gap-0.5">
-                                <i class="ti {{ field.icon }} text-primary text-xs"></i>
-                                {{ field.label }}
-                                {% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.team|get_item:field.name %}
-                            </label>
-                            <span class="text-xs font-bold text-primary" id="home_{{ field.name }}_value">5</span>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <!-- Домашняя команда -->
+            <div class="wz-card card bg-base-100 border border-primary/20 shadow-sm">
+                <div class="card-body p-4 sm:p-5">
+                    <div class="flex items-center gap-3 mb-4 pb-3 border-b border-base-200">
+                        {% if match.home_team.logo_url %}
+                        <img src="{{ match.home_team.logo_url }}" class="w-10 h-10 object-contain flex-shrink-0">
+                        {% else %}
+                        <div class="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center font-bold text-primary text-base flex-shrink-0">
+                            {{ match.home_team.name|first|upper }}
                         </div>
-                        <input type="range" 
-                               name="team_{{ match.home_team.id }}_{{ field.name }}" 
-                               min="1" max="10" value="5"
-                               class="range range-primary range-xs w-full"
-                               step="1"
-                               oninput="document.getElementById('home_{{ field.name }}_value').textContent = this.value">
-                        <div class="flex justify-between text-[8px] text-base-content/40 mt-0.5 px-1">
-                            <span>1</span><span>5</span><span>10</span>
+                        {% endif %}
+                        <div class="flex-1 min-w-0">
+                            <h3 class="font-extrabold text-base truncate">{{ match.home_team.name }}</h3>
+                            <p class="text-xs text-primary/70 font-semibold">Домашняя команда</p>
                         </div>
                     </div>
-                    {% endfor %}
+                    <div class="space-y-3.5">
+                        {% for field in evaluation_fields %}
+                        <div class="wz-accent-primary wz-slider-card">
+                            <div class="flex justify-between items-center mb-2">
+                                <label class="text-sm font-semibold flex items-center gap-1.5">
+                                    <i class="ti {{ field.icon }} text-primary"></i>
+                                    {{ field.label }}
+                                    {% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.team|get_item:field.name %}
+                                </label>
+                                <span class="wz-slider-card__value" id="home_{{ field.name }}_value">5</span>
+                            </div>
+                            <input type="range"
+                                   name="team_{{ match.home_team.id }}_{{ field.name }}"
+                                   min="1" max="10" value="5"
+                                   class="wizard-slider"
+                                   step="1"
+                                   oninput="document.getElementById('home_{{ field.name }}_value').textContent = this.value">
+                            <div class="flex justify-between text-[10px] text-base-content/40 mt-1.5 px-1">
+                                <span>1</span><span>5</span><span>10</span>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
                 </div>
             </div>
-        </div>
 
-        <!-- Гостевая команда -->
-        <div class="card bg-base-100 border-2 border-secondary/20 shadow-sm">
-            <div class="card-body p-3">
-                <div class="flex items-center gap-2 mb-3 pb-2 border-b border-base-200">
-                    {% if match.away_team.logo_url %}
-                    <img src="{{ match.away_team.logo_url }}" class="w-8 h-8 object-contain flex-shrink-0">
-                    {% else %}
-                    <div class="w-8 h-8 rounded-lg bg-secondary/10 flex items-center justify-center font-bold text-secondary text-base flex-shrink-0">
-                        {{ match.away_team.name|first|upper }}
-                    </div>
-                    {% endif %}
-                    <div class="flex-1 min-w-0">
-                        <h3 class="font-bold text-sm truncate">{{ match.away_team.name }}</h3>
-                        <p class="text-[10px] text-base-content/50">Гостевая команда</p>
-                    </div>
-                </div>
-                <div class="space-y-3">
-                    {% for field in evaluation_fields %}
-                    <div>
-                        <div class="flex justify-between mb-1">
-                            <label class="text-[10px] font-semibold flex items-center gap-0.5">
-                                <i class="ti {{ field.icon }} text-secondary text-xs"></i>
-                                {{ field.label }}
-                                {% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.team|get_item:field.name %}
-                            </label>
-                            <span class="text-xs font-bold text-secondary" id="away_{{ field.name }}_value">5</span>
+            <!-- Гостевая команда -->
+            <div class="wz-card card bg-base-100 border border-secondary/20 shadow-sm">
+                <div class="card-body p-4 sm:p-5">
+                    <div class="flex items-center gap-3 mb-4 pb-3 border-b border-base-200">
+                        {% if match.away_team.logo_url %}
+                        <img src="{{ match.away_team.logo_url }}" class="w-10 h-10 object-contain flex-shrink-0">
+                        {% else %}
+                        <div class="w-10 h-10 rounded-xl bg-secondary/10 flex items-center justify-center font-bold text-secondary text-base flex-shrink-0">
+                            {{ match.away_team.name|first|upper }}
                         </div>
-                        <input type="range" 
-                               name="team_{{ match.away_team.id }}_{{ field.name }}" 
-                               min="1" max="10" value="5"
-                               class="range range-secondary range-xs w-full"
-                               step="1"
-                               oninput="document.getElementById('away_{{ field.name }}_value').textContent = this.value">
-                        <div class="flex justify-between text-[8px] text-base-content/40 mt-0.5 px-1">
-                            <span>1</span><span>5</span><span>10</span>
+                        {% endif %}
+                        <div class="flex-1 min-w-0">
+                            <h3 class="font-extrabold text-base truncate">{{ match.away_team.name }}</h3>
+                            <p class="text-xs text-secondary/70 font-semibold">Гостевая команда</p>
                         </div>
                     </div>
-                    {% endfor %}
+                    <div class="space-y-3.5">
+                        {% for field in evaluation_fields %}
+                        <div class="wz-accent-secondary wz-slider-card">
+                            <div class="flex justify-between items-center mb-2">
+                                <label class="text-sm font-semibold flex items-center gap-1.5">
+                                    <i class="ti {{ field.icon }} text-secondary"></i>
+                                    {{ field.label }}
+                                    {% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.team|get_item:field.name %}
+                                </label>
+                                <span class="wz-slider-card__value" id="away_{{ field.name }}_value">5</span>
+                            </div>
+                            <input type="range"
+                                   name="team_{{ match.away_team.id }}_{{ field.name }}"
+                                   min="1" max="10" value="5"
+                                   class="wizard-slider"
+                                   step="1"
+                                   oninput="document.getElementById('away_{{ field.name }}_value').textContent = this.value">
+                            <div class="flex justify-between text-[10px] text-base-content/40 mt-1.5 px-1">
+                                <span>1</span><span>5</span><span>10</span>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
                 </div>
             </div>
         </div>
 
         <!-- Navigation Buttons -->
-        <div class="flex gap-2 pt-2">
-            <a href="{% url 'evaluations:context' match.id %}" class="btn btn-ghost btn-sm flex-1">
+        <div class="wz-sticky-nav flex gap-2">
+            <a href="{% url 'evaluations:context' match.id %}" class="btn btn-ghost btn-lg flex-1">
                 <i class="ti ti-arrow-left"></i> Назад
             </a>
-            <button type="submit" class="btn btn-primary btn-sm flex-1">
+            <button type="submit" class="btn btn-primary btn-lg flex-1">
                 Далее <i class="ti ti-arrow-right"></i>
             </button>
         </div>

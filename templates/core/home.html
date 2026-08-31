@@ -116,59 +116,7 @@
             </div>
             <div class="space-y-2 md:space-y-3">
                 {% for match in upcoming_matches %}
-                <!-- flex-nowrap ниже держит команды/счёт строго в одну линию -->
-                <div class="card bg-base-100 border border-base-300 hover:border-primary transition-all cursor-pointer h-full"
-                     onclick="window.location='{% url 'matches:detail' match.id %}'">
-                    <div class="card-body p-3 md:p-4">
-                        <!-- Контейнер: flex-nowrap запрещает перенос на новую строку -->
-                        <div class="flex flex-nowrap items-center justify-between gap-2 sm:gap-3 w-full">
-                            <!-- Домашняя команда (min-w-0 + truncate) -->
-                            <div class="flex items-center gap-2 sm:gap-3 flex-1 min-w-0 justify-start sm:justify-end">
-                                <span class="font-semibold text-sm sm:text-base truncate text-left sm:text-right w-full">
-                                    {{ match.home_team.name }}
-                                </span>
-                                {% if match.home_team.logo_url %}
-                                <img src="{{ match.home_team.logo_url }}" alt="{{ match.home_team.name }}" class="w-8 h-8 sm:w-10 sm:h-10 object-contain flex-shrink-0">
-                                {% else %}
-                                <div class="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-sm sm:text-base flex-shrink-0">
-                                    {{ match.home_team.name|first|upper }}
-                                </div>
-                                {% endif %}
-                            </div>
-
-                            <!-- Время/VS (shrink-0 - не сжимается) -->
-                            <div class="text-center px-2 py-1.5 sm:px-3 sm:py-2 bg-base-200 rounded-lg shrink-0 min-w-[80px] sm:min-w-[100px]">
-                                <div class="text-xs opacity-60 mb-0.5">VS</div>
-                                <div class="text-xs sm:text-sm font-mono">{{ match.start_time|date:"d.m" }}</div>
-                                <div class="text-[10px] sm:text-xs opacity-60">{{ match.start_time|time:"H:i" }}</div>
-                            </div>
-
-                            <!-- Гостевая команда (min-w-0 + truncate) -->
-                            <div class="flex items-center gap-2 sm:gap-3 flex-1 min-w-0 justify-end sm:justify-start flex-row-reverse sm:flex-row">
-                                {% if match.away_team.logo_url %}
-                                <img src="{{ match.away_team.logo_url }}" alt="{{ match.away_team.name }}" class="w-8 h-8 sm:w-10 sm:h-10 object-contain flex-shrink-0 order-first sm:order-none">
-                                {% else %}
-                                <div class="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-secondary/10 flex items-center justify-center font-bold text-secondary text-sm sm:text-base flex-shrink-0 order-first sm:order-none">
-                                    {{ match.away_team.name|first|upper }}
-                                </div>
-                                {% endif %}
-                                <span class="font-semibold text-sm sm:text-base truncate text-right sm:text-left w-full">
-                                    {{ match.away_team.name }}
-                                </span>
-                            </div>
-                        </div>
-                        <!-- Лига и стадион -->
-                        <div class="text-[10px] sm:text-xs opacity-60 mt-2 flex items-center gap-2 flex-wrap truncate">
-                            <i class="ti ti-trophy flex-shrink-0"></i>
-                            <span class="truncate">{{ match.league.name }}</span>
-                            {% if match.stadium %}
-                            <span class="hidden sm:inline">•</span>
-                            <i class="ti ti-map-pin hidden sm:inline flex-shrink-0"></i>
-                            <span class="truncate hidden sm:inline">{{ match.stadium.name }}</span>
-                            {% endif %}
-                        </div>
-                    </div>
-                </div>
+                {% include 'components/_match_card.html' with match=match %}
                 {% empty %}
                 <div class="text-center py-8 opacity-60">
                     <i class="ti ti-calendar-off text-3xl sm:text-4xl mb-2"></i>
@@ -192,94 +140,7 @@
             </div>
             <div class="space-y-2 md:space-y-3">
                 {% for match in recent_matches %}
-                <!-- flex-nowrap ниже держит команды/счёт строго в одну линию -->
-                <div class="card bg-base-100 border border-base-300 hover:border-primary transition-all cursor-pointer h-full"
-                     onclick="window.location='{% url 'matches:detail' match.id %}'">
-                    <div class="card-body p-3 md:p-4">
-                        <!-- Контейнер: flex-nowrap запрещает перенос на новую строку -->
-                        <div class="flex flex-nowrap items-center justify-between gap-2 sm:gap-3 w-full">
-                            <!-- Домашняя команда (min-w-0 + truncate) -->
-                            <div class="flex items-center gap-2 sm:gap-3 flex-1 min-w-0 justify-start sm:justify-end">
-                                <span class="font-semibold text-sm sm:text-base truncate text-left sm:text-right w-full {% if match.status == 'finished' and match.home_score > match.away_score %}text-success{% endif %}">
-                                    {{ match.home_team.name }}
-                                </span>
-                                {% if match.home_team.logo_url %}
-                                <img src="{{ match.home_team.logo_url }}" alt="{{ match.home_team.name }}" class="w-8 h-8 sm:w-10 sm:h-10 object-contain flex-shrink-0">
-                                {% else %}
-                                <div class="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-sm sm:text-base flex-shrink-0">
-                                    {{ match.home_team.name|first|upper }}
-                                </div>
-                                {% endif %}
-                            </div>
-
-                            <!-- Счёт (shrink-0 - не сжимается) -->
-                            <div class="text-center px-2 py-1.5 sm:px-3 sm:py-2 bg-base-200 rounded-lg shrink-0 min-w-[80px] sm:min-w-[100px]">
-                                {% if match.status == 'finished' %}
-                                <div class="text-lg sm:text-xl font-bold font-mono leading-tight">
-                                    {{ match.home_score|default:0 }} : {{ match.away_score|default:0 }}
-                                </div>
-                                {% if match.aggregate and match.aggregate.total_votes > 0 %}
-                                <div class="text-[10px] sm:text-xs opacity-60 mt-1 flex items-center justify-center gap-1">
-                                    <i class="ti ti-activity flex-shrink-0"></i>
-                                    <span class="truncate">Драма: {{ match.aggregate.drama_index|floatformat:0 }}</span>
-                                </div>
-                                {% elif not match.is_voting_open %}
-                                {% comment %}
-                                "Драма: 0" при total_votes=0 читалось бы как реальная оценка,
-                                а не отсутствие голосов — говорим прямо.
-                                {% endcomment %}
-                                <div class="text-[10px] sm:text-xs opacity-40 mt-1 truncate">Нет оценок</div>
-                                {% endif %}
-                                {% else %}
-                                <div class="text-sm sm:text-base font-bold text-error animate-pulse flex items-center justify-center gap-1">
-                                    <i class="ti ti-circle-filled text-[8px] flex-shrink-0"></i>
-                                    LIVE
-                                </div>
-                                <div class="text-[10px] sm:text-xs opacity-60 mt-1">
-                                    {{ match.home_score|default:0 }} : {{ match.away_score|default:0 }}
-                                </div>
-                                {% endif %}
-                            </div>
-
-                            <!-- Гостевая команда (min-w-0 + truncate) -->
-                            <div class="flex items-center gap-2 sm:gap-3 flex-1 min-w-0 justify-end sm:justify-start flex-row-reverse sm:flex-row">
-                                {% if match.away_team.logo_url %}
-                                <img src="{{ match.away_team.logo_url }}" alt="{{ match.away_team.name }}" class="w-8 h-8 sm:w-10 sm:h-10 object-contain flex-shrink-0 order-first sm:order-none">
-                                {% else %}
-                                <div class="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-secondary/10 flex items-center justify-center font-bold text-secondary text-sm sm:text-base flex-shrink-0 order-first sm:order-none">
-                                    {{ match.away_team.name|first|upper }}
-                                </div>
-                                {% endif %}
-                                <span class="font-semibold text-sm sm:text-base truncate text-right sm:text-left w-full {% if match.status == 'finished' and match.away_score > match.home_score %}text-success{% endif %}">
-                                    {{ match.away_team.name }}
-                                </span>
-                            </div>
-                        </div>
-                        <!-- Дата и голосование -->
-                        <div class="text-[10px] sm:text-xs opacity-60 mt-2 flex flex-wrap items-center justify-between gap-2">
-                            <div class="flex items-center gap-2">
-                                <i class="ti ti-calendar flex-shrink-0"></i>
-                                <span class="truncate">{{ match.start_time|date:"d.m.Y H:i" }}</span>
-                            </div>
-                            {% if match.user_has_evaluated %}
-                            <span class="badge badge-success badge-xs shrink-0" title="Вы уже оценили этот матч">
-                                <i class="ti ti-check flex-shrink-0"></i>
-                                <span class="hidden sm:inline">Оценено</span>
-                            </span>
-                            {% elif match.is_voting_open %}
-                            <a href="{% url 'evaluations:context' match.id %}" class="btn btn-xs btn-primary shrink-0" onclick="event.stopPropagation()">
-                                <i class="ti ti-star"></i>
-                                <span class="hidden sm:inline">Оценить</span>
-                            </a>
-                            {% else %}
-                            <span class="badge badge-ghost badge-xs shrink-0">
-                                <i class="ti ti-check flex-shrink-0"></i>
-                                <span class="hidden sm:inline">Завершено</span>
-                            </span>
-                            {% endif %}
-                        </div>
-                    </div>
-                </div>
+                {% include 'components/_match_card.html' with match=match show_stadium=False %}
                 {% empty %}
                 <div class="text-center py-8 opacity-60">
                     <i class="ti ti-scoreboard text-3xl sm:text-4xl mb-2"></i>

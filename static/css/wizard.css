@@ -1,0 +1,285 @@
+/* static/css/wizard.css
+ *
+ * СТРУКТУРНЫЙ РЕДИЗАЙН (2026-08-31, второй проход). Первая версия
+ * ограничилась перекраской нативных range-инпутов и лёгким скруглением —
+ * пользователь справедливо забраковал результат: "хуйня полная, надо
+ * заново". Здесь другая композиция, а не только цвет:
+ *
+ *  - Общая шапка матча (_wizard_match_header.html) вместо 6 разных копий
+ *    с обрезанными до 12 символов именами команд и гербами 32px.
+ *  - Именной степпер-рельс (.wz-rail) вместо ряда мелких кружков с
+ *    цифрами — иконка станции = мгновенно понятно что за шаг.
+ *  - Карточки-слайдеры (.wz-slider-card) — крупный лейбл, крупное
+ *    значение в отдельной "таблетке", а не мелкий текст сбоку.
+ *  - Карточки-выбора (.wz-select-card) для радио-кнопок (context.html) —
+ *    заметное состояние "выбрано" (обводка + подсветка + галочка), а не
+ *    еле заметная смена цвета бордера.
+ *  - Строки-переключатели (.wz-toggle-row) для чекбоксов/тумблеров —
+ *    весь ряд кликабелен, тумблер увеличен до реального тач-таргета.
+ *
+ * Один файл, подключён один раз в base.html, используется во всех
+ * templates/evaluations/*.html.
+ */
+
+/* ============================================================
+   ШАПКА МАТЧА
+   ============================================================ */
+.wz-hero-card {
+    border-radius: 1.5rem;
+    background: linear-gradient(160deg,
+        color-mix(in oklab, var(--color-primary) 6%, var(--color-base-100)),
+        var(--color-base-100) 60%);
+    border: 1px solid var(--color-base-300);
+    padding: 1rem 1.25rem;
+}
+
+/* ============================================================
+   СТЕППЕР-РЕЛЬС
+   ============================================================ */
+.wz-rail {
+    position: relative;
+    padding: 0 2px;
+}
+.wz-rail__track {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    right: 20px;
+    height: 3px;
+    border-radius: 9999px;
+    background: var(--color-base-200);
+    z-index: 0;
+}
+.wz-rail__fill {
+    height: 100%;
+    border-radius: 9999px;
+    background: linear-gradient(90deg, var(--color-primary), var(--color-secondary));
+    transition: width .6s cubic-bezier(.16,1,.3,1);
+}
+.wz-rail__stations {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    justify-content: space-between;
+}
+.wz-rail__station-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: .4rem;
+    flex: 1;
+}
+.wz-rail__station {
+    width: 40px;
+    height: 40px;
+    border-radius: 9999px;
+    background: var(--color-base-100);
+    border: 2px solid var(--color-base-300);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    color: color-mix(in oklab, var(--color-base-content) 35%, transparent);
+    transition: transform .35s cubic-bezier(.16,1,.3,1), border-color .35s ease,
+                background .35s ease, color .35s ease, box-shadow .35s ease;
+}
+.wz-rail__station--current {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+    background: color-mix(in oklab, var(--color-primary) 12%, var(--color-base-100));
+    transform: scale(1.12);
+    box-shadow: 0 0 0 6px color-mix(in oklab, var(--color-primary) 14%, transparent);
+}
+.wz-rail__station--done {
+    border-color: var(--color-success);
+    background: var(--color-success);
+    color: var(--color-success-content);
+}
+.wz-rail__label {
+    font-size: .625rem;
+    font-weight: 600;
+    opacity: .45;
+    display: none;
+    white-space: nowrap;
+}
+.wz-rail__label--current {
+    display: block;
+    opacity: 1;
+    font-weight: 800;
+    color: var(--color-primary);
+}
+@media (min-width: 640px) {
+    .wz-rail__label { display: block; font-size: .6875rem; }
+}
+
+/* ============================================================
+   КАРТОЧКИ-СЛАЙДЕРЫ
+   ============================================================ */
+.wz-slider-card {
+    border-radius: 1.125rem;
+    background: color-mix(in oklab, var(--wz-accent, var(--color-base-300)) 5%, var(--color-base-100));
+    border: 1px solid color-mix(in oklab, var(--wz-accent, var(--color-base-300)) 18%, var(--color-base-300));
+    padding: 1rem 1.125rem;
+    transition: border-color .3s ease, background .3s ease;
+}
+.wz-slider-card:focus-within {
+    border-color: color-mix(in oklab, var(--wz-accent, var(--color-primary)) 55%, var(--color-base-300));
+}
+.wz-slider-card__value {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2.5rem;
+    padding: .25rem .5rem;
+    border-radius: .625rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    background: color-mix(in oklab, var(--wz-accent, var(--color-primary)) 15%, transparent);
+    color: var(--wz-accent, var(--color-primary));
+}
+
+/* Кастомный range-слайдер */
+.wizard-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 8px;
+    border-radius: 9999px;
+    background: linear-gradient(to right,
+        var(--wz-accent, var(--color-primary)) 0%,
+        var(--wz-accent, var(--color-primary)) var(--wz-fill, 50%),
+        var(--color-base-300) var(--wz-fill, 50%),
+        var(--color-base-300) 100%);
+    outline: none;
+    margin: 0;
+    transition: box-shadow .2s ease;
+}
+.wizard-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 28px;
+    height: 28px;
+    border-radius: 9999px;
+    background: var(--color-base-100);
+    border: 3px solid var(--wz-accent, var(--color-primary));
+    box-shadow: 0 2px 8px rgba(0,0,0,.2);
+    cursor: pointer;
+    transition: transform .15s cubic-bezier(.16,1,.3,1);
+}
+.wizard-slider::-moz-range-thumb {
+    width: 28px;
+    height: 28px;
+    border-radius: 9999px;
+    background: var(--color-base-100);
+    border: 3px solid var(--wz-accent, var(--color-primary));
+    box-shadow: 0 2px 8px rgba(0,0,0,.2);
+    cursor: pointer;
+    transition: transform .15s cubic-bezier(.16,1,.3,1);
+}
+.wizard-slider::-moz-range-progress {
+    height: 8px;
+    border-radius: 9999px;
+    background: var(--wz-accent, var(--color-primary));
+}
+.wizard-slider::-moz-range-track {
+    height: 8px;
+    border-radius: 9999px;
+    background: var(--color-base-300);
+}
+.wizard-slider:active::-webkit-slider-thumb { transform: scale(1.15); }
+.wizard-slider:active::-moz-range-thumb { transform: scale(1.15); }
+.wizard-slider:focus-visible { box-shadow: 0 0 0 4px color-mix(in oklab, var(--wz-accent, var(--color-primary)) 25%, transparent); }
+
+/* Цветовые акценты — модификатор на обёртке прокидывает --wz-accent */
+.wz-accent-primary   { --wz-accent: var(--color-primary); }
+.wz-accent-secondary { --wz-accent: var(--color-secondary); }
+.wz-accent-accent    { --wz-accent: var(--color-accent); }
+.wz-accent-warning   { --wz-accent: var(--color-warning); }
+.wz-accent-error     { --wz-accent: var(--color-error); }
+.wz-accent-success   { --wz-accent: var(--color-success); }
+.wz-accent-info      { --wz-accent: var(--color-info); }
+.wz-accent-neutral   { --wz-accent: var(--color-neutral); }
+
+/* ============================================================
+   КАРТОЧКИ-ВЫБОРА (радио, context.html)
+   ============================================================ */
+.wz-select-card {
+    position: relative;
+    border-radius: 1.125rem;
+    border: 2px solid var(--color-base-300);
+    background: var(--color-base-100);
+    transition: transform .25s cubic-bezier(.16,1,.3,1), border-color .25s ease,
+                background .25s ease, box-shadow .25s ease;
+}
+.wz-select-card--active {
+    border-color: var(--color-primary);
+    background: color-mix(in oklab, var(--color-primary) 7%, var(--color-base-100));
+    box-shadow: 0 8px 20px -10px color-mix(in oklab, var(--color-primary) 45%, transparent);
+    transform: translateY(-2px);
+}
+.wz-select-card__check {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    width: 22px;
+    height: 22px;
+    border-radius: 9999px;
+    background: var(--color-primary);
+    color: var(--color-primary-content);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: .7rem;
+    box-shadow: 0 2px 6px rgba(0,0,0,.25);
+    transform: scale(0);
+    transition: transform .25s cubic-bezier(.34,1.56,.64,1);
+}
+.wz-select-card--active .wz-select-card__check { transform: scale(1); }
+
+/* ============================================================
+   СТРОКИ-ПЕРЕКЛЮЧАТЕЛИ (тумблеры)
+   ============================================================ */
+.wz-toggle-row {
+    border-radius: 1.125rem;
+    border: 2px solid var(--color-base-300);
+    background: var(--color-base-100);
+    transition: border-color .25s ease, background .25s ease;
+}
+.wz-toggle-row--active {
+    border-color: var(--color-primary);
+    background: color-mix(in oklab, var(--color-primary) 6%, var(--color-base-100));
+}
+
+/* ============================================================
+   ОБОЛОЧКА ШАГА / КАРТОЧКИ ШАГА
+   ============================================================ */
+.wz-shell {
+    border-radius: 1.5rem;
+}
+.wz-card {
+    border-radius: 1.25rem;
+    transition: border-color .3s ease, box-shadow .3s ease;
+}
+
+/* ============================================================
+   STICKY-БАР НАВИГАЦИИ
+   ============================================================ */
+.wz-sticky-nav {
+    position: sticky;
+    bottom: 0;
+    z-index: 20;
+    margin: 1.5rem -1rem 0;
+    padding: 0.875rem 1rem;
+    padding-bottom: calc(0.875rem + env(safe-area-inset-bottom));
+    background: color-mix(in oklab, var(--color-base-100) 90%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-top: 1px solid var(--color-base-300);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .wizard-slider, .wizard-slider::-webkit-slider-thumb, .wizard-slider::-moz-range-thumb,
+    .wz-rail__fill, .wz-rail__station, .wz-card, .wz-select-card, .wz-select-card__check {
+        transition: none !important;
+    }
+}

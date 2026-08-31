@@ -1,0 +1,334 @@
+/* static/css/match-detail.css
+ *
+ * Редизайн страницы матча (templates/matches/detail.html + _match_header.html
+ * + _match_events.html), 2026-08-31, прямой запрос "как лучший UI/UX
+ * дизайнер в мире, Apple/Google/Nvidia уровня, полное переосмысление".
+ * Раньше страница была набором одинаковых daisyUI card/card-body блоков —
+ * шапка матча, состав, события, статистика — визуально неотличимых друг
+ * от друга. Здесь другая композиция:
+ *
+ *  - .md-hero — полноразмерный градиентный баннер с "ambient glow" пятнами
+ *    (приём из презентаций Apple/Nvidia — мягкое цветное свечение на
+ *    тёмном/светлом фоне вместо плоской заливки), огромный счёт как
+ *    единственный фокус.
+ *  - .md-timeline — центральная "стрела" времени: события домашней
+ *    команды слева от стрелы, гостевой — справа (как трансляционная
+ *    графика на ESPN/Sofascore), а не плоский список с рамкой слева.
+ *  - .md-metric — карточки метрик вместо daisyUI .stat (одинаковых
+ *    серых прямоугольников).
+ *  - .md-lineup — ростер с номерными кружками и позицией всегда видимой.
+ *  - .md-side-card — единый стиль карточек правой колонки.
+ *  - .md-rank — медальные бейджи 1/2/3 места в топе игроков матча.
+ *
+ * Один файл, подключён один раз в base.html.
+ */
+
+/* ============================================================
+   HERO
+   ============================================================ */
+.md-hero {
+    position: relative;
+    border-radius: 1.75rem;
+    overflow: hidden;
+    background: linear-gradient(160deg,
+        color-mix(in oklab, var(--mh-accent, var(--color-primary)) 8%, var(--color-base-100)),
+        var(--color-base-100) 55%);
+    border: 1px solid var(--color-base-300);
+}
+.md-hero__glow {
+    position: absolute;
+    width: 420px;
+    height: 420px;
+    border-radius: 9999px;
+    filter: blur(90px);
+    opacity: .22;
+    pointer-events: none;
+    background: var(--mh-accent, var(--color-primary));
+}
+/* Пятна свечения красятся в ПАЛИТРУ клуба (не в один цвет) — большинство
+   эмблем в лиге двухцветные (Team.primary_color + secondary_color, см.
+   teams/services.py::extract_team_colors), поэтому каждое пятно теперь
+   диагональный градиент между двумя цветами клуба, а не плоская заливка.
+   --mh-home-a/-b и --mh-away-a/-b выставляются инлайн-стилем в
+   _match_header.html только когда цвет реально есть (b дублирует a для
+   однотонных эмблем), поэтому фолбэк на --mh-accent (окраска по статусу
+   матча) остаётся рабочим для ещё не обработанных команд — визуальной
+   деградации нет. */
+.md-hero__glow--a {
+    top: -160px; left: -120px;
+    background: linear-gradient(135deg,
+        var(--mh-home-a, var(--mh-accent, var(--color-primary))),
+        var(--mh-home-b, var(--mh-home-a, var(--mh-accent, var(--color-primary)))));
+}
+.md-hero__glow--b {
+    bottom: -160px; right: -120px;
+    background: linear-gradient(135deg,
+        var(--mh-away-a, var(--mh-accent, var(--color-secondary))),
+        var(--mh-away-b, var(--mh-away-a, var(--mh-accent, var(--color-secondary)))));
+}
+.md-hero__content { position: relative; z-index: 1; }
+
+/* Полоска-кромка сверху баннера — левая половина плавно переходит между
+   двумя цветами домашней команды, правая — между двумя цветами гостевой
+   (приём "командной идентичности", как капитанские нашивки на
+   трансляциях). Рендерится только если хотя бы один цвет посчитан. */
+.md-hero__edge {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 4px;
+    z-index: 2;
+    background: linear-gradient(
+        to right,
+        var(--mh-home-a, var(--mh-accent, var(--color-primary))) 0%,
+        var(--mh-home-b, var(--mh-home-a, var(--mh-accent, var(--color-primary)))) 50%,
+        var(--mh-away-a, var(--mh-accent, var(--color-secondary))) 50%,
+        var(--mh-away-b, var(--mh-away-a, var(--mh-accent, var(--color-secondary)))) 100%
+    );
+}
+
+.md-hero--live      { --mh-accent: var(--color-error); }
+.md-hero--finished    { --mh-accent: var(--color-success); }
+.md-hero--scheduled  { --mh-accent: var(--color-primary); }
+.md-hero--postponed  { --mh-accent: var(--color-warning); }
+.md-hero--cancelled  { --mh-accent: var(--color-base-300); }
+
+.md-hero__pill {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    font-size: .75rem;
+    font-weight: 800;
+    letter-spacing: .02em;
+    padding: .3rem .75rem;
+    border-radius: 9999px;
+    background: color-mix(in oklab, var(--mh-accent, var(--color-base-300)) 16%, transparent);
+    color: var(--mh-accent, var(--color-base-content));
+}
+.md-hero__live-dot {
+    width: 8px; height: 8px;
+    border-radius: 9999px;
+    background: var(--color-error);
+    animation: md-pulse 1.4s ease-in-out infinite;
+}
+
+.md-hero__crest {
+    filter: drop-shadow(0 8px 20px rgba(0,0,0,.15));
+    transition: transform .4s cubic-bezier(.16,1,.3,1);
+}
+.md-hero__crest:hover { transform: scale(1.05) rotate(-2deg); }
+
+.md-hero__score {
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    background: linear-gradient(135deg, var(--color-base-content), color-mix(in oklab, var(--mh-accent, var(--color-primary)) 55%, var(--color-base-content)));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+.md-hero--live .md-hero__score {
+    background: none; -webkit-background-clip: unset; background-clip: unset;
+    color: var(--color-error);
+}
+
+@keyframes md-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: .35; transform: scale(.6); }
+}
+
+/* ============================================================
+   TIMELINE (события матча)
+   ============================================================ */
+.md-timeline {
+    position: relative;
+}
+.md-timeline::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: linear-gradient(to bottom,
+        transparent,
+        var(--color-base-300) 4%,
+        var(--color-base-300) 96%,
+        transparent);
+    transform: translateX(-50%);
+}
+@media (max-width: 639px) {
+    .md-timeline::before { left: 20px; }
+}
+
+.md-timeline__row {
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr 48px 1fr;
+    align-items: start;
+    gap: 0;
+    margin-bottom: .5rem;
+}
+@media (max-width: 639px) {
+    .md-timeline__row { grid-template-columns: 40px 1fr; margin-bottom: .4rem; }
+}
+
+.md-timeline__node {
+    grid-column: 2;
+    width: 34px;
+    height: 34px;
+    border-radius: 9999px;
+    background: var(--color-base-100);
+    border: 2px solid var(--tl-accent, var(--color-base-300));
+    color: var(--tl-accent, var(--color-base-content));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: .9rem;
+    justify-self: center;
+    z-index: 1;
+    box-shadow: 0 2px 8px rgba(0,0,0,.08);
+}
+@media (max-width: 639px) {
+    .md-timeline__node { grid-column: 1; width: 28px; height: 28px; font-size: .75rem; }
+}
+
+.md-timeline__card {
+    border-radius: .875rem;
+    border: 1px solid color-mix(in oklab, var(--tl-accent, var(--color-base-300)) 25%, var(--color-base-300));
+    background: color-mix(in oklab, var(--tl-accent, var(--color-base-300)) 5%, var(--color-base-100));
+    padding: .5rem .75rem;
+    transition: border-color .25s ease, transform .25s cubic-bezier(.16,1,.3,1);
+}
+.md-timeline__card:hover {
+    border-color: color-mix(in oklab, var(--tl-accent, var(--color-primary)) 45%, var(--color-base-300));
+}
+.md-timeline__row--home .md-timeline__card { grid-column: 1; justify-self: end; text-align: right; }
+.md-timeline__row--away .md-timeline__card { grid-column: 3; justify-self: start; text-align: left; }
+@media (max-width: 639px) {
+    .md-timeline__row--home .md-timeline__card,
+    .md-timeline__row--away .md-timeline__card { grid-column: 2; justify-self: stretch; text-align: left; }
+}
+.md-timeline__row--home .md-timeline__card .md-timeline__meta { justify-content: flex-end; }
+@media (max-width: 639px) {
+    .md-timeline__row--home .md-timeline__card .md-timeline__meta { justify-content: flex-start; }
+}
+.md-timeline__meta { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+.md-timeline__minute {
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    color: var(--tl-accent, var(--color-base-content));
+}
+
+/* Цветовые акценты по типу события */
+.md-tl-goal            { --tl-accent: var(--color-success); }
+.md-tl-penalty         { --tl-accent: var(--color-warning); }
+.md-tl-missed-penalty  { --tl-accent: var(--color-error); }
+.md-tl-disallowed      { --tl-accent: var(--color-neutral); }
+.md-tl-own-goal        { --tl-accent: var(--color-info); }
+.md-tl-sub             { --tl-accent: var(--color-info); }
+.md-tl-yellow          { --tl-accent: #f59e0b; }
+.md-tl-red             { --tl-accent: #ef4444; }
+.md-tl-var             { --tl-accent: #a855f7; }
+
+/* ============================================================
+   МЕТРИКИ (замена daisyUI .stat)
+   ============================================================ */
+.md-metric {
+    border-radius: 1.125rem;
+    background: color-mix(in oklab, var(--mm-accent, var(--color-base-300)) 6%, var(--color-base-100));
+    border: 1px solid color-mix(in oklab, var(--mm-accent, var(--color-base-300)) 20%, var(--color-base-300));
+    padding: 1rem;
+    transition: transform .25s cubic-bezier(.16,1,.3,1);
+}
+.md-metric:hover { transform: translateY(-2px); }
+.md-metric__value {
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--mm-accent, var(--color-base-content));
+    font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   СОСТАВЫ
+   ============================================================ */
+.md-lineup {
+    border-radius: 1.25rem;
+    border: 1px solid var(--color-base-300);
+    background: var(--color-base-100);
+    overflow: hidden;
+}
+.md-lineup__head {
+    padding: .875rem 1rem;
+    background: color-mix(in oklab, var(--ll-accent, var(--color-primary)) 7%, var(--color-base-100));
+    border-bottom: 1px solid var(--color-base-300);
+}
+.md-lineup--home { --ll-accent: var(--color-primary); }
+.md-lineup--away { --ll-accent: var(--color-secondary); }
+.md-lineup__row {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    padding: .4rem .25rem;
+    border-radius: .6rem;
+    transition: background .2s ease;
+}
+.md-lineup__row:hover { background: var(--color-base-200); }
+.md-lineup__num {
+    width: 26px;
+    height: 26px;
+    border-radius: 9999px;
+    background: var(--color-base-200);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: .6875rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+    color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+}
+.md-lineup__row--starting .md-lineup__num {
+    background: color-mix(in oklab, var(--ll-accent, var(--color-primary)) 16%, transparent);
+    color: var(--ll-accent, var(--color-primary));
+}
+
+/* ============================================================
+   САЙДБАР
+   ============================================================ */
+.md-side-card {
+    border-radius: 1.25rem;
+    border: 1px solid var(--color-base-300);
+    background: var(--color-base-100);
+    overflow: hidden;
+}
+.md-side-card__head {
+    padding: .875rem 1.125rem;
+    border-bottom: 1px solid var(--color-base-300);
+}
+
+/* ============================================================
+   ТОП ИГРОКОВ — медальные бейджи
+   ============================================================ */
+.md-rank {
+    width: 34px;
+    height: 34px;
+    border-radius: 9999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: .8125rem;
+    flex-shrink: 0;
+}
+.md-rank--1 { background: linear-gradient(145deg, #ffd76b, #e8a317); color: #4a3200; box-shadow: 0 3px 10px -3px rgba(232,163,23,.6); }
+.md-rank--2 { background: linear-gradient(145deg, #e6e9ee, #b7c0cc); color: #3a4250; box-shadow: 0 3px 10px -3px rgba(150,160,175,.5); }
+.md-rank--3 { background: linear-gradient(145deg, #e3a97a, #c67c43); color: #3d2410; box-shadow: 0 3px 10px -3px rgba(198,124,67,.5); }
+.md-rank--other { background: var(--color-base-200); color: color-mix(in oklab, var(--color-base-content) 55%, transparent); }
+
+@media (prefers-reduced-motion: reduce) {
+    .md-hero__crest, .md-hero__live-dot, .md-timeline__card, .md-metric {
+        transition: none !important;
+        animation: none !important;
+    }
+}

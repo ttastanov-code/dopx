@@ -1,0 +1,40 @@
+{% load match_extras %}
+{% comment %}
+Шапка матча для вайзарда оценки — общий партиал вместо 6 копий одного и
+того же ~35-строчного блока (context/teams/players/coaches/referee/
+match_final.html держали каждый свою вставку — герб 32px, имя обрезано
+до 12 символов, счёт text-sm — едва читаемо и рассинхронизировалось бы
+при следующей правке). РЕДИЗАЙН (2026-08-31, второй проход): крупнее,
+воздуха больше, полное имя команды видно на любом экране (перенос строк
+вместо обрезки).
+
+Использование: {% include 'evaluations/_wizard_match_header.html' with match=match %}
+{% endcomment %}
+<div class="wz-hero flex items-center justify-between gap-2 sm:gap-4">
+    <div class="flex-1 min-w-0 flex flex-col items-center gap-1.5 text-center">
+        {% if match.home_team.logo_url %}
+        <img src="{{ match.home_team.logo_url }}" alt="{{ match.home_team.name }}" class="w-11 h-11 sm:w-14 sm:h-14 object-contain">
+        {% else %}
+        <div class="w-11 h-11 sm:w-14 sm:h-14 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-sm sm:text-lg">
+            {{ match.home_team.name|first|upper }}
+        </div>
+        {% endif %}
+        <span class="font-bold text-xs sm:text-sm leading-tight">{{ match.home_team.name }}</span>
+    </div>
+
+    <div class="flex-shrink-0 text-center px-2 sm:px-4">
+        <div class="text-xl sm:text-3xl font-extrabold tabular-nums tracking-tight">{% render_score match.home_score match.away_score %}</div>
+        <div class="text-[10px] sm:text-xs opacity-50 mt-0.5">{{ match.start_time|date:"d.m.Y" }}</div>
+    </div>
+
+    <div class="flex-1 min-w-0 flex flex-col items-center gap-1.5 text-center">
+        {% if match.away_team.logo_url %}
+        <img src="{{ match.away_team.logo_url }}" alt="{{ match.away_team.name }}" class="w-11 h-11 sm:w-14 sm:h-14 object-contain">
+        {% else %}
+        <div class="w-11 h-11 sm:w-14 sm:h-14 rounded-full bg-secondary/10 flex items-center justify-center font-bold text-secondary text-sm sm:text-lg">
+            {{ match.away_team.name|first|upper }}
+        </div>
+        {% endif %}
+        <span class="font-bold text-xs sm:text-sm leading-tight">{{ match.away_team.name }}</span>
+    </div>
+</div>

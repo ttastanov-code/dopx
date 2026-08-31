@@ -49,6 +49,18 @@
     <link href="https://cdn.jsdelivr.net/npm/daisyui@5.7.17/themes.css" rel="stylesheet" type="text/css" integrity="sha384-HhSoSsQclUlsqy8Gyz+E2oVSebHT4dv3MJ+NdUjV9mh1twUK4UPKQgmj0dHDKe0Y" crossorigin="anonymous" />
     <!-- Tabler Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.46.0/dist/tabler-icons.min.css" integrity="sha384-ND+q1IVc0KDElX60dZaqKc7Xl9cdxd2PpU2JfVUHcurCkFVtVLFdt9vJfxtHSL3p" crossorigin="anonymous">
+    <!-- Карточка матча (components/_match_card.html) — общий стиль, см.
+         докстринг static/css/match-card.css про то, почему это отдельный
+         файл, а не инлайн-<style> в компоненте. -->
+    <link rel="stylesheet" href="{% static 'css/match-card.css' %}">
+    <!-- Вайзард оценки матча (evaluations/*.html) — кастомные слайдеры,
+         прогресс-степпер, sticky-нижний бар. См. докстринг static/css/
+         wizard.css. -->
+    <link rel="stylesheet" href="{% static 'css/wizard.css' %}">
+    <!-- Страница матча (matches/detail.html, _match_header.html,
+         _match_events.html) — hero-баннер, timeline событий,
+         карточки метрик. См. докстринг static/css/match-detail.css. -->
+    <link rel="stylesheet" href="{% static 'css/match-detail.css' %}">
     <!-- Alpine.js -->
     {% comment %}
     Плагин Collapse нужно подключать ДО ядра Alpine (таков порядок для всех
@@ -113,6 +125,7 @@
     </script>
     <script defer src="{% static 'js/scroll-restore.js' %}"></script>
     <script defer src="{% static 'js/smart-back-links.js' %}"></script>
+    <script defer src="{% static 'js/wizard-sliders.js' %}"></script>
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

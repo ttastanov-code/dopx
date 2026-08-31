@@ -1,43 +1,62 @@
 {% comment %}
 HTMX partial для прогресс-бара wizard-оценки
 Использование: hx-get="{% url 'evaluations:context' match.id %}" hx-target="#progress-container"
+
+РЕДИЗАЙН (2026-08-31, второй проход): раньше — тонкая полоска + ряд из
+6 мелких кружков с цифрами, подписи скрыты на мобильном (hidden sm:block).
+Теперь — именной степпер: крупная подпись текущего шага сверху (всегда
+видна, не нужно расшифровывать цифру), градиентная линия-рельс с
+иконками-станциями вместо цифр (иконка = мгновенно понятно что за шаг),
+пройденные шаги — галочка на заливке success. Иконки те же, что
+используются как заголовки самих страниц шага (context=eye, teams=shield,
+players=users, coaches=clipboard-list, referee=gavel, final=star) —
+визуальная рифма между степпером и содержимым шага.
 {% endcomment %}
-<div id="progress-container" class="px-2 sm:px-0">
-    <!-- Progress Bar -->
-    <div class="mb-6 sm:mb-8">
-        <div class="flex items-center justify-between mb-2">
-            <span class="text-xs sm:text-sm font-medium text-base-content/70">Шаг {{ step }} из {{ total_steps }}</span>
-            <span class="text-xs sm:text-sm font-medium text-primary">{{ progress }}% завершено</span>
+<div id="progress-container" class="px-1 sm:px-0">
+    <div class="flex items-center justify-between mb-3 sm:mb-4">
+        <div class="flex items-baseline gap-2 min-w-0">
+            <span class="text-base sm:text-lg font-extrabold truncate">
+                {% if step == 1 %}Контекст просмотра
+                {% elif step == 2 %}Оценка команд
+                {% elif step == 3 %}Оценка игроков
+                {% elif step == 4 %}Оценка тренеров
+                {% elif step == 5 %}Оценка судейства
+                {% else %}Итоговая оценка{% endif %}
+            </span>
+            <span class="text-xs sm:text-sm opacity-40 flex-shrink-0">шаг {{ step }} из {{ total_steps }}</span>
         </div>
-        <div class="w-full bg-base-200 rounded-full h-2 sm:h-2.5">
-            <div class="bg-primary h-2 sm:h-2.5 rounded-full transition-all duration-300"
-                 style="width: {{ progress }}%"></div>
+        <span class="text-xs sm:text-sm font-bold text-primary flex-shrink-0">{{ progress }}%</span>
+    </div>
+
+    <div class="wz-rail">
+        <div class="wz-rail__track">
+            <div class="wz-rail__fill" style="width: {{ progress }}%"></div>
         </div>
-        <!-- Steps Indicator -->
-        <div class="flex justify-between mt-3 sm:mt-4 px-1">
+        <div class="wz-rail__stations">
             {% for i in "123456"|make_list %}
-            <div class="flex flex-col items-center flex-1">
-                <div class="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-xs sm:text-sm font-bold transition-all
+            <div class="wz-rail__station-wrap">
+                <div class="wz-rail__station
                     {% if i|stringformat:"s" == step|stringformat:"s" %}
-                    bg-primary text-primary-content scale-110
+                    wz-rail__station--current
                     {% elif i|stringformat:"s" < step|stringformat:"s" %}
-                    bg-success text-success-content
-                    {% else %}
-                    bg-base-300 opacity-40
+                    wz-rail__station--done
                     {% endif %}">
                     {% if i|stringformat:"s" < step|stringformat:"s" %}
-                    <i class="ti ti-check text-sm"></i>
-                    {% else %}
-                    {{ i }}
-                    {% endif %}
+                    <i class="ti ti-check"></i>
+                    {% elif forloop.counter == 1 %}<i class="ti ti-eye"></i>
+                    {% elif forloop.counter == 2 %}<i class="ti ti-shield"></i>
+                    {% elif forloop.counter == 3 %}<i class="ti ti-users"></i>
+                    {% elif forloop.counter == 4 %}<i class="ti ti-clipboard-list"></i>
+                    {% elif forloop.counter == 5 %}<i class="ti ti-gavel"></i>
+                    {% else %}<i class="ti ti-star"></i>{% endif %}
                 </div>
-                <span class="text-[10px] sm:text-xs mt-1 opacity-50 hidden sm:block truncate w-full text-center px-1">
+                <span class="wz-rail__label {% if i|stringformat:"s" == step|stringformat:"s" %}wz-rail__label--current{% endif %}">
                     {% if forloop.counter == 1 %}Контекст
                     {% elif forloop.counter == 2 %}Команды
                     {% elif forloop.counter == 3 %}Игроки
                     {% elif forloop.counter == 4 %}Тренеры
                     {% elif forloop.counter == 5 %}Судья
-                    {% else %}Финал{% endif %}
+                    {% else %}Итог{% endif %}
                 </span>
             </div>
             {% endfor %}
