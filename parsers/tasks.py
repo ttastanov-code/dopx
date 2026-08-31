@@ -642,7 +642,7 @@ def sync_kff_player_meta(self):
     Периодическая синхронизация МЕТАДАННЫХ игроков с kffleague.kz — ID
     (Player.kff_website_id) и бэкафилл пустой позиции (см.
     parsers/kff/photo_scraper.py, та же логика, что у management-команды
-    scrape_kff_photos --apply).
+    sync_kff_player_meta --apply).
 
     НЕ СКАЧИВАЕТ ФОТО (переименована из sync_kff_photos 2026-08-21) — от
     автоматического импорта фото с KFF отказались: нестабильный источник,
@@ -663,6 +663,19 @@ def sync_kff_player_meta(self):
     сыгравшие 1-2 матча, могут не попасть в публичный состав команды на
     сайте вообще). Задача просто не находит пару и репортит это в
     результатах — не исключение, не повод для алерта.
+
+    НОВОЕ (2026-08-31, "ушедшие игроки"): та же функция теперь ещё и
+    автоматически снимает is_active игрокам, которых N прогонов подряд не
+    находит в свежем составе команды на kffleague.kz (см.
+    parsers/kff/photo_scraper.py::ROSTER_ABSENCE_THRESHOLD и докстринг
+    match_and_fetch_players_for_team) — решает жалобу "на странице команды
+    висят игроки, которые уже ушли" (Дастан Сатпаев, Хуан Себастьян
+    Зебальос и т.п. — не отражались как ушедшие, потому что Player.team
+    раньше обновлялся только реактивно, при появлении в протоколе матча за
+    новую команду). Если в этом прогоне кого-то реально деактивировали —
+    шлём staff email-уведомление тем же каналом, что и другие sync-алерты,
+    чтобы был шанс вручную отменить, если это ложное срабатывание (см.
+    players/admin.py — действие "Вернуть в активный состав").
     """
     from teams.models import Team
 
@@ -679,6 +692,8 @@ def sync_kff_player_meta(self):
     totals = {
         "teams": 0, "matched": 0, "fuzzy_matched": 0, "positions_backfilled": 0,
     }
+    all_deactivated: list[tuple[str, str]] = []  # (команда, игрок)
+    all_absence_warnings: list[tuple[str, str, int]] = []  # (команда, игрок, счётчик)
 
     teams_qs = Team.objects.filter(is_active=True, kff_website_id__isnull=False)
     for team in teams_qs:
@@ -694,9 +709,32 @@ def sync_kff_player_meta(self):
         totals["matched"] += len(report["matched"])
         totals["fuzzy_matched"] += len(report["fuzzy_matched"])
         totals["positions_backfilled"] += len(report["positions_backfilled"])
+        for name in report.get("roster_deactivated", []):
+            all_deactivated.append((team.name, name))
+        for name, streak in report.get("roster_absence_warnings", []):
+            all_absence_warnings.append((team.name, name, streak))
+
+    if all_deactivated:
+        logger.warning(
+            "🚪 sync_kff_player_meta: автоматически деактивированы (не найдены в составе KFF %d+ прогонов подряд): %s",
+            2, ", ".join(f"{p} ({t})" for t, p in all_deactivated),
+        )
+        _send_sync_error_alert(
+            "Автоматически сняты с активного состава (не найдены в актуальном составе на kffleague.kz "
+            "несколько прогонов подряд):\n" + "\n".join(f"— {p} ({t})" for t, p in all_deactivated) +
+            "\n\nЕсли это ложное срабатывание — верните вручную в админке (Игроки → выбрать → действие "
+            "«Вернуть в активный состав»).",
+            "roster_departures",
+            extra_data={"deactivated": all_deactivated, "absence_warnings": all_absence_warnings},
+        )
 
     logger.info(f"✅ KFF player meta sync completed: teams_unmatched={len(team_report['unmatched_kff'])} {totals}")
-    return {**totals, "teams_unmatched_kff": team_report["unmatched_kff"]}
+    return {
+        **totals,
+        "teams_unmatched_kff": team_report["unmatched_kff"],
+        "roster_deactivated": all_deactivated,
+        "roster_absence_warnings": all_absence_warnings,
+    }
 
 
 @shared_task

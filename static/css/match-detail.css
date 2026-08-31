@@ -45,46 +45,16 @@
     pointer-events: none;
     background: var(--mh-accent, var(--color-primary));
 }
-/* Пятна свечения красятся в ПАЛИТРУ клуба (не в один цвет) — большинство
-   эмблем в лиге двухцветные (Team.primary_color + secondary_color, см.
-   teams/services.py::extract_team_colors), поэтому каждое пятно теперь
-   диагональный градиент между двумя цветами клуба, а не плоская заливка.
-   --mh-home-a/-b и --mh-away-a/-b выставляются инлайн-стилем в
-   _match_header.html только когда цвет реально есть (b дублирует a для
-   однотонных эмблем), поэтому фолбэк на --mh-accent (окраска по статусу
-   матча) остаётся рабочим для ещё не обработанных команд — визуальной
-   деградации нет. */
-.md-hero__glow--a {
-    top: -160px; left: -120px;
-    background: linear-gradient(135deg,
-        var(--mh-home-a, var(--mh-accent, var(--color-primary))),
-        var(--mh-home-b, var(--mh-home-a, var(--mh-accent, var(--color-primary)))));
-}
-.md-hero__glow--b {
-    bottom: -160px; right: -120px;
-    background: linear-gradient(135deg,
-        var(--mh-away-a, var(--mh-accent, var(--color-secondary))),
-        var(--mh-away-b, var(--mh-away-a, var(--mh-accent, var(--color-secondary)))));
-}
+.md-hero__glow--a { top: -160px; left: -120px; }
+.md-hero__glow--b { bottom: -160px; right: -120px; background: var(--mh-accent, var(--color-secondary)); }
 .md-hero__content { position: relative; z-index: 1; }
 
-/* Полоска-кромка сверху баннера — левая половина плавно переходит между
-   двумя цветами домашней команды, правая — между двумя цветами гостевой
-   (приём "командной идентичности", как капитанские нашивки на
-   трансляциях). Рендерится только если хотя бы один цвет посчитан. */
-.md-hero__edge {
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 4px;
-    z-index: 2;
-    background: linear-gradient(
-        to right,
-        var(--mh-home-a, var(--mh-accent, var(--color-primary))) 0%,
-        var(--mh-home-b, var(--mh-home-a, var(--mh-accent, var(--color-primary)))) 50%,
-        var(--mh-away-a, var(--mh-accent, var(--color-secondary))) 50%,
-        var(--mh-away-b, var(--mh-away-a, var(--mh-accent, var(--color-secondary)))) 100%
-    );
-}
+/* Тиснение гербов клубов на фоне шапки (.md-hero__emboss) пробовали
+   несколько раз (2026-08-31) — grayscale+contrast, CSS mask-image,
+   grayscale+multiply — и в итоге продуктово отклонили ("очень
+   уродливо смотрится"). Идею закрыли, шапка красится только по
+   статусу матча (--mh-accent ниже) + ambient glow, без клубной
+   айдентики на фоне. */
 
 .md-hero--live      { --mh-accent: var(--color-error); }
 .md-hero--finished    { --mh-accent: var(--color-success); }

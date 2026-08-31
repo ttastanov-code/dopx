@@ -137,10 +137,10 @@
                             <tr>
                                 <th>Матч</th>
                                 <th>Дата</th>
-                                <th class="text-center">Рейтинг выступления</th>
-                                <th class="text-center">Вклад</th>
-                                <th class="text-center">Риск</th>
-                                <th class="text-center">Клатч</th>
+                                <th class="text-center"><span class="inline-flex items-center gap-1 justify-center">Рейтинг выступления{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.aggregate.performance_score %}</span></th>
+                                <th class="text-center"><span class="inline-flex items-center gap-1 justify-center">Вклад{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.player.avg_contribution %}</span></th>
+                                <th class="text-center"><span class="inline-flex items-center gap-1 justify-center">Риск{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.aggregate.risk_index %}</span></th>
+                                <th class="text-center"><span class="inline-flex items-center gap-1 justify-center">Клатч{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.aggregate.clutch_index %}</span></th>
                             </tr>
                         </thead>
                         <tbody>

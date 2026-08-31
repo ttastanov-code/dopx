@@ -12,16 +12,19 @@ hx-атрибуты на корне живут только при status=live �
 счёт — единственный настоящий фокус баннера, крупная градиентная
 типографика вместо серой коробки.
 
-НОВОЕ (2026-08-31, автоцвет клубов, второй проход — двухцветные эмблемы):
---mh-home-a/--mh-home-b и --mh-away-a/--mh-away-b — CSS-переменные с
-фирменной ПАЛИТРОЙ команд (Team.primary_color/secondary_color,
-извлекается автоматически из логотипа через
-teams/services.py::extract_team_colors — большинство эмблем в лиге
-двухцветные, "Қайрат" жёлтый+чёрный и т.д.). Если у команды посчитан
-только primary — b-переменная дублирует a (градиент вырождается в
-сплошной цвет, деградации не видно). Если ни один цвет не посчитан —
-переменные не выставляются вовсе, CSS откатывается на
-var(--mh-accent, ...), то есть на прежнюю окраску по статусу матча.
+РЕДИЗАЙН (2026-08-31, четвёртый проход — откат автоцветов клубов):
+фичу "фирменные цвета команд в градиенте шапки" (Team.primary_color/
+secondary_color, полоска .md-hero__edge сверху) продуктово отклонили —
+выглядела аляповато на разных сочетаниях клубов. Вернули окраску только
+по статусу матча (--mh-accent, live/finished/scheduled/...).
+
+РЕДИЗАЙН (2026-08-31, пятый-седьмой проходы — тиснение гербов клубов
+на фоне баннера, .md-hero__emboss): перепробовали три варианта
+(grayscale+contrast(0) — герб исчезал в белом; CSS mask-image —
+невидимо из-за CORS на внешних логотипах; grayscale+multiply-блендинг —
+формально видно, но продуктово отклонили: "очень уродливо смотрится").
+Идею с гербами на фоне шапки закрыли целиком — шапка снова чистая,
+только окраска по статусу матча + ambient glow (без клубной айдентики).
 {% endcomment %}
 <div id="match-header"
      class="md-hero mb-4 sm:mb-6
@@ -30,18 +33,12 @@ var(--mh-accent, ...), то есть на прежнюю окраску по с�
             {% elif match.status == 'postponed' %}md-hero--postponed
             {% elif match.status == 'cancelled' %}md-hero--cancelled
             {% else %}md-hero--scheduled{% endif %}"
-     {% if match.home_team.primary_color or match.away_team.primary_color %}
-     style="{% if match.home_team.primary_color %}--mh-home-a: {{ match.home_team.primary_color }}; --mh-home-b: {{ match.home_team.secondary_color|default:match.home_team.primary_color }};{% endif %}{% if match.away_team.primary_color %} --mh-away-a: {{ match.away_team.primary_color }}; --mh-away-b: {{ match.away_team.secondary_color|default:match.away_team.primary_color }};{% endif %}"
-     {% endif %}
      {% if match.status == 'live' %}
      data-background-poll
      hx-get="{% url 'matches:header' match.id %}"
      hx-trigger="every 20s"
      hx-swap="outerHTML"
      {% endif %}>
-    {% if match.home_team.primary_color or match.away_team.primary_color %}
-    <div class="md-hero__edge"></div>
-    {% endif %}
     <div class="md-hero__glow md-hero__glow--a"></div>
     <div class="md-hero__glow md-hero__glow--b"></div>
 

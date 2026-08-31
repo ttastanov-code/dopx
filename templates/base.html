@@ -1,5 +1,6 @@
 {% load static %}
 {% load match_extras %}
+{% load asset_extras %}
 <!DOCTYPE html>
 <html lang="ru" data-theme="light">
 <head>
@@ -52,15 +53,21 @@
     <!-- Карточка матча (components/_match_card.html) — общий стиль, см.
          докстринг static/css/match-card.css про то, почему это отдельный
          файл, а не инлайн-<style> в компоненте. -->
-    <link rel="stylesheet" href="{% static 'css/match-card.css' %}">
+    <link rel="stylesheet" href="{% static_v 'css/match-card.css' %}">
     <!-- Вайзард оценки матча (evaluations/*.html) — кастомные слайдеры,
          прогресс-степпер, sticky-нижний бар. См. докстринг static/css/
          wizard.css. -->
-    <link rel="stylesheet" href="{% static 'css/wizard.css' %}">
+    <link rel="stylesheet" href="{% static_v 'css/wizard.css' %}">
     <!-- Страница матча (matches/detail.html, _match_header.html,
          _match_events.html) — hero-баннер, timeline событий,
          карточки метрик. См. докстринг static/css/match-detail.css. -->
-    <link rel="stylesheet" href="{% static 'css/match-detail.css' %}">
+    <link rel="stylesheet" href="{% static_v 'css/match-detail.css' %}">
+    <!-- static_v (core/templatetags/asset_extras.py) вместо static —
+         добавляет ?v=<mtime файла> к URL, чтобы браузер/nginx не
+         продолжали отдавать закэшированную версию файла после правки
+         (см. докстринг asset_extras.py — конкретный баг, из-за
+         которого это появилось: тиснение гербов в шапке матча). -->
+
     <!-- Alpine.js -->
     {% comment %}
     Плагин Collapse нужно подключать ДО ядра Alpine (таков порядок для всех
@@ -78,7 +85,7 @@
     зарегистрируются слишком поздно и x-data="имяКомпонента" по всему сайту
     упадёт с "Alpine Expression Error: имяКомпонента is not defined".
     {% endcomment %}
-    <script defer src="{% static 'js/alpine-components.js' %}"></script>
+    <script defer src="{% static_v 'js/alpine-components.js' %}"></script>
     {% comment %}
     2026-08-21: заменено с обычной сборки alpinejs на @alpinejs/csp —
     CSP-safe сборка, которая НЕ компилирует x-выражения через `new
@@ -108,7 +115,7 @@
     напрямую при выполнении, без defer он выполнился бы раньше, чем <body>
     существует (этот <script> лежит в <head>).
     {% endcomment %}
-    <script defer src="{% static 'js/notifications.js' %}"></script>
+    <script defer src="{% static_v 'js/notifications.js' %}"></script>
     <!-- Без tailwind.config — это Tailwind v4 (@tailwindcss/browser@4),
          JS-конфига в v4 не существует (тема настраивается через CSS
          @theme), window.tailwind не создаётся. Цвета берутся из тем DaisyUI
@@ -123,9 +130,9 @@
             history.scrollRestoration = 'manual';
         }
     </script>
-    <script defer src="{% static 'js/scroll-restore.js' %}"></script>
-    <script defer src="{% static 'js/smart-back-links.js' %}"></script>
-    <script defer src="{% static 'js/wizard-sliders.js' %}"></script>
+    <script defer src="{% static_v 'js/scroll-restore.js' %}"></script>
+    <script defer src="{% static_v 'js/smart-back-links.js' %}"></script>
+    <script defer src="{% static_v 'js/wizard-sliders.js' %}"></script>
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -274,13 +281,13 @@
     {% endcomment %}
     {% block extra_script %}{% endblock %}
     {% if request.resolver_match.app_name == 'notifications' %}
-    <script src="{% static 'js/tickets.js' %}"></script>
+    <script src="{% static_v 'js/tickets.js' %}"></script>
     {% endif %}
     <!-- Событийная аналитика продукта (analytics/views.py) — sendBeacon,
          не блокирует ничего на странице. -->
-    <script src="{% static 'js/analytics.js' %}"></script>
+    <script src="{% static_v 'js/analytics.js' %}"></script>
     <!-- Регистрирует /sw.js на каждой странице; подписка на push — по
          явному действию пользователя, см. static/js/push.js. -->
-    <script src="{% static 'js/push.js' %}"></script>
+    <script src="{% static_v 'js/push.js' %}"></script>
 </body>
 </html>

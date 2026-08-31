@@ -10,7 +10,7 @@ avatar_extras.py и parsers/kff/photo_scraper.py: скачивание фото 
 
 Без --apply — dry-run: только считает, сколько игроков затронет, ничего
 не удаляет и не пишет в БД (тот же паттерн, что у dedupe_referees_coaches.py
-и scrape_kff_photos.py). --apply — реально удаляет файл с диска
+и sync_kff_player_meta.py, бывшей scrape_kff_photos.py). --apply — реально удаляет файл с диска
 (player.photo.delete) и очищает поле, после чего на сайте у этих игроков
 показывается генеративный аватар (градиент + инициалы) вместо фото — см.
 templates/components/_avatar.html.
