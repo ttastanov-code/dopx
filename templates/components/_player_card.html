@@ -2,27 +2,35 @@
 {% comment %}
 Карточка игрока для списков
 Использование: {% include 'components/_player_card.html' with player=player show_stats=True %}
+
+ПРЕМИАЛЬНЫЙ РЕДИЗАЙН (2026-08-31, часть общего обновления кнопок/бейджей/
+карточек по сайту после .back-link): та же логика, что у _team_card.html
+— вся карточка теперь <a class="card"> (было: кликабелен только
+заголовок), ловит hover/подъём из глобального .card-правила в base.html.
+Аватар — в .entity-avatar-ring (переиспользуемый медальон, base.html)
+ВМЕСТО прежнего ring_classes='ring ring-primary...' — оба варианта
+кольца одновременно смотрелись бы избыточно, оставили один премиальный.
 {% endcomment %}
-<div class="card bg-base-100 border border-base-300 hover:border-primary transition-all">
+<a href="{% url 'players:detail' player.id %}" class="card bg-base-100 border border-base-300 group">
     <div class="card-body p-4">
         <div class="flex items-center gap-4">
-            <!-- Фото / генеративный аватар -->
-            {% if player.photo %}
-            {% include 'components/_avatar.html' with photo_url=player.photo.url name=player.full_name size_classes='w-16 h-16 text-xl' ring_classes='ring ring-primary ring-offset-base-100 ring-offset-2' %}
-            {% else %}
-            {% include 'components/_avatar.html' with name=player.full_name size_classes='w-16 h-16 text-xl' ring_classes='ring ring-primary ring-offset-base-100 ring-offset-2' %}
-            {% endif %}
-            
+            <!-- Фото / генеративный аватар в медальоне -->
+            <div class="entity-avatar-ring flex-shrink-0">
+                {% if player.photo %}
+                {% include 'components/_avatar.html' with photo_url=player.photo.url name=player.full_name size_classes='w-14 h-14 text-lg' %}
+                {% else %}
+                {% include 'components/_avatar.html' with name=player.full_name size_classes='w-14 h-14 text-lg' %}
+                {% endif %}
+            </div>
+
             <!-- Информация -->
             <div class="flex-1 min-w-0">
-                <a href="{% url 'players:detail' player.id %}" class="hover:text-primary transition-colors">
-                    <h3 class="font-bold text-lg truncate">{{ player.first_name }} {{ player.last_name }}</h3>
-                </a>
+                <h3 class="font-bold text-lg truncate group-hover:text-primary transition-colors">{{ player.first_name }} {{ player.last_name }}</h3>
                 {% if player.team %}
-                <a href="{% url 'teams:detail' player.team.id %}" class="text-sm opacity-60 hover:text-primary">
+                <span class="text-sm opacity-60">
                     <i class="ti ti-users"></i>
                     {{ player.team.name }}
-                </a>
+                </span>
                 {% endif %}
                 <div class="flex flex-wrap gap-2 mt-2">
                     {% with position=player.position|position_label %}
@@ -35,10 +43,10 @@
                     {% endif %}
                 </div>
             </div>
-            
+
             <!-- Статистика (если включена) с подсказкой -->
             {% if show_stats and player.match_aggregates.first %}
-            <div class="text-right">
+            <div class="text-right flex-shrink-0">
                 <div class="text-2xl font-bold text-success inline-flex items-center gap-1">
                     {{ player.match_aggregates.first.performance_score|floatformat:1 }}
                     {% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.player.performance_score %}
@@ -46,6 +54,7 @@
                 <div class="text-xs opacity-60">рейтинг выступления</div>
             </div>
             {% endif %}
+            <i class="ti ti-chevron-right opacity-0 group-hover:opacity-40 transition-opacity flex-shrink-0"></i>
         </div>
     </div>
-</div>
+</a>

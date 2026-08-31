@@ -10,9 +10,9 @@ templates/users/public_profile.html
 посетителю не показываются (профиль_view уже отфильтровал их).
 {% endcomment %}
 <div class="mb-6">
-    <a href="{% url 'users:leaderboard' %}" class="btn btn-ghost btn-sm" data-back-link>
-        <i class="ti ti-arrow-left"></i>
-        Назад к рейтингу
+    <a href="{% url 'users:leaderboard' %}" class="back-link" data-back-link>
+        <span class="back-link__icon"><i class="ti ti-arrow-left"></i></span>
+        <span>Назад к рейтингу</span>
     </a>
 </div>
 

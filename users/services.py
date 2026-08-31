@@ -133,11 +133,13 @@ def check_and_award_badges(user) -> list[UserBadge]:
         if total >= DERBY_HUNTER_MIN_MATCHES:
             _maybe_award_derby_hunter(user, awarded)
 
-        # НОВОЕ (retention loop "Серии", 2026-08-21): прогнозы 1X2 —
-        # ПАРАЛЛЕЛЬНЫЙ набор бейджей поверх user.prediction_streak (см.
-        # users/models.py::User.update_prediction_stats), тот же порог 7/30/100,
-        # что и у streak_7/30/100, но осознанно НЕ переиспользует их —
-        # прогноз и оценка разная активность, см. докстринг у поля.
+        # НОВОЕ (retention loop "Серии", 2026-08-21; семантика поля
+        # ПЕРЕСМОТРЕНА 2026-08-31): прогнозы 1X2 — ПАРАЛЛЕЛЬНЫЙ набор
+        # бейджей поверх user.prediction_streak (см. users/models.py::
+        # User.update_prediction_stats — с 2026-08-31 это подряд УГАДАННЫЕ
+        # исходы, не дни активности), тот же порог 7/30/100, что и у
+        # streak_7/30/100, но осознанно НЕ переиспользует их — прогноз и
+        # оценка разная активность, см. докстринг у поля.
         # Не отдельный денормализованный счётчик на User (в отличие от
         # total_evaluations) — прогнозов на порядки меньше оценок за один
         # матч (одна запись MatchPrediction на пару user+match), COUNT()

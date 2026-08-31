@@ -289,11 +289,25 @@
                 </div>
                 <span class="text-[11px] font-medium">Отменён</span>
             </div>
-            <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-amber-50 border border-amber-200">
+            {% comment %}
+            ФИКС (2026-08-31, тёмная тема): было bg-amber-50/border-amber-200
+            и bg-red-50/border-red-200 — голые Tailwind-цвета вне темы
+            daisyUI (в отличие от bg-warning/5, bg-error/5 у остальных
+            четырёх пилюль выше, которые берут --color-warning/--color-error
+            из активной темы и сами перекрашиваются в тёмной). amber-50/
+            red-50 — это ПОЧТИ БЕЛЫЙ фиксированный цвет, в тёмной теме он
+            оставался светлым и сливался/резал глаз на тёмном фоне.
+            Заменили на warning/error/5 — тот же паттерн, что и у "Гол"/
+            "Пенальти"/"Не забит"/"Отменён". Сам жёлтый/красный квадратик
+            (bg-amber-400/bg-red-600) оставили сплошным — это стилизация
+            под настоящую карточку, а не иконка-пилюля, сплошной цвет
+            одинаково хорошо читается в любой теме.
+            {% endcomment %}
+            <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-warning/5 border border-warning/20">
                 <div class="w-3.5 h-4.5 bg-amber-400 rounded-sm flex-shrink-0"></div>
                 <span class="text-[11px] font-medium">Жёлтая</span>
             </div>
-            <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-red-50 border border-red-200">
+            <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-error/5 border border-error/20">
                 <div class="w-3.5 h-4.5 bg-red-600 rounded-sm flex-shrink-0"></div>
                 <span class="text-[11px] font-medium">Красная</span>
             </div>

@@ -42,15 +42,26 @@
 <!-- === СПИСОК ТРЕНЕРОВ === -->
 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-6 px-2 sm:px-0">
     {% for coach in coaches %}
-    <a href="{% url 'coaches:detail' coach.id %}" class="card bg-base-100 border border-base-300 hover:border-accent transition-all group">
+    {% comment %}
+    ПРЕМИАЛЬНЫЙ РЕДИЗАЙН (2026-08-31): карточка уже была <a class="card">
+    (единственная из четырёх списков, где так было изначально) — подъём
+    при hover теперь ловит из глобального a.card:hover в base.html,
+    убрали дублирующий hover:border-accent. Иконка-заглушка (у тренера
+    нет лого/фото) — в .entity-avatar-ring, тот же медальон, что у
+    команд/игроков, для визуальной согласованности списков. Статы —
+    мягкий тинт вместо плоского bg-base-200, тот же приём, что у бейджей.
+    {% endcomment %}
+    <a href="{% url 'coaches:detail' coach.id %}" class="card bg-base-100 border border-base-300 group">
         <div class="card-body p-3 sm:p-6">
             <!-- Иконка и имя -->
             <div class="flex items-center gap-2 sm:gap-4 mb-3 sm:mb-4">
-                <div class="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-accent/10 flex items-center justify-center flex-shrink-0">
-                    <i class="ti ti-clipboard-list text-accent text-lg sm:text-2xl"></i>
+                <div class="entity-avatar-ring flex-shrink-0">
+                    <div class="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-accent/10 flex items-center justify-center">
+                        <i class="ti ti-clipboard-list text-accent text-lg sm:text-2xl"></i>
+                    </div>
                 </div>
                 <div class="flex-1 min-w-0">
-                    <h3 class="font-bold text-base sm:text-lg truncate group-hover:text-accent transition-colors">
+                    <h3 class="font-bold text-base sm:text-lg truncate group-hover:text-primary transition-colors">
                         {{ coach.first_name }} {{ coach.last_name }}
                     </h3>
                     {% if coach.team %}
@@ -59,15 +70,16 @@
                     </p>
                     {% endif %}
                 </div>
+                <i class="ti ti-chevron-right opacity-0 group-hover:opacity-40 transition-opacity flex-shrink-0 hidden sm:block"></i>
             </div>
             <!-- Статистика -->
             <div class="grid grid-cols-2 gap-2 text-center text-xs sm:text-sm">
-                <div class="bg-base-200 rounded-lg p-2">
+                <div class="rounded-lg p-2" style="background: color-mix(in oklab, var(--color-base-content) 4%, transparent);">
                     <div class="font-bold text-base sm:text-lg">{{ coach.evaluations_count|default:0 }}</div>
                     <div class="text-[10px] sm:text-xs opacity-60">Оценок</div>
                 </div>
-                <div class="bg-base-200 rounded-lg p-2">
-                    <div class="font-bold text-base sm:text-lg">
+                <div class="rounded-lg p-2" style="background: color-mix(in oklab, var(--color-accent) 8%, transparent);">
+                    <div class="font-bold text-base sm:text-lg text-accent">
                         {% with agg=coach.match_aggregates.first %}
                         {{ agg.avg_tactics|floatformat:1|default:"-" }}
                         {% endwith %}

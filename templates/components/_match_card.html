@@ -12,7 +12,17 @@
 композиция: статусная строка сверху (лига/тур + пилюля статуса), затем
 крупный ряд "герб — счёт — герб" без промежуточной серой коробки (счёт —
 просто крупная типографика, как в Apple TV / Sofascore), акцентная полоса
-слева карточки вместо линии сверху. Стили — static/css/match-card.css.
+слева карточки вместо линии сверху.
+
+ПРЕМИАЛЬНЫЙ РЕДИЗАЙН (2026-08-31, третий проход): второй проход дал
+правильную композицию, но пользователь снова сказал "дизайн не нравится,
+хочу премиальный" — карточка всё ещё читалась плоско. Добавили фактуру:
+.match-card__glow (мягкое цветное свечение в углу), .match-card__crest-ring
+(герб в медальоне с мягкой тенью вместо голой картинки), сегментированная
+"перфорированная" полоса слева вместо сплошной линии (приём посадочного
+талона/билета), градиентный тонированный футер-разделитель вместо жёсткой
+линии, кубок у победителя вместо просто цвета текста. Стили —
+static/css/match-card.css.
 
 Ожидаемые поля объекта `match` (все, кроме home_team/away_team/status/
 start_time, — опциональны, компонент проверяет их через {% if %}):
@@ -40,7 +50,8 @@ start_time, — опциональны, компонент проверяет и
           {% elif match.status == 'postponed' %}match-card--postponed
           {% elif match.status == 'cancelled' %}match-card--cancelled
           {% else %}match-card--scheduled{% endif %}">
-    <div class="pt-3.5 pb-3 px-3.5 sm:pt-5 sm:pb-4 sm:px-5">
+    <div class="match-card__glow" aria-hidden="true"></div>
+    <div class="match-card__body pt-3.5 pb-3 px-3.5 sm:pt-5 sm:pb-4 sm:px-5">
         <!-- === СТАТУСНАЯ СТРОКА === -->
         <div class="flex items-center justify-between gap-2 mb-3 sm:mb-4">
             <span class="match-card__eyebrow flex items-center gap-1 min-w-0 truncate">
@@ -67,17 +78,19 @@ start_time, — опциональны, компонент проверяет и
         <div class="flex items-center gap-2 sm:gap-4">
             <!-- Домашняя команда -->
             <div class="flex-1 min-w-0 flex flex-col items-center gap-1.5 sm:gap-2 text-center">
-                {% if match.home_team.logo_url %}
-                <img src="{{ match.home_team.logo_url }}" alt="{{ match.home_team.name }}"
-                     class="match-card__crest w-11 h-11 sm:w-14 sm:h-14 object-contain">
-                {% else %}
-                <div class="match-card__crest w-11 h-11 sm:w-14 sm:h-14 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-sm sm:text-lg">
-                    {{ match.home_team.name|first|upper }}
+                <div class="match-card__crest-ring">
+                    {% if match.home_team.logo_url %}
+                    <img src="{{ match.home_team.logo_url }}" alt="{{ match.home_team.name }}"
+                         class="match-card__crest w-11 h-11 sm:w-14 sm:h-14 object-contain">
+                    {% else %}
+                    <div class="match-card__crest w-11 h-11 sm:w-14 sm:h-14 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-sm sm:text-lg">
+                        {{ match.home_team.name|first|upper }}
+                    </div>
+                    {% endif %}
                 </div>
-                {% endif %}
                 <span class="match-card__team-name font-bold text-xs sm:text-sm leading-tight truncate w-full
                              {% if match.status == 'finished' and match.home_score > match.away_score %}match-card__team-name--winner{% endif %}">
-                    {{ match.home_team.name }}
+                    {% if match.status == 'finished' and match.home_score > match.away_score %}<i class="ti ti-trophy match-card__winner-icon"></i>{% endif %}{{ match.home_team.name }}
                 </span>
             </div>
 
@@ -98,23 +111,25 @@ start_time, — опциональны, компонент проверяет и
                 {% elif match.status == 'cancelled' %}
                 <i class="ti ti-ban text-2xl sm:text-3xl opacity-30"></i>
                 {% else %}
-                <div class="match-card__score text-xl sm:text-2xl opacity-25">VS</div>
+                <div class="match-card__score match-card__score--vs text-base sm:text-lg">VS</div>
                 {% endif %}
             </div>
 
             <!-- Гостевая команда -->
             <div class="flex-1 min-w-0 flex flex-col items-center gap-1.5 sm:gap-2 text-center">
-                {% if match.away_team.logo_url %}
-                <img src="{{ match.away_team.logo_url }}" alt="{{ match.away_team.name }}"
-                     class="match-card__crest w-11 h-11 sm:w-14 sm:h-14 object-contain">
-                {% else %}
-                <div class="match-card__crest w-11 h-11 sm:w-14 sm:h-14 rounded-full bg-secondary/10 flex items-center justify-center font-bold text-secondary text-sm sm:text-lg">
-                    {{ match.away_team.name|first|upper }}
+                <div class="match-card__crest-ring">
+                    {% if match.away_team.logo_url %}
+                    <img src="{{ match.away_team.logo_url }}" alt="{{ match.away_team.name }}"
+                         class="match-card__crest w-11 h-11 sm:w-14 sm:h-14 object-contain">
+                    {% else %}
+                    <div class="match-card__crest w-11 h-11 sm:w-14 sm:h-14 rounded-full bg-secondary/10 flex items-center justify-center font-bold text-secondary text-sm sm:text-lg">
+                        {{ match.away_team.name|first|upper }}
+                    </div>
+                    {% endif %}
                 </div>
-                {% endif %}
                 <span class="match-card__team-name font-bold text-xs sm:text-sm leading-tight truncate w-full
                              {% if match.status == 'finished' and match.away_score > match.home_score %}match-card__team-name--winner{% endif %}">
-                    {{ match.away_team.name }}
+                    {% if match.status == 'finished' and match.away_score > match.home_score %}<i class="ti ti-trophy match-card__winner-icon"></i>{% endif %}{{ match.away_team.name }}
                 </span>
             </div>
         </div>

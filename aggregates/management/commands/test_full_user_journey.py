@@ -71,7 +71,9 @@ class Command(BaseCommand):
             user.trust_score = 1.0
             user.total_evaluations = 0
             user.evaluation_streak = 0
-            user.last_evaluation_date = None
+            user.last_evaluation_season_id = None
+            user.last_evaluation_tour = None
+            user.prediction_streak = 0
             user.save()
             UserXP.objects.filter(user=user).update(total_xp=0, level=1)
             UserBadge.objects.filter(user=user).delete()

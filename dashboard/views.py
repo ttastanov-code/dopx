@@ -521,3 +521,92 @@ def audit_log(request):
         "entries": entries,
     }
     return render(request, "dashboard/audit_log.html", context)
+
+
+# ============================================================
+# Объявления: единственное место в проекте, где staff может реально
+# написать и разослать "системную новость платформы" — тумблер
+# email_system (users/models.py::DEFAULT_NOTIFICATION_SETTINGS,
+# templates/users/notification_settings.html) существовал давно, но
+# notification_type='system' до этой страницы использовался только для
+# АВТОМАТИЧЕСКОГО уведомления об изменении Trust Score
+# (evaluations/views.py) — никакого способа отправить настоящую новость
+# не было. См. users/tasks.py про check_and_award_badges_task как пример
+# похожего fan-out-триггера из dashboard-вьюхи.
+# ============================================================
+
+@staff_member_required
+def announcements(request):
+    """
+    /staff/dashboard/announcements/ — форма "заголовок + текст" → уходит
+    ВСЕМ верифицированным пользователям: in-app-уведомление создаётся
+    синхронно (дёшево, один bulk_create — должно появиться у пользователя
+    сразу, не ждать Celery), email — fan-out пачками, тот же паттерн, что
+    у send_voting_open_notification (notifications/tasks.py), с уважением
+    к тумблеру email_system у каждого получателя персонально
+    (_send_email_to_user проверяет его сама).
+
+    Рейт-лимит на самого staff-пользователя (не на IP — это авторизованный
+    2FA-защищённый staff, не аноним) — защита не от злоупотребления, а от
+    случайного двойного сабмита формы (нет прогресс-бара/дизейбла кнопки
+    на время отправки), который иначе продублировал бы рассылку.
+    """
+    from core.utils import is_rate_limited
+    from notifications.models import Notification
+    from notifications.tasks import BULK_EMAIL_CHUNK_SIZE, _chunked, _send_system_announcement_chunk
+    from users.models import User
+
+    recipients_count = User.objects.filter(is_verified=True).count()
+
+    if request.method == "POST":
+        title = request.POST.get("title", "").strip()
+        body = request.POST.get("body", "").strip()
+
+        if not title or not body:
+            messages.error(request, "Заполните заголовок и текст объявления")
+        elif is_rate_limited(f"system_announcement:{request.user.id}", 3, 300):
+            messages.error(request, "Слишком много рассылок подряд — подождите пару минут (защита от случайного дубля)")
+        else:
+            verified_users = list(User.objects.filter(is_verified=True))
+
+            # In-app — ВСЕМ верифицированным сразу, синхронно. email_system
+            # управляет только email-копией (см. докстринг выше) — так же,
+            # как остальные "email_*"-настройки нигде не скрывают саму
+            # in-app-строку, только письмо.
+            Notification.objects.bulk_create([
+                Notification(
+                    user=u, notification_type='system',
+                    title=title, message=body, is_read=False,
+                )
+                for u in verified_users
+            ])
+
+            user_ids_with_email = [str(u.id) for u in verified_users if u.email]
+            subject = f'📢 {title} | DOPX'
+            chunks = _chunked(user_ids_with_email, BULK_EMAIL_CHUNK_SIZE)
+            for chunk in chunks:
+                _send_system_announcement_chunk.delay(chunk, subject, title, body)
+
+            messages.success(
+                request,
+                f"Объявление отправлено: {len(verified_users)} in-app, "
+                f"{len(user_ids_with_email)} писем в очереди ({len(chunks)} пачек)",
+            )
+            log_staff_action(
+                request, AuditAction.SYSTEM_ANNOUNCEMENT_SENT,
+                target=title,
+                details={
+                    "title": title,
+                    "body_preview": body[:200],
+                    "recipients_in_app": len(verified_users),
+                    "recipients_email": len(user_ids_with_email),
+                },
+            )
+            return redirect("dashboard:announcements")
+
+    context = {
+        "page_title": "Объявления — DOPX Staff",
+        "active_tab": "announcements",
+        "recipients_count": recipients_count,
+    }
+    return render(request, "dashboard/announcements.html", context)

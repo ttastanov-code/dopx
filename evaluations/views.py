@@ -551,8 +551,9 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
             )
             self.complete_session(session)
 
-            # 2. Обновляем статистику пользователя
-            user.update_evaluation_stats()
+            # 2. Обновляем статистику пользователя (серия — по турам, см.
+            #    докстринг User.evaluation_streak/update_evaluation_stats)
+            user.update_evaluation_stats(self.match)
             user.refresh_from_db()
 
             # 3. Корректируем Trust Score

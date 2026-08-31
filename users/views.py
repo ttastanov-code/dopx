@@ -563,7 +563,14 @@ class NotificationSettingsView(LoginRequiredMixin, FormView):
         # has_push_subscription питает Alpine-стейт кнопки в шаблоне
         # (notification_settings.html) — есть ли активная подписка хоть с
         # одного устройства пользователя, не только текущего браузера.
-        context['has_push_subscription'] = self.request.user.push_subscriptions.exists()
+        push_subscriptions = self.request.user.push_subscriptions.order_by('-created_at')
+        context['has_push_subscription'] = push_subscriptions.exists()
+        # push_subscriptions — реальный список подписанных устройств для
+        # карточки "Ваши устройства" (2026-08-31, по запросу пользователя:
+        # раньше про "другие устройства" была только одна невнятная
+        # строка текста, без возможности посмотреть, что именно подписано,
+        # и отключить конкретное устройство удалённо).
+        context['push_subscriptions'] = push_subscriptions
         return context
 
 
@@ -737,3 +744,36 @@ def push_unsubscribe(request):
 
     PushSubscription.objects.filter(user=request.user, endpoint=endpoint).delete()
     return JsonResponse({'ok': True})
+
+
+@require_POST
+@login_required
+def push_revoke_device(request, subscription_id):
+    """
+    Отключить КОНКРЕТНОЕ устройство по id записи PushSubscription — в
+    отличие от push_unsubscribe (который работает только для ТЕКУЩЕГО
+    браузера, через его собственный PushManager.getSubscription()), эта
+    вьюха вызывается из обычной POST-формы на странице настроек и удаляет
+    запись без участия Push API браузера. Это осознанно: пользователь
+    должен иметь возможность отключить старый/чужой/потерянный телефон,
+    сидя за ноутбуком — без этого единственный способ снять подписку с
+    устройства был "открыть настройки именно на нём" (2026-08-31, по
+    запросу пользователя после того, как обнаружил забытую подписку
+    Chrome, зайдя с Safari на том же компьютере).
+
+    Со стороны браузера, чья подписка отозвана так — "тихо" продолжает
+    считать себя подписанным (localStorage/Push API не в курсе), пока
+    push реально не придёт: send_push_to_user (notifications/services.py)
+    получит 404/410 от push-сервиса на несуществующий endpoint и удалит
+    "осиротевшую" запись сам (см. её докстринг) — но т.к. записи уже нет,
+    это просто no-op. Разряженный edge-case (тот браузер решит, что он
+    "включён", хотя реально push до него больше не дойдёт), приемлем ради
+    простоты — то же самое происходит и у любого сервиса с "выйти со всех
+    устройств".
+    """
+    from users.models import PushSubscription
+
+    deleted, _ = PushSubscription.objects.filter(user=request.user, id=subscription_id).delete()
+    if deleted:
+        messages.success(request, '✅ Устройство отключено от push-уведомлений')
+    return redirect('users:notification_settings')

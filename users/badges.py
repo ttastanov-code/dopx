@@ -84,22 +84,26 @@ BADGE_CATALOG: dict[str, BadgeDefinition] = {
         description="Оценили 150 матчей — вы часть истории платформы.",
         rarity="gold",
     ),
+    # ПЕРЕСМОТРЕНО 2026-08-31: серия считается по ТУРАМ чемпионата, а не
+    # по календарным дням (матчи бывают 1–2 дня в неделю — дневная серия
+    # почти ни у кого не росла бы, см. докстринг User.evaluation_streak,
+    # users/models.py). Названия/описания приведены в соответствие.
     "streak_7": BadgeDefinition(
         code="streak_7",
-        name="Неделя подряд",
-        description="Оценивали матчи 7 дней подряд.",
+        name="Верный трибунам",
+        description="Оценили матч 7 туров чемпионата подряд.",
         rarity="bronze",
     ),
     "streak_30": BadgeDefinition(
         code="streak_30",
-        name="Месяц подряд",
-        description="Оценивали матчи 30 дней подряд.",
+        name="Сезонный болельщик",
+        description="Оценили матч 30 туров чемпионата подряд.",
         rarity="silver",
     ),
     "streak_100": BadgeDefinition(
         code="streak_100",
         name="Железная дисциплина",
-        description="Оценивали матчи 100 дней подряд.",
+        description="Оценили матч 100 туров чемпионата подряд.",
         rarity="platinum",
     ),
     # --- Качество и точность ---
@@ -146,22 +150,27 @@ BADGE_CATALOG: dict[str, BadgeDefinition] = {
         description="Поставили свой первый прогноз на исход матча.",
         rarity="bronze",
     ),
+    # ПЕРЕСМОТРЕНО 2026-08-31: серия прогнозов теперь означает подряд
+    # УГАДАННЫЕ исходы, а не подряд дни активности (см. докстринг
+    # User.prediction_streak, users/models.py) — иначе можно было бы
+    # получить "Оракула трибун" просто ставя прогнозы каждый день и всегда
+    # ошибаясь. Названия/описания приведены в соответствие.
     "prediction_streak_7": BadgeDefinition(
         code="prediction_streak_7",
         name="Аналитик недели",
-        description="Ставили прогнозы на матчи 7 дней подряд.",
+        description="Угадали исход 7 матчей подряд.",
         rarity="bronze",
     ),
     "prediction_streak_30": BadgeDefinition(
         code="prediction_streak_30",
         name="Штатный прогнозист",
-        description="Ставили прогнозы на матчи 30 дней подряд.",
+        description="Угадали исход 30 матчей подряд.",
         rarity="silver",
     ),
     "prediction_streak_100": BadgeDefinition(
         code="prediction_streak_100",
         name="Оракул трибун",
-        description="Ставили прогнозы на матчи 100 дней подряд.",
+        description="Угадали исход 100 матчей подряд.",
         rarity="platinum",
     ),
     # --- Дерби и статусные ---
