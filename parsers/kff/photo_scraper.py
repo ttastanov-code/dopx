@@ -132,6 +132,26 @@ BETWEEN_REQUESTS_DELAY_SECONDS = 0.5
 FUZZY_AUTO_THRESHOLD = 0.85
 FUZZY_REVIEW_THRESHOLD = 0.65
 
+# НОВОЕ (2026-08-31, "ушедшие игроки"): сколько подряд прогонов скрапера
+# игрок должен отсутствовать в свежем составе на kffleague.kz, прежде чем
+# мы автоматически снимем ему is_active (перестанет показываться в
+# составе команды на teams/detail.html). НЕ 1 — единичное отсутствие
+# слишком часто оказывается сбоем скрапинга/временной нестыковкой данных
+# на стороне KFF, а не реальным уходом (см. докстринг check_roster_departures
+# ниже). Задача запускается раз в 3 дня (dopx/settings.py::CELERY_BEAT_SCHEDULE,
+# 'sync-kff-player-meta'), так что порог 2 — это ПОДТВЕРЖДЁННОЕ отсутствие
+# на протяжении минимум ~6 дней, разумный баланс между "не мучить
+# пользователей устаревшим составом" и "не удалить игрока, у которого
+# просто была пауза".
+ROSTER_ABSENCE_THRESHOLD = 2
+
+# Защита от ложного "весь состав ушёл", если сама страница скрапилась
+# неудачно (таймаут отдал частичный HTML, вёрстка сайта изменилась и т.п.)
+# — команда премьер-лиги реально имеет 18+ человек в заявке, если скрап
+# вернул меньше — считаем прогон НЕуспешным для целей roster-diff и не
+# трогаем ничьи счётчики отсутствия в этом запуске вообще.
+MIN_SANE_SQUAD_SIZE = 11
+
 
 def _session() -> requests.Session:
     # Тот же набор заголовков, что у KFFClient (client.py) — сайт отдаёт
@@ -446,6 +466,10 @@ def match_and_fetch_players_for_team(team, dry_run: bool = True) -> dict:
         return {"error": f"У команды «{team.name}» не проставлен kff_website_id — сначала match_teams()"}
 
     scraped_players = scrape_team_squad(team.kff_website_id)
+    # Снимок ДО того, как Шаг 0 переприсвоит scraped_players на
+    # remaining_after_id (список сжимается по ходу матчинга) — нужен ниже
+    # для sanity-проверки "скрап вообще похож на настоящий состав команды".
+    scraped_squad_size = len(scraped_players)
     all_dopx_players = list(Player.objects.filter(team=team, is_active=True))
     # ID -> игрок — для Шага 0. Player.external_id проставляется парсером
     # МАТЧЕЙ (parsers/kff/importers.py::get_or_create_player) из JSON API
@@ -467,6 +491,10 @@ def match_and_fetch_players_for_team(team, dry_run: bool = True) -> dict:
     matched, fuzzy_matched, review_candidates = [], [], []
     unmatched_kff = []
     positions_backfilled: list[tuple[str, str]] = []
+    # НОВОЕ: id игроков (не имена — на случай полных тёзков в одной
+    # команде) для отслеживания "ушедших" ниже, см. блок roster-diff в
+    # конце функции.
+    matched_player_ids: set = set()
     # candidate_key -> имя KFF-игрока, который его забрал (ID/точным/
     # fuzzy-совпадением) — нужно ТОЛЬКО для диагностики ниже: объяснить
     # "похожий кандидат был, но его увели раньше", а не молча развести
@@ -509,6 +537,7 @@ def match_and_fetch_players_for_team(team, dry_run: bool = True) -> dict:
         key = normalize_kz(player.full_name)
         remaining_dopx.pop(key, None)
         matched.append((player.full_name, sp.website_id))
+        matched_player_ids.add(player.id)
         claimed_by[key] = sp.name
         _apply_match(player, sp)
     scraped_players = remaining_after_id
@@ -522,6 +551,7 @@ def match_and_fetch_players_for_team(team, dry_run: bool = True) -> dict:
         player = remaining_dopx.pop(key, None)
         if player is not None:
             matched.append((player.full_name, sp.website_id))
+            matched_player_ids.add(player.id)
             claimed_by[key] = sp.name
             _apply_match(player, sp)
         else:
@@ -552,6 +582,7 @@ def match_and_fetch_players_for_team(team, dry_run: bool = True) -> dict:
         if ratio >= FUZZY_AUTO_THRESHOLD:
             player = remaining_dopx.pop(candidate_key)
             fuzzy_matched.append((player.full_name, sp.name, round(ratio, 2)))
+            matched_player_ids.add(player.id)
             claimed_by[candidate_key] = sp.name
             _apply_match(player, sp)
         else:
@@ -612,6 +643,49 @@ def match_and_fetch_players_for_team(team, dry_run: bool = True) -> dict:
                 f"проверьте глазами, не опечатка ли",
             ))
 
+    # НОВОЕ (2026-08-31): "ушедшие игроки" — те, кто остался в remaining_dopx
+    # (не нашли ни по ID, ни по точному имени, ни по авто-fuzzy) — это
+    # ровно тот же список, что уже собирался для диагностики выше
+    # (unmatched_dopx), теперь используем его ещё и для отслеживания счётчика
+    # roster_absence_streak. Пропускаем всю эту логику целиком, если сам
+    # скрап выглядит неполным/битым (MIN_SANE_SQUAD_SIZE) — см. докстринг
+    # константы выше: не хотим массово "терять" весь состав команды из-за
+    # временного сбоя скрапинга страницы.
+    reactivated: list[str] = []
+    deactivated: list[str] = []
+    absence_warnings: list[tuple[str, int]] = []
+    squad_scrape_looks_valid = scraped_squad_size >= MIN_SANE_SQUAD_SIZE
+
+    if squad_scrape_looks_valid:
+        for player in all_dopx_players:
+            found = player.id in matched_player_ids
+            if found:
+                if player.roster_absence_streak != 0:
+                    if not dry_run:
+                        player.roster_absence_streak = 0
+                        player.save(update_fields=["roster_absence_streak"])
+                    reactivated.append(player.full_name)
+                continue
+
+            new_streak = player.roster_absence_streak + 1
+            if new_streak >= ROSTER_ABSENCE_THRESHOLD:
+                deactivated.append(player.full_name)
+                if not dry_run:
+                    player.roster_absence_streak = new_streak
+                    player.is_active = False
+                    player.save(update_fields=["roster_absence_streak", "is_active"])
+            else:
+                absence_warnings.append((player.full_name, new_streak))
+                if not dry_run:
+                    player.roster_absence_streak = new_streak
+                    player.save(update_fields=["roster_absence_streak"])
+    else:
+        logger.warning(
+            "⚠️ photo_scraper: состав «%s» на kffleague.kz выглядит неполным (%d чел., минимум %d) — "
+            "пропускаем проверку 'кто ушёл' в этом запуске, чтобы не отметить весь ростер как отсутствующий.",
+            team.name, scraped_squad_size, MIN_SANE_SQUAD_SIZE,
+        )
+
     return {
         "team": team.name,
         "matched": matched,
@@ -623,4 +697,10 @@ def match_and_fetch_players_for_team(team, dry_run: bool = True) -> dict:
         # точных, и авто-fuzzy совпадений.
         "unmatched_dopx": [p.full_name for p in remaining_dopx.values()],
         "positions_backfilled": positions_backfilled,
+        # "Ушедшие игроки" (см. блок выше) — только если скрап признан валидным.
+        "squad_scrape_looks_valid": squad_scrape_looks_valid,
+        "scraped_squad_size": scraped_squad_size,
+        "roster_deactivated": deactivated,  # игроки, у которых is_active снят в этом запуске
+        "roster_absence_warnings": absence_warnings,  # (имя, счётчик) — ещё не дотянули до порога
+        "roster_reactivated": reactivated,  # снова нашлись после того, как счётчик уже был > 0
     }

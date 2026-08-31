@@ -46,10 +46,18 @@ class PlayerListView(ListView):
                 to_attr='best_aggregate'
             )
         ).annotate(
-            # Через lineup, не через агрегаты — агрегат считается не для всех матчей
+            # Через lineup, не через агрегаты — агрегат считается не для всех матчей.
+            # 🔥 FIX (2026-08-31, второй проход): раньше считалась ЛЮБАЯ
+            # запись в заявке на матч, включая игроков, просидевших весь
+            # матч в запасе и не вышедших на замену — см. подробный
+            # комментарий в PlayerDetailView.get_context_data выше про
+            # is_starting/minute_in. Тут та же логика: matchlineupplayer__is_starting=True
+            # ИЛИ matchlineupplayer__minute_in не пусто — то есть реально вышел на поле.
             total_matches=Count(
                 'matchlineupplayer__lineup__match',
-                filter=Q(matchlineupplayer__lineup__match__status='finished'),
+                filter=Q(matchlineupplayer__lineup__match__status='finished') & (
+                    Q(matchlineupplayer__is_starting=True) | Q(matchlineupplayer__minute_in__isnull=False)
+                ),
                 distinct=True
             )
         )
@@ -127,12 +135,21 @@ class PlayerDetailView(DetailView):
         context = super().get_context_data(**kwargs)
         player = self.object
         
-        # 🔥 FIX: Считаем фактические матчи через MatchLineupPlayer
+        # 🔥 FIX (2026-08-31, второй проход): "Матчей сыграно" считался как
+        # ЛЮБАЯ запись в MatchLineupPlayer — то есть игрок, просидевший
+        # весь матч в запасе и ни разу не вышедший на замену, засчитывался
+        # как "сыгравший" наравне со стартовым составом. MatchLineupPlayer
+        # различает это через is_starting (в старте) и minute_in (минута
+        # выхода на замену — None, если игрок был в заявке, но так и не
+        # вышел на поле, см. parsers/kff/importers.py::import_lineups и
+        # import_events_and_minutes). Реально "сыграл" = был в старте ИЛИ
+        # вышел на замену — просто "был в заявке на матч" сюда не входит.
         from lineups.models import MatchLineupPlayer
+        actually_played = Q(is_starting=True) | Q(minute_in__isnull=False)
         actual_matches_count = MatchLineupPlayer.objects.filter(
             player=player,
             lineup__match__status='finished'
-        ).count()
+        ).filter(actually_played).count()
         
         # Агрегаты игрока по матчам
         aggregates = PlayerMatchAggregate.objects.filter(
@@ -197,9 +214,11 @@ class PlayerDetailView(DetailView):
         # дешевле, чем городить сложный ORM-запрос ради такой малой выгоды.
         from collections import OrderedDict
 
+        # actually_played (см. выше) — та же защита: не считаем "матчами
+        # сыграно" запись о том, что игрок просто был в заявке на матч.
         lineup_entries = MatchLineupPlayer.objects.filter(
             player=player, lineup__match__status='finished'
-        ).select_related(
+        ).filter(actually_played).select_related(
             'lineup__match__season__league', 'lineup__team'
         ).order_by('-lineup__match__start_time')
 
@@ -347,8 +366,13 @@ class PlayerSeasonRecapView(DetailView):
             total_votes=Sum('total_votes'),
             evaluated_matches=Count('id'),
         )
+        # 🔥 FIX (2026-08-31): та же поправка "реально вышел на поле", что
+        # и в PlayerDetailView/PlayerListView — просто быть в заявке на
+        # матч (запасным, не вышедшим на замену) не считается "сыгранным".
         matches_played = MatchLineupPlayer.objects.filter(
             player=player, lineup__match__season=season, lineup__match__status='finished'
+        ).filter(
+            Q(is_starting=True) | Q(minute_in__isnull=False)
         ).values('lineup__match_id').distinct().count()
 
         has_enough_votes = (stats['total_votes'] or 0) >= MIN_VOTES_FOR_DISPLAY

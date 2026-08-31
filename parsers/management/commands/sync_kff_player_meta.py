@@ -1,26 +1,32 @@
-# parsers/management/commands/scrape_kff_photos.py
+# parsers/management/commands/sync_kff_player_meta.py
 """
-manage.py scrape_kff_photos [--apply] [--team NAME] [--limit N]
+manage.py sync_kff_player_meta [--apply] [--team NAME] [--limit N]
 
-Сопоставление команд/игроков DOPX с kffleague.kz (parsers/kff/photo_scraper.py) —
-та же двухрежимная логика доверия, что у dedupe_referees_coaches.py:
+Синхронизация метаданных команд/игроков DOPX с kffleague.kz
+(parsers/kff/photo_scraper.py) — та же двухрежимная логика доверия, что у
+dedupe_referees_coaches.py:
 
 1. Без --apply — dry-run: показывает, какие команды/игроки совпали по
    имени (normalize_kz), какие не нашлись ни с одной стороны. НИЧЕГО не
    пишет в БД — можно проверить качество совпадений перед реальным запуском.
-2. --apply — реально проставляет Team.kff_website_id/Player.kff_website_id
-   и бэкафиллит ПУСТОЙ Player.position грубым кодом (GK/DF/MF/FW),
-   выведенным из группировки состава на публичном сайте — см. докстринг
-   parsers/kff/photo_scraper.py::scrape_team_squad. Никогда не перетирает
-   уже проставленную позицию (она обычно приходит из JSON API с более
-   точным кодом).
+2. --apply — реально проставляет Team.kff_website_id/Player.kff_website_id,
+   бэкафиллит ПУСТОЙ Player.position грубым кодом (GK/DF/MF/FW), выведенным
+   из группировки состава на публичном сайте (см. докстринг
+   parsers/kff/photo_scraper.py::scrape_team_squad — никогда не перетирает
+   уже проставленную позицию, она обычно приходит из JSON API с более
+   точным кодом), и отслеживает "ушедших" игроков (см. ROSTER_ABSENCE_THRESHOLD
+   в photo_scraper.py — если игрока N прогонов подряд нет в актуальном
+   составе на сайте, is_active снимается автоматически).
 
-ФОТО НЕ СКАЧИВАЕТ (команда переименована из "фото" по названию, но с
-2026-08-21 скачивание убрано целиком — см. core/templatetags/avatar_extras.py:
-вместо фото везде, где его нет, показывается генеративный аватар). Имя
-команды и файла оставлено прежним ради минимального диффа и привычки в
-крон-джобах/памяти — переименование самой management-команды не требуется
-для решения задачи.
+ФОТО НЕ СКАЧИВАЕТ И НИКОГДА НЕ БУДЕТ, ПОКА НЕ ПОДКЛЮЧИМ ПЛАТНЫЙ ИСТОЧНИК —
+с 2026-08-21 автоматический импорт фото с kffleague.kz отключён целиком
+(нестабильный источник, кривой авто-кроп на живых данных, см.
+core/templatetags/avatar_extras.py: вместо фото везде показывается
+генеративный аватар). Команда была переименована из scrape_kff_photos
+2026-08-31, когда стало окончательно ясно, что старое имя вводит в
+заблуждение (фото она уже больше недели как не собирает) — если позже
+подключим платный API вроде Stratorium под реальные фото, это будет
+отдельный, самостоятельный источник, никак не связанный с этой командой.
 
 --team NAME фильтрует по названию клуба (подстрока, регистронезависимо)
 — полезно прогнать сначала на одной команде и проверить результат глазами
@@ -35,7 +41,7 @@ from teams.models import Team
 
 
 class Command(BaseCommand):
-    help = "Сопоставляет команды/игроков DOPX с kffleague.kz (ID + позиция, без фото)"
+    help = "Синхронизирует команды/игроков DOPX с kffleague.kz (ID + позиция + актуальность состава, без фото)"
 
     def add_arguments(self, parser):
         parser.add_argument("--apply", action="store_true", help="Реально записать kff_website_id и позицию")
@@ -126,5 +132,31 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.WARNING(
                     f"  В DOPX есть, на сайте не нашли: {', '.join(report['unmatched_dopx'])}"
                 ))
+            if not report.get("squad_scrape_looks_valid", True):
+                self.stdout.write(self.style.ERROR(
+                    f"  ⚠️ Состав на сайте выглядит неполным ({report.get('scraped_squad_size', 0)} чел.) — "
+                    "проверка 'кто ушёл' для этой команды пропущена в этом запуске."
+                ))
+            if report.get("roster_deactivated"):
+                self.stdout.write(self.style.ERROR(
+                    "  🚪 Автоматически сняты с активного состава (не найдены на сайте KFF "
+                    f"{2}+ прогонов подряд): {', '.join(report['roster_deactivated'])}"
+                ))
+            if report.get("roster_absence_warnings"):
+                self.stdout.write(self.style.WARNING(
+                    "  ⏳ Отсутствуют на сайте, но ещё не достигли порога деактивации: " + ", ".join(
+                        f"{name} ({streak}/2)" for name, streak in report["roster_absence_warnings"]
+                    )
+                ))
+            if report.get("roster_reactivated"):
+                self.stdout.write(self.style.SUCCESS(
+                    f"  ↩️ Снова нашлись на сайте (счётчик отсутствия сброшен): {', '.join(report['roster_reactivated'])}"
+                ))
 
         self.stdout.write(self.style.SUCCESS("\nГотово."))
+        self.stdout.write(self.style.NOTICE(
+            "\nПодсказка: если нужно СРАЗУ снять с активного состава игрока, который точно уже ушёл "
+            "(не ждать несколько прогонов раз в 3 дня по расписанию) — запустите эту команду с --apply "
+            "ещё раз прямо сейчас: если оба прогона подряд подтвердят отсутствие на сайте KFF, счётчик "
+            "сразу дойдёт до порога."
+        ))
