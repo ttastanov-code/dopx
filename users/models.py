@@ -108,7 +108,16 @@ class User(AbstractUser, BaseModel):
     # Разрыв (пропущенный тур, смена сезона, тур неизвестен у матча) —
     # сброс в 1. См. update_evaluation_stats() ниже.
     evaluation_streak = models.IntegerField(_("Серия оценок"), default=0)
-    last_evaluation_season_id = models.IntegerField(
+    # БАГ, КОТОРЫЙ ТУТ БЫЛ (2026-09-01, DataError "integer out of range" на
+    # последнем шаге вайзарда оценки): поле объявлялось как IntegerField в
+    # предположении, что `Match.season_id` — числовой id. На самом деле
+    # `Season` — потомок `core.models.BaseModel`, а тот использует UUID
+    # первичный ключ (`id = models.UUIDField(...)`), не автоинкрементный
+    # integer. `update_evaluation_stats()` ниже пишет сюда `match.season_id`
+    # как есть — psycopg пытался засунуть UUID (по сути 128-битное число) в
+    # 32-битную колонку `integer` и падал с переполнением на каждой попытке
+    # оценить матч с известным туром. UUIDField — правильный тип.
+    last_evaluation_season_id = models.UUIDField(
         _("Сезон последней оценки"), null=True, blank=True
     )
     last_evaluation_tour = models.PositiveSmallIntegerField(

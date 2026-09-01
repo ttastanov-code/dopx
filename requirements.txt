@@ -83,6 +83,15 @@ pyzmq==27.1.0
 redis==7.3.0
 referencing==0.37.0
 requests==2.33.0
+# НАЙДЕНО (2026-09-01): kffleague.kz начал банить запросы parsers/kff/client.py
+# по TLS/HTTP2-отпечатку (Cloudflare Bot Management) — с ТЕМИ ЖЕ заголовками
+# тот же IP через настоящий браузер получает 200, а через requests — 403.
+# `requests` (urllib3+ssl) физически не может воспроизвести TLS ClientHello
+# настоящего Chrome. curl_cffi — опциональная зависимость (client.py работает
+# и без неё, просто менее устойчиво к таким блокировкам): pip install
+# curl_cffi, дальше клиент подхватит её сам, без дополнительных правок кода.
+# ВРЕМЕННОЕ решение, пока не куплена официальная подписка Stratorium API.
+curl_cffi==0.16.2
 rpds-py==0.30.0
 # Sentry error tracking (dopx/settings.py::SENTRY_DSN) — no-op без ключа в
 # .env, см. комментарий в settings.py про переход с email-алертов.

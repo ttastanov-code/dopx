@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections import Counter
 from datetime import timedelta
 from functools import partial
 
@@ -42,7 +43,7 @@ from django.db.utils import OperationalError
 from django.template.loader import render_to_string
 from django.utils import timezone
 
-from parsers.kff.client import KFFClient
+from parsers.kff.client import KFFAPICircuitBreakerOpen, KFFClient
 from parsers.kff.pipeline import import_full_match, sync_season
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,13 @@ logger = logging.getLogger(__name__)
 # чтобы лок гарантированно "протух", даже если воркер упал посреди работы
 # и не успел выполнить `finally: cache.delete(lock_key)`.
 MATCH_SYNC_LOCK_TIMEOUT_SECONDS = 180
+
+# Матчи одного тура обычно разыгрываются в пределах одного уик-энда (2-3
+# дня подряд) — см. Match.was_rescheduled в matches/models.py. Разница
+# больше этого порога от "типичной" (самой частой) даты тура — надёжный
+# признак переноса, не зависящий от того, что API сейчас говорит про
+# is_schedule_tentative (см. _detect_rescheduled_outlier ниже).
+RESCHEDULED_OUTLIER_THRESHOLD_DAYS = 3
 
 
 @shared_task(bind=True, max_retries=3)
@@ -210,6 +218,41 @@ def _release_match_sync_lock(match_id: uuid.UUID) -> None:
     cache.delete(f"parsers:match_sync_lock:{match_id}")
 
 
+def _detect_rescheduled_outlier(match, tour, start_time) -> bool:
+    """
+    True, если `start_time` этого матча отличается от "типичной" (самой
+    частой) даты остальных матчей его же тура больше, чем на
+    RESCHEDULED_OUTLIER_THRESHOLD_DAYS — см. докстринг Match.was_rescheduled.
+
+    Специально НЕ полагается на `is_schedule_tentative` от KFF — тот сигнал
+    живёт только пока дата официально не подтверждена; матч "Каспий —
+    Қайрат" (тур 6, весь тур отыгран 18-19 апреля, эта пара — 5 сентября)
+    к моменту, когда мы вообще успеваем на него посмотреть, у KFF уже
+    `is_schedule_tentative=False` — обычный сигнал ничего не поймал бы.
+    Сравнение с датами сокомандников по туру не зависит от таймингов API.
+
+    Требует минимум 2 других матча в туре, чтобы "типичная дата" вообще
+    имела смысл — на самом первом матче импортированного тура сравнивать
+    не с чем, это НЕ баг, просто отложенное обнаружение (сработает, как
+    только импортируются остальные матчи тура).
+    """
+    from matches.models import Match
+
+    if tour is None or start_time is None:
+        return False
+
+    sibling_dates = list(
+        Match.objects.filter(season_id=match.season_id, tour=tour)
+        .exclude(id=match.id)
+        .values_list("start_time", flat=True)
+    )
+    if len(sibling_dates) < 2:
+        return False
+
+    typical_date, _count = Counter(dt.date() for dt in sibling_dates).most_common(1)[0]
+    return abs((start_time.date() - typical_date).days) > RESCHEDULED_OUTLIER_THRESHOLD_DAYS
+
+
 @shared_task(bind=True, max_retries=3, rate_limit="30/m")
 def update_match_statuses(self):
     """
@@ -308,6 +351,17 @@ def update_match_statuses(self):
 
             api_status = game_data.get("status", "scheduled")
             new_status = STATUS_MAP.get(api_status, match.status)
+            # Тот же фикс, что в parsers/kff/importers.py::import_match_core
+            # (см. комментарий там за подробным разбором): KFF никогда не
+            # шлёт status="postponed" сам по себе — перенос сигнализируется
+            # только `is_schedule_tentative=True` поверх status="upcoming".
+            # Без этой строки уже импортированный матч, который позже
+            # перенесли, навсегда остаётся видимым как 'scheduled' — именно
+            # так и получилось с 23-м туром. Когда KFF в итоге твёрдо
+            # подтвердит дату (is_schedule_tentative снова false), матч сам
+            # вернётся в 'scheduled' на следующем цикле — тем же условием.
+            if game_data.get("is_schedule_tentative") and new_status == "scheduled":
+                new_status = "postponed"
             if new_status != match.status:
                 field_values["status"] = new_status
                 updated_fields.append("status")
@@ -340,6 +394,25 @@ def update_match_statuses(self):
                         f"📅 Match {match.id}: дата перенесена {match.start_time} → {api_start_time}"
                     )
 
+            # НАЙДЕНО (2026-09-01): статус-based признак "Перенесён" выше
+            # (is_schedule_tentative) ловит только КОРОТКОЕ окно, пока KFF
+            # сам не определился с датой. Матч, у которого дата уже давно
+            # твёрдая, но при этом сильно выбивается из дат своего тура
+            # (весь тур сыгран, а этот — через 4 месяца), этим признаком не
+            # ловится вообще — см. Match.was_rescheduled и докстринг
+            # _detect_rescheduled_outlier. Липкий: once True, дальше не
+            # перепроверяем (не нужно — исторический факт не меняется).
+            if not match.was_rescheduled:
+                effective_tour = field_values.get("tour", match.tour)
+                effective_start = field_values.get("start_time", match.start_time)
+                if _detect_rescheduled_outlier(match, effective_tour, effective_start):
+                    field_values["was_rescheduled"] = True
+                    updated_fields.append("was_rescheduled")
+                    logger.info(
+                        f"🔀 Match {match.id}: помечен как перенесённый относительно тура "
+                        f"{effective_tour} (дата {effective_start.date()} выбивается из остальных)"
+                    )
+
             api_home_score = game_data.get("home_score")
             api_away_score = game_data.get("away_score")
 
@@ -365,14 +438,32 @@ def update_match_statuses(self):
                     field_values["end_time"] = match.start_time + timedelta(minutes=110)
                 updated_fields.append("end_time")
 
-            # `just_finished` — этот матч ИМЕННО СЕЙЧАС первый раз получает
-            # voting_open_until, то есть переходит в 'finished' первый раз
-            # (voting_open_until больше никогда не переустанавливается —
-            # см. `not match.voting_open_until` в условии ниже). Используется
-            # ниже, чтобы поставить в очередь `notify_followers_match_
-            # activity` РОВНО ОДИН раз на матч, а не при каждой последующей
-            # синхронизации уже завершённого матча.
-            just_finished = new_status == "finished" and not match.voting_open_until
+            # `just_finished` — матч ИМЕННО СЕЙЧАС переходит в 'finished'
+            # первый раз. НАЙДЕНО (2026-09-01, реальный матч тура 24 —
+            # `notify_followers_match_activity` не поставилась в очередь НИ
+            # РАЗУ за весь матч-дей, при том что live→finished в логе виден):
+            # раньше это определялось через `not match.voting_open_until`, в
+            # расчёте на то, что поле остаётся NULL, пока матч не завершится.
+            # Это условие ЛОЖНОЕ для ЛЮБОГО матча, импортированного ДО фикса
+            # в `parsers/kff/importers.py` (AUDIT_2026-08.md, раздел 3) — там
+            # voting_open_until раньше выставлялся безусловно на первом же
+            # импорте, для любого статуса, включая 'scheduled'. У всех таких
+            # матчей (весь текущий сезон — они все были в БД до фикса)
+            # voting_open_until уже был непустым задолго до реального
+            # финального свистка, `not match.voting_open_until` был `False`
+            # ВСЕГДА, и follower-уведомление не отправлялось никому и никогда.
+            # Фикс в importers.py защищает только матчи, СОЗДАННЫЕ после
+            # фикса — уже существующие строки остаются "отравлены" навсегда
+            # (откатить их в NULL без миграции, разрешающей null на уровне
+            # БД, нельзя, а поле сейчас NOT NULL).
+            #
+            # Правильный, не зависящий от мусора в voting_open_until признак
+            # первого перехода в 'finished' — сравнение СТАРОГО статуса
+            # (`match.status`, тут ещё не перезаписан — мутация ниже, после
+            # транзакции) с новым, тот же паттерн, что уже используется (и
+            # работает корректно) в `parsers/kff/importers.py::import_match_
+            # core` через `was_finished_before`.
+            just_finished = new_status == "finished" and match.status != "finished"
             if just_finished:
                 field_values["voting_open_until"] = match.start_time + timedelta(hours=48)
                 updated_fields.append("voting_open_until")
@@ -463,9 +554,37 @@ def update_match_statuses(self):
                     # другим воркером исключена. replace_existing=False — сюда
                     # передаётся только дельта, import_events_and_minutes не
                     # должна стирать уже сохранённые события прошлых циклов.
-                    if import_events_and_minutes(match, {"events": new_events}, replace_existing=False):
+                    #
+                    # created_now собирает РЕАЛЬНО новые MatchEvent (не
+                    # обновления уже существующих) через on_event_created —
+                    # см. её докстринг в parsers/kff/importers.py. Нужно
+                    # для live push-уведомлений о голах/карточках (2026-09-01,
+                    # прямой запрос пользователя): "если я не увидел гол
+                    # в приложении, я хочу узнать о нём пушем".
+                    created_now: list = []
+                    if import_events_and_minutes(
+                        match, {"events": new_events}, replace_existing=False,
+                        on_event_created=created_now.append,
+                    ):
                         stats["new_events"] += len(new_events)
                         logger.info(f"⚡ Added {len(new_events)} new events for match {match.id}")
+
+                        # Ленивый импорт (тот же паттерн, что и у
+                        # notify_followers_match_activity ниже по файлу) —
+                        # notify_followers_match_event ставится в очередь
+                        # СРАЗУ, не через transaction.on_commit:
+                        # import_events_and_minutes сама обёрнута в
+                        # @transaction.atomic и коммитит при возврате, так
+                        # что к этой строке событие уже видно снаружи —
+                        # задержка on_commit тут не нужна.
+                        from notifications.tasks import (
+                            PUSH_WORTHY_EVENT_TYPES,
+                            notify_followers_match_event,
+                        )
+
+                        for created_event in created_now:
+                            if created_event.event_type in PUSH_WORTHY_EVENT_TYPES:
+                                notify_followers_match_event.delay(str(match.id), str(created_event.id))
 
             # === Загрузка составов (если ещё нет) ===
             if match.has_lineup and not match.lineups.exists():
@@ -482,6 +601,24 @@ def update_match_statuses(self):
                 if stats_data:
                     import_stats(match, stats_data)
 
+        except KFFAPICircuitBreakerOpen as e:
+            # НАЙДЕНО (2026-09-01, kffleague.kz забанил клиент): раньше это
+            # ловилось как обычная ошибка ОДНОГО матча (except Exception ниже)
+            # и цикл продолжал молотить ОСТАЛЬНЫЕ ~60 матчей — каждый со
+            # своими 3 ретраями внутри client._get(), то есть до сотни лишних
+            # ударов по уже заблокировавшему нас хосту за один прогон каждые
+            # 2 минуты. Явный break — прогон останавливается сразу, одна
+            # понятная запись в error_samples вместо ~60 задублированных.
+            logger.error(f"🚫 KFF API circuit breaker: {e}")
+            stats["errors"] += 1
+            error_samples.append({
+                "match_id": str(match.id),
+                "match": f"{match.home_team.name} — {match.away_team.name}",
+                "error_type": "KFFAPICircuitBreakerOpen",
+                "error": str(e)[:300],
+                "at": timezone.now().isoformat(),
+            })
+            break
         except Exception as e:
             logger.error(f"❌ Error syncing match {match.id}: {type(e).__name__}: {e}", exc_info=True)
             stats["errors"] += 1

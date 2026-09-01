@@ -1,4 +1,30 @@
 # parsers/kff/client.py
+"""
+НАЙДЕНО (2026-09-01): kffleague.kz заблокировал запросы этого клиента
+(HTTP 403 на всех эндпоинтах), при этом ТОТ ЖЕ IP через настоящий браузер
+с теми же заголовками получает 200 — то есть блокировка не по IP и не по
+заголовкам (они уже полные: User-Agent/Accept/Referer/Origin/Sec-Fetch-*,
+см. __init__ ниже), а по TLS/HTTP2-отпечатку (Cloudflare Bot Management
+отличает `requests`/urllib3 от настоящего Chrome на уровне TLS ClientHello
+независимо от HTTP-заголовков). Это временное решение, пока нет возможности
+купить официальную подписку Stratorium API — три независимые меры:
+
+1. curl_cffi (опционально, см. requirements.txt) — имитирует TLS/HTTP2-
+   отпечаток настоящего Chrome. Если пакет не установлен — тихий fallback
+   на обычный requests.Session(), поведение не меняется (см. _make_session).
+2. Джиттер вместо фиксированной паузы 0.2с между запросами (see _get) —
+   робот с идеально ровным интервалом между 61 запросом каждые 2 минуты сам
+   по себе поведенческий сигнал для anti-bot скоринга, отдельно от TLS.
+3. Circuit breaker (CircuitBreakerOpen) — если API стабильно возвращает не-200
+   несколько раз подряд ПОДРЯД (не за весь прогон, а именно подряд без
+   единого успеха между ними), это не "один матч не ответил", а блокировка
+   уровня всего хоста. Раньше при такой блокировке update_match_statuses всё
+   равно проходил ВСЕ 61 матчей, каждый по 3 попытки — то есть до 183 ударов
+   в стену за один прогон каждые 2 минуты, что могло только продлевать/
+   ужесточать временный бан. Теперь после порога подряд идущих отказов
+   клиент poднимает исключение и прогон останавливается сразу.
+"""
+import random
 import requests
 import time
 import logging
@@ -6,7 +32,26 @@ from typing import List, Dict, Optional, Any
 
 logger = logging.getLogger(__name__)
 
+try:
+    from curl_cffi import requests as cffi_requests
+    HAS_CURL_CFFI = True
+except ImportError:
+    cffi_requests = None
+    HAS_CURL_CFFI = False
+
+
+class KFFAPICircuitBreakerOpen(Exception):
+    """Слишком много подряд идущих неудачных запросов — похоже на блокировку
+    всего хоста (rate-limit/anti-bot), а не проблему одного матча. См.
+    докстринг модуля выше."""
+    pass
+
+
 class KFFClient:
+    # Порог ПОДРЯД идущих полных неудач (после всех ретраев внутри _get) —
+    # см. докстринг модуля, пункт 3.
+    CIRCUIT_BREAKER_THRESHOLD = 5
+
     BASE_URL = "https://kffleague.kz"
     API_URL = "https://kffleague.kz/api/v1"
     
@@ -29,54 +74,103 @@ class KFFClient:
     KNOWN_PL_SEASON_IDS = [200, 201, 202, 203, 204, 205, 206]
     
     def __init__(self):
-        self.session = requests.Session()
-        self.session.headers.update({
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-            "Accept": "application/json, text/plain, */*",
-            "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Connection": "keep-alive",
-            "Referer": "https://kffleague.kz/",
-            "Origin": "https://kffleague.kz",
-            "Sec-Fetch-Dest": "empty",
-            "Sec-Fetch-Mode": "cors",
-            "Sec-Fetch-Site": "same-origin",
-        })
-    
+        self.session = self._make_session()
+
+        if HAS_CURL_CFFI:
+            # НАЙДЕНО (2026-09-01, curl_cffi поставили — 403 всё равно):
+            # curl_cffi при impersonate="chrome" сам генерирует ПОЛНЫЙ,
+            # согласованный с TLS-отпечатком набор заголовков (User-Agent,
+            # Accept, sec-ch-ua, Sec-Fetch-* — версия Chrome в них СОВПАДАЕТ
+            # с версией, которую он выдаёт себя за в TLS ClientHello). Наш
+            # ручной User-Agent ниже ("Mozilla/5.0 ... AppleWebKit/537.36" —
+            # даже не полная строка, без версии Chrome/Safari в конце)
+            # ЗАТИРАЛ этот согласованный набор — получалось "TLS настоящего
+            # свежего Chrome, а в заголовке огрызок UA, которого ни один
+            # реальный браузер не шлёт". Это классический сигнал для
+            # Cloudflare Bot Management (рассогласование TLS/заголовков),
+            # вероятно ИМЕННО он и не дал curl_cffi помочь. Оставляем
+            # curl_cffi эти заголовки формировать самому — трогаем только
+            # Referer/Origin (контекстные, не части профиля браузера).
+            self.session.headers.update({
+                "Referer": "https://kffleague.kz/",
+                "Origin": "https://kffleague.kz",
+            })
+        else:
+            self.session.headers.update({
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+                              "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+                "Accept": "application/json, text/plain, */*",
+                "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+                "Accept-Encoding": "gzip, deflate, br",
+                "Connection": "keep-alive",
+                "Referer": "https://kffleague.kz/",
+                "Origin": "https://kffleague.kz",
+                "Sec-Fetch-Dest": "empty",
+                "Sec-Fetch-Mode": "cors",
+                "Sec-Fetch-Site": "same-origin",
+            })
+        # Circuit breaker — счётчик ПОДРЯД идущих полных неудач _get() (после
+        # исчерпания внутренних ретраев). Сбрасывается любым успехом. См.
+        # докстринг модуля.
+        self._consecutive_failures = 0
+
+    @staticmethod
+    def _make_session():
+        """
+        curl_cffi (если установлен, см. requirements.txt) имитирует TLS/HTTP2-
+        отпечаток настоящего Chrome — обычный requests.Session() физически не
+        может, независимо от того, насколько правильные HTTP-заголовки
+        выставлены (см. докстринг модуля). Без пакета — тихий fallback на
+        обычный requests, поведение не меняется относительно того, что было
+        раньше.
+        """
+        if HAS_CURL_CFFI:
+            logger.info("KFFClient: используется curl_cffi (impersonate=chrome)")
+            return cffi_requests.Session(impersonate="chrome")
+        return requests.Session()
+
     def _get(self, endpoint: str, params: Optional[Dict] = None, retries: int = 3) -> Optional[Dict]:
-        """GET-запрос с повторами"""
+        """GET-запрос с повторами + джиттером + circuit breaker (см. докстринг модуля)."""
+        if self._consecutive_failures >= self.CIRCUIT_BREAKER_THRESHOLD:
+            raise KFFAPICircuitBreakerOpen(
+                f"{self._consecutive_failures} подряд идущих неудачных запросов к KFF API — "
+                f"похоже на блокировку хоста, а не проблему одного эндпоинта. Прерываю прогон."
+            )
+
         url = f"{self.API_URL}{endpoint}"
-        
+
         for attempt in range(retries):
             try:
                 response = self.session.get(url, params=params, timeout=15)
-                
+
                 if response.status_code != 200:
                     logger.warning(f"HTTP {response.status_code} | Attempt {attempt+1} | {url}")
                     if attempt < retries - 1:
                         time.sleep(1 * (attempt + 1))
                     continue
-                
+
                 try:
                     result = response.json()
-                    time.sleep(0.2)
+                    self._consecutive_failures = 0
+                    # Джиттер вместо фиксированной паузы — см. докстринг
+                    # модуля, пункт 2 (робот с идеально ровным интервалом
+                    # между запросами сам по себе поведенческий сигнал).
+                    time.sleep(random.uniform(0.3, 0.9))
                     return result
                 except ValueError as e:
                     logger.error(f"JSON decode error: {e} | {url}")
+                    self._consecutive_failures += 1
                     return None
-                    
-            except requests.exceptions.Timeout:
-                logger.warning(f"Timeout attempt {attempt+1} for {url}")
-                if attempt < retries - 1:
-                    time.sleep(2 * (attempt + 1))
-            except requests.exceptions.ConnectionError as e:
-                logger.warning(f"Connection error: {e}")
-                if attempt < retries - 1:
-                    time.sleep(2 * (attempt + 1))
+
             except Exception as e:
-                logger.error(f"Unexpected error: {type(e).__name__}: {e}")
-                break
-        
+                # Единый обработчик для requests.exceptions.* И curl_cffi
+                # исключений (разные классы исключений из разных библиотек,
+                # но одинаковая правильная реакция — ретрай с бэкоффом).
+                logger.warning(f"{type(e).__name__}: {e} | Attempt {attempt+1} | {url}")
+                if attempt < retries - 1:
+                    time.sleep(2 * (attempt + 1))
+
+        self._consecutive_failures += 1
         return None
     
     def get_tournament_seasons(self, tournament_code: str = None) -> List[Dict]:

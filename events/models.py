@@ -18,6 +18,17 @@ class MatchEvent(BaseModel):
         ("penalty", _("Пенальти")),
         ("own_goal", _("Автогол")),
         ("var_check", _("VAR проверка")),
+        # ДОБАВЛЕНО 2026-09-01: parsers/kff/importers.py::_is_goal_disallowed
+        # уже давно переклассифицирует "goal"/"penalty"/"own_goal" в
+        # "disallowed_goal", если API отмечает гол отменённым/пересмотренным
+        # VAR — но этого значения не было в EVENT_TYPES. choices у CharField
+        # не enforced на уровне БД, поэтому запись НЕ падала, но
+        # get_event_type_display() отдавал бы сырой код вместо человеческого
+        # текста везде, где рендерится лента событий. Заодно это ровно тот
+        # тип, который push-уведомления о live-событиях (notifications/
+        # tasks.py::notify_followers_match_event) используют для "гол
+        # отменён" — пользователь явно просил такой пуш.
+        ("disallowed_goal", _("Гол отменён")),
     ]
     
     TEAM_SIDES = [

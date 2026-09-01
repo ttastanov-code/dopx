@@ -542,7 +542,7 @@ def announcements(request):
     ВСЕМ верифицированным пользователям: in-app-уведомление создаётся
     синхронно (дёшево, один bulk_create — должно появиться у пользователя
     сразу, не ждать Celery), email — fan-out пачками, тот же паттерн, что
-    у send_voting_open_notification (notifications/tasks.py), с уважением
+    у notify_prediction_closing_soon (notifications/tasks.py), с уважением
     к тумблеру email_system у каждого получателя персонально
     (_send_email_to_user проверяет его сама).
 

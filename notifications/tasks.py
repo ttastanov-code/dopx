@@ -3,8 +3,8 @@
 _send_email_to_user проверяет настройку через явный notification_type
 (маппинг на ключ настроек словарём), не парсит тему письма строкой — иначе
 письмо о закрытии голосования содержит слово "Голосование" и попадает не
-в ту ветку. Массовые рассылки (send_voting_open_notification,
-notify_voting_closing_soon) — fan-out: родительская задача ставит в очередь
+в ту ветку. Массовые рассылки (например, notify_voting_closing_soon,
+notify_prediction_closing_soon) — fan-out: родительская задача ставит в очередь
 пачки по BULK_EMAIL_CHUNK_SIZE через _send_match_email_chunk, каждая со
 своим rate_limit — иначе риск упереться в CELERY_TASK_TIME_LIMIT и при
 ретрае разослать всё заново. send_notification_digest — периодическая
@@ -356,39 +356,6 @@ def _send_system_announcement_chunk(self, user_ids: list[str], subject: str, tit
     return sent
 
 
-@shared_task(bind=True, max_retries=3, countdown=5)
-def send_voting_open_notification(self, match_id: str):
-    """
-    Оповещение о завершении матча и открытии голосования — теперь fan-out
-    вместо синхронного цикла по всем пользователям (см. пункт 2 докстринга
-    модуля).
-    """
-    try:
-        from matches.models import Match
-        from users.models import User
-
-        match = Match.objects.select_related('home_team', 'away_team').filter(id=match_id).first()
-        if not match:
-            logger.error(f"send_voting_open_notification: match {match_id} not found")
-            return {'queued_chunks': 0, 'total_users': 0}
-
-        subject = f'🏁 Матч завершён: {match.home_team.name} vs {match.away_team.name}'
-        user_ids = [
-            str(uid) for uid in User.objects.filter(is_verified=True, email__isnull=False)
-            .values_list('id', flat=True)
-        ]
-
-        chunks = _chunked(user_ids, BULK_EMAIL_CHUNK_SIZE)
-        for chunk in chunks:
-            _send_match_email_chunk.delay(chunk, match_id, subject, 'emails/voting_open.html', 'match_finished')
-
-        logger.info(f"✅ Queued {len(chunks)} email chunk(s) ({len(user_ids)} users) for match {match_id}")
-        return {'queued_chunks': len(chunks), 'total_users': len(user_ids)}
-    except Exception as e:
-        logger.error(f"❌ Error in send_voting_open_notification: {e}", exc_info=True)
-        raise self.retry(exc=e, countdown=60)
-
-
 @shared_task(bind=True, max_retries=3)
 def notify_voting_closing_soon(self):
     """
@@ -577,25 +544,36 @@ def cleanup_old_notifications():
 @shared_task(bind=True, max_retries=3, countdown=5)
 def notify_followers_match_activity(self, match_id: str):
     """
-    Продуктовый аудит, раздел 5b ("Follow-граф"): адресное уведомление
-    ТОЛЬКО тем, кто подписан на одну из играющих команд или на игрока в
-    составе этого матча — в отличие от `send_voting_open_notification`
-    (широковещательная рассылка ВСЕМ верифицированным пользователям, email).
+    Приглашение оценить только что завершённый матч — in-app + push + email.
     Ставится в очередь из `parsers/tasks.py::update_match_statuses` (и,
     подстраховкой, из `parsers/kff/importers.py::import_match_core`) через
     `transaction.on_commit` в момент первого перехода матча в 'finished'.
 
-    ИСПРАВЛЕНО (AUDIT_2026-08.md, раздел 4, находка про открытие/закрытие
-    голосования): раньше здесь были только in-app + push, БЕЗ email — при
-    этом пользователи получали email про ЗАКРЫТИЕ голосования
-    (`notify_voting_closing_soon`, всем верифицированным), но НИКОГДА про
-    ОТКРЫТИЕ, что било по удержанию (нет повода зайти и оценить матч сразу
-    по свежим впечатлениям). Дедуп-риск, из-за которого email был
-    сознательно пропущен, снят: `send_voting_open_notification`
-    (широковещательная рассылка) нигде не вызывается — она мёртвый код, не
-    висит ни в одном CELERY_BEAT_SCHEDULE и не вызывается из другого места
-    проекта, так что дублирования писем не будет. Email уважает
-    пользовательскую настройку `email_match_finished`
+    РАСШИРЕНО (2026-09-01, прямая жалоба пользователя: email верифицирован,
+    прогноз стоял, а пуша с приглашением оценить матч не пришло вообще).
+    Раньше аудитория была ТОЛЬКО подписчики (`Follow`) на одну из играющих
+    команд или на игрока в составе — так и было изначально задумано
+    продуктом ("если человек подписан на команду или игроков"). На практике
+    это означало, что пользователь, который просто поставил прогноз на матч
+    (самый частый и очевидный кандидат на "пригласить оценить"), но не
+    оформил отдельную Follow-подписку на команду, никогда не попадал в
+    аудиторию — push для него не приходил не из-за бага, а по дизайну,
+    который на практике ощущается как "не работает". Аудитория теперь —
+    объединение (без дублей) подписчиков команд/игроков И всех, кто
+    отправил `MatchPrediction` на этот матч.
+
+    Раньше здесь ещё и разбирался мёртвый `send_voting_open_notification`
+    (широковещательная email-рассылка ВСЕМ верифицированным пользователям,
+    ни разу не вызывалась ни из кода, ни из CELERY_BEAT_SCHEDULE) — вместо
+    того, чтобы оставлять его висеть как источник путаницы, функция удалена
+    целиком (см. git-историю), а её часть аудитории (широковещательная)
+    сознательно НЕ перенесена сюда: рассылать это буквально всем
+    верифицированным пользователям при завершении КАЖДОГО матча тура — это
+    email-спам для тех, кто вообще не интересовался этим конкретным матчем.
+    Возврат к Follow + предсказавшим — таргетинг на тех, кому эта конкретная
+    игра реально интересна.
+
+    Email уважает пользовательскую настройку `email_match_finished`
     (см. NOTIFICATION_TYPE_TO_SETTINGS_KEY['voting_open']) — как и любой
     другой канал в этом модуле.
     """
@@ -605,6 +583,7 @@ def notify_followers_match_activity(self, match_id: str):
     from lineups.models import MatchLineupPlayer
     from matches.models import Match
     from notifications.models import Notification
+    from predictions.models import MatchPrediction
     from users.models import Follow
 
     match = Match.objects.select_related('home_team', 'away_team').filter(id=match_id).first()
@@ -623,13 +602,17 @@ def notify_followers_match_activity(self, match_id: str):
             Q(team_id__in=[match.home_team_id, match.away_team_id]) | Q(player_id__in=player_ids)
         ).values_list('user_id', flat=True)
     )
+    predictor_user_ids = set(
+        MatchPrediction.objects.filter(match=match).values_list('user_id', flat=True)
+    )
+    audience_user_ids = follower_user_ids | predictor_user_ids
 
-    if not follower_user_ids:
+    if not audience_user_ids:
         return {'notified': 0}
 
     title = f"{match.home_team.name} {match.get_score_display()} {match.away_team.name}"
     message = (
-        "Матч с командой или игроком, за которыми вы следите, завершён. "
+        "Матч завершён — вы за ним следили или ставили прогноз. "
         "Голосование открыто 48 часов — поделитесь своим мнением."
     )
     action_url = reverse('matches:detail', args=[match.id])
@@ -643,34 +626,31 @@ def notify_followers_match_activity(self, match_id: str):
             action_url=action_url,
             related_match=match,
         )
-        for uid in follower_user_ids
+        for uid in audience_user_ids
     ])
 
-    # Push — лучшее из двух миров с in-app: следящий за игроком пользователь
-    # часто НЕ сидит на сайте в момент финального свистка. Best-effort:
-    # ошибка одного пользователя (устаревшая подписка и т.д.) не должна
-    # прерывать рассылку остальным — см. try/except внутри send_push_to_user
-    # самого по себе; здесь дополнительно оборачиваем весь цикл на случай
-    # отсутствия pywebpush/VAPID-ключей в окружении.
+    # Push — лучшее из двух миров с in-app: следящий за игроком/предсказавший
+    # пользователь часто НЕ сидит на сайте в момент финального свистка.
+    # Best-effort: ошибка одного пользователя (устаревшая подписка и т.д.)
+    # не должна прерывать рассылку остальным — см. try/except внутри
+    # send_push_to_user самого по себе; здесь дополнительно оборачиваем весь
+    # цикл на случай отсутствия pywebpush/VAPID-ключей в окружении.
     try:
         from notifications.services import send_push_to_user
         from users.models import User
 
-        for user in User.objects.filter(id__in=follower_user_ids):
+        for user in User.objects.filter(id__in=audience_user_ids):
             send_push_to_user(user, title=title, body=message, url=action_url)
     except Exception as exc:
         logger.warning(f"notify_followers_match_activity: push fan-out skipped: {exc}")
 
-    # Email — см. изменение в докстринге выше: раньше сознательно
-    # пропускался из-за риска задвоения с `send_voting_open_notification`,
-    # но та рассылка нигде не вызывается (мёртвый код), так что дублирования
-    # нет. Аудитория здесь — только реальные подписчики конкретного матча
-    # (обычно единицы-десятки пользователей), поэтому шлём напрямую, без
+    # Email — аудитория здесь (подписчики + предсказавшие на конкретный
+    # матч) обычно единицы-десятки пользователей, поэтому шлём напрямую, без
     # chunked fan-out паттерна, которым пользуются широковещательные рассылки.
     from users.models import User as _UserModel
 
     emailed = 0
-    for user in _UserModel.objects.filter(id__in=follower_user_ids, is_verified=True, email__isnull=False):
+    for user in _UserModel.objects.filter(id__in=audience_user_ids, is_verified=True, email__isnull=False):
         if _send_email_to_user(
             user,
             f'⚽ {title} — голосование открыто',
@@ -680,8 +660,127 @@ def notify_followers_match_activity(self, match_id: str):
         ):
             emailed += 1
 
-    logger.info(f"✅ Notified {len(follower_user_ids)} follower(s) about match {match.id} ({emailed} email(s) sent)")
-    return {'notified': len(follower_user_ids), 'emailed': emailed}
+    logger.info(f"✅ Notified {len(audience_user_ids)} user(s) about match {match.id} ({emailed} email(s) sent)")
+    return {'notified': len(audience_user_ids), 'emailed': emailed}
+
+
+# Какие типы событий вообще стоят push-уведомления в реальном времени —
+# см. докстринг notify_followers_match_event ниже. Вынесено на уровень
+# модуля, чтобы parsers/tasks.py::update_match_statuses могло фильтровать
+# ДО постановки задачи в очередь, не гоняя воркер зря на жёлтых карточках/
+# заменах/сырых VAR-проверках без исхода.
+PUSH_WORTHY_EVENT_TYPES = frozenset({'goal', 'own_goal', 'penalty', 'disallowed_goal', 'red_card'})
+
+
+@shared_task(bind=True, max_retries=2)
+def notify_followers_match_event(self, match_id: str, event_id: str):
+    """
+    Продуктовый аудит (2026-09-01, прямой запрос пользователя): live push
+    ПО ХОДУ матча — гол/автогол/пенальти/отменённый (VAR) гол/красная
+    карточка — подписчикам одной из играющих команд ИЛИ конкретного
+    игрока, к которому относится событие. В отличие от
+    `notify_followers_match_activity` (шлётся РОВНО ОДИН раз, в момент
+    финального свистка, с приглашением оценить матч), эта задача может
+    сработать много раз за один матч — по разу на каждое подходящее
+    событие, см. `PUSH_WORTHY_EVENT_TYPES` выше и точку постановки в
+    очередь — `parsers/tasks.py::update_match_statuses`, сразу после
+    `import_events_and_minutes(..., on_event_created=...)`, СТРОГО для
+    событий, которые только что реально впервые созданы (не для
+    докрутки деталей у давно существующих).
+
+    Только push + in-app, БЕЗ email — в отличие от голосования (редкое,
+    важное событие, есть смысл слать письмо), гол по ходу матча — частый
+    и мгновенный by design сигнал; письмо на каждый гол было бы спамом
+    и пришло бы с опозданием, когда матч давно ушёл дальше.
+    """
+    from django.db.models import Q
+    from django.urls import reverse
+
+    from events.models import MatchEvent
+    from matches.models import Match
+    from notifications.models import Notification
+    from users.models import Follow
+
+    event = MatchEvent.objects.select_related('match__home_team', 'match__away_team', 'player').filter(
+        id=event_id
+    ).first()
+    if not event:
+        logger.error(f"notify_followers_match_event: event {event_id} not found")
+        return {'notified': 0}
+
+    match = event.match
+    if str(match.id) != str(match_id):
+        # Защита от рассинхрона id при вызове — не должно случаться в
+        # нормальном потоке (event.match_id и есть match_id, которым
+        # ставилась задача), но лучше явно отказаться, чем молча уведомить
+        # не про тот матч.
+        logger.error(f"notify_followers_match_event: event {event_id} belongs to match {match.id}, not {match_id}")
+        return {'notified': 0}
+
+    follower_user_ids = set(
+        Follow.objects.filter(
+            Q(team_id__in=[match.home_team_id, match.away_team_id]) | Q(player_id=event.player_id)
+        ).values_list('user_id', flat=True)
+    )
+    if not follower_user_ids:
+        return {'notified': 0}
+
+    score = match.get_score_display()
+    home = match.home_team.name
+    away = match.away_team.name
+    player_name = str(event.player) if event.player_id else None
+
+    if event.event_type == 'goal':
+        title = f"⚽ Гол! {home} {score} {away}"
+        message = f"{player_name} забивает на {event.display_minute}-й минуте." if player_name else f"Гол на {event.display_minute}-й минуте."
+    elif event.event_type == 'own_goal':
+        title = f"⚽ Автогол! {home} {score} {away}"
+        message = f"{player_name} — автогол на {event.display_minute}-й минуте." if player_name else f"Автогол на {event.display_minute}-й минуте."
+    elif event.event_type == 'penalty':
+        title = f"🎯 Пенальти! {home} {score} {away}"
+        message = f"{player_name} с пенальти на {event.display_minute}-й минуте." if player_name else f"Пенальти на {event.display_minute}-й минуте."
+    elif event.event_type == 'disallowed_goal':
+        title = f"❌ Гол отменён (VAR) — {home} {score} {away}"
+        message = f"Гол на {event.display_minute}-й минуте отменён после проверки VAR."
+    elif event.event_type == 'red_card':
+        title = f"🟥 Красная карточка — {home} {score} {away}"
+        message = f"{player_name} получает красную карточку на {event.display_minute}-й минуте." if player_name else f"Красная карточка на {event.display_minute}-й минуте."
+    else:
+        # PUSH_WORTHY_EVENT_TYPES фильтрует это на этапе постановки задачи —
+        # сюда попасть не должно, но лучше тихо выйти, чем разослать
+        # уведомление без осмысленного текста, если фильтр когда-нибудь
+        # разойдётся с этим списком.
+        logger.warning(f"notify_followers_match_event: неожиданный event_type={event.event_type!r} для события {event.id}, пропуск")
+        return {'notified': 0}
+
+    action_url = reverse('matches:detail', args=[match.id])
+
+    Notification.objects.bulk_create([
+        Notification(
+            user_id=uid,
+            notification_type='match_event',
+            title=title,
+            message=message,
+            action_url=action_url,
+            related_match=match,
+        )
+        for uid in follower_user_ids
+    ])
+
+    # Push — best-effort, тот же паттерн, что notify_followers_match_activity
+    # выше: сбой одной подписки/отсутствие VAPID-ключей не должен ронять
+    # рассылку остальным подписчикам.
+    try:
+        from notifications.services import send_push_to_user
+        from users.models import User
+
+        for user in User.objects.filter(id__in=follower_user_ids):
+            send_push_to_user(user, title=title, body=message, url=action_url)
+    except Exception as exc:
+        logger.warning(f"notify_followers_match_event: push fan-out skipped: {exc}")
+
+    logger.info(f"✅ Notified {len(follower_user_ids)} follower(s) about event {event.id} ({event.event_type}) in match {match.id}")
+    return {'notified': len(follower_user_ids)}
 
 
 # ============================================================

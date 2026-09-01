@@ -102,6 +102,35 @@
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6 px-2 md:px-0">
     <!-- === ЛЕВАЯ КОЛОНКА (2/3) === -->
     <div class="lg:col-span-2 space-y-4 md:space-y-6">
+        {% comment %}
+        НАЙДЕНО (2026-09-01): на главной не было НИ ОДНОЙ query на
+        status='live' — пользователю приходилось идти в /matches/, ставить
+        фильтр "live" и искать матч там. Секция — только когда есть что
+        показывать (live матчи редки — не 24/7), поэтому без {% empty %}
+        ветки, в отличие от "Ближайшие"/"Последние" ниже. Ставим ПЕРЕД
+        "Ближайшие матчи" — то, что происходит прямо сейчас, важнее того,
+        что будет позже.
+        {% endcomment %}
+        {% if live_matches %}
+        <section>
+            <div class="flex items-center justify-between mb-3 md:mb-4">
+                <h2 class="text-xl md:text-2xl font-bold flex items-center gap-2">
+                    <span class="match-card__live-dot"></span>
+                    <span>Сейчас в игре</span>
+                </h2>
+                <a href="{% url 'matches:list' %}?status=live" class="btn btn-ghost btn-xs sm:btn-sm">
+                    Все live
+                    <i class="ti ti-chevron-right"></i>
+                </a>
+            </div>
+            <div class="space-y-2 md:space-y-3">
+                {% for match in live_matches %}
+                {% include 'components/_match_card.html' with match=match %}
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+
         <!-- === БЛИЖАЙШИЕ МАТЧИ === -->
         <section>
             <div class="flex items-center justify-between mb-3 md:mb-4">

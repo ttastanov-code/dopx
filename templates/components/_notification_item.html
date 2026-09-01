@@ -51,6 +51,7 @@ notifications/views.py::_oob_counters_html). Именно эта кнопка ч
         {% elif notification.notification_type == 'voting_open' %}bg-primary/10 text-primary
         {% elif notification.notification_type == 'voting_closing' or notification.notification_type == 'prediction_closing' %}bg-warning/10 text-warning
         {% elif notification.notification_type == 'top_performance' %}bg-accent/10 text-accent
+        {% elif notification.notification_type == 'match_event' %}bg-error/10 text-error
         {% elif notification.notification_type == 'new_badge' %}bg-info/10 text-info
         {% elif notification.notification_type == 'level_up' %}bg-warning/10 text-warning
         {% elif notification.notification_type == 'prediction_result' %}bg-accent/10 text-accent
@@ -62,6 +63,7 @@ notifications/views.py::_oob_counters_html). Именно эта кнопка ч
             {% elif notification.notification_type == 'voting_open' %}ti-star
             {% elif notification.notification_type == 'voting_closing' or notification.notification_type == 'prediction_closing' %}ti-clock
             {% elif notification.notification_type == 'top_performance' %}ti-medal
+            {% elif notification.notification_type == 'match_event' %}ti-ball-football
             {% elif notification.notification_type == 'new_badge' %}ti-award
             {% elif notification.notification_type == 'level_up' %}ti-trending-up
             {% elif notification.notification_type == 'prediction_result' %}ti-target-arrow

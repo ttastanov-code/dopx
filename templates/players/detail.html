@@ -67,11 +67,24 @@
                 </div>
                 <div class="flex flex-wrap justify-center md:justify-start gap-4 mb-4">
                     {% if player.team %}
-                        <a href="{% url 'teams:detail' player.team.id %}" 
+                        <a href="{% url 'teams:detail' player.team.id %}"
                            class="badge badge-lg hover:bg-primary hover:text-primary-content transition-colors">
                             <i class="ti ti-users"></i>
                             {{ player.team.name }}
                         </a>
+                    {% endif %}
+                    {% if not player.is_active %}
+                        {% comment %}
+                        НАЙДЕНО (2026-09-01): player.team — последняя ИЗВЕСТНАЯ
+                        команда, не обязательно текущая (см. players/views.py) —
+                        без этого бейджа страница выглядела бы так, будто игрок
+                        всё ещё выступает за этот клуб.
+                        {% endcomment %}
+                        <span class="badge badge-lg badge-warning badge-outline"
+                              title="Больше не найден в текущем составе — сменил клуб или покинул КПЛ">
+                            <i class="ti ti-door-exit"></i>
+                            Покинул клуб
+                        </span>
                     {% endif %}
                     {% with position=player.position|position_label %}
                     {% if position %}

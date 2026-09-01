@@ -2,7 +2,7 @@
 import time
 from datetime import datetime, timedelta
 from functools import partial
-from typing import Dict, Optional, Union, List
+from typing import Callable, Dict, Optional, Union, List
 from django.core.cache import cache
 from django.db import transaction, IntegrityError
 from django.utils import timezone
@@ -372,6 +372,21 @@ def import_match_core(game_data: Dict, season_id: int = None) -> Match:
         )
         raw_status = game_data.get("status", "upcoming")
         status = STATUS_MAP.get(raw_status, "scheduled")
+        # НАЙДЕНО (2026-09-01, жалоба пользователя: фильтр "Перенесённые" на
+        # /matches/ ничего не находит, хотя по факту куча матчей реально
+        # перенеслась — сезон-2026 сдвинул 23-й тур на 17-18 октября, см.
+        # новость КФФ). Проверено напрямую через реальный API (season 200,
+        # все 240 матчей): KFF ВООБЩЕ НИКОГДА не присылает status="postponed"
+        # — только "upcoming"/"finished"/"technical_defeat" (и "live" по ходу
+        # игры). Перенос сигнализируется отдельным булевым полем
+        # `is_schedule_tentative` (все 8 матчей 23-го тура из новости — ровно
+        # с ним, status у них при этом "upcoming"). STATUS_MAP["postponed"]
+        # был мёртвым кодом: маппинг существует, но входного значения, которое
+        # бы в него попало, KFF никогда не присылает. Раз матч без твёрдой
+        # даты — это и есть "Перенесён" с точки зрения пользователя, вне
+        # зависимости от того, была ли у него дата раньше.
+        if game_data.get("is_schedule_tentative") and status == "scheduled":
+            status = "postponed"
         home_score = game_data.get("home_score")
         away_score = game_data.get("away_score")
         # БАГ, КОТОРЫЙ ТУТ БЫЛ (найден полным аудитом, август 2026, см.
@@ -467,13 +482,38 @@ def import_match_core(game_data: Dict, season_id: int = None) -> Match:
                 defaults["voting_open_until"] = voting_open_until
             elif existing:
                 # Матч ещё не завершён — не трогаем end_time/voting_open_until,
-                # чтобы не проставить их преждевременно (см. комментарий выше
-                # про `just_finished` в update_match_statuses). Для НОВОГО
-                # ещё не завершённого матча (existing is None) эти ключи
-                # просто не попадают в defaults — Match создастся с NULL,
-                # как и задумано моделью.
+                # чтобы не проставить их преждевременно.
                 defaults["end_time"] = existing.end_time
                 defaults["voting_open_until"] = existing.voting_open_until
+            else:
+                # НАЙДЕНО (2026-09-01, при добавлении теста на постпонед-
+                # детект выше): для НОВОГО ещё не завершённого матча (existing
+                # is None) end_time/voting_open_until раньше не попадали в
+                # defaults вообще — комментарий утверждал "Match создастся с
+                # NULL, как и задумано моделью", но `Match.voting_open_until`
+                # (matches/models.py) — `DateTimeField` БЕЗ `null=True`, с
+                # самой первой миграции (0001_initial). На практике это ни
+                # разу не взрывалось только потому, что все 61 матчей текущего
+                # сезона были изначально импортированы ЕЩЁ ДО фикса выше (тогда
+                # voting_open_until проставлялся безусловно для любого статуса)
+                # — с тех пор в проекте не создавалось ни одного ПОДЛИННО
+                # нового матча. Первый же реально новый матч (кубковая пара,
+                # довыставленный тур и т.п.) упал бы `IntegrityError: null
+                # value in column "voting_open_until"` — pipeline.py эту
+                # ошибку ловит и тихо пишет в stats['errors'], так что матч
+                # просто никогда не появился бы на сайте, без явного алерта.
+                #
+                # Плейсхолдер безопасен: `just_finished` в parsers/tasks.py
+                # ПОСЛЕ фикса того же дня определяется сравнением статусов
+                # (`match.status != "finished"`), а не через `not match.
+                # voting_open_until` — значение этого поля для ещё не
+                # завершённого матча больше нигде не используется как сигнал
+                # и будет безусловно перезаписано настоящим значением в
+                # момент реального финального свистка.
+                # end_time — `null=True` в модели, спокойно остаётся
+                # неустановленным (Match создастся с NULL по-настоящему).
+                placeholder_start = start_time or timezone.now()
+                defaults["voting_open_until"] = placeholder_start + timedelta(hours=48)
 
         was_finished_before = bool(existing and existing.status == "finished")
 
@@ -823,7 +863,12 @@ def _is_goal_disallowed(evt: Dict) -> bool:
     return False
 
 @transaction.atomic
-def import_events_and_minutes(match: Match, events_data: Dict, replace_existing: bool = True) -> bool:
+def import_events_and_minutes(
+    match: Match,
+    events_data: Dict,
+    replace_existing: bool = True,
+    on_event_created: Optional[Callable[["MatchEvent"], None]] = None,
+) -> bool:
     """
     Импорт событий матча. `replace_existing=False` — только добавляет
     переданное, ничего не удаляя: используется в parsers/tasks.py::
@@ -839,6 +884,19 @@ def import_events_and_minutes(match: Match, events_data: Dict, replace_existing:
     матчей каждые 30 минут — слепой снос всех событий на каждом таком цикле
     стирал реакции пользователей на события, которые по факту никуда не
     делись, просто пересоздавались с новым UUID.
+
+    `on_event_created` (2026-09-01, live push-уведомления о событиях матча,
+    notifications/tasks.py::notify_followers_match_event): опциональный
+    колбэк, вызывается РОВНО для событий, которые реально только что
+    впервые созданы в этом вызове (НЕ для matched_existing — обновление уже
+    сохранённого события НЕ означает "это только что произошло", это может
+    быть докрутка деталей автогола часовой давности при очередном ресинке).
+    Осознанно НЕ меняет тип возврата функции (bool) — он используется как
+    есть в pipeline.py и в тестах (parsers/tests.py::assertFalse(...)),
+    добавлять новый элемент в возврат означало бы чинить оба вызывающих
+    места без необходимости. Единственный вызывающий код, которому нужны
+    сами объекты — parsers/tasks.py::update_match_statuses (только для
+    replace_existing=False, живая дельта) — передаёт сюда `list.append`.
     """
     if not events_data:
         return False
@@ -1034,7 +1092,7 @@ def import_events_and_minutes(match: Match, events_data: Dict, replace_existing:
                 matched_existing.save()
                 updated_count += 1
             else:
-                MatchEvent.objects.create(
+                new_event = MatchEvent.objects.create(
                     match=match,
                     player=player,
                     minute=minute,
@@ -1050,6 +1108,8 @@ def import_events_and_minutes(match: Match, events_data: Dict, replace_existing:
                     extra_data=evt,
                 )
                 created_count += 1
+                if on_event_created is not None:
+                    on_event_created(new_event)
 
         except Exception as e:
             logger.error(f"⚠️ Ошибка события: {e} | Data: {evt}", exc_info=True)
