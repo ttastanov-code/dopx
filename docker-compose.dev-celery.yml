@@ -1,0 +1,89 @@
+# docker-compose.dev-celery.yml
+#
+# ТОЛЬКО для локальной разработки на маке — гоняет celery_worker/celery_beat
+# в Linux-контейнере вместо `celery -A dopx worker` напрямую через app_venv.
+#
+# ЗАЧЕМ (2026-09-01): прямой запуск celery на маке с --pool=prefork (дефолт)
+# падает SIGSEGV/WorkerLostError при форке дочерних процессов — это баг
+# macOS: Objective-C рантайм (Security.framework, который трогают TLS-
+# библиотеки при HTTPS-запросах, в т.ч. новый curl_cffi для обхода
+# блокировки KFF) не является fork-safe. На Linux этой проблемы нет
+# физически — Objective-C рантайма там просто нет. Прод и так крутится в
+# Linux-контейнере (docker-compose.yml), значит и локально надёжнее гонять
+# celery в Linux-контейнере, а не бороться с macOS-специфичным крашем.
+#
+# ЭТО НЕ ЗАМЕНА docker-compose.yml и НЕ должен запускаться вместе с ним:
+# тот поднимает СВОИ db/redis контейнеры с чистой пустой базой — если
+# слить эти два файла, celery окажется на пустой БД без единого матча.
+# Здесь вместо этого celery подключается к ТВОЕЙ СУЩЕСТВУЮЩЕЙ локальной
+# базе/redis на маке через host.docker.internal (см. environment: ниже) —
+# той же, к которой ходит `manage.py runserver` через app_venv. Локальному
+# Postgres перед первым запуском нужно один раз разрешить принимать
+# соединения из докер-сети (инструкция дана отдельно в чате, не входит в
+# этот файл — правка вне репозитория, на самой машине).
+#
+# Явное имя файла (не docker-compose.override.yml) — намеренно: обычный
+# `docker compose up` (в т.ч. на сервере при деплое, см. .github/workflows/
+# deploy.yml) НЕ подхватывает этот файл автоматически. Запускать только
+# явно:
+#   docker compose -f docker-compose.dev-celery.yml up --build
+# Остановить:
+#   docker compose -f docker-compose.dev-celery.yml down
+#
+# ВАЖНО: не запускай одновременно с `celery -A dopx worker` через app_venv —
+# два воркера на одной очереди будут выхватывать задачи друг у друга
+# гонкой, не критично для корректности (задачи идемпотентны), но задвоит
+# логи и запросы к KFF API. Останавливай один способ перед стартом другого.
+
+services:
+  celery_worker_dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: celery -A dopx worker -l info --concurrency=4
+    env_file:
+      - .env
+    environment:
+      # Внутри контейнера "localhost"/"127.0.0.1" из .env указывали бы на
+      # сам контейнер, а не на мак — поэтому все адреса БД/Redis здесь
+      # переопределены на host.docker.internal (Docker Desktop на Mac
+      # резолвит его в реальный IP хост-машины из коробки).
+      DB_HOST: host.docker.internal
+      DB_PORT: "5432"
+      REDIS_URL: redis://host.docker.internal:6379/0
+      REDIS_AGGREGATES_URL: redis://host.docker.internal:6379/2
+      CELERY_BROKER_URL: redis://host.docker.internal:6379/0
+      CELERY_RESULT_BACKEND: redis://host.docker.internal:6379/0
+    extra_hosts:
+      # host-gateway работает на Docker 20.10+; на Docker Desktop для Mac
+      # host.docker.internal и так резолвится сам, эта строка — просто
+      # подстраховка на случай нестандартной конфигурации.
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./media:/app/media
+      - ./logs:/app/logs
+
+  celery_beat_dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: celery -A dopx beat -l info --schedule=/app/celerybeat/celerybeat-schedule
+    env_file:
+      - .env
+    environment:
+      DB_HOST: host.docker.internal
+      DB_PORT: "5432"
+      REDIS_URL: redis://host.docker.internal:6379/0
+      REDIS_AGGREGATES_URL: redis://host.docker.internal:6379/2
+      CELERY_BROKER_URL: redis://host.docker.internal:6379/0
+      CELERY_RESULT_BACKEND: redis://host.docker.internal:6379/0
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Отдельный volume от прод-стека (celerybeat_data в docker-compose.yml)
+      # — не делить файл расписания между двумя независимыми beat-инстансами.
+      - celerybeat_data_dev:/app/celerybeat
+      - ./logs:/app/logs
+
+volumes:
+  celerybeat_data_dev:
