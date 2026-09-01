@@ -36,6 +36,13 @@ class Notification(BaseModel):
         # финализации, см. round_squad/services.py::recompute_round и
         # notifications/tasks.py::send_round_results_notification.
         ('round_results', _('Итоги «DOPX Лучшие тура»')),
+        # НОВОЕ (2026-09-01) — live-события матча (гол/автогол/пенальти/
+        # отменённый гол/красная карточка) для подписчиков команды или
+        # игрока, см. notifications/tasks.py::notify_followers_match_event.
+        # Отдельный тип от 'voting_open' (тот шлётся ОДИН раз при финальном
+        # свистке с приглашением оценить) — этот может прилететь несколько
+        # раз за матч, пока он идёт.
+        ('match_event', _('Live-событие матча')),
     ]
 
     user = models.ForeignKey(

@@ -79,6 +79,20 @@
           {% else %}
           <span class="opacity-40 text-xs md:text-sm">Без команды</span>
           {% endif %}
+          {% comment %}
+          НАЙДЕНО (2026-09-01): рейтинг больше не скрывает игроков, сменивших
+          клуб/покинувших КПЛ (is_active=False) — их сезонные оценки реальны
+          и заслужены. Но пользователь должен видеть, что игрок больше не в
+          этом составе — иначе выглядит как обычный действующий игрок клуба,
+          указанного в этой же строке (player.team — последняя ИЗВЕСТНАЯ
+          команда, не обязательно текущая, см. players/views.py).
+          {% endcomment %}
+          {% if not player.is_active %}
+          <span class="inline-flex items-center gap-1 text-[10px] font-semibold text-warning opacity-80 mt-0.5"
+                title="Больше не найден в текущем составе — сменил клуб или покинул КПЛ">
+            <i class="ti ti-door-exit"></i> покинул клуб
+          </span>
+          {% endif %}
         </td>
         <td class="opacity-60 text-xs md:text-sm">{{ player.position|position_label|default:"—" }}</td>
         <td class="text-center"><span class="font-mono text-xs md:text-sm">{{ player.total_matches|default:0 }}</span></td>

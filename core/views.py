@@ -76,6 +76,19 @@ class HomeView(TemplateView):
         ).select_related('home_team', 'away_team', 'league', 'season'
         ).order_by('start_time')[:4]
 
+        # НАЙДЕНО (2026-09-01, жалоба пользователя: "на главной не
+        # отображаются live матчи, приходится лезть в /matches/ и искать по
+        # фильтру"): для live матчей на главной не было ни одной query вообще
+        # — только 'finished' (recent_matches) и 'scheduled' (upcoming_matches
+        # выше). Матч, который вот прямо сейчас идёт, был самой "горячей"
+        # информацией на сайте, но полностью отсутствовал на дашборде.
+        # _match_card.html уже умеет рендерить live-бейдж (match-card--live,
+        # match-card__live-dot) — не хватало только самой выборки.
+        live_matches = list(Match.objects.filter(
+            status='live'
+        ).select_related('home_team', 'away_team', 'league', 'season'
+        ).order_by('start_time'))
+
         top_players = PlayerMatchAggregate.objects.select_related(
             'player', 'player__team'
         ).order_by('-performance_score')[:5]
@@ -165,6 +178,7 @@ class HomeView(TemplateView):
         context.update({
             'recent_matches': recent_matches,
             'upcoming_matches': upcoming_matches,
+            'live_matches': live_matches,
             'top_players': top_players,
             'top_teams': top_teams,
             'stats': stats,

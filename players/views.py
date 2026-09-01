@@ -36,7 +36,19 @@ class PlayerListView(ListView):
         self.active_season = Season.get_primary_active()
         self.show_all = self.request.GET.get('season') == 'all'
 
-        queryset = Player.objects.filter(is_active=True).select_related('team').prefetch_related(
+        # НАЙДЕНО (2026-09-01, жалоба пользователя): фильтр `is_active=True`
+        # был добавлен 2026-08-31 ТОЛЬКО чтобы починить состав команды
+        # (teams/views.py — не показывать в текущем ростере игроков, которых
+        # KFF больше не видит на странице клуба). Здесь, в общем рейтинге,
+        # он же исключал ЛЮБОГО игрока, сменившего клуб/покинувшего КПЛ в
+        # середине сезона, — целиком, вместе с его реальными оценками за
+        # уже сыгранные матчи (PlayerMatchAggregate никак не завязан на
+        # is_active). Продуктовое решение: сезонный рейтинг отражает
+        # результативность ЗА СЕЗОН, а не текущий факт трудоустройства —
+        # игрок остаётся в рейтинге, is_active используется только для
+        # бейджа "покинул клуб/КПЛ" в шаблоне (players/list.html), не для
+        # исключения из выдачи.
+        queryset = Player.objects.select_related('team').prefetch_related(
             # Prefetch с [:1] — подгружаем только лучший агрегат на игрока, не все
             models.Prefetch(
                 'match_aggregates',

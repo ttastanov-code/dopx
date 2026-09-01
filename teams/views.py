@@ -1,5 +1,5 @@
 # teams/views.py
-from django.db.models import Avg, Count, F, Q, Sum
+from django.db.models import Avg, Count, Exists, F, OuterRef, Q, Sum
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.views.decorators.clickjacking import xframe_options_exempt
@@ -10,6 +10,7 @@ from teams.models import Team, TeamSeason, TeamSeasonStats
 from players.models import Player
 from matches.models import Match
 from aggregates.models import PlayerMatchAggregate, MatchAggregate, TeamMatchAggregate
+from lineups.models import MatchLineupPlayer
 from aggregates.services import MIN_VOTES_FOR_DISPLAY
 from seasons.models import Season
 import logging
@@ -151,8 +152,35 @@ class TeamDetailView(DetailView):
         # игрока с честными 40 оценками (тот же баг, что был закрыт для
         # matches/views.py, здесь оставался открытым — продуктовый аудит
         # "доверие к рейтингу", 2026-08-21).
-        top_players = PlayerMatchAggregate.objects.filter(
-            player__team=team, total_votes__gte=MIN_VOTES_FOR_DISPLAY
+        #
+        # НАЙДЕНО (2026-09-01, вопрос пользователя про игрока, сменившего
+        # клуб в середине сезона): раньше фильтр был `player__team=team` —
+        # то есть "у кого ТЕКУЩАЯ команда — эта", а затем брались ВСЕ
+        # PlayerMatchAggregate игрока без разбора, за какую команду был
+        # сыгран конкретный матч. Эффект в проде: если игрок блистал в
+        # клубе А, а потом перешёл в клуб Б — клуб А молча ТЕРЯЛ его из
+        # своего топа (Player.team уже указывает на Б), а клуб Б
+        # ПРИСВАИВАЛ себе его лучший матч, сыгранный ещё за А (виджет не
+        # проверяет match вообще, только текущую команду игрока). Матч в
+        # выдаче показывает только дату, без названий команд — со стороны
+        # выглядело так, будто игрок выдал 8.5 именно за Б.
+        #
+        # Правильный источник "за какую команду сыгран ИМЕННО ЭТОТ матч" —
+        # MatchLineupPlayer.lineup.team (см. players/views.py::
+        # PlayerDetailView, career_by_season) — не перезаписывается задним
+        # числом при трансфере, в отличие от Player.team. Exists-подзапрос
+        # ниже проверяет для каждой пары (player, match) из
+        # PlayerMatchAggregate: был ли этот игрок в составе ИМЕННО этой
+        # команды на ИМЕННО этот матч.
+        played_for_this_team = MatchLineupPlayer.objects.filter(
+            player_id=OuterRef('player_id'),
+            lineup__team=team,
+            lineup__match_id=OuterRef('match_id'),
+        )
+        top_players = PlayerMatchAggregate.objects.annotate(
+            played_for_this_team=Exists(played_for_this_team)
+        ).filter(
+            played_for_this_team=True, total_votes__gte=MIN_VOTES_FOR_DISPLAY
         ).select_related(
             'player',
             'match'

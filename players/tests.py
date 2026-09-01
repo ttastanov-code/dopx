@@ -100,10 +100,30 @@ class PlayerListSeasonFilterTests(PlayersFixtureMixin, TestCase):
         self.assertIn(in_season, players)
         self.assertIn(outside_season, players)
 
-    def test_inactive_player_excluded_regardless_of_season(self):
+    def test_inactive_player_still_shown_in_rating(self):
+        """
+        ПЕРЕВЁРНУТО (2026-09-01, жалоба пользователя): этот тест раньше
+        закреплял ровно тот баг, который сейчас чиним. `is_active=False`
+        проставляется photo_scraper'ом (parsers/kff/photo_scraper.py), когда
+        KFF два прогона подряд не видит игрока в составе клуба — это сигнал
+        для СОСТАВА КОМАНДЫ (teams/views.py), не для общего рейтинга.
+        Игрок, сменивший клуб или покинувший КПЛ в середине сезона, не
+        должен терять свои реальные оценки за уже сыгранные матчи — они
+        никак не связаны с is_active (PlayerMatchAggregate). Рейтинг
+        показывает его всегда, is_active используется только для бейджа
+        "покинул клуб" в шаблоне.
+        """
         inactive = self._player("Игрок", "Неактивный", is_active=False)
         response = self.client.get(reverse('players:list'), {'season': 'all'})
-        self.assertNotIn(inactive, list(response.context['players']))
+        self.assertIn(inactive, list(response.context['players']))
+
+    def test_inactive_player_still_shown_within_active_season_too(self):
+        """Тот же случай, но БЕЗ ?season=all — команда игрока (team FK)
+        photo_scraper не обнуляет при уходе, она остаётся в текущем сезоне,
+        поэтому обычный (не 'all') сезонный фильтр тоже должен его найти."""
+        inactive = self._player("Игрок", "Неактивный", is_active=False)
+        response = self.client.get(reverse('players:list'))
+        self.assertIn(inactive, list(response.context['players']))
 
 
 class PlayerDetailNotFoundTests(TestCase):

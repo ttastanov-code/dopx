@@ -90,8 +90,8 @@ def _make_league_season_teams():
 @override_settings(**EMAIL_TEST_SETTINGS)
 class NotifyFollowersMatchActivityTests(TestCase):
     """
-    notify_followers_match_activity — адресная рассылка ТОЛЬКО подписчикам
-    (в отличие от широковещательной send_voting_open_notification), три
+    notify_followers_match_activity — адресная рассылка подписчикам команд/
+    игроков И тем, кто предсказал матч (не всем верифицированным), три
     канала разом: in-app Notification, best-effort push, email. Именно
     здесь чинили баг "нет email при открытии голосования на команду,
     на которую подписан пользователь" — эти тесты закрывают его напрямую.
@@ -248,6 +248,44 @@ class NotifyFollowersMatchActivityTests(TestCase):
         result = notify_followers_match_activity(str(uuid.uuid4()))
         self.assertEqual(result, {"notified": 0})
         self.assertEqual(len(mail.outbox), 0)
+
+    def test_predictor_without_follow_is_also_notified(self):
+        """
+        РАСШИРЕНО (2026-09-01, прямая жалоба пользователя: email
+        верифицирован, прогноз стоял, но push с приглашением оценить не
+        пришёл): пользователь, поставивший MatchPrediction на этот матч, но
+        НЕ подписанный через Follow ни на одну из команд — тоже должен
+        попасть в аудиторию. Раньше аудитория была строго Follow-only, и
+        для предсказавших-но-не-подписанных пользователей рассылка не
+        срабатывала вообще — не из-за бага в коде, а по дизайну, который на
+        практике ощущается как "push не работает".
+        """
+        predictor = User.objects.create_user(
+            username="predictor", email="predictor@example.com", password="pass12345",
+            is_verified=True,
+        )
+        MatchPrediction.objects.create(
+            match=self.match, user=predictor, choice=MatchPrediction.CHOICE_HOME,
+        )
+
+        result = notify_followers_match_activity(str(self.match.id))
+
+        self.assertTrue(Notification.objects.filter(user=predictor, related_match=self.match).exists())
+        self.assertEqual(result["notified"], 2)  # follower + predictor, без задвоения
+        all_recipients = [addr for msg in mail.outbox for addr in msg.to]
+        self.assertIn(predictor.email, all_recipients)
+
+    def test_follower_who_also_predicted_is_not_double_counted(self):
+        """Follow + MatchPrediction от одного и того же пользователя — не
+        задвоение (set-объединение, не сумма списков)."""
+        MatchPrediction.objects.create(
+            match=self.match, user=self.follower, choice=MatchPrediction.CHOICE_HOME,
+        )
+
+        result = notify_followers_match_activity(str(self.match.id))
+
+        self.assertEqual(result["notified"], 1)
+        self.assertEqual(Notification.objects.filter(related_match=self.match).count(), 1)
 
 
 @override_settings(**EMAIL_TEST_SETTINGS, CACHES=LOCMEM_CACHES,

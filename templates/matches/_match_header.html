@@ -59,6 +59,19 @@ secondary_color, полоска .md-hero__edge сверху) продуктов�
                     <i class="ti ti-flame"></i> Дерби
                 </span>
                 {% endif %}
+                {% comment %}
+                НАЙДЕНО (2026-09-01): status='postponed' ловит только пока
+                у KFF дата ещё не твёрдая. Матч с уже подтверждённой, но
+                выбивающейся из тура датой (см. Match.was_rescheduled) не
+                должен терять эту историю — не дублируем, если статус и так
+                уже 'postponed' (там уже есть свой алерт ниже).
+                {% endcomment %}
+                {% if match.was_rescheduled and match.status != 'postponed' %}
+                <span class="md-hero__pill" style="--mh-accent: var(--color-warning);"
+                      title="Дата матча перенесена относительно остальных матчей этого тура">
+                    <i class="ti ti-calendar-exclamation"></i> Перенос
+                </span>
+                {% endif %}
             </div>
             <span class="md-hero__pill">
                 {% if match.status == 'scheduled' %}
@@ -84,6 +97,11 @@ secondary_color, полоска .md-hero__edge сверху) продуктов�
         <div class="alert text-sm mb-5 sm:mb-8 rounded-xl">
             <i class="ti ti-ban"></i>
             <span>Матч отменён.</span>
+        </div>
+        {% elif match.was_rescheduled and match.tour %}
+        <div class="alert alert-warning text-sm mb-5 sm:mb-8 rounded-xl">
+            <i class="ti ti-calendar-exclamation"></i>
+            <span>Матч был перенесён — изначально относится к {{ match.tour }}-му туру, но играется отдельно от остальных его матчей.</span>
         </div>
         {% endif %}
 

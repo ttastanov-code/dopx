@@ -59,20 +59,31 @@ def bias_segment_text(aggregate) -> str:
     Пустая строка, если сегментов ещё нет (старые записи до миграции
     0002, либо все голоса из одного сегмента) — вызывающий шаблон должен
     не рисовать иконку в этом случае.
+
+    НАЙДЕНО (2026-09-01, жалоба пользователя: "фанаты игрока" — неверно,
+    и вообще подсказка нихера не понятная): "own_fans_avg" — это фанаты
+    КОМАНДЫ сущности (`entity_team_id` в aggregates/services.py::
+    segment_evaluations_by_side), не персонально игрока. Раньше это было
+    видно только при рейтинге игрока, но `own_fans_avg`/`rival_fans_avg`
+    есть и на TeamMatchAggregate, и на CoachMatchAggregate (см.
+    aggregates/models.py) — там подпись "фанаты игрока" вообще не при чём
+    (тренер, целая команда). Заменено на нейтральную формулировку, верную
+    для игрока/тренера/команды одинаково: "свои болельщики" = болельщики
+    команды этой сущности, а не лично игрока/тренера.
     """
     if aggregate is None:
         return ""
     parts = []
     if aggregate.own_fans_avg is not None:
-        parts.append(f"фанаты игрока: {aggregate.own_fans_avg:.1f}")
+        parts.append(f"свои болельщики — {aggregate.own_fans_avg:.1f}")
     if aggregate.rival_fans_avg is not None:
-        parts.append(f"фанаты соперника: {aggregate.rival_fans_avg:.1f}")
+        parts.append(f"болельщики соперника — {aggregate.rival_fans_avg:.1f}")
     if aggregate.neutral_avg is not None:
-        parts.append(f"нейтральные: {aggregate.neutral_avg:.1f}")
+        parts.append(f"нейтральные зрители — {aggregate.neutral_avg:.1f}")
     if len(parts) < 2:
         # Меньше 2 сегментов — сравнивать не с чем, подсказка бесполезна.
         return ""
-    return "Разбивка по лагерям — " + ", ".join(parts)
+    return ", ".join(parts)
 
 
 def _confidence_tier(total_votes) -> str:
@@ -96,16 +107,25 @@ _TIER_META = {
 
 @register.filter
 def stability_label(stability_index) -> str:
-    """Человекочитаемый лейбл разброса мнений поверх stability_index = 1/std_dev."""
+    """
+    Человекочитаемый лейбл разброса мнений поверх stability_index = 1/std_dev.
+
+    НАЙДЕНО (2026-09-01): раньше возвращала "мнения сходятся"/"мнения
+    расходятся" целиком, а confidence_badge() ниже собирал строку
+    "Разброс мнений: {label}" — получалось задвоенное "мнения" ("Разброс
+    мнений: мнения расходятся"), одна из причин жалобы "тексты нихера не
+    понятные". Возвращает только прилагательное, слово "мнения" — один
+    раз, в самом confidence_badge.
+    """
     try:
         value = float(stability_index)
     except (TypeError, ValueError):
         return ""
     if value >= STABILITY_HIGH_THRESHOLD:
-        return "мнения сходятся"
+        return "сходятся"
     if value >= STABILITY_LOW_THRESHOLD:
-        return "мнения расходятся"
-    return "мнения расходятся сильно"
+        return "расходятся"
+    return "расходятся сильно"
 
 
 @register.inclusion_tag("components/_confidence_badge.html")
@@ -126,13 +146,23 @@ def confidence_badge(aggregate):
     tier = _confidence_tier(total_votes)
     meta = _TIER_META[tier]
 
+    # НАЙДЕНО (2026-09-01, жалоба пользователя: "тексты нихера не понятные"):
+    # раньше разброс мнений и разбивка по лагерям шли двумя отдельными,
+    # неловко построенными предложениями ("Разброс мнений: мнения
+    # расходятся. Разбивка по лагерям — фанаты игрока: 8.0, ..." — задвоенное
+    # "мнения", неверная подпись "фанаты игрока" для команды/тренера).
+    # Собираем ОДНИМ читаемым предложением, когда есть оба куска: "Мнения
+    # расходятся: свои болельщики — 8.0, болельщики соперника — 7.0,
+    # нейтральные зрители — 7.0." — сразу видно И вывод, И на чём он основан.
     tooltip_parts = [f"{total_votes} голос(ов)."]
     stability_text = stability_label(getattr(aggregate, "stability_index", None))
-    if stability_text:
-        tooltip_parts.append(f"Разброс мнений: {stability_text}.")
     segment_text = bias_segment_text(aggregate)
-    if segment_text:
-        tooltip_parts.append(segment_text + ".")
+    if stability_text and segment_text:
+        tooltip_parts.append(f"Мнения {stability_text}: {segment_text}.")
+    elif stability_text:
+        tooltip_parts.append(f"Мнения {stability_text}.")
+    elif segment_text:
+        tooltip_parts.append(f"{segment_text[0].upper()}{segment_text[1:]}.")
     if tier == "preliminary":
         remaining = votes_needed(total_votes)
         tooltip_parts.append(

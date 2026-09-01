@@ -28,6 +28,7 @@ from django.utils import timezone
 from aggregates.models import PlayerMatchAggregate, TeamMatchAggregate
 from aggregates.services import MIN_VOTES_FOR_DISPLAY
 from leagues.models import League
+from lineups.models import MatchLineup, MatchLineupPlayer
 from matches.models import Match
 from players.models import Player
 from seasons.models import Season
@@ -158,11 +159,19 @@ class TeamRatingWidgetVoteGateTests(TeamMatchFixtureMixin, TestCase):
 class TeamDetailTopPlayersGateTests(TeamMatchFixtureMixin, TestCase):
     """TeamDetailView.top_players фильтрует PlayerMatchAggregate по
     total_votes__gte=MIN_VOTES_FOR_DISPLAY — тот же гейт, что и на виджете,
-    закрывает продуктовый аудит "доверие к рейтингу" (см. teams/views.py)."""
+    закрывает продуктовый аудит "доверие к рейтингу" (см. teams/views.py).
+
+    Фикстура теперь ещё создаёт MatchLineup/MatchLineupPlayer — с 2026-09-01
+    top_players матчит не по player.team (текущая команда), а по тому, за
+    кого игрок реально был в заявке НА ЭТОТ матч (см. класс ниже про баг
+    трансфера), поэтому без записи в составе агрегат больше не попадёт в
+    выдачу вообще, независимо от порога голосов."""
 
     def setUp(self):
         super().setUp()
         self.player = Player.objects.create(first_name="Игорь", last_name="Форвардов", team=self.home)
+        lineup = MatchLineup.objects.create(match=self.match, team=self.home, side="home")
+        MatchLineupPlayer.objects.create(lineup=lineup, player=self.player, is_starting=True)
 
     def test_player_below_threshold_excluded_from_top_players(self):
         PlayerMatchAggregate.objects.create(
@@ -179,3 +188,44 @@ class TeamDetailTopPlayersGateTests(TeamMatchFixtureMixin, TestCase):
         )
         response = self.client.get(reverse('teams:detail', args=[self.home.id]))
         self.assertIn(aggregate, list(response.context['top_players']))
+
+
+class TeamDetailTopPlayersTransferBugTests(TeamMatchFixtureMixin, TestCase):
+    """
+    НАЙДЕНО (2026-09-01, вопрос пользователя: "игрок блистал в одной
+    команде КПЛ, потом перешёл в другую — он будет как игрок той, второй
+    команды везде у нас?"): top_players раньше фильтровал по
+    `player__team=team` (ТЕКУЩАЯ команда игрока), а затем брал ВСЕ его
+    PlayerMatchAggregate без разбора, за какую команду сыгран конкретный
+    матч. Итог в проде: старый клуб терял своего экс-игрока из топа
+    целиком, а новый клуб присваивал себе его лучший матч, сыгранный ещё
+    за старый клуб (виджет не показывает названия команд матча — со
+    стороны выглядит так, будто это его результат именно за новый клуб).
+
+    Фикс: матчим PlayerMatchAggregate не по текущей Player.team, а по
+    MatchLineupPlayer — был ли игрок в заявке ИМЕННО этой команды на
+    ИМЕННО этот матч (тот же источник истины, что и career_by_season на
+    странице игрока, players/views.py::PlayerDetailView).
+    """
+
+    def setUp(self):
+        super().setUp()
+        # Игрок сейчас в "Гости", но матч (self.match) сыграл ещё будучи в "Хозяева".
+        self.player = Player.objects.create(first_name="Игорь", last_name="Трансферов", team=self.away)
+        old_club_lineup = MatchLineup.objects.create(match=self.match, team=self.home, side="home")
+        MatchLineupPlayer.objects.create(lineup=old_club_lineup, player=self.player, is_starting=True)
+        self.aggregate = PlayerMatchAggregate.objects.create(
+            player=self.player, match=self.match,
+            performance_score=9.5, total_votes=MIN_VOTES_FOR_DISPLAY,
+        )
+
+    def test_old_club_still_shows_the_match_played_before_transfer(self):
+        response = self.client.get(reverse('teams:detail', args=[self.home.id]))
+        self.assertIn(self.aggregate, list(response.context['top_players']))
+
+    def test_new_club_does_not_claim_a_match_played_for_the_old_club(self):
+        """Игрок сейчас числится за 'Гости' (self.away), но конкретно ЭТОТ
+        матч сыграл за 'Хозяева' — 'Гости' не должны присвоить себе чужой
+        результат только потому, что Player.team теперь указывает на них."""
+        response = self.client.get(reverse('teams:detail', args=[self.away.id]))
+        self.assertNotIn(self.aggregate, list(response.context['top_players']))

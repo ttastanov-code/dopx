@@ -233,6 +233,70 @@ class MatchListViewOtherFiltersTests(TestCase):
 
 
 # ---------------------------------------------------------------------------
+# MatchListView — стартовая страница по умолчанию (без ?page=/?status=)
+# ---------------------------------------------------------------------------
+
+class MatchListViewDefaultPaginationTests(TestCase):
+    """
+    НАЙДЕНО (2026-09-01, жалоба пользователя: "открывает на одну страницу
+    раньше сегодняшней даты, показывает более старые матчи"):
+    `paginate_queryset()` отступала на 3 позиции НАЗАД от индекса первого
+    ещё не начавшегося матча — идея была показать чуть-чуть прошедших
+    результатов вместе с будущими. При фиксированных страницах паджинатора
+    (PAGINATE_BY=20) этот отступ иногда пересекал ГРАНИЦУ страницы целиком:
+    если индекс первого будущего матча кратен 20 (или на 1-2 больше), минус
+    3 уводит на ПРЕДЫДУЩУЮ страницу, где вообще нет ни одного будущего
+    матча — только прошедшие. Тесты ниже закрывают именно граничный случай.
+    """
+
+    def setUp(self):
+        self.league = _make_league()
+        self.season = _make_season(league=self.league)
+        self.home = _make_team()
+        self.away = _make_team()
+
+    def _match_at(self, offset_days):
+        return _make_match(
+            league=self.league, season=self.season, home_team=self.home, away_team=self.away,
+            start_time=timezone.now() + timedelta(days=offset_days),
+        )
+
+    def test_default_page_contains_first_upcoming_match_at_page_boundary(self):
+        """Ровно 40 прошедших матчей — индекс первого будущего (40) кратен
+        PAGINATE_BY=20. До фикса открывалась 2-я страница (индексы 20-39,
+        ВСЕ прошедшие) — первый будущий матч был виден только на 3-й."""
+        for i in range(40, 0, -1):
+            self._match_at(-i)
+        first_upcoming = self._match_at(1)
+
+        response = self.client.get(reverse("matches:list"))
+
+        ids_on_page = [m.id for m in response.context["matches"]]
+        self.assertIn(first_upcoming.id, ids_on_page)
+
+    def test_default_page_contains_first_upcoming_match_off_boundary(self):
+        """Несбойный случай (индекс первого будущего матча НЕ у границы
+        страницы) — тоже должен работать, регрессия не должна ломать
+        обычный путь."""
+        for i in range(25, 0, -1):
+            self._match_at(-i)
+        first_upcoming = self._match_at(1)
+
+        response = self.client.get(reverse("matches:list"))
+
+        ids_on_page = [m.id for m in response.context["matches"]]
+        self.assertIn(first_upcoming.id, ids_on_page)
+
+    def test_no_past_matches_opens_first_page(self):
+        only_future = self._match_at(1)
+
+        response = self.client.get(reverse("matches:list"))
+
+        self.assertEqual(response.context["page_obj"].number, 1)
+        self.assertIn(only_future.id, [m.id for m in response.context["matches"]])
+
+
+# ---------------------------------------------------------------------------
 # MatchDetailView — 404 на несуществующий матч
 # ---------------------------------------------------------------------------
 

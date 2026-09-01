@@ -32,7 +32,7 @@ class NotificationListView(LoginRequiredMixin, ListView):
         notification_type = self.request.GET.get('type')
         if notification_type:
             type_map = {
-                'match': ['match_finished', 'voting_open', 'voting_closing', 'aggregate_updated', 'top_performance'],
+                'match': ['match_finished', 'voting_open', 'voting_closing', 'aggregate_updated', 'top_performance', 'match_event'],
                 'voting': ['voting_open', 'voting_closing'],
                 'badge': ['new_badge', 'level_up'],
                 'system': ['system', 'verification_required'],

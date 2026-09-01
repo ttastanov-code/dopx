@@ -58,6 +58,24 @@ start_time, — опциональны, компонент проверяет и
                 <i class="ti ti-trophy flex-shrink-0"></i>
                 <span class="truncate">{{ match.league.name }}</span>
                 {% if match.tour %}<span class="flex-shrink-0">· {{ match.tour }}-й тур</span>{% endif %}
+                {% comment %}
+                НАЙДЕНО (2026-09-01): match.status='postponed' ловит только
+                КОРОТКОЕ окно, пока KFF сам не определился с датой (см.
+                Match.was_rescheduled). Матч с уже твёрдой, но выбивающейся
+                из тура датой не должен терять эту историю только потому,
+                что статус вернулся в обычный 'scheduled' — иначе прогнозы
+                на него никогда бы не открылись (is_prediction_open() требует
+                status=='scheduled'). Отдельный бейдж, не завязанный на
+                основную статус-пилюлю справа — не дублируем, если статус
+                и так уже 'postponed'.
+                {% endcomment %}
+                {% if match.was_rescheduled and match.status != 'postponed' %}
+                <span class="flex-shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full
+                             bg-warning/15 text-warning text-[9px] normal-case tracking-normal font-bold"
+                      title="Дата матча перенесена относительно остальных матчей этого тура">
+                    <i class="ti ti-calendar-exclamation"></i> перенос
+                </span>
+                {% endif %}
             </span>
             <span class="match-card__pill flex-shrink-0">
                 {% if match.status == 'live' %}

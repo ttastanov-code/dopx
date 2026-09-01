@@ -5,7 +5,7 @@
 гонку при параллельном пересчёте одной и той же сущности как главный
 риск для истории/консистентности денормализованных карточек). Плюс
 fan-out рассылка письма с итогами тура (send_round_results_notification) —
-тот же паттерн пачек, что notifications/tasks.py::send_voting_open_notification,
+тот же паттерн пачек, что notifications/tasks.py::notify_prediction_closing_soon,
 переиспользуем оттуда _send_email_to_user/_chunked/BULK_EMAIL_CHUNK_SIZE.
 """
 from __future__ import annotations
@@ -120,8 +120,7 @@ def send_round_results_notification(self, round_best_xi_id: str) -> dict:
     Fan-out рассылка итогов тура — вызывается ОДИН раз из
     round_squad/services.py::recompute_round в момент, когда тур переходит
     в is_final=True (и из round_squad/admin.py::force_finalize при ручной
-    фиксации стаффом). Тот же принцип, что notifications/tasks.py::
-    send_voting_open_notification: широковещательно всем верифицированным
+    фиксации стаффом). Широковещательно всем верифицированным
     пользователям с email, не только тем, кто голосовал за этот тур —
     итоги тура релевантны всей аудитории платформы, а не только
     участвовавшим (те же получатели, что у "Матч завершён").

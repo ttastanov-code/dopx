@@ -32,10 +32,118 @@ from events.models import MatchEvent
 from leagues.models import League
 from lineups.models import MatchLineup
 from matches.models import Match
-from parsers.kff.importers import STATUS_MAP, import_events_and_minutes, import_lineups
-from parsers.tasks import _acquire_match_sync_lock, _release_match_sync_lock
+from parsers.kff.importers import STATUS_MAP, import_events_and_minutes, import_lineups, import_match_core
+from parsers.tasks import _acquire_match_sync_lock, _detect_rescheduled_outlier, _release_match_sync_lock
 from seasons.models import Season
 from teams.models import Team
+
+
+class DetectRescheduledOutlierTests(TestCase):
+    """
+    НАЙДЕНО (2026-09-01, жалоба пользователя: матч тура 6 "Каспий — Қайрат"
+    играется 05.09, хотя весь остальной тур 6 отыгран 18-19 апреля — сайт
+    никак это не показывает). `status='postponed'`/`is_schedule_tentative`
+    тут не срабатывают — KFF уже подтвердил 05.09 как окончательную дату,
+    сигнал "дата не определена" давно снят. `_detect_rescheduled_outlier`
+    (parsers/tasks.py) — независимый признак: дата матча далеко от дат
+    остальных матчей того же тура. См. Match.was_rescheduled.
+    """
+
+    def setUp(self):
+        self.league = League.objects.create(name="Test League", country="KZ")
+        self.season = Season.objects.create(league=self.league, year="2026")
+        self.home = Team.objects.create(name="Home", external_id="100")
+        self.away = Team.objects.create(name="Away", external_id="200")
+
+    def _match(self, tour, start_time):
+        return Match.objects.create(
+            league=self.league, season=self.season, home_team=self.home, away_team=self.away,
+            tour=tour, start_time=start_time, voting_open_until=start_time + timedelta(hours=48),
+        )
+
+    def test_date_far_from_tour_siblings_is_outlier(self):
+        base = timezone.now()
+        self._match(tour=6, start_time=base)
+        self._match(tour=6, start_time=base + timedelta(hours=2))
+        outlier_match = self._match(tour=6, start_time=base + timedelta(days=140))
+
+        self.assertTrue(_detect_rescheduled_outlier(outlier_match, tour=6, start_time=outlier_match.start_time))
+
+    def test_date_close_to_tour_siblings_is_not_outlier(self):
+        """Тур обычно растянут на выходные (2-3 дня) — это НЕ перенос."""
+        base = timezone.now()
+        self._match(tour=6, start_time=base)
+        self._match(tour=6, start_time=base + timedelta(days=1))
+        weekend_match = self._match(tour=6, start_time=base + timedelta(days=2))
+
+        self.assertFalse(_detect_rescheduled_outlier(weekend_match, tour=6, start_time=weekend_match.start_time))
+
+    def test_single_sibling_is_not_enough_to_judge(self):
+        """Один другой матч тура — недостаточно, чтобы знать "типичную" дату
+        (могли перенести и его самого) — не помечаем, ждём остальных."""
+        base = timezone.now()
+        self._match(tour=6, start_time=base)
+        maybe_outlier = self._match(tour=6, start_time=base + timedelta(days=140))
+
+        self.assertFalse(_detect_rescheduled_outlier(maybe_outlier, tour=6, start_time=maybe_outlier.start_time))
+
+    def test_different_tour_is_not_compared(self):
+        """Матчи ДРУГИХ туров не должны участвовать в вычислении "типичной"
+        даты — иначе перенос тура 6 на дату, близкую к туру 7, ложно
+        считался бы нормой."""
+        base = timezone.now()
+        self._match(tour=7, start_time=base)
+        self._match(tour=7, start_time=base + timedelta(days=1))
+        tour6_match = self._match(tour=6, start_time=base + timedelta(days=140))
+
+        self.assertFalse(_detect_rescheduled_outlier(tour6_match, tour=6, start_time=tour6_match.start_time))
+
+
+class IsScheduleTentativeMeansPostponedTests(TestCase):
+    """
+    НАЙДЕНО (2026-09-01, жалоба пользователя: фильтр "Перенесённые" на
+    /matches/ ничего не находит, хотя реально куча матчей перенеслась —
+    23-й тур сезона-2026 сдвинут на 17-18 октября). Проверено напрямую
+    через реальный API kffleague.kz: KFF никогда не присылает
+    status="postponed" — STATUS_MAP["postponed"] был мёртвым кодом,
+    рабочий сигнал переноса — булево поле `is_schedule_tentative` поверх
+    status="upcoming". Эти тесты закрывают именно это: детект в
+    import_match_core (см. тот же фикс в parsers/tasks.py::
+    update_match_statuses для уже импортированных матчей).
+    """
+
+    @staticmethod
+    def _game_data(**overrides):
+        data = {
+            "id": 9001,
+            "date": "2026-10-18",
+            "time": None,
+            "status": "upcoming",
+            "is_schedule_tentative": False,
+            "tour": 23,
+            "home_team": {"id": 501, "name": "Home FC"},
+            "away_team": {"id": 502, "name": "Away FC"},
+        }
+        data.update(overrides)
+        return data
+
+    def test_tentative_schedule_is_imported_as_postponed(self):
+        match = import_match_core(self._game_data(is_schedule_tentative=True))
+        self.assertEqual(match.status, "postponed")
+
+    def test_firm_schedule_is_imported_as_scheduled(self):
+        """Без is_schedule_tentative (или False) — обычный 'scheduled', не
+        каждый матч без даты должен считаться перенесённым."""
+        match = import_match_core(self._game_data(is_schedule_tentative=False))
+        self.assertEqual(match.status, "scheduled")
+
+    def test_tentative_flag_does_not_override_finished(self):
+        """is_schedule_tentative — сигнал только для ещё не сыгранных
+        матчей; завершённый матч не должен вдруг стать 'postponed'."""
+        match = import_match_core(self._game_data(
+            status="finished", is_schedule_tentative=True, home_score=1, away_score=0,
+        ))
+        self.assertEqual(match.status, "finished")
 
 
 class StatusMapTests(TestCase):
