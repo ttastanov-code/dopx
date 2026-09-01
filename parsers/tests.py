@@ -123,6 +123,16 @@ class IsScheduleTentativeMeansPostponedTests(TestCase):
             "tour": 23,
             "home_team": {"id": 501, "name": "Home FC"},
             "away_team": {"id": 502, "name": "Away FC"},
+            # НАЙДЕНО (упало в CI на реальном Postgres, 2026-09-01): без
+            # season_id import_match_core (parsers/kff/importers.py) не
+            # резолвит season → `defaults["league"] = season.league if
+            # season else None` → NULL в NOT NULL поле Match.league.
+            # py_compile этого не ловит (это runtime/DB-ошибка, не
+            # синтаксис), а локальный SQLite не всегда используется в этом
+            # проекте — понадобился реальный прогон manage.py test.
+            # get_or_create_season сам создаст Season + дефолтную League,
+            # если их ещё нет — реальные фикстуры лиги/сезона не нужны.
+            "season_id": 200,
         }
         data.update(overrides)
         return data
