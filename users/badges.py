@@ -38,7 +38,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-Rarity = Literal["bronze", "silver", "gold", "platinum", "secret"]
+Rarity = Literal["bronze", "silver", "gold", "platinum", "secret", "legendary"]
 
 RARITY_ORDER: dict[Rarity, int] = {
     "bronze": 1,
@@ -46,6 +46,12 @@ RARITY_ORDER: dict[Rarity, int] = {
     "gold": 3,
     "platinum": 4,
     "secret": 5,
+    # НОВОЕ (2026-09-01, продуктовый запрос "супер ультра" достижения):
+    # "legendary" — про СЛОЖНОСТЬ получения (топ-уровень над platinum), а
+    # не про секретность, поэтому стоит ВЫШЕ "secret" по порядку — "secret"
+    # исторически означает "скрыт до получения" (founder — секретный, но
+    # получить его легко, просто рано зарегистрироваться), а не "трудный".
+    "legendary": 6,
 }
 
 
@@ -193,6 +199,79 @@ BADGE_CATALOG: dict[str, BadgeDefinition] = {
         description="Один из первых 500 пользователей DOPX.",
         rarity="secret",
         is_secret=True,
+    ),
+
+    # --- НОВОЕ (2026-09-01, продуктовый запрос "достижения по оценкам и
+    # прогнозам + супер-ультра уровень") — 6 обычных + 5 legendary. Все
+    # условия считаются по данным, которые в проекте УЖЕ есть, тот же
+    # принцип, что у "второго захода" выше (см. докстринг модуля) — без
+    # новых внешних пайплайнов данных. Критерии — users/services.py.
+    "coach_expert": BadgeDefinition(
+        code="coach_expert",
+        name="Тренерский эксперт",
+        description="Оценили работу тренеров в 25+ матчах.",
+        rarity="bronze",
+    ),
+    "both_sides": BadgeDefinition(
+        code="both_sides",
+        name="Обе стороны",
+        description="В 15+ матчах оценили игроков ОБЕИХ команд, а не только своих.",
+        rarity="silver",
+    ),
+    "full_season": BadgeDefinition(
+        code="full_season",
+        name="Полный сезон",
+        description="Оценили хотя бы один матч в каждом туре целого сезона.",
+        rarity="gold",
+    ),
+    "stable_hand": BadgeDefinition(
+        code="stable_hand",
+        name="Стабильная рука",
+        description="50+ прогнозов с точностью 85% и выше.",
+        rarity="silver",
+    ),
+    "derby_prophet": BadgeDefinition(
+        code="derby_prophet",
+        name="Дерби-пророк",
+        description="Угадали исход 5+ матчей между принципиальными соперниками.",
+        rarity="gold",
+    ),
+    "against_the_tide": BadgeDefinition(
+        code="against_the_tide",
+        name="Против течения",
+        description="Угадали исход, когда ваш прогноз был в меньшинстве голосов сообщества.",
+        rarity="gold",
+    ),
+    # --- Legendary ("супер ультра") ---
+    "perfect_tour": BadgeDefinition(
+        code="perfect_tour",
+        name="Идеальный тур",
+        description="Угадали исход АБСОЛЮТНО ВСЕХ матчей одного тура чемпионата.",
+        rarity="legendary",
+    ),
+    "streak_250": BadgeDefinition(
+        code="streak_250",
+        name="Живая легенда трибун",
+        description="Оценили матч 250 туров чемпионата подряд.",
+        rarity="legendary",
+    ),
+    "prediction_streak_200": BadgeDefinition(
+        code="prediction_streak_200",
+        name="Абсолютный оракул",
+        description="Угадали исход 200 матчей подряд.",
+        rarity="legendary",
+    ),
+    "season_completionist": BadgeDefinition(
+        code="season_completionist",
+        name="Стоглазый",
+        description="Оценили ВСЕ завершённые матчи одного полного сезона — без единого пропуска.",
+        rarity="legendary",
+    ),
+    "max_trust": BadgeDefinition(
+        code="max_trust",
+        name="Максимальное доверие",
+        description="Достигли максимального уровня доверия платформы на большой выборке оценок.",
+        rarity="legendary",
     ),
 }
 

@@ -177,12 +177,13 @@
                 {% for badge in cat.badges %}
                 {% tooltip_wrap badge.name %}
                 <div class="w-10 h-10 md:w-12 md:h-12 rounded-lg flex items-center justify-center border-2
-                  {% if badge.rarity == 'platinum' %}bg-info/10 border-info/40 text-info
+                  {% if badge.rarity == 'legendary' %}dopx-legendary-chip dopx-legendary-icon
+                  {% elif badge.rarity == 'platinum' %}bg-info/10 border-info/40 text-info
                   {% elif badge.rarity == 'gold' %}bg-warning/10 border-warning/40 text-warning
                   {% elif badge.rarity == 'silver' %}bg-base-300/60 border-base-content/20 text-base-content/70
                   {% elif badge.rarity == 'secret' %}bg-secondary/10 border-secondary/40 text-secondary
                   {% else %}bg-accent/10 border-accent/30 text-accent{% endif %}">
-                  <i class="ti {% if badge.is_secret %}ti-eye-off{% else %}ti-medal{% endif %} text-lg md:text-xl"></i>
+                  <i class="ti {% if badge.rarity == 'legendary' %}ti-crown{% elif badge.is_secret %}ti-eye-off{% else %}ti-medal{% endif %} text-lg md:text-xl"></i>
                 </div>
                 {% endtooltip_wrap %}
                 {% endfor %}

@@ -64,29 +64,55 @@
             </div>
         </div>
         <!-- Быстрые статистики -->
+        {% comment %}
+        НАЙДЕНО (2026-09-01, жалоба пользователя: "непонятно нифига что за
+        оценок, что за матчей, что за игроков"): "Оценок" и "Матчей" раньше
+        показывали ОДНО И ТО ЖЕ число (см. подробный комментарий в
+        users/views.py::ProfileView) — заменено на total_ratings_given
+        (реально другая метрика). Плюс подсказки на каждую плитку — раньше
+        не было вообще ни одной, только голые подписи.
+        {% endcomment %}
         <div class="grid grid-cols-2 gap-4">
             <div class="stat bg-base-100 border border-base-300 p-4">
-                <div class="stat-title text-xs">Оценок</div>
-                <div class="stat-value text-2xl">{{ stats.total_evaluations }}</div>
+                <div class="stat-title text-xs inline-flex items-center gap-1">
+                    Оценок
+                    {% include 'components/_tooltip_icon.html' with text="Сколько отдельных оценок вы поставили — игрокам, командам, тренерам и судьям суммарно за все матчи" %}
+                </div>
+                <div class="stat-value text-2xl">{{ stats.total_ratings_given }}</div>
             </div>
             <div class="stat bg-base-100 border border-base-300 p-4">
-                <div class="stat-title text-xs">Игроков</div>
+                <div class="stat-title text-xs inline-flex items-center gap-1">
+                    Игроков
+                    {% include 'components/_tooltip_icon.html' with text="Сколько РАЗНЫХ игроков вы оценили хотя бы раз за всё время" %}
+                </div>
                 <div class="stat-value text-2xl">{{ stats.total_players }}</div>
             </div>
             <div class="stat bg-base-100 border border-base-300 p-4">
-                <div class="stat-title text-xs">Матчей</div>
+                <div class="stat-title text-xs inline-flex items-center gap-1">
+                    Матчей
+                    {% include 'components/_tooltip_icon.html' with text="Сколько матчей вы оценили полностью — прошли вайзард оценки до конца" %}
+                </div>
                 <div class="stat-value text-2xl">{{ stats.total_matches }}</div>
             </div>
             <div class="stat bg-base-100 border border-base-300 p-4">
-                <div class="stat-title text-xs">Серия оценок</div>
+                <div class="stat-title text-xs inline-flex items-center gap-1">
+                    Серия оценок
+                    {% include 'components/_tooltip_icon.html' with text="Сколько туров чемпионата подряд вы оценивали хотя бы один матч — пропущенный тур сбрасывает серию" %}
+                </div>
                 <div class="stat-value text-2xl text-accent">{{ stats.evaluation_streak }}</div>
             </div>
             <div class="stat bg-base-100 border border-base-300 p-4">
-                <div class="stat-title text-xs">Прогнозов</div>
+                <div class="stat-title text-xs inline-flex items-center gap-1">
+                    Прогнозов
+                    {% include 'components/_tooltip_icon.html' with text="Сколько прогнозов на исход матча (1X2) вы поставили за всё время" %}
+                </div>
                 <div class="stat-value text-2xl">{{ stats.total_predictions }}</div>
             </div>
             <div class="stat bg-base-100 border border-base-300 p-4">
-                <div class="stat-title text-xs">Серия прогнозов</div>
+                <div class="stat-title text-xs inline-flex items-center gap-1">
+                    Серия прогнозов
+                    {% include 'components/_tooltip_icon.html' with text="Сколько прогнозов подряд вы угадали — первая же ошибка сбрасывает серию в 0" %}
+                </div>
                 <div class="stat-value text-2xl text-secondary">{{ stats.prediction_streak }}</div>
             </div>
         </div>
@@ -126,13 +152,20 @@
                 <div class="flex flex-wrap gap-2">
                     {% for badge in badges %}
                     {% tooltip_wrap badge.get_badge_type_display %}
+                    {% comment %}
+                    ДОБАВЛЕНО (2026-09-01, "супер ультра" достижения):
+                    legendary — единственный уровень с анимированной рамкой
+                    (dopx-legendary-chip/-icon, static/css/badges.css),
+                    остальные уровни не меняли — Tailwind-утилиты справа.
+                    {% endcomment %}
                     <div class="w-12 h-12 rounded-lg flex items-center justify-center border-2
-                        {% if badge.rarity == 'platinum' %}bg-info/10 border-info/40 text-info
+                        {% if badge.rarity == 'legendary' %}dopx-legendary-chip dopx-legendary-icon
+                        {% elif badge.rarity == 'platinum' %}bg-info/10 border-info/40 text-info
                         {% elif badge.rarity == 'gold' %}bg-warning/10 border-warning/40 text-warning
                         {% elif badge.rarity == 'silver' %}bg-base-300/60 border-base-content/20 text-base-content/70
                         {% elif badge.rarity == 'secret' %}bg-secondary/10 border-secondary/40 text-secondary
                         {% else %}bg-accent/10 border-accent/30 text-accent{% endif %}">
-                        <i class="ti {% if badge.is_secret %}ti-eye-off{% else %}ti-medal{% endif %} text-xl"></i>
+                        <i class="ti {% if badge.rarity == 'legendary' %}ti-crown{% elif badge.is_secret %}ti-eye-off{% else %}ti-medal{% endif %} text-xl"></i>
                     </div>
                     {% endtooltip_wrap %}
                     {% empty %}
@@ -184,7 +217,16 @@
                         <i class="ti ti-history mr-2"></i>
                         Последние оценки
                     </h3>
-                    <a href="{% url 'matches:list' %}" class="btn btn-ghost btn-sm">
+                    {% comment %}
+                    НАЙДЕНО (2026-09-01): вела на общий список всех матчей —
+                    "Последние оценки" выше показывает только последние 10
+                    (recent_evaluations, см. users/views.py::ProfileView),
+                    а ссылка должна вести на ПОЛНЫЙ список именно оценённых
+                    пользователем матчей. status=evaluated — виртуальный
+                    фильтр (matches/views.py), тот же приём, что и у
+                    status=votable на главной странице.
+                    {% endcomment %}
+                    <a href="{% url 'matches:list' %}?status=evaluated" class="btn btn-ghost btn-sm">
                         Все матчи
                     </a>
                 </div>
@@ -246,10 +288,17 @@
                         </div>
                         <i class="ti ti-chevron-right opacity-60"></i>
                     </a>
+                    {% comment %}
+                    НАЙДЕНО (2026-09-01, замечание пользователя): страница
+                    за этой ссылкой (templates/users/notification_settings.html)
+                    — это не только email-тумблеры, там же управление
+                    push-подписками устройств. "Email уведомления" описывала
+                    только часть страницы.
+                    {% endcomment %}
                     <a href="{% url 'users:notification_settings' %}" class="flex items-center justify-between p-3 bg-base-200 rounded-lg hover:bg-base-300 transition-all">
                         <div class="flex items-center gap-3">
-                            <i class="ti ti-mail"></i>
-                            <span>Email уведомления</span>
+                            <i class="ti ti-bell"></i>
+                            <span>Настройки уведомлений</span>
                         </div>
                         <i class="ti ti-chevron-right opacity-60"></i>
                     </a>

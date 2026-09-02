@@ -1,0 +1,83 @@
+/* static/css/badges.css
+ *
+ * Визуал уровня редкости "legendary" (users/badges.py::RARITY_ORDER,
+ * продуктовый запрос "супер ультра" достижения, 2026-09-01) — единственный
+ * уровень, который нельзя целиком собрать из готовых Tailwind/daisyUI
+ * утилит (см. аналогичный комментарий про color-mix в evaluations/
+ * complete.html — там же причина, почему bg-gradient-* классы daisyUI не
+ * работают с Tailwind v4). Используется на всех страницах, где рендерятся
+ * бейджи: templates/users/badge_catalog.html, templates/profile/
+ * dashboard.html, templates/users/public_profile.html, templates/core/
+ * rules.html.
+ *
+ * Обычные уровни (bronze/silver/gold/platinum/secret) остаются на
+ * Tailwind-утилитах прямо в шаблонах — здесь только то, чего утилитами не
+ * добиться: анимированная градиентная рамка + свечение. Анимация —
+ * background-position на большом линейном градиенте (классический приём,
+ * широко поддерживается), а не @property+conic-gradient — тот вариант
+ * надёжнее кросс-браузерно, хоть и чуть менее "по-настоящему вращается".
+ */
+
+@keyframes dopx-legendary-shimmer {
+    0%, 100% { background-position: 0% 0%, 0% 50%; }
+    50%      { background-position: 0% 0%, 100% 50%; }
+}
+
+@keyframes dopx-legendary-pulse {
+    0%, 100% { box-shadow: 0 0 18px -4px rgba(168, 85, 247, 0.45), 0 0 10px -2px rgba(245, 158, 11, 0.35); }
+    50%      { box-shadow: 0 0 30px -2px rgba(168, 85, 247, 0.65), 0 0 18px -1px rgba(245, 158, 11, 0.55); }
+}
+
+/* Карточка достижения целиком (badge_catalog.html) — заливка сохраняет
+   текущий theme-цвет базовой поверхности (--color-base-100, daisyUI 5 +
+   Tailwind v4 CSS-переменные), поверх неё — рамка движущимся золото-
+   фиолетовым градиентом. */
+.dopx-legendary-card {
+    position: relative;
+    border: 2px solid transparent;
+    border-radius: 1rem;
+    background:
+        linear-gradient(var(--color-base-100), var(--color-base-100)) padding-box,
+        linear-gradient(120deg, #f59e0b, #a855f7, #f59e0b, #a855f7) border-box;
+    background-size: 100% 100%, 300% 300%;
+    animation: dopx-legendary-shimmer 5s ease infinite, dopx-legendary-pulse 2.5s ease-in-out infinite;
+}
+
+/* Иконка-медаль/корона внутри легендарной карточки — сплошная заливка тем
+   же градиентом, без анимации (мигающая иконка внутри и так анимированной
+   рамки — перегруз, достаточно одного движения). */
+.dopx-legendary-icon {
+    background: linear-gradient(135deg, #f59e0b, #a855f7) !important;
+    color: #fff !important;
+    border-color: transparent !important;
+}
+
+/* Маленький бейдж-пилюля с подписью редкости ("legendary") — используется
+   рядом с названием достижения, там же где обычно daisyUI badge-info/
+   badge-warning/etc. */
+.dopx-legendary-pill {
+    background: linear-gradient(135deg, #f59e0b, #a855f7);
+    color: #fff;
+    border: none;
+}
+
+/* Компактный вариант — для строчных карточек в профиле (profile/
+   dashboard.html, users/public_profile.html), где достижение показывается
+   маленьким квадратом с иконкой, не полной карточкой каталога. */
+.dopx-legendary-chip {
+    position: relative;
+    border: 2px solid transparent;
+    border-radius: 0.75rem;
+    background:
+        linear-gradient(var(--color-base-100), var(--color-base-100)) padding-box,
+        linear-gradient(120deg, #f59e0b, #a855f7, #f59e0b, #a855f7) border-box;
+    background-size: 100% 100%, 300% 300%;
+    animation: dopx-legendary-shimmer 5s ease infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .dopx-legendary-card,
+    .dopx-legendary-chip {
+        animation: none;
+    }
+}

@@ -330,10 +330,22 @@ class RulesView(TemplateView):
             ('engagement', 'Вовлечённость', 'ti-flame', [
                 'first_evaluation', 'active_fan_10', 'active_fan_50', 'active_fan_150',
                 'streak_7', 'streak_30', 'streak_100',
+                # НОВОЕ (2026-09-01, "супер ультра" достижения):
+                'full_season',
             ]),
             ('quality', 'Качество и точность', 'ti-target-arrow', [
                 'accurate_analyst', 'foresight', 'bias_free', 'early_bird',
                 'judge_of_judges', 'polyglot',
+                # НОВОЕ (2026-09-01):
+                'coach_expert', 'both_sides',
+            ]),
+            # НОВОЕ (2026-09-01): раньше прогнозные достижения не показывались
+            # на этой странице вообще (были только в общем каталоге,
+            # users/badge_catalog.html) — добавляем отдельной категорией,
+            # заодно с тремя новыми.
+            ('predictions', 'Прогнозы', 'ti-chart-line', [
+                'first_prediction', 'prediction_streak_7', 'prediction_streak_30', 'prediction_streak_100',
+                'stable_hand', 'derby_prophet', 'against_the_tide',
             ]),
             ('status', 'Дерби и статусные', 'ti-crown', [
                 'derby_hunter', 'monthly_champion',
@@ -341,13 +353,40 @@ class RulesView(TemplateView):
             ('secret', 'Секретные', 'ti-lock-question', [
                 'founder',
             ]),
+            # НОВОЕ (2026-09-01): топ-уровень редкости "legendary" —
+            # отдельная категория с особым визуалом на странице (см.
+            # rarity == 'legendary' в шаблоне ниже, static/css/badges.css).
+            ('legendary', 'Легендарные', 'ti-diamond', [
+                'perfect_tour', 'streak_250', 'prediction_streak_200',
+                'season_completionist', 'max_trust',
+            ]),
         ]
+        # ВАЖНО (2026-09-01, найдено пользователем через tooltip на проде):
+        # эта страница НЕ персонализирована (доступна анонимам, не проверяет
+        # request.user), поэтому подставлять сюда "получено/не получено" для
+        # секретных бейджей нельзя технически — а значит показывать их
+        # РЕАЛЬНОЕ имя тут нельзя вообще никому и никогда, иначе секретность
+        # (BadgeDefinition.is_secret) не имеет смысла: раньше `badge.name`
+        # для 'founder' уходил прямо в {% tooltip_wrap %} и был виден любому
+        # посетителю /rules/ без входа в аккаунт. Маскируем так же, как
+        # BadgeCatalogView делает для ЕЩЁ НЕ полученных секретных бейджей
+        # (users/views.py) — только тут это применяется безусловно, ко ВСЕМ
+        # секретным бейджам, т.к. "получено" тут проверить не у кого.
+        def _safe_badge(code: str) -> dict:
+            d = BADGE_CATALOG[code]
+            return {
+                'code': code,
+                'name': '???' if d.is_secret else d.name,
+                'rarity': d.rarity,
+                'is_secret': d.is_secret,
+            }
+
         context['badge_categories'] = [
             {
                 'key': key,
                 'title': title,
                 'icon': icon,
-                'badges': [BADGE_CATALOG[code] for code in codes if code in BADGE_CATALOG],
+                'badges': [_safe_badge(code) for code in codes if code in BADGE_CATALOG],
             }
             for key, title, icon, codes in badge_categories
         ]
