@@ -68,21 +68,37 @@ templates/users/public_profile.html
             </div>
         </div>
 
+        {% comment %}
+        См. подробный комментарий в templates/profile/dashboard.html —
+        тот же баг ("Оценок"/"Матчей" показывали одно и то же число).
+        {% endcomment %}
         <div class="grid grid-cols-2 gap-4">
             <div class="stat bg-base-100 border border-base-300 p-4">
-                <div class="stat-title text-xs">Оценок</div>
-                <div class="stat-value text-2xl">{{ stats.total_evaluations }}</div>
+                <div class="stat-title text-xs inline-flex items-center gap-1">
+                    Оценок
+                    {% include 'components/_tooltip_icon.html' with text="Сколько отдельных оценок поставлено — игрокам, командам, тренерам и судьям суммарно за все матчи" %}
+                </div>
+                <div class="stat-value text-2xl">{{ stats.total_ratings_given }}</div>
             </div>
             <div class="stat bg-base-100 border border-base-300 p-4">
-                <div class="stat-title text-xs">Игроков</div>
+                <div class="stat-title text-xs inline-flex items-center gap-1">
+                    Игроков
+                    {% include 'components/_tooltip_icon.html' with text="Сколько РАЗНЫХ игроков оценено хотя бы раз за всё время" %}
+                </div>
                 <div class="stat-value text-2xl">{{ stats.total_players }}</div>
             </div>
             <div class="stat bg-base-100 border border-base-300 p-4">
-                <div class="stat-title text-xs">Матчей</div>
+                <div class="stat-title text-xs inline-flex items-center gap-1">
+                    Матчей
+                    {% include 'components/_tooltip_icon.html' with text="Сколько матчей оценено полностью — вайзард оценки пройден до конца" %}
+                </div>
                 <div class="stat-value text-2xl">{{ stats.total_matches }}</div>
             </div>
             <div class="stat bg-base-100 border border-base-300 p-4">
-                <div class="stat-title text-xs">Серия</div>
+                <div class="stat-title text-xs inline-flex items-center gap-1">
+                    Серия
+                    {% include 'components/_tooltip_icon.html' with text="Сколько туров чемпионата подряд оценён хотя бы один матч — пропущенный тур сбрасывает серию" %}
+                </div>
                 <div class="stat-value text-2xl text-accent">{{ stats.evaluation_streak }}</div>
             </div>
         </div>
@@ -98,12 +114,13 @@ templates/users/public_profile.html
                     {% for badge in badges %}
                     {% tooltip_wrap badge.get_badge_type_display %}
                     <div class="w-12 h-12 rounded-lg flex items-center justify-center border-2
-                        {% if badge.rarity == 'platinum' %}bg-info/10 border-info/40 text-info
+                        {% if badge.rarity == 'legendary' %}dopx-legendary-chip dopx-legendary-icon
+                        {% elif badge.rarity == 'platinum' %}bg-info/10 border-info/40 text-info
                         {% elif badge.rarity == 'gold' %}bg-warning/10 border-warning/40 text-warning
                         {% elif badge.rarity == 'silver' %}bg-base-300/60 border-base-content/20 text-base-content/70
                         {% elif badge.rarity == 'secret' %}bg-secondary/10 border-secondary/40 text-secondary
                         {% else %}bg-accent/10 border-accent/30 text-accent{% endif %}">
-                        <i class="ti {% if badge.is_secret %}ti-eye-off{% else %}ti-medal{% endif %} text-xl"></i>
+                        <i class="ti {% if badge.rarity == 'legendary' %}ti-crown{% elif badge.is_secret %}ti-eye-off{% else %}ti-medal{% endif %} text-xl"></i>
                     </div>
                     {% endtooltip_wrap %}
                     {% empty %}

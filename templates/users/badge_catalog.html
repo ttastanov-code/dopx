@@ -19,8 +19,61 @@
     </div>
 </div>
 
+{% if legendary_catalog %}
+{% comment %}
+ДОБАВЛЕНО (2026-09-01, продуктовый запрос "супер ультра" достижения —
+новый топ-уровень редкости "legendary", users/badges.py): выводятся
+отдельной витриной над обычной сеткой, они и есть та самая "витрина", ради
+которой их вводили. legendary_catalog/other_catalog собраны в
+users/views.py::BadgeCatalogView — так надёжнее и читаемее, чем считать
+"первый легендарный элемент" через forloop внутри вложенных {% for %}.
+Визуал (dopx-legendary-*) — static/css/badges.css, Tailwind-утилитами
+анимированную градиентную рамку не сделать.
+{% endcomment %}
+<div class="mb-3 flex items-center gap-2">
+    <i class="ti ti-crown text-lg" style="background: linear-gradient(135deg, #f59e0b, #a855f7); -webkit-background-clip: text; background-clip: text; color: transparent;"></i>
+    <h2 class="font-bold text-lg" style="background: linear-gradient(135deg, #f59e0b, #a855f7); -webkit-background-clip: text; background-clip: text; color: transparent;">Легендарные</h2>
+</div>
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+    {% for badge in legendary_catalog %}
+    <div class="card transition-all {% if badge.earned %}dopx-legendary-card{% else %}bg-base-100 border-2 border-base-300 opacity-60{% endif %}">
+        <div class="card-body p-4 flex-row items-start gap-3">
+            <div class="w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0 border-2
+                {% if badge.earned %}dopx-legendary-icon{% else %}bg-base-200 border-base-300 text-base-content/40{% endif %}">
+                <i class="ti {% if badge.is_secret and not badge.earned %}ti-help{% elif badge.earned %}ti-crown{% else %}ti-lock{% endif %} text-xl"></i>
+            </div>
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 flex-wrap">
+                    <h3 class="font-bold text-sm">{{ badge.name }}</h3>
+                    <span class="badge badge-xs dopx-legendary-pill">legendary</span>
+                </div>
+                <p class="text-xs opacity-60 mt-1">{{ badge.description }}</p>
+                {% if badge.earned %}
+                <p class="text-[10px] text-success mt-2">
+                    <i class="ti ti-check"></i> Получено {{ badge.awarded_at|date:"d.m.Y" }}
+                </p>
+                {% comment %}
+                Кнопка "Поделиться" (продуктовый запрос 2026-09-01) — тот же
+                Web Share API + фолбэк на window.open, что уже используется в
+                templates/players/season_recap.html. У карточки достижения нет
+                отдельной HTML-страницы (в отличие от season_recap) — шерим
+                напрямую URL PNG-карточки (badge.share_url, см.
+                BadgeCatalogView.get_context_data), а не window.location.href.
+                {% endcomment %}
+                <button type="button" class="btn btn-xs dopx-legendary-pill mt-2"
+                        onclick="if(window.dopxTrack){dopxTrack('share_clicked', {channel: 'native', context: 'badge', badge_code: '{{ badge.code }}'})}; navigator.share ? navigator.share({title: 'Достижение «{{ badge.name }}» на DOPX', url: '{{ badge.share_url }}'}) : window.open('{{ badge.share_url }}', '_blank')">
+                    <i class="ti ti-share"></i> Поделиться
+                </button>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-    {% for badge in catalog %}
+    {% for badge in other_catalog %}
     <div class="card border-2 transition-all
         {% if not badge.earned %}bg-base-100 border-base-300 opacity-60
         {% elif badge.rarity == 'platinum' %}bg-info/5 border-info/40
@@ -55,6 +108,11 @@
                 <p class="text-[10px] text-success mt-2">
                     <i class="ti ti-check"></i> Получено {{ badge.awarded_at|date:"d.m.Y" }}
                 </p>
+                {% comment %}См. подробный комментарий у той же кнопки в legendary-секции выше.{% endcomment %}
+                <button type="button" class="btn btn-xs btn-outline mt-2"
+                        onclick="if(window.dopxTrack){dopxTrack('share_clicked', {channel: 'native', context: 'badge', badge_code: '{{ badge.code }}'})}; navigator.share ? navigator.share({title: 'Достижение «{{ badge.name }}» на DOPX', url: '{{ badge.share_url }}'}) : window.open('{{ badge.share_url }}', '_blank')">
+                    <i class="ti ti-share"></i> Поделиться
+                </button>
                 {% endif %}
             </div>
         </div>

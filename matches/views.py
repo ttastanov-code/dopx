@@ -81,6 +81,30 @@ class MatchListView(ListView):
             queryset = queryset.filter(
                 status='finished', voting_open_until__gte=timezone.now()
             ).order_by('voting_open_until')
+        elif status == 'evaluated':
+            # НАЙДЕНО (2026-09-01, жалоба пользователя: кнопка "Все матчи" в
+            # блоке "Последние оценки" профиля вела на общий список всех
+            # матчей вообще, а не на те, что пользователь реально оценил —
+            # profile/dashboard.html показывает только последние 10
+            # (recent_evaluations), полного списка нигде не было). Тот же
+            # приём, что и у status=votable выше — не в выпадающем списке
+            # фильтров (templates/matches/list.html), только по прямой
+            # ссылке (см. profile/dashboard.html) — виртуальный статус,
+            # а не значение поля Match.status.
+            #
+            # Источник истины — EvaluationSession.status='completed', а не
+            # наличие связанных PlayerEvaluation/TeamEvaluation/... — так
+            # же, как ProfileView.get_context_data() считает
+            # recent_evaluations/total_matches (users/views.py), чтобы
+            # число "Матчей оценено" в статистике профиля и список за
+            # ссылкой "Все матчи" совпадали 1:1.
+            if self.request.user.is_authenticated:
+                queryset = queryset.filter(
+                    evaluation_sessions__user=self.request.user,
+                    evaluation_sessions__status='completed',
+                ).order_by('-evaluation_sessions__completed_at')
+            else:
+                queryset = queryset.none()
         else:
             # БАГ, КОТОРЫЙ ТУТ БЫЛ: сортировка "по близости к текущему
             # моменту" (симметричное расстояние |start_time - now|) вместо
@@ -162,9 +186,10 @@ class MatchListView(ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         current_status = self.request.GET.get('status', '')
-        context['page_title'] = (
-            'Матчи для оценки — DOPX' if current_status == 'votable' else 'Все матчи — DOPX'
-        )
+        context['page_title'] = {
+            'votable': 'Матчи для оценки — DOPX',
+            'evaluated': 'Оценённые мной матчи — DOPX',
+        }.get(current_status, 'Все матчи — DOPX')
         context['current_status'] = current_status
         context['current_league'] = self.request.GET.get('league', '')
         context['current_season'] = self.request.GET.get('season', '')

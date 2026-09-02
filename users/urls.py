@@ -2,6 +2,7 @@
 from django.urls import path
 from .views import (
     RegisterView, LoginView, LogoutView, ProfileView, PublicProfileView, BadgeCatalogView,
+    BadgeShareCardView,
     UserLeaderboardView, PlayerLeaderboardView,
     ProfileEditView, PasswordChangeViewCustom,
     PasswordResetViewCustom, PasswordResetDoneViewCustom,
@@ -47,4 +48,11 @@ urlpatterns = [
     # PublicProfileView. Префикс 'u/', а не 'profile/<username>/' — иначе
     # пересечётся с 'profile/edit/', 'profile/password/' и т.д.
     path('u/<str:username>/', PublicProfileView.as_view(), name='public_profile'),
+
+    # Премиальная шеринг-карточка достижения (PNG), см. докстринг
+    # BadgeShareCardView. Отдельный сегмент 'badges/<code>/card.png' ПОСЛЕ
+    # 'u/<username>/' — конфликта нет: <str:username> не матчит '/', так что
+    # 'u/vasya/' и 'u/vasya/badges/founder/card.png' резолвятся однозначно
+    # независимо от порядка объявления, порядок тут только для читаемости.
+    path('u/<str:username>/badges/<str:code>/card.png', BadgeShareCardView.as_view(), name='badge_share_card'),
 ]

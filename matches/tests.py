@@ -189,6 +189,62 @@ class MatchListViewStatusFilterTests(TestCase):
 
 
 # ---------------------------------------------------------------------------
+# MatchListView — ?status=evaluated ("Все матчи" из блока "Последние оценки"
+# в профиле, см. templates/profile/dashboard.html)
+# ---------------------------------------------------------------------------
+
+class MatchListViewEvaluatedFilterTests(TestCase):
+    """
+    НАЙДЕНО (2026-09-01, жалоба пользователя: "жму 'все матчи' в 'Последние
+    оценки', открывает страницу ВСЕХ матчей, а не тех, что я оценил"):
+    ссылка вела на matches:list без фильтра вообще — 'Последние оценки'
+    показывает только последние 10 (users/views.py::ProfileView,
+    recent_evaluations), полного списка оценённых матчей нигде не было.
+    ?status=evaluated — виртуальный фильтр (как и ?status=votable), источник
+    истины — EvaluationSession.status='completed' для ТЕКУЩЕГО пользователя,
+    не факт наличия любых evaluation-строк (та же логика, что и в
+    ProfileView.total_matches)."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="voter", email="voter@example.com", password="x")
+        self.other_user = User.objects.create_user(username="other", email="other@example.com", password="x")
+        now = timezone.now()
+        self.evaluated_by_me = _make_match(status="finished", start_time=now - timedelta(days=1))
+        EvaluationSession.objects.create(user=self.user, match=self.evaluated_by_me, status="completed")
+        self.abandoned_by_me = _make_match(status="finished", start_time=now - timedelta(days=2))
+        EvaluationSession.objects.create(user=self.user, match=self.abandoned_by_me, status="in_progress")
+        self.evaluated_by_other = _make_match(status="finished", start_time=now - timedelta(days=3))
+        EvaluationSession.objects.create(user=self.other_user, match=self.evaluated_by_other, status="completed")
+        self.never_evaluated = _make_match(status="finished", start_time=now - timedelta(days=4))
+
+    def _ids(self, response):
+        return {m.id for m in response.context["matches"]}
+
+    def test_returns_only_matches_completed_by_current_user(self):
+        self.client.login(username="voter", password="x")
+        response = self.client.get(reverse("matches:list"), {"status": "evaluated"})
+        self.assertEqual(self._ids(response), {self.evaluated_by_me.id})
+
+    def test_in_progress_session_not_counted_as_evaluated(self):
+        """Начатая, но не завершённая сессия — не должна попадать в список,
+        как и на самой странице профиля (recent_evaluations фильтрует
+        status='completed')."""
+        self.client.login(username="voter", password="x")
+        response = self.client.get(reverse("matches:list"), {"status": "evaluated"})
+        self.assertNotIn(self.abandoned_by_me.id, self._ids(response))
+
+    def test_other_users_evaluations_not_leaked(self):
+        self.client.login(username="voter", password="x")
+        response = self.client.get(reverse("matches:list"), {"status": "evaluated"})
+        self.assertNotIn(self.evaluated_by_other.id, self._ids(response))
+
+    def test_anonymous_user_gets_empty_list_not_error(self):
+        response = self.client.get(reverse("matches:list"), {"status": "evaluated"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self._ids(response), set())
+
+
+# ---------------------------------------------------------------------------
 # MatchListView — фильтры по лиге/сезону/туру (независимы от статуса)
 # ---------------------------------------------------------------------------
 

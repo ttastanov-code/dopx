@@ -275,8 +275,27 @@ class ProfileView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         user = self.request.user
+        # НАЙДЕНО (2026-09-01, жалоба пользователя: "непонятно что за
+        # оценок, что за матчей, что за игроков" в блоке статистики
+        # профиля): "Оценок" (total_evaluations) и "Матчей" (total_matches)
+        # раньше показывали ОДНО И ТО ЖЕ число — оба считают "сколько раз
+        # вайзард оценки матча пройден до конца" (total_evaluations — через
+        # аккумулятор на User, total_matches — через COUNT завершённых
+        # EvaluationSession), просто двумя разными путями к одному и тому
+        # же факту. Две одинаковые цифры под разными подписями выглядят как
+        # баг, даже когда обе технически верны. Заменяем "Оценок" на
+        # РЕАЛЬНО другую метрику — сколько отдельных оценок (игрокам,
+        # командам, тренерам, судьям суммарно) поставлено за все матчи, а
+        # не сколько матчей оценено целиком (это остаётся за "Матчей").
+        total_ratings_given = (
+            user.player_evaluations.count()
+            + user.team_evaluations.count()
+            + user.coach_evaluations.count()
+            + user.referee_evaluations.count()
+        )
         stats = {
             'total_evaluations': user.total_evaluations,
+            'total_ratings_given': total_ratings_given,
             'total_players': user.player_evaluations.values('player').distinct().count(),
             'trust_score': round(user.trust_score, 2),
             'trust_level': user.get_trust_level(),
@@ -331,6 +350,8 @@ class BadgeCatalogView(LoginRequiredMixin, TemplateView):
     template_name = 'users/badge_catalog.html'
 
     def get_context_data(self, **kwargs):
+        from django.urls import reverse
+
         context = super().get_context_data(**kwargs)
         earned = {
             b.badge_type: b.awarded_at
@@ -347,10 +368,24 @@ class BadgeCatalogView(LoginRequiredMixin, TemplateView):
                 'is_secret': definition.is_secret,
                 'earned': is_earned,
                 'awarded_at': earned.get(code),
+                # Ссылка на премиальную PNG-карточку (BadgeShareCardView) —
+                # только для полученных ачивок, иначе кнопка "Поделиться" вела
+                # бы на 404 (карточка требует существующую UserBadge-запись).
+                'share_url': self.request.build_absolute_uri(
+                    reverse('users:badge_share_card', args=[self.request.user.username, code])
+                ) if is_earned else None,
             })
         catalog.sort(key=lambda b: (not b['earned'], -RARITY_ORDER.get(b['rarity'], 0), b['name']))
+        # НОВОЕ (2026-09-01, "супер ультра" достижения): легендарные выводятся
+        # отдельной витриной над обычной сеткой — разбиваем список тут, в
+        # Python, а не городим подсчёт "первого легендарного элемента" в
+        # шаблоне через forloop (ненадёжно и нечитаемо при вложенных {% for %}).
+        legendary_catalog = [b for b in catalog if b['rarity'] == 'legendary']
+        other_catalog = [b for b in catalog if b['rarity'] != 'legendary']
         context.update({
             'catalog': catalog,
+            'legendary_catalog': legendary_catalog,
+            'other_catalog': other_catalog,
             'earned_count': len(earned),
             'total_count': len(BADGE_CATALOG),
             'page_title': 'Достижения — DOPX',
@@ -384,8 +419,17 @@ class PublicProfileView(TemplateView):
             EventName.PROFILE_VIEWED, request=self.request,
             properties={"viewed_username": profile_user.username},
         )
+        # См. подробный комментарий у той же конструкции в ProfileView
+        # (тот же баг: "Оценок" и "Матчей" показывали одно и то же число).
+        total_ratings_given = (
+            profile_user.player_evaluations.count()
+            + profile_user.team_evaluations.count()
+            + profile_user.coach_evaluations.count()
+            + profile_user.referee_evaluations.count()
+        )
         stats = {
             'total_evaluations': profile_user.total_evaluations,
+            'total_ratings_given': total_ratings_given,
             'total_players': profile_user.player_evaluations.values('player').distinct().count(),
             'trust_score': round(profile_user.trust_score, 2),
             'trust_level': profile_user.get_trust_level(),
@@ -414,6 +458,60 @@ class PublicProfileView(TemplateView):
             'page_title': f'{profile_user.username} — DOPX',
         })
         return context
+
+
+class BadgeShareCardView(View):
+    """
+    /u/<username>/badges/<code>/card.png — премиальная PNG-карточка
+    достижения для шеринга (продуктовый запрос 2026-09-01, "красивая супер
+    по дизайну карточка премиальная"). Тот же редирект-на-закэшированный-PNG
+    паттерн, что и MatchShareCardView/StreakShareCardView (core/views.py) и
+    player_season_recap_card (players/views.py).
+
+    Доступ: владелец видит свою карточку всегда, независимо от
+    is_profile_public; чужой профиль — только если is_profile_public=True
+    (тот же принцип, что PublicProfileView.get_context_data выше). ВАЖНО:
+    StreakShareCardView НЕ делает исключение для владельца приватного
+    профиля (`get_object_or_404(User, username=username,
+    is_profile_public=True)`) — это существующая недоработка, которую мы
+    сознательно НЕ повторяем здесь: иначе пользователь, выключивший
+    публичность профиля, не смог бы поделиться даже собственным
+    достижением.
+
+    Секретные ачивки (`is_secret`) чужому посетителю не показываем и не
+    рендерим по прямой ссылке на код, даже если профиль публичный — тот же
+    принцип фильтрации, что для `badges` в PublicProfileView выше.
+    """
+
+    def get(self, request, username, code):
+        from django.core.files.storage import default_storage
+        from django.http import Http404
+        from core.services.share_cards import build_badge_share_card
+        from users.badges import get_badge_definition
+
+        target_user = get_object_or_404(User, username=username, is_active=True)
+        is_owner = request.user.is_authenticated and request.user == target_user
+        if not is_owner and not target_user.is_profile_public:
+            raise Http404("Профиль скрыт владельцем")
+
+        definition = get_badge_definition(code)
+        if definition is None:
+            raise Http404("Неизвестный код достижения")
+        if definition.is_secret and not is_owner:
+            raise Http404("Секретное достижение")
+
+        user_badge = get_object_or_404(UserBadge, user=target_user, badge_type=code)
+
+        path = build_badge_share_card(
+            username=target_user.username,
+            badge_code=code,
+            badge_name=definition.name,
+            badge_description=definition.description,
+            rarity=definition.rarity,
+            is_secret=definition.is_secret,
+            awarded_at=user_badge.awarded_at,
+        )
+        return redirect(default_storage.url(path))
 
 
 class ProfileEditView(LoginRequiredMixin, UpdateView):

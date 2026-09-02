@@ -33,9 +33,13 @@ from django.urls import reverse
 from django.utils import timezone
 from PIL import Image
 
-from evaluations.models import PlayerEvaluation, RefereeEvaluation
+from evaluations.models import EvaluationSession, PlayerEvaluation, RefereeEvaluation
+from evaluations.models import CoachEvaluation
+from coaches.models import Coach
 from leagues.models import League
+from lineups.models import MatchLineup, MatchLineupPlayer
 from players.models import Player
+from predictions.models import MatchPrediction
 from seasons.models import Season
 from teams.models import Team
 from matches.models import Match
@@ -298,6 +302,245 @@ class CheckAndAwardBadgesRelatedModelTests(TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Новые достижения (2026-09-01, "супер ультра" + прогнозы) — 11 бейджей
+# поверх существовавших 20, включая 5 legendary. Пороги/обоснование каждого
+# условия — users/services.py, докстринги _maybe_award_* функций.
+# ---------------------------------------------------------------------------
+
+def _make_finished_match(league, season, tour=None, home=None, away=None, home_score=1, away_score=0):
+    home = home or Team.objects.create(name=f"Home-{Team.objects.count()}")
+    away = away or Team.objects.create(name=f"Away-{Team.objects.count()}")
+    return Match.objects.create(
+        league=league, season=season, home_team=home, away_team=away,
+        tour=tour, status="finished", home_score=home_score, away_score=away_score,
+        start_time=timezone.now() - timedelta(days=1),
+        voting_open_until=timezone.now() + timedelta(hours=48),
+    )
+
+
+class CheckAndAwardBadgesNewAchievementsTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="u1", email="u1@example.com", password="pass123")
+        self.league = League.objects.create(name="L", country="KZ")
+        self.season, _ = Season.objects.get_or_create(league=self.league, year="2026")
+
+    def _award(self):
+        return {b.badge_type for b in check_and_award_badges(self.user)}
+
+    # --- coach_expert ---
+
+    def test_coach_expert_awarded_at_25_coach_evaluations(self):
+        self.user.total_evaluations = 25
+        for _ in range(25):
+            match = _make_finished_match(self.league, self.season)
+            coach = Coach.objects.create(first_name="A", last_name="B", team=match.home_team)
+            CoachEvaluation.objects.create(
+                user=self.user, match=match, coach=coach,
+                tactics=5, substitutions=5, game_management=5, impact=5,
+            )
+        self.assertIn("coach_expert", self._award())
+
+    def test_coach_expert_not_awarded_below_threshold(self):
+        self.user.total_evaluations = 25
+        for _ in range(24):
+            match = _make_finished_match(self.league, self.season)
+            coach = Coach.objects.create(first_name="A", last_name="B", team=match.home_team)
+            CoachEvaluation.objects.create(
+                user=self.user, match=match, coach=coach,
+                tactics=5, substitutions=5, game_management=5, impact=5,
+            )
+        self.assertNotIn("coach_expert", self._award())
+
+    # --- both_sides ---
+
+    def test_both_sides_awarded_when_both_teams_evaluated_in_15_matches(self):
+        """Команда игрока НА МАТЧ берётся через MatchLineupPlayer.lineup.team,
+        не через текущий Player.team — создаём составы явно."""
+        self.user.total_evaluations = 15
+        for _ in range(15):
+            match = _make_finished_match(self.league, self.season)
+            home_lineup = MatchLineup.objects.create(match=match, team=match.home_team, side="home")
+            away_lineup = MatchLineup.objects.create(match=match, team=match.away_team, side="away")
+            home_player = Player.objects.create(first_name="H", last_name="P", team=match.home_team)
+            away_player = Player.objects.create(first_name="A", last_name="P", team=match.away_team)
+            MatchLineupPlayer.objects.create(lineup=home_lineup, player=home_player)
+            MatchLineupPlayer.objects.create(lineup=away_lineup, player=away_player)
+            PlayerEvaluation.objects.create(user=self.user, match=match, player=home_player, contribution=5, risk=5, potential=5)
+            PlayerEvaluation.objects.create(user=self.user, match=match, player=away_player, contribution=5, risk=5, potential=5)
+        self.assertIn("both_sides", self._award())
+
+    def test_both_sides_not_awarded_when_only_one_team_evaluated(self):
+        self.user.total_evaluations = 15
+        for _ in range(15):
+            match = _make_finished_match(self.league, self.season)
+            home_lineup = MatchLineup.objects.create(match=match, team=match.home_team, side="home")
+            home_player = Player.objects.create(first_name="H", last_name="P", team=match.home_team)
+            MatchLineupPlayer.objects.create(lineup=home_lineup, player=home_player)
+            PlayerEvaluation.objects.create(user=self.user, match=match, player=home_player, contribution=5, risk=5, potential=5)
+        self.assertNotIn("both_sides", self._award())
+
+    # --- full_season / season_completionist ---
+
+    def test_full_season_awarded_when_every_tour_has_one_evaluated_match(self):
+        self.user.total_evaluations = 10
+        for tour in range(1, 11):  # FULL_SEASON_MIN_TOURS = 10
+            match = _make_finished_match(self.league, self.season, tour=tour)
+            EvaluationSession.objects.create(user=self.user, match=match, status="completed")
+        self.assertIn("full_season", self._award())
+
+    def test_full_season_not_awarded_with_one_missing_tour(self):
+        # total_evaluations должен остаться >= FULL_SEASON_MIN_TOURS (10), иначе внешний
+        # гейт в check_and_award_badges вообще не вызовет _maybe_award_full_season, и
+        # тест будет проходить тривиально, не проверяя логику "не хватает одного тура".
+        self.user.total_evaluations = 10
+        for tour in list(range(1, 10)) + [11]:  # тур 10 пропущен, но туров в сезоне всё равно 10
+            match = _make_finished_match(self.league, self.season, tour=tour)
+            EvaluationSession.objects.create(user=self.user, match=match, status="completed")
+        # Создадим ещё и сам недостающий 10-й тур (матч существует, но НЕ оценён) —
+        # иначе "все туры сезона" совпадут с "все оценённые туры" случайно.
+        _make_finished_match(self.league, self.season, tour=10)
+        self.assertNotIn("full_season", self._award())
+
+    def test_season_completionist_awarded_when_every_match_evaluated(self):
+        self.user.total_evaluations = 30
+        for _ in range(30):  # SEASON_COMPLETIONIST_MIN_MATCHES = 30
+            match = _make_finished_match(self.league, self.season)
+            EvaluationSession.objects.create(user=self.user, match=match, status="completed")
+        self.assertIn("season_completionist", self._award())
+
+    def test_season_completionist_not_awarded_with_one_unevaluated_match(self):
+        # total_evaluations должен остаться >= SEASON_COMPLETIONIST_MIN_MATCHES (30),
+        # иначе внешний гейт не вызовет _maybe_award_season_completionist и тест
+        # пройдёт тривиально, не проверяя логику "не хватает одного матча".
+        self.user.total_evaluations = 30
+        for _ in range(30):
+            match = _make_finished_match(self.league, self.season)
+            EvaluationSession.objects.create(user=self.user, match=match, status="completed")
+        _make_finished_match(self.league, self.season)  # 31-й матч сезона — НЕ оценён
+        self.assertNotIn("season_completionist", self._award())
+
+    # --- stable_hand ---
+
+    def test_stable_hand_awarded_at_50_predictions_85_percent_accuracy(self):
+        for i in range(50):
+            correct = i < 43  # 43/50 = 86% >= STABLE_HAND_MIN_ACCURACY (0.85)
+            match = _make_finished_match(self.league, self.season, home_score=1, away_score=0)  # final_result='1'
+            MatchPrediction.objects.create(user=self.user, match=match, choice="1" if correct else "2")
+        self.assertIn("stable_hand", self._award())
+
+    def test_stable_hand_not_awarded_below_accuracy_threshold(self):
+        for i in range(50):
+            correct = i < 40  # 40/50 = 80% < 85%
+            match = _make_finished_match(self.league, self.season, home_score=1, away_score=0)
+            MatchPrediction.objects.create(user=self.user, match=match, choice="1" if correct else "2")
+        self.assertNotIn("stable_hand", self._award())
+
+    # --- derby_prophet ---
+
+    def test_derby_prophet_awarded_for_5_correct_derby_predictions(self):
+        rival_a = Team.objects.create(name="Rival A")
+        rival_b = Team.objects.create(name="Rival B")
+        rival_a.rivals.add(rival_b)
+        for _ in range(5):
+            match = _make_finished_match(
+                self.league, self.season, home=rival_a, away=rival_b, home_score=2, away_score=0,
+            )
+            MatchPrediction.objects.create(user=self.user, match=match, choice="1")
+        self.assertIn("derby_prophet", self._award())
+
+    def test_derby_prophet_not_awarded_without_rival_teams(self):
+        home = Team.objects.create(name="Home")
+        away = Team.objects.create(name="Away")  # НЕ соперники — rivals не проставлены
+        for _ in range(5):
+            match = _make_finished_match(self.league, self.season, home=home, away=away, home_score=2, away_score=0)
+            MatchPrediction.objects.create(user=self.user, match=match, choice="1")
+        self.assertNotIn("derby_prophet", self._award())
+
+    # --- against_the_tide ---
+
+    def test_against_the_tide_awarded_for_correct_minority_pick(self):
+        # Внешний гейт в check_and_award_badges считает ОБЩЕЕ число прогнозов
+        # ПОЛЬЗОВАТЕЛЯ (user.match_predictions), а не число голосов на конкретный
+        # матч — поэтому у self.user должно быть >= AGAINST_THE_TIDE_MIN_TOTAL_PREDICTIONS (5)
+        # собственных прогнозов на завершённые матчи, иначе _maybe_award_against_the_tide
+        # вообще не вызывается.
+        for _ in range(4):
+            filler = _make_finished_match(self.league, self.season, home_score=1, away_score=0)
+            MatchPrediction.objects.create(user=self.user, match=filler, choice="1")
+        match = _make_finished_match(self.league, self.season, home_score=0, away_score=1)  # final_result='2'
+        MatchPrediction.objects.create(user=self.user, match=match, choice="2")  # меньшинство, но угадал
+        for i in range(4):  # большинство (4 из 5) поставили на хозяев
+            other = User.objects.create_user(username=f"other{i}", email=f"o{i}@example.com", password="x")
+            MatchPrediction.objects.create(user=other, match=match, choice="1")
+        self.assertIn("against_the_tide", self._award())
+
+    def test_against_the_tide_not_awarded_when_pick_matches_majority(self):
+        match = _make_finished_match(self.league, self.season, home_score=1, away_score=0)  # final_result='1'
+        MatchPrediction.objects.create(user=self.user, match=match, choice="1")  # большинство и угадал
+        for i in range(4):
+            other = User.objects.create_user(username=f"other{i}", email=f"o{i}@example.com", password="x")
+            MatchPrediction.objects.create(user=other, match=match, choice="1")
+        self.assertNotIn("against_the_tide", self._award())
+
+    # --- perfect_tour (legendary) ---
+
+    def test_perfect_tour_awarded_when_all_tour_matches_predicted_correctly(self):
+        for i in range(6):  # PERFECT_TOUR_MIN_MATCHES = 6
+            match = _make_finished_match(self.league, self.season, tour=5, home_score=1, away_score=0)
+            MatchPrediction.objects.create(user=self.user, match=match, choice="1")
+        self.assertIn("perfect_tour", self._award())
+
+    def test_perfect_tour_not_awarded_when_one_match_missed(self):
+        for i in range(5):
+            match = _make_finished_match(self.league, self.season, tour=5, home_score=1, away_score=0)
+            MatchPrediction.objects.create(user=self.user, match=match, choice="1")
+        _make_finished_match(self.league, self.season, tour=5, home_score=1, away_score=0)  # без прогноза
+        self.assertNotIn("perfect_tour", self._award())
+
+    def test_perfect_tour_not_awarded_when_one_prediction_wrong(self):
+        for i in range(6):
+            match = _make_finished_match(self.league, self.season, tour=5, home_score=1, away_score=0)
+            choice = "1" if i < 5 else "2"  # последний прогноз неверный
+            MatchPrediction.objects.create(user=self.user, match=match, choice=choice)
+        self.assertNotIn("perfect_tour", self._award())
+
+    # --- streak_250 / prediction_streak_200 (legendary) ---
+
+    def test_streak_250_awarded_at_threshold(self):
+        self.user.evaluation_streak = 250
+        self.assertIn("streak_250", self._award())
+
+    def test_streak_250_not_awarded_below_threshold(self):
+        self.user.evaluation_streak = 249
+        self.assertNotIn("streak_250", self._award())
+
+    def test_prediction_streak_200_awarded_at_threshold(self):
+        self.user.prediction_streak = 200
+        self.assertIn("prediction_streak_200", self._award())
+
+    def test_prediction_streak_200_not_awarded_below_threshold(self):
+        self.user.prediction_streak = 199
+        self.assertNotIn("prediction_streak_200", self._award())
+
+    # --- max_trust (legendary) ---
+
+    def test_max_trust_awarded_with_high_trust_and_volume(self):
+        self.user.total_evaluations = 100
+        self.user.trust_score = 1.95
+        self.assertIn("max_trust", self._award())
+
+    def test_max_trust_not_awarded_with_high_trust_but_low_volume(self):
+        self.user.total_evaluations = 50
+        self.user.trust_score = 2.0
+        self.assertNotIn("max_trust", self._award())
+
+    def test_max_trust_not_awarded_below_trust_threshold(self):
+        self.user.total_evaluations = 100
+        self.user.trust_score = 1.9
+        self.assertNotIn("max_trust", self._award())
+
+
+# ---------------------------------------------------------------------------
 # Анти-фрод регистрации: honeypot + time-trap
 # ---------------------------------------------------------------------------
 
@@ -471,3 +714,84 @@ class ToggleFollowRateLimitTests(TestCase):
     def test_within_limit_returns_200(self):
         response = self.client.post(self.url)
         self.assertEqual(response.status_code, 200)
+
+
+class BadgeShareCardViewTests(TestCase):
+    """
+    BadgeShareCardView (users/views.py) — доступ и генерация премиальной
+    PNG-карточки достижения (продуктовый запрос 2026-09-01). Каждый успешный
+    self.client.get реально рендерит PNG через Pillow и сохраняет его в
+    default_storage (build_badge_share_card, core/services/share_cards.py) —
+    так же, как это произошло бы в проде при первом клике "Поделиться".
+
+    'polyglot' — реальный НЕсекретный код из BADGE_CATALOG (users/badges.py),
+    'founder' — реальный СЕКРЕТНЫЙ код (is_secret=True) — используем его
+    только там, где секретность и есть предмет теста. ВАЖНО: изначально тут
+    ошибочно использовался 'founder' и для тестов публичного доступа —
+    секретный бейдж 404-ит любого не-владельца независимо от
+    is_profile_public, из-за чего оба теста "чужой/аноним видит публичный
+    бейдж" падали бы на самом деле проверяя не то, что заявлено. Исправлено:
+    для проверки видимости чужому/анониму используется НЕсекретный код.
+    """
+
+    def setUp(self):
+        self.owner = User.objects.create_user(
+            username="owner", email="owner@example.com", password="pass123", is_profile_public=True,
+        )
+        self.other = User.objects.create_user(username="other", email="other@example.com", password="pass123")
+        UserBadge.objects.create(user=self.owner, badge_type="polyglot")
+
+    def test_owner_can_view_own_card_even_if_profile_private(self):
+        """StreakShareCardView (core/views.py) 404-ит владельцу приватного
+        профиля — сознательно НЕ повторяем эту недоработку здесь."""
+        self.owner.is_profile_public = False
+        self.owner.save(update_fields=["is_profile_public"])
+        self.client.force_login(self.owner)
+        response = self.client.get(reverse("users:badge_share_card", args=[self.owner.username, "polyglot"]))
+        self.assertEqual(response.status_code, 302)
+
+    def test_other_user_can_view_public_profile_badge(self):
+        self.client.force_login(self.other)
+        response = self.client.get(reverse("users:badge_share_card", args=[self.owner.username, "polyglot"]))
+        self.assertEqual(response.status_code, 302)
+
+    def test_anonymous_can_view_public_profile_badge(self):
+        response = self.client.get(reverse("users:badge_share_card", args=[self.owner.username, "polyglot"]))
+        self.assertEqual(response.status_code, 302)
+
+    def test_other_user_blocked_from_private_profile_badge(self):
+        self.owner.is_profile_public = False
+        self.owner.save(update_fields=["is_profile_public"])
+        self.client.force_login(self.other)
+        response = self.client.get(reverse("users:badge_share_card", args=[self.owner.username, "polyglot"]))
+        self.assertEqual(response.status_code, 404)
+
+    def test_unknown_badge_code_404s(self):
+        self.client.force_login(self.owner)
+        response = self.client.get(reverse("users:badge_share_card", args=[self.owner.username, "not_a_real_code"]))
+        self.assertEqual(response.status_code, 404)
+
+    def test_unearned_badge_404s(self):
+        # 'founder' существует в каталоге, но owner его не получал (в setUp
+        # выдан только 'polyglot'). Секретность 'founder' тут ни при чём —
+        # владелец обходит проверку is_secret, 404 будет из-за отсутствия
+        # самой записи UserBadge.
+        self.client.force_login(self.owner)
+        response = self.client.get(reverse("users:badge_share_card", args=[self.owner.username, "founder"]))
+        self.assertEqual(response.status_code, 404)
+
+    def test_secret_badge_hidden_from_non_owner(self):
+        from users.badges import BADGE_CATALOG
+        secret_code = next(code for code, d in BADGE_CATALOG.items() if d.is_secret)
+        UserBadge.objects.create(user=self.owner, badge_type=secret_code)
+        self.client.force_login(self.other)
+        response = self.client.get(reverse("users:badge_share_card", args=[self.owner.username, secret_code]))
+        self.assertEqual(response.status_code, 404)
+
+    def test_secret_badge_visible_to_owner(self):
+        from users.badges import BADGE_CATALOG
+        secret_code = next(code for code, d in BADGE_CATALOG.items() if d.is_secret)
+        UserBadge.objects.create(user=self.owner, badge_type=secret_code)
+        self.client.force_login(self.owner)
+        response = self.client.get(reverse("users:badge_share_card", args=[self.owner.username, secret_code]))
+        self.assertEqual(response.status_code, 302)

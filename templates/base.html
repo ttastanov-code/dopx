@@ -62,6 +62,10 @@
          _match_events.html) — hero-баннер, timeline событий,
          карточки метрик. См. докстринг static/css/match-detail.css. -->
     <link rel="stylesheet" href="{% static_v 'css/match-detail.css' %}">
+    <!-- Достижения уровня "legendary" (users/badges.py) — анимированная
+         градиентная рамка/свечение, единственное, чего не сделать
+         Tailwind-утилитами. См. докстринг static/css/badges.css. -->
+    <link rel="stylesheet" href="{% static_v 'css/badges.css' %}">
     <!-- static_v (core/templatetags/asset_extras.py) вместо static —
          добавляет ?v=<mtime файла> к URL, чтобы браузер/nginx не
          продолжали отдавать закэшированную версию файла после правки
