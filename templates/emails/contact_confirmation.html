@@ -1,74 +1,54 @@
-<!-- templates/emails/contact_confirmation.html -->
+<!-- templates/emails/contact_confirmation.html — ПОЛНЫЙ РЕДИЗАЙН 2026-09-02,
+     см. докстринг templates/emails/welcome.html про общий каркас в
+     partials/. Контекст: submission, username, site_name, site_url (см.
+     core/views.py::send_user_confirmation). -->
 <!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            max-width: 600px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f5f5f5;
-        }
-        .container {
-            background-color: #ffffff;
-            border-radius: 8px;
-            overflow: hidden;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        }
-        .header {
-            background: linear-gradient(135deg, #000000 0%, #333333 100%);
-            color: #ffffff;
-            padding: 30px 20px;
-            text-align: center;
-        }
-        .content {
-            padding: 30px 20px;
-        }
-        .info-box {
-            background-color: #f9fafb;
-            border-left: 4px solid #000000;
-            padding: 15px;
-            margin: 20px 0;
-            border-radius: 0 4px 4px 0;
-        }
-        .footer {
-            background-color: #f5f5f5;
-            padding: 20px;
-            text-align: center;
-            font-size: 12px;
-            color: #999;
-            border-top: 1px solid #e0e0e0;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>✅ Обращение принято</h1>
-            <p>Спасибо за ваше сообщение!</p>
-        </div>
-        <div class="content">
-            <p>Привет, {{ username }}!</p>
-            <div class="info-box">
-                <p><strong>Номер обращения:</strong> #{{ submission.id|truncatechars:8 }}</p>
-                <p><strong>Категория:</strong> {{ submission.get_category_display }}</p>
-                <p><strong>Дата:</strong> {{ submission.created_at|date:"d.m.Y H:i" }}</p>
-            </div>
-            <p>Мы получили ваше обращение и разбираем сообщения по очереди. Точных сроков ответа не называем, но ни одно обращение не останется без внимания.</p>
-            <p style="margin-top: 20px; font-size: 14px; color: #666;">
-                <strong>Хотите что-то уточнить?</strong><br>
-                Напишите нам: support@dopx.kz
-            </p>
-        </div>
-        <div class="footer">
-            <p>Автоматическое уведомление от DOPX.</p>
-            <p><a href="{{ site_url }}">Перейти на сайт</a></p>
-            <p style="margin-top: 15px;">© {% now "Y" %} {{ site_name }}. Все права защищены.</p>
-        </div>
-    </div>
+<html lang="ru">
+{% include "emails/partials/_head.html" %}
+<body style="margin: 0; padding: 0; background-color: #F4F4F5;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #F4F4F5;">
+        <tr>
+            <td align="center" style="padding: 40px 16px;">
+                <table role="presentation" class="dopx-container" width="600" cellpadding="0" cellspacing="0" border="0" style="width: 600px; max-width: 600px; background-color: #FFFFFF; border: 1px solid #E4E4E7; border-radius: 12px;">
+                    {% include "emails/partials/_header.html" with eyebrow_text="Обращение принято" eyebrow_color="#15803D" eyebrow_bg="#F0FDF4" %}
+                    <tr>
+                        <td class="dopx-px" style="padding: 32px 40px 8px 40px;">
+                            <h1 style="margin: 0 0 12px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 22px; line-height: 1.35; font-weight: 700; color: #18181B;">Спасибо за обращение, {{ username }}!</h1>
+                            <p style="margin: 0 0 20px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.6; color: #3F3F46;">
+                                Мы получили ваше сообщение и разбираем обращения по очереди. Точных сроков ответа не называем, но ни одно не останется без внимания.
+                            </p>
+
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #FAFAFA; border: 1px solid #E4E4E7; border-radius: 10px; margin: 0 0 24px;">
+                                <tr>
+                                    <td style="padding: 16px 20px;">
+                                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                                            <tr>
+                                                <td style="padding: 3px 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #71717A; width: 130px;">Номер обращения</td>
+                                                <td style="padding: 3px 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #18181B; font-weight: 600;">#{{ submission.id|truncatechars:8 }}</td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding: 3px 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #71717A;">Категория</td>
+                                                <td style="padding: 3px 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #18181B; font-weight: 600;">{{ submission.get_category_display }}</td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding: 3px 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #71717A;">Дата</td>
+                                                <td style="padding: 3px 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #18181B; font-weight: 600;">{{ submission.created_at|date:"d.m.Y H:i" }}</td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <p style="margin: 0 0 28px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; line-height: 1.6; color: #71717A;">
+                                Хотите что-то уточнить? Напишите на <a href="mailto:support@dopx.kz" style="color: #6366F1; text-decoration: none;">support@dopx.kz</a>.
+                            </p>
+                            <p style="margin: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; font-style: italic; color: #A1A1AA;">— Команда DOPX</p>
+                        </td>
+                    </tr>
+                    {% include "emails/partials/_footer.html" %}
+                </table>
+            </td>
+        </tr>
+    </table>
 </body>
 </html>

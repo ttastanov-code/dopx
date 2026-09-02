@@ -1,0 +1,61 @@
+<!-- templates/emails/partials/_head.html
+     Общий <head> для ВСЕХ писем DOPX (2026-09-02, редизайн "единый премиальный
+     вид всех писем" — до этого у каждого из 18 шаблонов был свой
+     копипаст-<style> в head, дублирование и расхождение стилей неизбежны на
+     дистанции). Сборка через include-теги, а не через base-шаблон с
+     extends/block: email-клиенты (особенно Outlook, использующий движок
+     Word) не прощают ничего, кроме самой прямолинейной table-based
+     вёрстки — extends/block тут работали бы не хуже технически, но
+     include даёт более явную, "плоскую" сборку письма построчно, которую
+     проще держать в голове при правке одного конкретного шаблона.
+
+     ВНИМАНИЕ при правке этого файла и остальных .html в templates/emails/:
+     Django не распознаёт HTML-комментарии как что-то особое — шаблонизатор
+     сканирует их так же, как остальной текст, и попытается распарсить
+     любую фигурную конструкцию Django-тега или переменной внутри
+     комментария как настоящий тег. По этой же причине запрещено писать в
+     комментариях буквальную закрывающую последовательность HTML-комментария
+     САМУ ПО СЕБЕ — она преждевременно закроет комментарий и обнажит весь
+     текст после неё как настоящий код шаблона (ровно так уже дважды падали
+     все 18 писем с TemplateSyntaxError, 2026-09-02) — только словами, без
+     фигурных скобок и без буквального описания открывающей/закрывающей
+     последовательности комментария.
+
+     color-scheme/supported-color-schemes — просим клиенты (Apple Mail,
+     Outlook.com и т.д.) не применять авто-тёмный режим поверх наших цветов:
+     все цвета ниже и во ВСЕХ шаблонах заданы явно (текст И фон на каждом
+     элементе), поэтому агрессивный авто-dark-mode некоторых клиентов иначе
+     мог бы инвертировать/испортить контраст непредсказуемо. -->
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="color-scheme" content="light">
+    <meta name="supported-color-schemes" content="light">
+    <title>DOPX</title>
+    <!--[if mso]>
+    <noscript>
+        <xml>
+            <o:OfficeDocumentSettings>
+                <o:PixelsPerInch>96</o:PixelsPerInch>
+            </o:OfficeDocumentSettings>
+        </xml>
+    </noscript>
+    <style>
+        table { border-collapse: collapse; }
+    </style>
+    <![endif]-->
+    <style>
+        body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+        table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+        img { -ms-interpolation-mode: bicubic; border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; }
+        body { margin: 0; padding: 0; width: 100% !important; background-color: #F4F4F5; }
+        /* Мобильные клиенты, поддерживающие <style> (все, кроме Outlook
+           desktop) — уже письмо и крупнее тап-зоны, единственное, что
+           inline-стили сами по себе дать не могут. */
+        @media only screen and (max-width: 600px) {
+            .dopx-container { width: 100% !important; }
+            .dopx-px { padding-left: 24px !important; padding-right: 24px !important; }
+        }
+    </style>
+</head>

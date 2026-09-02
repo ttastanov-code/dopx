@@ -1,0 +1,36 @@
+<!-- templates/emails/partials/_header.html
+     Шапка письма — логотип DOPX + опциональная цветная "пилюля"-категория
+     (`eyebrow_text`/`eyebrow_color`/`eyebrow_bg`, передаются через include
+     с `with` из конкретного письма). Пилюля вместо старого
+     подхода "цветной градиентный header на всю ширину с эмодзи в <h1>" —
+     тот же язык, что у премиальных продуктовых рассылок (Stripe/Linear):
+     один маленький цветной акцент сообщает категорию письма, но общий тон
+     шапки у ВСЕХ писем одинаковый (белый фон, логотип) — это и есть
+     "единый вид", о котором просили, а не 6 разных фирменных цветов шапки
+     на 18 писем, как было раньше.
+
+     dopx-logo.png — тёмный текст на прозрачном фоне (проверено: тёмные
+     пиксели ~#111827 + фирменный индиго ~#6657f7), поэтому логотип живёт
+     на белой подложке письма, а не на цветной плашке. -->
+<tr>
+    <td class="dopx-px" style="padding: 36px 40px 28px 40px; border-bottom: 1px solid #F0F0F2;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            <tr>
+                <td align="left" style="vertical-align: middle;">
+                    <img src="{{ site_url }}/static/img/dopx-logo.png" width="112" height="40" alt="DOPX" style="display: block; border: 0; outline: none;">
+                </td>
+                {% if eyebrow_text %}
+                <td align="right" style="vertical-align: middle;">
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                        <tr>
+                            <td bgcolor="{{ eyebrow_bg|default:'#EEF2FF' }}" style="background-color: {{ eyebrow_bg|default:'#EEF2FF' }}; border-radius: 999px; padding: 6px 14px;">
+                                <span style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; color: {{ eyebrow_color|default:'#4F46E5' }}; text-transform: uppercase; white-space: nowrap;">{{ eyebrow_text }}</span>
+                            </td>
+                        </tr>
+                    </table>
+                </td>
+                {% endif %}
+            </tr>
+        </table>
+    </td>
+</tr>

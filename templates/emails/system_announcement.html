@@ -1,37 +1,38 @@
-<!-- templates/emails/system_announcement.html
+<!-- templates/emails/system_announcement.html — ПОЛНЫЙ РЕДИЗАЙН 2026-09-02,
+     см. докстринг templates/emails/welcome.html про общий каркас в
+     partials/.
+
      Системное объявление платформы (staff-broadcast, /staff/dashboard/announcements/,
-     dashboard/views.py::announcements). Текст {{ body }} приходит от
-     staff-пользователя через обычный <textarea> — это НЕ доверенный HTML,
-     поэтому рендерим через {{ body|linebreaksbr }} с обычным
-     автоэкранированием Django-шаблонов (не |safe), а не подставляем как
-     готовый HTML. Ограничивает staff одним обычным текстом (без
-     форматирования/ссылок-кнопок), но исключает XSS через письмо,
-     уходящее всем верифицированным пользователям разом. -->
+     dashboard/views.py::announcements). Текст переменной body приходит от
+     staff-пользователя через обычный textarea — это НЕ доверенный HTML,
+     поэтому ниже рендерим через фильтр linebreaksbr с обычным
+     автоэкранированием Django-шаблонов (НЕ через safe), а не подставляем
+     как готовый HTML. НЕ УБИРАТЬ linebreaksbr в пользу safe при следующей
+     правке — это единственное, что защищает всех верифицированных
+     пользователей от XSS через это письмо. Контекст: user, title, body
+     (см. dashboard/views.py, notifications/tasks.py::
+     _send_system_announcement_chunk). -->
 <!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <style>
-        body { font-family: sans-serif; background: #f5f5f5; margin: 0; padding: 20px; }
-        .container { max-width: 600px; margin: 0 auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .header { background: #111827; color: #fff; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; margin: -30px -30px 30px -30px; }
-        .body-text { font-size: 15px; line-height: 1.6; color: #1f2937; white-space: pre-line; }
-        .btn { display: inline-block; padding: 12px 24px; background: #000; color: #fff; text-decoration: none; border-radius: 4px; margin-top: 20px; }
-        .footer { margin-top: 24px; font-size: 12px; color: #9ca3af; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header"><h1>📢 {{ title }}</h1></div>
-        <p>Привет, {{ user.username }}!</p>
-        <div class="body-text">{{ body|linebreaksbr }}</div>
-        <p style="text-align: center; margin-top: 30px;">
-            <a href="{{ site_url }}/" class="btn">Открыть DOPX</a>
-        </p>
-        <p class="footer">
-            Это письмо отправлено вручную командой DOPX. Отключить такие письма можно в
-            <a href="{{ site_url }}/users/profile/notifications/">настройках уведомлений</a>.
-        </p>
-    </div>
+<html lang="ru">
+{% include "emails/partials/_head.html" %}
+<body style="margin: 0; padding: 0; background-color: #F4F4F5;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #F4F4F5;">
+        <tr>
+            <td align="center" style="padding: 40px 16px;">
+                <table role="presentation" class="dopx-container" width="600" cellpadding="0" cellspacing="0" border="0" style="width: 600px; max-width: 600px; background-color: #FFFFFF; border: 1px solid #E4E4E7; border-radius: 12px;">
+                    {% include "emails/partials/_header.html" with eyebrow_text="Объявление DOPX" eyebrow_color="#52525B" eyebrow_bg="#F4F4F5" %}
+                    <tr>
+                        <td class="dopx-px" style="padding: 32px 40px 8px 40px;">
+                            <h1 style="margin: 0 0 4px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 22px; line-height: 1.35; font-weight: 700; color: #18181B;">{{ title }}</h1>
+                            <p style="margin: 0 0 20px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #A1A1AA;">Привет, {{ user.username }}!</p>
+                            <p style="margin: 0 0 28px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.6; color: #3F3F46;">{{ body|linebreaksbr }}</p>
+                            {% include "emails/partials/_button.html" with button_url=site_url button_label="Открыть DOPX" %}
+                        </td>
+                    </tr>
+                    {% include "emails/partials/_footer.html" with show_notification_settings=True %}
+                </table>
+            </td>
+        </tr>
+    </table>
 </body>
 </html>

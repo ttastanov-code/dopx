@@ -1,119 +1,67 @@
-<!-- templates/emails/sync_error_alert.html -->
+<!-- templates/emails/sync_error_alert.html — ПОЛНЫЙ РЕДИЗАЙН 2026-09-02, см.
+     докстринг templates/emails/welcome.html про общий каркас в partials/.
+     Внутренний алерт мониторинга парсера (см. parsers/tasks.py::
+     _send_sync_error_alert) — тот же визуальный язык, что у остальных
+     писем, красный акцент оставлен намеренно (единственное письмо в
+     проекте про реальный сбой системы, а не про пользовательское событие).
+     Контекст: alert_type, error_message, extra_data (dict|None), timestamp,
+     site_url. Без `user` в контексте — footer/подпись это учитывают. -->
 <!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            max-width: 600px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f5f5f5;
-        }
-        .container {
-            background-color: #ffffff;
-            border-radius: 8px;
-            overflow: hidden;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        }
-        .header {
-            background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
-            color: #ffffff;
-            padding: 30px 20px;
-            text-align: center;
-        }
-        .content {
-            padding: 30px 20px;
-        }
-        .error-box {
-            background-color: #fef2f2;
-            border-left: 4px solid #dc2626;
-            padding: 15px;
-            margin: 20px 0;
-            border-radius: 0 4px 4px 0;
-        }
-        .data-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 20px 0;
-        }
-        .data-table td {
-            padding: 8px;
-            border-bottom: 1px solid #e5e5e5;
-        }
-        .data-table td:first-child {
-            font-weight: 600;
-            color: #666;
-            width: 150px;
-        }
-        .footer {
-            background-color: #f5f5f5;
-            padding: 20px;
-            text-align: center;
-            font-size: 12px;
-            color: #999;
-            border-top: 1px solid #e0e0e0;
-        }
-        .button {
-            display: inline-block;
-            padding: 10px 20px;
-            background: #dc2626;
-            color: #ffffff;
-            text-decoration: none;
-            border-radius: 4px;
-            margin-top: 20px;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>🚨 Alert: Ошибка синхронизации</h1>
-            <p>DOPX Parser Monitoring</p>
-        </div>
-        <div class="content">
-            <div class="error-box">
-                <p><strong>Тип алерта:</strong> {{ alert_type }}</p>
-                <p><strong>Время:</strong> {{ timestamp|date:"d.m.Y H:i" }}</p>
-            </div>
-            
-            <h3>Сообщение об ошибке:</h3>
-            <p style="white-space: pre-wrap; background: #f9fafb; padding: 15px; border-radius: 4px;">{{ error_message }}</p>
-            
-            {% if extra_data %}
-            <h3>Дополнительные данные:</h3>
-            <table class="data-table">
-                {% for key, value in extra_data.items %}
-                <tr>
-                    <td>{{ key }}</td>
-                    <td>{{ value }}</td>
-                </tr>
-                {% endfor %}
-            </table>
-            {% endif %}
-            
-            <p style="margin-top: 20px; font-size: 14px; color: #666;">
-                <strong>Рекомендуемые действия:</strong><br>
-                1. Проверьте лог Celery: logs/celery.log.<br>
-                2. Проверьте лог ошибок: logs/errors.log.<br>
-                3. Проверьте доступность API KFF.<br>
-                4. При необходимости перезапустите воркеры.
-            </p>
-            
-            <p style="text-align: center;">
-                <a href="{{ site_url }}/admin/" class="button">
-                    📋 Открыть админ-панель
-                </a>
-            </p>
-        </div>
-        <div class="footer">
-            <p>Автоматическое уведомление системы мониторинга DOPX.</p>
-            <p><a href="{{ site_url }}">Перейти на сайт</a> • <a href="{{ site_url }}/admin/">Админ-панель</a></p>
-            <p style="margin-top: 15px;">© {% now "Y" %} DOPX. Все права защищены.</p>
-        </div>
-    </div>
+<html lang="ru">
+{% include "emails/partials/_head.html" %}
+<body style="margin: 0; padding: 0; background-color: #F4F4F5;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #F4F4F5;">
+        <tr>
+            <td align="center" style="padding: 40px 16px;">
+                <table role="presentation" class="dopx-container" width="600" cellpadding="0" cellspacing="0" border="0" style="width: 600px; max-width: 600px; background-color: #FFFFFF; border: 1px solid #E4E4E7; border-radius: 12px;">
+                    {% include "emails/partials/_header.html" with eyebrow_text="System Alert · Staff" eyebrow_color="#DC2626" eyebrow_bg="#FEF2F2" %}
+                    <tr>
+                        <td class="dopx-px" style="padding: 32px 40px 8px 40px;">
+                            <h1 style="margin: 0 0 4px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 22px; line-height: 1.35; font-weight: 700; color: #18181B;">Ошибка синхронизации</h1>
+                            <p style="margin: 0 0 20px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #A1A1AA;">DOPX Parser Monitoring</p>
+
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #FEF2F2; border: 1px solid #FECACA; border-radius: 10px; margin: 0 0 20px;">
+                                <tr>
+                                    <td style="padding: 14px 18px;">
+                                        <p style="margin: 0 0 4px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #991B1B;"><strong>Тип алерта:</strong> {{ alert_type }}</p>
+                                        <p style="margin: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #991B1B;"><strong>Время:</strong> {{ timestamp|date:"d.m.Y H:i" }}</p>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <p style="margin: 0 0 6px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; font-weight: 700; color: #18181B;">Сообщение об ошибке</p>
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #FAFAFA; border: 1px solid #E4E4E7; border-radius: 8px; margin: 0 0 20px;">
+                                <tr>
+                                    <td style="padding: 14px 16px; font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 12px; line-height: 1.6; color: #3F3F46; white-space: pre-wrap;">{{ error_message }}</td>
+                                </tr>
+                            </table>
+
+                            {% if extra_data %}
+                            <p style="margin: 0 0 6px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; font-weight: 700; color: #18181B;">Дополнительные данные</p>
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 20px;">
+                                {% for key, value in extra_data.items %}
+                                <tr>
+                                    <td width="160" style="padding: 6px 0; border-bottom: 1px solid #F0F0F2; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; font-weight: 600; color: #71717A;">{{ key }}</td>
+                                    <td style="padding: 6px 0; border-bottom: 1px solid #F0F0F2; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #18181B;">{{ value }}</td>
+                                </tr>
+                                {% endfor %}
+                            </table>
+                            {% endif %}
+
+                            <p style="margin: 0 0 24px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; line-height: 1.6; color: #71717A;">
+                                <strong style="color: #18181B;">Рекомендуемые действия:</strong><br>
+                                1. Проверьте лог Celery: logs/celery.log.<br>
+                                2. Проверьте лог ошибок: logs/errors.log.<br>
+                                3. Проверьте доступность API KFF.<br>
+                                4. При необходимости перезапустите воркеры.
+                            </p>
+                            {% include "emails/partials/_button.html" with button_url=site_url|add:"/admin/" button_label="Открыть админ-панель" button_color="#DC2626" %}
+                        </td>
+                    </tr>
+                    {% include "emails/partials/_footer.html" %}
+                </table>
+            </td>
+        </tr>
+    </table>
 </body>
 </html>

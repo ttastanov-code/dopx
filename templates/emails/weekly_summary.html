@@ -1,54 +1,65 @@
-<!-- templates/emails/weekly_summary.html -->
-<!-- Retention loop 2 ("персональная недельная сводка"), 2026-08-21.
+<!-- templates/emails/weekly_summary.html — ПОЛНЫЙ РЕДИЗАЙН 2026-09-02, см.
+     докстринг templates/emails/welcome.html про общий каркас в partials/.
+     Блок из 3 колонок-статистик раньше был на flexbox (.stats{display:flex}) —
+     не работает в Outlook; переведён на table-based 3-колоночную вёрстку.
+
+     Retention loop 2 ("персональная недельная сводка"), 2026-08-21.
      Контекст собирается в notifications/tasks.py::send_weekly_summary на
      каждого пользователя: evaluations_count, predictions_count,
      accuracy_pct (None, если за неделю не было прогнозов со известным
-     исходом), top_match (Match или None — общий "матч недели" по
-     aggregates.MatchAggregate, одинаковый для всех писем этой рассылки). -->
+     исходом), top_match (Match или None — общий "матч недели", одинаковый
+     для всех писем этой рассылки). -->
 <!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <style>
-        body { font-family: sans-serif; background: #f5f5f5; margin: 0; padding: 20px; }
-        .container { max-width: 600px; margin: 0 auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .header { background: linear-gradient(135deg, #111827, #374151); color: #fff; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; margin: -30px -30px 30px -30px; }
-        .stats { display: flex; gap: 12px; margin: 20px 0; }
-        .stat { flex: 1; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px; text-align: center; }
-        .stat .num { font-size: 24px; font-weight: bold; }
-        .stat .label { font-size: 12px; opacity: 0.6; margin-top: 4px; }
-        .match-info { background: #fff7ed; padding: 15px; border-radius: 6px; text-align: center; margin: 20px 0; border: 1px solid #f59e0b; }
-        .btn { display: inline-block; padding: 12px 24px; background: #000; color: #fff; text-decoration: none; border-radius: 4px; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header"><h1>📊 Ваша неделя на DOPX</h1></div>
-        <p>Вот что вы успели за последние 7 дней:</p>
-        <div class="stats">
-            <div class="stat">
-                <div class="num">{{ evaluations_count }}</div>
-                <div class="label">оценок матчей</div>
-            </div>
-            <div class="stat">
-                <div class="num">{{ predictions_count }}</div>
-                <div class="label">прогнозов</div>
-            </div>
-            <div class="stat">
-                <div class="num">{% if accuracy_pct is not None %}{{ accuracy_pct }}%{% else %}—{% endif %}</div>
-                <div class="label">точность прогнозов</div>
-            </div>
-        </div>
-        {% if top_match %}
-        <div class="match-info">
-            <p style="margin: 0 0 6px; font-weight: 600;">🔥 Матч недели по мнению сообщества</p>
-            <h3 style="margin: 0;">{{ top_match.home_team.name }} {{ top_match.get_score_display }} {{ top_match.away_team.name }}</h3>
-        </div>
-        {% endif %}
-        <p style="text-align: center; margin-top: 24px;"><a href="{{ site_url }}/" class="btn">Открыть DOPX</a></p>
-        <p style="font-size: 12px; opacity: 0.5; margin-top: 24px; text-align: center;">
-            Отключить эти письма можно в <a href="{{ site_url }}/users/profile/notifications/">настройках уведомлений</a>.
-        </p>
-    </div>
+<html lang="ru">
+{% include "emails/partials/_head.html" %}
+<body style="margin: 0; padding: 0; background-color: #F4F4F5;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #F4F4F5;">
+        <tr>
+            <td align="center" style="padding: 40px 16px;">
+                <table role="presentation" class="dopx-container" width="600" cellpadding="0" cellspacing="0" border="0" style="width: 600px; max-width: 600px; background-color: #FFFFFF; border: 1px solid #E4E4E7; border-radius: 12px;">
+                    {% include "emails/partials/_header.html" with eyebrow_text="Ваша неделя" eyebrow_color="#4F46E5" eyebrow_bg="#EEF2FF" %}
+                    <tr>
+                        <td class="dopx-px" style="padding: 32px 40px 8px 40px;">
+                            <h1 style="margin: 0 0 20px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 22px; line-height: 1.35; font-weight: 700; color: #18181B;">Вот что вы успели за 7 дней</h1>
+
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 24px;">
+                                <tr>
+                                    <td width="33%" align="center" style="background-color: #FAFAFA; border: 1px solid #E4E4E7; border-radius: 8px; padding: 16px 4px;">
+                                        <p style="margin: 0 0 4px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 24px; font-weight: 700; color: #18181B;">{{ evaluations_count }}</p>
+                                        <p style="margin: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 11px; color: #71717A;">оценок матчей</p>
+                                    </td>
+                                    <td width="12">&nbsp;</td>
+                                    <td width="33%" align="center" style="background-color: #FAFAFA; border: 1px solid #E4E4E7; border-radius: 8px; padding: 16px 4px;">
+                                        <p style="margin: 0 0 4px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 24px; font-weight: 700; color: #18181B;">{{ predictions_count }}</p>
+                                        <p style="margin: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 11px; color: #71717A;">прогнозов</p>
+                                    </td>
+                                    <td width="12">&nbsp;</td>
+                                    <td width="33%" align="center" style="background-color: #FAFAFA; border: 1px solid #E4E4E7; border-radius: 8px; padding: 16px 4px;">
+                                        <p style="margin: 0 0 4px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 24px; font-weight: 700; color: #18181B;">{% if accuracy_pct is not None %}{{ accuracy_pct }}%{% else %}—{% endif %}</p>
+                                        <p style="margin: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 11px; color: #71717A;">точность прогнозов</p>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            {% if top_match %}
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #FFFBEB; border: 1px solid #FDE68A; border-radius: 10px; margin: 0 0 24px;">
+                                <tr>
+                                    <td align="center" style="padding: 18px;">
+                                        <p style="margin: 0 0 6px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #B45309;">Матч недели по мнению сообщества</p>
+                                        <p style="margin: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 16px; font-weight: 700; color: #18181B;">{{ top_match.home_team.name }} {{ top_match.get_score_display }} {{ top_match.away_team.name }}</p>
+                                    </td>
+                                </tr>
+                            </table>
+                            {% endif %}
+
+                            {% include "emails/partials/_button.html" with button_url=site_url button_label="Открыть DOPX" %}
+                            <p style="margin: 32px 0 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; font-style: italic; color: #A1A1AA;">— Команда DOPX</p>
+                        </td>
+                    </tr>
+                    {% include "emails/partials/_footer.html" with show_notification_settings=True %}
+                </table>
+            </td>
+        </tr>
+    </table>
 </body>
 </html>
