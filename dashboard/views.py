@@ -582,7 +582,7 @@ def announcements(request):
             ])
 
             user_ids_with_email = [str(u.id) for u in verified_users if u.email]
-            subject = f'📢 {title} | DOPX'
+            subject = f'{title} | DOPX'
             chunks = _chunked(user_ids_with_email, BULK_EMAIL_CHUNK_SIZE)
             for chunk in chunks:
                 _send_system_announcement_chunk.delay(chunk, subject, title, body)

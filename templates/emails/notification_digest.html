@@ -1,87 +1,45 @@
-<!-- templates/emails/notification_digest.html -->
+<!-- templates/emails/notification_digest.html — ПОЛНЫЙ РЕДИЗАЙН 2026-09-02,
+     см. докстринг templates/emails/welcome.html про общий каркас в
+     partials/. Контекст: user, notifications (список), count (см.
+     notifications/tasks.py::send_notification_digest). -->
 <!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            max-width: 600px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f5f5f5;
-        }
-        .container {
-            background-color: #ffffff;
-            border-radius: 8px;
-            overflow: hidden;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        }
-        .header {
-            background: linear-gradient(135deg, #000000 0%, #333333 100%);
-            color: #ffffff;
-            padding: 30px 20px;
-            text-align: center;
-        }
-        .content {
-            padding: 30px 20px;
-        }
-        .notification-item {
-            background-color: #f9fafb;
-            border-left: 4px solid #000000;
-            padding: 15px;
-            margin: 15px 0;
-            border-radius: 0 4px 4px 0;
-        }
-        .footer {
-            background-color: #f5f5f5;
-            padding: 20px;
-            text-align: center;
-            font-size: 12px;
-            color: #999;
-            border-top: 1px solid #e0e0e0;
-        }
-        .button {
-            display: inline-block;
-            padding: 10px 20px;
-            background: #000000;
-            color: #ffffff;
-            text-decoration: none;
-            border-radius: 4px;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>📬 Дайджест уведомлений</h1>
-            <p>Ваши уведомления за последние 24 часа</p>
-        </div>
-        <div class="content">
-            <p>Привет, {{ user.username }}!</p>
-            <p>У вас {{ count }} новых уведомлений:</p>
-            
-            {% for notification in notifications %}
-            <div class="notification-item">
-                <h3>{{ notification.title }}</h3>
-                <p>{{ notification.message }}</p>
-                <p style="font-size: 12px; color: #666;">{{ notification.created_at|date:"d.m.Y H:i" }}</p>
-            </div>
-            {% endfor %}
-            
-            <p style="margin-top: 20px; text-align: center;">
-                <a href="{{ site_url }}/notifications/" class="button">
-                    Перейти к уведомлениям
-                </a>
-            </p>
-        </div>
-        <div class="footer">
-            <p>Автоматическое уведомление от DOPX.</p>
-            <p><a href="{{ site_url }}">Перейти на сайт</a></p>
-            <p style="margin-top: 15px;">© {% now "Y" %} {{ site_name }}. Все права защищены.</p>
-        </div>
-    </div>
+<html lang="ru">
+{% include "emails/partials/_head.html" %}
+<body style="margin: 0; padding: 0; background-color: #F4F4F5;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #F4F4F5;">
+        <tr>
+            <td align="center" style="padding: 40px 16px;">
+                <table role="presentation" class="dopx-container" width="600" cellpadding="0" cellspacing="0" border="0" style="width: 600px; max-width: 600px; background-color: #FFFFFF; border: 1px solid #E4E4E7; border-radius: 12px;">
+                    {% include "emails/partials/_header.html" with eyebrow_text="Дайджест" eyebrow_color="#4F46E5" eyebrow_bg="#EEF2FF" %}
+                    <tr>
+                        <td class="dopx-px" style="padding: 32px 40px 8px 40px;">
+                            <h1 style="margin: 0 0 12px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 22px; line-height: 1.35; font-weight: 700; color: #18181B;">Привет, {{ user.username }}!</h1>
+                            <p style="margin: 0 0 20px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.6; color: #3F3F46;">
+                                У вас {{ count }} новых уведомлений за последние 24 часа:
+                            </p>
+
+                            {% for notification in notifications %}
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 12px;">
+                                <tr>
+                                    <td width="4" bgcolor="#6366F1" style="background-color: #6366F1; border-radius: 3px 0 0 3px;">&nbsp;</td>
+                                    <td style="background-color: #FAFAFA; border: 1px solid #E4E4E7; border-left: none; border-radius: 0 8px 8px 0; padding: 14px 16px;">
+                                        <p style="margin: 0 0 4px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; font-weight: 600; color: #18181B;">{{ notification.title }}</p>
+                                        <p style="margin: 0 0 4px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #52525B;">{{ notification.message }}</p>
+                                        <p style="margin: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 11px; color: #A1A1AA;">{{ notification.created_at|date:"d.m.Y H:i" }}</p>
+                                    </td>
+                                </tr>
+                            </table>
+                            {% endfor %}
+
+                            <div style="height: 12px; line-height: 12px; font-size: 12px;">&nbsp;</div>
+                            {% include "emails/partials/_button.html" with button_url=site_url|add:"/notifications/" button_label="Перейти к уведомлениям" %}
+                            <p style="margin: 32px 0 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; font-style: italic; color: #A1A1AA;">— Команда DOPX</p>
+                        </td>
+                    </tr>
+                    {% include "emails/partials/_footer.html" with show_notification_settings=True %}
+                </table>
+            </td>
+        </tr>
+    </table>
 </body>
 </html>

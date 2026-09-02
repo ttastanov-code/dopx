@@ -1,135 +1,78 @@
-<!-- templates/emails/contact_form.html -->
+<!-- templates/emails/contact_form.html — ПОЛНЫЙ РЕДИЗАЙН 2026-09-02, см.
+     докстринг templates/emails/welcome.html про общий каркас в partials/.
+     Внутреннее письмо для founder/staff о новом обращении (см.
+     core/views.py::send_admin_notification). Контекст: submission,
+     category, email, username, has_attachment, site_name, site_url. -->
 <!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            max-width: 600px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f5f5f5;
-        }
-        .container {
-            background-color: #ffffff;
-            border-radius: 8px;
-            overflow: hidden;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        }
-        .header {
-            background: linear-gradient(135deg, #000000 0%, #333333 100%);
-            color: #ffffff;
-            padding: 30px 20px;
-            text-align: center;
-        }
-        .content {
-            padding: 30px 20px;
-        }
-        .info-box {
-            background-color: #f9fafb;
-            border-left: 4px solid #000000;
-            padding: 15px;
-            margin: 20px 0;
-            border-radius: 0 4px 4px 0;
-        }
-        .info-box table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        .info-box td {
-            padding: 5px 0;
-            font-size: 14px;
-        }
-        .info-box td:first-child {
-            font-weight: 600;
-            color: #666;
-            width: 120px;
-        }
-        .message-box {
-            background-color: #ffffff;
-            border: 1px solid #e0e0e0;
-            border-radius: 6px;
-            padding: 20px;
-            margin: 20px 0;
-            white-space: pre-wrap;
-        }
-        .footer {
-            background-color: #f5f5f5;
-            padding: 20px;
-            text-align: center;
-            font-size: 12px;
-            color: #999;
-            border-top: 1px solid #e0e0e0;
-        }
-        .button {
-            display: inline-block;
-            padding: 10px 20px;
-            background: #000000;
-            color: #ffffff;
-            text-decoration: none;
-            border-radius: 4px;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>📬 Новое обращение</h1>
-            <p>Сообщение с сайта DOPX</p>
-        </div>
-        <div class="content">
-            <div class="info-box">
-                <table>
+<html lang="ru">
+{% include "emails/partials/_head.html" %}
+<body style="margin: 0; padding: 0; background-color: #F4F4F5;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #F4F4F5;">
+        <tr>
+            <td align="center" style="padding: 40px 16px;">
+                <table role="presentation" class="dopx-container" width="600" cellpadding="0" cellspacing="0" border="0" style="width: 600px; max-width: 600px; background-color: #FFFFFF; border: 1px solid #E4E4E7; border-radius: 12px;">
+                    {% include "emails/partials/_header.html" with eyebrow_text="Новое обращение · Staff" eyebrow_color="#52525B" eyebrow_bg="#F4F4F5" %}
                     <tr>
-                        <td>ID:</td>
-                        <td>#{{ submission.id|truncatechars:8 }}</td>
+                        <td class="dopx-px" style="padding: 32px 40px 8px 40px;">
+                            <h1 style="margin: 0 0 20px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 22px; line-height: 1.35; font-weight: 700; color: #18181B;">Сообщение с сайта DOPX</h1>
+
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #FAFAFA; border: 1px solid #E4E4E7; border-radius: 10px; margin: 0 0 20px;">
+                                <tr>
+                                    <td style="padding: 16px 20px;">
+                                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                                            <tr>
+                                                <td width="90" style="padding: 3px 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #71717A;">ID</td>
+                                                <td style="padding: 3px 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #18181B; font-weight: 600;">#{{ submission.id|truncatechars:8 }}</td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding: 3px 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #71717A;">От</td>
+                                                <td style="padding: 3px 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #18181B; font-weight: 600;">{{ username }} ({{ email }})</td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding: 3px 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #71717A;">Категория</td>
+                                                <td style="padding: 3px 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #18181B; font-weight: 600;">{{ category }}</td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding: 3px 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #71717A;">Дата</td>
+                                                <td style="padding: 3px 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #18181B; font-weight: 600;">{{ submission.created_at|date:"d.m.Y H:i" }}</td>
+                                            </tr>
+                                            {% if submission.attachment %}
+                                            <tr>
+                                                <td style="padding: 3px 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #71717A;">Файл</td>
+                                                <td style="padding: 3px 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #18181B; font-weight: 600;">Прикреплён ({{ submission.attachment.name }})</td>
+                                            </tr>
+                                            {% endif %}
+                                            <tr>
+                                                <td style="padding: 3px 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #71717A;">Статус</td>
+                                                <td style="padding: 3px 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #18181B; font-weight: 600;">{{ submission.get_status_display }}</td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <p style="margin: 0 0 6px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; font-weight: 700; color: #18181B;">Сообщение</p>
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #FFFFFF; border: 1px solid #E4E4E7; border-radius: 8px; margin: 0 0 20px;">
+                                <tr>
+                                    <td style="padding: 14px 16px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; line-height: 1.6; color: #3F3F46; white-space: pre-wrap;">{{ message }}</td>
+                                </tr>
+                            </table>
+
+                            <p style="margin: 0 0 24px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; line-height: 1.6; color: #71717A;">
+                                <strong style="color: #18181B;">Действия:</strong><br>
+                                1. Откройте обращение в админ-панели.<br>
+                                2. Измените статус: «В работе» → «Решено».<br>
+                                3. Пользователь получит уведомление об изменении статуса.
+                            </p>
+                            {% with submission_id=submission.id|stringformat:"s" %}
+                            {% include "emails/partials/_button.html" with button_url=site_url|add:"/admin/notifications/contactsubmission/"|add:submission_id|add:"/change/" button_label="Открыть в админ-панели" button_color="#18181B" %}
+                            {% endwith %}
+                        </td>
                     </tr>
-                    <tr>
-                        <td>От:</td>
-                        <td>{{ username }} ({{ email }})</td>
-                    </tr>
-                    <tr>
-                        <td>Категория:</td>
-                        <td>{{ category }}</td>
-                    </tr>
-                    <tr>
-                        <td>Дата:</td>
-                        <td>{{ submission.created_at|date:"d.m.Y H:i" }}</td>
-                    </tr>
-                    {% if submission.attachment %}
-                    <tr>
-                        <td>Файл:</td>
-                        <td>✅ Прикреплён ({{ submission.attachment.name }})</td>
-                    </tr>
-                    {% endif %}
-                    <tr>
-                        <td>Статус:</td>
-                        <td>{{ submission.get_status_display }}</td>
-                    </tr>
+                    {% include "emails/partials/_footer.html" %}
                 </table>
-            </div>
-            <h3>Сообщение:</h3>
-            <div class="message-box">{{ message }}</div>
-            <p style="margin-top: 20px; font-size: 14px; color: #666;">
-                <strong>Действия:</strong><br>
-                1. Откройте обращение в админ-панели.<br>
-                2. Измените статус: «В работе» → «Решено».<br>
-                3. Пользователь получит уведомление об изменении статуса.
-            </p>
-            <p style="margin-top: 20px;">
-                <a href="{{ site_url }}/admin/notifications/contactsubmission/{{ submission.id }}/change/" class="button">
-                    📋 Открыть в админ-панели
-                </a>
-            </p>
-        </div>
-        <div class="footer">
-            <p>Автоматическое уведомление от DOPX.</p>
-            <p><a href="{{ site_url }}">Перейти на сайт</a> • <a href="{{ site_url }}/admin/">Админ-панель</a></p>
-            <p style="margin-top: 15px;">© {% now "Y" %} {{ site_name }}. Все права защищены.</p>
-        </div>
-    </div>
+            </td>
+        </tr>
+    </table>
 </body>
 </html>

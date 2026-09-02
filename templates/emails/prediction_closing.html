@@ -1,36 +1,53 @@
-<!-- templates/emails/prediction_closing.html -->
-<!-- Retention loop 1 / приглашение к прогнозу в стиле Sofascore —
+<!-- templates/emails/prediction_closing.html — ПОЛНЫЙ РЕДИЗАЙН 2026-09-02,
+     см. докстринг templates/emails/welcome.html про общий каркас в
+     partials/. Тон текста ("приглашение", не "срочно успейте") сохранён —
+     см. исходный докстринг ниже про продуктовое решение 2026-08-21.
+     Контекст: match (см. notifications/tasks.py::
+     notify_prediction_closing_soon → _send_match_email_chunk).
+
+     Retention loop 1 / приглашение к прогнозу в стиле Sofascore —
      ПЕРЕПИСАНО 2026-08-21 по прямому запросу продукта: раньше текст был
      чисто про срочность ("успейте, а то поздно"), теперь — приглашение
      ("как думаете, кто победит?"), закрытие окна упомянуто вторым планом,
-     не как главный посыл письма. См. подробности выбора тона в докстринге
-     notifications/tasks.py::notify_prediction_closing_soon. Визуальный
-     стиль (оранжевый header) сохранён намеренно — тот же цвет уже
-     ассоциируется с "матч скоро", менять его ради смены тона текста
-     избыточно. Призыв к действию — /matches/<id>/ (виджет прогноза
-     встроен в шапку матча), не /evaluations/... -->
+     не как главный посыл письма. -->
 <!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <style>
-        body { font-family: sans-serif; background: #f5f5f5; margin: 0; padding: 20px; }
-        .container { max-width: 600px; margin: 0 auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .header { background: #f59e0b; color: #fff; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; margin: -30px -30px 30px -30px; }
-        .match-info { background: #fff7ed; padding: 15px; border-radius: 6px; text-align: center; margin: 20px 0; border: 1px solid #f59e0b; }
-        .btn { display: inline-block; padding: 12px 24px; background: #000; color: #fff; text-decoration: none; border-radius: 4px; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header"><h1>⚽ Кто победит?</h1></div>
-        <p>Через час стартует матч. Как думаете, кто победит?</p>
-        <div class="match-info">
-            <h3>{{ match.home_team.name }} vs {{ match.away_team.name }}</h3>
-            <p style="margin: 4px 0 0; opacity: 0.7;">{{ match.start_time|date:"d.m.Y в H:i" }}</p>
-        </div>
-        <p style="opacity: 0.7;">Поставьте прогноз и сравните его с мнением сообщества. Приём открыт до стартового свистка.</p>
-        <p style="text-align: center;"><a href="{{ site_url }}/matches/{{ match.id }}/" class="btn">Поставить прогноз</a></p>
-    </div>
+<html lang="ru">
+{% include "emails/partials/_head.html" %}
+<body style="margin: 0; padding: 0; background-color: #F4F4F5;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #F4F4F5;">
+        <tr>
+            <td align="center" style="padding: 40px 16px;">
+                <table role="presentation" class="dopx-container" width="600" cellpadding="0" cellspacing="0" border="0" style="width: 600px; max-width: 600px; background-color: #FFFFFF; border: 1px solid #E4E4E7; border-radius: 12px;">
+                    {% include "emails/partials/_header.html" with eyebrow_text="Скоро старт" eyebrow_color="#B45309" eyebrow_bg="#FFFBEB" %}
+                    <tr>
+                        <td class="dopx-px" style="padding: 32px 40px 8px 40px;">
+                            <h1 style="margin: 0 0 12px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 22px; line-height: 1.35; font-weight: 700; color: #18181B;">Кто победит?</h1>
+                            <p style="margin: 0 0 20px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.6; color: #3F3F46;">
+                                Через час стартует матч. Как думаете, кто победит?
+                            </p>
+
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #FFFBEB; border: 1px solid #FDE68A; border-radius: 10px; margin: 0 0 24px;">
+                                <tr>
+                                    <td align="center" style="padding: 20px;">
+                                        <p style="margin: 0 0 4px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 17px; font-weight: 700; color: #18181B;">{{ match.home_team.name }} vs {{ match.away_team.name }}</p>
+                                        <p style="margin: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #92400E;">{{ match.start_time|date:"d.m.Y в H:i" }}</p>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <p style="margin: 0 0 28px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.6; color: #3F3F46;">
+                                Поставьте прогноз и сравните его с мнением сообщества. Приём открыт до стартового свистка.
+                            </p>
+                            {% with match_id=match.id|stringformat:"s" %}
+                            {% include "emails/partials/_button.html" with button_url=site_url|add:"/matches/"|add:match_id|add:"/" button_label="Поставить прогноз" button_color="#B45309" %}
+                            {% endwith %}
+                            <p style="margin: 32px 0 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; font-style: italic; color: #A1A1AA;">— Команда DOPX</p>
+                        </td>
+                    </tr>
+                    {% include "emails/partials/_footer.html" with show_notification_settings=True %}
+                </table>
+            </td>
+        </tr>
+    </table>
 </body>
 </html>

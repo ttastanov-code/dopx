@@ -1,25 +1,41 @@
-<!-- templates/emails/voting_closing.html -->
+<!-- templates/emails/voting_closing.html — ПОЛНЫЙ РЕДИЗАЙН 2026-09-02, см.
+     докстринг templates/emails/welcome.html про общий каркас в partials/.
+     Контекст: match (см. notifications/tasks.py::notify_voting_closing_soon
+     → _send_match_email_chunk). -->
 <!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <style>
-        body { font-family: sans-serif; background: #f5f5f5; margin: 0; padding: 20px; }
-        .container { max-width: 600px; margin: 0 auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .header { background: #f59e0b; color: #fff; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; margin: -30px -30px 30px -30px; }
-        .match-info { background: #fff7ed; padding: 15px; border-radius: 6px; text-align: center; margin: 20px 0; border: 1px solid #f59e0b; }
-        .btn { display: inline-block; padding: 12px 24px; background: #000; color: #fff; text-decoration: none; border-radius: 4px; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header"><h1>⏰ Голосование закрывается!</h1></div>
-        <p>Голосование за матч скоро закроется.</p>
-        <div class="match-info">
-            <h3>{{ match.home_team.name }} vs {{ match.away_team.name }}</h3>
-        </div>
-        <p>Успейте повлиять на итоговый рейтинг.</p>
-        <p style="text-align: center;"><a href="{{ site_url }}/evaluations/match/{{ match.id }}/context/" class="btn">Оценить сейчас</a></p>
-    </div>
+<html lang="ru">
+{% include "emails/partials/_head.html" %}
+<body style="margin: 0; padding: 0; background-color: #F4F4F5;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #F4F4F5;">
+        <tr>
+            <td align="center" style="padding: 40px 16px;">
+                <table role="presentation" class="dopx-container" width="600" cellpadding="0" cellspacing="0" border="0" style="width: 600px; max-width: 600px; background-color: #FFFFFF; border: 1px solid #E4E4E7; border-radius: 12px;">
+                    {% include "emails/partials/_header.html" with eyebrow_text="Закрывается скоро" eyebrow_color="#B45309" eyebrow_bg="#FFFBEB" %}
+                    <tr>
+                        <td class="dopx-px" style="padding: 32px 40px 8px 40px;">
+                            <h1 style="margin: 0 0 12px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 22px; line-height: 1.35; font-weight: 700; color: #18181B;">Голосование скоро закроется</h1>
+                            <p style="margin: 0 0 20px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.6; color: #3F3F46;">
+                                Успейте повлиять на итоговый рейтинг матча, пока приём оценок ещё открыт.
+                            </p>
+
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #FFFBEB; border: 1px solid #FDE68A; border-radius: 10px; margin: 0 0 28px;">
+                                <tr>
+                                    <td align="center" style="padding: 20px;">
+                                        <p style="margin: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 17px; font-weight: 700; color: #18181B;">{{ match.home_team.name }} vs {{ match.away_team.name }}</p>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            {% with match_id=match.id|stringformat:"s" %}
+                            {% include "emails/partials/_button.html" with button_url=site_url|add:"/evaluations/match/"|add:match_id|add:"/context/" button_label="Оценить сейчас" button_color="#B45309" %}
+                            {% endwith %}
+                            <p style="margin: 32px 0 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; font-style: italic; color: #A1A1AA;">— Команда DOPX</p>
+                        </td>
+                    </tr>
+                    {% include "emails/partials/_footer.html" with show_notification_settings=True %}
+                </table>
+            </td>
+        </tr>
+    </table>
 </body>
 </html>

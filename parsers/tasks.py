@@ -42,6 +42,7 @@ from django.db import transaction
 from django.db.utils import OperationalError
 from django.template.loader import render_to_string
 from django.utils import timezone
+from django.utils.html import strip_tags
 
 from parsers.kff.client import KFFAPICircuitBreakerOpen, KFFClient
 from parsers.kff.pipeline import import_full_match, sync_season
@@ -746,7 +747,7 @@ def _send_sync_error_alert(error_message: str, alert_type: str, extra_data: dict
     admin_email = getattr(settings, "ADMIN_ALERT_EMAIL", settings.CONTACT_EMAIL)
     site_url = getattr(settings, "SITE_URL", "https://dopx.kz")
 
-    subject = f"🚨 DOPX Sync Alert [{alert_type}]"
+    subject = f"DOPX Sync Alert [{alert_type}]"
 
     html_message = render_to_string(
         "emails/sync_error_alert.html",
@@ -762,7 +763,7 @@ def _send_sync_error_alert(error_message: str, alert_type: str, extra_data: dict
     try:
         send_mail(
             subject=subject,
-            message="",
+            message=strip_tags(html_message),
             from_email=settings.DEFAULT_FROM_EMAIL,
             recipient_list=[admin_email],
             html_message=html_message,

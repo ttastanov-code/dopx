@@ -21,6 +21,7 @@ from django.utils import timezone
 from django.views.decorators.clickjacking import xframe_options_exempt
 from django.views.generic import TemplateView, View
 from django.core.mail import send_mail, EmailMultiAlternatives
+from django.utils.html import strip_tags
 from django.core.files.storage import default_storage
 
 from aggregates.models import MatchAggregate, PlayerMatchAggregate
@@ -495,7 +496,7 @@ class ContactsView(TemplateView):
 
         # "Право на ответ" — юридически значимая категория, письмо должно
         # выделяться в почте founder'а среди обычных багрепортов.
-        urgency_prefix = "🚨 ПРАВО НА ОТВЕТ" if submission.category == 'dispute' else "📬 Новое обращение"
+        urgency_prefix = "ПРАВО НА ОТВЕТ" if submission.category == 'dispute' else "Новое обращение"
         subject = f"{urgency_prefix} #{str(submission.id)[:8]} ({submission.get_category_display()})"
 
         html_message = render_to_string('emails/contact_form.html', {
@@ -510,8 +511,11 @@ class ContactsView(TemplateView):
         })
 
         email = EmailMultiAlternatives(
+            # body=strip_tags(html) вместо '' — пустой text/plain рядом с
+            # html-альтернативой сам по себе спам-сигнал (см. аналогичный
+            # коммент в notifications/tasks.py::_send_email_to_user).
             subject=subject,
-            body='',
+            body=strip_tags(html_message),
             from_email=from_email,
             to=[admin_email],
         )
@@ -542,7 +546,7 @@ class ContactsView(TemplateView):
         from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@dopx.kz')
         site_url = getattr(settings, 'SITE_URL', 'https://dopx.kz')
 
-        subject = f"✅ Ваше обращение #{str(submission.id)[:8]} принято"
+        subject = f"Ваше обращение #{str(submission.id)[:8]} принято"
 
         html_message = render_to_string('emails/contact_confirmation.html', {
             'submission': submission,
@@ -553,7 +557,7 @@ class ContactsView(TemplateView):
 
         send_mail(
             subject=subject,
-            message='',
+            message=strip_tags(html_message),
             from_email=from_email,
             recipient_list=[submission.user.email],
             html_message=html_message,

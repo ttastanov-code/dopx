@@ -1,44 +1,96 @@
-<!-- templates/emails/prediction_result.html -->
-<!-- Retention loop 3 ("ваш прогноз vs сообщество"), 2026-08-21 —
-     ПЕРСОНАЛИЗИРОВАННОЕ письмо (не fan-out broadcast, как voting_open):
-     контекст собирается на пользователя внутри
-     notifications/tasks.py::notify_prediction_results, каждое письмо своё.
-     Контекст: match, your_choice_label, result_label, is_correct (bool),
-     counts (predictions.services.prediction_counts). -->
+<!-- templates/emails/prediction_result.html — ПОЛНЫЙ РЕДИЗАЙН 2026-09-02, см.
+     докстринг templates/emails/welcome.html про общий каркас в partials/.
+     Полосы распределения прогнозов сообщества раньше были на flexbox
+     (.bar-row { display:flex }) — flexbox НЕ поддерживается ни одним
+     движком Outlook (Word-рендерер) и рядом других почтовых клиентов;
+     переведено на table-based вёрстку (единственный по-настоящему надёжный
+     способ строить горизонтальные "полосы" в email).
+
+     Контекст: match, counts (predictions.services.prediction_counts),
+     is_correct (bool), your_choice_label (см. notifications/tasks.py::
+     notify_prediction_results). -->
 <!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <style>
-        body { font-family: sans-serif; background: #f5f5f5; margin: 0; padding: 20px; }
-        .container { max-width: 600px; margin: 0 auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .header { background: {% if is_correct %}#16a34a{% else %}#374151{% endif %}; color: #fff; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; margin: -30px -30px 30px -30px; }
-        .match-info { background: #f9fafb; padding: 15px; border-radius: 6px; text-align: center; margin: 20px 0; border: 1px solid #e5e7eb; }
-        .score { font-size: 28px; font-weight: bold; margin: 8px 0; }
-        .bars { margin: 20px 0; }
-        .bar-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: 14px; }
-        .bar-track { flex: 1; background: #e5e7eb; border-radius: 4px; height: 10px; overflow: hidden; }
-        .bar-fill { height: 100%; background: #6366f1; }
-        .btn { display: inline-block; padding: 12px 24px; background: #000; color: #fff; text-decoration: none; border-radius: 4px; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>{% if is_correct %}✅ Прогноз сбылся!{% else %}Прогноз не сбылся{% endif %}</h1>
-        </div>
-        <div class="match-info">
-            <h3>{{ match.home_team.name }} vs {{ match.away_team.name }}</h3>
-            <div class="score">{{ match.get_score_display }}</div>
-            <p style="margin: 0; opacity: 0.7;">Ваш прогноз: {{ your_choice_label }}</p>
-        </div>
-        <div class="bars">
-            <p style="margin-bottom: 8px; font-weight: 600;">Как проголосовало сообщество ({{ counts.total }} прогнозов):</p>
-            <div class="bar-row"><span style="width: 90px;">{{ match.home_team.name|truncatechars:14 }}</span><div class="bar-track"><div class="bar-fill" style="width: {{ counts.home_pct }}%;"></div></div><span>{{ counts.home_pct }}%</span></div>
-            <div class="bar-row"><span style="width: 90px;">Ничья</span><div class="bar-track"><div class="bar-fill" style="width: {{ counts.draw_pct }}%;"></div></div><span>{{ counts.draw_pct }}%</span></div>
-            <div class="bar-row"><span style="width: 90px;">{{ match.away_team.name|truncatechars:14 }}</span><div class="bar-track"><div class="bar-fill" style="width: {{ counts.away_pct }}%;"></div></div><span>{{ counts.away_pct }}%</span></div>
-        </div>
-        <p style="text-align: center;"><a href="{{ site_url }}/matches/{{ match.id }}/" class="btn">Смотреть матч</a></p>
-    </div>
+<html lang="ru">
+{% include "emails/partials/_head.html" %}
+<body style="margin: 0; padding: 0; background-color: #F4F4F5;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #F4F4F5;">
+        <tr>
+            <td align="center" style="padding: 40px 16px;">
+                <table role="presentation" class="dopx-container" width="600" cellpadding="0" cellspacing="0" border="0" style="width: 600px; max-width: 600px; background-color: #FFFFFF; border: 1px solid #E4E4E7; border-radius: 12px;">
+                    {% if is_correct %}
+                    {% include "emails/partials/_header.html" with eyebrow_text="Прогноз сбылся" eyebrow_color="#15803D" eyebrow_bg="#F0FDF4" %}
+                    {% else %}
+                    {% include "emails/partials/_header.html" with eyebrow_text="Итог прогноза" eyebrow_color="#52525B" eyebrow_bg="#F4F4F5" %}
+                    {% endif %}
+                    <tr>
+                        <td class="dopx-px" style="padding: 32px 40px 8px 40px;">
+                            <h1 style="margin: 0 0 20px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 22px; line-height: 1.35; font-weight: 700; color: #18181B;">{% if is_correct %}Ваш прогноз сбылся!{% else %}Прогноз не сбылся{% endif %}</h1>
+
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #FAFAFA; border: 1px solid #E4E4E7; border-radius: 10px; margin: 0 0 24px;">
+                                <tr>
+                                    <td align="center" style="padding: 20px;">
+                                        <p style="margin: 0 0 6px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 16px; font-weight: 700; color: #18181B;">{{ match.home_team.name }} vs {{ match.away_team.name }}</p>
+                                        <p style="margin: 0 0 6px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 26px; font-weight: 700; color: #18181B;">{{ match.get_score_display }}</p>
+                                        <p style="margin: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #71717A;">Ваш прогноз: {{ your_choice_label }}</p>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <p style="margin: 0 0 12px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; font-weight: 600; color: #18181B;">Как проголосовало сообщество ({{ counts.total }} прогнозов):</p>
+
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 8px;">
+                                <tr>
+                                    <td width="90" style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #52525B; padding: 4px 8px 4px 0;">{{ match.home_team.name|truncatechars:14 }}</td>
+                                    <td style="padding: 4px 0;">
+                                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #E4E4E7; border-radius: 4px;">
+                                            <tr>
+                                                <td width="{{ counts.home_pct }}%" bgcolor="#6366F1" style="background-color: #6366F1; border-radius: 4px; line-height: 8px; font-size: 8px;">&nbsp;</td>
+                                                <td bgcolor="#E4E4E7" style="line-height: 8px; font-size: 8px;">&nbsp;</td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                    <td width="44" align="right" style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #52525B; padding: 4px 0 4px 8px;">{{ counts.home_pct }}%</td>
+                                </tr>
+                            </table>
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 8px;">
+                                <tr>
+                                    <td width="90" style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #52525B; padding: 4px 8px 4px 0;">Ничья</td>
+                                    <td style="padding: 4px 0;">
+                                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #E4E4E7; border-radius: 4px;">
+                                            <tr>
+                                                <td width="{{ counts.draw_pct }}%" bgcolor="#6366F1" style="background-color: #6366F1; border-radius: 4px; line-height: 8px; font-size: 8px;">&nbsp;</td>
+                                                <td bgcolor="#E4E4E7" style="line-height: 8px; font-size: 8px;">&nbsp;</td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                    <td width="44" align="right" style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #52525B; padding: 4px 0 4px 8px;">{{ counts.draw_pct }}%</td>
+                                </tr>
+                            </table>
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 28px;">
+                                <tr>
+                                    <td width="90" style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #52525B; padding: 4px 8px 4px 0;">{{ match.away_team.name|truncatechars:14 }}</td>
+                                    <td style="padding: 4px 0;">
+                                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #E4E4E7; border-radius: 4px;">
+                                            <tr>
+                                                <td width="{{ counts.away_pct }}%" bgcolor="#6366F1" style="background-color: #6366F1; border-radius: 4px; line-height: 8px; font-size: 8px;">&nbsp;</td>
+                                                <td bgcolor="#E4E4E7" style="line-height: 8px; font-size: 8px;">&nbsp;</td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                    <td width="44" align="right" style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #52525B; padding: 4px 0 4px 8px;">{{ counts.away_pct }}%</td>
+                                </tr>
+                            </table>
+
+                            {% with match_id=match.id|stringformat:"s" %}
+                            {% include "emails/partials/_button.html" with button_url=site_url|add:"/matches/"|add:match_id|add:"/" button_label="Смотреть матч" %}
+                            {% endwith %}
+                            <p style="margin: 32px 0 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; font-style: italic; color: #A1A1AA;">— Команда DOPX</p>
+                        </td>
+                    </tr>
+                    {% include "emails/partials/_footer.html" with show_notification_settings=True %}
+                </table>
+            </td>
+        </tr>
+    </table>
 </body>
 </html>

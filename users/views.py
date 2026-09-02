@@ -135,7 +135,7 @@ class RegisterView(CreateView):
                 from notifications.tasks import _send_email_to_user
                 site_url = getattr(settings, 'SITE_URL', 'http://127.0.0.1:8000')
                 verify_url = f"{site_url}/users/verify-email/{user.verification_token}/"
-                _send_email_to_user(user, '👋 Подтвердите email на DOPX', 'emails/verify_email.html', {'verify_url': verify_url}, force=True)
+                _send_email_to_user(user, 'Подтвердите email на DOPX', 'emails/verify_email.html', {'verify_url': verify_url}, force=True)
             except Exception as fallback_e:
                 logger.critical(f"CRITICAL: Failed to send verification email synchronously: {fallback_e}")
 
@@ -600,6 +600,14 @@ class PasswordResetViewCustom(PasswordResetView):
     subject_template_name = 'emails/password_reset_subject.txt'
     success_url = reverse_lazy('users:password_reset_done')
     form_class = CustomPasswordResetForm
+    # Единый визуальный каркас писем (templates/emails/partials/_header.html,
+    # _footer.html — редизайн 2026-09-02) читает site_url из контекста
+    # письма, а Django здесь этот ключ сам не передаёт (в отличие от
+    # notifications/tasks.py::_send_email_to_user, который прокидывает его
+    # во ВСЕ остальные письма проекта) — добавляем его через штатный для
+    # PasswordResetView механизм extra_email_context, а не правим сами
+    # partials под этот один шаблон.
+    extra_email_context = {'site_url': getattr(settings, 'SITE_URL', 'https://dopx.kz')}
 
     def dispatch(self, request, *args, **kwargs):
         # Тот же паттерн, что в RegisterView.dispatch — лимит ДО валидации

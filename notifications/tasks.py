@@ -24,6 +24,7 @@ from django.core.cache import cache
 from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 from django.utils import timezone
+from django.utils.html import strip_tags
 
 logger = logging.getLogger(__name__)
 
@@ -168,8 +169,14 @@ def _send_email_to_user(
         })
 
         email = EmailMultiAlternatives(
+            # Пустой text/plain-body ПОМИМО html-альтернативы — сигнал
+            # спам-фильтров (письмо "только HTML", без единого читаемого
+            # текста без рендеринга разметки, типично для спама/фишинга).
+            # strip_tags() — быстрый, "достаточно хороший" plain-text из
+            # уже отрендеренного HTML вместо поддержки отдельного .txt на
+            # каждый из полутора десятков шаблонов писем в проекте.
             subject=subject,
-            body='',
+            body=strip_tags(html_message),
             from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@dopx.kz'),
             to=[user.email],
         )
@@ -210,7 +217,7 @@ def send_badge_earned_notification(self, user_id: str, badge_type: str, badge_na
         user = User.objects.get(id=user_id)
         logger.info(f"📤 Processing badge email for {user.username}: {badge_name}")
         _send_email_to_user(
-            user, f'🎖️ Новое достижение: {badge_name}', 'emails/badge_earned.html',
+            user, f'Новое достижение: {badge_name}', 'emails/badge_earned.html',
             {'badge_name': badge_name}, notification_type='new_badge', raise_on_transient=True,
         )
         return True
@@ -230,7 +237,7 @@ def send_level_up_notification(self, user_id: str, new_level: int, total_xp: int
         user = User.objects.get(id=user_id)
         logger.info(f"📤 Processing level up email for {user.username}: Level {new_level}")
         _send_email_to_user(
-            user, f'⬆️ Вы достигли уровня {new_level}!', 'emails/level_up.html',
+            user, f'Вы достигли уровня {new_level}!', 'emails/level_up.html',
             {'new_level': new_level, 'total_xp': total_xp}, notification_type='level_up',
             raise_on_transient=True,
         )
@@ -252,7 +259,7 @@ def send_email_verification(self, user_id: str, token: str):
         verify_url = f"{site_url}/users/verify-email/{token}/"
 
         _send_email_to_user(
-            user, '👋 Подтвердите email на DOPX', 'emails/verify_email.html', {'verify_url': verify_url},
+            user, 'Подтвердите email на DOPX', 'emails/verify_email.html', {'verify_url': verify_url},
             force=True, raise_on_transient=True,
         )
         return True
@@ -421,7 +428,7 @@ def notify_voting_closing_soon(self):
             skipped += 1
             continue
 
-        subject = f'⏰ Голосование за матч {match.home_team.name} vs {match.away_team.name} скоро закроется!'
+        subject = f'Голосование за матч {match.home_team.name} vs {match.away_team.name} скоро закроется'
         for chunk in chunks:
             _send_match_email_chunk.delay(chunk, str(match.id), subject, 'emails/voting_closing.html', 'voting_closing')
             queued += 1
@@ -507,7 +514,7 @@ def send_notification_digest():
 
             sent = _send_email_to_user(
                 user,
-                f'📋 Ваши обновления на DOPX ({len(notes)})',
+                f'Ваши обновления на DOPX ({len(notes)})',
                 'emails/notification_digest.html',
                 {'notifications': notes, 'count': len(notes)},
                 notification_type='system',
@@ -653,7 +660,7 @@ def notify_followers_match_activity(self, match_id: str):
     for user in _UserModel.objects.filter(id__in=audience_user_ids, is_verified=True, email__isnull=False):
         if _send_email_to_user(
             user,
-            f'⚽ {title} — голосование открыто',
+            f'{title} — голосование открыто',
             'emails/voting_open.html',
             {'match': match, 'title': title},
             notification_type='voting_open',
@@ -858,7 +865,7 @@ def notify_prediction_closing_soon(self):
         if not user_ids:
             continue
 
-        subject = f'⚽ {match.home_team.name} — {match.away_team.name}: как думаете, кто победит?'
+        subject = f'{match.home_team.name} — {match.away_team.name}: как думаете, кто победит?'
         for chunk in _chunked(user_ids, BULK_EMAIL_CHUNK_SIZE):
             _send_match_email_chunk.delay(chunk, str(match.id), subject, 'emails/prediction_closing.html', 'prediction_closing')
             queued += 1
@@ -1054,7 +1061,7 @@ def notify_prediction_results(self):
             for pred in predictions:
                 sent_ok = _send_email_to_user(
                     pred.user,
-                    f'{"✅" if pred.is_correct else "📊"} Итог матча {match.home_team.name} vs {match.away_team.name}',
+                    f'{"Прогноз сбылся" if pred.is_correct else "Итог матча"}: {match.home_team.name} vs {match.away_team.name}',
                     'emails/prediction_result.html',
                     {
                         'match': match,
@@ -1152,7 +1159,7 @@ def send_weekly_summary(self):
 
         if _send_email_to_user(
             user,
-            '📊 Ваша неделя на DOPX',
+            'Ваша неделя на DOPX',
             'emails/weekly_summary.html',
             {
                 'evaluations_count': evaluations_count,
@@ -1222,7 +1229,7 @@ def send_staff_antifraud_digest(self):
     for staff_user in recipients:
         if _send_email_to_user(
             staff_user,
-            f'🛡️ Антифрод за неделю: {len(new_flags)} новых сигналов',
+            f'Антифрод за неделю: {len(new_flags)} новых сигналов',
             'emails/staff_antifraud_digest.html',
             {
                 'total_new': len(new_flags),

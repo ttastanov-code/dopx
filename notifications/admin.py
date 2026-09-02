@@ -1,7 +1,7 @@
 # notifications/admin.py
 from django.contrib import admin
 from unfold.admin import ModelAdmin
-from django.utils.html import format_html
+from django.utils.html import format_html, strip_tags
 from django.utils.safestring import mark_safe
 from django.urls import reverse
 from django.utils import timezone
@@ -194,8 +194,8 @@ class ContactSubmissionAdmin(ModelAdmin):
             })
             
             email = EmailMultiAlternatives(
-                subject=f'📢 Статус обращения #{str(ticket.id)[:8]} изменён | DOPX',
-                body='',
+                subject=f'Статус обращения #{str(ticket.id)[:8]} изменён | DOPX',
+                body=strip_tags(html_message),
                 from_email=from_email,
                 to=[recipient],
             )

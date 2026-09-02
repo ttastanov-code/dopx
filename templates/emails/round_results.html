@@ -1,60 +1,66 @@
-<!-- templates/emails/round_results.html -->
-<!-- Итоги «DOPX Лучшие тура» (продуктовый запрос 2026-08-22) — письмо
-     отправляется ОДИН раз, в момент автоматической финализации тура
-     (round_squad/services.py::recompute_round, когда голосование по всем
-     матчам тура закрылось). Контекст: round_xi (round_squad.models.
-     RoundBestXI, select_related season/most_dramatic_match/teams) —
-     см. round_squad/tasks.py::_send_round_results_email_chunk. Тот же
-     визуальный язык, что у weekly_summary.html/voting_open.html. -->
+<!-- templates/emails/round_results.html — ПОЛНЫЙ РЕДИЗАЙН 2026-09-02, см.
+     докстринг templates/emails/welcome.html про общий каркас в partials/.
+
+     Итоги «DOPX Лучшие тура» — письмо отправляется ОДИН раз, в момент
+     автоматической финализации тура (round_squad/services.py::
+     recompute_round). Контекст: round_xi (round_squad.models.RoundBestXI,
+     select_related season/most_dramatic_match/teams) — см.
+     round_squad/tasks.py::_send_round_results_email_chunk. -->
 <!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <style>
-        body { font-family: sans-serif; background: #f5f5f5; margin: 0; padding: 20px; }
-        .container { max-width: 600px; margin: 0 auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .header { background: linear-gradient(135deg, #0c4a6e, #0369a1); color: #fff; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; margin: -30px -30px 30px -30px; }
-        .player-card { background: #eff6ff; border: 1px solid #60a5fa; border-radius: 8px; padding: 16px; text-align: center; margin: 20px 0; }
-        .player-card .label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: #2563eb; font-weight: 600; }
-        .player-card .name { font-size: 22px; font-weight: bold; margin: 6px 0 2px; }
-        .player-card .score { font-size: 14px; color: #6b7280; }
-        .match-info { background: #faf5ff; padding: 15px; border-radius: 6px; text-align: center; margin: 20px 0; border: 1px solid #a78bfa; }
-        .btn { display: inline-block; padding: 12px 24px; background: #000; color: #fff; text-decoration: none; border-radius: 4px; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header"><h1>🏆 {{ round_xi.brand_title }}</h1></div>
-        <p>Голосование по туру {{ round_xi.tour }} завершено. Вот кто оказался лучшим:</p>
+<html lang="ru">
+{% include "emails/partials/_head.html" %}
+<body style="margin: 0; padding: 0; background-color: #F4F4F5;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #F4F4F5;">
+        <tr>
+            <td align="center" style="padding: 40px 16px;">
+                <table role="presentation" class="dopx-container" width="600" cellpadding="0" cellspacing="0" border="0" style="width: 600px; max-width: 600px; background-color: #FFFFFF; border: 1px solid #E4E4E7; border-radius: 12px;">
+                    {% include "emails/partials/_header.html" with eyebrow_text="Итоги тура" eyebrow_color="#4F46E5" eyebrow_bg="#EEF2FF" %}
+                    <tr>
+                        <td class="dopx-px" style="padding: 32px 40px 8px 40px;">
+                            <h1 style="margin: 0 0 12px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 22px; line-height: 1.35; font-weight: 700; color: #18181B;">{{ round_xi.brand_title }}</h1>
+                            <p style="margin: 0 0 24px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.6; color: #3F3F46;">
+                                Голосование по туру {{ round_xi.tour }} завершено. Вот кто оказался лучшим:
+                            </p>
 
-        {% if round_xi.player_of_round_name %}
-        <div class="player-card">
-            <div class="label">Игрок тура</div>
-            <div class="name">{{ round_xi.player_of_round_name }}</div>
-            <div class="score">
-                {{ round_xi.player_of_round_team_name|default:"" }}
-                {% if round_xi.player_of_round_score %} · рейтинг {{ round_xi.player_of_round_score|floatformat:2 }}{% endif %}
-            </div>
-        </div>
-        {% endif %}
+                            {% if round_xi.player_of_round_name %}
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #EEF2FF; border: 1px solid #E0E7FF; border-radius: 10px; margin: 0 0 20px;">
+                                <tr>
+                                    <td align="center" style="padding: 20px;">
+                                        <p style="margin: 0 0 4px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #6366F1;">Игрок тура</p>
+                                        <p style="margin: 0 0 4px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 20px; font-weight: 700; color: #18181B;">{{ round_xi.player_of_round_name }}</p>
+                                        <p style="margin: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #71717A;">
+                                            {{ round_xi.player_of_round_team_name|default:"" }}{% if round_xi.player_of_round_score %} · рейтинг {{ round_xi.player_of_round_score|floatformat:2 }}{% endif %}
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+                            {% endif %}
 
-        {% if round_xi.most_dramatic_match %}
-        <div class="match-info">
-            <p style="margin: 0 0 6px; font-weight: 600;">🔥 Самый драматичный матч тура</p>
-            <h3 style="margin: 0;">
-                {{ round_xi.most_dramatic_match.home_team.name }}
-                {{ round_xi.most_dramatic_match.home_score }}:{{ round_xi.most_dramatic_match.away_score }}
-                {{ round_xi.most_dramatic_match.away_team.name }}
-            </h3>
-        </div>
-        {% endif %}
+                            {% if round_xi.most_dramatic_match %}
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #FAF5FF; border: 1px solid #E9D5FF; border-radius: 10px; margin: 0 0 28px;">
+                                <tr>
+                                    <td align="center" style="padding: 18px;">
+                                        <p style="margin: 0 0 6px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #7E22CE;">Самый драматичный матч тура</p>
+                                        <p style="margin: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 16px; font-weight: 700; color: #18181B;">
+                                            {{ round_xi.most_dramatic_match.home_team.name }}
+                                            {{ round_xi.most_dramatic_match.home_score }}:{{ round_xi.most_dramatic_match.away_score }}
+                                            {{ round_xi.most_dramatic_match.away_team.name }}
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+                            {% endif %}
 
-        <p style="text-align: center; margin-top: 24px;">
-            <a href="{{ site_url }}/season/{{ round_xi.season_id }}/round/{{ round_xi.tour }}/" class="btn">Смотреть полный состав тура</a>
-        </p>
-        <p style="font-size: 12px; opacity: 0.5; margin-top: 24px; text-align: center;">
-            Отключить эти письма можно в <a href="{{ site_url }}/users/profile/notifications/">настройках уведомлений</a>.
-        </p>
-    </div>
+                            {% with season_id=round_xi.season_id|stringformat:"s" tour=round_xi.tour|stringformat:"s" %}
+                            {% include "emails/partials/_button.html" with button_url=site_url|add:"/season/"|add:season_id|add:"/round/"|add:tour|add:"/" button_label="Смотреть полный состав тура" %}
+                            {% endwith %}
+                            <p style="margin: 32px 0 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; font-style: italic; color: #A1A1AA;">— Команда DOPX</p>
+                        </td>
+                    </tr>
+                    {% include "emails/partials/_footer.html" with show_notification_settings=True %}
+                </table>
+            </td>
+        </tr>
+    </table>
 </body>
 </html>

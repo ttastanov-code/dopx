@@ -1,8 +1,37 @@
-<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="font-family:sans-serif;background:#f5f5f5;padding:20px;">
-<div style="max-width:600px;margin:0 auto;background:#fff;padding:30px;border-radius:8px;">
-  <h1 style="color:#3b82f6;">👋 Подтвердите email</h1>
-  <p>Привет, {{ user.username }}!</p>
-  <p>Осталось подтвердить почту, чтобы активировать аккаунт DOPX:</p>
-  <a href="{{ verify_url }}" style="display:inline-block;padding:12px 24px;background:#000;color:#fff;text-decoration:none;border-radius:4px;">Активировать аккаунт</a>
-  <p style="margin-top:20px;font-size:12px;color:#666;">Ссылка действительна 48 часов.</p>
-</div></body></html>
+<!-- templates/emails/verify_email.html — ПОЛНЫЙ РЕДИЗАЙН 2026-09-02, см.
+     докстринг templates/emails/welcome.html про общий каркас в partials/.
+     Контекст: user, verify_url (уже готовая абсолютная ссылка — см.
+     notifications/tasks.py::send_email_verification и
+     users/views.py::VerifyEmailView). -->
+<!DOCTYPE html>
+<html lang="ru">
+{% include "emails/partials/_head.html" %}
+<body style="margin: 0; padding: 0; background-color: #F4F4F5;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #F4F4F5;">
+        <tr>
+            <td align="center" style="padding: 40px 16px;">
+                <table role="presentation" class="dopx-container" width="600" cellpadding="0" cellspacing="0" border="0" style="width: 600px; max-width: 600px; background-color: #FFFFFF; border: 1px solid #E4E4E7; border-radius: 12px;">
+                    {% include "emails/partials/_header.html" with eyebrow_text="Подтверждение email" eyebrow_color="#4F46E5" eyebrow_bg="#EEF2FF" %}
+                    <tr>
+                        <td class="dopx-px" style="padding: 32px 40px 8px 40px;">
+                            <h1 style="margin: 0 0 12px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 22px; line-height: 1.35; font-weight: 700; color: #18181B;">Подтвердите почту</h1>
+                            <p style="margin: 0 0 16px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.6; color: #3F3F46;">
+                                Привет, {{ user.username }}! Осталось подтвердить почту, чтобы активировать аккаунт DOPX и начать оценивать матчи.
+                            </p>
+                            {% include "emails/partials/_button.html" with button_url=verify_url button_label="Подтвердить email" %}
+                            <p style="margin: 24px 0 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; line-height: 1.6; color: #A1A1AA;">
+                                Если кнопка не открывается, скопируйте ссылку в браузер:<br>
+                                <a href="{{ verify_url }}" style="color: #6366F1; word-break: break-all;">{{ verify_url }}</a>
+                            </p>
+                            <p style="margin: 16px 0 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; line-height: 1.6; color: #A1A1AA;">
+                                Ссылка действительна 48 часов. Если вы не регистрировались на DOPX, просто проигнорируйте это письмо.
+                            </p>
+                        </td>
+                    </tr>
+                    {% include "emails/partials/_footer.html" %}
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>

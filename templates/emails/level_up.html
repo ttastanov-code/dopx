@@ -1,35 +1,46 @@
-<!-- templates/emails/level_up.html -->
+<!-- templates/emails/level_up.html — ПОЛНЫЙ РЕДИЗАЙН 2026-09-02, см.
+     докстринг templates/emails/welcome.html про общий каркас в partials/.
+     Контекст: user, new_level, total_xp (см. notifications/tasks.py::
+     send_level_up_notification). -->
 <!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <style>
-        body { font-family: sans-serif; background: #f5f5f5; margin: 0; padding: 20px; }
-        .container { max-width: 600px; margin: 0 auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .header { background: #8b5cf6; color: #fff; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; margin: -30px -30px 30px -30px; }
-        .level-box { text-align: center; padding: 20px; background: #f5f3ff; border-radius: 8px; margin: 20px 0; }
-        .level-number { font-size: 48px; font-weight: bold; color: #8b5cf6; margin: 10px 0; }
-        .btn { display: inline-block; padding: 12px 24px; background: #000; color: #fff; text-decoration: none; border-radius: 4px; margin-top: 20px; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header"><h1>⬆️ Новый уровень!</h1></div>
-        <p>Привет, {{ user.username }}!</p>
-        <div class="level-box">
-            <div style="font-size: 14px; color: #666;">Ваш новый уровень</div>
-            <div class="level-number">{{ new_level }}</div>
-            <div style="font-size: 14px; color: #666;">Всего опыта: {{ total_xp }} XP</div>
-        </div>
-        <p>Новый уровень открывает больше возможностей:</p>
-        <ul style="padding-left: 20px;">
-            <li>✨ Больший вес ваших оценок</li>
-            <li>🏆 Эксклюзивные достижения</li>
-            <li>📊 Расширенная статистика</li>
-        </ul>
-        <p style="text-align: center; margin-top: 30px;">
-            <a href="{{ site_url }}/users/profile/" class="btn">Посмотреть профиль</a>
-        </p>
-    </div>
+<html lang="ru">
+{% include "emails/partials/_head.html" %}
+<body style="margin: 0; padding: 0; background-color: #F4F4F5;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #F4F4F5;">
+        <tr>
+            <td align="center" style="padding: 40px 16px;">
+                <table role="presentation" class="dopx-container" width="600" cellpadding="0" cellspacing="0" border="0" style="width: 600px; max-width: 600px; background-color: #FFFFFF; border: 1px solid #E4E4E7; border-radius: 12px;">
+                    {% include "emails/partials/_header.html" with eyebrow_text="Новый уровень" eyebrow_color="#4F46E5" eyebrow_bg="#EEF2FF" %}
+                    <tr>
+                        <td class="dopx-px" style="padding: 32px 40px 8px 40px;">
+                            <h1 style="margin: 0 0 20px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 22px; line-height: 1.35; font-weight: 700; color: #18181B;">Привет, {{ user.username }}!</h1>
+
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #EEF2FF; border: 1px solid #E0E7FF; border-radius: 10px; margin: 0 0 24px;">
+                                <tr>
+                                    <td align="center" style="padding: 24px;">
+                                        <p style="margin: 0 0 6px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #6366F1;">Ваш новый уровень</p>
+                                        <p style="margin: 0 0 6px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 44px; font-weight: 700; color: #18181B; line-height: 1;">{{ new_level }}</p>
+                                        <p style="margin: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #71717A;">Всего опыта: {{ total_xp }} XP</p>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <p style="margin: 0 0 12px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.6; color: #3F3F46;">
+                                Новый уровень открывает больше возможностей:
+                            </p>
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 28px;">
+                                <tr><td style="padding: 4px 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; color: #3F3F46;">— Больший вес ваших оценок в общем рейтинге</td></tr>
+                                <tr><td style="padding: 4px 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; color: #3F3F46;">— Эксклюзивные достижения следующего уровня</td></tr>
+                                <tr><td style="padding: 4px 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; color: #3F3F46;">— Расширенная статистика в профиле</td></tr>
+                            </table>
+                            {% include "emails/partials/_button.html" with button_url=site_url|add:"/users/profile/" button_label="Посмотреть профиль" %}
+                            <p style="margin: 32px 0 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; font-style: italic; color: #A1A1AA;">— Команда DOPX</p>
+                        </td>
+                    </tr>
+                    {% include "emails/partials/_footer.html" with show_notification_settings=True %}
+                </table>
+            </td>
+        </tr>
+    </table>
 </body>
 </html>

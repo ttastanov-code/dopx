@@ -1,59 +1,76 @@
-<!-- templates/emails/staff_antifraud_digest.html -->
+<!-- templates/emails/staff_antifraud_digest.html — ПОЛНЫЙ РЕДИЗАЙН
+     2026-09-02, см. докстринг templates/emails/welcome.html про общий
+     каркас в partials/. Внутреннее операционное письмо для staff — тот же
+     визуальный язык (логотип, типографика, отступы), что у пользовательских
+     писем, но без "тёплой" подписи/ссылки на настройки уведомлений (это не
+     то, что сотрудник может отключить — force=True, см.
+     notifications/tasks.py::send_staff_antifraud_digest) и с явной
+     STAFF-меткой в шапке.
+
+     Контекст: total_new, by_source (dict), top_flags (список
+     SuspiciousActivityFlag), open_disputes. -->
 <!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <style>
-        body { font-family: sans-serif; background: #f5f5f5; margin: 0; padding: 20px; }
-        .container { max-width: 600px; margin: 0 auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .header { background: #b45309; color: #fff; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; margin: -30px -30px 30px -30px; }
-        .stat-box { background: #fffbeb; border-left: 4px solid #b45309; padding: 15px; margin: 20px 0; border-radius: 0 4px 4px 0; }
-        .source-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #eee; font-size: 14px; }
-        .flag-row { padding: 10px 0; border-bottom: 1px solid #eee; font-size: 14px; }
-        .flag-score { color: #b45309; font-weight: bold; }
-        .btn { display: inline-block; padding: 12px 24px; background: #000; color: #fff; text-decoration: none; border-radius: 4px; margin-top: 20px; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header"><h1>🛡️ Антифрод: итоги недели</h1></div>
+<html lang="ru">
+{% include "emails/partials/_head.html" %}
+<body style="margin: 0; padding: 0; background-color: #F4F4F5;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #F4F4F5;">
+        <tr>
+            <td align="center" style="padding: 40px 16px;">
+                <table role="presentation" class="dopx-container" width="600" cellpadding="0" cellspacing="0" border="0" style="width: 600px; max-width: 600px; background-color: #FFFFFF; border: 1px solid #E4E4E7; border-radius: 12px;">
+                    {% include "emails/partials/_header.html" with eyebrow_text="Antifraud · Staff" eyebrow_color="#B45309" eyebrow_bg="#FFFBEB" %}
+                    <tr>
+                        <td class="dopx-px" style="padding: 32px 40px 8px 40px;">
+                            <h1 style="margin: 0 0 20px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 22px; line-height: 1.35; font-weight: 700; color: #18181B;">Антифрод: итоги недели</h1>
 
-        <div class="stat-box">
-            <p style="margin: 0; font-size: 18px;"><strong>{{ total_new }}</strong> новых сигнал{{ total_new|pluralize:"," }} за последние 7 дней</p>
-            {% if open_disputes %}
-            <p style="margin: 8px 0 0 0; color: #666;">Открытых диспутов по рейтингу: {{ open_disputes }}</p>
-            {% endif %}
-        </div>
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #FFFBEB; border: 1px solid #FDE68A; border-radius: 10px; margin: 0 0 24px;">
+                                <tr>
+                                    <td style="padding: 16px 20px;">
+                                        <p style="margin: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 16px; color: #18181B;"><strong>{{ total_new }}</strong> новых сигнал{{ total_new|pluralize:"," }} за последние 7 дней</p>
+                                        {% if open_disputes %}
+                                        <p style="margin: 8px 0 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #92400E;">Открытых диспутов по рейтингу: {{ open_disputes }}</p>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            </table>
 
-        <h3 style="margin-bottom: 4px;">По источникам</h3>
-        {% for source, count in by_source.items %}
-        <div class="source-row">
-            <span>{{ source }}</span>
-            <span><strong>{{ count }}</strong></span>
-        </div>
-        {% endfor %}
+                            <p style="margin: 0 0 6px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; font-weight: 700; color: #18181B;">По источникам</p>
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 20px;">
+                                {% for source, count in by_source.items %}
+                                <tr>
+                                    <td style="padding: 6px 0; border-bottom: 1px solid #F0F0F2; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #3F3F46;">{{ source }}</td>
+                                    <td align="right" style="padding: 6px 0; border-bottom: 1px solid #F0F0F2; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; font-weight: 700; color: #18181B;">{{ count }}</td>
+                                </tr>
+                                {% endfor %}
+                            </table>
 
-        {% if top_flags %}
-        <h3 style="margin-top: 24px; margin-bottom: 4px;">Самое подозрительное</h3>
-        {% for flag in top_flags %}
-        <div class="flag-row">
-            <span class="flag-score">{{ flag.score|floatformat:2 }}</span>
-            · {{ flag.get_source_display }}
-            {% if flag.user %}· {{ flag.user.username }}{% elif flag.content_object %}· {{ flag.content_object }}{% endif %}
-            <div style="color: #666; margin-top: 4px;">{{ flag.human_summary.explanation }}</div>
-        </div>
-        {% endfor %}
-        {% endif %}
+                            {% if top_flags %}
+                            <p style="margin: 0 0 6px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; font-weight: 700; color: #18181B;">Самое подозрительное</p>
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 20px;">
+                                {% for flag in top_flags %}
+                                <tr>
+                                    <td style="padding: 10px 0; border-bottom: 1px solid #F0F0F2;">
+                                        <p style="margin: 0 0 4px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #18181B;">
+                                            <strong style="color: #B45309;">{{ flag.score|floatformat:2 }}</strong>
+                                            · {{ flag.get_source_display }}
+                                            {% if flag.user %}· {{ flag.user.username }}{% elif flag.content_object %}· {{ flag.content_object }}{% endif %}
+                                        </p>
+                                        <p style="margin: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #71717A;">{{ flag.human_summary.explanation }}</p>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </table>
+                            {% endif %}
 
-        <p style="color: #666; font-size: 13px; margin-top: 20px;">
-            Большинство сигналов не требуют действия: пороги самокалибруются,
-            а расхождение со статистикой КФФ уже скорректировано автоматически.
-            Загляните только если что-то из списка выше выглядит подозрительно.
-        </p>
-
-        <p style="text-align: center; margin-top: 20px;">
-            <a href="{{ site_url }}/staff/dashboard/antifraud/" class="btn">Открыть очередь</a>
-        </p>
-    </div>
+                            <p style="margin: 0 0 24px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; line-height: 1.6; color: #A1A1AA;">
+                                Большинство сигналов не требуют действия: пороги самокалибруются, а расхождение со статистикой КФФ уже скорректировано автоматически. Загляните только если что-то из списка выше выглядит подозрительно.
+                            </p>
+                            {% include "emails/partials/_button.html" with button_url=site_url|add:"/staff/dashboard/antifraud/" button_label="Открыть очередь" button_color="#B45309" %}
+                        </td>
+                    </tr>
+                    {% include "emails/partials/_footer.html" %}
+                </table>
+            </td>
+        </tr>
+    </table>
 </body>
 </html>
