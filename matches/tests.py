@@ -221,7 +221,13 @@ class MatchListViewEvaluatedFilterTests(TestCase):
         return {m.id for m in response.context["matches"]}
 
     def test_returns_only_matches_completed_by_current_user(self):
-        self.client.login(username="voter", password="x")
+        # force_login() вместо login(username=..., password=...): django-axes
+        # (AxesBackend, см. dopx/settings.py::AUTHENTICATION_BACKENDS) требует
+        # объект request в authenticate() при обычном логине через
+        # client.login() и падает AxesBackendRequestParameterRequired —
+        # тот же фикс, что уже применён в events/tests.py и остальных
+        # test-файлах проекта.
+        self.client.force_login(self.user)
         response = self.client.get(reverse("matches:list"), {"status": "evaluated"})
         self.assertEqual(self._ids(response), {self.evaluated_by_me.id})
 
@@ -229,12 +235,12 @@ class MatchListViewEvaluatedFilterTests(TestCase):
         """Начатая, но не завершённая сессия — не должна попадать в список,
         как и на самой странице профиля (recent_evaluations фильтрует
         status='completed')."""
-        self.client.login(username="voter", password="x")
+        self.client.force_login(self.user)
         response = self.client.get(reverse("matches:list"), {"status": "evaluated"})
         self.assertNotIn(self.abandoned_by_me.id, self._ids(response))
 
     def test_other_users_evaluations_not_leaked(self):
-        self.client.login(username="voter", password="x")
+        self.client.force_login(self.user)
         response = self.client.get(reverse("matches:list"), {"status": "evaluated"})
         self.assertNotIn(self.evaluated_by_other.id, self._ids(response))
 
