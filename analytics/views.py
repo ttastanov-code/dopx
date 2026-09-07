@@ -1,6 +1,7 @@
 # analytics/views.py — приёмник клиентских событий (sendBeacon)
 from __future__ import annotations
 
+from drf_spectacular.utils import extend_schema
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle
@@ -35,6 +36,13 @@ class TrackClientEventView(APIView):
     authentication_classes = []
     throttle_classes = [ClientEventThrottle]
 
+    @extend_schema(exclude=True)
+    # exclude=True — не GenericAPIView, request.data произвольный, никакого
+    # публичного контракта нет (эндпоинт дергает только static/js/analytics.js
+    # через sendBeacon). Без этой аннотации drf-spectacular не мог угадать
+    # сериализатор и падал в WARNING (drf_spectacular.W002), который CI
+    # ("Django deploy-чеклист под ПРОД-настройками") валит через
+    # `manage.py check --deploy --fail-level WARNING`.
     def post(self, request):
         event_name = request.data.get("event_name")
         # Allow-list: EventName.choices на модели НЕ проверяется Django на
