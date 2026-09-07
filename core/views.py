@@ -730,6 +730,63 @@ class MatchShareCardView(View):
         return redirect(default_storage.url(path))
 
 
+class MatchDNAShareCardView(View):
+    """
+    /share/match/<uuid:match_id>/dna-card.png — "ДНК матча" фаза 2
+    (docs/adr/0033-match-dna-phase2.md): отдельная карточка от
+    MatchShareCardView выше (та — счёт+топ-игрок для og:image ссылки), эта —
+    контент секции "ДНК матча" самой (drama/герой/самый заметный факт),
+    предназначена под прямой шеринг картинки (см. кнопку "Поделиться" на
+    templates/matches/detail.html — Web Share API на URL этой вьюхи).
+
+    404, если по матчу ещё нет ни одного голоса (то же условие, что
+    matches/services.py::build_match_dna использует, чтобы не рендерить
+    пустую секцию на странице матча) — карточку про несуществующие данные
+    шерить нечего.
+    """
+
+    def get(self, request, match_id):
+        from matches.services import build_match_dna
+        from core.services.share_cards import build_match_dna_share_card
+
+        match = get_object_or_404(
+            Match.objects.select_related("home_team", "away_team"), pk=match_id
+        )
+        match_agg = getattr(match, "aggregate", None)
+        if match_agg is None or match_agg.total_votes == 0:
+            raise Http404("Нет голосов по этому матчу")
+
+        events = list(match.events.select_related("player").order_by("minute")[:20])
+        referee_agg = match.referee_aggregates.first()
+        top_players = list(
+            PlayerMatchAggregate.objects.filter(match=match, total_votes__gte=1)
+            .select_related("player").order_by("-performance_score")[:1]
+        )
+        match_dna = build_match_dna(match, match_agg, events, referee_agg, top_players=top_players)
+        if match_dna is None:
+            raise Http404("Нет голосов по этому матчу")
+
+        # Приоритет "самого заметного факта" карточки — то же, в каком
+        # порядке эти строки идут на самой странице матча (см.
+        # templates/matches/detail.html): спорный эпизод заметнее общей
+        # фразы про расхождение мнений, та — заметнее переломного момента.
+        headline = (
+            match_dna["controversial_episode"]
+            or match_dna["referee_divergence"]
+            or match_dna["turning_point_text"]
+        )
+        hero = match_dna["hero"]
+
+        path = build_match_dna_share_card(
+            home_team=match.home_team.name, away_team=match.away_team.name,
+            home_score=match.home_score or 0, away_score=match.away_score or 0,
+            drama_level=match_dna["drama_level"], drama_index=match_dna["drama_index"],
+            hero_name=str(hero["player"]) if hero else "", hero_score=hero["score"] if hero else None,
+            headline=headline,
+        )
+        return redirect(default_storage.url(path))
+
+
 class StreakShareCardView(View):
     """
     /share/streak/<username>/<streak_type>/card.png — карточка серии

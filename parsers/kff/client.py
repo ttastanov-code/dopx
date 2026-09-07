@@ -23,12 +23,41 @@
    в стену за один прогон каждые 2 минуты, что могло только продлевать/
    ужесточать временный бан. Теперь после порога подряд идущих отказов
    клиент poднимает исключение и прогон останавливается сразу.
+
+БАГ, КОТОРЫЙ ТУТ БЫЛ (найден пользователем, 2026-09-07: "каждый понедельник
+у нас падает парсер" — понедельник = день после игрового уикенда, самый
+большой всплеск матчей на синк за раз). Счётчик подряд идущих неудач
+(_consecutive_failures) раньше жил В ЭКЗЕМПЛЯРЕ клиента — а
+parsers/kff/pipeline.py::_import_full_match_locked создаёт СВОЙ НОВЫЙ
+KFFClient() на КАЖДЫЙ матч. Итог: "порог" на самом деле защищал не хост
+целиком, а только ОДИН матч за раз — sync_recent_matches (10 матчей) могла
+сделать до 5 неудач × 10 матчей = 50 ударов по уже заблокировавшему нас
+хосту за один прогон, прежде чем хоть что-то остановится, ровно то
+поведение, от которого circuit breaker должен был защищать. Плюс сам
+sync_recent_matches (parsers/tasks.py) ловил КЛАССОМ Exception (не
+KFFAPICircuitBreakerOpen отдельно) и просто переходил к следующему матчу —
+то же самое "продолжаем долбить" на уровне вызывающего кода, тот же паттерн
+бага, что уже чинили для update_match_statuses 2026-09-01 (см. except
+KFFAPICircuitBreakerOpen там), просто на этот раз забыли применить и здесь,
+и в sync_season.
+
+Фикс — состояние breaker'а переехало из self._consecutive_failures (атрибут
+экземпляра) в Django cache (общий для ВСЕХ экземпляров клиента, ВСЕХ
+матчей, ВСЕХ задач Celery, включая соседний воркер): пока действует
+cooldown (CIRCUIT_BREAKER_COOLDOWN_SECONDS после срабатывания), _get() даже
+не пытается сделать запрос — сразу поднимает исключение. Это именно
+"дать хосту остыть", а не "сразу же продолжить долбить каждые 2 минуты",
+что раньше и превращало один плохой прогон в блокировку на весь день.
+sync_recent_matches и sync_season теперь тоже ловят KFFAPICircuitBreakerOpen
+отдельно и обрывают цикл (см. parsers/tasks.py, parsers/kff/pipeline.py).
 """
 import random
 import requests
 import time
 import logging
 from typing import List, Dict, Optional, Any
+
+from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +80,22 @@ class KFFClient:
     # Порог ПОДРЯД идущих полных неудач (после всех ретраев внутри _get) —
     # см. докстринг модуля, пункт 3.
     CIRCUIT_BREAKER_THRESHOLD = 5
+
+    # Состояние breaker'а — в Django cache (Redis), НЕ в self, см. докстринг
+    # модуля ("БАГ, КОТОРЫЙ ТУТ БЫЛ" про понедельники): общее на все
+    # экземпляры клиента, все матчи одного прогона и все воркеры Celery.
+    CIRCUIT_BREAKER_FAILURES_CACHE_KEY = "kff_api:circuit_breaker:consecutive_failures"
+    CIRCUIT_BREAKER_COOLDOWN_CACHE_KEY = "kff_api:circuit_breaker:cooldown"
+    # Если давно не было НИ ОДНОЙ неудачи подряд, счётчик не должен жить
+    # вечно — иначе через неделю одна случайная неудача сразу срабатывала бы
+    # как "5-я подряд". 10 минут — заведомо больше, чем длится один прогон
+    # любой из periodic-задач (см. CELERY_BEAT_SCHEDULE).
+    CIRCUIT_BREAKER_FAILURES_TTL_SECONDS = 10 * 60
+    # Сколько "остывает" хост после срабатывания, прежде чем клиент вообще
+    # попробует ещё раз — без этого celery-beat (update-live-matches каждые
+    # 2 минуты) снова долбил бы API через 2 минуты после только что
+    # сработавшего breaker'а, не давая временной блокировке кфф пройти.
+    CIRCUIT_BREAKER_COOLDOWN_SECONDS = 15 * 60
 
     BASE_URL = "https://kffleague.kz"
     API_URL = "https://kffleague.kz/api/v1"
@@ -99,10 +144,9 @@ class KFFClient:
                 "Sec-Fetch-Mode": "cors",
                 "Sec-Fetch-Site": "same-origin",
             })
-        # Circuit breaker — счётчик ПОДРЯД идущих полных неудач _get() (после
-        # исчерпания внутренних ретраев). Сбрасывается любым успехом. См.
-        # докстринг модуля.
-        self._consecutive_failures = 0
+        # Circuit breaker больше НЕ хранится на self — см. докстринг модуля
+        # ("БАГ, КОТОРЫЙ ТУТ БЫЛ" про понедельники) и CIRCUIT_BREAKER_*_CACHE_KEY
+        # выше: состояние в Django cache, общее на все экземпляры.
 
     @staticmethod
     def _make_session():
@@ -121,10 +165,13 @@ class KFFClient:
 
     def _get(self, endpoint: str, params: Optional[Dict] = None, retries: int = 3) -> Optional[Dict]:
         """GET-запрос с повторами + джиттером + circuit breaker (см. докстринг модуля)."""
-        if self._consecutive_failures >= self.CIRCUIT_BREAKER_THRESHOLD:
+        # Cooldown активен — хост уже недавно забанил нас, даже не пробуем
+        # (ни этот запрос, ни ретраи внутри него). Проверяем ПЕРЕД счётчиком
+        # неудач: пока cooldown не истёк, вообще не хотим трогать сеть.
+        if cache.get(self.CIRCUIT_BREAKER_COOLDOWN_CACHE_KEY):
             raise KFFAPICircuitBreakerOpen(
-                f"{self._consecutive_failures} подряд идущих неудачных запросов к KFF API — "
-                f"похоже на блокировку хоста, а не проблему одного эндпоинта. Прерываю прогон."
+                "Cooldown после срабатывания circuit breaker ещё активен — "
+                "не делаю запросов к KFF API, даю хосту 'остыть'."
             )
 
         url = f"{self.API_URL}{endpoint}"
@@ -141,7 +188,9 @@ class KFFClient:
 
                 try:
                     result = response.json()
-                    self._consecutive_failures = 0
+                    # Сбрасываем счётчик подряд идущих неудач любым успехом —
+                    # общий на все экземпляры/матчи/задачи (см. докстринг класса).
+                    cache.delete(self.CIRCUIT_BREAKER_FAILURES_CACHE_KEY)
                     # Джиттер вместо фиксированной паузы — см. докстринг
                     # модуля, пункт 2 (робот с идеально ровным интервалом
                     # между запросами сам по себе поведенческий сигнал).
@@ -149,7 +198,7 @@ class KFFClient:
                     return result
                 except ValueError as e:
                     logger.error(f"JSON decode error: {e} | {url}")
-                    self._consecutive_failures += 1
+                    self._register_failure()
                     return None
 
             except Exception as e:
@@ -160,8 +209,31 @@ class KFFClient:
                 if attempt < retries - 1:
                     time.sleep(2 * (attempt + 1))
 
-        self._consecutive_failures += 1
+        self._register_failure()
         return None
+
+    def _register_failure(self) -> None:
+        """Увеличивает ОБЩИЙ (cache-based) счётчик подряд идущих неудач
+        _get() и, при достижении порога, включает cooldown + поднимает
+        KFFAPICircuitBreakerOpen. См. докстринг модуля/класса про то, почему
+        это больше не self._consecutive_failures."""
+        failures = (cache.get(self.CIRCUIT_BREAKER_FAILURES_CACHE_KEY) or 0) + 1
+        cache.set(
+            self.CIRCUIT_BREAKER_FAILURES_CACHE_KEY, failures,
+            timeout=self.CIRCUIT_BREAKER_FAILURES_TTL_SECONDS,
+        )
+        if failures >= self.CIRCUIT_BREAKER_THRESHOLD:
+            cache.set(
+                self.CIRCUIT_BREAKER_COOLDOWN_CACHE_KEY, "1",
+                timeout=self.CIRCUIT_BREAKER_COOLDOWN_SECONDS,
+            )
+            cache.delete(self.CIRCUIT_BREAKER_FAILURES_CACHE_KEY)
+            raise KFFAPICircuitBreakerOpen(
+                f"{failures} подряд идущих неудачных запросов к KFF API — "
+                f"похоже на блокировку хоста, а не проблему одного эндпоинта. "
+                f"Прерываю прогон и включаю cooldown на "
+                f"{self.CIRCUIT_BREAKER_COOLDOWN_SECONDS // 60} мин."
+            )
     
     def get_tournament_seasons(self, tournament_code: str = None) -> List[Dict]:
         """Получает список сезонов для конкретного турнира через frontend_code"""

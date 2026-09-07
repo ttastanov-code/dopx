@@ -32,7 +32,17 @@ match-detail.css): hero-баннер для шапки, timeline для собы
     <!-- === MATCH HERO (live-поллинг счёта/статуса — см. _match_header.html) === -->
     {% include 'matches/_match_header.html' %}
 
-    <!-- === ДВЕ КОЛОНКИ (min-w-0 обязательно!) === -->
+    <!-- === ДВЕ КОЛОНКИ (min-w-0 обязательно!) ===
+         ИСПРАВЛЕНО (2026-09-07): раньше здесь была плоская CSS grid-сетка
+         из 11 карточек с `order`/`col-start` на каждой — сломала десктоп
+         (огромные пустые блоки из-за синхронизации строк grid между
+         колонками разной высоты, см. подробный докстринг в
+         templates/matches/_match_dna_card.html). Вернул простые
+         независимые block-колонки со `space-y-*`, как было изначально.
+         "ДНК матча" вынесена в отдельный partial и включена ДВАЖДЫ (по
+         разу в каждую колонку, показывается только одна копия через
+         `lg:hidden`/`hidden lg:block`) — так карточка стоит в разных
+         местах DOM на мобильном и десктопе без поломки высоты колонок. -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4 lg:gap-6 min-w-0 w-full">
         <!-- === ЛЕВАЯ КОЛОНКА (2/3) === -->
         <div class="lg:col-span-2 space-y-3 sm:space-y-4 lg:space-y-6 min-w-0">
@@ -180,6 +190,14 @@ match-detail.css): hero-баннер для шапки, timeline для собы
                 </div>
             </div>
 
+            <!-- === ДНК МАТЧА (мобильная копия) ===
+                 Фаза 1 (docs/PRODUCT_SCOPE_MATCH_DNA_AND_EXPLAINABILITY.md,
+                 docs/adr/0028-match-dna-phase1.md). На мобильном стоит тут
+                 же, где стояла исторически — сразу после "События матча".
+                 На десктопе (lg:) скрыта — вместо неё видна вторая копия
+                 в правой колонке, см. ниже и docstring в partial. -->
+            {% include 'matches/_match_dna_card.html' with extra_class="lg:hidden" %}
+
             <!-- === ТОП ИГРОКИ === -->
             {% if top_players %}
             <div class="md-side-card">
@@ -269,6 +287,13 @@ match-detail.css): hero-баннер для шапки, timeline для собы
                 </div>
             </div>
             {% endif %}
+
+            <!-- === ДНК МАТЧА (десктопная копия) ===
+                 На десктопе (lg:) стоит здесь, между "За кого болели" и
+                 "Оценки команд" — так просил пользователь. На мобильном
+                 скрыта (её показывает первая копия в левой колонке, см.
+                 её комментарий выше и docstring в partial). -->
+            {% include 'matches/_match_dna_card.html' with extra_class="hidden lg:block" %}
 
             <!-- === ОЦЕНКИ КОМАНД === -->
             {% if home_team_evals.total or away_team_evals.total %}

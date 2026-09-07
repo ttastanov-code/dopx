@@ -118,11 +118,58 @@ def build_content_feed(partner: Partner, request: HttpRequest, *, limit: int = 1
     return items
 
 
-def track_partner_feed_access(partner: Partner, request: HttpRequest) -> None:
+def track_partner_feed_access(partner: Partner, request: HttpRequest, *, feed_type: str = "content") -> None:
+    """:param feed_type: 'content' (build_content_feed, готовые PNG-карточки)
+    или 'mood_index' (build_mood_index_feed, см. ниже) — один event_name,
+    различаем через properties, тот же принцип, что PREDICTION_MADE (см.
+    докстринг EventName) — не плодим каталог событий ради v1-фичи."""
     track_event(
         EventName.PARTNER_FEED_ACCESSED, request=request,
-        properties={"partner_slug": partner.slug},
+        properties={"partner_slug": partner.slug, "feed_type": feed_type},
     )
+
+
+def build_mood_index_feed(partner: Partner, team, season) -> dict:
+    """
+    "Индекс настроения клуба" — B2B v1 (docs/adr/0034-club-mood-index-v2.md,
+    раздел B2B): ТОТ ЖЕ анонимизированный агрегат, что уже показывается на
+    публичной странице команды (teams/services.py::compute_mood_series,
+    find_season_controversial_matches) — никаких новых вычислений и никаких
+    данных на уровне пользователя (ни одного user_id/username в структуре
+    ниже, только числа и названия команд/матчей).
+
+    СОЗНАТЕЛЬНО НЕ полноценный B2B-продукт: нет отдельной модели тарифов,
+    контракта доступа сверх уже существующего Partner.feed_token, лимитов
+    запросов сверх общего рейт-лимита партнёрских эндпоинтов. Это тот же
+    принцип, что `build_content_feed` выше — готовый, работающий срез
+    данных для реального партнёра уже сегодня, а не спроектированная
+    заранее, но ещё не нужная инфраструктура биллинга/контрактов (эти
+    решения — бизнесовые, не решаются кодом за продукт).
+    """
+    from teams.services import build_sparkline_points, compute_mood_series, find_season_controversial_matches
+
+    series = compute_mood_series(team)
+    controversial = find_season_controversial_matches(team, season) if season else []
+    return {
+        "team": team.name,
+        "season": season.year if season else None,
+        "mood_series": [
+            {
+                "date": point["label"],
+                "opponent": point["opponent"],
+                "trust": point["trust"],
+                "mood": point["mood"],
+                "expectation_pct": point["expectation_pct"],
+            }
+            for point in series
+        ],
+        "trust_sparkline_points": build_sparkline_points(series, "trust", value_max=10.0),
+        "mood_sparkline_points": build_sparkline_points(series, "mood", value_max=10.0),
+        "controversial_matches": [
+            {"label": item["label"], "gap": item["gap"], "date": item["date"].isoformat()}
+            for item in controversial
+        ],
+    }
 
 
 def track_widget_embed_view(*, widget_type: str, entity_id: str, request: HttpRequest) -> None:

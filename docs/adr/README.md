@@ -65,7 +65,7 @@
 | [0003](0003-deploy-migrate-as-explicit-step.md) | Миграции как отдельный, видимый шаг деплоя | Accepted |
 | [0004](0004-live-updates-sse-migration-plan.md) | План перехода live-страниц с поллинга на SSE | Accepted (план) |
 | [0005](0005-anti-noise-touched-tracking.md) | Анти-шум: отслеживание "тронутых" ползунков в вайзарде оценки | Accepted |
-| [0006](0006-quick-full-evaluation-mode.md) | Режим оценки "Быстро/Подробно" в вайзарде | Accepted |
+| [0006](0006-quick-full-evaluation-mode.md) | Режим оценки "Быстро/Подробно" в вайзарде | Accepted (дефолт изменён — см. addendum и 0031) |
 | [0007](0007-kff-importer-status-and-timing-fixes.md) | KFF-импорт: статус "Перенесён" и таймер голосования | Accepted |
 | [0008](0008-kff-import-defensive-guards.md) | KFF-импорт: защита исторических данных от повторного синка | Accepted |
 | [0009](0009-stats-divergence-antibrigading-signal.md) | Анти-бригадинг: расхождение с объективной статистикой KFF | Accepted |
@@ -86,3 +86,11 @@
 | [0024](0024-profile-stats-ratings-vs-matches.md) | Профиль: "Оценок" и "Матчей" — разные метрики | Accepted |
 | [0025](0025-remove-cdn-dependencies.md) | Убрать рантайм-зависимость от cdn.jsdelivr.net | Accepted (план подготовлен, активация — см. чеклист) |
 | [0026](0026-rating-explainability-sample-size.md) | Видимость размера выборки в рейтингах игроков | Accepted |
+| [0027](0027-lock-evaluation-identity-fields-on-update.md) | Identity-поля оценок нельзя менять после создания (PATCH) | Accepted |
+| [0028](0028-match-dna-phase1.md) | "ДНК матча", фаза 1 (текстовая секция) | Accepted |
+| [0029](0029-club-mood-index-mvp.md) | Индекс настроения клуба: MVP тренд-бейдж | Accepted |
+| [0030](0030-rich-squad-explanation.md) | "Почему он в сборной?": обогащённое пояснение слота | Accepted |
+| [0031](0031-quick-mode-primary-flow.md) | Быстрый режим как основной сценарий оценки (дефолт + пикер лучший/худший + пресеты на "Оценке матча") | Accepted |
+| [0032](0032-squad-explainability-v2.md) | "Почему он в сборной?" v2: ближайший конкурент и rank_change тура | Accepted |
+| [0033](0033-match-dna-phase2.md) | Match DNA, фаза 2: герой матча, спорный эпизод, консенсус, шаринг | Accepted |
+| [0034](0034-club-mood-index-v2.md) | Индекс настроения клуба v2: time series, доверие, ожидания, B2B | Accepted |

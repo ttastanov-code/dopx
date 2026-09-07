@@ -198,6 +198,19 @@ def _wrap_text(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFon
     return lines[:max_lines]
 
 
+def _fit_single_line(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont, max_width: int) -> str:
+    """Однострочный аналог `_wrap_text` — обрезает с многоточием, если текст
+    не влезает в `max_width` целиком, вместо переноса. Нужен для `@username`
+    на карточке серии (`build_streak_share_card`): произвольной длины ник не
+    должен наезжать на бренд-марку слева или вылезать за правый край."""
+    if draw.textlength(text, font=font) <= max_width:
+        return text
+    trimmed = text
+    while trimmed and draw.textlength(trimmed + "…", font=font) > max_width:
+        trimmed = trimmed[:-1]
+    return (trimmed + "…") if trimmed else "…"
+
+
 def _mix_rgb(c1: tuple[int, int, int], c2: tuple[int, int, int], t: float) -> tuple[int, int, int]:
     """Линейная интерполяция между двумя RGB-цветами, t в [0, 1]."""
     return tuple(int(c1[i] + (c2[i] - c1[i]) * t) for i in range(3))  # type: ignore[return-value]
@@ -535,6 +548,63 @@ def _load_custom_badge_background(rarity: str) -> tuple[Image.Image, float] | No
     return _cover_resize(img, BADGE_CARD_SIZE), mtime
 
 
+def _cover_resize_right(img: Image.Image, target_size: tuple[int, int]) -> Image.Image:
+    """
+    То же самое, что `_cover_resize`, но обрезка НЕ по центру, а с привязкой
+    к ПРАВОМУ краю — для фонов серий (см. `_load_streak_background` ниже:
+    `prediction_strick.png`/`evaluation_strick.png`, 2026-09-07). Оба фона —
+    широкие AI-баннеры с ключевой иллюстрацией (растущий график/стадион-
+    голограмма), прижатой к правому краю, и почти сплошной чёрной левой
+    половиной под текст. Центральный кроп `_cover_resize` срезал бы кусок
+    именно с ПРАВОГО края (там, где содержимое) при кадрировании 2000x745 в
+    1200x630 — с привязкой вправо в кадр всегда попадает вся иллюстрация
+    целиком, а обрезается только лишний чёрный фон слева, который и так
+    визуально пуст.
+    """
+    src_w, src_h = img.size
+    target_w, target_h = target_size
+    scale = max(target_w / src_w, target_h / src_h)
+    new_w, new_h = round(src_w * scale), round(src_h * scale)
+    resized = img.resize((new_w, new_h), Image.LANCZOS)
+    left = new_w - target_w
+    top = (new_h - target_h) // 2
+    return resized.crop((left, top, left + target_w, top + target_h))
+
+
+# Фоны карточек серий (2026-09-07, продуктовый запрос: "добавил
+# prediction_strick.png и evaluation_strick.png в static/img/badge-cards,
+# нужно сделать карточки поверх этого дизайна, чтобы текст не сливался и
+# выглядело премиально") — та же папка и тот же принцип отказоустойчивости
+# (файла нет → тихий None → `build_streak_share_card` откатывается на
+# плоский тёмный фон), что `_load_custom_badge_background` для достижений.
+# Имена файлов — опечатка пользователя ("strick" вместо "streak"), но это
+# просто имя файла на диске, а не публичный API — оставлено как есть,
+# чтобы не заставлять пользователя переименовывать уже загруженные ассеты.
+STREAK_CARD_BACKGROUNDS = {
+    "prediction": "prediction_strick.png",
+    "evaluation": "evaluation_strick.png",
+}
+
+
+def _load_streak_background(streak_type: str) -> tuple[Image.Image, float] | None:
+    """:return: пара (готовый фон CARD_SIZE, mtime файла) или `None`, если
+    файла нет на диске. mtime — часть кэш-ключа карточки, тот же смысл, что
+    у `_load_custom_badge_background`: замена PNG на новый вариант не должна
+    обслуживаться из кэша со старой картинкой."""
+    filename = STREAK_CARD_BACKGROUNDS.get(streak_type)
+    if not filename:
+        return None
+    path = BADGE_CARD_BACKGROUNDS_DIR / filename
+    if not path.exists():
+        return None
+    try:
+        img = Image.open(path).convert("RGB")
+        mtime = path.stat().st_mtime
+    except OSError:
+        return None
+    return _cover_resize_right(img, CARD_SIZE), mtime
+
+
 def build_match_share_card(
     *, home_team: str, away_team: str, home_score: int, away_score: int,
     top_player_name: str, top_player_score: float,
@@ -565,12 +635,78 @@ def build_match_share_card(
     return relative_path
 
 
+def build_match_dna_share_card(
+    *, home_team: str, away_team: str, home_score: int, away_score: int,
+    drama_level: str, drama_index: float, hero_name: str, hero_score: float | None,
+    headline: str,
+) -> str:
+    """
+    "ДНК матча" — фаза 2 шеринга (docs/adr/0033-match-dna-phase2.md):
+    отдельная от `build_match_share_card` карточка (та осталась og:image
+    ссылки на страницу матча со счётом+топ-игроком), эта — контент самой
+    секции "ДНК матча" (drama_level/герой/самый заметный факт секции —
+    controversial_episode, иначе turning_point_text, иначе referee_divergence,
+    выбор — в вызывающей стороне, core/views.py::MatchDNAShareCardView, а
+    не здесь, чтобы функция генерации карточки не знала о приоритете полей
+    match_dna).
+
+    :param headline: одна строка — то, ради чего карточку хочется переслать
+        (спорный эпизод / переломный момент / расхождение мнений о судействе),
+        уже выбранная и обрезанная вызывающей стороной. Может быть пустой,
+        если по матчу есть только базовые drama_index/hero — карточка всё
+        равно валидна без неё.
+    :return: относительный путь в MEDIA к готовому PNG.
+    """
+    drama_label = {"high": "Высокая драма", "medium": "Средняя драма", "low": "Спокойный матч"}.get(drama_level, "")
+    hero_label = f"{hero_name} — {hero_score:.1f}/10" if hero_name and hero_score is not None else ""
+
+    key = _cache_key(
+        home_team, away_team, str(home_score), str(away_score),
+        drama_level, str(drama_index), hero_name, str(hero_score), headline,
+    )
+    relative_path = f"share-cards/match_dna_{key}.png"
+    if default_storage.exists(relative_path):
+        return relative_path
+
+    img = Image.new("RGB", CARD_SIZE, color="#0a0a0a")
+    draw = ImageDraw.Draw(img)
+    font_brand = _font("bold", 34)
+    font_title = _font("bold", 44)
+    font_score = _font("bold", 30)
+    font_label = _font("regular", 24)
+    font_small = _font("regular", 22)
+
+    draw.text((60, 50), "DOPX — ДНК матча", font=font_brand, fill="#a78bfa")
+    draw.text((60, 130), f"{home_team} {home_score}:{away_score} {away_team}", font=font_title, fill="#ffffff")
+
+    accent = {"high": "#f87171", "medium": "#fbbf24", "low": "#a3a3a3"}.get(drama_level, "#a3a3a3")
+    if drama_label:
+        draw.text((60, 220), f"{drama_label} · индекс {drama_index:.0f}", font=font_score, fill=accent)
+    if hero_label:
+        draw.text((60, 275), f"Герой матча: {hero_label}", font=font_label, fill="#60a5fa")
+
+    if headline:
+        headline_lines = _wrap_text(draw, headline, font_label, CARD_SIZE[0] - 120, max_lines=3)
+        hy = 350
+        for line in headline_lines:
+            draw.text((60, hy), line, font=font_label, fill="#e5e5e5")
+            hy += 34
+
+    draw.text((60, CARD_SIZE[1] - 50), "Голос трибун измеряем — dopx.kz", font=font_small, fill="#737373")
+
+    buffer = BytesIO()
+    img.save(buffer, format="PNG", optimize=True)
+    buffer.seek(0)
+    default_storage.save(relative_path, buffer)
+    return relative_path
+
+
 def build_streak_share_card(*, username: str, streak_type: str, streak_count: int) -> str:
     """
-    Retention loop "Серии" (2026-08-21, подписи ПЕРЕСМОТРЕНЫ 2026-08-31) —
-    карточка серии для шеринга в соцсети, тот же кэш-по-хэшу принцип, что у
-    двух функций выше. :param streak_type: 'evaluation' | 'prediction' —
-    подпись и цвет акцента РАЗНЫЕ и по смыслу, не только по цвету:
+    Retention loop "Серии" — карточка серии для шеринга в соцсети, тот же
+    кэш-по-хэшу принцип, что у остальных функций модуля. :param streak_type:
+    'evaluation' | 'prediction' — подпись и цвет акцента РАЗНЫЕ и по смыслу,
+    не только по цвету:
 
     - 'evaluation': "туров подряд" — evaluation_streak считается по турам
       чемпионата, а не по дням (см. докстринг User.evaluation_streak,
@@ -581,39 +717,131 @@ def build_streak_share_card(*, username: str, streak_type: str, streak_count: in
       докстринг User.prediction_streak) — "N дней подряд" тут вводило бы в
       заблуждение (можно прогнозировать каждый день и всегда ошибаться).
 
+    ПЕРЕДЕЛАНО 2026-09-07 (продуктовый запрос: добавлены AI-фоны
+    `static/img/badge-cards/prediction_strick.png` и `evaluation_strick.png`
+    — "нужно сделать карточки поверх этого дизайна, чтобы текст не сливался
+    и выглядело премиально"; первая версия ниже была плоским тёмным фоном с
+    текстом без всякой подложки под легибильность). Композиция и приёмы
+    легибильности переиспользуют premium-паттерн `build_badge_share_card`
+    (`_edge_vignette` + `_legibility_scrim` + `_shadow_text`/
+    `_shadow_tracked_text`, шрифты `_badge_font`), а не более простой стиль
+    остальных OG-карточек этого модуля — задача явно сформулирована как
+    "премиально", тот же уровень полировки, что уже был одобрен для
+    карточки достижения. `_load_streak_background` отказоустойчиво (см. её
+    докстринг): если PNG удалят с диска, карточка молча откатится на
+    плоский тёмный фон вместо падения.
+
     :return: относительный путь в MEDIA к готовому PNG.
     """
     if streak_type == "evaluation":
-        label_line1, label_line2 = "туров подряд", "оценили матч"
+        eyebrow, label_line1, label_line2 = "СЕРИЯ ОЦЕНОК", "туров подряд", "оценили матч"
+        accent = (96, 165, 250)  # #60a5fa
     else:
-        label_line1, label_line2 = "прогнозов подряд", "угадали исход"
-    accent = "#60a5fa" if streak_type == "evaluation" else "#a78bfa"
+        eyebrow, label_line1, label_line2 = "СЕРИЯ ПРОГНОЗОВ", "прогнозов подряд", "угадали исход"
+        accent = (167, 139, 250)  # #a78bfa
 
-    key = _cache_key(username, streak_type, str(streak_count))
+    custom_bg = _load_streak_background(streak_type)
+    # mtime готового фона — часть кэш-ключа, тот же смысл, что у
+    # build_badge_share_card::bg_marker: замена PNG на диске не должна
+    # обслуживаться из кэша со старой картинкой. "v2" — версия карточки
+    # (переход с плоского фона на premium-редизайн) — иначе уже выпущенные
+    # карточки продолжили бы отдаваться из кэша со старым видом.
+    bg_marker = f"custom-{custom_bg[1]}" if custom_bg else "flat"
+    key = _cache_key(username, streak_type, str(streak_count), "v2", bg_marker)
     relative_path = f"share-cards/streak_{key}.png"
     if default_storage.exists(relative_path):
         return relative_path
 
-    img = Image.new("RGB", CARD_SIZE, color="#0a0a0a")
-    draw = ImageDraw.Draw(img)
-    font_title = _font("bold", 40)
-    font_name = _font("bold", 46)
-    font_number = _font("bold", 160)
-    font_label = _font("regular", 32)
-    font_small = _font("regular", 22)
+    W, H = CARD_SIZE
+    MARGIN = 64
 
-    draw.text((60, 50), "DOPX", font=font_title, fill="#ffffff")
-    draw.text((60, 120), f"@{username}", font=font_name, fill="#a3a3a3")
+    if custom_bg is not None:
+        img = custom_bg[0]
+    else:
+        img = Image.new("RGB", CARD_SIZE, (10, 10, 10))
 
-    # Без emoji ("🔥") — та же причина, что в build_match_share_card: у
-    # Liberation Sans нет emoji-глифов.
+    # Та же легибильность-связка, что в build_badge_share_card: затемняем
+    # края независимо от содержимого фона, затем горизонтальный scrim
+    # (непрозрачно слева, где текст — прозрачно справа, где иллюстрация).
+    # На плоском фолбэк-фоне оба шага — не более чем no-op (фон и так
+    # однотонный), поэтому применяем их безусловно, не разветвляя код.
+    img = _edge_vignette(img, inset=36, strength=0.45)
+    scrim = _legibility_scrim(CARD_SIZE, start_alpha=235, end_fraction=0.50)
+    img = Image.alpha_composite(img.convert("RGBA"), scrim).convert("RGB")
+
+    draw = ImageDraw.Draw(img, "RGBA")
+
+    # Бренд-марка (настоящий логотип DOPX, не текст) + wordmark слева сверху —
+    # тот же элемент, что в нижней панели build_badge_share_card, здесь наверху,
+    # поскольку у этой карточки нет отдельной нижней панели.
+    font_brand = _badge_font("cond_bold", 26)
+    logo_size = 40
+    logo = _load_brand_mark(logo_size)
+    if logo is not None:
+        img_rgba = img.convert("RGBA")
+        img_rgba.alpha_composite(logo, (MARGIN, 52))
+        img = img_rgba.convert("RGB")
+        draw = ImageDraw.Draw(img, "RGBA")
+        brand_x = MARGIN + logo_size + 16
+    else:
+        brand_x = MARGIN
+    _tracked_text(draw, (brand_x, 62), "DOPX", font_brand, (240, 238, 244, 255), tracking=6)
+
+    # @username — верх справа, обрезается многоточием (_fit_single_line),
+    # если ник слишком длинный, на собственной полупрозрачной "таблетке"
+    # для гарантированной читаемости независимо от того, что там на фоне
+    # (в отличие от остального текста, эта зона не защищена scrim'ом —
+    # scrim гасит только левую часть карточки).
+    font_user = _badge_font("regular", 22)
+    user_text = _fit_single_line(draw, f"@{username}", font_user, W * 0.40)
+    uw = draw.textlength(user_text, font=font_user)
+    pad_x, pad_y = 16, 9
+    px1, py0 = W - MARGIN, 48
+    px0 = px1 - uw - pad_x * 2
+    py1 = py0 + 22 + pad_y * 2
+    draw.rounded_rectangle([px0, py0, px1, py1], radius=(py1 - py0) // 2, fill=(6, 5, 10, 140))
+    draw.text((px0 + pad_x, py0 + pad_y - 2), user_text, font=font_user, fill=(225, 223, 232, 255))
+
+    # Эйброу-лейбл ("СЕРИЯ ПРОГНОЗОВ"/"СЕРИЯ ОЦЕНОК") с подчёркиванием —
+    # тот же паттерн, что "ДОСТИЖЕНИЕ ПОЛУЧЕНО" в build_badge_share_card.
+    font_eyebrow = _badge_font("cond_bold", 20)
+    ey_y = 168
+    _shadow_tracked_text(draw, (MARGIN, ey_y), eyebrow, font_eyebrow, accent + (255,), tracking=4)
+    draw.line([(MARGIN + 2, ey_y + 34), (MARGIN + 94, ey_y + 34)], fill=accent + (255,), width=3)
+
+    # Большое число — размер шрифта уменьшается с числом цифр, а подпись
+    # стоит СТРОГО НИЖЕ числа (не сбоку), поэтому рост числа вширь при
+    # 3+ цифрах никогда не толкает подпись в иллюстрацию фона — раньше
+    # (плоский фон, число+подпись в один ряд) это было не важно, с
+    # premium-фоном справа съехавшая от числа подпись перекрывала бы
+    # график/стадион-голограмму.
+    digits = len(str(streak_count))
+    number_size = {1: 240, 2: 240, 3: 200}.get(digits, 160)
+    font_number = _badge_font("bold", number_size)
     number_text = str(streak_count)
-    draw.text((60, 240), number_text, font=font_number, fill=accent)
-    number_width = draw.textlength(number_text, font=font_number)
-    draw.text((60 + number_width + 30, 320), label_line1, font=font_label, fill="#ffffff")
-    draw.text((60 + number_width + 30, 365), label_line2, font=font_label, fill="#ffffff")
+    num_y = 222
+    _shadow_text(draw, (MARGIN, num_y), number_text, font_number, accent + (255,), shadow_alpha=190, offset=(0, 6))
+    num_bottom = draw.textbbox((MARGIN, num_y), number_text, font=font_number)[3]
 
-    draw.text((60, CARD_SIZE[1] - 50), "Голос трибун измеряем — dopx.kz", font=font_small, fill="#737373")
+    font_label = _badge_font("bold", 32)
+    label_y = num_bottom + 22
+    _shadow_text(draw, (MARGIN, label_y), label_line1, font_label, (245, 244, 248, 255), shadow_alpha=150, offset=(0, 2))
+    _shadow_text(draw, (MARGIN, label_y + 42), label_line2, font_label, (245, 244, 248, 255), shadow_alpha=150, offset=(0, 2))
+
+    # Футер — тот же "ГОЛОС ТРИБУН ИЗМЕРЯЕМ" / "DOPX.KZ" разнос по краям с
+    # разделительной линией, что в build_badge_share_card, адаптированный
+    # под ширину этой (не портретной) карточки.
+    font_footer = _badge_font("cond", 17)
+    _tracked_text(draw, (MARGIN, H - 52), "ГОЛОС ТРИБУН ИЗМЕРЯЕМ", font_footer, (170, 168, 178, 255), tracking=3)
+    kz_w = _tracked_text_width(draw, "DOPX.KZ", font_footer, tracking=3)
+    _tracked_text(draw, (W - MARGIN - kz_w, H - 52), "DOPX.KZ", font_footer, accent + (255,), tracking=3)
+    draw.line([(MARGIN, H - 64), (W - MARGIN, H - 64)], fill=(255, 255, 255, 25), width=1)
+
+    # Тонкая рамка по всему периметру — финальный штрих полировки, тот же
+    # приём, что фаска build_badge_share_card, без скругления (эта карточка
+    # служит og:image, как остальные CARD_SIZE-карточки модуля, а не
+    # шерится напрямую как самостоятельное изображение).
+    draw.rectangle([1, 1, W - 2, H - 2], outline=(255, 255, 255, 30), width=1)
 
     buffer = BytesIO()
     img.save(buffer, format="PNG", optimize=True)

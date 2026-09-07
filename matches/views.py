@@ -330,11 +330,42 @@ class MatchDetailView(DetailView):
         ).order_by('-count')[:2]
         
         # События матча
-        events = match.events.select_related('player').order_by('minute')[:20]
-        
+        events = list(match.events.select_related('player').order_by('minute')[:20])
+
+        # "ДНК матча" — фаза 1 (docs/PRODUCT_SCOPE_MATCH_DNA_AND_EXPLAINABILITY.md,
+        # docs/adr/0028-match-dna-phase1.md). referee_aggregates — единственная
+        # строка на матч (unique_together referee+match), один точечный
+        # .first() по уже отфильтрованному match.referee_aggregates, не
+        # отдельный запрос по всей таблице.
+        from matches.services import build_match_dna
+
+        referee_agg = match.referee_aggregates.first()
+        # Фаза 2 (docs/adr/0033-match-dna-phase2.md): consensus_level
+        # нужен разброс СЫРЫХ голосов, MatchAggregate его не хранит — один
+        # лёгкий точечный запрос на страницу матча (.only() — только 3
+        # нужных числовых поля, без join'ов). top_players уже посчитан выше
+        # для блока "Топ игроков матча" — передаём тот же список, не считаем
+        # заново для hero.
+        match_evaluations = list(MatchEvaluation.objects.filter(match=match).only('entertainment', 'tension', 'fairness'))
+        match_dna = build_match_dna(
+            match, match_agg, events, referee_agg,
+            match_evaluations=match_evaluations, top_players=list(top_players),
+        )
+
+        # Абсолютный URL PNG-карточки ДНК матча (только если есть что
+        # шерить — match_dna может быть None до первого голоса) — та же
+        # причина абсолютного адреса, что у og_image ниже (Web Share API
+        # ждёт полный URL, не относительный путь).
+        match_dna_share_url = (
+            self.request.build_absolute_uri(reverse('core:match_dna_share_card', args=[match.id]))
+            if match_dna else ''
+        )
+
         context.update(action_context)
         context.update({
             'match_aggregate': match_agg,
+            'match_dna': match_dna,
+            'match_dna_share_url': match_dna_share_url,
             'top_players': top_players,
             'worst_players': worst_players,
             'home_team_evals': home_team_evals,

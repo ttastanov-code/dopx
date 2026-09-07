@@ -176,19 +176,21 @@ document.addEventListener('alpine:init', () => {
         watchedType: 'full',
         attendedStadium: false,
         // evalMode — режим "Быстро/Подробно" (см.
-        // docs/adr/0006-quick-full-evaluation-mode.md), читается
+        // docs/adr/0006-quick-full-evaluation-mode.md и
+        // docs/adr/0031-quick-mode-primary-flow.md), читается
         // evaluations/views.py::EvaluateContextView.form_valid из POST
-        // ('eval_mode') и пишется в EvaluationSession.mode. Дефолт 'full' —
-        // сегодняшнее поведение, если пользователь ничего не выбрал (или
-        // JS не выполнился, тогда радио-инпут просто не рендерится
-        // визуально выбранным, но нативная разметка всё равно шлёт value
-        // по умолчанию через checked-атрибут на сервере — см. context.html).
-        evalMode: 'full',
+        // ('eval_mode') и пишется в EvaluationSession.mode. Дефолт 'quick'
+        // (с 2026-09-07) — быстрый режим теперь основной сценарий, если
+        // пользователь ничего не выбрал (или JS не выполнился, тогда
+        // радио-инпут просто не рендерится визуально выбранным, но
+        // нативная разметка всё равно шлёт value по умолчанию через
+        // checked-атрибут на сервере — см. context.html).
+        evalMode: 'quick',
         init() {
             this.supportedTeam = this.$el.dataset.supportedTeam || '';
             this.watchedType = this.$el.dataset.watchedType || 'full';
             this.attendedStadium = this.$el.dataset.attendedStadium === 'true';
-            this.evalMode = this.$el.dataset.evalMode || 'full';
+            this.evalMode = this.$el.dataset.evalMode || 'quick';
         },
     }));
 

@@ -1,473 +1,196 @@
 # matches/tests.py
 """
-Регрессионные тесты приложения `matches` — центрального приложения проекта
-(карточки матчей на главной и в списке, детальная страница матча, статус
-CTA "оценить матч"), у которого до этой сессии не было ни одного теста.
-
-Особый фокус — `MatchListView.get_queryset()`: до недавнего времени фильтр
-по статусу был построен на цепочке `if/elif`, где ветки для `postponed` и
-`cancelled` отсутствовали вовсе — GET-параметры `?status=postponed` и
-`?status=cancelled` молча проваливались в `else` и показывали ВСЕ матчи
-без разбора статуса (см. комментарий "БАГ, КОТОРЫЙ ТУТ БЫЛ" в
-matches/views.py). На момент написания этих тестов обе ветки в коде уже
-есть — ниже не столько поиск нового бага, сколько регрессионный тест,
-который заставит CI упасть, если кто-то снова "срежет" одну из веток
-статуса при рефакторинге фильтра.
-
-Второй фокус — `match_action_context()` (общий для MatchDetailView и
-live-поллинга шапки матча `match_header_partial`): именно он решает,
-показывать ли пользователю кнопку "оценить матч" — `voting_open`
-истинно, только если матч `finished` И `voting_open_until` ещё не
-наступил. Та же гейт-логика продублирована в `evaluations` (см.
-evaluations/tests.py::VotingAccessGateTests) на уровне HTTP-редиректа —
-здесь она тестируется на уровне контекста детальной страницы матча.
+Тесты matches/services.py::build_match_dna ("ДНК матча", фаза 1,
+docs/adr/0028-match-dna-phase1.md). Все функции модуля читают только
+переданные объекты — build_match_dna сам по себе не делает запросов к БД
+(это забота вызывающей стороны, MatchDetailView) — SimpleTestCase с
+SimpleNamespace вместо реальных Django-моделей, БД не нужна.
 """
 from __future__ import annotations
 
-import uuid
-from datetime import timedelta
+from types import SimpleNamespace
 
-from django.contrib.auth import get_user_model
-from django.test import TestCase
-from django.urls import reverse
-from django.utils import timezone
+from django.test import SimpleTestCase
 
-from evaluations.models import EvaluationSession
-from events.models import EventReaction, MatchEvent
-from leagues.models import League
-from matches.models import Match
-from seasons.models import Season
-from teams.models import Team
-
-User = get_user_model()
+from matches.services import (
+    _consensus_level,
+    _describe_controversial_episode,
+    _describe_hero,
+    _describe_momentum,
+    _describe_referee_divergence,
+    _describe_turning_point,
+    _drama_level,
+    build_match_dna,
+)
 
 
-# ---------------------------------------------------------------------------
-# Фабрики — тот же паттерн, что и в evaluations/tests.py::_make_match,
-# только разбит на составные части, т.к. тестам фильтров нужно создавать
-# несколько лиг/сезонов/команд в одном setUp.
-# ---------------------------------------------------------------------------
-
-def _make_league(**kwargs):
-    defaults = {"name": f"League-{League.objects.count()}", "country": "KZ"}
-    defaults.update(kwargs)
-    return League.objects.create(**defaults)
-
-
-def _make_season(league=None, **kwargs):
-    league = league or _make_league()
-    defaults = {"year": "2026"}
-    defaults.update(kwargs)
-    season, _created = Season.objects.get_or_create(league=league, **defaults)
-    return season
-
-
-def _make_team(**kwargs):
-    defaults = {"name": f"Team-{Team.objects.count()}"}
-    defaults.update(kwargs)
-    return Team.objects.create(**defaults)
-
-
-def _make_match(
-    status="scheduled",
-    start_time=None,
-    voting_open_until=None,
-    league=None,
-    season=None,
-    home_team=None,
-    away_team=None,
-    tour=None,
-    **extra,
-):
-    league = league or _make_league()
-    season = season or _make_season(league=league)
-    home_team = home_team or _make_team()
-    away_team = away_team or _make_team()
-    start_time = start_time or (timezone.now() + timedelta(days=1))
-    voting_open_until = voting_open_until or (timezone.now() + timedelta(hours=48))
-    return Match.objects.create(
-        league=league,
-        season=season,
-        home_team=home_team,
-        away_team=away_team,
-        start_time=start_time,
-        voting_open_until=voting_open_until,
-        status=status,
-        tour=tour,
-        **extra,
+def _event(minute, event_type="goal", player=None):
+    return SimpleNamespace(
+        minute=minute, event_type=event_type, display_minute=str(minute),
+        player=player, player_id=(player.id if player else None),
     )
 
 
-# ---------------------------------------------------------------------------
-# MatchListView — фильтр по статусу (см. докстринг модуля про elif-бага)
-# ---------------------------------------------------------------------------
+def _evaluation(entertainment, tension, fairness):
+    return SimpleNamespace(entertainment=entertainment, tension=tension, fairness=fairness)
 
-class MatchListViewStatusFilterTests(TestCase):
-    """Каждое значение ?status=... должно возвращать РОВНО матчи этого
-    статуса — ни одного лишнего из другого статуса и ни одного пропущенного."""
 
-    def setUp(self):
-        now = timezone.now()
-        self.scheduled = _make_match(status="scheduled", start_time=now + timedelta(days=3))
-        self.live = _make_match(status="live", start_time=now - timedelta(minutes=30))
-        self.finished_open = _make_match(
-            status="finished",
-            start_time=now - timedelta(hours=3),
-            voting_open_until=now + timedelta(hours=1),
-        )
-        self.postponed = _make_match(status="postponed", start_time=now + timedelta(days=10))
-        self.cancelled = _make_match(status="cancelled", start_time=now - timedelta(days=1))
-        # Отдельный finished-матч с УЖЕ закрытым голосованием — нужен, чтобы
-        # отличить ?status=finished (должен включать оба finished-матча) от
-        # ?status=votable (должен включать только тот, где голосование ещё
-        # открыто).
-        self.finished_closed = _make_match(
-            status="finished",
-            start_time=now - timedelta(days=5),
-            voting_open_until=now - timedelta(hours=2),
-        )
+class DramaLevelTests(SimpleTestCase):
+    def test_high(self):
+        self.assertEqual(_drama_level(60.0), "high")
+        self.assertEqual(_drama_level(80.0), "high")
 
-    def _ids(self, response):
-        return {m.id for m in response.context["matches"]}
+    def test_medium(self):
+        self.assertEqual(_drama_level(30.0), "medium")
+        self.assertEqual(_drama_level(59.9), "medium")
 
-    def test_status_scheduled_returns_only_scheduled(self):
-        response = self.client.get(reverse("matches:list"), {"status": "scheduled"})
-        self.assertEqual(self._ids(response), {self.scheduled.id})
+    def test_low(self):
+        self.assertEqual(_drama_level(0.0), "low")
+        self.assertEqual(_drama_level(29.9), "low")
 
-    def test_status_live_returns_only_live(self):
-        response = self.client.get(reverse("matches:list"), {"status": "live"})
-        self.assertEqual(self._ids(response), {self.live.id})
 
-    def test_status_finished_returns_only_finished(self):
-        response = self.client.get(reverse("matches:list"), {"status": "finished"})
-        self.assertEqual(self._ids(response), {self.finished_open.id, self.finished_closed.id})
+class DescribeMomentumTests(SimpleTestCase):
+    def test_no_events_returns_empty(self):
+        self.assertEqual(_describe_momentum([]), [])
 
-    def test_status_postponed_returns_only_postponed(self):
-        """Регрессия на "БАГ, КОТОРЫЙ ТУТ БЫЛ": раньше эта ветка отсутствовала
-        в if/elif, и ?status=postponed возвращал вообще все матчи."""
-        response = self.client.get(reverse("matches:list"), {"status": "postponed"})
-        self.assertEqual(self._ids(response), {self.postponed.id})
+    def test_single_event_in_window_not_a_momentum_point(self):
+        """Одно событие в окне — не "момент", просто строка таймлайна."""
+        self.assertEqual(_describe_momentum([_event(10)]), [])
 
-    def test_status_cancelled_returns_only_cancelled(self):
-        """Та же регрессия, что и test_status_postponed_returns_only_postponed,
-        но для второй пропавшей ветки — 'cancelled'."""
-        response = self.client.get(reverse("matches:list"), {"status": "cancelled"})
-        self.assertEqual(self._ids(response), {self.cancelled.id})
+    def test_two_goals_same_window_described_as_goals(self):
+        events = [_event(78, "goal"), _event(82, "goal")]
+        points = _describe_momentum(events)
+        self.assertEqual(len(points), 1)
+        self.assertIn("гол", points[0])
+        self.assertIn("75", points[0])
 
-    def test_status_votable_returns_only_finished_with_open_voting(self):
-        """?status=votable — то же условие, что и Match.is_voting_open():
-        finished + voting_open_until ещё не наступил. finished_closed (тот же
-        статус, но окно уже закрыто) обязан быть исключён."""
-        response = self.client.get(reverse("matches:list"), {"status": "votable"})
-        self.assertEqual(self._ids(response), {self.finished_open.id})
+    def test_non_goal_cluster_described_generically(self):
+        events = [_event(10, "yellow_card"), _event(12, "yellow_card")]
+        points = _describe_momentum(events)
+        self.assertEqual(len(points), 1)
+        self.assertIn("событий", points[0])
 
-    def test_no_status_filter_returns_all_matches(self):
-        """Без ?status= показываются матчи всех статусов (сортировка по
-        близости к "сейчас" — сортировку отдельно не проверяем, только состав)."""
-        response = self.client.get(reverse("matches:list"))
-        self.assertEqual(
-            self._ids(response),
-            {
-                self.scheduled.id, self.live.id, self.finished_open.id,
-                self.postponed.id, self.cancelled.id, self.finished_closed.id,
-            },
+    def test_returns_at_most_two_points(self):
+        events = [
+            _event(5), _event(7),      # окно 0-15
+            _event(20), _event(22),    # окно 15-30
+            _event(80), _event(82),    # окно 75-90
+        ]
+        self.assertLessEqual(len(_describe_momentum(events)), 2)
+
+
+class DescribeRefereeDivergenceTests(SimpleTestCase):
+    def _match(self):
+        return SimpleNamespace(
+            home_team=SimpleNamespace(name="Кайрат"),
+            away_team=SimpleNamespace(name="Актобе"),
         )
 
-    def test_unknown_status_value_falls_back_to_default_listing(self):
-        """Мусорное значение ?status= не должно ронять страницу 500-й — оно
-        просто не совпадает ни с одной веткой и проваливается в тот же
-        default-branch, что и полное отсутствие параметра."""
-        response = self.client.get(reverse("matches:list"), {"status": "bogus-value"})
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(
-            self._ids(response),
-            {
-                self.scheduled.id, self.live.id, self.finished_open.id,
-                self.postponed.id, self.cancelled.id, self.finished_closed.id,
-            },
+    def test_none_aggregate_returns_empty(self):
+        self.assertEqual(_describe_referee_divergence(self._match(), None), "")
+
+    def test_missing_segment_returns_empty(self):
+        agg = SimpleNamespace(home_fans_avg=7.0, away_fans_avg=None)
+        self.assertEqual(_describe_referee_divergence(self._match(), agg), "")
+
+    def test_small_gap_returns_empty(self):
+        agg = SimpleNamespace(home_fans_avg=7.0, away_fans_avg=6.0)
+        self.assertEqual(_describe_referee_divergence(self._match(), agg), "")
+
+    def test_large_gap_returns_sentence(self):
+        agg = SimpleNamespace(home_fans_avg=8.5, away_fans_avg=4.0)
+        text = _describe_referee_divergence(self._match(), agg)
+        self.assertIn("Кайрат", text)
+        self.assertIn("Актобе", text)
+        self.assertIn("4.5", text)
+
+
+class BuildMatchDnaTests(SimpleTestCase):
+    def test_none_aggregate_returns_none(self):
+        self.assertIsNone(build_match_dna(SimpleNamespace(), None, []))
+
+    def test_zero_votes_returns_none(self):
+        agg = SimpleNamespace(total_votes=0, drama_index=50.0, turning_point_ratio=0.0)
+        self.assertIsNone(build_match_dna(SimpleNamespace(), agg, []))
+
+    def test_with_votes_returns_dict(self):
+        match = SimpleNamespace(
+            home_team=SimpleNamespace(name="Кайрат"), away_team=SimpleNamespace(name="Актобе"),
         )
+        agg = SimpleNamespace(total_votes=10, drama_index=65.0, turning_point_ratio=0.0)
+        result = build_match_dna(match, agg, [_event(78), _event(80)])
+        self.assertEqual(result["drama_level"], "high")
+        self.assertEqual(result["drama_index"], 65.0)
+        self.assertIsInstance(result["momentum_points"], list)
+        self.assertEqual(result["referee_divergence"], "")
+        # Фаза 2 (docs/adr/0033) — новые ключи присутствуют, даже когда
+        # соответствующего сигнала нет (не ломаем контракт словаря).
+        self.assertIsNone(result["hero"])
+        self.assertEqual(result["turning_point_text"], "")
+        self.assertIsNone(result["consensus_level"])
+        self.assertEqual(result["controversial_episode"], "")
 
 
-# ---------------------------------------------------------------------------
-# MatchListView — ?status=evaluated ("Все матчи" из блока "Последние оценки"
-# в профиле, см. templates/profile/dashboard.html)
-# ---------------------------------------------------------------------------
+class DescribeHeroTests(SimpleTestCase):
+    def test_empty_list_returns_none(self):
+        self.assertIsNone(_describe_hero([]))
 
-class MatchListViewEvaluatedFilterTests(TestCase):
-    """
-    НАЙДЕНО (2026-09-01, жалоба пользователя: "жму 'все матчи' в 'Последние
-    оценки', открывает страницу ВСЕХ матчей, а не тех, что я оценил"):
-    ссылка вела на matches:list без фильтра вообще — 'Последние оценки'
-    показывает только последние 10 (users/views.py::ProfileView,
-    recent_evaluations), полного списка оценённых матчей нигде не было.
-    ?status=evaluated — виртуальный фильтр (как и ?status=votable), источник
-    истины — EvaluationSession.status='completed' для ТЕКУЩЕГО пользователя,
-    не факт наличия любых evaluation-строк (та же логика, что и в
-    ProfileView.total_matches)."""
-
-    def setUp(self):
-        self.user = User.objects.create_user(username="voter", email="voter@example.com", password="x")
-        self.other_user = User.objects.create_user(username="other", email="other@example.com", password="x")
-        now = timezone.now()
-        self.evaluated_by_me = _make_match(status="finished", start_time=now - timedelta(days=1))
-        EvaluationSession.objects.create(user=self.user, match=self.evaluated_by_me, status="completed")
-        self.abandoned_by_me = _make_match(status="finished", start_time=now - timedelta(days=2))
-        EvaluationSession.objects.create(user=self.user, match=self.abandoned_by_me, status="in_progress")
-        self.evaluated_by_other = _make_match(status="finished", start_time=now - timedelta(days=3))
-        EvaluationSession.objects.create(user=self.other_user, match=self.evaluated_by_other, status="completed")
-        self.never_evaluated = _make_match(status="finished", start_time=now - timedelta(days=4))
-
-    def _ids(self, response):
-        return {m.id for m in response.context["matches"]}
-
-    def test_returns_only_matches_completed_by_current_user(self):
-        # force_login() вместо login(username=..., password=...): django-axes
-        # (AxesBackend, см. dopx/settings.py::AUTHENTICATION_BACKENDS) требует
-        # объект request в authenticate() при обычном логине через
-        # client.login() и падает AxesBackendRequestParameterRequired —
-        # тот же фикс, что уже применён в events/tests.py и остальных
-        # test-файлах проекта.
-        self.client.force_login(self.user)
-        response = self.client.get(reverse("matches:list"), {"status": "evaluated"})
-        self.assertEqual(self._ids(response), {self.evaluated_by_me.id})
-
-    def test_in_progress_session_not_counted_as_evaluated(self):
-        """Начатая, но не завершённая сессия — не должна попадать в список,
-        как и на самой странице профиля (recent_evaluations фильтрует
-        status='completed')."""
-        self.client.force_login(self.user)
-        response = self.client.get(reverse("matches:list"), {"status": "evaluated"})
-        self.assertNotIn(self.abandoned_by_me.id, self._ids(response))
-
-    def test_other_users_evaluations_not_leaked(self):
-        self.client.force_login(self.user)
-        response = self.client.get(reverse("matches:list"), {"status": "evaluated"})
-        self.assertNotIn(self.evaluated_by_other.id, self._ids(response))
-
-    def test_anonymous_user_gets_empty_list_not_error(self):
-        response = self.client.get(reverse("matches:list"), {"status": "evaluated"})
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(self._ids(response), set())
+    def test_returns_first_player_with_score(self):
+        hero_agg = SimpleNamespace(player=SimpleNamespace(id=1, first_name="A"), performance_score=8.7)
+        result = _describe_hero([hero_agg, SimpleNamespace(player=SimpleNamespace(id=2), performance_score=6.0)])
+        self.assertEqual(result["score"], 8.7)
+        self.assertIs(result["player"], hero_agg.player)
 
 
-# ---------------------------------------------------------------------------
-# MatchListView — фильтры по лиге/сезону/туру (независимы от статуса)
-# ---------------------------------------------------------------------------
+class DescribeTurningPointTests(SimpleTestCase):
+    def test_below_threshold_returns_empty(self):
+        agg = SimpleNamespace(turning_point_ratio=0.1)
+        self.assertEqual(_describe_turning_point(agg), "")
 
-class MatchListViewOtherFiltersTests(TestCase):
-    """?league=/?season=/?tour= — накладываются ПОВЕРХ фильтра по статусу,
-    каждый должен сужать список независимо от остальных."""
-
-    def setUp(self):
-        self.league_a = _make_league(name="League A")
-        self.league_b = _make_league(name="League B")
-        self.season_a = _make_season(league=self.league_a, year="2026")
-        self.season_b = _make_season(league=self.league_b, year="2026")
-
-        self.match_a = _make_match(league=self.league_a, season=self.season_a, tour=5)
-        self.match_b = _make_match(league=self.league_b, season=self.season_b, tour=6)
-
-    def test_filter_by_league(self):
-        response = self.client.get(reverse("matches:list"), {"league": self.league_a.id})
-        ids = {m.id for m in response.context["matches"]}
-        self.assertEqual(ids, {self.match_a.id})
-
-    def test_filter_by_season(self):
-        response = self.client.get(reverse("matches:list"), {"season": self.season_b.id})
-        ids = {m.id for m in response.context["matches"]}
-        self.assertEqual(ids, {self.match_b.id})
-
-    def test_filter_by_tour(self):
-        response = self.client.get(reverse("matches:list"), {"tour": 5})
-        ids = {m.id for m in response.context["matches"]}
-        self.assertEqual(ids, {self.match_a.id})
-
-    def test_combined_status_and_league_filters(self):
-        other_in_league_a = _make_match(league=self.league_a, season=self.season_a, status="live")
-        response = self.client.get(
-            reverse("matches:list"), {"status": "scheduled", "league": self.league_a.id}
-        )
-        ids = {m.id for m in response.context["matches"]}
-        # match_a — scheduled по умолчанию (см. _make_match), other_in_league_a — live,
-        # должен быть отфильтрован и по статусу, и остаться той же лиги.
-        self.assertEqual(ids, {self.match_a.id})
-        self.assertNotIn(other_in_league_a.id, ids)
+    def test_at_or_above_threshold_returns_sentence(self):
+        agg = SimpleNamespace(turning_point_ratio=0.5)
+        text = _describe_turning_point(agg)
+        self.assertIn("50%", text)
+        self.assertIn("переломный момент", text)
 
 
-# ---------------------------------------------------------------------------
-# MatchListView — стартовая страница по умолчанию (без ?page=/?status=)
-# ---------------------------------------------------------------------------
+class ConsensusLevelTests(SimpleTestCase):
+    def test_fewer_than_two_evaluations_returns_none(self):
+        self.assertIsNone(_consensus_level([_evaluation(8, 8, 8)]))
 
-class MatchListViewDefaultPaginationTests(TestCase):
-    """
-    НАЙДЕНО (2026-09-01, жалоба пользователя: "открывает на одну страницу
-    раньше сегодняшней даты, показывает более старые матчи"):
-    `paginate_queryset()` отступала на 3 позиции НАЗАД от индекса первого
-    ещё не начавшегося матча — идея была показать чуть-чуть прошедших
-    результатов вместе с будущими. При фиксированных страницах паджинатора
-    (PAGINATE_BY=20) этот отступ иногда пересекал ГРАНИЦУ страницы целиком:
-    если индекс первого будущего матча кратен 20 (или на 1-2 больше), минус
-    3 уводит на ПРЕДЫДУЩУЮ страницу, где вообще нет ни одного будущего
-    матча — только прошедшие. Тесты ниже закрывают именно граничный случай.
-    """
+    def test_identical_scores_high_consensus(self):
+        evals = [_evaluation(8, 8, 8) for _ in range(5)]
+        self.assertEqual(_consensus_level(evals), "high")
 
-    def setUp(self):
-        self.league = _make_league()
-        self.season = _make_season(league=self.league)
-        self.home = _make_team()
-        self.away = _make_team()
+    def test_wildly_different_scores_low_consensus(self):
+        evals = [_evaluation(10, 10, 10), _evaluation(1, 1, 1), _evaluation(10, 1, 5)]
+        self.assertEqual(_consensus_level(evals), "low")
 
-    def _match_at(self, offset_days):
-        return _make_match(
-            league=self.league, season=self.season, home_team=self.home, away_team=self.away,
-            start_time=timezone.now() + timedelta(days=offset_days),
-        )
-
-    def test_default_page_contains_first_upcoming_match_at_page_boundary(self):
-        """Ровно 40 прошедших матчей — индекс первого будущего (40) кратен
-        PAGINATE_BY=20. До фикса открывалась 2-я страница (индексы 20-39,
-        ВСЕ прошедшие) — первый будущий матч был виден только на 3-й."""
-        for i in range(40, 0, -1):
-            self._match_at(-i)
-        first_upcoming = self._match_at(1)
-
-        response = self.client.get(reverse("matches:list"))
-
-        ids_on_page = [m.id for m in response.context["matches"]]
-        self.assertIn(first_upcoming.id, ids_on_page)
-
-    def test_default_page_contains_first_upcoming_match_off_boundary(self):
-        """Несбойный случай (индекс первого будущего матча НЕ у границы
-        страницы) — тоже должен работать, регрессия не должна ломать
-        обычный путь."""
-        for i in range(25, 0, -1):
-            self._match_at(-i)
-        first_upcoming = self._match_at(1)
-
-        response = self.client.get(reverse("matches:list"))
-
-        ids_on_page = [m.id for m in response.context["matches"]]
-        self.assertIn(first_upcoming.id, ids_on_page)
-
-    def test_no_past_matches_opens_first_page(self):
-        only_future = self._match_at(1)
-
-        response = self.client.get(reverse("matches:list"))
-
-        self.assertEqual(response.context["page_obj"].number, 1)
-        self.assertIn(only_future.id, [m.id for m in response.context["matches"]])
+    def test_moderate_spread_medium_consensus(self):
+        # Композиты 8/5/6 -> population stdev ~1.25 — строго между
+        # CONSENSUS_HIGH_STDEV=1.0 и CONSENSUS_LOW_STDEV=2.5.
+        evals = [_evaluation(8, 8, 8), _evaluation(5, 5, 5), _evaluation(6, 6, 6)]
+        self.assertEqual(_consensus_level(evals), "medium")
 
 
-# ---------------------------------------------------------------------------
-# MatchDetailView — 404 на несуществующий матч
-# ---------------------------------------------------------------------------
+class DescribeControversialEpisodeTests(SimpleTestCase):
+    def test_disallowed_goal_takes_priority(self):
+        scorer = SimpleNamespace(id=1)
+        events = [_event(60, "disallowed_goal", player=scorer), _event(70, "red_card", player=scorer)]
+        text = _describe_controversial_episode(events, None)
+        self.assertIn("Отменённый гол", text)
+        self.assertIn("60", text)
 
-class MatchDetailViewNotFoundTests(TestCase):
-    def test_random_uuid_returns_404(self):
-        response = self.client.get(reverse("matches:detail", kwargs={"pk": uuid.uuid4()}))
-        self.assertEqual(response.status_code, 404)
+    def test_red_card_only_shown_with_referee_divergence(self):
+        events = [_event(45, "red_card", player=SimpleNamespace(id=2))]
+        low_divergence_agg = SimpleNamespace(home_fans_avg=7.0, away_fans_avg=6.5)
+        self.assertEqual(_describe_controversial_episode(events, low_divergence_agg), "")
 
+        high_divergence_agg = SimpleNamespace(home_fans_avg=8.5, away_fans_avg=4.0)
+        text = _describe_controversial_episode(events, high_divergence_agg)
+        self.assertIn("Красная карточка", text)
+        self.assertIn("45", text)
 
-# ---------------------------------------------------------------------------
-# MatchDetailView — CTA "оценить матч" (match_action_context::voting_open)
-# ---------------------------------------------------------------------------
-
-class MatchDetailViewVotingGateContextTests(TestCase):
-    """voting_open = match.status == 'finished' AND voting_open_until ещё не
-    наступил. Проверяем все статусы и обе стороны временной границы."""
-
-    def test_scheduled_match_voting_closed(self):
-        match = _make_match(status="scheduled")
-        response = self.client.get(reverse("matches:detail", kwargs={"pk": match.id}))
-        self.assertEqual(response.status_code, 200)
-        self.assertFalse(response.context["voting_open"])
-
-    def test_live_match_voting_closed_even_with_future_deadline(self):
-        """Статус 'live' с ещё не наступившим voting_open_until всё равно не
-        должен показывать CTA — голосование открывается только после того,
-        как матч реально завершён (status == 'finished')."""
-        match = _make_match(status="live", voting_open_until=timezone.now() + timedelta(hours=48))
-        response = self.client.get(reverse("matches:detail", kwargs={"pk": match.id}))
-        self.assertFalse(response.context["voting_open"])
-
-    def test_postponed_match_voting_closed(self):
-        match = _make_match(status="postponed")
-        response = self.client.get(reverse("matches:detail", kwargs={"pk": match.id}))
-        self.assertFalse(response.context["voting_open"])
-
-    def test_cancelled_match_voting_closed(self):
-        match = _make_match(status="cancelled")
-        response = self.client.get(reverse("matches:detail", kwargs={"pk": match.id}))
-        self.assertFalse(response.context["voting_open"])
-
-    def test_finished_match_voting_just_opened(self):
-        """Граница "только что открылось": voting_open_until ещё чуть
-        впереди — CTA должен быть доступен."""
-        match = _make_match(status="finished", voting_open_until=timezone.now() + timedelta(seconds=5))
-        response = self.client.get(reverse("matches:detail", kwargs={"pk": match.id}))
-        self.assertTrue(response.context["voting_open"])
-
-    def test_finished_match_voting_just_closed(self):
-        """Граница "только что закрылось": voting_open_until только что
-        прошёл — CTA должен исчезнуть."""
-        match = _make_match(status="finished", voting_open_until=timezone.now() - timedelta(seconds=5))
-        response = self.client.get(reverse("matches:detail", kwargs={"pk": match.id}))
-        self.assertFalse(response.context["voting_open"])
-
-    def test_finished_match_voting_open_well_within_window(self):
-        match = _make_match(status="finished", voting_open_until=timezone.now() + timedelta(hours=48))
-        response = self.client.get(reverse("matches:detail", kwargs={"pk": match.id}))
-        self.assertTrue(response.context["voting_open"])
-
-    def test_finished_match_voting_closed_long_ago(self):
-        match = _make_match(status="finished", voting_open_until=timezone.now() - timedelta(days=30))
-        response = self.client.get(reverse("matches:detail", kwargs={"pk": match.id}))
-        self.assertFalse(response.context["voting_open"])
-
-
-# ---------------------------------------------------------------------------
-# MatchDetailView — user_has_evaluated / user_has_pulse_reactions
-# ---------------------------------------------------------------------------
-
-class MatchDetailViewUserFlagsTests(TestCase):
-    """Флаги персонального состояния пользователя на странице матча —
-    зависят и от статуса матча, и от того, авторизован ли пользователь."""
-
-    def setUp(self):
-        self.user = User.objects.create_user(username="u1", email="u1@example.com", password="pass123")
-        self.match = _make_match(status="finished", voting_open_until=timezone.now() + timedelta(hours=1))
-
-    def test_anonymous_user_flags_are_false(self):
-        response = self.client.get(reverse("matches:detail", kwargs={"pk": self.match.id}))
-        self.assertFalse(response.context["user_has_evaluated"])
-        self.assertFalse(response.context["user_has_pulse_reactions"])
-
-    def test_user_has_evaluated_true_after_completed_session(self):
-        EvaluationSession.objects.create(user=self.user, match=self.match, status="completed")
-        self.client.force_login(self.user)
-        response = self.client.get(reverse("matches:detail", kwargs={"pk": self.match.id}))
-        self.assertTrue(response.context["user_has_evaluated"])
-
-    def test_user_has_evaluated_false_without_completed_session(self):
-        EvaluationSession.objects.create(user=self.user, match=self.match, status="in_progress")
-        self.client.force_login(self.user)
-        response = self.client.get(reverse("matches:detail", kwargs={"pk": self.match.id}))
-        self.assertFalse(response.context["user_has_evaluated"])
-
-    def test_user_has_pulse_reactions_true_when_reacted_and_not_evaluated(self):
-        event = MatchEvent.objects.create(match=self.match, minute=10, event_type="goal", team_side="home")
-        EventReaction.objects.create(match_event=event, user=self.user, reaction="like")
-        self.client.force_login(self.user)
-        response = self.client.get(reverse("matches:detail", kwargs={"pk": self.match.id}))
-        self.assertTrue(response.context["user_has_pulse_reactions"])
-
-    def test_user_has_pulse_reactions_not_checked_for_unfinished_match(self):
-        """user_has_pulse_reactions считается только для finished-матчей
-        (см. match_action_context) — на scheduled/live матче реакций на
-        события в принципе быть не может, лишний запрос не нужен."""
-        live_match = _make_match(status="live")
-        event = MatchEvent.objects.create(match=live_match, minute=5, event_type="goal", team_side="away")
-        EventReaction.objects.create(match_event=event, user=self.user, reaction="like")
-        self.client.force_login(self.user)
-        response = self.client.get(reverse("matches:detail", kwargs={"pk": live_match.id}))
-        self.assertFalse(response.context["user_has_pulse_reactions"])
+    def test_no_signal_returns_empty(self):
+        events = [_event(10, "goal"), _event(50, "yellow_card")]
+        self.assertEqual(_describe_controversial_episode(events, None), "")

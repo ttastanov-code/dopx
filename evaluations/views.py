@@ -826,6 +826,10 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
         context.update({
             'match': self.match, 'page_title': 'Шаг 6: Финал — DOPX',
             'step': 6, 'total_steps': 6, 'progress': 100, 'prev_step': 'evaluations:referee',
+            # docs/adr/0031-quick-mode-primary-flow.md — те же 3 крупные
+            # кнопки-пресета, что уже были на шагах Тренеры/Судья, теперь и
+            # на финальном шаге "Оценка матча".
+            'mode': session.mode,
         })
         return context
 

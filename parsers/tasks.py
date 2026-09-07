@@ -2,11 +2,20 @@
 """
 Celery-задачи синхронизации с внешним KFF API.
 
-update_match_statuses зарегистрирована в CELERY_BEAT_SCHEDULE дважды под
-разными именами (update-live-matches */2m, update-scheduled-matches */10m),
-но фильтрует один и тот же набор матчей (status in scheduled/live) — на
-кратных 10 минутам отметках Celery Beat ставит в очередь два параллельных
-запуска. import_events_and_minutes (parsers/kff/importers.py) пишет события
+update_match_statuses СНОВА зарегистрирована в CELERY_BEAT_SCHEDULE дважды
+под разными именами (update-live-matches */2m, update-upcoming-matches-full
+раз в 30 мин) — но, в отличие от старой версии этого докстринга (был баг с
+двумя записями на ОДИН и тот же набор матчей, см. 'БАГ, КОТОРЫЙ ТУТ БЫЛ' в
+CELERY_BEAT_SCHEDULE, dopx/settings.py, тот баг починен), сейчас это
+СОЗНАТЕЛЬНО: scope="tight"/"loose" фильтруют ДИЗЪЮНКТНЫЕ наборы
+матчей (см. _tight_window_q ниже и докстринг update_match_statuses,
+2026-09-07 — раньше частый тик долбил КФФ по всем scheduled/postponed
+матчам без разбора, это и было основным источником объёма запросов,
+из-за которого хост нас банил). Блокировки ниже всё равно нужны — либо
+на случай наложения двух ПОСЛЕДОВАТЕЛЬНЫХ тиков одного и того же
+расписания (текущий прогон не успел закончиться до следующего), либо на
+случай ручного запуска кнопкой из staff-дашборда параллельно с расписанием.
+import_events_and_minutes (parsers/kff/importers.py) пишет события
 матча (создаёт/обновляет по совпадению минута+тип+сторона) внутри
 @transaction.atomic — атомарность одной транзакции не защищает от
 конкурентной второй: дубли событий, рост времени отклика или deadlock на
@@ -39,6 +48,7 @@ from django.conf import settings
 from django.core.cache import cache
 from django.core.mail import send_mail
 from django.db import transaction
+from django.db.models import Q
 from django.db.utils import OperationalError
 from django.template.loader import render_to_string
 from django.utils import timezone
@@ -110,17 +120,26 @@ def sync_recent_matches(self, season_id: int = None, limit: int = 10, tournament
 
     client = KFFClient()
 
-    if season_id is None:
-        season_id = client.find_premier_league_season()
-        if not season_id:
-            error_msg = f"❌ Could not auto-detect season for tournament {tournament_code}"
-            logger.error(error_msg)
-            _send_sync_error_alert(error_msg, "season_detection")
-            return {"success": 0, "total": 0, "error": error_msg}
+    # Cooldown (parsers/kff/client.py) теперь общий на все прогоны — если он
+    # активен уже ЗДЕСЬ, на самых первых вызовах, раньше это уронило бы
+    # задачу необработанным исключением (Celery просто пометил бы её FAILURE,
+    # без алерта и без понятной причины в логе). Ловим явно и тихо выходим —
+    # это ожидаемое "ещё не остыло", а не сбой.
+    try:
+        if season_id is None:
+            season_id = client.find_premier_league_season()
+            if not season_id:
+                error_msg = f"❌ Could not auto-detect season for tournament {tournament_code}"
+                logger.error(error_msg)
+                _send_sync_error_alert(error_msg, "season_detection")
+                return {"success": 0, "total": 0, "error": error_msg}
 
-    recent_ids = client.get_recent_finished_matches(
-        season_id=season_id, limit=limit, tournament_code=tournament_code
-    )
+        recent_ids = client.get_recent_finished_matches(
+            season_id=season_id, limit=limit, tournament_code=tournament_code
+        )
+    except KFFAPICircuitBreakerOpen as e:
+        logger.warning(f"⏭️  sync_recent_matches: cooldown ещё активен, пропускаю прогон — {e}")
+        return {"success": 0, "total": 0, "error": "circuit_breaker_cooldown", "circuit_breaker_tripped": True}
 
     if not recent_ids:
         logger.warning("⚠️  No recent finished matches found")
@@ -130,6 +149,7 @@ def sync_recent_matches(self, season_id: int = None, limit: int = 10, tournament
     failed = 0
     failed_matches = []
 
+    circuit_breaker_tripped = False
     for mid in recent_ids:
         try:
             if import_full_match(mid, season_id, tournament_code=tournament_code):
@@ -137,6 +157,23 @@ def sync_recent_matches(self, season_id: int = None, limit: int = 10, tournament
             else:
                 failed += 1
                 failed_matches.append(mid)
+        except KFFAPICircuitBreakerOpen as e:
+            # БАГ, КОТОРЫЙ ТУТ БЫЛ (найден пользователем, 2026-09-07 —
+            # "каждый понедельник падает парсер"): раньше это ловилось общим
+            # except Exception ниже и цикл спокойно шёл к СЛЕДУЮЩЕМУ матчу —
+            # т.е. для всех оставшихся recent_ids заново создавался клиент
+            # (внутри import_full_match) и заново долбил уже заблокировавший
+            # нас хост. Явный except + break — тот же паттерн, что уже
+            # применён в update_match_statuses (см. её докстринг про
+            # 2026-09-01). Cooldown сам по себе теперь общий на все
+            # экземпляры клиента (parsers/kff/client.py), но без break здесь
+            # каждая следующая итерация всё равно поймала бы то же самое
+            # исключение и просто засоряла failed_matches без пользы.
+            logger.error(f"🚫 KFF API circuit breaker при импорте матча {mid}: {e}")
+            failed += 1
+            failed_matches.append(mid)
+            circuit_breaker_tripped = True
+            break
         except Exception as e:
             logger.error(f"❌ Failed to import match {mid}: {type(e).__name__}: {e}")
             failed += 1
@@ -145,16 +182,27 @@ def sync_recent_matches(self, season_id: int = None, limit: int = 10, tournament
     logger.info(f"✅ Synced {success}/{len(recent_ids)} recent finished matches")
 
     if failed > 0:
+        alert_msg = f"Ошибки при синхронизации {failed} матчей: {failed_matches[:5]}"
+        if circuit_breaker_tripped:
+            alert_msg += (
+                " — сработал circuit breaker (похоже на блокировку хоста), "
+                "прогон остановлен досрочно, оставшиеся матчи не пытались"
+            )
         _send_sync_error_alert(
-            f"Ошибки при синхронизации {failed} матчей: {failed_matches[:5]}",
+            alert_msg,
             "sync_errors",
-            extra_data={"failed_matches": failed_matches, "success": success},
+            extra_data={
+                "failed_matches": failed_matches,
+                "success": success,
+                "circuit_breaker_tripped": circuit_breaker_tripped,
+            },
         )
 
     return {
         "success": success,
         "total": len(recent_ids),
         "failed": failed,
+        "circuit_breaker_tripped": circuit_breaker_tripped,
         "season_id": season_id,
         "tournament_code": tournament_code,
     }
@@ -219,6 +267,32 @@ def _release_match_sync_lock(match_id: uuid.UUID) -> None:
     cache.delete(f"parsers:match_sync_lock:{match_id}")
 
 
+# Насколько близко к "сейчас" должен быть start_time, чтобы матч считался
+# "вот-вот начнётся / уже идёт / вот-вот закончится" — см. докстринг
+# update_match_statuses про scope="tight". 90 минут игры + перерыв +
+# добавленное время редко превышают 2.5 часа, +30 минут запас на
+# затянувшийся матч/задержку старта.
+TIGHT_WINDOW_BEFORE_KICKOFF = timedelta(hours=1)
+TIGHT_WINDOW_AFTER_KICKOFF = timedelta(hours=3)
+
+
+def _tight_window_q() -> Q:
+    """Q-объект для "матч может измениться прямо сейчас" — см. докстринг
+    update_match_statuses. status='live' безусловно (статус мог устареть в
+    нашей БД, сам факт живого матча — самый частый повод проверять); плюс
+    scheduled/postponed в узком окне вокруг предполагаемого времени начала.
+    Вынесено в отдельную функцию (не инлайн в фильтре), чтобы полный прогон
+    мог использовать РОВНО ТОТ ЖЕ Q через .exclude() — дизъюнктность
+    наборов держится в одном месте, а не в двух похожих, но переписанных
+    вручную кусках кода."""
+    now = timezone.now()
+    return Q(status="live") | Q(
+        status__in=["scheduled", "postponed"],
+        start_time__gte=now - TIGHT_WINDOW_AFTER_KICKOFF,
+        start_time__lte=now + TIGHT_WINDOW_BEFORE_KICKOFF,
+    )
+
+
 def _detect_rescheduled_outlier(match, tour, start_time) -> bool:
     """
     True, если `start_time` этого матча отличается от "типичной" (самой
@@ -255,9 +329,9 @@ def _detect_rescheduled_outlier(match, tour, start_time) -> bool:
 
 
 @shared_task(bind=True, max_retries=3, rate_limit="30/m")
-def update_match_statuses(self):
+def update_match_statuses(self, scope: str = "full"):
     """
-    Полная синхронизация незавершённых матчей с внешним API.
+    Синхронизация незавершённых матчей с внешним API.
 
     Что обновляется:
     - Статус матча (scheduled → live → finished)
@@ -267,10 +341,37 @@ def update_match_statuses(self):
     - Составы (если ещё не загружены)
     - Статистика матча
 
-    Запускается каждые 2-5 минут для live-матчей, каждые 10-15 мин для
-    scheduled (см. CELERY_BEAT_SCHEDULE в dopx/settings.py — ОБА расписания
-    зовут именно эту функцию, поэтому защита от гонок ниже обязательна, а
-    не опциональна).
+    НАЙДЕНО (2026-09-07, пользователь: "парсер должен стабильно работать
+    несмотря на их попытки блокировки"): раньше эта задача КАЖДЫЕ 2 МИНУТЫ
+    (см. CELERY_BEAT_SCHEDULE) опрашивала АБСОЛЮТНО ВСЕ status__in=
+    [scheduled, live, postponed] матчи без разбора — включая матчи через
+    2 недели, у которых дата физически не может поменяться за 2 минуты.
+    В реальном прогоне это было total=55 матчей × 720 запусков/сутки =
+    десятки тысяч запросов в день к хосту, который и так уже склонен нас
+    банить по TLS-отпечатку (см. parsers/kff/client.py). Огромная часть
+    этого объёма была чистым расточительством: 90%+ матчей в scheduled
+    не меняются от одного прогона к другому.
+
+    scope="tight" — узкий, ЧАСТЫЙ прогон (см. 'update-live-matches' в
+    CELERY_BEAT_SCHEDULE, каждые 2 минуты): только status='live' ЛИБО
+    scheduled/postponed матчи в пределах TIGHT_WINDOW_BEFORE/AFTER от сейчас
+    (_tight_window_q ниже) — то, что реально может поменяться прямо сейчас
+    (вот-вот начнётся, уже идёт, вот-вот должно было закончиться).
+    scope="loose" — ДОПОЛНЯЮЩИЙ узкий набор (см. 'update-upcoming-matches-
+    full', раз в 30 минут): все активные матчи, КРОМЕ tight-окна — далёкие
+    scheduled/postponed матчи, которые почти никогда не меняются, но иногда
+    всё равно нужно проверить (перенос даты, отмена), просто не каждые
+    2 минуты. scope="tight" и "loose" вместе покрывают ровно то же
+    множество, что раньше покрывал один сплошной прогон, но 720 раз в
+    сутки долбится только маленький "живой" кусок, а не всё целиком.
+    scope="full" (ПО УМОЛЧАНИЮ — старое поведение без изменений) — ВООБЩЕ
+    без временной фильтрации, все активные матчи разом. Это то, что видит
+    staff, нажимая кнопку "Обновить статусы" в дашборде (dashboard/
+    parser_tools.py::trigger_task зовёт .delay() без kwargs) — сознательно
+    НЕ ограничено tight/loose: ручной клик означает "хочу проверить всё
+    прямо сейчас", а не "только то, что физически могло измениться за
+    последние 2 минуты". Единственный источник частого автоматического
+    трафика — scope="tight"/"loose" из расписания.
     """
     from events.models import MatchEvent
     from matches.models import Match
@@ -293,7 +394,16 @@ def update_match_statuses(self):
     # "postponed" включён сюда же — иначе перенесённый матч навсегда
     # выпадает из опроса и мы никогда не узнаем ни о новой дате, ни об
     # окончательной отмене (см. STATUS_MAP выше и docs/BACKLOG.md).
-    active_matches = Match.objects.filter(status__in=["scheduled", "live", "postponed"]).select_related(
+    active_matches = Match.objects.filter(status__in=["scheduled", "live", "postponed"])
+
+    if scope == "tight":
+        active_matches = active_matches.filter(_tight_window_q())
+    elif scope == "loose":
+        active_matches = active_matches.exclude(_tight_window_q())
+    elif scope != "full":
+        logger.warning(f"update_match_statuses: неизвестный scope={scope!r}, считаю как 'full'")
+
+    active_matches = active_matches.select_related(
         "home_team", "away_team", "season", "league", "stadium"
     )
 

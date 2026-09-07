@@ -2,6 +2,7 @@
 {% load static rating_extras %}
 {% load match_extras %}
 {% load position_extras %}
+{% load l10n %}
 {% block content %}
 <!-- === НАВИГАЦИЯ === -->
 <div class="mb-4 md:mb-6 px-2 sm:px-0 flex items-center justify-between flex-wrap gap-2">
@@ -53,6 +54,32 @@
         <div class="flex flex-wrap items-center justify-center md:justify-start gap-2 mb-2">
           <h1 class="text-xl md:text-3xl font-bold truncate">{{ team.name }}</h1>
           {% include 'users/_follow_button.html' with target_type='team' target_id=team.id following=is_following %}
+          {% if mood_trend %}
+          {% comment %}
+          Индекс настроения клуба — MVP тренд-бейдж (docs/adr/0029-club-mood-index-mvp.md),
+          НЕ полноценный индекс с историей — просто ↑/↓/→ по последним
+          нескольким матчам, посчитанный на лету (teams/services.py::compute_mood_trend).
+
+          БЫЛО (2026-09-07, продуктовый фидбек: "надпись 'Падает' — что
+          падает? нормально надо писать"): бейдж показывал голое "Падает"/
+          "Растёт"/"Стабильно" без подлежащего — объяснение существовало
+          ТОЛЬКО в hover-title, невидимом на мобильных (тач вообще не имеет
+          hover) и просто нигде не бросающемся в глаза. Текст самого бейджа
+          теперь называет метрику явно ("Настроение падает"), title остаётся
+          как дополнительная деталь (число матчей), а не единственный
+          источник смысла.
+          {% endcomment %}
+          <span class="badge {% if mood_trend.direction == 'up' %}badge-success{% elif mood_trend.direction == 'down' %}badge-error{% else %}badge-ghost{% endif %} gap-1"
+                title="По последним {{ mood_trend.matches_considered }} оцененным матчам, изменение {{ mood_trend.delta }} балла">
+            {% if mood_trend.direction == 'up' %}
+            <i class="ti ti-trending-up"></i> Настроение растёт
+            {% elif mood_trend.direction == 'down' %}
+            <i class="ti ti-trending-down"></i> Настроение падает
+            {% else %}
+            <i class="ti ti-minus"></i> Настроение стабильно
+            {% endif %}
+          </span>
+          {% endif %}
         </div>
         {% if team.city %}
         <p class="text-sm md:text-lg opacity-60 mb-3 md:mb-4 truncate">
@@ -81,6 +108,214 @@
     </div>
   </div>
 </div>
+
+{% comment %}
+Индекс настроения клуба v2 (docs/adr/0034-club-mood-index-v2.md) — настоящий
+time-series вместо одного бейджа-стрелки (тот остался у заголовка выше,
+см. mood_trend — быстрый ответ "как дела сейчас", это же — "как это
+выглядело за сезон"). SVG строится СЕРВЕРОМ (teams/services.py::build_mood_chart)
+— никакой клиентской JS-библиотеки графиков, ADR-0025 убрал рантайм-
+зависимость от внешних CDN и новый чарт не должен её возвращать.
+
+ПЕРЕСОБРАНО 2026-09-07 второй раз (живой скрин, продуктовый фидбек: "график
+уродский, синий и зелёный сливаются, пустые квадраты в ожиданиях перед
+матчем") — см. подробный докстринг в teams/services.py над build_mood_chart
+про каждый конкретный баг и почему он был. Коротко: (1) mood/trust теперь
+ДВА независимых мини-графика вместо одной общей оси — они физически не
+могут "слиться"; (2) сетка — только целые 0/5/10 с широким левым отступом и
+text-anchor="end", подпись растёт влево от фиксированной точки, обрезаться
+не обо что; (3) числа "сейчас" показываются по факту наличия значения
+(`latest_mood`/`latest_trust` не `None`), а не по факту существования
+графика — не бывает пустого "/10"; (4) "Ожидания перед матчем" — тоже SVG
+(`<rect>` с посчитанными на сервере координатами), а не HTML div с
+`height: N%` во flex-контейнере, которая на скрине не рендерилась вообще.
+{% endcomment %}
+{% if mood_chart %}
+<div class="card bg-base-100 border border-base-300 mb-4 md:mb-6 px-2 sm:px-0">
+  <div class="card-body p-4 md:p-6">
+    <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 mb-1">
+      <div>
+        <h3 class="font-bold text-base md:text-lg flex items-center gap-2">
+          <i class="ti ti-chart-line"></i> Индекс настроения клуба
+        </h3>
+        <p class="text-xs opacity-50 mt-0.5">Последние {{ mood_chart.match_count }} оценённых матчей — не официальная статистика, а мнение болельщиков DOPX</p>
+      </div>
+    </div>
+
+    {% comment %}
+    MOOD — главный, крупный график. Заголовок метрики + число "сейчас"
+    стоят НАД её собственным графиком (не общим блоком справа сверху, как
+    раньше) — так с первого взгляда понятно, какое число к какой линии
+    относится, ещё одна причина прошлой путаницы.
+    {% endcomment %}
+    <div class="mt-3">
+      <div class="flex items-baseline justify-between">
+        <span class="flex items-center gap-1.5 text-xs font-semibold">
+          <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background: var(--color-primary, #60a5fa)"></span>
+          Реакция после матча
+        </span>
+        {% if mood_chart.latest_mood != None %}
+        <span class="text-xl font-bold" style="color: var(--color-primary, #60a5fa)">{{ mood_chart.latest_mood|floatformat:1 }}<span class="text-xs opacity-40 font-normal">/10</span></span>
+        {% endif %}
+      </div>
+      <div class="overflow-x-auto mt-1">
+        {% comment %}
+        localize off — БАГ, КОТОРЫЙ ТУТ БЫЛ (2026-09-07, живой скрин: "10"
+        рисовалось как "1"/"0" на разных строках, бары в "ожиданиях" пропали
+        совсем). Причина оказалась не в геометрии и не в CSS, а в том, что
+        сайт локализован под ru/kk (запятая как десятичный разделитель) —
+        Django `{{ }}` рендерит ЛЮБОЙ float через текущую локаль, поэтому
+        `grid.y = 16.0` печаталось как `y="16,0"`, `bar.height = 15.2` как
+        `height="15,2"` — ЗАПЯТАЯ В XML-АТРИБУТЕ SVG невалидна, парсер её не
+        принимает, и координаты/размеры уезжают в никуда. `{% load l10n %}`
+        (см. верх файла) + `{% localize off %}` здесь заставляет Django
+        печатать те же float обычной точкой ТОЛЬКО внутри самого SVG —
+        пользовательские "2,5/10" рядом (latest_mood/latest_trust с запятой,
+        это корректно и обязано остаться) сюда не попадают, они снаружи блока.
+        {% endcomment %}
+        {% localize off %}
+        <svg viewBox="0 0 {{ mood_chart.mood.width }} {{ mood_chart.mood.height }}" class="w-full min-w-[480px]" style="max-height: 160px">
+          <defs>
+            <linearGradient id="moodFill-{{ team.id }}" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" style="stop-color: var(--color-primary, #60a5fa); stop-opacity: 0.30" />
+              <stop offset="100%" style="stop-color: var(--color-primary, #60a5fa); stop-opacity: 0" />
+            </linearGradient>
+          </defs>
+          {% for grid in mood_chart.mood.gridlines %}
+          <line x1="0" y1="{{ grid.y }}" x2="{{ mood_chart.mood.width }}" y2="{{ grid.y }}" stroke="currentColor" stroke-opacity="0.08" stroke-width="1" />
+          {% comment %} text-anchor="end" — подпись растёт ВЛЕВО от фиксированной точки, широкий левый отступ гарантирует, что даже "10" помещается целиком. {% endcomment %}
+          <text x="24" y="{{ grid.y }}" text-anchor="end" dominant-baseline="middle" font-size="11" font-weight="600" fill="currentColor" opacity="0.4">{{ grid.label }}</text>
+          {% endfor %}
+          {% if mood_chart.mood.has_data %}
+          <path d="{{ mood_chart.mood.area_path }}" fill="url(#moodFill-{{ team.id }})" stroke="none" />
+          <polyline points="{{ mood_chart.mood.polyline }}" fill="none" stroke="var(--color-primary, #60a5fa)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" />
+          {% for dot in mood_chart.mood.dots %}
+          <circle cx="{{ dot.x }}" cy="{{ dot.y }}" r="3.5" fill="var(--color-primary, #60a5fa)" stroke="var(--color-base-100, #fff)" stroke-width="1.5"><title>{{ dot.opponent }} {{ dot.label }} — реакция {{ dot.value|floatformat:1 }}/10</title></circle>
+          {% endfor %}
+          {% else %}
+          <text x="{{ mood_chart.mood.width|add:'-32' }}" y="{{ mood_chart.mood.baseline_y }}" text-anchor="end" font-size="11" fill="currentColor" opacity="0.35">Нужно ещё оценённых матчей</text>
+          {% endif %}
+        </svg>
+        {% endlocalize %}
+      </div>
+    </div>
+
+    {% comment %}
+    TRUST — компактный, приглушённый мини-график СВОЕЙ высоты под mood, а не
+    вторая линия на той же оси (это и была причина "сливаются" на скрине).
+    Если валидных точек меньше 2 — показываем текстовое пояснение вместо
+    пустого места, чтобы блок не выглядел сломанным.
+    {% endcomment %}
+    <div class="mt-3 pt-3 border-t border-base-200">
+      <div class="flex items-baseline justify-between">
+        <span class="flex items-center gap-1.5 text-xs font-semibold opacity-70">
+          <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background: var(--color-success, #4ade80)"></span>
+          Доверие своих болельщиков
+        </span>
+        {% if mood_chart.latest_trust != None %}
+        <span class="text-base font-bold opacity-80" style="color: var(--color-success, #4ade80)">{{ mood_chart.latest_trust|floatformat:1 }}<span class="text-xs opacity-40 font-normal">/10</span></span>
+        {% endif %}
+      </div>
+      {% if mood_chart.trust.has_data %}
+      <div class="overflow-x-auto mt-1">
+        {% localize off %}
+        <svg viewBox="0 0 {{ mood_chart.trust.width }} {{ mood_chart.trust.height }}" class="w-full min-w-[480px]" style="max-height: 70px">
+          <defs>
+            <linearGradient id="trustFill-{{ team.id }}" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" style="stop-color: var(--color-success, #4ade80); stop-opacity: 0.18" />
+              <stop offset="100%" style="stop-color: var(--color-success, #4ade80); stop-opacity: 0" />
+            </linearGradient>
+          </defs>
+          {% for grid in mood_chart.trust.gridlines %}
+          <text x="24" y="{{ grid.y }}" text-anchor="end" dominant-baseline="middle" font-size="9" fill="currentColor" opacity="0.35">{{ grid.label }}</text>
+          {% endfor %}
+          <path d="{{ mood_chart.trust.area_path }}" fill="url(#trustFill-{{ team.id }})" stroke="none" />
+          <polyline points="{{ mood_chart.trust.polyline }}" fill="none" stroke="var(--color-success, #4ade80)" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" />
+          {% for dot in mood_chart.trust.dots %}
+          <circle cx="{{ dot.x }}" cy="{{ dot.y }}" r="2.5" fill="var(--color-success, #4ade80)"><title>{{ dot.opponent }} {{ dot.label }} — доверие {{ dot.value|floatformat:1 }}/10</title></circle>
+          {% endfor %}
+        </svg>
+        {% endlocalize %}
+      </div>
+      {% else %}
+      <p class="text-[11px] opacity-35 mt-1.5">Пока недостаточно данных — нужно минимум 2 оценённых матча.</p>
+      {% endif %}
+    </div>
+
+    <div class="flex justify-between text-[10px] opacity-40 mt-2 px-1">
+      <span>{{ mood_chart.oldest_label }}</span>
+      <span>{{ mood_chart.newest_label }}</span>
+    </div>
+
+    {% if mood_chart.has_expectation_data %}
+    {% comment %} Ожидания перед матчем — отдельный SVG-блок, метрика другой природы (% прогнозов ДО игры, не 0-10 оценка ПОСЛЕ). {% endcomment %}
+    <div class="mt-4 pt-3 border-t border-base-200">
+      <div class="text-xs font-bold uppercase tracking-wide opacity-50 mb-2">Ожидания перед матчем — % прогнозов на победу</div>
+      <div class="overflow-x-auto pb-1">
+        {% localize off %}
+        {% comment %}
+        w-full + min-w вместо фиксированной ширины/высоты — тот же паттерн,
+        что у mood/trust svg выше: на мобильном (узкий контейнер) SVG
+        пропорционально сжимается вместо того, чтобы вылезать за экран.
+        overflow-x-auto на родителе — подстраховка на случай, если бар
+        много и даже min-w не спасает (тогда просто появляется горизонтальный
+        скролл, а не обрезанный/сплющенный контент).
+        {% endcomment %}
+        <svg viewBox="0 0 {{ mood_chart.expectation.width }} {{ mood_chart.expectation.height }}" class="w-full min-w-[280px]" style="max-height: 90px">
+          <line x1="0" y1="{{ mood_chart.expectation.baseline_y }}" x2="{{ mood_chart.expectation.width }}" y2="{{ mood_chart.expectation.baseline_y }}" stroke="currentColor" stroke-opacity="0.12" stroke-width="1" />
+          {% for bar in mood_chart.expectation.bars %}
+          {% if bar.has_data %}
+          {% comment %}
+          БАГ, КОТОРЫЙ ТУТ БЫЛ (живой скрин 2026-09-07): использовался
+          `var(--color-accent, #a78bfa)` — фиолетовый фолбэк никогда не
+          применялся, потому что в РЕАЛЬНОЙ теме сайта --color-accent
+          определён и оказался teal/бирюзовым (oklch hue≈182), почти
+          неотличимым от --color-success (hue≈163) — бар "ожиданий" сливался
+          по цвету с графиком "Доверие" прямо под ним. --color-secondary в
+          этой же теме — розовый (hue≈354), гарантированно контрастирует и с
+          primary (синий, hue≈277), и с success/accent (teal) — проверено
+          напрямую в живом DOM через getComputedStyle.
+          {% endcomment %}
+          <rect x="{{ bar.x }}" y="{{ bar.y }}" width="{{ bar.width }}" height="{{ bar.height }}" rx="4" fill="var(--color-secondary, #ec4899)">
+            <title>{{ bar.opponent }} {{ bar.label }} — {{ bar.pct|floatformat:0 }}% ждали победу</title>
+          </rect>
+          <text x="{{ bar.cx }}" y="{{ bar.y }}" dy="-4" text-anchor="middle" font-size="10" font-weight="700" fill="currentColor" opacity="0.65">{{ bar.pct|floatformat:0 }}%</text>
+          {% else %}
+          <line x1="{{ bar.x }}" y1="{{ mood_chart.expectation.baseline_y }}" x2="{{ bar.x|add:bar.width }}" y2="{{ mood_chart.expectation.baseline_y }}" stroke="currentColor" stroke-opacity="0.25" stroke-width="2" stroke-dasharray="2 2" />
+          <text x="{{ bar.cx }}" y="{{ mood_chart.expectation.baseline_y }}" dy="-6" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.3">—</text>
+          {% endif %}
+          <text x="{{ bar.cx }}" y="{{ mood_chart.expectation.baseline_y }}" dy="14" text-anchor="middle" font-size="9" fill="currentColor" opacity="0.4">{{ bar.label }}</text>
+          {% endfor %}
+        </svg>
+        {% endlocalize %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if controversial_matches %}
+    <div class="mt-4 pt-3 border-t border-base-200">
+      <div class="text-xs font-bold uppercase tracking-wide opacity-50 mb-2 flex items-center gap-1.5">
+        <i class="ti ti-alert-triangle text-error"></i> Самые спорные решения сезона
+      </div>
+      <p class="text-[11px] opacity-40 mb-2">
+        Матчи, где мнения домашних и гостевых болельщиков о судействе разошлись сильнее всего —
+        это разброс мнений аудитории, а не подтверждённая судейская ошибка.
+      </p>
+      <ul class="space-y-1.5">
+        {% for item in controversial_matches %}
+        <li class="text-sm">
+          <a href="{% url 'matches:detail' item.match.id %}" class="hover:text-primary transition-colors">
+            {{ item.label }}
+          </a>
+          <span class="text-xs opacity-50">— расхождение {{ item.gap }} балла, {{ item.date|date:"d.m" }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
 
 <!-- === ДВЕ КОЛОНКИ === -->
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6 px-2 sm:px-0 min-w-0">

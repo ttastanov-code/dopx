@@ -1,0 +1,122 @@
+{% comment %}
+ДНК матча — partial (2026-09-07, четвёртый проход, ИСПРАВЛЕНИЕ АРХИТЕКТУРНОЙ
+ОШИБКИ).
+
+БАГ, КОТОРЫЙ ТУТ БЫЛ: в предыдущей версии я убрал два wrapper-а колонок
+(левая 2/3 / правая 1/3, каждая — независимый block-контекст со своим
+`space-y-*`) и сделал все 11 карточек прямыми детьми ОДНОЙ CSS grid-сетки
+(`grid grid-cols-1 lg:grid-cols-3`), управляя порядком через `order` и
+позицией через `lg:col-start`. На мобильном (1 колонка) это работало
+нормально. Но на десктопе (3 колонки) нативный CSS Grid без
+`grid-auto-flow: dense` и без явного `grid-row` кладёт элементы В ОБЩИЕ
+строчные треки: высота каждой строки = высота САМОГО высокого элемента,
+попавшего в эту строку, и оба "виртуальных столбца" (левый col-span-2,
+правый col-span-1) синхронизированы по одним и тем же границам строк.
+У карточек в левой и правой колонках совершенно разная высота контента
+("Составы команд" — гигантская, "Статистика" — крошечная), поэтому под
+короткими карточками справа оставались огромные пустые полосы высотой
+"пока не закончится соседняя высокая карточка слева". Это НЕ баг вёрстки
+конкретной карточки — это фундаментальное ограничение CSS Grid: он не
+умеет делать "две независимые по высоте колонки" без masonry (а
+`grid-template-rows: masonry` пока экспериментален и есть только в
+Firefox).
+
+ИСПРАВЛЕНИЕ: вернул оба wrapper-а колонок как независимые block-контейнеры
+(`space-y-*`, БЕЗ участия в grid-раскладке построчно) — см.
+templates/matches/detail.html. Карточка "ДНК матча" при этом должна быть
+на разных МЕСТАХ в DOM на мобильном и десктопе (мобильный — сразу после
+"События матча" в левой колонке; десктоп — между "За кого болели" и
+"Оценки команд" в правой), а не просто визуально переставлена — двумя
+независимыми `space-y-*` контейнерами это чисто CSS не сделать (нет
+аналога `order` между независимыми родителями). Поэтому карточка вынесена
+в этот partial и ВКЛЮЧЕНА ДВАЖДЫ — по разу в каждую колонку, но каждое
+включение показывается только на своём брейкпоинте через Tailwind-классы
+видимости (`lg:hidden` / `hidden lg:block`), переданные через
+`extra_class`. В DOM оба экземпляра присутствуют всегда, рендерится
+(visible) только один — это не хак, а стандартный паттерн "разное место
+в DOM на разных брейкпоинтах без JS", когда чистый CSS-reflow (order)
+недостаточен из-за разных родительских колонок.
+{% endcomment %}
+{% if match_dna %}
+<div class="md-side-card {{ extra_class }}">
+    <div class="md-side-card__head flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2">
+            <i class="ti ti-activity"></i>
+            <h3 class="font-extrabold text-base md:text-lg">ДНК матча</h3>
+        </div>
+        {% comment %}
+        "Поделиться" — Web Share API + фолбэк на window.open, тот
+        же паттерн, что templates/users/badge_catalog.html
+        (см. её докстринг про причину выбора этого способа).
+        Шерим НЕ URL страницы матча, а прямую ссылку на PNG
+        core:match_dna_share_card — карточка должна открываться
+        как картинка одним нажатием, а не превью ссылки
+        (docs/adr/0033-match-dna-phase2.md).
+        {% endcomment %}
+        <button type="button" class="btn btn-ghost btn-xs"
+                onclick="if(window.dopxTrack){dopxTrack('share_clicked', {channel: 'native', context: 'match_dna', match_id: '{{ match.id }}'})}; navigator.share ? navigator.share({title: 'ДНК матча на DOPX', url: '{{ match_dna_share_url }}'}) : window.open('{{ match_dna_share_url }}', '_blank')">
+            <i class="ti ti-share"></i> Поделиться
+        </button>
+    </div>
+    <div class="p-3 sm:p-4 space-y-3">
+        <div class="flex items-center flex-wrap gap-2">
+            {% if match_dna.drama_level == 'high' %}
+            <span class="badge badge-error badge-lg font-bold">Высокая драма</span>
+            {% elif match_dna.drama_level == 'medium' %}
+            <span class="badge badge-warning badge-lg font-bold">Средняя драма</span>
+            {% else %}
+            <span class="badge badge-ghost badge-lg font-bold">Спокойный матч</span>
+            {% endif %}
+            <span class="text-xs opacity-60">индекс драмы {{ match_dna.drama_index|floatformat:0 }}</span>
+            {% if match_dna.consensus_level == 'high' %}
+            <span class="badge badge-success badge-sm gap-1"><i class="ti ti-users"></i> Высокий консенсус</span>
+            {% elif match_dna.consensus_level == 'low' %}
+            <span class="badge badge-error badge-sm gap-1"><i class="ti ti-users"></i> Мнения разошлись</span>
+            {% elif match_dna.consensus_level == 'medium' %}
+            <span class="badge badge-ghost badge-sm gap-1"><i class="ti ti-users"></i> Средний консенсус</span>
+            {% endif %}
+        </div>
+        {% if match_dna.hero %}
+        <div class="flex items-center gap-2.5 bg-base-200/60 rounded-xl p-2.5">
+            <div class="w-8 h-8 rounded-full bg-warning/15 flex items-center justify-center flex-shrink-0">
+                <i class="ti ti-crown text-warning"></i>
+            </div>
+            <div class="min-w-0">
+                <div class="text-[10px] uppercase tracking-wide opacity-50">Герой матча</div>
+                <a href="{% url 'players:detail' match_dna.hero.player.id %}" class="font-semibold text-sm hover:underline">
+                    {{ match_dna.hero.player }} — {{ match_dna.hero.score|floatformat:1 }}
+                </a>
+            </div>
+        </div>
+        {% endif %}
+        {% if match_dna.momentum_points %}
+        <ul class="text-sm space-y-1.5">
+            {% for point in match_dna.momentum_points %}
+            <li class="flex items-start gap-2">
+                <i class="ti ti-bolt text-warning mt-0.5 flex-shrink-0"></i>
+                <span>{{ point }}</span>
+            </li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+        {% if match_dna.controversial_episode %}
+        <p class="text-sm opacity-80 border-t border-base-300 pt-2.5 flex items-start gap-2">
+            <i class="ti ti-alert-triangle text-error mt-0.5 flex-shrink-0"></i>
+            <span>{{ match_dna.controversial_episode }}</span>
+        </p>
+        {% endif %}
+        {% if match_dna.referee_divergence %}
+        <p class="text-sm opacity-80 {% if not match_dna.controversial_episode %}border-t border-base-300 pt-2.5{% endif %} flex items-start gap-2">
+            <i class="ti ti-scale mt-0.5 flex-shrink-0"></i>
+            <span>{{ match_dna.referee_divergence }}</span>
+        </p>
+        {% endif %}
+        {% if match_dna.turning_point_text %}
+        <p class="text-sm opacity-80 flex items-start gap-2">
+            <i class="ti ti-refresh text-info mt-0.5 flex-shrink-0"></i>
+            <span>{{ match_dna.turning_point_text }}</span>
+        </p>
+        {% endif %}
+    </div>
+</div>
+{% endif %}

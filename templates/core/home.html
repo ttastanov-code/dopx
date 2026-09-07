@@ -88,9 +88,15 @@
                 <p class="text-xs sm:text-sm opacity-80 mt-0.5">Завершите оценку матча, чтобы получить XP</p>
             </div>
         </div>
-        <!-- Кнопка "Продолжить" -->
-        <a href="{% url 'evaluations:context' active_match_id %}" 
-           class="btn btn-sm btn-warning btn-block sm:btn-auto whitespace-nowrap flex-shrink-0 w-full sm:w-auto">
+        <!-- Кнопка "Продолжить" — БЫЛО btn-warning (2026-09-07, продуктовый
+        фидбек: "уродская золотая кнопка"): на янтарном alert-warning фоне
+        кнопка ТОГО ЖЕ цвета сливалась в сплошное золотое пятно вместо того,
+        чтобы выделяться как явный CTA. btn-primary — тот же паттерн, что
+        уже используется для точно такой же кнопки "Продолжить" в
+        templates/profile/dashboard.html, плюс он контрастирует с янтарным
+        фоном баннера, а не растворяется в нём. -->
+        <a href="{% url 'evaluations:context' active_match_id %}"
+           class="btn btn-sm btn-primary btn-block sm:btn-auto whitespace-nowrap flex-shrink-0 w-full sm:w-auto">
             <i class="ti ti-arrow-right"></i>
             Продолжить
         </a>

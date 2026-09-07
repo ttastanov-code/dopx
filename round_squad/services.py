@@ -27,6 +27,7 @@ from django.utils import timezone
 
 from aggregates.models import CoachMatchAggregate, PlayerMatchAggregate
 from coaches.models import Coach
+from events.models import MatchEvent
 from evaluations.models import MatchEvaluation
 from lineups.models import MatchLineupPlayer
 from matches.models import Match
@@ -37,7 +38,7 @@ from players.positions import (
     SLOT_PROCESSING_ORDER,
     resolve_lineup_codes,
 )
-from round_squad.models import RoundBestXI, RoundBestXISlot
+from round_squad.models import RoundBestXI, RoundBestXISlot, RoundPositionRanking
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,26 @@ ROUND_CONFIDENT_VOTES_THRESHOLD = 10
 # случайная горстка (как у тура с одним заранее сыгранным перенесённым
 # матчем).
 ROUND_CURRENT_TOUR_MIN_COMPLETION_RATIO = 0.75
+
+# "Почему он в сборной?" (docs/PRODUCT_SCOPE_MATCH_DNA_AND_EXPLAINABILITY.md,
+# раздел 1) — тот же список, что и season_squad/services.py и
+# evaluations/views.py::_compute_key_player_ids (docs/adr/0006). Дублируется
+# небольшой константой намеренно, а не импортируется из season_squad —
+# round_squad и season_squad не должны зависеть друг от друга ради одного
+# списка строк.
+NOTABLE_EVENT_TYPES = ("goal", "yellow_card", "red_card", "own_goal", "disallowed_goal")
+NOTABLE_EVENT_LABELS = {
+    "goal": "гол",
+    "yellow_card": "жёлтая карточка",
+    "red_card": "красная карточка",
+    "own_goal": "автогол",
+    "disallowed_goal": "отменённый гол",
+}
+
+# Сколько кандидатов пула сохранять в снимок RoundPositionRanking — тот же
+# смысл и то же число, что season_squad.RANKING_POOL_DEPTH (не импортируем
+# оттуда — см. докстринг про независимость round_squad/season_squad).
+RANKING_POOL_DEPTH = 10
 
 
 def resolve_current_tour(season) -> int | None:
@@ -328,7 +349,36 @@ def _find_most_dramatic_match(season, tour: int):
     return match, best["drama_avg"], best["votes"]
 
 
-def _build_round_explanation(label: str, candidate: RoundCandidate, score: float, is_confident: bool) -> str:
+def _describe_nearest_competitor_round(score: float, runner_up: tuple[RoundCandidate, float] | None) -> str:
+    """Тот же смысл, что season_squad._describe_nearest_competitor — см. её
+    докстринг про причину гейта `gap <= 0`."""
+    if runner_up is None:
+        return ""
+    competitor, competitor_score = runner_up
+    gap = round(score - competitor_score, 2)
+    if gap <= 0:
+        return ""
+    return f"Обошёл ближайшего конкурента ({competitor.name}, {competitor_score:.2f}) на {gap:.2f} балла."
+
+
+def _describe_round_rank_change(rank_change: str, rank_change_delta: int | None) -> str:
+    """"Изменение позиции" тур-к-туру (docs/adr/0032-squad-explainability-v2.md)
+    — см. докстринг RoundBestXISlot.RANK_CHANGE_CHOICES про то, почему
+    сравнение идёт с прошлым ЗАФИКСИРОВАННЫМ туром, а не с прошлым
+    прогоном recompute этого же тура."""
+    if rank_change == RoundBestXISlot.RANK_CHANGE_NEW:
+        return ""  # "не играл в прошлом туре" — не показываем как отдельную фразу, это не всегда значимо (травма/ротация/только начал сезон)
+    if rank_change == RoundBestXISlot.RANK_CHANGE_UP and rank_change_delta:
+        matches_word = "место" if rank_change_delta == 1 else "места"
+        return f"Поднялся на {rank_change_delta} {matches_word} по сравнению с прошлым туром."
+    return ""
+
+
+def _build_round_explanation(
+    label: str, candidate: RoundCandidate, score: float, is_confident: bool,
+    rank_change: str = RoundBestXISlot.RANK_CHANGE_NEW, rank_change_delta: int | None = None,
+    runner_up: tuple[RoundCandidate, float] | None = None,
+) -> str:
     sentence = (
         f"Рейтинг {score:.2f} на позиции «{label}» в этом туре — среднее по "
         f"{candidate.votes} голосам с поправкой на их число."
@@ -337,10 +387,71 @@ def _build_round_explanation(label: str, candidate: RoundCandidate, score: float
         sentence += " Голосов достаточно, чтобы доверять этому месту."
     else:
         sentence += " Голосов пока немного — оценка может быть неточной."
+
+    rank_change_text = _describe_round_rank_change(rank_change, rank_change_delta)
+    if rank_change_text:
+        sentence += f" {rank_change_text}"
+
+    competitor_text = _describe_nearest_competitor_round(score, runner_up)
+    if competitor_text:
+        sentence += f" {competitor_text}"
+
     return sentence
 
 
-def _apply_round_slot(round_best_xi: RoundBestXI, slot_code: str, candidate: RoundCandidate | None, score: float | None) -> None:
+def _describe_notable_events_in_round(player_id: str, season, tour: int) -> str:
+    """Тот же принцип, что season_squad._describe_top_matches, но в туре
+    игрок физически участвует ровно в ОДНОМ матче — вместо "топ-N матчей"
+    просто перечисляем его заметные события (см. NOTABLE_EVENT_TYPES) в
+    этом единственном матче."""
+    match_id = (
+        PlayerMatchAggregate.objects
+        .filter(player_id=player_id, match__season=season, match__tour=tour)
+        .values_list("match_id", flat=True)
+        .first()
+    )
+    if not match_id:
+        return ""
+    events = list(
+        MatchEvent.objects
+        .filter(player_id=player_id, match_id=match_id, event_type__in=NOTABLE_EVENT_TYPES)
+        .order_by("minute")
+    )
+    if not events:
+        return ""
+    ev_text = ", ".join(
+        f"{NOTABLE_EVENT_LABELS.get(e.event_type, e.event_type)} ({e.display_minute}')" for e in events
+    )
+    return f"Отличился: {ev_text}."
+
+
+def _store_round_ranking_batch(
+    buffer: list[RoundPositionRanking],
+    round_best_xi: RoundBestXI,
+    slot_code: str,
+    ranked: list[tuple[RoundCandidate, float]],
+) -> None:
+    """Тот же принцип, что season_squad._store_ranking_batch, но без
+    computed_at — на (тур, слот) всегда ровно один актуальный снимок (см.
+    докстринг RoundPositionRanking про delete+bulk_create в recompute_round)."""
+    for rank, (candidate, score) in enumerate(ranked[:RANKING_POOL_DEPTH], start=1):
+        buffer.append(RoundPositionRanking(
+            round_best_xi=round_best_xi,
+            slot_code=slot_code,
+            content_type_id=candidate.content_type_id,
+            object_id=candidate.object_id,
+            rank=rank,
+            round_score=score,
+            votes_count=candidate.votes,
+        ))
+
+
+def _apply_round_slot(
+    round_best_xi: RoundBestXI, slot_code: str, candidate: RoundCandidate | None, score: float | None,
+    season=None, tour: int | None = None,
+    previous_ranks: dict[tuple[str, int, str], int] | None = None,
+    runner_up: tuple[RoundCandidate, float] | None = None,
+) -> None:
     order = BEST_XI_SLOT_DISPLAY_ORDER.get(slot_code, 99)
     label = BEST_XI_SLOT_LABELS.get(slot_code, slot_code)
 
@@ -351,12 +462,27 @@ def _apply_round_slot(round_best_xi: RoundBestXI, slot_code: str, candidate: Rou
                 order=order, content_type=None, object_id=None,
                 occupant_name="", occupant_team_name="", occupant_photo_url="", occupant_profile_url="",
                 round_score=None, votes_count=0, is_confident=False,
+                rank_change=RoundBestXISlot.RANK_CHANGE_NEW, rank_change_delta=None,
                 explanation="Пока недостаточно голосов на этой позиции в этом туре.",
             ),
         )
         return
 
+    previous_ranks = previous_ranks or {}
+    prev_rank = previous_ranks.get((slot_code, candidate.content_type_id, candidate.object_id))
+    if prev_rank is None:
+        rank_change, delta = RoundBestXISlot.RANK_CHANGE_NEW, None
+    elif prev_rank == 1:
+        rank_change, delta = RoundBestXISlot.RANK_CHANGE_SAME, None
+    else:
+        rank_change, delta = RoundBestXISlot.RANK_CHANGE_UP, prev_rank - 1
+
     is_confident = candidate.votes >= ROUND_CONFIDENT_VOTES_THRESHOLD
+    explanation = _build_round_explanation(label, candidate, score, is_confident, rank_change, delta, runner_up)
+    if slot_code != "COACH" and season is not None and tour is not None:
+        events_text = _describe_notable_events_in_round(candidate.object_id, season, tour)
+        if events_text:
+            explanation = f"{explanation} {events_text}"
     RoundBestXISlot.objects.update_or_create(
         round_best_xi=round_best_xi, slot_code=slot_code,
         defaults=dict(
@@ -365,7 +491,8 @@ def _apply_round_slot(round_best_xi: RoundBestXI, slot_code: str, candidate: Rou
             occupant_name=candidate.name, occupant_team_name=candidate.team_name,
             occupant_photo_url=candidate.photo_url, occupant_profile_url=candidate.profile_url,
             round_score=score, votes_count=candidate.votes, is_confident=is_confident,
-            explanation=_build_round_explanation(label, candidate, score, is_confident),
+            rank_change=rank_change, rank_change_delta=delta,
+            explanation=explanation,
         ),
     )
 
@@ -383,6 +510,27 @@ def recompute_round(season, tour: int) -> RoundBestXI:
     player_stats, pool_by_code = _build_round_player_data(season, tour)
     coach_pool = _build_round_coach_pool(season, tour)
 
+    # "Изменение позиции" тур-к-туру (docs/adr/0032-squad-explainability-v2.md)
+    # — снимок ПРЕДЫДУЩЕГО тура (не предыдущего прогона ЭТОГО ЖЕ тура, см.
+    # докстринг RoundBestXISlot.RANK_CHANGE_CHOICES). Если предыдущего тура
+    # нет вообще (первый тур сезона) — previous_ranks остаётся пустым,
+    # rank_change для всех слотов корректно схлопывается в NEW.
+    previous_round = (
+        RoundBestXI.objects.filter(season=season, tour__lt=tour).order_by('-tour').first()
+    )
+    previous_ranks: dict[tuple[str, int, str], int] = {}
+    if previous_round is not None:
+        for row in RoundPositionRanking.objects.filter(
+            round_best_xi=previous_round
+        ).values("slot_code", "content_type_id", "object_id", "rank"):
+            previous_ranks[(row["slot_code"], row["content_type_id"], str(row["object_id"]))] = row["rank"]
+
+    # Снимок ЭТОГО тура полностью перезаписывается на каждый пересчёт (см.
+    # докстринг RoundPositionRanking) — предыдущий прогон ЭТОГО ЖЕ тура нам
+    # не нужен ни для чего, "предыдущее" всегда означает прошлый тур.
+    RoundPositionRanking.objects.filter(round_best_xi=round_best_xi).delete()
+    ranking_buffer: list[RoundPositionRanking] = []
+
     # ---- 11 полевых слотов формации 4-3-3 — жадное распределение, тот же
     # принцип и тот же SLOT_PROCESSING_ORDER, что у season_squad. ----
     assigned: set[str] = set()
@@ -397,20 +545,26 @@ def recompute_round(season, tour: int) -> RoundBestXI:
                 candidates.append(cand)
 
         ranked = _rank_round_pool(candidates)
+        _store_round_ranking_batch(ranking_buffer, round_best_xi, slot_code, ranked)
         if ranked:
             top_candidate, top_score = ranked[0]
             assigned.add(top_candidate.object_id)
-            _apply_round_slot(round_best_xi, slot_code, top_candidate, top_score)
+            runner_up = ranked[1] if len(ranked) > 1 else None
+            _apply_round_slot(round_best_xi, slot_code, top_candidate, top_score, season, tour, previous_ranks, runner_up)
         else:
-            _apply_round_slot(round_best_xi, slot_code, None, None)
+            _apply_round_slot(round_best_xi, slot_code, None, None, season, tour, previous_ranks, None)
 
     # ---- Тренер тура — отдельный пул, не пересекается с игроками ----
     coach_ranked = _rank_round_pool(coach_pool)
+    _store_round_ranking_batch(ranking_buffer, round_best_xi, "COACH", coach_ranked)
     if coach_ranked:
         top_coach, coach_score = coach_ranked[0]
-        _apply_round_slot(round_best_xi, "COACH", top_coach, coach_score)
+        coach_runner_up = coach_ranked[1] if len(coach_ranked) > 1 else None
+        _apply_round_slot(round_best_xi, "COACH", top_coach, coach_score, season, tour, previous_ranks, coach_runner_up)
     else:
-        _apply_round_slot(round_best_xi, "COACH", None, None)
+        _apply_round_slot(round_best_xi, "COACH", None, None, season, tour, previous_ranks, None)
+
+    RoundPositionRanking.objects.bulk_create(ranking_buffer, batch_size=200)
 
     # ---- «Игрок тура» — плоский пул, независимо от позиции/слота ----
     flat_ranked = _rank_round_pool(list(player_stats.values()))
@@ -425,12 +579,23 @@ def recompute_round(season, tour: int) -> RoundBestXI:
         round_best_xi.player_of_round_profile_url = top_player.profile_url
         round_best_xi.player_of_round_score = player_score
         round_best_xi.player_of_round_votes = top_player.votes
-        round_best_xi.player_of_round_explanation = (
+        player_of_round_explanation = (
             f"Лучший результат тура среди всех позиций — {player_score:.2f} "
             f"по {top_player.votes} голосам."
             + (" Голосов достаточно, чтобы доверять этому выбору." if is_confident
                else " Голосов пока немного — выбор может измениться.")
         )
+        # "Игрок тура" — плоский пул независимо от слота/позиции, поэтому
+        # ближайший конкурент здесь — flat_ranked[1] (второй ЛУЧШИЙ РЕЗУЛЬТАТ
+        # ТУРА в целом), а не runner_up внутри одного слота формации.
+        flat_runner_up = flat_ranked[1] if len(flat_ranked) > 1 else None
+        competitor_text = _describe_nearest_competitor_round(player_score, flat_runner_up)
+        if competitor_text:
+            player_of_round_explanation = f"{player_of_round_explanation} {competitor_text}"
+        events_text = _describe_notable_events_in_round(top_player.object_id, season, tour)
+        if events_text:
+            player_of_round_explanation = f"{player_of_round_explanation} {events_text}"
+        round_best_xi.player_of_round_explanation = player_of_round_explanation
     else:
         round_best_xi.player_of_round_content_type = None
         round_best_xi.player_of_round_object_id = None
