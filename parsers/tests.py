@@ -156,6 +156,69 @@ class IsScheduleTentativeMeansPostponedTests(TestCase):
         self.assertEqual(match.status, "finished")
 
 
+class FinishedMatchDiscrepancyTests(TestCase):
+    """
+    ParserDiscrepancy (см. её докстринг в parsers/models.py, заведено по
+    итогам внешнего аудита 2026-09-04) — матч, уже бывший 'finished',
+    получает другой счёт/статус при повторном импорте. Обычный прогресс
+    матча (scheduled → live → finished) НЕ должен создавать записи — только
+    правка задним числом поверх уже завершённого матча.
+    """
+
+    @staticmethod
+    def _game_data(**overrides):
+        data = {
+            "id": 9101,
+            "date": "2026-09-01",
+            "time": None,
+            "status": "finished",
+            "is_schedule_tentative": False,
+            "tour": 5,
+            "home_team": {"id": 601, "name": "Home FC"},
+            "away_team": {"id": 602, "name": "Away FC"},
+            "season_id": 201,
+            "home_score": 2,
+            "away_score": 1,
+        }
+        data.update(overrides)
+        return data
+
+    def test_score_correction_on_finished_match_creates_discrepancy(self):
+        from parsers.models import ParserDiscrepancy
+
+        import_match_core(self._game_data())
+        # Тот же external_id, другой счёт — как будто KFF задним числом
+        # поправил протокол уже отыгранного матча.
+        import_match_core(self._game_data(home_score=3))
+
+        discrepancies = ParserDiscrepancy.objects.filter(field_name="home_score")
+        self.assertEqual(discrepancies.count(), 1)
+        d = discrepancies.first()
+        self.assertEqual(d.old_value, "2")
+        self.assertEqual(d.new_value, "3")
+        self.assertFalse(d.reviewed)
+
+    def test_reimporting_same_finished_score_creates_no_discrepancy(self):
+        """Повторный импорт с ТЕМИ ЖЕ значениями (например, sync_recent_matches
+        перепроверяет уже виденный матч) — не должен создавать шум."""
+        from parsers.models import ParserDiscrepancy
+
+        import_match_core(self._game_data())
+        import_match_core(self._game_data())
+
+        self.assertEqual(ParserDiscrepancy.objects.count(), 0)
+
+    def test_normal_progression_to_finished_creates_no_discrepancy(self):
+        """Обычный путь scheduled → finished — НЕ расхождение, это первый
+        раз, когда матч вообще становится завершённым."""
+        from parsers.models import ParserDiscrepancy
+
+        import_match_core(self._game_data(status="upcoming", home_score=None, away_score=None))
+        import_match_core(self._game_data(status="finished", home_score=2, away_score=1))
+
+        self.assertEqual(ParserDiscrepancy.objects.count(), 0)
+
+
 class StatusMapTests(TestCase):
     """`STATUS_MAP` — единственное место, переводящее статус KFF в статус
     DOPX (`scheduled`/`live`/`finished`). Ошибка здесь тихо ломает и

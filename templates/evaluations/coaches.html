@@ -22,7 +22,8 @@
 
 <!-- === FORM === -->
 <div class="max-w-3xl mx-auto px-3">
-    <form method="post" action="{% url 'evaluations:coaches' match.id %}" class="space-y-5">
+    <form method="post" action="{% url 'evaluations:coaches' match.id %}" class="space-y-5"
+          data-wz-untouched-hint="Потяните, чтобы оценить — иначе этот критерий не будет учтён">
         {% csrf_token %}
 
         {% for coach in coaches %}
@@ -40,68 +41,25 @@
                     </div>
                     <div class="badge badge-accent badge-sm flex-shrink-0">Тренер</div>
                 </div>
-                <div class="space-y-3.5">
-                    <div class="wz-accent-accent wz-slider-card">
-                        <div class="flex justify-between items-center mb-2">
-                            <label class="text-sm font-semibold flex items-center gap-1.5">
-                                <i class="ti ti-chess text-accent"></i> Тактика
-                                {% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.coach.tactics %}
-                            </label>
-                            <span class="wz-slider-card__value" id="coach_{{ coach.id }}_tactics_value">5</span>
-                        </div>
-                        <input type="range" name="coach_{{ coach.id }}_tactics" min="1" max="10" value="5"
-                               class="wizard-slider"
-                               oninput="document.getElementById('coach_{{ coach.id }}_tactics_value').textContent = this.value">
-                        <div class="flex justify-between text-[10px] text-base-content/40 mt-1.5 px-1">
-                            <span>1</span><span>5</span><span>10</span>
-                        </div>
+                {% if mode == 'quick' %}
+                <div data-wz-preset-scope>
+                    <div class="grid grid-cols-3 gap-2 mb-3">
+                        <button type="button" class="btn btn-sm btn-outline" data-wz-preset-value="15">Слабо</button>
+                        <button type="button" class="btn btn-sm btn-outline" data-wz-preset-value="55">Нормально</button>
+                        <button type="button" class="btn btn-sm btn-outline" data-wz-preset-value="90">Сильно</button>
                     </div>
-                    <div class="wz-accent-accent wz-slider-card">
-                        <div class="flex justify-between items-center mb-2">
-                            <label class="text-sm font-semibold flex items-center gap-1.5">
-                                <i class="ti ti-refresh text-accent"></i> Замены
-                                {% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.coach.substitutions %}
-                            </label>
-                            <span class="wz-slider-card__value" id="coach_{{ coach.id }}_substitutions_value">5</span>
+                    <details>
+                        <summary class="cursor-pointer list-none text-xs text-base-content/50 mb-2">Настроить каждый критерий вручную</summary>
+                        <div class="space-y-3.5 mt-2">
+                            {% include 'evaluations/_coach_criteria.html' with coach=coach %}
                         </div>
-                        <input type="range" name="coach_{{ coach.id }}_substitutions" min="1" max="10" value="5"
-                               class="wizard-slider"
-                               oninput="document.getElementById('coach_{{ coach.id }}_substitutions_value').textContent = this.value">
-                        <div class="flex justify-between text-[10px] text-base-content/40 mt-1.5 px-1">
-                            <span>1</span><span>5</span><span>10</span>
-                        </div>
-                    </div>
-                    <div class="wz-accent-accent wz-slider-card">
-                        <div class="flex justify-between items-center mb-2">
-                            <label class="text-sm font-semibold flex items-center gap-1.5">
-                                <i class="ti ti-control text-accent"></i> Управление
-                                {% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.coach.game_management %}
-                            </label>
-                            <span class="wz-slider-card__value" id="coach_{{ coach.id }}_management_value">5</span>
-                        </div>
-                        <input type="range" name="coach_{{ coach.id }}_management" min="1" max="10" value="5"
-                               class="wizard-slider"
-                               oninput="document.getElementById('coach_{{ coach.id }}_management_value').textContent = this.value">
-                        <div class="flex justify-between text-[10px] text-base-content/40 mt-1.5 px-1">
-                            <span>1</span><span>5</span><span>10</span>
-                        </div>
-                    </div>
-                    <div class="wz-accent-accent wz-slider-card">
-                        <div class="flex justify-between items-center mb-2">
-                            <label class="text-sm font-semibold flex items-center gap-1.5">
-                                <i class="ti ti-impact text-accent"></i> Влияние
-                                {% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.coach.impact %}
-                            </label>
-                            <span class="wz-slider-card__value" id="coach_{{ coach.id }}_impact_value">5</span>
-                        </div>
-                        <input type="range" name="coach_{{ coach.id }}_impact" min="1" max="10" value="5"
-                               class="wizard-slider"
-                               oninput="document.getElementById('coach_{{ coach.id }}_impact_value').textContent = this.value">
-                        <div class="flex justify-between text-[10px] text-base-content/40 mt-1.5 px-1">
-                            <span>1</span><span>5</span><span>10</span>
-                        </div>
-                    </div>
+                    </details>
                 </div>
+                {% else %}
+                <div class="space-y-3.5">
+                    {% include 'evaluations/_coach_criteria.html' with coach=coach %}
+                </div>
+                {% endif %}
             </div>
         </div>
         {% empty %}

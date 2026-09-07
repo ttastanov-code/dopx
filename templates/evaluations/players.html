@@ -17,11 +17,16 @@
 
 <div class="max-w-7xl mx-auto px-3 text-center mb-5">
     <h2 class="text-xl sm:text-2xl font-extrabold mb-1">Оцените игроков</h2>
+    {% if mode == 'quick' %}
+    <p class="text-sm text-base-content/60">Мы отметили несколько заметных игроков — оцените их или разверните весь состав</p>
+    {% else %}
     <p class="text-sm text-base-content/60">Оценивайте только тех, кого хорошо запомнили</p>
+    {% endif %}
 </div>
 
 <!-- === FORM === -->
-<form method="post" action="{% url 'evaluations:players' match.id %}" class="max-w-7xl mx-auto px-3" id="players-form">
+<form method="post" action="{% url 'evaluations:players' match.id %}" class="max-w-7xl mx-auto px-3" id="players-form"
+      data-wz-untouched-hint="Потяните хотя бы один ползунок — иначе этот критерий не будет учтён">
     {% csrf_token %}
 
     <!-- Live Counter -->
@@ -58,6 +63,21 @@
             </div>
 
             <!-- Запас -->
+            {% if mode == 'quick' %}
+            <details>
+                <summary class="cursor-pointer list-none text-xs font-bold uppercase tracking-wider text-info/80 mb-2.5 flex items-center gap-1.5">
+                    <i class="ti ti-chevron-right text-[11px] transition-transform"></i>
+                    Показать запасных ({{ home_bench_count }})
+                </summary>
+                <div class="space-y-2.5 mt-2.5">
+                    {% for lp in lineup_players %}
+                    {% if not lp.is_starting and lp.lineup.side == 'home' %}
+                    {% include 'evaluations/_player_card.html' with lp=lp prefix="player" %}
+                    {% endif %}
+                    {% endfor %}
+                </div>
+            </details>
+            {% else %}
             <div>
                 <h3 class="text-xs font-bold uppercase tracking-wider text-info/80 mb-2.5 flex items-center gap-1.5">
                     <i class="ti ti-clock text-[11px]"></i> Запасные
@@ -70,6 +90,7 @@
                     {% endfor %}
                 </div>
             </div>
+            {% endif %}
         </div>
 
         <!-- Гостевая команда -->
@@ -96,6 +117,21 @@
             </div>
 
             <!-- Запас -->
+            {% if mode == 'quick' %}
+            <details>
+                <summary class="cursor-pointer list-none text-xs font-bold uppercase tracking-wider text-info/80 mb-2.5 flex items-center gap-1.5">
+                    <i class="ti ti-chevron-right text-[11px] transition-transform"></i>
+                    Показать запасных ({{ away_bench_count }})
+                </summary>
+                <div class="space-y-2.5 mt-2.5">
+                    {% for lp in lineup_players %}
+                    {% if not lp.is_starting and lp.lineup.side == 'away' %}
+                    {% include 'evaluations/_player_card.html' with lp=lp prefix="player" %}
+                    {% endif %}
+                    {% endfor %}
+                </div>
+            </details>
+            {% else %}
             <div>
                 <h3 class="text-xs font-bold uppercase tracking-wider text-info/80 mb-2.5 flex items-center gap-1.5">
                     <i class="ti ti-clock text-[11px]"></i> Запасные
@@ -108,6 +144,7 @@
                     {% endfor %}
                 </div>
             </div>
+            {% endif %}
         </div>
     </div>
 

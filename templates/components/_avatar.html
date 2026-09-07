@@ -14,21 +14,9 @@ templates/components/_avatar.html
   ring_style   — необязательная СЫРАЯ CSS-строка для кольца через outline
                  (например "outline: 2px solid var(--color-success);
                  outline-offset: 2px;"), а не через Tailwind-класс
-                 ring-{цвет}. ПРИЧИНА: этот проект грузит Tailwind как
-                 отдельный браузерный рантайм (@tailwindcss/browser@4,
-                 см. base.html), а daisyUI — отдельным <link>-стилем, а
-                 не как Tailwind-плагин/@theme. Из-за этого Tailwind не
-                 знает про daisyUI-цвета "success"/"warning" и т.п. как
-                 ИМЕНА для генерации классов ring-success/bg-success/…:
-                 класс ring-success/80 тихо схлопывается в дефолтный
-                 нейтральный оттенок Tailwind — эту проблему поймали
-                 2026-08-22, когда кольцо доверия вокруг аватара в
-                 «Сборной DOPX» перестало визуально отличать success/
-                 warning (см. season_squad/views.py — там же raw CSS var()
-                 напрямую, а не Tailwind-имя цвета). outline вместо
-                 box-shadow-based ring — тоже сознательно: overflow-hidden
-                 на этом div обрезал бы box-shadow-кольцо, а outline
-                 рисуется поверх, вне зоны обрезки.
+                 ring-{цвет} (см. docs/adr/0021-tailwind-runtime-daisyui-colors.md).
+                 outline, а не box-shadow-ring — overflow-hidden на этом
+                 div обрезал бы box-shadow-кольцо, outline рисуется поверх.
 Вызывать ТОЛЬКО через {% include %}, не напрямую — как и другие партиалы
 в этой папке (см. _confidence_badge.html).
 {% endcomment %}

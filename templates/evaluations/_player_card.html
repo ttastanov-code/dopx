@@ -1,13 +1,13 @@
 {% comment %}
 Карточка игрока для оценки
 Использование: {% include 'evaluations/_player_card.html' with lp=lp prefix="player" %}
+Ожидает в контексте (через наследование от родительского шаблона, не
+обязательные параметры include): mode, key_player_ids — режим "Быстро"
+(см. docs/adr/0006-quick-full-evaluation-mode.md) предзаполняет тумблер для
+курируемого набора заметных игроков.
 
-РЕДИЗАЙН (2026-08-31, второй проход): аватар крупнее (44px), тумблер —
-полноценный тач-таргет с явной подписью состояния, слайдеры переведены
-на общий .wz-slider-card (было: голый текст без фона, значение сливалось
-со строкой лейбла).
 {% endcomment %}
-<div x-data="playerEvaluationCard"
+<div x-data="playerEvaluationCard({% if mode == 'quick' and lp.player.id in key_player_ids %}true{% else %}false{% endif %})"
 class="wz-card card bg-base-100 border-2 shadow-sm"
 :class="evaluate ? 'border-primary bg-primary/5' : 'border-base-200'">
     <div class="card-body p-3.5">
@@ -34,6 +34,11 @@ class="wz-card card bg-base-100 border-2 shadow-sm"
                         {% else %}
                         <span class="text-info font-semibold flex items-center gap-0.5">
                             <i class="ti ti-clock text-[11px]"></i> Запас
+                        </span>
+                        {% endif %}
+                        {% if mode == 'quick' and lp.player.id in key_player_ids %}
+                        <span class="text-warning font-semibold flex items-center gap-0.5">
+                            <i class="ti ti-star text-[11px]"></i> Рекомендуем
                         </span>
                         {% endif %}
                     </div>

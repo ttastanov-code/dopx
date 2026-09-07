@@ -195,7 +195,7 @@ class MarkAllAsReadView(LoginRequiredMixin, View):
             }, request=request)
             return HttpResponse(items_html + _oob_counters_html(request.user))
 
-        messages.success(request, f'✅ Все {count} уведомлений отмечены как прочитанные')
+        messages.success(request, f'Все {count} уведомлений отмечены как прочитанные.')
         return redirect('notifications:list')
 
 

@@ -236,6 +236,105 @@ class ContextStepXPTests(TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Режим "Быстро/Подробно" (см. docs/adr/0006-quick-full-evaluation-mode.md)
+# ---------------------------------------------------------------------------
+
+class QuickModeSelectionTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="u1", email="u1@example.com", password="pass123")
+        self.client.force_login(self.user)
+        self.match = _make_match()
+
+    def test_default_mode_is_full_without_eval_mode_in_post(self):
+        """Старые закладки/JS не выполнился — eval_mode просто не приходит в
+        POST. Сессия должна остаться в дефолтном режиме 'full', а не упасть."""
+        url = reverse("evaluations:context", args=[self.match.id])
+        self.client.post(url, {"watched_type": "full"})
+        session = EvaluationSession.objects.get(user=self.user, match=self.match)
+        self.assertEqual(session.mode, "full")
+
+    def test_choosing_quick_mode_persists_on_session(self):
+        url = reverse("evaluations:context", args=[self.match.id])
+        self.client.post(url, {"watched_type": "full", "eval_mode": "quick"})
+        session = EvaluationSession.objects.get(user=self.user, match=self.match)
+        self.assertEqual(session.mode, "quick")
+
+    def test_garbage_eval_mode_value_ignored(self):
+        """Произвольная строка в eval_mode (испорченный запрос, не
+        значение из EvaluationSession.MODE_CHOICES) не должна попасть в БД —
+        MODE_CHOICES на уровне модели этого и так не пропустил бы при
+        full_clean(), но save() без него не проверяет choices сам по себе."""
+        url = reverse("evaluations:context", args=[self.match.id])
+        self.client.post(url, {"watched_type": "full", "eval_mode": "ultra-mega-mode"})
+        session = EvaluationSession.objects.get(user=self.user, match=self.match)
+        self.assertEqual(session.mode, "full")
+
+
+class KeyPlayerSelectionTests(TestCase):
+    """EvaluatePlayersView._compute_key_player_ids — курируемый набор для
+    режима 'Быстро' (см. docs/adr/0006-quick-full-evaluation-mode.md)."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="u1", email="u1@example.com", password="pass123")
+        self.client.force_login(self.user)
+        self.match = _make_match(has_lineup=True)
+
+    def _make_lineup(self, side, team, starters=3, bench=2):
+        from lineups.models import MatchLineup, MatchLineupPlayer
+        from players.models import Player
+
+        lineup = MatchLineup.objects.create(match=self.match, team=team, side=side)
+        players = []
+        for i in range(starters + bench):
+            player = Player.objects.create(first_name=f"P{side}", last_name=str(i), team=team)
+            MatchLineupPlayer.objects.create(
+                lineup=lineup, player=player, is_starting=i < starters, shirt_number=i + 1,
+            )
+            players.append(player)
+        return players
+
+    def test_scorer_prioritized_over_low_shirt_numbers(self):
+        from events.models import MatchEvent
+
+        EvaluationSession.objects.create(
+            user=self.user, match=self.match, completed_steps=["context", "teams"],
+        )
+        home_players = self._make_lineup("home", self.match.home_team, starters=5, bench=2)
+        self._make_lineup("away", self.match.away_team, starters=5, bench=2)
+        # Гол забил игрок под номером 5 (последний из стартовых, обычным
+        # "первые по номеру" эвристика его бы не выбрала).
+        scorer = home_players[4]
+        MatchEvent.objects.create(
+            match=self.match, event_type="goal", team_side="home",
+            player=scorer, minute=23,
+        )
+
+        response = self.client.get(reverse("evaluations:players", args=[self.match.id]))
+        key_ids = response.context["key_player_ids"]
+        # session.mode по умолчанию 'full' — key_player_ids должен быть
+        # пустым, пока пользователь явно не выбрал 'quick' на шаге 1.
+        self.assertEqual(key_ids, set())
+
+    def test_quick_mode_includes_scorer_and_caps_per_side(self):
+        from events.models import MatchEvent
+
+        EvaluationSession.objects.create(
+            user=self.user, match=self.match, mode="quick",
+            completed_steps=["context", "teams"],
+        )
+        home_players = self._make_lineup("home", self.match.home_team, starters=5, bench=2)
+        self._make_lineup("away", self.match.away_team, starters=5, bench=2)
+        scorer = home_players[4]
+        MatchEvent.objects.create(match=self.match, event_type="goal", team_side="home", player=scorer, minute=23)
+
+        response = self.client.get(reverse("evaluations:players", args=[self.match.id]))
+        key_ids = response.context["key_player_ids"]
+        self.assertIn(scorer.id, key_ids)
+        home_key_count = sum(1 for p in home_players if p.id in key_ids)
+        self.assertLessEqual(home_key_count, 3)
+
+
+# ---------------------------------------------------------------------------
 # Антифрод: слишком быстрое заполнение вайзарда
 # ---------------------------------------------------------------------------
 
@@ -269,3 +368,135 @@ class FastWizardAntiFraudTaskTests(TestCase):
         result = flag_suspicious_wizard_speed_task(str(session.id))
         self.assertFalse(result)
         self.assertFalse(SuspiciousActivityFlag.objects.filter(user=self.user, source="fast_wizard").exists())
+
+
+# ---------------------------------------------------------------------------
+# EvaluationPolicy — принадлежность сущности матчу (см.
+# docs/adr/0001-evaluation-policy-single-source-of-truth.md). Дубль этого же
+# правила на стороне API — api/tests.py::EvaluationPolicyAPITests. Здесь —
+# именно веб-форма, единственное место вайзарда, где ID сущности вообще
+# приходит от клиента напрямую (остальные формы генерируют поля по реальным
+# сущностям матча — подменить там нечего, см. докстринг
+# ContextEvaluationForm.clean_supported_team).
+# ---------------------------------------------------------------------------
+
+class ContextFormPolicyTests(TestCase):
+    def setUp(self):
+        self.match = _make_match()
+        self.outside_team = Team.objects.create(name="Сторонняя команда")
+
+    def test_supported_team_outside_match_rejected_even_if_queryset_bypassed(self):
+        """ModelChoiceField сам отклонил бы значение вне queryset ДО того,
+        как дошло бы до clean_supported_team — но именно поэтому здесь
+        тестируем сам метод политики напрямую, а не через form.is_valid()
+        (иначе тест проверял бы только ModelChoiceField, а не
+        assert_team_in_match)."""
+        from evaluations.forms import ContextEvaluationForm
+        from evaluations.policies import EvaluationPolicyError, assert_team_in_match
+
+        with self.assertRaises(EvaluationPolicyError):
+            assert_team_in_match(self.outside_team.id, self.match)
+
+    def test_supported_team_in_match_accepted_via_form(self):
+        from evaluations.forms import ContextEvaluationForm
+
+        form = ContextEvaluationForm(
+            data={
+                "supported_team": str(self.match.home_team_id),
+                "watched_type": "full",
+                "attended_stadium": False,
+            },
+            match=self.match,
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+
+    def test_supported_team_outside_match_rejected_by_queryset(self):
+        """End-to-end через форму: ModelChoiceField (queryset ограничен
+        домашней/гостевой командой) отклоняет чужую команду ещё до
+        clean_supported_team — обе линии защиты работают."""
+        from evaluations.forms import ContextEvaluationForm
+
+        form = ContextEvaluationForm(
+            data={
+                "supported_team": str(self.outside_team.id),
+                "watched_type": "full",
+                "attended_stadium": False,
+            },
+            match=self.match,
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn("supported_team", form.errors)
+
+
+# ---------------------------------------------------------------------------
+# Анти-шум ползунков (см. docs/adr/0005-anti-noise-touched-tracking.md) —
+# нетронутый критерий не должен сохраняться как настоящая оценка "5 из 10".
+# Разобрано подробно на шаге "Команды" (представитель паттерна,
+# см. evaluations/views.py::_touched_fields — используется идентично в
+# Teams/Coaches/Referee/Players).
+# ---------------------------------------------------------------------------
+
+class AntiNoiseTouchedTrackingTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="u1", email="u1@example.com", password="pass123")
+        self.client.force_login(self.user)
+        self.match = _make_match()
+        EvaluationSession.objects.create(
+            user=self.user, match=self.match, completed_steps=["context"], status="in_progress"
+        )
+
+    def _team_post_data(self, **overrides):
+        home_prefix = f"team_{self.match.home_team_id}"
+        away_prefix = f"team_{self.match.away_team_id}"
+        data = {}
+        for prefix in (home_prefix, away_prefix):
+            for criterion in ("tactics", "effort", "organization", "mentality"):
+                data[f"{prefix}_{criterion}"] = "5"
+        data.update(overrides)
+        return data
+
+    def test_untouched_sliders_create_no_team_evaluation(self):
+        """JS выполнился (есть __touched-поля), но ни одно не '1' — ни для
+        одной из команд не должно появиться записи с дефолтными значениями."""
+        from evaluations.models import TeamEvaluation
+
+        home_prefix = f"team_{self.match.home_team_id}"
+        away_prefix = f"team_{self.match.away_team_id}"
+        data = self._team_post_data()
+        for prefix in (home_prefix, away_prefix):
+            for criterion in ("tactics", "effort", "organization", "mentality"):
+                data[f"{prefix}_{criterion}__touched"] = "0"
+
+        self.client.post(reverse("evaluations:teams", args=[self.match.id]), data)
+        self.assertEqual(TeamEvaluation.objects.filter(user=self.user, match=self.match).count(), 0)
+
+    def test_touching_one_criterion_saves_that_team(self):
+        """Домашнюю команду тронули (хотя бы один критерий), гостевую — нет:
+        должна сохраниться только домашняя."""
+        from evaluations.models import TeamEvaluation
+
+        home_prefix = f"team_{self.match.home_team_id}"
+        away_prefix = f"team_{self.match.away_team_id}"
+        data = self._team_post_data(**{f"{home_prefix}_tactics": "8"})
+        for criterion in ("tactics", "effort", "organization", "mentality"):
+            data[f"{home_prefix}_{criterion}__touched"] = "1" if criterion == "tactics" else "0"
+            data[f"{away_prefix}_{criterion}__touched"] = "0"
+
+        self.client.post(reverse("evaluations:teams", args=[self.match.id]), data)
+        self.assertTrue(
+            TeamEvaluation.objects.filter(user=self.user, match=self.match, team_id=self.match.home_team_id).exists()
+        )
+        self.assertFalse(
+            TeamEvaluation.objects.filter(user=self.user, match=self.match, team_id=self.match.away_team_id).exists()
+        )
+
+    def test_no_javascript_fallback_still_saves_both_teams(self):
+        """Ни одного '__touched'-поля в POST вообще (JS не выполнился) —
+        деградация к прежнему поведению: обе команды сохраняются, как до
+        анти-шум фикса. Иначе пользователи без JS молча теряли бы свои
+        честно выставленные оценки."""
+        from evaluations.models import TeamEvaluation
+
+        data = self._team_post_data()
+        self.client.post(reverse("evaluations:teams", args=[self.match.id]), data)
+        self.assertEqual(TeamEvaluation.objects.filter(user=self.user, match=self.match).count(), 2)

@@ -24,7 +24,7 @@ from analytics.selectors import daily_active_users, traffic_overview, weekly_act
 from evaluations.models import ContextEvaluation, PlayerEvaluation
 from matches.models import Match
 from notifications.models import ContactSubmission
-from parsers.models import ParserSyncRun
+from parsers.models import ParserDiscrepancy, ParserSyncRun
 from users.models import SuspiciousActivityFlag
 
 User = get_user_model()
@@ -172,6 +172,13 @@ def data_health_summary(recent_runs: int = 20) -> dict:
         matches_missing_events_base.select_related("home_team", "away_team").order_by("-start_time")[:20]
     )
 
+    # Расхождения импорта (аудит 2026-09-04, см. parsers/models.py::
+    # ParserDiscrepancy) — правки счёта/статуса задним числом поверх уже
+    # завершённых матчей. Отдельная карточка на дашборде, не смешиваем со
+    # "статистикой синка" выше: это не ошибка запроса к API, а сигнал
+    # "данные пришли успешно, но разошлись с тем, что мы уже считали фактом".
+    unreviewed_discrepancies = ParserDiscrepancy.objects.filter(reviewed=False)
+
     return {
         "last_run": last_run,
         "recent_runs": runs,
@@ -180,6 +187,8 @@ def data_health_summary(recent_runs: int = 20) -> dict:
         "matches_missing_events": matches_missing_events_count,
         "matches_missing_events_list": matches_missing_events_list,
         "recent_error_samples": (last_run.error_samples if last_run else [])[:10],
+        "unreviewed_discrepancies_count": unreviewed_discrepancies.count(),
+        "unreviewed_discrepancies_list": list(unreviewed_discrepancies.select_related("match")[:20]),
     }
 
 

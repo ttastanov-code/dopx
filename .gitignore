@@ -70,8 +70,13 @@ scripts/verify_reports/
 logs/*.log
 !logs/.gitkeep
 
-# Node (future)
-node_modules/dump.rdb
+# Node — только для сборки static/css/app.css (Tailwind v4 + daisyUI), см.
+# docs/adr/0025-remove-cdn-dependencies.md. static/css/app.css и
+# static/vendor/ (Alpine/HTMX/Tabler Icons) — КОММИТЯТСЯ в git, как и
+# остальные файлы в static/css/ (это не выход сборки на сервере, а
+# зафиксированный собранный/скачанный ассет; пересобирается вручную через
+# npm run build:css / scripts/vendor_frontend_assets.sh при изменениях).
+node_modules/
+
 celerybeat-schedule.db
 dump.rdb
-celerybeat-schedule.db

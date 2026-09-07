@@ -11,7 +11,16 @@
                 <i class="ti ti-check text-3xl text-success"></i>
             </div>
             <h1 class="text-2xl font-bold mb-1">Матч оценён!</h1>
+            {% if total_rated %}
+            <p class="text-xs text-base-content/60">
+                Вы вошли в <span class="font-bold text-base-content/80">{{ total_rated }}</span> оценок этого матча —
+                {% with p=rated_counts.players t=rated_counts.teams c=rated_counts.coaches r=rated_counts.referee %}
+                {% if p %}игроков: {{ p }}{% endif %}{% if p and t %}, {% endif %}{% if t %}команд: {{ t }}{% endif %}{% if c %}{% if p or t %}, {% endif %}тренеров: {{ c }}{% endif %}{% if r %}{% if p or t or c %}, {% endif %}судья{% endif %}
+                {% endwith %}
+            </p>
+            {% else %}
             <p class="text-xs text-base-content/60">Оценка сохранена и учтена в рейтинге</p>
+            {% endif %}
         </div>
 
         <!-- Rewards Card -->

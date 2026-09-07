@@ -29,21 +29,53 @@
 
             {% comment %}
             Исходные значения — в data-атрибутах, не аргументами x-data(...).
-            Раньше supported_team (UUID команды, содержит дефисы!) шёл через
-            escapejs() прямо в строковый литерал вызова matchContextForm(...) —
-            тот же класс бага, что "Дербии002Дэксперт" у tooltipTrigger (см.
-            core/templatetags/tooltip_tags.py): CSP-евалуатор Alpine не
-            раскрывает \uXXXX-эскейпы внутри строковых литералов аргументов,
-            из-за чего supportedTeam мог тихо не совпадать с value радиокнопок
-            и подсветка выбранной команды могла ломаться.
+            См. docs/adr/0019-alpine-csp-data-passing.md.
             {% endcomment %}
             <form method="post" action="{% url 'evaluations:context' match.id %}"
                   class="space-y-6"
                   x-data="matchContextForm"
                   data-supported-team="{{ form.supported_team.value|default:'' }}"
                   data-watched-type="{{ form.watched_type.value|default:'full' }}"
-                  data-attended-stadium="{{ form.attended_stadium.value|yesno:'true,false' }}">
+                  data-attended-stadium="{{ form.attended_stadium.value|yesno:'true,false' }}"
+                  data-eval-mode="{{ mode|default:'full' }}">
                 {% csrf_token %}
+
+                <!-- Быстро или подробно? -->
+                <div>
+                    <label class="text-sm font-bold mb-3 flex items-center gap-1.5">
+                        <i class="ti ti-adjustments text-primary"></i>Как хотите оценить матч?
+                    </label>
+                    <div class="grid grid-cols-2 gap-2.5">
+                        <label class="cursor-pointer">
+                            <input type="radio" name="eval_mode" value="quick"
+                                   class="sr-only"
+                                   x-model="evalMode">
+                            <div class="wz-select-card p-4"
+                                 :class="evalMode === 'quick' && 'wz-select-card--active'">
+                                <span class="wz-select-card__check"><i class="ti ti-check"></i></span>
+                                <div class="w-9 h-9 rounded-xl bg-warning/10 flex items-center justify-center mb-2">
+                                    <i class="ti ti-bolt text-warning text-lg"></i>
+                                </div>
+                                <div class="text-sm font-bold">Быстро</div>
+                                <div class="text-xs text-base-content/50 mt-0.5">Ключевые игроки, судья и тренеры — в пару кликов</div>
+                            </div>
+                        </label>
+                        <label class="cursor-pointer">
+                            <input type="radio" name="eval_mode" value="full" checked
+                                   class="sr-only"
+                                   x-model="evalMode">
+                            <div class="wz-select-card p-4"
+                                 :class="evalMode === 'full' && 'wz-select-card--active'">
+                                <span class="wz-select-card__check"><i class="ti ti-check"></i></span>
+                                <div class="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center mb-2">
+                                    <i class="ti ti-list-details text-primary text-lg"></i>
+                                </div>
+                                <div class="text-sm font-bold">Подробно</div>
+                                <div class="text-xs text-base-content/50 mt-0.5">Весь состав и каждый критерий отдельно</div>
+                            </div>
+                        </label>
+                    </div>
+                </div>
 
                 <!-- За какую команду болеете? -->
                 <div>

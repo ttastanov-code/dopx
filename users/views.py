@@ -79,7 +79,7 @@ class RegisterView(CreateView):
         if request.method == 'POST' and client_ip:
             if is_rate_limited(f'register:{client_ip}', REGISTER_RATE_LIMIT, REGISTER_RATE_LIMIT_WINDOW_SECONDS):
                 logger.warning(f"⚠️ Registration rate limit exceeded for IP {client_ip}")
-                messages.error(request, '⚠️ Слишком много попыток регистрации. Попробуйте позже.')
+                messages.error(request, 'Слишком много попыток регистрации. Попробуйте позже.')
                 return redirect('users:register')
         return super().dispatch(request, *args, **kwargs)
 
@@ -139,7 +139,7 @@ class RegisterView(CreateView):
             except Exception as fallback_e:
                 logger.critical(f"CRITICAL: Failed to send verification email synchronously: {fallback_e}")
 
-        messages.success(self.request, '✅ Регистрация прошла успешно! Проверьте почту для активации.')
+        messages.success(self.request, 'Регистрация прошла успешно. Проверьте почту, чтобы активировать аккаунт.')
         return super().form_valid(form)
 
     def get_context_data(self, **kwargs):
@@ -173,14 +173,14 @@ class VerifyEmailView(View):
             f'verify_email:{client_ip}', VERIFY_EMAIL_RATE_LIMIT, VERIFY_EMAIL_RATE_LIMIT_WINDOW_SECONDS
         ):
             logger.warning(f"⚠️ Verify-email rate limit exceeded for IP {client_ip}")
-            messages.error(request, '⚠️ Слишком много попыток. Попробуйте позже.')
+            messages.error(request, 'Слишком много попыток. Попробуйте позже.')
             return redirect('users:verify_email_invalid')
         try:
             user = User.objects.get(verification_token=token, is_verified=False)
             # Проверка срока действия токена (48 часов)
             token_age = timezone.now() - user.verification_token_created_at
             if token_age > timedelta(hours=48):
-                messages.error(request, '❌ Ссылка для верификации устарела. Зарегистрируйтесь заново.')
+                messages.error(request, 'Ссылка для подтверждения устарела. Зарегистрируйтесь заново.')
                 return redirect('users:register')
 
             # Активируем аккаунт
@@ -210,10 +210,10 @@ class VerifyEmailView(View):
             except Exception as e:
                 logger.error(f"Failed to queue founder badge check: {e}")
 
-            messages.success(request, '🎉 Почта подтверждена! Добро пожаловать.')
+            messages.success(request, 'Почта подтверждена. Добро пожаловать.')
             return redirect('core:home')
         except User.DoesNotExist:
-            messages.error(request, '❌ Неверная или уже использованная ссылка.')
+            messages.error(request, 'Ссылка недействительна или уже использована.')
             return redirect('users:verify_email_invalid')
 
 
@@ -239,7 +239,7 @@ class LoginView(AuthLoginView):
                 send_email_verification.delay(str(user.id), str(user.verification_token))
             except Exception:
                 pass
-            messages.warning(self.request, '⚠️ Ваша почта не подтверждена. Мы отправили новое письмо.')
+            messages.warning(self.request, 'Почта не подтверждена. Мы отправили новое письмо со ссылкой.')
             return redirect('users:login')
 
         response = super().form_valid(form)
@@ -248,7 +248,7 @@ class LoginView(AuthLoginView):
             self.request.session.set_expiry(0)
         else:
             self.request.session.set_expiry(1209600)
-        messages.success(self.request, f'👋 С возвращением, {user.username}!')
+        messages.success(self.request, f'С возвращением, {user.username}.')
         return response
 
     def get_success_url(self):
@@ -265,7 +265,7 @@ class LoginView(AuthLoginView):
 class LogoutView(LoginRequiredMixin, View):
     def get(self, request, *args, **kwargs):
         logout(request)
-        messages.info(request, '👋 Вы вышли из аккаунта')
+        messages.info(request, 'Вы вышли из аккаунта.')
         return redirect('core:home')
 
 
@@ -275,18 +275,9 @@ class ProfileView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         user = self.request.user
-        # НАЙДЕНО (2026-09-01, жалоба пользователя: "непонятно что за
-        # оценок, что за матчей, что за игроков" в блоке статистики
-        # профиля): "Оценок" (total_evaluations) и "Матчей" (total_matches)
-        # раньше показывали ОДНО И ТО ЖЕ число — оба считают "сколько раз
-        # вайзард оценки матча пройден до конца" (total_evaluations — через
-        # аккумулятор на User, total_matches — через COUNT завершённых
-        # EvaluationSession), просто двумя разными путями к одному и тому
-        # же факту. Две одинаковые цифры под разными подписями выглядят как
-        # баг, даже когда обе технически верны. Заменяем "Оценок" на
-        # РЕАЛЬНО другую метрику — сколько отдельных оценок (игрокам,
-        # командам, тренерам, судьям суммарно) поставлено за все матчи, а
-        # не сколько матчей оценено целиком (это остаётся за "Матчей").
+        # "Оценок" — сумма отдельных оценок (игрокам/командам/тренерам/
+        # судьям), не то же число, что "Матчей" (матчей оценено целиком).
+        # См. docs/adr/0024-profile-stats-ratings-vs-matches.md.
         total_ratings_given = (
             user.player_evaluations.count()
             + user.team_evaluations.count()
@@ -553,9 +544,9 @@ class ProfileEditView(LoginRequiredMixin, UpdateView):
                 logger.info(f"Re-verification email queued for {self.object.email} (email changed)")
             except Exception as e:
                 logger.error(f"Failed to queue re-verification email after email change: {e}")
-            messages.success(self.request, '✅ Профиль обновлён. Новый email нужно подтвердить — мы отправили письмо со ссылкой.')
+            messages.success(self.request, 'Профиль обновлён. Чтобы подтвердить новый email, перейдите по ссылке из письма, которое мы отправили.')
         else:
-            messages.success(self.request, '✅ Профиль обновлён')
+            messages.success(self.request, 'Профиль обновлён.')
         return response
 
     def get_context_data(self, **kwargs):
@@ -577,7 +568,7 @@ class PasswordChangeViewCustom(LoginRequiredMixin, FormView):
     def form_valid(self, form):
         form.save()
         update_session_auth_hash(self.request, form.user)
-        messages.success(self.request, '✅ Пароль изменён')
+        messages.success(self.request, 'Пароль изменён.')
         return super().form_valid(form)
 
     def get_context_data(self, **kwargs):
@@ -618,12 +609,12 @@ class PasswordResetViewCustom(PasswordResetView):
                 f'password_reset:{client_ip}', PASSWORD_RESET_RATE_LIMIT, PASSWORD_RESET_RATE_LIMIT_WINDOW_SECONDS
             ):
                 logger.warning(f"⚠️ Password reset rate limit exceeded for IP {client_ip}")
-                messages.error(request, '⚠️ Слишком много попыток. Попробуйте позже.')
+                messages.error(request, 'Слишком много попыток. Попробуйте позже.')
                 return redirect('users:password_reset')
         return super().dispatch(request, *args, **kwargs)
 
     def form_valid(self, form):
-        messages.success(self.request, '✅ Инструкция отправлена')
+        messages.success(self.request, 'Инструкция отправлена на почту.')
         return super().form_valid(form)
 
 
@@ -660,7 +651,7 @@ class NotificationSettingsView(LoginRequiredMixin, FormView):
         }
         user.save(update_fields=['_notification_settings', 'updated_at'])
         user.refresh_from_db()  # Сбрасываем кэш свойств
-        messages.success(self.request, '✅ Настройки уведомлений сохранены')
+        messages.success(self.request, 'Настройки уведомлений сохранены.')
         return super().form_valid(form)
 
     def get_context_data(self, **kwargs):
@@ -881,5 +872,5 @@ def push_revoke_device(request, subscription_id):
 
     deleted, _ = PushSubscription.objects.filter(user=request.user, id=subscription_id).delete()
     if deleted:
-        messages.success(request, '✅ Устройство отключено от push-уведомлений')
+        messages.success(request, 'Устройство отключено от push-уведомлений.')
     return redirect('users:notification_settings')

@@ -50,23 +50,8 @@ class MatchListView(ListView):
             # Завершенные - ближе к сегодняшнему дню сначала
             queryset = queryset.filter(status='finished').order_by('-start_time')
         elif status == 'postponed':
-            # Перенесённые — БАГ, КОТОРЫЙ ТУТ БЫЛ: значения 'postponed'/
-            # 'cancelled' не было ни в одной ветке elif, поэтому фильтр
-            # молча падал в else и показывал вообще все матчи без разбора
-            # статуса. Сортировка по дате: у перенесённых start_time —
-            # старая (ещё не подтверждённая) дата, но всё равно разумный
-            # порядок, пока KFF не пришлёт новую.
-            #
-            # РАСШИРЕНО (2026-09-01): `status='postponed'` ловит только
-            # матчи, у которых KFF СЕЙЧАС ещё не определился с датой
-            # (is_schedule_tentative). Матч, у которого дата уже твёрдая, но
-            # он всё равно выбивается из своего тура (см. Match.
-            # was_rescheduled) — тоже "Перенесён" с точки зрения
-            # пользователя, просто уже не имеет смысла для is_prediction_open()
-            # держать его в status='postponed' (заблокировало бы приём
-            # прогнозов). Исключаем finished/cancelled — те показываются в
-            # своих собственных вкладках независимо от того, переносились ли
-            # когда-то.
+            # 'postponed' ИЛИ (was_rescheduled=True и ещё не сыгран/не отменён)
+            # — см. docs/adr/0013-match-list-filter-and-sort-fixes.md, находка №1.
             queryset = queryset.filter(
                 Q(status='postponed') |
                 Q(was_rescheduled=True, status__in=['scheduled', 'live'])
@@ -82,22 +67,10 @@ class MatchListView(ListView):
                 status='finished', voting_open_until__gte=timezone.now()
             ).order_by('voting_open_until')
         elif status == 'evaluated':
-            # НАЙДЕНО (2026-09-01, жалоба пользователя: кнопка "Все матчи" в
-            # блоке "Последние оценки" профиля вела на общий список всех
-            # матчей вообще, а не на те, что пользователь реально оценил —
-            # profile/dashboard.html показывает только последние 10
-            # (recent_evaluations), полного списка нигде не было). Тот же
-            # приём, что и у status=votable выше — не в выпадающем списке
-            # фильтров (templates/matches/list.html), только по прямой
-            # ссылке (см. profile/dashboard.html) — виртуальный статус,
-            # а не значение поля Match.status.
-            #
-            # Источник истины — EvaluationSession.status='completed', а не
-            # наличие связанных PlayerEvaluation/TeamEvaluation/... — так
-            # же, как ProfileView.get_context_data() считает
-            # recent_evaluations/total_matches (users/views.py), чтобы
-            # число "Матчей оценено" в статистике профиля и список за
-            # ссылкой "Все матчи" совпадали 1:1.
+            # Виртуальный статус (не поле Match.status), только по прямой
+            # ссылке из profile/dashboard.html. Источник истины —
+            # EvaluationSession.status='completed'. См.
+            # docs/adr/0013-match-list-filter-and-sort-fixes.md, находка №2.
             if self.request.user.is_authenticated:
                 queryset = queryset.filter(
                     evaluation_sessions__user=self.request.user,
@@ -106,22 +79,10 @@ class MatchListView(ListView):
             else:
                 queryset = queryset.none()
         else:
-            # БАГ, КОТОРЫЙ ТУТ БЫЛ: сортировка "по близости к текущему
-            # моменту" (симметричное расстояние |start_time - now|) вместо
-            # обычного хронологического порядка. Идея была разумной —
-            # показать самые актуальные матчи первыми, — но она ломала
-            # {% regroup %} по дате в шаблоне (matches/list.html): группа
-            # "будущее +2 дня" оказывалась БЛИЖЕ по этой метрике, чем
-            # "прошлое -1 день", поэтому в списке даты прыгали вперёд-назад
-            # (пользователь видел 31.08, потом 25.08 — уже сыгранный матч
-            # со счётом, — потом снова будущее 05.09). Обычный возрастающий
-            # порядок по start_time — единственный, при котором даты в
-            # списке идут монотонно и группы никогда не повторяются и не
-            # скачут. Чтобы не терять исходную идею "показать актуальное
-            # первым", стартовая страница вычисляется в paginate_queryset()
-            # ниже — рядом с сегодняшним днём, а не с первой страницы
-            # целиком отсортированного списка (иначе список открывался бы
-            # с самого начала истории сезона).
+            # Монотонный порядок по start_time (не по близости к "сейчас" —
+            # ломало {% regroup %} по дате). "Актуальное первым" достигается
+            # стартовой страницей в paginate_queryset(), не сортировкой. См.
+            # docs/adr/0013-match-list-filter-and-sort-fixes.md, находка №3.
             queryset = queryset.order_by('start_time')
         
         # Фильтр по лиге

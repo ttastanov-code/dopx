@@ -263,7 +263,7 @@
                         </div>
                         <div class="text-right flex-shrink-0">
                             <div class="font-bold text-primary text-sm md:text-base">{{ agg.performance_score|floatformat:1 }}</div>
-                            <div class="text-[10px] md:text-xs opacity-60 hidden sm:block">рейтинг</div>
+                            <div class="text-[10px] md:text-xs opacity-60 hidden sm:block">{{ agg.total_votes }} оценок</div>
                         </div>
                     </a>
                     {% empty %}

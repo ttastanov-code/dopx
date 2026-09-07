@@ -1,0 +1,33 @@
+/* static_src/app.css
+ *
+ * Точка входа локальной сборки Tailwind v4 — замена рантайм-CDN-скрипта
+ * @tailwindcss/browser@4.3.3 (см. docs/adr/0025-remove-cdn-dependencies.md).
+ * Компилируется в static/css/app.css, который подключается в base.html/
+ * base_auth.html ВМЕСТО тега <script src="https://cdn.jsdelivr.net/npm/
+ * @tailwindcss/browser@4.3.3">.
+ *
+ * Tailwind v4 — CSS-first конфиг, отдельного tailwind.config.js не нужно.
+ * @source сканирует шаблоны/JS на использованные классы (JIT).
+ */
+
+@import "tailwindcss";
+
+/* daisyUI как настоящий Tailwind-плагин (не отдельный <link> с CDN, как
+ * раньше) — только это даёт Tailwind реальное знание о daisyUI-цветах
+ * ("success"/"warning"/...) для генерации утилит с ними (ring-success,
+ * bg-warning/5 и т.п.). См. docs/adr/0021-tailwind-runtime-daisyui-colors.md
+ * — тот ADR фиксирует обходной путь (var(--color-*) в сыром style=) именно
+ * потому, что раньше Tailwind и daisyUI были загружены раздельно и не знали
+ * друг о друге. После этой миграции обходной путь остаётся рабочим (сами
+ * CSS custom properties никуда не делись), но перестаёт быть ЕДИНСТВЕННЫМ
+ * вариантом — обычные daisyUI-именованные Tailwind-утилиты тоже заработают.
+ */
+@plugin "daisyui" {
+  themes: light --default, dark;
+}
+
+/* Шаблоны и JS вне static_src/ — Tailwind v4 по умолчанию сканирует от
+ * корня проекта, но explicit @source явно и не зависит от того, откуда
+ * запущена команда сборки. */
+@source "../templates/**/*.html";
+@source "../static/js/**/*.js";

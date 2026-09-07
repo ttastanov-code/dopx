@@ -472,20 +472,9 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
-# БАГ, найденный при аудите перед докеризацией: Django по умолчанию
-# режет тело запроса на DATA_UPLOAD_MAX_MEMORY_SIZE / FILE_UPLOAD_MAX_MEMORY_SIZE
-# = 2.5 МБ (собственный дефолт фреймворка, нигде в проекте раньше не
-# переопределялся). При этом users/forms.py::MAX_AVATAR_SIZE_BYTES
-# заявляет лимит на аватарку в 5 МБ — но любая аватарка размером от 2.5
-# до 5 МБ (а это почти любое нормальное фото с телефона) отклонялась бы
-# ДО того, как запрос вообще доходил до этой проверки, с общей ошибкой
-# "Request body exceeded settings.DATA_UPLOAD_MAX_MEMORY_SIZE" вместо
-# понятного сообщения формы. Поднимаем до 10 МБ — с запасом и под
-# аватарки, и под баннеры (partners/models.py), и под вложения формы
-# "право на ответ" (core), ни один из которых явного лимита не задавал
-# и молча упирался в те же 2.5 МБ. nginx (docker/nginx.conf,
-# client_max_body_size) стоит ещё выше — 20 МБ — так что именно это
-# значение, а не nginx, было реальным узким местом.
+# Django-дефолт 2.5 МБ отклонял аватарки/баннеры ДО валидации формы, с
+# общей ошибкой вместо понятного сообщения. См.
+# docs/adr/0017-upload-size-limits.md.
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
 
@@ -555,6 +544,22 @@ SECURE_REFERRER_POLICY = 'same-origin'
 # dopx/middleware.py::ContentSecurityPolicyMiddleware. Полезно включить на
 # первый прогон после изменения политики — прежде чем блокировать по-настоящему.
 CSP_REPORT_ONLY = os.getenv('CSP_REPORT_ONLY', 'False') == 'True'
+
+# Домены, которым разрешено встраивать наши embed-виджеты (players/teams/
+# standings/best-xi/round) в <iframe> — см.
+# dopx/middleware.py::ContentSecurityPolicyMiddleware.WIDGET_POLICY.
+# Пусто (по умолчанию) — держим "frame-ancestors *" как сейчас: партнёров
+# ещё нет, ограничивать физически некого, а голый allow-list с самим DOPX
+# внутри был бы бесполезен для той же цели, что и сейчас (виджеты открыто
+# публичные и предназначены для встраивания куда угодно). Как только
+# появится первый партнёр — прописать его домен(ы) через запятую в
+# WIDGET_ALLOWED_ORIGINS, и middleware сам переключится на точный список
+# вместо "*". Заведено заранее (аудит 2026-09-04), чтобы включение allow-list
+# было изменением конфигурации, а не кода.
+WIDGET_ALLOWED_ORIGINS = [
+    origin.strip() for origin in os.getenv('WIDGET_ALLOWED_ORIGINS', '').split(',') if origin.strip()
+]
+
 if not DEBUG:
     # HSTS и proxy-заголовок SSL — только в проде за реальным TLS-терминатором
     # (nginx/ALB), на DEBUG-окружении без сертификата это уронит локальный сервер.
@@ -564,19 +569,9 @@ if not DEBUG:
     SECURE_HSTS_PRELOAD = True
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
-# Сколько ДОВЕРЕННЫХ обратных прокси реально стоит перед Gunicorn — в
-# типовой схеме nginx -> gunicorn это 1. core.utils.get_client_ip берёт
-# IP-адрес на этой позиции С КОНЦА цепочки X-Forwarded-For, а не первый
-# элемент: nginx с `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`
-# ДОПИСЫВАЕТ реальный IP клиента в конец заголовка, а не заменяет его —
-# значит именно последний элемент нельзя подделать снаружи (всё, что
-# ЛЕВЕЕ него в списке, атакующий мог вписать сам). Раньше брался первый
-# элемент — целиком контролируется клиентом, обходит IP rate limit одной
-# строкой заголовка. Это не заменяет требование ЗАКРЫТЬ прямой доступ к
-# Gunicorn извне (файрвол/security group) — без этого шага даже правильный
-# разбор XFF не спасает: у атакующего, зашедшего напрямую в обход nginx,
-# в заголовке будет всего один (подделанный) элемент, и он и окажется
-# "последним". См. docs/BACKLOG.md.
+# get_client_ip берёт IP с конца X-Forwarded-For (TRUSTED_PROXY_COUNT
+# позиций), не первый элемент — иначе клиент подделывает заголовок и
+# обходит rate limit. См. docs/adr/0018-trusted-proxy-xff-parsing.md.
 TRUSTED_PROXY_COUNT = int(os.getenv('TRUSTED_PROXY_COUNT', 1))
 
 # Idle-таймаут сессии ТОЛЬКО для staff (is_staff=True) — обычные пользователи

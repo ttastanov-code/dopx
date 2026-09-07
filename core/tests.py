@@ -16,12 +16,22 @@ CACHES переопределён на LocMemCache через @override_settings
 from __future__ import annotations
 
 import time
+from datetime import timedelta
 from types import SimpleNamespace
 
-from django.test import SimpleTestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
+from django.urls import reverse
+from django.utils import timezone
 
+from aggregates.models import PlayerMatchAggregate
+from aggregates.services import MIN_VOTES_FOR_DISPLAY
 from core.templatetags.rating_extras import bias_segment_text, confidence_badge, stability_label
 from core.utils import is_rate_limited
+from leagues.models import League
+from matches.models import Match
+from players.models import Player
+from seasons.models import Season
+from teams.models import Team
 
 LOCMEM_CACHES = {
     "default": {
@@ -162,3 +172,71 @@ class ConfidenceBadgeTooltipTests(SimpleTestCase):
 
     def test_none_aggregate_hides_badge(self):
         self.assertEqual(confidence_badge(None), {"show": False})
+
+
+class ConfidenceBadgeSampleSizeTests(SimpleTestCase):
+    """Число оценок — прямо в видимом лейбле бейджа для preliminary-уровня
+    (docs/BACKLOG.md: "показывать число оценок и пометку 'предварительный
+    рейтинг' при маленькой выборке"), не только в тултипе по наведению."""
+
+    def _agg(self, total_votes):
+        return SimpleNamespace(
+            total_votes=total_votes, stability_index=None,
+            own_fans_avg=None, rival_fans_avg=None, neutral_avg=None,
+        )
+
+    def test_preliminary_tier_shows_vote_count_in_label(self):
+        result = confidence_badge(self._agg(3))
+        self.assertEqual(result["tier"], "preliminary")
+        self.assertEqual(result["tier_label"], "Предварительно · 3")
+
+    def test_basic_tier_label_has_no_inline_count(self):
+        result = confidence_badge(self._agg(8))
+        self.assertEqual(result["tier"], "basic")
+        self.assertEqual(result["tier_label"], "Есть данные")
+
+    def test_high_tier_label_has_no_inline_count(self):
+        result = confidence_badge(self._agg(20))
+        self.assertEqual(result["tier"], "high")
+        self.assertEqual(result["tier_label"], "Высокая надёжность")
+
+
+class HomeTopPlayersVoteGateTests(TestCase):
+    """HomeView.top_players — тот же класс проблемы, что чинили для топа
+    игроков команды (docs/adr/0014-team-top-players-transfer-fix.md):
+    без гейта по total_votes единичный накрученный голос обходит в топе
+    игрока с честными десятками оценок."""
+
+    def setUp(self):
+        league = League.objects.create(name="League", country="KZ")
+        season, _ = Season.objects.get_or_create(league=league, year="2026")
+        home = Team.objects.create(name="Home")
+        away = Team.objects.create(name="Away")
+        self.match = Match.objects.create(
+            league=league, season=season, home_team=home, away_team=away,
+            start_time=timezone.now(), status="finished",
+            voting_open_until=timezone.now() + timedelta(hours=48),
+        )
+        self.underdog = Player.objects.create(first_name="Under", last_name="Dog", team=home)
+        self.star = Player.objects.create(first_name="Star", last_name="Player", team=away)
+
+    def test_single_inflated_vote_excluded_from_top_players(self):
+        PlayerMatchAggregate.objects.create(
+            player=self.underdog, match=self.match,
+            performance_score=10.0, total_votes=1,
+        )
+        PlayerMatchAggregate.objects.create(
+            player=self.star, match=self.match,
+            performance_score=8.0, total_votes=MIN_VOTES_FOR_DISPLAY,
+        )
+        response = self.client.get(reverse("core:home"))
+        top_players = list(response.context["top_players"])
+        self.assertEqual([agg.player_id for agg in top_players], [self.star.id])
+
+    def test_below_threshold_yields_empty_top_players(self):
+        PlayerMatchAggregate.objects.create(
+            player=self.underdog, match=self.match,
+            performance_score=10.0, total_votes=MIN_VOTES_FOR_DISPLAY - 1,
+        )
+        response = self.client.get(reverse("core:home"))
+        self.assertEqual(list(response.context["top_players"]), [])

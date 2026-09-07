@@ -439,31 +439,10 @@ def update_match_statuses(self):
                     field_values["end_time"] = match.start_time + timedelta(minutes=110)
                 updated_fields.append("end_time")
 
-            # `just_finished` — матч ИМЕННО СЕЙЧАС переходит в 'finished'
-            # первый раз. НАЙДЕНО (2026-09-01, реальный матч тура 24 —
-            # `notify_followers_match_activity` не поставилась в очередь НИ
-            # РАЗУ за весь матч-дей, при том что live→finished в логе виден):
-            # раньше это определялось через `not match.voting_open_until`, в
-            # расчёте на то, что поле остаётся NULL, пока матч не завершится.
-            # Это условие ЛОЖНОЕ для ЛЮБОГО матча, импортированного ДО фикса
-            # в `parsers/kff/importers.py` (AUDIT_2026-08.md, раздел 3) — там
-            # voting_open_until раньше выставлялся безусловно на первом же
-            # импорте, для любого статуса, включая 'scheduled'. У всех таких
-            # матчей (весь текущий сезон — они все были в БД до фикса)
-            # voting_open_until уже был непустым задолго до реального
-            # финального свистка, `not match.voting_open_until` был `False`
-            # ВСЕГДА, и follower-уведомление не отправлялось никому и никогда.
-            # Фикс в importers.py защищает только матчи, СОЗДАННЫЕ после
-            # фикса — уже существующие строки остаются "отравлены" навсегда
-            # (откатить их в NULL без миграции, разрешающей null на уровне
-            # БД, нельзя, а поле сейчас NOT NULL).
-            #
-            # Правильный, не зависящий от мусора в voting_open_until признак
-            # первого перехода в 'finished' — сравнение СТАРОГО статуса
-            # (`match.status`, тут ещё не перезаписан — мутация ниже, после
-            # транзакции) с новым, тот же паттерн, что уже используется (и
-            # работает корректно) в `parsers/kff/importers.py::import_match_
-            # core` через `was_finished_before`.
+            # just_finished — сравнение старого/нового статуса, НЕ через
+            # `not match.voting_open_until` (испорчено для матчей, импортированных
+            # до фикса — см. docs/adr/0007-kff-importer-status-and-timing-fixes.md,
+            # дополнение).
             just_finished = new_status == "finished" and match.status != "finished"
             if just_finished:
                 field_values["voting_open_until"] = match.start_time + timedelta(hours=48)

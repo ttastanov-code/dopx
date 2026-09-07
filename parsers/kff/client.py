@@ -77,20 +77,10 @@ class KFFClient:
         self.session = self._make_session()
 
         if HAS_CURL_CFFI:
-            # НАЙДЕНО (2026-09-01, curl_cffi поставили — 403 всё равно):
-            # curl_cffi при impersonate="chrome" сам генерирует ПОЛНЫЙ,
-            # согласованный с TLS-отпечатком набор заголовков (User-Agent,
-            # Accept, sec-ch-ua, Sec-Fetch-* — версия Chrome в них СОВПАДАЕТ
-            # с версией, которую он выдаёт себя за в TLS ClientHello). Наш
-            # ручной User-Agent ниже ("Mozilla/5.0 ... AppleWebKit/537.36" —
-            # даже не полная строка, без версии Chrome/Safari в конце)
-            # ЗАТИРАЛ этот согласованный набор — получалось "TLS настоящего
-            # свежего Chrome, а в заголовке огрызок UA, которого ни один
-            # реальный браузер не шлёт". Это классический сигнал для
-            # Cloudflare Bot Management (рассогласование TLS/заголовков),
-            # вероятно ИМЕННО он и не дал curl_cffi помочь. Оставляем
-            # curl_cffi эти заголовки формировать самому — трогаем только
-            # Referer/Origin (контекстные, не части профиля браузера).
+            # curl_cffi формирует профильные заголовки браузера сам — не
+            # перезаписываем их вручную (рассогласование TLS/заголовков —
+            # сигнал для Cloudflare Bot Management). См.
+            # docs/adr/0023-kff-client-curl-cffi-headers.md.
             self.session.headers.update({
                 "Referer": "https://kffleague.kz/",
                 "Origin": "https://kffleague.kz",

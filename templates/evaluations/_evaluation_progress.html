@@ -2,15 +2,11 @@
 HTMX partial для прогресс-бара wizard-оценки
 Использование: hx-get="{% url 'evaluations:context' match.id %}" hx-target="#progress-container"
 
-РЕДИЗАЙН (2026-08-31, второй проход): раньше — тонкая полоска + ряд из
-6 мелких кружков с цифрами, подписи скрыты на мобильном (hidden sm:block).
-Теперь — именной степпер: крупная подпись текущего шага сверху (всегда
-видна, не нужно расшифровывать цифру), градиентная линия-рельс с
-иконками-станциями вместо цифр (иконка = мгновенно понятно что за шаг),
-пройденные шаги — галочка на заливке success. Иконки те же, что
-используются как заголовки самих страниц шага (context=eye, teams=shield,
-players=users, coaches=clipboard-list, referee=gavel, final=star) —
-визуальная рифма между степпером и содержимым шага.
+Именной степпер: крупная подпись текущего шага сверху, градиентная линия-
+рельс с иконками-станциями вместо цифр, пройденные шаги — галочка на
+заливке success. Иконки те же, что на заголовках страниц шага
+(context=eye, teams=shield, players=users, coaches=clipboard-list,
+referee=gavel, final=star).
 {% endcomment %}
 <div id="progress-container" class="px-1 sm:px-0">
     <div class="flex items-center justify-between mb-3 sm:mb-4">

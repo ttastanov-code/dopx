@@ -5,7 +5,10 @@
 <html lang="ru" data-theme="light">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <!-- WCAG 2.1 SC 1.4.4: жест масштабирования (pinch-zoom) должен работать
+         всегда — maximum-scale=1.0 + user-scalable=no раньше блокировали
+         его для всех, это особенно бьёт по людям со слабым зрением. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#000000">
     <!-- SEO -->
     <title>{% block title %}{{ page_title|default:'DOPX' }}{% endblock %}</title>
@@ -31,18 +34,15 @@
     <link rel="apple-touch-icon" href="{% static 'favicons/apple-touch-icon.png' %}">
     <!-- Tailwind CSS -->
     {% comment %}
-    Версии CDN-пакетов ниже закреплены точно (не @4/@5/@latest) — плавающий
-    тег меняет отдаваемый файл без предупреждения, а SRI-хэш на такой тег
-    гарантированно рассинхронизируется с первым же апдейтом пакета.
+    Версии CDN-пакетов закреплены точно (не @4/@5/@latest) — плавающий тег
+    рассинхронизирует SRI-хэш с первым же апдейтом пакета.
 
-    integrity= ВРЕМЕННО убран (был здесь плейсхолдером sha384-REPLACE_*,
-    который так и не заменили реальным хэшем — SRI-мисматч блокирует
-    загрузку ресурса ЦЕЛИКОМ, из-за чего сайт остался без стилей/Alpine/
-    иконок). CSP (dopx/middleware.py::ContentSecurityPolicyMiddleware)
-    по-прежнему ограничивает домены-источники — это не откат защиты, а
-    временный откат ОДНОГО слоя (защита от подмены файла на cdn.jsdelivr.net)
-    до тех пор, пока реальные хэши не будут посчитаны и вручную проверены
-    ДО деплоя (см. TODO в scripts/generate_sri.sh).
+    ВНИМАНИЕ: integrity= у этого тега временно убран — был плейсхолдером
+    sha384-REPLACE_*, который заблокировал бы загрузку ресурса целиком.
+    CSP по-прежнему ограничивает домены-источники — реальный хэш нужно
+    посчитать и проверить до деплоя (scripts/generate_sri.sh). Готовый
+    план полного перехода на локальную сборку (снимет и эту CDN-
+    зависимость целиком) — docs/adr/0025-remove-cdn-dependencies.md.
     {% endcomment %}
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.3" integrity="sha384-aJ9rL4k6lF+91guGvUFVSkpIcge7Zd9EiI4TQDLoK9kFaFJgKHgjEXVvG/qA5COj" crossorigin="anonymous"></script>
     <!-- DaisyUI -->
@@ -91,23 +91,13 @@
     {% endcomment %}
     <script defer src="{% static_v 'js/alpine-components.js' %}"></script>
     {% comment %}
-    2026-08-21: заменено с обычной сборки alpinejs на @alpinejs/csp —
-    CSP-safe сборка, которая НЕ компилирует x-выражения через `new
-    Function(...)` (= не требует 'unsafe-eval' в CSP script-src, см.
-    dopx/middleware.py). Плата за это: инлайновые объектные литералы вида
-    x-data="{ ... }" больше не поддерживаются — ВСЕ x-data по сайту переведены
-    на зарегистрированные компоненты из static/js/alpine-components.js (см.
-    комментарий там же).
-    integrity= для этого файла и htmx.min.js ниже — sha256 (не sha384, как у
-    остальных тегов): scripts/generate_sri.sh (curl+openssl) не смог достать
-    сеть в окружении, где считался этот хэш, а прямой curl к cdn.jsdelivr.net
-    был заблокирован allowlist'ом песочницы. Значения взяты из официального
-    API jsDelivr (https://data.jsdelivr.com/v1/packages/npm/@alpinejs/csp@3.15.8?structure=flat,
-    поле "hash" для /dist/cdn.min.js) — это тот же байт-в-байт SHA-256 файла,
-    что раздаёт CDN, просто в другом алгоритме. sha256 — валидный алгоритм
-    для integrity= по спецификации SRI наравне с sha384. ОБЯЗАТЕЛЬНО перед
-    деплоем: bash scripts/generate_sri.sh (пересчитает sha384 и приведёт к
-    единому алгоритму с остальными тегами, если сеть будет доступна).
+    @alpinejs/csp, не обычная сборка — не требует 'unsafe-eval' в CSP
+    script-src (dopx/middleware.py), но не поддерживает инлайновые
+    x-data="{ ... }" — все x-data переведены на компоненты из
+    alpine-components.js. integrity= здесь и у htmx.min.js — sha256, не
+    sha384 (сеть для пересчёта была недоступна в момент подсчёта; значение
+    из официального API jsDelivr, тот же файл, другой алгоритм — валидно
+    по спецификации SRI). Перед деплоем: bash scripts/generate_sri.sh.
     {% endcomment %}
     <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/csp@3.15.8/dist/cdn.min.js" integrity="sha256-h9+HB497OogOke73+whm9Qht5S+SibyWUDYIMRgQp/w=" crossorigin="anonymous"></script>
     <!-- HTMX -->

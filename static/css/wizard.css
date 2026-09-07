@@ -125,6 +125,40 @@
 .wz-slider-card:focus-within {
     border-color: color-mix(in oklab, var(--wz-accent, var(--color-primary)) 55%, var(--color-base-300));
 }
+/* Анти-шум (2026-09-04, см. docs/adr/0005-anti-noise-touched-tracking.md):
+   ползунок ещё не тронут пользователем — тусклое значение и приглушённый
+   бегунок, плюс подсказка ниже (текст ставит static/js/wizard-sliders.js).
+   Как только пользователь реально подвинет ползунок, класс снимается JS. */
+.wz-slider-card--untouched .wz-slider-card__value {
+    background: var(--color-base-200);
+    color: color-mix(in oklab, var(--color-base-content) 45%, transparent);
+}
+.wz-slider-card--untouched .wizard-slider::-webkit-slider-thumb {
+    border-color: var(--color-base-300);
+    box-shadow: none;
+}
+.wz-slider-card--untouched .wizard-slider::-moz-range-thumb {
+    border-color: var(--color-base-300);
+    box-shadow: none;
+}
+.wz-slider-card__untouched-hint {
+    font-size: .6875rem;
+    font-weight: 600;
+    color: color-mix(in oklab, var(--color-warning) 70%, var(--color-base-content));
+    margin-top: .5rem;
+    display: flex;
+    align-items: center;
+    gap: .25rem;
+}
+.wz-slider-card__untouched-hint::before {
+    content: '';
+    width: 5px;
+    height: 5px;
+    border-radius: 9999px;
+    background: var(--color-warning);
+    flex-shrink: 0;
+}
+
 .wz-slider-card__value {
     display: inline-flex;
     align-items: center;

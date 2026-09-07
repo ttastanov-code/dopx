@@ -104,6 +104,16 @@ jobs:
       - name: Django system check
         run: python manage.py check
 
+      - name: Django deploy-чеклист (security-настройки)
+        # Раньше docs/DEPLOYMENT.md утверждал, что этот шаг уже есть в CI, а
+        # в самом workflow его не было (расхождение найдено во внешнем
+        # аудите 2026-09-04, см. docs/CODEX_AUDIT_RESPONSE_2026-09-04.md).
+        # ENVIRONMENT=development выше (см. env: этого job) — предупреждения
+        # по DEBUG/SECRET_KEY/HTTPS здесь ОЖИДАЕМЫ и не про прод-ветку
+        # настроек; смысл шага — не пропустить НОВОЕ предупреждение, которое
+        # появится при следующем изменении dopx/settings.py.
+        run: python manage.py check --deploy
+
       - name: Проверка расхождения моделей и миграций
         # Миграции в этом проекте местами пишутся вручную (см.
         # docs/BACKLOG.md) — этот шаг ловит именно тот случай, когда
@@ -179,5 +189,37 @@ jobs:
             set -e
             cd "$DEPLOY_PATH"
             git pull origin main
+
+            # Собираем образ ОТДЕЛЬНО от запуска — если сборка упадёт (битый
+            # Dockerfile, недоступный registry базового образа), сайт
+            # продолжает работать на старом образе, а не падает на середине
+            # `up --build`.
+            docker compose build web celery celery-beat
+
+            # Миграции — ОТДЕЛЬНЫМ шагом ДО перезапуска web, через
+            # одноразовый контейнер на уже собранном образе (не дожидаясь,
+            # пока entrypoint.sh накатит их сам при старте gunicorn — см.
+            # docs/adr/0003-deploy-migrate-as-explicit-step.md). Если
+            # миграция упадёт — `set -e` останавливает скрипт ЗДЕСЬ, старые
+            # контейнеры остаются работать на старой схеме, а не переходят в
+            # состояние "код уже новый, схема ещё старая".
+            docker compose run --rm web python manage.py migrate --noinput
+
             docker compose up -d --build
             docker image prune -f
+
+            # Смоук-тест — веб реально отвечает на новом коде, а не просто
+            # "контейнер запущен" (Docker healthcheck и то, и другое путает:
+            # процесс gunicorn мог стартовать и тут же начать 500-ить).
+            # Ретраи с паузой — gunicorn + миграции collectstatic внутри
+            # entrypoint.sh нужно время на холодный старт.
+            for i in 1 2 3 4 5; do
+              if curl -fsS -o /dev/null "http://localhost:8000/admin/login/"; then
+                echo "Смоук-тест пройден"
+                exit 0
+              fi
+              echo "Смоук-тест: попытка $i не удалась, жду 5с..."
+              sleep 5
+            done
+            echo "Смоук-тест не пройден после 5 попыток — сайт не отвечает на новом коде"
+            exit 1
