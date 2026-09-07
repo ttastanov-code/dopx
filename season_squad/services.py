@@ -46,6 +46,7 @@ from django.utils import timezone
 from aggregates.models import CoachMatchAggregate, PlayerMatchAggregate, RefereeMatchAggregate
 from aggregates.services import CONFIDENT_VOTES_THRESHOLD
 from coaches.models import Coach
+from events.models import MatchEvent
 from lineups.models import MatchLineupPlayer
 from matches.models import Match
 from players.models import Player
@@ -80,6 +81,23 @@ RANKING_BATCHES_TO_KEEP = 5
 # нужен только occupant (ранг 1), топ-10 с запасом на будущий блок
 # "кто ещё претендует на позицию".
 RANKING_POOL_DEPTH = 10
+
+# "Почему он в сборной?" (docs/PRODUCT_SCOPE_MATCH_DNA_AND_EXPLAINABILITY.md,
+# раздел 1) — тот же список заметных событий, что и в
+# evaluations/views.py::_compute_key_player_ids (docs/adr/0006): самый
+# дешёвый доступный прокси "заметности" на основе уже посчитанных данных,
+# без новой метрики. Не переиспользуем импортом из evaluations/ напрямую —
+# evaluations/views.py тянет за собой Django-view-слой (сессии вайзарда,
+# HttpRequest), совершенно не нужный здесь для одной константы.
+NOTABLE_EVENT_TYPES = ("goal", "yellow_card", "red_card", "own_goal", "disallowed_goal")
+NOTABLE_EVENT_LABELS = {
+    "goal": "гол",
+    "yellow_card": "жёлтая карточка",
+    "red_card": "красная карточка",
+    "own_goal": "автогол",
+    "disallowed_goal": "отменённый гол",
+}
+TOP_MATCHES_FOR_EXPLANATION = 2
 
 
 @dataclass
@@ -334,6 +352,27 @@ def _build_referee_pool(season, referee_ct: ContentType) -> list[Candidate]:
     return pool
 
 
+def _describe_nearest_competitor(score: float, runner_up: tuple[Candidate, float] | None) -> str:
+    """"Сравнение с ближайшим конкурентом" (docs/adr/0032-squad-explainability-v2.md,
+    продуктовый запрос по итогам второго аудита). `runner_up` — ранг №2 из
+    того же пула, что и occupant слота (см. `_rank_pool` — уже посчитанный,
+    отсортированный список, второй элемент даром, без нового запроса).
+
+    Не показываем фразу, если runner_up отсутствует (пул из одного
+    кандидата — сравнивать не с кем) или если gap получился <= 0 — по
+    построению occupant это ранг №1, поэтому такое означает не реальную
+    ничью, а гонку за третьим знаком после округления `_rank_pool` (`round`
+    в scored), и вводящая в заблуждение фраза "обошёл на 0.00 балла" хуже,
+    чем её отсутствие."""
+    if runner_up is None:
+        return ""
+    competitor, competitor_score = runner_up
+    gap = round(score - competitor_score, 2)
+    if gap <= 0:
+        return ""
+    return f"Обошёл ближайшего конкурента ({competitor.name}, {competitor_score:.2f}) на {gap:.2f} балла."
+
+
 def _build_explanation(
     slot_code: str,
     candidate: Candidate,
@@ -341,6 +380,7 @@ def _build_explanation(
     is_confident: bool,
     rank_change: str,
     rank_change_delta: int | None,
+    runner_up: tuple[Candidate, float] | None = None,
 ) -> str:
     """Собирает ЕДИНОЕ пояснение для тултипа на карточке — раньше confidence
     (бейдж "достаточно/мало данных") и rank_change (бейдж "вошёл в состав"/
@@ -366,7 +406,63 @@ def _build_explanation(
         matches_word = "место" if rank_change_delta == 1 else "места"
         sentences.append(f"Поднялся на {rank_change_delta} {matches_word} с прошлого пересчёта.")
 
+    competitor_text = _describe_nearest_competitor(score, runner_up)
+    if competitor_text:
+        sentences.append(competitor_text)
+
     return " ".join(sentences)
+
+
+def _describe_top_matches(player_id: str, season, limit: int = TOP_MATCHES_FOR_EXPLANATION) -> str:
+    """"Почему он в сборной?" — расширение _build_explanation ниже.
+    season_score — одно число ("средняя с поправкой на объём выборки"), но
+    само по себе не объясняет, ЗА ЧТО именно игрок получил высокие оценки.
+    Берём топ-N матчей по performance_score из тех, что вошли в усреднение
+    (те же PlayerMatchAggregate, что уже посчитаны _build_player_pool_by_code
+    — никаких новых полей/агрегатов), с датой/соперником и заметными
+    событиями (см. NOTABLE_EVENT_TYPES выше). Соперник определяется через
+    факт участия в составе (MatchLineupPlayer), а не через player.team —
+    та же причина, что в _player_season_team_name (переход в другой клуб
+    в середине сезона не должен искажать историю ПРОШЛЫХ матчей)."""
+    top = list(
+        PlayerMatchAggregate.objects
+        .filter(player_id=player_id, match__season=season)
+        .select_related("match", "match__home_team", "match__away_team")
+        .order_by("-performance_score")[:limit]
+    )
+    if not top:
+        return ""
+
+    match_ids = [pma.match_id for pma in top]
+    own_team_by_match: dict = {
+        row["lineup__match_id"]: row["lineup__team_id"]
+        for row in MatchLineupPlayer.objects.filter(
+            player_id=player_id, lineup__match_id__in=match_ids
+        ).values("lineup__match_id", "lineup__team_id")
+    }
+    events_by_match: dict[str, list] = defaultdict(list)
+    for event in (
+        MatchEvent.objects
+        .filter(player_id=player_id, match_id__in=match_ids, event_type__in=NOTABLE_EVENT_TYPES)
+        .order_by("minute")
+    ):
+        events_by_match[event.match_id].append(event)
+
+    pieces = []
+    for pma in top:
+        match = pma.match
+        own_team_id = own_team_by_match.get(match.id)
+        opponent = match.away_team if own_team_id == match.home_team_id else match.home_team
+        piece = f"{pma.performance_score:.1f} — {match.start_time:%d.%m} vs {opponent.name if opponent else '?'}"
+        events = events_by_match.get(match.id, [])
+        if events:
+            ev_text = ", ".join(
+                f"{NOTABLE_EVENT_LABELS.get(e.event_type, e.event_type)} ({e.display_minute}')"
+                for e in events
+            )
+            piece += f" ({ev_text})"
+        pieces.append(piece)
+    return "Лучшие матчи: " + "; ".join(pieces) + "."
 
 
 def _store_ranking_batch(
@@ -396,6 +492,8 @@ def _apply_slot(
     candidate: Candidate | None,
     score: float | None,
     previous_ranks: dict[tuple[str, int, str], int],
+    season,
+    runner_up: tuple[Candidate, float] | None = None,
 ) -> None:
     """Записывает/обновляет денормализованную карточку слота.
 
@@ -434,6 +532,13 @@ def _apply_slot(
         rank_change, delta = SeasonBestXISlot.RANK_CHANGE_UP, prev_rank - 1
 
     is_confident = candidate.votes >= CONFIDENT_VOTES_THRESHOLD
+    explanation = _build_explanation(slot_code, candidate, score, is_confident, rank_change, delta, runner_up)
+    if slot_code not in ("COACH", "REFEREE"):
+        # Обогащение только для игроков — у тренера/судьи нет
+        # персональных MatchEvent (голы/карточки привязаны к players.Player).
+        top_matches_text = _describe_top_matches(candidate.object_id, season)
+        if top_matches_text:
+            explanation = f"{explanation} {top_matches_text}"
     SeasonBestXISlot.objects.update_or_create(
         best_xi=best_xi, slot_code=slot_code,
         defaults=dict(
@@ -444,7 +549,7 @@ def _apply_slot(
             season_score=score, matches_count=candidate.matches, votes_count=candidate.votes,
             is_confident=is_confident,
             rank_change=rank_change, rank_change_delta=delta,
-            explanation=_build_explanation(slot_code, candidate, score, is_confident, rank_change, delta),
+            explanation=explanation,
         ),
     )
 
@@ -500,7 +605,10 @@ def recompute_best_xi(season) -> SeasonBestXI:
 
     assigned: set[tuple[int, str]] = set()
     ranking_buffer: list[SeasonPositionRanking] = []
-    slot_results: list[tuple[str, Candidate | None, float | None]] = []
+    # 4-й элемент — runner_up (ранг №2 того же пула, для "Обошёл ближайшего
+    # конкурента" в _build_explanation) — уже посчитан внутри `ranked`,
+    # просто прокидываем дальше без нового запроса.
+    slot_results: list[tuple[str, Candidate | None, float | None, tuple[Candidate, float] | None]] = []
 
     # ---- 11 полевых слотов формации 4-3-3 — жадное распределение ----
     for slot_code, raw_codes in SLOT_PROCESSING_ORDER:
@@ -519,9 +627,10 @@ def recompute_best_xi(season) -> SeasonBestXI:
         if ranked:
             top_candidate, top_score = ranked[0]
             assigned.add((top_candidate.content_type_id, top_candidate.object_id))
-            slot_results.append((slot_code, top_candidate, top_score))
+            runner_up = ranked[1] if len(ranked) > 1 else None
+            slot_results.append((slot_code, top_candidate, top_score, runner_up))
         else:
-            slot_results.append((slot_code, None, None))
+            slot_results.append((slot_code, None, None, None))
 
     # ---- Тренер и судья — отдельные пулы, не пересекаются с игроками ----
     for slot_code, pool in (("COACH", coach_pool), ("REFEREE", referee_pool)):
@@ -529,14 +638,15 @@ def recompute_best_xi(season) -> SeasonBestXI:
         _store_ranking_batch(ranking_buffer, best_xi, slot_code, ranked, now)
         if ranked:
             top_candidate, top_score = ranked[0]
-            slot_results.append((slot_code, top_candidate, top_score))
+            runner_up = ranked[1] if len(ranked) > 1 else None
+            slot_results.append((slot_code, top_candidate, top_score, runner_up))
         else:
-            slot_results.append((slot_code, None, None))
+            slot_results.append((slot_code, None, None, None))
 
     SeasonPositionRanking.objects.bulk_create(ranking_buffer, batch_size=200)
 
-    for slot_code, candidate, score in slot_results:
-        _apply_slot(best_xi, slot_code, candidate, score, previous_ranks)
+    for slot_code, candidate, score, runner_up in slot_results:
+        _apply_slot(best_xi, slot_code, candidate, score, previous_ranks, season, runner_up)
 
     _prune_old_rankings(best_xi)
 

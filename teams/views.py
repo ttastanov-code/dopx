@@ -254,8 +254,34 @@ class TeamDetailView(DetailView):
             from users.models import Follow
             is_following = Follow.objects.filter(user=self.request.user, team=team).exists()
 
+        # Индекс настроения клуба — v1 тренд-бейдж (docs/adr/0029) + v2
+        # график/доверие/ожидания/спорные решения сезона (docs/adr/0034-club-mood-index-v2.md).
+        # Бейдж и график сознательно СОСУЩЕСТВУЮТ (не заменяют друг друга) —
+        # бейдж отвечает на "как дела ПРЯМО СЕЙЧАС" одним взглядом у
+        # заголовка, график — на "как это выглядело за сезон", разные места
+        # на странице для разных вопросов.
+        from teams.services import (
+            compute_mood_trend, compute_mood_series, build_mood_chart,
+            find_season_controversial_matches,
+        )
+
+        mood_trend = compute_mood_trend(team)
+        mood_series = compute_mood_series(team)
+        # build_mood_chart (teams/services.py) — премиальный редизайн
+        # 2026-09-07 (продуктовый фидбек: "график уродский и непонятный")
+        # взамен сборки словаря из отдельных build_sparkline_points-вызовов
+        # прямо здесь: вся геометрия (сетка, точки, заливка) теперь считается
+        # в одном месте, а не размазана между view и шаблоном.
+        mood_chart = build_mood_chart(mood_series)
+        controversial_matches = (
+            find_season_controversial_matches(team, current_season) if current_season else []
+        )
+
         context.update({
             'is_following': is_following,
+            'mood_trend': mood_trend,
+            'mood_chart': mood_chart,
+            'controversial_matches': controversial_matches,
             'total_matches': total_matches,
             'wins': wins,
             'goals_scored': goals_scored,

@@ -129,6 +129,26 @@ class RoundBestXISlot(BaseModel):
     судьи — Codex-ревью и продуктовый запрос про «DOPX Лучшие тура»
     ограничили первую версию игроками/тренером/самым драматичным матчем)."""
 
+    # "Изменение позиции" (docs/adr/0032-squad-explainability-v2.md) — те же
+    # 4 значения, что у season_squad.SeasonBestXISlot.RANK_CHANGE_CHOICES,
+    # НАМЕРЕННО не импортируются оттуда (round_squad и season_squad не
+    # должны зависеть друг от друга ради одной константы — тот же принцип,
+    # что у NOTABLE_EVENT_TYPES в round_squad/services.py). Сравнение здесь
+    # идёт тур-к-туру (см. RoundPositionRanking ниже), а не батч-к-батчу
+    # внутри одного тура, как в season_squad — тур пересчитывается много раз
+    # ДО финализации, но "предыдущий" для rank_change — это прошлый
+    # ЗАФИКСИРОВАННЫЙ тур, а не предыдущий прогон recompute этого же тура.
+    RANK_CHANGE_NEW = 'new'
+    RANK_CHANGE_UP = 'up'
+    RANK_CHANGE_DOWN = 'down'
+    RANK_CHANGE_SAME = 'same'
+    RANK_CHANGE_CHOICES = [
+        (RANK_CHANGE_NEW, _('Не играл в прошлом туре')),
+        (RANK_CHANGE_UP, _('Поднялся')),
+        (RANK_CHANGE_DOWN, _('Опустился')),
+        (RANK_CHANGE_SAME, _('Без изменений')),
+    ]
+
     round_best_xi = models.ForeignKey(
         RoundBestXI, on_delete=models.CASCADE, related_name='slots', verbose_name=_('Тур'),
     )
@@ -150,6 +170,11 @@ class RoundBestXISlot(BaseModel):
     votes_count = models.PositiveIntegerField(_('Голосов'), default=0)
     is_confident = models.BooleanField(_('Достаточно данных'), default=False)
 
+    rank_change = models.CharField(
+        _('Изменение'), max_length=10, choices=RANK_CHANGE_CHOICES, default=RANK_CHANGE_NEW,
+    )
+    rank_change_delta = models.PositiveSmallIntegerField(_('На сколько мест'), null=True, blank=True)
+
     explanation = models.TextField(_('Почему в составе тура'), blank=True)
 
     class Meta:
@@ -165,3 +190,46 @@ class RoundBestXISlot(BaseModel):
 
     def __str__(self):
         return f"{self.slot_code}: {self.occupant_name or '—'}"
+
+
+class RoundPositionRanking(BaseModel):
+    """Полный ранжированный снимок кандидатов на слот ОДНОГО тура — тот же
+    смысл, что season_squad.SeasonPositionRanking, но партия сравнения
+    здесь не "предыдущий прогон recompute", а "предыдущий тур" (см.
+    докстринг RoundBestXISlot.RANK_CHANGE_CHOICES выше): round_squad/services.py
+    пересчитывает один и тот же тур много раз до финализации, поэтому
+    сравнивать с "прошлым прогоном ЭТОГО ЖЕ тура" бесполезно — почти всегда
+    SAME. recompute_round полностью перезаписывает строки этого тура на
+    каждый вызов (delete + bulk_create), в отличие от season_squad, который
+    хранит несколько последних батчей — здесь на слот/тур нужен только один
+    актуальный снимок, "предыдущая партия" всегда однозначно тур-1."""
+
+    round_best_xi = models.ForeignKey(
+        RoundBestXI, on_delete=models.CASCADE, related_name='rankings', verbose_name=_('Тур'),
+    )
+    slot_code = models.CharField(_('Код слота'), max_length=10)
+
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
+    object_id = models.UUIDField()
+    occupant = GenericForeignKey('content_type', 'object_id')
+
+    rank = models.PositiveSmallIntegerField(_('Ранг в пуле'))
+    round_score = models.FloatField(_('Рейтинг тура'))
+    votes_count = models.PositiveIntegerField(_('Голосов'), default=0)
+
+    class Meta:
+        verbose_name = _('Ранг кандидата в тур')
+        verbose_name_plural = _('Ранги кандидатов в тур')
+        ordering = ['slot_code', 'rank']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['round_best_xi', 'slot_code', 'rank'], name='unique_round_position_ranking',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['round_best_xi', 'slot_code']),
+            models.Index(fields=['content_type', 'object_id']),
+        ]
+
+    def __str__(self):
+        return f"{self.slot_code} #{self.rank} @ тур {self.round_best_xi.tour}"

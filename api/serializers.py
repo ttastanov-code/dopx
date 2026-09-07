@@ -53,6 +53,41 @@ def _run_policy(check, *args) -> None:
         raise serializers.ValidationError(str(e)) from e
 
 
+def _forbid_identity_field_changes(instance, data: dict, field_names: tuple[str, ...]) -> None:
+    """Запрещает менять поля, определяющие ЛИЧНОСТЬ оценки (какой матч/кого
+    оценивают), при PATCH/PUT уже существующей записи — см.
+    docs/adr/0027-lock-evaluation-identity-fields-on-update.md.
+
+    Найдено внешним аудитом (docs/CODEX_AUDIT_RESPONSE_2026-09-07.md):
+    validate() ниже брал match/player/team/coach из `data.get(...)`, и при
+    partial-обновлении (PATCH) с полем, ОТСУТСТВУЮЩИМ в теле запроса,
+    `data.get(...)` возвращал None — вся проверка `if user and match: ...`
+    (включая EvaluationPolicy: assert_player_in_squad и т.д.) тихо
+    пропускалась целиком. Хуже того: даже если поле ПРИСУТСТВОВАЛО в PATCH
+    (например, "player": 999 без "match"), уникальность и принадлежность
+    матчу всё равно не проверялись, потому что match отсутствовал в data.
+    Итог: владелец собственной оценки мог создать её честно, а затем прямым
+    PATCH подменить player/team/coach/match на что угодно — агрегаты и
+    сезонная сборная не отличили бы такую оценку от настоящей.
+
+    Фикс — не пытаться закрыть все комбинации в самой validate() (легко
+    забыть новую), а полностью запретить менять эти поля после создания:
+    после POST разрешено менять только сами баллы. Сравнение через `_id`,
+    а не сам объект — чтобы не делать лишний SELECT, если поле не менялось."""
+    if instance is None:
+        return
+    for field_name in field_names:
+        if field_name not in data:
+            continue
+        new_value = data[field_name]
+        new_id = new_value.id if new_value is not None else None
+        current_id = getattr(instance, f"{field_name}_id")
+        if new_id != current_id:
+            raise serializers.ValidationError(
+                {field_name: "Нельзя изменить после создания оценки — только баллы."}
+            )
+
+
 class MatchSerializer(serializers.ModelSerializer):
     """Сериалайзер матча для вложенных данных."""
 
@@ -107,6 +142,8 @@ class ContextEvaluationSerializer(serializers.ModelSerializer):
         """Проверка уникальности: user + match, и что выбранная
         поддерживаемая команда реально участвовала в матче (см.
         docs/adr/0001-evaluation-policy-single-source-of-truth.md)."""
+        _forbid_identity_field_changes(self.instance, data, ("match", "supported_team"))
+
         request = self.context.get("request")
         user = request.user if request else None
         match = data.get("match")
@@ -156,6 +193,8 @@ class PlayerEvaluationSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, data: dict) -> dict:
+        _forbid_identity_field_changes(self.instance, data, ("match", "player"))
+
         request = self.context.get("request")
         user = request.user if request else None
         match = data.get("match")
@@ -211,6 +250,8 @@ class TeamEvaluationSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, data: dict) -> dict:
+        _forbid_identity_field_changes(self.instance, data, ("match", "team"))
+
         request = self.context.get("request")
         user = request.user if request else None
         match = data.get("match")
@@ -263,6 +304,8 @@ class CoachEvaluationSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, data: dict) -> dict:
+        _forbid_identity_field_changes(self.instance, data, ("match", "coach"))
+
         request = self.context.get("request")
         user = request.user if request else None
         match = data.get("match")
@@ -273,6 +316,14 @@ class CoachEvaluationSerializer(serializers.ModelSerializer):
             ).exists()
             if existing and not self.instance:
                 raise serializers.ValidationError("Вы уже оценили этого тренера в данном матче")
+
+            if not self.instance:
+                # Единообразие с Player/Team-оценками (см.
+                # docs/CODEX_AUDIT_RESPONSE_2026-09-07.md): контекст
+                # просмотра — элемент доверия к голосу, требуется для
+                # ЛЮБОГО типа предметной оценки, не только для игрока/команды.
+                context_exists = ContextEvaluation.objects.filter(user=user, match=match).exists()
+                _run_policy(assert_context_exists, context_exists)
 
             if coach is not None:
                 _run_policy(assert_coach_in_match, coach.id, match)
@@ -302,6 +353,8 @@ class RefereeEvaluationSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, data: dict) -> dict:
+        _forbid_identity_field_changes(self.instance, data, ("match",))
+
         request = self.context.get("request")
         user = request.user if request else None
         match = data.get("match")
@@ -309,6 +362,12 @@ class RefereeEvaluationSerializer(serializers.ModelSerializer):
             existing = RefereeEvaluation.objects.filter(user=user, match=match).exists()
             if existing and not self.instance:
                 raise serializers.ValidationError("Вы уже оценили судейство этого матча")
+
+            if not self.instance:
+                # Единообразие с остальными типами оценок — см.
+                # docs/CODEX_AUDIT_RESPONSE_2026-09-07.md.
+                context_exists = ContextEvaluation.objects.filter(user=user, match=match).exists()
+                _run_policy(assert_context_exists, context_exists)
 
             influence_score = data.get("influence_score")
             if influence_score is not None and (influence_score < 0 or influence_score > 100):
@@ -343,6 +402,8 @@ class MatchEvaluationSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, data: dict) -> dict:
+        _forbid_identity_field_changes(self.instance, data, ("match",))
+
         request = self.context.get("request")
         user = request.user if request else None
         match = data.get("match")
@@ -350,6 +411,12 @@ class MatchEvaluationSerializer(serializers.ModelSerializer):
             existing = MatchEvaluation.objects.filter(user=user, match=match).exists()
             if existing and not self.instance:
                 raise serializers.ValidationError("Вы уже оценили этот матч")
+
+            if not self.instance:
+                # Единообразие с остальными типами оценок — см.
+                # docs/CODEX_AUDIT_RESPONSE_2026-09-07.md.
+                context_exists = ContextEvaluation.objects.filter(user=user, match=match).exists()
+                _run_policy(assert_context_exists, context_exists)
         return data
 
 

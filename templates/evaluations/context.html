@@ -37,7 +37,7 @@
                   data-supported-team="{{ form.supported_team.value|default:'' }}"
                   data-watched-type="{{ form.watched_type.value|default:'full' }}"
                   data-attended-stadium="{{ form.attended_stadium.value|yesno:'true,false' }}"
-                  data-eval-mode="{{ mode|default:'full' }}">
+                  data-eval-mode="{{ mode|default:'quick' }}">
                 {% csrf_token %}
 
                 <!-- Быстро или подробно? -->
@@ -47,7 +47,7 @@
                     </label>
                     <div class="grid grid-cols-2 gap-2.5">
                         <label class="cursor-pointer">
-                            <input type="radio" name="eval_mode" value="quick"
+                            <input type="radio" name="eval_mode" value="quick" checked
                                    class="sr-only"
                                    x-model="evalMode">
                             <div class="wz-select-card p-4"
@@ -61,7 +61,7 @@
                             </div>
                         </label>
                         <label class="cursor-pointer">
-                            <input type="radio" name="eval_mode" value="full" checked
+                            <input type="radio" name="eval_mode" value="full"
                                    class="sr-only"
                                    x-model="evalMode">
                             <div class="wz-select-card p-4"

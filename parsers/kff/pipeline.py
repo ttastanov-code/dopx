@@ -1,5 +1,5 @@
 # parsers/kff/pipeline.py
-from .client import KFFClient
+from .client import KFFAPICircuitBreakerOpen, KFFClient
 from .importers import (
     import_match_core,
     import_lineups,
@@ -306,7 +306,7 @@ def sync_season(season_id: int = None, tournament_code: str = None, match_ids: l
             logger.warning(f"⚠️  Матчи не найдены для сезона {season_id} (tournament={tournament_code})")
             return {"success": 0, "failed": 0, "total": 0}
     
-    results = {"success": 0, "failed": 0, "total": len(match_ids)}
+    results = {"success": 0, "failed": 0, "total": len(match_ids), "circuit_breaker_tripped": False}
     failed_matches = []
     
     for i, mid in enumerate(match_ids, 1):
@@ -317,6 +317,17 @@ def sync_season(season_id: int = None, tournament_code: str = None, match_ids: l
             else:
                 results["failed"] += 1
                 failed_matches.append(mid)
+        except KFFAPICircuitBreakerOpen as e:
+            # Тот же фикс, что в parsers/tasks.py::sync_recent_matches (см.
+            # её комментарий, найдено 2026-09-07) — sync_season гоняет ЦЕЛЫЙ
+            # сезон (десятки матчей) за один прогон, generic except ниже
+            # продолжал бы цикл после уже сработавшего breaker'а и молотил
+            # бы в закрытую дверь оставшиеся i..len(match_ids) матчей.
+            logger.error(f"🚫 KFF API circuit breaker на матче {mid}: {e}")
+            results["failed"] += 1
+            failed_matches.append(mid)
+            results["circuit_breaker_tripped"] = True
+            break
         except Exception as e:
             logger.error(f"❌ Критическая ошибка для матча {mid}: {type(e).__name__}: {e}", exc_info=True)
             results["failed"] += 1

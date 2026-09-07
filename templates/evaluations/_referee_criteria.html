@@ -30,8 +30,16 @@ evaluations/_coach_criteria.html.
         </label>
         <span class="wz-slider-card__value" id="quality_value">5</span>
     </div>
+    {% comment %}
+    data-wz-invert="true" — БАГФИКС 2026-09-07 (см. комментарий в
+    static/js/wizard-sliders.js про причину): "Качество решений" растёт в
+    ПРОТИВОПОЛОЖНУЮ сторону от "Влияния на матч" — незаметный судья (низкое
+    влияние) обычно означает хорошее качество, а не плохое. Без этого
+    атрибута кнопки "Слабо/Обычно/Сильно повлиял" тянули оба слайдера в
+    одну сторону, что было семантически неверно.
+    {% endcomment %}
     <input type="range" name="decision_quality" min="1" max="10" value="5"
-           class="wizard-slider"
+           class="wizard-slider" data-wz-invert="true"
            oninput="document.getElementById('quality_value').textContent = this.value">
     <div class="flex justify-between text-[10px] text-base-content/40 mt-1.5 px-1">
         <span>1</span><span>5</span><span>10</span>

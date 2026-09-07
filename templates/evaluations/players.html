@@ -18,7 +18,7 @@
 <div class="max-w-7xl mx-auto px-3 text-center mb-5">
     <h2 class="text-xl sm:text-2xl font-extrabold mb-1">Оцените игроков</h2>
     {% if mode == 'quick' %}
-    <p class="text-sm text-base-content/60">Мы отметили несколько заметных игроков — оцените их или разверните весь состав</p>
+    <p class="text-sm text-base-content/60">Выберите лучшего и худшего — этого достаточно. Хотите подробнее — раскройте весь состав ниже</p>
     {% else %}
     <p class="text-sm text-base-content/60">Оценивайте только тех, кого хорошо запомнили</p>
     {% endif %}
@@ -37,6 +37,75 @@
         </span>
         <span class="text-xs opacity-50 font-medium">из {{ lineup_players|length }} игроков</span>
     </div>
+
+    {% if mode == 'quick' %}
+    <!-- === ЛУЧШИЙ / ХУДШИЙ ИГРОК МАТЧА ===
+         Главный сценарий "Быстрой" оценки (см. docs/adr/0031-quick-mode-primary-flow.md):
+         не листать карточки со слайдерами, а выбрать двух игроков из
+         выпадающих списков — под капотом это те же PlayerEvaluation
+         (contribution/risk/potential), просто с преднастроенными
+         значениями (см. <script> ниже), заполняемыми в скрытые поля УЖЕ
+         существующих карточек состава (никаких изменений на бэкенде). -->
+    <div class="card bg-base-100 border-2 border-primary/30 shadow-sm mb-5">
+        <div class="card-body p-4 sm:p-5">
+            <h3 class="font-extrabold text-base sm:text-lg mb-3.5 flex items-center gap-2">
+                <i class="ti ti-arrows-diff text-primary"></i> Лучший и худший игрок матча
+            </h3>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                    <label class="text-xs font-bold uppercase tracking-wider text-success/80 mb-1.5 flex items-center gap-1.5">
+                        <i class="ti ti-trophy text-[13px]"></i> Лучший
+                    </label>
+                    <select id="best-player-select" class="select select-bordered w-full">
+                        <option value="">Выберите игрока…</option>
+                        <optgroup label="{{ match.home_team.name }}">
+                            {% for lp in lineup_players %}
+                            {% if lp.lineup.side == 'home' %}
+                            <option value="{{ lp.player.id }}">{{ lp.shirt_number|default:"?" }} — {{ lp.player.first_name }} {{ lp.player.last_name }}</option>
+                            {% endif %}
+                            {% endfor %}
+                        </optgroup>
+                        <optgroup label="{{ match.away_team.name }}">
+                            {% for lp in lineup_players %}
+                            {% if lp.lineup.side == 'away' %}
+                            <option value="{{ lp.player.id }}">{{ lp.shirt_number|default:"?" }} — {{ lp.player.first_name }} {{ lp.player.last_name }}</option>
+                            {% endif %}
+                            {% endfor %}
+                        </optgroup>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-xs font-bold uppercase tracking-wider text-error/80 mb-1.5 flex items-center gap-1.5">
+                        <i class="ti ti-thumb-down text-[13px]"></i> Худший
+                    </label>
+                    <select id="worst-player-select" class="select select-bordered w-full">
+                        <option value="">Выберите игрока…</option>
+                        <optgroup label="{{ match.home_team.name }}">
+                            {% for lp in lineup_players %}
+                            {% if lp.lineup.side == 'home' %}
+                            <option value="{{ lp.player.id }}">{{ lp.shirt_number|default:"?" }} — {{ lp.player.first_name }} {{ lp.player.last_name }}</option>
+                            {% endif %}
+                            {% endfor %}
+                        </optgroup>
+                        <optgroup label="{{ match.away_team.name }}">
+                            {% for lp in lineup_players %}
+                            {% if lp.lineup.side == 'away' %}
+                            <option value="{{ lp.player.id }}">{{ lp.shirt_number|default:"?" }} — {{ lp.player.first_name }} {{ lp.player.last_name }}</option>
+                            {% endif %}
+                            {% endfor %}
+                        </optgroup>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <details class="mb-2">
+        <summary class="cursor-pointer list-none text-sm font-bold text-info/80 mb-3 flex items-center gap-1.5">
+            <i class="ti ti-chevron-right text-[13px] transition-transform"></i>
+            Оценить подробнее — весь состав
+        </summary>
+    {% endif %}
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Домашняя команда -->
@@ -63,21 +132,6 @@
             </div>
 
             <!-- Запас -->
-            {% if mode == 'quick' %}
-            <details>
-                <summary class="cursor-pointer list-none text-xs font-bold uppercase tracking-wider text-info/80 mb-2.5 flex items-center gap-1.5">
-                    <i class="ti ti-chevron-right text-[11px] transition-transform"></i>
-                    Показать запасных ({{ home_bench_count }})
-                </summary>
-                <div class="space-y-2.5 mt-2.5">
-                    {% for lp in lineup_players %}
-                    {% if not lp.is_starting and lp.lineup.side == 'home' %}
-                    {% include 'evaluations/_player_card.html' with lp=lp prefix="player" %}
-                    {% endif %}
-                    {% endfor %}
-                </div>
-            </details>
-            {% else %}
             <div>
                 <h3 class="text-xs font-bold uppercase tracking-wider text-info/80 mb-2.5 flex items-center gap-1.5">
                     <i class="ti ti-clock text-[11px]"></i> Запасные
@@ -90,7 +144,6 @@
                     {% endfor %}
                 </div>
             </div>
-            {% endif %}
         </div>
 
         <!-- Гостевая команда -->
@@ -117,21 +170,6 @@
             </div>
 
             <!-- Запас -->
-            {% if mode == 'quick' %}
-            <details>
-                <summary class="cursor-pointer list-none text-xs font-bold uppercase tracking-wider text-info/80 mb-2.5 flex items-center gap-1.5">
-                    <i class="ti ti-chevron-right text-[11px] transition-transform"></i>
-                    Показать запасных ({{ away_bench_count }})
-                </summary>
-                <div class="space-y-2.5 mt-2.5">
-                    {% for lp in lineup_players %}
-                    {% if not lp.is_starting and lp.lineup.side == 'away' %}
-                    {% include 'evaluations/_player_card.html' with lp=lp prefix="player" %}
-                    {% endif %}
-                    {% endfor %}
-                </div>
-            </details>
-            {% else %}
             <div>
                 <h3 class="text-xs font-bold uppercase tracking-wider text-info/80 mb-2.5 flex items-center gap-1.5">
                     <i class="ti ti-clock text-[11px]"></i> Запасные
@@ -144,9 +182,12 @@
                     {% endfor %}
                 </div>
             </div>
-            {% endif %}
         </div>
     </div>
+
+    {% if mode == 'quick' %}
+    </details>
+    {% endif %}
 
     <!-- Navigation Buttons -->
     <div class="wz-sticky-nav flex gap-2">
@@ -174,6 +215,69 @@
                 if (e.target.type === 'checkbox' && e.target.name.endsWith('_evaluate')) updateCounter();
             });
         }
+
+        // === Лучший/худший игрок (см. docs/adr/0031-quick-mode-primary-flow.md) ===
+        // Под капотом — те же поля, что и у обычной карточки игрока
+        // (evaluations/_player_card.html): просто заполняем их значениями
+        // пресета и включаем тумблер "оценить" программно, без изменений
+        // на бэкенде (evaluations/views.py уже читает эти поля как обычно).
+        const BEST_PRESET = { contribution: 9, risk: 2, potential: 8 };
+        const WORST_PRESET = { contribution: 3, risk: 8, potential: 3 };
+
+        function applyPreset(playerId, preset) {
+            Object.keys(preset).forEach(function (field) {
+                const input = document.querySelector('[name="player_' + playerId + '_' + field + '"]');
+                if (!input) return;
+                input.value = preset[field];
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            });
+            const toggle = document.querySelector('[name="player_' + playerId + '_evaluate"]');
+            if (toggle && !toggle.checked) {
+                toggle.checked = true;
+                toggle.dispatchEvent(new Event('input', { bubbles: true }));
+                toggle.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        }
+
+        function resetPlayer(playerId) {
+            if (!playerId) return;
+            const toggle = document.querySelector('[name="player_' + playerId + '_evaluate"]');
+            if (toggle && toggle.checked) {
+                toggle.checked = false;
+                toggle.dispatchEvent(new Event('input', { bubbles: true }));
+                toggle.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        }
+
+        const bestSelect = document.getElementById('best-player-select');
+        const worstSelect = document.getElementById('worst-player-select');
+        if (!bestSelect || !worstSelect) return;
+
+        let lastBest = '';
+        let lastWorst = '';
+
+        function syncDisabledOptions() {
+            // Нельзя выбрать одного и того же игрока и лучшим, и худшим сразу.
+            Array.prototype.forEach.call(bestSelect.options, function (opt) {
+                opt.disabled = !!opt.value && opt.value === worstSelect.value;
+            });
+            Array.prototype.forEach.call(worstSelect.options, function (opt) {
+                opt.disabled = !!opt.value && opt.value === bestSelect.value;
+            });
+        }
+
+        bestSelect.addEventListener('change', function () {
+            resetPlayer(lastBest);
+            lastBest = bestSelect.value;
+            if (lastBest) applyPreset(lastBest, BEST_PRESET);
+            syncDisabledOptions();
+        });
+        worstSelect.addEventListener('change', function () {
+            resetPlayer(lastWorst);
+            lastWorst = worstSelect.value;
+            if (lastWorst) applyPreset(lastWorst, WORST_PRESET);
+            syncDisabledOptions();
+        });
     });
 })();
 </script>

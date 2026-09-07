@@ -1,4 +1,11 @@
 # aggregates/management/commands/create_test_evaluations.py
+#
+# Для наполнения матча РЕАЛИСТИЧНЫМ и/или БОЛЬШИМ числом голосов (разброс
+# оценок, переиспользуемый пул ботов, несколько матчей за один запуск,
+# сегментация по поддерживаемой команде) — см. seed_match_votes.py в этой
+# же папке, он написан позже специально под эти сценарии. Эта команда
+# осталась для быстрого "накинуть N одинаковых по духу голосов на один
+# матч" без лишних флагов.
 from django.core.management.base import BaseCommand
 from django.contrib.auth import get_user_model
 from django.utils import timezone

@@ -2,7 +2,7 @@
 from django.urls import path
 from .views import (
     HomeView, RulesView, ContactsView, PrivacyPolicyView, AntiFraudView,
-    MatchShareCardView, StreakShareCardView, standings_preview, standings_widget,
+    MatchShareCardView, MatchDNAShareCardView, StreakShareCardView, standings_preview, standings_widget,
     handler_404, handler_500, service_worker,
 )
 
@@ -16,6 +16,7 @@ urlpatterns = [
     path('contacts/', ContactsView.as_view(), name='contacts'),
     path('anti-fraud/', AntiFraudView.as_view(), name='anti_fraud'),
     path('share/match/<uuid:match_id>/card.png', MatchShareCardView.as_view(), name='match_share_card'),
+    path('share/match/<uuid:match_id>/dna-card.png', MatchDNAShareCardView.as_view(), name='match_dna_share_card'),
     # <str:streak_type> ограничен во ВЬЮХЕ (evaluation|prediction, иначе
     # Http404) — не в конвертере пути, чтобы не плодить кастомный path
     # converter ради двух значений.

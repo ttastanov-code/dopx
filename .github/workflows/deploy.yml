@@ -26,6 +26,17 @@ on:
     branches:
       - main
       - dev
+  # ДОБАВЛЕНО (2026-09-07, docs/CODEX_AUDIT_RESPONSE_2026-09-07.md): раньше
+  # проверки запускались только НА push в main/dev — то есть уже ПОСЛЕ
+  # слияния. Плохой код ловился постфактум, а не до того, как он попал в
+  # ветку. pull_request сюда не добавляет новых прав деплою — job `deploy`
+  # ниже проверяет `github.ref == 'refs/heads/main'`, а у pull_request-события
+  # `github.ref` указывает на синтетический merge-ref (`refs/pull/N/merge`),
+  # не на `refs/heads/main` — деплой на PR технически не запустится.
+  pull_request:
+    branches:
+      - main
+      - dev
   workflow_dispatch: {}
 
 jobs:
@@ -135,9 +146,59 @@ jobs:
           pip install pip-audit
           pip-audit -r requirements.txt
 
+  production-settings-check:
+    name: Django deploy-чеклист под ПРОД-настройками
+    runs-on: ubuntu-latest
+    # ДОБАВЛЕНО (2026-09-07, docs/CODEX_AUDIT_RESPONSE_2026-09-07.md): job
+    # `test` выше запускает `check --deploy` с ENVIRONMENT=development —
+    # предупреждения о DEBUG/SECRET_KEY/HTTPS там ОЖИДАЕМЫ и намеренно не
+    # блокируют workflow (см. комментарий в job `test`), то есть тот шаг
+    # никогда не проверял, что настройки БЕЗОПАСНЫ именно в проде — только
+    # что сам чеклист не падает с ошибкой импорта. Этот job — тот же
+    # `check --deploy`, но с ENVIRONMENT=production/DEBUG=False и сильным
+    # SECRET_KEY: `dopx/settings.py` при DEBUG=False сам включает
+    # SESSION_COOKIE_SECURE/CSRF_COOKIE_SECURE/SECURE_SSL_REDIRECT/HSTS —
+    # если что-то из этого сломается будущей правкой settings.py, ИМЕННО
+    # здесь появится новое предупреждение и упадёт CI, а не станет известно
+    # только на реальном сервере. Не требует Postgres/Redis — `manage.py
+    # check` не выполняет запросы к БД/кэшу, только проверяет конфигурацию.
+    env:
+      ENVIRONMENT: production
+      DEBUG: "False"
+      # Тестовый ключ ДЛИНОЙ и энтропией как настоящий (не литерал вида
+      # "test") — секрет не настоящий, никуда не деплоится, но должен
+      # реалистично проходить любые будущие проверки силы SECRET_KEY.
+      SECRET_KEY: "ci-only-production-settings-check-3f8a1c9e7b2d4f60a5e9c1b7d3f082ea"
+      ALLOWED_HOSTS: "dopx.kz,www.dopx.kz"
+      DB_NAME: dopx_ci_placeholder
+      DB_USER: dopx_ci_placeholder
+      DB_PASSWORD: dopx_ci_placeholder
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      REDIS_URL: redis://localhost:6379/1
+      REDIS_AGGREGATES_URL: redis://localhost:6379/2
+      CELERY_BROKER_URL: redis://localhost:6379/0
+      CELERY_RESULT_BACKEND: redis://localhost:6379/0
+      SECURE_SSL_REDIRECT: "True"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Установить зависимости
+        run: pip install -r requirements.txt
+
+      - name: Django deploy-чеклист под прод-настройками (должен пройти без предупреждений)
+        run: python manage.py check --deploy --fail-level WARNING
+
   deploy:
     name: Деплой на сервер
-    needs: [build-check, test]
+    needs: [build-check, test, production-settings-check]
     runs-on: ubuntu-latest
     # github.event_name != 'pull_request' раньше стояло тут как доп. защита,
     # но в блоке `on:` этого файла триггера pull_request вообще нет — сборка

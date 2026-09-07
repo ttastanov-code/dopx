@@ -16,6 +16,7 @@ from .services import (
     REFERRAL_COOKIE_NAME,
     build_click_redirect_url,
     build_content_feed,
+    build_mood_index_feed,
     track_banner_click,
     track_partner_feed_access,
     track_partner_referral_visit,
@@ -143,5 +144,38 @@ class PartnerContentFeedView(View):
         # СТОРОНЕ партнёра, системах веб-аналитики. no-store запрещает
         # кэширование ответа где бы то ни было по цепочке — снижает шанс,
         # что содержимое (пусть и не сверхсекретное) утечёт через чужой кэш.
+        response["Cache-Control"] = "no-store"
+        return response
+
+
+class PartnerMoodIndexFeedView(View):
+    """
+    /partners/<slug>/feed/<token>/mood/<uuid:team_id>/ — B2B v1 (docs/adr/0034-club-mood-index-v2.md):
+    тот же токен-доступ, что PartnerContentFeedView выше (Partner.feed_token —
+    один токен на партнёра для ВСЕХ его фидов, не заводим отдельный токен на
+    каждый вид фида), но отдаёт "Индекс настроения клуба" — уже
+    анонимизированный агрегат по конкретной команде (см. докстринг
+    partners/services.py::build_mood_index_feed про то, что здесь НЕТ данных
+    уровня пользователя).
+
+    Сезон — текущий активный (`Season.get_primary_active`), без параметра в
+    URL: партнёру нужен "сейчас", а не произвольный сезон в истории — то же
+    решение, что core/views.py::standings_widget.
+    """
+
+    def get(self, request: HttpRequest, slug: str, token: str, team_id) -> HttpResponse:
+        from seasons.models import Season
+        from teams.models import Team
+
+        partner = get_object_or_404(Partner, slug=slug, is_active=True)
+        if str(partner.feed_token) != str(token):
+            raise Http404()
+
+        team = get_object_or_404(Team, pk=team_id)
+        season = Season.get_primary_active()
+
+        track_partner_feed_access(partner, request, feed_type="mood_index")
+        data = build_mood_index_feed(partner, team, season)
+        response = JsonResponse({"partner": partner.name, **data})
         response["Cache-Control"] = "no-store"
         return response

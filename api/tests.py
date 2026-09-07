@@ -652,6 +652,7 @@ class EvaluationPolicyAPITests(APITestCase):
     def test_coach_not_in_match_rejected(self):
         from coaches.models import Coach
 
+        self._add_context()
         outside_coach = Coach.objects.create(first_name="Чужой", last_name="Тренер", team=self.other_team)
         url = reverse("api:coach-eval-list")
         response = self.client.post(
@@ -670,6 +671,7 @@ class EvaluationPolicyAPITests(APITestCase):
     def test_coach_in_match_accepted(self):
         from coaches.models import Coach
 
+        self._add_context()
         home_coach = Coach.objects.create(first_name="Свой", last_name="Тренер", team=self.match.home_team)
         self.match.home_coach = home_coach
         self.match.save(update_fields=["home_coach"])
@@ -697,6 +699,179 @@ class EvaluationPolicyAPITests(APITestCase):
             {"match": str(self.match.id), "supported_team": str(self.other_team.id), "watched_type": "full"},
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+
+    def test_coach_evaluation_without_context_rejected(self):
+        """Единообразие с Player/Team (docs/CODEX_AUDIT_RESPONSE_2026-09-07.md,
+        docs/adr/0027): контекст просмотра требуется для ЛЮБОГО типа
+        предметной оценки, не только игрока/команды."""
+        from coaches.models import Coach
+
+        home_coach = Coach.objects.create(first_name="Свой", last_name="Тренер", team=self.match.home_team)
+        self.match.home_coach = home_coach
+        self.match.save(update_fields=["home_coach"])
+        url = reverse("api:coach-eval-list")
+        response = self.client.post(
+            url,
+            {
+                "match": str(self.match.id), "coach": str(home_coach.id),
+                "tactics": 7, "substitutions": 6, "game_management": 8, "impact": 7,
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+
+    def test_referee_evaluation_without_context_rejected(self):
+        url = reverse("api:referee-eval-list")
+        response = self.client.post(
+            url, {"match": str(self.match.id), "influence_score": 40, "decision_quality": 7}
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+
+    def test_match_evaluation_without_context_rejected(self):
+        url = reverse("api:match-eval-list")
+        response = self.client.post(
+            url,
+            {"match": str(self.match.id), "entertainment": 8, "tension": 7, "fairness": 6, "turning_point": False},
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+
+
+@override_settings(CACHES=LOCMEM_CACHES)
+class EvaluationIdentityImmutableOnUpdateAPITests(APITestCase):
+    """
+    Регрессия на дыру из внешнего аудита (2026-09-07, см.
+    docs/adr/0027-lock-evaluation-identity-fields-on-update.md): validate()
+    брал match/player/team/coach из data.get(...), который при PATCH с
+    ОТСУТСТВУЮЩИМ в теле полем возвращает None — EvaluationPolicy тихо не
+    выполнялась вовсе. Владелец собственной оценки мог создать её честно
+    POST'ом, а затем PATCH'ом подменить player/team/coach/match/
+    supported_team на что угодно. Каждый тест здесь: создать оценку,
+    попытаться PATCH'ем подменить identity-поле — должно быть 400, объект
+    в БД не должен измениться; отдельный тест подтверждает, что PATCH самих
+    баллов по-прежнему работает.
+    """
+
+    def setUp(self):
+        from lineups.models import MatchLineup, MatchLineupPlayer
+
+        cache.clear()
+        self.user = _make_verified_user()
+        self.client.force_authenticate(user=self.user)
+        self.match = _make_match()
+        self.other_match = _make_match()
+
+        self.player = _make_player(self.match.home_team)
+        self.other_player = _make_player(self.match.away_team)
+        home_lineup = MatchLineup.objects.create(match=self.match, team=self.match.home_team, side="home")
+        away_lineup = MatchLineup.objects.create(match=self.match, team=self.match.away_team, side="away")
+        MatchLineupPlayer.objects.create(lineup=home_lineup, player=self.player, is_starting=True, shirt_number=10)
+        MatchLineupPlayer.objects.create(lineup=away_lineup, player=self.other_player, is_starting=True, shirt_number=9)
+
+        ContextEvaluation.objects.create(user=self.user, match=self.match, watched_type="full")
+        ContextEvaluation.objects.create(user=self.user, match=self.other_match, watched_type="full")
+
+    def test_cannot_change_player_via_patch(self):
+        """other_player тоже реально в заявке self.match — если бы проверка
+        не запрещала смену identity-поля вовсе, EvaluationPolicy пропустила
+        бы такую подмену (оба игрока валидны для матча)."""
+        obj = PlayerEvaluation.objects.create(
+            user=self.user, match=self.match, player=self.player, contribution=8, risk=3, potential=7
+        )
+        url = reverse("api:player-eval-detail", args=[obj.id])
+        response = self.client.patch(url, {"player": str(self.other_player.id)})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+        obj.refresh_from_db()
+        self.assertEqual(obj.player_id, self.player.id)
+
+    def test_cannot_change_match_via_patch(self):
+        obj = PlayerEvaluation.objects.create(
+            user=self.user, match=self.match, player=self.player, contribution=8, risk=3, potential=7
+        )
+        url = reverse("api:player-eval-detail", args=[obj.id])
+        response = self.client.patch(url, {"match": str(self.other_match.id)})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+        obj.refresh_from_db()
+        self.assertEqual(obj.match_id, self.match.id)
+
+    def test_can_still_patch_score_fields(self):
+        """Сам фикс не должен запрещать легитимное изменение баллов своей
+        же оценки — только identity-поля."""
+        obj = PlayerEvaluation.objects.create(
+            user=self.user, match=self.match, player=self.player, contribution=8, risk=3, potential=7
+        )
+        url = reverse("api:player-eval-detail", args=[obj.id])
+        response = self.client.patch(url, {"contribution": 5})
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        obj.refresh_from_db()
+        self.assertEqual(obj.contribution, 5)
+
+    def test_cannot_change_team_via_patch(self):
+        from evaluations.models import TeamEvaluation
+
+        obj = TeamEvaluation.objects.create(
+            user=self.user, match=self.match, team=self.match.home_team,
+            tactics=7, effort=8, organization=6, mentality=7,
+        )
+        url = reverse("api:team-eval-detail", args=[obj.id])
+        response = self.client.patch(url, {"team": str(self.match.away_team_id)})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+        obj.refresh_from_db()
+        self.assertEqual(obj.team_id, self.match.home_team_id)
+
+    def test_cannot_change_coach_via_patch(self):
+        from coaches.models import Coach
+        from evaluations.models import CoachEvaluation
+
+        home_coach = Coach.objects.create(first_name="Домашний", last_name="Тренер", team=self.match.home_team)
+        away_coach = Coach.objects.create(first_name="Гостевой", last_name="Тренер", team=self.match.away_team)
+        self.match.home_coach = home_coach
+        self.match.away_coach = away_coach
+        self.match.save(update_fields=["home_coach", "away_coach"])
+
+        obj = CoachEvaluation.objects.create(
+            user=self.user, match=self.match, coach=home_coach,
+            tactics=7, substitutions=6, game_management=8, impact=7,
+        )
+        url = reverse("api:coach-eval-detail", args=[obj.id])
+        response = self.client.patch(url, {"coach": str(away_coach.id)})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+        obj.refresh_from_db()
+        self.assertEqual(obj.coach_id, home_coach.id)
+
+    def test_cannot_change_match_via_patch_on_referee_evaluation(self):
+        from evaluations.models import RefereeEvaluation
+
+        obj = RefereeEvaluation.objects.create(
+            user=self.user, match=self.match, influence_score=40, decision_quality=7
+        )
+        url = reverse("api:referee-eval-detail", args=[obj.id])
+        response = self.client.patch(url, {"match": str(self.other_match.id)})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+        obj.refresh_from_db()
+        self.assertEqual(obj.match_id, self.match.id)
+
+    def test_cannot_change_match_via_patch_on_match_evaluation(self):
+        from evaluations.models import MatchEvaluation
+
+        obj = MatchEvaluation.objects.create(
+            user=self.user, match=self.match, entertainment=8, tension=7, turning_point=False, fairness=6
+        )
+        url = reverse("api:match-eval-detail", args=[obj.id])
+        response = self.client.patch(url, {"match": str(self.other_match.id)})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+        obj.refresh_from_db()
+        self.assertEqual(obj.match_id, self.match.id)
+
+    def test_cannot_change_match_or_supported_team_via_patch_on_context_evaluation(self):
+        obj = ContextEvaluation.objects.filter(user=self.user, match=self.match).get()
+        url = reverse("api:context-eval-detail", args=[obj.id])
+
+        response = self.client.patch(url, {"match": str(self.other_match.id)})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+
+        response = self.client.patch(url, {"supported_team": str(self.match.away_team_id)})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+        obj.refresh_from_db()
+        self.assertIsNone(obj.supported_team_id)
 
 
 @override_settings(CACHES=LOCMEM_CACHES)

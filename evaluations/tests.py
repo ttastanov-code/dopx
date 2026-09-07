@@ -245,11 +245,23 @@ class QuickModeSelectionTests(TestCase):
         self.client.force_login(self.user)
         self.match = _make_match()
 
-    def test_default_mode_is_full_without_eval_mode_in_post(self):
+    def test_default_mode_is_quick_without_eval_mode_in_post(self):
         """Старые закладки/JS не выполнился — eval_mode просто не приходит в
-        POST. Сессия должна остаться в дефолтном режиме 'full', а не упасть."""
+        POST. Сессия должна остаться в дефолтном режиме.
+
+        2026-09-07 (docs/adr/0031-quick-mode-primary-flow.md): дефолт
+        намеренно сменён с 'full' на 'quick' — быстрый режим теперь
+        основной сценарий по аудиту UX. Это НЕ регресс, а сознательная
+        смена поведения; было test_default_mode_is_full_without_eval_mode_in_post
+        с assertEqual(session.mode, "full")."""
         url = reverse("evaluations:context", args=[self.match.id])
         self.client.post(url, {"watched_type": "full"})
+        session = EvaluationSession.objects.get(user=self.user, match=self.match)
+        self.assertEqual(session.mode, "quick")
+
+    def test_choosing_full_mode_persists_on_session(self):
+        url = reverse("evaluations:context", args=[self.match.id])
+        self.client.post(url, {"watched_type": "full", "eval_mode": "full"})
         session = EvaluationSession.objects.get(user=self.user, match=self.match)
         self.assertEqual(session.mode, "full")
 
@@ -263,11 +275,13 @@ class QuickModeSelectionTests(TestCase):
         """Произвольная строка в eval_mode (испорченный запрос, не
         значение из EvaluationSession.MODE_CHOICES) не должна попасть в БД —
         MODE_CHOICES на уровне модели этого и так не пропустил бы при
-        full_clean(), но save() без него не проверяет choices сам по себе."""
+        full_clean(), но save() без него не проверяет choices сам по себе.
+        Сессия остаётся на дефолте модели ('quick', см. ADR-0031), т.к.
+        мусорное значение просто игнорируется и mode не переписывается."""
         url = reverse("evaluations:context", args=[self.match.id])
         self.client.post(url, {"watched_type": "full", "eval_mode": "ultra-mega-mode"})
         session = EvaluationSession.objects.get(user=self.user, match=self.match)
-        self.assertEqual(session.mode, "full")
+        self.assertEqual(session.mode, "quick")
 
 
 class KeyPlayerSelectionTests(TestCase):
@@ -293,11 +307,16 @@ class KeyPlayerSelectionTests(TestCase):
             players.append(player)
         return players
 
-    def test_scorer_prioritized_over_low_shirt_numbers(self):
+    def test_full_mode_has_no_key_player_preselection(self):
         from events.models import MatchEvent
 
+        # mode='full' явно указан: с 2026-09-07 (docs/adr/0031)
+        # EvaluationSession.mode по умолчанию 'quick', так что для этого
+        # теста ("full" -> пустой key_player_ids) режим нужно фиксировать
+        # явно, а не полагаться на дефолт модели.
         EvaluationSession.objects.create(
-            user=self.user, match=self.match, completed_steps=["context", "teams"],
+            user=self.user, match=self.match, mode="full",
+            completed_steps=["context", "teams"],
         )
         home_players = self._make_lineup("home", self.match.home_team, starters=5, bench=2)
         self._make_lineup("away", self.match.away_team, starters=5, bench=2)
@@ -311,8 +330,8 @@ class KeyPlayerSelectionTests(TestCase):
 
         response = self.client.get(reverse("evaluations:players", args=[self.match.id]))
         key_ids = response.context["key_player_ids"]
-        # session.mode по умолчанию 'full' — key_player_ids должен быть
-        # пустым, пока пользователь явно не выбрал 'quick' на шаге 1.
+        # В режиме 'full' key_player_ids должен быть пустым — предвыбор
+        # ключевых игроков это фича режима 'quick'.
         self.assertEqual(key_ids, set())
 
     def test_quick_mode_includes_scorer_and_caps_per_side(self):
@@ -332,6 +351,104 @@ class KeyPlayerSelectionTests(TestCase):
         self.assertIn(scorer.id, key_ids)
         home_key_count = sum(1 for p in home_players if p.id in key_ids)
         self.assertLessEqual(home_key_count, 3)
+
+
+# ---------------------------------------------------------------------------
+# Пикер "Лучший/худший игрок матча" (docs/adr/0031-quick-mode-primary-flow.md)
+# — сам пикер это клиентский JS (players.html), недоступный из Python-теста
+# без DOM; здесь проверяется РЕЗУЛЬТАТ отправки формы теми же значениями,
+# что JS-пресеты (BEST_PRESET/WORST_PRESET) проставили бы в реальном
+# браузере — т.е. что EvaluatePlayersView.post корректно сохраняет ровно
+# две PlayerEvaluation с этими баллами, как обычную оценку через слайдеры.
+# ---------------------------------------------------------------------------
+
+class PlayerBestWorstPickerSubmissionTests(TestCase):
+    # Те же числа, что в players.html::BEST_PRESET/WORST_PRESET — если
+    # эти константы поменяются в JS, тест стоит обновить синхронно, иначе
+    # он перестанет отражать реальный пресет.
+    BEST_PRESET = {'contribution': 9, 'risk': 2, 'potential': 8}
+    WORST_PRESET = {'contribution': 3, 'risk': 8, 'potential': 3}
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="u1", email="u1@example.com", password="pass123")
+        self.client.force_login(self.user)
+        self.match = _make_match(has_lineup=True)
+        EvaluationSession.objects.create(
+            user=self.user, match=self.match, mode="quick",
+            completed_steps=["context", "teams"],
+        )
+
+    def _make_lineup(self, side, team, count=3):
+        from lineups.models import MatchLineup, MatchLineupPlayer
+        from players.models import Player
+
+        lineup = MatchLineup.objects.create(match=self.match, team=team, side=side)
+        players = []
+        for i in range(count):
+            player = Player.objects.create(first_name=f"P{side}", last_name=str(i), team=team)
+            MatchLineupPlayer.objects.create(
+                lineup=lineup, player=player, is_starting=True, shirt_number=i + 1,
+            )
+            players.append(player)
+        return players
+
+    def _post_data_for(self, player, preset):
+        prefix = f'player_{player.id}'
+        data = {
+            f'{prefix}_evaluate': 'on',
+            f'{prefix}_contribution': str(preset['contribution']),
+            f'{prefix}_risk': str(preset['risk']),
+            f'{prefix}_potential': str(preset['potential']),
+            # Специально БЕЗ "{field}__touched" — applyPreset() в
+            # players.html диспатчит настоящие input-события, которые
+            # ensureTouchedTracking (ADR-0005) ловит и проставляет их сам;
+            # здесь достаточно проверить деградацию "JS не прислал
+            # __touched вообще ни для одного поля" (см. _touched_fields) —
+            # это НЕ должно блокировать сохранение пресетных значений.
+        }
+        return data
+
+    def test_best_and_worst_preset_values_saved_for_exactly_two_players(self):
+        from evaluations.models import PlayerEvaluation
+
+        home_players = self._make_lineup("home", self.match.home_team, count=3)
+        away_players = self._make_lineup("away", self.match.away_team, count=3)
+        best_player = home_players[0]
+        worst_player = away_players[0]
+
+        data = {}
+        data.update(self._post_data_for(best_player, self.BEST_PRESET))
+        data.update(self._post_data_for(worst_player, self.WORST_PRESET))
+
+        response = self.client.post(reverse("evaluations:players", args=[self.match.id]), data)
+        self.assertEqual(response.status_code, 302)
+
+        self.assertEqual(PlayerEvaluation.objects.filter(match=self.match).count(), 2)
+
+        best_eval = PlayerEvaluation.objects.get(match=self.match, player=best_player)
+        self.assertEqual(best_eval.contribution, self.BEST_PRESET['contribution'])
+        self.assertEqual(best_eval.risk, self.BEST_PRESET['risk'])
+        self.assertEqual(best_eval.potential, self.BEST_PRESET['potential'])
+
+        worst_eval = PlayerEvaluation.objects.get(match=self.match, player=worst_player)
+        self.assertEqual(worst_eval.contribution, self.WORST_PRESET['contribution'])
+        self.assertEqual(worst_eval.risk, self.WORST_PRESET['risk'])
+        self.assertEqual(worst_eval.potential, self.WORST_PRESET['potential'])
+
+    def test_untouched_players_not_evaluated(self):
+        """Остальной состав (не выбранный ни лучшим, ни худшим) не должен
+        попасть в БД — evaluate-тумблер для них не включён."""
+        from evaluations.models import PlayerEvaluation
+
+        home_players = self._make_lineup("home", self.match.home_team, count=3)
+        self._make_lineup("away", self.match.away_team, count=3)
+        best_player = home_players[0]
+
+        data = self._post_data_for(best_player, self.BEST_PRESET)
+        self.client.post(reverse("evaluations:players", args=[self.match.id]), data)
+
+        self.assertEqual(PlayerEvaluation.objects.filter(match=self.match).count(), 1)
+        self.assertTrue(PlayerEvaluation.objects.filter(match=self.match, player=best_player).exists())
 
 
 # ---------------------------------------------------------------------------

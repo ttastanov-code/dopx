@@ -1,0 +1,56 @@
+{% comment %}
+Три критерия общей оценки матча — вынесено из match_final.html в
+отдельный партиал (2026-09-07, режим "Быстро" на финальном шаге, см.
+docs/adr/0031-quick-mode-primary-flow.md), тот же приём, что и
+evaluations/_referee_criteria.html/_coach_criteria.html.
+{% endcomment %}
+<!-- Зрелищность -->
+<div class="wz-accent-warning wz-slider-card">
+    <div class="flex justify-between items-center mb-2">
+        <label class="text-sm font-semibold flex items-center gap-1.5">
+            <i class="ti ti-stars text-warning"></i> Зрелищность
+            {% include 'components/_tooltip_icon.html' with text='Зрелищность: атаки, голы, моменты. Было ли интересно смотреть' %}
+        </label>
+        <span class="wz-slider-card__value" id="entertainment_value">5</span>
+    </div>
+    <input type="range" name="entertainment" min="1" max="10" value="5"
+           class="wizard-slider"
+           oninput="document.getElementById('entertainment_value').textContent = this.value">
+    <div class="flex justify-between text-[10px] text-base-content/40 mt-1.5 px-1">
+        <span>1</span><span>5</span><span>10</span>
+    </div>
+</div>
+
+<!-- Напряжение -->
+<div class="wz-accent-info wz-slider-card">
+    <div class="flex justify-between items-center mb-2">
+        <label class="text-sm font-semibold flex items-center gap-1.5">
+            <i class="ti ti-lightning text-info"></i> Напряжение
+            {% include 'components/_tooltip_icon.html' with text='Напряжение: интрига и борьба до последней минуты' %}
+        </label>
+        <span class="wz-slider-card__value" id="tension_value">5</span>
+    </div>
+    <input type="range" name="tension" min="1" max="10" value="5"
+           class="wizard-slider"
+           oninput="document.getElementById('tension_value').textContent = this.value">
+    <div class="flex justify-between text-[10px] text-base-content/40 mt-1.5 px-1">
+        <span>1</span><span>5</span><span>10</span>
+    </div>
+</div>
+
+<!-- Справедливость -->
+<div class="wz-accent-accent wz-slider-card">
+    <div class="flex justify-between items-center mb-2">
+        <label class="text-sm font-semibold flex items-center gap-1.5">
+            <i class="ti ti-scale text-accent"></i> Справедливость
+            {% include 'components/_tooltip_icon.html' with text='Справедливость: отражает ли счёт ход игры' %}
+        </label>
+        <span class="wz-slider-card__value" id="fairness_value">5</span>
+    </div>
+    <input type="range" name="fairness" min="1" max="10" value="5"
+           class="wizard-slider"
+           oninput="document.getElementById('fairness_value').textContent = this.value">
+    <div class="flex justify-between text-[10px] text-base-content/40 mt-1.5 px-1">
+        <span>1</span><span>5</span><span>10</span>
+    </div>
+</div>

@@ -43,8 +43,25 @@ def _schedule_recalculation(match_id: str, countdown: int) -> None:
 
 @receiver(post_save, sender=Match)
 def on_match_status_changed(sender, instance, **kwargs):
-    """При изменении статуса матча → пересчёт таблицы"""
+    """При изменении статуса матча → пересчёт таблицы.
+
+    БАГ, КОТОРЫЙ ТУТ БЫЛ (найден пользователем, 2026-09-07, по спаму
+    "Season X not found" в celery.log): в отличие от _schedule_recalculation
+    выше (которая дедуплицирует через cache.add()), этот сигнал ставил
+    НОВУЮ отложенную задачу на КАЖДЫЙ save() матча со status='finished' —
+    без всякой защиты от повтора. Парсер (parsers/kff/pipeline.py) за один
+    прогон синхронизации сохраняет один и тот же finished-матч несколько
+    раз (счёт, потом события, потом состав) — то есть на один реальный
+    матч в очередь уходило по 3-5+ задач recalculate_season_standings с
+    одним и тем же season_id, вместо одной. Это ТОТ ЖЕ класс инцидента,
+    что случился 2026-08-22 (см. докстринг _schedule_recalculation выше,
+    очередь 'celery' разрослась до 42105 сообщений) — просто для другой
+    задачи. Дедуплицируем тем же способом: cache.add() как атомарный SETNX.
+    """
     if instance.status == 'finished' and instance.season:
+        debounce_key = f"aggregates:standings_recalc_pending:{instance.season.id}"
+        if not cache.add(debounce_key, "1", timeout=60):
+            return
         # Откладываем на 1 минуту чтобы собрать несколько изменений
         recalculate_season_standings.apply_async(
             args=[instance.season.id],
