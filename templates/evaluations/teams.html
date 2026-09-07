@@ -23,7 +23,8 @@
 
 <!-- === FORM === -->
 <div class="max-w-4xl mx-auto px-3">
-    <form method="post" action="{% url 'evaluations:teams' match.id %}" class="space-y-5">
+    <form method="post" action="{% url 'evaluations:teams' match.id %}" class="space-y-5"
+          data-wz-untouched-hint="Потяните, чтобы оценить — иначе этот критерий не будет учтён">
         {% csrf_token %}
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">

@@ -22,6 +22,27 @@
 # syntax=docker/dockerfile:1
 
 ########################################
+# Stage 0: frontend-builder — компилирует static/css/app.css (Tailwind v4 +
+# daisyUI) из static_src/app.css. См.
+# docs/adr/0025-remove-cdn-dependencies.md — эта стадия заменяет рантайм-
+# CDN-скрипт @tailwindcss/browser, который раньше компилировал CSS в
+# браузере пользователя на каждой загрузке страницы.
+#
+# Отдельный образ node:22-slim, не добавление Node в python-стадии ниже —
+# тот же принцип, что у builder/runtime split: инструменты сборки (npm,
+# сам Node) не должны попадать в финальный образ, там нужен только готовый
+# CSS-файл.
+########################################
+FROM node:22-slim AS frontend-builder
+WORKDIR /build
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY static_src ./static_src
+COPY templates ./templates
+COPY static/js ./static/js
+RUN npm run build:css
+
+########################################
 # Stage 1: builder — только для сборки зависимостей
 ########################################
 FROM python:3.12-slim AS builder
@@ -95,6 +116,12 @@ WORKDIR /app
 # Сначала код, потом создаём рабочие директории — так права выставляются
 # один раз и на всё сразу, не теряются при последующих COPY.
 COPY --chown=django:django . .
+
+# Собранный Tailwind/daisyUI CSS из frontend-builder — static/css/app.css НЕ
+# коммитится в git (build-артефакт, как staticfiles/), поэтому копируем его
+# сюда ПОСЛЕ основного COPY выше, а не полагаемся на то, что он был в
+# исходниках. См. docs/adr/0025-remove-cdn-dependencies.md.
+COPY --from=frontend-builder --chown=django:django /build/static/css/app.css ./static/css/app.css
 
 # staticfiles/media/logs/celerybeat — точки монтирования docker-volume'ов
 # (см. docker-compose.yml). Создаём заранее, чтобы entrypoint и Django не

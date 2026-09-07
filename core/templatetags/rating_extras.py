@@ -145,6 +145,14 @@ def confidence_badge(aggregate):
     total_votes = getattr(aggregate, "total_votes", 0) or 0
     tier = _confidence_tier(total_votes)
     meta = _TIER_META[tier]
+    # Число оценок — прямо в видимом бейдже, не только в тултипе, только
+    # для "preliminary" (продуктовый бэклог "показывать число оценок и
+    # пометку 'предварительный рейтинг' при маленькой выборке",
+    # docs/BACKLOG.md): именно этот случай — когда пользователю важнее
+    # всего сразу увидеть, что рейтинг основан на единичных голосах, не
+    # заходя в тултип. Для basic/high оставляем статичный лейбл — там
+    # число менее критично для доверия и не хочется загромождать таблицы.
+    tier_label = f"{meta['label']} · {total_votes}" if tier == "preliminary" else meta["label"]
 
     # НАЙДЕНО (2026-09-01, жалоба пользователя: "тексты нихера не понятные"):
     # раньше разброс мнений и разбивка по лагерям шли двумя отдельными,
@@ -172,7 +180,7 @@ def confidence_badge(aggregate):
     return {
         "show": True,
         "tier": tier,
-        "tier_label": meta["label"],
+        "tier_label": tier_label,
         "badge_class": meta["badge_class"],
         "tooltip_text": " ".join(tooltip_parts),
     }

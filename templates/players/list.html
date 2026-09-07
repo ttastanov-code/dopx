@@ -3,6 +3,7 @@
 {% load static %}
 {% load position_extras %}
 {% load querystring_extras %}
+{% load rating_extras %}
 {% block content %}
 <!-- === HEADER === -->
 <div class="mb-6 md:mb-8 px-2 sm:px-0">
@@ -99,7 +100,14 @@
         <td class="text-center">
           {% with player_agg=player.best_aggregate.0 %}
           {% if player_agg %}
-          <span class="font-bold text-success text-xs md:text-sm">{{ player_agg.performance_score|floatformat:1 }}</span>
+          <div class="inline-flex items-center gap-1">
+            {% if player_agg.total_votes|has_enough_votes %}
+            <span class="font-bold text-success text-xs md:text-sm">{{ player_agg.performance_score|floatformat:1 }}</span>
+            {% else %}
+            <span class="opacity-40 text-xs md:text-sm">{{ player_agg.performance_score|floatformat:1 }}</span>
+            {% endif %}
+            {% confidence_badge player_agg %}
+          </div>
           {% else %}
           <span class="opacity-40 text-xs md:text-sm">-</span>
           {% endif %}

@@ -46,6 +46,7 @@ from evaluations.models import (
     RefereeEvaluation,
     TeamEvaluation,
 )
+from events.models import MatchEvent
 from lineups.models import MatchLineupPlayer
 from matches.models import Match
 from notifications.models import Notification
@@ -65,6 +66,10 @@ XP_PLAYERS_STEP_MAX = 3
 XP_COACHES_STEP = 1
 XP_REFEREE_STEP = 1
 XP_FINAL_STEP = 1
+
+# Режим "Быстро" (см. docs/adr/0006-quick-full-evaluation-mode.md) —
+# сколько игроков на команду предзаполняется отмеченными на шаге "Игроки".
+KEY_PLAYERS_PER_SIDE = 3
 
 
 def _track_wizard_xp(request, amount: float) -> None:
@@ -97,6 +102,29 @@ def _award_step_xp(request, base_amount: float) -> None:
     gained = base_amount * user.xp_multiplier()
     xp.add_xp(gained)
     _track_wizard_xp(request, gained)
+
+
+def _touched_fields(post_data, field_names: list) -> list:
+    """
+    Анти-шум критериев вайзарда (см. docs/adr/0005-anti-noise-touched-tracking.md
+    и static/js/wizard-sliders.js). `<input type="range">` физически не может
+    остаться пустым при отправке формы — JS на клиенте сопровождает каждый
+    такой инпут скрытым полем "<name>__touched" ("1" после того, как
+    пользователь реально подвинул ползунок, иначе "0"). Эта функция
+    возвращает подмножество `field_names`, которые пользователь реально
+    тронул.
+
+    Деградация без JS: если ни для одного поля из field_names в POST вообще
+    нет "__touched"-парного поля (JS не выполнился — отключён в браузере,
+    очень старый User-Agent), функция считает ВСЕ поля тронутыми — иначе
+    форма без JS выглядела бы так, будто пользователь ничего не оценил, хотя
+    он честно подвинул все ползунки, просто без клиентской разметки этого
+    факта. Деградирует до поведения ДО анти-шум фикса, не блокирует отправку.
+    """
+    js_ran = any(f'{name}__touched' in post_data for name in field_names)
+    if not js_ran:
+        return list(field_names)
+    return [name for name in field_names if post_data.get(f'{name}__touched') == '1']
 
 
 class EvaluationWizardMixin:
@@ -167,7 +195,7 @@ class EvaluateContextView(LoginRequiredMixin, FormView, EvaluationWizardMixin):
             messages.error(request, error_msg)
             return redirect('matches:detail', pk=self.match.id)
         if EvaluationSession.objects.filter(user=request.user, match=self.match, status='completed').exists():
-            messages.info(request, 'Вы уже оценили этот матч')
+            messages.info(request, 'Вы уже оценили этот матч.')
             return redirect('matches:detail', pk=self.match.id)
         return super().dispatch(request, *args, **kwargs)
 
@@ -178,12 +206,9 @@ class EvaluateContextView(LoginRequiredMixin, FormView, EvaluationWizardMixin):
 
     def form_valid(self, form):
         with transaction.atomic():
-            # БАГ, КОТОРЫЙ ТУТ БЫЛ: session читалась без блокировки строки —
-            # два параллельных POST (двойной клик/два таба) оба видели
-            # completed_steps ещё пустым до коммита первого и оба начисляли
-            # XP за один и тот же шаг. select_for_update() сериализует
-            # конкурентные запросы — второй ждёт коммита первого и уже видит
-            # обновлённый completed_steps.
+            # select_for_update() против гонки двойного сабмита (двойной
+            # клик/два таба). См.
+            # docs/adr/0015-evaluation-wizard-concurrency-and-reward-delivery.md.
             session = self.get_or_create_session()
             session = EvaluationSession.objects.select_for_update().get(pk=session.pk)
             is_new_step = 'context' not in session.completed_steps
@@ -195,10 +220,22 @@ class EvaluateContextView(LoginRequiredMixin, FormView, EvaluationWizardMixin):
                     'attended_stadium': form.cleaned_data.get('attended_stadium'),
                 }
             )
+            # Режим "Быстро/Подробно" (см. docs/adr/0006-quick-full-evaluation-mode.md)
+            # — выбирается один раз, здесь, на первом шаге. Не часть
+            # ContextEvaluationForm/ContextEvaluation: это метаданные ПРОХОЖДЕНИЯ
+            # вайзарда (что показывать на следующих шагах), а не мнение
+            # пользователя о матче. Значение по умолчанию 'full' — если
+            # переключатель почему-то не пришёл в POST (JS выключен, старая
+            # закладка без него), поведение не меняется относительно того,
+            # что было до этой фичи.
+            requested_mode = self.request.POST.get('eval_mode')
+            if requested_mode in dict(EvaluationSession.MODE_CHOICES) and session.mode != requested_mode:
+                session.mode = requested_mode
+                session.save(update_fields=['mode', 'updated_at'])
             self.update_session(session, 'context')
             if is_new_step:
                 _award_step_xp(self.request, XP_CONTEXT_STEP)
-        messages.success(self.request, '✅ Контекст сохранён')
+        messages.success(self.request, 'Контекст сохранён.')
         return redirect('evaluations:teams', match_id=self.match.id)
 
     def get_context_data(self, **kwargs):
@@ -207,7 +244,7 @@ class EvaluateContextView(LoginRequiredMixin, FormView, EvaluationWizardMixin):
         context.update({
             'match': self.match, 'page_title': 'Шаг 1: Контекст — DOPX',
             'step': 1, 'total_steps': 6, 'progress': session.progress_percentage(),
-            'next_step': 'evaluations:teams',
+            'next_step': 'evaluations:teams', 'mode': session.mode,
         })
         return context
 
@@ -239,7 +276,7 @@ class EvaluateTeamsView(LoginRequiredMixin, TemplateView, EvaluationWizardMixin)
         # проверенной. Теперь значения идут через form.cleaned_data.
         form = TeamEvaluationForm(request.POST, match=self.match)
         if not form.is_valid():
-            messages.error(request, 'Проверьте оценки команд — что-то введено некорректно')
+            messages.error(request, 'Проверьте оценки команд. Что-то введено некорректно.')
             return self.render_to_response(self.get_context_data(form=form))
 
         session = self.get_or_create_session()
@@ -248,8 +285,15 @@ class EvaluateTeamsView(LoginRequiredMixin, TemplateView, EvaluationWizardMixin)
             # та же гонка двойного POST без блокировки строки session.
             session = EvaluationSession.objects.select_for_update().get(pk=session.pk)
             is_new_step = 'teams' not in session.completed_steps
+            rated_teams = 0
             for team in [self.match.home_team, self.match.away_team]:
                 prefix = f'team_{team.id}'
+                criteria = [f'{prefix}_tactics', f'{prefix}_effort', f'{prefix}_organization', f'{prefix}_mentality']
+                # Анти-шум (см. _touched_fields): ни один ползунок для этой
+                # команды не тронут — не создаём TeamEvaluation с "5,5,5,5"
+                # по умолчанию, это не оценка, а тишина.
+                if not _touched_fields(request.POST, criteria):
+                    continue
                 TeamEvaluation.objects.update_or_create(
                     user=request.user, match=self.match, team=team,
                     defaults={
@@ -259,10 +303,14 @@ class EvaluateTeamsView(LoginRequiredMixin, TemplateView, EvaluationWizardMixin)
                         'mentality': form.cleaned_data[f'{prefix}_mentality'],
                     }
                 )
+                rated_teams += 1
             self.update_session(session, 'teams')
             if is_new_step:
                 _award_step_xp(request, XP_TEAMS_STEP)
-        messages.success(request, '✅ Оценки команд сохранены')
+        if rated_teams:
+            messages.success(request, f'Оценки команд сохранены: {rated_teams} из 2.')
+        else:
+            messages.info(request, 'Команды пропущены — ни один критерий не был отмечен.')
         return redirect('evaluations:players', match_id=self.match.id)
 
     def get_context_data(self, **kwargs):
@@ -304,7 +352,7 @@ class EvaluatePlayersView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
         if not self.match.has_lineup:
             messages.warning(
                 request,
-                '⚠️ Составы этого матча ещё не загружены. Попробуйте оценить игроков чуть позже.',
+                'Составы этого матча ещё не загружены. Попробуйте оценить игроков позже.',
             )
             return redirect('matches:detail', pk=self.match.id)
         return super().dispatch(request, *args, **kwargs)
@@ -322,7 +370,7 @@ class EvaluatePlayersView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
         # как Teams/Coaches.
         form = PlayerEvaluationForm(request.POST, match=self.match)
         if not form.is_valid():
-            messages.error(request, 'Проверьте оценки игроков — что-то введено некорректно')
+            messages.error(request, 'Проверьте оценки игроков. Что-то введено некорректно.')
             return self.render_to_response(self.get_context_data(form=form))
 
         session = self.get_or_create_session()
@@ -341,6 +389,15 @@ class EvaluatePlayersView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
                     contribution = form.cleaned_data.get(f'{prefix}_contribution')
                     risk = form.cleaned_data.get(f'{prefix}_risk')
                     potential = form.cleaned_data.get(f'{prefix}_potential')
+                    # Анти-шум (см. _touched_fields): включить тумблер
+                    # "оценить" — это ещё не то же самое, что подвинуть хотя
+                    # бы один из трёх ползунков. Тумблер сам по себе уже
+                    # неплохой сигнал намерения, но без этой проверки
+                    # "включил и сразу дальше" тихо сохранял бы "5,5,5" как
+                    # реальную оценку контрибуции/риска/потенциала.
+                    criteria = [f'{prefix}_contribution', f'{prefix}_risk', f'{prefix}_potential']
+                    if not _touched_fields(request.POST, criteria):
+                        continue
                     if contribution is not None and risk is not None and potential is not None:
                         PlayerEvaluation.objects.update_or_create(
                             user=request.user, match=self.match, player=player,
@@ -357,15 +414,61 @@ class EvaluatePlayersView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
                 # состава — не фиксированная сумма за формальное
                 # "прохождение" шага.
                 _award_step_xp(request, XP_PLAYERS_STEP_MAX * (count / lineup_total))
-        messages.success(request, f'✅ Оценено игроков: {count}')
+        messages.success(request, f'Оценено игроков: {count}.')
         return redirect('evaluations:coaches', match_id=self.match.id)
+
+    def _compute_key_player_ids(self, lineup_players: list) -> set:
+        """
+        Курируемый набор игроков для режима "Быстро" — предзаполненные
+        карточки, чтобы не листать весь состав ради 3-5 самых заметных
+        участников матча. См. docs/adr/0006-quick-full-evaluation-mode.md.
+
+        Приоритет 1 — участники заметных событий матча (гол/красная/жёлтая
+        карточка/автогол — самый дешёвый доступный прокси "заметности" без
+        отдельной метрики минут на поле). Приоритет 2 — добивание до
+        KEY_PLAYERS_PER_SIDE игроков на команду стартовым составом по
+        возрастанию номера (детерминированно, не полагается на предположение
+        "капитан = игрок с наименьшим номером", которого в модели нет).
+        """
+        notable_ids = set(
+            MatchEvent.objects.filter(
+                match=self.match,
+                event_type__in=('goal', 'yellow_card', 'red_card', 'own_goal', 'disallowed_goal'),
+            ).values_list('player_id', flat=True)
+        )
+        lineup_by_player = {lp.player_id: lp for lp in lineup_players}
+
+        key_ids = {pid for pid in notable_ids if pid in lineup_by_player}
+        for side in ('home', 'away'):
+            side_count = sum(1 for pid in key_ids if lineup_by_player[pid].lineup.side == side)
+            side_starters = sorted(
+                (lp for lp in lineup_players if lp.lineup.side == side and lp.is_starting),
+                key=lambda lp: lp.shirt_number if lp.shirt_number is not None else 99,
+            )
+            for lp in side_starters:
+                if side_count >= KEY_PLAYERS_PER_SIDE:
+                    break
+                if lp.player_id not in key_ids:
+                    key_ids.add(lp.player_id)
+                    side_count += 1
+        return key_ids
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         session = self.get_or_create_session()
+        lineup_players = list(
+            MatchLineupPlayer.objects.filter(lineup__match=self.match)
+            .select_related('player__team')
+            .order_by('is_starting', 'shirt_number')
+        )
+        key_player_ids = self._compute_key_player_ids(lineup_players) if session.mode == 'quick' else set()
         context.update({
             'match': self.match,
-            'lineup_players': MatchLineupPlayer.objects.filter(lineup__match=self.match).select_related('player__team').order_by('is_starting', 'shirt_number'),
+            'lineup_players': lineup_players,
+            'mode': session.mode,
+            'key_player_ids': key_player_ids,
+            'home_bench_count': sum(1 for lp in lineup_players if not lp.is_starting and lp.lineup.side == 'home'),
+            'away_bench_count': sum(1 for lp in lineup_players if not lp.is_starting and lp.lineup.side == 'away'),
             'page_title': 'Шаг 3: Игроки — DOPX', 'step': 3, 'total_steps': 6,
             'progress': session.progress_percentage(), 'next_step': 'evaluations:coaches', 'prev_step': 'evaluations:teams',
         })
@@ -396,7 +499,7 @@ class EvaluateCoachesView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
         # описана в evaluations/forms.py с валидацией 1..10).
         form = CoachEvaluationForm(request.POST, match=self.match)
         if not form.is_valid():
-            messages.error(request, 'Проверьте оценки тренеров — что-то введено некорректно')
+            messages.error(request, 'Проверьте оценки тренеров. Что-то введено некорректно.')
             return self.render_to_response(self.get_context_data(form=form))
 
         session = self.get_or_create_session()
@@ -405,9 +508,19 @@ class EvaluateCoachesView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
             # та же гонка двойного POST без блокировки строки session.
             session = EvaluationSession.objects.select_for_update().get(pk=session.pk)
             is_new_step = 'coaches' not in session.completed_steps
+            rated_coaches = 0
+            total_coaches = 0
             for coach in [self.match.home_coach, self.match.away_coach]:
                 if coach:
+                    total_coaches += 1
                     prefix = f'coach_{coach.id}'
+                    criteria = [
+                        f'{prefix}_tactics', f'{prefix}_substitutions',
+                        f'{prefix}_management', f'{prefix}_impact',
+                    ]
+                    # Анти-шум — см. _touched_fields и EvaluateTeamsView.post.
+                    if not _touched_fields(request.POST, criteria):
+                        continue
                     CoachEvaluation.objects.update_or_create(
                         user=request.user, match=self.match, coach=coach,
                         defaults={
@@ -417,10 +530,16 @@ class EvaluateCoachesView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
                             'impact': form.cleaned_data[f'{prefix}_impact'],
                         }
                     )
+                    rated_coaches += 1
             self.update_session(session, 'coaches')
             if is_new_step:
                 _award_step_xp(request, XP_COACHES_STEP)
-        messages.success(request, '✅ Оценки тренеров сохранены')
+        if total_coaches == 0:
+            messages.info(request, 'Тренеры этого матча пока не загружены в базу.')
+        elif rated_coaches:
+            messages.success(request, f'Оценки тренеров сохранены: {rated_coaches} из {total_coaches}.')
+        else:
+            messages.info(request, 'Тренеры пропущены — ни один критерий не был отмечен.')
         return redirect('evaluations:referee', match_id=self.match.id)
 
     def get_context_data(self, **kwargs):
@@ -431,6 +550,7 @@ class EvaluateCoachesView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
             'match': self.match, 'coaches': coaches, 'page_title': 'Шаг 4: Тренеры — DOPX',
             'step': 4, 'total_steps': 6, 'progress': session.progress_percentage(),
             'next_step': 'evaluations:referee', 'prev_step': 'evaluations:players',
+            'mode': session.mode,
         })
         return context
 
@@ -455,22 +575,30 @@ class EvaluateRefereeView(LoginRequiredMixin, FormView, EvaluationWizardMixin):
 
     def form_valid(self, form):
         session = self.get_or_create_session()
+        # Анти-шум — см. _touched_fields и EvaluateTeamsView.post. Ни один
+        # из двух ползунков не тронут — не создаём RefereeEvaluation с
+        # дефолтами "50, 5", это не оценка, а молчание.
+        touched = _touched_fields(self.request.POST, ['influence_score', 'decision_quality'])
         with transaction.atomic():
             # БАГ, КОТОРЫЙ ТУТ БЫЛ: см. EvaluateContextView.form_valid —
             # та же гонка двойного POST без блокировки строки session.
             session = EvaluationSession.objects.select_for_update().get(pk=session.pk)
             is_new_step = 'referee' not in session.completed_steps
-            RefereeEvaluation.objects.update_or_create(
-                user=self.request.user, match=self.match,
-                defaults={
-                    'influence_score': form.cleaned_data.get('influence_score', 50),
-                    'decision_quality': form.cleaned_data.get('decision_quality', 5)
-                }
-            )
+            if touched:
+                RefereeEvaluation.objects.update_or_create(
+                    user=self.request.user, match=self.match,
+                    defaults={
+                        'influence_score': form.cleaned_data.get('influence_score', 50),
+                        'decision_quality': form.cleaned_data.get('decision_quality', 5)
+                    }
+                )
             self.update_session(session, 'referee')
             if is_new_step:
                 _award_step_xp(self.request, XP_REFEREE_STEP)
-        messages.success(self.request, '✅ Оценка судейства сохранена')
+        if touched:
+            messages.success(self.request, 'Оценка судейства сохранена.')
+        else:
+            messages.info(self.request, 'Судейство пропущено — ни один критерий не был отмечен.')
         return redirect('evaluations:match_eval', match_id=self.match.id)
 
     def get_context_data(self, **kwargs):
@@ -480,6 +608,7 @@ class EvaluateRefereeView(LoginRequiredMixin, FormView, EvaluationWizardMixin):
             'match': self.match, 'page_title': 'Шаг 5: Судья — DOPX',
             'step': 5, 'total_steps': 6, 'progress': session.progress_percentage(),
             'next_step': 'evaluations:match_eval', 'prev_step': 'evaluations:coaches',
+            'mode': session.mode,
         })
         return context
 
@@ -508,7 +637,7 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
         # что уже используется в EvaluateContextView.dispatch для входа в
         # вайзард заново.
         if session.status == 'completed':
-            messages.info(request, 'Вы уже оценили этот матч')
+            messages.info(request, 'Вы уже оценили этот матч.')
             return redirect('matches:detail', pk=self.match.id)
         return super().dispatch(request, *args, **kwargs)
 
@@ -517,21 +646,9 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
         user = self.request.user
 
         with transaction.atomic():
-            # БАГ, КОТОРЫЙ ТУТ БЫЛ (найден повторным ручным разбором после
-            # AUDIT_2026-08.md — при первом проходе фикса закрыли только
-            # половину гонки): проверка `session.status == 'completed'` в
-            # dispatch() защищает от ПОСЛЕДОВАТЕЛЬНОЙ повторной отправки
-            # (второй запрос приходит уже ПОСЛЕ коммита первого), но НЕ от
-            # ДВУХ ОДНОВРЕМЕННЫХ запросов (двойной клик/два таба) — оба
-            # проходят dispatch() параллельно, видя ещё не закоммиченный
-            # session.status='in_progress', и оба заходят сюда. Без лока
-            # строки session здесь ничего не мешает второму транзакции
-            # тоже начислить XP/скорректировать Trust Score/поставить
-            # анти-фрод и аналитику — тот же класс бага, что и у остальных
-            # 5 шагов, просто на последнем шаге дополнительных побочных
-            # эффектов больше. select_for_update() сериализует конкурентные
-            # транзакции, и повторная проверка статуса ПОСЛЕ получения
-            # лока ловит гонку, которую не поймал dispatch().
+            # Проверка session.status=='completed' в dispatch() не ловит два
+            # ОДНОВРЕМЕННЫХ запроса — повторная проверка после лока. См.
+            # docs/adr/0015-evaluation-wizard-concurrency-and-reward-delivery.md.
             session = EvaluationSession.objects.select_for_update().get(pk=session.pk)
             if session.status == 'completed':
                 messages.info(self.request, 'Вы уже оценили этот матч')
@@ -572,27 +689,10 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
             xp_result = xp.add_xp(final_step_gained)
             _track_wizard_xp(self.request, final_step_gained)
 
-            # БАГ, КОТОРЫЙ ТУТ БЫЛ (жалоба пользователя, 2026-08-29): награда
-            # хранилась одноразовым session.pop() и читалась в
-            # EvaluationCompleteView.get_context_data() строго ОДНИМ
-            # следующим GET-запросом. На практике страница "Матч оценён!"
-            # показывала "+—" XP и "—" Trust Score, хотя оба реально
-            # начислились (прогресс-бар уровня ниже был не нулевой) — session
-            # ключ кто-то съедал раньше, чем рендерился видимый пользователю
-            # ответ: antivirus/браузерный prescan редиректа, повторный
-            # HEAD-запрос (Django сам маппит HEAD на get() у TemplateView),
-            # двойной сабмит формы и т.п. — ровно тот класс багов, для
-            # которого одноразовый session.pop() как канал передачи данных
-            # некорректен: он выживает ровно один конкретный HTTP-запрос,
-            # а не "один взгляд пользователя на страницу".
-            #
-            # Вместо сессии — подписанный токен в query-string самого
-            # редиректа (см. return ниже): идемпотентен (сколько раз ни
-            # открой этот URL — числа те же, ничего не "съедается"),
-            # подписан (signing.dumps, тот же паттерн, что get_signed_cookie
-            # у реферальной cookie в partners/views.py) — пользователь не
-            # может подделать цифры в адресной строке, чтобы похвастаться
-            # выдуманной наградой.
+            # Награда передаётся подписанным токеном в query-string
+            # редиректа, не через session.pop() (одноразовый, "съедался" до
+            # рендера страницы у части пользователей). См.
+            # docs/adr/0015-evaluation-wizard-concurrency-and-reward-delivery.md.
             xp_gained = round(self.request.session.pop('wizard_xp_earned', 0), 1)
             trust_delta = round(new_trust - old_trust, 3)
 
@@ -684,12 +784,37 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
         except Exception as e:
             logger.error(f"Ошибка постановки задачи агрегатов: {e}")
 
-        messages.success(self.request, '🎉 Оценка завершена! Спасибо за вклад.')
+        messages.success(self.request, 'Оценка завершена. Спасибо за вклад.')
+
+        # Итоговая сводка "во сколько оценок вы вошли" (запрос из
+        # docs/adr/0006-quick-full-evaluation-mode.md, п. "мгновенная
+        # отдача после отправки") — считаем СРАЗУ здесь, синхронно, из уже
+        # закоммиченных строк текущего пользователя, а не ждём асинхронный
+        # пересчёт агрегатов (п. 10 ниже уходит в Celery и к моменту
+        # рендера страницы "Спасибо" мог ещё не отработать). Сознательно
+        # НЕ показываем "поднялся на N позиций в рейтинге" — это требует
+        # сравнения агрегата ДО/ПОСЛЕ пересчёта, честно посчитать которое
+        # можно только после того, как Celery-задача выше реально
+        # отработает; строить это на догадках значило бы городить ещё один
+        # источник недоверия к рейтингу, а не бороться с ним. См.
+        # "Последствия" в ADR — отдельная задача на будущее.
+        rated_counts = {
+            'teams': TeamEvaluation.objects.filter(user=user, match=self.match).count(),
+            'players': PlayerEvaluation.objects.filter(user=user, match=self.match).count(),
+            'coaches': CoachEvaluation.objects.filter(user=user, match=self.match).count(),
+            'referee': RefereeEvaluation.objects.filter(user=user, match=self.match).count(),
+        }
+        # +1 — сама общая оценка матча (MatchEvaluation), которая создана
+        # безусловно чуть выше в этой же транзакции.
+        total_rated = 1 + sum(rated_counts.values())
 
         # Награду передаём подписанным токеном в query-string, а не через
         # session — см. комментарий у объявления xp_gained/trust_delta выше.
         reward_token = signing.dumps(
-            {'xp_gained': xp_gained, 'trust_delta': trust_delta},
+            {
+                'xp_gained': xp_gained, 'trust_delta': trust_delta,
+                'rated_counts': rated_counts, 'total_rated': total_rated,
+            },
             salt='evaluations.reward',
         )
         complete_url = reverse('evaluations:complete', args=[self.match.id])
@@ -729,6 +854,11 @@ class EvaluationCompleteView(LoginRequiredMixin, TemplateView):
                 reward = None
         context['xp_gained'] = reward['xp_gained'] if reward else None
         context['trust_delta'] = reward['trust_delta'] if reward else None
+        # .get() — не reward['...']: токен, подписанный ДО деплоя этой правки
+        # (max_age=300с — теоретически ещё живой в первые секунды после
+        # раскатки) не будет содержать этих двух ключей.
+        context['rated_counts'] = reward.get('rated_counts') if reward else None
+        context['total_rated'] = reward.get('total_rated') if reward else None
 
         # Реальный прогресс до следующего уровня (UserXP.progress_percent
         # уже правильно считает от границ текущего/следующего уровня — см.

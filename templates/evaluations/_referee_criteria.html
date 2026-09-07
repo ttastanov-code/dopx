@@ -1,0 +1,39 @@
+{% comment %}
+Два критерия оценки судейства — вынесено из referee.html в отдельный
+партиал (2026-09-04, режим "Быстро", см.
+docs/adr/0006-quick-full-evaluation-mode.md), см. тот же приём в
+evaluations/_coach_criteria.html.
+{% endcomment %}
+<!-- Влияние на матч -->
+<div class="wz-accent-neutral wz-slider-card">
+    <div class="flex justify-between items-center mb-2">
+        <label class="text-sm font-semibold flex items-center gap-1.5">
+            <i class="ti ti-scale text-neutral"></i> Влияние на матч
+            {% include 'components/_tooltip_icon.html' with text='Влияние на матч: 0=незаметен, 50=норма, 100=решил исход' %}
+        </label>
+        <span class="wz-slider-card__value" id="influence_value">50</span>
+    </div>
+    <input type="range" name="influence_score" min="0" max="100" value="50"
+           class="wizard-slider" step="5"
+           oninput="document.getElementById('influence_value').textContent = this.value">
+    <div class="flex justify-between text-[10px] text-base-content/40 mt-1.5 px-1">
+        <span>0</span><span>50</span><span>100</span>
+    </div>
+</div>
+
+<!-- Качество решений -->
+<div class="wz-accent-success wz-slider-card">
+    <div class="flex justify-between items-center mb-2">
+        <label class="text-sm font-semibold flex items-center gap-1.5">
+            <i class="ti ti-checks text-success"></i> Качество решений
+            {% include 'components/_tooltip_icon.html' with text='Качество решений: точность свистков, работа с ВАР' %}
+        </label>
+        <span class="wz-slider-card__value" id="quality_value">5</span>
+    </div>
+    <input type="range" name="decision_quality" min="1" max="10" value="5"
+           class="wizard-slider"
+           oninput="document.getElementById('quality_value').textContent = this.value">
+    <div class="flex justify-between text-[10px] text-base-content/40 mt-1.5 px-1">
+        <span>1</span><span>5</span><span>10</span>
+    </div>
+</div>

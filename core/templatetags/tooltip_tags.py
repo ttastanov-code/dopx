@@ -27,18 +27,9 @@ class TooltipWrapNode(template.Node):
         inner = self.nodelist.render(context)
         if not text:
             return inner
-        # ВАЖНО (баг 2026-08-21, "Дербии002Дэксперт" вместо "Дерби-эксперт"):
-        # раньше текст шёл через escapejs() ПРЯМО в строковый литерал внутри
-        # x-data="tooltipTrigger('...')". escapejs() экранирует дефис как
-        # `-` (см. django.utils.html._js_escapes) — это валидный JS,
-        # но CSP-евалуатор @alpinejs/csp разбирает выражение x-data сам, не
-        # через настоящий JS-движок, и НЕ раскрывает \uXXXX-последовательности
-        # внутри строковых литералов аргумента — символы утекали в текст как
-        # есть. Правильный паттерн для CSP-сборки — вообще не передавать
-        # динамический текст аргументом функции в x-data, а класть его в
-        # обычный HTML data-атрибут (экранируется штатным HTML-escape(),
-        # никакого JS-парсинга) и читать в init() компонента через
-        # this.$el.dataset — см. tooltipTrigger в alpine-components.js.
+        # Текст идёт в data-атрибут + HTML-escape, не аргументом x-data —
+        # CSP-сборка Alpine не раскрывает \uXXXX внутри строковых литералов
+        # аргументов. См. docs/adr/0019-alpine-csp-data-passing.md.
         safe_text = escape(text)
         # Видимость управляется вручную через display в :style (объектом),
         # а не через x-show/x-transition — на телепортированном (x-teleport)

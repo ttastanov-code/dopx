@@ -182,21 +182,10 @@ class ContentSecurityPolicyMiddleware:
     )
     ADMIN_PATH_PREFIX = '/admin/'
 
-    # === WIDGET_POLICY (2026-08-21, дополнено 2026-08-22) ===
-    # Баг-репорт по итогам аудита: embed-виджеты для партнёров
-    # (players/views.py::player_rating_widget, teams/views.py::team_rating_widget,
-    # core/views.py::standings_widget, season_squad/views.py::best_xi_widget) снимают X-Frame-Options через
-    # @xframe_options_exempt, но CSP выше всё равно шлёт "frame-ancestors 'self'"
-    # НА ВСЕ страницы без исключения — а frame-ancestors у современных браузеров
-    # главнее устаревшего X-Frame-Options. В итоге партнёр вставляет <iframe> к
-    # себе на сайт (embed-код есть, ссылки работают), а браузер молча рисует
-    # пустой прямоугольник — виджет физически не может показаться нигде, кроме
-    # dopx.kz. Раз виджеты по задумке публичные и встраиваемые куда угодно (нет
-    # модели "разрешённых доменов партнёра" — TODO завести, когда появятся
-    # первые крупные партнёры и будет что защищать), для ЭТИХ трёх путей
-    # используем "frame-ancestors *" вместо 'self'. Остальные директивы не
-    # ослабляем — виджет всё равно не должен грузить чужие скрипты.
-    WIDGET_POLICY = (
+    # Отдельная CSP-политика для embed-виджетов — frame-ancestors 'self' на
+    # общей политике блокировал партнёрские iframe несмотря на
+    # @xframe_options_exempt. См. docs/adr/0016-widget-csp-frame-ancestors.md.
+    WIDGET_POLICY_BASE = (
         "default-src 'self'; "
         "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
         "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
@@ -208,22 +197,16 @@ class ContentSecurityPolicyMiddleware:
         "object-src 'none'; "
         "base-uri 'self'; "
         "form-action 'self'; "
-        "frame-ancestors *;"
     )
-    # Пятый embeddable-роут (продуктовый аудит 2026-08-22, чётко указано в
-    # ревью проекта: "@xframe_options_exempt есть, а CSP-разрешение — нет" —
-    # season_squad/views.py::best_xi_widget добавили 2026-08-22, но забыли
-    # внести его пути сюда, из-за чего frame-ancestors 'self' у ВСЕХ
-    # остальных страниц бил и по нему тоже: iframe с embed-кодом виджета
-    # сборной физически не мог открыться ни на одном чужом сайте несмотря
-    # на рабочую ссылку и валидный @xframe_options_exempt на самой view.
-    # Сознательно точечный regex, а не общий startswith('/widget') или
-    # "/best-xi", чтобы случайно не ослабить frame-ancestors на будущей
-    # странице, у которой в пути просто встретится похожее слово.
-    # Шестой embeddable-роут (продуктовый запрос 2026-08-22): embed для
-    # round_squad/views.py::round_widget («DOPX Лучшие тура») — тот же
-    # паттерн, что у best-xi/widget выше, тем же способом добавляем ОБА
-    # варианта пути (с season_id и без).
+
+    @staticmethod
+    def _widget_policy() -> str:
+        allowed = getattr(settings, 'WIDGET_ALLOWED_ORIGINS', [])
+        frame_ancestors = ' '.join(allowed) if allowed else '*'
+        return f"{ContentSecurityPolicyMiddleware.WIDGET_POLICY_BASE}frame-ancestors {frame_ancestors};"
+    # Точечные альтернативы в regex, не общий startswith('/widget') — иначе
+    # риск случайно ослабить frame-ancestors на будущей несвязанной странице.
+    # См. docs/adr/0016-widget-csp-frame-ancestors.md.
     WIDGET_PATH_PATTERN = re.compile(
         r'^/(players/[0-9a-f-]+/widget|teams/[0-9a-f-]+/widget|widget/standings'
         r'|season/best-xi/widget|season/[0-9a-f-]+/best-xi/widget'
@@ -243,7 +226,7 @@ class ContentSecurityPolicyMiddleware:
         if request.path.startswith(self.ADMIN_PATH_PREFIX):
             policy = self.ADMIN_POLICY
         elif self.WIDGET_PATH_PATTERN.match(request.path):
-            policy = self.WIDGET_POLICY
+            policy = self._widget_policy()
         else:
             policy = self.POLICY
         response[header] = policy

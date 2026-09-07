@@ -362,6 +362,41 @@ def get_or_create_coach(coach_data: Dict, team: Optional[Team] = None) -> Option
     logger.info(f"✅ Created coach: {coach.first_name} {coach.last_name}")
     return coach
 
+def _record_finished_match_discrepancies(existing, defaults: Dict, home_team, away_team) -> None:
+    """Сравнивает старые (existing) и новые (defaults) значения счёта/
+    статуса УЖЕ завершённого матча и пишет ParserDiscrepancy на каждое
+    расхождение. См. полное обоснование в parsers/models.py::ParserDiscrepancy.
+
+    Обёрнуто в try/except на уровне вызова НЕ нужно отдельно — сам импорт
+    матча не должен падать из-за сбоя записи диагностики, поэтому этот
+    вызов сознательно защищён здесь же, а не полагается на try/except
+    вызывающей функции (там ловятся куда более серьёзные ошибки импорта)."""
+    from parsers.models import ParserDiscrepancy
+
+    label = f"{home_team} — {away_team} ({existing.start_time:%d.%m.%Y})"
+    fields_to_check = (
+        ("status", existing.status, defaults.get("status")),
+        ("home_score", existing.home_score, defaults.get("home_score")),
+        ("away_score", existing.away_score, defaults.get("away_score")),
+    )
+    try:
+        for field_name, old_value, new_value in fields_to_check:
+            if new_value is not None and old_value != new_value:
+                ParserDiscrepancy.objects.create(
+                    match_id=existing.id,
+                    match_label=label,
+                    field_name=field_name,
+                    old_value=str(old_value),
+                    new_value=str(new_value),
+                )
+                logger.warning(
+                    f"⚠️ ParserDiscrepancy: {label}: {field_name} {old_value} → {new_value} "
+                    f"(матч уже был 'finished')"
+                )
+    except Exception:
+        logger.error("⚠️ Не удалось записать ParserDiscrepancy", exc_info=True)
+
+
 @transaction.atomic
 def import_match_core(game_data: Dict, season_id: int = None) -> Match:
     logger.debug(f"Importing match {game_data.get('id')}...")
@@ -372,42 +407,16 @@ def import_match_core(game_data: Dict, season_id: int = None) -> Match:
         )
         raw_status = game_data.get("status", "upcoming")
         status = STATUS_MAP.get(raw_status, "scheduled")
-        # НАЙДЕНО (2026-09-01, жалоба пользователя: фильтр "Перенесённые" на
-        # /matches/ ничего не находит, хотя по факту куча матчей реально
-        # перенеслась — сезон-2026 сдвинул 23-й тур на 17-18 октября, см.
-        # новость КФФ). Проверено напрямую через реальный API (season 200,
-        # все 240 матчей): KFF ВООБЩЕ НИКОГДА не присылает status="postponed"
-        # — только "upcoming"/"finished"/"technical_defeat" (и "live" по ходу
-        # игры). Перенос сигнализируется отдельным булевым полем
-        # `is_schedule_tentative` (все 8 матчей 23-го тура из новости — ровно
-        # с ним, status у них при этом "upcoming"). STATUS_MAP["postponed"]
-        # был мёртвым кодом: маппинг существует, но входного значения, которое
-        # бы в него попало, KFF никогда не присылает. Раз матч без твёрдой
-        # даты — это и есть "Перенесён" с точки зрения пользователя, вне
-        # зависимости от того, была ли у него дата раньше.
+        # KFF никогда не присылает status="postponed" — перенос сигнализируется
+        # полем is_schedule_tentative. См. docs/adr/0007-kff-importer-status-
+        # and-timing-fixes.md, находка №1.
         if game_data.get("is_schedule_tentative") and status == "scheduled":
             status = "postponed"
         home_score = game_data.get("home_score")
         away_score = game_data.get("away_score")
-        # БАГ, КОТОРЫЙ ТУТ БЫЛ (найден полным аудитом, август 2026, см.
-        # AUDIT_2026-08.md раздел 3, Critical #1/#2): end_time/voting_open_until
-        # выставлялись ЗДЕСЬ БЕЗУСЛОВНО для ЛЮБОГО статуса — в т.ч. для матча,
-        # который ещё даже не начался (status='scheduled'). Из-за этого
-        # `voting_open_until` оказывался заполнен уже на первом импорте, а
-        # `parsers/tasks.py::update_match_statuses` определяет "матч ТОЛЬКО
-        # ЧТО завершился" именно по `not match.voting_open_until` — условие
-        # было ЛОЖНЫМ ВСЕГДА, follow-уведомления подписчикам команды
-        # ("голосование открыто") не отправлялись НИКОГДА. Плюс сама
-        # формула была мёртвым тернарником: `48 if status=='finished' else 48`
-        # — обе ветки давали одно и то же число, что и выдавало утрату
-        # исходного намерения при более ранней правке.
-        #
-        # Правильно: эти поля — производные от факта "матч завершён", а не
-        # от факта "у матча есть дата начала". Выставляем их здесь ТОЛЬКО
-        # если статус уже 'finished' на момент этого импорта (например,
-        # бэкафилл исторических матчей) — иначе оставляем None и даём
-        # `update_match_statuses` заполнить их РОВНО в момент реального
-        # перехода в 'finished', как и было задумано изначально.
+        # end_time/voting_open_until — производные от "матч завершён", не от
+        # "есть дата начала". См. docs/adr/0007-kff-importer-status-and-
+        # timing-fixes.md, находка №2.
         end_time = voting_open_until = None
         if start_time and status == "finished":
             end_time = start_time + timedelta(hours=2)
@@ -462,7 +471,8 @@ def import_match_core(game_data: Dict, season_id: int = None) -> Match:
         # until) не трогаем, остальное (команды, стадион, судья, тур, счёт)
         # обновляем как обычно — эти поля переносом не затронуты.
         existing = Match.objects.filter(external_id=str(game_data["id"])).only(
-            "id", "manual_override", "status", "start_time", "end_time", "voting_open_until"
+            "id", "manual_override", "status", "start_time", "end_time", "voting_open_until",
+            "home_score", "away_score",
         ).first()
 
         if existing and existing.manual_override:
@@ -486,36 +496,23 @@ def import_match_core(game_data: Dict, season_id: int = None) -> Match:
                 defaults["end_time"] = existing.end_time
                 defaults["voting_open_until"] = existing.voting_open_until
             else:
-                # НАЙДЕНО (2026-09-01, при добавлении теста на постпонед-
-                # детект выше): для НОВОГО ещё не завершённого матча (existing
-                # is None) end_time/voting_open_until раньше не попадали в
-                # defaults вообще — комментарий утверждал "Match создастся с
-                # NULL, как и задумано моделью", но `Match.voting_open_until`
-                # (matches/models.py) — `DateTimeField` БЕЗ `null=True`, с
-                # самой первой миграции (0001_initial). На практике это ни
-                # разу не взрывалось только потому, что все 61 матчей текущего
-                # сезона были изначально импортированы ЕЩЁ ДО фикса выше (тогда
-                # voting_open_until проставлялся безусловно для любого статуса)
-                # — с тех пор в проекте не создавалось ни одного ПОДЛИННО
-                # нового матча. Первый же реально новый матч (кубковая пара,
-                # довыставленный тур и т.п.) упал бы `IntegrityError: null
-                # value in column "voting_open_until"` — pipeline.py эту
-                # ошибку ловит и тихо пишет в stats['errors'], так что матч
-                # просто никогда не появился бы на сайте, без явного алерта.
-                #
-                # Плейсхолдер безопасен: `just_finished` в parsers/tasks.py
-                # ПОСЛЕ фикса того же дня определяется сравнением статусов
-                # (`match.status != "finished"`), а не через `not match.
-                # voting_open_until` — значение этого поля для ещё не
-                # завершённого матча больше нигде не используется как сигнал
-                # и будет безусловно перезаписано настоящим значением в
-                # момент реального финального свистка.
-                # end_time — `null=True` в модели, спокойно остаётся
-                # неустановленным (Match создастся с NULL по-настоящему).
+                # voting_open_until не nullable — новому незавершённому матчу
+                # нужен безопасный плейсхолдер, иначе IntegrityError. См.
+                # docs/adr/0007-kff-importer-status-and-timing-fixes.md,
+                # находка №3.
                 placeholder_start = start_time or timezone.now()
                 defaults["voting_open_until"] = placeholder_start + timedelta(hours=48)
 
         was_finished_before = bool(existing and existing.status == "finished")
+
+        # Расхождение задним числом (см. parsers/models.py::ParserDiscrepancy
+        # за полным обоснованием): матч уже был 'finished', а этот импорт
+        # приносит другой счёт или статус — не обычный прогресс матча
+        # (тот идёт через update_match_statuses, который 'finished' вообще
+        # не трогает), а правка источника поверх уже свершившегося факта.
+        # Пишем ДО update_or_create, пока existing ещё хранит старые значения.
+        if was_finished_before:
+            _record_finished_match_discrepancies(existing, defaults, home_team, away_team)
 
         match, created = Match.objects.update_or_create(
             external_id=str(game_data["id"]),
@@ -577,19 +574,8 @@ def import_coaches(match: Match, lineup_data: Dict) -> bool:
     
     logger.info(f"📊 Home coaches: {len(home_coaches) if home_coaches else 0}, Away coaches: {len(away_coaches) if away_coaches else 0}")
     
-    # ЗАЩИТА ОТ ПЕРЕЗАПИСИ ЗАДНИМ ЧИСЛОМ: parsers/kff/pipeline.py::import_full_match
-    # вызывает import_coaches БЕЗ проверки "уже обработано" — sync_recent_matches
-    # (parsers/tasks.py) периодически повторно импортирует последние N
-    # завершённых матчей, и КАЖДЫЙ раз это условие могло сработать заново
-    # (is_main распознаёт роль как главную) и переписать home_coach/away_coach
-    # на тренера из СВЕЖЕГО ответа KFF — даже если матч давно завершён и
-    # тренер там был другой. Итог был замечен на живом примере: у тренера,
-    # пришедшего в клуб на 2 матча, счётчик показывал 21 (весь сезон клуба),
-    # потому что он тихо "натягивался" на все прошлые матчи при каждом
-    # ресинке. См. docs/BACKLOG.md, находка 4. once матч 'finished' и поле
-    # уже заполнено — считаем его зафиксированным историческим фактом и
-    # больше не трогаем; для scheduled/live обновлять по-прежнему можно
-    # (состав ещё может уточняться).
+    # Тренер завершённого матча — зафиксированный факт, повторный ресинк его
+    # не переписывает. См. docs/adr/0008-kff-import-defensive-guards.md, находка №1.
     already_locked_home = match.status == "finished" and match.home_coach_id is not None
     already_locked_away = match.status == "finished" and match.away_coach_id is not None
 
@@ -1119,18 +1105,10 @@ def import_events_and_minutes(
     if existing_pool is not None:
         stale_ids = [e.id for bucket in existing_pool.values() for e in bucket]
         if stale_ids:
-            # ЗАЩИТА ОТ НЕПОЛНОГО ОТВЕТА KFF (HTTP 200, но обрезанный/
-            # частичный список событий): если бы мы просто удаляли всё, чего
-            # нет в текущем ответе, такой "усечённый" ответ снёс бы РЕАЛЬНЫЕ
-            # события матча (и каскадно EventReaction — реакции
-            # пользователей). Явного признака "ответ неполный" API не даёт,
-            # поэтому эвристика — если новый набор событий от API СУЩЕСТВЕННО
-            # (менее чем наполовину) короче того, что уже есть в БД для этого
-            # матча, это подозрительно похоже на обрезанный ответ, а не на
-            # реальное исчезновение событий. В этом случае "устаревшие"
-            # события НЕ удаляем (остальной импорт — добавление/обновление
-            # новых событий из ответа — уже выполнен выше как обычно), только
-            # логируем warning для ручного разбора.
+            # Подозрительно короткий ответ API (<50% от того, что уже в БД) —
+            # похоже на обрезанный ответ, а не реальное исчезновение событий.
+            # Не удаляем "устаревшие" события, только логируем. См.
+            # docs/adr/0008-kff-import-defensive-guards.md, находка №2.
             if len(events) < existing_total * 0.5:
                 logger.warning(
                     f"⚠️ import_events_and_minutes: подозрительно короткий ответ API для "

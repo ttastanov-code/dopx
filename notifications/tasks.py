@@ -28,18 +28,10 @@ from django.utils.html import strip_tags
 
 logger = logging.getLogger(__name__)
 
-# Сетевые/протокольные сбои при отправке письма — DNS не резолвится (ровно
-# `socket.gaierror: [Errno 8] nodename nor servname provided` из инцидента),
-# TCP оборвался (`ConnectionResetError`/`Errno 54` — подкласс ConnectionError),
-# сервер разорвал соединение. Всё это временно: та же попытка через
-# минуту-другую вполне может пройти (см. `_send_email_to_user`, параметр
-# `raise_on_transient`). Намеренно НЕ голый `OSError` — он перехватил бы и
-# файловые/прочие ошибки, никак не связанные с сетью (например, сбой при
-# рендеринге шаблона письма), и мы бы бессмысленно ретраили то, что не
-# починится повторной попыткой. И НЕ включает smtplib.SMTPRecipientsRefused/
-# SMTPSenderRefused/SMTPDataError — это ПОСТОЯННЫЕ отказы (несуществующий
-# адрес, письмо отклонено содержимым), повторная попытка с теми же данными
-# провалится точно так же, ретраить их бессмысленно.
+# Временные (retry-able) сетевые сбои — не голый OSError (задел бы и
+# нетранзиентные ошибки) и не SMTP-отказы вида Refused/DataError
+# (постоянны, ретраить бессмысленно). См.
+# docs/adr/0020-prediction-result-email-dedup.md.
 TRANSIENT_EMAIL_ERRORS = (
     socket.gaierror,
     ConnectionError,
@@ -968,21 +960,10 @@ def notify_prediction_results(self):
         notified = 0
 
         for match in matches:
-            # БАГ, КОТОРЫЙ ТУТ БЫЛ (Sentry-инцидент 2026-08-30 — см.
-            # TransientEmailError): дедуп раньше смотрел на "есть ли ВООБЩЕ
-            # Notification(prediction_result) для этой пары" — а
-            # email_sent_at проставлялся сразу при bulk_create, ДО попытки
-            # реальной отправки письма. Если письмо срывалось из-за сетевого
-            # сбоя (DNS/обрыв соединения — ровно то, что поймал Sentry, пока
-            # ноутбук с dev-сервером спал), запись всё равно оставалась
-            # "уже уведомлён" навсегда — следующий прогон (через 30 минут)
-            # этого пользователя больше НИКОГДА не трогал. Письмо терялось
-            # без возможности когда-либо переотправиться. Теперь: дедуп — по
-            # УЖЕ ОТПРАВЛЕННЫМ (email_sent_at не пусто), а не по самому
-            # факту существования записи; уже созданная, но не отправленная
-            # (email_sent_at пуст) запись — переиспользуется, чтобы не
-            # плодить вторую in-app-строку на того же пользователя, и
-            # получает email_sent_at ТОЛЬКО после реального успеха отправки.
+            # Дедуп по факту УСПЕШНОЙ отправки (email_sent_at), не по факту
+            # создания записи — иначе сетевой сбой при отправке навсегда
+            # блокирует переотправку. См.
+            # docs/adr/0020-prediction-result-email-dedup.md.
             already_emailed = Notification.objects.filter(
                 notification_type='prediction_result', related_match=match, email_sent_at__isnull=False,
             ).values('user_id')

@@ -19,7 +19,6 @@ Meta-опций DRF (в официальной документации и ис�
 """
 from __future__ import annotations
 
-from django.utils import timezone
 from rest_framework import serializers
 
 from aggregates.models import CoachMatchAggregate, MatchAggregate, PlayerMatchAggregate
@@ -31,7 +30,27 @@ from evaluations.models import (
     RefereeEvaluation,
     TeamEvaluation,
 )
+from evaluations.policies import (
+    EvaluationPolicyError,
+    assert_coach_in_match,
+    assert_context_exists,
+    assert_player_in_squad,
+    assert_team_in_match,
+    assert_voting_open,
+)
 from matches.models import Match
+
+
+def _run_policy(check, *args) -> None:
+    """Прогоняет одну проверку из evaluations/policies.py и переводит её
+    исключение в serializers.ValidationError — единственное место, где
+    политика "знает" про DRF (сам модуль policies.py от DRF не зависит,
+    его же вызывает и evaluations/forms.py, где нужен forms.ValidationError).
+    См. docs/adr/0001-evaluation-policy-single-source-of-truth.md."""
+    try:
+        check(*args)
+    except EvaluationPolicyError as e:
+        raise serializers.ValidationError(str(e)) from e
 
 
 class MatchSerializer(serializers.ModelSerializer):
@@ -81,15 +100,13 @@ class ContextEvaluationSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "created_at", "updated_at")
 
     def validate_match(self, value: Match) -> Match:
-        """Проверка: голосование открыто."""
-        if timezone.now() > value.voting_open_until:
-            raise serializers.ValidationError("Голосование для этого матча закрыто")
-        if timezone.now() < value.start_time:
-            raise serializers.ValidationError("Голосование откроется после начала матча")
+        _run_policy(assert_voting_open, value)
         return value
 
     def validate(self, data: dict) -> dict:
-        """Проверка уникальности: user + match."""
+        """Проверка уникальности: user + match, и что выбранная
+        поддерживаемая команда реально участвовала в матче (см.
+        docs/adr/0001-evaluation-policy-single-source-of-truth.md)."""
         request = self.context.get("request")
         user = request.user if request else None
         match = data.get("match")
@@ -97,6 +114,10 @@ class ContextEvaluationSerializer(serializers.ModelSerializer):
             existing = ContextEvaluation.objects.filter(user=user, match=match).exists()
             if existing and not self.instance:
                 raise serializers.ValidationError("Вы уже оценили контекст этого матча")
+
+            supported_team = data.get("supported_team")
+            if supported_team is not None:
+                _run_policy(assert_team_in_match, supported_team.id, match)
         return data
 
 
@@ -131,8 +152,7 @@ class PlayerEvaluationSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "created_at", "updated_at", "maturity_score")
 
     def validate_match(self, value: Match) -> Match:
-        if timezone.now() > value.voting_open_until:
-            raise serializers.ValidationError("Голосование для этого матча закрыто")
+        _run_policy(assert_voting_open, value)
         return value
 
     def validate(self, data: dict) -> dict:
@@ -147,9 +167,12 @@ class PlayerEvaluationSerializer(serializers.ModelSerializer):
             if existing and not self.instance:
                 raise serializers.ValidationError("Вы уже оценили этого игрока в данном матче")
 
-            context_exists = ContextEvaluation.objects.filter(user=user, match=match).exists()
-            if not context_exists and not self.instance:
-                raise serializers.ValidationError("Сначала укажите контекст просмотра матча")
+            if not self.instance:
+                context_exists = ContextEvaluation.objects.filter(user=user, match=match).exists()
+                _run_policy(assert_context_exists, context_exists)
+
+            if player is not None:
+                _run_policy(assert_player_in_squad, player.id, match)
 
             for field_name in ("contribution", "risk", "potential"):
                 field_value = data.get(field_name)
@@ -184,8 +207,7 @@ class TeamEvaluationSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "created_at", "updated_at", "average_score")
 
     def validate_match(self, value: Match) -> Match:
-        if timezone.now() > value.voting_open_until:
-            raise serializers.ValidationError("Голосование для этого матча закрыто")
+        _run_policy(assert_voting_open, value)
         return value
 
     def validate(self, data: dict) -> dict:
@@ -200,9 +222,12 @@ class TeamEvaluationSerializer(serializers.ModelSerializer):
             if existing and not self.instance:
                 raise serializers.ValidationError("Вы уже оценили эту команду в данном матче")
 
-            context_exists = ContextEvaluation.objects.filter(user=user, match=match).exists()
-            if not context_exists and not self.instance:
-                raise serializers.ValidationError("Сначала укажите контекст просмотра матча")
+            if not self.instance:
+                context_exists = ContextEvaluation.objects.filter(user=user, match=match).exists()
+                _run_policy(assert_context_exists, context_exists)
+
+            if team is not None:
+                _run_policy(assert_team_in_match, team.id, match)
         return data
 
 
@@ -234,8 +259,7 @@ class CoachEvaluationSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "created_at", "updated_at", "average_score")
 
     def validate_match(self, value: Match) -> Match:
-        if timezone.now() > value.voting_open_until:
-            raise serializers.ValidationError("Голосование для этого матча закрыто")
+        _run_policy(assert_voting_open, value)
         return value
 
     def validate(self, data: dict) -> dict:
@@ -249,6 +273,9 @@ class CoachEvaluationSerializer(serializers.ModelSerializer):
             ).exists()
             if existing and not self.instance:
                 raise serializers.ValidationError("Вы уже оценили этого тренера в данном матче")
+
+            if coach is not None:
+                _run_policy(assert_coach_in_match, coach.id, match)
         return data
 
 
@@ -271,8 +298,7 @@ class RefereeEvaluationSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "created_at", "updated_at")
 
     def validate_match(self, value: Match) -> Match:
-        if timezone.now() > value.voting_open_until:
-            raise serializers.ValidationError("Голосование для этого матча закрыто")
+        _run_policy(assert_voting_open, value)
         return value
 
     def validate(self, data: dict) -> dict:
@@ -313,8 +339,7 @@ class MatchEvaluationSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "created_at", "updated_at", "drama_index")
 
     def validate_match(self, value: Match) -> Match:
-        if timezone.now() > value.voting_open_until:
-            raise serializers.ValidationError("Голосование для этого матча закрыто")
+        _run_policy(assert_voting_open, value)
         return value
 
     def validate(self, data: dict) -> dict:

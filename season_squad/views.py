@@ -31,24 +31,10 @@ def _resolve_season(season_id):
     return season
 
 
-# Кольцо вокруг аватара кодирует доверие к рейтингу цветом — премиальный
-# паттерн уровня Sofascore (вместо отдельного текстового бейджа "мало
-# данных" под каждой карточкой): пусто/пунктир — слот ещё не занят,
-# янтарное — занят, но голосов пока мало, изумрудное — данных достаточно.
-#
-# ring_style — СЫРАЯ CSS-строка через outline + var(--color-*), а НЕ
-# Tailwind-класс вида ring-success. Баг, пойманный 2026-08-22: на этом
-# сайте Tailwind загружен как отдельный браузерный рантайм
-# (@tailwindcss/browser@4), а daisyUI — отдельным <link>-стилем, не как
-# Tailwind-плагин/@theme. Tailwind поэтому НЕ знает про daisyUI-цвета
-# "success"/"warning" как имена для генерации утилит: класс
-# ring-success/80 тихо схлопывался в один и тот же нейтральный дефолт
-# для обоих состояний — кольца "данных достаточно" и "данных мало"
-# визуально не отличались вообще (см. templates/components/_avatar.html
-# докстринг ring_style — там же объяснение, почему outline, а не
-# box-shadow-ring). var(--color-success)/var(--color-warning) — реальные
-# CSS custom properties, которые daisyUI ставит в :root, поэтому прямая
-# ссылка на них в style работает корректно в обход Tailwind.
+# ring_style — сырой CSS через var(--color-*), не Tailwind-класс
+# ring-success (Tailwind runtime не знает про daisyUI-цвета — класс тихо
+# схлопывается в нейтральный дефолт). См.
+# docs/adr/0021-tailwind-runtime-daisyui-colors.md.
 _RING_STYLE_EMPTY = 'outline: 2px dashed rgba(255,255,255,.35); outline-offset: 2px;'
 _RING_STYLE_CONFIDENT = 'outline: 2px solid var(--color-success); outline-offset: 2px;'
 _RING_STYLE_LOW_CONFIDENCE = 'outline: 2px solid var(--color-warning); outline-offset: 2px;'

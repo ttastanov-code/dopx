@@ -2,13 +2,14 @@
 from django import forms
 from django.core.validators import MinValueValidator, MaxValueValidator
 from evaluations.models import (
-    ContextEvaluation, 
-    MatchEvaluation, 
+    ContextEvaluation,
+    MatchEvaluation,
     TeamEvaluation,
-    PlayerEvaluation, 
-    CoachEvaluation, 
+    PlayerEvaluation,
+    CoachEvaluation,
     RefereeEvaluation
 )
+from evaluations.policies import EvaluationPolicyError, assert_team_in_match
 from teams.models import Team
 from lineups.models import MatchLineupPlayer
 
@@ -46,6 +47,23 @@ class ContextEvaluationForm(forms.ModelForm):
             )
             self.fields['supported_team'].required = False
             self.fields['supported_team'].empty_label = 'Не болею ни за кого'
+
+    def clean_supported_team(self):
+        """Queryset выше уже гарантирует это (ModelChoiceField сам отклонит
+        значение вне queryset) — вызов политики здесь избыточен СЕЙЧАС, но
+        это единственное поле во всём вайзарде, где ID сущности вообще
+        приходит от клиента напрямую (остальные формы — TeamEvaluationForm/
+        PlayerEvaluationForm/CoachEvaluationForm — генерируют поля по
+        реальным сущностям матча, подменить там нечего). Если queryset
+        когда-нибудь расширят по невнимательности — политика всё равно
+        поймает нарушение. См. docs/adr/0001-evaluation-policy-single-source-of-truth.md."""
+        team = self.cleaned_data.get('supported_team')
+        if team is not None and self.match is not None:
+            try:
+                assert_team_in_match(team.id, self.match)
+            except EvaluationPolicyError as e:
+                raise forms.ValidationError(str(e))
+        return team
 
 
 class TeamEvaluationForm(forms.Form):

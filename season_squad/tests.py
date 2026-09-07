@@ -341,6 +341,17 @@ class WidgetEmbedTests(TestCase):
         csp = response.headers.get("Content-Security-Policy", "")
         self.assertIn("frame-ancestors 'self'", csp)
 
+    @override_settings(WIDGET_ALLOWED_ORIGINS=["https://partner.kz", "https://another.kz"])
+    def test_widget_respects_configured_allow_list(self):
+        """Аудит 2026-09-04: пока WIDGET_ALLOWED_ORIGINS пуст, виджеты
+        встраиваемы куда угодно ("*") — это осознанное и временное решение,
+        см. dopx/settings.py. Как только список заполнен, middleware должен
+        сразу отдавать точный список доменов, без изменений в коде."""
+        response = self.client.get(reverse("season_squad:widget"))
+        csp = response.headers.get("Content-Security-Policy", "")
+        self.assertIn("frame-ancestors https://partner.kz https://another.kz;", csp)
+        self.assertNotIn("frame-ancestors *", csp)
+
 
 @override_settings(CACHES=LOCMEM_CACHE)
 class RecomputeLockTests(SeasonSquadTestCase):

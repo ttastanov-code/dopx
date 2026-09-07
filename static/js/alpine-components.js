@@ -175,17 +175,33 @@ document.addEventListener('alpine:init', () => {
         supportedTeam: '',
         watchedType: 'full',
         attendedStadium: false,
+        // evalMode — режим "Быстро/Подробно" (см.
+        // docs/adr/0006-quick-full-evaluation-mode.md), читается
+        // evaluations/views.py::EvaluateContextView.form_valid из POST
+        // ('eval_mode') и пишется в EvaluationSession.mode. Дефолт 'full' —
+        // сегодняшнее поведение, если пользователь ничего не выбрал (или
+        // JS не выполнился, тогда радио-инпут просто не рендерится
+        // визуально выбранным, но нативная разметка всё равно шлёт value
+        // по умолчанию через checked-атрибут на сервере — см. context.html).
+        evalMode: 'full',
         init() {
             this.supportedTeam = this.$el.dataset.supportedTeam || '';
             this.watchedType = this.$el.dataset.watchedType || 'full';
             this.attendedStadium = this.$el.dataset.attendedStadium === 'true';
+            this.evalMode = this.$el.dataset.evalMode || 'full';
         },
     }));
 
     // === Карточка игрока в вайзарде оценки (evaluations/_player_card.html) —
     // рендерится в цикле по составу, каждый экземпляр независим. ===
-    Alpine.data('playerEvaluationCard', () => ({
-        evaluate: false,
+    // initialEvaluate — режим "Быстро" (см.
+    // docs/adr/0006-quick-full-evaluation-mode.md) предзаполняет тумблер
+    // для небольшого набора заметных игроков; булево значение приходит из
+    // шаблона как литерал true/false (не строка пользовательского ввода —
+    // это безопасно инлайнить прямо в x-data, в отличие от текстовых полей,
+    // см. историю бага с tooltipTrigger/escapejs в docs/BACKLOG.md).
+    Alpine.data('playerEvaluationCard', (initialEvaluate) => ({
+        evaluate: !!initialEvaluate,
         contribution: 5,
         risk: 5,
         potential: 5,

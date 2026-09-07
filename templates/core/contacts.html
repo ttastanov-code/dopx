@@ -38,7 +38,23 @@
               data-initial-category="{{ request.GET.category|default:'general' }}"
               data-initial-email="{{ user.email|default:'' }}">
           {% csrf_token %}
-          
+
+          <!-- АНТИ-БОТ: honeypot-поле, невидимое человеку (визуально
+               скрыто и вынесено из потока табуляции), но доступное
+               примитивному боту, слепо заполняющему все input'ы формы.
+               Поле ОБЯЗАНО остаться пустым — см.
+               core/forms.py::ContactAntiBotForm.clean_website. -->
+          <div style="position:absolute; left:-9999px; top:-9999px;" aria-hidden="true">
+            <label for="id_website">Website</label>
+            <input type="text" id="id_website" name="website" tabindex="-1" autocomplete="off">
+          </div>
+
+          <!-- АНТИ-БОТ: time-trap — момент рендера формы, см.
+               core/forms.py::ContactAntiBotForm.clean_form_rendered_at.
+               Отправка формы быстрее нескольких секунд после рендера
+               физически невозможна для человека. -->
+          {{ antibot_form.form_rendered_at }}
+
           <!-- Категория обращения -->
           <div class="form-control">
             <label class="label py-1 md:py-2">
@@ -120,6 +136,24 @@
             </div>
           </div>
 
+          <!-- CAPTCHA: self-hosted (django-simple-captcha), картинка
+               рисуется Pillow'ом на сервере, без внешних API-ключей.
+               Клик по картинке обновляет её через встроенный AJAX-
+               эндпоинт пакета (captcha-refresh) — см. JS в конце
+               шаблона. Тот же паттерн, что и в templates/auth/register.html. -->
+          <div class="form-control">
+            <label for="id_captcha_1" class="label py-1 md:py-2">
+              <span class="label-text font-medium text-sm md:text-base">Подтвердите, что вы не робот <span class="text-error">*</span></span>
+            </label>
+            <div class="flex items-center gap-3">
+              {{ antibot_form.captcha }}
+            </div>
+            {% if antibot_form.captcha.errors %}
+            <p class="text-xs text-error mt-1.5">{{ antibot_form.captcha.errors.0 }}</p>
+            {% endif %}
+            <p class="text-xs opacity-40 mt-1.5">Не видно текст? Кликните по картинке, чтобы обновить.</p>
+          </div>
+
           <!-- Согласие на обработку данных -->
         <div class="form-control w-full">
         <div class="flex items-center gap-3 p-4 rounded-lg border border-base-300">
@@ -198,4 +232,41 @@
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block extra_script %}
+<script>
+// Обновление капчи по клику на картинку — тот же паттерн, что и в
+// templates/auth/register.html (см. докстринг там). Виджет
+// django-simple-captcha сам по себе никакого JS не подключает,
+// поэтому дёргаем официальный AJAX-эндпоинт captcha-refresh напрямую
+// и вручную подменяем src картинки + значение скрытого поля с ключом
+// (id_captcha_0). Обязательный заголовок X-Requested-With — без него
+// captcha.views.captcha_refresh отвечает 404.
+document.addEventListener('DOMContentLoaded', () => {
+    const captchaImg = document.querySelector('img.captcha');
+    const captchaKeyInput = document.getElementById('id_captcha_0');
+    if (!captchaImg || !captchaKeyInput) {
+        return;
+    }
+    captchaImg.style.cursor = 'pointer';
+    captchaImg.title = 'Кликните, чтобы обновить картинку';
+    captchaImg.addEventListener('click', async () => {
+        try {
+            const response = await fetch('/captcha/refresh/', {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            });
+            if (!response.ok) {
+                return;
+            }
+            const data = await response.json();
+            captchaImg.src = data.image_url;
+            captchaKeyInput.value = data.key;
+        } catch (e) {
+            // Тихо игнорируем — пользователь просто не увидит новую картинку
+            // и попробует кликнуть ещё раз, форма при этом не ломается.
+        }
+    });
+});
+</script>
 {% endblock %}

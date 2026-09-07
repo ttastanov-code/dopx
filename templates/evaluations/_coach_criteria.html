@@ -1,0 +1,68 @@
+{% comment %}
+Четыре критерия оценки тренера — вынесено из coaches.html в отдельный
+партиал (2026-09-04, режим "Быстро", см.
+docs/adr/0006-quick-full-evaluation-mode.md), чтобы не дублировать одну и
+ту же разметку в двух местах (обычный режим — сразу видно, быстрый режим —
+под "Настроить каждый критерий вручную").
+Использование: {% include 'evaluations/_coach_criteria.html' with coach=coach %}
+{% endcomment %}
+<div class="wz-accent-accent wz-slider-card">
+    <div class="flex justify-between items-center mb-2">
+        <label class="text-sm font-semibold flex items-center gap-1.5">
+            <i class="ti ti-chess text-accent"></i> Тактика
+            {% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.coach.tactics %}
+        </label>
+        <span class="wz-slider-card__value" id="coach_{{ coach.id }}_tactics_value">5</span>
+    </div>
+    <input type="range" name="coach_{{ coach.id }}_tactics" min="1" max="10" value="5"
+           class="wizard-slider"
+           oninput="document.getElementById('coach_{{ coach.id }}_tactics_value').textContent = this.value">
+    <div class="flex justify-between text-[10px] text-base-content/40 mt-1.5 px-1">
+        <span>1</span><span>5</span><span>10</span>
+    </div>
+</div>
+<div class="wz-accent-accent wz-slider-card">
+    <div class="flex justify-between items-center mb-2">
+        <label class="text-sm font-semibold flex items-center gap-1.5">
+            <i class="ti ti-refresh text-accent"></i> Замены
+            {% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.coach.substitutions %}
+        </label>
+        <span class="wz-slider-card__value" id="coach_{{ coach.id }}_substitutions_value">5</span>
+    </div>
+    <input type="range" name="coach_{{ coach.id }}_substitutions" min="1" max="10" value="5"
+           class="wizard-slider"
+           oninput="document.getElementById('coach_{{ coach.id }}_substitutions_value').textContent = this.value">
+    <div class="flex justify-between text-[10px] text-base-content/40 mt-1.5 px-1">
+        <span>1</span><span>5</span><span>10</span>
+    </div>
+</div>
+<div class="wz-accent-accent wz-slider-card">
+    <div class="flex justify-between items-center mb-2">
+        <label class="text-sm font-semibold flex items-center gap-1.5">
+            <i class="ti ti-control text-accent"></i> Управление
+            {% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.coach.game_management %}
+        </label>
+        <span class="wz-slider-card__value" id="coach_{{ coach.id }}_management_value">5</span>
+    </div>
+    <input type="range" name="coach_{{ coach.id }}_management" min="1" max="10" value="5"
+           class="wizard-slider"
+           oninput="document.getElementById('coach_{{ coach.id }}_management_value').textContent = this.value">
+    <div class="flex justify-between text-[10px] text-base-content/40 mt-1.5 px-1">
+        <span>1</span><span>5</span><span>10</span>
+    </div>
+</div>
+<div class="wz-accent-accent wz-slider-card">
+    <div class="flex justify-between items-center mb-2">
+        <label class="text-sm font-semibold flex items-center gap-1.5">
+            <i class="ti ti-impact text-accent"></i> Влияние
+            {% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.coach.impact %}
+        </label>
+        <span class="wz-slider-card__value" id="coach_{{ coach.id }}_impact_value">5</span>
+    </div>
+    <input type="range" name="coach_{{ coach.id }}_impact" min="1" max="10" value="5"
+           class="wizard-slider"
+           oninput="document.getElementById('coach_{{ coach.id }}_impact_value').textContent = this.value">
+    <div class="flex justify-between text-[10px] text-base-content/40 mt-1.5 px-1">
+        <span>1</span><span>5</span><span>10</span>
+    </div>
+</div>

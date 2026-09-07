@@ -5,7 +5,7 @@
      загрузке страницы (через include-тег шаблона) и при каждом poll-запросе
      (через dashboard/views.py::data_health_partial) — сам по себе, без
      base.html/_nav.html, чтобы HTMX не задваивал шапку/навигацию при свапе. -->
-<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-6">
+<div class="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4 mb-6">
     <div class="stat bg-base-100 border border-base-300 rounded-lg p-3 md:p-4">
         <div class="stat-title text-[10px] md:text-xs">Последняя синхронизация</div>
         {% if health.last_run %}
@@ -36,6 +36,13 @@
             {{ health.matches_missing_events }}
         </div>
         <div class="stat-desc text-[10px] md:text-xs">live/finished, ни одного MatchEvent</div>
+    </div>
+    <div class="stat bg-base-100 border border-base-300 rounded-lg p-3 md:p-4">
+        <div class="stat-title text-[10px] md:text-xs">Расхождения импорта</div>
+        <div class="stat-value text-lg md:text-2xl {% if health.unreviewed_discrepancies_count %}text-warning{% else %}text-success{% endif %}">
+            {{ health.unreviewed_discrepancies_count }}
+        </div>
+        <div class="stat-desc text-[10px] md:text-xs">счёт/статус изменились у уже завершённых</div>
     </div>
 </div>
 
@@ -145,6 +152,40 @@
         </div>
     </div>
 </div>
+
+{% if health.unreviewed_discrepancies_list %}
+<div class="card bg-base-100 border border-warning/30 mb-6">
+    <div class="card-body p-4">
+        <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
+            <i class="ti ti-alert-triangle text-warning"></i> Расхождения импорта (нужен ручной разбор)
+        </h3>
+        <p class="text-xs opacity-60 mb-3">Счёт или статус изменились у матча, который уже был завершён — обычный ход матча сюда не попадает, см. parsers/models.py::ParserDiscrepancy. Разбор и отметка «разобрано» — в Django admin.</p>
+        <div class="overflow-x-auto">
+            <table class="table table-sm">
+                <thead>
+                    <tr><th>Матч</th><th>Поле</th><th>Было</th><th>Стало</th><th>Когда</th><th></th></tr>
+                </thead>
+                <tbody>
+                    {% for d in health.unreviewed_discrepancies_list %}
+                    <tr>
+                        <td class="whitespace-nowrap">{{ d.match_label }}</td>
+                        <td><span class="badge badge-warning badge-sm badge-outline">{{ d.field_name }}</span></td>
+                        <td class="text-xs opacity-70">{{ d.old_value }}</td>
+                        <td class="text-xs font-semibold">{{ d.new_value }}</td>
+                        <td class="text-xs opacity-60 whitespace-nowrap">{{ d.created_at|timesince }} назад</td>
+                        <td>
+                            <a href="{% url 'admin:parsers_parserdiscrepancy_change' d.id %}" class="btn btn-xs btn-outline" target="_blank">
+                                <i class="ti ti-eye"></i> Разобрать
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 {% if health.recent_error_samples %}
 <div class="card bg-base-100 border border-error/30 mb-6">

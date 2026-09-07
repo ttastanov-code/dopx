@@ -11,6 +11,7 @@ sync completed: {stats}")`) и возвращали dict, который ник�
 """
 from __future__ import annotations
 
+from django.conf import settings
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -63,3 +64,75 @@ class ParserSyncRun(BaseModel):
         if not self.total:
             return 0.0
         return round(self.errors / self.total * 100, 1)
+
+
+class ParserDiscrepancy(BaseModel):
+    """
+    Матч, у которого поле, УЖЕ считавшееся окончательным (счёт или статус
+    матча, стоявшего 'finished' до этого импорта), изменилось при
+    повторном импорте с KFF — то есть не обычный прогресс матча
+    (scheduled → live → finished, счёт растёт по ходу игры), а правка
+    задним числом внешним источником данных.
+
+    ПОЧЕМУ ЭТО ЗАВЕДЕНО (2026-09-04, внешний аудит + план перехода на
+    платный Stratorium, см. docs/CODEX_AUDIT_RESPONSE_2026-09-04.md,
+    раздел "Парсинг KFF / план Б"): пока проект на бесплатном парсинге KFF,
+    у нас нет способа отличить "источник поправил опечатку" от "источник
+    временно отдал неверные данные" — молчаливое перезаписывание счёта уже
+    завершённого матча могло бы годами оставаться незамеченным, при этом
+    именно от счёта косвенно зависят агрегаты и сезонная статистика. Это
+    НЕ замена мониторингу ошибок (`ParserSyncRun.errors`/`error_samples` —
+    те про исключения при запросе к API), а отдельный сигнал "данные
+    пришли успешно, но не совпадают с тем, что мы уже считали фактом".
+
+    Пишется в `parsers/kff/importers.py::import_match_core` — единственном
+    месте, где матч, уже бывший 'finished' на момент импорта
+    (`was_finished_before`), может получить новые значения `home_score`/
+    `away_score`/`status` из `Match.objects.update_or_create(...)`.
+    `update_match_statuses` (parsers/tasks.py) сюда не попадает вообще —
+    там `active_matches` явно исключает 'finished' из выборки.
+
+    `reviewed`/`reviewed_by` — staff разбирает записи в админке (см.
+    parsers/admin.py) и отмечает результат разбора в `note`
+    ("подтверждено KFF, счёт правда изменился" / "ложное срабатывание" и
+    т.п.) — без автоматического отката: пусть решение всегда принимает
+    человек, не код.
+    """
+
+    match = models.ForeignKey(
+        'matches.Match',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='parser_discrepancies',
+        verbose_name=_('Матч'),
+    )
+    # Снэпшот названия — переживает удаление матча (on_delete=SET_NULL) и
+    # не требует лишнего JOIN на списке в админке.
+    match_label = models.CharField(_('Матч (снэпшот)'), max_length=200)
+    field_name = models.CharField(_('Поле'), max_length=50)
+    old_value = models.CharField(_('Было'), max_length=200)
+    new_value = models.CharField(_('Стало'), max_length=200)
+
+    reviewed = models.BooleanField(_('Разобрано'), default=False, db_index=True)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+        verbose_name=_('Кто разобрал'),
+    )
+    reviewed_at = models.DateTimeField(_('Когда разобрано'), null=True, blank=True)
+    note = models.TextField(_('Заметка'), blank=True)
+
+    class Meta:
+        verbose_name = _('Расхождение импорта')
+        verbose_name_plural = _('Расхождения импорта')
+        ordering = ['reviewed', '-created_at']
+        indexes = [
+            models.Index(fields=['reviewed', '-created_at'], name='parser_discrepancy_review_idx'),
+        ]
+
+    def __str__(self):
+        return f"{self.match_label}: {self.field_name} {self.old_value} → {self.new_value}"

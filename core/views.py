@@ -25,6 +25,8 @@ from django.utils.html import strip_tags
 from django.core.files.storage import default_storage
 
 from aggregates.models import MatchAggregate, PlayerMatchAggregate
+from aggregates.services import MIN_VOTES_FOR_DISPLAY
+from core.forms import ContactAntiBotForm
 from core.nominations import MIN_VOTES as NOMINATION_MIN_VOTES, get_nominations
 from core.utils import get_client_ip
 from evaluations.models import ContextEvaluation, EvaluationSession, MatchEvaluation, PlayerEvaluation, TeamEvaluation
@@ -90,9 +92,13 @@ class HomeView(TemplateView):
         ).select_related('home_team', 'away_team', 'league', 'season'
         ).order_by('start_time'))
 
+        # total_votes__gte=MIN_VOTES_FOR_DISPLAY — без этого гейта "Топ
+        # игроков" на главной ранжируется наравне с единичными накрученными
+        # голосами (тот же класс бага, что был закрыт для топа игроков
+        # команды, см. docs/adr/0014-team-top-players-transfer-fix.md).
         top_players = PlayerMatchAggregate.objects.select_related(
             'player', 'player__team'
-        ).order_by('-performance_score')[:5]
+        ).filter(total_votes__gte=MIN_VOTES_FOR_DISPLAY).order_by('-performance_score')[:5]
 
         # === НОВАЯ СТАТИСТИКА ===
         total_evals = (
@@ -403,6 +409,10 @@ class ContactsView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Контакты — DOPX'
+        # Свежая форма на каждый рендер: и initial-таймстемп time-trap'а,
+        # и картинка капчи должны быть новыми (в т.ч. после редиректа
+        # обратно сюда из post() при ошибке — см. ContactAntiBotForm).
+        context['antibot_form'] = ContactAntiBotForm()
         now = timezone.now()
         context['stats'] = {
             'total_matches': Match.objects.count(),
@@ -422,6 +432,19 @@ class ContactsView(TemplateView):
 
     def post(self, request, *args, **kwargs):
         """Обработка формы обратной связи"""
+        # Анти-бот проверка — первой, до чтения остальных полей. Тот же
+        # трёхуровневый паттерн (honeypot + time-trap + капча), что и в
+        # users/forms.py::UserRegistrationForm, см. core/forms.py.
+        antibot_form = ContactAntiBotForm(request.POST)
+        if not antibot_form.is_valid():
+            if 'captcha' in antibot_form.errors:
+                messages.error(request, 'Неверный текст с картинки. Попробуйте ещё раз.')
+            else:
+                # honeypot или time-trap сработали — боту осмысленная
+                # причина ошибки не нужна, ведём себя как при капче.
+                messages.error(request, 'Не удалось обработать форму. Попробуйте ещё раз.')
+            return redirect('core:contacts')
+
         category = request.POST.get('category', 'general')
         email = request.POST.get('email', '').strip()
         subject = request.POST.get('subject', 'Обращение через сайт').strip()
@@ -430,18 +453,18 @@ class ContactsView(TemplateView):
 
         # Валидация
         if len(message) < 20:
-            messages.error(request, 'Сообщение слишком короткое (мин. 20 символов)')
+            messages.error(request, 'Слишком короткое сообщение. Минимум 20 символов.')
             return redirect('core:contacts')
 
         user = request.user if request.user.is_authenticated else None
 
         if not user and not email:
-            messages.error(request, 'Укажите email для связи')
+            messages.error(request, 'Укажите email для связи.')
             return redirect('core:contacts')
 
         # Проверка размера файла (макс. 5MB)
         if screenshot and screenshot.size > 5 * 1024 * 1024:
-            messages.error(request, 'Файл слишком большой (макс. 5MB)')
+            messages.error(request, 'Файл слишком большой. Максимум 5 МБ.')
             return redirect('core:contacts')
 
         try:
@@ -468,22 +491,29 @@ class ContactsView(TemplateView):
             # Отправка email админу
             self.send_admin_notification(submission)
 
-            # Уведомление пользователя
-            if user and user.is_verified:
-                self.send_user_confirmation(submission)
+            # Подтверждение получателю обращения — раньше отправлялось
+            # ТОЛЬКО верифицированным зарегистрированным пользователям
+            # (`if user and user.is_verified`), поэтому гости и
+            # неверифицированные пользователи отправляли обращение и не
+            # получали вообще ничего на почту, кроме будущих писем о смене
+            # статуса — баг, найденный пользователем 2026-09-02. Подтверждение
+            # получения не требует верификации: это просто вежливое "мы вас
+            # услышали", а не действие с побочным эффектом.
+            self.send_user_confirmation(submission)
 
-            messages.success(request, '✅ Сообщение отправлено! Разбираем обращения по очереди — ответим, как только дойдёт черёд.')
+            messages.success(request, 'Сообщение отправлено. Мы ответим вам на почту.')
             logger.info(
                 f"Contact submission #{submission.id} from {submission.contact_email} "
                 f"(category: {category}, has_attachment: {bool(submission.attachment)})"
             )
 
         except Exception as e:
+            # Пользователю — общая формулировка без деталей исключения (не
+            # премиально и потенциально небезопасно показывать сырой текст
+            # ошибки в интерфейсе); техническая суть уже есть в logger.error
+            # выше для диагностики.
             logger.error(f"Contact form error: {type(e).__name__}: {e}", exc_info=True)
-            messages.error(
-                request,
-                f'❌ Ошибка отправки: {str(e)}. Напишите на support@dopx.kz'
-            )
+            messages.error(request, 'Не удалось отправить сообщение. Напишите нам на support@dopx.kz.')
             return redirect('core:contacts')
 
         return redirect('core:contacts')
@@ -539,8 +569,18 @@ class ContactsView(TemplateView):
         logger.info(f"✅ Admin notification sent to {admin_email}")
 
     def send_user_confirmation(self, submission):
-        """Подтверждение пользователю"""
-        if not submission.user or not submission.user.email:
+        """
+        Подтверждение получения обращения — на `submission.contact_email`
+        (property из ContactSubmission: email пользователя, если он есть,
+        иначе введённый гостем email), а НЕ только на email
+        верифицированного пользователя, как было раньше. Гость, указавший
+        свой email при отправке формы, ждёт то же самое подтверждение, что
+        и залогиненный пользователь — верификация аккаунта тут ни при чём,
+        это просто вежливое "мы получили ваше сообщение", без каких-либо
+        побочных эффектов, требующих доверия к адресу.
+        """
+        recipient = submission.contact_email
+        if not recipient:
             return
 
         from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@dopx.kz')
@@ -550,7 +590,7 @@ class ContactsView(TemplateView):
 
         html_message = render_to_string('emails/contact_confirmation.html', {
             'submission': submission,
-            'username': submission.user.username,
+            'username': submission.user.username if submission.user else 'Гость',
             'site_name': 'DOPX',
             'site_url': site_url,
         })
@@ -559,7 +599,7 @@ class ContactsView(TemplateView):
             subject=subject,
             message=strip_tags(html_message),
             from_email=from_email,
-            recipient_list=[submission.user.email],
+            recipient_list=[recipient],
             html_message=html_message,
             fail_silently=False,
         )

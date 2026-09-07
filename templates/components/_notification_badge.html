@@ -2,23 +2,11 @@
 Компонент уведомлений: триггер + дропдаун. Клик — через Alpine (x-data), не
 HTMX. На мобильных дропдаун fixed по центру, на десктопе absolute справа.
 
-ПЕРЕСОБРАНО 2026-08-21 по прямому запросу пользователя после живого теста
-retention loops ("кнопки кривые, непонятно, нельзя прочитать уведомление
-сразу в дропдауне"). Что изменилось по сути:
-  1. Строки уведомлений теперь используют общий партиал
-     components/_notification_item.html (compact=True) — тот же, что и на
-     полной странице /notifications/, с рабочей кнопкой "отметить
-     прочитанным" ПРЯМО в дропдауне (раньше клик по строке просто уводил
-     на action_url, ничего не отмечая — исправлено).
-  2. Счётчик на колокольчике вынесен в отдельный самополлящийся партиал
-     components/_notification_unread_badge.html — раньше "живое"
-     обновление было мёртвым кодом (JS слушал htmx:afterSwap на элементе
-     #notification-badge-container, которого нигде не было в DOM). Теперь
-     число реально обновляется каждые 30с и мгновенно после любой отметки
-     прочитанным (out-of-band swap, см. notifications/views.py::
-     _oob_counters_html).
-  3. Добавлена кнопка "Прочитать все" прямо в шапке дропдауна (раньше была
-     только на отдельной полной странице).
+Строки — общий партиал components/_notification_item.html (compact=True),
+тот же, что на полной странице /notifications/. Счётчик — отдельный
+самополлящийся партиал components/_notification_unread_badge.html
+(обновляется каждые 30с и мгновенно после отметки прочитанным через
+out-of-band swap, см. notifications/views.py::_oob_counters_html).
 {% endcomment %}
 <div class="dropdown dropdown-end relative" id="notification-wrapper" x-data="notificationDropdown" @click.outside="open = false">
 

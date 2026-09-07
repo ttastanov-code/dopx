@@ -261,11 +261,19 @@ class PlayerEvaluationAPITests(APITestCase):
     плюс два кастомных read-@action (by_match, analytics)."""
 
     def setUp(self):
+        from lineups.models import MatchLineup, MatchLineupPlayer
+
         cache.clear()
         self.user = _make_verified_user()
         self.client.force_authenticate(user=self.user)
         self.match = _make_match()
         self.player = _make_player(self.match.home_team)
+        # EvaluationPolicy.assert_player_in_squad (docs/adr/0001) требует
+        # реальной записи в заявке матча — без неё все "успешные" тесты
+        # этого класса ловили бы 400 "не входил в заявку", а не ту причину,
+        # которую они на самом деле проверяют.
+        lineup = MatchLineup.objects.create(match=self.match, team=self.match.home_team, side="home")
+        MatchLineupPlayer.objects.create(lineup=lineup, player=self.player, is_starting=True, shirt_number=10)
 
     def test_create_without_prior_context_evaluation_rejected(self):
         """PlayerEvaluationSerializer.validate() требует, чтобы ContextEvaluation
@@ -541,6 +549,154 @@ class SerializerFieldLeakageTests(APITestCase):
             user=self.user, match=self.match, entertainment=8, tension=7, turning_point=True, fairness=6
         )
         self._assert_no_forbidden_keys(MatchEvaluationSerializer(obj).data)
+
+
+@override_settings(CACHES=LOCMEM_CACHES)
+class EvaluationPolicyAPITests(APITestCase):
+    """
+    Регрессия на дыру из внешнего аудита (2026-09-04, см.
+    docs/adr/0001-evaluation-policy-single-source-of-truth.md): до
+    evaluations/policies.py эти сериалайзеры проверяли только уникальность
+    голоса и открытое окно голосования, но НЕ принадлежность сущности
+    (игрок/команда/тренер) конкретному матчу. Каждый тест здесь — попытка
+    оценить сущность, которая физически не участвовала в матче, и должен
+    получать 400, а не 201.
+    """
+
+    def setUp(self):
+        cache.clear()
+        self.user = _make_verified_user()
+        self.client.force_authenticate(user=self.user)
+        self.match = _make_match()
+        # Второй, полностью не связанный с self.match матч/команда/игрок/
+        # тренер — источник "чужих" ID для попыток нарушения политики.
+        self.other_match = _make_match()
+        self.other_team = Team.objects.create(name="Стороння команда")
+        self.other_player = _make_player(self.other_team)
+
+    def _add_context(self, match=None):
+        ContextEvaluation.objects.create(
+            user=self.user, match=match or self.match, watched_type="full"
+        )
+
+    def test_player_not_in_squad_rejected(self):
+        """Игрок из другого матча (даже не в заявке self.match) не должен
+        приниматься — раньше принимался, единственная проверка была
+        "уже голосовали?"."""
+        self._add_context()
+        url = reverse("api:player-eval-list")
+        response = self.client.post(
+            url,
+            {
+                "match": str(self.match.id),
+                "player": str(self.other_player.id),
+                "contribution": 8,
+                "risk": 3,
+                "potential": 7,
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+        self.assertFalse(
+            PlayerEvaluation.objects.filter(user=self.user, player=self.other_player).exists()
+        )
+
+    def test_player_in_squad_accepted(self):
+        """Контрольный позитивный кейс — реальный игрок заявки матча
+        по-прежнему проходит (политика не должна ловить и легитимные оценки)."""
+        from lineups.models import MatchLineup, MatchLineupPlayer
+
+        lineup = MatchLineup.objects.create(match=self.match, team=self.match.home_team, side="home")
+        player = _make_player(self.match.home_team)
+        MatchLineupPlayer.objects.create(lineup=lineup, player=player, is_starting=True, shirt_number=9)
+        self._add_context()
+
+        url = reverse("api:player-eval-list")
+        response = self.client.post(
+            url,
+            {"match": str(self.match.id), "player": str(player.id), "contribution": 8, "risk": 3, "potential": 7},
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+
+    def test_team_not_in_match_rejected(self):
+        self._add_context()
+        url = reverse("api:team-eval-list")
+        response = self.client.post(
+            url,
+            {
+                "match": str(self.match.id),
+                "team": str(self.other_team.id),
+                "tactics": 7,
+                "effort": 8,
+                "organization": 6,
+                "mentality": 7,
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+
+    def test_team_in_match_accepted(self):
+        self._add_context()
+        url = reverse("api:team-eval-list")
+        response = self.client.post(
+            url,
+            {
+                "match": str(self.match.id),
+                "team": str(self.match.home_team_id),
+                "tactics": 7,
+                "effort": 8,
+                "organization": 6,
+                "mentality": 7,
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+
+    def test_coach_not_in_match_rejected(self):
+        from coaches.models import Coach
+
+        outside_coach = Coach.objects.create(first_name="Чужой", last_name="Тренер", team=self.other_team)
+        url = reverse("api:coach-eval-list")
+        response = self.client.post(
+            url,
+            {
+                "match": str(self.match.id),
+                "coach": str(outside_coach.id),
+                "tactics": 7,
+                "substitutions": 6,
+                "game_management": 8,
+                "impact": 7,
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+
+    def test_coach_in_match_accepted(self):
+        from coaches.models import Coach
+
+        home_coach = Coach.objects.create(first_name="Свой", last_name="Тренер", team=self.match.home_team)
+        self.match.home_coach = home_coach
+        self.match.save(update_fields=["home_coach"])
+
+        url = reverse("api:coach-eval-list")
+        response = self.client.post(
+            url,
+            {
+                "match": str(self.match.id),
+                "coach": str(home_coach.id),
+                "tactics": 7,
+                "substitutions": 6,
+                "game_management": 8,
+                "impact": 7,
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+
+    def test_supported_team_not_in_match_rejected(self):
+        """ContextEvaluation.supported_team — команда должна быть домашней
+        или гостевой в ЭТОМ матче, не в произвольном другом."""
+        url = reverse("api:context-eval-list")
+        response = self.client.post(
+            url,
+            {"match": str(self.match.id), "supported_team": str(self.other_team.id), "watched_type": "full"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
 
 
 @override_settings(CACHES=LOCMEM_CACHES)

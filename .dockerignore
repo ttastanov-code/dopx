@@ -15,6 +15,11 @@ __pycache__/
 **/__pycache__/
 *.py[cod]
 
+# node_modules ставится заново внутри frontend-builder-стадии (npm ci) —
+# локальный, если разработчик гонял npm run build:css у себя, в контекст
+# не нужен. См. docs/adr/0025-remove-cdn-dependencies.md.
+node_modules/
+
 # Секреты и локальные конфиги — попадают в контейнер через env_file:
 # в docker-compose.yml, а не через COPY внутрь образа
 .env
