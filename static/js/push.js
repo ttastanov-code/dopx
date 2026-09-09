@@ -61,7 +61,7 @@
     // участия браузера. `PushManager.getSubscription()` — единственный
     // источник истины ИМЕННО для текущего браузера: если он вернул
     // объект — значит push-подписка активна прямо здесь и сейчас.
-    window.dopxPushStatus = async function () {
+    window.dopxPushStatus = async function (csrfToken) {
         if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
             return 'unsupported';
         }
@@ -81,7 +81,45 @@
                 (async () => {
                     const registration = await navigator.serviceWorker.ready;
                     const subscription = await registration.pushManager.getSubscription();
-                    return subscription ? 'subscribed' : 'idle';
+                    if (!subscription) return 'idle';
+                    // САМОЛЕЧЕНИЕ (2026-09-09, баг пользователя: снёс БД,
+                    // создал новый аккаунт — настройки уведомлений
+                    // показали "Включено на этом устройстве", хотя список
+                    // устройств был пуст; выключил/включил — появилось).
+                    // PushManager.getSubscription() — источник истины
+                    // ТОЛЬКО для браузера: сама подписка живёт в push-
+                    // сервисе браузера (FCM/Mozilla push и т.п.),
+                    // НЕЗАВИСИМО от нашей БД. Снос БД (или ручное удаление
+                    // PushSubscription-записи, или тот же браузер после
+                    // входа под другим аккаунтом) стирает серверную
+                    // запись, но НЕ трогает саму браузерную подписку —
+                    // getSubscription() продолжает находить её и молча
+                    // считать "включено", хотя send_push_to_user
+                    // (notifications/services.py) физически некому
+                    // слать: строки в БД нет. Раньше единственным способом
+                    // синхронизировать было вручную выключить/включить
+                    // (что вызывает dopxSubscribePush и пересоздаёт
+                    // запись). Теперь при КАЖДОЙ проверке статуса тихо
+                    // переотправляем текущую подписку на сервер тем же
+                    // update_or_create-эндпоинтом (users/views.py::
+                    // push_subscribe, идемпотентен по endpoint) — если
+                    // запись уже на месте и привязана к этому же
+                    // пользователю, это просто no-op; если её нет или она
+                    // осиротела — регистрация восстанавливается сама, без
+                    // участия пользователя, и push реально начинает
+                    // работать, а не только выглядит включённым.
+                    if (csrfToken) {
+                        try {
+                            await fetch('/users/push/subscribe/', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+                                body: JSON.stringify(subscription.toJSON()),
+                            });
+                        } catch (err) {
+                            console.warn('DOPX: push self-heal re-register failed', err);
+                        }
+                    }
+                    return 'subscribed';
                 })(),
                 timeout,
             ]);

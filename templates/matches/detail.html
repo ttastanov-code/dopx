@@ -78,6 +78,19 @@ match-detail.css): hero-баннер для шапки, timeline для собы
             </div>
             {% endif %}
 
+            <!-- === СТАТИСТИКА МАТЧА (фаза 5) ===
+                 2026-09-09 (жалоба пользователя: "статистика в самом низу,
+                 чтобы добраться нужно крутить все события" + бриф Codex:
+                 "не портянка, удобно и комфортно"). Раньше стояла ПОСЛЕ
+                 составов, live-пульса, ленты событий и ДНК матча — почти в
+                 самом конце левой колонки. Объективные факты матча (удары,
+                 владение, опасные атаки и т.д.) — такая же "итоговая
+                 сводка", как "Результаты оценок" сразу над ней, только с
+                 другой стороны (факты игры vs. мнение болельщиков) —
+                 логично держать их РЯДОМ, а не разносить на разные концы
+                 страницы. -->
+            {% include 'matches/_match_statistics_card.html' %}
+
             <!-- === СОСТАВЫ === -->
             {% if lineups %}
             <div class="md-side-card">
@@ -89,8 +102,19 @@ match-detail.css): hero-баннер для шапки, timeline для собы
                     {% for lineup in lineups %}
                     <div class="md-lineup {% if lineup.side == 'home' %}md-lineup--home{% else %}md-lineup--away{% endif %}">
                         <div class="md-lineup__head flex items-center justify-between">
-                            <span class="font-bold text-sm md:text-base truncate">{{ lineup.team.name }}</span>
-                            <span class="text-xs opacity-60 font-medium">{{ lineup.get_side_display }}</span>
+                            <a href="{% url 'teams:detail' lineup.team.id %}" class="font-bold text-sm md:text-base truncate hover:underline hover:text-primary">{{ lineup.team.name }}</a>
+                            <span class="text-xs opacity-60 font-medium flex items-center gap-1.5">
+                                {% comment %}
+                                Формация (фаза 5/новые фичи) — приходит отдельным include
+                                'formations' от Sportmonks (parsers/sportmonks/importers.py::
+                                import_lineups), подтверждено вживую 2026-09-08, но раньше
+                                нигде не выводилась на странице, хотя уже сохранялась в БД.
+                                {% endcomment %}
+                                {% if lineup.formation %}
+                                <span class="badge badge-ghost badge-xs font-mono">{{ lineup.formation }}</span>
+                                {% endif %}
+                                {{ lineup.get_side_display }}
+                            </span>
                         </div>
                         <div class="p-2.5 md:p-3">
                             <!-- Стартовый состав -->
@@ -305,7 +329,7 @@ match-detail.css): hero-баннер для шапки, timeline для собы
                 <div class="p-3 sm:p-4">
                     {% if home_team_evals.total %}
                     <div class="mb-3 md:mb-4 pb-3 md:pb-4 border-b border-base-200">
-                        <div class="font-semibold text-xs md:text-sm mb-1.5 md:mb-2">{{ match.home_team.name }}</div>
+                        <a href="{% url 'teams:detail' match.home_team.id %}" class="font-semibold text-xs md:text-sm mb-1.5 md:mb-2 block w-fit hover:underline hover:text-primary">{{ match.home_team.name }}</a>
                         <div class="grid grid-cols-2 gap-x-2 md:gap-x-4 gap-y-1 text-[10px] md:text-xs">
                             <div class="flex justify-between">
                                 <span class="opacity-60">Тактика</span>
@@ -328,7 +352,7 @@ match-detail.css): hero-баннер для шапки, timeline для собы
                     {% endif %}
                     {% if away_team_evals.total %}
                     <div>
-                        <div class="font-semibold text-xs md:text-sm mb-1.5 md:mb-2">{{ match.away_team.name }}</div>
+                        <a href="{% url 'teams:detail' match.away_team.id %}" class="font-semibold text-xs md:text-sm mb-1.5 md:mb-2 block w-fit hover:underline hover:text-primary">{{ match.away_team.name }}</a>
                         <div class="grid grid-cols-2 gap-x-2 md:gap-x-4 gap-y-1 text-[10px] md:text-xs">
                             <div class="flex justify-between">
                                 <span class="opacity-60">Тактика</span>

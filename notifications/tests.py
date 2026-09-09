@@ -201,6 +201,32 @@ class NotifyFollowersMatchActivityTests(TestCase):
         all_recipients = [addr for msg in mail.outbox for addr in msg.to]
         self.assertNotIn(unverified.email, all_recipients)
 
+    def test_bot_pool_follower_gets_inapp_but_no_email(self):
+        """
+        2026-09-07, продуктовый запрос: "надо исключить рассылку писем на
+        тестовых ботов". Сид-боты (aggregates/management/commands/
+        seed_match_votes.py, core/management/commands/seed_full_history.py)
+        создаются с is_verified=True и правдоподобным на вид email
+        (`test_user_bot_NNNN@test.dopx.local`) — БЕЗ этого фикса такой
+        follower проходил бы через `is_verified=True` фильтр наравне с
+        настоящим пользователем и реально получал бы письмо. Как и у
+        is_verified=False выше — блокируется ТОЛЬКО email-канал
+        (notifications/tasks.py::_send_email_to_user, единственная точка
+        отправки, см. core.utils.is_synthetic_test_email), in-app
+        Notification создаётся как обычно.
+        """
+        bot_follower = User.objects.create_user(
+            username="test_user_bot_0001", email="test_user_bot_0001@test.dopx.local",
+            password="pass12345", is_verified=True,
+        )
+        Follow.objects.create(user=bot_follower, team=self.home)
+
+        notify_followers_match_activity(str(self.match.id))
+
+        self.assertTrue(Notification.objects.filter(user=bot_follower).exists())
+        all_recipients = [addr for msg in mail.outbox for addr in msg.to]
+        self.assertNotIn(bot_follower.email, all_recipients)
+
     def test_follower_with_email_channel_disabled_gets_inapp_but_no_email(self):
         """
         Настройка email_match_finished=False (см. NOTIFICATION_TYPE_TO_SETTINGS_KEY

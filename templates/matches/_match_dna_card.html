@@ -41,7 +41,9 @@ templates/matches/detail.html. Карточка "ДНК матча" при эт�
 <div class="md-side-card {{ extra_class }}">
     <div class="md-side-card__head flex items-center justify-between gap-2">
         <div class="flex items-center gap-2">
-            <i class="ti ti-activity"></i>
+            <span class="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                <i class="ti ti-activity text-primary text-sm"></i>
+            </span>
             <h3 class="font-extrabold text-base md:text-lg">ДНК матча</h3>
         </div>
         {% comment %}
@@ -76,18 +78,49 @@ templates/matches/detail.html. Карточка "ДНК матча" при эт�
             <span class="badge badge-ghost badge-sm gap-1"><i class="ti ti-users"></i> Средний консенсус</span>
             {% endif %}
         </div>
-        {% if match_dna.hero %}
-        <div class="flex items-center gap-2.5 bg-base-200/60 rounded-xl p-2.5">
-            <div class="w-8 h-8 rounded-full bg-warning/15 flex items-center justify-center flex-shrink-0">
-                <i class="ti ti-crown text-warning"></i>
+        {% if match_dna.hero or match_dna.antihero %}
+        <div class="grid grid-cols-1 {% if match_dna.hero and match_dna.antihero %}sm:grid-cols-2{% endif %} gap-2">
+            {% if match_dna.hero %}
+            <div class="flex items-center gap-2.5 bg-warning/5 border border-warning/20 rounded-xl p-2.5">
+                <div class="w-8 h-8 rounded-full bg-warning/15 flex items-center justify-center flex-shrink-0">
+                    <i class="ti ti-crown text-warning"></i>
+                </div>
+                <div class="min-w-0">
+                    <div class="text-[10px] uppercase tracking-wide opacity-50">Герой матча</div>
+                    <a href="{% url 'players:detail' match_dna.hero.player.id %}" class="font-semibold text-sm hover:underline">
+                        {{ match_dna.hero.player }} — {{ match_dna.hero.score|floatformat:1 }}
+                    </a>
+                </div>
             </div>
-            <div class="min-w-0">
-                <div class="text-[10px] uppercase tracking-wide opacity-50">Герой матча</div>
-                <a href="{% url 'players:detail' match_dna.hero.player.id %}" class="font-semibold text-sm hover:underline">
-                    {{ match_dna.hero.player }} — {{ match_dna.hero.score|floatformat:1 }}
-                </a>
+            {% endif %}
+            {% comment %}
+            "Антигерой" (фаза 3, docs/adr/0034-match-dna-phase3-antihero-fan-mood.md)
+            — тот же worst_players, что matches/views.py уже считал для
+            антифрод-витрины, но нигде не показывал (данные были, витрины
+            не было). matches/services.py::_describe_antihero сам гасит
+            это поле в None, если антигерой совпал бы с героем (единственный
+            отфильтрованный игрок матча) — здесь просто доверяем контракту.
+            {% endcomment %}
+            {% if match_dna.antihero %}
+            <div class="flex items-center gap-2.5 bg-error/5 border border-error/20 rounded-xl p-2.5">
+                <div class="w-8 h-8 rounded-full bg-error/15 flex items-center justify-center flex-shrink-0">
+                    <i class="ti ti-mood-sad text-error"></i>
+                </div>
+                <div class="min-w-0">
+                    <div class="text-[10px] uppercase tracking-wide opacity-50">Антигерой матча</div>
+                    <a href="{% url 'players:detail' match_dna.antihero.player.id %}" class="font-semibold text-sm hover:underline">
+                        {{ match_dna.antihero.player }} — {{ match_dna.antihero.score|floatformat:1 }}
+                    </a>
+                </div>
             </div>
+            {% endif %}
         </div>
+        {% endif %}
+        {% if match_dna.fan_mood_text %}
+        <p class="text-sm opacity-80 flex items-start gap-2">
+            <i class="ti ti-heart text-secondary mt-0.5 flex-shrink-0"></i>
+            <span>{{ match_dna.fan_mood_text }}</span>
+        </p>
         {% endif %}
         {% if match_dna.momentum_points %}
         <ul class="text-sm space-y-1.5">
@@ -99,23 +132,43 @@ templates/matches/detail.html. Карточка "ДНК матча" при эт�
             {% endfor %}
         </ul>
         {% endif %}
-        {% if match_dna.controversial_episode %}
-        <p class="text-sm opacity-80 border-t border-base-300 pt-2.5 flex items-start gap-2">
-            <i class="ti ti-alert-triangle text-error mt-0.5 flex-shrink-0"></i>
-            <span>{{ match_dna.controversial_episode }}</span>
-        </p>
-        {% endif %}
-        {% if match_dna.referee_divergence %}
-        <p class="text-sm opacity-80 {% if not match_dna.controversial_episode %}border-t border-base-300 pt-2.5{% endif %} flex items-start gap-2">
-            <i class="ti ti-scale mt-0.5 flex-shrink-0"></i>
-            <span>{{ match_dna.referee_divergence }}</span>
-        </p>
-        {% endif %}
-        {% if match_dna.turning_point_text %}
-        <p class="text-sm opacity-80 flex items-start gap-2">
-            <i class="ti ti-refresh text-info mt-0.5 flex-shrink-0"></i>
-            <span>{{ match_dna.turning_point_text }}</span>
-        </p>
+        {% comment %}
+        БАГ, КОТОРЫЙ ТУТ БЫЛ (продуктовый отзыв по скриншоту, 2026-09-07:
+        "весь контент внутри кривой и не вмещается нормально... не как у
+        студента в дипломной работе"): раньше у каждого из трёх блоков ниже
+        была СВОЯ условная логика разделителя (controversial_episode ВСЕГДА
+        получал border-t; referee_divergence — border-t ТОЛЬКО если
+        controversial_episode отсутствовал; turning_point_text — border-t
+        не получал НИКОГДА, хотя это точно такой же "довесок", что и два
+        других). Результат — рваный, непредсказуемый ритм отступов в
+        зависимости от того, какая именно комбинация полей есть у
+        конкретного матча: то один разделитель, то два подряд слипшихся
+        блока без отступа. Теперь все три — единая группа "дополнительных
+        заметок" с ОДНИМ разделителем перед группой и единым внутренним
+        ритмом (space-y-2, теснее, чем основной space-y-3 у карточки —
+        сигнализирует, что это вторичные детали, не основной контент).
+        {% endcomment %}
+        {% if match_dna.controversial_episode or match_dna.referee_divergence or match_dna.turning_point_text %}
+        <div class="border-t border-base-300 pt-2.5 space-y-2">
+            {% if match_dna.controversial_episode %}
+            <p class="text-sm opacity-80 flex items-start gap-2">
+                <i class="ti ti-alert-triangle text-error mt-0.5 flex-shrink-0"></i>
+                <span>{{ match_dna.controversial_episode }}</span>
+            </p>
+            {% endif %}
+            {% if match_dna.referee_divergence %}
+            <p class="text-sm opacity-80 flex items-start gap-2">
+                <i class="ti ti-scale mt-0.5 flex-shrink-0"></i>
+                <span>{{ match_dna.referee_divergence }}</span>
+            </p>
+            {% endif %}
+            {% if match_dna.turning_point_text %}
+            <p class="text-sm opacity-80 flex items-start gap-2">
+                <i class="ti ti-refresh text-info mt-0.5 flex-shrink-0"></i>
+                <span>{{ match_dna.turning_point_text }}</span>
+            </p>
+            {% endif %}
+        </div>
         {% endif %}
     </div>
 </div>

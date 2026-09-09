@@ -19,9 +19,25 @@ from core.models import BaseModel
 
 
 class ParserSyncRun(BaseModel):
-    """Один запуск celery-задачи синхронизации с KFF (`update_match_statuses`
-    и родственные). Пишется ОДИН раз в конце задачи — не на каждый матч,
-    чтобы не раздувать таблицу на проде (задача крутится каждые 2 минуты)."""
+    """Один запуск celery-задачи синхронизации матчей (`update_match_statuses`
+    у KFF и родственные Sportmonks-таски). Пишется ОДИН раз в конце задачи —
+    не на каждый матч, чтобы не раздувать таблицу на проде (задача крутится
+    каждые 1-2 минуты)."""
+
+    # НОВОЕ (cutover, фаза 6, docs/sportmonks-migration-plan.md, 2026-09-08):
+    # изначально модель писалась ТОЛЬКО из KFF-задач (см. докстринг ниже до
+    # правки), поэтому dashboard/services.py::data_health_summary называл
+    # раздел "здоровье KFF-синка" и не различал источник. После переключения
+    # CELERY_BEAT_SCHEDULE на sportmonks-* задачи (см. dopx/settings.py)
+    # KFF-запись перестала писаться регулярно — БЕЗ этого поля дашборд
+    # выглядел бы так, будто синк "замёрз" много часов назад, хотя сайт
+    # реально живёт на свежих данных от нового источника. default='kff' —
+    # безопасно для уже накопленных строк (все они действительно от KFF).
+    SOURCE_CHOICES = [
+        ("kff", "KFF"),
+        ("sportmonks", "Sportmonks"),
+    ]
+    source = models.CharField(_('Источник'), max_length=20, choices=SOURCE_CHOICES, default="kff", db_index=True)
 
     # `created_at` (из BaseModel) — момент записи строки, ОН ЖЕ момент
     # завершения синка (запись создаётся в самом конце задачи). Отдельный
@@ -85,12 +101,18 @@ class ParserDiscrepancy(BaseModel):
     те про исключения при запросе к API), а отдельный сигнал "данные
     пришли успешно, но не совпадают с тем, что мы уже считали фактом".
 
-    Пишется в `parsers/kff/importers.py::import_match_core` — единственном
-    месте, где матч, уже бывший 'finished' на момент импорта
-    (`was_finished_before`), может получить новые значения `home_score`/
-    `away_score`/`status` из `Match.objects.update_or_create(...)`.
-    `update_match_statuses` (parsers/tasks.py) сюда не попадает вообще —
-    там `active_matches` явно исключает 'finished' из выборки.
+    ⚠️ РЕГРЕССИЯ (2026-09-09, полное удаление KFF-парсера по решению
+    пользователя): писалось ТОЛЬКО в `parsers/kff/importers.py::
+    import_match_core`, единственном месте, где матч, уже бывший
+    'finished' на момент импорта (`was_finished_before`), мог получить
+    новые значения `home_score`/`away_score`/`status`. Этот файл физически
+    удалён, а `parsers/sportmonks/importers.py` эквивалентной проверки НЕ
+    делает — новые расхождения больше НЕ детектируются и НЕ пишутся сюда.
+    Модель и таблица оставлены как есть (исторические строки, admin-страница
+    parsers/admin.py::ParserDiscrepancyAdmin, карточка "Расхождения импорта"
+    на /staff/dashboard/data-health/ — всё продолжает работать и читать
+    старые данные), просто новых строк больше не появится, пока кто-то не
+    реализует такую же проверку поверх Sportmonks-импортёра.
 
     `reviewed`/`reviewed_by` — staff разбирает записи в админке (см.
     parsers/admin.py) и отмечает результат разбора в `note`

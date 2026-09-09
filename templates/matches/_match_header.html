@@ -22,8 +22,12 @@ static/css/match-detail.css), окраска по статусу матча (--m
      hx-trigger="every 20s"
      hx-swap="outerHTML"
      {% endif %}>
+    {% comment %}
+    2026-09-09: было два ярких пятна (--a/--b) — сокращено до одного едва
+    заметного (см. докстринг static/css/match-detail.css, "большой чистый
+    hero" из брифа Codex).
+    {% endcomment %}
     <div class="md-hero__glow md-hero__glow--a"></div>
-    <div class="md-hero__glow md-hero__glow--b"></div>
 
     <div class="md-hero__content p-4 sm:p-8">
         <!-- Лига и статус -->
@@ -44,10 +48,16 @@ static/css/match-detail.css), окраска по статусу матча (--m
                 {% endif %}
                 {% comment %}
                 НАЙДЕНО (2026-09-01): status='postponed' ловит только пока
-                у KFF дата ещё не твёрдая. Матч с уже подтверждённой, но
-                выбивающейся из тура датой (см. Match.was_rescheduled) не
-                должен терять эту историю — не дублируем, если статус и так
-                уже 'postponed' (там уже есть свой алерт ниже).
+                у источника данных дата ещё не твёрдая. Матч с уже
+                подтверждённой, но выбивающейся из тура датой (см.
+                Match.was_rescheduled) не должен терять эту историю — не
+                дублируем, если статус и так уже 'postponed' (там уже есть
+                свой алерт ниже).
+                ⚠️ 2026-09-09: авто-детект was_rescheduled (_detect_rescheduled_outlier,
+                был в удалённом KFF-таске update_match_statuses) для новых
+                матчей больше не работает — Sportmonks-пайплайн его не
+                реализует. Бейдж продолжит показываться на исторических
+                матчах, у которых поле уже стоит True.
                 {% endcomment %}
                 {% if match.was_rescheduled and match.status != 'postponed' %}
                 <span class="md-hero__pill" style="--mh-accent: var(--color-warning);"
@@ -92,16 +102,30 @@ static/css/match-detail.css), окраска по статусу матча (--m
         <div class="flex flex-col md:flex-row items-center justify-between gap-4 sm:gap-6">
             <!-- Домашняя команда -->
             <div class="flex flex-col items-center flex-1 text-center md:text-left w-full min-w-0">
-                {% if match.home_team.logo_url %}
-                <img src="{{ match.home_team.logo_url }}" alt="{{ match.home_team.name }}" class="md-hero__crest w-20 h-20 md:w-28 md:h-28 object-contain mb-2 md:mb-3">
-                {% else %}
-                <div class="md-hero__crest w-20 h-20 md:w-28 md:h-28 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-2xl md:text-3xl mb-2 md:mb-3">
-                    {{ match.home_team.name|first|upper }}
-                </div>
-                {% endif %}
-                <h2 class="text-lg md:text-2xl font-extrabold truncate w-full">{{ match.home_team.name }}</h2>
+                <!-- Герб + название — единая ссылка на страницу клуба
+                     (2026-09-07, по просьбе пользователя). Тренер вынесен
+                     ИЗ ссылки — это данные о человеке, а не о клубе. -->
+                <a href="{% url 'teams:detail' match.home_team.id %}" class="group flex flex-col items-center w-full min-w-0">
+                    {% if match.home_team.logo_url %}
+                    <img src="{{ match.home_team.logo_url }}" alt="{{ match.home_team.name }}" class="md-hero__crest w-20 h-20 md:w-28 md:h-28 object-contain mb-2 md:mb-3 transition-transform group-hover:scale-105">
+                    {% else %}
+                    <div class="md-hero__crest w-20 h-20 md:w-28 md:h-28 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-2xl md:text-3xl mb-2 md:mb-3 transition-transform group-hover:scale-105">
+                        {{ match.home_team.name|first|upper }}
+                    </div>
+                    {% endif %}
+                    <h2 class="text-lg md:text-2xl font-extrabold truncate w-full group-hover:text-primary">{{ match.home_team.name }}</h2>
+                </a>
                 {% if match.home_coach %}
                 <p class="text-xs md:text-sm opacity-55 truncate w-full mt-0.5">Тренер: {{ match.home_coach }}</p>
+                {% endif %}
+                {% if home_team_form %}
+                {% comment %}Форма перед этим матчем (фаза 5) — только на детальной странице, не в live-partial.{% endcomment %}
+                <div class="flex items-center gap-1 mt-1.5">
+                    {% for item in home_team_form %}
+                    <span class="w-4 h-4 md:w-5 md:h-5 rounded-full flex items-center justify-center text-[9px] md:text-[10px] font-bold text-white
+                                 {% if item.result == 'W' %}bg-success{% elif item.result == 'L' %}bg-error{% else %}bg-base-content/30{% endif %}">{{ item.result }}</span>
+                    {% endfor %}
+                </div>
                 {% endif %}
             </div>
 
@@ -146,16 +170,26 @@ static/css/match-detail.css), окраска по статусу матча (--m
 
             <!-- Гостевая команда -->
             <div class="flex flex-col items-center flex-1 text-center md:text-right w-full min-w-0">
-                {% if match.away_team.logo_url %}
-                <img src="{{ match.away_team.logo_url }}" alt="{{ match.away_team.name }}" class="md-hero__crest w-20 h-20 md:w-28 md:h-28 object-contain mb-2 md:mb-3">
-                {% else %}
-                <div class="md-hero__crest w-20 h-20 md:w-28 md:h-28 rounded-full bg-secondary/10 flex items-center justify-center font-bold text-secondary text-2xl md:text-3xl mb-2 md:mb-3">
-                    {{ match.away_team.name|first|upper }}
-                </div>
-                {% endif %}
-                <h2 class="text-lg md:text-2xl font-extrabold truncate w-full">{{ match.away_team.name }}</h2>
+                <a href="{% url 'teams:detail' match.away_team.id %}" class="group flex flex-col items-center w-full min-w-0">
+                    {% if match.away_team.logo_url %}
+                    <img src="{{ match.away_team.logo_url }}" alt="{{ match.away_team.name }}" class="md-hero__crest w-20 h-20 md:w-28 md:h-28 object-contain mb-2 md:mb-3 transition-transform group-hover:scale-105">
+                    {% else %}
+                    <div class="md-hero__crest w-20 h-20 md:w-28 md:h-28 rounded-full bg-secondary/10 flex items-center justify-center font-bold text-secondary text-2xl md:text-3xl mb-2 md:mb-3 transition-transform group-hover:scale-105">
+                        {{ match.away_team.name|first|upper }}
+                    </div>
+                    {% endif %}
+                    <h2 class="text-lg md:text-2xl font-extrabold truncate w-full group-hover:text-secondary">{{ match.away_team.name }}</h2>
+                </a>
                 {% if match.away_coach %}
                 <p class="text-xs md:text-sm opacity-55 truncate w-full mt-0.5">Тренер: {{ match.away_coach }}</p>
+                {% endif %}
+                {% if away_team_form %}
+                <div class="flex items-center gap-1 mt-1.5 md:justify-end">
+                    {% for item in away_team_form %}
+                    <span class="w-4 h-4 md:w-5 md:h-5 rounded-full flex items-center justify-center text-[9px] md:text-[10px] font-bold text-white
+                                 {% if item.result == 'W' %}bg-success{% elif item.result == 'L' %}bg-error{% else %}bg-base-content/30{% endif %}">{{ item.result }}</span>
+                    {% endfor %}
+                </div>
                 {% endif %}
             </div>
         </div>
@@ -166,33 +200,65 @@ static/css/match-detail.css), окраска по статусу матча (--m
              Показываем на любой стадии, КРОМЕ отменённого матча: до старта
              — голосование, во время/после — застывшие проценты + (после
              финального свистка) подсветка реально сбывшегося исхода. -->
+        {% comment %}
+        2026-09-09: было отдельной daisyUI .card ("карточка в карточке"
+        внутри hero — прямая жалоба Codex-брифа). Теперь просто блок с
+        тонкой разделительной линией сверху, как остальные секции hero —
+        см. predictions/_prediction_widget.html, тот же класс на
+        реальном виджете, который сюда прилетит через hx-swap.
+        {% endcomment %}
         <div id="prediction-widget-{{ match.id }}"
-             class="card bg-base-100 border border-base-300 mt-5 sm:mt-8 animate-pulse rounded-xl"
+             class="mt-5 sm:mt-8 pt-5 sm:pt-8 border-t border-base-300 animate-pulse"
              hx-get="{% url 'predictions:widget' match.id %}"
              hx-trigger="load"
              hx-swap="outerHTML">
-            <div class="card-body p-3 sm:p-4">
-                <div class="h-4 w-32 bg-base-200 rounded mb-3"></div>
-                <div class="h-16 bg-base-200 rounded"></div>
-            </div>
+            <div class="h-4 w-32 bg-base-200 rounded mb-3"></div>
+            <div class="h-16 bg-base-200 rounded"></div>
         </div>
         {% endif %}
 
-        <!-- Стадион и судья -->
+        {% comment %}
+        2026-09-09 (решение пользователя): блок "Стадион" убран целиком
+        вместе со всей моделью Stadium — venue-данные Sportmonks для КПЛ
+        принципиально ненадёжны (клубы играют "домашние" матчи на разных
+        стадионах в разных городах в течение сезона). Судья остаётся —
+        обёрнут в свой div, только если он есть.
+        {% endcomment %}
+        {% if match.referee %}
         <div class="flex flex-wrap justify-center gap-2 sm:gap-6 mt-5 sm:mt-8 pt-4 sm:pt-6 border-t border-base-300/70 text-xs sm:text-sm">
-            {% if match.stadium %}
-            <div class="flex items-center gap-1 md:gap-2 opacity-60">
-                <i class="ti ti-map-pin flex-shrink-0"></i>
-                <span class="truncate max-w-[140px] sm:max-w-none">{{ match.stadium.name }}{% if match.stadium.city %}, {{ match.stadium.city }}{% endif %}</span>
-            </div>
-            {% endif %}
-            {% if match.referee %}
             <div class="flex items-center gap-1 md:gap-2 opacity-60">
                 <i class="ti ti-gavel flex-shrink-0"></i>
                 <span class="truncate">Судья: {{ match.referee }}</span>
             </div>
-            {% endif %}
         </div>
+        {% endif %}
+
+        {% comment %}
+        Судейская бригада (фаза 5, docs/sportmonks-migration-plan.md) —
+        ассистенты + четвёртый судья, Match.referee_crew JSON
+        (parsers/sportmonks/importers.py::_build_referee_crew). У KFF такого
+        не было, поэтому раздел показывается только когда данные реально
+        есть (не на всех исторических/KFF-матчах). Свёрнут по умолчанию —
+        второстепенная деталь, не должна отвлекать от счёта/статистики.
+        {% endcomment %}
+        {% if match.referee_crew.assistant_1 or match.referee_crew.assistant_2 or match.referee_crew.fourth_official %}
+        <details class="mt-2 text-xs sm:text-sm text-center opacity-60">
+            <summary class="cursor-pointer select-none hover:opacity-100 transition-opacity inline-flex items-center gap-1">
+                <i class="ti ti-users-group"></i> Бригада судей
+            </summary>
+            <div class="mt-2 flex flex-col items-center gap-1">
+                {% if match.referee_crew.assistant_1 %}
+                <span>1-й ассистент: {{ match.referee_crew.assistant_1 }}</span>
+                {% endif %}
+                {% if match.referee_crew.assistant_2 %}
+                <span>2-й ассистент: {{ match.referee_crew.assistant_2 }}</span>
+                {% endif %}
+                {% if match.referee_crew.fourth_official %}
+                <span>4-й судья: {{ match.referee_crew.fourth_official }}</span>
+                {% endif %}
+            </div>
+        </details>
+        {% endif %}
 
         <!-- Кнопки действий -->
         <div class="flex flex-wrap justify-center gap-2 sm:gap-4 mt-4 sm:mt-6">
@@ -222,6 +288,13 @@ static/css/match-detail.css), окраска по статусу матча (--m
                 </div>
                 {% endif %}
             {% endif %}
+            {% comment %}
+            2026-09-09 (бриф Codex): "Поделиться" — единственное secondary-
+            действие в основном ряду кнопок, рядом с primary CTA "Оценить
+            матч" выше. Telegram/WhatsApp и "Сообщить об ошибке" вынесены
+            ниже, вне этого ряда — они не должны конкурировать по весу с
+            primary/secondary CTA.
+            {% endcomment %}
             <button class="btn btn-ghost btn-sm w-full sm:w-auto"
                     onclick="if(window.dopxTrack){dopxTrack('share_clicked', {channel: 'native', match_id: '{{ match.id }}'})}; navigator.share({title: '{{ match.home_team }} vs {{ match.away_team }}', url: window.location.href})">
                 <i class="ti ti-share"></i>
@@ -229,17 +302,35 @@ static/css/match-detail.css), окраска по статусу матча (--m
             </button>
         </div>
 
-        <!-- Telegram/WhatsApp вместо X/Twitter — под казахстанскую аудиторию -->
-        <div class="flex flex-wrap justify-center gap-2 mt-2">
+        <!-- Telegram/WhatsApp вместо X/Twitter — под казахстанскую аудиторию.
+             Второй уровень: явно мельче основного ряда кнопок (btn-xs). -->
+        <div class="flex flex-wrap justify-center gap-2 mt-2.5">
             <a href="https://t.me/share/url?url={{ request.build_absolute_uri|urlencode }}&text={{ share_text|urlencode }}"
-               target="_blank" rel="noopener" class="btn btn-sm btn-outline"
+               target="_blank" rel="noopener" class="btn btn-xs btn-outline"
                onclick="if(window.dopxTrack){dopxTrack('share_clicked', {channel: 'telegram', match_id: '{{ match.id }}'})}">
                 <i class="ti ti-brand-telegram"></i> Telegram
             </a>
             <a href="https://wa.me/?text={{ share_text|urlencode }}%20{{ request.build_absolute_uri|urlencode }}"
-               target="_blank" rel="noopener" class="btn btn-sm btn-outline"
+               target="_blank" rel="noopener" class="btn btn-xs btn-outline"
                onclick="if(window.dopxTrack){dopxTrack('share_clicked', {channel: 'whatsapp', match_id: '{{ match.id }}'})}">
                 <i class="ti ti-brand-whatsapp"></i> WhatsApp
+            </a>
+        </div>
+
+        {% comment %}
+        2026-09-09, Центр доверия к данным (бриф Codex: "тихое вторичное
+        действие" — не btn, а мелкая ссылка мелким шрифтом): доступно
+        любому посетителю (не только staff) — статус/составы приходят из
+        внешнего источника (Sportmonks) и иногда реально ошибаются (см.
+        needs_review бейдж выше), человек на трибуне часто узнаёт об
+        ошибке раньше нас. Ведёт на core:contacts с предзаполненной
+        категорией и id матча (core/views.py::ContactsView,
+        templates/core/contacts.html).
+        {% endcomment %}
+        <div class="text-center mt-3">
+            <a href="{% url 'core:contacts' %}?category=data_error&match={{ match.id }}"
+               class="text-xs opacity-45 hover:opacity-80 transition-opacity inline-flex items-center gap-1">
+                <i class="ti ti-flag-3"></i> Сообщить об ошибке в данных
             </a>
         </div>
     </div>

@@ -29,7 +29,9 @@ class TeamListView(ListView):
 
         # Дефолт: только команды текущего сезона главной лиги (через
         # TeamSeason — реально заполняется на каждом импорте матча, см.
-        # parsers/kff/importers.py::import_match_core). Без этого список
+        # parsers/sportmonks/importers.py; до 2026-09-09 то же самое делал
+        # parsers/kff/importers.py::import_match_core, теперь удалён). Без
+        # этого список
         # копил бы вперемешку команды разных сезонов/дивизионов без
         # возможности отличить, кто играет сейчас. Переключатель ?season=all
         # возвращает полный список — нужен, например, чтобы найти вылетевший
@@ -52,15 +54,26 @@ class TeamListView(ListView):
                 if normalized_query in normalize_kz(t.name)
             ]
             queryset = queryset.filter(id__in=matching_ids)
+        # 2026-09-09 (жалоба пользователя после полного бэкафилла 3 сезонов):
+        # счётчик матчей в списке считал ВСЮ историю команды разом (3 сезона
+        # сразу), а не текущий — на списке команд это выглядит как "у клуба
+        # уже 90 матчей" через неделю после старта сезона. При show_all=True
+        # (флаг того же ?season=all, что фильтрует сам queryset выше) счётчик
+        # честно тоже становится за всю историю — иначе цифра не совпадала
+        # бы с тем, что реально выбрано. Q-путь ОБЯЗАН идти через тот же
+        # related_name, что и сам Count (home_matches__season, не просто
+        # season — у Team такого поля нет), иначе Django упадёт FieldError.
+        home_season_q = Q(home_matches__season=self.active_season) if self.active_season and not self.show_all else Q()
+        away_season_q = Q(away_matches__season=self.active_season) if self.active_season and not self.show_all else Q()
         queryset = queryset.annotate(
             home_matches_count=Count(
                 'home_matches',
-                filter=Q(home_matches__status='finished'),
+                filter=Q(home_matches__status='finished') & home_season_q,
                 distinct=True
             ),
             away_matches_count=Count(
                 'away_matches',
-                filter=Q(away_matches__status='finished'),
+                filter=Q(away_matches__status='finished') & away_season_q,
                 distinct=True
             )
         )
@@ -72,10 +85,12 @@ class TeamListView(ListView):
         context['search_query'] = self.request.GET.get('q', '')
         context['active_season'] = self.active_season
         context['show_all'] = self.show_all
-        # Фильтр по городу убран: KFF не присылает city на уровне команды
-        # (парсер заполняет city только у Stadium — см. parsers/kff/importers.py),
-        # поле Team.city реально всегда пустое, показывать нерабочий
-        # dropdown было бы обманом пользователя.
+        # Фильтр по городу убран: источник не присылает city на уровне
+        # команды (то же самое было верно и для KFF, теперь удалён), поле
+        # Team.city реально всегда пустое, показывать нерабочий dropdown
+        # было бы обманом пользователя. (2026-09-09: раньше city заполнялся
+        # хотя бы у Stadium — модель убрана из проекта целиком, см.
+        # matches/models.py.)
         return context
 
 class TeamDetailView(DetailView):
@@ -93,9 +108,23 @@ class TeamDetailView(DetailView):
         now = timezone.now()
         
         # ✅ ПОЛУЧАЕМ ТЕКУЩИЙ АКТИВНЫЙ СЕЗОН
-        current_season = Season.objects.filter(is_active=True).first()
-        
-        # ✅ ФИЛЬТР МАТЧЕЙ: только текущий сезон + завершённые
+        active_season = Season.objects.filter(is_active=True).first()
+
+        # ВЫБОР СЕЗОНА (2026-09-09, продуктовый фидбек: "внутри страницы
+        # команды должна быть статистика по сезонам", тот же паттерн, что и
+        # ?season=<год> на странице лиги, leagues/views.py::LeagueDetailView).
+        # team_seasons — только сезоны, в которых команда реально участвовала
+        # (через TeamSeason), а не вообще все сезоны лиги — иначе в
+        # переключателе были бы годы, когда эта команда, например, играла в
+        # другом дивизионе или ещё не существовала.
+        team_seasons = Season.objects.filter(teamseason__team=team).distinct().order_by('-year')
+        season_param = self.request.GET.get('season', '').strip()
+        selected_season = team_seasons.filter(year=season_param).first() if season_param else None
+        if selected_season is None:
+            selected_season = active_season
+        current_season = selected_season  # см. ниже — исторически весь блок ссылался на "current_season"
+
+        # ✅ ФИЛЬТР МАТЧЕЙ: только выбранный сезон + завершённые
         if current_season:
             matches_filter = Q(
                 Q(home_team=team) | Q(away_team=team),
@@ -141,11 +170,43 @@ class TeamDetailView(DetailView):
         logger.info(f"📊 Team {team.name} stats (season {current_season.year if current_season else 'N/A'}): "
                    f"Matches={total_matches}, Wins={wins}, Scored={goals_scored}, Conceded={goals_conceded}")
         
-        # Игроки команды
-        players = Player.objects.filter(
-            team=team,
-            is_active=True
-        ).order_by('number')[:25]
+        # Игроки команды.
+        # ИСПРАВЛЕНО (2026-09-09, жалоба пользователя "при переключении
+        # сезона состав не меняется"): раньше здесь всегда был просто
+        # ТЕКУЩИЙ живой ростер (team=team, is_active=True) — независимо от
+        # выбранного в переключателе сезона. Для прошлых сезонов это
+        # означало, что состав либо совпадал с сегодняшним (неверно, если
+        # были трансферы), либо вовсе не включал игроков, которые с тех
+        # пор ушли из клуба. Правильный источник состава конкретного
+        # сезона — кто РЕАЛЬНО выходил в заявке на матчи этой команды в
+        # этом сезоне (MatchLineupPlayer), тот же принцип, что уже
+        # использовался для top_players ниже (см. docs/adr/0014).
+        if current_season and not current_season.is_active:
+            # Прошлый сезон: только те, кто реально играл за эту команду
+            # именно в этом сезоне — team=team текущего Player тут не
+            # подходит (у трансферных игроков FK уже указывает на новый
+            # клуб).
+            players = Player.objects.filter(
+                matchlineupplayer__lineup__team=team,
+                matchlineupplayer__lineup__match__season=current_season,
+            ).distinct().order_by('number')[:25]
+        else:
+            # Текущий/активный сезон: берём живой ростер (включая
+            # новичков, ещё не сыгравших ни одного матча) + тех, кто уже
+            # успел сыграть за клуб в этом сезоне, но с тех пор ушёл —
+            # иначе они пропали бы из состава сезона сразу в день ухода.
+            current_roster_ids = Player.objects.filter(
+                team=team, is_active=True
+            ).values_list('id', flat=True)
+            played_this_season_ids = []
+            if current_season:
+                played_this_season_ids = Player.objects.filter(
+                    matchlineupplayer__lineup__team=team,
+                    matchlineupplayer__lineup__match__season=current_season,
+                ).values_list('id', flat=True)
+            players = Player.objects.filter(
+                Q(id__in=current_roster_ids) | Q(id__in=played_this_season_ids)
+            ).distinct().order_by('number')[:25]
         
         # Топ-5 игроков: матч засчитывается команде, за которую он реально
         # сыгран (MatchLineupPlayer.lineup.team), не текущему клубу игрока —
@@ -231,9 +292,16 @@ class TeamDetailView(DetailView):
         ).first()
 
         # Позиция в турнирной таблице — читает готовую TeamSeasonStats
-        # (recalculate_season_standings, Celery Beat каждые 10 минут).
+        # (recalculate_season_standings, Celery Beat каждые 10 минут — но
+        # ТОЛЬКО для активного сезона, см. aggregates/tasks.py). Для
+        # завершённых сезонов, только что подтянутых бэкафиллом, строк
+        # может не быть вообще — досчитываем синхронно один раз при первом
+        # заходе (тот же приём, что и в leagues/views.py::LeagueDetailView).
         season_stats = None
         if current_season:
+            if not TeamSeasonStats.objects.filter(season=current_season).exists():
+                from aggregates.tasks import _recalculate_standings_for_season
+                _recalculate_standings_for_season(current_season)
             season_stats = TeamSeasonStats.objects.filter(
                 team=team, season=current_season
             ).first()
@@ -262,8 +330,12 @@ class TeamDetailView(DetailView):
         # на странице для разных вопросов.
         from teams.services import (
             compute_mood_trend, compute_mood_series, build_mood_chart,
-            find_season_controversial_matches,
+            find_season_controversial_matches, get_team_form,
         )
+
+        # Форма команды (фаза 5, docs/sportmonks-migration-plan.md) — на лету
+        # из уже посчитанного recent_matches выше, без нового запроса.
+        team_form = get_team_form(team, recent_matches)
 
         mood_trend = compute_mood_trend(team)
         mood_series = compute_mood_series(team)
@@ -281,6 +353,7 @@ class TeamDetailView(DetailView):
             'is_following': is_following,
             'mood_trend': mood_trend,
             'mood_chart': mood_chart,
+            'team_form': team_form,
             'controversial_matches': controversial_matches,
             'total_matches': total_matches,
             'wins': wins,
@@ -295,6 +368,9 @@ class TeamDetailView(DetailView):
             'season_stats': season_stats,
             'total_teams_in_league': total_teams_in_league,
             'votable_match': votable_match,
+            'team_seasons': team_seasons,
+            'active_season': active_season,
+            'selected_season': selected_season,
             'page_title': f'{team.name} — DOPX',
         })
 

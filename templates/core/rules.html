@@ -130,11 +130,17 @@
             <div class="flex items-center justify-between gap-2 p-3 bg-base-200 rounded-lg"><span class="text-xs md:text-sm opacity-70">Базовый вес</span><span class="font-mono font-bold text-sm">1.0</span></div>
             <div class="flex items-center justify-between gap-2 p-3 bg-base-200 rounded-lg"><span class="text-xs md:text-sm opacity-70">Смотрели полный матч</span><span class="font-mono font-bold text-sm text-success">+0.2</span></div>
             <div class="flex items-center justify-between gap-2 p-3 bg-base-200 rounded-lg"><span class="text-xs md:text-sm opacity-70">Trust Score &gt; 1.2</span><span class="font-mono font-bold text-sm text-success">+0.2</span></div>
-            <div class="flex items-center justify-between gap-2 p-3 bg-base-200 rounded-lg"><span class="text-xs md:text-sm opacity-70">Признаки предвзятости к своей команде</span><span class="font-mono font-bold text-sm text-error">−0.3</span></div>
+            <div class="flex items-center justify-between gap-2 p-3 bg-base-200 rounded-lg"><span class="text-xs md:text-sm opacity-70">Признаки предвзятости к своей команде</span><span class="font-mono font-bold text-sm text-error">до −0.625</span></div>
           </div>
-          <p class="text-xs opacity-50 mb-4 md:mb-6">Итоговый вес всегда ограничен диапазоном 0.5 – 2.0. Ни один голос не может занулиться или перевесить остальные в 10 раз.</p>
+          <p class="text-xs opacity-50 mb-2">
+            Штраф за предвзятость не фиксированный — он плавно растёт вместе с тем, насколько
+            систематически ваши оценки завышают свою команду и занижают соперника в предыдущих матчах,
+            и выше, если разрыв подозрительно одинаковый от матча к матчу (похоже на накрутку, а не на
+            искреннюю пристрастность). Небольшая тёплая пристрастность к своей команде не штрафуется вовсе.
+          </p>
+          <p class="text-xs opacity-50 mb-4 md:mb-6">Итоговый вес всегда ограничен диапазоном 0.3 – 2.0. Ни один голос не может занулиться или перевесить остальные в разы.</p>
 
-          <div class="alert alert-info text-xs md:text-sm"><i class="ti ti-info-circle"></i><div><h3 class="font-bold">Как повысить Trust Score?</h3><ul class="mt-2 space-y-1"><li>• Оценивайте матчи регулярно: точность становится заметнее после 10 оценок.</li><li>• По возможности смотрите матч целиком.</li><li>• Не завышайте оценки своей команде и не занижайте сопернику.</li><li>• Оценивайте последовательно от матча к матчу.</li></ul></div></div>
+          <div class="alert alert-info text-xs md:text-sm"><i class="ti ti-info-circle"></i><div><h3 class="font-bold">Как повысить Trust Score?</h3><ul class="mt-2 space-y-1"><li>• Оценивайте матчи регулярно — Trust Score пересчитывается после каждого нового матча по тому, насколько ваши оценки совпали с общим мнением сообщества.</li><li>• По возможности смотрите матч целиком.</li><li>• Не завышайте оценки своей команде и не занижайте сопернику.</li><li>• Оценивайте последовательно от матча к матчу.</li></ul></div></div>
         </div>
       </div>
     </section>

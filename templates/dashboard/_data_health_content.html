@@ -10,10 +10,10 @@
         <div class="stat-title text-[10px] md:text-xs">Последняя синхронизация</div>
         {% if health.last_run %}
         <div class="stat-value text-base md:text-xl">{{ health.last_run.created_at|timesince }} назад</div>
-        <div class="stat-desc text-[10px] md:text-xs">{{ health.last_run.total }} матчей, {{ health.last_run.duration_seconds|floatformat:1 }}с</div>
+        <div class="stat-desc text-[10px] md:text-xs whitespace-normal">{{ health.last_run.total }} матчей, {{ health.last_run.duration_seconds|floatformat:1 }}с</div>
         {% else %}
         <div class="stat-value text-base md:text-xl opacity-40">нет данных</div>
-        <div class="stat-desc text-[10px] md:text-xs">Синхронизация ещё не запускалась</div>
+        <div class="stat-desc text-[10px] md:text-xs whitespace-normal">Синхронизация ещё не запускалась</div>
         {% endif %}
     </div>
     <div class="stat bg-base-100 border border-base-300 rounded-lg p-3 md:p-4">
@@ -21,28 +21,28 @@
         <div class="stat-value text-lg md:text-2xl {% if health.last_run.errors %}text-error{% else %}text-success{% endif %}">
             {{ health.last_run.errors|default:0 }}
         </div>
-        <div class="stat-desc text-[10px] md:text-xs">{{ health.last_run.error_rate_percent|default:0 }}% от {{ health.last_run.total|default:0 }}</div>
+        <div class="stat-desc text-[10px] md:text-xs whitespace-normal">{{ health.last_run.error_rate_percent|default:0 }}% от {{ health.last_run.total|default:0 }}</div>
     </div>
     <div class="stat bg-base-100 border border-base-300 rounded-lg p-3 md:p-4">
         <div class="stat-title text-[10px] md:text-xs">Матчи без составов</div>
         <div class="stat-value text-lg md:text-2xl {% if health.matches_missing_lineups %}text-warning{% endif %}">
             {{ health.matches_missing_lineups }}
         </div>
-        <div class="stat-desc text-[10px] md:text-xs">live/finished, has_lineup=True, но пусто</div>
+        <div class="stat-desc text-[10px] md:text-xs whitespace-normal">live/finished, has_lineup=True, но пусто</div>
     </div>
     <div class="stat bg-base-100 border border-base-300 rounded-lg p-3 md:p-4">
         <div class="stat-title text-[10px] md:text-xs">Матчи без событий</div>
         <div class="stat-value text-lg md:text-2xl {% if health.matches_missing_events %}text-warning{% endif %}">
             {{ health.matches_missing_events }}
         </div>
-        <div class="stat-desc text-[10px] md:text-xs">live/finished, ни одного MatchEvent</div>
+        <div class="stat-desc text-[10px] md:text-xs whitespace-normal">live/finished, ни одного MatchEvent</div>
     </div>
     <div class="stat bg-base-100 border border-base-300 rounded-lg p-3 md:p-4">
         <div class="stat-title text-[10px] md:text-xs">Расхождения импорта</div>
         <div class="stat-value text-lg md:text-2xl {% if health.unreviewed_discrepancies_count %}text-warning{% else %}text-success{% endif %}">
             {{ health.unreviewed_discrepancies_count }}
         </div>
-        <div class="stat-desc text-[10px] md:text-xs">счёт/статус изменились у уже завершённых</div>
+        <div class="stat-desc text-[10px] md:text-xs whitespace-normal">счёт/статус изменились у уже завершённых</div>
     </div>
 </div>
 
@@ -52,7 +52,7 @@
         <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
             <i class="ti ti-alert-triangle text-warning"></i> Матчи с пропущенными данными
         </h3>
-        <p class="text-xs opacity-60 mb-3">Те же матчи, что в карточках выше. Кнопка «Ресинк» запускает полную пересинхронизацию с KFF прямо отсюда, без поиска UUID в Django admin.</p>
+        <p class="text-xs opacity-60 mb-3">Те же матчи, что в карточках выше. Кнопка «Ресинк» запускает полную пересинхронизацию через Sportmonks прямо отсюда, без поиска UUID в Django admin.</p>
         <div class="overflow-x-auto">
             <table class="table table-sm">
                 <thead>
@@ -244,7 +244,7 @@
                         <td class="text-xs opacity-60">{{ run.duration_seconds|floatformat:1 }}с</td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="7" class="text-center opacity-50 py-6">Запусков пока не было. Появятся после первого выполнения задачи update_match_statuses</td></tr>
+                    <tr><td colspan="7" class="text-center opacity-50 py-6">Запусков пока не было. Появятся после первого выполнения задачи sportmonks_update_live</td></tr>
                     {% endfor %}
                 </tbody>
             </table>

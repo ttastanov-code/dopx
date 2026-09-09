@@ -358,7 +358,7 @@ def _describe_nearest_competitor_round(score: float, runner_up: tuple[RoundCandi
     gap = round(score - competitor_score, 2)
     if gap <= 0:
         return ""
-    return f"Обошёл ближайшего конкурента ({competitor.name}, {competitor_score:.2f}) на {gap:.2f} балла."
+    return f"Обошёл ближайшего конкурента: {competitor.name} ({competitor_score:.2f}), разница {gap:.2f}."
 
 
 def _describe_round_rank_change(rank_change: str, rank_change_delta: int | None) -> str:
@@ -379,24 +379,28 @@ def _build_round_explanation(
     rank_change: str = RoundBestXISlot.RANK_CHANGE_NEW, rank_change_delta: int | None = None,
     runner_up: tuple[RoundCandidate, float] | None = None,
 ) -> str:
-    sentence = (
-        f"Рейтинг {score:.2f} на позиции «{label}» в этом туре — среднее по "
+    """2026-09-09 (та же жалоба, что чинили в season_squad::_build_explanation
+    — "куча тире, текст нечитабелен"): было одно предложение, собранное
+    через += с " — " и " " внутри — теперь список фактов, каждый на своей
+    строке (см. white-space: pre-line в components/_tooltip_icon.html)."""
+    lines = [
+        f"Рейтинг {score:.2f} на позиции «{label}» в этом туре: среднее по "
         f"{candidate.votes} голосам с поправкой на их число."
-    )
+    ]
     if is_confident:
-        sentence += " Голосов достаточно, чтобы доверять этому месту."
+        lines.append("Голосов достаточно, чтобы доверять этому месту.")
     else:
-        sentence += " Голосов пока немного — оценка может быть неточной."
+        lines.append("Голосов пока немного: оценка может быть неточной.")
 
     rank_change_text = _describe_round_rank_change(rank_change, rank_change_delta)
     if rank_change_text:
-        sentence += f" {rank_change_text}"
+        lines.append(rank_change_text)
 
     competitor_text = _describe_nearest_competitor_round(score, runner_up)
     if competitor_text:
-        sentence += f" {competitor_text}"
+        lines.append(competitor_text)
 
-    return sentence
+    return "\n".join(lines)
 
 
 def _describe_notable_events_in_round(player_id: str, season, tour: int) -> str:
@@ -420,7 +424,7 @@ def _describe_notable_events_in_round(player_id: str, season, tour: int) -> str:
     if not events:
         return ""
     ev_text = ", ".join(
-        f"{NOTABLE_EVENT_LABELS.get(e.event_type, e.event_type)} ({e.display_minute}')" for e in events
+        f"{NOTABLE_EVENT_LABELS.get(e.event_type, e.event_type)} {e.display_minute}'" for e in events
     )
     return f"Отличился: {ev_text}."
 
@@ -482,7 +486,7 @@ def _apply_round_slot(
     if slot_code != "COACH" and season is not None and tour is not None:
         events_text = _describe_notable_events_in_round(candidate.object_id, season, tour)
         if events_text:
-            explanation = f"{explanation} {events_text}"
+            explanation = f"{explanation}\n{events_text}"
     RoundBestXISlot.objects.update_or_create(
         round_best_xi=round_best_xi, slot_code=slot_code,
         defaults=dict(
@@ -579,11 +583,15 @@ def recompute_round(season, tour: int) -> RoundBestXI:
         round_best_xi.player_of_round_profile_url = top_player.profile_url
         round_best_xi.player_of_round_score = player_score
         round_best_xi.player_of_round_votes = top_player.votes
-        player_of_round_explanation = (
-            f"Лучший результат тура среди всех позиций — {player_score:.2f} "
+        # 2026-09-09 (та же жалоба "стена тире, нечитабельно") — список строк
+        # вместо конкатенации предложений через + и " — ".
+        player_of_round_lines = [
+            f"Лучший результат тура среди всех позиций: {player_score:.2f} "
             f"по {top_player.votes} голосам."
-            + (" Голосов достаточно, чтобы доверять этому выбору." if is_confident
-               else " Голосов пока немного — выбор может измениться.")
+        ]
+        player_of_round_lines.append(
+            "Голосов достаточно, чтобы доверять этому выбору." if is_confident
+            else "Голосов пока немного: выбор может измениться."
         )
         # "Игрок тура" — плоский пул независимо от слота/позиции, поэтому
         # ближайший конкурент здесь — flat_ranked[1] (второй ЛУЧШИЙ РЕЗУЛЬТАТ
@@ -591,11 +599,11 @@ def recompute_round(season, tour: int) -> RoundBestXI:
         flat_runner_up = flat_ranked[1] if len(flat_ranked) > 1 else None
         competitor_text = _describe_nearest_competitor_round(player_score, flat_runner_up)
         if competitor_text:
-            player_of_round_explanation = f"{player_of_round_explanation} {competitor_text}"
+            player_of_round_lines.append(competitor_text)
         events_text = _describe_notable_events_in_round(top_player.object_id, season, tour)
         if events_text:
-            player_of_round_explanation = f"{player_of_round_explanation} {events_text}"
-        round_best_xi.player_of_round_explanation = player_of_round_explanation
+            player_of_round_lines.append(events_text)
+        round_best_xi.player_of_round_explanation = "\n".join(player_of_round_lines)
     else:
         round_best_xi.player_of_round_content_type = None
         round_best_xi.player_of_round_object_id = None
@@ -614,7 +622,7 @@ def recompute_round(season, tour: int) -> RoundBestXI:
     if dramatic_match:
         round_best_xi.most_dramatic_match_explanation = (
             f"{dramatic_match.home_team.name} {dramatic_match.home_score}:{dramatic_match.away_score} "
-            f"{dramatic_match.away_team.name} — самый высокий индекс зрелищности тура "
+            f"{dramatic_match.away_team.name}: самый высокий индекс зрелищности тура "
             f"({drama_score:.1f}, по {drama_votes} оценкам матча)."
         )
     else:

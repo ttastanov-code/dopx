@@ -1,5 +1,4 @@
 # season_squad/views.py
-from django.http import Http404
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.views.decorators.clickjacking import xframe_options_exempt
@@ -23,12 +22,19 @@ PITCH_ROWS = [
 
 
 def _resolve_season(season_id):
+    """Явный season_id в URL — get_object_or_404 (неверный UUID ЭТО и есть
+    404: такого сезона не существует). Без season_id (URL умолчания) —
+    Season.get_primary_active() может честно вернуть None (например, сразу
+    после миграции на Sportmonks ни один сезон ещё не помечен is_active,
+    см. чат с пользователем 2026-09-08 "страницы сборная сезона... выдают
+    ошибку потому что пустые") — раньше это оборачивалось в Http404, из-за
+    чего страница выглядела сломанной, хотя это ожидаемое "данных пока
+    нет" состояние, а не ошибка запроса. Вызывающий код (best_xi и т.д.)
+    обязан явно проверить None и отрендерить дружелюбное пустое состояние,
+    а не 404/500."""
     if season_id:
         return get_object_or_404(Season.objects.select_related('league'), pk=season_id)
-    season = Season.get_primary_active()
-    if season is None:
-        raise Http404("Нет активного сезона")
-    return season
+    return Season.get_primary_active()
 
 
 # ring_style — сырой CSS через var(--color-*), не Tailwind-класс
@@ -67,7 +73,11 @@ def _slot_to_card(slot, slot_code):
 
 
 def _best_xi_context(season_id):
+    """None — легитимный результат (нет активного сезона), НЕ ошибка.
+    Вызывающие views обязаны проверить None перед рендером."""
     season = _resolve_season(season_id)
+    if season is None:
+        return None
     best_xi, _created = SeasonBestXI.objects.get_or_create(season=season)
     slots_by_code = {s.slot_code: s for s in best_xi.slots.all()}
 
@@ -95,6 +105,11 @@ def _best_xi_context(season_id):
 def best_xi(request, season_id=None):
     """Публичная страница «Живая сборная сезона»."""
     context = _best_xi_context(season_id)
+    if context is None:
+        return render(request, 'season_squad/no_data.html', {
+            'title': 'Сборная DOPX сезона',
+            'message': 'Пока нет активного сезона с данными — загляните чуть позже.',
+        })
 
     # Готовая строка <iframe> для кнопки "Получить embed-код" — тот же
     # паттерн, что у players/views.py::PlayerDetailView и
@@ -120,6 +135,8 @@ def best_xi_partial(request, season_id=None):
     — частый опрос здесь просто ловит момент готовности нового пересчёта,
     а не запускает его сам."""
     context = _best_xi_context(season_id)
+    if context is None:
+        return render(request, 'season_squad/_no_data_partial.html')
     return render(request, 'season_squad/_best_xi_content.html', context)
 
 

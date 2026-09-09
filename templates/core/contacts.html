@@ -36,8 +36,23 @@
               class="space-y-4 md:space-y-5"
               x-data="contactForm"
               data-initial-category="{{ request.GET.category|default:'general' }}"
-              data-initial-email="{{ user.email|default:'' }}">
+              data-initial-email="{{ user.email|default:'' }}"
+              data-initial-subject="{% if related_match %}Ошибка в данных: {{ related_match.home_team }} — {{ related_match.away_team }}{% endif %}">
           {% csrf_token %}
+
+          {% if related_match %}
+          <input type="hidden" name="related_match" value="{{ related_match.id }}">
+          <div class="alert alert-info text-xs md:text-sm py-2 md:py-3">
+            <i class="ti ti-info-circle"></i>
+            <span>
+              Обращение будет привязано к матчу
+              <a href="{% url 'matches:detail' related_match.id %}" class="link link-hover font-medium" target="_blank">
+                {{ related_match.home_team }} — {{ related_match.away_team }}
+              </a>.
+              Опишите ниже, что именно неверно (счёт, состав, событие, стадион, время).
+            </span>
+          </div>
+          {% endif %}
 
           <!-- АНТИ-БОТ: honeypot-поле, невидимое человеку (визуально
                скрыто и вынесено из потока табуляции), но доступное
@@ -67,10 +82,14 @@
               <option value="evaluation">⭐ Проблема с оценкой матча</option>
               <option value="account">👤 Вопрос по аккаунту</option>
               <option value="dispute">⚖️ Оспорить рейтинг / право на ответ</option>
+              <option value="data_error">🏟️ Ошибка в данных матча</option>
               <option value="other">📦 Другое</option>
             </select>
             <p x-show="category === 'dispute'" x-cloak class="text-xs opacity-60 mt-2">
               Укажите ссылку на страницу игрока или матча и что именно вы оспариваете. Такие обращения мы рассматриваем в первую очередь.
+            </p>
+            <p x-show="category === 'data_error'" x-cloak class="text-xs opacity-60 mt-2">
+              Неверный счёт, состав, событие, стадион или время матча — укажите ссылку на матч и что именно неверно, мы проверим первоисточник.
             </p>
           </div>
 

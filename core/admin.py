@@ -1,12 +1,8 @@
-from django.contrib import admin
-from unfold.admin import ModelAdmin
-
-from core.admin_actions import export_as_csv
-
-from .models_stadium import Stadium
-
-@admin.register(Stadium)
-class StadiumAdmin(ModelAdmin):
-    list_display = ('name', 'city', 'capacity')
-    search_fields = ('name', 'city')
-    actions = [export_as_csv]
+# core/admin.py
+# УДАЛЕНО (2026-09-09, решение пользователя): StadiumAdmin/Stadium убраны
+# из проекта целиком — venue-данные Sportmonks для КПЛ принципиально
+# ненадёжны (клубы играют "домашние" матчи на разных стадионах в разных
+# городах в течение сезона). Файл оставлен пустым (не удалён), а не
+# убран из INSTALLED_APPS/urls — Django ожидает admin.py как штатную точку
+# регистрации для приложения `core`, будущие core-модели регистрируются
+# здесь же.

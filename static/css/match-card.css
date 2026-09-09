@@ -1,239 +1,247 @@
 /* static/css/match-card.css
  *
- * ТРЕТИЙ ПРОХОД — по-настоящему премиальный редизайн (2026-08-31).
- * Второй проход поменял композицию (статусная строка сверху, крупный
- * счёт, полоса слева вместо линии сверху), но пользователь справедливо
- * сказал: "дизайн не нравится, хочу действительно премиальный дизайн" —
- * второй проход всё ещё читался как обычная плоская карточка. Здесь
- * добавлена настоящая премиальная фактура, а не только компоновка:
+ * ПЯТЫЙ ПРОХОД — ПОЛНЫЙ РЕДИЗАЙН С НУЛЯ (2026-09-09, прямая просьба
+ * пользователя + бриф от Codex). Прошлые четыре прохода шли в сторону
+ * "больше премиальности" (градиенты, свечения, перфорация, крупные
+ * медальоны гербов) и в итоге сами стали проблемой — пользователь и
+ * Codex независимо пришли к одному и тому же диагнозу: карточка кричит,
+ * а не сообщает. Пятый проход — противоположное направление: спокойные
+ * поверхности, точная типографика, ясная иерархия (принципы Apple/Google,
+ * не их визуальный стиль).
  *
- *  - Полоса слева больше не сплошная — сегментирована в пунктир через
- *    mask-image (repeating-linear-gradient), как перфорация на
- *    посадочном талоне/билете — узнаваемый "премиальный тикет" приём,
- *    не встречавшийся раньше на сайте.
- *  - .match-card__glow — мягкое цветное свечение в углу карточки
- *    (тот же приём ambient glow, что и в hero-баннере страницы матча,
- *    static/css/match-detail.css) — карточка перестаёт быть плоским
- *    прямоугольником, появляется глубина.
- *  - Гербы — в медальоне с мягким внутренним и внешним тенями
- *    (inset highlight + drop shadow), а не голая картинка на пустом
- *    фоне.
- *  - Тень карточки — многослойная и тонированная акцентным цветом
- *    статуса (не серая), при hover — тень усиливается и подсвечивается
- *    цветом, а не просто "поднимается".
- *  - Счёт финального матча — крупнее и с более выразительным
- *    градиентом; для live — живой пульсирующий цвет ошибки.
- *  - Победитель — не просто цвет текста, а компактная иконка кубка +
- *    полужирный вес.
+ * Что убрано целиком (было — стало):
+ *  - Сегментированная "перфорация" слева (repeating-linear-gradient) —
+ *    убрана. Выглядела как случайный декор, не несла информации.
+ *  - Два/один пятна ambient glow (blur-свечение по углам) — убраны.
+ *  - Фоновый status-градиент карточки (linear-gradient 160deg) — убран,
+ *    карточка снова плоская белая поверхность (var(--color-base-100)).
+ *  - Круглый медальон герба с inset/drop-тенями — убран, герб — простое
+ *    изображение без подложки.
+ *  - Градиентная заливка текста счёта (background-clip: text) — убрана,
+ *    счёт — обычный сплошной цвет, крупный вес, табличные цифры.
+ *  - Мини-график "Драма N" под счётом — убран из карточки списка (это
+ *    вторичная метрика, ей место на странице матча, не в списке из
+ *    десятков карточек).
  *
- * Единый файл, подключён один раз в base.html, используется components/
- * _match_card.html на главной и на /matches/.
+ * Что добавлено:
+ *  - Композиция ОДНОЙ строки (не вертикальный стек герб/имя/герб) —
+ *    герб — имя — VS/счёт — имя — герб — стрелка, как в списках
+ *    Sofascore/FotMob. Компактно, много карточек помещается на экран без
+ *    прокрутки.
+ *  - Статусный акцент — маленькая пилюля даты/времени справа сверху
+ *    (спокойный фиолетовый = var(--color-primary), тот же брендовый
+ *    акцент, что и везде на сайте), а не заливка всей карточки.
+ *  - Тонкая шеврон-стрелка справа — сигнал кликабельности без лишнего
+ *    текста "Подробнее".
+ *
+ * Цветовые токены брифа (primary #17171C, muted #777782, accent #5B3DF5,
+ * positive #19C37D, negative #F45B79, background #F7F7FA, card #FFFFFF,
+ * border #E8E8EE) сознательно НЕ захардкожены как raw hex — вместо этого
+ * взяты соответствующие CSS-переменные темы сайта (--color-base-content,
+ * --color-primary, --color-success, --color-error, --color-base-100,
+ * --color-base-300): переменные дают тот же спокойный минималистичный
+ * результат в светлой теме (стоковая daisyUI "light", primary там —
+ * тот же класс фиолетового) И продолжают корректно работать в тёмной
+ * теме/при смене темы переключателем сайта — hardcoded hex сломал бы
+ * тёмную тему намертво (сайт использует единый переключатель темы, см.
+ * templates/base.html).
+ *
+ * Используется components/_match_card.html — на главной и на /matches/
+ * (везде рендерится ОДНА полноширинная колонка карточек, не сетка — см.
+ * space-y-* обёртки в обоих шаблонах, поэтому "строчная" композиция
+ * ничего не ломает).
  */
 
-.match-card {
+.mrow {
     position: relative;
     display: block;
-    border-radius: 1.5rem;
     background: var(--color-base-100);
     border: 1px solid var(--color-base-300);
-    overflow: hidden;
-    isolation: isolate;
-    padding-left: 14px; /* место под сегментированную акцентную полосу */
-    box-shadow:
-        0 1px 2px rgba(0,0,0,.05),
-        0 14px 28px -20px color-mix(in oklab, var(--mc-accent, var(--color-base-300)) 55%, rgba(0,0,0,.35));
-    transition: transform .4s cubic-bezier(.16,1,.3,1),
-                box-shadow .4s cubic-bezier(.16,1,.3,1),
-                border-color .4s ease,
-                background .4s ease;
+    border-radius: 20px;
+    padding: 14px 16px;
+    transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease;
 }
-/* Сегментированная акцентная полоса — "перфорация" посадочного талона */
-.match-card::before {
-    content: '';
-    position: absolute;
-    top: 0; bottom: 0; left: 0;
-    width: 6px;
-    z-index: 2;
-    background: linear-gradient(180deg,
-        var(--mc-accent, var(--color-base-300)),
-        color-mix(in oklab, var(--mc-accent, var(--color-base-300)) 45%, transparent));
-    -webkit-mask-image: repeating-linear-gradient(180deg, #000 0 7px, transparent 7px 13px);
-    mask-image: repeating-linear-gradient(180deg, #000 0 7px, transparent 7px 13px);
+.mrow:hover, .mrow:focus-visible {
+    border-color: color-mix(in oklab, var(--mrow-accent, var(--color-primary)) 35%, var(--color-base-300));
+    box-shadow: 0 4px 16px -8px color-mix(in oklab, var(--mrow-accent, var(--color-primary)) 30%, transparent);
+    transform: translateY(-1px);
 }
-.match-card:hover, .match-card:focus-visible {
-    transform: translateY(-5px);
-    box-shadow:
-        0 2px 4px rgba(0,0,0,.06),
-        0 26px 44px -18px color-mix(in oklab, var(--mc-accent, var(--color-primary)) 60%, rgba(0,0,0,.4));
-    border-color: color-mix(in oklab, var(--mc-accent, var(--color-primary)) 45%, var(--color-base-300));
-    background: color-mix(in oklab, var(--mc-accent, var(--color-base-100)) 3%, var(--color-base-100));
-}
-.match-card:active { transform: translateY(-1px) scale(.994); }
-.match-card:focus-visible {
-    outline: 2px solid var(--mc-accent, var(--color-primary));
+.mrow:active { transform: translateY(0); }
+.mrow:focus-visible {
+    outline: 2px solid var(--color-primary);
     outline-offset: 2px;
 }
 
-/* Статусные акценты */
-.match-card--live       { --mc-accent: var(--color-error); }
-.match-card--finished    { --mc-accent: var(--color-success); }
-.match-card--scheduled  { --mc-accent: var(--color-primary); }
-.match-card--postponed  { --mc-accent: var(--color-warning); }
-.match-card--cancelled  { --mc-accent: var(--color-base-300); }
+/* Статусные акценты — используются ТОЛЬКО точечно (бейдж времени, live-
+   точка, счёт), не заливкой всей карточки. */
+.mrow--live       { --mrow-accent: var(--color-error); }
+.mrow--finished   { --mrow-accent: var(--color-success); }
+.mrow--scheduled  { --mrow-accent: var(--color-primary); }
+.mrow--postponed  { --mrow-accent: var(--color-warning); }
+.mrow--cancelled  { --mrow-accent: var(--color-base-300); }
 
-/* Ambient glow — мягкое цветное свечение в углу, даёт карточке глубину
-   вместо плоской заливки (тот же язык, что у hero-баннера страницы
-   матча). Чисто декоративное CSS-пятно, без изображений — никаких
-   рисков с CORS/видимостью, в отличие от эксперимента с тиснением
-   гербов в шапке матча. */
-.match-card__glow {
-    position: absolute;
-    top: -70px;
-    right: -50px;
-    width: 190px;
-    height: 190px;
-    border-radius: 9999px;
-    background: var(--mc-accent, var(--color-primary));
-    filter: blur(54px);
-    opacity: .13;
-    pointer-events: none;
-    z-index: 0;
-    transition: opacity .4s ease, transform .4s ease;
+/* === Верхняя строка: лига/тур слева, статус-пилюля справа === */
+.mrow__top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
 }
-.match-card:hover .match-card__glow { opacity: .22; transform: scale(1.08); }
-
-.match-card__body { position: relative; z-index: 1; }
-
-/* === Статусная строка (лига/тур слева, пилюля статуса справа) === */
-.match-card__eyebrow {
-    font-size: .6875rem;
-    font-weight: 700;
-    letter-spacing: .03em;
-    text-transform: uppercase;
-    color: color-mix(in oklab, var(--color-base-content) 50%, transparent);
+.mrow__meta {
+    display: flex;
+    align-items: center;
+    gap: .3rem;
+    font-size: .75rem;
+    font-weight: 600;
+    color: color-mix(in oklab, var(--color-base-content) 52%, transparent);
+    min-width: 0;
 }
-.match-card__pill {
+.mrow__meta span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mrow__badge {
     display: inline-flex;
     align-items: center;
     gap: .3rem;
     font-size: .6875rem;
-    font-weight: 800;
-    letter-spacing: .02em;
-    padding: .25rem .6rem;
-    border-radius: 9999px;
-    background: color-mix(in oklab, var(--mc-accent, var(--color-base-300)) 14%, transparent);
-    color: var(--mc-accent, var(--color-base-content));
-    box-shadow: inset 0 1px 0 color-mix(in oklab, var(--mc-accent, white) 25%, transparent);
-    white-space: nowrap;
-}
-
-/* === Счёт — главный фокус карточки === */
-.match-card__score {
-    font-weight: 800;
-    letter-spacing: -0.035em;
-    font-variant-numeric: tabular-nums;
-    line-height: 1;
-}
-.match-card--finished .match-card__score {
-    background: linear-gradient(135deg,
-        var(--color-base-content),
-        color-mix(in oklab, var(--mc-accent, var(--color-base-content)) 55%, var(--color-base-content)));
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-}
-.match-card--live .match-card__score {
-    color: var(--color-error);
-    text-shadow: 0 0 24px color-mix(in oklab, var(--color-error) 35%, transparent);
-}
-.match-card__score--vs {
     font-weight: 700;
-    letter-spacing: .06em;
-    color: color-mix(in oklab, var(--mc-accent, var(--color-primary)) 55%, var(--color-base-content));
-    opacity: .5;
+    letter-spacing: .01em;
+    padding: .25rem .55rem;
+    border-radius: 9999px;
+    background: color-mix(in oklab, var(--mrow-accent, var(--color-primary)) 12%, transparent);
+    color: var(--mrow-accent, var(--color-primary));
+    white-space: nowrap;
+    flex-shrink: 0;
 }
-
-.match-card__live-dot {
-    display: inline-block;
-    width: 7px;
-    height: 7px;
+.mrow__live-dot {
+    width: 6px; height: 6px;
     border-radius: 9999px;
     background: var(--color-error);
-    animation: match-card-pulse 1.4s ease-in-out infinite;
+    animation: mrow-pulse 1.4s ease-in-out infinite;
 }
 
-/* === Гербы команд — медальон с мягкой тенью, а не голая картинка === */
-.match-card__crest-ring {
-    position: relative;
-    display: inline-flex;
+/* === Главная строка: герб — имя — VS/счёт — имя — герб — стрелка === */
+.mrow__main {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.mrow__team {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    flex: 1 1 0;
+}
+.mrow__team--away { flex-direction: row-reverse; text-align: right; }
+.mrow__crest {
+    width: 26px;
+    height: 26px;
+    object-fit: contain;
+    flex-shrink: 0;
+}
+.mrow__crest-fallback {
+    width: 26px;
+    height: 26px;
+    border-radius: 9999px;
+    background: color-mix(in oklab, var(--color-base-content) 8%, transparent);
+    color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+    display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 9999px;
-    padding: 5px;
-    background: radial-gradient(circle at 32% 28%,
-        color-mix(in oklab, var(--color-base-100) 100%, transparent) 0%,
-        color-mix(in oklab, var(--mc-accent, var(--color-base-300)) 10%, var(--color-base-100)) 100%);
-    box-shadow:
-        inset 0 1px 1px color-mix(in oklab, white 70%, transparent),
-        inset 0 -1px 2px color-mix(in oklab, black 8%, transparent),
-        0 2px 6px -2px color-mix(in oklab, var(--mc-accent, black) 25%, rgba(0,0,0,.18));
-    transition: transform .4s cubic-bezier(.16,1,.3,1), box-shadow .4s ease;
-}
-.match-card:hover .match-card__crest-ring {
-    transform: scale(1.07);
-    box-shadow:
-        inset 0 1px 1px color-mix(in oklab, white 70%, transparent),
-        inset 0 -1px 2px color-mix(in oklab, black 8%, transparent),
-        0 6px 16px -4px color-mix(in oklab, var(--mc-accent, black) 45%, rgba(0,0,0,.25));
-}
-.match-card__crest {
-    display: block;
-}
-
-.match-card__team-name {
-    letter-spacing: -0.01em;
-}
-.match-card__team-name--winner {
-    color: var(--color-success);
+    font-size: .625rem;
     font-weight: 800;
+    flex-shrink: 0;
 }
-.match-card__winner-icon {
-    font-size: .7em;
-    margin-right: .2em;
-    vertical-align: .05em;
+/* Названия команд важнее гербов — см. бриф: крупнее и жирнее, чем
+   раньше, без ограничения "маленький текст под большой картинкой". */
+.mrow__team-name {
+    font-size: .875rem;
+    font-weight: 600;
+    color: var(--color-base-content);
+    letter-spacing: -0.005em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+.mrow__team-name--winner { font-weight: 800; }
+
+.mrow__center {
+    flex-shrink: 0;
+    min-width: 56px;
+    text-align: center;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+    font-size: 1.125rem;
+    color: var(--color-base-content);
+}
+.mrow--live .mrow__center { color: var(--color-error); }
+.mrow__center--vs {
+    font-size: .8125rem;
+    font-weight: 700;
+    letter-spacing: .04em;
+    color: color-mix(in oklab, var(--color-base-content) 45%, transparent);
+}
+.mrow__center-time {
+    font-size: .6875rem;
+    font-weight: 600;
+    color: color-mix(in oklab, var(--color-base-content) 45%, transparent);
+    margin-top: 2px;
 }
 
-/* === Футер: мета + CTA — плавный градиентный переход вместо жёсткой
-   линии, чтобы карточка не выглядела "разрезанной пополам" === */
-.match-card__footer {
+.mrow__arrow {
+    flex-shrink: 0;
+    font-size: 1rem;
+    color: color-mix(in oklab, var(--color-base-content) 30%, transparent);
+    transition: transform .2s ease, color .2s ease;
+}
+.mrow:hover .mrow__arrow {
+    transform: translateX(2px);
+    color: var(--mrow-accent, var(--color-primary));
+}
+
+/* === Нижняя строка (второй уровень) — дерби/голоса/CTA, только если
+   реально есть что показать; не занимает места, когда пусто. === */
+.mrow__footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--color-base-300);
+    flex-wrap: wrap;
+}
+.mrow__footer-meta {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    font-size: .6875rem;
+    color: color-mix(in oklab, var(--color-base-content) 50%, transparent);
+    min-width: 0;
+}
+.mrow__cta {
     position: relative;
     z-index: 1;
-    border-top: 1px solid transparent;
-    background: linear-gradient(var(--color-base-100), var(--color-base-100)) padding-box,
-                linear-gradient(90deg,
-                    transparent,
-                    color-mix(in oklab, var(--color-base-300) 90%, transparent) 20%,
-                    color-mix(in oklab, var(--color-base-300) 90%, transparent) 80%,
-                    transparent) border-box;
 }
 
-.match-card__cta {
-    transition: transform .2s cubic-bezier(.16,1,.3,1), box-shadow .2s ease;
-    box-shadow: 0 6px 16px -4px color-mix(in oklab, var(--color-primary) 55%, transparent);
-}
-.match-card__cta:hover { transform: scale(1.06); }
-.match-card__cta:active { transform: scale(.96); }
-
-@keyframes match-card-pulse {
+@keyframes mrow-pulse {
     0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: .3; transform: scale(.65); }
+    50% { opacity: .35; transform: scale(.6); }
+}
+
+@media (max-width: 480px) {
+    .mrow { padding: 12px 14px; border-radius: 18px; }
+    .mrow__team-name { font-size: .8125rem; }
+    .mrow__crest, .mrow__crest-fallback { width: 22px; height: 22px; }
+    .mrow__center { min-width: 44px; font-size: 1rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .match-card, .match-card__crest-ring, .match-card__cta, .match-card__glow { transition: none !important; }
-    .match-card:hover { transform: none !important; }
-    .match-card:hover .match-card__crest-ring { transform: none !important; }
-    .match-card:hover .match-card__glow { transform: none !important; }
-    .match-card__live-dot { animation: none !important; }
-    .match-card__cta:hover { transform: none !important; }
+    .mrow, .mrow__arrow { transition: none !important; }
+    .mrow:hover { transform: none !important; }
+    .mrow:hover .mrow__arrow { transform: none !important; }
+    .mrow__live-dot { animation: none !important; }
 }

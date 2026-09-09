@@ -605,6 +605,39 @@ def _load_streak_background(streak_type: str) -> tuple[Image.Image, float] | Non
     return _cover_resize_right(img, CARD_SIZE), mtime
 
 
+MATCH_DNA_BACKGROUND_FILENAME = "match_dna.png"
+
+
+def _load_match_dna_background() -> tuple[Image.Image, float] | None:
+    """
+    Ищет `static/img/badge-cards/match_dna.png` — премиальный AI-фон карточки
+    "ДНК матча" (продуктовый запрос 2026-09-07: "загрузил в static/img/
+    badge-cards файл match_dna.png это карточка, под ее дизайн теперь надо
+    красиво текст генерировать"). Тот же принцип отказоустойчивости, что у
+    `_load_custom_badge_background`/`_load_streak_background`: файла нет на
+    диске → `None` → `build_match_dna_share_card` откатывается на плоский
+    тёмный фон вместо падения.
+
+    `_cover_resize_right`, а не центральный `_cover_resize` — композиция
+    фона (ДНК-спираль + мяч) сосредоточена в ПРАВОЙ половине картинки, левая
+    почти сплошного чёрного цвета под текст (тот же формат, что у
+    `prediction_strick.png`/`evaluation_strick.png`, см. докстринг
+    `_cover_resize_right`) — исходное соотношение сторон файла (1728×910)
+    почти совпадает с `CARD_SIZE` (1200×630), так что кроп минимальный.
+
+    :return: пара (готовый фон CARD_SIZE, mtime файла) или `None`.
+    """
+    path = BADGE_CARD_BACKGROUNDS_DIR / MATCH_DNA_BACKGROUND_FILENAME
+    if not path.exists():
+        return None
+    try:
+        img = Image.open(path).convert("RGB")
+        mtime = path.stat().st_mtime
+    except OSError:
+        return None
+    return _cover_resize_right(img, CARD_SIZE), mtime
+
+
 def build_match_share_card(
     *, home_team: str, away_team: str, home_score: int, away_score: int,
     top_player_name: str, top_player_score: float,
@@ -638,17 +671,43 @@ def build_match_share_card(
 def build_match_dna_share_card(
     *, home_team: str, away_team: str, home_score: int, away_score: int,
     drama_level: str, drama_index: float, hero_name: str, hero_score: float | None,
-    headline: str,
+    headline: str, antihero_name: str = "", antihero_score: float | None = None,
+    fan_mood_text: str = "", consensus_text: str = "",
 ) -> str:
     """
-    "ДНК матча" — фаза 2 шеринга (docs/adr/0033-match-dna-phase2.md):
-    отдельная от `build_match_share_card` карточка (та осталась og:image
+    "ДНК матча" — фаза 2 шеринга (docs/adr/0033-match-dna-phase2.md),
+    контентно расширена в фазе 3 (docs/adr/0035-match-dna-phase3-antihero-fan-mood.md)
+    антигероем/настроением фанатов/разрывом мнений, ВИЗУАЛЬНО полностью
+    переделана в фазе 4 (docs/adr/0036-match-dna-share-card-premium.md,
+    продуктовый запрос 2026-09-07: "карточка пздц страшная... финальный на
+    выходе должен выглядеть премиум супер красиво"). Раньше — голый чёрный
+    прямоугольник с обычным `draw.text` без тени/трекинга/иерархии, из-за
+    чего все строки визуально сливались в один блок. Теперь — тот же
+    премиальный визуальный язык, что уже одобрен пользователем для
+    `build_badge_share_card`/`build_streak_share_card`: готовый AI-фон
+    (`static/img/badge-cards/match_dna.png`, см. `_load_match_dna_background`)
+    + `_edge_vignette`/`_legibility_scrim` для читаемости + `_badge_font`
+    (кириллица) + `_shadow_text`/`_shadow_tracked_text` для контраста
+    независимо от фона под конкретной буквой + пилюли/бейджи вместо голого
+    текста + чёткая типографическая иерархия (эйброу → счёт → драма-пилюля →
+    герой/антигерой → настроение/консенсус → цитата-хедлайн → футер).
+
+    Отдельная от `build_match_share_card` карточка (та осталась og:image
     ссылки на страницу матча со счётом+топ-игроком), эта — контент самой
-    секции "ДНК матча" (drama_level/герой/самый заметный факт секции —
-    controversial_episode, иначе turning_point_text, иначе referee_divergence,
-    выбор — в вызывающей стороне, core/views.py::MatchDNAShareCardView, а
-    не здесь, чтобы функция генерации карточки не знала о приоритете полей
-    match_dna).
+    секции "ДНК матча" (drama_level/герой/антигерой/настроение фанатов/
+    разрыв мнений/самый заметный факт секции — controversial_episode, иначе
+    turning_point_text, иначе referee_divergence, выбор — в вызывающей
+    стороне, core/views.py::MatchDNAShareCardView, а не здесь, чтобы функция
+    генерации карточки не знала о приоритете полей match_dna).
+
+    Параметры антигероя/настроения/консенсуса — с дефолтами (пустая строка /
+    None), а не обязательные позиционные: у матча может не быть антигероя
+    (после фильтра MIN_VOTES_FOR_DISPLAY остался только герой), настроения
+    фанатов (меньше FAN_MOOD_MIN_VOTES проголосовавших "за кого болели") или
+    разброса мнений (< 2 MatchEvaluation) — карточка не должна падать,
+    просто пропускает отсутствующую строку (динамический курсор `y`, см.
+    ниже — следующий присутствующий факт поднимается выше, а не оставляет
+    пустой промежуток).
 
     :param headline: одна строка — то, ради чего карточку хочется переслать
         (спорный эпизод / переломный момент / расхождение мнений о судействе),
@@ -659,40 +718,174 @@ def build_match_dna_share_card(
     """
     drama_label = {"high": "Высокая драма", "medium": "Средняя драма", "low": "Спокойный матч"}.get(drama_level, "")
     hero_label = f"{hero_name} — {hero_score:.1f}/10" if hero_name and hero_score is not None else ""
+    antihero_label = f"{antihero_name} — {antihero_score:.1f}/10" if antihero_name and antihero_score is not None else ""
+    # DOPX-фиолетовый — цвет ДНК-спирали на самом фоне (см.
+    # _load_match_dna_background), используется как identity-акцент
+    # карточки (эйброу/цитата), НЕЗАВИСИМО от акцента драмы ниже (тот
+    # красный/жёлтый/серый — семантика конкретного матча, не бренда).
+    brand_accent = (167, 139, 250)  # #a78bfa
+    drama_accent = {
+        "high": (248, 113, 113), "medium": (251, 191, 36), "low": (163, 163, 163),
+    }.get(drama_level, (163, 163, 163))
 
+    custom_bg = _load_match_dna_background()
+    bg_marker = f"custom-{custom_bg[1]}" if custom_bg else "flat"
     key = _cache_key(
         home_team, away_team, str(home_score), str(away_score),
         drama_level, str(drama_index), hero_name, str(hero_score), headline,
+        # v3 (фаза 4) — визуальный редизайн целиком, не только новые поля:
+        # карточки, закэшированные ДО этой правки (даже "v2" фазы 3),
+        # выглядели совсем иначе и не должны отдаваться из кэша.
+        "v3", antihero_name, str(antihero_score), fan_mood_text, consensus_text, bg_marker,
     )
     relative_path = f"share-cards/match_dna_{key}.png"
     if default_storage.exists(relative_path):
         return relative_path
 
-    img = Image.new("RGB", CARD_SIZE, color="#0a0a0a")
-    draw = ImageDraw.Draw(img)
-    font_brand = _font("bold", 34)
-    font_title = _font("bold", 44)
-    font_score = _font("bold", 30)
-    font_label = _font("regular", 24)
-    font_small = _font("regular", 22)
+    W, H = CARD_SIZE
+    MARGIN = 64
 
-    draw.text((60, 50), "DOPX — ДНК матча", font=font_brand, fill="#a78bfa")
-    draw.text((60, 130), f"{home_team} {home_score}:{away_score} {away_team}", font=font_title, fill="#ffffff")
+    img = custom_bg[0] if custom_bg is not None else Image.new("RGB", CARD_SIZE, (10, 10, 10))
 
-    accent = {"high": "#f87171", "medium": "#fbbf24", "low": "#a3a3a3"}.get(drama_level, "#a3a3a3")
+    # Та же легибильность-связка, что в build_streak_share_card: затемняем
+    # края независимо от содержимого фона, затем горизонтальный scrim —
+    # непрозрачно слева (где весь текст), прозрачно справа (где спираль/
+    # мяч из иллюстрации, её не нужно затемнять). На плоском фолбэк-фоне
+    # оба шага — no-op (фон и так однотонный).
+    img = _edge_vignette(img, inset=36, strength=0.45)
+    scrim = _legibility_scrim(CARD_SIZE, start_alpha=235, end_fraction=0.54)
+    img = Image.alpha_composite(img.convert("RGBA"), scrim).convert("RGB")
+
+    draw = ImageDraw.Draw(img, "RGBA")
+    # Иллюстрация (ДНК-спираль/мяч) занимает правую часть фона, scrim гасит
+    # её влияние на читаемость текста примерно до end_fraction=0.54 ширины —
+    # текстовая колонка чуть уже этого, чтобы не заезжать на полупрозрачную
+    # границу перехода.
+    text_max_w = int(W * 0.56) - MARGIN
+    # Ниже этой линии ничего не рисуем — граница футера (см. `y` в конце
+    # функции). Не все факты влезают одновременно на самых длинных данных
+    # (антигерой + двухстрочные настроение/хедлайн разом) — при нехватке
+    # места пропускаем менее приоритетные хвостовые блоки целиком (не
+    # обрезаем ИХ ТЕКСТ на середине слова, что выглядело бы неряшливо),
+    # а не позволяем им наехать на футер.
+    CONTENT_BOTTOM = H - 78
+
+    # Бренд-марка (логотип DOPX) + wordmark — тот же верхний элемент, что в
+    # build_streak_share_card/build_badge_share_card.
+    font_brand = _badge_font("cond_bold", 24)
+    logo_size = 38
+    logo = _load_brand_mark(logo_size)
+    if logo is not None:
+        img_rgba = img.convert("RGBA")
+        img_rgba.alpha_composite(logo, (MARGIN, 50))
+        img = img_rgba.convert("RGB")
+        draw = ImageDraw.Draw(img, "RGBA")
+        brand_x = MARGIN + logo_size + 14
+    else:
+        brand_x = MARGIN
+    _tracked_text(draw, (brand_x, 58), "DOPX", font_brand, (240, 238, 244, 255), tracking=5)
+
+    # Эйброу "ДНК МАТЧА" с подчёркиванием — фирменный фиолетовый, тот же
+    # паттерн, что "СЕРИЯ ПРОГНОЗОВ"/"ДОСТИЖЕНИЕ ПОЛУЧЕНО" в остальных
+    # премиальных карточках модуля.
+    font_eyebrow = _badge_font("cond_bold", 19)
+    ey_y = 120
+    _shadow_tracked_text(draw, (MARGIN, ey_y), "ДНК МАТЧА", font_eyebrow, brand_accent + (255,), tracking=4)
+    draw.line([(MARGIN + 2, ey_y + 32), (MARGIN + 90, ey_y + 32)], fill=brand_accent + (255,), width=3)
+
+    # Счёт — заголовок карточки. _fit_single_line (не wrap): держим ровно
+    # одну строку с гарантированной высотой, чтобы курсор ниже был
+    # предсказуем независимо от длины названий клубов (у KFF они короткие,
+    # но карточка не должна ломаться, если когда-нибудь окажутся длиннее).
+    font_title = _badge_font("bold", 42)
+    title_text = _fit_single_line(draw, f"{home_team} {home_score}:{away_score} {away_team}", font_title, text_max_w)
+    y = 158
+    _shadow_text(draw, (MARGIN, y), title_text, font_title, (250, 248, 252, 255), shadow_alpha=190, offset=(0, 3))
+    y += 64
+
+    # Драма-пилюля — та же капсула с обводкой, что rarity-пилюля в
+    # build_badge_share_card, цвет — по drama_level (не бренд-фиолетовый:
+    # это оценка конкретного матча, а не идентичность DOPX).
     if drama_label:
-        draw.text((60, 220), f"{drama_label} · индекс {drama_index:.0f}", font=font_score, fill=accent)
-    if hero_label:
-        draw.text((60, 275), f"Герой матча: {hero_label}", font=font_label, fill="#60a5fa")
+        font_pill = _badge_font("cond_bold", 20)
+        pill_text = f"{drama_label} · индекс {drama_index:.0f}"
+        pill_w = _tracked_text_width(draw, pill_text, font_pill, tracking=2) + 40
+        pill_h = 42
+        draw.rounded_rectangle(
+            [MARGIN, y, MARGIN + pill_w, y + pill_h], radius=pill_h // 2,
+            outline=drama_accent + (220,), width=2, fill=(10, 9, 14, 190),
+        )
+        _tracked_text(draw, (MARGIN + 20, y + 11), pill_text, font_pill, drama_accent + (255,), tracking=2)
+        y += pill_h + 18
 
-    if headline:
-        headline_lines = _wrap_text(draw, headline, font_label, CARD_SIZE[0] - 120, max_lines=3)
-        hy = 350
-        for line in headline_lines:
-            draw.text((60, hy), line, font=font_label, fill="#e5e5e5")
-            hy += 34
+    # Герой/антигерой — компактные строки с цветной точкой-маркером вместо
+    # Tabler-иконки (DejaVu Sans не содержит их глифов, см. докстринг
+    # _badge_font) — простой закрашенный кружок тем же приёмом, что и
+    # ромб-маркер rarity-пилюли выше по файлу.
+    font_fact_label = _badge_font("cond_bold", 16)
+    font_fact_value = _badge_font("bold", 24)
 
-    draw.text((60, CARD_SIZE[1] - 50), "Голос трибун измеряем — dopx.kz", font=font_small, fill="#737373")
+    def _fact_row(label: str, value: str, color: tuple[int, int, int], y_pos: float) -> float:
+        dot_r = 5
+        dcy = y_pos + 16
+        draw.ellipse([MARGIN, dcy - dot_r, MARGIN + dot_r * 2, dcy + dot_r], fill=color + (255,))
+        tx = MARGIN + dot_r * 2 + 14
+        _tracked_text(draw, (tx, y_pos), label.upper(), font_fact_label, color + (230,), tracking=2)
+        value_fitted = _fit_single_line(draw, value, font_fact_value, text_max_w - (tx - MARGIN))
+        _shadow_text(draw, (tx, y_pos + 20), value_fitted, font_fact_value, (245, 244, 248, 255), shadow_alpha=150, offset=(0, 2))
+        return y_pos + 48
+
+    if hero_label and y + 48 <= CONTENT_BOTTOM:
+        y = _fact_row("Герой матча", hero_label, (96, 165, 250), y)
+    if antihero_label and y + 48 <= CONTENT_BOTTOM:
+        y = _fact_row("Антигерой", antihero_label, (248, 113, 113), y)
+
+    # Место, которое нужно оставить под headline (см. ниже) — 2 строки
+    # цитаты плюс её собственный отступ сверху. Настроение фанатов/разрыв
+    # мнений — младший приоритет, чем headline (самый цитируемый факт
+    # секции): если места на всё не хватает, урезаем/пропускаем ИХ, а не
+    # headline (см. докстринг CONTENT_BOTTOM выше про общий принцип).
+    HEADLINE_RESERVE = 8 + 26 + 50 if headline else 0
+
+    font_meta = _badge_font("regular", 20)
+    if fan_mood_text and y + 26 + HEADLINE_RESERVE <= CONTENT_BOTTOM:
+        y += 6
+        # 2 строки, только если headline после этого всё ещё получит свои
+        # полные 2 строки — иначе 1 (короче, но не в ущерб headline).
+        fan_lines_budget = 2 if y + 26 * 2 + HEADLINE_RESERVE <= CONTENT_BOTTOM else 1
+        for line in _wrap_text(draw, fan_mood_text, font_meta, text_max_w, max_lines=fan_lines_budget):
+            draw.text((MARGIN, y), line, font=font_meta, fill=(210, 208, 220, 255))
+            y += 26
+        y += 4
+    if consensus_text and y + 24 + HEADLINE_RESERVE <= CONTENT_BOTTOM:
+        line = _fit_single_line(draw, consensus_text, font_meta, text_max_w)
+        draw.text((MARGIN, y), line, font=font_meta, fill=(160, 158, 168, 255))
+        y += 28
+
+    # Headline — "цитата" (тот же приём, что флейвор-цитата в
+    # build_badge_share_card: открывающая кавычка акцентным цветом + курсив)
+    # — самый заметный отдельный факт секции (спорный эпизод/переломный
+    # момент/расхождение мнений о судействе), поэтому визуально выделен, а
+    # не просто ещё одна строка в общем списке. Приоритет НАД fan_mood/
+    # consensus_text выше — ей всегда зарезервированы полные 2 строки.
+    if headline and y + 40 <= CONTENT_BOTTOM:
+        y += 8
+        font_quote_mark = _badge_font("bold", 32)
+        draw.text((MARGIN, y), "“", font=font_quote_mark, fill=brand_accent + (200,))
+        font_quote = _badge_font("italic", 20)
+        quote_lines = _wrap_text(draw, headline, font_quote, text_max_w - 28, max_lines=2)
+        qy = y + 26
+        for line in quote_lines:
+            draw.text((MARGIN + 28, qy), line, font=font_quote, fill=(224, 222, 232, 255))
+            qy += 25
+
+    # Футер — разнос по краям с разделительной линией, тот же паттерн, что
+    # у остальных премиальных карточек модуля.
+    font_footer = _badge_font("cond", 16)
+    _tracked_text(draw, (MARGIN, H - 52), "ГОЛОС ТРИБУН ИЗМЕРЯЕМ", font_footer, (170, 168, 178, 255), tracking=3)
+    kz_w = _tracked_text_width(draw, "DOPX.KZ", font_footer, tracking=3)
+    _tracked_text(draw, (W - MARGIN - kz_w, H - 52), "DOPX.KZ", font_footer, brand_accent + (255,), tracking=3)
+    draw.line([(MARGIN, H - 64), (W - MARGIN, H - 64)], fill=(255, 255, 255, 25), width=1)
 
     buffer = BytesIO()
     img.save(buffer, format="PNG", optimize=True)

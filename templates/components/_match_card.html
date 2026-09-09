@@ -6,8 +6,13 @@
 
 Использование: {% include 'components/_match_card.html' with match=match %}
 
-Стили — static/css/match-card.css (акцентная полоса слева, медальон герба,
-свечение в углу, кубок у победителя).
+ПОЛНЫЙ РЕДИЗАЙН 2026-09-09 (прямая просьба пользователя + бриф Codex —
+см. докстринг static/css/match-card.css за развёрнутым обоснованием).
+Раньше — вертикальная композиция (герб/имя/герб над крупным счётом),
+тяжёлые градиенты, декоративная "перфорация" слева, круглые медальоны
+гербов. Теперь — компактная ОДНА строка (герб-имя-VS/счёт-имя-герб-
+стрелка), спокойная белая поверхность, статус выражен точечно (пилюля
+даты/времени, live-точка, цвет счёта), не заливкой всей карточки.
 
 Ожидаемые поля объекта `match` (все, кроме home_team/away_team/status/
 start_time, — опциональны, компонент проверяет их через {% if %}):
@@ -16,143 +21,104 @@ start_time, — опциональны, компонент проверяет и
   home_score, away_score
   league — с .name
   tour — номер тура (int) или None
-  stadium — с .name
-  aggregate — с .total_votes, .drama_index
+  aggregate — с .total_votes
   is_voting_open — окно оценки матча ещё открыто
   user_has_evaluated — пользователь уже оценил этот матч
   is_derby — пара соперников из Team.rivals (админка)
+  was_rescheduled — матч перенесён относительно тура
   list_prediction_counts / list_my_prediction — инлайн-прогноз 1X2
     (проставляются bulk'ом только там, где нужно — matches/views.py::
-    MatchListView, core/views.py::HomeView; см. докстринг у include ниже)
-
-Параметр `show_stadium` (по умолчанию True) — на главной странице в двух
-узких колонках стадион не помещается и не так важен, как на /matches/.
+    MatchListView, core/views.py::HomeView)
 {% endcomment %}
 <a href="{% url 'matches:detail' match.id %}"
-   class="match-card block group
-          {% if match.status == 'live' %}match-card--live
-          {% elif match.status == 'finished' %}match-card--finished
-          {% elif match.status == 'postponed' %}match-card--postponed
-          {% elif match.status == 'cancelled' %}match-card--cancelled
-          {% else %}match-card--scheduled{% endif %}">
-    <div class="match-card__glow" aria-hidden="true"></div>
-    <div class="match-card__body pt-3.5 pb-3 px-3.5 sm:pt-5 sm:pb-4 sm:px-5">
-        <!-- === СТАТУСНАЯ СТРОКА === -->
-        <div class="flex items-center justify-between gap-2 mb-3 sm:mb-4">
-            <span class="match-card__eyebrow flex items-center gap-1 min-w-0 truncate">
-                <i class="ti ti-trophy flex-shrink-0"></i>
-                <span class="truncate">{{ match.league.name }}</span>
-                {% if match.tour %}<span class="flex-shrink-0">· {{ match.tour }}-й тур</span>{% endif %}
-                {% comment %}
-                НАЙДЕНО (2026-09-01): match.status='postponed' ловит только
-                КОРОТКОЕ окно, пока KFF сам не определился с датой (см.
-                Match.was_rescheduled). Матч с уже твёрдой, но выбивающейся
-                из тура датой не должен терять эту историю только потому,
-                что статус вернулся в обычный 'scheduled' — иначе прогнозы
-                на него никогда бы не открылись (is_prediction_open() требует
-                status=='scheduled'). Отдельный бейдж, не завязанный на
-                основную статус-пилюлю справа — не дублируем, если статус
-                и так уже 'postponed'.
-                {% endcomment %}
-                {% if match.was_rescheduled and match.status != 'postponed' %}
-                <span class="flex-shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full
-                             bg-warning/15 text-warning text-[9px] normal-case tracking-normal font-bold"
-                      title="Дата матча перенесена относительно остальных матчей этого тура">
-                    <i class="ti ti-calendar-exclamation"></i> перенос
-                </span>
-                {% endif %}
-            </span>
-            <span class="match-card__pill flex-shrink-0">
-                {% if match.status == 'live' %}
-                <span class="match-card__live-dot"></span> LIVE
-                {% elif match.status == 'finished' %}
-                <i class="ti ti-flag-3"></i> Завершён
-                {% elif match.status == 'postponed' %}
-                <i class="ti ti-calendar-off"></i> Перенесён
-                {% elif match.status == 'cancelled' %}
-                <i class="ti ti-ban"></i> Отменён
-                {% else %}
-                {{ match.start_time|date:"d.m" }} · {{ match.start_time|time:"H:i" }}
-                {% endif %}
-            </span>
-        </div>
+   class="mrow block group
+          {% if match.status == 'live' %}mrow--live
+          {% elif match.status == 'finished' %}mrow--finished
+          {% elif match.status == 'postponed' %}mrow--postponed
+          {% elif match.status == 'cancelled' %}mrow--cancelled
+          {% else %}mrow--scheduled{% endif %}">
 
-        <!-- === ГЕРБ — СЧЁТ — ГЕРБ === -->
-        <div class="flex items-center gap-2 sm:gap-4">
-            <!-- Домашняя команда -->
-            <div class="flex-1 min-w-0 flex flex-col items-center gap-1.5 sm:gap-2 text-center">
-                <div class="match-card__crest-ring">
-                    {% if match.home_team.logo_url %}
-                    <img src="{{ match.home_team.logo_url }}" alt="{{ match.home_team.name }}"
-                         class="match-card__crest w-11 h-11 sm:w-14 sm:h-14 object-contain">
-                    {% else %}
-                    <div class="match-card__crest w-11 h-11 sm:w-14 sm:h-14 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-sm sm:text-lg">
-                        {{ match.home_team.name|first|upper }}
-                    </div>
-                    {% endif %}
-                </div>
-                <span class="match-card__team-name font-bold text-xs sm:text-sm leading-tight truncate w-full
-                             {% if match.status == 'finished' and match.home_score > match.away_score %}match-card__team-name--winner{% endif %}">
-                    {% if match.status == 'finished' and match.home_score > match.away_score %}<i class="ti ti-trophy match-card__winner-icon"></i>{% endif %}{{ match.home_team.name }}
-                </span>
-            </div>
-
-            <!-- Счёт -->
-            <div class="flex-shrink-0 text-center px-1 sm:px-2 min-w-[64px] sm:min-w-[88px]">
-                {% if match.status == 'finished' or match.status == 'live' %}
-                <div class="match-card__score text-2xl sm:text-4xl">
-                    {% render_score match.home_score match.away_score %}
-                </div>
-                {% if match.status == 'finished' and match.aggregate and match.aggregate.total_votes > 0 %}
-                <div class="text-[10px] sm:text-xs opacity-50 mt-1.5 sm:mt-2 flex items-center justify-center gap-1">
-                    <i class="ti ti-activity flex-shrink-0"></i>
-                    <span class="truncate">Драма {{ match.aggregate.drama_index|floatformat:0 }}</span>
-                </div>
-                {% endif %}
-                {% elif match.status == 'postponed' %}
-                <i class="ti ti-calendar-off text-2xl sm:text-3xl opacity-30"></i>
-                {% elif match.status == 'cancelled' %}
-                <i class="ti ti-ban text-2xl sm:text-3xl opacity-30"></i>
-                {% else %}
-                <div class="match-card__score match-card__score--vs text-base sm:text-lg">VS</div>
-                {% endif %}
-            </div>
-
-            <!-- Гостевая команда -->
-            <div class="flex-1 min-w-0 flex flex-col items-center gap-1.5 sm:gap-2 text-center">
-                <div class="match-card__crest-ring">
-                    {% if match.away_team.logo_url %}
-                    <img src="{{ match.away_team.logo_url }}" alt="{{ match.away_team.name }}"
-                         class="match-card__crest w-11 h-11 sm:w-14 sm:h-14 object-contain">
-                    {% else %}
-                    <div class="match-card__crest w-11 h-11 sm:w-14 sm:h-14 rounded-full bg-secondary/10 flex items-center justify-center font-bold text-secondary text-sm sm:text-lg">
-                        {{ match.away_team.name|first|upper }}
-                    </div>
-                    {% endif %}
-                </div>
-                <span class="match-card__team-name font-bold text-xs sm:text-sm leading-tight truncate w-full
-                             {% if match.status == 'finished' and match.away_score > match.home_score %}match-card__team-name--winner{% endif %}">
-                    {% if match.status == 'finished' and match.away_score > match.home_score %}<i class="ti ti-trophy match-card__winner-icon"></i>{% endif %}{{ match.away_team.name }}
-                </span>
-            </div>
-        </div>
+    <!-- === ВЕРХНЯЯ СТРОКА: лига/тур слева, статус справа === -->
+    <div class="mrow__top">
+        <span class="mrow__meta">
+            <i class="ti ti-trophy flex-shrink-0"></i>
+            <span>{{ match.league.name }}{% if match.tour %} · {{ match.tour }}-й тур{% endif %}</span>
+            {% if match.is_derby %}
+            <i class="ti ti-flame text-error flex-shrink-0" title="Дерби"></i>
+            {% endif %}
+            {% comment %}
+            ⚠️ 2026-09-09: авто-детект was_rescheduled для новых матчей
+            больше не работает (см. templates/matches/_match_header.html),
+            бейдж продолжит показываться только на исторических матчах,
+            у которых поле уже стоит True.
+            {% endcomment %}
+            {% if match.was_rescheduled and match.status != 'postponed' %}
+            <i class="ti ti-calendar-exclamation text-warning flex-shrink-0" title="Дата перенесена относительно тура"></i>
+            {% endif %}
+        </span>
+        <span class="mrow__badge">
+            {% if match.status == 'live' %}
+            <span class="mrow__live-dot"></span> LIVE
+            {% elif match.status == 'finished' %}
+            <i class="ti ti-check"></i> {{ match.start_time|date:"d.m.Y" }}
+            {% elif match.status == 'postponed' %}
+            <i class="ti ti-calendar-off"></i> Перенесён
+            {% elif match.status == 'cancelled' %}
+            <i class="ti ti-ban"></i> Отменён
+            {% else %}
+            <i class="ti ti-clock"></i> {{ match.start_time|date:"d.m" }} · {{ match.start_time|time:"H:i" }}
+            {% endif %}
+        </span>
     </div>
 
-    <!-- === ФУТЕР: мета + CTA === -->
-    <div class="match-card__footer flex flex-wrap items-center justify-between gap-2 px-3.5 sm:px-5 py-2.5 sm:py-3">
-        <div class="flex flex-wrap items-center gap-1.5 sm:gap-2.5 text-[10px] sm:text-xs opacity-60 min-w-0">
-            {% if show_stadium|default:True and match.stadium %}
-            <span class="flex items-center gap-1 truncate max-w-[110px] sm:max-w-none">
-                <i class="ti ti-map-pin flex-shrink-0"></i>
-                <span class="truncate">{{ match.stadium.name }}</span>
-            </span>
+    <!-- === ГЛАВНАЯ СТРОКА: герб — имя — VS/счёт — имя — герб — стрелка === -->
+    <div class="mrow__main">
+        <div class="mrow__team mrow__team--home">
+            {% if match.home_team.logo_url %}
+            <img src="{{ match.home_team.logo_url }}" alt="" class="mrow__crest">
+            {% else %}
+            <div class="mrow__crest-fallback">{{ match.home_team.name|first|upper }}</div>
             {% endif %}
-            {% if match.is_derby %}
-            <span class="badge badge-error badge-xs gap-0.5">
-                <i class="ti ti-flame flex-shrink-0"></i>
-                <span class="hidden sm:inline">Дерби</span>
+            <span class="mrow__team-name {% if match.status == 'finished' and match.home_score > match.away_score %}mrow__team-name--winner{% endif %}">
+                {{ match.home_team.name }}
             </span>
+        </div>
+
+        <div class="mrow__center">
+            {% if match.status == 'finished' or match.status == 'live' %}
+            {% render_score_short match.home_score match.away_score %}
+            {% elif match.status == 'postponed' %}
+            <i class="ti ti-calendar-off opacity-40"></i>
+            {% elif match.status == 'cancelled' %}
+            <i class="ti ti-ban opacity-40"></i>
+            {% else %}
+            <span class="mrow__center--vs">VS</span>
             {% endif %}
+        </div>
+
+        <div class="mrow__team mrow__team--away">
+            {% if match.away_team.logo_url %}
+            <img src="{{ match.away_team.logo_url }}" alt="" class="mrow__crest">
+            {% else %}
+            <div class="mrow__crest-fallback">{{ match.away_team.name|first|upper }}</div>
+            {% endif %}
+            <span class="mrow__team-name {% if match.status == 'finished' and match.away_score > match.home_score %}mrow__team-name--winner{% endif %}">
+                {{ match.away_team.name }}
+            </span>
+        </div>
+
+        <i class="ti ti-chevron-right mrow__arrow" aria-hidden="true"></i>
+    </div>
+
+    {% comment %}
+    Второй уровень информации (не конкурирует с составом/счётом выше) —
+    дерби/голоса слева, статус оценки/CTA справа. Рендерится, только
+    когда реально есть что показать хотя бы с одной стороны — пустая
+    карточка не тянет за собой пустую полосу с border-top.
+    {% endcomment %}
+    {% if match.aggregate.total_votes or match.user_has_evaluated or match.status == 'finished' %}
+    <div class="mrow__footer">
+        <div class="mrow__footer-meta">
             {% if match.aggregate and match.aggregate.total_votes %}
             <span class="flex items-center gap-1">
                 <i class="ti ti-users flex-shrink-0"></i>
@@ -160,48 +126,43 @@ start_time, — опциональны, компонент проверяет и
             </span>
             {% endif %}
         </div>
-        <div class="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+        <div class="flex items-center gap-1.5 flex-shrink-0">
             {% if match.user_has_evaluated %}
-            <span class="badge badge-success badge-xs sm:badge-sm gap-1" title="Вы уже оценили этот матч">
+            <span class="badge badge-success badge-xs gap-1" title="Вы уже оценили этот матч">
                 <i class="ti ti-check flex-shrink-0"></i>
                 <span class="hidden sm:inline">Оценено</span>
             </span>
             {% elif match.status == 'finished' and match.is_voting_open %}
             {% comment %}
-            НЕ <a> — вся карточка уже сама <a href="{% url 'matches:detail' %}">
-            (см. ниже), а вложенные <a> внутри <a> — невалидный HTML:
-            браузер закрывает внешний <a> прямо на месте вложенного, и
-            весь остаток карточки (мета-строка, бейджи, прогноз)
-            выпадает из .match-card наружу как отдельные "голые" узлы —
-            отсюда и "кривые/пустые" карточки с открытым голосованием,
-            на что пожаловался пользователь (2026-08-31). <button> с
-            переходом через JS ведёт себя как ссылка, но не ломает
-            вложенность.
+            НЕ <a> — карточка уже сама <a> (см. выше), а вложенные <a>
+            внутри <a> — невалидный HTML, ломает вёрстку в браузере (см.
+            исторический комментарий в предыдущей версии файла). <button>
+            с переходом через JS ведёт себя как ссылка, но не рвёт вложенность.
             {% endcomment %}
             <button type="button"
                     onclick="event.stopPropagation(); window.location.href='{% url 'evaluations:context' match.id %}'"
-                    class="match-card__cta btn btn-xs sm:btn-sm btn-primary shrink-0">
+                    class="mrow__cta btn btn-xs btn-primary shrink-0">
                 <i class="ti ti-star"></i>
                 <span class="hidden sm:inline">Оценить</span>
             </button>
             {% elif match.status == 'finished' %}
-            <span class="badge badge-ghost badge-xs sm:badge-sm shrink-0">
+            <span class="badge badge-ghost badge-xs shrink-0">
                 <i class="ti ti-lock flex-shrink-0"></i>
                 <span class="hidden sm:inline">Голосование закрыто</span>
             </span>
             {% endif %}
         </div>
     </div>
+    {% endif %}
 
     {% if match.list_prediction_counts %}
     {% comment %}
-    Инлайн-прогноз 1X2 прямо на карточке (2026-08-29). Ссылка-обёртка
-    карточки ведёт на матч — виджет внутри должен сам останавливать
-    всплытие клика по своим кнопкам (см. predictions/
-    _prediction_widget_compact.html).
+    Инлайн-прогноз 1X2 — второй уровень. Партиал сам рисует свой
+    mt-2/pt-2/border-t (см. predictions/_prediction_widget_compact.html) —
+    без внешней обёртки здесь, иначе получится двойная разделительная
+    линия, когда .mrow__footer выше уже нарисовал свою. Виджет сам
+    останавливает всплытие клика по своим кнопкам.
     {% endcomment %}
-    <div class="px-3.5 sm:px-5 pb-3.5 sm:pb-4">
-        {% include 'predictions/_prediction_widget_compact.html' with counts=match.list_prediction_counts my_prediction=match.list_my_prediction %}
-    </div>
+    {% include 'predictions/_prediction_widget_compact.html' with counts=match.list_prediction_counts my_prediction=match.list_my_prediction %}
     {% endif %}
 </a>

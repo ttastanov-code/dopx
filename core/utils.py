@@ -15,6 +15,14 @@ dashboard/parser_tools.py (поиск матча в staff-панели по на
 но тот же баг ("Кайрат" по-русски не находит "Қайрат") оказался и в
 поиске на страницах teams/players/coaches/referees — вынесено сюда как
 общую утилиту, чтобы не дублировать таблицу транслитерации в 5 местах.
+
+is_synthetic_test_email — продуктовый запрос 2026-09-07: "надо исключить
+рассылку писем на тестовых ботов". Единая точка правды для ОБОИХ семейств
+синтетических аккаунтов проекта (бот-пул seed_match_votes.py/
+seed_full_history.py — `test_user_bot_NNNN@test.dopx.local`, и нагрузочные
+аккаунты setup_load_test.py — `loadtest_NNNN@loadtest.dopx.local`), чтобы
+notifications/tasks.py::_send_email_to_user не пыталась слать реальные
+письма на заведомо несуществующие адреса.
 """
 from __future__ import annotations
 
@@ -130,6 +138,27 @@ def get_client_ip(request: HttpRequest) -> str | None:
             client_index = len(chain) - trusted_proxy_count
             return chain[client_index] if client_index >= 0 else chain[0]
     return request.META.get("REMOTE_ADDR")
+
+
+# ".dopx.local" — зарезервированный поддомен под синтетические/сид-
+# аккаунты (".local" — недоставляемый TLD по RFC 6762, домен физически не
+# резолвится наружу). Оба текущих семейства тестовых пользователей
+# используют СВОИ поддомены под ним (test.dopx.local / loadtest.dopx.local)
+# — проверка по суффиксу ловит их разом и любые будущие поддомены того же
+# паттерна без необходимости перечислять каждый префикс username отдельно.
+TEST_EMAIL_DOMAIN_SUFFIX = ".dopx.local"
+
+
+def is_synthetic_test_email(email: str | None) -> bool:
+    """True для email тестовых/сид-аккаунтов (бот-пул голосов, нагрузочное
+    тестирование и т.п.) — см. докстринг модуля. Пустой/None email — False
+    (не наша забота здесь: `_send_email_to_user` и так отдельно проверяет
+    `user.email` на пустоту до вызова этой функции)."""
+    email = (email or "").strip().lower()
+    if "@" not in email:
+        return False
+    domain = email.rsplit("@", 1)[-1]
+    return domain == "dopx.local" or domain.endswith(TEST_EMAIL_DOMAIN_SUFFIX)
 
 
 def is_rate_limited(key: str, limit: int, window_seconds: int) -> bool:

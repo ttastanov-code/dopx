@@ -1,5 +1,6 @@
 # players/views.py
 import json
+from collections import Counter
 
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
@@ -14,7 +15,7 @@ from aggregates.services import MIN_VOTES_FOR_DISPLAY
 from core.utils import normalize_kz
 from evaluations.models import PlayerEvaluation
 from lineups.models import MatchLineupPlayer
-from players.positions import position_label, clean_position_code, LABEL_TO_CODES
+from players.positions import position_label, clean_position_code, LABEL_TO_CODES, player_position_breakdown
 from seasons.models import Season
 import logging
 import django.db.models as models
@@ -35,6 +36,15 @@ class PlayerListView(ListView):
         # docs/BACKLOG.md, находка 3.
         self.active_season = Season.get_primary_active()
         self.show_all = self.request.GET.get('season') == 'all'
+
+        # 2026-09-09 (жалоба пользователя после полного бэкафилла 3
+        # сезонов): "Матчей" в списке должно быть за текущий сезон, а не
+        # сумма по всей импортированной истории — та же поправка, что и в
+        # TeamListView (teams/views.py).
+        season_q = (
+            Q(matchlineupplayer__lineup__match__season=self.active_season)
+            if self.active_season and not self.show_all else Q()
+        )
 
         # is_active НЕ фильтрует общий рейтинг (только бейдж "покинул клуб")
         # — рейтинг отражает результативность за сезон, не трудоустройство
@@ -58,7 +68,7 @@ class PlayerListView(ListView):
             # ИЛИ matchlineupplayer__minute_in не пусто — то есть реально вышел на поле.
             total_matches=Count(
                 'matchlineupplayer__lineup__match',
-                filter=Q(matchlineupplayer__lineup__match__status='finished') & (
+                filter=Q(matchlineupplayer__lineup__match__status='finished') & season_q & (
                     Q(matchlineupplayer__is_starting=True) | Q(matchlineupplayer__minute_in__isnull=False)
                 ),
                 distinct=True
@@ -144,9 +154,10 @@ class PlayerDetailView(DetailView):
         # как "сыгравший" наравне со стартовым составом. MatchLineupPlayer
         # различает это через is_starting (в старте) и minute_in (минута
         # выхода на замену — None, если игрок был в заявке, но так и не
-        # вышел на поле, см. parsers/kff/importers.py::import_lineups и
-        # import_events_and_minutes). Реально "сыграл" = был в старте ИЛИ
-        # вышел на замену — просто "был в заявке на матч" сюда не входит.
+        # вышел на поле, см. parsers/sportmonks/importers.py::import_lineups;
+        # до 2026-09-09 то же самое делал parsers/kff/importers.py, теперь
+        # удалён). Реально "сыграл" = был в старте ИЛИ вышел на замену —
+        # просто "был в заявке на матч" сюда не входит.
         from lineups.models import MatchLineupPlayer
         actually_played = Q(is_starting=True) | Q(minute_in__isnull=False)
         actual_matches_count = MatchLineupPlayer.objects.filter(
@@ -255,6 +266,17 @@ class PlayerDetailView(DetailView):
             reverse=True,
         )
 
+        # Мини-схема поля (players/positions.py::player_position_breakdown,
+        # 2026-09-09) — считаем ПО ТЕМ ЖЕ lineup_entries, что и career_by_
+        # season выше (уже отфильтрованы actually_played + status=finished),
+        # чтобы не плодить второй похожий запрос. entry.position — код,
+        # записанный parsers/sportmonks/importers.py::import_lineups (теперь
+        # приоритетно из DETAILED_POSITION_ID_MAP, см. этот файл).
+        position_counts = Counter(
+            entry.position for entry in lineup_entries if entry.position
+        )
+        position_breakdown = player_position_breakdown(position_counts)
+
         # НОВОЕ: ближайший сыгранный матч этого игрока, который ещё можно
         # оценить — используется для CTA в пустых состояниях ("История
         # выступлений" / "Лучшие матчи"), чтобы не просто прятать карточки,
@@ -275,6 +297,16 @@ class PlayerDetailView(DetailView):
             from users.models import Follow
             is_following = Follow.objects.filter(user=self.request.user, player=player).exists()
 
+        # Фаза 5 (docs/sportmonks-migration-plan.md) — бейдж "недоступен" на
+        # карточке игрока. "Активная" запись определяется методом самой
+        # модели (players/models.py::PlayerSidelined.is_current — уже
+        # учитывает и ещё-не-начавшиеся, и уже-закончившиеся периоды), не
+        # дублируем эту логику здесь второй раз через queryset-фильтр.
+        # Записей на игрока обычно 0-1, редко больше — fetch всех и фильтр
+        # в Python дешевле, чем городить .filter() под свойство модели.
+        candidates = list(player.sidelined_periods.order_by('-start_date')[:5])
+        active_sidelined = next((s for s in candidates if s.is_current), None)
+
         context.update({
             'aggregates': aggregates,
             'stats': stats,
@@ -282,8 +314,10 @@ class PlayerDetailView(DetailView):
             'best_matches': best_matches,
             'team': team,
             'career_by_season': career_by_season,
+            'position_breakdown': position_breakdown,
             'votable_match': votable_match,
             'is_following': is_following,
+            'active_sidelined': active_sidelined,
             'page_title': f'{player.first_name} {player.last_name} — DOPX',
         })
 

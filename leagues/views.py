@@ -48,16 +48,42 @@ class LeagueDetailView(DetailView):
             match_count=Count('match')
         ).order_by('-year')
         
-        # === 2. Активный сезон для таблицы ===
+        # === 2. Активный сезон (для бейджа "Активен") и выбранный сезон ===
         active_season = seasons.filter(is_active=True).first()
+
+        # ВЫБОР СЕЗОНА (2026-09-09, продуктовый фидбек: "сезоны в списке не
+        # кликабельны, почему нельзя посмотреть таблицу завершённого
+        # сезона?") — ?season=<year> в query string переключает, какой
+        # сезон показывается на этой же странице лиги, вместо жёсткой
+        # привязки ко ВСЕГДА активному. Без параметра — прежнее поведение
+        # (активный сезон). Невалидный/несуществующий год — тихий fallback
+        # на активный, а не 404: страница лиги не должна падать из-за
+        # опечатки в URL.
+        season_param = self.request.GET.get('season', '').strip()
+        selected_season = None
+        if season_param:
+            selected_season = seasons.filter(year=season_param).first()
+        if selected_season is None:
+            selected_season = active_season
 
         # === 3. Турнирная таблица ===
         # Читает готовую TeamSeasonStats (тот же источник, что и превью на
         # главной) — не пересчитывает N+1-агрегатами на каждый заход.
+        # ИСКЛЮЧЕНИЕ: TeamSeasonStats считается по расписанию (aggregates/
+        # tasks.py::recalculate_season_standings) ТОЛЬКО для активного
+        # сезона — у завершённых сезонов, только что подтянутых бэкафиллом
+        # (parsers/management/commands/sync_sportmonks_season), строк может
+        # не быть вообще ни разу. Досчитываем синхронно и один раз при
+        # первом заходе — дальше строки уже есть, повторный расчёт не нужен
+        # (сезон завершён, числа больше не меняются).
         standings = []
-        if active_season:
+        if selected_season:
+            if not TeamSeasonStats.objects.filter(season=selected_season).exists():
+                from aggregates.tasks import _recalculate_standings_for_season
+                _recalculate_standings_for_season(selected_season)
+
             stats_rows = (
-                TeamSeasonStats.objects.filter(season=active_season)
+                TeamSeasonStats.objects.filter(season=selected_season)
                 .select_related('team')
                 .order_by('position', '-points', '-goal_diff', '-goals_scored')
             )
@@ -79,12 +105,17 @@ class LeagueDetailView(DetailView):
             ]
 
         # === 4. Последние матчи ===
+        # Фильтр по selected_season (не только по лиге) — иначе при
+        # просмотре завершённого сезона тут молча показывались бы свежие
+        # матчи ТЕКУЩЕГО сезона, что сбивает с толку ("почему в разделе
+        # 2024 года матчи 2026-го?").
         recent_matches = Match.objects.filter(
             league=league,
+            season=selected_season,
             status='finished'  # 🔥 Добавлен фильтр
         ).select_related(
-            'home_team', 'away_team', 'season', 'stadium'
-        ).order_by('-start_time')[:10]
+            'home_team', 'away_team', 'season'
+        ).order_by('-start_time')[:10] if selected_season else Match.objects.none()
 
         # === 5. АНАЛИТИКА СЕЗОНА (новое) ===
         # Раньше в сайдбаре было только "Всего сезонов/Всего матчей/Команд в
@@ -101,8 +132,8 @@ class LeagueDetailView(DetailView):
         best_defense = None
         avg_goals_per_match = None
 
-        if active_season:
-            cache_key = f'league_{league.id}_season_{active_season.id}_analytics'
+        if selected_season:
+            cache_key = f'league_{league.id}_season_{selected_season.id}_analytics'
             cached = cache.get(cache_key)
 
             if cached is not None:
@@ -118,7 +149,7 @@ class LeagueDetailView(DetailView):
                 top_scorers = list(
                     Player.objects.filter(
                         events__match__league=league,
-                        events__match__season=active_season,
+                        events__match__season=selected_season,
                         events__event_type='goal',
                     )
                     .select_related('team')
@@ -139,7 +170,7 @@ class LeagueDetailView(DetailView):
                 MIN_VOTES_FOR_MOOD = 3
                 mood_agg = MatchAggregate.objects.filter(
                     match__league=league,
-                    match__season=active_season,
+                    match__season=selected_season,
                     total_votes__gte=MIN_VOTES_FOR_MOOD,
                 ).aggregate(
                     avg_entertainment=Avg('avg_entertainment'),
@@ -158,7 +189,7 @@ class LeagueDetailView(DetailView):
                 dramatic = (
                     MatchAggregate.objects.filter(
                         match__league=league,
-                        match__season=active_season,
+                        match__season=selected_season,
                         total_votes__gte=MIN_VOTES_FOR_MOOD,
                     )
                     .select_related('match__home_team', 'match__away_team')
@@ -171,7 +202,7 @@ class LeagueDetailView(DetailView):
                 # Среднее число голов за матч — базовая, но реально
                 # отсутствовавшая метрика "результативности" сезона.
                 goals_agg = Match.objects.filter(
-                    league=league, season=active_season, status='finished'
+                    league=league, season=selected_season, status='finished'
                 ).aggregate(
                     total_home=Sum('home_score'),
                     total_away=Sum('away_score'),
@@ -199,12 +230,14 @@ class LeagueDetailView(DetailView):
 
         # === НОМИНАЦИИ СЕЗОНА ===
         # Та же витрина, что и на главной (core/nominations.py), но с
-        # фильтром по конкретной лиге и активному сезону.
-        nominations = get_nominations(league=league, season=active_season) if active_season else []
+        # фильтром по конкретной лиге и ВЫБРАННОМУ (не обязательно
+        # активному) сезону.
+        nominations = get_nominations(league=league, season=selected_season) if selected_season else []
 
         context.update({
             'seasons': seasons,
             'active_season': active_season,
+            'selected_season': selected_season,
             'standings': standings,
             'recent_matches': recent_matches,
             'top_scorers': top_scorers,

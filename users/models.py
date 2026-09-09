@@ -393,11 +393,22 @@ class SuspiciousActivityFlag(BaseModel):
     detect_rating_stats_divergence_task): единственный источник этого
     флага, который сравнивает рейтинг сообщества не с самим собой
     (остальными голосами/историей пользователя), а с ОБЪЕКТИВНЫМИ фактами
-    матча от KFF (matches.models.MatchTeamStatistics) — не зависит от
-    голосов DOPX вообще, поэтому его нельзя обмануть, просто договорившись
-    ставить "умеренные" оценки (см. VOTE_SPIKE/extreme_bias/градуированный
-    штраф веса в aggregates/services.py — все они так или иначе смотрят на
-    сами голоса). Как и vote_spike — сущность (Team), не пользователь.
+    матча (matches.models.MatchTeamStatistics) — не зависит от голосов
+    DOPX вообще, поэтому его нельзя обмануть, просто договорившись ставить
+    "умеренные" оценки (см. VOTE_SPIKE/extreme_bias/градуированный штраф
+    веса в aggregates/services.py — все они так или иначе смотрят на сами
+    голоса). Как и vote_spike — сущность (Team), не пользователь.
+    2026-09-08: источник данных статистики сменился с KFF на Sportmonks
+    (docs/sportmonks-migration-plan.md) — MatchTeamStatistics осталась той
+    же моделью, менять тут нечего, кроме формулировки в SOURCE_CHOICES
+    ниже (была явно "...от KFF", больше не соответствует действительности).
+
+    2026-09-08, источник "player_stats_divergence" (aggregates/tasks.py::
+    detect_player_rating_stats_divergence_task) — тот же принцип, что у
+    "stats_divergence", но на уровне ИГРОКА и с другим объективным
+    сигналом (MatchPlayerStatistics + события матча вместо "доли
+    доминирования" — см. докстринг aggregates.models.PlayerRatingCorrection
+    про то, почему у игрока нет прямого аналога team dominance share).
     """
 
     SOURCE_CHOICES = [
@@ -405,7 +416,8 @@ class SuspiciousActivityFlag(BaseModel):
         ("ip_cluster", _("Кластер аккаунтов с одного IP")),
         ("extreme_bias", _("Экстремальная историческая предвзятость")),
         ("vote_spike", _("Аномальный всплеск голосования (возможный сговор)")),
-        ("stats_divergence", _("Рейтинг сообщества расходится с объективной статистикой KFF")),
+        ("stats_divergence", _("Рейтинг команды расходится с объективной статистикой матча")),
+        ("player_stats_divergence", _("Рейтинг игрока расходится с объективной статистикой матча")),
         ("manual", _("Отмечено вручную модератором")),
     ]
     STATUS_CHOICES = [

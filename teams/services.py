@@ -479,3 +479,51 @@ def find_season_controversial_matches(team, season, *, limit: int = 3) -> list[d
             "date": match.start_time,
         })
     return result
+
+
+# Сколько последних матчей показываем в форме команды (фаза 5,
+# docs/sportmonks-migration-plan.md, раздел 7 — "не тянуть отдельным полем
+# из API, считать на лету из уже имеющихся в базе Match, это бесплатно").
+TEAM_FORM_RECENT_MATCHES = 5
+
+
+def get_team_form(team, matches) -> list[dict]:
+    """W/D/L последних матчей команды — считается на лету из УЖЕ полученного
+    списка `matches` (например, TeamDetailView.recent_matches, уже
+    отфильтрованного по finished + текущему сезону, отсортированного
+    -start_time) — намеренно не делает свой запрос к БД, чтобы не платить
+    вторым походом за тем, что вызывающий код обычно и так уже достал.
+
+    :param matches: любой итерируемый список Match (finished), отсортированный
+        от новых к старым — если сортировка другая, результат будет в чужом
+        порядке. Берутся первые TEAM_FORM_RECENT_MATCHES штук.
+    :return: список dict [{result: 'W'|'D'|'L', match: Match, opponent: Team,
+        score_display: str}], от старых к новым (так удобнее рисовать слева
+        направо — W W D L W читается как "было -> стало", а не наоборот).
+    """
+    form = []
+    for match in list(matches)[:TEAM_FORM_RECENT_MATCHES]:
+        if match.home_score is None or match.away_score is None:
+            continue
+        is_home = match.home_team_id == team.id
+        own_score = match.home_score if is_home else match.away_score
+        opp_score = match.away_score if is_home else match.home_score
+        opponent = match.away_team if is_home else match.home_team
+
+        if own_score > opp_score:
+            result = "W"
+        elif own_score < opp_score:
+            result = "L"
+        else:
+            result = "D"
+
+        form.append({
+            "result": result,
+            "match": match,
+            "opponent": opponent,
+            "is_home": is_home,
+            "score_display": f"{own_score}:{opp_score}",
+        })
+
+    form.reverse()
+    return form

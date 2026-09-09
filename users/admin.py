@@ -105,12 +105,21 @@ class SuspiciousActivityFlagAdmin(ModelAdmin):
         проставляем suppressed_until на STATS_DIVERGENCE_DISMISS_COOLDOWN_DAYS
         вперёд — _check_team_stats_divergence пропускает команду, пока
         cooldown не истёк.
+
+        2026-09-08: source="player_stats_divergence" (aggregates/tasks.py::
+        detect_player_rating_stats_divergence_task) — тот же принцип, тот
+        же баг-предохранитель, один-в-один, но для PlayerRatingCorrection/
+        Player вместо TeamRatingCorrection/Team.
         """
         from django.contrib.contenttypes.models import ContentType
         from datetime import timedelta
 
-        from aggregates.models import TeamRatingCorrection
-        from aggregates.tasks import STATS_DIVERGENCE_DISMISS_COOLDOWN_DAYS
+        from aggregates.models import PlayerRatingCorrection, TeamRatingCorrection
+        from aggregates.tasks import (
+            PLAYER_STATS_DIVERGENCE_DISMISS_COOLDOWN_DAYS,
+            STATS_DIVERGENCE_DISMISS_COOLDOWN_DAYS,
+        )
+        from players.models import Player
         from teams.models import Team
 
         team_content_type = ContentType.objects.get_for_model(Team)
@@ -123,6 +132,18 @@ class SuspiciousActivityFlagAdmin(ModelAdmin):
                 correction=0.0,
                 last_pattern="",
                 suppressed_until=timezone.now() + timedelta(days=STATS_DIVERGENCE_DISMISS_COOLDOWN_DAYS),
+            )
+
+        player_content_type = ContentType.objects.get_for_model(Player)
+        divergence_player_ids = [
+            flag.object_id
+            for flag in queryset.filter(source="player_stats_divergence", content_type=player_content_type)
+        ]
+        if divergence_player_ids:
+            PlayerRatingCorrection.objects.filter(player_id__in=divergence_player_ids).update(
+                correction=0.0,
+                last_pattern="",
+                suppressed_until=timezone.now() + timedelta(days=PLAYER_STATS_DIVERGENCE_DISMISS_COOLDOWN_DAYS),
             )
 
         updated = queryset.update(status="dismissed", reviewed_by=request.user, reviewed_at=timezone.now())

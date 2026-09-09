@@ -553,6 +553,52 @@
             if (isBackgroundPoll(event)) return;
             document.body.classList.remove('htmx-request');
         });
+        // БАГ, КОТОРЫЙ ТУТ БЫЛ (2026-09-08, живой репорт пользователя:
+        // "форма логина вылезла из ниоткуда и всё сломала" — воспроизвёл
+        // через несколько открытых вкладок: залогинился заново в /admin/ в
+        // одной вкладке, в другой (открытая страница со фоновым поллингом,
+        // например счётчик уведомлений components/_notification_unread_
+        // badge.html, hx-trigger="every 30s") всё сломалось).
+        //
+        // КОРНЕВАЯ ПРИЧИНА: Django.login() всегда вызывает cycle_key()
+        // (защита от session fixation) — сессия ротируется, старый cookie
+        // sessionid других вкладок того же браузера мгновенно становится
+        // недействительным для ЛЮБОЙ другой вкладки того же сайта (cookies
+        // общие на origin, не на вкладку). Следующий же фоновый htmx-поллинг
+        // на login-required вьюху (LoginRequiredMixin, например
+        // notifications/views.py::UnreadCountBadgeView) получает 302 на
+        // страницу входа — браузерный fetch/XHR, которым пользуется htmx,
+        // САМ прозрачно проходит редирект и возвращает htmx уже финальный
+        // ответ 200 с ПОЛНОЙ HTML-страницей логина (свой <html>/<head>/
+        // <body>, extends base_auth.html). htmx не отличает "это страница,
+        // на которую редиректнули" от "это обычный частичный HTML" — и
+        // честно вставляет ВСЮ страницу входа внутрь крошечного элемента
+        // (`hx-swap="outerHTML"` на <span id="notif-unread-badge">
+        // размером с иконку) — визуально ровно то, что описал пользователь:
+        // полноразмерная форма логина, наложенная поверх страницы.
+        //
+        // ФИКС: `xhr.responseURL` после прозрачного редиректа отличается от
+        // изначального URL запроса и указывает на LOGIN_URL (settings.py,
+        // 'users:login', см. docs/adr — путь '/users/login/'). Это не
+        // легитимный контент для фонового свапа фрагмента, а сигнал "сессия
+        // умерла" — вместо вставки в DOM делаем НАСТОЯЩИЙ переход браузера
+        // на эту страницу (пользователь увидит нормальную полноразмерную
+        // страницу входа, как и должно быть при разлогине), event.
+        // preventDefault() останавливает сам htmx-свап.
+        document.body.addEventListener('htmx:beforeSwap', (event) => {
+            const xhr = event.detail.xhr;
+            if (!xhr || !xhr.responseURL) return;
+            let responseUrl;
+            try {
+                responseUrl = new URL(xhr.responseURL, window.location.origin);
+            } catch (e) {
+                return;
+            }
+            if (/^\/users\/login\/?$/.test(responseUrl.pathname)) {
+                event.preventDefault();
+                window.location.href = xhr.responseURL;
+            }
+        });
         // DaisyUI toast helper
         function showToast(message, type = 'info') {
             const toast = document.getElementById('toast-container');

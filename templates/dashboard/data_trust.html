@@ -1,0 +1,191 @@
+{% extends 'base.html' %}
+{% comment %}
+templates/dashboard/data_trust.html — Центр доверия к данным (2026-09-09,
+MVP из рекомендации Codex-ревью, расширен по прямой просьбе пользователя
+"сделай страницу более функциональной"). НЕ дублирует data_health.html (та
+отвечает "синк работает технически?"): здесь — "можно ли доверять уже
+импортированным данным конкретного матча" — см. dashboard/services.py::
+data_trust_summary докстринг.
+
+2026-09-09: карточка "Стадионы, требующие проверки" убрана вместе со всей
+моделью Stadium (решение пользователя) — проблема оказалась принципиальной
+(клубы КПЛ играют "домашние" матчи на разных стадионах в разных городах в
+течение сезона), а не набором отдельных ошибок сопоставления.
+{% endcomment %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+<div class="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6">
+    <div class="stat bg-base-100 border border-error/30 rounded-lg p-3 md:p-4">
+        <div class="stat-title text-[10px] md:text-xs">Открытых жалоб</div>
+        <div class="stat-value text-lg md:text-2xl text-error">{{ trust.data_error_reports_count }}</div>
+    </div>
+    <div class="stat bg-base-100 border border-base-300 rounded-lg p-3 md:p-4">
+        <div class="stat-title text-[10px] md:text-xs">Всего жалоб / решено</div>
+        <div class="stat-value text-lg md:text-2xl">{{ trust.data_error_reports_resolved_count }}<span class="text-sm opacity-50"> / {{ trust.data_error_reports_total }}</span></div>
+    </div>
+    <div class="stat bg-base-100 border border-warning/30 rounded-lg p-3 md:p-4 col-span-2 md:col-span-1">
+        <div class="stat-title text-[10px] md:text-xs">Расхождения импорта</div>
+        <div class="stat-value text-lg md:text-2xl text-warning">{{ trust.unreviewed_discrepancies_count }}</div>
+    </div>
+    <div class="stat bg-base-100 border border-base-300 rounded-lg p-3 md:p-4">
+        <div class="stat-title text-[10px] md:text-xs">Синк матчей</div>
+        <div class="stat-value text-sm md:text-base">
+            <a href="{% url 'dashboard:data_health' %}" class="link link-hover">Здоровье данных →</a>
+        </div>
+    </div>
+</div>
+
+<!-- Жалобы пользователей на данные матчей -->
+<div class="card bg-base-100 border border-base-300 mb-6">
+    <div class="card-body p-4">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-1">
+            <h3 class="font-bold text-sm md:text-base flex items-center gap-2">
+                <i class="ti ti-flag-3 text-error"></i> Жалобы на данные матчей
+            </h3>
+            <div role="tablist" class="tabs tabs-boxed tabs-xs">
+                <a role="tab" href="?report_status=open" class="tab {% if trust.report_status_filter == 'open' %}tab-active{% endif %}">Открытые</a>
+                <a role="tab" href="?report_status=resolved" class="tab {% if trust.report_status_filter == 'resolved' %}tab-active{% endif %}">Решённые</a>
+                <a role="tab" href="?report_status=all" class="tab {% if trust.report_status_filter == 'all' %}tab-active{% endif %}">Все</a>
+            </div>
+        </div>
+        <p class="text-xs opacity-50 mb-3">
+            Приходят с кнопки «Сообщить об ошибке в данных» на странице матча (доступна любому посетителю).
+            Проверьте первоисточник, поправьте данные в Django admin и закройте жалобу.
+        </p>
+        {% if not trust.data_error_reports %}
+        <p class="text-sm opacity-50 py-6 text-center">
+            {% if trust.report_status_filter == 'open' %}Открытых жалоб нет.{% else %}Жалоб в этой категории нет.{% endif %}
+        </p>
+        {% else %}
+        <div class="space-y-2">
+            {% for report in trust.data_error_reports %}
+            <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 p-3 rounded-lg bg-base-200/60">
+                <div class="flex-1 min-w-0">
+                    <div class="font-medium truncate">{{ report.subject }}</div>
+                    {% if report.related_match %}
+                    <a href="{% url 'matches:detail' report.related_match.id %}" target="_blank" class="text-xs link link-hover">
+                        <i class="ti ti-external-link"></i> {{ report.related_match.home_team }} — {{ report.related_match.away_team }}
+                    </a>
+                    {% endif %}
+                    <div class="text-sm mt-1.5 leading-snug opacity-80">{{ report.message|truncatewords:40 }}</div>
+                    <div class="text-xs opacity-50 mt-1">
+                        {{ report.contact_email }} · {{ report.created_at|timesince }} назад
+                        <span class="badge badge-xs {% if report.status == 'new' %}badge-info{% elif report.status == 'in_progress' %}badge-warning{% elif report.status == 'resolved' %}badge-success{% else %}badge-ghost{% endif %} ml-1">
+                            {{ report.get_status_display }}
+                        </span>
+                    </div>
+                </div>
+                <div class="flex gap-2 shrink-0">
+                    <a href="{% url 'admin:notifications_contactsubmission_change' report.id %}" class="btn btn-ghost btn-sm">
+                        <i class="ti ti-message-2"></i> Ответить
+                    </a>
+                    {% if report.status == 'new' or report.status == 'in_progress' %}
+                    <form method="post" action="{% url 'dashboard:data_trust_resolve_report' report.id %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="status" value="resolved">
+                        <input type="hidden" name="return_status" value="{{ trust.report_status_filter }}">
+                        <button type="submit" class="btn btn-outline btn-sm">
+                            <i class="ti ti-check"></i> Закрыть
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Расхождения импорта -->
+<div class="card bg-base-100 border border-base-300 mb-6">
+    <div class="card-body p-4">
+        <h3 class="font-bold text-sm md:text-base mb-1 flex items-center gap-2">
+            <i class="ti ti-git-compare text-warning"></i> Расхождения импорта
+        </h3>
+        {% comment %}
+        Честно про заморозку очереди (см. dashboard/services.py докстринг):
+        писал их только удалённый KFF-импортёр, Sportmonks-пайплайн новых
+        строк сюда не пишет. Полезна как историческая очередь на разбор, не
+        как живой сигнал текущего состояния синка.
+        {% endcomment %}
+        <p class="text-xs opacity-50 mb-3">
+            Правки счёта/статуса задним числом поверх уже завершённого матча. <strong>Историческая очередь</strong> —
+            писал только старый KFF-парсер (удалён 2026-09-09), новых строк Sportmonks-пайплайн сюда не добавляет.
+        </p>
+        {% if not trust.unreviewed_discrepancies %}
+        <p class="text-sm opacity-50 py-6 text-center">Неразобранных расхождений нет.</p>
+        {% else %}
+        <div class="space-y-2">
+            {% for d in trust.unreviewed_discrepancies %}
+            <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 p-3 rounded-lg bg-base-200/60">
+                <div class="flex-1 min-w-0">
+                    <div class="font-medium truncate">
+                        {% if d.match %}
+                        <a href="{% url 'matches:detail' d.match.id %}" target="_blank" class="link link-hover">{{ d.match_label }}</a>
+                        {% else %}
+                        {{ d.match_label }} <span class="text-xs opacity-40">(матч удалён)</span>
+                        {% endif %}
+                    </div>
+                    <div class="text-sm mt-1">
+                        <span class="badge badge-sm badge-ghost">{{ d.field_name }}</span>
+                        <span class="opacity-60">{{ d.old_value }}</span>
+                        <i class="ti ti-arrow-right opacity-40"></i>
+                        <span class="font-medium">{{ d.new_value }}</span>
+                    </div>
+                    <div class="text-xs opacity-50 mt-1">{{ d.created_at|timesince }} назад</div>
+                </div>
+                <div class="flex gap-2 shrink-0">
+                    <a href="{% url 'admin:parsers_parserdiscrepancy_change' d.id %}" class="btn btn-ghost btn-sm">
+                        <i class="ti ti-note"></i> Заметка
+                    </a>
+                    <form method="post" action="{% url 'dashboard:data_trust_review_discrepancy' d.id %}">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-outline btn-sm">
+                            <i class="ti ti-check"></i> Разобрано
+                        </button>
+                    </form>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- История исправлений -->
+<div class="card bg-base-100 border border-base-300">
+    <div class="card-body p-4">
+        <h3 class="font-bold text-sm md:text-base mb-1 flex items-center gap-2">
+            <i class="ti ti-history text-info"></i> История исправлений
+        </h3>
+        <p class="text-xs opacity-50 mb-3">
+            Последние действия staff по правке данных: закрытие жалобы, разбор расхождения импорта, ручной ресинк матча.
+            Полный аудит-лог — на вкладке «Аудит».
+        </p>
+        {% if not trust.recent_corrections %}
+        <p class="text-sm opacity-50 py-6 text-center">Исправлений пока не было.</p>
+        {% else %}
+        <div class="overflow-x-auto">
+            <table class="table table-sm">
+                <thead>
+                    <tr><th>Когда</th><th>Кто</th><th>Действие</th><th>Объект</th></tr>
+                </thead>
+                <tbody>
+                    {% for entry in trust.recent_corrections %}
+                    <tr>
+                        <td class="text-xs opacity-70 whitespace-nowrap">{{ entry.created_at|date:"d.m.Y H:i" }}</td>
+                        <td class="text-xs">{{ entry.actor_username|default:"—" }}</td>
+                        <td><span class="badge badge-sm badge-ghost">{{ entry.get_action_display }}</span></td>
+                        <td class="text-xs truncate max-w-[240px]">{{ entry.target|default:"—" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

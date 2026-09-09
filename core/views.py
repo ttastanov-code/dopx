@@ -413,6 +413,22 @@ class ContactsView(TemplateView):
         # и картинка капчи должны быть новыми (в т.ч. после редиректа
         # обратно сюда из post() при ошибке — см. ContactAntiBotForm).
         context['antibot_form'] = ContactAntiBotForm()
+
+        # НОВОЕ (2026-09-09, Центр доверия к данным): переход по кнопке
+        # "Сообщить об ошибке в данных" со страницы матча
+        # (templates/matches/_match_header.html) приносит ?category=
+        # data_error&match=<uuid> — подставляем матч в контекст, чтобы
+        # шаблон мог и показать явный контекст жалобы человеку, и передать
+        # id матча в форму скрытым полем (см. ниже, post()). Если id битый
+        # или матча уже нет — просто не подставляем, форма всё равно
+        # работает как обычное обращение.
+        context['related_match'] = None
+        match_id = self.request.GET.get('match', '').strip()
+        if match_id:
+            context['related_match'] = Match.objects.filter(id=match_id).select_related(
+                'home_team', 'away_team'
+            ).first()
+
         now = timezone.now()
         context['stats'] = {
             'total_matches': Match.objects.count(),
@@ -451,6 +467,17 @@ class ContactsView(TemplateView):
         message = request.POST.get('message', '').strip()
         screenshot = request.FILES.get('screenshot')
 
+        # НОВОЕ (2026-09-09, Центр доверия к данным): скрытое поле формы,
+        # заполняется только если пришли с кнопки "Сообщить об ошибке в
+        # данных" на странице матча. Не доверяем слепо id из POST — как и с
+        # GET-параметром выше, просто резолвим через БД и молча игнорируем,
+        # если матча с таким id нет (подделанный/устаревший id не должен
+        # ронять всю отправку формы).
+        related_match = None
+        related_match_id = request.POST.get('related_match', '').strip()
+        if related_match_id:
+            related_match = Match.objects.filter(id=related_match_id).first()
+
         # Валидация
         if len(message) < 20:
             messages.error(request, 'Слишком короткое сообщение. Минимум 20 символов.')
@@ -475,6 +502,7 @@ class ContactsView(TemplateView):
                 category=category,
                 subject=subject,
                 message=message,
+                related_match=related_match,
                 ip_address=get_client_ip(request),
                 user_agent=request.META.get('HTTP_USER_AGENT', '')[:500],
             )
@@ -746,6 +774,8 @@ class MatchDNAShareCardView(View):
     """
 
     def get(self, request, match_id):
+        from django.db.models import Count
+        from evaluations.models import ContextEvaluation, MatchEvaluation
         from matches.services import build_match_dna
         from core.services.share_cards import build_match_dna_share_card
 
@@ -758,11 +788,38 @@ class MatchDNAShareCardView(View):
 
         events = list(match.events.select_related("player").order_by("minute")[:20])
         referee_agg = match.referee_aggregates.first()
+        # ИСПРАВЛЕНО (фаза 3, docs/adr/0034): раньше здесь был свой отдельный
+        # порог `total_votes__gte=1` вместо MIN_VOTES_FOR_DISPLAY, которым
+        # страница матча (MatchDetailView) фильтрует top_players/worst_players.
+        # Из-за этого расхождения герой на карточке мог оказаться игроком,
+        # который на самой странице матча вообще не попал бы в топ (1 голос
+        # "10/10 от друга" легко обходит честного игрока с 20 оценками) —
+        # тот же класс бага, который MIN_VOTES_FOR_DISPLAY закрывает везде
+        # остальных местах сайта. Теперь оба списка и порог — те же самые,
+        # что использует MatchDetailView.
         top_players = list(
-            PlayerMatchAggregate.objects.filter(match=match, total_votes__gte=1)
+            PlayerMatchAggregate.objects.filter(match=match, total_votes__gte=MIN_VOTES_FOR_DISPLAY)
             .select_related("player").order_by("-performance_score")[:1]
         )
-        match_dna = build_match_dna(match, match_agg, events, referee_agg, top_players=top_players)
+        worst_players = list(
+            PlayerMatchAggregate.objects.filter(match=match, total_votes__gte=MIN_VOTES_FOR_DISPLAY)
+            .select_related("player").order_by("performance_score")[:1]
+        )
+        fan_support = list(ContextEvaluation.objects.filter(
+            match=match
+        ).exclude(
+            supported_team__isnull=True
+        ).values(
+            "supported_team__id", "supported_team__name"
+        ).annotate(count=Count("id")).order_by("-count")[:2])
+        match_evaluations = list(
+            MatchEvaluation.objects.filter(match=match).only("entertainment", "tension", "fairness")
+        )
+        match_dna = build_match_dna(
+            match, match_agg, events, referee_agg,
+            match_evaluations=match_evaluations, top_players=top_players,
+            worst_players=worst_players, fan_support=fan_support,
+        )
         if match_dna is None:
             raise Http404("Нет голосов по этому матчу")
 
@@ -776,12 +833,17 @@ class MatchDNAShareCardView(View):
             or match_dna["turning_point_text"]
         )
         hero = match_dna["hero"]
+        antihero = match_dna["antihero"]
 
         path = build_match_dna_share_card(
             home_team=match.home_team.name, away_team=match.away_team.name,
             home_score=match.home_score or 0, away_score=match.away_score or 0,
             drama_level=match_dna["drama_level"], drama_index=match_dna["drama_index"],
             hero_name=str(hero["player"]) if hero else "", hero_score=hero["score"] if hero else None,
+            antihero_name=str(antihero["player"]) if antihero else "",
+            antihero_score=antihero["score"] if antihero else None,
+            fan_mood_text=match_dna["fan_mood_text"],
+            consensus_text=match_dna["consensus_text"],
             headline=headline,
         )
         return redirect(default_storage.url(path))

@@ -31,7 +31,6 @@ class MatchListView(ListView):
             'away_team',
             'league',
             'season',
-            'stadium'
         ).prefetch_related(
             'aggregate',
             'home_team__rivals',  # для match.is_derby — иначе N+1 на каждой карточке
@@ -156,14 +155,28 @@ class MatchListView(ListView):
         context['current_season'] = self.request.GET.get('season', '')
         context['current_tour'] = self.request.GET.get('tour', '')
         context['leagues'] = League.objects.all()[:10]
-        context['seasons'] = Season.objects.filter(is_active=True)[:5]
-        # Только туры активного сезона — иначе список рос бы вечно номерами
-        # из прошлых сезонов вперемешку. У матчей без tour (ещё не
+        # ИСПРАВЛЕНО (2026-09-09, баг найден пользователем — "в фильтрах
+        # только один сезон, текущий"): is_active=True — ровно ОДИН сезон на
+        # лигу (Season.save() сам это гарантирует, см. seasons/models.py),
+        # так что этот фильтр физически не мог показать больше одного
+        # варианта. После бэкафилла 3 сезонов КПЛ (2024/2025/2026) в фильтре
+        # должны быть видны все, не только текущий — иначе старые сезоны
+        # вообще нельзя выбрать на этой странице.
+        context['seasons'] = Season.objects.order_by('-year')[:10]
+        # Туры — сезона, выбранного В ФИЛЬТРЕ (а не всегда активного): иначе
+        # при выборе прошлого сезона список туров молча остался бы от
+        # текущего и не совпадал бы с тем, что реально есть в выбранном
+        # сезоне. Без выбора сезона в фильтре — поведение как раньше (туры
+        # активного сезона, самый частый случай). У матчей без tour (ещё не
         # пересинканы после добавления поля) exclude(tour__isnull=True).
-        active_season = Season.objects.filter(is_active=True).first()
+        season_param = self.request.GET.get('season', '').strip()
+        if season_param:
+            tours_season = Season.objects.filter(id=season_param).first()
+        else:
+            tours_season = Season.objects.filter(is_active=True).first()
         tours_qs = Match.objects.exclude(tour__isnull=True)
-        if active_season:
-            tours_qs = tours_qs.filter(season=active_season)
+        if tours_season:
+            tours_qs = tours_qs.filter(season=tours_season)
         context['tours'] = tours_qs.values_list('tour', flat=True).distinct().order_by('tour')
         context['now'] = timezone.now()
 
@@ -219,7 +232,6 @@ class MatchDetailView(DetailView):
             'home_coach',
             'away_coach',
             'referee',
-            'stadium'
         ).prefetch_related(
             'lineups__players__player',
             'lineups__players__player__team',
@@ -229,6 +241,11 @@ class MatchDetailView(DetailView):
             'events',
             'coach_aggregates__coach',
             'home_team__rivals',  # для match.is_derby
+            # Фаза 5 (docs/sportmonks-migration-plan.md) — объективная
+            # статистика команд за матч (владение/удары/угловые/xG и т.д.),
+            # данные уже импортируются в фазе 3 (importers.import_statistics),
+            # тут только подтягиваем для шаблона.
+            'team_statistics__team',
         )
     
     def get_context_data(self, **kwargs):
@@ -317,8 +334,10 @@ class MatchDetailView(DetailView):
             )
         ).order_by('side_order')
         
-        # Мнение большинства (за кого болели)
-        fan_support = ContextEvaluation.objects.filter(
+        # Мнение большинства (за кого болели). list() сразу — переиспользуем
+        # тот же материализованный список и в контексте шаблона, и ниже в
+        # build_match_dna (фаза 3, fan_mood_text) без второго запроса.
+        fan_support = list(ContextEvaluation.objects.filter(
             match=match
         ).exclude(
             supported_team__isnull=True
@@ -327,7 +346,7 @@ class MatchDetailView(DetailView):
             'supported_team__name'
         ).annotate(
             count=Count('id')
-        ).order_by('-count')[:2]
+        ).order_by('-count')[:2])
         
         # События матча
         events = list(match.events.select_related('player').order_by('minute')[:20])
@@ -350,6 +369,7 @@ class MatchDetailView(DetailView):
         match_dna = build_match_dna(
             match, match_agg, events, referee_agg,
             match_evaluations=match_evaluations, top_players=list(top_players),
+            worst_players=list(worst_players), fan_support=fan_support,
         )
 
         # Абсолютный URL PNG-карточки ДНК матча (только если есть что
@@ -360,6 +380,70 @@ class MatchDetailView(DetailView):
             self.request.build_absolute_uri(reverse('core:match_dna_share_card', args=[match.id]))
             if match_dna else ''
         )
+
+        # Фаза 5 — объективная статистика команд за матч (см. prefetch выше).
+        # dict по team_id, а не список — шаблону нужно достать статистику
+        # конкретно домашней/гостевой команды, не перебирать все строки.
+        team_stats_by_team_id = {
+            stat.team_id: stat for stat in match.team_statistics.all()
+        }
+        home_team_stats = team_stats_by_team_id.get(match.home_team_id)
+        away_team_stats = team_stats_by_team_id.get(match.away_team_id)
+
+        # Строки для templates/matches/_match_statistics_card.html — собраны
+        # тут, а не в шаблоне, чтобы не плодить 10 одинаковых {% with %}
+        # блоков на каждое поле; шаблон просто перебирает готовый список.
+        def _stat_pair(field, label, suffix=''):
+            return {
+                'label': label,
+                'suffix': suffix,
+                'home': getattr(home_team_stats, field, None) if home_team_stats else None,
+                'away': getattr(away_team_stats, field, None) if away_team_stats else None,
+            }
+
+        stat_rows = [
+            _stat_pair('possession_percent', 'Владение мячом', '%'),
+            # НОВОЕ (2026-09-09, аудит неиспользуемых полей Sportmonks по
+            # просьбе пользователя) — dangerous_attacks: тип DANGEROUS_ATTACKS
+            # у Sportmonks, которого не было у KFF. Сразу под владением —
+            # тот же уровень "темп матча", что и possession, а не в конце
+            # списка вперемешку с карточками/офсайдами.
+            _stat_pair('dangerous_attacks', 'Опасные атаки'),
+            _stat_pair('shots', 'Удары'),
+            _stat_pair('shots_on_goal', 'Удары в створ'),
+            _stat_pair('corners', 'Угловые'),
+            _stat_pair('fouls', 'Фолы'),
+            _stat_pair('offsides', 'Офсайды'),
+            _stat_pair('yellow_cards', 'Жёлтые карточки'),
+            _stat_pair('red_cards', 'Красные карточки'),
+            _stat_pair('xg', 'Ожидаемые голы (xG)'),
+            _stat_pair('pass_accuracy', 'Точность передач', '%'),
+            # НОВОЕ (тот же аудит) — колонка key_passes существовала в
+            # модели ещё с KFF-эпохи, но у Sportmonks маппинг на неё
+            # никогда не был прописан (см. parsers/sportmonks/importers.py::
+            # TEAM_STAT_DEV_NAME_MAP) — поле молча оставалось null.
+            _stat_pair('key_passes', 'Ключевые передачи'),
+        ]
+        has_match_statistics = any(row['home'] is not None or row['away'] is not None for row in stat_rows)
+
+        # Форма команд (последние 5 W/D/L) ДО этого матча — на лету, без
+        # отдельного хранимого поля (см. teams/services.py::get_team_form
+        # и план фаза 5, раздел 7). start_time__lt=match.start_time — форма
+        # "на момент этого матча", а не "по состоянию на сегодня" (иначе
+        # форма перед матчем недельной давности показывала бы будущее
+        # относительно него самого).
+        from teams.services import get_team_form
+
+        home_recent = Match.objects.filter(
+            Q(home_team=match.home_team) | Q(away_team=match.home_team),
+            status='finished', start_time__lt=match.start_time,
+        ).select_related('home_team', 'away_team').order_by('-start_time')[:5]
+        away_recent = Match.objects.filter(
+            Q(home_team=match.away_team) | Q(away_team=match.away_team),
+            status='finished', start_time__lt=match.start_time,
+        ).select_related('home_team', 'away_team').order_by('-start_time')[:5]
+        home_team_form = get_team_form(match.home_team, home_recent)
+        away_team_form = get_team_form(match.away_team, away_recent)
 
         context.update(action_context)
         context.update({
@@ -377,6 +461,12 @@ class MatchDetailView(DetailView):
             'lineups': lineups,
             'fan_support': fan_support,
             'events': events,
+            'home_team_stats': home_team_stats,
+            'away_team_stats': away_team_stats,
+            'stat_rows': stat_rows,
+            'has_match_statistics': has_match_statistics,
+            'home_team_form': home_team_form,
+            'away_team_form': away_team_form,
             'page_title': f'{match.home_team.name} vs {match.away_team.name} — DOPX',
             'now': now,
         })
@@ -402,7 +492,12 @@ class MatchDetailView(DetailView):
             "@type": "SportsEvent",
             "name": f"{match.home_team.name} vs {match.away_team.name}",
             "startDate": match.start_time.isoformat(),
-            "location": {"@type": "Place", "name": match.stadium.name if match.stadium else (match.home_team.city or "Казахстан")},
+            # УДАЛЕНО (2026-09-09): match.stadium убран из проекта целиком
+            # (данные Sportmonks по стадионам КПЛ ненадёжны — команда может
+            # играть "домашние" матчи на разных стадионах в разных городах
+            # в течение одного сезона). location — просто город домашней
+            # команды, без привязки к конкретной площадке.
+            "location": {"@type": "Place", "name": match.home_team.city or "Казахстан"},
             "competitor": [
                 {"@type": "SportsTeam", "name": match.home_team.name},
                 {"@type": "SportsTeam", "name": match.away_team.name},
@@ -460,7 +555,7 @@ def match_header_partial(request, match_id):
     match = get_object_or_404(
         Match.objects.select_related(
             'home_team', 'away_team', 'league', 'season',
-            'home_coach', 'away_coach', 'referee', 'stadium',
+            'home_coach', 'away_coach', 'referee',
         ).prefetch_related('home_team__rivals'),  # rivals нужен для match.is_derby
         id=match_id,
     )

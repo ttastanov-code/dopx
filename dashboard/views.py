@@ -19,6 +19,9 @@ from django.views.decorators.http import require_POST
 
 from core.admin_actions import _csv_safe
 from matches.models import Match
+from notifications.models import ContactSubmission
+from parsers.models import ParserDiscrepancy
+from parsers.sportmonks.client import get_request_counts
 from users.models import SuspiciousActivityFlag
 
 from . import infra_services, parser_tools, services
@@ -95,10 +98,10 @@ def data_health_partial(request):
 @require_POST
 def data_health_resync_match(request, match_id):
     """Кнопка «Досинхронизировать» у конкретного матча в data-health —
-    синхронный full-ресинк (см. dashboard/parser_tools.py::resync_match),
-    не ждём celery beat. Подходит для точечного случая (1-2 проблемных
-    матча); для массового резинка используется задача sync_kff_premier_league
-    из вкладки «Парсер» ниже."""
+    синхронный full-ресинк через Sportmonks (см. dashboard/parser_tools.py::
+    resync_match), не ждём celery beat. Подходит для точечного случая (1-2
+    проблемных матча); для массового резинка — кнопка «Sportmonks: Сверить
+    календарь сезона» из вкладки «Парсер»."""
     match = get_object_or_404(Match, id=match_id)
     success, message = parser_tools.resync_match(match)
     (messages.success if success else messages.error)(request, message)
@@ -192,39 +195,89 @@ def antifraud_export_csv(request):
 
 
 # ============================================================
-# Парсер-тулинг: сырые ответы KFF, ручной ресинк, ручной запуск задач
+# Центр доверия к данным (2026-09-09) — см. services.data_trust_summary
+# докстринг для разделения ответственности с data_health.
+# ============================================================
+
+@staff_member_required
+def data_trust(request):
+    report_status = request.GET.get("report_status", "open")
+    if report_status not in services.DATA_TRUST_REPORT_STATUS_FILTERS:
+        report_status = "open"
+    context = {
+        "page_title": "Центр доверия к данным — DOPX Staff",
+        "active_tab": "data_trust",
+        "trust": services.data_trust_summary(report_status=report_status),
+    }
+    return render(request, "dashboard/data_trust.html", context)
+
+
+@staff_member_required
+@require_POST
+def data_trust_resolve_report(request, submission_id):
+    """Закрыть жалобу «Ошибка в данных матча» из очереди — staff уже
+    проверил/исправил данные (в /admin/matches/match/ и т.п.), это просто
+    снимает пункт с очереди с отметкой, кто и когда. status берётся из
+    формы ('resolved' по умолчанию, 'closed' — для явно нерелевантных
+    обращений без содержательного ответа)."""
+    submission = get_object_or_404(ContactSubmission, id=submission_id, category="data_error")
+    new_status = request.POST.get("status", "resolved")
+    if new_status not in ("resolved", "closed"):
+        new_status = "resolved"
+    submission.status = new_status
+    submission.save(update_fields=["status", "updated_at"])
+    messages.success(request, f"Жалоба «{submission.subject}» закрыта")
+    log_staff_action(
+        request, AuditAction.DATA_ERROR_REPORT_RESOLVED,
+        target=submission.subject,
+        details={
+            "submission_id": str(submission.id),
+            "match_id": str(submission.related_match_id) if submission.related_match_id else None,
+            "status": new_status,
+        },
+    )
+    return redirect(f"{reverse('dashboard:data_trust')}?report_status={request.POST.get('return_status', 'open')}")
+
+
+@staff_member_required
+@require_POST
+def data_trust_review_discrepancy(request, discrepancy_id):
+    """Тот же экшен, что parsers/admin.py::ParserDiscrepancyAdmin.mark_reviewed
+    (по одной записи, не bulk), но без захода в Django admin — очередь
+    теперь полноценно живёт на этой странице (2026-09-09, запрошено
+    пользователем: "сделай страницу более функциональной"), не просто
+    счётчик+ссылка, как раньше."""
+    discrepancy = get_object_or_404(ParserDiscrepancy, id=discrepancy_id)
+    discrepancy.reviewed = True
+    discrepancy.reviewed_by = request.user
+    discrepancy.reviewed_at = timezone.now()
+    discrepancy.save(update_fields=["reviewed", "reviewed_by", "reviewed_at"])
+    messages.success(request, f"Расхождение по «{discrepancy.match_label}» отмечено разобранным")
+    log_staff_action(
+        request, AuditAction.PARSER_DISCREPANCY_REVIEWED,
+        target=discrepancy.match_label,
+        details={"discrepancy_id": str(discrepancy.id), "field_name": discrepancy.field_name},
+    )
+    return redirect("dashboard:data_trust")
+
+
+# ============================================================
+# Парсер-тулинг: поиск матча, ручной ресинк, ручной запуск задач
 # ============================================================
 
 @staff_member_required
 def parser_tools_view(request):
     """Единая страница инструментов парсера (задача #91/#92/#93, расширено
     задачей "польза для решения проблем проекта" — добавлены поиск матча,
-    live-проверка KFF API и инспекция очереди celery):
-      - поиск матча по названию команд/external_id → UUID и быстрые ссылки;
-      - форма просмотра сырого JSON от KFF API по external_id + эндпоинту;
-      - живая (синхронная) проверка доступности внешнего KFF API;
+    live-проверка API и инспекция очереди celery; 2026-09-09 — вся KFF-часть
+    (сырой JSON-вьюер, отдельный health-check, KFF-задачи) физически удалена
+    по решению пользователя, Sportmonks остался единственным источником):
+      - поиск матча по названию команд/sportmonks_id → UUID и быстрые ссылки;
+      - живая (синхронная) проверка доступности Sportmonks API;
       - список активных/зарезервированных celery-задач с revoke;
       - кнопки ручного запуска celery-задач синка (с дебаунсом).
     Ресинк конкретного матча живёт на вкладке data-health (там есть список
     матчей под рукой), сюда вынесены только "безадресные" инструменты."""
-    raw_result = None
-    raw_form = {
-        "external_id": request.GET.get("external_id", ""),
-        "endpoint": request.GET.get("endpoint", "events"),
-    }
-    if raw_form["external_id"]:
-        try:
-            ext_id = int(raw_form["external_id"])
-        except ValueError:
-            messages.error(request, "external_id должен быть числом")
-        else:
-            raw_result = parser_tools.raw_kff_response(ext_id, raw_form["endpoint"])
-            log_staff_action(
-                request, AuditAction.RAW_KFF_LOOKUP,
-                target=f"external_id={ext_id} endpoint={raw_form['endpoint']}",
-                details={"external_id": ext_id, "endpoint": raw_form["endpoint"], "error": raw_result.get("error")},
-            )
-
     # Поиск матча — не логируем в аудит (read-only просмотр, тот же
     # уровень чувствительности, что и обычный список в Django admin).
     search_query = request.GET.get("q", "").strip()
@@ -238,17 +291,25 @@ def parser_tools_view(request):
     context = {
         "page_title": "Парсер — DOPX Staff",
         "active_tab": "parser_tools",
-        "raw_endpoints": parser_tools.RAW_ENDPOINTS,
-        "raw_form": raw_form,
-        "raw_result": raw_result,
         "triggerable_tasks": parser_tools.TRIGGERABLE_TASKS,
         "task_descriptions": parser_tools.TASK_DESCRIPTIONS,
+        "sportmonks_triggerable_tasks": parser_tools.SPORTMONKS_TRIGGERABLE_TASKS,
+        "sportmonks_task_descriptions": parser_tools.SPORTMONKS_TASK_DESCRIPTIONS,
         "search_query": search_query,
         "search_results": search["results"],
         "search_total_count": search["total_count"],
         "search_year": search["year"],
         "search_available_years": parser_tools.available_search_years(),
         "celery_tasks": parser_tools.list_active_celery_tasks(),
+        "sportmonks_health": parser_tools.get_cached_sportmonks_health(),
+        # НЕ через кэш health-check (тот снимок делается только по клику
+        # «Проверить доступность» и тогда быстро устаревает) — читаем
+        # счётчик напрямую при КАЖДОЙ загрузке страницы, дёшево (два
+        # cache.get) и всегда актуально, т.к. инкрементируется в фоне из
+        # любой задачи синка/live-опроса (2026-09-09, баг найден
+        # пользователем: "вообще не сходится кол-во запросов", см.
+        # parsers/sportmonks/client.py::get_request_counts докстринг).
+        "sportmonks_request_counts": get_request_counts(),
     }
     return render(request, "dashboard/parser_tools.html", context)
 
@@ -257,9 +318,8 @@ def parser_tools_view(request):
 def parser_tasks_partial(request):
     """Карточка «Очередь celery» на странице parser_tools — цель
     HTMX-поллинга (hx-get каждые 10с). Только этот кусок, а не вся
-    страница — иначе перетирались бы форма поиска и просмотр сырого
-    ответа KFF, которые staff мог только что заполнить (см. комментарий
-    в _celery_tasks_card.html)."""
+    страница — иначе перетирались бы форма поиска, которую staff мог
+    только что заполнить (см. комментарий в _celery_tasks_card.html)."""
     context = {"celery_tasks": parser_tools.list_active_celery_tasks()}
     return render(request, "dashboard/_celery_tasks_card.html", context)
 
@@ -279,19 +339,30 @@ def parser_trigger_task(request):
 
 @staff_member_required
 @require_POST
-def parser_kff_health_check(request):
-    """Живая проверка "это мы или у них API лежит" — синхронный вызов,
-    результат сразу в messages, без ожидания celery-цикла и без захода в
-    логи сервера."""
-    result = parser_tools.kff_api_health_check()
-    if result["ok"]:
-        messages.success(request, f"KFF API доступен ({result['elapsed_ms']}мс)")
-    else:
-        messages.error(request, f"KFF API недоступен: {result['status']} ({result['elapsed_ms']}мс)")
+def parser_sportmonks_health_check(request):
+    """Живая проверка "это мы или у них API лежит" — синхронный вызов.
+
+    ПЕРЕДЕЛАНО (2026-09-09, жалоба пользователя на карточку "Доступность
+    Sportmonks API": "огромная пустота и кнопка в самом низу" — у карточки
+    не было НИКАКОГО контента, кроме заголовка/описания/кнопки, а результат
+    уходил в messages где-то в другом месте страницы, визуально никак не
+    привязанный к самой карточке): теперь при HTMX-запросе (кнопка на
+    странице — hx-post) отдаём partial с результатом ПРЯМО в карточку
+    (см. _sportmonks_health_result.html), a не редиректим всю страницу.
+    Обычный (не-HTMX) POST — на случай отключённого JS/прямого curl —
+    по-прежнему работает через messages+redirect, как раньше."""
+    result = parser_tools.sportmonks_api_health_check()
     log_staff_action(
-        request, AuditAction.KFF_HEALTH_CHECK,
-        target="KFF API", details=result,
+        request, AuditAction.SPORTMONKS_HEALTH_CHECK,
+        target="Sportmonks API", details=result,
     )
+    if request.headers.get("HX-Request") == "true":
+        return render(request, "dashboard/_sportmonks_health_result.html", {"sportmonks_health": result})
+
+    if result["ok"]:
+        messages.success(request, f"Sportmonks API доступен: {result['status']} ({result['elapsed_ms']}мс)")
+    else:
+        messages.error(request, f"Sportmonks API недоступен: {result['status']} ({result['elapsed_ms']}мс)")
     return redirect("dashboard:parser_tools")
 
 

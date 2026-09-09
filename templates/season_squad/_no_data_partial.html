@@ -1,0 +1,13 @@
+{% comment %}
+templates/season_squad/_no_data_partial.html
+HTMX-партиал для best_xi_partial, когда сезон стал недоступен между
+загрузкой страницы и опросом (hx-swap="innerHTML" на #best-xi-content, см.
+best_xi.html) — редкий крайний случай, но не должен уронить поллинг.
+{% endcomment %}
+<div class="text-center py-10 opacity-60">
+  <div class="w-14 h-14 rounded-full bg-base-200 flex items-center justify-center mx-auto mb-3">
+    <i class="ti ti-shirt text-2xl"></i>
+  </div>
+  <p class="font-medium">Данные временно недоступны</p>
+  <p class="text-sm opacity-60 mt-1">Загляните чуть позже</p>
+</div>

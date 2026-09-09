@@ -1,0 +1,99 @@
+{% comment %}
+templates/players/_position_map.html
+Мини-схема поля — "все позиции, на которых играл этот игрок" (2026-09-09).
+
+2026-09-09, третий проход (пользователь: "схема дизайн страшный, надо
+минималистично и красиво", плюс на скриншоте был виден двойной "ореол"
+вокруг бейджа): убрана вся лишняя разметка (шестиметровая зона внутри
+штрафной, угловые дуги — на таком маленьком виджете это просто шум), белая
+обводка бейджа заменена на мягкую SVG-тень вместо второго кольца, неглавные
+позиции стали ПЛОТНЫМ, а не полупрозрачным цветом (полупрозрачность на
+светлом фоне давала грязный "мыльный" вид) — разница главная/неглавная
+теперь только по размеру круга. Высота схемы больше не завязана на вязкий
+vw-расчёт (62vw) — фиксированное соотношение сторон через aspect-ratio,
+предсказуемо на любой ширине карточки.
+
+Принимает: position_breakdown — список dict {code, label, count, x, y,
+group} из players/positions.py::player_position_breakdown (group —
+"gk"/"def"/"mid"/"fwd", только для цвета). x/y — проценты 0-100.
+
+Не показываем карту вообще, если данных нет — пустое поле без бейджей
+выглядело бы как баг, а не как "нет данных".
+{% endcomment %}
+{% if position_breakdown %}
+<div class="card bg-base-100 border border-base-300">
+    <div class="card-body p-4">
+        <h3 class="font-bold text-lg mb-1">
+            <i class="ti ti-map-2 mr-2"></i>
+            Позиции на поле
+        </h3>
+        <p class="text-xs opacity-55 mb-3">
+            Основная — {{ position_breakdown.0.label|lower }}{% if position_breakdown|length > 1 %}, играл(а) и на других позициях{% endif %}
+        </p>
+
+        <svg viewBox="0 0 100 130" preserveAspectRatio="none"
+             class="w-full rounded-2xl" style="aspect-ratio: 100 / 130; background: color-mix(in oklab, var(--color-success) 6%, var(--color-base-100));"
+             role="img" aria-label="Схема позиций на поле">
+            <defs>
+                <filter id="posmap-shadow-{{ player.id }}" x="-60%" y="-60%" width="220%" height="220%">
+                    <feDropShadow dx="0" dy="1" stdDeviation="1.4" flood-color="#000" flood-opacity="0.22"/>
+                </filter>
+            </defs>
+
+            <!-- разметка: только рамка, центральная линия/круг, две штрафные зоны -->
+            <g fill="none" stroke="var(--color-base-content)" stroke-opacity="0.14" stroke-width="0.5">
+                <rect x="1.5" y="1.5" width="97" height="127" rx="3"/>
+                <line x1="1.5" y1="65" x2="98.5" y2="65"/>
+                <circle cx="50" cy="65" r="11"/>
+                <rect x="27" y="1.5" width="46" height="16"/>
+                <rect x="27" y="112.5" width="46" height="16"/>
+            </g>
+
+            {% for pos in position_breakdown %}
+            {% comment %}
+            players/positions.py::PITCH_COORDS хранит y в шкале 0-100 (та же
+            система координат, что уже использует templates/season_squad/
+            _best_xi_content.html — не переизобретаем). viewBox этой схемы —
+            0 0 100 130 (портретные пропорции вместо квадрата), поэтому y
+            пересчитывается в реальную высоту через {% widthratio %} — тот
+            же встроенный тег Django, что уже используется для полосок
+            статистики в _match_statistics_card.html, не нужен кастомный
+            фильтр деления.
+            {% endcomment %}
+            {% comment %}
+            2026-09-09, ВТОРОЙ проход (пользователь прислал новый скриншот —
+            подложка из первого прохода САМА стала видимым кольцом): причина
+            — подложка сидела ВНУТРИ той же <g filter="drop-shadow">, что и
+            цветной маркер, а drop-shadow строится по силуэту ВСЕЙ группы —
+            то есть тень рисовалась по краю большей (подложки), а не меньшей
+            (маркера) окружности, и получалось ровно то же самое кольцо,
+            только от собственной подложки вместо линии поля. Фикс: подложка
+            теперь СНАРУЖИ filter-группы (без тени вообще — она плоская
+            заливка для перекрытия разметки поля, тени ей не нужно), тень
+            остаётся только у видимого цветного маркера.
+            {% endcomment %}
+            <circle cx="{{ pos.x }}" cy="{% widthratio pos.y 100 130 %}"
+                    r="{% if forloop.first %}8{% else %}6.5{% endif %}"
+                    fill="color-mix(in oklab, var(--color-success) 6%, var(--color-base-100))"/>
+            <g filter="url(#posmap-shadow-{{ player.id }})">
+                <circle cx="{{ pos.x }}" cy="{% widthratio pos.y 100 130 %}"
+                        r="{% if forloop.first %}6.5{% else %}5{% endif %}"
+                        fill="{% if pos.group == 'def' %}var(--color-info){% elif pos.group == 'mid' %}var(--color-success){% elif pos.group == 'fwd' %}var(--color-error){% else %}var(--color-neutral){% endif %}"/>
+                <text x="{{ pos.x }}" y="{% widthratio pos.y 100 130 %}" text-anchor="middle" dominant-baseline="central"
+                      fill="white" font-size="{% if forloop.first %}4{% else %}3.4{% endif %}" font-weight="700">{{ pos.code }}</text>
+            </g>
+            {% endfor %}
+        </svg>
+
+        <div class="flex flex-wrap gap-1.5 mt-3">
+            {% for pos in position_breakdown %}
+            <span class="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full border border-base-300"
+                  style="{% if forloop.first %}background: color-mix(in oklab, {% if pos.group == 'def' %}var(--color-info){% elif pos.group == 'mid' %}var(--color-success){% elif pos.group == 'fwd' %}var(--color-error){% else %}var(--color-neutral){% endif %} 12%, transparent); border-color: transparent;{% endif %}">
+                <span class="w-1.5 h-1.5 rounded-full" style="background: {% if pos.group == 'def' %}var(--color-info){% elif pos.group == 'mid' %}var(--color-success){% elif pos.group == 'fwd' %}var(--color-error){% else %}var(--color-neutral){% endif %};"></span>
+                {{ pos.label }}{% if pos.count > 1 %} · {{ pos.count }}{% endif %}
+            </span>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}

@@ -8,6 +8,7 @@ from .models import (
     CoachMatchAggregate,
     MatchAggregate,
     PlayerMatchAggregate,
+    PlayerRatingCorrection,
     RefereeMatchAggregate,
     TeamMatchAggregate,
     TeamRatingCorrection,
@@ -84,6 +85,24 @@ class TeamRatingCorrectionAdmin(ModelAdmin):
     actions = ['reset_to_zero', export_as_csv]
 
     @admin.action(description="Обнулить поправку (не корректировать команду)")
+    def reset_to_zero(self, request, queryset):
+        updated = queryset.update(correction=0.0, last_pattern='')
+        self.message_user(request, f"Поправка обнулена: {updated}")
+
+
+@admin.register(PlayerRatingCorrection)
+class PlayerRatingCorrectionAdmin(ModelAdmin):
+    """Аналог TeamRatingCorrectionAdmin выше — та же механика ручного
+    override, теперь на уровне игрока (2026-09-08, detect_player_rating_
+    stats_divergence_task)."""
+
+    list_display = ('player', 'correction', 'last_pattern', 'updated_at')
+    search_fields = ('player__first_name', 'player__last_name')
+    list_editable = ('correction',)
+    autocomplete_fields = ('player',)
+    actions = ['reset_to_zero', export_as_csv]
+
+    @admin.action(description="Обнулить поправку (не корректировать игрока)")
     def reset_to_zero(self, request, queryset):
         updated = queryset.update(correction=0.0, last_pattern='')
         self.message_user(request, f"Поправка обнулена: {updated}")

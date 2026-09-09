@@ -121,7 +121,12 @@
         <section>
             <div class="flex items-center justify-between mb-3 md:mb-4">
                 <h2 class="text-xl md:text-2xl font-bold flex items-center gap-2">
-                    <span class="match-card__live-dot"></span>
+                    {% comment %}
+                    2026-09-09: класс переименован вместе с полным
+                    редизайном карточки матча (match-card__live-dot ->
+                    mrow__live-dot, см. static/css/match-card.css).
+                    {% endcomment %}
+                    <span class="mrow__live-dot"></span>
                     <span>Сейчас в игре</span>
                 </h2>
                 <a href="{% url 'matches:list' %}?status=live" class="btn btn-ghost btn-xs sm:btn-sm">
@@ -175,7 +180,7 @@
             </div>
             <div class="space-y-2 md:space-y-3">
                 {% for match in recent_matches %}
-                {% include 'components/_match_card.html' with match=match show_stadium=False %}
+                {% include 'components/_match_card.html' with match=match %}
                 {% empty %}
                 <div class="text-center py-8 opacity-60">
                     <i class="ti ti-scoreboard text-3xl sm:text-4xl mb-2"></i>

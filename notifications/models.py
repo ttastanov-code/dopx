@@ -93,6 +93,16 @@ class ContactSubmission(BaseModel):
         # обращения должны быть отличимы в фильтре админки, а не
         # угадываться модератором по тексту сообщения.
         ('dispute', _('Оспорить рейтинг / право на ответ')),
+        # НОВОЕ (2026-09-09, "Центр доверия к данным" — рекомендация из
+        # код-ревью Codex, дополнительно запрошено пользователем явно):
+        # отдельная категория для "у этого матча неверные данные" —
+        # неправильный стадион/счёт/состав/событие. Отличается от 'bug'
+        # (баг сайта) и 'evaluation' (несогласие с чужой оценкой): здесь
+        # речь о фактической ошибке в данных ИСТОЧНИКА (Sportmonks) или
+        # нашего импорта, попадает в отдельную очередь на дашборде
+        # (dashboard/services.py::data_trust_summary), а не в общую очередь
+        # поддержки.
+        ('data_error', _('Ошибка в данных матча')),
         ('other', _('Другое')),
     ]
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='contact_submissions', verbose_name=_('Пользователь'))
@@ -105,6 +115,16 @@ class ContactSubmission(BaseModel):
     admin_response = models.TextField(_('Ответ админа'), blank=True, help_text=_('Внутренний ответ для истории'))
     ip_address = models.GenericIPAddressField(_('IP адрес'), null=True, blank=True)
     user_agent = models.TextField(_('User Agent'), blank=True)
+    # НОВОЕ (2026-09-09, Центр доверия к данным): опциональная привязка к
+    # конкретному матчу — заполняется, только когда обращение пришло с
+    # кнопки "Сообщить об ошибке в данных" на странице матча (см.
+    # templates/matches/_match_header.html, core/views.py::ContactsView.post).
+    # SET_NULL, а не CASCADE — жалоба как факт обращения переживает удаление
+    # матча (тот же принцип, что Notification.related_match).
+    related_match = models.ForeignKey(
+        'matches.Match', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='data_error_reports', verbose_name=_('Матч (если жалоба на данные)'),
+    )
 
     class Meta:
         verbose_name = _('Обращение')

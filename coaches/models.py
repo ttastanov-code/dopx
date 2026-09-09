@@ -27,6 +27,17 @@ class Coach(BaseModel):
         null=True,
         blank=True
     )
+    # См. комментарий у League.sportmonks_id (leagues/models.py). У KFF
+    # тренер не всегда приходил со стабильным id — Sportmonks отдаёт
+    # стабильный id всегда, но исторические записи всё равно нужно один
+    # раз сверить скриптом реконсиляции (фаза 2 плана), не заводить дублей.
+    sportmonks_id = models.CharField(
+        _('Sportmonks ID'),
+        max_length=100,
+        unique=True,
+        null=True,
+        blank=True
+    )
 
     class Meta:
         verbose_name = _('Тренер')

@@ -46,8 +46,19 @@ text (имя переменной, содержащей текст подска�
         <div x-ref="bubble"
              x-cloak
              :style="{ position: 'fixed', top: pos.top + 'px', left: pos.left + 'px', display: open ? 'block' : 'none' }"
-             class="z-[9999] max-w-[240px] rounded-md bg-neutral text-neutral-content text-xs leading-snug px-2.5 py-1.5 shadow-lg pointer-events-none">
-            <span x-text="text"></span>
+             class="z-[9999] max-w-[280px] rounded-md bg-neutral text-neutral-content text-xs leading-snug px-2.5 py-2 shadow-lg pointer-events-none">
+            {% comment %}
+            white-space: pre-line (2026-09-09, жалоба "текст как куча букв
+            без структуры и нечитабельно") — раньше длинные пояснения
+            (season_squad/round_squad "почему в составе") приходили одной
+            строкой без переносов и превращались в нечитаемую простыню
+            текста в узком пузыре. pre-line уважает переносы \n внутри
+            {{ text }} (см. season_squad/services.py::_build_explanation —
+            теперь каждый факт на отдельной строке), но по-прежнему схлопывает
+            обычные пробелы — короткие однострочные подсказки (без \n)
+            выглядят как раньше, ничего не ломает для них.
+            {% endcomment %}
+            <span x-text="text" style="white-space: pre-line;"></span>
         </div>
     </template>
 </span>
