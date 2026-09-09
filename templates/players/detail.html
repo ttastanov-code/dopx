@@ -73,6 +73,25 @@
                             {{ player.team.name }}
                         </a>
                     {% endif %}
+                    {% if active_sidelined %}
+                    {% comment %}
+                    Бейдж "недоступен" (фаза 5, docs/sportmonks-migration-plan.md) —
+                    активная травма/дисквалификация из PlayerSidelined
+                    (players/views.py::PlayerDetailView). НЕ путать с
+                    "Покинул клуб" ниже — это временный статус, не связан
+                    с Player.is_active.
+                    {% endcomment %}
+                    <span class="badge badge-lg badge-error badge-outline"
+                          title="{% if active_sidelined.start_date %}С {{ active_sidelined.start_date|date:'d.m.Y' }}{% endif %}{% if active_sidelined.end_date %} по {{ active_sidelined.end_date|date:'d.m.Y' }}{% endif %}">
+                        {% if active_sidelined.category == 'injury' %}
+                        <i class="ti ti-first-aid-kit"></i> Травма
+                        {% elif active_sidelined.category == 'suspended' %}
+                        <i class="ti ti-hand-stop"></i> Дисквалификация
+                        {% else %}
+                        <i class="ti ti-alert-circle"></i> Недоступен
+                        {% endif %}
+                    </span>
+                    {% endif %}
                     {% if not player.is_active %}
                         {% comment %}
                         НАЙДЕНО (2026-09-01): player.team — последняя ИЗВЕСТНАЯ
@@ -294,6 +313,9 @@
 
     <!-- === ПРАВАЯ КОЛОНКА (1/3) === -->
     <div class="space-y-6">
+        <!-- === МИНИ-СХЕМА ПОЗИЦИЙ === -->
+        {% include 'players/_position_map.html' %}
+
         <!-- === РАДАР МЕТРИК === -->
         <div class="card bg-base-100 border border-base-300">
             <div class="card-body p-4">
@@ -327,15 +349,19 @@
                         </div>
                     </div>
 
-                    <!-- Зрелость -->
+                    <!-- Зрелость — двуполярная метрика (вклад минус риск, см.
+                         evaluations/models.py::maturity_score), диапазон
+                         примерно [-9, +9], а не [0, 10] — обычный widthratio
+                         тут ломается на отрицательных значениях (см.
+                         core/templatetags/math_extras.py::bipolar_bar_pct). -->
                     <div>
                         <div class="flex justify-between text-sm mb-1">
                             <span>Зрелость</span>
-                            <span class="font-bold">{{ stats.avg_maturity }}</span>
+                            <span class="font-bold {% if stats.avg_maturity < 0 %}text-error{% endif %}">{{ stats.avg_maturity }}</span>
                         </div>
                         <div class="w-full bg-base-200 rounded-full h-2">
-                            <div class="bg-info h-2 rounded-full"
-                                 style="width: {% widthratio stats.avg_maturity 10 100 %}%"></div>
+                            <div class="{% if stats.avg_maturity < 0 %}bg-error{% else %}bg-info{% endif %} h-2 rounded-full"
+                                 style="width: {{ stats.avg_maturity|bipolar_bar_pct:10 }}%"></div>
                         </div>
                     </div>
 

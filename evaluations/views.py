@@ -48,7 +48,7 @@ from evaluations.models import (
 )
 from events.models import MatchEvent
 from lineups.models import MatchLineupPlayer
-from matches.models import Match
+from matches.models import Match, MatchPlayerStatistics
 from notifications.models import Notification
 from notifications.tasks import send_level_up_notification
 from users.models import UserXP
@@ -70,6 +70,56 @@ XP_FINAL_STEP = 1
 # Режим "Быстро" (см. docs/adr/0006-quick-full-evaluation-mode.md) —
 # сколько игроков на команду предзаполняется отмеченными на шаге "Игроки".
 KEY_PLAYERS_PER_SIDE = 3
+
+# НОВОЕ (2026-09-08, по просьбе пользователя — "использовать статистику
+# матча при рекомендации быстрой оценки игроков"): раньше "заметность"
+# игрока в quick-режиме определялась ТОЛЬКО по MatchEvent (гол/карточка) —
+# игрок с 5 ударами и вратарь с 6 сейвами, но без гола/карточки, никогда не
+# попадали в курируемый набор, хотя объективно были в центре игры. Пороги
+# ниже — статистика (MatchPlayerStatistics, фаза 3/5 миграции на
+# Sportmonks) добавляет ВТОРОЙ, независимый от событий источник
+# "заметности". Сознательно НЕ используется для предзаполнения самих
+# ползунков (Вклад/Риск/Потенциал) — см. обсуждение с пользователем:
+# "Риск"/"Потенциал" суть субъективные суждения, статистика одного матча
+# не может их "порекомендовать" осмысленно, а автозаполнение "Вклада" по
+# формуле рисковало бы просто заменить мнение пользователя числом — здесь
+# статистика влияет ТОЛЬКО на то, чья карточка раскрыта по умолчанию, сам
+# выбор баллов остаётся полностью за человеком.
+STATS_KEY_PLAYER_SHOTS_ON_TARGET = 2
+STATS_KEY_PLAYER_SHOTS = 4
+STATS_KEY_PLAYER_SAVES = 3
+
+
+def _pluralize_ru(n: int, one: str, few: str, many: str) -> str:
+    """Общее русское склонение по числу (тот же алгоритм, что
+    matches/services.py::_pluralize_goals, но параметризован — там было
+    захардкожено только под "гол"). НЕ используем встроенный Django-фильтр
+    |pluralize с 3 формами через запятую — он поддерживает максимум ДВЕ
+    формы (singular/plural suffix), при трёх формах молча возвращает
+    пустую строку (см. django/template/defaultfilters.py::pluralize) —
+    настоящая русская форма 1/2-4/5+ ему в принципе недоступна."""
+    if n % 10 == 1 and n % 100 != 11:
+        return one
+    if 2 <= n % 10 <= 4 and not (12 <= n % 100 <= 14):
+        return few
+    return many
+
+
+def _player_stats_badges(stats: "MatchPlayerStatistics") -> list[str]:
+    """Готовые строки для карточки игрока в шаге "Игроки" (справочная
+    статистика, см. STATS_KEY_PLAYER_* выше) — посчитаны в Python, а не
+    через шаблонный |pluralize (см. _pluralize_ru), максимум 3 штуки,
+    приоритет: сейвы (сигнал "вратарь поработал") -> удары -> фолы."""
+    badges = []
+    if stats.saves:
+        badges.append(f"{stats.saves} {_pluralize_ru(stats.saves, 'сейв', 'сейва', 'сейвов')}")
+    if stats.shots:
+        word = _pluralize_ru(stats.shots, 'удар', 'удара', 'ударов')
+        extra = f" ({stats.shots_on_target} в створ)" if stats.shots_on_target else ""
+        badges.append(f"{stats.shots} {word}{extra}")
+    if stats.fouls:
+        badges.append(f"{stats.fouls} {_pluralize_ru(stats.fouls, 'фол', 'фола', 'фолов')}")
+    return badges
 
 
 def _track_wizard_xp(request, amount: float) -> None:
@@ -417,18 +467,36 @@ class EvaluatePlayersView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
         messages.success(request, f'Оценено игроков: {count}.')
         return redirect('evaluations:coaches', match_id=self.match.id)
 
-    def _compute_key_player_ids(self, lineup_players: list) -> set:
+    def _stats_notable_player_ids(self, player_stats_by_id: dict) -> set:
+        """Второй, независимый от событий источник "заметности" — см.
+        комментарий у STATS_KEY_PLAYER_* констант. Игрок считается заметным
+        по статистике, если превышен любой из порогов (удары в створ ИЛИ
+        общие удары ИЛИ сейвы — вратарь без ударов по воротам соперника не
+        должен теряться из-за порога, рассчитанного на полевого игрока)."""
+        notable = set()
+        for player_id, stats in player_stats_by_id.items():
+            if (stats.shots_on_target or 0) >= STATS_KEY_PLAYER_SHOTS_ON_TARGET:
+                notable.add(player_id)
+            elif (stats.shots or 0) >= STATS_KEY_PLAYER_SHOTS:
+                notable.add(player_id)
+            elif (stats.saves or 0) >= STATS_KEY_PLAYER_SAVES:
+                notable.add(player_id)
+        return notable
+
+    def _compute_key_player_ids(self, lineup_players: list, player_stats_by_id: dict) -> set:
         """
         Курируемый набор игроков для режима "Быстро" — предзаполненные
         карточки, чтобы не листать весь состав ради 3-5 самых заметных
         участников матча. См. docs/adr/0006-quick-full-evaluation-mode.md.
 
         Приоритет 1 — участники заметных событий матча (гол/красная/жёлтая
-        карточка/автогол — самый дешёвый доступный прокси "заметности" без
-        отдельной метрики минут на поле). Приоритет 2 — добивание до
-        KEY_PLAYERS_PER_SIDE игроков на команду стартовым составом по
-        возрастанию номера (детерминированно, не полагается на предположение
-        "капитан = игрок с наименьшим номером", которого в модели нет).
+        карточка/автогол) ИЛИ игроки с заметной объективной статистикой
+        (удары в створ/сейвы — см. _stats_notable_player_ids, добавлено
+        2026-09-08 поверх исходной событийной эвристики). Приоритет 2 —
+        добивание до KEY_PLAYERS_PER_SIDE игроков на команду стартовым
+        составом по возрастанию номера (детерминированно, не полагается на
+        предположение "капитан = игрок с наименьшим номером", которого в
+        модели нет).
         """
         notable_ids = set(
             MatchEvent.objects.filter(
@@ -436,6 +504,7 @@ class EvaluatePlayersView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
                 event_type__in=('goal', 'yellow_card', 'red_card', 'own_goal', 'disallowed_goal'),
             ).values_list('player_id', flat=True)
         )
+        notable_ids |= self._stats_notable_player_ids(player_stats_by_id)
         lineup_by_player = {lp.player_id: lp for lp in lineup_players}
 
         key_ids = {pid for pid in notable_ids if pid in lineup_by_player}
@@ -461,7 +530,25 @@ class EvaluatePlayersView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
             .select_related('player__team')
             .order_by('is_starting', 'shirt_number')
         )
-        key_player_ids = self._compute_key_player_ids(lineup_players) if session.mode == 'quick' else set()
+
+        # Объективная статистика по игроку за ЭТОТ матч (фаза 5 миграции на
+        # Sportmonks) — используется и для "умного" выбора ключевых игроков
+        # ниже, и просто выводится на карточке как справочная информация
+        # (см. templates/evaluations/_player_card.html) — НЕ предзаполняет
+        # ползунки, только даёт контекст перед оценкой.
+        player_stats_by_id = {
+            stat.player_id: stat
+            for stat in MatchPlayerStatistics.objects.filter(match=self.match)
+        }
+        for lp in lineup_players:
+            stats = player_stats_by_id.get(lp.player_id)
+            lp.match_stats = stats
+            lp.stats_badges = _player_stats_badges(stats) if stats else []
+
+        key_player_ids = (
+            self._compute_key_player_ids(lineup_players, player_stats_by_id)
+            if session.mode == 'quick' else set()
+        )
         context.update({
             'match': self.match,
             'lineup_players': lineup_players,

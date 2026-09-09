@@ -15,6 +15,19 @@ class League(BaseModel):
         null=True,
         blank=True
     )
+    # НОВОЕ (переход с KFF на Sportmonks): отдельное поле, НЕ переиспользуем
+    # external_id выше — там уже лежат id из JSON API KFF, у Sportmonks
+    # совершенно другая нумерация в том же типе (integer as string), и
+    # переиспользование поля рано или поздно столкнуло бы id разных
+    # источников. sportmonks_id заполняется параллельно, старые записи с
+    # external_id продолжают резолвиться как раньше, пока идёт миграция.
+    sportmonks_id = models.CharField(
+        _('Sportmonks ID'),
+        max_length=100,
+        unique=True,
+        null=True,
+        blank=True
+    )
     # Какая лига считается "главной" для сайта — используется вместо
     # Season.objects.filter(is_active=True).first() (без фильтра по лиге)
     # в core/views.py::standings_preview и core/views.py (главная страница):

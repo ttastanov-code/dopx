@@ -1,5 +1,4 @@
 # round_squad/views.py
-from django.http import Http404
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.views.decorators.clickjacking import xframe_options_exempt
@@ -27,12 +26,13 @@ from seasons.models import Season
 
 
 def _resolve_season(season_id):
+    """См. тот же принцип в season_squad/views.py::_resolve_season — None
+    без season_id в URL легитимен ("нет активного сезона" — данные ещё не
+    подъехали, не ошибка запроса), Http404 остаётся только для явно
+    неверного season_id."""
     if season_id:
         return get_object_or_404(Season.objects.select_related('league'), pk=season_id)
-    season = Season.get_primary_active()
-    if season is None:
-        raise Http404("Нет активного сезона")
-    return season
+    return Season.get_primary_active()
 
 
 def _resolve_latest_tour(season):
@@ -106,11 +106,19 @@ def _slot_to_card(slot, slot_code):
 
 
 def _round_context(season_id, tour):
+    """None — легитимный результат в ДВУХ случаях: нет активного сезона, или
+    сезон есть, но ещё ни один тур не сыгран настолько, чтобы его показать
+    (см. _resolve_latest_tour). Оба — "данных пока нет", не ошибка запроса
+    (тот же принцип, что season_squad/views.py::_best_xi_context) — Http404
+    здесь раньше делал страницу похожей на сломанную сразу после миграции
+    на Sportmonks, когда сыграно всего несколько матчей."""
     season = _resolve_season(season_id)
+    if season is None:
+        return None
     if tour is None:
         tour = _resolve_latest_tour(season)
     if tour is None:
-        raise Http404("В этом сезоне ещё нет завершённых туров")
+        return None
 
     round_xi, _created = RoundBestXI.objects.get_or_create(season=season, tour=tour)
     slots_by_code = {s.slot_code: s for s in round_xi.slots.all()}
@@ -157,6 +165,11 @@ def _round_context(season_id, tour):
 def round_of_week(request, season_id=None, tour=None):
     """Публичная страница «DOPX Лучшие тура»."""
     context = _round_context(season_id, tour)
+    if context is None:
+        return render(request, 'round_squad/no_data.html', {
+            'title': 'DOPX Лучшие тура',
+            'message': 'Пока нет ни одного завершённого тура с данными — загляните чуть позже.',
+        })
     round_xi = context['round_xi']
     if round_xi.share_card_path:
         from django.core.files.storage import default_storage
@@ -185,6 +198,8 @@ def round_of_week_partial(request, season_id=None, tour=None):
     """HTMX-партиал для фонового поллинга, тот же принцип, что
     season_squad/views.py::best_xi_partial."""
     context = _round_context(season_id, tour)
+    if context is None:
+        return render(request, 'round_squad/_no_data_partial.html')
     return render(request, 'round_squad/_round_content.html', context)
 
 

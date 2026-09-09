@@ -10,14 +10,17 @@ from .models import ParserDiscrepancy, ParserSyncRun
 
 @admin.register(ParserSyncRun)
 class ParserSyncRunAdmin(ModelAdmin):
-    """Только чтение — записи создаются исключительно из
-    `parsers/tasks.py::update_match_statuses`, руками их редактировать
-    незачем (см. dashboard/services.py::data_health_summary для основного
-    UI поверх этих данных — эта admin-страница нужна как fallback/для
-    отладки конкретного запуска)."""
+    """Только чтение — записи пишет `parsers/sportmonks/tasks.py::
+    _record_sync_run` (source='sportmonks'). Исторические строки с
+    source='kff' писала `parsers/tasks.py::update_match_statuses` до
+    2026-09-09, когда KFF-парсер был физически удалён — писать этот
+    source больше некому, но старые строки в БД остаются как есть.
+    Руками редактировать незачем (см. dashboard/services.py::
+    data_health_summary для основного UI поверх этих данных — эта
+    admin-страница нужна как fallback/для отладки конкретного запуска)."""
 
-    list_display = ('task_name', 'created_at', 'total', 'updated', 'errors', 'new_events', 'error_rate_percent')
-    list_filter = ('task_name', 'created_at')
+    list_display = ('task_name', 'source', 'created_at', 'total', 'updated', 'errors', 'new_events', 'error_rate_percent')
+    list_filter = ('source', 'task_name', 'created_at')
     ordering = ('-created_at',)
     readonly_fields = [f.name for f in ParserSyncRun._meta.fields] + ['duration_seconds', 'error_rate_percent']
     actions = [export_as_csv]

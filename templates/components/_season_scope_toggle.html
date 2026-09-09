@@ -1,19 +1,27 @@
 <!-- templates/components/_season_scope_toggle.html
      Переключатель "текущий сезон / показать всех" для списков команд,
-     игроков и тренеров (teams/players/coaches list.html) — контекст:
-     active_season (Season|None), show_all (bool). См. docs/BACKLOG.md,
-     находка 3. -->
+     игроков, тренеров и судей (teams/players/coaches/referees list.html) —
+     контекст: active_season (Season|None), show_all (bool). См.
+     docs/BACKLOG.md, находка 3.
+
+     ПЕРЕДЕЛАНО (2026-09-09, жалоба пользователя: "кнопку надо переделать
+     нормально" — раньше это была голая гиперссылка с иконкой, без единого
+     признака кликабельного контрола): теперь сегментированный тумблер из
+     двух пилюль, как переключатель сезонов на странице лиги (leagues/
+     detail.html) — активный сегмент подсвечен, оба варианта видны сразу
+     (не нужно гадать, что скрывается за единственной ссылкой). -->
 {% load querystring_extras %}
 {% if active_season %}
-<div class="flex items-center gap-2 text-xs sm:text-sm mb-4 md:mb-6 px-2 sm:px-0 opacity-80">
-    {% if show_all %}
-    <i class="ti ti-history"></i>
-    <span>Показаны все сезоны</span>
-    <a href="?{% query_transform season=None %}" class="link link-primary font-medium">Только сезон {{ active_season.year }}</a>
-    {% else %}
-    <i class="ti ti-calendar-event"></i>
-    <span>Сезон {{ active_season.year }}</span>
-    <a href="?{% query_transform season='all' %}" class="link link-primary font-medium">Показать всех</a>
-    {% endif %}
+<div class="inline-flex items-center gap-1 p-1 rounded-lg bg-base-200 mb-4 md:mb-6 mx-2 sm:mx-0 text-xs sm:text-sm">
+    <a href="?{% query_transform season=None %}"
+       class="px-3 py-1.5 rounded-md font-medium transition-colors flex items-center gap-1.5
+              {% if not show_all %}bg-base-100 shadow-sm text-primary{% else %}opacity-60 hover:opacity-100{% endif %}">
+        <i class="ti ti-calendar-event"></i> Сезон {{ active_season.year }}
+    </a>
+    <a href="?{% query_transform season='all' %}"
+       class="px-3 py-1.5 rounded-md font-medium transition-colors flex items-center gap-1.5
+              {% if show_all %}bg-base-100 shadow-sm text-primary{% else %}opacity-60 hover:opacity-100{% endif %}">
+        <i class="ti ti-history"></i> Все сезоны
+    </a>
 </div>
 {% endif %}

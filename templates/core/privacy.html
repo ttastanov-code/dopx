@@ -58,11 +58,11 @@
             </div>
             <div class="p-3 md:p-4 bg-base-200 rounded-lg">
               <h3 class="font-semibold mb-2 text-sm flex items-center gap-1.5"><i class="ti ti-star opacity-60"></i> При использовании</h3>
-              <ul class="list-disc list-inside opacity-70 text-xs space-y-1"><li>Оценки матчей, игроков, команд</li><li>Контекст просмотра матчей</li><li>Настройки уведомлений</li><li>Технические данные (IP, браузер, устройство)</li></ul>
+              <ul class="list-disc list-inside opacity-70 text-xs space-y-1"><li>Оценки матчей, игроков, команд</li><li>Контекст просмотра матчей</li><li>Настройки уведомлений</li><li>Ключи push-подписки браузера (если включили уведомления)</li><li>Технические данные (IP, браузер, устройство)</li></ul>
             </div>
             <div class="p-3 md:p-4 bg-base-200 rounded-lg">
               <h3 class="font-semibold mb-2 text-sm flex items-center gap-1.5"><i class="ti ti-cookie opacity-60"></i> Автоматически</h3>
-              <ul class="list-disc list-inside opacity-70 text-xs space-y-1"><li>Cookie для сессий</li><li>Логи доступа</li><li>Данные об использовании платформы</li></ul>
+              <ul class="list-disc list-inside opacity-70 text-xs space-y-1"><li>Cookie для сессий</li><li>Логи доступа</li><li>Анонимный идентификатор устройства и просмотренные страницы (продуктовая аналитика, см. раздел «Cookie» ниже)</li></ul>
             </div>
           </div>
         </div>
@@ -73,8 +73,8 @@
     <section id="cookies" class="scroll-mt-24">
       <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4 md:p-6">
-          <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4 flex items-center gap-2"><i class="ti ti-cookie text-warning"></i> Cookie</h2>
-          <div class="alert alert-success text-xs md:text-sm mb-4 md:mb-6"><i class="ti ti-shield-check"></i><span>Мы используем только технически необходимые cookie. Рекламных, аналитических и трекинговых cookie на платформе нет.</span></div>
+          <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4 flex items-center gap-2"><i class="ti ti-cookie text-warning"></i> Cookie и похожие технологии</h2>
+          <div class="alert alert-success text-xs md:text-sm mb-4 md:mb-6"><i class="ti ti-shield-check"></i><span>Рекламных cookie и трекинга сторонними рекламными/аналитическими сетями на платформе нет. Ваши данные никогда не передаются рекламодателям.</span></div>
           <div class="overflow-x-auto -mx-2 px-2 md:mx-0 md:px-0">
             <table class="table table-zebra min-w-[560px]">
               <thead><tr><th>Cookie</th><th>Зачем нужен</th><th>Срок хранения</th><th>Категория</th></tr></thead>
@@ -94,7 +94,17 @@
               </tbody>
             </table>
           </div>
-          <p class="text-xs opacity-50 mt-3 md:mt-4">Выбранная тема оформления хранится только в браузере и никуда не передаётся. Cookie на DOPX нужны для работы сайта, но мы всё равно рассказываем о них открыто.</p>
+          <div class="p-3 md:p-4 bg-base-200 rounded-lg mt-3 md:mt-4">
+            <h3 class="font-semibold mb-2 text-sm flex items-center gap-1.5"><i class="ti ti-chart-line opacity-60"></i> Собственная продуктовая аналитика</h3>
+            <p class="text-xs opacity-70">
+              Отдельно от cookie в браузере хранится анонимный технический идентификатор (не привязан к имени
+              или email, пока вы не вошли в аккаунт), чтобы мы понимали, какие страницы и функции реально
+              используются, и могли улучшать платформу. Собираются просмотры страниц, источник перехода и
+              технические параметры устройства. Это не рекламный и не сторонний трекинг — данные не продаются
+              и не передаются рекламным сетям.
+            </p>
+          </div>
+          <p class="text-xs opacity-50 mt-3 md:mt-4">Выбранная тема оформления хранится только в браузере и никуда не передаётся. Технологии на DOPX нужны для работы и улучшения сайта, но мы всё равно рассказываем о них открыто.</p>
         </div>
       </div>
     </section>

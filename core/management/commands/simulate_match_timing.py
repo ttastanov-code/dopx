@@ -3,8 +3,8 @@
 ТОЛЬКО для локального/staging тестирования — см. docs/BACKLOG.md, раздел
 "Как тестировать retention loops без реальных матчей" (2026-08-21).
 
-Реальные матчи приходят из KFF по своему расписанию — раз в несколько дней
-или неделю, и виджет прогнозов (predictions app), и все Celery-таски
+Реальные матчи приходят по расписанию активного источника — раз в несколько
+дней или неделю, и виджет прогнозов (predictions app), и все Celery-таски
 retention loops (notify_prediction_closing_soon, notify_prediction_results,
 send_weekly_summary — см. notifications/tasks.py) завязаны на РЕАЛЬНОЕ
 время (`Match.start_time`/`status`/`end_time`), поэтому без матча "прямо
@@ -15,18 +15,24 @@ send_weekly_summary — см. notifications/tasks.py) завязаны на РЕ
 многие queryset'ы по всему проекту) — она берёт УЖЕ существующий в БД матч
 (любого статуса) и двигает его по времени/статусу/счёту, выставляя
 `manual_override=True` (то же поле, что для матчей с перенесённой датой —
-см. докстринг у поля в matches/models.py), чтобы автосинк
-(parsers/tasks.py::update_match_statuses) не перезаписал подделанные данные
-реальными от KFF на следующем цикле парсера.
+см. докстринг у поля в matches/models.py), чтобы автосинк не перезаписал
+подделанные данные реальными на следующем цикле парсера. С 2026-09-08
+(cutover, ADR-0044) активный автосинк — Sportmonks (parsers/sportmonks/
+tasks.py::sportmonks_update_live/sportmonks_sync_season); KFF-эквивалент
+(parsers/tasks.py::update_match_statuses) снят с расписания, но остаётся
+рабочим rollback-путём — manual_override уважают ОБА импортёра одинаково,
+так что эта команда работает независимо от того, какой источник сейчас
+активен.
 
 После тестов подделанный матч стоит либо вернуть `--release`, либо (если
 это тестовая учебная запись, а не настоящий будущий матч из расписания) не
 трогать — очередной реальный прогон парсера всё равно не заденет его, пока
 manual_override не снят вручную.
 
-Первый аргумент принимает ЛИБО внутренний UUID (первичный ключ, обычно не
-виден пользователю), ЛИБО `external_id` — числовой id матча из KFF (тот,
-что виден в админке/`/staff/dashboard/parser/`) — например `1053`.
+Первый аргумент принимает внутренний UUID (первичный ключ, обычно не виден
+пользователю) ЛИБО числовой внешний id — `external_id` (KFF-история) или
+`sportmonks_id` (матчи с 2026-09-08), оба видны в админке/
+`/staff/dashboard/parser/` — например `1053`.
 
 Примеры:
 
@@ -50,8 +56,8 @@ manual_override не снят вручную.
 """
 from datetime import timedelta
 
-from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
+from django.db.models import Q
 from django.utils import timezone
 
 from matches.models import Match
@@ -85,7 +91,7 @@ class Command(BaseCommand):
         )
         parser.add_argument(
             '--release', action='store_true',
-            help='Снять manual_override — вернуть матч под управление автосинка KFF, ничего больше не менять.',
+            help='Снять manual_override — вернуть матч под управление автосинка (Sportmonks), ничего больше не менять.',
         )
 
     def handle(self, *args, **options):
@@ -95,24 +101,28 @@ class Command(BaseCommand):
             self._list_recent()
             return
 
-        # Принимает и внутренний UUID (первичный ключ, скрыт от пользователя
-        # в обычном UI), и `external_id` — числовой id матча из KFF, который
-        # реально виден на сайте (админка, "Детали матча" в /staff/dashboard/
-        # parser/, RAW JSON парсера) и которым пользователи и будут
-        # пользоваться на практике.
+        # Принимает внутренний UUID (первичный ключ, скрыт от пользователя в
+        # обычном UI) или числовой внешний id — но у матча ДВА разных
+        # числовых id в зависимости от того, каким источником он был
+        # изначально создан: external_id (KFF-история) или sportmonks_id
+        # (матчи с 2026-09-08, cutover ADR-0044). Числовые ID у двух
+        # источников не пересекаются по значению лишь случайно, поэтому
+        # пробуем оба, а не только external_id, как раньше (до этой правки
+        # команда не находила матчи, созданные уже после переключения на
+        # Sportmonks, если вводили их sportmonks_id).
         import uuid as uuid_module
 
         try:
             uuid_module.UUID(str(match_id))
-            lookup = {'id': match_id}
+            match = Match.objects.select_related('home_team', 'away_team').filter(id=match_id).first()
         except (ValueError, AttributeError, TypeError):
-            lookup = {'external_id': match_id}
+            match = Match.objects.select_related('home_team', 'away_team').filter(
+                Q(external_id=match_id) | Q(sportmonks_id=match_id)
+            ).first()
 
-        try:
-            match = Match.objects.select_related('home_team', 'away_team').get(**lookup)
-        except (Match.DoesNotExist, ValueError, ValidationError):
+        if not match:
             raise CommandError(
-                f"Матч с {list(lookup.keys())[0]}={match_id!r} не найден. "
+                f"Матч с id={match_id!r} не найден (искали по UUID/external_id/sportmonks_id). "
                 f"Запустите команду без аргументов, чтобы увидеть список последних матчей."
             )
 
@@ -120,7 +130,7 @@ class Command(BaseCommand):
             match.manual_override = False
             match.save(update_fields=['manual_override', 'updated_at'])
             self.stdout.write(self.style.SUCCESS(
-                f"✅ manual_override снят — {match} снова под управлением автосинка KFF."
+                f"✅ manual_override снят — {match} снова под управлением автосинка."
             ))
             return
 
@@ -153,8 +163,9 @@ class Command(BaseCommand):
             ))
             return
 
-        # Иначе следующий прогон update_match_statuses может тут же
-        # перезаписать подделанные данные реальными от KFF.
+        # Иначе следующий прогон автосинка (sportmonks_update_live/
+        # sportmonks_sync_season — активный источник с 2026-09-08, ADR-0044)
+        # может тут же перезаписать подделанные данные реальными.
         match.manual_override = True
         update_fields.append('manual_override')
 
@@ -176,9 +187,14 @@ class Command(BaseCommand):
         if not matches:
             self.stdout.write(self.style.WARNING("В БД нет ни одного матча."))
             return
-        self.stdout.write("Последние матчи (external_id — короче, передайте первым аргументом команды):\n")
+        self.stdout.write(
+            "Последние матчи (external_id/sportmonks_id — короче, передайте "
+            "первым аргументом команды; матчи, созданные после cutover на "
+            "Sportmonks, имеют только sportmonks_id, external_id у них пуст):\n"
+        )
         for m in matches:
             self.stdout.write(
-                f"  external_id={m.external_id or '—':<8} [{m.status:<9}]  {m.start_time:%d.%m %H:%M}   "
+                f"  external_id={m.external_id or '—':<8} sportmonks_id={m.sportmonks_id or '—':<8} "
+                f"[{m.status:<9}]  {m.start_time:%d.%m %H:%M}   "
                 f"{m.home_team.name} vs {m.away_team.name}   ({m.get_score_display()})   uuid={m.id}"
             )

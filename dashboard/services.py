@@ -8,7 +8,8 @@
 
 Три раздела, три функции верхнего уровня:
   - overview_metrics()      — П.1 продуктовые метрики (DAU/WAU, рост, оценки)
-  - data_health_summary()   — П.2 здоровье KFF-синка (ParserSyncRun)
+  - data_health_summary()   — П.2 здоровье синка матчей (ParserSyncRun,
+    источник-агностично — см. её собственный докстринг ниже про cutover)
   - antifraud_queue()       — П.3 быстрый триаж SuspiciousActivityFlag/диспутов
 """
 from __future__ import annotations
@@ -26,6 +27,7 @@ from matches.models import Match
 from notifications.models import ContactSubmission
 from parsers.models import ParserDiscrepancy, ParserSyncRun
 from users.models import SuspiciousActivityFlag
+from .models import AuditAction, StaffActionLog
 
 User = get_user_model()
 
@@ -138,19 +140,28 @@ def content_metrics(limit: int = 8) -> dict:
 
 
 # ============================================================
-# П.2 — Здоровье данных / KFF-синк
+# П.2 — Здоровье данных / синк матчей
 # ============================================================
+# 2026-09-09: KFF-парсер физически удалён (по решению пользователя),
+# Sportmonks — единственный источник, пишущий в ParserSyncRun (поле source
+# на модели по-прежнему различает исторические KFF-строки от новых, но
+# писать в него "kff" больше некому, см. parsers/models.py). "Последний
+# запуск" — живой индикатор синка (см. parsers/sportmonks/tasks.py::
+# _record_sync_run).
 
 def data_health_summary(recent_runs: int = 20) -> dict:
     runs = list(ParserSyncRun.objects.all()[:recent_runs])
     last_run = runs[0] if runs else None
 
-    # "Матчи без составов" — только те, для которых уже наступило время,
-    # когда состав ДОЛЖЕН быть (has_lineup=True со стороны KFF, но у нас
-    # пока нет lineups) или матч уже live/finished, а состава так и нет:
-    # started_at здесь не проверяем отдельно, has_lineup — это ФЛАГ ОТ KFF
-    # "состав опубликован", он появляется только когда реально есть что
-    # тянуть, так что пересечение с отсутствием locale-записи уже точное.
+    # "Матчи без составов" — только те, для которых Sportmonks уже
+    # подтвердил, что состав ДОЛЖЕН быть (has_lineup=True), но у нас пока
+    # нет ни одной строки MatchLineup: started_at здесь не проверяем
+    # отдельно, has_lineup выставляется импортёром ТОЛЬКО когда реально
+    # есть что тянуть (parsers/sportmonks/importers.py::import_lineups),
+    # так что пересечение с отсутствием строк состава уже точное. У
+    # матчей из KFF-истории (до 2026-09-09) has_lineup тоже мог быть
+    # выставлен старым, уже удалённым импортёром — поле на модели не
+    # трогали, значение осталось.
     #
     # Отдаём не только .count(), но и сам queryset (топ-N) — чтобы в
     # шаблоне сразу дать ссылку на матч + кнопку ресинка, без похода в admin.
@@ -189,6 +200,75 @@ def data_health_summary(recent_runs: int = 20) -> dict:
         "recent_error_samples": (last_run.error_samples if last_run else [])[:10],
         "unreviewed_discrepancies_count": unreviewed_discrepancies.count(),
         "unreviewed_discrepancies_list": list(unreviewed_discrepancies.select_related("match")[:20]),
+    }
+
+
+# ============================================================
+# Центр доверия к данным (2026-09-09) — MVP из рекомендации Codex-ревью,
+# явно подтверждённой пользователем как отдельная задача, затем расширен
+# по прямой просьбе пользователя ("сделай страницу более функциональной").
+# Намеренно НЕ дублирует data_health_summary() выше: та отвечает "синк
+# работает технически?" (ошибки API, отсутствующие составы/события), эта —
+# "можно ли доверять УЖЕ импортированным данным конкретного матча?".
+#
+# УДАЛЕНО (2026-09-09, решение пользователя): очередь "Стадионы, требующие
+# проверки" убрана вместе со всей моделью Stadium — оказалось, что проблема
+# была не в отдельных ошибках сопоставления, а принципиальная: клубы КПЛ
+# реально играют "домашние" матчи на разных стадионах в разных городах в
+# течение сезона, доверять venue-данным Sportmonks в принципе нельзя. См.
+# matches/models.py и core/models_stadium.py (модель удалена).
+#
+# Две живые очереди + расширенная история:
+#   1. ContactSubmission(category='data_error') — жалобы пользователей на
+#      конкретный матч (see notifications/models.py, templates/matches/
+#      _match_header.html — кнопка "Сообщить об ошибке в данных"). Теперь с
+#      фильтром "открытые/решённые/все" (data_trust_summary(status_filter=)).
+#   2. ParserDiscrepancy — расхождения импорта. ВАЖНО: писал их только
+#      старый KFF-импортёр (удалён 2026-09-09) — очередь ЗАМОРОЖЕНА,
+#      Sportmonks-пайплайн новых строк сюда не пишет. Показываем как
+#      историю, честно помечено в шаблоне, но действие "разобрать" полезно
+#      и для старых записей. Раньше здесь был только счётчик+ссылка на
+#      data-health — теперь полноценная queue с действием прямо на этой
+#      странице (не нужно уходить в admin ради одного клика).
+# ============================================================
+
+DATA_TRUST_HISTORY_ACTIONS = [
+    AuditAction.DATA_ERROR_REPORT_RESOLVED,
+    AuditAction.MATCH_RESYNC,
+    AuditAction.PARSER_DISCREPANCY_REVIEWED,
+]
+
+DATA_TRUST_REPORT_STATUS_FILTERS = {
+    "open": ["new", "in_progress"],
+    "resolved": ["resolved", "closed"],
+    "all": ["new", "in_progress", "resolved", "closed"],
+}
+
+
+def data_trust_summary(limit: int = 25, report_status: str = "open") -> dict:
+    statuses = DATA_TRUST_REPORT_STATUS_FILTERS.get(report_status, DATA_TRUST_REPORT_STATUS_FILTERS["open"])
+    data_error_reports_qs = (
+        ContactSubmission.objects.filter(category="data_error", status__in=statuses)
+        .select_related("user", "related_match", "related_match__home_team", "related_match__away_team")
+        .order_by("-created_at")
+    )
+    all_data_error_reports = ContactSubmission.objects.filter(category="data_error")
+    unreviewed_discrepancies = ParserDiscrepancy.objects.filter(reviewed=False).select_related("match")
+    recent_corrections = list(
+        StaffActionLog.objects.filter(action__in=DATA_TRUST_HISTORY_ACTIONS)
+        .select_related("actor")
+        .order_by("-created_at")[:limit]
+    )
+
+    return {
+        "report_status_filter": report_status,
+        "data_error_reports_count": data_error_reports_qs.count(),
+        "data_error_reports": list(data_error_reports_qs[:limit]),
+        "data_error_reports_total": all_data_error_reports.count(),
+        "data_error_reports_resolved_count": all_data_error_reports.filter(status__in=["resolved", "closed"]).count(),
+        "unreviewed_discrepancies_count": unreviewed_discrepancies.count(),
+        "unreviewed_discrepancies": list(unreviewed_discrepancies.order_by("-created_at")[:limit]),
+        "recent_corrections": recent_corrections,
     }
 
 

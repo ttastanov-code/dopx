@@ -358,3 +358,64 @@ class TeamRatingCorrection(BaseModel):
 
     def __str__(self):
         return f"{self.team}: {self.correction:+.2f}"
+
+
+class PlayerRatingCorrection(BaseModel):
+    """
+    Аналог TeamRatingCorrection (см. её докстринг выше — та же механика
+    один-в-один), но на уровне ИГРОКА — 2026-09-08, по прямой просьбе
+    пользователя ("статистику матча... использовать при рекомендации
+    быстрой оценки игроков... против накрутки и неадекватной оценки").
+
+    Структурный ответ на detect_player_rating_stats_divergence_task
+    (aggregates/tasks.py) — сравнивает тренд community-рейтинга игрока
+    (PlayerMatchAggregate.performance_score) с его же ОБЪЕКТИВНЫМ игровым
+    индексом за те же матчи (composite из MatchPlayerStatistics + событий
+    MatchEvent — голы/ассисты/карточки, см. _player_objective_score).
+
+    ВАЖНОЕ ОТЛИЧИЕ от команды: у TeamRatingCorrection объективный сигнал —
+    "доля доминирования" (0..1, сравнение с СОПЕРНИКОМ в том же матче,
+    DOMINANCE_SHARE_FIELDS). У игрока нет естественного аналога "доли" —
+    вратарь и нападающий структурно дают разные абсолютные цифры статистики
+    (сейвы vs удары), сравнивать их напрямую бессмысленно. Поэтому здесь
+    объективный индекс сравнивается НЕ с чужим, а с СОБСТВЕННОЙ историей
+    игрока (self-relative z-score, _check_player_stats_divergence) — это
+    само по себе корректно учитывает амплуа без отдельной калибровки по
+    позиции.
+
+    Применяется и затухает по абсолютно той же схеме: небольшая, жёстко
+    ограниченная (PLAYER_STATS_DIVERGENCE_MAX_CORRECTION), самозатухающая
+    поправка к performance_score, применяется ТОЛЬКО к будущим пересчётам
+    (recalculate_player_aggregates), не переписывает уже сохранённую
+    историю. Модератор может отклонить флаг (users/admin.py::
+    mark_dismissed) — обнуляет correction и ставит cooldown, как у команды.
+    """
+    player = models.OneToOneField(
+        'players.Player',
+        on_delete=models.CASCADE,
+        related_name='rating_correction',
+        verbose_name=_('Игрок'),
+    )
+    correction = models.FloatField(
+        _('Текущая поправка'), default=0.0,
+        help_text=_('Прибавляется к performance_score на каждом пересчёте, ограничена и самозатухает.'),
+    )
+    last_pattern = models.CharField(
+        _('Последний обнаруженный паттерн'), max_length=40, blank=True,
+        help_text=_('underrated_despite_stats / overrated_despite_stats / пусто, если сейчас идёт затухание.'),
+    )
+    suppressed_until = models.DateTimeField(
+        _('Подавлено до'), null=True, blank=True,
+        help_text=_(
+            'Тот же приём, что у TeamRatingCorrection.suppressed_until — пока это поле в будущем, '
+            '_check_player_stats_divergence пропускает игрока, не трогая поправку (модератор явно '
+            'отклонил флаг как объяснимый).'
+        ),
+    )
+
+    class Meta:
+        verbose_name = _('Поправка рейтинга игрока (авто)')
+        verbose_name_plural = _('Поправки рейтинга игроков (авто)')
+
+    def __str__(self):
+        return f"{self.player}: {self.correction:+.2f}"

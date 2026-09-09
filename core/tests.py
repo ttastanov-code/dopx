@@ -26,7 +26,7 @@ from django.utils import timezone
 from aggregates.models import PlayerMatchAggregate
 from aggregates.services import MIN_VOTES_FOR_DISPLAY
 from core.templatetags.rating_extras import bias_segment_text, confidence_badge, stability_label
-from core.utils import is_rate_limited
+from core.utils import is_rate_limited, is_synthetic_test_email
 from leagues.models import League
 from matches.models import Match
 from players.models import Player
@@ -39,6 +39,41 @@ LOCMEM_CACHES = {
         "LOCATION": "test-rate-limiter",
     }
 }
+
+
+class IsSyntheticTestEmailTests(SimpleTestCase):
+    """core.utils.is_synthetic_test_email — единая проверка, которой
+    notifications/tasks.py::_send_email_to_user исключает бот-пул
+    (seed_match_votes.py/seed_full_history.py) и нагрузочные аккаунты
+    (setup_load_test.py) из реальных рассылок (2026-09-07)."""
+
+    def test_bot_pool_email_is_synthetic(self):
+        self.assertTrue(is_synthetic_test_email("test_user_bot_0001@test.dopx.local"))
+
+    def test_load_test_email_is_synthetic(self):
+        self.assertTrue(is_synthetic_test_email("loadtest_0042@loadtest.dopx.local"))
+
+    def test_bare_reserved_domain_is_synthetic(self):
+        self.assertTrue(is_synthetic_test_email("someone@dopx.local"))
+
+    def test_real_user_email_is_not_synthetic(self):
+        self.assertFalse(is_synthetic_test_email("timur@gmail.com"))
+
+    def test_similar_but_different_domain_is_not_synthetic(self):
+        """"dopx.local.evil.com" — суффикс НЕ должен матчить произвольный
+        домен, просто содержащий "dopx.local" где-то в середине строки."""
+        self.assertFalse(is_synthetic_test_email("someone@notdopx.local"))
+        self.assertFalse(is_synthetic_test_email("someone@dopx.local.evil.com"))
+
+    def test_case_insensitive(self):
+        self.assertTrue(is_synthetic_test_email("Test_User_Bot_0001@TEST.DOPX.LOCAL"))
+
+    def test_empty_or_none_is_not_synthetic(self):
+        self.assertFalse(is_synthetic_test_email(""))
+        self.assertFalse(is_synthetic_test_email(None))
+
+    def test_no_at_sign_is_not_synthetic(self):
+        self.assertFalse(is_synthetic_test_email("not-an-email"))
 
 
 @override_settings(CACHES=LOCMEM_CACHES)
@@ -188,17 +223,20 @@ class ConfidenceBadgeSampleSizeTests(SimpleTestCase):
     def test_preliminary_tier_shows_vote_count_in_label(self):
         result = confidence_badge(self._agg(3))
         self.assertEqual(result["tier"], "preliminary")
-        self.assertEqual(result["tier_label"], "Предварительно · 3")
+        # 2026-09-09: метки укорочены (жалоба "из-за бейджей ломаются
+        # таблицы" — whitespace-nowrap-бейдж с длинным текстом раздувал
+        # колонку таблицы, см. коммент у _TIER_META в rating_extras.py).
+        self.assertEqual(result["tier_label"], "Предв. · 3")
 
     def test_basic_tier_label_has_no_inline_count(self):
         result = confidence_badge(self._agg(8))
         self.assertEqual(result["tier"], "basic")
-        self.assertEqual(result["tier_label"], "Есть данные")
+        self.assertEqual(result["tier_label"], "Умеренно")
 
     def test_high_tier_label_has_no_inline_count(self):
         result = confidence_badge(self._agg(20))
         self.assertEqual(result["tier"], "high")
-        self.assertEqual(result["tier_label"], "Высокая надёжность")
+        self.assertEqual(result["tier_label"], "Надёжно")
 
 
 class HomeTopPlayersVoteGateTests(TestCase):

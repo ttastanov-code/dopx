@@ -46,6 +46,15 @@ TURNING_POINT_MIN_RATIO = 0.3
 CONSENSUS_HIGH_STDEV = 1.0
 CONSENSUS_LOW_STDEV = 2.5
 
+# "ДНК матча" фаза 3 (docs/adr/0034-match-dna-phase3-antihero-fan-mood.md) —
+# антигерой матча и настроение фанатов. Третий аудит (Codex, 2026-09-07)
+# отдельно назвал их недостающими в шаринговой карточке. Порог "достаточно
+# голосов за поддерживаемую команду, чтобы подавать процент как факт" —
+# тот же принцип, что и у остальных гейтов этого модуля (REFEREE_DIVERGENCE_MIN_GAP,
+# TURNING_POINT_MIN_RATIO): маленькая выборка не должна выглядеть как
+# уверенное утверждение.
+FAN_MOOD_MIN_VOTES = 3
+
 
 def _drama_level(drama_index: float) -> str:
     if drama_index >= DRAMA_HIGH_THRESHOLD:
@@ -118,6 +127,70 @@ def _describe_hero(top_players: list) -> dict | None:
         return None
     hero_agg = top_players[0]
     return {"player": hero_agg.player, "score": hero_agg.performance_score}
+
+
+def _describe_antihero(top_players: list, worst_players: list) -> dict | None:
+    """"Антигерой матча" — первая строка уже отфильтрованного и
+    отсортированного ПО ВОЗРАСТАНИЮ `worst_players` (тот же порог
+    total_votes >= MIN_VOTES_FOR_DISPLAY, что и у top_players/_describe_hero —
+    `matches/views.py::MatchDetailView` уже считает этот список для
+    антифрод/качественной витрины, но до фазы 3 нигде его не показывал:
+    данные были, витрины не было — та же формулировка, что и у
+    _describe_turning_point до фазы 2).
+
+    Не показываем антигероя, если он оказался ТЕМ ЖЕ игроком, что и герой —
+    это происходит, когда после фильтра по MIN_VOTES_FOR_DISPLAY остался
+    только один игрок: "антигерой" и "герой" совпадали бы, что вводит в
+    заблуждение (не "второй полюс", а тот же самый человек).
+    """
+    if not worst_players:
+        return None
+    antihero_agg = worst_players[0]
+    hero_agg = top_players[0] if top_players else None
+    if hero_agg is not None and antihero_agg.player_id == hero_agg.player_id:
+        return None
+    return {"player": antihero_agg.player, "score": antihero_agg.performance_score}
+
+
+def _describe_fan_mood(match_aggregate, fan_support: list) -> str:
+    """"Настроение фанатов" — зрелищность матча (MatchAggregate.avg_entertainment,
+    уже посчитана) плюс перекос трибун (ContextEvaluation.supported_team) —
+    тот же агрегат, что matches/views.py уже считает для блока "За кого
+    болели" (fan_support: до 2 строк вида {'supported_team__name', 'count'},
+    отсортированных по count по убыванию), просто раньше не соединялся с
+    зрелищностью в одну "настроенческую" фразу нигде на странице.
+
+    :param fan_support: список dict'ов (не queryset — вызывающая сторона
+        уже материализовала его для шаблона, здесь только читаем).
+    :return: пустая строка, если голосов за поддерживаемую команду меньше
+        FAN_MOOD_MIN_VOTES (шум) — то же решение "не гадать", что у
+        _describe_referee_divergence/_describe_turning_point.
+    """
+    if not fan_support:
+        return ""
+    total = sum(row["count"] for row in fan_support)
+    if total < FAN_MOOD_MIN_VOTES:
+        return ""
+    dominant = fan_support[0]
+    pct = round(dominant["count"] / total * 100)
+    return (
+        f"Зрелищность матча болельщики оценили на {match_aggregate.avg_entertainment:.1f}/10, "
+        f"{pct}% из проголосовавших за команду поддерживали {dominant['supported_team__name']}."
+    )
+
+
+def _describe_consensus_text(consensus_level: str | None) -> str:
+    """Текстовая версия `_consensus_level` (та возвращает только 'high'/
+    'medium'/'low'/None — для бейджа на странице этого достаточно, но
+    шаринговая карточка (Pillow, `core/services/share_cards.py`) рисует
+    обычный текст, не бейджи с цветом)."""
+    if consensus_level == "high":
+        return "Болельщики почти единодушны в оценке этого матча."
+    if consensus_level == "low":
+        return "Мнения о матче разошлись сильно — единого впечатления нет."
+    if consensus_level == "medium":
+        return "Мнения о матче разошлись умеренно."
+    return ""
 
 
 def _describe_turning_point(match_aggregate) -> str:
@@ -193,6 +266,7 @@ def _describe_controversial_episode(events: list, referee_aggregate) -> str:
 def build_match_dna(
     match, match_aggregate, events, referee_aggregate=None,
     match_evaluations: list | None = None, top_players: list | None = None,
+    worst_players: list | None = None, fan_support: list | None = None,
 ) -> dict | None:
     """Собирает контекст для секции "ДНК матча" на странице матча.
 
@@ -208,24 +282,40 @@ def build_match_dna(
     :param top_players: уже отфильтрованный/отсортированный список
         PlayerMatchAggregate (фаза 2, для hero) — тот же список, что
         matches/views.py передаёт в шаблон как `top_players`.
+    :param worst_players: список PlayerMatchAggregate, отсортированный ПО
+        ВОЗРАСТАНИЮ performance_score, тот же порог total_votes, что и
+        top_players (фаза 3, для antihero) — matches/views.py уже считает
+        его как `worst_players`, просто раньше нигде не показывал.
+    :param fan_support: до 2 dict'ов {'supported_team__name', 'count'} —
+        тот же агрегат, что matches/views.py считает для блока "За кого
+        болели" (фаза 3, для fan_mood_text).
     :return: None, если голосов по матчу ещё нет вообще (нечего показывать —
         секция не должна рендериться пустой рамкой), иначе dict с ключами
         drama_index, drama_level ('high'/'medium'/'low'), momentum_points
         (list[str], может быть пустым), referee_divergence (str, может быть
-        пустой), hero (dict{'player','score'} | None), turning_point_text
-        (str, может быть пустой), consensus_level ('high'/'medium'/'low'/None),
-        controversial_episode (str, может быть пустой).
+        пустой), hero (dict{'player','score'} | None), antihero
+        (dict{'player','score'} | None), turning_point_text (str, может быть
+        пустой), consensus_level ('high'/'medium'/'low'/None), consensus_text
+        (str, может быть пустой — текстовая версия consensus_level),
+        fan_mood_text (str, может быть пустой), controversial_episode (str,
+        может быть пустой).
     """
     if match_aggregate is None or match_aggregate.total_votes == 0:
         return None
+
+    top_players = top_players or []
+    consensus_level = _consensus_level(match_evaluations or [])
 
     return {
         "drama_index": match_aggregate.drama_index,
         "drama_level": _drama_level(match_aggregate.drama_index),
         "momentum_points": _describe_momentum(events),
         "referee_divergence": _describe_referee_divergence(match, referee_aggregate),
-        "hero": _describe_hero(top_players or []),
+        "hero": _describe_hero(top_players),
+        "antihero": _describe_antihero(top_players, worst_players or []),
         "turning_point_text": _describe_turning_point(match_aggregate),
-        "consensus_level": _consensus_level(match_evaluations or []),
+        "consensus_level": consensus_level,
+        "consensus_text": _describe_consensus_text(consensus_level),
+        "fan_mood_text": _describe_fan_mood(match_aggregate, fan_support or []),
         "controversial_episode": _describe_controversial_episode(events, referee_aggregate),
     }

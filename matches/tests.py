@@ -14,7 +14,10 @@ from django.test import SimpleTestCase
 
 from matches.services import (
     _consensus_level,
+    _describe_antihero,
+    _describe_consensus_text,
     _describe_controversial_episode,
+    _describe_fan_mood,
     _describe_hero,
     _describe_momentum,
     _describe_referee_divergence,
@@ -129,6 +132,11 @@ class BuildMatchDnaTests(SimpleTestCase):
         self.assertEqual(result["turning_point_text"], "")
         self.assertIsNone(result["consensus_level"])
         self.assertEqual(result["controversial_episode"], "")
+        # Фаза 3 (docs/adr/0034) — то же самое: ключи есть, но пустые/None,
+        # когда worst_players/fan_support не переданы вызывающей стороной.
+        self.assertIsNone(result["antihero"])
+        self.assertEqual(result["consensus_text"], "")
+        self.assertEqual(result["fan_mood_text"], "")
 
 
 class DescribeHeroTests(SimpleTestCase):
@@ -194,3 +202,97 @@ class DescribeControversialEpisodeTests(SimpleTestCase):
     def test_no_signal_returns_empty(self):
         events = [_event(10, "goal"), _event(50, "yellow_card")]
         self.assertEqual(_describe_controversial_episode(events, None), "")
+
+
+class DescribeAntiheroTests(SimpleTestCase):
+    """Фаза 3 (docs/adr/0034-match-dna-phase3-antihero-fan-mood.md)."""
+
+    def _agg(self, player_id, score):
+        return SimpleNamespace(player=SimpleNamespace(id=player_id), player_id=player_id, performance_score=score)
+
+    def test_empty_worst_players_returns_none(self):
+        self.assertIsNone(_describe_antihero([self._agg(1, 8.0)], []))
+
+    def test_returns_worst_player_with_score(self):
+        hero_agg = self._agg(1, 8.7)
+        worst_agg = self._agg(2, 3.2)
+        result = _describe_antihero([hero_agg], [worst_agg])
+        self.assertEqual(result["score"], 3.2)
+        self.assertIs(result["player"], worst_agg.player)
+
+    def test_same_player_as_hero_returns_none(self):
+        """Единственный отфильтрованный игрок матча — герой и антигерой
+        совпадали бы, вводя в заблуждение. Не показываем антигероя."""
+        only_agg = self._agg(1, 6.0)
+        self.assertIsNone(_describe_antihero([only_agg], [only_agg]))
+
+    def test_no_hero_still_returns_antihero(self):
+        """top_players пуст (герой не посчитан), но worst_players есть —
+        антигерой не должен зависеть от наличия героя."""
+        worst_agg = self._agg(2, 2.0)
+        result = _describe_antihero([], [worst_agg])
+        self.assertEqual(result["score"], 2.0)
+
+
+class DescribeFanMoodTests(SimpleTestCase):
+    def _agg(self, entertainment):
+        return SimpleNamespace(avg_entertainment=entertainment)
+
+    def test_empty_fan_support_returns_empty(self):
+        self.assertEqual(_describe_fan_mood(self._agg(8.0), []), "")
+
+    def test_below_min_votes_returns_empty(self):
+        fan_support = [{"supported_team__name": "Кайрат", "count": 2}]
+        self.assertEqual(_describe_fan_mood(self._agg(8.0), fan_support), "")
+
+    def test_at_min_votes_returns_sentence_with_percent_and_entertainment(self):
+        fan_support = [
+            {"supported_team__name": "Кайрат", "count": 8},
+            {"supported_team__name": "Актобе", "count": 2},
+        ]
+        text = _describe_fan_mood(self._agg(7.5), fan_support)
+        self.assertIn("7.5", text)
+        self.assertIn("80%", text)
+        self.assertIn("Кайрат", text)
+
+
+class DescribeConsensusTextTests(SimpleTestCase):
+    def test_high(self):
+        self.assertIn("единодушны", _describe_consensus_text("high"))
+
+    def test_low(self):
+        self.assertIn("разошлись сильно", _describe_consensus_text("low"))
+
+    def test_medium(self):
+        self.assertIn("умеренно", _describe_consensus_text("medium"))
+
+    def test_none_returns_empty(self):
+        self.assertEqual(_describe_consensus_text(None), "")
+
+
+class BuildMatchDnaPhase3Tests(SimpleTestCase):
+    """Сквозная проверка, что build_match_dna действительно прокидывает
+    worst_players/fan_support в новые поля, а не только что сами хелперы
+    работают в изоляции (см. классы выше)."""
+
+    def _match(self):
+        return SimpleNamespace(home_team=SimpleNamespace(name="Кайрат"), away_team=SimpleNamespace(name="Актобе"))
+
+    def _agg(self, player_id, score):
+        return SimpleNamespace(player=SimpleNamespace(id=player_id), player_id=player_id, performance_score=score)
+
+    def test_antihero_and_fan_mood_present_when_data_given(self):
+        agg = SimpleNamespace(total_votes=10, drama_index=65.0, turning_point_ratio=0.0, avg_entertainment=7.0)
+        hero_agg = self._agg(1, 8.7)
+        worst_agg = self._agg(2, 3.2)
+        fan_support = [
+            {"supported_team__name": "Кайрат", "count": 8},
+            {"supported_team__name": "Актобе", "count": 2},
+        ]
+        result = build_match_dna(
+            self._match(), agg, [],
+            top_players=[hero_agg], worst_players=[worst_agg], fan_support=fan_support,
+        )
+        self.assertEqual(result["antihero"]["score"], 3.2)
+        self.assertIn("Кайрат", result["fan_mood_text"])
+        self.assertIn("80%", result["fan_mood_text"])

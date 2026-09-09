@@ -225,6 +225,11 @@ document.addEventListener('alpine:init', () => {
         init() {
             this.category = this.$el.dataset.initialCategory || 'general';
             this.email = this.$el.dataset.initialEmail || '';
+            // НОВОЕ (2026-09-09, Центр доверия к данным): переход с кнопки
+            // "Сообщить об ошибке в данных" на странице матча приносит
+            // готовую тему через data-initial-subject — экономит человеку
+            // набор текста, но остаётся редактируемым полем, не readonly.
+            this.subject = this.$el.dataset.initialSubject || '';
         },
         handleFileSelect(event) {
             const file = event.target.files[0];
@@ -297,7 +302,10 @@ document.addEventListener('alpine:init', () => {
         csrfToken: '',
         async init() {
             this.csrfToken = this.$el.dataset.csrfToken || '';
-            this.status = await window.dopxPushStatus();
+            // csrfToken пробрасывается в dopxPushStatus для самолечения
+            // осиротевшей подписки (см. static/js/push.js::dopxPushStatus
+            // за полным объяснением бага, найденного пользователем 2026-09-09).
+            this.status = await window.dopxPushStatus(this.csrfToken);
         },
         async subscribe() {
             this.status = 'loading';

@@ -10,6 +10,16 @@ notify_prediction_closing_soon) — fan-out: родительская задач
 ретрае разослать всё заново. send_notification_digest — периодическая
 задача, собирает не отправленные по email Notification для пользователей
 с email_digest_mode=True в одно письмо вместо N отдельных.
+
+_send_email_to_user — ЕДИНСТВЕННОЕ место в проекте, где реально уходит
+письмо конкретному User (см. её тело) — поэтому именно здесь, а не в
+каждой аудиторной выборке по отдельности, стоит проверка
+core.utils.is_synthetic_test_email: тестовые/сид-боты (seed_match_votes.py,
+seed_full_history.py, setup_load_test.py) создаются с is_verified=True и
+похожим на настоящий email, поэтому свободно проходят фильтры audience-
+запросов (`is_verified=True, email__isnull=False`) наравне с реальными
+пользователями — без этой проверки массовая рассылка пыталась бы слать
+письма на заведомо несуществующие адреса.
 """
 from __future__ import annotations
 
@@ -134,6 +144,30 @@ def _send_email_to_user(
     """
     if not user or not user.email:
         logger.warning("⚠️ Cannot send email: user or email is missing")
+        return False
+
+    # ИСКЛЮЧАЕМ ТЕСТОВЫХ БОТОВ (2026-09-07, продуктовый запрос: "надо
+    # исключить рассылку писем на тестовых ботов"). Бот-пул seed_match_votes.py/
+    # seed_full_history.py создаётся с `is_verified=True` и реальным на вид
+    # email (`test_user_bot_NNNN@test.dopx.local`), поэтому ДО этой правки
+    # свободно проходил через все аудиторные фильтры массовых рассылок
+    # (`User.objects.filter(..., is_verified=True, email__isnull=False)` —
+    # см. `_send_match_email_chunk`/`_send_system_announcement_chunk` и
+    # другие ниже) наравне с настоящими пользователями. Проверка — здесь, в
+    # ЕДИНСТВЕННОЙ точке фактической отправки (см. докстринг модуля про
+    # "единственное место"), а не в каждой аудиторной queryset-выборке по
+    # отдельности — гарантирует, что письмо к боту не уйдёт независимо от
+    # того, из какого места кода (их больше десятка) пришёл вызов, и не
+    # требует держать этот список мест в актуальном состоянии. Возвращаем
+    # False БЕЗ рендеринга шаблона/похода в SMTP — та же "тихая, не
+    # ошибочная" семантика, что у остальных ранних return False выше и
+    # ниже в этой функции (вызывающий код просто не засчитывает письмо
+    # отправленным, ретраев не будет — см. TransientEmailError про то, что
+    # раздельно обрабатываются именно СЕТЕВЫЕ сбои, не бизнес-пропуски).
+    from core.utils import is_synthetic_test_email
+
+    if is_synthetic_test_email(user.email):
+        logger.debug(f"_send_email_to_user: пропуск синтетического тестового аккаунта {user.email}")
         return False
 
     if not force:
@@ -544,9 +578,11 @@ def cleanup_old_notifications():
 def notify_followers_match_activity(self, match_id: str):
     """
     Приглашение оценить только что завершённый матч — in-app + push + email.
-    Ставится в очередь из `parsers/tasks.py::update_match_statuses` (и,
-    подстраховкой, из `parsers/kff/importers.py::import_match_core`) через
-    `transaction.on_commit` в момент первого перехода матча в 'finished'.
+    Ставится в очередь, подстраховкой, из `parsers/sportmonks/importers.py`
+    через `transaction.on_commit` в момент первого перехода матча в
+    'finished' (до 2026-09-09 то же самое умел `parsers/tasks.py::
+    update_match_statuses` и `parsers/kff/importers.py::import_match_core`
+    — оба удалены вместе с KFF-парсером).
 
     РАСШИРЕНО (2026-09-01, прямая жалоба пользователя: email верифицирован,
     прогноз стоял, а пуша с приглашением оценить матч не пришло вообще).

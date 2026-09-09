@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{% block content %}
+{% comment %}
+templates/season_squad/no_data.html
+Дружелюбное "пока нет данных" вместо Http404 — см. season_squad/views.py::
+_resolve_season/_best_xi_context. Раньше отсутствие активного сезона
+(например, сразу после миграции на Sportmonks, пока сезон ещё не
+активирован) оборачивалось в Http404 — технически корректно, но страница
+выглядела сломанной, а не "загляните позже". Тот же визуальный язык
+пустого состояния, что в _match_events.html ({% empty %} блок).
+{% endcomment %}
+<div class="max-w-lg mx-auto text-center py-20 px-4">
+  <div class="w-16 h-16 rounded-full bg-base-200 flex items-center justify-center mx-auto mb-4">
+    <i class="ti ti-shirt text-3xl opacity-60"></i>
+  </div>
+  <h1 class="text-xl font-bold mb-2">{{ title }}</h1>
+  <p class="opacity-60">{{ message }}</p>
+  <a href="{% url 'core:home' %}" class="btn btn-outline btn-sm mt-6">
+    <i class="ti ti-arrow-left"></i> На главную
+  </a>
+</div>
+{% endblock %}

@@ -370,7 +370,7 @@ def _describe_nearest_competitor(score: float, runner_up: tuple[Candidate, float
     gap = round(score - competitor_score, 2)
     if gap <= 0:
         return ""
-    return f"Обошёл ближайшего конкурента ({competitor.name}, {competitor_score:.2f}) на {gap:.2f} балла."
+    return f"Обошёл ближайшего конкурента: {competitor.name} ({competitor_score:.2f}), разница {gap:.2f}."
 
 
 def _build_explanation(
@@ -388,29 +388,40 @@ def _build_explanation(
     вызвало жалобу продакта ("вошёл в состав — непонятно о чём"): сама по
     себе фраза не объясняет, что это про место в рейтинге. Теперь вся эта
     информация — один связный текст под одной иконкой-подсказкой, а на
-    карточке остаётся только цвет кольца аватара (тонкий сигнал, не текст)."""
+    карточке остаётся только цвет кольца аватара (тонкий сигнал, не текст).
+
+    2026-09-09 (жалоба пользователя со скриншотом тултипа: "куча тире
+    дефисов явный ИИ паттерн и текст как куча букв без структуры и
+    нечитабельно") — раньше все предложения склеивались ПРОБЕЛОМ в один
+    плотный абзац внутри узкого 240px-пузыря (components/_tooltip_icon.html),
+    и почти каждое предложение отдельно использовало " — " как разделитель
+    внутри себя — при вёрстке в одну строку это давало сплошную стену из
+    тире. Теперь: (1) каждый факт — отдельная строка, СОЕДИНЯЮТСЯ ПЕРЕНОСОМ
+    "\\n" (тултип рендерит их раздельными строками, см. white-space:
+    pre-line в _tooltip_icon.html), (2) формулировки внутри предложений по
+    возможности без тире — двоеточие вместо " — "."""
     label = BEST_XI_SLOT_LABELS.get(slot_code, slot_code)
-    sentences = [
-        f"Рейтинг {score:.2f} на позиции «{label}» — среднее за сезон с поправкой "
-        f"на объём выборки ({candidate.matches} матчей, {candidate.votes} голосов)."
+    lines = [
+        f"Рейтинг {score:.2f} на позиции «{label}»: среднее за сезон "
+        f"({candidate.matches} матчей, {candidate.votes} голосов)."
     ]
 
     if is_confident:
-        sentences.append("Голосов достаточно, чтобы доверять этому месту в составе.")
+        lines.append("Голосов достаточно, чтобы доверять этому месту в составе.")
     else:
-        sentences.append("Голосов пока немного — место может измениться, когда их станет больше.")
+        lines.append("Голосов пока немного: место может измениться, когда их станет больше.")
 
     if rank_change == SeasonBestXISlot.RANK_CHANGE_NEW:
-        sentences.append("Занял место в составе по итогам последнего пересчёта.")
+        lines.append("Занял место в составе по итогам последнего пересчёта.")
     elif rank_change == SeasonBestXISlot.RANK_CHANGE_UP and rank_change_delta:
         matches_word = "место" if rank_change_delta == 1 else "места"
-        sentences.append(f"Поднялся на {rank_change_delta} {matches_word} с прошлого пересчёта.")
+        lines.append(f"Поднялся на {rank_change_delta} {matches_word} с прошлого пересчёта.")
 
     competitor_text = _describe_nearest_competitor(score, runner_up)
     if competitor_text:
-        sentences.append(competitor_text)
+        lines.append(competitor_text)
 
-    return " ".join(sentences)
+    return "\n".join(lines)
 
 
 def _describe_top_matches(player_id: str, season, limit: int = TOP_MATCHES_FOR_EXPLANATION) -> str:
@@ -448,21 +459,26 @@ def _describe_top_matches(player_id: str, season, limit: int = TOP_MATCHES_FOR_E
     ):
         events_by_match[event.match_id].append(event)
 
+    # 2026-09-09 (та же жалоба на "стену тире") — раньше строка выглядела
+    # "8.9 — 20.03 vs Иртыш; 8.8 — 19.04 vs Атырау." (тире + "vs" + ";" —
+    # три разных разделителя вперемешку). Теперь каждый матч — своя строка
+    # с маркером "·", факты внутри строки — через скобки/запятую, без тире.
     pieces = []
     for pma in top:
         match = pma.match
         own_team_id = own_team_by_match.get(match.id)
         opponent = match.away_team if own_team_id == match.home_team_id else match.home_team
-        piece = f"{pma.performance_score:.1f} — {match.start_time:%d.%m} vs {opponent.name if opponent else '?'}"
+        piece = f"· {pma.performance_score:.1f} ({match.start_time:%d.%m}, {opponent.name if opponent else '?'}"
         events = events_by_match.get(match.id, [])
         if events:
             ev_text = ", ".join(
-                f"{NOTABLE_EVENT_LABELS.get(e.event_type, e.event_type)} ({e.display_minute}')"
+                f"{NOTABLE_EVENT_LABELS.get(e.event_type, e.event_type)} {e.display_minute}'"
                 for e in events
             )
-            piece += f" ({ev_text})"
+            piece += f", {ev_text}"
+        piece += ")"
         pieces.append(piece)
-    return "Лучшие матчи: " + "; ".join(pieces) + "."
+    return "Лучшие матчи:\n" + "\n".join(pieces)
 
 
 def _store_ranking_batch(
@@ -517,7 +533,7 @@ def _apply_slot(
                 occupant_photo_url="", occupant_profile_url="",
                 season_score=None, matches_count=0, votes_count=0, is_confident=False,
                 rank_change=SeasonBestXISlot.RANK_CHANGE_NEW, rank_change_delta=None,
-                explanation="Пока недостаточно оценённых матчей на этой позиции — "
+                explanation="Пока недостаточно оценённых матчей на этой позиции: "
                             "покажем, как только наберётся минимум данных.",
             ),
         )
@@ -538,7 +554,10 @@ def _apply_slot(
         # персональных MatchEvent (голы/карточки привязаны к players.Player).
         top_matches_text = _describe_top_matches(candidate.object_id, season)
         if top_matches_text:
-            explanation = f"{explanation} {top_matches_text}"
+            # Пустая строка — визуальный отступ между блоком "почему в
+            # составе" и блоком "лучшие матчи" в тултипе (white-space:
+            # pre-line превращает "\n\n" в пустую строку, а не схлопывает).
+            explanation = f"{explanation}\n\n{top_matches_text}"
     SeasonBestXISlot.objects.update_or_create(
         best_xi=best_xi, slot_code=slot_code,
         defaults=dict(

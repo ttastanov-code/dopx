@@ -90,23 +90,26 @@ class ContactSubmissionAdmin(ModelAdmin):
     )
     list_filter = ('status', 'category', 'created_at', 'user__is_verified')
     search_fields = ('subject', 'message', 'user__username', 'guest_email')
+    # related_match — см. модель, заполняется кнопкой "Сообщить об ошибке в
+    # данных" на странице матча (Центр доверия к данным, 2026-09-09).
+    autocomplete_fields = ('related_match',)
     readonly_fields = (
-        'created_at', 
-        'updated_at', 
-        'ip_address', 
+        'created_at',
+        'updated_at',
+        'ip_address',
         'user_agent',
         'attachment_link',
         'contact_email',
     )
     date_hierarchy = 'created_at'
     list_per_page = 30
-    
+
     fieldsets = (
         ('Информация о пользователе', {
             'fields': ('user', 'contact_email', 'ip_address', 'user_agent')
         }),
         ('Данные обращения', {
-            'fields': ('category', 'subject', 'message', 'attachment', 'attachment_link')
+            'fields': ('category', 'subject', 'message', 'attachment', 'attachment_link', 'related_match')
         }),
         ('Статус', {
             'fields': ('status', 'send_status_email')

@@ -16,12 +16,22 @@ class Team(BaseModel):
         upload_to='teams/',
         blank=True,
         null=True,
-        verbose_name=_('Логотип')
+        verbose_name=_('Логотип (ручная загрузка)'),
+        help_text=_(
+            'Если загружен — всегда показывается вместо герба из Sportmonks '
+            'и НИКОГДА не перезаписывается синком. Используйте, если герб '
+            'источника устарел/неверен.'
+        ),
     )
     logo_url = models.URLField(
         blank=True,
         null=True,
-        verbose_name=_('URL логотипа')
+        verbose_name=_('URL логотипа (Sportmonks)'),
+        help_text=_(
+            'Заполняется и обновляется автоматически при каждом синке '
+            'Sportmonks. Не редактируйте вручную — правки затрутся при '
+            'следующем синке; для ручного герба используйте поле выше.'
+        ),
     )
     city = models.CharField(
         max_length=120,
@@ -46,6 +56,15 @@ class Team(BaseModel):
         _('ID команды на сайте KFF'),
         max_length=20, blank=True, null=True, unique=True,
         help_text=_('Числовой id из URL kffleague.kz/ru/team/<id> — для скрапинга фото игроков.'),
+    )
+    # См. комментарий у League.sportmonks_id (leagues/models.py). Для
+    # команд заполняется один раз вручную по итогам сверки 16 клубов КПЛ
+    # (docs/sportmonks-migration-plan.md, фаза 2) — список маленький и
+    # стабильный, автоматический fuzzy-мэтчинг тут не нужен и рискованнее
+    # ручной проверки.
+    sportmonks_id = models.CharField(
+        _('Sportmonks ID'),
+        max_length=100, blank=True, null=True, unique=True,
     )
     is_active = models.BooleanField(
         default=True,
@@ -74,8 +93,22 @@ class Team(BaseModel):
     
     @property
     def logo_display(self):
-        """Возвращает логотип (URL или файл)"""
-        return self.logo_url or (self.logo.url if self.logo else None)
+        """Возвращает логотип (файл или URL).
+
+        ВАЖНО (2026-09-09, вопрос пользователя "менеджер сказал логотипы
+        обновят за 24 часа, но мы вроде сделали так, чтобы не
+        обновлялись"): `logo_url` теперь СВОБОДНО перезаписывается каждым
+        синком Sportmonks (см. parsers/sportmonks/importers.py::
+        get_or_create_team) — если источник обновит герб, это само
+        подтянется на сайт. Защита от затирания переехала сюда: `logo`
+        (загруженный вручную в админке файл) — это staff-override, и он
+        ВСЕГДА в приоритете над `logo_url`, независимо от того, что
+        прислал Sportmonks. Раньше приоритет был обратный (logo_url
+        всегда выигрывал), из-за чего ручная загрузка файла в админке
+        молча игнорировалась на странице — то был реальный баг, а не
+        просто "защита от обновлений", извиняюсь за путаницу.
+        """
+        return (self.logo.url if self.logo else None) or self.logo_url
 
 
 class TeamSeason(BaseModel):

@@ -205,6 +205,11 @@ UNFOLD = {
                         "link": reverse_lazy("dashboard:data_health"),
                     },
                     {
+                        "title": _("Доверие к данным"),
+                        "icon": "verified",
+                        "link": reverse_lazy("dashboard:data_trust"),
+                    },
+                    {
                         "title": _("Реклама и виджеты"),
                         "icon": "code",
                         "link": reverse_lazy("dashboard:ads"),
@@ -253,7 +258,6 @@ UNFOLD = {
                     {"title": _("Игроки"), "icon": "sports", "link": reverse_lazy("admin:players_player_changelist")},
                     {"title": _("Тренеры"), "icon": "assignment_ind", "link": reverse_lazy("admin:coaches_coach_changelist")},
                     {"title": _("Судьи"), "icon": "sports_score", "link": reverse_lazy("admin:referees_referee_changelist")},
-                    {"title": _("Стадионы"), "icon": "stadium", "link": reverse_lazy("admin:core_stadium_changelist")},
                 ],
             },
             {
@@ -329,7 +333,10 @@ UNFOLD = {
                 "icon": "dns",
                 "collapsible": True,
                 "items": [
-                    {"title": _("Запуски синка KFF"), "icon": "sync", "link": reverse_lazy("admin:parsers_parsersyncrun_changelist")},
+                    # 2026-09-08 (cutover, ADR-0044): ParserSyncRun пишут ОБА
+                    # источника (см. поле source, parsers/0003) — название
+                    # раньше было "Запуски синка KFF", когда писал только он.
+                    {"title": _("Запуски синка (парсер)"), "icon": "sync", "link": reverse_lazy("admin:parsers_parsersyncrun_changelist")},
                     {"title": _("Аудит-лог staff (полный)"), "icon": "manage_history", "link": reverse_lazy("admin:dashboard_staffactionlog_changelist")},
                     {"title": _("Попытки входа (axes)"), "icon": "lock_clock", "link": reverse_lazy("admin:axes_accessattempt_changelist")},
                 ],
@@ -638,69 +645,28 @@ VAPID_PUBLIC_KEY = os.getenv('VAPID_PUBLIC_KEY', '')
 VAPID_PRIVATE_KEY = os.getenv('VAPID_PRIVATE_KEY', '')
 VAPID_ADMIN_EMAIL = os.getenv('VAPID_ADMIN_EMAIL', 'admin@dopx.kz')
 
-# Настройки парсера — какие турниры включены
-PARSER_SETTINGS = {
-    'ENABLED_TOURNAMENTS': ['pl'],  # ['pl', '1l', '2l', 'cup'] - добавить при необходимости
-    'DEFAULT_TOURNAMENT': 'pl',
-    'AUTO_CREATE_SEASONS': True,
-    'SYNC_RECENT_LIMIT': 10,
-}
+# Настройки Sportmonks (docs/sportmonks-migration-plan.md) — единственный
+# источник данных матчей с 2026-09-09 (KFF-парсер и вся его инфраструктура —
+# client.py с circuit breaker/proxy pool, PARSER_SETTINGS, management-команды —
+# физически удалены по решению пользователя, см. историю чата; переход был
+# завершён ранее как cutover с оставленным rollback-путём через
+# CELERY_BEAT_SCHEDULE, но сам rollback-код теперь тоже вычищен). Никакого
+# circuit breaker/proxy pool здесь нет и не было — против платного
+# разрешённого API это не нужно, см. parsers/sportmonks/client.py.
+SPORTMONKS_API_TOKEN = os.getenv('SPORTMONKS_API_TOKEN', '')
+SPORTMONKS_LEAGUE_ID = int(os.getenv('SPORTMONKS_LEAGUE_ID', '393'))  # Kazakhstan Premier League
+SPORTMONKS_BASE_URL = 'https://api.sportmonks.com/v3/football'
+SPORTMONKS_LOCALE = 'ru'
 
 CELERY_BEAT_SCHEDULE = {
-    # === БЫСТРАЯ синхронизация последних ЗАВЕРШЁННЫХ матчей Премьер-Лиги (каждые 30 мин) ===
-    'sync-kff-recent-premier': {
-        'task': 'parsers.tasks.sync_recent_matches',
-        'schedule': crontab(minute='*/30'),
-        'kwargs': {
-            'tournament_code': 'pl',
-            'limit': 10,
-        },
-        # 'options': {'queue': 'default'}
-    },
-    # === ПОЛНАЯ синхронизация Премьер-Лиги (раз в сутки в 03:00) ===
-    'sync-kff-premier-league-full': {
-        'task': 'parsers.tasks.sync_kff_premier_league',
-        'schedule': crontab(hour=3, minute=0),
-        # 'options': {'queue': 'default'}
-    },
-    # === Частое обновление для LIVE/скоро-стартующих матчей ===
-    # БАГ, КОТОРЫЙ ТУТ БЫЛ (2026-08-хх): раньше здесь было ДВЕ записи — эта
-    # (*/2) и 'update-scheduled-matches' (*/10), обе вызывали ОДНУ И ТУ ЖЕ
-    # задачу с одинаковым внутренним фильтром — */10 была строгим
-    # подмножеством */2, только лишняя нагрузка и гонки. Удалена.
-    #
-    # ВТОРОЙ БАГ, КОТОРЫЙ ТУТ БЫЛ (2026-09-07, пользователь: "каждый
-    # понедельник падает парсер... должен работать несмотря на их попытки
-    # блокировки"): у ЭТОЙ записи фильтр был ВООБЩЕ без временного окна —
-    # каждые 2 минуты опрашивались ВСЕ scheduled/live/postponed матчи,
-    # включая те, что через 2 недели (реально было total=55 в одном
-    # прогоне). 720 прогонов/сутки × десятки матчей = основной источник
-    # объёма запросов к хосту, который и так банит нас по TLS-отпечатку
-    # (см. parsers/kff/client.py) — чем больше долбим, тем чаще ловим бан.
-    # scope="tight" сужает фильтр до status='live' + матчей в пределах
-    # ~часа до / трёх часов после предполагаемого начала (см.
-    # parsers/tasks.py::_tight_window_q) — то, что реально может
-    # поменяться за 2 минуты. Далёкие scheduled/postponed матчи покрывает
-    # соседняя запись ниже (scope="loose"), в 15 раз реже. Ручная кнопка
-    # в staff-дашборде вызывает задачу БЕЗ kwargs — там scope="full" по
-    # умолчанию, старое поведение без временных ограничений не тронуто.
-    'update-live-matches': {
-        'task': 'parsers.tasks.update_match_statuses',
-        'schedule': crontab(minute='*/2'),
-        'kwargs': {'scope': 'tight'},
-        # 'options': {'queue': 'default'}
-    },
-    # === Редкое обновление для далёких scheduled/postponed матчей ===
-    # Дополняет запись выше (дизъюнктный набор, см. _tight_window_q) — эти
-    # матчи почти никогда не меняются от одного прогона к другому, раз в
-    # 30 минут более чем достаточно, чтобы вовремя заметить перенос даты
-    # или отмену, не нагружая хост так, как раньше.
-    'update-upcoming-matches-full': {
-        'task': 'parsers.tasks.update_match_statuses',
-        'schedule': crontab(minute='*/30'),
-        'kwargs': {'scope': 'loose'},
-        # 'options': {'queue': 'default'}
-    },
+    # =========================================================================
+    # KFF-парсер и весь его rollback-путь физически удалены (2026-09-09, по
+    # явному решению пользователя — "полностью выпилить и заменить на наш
+    # новый API"). Единственный источник синхронизации матчей — Sportmonks
+    # (записи sportmonks-* ниже). recalculate-standings/recalculate-aggregates
+    # и всё остальное не зависящее от источника данных матчей — продолжают
+    # работать с Match независимо от того, кто её туда пишет.
+    # =========================================================================
     # === Пересчёт таблицы (каждые 10 минут) — ✅ АВТО-СЕЗОН ===
     'recalculate-standings': {
         'task': 'aggregates.tasks.recalculate_season_standings',
@@ -728,12 +694,6 @@ CELERY_BEAT_SCHEDULE = {
     'notification-digest-hourly': {
         'task': 'notifications.tasks.send_notification_digest',
         'schedule': crontab(minute=0),  # раз в час, на весь час
-    },
-    # === Проверка здоровья API (каждые 2 часа) ===
-    'health-check-kff-api': {
-        'task': 'parsers.tasks.health_check_kff_api',
-        'schedule': crontab(minute=0, hour='*/2'),
-        # 'options': {'queue': 'default'}
     },
     # === Мониторинг ошибок синхронизации (каждые 4 часа) ===
     'sync-error-monitor': {
@@ -782,14 +742,27 @@ CELERY_BEAT_SCHEDULE = {
         'schedule': crontab(minute=20, hour=4),
     },
     # === Независимый внешний сигнал — расхождение рейтинга сообщества с
-    # объективной статистикой матчей от KFF (aggregates/tasks.py::
-    # detect_rating_stats_divergence_task, см. её докстринг), 2026-08-23.
+    # объективной статистикой матчей (aggregates/tasks.py::
+    # detect_rating_stats_divergence_task, см. её докстринг), 2026-08-23,
+    # источник данных статистики — Sportmonks с 2026-09-08 (был KFF).
     # Раз в сутки: это МЕДЛЕННЫЙ трендовый сигнал (нужно несколько матчей
     # команды), не привязан к конкретному свежему событию, как vote_spike —
     # чаще пересчитывать бессмысленно. ===
     'detect-rating-stats-divergence': {
         'task': 'aggregates.tasks.detect_rating_stats_divergence_task',
         'schedule': crontab(minute=30, hour=5),
+    },
+    # === Тот же принцип, но на уровне ИГРОКА (2026-09-08, по просьбе
+    # пользователя — "статистику матча... против накрутки и неадекватной
+    # оценки"): aggregates/tasks.py::detect_player_rating_stats_divergence_task,
+    # объективный сигнал — MatchPlayerStatistics + события матча вместо
+    # "доли доминирования" (см. докстринг PlayerRatingCorrection). Сдвинуто
+    # на 15 минут от командной версии — не пересекаются по времени, обе
+    # читают один и тот же ContentType-реестр (SuspiciousActivityFlag),
+    # не хочется гонки на запись, хотя они и не конфликтуют по объекту. ===
+    'detect-player-rating-stats-divergence': {
+        'task': 'aggregates.tasks.detect_player_rating_stats_divergence_task',
+        'schedule': crontab(minute=45, hour=5),
     },
     # === Бейдж «Чемпион месяца» — 1-го числа каждого месяца в 03:00 ===
     'award-monthly-champion-badge': {
@@ -846,18 +819,47 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'round_squad.tasks.recompute_active_rounds',
         'schedule': crontab(minute='*/15'),
     },
-    # === Синхронизация ID + позиции игроков с KFF (раз в 3 дня в 04:30) ===
-    # Переименовано из sync-kff-photos (2026-08-21) — от автоматического
-    # импорта ФОТО отказались (см. parsers/tasks.py::sync_kff_player_meta и
-    # core/templatetags/avatar_extras.py), но привязка Player.kff_website_id
-    # и бэкафилл пустой позиции по-прежнему полезны, поэтому задачу не
-    # выключаем целиком, а сузили до метаданных. Не чаще: сайт-источник
-    # чужой (вежливость + не хотим банов по UA), составы команд не меняются
-    # ежедневно. 04:30 — не пересекается с sync-kff-premier-league-full
-    # (03:00) и cleanup-old-notifications-daily (04:00).
-    'sync-kff-player-meta': {
-        'task': 'parsers.tasks.sync_kff_player_meta',
-        'schedule': crontab(hour=4, minute=30, day_of_month='*/3'),
+    # =========================================================================
+    # Sportmonks (docs/sportmonks-migration-plan.md) — единственный источник
+    # синхронизации матчей. Двухуровневая схема: лёгкий bulk-опрос ловит
+    # изменения, тяжёлая догрузка (per-fixture) идёт только для реально
+    # изменившихся матчей — см. докстринг parsers/sportmonks/tasks.py.
+    # =========================================================================
+    # === ЛЁГКИЙ live-опрос — один bulk-вызов get_livescores() на всю лигу
+    # вместо цикла по матчам (см. докстринг sportmonks_update_live). ===
+    'sportmonks-update-live': {
+        'task': 'parsers.sportmonks.tasks.sportmonks_update_live',
+        'schedule': crontab(minute='*/2'),
+    },
+    # === Подтяжка составов для матчей в ближайшие 3 часа. ===
+    'sportmonks-update-upcoming': {
+        'task': 'parsers.sportmonks.tasks.sportmonks_update_upcoming',
+        'schedule': crontab(minute='*/30'),
+    },
+    # === Суточная сверка календаря активного сезона (перенос дат/новые
+    # матчи) — ночью в 03:30, до cleanup-old-notifications-daily (04:00),
+    # чтобы не толкаться с ней за воркер одновременно. ===
+    'sportmonks-sync-season': {
+        'task': 'parsers.sportmonks.tasks.sportmonks_sync_season',
+        'schedule': crontab(hour=3, minute=30),
+    },
+    # === Health check токена/квоты — каждые 2 часа. ===
+    'sportmonks-health-check': {
+        'task': 'parsers.sportmonks.tasks.sportmonks_health_check',
+        'schedule': crontab(minute=15, hour='*/2'),
+    },
+    # === Недоступность игроков (травмы/дисквалификации) — раз в сутки. ===
+    'sportmonks-sync-sidelined': {
+        'task': 'parsers.sportmonks.tasks.sportmonks_sync_sidelined',
+        'schedule': crontab(hour=4, minute=0),
+    },
+    # === Гигиена Coach.is_active/team (2026-09-09, найдено пользователем:
+    # тренеры, ушедшие из клуба, вечно показывались активными — источник не
+    # присылает явное "уволен", см. coaches/services.py::refresh_coach_activity
+    # за полным объяснением) — раз в сутки, без обращения к API. ===
+    'sportmonks-sync-coach-activity': {
+        'task': 'parsers.sportmonks.tasks.sportmonks_sync_coach_activity',
+        'schedule': crontab(hour=4, minute=30),
     },
 }
 

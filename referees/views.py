@@ -1,10 +1,11 @@
 # referees/views.py
+from django.db.models import Avg, Count, Q, Sum
 from django.views.generic import ListView, DetailView
-from django.db.models import Avg, Count, Sum
 from core.utils import normalize_kz
 from referees.models import Referee
 from matches.models import Match
 from aggregates.models import RefereeMatchAggregate
+from seasons.models import Season
 
 
 class RefereeListView(ListView):
@@ -21,11 +22,23 @@ class RefereeListView(ListView):
         # aggregates/tasks.py::recalculate_referee_aggregates) — не только
         # честнее, но и проще: обычный Avg() через join вместо двух
         # Subquery/OuterRef.
+        #
+        # 2026-09-09 (жалоба пользователя после полного бэкафилла 3
+        # сезонов): "матчей" должно быть за текущий сезон, а не за всю
+        # историю разом — тот же принцип, что и в TeamListView/PlayerListView
+        # (teams/views.py, players/views.py). ?season=all снимает фильтр —
+        # для единообразия с этими двумя страницами, хотя сам список судей
+        # (в отличие от команд/игроков) и так не был season-scoped: судья
+        # не привязан к сезону напрямую, только через свои матчи.
+        self.active_season = Season.get_primary_active()
+        self.show_all = self.request.GET.get('season') == 'all'
+        season_q = Q(match__season=self.active_season) if self.active_season and not self.show_all else Q()
+
         queryset = Referee.objects.filter(
             is_active=True
         ).annotate(
             # ✅ Имя аннотации должно совпадать с шаблоном!
-            total_matches=Count('match', distinct=True),
+            total_matches=Count('match', filter=season_q, distinct=True),
             avg_influence=Avg('match_aggregates__avg_influence'),
             avg_decision_quality=Avg('match_aggregates__avg_decision_quality'),
         )
@@ -47,6 +60,8 @@ class RefereeListView(ListView):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Все судьи — DOPX'
         context['search_query'] = self.request.GET.get('q', '')
+        context['active_season'] = self.active_season
+        context['show_all'] = self.show_all
         return context
 
 

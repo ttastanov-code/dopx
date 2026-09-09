@@ -19,6 +19,20 @@ class Referee(BaseModel):
         null=True,
         blank=True
     )
+    # См. комментарий у League.sportmonks_id (leagues/models.py). В отличие
+    # от KFF (судья приходил свободным текстом без id, см.
+    # parsers/kff/importers.py::get_or_create_referee_by_name), у Sportmonks
+    # судья — стабильная сущность со своим id с самого начала. Существующие
+    # записи, заведённые ещё через парсинг текста KFF, сверяются со
+    # Sportmonks один раз скриптом реконсиляции (фаза 2 плана), дальше
+    # матчинг всегда идёт по этому полю, а не по имени.
+    sportmonks_id = models.CharField(
+        _('Sportmonks ID'),
+        max_length=100,
+        unique=True,
+        null=True,
+        blank=True
+    )
 
     class Meta:
         verbose_name = _('Судья')

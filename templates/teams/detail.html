@@ -104,6 +104,24 @@
             <div class="stat-value text-lg md:text-xl text-error">{{ goals_conceded }}</div>
           </div>
         </div>
+        {% comment %}
+        Форма команды (фаза 5, docs/sportmonks-migration-plan.md) — последние
+        5 W/D/L, считается на лету из recent_matches (teams/services.py::
+        get_team_form), без отдельного поля/запроса к API.
+        {% endcomment %}
+        {% if team_form %}
+        <div class="flex items-center justify-center md:justify-start gap-1.5 mt-3">
+          <span class="text-xs opacity-50 mr-1">Форма:</span>
+          {% for item in team_form %}
+          <a href="{% url 'matches:detail' item.match.id %}"
+             title="{% if item.is_home %}{{ team.name }} {{ item.score_display }} {{ item.opponent.name }}{% else %}{{ item.opponent.name }} {{ item.score_display }} {{ team.name }}{% endif %}"
+             class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0
+                    {% if item.result == 'W' %}bg-success{% elif item.result == 'L' %}bg-error{% else %}bg-base-content/30{% endif %}">
+            {{ item.result }}
+          </a>
+          {% endfor %}
+        </div>
+        {% endif %}
       </div>
     </div>
   </div>
@@ -317,6 +335,33 @@ text-anchor="end", подпись растёт влево от фиксиров�
 </div>
 {% endif %}
 
+<!-- === ПЕРЕКЛЮЧАТЕЛЬ СЕЗОНА === -->
+<!-- 2026-09-09 (продуктовый фидбек: "внутри страницы команды должна быть
+     статистика по сезонам", + кривая кнопка "Сезон 2026 Показать всех"
+     переделана нормально) — тот же паттерн кликабельных пилюль, что и на
+     странице лиги (leagues/detail.html): переключает ?season=<год> на этой
+     же странице, teams/views.py::TeamDetailView пересчитывает "Позицию в
+     лиге"/"Последние матчи"/"Спорные решения" под выбранный сезон.
+     2026-09-09 (жалоба пользователя "состав не меняется при смене сезона"):
+     "Состав команды" теперь тоже честно переключается — для прошлых сезонов
+     показывает тех, кто реально играл за клуб в заявках именно в этом
+     сезоне (а не сегодняшний живой ростер), см. teams/views.py::players.
+     Карьерные метрики (оценки болельщиков, топ-5 игроков, настроение
+     клуба) по-прежнему сознательно НЕ переключаются — это статистика за
+     всё время, не за сезон (иначе на сезонах с малым числом голосов эти
+     цифры были бы слишком шумными). -->
+{% if team_seasons|length > 1 %}
+<div class="flex flex-wrap items-center gap-2 mb-4 md:mb-6 px-2 sm:px-0">
+  <span class="text-xs opacity-60 flex-shrink-0"><i class="ti ti-calendar mr-1"></i>Сезон:</span>
+  {% for season in team_seasons %}
+  <a href="?season={{ season.year }}"
+     class="badge badge-md {% if season.is_active %}badge-warning{% else %}badge-ghost{% endif %} {% if season == selected_season %}outline outline-2 outline-offset-1 outline-primary{% endif %}">
+    {{ season.year }}
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+
 <!-- === ДВЕ КОЛОНКИ === -->
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6 px-2 sm:px-0 min-w-0">
   <!-- === ЛЕВАЯ КОЛОНКА (2/3) === -->
@@ -371,8 +416,9 @@ text-anchor="end", подпись растёт влево от фиксиров�
     {% if recent_matches %}
     <div class="card bg-base-100 border border-base-300">
       <div class="card-body p-3 md:p-4">
-        <h3 class="font-bold text-base md:text-lg mb-3 md:mb-4">
-          <i class="ti ti-clock mr-2"></i>Последние матчи
+        <h3 class="font-bold text-base md:text-lg mb-3 md:mb-4 flex items-center justify-between">
+          <span><i class="ti ti-clock mr-2"></i>Последние матчи</span>
+          {% if selected_season %}<span class="badge badge-xs md:badge-sm badge-ghost">{{ selected_season.year }}</span>{% endif %}
         </h3>
         <div class="space-y-2 md:space-y-3">
           {% for match in recent_matches %}
@@ -456,8 +502,9 @@ text-anchor="end", подпись растёт влево от фиксиров�
     {% if season_stats %}
     <div class="card bg-base-100 border border-base-300">
       <div class="card-body p-3 md:p-4">
-        <h3 class="font-bold text-base md:text-lg mb-3 md:mb-4">
-          <i class="ti ti-table mr-2"></i>Позиция в лиге
+        <h3 class="font-bold text-base md:text-lg mb-3 md:mb-4 flex items-center justify-between">
+          <span><i class="ti ti-table mr-2"></i>Позиция в лиге</span>
+          {% if selected_season %}<span class="badge badge-xs md:badge-sm badge-ghost">{{ selected_season.year }}</span>{% endif %}
         </h3>
         <div class="flex items-center gap-4">
           <div class="text-3xl md:text-4xl font-bold text-primary flex-shrink-0">{{ season_stats.position }}</div>

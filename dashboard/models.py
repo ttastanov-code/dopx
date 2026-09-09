@@ -27,10 +27,27 @@ class AuditAction(models.TextChoices):
     ANTIFRAUD_FLAG_DISMISSED = "antifraud_flag_dismissed", _("Флаг отклонён")
     MATCH_RESYNC = "match_resync", _("Ручной ресинк матча")
     CELERY_TASK_TRIGGERED = "celery_task_triggered", _("Запуск celery-задачи вручную")
-    RAW_KFF_LOOKUP = "raw_kff_lookup", _("Просмотр сырого ответа KFF API")
     CELERY_TASK_REVOKED = "celery_task_revoked", _("Отзыв/остановка celery-задачи")
-    KFF_HEALTH_CHECK = "kff_health_check", _("Проверка доступности KFF API")
+    SPORTMONKS_HEALTH_CHECK = "sportmonks_health_check", _("Проверка доступности Sportmonks API")
     SYSTEM_ANNOUNCEMENT_SENT = "system_announcement_sent", _("Отправлено системное объявление")
+    # НОВОЕ (2026-09-09, Центр доверия к данным) — dashboard/views.py::
+    # data_trust, dashboard/views.py::data_trust_report_action,
+    # dashboard/views.py::data_trust_discrepancy_review.
+    DATA_ERROR_REPORT_RESOLVED = "data_error_report_resolved", _("Жалоба на данные матча закрыта")
+    PARSER_DISCREPANCY_REVIEWED = "parser_discrepancy_reviewed", _("Расхождение импорта разобрано")
+
+    # 2026-09-09: RAW_KFF_LOOKUP/KFF_HEALTH_CHECK удалены вместе со всем
+    # KFF-парсером (по решению пользователя). STADIUM_MARKED_REVIEWED
+    # удалён в тот же день вместе со всей моделью Stadium (см.
+    # matches/models.py, core/models_stadium.py — принципиальная проблема
+    # с venue-данными КПЛ, не просто отдельные ошибки сопоставления). Уже
+    # существующие строки StaffActionLog с этими значениями в БД не трогаем
+    # и не удаляем — они просто перестают резолвиться в красивый label
+    # через get_action_display() и будут показывать сырое значение
+    # ("raw_kff_lookup"/"kff_health_check"/"stadium_marked_reviewed") в
+    # истории аудита. Это осознанный компромисс: исторический лог
+    # неизменяем (см. докстринг StaffActionLog), а не повод держать мёртвые
+    # choices вечно.
 
 
 class StaffActionLog(models.Model):

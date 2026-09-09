@@ -30,15 +30,20 @@
                     <i class="ti ti-flag"></i>
                     {{ league.country }}
                 </p>
-                <!-- Сезоны -->
+                <!-- Сезоны — кликабельные, переключают ?season=<год> на этой же
+                     странице (leagues/views.py::LeagueDetailView, 2026-09-09:
+                     раньше это были просто <span>, завершённые сезоны нельзя
+                     было открыть вообще). Активный подсвечен warning всегда;
+                     ВЫБРАННЫЙ (может совпадать с активным) — обведён рамкой. -->
                 <div class="flex flex-wrap justify-center md:justify-start gap-2">
                     {% for season in seasons %}
-                    <span class="badge badge-md md:badge-lg {% if season.is_active %}badge-warning{% else %}badge-ghost{% endif %}">
+                    <a href="?season={{ season.year }}"
+                       class="badge badge-md md:badge-lg {% if season.is_active %}badge-warning{% else %}badge-ghost{% endif %} {% if season == selected_season %}outline outline-2 outline-offset-1 outline-primary{% endif %}">
                         {{ season.year }}
                         {% if season.is_active %}
                         <i class="ti ti-circle-filled text-xs ml-1"></i>
                         {% endif %}
-                    </span>
+                    </a>
                     {% endfor %}
                 </div>
             </div>
@@ -54,8 +59,8 @@
             <i class="ti ti-award"></i>
             Номинации сезона
         </h2>
-        {% if active_season %}
-        <span class="badge badge-warning badge-sm">{{ active_season.year }}</span>
+        {% if selected_season %}
+        <span class="badge badge-sm {% if selected_season.is_active %}badge-warning{% else %}badge-ghost{% endif %}">{{ selected_season.year }}</span>
         {% endif %}
     </div>
     {% include 'components/_nominations.html' %}
@@ -76,9 +81,9 @@
                         <i class="ti ti-table mr-2"></i>
                         Турнирная таблица
                     </h3>
-                    {% if active_season %}
-                    <span class="badge badge-xs md:badge-sm badge-warning">
-                        {{ active_season.year }}
+                    {% if selected_season %}
+                    <span class="badge badge-xs md:badge-sm {% if selected_season.is_active %}badge-warning{% else %}badge-ghost{% endif %}">
+                        {{ selected_season.year }}{% if not selected_season.is_active %} · завершён{% endif %}
                     </span>
                     {% endif %}
                 </div>
@@ -171,10 +176,10 @@
                 <i class="ti ti-table-off text-3xl md:text-4xl opacity-40 mb-3"></i>
                 <h3 class="font-bold text-lg md:text-xl mb-2">Турнирная таблица скоро появится</h3>
                 <p class="text-sm opacity-60">
-                    {% if not active_season %}
+                    {% if not selected_season %}
                     Сезон в этой лиге ещё не начался
                     {% else %}
-                    Матчи активного сезона ещё не сыграны
+                    Матчи сезона {{ selected_season.year }} ещё не сыграны
                     {% endif %}
                 </p>
             </div>
@@ -242,14 +247,15 @@
                 </h3>
                 <div class="space-y-2">
                     {% for season in seasons %}
-                    <div class="flex items-center justify-between p-2 rounded-lg hover:bg-base-200">
-                        <span class="font-medium text-sm md:text-base truncate">{{ season.year }}</span>
+                    <a href="?season={{ season.year }}"
+                       class="flex items-center justify-between p-2 rounded-lg hover:bg-base-200 transition-colors {% if season == selected_season %}bg-base-200{% endif %}">
+                        <span class="font-medium text-sm md:text-base truncate {% if season == selected_season %}text-primary{% endif %}">{{ season.year }}</span>
                         {% if season.is_active %}
                         <span class="badge badge-xs md:badge-sm badge-warning">Активен</span>
                         {% else %}
                         <span class="text-xs opacity-60">Завершён</span>
                         {% endif %}
-                    </div>
+                    </a>
                     {% endfor %}
                 </div>
             </div>
@@ -271,7 +277,7 @@
                         <span class="opacity-60">Всего матчей</span>
                         <span class="font-medium">{{ league.match_set.count }}</span>
                     </div>
-                    {% if active_season %}
+                    {% if selected_season %}
                     <div class="flex justify-between">
                         <span class="opacity-60">Команд в сезоне</span>
                         <span class="font-medium">{{ standings|length }}</span>

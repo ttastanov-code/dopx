@@ -21,6 +21,16 @@ class Season(BaseModel):
         null=True,
         blank=True
     )
+    # См. комментарий у League.sportmonks_id (leagues/models.py) — тот же
+    # принцип, отдельное поле под id из Sportmonks, external_id остаётся
+    # за KFF.
+    sportmonks_id = models.CharField(
+        _('Sportmonks ID'),
+        max_length=100,
+        unique=True,
+        null=True,
+        blank=True
+    )
 
     class Meta:
         verbose_name = _('Сезон')

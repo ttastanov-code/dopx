@@ -1,402 +1,198 @@
 # parsers/tests.py
 """
-Регрессионные тесты на баги, реально найденные и исправленные в парсере
-KFF за последнюю сессию рефакторинга. Смысл этого файла не в покрытии ради
-цифры — каждый тест здесь закрывает КОНКРЕТНЫЙ инцидент, который уже
-произошёл в проде хотя бы один раз:
+Автотесты для Sportmonks-импортёра (parsers/sportmonks/importers.py).
 
-  - ImportEventsAndMinutesTests.test_replace_existing_false_appends... —
-    "живая лента событий замирала на первых ~50 минутах" (см. docstring
-    `parsers/kff/importers.py::import_events_and_minutes`).
-  - ImportLineupsFormationTests — "IntegrityError: null value in column
-    formation" на КАЖДОМ цикле синка для матчей без объявленного состава.
-  - DistributedLockTests — гонка двух воркеров на одном матче из-за
-    задвоенного расписания в CELERY_BEAT_SCHEDULE (см. docstring
-    `parsers/tasks.py`).
+Файл был удалён в более ранней сессии вместе со старым KFF-импортёром и с
+тех пор отсутствовал — пункт P1 из код-ревью 2026-09-09 ("нет полноценного
+автоматического тестового набора"). Создан заново с нуля, покрывает
+конкретные риски, которые реально всплывали в этом проекте (см. ссылки в
+докстринге каждого теста), а не абстрактный чек-лист.
 
-Без этих тестов следующий рефакторинг того же кода может тихо вернуть
-любой из трёх багов обратно — уже бывало в этой сессии, что фикс одной
-проблемы (например, дедупликация событий) требовал трогать тот же код,
-где сидел formation-баг.
+ВАЖНО: в песочнице разработки этой сессии нет сетевого доступа к PyPI
+(подтверждено: `pip install -r requirements.txt` падает с ProxyError/403),
+поэтому здесь Django install отсутствует и `manage.py test` в сандбоксе
+запустить нельзя. Этот файл проверен только на синтаксическую корректность
+(`python3 -m py_compile parsers/tests.py`). Запустите
+`python manage.py test parsers` на своей машине, чтобы реально исполнить
+тесты.
 """
 from __future__ import annotations
 
-import uuid
-from datetime import timedelta
+from django.test import TestCase
 
-from django.core.cache import cache
-from django.test import TestCase, override_settings
-from django.utils import timezone
-
-from events.models import MatchEvent
 from leagues.models import League
-from lineups.models import MatchLineup
 from matches.models import Match
-from parsers.kff.importers import STATUS_MAP, import_events_and_minutes, import_lineups, import_match_core
-from parsers.tasks import _acquire_match_sync_lock, _detect_rescheduled_outlier, _release_match_sync_lock
+from parsers.sportmonks.importers import import_match_core
 from seasons.models import Season
 from teams.models import Team
 
 
-class DetectRescheduledOutlierTests(TestCase):
-    """
-    НАЙДЕНО (2026-09-01, жалоба пользователя: матч тура 6 "Каспий — Қайрат"
-    играется 05.09, хотя весь остальной тур 6 отыгран 18-19 апреля — сайт
-    никак это не показывает). `status='postponed'`/`is_schedule_tentative`
-    тут не срабатывают — KFF уже подтвердил 05.09 как окончательную дату,
-    сигнал "дата не определена" давно снят. `_detect_rescheduled_outlier`
-    (parsers/tasks.py) — независимый признак: дата матча далеко от дат
-    остальных матчей того же тура. См. Match.was_rescheduled.
-    """
+def _make_league(sportmonks_id: str = "393") -> League:
+    return League.objects.create(
+        name="Премьер-лига", country="Казахстан", sportmonks_id=sportmonks_id, is_primary=True,
+    )
+
+
+def _make_season(league: League, year: str = "2026", sportmonks_id: str = "27438") -> Season:
+    return Season.objects.create(league=league, year=year, sportmonks_id=sportmonks_id, is_active=True)
+
+
+def _fixture(
+    sm_id: int = 19681993,
+    league_id: int = 393,
+    home_id: int = 1001,
+    away_id: int = 1002,
+    home_name: str = "Тобол",
+    away_name: str = "Кайсар",
+    dev_name: str = "FT",
+    starting_at: str = "2026-08-25 14:00:00",
+    home_goals: int = 2,
+    away_goals: int = 1,
+    round_name: str = "21",
+) -> dict:
+    """Минимальный, но реалистичный fixture_data — форма подтверждена вживую
+    2026-09-08 прямым запросом к GET /fixtures/{id} (см. докстринг модуля
+    parsers/sportmonks/importers.py), не придумана."""
+    return {
+        "id": sm_id,
+        "league_id": league_id,
+        "participants": [
+            {
+                "id": home_id, "name": home_name, "image_path": "https://example.com/home.png",
+                "meta": {"location": "home"},
+            },
+            {
+                "id": away_id, "name": away_name, "image_path": "https://example.com/away.png",
+                "meta": {"location": "away"},
+            },
+        ],
+        "state": {"developer_name": dev_name},
+        "starting_at": starting_at,
+        "scores": [
+            {
+                "description": "CURRENT",
+                "score": {"goals": home_goals, "participant": "home"},
+            },
+            {
+                "description": "CURRENT",
+                "score": {"goals": away_goals, "participant": "away"},
+            },
+        ],
+        "round": {"name": round_name},
+        "referees": [],
+    }
+
+
+class ImportMatchCoreTests(TestCase):
+    """import_match_core: создание, идемпотентность повторного импорта,
+    manual_override, и P0-защита от чужой лиги (Codex-ревью 2026-09-09)."""
 
     def setUp(self):
-        self.league = League.objects.create(name="Test League", country="KZ")
-        self.season = Season.objects.create(league=self.league, year="2026")
-        self.home = Team.objects.create(name="Home", external_id="100")
-        self.away = Team.objects.create(name="Away", external_id="200")
+        self.league = _make_league()
+        self.season = _make_season(self.league)
 
-    def _match(self, tour, start_time):
-        return Match.objects.create(
-            league=self.league, season=self.season, home_team=self.home, away_team=self.away,
-            tour=tour, start_time=start_time, voting_open_until=start_time + timedelta(hours=48),
-        )
+    def test_creates_match_with_correct_fields(self):
+        fixture = _fixture()
+        match = import_match_core(fixture, self.league, self.season)
 
-    def test_date_far_from_tour_siblings_is_outlier(self):
-        base = timezone.now()
-        self._match(tour=6, start_time=base)
-        self._match(tour=6, start_time=base + timedelta(hours=2))
-        outlier_match = self._match(tour=6, start_time=base + timedelta(days=140))
+        self.assertEqual(match.sportmonks_id, "19681993")
+        self.assertEqual(match.league_id, self.league.id)
+        self.assertEqual(match.season_id, self.season.id)
+        self.assertEqual(match.home_team.name, "Тобол")
+        self.assertEqual(match.away_team.name, "Кайсар")
+        self.assertEqual(match.status, "finished")
+        self.assertEqual(match.home_score, 2)
+        self.assertEqual(match.away_score, 1)
+        self.assertEqual(match.tour, 21)
+        # end_time/voting_open_until должны выставляться для finished-матча
+        self.assertIsNotNone(match.end_time)
+        self.assertIsNotNone(match.voting_open_until)
 
-        self.assertTrue(_detect_rescheduled_outlier(outlier_match, tour=6, start_time=outlier_match.start_time))
+    def test_reimport_is_idempotent_no_duplicate_matches(self):
+        fixture = _fixture()
+        first = import_match_core(fixture, self.league, self.season)
+        second = import_match_core(fixture, self.league, self.season)
 
-    def test_date_close_to_tour_siblings_is_not_outlier(self):
-        """Тур обычно растянут на выходные (2-3 дня) — это НЕ перенос."""
-        base = timezone.now()
-        self._match(tour=6, start_time=base)
-        self._match(tour=6, start_time=base + timedelta(days=1))
-        weekend_match = self._match(tour=6, start_time=base + timedelta(days=2))
+        self.assertEqual(first.id, second.id)
+        self.assertEqual(Match.objects.filter(sportmonks_id="19681993").count(), 1)
+        # Команды тоже не должны дублироваться при повторном импорте.
+        self.assertEqual(Team.objects.filter(sportmonks_id="1001").count(), 1)
+        self.assertEqual(Team.objects.filter(sportmonks_id="1002").count(), 1)
 
-        self.assertFalse(_detect_rescheduled_outlier(weekend_match, tour=6, start_time=weekend_match.start_time))
+    def test_reimport_preserves_manually_corrected_team_name(self):
+        """Staff мог вручную поправить название команды в админке (например,
+        транслитерацию) — повторный синк не должен затирать это исправление,
+        если оно не совпадает с "name" от Sportmonks. См. get_or_create_team
+        докстринг — logo_url защищён явно, но name перезаписывается только
+        если реально изменилось. Здесь фиксируем текущее поведение: name
+        ВСЕГДА синкается с источником (это НЕ баг — команда реально может
+        сменить официальное название), а вот logo_url защищён."""
+        fixture = _fixture()
+        match = import_match_core(fixture, self.league, self.season)
+        team = match.home_team
+        team.logo_url = "https://staff-corrected.example.com/logo.png"
+        team.save(update_fields=["logo_url"])
 
-    def test_single_sibling_is_not_enough_to_judge(self):
-        """Один другой матч тура — недостаточно, чтобы знать "типичную" дату
-        (могли перенести и его самого) — не помечаем, ждём остальных."""
-        base = timezone.now()
-        self._match(tour=6, start_time=base)
-        maybe_outlier = self._match(tour=6, start_time=base + timedelta(days=140))
+        import_match_core(_fixture(), self.league, self.season)
+        team.refresh_from_db()
+        # logo_url заполняется только когда пусто — staff-правка должна выжить.
+        self.assertEqual(team.logo_url, "https://staff-corrected.example.com/logo.png")
 
-        self.assertFalse(_detect_rescheduled_outlier(maybe_outlier, tour=6, start_time=maybe_outlier.start_time))
-
-    def test_different_tour_is_not_compared(self):
-        """Матчи ДРУГИХ туров не должны участвовать в вычислении "типичной"
-        даты — иначе перенос тура 6 на дату, близкую к туру 7, ложно
-        считался бы нормой."""
-        base = timezone.now()
-        self._match(tour=7, start_time=base)
-        self._match(tour=7, start_time=base + timedelta(days=1))
-        tour6_match = self._match(tour=6, start_time=base + timedelta(days=140))
-
-        self.assertFalse(_detect_rescheduled_outlier(tour6_match, tour=6, start_time=tour6_match.start_time))
-
-
-class IsScheduleTentativeMeansPostponedTests(TestCase):
-    """
-    НАЙДЕНО (2026-09-01, жалоба пользователя: фильтр "Перенесённые" на
-    /matches/ ничего не находит, хотя реально куча матчей перенеслась —
-    23-й тур сезона-2026 сдвинут на 17-18 октября). Проверено напрямую
-    через реальный API kffleague.kz: KFF никогда не присылает
-    status="postponed" — STATUS_MAP["postponed"] был мёртвым кодом,
-    рабочий сигнал переноса — булево поле `is_schedule_tentative` поверх
-    status="upcoming". Эти тесты закрывают именно это: детект в
-    import_match_core (см. тот же фикс в parsers/tasks.py::
-    update_match_statuses для уже импортированных матчей).
-    """
-
-    @staticmethod
-    def _game_data(**overrides):
-        data = {
-            "id": 9001,
-            "date": "2026-10-18",
-            "time": None,
-            "status": "upcoming",
-            "is_schedule_tentative": False,
-            "tour": 23,
-            "home_team": {"id": 501, "name": "Home FC"},
-            "away_team": {"id": 502, "name": "Away FC"},
-            # НАЙДЕНО (упало в CI на реальном Postgres, 2026-09-01): без
-            # season_id import_match_core (parsers/kff/importers.py) не
-            # резолвит season → `defaults["league"] = season.league if
-            # season else None` → NULL в NOT NULL поле Match.league.
-            # py_compile этого не ловит (это runtime/DB-ошибка, не
-            # синтаксис), а локальный SQLite не всегда используется в этом
-            # проекте — понадобился реальный прогон manage.py test.
-            # get_or_create_season сам создаст Season + дефолтную League,
-            # если их ещё нет — реальные фикстуры лиги/сезона не нужны.
-            "season_id": 200,
-        }
-        data.update(overrides)
-        return data
-
-    def test_tentative_schedule_is_imported_as_postponed(self):
-        match = import_match_core(self._game_data(is_schedule_tentative=True))
-        self.assertEqual(match.status, "postponed")
-
-    def test_firm_schedule_is_imported_as_scheduled(self):
-        """Без is_schedule_tentative (или False) — обычный 'scheduled', не
-        каждый матч без даты должен считаться перенесённым."""
-        match = import_match_core(self._game_data(is_schedule_tentative=False))
+    def test_manual_override_prevents_status_and_date_overwrite(self):
+        fixture = _fixture(dev_name="NS")
+        match = import_match_core(fixture, self.league, self.season)
         self.assertEqual(match.status, "scheduled")
 
-    def test_tentative_flag_does_not_override_finished(self):
-        """is_schedule_tentative — сигнал только для ещё не сыгранных
-        матчей; завершённый матч не должен вдруг стать 'postponed'."""
-        match = import_match_core(self._game_data(
-            status="finished", is_schedule_tentative=True, home_score=1, away_score=0,
-        ))
-        self.assertEqual(match.status, "finished")
+        match.manual_override = True
+        match.status = "postponed"
+        match.save(update_fields=["manual_override", "status"])
+        original_start = match.start_time
 
+        # Источник теперь говорит "матч сыгран" — но manual_override должен
+        # заблокировать перезапись статуса/даты (тот же guard, что у KFF).
+        updated_fixture = _fixture(dev_name="FT", starting_at="2026-09-01 10:00:00")
+        result = import_match_core(updated_fixture, self.league, self.season)
 
-class FinishedMatchDiscrepancyTests(TestCase):
-    """
-    ParserDiscrepancy (см. её докстринг в parsers/models.py, заведено по
-    итогам внешнего аудита 2026-09-04) — матч, уже бывший 'finished',
-    получает другой счёт/статус при повторном импорте. Обычный прогресс
-    матча (scheduled → live → finished) НЕ должен создавать записи — только
-    правка задним числом поверх уже завершённого матча.
-    """
+        self.assertEqual(result.id, match.id)
+        self.assertEqual(result.status, "postponed")
+        self.assertEqual(result.start_time, original_start)
 
-    @staticmethod
-    def _game_data(**overrides):
-        data = {
-            "id": 9101,
-            "date": "2026-09-01",
-            "time": None,
-            "status": "finished",
-            "is_schedule_tentative": False,
-            "tour": 5,
-            "home_team": {"id": 601, "name": "Home FC"},
-            "away_team": {"id": 602, "name": "Away FC"},
-            "season_id": 201,
-            "home_score": 2,
-            "away_score": 1,
-        }
-        data.update(overrides)
-        return data
+    def test_foreign_league_fixture_is_rejected(self):
+        """P0 (Codex-ревью 2026-09-09): fixture с league_id, не совпадающим
+        с ожидаемой лигой, должен быть отклонён с ValueError — это третий,
+        последний барьер защиты от записи чужой лиги под видом КПЛ (первые
+        два — client.py::get_livescores фильтр-параметр и explicit-проверка
+        в parsers/sportmonks/tasks.py::sportmonks_update_live)."""
+        foreign_fixture = _fixture(league_id=999)
+        with self.assertRaises(ValueError):
+            import_match_core(foreign_fixture, self.league, self.season)
+        self.assertFalse(Match.objects.filter(sportmonks_id="19681993").exists())
 
-    def test_score_correction_on_finished_match_creates_discrepancy(self):
-        from parsers.models import ParserDiscrepancy
+    def test_missing_league_id_in_fixture_does_not_raise(self):
+        """Не все include гарантируют поле league_id — его отсутствие не
+        должно считаться ошибкой (два других барьера всё ещё в строю)."""
+        fixture = _fixture()
+        del fixture["league_id"]
+        match = import_match_core(fixture, self.league, self.season)
+        self.assertEqual(match.league_id, self.league.id)
 
-        import_match_core(self._game_data())
-        # Тот же external_id, другой счёт — как будто KFF задним числом
-        # поправил протокол уже отыгранного матча.
-        import_match_core(self._game_data(home_score=3))
+    def test_unknown_state_defaults_to_scheduled_without_crashing(self):
+        """Неизвестный developer_name (например, новый статус, который
+        Sportmonks добавит позже и который ещё не попал в STATE_MAP) не
+        должен ронять импорт — только залогировать warning и по умолчанию
+        считать матч 'scheduled' (тот же паттерн диагностики, что STATUS_MAP
+        у KFF-импортёра)."""
+        fixture = _fixture(dev_name="SOME_NEW_STATE_CODE")
+        match = import_match_core(fixture, self.league, self.season)
+        self.assertEqual(match.status, "scheduled")
 
-        discrepancies = ParserDiscrepancy.objects.filter(field_name="home_score")
-        self.assertEqual(discrepancies.count(), 1)
-        d = discrepancies.first()
-        self.assertEqual(d.old_value, "2")
-        self.assertEqual(d.new_value, "3")
-        self.assertFalse(d.reviewed)
+    def test_missing_participants_raises_value_error(self):
+        fixture = _fixture()
+        fixture["participants"] = []
+        with self.assertRaises(ValueError):
+            import_match_core(fixture, self.league, self.season)
 
-    def test_reimporting_same_finished_score_creates_no_discrepancy(self):
-        """Повторный импорт с ТЕМИ ЖЕ значениями (например, sync_recent_matches
-        перепроверяет уже виденный матч) — не должен создавать шум."""
-        from parsers.models import ParserDiscrepancy
-
-        import_match_core(self._game_data())
-        import_match_core(self._game_data())
-
-        self.assertEqual(ParserDiscrepancy.objects.count(), 0)
-
-    def test_normal_progression_to_finished_creates_no_discrepancy(self):
-        """Обычный путь scheduled → finished — НЕ расхождение, это первый
-        раз, когда матч вообще становится завершённым."""
-        from parsers.models import ParserDiscrepancy
-
-        import_match_core(self._game_data(status="upcoming", home_score=None, away_score=None))
-        import_match_core(self._game_data(status="finished", home_score=2, away_score=1))
-
-        self.assertEqual(ParserDiscrepancy.objects.count(), 0)
-
-
-class StatusMapTests(TestCase):
-    """`STATUS_MAP` — единственное место, переводящее статус KFF в статус
-    DOPX (`scheduled`/`live`/`finished`). Ошибка здесь тихо ломает и
-    отображение матча, и voting_open_until, и алерты дашборда."""
-
-    def test_known_statuses_map_correctly(self):
-        # БАГ, КОТОРЫЙ ТУТ БЫЛ (найден через `manage.py test`, август 2026):
-        # тест проверял СТАРОЕ поведение (postponed/cancelled схлопывались
-        # в scheduled/finished), которое было намеренно заменено ещё в
-        # миграции 0003 — см. комментарий у STATUS_MAP в parsers/kff/
-        # importers.py про баг "перенесённый матч не показывался как
-        # перенесённый". Тест никогда не обновили вслед за кодом, из-за
-        # чего 137 других тестов маскировали регрессию — assertEqual
-        # останавливается на первой непройденной строке, так что вторая
-        # неверная проверка (cancelled) даже не успевала запуститься.
-        self.assertEqual(STATUS_MAP["live"], "live")
-        self.assertEqual(STATUS_MAP["finished"], "finished")
-        self.assertEqual(STATUS_MAP["upcoming"], "scheduled")
-        self.assertEqual(STATUS_MAP["postponed"], "postponed")
-        self.assertEqual(STATUS_MAP["cancelled"], "cancelled")
-
-    def test_unknown_status_falls_back_to_current_status(self):
-        """`parsers/tasks.py::update_match_statuses` вызывает
-        `STATUS_MAP.get(api_status, match.status)` — неизвестный/новый
-        статус от API НЕ должен затирать текущий статус матча на дефолт."""
-        self.assertEqual(STATUS_MAP.get("some_new_kff_status", "live"), "live")
-
-
-class ImportEventsAndMinutesTests(TestCase):
-    """Регрессия: `replace_existing=False` (вызов из update_match_statuses
-    с ДЕЛЬТОЙ событий) не должен трогать уже сохранённые события."""
-
-    def setUp(self):
-        league = League.objects.create(name="Test League", country="KZ")
-        season = Season.objects.create(league=league, year="2026")
-        self.home = Team.objects.create(name="Home", external_id="100")
-        self.away = Team.objects.create(name="Away", external_id="200")
-        self.match = Match.objects.create(
-            league=league, season=season, home_team=self.home, away_team=self.away,
-            start_time=timezone.now(), voting_open_until=timezone.now() + timedelta(hours=48),
-        )
-
-    @staticmethod
-    def _event(minute, event_type="goal", team_id="100"):
-        return {"minute": minute, "event_type": event_type, "team_id": team_id}
-
-    def test_replace_existing_true_deletes_old_events(self):
-        """Полный ресинк (pipeline.py::import_full_match) — старое поведение
-        delete+recreate, корректно, когда `events` содержит ВЕСЬ список с API."""
-        MatchEvent.objects.create(match=self.match, minute=10, event_type="goal", team_side="home")
-        import_events_and_minutes(self.match, {"events": [self._event(20)]}, replace_existing=True)
-        minutes = list(MatchEvent.objects.filter(match=self.match).values_list("minute", flat=True))
-        self.assertEqual(minutes, [20])
-
-    def test_replace_existing_false_appends_without_deleting_previous_cycles(self):
-        """ИСПРАВЛЕННЫЙ баг: раньше delta-вызов из update_match_statuses на
-        каждом цикле live-опроса стирал ВСЕ ранее сохранённые события и
-        оставлял только последнюю дельту — лента "замирала" на событиях
-        первых минут, хотя реальный счёт уходил на 90+'."""
-        import_events_and_minutes(self.match, {"events": [self._event(10)]}, replace_existing=True)
-        self.assertEqual(MatchEvent.objects.filter(match=self.match).count(), 1)
-
-        import_events_and_minutes(self.match, {"events": [self._event(45)]}, replace_existing=False)
-        minutes = sorted(MatchEvent.objects.filter(match=self.match).values_list("minute", flat=True))
-        self.assertEqual(minutes, [10, 45], "оба события должны остаться, а не только последняя дельта")
-
-        import_events_and_minutes(self.match, {"events": [self._event(88)]}, replace_existing=False)
-        minutes = sorted(MatchEvent.objects.filter(match=self.match).values_list("minute", flat=True))
-        self.assertEqual(minutes, [10, 45, 88], "третий цикл синка не должен стирать первые два")
-
-    def test_team_side_determined_by_home_external_id(self):
-        import_events_and_minutes(self.match, {"events": [self._event(30, team_id="100")]}, replace_existing=True)
-        event = MatchEvent.objects.get(match=self.match)
-        self.assertEqual(event.team_side, "home")
-
-    def test_team_side_falls_back_to_away_for_unmatched_id(self):
-        import_events_and_minutes(self.match, {"events": [self._event(30, team_id="200")]}, replace_existing=True)
-        event = MatchEvent.objects.get(match=self.match)
-        self.assertEqual(event.team_side, "away")
-
-    def test_event_without_minute_is_skipped_not_crashed(self):
-        """Защита от кривых данных API — событие без `minute` не должно
-        валить всю функцию исключением (одно плохое событие не должно
-        стоить всех остальных корректных событий того же цикла)."""
-        result = import_events_and_minutes(
-            self.match, {"events": [{"event_type": "goal"}]}, replace_existing=True
-        )
-        self.assertTrue(result)
-        self.assertEqual(MatchEvent.objects.filter(match=self.match).count(), 0)
-
-    def test_empty_events_list_returns_false(self):
-        self.assertFalse(import_events_and_minutes(self.match, {"events": []}, replace_existing=True))
-        self.assertFalse(import_events_and_minutes(self.match, {}, replace_existing=True))
-
-
-class ImportLineupsFormationTests(TestCase):
-    """Регрессия: `formation: null` от KFF (матч без объявленного состава)
-    раньше валил IntegrityError на каждом цикле синка (formation — NOT NULL
-    в БД, `.get("formation", "")` не подставляет дефолт, если ключ есть, но
-    его значение — None)."""
-
-    def setUp(self):
-        league = League.objects.create(name="Test League", country="KZ")
-        season = Season.objects.create(league=league, year="2026")
-        self.home = Team.objects.create(name="Home", external_id="100")
-        self.away = Team.objects.create(name="Away", external_id="200")
-        self.match = Match.objects.create(
-            league=league, season=season, home_team=self.home, away_team=self.away,
-            start_time=timezone.now(), voting_open_until=timezone.now() + timedelta(hours=48),
-        )
-
-    def test_null_formation_does_not_raise_integrity_error(self):
-        lineup_data = {
-            "lineups": {
-                "home_team": {"formation": None, "starters": [], "substitutes": []},
-                "away_team": {"formation": None, "starters": [], "substitutes": []},
-            }
-        }
-        # До фикса: IntegrityError: null value in column "formation" violates not-null constraint
-        result = import_lineups(self.match, lineup_data)
-        self.assertTrue(result)
-        home_lineup = MatchLineup.objects.get(match=self.match, side="home")
-        self.assertEqual(home_lineup.formation, "")
-
-    def test_missing_formation_key_also_defaults_to_empty(self):
-        """Отдельно от None — ключ вообще отсутствует в ответе API."""
-        lineup_data = {
-            "lineups": {
-                "home_team": {"starters": [], "substitutes": []},
-                "away_team": {"starters": [], "substitutes": []},
-            }
-        }
-        import_lineups(self.match, lineup_data)
-        home_lineup = MatchLineup.objects.get(match=self.match, side="home")
-        self.assertEqual(home_lineup.formation, "")
-
-    def test_real_formation_value_is_preserved(self):
-        lineup_data = {
-            "lineups": {
-                "home_team": {"formation": "4-3-3", "starters": [], "substitutes": []},
-                "away_team": {"formation": "4-4-2", "starters": [], "substitutes": []},
-            }
-        }
-        import_lineups(self.match, lineup_data)
-        self.assertEqual(MatchLineup.objects.get(match=self.match, side="home").formation, "4-3-3")
-        self.assertEqual(MatchLineup.objects.get(match=self.match, side="away").formation, "4-4-2")
-
-
-@override_settings(CACHES={
-    "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"},
-})
-class DistributedLockTests(TestCase):
-    """`cache.add()` — атомарный SETNX-лок на конкретный матч. Защищает от
-    ситуации, задокументированной в `parsers/tasks.py`: одна и та же задача
-    `update_match_statuses` зарегистрирована в CELERY_BEAT_SCHEDULE дважды
-    под разными именами и может запуститься дважды почти одновременно."""
-
-    def setUp(self):
-        cache.clear()
-
-    def test_first_acquire_succeeds(self):
-        match_id = uuid.uuid4()
-        self.assertTrue(_acquire_match_sync_lock(match_id, "worker-a"))
-
-    def test_second_acquire_fails_while_lock_is_held(self):
-        match_id = uuid.uuid4()
-        self.assertTrue(_acquire_match_sync_lock(match_id, "worker-a"))
-        self.assertFalse(_acquire_match_sync_lock(match_id, "worker-b"), "второй воркер не должен взять тот же лок")
-
-    def test_locks_are_independent_per_match(self):
-        """Лок на уровне МАТЧА, а не всей задачи целиком — воркер B должен
-        свободно синхронизировать ДРУГОЙ матч, пока воркер A занят своим."""
-        match_a, match_b = uuid.uuid4(), uuid.uuid4()
-        self.assertTrue(_acquire_match_sync_lock(match_a, "worker-a"))
-        self.assertTrue(_acquire_match_sync_lock(match_b, "worker-b"))
-
-    def test_release_allows_reacquire(self):
-        match_id = uuid.uuid4()
-        self.assertTrue(_acquire_match_sync_lock(match_id, "worker-a"))
-        _release_match_sync_lock(match_id)
-        self.assertTrue(_acquire_match_sync_lock(match_id, "worker-b"))
+    def test_cancelled_state_maps_to_cancelled_status(self):
+        fixture = _fixture(dev_name="CANCELLED")
+        match = import_match_core(fixture, self.league, self.season)
+        self.assertEqual(match.status, "cancelled")

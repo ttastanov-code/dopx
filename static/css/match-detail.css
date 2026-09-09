@@ -7,10 +7,21 @@
  * шапка матча, состав, события, статистика — визуально неотличимых друг
  * от друга. Здесь другая композиция:
  *
- *  - .md-hero — полноразмерный градиентный баннер с "ambient glow" пятнами
- *    (приём из презентаций Apple/Nvidia — мягкое цветное свечение на
- *    тёмном/светлом фоне вместо плоской заливки), огромный счёт как
- *    единственный фокус.
+ *  - .md-hero — полноразмерный баннер, огромный счёт как единственный
+ *    фокус.
+ *    2026-09-09 (прямая просьба пользователя + бриф Codex: "большой
+ *    чистый hero", "не копировать Apple/Google, использовать их
+ *    ПРИНЦИПЫ — минимализм, спокойные поверхности"): два ambient-glow
+ *    пятна и градиентный фон сокращены до ОДНОГО едва заметного пятна —
+ *    прежний вариант (двойное яркое свечение + сплошной цветной
+ *    градиент) читался ближе к "премиальной презентации", чем к
+ *    "спокойному продукту", и не совпадал по языку с новой карточкой
+ *    списка (static/css/match-card.css, тот же редизайн, там ambient
+ *    glow убран полностью). Прогноз сообщества внутри hero больше НЕ
+ *    отдельная daisyUI .card ("карточка в карточке", отдельная жалоба
+ *    Codex) — просто блок с тонкой разделительной линией сверху, как и
+ *    остальные секции hero (составы/CTA), см. predictions/
+ *    _prediction_widget.html.
  *  - .md-timeline — центральная "стрела" времени: события домашней
  *    команды слева от стрелы, гостевой — справа (как трансляционная
  *    графика на ESPN/Sofascore), а не плоский список с рамкой слева.
@@ -30,9 +41,9 @@
     position: relative;
     border-radius: 1.75rem;
     overflow: hidden;
-    background: linear-gradient(160deg,
-        color-mix(in oklab, var(--mh-accent, var(--color-primary)) 8%, var(--color-base-100)),
-        var(--color-base-100) 55%);
+    /* Плоская спокойная поверхность (было — двухцветный градиент 160deg)
+       — см. докстринг файла выше. */
+    background: var(--color-base-100);
     border: 1px solid var(--color-base-300);
 }
 .md-hero__glow {
@@ -40,13 +51,15 @@
     width: 420px;
     height: 420px;
     border-radius: 9999px;
-    filter: blur(90px);
-    opacity: .22;
+    filter: blur(110px);
+    /* Одно едва заметное пятно вместо двух ярких (было opacity: .22,
+       два блока --a/--b разных цветов) — лёгкий намёк на статус матча,
+       не декоративный фокус. */
+    opacity: .08;
     pointer-events: none;
     background: var(--mh-accent, var(--color-primary));
 }
 .md-hero__glow--a { top: -160px; left: -120px; }
-.md-hero__glow--b { bottom: -160px; right: -120px; background: var(--mh-accent, var(--color-secondary)); }
 .md-hero__content { position: relative; z-index: 1; }
 
 /* Тиснение гербов клубов на фоне шапки (.md-hero__emboss) пробовали
@@ -88,17 +101,16 @@
 .md-hero__crest:hover { transform: scale(1.05) rotate(-2deg); }
 
 .md-hero__score {
+    /* Плоский сплошной цвет вместо градиентной заливки текста (было
+       background-clip: text) — точная типографика, а не декоративный
+       эффект, см. докстринг файла. */
     font-weight: 800;
     letter-spacing: -0.04em;
     line-height: 1;
     font-variant-numeric: tabular-nums;
-    background: linear-gradient(135deg, var(--color-base-content), color-mix(in oklab, var(--mh-accent, var(--color-primary)) 55%, var(--color-base-content)));
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+    color: var(--color-base-content);
 }
 .md-hero--live .md-hero__score {
-    background: none; -webkit-background-clip: unset; background-clip: unset;
     color: var(--color-error);
 }
 

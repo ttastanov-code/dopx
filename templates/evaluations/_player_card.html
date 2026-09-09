@@ -42,6 +42,25 @@ class="wz-card card bg-base-100 border-2 shadow-sm"
                         </span>
                         {% endif %}
                     </div>
+                    {% comment %}
+                    Объективная статистика игрока за матч (2026-09-08, по
+                    просьбе пользователя — "использовать статистику при
+                    оценке игроков"; MatchPlayerStatistics, фаза 5 миграции
+                    на Sportmonks). ТОЛЬКО справочная информация — ничего не
+                    предзаполняет, человек сам решает, что означают эти
+                    цифры для Вклада/Риска/Потенциала. Готовые строки
+                    (evaluations/views.py::_player_stats_badges) — русское
+                    склонение (1/2-4/5+) посчитано в Python, не встроенным
+                    |pluralize (тот поддерживает только 2 формы, см.
+                    докстринг _pluralize_ru).
+                    {% endcomment %}
+                    {% if lp.stats_badges %}
+                    <div class="flex flex-wrap items-center gap-1.5 mt-1">
+                        {% for badge in lp.stats_badges %}
+                        <span class="badge badge-ghost badge-xs">{{ badge }}</span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
                 </div>
             </div>
 

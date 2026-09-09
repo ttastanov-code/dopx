@@ -1,0 +1,51 @@
+{% comment %}
+templates/matches/_match_statistics_card.html
+Фаза 5 (docs/sportmonks-migration-plan.md, раздел 7): "Статистика матча
+рядом с ДНК матча — данные уже приходят через фазу 3, тут только
+фронтенд/шаблон." Источник — MatchTeamStatistics (matches/models.py),
+заполняется parsers/sportmonks/importers.py::import_statistics.
+
+Показывается ТОЛЬКО если хотя бы одна из команд имеет запись статистики —
+на старых/неполных матчах (или пока не подтянута тяжёлая догрузка) карточки
+просто не будет, а не пустых нулей, которые выглядели бы как "0:0 по всем
+показателям" (обманчиво, будто это реальный факт, а не отсутствие данных).
+
+Принимает: stat_rows (список dict {label, suffix, home, away} —
+собран в matches/views.py::MatchDetailView, чтобы не плодить в шаблоне
+одинаковый {% with %} на каждое поле) и has_match_statistics (bool,
+предпосчитанный флаг "есть хоть одна ненулевая строка").
+{% endcomment %}
+{% if has_match_statistics %}
+<div class="md-side-card">
+    <div class="md-side-card__head flex items-center gap-2">
+        <i class="ti ti-chart-bar"></i>
+        <h3 class="font-extrabold text-base md:text-lg">Статистика матча</h3>
+    </div>
+    <div class="p-3 sm:p-4 space-y-3">
+        {% comment %}
+        Каждая строка — пара значений с пропорциональной полоской между
+        ними. {% widthratio %} — встроенный тег Django, не нужен кастомный
+        фильтр деления, чтобы посчитать долю home/away в сумме двух чисел.
+        Пропускаем строку целиком, если ОБА значения null (см. докстринг
+        MatchTeamStatistics — не все поля приходят на каждом матче).
+        {% endcomment %}
+        {% for row in stat_rows %}
+        {% if row.home != None or row.away != None %}
+        <div>
+            <div class="flex items-center justify-between text-xs sm:text-sm mb-1">
+                <span class="font-semibold w-10 text-left">{{ row.home|default_if_none:"—" }}{{ row.suffix }}</span>
+                <span class="opacity-55 text-center flex-1 px-1 truncate">{{ row.label }}</span>
+                <span class="font-semibold w-10 text-right">{{ row.away|default_if_none:"—" }}{{ row.suffix }}</span>
+            </div>
+            {% if row.home != None and row.away != None and row.home|add:row.away > 0 %}
+            <div class="flex h-1.5 rounded-full overflow-hidden bg-base-200">
+                <div class="bg-primary" style="width: {% widthratio row.home row.home|add:row.away 100 %}%"></div>
+                <div class="bg-secondary" style="width: {% widthratio row.away row.home|add:row.away 100 %}%"></div>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+        {% endfor %}
+    </div>
+</div>
+{% endif %}

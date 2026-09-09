@@ -63,15 +63,16 @@ class MatchAdmin(ModelAdmin):
         "external_id",
     )
 
-    # Match — самая "central hub" модель проекта (7 FK) — до этого ни один
-    # из них не был autocomplete, значит редактирование матча грузило ПОЛНЫЙ
-    # <select> со всеми командами/тренерами/судьями/стадионами в БД разом.
-    # Все 8 целевых моделей уже имеют search_fields (проверено/дополнено
-    # в leagues/seasons/teams/coaches/referees/core admin.py) — обязательное
-    # условие для autocomplete_fields, иначе Django падает системной проверкой.
+    # Match — самая "central hub" модель проекта (6 FK, было 7 — stadium
+    # убран полностью 2026-09-09, см. модель) — до этого ни один из них не
+    # был autocomplete, значит редактирование матча грузило ПОЛНЫЙ <select>
+    # со всеми командами/тренерами/судьями в БД разом. Все целевые модели
+    # уже имеют search_fields (проверено/дополнено в leagues/seasons/teams/
+    # coaches/referees admin.py) — обязательное условие для
+    # autocomplete_fields, иначе Django падает системной проверкой.
     autocomplete_fields = (
         "league", "season", "home_team", "away_team",
-        "home_coach", "away_coach", "referee", "stadium",
+        "home_coach", "away_coach", "referee",
     )
 
     inlines = [MatchLineupInline, MatchEventInline, MatchTeamStatisticsInline]
@@ -80,15 +81,16 @@ class MatchAdmin(ModelAdmin):
 
     @admin.action(description="⏸️ Пометить перенесённым вручную (снять с автосинка)")
     def mark_postponed_manually(self, request, queryset):
-        """Для случаев вроде обнаруженного 2026-08-21: KFF показывает на
-        своей странице матча баннер "перенесён на неопределённый срок"
-        ЗАДОЛГО до того, как реально меняет структурные status/date в API —
-        update_match_statuses видит api_status="scheduled" ещё много дней
-        и молча откатывал бы ручную правку статуса обратно. Это действие
-        ставит status='postponed' И manual_override=True разом — второе
-        обязательно, иначе первое переживёт максимум один цикл автосинка
-        (10-15 минут). Снимается действием ниже, когда KFF наконец
-        опубликует настоящую новую дату."""
+        """Для случаев вроде обнаруженного 2026-08-21: источник данных
+        показывает на своей странице матча баннер "перенесён на
+        неопределённый срок" ЗАДОЛГО до того, как реально меняет структурные
+        status/date в API — sportmonks_update_live/sportmonks_sync_season
+        видят прежний статус ещё много дней и молча откатывали бы ручную
+        правку статуса обратно. Это действие ставит status='postponed' И
+        manual_override=True разом — второе обязательно, иначе первое
+        переживёт максимум один цикл автосинка (1-2 минуты). Снимается
+        действием ниже, когда источник наконец опубликует настоящую новую
+        дату."""
         updated = queryset.update(status="postponed", manual_override=True)
         self.message_user(
             request,
@@ -98,20 +100,23 @@ class MatchAdmin(ModelAdmin):
 
     @admin.action(description="▶️ Снять ручную пометку — вернуть под автосинк")
     def clear_manual_override(self, request, queryset):
-        """Снимает manual_override — используйте, когда KFF наконец
-        опубликовал реальную новую дату/статус (проверьте на kff.kz), и
-        матч можно снова доверить автосинку."""
+        """Снимает manual_override — используйте, когда источник данных
+        наконец опубликовал реальную новую дату/статус, и матч можно снова
+        доверить автосинку (см. mark_postponed_manually выше про то, какой
+        источник сейчас активен)."""
         updated = queryset.update(manual_override=False)
         self.message_user(request, f"Ручная пометка снята: {updated}. Матч(и) снова под автосинком.")
 
-    @admin.action(description="Пересинхронизировать выбранные матчи с KFF")
+    @admin.action(description="Пересинхронизировать выбранные матчи")
     def resync_selected(self, request, queryset):
         """Массовый ресинк — та же логика, что кнопка «Досинхронизировать»
         на /staff/dashboard/data-health/ (dashboard/parser_tools.py::resync_match),
-        просто применённая сразу к нескольким матчам из списка admin.
-        Синхронно, один HTTP-запрос staff = ожидание N матчей — ок для
-        точечной работы с десятком строк, для массового полного синка
-        сезона используется celery-задача sync_kff_premier_league."""
+        просто применённая сразу к нескольким матчам из списка admin. Работает
+        только для матчей с sportmonks_id (KFF-парсер удалён 2026-09-09 —
+        матчи без sportmonks_id из старой истории пересинхронизировать
+        больше нечем). Синхронно, один HTTP-запрос staff = ожидание N
+        матчей — ок для точечной работы с десятком строк, для массового
+        полного синка сезона — management-команда sync_sportmonks_season."""
         from dashboard.audit import log_staff_action
         from dashboard.models import AuditAction
         from dashboard.parser_tools import resync_match
