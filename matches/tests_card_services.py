@@ -42,7 +42,12 @@ from matches.services import (
 from players.models import Player
 from seasons.models import Season
 from teams.models import Team, TeamSeason, TeamSeasonStats
-from teams.services import compute_standings_asof, describe_form_streak, describe_season_form_streak
+from teams.services import (
+    compute_match_table_impact_positions,
+    compute_standings_asof,
+    describe_form_streak,
+    describe_season_form_streak,
+)
 from users.models import User
 
 
@@ -283,19 +288,65 @@ class DescribeIntrigueTests(CardServicesTestCase):
 
 class DescribeKeyMomentTests(CardServicesTestCase):
     def test_late_goal_wins_priority(self):
+        # 1:1 -> 2:1 на 88-й — категория результата реально сменилась
+        # (ничья -> победа хозяев), score_after заполнен как у настоящего
+        # Sportmonks-события (parsers/sportmonks/importers.py).
         match = self.make_match(status='finished', home_score=2, away_score=1)
         player = self.make_player(self.team_a)
-        MatchEvent.objects.create(match=match, minute=10, event_type='goal', team_side='home', player=player)
-        MatchEvent.objects.create(match=match, minute=88, event_type='goal', team_side='home', player=player)
+        MatchEvent.objects.create(
+            match=match, minute=10, event_type='goal', team_side='home', player=player, score_after='1-0',
+        )
+        MatchEvent.objects.create(
+            match=match, minute=45, event_type='goal', team_side='away', player=player, score_after='1-1',
+        )
+        MatchEvent.objects.create(
+            match=match, minute=88, event_type='goal', team_side='home', player=player, score_after='2-1',
+        )
         events = list(match.events.order_by('minute'))
         text = describe_key_moment(match, events)
         self.assertIn("88", text)
         self.assertIn("решил исход матча", text)
 
+    def test_late_consolation_goal_is_not_decisive(self):
+        # 2026-09-11, прямая жалоба пользователя: "гол 90+6 такой-то решил
+        # исход матча, но по факту он не решил, потому его команда
+        # проигрывала 3-0, а он сделал 3-1" — категория результата (победа
+        # хозяев) не менялась НИ до, НИ после этого гола, значит это не
+        # "ключевой момент" в смысле решающего гола.
+        match = self.make_match(status='finished', home_score=3, away_score=1)
+        player = self.make_player(self.team_b)
+        MatchEvent.objects.create(
+            match=match, minute=20, event_type='goal', team_side='home', player=None, score_after='1-0',
+        )
+        MatchEvent.objects.create(
+            match=match, minute=50, event_type='goal', team_side='home', player=None, score_after='2-0',
+        )
+        MatchEvent.objects.create(
+            match=match, minute=70, event_type='goal', team_side='home', player=None, score_after='3-0',
+        )
+        MatchEvent.objects.create(
+            match=match, minute=96, event_type='goal', team_side='away', player=player, score_after='3-1',
+        )
+        events = list(match.events.order_by('minute'))
+        text = describe_key_moment(match, events)
+        self.assertIsNone(text)
+
+    def test_missing_score_after_does_not_claim_decisive(self):
+        # Исторические матчи со старого (удалённого) KFF-парсера никогда не
+        # заполняли score_after — не можем проверить, значит не заявляем.
+        match = self.make_match(status='finished', home_score=2, away_score=1)
+        player = self.make_player(self.team_a)
+        MatchEvent.objects.create(match=match, minute=10, event_type='goal', team_side='home', player=player)
+        MatchEvent.objects.create(match=match, minute=88, event_type='goal', team_side='home', player=player)
+        events = list(match.events.order_by('minute'))
+        self.assertIsNone(describe_key_moment(match, events))
+
     def test_red_card_when_no_late_goal(self):
         match = self.make_match(status='finished', home_score=1, away_score=1)
         player = self.make_player(self.team_a)
-        MatchEvent.objects.create(match=match, minute=30, event_type='goal', team_side='home', player=player)
+        MatchEvent.objects.create(
+            match=match, minute=30, event_type='goal', team_side='home', player=player, score_after='1-0',
+        )
         MatchEvent.objects.create(match=match, minute=45, event_type='red_card', team_side='away', player=player)
         events = list(match.events.order_by('minute'))
         text = describe_key_moment(match, events)
@@ -448,18 +499,70 @@ class TopReactionMatchesTests(CardServicesTestCase):
 
 class DescribeTableImpactTests(CardServicesTestCase):
     def test_moved_up(self):
-        text = describe_table_impact(self.team_a, before_position=7, current_position=4)
+        text = describe_table_impact(self.team_a, before_position=7, after_position=4)
         self.assertEqual(text, 'Алатау поднялся на 4-е место')
 
     def test_moved_down(self):
-        text = describe_table_impact(self.team_a, before_position=4, current_position=7)
+        text = describe_table_impact(self.team_a, before_position=4, after_position=7)
         self.assertEqual(text, 'Алатау опустился на 7-е место')
 
     def test_no_change_returns_none(self):
-        self.assertIsNone(describe_table_impact(self.team_a, before_position=5, current_position=5))
+        self.assertIsNone(describe_table_impact(self.team_a, before_position=5, after_position=5))
 
     def test_missing_position_returns_none(self):
-        self.assertIsNone(describe_table_impact(self.team_a, before_position=None, current_position=5))
+        self.assertIsNone(describe_table_impact(self.team_a, before_position=None, after_position=5))
+
+
+class ComputeMatchTableImpactPositionsTests(CardServicesTestCase):
+    """2026-09-11, регрессия на жалобу пользователя: "Кайрат поднялся на
+    1 место" показывалось на ВСЕХ исторических матчах команды, потому что
+    "стало" бралось из сегодняшней позиции в лиге, а не из позиции сразу
+    после конкретного матча. Проверяем, что
+    compute_match_table_impact_positions считает "после" именно по
+    результату ЭТОГО матча, независимо от того, что произошло в лиге
+    ПОСЛЕ него."""
+
+    def setUp(self):
+        super().setUp()
+        TeamSeason.objects.create(team=self.team_a, season=self.season)
+        TeamSeason.objects.create(team=self.team_b, season=self.season)
+
+    def test_after_position_reflects_only_this_match_not_later_ones(self):
+        # Очень старый матч: team_b обыгрывает team_a 1:0 — задаёт "до"
+        # для старого матча ниже (team_b лидирует).
+        self.make_match(
+            status='finished', start_time=timezone.now() - timedelta(days=800),
+            home_score=0, away_score=1, home_team=self.team_a, away_team=self.team_b,
+        )
+        # Матч, факт про который проверяем: team_a громит team_b 3:0.
+        old_match = self.make_match(
+            status='finished', start_time=timezone.now() - timedelta(days=400),
+            home_score=3, away_score=0, home_team=self.team_a, away_team=self.team_b,
+        )
+        # Гораздо более поздний матч — переворачивает СЕГОДНЯШНЮЮ таблицу
+        # обратно, но НЕ должен влиять на факт про old_match, сыгранный
+        # намного раньше (именно это раньше ломалось).
+        self.make_match(
+            status='finished', start_time=timezone.now() - timedelta(days=1),
+            home_score=0, away_score=5, home_team=self.team_a, away_team=self.team_b,
+        )
+
+        before, after = compute_match_table_impact_positions(old_match)
+
+        # До old_match: только старый матч учтён — team_b (3 очка) лидирует.
+        self.assertEqual(before[self.team_b.id], 1)
+        self.assertEqual(before[self.team_a.id], 2)
+
+        # После old_match: у обеих по 3 очка, но у team_a разница мячей
+        # лучше (+2 против -2) — team_a выходит на 1-е место. Более
+        # поздний матч (день -1) в этот расчёт попадать не должен.
+        self.assertEqual(after[self.team_a.id], 1)
+        self.assertEqual(after[self.team_b.id], 2)
+
+        self.assertEqual(
+            describe_table_impact(self.team_a, before[self.team_a.id], after[self.team_a.id]),
+            'Алатау поднялся на 1-е место',
+        )
 
 
 class DescribeFinishedCtaTests(TestCase):

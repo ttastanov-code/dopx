@@ -49,9 +49,17 @@
         {% endif %}
 
         <!-- Переключатель темы -->
+        {% comment %}
+        2026-09-11 (та же причина, что и мигание центра уведомлений —
+        Alpine грузится с defer, см. base.html): без x-cloak браузер на
+        долю секунды успевал отрисовать ОБЕ иконки разом (луна и солнце
+        наложены друг на друга), пока Alpine не спрятал одну из них по
+        theme. Эта кнопка на КАЖДОЙ странице сайта, так что мигание было
+        заметно постоянно, не только у уведомлений.
+        {% endcomment %}
         <button class="btn btn-ghost btn-circle btn-sm flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10" @click="toggleTheme()">
-            <i x-show="theme === 'light'" class="ti ti-moon text-lg sm:text-xl leading-none"></i>
-            <i x-show="theme === 'dark'" class="ti ti-sun text-lg sm:text-xl leading-none"></i>
+            <i x-show="theme === 'light'" x-cloak class="ti ti-moon text-lg sm:text-xl leading-none"></i>
+            <i x-show="theme === 'dark'" x-cloak class="ti ti-sun text-lg sm:text-xl leading-none"></i>
         </button>
 
         <!-- Auth кнопки -->

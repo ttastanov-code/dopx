@@ -75,8 +75,16 @@ class="wz-card card bg-base-100 border-2 shadow-sm"
             </div>
         </label>
 
+        {% comment %}
+        2026-09-11: та же причина, что мигание центра уведомлений/иконки
+        темы (Alpine грузится с defer) — без x-cloak слайдеры карточек,
+        для которых evaluate изначально false (все, кроме "Рекомендуем" в
+        режиме "Быстро"), на долю секунды показывались раскрытыми, потом
+        схлопывались — на странице оценки таких карточек сразу много.
+        {% endcomment %}
         <!-- Sliders Section (Expandable) -->
         <div x-show="evaluate"
+             x-cloak
              x-collapse
              class="mt-3.5 pt-3.5 border-t border-base-200 space-y-3">
 
