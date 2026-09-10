@@ -178,7 +178,19 @@ data_trust_summary докстринг.
                     <tr>
                         <td class="text-xs opacity-70 whitespace-nowrap">{{ entry.created_at|date:"d.m.Y H:i" }}</td>
                         <td class="text-xs">{{ entry.actor_username|default:"—" }}</td>
-                        <td><span class="badge badge-sm badge-ghost">{{ entry.get_action_display }}</span></td>
+                        {% comment %}
+                        2026-09-11 (жалоба пользователя, скриншот: строки
+                        таблицы наезжали друг на друга) — daisyUI .badge
+                        держит фиксированную высоту в одну строку; в узкой
+                        ячейке длинный get_action_display ("Ручной ресинк
+                        матча") переносился на 2 строки и вылезал в
+                        соседнюю строку таблицы. Таблица и так скроллится
+                        по горизонтали (overflow-x-auto на обёртке) —
+                        правильное мобильное поведение здесь не "перенести
+                        текст", а "не переносить, скроллить" — как уже
+                        сделано для колонки "Когда".
+                        {% endcomment %}
+                        <td><span class="badge badge-sm badge-ghost whitespace-nowrap">{{ entry.get_action_display }}</span></td>
                         <td class="text-xs truncate max-w-[240px]">{{ entry.target|default:"—" }}</td>
                     </tr>
                     {% endfor %}

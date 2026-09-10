@@ -44,14 +44,42 @@
                     <p class="text-sm opacity-60">Мгновенное уведомление на телефон или компьютер, даже если сайт не открыт. Например, когда завершается матч команды, на которую вы подписаны</p>
                 </div>
             </div>
+            {% comment %}
+            ДОБАВЛЕНО (2026-09-11, прямая просьба пользователя — "надо
+            добавить подсказки туда, где пуши активируются"): на iPhone
+            Web Push работает ТОЛЬКО у сайтов, добавленных на экран "Домой"
+            (ограничение самого iOS 16.4+, не баг DOPX) — просто открытая
+            вкладка Safari пуши слать не может. Показываем ТОЛЬКО iOS-
+            пользователям, у которых сайт ещё не установлен (isStandalone),
+            иначе кнопка "Включить" молча ничего не даст, без объяснений.
+            {% endcomment %}
+            <div x-show="isIOS && !isStandalone" x-cloak class="alert alert-warning text-sm mb-3">
+                <i class="ti ti-brand-safari flex-shrink-0"></i>
+                <div>
+                    <strong>На iPhone сначала добавьте сайт на экран «Домой»</strong> —
+                    иначе Safari не разрешит push-уведомления. Нажмите значок «Поделиться»
+                    внизу экрана → «На экран «Домой»» → откройте DOPX с новой иконки и
+                    вернитесь в эти настройки.
+                </div>
+            </div>
+            {% comment %}
+            2026-09-11 (жалоба пользователя: "включены пуши и включить
+            пуши кнопки и надпись криво отображаются в мобильном") — то же
+            daisyUI-ограничение фиксированной высоты в одну строку, что уже
+            чинили на карточках матча/сборной/парсера: длинный текст
+            кнопки/бейджа переносился на 2 строки и обрезался. h-auto +
+            whitespace-normal у кнопки, ручная pill-разметка у бейджа
+            (растягиваются под перенос); flex-wrap на строке "включено" —
+            чтобы "Отключить" не выталкивался за край на самых узких экранах.
+            {% endcomment %}
             <span x-show="status === 'checking'" class="loading loading-spinner loading-xs opacity-50"></span>
-            <button type="button" @click="subscribe()" x-show="status !== 'subscribed' && status !== 'checking'" class="btn btn-outline btn-sm" :disabled="status === 'loading'">
-                <span x-show="status !== 'loading'"><i class="ti ti-bell-plus"></i></span>
-                <span x-show="status === 'loading'" class="loading loading-spinner loading-xs"></span>
+            <button type="button" @click="subscribe()" x-show="status !== 'subscribed' && status !== 'checking'" class="btn btn-outline btn-sm h-auto min-h-9 py-2 whitespace-normal text-left leading-snug" :disabled="status === 'loading'">
+                <span x-show="status !== 'loading'" class="flex-shrink-0"><i class="ti ti-bell-plus"></i></span>
+                <span x-show="status === 'loading'" class="loading loading-spinner loading-xs flex-shrink-0"></span>
                 <span>Включить push-уведомления</span>
             </button>
-            <div x-show="status === 'subscribed'" x-cloak class="flex items-center gap-3">
-                <span class="badge badge-success gap-1"><i class="ti ti-check"></i> Включено на этом устройстве</span>
+            <div x-show="status === 'subscribed'" x-cloak class="flex items-center flex-wrap gap-3">
+                <span class="inline-flex items-center gap-1 rounded-full bg-success/15 text-success px-2.5 py-1 text-xs sm:text-sm leading-snug"><i class="ti ti-check flex-shrink-0"></i> Включено на этом устройстве</span>
                 <button type="button" @click="unsubscribe()" class="btn btn-ghost btn-xs opacity-60">Отключить</button>
             </div>
             {% if has_push_subscription %}
@@ -102,7 +130,7 @@
                         {% csrf_token %}
                         <button type="submit" class="btn btn-ghost btn-xs opacity-60 flex-shrink-0">
                             <i class="ti ti-x"></i>
-                            <span class="hidden sm:inline">Отключить</span>
+                            <span>Отключить</span>
                         </button>
                     </form>
                 </div>

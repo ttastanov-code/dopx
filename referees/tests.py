@@ -128,3 +128,44 @@ class RefereeDetailHasEvaluationsGateTests(RefereeMatchFixtureMixin, TestCase):
         )
         response = self.client.get(reverse('referees:detail', args=[self.referee.id]))
         self.assertEqual(response.context['stats']['total_evaluations'], 1)
+
+
+class RefereeListVsDetailSeasonCountTests(TestCase):
+    """Регрессия (2026-09-11, жалоба пользователя: "на странице судья у
+    Нурзатбек Абдыкадырова в столбце матчей 0, а если открыть его страницу
+    то там 1"). Причина: RefereeListView считал total_matches ТОЛЬКО за
+    активный сезон (см. комментарий 2026-09-09 в get_queryset), а
+    RefereeDetailView — за всю историю разом. Для судьи, чей единственный
+    матч был в прошлом сезоне, список показывал 0, страница — 1. Оба места
+    теперь должны сходиться: 0 по умолчанию, 1 при ?season=all."""
+
+    def setUp(self):
+        self.league = League.objects.create(name="КПЛ", country="Казахстан", is_primary=True)
+        self.active_season = Season.objects.create(league=self.league, year="2026", is_active=True)
+        self.past_season = Season.objects.create(league=self.league, year="2025", is_active=False)
+        self.home = Team.objects.create(name="Хозяева")
+        self.away = Team.objects.create(name="Гости")
+        self.referee = Referee.objects.create(first_name="Нурзатбек", last_name="Абдыкадыров")
+        Match.objects.create(
+            league=self.league, season=self.past_season,
+            home_team=self.home, away_team=self.away, referee=self.referee,
+            status="finished",
+            start_time=timezone.now() - timedelta(days=400),
+            voting_open_until=timezone.now() - timedelta(days=398),
+        )
+
+    def test_list_and_detail_agree_on_zero_by_default(self):
+        list_response = self.client.get(reverse('referees:list'))
+        referees = {r.id: r for r in list_response.context['referees']}
+        self.assertEqual(referees[self.referee.id].total_matches, 0)
+
+        detail_response = self.client.get(reverse('referees:detail', args=[self.referee.id]))
+        self.assertEqual(detail_response.context['stats']['total_matches'], 0)
+
+    def test_list_and_detail_agree_on_one_with_season_all(self):
+        list_response = self.client.get(reverse('referees:list'), {'season': 'all'})
+        referees = {r.id: r for r in list_response.context['referees']}
+        self.assertEqual(referees[self.referee.id].total_matches, 1)
+
+        detail_response = self.client.get(reverse('referees:detail', args=[self.referee.id]), {'season': 'all'})
+        self.assertEqual(detail_response.context['stats']['total_matches'], 1)

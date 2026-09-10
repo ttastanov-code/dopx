@@ -65,6 +65,23 @@ class ContextEvaluationForm(forms.ModelForm):
                 raise forms.ValidationError(str(e))
         return team
 
+    def clean(self):
+        """ИСПРАВЛЕНО (2026-09-11, прямая просьба пользователя — "был на
+        стадионе и только голы это как?"): "Голы" рассчитан на просмотр
+        нарезки/трансляции дома — на трибуне физически нельзя "посмотреть
+        только голы". Клиентская форма (templates/evaluations/context.html
+        + matchContextForm в static/js/alpine-components.js) прячет этот
+        вариант и сама сбрасывает его на "Полный", если человек включает
+        тумблер "Были на стадионе" уже после выбора "Голы" — здесь та же
+        подстраховка на случай отключённого JS или прямого POST мимо формы
+        (не ошибка валидации, тихая нормализация — то же поведение, что и
+        на клиенте, не хотим наказывать человека отказом в сохранении
+        оценки из-за формулировки вопроса)."""
+        cleaned_data = super().clean()
+        if cleaned_data.get('attended_stadium') and cleaned_data.get('watched_type') == 'highlights':
+            cleaned_data['watched_type'] = 'full'
+        return cleaned_data
+
 
 class TeamEvaluationForm(forms.Form):
     """

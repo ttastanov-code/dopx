@@ -41,7 +41,17 @@
                             {{ flag.content_object|default:"—" }}
                         </span>
                         {% endif %}
-                        <span class="badge badge-sm badge-ghost">{{ flag.get_source_display }}</span>
+                        {% comment %}
+                        2026-09-11 (жалоба пользователя: длинный источник
+                        сигнала "Рейтинг игрока расходится с объективной
+                        статистикой матча" вылезал за рамки) — daisyUI
+                        .badge держит фиксированную высоту в одну строку,
+                        длинные SOURCE_CHOICES-подписи (users/models.py::
+                        SuspiciousActivityFlag) переносились и обрезались.
+                        Ручная pill-разметка растягивается под любое число
+                        строк — тот же приём, что уже применён на карточках
+                        матча/сборной. {% endcomment %}
+                        <span class="inline-flex items-center rounded-full bg-base-300 px-2 py-0.5 text-xs leading-snug max-w-full">{{ flag.get_source_display }}</span>
                         <span class="badge badge-sm {% if flag.score >= 0.7 %}badge-error{% elif flag.score >= 0.4 %}badge-warning{% else %}badge-ghost{% endif %}">
                             score {{ flag.score|floatformat:2 }}
                         </span>

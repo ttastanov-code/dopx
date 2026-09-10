@@ -32,15 +32,17 @@ from matches.services import (
     describe_finished_cta,
     describe_intrigue,
     describe_key_moment,
+    describe_reaction_badge,
     describe_table_impact,
     reaction_counts,
     submit_match_reaction,
+    top_reaction_matches,
     user_match_reaction,
 )
 from players.models import Player
 from seasons.models import Season
 from teams.models import Team, TeamSeason, TeamSeasonStats
-from teams.services import compute_standings_asof, describe_form_streak
+from teams.services import compute_standings_asof, describe_form_streak, describe_season_form_streak
 from users.models import User
 
 
@@ -111,6 +113,57 @@ class DescribeFormStreakTests(TestCase):
         self.assertEqual(describe_form_streak(form), '5 побед подряд')
 
 
+class DescribeSeasonFormStreakTests(CardServicesTestCase):
+    """ИСПРАВЛЕНО (2026-09-11, прямая просьба пользователя — "стрик из
+    побед только в рамках 5 матчей пишем, хотя по факту в этом сезоне
+    стрик из 10 побед подряд"): describe_form_streak(get_team_form(...))
+    искусственно резал историю до TEAM_FORM_RECENT_MATCHES=5.
+    describe_season_form_streak должна считать по ВСЕМ переданным матчам,
+    без этого среза."""
+
+    def test_streak_longer_than_five_is_reported_in_full(self):
+        # Опонент здесь — self.team_b: в отличие от ComputeStandingsAsofTests
+        # (где важна изоляция через общего "мальчика для битья", см. её
+        # докстринг), тут считаем серию только team_a — кто соперник,
+        # не имеет значения, отдельный team_c не нужен.
+        cutoff = timezone.now()
+        matches = []
+        for i in range(10, 0, -1):
+            matches.append(self.make_match(
+                status='finished', start_time=cutoff - timedelta(days=i),
+                home_team=self.team_a, away_team=self.team_b, home_score=2, away_score=0,
+            ))
+        # describe_season_form_streak ожидает -start_time (новые первыми).
+        matches_desc = list(reversed(matches))
+        self.assertEqual(
+            describe_season_form_streak(self.team_a, matches_desc),
+            '10 побед подряд',
+        )
+
+    def test_streak_broken_by_older_loss_stops_there(self):
+        cutoff = timezone.now()
+        # От старых к новым: поражение, потом 6 побед подряд.
+        loss = self.make_match(
+            status='finished', start_time=cutoff - timedelta(days=7),
+            home_team=self.team_a, away_team=self.team_b, home_score=0, away_score=2,
+        )
+        wins = [
+            self.make_match(
+                status='finished', start_time=cutoff - timedelta(days=6 - i),
+                home_team=self.team_a, away_team=self.team_b, home_score=2, away_score=0,
+            )
+            for i in range(6)
+        ]
+        matches_desc = list(reversed([loss] + wins))
+        self.assertEqual(
+            describe_season_form_streak(self.team_a, matches_desc),
+            '6 побед подряд',
+        )
+
+    def test_empty_matches_returns_none(self):
+        self.assertIsNone(describe_season_form_streak(self.team_a, []))
+
+
 class ComputeStandingsAsofTests(CardServicesTestCase):
     """ГЛАВНЫЙ РЕГРЕССИОННЫЙ ТЕСТ — compute_standings_asof() должен считать
     позиции ТОЧНО тем же алгоритмом, что настоящий пересчёт таблицы
@@ -146,10 +199,24 @@ class ComputeStandingsAsofTests(CardServicesTestCase):
         self.assertGreater(positions[self.team_c.id], positions[self.team_a.id])
 
     def test_tie_break_matches_goal_diff_then_goals_scored(self):
+        # ИСПРАВЛЕНО (баг найден пользователем реальным прогоном — assertEqual
+        # 2 != 1): у обоих матчей ниже ОБЩИЙ противник (team_c), а не team_b
+        # против team_a напрямую — раньше первый матч был "A против B", а
+        # значит A и B оба УЖЕ участвовали в нём (A победитель, B проигравший)
+        # ещё ДО второго матча "B против C" — ожидаемые очки/разница мячей в
+        # комментариях не учитывали это участие team_b в первом матче, из-за
+        # чего ожидание теста было арифметически неверным (сама функция
+        # compute_standings_asof считала правильно, ошибка была в тесте).
+        # Теперь team_a и team_b встречаются только с общим "мальчиком для
+        # битья" team_c — их результаты друг на друга не влияют, тай-брейк
+        # проверяется чисто.
         cutoff = timezone.now()
-        # A: 1 победа 3:1 (points=3, gd=+2, gs=3)
-        self.make_match(status='finished', start_time=cutoff - timedelta(days=5), home_score=3, away_score=1)
-        # C против B: B выигрывает 4:1 у C (points=3, gd=+3, gs=4) — больше очков быть не может (уже 3=3),
+        # A громит C 3:1 -> A: points=3, gd=+2, gs=3.
+        self.make_match(
+            status='finished', start_time=cutoff - timedelta(days=5),
+            home_team=self.team_a, away_team=self.team_c, home_score=3, away_score=1,
+        )
+        # B громит C 4:1 -> B: points=3, gd=+3, gs=4. Очков поровну (3=3),
         # но goal_diff у B (+3) больше, чем у A (+2) -> B должен быть выше A.
         self.make_match(
             status='finished', start_time=cutoff - timedelta(days=4),
@@ -195,7 +262,11 @@ class DescribeIntrigueTests(CardServicesTestCase):
             'home_score': 4, 'away_score': 0,
         }
         tag = describe_intrigue(match, last_meeting=last_meeting)
-        self.assertEqual(tag, 'Реванш за 0:4')
+        # ИСПРАВЛЕНО (2026-09-10, жалоба пользователя — "Реванш за 0:4" не
+        # называл, кто именно жаждёт реванша): теперь тег называет
+        # проигравшую тогда команду явно — team_a ("Алатау") тогда играла
+        # в гостях и проиграла 0:4.
+        self.assertEqual(tag, 'Реванш Алатау за 0:4')
 
     def test_small_margin_is_not_a_revenge(self):
         match = self.make_match()
@@ -276,6 +347,103 @@ class ComputeSensationIndexTests(CardServicesTestCase):
         match = self.make_match(status='scheduled')
         counts = {'total': 20, 'home_pct': 65, 'draw_pct': 15, 'away_pct': 20}
         self.assertIsNone(compute_sensation_index(match, counts))
+
+    # --- Доп. предложение (2026-09-10) — реакции как запасной источник,
+    # когда прогнозов до матча было мало. ---
+
+    def test_reaction_fallback_used_when_too_few_predictions(self):
+        match = self.make_match(status='finished', home_score=0, away_score=2)
+        counts = {'total': 2, 'home_pct': 70, 'draw_pct': 10, 'away_pct': 20}  # мало прогнозов
+        reaction_counts_dict = {
+            'match_of_round': 0, 'upset': 4, 'boring': 1, 'total': 5,
+            'match_of_round_pct': 0, 'upset_pct': 80, 'boring_pct': 20,
+        }
+        self.assertEqual(compute_sensation_index(match, counts, reaction_counts_dict), 80)
+
+    def test_reaction_fallback_ignored_when_predictions_sufficient(self):
+        # Прогнозов достаточно и фаворит угадан — сенсации нет, даже если
+        # реакции сообщества почему-то говорят об обратном (прогнозы до
+        # матча остаются основным источником при достаточной выборке).
+        match = self.make_match(status='finished', home_score=2, away_score=0)  # final_result = '1'
+        counts = {'total': 20, 'home_pct': 70, 'draw_pct': 15, 'away_pct': 15}
+        reaction_counts_dict = {
+            'match_of_round': 0, 'upset': 4, 'boring': 1, 'total': 5,
+            'match_of_round_pct': 0, 'upset_pct': 80, 'boring_pct': 20,
+        }
+        self.assertIsNone(compute_sensation_index(match, counts, reaction_counts_dict))
+
+    def test_reaction_fallback_requires_min_votes_and_plurality(self):
+        match = self.make_match(status='finished', home_score=0, away_score=2)
+        counts = {'total': 2, 'home_pct': 70, 'draw_pct': 10, 'away_pct': 20}
+        # Мало голосов реакции (< REACTION_BADGE_MIN_VOTES=5) — не считаем.
+        few_votes = {
+            'match_of_round': 0, 'upset': 2, 'boring': 0, 'total': 2,
+            'match_of_round_pct': 0, 'upset_pct': 100, 'boring_pct': 0,
+        }
+        self.assertIsNone(compute_sensation_index(match, counts, few_votes))
+        # Голосов достаточно, но "Неожиданно" не в большинстве — не считаем.
+        no_plurality = {
+            'match_of_round': 3, 'upset': 2, 'boring': 0, 'total': 5,
+            'match_of_round_pct': 60, 'upset_pct': 40, 'boring_pct': 0,
+        }
+        self.assertIsNone(compute_sensation_index(match, counts, no_plurality))
+
+
+class DescribeReactionBadgeTests(CardServicesTestCase):
+    def test_none_below_min_votes(self):
+        counts = {
+            'match_of_round': 3, 'upset': 0, 'boring': 0, 'total': 3,
+            'match_of_round_pct': 100, 'upset_pct': 0, 'boring_pct': 0,
+        }
+        self.assertIsNone(describe_reaction_badge(counts))
+
+    def test_none_when_another_reaction_has_more_votes(self):
+        # match_of_round_pct=40 формально проходит порог REACTION_BADGE_MIN_PCT,
+        # но по факту голосов МЕНЬШЕ, чем у upset (2 против 3) — не плюральность,
+        # округление процента здесь вводило бы в заблуждение.
+        counts = {
+            'match_of_round': 2, 'upset': 3, 'boring': 0, 'total': 5,
+            'match_of_round_pct': 40, 'upset_pct': 60, 'boring_pct': 0,
+        }
+        self.assertIsNone(describe_reaction_badge(counts))
+
+    def test_badge_when_clear_majority(self):
+        counts = {
+            'match_of_round': 4, 'upset': 1, 'boring': 0, 'total': 5,
+            'match_of_round_pct': 80, 'upset_pct': 20, 'boring_pct': 0,
+        }
+        self.assertEqual(describe_reaction_badge(counts), 'Матч тура по мнению болельщиков')
+
+    def test_none_when_boring_dominates(self):
+        counts = {
+            'match_of_round': 1, 'upset': 0, 'boring': 4, 'total': 5,
+            'match_of_round_pct': 20, 'upset_pct': 0, 'boring_pct': 80,
+        }
+        self.assertIsNone(describe_reaction_badge(counts))
+
+
+class TopReactionMatchesTests(CardServicesTestCase):
+    def test_orders_by_vote_count_not_percent(self):
+        # match_small: 1 голос из 1 (100%). match_big: 4 голоса из 5 (80%).
+        match_small = self.make_match(status='finished', home_score=1, away_score=0)
+        match_big = self.make_match(status='finished', home_score=2, away_score=1)
+        submit_match_reaction(user=self.make_user(), match=match_small, reaction=MatchReaction.REACTION_MATCH_OF_ROUND)
+        for _ in range(4):
+            submit_match_reaction(user=self.make_user(), match=match_big, reaction=MatchReaction.REACTION_MATCH_OF_ROUND)
+        submit_match_reaction(user=self.make_user(), match=match_big, reaction=MatchReaction.REACTION_BORING)
+
+        top = top_reaction_matches(self.season, MatchReaction.REACTION_MATCH_OF_ROUND, min_votes=1)
+        self.assertEqual([m.id for m in top], [match_big.id, match_small.id])
+
+    def test_respects_min_votes_gate(self):
+        match = self.make_match(status='finished', home_score=1, away_score=0)
+        submit_match_reaction(user=self.make_user(), match=match, reaction=MatchReaction.REACTION_UPSET)
+        top = top_reaction_matches(self.season, MatchReaction.REACTION_UPSET, min_votes=5)
+        self.assertEqual(top, [])
+
+    def test_empty_when_no_reactions(self):
+        top = top_reaction_matches(self.season, MatchReaction.REACTION_BORING)
+        self.assertEqual(top, [])
 
 
 class DescribeTableImpactTests(CardServicesTestCase):

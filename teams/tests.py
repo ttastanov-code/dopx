@@ -10,14 +10,16 @@ from datetime import timedelta
 
 from django.core.cache import cache
 from django.test import SimpleTestCase, TestCase, override_settings
+from django.urls import reverse
 from django.utils import timezone
 
 from aggregates.models import RefereeMatchAggregate, TeamMatchAggregate
 from leagues.models import League
 from matches.models import Match
+from players.models import Player
 from referees.models import Referee
 from seasons.models import Season
-from teams.models import Team
+from teams.models import Team, TeamSeason
 from teams.services import (
     build_mood_chart,
     build_sparkline_points,
@@ -350,3 +352,97 @@ class SeasonControversialMatchesTests(TestCase):
             home_fans_avg=8.0, away_fans_avg=None,
         )
         self.assertEqual(find_season_controversial_matches(self.team, self.season), [])
+
+
+class TeamDetailViewRosterTests(TestCase):
+    """Регрессия для teams/views.py::TeamDetailView, блок "состав команды"
+    в активном сезоне — до этого теста не было НИ ОДНОГО, хотя сама логика
+    минимум трижды переписывалась в ответ на баг-репорты пользователя (см.
+    комментарии в самой вьюхе, 2026-09-09/10/11 — "Виктор Васин", затем
+    "Офри Арад" дважды: сперва на /players/, потом здесь же, в исходном
+    месте этой логики)."""
+
+    def setUp(self):
+        self.league = League.objects.create(name="КПЛ", country="Казахстан", is_primary=True)
+        self.season = Season.objects.create(league=self.league, year="2026", is_active=True)
+        self.team = Team.objects.create(name="Кайрат")
+        TeamSeason.objects.create(team=self.team, season=self.season)
+
+    def _get_players(self):
+        response = self.client.get(reverse('teams:detail', args=[self.team.id]))
+        return list(response.context['players'])
+
+    def test_player_who_only_played_past_season_excluded(self):
+        """ИСПРАВЛЕНО (2026-09-11, конкретный пример пользователя —
+        "Офри Арад" всё ещё в составе "Кайрат" ТЕКУЩЕГО сезона на странице
+        команды, хотя последний раз реально играл в сезоне 2025):
+        промежуточная версия фикса проверяла last_match_at не старше
+        ROSTER_STALE_THRESHOLD (~15 месяцев) — временное окно, а не
+        привязка к конкретному сезону; сезон 2025 легко укладывался в это
+        окно. Игрок с реальной историей матчей, но НЕ в активном сезоне,
+        не должен попадать в текущий состав, даже если Player.team
+        формально указывает на эту команду."""
+        from lineups.models import MatchLineup, MatchLineupPlayer
+
+        past_season = Season.objects.create(league=self.league, year="2025", is_active=False)
+        arad = Player.objects.create(first_name="Офри", last_name="Арад", team=self.team)
+        past_match = Match.objects.create(
+            league=self.league, season=past_season,
+            home_team=self.team, away_team=Team.objects.create(name="Соперник 2025"),
+            status='finished', start_time=timezone.now() - timedelta(days=400),
+            voting_open_until=timezone.now() - timedelta(days=397),
+            home_score=1, away_score=0,
+        )
+        past_lineup = MatchLineup.objects.create(match=past_match, team=self.team, side='home')
+        MatchLineupPlayer.objects.create(lineup=past_lineup, player=arad, is_starting=True)
+
+        self.assertNotIn(arad, self._get_players())
+
+    def test_new_signee_with_no_history_shown(self):
+        """Новичок, ещё не дебютировавший — team FK уже указывает на эту
+        команду, истории в MatchLineupPlayer вообще нет — единственный
+        случай, где доверяем team FK как есть, должен показываться."""
+        rookie = Player.objects.create(first_name="Новичок", last_name="БезМатчей", team=self.team)
+        self.assertIn(rookie, self._get_players())
+
+    def test_player_who_played_this_season_shown(self):
+        """Игрок реально выходил в заявке на матч ИМЕННО текущего сезона —
+        должен показываться, даже если это был единственный его матч."""
+        from lineups.models import MatchLineup, MatchLineupPlayer
+
+        played = Player.objects.create(first_name="Игрок", last_name="ТекущегоСезона", team=self.team)
+        match = Match.objects.create(
+            league=self.league, season=self.season,
+            home_team=self.team, away_team=Team.objects.create(name="Соперник"),
+            status='finished', start_time=timezone.now() - timedelta(days=10),
+            voting_open_until=timezone.now() - timedelta(days=7),
+            home_score=2, away_score=1,
+        )
+        lineup = MatchLineup.objects.create(match=match, team=self.team, side='home')
+        MatchLineupPlayer.objects.create(lineup=lineup, player=played, is_starting=True)
+
+        self.assertIn(played, self._get_players())
+
+    def test_player_who_transferred_away_after_playing_this_season_still_shown(self):
+        """Игрок сыграл за команду в ЭТОМ сезоне, но Player.team с тех пор
+        уже указывает на ДРУГОЙ клуб (трансфер в разгар сезона) — должен
+        всё равно оставаться в составе сезона у ПРЕЖНЕГО клуба (тот же
+        принцип, что описан в комментарии вьюхи: "иначе они пропали бы из
+        состава сезона сразу в день ухода")."""
+        from lineups.models import MatchLineup, MatchLineupPlayer
+
+        other_team = Team.objects.create(name="Новый клуб")
+        transferred = Player.objects.create(
+            first_name="Игрок", last_name="Трансферный", team=other_team,
+        )
+        match = Match.objects.create(
+            league=self.league, season=self.season,
+            home_team=self.team, away_team=Team.objects.create(name="Соперник"),
+            status='finished', start_time=timezone.now() - timedelta(days=60),
+            voting_open_until=timezone.now() - timedelta(days=57),
+            home_score=1, away_score=1,
+        )
+        lineup = MatchLineup.objects.create(match=match, team=self.team, side='home')
+        MatchLineupPlayer.objects.create(lineup=lineup, player=transferred, is_starting=True)
+
+        self.assertIn(transferred, self._get_players())

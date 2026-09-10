@@ -58,6 +58,15 @@ out-of-band swap, см. notifications/views.py::_oob_counters_html).
                  (см. комментарий там). -->
             <div class="flex items-center gap-1">
                 {% if count > 0 %}
+                {% comment %}
+                2026-09-11 (жалоба пользователя: "кнопка «прочитать все»
+                просто с иконкой без текста и непонятно что за кнопка") —
+                title-тултип на touch-устройствах не показывается вообще
+                (нет hover), поэтому .hidden.sm:inline на мобильном
+                оставлял голую иконку без единой подсказки, что она
+                делает. Текст теперь виден всегда — места в шапке дропдауна
+                достаточно (см. inset-x-4 выше, почти вся ширина экрана).
+                {% endcomment %}
                 <button type="button"
                         title="Прочитать все"
                         class="btn btn-outline btn-xs"
@@ -65,7 +74,7 @@ out-of-band swap, см. notifications/views.py::_oob_counters_html).
                         hx-swap="outerHTML"
                         hx-target="#notif-list-items">
                     <i class="ti ti-checks"></i>
-                    <span class="hidden sm:inline">Прочитать все</span>
+                    <span>Прочитать все</span>
                 </button>
                 {% endif %}
                 <button @click="open = false" class="btn btn-ghost btn-xs btn-circle sm:hidden">

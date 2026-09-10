@@ -23,7 +23,15 @@
                     <tr>
                         <td class="whitespace-nowrap text-xs">{{ entry.created_at|date:"d.m H:i:s" }}</td>
                         <td class="whitespace-nowrap">{{ entry.actor_username|default:"—" }}</td>
-                        <td><span class="badge badge-sm badge-ghost">{{ entry.get_action_display }}</span></td>
+                        {% comment %}
+                        2026-09-11 (жалоба пользователя: столбец "Действие"
+                        переполняется на мобильном) — тот же фикс, что в
+                        dashboard/data_trust.html: .badge не растягивается
+                        под перенос, таблица и так скроллится по
+                        горизонтали (overflow-x-auto выше) — не переносим
+                        текст внутри ячейки, а держим в одну строку.
+                        {% endcomment %}
+                        <td><span class="badge badge-sm badge-ghost whitespace-nowrap">{{ entry.get_action_display }}</span></td>
                         <td class="text-xs opacity-70 max-w-xs truncate" title="{{ entry.target }}">{{ entry.target|default:"—" }}</td>
                         <td class="text-xs opacity-50 font-mono">{{ entry.ip_address|default:"—" }}</td>
                     </tr>

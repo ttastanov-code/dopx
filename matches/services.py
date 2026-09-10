@@ -21,7 +21,7 @@ from collections import defaultdict
 
 from django.db.models import Count, Q
 
-from matches.models import MatchReaction
+from matches.models import Match, MatchReaction
 
 MOMENTUM_WINDOW_MINUTES = 15
 # Меньше двух событий в окне — не "момент", просто одно событие тайм-лайна,
@@ -361,6 +361,15 @@ INTRIGUE_RELEGATION_ZONE_SIZE = 3
 # результат, не повод для отдельного нарратива.
 INTRIGUE_REVENGE_MARGIN = 3
 
+# Реакции сообщества как источник сигналов (2026-09-10, прямая просьба
+# пользователя после вопроса "а мы эти данные где-то используем?") —
+# тот же принцип, что и у остальных гейтов модуля: маленькая выборка не
+# должна выглядеть уверенным утверждением. REACTION_BADGE_MIN_PCT — порог
+# "явного большинства" среди трёх вариантов (при 33/33/34 сигнала нет,
+# при 40%+ один вариант заметно вырывается вперёд).
+REACTION_BADGE_MIN_VOTES = 5
+REACTION_BADGE_MIN_PCT = 40
+
 
 def describe_intrigue(match, *, home_position=None, away_position=None, total_teams=None, last_meeting=None) -> str | None:
     """Пункт 1 брифа — короткий тег интриги под составом. Приоритет (первое
@@ -406,11 +415,17 @@ def describe_intrigue(match, *, home_position=None, away_position=None, total_te
         if home_score is not None and away_score is not None and home_score != away_score:
             margin = abs(home_score - away_score)
             if margin >= INTRIGUE_REVENGE_MARGIN:
-                # Кто тогда проиграл разгромно — это и есть "жаждущая
-                # реванша" сторона; текущий матч ей интересен именно так,
-                # независимо от того, дома она сейчас играет или в гостях.
-                loser_score, winner_score = min(home_score, away_score), max(home_score, away_score)
-                return f'Реванш за {loser_score}:{winner_score}'
+                # ИСПРАВЛЕНО (2026-09-10, жалоба пользователя — "метки не
+                # всегда понятны, из чего складываются"): раньше тег был
+                # просто "Реванш за 0:4" без имени команды — непонятно, КТО
+                # тогда проиграл и жаждёт реванша. Теперь называем
+                # проигравшую тогда сторону явно ("Реванш Жениса за 0:4").
+                if home_score < away_score:
+                    loser_team_id, loser_score, winner_score = last_meeting['home_team_id'], home_score, away_score
+                else:
+                    loser_team_id, loser_score, winner_score = last_meeting['away_team_id'], away_score, home_score
+                loser_team = match.home_team if loser_team_id == match.home_team_id else match.away_team
+                return f'Реванш {loser_team.name} за {loser_score}:{winner_score}'
 
     return None
 
@@ -480,7 +495,14 @@ def describe_card_dna_traits(aggregate) -> list[str]:
     if level == 'high':
         traits.append('Высокая драма')
     elif level == 'medium':
-        traits.append('Умеренная интрига')
+        # ИСПРАВЛЕНО (2026-09-10, жалоба пользователя на нечитаемость меток):
+        # раньше здесь было "Умеренная интрига" — то же слово "интрига", что
+        # и у отдельного тега card_intrigue (Дерби/Битва за топ-N/Реванш и
+        # т.д., см. describe_intrigue выше). Два разных смысла под одним
+        # словом в разных местах карточки путали пользователя. Теперь
+        # трейт называется в стиле "Высокая драма" выше — один и тот же
+        # смысловой ряд ("уровень драмы"), без пересечения с интригой.
+        traits.append('Умеренная драма')
 
     # 0 < avg_fairness — при total_votes >= CARD_DNA_MIN_VOTES это всегда
     # настоящее среднее по шкале 1-10 (см. _consensus_level выше), не
@@ -495,7 +517,7 @@ def describe_card_dna_traits(aggregate) -> list[str]:
     return traits[:3]
 
 
-def compute_sensation_index(match, counts: dict | None) -> int | None:
+def compute_sensation_index(match, counts: dict | None, reaction_counts: dict | None = None) -> int | None:
     """Пункт 12 брифа — "Индекс сенсации", 0-100, показывается ТОЛЬКО когда
     итог разошёлся с ожиданиями сообщества (см. return None ниже). Формула
     — эвристика, не строгая статистика (тот же честный принцип, что у
@@ -510,12 +532,29 @@ def compute_sensation_index(match, counts: dict | None) -> int | None:
         распределение прогнозов ДО матча, а не гейтовано `is_prediction_open`
         (окно давно закрыто у завершённого матча, но строки прогнозов
         остаются — см. докстринг `bulk_final_prediction_counts`).
-    :return: None, если прогнозов меньше SENSATION_MIN_PREDICTIONS (мало
-        данных — не сенсация, просто нечем измерить), либо если фаворит
-        сообщества и совпал с реальным исходом (предсказуемый результат —
-        по определению не сенсация, бейдж вообще не должен показываться).
+    :param reaction_counts: dict от `reaction_counts()`/`bulk_reaction_data()`
+        (2026-09-10, доп. предложение по вопросу пользователя "а данные
+        реакций мы где-то используем?") — ЗАПАСНОЙ источник, применяется
+        ТОЛЬКО когда прогнозов до матча физически мало (см. return None
+        ниже): если сообщество ПОСЛЕ матча явным большинством отметило
+        "Неожиданно" — это тот же по сути сигнал ("итог разошёлся с
+        ожиданиями"), просто с другого конца временной шкалы. Прогнозы до
+        матча остаются основным источником там, где их достаточно — они
+        собраны ДО того, как исход стал известен, это более чистый сигнал,
+        чем реакция постфактум.
+    :return: None, если данных недостаточно ни по прогнозам, ни (запасным
+        путём) по реакциям, либо если фаворит сообщества и совпал с
+        реальным исходом (предсказуемый результат — по определению не
+        сенсация, бейдж вообще не должен показываться).
     """
     if not counts or counts.get('total', 0) < SENSATION_MIN_PREDICTIONS:
+        if (
+            reaction_counts and reaction_counts.get('total', 0) >= REACTION_BADGE_MIN_VOTES
+            and reaction_counts['upset_pct'] >= REACTION_BADGE_MIN_PCT
+            and reaction_counts['upset'] >= reaction_counts['match_of_round']
+            and reaction_counts['upset'] >= reaction_counts['boring']
+        ):
+            return reaction_counts['upset_pct']
         return None
     final_result = match.final_result
     if final_result is None:
@@ -527,6 +566,23 @@ def compute_sensation_index(match, counts: dict | None) -> int | None:
         return None  # сообщество угадало фаворита — предсказуемый результат
 
     return round(pct_by_choice[favorite_choice])
+
+
+def describe_reaction_badge(counts: dict | None) -> str | None:
+    """Доп. предложение (2026-09-10, прямая просьба пользователя после
+    вопроса "а мы эти данные где-то используем?") — видимый бейдж "Матч
+    тура" в верхней строке карточки, когда сообщество явным большинством
+    (см. REACTION_BADGE_MIN_PCT/REACTION_BADGE_MIN_VOTES) отметило именно
+    этот вариант реакции, а не просто хранит нули в БД без применения."""
+    if not counts or counts.get('total', 0) < REACTION_BADGE_MIN_VOTES:
+        return None
+    if (
+        counts['match_of_round_pct'] >= REACTION_BADGE_MIN_PCT
+        and counts['match_of_round'] >= counts['upset']
+        and counts['match_of_round'] >= counts['boring']
+    ):
+        return 'Матч тура по мнению болельщиков'
+    return None
 
 
 def describe_table_impact(team, before_position: int | None, current_position: int | None) -> str | None:
@@ -640,3 +696,39 @@ def bulk_reaction_data(matches, user) -> dict:
         m_id: {'counts': counts_by_match[m_id], 'my_reaction': my_reactions.get(m_id)}
         for m_id in match_ids
     }
+
+
+def top_reaction_matches(season, reaction: str, limit: int = 5, min_votes: int = REACTION_BADGE_MIN_VOTES) -> list:
+    """Топ матчей сезона по конкретной реакции сообщества — доп. предложение
+    (2026-09-10, прямая просьба пользователя после вопроса "а мы эти данные
+    где-то используем? неплохо было бы"). ПОКА НИГДЕ НЕ ПОДКЛЮЧЕНО В UI —
+    честно: это готовый строительный блок для будущей витрины ("Топ матчей
+    сезона" на странице лиги/сезона), а не законченная фича с собственной
+    страницей — витрины для неё пока нет, заводить её без запроса
+    пользователя было бы лишним скоупом.
+
+    Сортировка по ЧИСЛУ голосов за реакцию, а не по проценту — иначе матч
+    с 1 голосом "за" из 1 (100%) обходил бы матч с 40 голосами "за" из 50
+    (80%), хотя очевидно второй — куда более уверенный "топ".
+
+    :param reaction: одно из MatchReaction.REACTION_* значений.
+    :param min_votes: тот же гейт "маленькая выборка не в топ", что и у
+        REACTION_BADGE_MIN_VOTES выше, вынесен параметром на случай, если
+        будущая витрина захочет свой порог (напр. пошире для нового сезона
+        с малым числом голосов вообще).
+    :return: список `Match` (с `select_related('home_team', 'away_team')`),
+        отсортированный по убыванию голосов за `reaction`, максимум `limit`.
+    """
+    rows = (
+        MatchReaction.objects.filter(match__season=season, reaction=reaction)
+        .values('match_id').annotate(n=Count('id'))
+        .filter(n__gte=min_votes).order_by('-n')[:limit]
+    )
+    match_ids = [row['match_id'] for row in rows]
+    if not match_ids:
+        return []
+    matches_by_id = {
+        m.id: m for m in Match.objects.filter(id__in=match_ids).select_related('home_team', 'away_team')
+    }
+    # Порядок — по числу голосов (см. rows выше), не порядок БД по id.
+    return [matches_by_id[m_id] for m_id in match_ids if m_id in matches_by_id]

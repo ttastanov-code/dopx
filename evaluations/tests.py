@@ -544,6 +544,41 @@ class ContextFormPolicyTests(TestCase):
         self.assertFalse(form.is_valid())
         self.assertIn("supported_team", form.errors)
 
+    def test_stadium_plus_highlights_normalized_to_full(self):
+        """ИСПРАВЛЕНО (2026-09-11, прямая просьба пользователя — "был на
+        стадионе и только голы это как?"): комбинация бессмысленна (на
+        трибуне нельзя "посмотреть только голы"), клиент её прячет и сам
+        нормализует, но это же должно работать и при прямом POST мимо
+        JS/формы — тихая нормализация, не ошибка валидации."""
+        from evaluations.forms import ContextEvaluationForm
+
+        form = ContextEvaluationForm(
+            data={
+                "supported_team": "",
+                "watched_type": "highlights",
+                "attended_stadium": True,
+            },
+            match=self.match,
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.cleaned_data["watched_type"], "full")
+
+    def test_stadium_plus_partial_left_untouched(self):
+        """"Фрагменты" остаётся допустимой комбинацией со стадионом
+        (пришёл позже/ушёл раньше) — нормализуется только "Голы"."""
+        from evaluations.forms import ContextEvaluationForm
+
+        form = ContextEvaluationForm(
+            data={
+                "supported_team": "",
+                "watched_type": "partial",
+                "attended_stadium": True,
+            },
+            match=self.match,
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.cleaned_data["watched_type"], "partial")
+
 
 # ---------------------------------------------------------------------------
 # Анти-шум ползунков (см. docs/adr/0005-anti-noise-touched-tracking.md) —

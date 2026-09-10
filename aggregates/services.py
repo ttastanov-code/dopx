@@ -149,13 +149,28 @@ def calculate_user_weight(
 ) -> float:
     """
     Вес голоса для взвешенного среднего: +0.2 за полный просмотр, +0.2 за
-    trust_score, минус ГРАДУИРОВАННЫЙ штраф за историческую предвзятость
-    (см. _graduated_bias_penalty/compute_bias_profile) — не жёсткий -0.3
-    по щелчку порога, как было до 2026-08-23, а плавно растущий штраф от
-    BIAS_FREE_DIFF до BIAS_MAX_DIFF, с потолком BIAS_CONTINUOUS_MAX_PENALTY.
+    присутствие на стадионе, +0.2 за trust_score, минус ГРАДУИРОВАННЫЙ
+    штраф за историческую предвзятость (см. _graduated_bias_penalty/
+    compute_bias_profile) — не жёсткий -0.3 по щелчку порога, как было до
+    2026-08-23, а плавно растущий штраф от BIAS_FREE_DIFF до BIAS_MAX_DIFF,
+    с потолком BIAS_CONTINUOUS_MAX_PENALTY.
+
+    ИСПРАВЛЕНО (2026-09-11, прямая просьба пользователя): экран "Контекст
+    оценки" (templates/evaluations/context.html) годами обещал "Эти ответы
+    влияют на вес вашей оценки в общем рейтинге" для ВСЕХ вопросов этого
+    шага — но ContextEvaluation.attended_stadium ("Были на стадионе?")
+    фактически нигде не читался, только сохранялся. Бонус ниже — тот же
+    +0.2, что и за watched_type == "full": очевидец на трибуне видит игру
+    не хуже (обычно лучше), чем зритель полного матча по ТВ, так что тот
+    же уровень доверия к его оценке оправдан. Бонусы независимы и
+    складываются — можно получить оба (или ни одного): человек мог быть
+    на стадионе, но уйти до конца матча (watched_type != "full"), и
+    наоборот — посмотреть трансляцию дома от свистка до свистка.
     """
     weight = 1.0
     if context_eval and context_eval.watched_type == "full":
+        weight += 0.2
+    if context_eval and context_eval.attended_stadium:
         weight += 0.2
     if user.trust_score > 1.2:
         weight += 0.2
@@ -331,7 +346,11 @@ def build_user_weight_map(evaluations: list[PlayerEvaluation], match) -> dict[uu
         ce.user_id: ce
         for ce in ContextEvaluation.objects.filter(
             match_id=match.id, user_id__in=unique_user_ids
-        ).only("user_id", "watched_type")
+        # attended_stadium добавлено 2026-09-11 вместе с её использованием
+        # в calculate_user_weight ниже — без него .attended_stadium читался
+        # бы отдельным запросом НА КАЖДОГО пользователя (та же ловушка
+        # .only(), что уже не раз чинили в этой сессии в других местах).
+        ).only("user_id", "watched_type", "attended_stadium")
     }
 
     weight_map: dict[uuid.UUID, float] = {}

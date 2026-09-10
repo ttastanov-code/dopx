@@ -47,6 +47,8 @@ start_time, — опциональны, компонент проверяет и
   card_hero — dict{player,score}|None, только finished (п.9)
   card_dna_traits — list[str], только finished (п.10)
   card_reaction_counts / card_my_reaction — только finished (п.11)
+  card_reaction_badge — str|None, "Матч тура по мнению болельщиков" при явном
+    большинстве реакций, только finished (доп. предложение 2026-09-10)
   card_sensation — int|None, только finished (п.12)
   card_table_impact — str|None, только finished (п.13)
   card_cta — dict{icon,label}, только finished (п.14)
@@ -104,14 +106,29 @@ start_time, — опциональны, компонент проверяет и
         </span>
     </div>
 
-    {% if match.card_intrigue or match.card_followed_teams %}
-    {% comment %}Пункты 1 и 6 брифа — тег интриги и "Ваша команда", отдельной тонкой строкой между статусом и составом.{% endcomment %}
+    {% if match.card_intrigue or match.card_followed_teams or match.card_reaction_badge %}
+    {% comment %}
+    Пункты 1 и 6 брифа — тег интриги и "Ваша команда", отдельной тонкой
+    строкой между статусом и составом. Плюс бейдж "Матч тура" (2026-09-10,
+    доп. предложение по вопросу пользователя об использовании реакций) —
+    для finished-матчей, где card_intrigue не считается, но сам ряд-тегов
+    тот же самый, уместен и здесь.
+    {% endcomment %}
     <div class="mrow__tags-row">
         {% if match.card_intrigue %}
-        <span class="mrow__intrigue-tag"><i class="ti ti-bolt flex-shrink-0"></i>{{ match.card_intrigue }}</span>
+        <span class="mrow__intrigue-tag" title="Почему это интересный матч">
+            <i class="ti ti-bolt flex-shrink-0"></i>{{ match.card_intrigue }}
+        </span>
+        {% endif %}
+        {% if match.card_reaction_badge %}
+        <span class="mrow__reaction-tag" title="Явное большинство болельщиков отметили этот матч как лучший в туре">
+            <i class="ti ti-trophy flex-shrink-0"></i>{{ match.card_reaction_badge }}
+        </span>
         {% endif %}
         {% if match.card_followed_teams %}
-        <span class="mrow__followed-badge"><i class="ti ti-heart flex-shrink-0"></i>Ваша команда</span>
+        <span class="mrow__followed-badge" title="Вы подписаны на {{ match.card_followed_teams|join:' и ' }}">
+            <i class="ti ti-heart flex-shrink-0"></i>Ваша команда
+        </span>
         {% endif %}
     </div>
     {% endif %}
@@ -156,12 +173,50 @@ start_time, — опциональны, компонент проверяет и
     </div>
 
     {% if match.card_home_form_text or match.card_away_form_text or match.card_h2h %}
-    {% comment %}Пункты 3 и 4 брифа — форма команд и очный баланс, только для ещё не сыгранных матчей (см. attach_card_extras).{% endcomment %}
+    {% comment %}
+    Пункты 3 и 4 брифа — форма команд и очный баланс, только для ещё не
+    сыгранных матчей (см. attach_card_extras). ИСПРАВЛЕНО (2026-09-10,
+    жалоба пользователя — было "просто набор слов и букв, не влезает") —
+    каждый факт теперь своя строка с иконкой, направление стрелки формы
+    читаем прямо из текста ("Не побеждает..." → вниз, иначе → вверх), а не
+    заводим для этого отдельное поле на бэкенде — фраза и так однозначно
+    говорит о направлении, дублировать её отдельным булевым флагом было бы
+    лишней сущностью ради того же самого факта.
+    {% endcomment %}
     <div class="mrow__context">
-        {% if match.card_home_form_text %}<span>{{ match.home_team.name }}: {{ match.card_home_form_text }}</span>{% endif %}
-        {% if match.card_away_form_text %}<span>{{ match.away_team.name }}: {{ match.card_away_form_text }}</span>{% endif %}
+        {% if match.card_home_form_text %}
+        <div class="mrow__context-row" title="Форма {{ match.home_team.name }} за последние матчи">
+            {% if 'Не побеждает' in match.card_home_form_text %}
+            <i class="ti ti-trending-down"></i>
+            {% else %}
+            <i class="ti ti-trending-up"></i>
+            {% endif %}
+            <span><strong>{{ match.home_team.name }}</strong> — {{ match.card_home_form_text }}</span>
+        </div>
+        {% endif %}
+        {% if match.card_away_form_text %}
+        <div class="mrow__context-row" title="Форма {{ match.away_team.name }} за последние матчи">
+            {% if 'Не побеждает' in match.card_away_form_text %}
+            <i class="ti ti-trending-down"></i>
+            {% else %}
+            <i class="ti ti-trending-up"></i>
+            {% endif %}
+            <span><strong>{{ match.away_team.name }}</strong> — {{ match.card_away_form_text }}</span>
+        </div>
+        {% endif %}
         {% if match.card_h2h %}
-        <span>Последние {{ match.card_h2h.count }}: {{ match.home_team.name }} {{ match.card_h2h.home_wins }} · Ничьи {{ match.card_h2h.draws }} · {{ match.away_team.name }} {{ match.card_h2h.away_wins }}</span>
+        {% comment %}
+        ИСПРАВЛЕНО (2026-09-10, жалоба пользователя — "на мобильном title
+        не увидеть, наведением мыши не воспользуешься, всё должно быть
+        понятно и так"): раньше подпись "Последние 5: ..." объясняла себя
+        только через title-тултип (недоступен на тач-устройствах). Теперь
+        сама надпись прямо называет, что это — "Очные встречи", без
+        необходимости наводить курсор.
+        {% endcomment %}
+        <div class="mrow__context-row" title="Очные встречи этих команд за последние {{ match.card_h2h.count }} матчей">
+            <i class="ti ti-history"></i>
+            <span>Очные встречи ({{ match.card_h2h.count }}): <strong>{{ match.home_team.name }} {{ match.card_h2h.home_wins }}</strong> · Ничьи {{ match.card_h2h.draws }} · <strong>{{ match.away_team.name }} {{ match.card_h2h.away_wins }}</strong></span>
+        </div>
         {% endif %}
     </div>
     {% endif %}
@@ -169,11 +224,13 @@ start_time, — опциональны, компонент проверяет и
     {% if match.status == 'finished' %}
     {% comment %}Пункты 8, 9, 10, 12, 13 брифа — только для завершённых матчей, каждый блок рендерится независимо (может не быть данных для какого-то одного).{% endcomment %}
     {% if match.card_key_moment %}
-    <div class="mrow__key-moment"><i class="ti ti-bolt flex-shrink-0"></i>{{ match.card_key_moment }}</div>
+    <div class="mrow__key-moment" title="Момент, который определил исход матча">
+        <i class="ti ti-bolt flex-shrink-0"></i>{{ match.card_key_moment }}
+    </div>
     {% endif %}
 
     {% if match.card_hero %}
-    <div class="mrow__hero">
+    <div class="mrow__hero" title="Лучший по оценкам болельщиков DOPX среди игроков этого матча">
         {% if match.card_hero.player.photo %}
         <img src="{{ match.card_hero.player.photo.url }}" alt="" class="mrow__hero-photo">
         {% else %}
@@ -187,17 +244,36 @@ start_time, — опциональны, компонент проверяет и
     {% endif %}
 
     {% if match.card_dna_traits %}
+    {% comment %}
+    ИСПРАВЛЕНО (2026-09-10, жалоба пользователя — "на мобильном title не
+    наведёшь, должно быть понятно и так"): раньше источник чипов ("Высокая
+    драма" и т.д.) объяснялся только через title. Теперь подпись
+    "по оценкам болельщиков" видна сразу, без наведения.
+    {% endcomment %}
     <div class="mrow__dna-traits">
-        {% for trait in match.card_dna_traits %}<span class="mrow__dna-chip">{{ trait }}</span>{% endfor %}
+        <span class="mrow__dna-caption">ДНК матча по оценкам болельщиков:</span>
+        <div class="mrow__dna-chips">
+            {% for trait in match.card_dna_traits %}<span class="mrow__dna-chip">{{ trait }}</span>{% endfor %}
+        </div>
     </div>
     {% endif %}
 
     {% if match.card_sensation %}
-    <div class="mrow__sensation"><i class="ti ti-alert-triangle flex-shrink-0"></i>Сенсация {{ match.card_sensation }}/100</div>
+    {% comment %}
+    ИСПРАВЛЕНО (2026-09-10, та же жалоба) — раньше "Сенсация N/100" была
+    самодостаточна только с title. Добавлена короткая поясняющая фраза
+    прямо в тексте, работает и без наведения.
+    {% endcomment %}
+    <div class="mrow__sensation" title="Насколько итог разошёлся с ожиданиями болельщиков — по прогнозам до матча или по голосованию после него">
+        <i class="ti ti-alert-triangle flex-shrink-0"></i>
+        <span>Сенсация {{ match.card_sensation }}/100 — итог удивил большинство болельщиков</span>
+    </div>
     {% endif %}
 
     {% if match.card_table_impact %}
-    <div class="mrow__table-impact"><i class="ti ti-arrow-up flex-shrink-0"></i>{{ match.card_table_impact }}</div>
+    <div class="mrow__table-impact" title="Как этот матч изменил положение команды в турнирной таблице">
+        <i class="ti ti-arrow-up flex-shrink-0"></i>{{ match.card_table_impact }}
+    </div>
     {% endif %}
     {% endif %}
 

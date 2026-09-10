@@ -76,7 +76,44 @@ class PlayerListView(ListView):
         )
 
         if self.active_season and not self.show_all:
-            queryset = queryset.filter(team__teamseason__season=self.active_season)
+            # ИСПРАВЛЕНО ВТОРОЙ РАЗ (2026-09-11, конкретный пример от
+            # пользователя — "Офри Арад"/"Лука Гадрани" в фильтре "Кайрат"
+            # на /players/, хотя оба реально играли последний раз в сезоне
+            # 2025, Арад вообще ушёл в другую лигу): ПЕРВЫЙ проход (ниже по
+            # git-истории) проверял "давность" через `last_match_at` не
+            # старше ROSTER_STALE_THRESHOLD (~15 месяцев) — но это ВРЕМЕННОЕ
+            # окно, а не привязка к КОНКРЕТНОМУ сезону. Если сезон 2025
+            # закончился, скажем, 7 месяцев назад, его последний матч легко
+            # укладывается в 15-месячное окно "не устарело" — фильтр даже
+            # при корректно проставленном last_match_at не мог отличить
+            # "играл в ЭТОМ сезоне" от "играл где-то в последние 1.5 года".
+            # Тот же временной допуск в teams/views.py::TeamDetailView
+            # оправдан (там показывается живой состав команды здесь и
+            # сейчас, немного люфта — это ОК), а здесь, где явно нужен
+            # ИМЕННО текущий сезон, это в принципе не тот инструмент.
+            #
+            # Новая логика — БЕЗ временных допущений, только факты по
+            # заявкам на матчи:
+            #   (а) игрок реально выходил в заявке на матч ИМЕННО активного
+            #       сезона (played_this_season_ids) — сильный, точный сигнал;
+            #   (б) ЛИБО у игрока вообще НЕТ ни одной записи в
+            #       MatchLineupPlayer (never_played_ids) — это единственный
+            #       случай, где сезонных данных просто не существует
+            #       (новичок, ещё не дебютировавший в текущем составе) —
+            #       тогда, и только тогда, доверяем текущему Player.team.
+            # Игрок с историей в MatchLineupPlayer, но НЕ в активном сезоне
+            # (как Арад/Гадрани — есть записи, просто за 2025) — НЕ попадает
+            # ни в (а), ни в (б), корректно исключается.
+            played_this_season_ids = Player.objects.filter(
+                matchlineupplayer__lineup__match__season=self.active_season
+            ).values_list('id', flat=True)
+            never_played_ids = Player.objects.filter(
+                team__teamseason__season=self.active_season,
+                matchlineupplayer__isnull=True,
+            ).values_list('id', flat=True)
+            queryset = queryset.filter(
+                Q(id__in=played_this_season_ids) | Q(id__in=never_played_ids)
+            )
 
         # Поиск по имени — тот же normalize_kz, что и в поиске команд/
         # тренеров/судей (core/utils.py): "Кайрат" находит "Қайрат" и
@@ -117,8 +154,21 @@ class PlayerListView(ListView):
         context['search_query'] = self.request.GET.get('q', '')
         context['active_season'] = self.active_season
         context['show_all'] = self.show_all
-        # Team не имеет is_active — берём все
-        context['teams'] = Team.objects.all()[:20]
+        # ИСПРАВЛЕНО (2026-09-10, жалоба пользователя — "в фильтрах команд
+        # все команды из БД, а не текущие на сезон"): раньше здесь были
+        # ЛЮБЫЕ команды из БД за всю историю импорта (включая вылетевшие/
+        # неактуальные), да ещё обрезанные до первых 20 по id — выбор
+        # команды, которой в этом сезоне уже нет, приводил бы к пустому
+        # списку игроков. Теперь — те же команды, что фактически участвуют
+        # в выбранном сезоне (тот же паттерн, что уже использует
+        # TeamListView, см. её докстринг), без произвольной обрезки: команд
+        # в лиге физически немного (десяток-полтора), резать нечего.
+        if self.active_season and not self.show_all:
+            context['teams'] = Team.objects.filter(
+                teamseason__season=self.active_season
+            ).distinct().order_by('name')
+        else:
+            context['teams'] = Team.objects.all().order_by('name')
         # Список УНИКАЛЬНЫХ подписей, а не сырых кодов — иначе разные
         # варианты регистра одного кода ("AM"/"am") или разные синонимы
         # с одинаковым переводом дали бы дублирующиеся на вид пункты в
@@ -147,7 +197,9 @@ class PlayerDetailView(DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         player = self.object
-        
+        # Нужен для бейджа "Текущая" в career_by_season ниже — см. комментарий там.
+        active_season = Season.get_primary_active()
+
         # 🔥 FIX (2026-08-31, второй проход): "Матчей сыграно" считался как
         # ЛЮБАЯ запись в MatchLineupPlayer — то есть игрок, просидевший
         # весь матч в запасе и ни разу не вышедший на замену, засчитывался
@@ -230,6 +282,11 @@ class PlayerDetailView(DetailView):
         stints = OrderedDict()  # (season_id, team_id) -> накопитель
         match_ids_by_stint = {}
         for entry in lineup_entries:
+            # lineup_entries уже отсортирован -lineup__match__start_time
+            # (order_by выше) — то есть для каждого stint'а ПЕРВАЯ по циклу
+            # запись и есть его самая свежая дата, дальше только более
+            # ранние. Запоминаем её один раз (latest_match_at) — нужна для
+            # хронологической сортировки ниже.
             match = entry.lineup.match
             season = match.season
             if not season:
@@ -241,6 +298,7 @@ class PlayerDetailView(DetailView):
                     'team': entry.lineup.team,
                     'matches_played': 0,
                     'goals': 0,
+                    'latest_match_at': match.start_time,
                 }
                 match_ids_by_stint[key] = []
             stints[key]['matches_played'] += 1
@@ -258,11 +316,19 @@ class PlayerDetailView(DetailView):
             for key, match_ids in match_ids_by_stint.items():
                 stints[key]['goals'] = sum(goals_by_match.get(mid, 0) for mid in match_ids)
 
-        # Сортировка: сначала свежие сезоны, внутри сезона — по кол-ву
-        # матчей (основной клуб сезона первым, если был трансфер).
+        # ИСПРАВЛЕНО (2026-09-11, прямая просьба пользователя — "надо
+        # отображать по хронологии, типа текущая чтобы была первая, вторая,
+        # предыдущая и т.д."): раньше внутри одного сезона сортировка шла
+        # по кол-ву сыгранных матчей — при трансферe в разгар сезона клуб,
+        # за который сыграно БОЛЬШЕ матчей, оказывался первым, даже если
+        # игрок с тех пор уже перешёл в другой клуб и там сыграл меньше.
+        # Это НЕ хронология, а "у кого больше матчей" — сбивало с толку:
+        # текущий клуб мог оказаться ниже старого. Теперь сортируем по
+        # дате САМОГО СВЕЖЕГО матча в рамках stint'а (latest_match_at) —
+        # реальная хронология, текущий клуб всегда первый.
         career_by_season = sorted(
             stints.values(),
-            key=lambda s: (s['season'].year, s['matches_played']),
+            key=lambda s: (s['season'].year, s['latest_match_at']),
             reverse=True,
         )
 
@@ -313,6 +379,7 @@ class PlayerDetailView(DetailView):
             'has_evaluations': has_evaluations,
             'best_matches': best_matches,
             'team': team,
+            'active_season': active_season,
             'career_by_season': career_by_season,
             'position_breakdown': position_breakdown,
             'votable_match': votable_match,

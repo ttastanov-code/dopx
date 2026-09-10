@@ -69,8 +69,16 @@
                     <form method="post" action="{% url 'dashboard:parser_trigger_task' %}" class="flex items-center gap-2">
                         {% csrf_token %}
                         <input type="hidden" name="task_name" value="{{ task_name }}">
-                        <button type="submit" class="btn btn-sm btn-outline flex-1 justify-start">
-                            <i class="ti ti-player-play mr-1"></i> {{ task_label }}
+                        {% comment %}
+                        2026-09-11 (жалоба пользователя: "названия всех
+                        кнопок команд криво" в мобильной версии) — daisyUI
+                        .btn держит фиксированную высоту в одну строку;
+                        длинные task_label (например, полные названия
+                        celery-задач) на узком экране переносились и
+                        обрезались. h-auto + whitespace-normal + py-2
+                        позволяют кнопке вырасти под любое число строк. {% endcomment %}
+                        <button type="submit" class="btn btn-sm btn-outline flex-1 justify-start h-auto min-h-9 py-2 whitespace-normal text-left leading-snug">
+                            <i class="ti ti-player-play mr-1 flex-shrink-0"></i> {{ task_label }}
                         </button>
                     </form>
                     {% with description=sportmonks_task_descriptions|get_item:task_name %}
@@ -92,8 +100,16 @@
                     <form method="post" action="{% url 'dashboard:parser_trigger_task' %}" class="flex items-center gap-2">
                         {% csrf_token %}
                         <input type="hidden" name="task_name" value="{{ task_name }}">
-                        <button type="submit" class="btn btn-sm btn-outline flex-1 justify-start">
-                            <i class="ti ti-player-play mr-1"></i> {{ task_label }}
+                        {% comment %}
+                        2026-09-11 (жалоба пользователя: "названия всех
+                        кнопок команд криво" в мобильной версии) — daisyUI
+                        .btn держит фиксированную высоту в одну строку;
+                        длинные task_label (например, полные названия
+                        celery-задач) на узком экране переносились и
+                        обрезались. h-auto + whitespace-normal + py-2
+                        позволяют кнопке вырасти под любое число строк. {% endcomment %}
+                        <button type="submit" class="btn btn-sm btn-outline flex-1 justify-start h-auto min-h-9 py-2 whitespace-normal text-left leading-snug">
+                            <i class="ti ti-player-play mr-1 flex-shrink-0"></i> {{ task_label }}
                         </button>
                     </form>
                     {% with description=task_descriptions|get_item:task_name %}
