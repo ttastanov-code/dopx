@@ -27,13 +27,42 @@ from django.conf import settings
 from django.core.files.storage import default_storage
 from PIL import Image, ImageColor, ImageDraw, ImageFilter, ImageFont
 
-CARD_SIZE = (1200, 630)  # стандартный OG-image размер
+CARD_SIZE = (1200, 630)  # стандартный OG-image размер (финальный, на диске)
 # Карточка достижения (build_badge_share_card, ниже) — единственная в этом
 # модуле портретная: сделана под шеринг в мессенджеры/сторис (продуктовый
 # запрос 2026-09-01, "не хуже, а лучше" референсного макета пользователя),
 # а не под og:image превью ссылки — поэтому у неё свой размер, отдельный от
 # общего CARD_SIZE, чтобы не задевать остальные 4 функции файла.
-BADGE_CARD_SIZE = (1080, 1360)
+BADGE_CARD_SIZE = (1080, 1360)  # финальный размер (на диске)
+
+# СУПЕРСЕМПЛИНГ (фикс "пиксельного" вида карточек, продуктовый репорт
+# 2026-09-10: "генерируемый контент текст и тд пиксельный и выглядит
+# уебански"). Причина: PIL/Pillow-примитивы `ImageDraw.ellipse/polygon/
+# rounded_rectangle/line` НЕ сглаживаются (no anti-aliasing) — в отличие от
+# текста, который сглаживает сам FreeType. При рендере сразу в целевом
+# разрешении (CARD_SIZE/BADGE_CARD_SIZE) это даёт рваный, "пиксельный" край
+# у кружков-маркеров (`_fact_row`), граней процедурного кристалла
+# (`_draw_gem`), скруглённых панелей/пилюль и тонких линий-разделителей —
+# именно на них жалоба и была заметнее всего; мелкий текст (16-22pt) страдал
+# той же болезнью слабее.
+#
+# Фикс — стандартный приём: рендерим ВСЮ карточку на холсте в SS_SCALE раз
+# больше целевого (`_CARD_RENDER_SIZE`/`_BADGE_RENDER_SIZE` ниже),
+# пропорционально увеличивая абсолютно всё — кегли шрифтов (см. `_font`/
+# `_badge_font`, масштабируются автоматически для любого вызова), толщину
+# линий, радиусы скругления/блюра, отступы и координаты — а затем ОДИН раз
+# в самом конце уменьшаем готовое изображение до целевого размера через
+# `Image.LANCZOS` (качественный resampling-фильтр с честной фильтрацией по
+# соседним пикселям, а не дефолтный NEAREST) — рваные края превращаются в
+# плавный, настоящий antialiasing. Тот же принцип, что SSAA в 3D-рендеринге,
+# применённый к 2D-холсту Pillow. Все функции build_*_share_card в этом
+# файле следуют одному паттерну: `S = SS_SCALE` в начале, все "сырые"
+# пиксельные литералы (координаты/радиусы/толщины/блюр), которые не
+# выражены как доля W/H, домножаются на `S`, `img.resize(<финальный размер>,
+# Image.LANCZOS)` перед сохранением.
+SS_SCALE = 3
+_CARD_RENDER_SIZE = (CARD_SIZE[0] * SS_SCALE, CARD_SIZE[1] * SS_SCALE)
+_BADGE_RENDER_SIZE = (BADGE_CARD_SIZE[0] * SS_SCALE, BADGE_CARD_SIZE[1] * SS_SCALE)
 FONTS_DIR = Path(settings.BASE_DIR) / "static" / "fonts"
 
 # Достижения (build_badge_share_card, ниже) — визуальная система "от бронзы
@@ -111,6 +140,13 @@ _FONT_FILES = {
 def _font(name: str, size: int) -> ImageFont.FreeTypeFont:
     """
     :param name: 'bold', 'regular' или 'italic'.
+    :param size: кегль в "целевых" (1x, финальных) пунктах — вызывающий код
+        во всём этом модуле всегда указывает размер, каким текст должен
+        выглядеть на готовой (уже уменьшенной) карточке. Фактически шрифт
+        грузится в `size * SS_SCALE` пунктов, потому что рисуется на
+        supersampled-холсте в SS_SCALE раз больше целевого (см. докстринг
+        `SS_SCALE` в начале модуля) — сами вызовы `_font(...)` по всему
+        файлу от этого не меняются.
 
     Не падает, если TTF-файла нет на диске (например, в свежем клоне
     репозитория до первого `collectstatic`) — молча откатывается на
@@ -119,9 +155,9 @@ def _font(name: str, size: int) -> ImageFont.FreeTypeFont:
     """
     filename = _FONT_FILES.get(name, _FONT_FILES["regular"])
     try:
-        return ImageFont.truetype(str(FONTS_DIR / filename), size)
+        return ImageFont.truetype(str(FONTS_DIR / filename), size * SS_SCALE)
     except OSError:
-        return ImageFont.load_default(size=size)
+        return ImageFont.load_default(size=size * SS_SCALE)
 
 
 # Второе семейство шрифтов — только для build_badge_share_card (DejaVu Sans,
@@ -137,11 +173,13 @@ _BADGE_FONT_FILES = {
 
 
 def _badge_font(name: str, size: int) -> ImageFont.FreeTypeFont:
+    """:param size: кегль в целевых (1x) пунктах — см. докстринг `_font`
+    про автоматическое масштабирование на `size * SS_SCALE`."""
     filename = _BADGE_FONT_FILES.get(name, _BADGE_FONT_FILES["regular"])
     try:
-        return ImageFont.truetype(str(FONTS_DIR / filename), size)
+        return ImageFont.truetype(str(FONTS_DIR / filename), size * SS_SCALE)
     except OSError:
-        return ImageFont.load_default(size=size)
+        return ImageFont.load_default(size=size * SS_SCALE)
 
 
 def _cache_key(*parts: str) -> str:
@@ -268,6 +306,15 @@ def _draw_gem(
         параметр вариации граней — один и тот же rarity должен давать
         визуально одинаковый кристалл у всех пользователей, а не
         "случайную" форму при каждой перегенерации кэша.
+
+    Все геометрические параметры (`cx`, `cy_center`, `height`, `width`) —
+    уже физические (supersampled) пиксели: вызывающая сторона
+    (`build_badge_share_card`) домножает их на `SS_SCALE` перед вызовом
+    (см. докстринг `SS_SCALE` в начале модуля), поэтому вся геометрия ниже,
+    вычисленная относительно них, масштабируется автоматически — домножать
+    на `SS_SCALE` внутри этой функции нужно только "сырые" абсолютные
+    литералы, не привязанные ни к одному параметру (радиусы блюра, отступы
+    тени ниже).
     """
     top_y = cy_center - height / 2
     bot_y = cy_center + height / 2
@@ -333,7 +380,7 @@ def _draw_gem(
             [cx - width * glow_scale, cy_center - height * 0.60, cx + width * glow_scale, cy_center + height * 0.60],
             fill=glow_color + (glow_alpha,),
         )
-        glow_layer = glow_layer.filter(ImageFilter.GaussianBlur(110))
+        glow_layer = glow_layer.filter(ImageFilter.GaussianBlur(110 * SS_SCALE))
         img_rgba = Image.alpha_composite(img.convert("RGBA"), glow_layer)
     else:
         img_rgba = img.convert("RGBA")
@@ -342,9 +389,9 @@ def _draw_gem(
     # опоры на плоском тёмном фоне.
     shadow = Image.new("RGBA", img.size, (0, 0, 0, 0))
     ImageDraw.Draw(shadow).ellipse(
-        [cx - width * 0.42, bot_y - 16, cx + width * 0.42, bot_y + 40], fill=(0, 0, 0, 150),
+        [cx - width * 0.42, bot_y - 16 * SS_SCALE, cx + width * 0.42, bot_y + 40 * SS_SCALE], fill=(0, 0, 0, 150),
     )
-    shadow = shadow.filter(ImageFilter.GaussianBlur(24))
+    shadow = shadow.filter(ImageFilter.GaussianBlur(24 * SS_SCALE))
     img_rgba = Image.alpha_composite(img_rgba, shadow)
     img_rgba = Image.alpha_composite(img_rgba, base)
     return img_rgba.convert("RGB")
@@ -479,7 +526,8 @@ def _legibility_scrim(size: tuple[int, int], start_alpha: int = 225, end_fractio
 
 
 def _shadow_text(draw: ImageDraw.ImageDraw, xy: tuple[float, float], text: str,
-                  font: ImageFont.FreeTypeFont, fill, shadow_alpha: int = 170, offset: tuple[int, int] = (0, 3)) -> None:
+                  font: ImageFont.FreeTypeFont, fill, shadow_alpha: int = 170,
+                  offset: tuple[int, int] = (0, 3 * SS_SCALE)) -> None:
     """Текст с тёмной смещённой "подложкой" под ним — гарантирует контраст
     независимо от яркости/пестроты фона под конкретным символом (в отличие
     от одного сплошного `_legibility_scrim`, который защищает всю зону, но не
@@ -490,7 +538,7 @@ def _shadow_text(draw: ImageDraw.ImageDraw, xy: tuple[float, float], text: str,
 
 def _shadow_tracked_text(draw: ImageDraw.ImageDraw, xy: tuple[float, float], text: str,
                           font: ImageFont.FreeTypeFont, fill, tracking: float = 0,
-                          shadow_alpha: int = 170, offset: tuple[int, int] = (0, 3)) -> float:
+                          shadow_alpha: int = 170, offset: tuple[int, int] = (0, 3 * SS_SCALE)) -> float:
     _tracked_text(draw, (xy[0] + offset[0], xy[1] + offset[1]), text, font, (0, 0, 0, shadow_alpha), tracking=tracking)
     return _tracked_text(draw, xy, text, font, fill, tracking=tracking)
 
@@ -545,7 +593,12 @@ def _load_custom_badge_background(rarity: str) -> tuple[Image.Image, float] | No
         mtime = path.stat().st_mtime
     except OSError:
         return None
-    return _cover_resize(img, BADGE_CARD_SIZE), mtime
+    # _BADGE_RENDER_SIZE (не BADGE_CARD_SIZE) — фон компонуется на
+    # supersampled-холсте, см. докстринг SS_SCALE в начале модуля; заодно
+    # LANCZOS-ресайз самого фона (уже используется в _cover_resize) при
+    # таком целевом размере даёт более чёткую картинку после финального
+    # downscale, чем апскейл уже уменьшенного фона.
+    return _cover_resize(img, _BADGE_RENDER_SIZE), mtime
 
 
 def _cover_resize_right(img: Image.Image, target_size: tuple[int, int]) -> Image.Image:
@@ -602,7 +655,9 @@ def _load_streak_background(streak_type: str) -> tuple[Image.Image, float] | Non
         mtime = path.stat().st_mtime
     except OSError:
         return None
-    return _cover_resize_right(img, CARD_SIZE), mtime
+    # _CARD_RENDER_SIZE (см. докстринг SS_SCALE) — фон компонуется на
+    # supersampled-холсте build_streak_share_card, не на финальном CARD_SIZE.
+    return _cover_resize_right(img, _CARD_RENDER_SIZE), mtime
 
 
 MATCH_DNA_BACKGROUND_FILENAME = "match_dna.png"
@@ -635,7 +690,9 @@ def _load_match_dna_background() -> tuple[Image.Image, float] | None:
         mtime = path.stat().st_mtime
     except OSError:
         return None
-    return _cover_resize_right(img, CARD_SIZE), mtime
+    # _CARD_RENDER_SIZE (см. докстринг SS_SCALE) — фон компонуется на
+    # supersampled-холсте build_match_dna_share_card, не на финальном CARD_SIZE.
+    return _cover_resize_right(img, _CARD_RENDER_SIZE), mtime
 
 
 def build_match_share_card(
@@ -648,19 +705,27 @@ def build_match_share_card(
     if default_storage.exists(relative_path):
         return relative_path
 
-    img = Image.new("RGB", CARD_SIZE, color="#0a0a0a")
+    # Рендерим на холсте в SS_SCALE раз больше целевого CARD_SIZE (см.
+    # докстринг SS_SCALE в начале модуля) — координаты ниже домножены на S,
+    # шрифты сами масштабируются внутри _font().
+    S = SS_SCALE
+    img = Image.new("RGB", _CARD_RENDER_SIZE, color="#0a0a0a")
     draw = ImageDraw.Draw(img)
     font_bold = _font("bold", 54)
     font_regular = _font("regular", 30)
     font_small = _font("regular", 22)
 
-    draw.text((60, 50), "DOPX", font=font_bold, fill="#ffffff")
-    draw.text((60, 190), f"{home_team} {home_score}:{away_score} {away_team}", font=font_bold, fill="#ffffff")
+    draw.text((60 * S, 50 * S), "DOPX", font=font_bold, fill="#ffffff")
+    draw.text((60 * S, 190 * S), f"{home_team} {home_score}:{away_score} {away_team}", font=font_bold, fill="#ffffff")
     # Без emoji ("⭐"): Liberation Sans не содержит emoji-глифов, Pillow
     # отрисовал бы нечитаемый "tofu"-квадрат вместо звезды.
-    draw.text((60, 290), f"Лучший на поле: {top_player_name} — {top_player_score:.1f}/10", font=font_regular, fill="#60a5fa")
-    draw.text((60, CARD_SIZE[1] - 50), "Голос трибун измеряем — dopx.kz", font=font_small, fill="#737373")
+    draw.text((60 * S, 290 * S), f"Лучший на поле: {top_player_name} — {top_player_score:.1f}/10", font=font_regular, fill="#60a5fa")
+    draw.text((60 * S, _CARD_RENDER_SIZE[1] - 50 * S), "Голос трибун измеряем — dopx.kz", font=font_small, fill="#737373")
 
+    # Downscale физического (SS_SCALE×) холста до целевого CARD_SIZE через
+    # LANCZOS — этот шаг и убирает рваные края текста/линий (см. докстринг
+    # SS_SCALE выше про supersampling).
+    img = img.resize(CARD_SIZE, Image.LANCZOS)
     buffer = BytesIO()
     img.save(buffer, format="PNG", optimize=True)
     buffer.seek(0)
@@ -742,18 +807,24 @@ def build_match_dna_share_card(
     if default_storage.exists(relative_path):
         return relative_path
 
-    W, H = CARD_SIZE
-    MARGIN = 64
+    # Тот же supersampling-паттерн, что в остальных функциях модуля (см.
+    # докстринг SS_SCALE): все "сырые" пиксельные литералы ниже домножены
+    # на S, W/H и MARGIN уже физического (SS_SCALE×) масштаба, поэтому вся
+    # относительная арифметика (W * 0.56, H - 250 и т.п.) масштабируется
+    # автоматически.
+    S = SS_SCALE
+    W, H = _CARD_RENDER_SIZE
+    MARGIN = 64 * S
 
-    img = custom_bg[0] if custom_bg is not None else Image.new("RGB", CARD_SIZE, (10, 10, 10))
+    img = custom_bg[0] if custom_bg is not None else Image.new("RGB", _CARD_RENDER_SIZE, (10, 10, 10))
 
     # Та же легибильность-связка, что в build_streak_share_card: затемняем
     # края независимо от содержимого фона, затем горизонтальный scrim —
     # непрозрачно слева (где весь текст), прозрачно справа (где спираль/
     # мяч из иллюстрации, её не нужно затемнять). На плоском фолбэк-фоне
     # оба шага — no-op (фон и так однотонный).
-    img = _edge_vignette(img, inset=36, strength=0.45)
-    scrim = _legibility_scrim(CARD_SIZE, start_alpha=235, end_fraction=0.54)
+    img = _edge_vignette(img, inset=36 * S, strength=0.45)
+    scrim = _legibility_scrim(_CARD_RENDER_SIZE, start_alpha=235, end_fraction=0.54)
     img = Image.alpha_composite(img.convert("RGBA"), scrim).convert("RGB")
 
     draw = ImageDraw.Draw(img, "RGBA")
@@ -768,30 +839,30 @@ def build_match_dna_share_card(
     # места пропускаем менее приоритетные хвостовые блоки целиком (не
     # обрезаем ИХ ТЕКСТ на середине слова, что выглядело бы неряшливо),
     # а не позволяем им наехать на футер.
-    CONTENT_BOTTOM = H - 78
+    CONTENT_BOTTOM = H - 78 * S
 
     # Бренд-марка (логотип DOPX) + wordmark — тот же верхний элемент, что в
     # build_streak_share_card/build_badge_share_card.
     font_brand = _badge_font("cond_bold", 24)
-    logo_size = 38
+    logo_size = 38 * S
     logo = _load_brand_mark(logo_size)
     if logo is not None:
         img_rgba = img.convert("RGBA")
-        img_rgba.alpha_composite(logo, (MARGIN, 50))
+        img_rgba.alpha_composite(logo, (MARGIN, 50 * S))
         img = img_rgba.convert("RGB")
         draw = ImageDraw.Draw(img, "RGBA")
-        brand_x = MARGIN + logo_size + 14
+        brand_x = MARGIN + logo_size + 14 * S
     else:
         brand_x = MARGIN
-    _tracked_text(draw, (brand_x, 58), "DOPX", font_brand, (240, 238, 244, 255), tracking=5)
+    _tracked_text(draw, (brand_x, 58 * S), "DOPX", font_brand, (240, 238, 244, 255), tracking=5 * S)
 
     # Эйброу "ДНК МАТЧА" с подчёркиванием — фирменный фиолетовый, тот же
     # паттерн, что "СЕРИЯ ПРОГНОЗОВ"/"ДОСТИЖЕНИЕ ПОЛУЧЕНО" в остальных
     # премиальных карточках модуля.
     font_eyebrow = _badge_font("cond_bold", 19)
-    ey_y = 120
-    _shadow_tracked_text(draw, (MARGIN, ey_y), "ДНК МАТЧА", font_eyebrow, brand_accent + (255,), tracking=4)
-    draw.line([(MARGIN + 2, ey_y + 32), (MARGIN + 90, ey_y + 32)], fill=brand_accent + (255,), width=3)
+    ey_y = 120 * S
+    _shadow_tracked_text(draw, (MARGIN, ey_y), "ДНК МАТЧА", font_eyebrow, brand_accent + (255,), tracking=4 * S)
+    draw.line([(MARGIN + 2 * S, ey_y + 32 * S), (MARGIN + 90 * S, ey_y + 32 * S)], fill=brand_accent + (255,), width=3 * S)
 
     # Счёт — заголовок карточки. _fit_single_line (не wrap): держим ровно
     # одну строку с гарантированной высотой, чтобы курсор ниже был
@@ -799,9 +870,9 @@ def build_match_dna_share_card(
     # но карточка не должна ломаться, если когда-нибудь окажутся длиннее).
     font_title = _badge_font("bold", 42)
     title_text = _fit_single_line(draw, f"{home_team} {home_score}:{away_score} {away_team}", font_title, text_max_w)
-    y = 158
-    _shadow_text(draw, (MARGIN, y), title_text, font_title, (250, 248, 252, 255), shadow_alpha=190, offset=(0, 3))
-    y += 64
+    y = 158 * S
+    _shadow_text(draw, (MARGIN, y), title_text, font_title, (250, 248, 252, 255), shadow_alpha=190, offset=(0, 3 * S))
+    y += 64 * S
 
     # Драма-пилюля — та же капсула с обводкой, что rarity-пилюля в
     # build_badge_share_card, цвет — по drama_level (не бренд-фиолетовый:
@@ -809,14 +880,14 @@ def build_match_dna_share_card(
     if drama_label:
         font_pill = _badge_font("cond_bold", 20)
         pill_text = f"{drama_label} · индекс {drama_index:.0f}"
-        pill_w = _tracked_text_width(draw, pill_text, font_pill, tracking=2) + 40
-        pill_h = 42
+        pill_w = _tracked_text_width(draw, pill_text, font_pill, tracking=2 * S) + 40 * S
+        pill_h = 42 * S
         draw.rounded_rectangle(
             [MARGIN, y, MARGIN + pill_w, y + pill_h], radius=pill_h // 2,
-            outline=drama_accent + (220,), width=2, fill=(10, 9, 14, 190),
+            outline=drama_accent + (220,), width=2 * S, fill=(10, 9, 14, 190),
         )
-        _tracked_text(draw, (MARGIN + 20, y + 11), pill_text, font_pill, drama_accent + (255,), tracking=2)
-        y += pill_h + 18
+        _tracked_text(draw, (MARGIN + 20 * S, y + 11 * S), pill_text, font_pill, drama_accent + (255,), tracking=2 * S)
+        y += pill_h + 18 * S
 
     # Герой/антигерой — компактные строки с цветной точкой-маркером вместо
     # Tabler-иконки (DejaVu Sans не содержит их глифов, см. докстринг
@@ -826,18 +897,18 @@ def build_match_dna_share_card(
     font_fact_value = _badge_font("bold", 24)
 
     def _fact_row(label: str, value: str, color: tuple[int, int, int], y_pos: float) -> float:
-        dot_r = 5
-        dcy = y_pos + 16
+        dot_r = 5 * S
+        dcy = y_pos + 16 * S
         draw.ellipse([MARGIN, dcy - dot_r, MARGIN + dot_r * 2, dcy + dot_r], fill=color + (255,))
-        tx = MARGIN + dot_r * 2 + 14
-        _tracked_text(draw, (tx, y_pos), label.upper(), font_fact_label, color + (230,), tracking=2)
+        tx = MARGIN + dot_r * 2 + 14 * S
+        _tracked_text(draw, (tx, y_pos), label.upper(), font_fact_label, color + (230,), tracking=2 * S)
         value_fitted = _fit_single_line(draw, value, font_fact_value, text_max_w - (tx - MARGIN))
-        _shadow_text(draw, (tx, y_pos + 20), value_fitted, font_fact_value, (245, 244, 248, 255), shadow_alpha=150, offset=(0, 2))
-        return y_pos + 48
+        _shadow_text(draw, (tx, y_pos + 20 * S), value_fitted, font_fact_value, (245, 244, 248, 255), shadow_alpha=150, offset=(0, 2 * S))
+        return y_pos + 48 * S
 
-    if hero_label and y + 48 <= CONTENT_BOTTOM:
+    if hero_label and y + 48 * S <= CONTENT_BOTTOM:
         y = _fact_row("Герой матча", hero_label, (96, 165, 250), y)
-    if antihero_label and y + 48 <= CONTENT_BOTTOM:
+    if antihero_label and y + 48 * S <= CONTENT_BOTTOM:
         y = _fact_row("Антигерой", antihero_label, (248, 113, 113), y)
 
     # Место, которое нужно оставить под headline (см. ниже) — 2 строки
@@ -845,22 +916,22 @@ def build_match_dna_share_card(
     # мнений — младший приоритет, чем headline (самый цитируемый факт
     # секции): если места на всё не хватает, урезаем/пропускаем ИХ, а не
     # headline (см. докстринг CONTENT_BOTTOM выше про общий принцип).
-    HEADLINE_RESERVE = 8 + 26 + 50 if headline else 0
+    HEADLINE_RESERVE = (8 + 26 + 50) * S if headline else 0
 
     font_meta = _badge_font("regular", 20)
-    if fan_mood_text and y + 26 + HEADLINE_RESERVE <= CONTENT_BOTTOM:
-        y += 6
+    if fan_mood_text and y + 26 * S + HEADLINE_RESERVE <= CONTENT_BOTTOM:
+        y += 6 * S
         # 2 строки, только если headline после этого всё ещё получит свои
         # полные 2 строки — иначе 1 (короче, но не в ущерб headline).
-        fan_lines_budget = 2 if y + 26 * 2 + HEADLINE_RESERVE <= CONTENT_BOTTOM else 1
+        fan_lines_budget = 2 if y + 26 * 2 * S + HEADLINE_RESERVE <= CONTENT_BOTTOM else 1
         for line in _wrap_text(draw, fan_mood_text, font_meta, text_max_w, max_lines=fan_lines_budget):
             draw.text((MARGIN, y), line, font=font_meta, fill=(210, 208, 220, 255))
-            y += 26
-        y += 4
-    if consensus_text and y + 24 + HEADLINE_RESERVE <= CONTENT_BOTTOM:
+            y += 26 * S
+        y += 4 * S
+    if consensus_text and y + 24 * S + HEADLINE_RESERVE <= CONTENT_BOTTOM:
         line = _fit_single_line(draw, consensus_text, font_meta, text_max_w)
         draw.text((MARGIN, y), line, font=font_meta, fill=(160, 158, 168, 255))
-        y += 28
+        y += 28 * S
 
     # Headline — "цитата" (тот же приём, что флейвор-цитата в
     # build_badge_share_card: открывающая кавычка акцентным цветом + курсив)
@@ -868,25 +939,28 @@ def build_match_dna_share_card(
     # момент/расхождение мнений о судействе), поэтому визуально выделен, а
     # не просто ещё одна строка в общем списке. Приоритет НАД fan_mood/
     # consensus_text выше — ей всегда зарезервированы полные 2 строки.
-    if headline and y + 40 <= CONTENT_BOTTOM:
-        y += 8
+    if headline and y + 40 * S <= CONTENT_BOTTOM:
+        y += 8 * S
         font_quote_mark = _badge_font("bold", 32)
         draw.text((MARGIN, y), "“", font=font_quote_mark, fill=brand_accent + (200,))
         font_quote = _badge_font("italic", 20)
-        quote_lines = _wrap_text(draw, headline, font_quote, text_max_w - 28, max_lines=2)
-        qy = y + 26
+        quote_lines = _wrap_text(draw, headline, font_quote, text_max_w - 28 * S, max_lines=2)
+        qy = y + 26 * S
         for line in quote_lines:
-            draw.text((MARGIN + 28, qy), line, font=font_quote, fill=(224, 222, 232, 255))
-            qy += 25
+            draw.text((MARGIN + 28 * S, qy), line, font=font_quote, fill=(224, 222, 232, 255))
+            qy += 25 * S
 
     # Футер — разнос по краям с разделительной линией, тот же паттерн, что
     # у остальных премиальных карточек модуля.
     font_footer = _badge_font("cond", 16)
-    _tracked_text(draw, (MARGIN, H - 52), "ГОЛОС ТРИБУН ИЗМЕРЯЕМ", font_footer, (170, 168, 178, 255), tracking=3)
-    kz_w = _tracked_text_width(draw, "DOPX.KZ", font_footer, tracking=3)
-    _tracked_text(draw, (W - MARGIN - kz_w, H - 52), "DOPX.KZ", font_footer, brand_accent + (255,), tracking=3)
-    draw.line([(MARGIN, H - 64), (W - MARGIN, H - 64)], fill=(255, 255, 255, 25), width=1)
+    _tracked_text(draw, (MARGIN, H - 52 * S), "ГОЛОС ТРИБУН ИЗМЕРЯЕМ", font_footer, (170, 168, 178, 255), tracking=3 * S)
+    kz_w = _tracked_text_width(draw, "DOPX.KZ", font_footer, tracking=3 * S)
+    _tracked_text(draw, (W - MARGIN - kz_w, H - 52 * S), "DOPX.KZ", font_footer, brand_accent + (255,), tracking=3 * S)
+    draw.line([(MARGIN, H - 64 * S), (W - MARGIN, H - 64 * S)], fill=(255, 255, 255, 25), width=1 * S)
 
+    # Downscale физического (SS_SCALE×) холста до целевого CARD_SIZE через
+    # LANCZOS — см. докстринг SS_SCALE в начале модуля.
+    img = img.resize(CARD_SIZE, Image.LANCZOS)
     buffer = BytesIO()
     img.save(buffer, format="PNG", optimize=True)
     buffer.seek(0)
@@ -945,21 +1019,24 @@ def build_streak_share_card(*, username: str, streak_type: str, streak_count: in
     if default_storage.exists(relative_path):
         return relative_path
 
-    W, H = CARD_SIZE
-    MARGIN = 64
+    # Тот же supersampling-паттерн, что в остальных функциях модуля (см.
+    # докстринг SS_SCALE): "сырые" пиксельные литералы ниже домножены на S.
+    S = SS_SCALE
+    W, H = _CARD_RENDER_SIZE
+    MARGIN = 64 * S
 
     if custom_bg is not None:
         img = custom_bg[0]
     else:
-        img = Image.new("RGB", CARD_SIZE, (10, 10, 10))
+        img = Image.new("RGB", _CARD_RENDER_SIZE, (10, 10, 10))
 
     # Та же легибильность-связка, что в build_badge_share_card: затемняем
     # края независимо от содержимого фона, затем горизонтальный scrim
     # (непрозрачно слева, где текст — прозрачно справа, где иллюстрация).
     # На плоском фолбэк-фоне оба шага — не более чем no-op (фон и так
     # однотонный), поэтому применяем их безусловно, не разветвляя код.
-    img = _edge_vignette(img, inset=36, strength=0.45)
-    scrim = _legibility_scrim(CARD_SIZE, start_alpha=235, end_fraction=0.50)
+    img = _edge_vignette(img, inset=36 * S, strength=0.45)
+    scrim = _legibility_scrim(_CARD_RENDER_SIZE, start_alpha=235, end_fraction=0.50)
     img = Image.alpha_composite(img.convert("RGBA"), scrim).convert("RGB")
 
     draw = ImageDraw.Draw(img, "RGBA")
@@ -968,17 +1045,17 @@ def build_streak_share_card(*, username: str, streak_type: str, streak_count: in
     # тот же элемент, что в нижней панели build_badge_share_card, здесь наверху,
     # поскольку у этой карточки нет отдельной нижней панели.
     font_brand = _badge_font("cond_bold", 26)
-    logo_size = 40
+    logo_size = 40 * S
     logo = _load_brand_mark(logo_size)
     if logo is not None:
         img_rgba = img.convert("RGBA")
-        img_rgba.alpha_composite(logo, (MARGIN, 52))
+        img_rgba.alpha_composite(logo, (MARGIN, 52 * S))
         img = img_rgba.convert("RGB")
         draw = ImageDraw.Draw(img, "RGBA")
-        brand_x = MARGIN + logo_size + 16
+        brand_x = MARGIN + logo_size + 16 * S
     else:
         brand_x = MARGIN
-    _tracked_text(draw, (brand_x, 62), "DOPX", font_brand, (240, 238, 244, 255), tracking=6)
+    _tracked_text(draw, (brand_x, 62 * S), "DOPX", font_brand, (240, 238, 244, 255), tracking=6 * S)
 
     # @username — верх справа, обрезается многоточием (_fit_single_line),
     # если ник слишком длинный, на собственной полупрозрачной "таблетке"
@@ -988,19 +1065,19 @@ def build_streak_share_card(*, username: str, streak_type: str, streak_count: in
     font_user = _badge_font("regular", 22)
     user_text = _fit_single_line(draw, f"@{username}", font_user, W * 0.40)
     uw = draw.textlength(user_text, font=font_user)
-    pad_x, pad_y = 16, 9
-    px1, py0 = W - MARGIN, 48
+    pad_x, pad_y = 16 * S, 9 * S
+    px1, py0 = W - MARGIN, 48 * S
     px0 = px1 - uw - pad_x * 2
-    py1 = py0 + 22 + pad_y * 2
+    py1 = py0 + 22 * S + pad_y * 2
     draw.rounded_rectangle([px0, py0, px1, py1], radius=(py1 - py0) // 2, fill=(6, 5, 10, 140))
-    draw.text((px0 + pad_x, py0 + pad_y - 2), user_text, font=font_user, fill=(225, 223, 232, 255))
+    draw.text((px0 + pad_x, py0 + pad_y - 2 * S), user_text, font=font_user, fill=(225, 223, 232, 255))
 
     # Эйброу-лейбл ("СЕРИЯ ПРОГНОЗОВ"/"СЕРИЯ ОЦЕНОК") с подчёркиванием —
     # тот же паттерн, что "ДОСТИЖЕНИЕ ПОЛУЧЕНО" в build_badge_share_card.
     font_eyebrow = _badge_font("cond_bold", 20)
-    ey_y = 168
-    _shadow_tracked_text(draw, (MARGIN, ey_y), eyebrow, font_eyebrow, accent + (255,), tracking=4)
-    draw.line([(MARGIN + 2, ey_y + 34), (MARGIN + 94, ey_y + 34)], fill=accent + (255,), width=3)
+    ey_y = 168 * S
+    _shadow_tracked_text(draw, (MARGIN, ey_y), eyebrow, font_eyebrow, accent + (255,), tracking=4 * S)
+    draw.line([(MARGIN + 2 * S, ey_y + 34 * S), (MARGIN + 94 * S, ey_y + 34 * S)], fill=accent + (255,), width=3 * S)
 
     # Большое число — размер шрифта уменьшается с числом цифр, а подпись
     # стоит СТРОГО НИЖЕ числа (не сбоку), поэтому рост числа вширь при
@@ -1008,34 +1085,40 @@ def build_streak_share_card(*, username: str, streak_type: str, streak_count: in
     # (плоский фон, число+подпись в один ряд) это было не важно, с
     # premium-фоном справа съехавшая от числа подпись перекрывала бы
     # график/стадион-голограмму.
+    # digits/number_size — размер шрифта числа СЕРИИ в цифрах ниже (не
+    # шкала pixel-геометрии): _badge_font сам домножает на SS_SCALE (см. её
+    # докстринг), поэтому значения словаря остаются "логическими" (1x).
     digits = len(str(streak_count))
     number_size = {1: 240, 2: 240, 3: 200}.get(digits, 160)
     font_number = _badge_font("bold", number_size)
     number_text = str(streak_count)
-    num_y = 222
-    _shadow_text(draw, (MARGIN, num_y), number_text, font_number, accent + (255,), shadow_alpha=190, offset=(0, 6))
+    num_y = 222 * S
+    _shadow_text(draw, (MARGIN, num_y), number_text, font_number, accent + (255,), shadow_alpha=190, offset=(0, 6 * S))
     num_bottom = draw.textbbox((MARGIN, num_y), number_text, font=font_number)[3]
 
     font_label = _badge_font("bold", 32)
-    label_y = num_bottom + 22
-    _shadow_text(draw, (MARGIN, label_y), label_line1, font_label, (245, 244, 248, 255), shadow_alpha=150, offset=(0, 2))
-    _shadow_text(draw, (MARGIN, label_y + 42), label_line2, font_label, (245, 244, 248, 255), shadow_alpha=150, offset=(0, 2))
+    label_y = num_bottom + 22 * S
+    _shadow_text(draw, (MARGIN, label_y), label_line1, font_label, (245, 244, 248, 255), shadow_alpha=150, offset=(0, 2 * S))
+    _shadow_text(draw, (MARGIN, label_y + 42 * S), label_line2, font_label, (245, 244, 248, 255), shadow_alpha=150, offset=(0, 2 * S))
 
     # Футер — тот же "ГОЛОС ТРИБУН ИЗМЕРЯЕМ" / "DOPX.KZ" разнос по краям с
     # разделительной линией, что в build_badge_share_card, адаптированный
     # под ширину этой (не портретной) карточки.
     font_footer = _badge_font("cond", 17)
-    _tracked_text(draw, (MARGIN, H - 52), "ГОЛОС ТРИБУН ИЗМЕРЯЕМ", font_footer, (170, 168, 178, 255), tracking=3)
-    kz_w = _tracked_text_width(draw, "DOPX.KZ", font_footer, tracking=3)
-    _tracked_text(draw, (W - MARGIN - kz_w, H - 52), "DOPX.KZ", font_footer, accent + (255,), tracking=3)
-    draw.line([(MARGIN, H - 64), (W - MARGIN, H - 64)], fill=(255, 255, 255, 25), width=1)
+    _tracked_text(draw, (MARGIN, H - 52 * S), "ГОЛОС ТРИБУН ИЗМЕРЯЕМ", font_footer, (170, 168, 178, 255), tracking=3 * S)
+    kz_w = _tracked_text_width(draw, "DOPX.KZ", font_footer, tracking=3 * S)
+    _tracked_text(draw, (W - MARGIN - kz_w, H - 52 * S), "DOPX.KZ", font_footer, accent + (255,), tracking=3 * S)
+    draw.line([(MARGIN, H - 64 * S), (W - MARGIN, H - 64 * S)], fill=(255, 255, 255, 25), width=1 * S)
 
     # Тонкая рамка по всему периметру — финальный штрих полировки, тот же
     # приём, что фаска build_badge_share_card, без скругления (эта карточка
     # служит og:image, как остальные CARD_SIZE-карточки модуля, а не
     # шерится напрямую как самостоятельное изображение).
-    draw.rectangle([1, 1, W - 2, H - 2], outline=(255, 255, 255, 30), width=1)
+    draw.rectangle([1 * S, 1 * S, W - 2 * S, H - 2 * S], outline=(255, 255, 255, 30), width=1 * S)
 
+    # Downscale физического (SS_SCALE×) холста до целевого CARD_SIZE через
+    # LANCZOS — см. докстринг SS_SCALE в начале модуля.
+    img = img.resize(CARD_SIZE, Image.LANCZOS)
     buffer = BytesIO()
     img.save(buffer, format="PNG", optimize=True)
     buffer.seek(0)
@@ -1065,7 +1148,10 @@ def build_round_squad_share_card(
     if default_storage.exists(relative_path):
         return relative_path
 
-    img = Image.new("RGB", CARD_SIZE, color="#0a0a0a")
+    # Тот же supersampling-паттерн, что build_match_share_card выше (см.
+    # докстринг SS_SCALE в начале модуля).
+    S = SS_SCALE
+    img = Image.new("RGB", _CARD_RENDER_SIZE, color="#0a0a0a")
     draw = ImageDraw.Draw(img)
     font_title = _font("bold", 34)
     font_tour = _font("bold", 50)
@@ -1074,19 +1160,20 @@ def build_round_squad_share_card(
     font_score = _font("bold", 40)
     font_small = _font("regular", 22)
 
-    draw.text((60, 50), f"Сезон {season_year}", font=font_title, fill="#a3a3a3")
-    draw.text((60, 105), f"DOPX Лучшие {tour}-го тура", font=font_tour, fill="#ffffff")
+    draw.text((60 * S, 50 * S), f"Сезон {season_year}", font=font_title, fill="#a3a3a3")
+    draw.text((60 * S, 105 * S), f"DOPX Лучшие {tour}-го тура", font=font_tour, fill="#ffffff")
 
-    draw.text((60, 240), "Игрок тура", font=font_label, fill="#60a5fa")
-    draw.text((60, 275), player_of_round_name, font=font_name, fill="#ffffff")
-    draw.text((60, 340), score_label, font=font_score, fill="#60a5fa")
+    draw.text((60 * S, 240 * S), "Игрок тура", font=font_label, fill="#60a5fa")
+    draw.text((60 * S, 275 * S), player_of_round_name, font=font_name, fill="#ffffff")
+    draw.text((60 * S, 340 * S), score_label, font=font_score, fill="#60a5fa")
 
     if dramatic_match_label:
-        draw.text((60, 440), "Самый драматичный матч тура", font=font_label, fill="#a78bfa")
-        draw.text((60, 475), dramatic_match_label, font=font_name, fill="#ffffff")
+        draw.text((60 * S, 440 * S), "Самый драматичный матч тура", font=font_label, fill="#a78bfa")
+        draw.text((60 * S, 475 * S), dramatic_match_label, font=font_name, fill="#ffffff")
 
-    draw.text((60, CARD_SIZE[1] - 50), "Голос трибун измеряем — dopx.kz", font=font_small, fill="#737373")
+    draw.text((60 * S, _CARD_RENDER_SIZE[1] - 50 * S), "Голос трибун измеряем — dopx.kz", font=font_small, fill="#737373")
 
+    img = img.resize(CARD_SIZE, Image.LANCZOS)
     buffer = BytesIO()
     img.save(buffer, format="PNG", optimize=True)
     buffer.seek(0)
@@ -1113,16 +1200,19 @@ def build_player_season_recap_card(
     if default_storage.exists(relative_path):
         return relative_path
 
-    img = Image.new("RGB", CARD_SIZE, color="#0a0a0a")
+    # Тот же supersampling-паттерн, что build_match_share_card выше (см.
+    # докстринг SS_SCALE в начале модуля).
+    S = SS_SCALE
+    img = Image.new("RGB", _CARD_RENDER_SIZE, color="#0a0a0a")
     draw = ImageDraw.Draw(img)
     font_title = _font("bold", 46)
     font_name = _font("bold", 58)
     font_label = _font("regular", 24)
     font_stat = _font("bold", 64)
 
-    draw.text((60, 50), f"Сезон {season_label} на DOPX", font=font_title, fill="#a78bfa")
-    draw.text((60, 120), player_name, font=font_name, fill="#ffffff")
-    draw.text((60, 195), team_name, font=font_label, fill="#a3a3a3")
+    draw.text((60 * S, 50 * S), f"Сезон {season_label} на DOPX", font=font_title, fill="#a78bfa")
+    draw.text((60 * S, 120 * S), player_name, font=font_name, fill="#ffffff")
+    draw.text((60 * S, 195 * S), team_name, font=font_label, fill="#a3a3a3")
 
     # Три колонки статистики — тот же макет, что "карточки цифр" на
     # anti_fraud.html/HTML-версии этой страницы, только растрированный.
@@ -1131,14 +1221,15 @@ def build_player_season_recap_card(
         ("Средний рейтинг", performance_label),
         ("Голов", str(goals)),
     ]
-    col_width = (CARD_SIZE[0] - 120) // 3
+    col_width = (_CARD_RENDER_SIZE[0] - 120 * S) // 3
     for i, (label, value) in enumerate(columns):
-        x = 60 + i * col_width
-        draw.text((x, 320), value, font=font_stat, fill="#60a5fa")
-        draw.text((x, 400), label, font=font_label, fill="#a3a3a3")
+        x = 60 * S + i * col_width
+        draw.text((x, 320 * S), value, font=font_stat, fill="#60a5fa")
+        draw.text((x, 400 * S), label, font=font_label, fill="#a3a3a3")
 
-    draw.text((60, CARD_SIZE[1] - 50), "Голос трибун измеряем — dopx.kz", font=font_label, fill="#737373")
+    draw.text((60 * S, _CARD_RENDER_SIZE[1] - 50 * S), "Голос трибун измеряем — dopx.kz", font=font_label, fill="#737373")
 
+    img = img.resize(CARD_SIZE, Image.LANCZOS)
     buffer = BytesIO()
     img.save(buffer, format="PNG", optimize=True)
     buffer.seek(0)
@@ -1207,56 +1298,64 @@ def build_badge_share_card(
     if default_storage.exists(relative_path):
         return relative_path
 
-    W, H = BADGE_CARD_SIZE
+    # Тот же supersampling-паттерн, что в остальных функциях модуля (см.
+    # докстринг SS_SCALE): "сырые" пиксельные литералы ниже домножены на S;
+    # `meta["gem_h"]`/`meta["gem_w"]` — абсолютные размеры в BADGE_RARITY_META
+    # (логические, 1x) — домножаются на S в вызове `_draw_gem` ниже, а не в
+    # самом словаре, чтобы не задваивать источник истины.
+    S = SS_SCALE
+    W, H = _BADGE_RENDER_SIZE
     top, bot = meta["top"], meta["bot"]
 
     if custom_bg is not None:
         img = custom_bg[0]
     else:
-        img = Image.new("RGB", BADGE_CARD_SIZE, meta["base_bg"])
+        img = Image.new("RGB", _BADGE_RENDER_SIZE, meta["base_bg"])
 
         # Два угловых свечения (верх-право тёплый/верхний цвет градиента,
         # низ-лево — нижний) — общая атмосфера карточки, независимая от
         # самого кристалла (тот рисуется поверх со своим свечением).
-        glow_layer = Image.new("RGBA", BADGE_CARD_SIZE, (0, 0, 0, 0))
+        glow_layer = Image.new("RGBA", _BADGE_RENDER_SIZE, (0, 0, 0, 0))
         gd = ImageDraw.Draw(glow_layer)
-        gd.ellipse([W * 0.62 - 260, 60 - 260, W * 0.62 + 260, 60 + 260], fill=top + (45,))
-        gd.ellipse([120 - 260, H - 140 - 260, 120 + 260, H - 140 + 260], fill=bot + (40,))
-        glow_layer = glow_layer.filter(ImageFilter.GaussianBlur(140))
+        gd.ellipse([W * 0.62 - 260 * S, 60 * S - 260 * S, W * 0.62 + 260 * S, 60 * S + 260 * S], fill=top + (45,))
+        gd.ellipse([120 * S - 260 * S, H - 140 * S - 260 * S, 120 * S + 260 * S, H - 140 * S + 260 * S], fill=bot + (40,))
+        glow_layer = glow_layer.filter(ImageFilter.GaussianBlur(140 * S))
         img = Image.alpha_composite(img.convert("RGBA"), glow_layer).convert("RGB")
 
         if meta["beam"]:
-            beam_layer = Image.new("RGBA", BADGE_CARD_SIZE, (0, 0, 0, 0))
+            beam_layer = Image.new("RGBA", _BADGE_RENDER_SIZE, (0, 0, 0, 0))
             bx = W * 0.72
             ImageDraw.Draw(beam_layer).polygon(
-                [(bx - 70, -250), (bx + 90, -250), (bx + 560, H + 250), (bx + 400, H + 250)], fill=(255, 255, 255, 10),
+                [(bx - 70 * S, -250 * S), (bx + 90 * S, -250 * S), (bx + 560 * S, H + 250 * S), (bx + 400 * S, H + 250 * S)], fill=(255, 255, 255, 10),
             )
-            beam_layer = beam_layer.filter(ImageFilter.GaussianBlur(80))
+            beam_layer = beam_layer.filter(ImageFilter.GaussianBlur(80 * S))
             img = Image.alpha_composite(img.convert("RGBA"), beam_layer).convert("RGB")
 
         if meta["grain"]:
             # Лёгкое зерно (film grain) — премиальная фактура у более высоких
             # rarity; для bronze/silver сознательно выключено (см. докстринг
-            # BADGE_RARITY_META про монотонно нарастающую сложность).
-            noise = Image.effect_noise(BADGE_CARD_SIZE, 16).convert("L")
+            # BADGE_RARITY_META про монотонно нарастающую сложность). Sigma
+            # (16) — амплитуда шума на пиксель, не пространственная величина,
+            # супersampling её не касается.
+            noise = Image.effect_noise(_BADGE_RENDER_SIZE, 16).convert("L")
             noise_rgb = Image.merge("RGB", (noise, noise, noise))
             img = Image.blend(img, noise_rgb, alpha=0.025)
 
         # Тонкая цветная полоса-"корешок" по левому краю — единственный
         # элемент оформления, присутствующий у ВСЕХ rarity без исключения
         # (даже bronze), чтобы карточка не выглядела голой на простом уровне.
-        img.paste(Image.new("RGB", (8, H), top), (0, 0))
+        img.paste(Image.new("RGB", (8 * S, H), top), (0, 0))
 
-        gem_cy = 430
+        gem_cy = 430 * S
         img = _draw_gem(
-            img, cx=int(W * 0.70), cy_center=gem_cy, height=meta["gem_h"], width=meta["gem_w"],
+            img, cx=int(W * 0.70), cy_center=gem_cy, height=meta["gem_h"] * S, width=meta["gem_w"] * S,
             color_top=top, color_bot=bot, n_sides=meta["n_sides"],
             seed=sum(badge_code.encode()) % 97, glow_alpha=meta["glow_alpha"], glow_scale=meta["glow_scale"],
         )
 
         if meta["sparkles"]:
             draw_s = ImageDraw.Draw(img, "RGBA")
-            positions = [(200, 220, 7), (880, 650, 5), (300, 760, 4), (140, 560, 6)]
+            positions = [(200 * S, 220 * S, 7 * S), (880 * S, 650 * S, 5 * S), (300 * S, 760 * S, 4 * S), (140 * S, 560 * S, 6 * S)]
             for i in range(meta["sparkles"]):
                 sx, sy, sr = positions[i % len(positions)]
                 _draw_sparkle(draw_s, sx, sy, sr, top, alpha=180)
@@ -1265,14 +1364,14 @@ def build_badge_share_card(
     # AI-фону и к процедурному фолбэку, до любого текста. strength=0.85 (не
     # 0.65 — недостаточно на скруглённом вырезе). См.
     # docs/adr/0011-badge-share-card-legibility.md.
-    img = _edge_vignette(img, inset=90, strength=0.85)
-    scrim = _legibility_scrim(BADGE_CARD_SIZE, start_alpha=225, end_fraction=0.60)
+    img = _edge_vignette(img, inset=90 * S, strength=0.85)
+    scrim = _legibility_scrim(_BADGE_RENDER_SIZE, start_alpha=225, end_fraction=0.60)
     img = Image.alpha_composite(img.convert("RGBA"), scrim).convert("RGB")
 
     draw = ImageDraw.Draw(img, "RGBA")
 
     font_brand = _badge_font("cond_bold", 30)
-    _shadow_tracked_text(draw, (56, 52), "DOPX", font_brand, (240, 232, 215, 255), tracking=9)
+    _shadow_tracked_text(draw, (56 * S, 52 * S), "DOPX", font_brand, (240, 232, 215, 255), tracking=9 * S)
 
     # Rarity-пилюля справа сверху. Без символа-звёздочки/иконки — у DejaVu
     # (см. докстринг `_badge_font`) нет декоративных глифов "★"/"✦"/Tabler
@@ -1280,41 +1379,41 @@ def build_badge_share_card(
     # Маленький закрашенный ромб рисуем сами (полигон), а не unicode-символом.
     font_pill = _badge_font("cond_bold", 21)
     pill_label = BADGE_RARITY_LABELS.get(rarity, rarity.upper())
-    pill_w = _tracked_text_width(draw, pill_label, font_pill, tracking=3) + 56
-    pill_h = 44
-    px0, py0 = W - 56 - pill_w, 46
-    draw.rounded_rectangle([px0, py0, px0 + pill_w, py0 + pill_h], radius=pill_h // 2, outline=top + (220,), width=2, fill=(10, 9, 14, 205))
-    dcx, dcy = px0 + 24, py0 + pill_h / 2
-    draw.polygon([(dcx, dcy - 7), (dcx + 6, dcy), (dcx, dcy + 7), (dcx - 6, dcy)], fill=top + (255,))
-    _tracked_text(draw, (px0 + 40, py0 + 12), pill_label, font_pill, (235, 230, 240), tracking=3)
+    pill_w = _tracked_text_width(draw, pill_label, font_pill, tracking=3 * S) + 56 * S
+    pill_h = 44 * S
+    px0, py0 = W - 56 * S - pill_w, 46 * S
+    draw.rounded_rectangle([px0, py0, px0 + pill_w, py0 + pill_h], radius=pill_h // 2, outline=top + (220,), width=2 * S, fill=(10, 9, 14, 205))
+    dcx, dcy = px0 + 24 * S, py0 + pill_h / 2
+    draw.polygon([(dcx, dcy - 7 * S), (dcx + 6 * S, dcy), (dcx, dcy + 7 * S), (dcx - 6 * S, dcy)], fill=top + (255,))
+    _tracked_text(draw, (px0 + 40 * S, py0 + 12 * S), pill_label, font_pill, (235, 230, 240), tracking=3 * S)
 
     font_eyebrow = _badge_font("cond_bold", 20)
-    ey_y = 420
-    _shadow_tracked_text(draw, (56, ey_y), "ДОСТИЖЕНИЕ ПОЛУЧЕНО", font_eyebrow, top + (255,), tracking=4)
-    draw.line([(58, ey_y + 38), (150, ey_y + 38)], fill=top + (255,), width=3)
+    ey_y = 420 * S
+    _shadow_tracked_text(draw, (56 * S, ey_y), "ДОСТИЖЕНИЕ ПОЛУЧЕНО", font_eyebrow, top + (255,), tracking=4 * S)
+    draw.line([(58 * S, ey_y + 38 * S), (150 * S, ey_y + 38 * S)], fill=top + (255,), width=3 * S)
 
     font_title = _badge_font("bold", 54)
     title_max_w = int(W * 0.56)
     title_lines = _wrap_text(draw, badge_name, font_title, title_max_w, max_lines=2)
-    ty = ey_y + 62
+    ty = ey_y + 62 * S
     for line in title_lines:
-        _shadow_text(draw, (56, ty), line, font_title, (250, 248, 252, 255), shadow_alpha=190, offset=(0, 4))
-        ty += 64
+        _shadow_text(draw, (56 * S, ty), line, font_title, (250, 248, 252, 255), shadow_alpha=190, offset=(0, 4 * S))
+        ty += 64 * S
 
     font_desc = _badge_font("regular", 25)
     desc_lines = _wrap_text(draw, badge_description, font_desc, title_max_w, max_lines=2)
-    ty += 12
+    ty += 12 * S
     for line in desc_lines:
-        _shadow_text(draw, (56, ty), line, font_desc, (198, 196, 206, 255), shadow_alpha=160, offset=(0, 2))
-        ty += 33
+        _shadow_text(draw, (56 * S, ty), line, font_desc, (198, 196, 206, 255), shadow_alpha=160, offset=(0, 2 * S))
+        ty += 33 * S
 
     # Нижняя панель: слева бренд-марка DOPX + @username + дата получения;
     # справа — короткая флейвор-цитата по редкости (BADGE_RARITY_QUOTES),
     # визуально отделённая тонкой вертикальной чертой.
-    panel_y0, panel_y1 = H - 250, H - 120
-    draw.rounded_rectangle([56, panel_y0, W - 56, panel_y1], radius=22, fill=(10, 9, 14, 205), outline=(255, 255, 255, 25), width=1)
-    mid_x = (56 + W - 56) // 2
-    draw.line([(mid_x, panel_y0 + 22), (mid_x, panel_y1 - 22)], fill=(255, 255, 255, 35), width=1)
+    panel_y0, panel_y1 = H - 250 * S, H - 120 * S
+    draw.rounded_rectangle([56 * S, panel_y0, W - 56 * S, panel_y1], radius=22 * S, fill=(10, 9, 14, 205), outline=(255, 255, 255, 25), width=1 * S)
+    mid_x = (56 * S + W - 56 * S) // 2
+    draw.line([(mid_x, panel_y0 + 22 * S), (mid_x, panel_y1 - 22 * S)], fill=(255, 255, 255, 35), width=1 * S)
 
     # Настоящий логотип DOPX вместо процедурного лаврового венка (второй
     # раунд правок 2026-09-01 — см. докстринг `_load_brand_mark`: венок
@@ -1323,59 +1422,63 @@ def build_badge_share_card(
     # используется здесь: бренд-марка — это печать подлинности DOPX, а не
     # элемент нарастающей сложности редкости, поэтому она теперь одинаково
     # показывается на ВСЕХ карточках, включая bronze.
-    mark_size = 52
+    mark_size = 52 * S
     mark = _load_brand_mark(mark_size)
-    mark_x, mark_y = 56 + 24, (panel_y0 + panel_y1) // 2 - mark_size // 2
+    mark_x, mark_y = 56 * S + 24 * S, (panel_y0 + panel_y1) // 2 - mark_size // 2
     if mark is not None:
         img_rgba = img.convert("RGBA")
         img_rgba.alpha_composite(mark, (int(mark_x), int(mark_y)))
         img = img_rgba.convert("RGB")
         draw = ImageDraw.Draw(img, "RGBA")
-        ux = mark_x + mark_size + 20
+        ux = mark_x + mark_size + 20 * S
     elif meta["wreath"]:
         # Отказоустойчивый фолбэк, если бренд-ассет вдруг отсутствует на
         # диске (см. докстринг `_load_brand_mark`) — старый венок лучше,
         # чем пустое место.
-        img = _draw_laurel(img, 56 + 58, (panel_y0 + panel_y1) // 2 - 6, 42, top)
+        img = _draw_laurel(img, 56 * S + 58 * S, (panel_y0 + panel_y1) // 2 - 6 * S, 42 * S, top)
         draw = ImageDraw.Draw(img, "RGBA")
-        ux = 56 + 140
+        ux = 56 * S + 140 * S
     else:
-        ux = 56 + 24
+        ux = 56 * S + 24 * S
 
     font_user = _badge_font("bold", 24)
     font_date = _badge_font("regular", 18)
-    draw.text((ux, (panel_y0 + panel_y1) // 2 - 25), f"@{username}", font=font_user, fill=(240, 238, 244))
-    draw.text((ux, (panel_y0 + panel_y1) // 2 + 5), f"получено {date_label}" if date_label else "", font=font_date, fill=(160, 158, 168))
+    draw.text((ux, (panel_y0 + panel_y1) // 2 - 25 * S), f"@{username}", font=font_user, fill=(240, 238, 244))
+    draw.text((ux, (panel_y0 + panel_y1) // 2 + 5 * S), f"получено {date_label}" if date_label else "", font=font_date, fill=(160, 158, 168))
 
     font_quote_mark = _badge_font("bold", 38)
-    qx = mid_x + 30
-    draw.text((qx, panel_y0 + 18), "“", font=font_quote_mark, fill=top + (200,))
+    qx = mid_x + 30 * S
+    draw.text((qx, panel_y0 + 18 * S), "“", font=font_quote_mark, fill=top + (200,))
     font_quote = _badge_font("italic", 20)
-    quote_lines = _wrap_text(draw, BADGE_RARITY_QUOTES.get(rarity, ""), font_quote, (W - 56 - 24) - qx - 32, max_lines=3)
-    qy = panel_y0 + 50
+    quote_lines = _wrap_text(draw, BADGE_RARITY_QUOTES.get(rarity, ""), font_quote, (W - 56 * S - 24 * S) - qx - 32 * S, max_lines=3)
+    qy = panel_y0 + 50 * S
     for line in quote_lines:
-        draw.text((qx + 30, qy), line, font=font_quote, fill=(210, 208, 220))
-        qy += 27
+        draw.text((qx + 30 * S, qy), line, font=font_quote, fill=(210, 208, 220))
+        qy += 27 * S
 
     font_footer = _badge_font("cond", 18)
-    _tracked_text(draw, (56, H - 56), "ГОЛОС ТРИБУН ИЗМЕРЯЕМ", font_footer, (120, 118, 128), tracking=3)
-    kz_w = _tracked_text_width(draw, "DOPX.KZ", font_footer, tracking=3)
-    _tracked_text(draw, (W - 56 - kz_w, H - 56), "DOPX.KZ", font_footer, top, tracking=3)
-    draw.line([(320, H - 46), (W - 56 - kz_w - 24, H - 46)], fill=(255, 255, 255, 25), width=1)
+    _tracked_text(draw, (56 * S, H - 56 * S), "ГОЛОС ТРИБУН ИЗМЕРЯЕМ", font_footer, (120, 118, 128), tracking=3 * S)
+    kz_w = _tracked_text_width(draw, "DOPX.KZ", font_footer, tracking=3 * S)
+    _tracked_text(draw, (W - 56 * S - kz_w, H - 56 * S), "DOPX.KZ", font_footer, top, tracking=3 * S)
+    draw.line([(320 * S, H - 46 * S), (W - 56 * S - kz_w - 24 * S, H - 46 * S)], fill=(255, 255, 255, 25), width=1 * S)
 
     # Тонкая полупрозрачная белая рамка-фаска чуть внутри края — финальный
     # штрих премиальной полировки, добавлен вместе со вторым раундом правок.
-    draw.rounded_rectangle([2, 2, W - 3, H - 3], radius=34, outline=(255, 255, 255, 25), width=1)
+    draw.rounded_rectangle([2 * S, 2 * S, W - 3 * S, H - 3 * S], radius=34 * S, outline=(255, 255, 255, 25), width=1 * S)
 
     # Скруглённые прозрачные углы у ВСЕЙ карточки — последний шаг: карточка
     # не служит og:image (в отличие от остальных 4 функций файла), а
     # открывается напрямую/шарится через Web Share API (см.
     # templates/users/badge_catalog.html), поэтому прозрачность по углам не
     # ломает превью ссылок и придаёт вид "плавающей" премиальной карточки.
-    mask = _rounded_alpha_mask(BADGE_CARD_SIZE, 36)
-    out = Image.new("RGBA", BADGE_CARD_SIZE, (0, 0, 0, 0))
+    mask = _rounded_alpha_mask(_BADGE_RENDER_SIZE, 36 * S)
+    out = Image.new("RGBA", _BADGE_RENDER_SIZE, (0, 0, 0, 0))
     out.paste(img, (0, 0), mask)
 
+    # Downscale физического (SS_SCALE×) холста до целевого BADGE_CARD_SIZE
+    # через LANCZOS — см. докстринг SS_SCALE в начале модуля. RGBA (углы с
+    # прозрачностью) — LANCZOS у Pillow корректно ресемплит и альфа-канал.
+    out = out.resize(BADGE_CARD_SIZE, Image.LANCZOS)
     buffer = BytesIO()
     out.save(buffer, format="PNG", optimize=True)
     buffer.seek(0)

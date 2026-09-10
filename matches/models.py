@@ -1,4 +1,5 @@
 # matches/models.py
+from django.conf import settings
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 from core.models import BaseModel
@@ -70,6 +71,29 @@ class Match(BaseModel):
     home_score = models.IntegerField(_('Счёт дома'), null=True, blank=True, default=0)
     away_score = models.IntegerField(_('Счёт гостей'), null=True, blank=True, default=0)
     has_lineup = models.BooleanField(_('Есть состав'), default=False)
+    # НАЙДЕНО (2026-09-10, расследование алерта sync_monitoring "12 матчей
+    # без составов за 24ч", parsers/tasks.py::check_sync_errors_and_alert):
+    # матч со state.developer_name AWARDED/WO/ABANDONED (техническое
+    # поражение/неявка/матч прерван и засчитан техническим результатом,
+    # см. STATE_MAP в parsers/sportmonks/importers.py) у Sportmonks
+    # ЗАКОННО не имеет данных lineups — состав никогда не выходил на поле,
+    # присылать его неоткуда. До этого поля такие матчи были неотличимы от
+    # матчей status='finished' обычным путём (мы мапили developer_name
+    # только в укрупнённый status, исходный dev_name нигде не сохранялся)
+    # — значит has_lineup=False на них "утекало" в алерт check_sync_errors_
+    # and_alert как будто это баг синхронизации, хотя это ожидаемая
+    # характеристика конкретного типа результата, а не сбой. Проставляется
+    # в import_match_core; используется только для фильтрации таких
+    # алертов (см. parsers/tasks.py) — на остальную логику сайта не влияет.
+    decided_administratively = models.BooleanField(
+        _('Решён технически (неявка/тех. поражение)'),
+        default=False,
+        help_text=_(
+            'Матч завершён административным решением (неявка, техническое '
+            'поражение, прерван и засчитан) — у источника данных никогда не '
+            'будет состава и событий для такого матча, это не ошибка синка.'
+        ),
+    )
     voting_open_until = models.DateTimeField(_('Голосование до'))
     external_id = models.CharField(
         _('Внешний ID'),
@@ -268,6 +292,70 @@ class Match(BaseModel):
         if self.home_score < self.away_score:
             return '2'
         return 'X'
+
+
+class MatchReaction(BaseModel):
+    """
+    Реакция сообщества на ЗАВЕРШЁННЫЙ матч целиком — "Матч тура" /
+    "Неожиданный результат" / "Скучный матч" (редизайн карточки матча,
+    прямая просьба пользователя 2026-09-09, пункт 11 брифа). Один
+    пользователь — один (актуальный) выбор на матч, тот же принцип, что и
+    `predictions.MatchPrediction` (НЕ toggle-off, как `events.EventReaction`
+    — "передумал" здесь означает смену выбора через update_or_create, а не
+    отмену; "у меня нет мнения" не более осмысленно, чем "я не прогнозировал",
+    той же кнопки/состояния для этого не предусмотрено).
+
+    ПОЧЕМУ ОТДЕЛЬНАЯ МОДЕЛЬ, А НЕ `events.EventReaction`/`predictions.
+    MatchPrediction`: `EventReaction` привязана к конкретному MatchEvent
+    (пульс "на бегу" по ходу трансляции), а не к матчу целиком, и до трёх
+    вариантов выбора там нет (только like/dislike). `MatchPrediction`
+    закрывается ДО старта матча (`is_prediction_open`) — семантика
+    противоположная: это реакция ПОСЛЕ финального свистка, когда исход уже
+    известен. Общей модели, которая покрывала бы оба момента жизни матча
+    осмысленно, в проекте нет — заводить её ради экономии одной модели
+    было бы менее понятно, чем две маленьких с ясной границей ответственности.
+
+    НЕ отдельное Django-приложение (как `predictions`/`events`) — модель
+    живёт прямо в `matches`, т.к. она принадлежит ИМЕННО матчу как сущности
+    (в отличие от `predictions`, у которой есть собственный небольшой
+    сервисный/вью-слой и HTMX-эндпоинты вне контекста одной карточки). См.
+    также урок этой же сессии (dopx/celery.py, autodiscover_tasks) — лишние
+    подпакеты добавляют риск конфигурационных ошибок без реальной пользы,
+    когда модель и так тесно связана с одним существующим приложением.
+    """
+    REACTION_MATCH_OF_ROUND = 'match_of_round'
+    REACTION_UPSET = 'upset'
+    REACTION_BORING = 'boring'
+    REACTION_CHOICES = [
+        (REACTION_MATCH_OF_ROUND, _('Матч тура')),
+        (REACTION_UPSET, _('Неожиданный результат')),
+        (REACTION_BORING, _('Скучный матч')),
+    ]
+
+    match = models.ForeignKey(
+        Match, on_delete=models.CASCADE, related_name='reactions', verbose_name=_('Матч'),
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='match_reactions', verbose_name=_('Пользователь'),
+    )
+    reaction = models.CharField(_('Реакция'), max_length=20, choices=REACTION_CHOICES)
+
+    class Meta:
+        verbose_name = _('Реакция на матч')
+        verbose_name_plural = _('Реакции на матчи')
+        constraints = [
+            models.UniqueConstraint(fields=['match', 'user'], name='unique_match_reaction'),
+        ]
+        indexes = [
+            # Явное имя — миграции в проекте пишутся вручную (нет доступа к
+            # makemigrations на реальной БД), тот же принцип, что и у
+            # остальных явных индексов проекта (см. match_prediction_choice_idx,
+            # event_reaction_type_idx).
+            models.Index(fields=['match', 'reaction'], name='match_reaction_type_idx'),
+        ]
+
+    def __str__(self):
+        return f"{self.user} → {self.match}: {self.get_reaction_display()}"
 
 
 class MatchTeamStatistics(BaseModel):

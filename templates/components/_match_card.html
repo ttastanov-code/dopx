@@ -14,6 +14,17 @@
 стрелка), спокойная белая поверхность, статус выражен точечно (пилюля
 даты/времени, live-точка, цвет счёта), не заливкой всей карточки.
 
+ВТОРОЙ РЕДИЗАЙН 2026-09-10 (прямая просьба пользователя, полный бриф из
+14 пунктов — "интрига, прогноз сообщества, игрок матча DOPX, Match DNA,
+индекс сенсации и т.д., делай всё сразу, без косяков") — карточка "живёт"
+за счёт мнения болельщиков и контекста, а не только сухих фактов. ВСЕ
+новые поля ниже вычисляются ОДНИМ bulk-вызовом на страницу — см.
+matches/card_services.py::attach_card_extras (matches/views.py::
+MatchListView и core/views.py::HomeView вызывают его перед рендером
+списка) — компонент НИЧЕГО не запрашивает сам, только читает уже
+навешанные атрибуты `card_*`, ровно как и раньше с list_prediction_counts/
+user_has_evaluated.
+
 Ожидаемые поля объекта `match` (все, кроме home_team/away_team/status/
 start_time, — опциональны, компонент проверяет их через {% if %}):
   home_team, away_team — с .name и опционально .logo_url
@@ -27,8 +38,21 @@ start_time, — опциональны, компонент проверяет и
   is_derby — пара соперников из Team.rivals (админка)
   was_rescheduled — матч перенесён относительно тура
   list_prediction_counts / list_my_prediction — инлайн-прогноз 1X2
-    (проставляются bulk'ом только там, где нужно — matches/views.py::
-    MatchListView, core/views.py::HomeView)
+  card_intrigue — str|None, короткий тег интриги (п.1)
+  card_h2h — dict{count,home_wins,draws,away_wins}|None (п.3)
+  card_home_form_text / card_away_form_text — str|None (п.4)
+  card_engagement — str|None, статус вовлечённости (п.5)
+  card_followed_teams — list[str], имена подписанных команд (п.6)
+  card_key_moment — str|None, только finished (п.8)
+  card_hero — dict{player,score}|None, только finished (п.9)
+  card_dna_traits — list[str], только finished (п.10)
+  card_reaction_counts / card_my_reaction — только finished (п.11)
+  card_sensation — int|None, только finished (п.12)
+  card_table_impact — str|None, только finished (п.13)
+  card_cta — dict{icon,label}, только finished (п.14)
+  Countdown (п.7) считается на клиенте Alpine-компонентом matchCountdown
+  (static/js/alpine-components.js) прямо из match.start_time — без
+  серверного поля, badge всегда содержит дату/время как надёжный fallback.
 {% endcomment %}
 <a href="{% url 'matches:detail' match.id %}"
    class="mrow block group
@@ -36,7 +60,8 @@ start_time, — опциональны, компонент проверяет и
           {% elif match.status == 'finished' %}mrow--finished
           {% elif match.status == 'postponed' %}mrow--postponed
           {% elif match.status == 'cancelled' %}mrow--cancelled
-          {% else %}mrow--scheduled{% endif %}">
+          {% else %}mrow--scheduled{% endif %}"
+   {% if match.status == 'scheduled' %}x-data="matchCountdown" data-kickoff="{{ match.start_time|date:'c' }}"{% endif %}>
 
     <!-- === ВЕРХНЯЯ СТРОКА: лига/тур слева, статус справа === -->
     <div class="mrow__top">
@@ -66,10 +91,30 @@ start_time, — опциональны, компонент проверяет и
             {% elif match.status == 'cancelled' %}
             <i class="ti ti-ban"></i> Отменён
             {% else %}
-            <i class="ti ti-clock"></i> {{ match.start_time|date:"d.m" }} · {{ match.start_time|time:"H:i" }}
+            {% comment %}
+            Пункт 7 брифа — countdown до стартового свистка вместо голой
+            даты. x-text перезаписывает текст ПОСЛЕ гидратации Alpine
+            (см. matchCountdown в alpine-components.js); дата/время внутри
+            <span> — надёжный fallback без JS/до гидратации, тот же
+            принцип прогрессивного улучшения, что и у остальных Alpine-
+            компонентов сайта.
+            {% endcomment %}
+            <i class="ti ti-clock"></i> <span x-text="countdownText">{{ match.start_time|date:"d.m" }} · {{ match.start_time|time:"H:i" }}</span>
             {% endif %}
         </span>
     </div>
+
+    {% if match.card_intrigue or match.card_followed_teams %}
+    {% comment %}Пункты 1 и 6 брифа — тег интриги и "Ваша команда", отдельной тонкой строкой между статусом и составом.{% endcomment %}
+    <div class="mrow__tags-row">
+        {% if match.card_intrigue %}
+        <span class="mrow__intrigue-tag"><i class="ti ti-bolt flex-shrink-0"></i>{{ match.card_intrigue }}</span>
+        {% endif %}
+        {% if match.card_followed_teams %}
+        <span class="mrow__followed-badge"><i class="ti ti-heart flex-shrink-0"></i>Ваша команда</span>
+        {% endif %}
+    </div>
+    {% endif %}
 
     <!-- === ГЛАВНАЯ СТРОКА: герб — имя — VS/счёт — имя — герб — стрелка === -->
     <div class="mrow__main">
@@ -110,13 +155,59 @@ start_time, — опциональны, компонент проверяет и
         <i class="ti ti-chevron-right mrow__arrow" aria-hidden="true"></i>
     </div>
 
+    {% if match.card_home_form_text or match.card_away_form_text or match.card_h2h %}
+    {% comment %}Пункты 3 и 4 брифа — форма команд и очный баланс, только для ещё не сыгранных матчей (см. attach_card_extras).{% endcomment %}
+    <div class="mrow__context">
+        {% if match.card_home_form_text %}<span>{{ match.home_team.name }}: {{ match.card_home_form_text }}</span>{% endif %}
+        {% if match.card_away_form_text %}<span>{{ match.away_team.name }}: {{ match.card_away_form_text }}</span>{% endif %}
+        {% if match.card_h2h %}
+        <span>Последние {{ match.card_h2h.count }}: {{ match.home_team.name }} {{ match.card_h2h.home_wins }} · Ничьи {{ match.card_h2h.draws }} · {{ match.away_team.name }} {{ match.card_h2h.away_wins }}</span>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% if match.status == 'finished' %}
+    {% comment %}Пункты 8, 9, 10, 12, 13 брифа — только для завершённых матчей, каждый блок рендерится независимо (может не быть данных для какого-то одного).{% endcomment %}
+    {% if match.card_key_moment %}
+    <div class="mrow__key-moment"><i class="ti ti-bolt flex-shrink-0"></i>{{ match.card_key_moment }}</div>
+    {% endif %}
+
+    {% if match.card_hero %}
+    <div class="mrow__hero">
+        {% if match.card_hero.player.photo %}
+        <img src="{{ match.card_hero.player.photo.url }}" alt="" class="mrow__hero-photo">
+        {% else %}
+        <div class="mrow__hero-photo-fallback">{{ match.card_hero.player.first_name|first|upper }}</div>
+        {% endif %}
+        <div class="mrow__hero-info">
+            <span class="mrow__hero-label"><i class="ti ti-medal flex-shrink-0"></i>Игрок матча</span>
+            <span class="mrow__hero-name">{{ match.card_hero.player.full_name }} · {{ match.card_hero.score|floatformat:1 }}</span>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if match.card_dna_traits %}
+    <div class="mrow__dna-traits">
+        {% for trait in match.card_dna_traits %}<span class="mrow__dna-chip">{{ trait }}</span>{% endfor %}
+    </div>
+    {% endif %}
+
+    {% if match.card_sensation %}
+    <div class="mrow__sensation"><i class="ti ti-alert-triangle flex-shrink-0"></i>Сенсация {{ match.card_sensation }}/100</div>
+    {% endif %}
+
+    {% if match.card_table_impact %}
+    <div class="mrow__table-impact"><i class="ti ti-arrow-up flex-shrink-0"></i>{{ match.card_table_impact }}</div>
+    {% endif %}
+    {% endif %}
+
     {% comment %}
     Второй уровень информации (не конкурирует с составом/счётом выше) —
     дерби/голоса слева, статус оценки/CTA справа. Рендерится, только
     когда реально есть что показать хотя бы с одной стороны — пустая
     карточка не тянет за собой пустую полосу с border-top.
     {% endcomment %}
-    {% if match.aggregate.total_votes or match.user_has_evaluated or match.status == 'finished' %}
+    {% if match.aggregate.total_votes or match.user_has_evaluated or match.status == 'finished' or match.card_engagement %}
     <div class="mrow__footer">
         <div class="mrow__footer-meta">
             {% if match.aggregate and match.aggregate.total_votes %}
@@ -124,6 +215,10 @@ start_time, — опциональны, компонент проверяет и
                 <i class="ti ti-users flex-shrink-0"></i>
                 {{ match.aggregate.total_votes }}
             </span>
+            {% endif %}
+            {% comment %}Пункт 5 брифа — статус вовлечённости в прогноз ("Прогнозов: 247" / "Вы ещё не сделали прогноз").{% endcomment %}
+            {% if match.card_engagement %}
+            <span class="mrow__engagement">{{ match.card_engagement }}</span>
             {% endif %}
         </div>
         <div class="flex items-center gap-1.5 flex-shrink-0">
@@ -146,9 +241,18 @@ start_time, — опциональны, компонент проверяет и
                 <span class="hidden sm:inline">Оценить</span>
             </button>
             {% elif match.status == 'finished' %}
+            {% comment %}
+            ИСПРАВЛЕНО (2026-09-10, пункт 14 брифа — "убери 'Голосование
+            закрыто', замени на CTA со смыслом"): раньше здесь всегда был
+            один и тот же бейдж-заглушка независимо от того, есть ли на
+            карточке разбор матча. card_cta (matches/services.py::
+            describe_finished_cta) выбирает копию по факту наличия данных
+            — карточка и так целиком ссылка на страницу матча, это не
+            новый переход, а более честная подпись существующего клика.
+            {% endcomment %}
             <span class="badge badge-ghost badge-xs shrink-0">
-                <i class="ti ti-lock flex-shrink-0"></i>
-                <span class="hidden sm:inline">Голосование закрыто</span>
+                <i class="ti {{ match.card_cta.icon|default:'ti-lock' }} flex-shrink-0"></i>
+                <span class="hidden sm:inline">{{ match.card_cta.label|default:"Матч завершён" }}</span>
             </span>
             {% endif %}
         </div>
@@ -164,5 +268,10 @@ start_time, — опциональны, компонент проверяет и
     останавливает всплытие клика по своим кнопкам.
     {% endcomment %}
     {% include 'predictions/_prediction_widget_compact.html' with counts=match.list_prediction_counts my_prediction=match.list_my_prediction %}
+    {% endif %}
+
+    {% if match.status == 'finished' and match.card_reaction_counts %}
+    {% comment %}Пункт 11 брифа — реакция сообщества, тот же паттерн, что и прогноз выше.{% endcomment %}
+    {% include 'matches/_reaction_widget_compact.html' with match=match counts=match.card_reaction_counts my_reaction=match.card_my_reaction %}
     {% endif %}
 </a>

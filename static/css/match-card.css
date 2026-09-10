@@ -227,6 +227,157 @@
     z-index: 1;
 }
 
+/* === РЕДИЗАЙН 2026-09-10 — второй проход, прямая просьба пользователя
+   ("делай все улучшения сразу"), полный бриф из 14 пунктов. Новые блоки
+   ниже сознательно используют ТЕ ЖЕ токены, что и первый проход выше
+   (color-mix с --mrow-accent/--color-*, тот же радиус/отступы .mrow__badge/
+   .mrow__footer) — никаких новых цветов/паттернов, чтобы карточка не
+   начала "кричать" заново (см. докстринг файла про историю пяти проходов). */
+
+/* Тег интриги (п.1) + бейдж "Ваша команда" (п.6) — тонкая строка между
+   статусом и составом, тот же принцип, что .mrow__badge, но не привязана
+   к статусу матча (свой нейтральный акцент). */
+.mrow__tags-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .4rem;
+    margin-bottom: 8px;
+}
+.mrow__intrigue-tag, .mrow__followed-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: .3rem;
+    font-size: .625rem;
+    font-weight: 700;
+    padding: .2rem .5rem;
+    border-radius: 9999px;
+    white-space: nowrap;
+}
+.mrow__intrigue-tag {
+    background: color-mix(in oklab, var(--color-secondary) 14%, transparent);
+    color: var(--color-secondary);
+}
+.mrow__followed-badge {
+    background: color-mix(in oklab, var(--color-error) 12%, transparent);
+    color: var(--color-error);
+}
+
+/* Форма команд/очный баланс (п.3, п.4) — компактный текст под составом,
+   тот же визуальный вес, что .mrow__meta (второстепенная информация). */
+.mrow__context {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .25rem .7rem;
+    font-size: .6875rem;
+    font-weight: 600;
+    color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+    margin-top: 8px;
+}
+
+/* "Главный момент" завершённого матча (п.8) */
+.mrow__key-moment {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    font-size: .75rem;
+    font-weight: 600;
+    color: var(--color-base-content);
+    margin-top: 10px;
+}
+.mrow__key-moment .ti { color: var(--mrow-accent, var(--color-success)); }
+
+/* "Игрок матча DOPX" (п.9) — фото/инициал + подпись, компактная строка,
+   не отдельная громоздкая карточка внутри карточки. */
+.mrow__hero {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    margin-top: 10px;
+}
+.mrow__hero-photo, .mrow__hero-photo-fallback {
+    width: 28px;
+    height: 28px;
+    border-radius: 9999px;
+    flex-shrink: 0;
+    object-fit: cover;
+}
+.mrow__hero-photo-fallback {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: color-mix(in oklab, var(--color-warning) 16%, transparent);
+    color: var(--color-warning);
+    font-size: .6875rem;
+    font-weight: 800;
+}
+.mrow__hero-info { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.mrow__hero-label {
+    display: flex;
+    align-items: center;
+    gap: .25rem;
+    font-size: .5625rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    color: var(--color-warning);
+}
+.mrow__hero-name {
+    font-size: .75rem;
+    font-weight: 700;
+    color: var(--color-base-content);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Мини-ДНК матча на карточке (п.10) — маленькие чипы-трейты, НЕ график
+   (см. докстринг файла — график "Драма N" уже убирали из списка). */
+.mrow__dna-traits {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .3rem;
+    margin-top: 8px;
+}
+.mrow__dna-chip {
+    font-size: .625rem;
+    font-weight: 600;
+    padding: .15rem .5rem;
+    border-radius: 9999px;
+    background: color-mix(in oklab, var(--color-base-content) 6%, transparent);
+    color: color-mix(in oklab, var(--color-base-content) 65%, transparent);
+}
+
+/* Индекс сенсации (п.12) — заметный, но не тревожный акцент. */
+.mrow__sensation {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    font-size: .6875rem;
+    font-weight: 700;
+    color: var(--color-error);
+    margin-top: 8px;
+}
+
+/* "Изменил таблицу" (п.13) */
+.mrow__table-impact {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    font-size: .6875rem;
+    font-weight: 600;
+    color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+    margin-top: 8px;
+}
+
+/* Статус вовлечённости в прогноз (п.5) — в одну строку со счётчиком
+   голосов в .mrow__footer-meta. */
+.mrow__engagement {
+    font-size: .6875rem;
+    font-weight: 600;
+    color: color-mix(in oklab, var(--color-base-content) 50%, transparent);
+}
+
 @keyframes mrow-pulse {
     0%, 100% { opacity: 1; transform: scale(1); }
     50% { opacity: .35; transform: scale(.6); }

@@ -217,11 +217,37 @@ document.addEventListener('alpine:init', () => {
     Alpine.data('contactForm', () => ({
         submitting: false,
         category: 'general',
+        categoryOpen: false,
         subject: '',
         message: '',
         email: '',
         screenshot: null,
         screenshotPreview: null,
+        // НОВОЕ (2026-09-10, запрос пользователя: заменить emoji в
+        // "Тема обращения" на "нормальные солидные премиум обозначения"):
+        // нативный <select><option> физически не умеет рисовать иконки
+        // внутри option (ограничение браузера, не Alpine/CSS) — поэтому
+        // дропдаун теперь кастомный (details/summary, тот же паттерн, что
+        // в components/_navbar.html), а этот массив — единственный
+        // источник правды для его пунктов. value должен совпадать с
+        // notifications/models.py::ContactSubmission.CATEGORY_CHOICES.
+        categoryOptions: [
+            { value: 'general', label: 'Общий вопрос', hint: 'Что-то другое или не уверены, куда', icon: 'ti-message-circle', color: 'primary' },
+            { value: 'bug', label: 'Сообщение об ошибке', hint: 'Что-то не работает или ведёт себя не так', icon: 'ti-bug', color: 'error' },
+            { value: 'feature', label: 'Предложение функции', hint: 'Идея, как сделать DOPX лучше', icon: 'ti-bulb', color: 'warning' },
+            { value: 'evaluation', label: 'Проблема с оценкой матча', hint: 'Не согласны с рейтингом или оценкой', icon: 'ti-star', color: 'secondary' },
+            { value: 'account', label: 'Вопрос по аккаунту', hint: 'Профиль, вход, уведомления', icon: 'ti-user', color: 'info' },
+            { value: 'dispute', label: 'Оспорить рейтинг / право на ответ', hint: 'Формальное обращение по конкретной оценке', icon: 'ti-scale', color: 'accent' },
+            { value: 'data_error', label: 'Ошибка в данных матча', hint: 'Неверный счёт, состав, события матча', icon: 'ti-alert-triangle', color: 'error' },
+            { value: 'other', label: 'Другое', hint: '', icon: 'ti-dots', color: 'neutral' },
+        ],
+        get selectedCategory() {
+            return this.categoryOptions.find((c) => c.value === this.category) || this.categoryOptions[0];
+        },
+        selectCategory(value) {
+            this.category = value;
+            this.categoryOpen = false;
+        },
         init() {
             this.category = this.$el.dataset.initialCategory || 'general';
             this.email = this.$el.dataset.initialEmail || '';
@@ -321,6 +347,53 @@ document.addEventListener('alpine:init', () => {
             this.status = 'loading';
             const result = await window.dopxUnsubscribePush(this.csrfToken);
             this.status = result.ok ? 'idle' : 'error';
+        },
+    }));
+
+    // === Countdown до стартового свистка (components/_match_card.html,
+    // пункт 7 брифа редизайна карточки матча, 2026-09-10) ===
+    // Дата приходит через data-kickoff (не аргументом фабрики) — та же
+    // защита от бага tooltipTrigger/escapejs (см. комментарии выше в этом
+    // файле): ISO-строка с "c"-форматом Django содержит дефисы/двоеточия,
+    // и хотя конкретно здесь нет escapejs (значит формально бага и не
+    // было бы), проект последовательно читает ЛЮБОЙ строковый аргумент из
+    // data-атрибута — не стоит заводить единственное исключение из этого
+    // правила ради одного компонента.
+    Alpine.data('matchCountdown', () => ({
+        countdownText: '',
+        _timerId: null,
+        init() {
+            const kickoffIso = this.$el.dataset.kickoff;
+            if (!kickoffIso) return;
+            const kickoffMs = new Date(kickoffIso).getTime();
+            if (Number.isNaN(kickoffMs)) return;
+            this._tick(kickoffMs);
+            // 30с достаточно для минутной точности текста ("Через N мин"),
+            // не нужен ежесекундный тик — карточка в списке, не таймер
+            // обратного отсчёта крупным планом.
+            this._timerId = setInterval(() => this._tick(kickoffMs), 30000);
+        },
+        destroy() {
+            if (this._timerId) clearInterval(this._timerId);
+        },
+        _tick(kickoffMs) {
+            const diffMs = kickoffMs - Date.now();
+            if (diffMs <= 0) {
+                this.countdownText = 'Начинается';
+                if (this._timerId) clearInterval(this._timerId);
+                return;
+            }
+            const totalMinutes = Math.floor(diffMs / 60000);
+            const days = Math.floor(totalMinutes / 1440);
+            const hours = Math.floor((totalMinutes % 1440) / 60);
+            const minutes = totalMinutes % 60;
+            if (days >= 1) {
+                this.countdownText = `Через ${days} дн ${hours} ч`;
+            } else if (hours >= 1) {
+                this.countdownText = `Через ${hours} ч ${minutes} мин`;
+            } else {
+                this.countdownText = `Через ${minutes} мин`;
+            }
         },
     }));
 });

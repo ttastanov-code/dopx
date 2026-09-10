@@ -5,7 +5,7 @@ from core.admin_actions import export_as_csv
 from events.models import MatchEvent
 from lineups.models import MatchLineup
 
-from .models import Match, MatchPlayerStatistics, MatchTeamStatistics
+from .models import Match, MatchPlayerStatistics, MatchReaction, MatchTeamStatistics
 
 
 class MatchEventInline(TabularInline):
@@ -155,3 +155,14 @@ class MatchPlayerStatisticsAdmin(ModelAdmin):
     search_fields = ("player__first_name", "player__last_name", "team__name")
     autocomplete_fields = ("match", "player", "team")
     actions = [export_as_csv]
+
+
+@admin.register(MatchReaction)
+class MatchReactionAdmin(ModelAdmin):
+    """Редизайн карточки матча (2026-09-10), пункт 11 — реакция сообщества
+    на завершённый матч. Только для просмотра/модерации, тот же уровень
+    админки, что у остальных пользовательских голосов проекта."""
+    list_display = ("match", "user", "reaction", "created_at")
+    list_filter = ("reaction",)
+    search_fields = ("match__home_team__name", "match__away_team__name", "user__username")
+    autocomplete_fields = ("match", "user")

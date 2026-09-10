@@ -32,9 +32,34 @@ name_translations.py + `python manage.py apply_cyrillic_names
 живой повторный запрос + пересчёт через (уже исправленный) резолвер
 остаётся оправданным здесь.
 
+РАСШИРЕНО (2026-09-10, жалоба "у нас все еще Эркин Тапалов вместо Еркин
+Тапалов может и другие есть... сделай уже один раз и чтобы все идеально
+работало"): фильтр `_is_broken()` ниже ловит только ВИДИМО испорченные
+имена — смесь кириллицы с латиницей/диакритикой в одной строке. Имя вроде
+"Эркин Тапалов" — ПОЛНОСТЬЮ кириллическое, просто СЕМАНТИЧЕСКИ неверное
+(см. подробный докстринг PLAYER_NAME_CORRECTIONS в parsers/sportmonks/
+name_translations.py) — этот фильтр его в принципе не может увидеть, у нас
+нет способа автоматически отличить "это валидная кириллица, но неправильный
+перевод" чисто по тексту, без сверки с источником. Единственный систематический (не
+"нашли — добавили в словарь — а другие есть?") способ найти ВСЕ такие
+случаи — переспросить Sportmonks по каждому игроку заново и пересчитать
+через (уже исправленный) резолвер, сравнить с тем, что в базе. Флаг --all
+делает именно это — обходит ВСЕХ игроков с sportmonks_id, не только тех,
+что прошли _is_broken(). Дороже (один запрос на игрока), но это разовая
+операция, и это единственный способ закрыть класс проблемы целиком, а не
+по одному имени за раз по мере жалоб.
+
+ИСПРАВЛЕНО (2026-09-10, безопасность): раньше команда ПРИМЕНЯЛА изменения по
+умолчанию (--dry-run — опция, чтобы только посмотреть) — единственная (вместе
+с apply_cyrillic_names, тоже исправлено тем же днём) команда в проекте с
+таким умолчанием, все остальные разовые коррекции по умолчанию dry-run.
+Теперь единообразно: dry-run по умолчанию, --apply — записать по-настоящему.
+
 Использование:
-    python manage.py fix_foreign_names                # только игроки
-    python manage.py fix_foreign_names --dry-run       # только показать
+    python manage.py fix_foreign_names                  # только отчёт (dry-run), видимо испорченные (смесь алфавитов)
+    python manage.py fix_foreign_names --apply           # применить
+    python manage.py fix_foreign_names --all             # только отчёт, ВСЕ игроки с sportmonks_id, сверка с источником целиком
+    python manage.py fix_foreign_names --all --apply     # применить результат полной сверки
 """
 import re
 
@@ -63,13 +88,23 @@ def _is_broken(text: str) -> bool:
 
 
 class Command(BaseCommand):
-    help = "Чинит имена Player, испорченные багом транслитерации (смесь кириллицы/латиницы). Для Referee/Coach используйте apply_cyrillic_names --include-review."
+    help = "Чинит имена Player, испорченные багом транслитерации (смесь кириллицы/латиницы), либо (--all) переспрашивает Sportmonks и пересверяет ВСЕХ игроков с текущим резолвером. Для Referee/Coach используйте apply_cyrillic_names --include-review."
 
     def add_arguments(self, parser):
-        parser.add_argument("--dry-run", action="store_true", help="Только показать, что будет изменено, ничего не сохранять")
+        parser.add_argument("--apply", action="store_true", help="Реально записать изменения (по умолчанию — только отчёт, dry-run)")
+        parser.add_argument(
+            "--all", action="store_true",
+            help="Обойти ВСЕХ игроков с sportmonks_id (не только визуально испорченных смесью алфавитов) — "
+                 "систематическая сверка с источником, найдёт и 'чисто кириллические, но неверные' случаи "
+                 "вроде 'Эркин Тапалов' (см. докстринг модуля). Один запрос к Sportmonks на игрока — дороже, "
+                 "но разово.",
+        )
 
     def handle(self, *args, **options):
-        dry_run = options["dry_run"]
+        dry_run = not options["apply"]
+        check_all = options["all"]
+        mode = "ПРИМЕНИТЬ" if not dry_run else "ТОЛЬКО ОТЧЁТ (dry-run, --apply чтобы применить)"
+        self.stdout.write(self.style.WARNING(f"Режим: {mode}"))
         client = SportmonksClient()
 
         self.stdout.write(self.style.WARNING(
@@ -79,16 +114,20 @@ class Command(BaseCommand):
             "КПЛ, включая Слишковича и Гонсалвиша)."
         ))
 
-        broken = [
-            obj for obj in Player.objects.filter(sportmonks_id__isnull=False)
-            if _is_broken(f"{obj.first_name} {obj.last_name}".strip())
-        ]
-        if not broken:
-            self.stdout.write("Игроки: испорченных смешанным именем не найдено")
+        if check_all:
+            candidates = list(Player.objects.filter(sportmonks_id__isnull=False))
+            self.stdout.write(f"Режим --all: сверяю ВСЕХ {len(candidates)} игроков с sportmonks_id против свежих данных Sportmonks (это займёт время)...")
+        else:
+            candidates = [
+                obj for obj in Player.objects.filter(sportmonks_id__isnull=False)
+                if _is_broken(f"{obj.first_name} {obj.last_name}".strip())
+            ]
+        if not candidates:
+            self.stdout.write("Игроки: испорченных смешанным именем не найдено (для полной сверки с источником используйте --all)")
             return
 
-        fixed = failed = 0
-        for obj in broken:
+        fixed = failed = unchanged = 0
+        for obj in candidates:
             old_full = f"{obj.first_name} {obj.last_name}".strip()
             try:
                 entity_data = client.get_player(int(obj.sportmonks_id))
@@ -104,6 +143,10 @@ class Command(BaseCommand):
                 failed += 1
                 continue
 
+            if new_first == obj.first_name and new_last == obj.last_name:
+                unchanged += 1
+                continue
+
             self.stdout.write(f"  игрок: {old_full!r} -> {new_full!r}")
             if not dry_run:
                 obj.first_name = new_first
@@ -113,5 +156,6 @@ class Command(BaseCommand):
 
         suffix = " (--dry-run, ничего не сохранено)" if dry_run else ""
         self.stdout.write(self.style.SUCCESS(
-            f"Игроки: испорченных найдено {len(broken)}, починено {fixed}, ошибок {failed}{suffix}"
+            f"Игроки: проверено {len(candidates)}, расходится с источником {fixed}, "
+            f"уже верно {unchanged}, ошибок запроса {failed}{suffix}"
         ))

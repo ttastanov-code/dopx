@@ -134,7 +134,29 @@ def sportmonks_update_live(self):
     data_health_summary судит о "жив ли синк" по свежести последней строки.
     Если писать только при реальных изменениях, в тихие часы без live-матчей
     (большую часть суток) дашборд выглядел бы так, будто синк снова "завис",
-    хотя задача исправно тикает каждые 2 минуты и просто не находит работы."""
+    хотя задача исправно тикает каждые 2 минуты и просто не находит работы.
+
+    ИСПРАВЛЕНО (2026-09-09, жалоба пользователя: матч Кайрат-Женис навсегда
+    "завис" в статусе live — стал live после ручного ресинка в середине
+    2-го тайма, и НИ ОДИН последующий тик за двое суток его не поправил,
+    включая ручной клик "Обновить live-матчи" в staff-панели) — КОРНЕВАЯ
+    ПРИЧИНА: эта задача раньше проходила ТОЛЬКО по списку фикстур, которые
+    Sportmonks СЕЙЧАС считает live (`live_fixtures` ниже). Как только матч
+    реально заканчивается, Sportmonks перестаёт отдавать его в
+    /livescores/inplay — фикстура просто исчезает из ответа, и цикл ниже
+    для неё больше НИКОГДА не выполняется. У нас в БД матч остаётся
+    status='live' НАВСЕГДА, пока не сработает суточная sportmonks_sync_season
+    (а если и она по какой-то причине не отработала — вообще никогда).
+    "Обновить live-матчи" в staff-панели дёргает ровно эту же задачу —
+    та же слепая зона, поэтому и ручной клик не помогал.
+
+    Фикс: после разбора live_fixtures ДОПОЛНИТЕЛЬНО берём все матчи, которые
+    У НАС в БД сейчас status='live', и для тех, чей sportmonks_id НЕ попал в
+    свежий live_fixtures (т.е. "выпал из живого списка" — либо закончился,
+    либо это transient-пропуск в ответе API), сразу дёргаем тяжёлую догрузку
+    — не ждём суточного сведения. Не расходует лимит зря: таких матчей в
+    любой момент времени — считаные единицы (одновременно идущих + только
+    что завершившихся с прошлого тика), а не весь календарь сезона."""
     started_at = timezone.now()
     league, season = _get_league_and_season()
     if league is None or season is None:
@@ -149,6 +171,8 @@ def sportmonks_update_live(self):
         logger.error("Sportmonks: get_livescores() не удался: %s", exc)
         _record_sync_run("sportmonks_update_live", started_at, total=0, errors=1)
         return
+
+    live_sm_ids_from_api = {str(fx.get("id")) for fx in live_fixtures if fx.get("id") is not None}
 
     synced = 0
     errors = 0
@@ -206,12 +230,36 @@ def sportmonks_update_live(self):
         else:
             errors += 1
 
-    if synced:
-        logger.info("Sportmonks: sportmonks_update_live — синкнуто матчей с изменениями: %d", synced)
+    # См. докстринг выше — матчи, которые У НАС ещё 'live', но уже выпали
+    # из свежего live_fixtures. manual_override исключаем намеренно: если
+    # staff вручную заморозил статус (mark_postponed_manually и т.п.), это
+    # ЕГО решение, автосинк не должен его перебивать — та же гарантия,
+    # что и everywhere else в этом файле/importers.py.
+    stuck_live = Match.objects.filter(
+        league=league, status="live", sportmonks_id__isnull=False, manual_override=False,
+    ).exclude(sportmonks_id__in=live_sm_ids_from_api).only("id", "sportmonks_id")
+
+    reconciled = 0
+    for match in stuck_live:
+        logger.info(
+            "Sportmonks: матч %s (sportmonks_id=%s) числится live, но выпал из /livescores/inplay — "
+            "досинхронизирую вне очереди (см. фикс 2026-09-09 про 'вечный live')",
+            match.id, match.sportmonks_id,
+        )
+        if _heavy_sync_fixture(client, league, season, match.sportmonks_id):
+            reconciled += 1
+        else:
+            errors += 1
+
+    if synced or reconciled:
+        logger.info(
+            "Sportmonks: sportmonks_update_live — синкнуто матчей с изменениями: %d, "
+            "досведено 'зависших' live: %d", synced, reconciled,
+        )
 
     _record_sync_run(
         "sportmonks_update_live", started_at,
-        total=len(live_fixtures), updated=synced, errors=errors,
+        total=len(live_fixtures) + reconciled, updated=synced + reconciled, errors=errors,
         unchanged=max(len(live_fixtures) - synced - errors, 0),
     )
 

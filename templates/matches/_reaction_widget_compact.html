@@ -1,0 +1,50 @@
+{% comment %}
+Пункт 11 брифа редизайна карточки матча (2026-09-10) — "Реакция
+сообщества": Матч тура / Неожиданный результат / Скучный матч. Тот же
+паттерн, что predictions/_prediction_widget_compact.html: клик обновляет
+одну строку в БД и возвращает этот же партиал целиком (HTMX
+hx-swap="outerHTML").
+
+Контекст: match, counts (dict match_of_round/upset/boring/*_pct/total),
+my_reaction (MatchReaction|None).
+
+Карточка матча — это <a href="...">, контейнер виджета останавливает
+всплытие клика — тот же приём, что у виджета прогноза выше на карточке.
+{% endcomment %}
+<div id="reaction-widget-{{ match.id }}"
+     class="grid grid-cols-3 gap-1 sm:gap-1.5 mt-2 pt-2 border-t border-base-300"
+     onclick="event.stopPropagation()">
+    <button type="button"
+            hx-post="{% url 'matches:react' match.id %}"
+            hx-vals='{"reaction": "match_of_round"}'
+            hx-target="#reaction-widget-{{ match.id }}"
+            hx-swap="outerHTML"
+            class="flex flex-col items-center gap-0.5 py-1 px-1 rounded-lg border transition-all
+                   {% if my_reaction.reaction == 'match_of_round' %}border-success bg-success/10{% else %}border-base-300{% endif %}">
+        <i class="ti ti-trophy text-xs"></i>
+        <span class="text-[9px] font-semibold opacity-60 truncate max-w-full">Матч тура</span>
+        <span class="text-xs font-bold">{{ counts.match_of_round_pct }}%</span>
+    </button>
+    <button type="button"
+            hx-post="{% url 'matches:react' match.id %}"
+            hx-vals='{"reaction": "upset"}'
+            hx-target="#reaction-widget-{{ match.id }}"
+            hx-swap="outerHTML"
+            class="flex flex-col items-center gap-0.5 py-1 px-1 rounded-lg border transition-all
+                   {% if my_reaction.reaction == 'upset' %}border-warning bg-warning/10{% else %}border-base-300{% endif %}">
+        <i class="ti ti-bolt text-xs"></i>
+        <span class="text-[9px] font-semibold opacity-60 truncate max-w-full">Неожиданно</span>
+        <span class="text-xs font-bold">{{ counts.upset_pct }}%</span>
+    </button>
+    <button type="button"
+            hx-post="{% url 'matches:react' match.id %}"
+            hx-vals='{"reaction": "boring"}'
+            hx-target="#reaction-widget-{{ match.id }}"
+            hx-swap="outerHTML"
+            class="flex flex-col items-center gap-0.5 py-1 px-1 rounded-lg border transition-all
+                   {% if my_reaction.reaction == 'boring' %}border-neutral bg-neutral/10{% else %}border-base-300{% endif %}">
+        <i class="ti ti-moon text-xs"></i>
+        <span class="text-[9px] font-semibold opacity-60 truncate max-w-full">Скучный</span>
+        <span class="text-xs font-bold">{{ counts.boring_pct }}%</span>
+    </button>
+</div>
