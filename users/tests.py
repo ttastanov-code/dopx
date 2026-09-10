@@ -795,3 +795,61 @@ class BadgeShareCardViewTests(TestCase):
         self.client.force_login(self.owner)
         response = self.client.get(reverse("users:badge_share_card", args=[self.owner.username, secret_code]))
         self.assertEqual(response.status_code, 302)
+
+
+class ProfileEditViewOtpCollisionTests(TestCase):
+    """Регрессия (2026-09-11, реальная ошибка пользователя на проде):
+    ValidationError "...functools.partial(<function is_verified...>)
+    должно быть True или False" при сохранении /users/profile/edit/.
+
+    Причина — django_otp.middleware.OTPMiddleware (стоит в MIDDLEWARE ради
+    2FA staff, см. dopx/settings.py) на КАЖДОМ аутентифицированном запросе
+    подменяет атрибут request.user.is_verified на functools.partial(...)
+    (её штатный способ добавить user.is_verified() для проверки OTP-статуса)
+    — имя случайно совпало с НАШИМ полем User.is_verified (флаг
+    подтверждения email). ProfileEditView.get_object() раньше возвращал
+    request.user НАПРЯМУЮ — тот же самый "отравленный" объект; полный
+    Model.save() (без update_fields) сериализует ВСЕ поля, и
+    BooleanField.get_prep_value() вызывает to_python() на этом мусорном
+    значении. Ломалось у ЛЮБОГО пользователя при любом сохранении профиля,
+    где email не менялся (единственная ветка, которая перезаписывала
+    is_verified реальным bool перед save). Тест обязательно идёт через
+    self.client (полный стек middleware, включая OTPMiddleware) — прямой
+    вызов вьюхи/формы в обход middleware не воспроизвёл бы баг."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="profileeditor", email="profileeditor@example.com", password="pass123",
+            is_verified=True,
+        )
+        self.client.force_login(self.user)
+        self.url = reverse("users:profile_edit")
+
+    def test_saving_profile_without_changing_email_does_not_crash(self):
+        response = self.client.post(self.url, {
+            "email": self.user.email,  # email НЕ меняется — эта ветка не трогает is_verified вручную
+            "city": "Алматы",
+            "bio": "Тест",
+            "is_profile_public": "on",
+        })
+        self.assertEqual(response.status_code, 302)
+
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.city, "Алматы")
+        self.assertTrue(self.user.is_verified, "is_verified не должен был затронуться, раз email не менялся")
+
+    def test_get_object_returns_fresh_instance_not_middleware_patched_request_user(self):
+        # Симулируем ТОЧНО то, что делает django_otp.middleware.OTPMiddleware.
+        # _init_user_fields (см. app_venv/.../django_otp/middleware.py) —
+        # подменяем is_verified на functools.partial прямо на объекте
+        # self.user, как это происходит с request.user на живом запросе.
+        import functools
+        poisoned_user = User.objects.get(pk=self.user.pk)
+        poisoned_user.is_verified = functools.partial(lambda u: True, poisoned_user)
+
+        from users.views import ProfileEditView
+        view = ProfileEditView()
+        view.request = type("R", (), {"user": poisoned_user})()
+        obj = view.get_object()
+
+        self.assertIsInstance(obj.is_verified, bool, "get_object() должен вернуть свежий экземпляр из БД, а не отравленный request.user")
