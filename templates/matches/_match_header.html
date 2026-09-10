@@ -130,7 +130,17 @@ static/css/match-detail.css), окраска по статусу матча (--m
             </div>
 
             <!-- Счёт -->
-            <div class="text-center order-first md:order-none w-full md:w-auto mb-1 md:mb-0 shrink-0 px-2">
+            {% comment %}
+            2026-09-11 (жалоба пользователя: "счёт или VS идут не между
+            клубами, сверху, а потом уже клубы") — order-first держал этот
+            блок ПЕРВЫМ визуально на мобильном (flex-col), хотя в DOM он и
+            так между домашней и гостевой командой. При стеке в колонку
+            естественный порядок DOM (хозяева → счёт → гости) и даёт
+            привычный вид "клуб / счёт / клуб" — order-first был лишним и
+            только ломал порядок. Убрано, md:order-none тоже больше не
+            нужен (нечего сбрасывать).
+            {% endcomment %}
+            <div class="text-center w-full md:w-auto mb-1 md:mb-0 shrink-0 px-2">
                 {% if match.status == 'finished' %}
                 <div class="md-hero__score text-5xl md:text-7xl mb-2">
                     {% render_score match.home_score match.away_score %}

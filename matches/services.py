@@ -430,20 +430,72 @@ def describe_intrigue(match, *, home_position=None, away_position=None, total_te
     return None
 
 
+def _parse_score(score_str: str | None) -> tuple[int, int] | None:
+    """'2-1' -> (2, 1). `score_str` — MatchEvent.score_after, заполняется
+    Sportmonks-импортёром из поля `result` события (parsers/sportmonks/
+    importers.py) — НЕ заполнялось старым (удалённым 2026-09-09) KFF-
+    парсером, поэтому у части исторических матчей это поле пустое.
+    Возвращаем None на пустой/неожиданный формат — вызывающий код обязан
+    трактовать это как "не можем проверить", а не гадать (тот же принцип
+    "не сочиняем историю на пустом месте", что и во всей этой функции)."""
+    if not score_str:
+        return None
+    parts = score_str.split('-')
+    if len(parts) != 2:
+        return None
+    try:
+        return int(parts[0]), int(parts[1])
+    except ValueError:
+        return None
+
+
+def _score_outcome(home: int, away: int) -> str:
+    if home > away:
+        return 'home'
+    if away > home:
+        return 'away'
+    return 'draw'
+
+
+def _goal_changed_outcome(goals: list, last_goal) -> bool:
+    """Гол реально "решил исход", только если категория результата
+    (победа хозяев / ничья / победа гостей) ДО этого гола отличается от
+    итоговой. Жалоба пользователя 2026-09-11: поздний консольный гол в
+    уже решённом матче (3:0 -> 3:1) подписывался "решил исход", хотя
+    победитель не менялся ни на секунду. Опираемся на score_after
+    (авторитетный счёт от источника данных на момент события), а не на
+    team_side/event_type голов самостоятельно — знак автогола (кому он
+    засчитан) не наш домен знаний, его лучше не реконструировать вручную."""
+    after = _parse_score(last_goal.score_after)
+    if after is None:
+        return False  # не можем проверить — не заявляем
+
+    idx = goals.index(last_goal)
+    before = (0, 0) if idx == 0 else _parse_score(goals[idx - 1].score_after)
+    if before is None:
+        return False
+
+    return _score_outcome(*before) != _score_outcome(*after)
+
+
 def describe_key_moment(match, events: list) -> str | None:
     """Пункт 8 брифа — "главный момент" завершённого матча одной строкой.
     Эвристика (та же дисциплина, что у `_describe_controversial_episode`
     выше — явный приоритет, "" вместо гадания, если ничего не подходит):
 
-    1. Поздний гол (>= LATE_GOAL_MINUTE_THRESHOLD'), который менял разницу
-       мячей до 1 или срав­нивал счёт — по построению это последний гол
-       матча (события отсортированы по минуте, см. `MatchEvent.Meta.ordering`)
-       на такой минуте почти всегда и есть "решивший исход".
+    1. Поздний гол (>= LATE_GOAL_MINUTE_THRESHOLD'), который РЕАЛЬНО менял
+       категорию результата (см. `_goal_changed_outcome` — ничья/победа
+       любой из сторон), а не просто последний по времени гол на такой
+       минуте. ИСПРАВЛЕНО (2026-09-11, жалоба пользователя): раньше любой
+       поздний гол автоматически подписывался "решил исход", даже когда
+       команда уже проигрывала с разгромным счётом и гол лишь сократил
+       разрыв (3:0 -> 3:1) — исход при этом не менялся ни разу.
     2. Красная карточка — карточка меняет ход игры сама по себе, даже без
        дальнейшего гола.
     3. Пенальти (реализованный) — редкое, заметное событие.
     4. Иначе — None, не сочиняем историю на пустом месте (например, сухая
-       ничья без единого примечательного события).
+       ничья без единого примечательного события, или поздний гол, чей
+       score_after не удалось разобрать/сверить).
 
     :param events: список MatchEvent (не queryset), отсортированный по
         минуте — обычной страницы события уже приходят так (Meta.ordering).
@@ -454,7 +506,7 @@ def describe_key_moment(match, events: list) -> str | None:
     goals = [e for e in events if e.event_type in ('goal', 'penalty', 'own_goal')]
     if goals:
         last_goal = goals[-1]
-        if last_goal.minute >= LATE_GOAL_MINUTE_THRESHOLD:
+        if last_goal.minute >= LATE_GOAL_MINUTE_THRESHOLD and _goal_changed_outcome(goals, last_goal):
             who = f' ({last_goal.player})' if last_goal.player_id else ''
             return f'Гол на {last_goal.display_minute}\'{who} решил исход матча'
 
@@ -585,15 +637,20 @@ def describe_reaction_badge(counts: dict | None) -> str | None:
     return None
 
 
-def describe_table_impact(team, before_position: int | None, current_position: int | None) -> str | None:
+def describe_table_impact(team, before_position: int | None, after_position: int | None) -> str | None:
     """Пункт 13 брифа — "Изменил таблицу" (чистая функция, без запросов —
     позиции считает вызывающая сторона, см. matches/card_services.py и
-    teams/services.py::compute_standings_asof)."""
-    if before_position is None or current_position is None or before_position == current_position:
+    teams/services.py::compute_match_table_impact_positions).
+
+    ИСПРАВЛЕНО (2026-09-11): `after_position` — позиция СРАЗУ ПОСЛЕ этого
+    конкретного матча (раньше сюда передавали сегодняшнюю позицию команды
+    в лиге — см. докстринг compute_match_table_impact_positions про баг,
+    который это вызывало)."""
+    if before_position is None or after_position is None or before_position == after_position:
         return None
-    if current_position < before_position:
-        return f'{team.name} поднялся на {current_position}-е место'
-    return f'{team.name} опустился на {current_position}-е место'
+    if after_position < before_position:
+        return f'{team.name} поднялся на {after_position}-е место'
+    return f'{team.name} опустился на {after_position}-е место'
 
 
 def describe_finished_cta(has_hero: bool, has_dna: bool) -> dict:

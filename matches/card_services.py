@@ -54,7 +54,7 @@ from matches.services import (
 )
 from predictions.services import bulk_final_prediction_counts, bulk_prediction_data
 from teams.models import TeamSeasonStats
-from teams.services import compute_standings_asof, describe_season_form_streak
+from teams.services import compute_match_table_impact_positions, describe_season_form_streak
 
 
 def attach_card_extras(matches, request) -> None:
@@ -307,15 +307,16 @@ def _attach_finished_extras(finished, user) -> None:
     # --- 12: индекс сенсации (bulk распределение прогнозов) ---
     sensation_counts = bulk_final_prediction_counts(finished_ids)
 
-    # --- 13: "изменил таблицу" — текущие позиции bulk'ом, "было" — по
-    # запросу на матч (см. докстринг модуля про стоимость) ---
-    season_ids = {m.season_id for m in finished}
-    team_ids = set()
-    for m in finished:
-        team_ids.add(m.home_team_id)
-        team_ids.add(m.away_team_id)
-    current_positions = _bulk_current_positions(season_ids, team_ids)
-
+    # --- 13: "изменил таблицу" — позиция ДО и СРАЗУ ПОСЛЕ КОНКРЕТНОГО
+    # матча, один запрос на матч (см. teams/services.py::
+    # compute_match_table_impact_positions). ИСПРАВЛЕНО (2026-09-11,
+    # жалоба пользователя): раньше "стало" бралось из ТЕКУЩЕЙ (сегодняшней)
+    # позиции команды в лиге одним bulk-запросом на всю страницу — для
+    # старого матча "до" и "сегодня" никак не связаны, из-за чего один и
+    # тот же факт ("Кайрат поднялся на 1-е место") приклеивался ко ВСЕМ
+    # карточкам матчей "Кайрата" в сезоне разом. Теперь "стало" — это
+    # позиция сразу после именно этого результата, факт закреплён за
+    # конкретным матчем.
     for match in finished:
         hero_row = hero_by_match.get(match.id)
         match.card_hero = {'player': hero_row.player, 'score': hero_row.performance_score} if hero_row else None
@@ -339,18 +340,18 @@ def _attach_finished_extras(finished, user) -> None:
             match, sensation_counts.get(match.id), match.card_reaction_counts,
         )
 
-        standings_before = compute_standings_asof(match.season, match.start_time)
+        standings_before, standings_after = compute_match_table_impact_positions(match)
         before_home = standings_before.get(match.home_team_id)
         before_away = standings_before.get(match.away_team_id)
-        current_home = current_positions.get((match.season_id, match.home_team_id))
-        current_away = current_positions.get((match.season_id, match.away_team_id))
-        home_impact = describe_table_impact(match.home_team, before_home, current_home)
-        away_impact = describe_table_impact(match.away_team, before_away, current_away)
+        after_home = standings_after.get(match.home_team_id)
+        after_away = standings_after.get(match.away_team_id)
+        home_impact = describe_table_impact(match.home_team, before_home, after_home)
+        away_impact = describe_table_impact(match.away_team, before_away, after_away)
         # Показываем максимум один факт — тот, где изменение позиций
         # больше (заметнее пользователю); при равенстве — домашняя команда.
         if home_impact and away_impact:
-            home_delta = abs((before_home or 0) - (current_home or 0))
-            away_delta = abs((before_away or 0) - (current_away or 0))
+            home_delta = abs((before_home or 0) - (after_home or 0))
+            away_delta = abs((before_away or 0) - (after_away or 0))
             match.card_table_impact = home_impact if home_delta >= away_delta else away_impact
         else:
             match.card_table_impact = home_impact or away_impact

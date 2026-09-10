@@ -638,17 +638,14 @@ def _win_suffix(n: int) -> str:
 # та же сортировка -points/-goal_diff/-goals_scored, см.
 # _recalculate_standings_for_season) — просто с доп. срезом по дате, чтобы
 # сравнение "было -> стало" не могло разойтись с алгоритмом реальной таблицы.
-def compute_standings_asof(season, cutoff) -> dict:
-    """Позиции всех команд сезона по матчам СТРОГО ДО `cutoff` (исключая его).
-
-    :param cutoff: datetime — обычно `match.start_time` конкретного матча,
-        "таблица как она была непосредственно перед этой игрой".
-    :return: {team_id: position (int, с 1)} — команда без сыгранных до
-        `cutoff` матчей в сезоне ВСЁ РАВНО попадает в словарь (0 очков,
-        играет роль при разрыве позиций внизу таблицы), т.к. `Team.objects`
-        ограничивается участниками сезона (`teamseason__season=season`), а
-        не только теми, кто уже сыграл хоть один матч к этому моменту.
-    """
+def _standings_stats_asof(season, cutoff) -> dict:
+    """Внутренний helper — {team_id: {points, goal_diff, goals_scored}} по
+    матчам СТРОГО ДО `cutoff`. Вынесено из `compute_standings_asof`
+    (2026-09-11) отдельно от финального ранжирования, чтобы
+    `compute_match_table_impact_positions` ниже могло досчитать позицию
+    "сразу ПОСЛЕ" конкретного матча в памяти (просто добавив в этот же
+    словарь его собственный результат), не гоняя второй раз тот же запрос
+    по всему сезону ради одного матча."""
     from teams.models import TeamSeason
 
     team_ids = list(
@@ -663,29 +660,83 @@ def compute_standings_asof(season, cutoff) -> dict:
     ).values('home_team_id', 'away_team_id', 'home_score', 'away_score')
 
     for row in rows:
-        home_id, away_id = row['home_team_id'], row['away_team_id']
-        home_score, away_score = row['home_score'], row['away_score']
-        if home_score is None or away_score is None:
-            continue
-        if home_id in stats_by_team:
-            s = stats_by_team[home_id]
-            s['goals_scored'] += home_score
-            s['goal_diff'] += home_score - away_score
-            if home_score > away_score:
-                s['points'] += 3
-            elif home_score == away_score:
-                s['points'] += 1
-        if away_id in stats_by_team:
-            s = stats_by_team[away_id]
-            s['goals_scored'] += away_score
-            s['goal_diff'] += away_score - home_score
-            if away_score > home_score:
-                s['points'] += 3
-            elif away_score == home_score:
-                s['points'] += 1
+        _apply_match_result_to_stats(
+            stats_by_team, row['home_team_id'], row['home_score'], row['away_team_id'], row['away_score'],
+        )
+    return stats_by_team
 
+
+def _apply_match_result_to_stats(stats_by_team, home_id, home_score, away_id, away_score) -> None:
+    if home_score is None or away_score is None:
+        return
+    if home_id in stats_by_team:
+        s = stats_by_team[home_id]
+        s['goals_scored'] += home_score
+        s['goal_diff'] += home_score - away_score
+        if home_score > away_score:
+            s['points'] += 3
+        elif home_score == away_score:
+            s['points'] += 1
+    if away_id in stats_by_team:
+        s = stats_by_team[away_id]
+        s['goals_scored'] += away_score
+        s['goal_diff'] += away_score - home_score
+        if away_score > home_score:
+            s['points'] += 3
+        elif away_score == home_score:
+            s['points'] += 1
+
+
+def _rank_standings(stats_by_team) -> dict:
     ordered = sorted(
         stats_by_team.items(),
         key=lambda kv: (-kv[1]['points'], -kv[1]['goal_diff'], -kv[1]['goals_scored']),
     )
     return {team_id: position for position, (team_id, _stats) in enumerate(ordered, start=1)}
+
+
+def compute_standings_asof(season, cutoff) -> dict:
+    """Позиции всех команд сезона по матчам СТРОГО ДО `cutoff` (исключая его).
+
+    :param cutoff: datetime — обычно `match.start_time` конкретного матча,
+        "таблица как она была непосредственно перед этой игрой".
+    :return: {team_id: position (int, с 1)} — команда без сыгранных до
+        `cutoff` матчей в сезоне ВСЁ РАВНО попадает в словарь (0 очков,
+        играет роль при разрыве позиций внизу таблицы), т.к. `Team.objects`
+        ограничивается участниками сезона (`teamseason__season=season`), а
+        не только теми, кто уже сыграл хоть один матч к этому моменту.
+    """
+    return _rank_standings(_standings_stats_asof(season, cutoff))
+
+
+def compute_match_table_impact_positions(match) -> tuple[dict, dict]:
+    """Позиции "ДО" и "СРАЗУ ПОСЛЕ" конкретного `match` — для пункта 13
+    брифа карточки матча ("Изменил таблицу").
+
+    ИСПРАВЛЕНО (2026-09-11, жалоба пользователя): `matches/card_services.py`
+    раньше сравнивал позицию команды ПЕРЕД этим матчем с её ТЕКУЩЕЙ
+    (сегодняшней) позицией в лиге (TeamSeasonStats.position) — для старого
+    матча это два никак не связанных момента времени: "Кайрат поднялся на
+    1-е место" показывалось на КАЖДОЙ карточке матча Кайрата в сезоне,
+    потому что "сегодня" у всех этих карточек одно и то же. Факт должен
+    закрепляться за конкретным матчем: сравниваем позицию ПЕРЕД игрой и
+    позицию СРАЗУ ПОСЛЕ неё — именно то изменение, которое вызвал этот
+    результат, а не вся история сезона до сегодняшнего дня.
+
+    Всего ОДИН запрос к БД (через `_standings_stats_asof` для "до") — эффект
+    самого матча добавляется в статистику в памяти, второй проход по
+    сезону не нужен.
+
+    :return: (positions_before, positions_after) — оба {team_id: position}.
+    """
+    stats_before = _standings_stats_asof(match.season, match.start_time)
+    positions_before = _rank_standings(stats_before)
+
+    stats_after = {tid: dict(s) for tid, s in stats_before.items()}
+    if match.status == 'finished':
+        _apply_match_result_to_stats(
+            stats_after, match.home_team_id, match.home_score, match.away_team_id, match.away_score,
+        )
+    positions_after = _rank_standings(stats_after)
+
+    return positions_before, positions_after
