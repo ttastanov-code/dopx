@@ -85,7 +85,19 @@ class CoachListView(ListView):
         context['show_all'] = self.show_all
         # Только команды, у которых реально есть привязанный тренер —
         # иначе в списке снова были бы варианты, ничего не находящие.
-        context['teams'] = Team.objects.filter(coaches__isnull=False).distinct().order_by('name')
+        #
+        # ИСПРАВЛЕНО (2026-09-10, жалоба пользователя — "в фильтре по
+        # командам тоже все команды всех сезонов, а не текущий сезон"):
+        # раньше фильтр `coaches__isnull=False` брал ЛЮБУЮ команду за всю
+        # историю импорта, включая команды прошлых/вылетевших сезонов —
+        # тот же класс бага, что был на странице "Игроки" (см.
+        # players/views.py::PlayerListView.get_context_data). Теперь, как и
+        # там, дополнительно ограничиваем текущим сезоном (тот же паттерн,
+        # что и TeamListView/PlayerListView), кроме режима ?season=all.
+        teams_qs = Team.objects.filter(coaches__isnull=False)
+        if self.active_season and not self.show_all:
+            teams_qs = teams_qs.filter(teamseason__season=self.active_season)
+        context['teams'] = teams_qs.distinct().order_by('name')
         return context
 
 class CoachDetailView(DetailView):

@@ -76,6 +76,35 @@ class UserWeightTests(TestCase):
         )
         weight = calculate_user_weight(self.user, context)
         self.assertEqual(weight, 1.4)
+
+    def test_attended_stadium_bonus(self):
+        """ИСПРАВЛЕНО (2026-09-11, прямая просьба пользователя — "мы же
+        пишем, что эти ответы влияют на вес"): attended_stadium раньше
+        сохранялся, но нигде не читался calculate_user_weight — бонус +0.2,
+        тот же вес, что и за watched_type == "full"."""
+        context = ContextEvaluation.objects.create(
+            user=self.user, match=self.match, watched_type="partial", attended_stadium=True,
+        )
+        weight = calculate_user_weight(self.user, context)
+        self.assertEqual(weight, 1.2)
+
+    def test_stadium_and_full_match_bonuses_stack(self):
+        """Присутствие на стадионе И просмотр "полного матча" — независимые
+        флаги, оба бонуса складываются (можно уйти со стадиона раньше
+        конца — тогда attended_stadium=True, но watched_type != 'full';
+        здесь проверяем случай, когда досмотрел до конца, будучи там)."""
+        context = ContextEvaluation.objects.create(
+            user=self.user, match=self.match, watched_type="full", attended_stadium=True,
+        )
+        weight = calculate_user_weight(self.user, context)
+        self.assertEqual(weight, 1.4)
+
+    def test_attended_stadium_false_gives_no_bonus(self):
+        context = ContextEvaluation.objects.create(
+            user=self.user, match=self.match, watched_type="partial", attended_stadium=False,
+        )
+        weight = calculate_user_weight(self.user, context)
+        self.assertEqual(weight, 1.0)
  
  
 @override_settings(CELERY_TASK_ALWAYS_EAGER=True, CELERY_TASK_EAGER_PROPAGATES=True)

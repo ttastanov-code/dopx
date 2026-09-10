@@ -10,41 +10,56 @@ my_reaction (MatchReaction|None).
 
 Карточка матча — это <a href="...">, контейнер виджета останавливает
 всплытие клика — тот же приём, что у виджета прогноза выше на карточке.
+
+ИСПРАВЛЕНО (2026-09-10, вопрос пользователя — "почему везде 0%?"): это не
+баг, а честный "0 голосов из 0" для только что запущенной фичи — раньше
+процент выглядел как "0%" неотличимо от "проголосовали, но никто не
+выбрал этот вариант", из-за чего смотрелось как поломка. Теперь при
+total=0 показываем "—" вместо "0%" и заголовок над виджетом приглашает
+проголосовать первым, вместо того чтобы молча показывать три нуля.
 {% endcomment %}
 <div id="reaction-widget-{{ match.id }}"
-     class="grid grid-cols-3 gap-1 sm:gap-1.5 mt-2 pt-2 border-t border-base-300"
+     class="mt-2 pt-2 border-t border-base-300"
      onclick="event.stopPropagation()">
+    <div class="text-[9px] font-semibold opacity-50 mb-1">
+        {% if counts.total %}Мнение болельщиков{% else %}Оцените матч первым{% endif %}
+    </div>
+    <div class="grid grid-cols-3 gap-1 sm:gap-1.5">
     <button type="button"
             hx-post="{% url 'matches:react' match.id %}"
             hx-vals='{"reaction": "match_of_round"}'
             hx-target="#reaction-widget-{{ match.id }}"
             hx-swap="outerHTML"
+            title="Один из лучших матчей тура"
             class="flex flex-col items-center gap-0.5 py-1 px-1 rounded-lg border transition-all
                    {% if my_reaction.reaction == 'match_of_round' %}border-success bg-success/10{% else %}border-base-300{% endif %}">
         <i class="ti ti-trophy text-xs"></i>
         <span class="text-[9px] font-semibold opacity-60 truncate max-w-full">Матч тура</span>
-        <span class="text-xs font-bold">{{ counts.match_of_round_pct }}%</span>
+        <span class="text-xs font-bold">{% if counts.total %}{{ counts.match_of_round_pct }}%{% else %}—{% endif %}</span>
     </button>
     <button type="button"
             hx-post="{% url 'matches:react' match.id %}"
             hx-vals='{"reaction": "upset"}'
             hx-target="#reaction-widget-{{ match.id }}"
             hx-swap="outerHTML"
+            title="Результат стал неожиданностью"
             class="flex flex-col items-center gap-0.5 py-1 px-1 rounded-lg border transition-all
                    {% if my_reaction.reaction == 'upset' %}border-warning bg-warning/10{% else %}border-base-300{% endif %}">
         <i class="ti ti-bolt text-xs"></i>
         <span class="text-[9px] font-semibold opacity-60 truncate max-w-full">Неожиданно</span>
-        <span class="text-xs font-bold">{{ counts.upset_pct }}%</span>
+        <span class="text-xs font-bold">{% if counts.total %}{{ counts.upset_pct }}%{% else %}—{% endif %}</span>
     </button>
     <button type="button"
             hx-post="{% url 'matches:react' match.id %}"
             hx-vals='{"reaction": "boring"}'
             hx-target="#reaction-widget-{{ match.id }}"
             hx-swap="outerHTML"
+            title="Матч получился скучным"
             class="flex flex-col items-center gap-0.5 py-1 px-1 rounded-lg border transition-all
                    {% if my_reaction.reaction == 'boring' %}border-neutral bg-neutral/10{% else %}border-base-300{% endif %}">
         <i class="ti ti-moon text-xs"></i>
         <span class="text-[9px] font-semibold opacity-60 truncate max-w-full">Скучный</span>
-        <span class="text-xs font-bold">{{ counts.boring_pct }}%</span>
+        <span class="text-xs font-bold">{% if counts.total %}{{ counts.boring_pct }}%{% else %}—{% endif %}</span>
     </button>
+    </div>
 </div>

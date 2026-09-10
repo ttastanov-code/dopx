@@ -487,22 +487,14 @@ def find_season_controversial_matches(team, season, *, limit: int = 3) -> list[d
 TEAM_FORM_RECENT_MATCHES = 5
 
 
-def get_team_form(team, matches) -> list[dict]:
-    """W/D/L последних матчей команды — считается на лету из УЖЕ полученного
-    списка `matches` (например, TeamDetailView.recent_matches, уже
-    отфильтрованного по finished + текущему сезону, отсортированного
-    -start_time) — намеренно не делает свой запрос к БД, чтобы не платить
-    вторым походом за тем, что вызывающий код обычно и так уже достал.
-
-    :param matches: любой итерируемый список Match (finished), отсортированный
-        от новых к старым — если сортировка другая, результат будет в чужом
-        порядке. Берутся первые TEAM_FORM_RECENT_MATCHES штук.
-    :return: список dict [{result: 'W'|'D'|'L', match: Match, opponent: Team,
-        score_display: str}], от старых к новым (так удобнее рисовать слева
-        направо — W W D L W читается как "было -> стало", а не наоборот).
-    """
+def _build_form_entries(team, matches) -> list[dict]:
+    """Общий строитель W/D/L-записей — вынесено из get_team_form (2026-09-11),
+    чтобы переиспользовать в describe_season_form_streak ниже БЕЗ среза по
+    TEAM_FORM_RECENT_MATCHES (см. её докстринг). Порядок записей в
+    результате — тот же, что и в `matches` на входе, без реверса (реверс —
+    забота каждого из двух вызывающих, у них разные контракты)."""
     form = []
-    for match in list(matches)[:TEAM_FORM_RECENT_MATCHES]:
+    for match in matches:
         if match.home_score is None or match.away_score is None:
             continue
         is_home = match.home_team_id == team.id
@@ -524,7 +516,24 @@ def get_team_form(team, matches) -> list[dict]:
             "is_home": is_home,
             "score_display": f"{own_score}:{opp_score}",
         })
+    return form
 
+
+def get_team_form(team, matches) -> list[dict]:
+    """W/D/L последних матчей команды — считается на лету из УЖЕ полученного
+    списка `matches` (например, TeamDetailView.recent_matches, уже
+    отфильтрованного по finished + текущему сезону, отсортированного
+    -start_time) — намеренно не делает свой запрос к БД, чтобы не платить
+    вторым походом за тем, что вызывающий код обычно и так уже достал.
+
+    :param matches: любой итерируемый список Match (finished), отсортированный
+        от новых к старым — если сортировка другая, результат будет в чужом
+        порядке. Берутся первые TEAM_FORM_RECENT_MATCHES штук.
+    :return: список dict [{result: 'W'|'D'|'L', match: Match, opponent: Team,
+        score_display: str}], от старых к новым (так удобнее рисовать слева
+        направо — W W D L W читается как "было -> стало", а не наоборот).
+    """
+    form = _build_form_entries(team, list(matches)[:TEAM_FORM_RECENT_MATCHES])
     form.reverse()
     return form
 
@@ -575,6 +584,30 @@ def describe_form_streak(form: list[dict]) -> str | None:
     if streak_len < 2:
         return None  # одиночная ничья/поражение без серии — не о чем сообщить
     return f'Не побеждает {streak_len} {_pluralize_matches(streak_len)}'
+
+
+def describe_season_form_streak(team, season_matches) -> str | None:
+    """ИСПРАВЛЕНО (2026-09-11, прямая просьба пользователя — "стрик из
+    побед только в рамках 5 матчей пишем, а по факту в этом сезоне серия
+    длиннее, например 10 побед подряд, а мы пишем 5"):
+    describe_form_streak(get_team_form(...)) выше искусственно обрезан до
+    TEAM_FORM_RECENT_MATCHES=5 — это верный компромисс для кружков W/D/L
+    (визуально больше 5 некуда), но НЕ для текстового факта "N побед
+    подряд", который претендует на точность. Эта функция считает серию по
+    ВСЕМ переданным матчам — обрыв серии определяется только реальным
+    результатом, не искусственным окном в 5 игр.
+
+    :param season_matches: Match (finished) этой команды за ТЕКУЩИЙ сезон
+        (matches/card_services.py фильтрует `season=match.season` — форма
+        "за сезон", не "за последние N игр когда-либо"), отсортированные
+        -start_time (от новых к старым) — тот же порядок, что ожидает
+        get_team_form.
+    :return: та же формулировка, что и describe_form_streak — переиспользует
+        её текстовую логику один в один, просто без среза входных данных.
+    """
+    form = _build_form_entries(team, season_matches)
+    form.reverse()
+    return describe_form_streak(form)
 
 
 def _win_suffix(n: int) -> str:

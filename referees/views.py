@@ -74,9 +74,23 @@ class RefereeDetailView(DetailView):
         context = super().get_context_data(**kwargs)
         referee = self.object
 
+        # 2026-09-11 (баг пользователя: у Нурзатбек Абдыкадырова список
+        # судей показывал "0" матчей, а его же страница — "1"). Причина —
+        # ТОТ ЖЕ класс несоответствия querysets, что уже чинили для
+        # игроков/команд: RefereeListView.get_queryset() с 2026-09-09
+        # считает total_matches ТОЛЬКО за активный сезон (Q(match__season=
+        # active_season), см. комментарий там же), а эта страница до
+        # сегодня считала матчи/оценки за ВСЮ историю разом — числа не
+        # могли не разойтись. Приводим детальную страницу к тому же
+        # умолчанию (активный сезон, ?season=all снимает фильтр) — тот же
+        # переключатель _season_scope_toggle.html, что и на списке судей.
+        active_season = Season.get_primary_active()
+        show_all = self.request.GET.get('season') == 'all'
+        season_kwargs = {'season': active_season} if active_season and not show_all else {}
+
         # ✅ Матчи судьи (по факту, а не по оценкам)
         matches = Match.objects.filter(
-            referee=referee
+            referee=referee, **season_kwargs
         ).select_related(
             'home_team', 'away_team', 'league', 'season'
         ).order_by('-start_time')[:20]
@@ -89,19 +103,22 @@ class RefereeDetailView(DetailView):
         # взвешенный агрегат ПО МАТЧУ (RefereeMatchAggregate, см.
         # aggregates/tasks.py::recalculate_referee_aggregates): одна
         # строка = один матч.
+        eval_season_kwargs = {'match__season': active_season} if active_season and not show_all else {}
         evaluations = RefereeMatchAggregate.objects.filter(
-            referee=referee
+            referee=referee, **eval_season_kwargs
         ).select_related('match').order_by('-match__start_time')[:10]
 
         # ✅ Статистика: разделяем матчи и оценки
-        agg_totals = RefereeMatchAggregate.objects.filter(referee=referee).aggregate(
+        agg_totals = RefereeMatchAggregate.objects.filter(
+            referee=referee, **eval_season_kwargs
+        ).aggregate(
             total_evaluations=Sum('total_votes'),
             avg_influence=Avg('avg_influence'),
             avg_decision_quality=Avg('avg_decision_quality'),
         )
         stats = {
             # Матчи (факт)
-            'total_matches': Match.objects.filter(referee=referee).count(),
+            'total_matches': Match.objects.filter(referee=referee, **season_kwargs).count(),
             # Оценки (мнение) — берём из готового агрегата, не RefereeEvaluation.
             'total_evaluations': agg_totals['total_evaluations'] or 0,
             'avg_influence': agg_totals['avg_influence'],
@@ -121,6 +138,8 @@ class RefereeDetailView(DetailView):
             'evaluations': evaluations,
             'stats': stats,
             'votable_match': votable_match,
+            'active_season': active_season,
+            'show_all': show_all,
             'page_title': f'{referee.first_name} {referee.last_name} — DOPX',
         })
         return context

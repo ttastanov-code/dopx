@@ -244,7 +244,7 @@
     gap: .4rem;
     margin-bottom: 8px;
 }
-.mrow__intrigue-tag, .mrow__followed-badge {
+.mrow__intrigue-tag, .mrow__followed-badge, .mrow__reaction-tag {
     display: inline-flex;
     align-items: center;
     gap: .3rem;
@@ -262,17 +262,53 @@
     background: color-mix(in oklab, var(--color-error) 12%, transparent);
     color: var(--color-error);
 }
+/* "Матч тура" по реакциям сообщества (2026-09-10, доп. предложение) —
+   тёплый золотой тон вместо секондари/эррор выше, чтобы визуально читался
+   как "награда от болельщиков", а не как ещё один тег интриги. */
+.mrow__reaction-tag {
+    background: color-mix(in oklab, var(--color-warning) 16%, transparent);
+    color: var(--color-warning);
+}
 
 /* Форма команд/очный баланс (п.3, п.4) — компактный текст под составом,
-   тот же визуальный вес, что .mrow__meta (второстепенная информация). */
+   тот же визуальный вес, что .mrow__meta (второстепенная информация).
+   ИСПРАВЛЕНО (2026-09-10, жалоба пользователя со скриншотом — "просто
+   набор слов и букв", "не влезает даже"): раньше все 2-3 факта лежали
+   инлайн на одной flex-wrap строке через точки-разделители — на узкой
+   карточке они боролись за одну и ту же строку и либо обрезались, либо
+   переносились посреди фразы, всё сливалось в нечитаемую кашу. Теперь
+   каждый факт — своя строка с иконкой (см. .mrow__context-row ниже),
+   ровно тот же приём, что уже применён для .mrow__key-moment на этой же
+   карточке — читается построчно, не соревнуется за ширину с соседями. */
 .mrow__context {
     display: flex;
-    flex-wrap: wrap;
-    gap: .25rem .7rem;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 8px;
+}
+.mrow__context-row {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    min-width: 0;
     font-size: .6875rem;
     font-weight: 600;
     color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
-    margin-top: 8px;
+}
+.mrow__context-row .ti {
+    flex-shrink: 0;
+    font-size: .8rem;
+    color: color-mix(in oklab, var(--color-base-content) 35%, transparent);
+}
+.mrow__context-row span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.mrow__context-row strong {
+    color: var(--color-base-content);
+    font-weight: 700;
 }
 
 /* "Главный момент" завершённого матча (п.8) */
@@ -335,9 +371,19 @@
    (см. докстринг файла — график "Драма N" уже убирали из списка). */
 .mrow__dna-traits {
     display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 8px;
+}
+.mrow__dna-caption {
+    font-size: .5625rem;
+    font-weight: 600;
+    color: color-mix(in oklab, var(--color-base-content) 40%, transparent);
+}
+.mrow__dna-chips {
+    display: flex;
     flex-wrap: wrap;
     gap: .3rem;
-    margin-top: 8px;
 }
 .mrow__dna-chip {
     font-size: .625rem;

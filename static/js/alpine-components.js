@@ -191,6 +191,22 @@ document.addEventListener('alpine:init', () => {
             this.watchedType = this.$el.dataset.watchedType || 'full';
             this.attendedStadium = this.$el.dataset.attendedStadium === 'true';
             this.evalMode = this.$el.dataset.evalMode || 'quick';
+
+            // ИСПРАВЛЕНО (2026-09-11, прямая просьба пользователя — "на
+            // стадионе" + "только голы" не имеет смысла: на трибуне
+            // физически нельзя "посмотреть только голы", этот вариант
+            // рассчитан на просмотр нарезки/нарезанной трансляции дома, не
+            // на живое присутствие). Вариант "Голы" скрывается в разметке
+            // через x-show="!attendedStadium" (context.html) — здесь же
+            // подчищаем само значение, если человек сначала выбрал "Голы",
+            // а потом включил тумблер "Были на стадионе": иначе скрытый, но
+            // всё ещё выбранный вариант ушёл бы на сервер несогласованным
+            // с тем, что видно на экране.
+            this.$watch('attendedStadium', (value) => {
+                if (value && this.watchedType === 'highlights') {
+                    this.watchedType = 'full';
+                }
+            });
         },
     }));
 
@@ -326,8 +342,24 @@ document.addEventListener('alpine:init', () => {
     Alpine.data('pushSettings', () => ({
         status: 'checking',
         csrfToken: '',
+        // ДОБАВЛЕНО (2026-09-11, прямая просьба пользователя после вопроса
+        // "можем ли мы сделать пуши как у приложений") — iOS Safari
+        // поддерживает Web Push ТОЛЬКО для сайтов, установленных на экран
+        // "Домой" (iOS 16.4+); просто открытая вкладка Safari пуши слать
+        // не может — это ограничение самого iOS, не баг DOPX. Без этой
+        // подсказки iPhone-пользователь жал бы "Включить" и просто получал
+        // бы 'denied'/'unsupported' без объяснения причины.
+        isIOS: false,
+        isStandalone: false,
         async init() {
             this.csrfToken = this.$el.dataset.csrfToken || '';
+            this.isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+            // navigator.standalone — нестандартное свойство именно iOS
+            // Safari (true, когда сайт запущен с иконки на экране "Домой");
+            // display-mode: standalone — тот же признак по стандарту CSS
+            // Media Queries, для остальных браузеров/Android.
+            this.isStandalone = window.navigator.standalone === true
+                || window.matchMedia('(display-mode: standalone)').matches;
             // csrfToken пробрасывается в dopxPushStatus для самолечения
             // осиротевшей подписки (см. static/js/push.js::dopxPushStatus
             // за полным объяснением бага, найденного пользователем 2026-09-09).

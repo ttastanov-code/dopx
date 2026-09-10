@@ -125,6 +125,74 @@ class PlayerListSeasonFilterTests(PlayersFixtureMixin, TestCase):
         response = self.client.get(reverse('players:list'))
         self.assertIn(inactive, list(response.context['players']))
 
+    def test_stale_team_fk_excluded_from_default_season_list(self):
+        """ИСПРАВЛЕНО ВТОРОЙ РАЗ (2026-09-11, конкретный пример от
+        пользователя — "Офри Арад"/"Лука Гадрани" в фильтре "Кайрат",
+        оба реально играли последний раз в сезоне 2025, не в текущем):
+        первая версия фикса (last_match_at не старше ROSTER_STALE_THRESHOLD)
+        не ловила этот случай — сезон 2025 вполне укладывался в 15-месячное
+        окно "не устарело". Здесь тот же сценарий: у игрока ЕСТЬ реальная
+        история в MatchLineupPlayer, но она ЦЕЛИКОМ в прошлом сезоне, не в
+        активном — такой игрок не должен попадать в дефолтный сезонный
+        список, хотя `Player.team` формально указывает на команду, которая
+        СЕЙЧАС участвует в активном сезоне."""
+        from lineups.models import MatchLineup, MatchLineupPlayer
+
+        past_season = Season.objects.create(league=self.league, year="2025", is_active=False)
+        stale = self._player("Офри", "Арад")
+        past_match = Match.objects.create(
+            league=self.league, season=past_season,
+            home_team=self.team, away_team=Team.objects.create(name="Соперник 2025"),
+            status='finished', start_time=timezone.now() - timedelta(days=400),
+            voting_open_until=timezone.now() - timedelta(days=397),
+            home_score=1, away_score=0,
+        )
+        past_lineup = MatchLineup.objects.create(match=past_match, team=self.team, side='home')
+        MatchLineupPlayer.objects.create(lineup=past_lineup, player=stale, is_starting=True)
+
+        response = self.client.get(reverse('players:list'))
+        self.assertNotIn(stale, list(response.context['players']))
+
+        # Но фильтр по команде тоже не должен его находить — это и есть
+        # дословный баг-репорт пользователя ("если сделать фильтр по
+        # команде, всё равно отображаются игроки других сезонов").
+        response_team_filtered = self.client.get(reverse('players:list'), {'team': self.team.id})
+        self.assertNotIn(stale, list(response_team_filtered.context['players']))
+
+        # Но в режиме "все сезоны" он должен оставаться видимым — те же
+        # соображения, что и у test_season_all_shows_players_outside_active_season_too.
+        response_all = self.client.get(reverse('players:list'), {'season': 'all'})
+        self.assertIn(stale, list(response_all.context['players']))
+
+    def test_played_this_season_shown_even_if_recently_out_of_form(self):
+        """Игрок, реально выходивший в заявке на матч ТЕКУЩЕГО сезона,
+        должен показываться в дефолтном списке — played_this_season_ids
+        находит его напрямую по факту участия, без временных допущений."""
+        from lineups.models import MatchLineup, MatchLineupPlayer
+
+        played = self._player("Игрок", "СыгравшийВСезоне")
+        match = Match.objects.create(
+            league=self.league, season=self.season,
+            home_team=self.team, away_team=Team.objects.create(name="Соперник"),
+            status='finished', start_time=timezone.now() - timedelta(days=10),
+            voting_open_until=timezone.now() - timedelta(days=7),
+            home_score=1, away_score=0,
+        )
+        lineup = MatchLineup.objects.create(match=match, team=self.team, side='home')
+        MatchLineupPlayer.objects.create(lineup=lineup, player=played, is_starting=True)
+
+        response = self.client.get(reverse('players:list'))
+        self.assertIn(played, list(response.context['players']))
+
+    def test_new_signee_with_no_lineup_history_at_all_is_shown(self):
+        """Совсем новый игрок — team FK уже указывает на команду текущего
+        сезона, но он ещё ни разу не выходил на поле ни за одну команду
+        (никогда) — единственный случай, где season-специфичных данных
+        нет вообще, поэтому доверяем team FK как есть."""
+        rookie = self._player("Новичок", "БезМатчей")
+        response = self.client.get(reverse('players:list'))
+        self.assertIn(rookie, list(response.context['players']))
+
 
 class PlayerDetailNotFoundTests(TestCase):
     def test_nonexistent_player_returns_404(self):

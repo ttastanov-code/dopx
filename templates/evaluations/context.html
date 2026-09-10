@@ -124,7 +124,32 @@
                     <label class="text-sm font-bold mb-3 flex items-center gap-1.5">
                         <i class="ti ti-device-tv text-info"></i>Как вы смотрели матч?
                     </label>
-                    <div class="grid grid-cols-3 gap-2.5">
+                    {% comment %}
+                    ИСПРАВЛЕНО (2026-09-11, прямая просьба пользователя —
+                    "был на стадионе и фрагменты или голы это как?"):
+                    "Голы" рассчитан на просмотр нарезки/трансляции дома —
+                    на трибуне физически нельзя "посмотреть только голы",
+                    комбинация с "Были на стадионе" выглядела абсурдной.
+                    Вариант скрывается, когда включён тумблер ниже (см.
+                    matchContextForm в static/js/alpine-components.js — там
+                    же автосброс значения, если "Голы" был выбран раньше).
+                    Сетка переключается на 2 колонки, чтобы не оставлять
+                    пустое место на месте скрытой карточки.
+
+                    ИСПРАВЛЕНО (тот же день, следующая жалоба пользователя —
+                    "убрать +20% на кнопке 'Полный', это влечёт указать
+                    неправдивую информацию ради рейтинга, типа посмотрел
+                    обзор, но указал ради +20% полный матч"): бейдж "+20%"
+                    прямо на кнопке самоотчёта — это прямой стимул соврать
+                    в свою пользу в момент заполнения формы, а честность
+                    этого самого поля потом ЖЕ используется для повышения
+                    доверия к оценке (calculate_user_weight). Сам бонус к
+                    весу голоса за просмотр целиком никуда не делся (см.
+                    templates/core/rules.html, раздел "Из чего складывается
+                    вес голоса") — просто больше не рекламируется прямо на
+                    кнопке выбора, провоцируя врать.
+                    {% endcomment %}
+                    <div class="grid gap-2.5" :class="attendedStadium ? 'grid-cols-2' : 'grid-cols-3'">
                         <label class="cursor-pointer">
                             <input type="radio" name="watched_type" value="full"
                                    class="sr-only"
@@ -136,10 +161,9 @@
                                     <i class="ti ti-player-play text-primary"></i>
                                 </div>
                                 <div class="text-xs font-semibold mt-1.5">Полный</div>
-                                <div class="badge badge-xs badge-primary mt-1">+20%</div>
                             </div>
                         </label>
-                        <label class="cursor-pointer">
+                        <label class="cursor-pointer" x-show="!attendedStadium">
                             <input type="radio" name="watched_type" value="highlights"
                                    class="sr-only"
                                    x-model="watchedType">

@@ -49,11 +49,12 @@ from matches.services import (
     describe_finished_cta,
     describe_intrigue,
     describe_key_moment,
+    describe_reaction_badge,
     describe_table_impact,
 )
 from predictions.services import bulk_final_prediction_counts, bulk_prediction_data
 from teams.models import TeamSeasonStats
-from teams.services import TEAM_FORM_RECENT_MATCHES, compute_standings_asof, describe_form_streak, get_team_form
+from teams.services import compute_standings_asof, describe_season_form_streak
 
 
 def attach_card_extras(matches, request) -> None:
@@ -178,20 +179,30 @@ def _attach_intrigue_and_pre_match(pre_match) -> None:
         )
         match.card_h2h = _summarize_h2h(match, last_meeting_and_more=recent_meetings)
 
-        home_recent = list(
+        # ИСПРАВЛЕНО (2026-09-11, прямая просьба пользователя — "стрик из
+        # побед только в рамках 5 матчей пишем, а по факту в этом сезоне
+        # серия длиннее"): раньше запрос был БЕЗ фильтра по сезону и с
+        # срезом [:TEAM_FORM_RECENT_MATCHES] — серия физически не могла
+        # превысить 5, даже если реальная серия в текущем сезоне длиннее
+        # (или вообще началась в предыдущем сезоне, что тоже не то, что
+        # нужно для "форма В ЭТОМ СЕЗОНЕ"). Теперь — все финишированные
+        # матчи ИМЕННО текущего сезона команды (season=match.season), без
+        # среза — describe_season_form_streak (teams/services.py) сама
+        # находит, где серия реально обрывается.
+        home_season_matches = list(
             Match.objects.filter(
                 Q(home_team=match.home_team) | Q(away_team=match.home_team),
-                status='finished', start_time__lt=match.start_time,
-            ).select_related('home_team', 'away_team').order_by('-start_time')[:TEAM_FORM_RECENT_MATCHES]
+                season=match.season, status='finished', start_time__lt=match.start_time,
+            ).select_related('home_team', 'away_team').order_by('-start_time')
         )
-        away_recent = list(
+        away_season_matches = list(
             Match.objects.filter(
                 Q(home_team=match.away_team) | Q(away_team=match.away_team),
-                status='finished', start_time__lt=match.start_time,
-            ).select_related('home_team', 'away_team').order_by('-start_time')[:TEAM_FORM_RECENT_MATCHES]
+                season=match.season, status='finished', start_time__lt=match.start_time,
+            ).select_related('home_team', 'away_team').order_by('-start_time')
         )
-        match.card_home_form_text = describe_form_streak(get_team_form(match.home_team, home_recent))
-        match.card_away_form_text = describe_form_streak(get_team_form(match.away_team, away_recent))
+        match.card_home_form_text = describe_season_form_streak(match.home_team, home_season_matches)
+        match.card_away_form_text = describe_season_form_streak(match.away_team, away_season_matches)
 
 
 def _bulk_current_positions(season_ids, team_ids) -> dict:
@@ -282,7 +293,7 @@ def _attach_finished_extras(finished, user) -> None:
     # --- 8: главный момент (bulk fetch событий, группировка в Python) ---
     events_by_match = defaultdict(list)
     decided_admin_ids = {m.id for m in finished if m.decided_administratively}
-    non_admin_ids = [m.id for m in finished_ids if m.id not in decided_admin_ids]
+    non_admin_ids = [match_id for match_id in finished_ids if match_id not in decided_admin_ids]
     if non_admin_ids:
         for event in (
             MatchEvent.objects.filter(match_id__in=non_admin_ids)
@@ -317,8 +328,16 @@ def _attach_finished_extras(finished, user) -> None:
         reaction_entry = reaction_data.get(match.id)
         match.card_reaction_counts = reaction_entry['counts'] if reaction_entry else None
         match.card_my_reaction = reaction_entry['my_reaction'] if reaction_entry else None
+        # Доп. предложение (2026-09-10) — видимый бейдж "Матч тура", когда
+        # сообщество явным большинством так и отметило (см. описание в
+        # matches/services.py::describe_reaction_badge).
+        match.card_reaction_badge = describe_reaction_badge(match.card_reaction_counts)
 
-        match.card_sensation = compute_sensation_index(match, sensation_counts.get(match.id))
+        # Реакции — запасной источник для индекса сенсации, если прогнозов
+        # до матча было мало (см. докстринг compute_sensation_index).
+        match.card_sensation = compute_sensation_index(
+            match, sensation_counts.get(match.id), match.card_reaction_counts,
+        )
 
         standings_before = compute_standings_asof(match.season, match.start_time)
         before_home = standings_before.get(match.home_team_id)
