@@ -15,10 +15,20 @@
    команда закрывает пробел ТОЛЬКО для записей, созданных ДО того, как
    транслитератор туда подключили (см. чат: "надо автоматизировать").
 
+ИСПРАВЛЕНО (2026-09-10, безопасность): раньше команда ПРИМЕНЯЛА изменения
+по умолчанию, а --dry-run был опцией, чтобы только посмотреть — единственная
+такая команда в проекте (fix_known_wrong_names/fix_stale_player_teams и
+все остальные "разовые коррекции" в parsers/management/commands/, наоборот,
+по умолчанию dry-run, --apply нужен явно). Несогласованность между
+командами — реальный риск при большом количестве похожих команд в одной
+сессии (легко перепутать, какая из них "безопасная по умолчанию"). Теперь
+ЭТА команда тоже дефолтит на dry-run, как и все остальные — --apply нужен
+явно, чтобы реально записать.
+
 Использование:
-    python manage.py apply_cyrillic_names                    # high + авто
-    python manage.py apply_cyrillic_names --include-review   # + review-словарь
-    python manage.py apply_cyrillic_names --dry-run          # только показать
+    python manage.py apply_cyrillic_names                        # только отчёт (dry-run)
+    python manage.py apply_cyrillic_names --apply                # применить (high + авто)
+    python manage.py apply_cyrillic_names --include-review --apply   # + review-словарь
 
 Ничего не трогает у записей, чьё текущее имя УЖЕ чистая кириллица (ручная
 правка staff не перезаписывается).
@@ -47,35 +57,57 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--include-review", action="store_true", help="Применить и словарные записи с уверенностью 'review'")
-        parser.add_argument("--dry-run", action="store_true", help="Только показать, что будет изменено, ничего не сохранять")
+        parser.add_argument("--apply", action="store_true", help="Реально записать изменения (по умолчанию — только отчёт, dry-run)")
 
     def handle(self, *args, **options):
         include_review = options["include_review"]
-        dry_run = options["dry_run"]
+        dry_run = not options["apply"]
+        mode = "ПРИМЕНИТЬ" if not dry_run else "ТОЛЬКО ОТЧЁТ (dry-run, --apply чтобы применить)"
+        self.stdout.write(self.style.WARNING(f"Режим: {mode}"))
 
         self._apply(Referee, REFEREE_TRANSLATIONS, "судья", include_review, dry_run)
         self._apply(Coach, COACH_TRANSLATIONS, "тренер", include_review, dry_run)
 
     def _apply(self, model, translations: dict, label: str, include_review: bool, dry_run: bool):
-        applied_dict = applied_auto = skipped_already_cyrillic = skipped_review = 0
+        applied_dict = applied_auto = skipped_already_cyrillic = skipped_review = skipped_dict_already_correct = 0
 
         for obj in model.objects.filter(sportmonks_id__isnull=False):
             current_full = f"{obj.first_name} {obj.last_name}".strip()
-            if _is_clean_cyrillic(current_full):
-                skipped_already_cyrillic += 1
-                continue
-
             sm_id = int(obj.sportmonks_id)
             entry = translations.get(sm_id)
 
+            # ИСПРАВЛЕНО (2026-09-10, НАСТОЯЩАЯ причина "Григоры Московченко"
+            # вместо "Григорий" — словарная запись УЖЕ была верной
+            # (REFEREE_TRANSLATIONS[27929], confidence="high"), но эта
+            # команда никогда до неё не доходила): проверка "уже чистая
+            # кириллица — не трогаем" раньше шла ПЕРВОЙ, ДО того, как вообще
+            # смотрели в словарь. "Григоры" — ПОЛНОСТЬЮ кириллическая строка
+            # (это не смесь алфавитов, просто неверный автоперевод), поэтому
+            # _is_clean_cyrillic(current_full) считала её "уже готовой" и
+            # запись пропускалась НАВСЕГДА — ни --apply, ни --include-review
+            # не помогали, дело было не в них. Теперь порядок другой: сперва
+            # смотрим, есть ли sm_id в вручную выверенном словаре — если
+            # есть, он ВСЕГДА в приоритете (это заведомо более надёжный
+            # источник, чем "текущее значение выглядит нормально") и
+            # применяется, если РЕАЛЬНО отличается от текущего значения.
+            # Проверка "уже чистая кириллица, не трогаем" остаётся ТОЛЬКО
+            # для записей, которых в словаре НЕТ (там это по-прежнему
+            # правильная защита ручной правки staff/уже верного автоперевода
+            # от повторного прогона).
             if entry is not None:
                 first_name, last_name, confidence = entry
                 if confidence == "review" and not include_review:
                     skipped_review += 1
                     continue
+                if first_name == obj.first_name and last_name == obj.last_name:
+                    skipped_dict_already_correct += 1
+                    continue
                 mark = "" if confidence == "high" else " [review]"
                 self.stdout.write(f"  {label} (словарь): {current_full!r} -> {first_name} {last_name}{mark}")
                 applied_dict += 1
+            elif _is_clean_cyrillic(current_full):
+                skipped_already_cyrillic += 1
+                continue
             elif is_likely_foreign(current_full):
                 # ИСПРАВЛЕНО (2026-09-09, баг найден пользователем —
                 # "Слиšковиć"/"Йоãо Антóнио..."): транслитератор не знает
@@ -106,6 +138,7 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(
             f"{label.capitalize()}и: применено из словаря {applied_dict}, "
             f"применено автотранслитератором {applied_auto}, "
-            f"уже кириллица (пропущено) {skipped_already_cyrillic}"
+            f"по словарю уже верно {skipped_dict_already_correct}, "
+            f"вне словаря уже кириллица (пропущено) {skipped_already_cyrillic}"
             + (f", review в словаре пропущено (--include-review) {skipped_review}" if skipped_review else "")
         ))

@@ -38,7 +38,29 @@ templates/matches/detail.html. Карточка "ДНК матча" при эт�
 недостаточен из-за разных родительских колонок.
 {% endcomment %}
 {% if match_dna %}
-<div class="md-side-card {{ extra_class }}">
+{% comment %}
+БАГ, КОТОРЫЙ ТУТ БЫЛ (продуктовый отзыв по скриншоту, 2026-09-10: "карточка
+кривая, контент не влезает"): блок героя/антигероя переключался на
+`sm:grid-cols-2` — а это breakpoint ВЬЮПОРТА (≥640px), не ширины самой
+карточки. На десктопе (lg:) эта карточка стоит в ПРАВОЙ колонке —
+`lg:col-span-2` у левой колонки оставляет правой примерно 1/3 от
+`max-w-7xl` контейнера, то есть ~380–400px, а не полную ширину вьюпорта.
+Вьюпорт при этом почти всегда ≥640px, поэтому `sm:grid-cols-2` включался
+ВСЕГДА на десктопе, даже когда самой карточке физически некуда девать две
+колонки — два аватара+имя+счёт игрока пытались втиснуться в ~180px каждый,
+кириллические имена ломались/наезжали друг на друга. Тот же риск и на
+мобильном для планшетных вьюпортов 640–1023px (там ещё нет `lg:`, карточка
+в одну колонку на всю ширину, но `sm:` уже включает grid-cols-2 — там,
+впрочем, обычно достаточно места).
+ИСПРАВЛЕНИЕ: переключаемся на container query (`@container` + `@md:` —
+нативная фича Tailwind v4, доп. плагин не нужен) — тогда 2 колонки
+включаются по РЕАЛЬНОЙ ширине самой карточки (≥28rem/448px), а не по
+ширине вьюпорта. В узком сайдбаре (~400px) карточка останется в одну
+колонку (герой над антигероем) — там как раз мало места, и это выглядит
+аккуратно; в широких местах (мобильная копия на большом экране, десктоп
+без сайдбара) 2 колонки включатся как и раньше.
+{% endcomment %}
+<div class="md-side-card @container {{ extra_class }}">
     <div class="md-side-card__head flex items-center justify-between gap-2">
         <div class="flex items-center gap-2">
             <span class="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
@@ -79,7 +101,7 @@ templates/matches/detail.html. Карточка "ДНК матча" при эт�
             {% endif %}
         </div>
         {% if match_dna.hero or match_dna.antihero %}
-        <div class="grid grid-cols-1 {% if match_dna.hero and match_dna.antihero %}sm:grid-cols-2{% endif %} gap-2">
+        <div class="grid grid-cols-1 {% if match_dna.hero and match_dna.antihero %}@md:grid-cols-2{% endif %} gap-2">
             {% if match_dna.hero %}
             <div class="flex items-center gap-2.5 bg-warning/5 border border-warning/20 rounded-xl p-2.5">
                 <div class="w-8 h-8 rounded-full bg-warning/15 flex items-center justify-center flex-shrink-0">

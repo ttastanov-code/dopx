@@ -54,6 +54,7 @@ from leagues.models import League
 from lineups.models import MatchLineup, MatchLineupPlayer
 from matches.models import Match, MatchPlayerStatistics, MatchTeamStatistics
 from players.models import Player, PlayerSidelined
+from parsers.sportmonks.name_translations import PLAYER_NAME_CORRECTIONS
 from parsers.sportmonks.translit import is_likely_foreign, transliterate_name
 from referees.models import Referee
 from seasons.models import Season
@@ -182,6 +183,13 @@ LINEUP_TYPE_BENCH = 12  # developer_name BENCH — подтверждено вж
 # поле означает гарантированно ловить битые имена у части игроков — вместо
 # этого пробуем несколько кандидатов по очереди и берём первый, который
 # ПОЛНОСТЬЮ кириллический (ни одной латинской буквы/диакритики).
+#
+# ОГРАНИЧЕНИЕ, НАЙДЕНО 2026-09-10: "полностью кириллический" — это
+# синтаксическая проверка (валидные буквы), а НЕ семантическая (перевод
+# правильный). У четырёх казахских игроков Sportmonks сам присылал
+# "чистую", но НЕВЕРНУЮ кириллицу в "name" ("Эркин" вместо "Еркин" и т.п.)
+# — см. _apply_known_name_corrections ниже, которая точечно перекрывает
+# именно эти известные случаи поверх результата _is_clean_cyrillic.
 _CLEAN_CYRILLIC_RE = re.compile(
     r"^[А-ЯЁа-яёӘәҒғҚқҢңӨөҰұҮүҺһІіЇїЄєЎў\s\-'`\.]+$"
 )
@@ -199,26 +207,89 @@ def _split_name(full_name: str) -> Tuple[str, str]:
     return full_name, ""
 
 
+def _apply_known_name_corrections(
+    first_name: str, last_name: str, entity_label: str, entity_id,
+) -> Tuple[str, str]:
+    """НАЙДЕНО 2026-09-10 (жалоба пользователя — четыре казахских игрока с
+    неверной кириллицей на сайте: "Эркин"/"Еркин" (Тапалов), "Рафаел"/
+    "Рафаэль" (Уразбахтин), "Аскхат"/"Асхат" (Тагыберген), "Мукагалы"/
+    "Мукагали" (Пангерей)): _resolve_cyrillic_name ниже доверяет ЛЮБОМУ
+    кандидату, прошедшему _is_clean_cyrillic, не проверяя, что сам перевод
+    от Sportmonks корректен — для казахских игроков Sportmonks обычно сам
+    присылает готовую (но иногда наивную/неверную) кириллицу, и она
+    принимается как есть, даже если она ошибочна.
+
+    Применяется здесь как ПОСЛЕДНИЙ шаг НАД результатом любого из путей
+    резолвера (clean firstname+lastname / clean name / clean display_name /
+    транслитерация / "похоже на не-славянское") — сверяет ИТОГОВЫЕ
+    first_name/last_name (то, что реально попадёт на сайт) с parsers/
+    sportmonks/name_translations.py::PLAYER_NAME_CORRECTIONS и, если есть
+    совпадение, подставляет проверенную кириллицу.
+
+    ИСПРАВЛЕНО ВТОРОЙ РАЗ (2026-09-10, тот же день — "у нас всё ещё Эркин
+    Тапалов" ПОСЛЕ того, как разовая команда fix_known_wrong_names уже
+    вроде бы починила именно эту запись): раньше сверялись СЫРЫЕ латинские
+    firstname/lastname ДО перевода — но Sportmonks для этих игроков шлёт
+    готовую кириллицу ПРЯМО в firstname/lastname, а не латиницу, так что
+    сверка с латинскими ключами никогда не совпадала и поправка молча не
+    срабатывала на импорте (при этом одноразовая команда чинила запись в
+    базе НАПРЯМУЮ по кириллице — и её тут же откатывал следующий синк,
+    потому что get_or_create_player обновляет имя при КАЖДОМ импорте, см. её
+    докстринг). Теперь сверяем РЕЗУЛЬТАТ, а не источник — не важно, из
+    какого поля/алфавита он взялся, поправка либо совпадает с видимой
+    неверной кириллицей, либо нет.
+
+    first_name/last_name корректируются НЕЗАВИСИМО друг от друга — у
+    игрока может быть неверным только имя, только фамилия, или (в теории)
+    оба сразу. Тот же словарь используется в parsers/management/commands/
+    fix_known_wrong_names.py для разовой коррекции уже испорченных записей
+    — единый источник истины, больше не расходится."""
+    corrected_first = PLAYER_NAME_CORRECTIONS.get(first_name.strip().lower()) if first_name else None
+    corrected_last = PLAYER_NAME_CORRECTIONS.get(last_name.strip().lower()) if last_name else None
+    if corrected_first is None and corrected_last is None:
+        return first_name, last_name
+
+    result_first = corrected_first or first_name
+    result_last = corrected_last or last_name
+    logger.info(
+        "Sportmonks: имя %s sportmonks_id=%s исправлено известной ручной "
+        "поправкой (PLAYER_NAME_CORRECTIONS, найдено 2026-09-10) — было "
+        "%r %r, стало %r %r",
+        entity_label, entity_id, first_name, last_name, result_first, result_last,
+    )
+    return result_first, result_last
+
+
 def _resolve_cyrillic_name(entity_data: Dict, entity_label: str) -> Tuple[str, str]:
     """Возвращает (first_name, last_name), предпочитая первого "чистого"
     кириллического кандидата среди firstname+lastname / name / display_name
     (в этом порядке — см. докстринг блока выше). Если ни один кандидат не
     оказался чистым, берёт лучший доступный текст и логирует warning —
-    такую запись стоит поправить вручную в админке (см. list_latin_names.py)."""
+    такую запись стоит поправить вручную в админке (см. list_latin_names.py).
+
+    ИСПРАВЛЕНО (2026-09-10, см. докстринг _apply_known_name_corrections
+    выше): перед КАЖДЫМ return применяется точечная поправка известных
+    ошибок перевода САМОГО Sportmonks (PLAYER_NAME_CORRECTIONS) — "чистая
+    кириллица" от источника не всегда означает "правильная кириллица"."""
+    entity_id = entity_data.get("id")
     firstname = (entity_data.get("firstname") or "").strip()
     lastname = (entity_data.get("lastname") or "").strip()
+
+    def _corrected(first_name: str, last_name: str) -> Tuple[str, str]:
+        return _apply_known_name_corrections(first_name, last_name, entity_label, entity_id)
+
     if _is_clean_cyrillic(firstname) and _is_clean_cyrillic(lastname):
-        return firstname, lastname
+        return _corrected(firstname, lastname)
 
     name = (entity_data.get("name") or "").strip()
     if _is_clean_cyrillic(name):
-        return _split_name(name)
+        return _corrected(*_split_name(name))
 
     display_name = (entity_data.get("display_name") or "").strip()
     # "Х. Фамилия" — сокращённая форма (инициал с точкой), не годится как
     # first_name даже если сама по себе кириллическая и чистая.
     if _is_clean_cyrillic(display_name) and not re.match(r"^[А-ЯЁ]\.\s", display_name):
-        return _split_name(display_name)
+        return _corrected(*_split_name(display_name))
 
     # Ни один кандидат не оказался чистой кириллицей — автоматически
     # транслитерируем (parsers/sportmonks/translit.py, см. чат с
@@ -256,7 +327,7 @@ def _resolve_cyrillic_name(entity_data: Dict, entity_label: str) -> Tuple[str, s
             "выставить вручную в админке",
             entity_label, entity_data.get("id"), latin_source, name, firstname, lastname, display_name,
         )
-        return _split_name(latin_source)
+        return _corrected(*_split_name(latin_source))
 
     transliterated = transliterate_name(latin_source)
     logger.info(
@@ -267,7 +338,7 @@ def _resolve_cyrillic_name(entity_data: Dict, entity_label: str) -> Tuple[str, s
         entity_label, entity_data.get("id"), latin_source, transliterated,
         name, firstname, lastname, display_name,
     )
-    return _split_name(transliterated)
+    return _corrected(*_split_name(transliterated))
 
 
 # Группировка игроков одной строки формации (formation_field "row:col") в
@@ -785,6 +856,10 @@ def import_match_core(fixture_data: Dict, league: League, season: Season) -> Mat
 
     tour = _extract_tour(fixture_data.get("round"))
     main_referee, referee_crew = _build_referee_crew(fixture_data.get("referees") or [])
+    # См. докстринг Match.decided_administratively (matches/models.py) —
+    # такие матчи никогда не получат lineups/events от источника, это
+    # ожидаемая характеристика результата, а не признак сбоя синка.
+    decided_administratively = dev_name in ("AWARDED", "WO", "ABANDONED")
 
     existing = Match.objects.filter(sportmonks_id=sm_id).only(
         "id", "manual_override", "status", "start_time", "end_time", "voting_open_until",
@@ -800,6 +875,7 @@ def import_match_core(fixture_data: Dict, league: League, season: Season) -> Mat
         "referee": main_referee,
         "referee_crew": referee_crew,
         "tour": tour,
+        "decided_administratively": decided_administratively,
     }
 
     # Тот же guard, что в KFF-импортёре (см. parsers/kff/importers.py::
@@ -977,9 +1053,33 @@ def import_events(match: Match, events_data: List[Dict]) -> bool:
     "обрезанный/неполный ответ", и матч по sportmonks_id обновляется идемпотентно:
     повторный вызов на том же наборе событий просто обновит совпавшие по
     (минута, тип, сторона) записи на месте, не создавая дублей и не трогая id
-    (а значит и EventReaction) уже сохранённых событий."""
+    (а значит и EventReaction) уже сохранённых событий.
+
+    ИСПРАВЛЕНО (2026-09-10, жалоба пользователя "не работают пуши по
+    событиям!!!"): КОРНЕВАЯ ПРИЧИНА — `notifications/tasks.py::
+    notify_followers_match_event` (живой пуш "гол!"/"красная карточка!" и
+    т.д., см. её докстринг) физически существовала и работала бы правильно,
+    но НИКТО и НИКОГДА её не вызывал (`.delay(...)`) — её докстринг прямо
+    заявлял, что постановка в очередь идёт "из parsers/tasks.py::
+    update_match_statuses, сразу после import_events_and_minutes(...,
+    on_event_created=...)" — но именно эта функция и весь KFF-пайплайн были
+    физически удалены 2026-09-09 (см. шапку parsers/tasks.py), и при
+    переходе на Sportmonks (`import_events` выше, другое имя, другая
+    сигнатура, без колбэка on_event_created) точку вызова никто не
+    восстановил. Задача осталась орфанной: код правильный, но выполнить
+    его было неоткуда. Тот же баг обнаружен и у
+    `notify_followers_match_activity` — см. фикс в `import_full_fixture` в
+    этом же файле.
+
+    Фикс: сама функция теперь возвращает список НОВЫХ (не обновлённых
+    повторным импортом) MatchEvent — вызывающая сторона (`import_full_
+    fixture`) ставит `notify_followers_match_event.delay(...)` в очередь
+    через `transaction.on_commit` для каждого события из
+    `notifications.tasks.PUSH_WORTHY_EVENT_TYPES` (гол/автогол/пенальти/
+    отменённый VAR-гол/красная карточка) — то же самое фильтрующее
+    множество, что и раньше, просто теперь реально подключено."""
     if not events_data:
-        return False
+        return []
 
     home_sm_id = str(match.home_team.sportmonks_id or "")
     away_sm_id = str(match.away_team.sportmonks_id or "")
@@ -990,6 +1090,7 @@ def import_events(match: Match, events_data: List[Dict]) -> bool:
         existing_pool.setdefault(key, []).append(ev)
 
     created_count = updated_count = skipped_count = 0
+    newly_created_events: List[MatchEvent] = []
 
     for evt in events_data:
         dev_name = (evt.get("type") or {}).get("developer_name") or ""
@@ -1060,7 +1161,7 @@ def import_events(match: Match, events_data: List[Dict]) -> bool:
             matched_existing.save()
             updated_count += 1
         else:
-            MatchEvent.objects.create(
+            new_event = MatchEvent.objects.create(
                 match=match,
                 player=player,
                 minute=minute,
@@ -1073,12 +1174,13 @@ def import_events(match: Match, events_data: List[Dict]) -> bool:
                 extra_data=evt,
             )
             created_count += 1
+            newly_created_events.append(new_event)
 
     logger.info(
         "Sportmonks: события матча %s — %s новых, %s обновлено, %s пропущено (неизв. тип)",
         match.id, created_count, updated_count, skipped_count,
     )
-    return bool(created_count or updated_count)
+    return newly_created_events
 
 
 @transaction.atomic
@@ -1275,11 +1377,47 @@ def import_full_fixture(fixture_data: Dict, league: League, season: Season) -> M
     client.get_fixture(fixture_id, include=HEAVY_FIXTURE_INCLUDE)). Вызывается
     из parsers/sportmonks/tasks.py (фаза 4) только для матчей, где
     двухуровневая схема обнаружила реальное изменение, и из бэкафилл-команды
-    (sync_sportmonks_season) для истории — никогда в цикле лёгкого опроса."""
+    (sync_sportmonks_season) для истории — никогда в цикле лёгкого опроса.
+
+    ИСПРАВЛЕНО (2026-09-10, жалоба "не работают пуши по событиям!!!" — см.
+    полный разбор в докстринге `import_events` выше): здесь же чинится
+    парный баг для `notify_followers_match_activity` (приглашение оценить
+    ТОЛЬКО ЧТО завершившийся матч) — она тоже нигде не вызывалась. Статус
+    "уже был finished ДО этого вызова" читаем ОДНИМ лёгким запросом ДО
+    `import_match_core` (а не через сравнение "было/стало" внутри неё —
+    её сигнатура `-> Match` используется в 10+ местах parsers/tests.py,
+    менять её ради этого не стоило), поэтому реально ловим именно МОМЕНТ
+    перехода, а не повторно шлём при каждой последующей досинхронизации
+    уже завершённого матча (статистика/составы могут ещё дозагружаться
+    отдельными вызовами _heavy_sync_fixture после финального свистка).
+    `transaction.on_commit` — та же гарантия, что и была задумана исходно
+    (см. докстринг notify_followers_match_activity): задача не должна
+    уйти в очередь раньше, чем изменения реально закоммичены в БД, иначе
+    воркер может прочитать ещё не сохранённые данные."""
+    sm_id = str(fixture_data.get("id"))
+    was_finished_before = Match.objects.filter(
+        sportmonks_id=sm_id, status="finished"
+    ).exists()
+
     match = import_match_core(fixture_data, league=league, season=season)
     import_coaches(match, fixture_data.get("coaches") or [])
     import_lineups(match, fixture_data.get("lineups") or [], fixture_data.get("formations") or [])
-    import_events(match, fixture_data.get("events") or [])
+    newly_created_events = import_events(match, fixture_data.get("events") or [])
     import_statistics(match, fixture_data.get("statistics") or [])
     import_player_statistics(match, fixture_data.get("lineups") or [])
+
+    if match.status == "finished" and not was_finished_before:
+        from notifications.tasks import notify_followers_match_activity
+        transaction.on_commit(lambda: notify_followers_match_activity.delay(str(match.id)))
+
+    if newly_created_events:
+        from notifications.tasks import PUSH_WORTHY_EVENT_TYPES, notify_followers_match_event
+        for event in newly_created_events:
+            if event.event_type in PUSH_WORTHY_EVENT_TYPES:
+                transaction.on_commit(
+                    lambda match_id=str(match.id), event_id=str(event.id): (
+                        notify_followers_match_event.delay(match_id, event_id)
+                    )
+                )
+
     return match

@@ -32,6 +32,39 @@ last_match_at не проставлен/расходится — обновля�
 вручную в админке, или ещё не сыгравших ни матча новичков) команда не
 трогает — сравнивать не с чем, трогать их team было бы гаданием.
 
+ИСПРАВЛЕНО (2026-09-10, пользователь прогнал --apply и "нихуя не
+изменилось" — "Виктор Васин" остался в составе): ДВЕ отдельные ошибки
+нашлись разом.
+
+  1. Раньше queryset был `Player.objects.exclude(sportmonks_id__isnull=True)
+     .exclude(sportmonks_id="")` — то есть игроки БЕЗ sportmonks_id
+     (легаси-записи ещё с KFF-эпохи, так и не сопоставленные
+     reconcile_sportmonks'ом с Sportmonks ID) молча пропускались ЦЕЛИКОМ,
+     даже не попадая в счётчик "проверено". Именно такие записи — самые
+     вероятные кандидаты на "залипание": raз они никогда не были связаны с
+     Sportmonks ID, их НИКОГДА не трогал ни один автосинк вообще, с самого
+     cutover'а. Фильтр по sportmonks_id снят — команда теперь смотрит
+     ВСЕХ игроков, у кого есть история в MatchLineupPlayer, независимо от
+     того, привязаны ли они к Sportmonks.
+
+  2. Если team в MatchLineupPlayer УЖЕ И ТАК совпадает с Player.team (игрок
+     реально в последний раз играл именно за эту команду — он просто
+     давно не играет ВООБЩЕ, не перешёл в другой клуб), эта команда ничего
+     не "чинит" в team, только проставляет last_match_at — а
+     teams/views.py::TeamDetailView ДО этой правки last_match_at вообще не
+     смотрел, состав по-прежнему решался через голый is_active=True без
+     учёта давности. Тот факт, что "команда ничего не изменила" для
+     Васина, мог означать именно это: team и так был верным, чинить было
+     нечего — баг был не в Player.team, а в отсутствии проверки давности
+     на стороне view. См. правку в teams/views.py той же датой — теперь
+     "живой ростер" требует last_match_at не старше ~15 месяцев (или
+     NULL — новичок, ещё не дебютировавший), не просто is_active=True
+     навсегда. last_match_at, проставленный ЭТОЙ командой, — необходимая
+     предпосылка для той проверки: без него у всех старых записей
+     last_match_at=NULL, что тоже давало бы "год давности" эффект новичка
+     — прогнать --apply нужно ОБЯЗАТЕЛЬНО, прежде чем полагаться на
+     фильтр в TeamDetailView.
+
 Использование:
     python manage.py fix_stale_player_teams              # только отчёт (dry-run)
     python manage.py fix_stale_player_teams --apply       # применить изменения
@@ -39,14 +72,13 @@ last_match_at не проставлен/расходится — обновля�
 from __future__ import annotations
 
 from django.core.management.base import BaseCommand
-from django.db.models import Max
 
 from lineups.models import MatchLineupPlayer
 from players.models import Player
 
 
 class Command(BaseCommand):
-    help = "Чинит Player.team/number/position/last_match_at по самой свежей записи в MatchLineupPlayer (разовая коррекция бэкафилла не по хронологии)"
+    help = "Чинит Player.team/number/position/last_match_at по самой свежей записи в MatchLineupPlayer (разовая коррекция бэкафилла не по хронологии + первичное проставление last_match_at всем игрокам)"
 
     def add_arguments(self, parser):
         parser.add_argument("--apply", action="store_true", help="Реально записать изменения (по умолчанию — только отчёт)")
@@ -56,7 +88,9 @@ class Command(BaseCommand):
         mode = "ПРИМЕНИТЬ" if apply_changes else "ТОЛЬКО ОТЧЁТ (dry-run, --apply чтобы применить)"
         self.stdout.write(self.style.WARNING(f"Режим: {mode}"))
 
-        players = Player.objects.exclude(sportmonks_id__isnull=True).exclude(sportmonks_id="")
+        # БЕЗ фильтра по sportmonks_id (см. докстринг, пункт 1) — легаси-
+        # игроки без привязки к Sportmonks ID тоже проверяются.
+        players = Player.objects.all()
         checked = fixed = no_lineup_data = already_correct = 0
 
         for player in players.iterator():

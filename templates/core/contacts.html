@@ -75,16 +75,69 @@
             <label class="label py-1 md:py-2">
               <span class="label-text font-medium text-sm md:text-base">Тема обращения <span class="text-error">*</span></span>
             </label>
-            <select name="category" x-model="category" class="select select-bordered select-sm md:select-md w-full focus:select-primary" :disabled="submitting">
-              <option value="general">💬 Общий вопрос</option>
-              <option value="bug">🐛 Сообщение об ошибке</option>
-              <option value="feature">✨ Предложение функции</option>
-              <option value="evaluation">⭐ Проблема с оценкой матча</option>
-              <option value="account">👤 Вопрос по аккаунту</option>
-              <option value="dispute">⚖️ Оспорить рейтинг / право на ответ</option>
-              <option value="data_error">🏟️ Ошибка в данных матча</option>
-              <option value="other">📦 Другое</option>
-            </select>
+            <!-- ИСПРАВЛЕНО (2026-09-10, запрос пользователя: "убери эти
+                 эмодзи... сделай нормальные солидные премиум обозначения",
+                 затем уточнение: "я сказал сделать другое что-то премиум
+                 солидное ВМЕСТО эмодзи", т.е. просто убрать текст без
+                 замены было недостаточно): нативный <select><option>
+                 физически не умеет рисовать иконки внутри option — это
+                 ограничение браузера, не CSS/Tailwind. Поэтому это больше
+                 не <select>, а кастомный дропдаун на Alpine (тот же
+                 визуальный паттерн, что в components/_navbar.html —
+                 иконка Tabler в цветном скруглённом квадрате + подпись),
+                 с иконкой Tabler вместо эмодзи. Состояние/опции — в
+                 alpine-components.js::contactForm (categoryOptions,
+                 selectedCategory, selectCategory). Значения value=
+                 остались ТЕ ЖЕ, что и в CATEGORY_CHOICES модели (см.
+                 notifications/models.py::ContactSubmission) — меняется
+                 только визуал, не БД. Скрытый input ниже нужен, т.к. это
+                 больше не <select> — ContactsView.post() (core/views.py)
+                 читает category как обычное поле формы. -->
+            <input type="hidden" name="category" x-model="category">
+            <div class="relative" @click.outside="categoryOpen = false" @keydown.escape.window="categoryOpen = false">
+              <button
+                type="button"
+                @click="categoryOpen = !categoryOpen"
+                :disabled="submitting"
+                :aria-expanded="categoryOpen"
+                aria-haspopup="listbox"
+                class="select select-bordered select-sm md:select-md w-full flex items-center gap-2 md:gap-3 focus:select-primary"
+                :class="{'select-primary': categoryOpen}"
+              >
+                <span class="w-6 h-6 md:w-7 md:h-7 rounded-md flex items-center justify-center flex-shrink-0" :class="'bg-' + selectedCategory.color + '/10'">
+                  <i class="ti text-sm md:text-base" :class="[selectedCategory.icon, 'text-' + selectedCategory.color]"></i>
+                </span>
+                <span class="truncate text-left flex-1" x-text="selectedCategory.label"></span>
+                <i class="ti ti-chevron-down opacity-50 transition-transform flex-shrink-0" :class="{'rotate-180': categoryOpen}"></i>
+              </button>
+              <ul
+                x-show="categoryOpen"
+                x-cloak
+                x-transition.opacity.duration.150ms
+                role="listbox"
+                class="absolute z-30 mt-2 w-full p-2 bg-base-100 rounded-box shadow-xl border border-base-300 max-h-80 overflow-y-auto"
+              >
+                <template x-for="opt in categoryOptions" :key="opt.value">
+                  <li role="option" :aria-selected="opt.value === category">
+                    <button
+                      type="button"
+                      @click="selectCategory(opt.value)"
+                      class="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-base-200 text-left transition-colors"
+                      :class="{'bg-base-200': opt.value === category}"
+                    >
+                      <span class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" :class="'bg-' + opt.color + '/10'">
+                        <i class="ti" :class="[opt.icon, 'text-' + opt.color]"></i>
+                      </span>
+                      <span class="min-w-0 flex-1">
+                        <span class="block font-medium text-sm" x-text="opt.label"></span>
+                        <span class="block text-xs opacity-60" x-show="opt.hint" x-text="opt.hint"></span>
+                      </span>
+                      <i class="ti ti-check text-primary flex-shrink-0" x-show="opt.value === category"></i>
+                    </button>
+                  </li>
+                </template>
+              </ul>
+            </div>
             <p x-show="category === 'dispute'" x-cloak class="text-xs opacity-60 mt-2">
               Укажите ссылку на страницу игрока или матча и что именно вы оспариваете. Такие обращения мы рассматриваем в первую очередь.
             </p>

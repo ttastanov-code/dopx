@@ -107,6 +107,17 @@
         </div>
     </div>
 
+    {% comment %}
+    2026-09-09 (запрос пользователя: "перенеси 'Очередь celery: что
+    выполняется сейчас' под 'Доступность Sportmonks API'") — обёртка
+    flex-col вокруг ОБЕИХ карточек правой колонки: без неё третий прямой
+    child grid-контейнера (grid-cols-2, auto-flow row) ушёл бы в НОВУЮ
+    строку начиная с ПЕРВОЙ колонки (под "Ручной запуск celery-задач"),
+    а не под эту карточку — обычное поведение CSS grid auto-placement,
+    не то, что нужно здесь. Обёртка делает правую колонку самостоятельным
+    вертикальным стеком, независимым от высоты левой.
+    {% endcomment %}
+    <div class="flex flex-col gap-4">
     <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4">
             <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
@@ -188,9 +199,10 @@
             </div>
         </div>
     </div>
-</div>
 
-<div id="celery-tasks-card" data-background-poll hx-get="{% url 'dashboard:parser_tasks_partial' %}" hx-trigger="every 10s" hx-swap="innerHTML">
-    {% include 'dashboard/_celery_tasks_card.html' %}
+    <div id="celery-tasks-card" data-background-poll hx-get="{% url 'dashboard:parser_tasks_partial' %}" hx-trigger="every 10s" hx-swap="innerHTML">
+        {% include 'dashboard/_celery_tasks_card.html' %}
+    </div>
+    </div>
 </div>
 {% endblock %}

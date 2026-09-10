@@ -1,4 +1,6 @@
 # teams/views.py
+from datetime import timedelta
+
 from django.db.models import Avg, Count, Exists, F, OuterRef, Q, Sum
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
@@ -16,6 +18,14 @@ from seasons.models import Season
 import logging
 
 logger = logging.getLogger(__name__)
+
+# 2026-09-10 (см. коммент у current_roster_ids в TeamDetailView) — сколько
+# времени без единого матча за клуб игрок ещё считается "живым составом"
+# без прямого доказательства (просто team+is_active, без матча В ЭТОМ
+# сезоне). ~15 месяцев — с запасом на долгую травму/дисквалификацию
+# длиной в межсезонье, но достаточно короткий, чтобы не показывать игроков,
+# явно завершивших карьеру/пропавших без следа год-два назад.
+ROSTER_STALE_THRESHOLD = timedelta(days=450)
 
 class TeamListView(ListView):
     """Список всех команд"""
@@ -195,8 +205,34 @@ class TeamDetailView(DetailView):
             # новичков, ещё не сыгравших ни одного матча) + тех, кто уже
             # успел сыграть за клуб в этом сезоне, но с тех пор ушёл —
             # иначе они пропали бы из состава сезона сразу в день ухода.
+            #
+            # ИСПРАВЛЕНО (2026-09-10, жалоба пользователя со скриншотами —
+            # "Виктор Васин" и "Иброхимхалил Йолдошев" висели в составе
+            # "Кайрат" сезона 2026, хотя последний раз реально играли за
+            # клуб в 2024): is_active=True раньше был БЕССРОЧНЫМ сигналом —
+            # KFF-скрапер, который когда-то снимал is_active у ушедших
+            # игроков (роскомментарий у Player.roster_absence_streak),
+            # удалён из проекта вместе с parsers/kff, ничего больше
+            # is_active в False не переводит. players/models.py::
+            # Player.last_match_at (добавлено тем же фиксом) — дата
+            # САМОГО СВЕЖЕГО матча, к которому привязан текущий team —
+            # используем как признак "давно не играл": NULL (новичок, ещё
+            # не дебютировавший — намеренно ПРОПУСКАЕМ через фильтр, это
+            # ровно тот случай, ради которого current_roster_ids вообще
+            # существует отдельно от played_this_season_ids) или не
+            # старше ROSTER_STALE_THRESHOLD считаются "живым" составом;
+            # более старые last_match_at — явный признак "давно не играл
+            # нигде", такой Player.team просто "застрял" на последнем
+            # реальном клубе и не должен показываться текущим составом.
+            # Запустите `manage.py fix_stale_player_teams --apply`, если
+            # у существующих игроков last_match_at ещё не проставлен —
+            # без него ВСЕ старые записи читаются как NULL, то есть как
+            # "новичок", и этот фильтр их пропустит без эффекта.
+            roster_staleness_cutoff = timezone.now() - ROSTER_STALE_THRESHOLD
             current_roster_ids = Player.objects.filter(
                 team=team, is_active=True
+            ).filter(
+                Q(last_match_at__isnull=True) | Q(last_match_at__gte=roster_staleness_cutoff)
             ).values_list('id', flat=True)
             played_this_season_ids = []
             if current_season:

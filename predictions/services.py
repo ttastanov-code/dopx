@@ -138,3 +138,59 @@ def bulk_prediction_data(matches, user) -> dict:
         m_id: {'counts': counts_by_match[m_id], 'my_prediction': my_predictions.get(m_id)}
         for m_id in match_ids
     }
+
+
+def bulk_final_prediction_counts(match_ids) -> dict:
+    """Bulk-версия `prediction_counts()` БЕЗ гейта `is_prediction_open()` —
+    в отличие от `bulk_prediction_data()` выше (который сознательно
+    пропускает матчи с закрытым окном, см. её докстринг), эта функция нужна
+    редизайну карточки ЗАВЕРШЁННОГО матча (индекс сенсации, пункт 12 брифа
+    2026-09-10) — там нужно распределение голосов, отданных ДО матча, ПОСЛЕ
+    того как он уже сыгран, окно закрыто уже давно. Строки `MatchPrediction`
+    никуда не удаляются после закрытия окна, поэтому это тот же самый
+    единственный запрос, что и в `bulk_prediction_data`, просто без фильтра
+    по `is_prediction_open()` на входном списке матчей.
+
+    :param match_ids: голые id (не объекты Match — вызывающей стороне
+        (`matches/card_services.py`) не нужно тут второй раз фильтровать
+        по статусу, она уже отобрала завершённые матчи сама).
+    :return: {match_id: counts_dict} — тот же формат dict, что и один вызов
+        `prediction_counts()`, но на весь список одним запросом. Матч без
+        единого прогноза просто не попадёт в словарь (вызывающая сторона
+        трактует отсутствие ключа как "прогнозов не было").
+    """
+    match_ids = list(match_ids)
+    if not match_ids:
+        return {}
+
+    counts_by_match: dict = {}
+    rows = (
+        MatchPrediction.objects.filter(match_id__in=match_ids)
+        .values('match_id', 'choice')
+        .annotate(n=Count('id'))
+    )
+    choice_key = {
+        MatchPrediction.CHOICE_HOME: 'home',
+        MatchPrediction.CHOICE_DRAW: 'draw',
+        MatchPrediction.CHOICE_AWAY: 'away',
+    }
+    for row in rows:
+        key = choice_key.get(row['choice'])
+        if not key:
+            continue
+        entry = counts_by_match.setdefault(
+            row['match_id'], {'home': 0, 'draw': 0, 'away': 0}
+        )
+        entry[key] = row['n']
+
+    result = {}
+    for match_id, counts in counts_by_match.items():
+        total = counts['home'] + counts['draw'] + counts['away']
+        result[match_id] = {
+            'home': counts['home'], 'draw': counts['draw'], 'away': counts['away'],
+            'total': total,
+            'home_pct': round(counts['home'] * 100 / total) if total else 0,
+            'draw_pct': round(counts['draw'] * 100 / total) if total else 0,
+            'away_pct': round(counts['away'] * 100 / total) if total else 0,
+        }
+    return result

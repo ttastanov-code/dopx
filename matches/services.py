@@ -19,6 +19,10 @@ from __future__ import annotations
 import statistics
 from collections import defaultdict
 
+from django.db.models import Count, Q
+
+from matches.models import MatchReaction
+
 MOMENTUM_WINDOW_MINUTES = 15
 # Меньше двух событий в окне — не "момент", просто одно событие тайм-лайна,
 # отдельно уже видное в блоке "События матча".
@@ -318,4 +322,321 @@ def build_match_dna(
         "consensus_text": _describe_consensus_text(consensus_level),
         "fan_mood_text": _describe_fan_mood(match_aggregate, fan_support or []),
         "controversial_episode": _describe_controversial_episode(events, referee_aggregate),
+    }
+
+
+# ---------------------------------------------------------------------------
+# РЕДИЗАЙН КАРТОЧКИ МАТЧА (2026-09-10, прямая просьба пользователя, полный
+# бриф из 14 пунктов — "интрига, прогноз сообщества, игрок матча DOPX,
+# Match DNA, индекс сенсации и т.д."). Функции ниже — чистая композиция уже
+# существующих сигналов в короткие фразы/бейджи ДЛЯ КАРТОЧКИ СПИСКА
+# (upcoming/finished), сознательно ОТДЕЛЬНО от build_match_dna() выше:
+# та функция — полная секция страницы одного матча (требует events,
+# match_evaluations и т.д. — дорого на карточку в списке из 20 штук),
+# здесь — минимальный бесплатный набор, безопасный для рендера пачками
+# (см. matches/card_services.py — bulk-оркестрация для списка матчей).
+# ---------------------------------------------------------------------------
+
+# Минимум голосов, чтобы карточка вообще показывала мини-ДНК — тот же
+# принцип "маленькая выборка не должна выглядеть уверенным утверждением",
+# что и FAN_MOOD_MIN_VOTES выше, только применённый к total_votes матча
+# целиком, а не к одной подгруппе.
+CARD_DNA_MIN_VOTES = 3
+
+# Минимум прогнозов, чтобы индекс сенсации вообще что-то значил — один
+# голос "против" не делает результат сенсацией, просто у него мало данных.
+SENSATION_MIN_PREDICTIONS = 5
+
+# С какой минуты гол считается "поздним/решающим" для карточки "главный
+# момент" — тот же порядок величины, что MOMENTUM_WINDOW_MINUTES*5 (75-90'
+# уже используется как пример "концовка" в других местах проекта, см.
+# докстринг _describe_momentum выше).
+LATE_GOAL_MINUTE_THRESHOLD = 75
+
+# "Битва за топ-N" / "матч за выживание" — пороги позиций в таблице.
+INTRIGUE_TOP_BATTLE_POSITION = 3
+INTRIGUE_RELEGATION_ZONE_SIZE = 3
+# Разница мячей в предыдущей очной встрече, начиная с которой имеет смысл
+# подавать следующую игру как "реванш" — 1-2 гола это обычный футбольный
+# результат, не повод для отдельного нарратива.
+INTRIGUE_REVENGE_MARGIN = 3
+
+
+def describe_intrigue(match, *, home_position=None, away_position=None, total_teams=None, last_meeting=None) -> str | None:
+    """Пункт 1 брифа — короткий тег интриги под составом. Приоритет (первое
+    подходящее побеждает — карточка показывает ОДИН тег, не список):
+
+    1. Дерби (`match.is_derby` — уже существующий сигнал, админский список
+       `Team.rivals`, полностью переиспользуется, не дублируется).
+    2. Битва за топ-N — обе команды сейчас входят в верхние
+       INTRIGUE_TOP_BATTLE_POSITION мест таблицы.
+    3. Матч за выживание — обе команды в нижних INTRIGUE_RELEGATION_ZONE_SIZE
+       местах (зона вычисляется от `total_teams`, а не захардкожена — число
+       команд в лиге не константа проекта).
+    4. Реванш — последняя очная встреча закончилась разгромом (>= INTRIGUE_
+       REVENGE_MARGIN мячей) в пользу ТЕКУЩЕГО соперника проигравшей тогда
+       команды: следующая игра между теми же командами подписывается как
+       "Реванш за X:Y".
+
+    :param home_position, away_position: текущая позиция в таблице
+        (TeamSeasonStats.position) — None, если ещё не посчитана.
+    :param last_meeting: dict {'home_team_id', 'away_team_id', 'home_score',
+        'away_score'} последней очной встречи ДО этого матча (любой из двух
+        мог тогда играть дома) либо None, если очных встреч не было.
+    :return: готовая строка тега либо None — карточка просто не показывает
+        блок интриги, не показывает пустой тег.
+    """
+    if getattr(match, 'is_derby', False):
+        return 'Дерби'
+
+    if (
+        home_position is not None and away_position is not None
+        and home_position <= INTRIGUE_TOP_BATTLE_POSITION and away_position <= INTRIGUE_TOP_BATTLE_POSITION
+    ):
+        return f'Битва за топ-{INTRIGUE_TOP_BATTLE_POSITION}'
+
+    if home_position is not None and away_position is not None and total_teams:
+        relegation_from = total_teams - INTRIGUE_RELEGATION_ZONE_SIZE + 1
+        if home_position >= relegation_from and away_position >= relegation_from:
+            return 'Матч за выживание'
+
+    if last_meeting:
+        home_score = last_meeting.get('home_score')
+        away_score = last_meeting.get('away_score')
+        if home_score is not None and away_score is not None and home_score != away_score:
+            margin = abs(home_score - away_score)
+            if margin >= INTRIGUE_REVENGE_MARGIN:
+                # Кто тогда проиграл разгромно — это и есть "жаждущая
+                # реванша" сторона; текущий матч ей интересен именно так,
+                # независимо от того, дома она сейчас играет или в гостях.
+                loser_score, winner_score = min(home_score, away_score), max(home_score, away_score)
+                return f'Реванш за {loser_score}:{winner_score}'
+
+    return None
+
+
+def describe_key_moment(match, events: list) -> str | None:
+    """Пункт 8 брифа — "главный момент" завершённого матча одной строкой.
+    Эвристика (та же дисциплина, что у `_describe_controversial_episode`
+    выше — явный приоритет, "" вместо гадания, если ничего не подходит):
+
+    1. Поздний гол (>= LATE_GOAL_MINUTE_THRESHOLD'), который менял разницу
+       мячей до 1 или срав­нивал счёт — по построению это последний гол
+       матча (события отсортированы по минуте, см. `MatchEvent.Meta.ordering`)
+       на такой минуте почти всегда и есть "решивший исход".
+    2. Красная карточка — карточка меняет ход игры сама по себе, даже без
+       дальнейшего гола.
+    3. Пенальти (реализованный) — редкое, заметное событие.
+    4. Иначе — None, не сочиняем историю на пустом месте (например, сухая
+       ничья без единого примечательного события).
+
+    :param events: список MatchEvent (не queryset), отсортированный по
+        минуте — обычной страницы события уже приходят так (Meta.ordering).
+    """
+    if match.decided_administratively or not events:
+        return None
+
+    goals = [e for e in events if e.event_type in ('goal', 'penalty', 'own_goal')]
+    if goals:
+        last_goal = goals[-1]
+        if last_goal.minute >= LATE_GOAL_MINUTE_THRESHOLD:
+            who = f' ({last_goal.player})' if last_goal.player_id else ''
+            return f'Гол на {last_goal.display_minute}\'{who} решил исход матча'
+
+    red_cards = [e for e in events if e.event_type == 'red_card']
+    if red_cards:
+        event = red_cards[0]
+        who = f' ({event.player})' if event.player_id else ''
+        return f'Красная карточка на {event.display_minute}\'{who}'
+
+    penalties = [e for e in events if e.event_type == 'penalty']
+    if penalties:
+        event = penalties[0]
+        who = f' ({event.player})' if event.player_id else ''
+        return f'Пенальти на {event.display_minute}\'{who}'
+
+    return None
+
+
+def describe_card_dna_traits(aggregate) -> list[str]:
+    """Пункт 10 брифа — мини-версия "ДНК матча" ПРЯМО НА КАРТОЧКЕ (не
+    путать с полным виджетом `_match_dna_card.html`/`build_match_dna()`
+    выше — это два разных места, см. их докстринги). Специально считается
+    ТОЛЬКО из уже загруженных полей `MatchAggregate` (drama_index,
+    avg_tension, avg_fairness, turning_point_ratio) — БЕЗ единого
+    дополнительного запроса на карточку (ни events, ни MatchEvaluation):
+    на странице списка из 10-20 карточек лишний запрос на каждую было бы
+    ровно тем N+1, из-за которого в проекте уже есть `bulk_prediction_data`
+    и подобные bulk-функции.
+
+    :return: 0-3 коротких строки-трейта (может быть пустым — карточка
+        просто не показывает блок).
+    """
+    if aggregate is None or aggregate.total_votes < CARD_DNA_MIN_VOTES:
+        return []
+
+    traits = []
+    level = _drama_level(aggregate.drama_index)
+    if level == 'high':
+        traits.append('Высокая драма')
+    elif level == 'medium':
+        traits.append('Умеренная интрига')
+
+    # 0 < avg_fairness — при total_votes >= CARD_DNA_MIN_VOTES это всегда
+    # настоящее среднее по шкале 1-10 (см. _consensus_level выше), не
+    # дефолтное 0.0 "голосов нет" — та ветка уже отсечена гейтом выше,
+    # поэтому здесь достаточно сравнения без доп. truthy-проверки.
+    if 0 < aggregate.avg_fairness <= 5.0:
+        traits.append('Жёсткая игра')
+
+    if aggregate.turning_point_ratio >= TURNING_POINT_MIN_RATIO:
+        traits.append('Был перелом')
+
+    return traits[:3]
+
+
+def compute_sensation_index(match, counts: dict | None) -> int | None:
+    """Пункт 12 брифа — "Индекс сенсации", 0-100, показывается ТОЛЬКО когда
+    итог разошёлся с ожиданиями сообщества (см. return None ниже). Формула
+    — эвристика, не строгая статистика (тот же честный принцип, что у
+    `_describe_referee_divergence`/`find_season_controversial_matches`:
+    открыто фиксируем ограничение прямо в докстринге, а не выдаём число за
+    точную науку): "насколько уверенно сообщество ошиблось" — доля голосов
+    за фаворита (по прогнозам ДО матча), который в итоге НЕ выиграл.
+    Чем увереннее (выше %) было ошибочное большинство — тем выше сенсация.
+
+    :param counts: dict от `predictions.services.prediction_counts()`/
+        `bulk_final_prediction_counts()` (home/draw/away/total/*_pct) —
+        распределение прогнозов ДО матча, а не гейтовано `is_prediction_open`
+        (окно давно закрыто у завершённого матча, но строки прогнозов
+        остаются — см. докстринг `bulk_final_prediction_counts`).
+    :return: None, если прогнозов меньше SENSATION_MIN_PREDICTIONS (мало
+        данных — не сенсация, просто нечем измерить), либо если фаворит
+        сообщества и совпал с реальным исходом (предсказуемый результат —
+        по определению не сенсация, бейдж вообще не должен показываться).
+    """
+    if not counts or counts.get('total', 0) < SENSATION_MIN_PREDICTIONS:
+        return None
+    final_result = match.final_result
+    if final_result is None:
+        return None
+
+    pct_by_choice = {'1': counts['home_pct'], 'X': counts['draw_pct'], '2': counts['away_pct']}
+    favorite_choice = max(pct_by_choice, key=pct_by_choice.get)
+    if favorite_choice == final_result:
+        return None  # сообщество угадало фаворита — предсказуемый результат
+
+    return round(pct_by_choice[favorite_choice])
+
+
+def describe_table_impact(team, before_position: int | None, current_position: int | None) -> str | None:
+    """Пункт 13 брифа — "Изменил таблицу" (чистая функция, без запросов —
+    позиции считает вызывающая сторона, см. matches/card_services.py и
+    teams/services.py::compute_standings_asof)."""
+    if before_position is None or current_position is None or before_position == current_position:
+        return None
+    if current_position < before_position:
+        return f'{team.name} поднялся на {current_position}-е место'
+    return f'{team.name} опустился на {current_position}-е место'
+
+
+def describe_finished_cta(has_hero: bool, has_dna: bool) -> dict:
+    """Пункт 14 брифа — замена бейджа "Голосование закрыто" на CTA со
+    смыслом. Карточка и так целиком <a> на страницу матча (см.
+    components/_match_card.html) — это НЕ отдельная ссылка, а более
+    информативный ярлык того же места, куда клик уже ведёт."""
+    if has_hero or has_dna:
+        return {'icon': 'ti-chart-bar', 'label': 'Разобрать матч'}
+    return {'icon': 'ti-star', 'label': 'Смотреть оценки игроков'}
+
+
+# --- Реакция сообщества на завершённый матч (пункт 11 брифа) — тот же
+# сервисный паттерн, что predictions/services.py::submit_prediction/
+# prediction_counts/bulk_prediction_data, только на модели MatchReaction. ---
+
+def submit_match_reaction(*, user, match, reaction: str):
+    """Ставит/меняет реакцию пользователя на завершённый матч. Доступно
+    только для `status='finished'` — реагировать "скучный матч"/"матч тура"
+    до финального свистка не имеет смысла (в отличие от прогноза, у
+    реакции нет собственного окна времени — единственное условие это сам
+    факт, что матч уже сыгран)."""
+    if match.status != 'finished':
+        return None
+    reaction_codes = dict(MatchReaction.REACTION_CHOICES)
+    if reaction not in reaction_codes:
+        return None
+    obj, _created = MatchReaction.objects.update_or_create(
+        match=match, user=user, defaults={'reaction': reaction},
+    )
+    return obj
+
+
+def reaction_counts(match) -> dict:
+    """Один матч — распределение реакций сообщества, тот же принцип
+    округления в Python, что `predictions.services.prediction_counts()`."""
+    row = MatchReaction.objects.filter(match=match).aggregate(
+        match_of_round=Count('id', filter=Q(reaction=MatchReaction.REACTION_MATCH_OF_ROUND)),
+        upset=Count('id', filter=Q(reaction=MatchReaction.REACTION_UPSET)),
+        boring=Count('id', filter=Q(reaction=MatchReaction.REACTION_BORING)),
+    )
+    total = row['match_of_round'] + row['upset'] + row['boring']
+
+    def pct(n: int) -> int:
+        return round(n * 100 / total) if total else 0
+
+    return {
+        'match_of_round': row['match_of_round'], 'upset': row['upset'], 'boring': row['boring'],
+        'total': total,
+        'match_of_round_pct': pct(row['match_of_round']),
+        'upset_pct': pct(row['upset']),
+        'boring_pct': pct(row['boring']),
+    }
+
+
+def user_match_reaction(user, match):
+    if not user or not user.is_authenticated:
+        return None
+    return MatchReaction.objects.filter(match=match, user=user).first()
+
+
+def bulk_reaction_data(matches, user) -> dict:
+    """Bulk-версия reaction_counts()/user_match_reaction() выше — тот же
+    принцип, что predictions.services.bulk_prediction_data() (см. её
+    докстринг про N+1 на карточках списка), но БЕЗ фильтра по открытому
+    окну (у реакции нет окна — единственное условие уже применено
+    вызывающей стороной, matches/card_services.py, которая передаёт сюда
+    только status='finished' матчи)."""
+    matches = list(matches)
+    if not matches:
+        return {}
+    match_ids = [m.id for m in matches]
+
+    counts_by_match = {
+        m_id: {'match_of_round': 0, 'upset': 0, 'boring': 0, 'total': 0,
+               'match_of_round_pct': 0, 'upset_pct': 0, 'boring_pct': 0}
+        for m_id in match_ids
+    }
+    rows = (
+        MatchReaction.objects.filter(match_id__in=match_ids)
+        .values('match_id', 'reaction').annotate(n=Count('id'))
+    )
+    for row in rows:
+        key = row['reaction']
+        if key in counts_by_match[row['match_id']]:
+            counts_by_match[row['match_id']][key] = row['n']
+    for counts in counts_by_match.values():
+        total = counts['match_of_round'] + counts['upset'] + counts['boring']
+        counts['total'] = total
+        for key in ('match_of_round', 'upset', 'boring'):
+            counts[f'{key}_pct'] = round(counts[key] * 100 / total) if total else 0
+
+    my_reactions = {}
+    if user and user.is_authenticated:
+        my_reactions = {
+            r.match_id: r for r in MatchReaction.objects.filter(match_id__in=match_ids, user=user)
+        }
+
+    return {
+        m_id: {'counts': counts_by_match[m_id], 'my_reaction': my_reactions.get(m_id)}
+        for m_id in match_ids
     }

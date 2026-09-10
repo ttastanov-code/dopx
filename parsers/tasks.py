@@ -57,14 +57,34 @@ def check_sync_errors_and_alert():
     now = timezone.now()
     cutoff = now - timedelta(hours=24)
 
+    # ИСПРАВЛЕНО (2026-09-10, расследование алерта "12 матчей без составов
+    # за 24ч" — жалоба пользователя "не работает парсер или че"): матчи с
+    # Match.decided_administratively=True (неявка/техническое поражение/
+    # прерван и засчитан, см. её докстринг в matches/models.py) у
+    # Sportmonks НИКОГДА не будут иметь lineups/events — состав/события
+    # неоткуда взять для матча, который по факту не доигрывался в обычном
+    # режиме. Без этого исключения такие матчи инфлировали счётчик как
+    # будто это сбой синхронизации, хотя это ожидаемая характеристика
+    # результата. Поле появилось только 2026-09-10 — на старых Match-
+    # записях (импортированных до этой правки) оно останется False, даже
+    # если матч на самом деле техническое поражение; разовая коррекция для
+    # уже накопленных записей — повторный прогон daily sportmonks_sync_
+    # season (parsers/sportmonks/tasks.py) сам переустановит его при
+    # следующем обновлении фикстуры, специальная management-команда не
+    # нужна (все фикстуры сезона синкаются каждую ночь в 03:30).
     matches_without_lineups = Match.objects.filter(
-        status="finished", created_at__gte=cutoff, has_lineup=False
+        status="finished",
+        created_at__gte=cutoff,
+        has_lineup=False,
+        decided_administratively=False,
     ).count()
 
     from events.models import MatchEvent
 
     matches_without_events = (
-        Match.objects.filter(status="finished", created_at__gte=cutoff)
+        Match.objects.filter(
+            status="finished", created_at__gte=cutoff, decided_administratively=False
+        )
         .exclude(
             id__in=MatchEvent.objects.filter(created_at__gte=cutoff).values_list(
                 "match_id", flat=True

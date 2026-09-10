@@ -1,0 +1,14 @@
+{% comment %}
+Компактный логин-промпт для инлайн-виджета реакции на карточке
+завершённого матча — возвращается вместо _reaction_widget_compact.html,
+если реагирует неавторизованный пользователь (см. matches/views.py::
+react_to_match). Тот же паттерн, что и predictions/
+_prediction_login_prompt_compact.html.
+{% endcomment %}
+<div id="reaction-widget-{{ match.id }}"
+     class="mt-2 pt-2 border-t border-base-300"
+     onclick="event.stopPropagation()">
+    <a href="{% url 'users:login' %}" class="btn btn-ghost btn-xs w-full">
+        <i class="ti ti-login"></i> Войти, чтобы поделиться мнением о матче
+    </a>
+</div>

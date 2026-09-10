@@ -223,20 +223,21 @@ class ConfidenceBadgeSampleSizeTests(SimpleTestCase):
     def test_preliminary_tier_shows_vote_count_in_label(self):
         result = confidence_badge(self._agg(3))
         self.assertEqual(result["tier"], "preliminary")
-        # 2026-09-09: метки укорочены (жалоба "из-за бейджей ломаются
-        # таблицы" — whitespace-nowrap-бейдж с длинным текстом раздувал
-        # колонку таблицы, см. коммент у _TIER_META в rating_extras.py).
-        self.assertEqual(result["tier_label"], "Предв. · 3")
+        # 2026-09-10: метки переименованы (жалоба "нихуя не понятно что
+        # надежно... создается впечатление, что это типа рейтинг такой") —
+        # каждая метка теперь явно содержит слово "оценок", см. коммент у
+        # _TIER_META в rating_extras.py.
+        self.assertEqual(result["tier_label"], "Мало оценок · 3")
 
     def test_basic_tier_label_has_no_inline_count(self):
         result = confidence_badge(self._agg(8))
         self.assertEqual(result["tier"], "basic")
-        self.assertEqual(result["tier_label"], "Умеренно")
+        self.assertEqual(result["tier_label"], "Оценок хватает")
 
     def test_high_tier_label_has_no_inline_count(self):
         result = confidence_badge(self._agg(20))
         self.assertEqual(result["tier"], "high")
-        self.assertEqual(result["tier_label"], "Надёжно")
+        self.assertEqual(result["tier_label"], "Оценок много")
 
 
 class HomeTopPlayersVoteGateTests(TestCase):

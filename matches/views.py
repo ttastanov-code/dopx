@@ -1,20 +1,23 @@
 # matches/views.py
 import json
 
+from django.http import HttpResponse
 from django.shortcuts import render, get_object_or_404
 from django.urls import reverse
 from django.views.generic import ListView, DetailView
 from django.utils import timezone
 from django.db.models import Count, Q, Case, When, Value, IntegerField
-from matches.models import Match
+from matches.models import Match, MatchReaction
+from matches.card_services import attach_card_extras
+from matches.services import submit_match_reaction, reaction_counts, user_match_reaction
 from aggregates.models import MatchAggregate, PlayerMatchAggregate, TeamMatchAggregate
 from evaluations.models import PlayerEvaluation, MatchEvaluation, ContextEvaluation, EvaluationSession
 from lineups.models import MatchLineup
 from seasons.models import Season
 from leagues.models import League
-from predictions.services import bulk_prediction_data
+from core.utils import is_rate_limited
 import logging
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_http_methods, require_POST
 
 logger = logging.getLogger(__name__)
 
@@ -180,40 +183,17 @@ class MatchListView(ListView):
         context['tours'] = tours_qs.values_list('tour', flat=True).distinct().order_by('tour')
         context['now'] = timezone.now()
 
-        # Инлайн-виджет прогноза 1X2 прямо на карточке (без перехода на
-        # страницу матча) — запрос пользователя 2026-08-29. Считаем bulk'ом
-        # на уже отпагинированную страницу (context[context_object_name] —
-        # только 20 матчей максимум), не на весь queryset, см. докстринг
-        # bulk_prediction_data(). Атрибуты вешаются прямо на объекты Match
-        # текущей страницы — так шаблон обращается к ним как к обычным
-        # полям (match.list_prediction_counts), без кастомного dict-lookup
-        # фильтра в Django templates.
+        # ИСПРАВЛЕНО (2026-09-10, редизайн карточки матча, полный бриф из
+        # 14 пунктов): инлайн-прогноз 1X2 + "уже оценено" + все новые
+        # сигналы (интрига, H2H, форма, вовлечённость, "ваша команда",
+        # герой матча, мини-ДНК, реакция сообщества, индекс сенсации,
+        # влияние на таблицу, CTA) теперь считаются ОДНИМ общим вызовом —
+        # см. matches/card_services.py::attach_card_extras, тот же bulk-
+        # принцип, что был здесь раньше (bulk_prediction_data +
+        # EvaluationSession bulk), просто вынесенный в общую с HomeView
+        # функцию, чтобы не дублировать код и не дать им разойтись.
         page_matches = context.get(self.context_object_name) or []
-        prediction_data = bulk_prediction_data(page_matches, self.request.user)
-        for match in page_matches:
-            data = prediction_data.get(match.id)
-            if data:
-                match.list_prediction_counts = data['counts']
-                match.list_my_prediction = data['my_prediction']
-
-        # "Оценить" на карточке матча вело в тупик для тех, кто уже оценил
-        # этот матч — EvaluateContextView.dispatch() всё равно редиректит
-        # такого пользователя назад с "Вы уже оценили этот матч". Отражаем
-        # это в списке сразу, одним bulk-запросом на страницу (20 матчей),
-        # а не N запросами по одному на карточку.
-        if self.request.user.is_authenticated:
-            evaluated_match_ids = set(
-                EvaluationSession.objects.filter(
-                    user=self.request.user,
-                    match_id__in=[m.id for m in page_matches],
-                    status='completed',
-                ).values_list('match_id', flat=True)
-            )
-            for match in page_matches:
-                match.user_has_evaluated = match.id in evaluated_match_ids
-        else:
-            for match in page_matches:
-                match.user_has_evaluated = False
+        attach_card_extras(page_matches, self.request)
 
         return context
 
@@ -562,3 +542,54 @@ def match_header_partial(request, match_id):
     context = match_action_context(request, match)
     context['match'] = match
     return render(request, 'matches/_match_header.html', context)
+
+
+# По user.id — тот же выбор, что и у predictions/views.py::PREDICT_RATE_LIMIT
+# (эндпоинт требует аутентификации, id доступен и точнее IP).
+REACT_TO_MATCH_RATE_LIMIT = 20
+REACT_TO_MATCH_RATE_LIMIT_WINDOW_SECONDS = 60
+
+
+def _reaction_widget_context(request, match):
+    return {
+        'match': match,
+        'counts': reaction_counts(match),
+        'my_reaction': user_match_reaction(request.user, match),
+    }
+
+
+@require_POST
+def react_to_match(request, match_id):
+    """
+    Пункт 11 брифа редизайна карточки матча (2026-09-10) — "Матч тура" /
+    "Неожиданный результат" / "Скучный матч". Тот же HTMX-паттерн, что
+    predictions/views.py::predict — клик возвращает обновлённый партиал
+    целиком (проценты меняются у всех трёх опций разом), compact=1
+    отличает инлайн-виджет карточки списка от возможной полноразмерной
+    версии на странице матча (сейчас используется только compact-вариант,
+    см. templates/matches/_reaction_widget_compact.html).
+    """
+    match = get_object_or_404(Match, id=match_id)
+    widget_template = 'matches/_reaction_widget_compact.html'
+
+    if not request.user.is_authenticated:
+        # status=200, не 401 — тот же приём, что у predictions/events (HTMX
+        # свапает контент только на 2xx).
+        return render(request, 'matches/_reaction_login_prompt_compact.html', {'match': match}, status=200)
+
+    if is_rate_limited(
+        f'react_to_match:{request.user.id}', REACT_TO_MATCH_RATE_LIMIT, REACT_TO_MATCH_RATE_LIMIT_WINDOW_SECONDS
+    ):
+        return HttpResponse(status=429)
+
+    reaction = request.POST.get('reaction')
+    if reaction not in dict(MatchReaction.REACTION_CHOICES):
+        return HttpResponse(status=400)
+
+    submit_match_reaction(user=request.user, match=match, reaction=reaction)
+    # Матч не 'finished' — submit_match_reaction() тихо вернула None, форма
+    # просто перерисуется в исходном состоянии (кнопки всё равно
+    # задизейблены в шаблоне для нефинишированных матчей, см. is_finished
+    # ниже — гонка практически невозможна, но не должна падать ошибкой).
+
+    return render(request, widget_template, _reaction_widget_context(request, match))

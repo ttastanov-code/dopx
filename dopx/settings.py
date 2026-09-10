@@ -923,6 +923,25 @@ CACHES = {
 LOGS_DIR = BASE_DIR / 'logs'
 LOGS_DIR.mkdir(exist_ok=True)
 
+# ИСПРАВЛЕНО (2026-09-10, жалоба пользователя "надо кстати почистить логи",
+# в контексте пасты sync_monitoring-алерта): `celery_file`/`error_file`
+# были обычным `logging.FileHandler` — БЕЗ ротации вообще. При активном
+# Celery Beat (задачи каждые 1-2 минуты, см. parsers/sportmonks/tasks.py)
+# `logs/celery.log` растёт БЕСКОНЕЧНО с момента первого деплоя, ничем не
+# ограничен — рано или поздно съедает диск сервера целиком. `RotatingFile
+# Handler` — тот же формат записи, но при достижении `maxBytes` переименовывает
+# файл в `celery.log.1` и начинает новый, храня не больше `backupCount`
+# старых копий — суммарный потолок на диске: `maxBytes * (backupCount + 1)`.
+# 10 МБ × 6 файлов = 60 МБ на celery.log (обычно достаточно для нескольких
+# дней INFO-логов при текущей частоте задач), 10 МБ × 4 на errors.log
+# (ошибок меньше по объёму, но полезно хранить историю подольше для
+# расследований вроде этого). УЖЕ НАКОПЛЕННЫЕ (до этой правки) `logs/
+# celery.log`/`logs/errors.log` на сервере эта правка не тронет сама по
+# себе — сама по себе ротация активируется только когда файл СЛЕДУЮЩИЙ РАЗ
+# достигнет maxBytes; если текущие файлы уже большие, стоит один раз вручную
+# обрезать/удалить их после деплоя (например: `truncate -s 0 logs/celery.log
+# logs/errors.log`, или просто удалить — Django/Celery создадут их заново
+# сами при следующей записи, см. `LOGS_DIR.mkdir(exist_ok=True)` выше).
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -935,8 +954,10 @@ LOGGING = {
     'handlers': {
         'celery_file': {
             'level': 'INFO',
-            'class': 'logging.FileHandler',
+            'class': 'logging.handlers.RotatingFileHandler',
             'filename': LOGS_DIR / 'celery.log',
+            'maxBytes': 10 * 1024 * 1024,  # 10 МБ
+            'backupCount': 5,
             'formatter': 'verbose',
         },
         'console': {
@@ -945,8 +966,10 @@ LOGGING = {
         },
         'error_file': {
             'level': 'ERROR',
-            'class': 'logging.FileHandler',
+            'class': 'logging.handlers.RotatingFileHandler',
             'filename': LOGS_DIR / 'errors.log',
+            'maxBytes': 10 * 1024 * 1024,  # 10 МБ
+            'backupCount': 3,
             'formatter': 'verbose',
         },
     },

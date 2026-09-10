@@ -527,3 +527,132 @@ def get_team_form(team, matches) -> list[dict]:
 
     form.reverse()
     return form
+
+
+def describe_form_streak(form: list[dict]) -> str | None:
+    """Сворачивает результат `get_team_form()` (список от старых к новым) в
+    короткую фразу вида "4 победы подряд" / "не побеждает 5 матчей" —
+    пункт 4 брифа редизайна карточки матча (2026-09-10, прямая просьба
+    пользователя): "форма как компактный текст, не кружки W/D/L".
+
+    Считает СЕРИЮ с конца списка (самые свежие матчи) — количество подряд
+    идущих ОДИНАКОВЫХ по знаку исходов: подряд побед, подряд поражений/ничьих
+    ("не побеждает" объединяет ничьи и поражения — пользователю обычно важно
+    именно "давно не выигрывает", а не отдельно "3 ничьи потом 2 поражения").
+
+    :return: None, если `form` пустой (данных нет вообще — карточка не
+        должна рисовать пустую строку) или самый свежий матч не образует
+        видимой серии (одна победа среди разных исходов — "1 победа подряд"
+        звучит нелепо, в этом случае просто показываем сам результат).
+    """
+    if not form:
+        return None
+
+    recent = list(reversed(form))  # от нового к старому
+    latest_result = recent[0]['result']
+    is_win_streak = latest_result == 'W'
+
+    streak_len = 0
+    for entry in recent:
+        entry_is_win = entry['result'] == 'W'
+        if entry_is_win == is_win_streak:
+            streak_len += 1
+        else:
+            break
+
+    def _pluralize_matches(n: int) -> str:
+        if n % 10 == 1 and n % 100 != 11:
+            return 'матч'
+        if 2 <= n % 10 <= 4 and not (12 <= n % 100 <= 14):
+            return 'матча'
+        return 'матчей'
+
+    if is_win_streak:
+        if streak_len < 2:
+            return 'Победа в последнем матче'
+        return f'{streak_len} побед{_win_suffix(streak_len)} подряд'
+
+    if streak_len < 2:
+        return None  # одиночная ничья/поражение без серии — не о чем сообщить
+    return f'Не побеждает {streak_len} {_pluralize_matches(streak_len)}'
+
+
+def _win_suffix(n: int) -> str:
+    """"побед-а/-ы/-" — 1 победа, 2-4 победы, 5+ побед. Тот же принцип
+    русской плюрализации, что и `_pluralize_matches` выше/`_pluralize_goals`
+    в matches/services.py, вынесенный отдельно, т.к. у "победа" другой набор
+    окончаний, чем у "матч"."""
+    if n % 10 == 1 and n % 100 != 11:
+        return 'а'
+    if 2 <= n % 10 <= 4 and not (12 <= n % 100 <= 14):
+        return 'ы'
+    return ''
+
+
+# ---------------------------------------------------------------------------
+# Редизайн карточки матча (2026-09-10, прямая просьба пользователя, полный
+# бриф из 14 пунктов) — пункт 13, "Изменил таблицу": позиция команды в
+# турнирной таблице СРАЗУ ПЕРЕД конкретным матчем, для сравнения с текущей
+# (уже сохранённой в TeamSeasonStats.position, пересчитывается по расписанию
+# Celery — см. aggregates/tasks.py::recalculate_season_standings).
+#
+# НЕ новая модель "снимок таблицы по турам" — в проекте нет истории позиций
+# вообще, а заводить её только ради одной фразы на карточке было бы той же
+# ошибкой "решить всё новой моделью", от которой уже отказались в
+# teams/services.py выше (см. докстринг модуля про MVP-индекс настроения).
+# Вместо этого считаем таблицу "как она была" на лету — ТОЧНО тем же
+# алгоритмом, что и настоящий пересчёт (тот же фильтр status='finished',
+# та же сортировка -points/-goal_diff/-goals_scored, см.
+# _recalculate_standings_for_season) — просто с доп. срезом по дате, чтобы
+# сравнение "было -> стало" не могло разойтись с алгоритмом реальной таблицы.
+def compute_standings_asof(season, cutoff) -> dict:
+    """Позиции всех команд сезона по матчам СТРОГО ДО `cutoff` (исключая его).
+
+    :param cutoff: datetime — обычно `match.start_time` конкретного матча,
+        "таблица как она была непосредственно перед этой игрой".
+    :return: {team_id: position (int, с 1)} — команда без сыгранных до
+        `cutoff` матчей в сезоне ВСЁ РАВНО попадает в словарь (0 очков,
+        играет роль при разрыве позиций внизу таблицы), т.к. `Team.objects`
+        ограничивается участниками сезона (`teamseason__season=season`), а
+        не только теми, кто уже сыграл хоть один матч к этому моменту.
+    """
+    from teams.models import TeamSeason
+
+    team_ids = list(
+        TeamSeason.objects.filter(season=season).values_list('team_id', flat=True)
+    )
+    stats_by_team = {tid: {'points': 0, 'goal_diff': 0, 'goals_scored': 0} for tid in team_ids}
+
+    from matches.models import Match
+
+    rows = Match.objects.filter(
+        season=season, status='finished', start_time__lt=cutoff,
+    ).values('home_team_id', 'away_team_id', 'home_score', 'away_score')
+
+    for row in rows:
+        home_id, away_id = row['home_team_id'], row['away_team_id']
+        home_score, away_score = row['home_score'], row['away_score']
+        if home_score is None or away_score is None:
+            continue
+        if home_id in stats_by_team:
+            s = stats_by_team[home_id]
+            s['goals_scored'] += home_score
+            s['goal_diff'] += home_score - away_score
+            if home_score > away_score:
+                s['points'] += 3
+            elif home_score == away_score:
+                s['points'] += 1
+        if away_id in stats_by_team:
+            s = stats_by_team[away_id]
+            s['goals_scored'] += away_score
+            s['goal_diff'] += away_score - home_score
+            if away_score > home_score:
+                s['points'] += 3
+            elif away_score == home_score:
+                s['points'] += 1
+
+    ordered = sorted(
+        stats_by_team.items(),
+        key=lambda kv: (-kv[1]['points'], -kv[1]['goal_diff'], -kv[1]['goals_scored']),
+    )
+    return {team_id: position for position, (team_id, _stats) in enumerate(ordered, start=1)}

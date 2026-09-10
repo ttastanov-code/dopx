@@ -52,32 +52,12 @@ class HomeView(TemplateView):
         recent_matches = list(Match.objects.filter(
             status='finished', start_time__lte=now
         ).select_related('home_team', 'away_team', 'league', 'season'
-        ).prefetch_related('aggregate').order_by('-start_time')[:6])
+        ).prefetch_related('aggregate', 'home_team__rivals').order_by('-start_time')[:6])
 
-        # "Оценить" на карточке главной вело в тупик для тех, кто уже
-        # оценил этот матч (см. тот же фикс в matches/views.py::MatchListView) —
-        # тут та же карточка, но своя копия шаблона с собственной логикой
-        # кнопки, поэтому и флаг нужен отдельно. list() выше — иначе
-        # queryset[:6] пересчитывался бы дважды (сначала здесь для id, потом
-        # в шаблоне).
-        if self.request.user.is_authenticated and recent_matches:
-            evaluated_match_ids = set(
-                EvaluationSession.objects.filter(
-                    user=self.request.user,
-                    match_id__in=[m.id for m in recent_matches],
-                    status='completed',
-                ).values_list('match_id', flat=True)
-            )
-            for match in recent_matches:
-                match.user_has_evaluated = match.id in evaluated_match_ids
-        else:
-            for match in recent_matches:
-                match.user_has_evaluated = False
-
-        upcoming_matches = Match.objects.filter(
+        upcoming_matches = list(Match.objects.filter(
             status='scheduled', start_time__gte=now
         ).select_related('home_team', 'away_team', 'league', 'season'
-        ).order_by('start_time')[:4]
+        ).prefetch_related('home_team__rivals').order_by('start_time')[:4])
 
         # НАЙДЕНО (2026-09-01, жалоба пользователя: "на главной не
         # отображаются live матчи, приходится лезть в /matches/ и искать по
@@ -90,7 +70,20 @@ class HomeView(TemplateView):
         live_matches = list(Match.objects.filter(
             status='live'
         ).select_related('home_team', 'away_team', 'league', 'season'
-        ).order_by('start_time'))
+        ).prefetch_related('home_team__rivals').order_by('start_time'))
+
+        # ИСПРАВЛЕНО (2026-09-10, редизайн карточки матча, полный бриф из 14
+        # пунктов): раньше "Оценить"/"уже оценено" считались тут отдельным
+        # inline-кодом ТОЛЬКО для recent_matches, а инлайн-прогноз 1X2
+        # (list_prediction_counts) на главной вообще не вызывался — из-за
+        # этого виджет прогноза молча не показывался на дашборде, хотя
+        # прекрасно работал на /matches/ (см. matches/views.py::
+        # MatchListView). Один общий вызов на все три списка сразу —
+        # тот же bulk-принцип, что и был, но без дублирования и без
+        # пропавшей фичи. См. matches/card_services.py::attach_card_extras.
+        from matches.card_services import attach_card_extras
+
+        attach_card_extras(recent_matches + upcoming_matches + live_matches, self.request)
 
         # total_votes__gte=MIN_VOTES_FOR_DISPLAY — без этого гейта "Топ
         # игроков" на главной ранжируется наравне с единичными накрученными

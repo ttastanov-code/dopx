@@ -177,6 +177,34 @@ class SportmonksClient:
 
         raise SportmonksAPIError(f"Не удалось получить {path} после {MAX_RETRIES} попыток: {last_error}")
 
+    def _get_data(self, path: str, params: Optional[dict] = None) -> dict:
+        """Обёртка над _get() для одиночных сущностей (fixture/team/league/
+        player/referee/coach/...) — раньше каждый из 7 вызывающих методов
+        сам индексировал `['data']` напрямую.
+
+        ИСПРАВЛЕНО (2026-09-10, реальный краш в проде — `KeyError: 'data'`
+        на первом же вызове get_player() при прогоне `fix_foreign_names
+        --all`): _get() поднимает SportmonksAPIError ТОЛЬКО для HTTP-статусов
+        >=400 (после ретраев транзиентных) — если Sportmonks ответил 200, но
+        тело ответа почему-то не содержит "data" (не видели вживую, почему
+        именно — нужен реальный текст ответа, чтобы понять: не хватает
+        доступа по плану на конкретный эндпоинт, содержательная ошибка в
+        обёртке 200, или что-то ещё), голый `payload['data']` падал НЕПОЙМАННЫМ
+        KeyError — вызывающий код (fix_foreign_names.py и другие команды)
+        ловит только SportmonksAPIError, поэтому весь прогон по 836 игрокам
+        обрывался на первом же таком ответе, ничего не обработав и не
+        залогировав, ПОЧЕМУ. Теперь при отсутствии "data" поднимаем
+        SportmonksAPIError с ПОЛНЫМ телом ответа — вызывающий код может
+        поймать её и продолжить обработку остальных записей (как и было
+        задумано), а текст ошибки в логе/выводе команды покажет, что
+        Sportmonks реально прислал вместо data, не оставляя гадать."""
+        payload = self._get(path, params)
+        if 'data' not in payload:
+            raise SportmonksAPIError(
+                f"Ответ {path} не содержит поля 'data' — тело ответа: {str(payload)[:500]}"
+            )
+        return payload['data']
+
     def _get_all_pages(self, path: str, params: Optional[dict] = None) -> list:
         """НАЙДЕНО ВЖИВУЮ (2026-09-09, реальный прогон sync_sportmonks_season:
         каждый из 3 запросов по датам вернул РОВНО 25 матчей — 75 на сезон
@@ -261,13 +289,13 @@ class SportmonksClient:
     def get_league(self, league_id: Optional[int] = None, include: Optional[str] = None) -> dict:
         league_id = league_id or settings.SPORTMONKS_LEAGUE_ID
         params = {'include': include} if include else None
-        return self._get(f"/leagues/{league_id}", params)['data']
+        return self._get_data(f"/leagues/{league_id}", params)
 
     def get_seasons(self, league_id: Optional[int] = None) -> list:
         return self.get_league(league_id, include='seasons').get('seasons', [])
 
     def get_standings(self, season_id: int, include: str = 'form;details.type') -> list:
-        return self._get(f"/standings/seasons/{season_id}", {'include': include})['data']
+        return self._get_data(f"/standings/seasons/{season_id}", {'include': include})
 
     def get_season_teams(self, season_id: int) -> list:
         """Список из 16 команд лиги на сезон — участник + позиция, самый
@@ -331,13 +359,13 @@ class SportmonksClient:
         этого конкретного матча реально изменилось (двухуровневая схема,
         см. план фаза 4), не на каждый матч каждый цикл опроса."""
         params = {'include': include} if include else None
-        return self._get(f"/fixtures/{fixture_id}", params)['data']
+        return self._get_data(f"/fixtures/{fixture_id}", params)
 
     # -- команды/составы/недоступность игроков --------------------------------
 
     def get_team(self, team_id: int, include: Optional[str] = None) -> dict:
         params = {'include': include} if include else None
-        return self._get(f"/teams/{team_id}", params)['data']
+        return self._get_data(f"/teams/{team_id}", params)
 
     def get_squad(self, season_id: int, team_id: int, include: str = 'player') -> list:
         # _get_all_pages — полный игровой ростер топ-клуба (25-30+ игроков
@@ -360,10 +388,10 @@ class SportmonksClient:
     # "Слиšковиć"/"Йоãо Антóнио..." — is_likely_foreign раньше не
     # останавливал транслитерацию, см. importers.py::_resolve_cyrillic_name).
     def get_referee(self, referee_id: int) -> dict:
-        return self._get(f"/referees/{referee_id}")['data']
+        return self._get_data(f"/referees/{referee_id}")
 
     def get_coach(self, coach_id: int) -> dict:
-        return self._get(f"/coaches/{coach_id}")['data']
+        return self._get_data(f"/coaches/{coach_id}")
 
     def get_player(self, player_id: int) -> dict:
-        return self._get(f"/players/{player_id}")['data']
+        return self._get_data(f"/players/{player_id}")
