@@ -512,7 +512,27 @@ class ProfileEditView(LoginRequiredMixin, UpdateView):
     success_url = reverse_lazy('users:profile')
 
     def get_object(self):
-        return self.request.user
+        # ИСПРАВЛЕНО (2026-09-11, реальная ошибка пользователя:
+        # ValidationError "...functools.partial(<function is_verified...>)
+        # должно быть True или False" при сохранении формы). Причина —
+        # django_otp.middleware.OTPMiddleware (см. MIDDLEWARE в
+        # dopx/settings.py, используется для 2FA staff) на КАЖДОМ
+        # аутентифицированном запросе подменяет атрибут
+        # request.user.is_verified на functools.partial(...) — это её
+        # штатный способ добавить метод "user.is_verified()" для проверки
+        # OTP-статуса (см. django_otp/middleware.py::_init_user_fields),
+        # который случайно совпал по имени с НАШИМ полем User.is_verified
+        # (флаг подтверждения email, см. users/models.py). request.user —
+        # тот же самый объект, что мутировала OTPMiddleware; Model.save()
+        # без update_fields сериализует ВСЕ поля через get_prep_value(), а
+        # BooleanField.get_prep_value() сам вызывает to_python() — падает
+        # на этом "испорченном" значении. Ломалось у ЛЮБОГО пользователя
+        # при любом сохранении профиля, где email не менялся (единственная
+        # ветка form_valid ниже, которая перезаписывала is_verified
+        # реальным bool перед save). Берём свежий экземпляр из БД, которого
+        # OTPMiddleware никогда не касалась, вместо заведомо "отравленного"
+        # self.request.user.
+        return User.objects.get(pk=self.request.user.pk)
 
     def form_valid(self, form):
         # БАГ, КОТОРЫЙ ТУТ БЫЛ (найден полным аудитом, август 2026): смена

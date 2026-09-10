@@ -286,42 +286,59 @@
     gap: 4px;
     margin-top: 8px;
 }
+/* 2026-09-11 (жалоба пользователя: тексты-факты "перегружают глаза" на
+   мобильном при большом числе карточек, плюс "не влезают, когда очные
+   встречи и длинные названия команд") — два изменения разом:
+   1. Размер шрифта на ступень меньше (.6875rem -> .625rem), тот же тон,
+      что у тегов интриги/DNA-чипов — снижает визуальный вес строки.
+   2. Раньше длинная строка (например H2H с двумя длинными названиями
+      команд) обрезалась многоточием (white-space:nowrap + ellipsis) —
+      часть цифр физически пропадала с экрана. Теперь строка переносится
+      на вторую строку (overflow-wrap: anywhere) вместо того, чтобы молча
+      прятать часть текста — при таком маленьком шрифте это не выглядит
+      громоздко, но данные больше не теряются. align-items: flex-start —
+      чтобы иконка не "плавала" по центру двухстрочного текста. */
 .mrow__context-row {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: .35rem;
     min-width: 0;
-    font-size: .6875rem;
+    font-size: .625rem;
     font-weight: 600;
+    line-height: 1.35;
     color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
 }
 .mrow__context-row .ti {
     flex-shrink: 0;
-    font-size: .8rem;
+    font-size: .75rem;
+    margin-top: 1px;
     color: color-mix(in oklab, var(--color-base-content) 35%, transparent);
 }
 .mrow__context-row span {
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
 }
 .mrow__context-row strong {
     color: var(--color-base-content);
     font-weight: 700;
 }
 
-/* "Главный момент" завершённого матча (п.8) */
+/* "Главный момент" завершённого матча (п.8). 2026-09-11: шрифт на
+   ступень меньше и разрешён перенос (та же жалоба пользователя, что у
+   .mrow__context-row выше — длинная подпись с именем игрока не должна
+   обрезаться и не должна выглядеть тяжеловесно на мобильном). */
 .mrow__key-moment {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: .35rem;
-    font-size: .75rem;
+    font-size: .6875rem;
     font-weight: 600;
+    line-height: 1.35;
     color: var(--color-base-content);
     margin-top: 10px;
 }
-.mrow__key-moment .ti { color: var(--mrow-accent, var(--color-success)); }
+.mrow__key-moment span { min-width: 0; overflow-wrap: anywhere; }
+.mrow__key-moment .ti { flex-shrink: 0; margin-top: 1px; color: var(--mrow-accent, var(--color-success)); }
 
 /* "Игрок матча DOPX" (п.9) — фото/инициал + подпись, компактная строка,
    не отдельная громоздкая карточка внутри карточки. */
@@ -395,23 +412,30 @@
 }
 
 /* Индекс сенсации (п.12) — заметный, но не тревожный акцент. */
+/* 2026-09-11: тот же общий фикс размера/переноса, что у .mrow__context-row
+   и .mrow__key-moment (жалоба пользователя на визуальный вес и обрезание
+   длинных названий команд) — распространён на все текстовые "факты" карточки. */
 .mrow__sensation {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: .35rem;
-    font-size: .6875rem;
+    font-size: .625rem;
     font-weight: 700;
+    line-height: 1.35;
     color: var(--color-error);
     margin-top: 8px;
 }
+.mrow__sensation span, .mrow__table-impact span { min-width: 0; overflow-wrap: anywhere; }
+.mrow__sensation .ti, .mrow__table-impact .ti { flex-shrink: 0; margin-top: 1px; }
 
 /* "Изменил таблицу" (п.13) */
 .mrow__table-impact {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: .35rem;
-    font-size: .6875rem;
+    font-size: .625rem;
     font-weight: 600;
+    line-height: 1.35;
     color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
     margin-top: 8px;
 }

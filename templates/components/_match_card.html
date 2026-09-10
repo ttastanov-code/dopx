@@ -225,7 +225,7 @@ start_time, — опциональны, компонент проверяет и
     {% comment %}Пункты 8, 9, 10, 12, 13 брифа — только для завершённых матчей, каждый блок рендерится независимо (может не быть данных для какого-то одного).{% endcomment %}
     {% if match.card_key_moment %}
     <div class="mrow__key-moment" title="Момент, который определил исход матча">
-        <i class="ti ti-bolt flex-shrink-0"></i>{{ match.card_key_moment }}
+        <i class="ti ti-bolt"></i><span>{{ match.card_key_moment }}</span>
     </div>
     {% endif %}
 
@@ -272,7 +272,7 @@ start_time, — опциональны, компонент проверяет и
 
     {% if match.card_table_impact %}
     <div class="mrow__table-impact" title="Как этот матч изменил положение команды в турнирной таблице">
-        <i class="ti ti-arrow-up flex-shrink-0"></i>{{ match.card_table_impact }}
+        <i class="ti ti-arrow-up"></i><span>{{ match.card_table_impact }}</span>
     </div>
     {% endif %}
     {% endif %}
