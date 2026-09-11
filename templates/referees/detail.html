@@ -185,27 +185,64 @@
                 </h3>
                 {% if stats.total_evaluations > 0 %}
                 <div class="space-y-4">
+                    {% comment %}
+                    2026-09-11 (жалоба пользователя): полоска "Среднее
+                    влияние" всегда была bg-neutral (тёмно-серая/чёрная в
+                    большинстве daisyUI-тем) — цвет НЕ менялся в
+                    зависимости от значения, хотя подпись под ней (см.
+                    ниже) уже давно делит influence на 3 уровня. Цвет
+                    полоски теперь совпадает с этими же порогами (те же
+                    success/warning/error, что и у "Качество решений" ниже
+                    и у остальных индикаторов сайта). Эмодзи (✅⚠️❌) заменены
+                    на иконки Tabler — единообразно с остальным сайтом,
+                    эмодзи больше нигде в интерфейсе так не используются.
+
+                    ВТОРАЯ, НАСТОЯЩАЯ причина "полоска всегда полная"
+                    (жалоба пользователя, второй заход): `{{ value }}%` в
+                    style-атрибуте рендерился через локализацию Django
+                    (LANGUAGE_CODE=ru) — дробная часть печаталась через
+                    ЗАПЯТУЮ ("34,223636...%" вместо "34.22%"), а
+                    `width: 34,223636...%` — невалидный CSS, браузер его
+                    молча игнорирует и полоска остаётся на дефолтной
+                    (полной) ширине. {% widthratio %} — штатный Django-тег,
+                    всегда отдаёт целое число БЕЗ локализации (тот же
+                    приём уже используется в players/detail.html для
+                    аналогичных шкал) — безопасно в любой локали.
+                    {% endcomment %}
                     <div>
                         <div class="flex justify-between text-sm mb-1">
                             <span>Среднее влияние</span>
                             <span class="font-bold">{{ stats.avg_influence|floatformat:0 }}</span>
                         </div>
                         <div class="w-full bg-base-200 rounded-full h-2">
-                            <div class="bg-neutral h-2 rounded-full" style="width: {{ stats.avg_influence|default:0 }}%"></div>
+                            <div class="h-2 rounded-full {% if stats.avg_influence < 40 %}bg-success{% elif stats.avg_influence < 70 %}bg-warning{% else %}bg-error{% endif %}" style="width: {% widthratio stats.avg_influence 100 100 %}%"></div>
                         </div>
-                        <div class="text-xs opacity-60 mt-1">
-                            {% if stats.avg_influence < 40 %}✅ Незаметная работа
-                            {% elif stats.avg_influence < 70 %}⚠️ Нормальная работа
-                            {% else %}❌ Влияет на игру{% endif %}
+                        <div class="text-xs opacity-60 mt-1 flex items-center gap-1">
+                            {% if stats.avg_influence < 40 %}
+                            <i class="ti ti-circle-check text-success"></i> Незаметная работа
+                            {% elif stats.avg_influence < 70 %}
+                            <i class="ti ti-alert-triangle text-warning"></i> Нормальная работа
+                            {% else %}
+                            <i class="ti ti-alert-octagon text-error"></i> Влияет на игру
+                            {% endif %}
                         </div>
                     </div>
+                    {% comment %}
+                    2026-09-11: RefereeEvaluation.decision_quality — шкала
+                    1-10 (evaluations/models.py), а не 0-100. Ширина
+                    "width: N%" раньше подставляла это значение НАПРЯМУЮ —
+                    даже идеальные 10/10 давали ширину всего 10%, полоска
+                    была почти всегда пустой. {% widthratio value 10 100 %}
+                    честно переводит шкалу 1-10 в проценты (и заодно, как
+                    и у "Среднее влияние" выше, не ломается на локали ru).
+                    {% endcomment %}
                     <div>
                         <div class="flex justify-between text-sm mb-1">
                             <span>Качество решений</span>
                             <span class="font-bold">{{ stats.avg_decision_quality|floatformat:1 }}</span>
                         </div>
                         <div class="w-full bg-base-200 rounded-full h-2">
-                            <div class="bg-success h-2 rounded-full" style="width: {{ stats.avg_decision_quality|floatformat:0 }}%"></div>
+                            <div class="bg-success h-2 rounded-full" style="width: {% widthratio stats.avg_decision_quality 10 100 %}%"></div>
                         </div>
                     </div>
                 </div>
