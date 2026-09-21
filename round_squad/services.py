@@ -231,10 +231,21 @@ def _build_round_player_data(season, tour: int):
         .values("player_id")
         .annotate(raw_avg=Avg("performance_score"), votes=Sum("total_votes"))
     )
+    # ИСПРАВЛЕНО (2026-09-21, жалоба пользователя: "игрок стоит на позиции,
+    # на которой вообще не играет") — тот же фикс, что и в season_squad/
+    # services.py::_player_season_position: строка невышедшего запасного
+    # (is_starting=False И ни разу не вышел на замену, minute_in IS NULL)
+    # не говорит НИЧЕГО о том, где игрок реально играл — это его
+    # номинальное амплуа в заявке, а не факт игры. Без этого фильтра такой
+    # игрок мог зарегистрироваться в pool_by_code под голым (без стороны)
+    # кодом и — в сочетании со старым фолбэком на голые коды у RW/LW/RB/LB
+    # (см. players/positions.py::SLOT_PROCESSING_ORDER, исправлено тем же
+    # днём) — оказаться "лучшим на фланге тура", ни разу не выйдя на поле.
     lineup_rows = (
         MatchLineupPlayer.objects
         .filter(lineup__match__season=season, lineup__match__tour=tour)
         .exclude(position="")
+        .filter(Q(is_starting=True) | Q(minute_in__isnull=False))
         .values_list("player_id", "position", "field_position", "lineup__team__name")
     )
     # codes теперь список (см. resolve_lineup_codes) — обычно один элемент,

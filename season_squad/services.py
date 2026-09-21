@@ -39,7 +39,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 
 from django.contrib.contenttypes.models import ContentType
-from django.db.models import Avg, Count, Sum
+from django.db.models import Avg, Count, Q, Sum
 from django.urls import reverse
 from django.utils import timezone
 
@@ -141,8 +141,7 @@ def _rank_pool(candidates: list[Candidate]) -> list[tuple[Candidate, float]]:
 
 def _player_season_position(season) -> dict[str, str]:
     """player_id (строкой) -> самый частый (мода) КОД позиции этого игрока
-    в сезоне, по фактическим составам (MatchLineupPlayer, включая скамейку
-    — амплуа не зависит от того, вышел человек с первых минут).
+    в сезоне, по фактическим составам (MatchLineupPlayer).
 
     2026-08-23: код теперь берётся через resolve_lineup_codes(position,
     field_position) — там, где известна сторона поля (см.
@@ -150,11 +149,25 @@ def _player_season_position(season) -> dict[str, str]:
     амплуа-код, как раньше. Мода считается по этим кодам напрямую, а не
     по голому амплуа: если игрок почти всегда выходил на левом фланге
     защиты, его код сезона — "D:L", и он корректно конкурирует именно за
-    LB, а не размывается в общий пул CB1/CB2/RB/LB."""
+    LB, а не размывается в общий пул CB1/CB2/RB/LB.
+
+    ИСПРАВЛЕНО (2026-09-21, жалоба пользователя: "игрок стоит на позиции,
+    на которой вообще не играет"). КОРНЕВАЯ ПРИЧИНА — раньше строки
+    невышедших запасных (is_starting=False И ни разу не вышел на замену,
+    minute_in IS NULL) считались наравне со стартовыми и реальными
+    выходами на замену. У НЕВЫШЕДШЕГО запасного нет НИКАКОЙ информации о
+    том, где он играл — это просто его номинальное амплуа в заявке на
+    матч, а не факт игры. Игрок, часто попадавший в заявку, но редко
+    выходивший на поле, мог набрать больше "голосов" в моде просто за счёт
+    количества строк на скамейке, чем за счёт немногих реальных выходов на
+    совсем другой позиции — и получал в сезонный код позицию, на которой
+    фактически ни разу не играл. Теперь считаем моду ТОЛЬКО по строкам, где
+    игрок реально вышел на поле (is_starting=True ИЛИ minute_in задан)."""
     rows = (
         MatchLineupPlayer.objects
         .filter(lineup__match__season=season)
         .exclude(position="")
+        .filter(Q(is_starting=True) | Q(minute_in__isnull=False))
         .values_list("player_id", "position", "field_position")
     )
     counters: dict[str, Counter] = defaultdict(Counter)

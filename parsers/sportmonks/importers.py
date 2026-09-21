@@ -26,7 +26,10 @@ statistics.type;referees.type;referees.referee;coaches
 Три места ПОМЕЧЕНЫ как эвристика/требуют проверки на большем числе матчей
 перед тем, как полностью им доверять (см. комментарии на месте):
   1. `_compute_field_positions` — сторона в формации (L/C/R) выводится из
-     `formation_field` ("row:col"), а не приходит готовой от API.
+     `formation_field` ("row:col"), а не приходит готовой от API. Для
+     замен такого поля нет вообще — `import_events()` при обработке
+     substitution-события наследует зону вышедшего с поля игрока для
+     вошедшего (см. докстринг на месте, 2026-09-21).
   2. `_parse_starting_at` — предположение, что Sportmonks отдаёт время в UTC.
   3. `EVENT_DEV_NAME_MAP` / `*_STAT_DEV_NAME_MAP` — на тестовом матче НЕ
      встретились автогол, незабитый пенальти, красная карточка, VAR — эти
@@ -1193,9 +1196,33 @@ def import_events(match: Match, events_data: List[Dict]) -> bool:
                     minute_in=minute, is_starting=False
                 )
             if player_out:
-                MatchLineupPlayer.objects.filter(lineup__match=match, player=player_out).update(
-                    minute_out=minute
-                )
+                # НАСЛЕДОВАНИЕ ЗОНЫ ПРИ ЗАМЕНЕ (2026-09-21, жалоба пользователя:
+                # "игрок стоит на правом полузащитнике, а сам не играет там
+                # вообще" — вторая часть той же проблемы, для вышедших на
+                # замену). `field_position` (L/C/R) в import_lineups()
+                # считается ТОЛЬКО для стартового состава через
+                # `_compute_field_positions`, которая опирается на
+                # `formation_field` — а это координата в статичной СХЕМЕ
+                # СТАРТА, у замен такого поля в API нет вообще (замена
+                # происходит по ходу игры, а не в заранее известной
+                # расстановке). Точную зону вышедшего на замену Sportmonks не
+                # отдаёт никогда — ни в lineups, ни в events. Разумное
+                # приближение: тренер обычно ставит новичка НА МЕСТО того,
+                # кого он заменяет (наиболее частый сценарий на практике) —
+                # поэтому зона ушедшего с поля наследуется вошедшим, но
+                # только если у вошедшего зона ещё не известна из другого
+                # источника (защита от перезаписи, идемпотентно при
+                # повторном импорте).
+                outgoing_row = MatchLineupPlayer.objects.filter(
+                    lineup__match=match, player=player_out
+                ).first()
+                if outgoing_row:
+                    outgoing_row.minute_out = minute
+                    outgoing_row.save(update_fields=["minute_out"])
+                    if player and outgoing_row.field_position:
+                        MatchLineupPlayer.objects.filter(
+                            lineup__match=match, player=player, field_position="",
+                        ).update(field_position=outgoing_row.field_position)
         else:
             if player_sm_id:
                 player = Player.objects.filter(sportmonks_id=str(player_sm_id)).first()

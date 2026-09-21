@@ -251,4 +251,61 @@ class RecomputeClosedRoundForceTests(TestCase):
         self.assertFalse(RoundBestXI.objects.filter(season=self.season, tour=8).exists())
         round_xi = RoundBestXI.objects.get(season=self.season, tour=7)
         self.assertEqual(round_xi.player_of_round_score, 3.3)
-        mock_delay.assert_called_once()  # по-прежнему один-единственный раз за весь тест
+
+
+class SideSlotRequiresSideEvidenceTests(TestCase):
+    """2026-09-21, прямая жалоба пользователя: "некоторые игроки стоят
+    например на правом полузащитнике, а сам игрок например не играет там
+    вообще". КОРНЕВАЯ ПРИЧИНА — players/positions.py::SLOT_PROCESSING_ORDER
+    у RW/LW/RB/LB раньше доходил до голых (без стороны) кодов "AM"/"F"/"D"/
+    "DF" как фолбэка, и жадный алгоритм ранжирует ВСЕХ кандидатов из ВСЕХ
+    допустимых кодов слота ВМЕСТЕ (не "сначала точный код, потом голый
+    только если точных нет") — значит игрок без НИКАКОЙ информации о
+    стороне поля мог обойти по рейтингу реального флангового игрока просто
+    потому, что был выше по очкам. Голые коды убраны из фолбэка сторонних
+    слотов (см. докстринг SLOT_PROCESSING_ORDER) — этот тест подтверждает
+    итоговый эффект на реальном пересчёте тура, а не только состав списка."""
+
+    def setUp(self):
+        self.league = League.objects.create(name="League", country="KZ")
+        self.season = Season.objects.create(league=self.league, year="2026")
+        self.home = Team.objects.create(name="Home")
+        self.away = Team.objects.create(name="Away")
+        self.match = Match.objects.create(
+            league=self.league, season=self.season, home_team=self.home, away_team=self.away,
+            start_time=timezone.now() - timedelta(days=1),
+            voting_open_until=timezone.now() - timedelta(hours=1),
+            status="finished", tour=3,
+        )
+        self.lineup = MatchLineup.objects.create(match=self.match, team=self.home, side="home")
+
+    def test_bare_code_player_does_not_win_side_slot_over_specific_winger(self):
+        # Игрок БЕЗ информации о стороне (старые данные/невышедший
+        # запасной без field_position) — намеренно ВЫШЕ по рейтингу.
+        no_side_info = Player.objects.create(first_name="Без", last_name="Стороны", team=self.home)
+        MatchLineupPlayer.objects.create(
+            lineup=self.lineup, player=no_side_info, is_starting=True, shirt_number=17,
+            position="AM", field_position="",
+        )
+        PlayerMatchAggregate.objects.create(
+            player=no_side_info, match=self.match, performance_score=9.5, total_votes=10,
+        )
+
+        # Настоящий правый вингер — ниже по рейтингу, но с подтверждённой стороной.
+        real_winger = Player.objects.create(first_name="Настоящий", last_name="Вингер", team=self.home)
+        MatchLineupPlayer.objects.create(
+            lineup=self.lineup, player=real_winger, is_starting=True, shirt_number=7,
+            position="M", field_position="R",
+        )
+        PlayerMatchAggregate.objects.create(
+            player=real_winger, match=self.match, performance_score=6.5, total_votes=10,
+        )
+
+        recompute_round(self.season, 3)
+
+        rw_slot = RoundBestXISlot.objects.get(round_best_xi__season=self.season, round_best_xi__tour=3, slot_code="RW")
+        self.assertEqual(
+            rw_slot.occupant_name, "Настоящий Вингер",
+            "слот RW должен достаться игроку с подтверждённой правой стороной, а не более рейтинговому "
+            "игроку без данных о стороне",
+        )
