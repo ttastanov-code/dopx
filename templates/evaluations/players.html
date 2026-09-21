@@ -112,7 +112,8 @@
         <div class="space-y-4">
             <h2 class="font-extrabold text-lg flex items-center gap-2.5 pb-3 border-b-2 border-primary/20">
                 {% if match.home_team.logo_url %}
-                <img src="{{ match.home_team.logo_url }}" class="w-6 h-6 object-contain">
+                {# alt="" — герб декоративный, название команды идёт текстом рядом (см. UI/UX-аудит 2026-09-21). #}
+                <img src="{{ match.home_team.logo_url }}" alt="" class="w-6 h-6 object-contain">
                 {% endif %}
                 <span class="truncate">{{ match.home_team.name }}</span>
             </h2>
@@ -150,7 +151,8 @@
         <div class="space-y-4">
             <h2 class="font-extrabold text-lg flex items-center gap-2.5 pb-3 border-b-2 border-secondary/20">
                 {% if match.away_team.logo_url %}
-                <img src="{{ match.away_team.logo_url }}" class="w-6 h-6 object-contain">
+                {# alt="" — та же причина, что у домашней команды выше. #}
+                <img src="{{ match.away_team.logo_url }}" alt="" class="w-6 h-6 object-contain">
                 {% endif %}
                 <span class="truncate">{{ match.away_team.name }}</span>
             </h2>

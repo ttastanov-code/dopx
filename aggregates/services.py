@@ -645,7 +645,14 @@ def recalculate_player_aggregate(player, match):
     drama_index = cache.get(f"match_agg_{match_id}")
     if drama_index is None:
         match_agg = MatchAggregate.objects.filter(match=match).only("drama_index").first()
-        drama_index = match_agg.drama_index if match_agg else 5.0
+        # 50.0, НЕ 5.0 — drama_index = avg_entertainment * avg_tension, два
+        # поля 1-10 каждое (см. aggregates/tasks.py::recalculate_match_
+        # aggregate), поэтому реальная шкала drama_index — 0..100 (тест
+        # aggregates/tests.py::test_match_aggregate_drama_index и подсказка
+        # в core/context_processors.py прямо говорят "макс. 100"), а не
+        # 0..10. 50.0 — середина РЕАЛЬНОЙ шкалы, тот же смысл, что "5.0
+        # из 10" был для 10-балльной. См. докстринг clutch_index ниже.
+        drama_index = match_agg.drama_index if match_agg else 50.0
         cache.set(f"match_agg_{match_id}", drama_index, 600)
 
     # performance_score/risk_index, в отличие от avg_contribution/avg_risk,
@@ -658,7 +665,21 @@ def recalculate_player_aggregate(player, match):
         avg_risk, neutral_risk_avg, risk_own_n, risk_rival_n, risk_neutral_n
     )
     maturity_score = performance_score - risk_index_value
-    clutch_index = performance_score * (drama_index / 10.0)
+    # ИСПРАВЛЕНО (2026-09-22, найдено сквозным аудитом проекта, не жалобой
+    # пользователя): было `drama_index / 10.0` — верно, если бы drama_index
+    # был на шкале 0-10, но это НЕ так (см. коммент выше про 50.0/100).
+    # На реальных данных (например, entertainment=7, tension=7 →
+    # drama_index=49) старая формула давала clutch_index = performance_score
+    # * 4.9 — то есть до ~5x раздутое число (для рейтинга 7/10 получалось
+    # ~34), а на странице игрока (templates/players/detail.html) эта колонка
+    # "Клатч" рисуется В ТОЙ ЖЕ таблице и тем же форматированием, что явно
+    # 1-10-шкальные "Рейтинг выступления"/"Вклад"/"Риск" — число за 30-70
+    # смотрелось откровенно сломанным рядом с ними. Делим на 100.0 (полная
+    # реальная шкала drama_index), а не на 10.0 — тогда множитель
+    # (drama_index/100) действительно лежит в 0..1, и clutch_index остаётся
+    # в том же порядке величины, что и performance_score, как и было видно
+    # по замыслу из соседних колонок таблицы.
+    clutch_index = performance_score * (drama_index / 100.0)
 
     aggregate, _created = PlayerMatchAggregate.objects.update_or_create(
         player=player,

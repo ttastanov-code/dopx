@@ -20,7 +20,21 @@
             <li><a href="{% url 'matches:list' %}" class="flex items-center gap-2 {% if request.resolver_match.app_name == 'matches' %}active font-semibold{% endif %}"><i class="ti ti-trophy"></i><span>Матчи</span></a></li>
             <li>
                 <details>
-                    <summary class="flex items-center gap-2 {% if request.resolver_match.app_name in 'teams,players,coaches,referees' %}active font-semibold{% endif %}">
+                    {% comment %}
+                    БАГ, КОТОРЫЙ ТУТ БЫЛ (найдено 2026-09-21, UI/UX-аудит):
+                    `app_name in 'teams,players,coaches,referees'` — это
+                    Python/Django `in` над СТРОКОЙ, т.е. проверка
+                    подстроки, а не принадлежности списку значений через
+                    запятую. Сейчас совпадение "случайно" верное только
+                    потому, что ни одно из четырёх реальных имён приложений
+                    не является подстрокой другого и не входит как часть
+                    в другое слово этой строки — но это землина с минами:
+                    добавь короче названное приложение вроде "team" или
+                    "layer", и оно тоже "внезапно" подсветится как активное.
+                    Явные сравнения ниже корректны при любых будущих именах
+                    приложений.
+                    {% endcomment %}
+                    <summary class="flex items-center gap-2 {% if request.resolver_match.app_name == 'teams' or request.resolver_match.app_name == 'players' or request.resolver_match.app_name == 'coaches' or request.resolver_match.app_name == 'referees' %}active font-semibold{% endif %}">
                         <i class="ti ti-chart-bar"></i><span>Статистика</span>
                     </summary>
                     <ul class="p-2 w-72 bg-base-100 rounded-box shadow-xl border border-base-300 mt-2">

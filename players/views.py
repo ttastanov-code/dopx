@@ -537,8 +537,18 @@ def player_season_recap_card(request, pk, season_id):
         total_votes=Sum('total_votes'),
     )
     has_enough_votes = (stats['total_votes'] or 0) >= MIN_VOTES_FOR_DISPLAY
+    # БАГ, КОТОРЫЙ ТУТ БЫЛ (найден 2026-09-21, сквозной аудит): в отличие от
+    # PlayerSeasonRecapView.get_context_data выше (страница, под которую эта
+    # функция генерирует шерабельную PNG-карточку) и PlayerDetailView — здесь
+    # НЕ было фильтра "реально вышел на поле" (🔥 FIX 2026-08-31, см. те же
+    # комментарии там). Любая строка MatchLineupPlayer, включая невышедшего
+    # запасного, считалась "сыгранным матчем" — карточка для шеринга могла
+    # показывать БОЛЬШЕЕ число матчей, чем сама страница итогов сезона,
+    # с которой её и репостят.
     matches_played = MatchLineupPlayer.objects.filter(
         player=player, lineup__match__season=season, lineup__match__status='finished'
+    ).filter(
+        Q(is_starting=True) | Q(minute_in__isnull=False)
     ).values('lineup__match_id').distinct().count()
 
     from events.models import MatchEvent

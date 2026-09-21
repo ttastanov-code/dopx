@@ -234,7 +234,15 @@ def recalculate_player_aggregates(self, match_id: str) -> bool:
         if player_correction:
             performance_score = max(1.0, min(10.0, performance_score + player_correction))
 
-        clutch_index = performance_score * (drama_index / 10.0)
+        # ИСПРАВЛЕНО (2026-09-22, сквозной аудит проекта) — см. полное
+        # объяснение в aggregates/services.py::recalculate_player_aggregate
+        # (тот же баг был продублирован в обоих местах, где считается
+        # clutch_index): drama_index — шкала 0..100 (avg_entertainment *
+        # avg_tension, оба 1-10), а не 0..10, поэтому нормализующий делитель
+        # должен быть 100.0, а не 10.0 — иначе clutch_index получался в
+        # разы больше performance_score, хотя отображается в той же
+        # 1-10-шкальной колонке (templates/players/detail.html).
+        clutch_index = performance_score * (drama_index / 100.0)
 
         aggregates_to_upsert.append(
             PlayerMatchAggregate(
@@ -281,12 +289,21 @@ def recalculate_player_aggregates(self, match_id: str) -> bool:
 
 
 def _get_match_drama_index(match_id: str, match_uuid: uuid.UUID) -> float:
-    """Достаёт drama_index матча из кэша, при промахе — из БД (один раз на пересчёт)."""
+    """Достаёт drama_index матча из кэша, при промахе — из БД (один раз на пересчёт).
+
+    Фолбэк 50.0, НЕ 5.0 (исправлено 2026-09-22, сквозной аудит) — drama_index
+    = avg_entertainment * avg_tension (оба 1-10), реальная шкала 0..100, не
+    0..10 (см. recalculate_match_aggregate ниже и тест
+    aggregates/tests.py::test_match_aggregate_drama_index). 50.0 — середина
+    РЕАЛЬНОЙ шкалы. Использующий эту функцию clutch_index (см. коммент на
+    месте) делит результат на 100.0, а не на 10.0 — старый фолбэк 5.0 был
+    бы в 10 раз меньше нужного и после деления давал multiplier около 0.05
+    вместо ожидаемых "средних" ~0.5."""
     cached = cache.get(f"match_aggregate_{match_id}")
     if cached:
-        return cached.get("drama_index", 5.0)
+        return cached.get("drama_index", 50.0)
     match_agg = MatchAggregate.objects.filter(match_id=match_uuid).only("drama_index").first()
-    return match_agg.drama_index if match_agg else 5.0
+    return match_agg.drama_index if match_agg else 50.0
 
 
 @shared_task(bind=True, max_retries=3)
