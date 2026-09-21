@@ -13,7 +13,11 @@ from teams.models import Team
  
 from .models import MatchAggregate, PlayerMatchAggregate
 from .services import calculate_user_weight, recalculate_player_aggregate
-from .tasks import recalculate_all_aggregates_for_match, recalculate_match_aggregate
+from .tasks import (
+    recalculate_all_aggregates_for_match,
+    recalculate_match_aggregate,
+    recalculate_player_aggregates,
+)
  
 User = get_user_model()
  
@@ -173,6 +177,58 @@ class AggregateCalculationTests(TestCase):
         # drama_index = entertainment * tension = 8 * 9 = 72
         self.assertEqual(aggregate.drama_index, 72.0)
  
+    def test_clutch_index_stays_on_same_scale_as_performance_score(self):
+        """2026-09-22, найдено сквозным аудитом проекта (не жалобой
+        пользователя): drama_index — шкала 0..100 (avg_entertainment *
+        avg_tension, оба 1-10, см. test_match_aggregate_drama_index выше:
+        8*9=72), а НЕ 0..10. Формула clutch_index = performance_score *
+        (drama_index / N) должна использовать N=100, чтобы множитель лежал
+        в 0..1 и clutch_index оставался того же порядка величины, что и
+        performance_score — та же 1-10-шкальная колонка на странице игрока
+        (templates/players/detail.html, "Клатч" рядом с "Рейтинг
+        выступления"/"Вклад"/"Риск"). Со старой формулой (/10.0) drama_index
+        =72 давало бы множитель 7.2 — clutch_index в разы больше
+        performance_score, откровенно не на своём месте в таблице."""
+        MatchEvaluation.objects.create(
+            user=self.user1, match=self.match, entertainment=8, tension=9, fairness=7
+        )
+        recalculate_match_aggregate(str(self.match.id))
+        self.assertEqual(MatchAggregate.objects.get(match=self.match).drama_index, 72.0)
+
+        PlayerEvaluation.objects.create(
+            user=self.user1, match=self.match, player=self.player, contribution=8, risk=3, potential=7
+        )
+
+        aggregate = recalculate_player_aggregate(self.player, self.match)
+        # performance_score == avg_contribution с одним голосующим (без
+        # нейтрального якоря — вес 1.0 у единственного оценившего) == 8.0.
+        # multiplier = 72/100 = 0.72 -> clutch_index = 8.0 * 0.72 = 5.76.
+        self.assertAlmostEqual(aggregate.clutch_index, 5.76, places=1)
+        self.assertLess(
+            aggregate.clutch_index, 10.0,
+            "clutch_index не должен выходить за пределы той же 1-10 шкалы, что performance_score",
+        )
+
+    def test_clutch_index_scale_fix_applies_to_bulk_task_too(self):
+        """Формула была продублирована в aggregates/tasks.py::
+        recalculate_player_aggregates (batch-путь, используется в проде) —
+        отдельный тест на ЭТОТ путь, а не только на recalculate_player_
+        aggregate из services.py (единичный путь, используется в тестах
+        выше) — оба места чинились одним и тем же коммитом, регрессия в
+        одном без другого была бы возможна при будущей правке одного файла."""
+        MatchEvaluation.objects.create(
+            user=self.user1, match=self.match, entertainment=8, tension=9, fairness=7
+        )
+        recalculate_match_aggregate(str(self.match.id))
+
+        PlayerEvaluation.objects.create(
+            user=self.user1, match=self.match, player=self.player, contribution=8, risk=3, potential=7
+        )
+
+        recalculate_player_aggregates(str(self.match.id))
+        aggregate = PlayerMatchAggregate.objects.get(player=self.player, match=self.match)
+        self.assertAlmostEqual(aggregate.clutch_index, 5.76, places=1)
+
     def test_recalculate_all_aggregates(self):
         """Полный пересчёт агрегатов для матча (Celery-цепочка, EAGER-режим)."""
         ContextEvaluation.objects.create(user=self.user1, match=self.match, watched_type="full")

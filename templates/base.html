@@ -535,7 +535,13 @@
          @click.outside="show = false">
         {% for message in messages %}
         <div class="alert alert-{{ message.tags|default:'info' }} shadow-lg text-sm sm:text-base">
-            <i class="ti ti-{{ message.tags|default:'info' }}"></i>
+            {# БАГ, КОТОРЫЙ ТУТ БЫЛ — см. докстринг message_icon() в
+               core/templatetags/asset_extras.py: тег сообщения Django
+               (debug/info/success/warning/error) НЕ является именем иконки
+               Tabler, .ti-success/.ti-error/.ti-warning не существуют
+               вообще — иконка была невидимым пустым квадратом на каждом
+               flash-сообщении сайта. #}
+            <i class="ti ti-{{ message.tags|default:'info'|message_icon }}"></i>
             <span class="break-words">{{ message }}</span>
             <button @click="show = false" class="btn btn-sm btn-ghost shrink-0">✕</button>
         </div>

@@ -327,7 +327,25 @@ class MatchDetailView(DetailView):
         ).annotate(
             count=Count('id')
         ).order_by('-count')[:2])
-        
+
+        # БАГ, КОТОРЫЙ ТУТ БЫЛ (найдено 2026-09-21, UI/UX-аудит matches/
+        # detail.html): шаблон рисовал ширину полоски "За кого болели" как
+        # `style="width: {{ support.count }}%"` — то есть напрямую брал
+        # АБСОЛЮТНОЕ число голосов за команду и подставлял его как ПРОЦЕНТ
+        # ширины. Правильная пропорция (голоса за эту команду / голоса за
+        # обе показанные команды) уже считается ЗДЕСЬ РЯДОМ, в этом же
+        # файле фичи — matches/services.py::_describe_fan_mood (`pct =
+        # round(dominant["count"] / total * 100)`) — просто для полоски
+        # эта пропорция не считалась вообще. При total > 100 голосов полоска
+        # лидера "переполнялась" бы за 100% (визуально срезалась
+        # overflow-hidden, неотличимо от полоски с ЛЮБЫМ количеством голосов
+        # ≥100), а при малом числе голосов (типично — до первых десятков
+        # оценок) обе полоски были почти невидимыми огрызками, даже если
+        # реальный перекос трибун — 3:1 или больше.
+        fan_support_total = sum(row['count'] for row in fan_support)
+        for row in fan_support:
+            row['pct'] = round(row['count'] / fan_support_total * 100) if fan_support_total else 0
+
         # События матча
         events = list(match.events.select_related('player').order_by('minute')[:20])
 

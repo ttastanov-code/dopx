@@ -218,7 +218,20 @@ def check_and_award_badges(user) -> list[UserBadge]:
         if user.match_predictions.filter(match__status="finished").count() >= DERBY_PROPHET_MIN_CORRECT:
             _maybe_award_derby_prophet(user, awarded)
 
-        if user.match_predictions.filter(match__status="finished").count() >= AGAINST_THE_TIDE_MIN_TOTAL_PREDICTIONS:
+        # БАГ, КОТОРЫЙ ТУТ БЫЛ: внешний гейт сравнивал СОБСТВЕННОЕ число
+        # прогнозов пользователя с AGAINST_THE_TIDE_MIN_TOTAL_PREDICTIONS —
+        # но этот порог относится к ДРУГОЙ величине: минимальному числу
+        # голосов СООБЩЕСТВА на ОДНОМ матче (см. докстринг
+        # `_maybe_award_against_the_tide` — "чтобы меньшинство было
+        # осмысленным"), а не к количеству прогнозов самого пользователя.
+        # Бейдж по определению можно получить и с ОДНИМ угаданным прогнозом
+        # (если на тот конкретный матч сообщество проголосовало 5+ раз) —
+        # гейт `count() >= 5` ошибочно скрывал функцию именно для таких
+        # пользователей (мало своих прогнозов, но заслуживших бейдж).
+        # Как и у perfect_tour, единственное реально необходимое условие —
+        # что у пользователя есть хотя бы один угаданный прогноз; точную
+        # проверку порога делает сама `_maybe_award_against_the_tide`.
+        if user.match_predictions.filter(match__status="finished").exists():
             _maybe_award_against_the_tide(user, awarded)
 
         if user.match_predictions.filter(match__status="finished").exists():

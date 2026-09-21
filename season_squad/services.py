@@ -684,7 +684,17 @@ def recompute_best_xi(season) -> SeasonBestXI:
 
     best_xi.last_computed_at = now
     best_xi.save(update_fields=["last_computed_at"])
-    logger.info("Живая сборная сезона %s пересчитана: %d слотов заполнено", season, len(assigned) + 2)
+    # БАГ, КОТОРЫЙ ТУТ БЫЛ (найден 2026-09-21, сквозной аудит): было
+    # `len(assigned) + 2` — жёстко предполагало, что слоты COACH и REFEREE
+    # ВСЕГДА заполняются, хотя чуть выше `slot_results` явно допускает для
+    # них `(slot_code, None, None, None)`, если пул кандидатов пуст (нет
+    # оцененных тренеров/судей в сезоне на момент пересчёта, например самое
+    # начало сезона). В этом случае лог рапортовал на 1-2 "заполненных
+    # слота" больше реальности — не влияет на данные карточек (там честный
+    # None), только на диагностическое число в логах. Считаем реальное
+    # число непустых слотов из уже посчитанного slot_results.
+    filled_slots = sum(1 for _, candidate, _, _ in slot_results if candidate is not None)
+    logger.info("Живая сборная сезона %s пересчитана: %d слотов заполнено", season, filled_slots)
     return best_xi
 
 

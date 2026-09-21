@@ -404,9 +404,27 @@ document.addEventListener('alpine:init', () => {
             // не нужен ежесекундный тик — карточка в списке, не таймер
             // обратного отсчёта крупным планом.
             this._timerId = setInterval(() => this._tick(kickoffMs), 30000);
+            // БАГ, КОТОРЫЙ ТУТ БЫЛ (найден 2026-09-21, сквозной аудит): метод
+            // destroy() ниже не является магическим Alpine-лайфхуком — в
+            // отличие от init(), Alpine НЕ вызывает метод с таким именем
+            // автоматически при удалении элемента из DOM. Сейчас это не
+            // проявляется заметно (карточка с этим компонентом ставится
+            // ТОЛЬКО для status=scheduled, а hx-swap="outerHTML" на этой же
+            // карточке — ТОЛЬКО для status=live, оба условия взаимно
+            // исключают друг друга в текущей разметке _match_card.html), но
+            // это latent-утечка: если карточку когда-нибудь начнут удалять/
+            // подменять через htmx, ПОКА статус ещё scheduled (например,
+            // общий hx-swap на весь список), таймер продолжил бы тикать
+            // вечно на отсоединённом узле. htmx документированно шлёт
+            // 'htmx:beforeCleanupElement' на элемент непосредственно перед
+            // тем, как его удалить/подменить — вешаем реальный вызов
+            // очистки на это событие, а не полагаемся на несуществующий
+            // Alpine-хук destroy().
+            this.$el.addEventListener('htmx:beforeCleanupElement', () => this.destroy(), { once: true });
         },
         destroy() {
             if (this._timerId) clearInterval(this._timerId);
+            this._timerId = null;
         },
         _tick(kickoffMs) {
             const diffMs = kickoffMs - Date.now();

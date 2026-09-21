@@ -415,12 +415,30 @@ class ContactsView(TemplateView):
         # id матча в форму скрытым полем (см. ниже, post()). Если id битый
         # или матча уже нет — просто не подставляем, форма всё равно
         # работает как обычное обращение.
+        # БАГ, КОТОРЫЙ ТУТ БЫЛ (найден 2026-09-21, сквозной аудит): Match.id —
+        # UUIDField (core/models.py::BaseModel), а `?match=` приходит сырой
+        # строкой из GET. `.filter(id=match_id)` с НЕвалидным UUID (битая
+        # ссылка, отредактированный вручную URL, случайный текст) падает
+        # `django.core.exceptions.ValidationError` прямо из ORM ДО выполнения
+        # запроса — Django не превращает это в 404 автоматически, вся
+        # страница /contacts/ отдавала 500 вместо обычной формы обратной
+        # связи. Тот же класс бага, что чинили в dashboard/views.py::
+        # _resolve_match_for_resync (там — POST на несуществующий/legacy id,
+        # здесь — GET-параметр с произвольным содержимым). Явный try/except
+        # вокруг парсинга UUID — минимальная защита: битый/отсутствующий id
+        # просто не подставляет контекст жалобы, форма всё равно работает.
         context['related_match'] = None
         match_id = self.request.GET.get('match', '').strip()
         if match_id:
-            context['related_match'] = Match.objects.filter(id=match_id).select_related(
-                'home_team', 'away_team'
-            ).first()
+            try:
+                import uuid as uuid_module
+                uuid_module.UUID(match_id)
+            except (ValueError, TypeError, AttributeError):
+                pass
+            else:
+                context['related_match'] = Match.objects.filter(id=match_id).select_related(
+                    'home_team', 'away_team'
+                ).first()
 
         now = timezone.now()
         context['stats'] = {
@@ -466,10 +484,23 @@ class ContactsView(TemplateView):
         # GET-параметром выше, просто резолвим через БД и молча игнорируем,
         # если матча с таким id нет (подделанный/устаревший id не должен
         # ронять всю отправку формы).
+        # БАГ, КОТОРЫЙ ТУТ БЫЛ (тот же, что в get_context_data выше для
+        # GET-параметра `match`): комментарий обещал "молча игнорируем,
+        # если матча с таким id нет", но невалидный UUID (не "матч не
+        # найден", а "это вообще не UUID") падал `ValidationError` прямо из
+        # `.filter(id=...)`, роняя ВСЮ отправку формы обратной связи в 500
+        # — то есть ключевой канал связи с пользователем не работал именно
+        # тогда, когда скрытое поле было повреждено/подделано.
         related_match = None
         related_match_id = request.POST.get('related_match', '').strip()
         if related_match_id:
-            related_match = Match.objects.filter(id=related_match_id).first()
+            try:
+                import uuid as uuid_module
+                uuid_module.UUID(related_match_id)
+            except (ValueError, TypeError, AttributeError):
+                pass
+            else:
+                related_match = Match.objects.filter(id=related_match_id).first()
 
         # Валидация
         if len(message) < 20:

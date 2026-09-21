@@ -135,8 +135,23 @@
         {% if debug %}
         <div class="border-t border-base-300 mt-8 pt-4">
             <div class="text-xs opacity-40 font-mono">
+                {% comment %}
+                БАГ, КОТОРЫЙ ТУТ БЫЛ (найдено 2026-09-21, UI/UX-аудит):
+                версии HTMX и DaisyUI были захардкожены (2.0.4 и 4.12
+                соответственно) и разошлись с реально подключёнными в
+                base.html CDN-версиями (htmx.org@2.0.8, daisyui@5.7.17) —
+                эта строка обновлялась в base.html при апгрейдах пакетов,
+                а здесь, в отдельном дублирующем месте, забыли. `django_
+                version` вообще никогда не передаётся ни одним context
+                processor'ом — фоллбэк-значение '6.0.3' показывалось
+                ВСЕГДА, и оно тоже устарело относительно реально
+                установленной версии (requirements.txt: Django==6.0.8).
+                Раз единственный источник правды по факту — этот фоллбэк,
+                обновляем его на реальную версию вместо того, чтобы заводить
+                отдельный context processor только для строки в dev-панели.
+                {% endcomment %}
                 <div class="flex flex-wrap gap-4">
-                    <span>Django {{ django_version|default:'6.0.3' }}</span>
+                    <span>Django {{ django_version|default:'6.0.8' }}</span>
                     <span>•</span>
                     <span>Python 3.12</span>
                     <span>•</span>
@@ -146,9 +161,9 @@
                     <span>•</span>
                     <span>Celery</span>
                     <span>•</span>
-                    <span>HTMX 2.0.4</span>
+                    <span>HTMX 2.0.8</span>
                     <span>•</span>
-                    <span>DaisyUI 4.12</span>
+                    <span>DaisyUI 5.7.17</span>
                 </div>
             </div>
         </div>

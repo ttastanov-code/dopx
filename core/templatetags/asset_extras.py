@@ -56,3 +56,41 @@ def static_v(path):
 
     separator = "&" if "?" in url else "?"
     return f"{url}{separator}v={version}"
+
+
+# Django messages.tags ('debug'/'info'/'success'/'warning'/'error') -> реальное
+# имя иконки в наборе Tabler Icons (см. докстринг message_icon() ниже).
+_MESSAGE_ICON_BY_TAG = {
+    "debug": "bug",
+    "info": "info-circle",
+    "success": "circle-check",
+    "warning": "alert-triangle",
+    "error": "alert-circle",
+}
+
+
+@register.filter
+def message_icon(tags):
+    """БАГ, КОТОРЫЙ ТУТ БЫЛ (найдено 2026-09-21, UI/UX-аудит base.html и
+    base_auth.html): иконка возле каждого flash-сообщения рисовалась как
+    `class="ti ti-{{ message.tags|default:'info' }}"` — то есть тег
+    Django-сообщения (debug/info/success/warning/error) подставлялся
+    НАПРЯМУЮ как имя иконки Tabler. Проверено прямой выгрузкой реального
+    tabler-icons.min.css из того же CDN-пакета (@tabler/icons-webfont@
+    3.46.0), что подключён в <head>: классов `.ti-success`, `.ti-error`,
+    `.ti-warning` в нём НЕТ вообще — у Tabler для этих смыслов другие,
+    более длинные имена (circle-check, alert-circle, alert-triangle). А
+    `.ti-debug` не существует ни в каком виде. `.ti-info` — реальный
+    класс, но это другая, более скромная пиктограмма, чем `info-circle`,
+    которым по всему остальному сайту обозначают именно "информация"
+    (components/_tooltip_icon.html и т.д.) — то есть даже "рабочий" по
+    случайности вариант выглядел не как остальные info-иконки сайта.
+
+    Итог до фикса: иконка перед КАЖДЫМ flash-сообщением на сайте (успех
+    после сохранения формы, ошибка входа, предупреждение и т.д.) — на
+    обеих раскладках, base.html и base_auth.html — либо не отображала
+    вообще никакого символа (invalid class = невидимый пустой квадрат
+    шрифтовой иконки), либо отображала не тот символ, что предполагался.
+
+    Фикс: явный маппинг тега сообщения на реальное имя иконки Tabler."""
+    return _MESSAGE_ICON_BY_TAG.get(tags, "info-circle")

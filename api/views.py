@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 
 from django.core.cache import cache
-from django.db.models import Avg, Count, Max, Prefetch
+from django.db.models import Avg, Count, Max, Prefetch, Sum
 from django.shortcuts import get_object_or_404
 from rest_framework import permissions, status, throttling, viewsets
 from rest_framework.decorators import action
@@ -227,8 +227,16 @@ class PlayerEvaluationViewSet(viewsets.ModelViewSet):
                 *MATCH_DETAIL_ONLY_FIELDS,
             )
         )
+        # БАГ, КОТОРЫЙ ТУТ БЫЛ (найден 2026-09-21, сквозной аудит): было
+        # `Count("total_votes")` — total_votes всегда НЕ NULL (default=0 на
+        # PlayerMatchAggregate), поэтому Count() считал число СТРОК агрегата
+        # (то же самое, что и matches_count ниже), а не сумму реальных
+        # голосов по всем матчам игрока. Тот же класс бага уже был найден и
+        # исправлен в players/views.py::PlayerDetailView (см. её комментарий
+        # "Sum, не Count — total_votes всегда не NULL...") — здесь, в
+        # публичном API-эндпоинте /api/.../analytics/, он остался.
         summary_data = PlayerMatchAggregate.objects.filter(player_id=player_id).aggregate(
-            total_votes=Count("total_votes"),
+            total_votes=Sum("total_votes"),
             avg_performance=Avg("performance_score"),
             avg_risk=Avg("risk_index"),
             avg_maturity=Avg("maturity_score"),

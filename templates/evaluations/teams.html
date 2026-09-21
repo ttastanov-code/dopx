@@ -33,7 +33,8 @@
                 <div class="card-body p-4 sm:p-5">
                     <div class="flex items-center gap-3 mb-4 pb-3 border-b border-base-200">
                         {% if match.home_team.logo_url %}
-                        <img src="{{ match.home_team.logo_url }}" class="w-10 h-10 object-contain flex-shrink-0">
+                        {# alt="" — герб декоративный, название команды уже есть текстом в h3 ниже (см. UI/UX-аудит 2026-09-21: тут не хватало alt вообще, а не пустого — скринридер зачитывал бы URL картинки). #}
+                        <img src="{{ match.home_team.logo_url }}" alt="" class="w-10 h-10 object-contain flex-shrink-0">
                         {% else %}
                         <div class="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center font-bold text-primary text-base flex-shrink-0">
                             {{ match.home_team.name|first|upper }}
@@ -75,7 +76,8 @@
                 <div class="card-body p-4 sm:p-5">
                     <div class="flex items-center gap-3 mb-4 pb-3 border-b border-base-200">
                         {% if match.away_team.logo_url %}
-                        <img src="{{ match.away_team.logo_url }}" class="w-10 h-10 object-contain flex-shrink-0">
+                        {# alt="" — та же причина, что у домашней команды выше. #}
+                        <img src="{{ match.away_team.logo_url }}" alt="" class="w-10 h-10 object-contain flex-shrink-0">
                         {% else %}
                         <div class="w-10 h-10 rounded-xl bg-secondary/10 flex items-center justify-center font-bold text-secondary text-base flex-shrink-0">
                             {{ match.away_team.name|first|upper }}

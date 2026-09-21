@@ -107,7 +107,16 @@ def build_content_feed(partner: Partner, request: HttpRequest, *, limit: int = 1
         drama_index = getattr(getattr(match, "aggregate", None), "drama_index", None)
         caption = f"{match.home_team.name} {match.home_score}:{match.away_score} {match.away_team.name}"
         if drama_index:
-            caption += f" — индекс драмы {drama_index:.1f}/10 по мнению болельщиков DOPX"
+            # БАГ, КОТОРЫЙ ТУТ БЫЛ (найден 2026-09-21, сквозной аудит): было
+            # "{drama_index:.1f}/10" — та же ошибка масштаба, что чинили в
+            # aggregates/services.py::clutch_index (см. коммент там же).
+            # drama_index = avg_entertainment * avg_tension, оба поля 1-10,
+            # реальная шкала — 0..100 (aggregates/tests.py::
+            # test_match_aggregate_drama_index, подтверждает 72.0 для 8×9;
+            # core/context_processors.py прямо подписывает "макс. 100").
+            # Партнёрский фид отдавал "72.0/10" вместо "72/100" во ВСЕ
+            # брендированные подписи для внешних каналов партнёров.
+            caption += f" — индекс драмы {drama_index:.0f}/100 по мнению болельщиков DOPX"
         items.append({
             "match_id": str(match.id),
             "match_url": match_url,
