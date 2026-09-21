@@ -147,3 +147,40 @@ class LastSyncRunTests(TestCase):
         health = data_health_summary()
         self.assertIsNone(health["last_run"])
         self.assertEqual(health["recent_error_samples"], [])
+
+
+class ResolveMatchForResyncTests(DataHealthFixtureMixin, TestCase):
+    """2026-09-22, жалоба пользователя со скриншотом Django 404 "Page not
+    found" на POST .../matches/19681947/resync/. КОРНЕВАЯ ПРИЧИНА — URL
+    кнопки «Ресинк» был <uuid:match_id>, а секция «Последние ошибки» на
+    странице «Здоровье данных» рендерит эту кнопку из ParserSyncRun.
+    error_samples (см. LastSyncRunTests выше) — сырого JSON, где всё ещё
+    живут записи удалённого KFF-парсера с ЧИСЛОВЫМ id матча вместо нашего
+    UUID. dashboard/views.py::_resolve_match_for_resync — функция, которая
+    теперь принимает оба варианта вместо жёсткого <uuid:...> в роутинге."""
+
+    def test_resolves_by_real_uuid(self):
+        from dashboard.views import _resolve_match_for_resync
+
+        match = self._make_match(status="finished")
+        found = _resolve_match_for_resync(str(match.id))
+        self.assertEqual(found, match)
+
+    def test_resolves_by_legacy_sportmonks_numeric_id(self):
+        """Именно сценарий с реального скриншота — match_id из URL был
+        сырым числом (19681947), не UUID."""
+        from dashboard.views import _resolve_match_for_resync
+
+        match = self._make_match(status="finished")
+        match.sportmonks_id = "19681947"
+        match.save(update_fields=["sportmonks_id"])
+
+        found = _resolve_match_for_resync("19681947")
+        self.assertEqual(found, match)
+
+    def test_unknown_id_returns_none_not_crash(self):
+        from dashboard.views import _resolve_match_for_resync
+
+        self.assertIsNone(_resolve_match_for_resync("19681947"))
+        self.assertIsNone(_resolve_match_for_resync("00000000-0000-0000-0000-000000000000"))
+        self.assertIsNone(_resolve_match_for_resync("not-a-valid-anything"))

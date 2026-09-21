@@ -10,7 +10,16 @@ urlpatterns = [
     path("traffic/", views.traffic, name="traffic"),
     path("data-health/", views.data_health, name="data_health"),
     path("data-health/partial/", views.data_health_partial, name="data_health_partial"),
-    path("data-health/matches/<uuid:match_id>/resync/", views.data_health_resync_match, name="data_health_resync_match"),
+    # НЕ <uuid:match_id> (см. докстринг views.data_health_resync_match про
+    # причину 404 2026-09-22) — эта кнопка получает id из ДВУХ разных
+    # источников: свежие ("Матчи с пропущенными данными") всегда шлют
+    # настоящий UUID (Match.id), а "Последние ошибки" читает сырой JSON
+    # ParserSyncRun.error_samples, где ещё живут строки времён удалённого
+    # KFF-парсера с ЧИСЛОВЫМ id матча вместо UUID — <uuid:...> отбраковывал
+    # такой запрос ДО того, как он вообще доходил до view (роутинг-404, а
+    # не 404 из get_object_or_404), само тело view при этом ни разу не
+    # запускалось.
+    path("data-health/matches/<str:match_id>/resync/", views.data_health_resync_match, name="data_health_resync_match"),
     path("ads/", views.ads, name="ads"),
     path("ads/stats/partial/", views.ads_stats_partial, name="ads_stats_partial"),
     path("antifraud/", views.antifraud, name="antifraud"),

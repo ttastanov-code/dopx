@@ -94,6 +94,26 @@ def data_health_partial(request):
     return render(request, "dashboard/_data_health_content.html", context)
 
 
+def _resolve_match_for_resync(match_id: str) -> Match | None:
+    """Резолвит матч для кнопки «Досинхронизировать» (см. докстринг
+    data_health_resync_match ниже про то, откуда берётся match_id и почему
+    он не всегда UUID). Сначала пробуем как настоящий Match.id (UUID) —
+    актуальный путь для всех НОВЫХ ссылок в шаблоне. Если строка не
+    парсится как UUID (или под таким UUID матча нет), пробуем как
+    sportmonks_id — путь для legacy-записей в ParserSyncRun.error_samples,
+    оставшихся от удалённого KFF-парсера."""
+    import uuid as uuid_module
+
+    match = None
+    try:
+        match = Match.objects.filter(id=uuid_module.UUID(str(match_id))).first()
+    except (ValueError, TypeError, AttributeError):
+        pass
+    if match is None:
+        match = Match.objects.filter(sportmonks_id=str(match_id)).first()
+    return match
+
+
 @staff_member_required
 @require_POST
 def data_health_resync_match(request, match_id):
@@ -101,8 +121,30 @@ def data_health_resync_match(request, match_id):
     синхронный full-ресинк через Sportmonks (см. dashboard/parser_tools.py::
     resync_match), не ждём celery beat. Подходит для точечного случая (1-2
     проблемных матча); для массового резинка — кнопка «Sportmonks: Сверить
-    календарь сезона» из вкладки «Парсер»."""
-    match = get_object_or_404(Match, id=match_id)
+    календарь сезона» из вкладки «Парсер».
+
+    ИСПРАВЛЕНО (2026-09-22, жалоба пользователя со скриншотом Django 404
+    "Page not found", POST .../matches/19681947/resync/): раньше URL был
+    <uuid:match_id>, а сама кнопка в шаблоне рендерится из ДВУХ разных
+    источников (templates/dashboard/_data_health_content.html) — секция
+    "Матчи с пропущенными данными" всегда даёт настоящий Match.id (UUID),
+    а секция "Последние ошибки" (err.match_id) читает сырое поле
+    ParserSyncRun.error_samples — JSONField, куда УДАЛЁННЫЙ 2026-09-09
+    KFF-парсер когда-то писал числовой id матча (свой собственный, не наш
+    UUID), а текущий Sportmonks-код вообще не пишет error_samples (см.
+    parsers/sportmonks/tasks.py::_record_sync_run). На проде это скрыто
+    (там всегда есть свежие Sportmonks-прогоны с error_samples=[]), но на
+    локальной машине пользователя без запущенного Celery beat "последним
+    прогоном" в БД так и остаётся старая KFF-строка с этими числовыми id
+    — отсюда 404 именно при локальном тестировании. См. _resolve_match_for_
+    resync() выше — пробуем сначала UUID (актуальный путь), затем
+    sportmonks_id (путь для legacy-данных) — вместо того чтобы вообще
+    ронять запрос на уровне роутинга."""
+    match = _resolve_match_for_resync(match_id)
+    if match is None:
+        messages.error(request, f"Матч с id={match_id} не найден (возможно, устаревшая запись об ошибке).")
+        return redirect("dashboard:data_health")
+
     success, message = parser_tools.resync_match(match)
     (messages.success if success else messages.error)(request, message)
     log_staff_action(
