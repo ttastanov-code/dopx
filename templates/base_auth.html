@@ -91,8 +91,7 @@
         {% for message in messages %}
         <div class="alert alert-{{ message.tags|default:'info' }} shadow-lg max-w-md"
              role="alert">
-            {# БАГ, КОТОРЫЙ ТУТ БЫЛ — та же проблема, что в base.html, см.
-               докстринг message_icon() в core/templatetags/asset_extras.py. #}
+            {% comment %}БАГ, КОТОРЫЙ ТУТ БЫЛ — та же проблема, что в base.html, см. докстринг message_icon() в core/templatetags/asset_extras.py.{% endcomment %}
             <i class="ti ti-{{ message.tags|default:'info'|message_icon }}"></i>
             <span>{{ message }}</span>
             <button @click="show = false" class="btn btn-sm btn-ghost">✕</button>
