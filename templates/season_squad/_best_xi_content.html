@@ -51,8 +51,30 @@ info-иконкой (см. season_squad/services.py::_build_explanation). Кол
                 color-mix(in oklab, var(--color-success) 32%, #05341c) 64px,
                 color-mix(in oklab, var(--color-success) 22%, #05341c) 64px,
                 color-mix(in oklab, var(--color-success) 22%, #05341c) 128px);">
-    {% comment %} Разметка поля — чисто декоративная, не мешает контенту/кликам {% endcomment %}
-    <svg class="absolute inset-0 w-full h-full pointer-events-none opacity-20" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+    {% comment %}
+    БАГ, КОТОРЫЙ ТУТ БЫЛ (жалоба пользователя со скриншотом мобильной
+    версии, 2026-09-21: "схема сборных криво отображается" — на фото видно
+    кривые дуги и рамку, прорезающие карточки игроков). Разметка поля
+    рассчитана на viewBox 100×100 с preserveAspectRatio="none" — то есть
+    SVG растягивается НЕРАВНОМЕРНО по X и Y, чтобы заполнить контейнер
+    любых пропорций. На десктопе карточка "поля" широкая и невысокая
+    (близко к настоящему футбольному полю, 4 ряда в 2-3 колонки укладыв-
+    аются компактно) — растяжение почти незаметно. На мобильном те же 4
+    ряда складываются В ВЫСОТУ (по одному под другим, `grid-cols-1`
+    отсутствует, но `space-y-7`/`space-y-12` между рядами), карточка
+    становится УЗКОЙ и ОЧЕНЬ ВЫСОКОЙ (портретной) — те же 100×100
+    единицы виртуального холста растягиваются по вертикали в разы сильнее,
+    чем по горизонтали. Центральный круг (r=9 у cx=50,cy=50) превращается
+    в вытянутый вертикальный овал, прорезающий сразу несколько рядов
+    игроков (те самые "кривые дуги" на скриншоте между СМ/АТ/КН и ДН/НЭ) —
+    а "рамки штрафных" (rect height=10, у верхнего/нижнего края) растяг-
+    иваются в высокие прямоугольники, обрамляющие текст вратаря снизу.
+    Разметка задумана как декорация под ландшафтную (широкую) пропорцию
+    реального поля — на портретных мобильных пропорциях она структурно
+    не может выглядеть корректно, поэтому просто скрываем её там, где
+    карточка неизбежно портретная, и показываем только от md: и шире.
+    {% endcomment %}
+    <svg class="hidden md:block absolute inset-0 w-full h-full pointer-events-none opacity-20" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
         <line x1="0" y1="50" x2="100" y2="50" stroke="white" stroke-width="0.25" />
         <circle cx="50" cy="50" r="9" fill="none" stroke="white" stroke-width="0.25" />
         <rect x="22" y="0" width="56" height="10" fill="none" stroke="white" stroke-width="0.25" />
@@ -60,7 +82,14 @@ info-иконкой (см. season_squad/services.py::_build_explanation). Кол
         <rect x="0" y="0" width="100" height="100" fill="none" stroke="white" stroke-width="0.25" />
     </svg>
 
-    <div class="relative space-y-7 md:space-y-12">
+    {% comment %}
+    space-y уменьшен с 7/12 до 5/10 (2026-09-21, продолжение жалобы "слишком
+    растянуто по вертикали") — сами карточки стали компактнее (см. коммент
+    ниже про имя/рейтинг/клуб в 3 строки вместо 4-5), прежний межрядовый
+    зазор был откалиброван под более высокие карточки и после их сжатия
+    стал выглядеть непропорционально просторным.
+    {% endcomment %}
+    <div class="relative space-y-5 md:space-y-10">
         {% for row in pitch_rows %}
         <div class="grid gap-2 md:gap-4 justify-items-center" style="grid-template-columns: repeat({{ row.slots|length }}, minmax(0, 1fr));">
             {% for card in row.slots %}
@@ -72,21 +101,67 @@ info-иконкой (см. season_squad/services.py::_build_explanation). Кол
                 — явная подпись выглядела бы категоричным утверждением.
                 {% endcomment %}
 
-                {% include 'components/_avatar.html' with photo_url=card.occupant_photo_url name=card.occupant_name size_classes='w-12 h-12 md:w-16 md:h-16 text-base md:text-lg' ring_style=card.ring_style %}
+                {% comment %}
+                ПЕРЕОСМЫСЛЕНО ЦЕЛИКОМ (2026-09-21, три раунда обратной связи
+                от пользователя на одной и той же карточке):
+                1) "криво" — инфо-иконка то липла к имени, то падала на
+                   свою строку, у соседних карточек в ряду получалось
+                   разное число строк.
+                2) фикс через truncate — "хуйня а не решение, ФИО
+                   обрезанные блять не надо делать" — имя обязано быть
+                   видно ПОЛНОСТЬЮ, без многоточия.
+                3) "переиграй эти круги, аватарок всё равно нет, а эти
+                   буквы имени нахуй не нужны" — фото у игроков почти
+                   никогда нет (см. докстринг core/templatetags/
+                   avatar_extras.py — авто-скрапинг фото отключён), и
+                   генеративные инициалы ("ОА", "НБ" — две случайные буквы
+                   случайного цвета) не несут пользы: не помогают узнать
+                   игрока, только занимают место и создают визуальный шум
+                   на 11 карточках подряд.
+
+                Новая схема убирает причину, а не следствие:
+                — Круг аватара: есть фото — фото. НЕТ фото (подавляющее
+                  большинство) — вместо букв показываем РЕЙТИНГ прямо в
+                  круге (components/_avatar.html, параметр fallback_text).
+                  Это не декорация, а самая ценная цифра на карточке — то,
+                  ради чего вообще существует "Сборная DOPX". Отдельной
+                  строки под рейтинг больше не нужно — она была бы
+                  дублем.
+                — Имя: ОДНА ссылка, БЕЗ truncate/multiline-ограничений —
+                  короткое влезает в одну строку, длинное свободно
+                  переносится на вторую целиком, ни одна буква не
+                  обрезается никогда.
+                — Клуб + инфо-иконка — один общий ряд. Название клуба
+                  почти всегда короткое одно слово ("Кайрат", "Иртыш") —
+                  в отличие от ФИО, оно НАДЁЖНО умещается в одну строку,
+                  поэтому иконка рядом с ним никогда не "отрывается" на
+                  отдельную строку, как раньше отрывалась от имени.
+                Итог: максимум фактов на карточке (фото/рейтинг, полное
+                имя, клуб, объяснение), минимум строк, ничего не обрезано
+                и не скачет между соседними карточками в ряду.
+                {% endcomment %}
+                {% include 'components/_avatar.html' with photo_url=card.occupant_photo_url name=card.occupant_name size_classes='w-14 h-14 md:w-16 md:h-16 text-sm md:text-base' ring_style=card.ring_style fallback_text=card.season_score|floatformat:1 %}
 
                 {% if card.filled %}
-                {% comment %}
-                Ни display:flex на обёртке, ни -webkit-line-clamp на ссылке
-                — сочетание двух движков переноса ломает центрирование
-                текста в разных браузерах. Обычный инлайновый текстовый
-                поток + text-align:center наследуется от карточки надёжно.
-                {% endcomment %}
-                <div class="mt-2 max-w-full text-white/90">
-                    <a href="{{ card.occupant_profile_url }}" class="font-medium text-[11px] md:text-sm leading-tight hover:opacity-70 transition-opacity">{{ card.occupant_name }}</a>
-                    {% if card.explanation %}{% include 'components/_tooltip_icon.html' with text=card.explanation %}{% endif %}
+                <a href="{{ card.occupant_profile_url }}"
+                   class="mt-1.5 block w-full max-w-full text-center font-medium text-[11px] md:text-sm leading-snug text-white/90 hover:opacity-70 transition-opacity">{{ card.occupant_name }}</a>
+                <div class="flex items-center justify-center gap-1 mt-0.5 max-w-full">
+                    <span class="text-[9px] md:text-[11px] text-white/45 truncate">{{ card.occupant_team_name|default:"—" }}</span>
+                    {% comment %}
+                    БАГ, КОТОРЫЙ ТУТ БЫЛ (жалоба пользователя 2026-09-21:
+                    "иконку инфо не видно, она тёмная"). _tooltip_icon.html
+                    не красит себя явно — рассчитан на то, что цвет придёт
+                    по наследованию от родителя (на обычных светлых карточках
+                    сайта это тёмный text-base-content, там всё видно). На
+                    тёмно-зелёном фоне поля наследуется ТОТ ЖЕ тёмный
+                    цвет — тёмная иконка на тёмном фоне, невидима. Обёртка
+                    text-white/70 задаёт нужный цвет локально, сам
+                    переиспользуемый компонент не трогаем — на светлых
+                    карточках сайта (players/detail.html и т.д.) он
+                    по-прежнему наследует обычный тёмный цвет как раньше.
+                    {% endcomment %}
+                    {% if card.explanation %}<span class="text-white/70">{% include 'components/_tooltip_icon.html' with text=card.explanation %}</span>{% endif %}
                 </div>
-                <div class="text-[10px] md:text-xs font-semibold text-white/75 mt-0.5">{{ card.season_score|floatformat:1 }}</div>
-                <div class="text-[8px] md:text-[10px] text-white/35 mt-0.5 truncate max-w-full">{{ card.occupant_team_name|default:"—" }}</div>
                 {% else %}
                 <div class="mt-2 text-[9px] md:text-xs text-white/35 leading-tight">Пока недостаточно<br>оценённых матчей</div>
                 {% endif %}

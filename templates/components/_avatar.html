@@ -11,6 +11,16 @@ templates/components/_avatar.html
                  подтягивает его автоматически.
   size_classes — Tailwind-классы размера/шрифта, по умолчанию 'w-12 h-12 text-lg'
   ring_classes — необязательные классы кольца (ring ring-primary ...)
+  fallback_text — необязательная замена инициалам, когда фото нет (например,
+                  рейтинг "6.4" вместо букв — см. season_squad/
+                  _best_xi_content.html и round_squad/_round_content.html:
+                  на "поле" сборной тура/сезона фото у игроков почти
+                  никогда нет, а инициалы двух случайных цветных букв не
+                  несут пользы ("нахуй не нужны" — жалоба пользователя
+                  2026-09-21), в отличие от рейтинга, который и так рядом
+                  показывается текстом. Не передан — поведение как раньше,
+                  инициалы по имени (все остальные вызовы этого партиала
+                  по сайту не меняются).
   ring_style   — необязательная СЫРАЯ CSS-строка для кольца через outline
                  (например "outline: 2px solid var(--color-success);
                  outline-offset: 2px;"), а не через Tailwind-класс
@@ -24,6 +34,8 @@ templates/components/_avatar.html
      style="{% if not photo_url %}background: {{ name|avatar_gradient }};{% endif %}{{ ring_style }}">
     {% if photo_url %}
     <img src="{{ photo_url }}" alt="{{ name }}" class="w-full h-full object-cover" />
+    {% elif fallback_text %}
+    <span>{{ fallback_text }}</span>
     {% else %}
     <span>{{ name|avatar_initials }}</span>
     {% endif %}
