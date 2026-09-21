@@ -43,6 +43,11 @@ class Notification(BaseModel):
         # свистке с приглашением оценить) — этот может прилететь несколько
         # раз за матч, пока он идёт.
         ('match_event', _('Live-событие матча')),
+        # НОВОЕ (2026-09-21, аудит пуш-системы по жалобе пользователя) —
+        # см. notifications/tasks.py::notify_followers_match_started/
+        # notify_followers_lineups_available.
+        ('match_started', _('Матч начался')),
+        ('lineups_available', _('Составы объявлены')),
     ]
 
     user = models.ForeignKey(

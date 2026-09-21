@@ -77,6 +77,7 @@ SPORTMONKS_TRIGGERABLE_TASKS = {
     "sportmonks_sync_season": "Сверить календарь активного сезона (новые/изменившиеся матчи)",
     "sportmonks_sync_sidelined": "Обновить травмы/дисквалификации по всем командам лиги",
     "sportmonks_sync_coach_activity": "Обновить статус тренеров (кто реально ещё активен)",
+    "sportmonks_resync_recent_stats": "Досинкать статистику недавно завершившихся матчей (последние 3ч)",
 }
 
 SPORTMONKS_TASK_DESCRIPTIONS: dict[str, str] = {
@@ -113,6 +114,20 @@ SPORTMONKS_TASK_DESCRIPTIONS: dict[str, str] = {
         "снимает «Активен» с тех, кто перестал появляться в новых матчах "
         "(coaches/services.py::refresh_coach_activity). Нажмите один раз "
         "сразу после большого бэкафилла — иначе ждать до 04:30 по расписанию."
+    ),
+    "sportmonks_resync_recent_stats": (
+        "Тяжело догружает статистику (удары, владение, угловые и т.д.) "
+        "ВСЕХ матчей, завершившихся за последние 3 часа — БЕЗ проверки "
+        "'счёт разошёлся', в отличие от остальных задач выше. Нужна, "
+        "потому что sportmonks_update_live/sportmonks_sync_season синкают "
+        "статистику только в момент завершения матча, а Sportmonks иногда "
+        "досчитывает официальные цифры уже ПОСЛЕ финального свистка — без "
+        "этой задачи заниженные значения замораживались бы навсегда "
+        "(2026-09-13, реальный случай — заниженные удары в матче Ордабасы-"
+        "Астана). Тикает каждые 15 минут само; жать вручную нужно только "
+        "для немедленного досинка конкретного недавнего матча, не дожидаясь "
+        "ближайшего тика — для матчей СТАРШЕ 3 часов используйте точечный "
+        "«Досинхронизировать» на /staff/dashboard/data-health/ у самого матча."
     ),
 }
 
@@ -209,6 +224,7 @@ _TASK_MODULES = {
     "sportmonks_sync_season": "parsers.sportmonks.tasks",
     "sportmonks_sync_sidelined": "parsers.sportmonks.tasks",
     "sportmonks_sync_coach_activity": "parsers.sportmonks.tasks",
+    "sportmonks_resync_recent_stats": "parsers.sportmonks.tasks",
 }
 _DEFAULT_TASK_MODULE = "parsers.tasks"
 

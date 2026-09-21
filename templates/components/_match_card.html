@@ -56,14 +56,51 @@ start_time, — опциональны, компонент проверяет и
   (static/js/alpine-components.js) прямо из match.start_time — без
   серверного поля, badge всегда содержит дату/время как надёжный fallback.
 {% endcomment %}
+{% comment %}
+2026-09-12 (жалоба пользователя: "по факту счёт 1-0, но на главной 0-0
+пока не обновишь страницу") — карточка рендерится один раз на загрузке
+страницы и больше никогда не перечитывает БД, в отличие от шапки страницы
+матча (templates/matches/_match_header.html), которая уже поллит себя
+каждые 20с через hx-trigger="every 20s". Тот же приём здесь: пока матч
+live — hx-get на сам корневой <a> с hx-trigger="every 15s" (короче, чем
+у шапки — на списке из нескольких live-карточек это по-прежнему один
+лёгкий запрос на карточку, зато счёт обновляется быстрее там, где обычно
+СРАЗУ несколько глаз следят за табло), hx-swap="outerHTML" целиком
+подменяет карточку на свежую (matches:card, см. matches/views.py::
+match_card_partial). id нужен для валидного outerHTML-таргета и на случай,
+если один и тот же матч отрисован дважды на странице (не должно
+случаться, но id уникален по match.id, а не по позиции в списке).
+hx-trigger="every 15s" ПОЛНОСТЬЮ заменяет дефолтный триггер <a> (click) —
+обычный переход по клику на карточку продолжает работать нативно, HTMX
+его не перехватывает.
+
+ИСПРАВЛЕНО (2026-09-12, жалоба пользователя сразу следом: "страница прям
+обновляется, что мешает работе на сайте" — и на мобильном, и на десктопе):
+`data-background-poll` был забыт здесь. Без него templates/base.html
+считает этот hx-get обычным пользовательским запросом (клик/сабмит) и
+вешает на body класс, который показывает #global-loader — ПОЛНОЭКРАННЫЙ
+полупрозрачный оверлей со спиннером (z-[100], перекрывает всю страницу и
+блокирует клики). На странице с несколькими live-карточками это давало
+видимую "вспышку" каждые 15с у каждой из них — то же самое, из-за чего
+раньше был баг в дашборде (см. комментарий у htmx:beforeRequest ниже по
+файлу про isBackgroundPoll). С data-background-poll фоновый свап карточки
+проходит тихо — меняется только сама карточка, экран не мигает.
+{% endcomment %}
 <a href="{% url 'matches:detail' match.id %}"
+   id="match-card-{{ match.id }}"
    class="mrow block group
           {% if match.status == 'live' %}mrow--live
           {% elif match.status == 'finished' %}mrow--finished
           {% elif match.status == 'postponed' %}mrow--postponed
           {% elif match.status == 'cancelled' %}mrow--cancelled
           {% else %}mrow--scheduled{% endif %}"
-   {% if match.status == 'scheduled' %}x-data="matchCountdown" data-kickoff="{{ match.start_time|date:'c' }}"{% endif %}>
+   {% if match.status == 'scheduled' %}x-data="matchCountdown" data-kickoff="{{ match.start_time|date:'c' }}"{% endif %}
+   {% if match.status == 'live' %}
+   data-background-poll
+   hx-get="{% url 'matches:card' match.id %}"
+   hx-trigger="every 15s"
+   hx-swap="outerHTML"
+   {% endif %}>
 
     <!-- === ВЕРХНЯЯ СТРОКА: лига/тур слева, статус справа === -->
     <div class="mrow__top">

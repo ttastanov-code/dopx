@@ -23,8 +23,13 @@ from unittest.mock import MagicMock, patch
 
 from django.test import TestCase
 
+from datetime import timedelta
+
+from django.utils import timezone
+
+from parsers.sportmonks import importers as importers_module
 from parsers.sportmonks.importers import import_match_core
-from parsers.sportmonks.tasks import sportmonks_update_live
+from parsers.sportmonks.tasks import sportmonks_resync_recent_stats, sportmonks_update_live
 from parsers.tests import _fixture, _make_league, _make_season
 
 
@@ -58,6 +63,7 @@ class CeleryTaskRegistrationTests(TestCase):
             "parsers.sportmonks.tasks.sportmonks_sync_sidelined",
             "parsers.sportmonks.tasks.sportmonks_sync_coach_activity",
             "parsers.sportmonks.tasks.sportmonks_health_check",
+            "parsers.sportmonks.tasks.sportmonks_resync_recent_stats",
         }
         missing = expected - registered
         self.assertEqual(
@@ -145,3 +151,164 @@ class SportmonksUpdateLiveStuckMatchReconciliationTests(TestCase):
         # Ровно один heavy sync (через обычный diff-путь по изменившемуся
         # счёту 2:1 -> 1:0), не два.
         self.assertEqual(mock_client.get_fixture.call_count, 1)
+
+
+class SportmonksUpdateLiveEventSignatureTests(TestCase):
+    """2026-09-21, жалоба пользователя со скриншотом (матч Астана-Кайрат):
+    судья показал жёлтую, VAR пересмотрел и заменил на красную ТОМУ ЖЕ
+    игроку — в ленте события остались ОБЕ карточки, будто было два разных
+    нарушения, да ещё и с задержкой. См. полный разбор корневой причины в
+    docstring sportmonks_update_live у сравнения `changed`.
+
+    КОРНЕВАЯ ПРИЧИНА была ШИРЕ, чем просто дубль в БД (тот дубль отдельно
+    чинится в parsers/sportmonks/importers.py::import_events через
+    sportmonks_id, см. parsers/tests.py::test_var_card_upgrade_updates_
+    same_event_no_duplicate) — лёгкий live-опрос (каждую минуту) решал,
+    стоит ли ВООБЩЕ звать тяжёлую догрузку матча, ТОЛЬКО по изменению
+    статуса/счёта. Карточка, замена, смена типа уже присланного события
+    (VAR) не меняют ни то, ни другое — поэтому тяжёлая догрузка для них не
+    вызывалась совсем, и правильный (уже исправленный на уровне БД)
+    результат появлялся только случайно, на следующем голе или финальном
+    свистке. Эти тесты проверяют именно это решение (`changed`), а не сам
+    импорт события."""
+
+    def setUp(self):
+        self.league = _make_league()
+        self.season = _make_season(self.league)
+        fixture = _fixture(sm_id=850000001, dev_name="INPLAY_2ND_HALF", home_goals=1, away_goals=0)
+        self.match = import_match_core(fixture, self.league, self.season)
+
+        from events.models import MatchEvent
+        self.existing_event = MatchEvent.objects.create(
+            match=self.match, minute=9, event_type="yellow_card", team_side="home",
+            sportmonks_id="1", extra_data={"type": {"developer_name": "YELLOWCARD"}},
+        )
+
+    def _api_fixture(self, event_dev_name: str) -> dict:
+        """Тот же матч, тот же счёт/статус, что уже в базе (иначе changed
+        сработал бы и без сравнения событий, тест ничего бы не доказывал)
+        — единственная переменная — developer_name события с id=1."""
+        return {
+            "id": 850000001,
+            "league_id": 393,
+            "state": {"developer_name": "INPLAY_2ND_HALF"},
+            "scores": [
+                {"description": "CURRENT", "score": {"goals": 1, "participant": "home"}},
+                {"description": "CURRENT", "score": {"goals": 0, "participant": "away"}},
+            ],
+            "events": [{"id": 1, "type": {"developer_name": event_dev_name}}],
+        }
+
+    @patch("parsers.sportmonks.tasks.SportmonksClient")
+    def test_var_type_change_on_same_event_id_triggers_heavy_sync(self, mock_client_cls):
+        """ГЛАВНАЯ ПРОВЕРКА: id события тот же (1), но developer_name
+        сменился YELLOWCARD → REDCARD (VAR) — статус/счёт матча НЕ
+        изменились, но тяжёлая догрузка всё равно должна вызваться."""
+        mock_client = MagicMock()
+        mock_client.get_livescores.return_value = [self._api_fixture("REDCARD")]
+        mock_client.get_fixture.return_value = _fixture(
+            sm_id=850000001, dev_name="INPLAY_2ND_HALF", home_goals=1, away_goals=0,
+        )
+        mock_client_cls.return_value = mock_client
+
+        sportmonks_update_live()
+
+        mock_client.get_fixture.assert_called_once()
+
+    @patch("parsers.sportmonks.tasks.SportmonksClient")
+    def test_identical_events_do_not_trigger_heavy_sync(self, mock_client_cls):
+        """Контрольная проверка: ничего не поменялось (тот же id, тот же
+        developer_name), статус/счёт тоже не поменялись — тяжёлая
+        догрузка НЕ должна вызываться (иначе фикс звонил бы каждый тик по
+        каждому live-матчу без всякого смысла, сводя на нет саму идею
+        двухуровневой схемы — см. докстринг модуля)."""
+        mock_client = MagicMock()
+        mock_client.get_livescores.return_value = [self._api_fixture("YELLOWCARD")]
+        mock_client_cls.return_value = mock_client
+
+        sportmonks_update_live()
+
+        mock_client.get_fixture.assert_not_called()
+
+    @patch("parsers.sportmonks.tasks.SportmonksClient")
+    def test_new_event_id_triggers_heavy_sync(self, mock_client_cls):
+        """Контрольная проверка на 'обычный' (не VAR) пропущенный случай —
+        новая карточка/замена (новый id, которого раньше не было), которую
+        до фикса тоже теряли, пока не поменяется счёт или статус."""
+        fx = self._api_fixture("YELLOWCARD")
+        fx["events"].append({"id": 2, "type": {"developer_name": "SUBSTITUTION"}})
+        mock_client = MagicMock()
+        mock_client.get_livescores.return_value = [fx]
+        mock_client.get_fixture.return_value = _fixture(
+            sm_id=850000001, dev_name="INPLAY_2ND_HALF", home_goals=1, away_goals=0,
+        )
+        mock_client_cls.return_value = mock_client
+
+        sportmonks_update_live()
+
+        mock_client.get_fixture.assert_called_once()
+
+
+class SportmonksResyncRecentStatsTests(TestCase):
+    """2026-09-13, реальный случай: занижённая статистика (3 удара против
+    ~23 у стороннего источника) в завершённом матче Ордабасы-Астана —
+    см. докстринг STATS_RESYNC_WINDOW в parsers/sportmonks/tasks.py за
+    полным разбором корневой причины (sportmonks_update_live/
+    sportmonks_sync_season синкают статистику ТОЛЬКО когда счёт/статус
+    разошёлся — уже согласованный завершённый матч больше никогда не
+    трогают, даже если статистика в нём объективно неполная)."""
+
+    def setUp(self):
+        self.league = _make_league()
+        self.season = _make_season(self.league)
+
+    def _make_finished_match(self, sm_id, hours_ago):
+        fixture = _fixture(sm_id=sm_id, dev_name="FT", home_goals=2, away_goals=1)
+        match = import_match_core(fixture, self.league, self.season)
+        match.start_time = timezone.now() - timedelta(hours=hours_ago)
+        match.save(update_fields=["start_time"])
+        return match
+
+    @patch("parsers.sportmonks.tasks.SportmonksClient")
+    def test_recently_finished_match_gets_stats_resynced_even_without_score_change(self, mock_client_cls):
+        """ГЛАВНАЯ ПРОВЕРКА: heavy sync вызван, ХОТЯ счёт/статус между базой
+        и ответом Sportmonks одинаковые (2:1 -> 2:1) — именно это отличает
+        эту задачу от sportmonks_update_live/sportmonks_sync_season, у
+        которых такой матч был бы молча пропущен как "без изменений"."""
+        self._make_finished_match(sm_id=700000111, hours_ago=1)
+        mock_client = MagicMock()
+        mock_client.get_fixture.return_value = _fixture(
+            sm_id=700000111, dev_name="FT", home_goals=2, away_goals=1,
+        )
+        mock_client_cls.return_value = mock_client
+
+        sportmonks_resync_recent_stats()
+
+        mock_client.get_fixture.assert_called_once_with(
+            700000111, include=importers_module.HEAVY_FIXTURE_INCLUDE,
+        )
+
+    @patch("parsers.sportmonks.tasks.SportmonksClient")
+    def test_match_older_than_window_is_not_touched(self, mock_client_cls):
+        """Матч, завершившийся 4 часа назад (за пределами STATS_RESYNC_WINDOW
+        = 3ч) — задача не должна дёргать API ради него бесконечно."""
+        self._make_finished_match(sm_id=700000222, hours_ago=4)
+        mock_client = MagicMock()
+        mock_client_cls.return_value = mock_client
+
+        sportmonks_resync_recent_stats()
+
+        mock_client.get_fixture.assert_not_called()
+
+    @patch("parsers.sportmonks.tasks.SportmonksClient")
+    def test_scheduled_match_is_not_touched(self, mock_client_cls):
+        """Ещё не сыгранный матч — не 'finished', задаче тут делать нечего."""
+        fixture = _fixture(sm_id=700000333, dev_name="NS")
+        match = import_match_core(fixture, self.league, self.season)
+        self.assertEqual(match.status, "scheduled")
+        mock_client = MagicMock()
+        mock_client_cls.return_value = mock_client
+
+        sportmonks_resync_recent_stats()
+
+        mock_client.get_fixture.assert_not_called()

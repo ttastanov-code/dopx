@@ -113,12 +113,21 @@
         <div class="flex items-center justify-center md:justify-start gap-1.5 mt-3">
           <span class="text-xs opacity-50 mr-1">Форма:</span>
           {% for item in team_form %}
+          {% comment %}
+          2026-09-11 (жалоба пользователя: "буквы криво стоят" в кружках
+          формы на мобильном) — без leading-none браузер использует
+          обычный line-height шрифта (обычно 1.2-1.5), а не 1: в таком
+          маленьком фиксированном круге (w-6 h-6) это визуально сдвигает
+          букву вниз от центра, даже при flex items-center. leading-none
+          убирает лишнюю высоту строки — буква реально по центру. Заодно
+          textwrap убран (перевод строки в шаблоне между {{ item.result }}
+          и тегами добавлял пробельный текстовый узел внутри круга, что
+          при таком мелком размере тоже чуть смещало букву).
+          {% endcomment %}
           <a href="{% url 'matches:detail' item.match.id %}"
              title="{% if item.is_home %}{{ team.name }} {{ item.score_display }} {{ item.opponent.name }}{% else %}{{ item.opponent.name }} {{ item.score_display }} {{ team.name }}{% endif %}"
-             class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0
-                    {% if item.result == 'W' %}bg-success{% elif item.result == 'L' %}bg-error{% else %}bg-base-content/30{% endif %}">
-            {{ item.result }}
-          </a>
+             class="w-6 h-6 rounded-full flex items-center justify-center leading-none text-xs font-bold text-white flex-shrink-0
+                    {% if item.result == 'W' %}bg-success{% elif item.result == 'L' %}bg-error{% else %}bg-base-content/30{% endif %}">{{ item.result }}</a>
           {% endfor %}
         </div>
         {% endif %}

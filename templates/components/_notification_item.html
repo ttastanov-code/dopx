@@ -37,6 +37,8 @@ hx-swap="outerHTML" на саму строку: ответ сервера — э
         {% elif notification.notification_type == 'voting_closing' or notification.notification_type == 'prediction_closing' %}bg-warning/10 text-warning
         {% elif notification.notification_type == 'top_performance' %}bg-accent/10 text-accent
         {% elif notification.notification_type == 'match_event' %}bg-error/10 text-error
+        {% elif notification.notification_type == 'match_started' %}bg-success/10 text-success
+        {% elif notification.notification_type == 'lineups_available' %}bg-primary/10 text-primary
         {% elif notification.notification_type == 'new_badge' %}bg-info/10 text-info
         {% elif notification.notification_type == 'level_up' %}bg-warning/10 text-warning
         {% elif notification.notification_type == 'prediction_result' %}bg-accent/10 text-accent
@@ -49,6 +51,8 @@ hx-swap="outerHTML" на саму строку: ответ сервера — э
             {% elif notification.notification_type == 'voting_closing' or notification.notification_type == 'prediction_closing' %}ti-clock
             {% elif notification.notification_type == 'top_performance' %}ti-medal
             {% elif notification.notification_type == 'match_event' %}ti-ball-football
+            {% elif notification.notification_type == 'match_started' %}ti-player-play
+            {% elif notification.notification_type == 'lineups_available' %}ti-clipboard-list
             {% elif notification.notification_type == 'new_badge' %}ti-award
             {% elif notification.notification_type == 'level_up' %}ti-trending-up
             {% elif notification.notification_type == 'prediction_result' %}ti-target-arrow

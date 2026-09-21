@@ -38,6 +38,8 @@
                    class="font-semibold hover:text-success transition-colors truncate">
                     {{ event.player.first_name }} {{ event.player.last_name }}
                 </a>
+                {% elif event.player_display_name %}
+                <span class="font-semibold truncate">{{ event.player_display_name }}</span>
                 {% endif %}
             </div>
             {% if event.assist_player %}
@@ -46,6 +48,11 @@
                 <a href="{% url 'players:detail' event.assist_player.id %}" class="hover:text-info transition-colors">
                     ассист: {{ event.assist_player.first_name }} {{ event.assist_player.last_name }}
                 </a>
+            </div>
+            {% elif event.assist_display_name %}
+            <div class="text-sm opacity-75">
+                <i class="ti ti-arrow-narrow-right text-success"></i>
+                ассист: {{ event.assist_display_name }}
             </div>
             {% endif %}
         </div>
@@ -64,6 +71,8 @@
                    class="font-semibold hover:text-warning transition-colors truncate">
                     {{ event.player.first_name }} {{ event.player.last_name }}
                 </a>
+                {% elif event.player_display_name %}
+                <span class="font-semibold truncate">{{ event.player_display_name }}</span>
                 {% endif %}
             </div>
         </div>
@@ -82,6 +91,8 @@
                    class="font-semibold hover:text-error transition-colors truncate">
                     {{ event.player.first_name }} {{ event.player.last_name }}
                 </a>
+                {% elif event.player_display_name %}
+                <span class="font-semibold truncate">{{ event.player_display_name }}</span>
                 {% endif %}
             </div>
         </div>
@@ -100,12 +111,19 @@
                    class="font-semibold hover:text-neutral transition-colors truncate">
                     {{ event.player.first_name }} {{ event.player.last_name }}
                 </a>
+                {% elif event.player_display_name %}
+                <span class="font-semibold truncate">{{ event.player_display_name }}</span>
                 {% endif %}
             </div>
             {% if event.assist_player %}
             <div class="text-sm opacity-60">
                 <i class="ti ti-arrow-narrow-right"></i>
                 ассист: {{ event.assist_player.first_name }} {{ event.assist_player.last_name }}
+            </div>
+            {% elif event.assist_display_name %}
+            <div class="text-sm opacity-60">
+                <i class="ti ti-arrow-narrow-right"></i>
+                ассист: {{ event.assist_display_name }}
             </div>
             {% endif %}
         </div>
@@ -124,6 +142,8 @@
                    class="font-semibold hover:text-info transition-colors truncate">
                     {{ event.player.first_name }} {{ event.player.last_name }}
                 </a>
+                {% elif event.player_display_name %}
+                <span class="font-semibold truncate">{{ event.player_display_name }}</span>
                 {% endif %}
             </div>
         </div>
@@ -144,6 +164,8 @@
                    class="hover:text-error transition-colors line-through decoration-error/50 truncate">
                     {{ event.player_out.first_name }} {{ event.player_out.last_name }}
                 </a>
+                {% elif event.player_out_display_name %}
+                <span class="truncate line-through decoration-error/50">{{ event.player_out_display_name }}</span>
                 {% else %}
                 <span class="opacity-40 italic">неизвестен</span>
                 {% endif %}
@@ -154,6 +176,8 @@
                    class="font-medium hover:text-success transition-colors truncate">
                     {{ event.player.first_name }} {{ event.player.last_name }}
                 </a>
+                {% elif event.player_display_name %}
+                <span class="font-medium truncate">{{ event.player_display_name }}</span>
                 {% else %}
                 <span class="opacity-40 italic">неизвестен</span>
                 {% endif %}
@@ -175,6 +199,8 @@
                    class="font-semibold hover:text-warning transition-colors truncate">
                     {{ event.player.first_name }} {{ event.player.last_name }}
                 </a>
+                {% elif event.player_display_name %}
+                <span class="font-semibold truncate">{{ event.player_display_name }}</span>
                 {% endif %}
             </div>
             {% if event.card_reason %}
@@ -203,6 +229,8 @@
                    class="font-semibold hover:text-red-600 transition-colors truncate">
                     {{ event.player.first_name }} {{ event.player.last_name }}
                 </a>
+                {% elif event.player_display_name %}
+                <span class="font-semibold truncate">{{ event.player_display_name }}</span>
                 {% endif %}
             </div>
             {% if event.card_reason %}

@@ -226,10 +226,18 @@ class ImportMatchCoreTests(TestCase):
         self.assertEqual(match.status, "cancelled")
 
 
-def _goal_event(minute: int = 87, participant_id: int = 1001, dev_name: str = "GOAL") -> dict:
+def _goal_event(
+    minute: int = 87, participant_id: int = 1001, dev_name: str = "GOAL",
+    event_id: int = 90000001,
+) -> dict:
     """Минимальная форма события Sportmonks (см. EVENT_DEV_NAME_MAP,
-    подтверждено вживую — см. докстринг модуля importers.py)."""
+    подтверждено вживую — см. докстринг модуля importers.py).
+
+    event_id — стабильный id самого события (Sportmonks гарантирует его на
+    каждый events[], см. docstring import_events, 2026-09-21) — по нему
+    теперь в первую очередь сопоставляется повторный импорт."""
     return {
+        "id": event_id,
         "type": {"developer_name": dev_name},
         "minute": minute,
         "participant_id": participant_id,
@@ -337,6 +345,195 @@ class ImportFullFixtureNotificationWiringTests(TestCase):
         with self.captureOnCommitCallbacks(execute=True):
             import_full_fixture(fixture, self.league, self.season)
         self.assertEqual(mock_delay.call_count, 1)
+
+    @patch("notifications.tasks.notify_followers_match_started.delay")
+    def test_first_transition_to_live_queues_started_notification(self, mock_delay):
+        """2026-09-21, аудит пуш-системы (жалоба пользователя: "о начале
+        матча тоже нет пушей!") — матч создаётся 'scheduled' (обычный
+        путь — составы/расписание подтягиваются заранее задолго до
+        стартового свистка), затем реально стартует."""
+        scheduled_fixture = _fixture(sm_id=777000666, dev_name="NS")
+        match = import_full_fixture(scheduled_fixture, self.league, self.season)
+        self.assertEqual(match.status, "scheduled")
+        mock_delay.assert_not_called()
+
+        live_fixture = _fixture(sm_id=777000666, dev_name="INPLAY_1ST_HALF")
+        with self.captureOnCommitCallbacks(execute=True):
+            match = import_full_fixture(live_fixture, self.league, self.season)
+
+        self.assertEqual(match.status, "live")
+        mock_delay.assert_called_once_with(str(match.id))
+
+    @patch("notifications.tasks.notify_followers_match_started.delay")
+    def test_reimporting_already_live_match_does_not_requeue_started(self, mock_delay):
+        scheduled_fixture = _fixture(sm_id=777000777, dev_name="NS")
+        import_full_fixture(scheduled_fixture, self.league, self.season)
+
+        live_fixture = _fixture(sm_id=777000777, dev_name="INPLAY_1ST_HALF")
+        with self.captureOnCommitCallbacks(execute=True):
+            import_full_fixture(live_fixture, self.league, self.season)
+        self.assertEqual(mock_delay.call_count, 1)
+
+        # Досинк того же live-матча (например, следующий тик light-опроса) —
+        # НЕ должен слать повторный "матч начался".
+        with self.captureOnCommitCallbacks(execute=True):
+            import_full_fixture(
+                _fixture(sm_id=777000777, dev_name="INPLAY_2ND_HALF"), self.league, self.season,
+            )
+        self.assertEqual(mock_delay.call_count, 1)
+
+    @patch("notifications.tasks.notify_followers_match_started.delay")
+    def test_match_created_directly_as_live_does_not_fire_started(self, mock_delay):
+        """Первый ЛИБО-КОГДА-ЛИБО импорт фикстуры сразу в статусе 'live'
+        (например, бэкафилл истории, где матч у нас никогда не был
+        'scheduled') — не "только что начался" с точки зрения пользователя,
+        started-пуш не должен слаться (см. was_scheduled_before в
+        import_full_fixture)."""
+        fixture = _fixture(sm_id=777000888, dev_name="INPLAY_1ST_HALF")
+        with self.captureOnCommitCallbacks(execute=True):
+            import_full_fixture(fixture, self.league, self.season)
+        mock_delay.assert_not_called()
+
+    @patch("notifications.tasks.notify_followers_match_started.delay")
+    def test_match_skipping_straight_to_finished_does_not_fire_started(self, mock_delay):
+        """Сервер был выключен весь матч (жалоба пользователя про
+        нестабильную работу пушей на локальной среде) — досинк подхватывает
+        сразу 'finished', минуя 'live'. "Матч начался" для уже прошедшей
+        игры не имеет смысла."""
+        scheduled_fixture = _fixture(sm_id=777000999, dev_name="NS")
+        import_full_fixture(scheduled_fixture, self.league, self.season)
+
+        finished_fixture = _fixture(sm_id=777000999, dev_name="FT")
+        with self.captureOnCommitCallbacks(execute=True):
+            import_full_fixture(finished_fixture, self.league, self.season)
+        mock_delay.assert_not_called()
+
+    @patch("parsers.sportmonks.importers.import_lineups")
+    @patch("notifications.tasks.notify_followers_lineups_available.delay")
+    def test_lineups_becoming_available_queues_notification(self, mock_delay, mock_import_lineups):
+        """2026-09-21, тот же аудит (жалоба: "о том что составы доступны"
+        нет пуша). import_lineups мокнут — реальный парсинг сырых lineups[]
+        покрыт отдельно, здесь важен только сам факт перехода has_lineup
+        False -> True и постановка задачи в очередь."""
+        def _fake_import_lineups(match, lineups_data, formations_data=None):
+            match.has_lineup = True
+            match.save(update_fields=["has_lineup", "updated_at"])
+            return True
+        mock_import_lineups.side_effect = _fake_import_lineups
+
+        fixture = _fixture(sm_id=777001111, dev_name="NS")
+        fixture["lineups"] = [{"dummy": "нужен непустой список — сам импорт мокнут выше"}]
+
+        with self.captureOnCommitCallbacks(execute=True):
+            match = import_full_fixture(fixture, self.league, self.season)
+
+        self.assertTrue(match.has_lineup)
+        mock_delay.assert_called_once_with(str(match.id))
+
+    @patch("parsers.sportmonks.importers.import_lineups")
+    @patch("notifications.tasks.notify_followers_lineups_available.delay")
+    def test_reimporting_with_lineups_already_present_does_not_requeue(self, mock_delay, mock_import_lineups):
+        def _fake_import_lineups(match, lineups_data, formations_data=None):
+            match.has_lineup = True
+            match.save(update_fields=["has_lineup", "updated_at"])
+            return True
+        mock_import_lineups.side_effect = _fake_import_lineups
+
+        fixture = _fixture(sm_id=777001222, dev_name="NS")
+        fixture["lineups"] = [{"dummy": "1"}]
+        with self.captureOnCommitCallbacks(execute=True):
+            import_full_fixture(fixture, self.league, self.season)
+        self.assertEqual(mock_delay.call_count, 1)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            import_full_fixture(fixture, self.league, self.season)
+        self.assertEqual(mock_delay.call_count, 1)
+
+    @patch("parsers.sportmonks.importers.import_lineups")
+    @patch("notifications.tasks.notify_followers_lineups_available.delay")
+    def test_lineups_available_not_fired_for_already_finished_match(self, mock_delay, mock_import_lineups):
+        """Составы досинкались ВМЕСТЕ с уже завершённым матчем (постфактум
+        досинк истории) — "составы объявлены" для прошедшей игры не имеет
+        смысла как приглашение посмотреть перед стартом."""
+        def _fake_import_lineups(match, lineups_data, formations_data=None):
+            match.has_lineup = True
+            match.save(update_fields=["has_lineup", "updated_at"])
+            return True
+        mock_import_lineups.side_effect = _fake_import_lineups
+
+        fixture = _fixture(sm_id=777001333, dev_name="FT")
+        fixture["lineups"] = [{"dummy": "1"}]
+        with self.captureOnCommitCallbacks(execute=True):
+            match = import_full_fixture(fixture, self.league, self.season)
+
+        self.assertEqual(match.status, "finished")
+        self.assertTrue(match.has_lineup)
+        mock_delay.assert_not_called()
+
+    @patch("notifications.tasks.notify_followers_match_event.delay")
+    def test_goal_disallowed_event_is_imported_and_queues_push(self, mock_delay):
+        """2026-09-21, регрессия на реальную дыру в EVENT_DEV_NAME_MAP:
+        Sportmonks шлёт отменённый после VAR гол отдельным событием
+        developer_name='GOAL_DISALLOWED' — раньше маппинга не было вообще,
+        событие тихо отбрасывалось как "неизвестный тип", и пуш "гол
+        отменён" никогда не срабатывал, хотя вся остальная инфраструктура
+        под него уже была готова (PUSH_WORTHY_EVENT_TYPES/notify_followers_
+        match_event/EVENT_TYPES)."""
+        fixture = _fixture(sm_id=777001444, dev_name="INPLAY_2ND_HALF")
+        fixture["events"] = [
+            _goal_event(minute=54, participant_id=fixture["participants"][0]["id"], dev_name="GOAL_DISALLOWED"),
+        ]
+
+        with self.captureOnCommitCallbacks(execute=True):
+            match = import_full_fixture(fixture, self.league, self.season)
+
+        from events.models import MatchEvent
+        event = MatchEvent.objects.get(match=match, minute=54)
+        self.assertEqual(event.event_type, "disallowed_goal")
+        mock_delay.assert_called_once_with(str(match.id), str(event.id))
+
+    @patch("notifications.tasks.notify_followers_match_event.delay")
+    def test_var_card_upgrade_updates_same_event_no_duplicate(self, mock_delay):
+        """2026-09-21, жалоба пользователя со скриншотом (матч Астана-
+        Кайрат): судья показал жёлтую, после просмотра VAR заменил её на
+        красную ТОМУ ЖЕ игроку — в ленте остались ОБЕ карточки, будто было
+        два разных нарушения. КОРНЕВАЯ ПРИЧИНА — сопоставление "то же самое
+        событие" шло по (minute, event_type, team_side): смена event_type
+        ломала совпадение. Теперь сопоставление в первую очередь идёт по
+        sportmonks_id (см. import_events) — при повторном импорте с тем же
+        event id, но другим developer_name, должна обновиться ОДНА и та же
+        запись, а не появиться вторая."""
+        fixture = _fixture(sm_id=777001555, dev_name="INPLAY_2ND_HALF")
+        fixture["events"] = [
+            _goal_event(minute=9, participant_id=fixture["participants"][0]["id"],
+                        dev_name="YELLOWCARD", event_id=55123456),
+        ]
+        with self.captureOnCommitCallbacks(execute=True):
+            match = import_full_fixture(fixture, self.league, self.season)
+
+        from events.models import MatchEvent
+        self.assertEqual(MatchEvent.objects.filter(match=match).count(), 1)
+        event = MatchEvent.objects.get(match=match)
+        self.assertEqual(event.event_type, "yellow_card")
+        event_pk = event.id
+        # Жёлтая не push-достойна — до апгрейда пуш не улетал.
+        mock_delay.assert_not_called()
+
+        # VAR пересматривает то же событие (тот же id!) и меняет его на красную.
+        fixture["events"] = [
+            _goal_event(minute=11, participant_id=fixture["participants"][0]["id"],
+                        dev_name="REDCARD", event_id=55123456),
+        ]
+        with self.captureOnCommitCallbacks(execute=True):
+            import_full_fixture(fixture, self.league, self.season)
+
+        self.assertEqual(MatchEvent.objects.filter(match=match).count(), 1, "не должно быть дубля")
+        event.refresh_from_db()
+        self.assertEqual(event.id, event_pk, "должна обновиться та же запись, не создаться новая")
+        self.assertEqual(event.event_type, "red_card")
+        self.assertEqual(event.minute, 11)
+        # Красная push-достойна — коррекция должна была отправить пуш.
+        mock_delay.assert_called_once_with(str(match.id), str(event_pk))
 
 
 class DecidedAdministrativelyTests(TestCase):
@@ -462,4 +659,5 @@ class PlayerNameCorrectionTests(TestCase):
         словаре как ключа) — иначе легко было бы случайно "смягчить" славянское
         имя тем же правилом, что и заимствованное "Rafael"."""
         player = get_or_create_player(_sportmonks_player(9001005, firstname="Pavel", lastname="Testov"))
+        self.assertEqual(player.first_name, "Павел")
         self.assertEqual(player.first_name, "Павел")
