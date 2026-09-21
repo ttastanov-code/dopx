@@ -501,12 +501,34 @@ def _apply_round_slot(
     )
 
 
-def recompute_round(season, tour: int) -> RoundBestXI:
+def recompute_round(season, tour: int, *, force: bool = False) -> RoundBestXI:
     """Точка входа — вызывается из round_squad/tasks.py (Celery Beat) и из
     админского действия «Пересчитать сейчас». Идемпотентна, как и
-    season_squad.recompute_best_xi: безопасно вызывать чаще, чем нужно."""
+    season_squad.recompute_best_xi: безопасно вызывать чаще, чем нужно.
+
+    ДОБАВЛЕНО (2026-09-21, прямая просьба пользователя: "команду, которая
+    перерасчёт делает всех закрытых туров сборные"): по умолчанию (force=
+    False) поведение не изменилось — уже зафиксированный (is_final=True)
+    тур пропускается, донакручивать состав нечем, т.к. голосование
+    закрыто. `force=True` (используется ТОЛЬКО из recompute_all_closed_
+    rounds ниже) обходит этот ранний выход и пересчитывает состав заново
+    — например, после того как задним числом поправили данные матча
+    (событие, состав), из-за которых голоса были посчитаны неверно, и тур
+    к моменту первой фиксации закрылся с ошибочными данными.
+
+    КРИТИЧНО: force=True НЕ должен приводить к повторной рассылке письма
+    «итоги тура» (send_round_results_notification) — see `just_finalized`
+    ниже, которое теперь считается через `was_final_before` (снимок ДО
+    пересчёта), а не через сам факт входа в `if _round_is_complete(...)`
+    (тур с уже закрытым голосованием ВСЕГДА "complete", так что при
+    force=True этот if сработает при каждом пересчёте — количество
+    попаданий в него не может служить сигналом "только что закрылся").
+    Та же причина, по которой finalized_at не перезаписывается на `now`,
+    если тур уже был финализирован раньше — дата реальной фиксации тура
+    не должна "уезжать" на дату ручного пересчёта."""
     round_best_xi, _created = RoundBestXI.objects.get_or_create(season=season, tour=tour)
-    if round_best_xi.is_final:
+    was_final_before = round_best_xi.is_final
+    if was_final_before and not force:
         logger.info("Тур %s сезона %s уже зафиксирован — пересчёт пропущен", tour, season)
         return round_best_xi
 
@@ -637,9 +659,16 @@ def recompute_round(season, tour: int) -> RoundBestXI:
     # разослать письмо с итогами (см. just_finalized ниже). ----
     just_finalized = False
     if _round_is_complete(season, tour):
-        just_finalized = True
+        # was_final_before, не факт попадания в этот if — см. докстринг
+        # функции про force=True: с ним сюда заходят и при повторных
+        # пересчётах уже закрытого тура (голосование закрыто НАВСЕГДА,
+        # значит _round_is_complete() истинно при КАЖДОМ вызове), поэтому
+        # "только что закрылся" может значить только "не был закрыт до
+        # ЭТОГО конкретного вызова".
+        just_finalized = not was_final_before
         round_best_xi.is_final = True
-        round_best_xi.finalized_at = now
+        if just_finalized:
+            round_best_xi.finalized_at = now
         try:
             from core.services.share_cards import build_round_squad_share_card
 
@@ -681,3 +710,33 @@ def recompute_round(season, tour: int) -> RoundBestXI:
         tour, season, round_best_xi.is_final, len(assigned),
     )
     return round_best_xi
+
+
+def recompute_all_closed_rounds() -> int:
+    """2026-09-21, прямая просьба пользователя: "команда, которая
+    перерасчёт делает всех закрытых туров сборные". Проходит по ВСЕМ уже
+    зафиксированным (is_final=True) RoundBestXI — по всем сезонам и лигам,
+    без ограничения "только активный сезон" (в отличие от recompute_
+    active_rounds в tasks.py, которая специально пропускает финализированные
+    туры) — и пересчитывает каждый через recompute_round(force=True).
+
+    Зачем это вообще нужно: тур мог закрыться с данными, которые потом
+    поправили задним числом (например, найденную ошибку в статистике/
+    составе матча, см. parsers/sportmonks/tasks.py::sportmonks_resync_
+    recent_stats и подобные истории в этом проекте) — сам PlayerMatchAggregate
+    пересчитывается при таких правках, но уже зафиксированный RoundBestXI
+    никогда сам не подхватит новые цифры, раз голосование в нём формально
+    закрыто.
+
+    Безопасно вызывать когда угодно: force=True внутри recompute_round
+    НЕ перезаписывает finalized_at и НЕ ставит повторную рассылку письма
+    «итоги тура» — см. докстринг recompute_round про just_finalized/
+    was_final_before. Возвращает количество реально пересчитанных туров."""
+    closed = list(
+        RoundBestXI.objects.filter(is_final=True).select_related('season').order_by('season_id', 'tour')
+    )
+    for round_xi in closed:
+        recompute_round(round_xi.season, round_xi.tour, force=True)
+
+    logger.info("recompute_all_closed_rounds: пересчитано закрытых туров: %d", len(closed))
+    return len(closed)

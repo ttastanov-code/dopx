@@ -284,8 +284,13 @@ class SportmonksResyncRecentStatsTests(TestCase):
 
         sportmonks_resync_recent_stats()
 
+        # Match.sportmonks_id — CharField (см. matches/models.py), поэтому
+        # _heavy_sync_fixture передаёт сюда СТРОКУ ("700000111"), не int —
+        # так же, как везде в проекте (import_match_core, sportmonks_update_
+        # live и т.д. везде сравнивают/хранят sportmonks_id как str). Тест
+        # раньше ошибочно ожидал int — код правильный, ожидание было неверным.
         mock_client.get_fixture.assert_called_once_with(
-            700000111, include=importers_module.HEAVY_FIXTURE_INCLUDE,
+            "700000111", include=importers_module.HEAVY_FIXTURE_INCLUDE,
         )
 
     @patch("parsers.sportmonks.tasks.SportmonksClient")

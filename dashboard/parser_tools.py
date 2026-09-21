@@ -157,6 +157,13 @@ TRIGGERABLE_TASKS = {
     # прогона тестовых голосований (see users/management/commands/
     # create_test_users.py + aggregates/management/commands/simulate_evaluations.py).
     "recompute_active_rounds": "DOPX Лучшие тура: пересчитать сейчас (все незакрытые туры)",
+    # 2026-09-21, прямая просьба пользователя: "команда, которая перерасчёт
+    # делает всех закрытых туров сборные... вывести на дашборд" — в
+    # отличие от recompute_active_rounds выше, эта кнопка ИМЕННО для уже
+    # зафиксированных (is_final=True) туров, которые обычный крон-тик
+    # больше никогда не трогает (см. round_squad/services.py::
+    # recompute_all_closed_rounds).
+    "recompute_all_closed_rounds_task": "DOPX Лучшие тура: пересчитать ВСЕ закрытые туры (без повторной рассылки)",
 }
 
 # Короткие пояснения под кнопками (2026-08-21, продуктовый фидбек: "не
@@ -207,6 +214,17 @@ TASK_DESCRIPTIONS: dict[str, str] = {
         "автоматически ставится в очередь рассылка «Игрок/сборная тура» "
         "всем верифицированным пользователям."
     ),
+    "recompute_all_closed_rounds_task": (
+        "Пересчитывает состав ВСЕХ уже зафиксированных (is_final=True) "
+        "туров — по всем сезонам и лигам, не только активным. Нужна для "
+        "случаев, когда данные матча (событие, состав, статистика) "
+        "поправили ПОСЛЕ того, как тур уже закрылся с неверными цифрами — "
+        "обычный крон-тик такие туры больше никогда не трогает. Безопасна: "
+        "НЕ перезаписывает дату фиксации тура и НЕ рассылает повторно "
+        "письмо «итоги тура» — только пересчитывает состав/статистику на "
+        "уже закрытых данных. Может занять время, если закрытых туров "
+        "много — не жмите повторно, пока не увидите результат в логах."
+    ),
 }
 
 # Модуль, откуда импортировать функцию задачи — по умолчанию parsers.tasks
@@ -218,6 +236,7 @@ _TASK_MODULES = {
     "send_weekly_summary": "notifications.tasks",
     "recompute_all_active_best_xi": "season_squad.tasks",
     "recompute_active_rounds": "round_squad.tasks",
+    "recompute_all_closed_rounds_task": "round_squad.tasks",
     "recalculate_season_standings": "aggregates.tasks",
     "sportmonks_update_live": "parsers.sportmonks.tasks",
     "sportmonks_update_upcoming": "parsers.sportmonks.tasks",

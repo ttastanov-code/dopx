@@ -535,6 +535,76 @@ class ImportFullFixtureNotificationWiringTests(TestCase):
         # Красная push-достойна — коррекция должна была отправить пуш.
         mock_delay.assert_called_once_with(str(match.id), str(event_pk))
 
+    def test_blank_resend_of_same_event_id_does_not_erase_real_data(self):
+        """2026-09-21, жалоба пользователя со скриншотом РЕАЛЬНОГО матча
+        (Кайрат 1:4 Тобыл, 13.09.2026) — на 45' и 81' минуте в ленте "Гол"
+        без имени забившего, хотя на 44'/80' минутой раньше уже есть
+        настоящий гол. Сырой extra_data (снят через diagnose_match_events)
+        показал: у "пустого" и настоящего события ОДИН И ТОТ ЖЕ sportmonks
+        id, но у "пустого" все поля игрока — null, а минута сдвинута на 1.
+        Похоже на недообогащённый промежуточный снимок с другого момента
+        live-цикла Sportmonks.
+
+        Раньше (сопоставление по minute/type/side) это создавало дубль-
+        строку — уже исправлено отдельно (см. test_var_card_upgrade_...
+        выше, сопоставление теперь по id). Но сопоставление по id само по
+        себе создало НОВЫЙ риск: если "пустой" повтор придёт ПОСЛЕ того,
+        как мы уже сохранили содержательную версию, он найдётся по тому же
+        id и затрёт настоящие данные пустотой. Этот тест — на защиту от
+        именно такой регрессии (см. комментарий "ЗАЩИТА ОТ РЕГРЕССИИ" в
+        import_events)."""
+        from events.models import MatchEvent
+        from players.models import Player
+
+        scorer = Player.objects.create(first_name="Урош", last_name="Милованович", sportmonks_id="784559")
+
+        fixture = _fixture(sm_id=777002666, dev_name="INPLAY_2ND_HALF")
+        real_goal_event = {
+            "id": 157899217,
+            "type": {"developer_name": "GOAL"},
+            "minute": 44,
+            "participant_id": fixture["participants"][1]["id"],
+            "player_id": 784559,
+            "related_player_id": None,
+            "result": "1-2",
+            "extra_minute": 0,
+            "player_name": "Uros Milovanović",
+        }
+        fixture["events"] = [real_goal_event]
+        with self.captureOnCommitCallbacks(execute=True):
+            match = import_full_fixture(fixture, self.league, self.season)
+
+        event = MatchEvent.objects.get(match=match)
+        self.assertEqual(event.player_id, scorer.id)
+        event_pk = event.id
+
+        # Точная копия того же raw-события от Sportmonks — тот же id, но
+        # минута +1 и все поля игрока обнулены (ровно как в реальном
+        # ответе API, см. докстринг теста).
+        blank_resend_event = {
+            "id": 157899217,
+            "type": {"developer_name": "GOAL"},
+            "minute": 45,
+            "participant_id": fixture["participants"][1]["id"],
+            "player_id": None,
+            "related_player_id": None,
+            "result": "1-2",
+            "extra_minute": None,
+            "player_name": None,
+        }
+        fixture["events"] = [blank_resend_event]
+        with self.captureOnCommitCallbacks(execute=True):
+            import_full_fixture(fixture, self.league, self.season)
+
+        self.assertEqual(
+            MatchEvent.objects.filter(match=match).count(), 1,
+            "пустой повтор не должен создавать вторую строку",
+        )
+        event.refresh_from_db()
+        self.assertEqual(event.id, event_pk)
+        self.assertEqual(event.player_id, scorer.id, "пустой повтор не должен стирать уже известного игрока")
+        self.assertEqual(event.minute, 44, "пустой повтор не должен сдвигать минуту настоящего события")
+
 
 class DecidedAdministrativelyTests(TestCase):
     """ИСПРАВЛЕНО (2026-09-10, расследование алерта "12 матчей без составов

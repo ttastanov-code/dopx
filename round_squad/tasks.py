@@ -27,6 +27,14 @@ ROUND_RECOMPUTE_LOCK_TIMEOUT = 300
 # смысл имени в логах/коде был однозначным).
 ROUND_NOTIFY_LOCK_TIMEOUT = 600
 
+# Лок для recompute_all_closed_rounds_task ниже — отдельная константа (не
+# ROUND_RECOMPUTE_LOCK_TIMEOUT, тот рассчитан на ОДИН тур): редкая ручная
+# операция "пересчитать вообще все закрытые туры сразу" может задеть
+# десятки туров за несколько сезонов подряд — с запасом относительно
+# ROUND_RECOMPUTE_LOCK_TIMEOUT=300, чтобы не словить ложное "уже
+# выполняется" на честно длинном прогоне.
+ALL_CLOSED_ROUNDS_LOCK_TIMEOUT = 1800
+
 
 @shared_task
 def recompute_round_task(season_id: str, tour: int) -> None:
@@ -52,6 +60,32 @@ def recompute_round_task(season_id: str, tour: int) -> None:
             return
 
         recompute_round(season, tour)
+    finally:
+        cache.delete(lock_key)
+
+
+@shared_task
+def recompute_all_closed_rounds_task() -> int:
+    """2026-09-21, прямая просьба пользователя ("команда, которая
+    перерасчёт делает всех закрытых туров сборные... вывести на дашборд")
+    — ручной пересчёт ВСЕХ уже зафиксированных туров (не только активных
+    сезонов, в отличие от recompute_active_rounds ниже, которая специально
+    их пропускает). Без обязательных аргументов — вызывается с дашборда
+    через dashboard/parser_tools.py::trigger_task как task_fn.delay(),
+    без параметров, тот же контракт, что у остальных кнопок там.
+
+    Один общий лок на всю операцию (не по каждому туру отдельно, как у
+    recompute_round_task) — это редкая ручная операция "пересчитать всё"
+    (не крон-тик по одному туру), от нескольких одновременных полных
+    прогонов защищаемся целиком, а не по кусочкам."""
+    lock_key = "round_squad:recompute_all_closed:running"
+    if not cache.add(lock_key, "1", timeout=ALL_CLOSED_ROUNDS_LOCK_TIMEOUT):
+        logger.info("recompute_all_closed_rounds_task: уже выполняется — пропускаем")
+        return 0
+    try:
+        from round_squad.services import recompute_all_closed_rounds
+
+        return recompute_all_closed_rounds()
     finally:
         cache.delete(lock_key)
 

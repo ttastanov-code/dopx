@@ -489,6 +489,15 @@ class TeamDetailViewRosterTests(TestCase):
         from lineups.models import MatchLineup, MatchLineupPlayer
 
         past_season = Season.objects.create(league=self.league, year="2025", is_active=False)
+        # Без этой строки TeamDetailView не находит 2025 в team_seasons
+        # (views.py:130 строит список сезонов команды именно из TeamSeason,
+        # а не из факта наличия сыгранных матчей) — ?season=2025 молча
+        # игнорируется, view откатывается на активный сезон, и тест ловит
+        # 0 игроков вместо 30 не из-за [:25], а из-за пропущенной здесь
+        # связки TeamSeason. Реальные данные всегда получают TeamSeason
+        # через синк (см. setUp класса — TeamSeason создаётся и для
+        # активного сезона тоже), тест обязан воспроизводить это же условие.
+        TeamSeason.objects.create(team=self.team, season=past_season)
         opponent = Team.objects.create(name="Соперник (прошлый сезон)")
         match = Match.objects.create(
             league=self.league, season=past_season,
