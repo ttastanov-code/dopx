@@ -321,6 +321,45 @@
         .btn-outline:not(.btn-disabled):not(:disabled):hover {
             box-shadow: 0 6px 16px -8px color-mix(in oklab, currentColor 45%, transparent);
         }
+
+        /* ============================================================
+           OUTLINE-КНОПКИ С ЦВЕТОМ (2026-09-21, жалоба пользователя:
+           "кнопка отозвать в дашборде уродская! везде где есть такая
+           кнопка по дизайну — исправить"). КОРНЕВАЯ ПРИЧИНА — фирменный
+           градиент/цветная тень выше (.btn-primary/.btn-success/
+           .btn-error/.btn-warning) написан ОДИНАРНЫМ селектором по цвету
+           и рассчитан на СПЛОШНУЮ кнопку. Как только к ней добавляется
+           .btn-outline (например "Отозвать" — btn-outline btn-error), у
+           daisyUI срабатывает СОСТАВНОЙ селектор `.btn-outline.btn-error`
+           (специфичность выше одинарного .btn-error) и перебивает наш
+           градиент обратно на плоский прозрачный фон с тонкой рамкой —
+           именно поэтому эта кнопка выглядела чужеродно на фоне
+           остальных "объёмных" кнопок сайта. Тот же приём, что уже
+           используется для .badge-* (CSS-переменная -tint, назначаемая
+           отдельно по классу цвета) — работает для ЛЮБой outline-кнопки
+           с цветовым модификатором сайта одним местом, без правки
+           каждого шаблона по отдельности. */
+        .btn-outline.btn-primary,
+        .btn-outline.btn-success,
+        .btn-outline.btn-error,
+        .btn-outline.btn-warning {
+            background: color-mix(in oklab, var(--btn-outline-tint) 8%, var(--color-base-100));
+            border-color: color-mix(in oklab, var(--btn-outline-tint) 45%, var(--color-base-300));
+            color: color-mix(in oklab, var(--btn-outline-tint) 82%, var(--color-base-content));
+        }
+        .btn-outline.btn-primary:not(.btn-disabled):not(:disabled):hover,
+        .btn-outline.btn-success:not(.btn-disabled):not(:disabled):hover,
+        .btn-outline.btn-error:not(.btn-disabled):not(:disabled):hover,
+        .btn-outline.btn-warning:not(.btn-disabled):not(:disabled):hover {
+            background: color-mix(in oklab, var(--btn-outline-tint) 16%, var(--color-base-100));
+            border-color: var(--btn-outline-tint);
+            box-shadow: 0 6px 16px -8px color-mix(in oklab, var(--btn-outline-tint) 45%, transparent);
+        }
+        .btn-outline.btn-primary { --btn-outline-tint: var(--color-primary); }
+        .btn-outline.btn-success { --btn-outline-tint: var(--color-success); }
+        .btn-outline.btn-error   { --btn-outline-tint: var(--color-error); }
+        .btn-outline.btn-warning { --btn-outline-tint: var(--color-warning); }
+
         .btn.btn-disabled, .btn:disabled {
             box-shadow: none !important;
             filter: none !important;

@@ -16,7 +16,12 @@ from leagues.models import League
 from lineups.models import MatchLineup, MatchLineupPlayer
 from matches.models import Match
 from players.models import Player
-from season_squad.services import Candidate, _describe_nearest_competitor, _describe_top_matches
+from season_squad.services import (
+    Candidate,
+    _describe_nearest_competitor,
+    _describe_top_matches,
+    _player_season_position,
+)
 from seasons.models import Season
 from teams.models import Team
 
@@ -96,4 +101,67 @@ class DescribeNearestCompetitorTests(SimpleTestCase):
         разница означает эффект округления в _rank_pool, а не реальную
         ничью; вводящую в заблуждение фразу "обошёл на 0.00" не показываем."""
         self.assertEqual(_describe_nearest_competitor(8.0, (_candidate(), 8.0)), "")
+
+
+class PlayerSeasonPositionTests(TestCase):
+    """2026-09-21, прямая жалоба пользователя: "некоторые игроки стоят
+    например на правом полузащитнике, а сам игрок например не играет там
+    вообще". Одна из двух корневых причин (вторая — в players/positions.py::
+    SLOT_PROCESSING_ORDER, см. round_squad/tests.py) — _player_season_
+    position раньше считал моду позиции по ВСЕМ строкам MatchLineupPlayer,
+    включая невышедших запасных, у которых нет вообще никакой информации
+    о реальном амплуа на поле."""
+
+    def setUp(self):
+        self.league = League.objects.create(name="League", country="KZ")
+        self.season = Season.objects.create(league=self.league, year="2026")
+        self.team = Team.objects.create(name="Home")
+        self.opponent = Team.objects.create(name="Away")
+        self.player = Player.objects.create(first_name="Игрок", last_name="Тестов", team=self.team)
+
+    def _make_match(self, days_ago):
+        return Match.objects.create(
+            league=self.league, season=self.season,
+            home_team=self.team, away_team=self.opponent,
+            start_time=timezone.now() - timedelta(days=days_ago),
+            voting_open_until=timezone.now() + timedelta(days=1),
+            status="finished",
+        )
+
+    def test_unused_bench_appearances_do_not_dominate_mode(self):
+        """Игрок 5 раз был в заявке невышедшим запасным под общим "AM"
+        (голое амплуа без стороны — так регистрируется скамейка, см.
+        докстринг _player_season_position) и всего 1 раз реально вышел на
+        поле — на левом фланге защиты (D:L). Сезонная позиция должна быть
+        D:L, а не "AM" по большинству строк скамейки."""
+        for i in range(5):
+            match = self._make_match(days_ago=10 + i)
+            lineup = MatchLineup.objects.create(match=match, team=self.team, side="home")
+            MatchLineupPlayer.objects.create(
+                lineup=lineup, player=self.player, is_starting=False, minute_in=None,
+                position="AM", field_position="",
+            )
+        played_match = self._make_match(days_ago=1)
+        lineup = MatchLineup.objects.create(match=played_match, team=self.team, side="home")
+        MatchLineupPlayer.objects.create(
+            lineup=lineup, player=self.player, is_starting=True,
+            position="D", field_position="L",
+        )
+
+        result = _player_season_position(self.season)
+        self.assertEqual(result[str(self.player.id)], "D:L")
+
+    def test_substitute_appearance_counts_toward_mode(self):
+        """Контрольная проверка: реальный выход на замену (minute_in
+        задан) — это НЕ невышедшая скамейка, такая строка должна
+        по-прежнему учитываться в моде."""
+        match = self._make_match(days_ago=1)
+        lineup = MatchLineup.objects.create(match=match, team=self.team, side="home")
+        MatchLineupPlayer.objects.create(
+            lineup=lineup, player=self.player, is_starting=False, minute_in=60,
+            position="M", field_position="R",
+        )
+
+        result = _player_season_position(self.season)
+        self.assertEqual(result[str(self.player.id)], "M:R")
         self.assertEqual(_describe_nearest_competitor(8.0, (_candidate(), 8.1)), "")

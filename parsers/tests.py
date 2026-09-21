@@ -605,6 +605,93 @@ class ImportFullFixtureNotificationWiringTests(TestCase):
         self.assertEqual(event.player_id, scorer.id, "пустой повтор не должен стирать уже известного игрока")
         self.assertEqual(event.minute, 44, "пустой повтор не должен сдвигать минуту настоящего события")
 
+    def test_substitute_inherits_zone_from_outgoing_player(self):
+        """2026-09-21, продолжение той же жалобы пользователя ("некоторые
+        игроки стоят например на правом полузащитнике, а сам игрок не
+        играет там вообще") — теперь для вышедших НА ЗАМЕНУ игроков.
+        Sportmonks в принципе не отдаёт зону (L/C/R) для замен — поле
+        formation_field есть только у стартовой расстановки. Единственный
+        разумный источник — зона игрока, которого заменили (см. докстринг
+        в import_events, ветка event_type == "substitution")."""
+        from lineups.models import MatchLineup, MatchLineupPlayer
+        from parsers.sportmonks.importers import import_events
+        from players.models import Player
+
+        fixture = _fixture(sm_id=777003777, dev_name="INPLAY_2ND_HALF")
+        match = import_match_core(fixture, self.league, self.season)
+
+        outgoing = Player.objects.create(
+            first_name="Уходит", last_name="Игрок", team=match.home_team, sportmonks_id="500001",
+        )
+        incoming = Player.objects.create(
+            first_name="Выходит", last_name="Заменой", team=match.home_team, sportmonks_id="500002",
+        )
+        lineup = MatchLineup.objects.create(match=match, team=match.home_team, side="home")
+        MatchLineupPlayer.objects.create(
+            lineup=lineup, player=outgoing, is_starting=True, position="M", field_position="R",
+        )
+        MatchLineupPlayer.objects.create(
+            lineup=lineup, player=incoming, is_starting=False, position="M", field_position="",
+        )
+
+        sub_event = {
+            "id": 88800001,
+            "type": {"developer_name": "SUBSTITUTION"},
+            "minute": 60,
+            "participant_id": fixture["participants"][0]["id"],
+            "player_id": 500002,
+            "related_player_id": 500001,
+            "result": "0-0",
+            "extra_minute": 0,
+        }
+        import_events(match, [sub_event])
+
+        incoming_row = MatchLineupPlayer.objects.get(lineup=lineup, player=incoming)
+        outgoing_row = MatchLineupPlayer.objects.get(lineup=lineup, player=outgoing)
+        self.assertEqual(incoming_row.field_position, "R", "должен унаследовать зону вышедшего")
+        self.assertEqual(incoming_row.minute_in, 60)
+        self.assertEqual(outgoing_row.minute_out, 60)
+
+    def test_substitute_existing_zone_is_not_overwritten(self):
+        """Контроль: если у вошедшего зона УЖЕ известна (например, сам
+        Sportmonks прислал detailedPosition с явной стороной для этой
+        замены) — наследование от ушедшего не должно её затирать."""
+        from lineups.models import MatchLineup, MatchLineupPlayer
+        from parsers.sportmonks.importers import import_events
+        from players.models import Player
+
+        fixture = _fixture(sm_id=777003888, dev_name="INPLAY_2ND_HALF")
+        match = import_match_core(fixture, self.league, self.season)
+
+        outgoing = Player.objects.create(
+            first_name="Уходит2", last_name="Игрок", team=match.home_team, sportmonks_id="500003",
+        )
+        incoming = Player.objects.create(
+            first_name="Выходит2", last_name="Заменой", team=match.home_team, sportmonks_id="500004",
+        )
+        lineup = MatchLineup.objects.create(match=match, team=match.home_team, side="home")
+        MatchLineupPlayer.objects.create(
+            lineup=lineup, player=outgoing, is_starting=True, position="M", field_position="L",
+        )
+        MatchLineupPlayer.objects.create(
+            lineup=lineup, player=incoming, is_starting=False, position="RM", field_position="R",
+        )
+
+        sub_event = {
+            "id": 88800002,
+            "type": {"developer_name": "SUBSTITUTION"},
+            "minute": 70,
+            "participant_id": fixture["participants"][0]["id"],
+            "player_id": 500004,
+            "related_player_id": 500003,
+            "result": "0-0",
+            "extra_minute": 0,
+        }
+        import_events(match, [sub_event])
+
+        incoming_row = MatchLineupPlayer.objects.get(lineup=lineup, player=incoming)
+        self.assertEqual(incoming_row.field_position, "R", "уже известная зона не должна перезаписываться")
+
 
 class DecidedAdministrativelyTests(TestCase):
     """ИСПРАВЛЕНО (2026-09-10, расследование алерта "12 матчей без составов

@@ -400,7 +400,25 @@ text-anchor="end", подпись растёт влево от фиксиров�
               <tr>
                 <td class="font-mono">{{ player.number|default:"-" }}</td>
                 <td>
-                  <a href="{% url 'players:detail' player.id %}" class="hover:text-primary transition-colors truncate block max-w-[150px]">
+                  {% comment %}
+                  2026-09-21, жалоба пользователя: "имена игроков в
+                  составе не вмещаются" — `truncate` (однострочный обрез
+                  с многоточием) в паре с фиксированным max-w-[150px] БЕЗ
+                  responsive-вариантов резал длинные имена ("Луис
+                  Алехандро Герра Ромеро", "Александр Широбоков") на всех
+                  экранах, включая десктоп с кучей свободного места. Тот
+                  же паттерн (truncate + фиксированный max-w) был раньше
+                  уместен для ВТОРИЧНОГО текста (например, названия команды
+                  рядом с судьёй/тренером), но тут это ОСНОВНОЕ имя
+                  сущности — по остальному проекту такое не обрезают (см.
+                  templates/players/list.html — имя игрока без truncate
+                  вообще) или переносят на 2 строки (templates/round_squad/
+                  _round_content.html — line-clamp-2 break-words), а не
+                  обрубают. Заменил обрезание на перенос по словам с узким
+                  max-w только на мобильном (чтобы одно длинное имя не
+                  разъезжало всю таблицу) — на md+ ширина не ограничена.
+                  {% endcomment %}
+                  <a href="{% url 'players:detail' player.id %}" class="hover:text-primary transition-colors block max-w-[110px] sm:max-w-[160px] md:max-w-none whitespace-normal break-words leading-tight">
                     {{ player.first_name }} {{ player.last_name }}
                   </a>
                 </td>

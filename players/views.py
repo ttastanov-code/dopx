@@ -15,7 +15,10 @@ from aggregates.services import MIN_VOTES_FOR_DISPLAY
 from core.utils import normalize_kz
 from evaluations.models import PlayerEvaluation
 from lineups.models import MatchLineupPlayer
-from players.positions import position_label, clean_position_code, LABEL_TO_CODES, player_position_breakdown
+from players.positions import (
+    position_label, clean_position_code, LABEL_TO_CODES,
+    player_position_breakdown, player_position_display_code,
+)
 from seasons.models import Season
 import logging
 import django.db.models as models
@@ -338,9 +341,23 @@ class PlayerDetailView(DetailView):
         # чтобы не плодить второй похожий запрос. entry.position — код,
         # записанный parsers/sportmonks/importers.py::import_lineups (теперь
         # приоритетно из DETAILED_POSITION_ID_MAP, см. этот файл).
+        #
+        # ИСПРАВЛЕНО (2026-09-22, жалоба пользователя со скриншотом:
+        # сборная тура поставила игрока на правый фланг, а на его же
+        # профиле мини-схема показывала только голое "M"/"F" без единого
+        # намёка на сторону) — считали раньше ГОЛЫЙ entry.position,
+        # игнорируя entry.field_position, хотя squad-логика (season_squad/
+        # round_squad) при выборе слота использует ИМЕННО комбинацию
+        # амплуа+зона (см. resolve_lineup_codes). Теперь используем ту же
+        # зону через player_position_display_code() — для амбивалентных
+        # кодов без стороны в самом амплуа она подменяет код на боковой
+        # эквивалент, когда конкретное появление реально было отмечено
+        # с field_position L/R.
         position_counts = Counter(
-            entry.position for entry in lineup_entries if entry.position
+            player_position_display_code(entry.position, entry.field_position)
+            for entry in lineup_entries if entry.position
         )
+        position_counts.pop("", None)
         position_breakdown = player_position_breakdown(position_counts)
 
         # НОВОЕ: ближайший сыгранный матч этого игрока, который ещё можно
