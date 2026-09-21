@@ -1212,6 +1212,37 @@ def import_events(match: Match, events_data: List[Dict]) -> bool:
             matched_existing = bucket.pop(0) if bucket else None
 
         if matched_existing is not None:
+            # ЗАЩИТА ОТ РЕГРЕССИИ (2026-09-21, жалоба пользователя со
+            # скриншотом реального матча Кайрат-Тобыл: 45'/81' — "Гол" без
+            # имени, хотя на 44'/80' минутой раньше — тот же самый
+            # sportmonks-id события, но с ПОЛНЫМИ данными игрока).
+            # Диагностика сырого extra_data (diagnose_match_events)
+            # подтвердила: Sportmonks иногда повторно присылает ТОТ ЖЕ id
+            # события в "пустом" виде (player=null, минута сдвинута на 1)
+            # — вероятно, недообогащённый промежуточный снимок с другого
+            # momента live-цикла. Раньше (сопоставление по (минута, тип,
+            # сторона)) это просто плодило дубль-строку; теперь, когда
+            # сопоставление идёт по id, без этой защиты БЫЛО БЫ ХУЖЕ —
+            # такой "пустой" повтор нашёл бы уже сохранённую содержательную
+            # запись ПО ID и затёр бы её данные пустотой. Если новые данные
+            # ничего не знают об игроке, а у нас уже есть информация о нём —
+            # просто игнорируем этот конкретный приход целиком, не только
+            # поле игрока (минута/счёт у "пустого" дубля тоже недостоверны,
+            # см. сырой пример — result там формально совпадает, но это
+            # может быть случайностью снимка, а не гарантией).
+            incoming_has_player_info = bool(player_sm_id) or bool(evt.get("player_name"))
+            existing_has_player_info = bool(matched_existing.player_id) or bool(
+                (matched_existing.extra_data or {}).get("player_name")
+            )
+            if not incoming_has_player_info and existing_has_player_info:
+                logger.info(
+                    "Sportmonks: событие %s (sportmonks_id=%s) матча %s — новый приход без данных "
+                    "игрока поверх уже сохранённых данных, игнорирую (защита от регрессии)",
+                    matched_existing.id, evt_sm_id, match.id,
+                )
+                skipped_count += 1
+                continue
+
             previous_type = matched_existing.event_type
             matched_existing.player = player
             matched_existing.minute = minute

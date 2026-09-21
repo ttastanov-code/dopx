@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from unittest.mock import patch
 
 from django.test import SimpleTestCase, TestCase
 from django.utils import timezone
@@ -151,3 +152,103 @@ class RoundRankChangeAcrossToursTests(TestCase):
 
         slot2 = RoundBestXISlot.objects.get(round_best_xi__season=self.season, round_best_xi__tour=2, slot_code="GK")
         self.assertEqual(slot2.rank_change, RoundBestXISlot.RANK_CHANGE_SAME)
+
+
+class RecomputeClosedRoundForceTests(TestCase):
+    """2026-09-21, прямая просьба пользователя: "команда, которая
+    перерасчёт делает всех закрытых туров сборные". Главные гарантии
+    force=True (см. докстринг recompute_round): (1) реально пересчитывает
+    уже закрытый тур на новых данных, (2) НЕ трогает finalized_at,
+    (3) НЕ ставит повторную рассылку send_round_results_notification."""
+
+    def setUp(self):
+        self.league = League.objects.create(name="League", country="KZ")
+        self.season = Season.objects.create(league=self.league, year="2026")
+        self.home = Team.objects.create(name="Home")
+        self.away = Team.objects.create(name="Away")
+        self.match = Match.objects.create(
+            league=self.league, season=self.season, home_team=self.home, away_team=self.away,
+            start_time=timezone.now() - timedelta(days=1),
+            voting_open_until=timezone.now() - timedelta(hours=1),  # тур уже закрыт
+            status="finished", tour=7,
+        )
+        self.player = Player.objects.create(first_name="Игрок", last_name="Тестов", team=self.home)
+        lineup = MatchLineup.objects.create(match=self.match, team=self.home, side="home")
+        MatchLineupPlayer.objects.create(
+            lineup=lineup, player=self.player, is_starting=True, shirt_number=9, position="ST",
+        )
+        self.aggregate = PlayerMatchAggregate.objects.create(
+            player=self.player, match=self.match, performance_score=6.0, total_votes=10,
+        )
+
+    @patch("round_squad.tasks.send_round_results_notification.delay")
+    def test_without_force_already_final_round_is_skipped(self, mock_delay):
+        recompute_round(self.season, 7)  # первый вызов — тур закрывается
+        round_xi = RoundBestXI.objects.get(season=self.season, tour=7)
+        self.assertTrue(round_xi.is_final)
+        first_computed_at = round_xi.last_computed_at
+        mock_delay.assert_called_once()
+
+        self.aggregate.performance_score = 9.9
+        self.aggregate.save(update_fields=["performance_score"])
+
+        recompute_round(self.season, 7)  # без force — должен молча пропустить
+
+        round_xi.refresh_from_db()
+        self.assertEqual(round_xi.last_computed_at, first_computed_at, "без force пересчёта быть не должно")
+        mock_delay.assert_called_once()  # всё ещё ровно один вызов
+
+    @patch("round_squad.tasks.send_round_results_notification.delay")
+    def test_force_recomputes_without_resending_or_changing_finalized_at(self, mock_delay):
+        recompute_round(self.season, 7)  # первый вызов — тур закрывается, письмо ставится в очередь
+        round_xi = RoundBestXI.objects.get(season=self.season, tour=7)
+        self.assertTrue(round_xi.is_final)
+        original_finalized_at = round_xi.finalized_at
+        self.assertIsNotNone(original_finalized_at)
+        mock_delay.assert_called_once()
+
+        # Правим данные задним числом — ровно тот сценарий из просьбы
+        # пользователя ("данные матча поправили, а тур уже закрылся").
+        self.aggregate.performance_score = 9.9
+        self.aggregate.save(update_fields=["performance_score"])
+
+        recompute_round(self.season, 7, force=True)
+
+        round_xi.refresh_from_db()
+        self.assertTrue(round_xi.is_final)
+        self.assertEqual(
+            round_xi.finalized_at, original_finalized_at,
+            "force не должен сдвигать дату реальной фиксации тура",
+        )
+        self.assertEqual(
+            round_xi.player_of_round_score, 9.9,
+            "force ДОЛЖЕН пересчитать состав на новых данных",
+        )
+        # ГЛАВНАЯ ГАРАНТИЯ: письмо с итогами тура не улетело второй раз.
+        mock_delay.assert_called_once()
+
+    @patch("round_squad.tasks.send_round_results_notification.delay")
+    def test_recompute_all_closed_rounds_processes_only_final_rounds(self, mock_delay):
+        from round_squad.services import recompute_all_closed_rounds
+
+        recompute_round(self.season, 7)  # закрывает тур 7
+        mock_delay.assert_called_once()
+
+        # Незакрытый тур в том же сезоне — не должен помешать/задеться.
+        open_match = Match.objects.create(
+            league=self.league, season=self.season, home_team=self.home, away_team=self.away,
+            start_time=timezone.now() + timedelta(days=1),
+            voting_open_until=timezone.now() + timedelta(days=3),
+            status="scheduled", tour=8,
+        )
+
+        self.aggregate.performance_score = 3.3
+        self.aggregate.save(update_fields=["performance_score"])
+
+        processed = recompute_all_closed_rounds()
+
+        self.assertEqual(processed, 1, "должен пересчитать ровно один закрытый тур (7), не трогая открытый (8)")
+        self.assertFalse(RoundBestXI.objects.filter(season=self.season, tour=8).exists())
+        round_xi = RoundBestXI.objects.get(season=self.season, tour=7)
+        self.assertEqual(round_xi.player_of_round_score, 3.3)
+        mock_delay.assert_called_once()  # по-прежнему один-единственный раз за весь тест
