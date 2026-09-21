@@ -52,6 +52,20 @@ logger = logging.getLogger(__name__)
 # тяжёлой догрузки и не выполнил finally: cache.delete(...).
 FIXTURE_SYNC_LOCK_TIMEOUT_SECONDS = 120
 
+# ДОБАВЛЕНО (2026-09-21, ускорение sportmonks-update-live до timedelta(
+# seconds=15) в CELERY_BEAT_SCHEDULE — см. её докстринг про расчёт лимита):
+# лок на саму задачу целиком (не на fixture, как FIXTURE_SYNC_LOCK_TIMEOUT_
+# SECONDS выше) — при тике раз в минуту два одновременных запуска были
+# практически невозможны (get_livescores() почти всегда быстрее минуты), но
+# при тике раз в 15 секунд один медленный/подвисший ответ Sportmonks легко
+# может не уложиться в интервал — без лока следующий тик стартовал бы поверх
+# ещё не завершившегося, удваивая нагрузку на лимит без всякой пользы (оба
+# тика увидят одни и те же несинканные изменения). TTL короче, чем у
+# FIXTURE_SYNC_LOCK_TIMEOUT_SECONDS — здесь именно "не дать тикам наложиться
+# друг на друга", а не пережить падение воркера посреди тяжёлой догрузки.
+LIVE_POLL_OVERLAP_LOCK_KEY = "sportmonks:update_live:running"
+LIVE_POLL_OVERLAP_LOCK_TIMEOUT_SECONDS = 30
+
 # Насколько заранее до стартового свистка начинаем тянуть составы —
 # подтверждено вживую менеджером Sportmonks: расстановки появляются за
 # 10-15 минут до матча. 3 часа с запасом — задача сама по себе лёгкая
@@ -121,12 +135,14 @@ def _heavy_sync_fixture(client: SportmonksClient, league, season, sportmonks_fix
         cache.delete(lock_key)
 
 
-@shared_task(bind=True, max_retries=2)
-def sportmonks_update_live(self):
-    """ЛЁГКИЙ опрос — каждые 1-2 минуты (см. CELERY_BEAT_SCHEDULE). ОДИН
-    bulk-вызов на всю лигу, без тяжёлых include (state;participants;scores
-    достаточно для сравнения — 'events' здесь намеренно не запрашиваем,
-    полные события всё равно приходят через тяжёлую догрузку ниже).
+def _sportmonks_update_live_impl(self):
+    """ЛЁГКИЙ опрос — каждые 15 секунд (см. CELERY_BEAT_SCHEDULE, расчёт
+    лимита в комментарии рядом с расписанием). ОДИН bulk-вызов на всю лигу.
+    include теперь также включает 'events' (см. ниже у `changed`,
+    2026-09-21) — раньше не запрашивался специально, чтобы не платить за
+    лишние данные, но выяснилось, что без него карточки/замены вообще не
+    попадали в детекцию изменений; включение бесплатно (тот же один
+    bulk-вызов, см. докстринг модуля).
 
     Пишет ParserSyncRun(source='sportmonks') в конце КАЖДОГО запуска (даже
     если сейчас нет ни одного live-матча) — та же причина, что у KFF's
@@ -166,7 +182,15 @@ def sportmonks_update_live(self):
     client = SportmonksClient()
     league_sm_id = int(league.sportmonks_id)
     try:
-        live_fixtures = client.get_livescores(include="state;participants;scores", league_id=league_sm_id)
+        # 'events' ДОБАВЛЕН (2026-09-21, жалоба пользователя: карточка,
+        # исправленная VAR с жёлтой на красную, отобразилась ДВУМЯ разными
+        # событиями и вообще с задержкой) — см. полный разбор ниже, у
+        # сравнения `changed`. Это НЕ увеличивает число запросов к API (тот
+        # же единственный bulk-вызов на всю лигу, см. докстринг модуля про
+        # экономию лимита) — просто больше данных в уже оплаченном ответе.
+        live_fixtures = client.get_livescores(
+            include="state;participants;scores;events", league_id=league_sm_id
+        )
     except SportmonksAPIError as exc:
         logger.error("Sportmonks: get_livescores() не удался: %s", exc)
         _record_sync_run("sportmonks_update_live", started_at, total=0, errors=1)
@@ -222,6 +246,42 @@ def sportmonks_update_live(self):
             or existing.home_score != home_score
             or existing.away_score != away_score
         )
+
+        # ДОБАВЛЕНО (2026-09-21, жалоба пользователя — карточка, изменённая
+        # VAR с жёлтой на красную, повисла ДВУМЯ событиями в ленте И с
+        # задержкой). КОРНЕВАЯ ПРИЧИНА: `changed` выше сравнивал ТОЛЬКО
+        # статус и счёт — карточка, замена, отменённый после VAR гол (счёт
+        # уже был засчитан и потом снят — тоже мимо, если позже забьют ещё
+        # раз тем же счётом) вообще не меняют ни то, ни другое, поэтому
+        # тяжёлая догрузка для них НЕ вызывалась вовсе — событие подхватывал
+        # только следующий тик, где что-то ДРУГОЕ (гол, финальный свисток)
+        # случайно менял счёт/статус. Отсюда и "пуш по карточке не пришёл",
+        # и "два гола прилетели одним пушем с опозданием" — то были не два
+        # НЕЗАВИСИМЫХ сбоя, а один и тот же пробел в детекции изменений.
+        #
+        # Фикс: сравниваем ещё и "подпись" событий матча — (id события,
+        # его текущий developer_name) — с тем, что уже лежит в БД. 'events'
+        # в лёгком опросе теперь запрашивается (см. include выше, без доп.
+        # цены по лимиту), поэтому сравнение ничего не стоит сверх уже
+        # оплаченного bulk-вызова. Расхождение сигнатур ловит: новую
+        # карточку/замену (появился id, которого не было), отменённый
+        # VAR-гол (новый GOAL_DISALLOWED-id) И саму VAR-коррекцию типа (id
+        # тот же, но developer_name сменился с YELLOWCARD на REDCARD) — то
+        # есть ровно тот кейс со скриншота пользователя.
+        if not changed and existing is not None:
+            api_signature = {
+                (str(e["id"]), (e.get("type") or {}).get("developer_name") or "")
+                for e in (fx.get("events") or []) if e.get("id") is not None
+            }
+            local_signature = {
+                (ev.sportmonks_id, (ev.extra_data or {}).get("type", {}).get("developer_name") or "")
+                for ev in existing.events.exclude(sportmonks_id__isnull=True).only(
+                    "sportmonks_id", "extra_data"
+                )
+            }
+            if api_signature != local_signature:
+                changed = True
+
         if not changed:
             continue
 
@@ -261,6 +321,113 @@ def sportmonks_update_live(self):
         "sportmonks_update_live", started_at,
         total=len(live_fixtures) + reconciled, updated=synced + reconciled, errors=errors,
         unchanged=max(len(live_fixtures) - synced - errors, 0),
+    )
+
+
+@shared_task(bind=True, max_retries=2)
+def sportmonks_update_live(self):
+    """Тонкая обёртка вокруг `_sportmonks_update_live_impl` — вся бизнес-
+    логика (и её докстринг) там, эта функция отвечает ТОЛЬКО за защиту от
+    overlap (см. LIVE_POLL_OVERLAP_LOCK_KEY выше). Вынесена отдельно, а не
+    оформлена как try/finally вокруг всего тела импла на месте — не хотелось
+    переотступать ~150 строк уже проверенной логики ради одного лока.
+
+    ДОБАВЛЕНО (2026-09-21, вместе с ускорением расписания до 15 секунд —
+    см. CELERY_BEAT_SCHEDULE): при тике раз в минуту два одновременных
+    запуска были практически невозможны (bulk-запрос почти всегда быстрее
+    минуты), но раз в 15 секунд один медленный ответ Sportmonks вполне
+    может не уложиться в интервал — без лока следующий тик стартовал бы
+    поверх ещё не завершившегося, удваивая расход лимита без всякой пользы
+    (оба тика увидели бы одни и те же ещё несинканные изменения)."""
+    if not cache.add(
+        LIVE_POLL_OVERLAP_LOCK_KEY, "1", timeout=LIVE_POLL_OVERLAP_LOCK_TIMEOUT_SECONDS
+    ):
+        logger.info(
+            "Sportmonks: sportmonks_update_live уже выполняется другим тиком, "
+            "пропуск (overlap-лок, см. её докстринг)"
+        )
+        return
+    try:
+        return _sportmonks_update_live_impl(self)
+    finally:
+        cache.delete(LIVE_POLL_OVERLAP_LOCK_KEY)
+
+
+# Сколько времени после финального свистка ещё пытаемся досинкать
+# статистику матча (2026-09-13, жалоба пользователя: реальный матч
+# Ордабасы-Астана 12.09.2026 — на сайте 3 удара, у стороннего источника
+# порядка 23).
+#
+# КОРНЕВАЯ ПРИЧИНА (найдена чтением кода, не гипотеза): и
+# sportmonks_update_live выше, и суточная sportmonks_sync_season тяжело
+# догружают матч ТОЛЬКО когда его счёт/статус разошлись с тем, что уже в
+# базе ("changed" в обеих функциях). Единственный момент, когда матч
+# реально получает статистику, — это ПЕРЕХОД в 'finished' (счёт к этому
+# моменту обычно уже устоялся на последнем голе, поэтому именно смена
+# статуса — тот самый триггер). Как только этот один-единственный опрос
+# (окно */2 минуты) происходит, СЧЁТ И СТАТУС у нас и у Sportmonks
+# совпадают — и после этого ни sportmonks_update_live, ни
+# sportmonks_sync_season больше НИКОГДА не трогают этот матч, даже если
+# статистика в нём объективно неполная.
+#
+# Провайдеры статистики (Sportmonks — не исключение, особенно для менее
+# топовых лиг вроде КПЛ) часто досчитывают/валидируют официальные
+# показатели матча (удары, владение и т.д.) С ЗАДЕРЖКОЙ после финального
+# свистка — минуты, иногда больше. Если наш единственный снимок статистики
+# приходится ровно на этот момент "ещё не досчитано", неполные цифры
+# замораживаются НАВСЕГДА. Фикс — не трогать саму двухуровневую схему (она
+# по-прежнему единственный дешёвый способ ловить live-изменения счёта), а
+# дать каждому недавно завершившемуся матчу ещё несколько шансов досинкать
+# статистику УЖЕ ПОСЛЕ того, как счёт/статус совпали — см.
+# sportmonks_resync_recent_stats ниже.
+#
+# 3 часа — с большим запасом относительно обычной длительности матча
+# (~2 часа с перерывом) и типичной задержки публикации официальной
+# статистики. Самоограничивающееся окно: матч сам "выпадает" из выборки
+# по мере старения, отдельный флаг "уже досинкан" в БД не нужен — задача
+# и так дешёвая (обычно 0-2 матча одновременно попадают в окно).
+STATS_RESYNC_WINDOW = timedelta(hours=3)
+
+
+@shared_task(bind=True, max_retries=2)
+def sportmonks_resync_recent_stats(self):
+    """Каждые 15 минут (см. CELERY_BEAT_SCHEDULE) — безусловный (БЕЗ
+    проверки "счёт/статус разошлись", в отличие от sportmonks_update_live/
+    sportmonks_sync_season выше) heavy-sync статистики матчей, завершившихся
+    в последние STATS_RESYNC_WINDOW — см. её докстринг за полным разбором
+    проблемы, которую эта задача чинит."""
+    league, season = _get_league_and_season()
+    if league is None or season is None:
+        logger.debug("Sportmonks: нет активной лиги/сезона — sportmonks_resync_recent_stats пропущен")
+        return
+
+    started_at = timezone.now()
+    cutoff = started_at - STATS_RESYNC_WINDOW
+    recent_finished = list(Match.objects.filter(
+        league=league, season=season, status="finished",
+        sportmonks_id__isnull=False, start_time__gte=cutoff,
+    ).only("id", "sportmonks_id"))
+
+    if not recent_finished:
+        _record_sync_run("sportmonks_resync_recent_stats", started_at, total=0)
+        return
+
+    client = SportmonksClient()
+    synced = errors = 0
+    for match in recent_finished:
+        if _heavy_sync_fixture(client, league, season, match.sportmonks_id):
+            synced += 1
+        else:
+            errors += 1
+
+    logger.info(
+        "Sportmonks: sportmonks_resync_recent_stats — досинкано статистики %d матч(ей), ошибок %d "
+        "(окно %s после финального свистка)",
+        synced, errors, STATS_RESYNC_WINDOW,
+    )
+    _record_sync_run(
+        "sportmonks_resync_recent_stats", started_at,
+        total=len(recent_finished), updated=synced, errors=errors,
     )
 
 

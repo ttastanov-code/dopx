@@ -1,6 +1,7 @@
 # dopx/settings.py
 import os
 import sys
+from datetime import timedelta
 from dotenv import load_dotenv
 from pathlib import Path
 from celery.schedules import crontab
@@ -826,15 +827,49 @@ CELERY_BEAT_SCHEDULE = {
     # изменившихся матчей — см. докстринг parsers/sportmonks/tasks.py.
     # =========================================================================
     # === ЛЁГКИЙ live-опрос — один bulk-вызов get_livescores() на всю лигу
-    # вместо цикла по матчам (см. докстринг sportmonks_update_live). ===
+    # вместо цикла по матчам (см. докстринг sportmonks_update_live).
+    #
+    # ИЗМЕНЕНО ВТОРОЙ РАЗ (2026-09-21, прямой вопрос пользователя "может
+    # опрашивать как рекомендуют раз в 10 или 15 сек, но надо посчитать
+    # лимиты"): crontab не умеет секундной гранулярности — schedule здесь
+    # обычный `timedelta` (Celery Beat поддерживает его нативно как "запускать
+    # каждые N секунд", без crontab).
+    #
+    # РАСЧЁТ ЛИМИТА (см. client.py — 2000 запросов/час НА КАЖДУЮ entity
+    # отдельно, подтверждено вживую тестовым ключом): 15 секунд = 3600/15 =
+    # 240 запросов/час — ОДИН и тот же bulk-вызов независимо от числа live-
+    # матчей (см. докстринг get_livescores), то есть 12% от лимита entity,
+    # который он расходует. Даже 10 секунд (рекомендация самого Sportmonks
+    # для live-опроса, см. их блог "Building a real-time Livescore app") —
+    # 360/час, 18% лимита. Огромный запас на случай нескольких одновременных
+    # матчей тура. Тяжёлая догрузка (_heavy_sync_fixture, entity Fixture) от
+    # частоты ЭТОГО опроса не растёт пропорционально — она срабатывает не
+    # чаще, чем реально происходят события в матче (десяток-два за игру),
+    # более частый лёгкий опрос лишь ЗАМЕЧАЕТ их быстрее, а не размножает.
+    #
+    # Раньше здесь было crontab(minute='*/1') (до того — */2, см. первую
+    # правку ниже по истории) — гол/карточка могли ждать пуша до минуты.
+    # 15 секунд — тот же порядок задержки, что видит пользователь Sofascore.
+    #
+    # ВАЖНО: при такой частоте сама задача теперь берёт короткий Redis-лок
+    # на время своего выполнения (см. _LIVE_POLL_OVERLAP_LOCK_KEY в
+    # sportmonks_update_live) — без него медленный ответ API мог бы привести
+    # к тому, что несколько тиков выполняются одновременно.
     'sportmonks-update-live': {
         'task': 'parsers.sportmonks.tasks.sportmonks_update_live',
-        'schedule': crontab(minute='*/2'),
+        'schedule': timedelta(seconds=15),
     },
     # === Подтяжка составов для матчей в ближайшие 3 часа. ===
     'sportmonks-update-upcoming': {
         'task': 'parsers.sportmonks.tasks.sportmonks_update_upcoming',
         'schedule': crontab(minute='*/30'),
+    },
+    # === Досинк статистики недавно завершившихся матчей (2026-09-13,
+    # жалоба пользователя на заниженные удары в матче Ордабасы-Астана) —
+    # см. докстринг STATS_RESYNC_WINDOW в parsers/sportmonks/tasks.py. ===
+    'sportmonks-resync-recent-stats': {
+        'task': 'parsers.sportmonks.tasks.sportmonks_resync_recent_stats',
+        'schedule': crontab(minute='*/15'),
     },
     # === Суточная сверка календаря активного сезона (перенос дат/новые
     # матчи) — ночью в 03:30, до cleanup-old-notifications-daily (04:00),

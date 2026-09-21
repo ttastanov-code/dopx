@@ -740,3 +740,49 @@ def compute_match_table_impact_positions(match) -> tuple[dict, dict]:
     positions_after = _rank_standings(stats_after)
 
     return positions_before, positions_after
+
+
+def get_pre_match_standings_snapshot(match) -> dict | None:
+    """"Турнирная таблица перед матчем" — мини-виджет на странице матча
+    (2026-09-11, прямая просьба пользователя: "страница матча который ещё
+    не наступил как-то скучно и пусто"). Показывает позицию/очки/разницу
+    мячей обеих команд ИМЕННО перед этой игрой — переиспользует тот же
+    "as of cutoff" алгоритм, что и `compute_match_table_impact_positions`
+    (см. её докстринг про баг "сегодняшней" позиции вместо позиции на
+    конкретный момент), поэтому корректен и для будущего, и для уже
+    сыгранного матча.
+
+    :return: None, если до этого матча в сезоне ещё не сыграно ни одной
+        игры (1-й тур) — таблица "все по 0 очков" не несёт содержательной
+        информации, показывать нечего.
+    """
+    from matches.models import Match
+
+    has_prior_matches = Match.objects.filter(
+        season=match.season, status='finished', start_time__lt=match.start_time,
+    ).exists()
+    if not has_prior_matches:
+        return None
+
+    stats = _standings_stats_asof(match.season, match.start_time)
+    positions = _rank_standings(stats)
+    total_teams = len(stats)
+
+    home_stats = stats.get(match.home_team_id)
+    away_stats = stats.get(match.away_team_id)
+    if home_stats is None or away_stats is None:
+        return None
+
+    def _row(team, team_stats):
+        return {
+            'team': team,
+            'position': positions.get(team.id),
+            'points': team_stats['points'],
+            'goal_diff': team_stats['goal_diff'],
+        }
+
+    return {
+        'home': _row(match.home_team, home_stats),
+        'away': _row(match.away_team, away_stats),
+        'total_teams': total_teams,
+    }

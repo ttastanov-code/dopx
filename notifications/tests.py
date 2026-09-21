@@ -50,7 +50,9 @@ from users.models import Follow
 
 from .models import Notification
 from .tasks import (
+    notify_followers_lineups_available,
     notify_followers_match_activity,
+    notify_followers_match_started,
     notify_prediction_results,
     notify_voting_closing_soon,
     send_notification_digest,
@@ -312,6 +314,76 @@ class NotifyFollowersMatchActivityTests(TestCase):
 
         self.assertEqual(result["notified"], 1)
         self.assertEqual(Notification.objects.filter(related_match=self.match).count(), 1)
+
+
+@override_settings(**EMAIL_TEST_SETTINGS)
+class NotifyFollowersMatchStartedAndLineupsAvailableTests(TestCase):
+    """2026-09-21, аудит пуш-системы (прямая жалоба пользователя: "надо
+    наладить пуши... о начале матча, тоже нет пушей! ... о том что составы
+    доступны"). Та же таргетинг-логика, что и у notify_followers_match_
+    activity (Follow на команду/игрока ОБЪЕДИНЁННЫЕ с предсказавшими), но
+    БЕЗ email-канала (см. докстринг обеих задач в notifications/tasks.py —
+    "начался"/"составы доступны" ценны только в моменте)."""
+
+    def setUp(self):
+        self.league, self.season, self.home, self.away = _make_league_season_teams()
+        now = timezone.now()
+        self.match = Match.objects.create(
+            league=self.league, season=self.season, home_team=self.home, away_team=self.away,
+            start_time=now, status="live", voting_open_until=now + timedelta(hours=50),
+        )
+        self.follower = User.objects.create_user(
+            username="follower", email="follower@example.com", password="pass12345", is_verified=True,
+        )
+        Follow.objects.create(user=self.follower, team=self.home)
+        self.non_follower = User.objects.create_user(
+            username="stranger", email="stranger@example.com", password="pass12345", is_verified=True,
+        )
+
+    def test_started_creates_inapp_for_follower_only(self):
+        result = notify_followers_match_started(str(self.match.id))
+
+        self.assertEqual(result["notified"], 1)
+        notif = Notification.objects.get(user=self.follower, related_match=self.match)
+        self.assertEqual(notif.notification_type, "match_started")
+        self.assertFalse(Notification.objects.filter(user=self.non_follower).exists())
+        # Никакого email — см. докстринг задачи.
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_started_notifies_predictor_without_follow_too(self):
+        predictor = User.objects.create_user(
+            username="predictor", email="predictor@example.com", password="pass12345", is_verified=True,
+        )
+        MatchPrediction.objects.create(match=self.match, user=predictor, choice=MatchPrediction.CHOICE_HOME)
+
+        result = notify_followers_match_started(str(self.match.id))
+
+        self.assertEqual(result["notified"], 2)  # follower + predictor
+        self.assertTrue(Notification.objects.filter(user=predictor, related_match=self.match).exists())
+
+    def test_started_push_is_attempted_best_effort(self):
+        from unittest.mock import patch
+
+        with patch("notifications.services.send_push_to_user") as mocked_push:
+            mocked_push.return_value = 0
+            notify_followers_match_started(str(self.match.id))
+
+        self.assertEqual(mocked_push.call_count, 1)
+        self.assertEqual(mocked_push.call_args.args[0].id, self.follower.id)
+
+    def test_lineups_available_creates_inapp_for_follower_only(self):
+        result = notify_followers_lineups_available(str(self.match.id))
+
+        self.assertEqual(result["notified"], 1)
+        notif = Notification.objects.get(user=self.follower, related_match=self.match)
+        self.assertEqual(notif.notification_type, "lineups_available")
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_no_match_found_returns_zero_without_error(self):
+        import uuid
+
+        self.assertEqual(notify_followers_match_started(str(uuid.uuid4())), {"notified": 0})
+        self.assertEqual(notify_followers_lineups_available(str(uuid.uuid4())), {"notified": 0})
 
 
 @override_settings(**EMAIL_TEST_SETTINGS, CACHES=LOCMEM_CACHES,

@@ -374,6 +374,21 @@ EVENT_DEV_NAME_MAP = {
     "YELLOWREDCARD": "red_card",
     "VAR": "var_check",
     "VARCARD": "var_check",
+    # ДОБАВЛЕНО (2026-09-21, прямая жалоба пользователя: "если гол отменен
+    # например тоже пуш" — такого пуша НИКОГДА не приходило, хотя вся
+    # инфраструктура под него уже была готова: PUSH_WORTHY_EVENT_TYPES
+    # включает 'disallowed_goal', notify_followers_match_event умеет его
+    # рендерить, MatchEvent.EVENT_TYPES знает такой тип). КОРНЕВАЯ ПРИЧИНА —
+    # этого маппинга просто не было: Sportmonks шлёт отменённый после VAR
+    # гол отдельным событием с developer_name="GOAL_DISALLOWED" (см.
+    # docs.sportmonks.com/v3, разбор потока VAR — GOAL → GOAL_UNDER_REVIEW →
+    # GOAL_DISALLOWED тремя отдельными событиями), которое раньше молча
+    # попадало в ветку "неизвестный тип" и отбрасывалось целиком — то есть
+    # пользователь получал ложный пуш "⚽ Гол!" на исходное событие GOAL и
+    # НИКОГДА не получал исправляющий "❌ Гол отменён". GOAL_UNDER_REVIEW
+    # (промежуточное "идёт проверка") намеренно не мапим — это переходное
+    # состояние без окончательного решения, пушить его было бы шумом.
+    "GOAL_DISALLOWED": "disallowed_goal",
 }
 
 # --- статистика матча -------------------------------------------------------
@@ -1051,9 +1066,32 @@ def import_events(match: Match, events_data: List[Dict]) -> bool:
     """Не удаляет "пропавшие" события (в отличие от KFF-варианта с
     replace_existing=True) — на платном API нет наблюдавшегося у KFF паттерна
     "обрезанный/неполный ответ", и матч по sportmonks_id обновляется идемпотентно:
-    повторный вызов на том же наборе событий просто обновит совпавшие по
-    (минута, тип, сторона) записи на месте, не создавая дублей и не трогая id
-    (а значит и EventReaction) уже сохранённых событий.
+    повторный вызов на том же наборе событий просто обновит совпавшую запись
+    на месте, не создавая дублей и не трогая id (а значит и EventReaction)
+    уже сохранённых событий.
+
+    ИСПРАВЛЕНО (2026-09-21, жалоба пользователя со скриншотом матча Астана-
+    Кайрат: судья показал жёлтую, VAR пересмотрел и заменил на красную ТОМУ
+    ЖЕ игроку, а в ленте остались ОБЕ карточки, будто было два разных
+    нарушения). КОРНЕВАЯ ПРИЧИНА — сопоставление "то же самое событие при
+    повторном импорте" раньше шло по эвристике (minute, event_type,
+    team_side). event_type входил в ключ, поэтому когда Sportmonks
+    ИСПРАВЛЯЕТ уже присланное событие (тот же его event.id, но другой
+    developer_name/type — типичный VAR-паттерн: сначала прилетает жёлтая,
+    затем после проверки то же событие переклассифицируется в красную), это
+    выглядело как совершенно новое событие: старая (уже неверная) жёлтая
+    карточка никогда не обновлялась и не удалялась, второй записью
+    добавлялась красная — дубль на весь матч.
+
+    Теперь сопоставление идёт СНАЧАЛА по стабильному `sportmonks_id`
+    (числовой `id` объекта события — Sportmonks гарантирует его на каждый
+    events[], подтверждено docs.sportmonks.com/v3 events include). Найдено —
+    обновляем ту же запись, включая event_type/minute/team_side (раньше эти
+    поля при "совпадении" не перезаписывались вовсе, т.к. составляли сам
+    ключ совпадения — то есть даже случайно нашедшееся совпадение не могло
+    поймать смену типа). Эвристика (minute, event_type, team_side) оставлена
+    только как fallback — на случай события без id (не встречалось на
+    реальных данных, но так ничего не потеряется молча).
 
     ИСПРАВЛЕНО (2026-09-10, жалоба пользователя "не работают пуши по
     событиям!!!"): КОРНЕВАЯ ПРИЧИНА — `notifications/tasks.py::
@@ -1081,16 +1119,33 @@ def import_events(match: Match, events_data: List[Dict]) -> bool:
     if not events_data:
         return []
 
+    # Локальный импорт — как и в import_full_fixture ниже, во избежание
+    # циклического импорта (notifications.tasks, в свою очередь, тянет
+    # модели matches/events на верхнем уровне).
+    from notifications.tasks import PUSH_WORTHY_EVENT_TYPES
+
     home_sm_id = str(match.home_team.sportmonks_id or "")
     away_sm_id = str(match.away_team.sportmonks_id or "")
 
+    # Основной путь сопоставления — по sportmonks_id (стабильный id самого
+    # события). Эвристика (minute, event_type, team_side) — только fallback
+    # для строк без id (не должно встречаться после миграции-бэкафилла
+    # 0006, но событие без id лучше домыслить эвристикой, чем потерять).
+    existing_by_sm_id: Dict[str, MatchEvent] = {}
     existing_pool: Dict[tuple, List[MatchEvent]] = {}
     for ev in match.events.all():
-        key = (ev.minute, ev.event_type, ev.team_side)
-        existing_pool.setdefault(key, []).append(ev)
+        if ev.sportmonks_id:
+            existing_by_sm_id[ev.sportmonks_id] = ev
+        else:
+            key = (ev.minute, ev.event_type, ev.team_side)
+            existing_pool.setdefault(key, []).append(ev)
 
-    created_count = updated_count = skipped_count = 0
-    newly_created_events: List[MatchEvent] = []
+    created_count = updated_count = reclassified_count = skipped_count = 0
+    # Возвращаем не только реально НОВЫЕ события, но и те, что при повторном
+    # импорте сменили тип на push-достойный (VAR: жёлтая → красная и т.п.)
+    # — иначе такая коррекция молча обновилась бы в базе без единого пуша,
+    # хотя итоговый тип (например, red_card) сам по себе push-достоин.
+    push_candidate_events: List[MatchEvent] = []
 
     for evt in events_data:
         dev_name = (evt.get("type") or {}).get("developer_name") or ""
@@ -1147,19 +1202,38 @@ def import_events(match: Match, events_data: List[Dict]) -> bool:
             if event_type in ("goal", "penalty", "own_goal") and related_sm_id:
                 assist_player = Player.objects.filter(sportmonks_id=str(related_sm_id)).first()
 
-        matched_key = (minute, event_type, team_side)
-        bucket = existing_pool.get(matched_key)
-        matched_existing = bucket.pop(0) if bucket else None
+        evt_sm_id = str(evt.get("id") or "") or None
+
+        matched_existing = existing_by_sm_id.pop(evt_sm_id, None) if evt_sm_id else None
+        if matched_existing is None:
+            # Fallback только для событий без id — см. докстринг выше.
+            matched_key = (minute, event_type, team_side)
+            bucket = existing_pool.get(matched_key)
+            matched_existing = bucket.pop(0) if bucket else None
 
         if matched_existing is not None:
+            previous_type = matched_existing.event_type
             matched_existing.player = player
+            matched_existing.minute = minute
             matched_existing.added_time = added_time
+            matched_existing.event_type = event_type
+            matched_existing.team_side = team_side
             matched_existing.assist_player = assist_player
             matched_existing.score_after = score_after
             matched_existing.player_out = player_out
             matched_existing.extra_data = evt
+            matched_existing.sportmonks_id = evt_sm_id
             matched_existing.save()
             updated_count += 1
+            if previous_type != event_type:
+                reclassified_count += 1
+                logger.info(
+                    "Sportmonks: событие %s матча %s переклассифицировано %r → %r "
+                    "(коррекция/VAR, минута %s)",
+                    matched_existing.id, match.id, previous_type, event_type, minute,
+                )
+                if event_type in PUSH_WORTHY_EVENT_TYPES:
+                    push_candidate_events.append(matched_existing)
         else:
             new_event = MatchEvent.objects.create(
                 match=match,
@@ -1172,15 +1246,16 @@ def import_events(match: Match, events_data: List[Dict]) -> bool:
                 score_after=score_after,
                 player_out=player_out,
                 extra_data=evt,
+                sportmonks_id=evt_sm_id,
             )
             created_count += 1
-            newly_created_events.append(new_event)
+            push_candidate_events.append(new_event)
 
     logger.info(
-        "Sportmonks: события матча %s — %s новых, %s обновлено, %s пропущено (неизв. тип)",
-        match.id, created_count, updated_count, skipped_count,
+        "Sportmonks: события матча %s — %s новых, %s обновлено (из них %s переклассифицировано), %s пропущено (неизв. тип)",
+        match.id, created_count, updated_count, reclassified_count, skipped_count,
     )
-    return newly_created_events
+    return push_candidate_events
 
 
 @transaction.atomic
@@ -1393,16 +1468,29 @@ def import_full_fixture(fixture_data: Dict, league: League, season: Season) -> M
     `transaction.on_commit` — та же гарантия, что и была задумана исходно
     (см. докстринг notify_followers_match_activity): задача не должна
     уйти в очередь раньше, чем изменения реально закоммичены в БД, иначе
-    воркер может прочитать ещё не сохранённые данные."""
+    воркер может прочитать ещё не сохранённые данные.
+
+    РАСШИРЕНО (2026-09-21, полный аудит пуш-системы по прямой жалобе
+    пользователя — "надо наладить пуши... о начале матча, тоже нет пушей!
+    ... о том что составы доступны"): тем же приёмом "снимок состояния ДО"
+    добавлены ещё два перехода — 'scheduled' → 'live' (старт матча) и
+    has_lineup False → True (составы появились). Оба читаются ОДНИМ
+    запросом вместе с was_finished_before (не тремя отдельными) — снимок
+    нужен ДО import_match_core/import_lineups, иначе "было" неотличимо от
+    "стало"."""
     sm_id = str(fixture_data.get("id"))
-    was_finished_before = Match.objects.filter(
-        sportmonks_id=sm_id, status="finished"
-    ).exists()
+    existing_before = Match.objects.filter(sportmonks_id=sm_id).only("id", "status", "has_lineup").first()
+    was_finished_before = existing_before is not None and existing_before.status == "finished"
+    was_scheduled_before = existing_before is not None and existing_before.status == "scheduled"
+    had_lineup_before = existing_before is not None and existing_before.has_lineup
 
     match = import_match_core(fixture_data, league=league, season=season)
     import_coaches(match, fixture_data.get("coaches") or [])
     import_lineups(match, fixture_data.get("lineups") or [], fixture_data.get("formations") or [])
-    newly_created_events = import_events(match, fixture_data.get("events") or [])
+    # Не только реально новые события — см. докстринг import_events: сюда же
+    # попадают события, переклассифицированные при повторном импорте в
+    # push-достойный тип (VAR-коррекция жёлтая → красная и т.п.).
+    push_worthy_events = import_events(match, fixture_data.get("events") or [])
     import_statistics(match, fixture_data.get("statistics") or [])
     import_player_statistics(match, fixture_data.get("lineups") or [])
 
@@ -1410,9 +1498,26 @@ def import_full_fixture(fixture_data: Dict, league: League, season: Season) -> M
         from notifications.tasks import notify_followers_match_activity
         transaction.on_commit(lambda: notify_followers_match_activity.delay(str(match.id)))
 
-    if newly_created_events:
+    # Старт матча — ТОЛЬКО реальный переход 'scheduled' → 'live', замеченный
+    # ИМЕННО этим синком (was_scheduled_before), а не "матч почему-то не был
+    # у нас live" вообще (иначе матч, случайно пропущенный на всех
+    # предыдущих поллах и досинканный сразу как 'finished' или который уже
+    # 'live'/'postponed' по другой причине, ложно получил бы "матч начался").
+    if match.status == "live" and was_scheduled_before:
+        from notifications.tasks import notify_followers_match_started
+        transaction.on_commit(lambda: notify_followers_match_started.delay(str(match.id)))
+
+    # Составы доступны — только пока матч ещё не завершился (см. докстринг
+    # notify_followers_lineups_available): "составы объявлены" бессмысленно
+    # для матча, который синкается постфактум уже завершённым (сервер был
+    # выключен всю игру, досинк подхватил сразу финальное состояние).
+    if match.has_lineup and not had_lineup_before and match.status in ("scheduled", "live"):
+        from notifications.tasks import notify_followers_lineups_available
+        transaction.on_commit(lambda: notify_followers_lineups_available.delay(str(match.id)))
+
+    if push_worthy_events:
         from notifications.tasks import PUSH_WORTHY_EVENT_TYPES, notify_followers_match_event
-        for event in newly_created_events:
+        for event in push_worthy_events:
             if event.event_type in PUSH_WORTHY_EVENT_TYPES:
                 transaction.on_commit(
                     lambda match_id=str(match.id), event_id=str(event.id): (

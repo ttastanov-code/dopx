@@ -78,6 +78,69 @@ match-detail.css): hero-баннер для шапки, timeline для собы
             </div>
             {% endif %}
 
+            <!-- === ТУРНИРНАЯ ТАБЛИЦА ПЕРЕД МАТЧЕМ ===
+                 2026-09-11 (прямая просьба пользователя: "страница матча
+                 который ещё не наступил как-то скучно и пусто") — на
+                 странице предстоящего матча почти все блоки выше скрыты
+                 (нет оценок/составов/событий), а "форма" в шапке — просто
+                 5 кружков без контекста таблицы. Показываем позицию/очки/
+                 разницу мячей обеих команд НА МОМЕНТ этого матча (см.
+                 teams/services.py::get_pre_match_standings_snapshot) — не
+                 только для scheduled, полезный контекст и для live/
+                 finished ("как выглядела таблица перед игрой"). -->
+            {% if standings_snapshot %}
+            <div class="md-side-card">
+                <div class="md-side-card__head flex items-center gap-2">
+                    <i class="ti ti-table"></i>
+                    <h3 class="font-extrabold text-base md:text-lg">Турнирная таблица перед матчем</h3>
+                </div>
+                <div class="p-3 sm:p-4 grid grid-cols-2 gap-2 sm:gap-4">
+                    <a href="{% url 'teams:detail' standings_snapshot.home.team.id %}"
+                       class="flex flex-col items-center gap-1 p-2.5 sm:p-3 rounded-xl hover:bg-base-200 transition-colors min-w-0">
+                        <span class="text-2xl md:text-3xl font-extrabold text-primary leading-none">{{ standings_snapshot.home.position }}<span class="text-xs opacity-50 font-normal">/{{ standings_snapshot.total_teams }}</span></span>
+                        <span class="text-xs md:text-sm font-semibold truncate w-full text-center mt-1">{{ standings_snapshot.home.team.name }}</span>
+                        <span class="text-[10px] md:text-xs opacity-60">{{ standings_snapshot.home.points }} очк. · РМ {{ standings_snapshot.home.goal_diff|stringformat:"+d" }}</span>
+                    </a>
+                    <a href="{% url 'teams:detail' standings_snapshot.away.team.id %}"
+                       class="flex flex-col items-center gap-1 p-2.5 sm:p-3 rounded-xl hover:bg-base-200 transition-colors min-w-0">
+                        <span class="text-2xl md:text-3xl font-extrabold text-secondary leading-none">{{ standings_snapshot.away.position }}<span class="text-xs opacity-50 font-normal">/{{ standings_snapshot.total_teams }}</span></span>
+                        <span class="text-xs md:text-sm font-semibold truncate w-full text-center mt-1">{{ standings_snapshot.away.team.name }}</span>
+                        <span class="text-[10px] md:text-xs opacity-60">{{ standings_snapshot.away.points }} очк. · РМ {{ standings_snapshot.away.goal_diff|stringformat:"+d" }}</span>
+                    </a>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- === ЛИЧНЫЕ ВСТРЕЧИ ===
+                 Тот же повод (2026-09-11) — последние очные матчи этих
+                 команд, независимо от статуса текущего матча. -->
+            {% if h2h_matches %}
+            <div class="md-side-card">
+                <div class="md-side-card__head flex items-center justify-between gap-2 flex-wrap">
+                    <h3 class="font-extrabold text-base md:text-lg flex items-center gap-2">
+                        <i class="ti ti-swords"></i>
+                        <span>Личные встречи</span>
+                    </h3>
+                    {% if h2h_summary %}
+                    <span class="text-[10px] md:text-xs opacity-60">
+                        {{ match.home_team.name }} {{ h2h_summary.home_wins }} · Ничьи {{ h2h_summary.draws }} · {{ match.away_team.name }} {{ h2h_summary.away_wins }}
+                    </span>
+                    {% endif %}
+                </div>
+                <div class="p-2 sm:p-3">
+                    {% for hm in h2h_matches %}
+                    <a href="{% url 'matches:detail' hm.id %}"
+                       class="flex items-center gap-1.5 sm:gap-2 text-xs md:text-sm py-2 px-1.5 sm:px-2 rounded-lg hover:bg-base-200 transition-colors">
+                        <span class="opacity-50 text-[10px] md:text-xs flex-shrink-0 w-10 sm:w-14">{{ hm.start_time|date:"d.m.y" }}</span>
+                        <span class="truncate flex-1 text-right min-w-0">{{ hm.home_team.name }}</span>
+                        <span class="font-mono font-bold flex-shrink-0 px-1.5 sm:px-2">{{ hm.home_score }}:{{ hm.away_score }}</span>
+                        <span class="truncate flex-1 min-w-0">{{ hm.away_team.name }}</span>
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
             <!-- === СТАТИСТИКА МАТЧА (фаза 5) ===
                  2026-09-09 (жалоба пользователя: "статистика в самом низу,
                  чтобы добраться нужно крутить все события" + бриф Codex:

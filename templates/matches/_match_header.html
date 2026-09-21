@@ -122,7 +122,8 @@ static/css/match-detail.css), окраска по статусу матча (--m
                 {% comment %}Форма перед этим матчем (фаза 5) — только на детальной странице, не в live-partial.{% endcomment %}
                 <div class="flex items-center gap-1 mt-1.5">
                     {% for item in home_team_form %}
-                    <span class="w-4 h-4 md:w-5 md:h-5 rounded-full flex items-center justify-center text-[9px] md:text-[10px] font-bold text-white
+                    {% comment %}2026-09-11: leading-none — та же правка, что в teams/detail.html (жалоба "буквы криво стоят" в кружках формы на мобильном, без него line-height шрифта сдвигает букву от центра в таком маленьком круге).{% endcomment %}
+                    <span class="w-4 h-4 md:w-5 md:h-5 rounded-full flex items-center justify-center leading-none text-[9px] md:text-[10px] font-bold text-white
                                  {% if item.result == 'W' %}bg-success{% elif item.result == 'L' %}bg-error{% else %}bg-base-content/30{% endif %}">{{ item.result }}</span>
                     {% endfor %}
                 </div>
@@ -196,7 +197,8 @@ static/css/match-detail.css), окраска по статусу матча (--m
                 {% if away_team_form %}
                 <div class="flex items-center gap-1 mt-1.5 md:justify-end">
                     {% for item in away_team_form %}
-                    <span class="w-4 h-4 md:w-5 md:h-5 rounded-full flex items-center justify-center text-[9px] md:text-[10px] font-bold text-white
+                    {% comment %}2026-09-11: leading-none — та же правка, что в teams/detail.html (жалоба "буквы криво стоят" в кружках формы на мобильном, без него line-height шрифта сдвигает букву от центра в таком маленьком круге).{% endcomment %}
+                    <span class="w-4 h-4 md:w-5 md:h-5 rounded-full flex items-center justify-center leading-none text-[9px] md:text-[10px] font-bold text-white
                                  {% if item.result == 'W' %}bg-success{% elif item.result == 'L' %}bg-error{% else %}bg-base-content/30{% endif %}">{{ item.result }}</span>
                     {% endfor %}
                 </div>

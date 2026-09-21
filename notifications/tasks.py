@@ -699,6 +699,149 @@ def notify_followers_match_activity(self, match_id: str):
     return {'notified': len(audience_user_ids), 'emailed': emailed}
 
 
+def _match_notification_audience(match) -> set[str]:
+    """Общая аудитория для пред-/около-матчевых пушей (старт матча, составы
+    доступны) — подписчики домашней/гостевой команды или игрока в составе
+    (когда он уже есть) ОБЪЕДИНЁННЫЕ с теми, кто поставил прогноз на этот
+    матч. Тот же принцип таргетинга, что и в notify_followers_match_activity
+    выше (см. её докстринг про расширение аудитории 2026-09-01) — не только
+    формальные подписчики, но и все, кто уже проявил интерес к конкретной
+    игре."""
+    from django.db.models import Q
+
+    from lineups.models import MatchLineupPlayer
+    from predictions.models import MatchPrediction
+    from users.models import Follow
+
+    player_ids = list(
+        MatchLineupPlayer.objects.filter(lineup__match=match)
+        .values_list('player_id', flat=True)
+        .distinct()
+    )
+    follower_user_ids = set(
+        Follow.objects.filter(
+            Q(team_id__in=[match.home_team_id, match.away_team_id]) | Q(player_id__in=player_ids)
+        ).values_list('user_id', flat=True)
+    )
+    predictor_user_ids = set(
+        MatchPrediction.objects.filter(match=match).values_list('user_id', flat=True)
+    )
+    return follower_user_ids | predictor_user_ids
+
+
+@shared_task(bind=True, max_retries=3, countdown=5)
+def notify_followers_match_started(self, match_id: str):
+    """
+    НОВОЕ (2026-09-21, прямая жалоба пользователя: "надо наладить пуши...
+    о начале матча, тоже нет пушей!" — полный аудит пуш-системы по образцу
+    Sofascore). Push + in-app в момент первого перехода матча в 'live' —
+    ставится из `parsers/sportmonks/importers.py::import_full_fixture`
+    через `transaction.on_commit`, тем же способом, что и
+    `notify_followers_match_activity` (финал) и `notify_followers_match_event`
+    (голы/карточки) — единственное место, физически видящее переход
+    'scheduled' → 'live' (двухуровневая live-схема Sportmonks, см. докстринг
+    parsers/sportmonks/tasks.py).
+
+    Только push + in-app, БЕЗ email — "матч начался" ценно только в моменте,
+    письмо пришло бы, когда матч уже давно идёт (та же логика, что у
+    notify_followers_match_event).
+    """
+    from django.urls import reverse
+
+    from matches.models import Match
+    from notifications.models import Notification
+
+    match = Match.objects.select_related('home_team', 'away_team').filter(id=match_id).first()
+    if not match:
+        logger.error(f"notify_followers_match_started: match {match_id} not found")
+        return {'notified': 0}
+
+    audience_user_ids = _match_notification_audience(match)
+    if not audience_user_ids:
+        return {'notified': 0}
+
+    title = f"⚽️ Матч начался: {match.home_team.name} — {match.away_team.name}"
+    message = "Стартовый свисток прозвучал — следите за матчем в реальном времени."
+    action_url = reverse('matches:detail', args=[match.id])
+
+    Notification.objects.bulk_create([
+        Notification(
+            user_id=uid,
+            notification_type='match_started',
+            title=title,
+            message=message,
+            action_url=action_url,
+            related_match=match,
+        )
+        for uid in audience_user_ids
+    ])
+
+    try:
+        from notifications.services import send_push_to_user
+        from users.models import User
+
+        for user in User.objects.filter(id__in=audience_user_ids):
+            send_push_to_user(user, title=title, body=message, url=action_url)
+    except Exception as exc:
+        logger.warning(f"notify_followers_match_started: push fan-out skipped: {exc}")
+
+    logger.info(f"✅ Notified {len(audience_user_ids)} follower(s) about match {match.id} kickoff")
+    return {'notified': len(audience_user_ids)}
+
+
+@shared_task(bind=True, max_retries=3, countdown=5)
+def notify_followers_lineups_available(self, match_id: str):
+    """
+    НОВОЕ (2026-09-21, тот же аудит, что и notify_followers_match_started
+    выше — прямая жалоба пользователя "о том что составы доступны" нет
+    пуша). Ставится из `import_full_fixture` в момент первого перехода
+    `Match.has_lineup` False → True, ТОЛЬКО пока матч ещё не завершился
+    (см. проверку в import_full_fixture — для уже завершённого/пропущенного
+    вперёд матча "составы доступны" не несёт смысла, это прошлое, а не
+    приглашение посмотреть перед стартом)."""
+    from django.urls import reverse
+
+    from matches.models import Match
+    from notifications.models import Notification
+
+    match = Match.objects.select_related('home_team', 'away_team').filter(id=match_id).first()
+    if not match:
+        logger.error(f"notify_followers_lineups_available: match {match_id} not found")
+        return {'notified': 0}
+
+    audience_user_ids = _match_notification_audience(match)
+    if not audience_user_ids:
+        return {'notified': 0}
+
+    title = f"📋 Составы объявлены: {match.home_team.name} — {match.away_team.name}"
+    message = "Стартовые составы уже на сайте — посмотрите, кто выйдет на поле."
+    action_url = reverse('matches:detail', args=[match.id])
+
+    Notification.objects.bulk_create([
+        Notification(
+            user_id=uid,
+            notification_type='lineups_available',
+            title=title,
+            message=message,
+            action_url=action_url,
+            related_match=match,
+        )
+        for uid in audience_user_ids
+    ])
+
+    try:
+        from notifications.services import send_push_to_user
+        from users.models import User
+
+        for user in User.objects.filter(id__in=audience_user_ids):
+            send_push_to_user(user, title=title, body=message, url=action_url)
+    except Exception as exc:
+        logger.warning(f"notify_followers_lineups_available: push fan-out skipped: {exc}")
+
+    logger.info(f"✅ Notified {len(audience_user_ids)} follower(s) about lineups for match {match.id}")
+    return {'notified': len(audience_user_ids)}
+
+
 # Какие типы событий вообще стоят push-уведомления в реальном времени —
 # см. докстринг notify_followers_match_event ниже. Вынесено на уровень
 # модуля, чтобы parsers/tasks.py::update_match_statuses могло фильтровать
@@ -763,7 +906,13 @@ def notify_followers_match_event(self, match_id: str, event_id: str):
     score = match.get_score_display()
     home = match.home_team.name
     away = match.away_team.name
-    player_name = str(event.player) if event.player_id else None
+    # 2026-09-21 (жалоба пользователя, скриншот: "45' Гол" без имени
+    # забившего) — event.player бывает None, если наш локальный поиск по
+    # sportmonks_id не нашёл игрока (см. докстринг MatchEvent.player_display_
+    # name в events/models.py), хотя само имя Sportmonks реально присылает.
+    # Раньше пуш в этом случае тихо терял имя целиком ("Гол на 45-й минуте."
+    # вместо "Иванов забивает..."), хотя оно было доступно в extra_data.
+    player_name = event.player_display_name
 
     if event.event_type == 'goal':
         title = f"⚽ Гол! {home} {score} {away}"

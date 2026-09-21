@@ -26,6 +26,7 @@ from teams.services import (
     compute_mood_series,
     compute_mood_trend,
     find_season_controversial_matches,
+    get_pre_match_standings_snapshot,
 )
 
 LOCMEM_CACHES = {
@@ -446,3 +447,139 @@ class TeamDetailViewRosterTests(TestCase):
         MatchLineupPlayer.objects.create(lineup=lineup, player=transferred, is_starting=True)
 
         self.assertIn(transferred, self._get_players())
+
+    def test_large_squad_not_truncated_to_25(self):
+        """Регрессия (2026-09-11, конкретный пример пользователя — "Исмаил
+        Бекболат" реально играет за "Кайрат" (9 матчей в сезоне), но не
+        показывался в составе на странице команды). Причина — players
+        когда-то был срезан [:25] по возрастанию номера; у большого клуба
+        сезонных игроков легко больше 25 (основа + ротация + вызовы из
+        дубля), игрок с высоким номером на майке (как реальный Бекболат —
+        №81) физически не помещался в первые 25 и молча пропадал из
+        "полного" состава команды. Явно воспроизводим: 30 игроков этого
+        сезона, номера 1..30 — 26-й и далее раньше исчезали."""
+        from lineups.models import MatchLineup, MatchLineupPlayer
+
+        opponent = Team.objects.create(name="Соперник (большой состав)")
+        match = Match.objects.create(
+            league=self.league, season=self.season,
+            home_team=self.team, away_team=opponent,
+            status='finished', start_time=timezone.now() - timedelta(days=5),
+            voting_open_until=timezone.now() - timedelta(days=2),
+            home_score=3, away_score=0,
+        )
+        lineup = MatchLineup.objects.create(match=match, team=self.team, side='home')
+
+        squad = []
+        for number in range(1, 31):
+            player = Player.objects.create(
+                first_name="Игрок", last_name=f"Номер{number}", team=self.team, number=number,
+            )
+            MatchLineupPlayer.objects.create(lineup=lineup, player=player, is_starting=(number <= 11))
+            squad.append(player)
+
+        players = self._get_players()
+        self.assertEqual(len(players), 30, "состав команды не должен обрезаться искусственным лимитом")
+        last_player = squad[-1]  # номер 30 — раньше падал за пределы [:25]
+        self.assertIn(last_player, players)
+
+    def test_large_squad_not_truncated_to_25_for_past_season_too(self):
+        """Тот же [:25] стоял и в ветке прошлого сезона (не только
+        активного) — на всякий случай закрываем тестом и её."""
+        from lineups.models import MatchLineup, MatchLineupPlayer
+
+        past_season = Season.objects.create(league=self.league, year="2025", is_active=False)
+        opponent = Team.objects.create(name="Соперник (прошлый сезон)")
+        match = Match.objects.create(
+            league=self.league, season=past_season,
+            home_team=self.team, away_team=opponent,
+            status='finished', start_time=timezone.now() - timedelta(days=400),
+            voting_open_until=timezone.now() - timedelta(days=397),
+            home_score=2, away_score=0,
+        )
+        lineup = MatchLineup.objects.create(match=match, team=self.team, side='home')
+
+        squad = []
+        for number in range(1, 31):
+            player = Player.objects.create(
+                first_name="Игрок25", last_name=f"Номер{number}", team=self.team, number=number,
+            )
+            MatchLineupPlayer.objects.create(lineup=lineup, player=player, is_starting=(number <= 11))
+            squad.append(player)
+
+        response = self.client.get(reverse('teams:detail', args=[self.team.id]), {'season': '2025'})
+        players = list(response.context['players'])
+        self.assertEqual(len(players), 30)
+        self.assertIn(squad[-1], players)
+
+
+class GetPreMatchStandingsSnapshotTests(TestCase):
+    """2026-09-11, прямая просьба пользователя: страница ещё не начавшегося
+    матча "скучно и пусто" — новый виджет "Турнирная таблица перед матчем"
+    (get_pre_match_standings_snapshot)."""
+
+    def setUp(self):
+        self.league = League.objects.create(name="League", country="KZ")
+        self.season = Season.objects.create(league=self.league, year="2026")
+        self.team_a = Team.objects.create(name="Алатау")
+        self.team_b = Team.objects.create(name="Женис")
+        self.team_c = Team.objects.create(name="Третья команда")
+        for team in (self.team_a, self.team_b, self.team_c):
+            TeamSeason.objects.create(team=team, season=self.season)
+
+    def test_none_when_no_matches_played_yet(self):
+        """1-й тур сезона — таблица "все по 0" неинформативна, виджет не
+        должен показываться вообще."""
+        upcoming = Match.objects.create(
+            league=self.league, season=self.season,
+            home_team=self.team_a, away_team=self.team_b,
+            status='scheduled', start_time=timezone.now() + timedelta(days=1),
+            voting_open_until=timezone.now() + timedelta(days=2),
+        )
+        self.assertIsNone(get_pre_match_standings_snapshot(upcoming))
+
+    def test_snapshot_reflects_standings_right_before_this_match(self):
+        # team_a громит team_c 3:0 — задаёт таблицу "до".
+        Match.objects.create(
+            league=self.league, season=self.season,
+            home_team=self.team_a, away_team=self.team_c,
+            status='finished', start_time=timezone.now() - timedelta(days=10),
+            voting_open_until=timezone.now() - timedelta(days=9),
+            home_score=3, away_score=0,
+        )
+        # team_b обыгрывает team_c 1:0.
+        Match.objects.create(
+            league=self.league, season=self.season,
+            home_team=self.team_b, away_team=self.team_c,
+            status='finished', start_time=timezone.now() - timedelta(days=8),
+            voting_open_until=timezone.now() - timedelta(days=7),
+            home_score=1, away_score=0,
+        )
+        upcoming = Match.objects.create(
+            league=self.league, season=self.season,
+            home_team=self.team_a, away_team=self.team_b,
+            status='scheduled', start_time=timezone.now() + timedelta(days=1),
+            voting_open_until=timezone.now() + timedelta(days=2),
+        )
+        # Матч, сыгранный ПОСЛЕ upcoming (например, перенос другого тура) —
+        # не должен влиять на снимок таблицы перед upcoming.
+        Match.objects.create(
+            league=self.league, season=self.season,
+            home_team=self.team_c, away_team=self.team_b,
+            status='finished', start_time=timezone.now() + timedelta(days=5),
+            voting_open_until=timezone.now() + timedelta(days=6),
+            home_score=0, away_score=0,
+        )
+
+        snapshot = get_pre_match_standings_snapshot(upcoming)
+
+        self.assertIsNotNone(snapshot)
+        self.assertEqual(snapshot['total_teams'], 3)
+        self.assertEqual(snapshot['home']['team'], self.team_a)
+        self.assertEqual(snapshot['home']['points'], 3)
+        self.assertEqual(snapshot['home']['goal_diff'], 3)
+        self.assertEqual(snapshot['home']['position'], 1)
+        self.assertEqual(snapshot['away']['team'], self.team_b)
+        self.assertEqual(snapshot['away']['points'], 3)
+        self.assertEqual(snapshot['away']['goal_diff'], 1)
+        self.assertEqual(snapshot['away']['position'], 2)

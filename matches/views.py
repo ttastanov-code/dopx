@@ -412,7 +412,41 @@ class MatchDetailView(DetailView):
         # "на момент этого матча", а не "по состоянию на сегодня" (иначе
         # форма перед матчем недельной давности показывала бы будущее
         # относительно него самого).
-        from teams.services import get_team_form
+        from teams.services import get_team_form, get_pre_match_standings_snapshot
+
+        # "Турнирная таблица перед матчем" (2026-09-11, прямая просьба
+        # пользователя — страница ещё не начавшегося матча "скучно и
+        # пусто"): позиция/очки/разница мячей обеих команд НА МОМЕНТ этого
+        # матча, тем же "as of cutoff" алгоритмом, что и
+        # compute_match_table_impact_positions (см. её докстринг). Не
+        # только для scheduled — на live/finished тоже полезный контекст
+        # "как выглядела таблица перед стартовым свистком".
+        standings_snapshot = get_pre_match_standings_snapshot(match)
+
+        # "Личные встречи" — последние очные матчи этих же двух команд
+        # (в любом сезоне/турнире), с полными объектами Match (не срез
+        # .values(), как в card_services._recent_meetings — там для
+        # карточек списка хватает сырых чисел, тут на детальной странице
+        # нужны ссылки/гербы/названия команд, поэтому select_related).
+        h2h_matches = list(
+            Match.objects.filter(
+                Q(home_team=match.home_team, away_team=match.away_team)
+                | Q(home_team=match.away_team, away_team=match.home_team),
+                status='finished',
+            ).exclude(id=match.id)
+            .select_related('home_team', 'away_team')
+            .order_by('-start_time')[:5]
+        )
+        h2h_summary = None
+        if h2h_matches:
+            from matches.card_services import _summarize_h2h
+
+            h2h_summary = _summarize_h2h(match, [
+                {
+                    'home_team_id': m.home_team_id, 'away_team_id': m.away_team_id,
+                    'home_score': m.home_score, 'away_score': m.away_score,
+                } for m in h2h_matches
+            ])
 
         home_recent = Match.objects.filter(
             Q(home_team=match.home_team) | Q(away_team=match.home_team),
@@ -447,6 +481,9 @@ class MatchDetailView(DetailView):
             'has_match_statistics': has_match_statistics,
             'home_team_form': home_team_form,
             'away_team_form': away_team_form,
+            'standings_snapshot': standings_snapshot,
+            'h2h_matches': h2h_matches,
+            'h2h_summary': h2h_summary,
             'page_title': f'{match.home_team.name} vs {match.away_team.name} — DOPX',
             'now': now,
         })
@@ -542,6 +579,32 @@ def match_header_partial(request, match_id):
     context = match_action_context(request, match)
     context['match'] = match
     return render(request, 'matches/_match_header.html', context)
+
+
+@require_http_methods(["GET"])
+def match_card_partial(request, match_id):
+    """Live-поллинг карточки матча (components/_match_card.html) — на
+    главной и в /matches/ (2026-09-12, жалоба пользователя: "по факту счёт
+    1-0, но на главной 0-0 пока не обновишь страницу"). Тот же принцип,
+    что и match_header_partial выше (страница матча уже поллилась), только
+    для компактной карточки списков — компонент сам добавляет
+    hx-trigger="every 15s" на корневой <a>, ТОЛЬКО пока match.status ==
+    'live' (см. components/_match_card.html), поэтому обычные scheduled/
+    finished карточки лишних запросов не создают.
+
+    attach_card_extras — та же bulk-функция, что и у MatchListView/
+    HomeView, здесь вызвана на список из одного матча: карточка после
+    обновления не "худеет" (сохраняются форма/H2H/прогноз/вовлечённость),
+    просто счёт/статус подтягиваются заново из БД.
+    """
+    match = get_object_or_404(
+        Match.objects.select_related('home_team', 'away_team', 'league', 'season').prefetch_related(
+            'aggregate', 'home_team__rivals',
+        ),
+        id=match_id,
+    )
+    attach_card_extras([match], request)
+    return render(request, 'components/_match_card.html', {'match': match})
 
 
 # По user.id — тот же выбор, что и у predictions/views.py::PREDICT_RATE_LIMIT
