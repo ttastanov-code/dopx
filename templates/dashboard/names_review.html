@@ -146,7 +146,7 @@ Player/Referee/Coach — см. dashboard/views.py::names_review_action.
 </div>
 {% endif %}
 
-<div class="card bg-base-100 border border-base-300">
+<div class="card bg-base-100 border border-base-300" id="recent-decided">
     <div class="card-body p-4">
         <h4 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
             <i class="ti ti-history text-primary"></i> Недавно разобранные
@@ -174,6 +174,44 @@ Player/Referee/Coach — см. dashboard/views.py::names_review_action.
                 </tbody>
             </table>
         </div>
+        {% comment %}
+        2026-09-22, прямая просьба пользователя: раньше был жёсткий срез
+        [:20] без пагинации — при большом прогоне (--all --limit 0
+        --recheck) список решённых быстро уходит далеко за 20, а старые
+        записи посмотреть было нельзя вообще. recent_decided — теперь
+        Django Page-объект (dashboard/views.py::names_review), а не
+        плоский список — у него есть has_previous/has_next/number/
+        paginator.num_pages "из коробки".
+        {% endcomment %}
+        {% if recent_decided.paginator.num_pages > 1 %}
+        {% comment %}
+        2026-09-22: daisyUI `.join` намеренно склеивает кнопки в один
+        сегмент без зазоров (как у переключателя вкладок) — пользователю
+        такой вид не понравился ("прилипшие друг к другу"), заменил на
+        обычный flex с gap, как в остальных группах кнопок по проекту
+        (см. templates/dashboard/scripts.html — "flex gap-2").
+
+        #recent-decided в конце href (якорь на id этой же карточки выше) —
+        без этого переход по ?page=N перезагружает всю страницу, браузер
+        по умолчанию скроллит в самый верх, и после каждого клика "Позже"/
+        "Раньше" приходится заново скроллить вниз до этой же таблицы —
+        жалоба пользователя. С якорем браузер сам прыгает сюда после
+        загрузки страницы.
+        {% endcomment %}
+        <div class="flex items-center justify-center gap-2 mt-3">
+            {% if recent_decided.has_previous %}
+            <a href="?page={{ recent_decided.previous_page_number }}#recent-decided" class="btn btn-xs btn-outline">« Раньше</a>
+            {% else %}
+            <span class="btn btn-xs btn-disabled">« Раньше</span>
+            {% endif %}
+            <span class="text-xs opacity-60">Стр. {{ recent_decided.number }} из {{ recent_decided.paginator.num_pages }}</span>
+            {% if recent_decided.has_next %}
+            <a href="?page={{ recent_decided.next_page_number }}#recent-decided" class="btn btn-xs btn-outline">Позже »</a>
+            {% else %}
+            <span class="btn btn-xs btn-disabled">Позже »</span>
+            {% endif %}
+        </div>
+        {% endif %}
         {% else %}
         <p class="text-sm opacity-60 py-4 text-center">Пока ничего не разобрано.</p>
         {% endif %}

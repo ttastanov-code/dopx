@@ -11,6 +11,7 @@ import csv
 
 from django.contrib import messages
 from django.contrib.admin.views.decorators import staff_member_required
+from django.core.paginator import Paginator
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -570,10 +571,18 @@ def names_review(request):
     failed_qs = NameVerificationSuggestion.objects.filter(status="check_failed").order_by("-created_at")
     failed_count = failed_qs.count()
     failed = failed_qs[:20]
-    recent_decided = (
+    # 2026-09-22, прямая просьба пользователя: "Недавно разобранные" раньше
+    # был жёсткий срез [:20] без возможности посмотреть более старые записи
+    # — при разовом прогоне --all --limit 0 --recheck по 914 сущностям
+    # список решённых быстро растёт далеко за 20, а посмотреть, что было
+    # решено вчера/позавчера, было нельзя вообще. Обычный Django Paginator
+    # — постранично, 20 на страницу, ?page=N в query string.
+    recent_decided_qs = (
         NameVerificationSuggestion.objects.filter(status__in=["approved", "rejected"])
-        .select_related("reviewed_by").order_by("-reviewed_at")[:20]
+        .select_related("reviewed_by").order_by("-reviewed_at")
     )
+    recent_decided_paginator = Paginator(recent_decided_qs, 20)
+    recent_decided = recent_decided_paginator.get_page(request.GET.get("page"))
     context = {
         "page_title": "Проверка ФИО (ИИ) — DOPX Staff",
         "active_tab": "names_review",

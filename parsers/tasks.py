@@ -121,6 +121,67 @@ def check_sync_errors_and_alert():
     return {"status": "ok"}
 
 
+@shared_task(bind=True, max_retries=0)
+def verify_names_with_ai_monthly(self):
+    """Ежемесячный автопрогон «Проверка ФИО (ИИ)» (2026-09-22, прямая
+    просьба пользователя: "надо раз в месяц даже сделать", после того как
+    сделали разовый ручной прогон по всей базе через дашборд).
+
+    НЕ `--all` — обычный режим команды (parsers/management/commands/
+    verify_names_with_ai.py) и так сам проверяет только НОВОЕ:
+    name_source=guessed_transliteration (свежепришедшие через трансферы/
+    новые сезоны игроки, угаданные транслитерацией) плюс записи с прошлым
+    check_failed (см. дедупликацию в самой команде — 2026-09-22 фикс,
+    исключающий check_failed из "уже проверено"). Уже одобренные/
+    отклонённые staff записи не трогает. --all запускался ОДИН раз вручную
+    для разового прохода по уже существующей базе — сюда его сознательно
+    не добавляем, иначе каждый месяц заново тратились бы вызовы на давно
+    подтверждённые записи. `limit=100` — защитный потолок на случай
+    аномального наплыва новых записей за месяц (обычный трансферный поток
+    КПЛ таким лимитом даже близко не исчерпывается), не даёт задаче
+    случайно улететь в сотни вызовов без присмотра.
+
+    Пишет ManagementCommandRun как обычный ручной запуск (тот же
+    dashboard/command_runner.py::run_command_sync) — результат виден в
+    "Скрипты и команды" → История запусков, с triggered_by_username=
+    "celery-beat (ежемесячно)" вместо логина staff, чтобы сразу было
+    видно, что запуск автоматический. log_staff_action сюда НЕ пишем —
+    это не действие staff (нет request/user), тот же принцип, что и у
+    остальных периодических задач этого файла/parsers.sportmonks.tasks —
+    видимость через ParserSyncRun/ManagementCommandRun, не через
+    StaffActionLog."""
+    from dashboard.command_runner import run_command_sync
+    from dashboard.commands_registry import get_command
+    from dashboard.models import ManagementCommandRun
+
+    spec = get_command("verify_names_with_ai")
+    if spec is None:
+        logger.error("verify_names_with_ai_monthly: команда verify_names_with_ai не найдена в COMMAND_REGISTRY")
+        return {"status": "error", "reason": "command_not_registered"}
+
+    positional: list = []
+    kwargs = {"entity": None, "limit": 100, "delay": 4.0, "recheck": False, "dry_run": False}
+
+    run = ManagementCommandRun.objects.create(
+        command_name=spec.name,
+        args={"positional": positional, "kwargs": kwargs},
+        status=ManagementCommandRun.Status.RUNNING,
+        triggered_by=None,
+        triggered_by_username="celery-beat (ежемесячно)",
+        started_at=timezone.now(),
+        celery_task_id=self.request.id or "",
+    )
+
+    success, out, err = run_command_sync(spec, positional, kwargs)
+
+    run.status = ManagementCommandRun.Status.SUCCESS if success else ManagementCommandRun.Status.FAILED
+    run.stdout, run.stderr = out, err
+    run.finished_at = timezone.now()
+    run.save(update_fields=["status", "stdout", "stderr", "finished_at"])
+
+    return {"status": "success" if success else "failed", "run_id": str(run.id)}
+
+
 def _send_sync_error_alert(error_message: str, alert_type: str, extra_data: dict = None):
     """Отправка email-алерта админу при критических ошибках синка."""
     if not getattr(settings, "ENABLE_SYNC_ERROR_ALERTS", True):
