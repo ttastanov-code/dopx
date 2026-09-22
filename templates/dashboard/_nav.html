@@ -10,9 +10,25 @@ url_name-сравнения, чтобы не завязываться на ре�
         </h1>
         <p class="text-xs md:text-sm opacity-60">Только для сотрудников. Данные не кэшируются агрессивно и могут отставать на пару минут.</p>
     </div>
-    <a href="{% url 'admin:index' %}" class="btn btn-ghost btn-xs sm:btn-sm hidden sm:inline-flex">
-        <i class="ti ti-settings"></i> Django admin
-    </a>
+    <div class="flex items-center gap-1">
+        {% comment %}
+        2026-09-22 (прямая просьба пользователя): "Скрипты и команды" убраны
+        из общего ряда табов ниже — это опасный раздел (сидирование/удаление
+        тестовых данных из COMMAND_REGISTRY, см. dashboard/commands_registry.py),
+        не должен попадаться под руку при обычной навигации между "Парсер"/
+        "Аудит"/"Объявления". Компактная иконка-ссылка рядом с "Django admin"
+        — доступна тем, кто целенаправленно её ищет, а не тем, кто листает
+        табы подряд. title вместо подписи — тот же принцип компактности,
+        `active_tab == 'scripts'` подсвечивает её, раз она вне tabs-boxed.
+        {% endcomment %}
+        <a href="{% url 'dashboard:scripts' %}" title="Скрипты и команды (осторожно — сидирование/удаление данных)"
+           class="btn btn-ghost btn-xs sm:btn-sm btn-square {% if active_tab == 'scripts' %}text-warning{% else %}opacity-60{% endif %}">
+            <i class="ti ti-terminal-2"></i>
+        </a>
+        <a href="{% url 'admin:index' %}" class="btn btn-ghost btn-xs sm:btn-sm hidden sm:inline-flex">
+            <i class="ti ti-settings"></i> Django admin
+        </a>
+    </div>
 </div>
 <div role="tablist" class="tabs tabs-boxed mb-4 md:mb-6 w-fit">
     <a role="tab" href="{% url 'dashboard:overview' %}" class="tab {% if active_tab == 'overview' %}tab-active{% endif %}">

@@ -591,10 +591,27 @@ def sportmonks_sync_sidelined(self):
     (players/models.py::PlayerSidelined). Один вызов client.get_sidelined()
     НА КОМАНДУ (16 команд лиги — 16 лёгких запросов раз в сутки, далеко от
     лимита, в отличие от live-опроса тут не нужна двухуровневая схема,
-    сама по себе задача уже дешёвая)."""
+    сама по себе задача уже дешёвая).
+
+    ИСПРАВЛЕНО (2026-09-22, прямая просьба пользователя после жалобы
+    "травмы и дисквалификации не отображаются, но после ручного запуска из
+    дашборда появились — было ли так до этого само по себе, не знаю"):
+    в отличие от ВСЕХ остальных задач в этом файле, эта единственная не
+    писала _record_sync_run() — то есть на /staff/dashboard/data-health/
+    ("Здоровье данных") она была НЕВИДИМА: не было способа отличить "крон
+    тикает каждый день в 04:00, просто сейчас в лиге нет травм" от "крон
+    вообще не срабатывает, только ручная кнопка когда-либо запускала эту
+    задачу". Само по себе это не объясняет пропавшие бейджи — пайплайн
+    (see dopx/celery.py про фикс автодискавери parsers.sportmonks 2026-09-10)
+    рабочий, но без записи в ParserSyncRun невозможно было ПОДТВЕРДИТЬ, что
+    расписание реально срабатывает, а не только кнопка "Обновить" в парсере
+    — теперь каждый прогон (в т.ч. плановый ночной) виден на дашборде,
+    как и у всех остальных Sportmonks-задач."""
+    started_at = timezone.now()
     league, season = _get_league_and_season()
     if league is None or season is None:
         logger.debug("Sportmonks: нет активной лиги/сезона — sportmonks_sync_sidelined пропущен")
+        _record_sync_run("sportmonks_sync_sidelined", started_at, total=0)
         return
 
     teams = Team.objects.filter(sportmonks_id__isnull=False, teamseason__season=season).distinct()
@@ -607,15 +624,21 @@ def sportmonks_sync_sidelined(self):
 
     client = SportmonksClient()
     total_saved = 0
+    errors = 0
     for team in teams:
         try:
             sidelined_data = client.get_sidelined(int(team.sportmonks_id))
         except (SportmonksAPIError, ValueError) as exc:
             logger.error("Sportmonks: sportmonks_sync_sidelined — команда %s: %s", team, exc)
+            errors += 1
             continue
         total_saved += importers.import_sidelined(team, sidelined_data)
 
     logger.info("Sportmonks: sportmonks_sync_sidelined — обработано команд: %d, активных записей: %d", len(teams), total_saved)
+    _record_sync_run(
+        "sportmonks_sync_sidelined", started_at,
+        total=len(teams), updated=total_saved, errors=errors,
+    )
 
 
 @shared_task(bind=True, max_retries=1)

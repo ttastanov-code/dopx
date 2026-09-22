@@ -1,0 +1,53 @@
+{% comment %}
+templates/dashboard/_scripts_runs_table.html
+Партиал истории запусков — цель HTMX-поллинга каждые 4с (см. scripts.html,
+hx-get на #scripts-runs-table) — обновляет PENDING/RUNNING → SUCCESS/FAILED
+без перезагрузки страницы и без сброса заполненных форм команд.
+{% endcomment %}
+{% if recent_runs %}
+<div class="overflow-x-auto">
+    <table class="table table-sm">
+        <thead>
+            <tr>
+                <th>Команда</th>
+                <th>Статус</th>
+                <th>Кто</th>
+                <th>Когда</th>
+                <th>Вывод</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for run in recent_runs %}
+            <tr>
+                <td class="font-mono text-xs whitespace-nowrap">{{ run.command_name }}</td>
+                <td>
+                    <span class="badge badge-sm whitespace-nowrap
+                        {% if run.status == 'success' %}badge-success
+                        {% elif run.status == 'failed' %}badge-error
+                        {% elif run.status == 'running' %}badge-warning
+                        {% else %}badge-ghost{% endif %}">
+                        {% if run.status == 'running' %}<span class="loading loading-spinner loading-xs mr-1"></span>{% endif %}
+                        {{ run.get_status_display }}
+                    </span>
+                </td>
+                <td class="text-xs opacity-70 whitespace-nowrap">{{ run.triggered_by_username|default:"—" }}</td>
+                <td class="text-xs opacity-60 whitespace-nowrap">{{ run.created_at|timesince }} назад</td>
+                <td class="text-xs">
+                    {% if run.stdout or run.stderr %}
+                    <details>
+                        <summary class="cursor-pointer link link-hover">показать</summary>
+                        {% if run.stdout %}<pre class="bg-base-200 rounded p-2 mt-1 max-h-48 overflow-auto whitespace-pre-wrap">{{ run.stdout }}</pre>{% endif %}
+                        {% if run.stderr %}<pre class="bg-error/10 text-error rounded p-2 mt-1 max-h-48 overflow-auto whitespace-pre-wrap">{{ run.stderr }}</pre>{% endif %}
+                    </details>
+                    {% else %}
+                    <span class="opacity-40">—</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<p class="text-sm opacity-60 py-4 text-center">Команды ещё не запускались</p>
+{% endif %}
