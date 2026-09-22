@@ -47,13 +47,20 @@
                         {% for arg in spec.args %}
                         <div>
                             {% if arg.kind == 'flag' %}
-                            <label class="label cursor-pointer justify-start gap-2 py-1">
-                                <input type="checkbox" name="{{ arg.dest }}" class="checkbox checkbox-xs">
-                                <span class="label-text text-xs">{{ arg.flag }} — {{ arg.help }}</span>
+                            {% comment %}
+                            2026-09-22: длинный arg.help (напр. у --all в
+                            verify_names_with_ai) выпирал за границу карточки
+                            — label flex-контейнер не сжимал соседний span
+                            без min-w-0, поэтому текст не переносился, а рос
+                            вширь. min-w-0 + break-words разрешают перенос.
+                            {% endcomment %}
+                            <label class="label cursor-pointer justify-start items-start gap-2 py-1">
+                                <input type="checkbox" name="{{ arg.dest }}" class="checkbox checkbox-xs mt-0.5">
+                                <span class="label-text text-xs min-w-0 break-words">{{ arg.flag }} — {{ arg.help }}</span>
                             </label>
                             {% else %}
                             <label class="label py-0.5">
-                                <span class="label-text text-xs">
+                                <span class="label-text text-xs min-w-0 break-words">
                                     {{ arg.flag }}{% if arg.required %} <span class="text-error">*</span>{% endif %}
                                     — {{ arg.help }}
                                 </span>

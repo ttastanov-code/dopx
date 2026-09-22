@@ -5,7 +5,7 @@ from unfold.admin import ModelAdmin
 
 from core.admin_actions import export_as_csv
 
-from .models import ParserDiscrepancy, ParserSyncRun
+from .models import ConfirmedNameCorrection, NameVerificationSuggestion, ParserDiscrepancy, ParserSyncRun
 
 
 @admin.register(ParserSyncRun)
@@ -73,3 +73,30 @@ class ParserDiscrepancyAdmin(ModelAdmin):
         )
         self.message_user(request, f"Отмечено разобранными: {count}")
     mark_reviewed.short_description = 'Отметить разобранными'
+
+
+@admin.register(NameVerificationSuggestion)
+class NameVerificationSuggestionAdmin(ModelAdmin):
+    """Основной рабочий интерфейс — очередь «Проверка ФИО (ИИ)» на staff-
+    дашборде (dashboard/views.py::names_review), где approve/reject сразу
+    пишет ConfirmedNameCorrection и обновляет сущность. Эта admin-страница —
+    только для отладки/просмотра сырых данных, без кастомных экшенов."""
+
+    list_display = ('entity_label', 'current_first_name', 'current_last_name', 'suggested_first_name', 'suggested_last_name', 'confidence', 'status', 'created_at')
+    list_filter = ('status', 'entity_label', 'confidence', 'created_at')
+    readonly_fields = [f.name for f in NameVerificationSuggestion._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+
+@admin.register(ConfirmedNameCorrection)
+class ConfirmedNameCorrectionAdmin(ModelAdmin):
+    """DB-версия PLAYER_NAME_CORRECTIONS (parsers/sportmonks/
+    name_translations.py) — обычно создаётся через approve в дашборде, но
+    ручное добавление/правку здесь не запрещаем (в отличие от
+    NameVerificationSuggestion выше) — иногда проще один раз вписать
+    известную поправку напрямую, чем гонять её через ИИ-проверку."""
+
+    list_display = ('wrong_text', 'correct_text', 'source_suggestion', 'created_by', 'created_at')
+    search_fields = ('wrong_text', 'correct_text')

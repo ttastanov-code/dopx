@@ -18,9 +18,11 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from core.admin_actions import _csv_safe
+from core.models import NAME_SOURCE_AI_VERIFIED
 from matches.models import Match
 from notifications.models import ContactSubmission
-from parsers.models import ParserDiscrepancy
+from parsers import name_ai
+from parsers.models import ConfirmedNameCorrection, NameVerificationSuggestion, ParserDiscrepancy
 from parsers.sportmonks.client import get_request_counts
 from users.models import SuspiciousActivityFlag
 
@@ -490,6 +492,126 @@ def scripts_trigger(request):
         details={"success": success, "message": message, "apply": apply, "run_id": str(run.id) if run else None},
     )
     return redirect("dashboard:scripts")
+
+
+# ============================================================
+# "Проверка ФИО (ИИ)" — очередь на подтверждение предложений Gemini
+# (2026-09-22, прямая просьба пользователя после жалобы "Сергий Малий"
+# вместо "Сергий Малый"). Заполняется командой verify_names_with_ai
+# (запускается вручную из "Скрипты и команды" — dashboard/
+# commands_registry.py::COMMAND_REGISTRY["verify_names_with_ai"]).
+# Approve/reject ПРИНЦИПИАЛЬНО ручные — прямое решение пользователя
+# ("всегда через ручное подтверждение в дашборде"), см. parsers/name_ai.py
+# докстринг про то, почему автоприменение рискованно.
+# ============================================================
+
+@staff_member_required
+def names_review(request):
+    pending = NameVerificationSuggestion.objects.filter(status="pending_review").order_by("-created_at")
+    failed = NameVerificationSuggestion.objects.filter(status="check_failed").order_by("-created_at")[:20]
+    recent_decided = (
+        NameVerificationSuggestion.objects.filter(status__in=["approved", "rejected"])
+        .select_related("reviewed_by").order_by("-reviewed_at")[:20]
+    )
+    context = {
+        "page_title": "Проверка ФИО (ИИ) — DOPX Staff",
+        "active_tab": "names_review",
+        "pending_suggestions": pending,
+        "failed_suggestions": failed,
+        "recent_decided": recent_decided,
+        "gemini_configured": name_ai.is_configured(),
+    }
+    return render(request, "dashboard/names_review.html", context)
+
+
+@staff_member_required
+@require_POST
+def names_review_action(request, suggestion_id):
+    """`action=approve` — пишет ConfirmedNameCorrection (переживает будущие
+    синки, см. parsers/sportmonks/importers.py::_apply_known_name_corrections)
+    И СРАЗУ обновляет саму сущность, не дожидаясь следующего импорта.
+    `action=reject`/дисмисс check_failed — только меняет статус очереди,
+    данные сайта не трогает.
+
+    first_name/last_name в POST — ПРЕДЗАПОЛНЕНЫ предложением Gemini в форме
+    (names_review.html), но staff мог поправить их перед кликом
+    «Подтвердить» (Gemini тоже может почти угадать, но не идеально) —
+    сверяем именно с ЭТИМИ значениями, не с suggestion.suggested_*, чтобы
+    ручная правка не терялась."""
+    suggestion = get_object_or_404(NameVerificationSuggestion, id=suggestion_id)
+    action = request.POST.get("action")
+
+    if action not in ("approve", "reject"):
+        messages.error(request, f"Неизвестное действие: {action}")
+        return redirect("dashboard:names_review")
+
+    if suggestion.status not in ("pending_review", "check_failed"):
+        messages.warning(request, "Это предложение уже разобрано.")
+        return redirect("dashboard:names_review")
+
+    if action == "reject":
+        suggestion.status = "rejected"
+        suggestion.reviewed_by = request.user
+        suggestion.reviewed_at = timezone.now()
+        suggestion.save(update_fields=["status", "reviewed_by", "reviewed_at", "updated_at"])
+        log_staff_action(
+            request, AuditAction.NAME_SUGGESTION_REJECTED,
+            target=f"{suggestion.entity_label}:{suggestion.object_id}",
+            details={"current": f"{suggestion.current_first_name} {suggestion.current_last_name}"},
+        )
+        messages.success(request, "Предложение отклонено.")
+        return redirect("dashboard:names_review")
+
+    # action == "approve"
+    final_first = (request.POST.get("first_name") or suggestion.suggested_first_name or "").strip()
+    final_last = (request.POST.get("last_name") or suggestion.suggested_last_name or "").strip()
+    if not final_first and not final_last:
+        messages.error(request, "Пустое имя и фамилия — нечего подтверждать.")
+        return redirect("dashboard:names_review")
+
+    entity = suggestion.content_object
+    if entity is None:
+        messages.error(request, "Сущность (игрок/судья/тренер) больше не существует — подтвердить нечего.")
+        suggestion.status = "rejected"
+        suggestion.reviewed_by = request.user
+        suggestion.reviewed_at = timezone.now()
+        suggestion.save(update_fields=["status", "reviewed_by", "reviewed_at", "updated_at"])
+        return redirect("dashboard:names_review")
+
+    old_first, old_last = entity.first_name, entity.last_name
+    update_fields = []
+    if final_first and final_first != entity.first_name:
+        ConfirmedNameCorrection.objects.update_or_create(
+            wrong_text=entity.first_name.strip().lower(),
+            defaults={"correct_text": final_first, "source_suggestion": suggestion, "created_by": request.user},
+        )
+        entity.first_name = final_first
+        update_fields.append("first_name")
+    if final_last and final_last != entity.last_name:
+        ConfirmedNameCorrection.objects.update_or_create(
+            wrong_text=entity.last_name.strip().lower(),
+            defaults={"correct_text": final_last, "source_suggestion": suggestion, "created_by": request.user},
+        )
+        entity.last_name = final_last
+        update_fields.append("last_name")
+
+    if update_fields:
+        entity.name_source = NAME_SOURCE_AI_VERIFIED
+        update_fields.append("name_source")
+        entity.save(update_fields=update_fields + ["updated_at"])
+
+    suggestion.status = "approved"
+    suggestion.reviewed_by = request.user
+    suggestion.reviewed_at = timezone.now()
+    suggestion.save(update_fields=["status", "reviewed_by", "reviewed_at", "updated_at"])
+
+    log_staff_action(
+        request, AuditAction.NAME_SUGGESTION_APPROVED,
+        target=f"{suggestion.entity_label}:{suggestion.object_id}",
+        details={"was": f"{old_first} {old_last}", "now": f"{final_first} {final_last}"},
+    )
+    messages.success(request, f"Подтверждено: {old_first} {old_last} → {final_first} {final_last}")
+    return redirect("dashboard:names_review")
 
 
 # Единая staff-страница по всей партнёрской монетизации: embed-виджеты

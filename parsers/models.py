@@ -12,6 +12,8 @@ sync completed: {stats}")`) и возвращали dict, который ник�
 from __future__ import annotations
 
 from django.conf import settings
+from django.contrib.contenttypes.fields import GenericForeignKey
+from django.core.cache import cache
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -158,3 +160,152 @@ class ParserDiscrepancy(BaseModel):
 
     def __str__(self):
         return f"{self.match_label}: {self.field_name} {self.old_value} → {self.new_value}"
+
+
+# ============================================================
+# Проверка ФИО через ИИ (2026-09-22, прямая просьба пользователя после
+# жалобы "Сергий Малий" вместо "Сергий Малый" — см. parsers/name_ai.py
+# докстринг, там же объяснение ПОЧЕМУ Gemini API, а не автоматизация
+# чат-интерфейса).
+# ============================================================
+
+class NameVerificationSuggestion(BaseModel):
+    """Очередь на ручную проверку — тот же паттерн, что и
+    users.models.SuspiciousActivityFlag (generic FK на Player/Referee/Coach,
+    статус ручного разбора). Одна строка = один вызов parsers/name_ai.py::
+    verify_name() для одной сущности.
+
+    content_type/object_id вместо трёх nullable FK (Player/Referee/Coach) —
+    ЕСТЬ прецедент GenericForeignKey именно для такого "сигнал про любую из
+    нескольких сущностей" случая в этом проекте (SuspiciousActivityFlag),
+    в отличие от users.models.Follow (там осознанно НЕ стали заводить
+    GenericForeignKey ради одной фичи — но тут уже второй случай с тем же
+    паттерном, не первый)."""
+
+    STATUS_CHOICES = [
+        ("pending_review", _("Ждёт проверки staff")),
+        ("approved", _("Подтверждено")),
+        ("rejected", _("Отклонено")),
+        ("check_failed", _("Ошибка запроса к Gemini")),
+    ]
+    CONFIDENCE_CHOICES = [
+        ("high", _("Высокая")),
+        ("medium", _("Средняя")),
+        ("low", _("Низкая")),
+    ]
+    ENTITY_LABEL_CHOICES = [
+        ("player", _("Игрок")),
+        ("referee", _("Судья")),
+        ("coach", _("Тренер")),
+    ]
+
+    content_type = models.ForeignKey("contenttypes.ContentType", on_delete=models.CASCADE, verbose_name=_("Тип сущности"))
+    object_id = models.CharField(_("ID сущности"), max_length=64)
+    content_object = GenericForeignKey("content_type", "object_id")
+
+    entity_label = models.CharField(_("Роль"), max_length=10, choices=ENTITY_LABEL_CHOICES)
+    # Снэпшоты — переживают удаление/дальнейшее изменение сущности,
+    # запись остаётся читаемой в истории даже если content_object пропал.
+    sportmonks_id = models.CharField(_("Sportmonks ID (снэпшот)"), max_length=100, blank=True)
+    current_first_name = models.CharField(_("Текущее имя"), max_length=120, blank=True)
+    current_last_name = models.CharField(_("Текущая фамилия"), max_length=120, blank=True)
+
+    suggested_first_name = models.CharField(_("Предложенное имя"), max_length=120, blank=True)
+    suggested_last_name = models.CharField(_("Предложенная фамилия"), max_length=120, blank=True)
+    confidence = models.CharField(_("Уверенность"), max_length=10, choices=CONFIDENCE_CHOICES, blank=True)
+    reasoning = models.TextField(_("Обоснование от Gemini"), blank=True)
+    matches_current = models.BooleanField(_("Gemini подтвердил текущее написание"), default=False)
+
+    status = models.CharField(_("Статус"), max_length=20, choices=STATUS_CHOICES, default="pending_review", db_index=True)
+    error_message = models.TextField(_("Ошибка запроса"), blank=True)
+
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="reviewed_name_suggestions", verbose_name=_("Кто проверил"),
+    )
+    reviewed_at = models.DateTimeField(_("Когда проверено"), null=True, blank=True)
+
+    class Meta:
+        verbose_name = _("Предложение по ФИО (ИИ)")
+        verbose_name_plural = _("Предложения по ФИО (ИИ)")
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["status", "-created_at"], name="name_suggestion_status_idx"),
+            models.Index(fields=["content_type", "object_id"], name="name_suggestion_entity_idx"),
+        ]
+        constraints = [
+            # Не даёт команде verify_names_with_ai наплодить дубли, если
+            # запустить её дважды подряд до того, как staff разберёт очередь.
+            models.UniqueConstraint(
+                fields=["content_type", "object_id"], condition=models.Q(status="pending_review"),
+                name="uniq_pending_review_per_entity",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.get_entity_label_display()}: {self.current_first_name} {self.current_last_name} → {self.suggested_first_name} {self.suggested_last_name} ({self.status})"
+
+
+class ConfirmedNameCorrection(BaseModel):
+    """DB-версия parsers/sportmonks/name_translations.py::
+    PLAYER_NAME_CORRECTIONS — раньше КАЖДАЯ новая поправка требовала правки
+    кода и деплоя (см. историю правок в name_translations.py — Еркин/
+    Рафаэль/Асхат/Мукагали/Рамазан, каждая — отдельный коммит). После
+    подтверждения предложения ИИ в дашборде (dashboard/views.py::
+    names_review_approve) поправка сохраняется СЮДА и работает СРАЗУ, без
+    деплоя — это и есть тот самый "уйти от того что мы персонально каждого
+    обрабатываем и сидим ищем", о чём просил пользователь.
+
+    Ключ — САМ НЕВЕРНЫЙ ТЕКСТ (как и в PLAYER_NAME_CORRECTIONS, см. её
+    докстринг про то, почему ключ по результату, а не по сырому источнику),
+    в нижнем регистре, ОБЩИЙ для Player/Referee/Coach — тот же принцип
+    "один словарь на всех", что уже работает в fix_known_wrong_names.py."""
+
+    wrong_text = models.CharField(_("Неверный текст"), max_length=120, unique=True, db_index=True)
+    correct_text = models.CharField(_("Верный текст"), max_length=120)
+    source_suggestion = models.ForeignKey(
+        NameVerificationSuggestion, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="confirmed_corrections", verbose_name=_("Из предложения ИИ"),
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+", verbose_name=_("Кто подтвердил"),
+    )
+
+    class Meta:
+        verbose_name = _("Подтверждённая поправка ФИО")
+        verbose_name_plural = _("Подтверждённые поправки ФИО")
+        ordering = ["wrong_text"]
+
+    def __str__(self):
+        return f"{self.wrong_text!r} → {self.correct_text!r}"
+
+    def save(self, *args, **kwargs):
+        self.wrong_text = self.wrong_text.strip().lower()
+        super().save(*args, **kwargs)
+        # Инвалидация кэша (см. get_corrections_dict ниже) — поправка
+        # должна подхватиться СЛЕДУЮЩИМ же импортом, не ждать TTL.
+        cache.delete(_CORRECTIONS_CACHE_KEY)
+
+    def delete(self, *args, **kwargs):
+        super().delete(*args, **kwargs)
+        cache.delete(_CORRECTIONS_CACHE_KEY)
+
+
+_CORRECTIONS_CACHE_KEY = "parsers:confirmed_name_corrections"
+_CORRECTIONS_CACHE_TTL_SECONDS = 300
+
+
+def get_confirmed_corrections() -> dict:
+    """Кэшировано (5 минут) — вызывается из parsers/sportmonks/importers.py::
+    _apply_known_name_corrections на КАЖДОЕ разрешение имени (сотни раз за
+    один бэкафилл сезона), поэтому поход в БД на каждый вызов был бы
+    заметной лишней нагрузкой. Инвалидируется явно при save/delete
+    ConfirmedNameCorrection (см. выше) — правка вступает в силу сразу,
+    не через 5 минут ожидания TTL."""
+    cached = cache.get(_CORRECTIONS_CACHE_KEY)
+    if cached is not None:
+        return cached
+    result = dict(ConfirmedNameCorrection.objects.values_list("wrong_text", "correct_text"))
+    cache.set(_CORRECTIONS_CACHE_KEY, result, timeout=_CORRECTIONS_CACHE_TTL_SECONDS)
+    return result

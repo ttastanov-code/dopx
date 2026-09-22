@@ -36,6 +36,8 @@ urlpatterns = [
     path("scripts/", views.scripts_view, name="scripts"),
     path("scripts/runs/partial/", views.scripts_runs_partial, name="scripts_runs_partial"),
     path("scripts/trigger/", views.scripts_trigger, name="scripts_trigger"),
+    path("names-review/", views.names_review, name="names_review"),
+    path("names-review/<uuid:suggestion_id>/action/", views.names_review_action, name="names_review_action"),
     path("audit/", views.audit_log, name="audit_log"),
     path("announcements/", views.announcements, name="announcements"),
     # 2FA (security-стек) — ЭТИ пути освобождены от самой OTP-проверки в
