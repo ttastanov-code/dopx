@@ -720,6 +720,16 @@ CELERY_BEAT_SCHEDULE = {
         'schedule': crontab(minute=0, hour='*/4'),
         # 'options': {'queue': 'default'}
     },
+    # === Проверка ФИО (ИИ) через Gemini — раз в месяц (2026-09-22, прямая
+    # просьба пользователя: "надо раз в месяц даже сделать") — ловит новых
+    # игроков/судей/тренеров, пришедших за месяц через трансферы/новый
+    # сезон, чьё ФИО механическая транслитерация могла угадать неверно.
+    # НЕ --all (тот прогонялся один раз вручную по всей уже существующей
+    # базе) — см. докстринг parsers/tasks.py::verify_names_with_ai_monthly. ===
+    'verify-names-with-ai-monthly': {
+        'task': 'parsers.tasks.verify_names_with_ai_monthly',
+        'schedule': crontab(day_of_month=1, hour=3, minute=0),
+    },
     # === Очистка просроченных CAPTCHA-записей (раз в час) ===
     # django-simple-captcha сама не удаляет истёкшие челленджи — таблица
     # captcha_captchastore росла бы бесконечно без этой задачи.
@@ -1030,17 +1040,46 @@ LOGGING = {
         'celery': {
             'handlers': ['celery_file', 'console'],
             'level': 'INFO',
-            'propagate': True,
+            # 2026-09-22: было True — при "зависшей" verify_names_with_ai
+            # искали причину именно в этом файле и выяснили, что тут
+            # писались только эти три явно перечисленных логгера. Раз уже
+            # добавляем 'dashboard'/'parsers' как catch-all ниже, отключаем
+            # propagate здесь же — иначе сообщения этого логгера пошли бы
+            # ещё и вверх по иерархии и задваивались бы в celery_file.
+            'propagate': False,
         },
         'aggregates.tasks': {
             'handlers': ['celery_file', 'console'],
             'level': 'INFO',
-            'propagate': True,
+            'propagate': False,
         },
         'parsers.tasks': {
             'handlers': ['celery_file', 'console', 'error_file'],
             'level': 'INFO',
-            'propagate': True,
+            'propagate': False,
+        },
+        # 2026-09-22: расследование "зависшей на 1ч08м verify_names_with_ai"
+        # — grep по logs/celery.log ничего не нашёл по run_management_command
+        # /verify_names, хотя сам файл оказался живым и пишущимся (см.
+        # aggregates.tasks строки выше). Причина: dashboard.tasks (где
+        # живёт run_management_command), dashboard.command_runner,
+        # parsers.management.commands.verify_names_with_ai и
+        # parsers.name_ai вообще не были перечислены в loggers — их
+        # logger.error/warning уходили в никуда, независимо от Docker и
+        # от того, жив ли ещё тот же контейнер. Настоящую причину гибели
+        # контейнера это задним числом не восстановит (тот лог уже удалён
+        # вместе с заменённым `docker compose up --build` контейнером), но
+        # закрывает дыру на будущее — теперь любая ошибка из этих модулей
+        # тоже попадёт в logs/celery.log и logs/errors.log.
+        'dashboard': {
+            'handlers': ['celery_file', 'console', 'error_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'parsers': {
+            'handlers': ['celery_file', 'console', 'error_file'],
+            'level': 'INFO',
+            'propagate': False,
         },
     },
 }
