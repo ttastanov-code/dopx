@@ -1,13 +1,20 @@
 # players/models.py
 from django.db import models
 from django.utils.translation import gettext_lazy as _
-from core.models import BaseModel
+from core.models import BaseModel, NAME_SOURCE_CHOICES
 from teams.models import Team
 
 class Player(BaseModel):
     """Футбольный игрок"""
     first_name = models.CharField(_('Имя'), max_length=120)
     last_name = models.CharField(_('Фамилия'), max_length=120)
+    # См. core/models.py::NAME_SOURCE_CHOICES — откуда взялось текущее ФИО,
+    # проставляется на каждом импорте (parsers/sportmonks/importers.py::
+    # _resolve_cyrillic_name). blank=True — у записей ДО этой миграции
+    # значение пустое (не значит "проверено", просто "неизвестно, откуда").
+    name_source = models.CharField(
+        _('Источник ФИО'), max_length=30, choices=NAME_SOURCE_CHOICES, blank=True, db_index=True,
+    )
     team = models.ForeignKey(
         Team,
         on_delete=models.SET_NULL,

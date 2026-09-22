@@ -1,12 +1,16 @@
 # referees/models.py
 from django.db import models
 from django.utils.translation import gettext_lazy as _
-from core.models import BaseModel
+from core.models import BaseModel, NAME_SOURCE_CHOICES
 
 class Referee(BaseModel):
     """Футбольный судья"""
     first_name = models.CharField(_('Имя'), max_length=120)
     last_name = models.CharField(_('Фамилия'), max_length=120)
+    # См. core/models.py::NAME_SOURCE_CHOICES.
+    name_source = models.CharField(
+        _('Источник ФИО'), max_length=30, choices=NAME_SOURCE_CHOICES, blank=True, db_index=True,
+    )
     country = models.CharField(_('Страна'), max_length=120, blank=True)
     # См. тот же комментарий в coaches/models.py::Coach.photo — у KFF нет
     # публичных фото судей, поле для ручной загрузки стаффом.

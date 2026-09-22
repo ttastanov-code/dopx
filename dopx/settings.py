@@ -659,6 +659,19 @@ SPORTMONKS_LEAGUE_ID = int(os.getenv('SPORTMONKS_LEAGUE_ID', '393'))  # Kazakhst
 SPORTMONKS_BASE_URL = 'https://api.sportmonks.com/v3/football'
 SPORTMONKS_LOCALE = 'ru'
 
+# Проверка написания ФИО через Gemini API (2026-09-22, прямая просьба
+# пользователя после жалобы "Сергий Малий" вместо "Сергий Малый" — см.
+# parsers/name_ai.py, parsers/models.py::NameVerificationSuggestion,
+# parsers/management/commands/verify_names_with_ai.py). Бесплатный тариф
+# (aistudio.google.com), а не платный Anthropic/OpenAI — осознанный выбор
+# пользователя. GEMINI_API_KEY пуст по умолчанию — parsers/name_ai.py
+# логирует и НЕ падает, если ключ не задан (та же защита, что у VAPID_*
+# выше — отсутствующий ключ отключает фичу, не роняет сайт). Модель — через
+# env, а не хардкод: доступность конкретных моделей на бесплатном тарифе
+# меняется, обновить можно без деплоя кода.
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
+GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')
+
 CELERY_BEAT_SCHEDULE = {
     # =========================================================================
     # KFF-парсер и весь его rollback-путь физически удалены (2026-09-09, по

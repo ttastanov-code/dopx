@@ -57,6 +57,13 @@ from leagues.models import League
 from lineups.models import MatchLineup, MatchLineupPlayer
 from matches.models import Match, MatchPlayerStatistics, MatchTeamStatistics
 from players.models import Player, PlayerSidelined
+from core.models import (
+    NAME_SOURCE_AI_VERIFIED,
+    NAME_SOURCE_CLEAN_SOURCE,
+    NAME_SOURCE_GUESSED_TRANSLITERATION,
+    NAME_SOURCE_LATIN_FOREIGN,
+)
+from parsers.models import get_confirmed_corrections
 from parsers.sportmonks.name_translations import PLAYER_NAME_CORRECTIONS
 from parsers.sportmonks.translit import is_likely_foreign, transliterate_name
 from referees.models import Referee
@@ -246,9 +253,28 @@ def _apply_known_name_corrections(
     игрока может быть неверным только имя, только фамилия, или (в теории)
     оба сразу. Тот же словарь используется в parsers/management/commands/
     fix_known_wrong_names.py для разовой коррекции уже испорченных записей
-    — единый источник истины, больше не расходится."""
-    corrected_first = PLAYER_NAME_CORRECTIONS.get(first_name.strip().lower()) if first_name else None
-    corrected_last = PLAYER_NAME_CORRECTIONS.get(last_name.strip().lower()) if last_name else None
+    — единый источник истины, больше не расходится.
+
+    РАСШИРЕНО (2026-09-22, прямая просьба пользователя после жалобы
+    "Сергий Малий" вместо "Сергий Малый" — "надо что-то 100% рабочее
+    придумать... уйти от того что мы персонально каждого обрабатываем"):
+    кроме статического PLAYER_NAME_CORRECTIONS теперь ПЕРВЫМ проверяется
+    parsers/models.py::ConfirmedNameCorrection — DB-таблица, которая
+    пополняется через approve в очереди «Проверка ФИО (ИИ)» на дашборде
+    (Gemini API + ручное подтверждение staff, см. parsers/name_ai.py). Живой
+    источник (approve в дашборде) проверяется раньше статического словаря,
+    но конфликтов на практике быть не должно — ключи (неверный текст) не
+    пересекаются, разве что кто-то вручную задублирует то же самое имя в
+    обоих местах, тогда побеждает DB-запись."""
+    db_corrections = get_confirmed_corrections()
+    corrected_first = (
+        db_corrections.get(first_name.strip().lower())
+        or PLAYER_NAME_CORRECTIONS.get(first_name.strip().lower())
+    ) if first_name else None
+    corrected_last = (
+        db_corrections.get(last_name.strip().lower())
+        or PLAYER_NAME_CORRECTIONS.get(last_name.strip().lower())
+    ) if last_name else None
     if corrected_first is None and corrected_last is None:
         return first_name, last_name
 
@@ -256,43 +282,70 @@ def _apply_known_name_corrections(
     result_last = corrected_last or last_name
     logger.info(
         "Sportmonks: имя %s sportmonks_id=%s исправлено известной ручной "
-        "поправкой (PLAYER_NAME_CORRECTIONS, найдено 2026-09-10) — было "
+        "поправкой (ConfirmedNameCorrection/PLAYER_NAME_CORRECTIONS) — было "
         "%r %r, стало %r %r",
         entity_label, entity_id, first_name, last_name, result_first, result_last,
     )
     return result_first, result_last
 
 
-def _resolve_cyrillic_name(entity_data: Dict, entity_label: str) -> Tuple[str, str]:
-    """Возвращает (first_name, last_name), предпочитая первого "чистого"
-    кириллического кандидата среди firstname+lastname / name / display_name
-    (в этом порядке — см. докстринг блока выше). Если ни один кандидат не
-    оказался чистым, берёт лучший доступный текст и логирует warning —
-    такую запись стоит поправить вручную в админке (см. list_latin_names.py).
+def _resolve_cyrillic_name(entity_data: Dict, entity_label: str) -> Tuple[str, str, str]:
+    """Возвращает (first_name, last_name, name_source), предпочитая первого
+    "чистого" кириллического кандидата среди firstname+lastname / name /
+    display_name (в этом порядке — см. докстринг блока выше). Если ни один
+    кандидат не оказался чистым, берёт лучший доступный текст и логирует
+    warning — такую запись стоит поправить вручную в админке (см.
+    list_latin_names.py).
 
     ИСПРАВЛЕНО (2026-09-10, см. докстринг _apply_known_name_corrections
     выше): перед КАЖДЫМ return применяется точечная поправка известных
     ошибок перевода САМОГО Sportmonks (PLAYER_NAME_CORRECTIONS) — "чистая
-    кириллица" от источника не всегда означает "правильная кириллица"."""
+    кириллица" от источника не всегда означает "правильная кириллица".
+
+    РАСШИРЕНО (2026-09-22, "Сергий Малий" вместо "Сергий Малый" —
+    core/models.py::NAME_SOURCE_CHOICES): третий элемент возврата — ОТКУДА
+    взялось итоговое ФИО, персистится на Player/Referee/Coach.name_source
+    (см. вызовы get_or_create_player/referee/coach) и используется
+    parsers/management/commands/verify_names_with_ai.py, чтобы найти записи
+    с УГАДАННОЙ (не подтверждённой источником) кириллицей — именно они
+    ставятся в очередь на проверку через Gemini. Значение source — это
+    источник САМОГО распознавания (клеймится ДО _apply_known_name_
+    corrections), а не то, применилась ли известная поправка поверх —
+    "guessed_transliteration" с уже применённой ручной/ИИ-поправкой всё
+    равно возвращается как "guessed_transliteration" (сама поправка это уже
+    подтверждённый факт, что видно по существованию строки в
+    ConfirmedNameCorrection — verify_names_with_ai пропускает сущности, для
+    которых уже есть НЕ пустой NameVerificationSuggestion, см. её докстринг)."""
     entity_id = entity_data.get("id")
     firstname = (entity_data.get("firstname") or "").strip()
     lastname = (entity_data.get("lastname") or "").strip()
 
-    def _corrected(first_name: str, last_name: str) -> Tuple[str, str]:
-        return _apply_known_name_corrections(first_name, last_name, entity_label, entity_id)
+    def _corrected(first_name: str, last_name: str, name_source: str) -> Tuple[str, str, str]:
+        corrected_first, corrected_last = _apply_known_name_corrections(first_name, last_name, entity_label, entity_id)
+        # Если известная поправка реально что-то поменяла — считаем итог
+        # проверенным (AI_VERIFIED), даже если сама классификация ветки
+        # была "угадано" — иначе после approve в дашборде name_source на
+        # СЛЕДУЮЩЕМ же синке снова показал бы "угадано", хотя текст уже
+        # исправлен и стабилен (не повторно ставится в очередь — см.
+        # докстринг выше про дедуп по факту существования
+        # NameVerificationSuggestion, а не по name_source — но для честного
+        # отображения в дашборде это всё равно должно выглядеть "проверено").
+        if (corrected_first, corrected_last) != (first_name, last_name):
+            name_source = NAME_SOURCE_AI_VERIFIED
+        return corrected_first, corrected_last, name_source
 
     if _is_clean_cyrillic(firstname) and _is_clean_cyrillic(lastname):
-        return _corrected(firstname, lastname)
+        return _corrected(firstname, lastname, NAME_SOURCE_CLEAN_SOURCE)
 
     name = (entity_data.get("name") or "").strip()
     if _is_clean_cyrillic(name):
-        return _corrected(*_split_name(name))
+        return _corrected(*_split_name(name), NAME_SOURCE_CLEAN_SOURCE)
 
     display_name = (entity_data.get("display_name") or "").strip()
     # "Х. Фамилия" — сокращённая форма (инициал с точкой), не годится как
     # first_name даже если сама по себе кириллическая и чистая.
     if _is_clean_cyrillic(display_name) and not re.match(r"^[А-ЯЁ]\.\s", display_name):
-        return _corrected(*_split_name(display_name))
+        return _corrected(*_split_name(display_name), NAME_SOURCE_CLEAN_SOURCE)
 
     # Ни один кандидат не оказался чистой кириллицей — автоматически
     # транслитерируем (parsers/sportmonks/translit.py, см. чат с
@@ -300,48 +353,72 @@ def _resolve_cyrillic_name(entity_data: Dict, entity_label: str) -> Tuple[str, s
     # корректно было") вместо того, чтобы оставлять голую латиницу на
     # сайте. Предпочитаем firstname+lastname источником для транслитерации
     # (обычно самые "сырые"/надёжные поля), иначе name, иначе display_name.
-    latin_source = (
-        f"{firstname} {lastname}".strip() if (firstname or lastname) else (name or display_name)
-    )
+    has_split_source = bool(firstname or lastname)
+    latin_source = f"{firstname} {lastname}".strip() if has_split_source else (name or display_name)
     if not latin_source:
-        return "", ""
+        return "", "", ""
 
-    # ИСПРАВЛЕНО (2026-09-09, баги найдены пользователем — "Владимир
-    # Слиšковиć", "Йоãо Антóнио Ферреира Гонçалвес"): _SINGLE_CHAR_MAP в
-    # translit.py не знает диакритику романских/южнославянских языков (š,
-    # ć, ã, ó, ç...) и по докстрингу оставляет такие символы "как есть" —
-    # is_likely_foreign() и раньше ловил именно такие имена, но раньше
-    # использовался ТОЛЬКО для уровня логирования, транслитерация всё
-    # равно запускалась. На явно не-славянском имени это давало не
-    # "неидеальную кириллицу" (как задумывалось), а буквальную мешанину
-    # кириллицы с необработанными латинскими символами внутри одного
-    # слова — хуже чистой латиницы, а не лучше. Теперь для таких имён
-    # транслитерация вообще не запускается — используется оригинальный
-    # латинский текст с диакритикой как есть (João António Ferreira
-    # Gonçalves, Vladimir Slišković): читаемо и правильно, точная
-    # практическая транскрипция кириллицей по-прежнему возможна вручную
-    # через админку в любой момент (как и для остальных имён).
+    # ИСПРАВЛЕНО (2026-09-22, жалоба пользователя — игрок Кызылжара на
+    # сайте "Etienne Yves Beugré" вместо настоящего "Эдгард Анге Этиен
+    # Бугре"): при разборе этого случая нашёлся ОТДЕЛЬНЫЙ баг, не
+    # объясняющий саму жалобу (см. PLAYER_NAME_CORRECTIONS ниже для сути
+    # жалобы), но реальный и способный портить имена ЛЮБОГО иностранного
+    # игрока с составным именем ИЗ НЕСКОЛЬКИХ СЛОВ (Edgard Angé Étienne —
+    # три слова): latin_source ниже СКЛЕИВАЛ уже правильно разделённые
+    # Sportmonks'ом firstname/lastname в одну строку, а затем ОБЕ ветки
+    # (is_likely_foreign и транслитерация) резали её обратно через
+    # _split_name — а та умеет делить только "первое слово / всё
+    # остальное", без понятия о том, где на самом деле проходит граница
+    # между именем и фамилией. Для simple "Firstname Lastname" (оба поля
+    # по одному слову) склейка-и-разрезание давали тот же результат, что и
+    # исходные поля, баг был незаметен — но для составного firstname из
+    # НЕСКОЛЬКИХ слов (как у этого игрока) склейка стирала эту границу, и
+    # обратное разрезание "первое слово / остальное" переносило лишние
+    # слова из firstname в last_name. Теперь, когда Sportmonks прислал оба
+    # поля НЕПУСТЫМИ, используем их границу как есть — split_name/
+    # _split_name вызывается ТОЛЬКО как fallback, когда есть лишь
+    # одно объединённое поле (name/display_name) и делить действительно
+    # больше не по чему.
     if is_likely_foreign(latin_source):
+        result_first, result_last = (firstname, lastname) if has_split_source else _split_name(latin_source)
+        # ИСПРАВЛЕНО (2026-09-09, баги найдены пользователем — "Владимир
+        # Слиšковиć", "Йоãо Антóнио Ферреира Гонçалвес"): _SINGLE_CHAR_MAP в
+        # translit.py не знает диакритику романских/южнославянских языков (š,
+        # ć, ã, ó, ç...) и по докстрингу оставляет такие символы "как есть" —
+        # is_likely_foreign() и раньше ловил именно такие имена, но раньше
+        # использовался ТОЛЬКО для уровня логирования, транслитерация всё
+        # равно запускалась. На явно не-славянском имени это давало не
+        # "неидеальную кириллицу" (как задумывалось), а буквальную мешанину
+        # кириллицы с необработанными латинскими символами внутри одного
+        # слова — хуже чистой латиницы, а не лучше. Теперь для таких имён
+        # транслитерация вообще не запускается — используется оригинальный
+        # латинский текст с диакритикой как есть (João António Ferreira
+        # Gonçalves, Vladimir Slišković): читаемо и правильно, точная
+        # практическая транскрипция кириллицей по-прежнему возможна вручную
+        # через админку в любой момент (как и для остальных имён).
         logger.info(
             "Sportmonks: имя %s sportmonks_id=%s похоже на не-славянское — "
-            "оставлено латиницей как есть %r вместо частичной/ломаной "
+            "оставлено латиницей как есть %r %r вместо частичной/ломаной "
             "транслитерации (источник: name=%r, firstname=%r, lastname=%r, "
             "display_name=%r); практическую транскрипцию кириллицей можно "
             "выставить вручную в админке",
-            entity_label, entity_data.get("id"), latin_source, name, firstname, lastname, display_name,
+            entity_label, entity_data.get("id"), result_first, result_last, name, firstname, lastname, display_name,
         )
-        return _corrected(*_split_name(latin_source))
+        return _corrected(result_first, result_last, NAME_SOURCE_LATIN_FOREIGN)
 
-    transliterated = transliterate_name(latin_source)
+    if has_split_source:
+        result_first, result_last = transliterate_name(firstname), transliterate_name(lastname)
+    else:
+        result_first, result_last = _split_name(transliterate_name(latin_source))
     logger.info(
         "Sportmonks: имя %s sportmonks_id=%s автоматически транслитерировано "
-        "%r -> %r — источник (name=%r, firstname=%r, lastname=%r, "
+        "%r %r -> %r %r — источник (name=%r, firstname=%r, lastname=%r, "
         "display_name=%r) не дал чистой кириллицы ни по одному полю; при "
         "необходимости поправить вручную в админке",
-        entity_label, entity_data.get("id"), latin_source, transliterated,
+        entity_label, entity_data.get("id"), firstname, lastname, result_first, result_last,
         name, firstname, lastname, display_name,
     )
-    return _corrected(*_split_name(transliterated))
+    return _corrected(result_first, result_last, NAME_SOURCE_GUESSED_TRANSLITERATION)
 
 
 # Группировка игроков одной строки формации (formation_field "row:col") в
@@ -591,9 +668,10 @@ def get_or_create_referee(referee_data: Optional[Dict]) -> Optional[Referee]:
     # судей "name" не переводится вообще, см. докстринг выше) — но
     # вызывается для единообразия и на случай редкого исключения, а не
     # заново пишем разбор строки.
-    first_name, last_name = _resolve_cyrillic_name(referee_data, "судьи")
+    first_name, last_name, name_source = _resolve_cyrillic_name(referee_data, "судьи")
     referee = Referee.objects.create(
         sportmonks_id=str(sm_id), first_name=first_name, last_name=last_name, is_active=True,
+        name_source=name_source,
     )
     logger.info("Sportmonks: создан судья %s (sportmonks_id=%s)", referee.full_name, sm_id)
     return referee
@@ -628,10 +706,10 @@ def get_or_create_coach(coach_data: Optional[Dict], team: Optional[Team] = None)
             coach.save(update_fields=update_fields + ["updated_at"])
         return coach
 
-    first_name, last_name = _resolve_cyrillic_name(coach_data, "тренера")
+    first_name, last_name, name_source = _resolve_cyrillic_name(coach_data, "тренера")
     coach = Coach.objects.create(
         sportmonks_id=str(sm_id), first_name=first_name, last_name=last_name,
-        is_active=True, team=team,
+        is_active=True, team=team, name_source=name_source,
     )
     logger.info("Sportmonks: создан тренер %s (sportmonks_id=%s)", coach.full_name, sm_id)
     return coach
@@ -670,7 +748,7 @@ def get_or_create_player(
     if sm_id is None:
         return None
 
-    first_name, last_name = _resolve_cyrillic_name(player_data, "игрока")
+    first_name, last_name, name_source = _resolve_cyrillic_name(player_data, "игрока")
     existing = Player.objects.filter(sportmonks_id=str(sm_id)).only("id", "last_match_at").first()
 
     is_more_recent = (
@@ -683,6 +761,7 @@ def get_or_create_player(
     defaults = {
         "first_name": first_name,
         "last_name": last_name,
+        "name_source": name_source,
         "is_active": True,
     }
     if is_more_recent:

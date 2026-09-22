@@ -42,6 +42,10 @@ class AuditAction(models.TextChoices):
     # отдельный раздел") — см. dashboard/commands_registry.py,
     # dashboard/command_runner.py, ManagementCommandRun ниже.
     MANAGEMENT_COMMAND_TRIGGERED = "management_command_triggered", _("Запуск management-команды из дашборда")
+    # НОВОЕ (2026-09-22, очередь «Проверка ФИО (ИИ)») — см. parsers/models.py::
+    # NameVerificationSuggestion, dashboard/views.py::names_review_action.
+    NAME_SUGGESTION_APPROVED = "name_suggestion_approved", _("Предложение ИИ по ФИО подтверждено")
+    NAME_SUGGESTION_REJECTED = "name_suggestion_rejected", _("Предложение ИИ по ФИО отклонено")
 
     # 2026-09-09: RAW_KFF_LOOKUP/KFF_HEALTH_CHECK удалены вместе со всем
     # KFF-парсером (по решению пользователя). STADIUM_MARKED_REVIEWED
