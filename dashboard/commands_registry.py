@@ -260,7 +260,7 @@ COMMAND_REGISTRY: dict[str, CommandSpec] = {
         args=[
             ArgSpec("--all", "all", "flag", help="Разовый прогон по ВСЕМ записям (не только «угадано») — для первого полного прохода по базе."),
             ArgSpec("--entity", "entity", "choice", choices=["player", "referee", "coach"], help="Ограничиться одним типом. Пусто — все три."),
-            ArgSpec("--limit", "limit", "int", default=20, help="Максимум вызовов Gemini за запуск (бережём бесплатный лимит)."),
+            ArgSpec("--limit", "limit", "int", default=20, help="Максимум вызовов Gemini за запуск (бережём бесплатный лимит). 0 — без ограничения, проверит всех кандидатов."),
             ArgSpec("--delay", "delay", "float", default=4.0, help="Пауза в секундах между вызовами Gemini."),
             ArgSpec("--recheck", "recheck", "flag", help="Не пропускать записи, у которых уже есть предложение (любого статуса)."),
             ArgSpec("--dry-run", "dry_run", "flag", help="Только показать список кандидатов, не тратить вызовы Gemini."),

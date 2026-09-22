@@ -14,6 +14,7 @@ hx-get на #scripts-runs-table) — обновляет PENDING/RUNNING → SUCC
                 <th>Кто</th>
                 <th>Когда</th>
                 <th>Вывод</th>
+                <th></th>
             </tr>
         </thead>
         <tbody>
@@ -41,6 +42,25 @@ hx-get на #scripts-runs-table) — обновляет PENDING/RUNNING → SUCC
                     </details>
                     {% else %}
                     <span class="opacity-40">—</span>
+                    {% endif %}
+                </td>
+                <td class="whitespace-nowrap">
+                    {% if run.status == 'pending' or run.status == 'running' %}
+                    {% comment %}
+                    2026-09-22: только PENDING/RUNNING — завершённые (success/
+                    failed) отзывать нечего, celery_task_id к тому моменту уже
+                    неактуален. terminate=True жёстко зашит в самой вьюхе
+                    (dashboard/views.py::scripts_revoke_run) — без формы выбора,
+                    см. докстринг там же почему soft-revoke бесполезен для уже
+                    бегущего call_command().
+                    {% endcomment %}
+                    <form method="post" action="{% url 'dashboard:scripts_revoke_run' run.id %}"
+                          onsubmit="return confirm('Остановить «' + '{{ run.command_name }}' + '»? Прервёт процесс прямо посреди выполнения (SIGTERM).');">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-error btn-outline btn-xs">
+                            <i class="ti ti-player-stop"></i> Стоп
+                        </button>
+                    </form>
                     {% endif %}
                 </td>
             </tr>

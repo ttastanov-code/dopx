@@ -48,19 +48,28 @@
                         <div>
                             {% if arg.kind == 'flag' %}
                             {% comment %}
-                            2026-09-22: длинный arg.help (напр. у --all в
-                            verify_names_with_ai) выпирал за границу карточки
-                            — label flex-контейнер не сжимал соседний span
-                            без min-w-0, поэтому текст не переносился, а рос
-                            вширь. min-w-0 + break-words разрешают перенос.
+                            2026-09-22, проверено ПРЯМО в исходнике CDN-CSS
+                            (cdn.jsdelivr.net/npm/daisyui@5.7.17): класс
+                            `.label` у daisyUI сам задаёт
+                            `white-space: nowrap` — из-за этого длинный
+                            arg.help (напр. у --all в verify_names_with_ai)
+                            вообще не мог перенестись, сколько ни добавляй
+                            min-w-0/break-words (они трогают другое
+                            CSS-свойство, не white-space, и потому не
+                            перебивали nowrap). Настоящий фикс — явно
+                            перебить nowrap через whitespace-normal ПРЯМО на
+                            span (не на label — white-space наследуется, но
+                            правило .label бьёт по самому label, ставить
+                            override нужно на потомка, который реально
+                            содержит текст).
                             {% endcomment %}
                             <label class="label cursor-pointer justify-start items-start gap-2 py-1">
                                 <input type="checkbox" name="{{ arg.dest }}" class="checkbox checkbox-xs mt-0.5">
-                                <span class="label-text text-xs min-w-0 break-words">{{ arg.flag }} — {{ arg.help }}</span>
+                                <span class="label-text text-xs whitespace-normal break-words min-w-0">{{ arg.flag }} — {{ arg.help }}</span>
                             </label>
                             {% else %}
                             <label class="label py-0.5">
-                                <span class="label-text text-xs min-w-0 break-words">
+                                <span class="label-text text-xs whitespace-normal break-words min-w-0">
                                     {{ arg.flag }}{% if arg.required %} <span class="text-error">*</span>{% endif %}
                                     — {{ arg.help }}
                                 </span>

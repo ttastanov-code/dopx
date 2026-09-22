@@ -670,7 +670,12 @@ SPORTMONKS_LOCALE = 'ru'
 # env, а не хардкод: доступность конкретных моделей на бесплатном тарифе
 # меняется, обновить можно без деплоя кода.
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
-GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')
+# 2026-09-22: 'gemini-2.5-flash' — 404 Not Found на generateContent, хотя
+# ListModels её ещё показывает (модель уже снята с генерации, просто не
+# убрана из листинга). Проверено официальной документацией ai.google.dev —
+# текущий актуальный пример в quickstart уже на gemini-3.8-flash. Сменили
+# дефолт на неё; при необходимости откатить/сменить — через env, без деплоя.
+GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-3.8-flash')
 
 CELERY_BEAT_SCHEDULE = {
     # =========================================================================

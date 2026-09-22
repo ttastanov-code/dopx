@@ -494,6 +494,51 @@ def scripts_trigger(request):
     return redirect("dashboard:scripts")
 
 
+@staff_member_required
+@require_POST
+def scripts_revoke_run(request, run_id):
+    """Остановить уже поставленную/выполняющуюся команду из "Скрипты и
+    команды" (2026-09-22, прямая просьба пользователя — при разовом прогоне
+    verify_names_with_ai --all --limit 0 не было способа прервать). Команда
+    выполняется синхронным Python-циклом (call_command внутри celery-таска,
+    см. dashboard/tasks.py::run_management_command) — она НЕ проверяет
+    какой-либо "флаг отмены" между итерациями, поэтому мягкий
+    app.control.revoke() (terminate=False) тут бесполезен для УЖЕ
+    запущенной задачи: он только помешал бы ей стартовать, если бы она
+    ещё была в очереди. Раз статус RUNNING — процесс уже внутри цикла,
+    единственный реальный способ прервать — terminate=True (SIGTERM
+    воркеру), поэтому здесь жёстко используем terminate=True без формы
+    выбора (в отличие от parser_revoke_task, где soft-revoke имеет смысл
+    для задач, которые могут быть ещё в очереди). SIGTERM посреди
+    call_command может прервать сохранение ОДНОЙ NameVerificationSuggestion
+    на середине — не хуже, чем оставить бежать 40+ минут без возможности
+    остановить, и в любом случае каждая suggestion сохраняется по одной за
+    раз (см. verify_names_with_ai.py), а не одной большой транзакцией."""
+    run = get_object_or_404(ManagementCommandRun, id=run_id)
+
+    if run.status not in (ManagementCommandRun.Status.PENDING, ManagementCommandRun.Status.RUNNING):
+        messages.info(request, f"«{run.command_name}» уже завершена ({run.get_status_display()}) — останавливать нечего.")
+        return redirect("dashboard:scripts")
+
+    if not run.celery_task_id:
+        messages.error(request, f"У запуска «{run.command_name}» нет celery_task_id — нечего отзывать.")
+        return redirect("dashboard:scripts")
+
+    success, message = parser_tools.revoke_celery_task(run.celery_task_id, terminate=True)
+    if success:
+        run.status = ManagementCommandRun.Status.FAILED
+        run.stderr = (run.stderr + "\n" if run.stderr else "") + "Остановлено вручную staff (terminate)."
+        run.finished_at = timezone.now()
+        run.save(update_fields=["status", "stderr", "finished_at"])
+    (messages.success if success else messages.error)(request, message)
+    log_staff_action(
+        request, AuditAction.CELERY_TASK_REVOKED,
+        target=run.command_name,
+        details={"success": success, "message": message, "run_id": str(run.id), "terminate": True},
+    )
+    return redirect("dashboard:scripts")
+
+
 # ============================================================
 # "Проверка ФИО (ИИ)" — очередь на подтверждение предложений Gemini
 # (2026-09-22, прямая просьба пользователя после жалобы "Сергий Малий"
@@ -508,7 +553,23 @@ def scripts_trigger(request):
 @staff_member_required
 def names_review(request):
     pending = NameVerificationSuggestion.objects.filter(status="pending_review").order_by("-created_at")
-    failed = NameVerificationSuggestion.objects.filter(status="check_failed").order_by("-created_at")[:20]
+    # 2026-09-22, прямая просьба пользователя ("не хватает кнопки
+    # подтвердить все/отклонить все"): счётчик для кнопки массового
+    # подтверждения — только те pending_review, где сам Gemini сказал
+    # matches_current=True (текущее написание и так верное, менять
+    # нечего). Настоящие ПРЕДЛОЖЕНИЯ ИЗМЕНЕНИЙ под это не попадают —
+    # они по-прежнему разбираются по одному, см. names_review_bulk_confirm_matches.
+    matches_count = pending.filter(matches_current=True).count()
+    # 2026-09-22: бейдж в шаблоне раньше считал len(failed_suggestions) —
+    # а список уже обрезан [:20] ради производительности страницы, поэтому
+    # цифра в бейдже молчаливо занижалась на всё, что после 20-й записи
+    # (при разовом прогоне --all --limit 0 ошибок вполне может быть больше
+    # 20 за раз). Отдельный .count() ДО среза — честное общее число,
+    # список ниже как был ограничен 20 (это разумно — не рендерить сотни
+    # карточек), просто бейдж и рендер теперь не одно и то же.
+    failed_qs = NameVerificationSuggestion.objects.filter(status="check_failed").order_by("-created_at")
+    failed_count = failed_qs.count()
+    failed = failed_qs[:20]
     recent_decided = (
         NameVerificationSuggestion.objects.filter(status__in=["approved", "rejected"])
         .select_related("reviewed_by").order_by("-reviewed_at")[:20]
@@ -518,10 +579,84 @@ def names_review(request):
         "active_tab": "names_review",
         "pending_suggestions": pending,
         "failed_suggestions": failed,
+        "failed_count": failed_count,
+        "matches_count": matches_count,
         "recent_decided": recent_decided,
         "gemini_configured": name_ai.is_configured(),
     }
     return render(request, "dashboard/names_review.html", context)
+
+
+@staff_member_required
+@require_POST
+def names_review_bulk_confirm_matches(request):
+    """Массовое подтверждение (2026-09-22, прямая просьба пользователя —
+    при --all кандидатов, где Gemini лишь подтвердил уже верное написание,
+    набирается много, и щёлкать «Подтвердить» по одной неудобно).
+
+    ВАЖНО: трогает ТОЛЬКО pending_review с matches_current=True — то есть
+    сам Gemini сказал "менять нечего". Настоящие предложения ИЗМЕНИТЬ
+    написание сюда не попадают ни при каких условиях — они по-прежнему
+    идут через ручное подтверждение по одной карточке (прямое решение
+    пользователя "всегда через ручное подтверждение", см. докстринг
+    parsers/name_ai.py). Это чисто веб-вьюха (без Celery) — можно жать в
+    любой момент, даже пока в фоне ещё работает verify_names_with_ai.
+
+    Раньше (до этого бака) name_source не обновлялся, если итоговое имя
+    совпадало с текущим (see names_review_action — там update_fields
+    остаётся пустым и entity.save() не вызывается вовсе). Здесь — ровно
+    противоположный случай: сам факт "Gemini подтвердил" — это и есть
+    полноценная верификация, поэтому name_source обновляется на
+    ai_verified ВСЕГДА, даже если текст ФИО не изменился ни на символ."""
+    qs = NameVerificationSuggestion.objects.filter(status="pending_review", matches_current=True)
+    confirmed = 0
+    skipped = 0
+    for suggestion in qs:
+        entity = suggestion.content_object
+        if entity is None:
+            suggestion.status = "rejected"
+            suggestion.reviewed_by = request.user
+            suggestion.reviewed_at = timezone.now()
+            suggestion.save(update_fields=["status", "reviewed_by", "reviewed_at", "updated_at"])
+            skipped += 1
+            continue
+
+        final_first = (suggestion.suggested_first_name or entity.first_name).strip()
+        final_last = (suggestion.suggested_last_name or entity.last_name).strip()
+        update_fields = []
+        if final_first and final_first != entity.first_name:
+            ConfirmedNameCorrection.objects.update_or_create(
+                wrong_text=entity.first_name.strip().lower(),
+                defaults={"correct_text": final_first, "source_suggestion": suggestion, "created_by": request.user},
+            )
+            entity.first_name = final_first
+            update_fields.append("first_name")
+        if final_last and final_last != entity.last_name:
+            ConfirmedNameCorrection.objects.update_or_create(
+                wrong_text=entity.last_name.strip().lower(),
+                defaults={"correct_text": final_last, "source_suggestion": suggestion, "created_by": request.user},
+            )
+            entity.last_name = final_last
+            update_fields.append("last_name")
+
+        entity.name_source = NAME_SOURCE_AI_VERIFIED
+        update_fields.append("name_source")
+        entity.save(update_fields=update_fields + ["updated_at"])
+
+        suggestion.status = "approved"
+        suggestion.reviewed_by = request.user
+        suggestion.reviewed_at = timezone.now()
+        suggestion.save(update_fields=["status", "reviewed_by", "reviewed_at", "updated_at"])
+        confirmed += 1
+
+    log_staff_action(
+        request, AuditAction.NAME_SUGGESTION_APPROVED,
+        target="bulk_confirm_matches",
+        details={"confirmed": confirmed, "skipped_deleted_entity": skipped},
+    )
+    suffix = f", пропущено (сущность удалена): {skipped}" if skipped else ""
+    messages.success(request, f"Массово подтверждено: {confirmed}{suffix}")
+    return redirect("dashboard:names_review")
 
 
 @staff_member_required
@@ -550,6 +685,30 @@ def names_review_action(request, suggestion_id):
         return redirect("dashboard:names_review")
 
     if action == "reject":
+        # 2026-09-22: "Скрыть" у check_failed (технический сбой вызова
+        # Gemini — 429/сеть/невалидный JSON) шлёт ТУ ЖЕ форму с action=
+        # reject, что и настоящее "Отклонить" у pending_review (staff
+        # осознанно решил, что текущее написание верное). Раньше оба
+        # случая безусловно превращались в status="rejected" — а это
+        # НЕ check_failed, значит запись начинала считаться "уже
+        # разобранной" в verify_names_with_ai.py::already_suggested_ids
+        # и переставала сама попадать в обычный (без --recheck) прогон.
+        # Технический сбой — это не решение по ФИО, удаляем запись
+        # целиком вместо подмены статуса: следующий обычный прогон
+        # увидит "предложения по этой сущности вообще нет" и проверит
+        # заново сам, без --recheck (который бы дополнительно тратил
+        # вызовы на уже одобренные/отклонённые записи).
+        if suggestion.status == "check_failed":
+            target = f"{suggestion.entity_label}:{suggestion.object_id}"
+            details = {
+                "current": f"{suggestion.current_first_name} {suggestion.current_last_name}",
+                "dismissed_error": suggestion.error_message,
+            }
+            suggestion.delete()
+            log_staff_action(request, AuditAction.NAME_SUGGESTION_REJECTED, target=target, details=details)
+            messages.success(request, "Ошибка скрыта — запись сама попадёт под проверку в следующем обычном прогоне (без --recheck).")
+            return redirect("dashboard:names_review")
+
         suggestion.status = "rejected"
         suggestion.reviewed_by = request.user
         suggestion.reviewed_at = timezone.now()
