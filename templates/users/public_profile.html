@@ -71,34 +71,37 @@ templates/users/public_profile.html
         {% comment %}
         См. подробный комментарий в templates/profile/dashboard.html —
         тот же баг ("Оценок"/"Матчей" показывали одно и то же число).
+
+        БАГ, КОТОРЫЙ ТУТ БЫЛ, ИТОГОВАЯ ВЕРСИЯ (2026-09-22): промежуточный
+        фикс (whitespace-normal + flex-wrap ПРЯМО в потоке текста
+        заголовка) на странице игрока показал себя плохо — при переносе
+        заголовка иконка всё равно норовила "оторваться" на отдельную
+        строку. Правильное решение — вынести иконку ИЗ текстового потока
+        вообще: она абсолютно спозиционирована в фиксированном углу
+        карточки (.stat теперь relative, иконка — absolute top-2 right-2),
+        заголовок при этом свободно переносится на любое число строк, не
+        влияя на позицию иконки вообще. См. подробный докстринг в
+        templates/players/detail.html рядом с тем же фиксом.
         {% endcomment %}
         <div class="grid grid-cols-2 gap-4">
-            <div class="stat bg-base-100 border border-base-300 p-4">
-                <div class="stat-title text-xs inline-flex items-center gap-1">
-                    Оценок
-                    {% include 'components/_tooltip_icon.html' with text="Сколько отдельных оценок поставлено — игрокам, командам, тренерам и судьям суммарно за все матчи" %}
-                </div>
+            <div class="stat relative bg-base-100 border border-base-300 p-4">
+                <div class="absolute top-2 right-2 z-10">{% include 'components/_tooltip_icon.html' with text="Сколько отдельных оценок поставлено — игрокам, командам, тренерам и судьям суммарно за все матчи" %}</div>
+                <div class="stat-title text-xs whitespace-normal leading-snug pr-4">Оценок</div>
                 <div class="stat-value text-2xl">{{ stats.total_ratings_given }}</div>
             </div>
-            <div class="stat bg-base-100 border border-base-300 p-4">
-                <div class="stat-title text-xs inline-flex items-center gap-1">
-                    Игроков
-                    {% include 'components/_tooltip_icon.html' with text="Сколько РАЗНЫХ игроков оценено хотя бы раз за всё время" %}
-                </div>
+            <div class="stat relative bg-base-100 border border-base-300 p-4">
+                <div class="absolute top-2 right-2 z-10">{% include 'components/_tooltip_icon.html' with text="Сколько РАЗНЫХ игроков оценено хотя бы раз за всё время" %}</div>
+                <div class="stat-title text-xs whitespace-normal leading-snug pr-4">Игроков</div>
                 <div class="stat-value text-2xl">{{ stats.total_players }}</div>
             </div>
-            <div class="stat bg-base-100 border border-base-300 p-4">
-                <div class="stat-title text-xs inline-flex items-center gap-1">
-                    Матчей
-                    {% include 'components/_tooltip_icon.html' with text="Сколько матчей оценено полностью — вайзард оценки пройден до конца" %}
-                </div>
+            <div class="stat relative bg-base-100 border border-base-300 p-4">
+                <div class="absolute top-2 right-2 z-10">{% include 'components/_tooltip_icon.html' with text="Сколько матчей оценено полностью — вайзард оценки пройден до конца" %}</div>
+                <div class="stat-title text-xs whitespace-normal leading-snug pr-4">Матчей</div>
                 <div class="stat-value text-2xl">{{ stats.total_matches }}</div>
             </div>
-            <div class="stat bg-base-100 border border-base-300 p-4">
-                <div class="stat-title text-xs inline-flex items-center gap-1">
-                    Серия
-                    {% include 'components/_tooltip_icon.html' with text="Сколько туров чемпионата подряд оценён хотя бы один матч — пропущенный тур сбрасывает серию" %}
-                </div>
+            <div class="stat relative bg-base-100 border border-base-300 p-4">
+                <div class="absolute top-2 right-2 z-10">{% include 'components/_tooltip_icon.html' with text="Сколько туров чемпионата подряд оценён хотя бы один матч — пропущенный тур сбрасывает серию" %}</div>
+                <div class="stat-title text-xs whitespace-normal leading-snug pr-4">Серия</div>
                 <div class="stat-value text-2xl text-accent">{{ stats.evaluation_streak }}</div>
             </div>
         </div>

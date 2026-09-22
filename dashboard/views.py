@@ -24,9 +24,9 @@ from parsers.models import ParserDiscrepancy
 from parsers.sportmonks.client import get_request_counts
 from users.models import SuspiciousActivityFlag
 
-from . import infra_services, parser_tools, services
+from . import command_runner, commands_registry, infra_services, parser_tools, services
 from .audit import log_staff_action
-from .models import AuditAction, StaffActionLog
+from .models import AuditAction, ManagementCommandRun, StaffActionLog
 
 # Пресеты диапазона для overview — используются и во вьюхе, и в шаблоне
 # (кнопки переключения), единый источник правды на оба конца.
@@ -423,6 +423,73 @@ def parser_revoke_task(request, task_id):
         target=task_id, details={"success": success, "message": message, "terminate": terminate},
     )
     return redirect("dashboard:parser_tools")
+
+
+# ============================================================
+# "Скрипты и команды" — management-команды из staff-панели
+# (2026-09-22, прямая просьба пользователя: seed_full_history с
+# настройками + очистка/удаление + все тестовые скрипты в один раздел).
+# См. dashboard/commands_registry.py (allowlist + схема аргументов) и
+# dashboard/command_runner.py (валидация + запуск, sync для readonly-
+# диагностики, через Celery — для остального).
+# ============================================================
+
+@staff_member_required
+def scripts_view(request):
+    """Главная страница раздела — карточки по категориям (сидирование,
+    очистка, пересчёт, диагностика) + история последних запусков."""
+    context = {
+        "page_title": "Скрипты и команды — DOPX Staff",
+        "active_tab": "scripts",
+        "command_categories": commands_registry.categories(),
+        "recent_runs": ManagementCommandRun.objects.select_related("triggered_by")[:30],
+    }
+    return render(request, "dashboard/scripts.html", context)
+
+
+@staff_member_required
+def scripts_runs_partial(request):
+    """Таблица последних запусков — цель HTMX-поллинга (hx-get каждые 4с),
+    тот же приём, что и «Очередь celery» на странице parser_tools (см.
+    parser_tasks_partial выше) — обновляет статус PENDING/RUNNING → SUCCESS/
+    FAILED без перезагрузки всей страницы и без потери заполненных форм."""
+    context = {"recent_runs": ManagementCommandRun.objects.select_related("triggered_by")[:30]}
+    return render(request, "dashboard/_scripts_runs_table.html", context)
+
+
+@staff_member_required
+@require_POST
+def scripts_trigger(request):
+    """Запуск одной команды из allowlist'а COMMAND_REGISTRY. `apply`
+    приходит отдельным чекбоксом формы — команды с has_apply_flag=True без
+    него всегда делают dry-run (см. докстринг CommandSpec.danger в
+    commands_registry.py). cleanup_load_test — единственная команда без
+    своего --apply вообще, поэтому для неё форма требует вписать имя
+    команды текстом (сверяем здесь, а не полагаемся только на JS)."""
+    command_name = request.POST.get("command_name", "")
+    spec = commands_registry.get_command(command_name)
+    if spec is None:
+        messages.error(request, f"Неизвестная команда: {command_name}")
+        return redirect("dashboard:scripts")
+
+    if spec.name == "cleanup_load_test":
+        confirm_text = request.POST.get("confirm_text", "").strip()
+        if confirm_text != spec.name:
+            messages.error(
+                request,
+                f"Для «{spec.label}» нужно вписать имя команды («{spec.name}») в поле подтверждения — не совпало.",
+            )
+            return redirect("dashboard:scripts")
+
+    apply = request.POST.get("apply") == "on"
+    success, message, run = command_runner.trigger_command(request, command_name, apply=apply)
+    (messages.success if success else messages.warning)(request, message)
+    log_staff_action(
+        request, AuditAction.MANAGEMENT_COMMAND_TRIGGERED,
+        target=command_name,
+        details={"success": success, "message": message, "apply": apply, "run_id": str(run.id) if run else None},
+    )
+    return redirect("dashboard:scripts")
 
 
 # Единая staff-страница по всей партнёрской монетизации: embed-виджеты

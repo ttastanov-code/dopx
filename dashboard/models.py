@@ -13,6 +13,8 @@ StaffActionLog закрывает именно этот пробел. См. dash
 """
 from __future__ import annotations
 
+import uuid
+
 from django.conf import settings
 from django.db import models
 from django.utils.translation import gettext_lazy as _
@@ -35,6 +37,11 @@ class AuditAction(models.TextChoices):
     # dashboard/views.py::data_trust_discrepancy_review.
     DATA_ERROR_REPORT_RESOLVED = "data_error_report_resolved", _("Жалоба на данные матча закрыта")
     PARSER_DISCREPANCY_REVIEWED = "parser_discrepancy_reviewed", _("Расхождение импорта разобрано")
+    # НОВОЕ (2026-09-22, прямая просьба пользователя: "seed_full_history
+    # надо вывести в дашборд... все наши тестовые скрипты и команды в
+    # отдельный раздел") — см. dashboard/commands_registry.py,
+    # dashboard/command_runner.py, ManagementCommandRun ниже.
+    MANAGEMENT_COMMAND_TRIGGERED = "management_command_triggered", _("Запуск management-команды из дашборда")
 
     # 2026-09-09: RAW_KFF_LOOKUP/KFF_HEALTH_CHECK удалены вместе со всем
     # KFF-парсером (по решению пользователя). STADIUM_MARKED_REVIEWED
@@ -80,3 +87,60 @@ class StaffActionLog(models.Model):
 
     def __str__(self) -> str:
         return f"{self.actor_username or 'system'} · {self.action} · {self.created_at:%Y-%m-%d %H:%M}"
+
+
+class ManagementCommandRun(models.Model):
+    """Один запуск management-команды из раздела "Скрипты и команды"
+    (dashboard/commands_registry.py — allowlist команд + их аргументов,
+    dashboard/command_runner.py — сборка call_command()/запуск,
+    dashboard/tasks.py::run_management_command — сам Celery-таск).
+
+    Асинхронное выполнение (а не синхронный call_command() прямо во view) —
+    принципиально: seed_full_history на пару туров истории может идти
+    минуты, HTTP-запрос staff-панели не должен висеть всё это время (и
+    упадёт по таймауту прокси/gunicorn раньше, чем команда реально
+    закончит). Строка создаётся статусом PENDING синхронно (staff сразу
+    видит её в истории), сам вызов исполняется воркером, а страница
+    поллит статус через scripts_run_status_partial (тот же приём, что
+    celery-задачи парсера — dashboard/_celery_tasks_card.html).
+
+    `stdout`/`stderr` — реальный вывод call_command(..., stdout=StringIO(),
+    stderr=StringIO()) — большинство наших команд печатают отчёт (сколько
+    записей создано/удалено/пропущено) именно туда, это и есть "результат"
+    для staff, не только факт success/failure."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", _("В очереди")
+        RUNNING = "running", _("Выполняется")
+        SUCCESS = "success", _("Успешно")
+        FAILED = "failed", _("Ошибка")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    command_name = models.CharField(_("Команда"), max_length=100, db_index=True)
+    # Аргументы, с которыми запущена команда — снимок того, что реально
+    # ушло в call_command() (уже провалидированное/приведённое к типам
+    # dashboard/commands_registry.py, а не сырой request.POST).
+    args = models.JSONField(_("Аргументы"), default=dict, blank=True)
+    status = models.CharField(_("Статус"), max_length=10, choices=Status.choices, default=Status.PENDING, db_index=True)
+    stdout = models.TextField(_("Вывод"), blank=True)
+    stderr = models.TextField(_("Ошибки"), blank=True)
+    triggered_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="management_command_runs", verbose_name=_("Кто запустил"),
+    )
+    triggered_by_username = models.CharField(_("Логин (снимок)"), max_length=150, blank=True)
+    created_at = models.DateTimeField(_("Поставлена"), auto_now_add=True, db_index=True)
+    started_at = models.DateTimeField(_("Начата"), null=True, blank=True)
+    finished_at = models.DateTimeField(_("Завершена"), null=True, blank=True)
+    celery_task_id = models.CharField(_("ID celery-задачи"), max_length=255, blank=True)
+
+    class Meta:
+        verbose_name = _("Запуск management-команды")
+        verbose_name_plural = _("Запуски management-команд")
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["command_name", "created_at"], name="cmd_run_name_time_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.command_name} · {self.get_status_display()} · {self.created_at:%Y-%m-%d %H:%M}"

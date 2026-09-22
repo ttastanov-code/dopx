@@ -122,23 +122,49 @@
                 </div>
                 
                 <!-- Общая статистика -->
+                {% comment %}
+                БАГ, КОТОРЫЙ ТУТ БЫЛ, ВЕРСИЯ 2 (2026-09-22): предыдущий фикс
+                (whitespace-normal + flex-wrap прямо в потоке текста
+                заголовка) убрал overflow за край карточки, но не саму
+                кривизну — при переносе "Рейтинг выступления" на две строки
+                иконке банально не хватало места и на второй строке, она
+                падала на СВОЮ, третью, строку — снова разнобой, только
+                теперь без overflow.
+
+                Корневая ошибка была в самом ПОДХОДЕ: иконка была частью
+                одного текстового потока с заголовком переменной длины —
+                любая раскладка внутри потока (flex, inline, что угодно)
+                при достаточно длинном/переносящемся заголовке рано или
+                поздно вытолкнет иконку в неудобное место. Правильное
+                решение — вообще вынести иконку ИЗ потока текста: теперь
+                она абсолютно спозиционирована в фиксированном углу
+                карточки (position: absolute, top-2 right-2 у самой
+                .stat), а не идёт следом за заголовком. Заголовок при этом
+                свободно переносится на сколько угодно строк — иконку это
+                больше никак не касается, её позиция не зависит от длины
+                текста вообще. `pr-4` у заголовка — чтобы длинный текст не
+                подтекал ПОД иконку в углу.
+                {% endcomment %}
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div class="stat bg-base-200 rounded-lg p-3">
                         <div class="stat-title text-xs">Матчей</div>
                         <div class="stat-value text-xl">{{ stats.total_matches }}</div>
                     </div>
-                    <div class="stat bg-base-200 rounded-lg p-3">
-                        <div class="stat-title text-xs flex items-center gap-1">Рейтинг выступления{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.player.performance_score %}</div>
+                    <div class="stat relative bg-base-200 rounded-lg p-3">
+                        <div class="absolute top-2 right-2 z-10">{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.player.performance_score %}</div>
+                        <div class="stat-title text-xs whitespace-normal leading-snug pr-4">Рейтинг выступления</div>
                         <div class="stat-value text-xl text-success">
                             {% if stats.total_votes|has_enough_votes %}{{ stats.avg_performance|default_if_none:"—" }}{% else %}н/д{% endif %}
                         </div>
                     </div>
-                    <div class="stat bg-base-200 rounded-lg p-3">
-                        <div class="stat-title text-xs flex items-center gap-1">Индекс риска{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.player.risk %}</div>
+                    <div class="stat relative bg-base-200 rounded-lg p-3">
+                        <div class="absolute top-2 right-2 z-10">{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.player.risk %}</div>
+                        <div class="stat-title text-xs whitespace-normal leading-snug pr-4">Индекс риска</div>
                         <div class="stat-value text-xl text-error">{{ stats.avg_risk|default_if_none:"—" }}</div>
                     </div>
-                    <div class="stat bg-base-200 rounded-lg p-3">
-                        <div class="stat-title text-xs flex items-center gap-1">Индекс зрелости{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.player.maturity_score %}</div>
+                    <div class="stat relative bg-base-200 rounded-lg p-3">
+                        <div class="absolute top-2 right-2 z-10">{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.player.maturity_score %}</div>
+                        <div class="stat-title text-xs whitespace-normal leading-snug pr-4">Индекс зрелости</div>
                         <div class="stat-value text-xl text-info">{{ stats.avg_maturity|default_if_none:"—" }}</div>
                     </div>
                 </div>
