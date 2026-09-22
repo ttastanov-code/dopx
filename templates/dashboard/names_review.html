@@ -20,9 +20,9 @@ Player/Referee/Coach — см. dashboard/views.py::names_review_action.
             <i class="ti ti-sparkles text-primary"></i> Проверка ФИО (ИИ)
         </h3>
         <p class="text-xs opacity-60">
-            Механическая транслитерация иногда угадывает написание неверно (пример: "Сергий Малий" вместо "Сергий Малый").
-            Команда «Проверить ФИО через Gemini» (раздел «Скрипты и команды») находит такие записи и спрашивает у Gemini API
-            реальное написание через веб-поиск. Ничего не применяется автоматически — только здесь, после вашего подтверждения.
+            Механическая транслитерация иногда угадывает написание ФИО неверно. Команда «Проверить ФИО через Gemini»
+            (раздел «Скрипты и команды») находит такие записи и спрашивает у Gemini API реальное написание через
+            веб-поиск. Ничего не применяется автоматически — только здесь, после вашего подтверждения.
         </p>
         {% if not gemini_configured %}
         {% comment %}
@@ -46,9 +46,25 @@ Player/Referee/Coach — см. dashboard/views.py::names_review_action.
 
 <div class="card bg-base-100 border border-base-300 mb-4">
     <div class="card-body p-4">
-        <h4 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
+        <h4 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2 flex-wrap">
             <i class="ti ti-inbox text-warning"></i> Ждут проверки
             <span class="badge badge-warning badge-sm">{{ pending_suggestions|length }}</span>
+            {% if matches_count > 0 %}
+            {% comment %}
+            2026-09-22, прямая просьба пользователя: массовое "Подтвердить
+            все" — но ТОЛЬКО для карточек, где сам Gemini написал
+            matches_current=True (менять нечего, это просто подтверждение
+            уже верного написания). Настоящие предложения ИЗМЕНИТЬ имя
+            под эту кнопку не попадают — по одной, как и раньше.
+            {% endcomment %}
+            <form method="post" action="{% url 'dashboard:names_review_bulk_confirm_matches' %}" class="ml-auto"
+                  onsubmit="return confirm('Подтвердить все {{ matches_count }} карточки, где Gemini написал «текущее написание верно»? Реальные предложения изменить ФИО это не затронет.');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-success btn-outline btn-xs">
+                    <i class="ti ti-checks"></i> Подтвердить все совпадающие ({{ matches_count }})
+                </button>
+            </form>
+            {% endif %}
         </h4>
 
         {% if pending_suggestions %}
@@ -98,9 +114,19 @@ Player/Referee/Coach — см. dashboard/views.py::names_review_action.
     <div class="card-body p-4">
         <h4 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
             <i class="ti ti-alert-triangle text-error"></i> Ошибки запроса к Gemini
-            <span class="badge badge-error badge-sm">{{ failed_suggestions|length }}</span>
+            {% comment %}
+            2026-09-22: бейдж раньше считал len(failed_suggestions), а
+            список в контексте обрезан [:20] — цифра занижалась при
+            больших прогонах. failed_count — честный total .count() до
+            среза, см. dashboard/views.py::names_review.
+            {% endcomment %}
+            <span class="badge badge-error badge-sm">{{ failed_count }}</span>
         </h4>
-        <p class="text-xs opacity-60 mb-3">Технический сбой вызова (не путать с "Gemini не нашёл человека" — это отдельный, честный результат с низкой уверенностью в очереди выше). Отклоните, чтобы не мешали — запись попадёт под повторную проверку при следующем прогоне с <span class="font-mono">--recheck</span>.</p>
+        <p class="text-xs opacity-60 mb-3">
+            Технический сбой вызова (не путать с "Gemini не нашёл человека" — это отдельный, честный результат с низкой уверенностью в очереди выше).
+            {% if failed_count > failed_suggestions|length %}Показаны последние {{ failed_suggestions|length }} из {{ failed_count }} — скрывайте по очереди, остальные появятся.{% endif %}
+            «Скрыть» удаляет запись об ошибке — сущность сама попадёт под проверку при следующем ОБЫЧНОМ прогоне, <span class="font-mono">--recheck</span> для этого не нужен (он заново тратит вызовы и на уже одобренные/отклонённые записи).
+        </p>
         <div class="space-y-2">
             {% for s in failed_suggestions %}
             <div class="flex items-center justify-between gap-3 border border-base-300 rounded-lg p-2 text-xs">

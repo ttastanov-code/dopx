@@ -106,7 +106,19 @@ def verify_name(
         data = response.json()
     except requests.RequestException as exc:
         logger.error("Gemini: запрос не удался (%s %r %r): %s", entity_label, first_name, last_name, exc)
-        return NameVerificationResult(ok=False, error=f"{type(exc).__name__}: {exc}")
+        # 2026-09-22: для 429/4xx/5xx достаём тело ответа — там у Gemini
+        # обычно лежит status ("RESOURCE_EXHAUSTED" и т.п.) и quotaMetric,
+        # по которому видно, упёрлись в per-minute или per-day лимит
+        # (просто "429 Too Many Requests" из str(exc) этого не говорит —
+        # снаружи неотличимо, увеличивать --delay бесполезно или нет).
+        detail = ""
+        response = getattr(exc, "response", None)
+        if response is not None:
+            try:
+                detail = f" | body: {response.text[:500]}"
+            except Exception:
+                pass
+        return NameVerificationResult(ok=False, error=f"{type(exc).__name__}: {exc}{detail}")
     except ValueError as exc:  # response.json() — невалидный JSON от сервера
         logger.error("Gemini: невалидный JSON в HTTP-ответе (%s %r %r): %s", entity_label, first_name, last_name, exc)
         return NameVerificationResult(ok=False, error=f"невалидный JSON HTTP-ответа: {exc}")

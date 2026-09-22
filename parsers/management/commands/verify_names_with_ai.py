@@ -72,7 +72,7 @@ class Command(BaseCommand):
             "--entity", choices=["player", "referee", "coach"], default=None,
             help="Ограничиться одним типом сущности. По умолчанию — все три.",
         )
-        parser.add_argument("--limit", type=int, default=20, help="Максимум вызовов Gemini за один запуск (по умолчанию 20 — бережём бесплатный лимит).")
+        parser.add_argument("--limit", type=int, default=20, help="Максимум вызовов Gemini за один запуск (по умолчанию 20 — бережём бесплатный лимит). 0 — без ограничения (для разового прогона по всей базе через --all).")
         parser.add_argument("--delay", type=float, default=4.0, help="Пауза в секундах между вызовами Gemini (по умолчанию 4с).")
         parser.add_argument("--recheck", action="store_true", help="Не пропускать записи, у которых уже есть предложение (любого статуса).")
         parser.add_argument("--dry-run", action="store_true", help="Только показать, кого бы проверили, не тратя вызовы Gemini.")
@@ -86,7 +86,13 @@ class Command(BaseCommand):
             return
 
         entities = [options["entity"]] if options["entity"] else list(_ENTITY_CONFIG.keys())
-        limit = options["limit"]
+        # 2026-09-22: --limit 0 (или отрицательный) — "без ограничения", не
+        # "ноль вызовов". Раньше `checked >= limit` при limit=0 обрывало
+        # прогон СРАЗУ на первой же итерации (0 >= 0 — True), и --all
+        # --limit 0 молча проверял 0 записей вместо ожидаемого "прогнать
+        # всю базу" — ровно та ситуация, для которой --all и придумывался.
+        # float('inf') с int'ом сравнивается нормально, просто снимает cap.
+        limit = options["limit"] if options["limit"] > 0 else float("inf")
         delay = options["delay"]
         recheck = options["recheck"]
         sweep_all = options["all"]
@@ -108,8 +114,19 @@ class Command(BaseCommand):
                 qs = qs.filter(name_source=NAME_SOURCE_GUESSED_TRANSLITERATION)
 
             if not recheck:
+                # 2026-09-22: check_failed — ТЕХНИЧЕСКИЙ сбой (429/сеть/
+                # невалидный JSON), не настоящий ответ Gemini — не считаем
+                # его "уже проверено". Раньше exclude() здесь не было, и
+                # запись с 429 навсегда пропадала из обычных прогонов —
+                # единственный способ перепроверить был --recheck, который
+                # заново дёргает Gemini ВООБЩЕ по всем (включая уже
+                # успешно подтверждённые/отклонённые), зря тратя дневной
+                # лимит. Теперь упавшие сами попадают в следующий обычный
+                # прогон, а pending_review/approved/rejected — реальные
+                # исходы, их по-прежнему не трогаем без --recheck.
                 already_suggested_ids = set(
                     NameVerificationSuggestion.objects.filter(content_type=content_type)
+                    .exclude(status="check_failed")
                     .values_list("object_id", flat=True)
                 )
                 # object_id хранится как str (CharField) — сравниваем по str(id).
