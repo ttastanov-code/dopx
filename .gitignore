@@ -66,8 +66,16 @@ scripts/verify_reports/
 # Type checking
 .mypy_cache/
 
-# Logs — игнорируем только .log файлы, но сохраняем директорию через .gitkeep
-logs/*.log
+# Logs — игнорируем директорию целиком (сохраняем только .gitkeep).
+# ИСПРАВЛЕНО (2026-09-23, пользователь поймал на "git checkout main"
+# отказ "your local changes to logs/celery.log.1 would be overwritten"):
+# старый паттерн `logs/*.log` ловил только файлы, ЗАКАНЧИВАЮЩИЕСЯ на
+# .log — но логротация (см. logging.handlers.RotatingFileHandler в
+# dopx/settings.py) переименовывает старые файлы в celery.log.1,
+# celery.log.2 и т.д. (суффикс — число, не .log), которые под паттерн
+# не подпадали и поэтому раньше по ошибке закоммитились. `logs/*` ловит
+# все файлы в каталоге без исключений (и .log, и ротированные .log.N).
+logs/*
 !logs/.gitkeep
 
 # Node — только для сборки static/css/app.css (Tailwind v4 + daisyUI), см.
