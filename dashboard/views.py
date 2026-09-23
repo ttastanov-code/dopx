@@ -12,6 +12,7 @@ import csv
 from django.contrib import messages
 from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib.auth import get_user_model
+from django.contrib.auth.decorators import user_passes_test
 from django.core.paginator import Paginator
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -665,6 +666,11 @@ def parser_tools_view(request):
         # пользователем: "вообще не сходится кол-во запросов", см.
         # parsers/sportmonks/client.py::get_request_counts докстринг).
         "sportmonks_request_counts": get_request_counts(),
+        # Рубильник синка (2026-09-23) — читаем через тот же get_setting(),
+        # что и сама задача-гейт, чтобы карточка на странице ВСЕГДА
+        # показывала то же значение, что реально видят celery-задачи (а не
+        # отдельный прямой ORM-запрос, который мог бы разойтись с кэшем).
+        "sportmonks_sync_enabled": get_setting("sportmonks_sync_enabled", True),
     }
     return render(request, "dashboard/parser_tools.html", context)
 
@@ -718,6 +724,68 @@ def parser_sportmonks_health_check(request):
         messages.success(request, f"Sportmonks API доступен: {result['status']} ({result['elapsed_ms']}мс)")
     else:
         messages.error(request, f"Sportmonks API недоступен: {result['status']} ({result['elapsed_ms']}мс)")
+    return redirect("dashboard:parser_tools")
+
+
+SPORTMONKS_SYNC_ENABLED_KEY = "sportmonks_sync_enabled"
+
+
+@staff_member_required
+@user_passes_test(lambda u: u.is_superuser)
+@require_POST
+def sportmonks_sync_toggle(request):
+    """Рубильник синка с Sportmonks (2026-09-23, прямая просьба пользователя:
+    "у меня закончилась пробная подписка на sportmonks. Сыпятся ошибки...
+    можем сделать кнопку которая включает и выключает парсер? без
+    перезагрузки сервисов и тд?").
+
+    Только is_superuser (не просто staff) — это способен полностью
+    остановить обновление данных на всём сайте, а не точечное действие.
+
+    Механизм — обычный PlatformSetting (bool), читаемый функцией
+    parsers/sportmonks/tasks.py::_sync_enabled() первой строкой в КАЖДОЙ из
+    6 задач синка (live-опрос, до-синк статистики, составы, календарь,
+    травмы/дисквалификации, health-check). Без перезапуска воркеров/beat:
+    тикер Celery Beat продолжает срабатывать по расписанию как раньше, но
+    тело задачи сразу выходит, не делая ни одного запроса к API — то же
+    60-секундное кэширование, что у всех остальных настроек платформы (см.
+    core.models.get_setting), так что выключение применяется практически
+    сразу, а не мгновенно в течение секунды.
+
+    НЕ трогает: sportmonks_sync_coach_activity (не ходит в API, чистая
+    гигиена локальной БД) и ручную кнопку "Проверить доступность" в
+    parser_tools.py (осознанная диагностика должна работать всегда, в т.ч.
+    чтобы понять, что пора включать синк обратно)."""
+    setting, created = PlatformSetting.objects.get_or_create(
+        key=SPORTMONKS_SYNC_ENABLED_KEY,
+        defaults={
+            "value": "true",
+            "value_type": PlatformSetting.TYPE_BOOL,
+            "description": "Главный рубильник синка с Sportmonks API (все 6 celery-задач). "
+                            "Выключите, если кончилась подписка/квота — синк встанет на паузу "
+                            "без перезапуска сервисов, задачи продолжат тикать по расписанию, "
+                            "но не будут дёргать API.",
+            "updated_by": request.user,
+        },
+    )
+    was_enabled = True if created else setting.typed_value()
+    new_value = not was_enabled
+    setting.value = "true" if new_value else "false"
+    setting.value_type = PlatformSetting.TYPE_BOOL
+    setting.updated_by = request.user
+    setting.save(update_fields=["value", "value_type", "updated_by", "updated_at"])
+
+    from django.core.cache import cache
+    cache.delete(f"platform_setting:{SPORTMONKS_SYNC_ENABLED_KEY}")
+
+    if new_value:
+        messages.success(request, "Синк с Sportmonks включён — задачи возобновят обращения к API в течение минуты")
+    else:
+        messages.warning(request, "Синк с Sportmonks выключен — задачи будут пропускаться без обращений к API")
+    log_staff_action(
+        request, AuditAction.SPORTMONKS_SYNC_TOGGLED,
+        target="Sportmonks", details={"before": was_enabled, "after": new_value},
+    )
     return redirect("dashboard:parser_tools")
 
 

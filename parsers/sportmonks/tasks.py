@@ -75,6 +75,26 @@ LIVE_POLL_OVERLAP_LOCK_TIMEOUT_SECONDS = 30
 UPCOMING_WINDOW = timedelta(hours=3)
 
 
+# 2026-09-23, прямая просьба пользователя: закончилась пробная подписка
+# Sportmonks, каждая задача рубится об это ошибкой в логах — нужен способ
+# временно выключить весь синк БЕЗ рестарта Celery Beat/воркеров (просто
+# правка в БД, которую видно в дашборде). Celery Beat продолжает тикать по
+# расписанию как обычно — задачи физически не отменить без перезапуска
+# процесса, поэтому флаг проверяется ВНУТРИ каждой задачи, до первого
+# обращения к API: тик происходит, но тело задачи сразу возвращается,
+# не тратя ни одного запроса к Sportmonks. См. dashboard/views.py::
+# sportmonks_sync_toggle — кнопка суперпользователя на странице «Парсер».
+def _sync_enabled() -> bool:
+    """PlatformSetting("sportmonks_sync_enabled", default True) — общий
+    механизм core.models.get_setting, тот же 60-секундный кэш, что и у
+    остальных настроек платформы: включение/выключение применяется в
+    течение минуты, не мгновенно (следующий тик Celery Beat уже увидит
+    новое значение, текущий — при промахе кэша тоже увидит сразу)."""
+    from core.models import get_setting
+
+    return bool(get_setting("sportmonks_sync_enabled", True))
+
+
 def _record_sync_run(task_name: str, started_at, total: int = 0, updated: int = 0, unchanged: int = 0, errors: int = 0) -> None:
     """Пишет ParserSyncRun(source='sportmonks') — та же таблица, что и у
     KFF (parsers/tasks.py::update_match_statuses), теперь с полем `source`
@@ -173,6 +193,9 @@ def _sportmonks_update_live_impl(self):
     — не ждём суточного сведения. Не расходует лимит зря: таких матчей в
     любой момент времени — считаные единицы (одновременно идущих + только
     что завершившихся с прошлого тика), а не весь календарь сезона."""
+    if not _sync_enabled():
+        logger.info("Sportmonks: синк выключен флагом sportmonks_sync_enabled — sportmonks_update_live пропущен")
+        return
     started_at = timezone.now()
     league, season = _get_league_and_season()
     if league is None or season is None:
@@ -396,6 +419,9 @@ def sportmonks_resync_recent_stats(self):
     sportmonks_sync_season выше) heavy-sync статистики матчей, завершившихся
     в последние STATS_RESYNC_WINDOW — см. её докстринг за полным разбором
     проблемы, которую эта задача чинит."""
+    if not _sync_enabled():
+        logger.info("Sportmonks: синк выключен флагом sportmonks_sync_enabled — sportmonks_resync_recent_stats пропущен")
+        return
     league, season = _get_league_and_season()
     if league is None or season is None:
         logger.debug("Sportmonks: нет активной лиги/сезона — sportmonks_resync_recent_stats пропущен")
@@ -438,6 +464,9 @@ def sportmonks_update_upcoming(self):
     (has_lineup=False). Дешёвая задача: обычно 0-6 матчей одновременно
     (максимум тура КПЛ), каждый — отдельный тяжёлый вызов, но не в цикле
     ЖИВОГО опроса (см. докстринг модуля)."""
+    if not _sync_enabled():
+        logger.info("Sportmonks: синк выключен флагом sportmonks_sync_enabled — sportmonks_update_upcoming пропущен")
+        return
     league, season = _get_league_and_season()
     if league is None or season is None:
         logger.debug("Sportmonks: нет активной лиги/сезона — sportmonks_update_upcoming пропущен")
@@ -490,6 +519,9 @@ def sportmonks_sync_season(self):
     докстринг и Season.save() — снимает is_active со старого сезона
     автоматически) и продолжаем сверку календаря уже для него, без
     ручного вмешательства."""
+    if not _sync_enabled():
+        logger.info("Sportmonks: синк выключен флагом sportmonks_sync_enabled — sportmonks_sync_season пропущен")
+        return
     league, season = _get_league_and_season()
     if league is None:
         logger.debug("Sportmonks: нет активной лиги — sportmonks_sync_season пропущен")
@@ -607,6 +639,9 @@ def sportmonks_sync_sidelined(self):
     расписание реально срабатывает, а не только кнопка "Обновить" в парсере
     — теперь каждый прогон (в т.ч. плановый ночной) виден на дашборде,
     как и у всех остальных Sportmonks-задач."""
+    if not _sync_enabled():
+        logger.info("Sportmonks: синк выключен флагом sportmonks_sync_enabled — sportmonks_sync_sidelined пропущен")
+        return
     started_at = timezone.now()
     league, season = _get_league_and_season()
     if league is None or season is None:
@@ -663,7 +698,18 @@ def sportmonks_health_check(self):
     видимости в staff-дашборде (не критично для работы, в отличие от
     health_check_kff_api у KFF — Sportmonks не банит по TLS-отпечатку, но
     полезно раньше заметить проблему с токеном/квотой, чем по жалобе
-    пользователя)."""
+    пользователя).
+
+    Это ПЛАНОВЫЙ (Celery Beat) health-check — гейтится флагом наравне со
+    всеми остальными задачами, чтобы не сыпать error-логами при намеренно
+    выключенном синке (например, кончилась пробная подписка). Отдельная от
+    неё ручная кнопка "Проверить доступность" на странице Парсер —
+    dashboard/parser_tools.py::sportmonks_api_health_check() — гейту НЕ
+    подчиняется: это осознанная ручная диагностика (в т.ч. чтобы понять,
+    пора ли уже включать синк обратно), она должна работать всегда."""
+    if not _sync_enabled():
+        logger.info("Sportmonks: синк выключен флагом sportmonks_sync_enabled — sportmonks_health_check пропущен")
+        return
     client = SportmonksClient()
     try:
         league_data = client.get_league()

@@ -57,6 +57,7 @@ urlpatterns = [
     path("parser/tasks/partial/", views.parser_tasks_partial, name="parser_tasks_partial"),
     path("parser/trigger/", views.parser_trigger_task, name="parser_trigger_task"),
     path("parser/sportmonks-health-check/", views.parser_sportmonks_health_check, name="parser_sportmonks_health_check"),
+    path("parser/sportmonks-sync-toggle/", views.sportmonks_sync_toggle, name="sportmonks_sync_toggle"),
     path("parser/tasks/<str:task_id>/revoke/", views.parser_revoke_task, name="parser_revoke_task"),
     path("scripts/", views.scripts_view, name="scripts"),
     path("scripts/runs/partial/", views.scripts_runs_partial, name="scripts_runs_partial"),
