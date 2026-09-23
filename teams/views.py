@@ -15,6 +15,7 @@ from matches.models import Match
 from aggregates.models import PlayerMatchAggregate, MatchAggregate, TeamMatchAggregate
 from lineups.models import MatchLineupPlayer
 from aggregates.services import MIN_VOTES_FOR_DISPLAY
+from aggregates.services import vote_weighted_avg
 from seasons.models import Season
 import logging
 
@@ -300,10 +301,10 @@ class TeamDetailView(DetailView):
         # TeamEvaluation, чтобы гейт MIN_VOTES_FOR_DISPLAY остался
         # осмысленным (число реальных оценок, а не число матчей).
         team_match_aggs = TeamMatchAggregate.objects.filter(team=team).aggregate(
-            avg_tactics=Avg('avg_tactics'),
-            avg_effort=Avg('avg_effort'),
-            avg_organization=Avg('avg_organization'),
-            avg_mentality=Avg('avg_mentality'),
+            avg_tactics=vote_weighted_avg('avg_tactics'),
+            avg_effort=vote_weighted_avg('avg_effort'),
+            avg_organization=vote_weighted_avg('avg_organization'),
+            avg_mentality=vote_weighted_avg('avg_mentality'),
             total=Sum('total_votes'),
         )
         team_evals = {
@@ -440,6 +441,13 @@ class TeamDetailView(DetailView):
             'page_title': f'{team.name} — DOPX',
         })
 
+        # 2026-09-23, честный аудит формул рейтингов — см. тот же
+        # комментарий в players/views.py::PlayerDetailView.
+        rating_correction = getattr(team, 'rating_correction', None)
+        if rating_correction is not None and abs(rating_correction.correction) < 0.01:
+            rating_correction = None
+        context['rating_correction'] = rating_correction
+
         # Готовая строка <iframe> для кнопки "Получить embed-код" — тот же
         # паттерн, что у players/views.py::PlayerDetailView.
         widget_url = self.request.build_absolute_uri(reverse('teams:widget', args=[team.id]))
@@ -473,7 +481,7 @@ def team_rating_widget(request, pk):
     team = get_object_or_404(Team, pk=pk)
 
     evals_stats = TeamMatchAggregate.objects.filter(team=team).aggregate(
-        avg_score=Avg('performance_score'), total_votes=Sum('total_votes'),
+        avg_score=vote_weighted_avg('performance_score'), total_votes=Sum('total_votes'),
     )
     total_votes = evals_stats['total_votes'] or 0
     has_enough_votes = total_votes >= MIN_VOTES_FOR_DISPLAY

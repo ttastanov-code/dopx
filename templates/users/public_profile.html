@@ -115,8 +115,18 @@ templates/users/public_profile.html
                 </h3>
                 <div class="flex flex-wrap gap-2">
                     {% for badge in badges %}
-                    {% tooltip_wrap badge.get_badge_type_display %}
-                    <div class="w-12 h-12 rounded-lg flex items-center justify-center border-2
+                    {% comment %}
+                    2026-09-23, фикс аудита: у 5 "статусных" бейджей
+                    (foresight/max_trust/stable_hand/accurate_analyst/
+                    bias_free) показатель мог упасть ниже порога после
+                    выдачи — badge.is_stale (см. UserBadge.is_stale,
+                    users/models.py). Сам бейдж не скрываем (это реальное
+                    историческое достижение), но визуально приглушаем и
+                    объясняем в тултипе, что он сейчас не актуален.
+                    {% endcomment %}
+                    {% tooltip_wrap badge.tooltip_text %}
+                    <div class="w-12 h-12 rounded-lg flex items-center justify-center border-2 relative
+                        {% if badge.is_stale %}opacity-40 grayscale{% endif %}
                         {% if badge.rarity == 'legendary' %}dopx-legendary-chip dopx-legendary-icon
                         {% elif badge.rarity == 'platinum' %}bg-info/10 border-info/40 text-info
                         {% elif badge.rarity == 'gold' %}bg-warning/10 border-warning/40 text-warning
@@ -124,6 +134,11 @@ templates/users/public_profile.html
                         {% elif badge.rarity == 'secret' %}bg-secondary/10 border-secondary/40 text-secondary
                         {% else %}bg-accent/10 border-accent/30 text-accent{% endif %}">
                         <i class="ti {% if badge.rarity == 'legendary' %}ti-crown{% elif badge.is_secret %}ti-eye-off{% else %}ti-medal{% endif %} text-xl"></i>
+                        {% if badge.is_stale %}
+                        <span class="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-base-300 border border-base-100 flex items-center justify-center">
+                            <i class="ti ti-clock-pause text-[10px]"></i>
+                        </span>
+                        {% endif %}
                     </div>
                     {% endtooltip_wrap %}
                     {% empty %}

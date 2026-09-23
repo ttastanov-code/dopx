@@ -78,16 +78,41 @@ from __future__ import annotations
 
 import logging
 import math
+import statistics
 import uuid
 from typing import Iterable
 
 from django.core.cache import cache
-from django.db.models import Avg, Q
+from django.db.models import Avg, ExpressionWrapper, F, FloatField, Q, Sum
+from django.db.models.functions import NullIf
 
 from evaluations.models import ContextEvaluation, PlayerEvaluation
 from users.models import User
 
 logger = logging.getLogger(__name__)
+
+
+def vote_weighted_avg(field: str, votes_field: str = "total_votes") -> ExpressionWrapper:
+    """Среднее по матчам С УЧЁТОМ ЧИСЛА ГОЛОСОВ в каждом матче:
+    Σ(значение × голосов) / Σ(голосов).
+
+    2026-09-24, аудит формул: раньше средние по сезону/карьере на страницах
+    игрока/команды/тренера/судьи считались как Avg() по матчам — матч, где
+    игрока оценили 5 человек, весил столько же, сколько матч с 200 оценками.
+    Один малочисленный (и легче накручиваемый) матч мог заметно сдвинуть
+    итоговую цифру. Для полей с префиксом (например,
+    "match_aggregates__performance_score") передавайте votes_field с тем
+    же префиксом. Матчи с 0 голосов в сумму не вносят вклада; если голосов
+    нет вообще — результат None (NullIf), как у обычного Avg по пустой выборке.
+
+    ВНИМАНИЕ: не объявляйте в том же .aggregate()/.annotate() алиас с именем
+    поля голосов (total_votes=Sum('total_votes')) ПЕРЕД вызовом этой функции —
+    Django начнёт резолвить 'total_votes' как тот агрегат и упадёт с
+    "Cannot compute Sum('total_votes'): 'total_votes' is an aggregate"."""
+    return ExpressionWrapper(
+        Sum(F(field) * F(votes_field), output_field=FloatField()) / NullIf(Sum(votes_field), 0),
+        output_field=FloatField(),
+    )
 
 FAN_BIAS_CACHE_TTL = 600  # секунд; fan-bias не меняется чаще, чем раз в 10 минут
 FAN_BIAS_MIN_HISTORY_MATCHES = 3
@@ -114,6 +139,19 @@ BIAS_CONTINUOUS_MAX_PENALTY = 0.5
 # compute_bias_profile).
 BIAS_LOW_VARIANCE_STDEV = 1.0
 BIAS_LOW_VARIANCE_MULTIPLIER = 1.25
+
+# 2026-09-23, честный аудит формул рейтингов: "bias-penalty никогда не
+# проверяется на реальность — self-calibration работает для vote_spike и
+# ip_cluster (за счёт confirm/dismiss модератора), но НЕ для градуированного
+# штрафа: он бьёт по весу голоса тихо, без очереди модерации, а значит и без
+# обратной связи". Штраф от этого порога и выше теперь ТАКЖЕ создаёт
+# SuspiciousActivityFlag(source="extreme_bias") — тот самый источник,
+# который годами был объявлен в SOURCE_CHOICES, но никогда не
+# использовался (см. users/models.py). Порог — заметная часть потолка
+# (0.2 из максимума 0.5-0.625), а не любое ненулевое значение: цель дать
+# модератору видимость и почву для будущей калибровки на РЕАЛЬНО спорных
+# случаях, а не завалить очередь каждым чуть тёплым фанатом.
+EXTREME_BIAS_FLAG_THRESHOLD = 0.2
 
 # --- Нейтральный якорь (apply_neutral_anchor) ---
 # Меньше этого числа нейтральных голосов — не доверяем нейтральному
@@ -175,8 +213,54 @@ def calculate_user_weight(
     if user.trust_score > 1.2:
         weight += 0.2
     if match is not None:
-        weight -= _graduated_bias_penalty(_bias_profile_cached(user, match))
+        profile = _bias_profile_cached(user, match)
+        penalty = _graduated_bias_penalty(profile)
+        weight -= penalty
+        # Порог видимости — калибруемый (см. users.tasks.
+        # ANTIFRAUD_CALIBRATED_THRESHOLDS["extreme_bias_flag_threshold"]),
+        # EXTREME_BIAS_FLAG_THRESHOLD — только запасное значение, пока
+        # калибровка ни разу не запускалась (та же схема, что и у
+        # vote_spike/ip_cluster в aggregates/tasks.py).
+        from users.tasks import get_antifraud_threshold
+        flag_threshold = get_antifraud_threshold("extreme_bias_flag_threshold", EXTREME_BIAS_FLAG_THRESHOLD)
+        if penalty >= flag_threshold:
+            _maybe_flag_extreme_bias(user, match, profile, penalty)
     return max(0.3, min(2.0, weight))
+
+
+def _maybe_flag_extreme_bias(user: User, match, profile: dict, penalty: float) -> None:
+    """
+    Создаёт SuspiciousActivityFlag(source="extreme_bias") при заметном
+    градуированном штрафе — см. EXTREME_BIAS_FLAG_THRESHOLD выше за полным
+    объяснением, зачем (была тихая, никак не видимая модератору мера).
+
+    Дедуп через get_or_create по (user, match, source) — build_user_weight_map
+    вызывает calculate_user_weight на каждый пересчёт (до 4 раз на один
+    матч: игроки/команды/тренеры/судьи считаются отдельными задачами), без
+    дедупа тут получился бы дубль флага на каждый тип сущности. get_or_create
+    также естественно не плодит новый флаг при КАЖДОМ суточном/ручном
+    пересчёте одного и того же уже прошедшего матча — только первый раз.
+    """
+    from users.models import SuspiciousActivityFlag
+
+    score = round(min(1.0, penalty / (BIAS_CONTINUOUS_MAX_PENALTY * BIAS_LOW_VARIANCE_MULTIPLIER)), 2)
+    _, created = SuspiciousActivityFlag.objects.get_or_create(
+        user=user, match=match, source="extreme_bias",
+        defaults={
+            "score": score,
+            "details": {
+                "mean_diff": round(profile["mean_diff"], 2) if profile.get("mean_diff") is not None else None,
+                "diff_stdev": round(profile["diff_stdev"], 2) if profile.get("diff_stdev") is not None else None,
+                "considered_matches": profile.get("considered"),
+                "weight_penalty": round(penalty, 3),
+            },
+        },
+    )
+    if created:
+        logger.info(
+            "extreme_bias flagged: user=%s match=%s mean_diff=%s penalty=%.3f score=%.2f",
+            user.username, match.id, profile.get("mean_diff"), penalty, score,
+        )
 
 
 def compute_bias_profile(
@@ -390,19 +474,64 @@ def winsorize_values(values: list[float], pct: float = 0.1, min_n: int = 10) -> 
         искренний резко негативный консенсус БОЛЬШИНСТВА (например, после
         реально провальной игры) — это не сговор, а сигнал, его глушить
         нельзя, обрезаются только хвосты.
-    :param min_n: при выборке меньше этого числа винзоризация не
-        применяется — на 3-5 голосах перцентили статистически бессмысленны,
-        единственная защита на этом объёме — вес пользователя.
+    :param min_n: при выборке меньше этого числа перцентильная винзоризация
+        не применяется — на 3-9 голосах перцентили статистически
+        бессмысленны (10% от 5 голосов — это 0.5 голоса). См.
+        `_clip_small_sample_outliers` — именно там выборки этого размера
+        получают СВОЮ защиту, не "вообще никакую".
     """
     n = len(values)
     if n < min_n:
-        return list(values)
+        return _clip_small_sample_outliers(values)
     sorted_values = sorted(values)
     lower_idx = min(int(math.floor(n * pct)), n - 1)
     upper_idx = max(int(math.ceil(n * (1 - pct))) - 1, lower_idx)
     upper_idx = min(upper_idx, n - 1)
     lower_bound = sorted_values[lower_idx]
     upper_bound = sorted_values[upper_idx]
+    return [min(max(v, lower_bound), upper_bound) for v in values]
+
+
+def _clip_small_sample_outliers(values: list[float], min_n: int = 3, mad_k: float = 2.5) -> list[float]:
+    """
+    Бэкстоп против выбросов на МАЛЫХ выборках (3-9 голосов), где
+    перцентильная винзоризация выше статистически бессмысленна.
+
+    ИСПРАВЛЕНО (2026-09-23, аудит формул: "у большинства игроков КПЛ вне
+    топ-матчей голосов меньше 10 — то есть как раз там, где выбросы/
+    накрутка опаснее всего, защиты не было вообще, кроме веса
+    пользователя — а вес ловит только ИЗВЕСТНЫХ предвзятых, не свежую
+    скоординированную волну"). Вместо перцентилей — клиппинг по медиане и
+    MAD (Median Absolute Deviation): значение, ушедшее дальше `mad_k`
+    "MAD-сигм" от медианы, подрезается до границы, как и в обычной
+    винзоризации (не выбрасывается, просто не может утянуть среднее в
+    одиночку). Медиана и MAD устойчивы к выбросам сами по себе (в отличие
+    от среднего и std_dev), поэтому работают уже на 3 голосах — тот же
+    метод (0.6745 — стандартный коэффициент для перевода MAD в
+    std-dev-эквивалент), что уже используется в
+    aggregates/tasks.py::detect_vote_velocity_anomalies_task для детекта
+    всплесков.
+
+    :param min_n: ниже этого объёма (1-2 голоса) любая статистическая
+        защита бессмысленна по определению — единственный рычаг остаётся
+        вес пользователя, как и было. Согласуется с общим порогом отображения
+        MIN_VOTES_FOR_DISPLAY (см. ниже) — на 1-2 голосах рейтинг ещё и не
+        показывается публично.
+    :param mad_k: намеренно мягче (шире), чем стандартные 3.5 из детектора
+        всплесков — там цель поймать флаг для модератора (можно быть
+        строже), здесь цель НЕ ИСКАЗИТЬ мнение маленькой честной группы,
+        а только не дать 1 голосу из 3-4 утянуть среднее в крайность.
+    """
+    n = len(values)
+    if n < min_n:
+        return list(values)
+    median = statistics.median(values)
+    mad = statistics.median([abs(v - median) for v in values])
+    if mad == 0:
+        return list(values)
+    scaled_mad = mad / 0.6745
+    lower_bound = median - mad_k * scaled_mad
+    upper_bound = median + mad_k * scaled_mad
     return [min(max(v, lower_bound), upper_bound) for v in values]
 
 

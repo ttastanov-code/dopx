@@ -52,25 +52,81 @@
                         матча/сборной. {% endcomment %}
                         <span class="inline-flex items-center rounded-full bg-base-300 px-2 py-0.5 text-xs leading-snug max-w-full">{{ flag.get_source_display }}</span>
                         <span class="badge badge-sm {% if flag.score >= 0.7 %}badge-error{% elif flag.score >= 0.4 %}badge-warning{% else %}badge-ghost{% endif %}">
-                            score {{ flag.score|floatformat:2 }}
+                            {{ flag.score_label }}
                         </span>
                         {% if flag.match %}<span class="text-xs opacity-50">· {{ flag.match }}</span>{% endif %}
                     </div>
                     {% with summary=flag.human_summary %}
+                    {% if summary.what_happened %}
+                    {% comment %}
+                    2026-09-23, жалоба "ничего не понятно — что произошло,
+                    почему сработало, что делать" — для сигналов расхождения
+                    с объективной статистикой текст разбит на 4 блока, а
+                    поправка берётся ТЕКУЩАЯ (flag.live_correction), та же,
+                    что видна на странице игрока/команды.
+                    {% endcomment %}
+                    <div class="text-sm mt-2 leading-snug space-y-2 max-w-3xl">
+                        <div><span class="font-semibold">Что произошло.</span> {{ summary.what_happened }}</div>
+                        <div class="opacity-80"><span class="font-semibold">Почему это подозрительно.</span> {{ summary.why }}</div>
+                        <div class="opacity-80"><span class="font-semibold">Что система уже сделала.</span> {{ summary.system_action }}</div>
+                        <div class="opacity-80"><span class="font-semibold">Что делать вам.</span> {{ summary.what_to_do }}</div>
+                    </div>
+                    {% else %}
                     <div class="text-sm mt-2 leading-snug">{{ summary.explanation }}</div>
                     <div class="text-xs opacity-60 mt-2 space-y-0.5">
                         <div><span class="font-semibold opacity-80">Отклонить:</span> {{ summary.dismiss_hint }}.</div>
                         <div><span class="font-semibold opacity-80">Подтвердить:</span> {{ summary.confirm_hint }}.</div>
                     </div>
+                    {% endif %}
                     {% endwith %}
                     {% if flag.details %}
                     <details class="mt-2">
-                        <summary class="text-[11px] opacity-40 cursor-pointer select-none">Технические детали</summary>
-                        <div class="text-[11px] opacity-50 mt-1 flex flex-wrap gap-x-3">
-                            {% for key, value in flag.details.items %}
-                            <span>{{ key }}: {{ value }}</span>
+                        {% comment %}
+                        2026-09-23, честный аудит формул: раньше здесь
+                        напрямую дампился flag.details.items (сырые ключи
+                        из кода вида "objective_z: 0.64" — жалоба
+                        пользователя "никто не поймет вообще"). Объяснение
+                        на человеческом языке — в flag.human_summary выше,
+                        этот блок остаётся вспомогательным для
+                        модератора-эксперта, но теперь тоже с понятными
+                        подписями (users/models.py::readable_details).
+                        {% endcomment %}
+                        <summary class="text-[11px] opacity-40 cursor-pointer select-none">Цифры и как считается</summary>
+                        {% comment %}
+                        2026-09-24, жалоба "текст насаживается друг на друга":
+                        значение было в одной строке с подписью и с shrink-0 —
+                        длинное текстовое значение ("оценки выше обычного,
+                        хотя...") не переносилось и залезало на соседнюю
+                        колонку. Теперь каждая пара — отдельная плашка:
+                        подпись сверху мелким, значение под ней, оба
+                        переносятся. 1 колонка на телефоне, 2 — с sm.
+                        {% endcomment %}
+                        <div class="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 max-w-3xl">
+                            {% for label, value in flag.readable_details %}
+                            <div class="min-w-0 rounded-md bg-base-100 px-2.5 py-1.5">
+                                <div class="text-[11px] leading-snug opacity-50 break-words">{{ label }}</div>
+                                <div class="text-sm font-medium leading-snug break-words">{{ value }}</div>
+                            </div>
                             {% endfor %}
                         </div>
+                        {% if flag.source == 'player_stats_divergence' %}
+                        <p class="text-xs opacity-60 mt-2 max-w-3xl leading-snug">
+                            <b>Как оценивается игра.</b> Основной источник — оценка игры по статистике матча (шкала 1–10, та же, что «по статистике» на сайте): она
+                            считается по десяткам метрик с учётом амплуа, включая отборы, перехваты, выносы и единоборства
+                            защитника. Если рейтинга не хватает, используется наша сумма баллов: гол +3, передача +2, ключевой
+                            пас +0.4, удар в створ +0.5, отбор/перехват +0.3, вынос +0.15, выигранное единоборство +0.1, сейв +0.4,
+                            ошибка, приведшая к удару, −1, карточки и фолы — минус. Игрока сравнивают только с ним же самим:
+                            до 5 последних матчей против его более ранних матчей. Сигнал срабатывает, когда игра ушла в одну
+                            сторону, а оценки болельщиков — в другую.
+                        </p>
+                        {% elif flag.source == 'stats_divergence' %}
+                        <p class="text-xs opacity-60 mt-2 max-w-3xl leading-snug">
+                            <b>Доля команды в игре</b> — какую часть показателей матча сделала эта команда (50% — поровну с соперником).
+                            Учитываются: удары в створ (вес ×2), опасные атаки (×1.5), все удары (×1), угловые и владение (×0.5).
+                            Сигнал срабатывает, когда команда явно давила или уступала, а оценки болельщиков пошли в
+                            противоположную сторону от её обычного уровня.
+                        </p>
+                        {% endif %}
                     </details>
                     {% endif %}
                     <div class="text-xs opacity-40 mt-1">{{ flag.created_at|timesince }} назад</div>

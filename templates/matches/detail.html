@@ -317,6 +317,12 @@ match-detail.css): hero-баннер для шапки, timeline для собы
                                 <span class="pointer-events-none">{{ agg.performance_score|floatformat:1 }}</span>{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.aggregate.performance_score %}
                             </div>
                             <div class="text-[10px] md:text-xs opacity-60 hidden sm:block pointer-events-none">{{ agg.total_votes }} оценок</div>
+                            {% if agg.stat_rating %}
+                            {% comment %}2026-09-24: оценка по статистике матча (matches/stat_ratings.py) — независимый ориентир рядом с оценкой трибун.{% endcomment %}
+                            <div class="text-[10px] md:text-xs opacity-70 pointer-events-none whitespace-nowrap">
+                                <i class="ti ti-chart-bar"></i> по статистике <b>{{ agg.stat_rating|floatformat:1 }}</b>
+                            </div>
+                            {% endif %}
                             <div class="mt-0.5">{% confidence_badge agg %}</div>
                         </div>
                     </div>

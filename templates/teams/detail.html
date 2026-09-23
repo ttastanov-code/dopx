@@ -2,6 +2,7 @@
 {% load static rating_extras %}
 {% load match_extras %}
 {% load position_extras %}
+{% load tooltip_tags %}
 {% load l10n %}
 {% block content %}
 <!-- === НАВИГАЦИЯ === -->
@@ -610,6 +611,24 @@ text-anchor="end", подпись растёт влево от фиксиров�
         </div>
         <div class="text-center mt-4 pt-4 border-t border-base-300">
           <span class="text-xs opacity-60">Всего оценок: {{ team_evals.total }}</span>
+          {% comment %}
+          2026-09-23, честный аудит формул: TeamRatingCorrection —
+          единственный механизм, который САМ, без модератора, меняет уже
+          показанный итоговый рейтинг команды (performance_score, используется
+          в рейтингах/сравнениях) — см. players/detail.html за тем же
+          комментарием и teams/views.py::TeamDetailView.
+          {% endcomment %}
+          {% if rating_correction %}
+          <div class="mt-1.5">
+            {% tooltip_wrap rating_correction.public_explanation %}
+            <span class="badge badge-xs badge-ghost gap-1">
+              <i class="ti ti-shield-check text-[10px]"></i>
+              защита от накрутки {% if rating_correction.correction > 0 %}+{% endif %}{{ rating_correction.correction|floatformat:2 }}
+              <i class="ti ti-info-circle text-[10px] opacity-60"></i>
+            </span>
+            {% endtooltip_wrap %}
+          </div>
+          {% endif %}
         </div>
         {% else %}
         <div class="text-center py-6 opacity-60">

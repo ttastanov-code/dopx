@@ -10,17 +10,30 @@
         <i class="ti ti-trophy mr-2"></i>
         Рейтинг пользователей
     </h1>
-    <p class="opacity-60">Топ болельщиков по Trust Score</p>
+    <p class="opacity-60">
+        Топ болельщиков{% if selected_city %} города {{ selected_city }}{% endif %} —
+        {% for key, opt in sort_options.items %}{% if key == selected_sort %}срез «{{ opt.label }}»{% endif %}{% endfor %}
+    </p>
 </div>
 
 <!-- === TABS === -->
 <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
-    <div class="tabs tabs-boxed">
-        <a href="{% url 'users:leaderboard' %}" class="tab tab-active">
+    {% comment %}
+    2026-09-23, жалоба пользователя: "кнопки игроки и пользователи надо
+    сделать более видимыми" — daisyUI .tabs.tabs-boxed даёт слишком
+    ненавязчивый активный сегмент (тонкая подложка, почти не отличить от
+    неактивного на некоторых темах). Тот же сегментированный
+    пилюля-тумблер, что уже используется и проверен на components/
+    _season_scope_toggle.html (там была точно такая же жалоба про
+    "кнопку надо переделать нормально") — активный сегмент явно залит
+    primary-цветом, а не еле заметным оттенком фона.
+    {% endcomment %}
+    <div class="inline-flex items-center gap-1 p-1 rounded-lg bg-base-200 text-sm">
+        <a href="{% url 'users:leaderboard' %}" class="px-3 py-1.5 rounded-md font-medium transition-colors flex items-center gap-1.5 bg-primary text-primary-content shadow-sm">
             <i class="ti ti-users"></i>
             Пользователи
         </a>
-        <a href="{% url 'users:player_leaderboard' %}" class="tab">
+        <a href="{% url 'users:player_leaderboard' %}" class="px-3 py-1.5 rounded-md font-medium transition-colors flex items-center gap-1.5 opacity-60 hover:opacity-100">
             <i class="ti ti-play-football"></i>
             Игроки
         </a>
@@ -30,6 +43,7 @@
          ?city= читается в UserLeaderboardView.get_queryset(). -->
     {% if available_cities %}
     <form method="get" class="flex items-center gap-2">
+        {% if selected_sort != 'trust' %}<input type="hidden" name="sort" value="{{ selected_sort }}">{% endif %}
         <label class="text-sm opacity-60 hidden sm:inline" for="city-filter"><i class="ti ti-map-pin"></i></label>
         <select id="city-filter" name="city" class="select select-bordered select-sm" onchange="this.form.submit()">
             <option value="">Все города</option>
@@ -38,10 +52,26 @@
             {% endfor %}
         </select>
         {% if selected_city %}
-        <a href="{% url 'users:leaderboard' %}" class="btn btn-ghost btn-sm btn-circle" title="Сбросить фильтр"><i class="ti ti-x"></i></a>
+        <a href="{% url 'users:leaderboard' %}{% if selected_sort != 'trust' %}?sort={{ selected_sort }}{% endif %}" class="btn btn-ghost btn-sm btn-circle" title="Сбросить фильтр"><i class="ti ti-x"></i></a>
         {% endif %}
     </form>
     {% endif %}
+</div>
+
+{% comment %}
+2026-09-23, продуктовый запрос "больше срезов рейтинга" — переключатель
+между trust/active/streak (users/views.py::UserLeaderboardView.SORT_OPTIONS),
+тот же визуальный паттерн пилюль-сегментов, что и вкладки
+Пользователи/Игроки выше (уже проверенный фикс видимости).
+{% endcomment %}
+<div class="inline-flex items-center gap-1 p-1 rounded-lg bg-base-200 text-sm mb-6 flex-wrap">
+    {% for key, opt in sort_options.items %}
+    <a href="?sort={{ key }}{% if selected_city %}&city={{ selected_city }}{% endif %}"
+       class="px-3 py-1.5 rounded-md font-medium transition-colors flex items-center gap-1.5 {% if key == selected_sort %}bg-primary text-primary-content shadow-sm{% else %}opacity-60 hover:opacity-100{% endif %}">
+        <i class="ti {{ opt.icon }}"></i>
+        {{ opt.label }}
+    </a>
+    {% endfor %}
 </div>
 
 <!-- Раньше был max-w-md (448px) — узкая полоска над широкой таблицей
@@ -53,6 +83,79 @@
     {% render_banner "leaderboard" %}
 </div>
 
+{% comment %}
+2026-09-23, продуктовый запрос "визуальный редизайн карточек/таблицы" —
+подиум топ-3 карточками, только на 1-й странице (дальше это уже не топ-3,
+а обычные строки, ниже раскрытые полностью в таблице).
+{% endcomment %}
+{% if page_obj.number == 1 and users|length >= 3 %}
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+    {% for user in users|slice:":3" %}
+    <div class="card border {% if forloop.counter == 1 %}border-warning bg-warning/5 sm:order-2 sm:-mt-3{% elif forloop.counter == 2 %}border-base-300 bg-base-100 sm:order-1{% else %}border-base-300 bg-base-100 sm:order-3{% endif %}">
+        <div class="card-body items-center text-center py-6">
+            <span class="text-3xl mb-1">{% if forloop.counter == 1 %}🥇{% elif forloop.counter == 2 %}🥈{% else %}🥉{% endif %}</span>
+            <div class="avatar">
+                <div class="w-14 rounded-full">
+                    {% if user.avatar %}
+                    <img src="{{ user.avatar.url }}" alt="{{ user.username }}" />
+                    {% else %}
+                    <div class="w-full h-full bg-primary flex items-center justify-center text-primary-content font-bold text-xl">{{ user.username|first|upper }}</div>
+                    {% endif %}
+                </div>
+            </div>
+            <a href="{% url 'users:public_profile' user.username %}" class="font-semibold hover:text-primary transition-colors mt-1">{{ user.username }}</a>
+            {% if user.city %}<div class="text-xs opacity-60"><i class="ti ti-map-pin"></i> {{ user.city }}</div>{% endif %}
+            <div class="mt-2 flex items-center gap-3 text-sm">
+                <span class="font-bold text-lg">{{ user.trust_score|floatformat:2 }}</span>
+                <span class="opacity-50">·</span>
+                <span class="opacity-70">{{ user.eval_count }} оценок</span>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+{% comment %}
+2026-09-23, продуктовый запрос "своя позиция и соседи по рейтингу" —
+показывается только если текущий пользователь авторизован, попадает в
+активный (город+срез) фильтр, но НЕ виден на открытой странице таблицы
+ниже (см. UserLeaderboardView.get_context_data — сам расчёт окна).
+{% endcomment %}
+{% if my_rank_neighbors %}
+<div class="card bg-primary/5 border border-primary/30 mb-6">
+    <div class="card-body p-4">
+        <div class="dopx-section-eyebrow"><i class="ti ti-map-pin-filled"></i>Твоя позиция</div>
+        <div class="overflow-x-auto mt-2">
+            <table class="table table-sm">
+                <tbody>
+                    {% for row_user, rank, is_me in my_rank_neighbors %}
+                    <tr class="{% if is_me %}bg-primary/15 font-semibold{% endif %}">
+                        <td class="w-12">#{{ rank }}</td>
+                        <td>
+                            <a href="{% url 'users:public_profile' row_user.username %}" class="flex items-center gap-2 hover:text-primary transition-colors">
+                                <div class="avatar">
+                                    <div class="w-7 rounded-full">
+                                        {% if row_user.avatar %}
+                                        <img src="{{ row_user.avatar.url }}" alt="{{ row_user.username }}" />
+                                        {% else %}
+                                        <div class="w-full h-full bg-primary flex items-center justify-center text-primary-content text-xs font-bold">{{ row_user.username|first|upper }}</div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                {{ row_user.username }}{% if is_me %} <span class="opacity-60 font-normal">(это ты)</span>{% endif %}
+                            </a>
+                        </td>
+                        <td class="text-right font-mono">{{ row_user.trust_score|floatformat:2 }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <!-- === ТАБЛИЦА === -->
 <div class="card bg-base-100 border border-base-300">
     <div class="card-body p-0">
@@ -62,24 +165,34 @@
                     <tr>
                         <th class="w-16">#</th>
                         <th>Пользователь</th>
-                        <th class="text-center">Trust Score</th>
-                        <th class="text-center">Оценок</th>
+                        <th class="text-center {% if selected_sort == 'trust' %}text-primary{% endif %}">Trust Score</th>
+                        <th class="text-center {% if selected_sort == 'active' %}text-primary{% endif %}">Оценок</th>
+                        <th class="text-center {% if selected_sort == 'streak' %}text-primary{% endif %}"><i class="ti ti-bolt"></i> Серия</th>
                         <th class="text-center">Уровень</th>
                         <th class="text-center">Статус</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for user in users %}
-                    <tr class="hover {% if forloop.counter <= 3 %}bg-warning/10{% endif %}">
+                    {% comment %}
+                    2026-09-23, попутный фикс: forloop.counter даёт номер
+                    В ПРЕДЕЛАХ страницы (1,2,3... заново на каждой странице
+                    пагинации) — раньше медали 🥇🥈🥉 повторно рисовались на
+                    первых трёх строках КАЖДОЙ страницы, не только реального
+                    топ-3 всего рейтинга. page_obj.start_index — с какого
+                    номера начинается текущая страница в общем списке.
+                    {% endcomment %}
+                    {% with global_rank=page_obj.start_index|add:forloop.counter0|default:forloop.counter %}
+                    <tr class="hover {% if global_rank <= 3 %}bg-warning/10{% endif %}">
                         <td>
-                            {% if forloop.counter == 1 %}
+                            {% if global_rank == 1 %}
                             <span class="text-2xl">🥇</span>
-                            {% elif forloop.counter == 2 %}
+                            {% elif global_rank == 2 %}
                             <span class="text-2xl">🥈</span>
-                            {% elif forloop.counter == 3 %}
+                            {% elif global_rank == 3 %}
                             <span class="text-2xl">🥉</span>
                             {% else %}
-                            <span class="font-bold">{{ forloop.counter }}</span>
+                            <span class="font-bold">{{ global_rank }}</span>
                             {% endif %}
                         </td>
                         <td>
@@ -116,6 +229,9 @@
                             <span class="font-mono">{{ user.eval_count }}</span>
                         </td>
                         <td class="text-center">
+                            <span class="font-mono {% if user.evaluation_streak >= 3 %}text-warning{% endif %}">{{ user.evaluation_streak }}</span>
+                        </td>
+                        <td class="text-center">
                             {% if user.xp %}
                             <span class="badge badge-sm badge-outline">
                                 {{ user.xp.level }}
@@ -134,9 +250,10 @@
                             {% endif %}
                         </td>
                     </tr>
+                    {% endwith %}
                     {% empty %}
                     <tr>
-                        <td colspan="6" class="text-center py-16 opacity-60">
+                        <td colspan="7" class="text-center py-16 opacity-60">
                             <i class="ti ti-trophy-off text-6xl mb-4"></i>
                             <h3 class="text-xl font-semibold mb-2">Рейтинг пока пуст</h3>
                             <p>Оцените первый матч и возглавьте топ!</p>

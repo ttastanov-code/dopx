@@ -6,6 +6,7 @@ from core.models import get_setting
 from referees.models import Referee
 from matches.models import Match
 from aggregates.models import RefereeMatchAggregate
+from aggregates.services import vote_weighted_avg
 from seasons.models import Season
 
 
@@ -44,8 +45,8 @@ class RefereeListView(ListView):
         ).annotate(
             # ✅ Имя аннотации должно совпадать с шаблоном!
             total_matches=Count('match', filter=season_q, distinct=True),
-            avg_influence=Avg('match_aggregates__avg_influence'),
-            avg_decision_quality=Avg('match_aggregates__avg_decision_quality'),
+            avg_influence=vote_weighted_avg('match_aggregates__avg_influence', 'match_aggregates__total_votes'),
+            avg_decision_quality=vote_weighted_avg('match_aggregates__avg_decision_quality', 'match_aggregates__total_votes'),
         )
 
         # БАГ, КОТОРЫЙ ТУТ БЫЛ: строка поиска в шаблоне рисовалась, но
@@ -118,8 +119,18 @@ class RefereeDetailView(DetailView):
             referee=referee, **eval_season_kwargs
         ).aggregate(
             total_evaluations=Sum('total_votes'),
-            avg_influence=Avg('avg_influence'),
-            avg_decision_quality=Avg('avg_decision_quality'),
+            avg_influence=vote_weighted_avg('avg_influence'),
+            avg_decision_quality=vote_weighted_avg('avg_decision_quality'),
+            # 2026-09-23, прямая просьба пользователя после аудита формул
+            # ("если performance_score не показывается нигде, может надо
+            # показывать?") — итоговый композит (aggregates/tasks.py::
+            # recalculate_referee_aggregates, формула см. её же докстринг
+            # и evaluations/models.py::RefereeEvaluation) раньше считался,
+            # но нигде не выводился пользователю — только влияние и
+            # качество раздельно. Показываем и его, с тултипом-объяснением
+            # формулы прямо на карточке (см. core/context_processors.py::
+            # indicator_tooltips → referee.performance_score).
+            avg_performance_score=vote_weighted_avg('performance_score'),
         )
         stats = {
             # Матчи (факт)
@@ -128,6 +139,7 @@ class RefereeDetailView(DetailView):
             'total_evaluations': agg_totals['total_evaluations'] or 0,
             'avg_influence': agg_totals['avg_influence'],
             'avg_decision_quality': agg_totals['avg_decision_quality'],
+            'avg_performance_score': agg_totals['avg_performance_score'],
         }
 
         # НОВОЕ: ближайший обслуженный матч, который ещё можно оценить —

@@ -12,6 +12,7 @@ from players.models import Player
 from teams.models import Team
 from aggregates.models import PlayerMatchAggregate
 from aggregates.services import MIN_VOTES_FOR_DISPLAY
+from aggregates.services import vote_weighted_avg
 from core.utils import normalize_kz
 from core.models import get_setting
 from evaluations.models import PlayerEvaluation
@@ -239,10 +240,10 @@ class PlayerDetailView(DetailView):
         stats_raw = PlayerMatchAggregate.objects.filter(
             player=player
         ).aggregate(
-            avg_performance=Avg('performance_score'),
-            avg_risk=Avg('risk_index'),
-            avg_maturity=Avg('maturity_score'),
-            avg_potential=Avg('avg_potential'),
+            avg_performance=vote_weighted_avg('performance_score'),
+            avg_risk=vote_weighted_avg('risk_index'),
+            avg_maturity=vote_weighted_avg('maturity_score'),
+            avg_potential=vote_weighted_avg('avg_potential'),
             evaluated_matches=Count('id', distinct=True),
             # Sum, не Count — total_votes всегда не NULL (default=0), Count
             # считал бы число строк агрегата, а не сумму голосов по матчам.
@@ -252,6 +253,20 @@ class PlayerDetailView(DetailView):
         # has_evaluations отдельно от avg-полей — без оценок avg остаётся
         # None (не 0), чтобы шаблон показал "—", а не обманчивый ноль.
         has_evaluations = stats_raw['evaluated_matches'] > 0
+
+        # 2026-09-23, честный аудит формул рейтингов (прямая просьба
+        # пользователя "тихая авто-коррекция рейтинга... стоит добавить
+        # хотя бы значок «скорректировано»"): PlayerRatingCorrection
+        # (aggregates/models.py) — единственный механизм в проекте, который
+        # САМ, без модератора, меняет уже показанный публично
+        # performance_score (см. её докстринг и
+        # aggregates/tasks.py::_check_player_stats_divergence). Раньше это
+        # было полностью невидимо пользователю — цифра просто была другой,
+        # без всякого следа, что её тронул алгоритм. Показываем факт
+        # активной поправки прямо на карточке игрока.
+        rating_correction = getattr(player, 'rating_correction', None)
+        if rating_correction is not None and abs(rating_correction.correction) < 0.01:
+            rating_correction = None
         stats = {
             'avg_performance': round(stats_raw['avg_performance'], 2) if stats_raw['avg_performance'] is not None else None,
             'avg_risk': round(stats_raw['avg_risk'], 2) if stats_raw['avg_risk'] is not None else None,
@@ -261,6 +276,17 @@ class PlayerDetailView(DetailView):
             'evaluated_matches': stats_raw['evaluated_matches'] or 0,  # из них оценено болельщиками
             'total_votes': stats_raw['total_votes'] or 0,
         }
+
+        # 2026-09-24: «по статистике» — независимая оценка игры за матч по
+        # данным матча (matches/stat_ratings.py), показывается рядом с
+        # оценкой болельщиков. Средняя — по всем матчам, где она есть.
+        from matches.stat_ratings import average_stat_rating, stat_ratings_for_player
+
+        stats['avg_stat_rating'], stats['stat_rating_matches'] = average_stat_rating(player)
+        aggregates = list(aggregates)
+        per_match_stat = stat_ratings_for_player(player, [a.match_id for a in aggregates])
+        for agg in aggregates:
+            agg.stat_rating = per_match_stat.get(agg.match_id)
 
         # Лучшие матчи игрока
         best_matches = PlayerMatchAggregate.objects.filter(
@@ -407,6 +433,7 @@ class PlayerDetailView(DetailView):
             'votable_match': votable_match,
             'is_following': is_following,
             'active_sidelined': active_sidelined,
+            'rating_correction': rating_correction,
             'page_title': f'{player.first_name} {player.last_name} — DOPX',
         })
 
@@ -479,7 +506,7 @@ class PlayerSeasonRecapView(DetailView):
 
         aggregates_qs = PlayerMatchAggregate.objects.filter(player=player, match__season=season)
         stats = aggregates_qs.aggregate(
-            avg_performance=Avg('performance_score'),
+            avg_performance=vote_weighted_avg('performance_score'),
             total_votes=Sum('total_votes'),
             evaluated_matches=Count('id'),
         )
@@ -538,7 +565,7 @@ def player_season_recap_card(request, pk, season_id):
     season = get_object_or_404(Season, pk=season_id)
 
     stats = PlayerMatchAggregate.objects.filter(player=player, match__season=season).aggregate(
-        avg_performance=Avg('performance_score'),
+        avg_performance=vote_weighted_avg('performance_score'),
         total_votes=Sum('total_votes'),
     )
     has_enough_votes = (stats['total_votes'] or 0) >= MIN_VOTES_FOR_DISPLAY
@@ -592,7 +619,7 @@ def player_rating_widget(request, pk):
     player = get_object_or_404(Player.objects.select_related('team'), pk=pk)
 
     stats = PlayerMatchAggregate.objects.filter(player=player).aggregate(
-        avg_performance=Avg('performance_score'),
+        avg_performance=vote_weighted_avg('performance_score'),
         total_votes=Sum('total_votes'),
     )
     has_enough_votes = (stats['total_votes'] or 0) >= MIN_VOTES_FOR_DISPLAY

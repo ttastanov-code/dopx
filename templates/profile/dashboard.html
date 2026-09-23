@@ -59,6 +59,26 @@
                     <div class="w-full bg-base-200 rounded-full h-2">
                         <div class="bg-primary h-2 rounded-full" style="width: {{ xp.progress_percent }}%"></div>
                     </div>
+                    {% comment %}
+                    2026-09-23, фикс аудита: XP за шаги вайзарда начисляется
+                    сразу на каждом пройденном шаге, ДО завершения всей
+                    оценки (users/views.py::ProfileView.get_context_data —
+                    incomplete_sessions_count). Явно предупреждаем, что
+                    часть XP выше может быть из вайзардов, которые так и не
+                    были доведены до конца.
+                    {% endcomment %}
+                    {% if incomplete_sessions_count %}
+                    {% tooltip_wrap "XP начисляется по мере прохождения шагов вайзарда, ещё до его завершения — эти сессии не учитываются в счётчике «Матчей» и не влияют на Trust Score/достижения." %}
+                    <div class="text-xs opacity-50 mt-2 flex items-center gap-1 cursor-help">
+                        <i class="ti ti-info-circle"></i>
+                        {% if incomplete_sessions_count == 1 %}
+                        Часть XP — из 1 незавершённой оценки
+                        {% else %}
+                        Часть XP — из {{ incomplete_sessions_count }} незавершённых оценок
+                        {% endif %}
+                    </div>
+                    {% endtooltip_wrap %}
+                    {% endif %}
                 </div>
                 {% endif %}
             </div>
@@ -146,14 +166,23 @@
                 </h3>
                 <div class="flex flex-wrap gap-2">
                     {% for badge in badges %}
-                    {% tooltip_wrap badge.get_badge_type_display %}
+                    {% comment %}
+                    2026-09-23, фикс аудита: badge.tooltip_text/is_stale —
+                    см. докстринг UserBadge.tooltip_text (users/models.py) и
+                    UserBadge.is_stale — 5 "статусных" достижений
+                    (foresight/max_trust/stable_hand/accurate_analyst/
+                    bias_free) могут временно "выцвести", если показатель
+                    упал ниже порога после выдачи; сам бейдж не пропадает.
+                    {% endcomment %}
+                    {% tooltip_wrap badge.tooltip_text %}
                     {% comment %}
                     ДОБАВЛЕНО (2026-09-01, "супер ультра" достижения):
                     legendary — единственный уровень с анимированной рамкой
                     (dopx-legendary-chip/-icon, static/css/badges.css),
                     остальные уровни не меняли — Tailwind-утилиты справа.
                     {% endcomment %}
-                    <div class="w-12 h-12 rounded-lg flex items-center justify-center border-2
+                    <div class="w-12 h-12 rounded-lg flex items-center justify-center border-2 relative
+                        {% if badge.is_stale %}opacity-40 grayscale{% endif %}
                         {% if badge.rarity == 'legendary' %}dopx-legendary-chip dopx-legendary-icon
                         {% elif badge.rarity == 'platinum' %}bg-info/10 border-info/40 text-info
                         {% elif badge.rarity == 'gold' %}bg-warning/10 border-warning/40 text-warning
@@ -161,6 +190,11 @@
                         {% elif badge.rarity == 'secret' %}bg-secondary/10 border-secondary/40 text-secondary
                         {% else %}bg-accent/10 border-accent/30 text-accent{% endif %}">
                         <i class="ti {% if badge.rarity == 'legendary' %}ti-crown{% elif badge.is_secret %}ti-eye-off{% else %}ti-medal{% endif %} text-xl"></i>
+                        {% if badge.is_stale %}
+                        <span class="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-base-300 border border-base-100 flex items-center justify-center">
+                            <i class="ti ti-clock-pause text-[10px]"></i>
+                        </span>
+                        {% endif %}
                     </div>
                     {% endtooltip_wrap %}
                     {% empty %}

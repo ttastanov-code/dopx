@@ -38,6 +38,16 @@ MIN_HUMAN_WIZARD_SECONDS = 20
 IP_CLUSTER_LOOKBACK_HOURS = 24
 IP_CLUSTER_MIN_ACCOUNTS = 3
 
+# 2026-09-23, честный аудит формул рейтингов — доля расстояния до
+# нейтрального trust_score=1.0, на которую сдвигается счёт АКТИВНОГО
+# пользователя за один прогон decay_trust_scores_task (раз в месяц). См.
+# докстринг задачи ниже за полным объяснением, почему decay нужен вообще.
+TRUST_DECAY_FRACTION = 0.1
+# Не трогаем decay'ем тех, кто не голосовал последние N дней — иначе
+# пользователь, который просто ушёл с платформы, "реабилитировался" бы
+# без единого нового добросовестного голоса.
+TRUST_DECAY_LOOKBACK_DAYS = 90
+
 # Бейдж «Чемпион месяца»: не выдаём тому, кто "занял первое место" с
 # одной-двумя оценками в мёртвом месяце — минимальная активность для
 # зачёта результата.
@@ -95,6 +105,24 @@ ANTIFRAUD_CALIBRATED_THRESHOLDS = {
         "min": 3.0,
         "max": 6.0,
         "default": float(IP_CLUSTER_MIN_ACCOUNTS),
+    },
+    # 2026-09-23, честный аудит формул рейтингов: раньше градуированный
+    # штраф за фан-bias (aggregates/services.py::_graduated_bias_penalty)
+    # был единственным антифрод-сигналом БЕЗ очереди модерации и, как
+    # следствие, без обратной связи для калибровки (см. старый докстринг
+    # AntiFraudThreshold). Теперь _maybe_flag_extreme_bias создаёт
+    # SuspiciousActivityFlag(source="extreme_bias") при заметном штрафе —
+    # у этого порога появилась земля под ногами, как у vote_spike/
+    # ip_cluster. Калибруется ПОРОГ ВИДИМОСТИ (с какого штрафа создавать
+    # флаг), а не сами константы формулы штрафа (BIAS_FREE_DIFF и т.д.) —
+    # тронуть саму формулу автоматически было бы более рискованно, чем
+    # калибровать, что показывать модератору.
+    "extreme_bias_flag_threshold": {
+        "source": "extreme_bias",
+        "step": 0.05,
+        "min": 0.1,
+        "max": 0.35,
+        "default": 0.2,
     },
 }
 
@@ -203,6 +231,19 @@ def award_founder_badge_if_eligible(self, user_id: str, founder_threshold: int =
     `users/views.py::VerifyEmailView` в момент первой верификации email
     (не из `check_and_award_badges`, потому что это событие происходит один
     раз в жизни аккаунта, а не пересчитывается на каждой оценке).
+
+    2026-09-23, фикс аудита: раньше ранг считался только среди УЖЕ
+    верифицированных пользователей (`is_verified=True, date_joined__lte=...`).
+    Из-за этого сам факт "входишь ли ты в первые `founder_threshold`" зависел
+    не от даты регистрации, а от того, кто ещё успел подтвердить почту к
+    моменту проверки — задержка с верификацией со стороны настоящих ранних
+    пользователей уменьшала знаменатель и позволяла объективно более поздним
+    пользователям (например, 800-му по счёту) проскочить в "первые 500", а
+    ранний пользователь мог откладывать верификацию сколь угодно долго без
+    риска потерять статус. Правило «один из первых N зарегистрированных»
+    должно опираться на `date_joined` СРЕДИ ВСЕХ зарегистрированных
+    аккаунтов (независимо от того, верифицированы они или нет) — тогда ранг
+    фиксирован в момент регистрации и не плавает от чужих действий.
     """
     from users.models import User, UserBadge
 
@@ -211,10 +252,8 @@ def award_founder_badge_if_eligible(self, user_id: str, founder_threshold: int =
     except User.DoesNotExist:
         return False
 
-    verified_rank = User.objects.filter(
-        is_verified=True, date_joined__lte=user.date_joined
-    ).count()
-    if verified_rank > founder_threshold:
+    registration_rank = User.objects.filter(date_joined__lte=user.date_joined).count()
+    if registration_rank > founder_threshold:
         return False
 
     badge, created = UserBadge.objects.get_or_create(user=user, badge_type="founder")
@@ -454,6 +493,153 @@ def award_monthly_champion_badge() -> bool:
         "Чемпион месяца: %s (%d завершённых оценок за прошлый месяц).", user.username, top["cnt"]
     )
     return True
+
+
+@shared_task
+def decay_trust_scores_task() -> int:
+    """
+    Раз в месяц, 1-го числа (см. `CELERY_BEAT_SCHEDULE`) — плавно тянет
+    `trust_score` каждого АКТИВНОГО пользователя к нейтральному 1.0.
+
+    2026-09-23, честный аудит формул рейтингов (прямая просьба
+    пользователя): "доверие пользователя не забывает и не прощает" —
+    `calculate_user_trust_adjustment` (aggregates/services.py) двигает
+    trust_score крошечными шагами (±0.05 за завершённую сессию оценки), но
+    НИКАК не возвращается к центру со временем. Без decay человек,
+    голосовавший предвзято когда-то давно и с тех пор исправившийся, весит
+    в формуле ровно так же мало, как и вчера, — а добросовестный, который
+    один раз ошибся, тащит это на себе неограниченно долго.
+
+    Decay работает СИММЕТРИЧНО в обе стороны, поэтому не открывает лазейку
+    сильнее, чем закрывает несправедливость: тот, кто ПРОДОЛЖАЕТ голосовать
+    предвзято, получает новые -0.05 каждую сессию быстрее, чем decay успевает
+    их компенсировать (0.05 за голос против 10% расстояния до 1.0 раз в
+    месяц), а тот, кто перестал — постепенно возвращается к базовому весу.
+    Экспоненциальный шаг (доля РАССТОЯНИЯ до 1.0, не фиксированное число) —
+    чем дальше от центра, тем заметнее шаг, чем ближе — тем меньше,
+    никогда не перескочит через 1.0 и не требует отдельного клампа.
+
+    Намеренно НЕ трогаем пользователей без единой завершённой оценки за
+    TRUST_DECAY_LOOKBACK_DAYS — decay должен возвращать к нейтральности
+    только действующих участников; для того, кто месяцами не голосует, это
+    было бы наградой без всякого нового добросовестного поведения (и
+    симметрично — не поводом отменить прошлое наказание неактивному
+    нарушителю, если он просто исчез, а не изменился).
+    """
+    from core.models import get_setting
+    from evaluations.models import EvaluationSession
+    from users.models import User
+
+    fraction = get_setting("trust_decay_fraction", TRUST_DECAY_FRACTION)
+    lookback_days = get_setting("trust_decay_lookback_days", TRUST_DECAY_LOOKBACK_DAYS)
+    cutoff = timezone.now() - timedelta(days=lookback_days)
+
+    active_user_ids = (
+        EvaluationSession.objects.filter(status="completed", completed_at__gte=cutoff)
+        .values_list("user_id", flat=True)
+        .distinct()
+    )
+
+    updated = 0
+    for user in User.objects.filter(id__in=active_user_ids).exclude(trust_score=1.0).only("id", "trust_score"):
+        new_score = 1.0 + (user.trust_score - 1.0) * (1 - fraction)
+        new_score = max(0.5, min(2.0, new_score))
+        if abs(new_score - user.trust_score) < 0.001:
+            continue
+        User.objects.filter(id=user.id).update(trust_score=new_score)
+        updated += 1
+
+    logger.info(
+        "decay_trust_scores_task: trust_score сдвинут к нейтральному у %d активных пользователей (шаг %.0f%% расстояния до 1.0).",
+        updated, fraction * 100,
+    )
+    return updated
+
+
+@shared_task
+def revalidate_status_badges_task() -> dict:
+    """
+    Раз в месяц (см. `CELERY_BEAT_SCHEDULE`, тот же день, что и
+    decay_trust_scores_task, — обе задачи про "показатель мог измениться со
+    временем, перепроверим") — перепроверяет условия уже выданных статусных
+    бейджей (`users.services.STATUS_BADGE_TYPES`) и помечает is_stale, если
+    показатель упал ниже порога. См. докстринг `UserBadge.is_stale`
+    (users/models.py) и `users.services.revalidate_status_badges`.
+
+    Проходит только по пользователям, у которых ЕСТЬ хотя бы один из этих
+    5 типов бейджей — не по всей таблице User.
+    """
+    from users.models import User, UserBadge
+    from users.services import STATUS_BADGE_TYPES, revalidate_status_badges
+
+    user_ids = (
+        UserBadge.objects.filter(badge_type__in=STATUS_BADGE_TYPES)
+        .values_list("user_id", flat=True)
+        .distinct()
+    )
+
+    total_now_stale = 0
+    total_reactivated = 0
+    affected_users = 0
+
+    for user in User.objects.filter(id__in=user_ids):
+        result = revalidate_status_badges(user)
+        if not result["now_stale"] and not result["reactivated"]:
+            continue
+        affected_users += 1
+        total_now_stale += len(result["now_stale"])
+        total_reactivated += len(result["reactivated"])
+
+        if result["now_stale"]:
+            _notify_status_badges_stale(user, result["now_stale"])
+        if result["reactivated"]:
+            _notify_status_badges_reactivated(user, result["reactivated"])
+
+    logger.info(
+        "revalidate_status_badges_task: %d бейдж(ей) помечены устаревшими, %d возвращены в силу, "
+        "затронуто %d пользователей.",
+        total_now_stale, total_reactivated, affected_users,
+    )
+    return {"now_stale": total_now_stale, "reactivated": total_reactivated, "affected_users": affected_users}
+
+
+def _notify_status_badges_stale(user, badge_types: list[str]) -> None:
+    """Мягкое (не наказывающее) in-app уведомление — бейдж остаётся в профиле, просто помечен."""
+    from notifications.models import Notification
+    from users.badges import get_badge_definition
+
+    names = ", ".join(
+        get_badge_definition(bt).name if get_badge_definition(bt) else bt for bt in badge_types
+    )
+    Notification.objects.create(
+        user=user,
+        notification_type="new_badge",
+        title="Статус достижения обновлён",
+        message=(
+            f"Показатель для «{names}» временно опустился ниже порога — достижение осталось в вашем "
+            f"профиле как исторический факт, но помечено как неактуальное. Вернётся в силу автоматически, "
+            f"если показатель снова достигнет порога."
+        ),
+        action_url="/users/profile/",
+        is_read=False,
+    )
+
+
+def _notify_status_badges_reactivated(user, badge_types: list[str]) -> None:
+    from notifications.models import Notification
+    from users.badges import get_badge_definition
+
+    names = ", ".join(
+        get_badge_definition(bt).name if get_badge_definition(bt) else bt for bt in badge_types
+    )
+    Notification.objects.create(
+        user=user,
+        notification_type="new_badge",
+        title="Достижение снова в силе",
+        message=f"Показатель для «{names}» снова достиг порога — пометка «неактуально» снята.",
+        action_url="/users/profile/",
+        is_read=False,
+    )
 
 
 @shared_task

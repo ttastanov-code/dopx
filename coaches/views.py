@@ -1,11 +1,13 @@
 # coaches/views.py
 from django.views.generic import ListView, DetailView
-from django.db.models import Count, Avg, Q, Prefetch
+from django.db.models import Count, Avg, Q, Prefetch, Sum
 from core.utils import normalize_kz
 from core.models import get_setting
 from coaches.models import Coach
 from teams.models import Team
 from aggregates.models import CoachMatchAggregate
+from aggregates.services import MIN_VOTES_FOR_DISPLAY
+from aggregates.services import vote_weighted_avg
 from matches.models import Match
 from seasons.models import Season
 
@@ -143,13 +145,18 @@ class CoachDetailView(DetailView):
 
         agg_totals = CoachMatchAggregate.objects.filter(coach=coach).aggregate(
             total_evaluations=Count('id'),
-            avg_tactics=Avg('avg_tactics'),
-            avg_substitutions=Avg('avg_substitutions'),
-            avg_management=Avg('avg_management'),
-            avg_impact=Avg('avg_impact'),
+            # Алиас НЕ total_votes: иначе vote_weighted_avg ниже внутри
+            # Sum('total_votes') ссылается на этот агрегат, а не на поле
+            # ("Cannot compute Sum('total_votes'): 'total_votes' is an aggregate").
+            votes_sum=Sum('total_votes'),
+            avg_tactics=vote_weighted_avg('avg_tactics'),
+            avg_substitutions=vote_weighted_avg('avg_substitutions'),
+            avg_management=vote_weighted_avg('avg_management'),
+            avg_impact=vote_weighted_avg('avg_impact'),
         )
         stats = {
             'total_evaluations': agg_totals['total_evaluations'] or 0,
+            'total_votes': agg_totals['votes_sum'] or 0,
             'avg_tactics': agg_totals['avg_tactics'],
             'avg_substitutions': agg_totals['avg_substitutions'],
             'avg_management': agg_totals['avg_management'],
@@ -160,11 +167,21 @@ class CoachDetailView(DetailView):
         # прогресс-барах ломается на пустой строке.
         has_evaluations = stats['total_evaluations'] > 0
 
+        # 2026-09-23, фикс аудита: та же логика, что и у players/teams
+        # (players/views.py::has_enough_votes, MIN_VOTES_FOR_DISPLAY) — но
+        # раньше у тренера её не было вообще, карточка "Средние оценки"
+        # могла уверенно показать число на основании единственного матча с
+        # 1 голосом. `has_evaluations` (>=1 матч оценён) остаётся условием
+        # видимости самой карточки; `has_enough_votes` (>=MIN_VOTES_FOR_
+        # DISPLAY суммарных голосов) — условием доверия к цифре внутри неё.
+        has_enough_votes = stats['total_votes'] >= MIN_VOTES_FOR_DISPLAY
+
         context.update({
             'team_matches': team_matches,
             'aggregates': aggregates,
             'stats': stats,
             'has_evaluations': has_evaluations,
+            'has_enough_votes': has_enough_votes,
             'page_title': f'{coach.first_name} {coach.last_name} — DOPX',
         })
         return context

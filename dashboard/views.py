@@ -497,6 +497,13 @@ def antifraud_flag_action(request, flag_id):
     flag.reviewed_at = timezone.now()
     flag.save(update_fields=["status", "reviewed_by", "reviewed_at", "updated_at"])
 
+    if action == "dismiss":
+        # 2026-09-24, БАГ: раньше здесь только менялся статус — поправка
+        # рейтинга оставалась, хотя карточка обещала "сразу снимется".
+        from aggregates.tasks import apply_divergence_dismissal
+
+        apply_divergence_dismissal([flag])
+
     # 2026-08-23, anti-brigading: flag.user может быть None у entity-level
     # сигналов (source="vote_spike" — аномалия у игрока/команды/тренера,
     # а не у конкретного пользователя, см. users/models.py::

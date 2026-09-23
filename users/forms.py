@@ -26,6 +26,7 @@ from django.contrib.auth.forms import (
 from django.core.files.uploadedfile import UploadedFile
 from PIL import Image, UnidentifiedImageError
 
+from users.kz_cities import KZ_CITY_CHOICES
 from users.models import User
 
 MIN_FORM_FILL_SECONDS = 3
@@ -49,17 +50,22 @@ class UserRegistrationForm(UserCreationForm):
             }
         ),
     )
-    city = forms.CharField(
-        max_length=120,
-        required=False,
+    # ИСПРАВЛЕНО (2026-09-23, продуктовый запрос: "пользователь должен
+    # город указать при регистрации обязательно" + "реальные казахстанские
+    # города" — см. полный контекст в users/kz_cities.py и докстринге
+    # User.city в users/models.py): было CharField со свободным текстом
+    # (required=False) — теперь обязательный выбор из справочника
+    # реальных городов РК, тот же источник choices, что и на самой модели,
+    # так что форма и модель не могут разойтись.
+    city = forms.ChoiceField(
+        # Пустой первый пункт — иначе браузер по умолчанию выбрал бы ПЕРВЫЙ
+        # реальный город списка (Абай, по алфавиту) без осознанного выбора
+        # пользователя; required=True отклонит форму, если это пустое
+        # значение так и останется выбранным.
+        choices=[("", "— Выберите город —")] + KZ_CITY_CHOICES,
+        required=True,
         label="Город",
-        widget=forms.TextInput(
-            attrs={
-                "class": "input-dopx w-full",
-                "placeholder": "Алматы",
-                "autocomplete": "address-level2",
-            }
-        ),
+        widget=forms.Select(attrs={"class": "input-dopx w-full"}),
     )
 
     # --- Анти-бот поля (не показываются в списке fields ниже намеренно,
@@ -222,9 +228,11 @@ class UserProfileForm(forms.ModelForm):
         }
         widgets = {
             "email": forms.EmailInput(attrs={"class": "input input-bordered w-full"}),
-            "city": forms.TextInput(
-                attrs={"class": "input input-bordered w-full", "placeholder": "Алматы"}
-            ),
+            # 2026-09-23 — тот же справочник, что и в форме регистрации
+            # (users/kz_cities.py), не свободный текст: иначе профиль можно
+            # было бы отредактировать обратно на произвольную строку сразу
+            # после регистрации, обесценив весь смысл выбора из списка.
+            "city": forms.Select(attrs={"class": "select select-bordered w-full"}),
             "bio": forms.Textarea(
                 attrs={
                     "class": "textarea textarea-bordered w-full",

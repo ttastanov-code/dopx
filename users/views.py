@@ -28,7 +28,9 @@ from django.contrib.auth.views import (
 from django.contrib import messages
 from django.views.generic import CreateView, TemplateView, ListView, UpdateView, FormView, View
 from django.urls import reverse_lazy
-from django.db.models import Count, Avg, Q
+from django.db.models import Count, Avg, Q, F, Window
+from aggregates.services import vote_weighted_avg
+from django.db.models.functions import RowNumber
 from django.utils import timezone
 from django.conf import settings
 from datetime import timedelta
@@ -321,6 +323,23 @@ class ProfileView(LoginRequiredMixin, TemplateView):
             match__status='finished',
         ).select_related('match').order_by('-created_at')[:5]
 
+        # 2026-09-23, фикс аудита: XP за шаги вайзарда (context/teams/
+        # players/coaches/referee) начисляется СРАЗУ на каждом пройденном
+        # шаге (evaluations/views.py::_award_step_xp), а не по факту
+        # завершения всей оценки — см. докстринг UserXP.add_xp. Если
+        # пользователь бросает вайзард до последнего шага, эти сессии
+        # остаются в status='started'/'in_progress' НАВСЕГДА: они не входят
+        # в total_evaluations/trust-корректировку/бейджи по числу оценок,
+        # но уже полученный за них XP остаётся в total_xp неотличимым от
+        # XP за реально завершённые оценки. Раньше это нигде не было видно
+        # пользователю — теперь считаем и явно показываем в профиле.
+        # `match__voting_open_until__gte` НЕ применяем здесь специально (в
+        # отличие от active_sessions выше) — нас интересуют ВСЕ сессии,
+        # включая те, где окно голосования уже закрылось и продолжить
+        # больше нельзя, но XP за пройденные шаги уже необратимо начислен.
+        incomplete_sessions = user.evaluation_sessions.filter(status__in=['started', 'in_progress'])
+        incomplete_sessions_count = incomplete_sessions.count()
+
         context.update({
             'user': user,
             'stats': stats,
@@ -328,6 +347,7 @@ class ProfileView(LoginRequiredMixin, TemplateView):
             'badges': badges,
             'xp': xp,
             'active_sessions': active_sessions,
+            'incomplete_sessions_count': incomplete_sessions_count,
             'page_title': f'Профиль — {user.username}'
         })
         return context
@@ -693,21 +713,39 @@ class NotificationSettingsView(LoginRequiredMixin, FormView):
 
 
 class UserLeaderboardView(ListView):
+    """
+    2026-09-23, продуктовый запрос ("сделать leaderboard интереснее —
+    больше срезов рейтинга, своя позиция и соседи"): раньше единственный
+    возможный порядок — trust_score. SORT_OPTIONS — реестр доступных
+    срезов, каждый со своим order_by и подписью для UI; ?sort= выбирает
+    срез, по умолчанию исторический (доверие).
+    """
     model = User
     template_name = 'users/leaderboard.html'
     context_object_name = 'users'
     paginate_by = 20
 
+    SORT_OPTIONS = {
+        'trust': {'label': 'Доверие', 'icon': 'ti-shield-check', 'order_by': ('-trust_score', '-eval_count')},
+        'active': {'label': 'Активность', 'icon': 'ti-flame', 'order_by': ('-total_evaluations', '-trust_score')},
+        'streak': {'label': 'Серия оценок', 'icon': 'ti-bolt', 'order_by': ('-evaluation_streak', '-trust_score')},
+    }
+    DEFAULT_SORT = 'trust'
+
     def get_paginate_by(self, queryset):
         # 2026-09-23, «Настройки платформы» — управляется staff без деплоя.
         return get_setting("user_leaderboard_page_size", self.paginate_by)
 
-    def get_queryset(self):
+    def _sort_key(self):
+        key = self.request.GET.get('sort', self.DEFAULT_SORT)
+        return key if key in self.SORT_OPTIONS else self.DEFAULT_SORT
+
+    def _base_queryset(self):
         # select_related('xp') — шаблон читает user.xp.level на каждой
         # строке (leaderboard.html), иначе N+1 на 20 пользователей страницы.
         qs = User.objects.filter(is_active=True, is_verified=True).select_related('xp').annotate(
             eval_count=Count('context_evaluations', distinct=True)
-        ).filter(eval_count__gte=1).order_by('-trust_score', '-eval_count')
+        ).filter(eval_count__gte=1)
         # ?city= — локальный рейтинг "лучшие болельщики моего города".
         # Точное совпадение, не icontains: фильтр приходит из выпадающего
         # списка существующих значений city, не из свободного текста.
@@ -716,10 +754,16 @@ class UserLeaderboardView(ListView):
             qs = qs.filter(city__iexact=city)
         return qs
 
+    def get_queryset(self):
+        order_by = self.SORT_OPTIONS[self._sort_key()]['order_by']
+        return self._base_queryset().order_by(*order_by)
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Рейтинг пользователей — DOPX'
         context['selected_city'] = self.request.GET.get('city', '').strip()
+        context['sort_options'] = self.SORT_OPTIONS
+        context['selected_sort'] = self._sort_key()
         # Список городов для выпадающего фильтра — только те, что реально
         # встречаются у активных верифицированных пользователей (не пустой
         # справочник административных единиц Казахстана "на будущее").
@@ -727,6 +771,47 @@ class UserLeaderboardView(ListView):
             User.objects.filter(is_active=True, is_verified=True)
             .exclude(city='').values_list('city', flat=True).distinct().order_by('city')
         )
+
+        # "Твоя позиция и соседи" — 2026-09-23, прямая просьба
+        # пользователя. Считаем номер строки через оконную функцию
+        # RowNumber() по ТОМУ ЖЕ порядку/фильтру, что и основной список
+        # (город + выбранный срез). Django не даёт фильтровать queryset
+        # ПО САМОЙ window-аннотации в WHERE того же запроса ("Window is
+        # disallowed in the filter clause") — поэтому забираем ВЕСЬ
+        # пронумерованный список одним лёгким запросом (только id+rank,
+        # без остальных полей) и режем окно вокруг пользователя уже в
+        # Python. Для реального объёма пользователей платформы (не
+        # десятки миллионов) это дешевле, чем городить subquery-обвязку
+        # вокруг ограничения ORM.
+        context['my_rank_neighbors'] = []
+        user = self.request.user
+        if user.is_authenticated:
+            order_by = self.SORT_OPTIONS[self._sort_key()]['order_by']
+            order_exprs = [F(f[1:]).desc() if f.startswith('-') else F(f).asc() for f in order_by]
+            ranked_list = list(
+                self._base_queryset()
+                .annotate(rank=Window(expression=RowNumber(), order_by=order_exprs))
+                .order_by('rank')
+                .values_list('id', 'rank')
+            )
+            rank_by_id = dict(ranked_list)
+            my_rank = rank_by_id.get(user.id)
+            if my_rank is not None:
+                # Показываем блок только если пользователь НЕ виден на
+                # текущей открытой странице — иначе получилось бы
+                # дублирование той же строки, которая и так уже в таблице
+                # ниже.
+                page_size = self.get_paginate_by(None)
+                page_number = context['page_obj'].number if context.get('page_obj') else 1
+                visible_range = range((page_number - 1) * page_size + 1, page_number * page_size + 1)
+                if my_rank not in visible_range:
+                    neighbor_ids = [uid for uid, r in ranked_list if my_rank - 2 <= r <= my_rank + 2]
+                    users_by_id = User.objects.filter(id__in=neighbor_ids).select_related('xp').in_bulk()
+                    context['my_rank_neighbors'] = [
+                        (users_by_id[uid], r, uid == user.id)
+                        for uid, r in ranked_list
+                        if my_rank - 2 <= r <= my_rank + 2 and uid in users_by_id
+                    ]
         return context
 
 
@@ -744,7 +829,7 @@ class PlayerLeaderboardView(ListView):
         from aggregates.models import PlayerMatchAggregate
         from django.db.models import Avg, Count, Sum, Q
         qs = Player.objects.filter(is_active=True).annotate(
-            avg_performance=Avg('match_aggregates__performance_score'),
+            avg_performance=vote_weighted_avg('match_aggregates__performance_score', 'match_aggregates__total_votes'),
             total_matches=Count('match_aggregates', distinct=True),
             total_votes=Sum('match_aggregates__total_votes')
         ).filter(
