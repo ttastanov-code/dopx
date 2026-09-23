@@ -126,6 +126,43 @@
     вертикальным стеком, независимым от высоты левой.
     {% endcomment %}
     <div class="flex flex-col gap-4">
+    {% if user.is_superuser %}
+    {% comment %}
+    2026-09-23, прямая просьба пользователя: "у меня закончилась пробная
+    подписка на sportmonks. Сыпятся ошибки... сделать кнопку которая
+    включает и выключает парсер? без перезагрузки сервисов? для
+    суперпользователя". Только is_superuser (не is_staff) — см. докстринг
+    dashboard/views.py::sportmonks_sync_toggle. Карточка стоит первой в
+    правой колонке — намеренно: это главный рубильник, важнее
+    диагностического пинга под ней.
+    {% endcomment %}
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4">
+            <div class="dopx-section-eyebrow"><i class="ti ti-power"></i>Sportmonks</div>
+            <div class="dopx-section-title">Синк с API</div>
+            <p class="dopx-section-desc mb-3">Общий рубильник всех 6 фоновых задач синка (live-опрос, статистика, составы, календарь, травмы, health-check). Выключение применяется в течение минуты, без перезапуска celery — полезно, если кончилась подписка/квота у Sportmonks.</p>
+
+            {% comment %}
+            2026-09-23, правка по отзыву пользователя ("че за страшная
+            кнопка") — обычная кнопка pause/play с предупреждающим цветом
+            выглядела как алерт об ошибке, а не как штатный переключатель.
+            Заменено на daisyUI toggle (обычный iOS-style свитч) — стандартный
+            паттерн вкл/выкл, без тревожных цветов и текста на самой кнопке;
+            чекбокс шлёт форму сразу при клике через onchange, confirm()
+            остаётся (необратимое по сути действие — останавливает обновление
+            данных на сайте).
+            {% endcomment %}
+            <form method="post" action="{% url 'dashboard:sportmonks_sync_toggle' %}" id="sportmonks-sync-toggle-form">
+                {% csrf_token %}
+                <div class="flex items-center justify-between gap-3 rounded-lg border border-base-300 px-3 py-2.5">
+                    <span class="text-sm font-medium">{% if sportmonks_sync_enabled %}Синк включён{% else %}Синк выключен{% endif %}</span>
+                    <input type="checkbox" class="toggle toggle-success" {% if sportmonks_sync_enabled %}checked{% endif %}
+                           onchange="if(confirm(this.checked ? 'Включить синк с Sportmonks обратно?' : 'Выключить синк с Sportmonks? Задачи перестанут обращаться к API (данные матчей не будут обновляться), пока вы не включите обратно.')){document.getElementById('sportmonks-sync-toggle-form').submit();}else{this.checked=!this.checked;}">
+                </div>
+            </form>
+        </div>
+    </div>
+    {% endif %}
     <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4">
             <div class="dopx-section-eyebrow"><i class="ti ti-api"></i>Sportmonks</div>

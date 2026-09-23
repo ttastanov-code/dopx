@@ -86,6 +86,12 @@ class AuditAction(models.TextChoices):
     # НОВОЕ (2026-09-23, раздел «Роли доступа») — см. StaffAccessGrant ниже,
     # dashboard/views.py::access_roles_update.
     ACCESS_GRANT_UPDATED = "access_grant_updated", _("Права доступа сотрудника изменены")
+    # НОВОЕ (2026-09-23, прямая просьба пользователя: закончилась пробная
+    # подписка Sportmonks, сыплются ошибки — нужен рубильник синка без
+    # перезапуска Celery) — см. core.models.PlatformSetting("sportmonks_sync_
+    # enabled"), parsers/sportmonks/tasks.py::_sync_enabled(),
+    # dashboard/views.py::sportmonks_sync_toggle.
+    SPORTMONKS_SYNC_TOGGLED = "sportmonks_sync_toggled", _("Синк с Sportmonks включён/выключен")
 
     # 2026-09-09: RAW_KFF_LOOKUP/KFF_HEALTH_CHECK удалены вместе со всем
     # KFF-парсером (по решению пользователя). STADIUM_MARKED_REVIEWED
