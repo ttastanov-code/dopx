@@ -1,0 +1,170 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+{% comment %}
+templates/dashboard/evaluation_session_detail.html
+2026-09-23, раздел «Модерация оценок» — карточка одной сессии
+(dashboard/views.py::evaluation_session_detail). Сама сессия не хранит
+баллы (только прогресс/тайминг) — под-оценки (Context/Team/Player/Coach/
+Referee/MatchEvaluation) подтягиваются ОТДЕЛЬНЫМИ запросами по (user,
+match), см. dashboard/services.py::evaluation_session_detail_context.
+
+Единственное действие — «Удалить сессию» (evaluation_session_delete):
+удаляет ВСЕ под-оценки этого (user, match) разом и запускает пересчёт
+агрегатов матча. Необратимо, поэтому подтверждение через confirm() с явным
+именем пользователя и матча в тексте — тот же паттерн, что бан пользователя/
+удаление настройки.
+{% endcomment %}
+
+<div class="mb-4">
+    <a href="{% url 'dashboard:evaluation_sessions_list' %}" class="text-xs opacity-60 hover:opacity-100"><i class="ti ti-arrow-left"></i> К списку оценок</a>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+    <div class="lg:col-span-2 space-y-4">
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-4">
+                <div class="flex items-center justify-between flex-wrap gap-2">
+                    <div>
+                        <div class="dopx-section-eyebrow"><i class="ti ti-clipboard-check"></i>Сессия оценки</div>
+                        <div class="dopx-section-title">{{ session.user.username }} — {{ session.match.home_team.name }} vs {{ session.match.away_team.name }}</div>
+                    </div>
+                    <span class="badge {% if session.status == 'completed' %}badge-success{% elif session.status == 'abandoned' %}badge-ghost{% else %}badge-warning{% endif %}">{{ session.get_status_display }}</span>
+                </div>
+                {% comment %}
+                2026-09-23, тот же класс бага, что нашли на user_detail.html
+                (жалоба пользователя — email наезжал на соседнюю ячейку):
+                grid-cols-2 на мобильном без min-w-0 не даёт треку сжаться,
+                а у длинного значения без пробелов (IP-адрес, особенно
+                IPv6) нет естественной точки переноса — вылезает на
+                соседа. min-w-0 на ячейке + break-words на значении — тот
+                же фикс, для профилактики применён сразу везде на этой
+                странице, а не только там, где уже жаловались.
+                {% endcomment %}
+                <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-3 text-xs">
+                    <div class="min-w-0"><span class="opacity-50">Режим</span><div class="font-medium break-words">{{ session.get_mode_display }}</div></div>
+                    <div class="min-w-0"><span class="opacity-50">Прогресс</span><div class="font-medium break-words">{{ session.progress_percentage }}%</div></div>
+                    <div class="min-w-0">
+                        <span class="opacity-50">Время заполнения</span>
+                        <div class="font-medium font-mono break-words">
+                            {% with dur=session.fill_duration_seconds %}
+                            {% if dur is not None %}
+                            <span class="{% if dur < 20 %}text-error{% endif %}">{{ dur|floatformat:0 }}с{% if dur < 20 %} ⚠{% endif %}</span>
+                            {% else %}—{% endif %}
+                            {% endwith %}
+                        </div>
+                    </div>
+                    <div class="min-w-0"><span class="opacity-50">Начато</span><div class="font-medium break-words">{{ session.started_at|date:"d.m.Y H:i" }}</div></div>
+                    <div class="min-w-0"><span class="opacity-50">Завершено</span><div class="font-medium break-words">{{ session.completed_at|date:"d.m.Y H:i"|default:"—" }}</div></div>
+                    <div class="min-w-0"><span class="opacity-50">IP завершения</span><div class="font-medium font-mono break-words">{{ session.ip_address|default:"—" }}</div></div>
+                </div>
+            </div>
+        </div>
+
+        {% if context_eval %}
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-4">
+                <div class="dopx-section-eyebrow"><i class="ti ti-eye"></i>Контекст просмотра</div>
+                <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-2 text-xs">
+                    <div><span class="opacity-50">Поддерживает</span><div class="font-medium">{{ context_eval.supported_team.name|default:"—" }}</div></div>
+                    <div><span class="opacity-50">Тип просмотра</span><div class="font-medium">{{ context_eval.get_watched_type_display }}</div></div>
+                    <div><span class="opacity-50">На стадионе</span><div class="font-medium">{{ context_eval.attended_stadium|yesno:"да,нет" }}</div></div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if team_evals %}
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-4">
+                <div class="dopx-section-eyebrow"><i class="ti ti-shirt-sport"></i>Оценки команд ({{ team_evals|length }})</div>
+                <div class="overflow-x-auto mt-2">
+                    <table class="table table-xs">
+                        <thead><tr><th>Команда</th><th>Тактика</th><th>Самоотдача</th><th>Организация</th><th>Менталитет</th><th>Средний балл</th></tr></thead>
+                        <tbody>
+                        {% for te in team_evals %}
+                        <tr><td class="font-medium">{{ te.team.name }}</td><td>{{ te.tactics }}</td><td>{{ te.effort }}</td><td>{{ te.organization }}</td><td>{{ te.mentality }}</td><td class="font-mono">{{ te.average_score|floatformat:1 }}</td></tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if player_evals %}
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-4">
+                <div class="dopx-section-eyebrow"><i class="ti ti-run"></i>Оценки игроков ({{ player_evals|length }})</div>
+                <div class="overflow-x-auto mt-2 max-h-96 overflow-y-auto">
+                    <table class="table table-xs">
+                        <thead><tr><th>Игрок</th><th>Вклад</th><th>Риск</th><th>Потенциал</th><th>Зрелость</th></tr></thead>
+                        <tbody>
+                        {% for pe in player_evals %}
+                        <tr><td class="font-medium">{{ pe.player }}</td><td>{{ pe.contribution }}</td><td>{{ pe.risk }}</td><td>{{ pe.potential }}</td><td class="font-mono">{{ pe.maturity_score }}</td></tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if coach_evals %}
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-4">
+                <div class="dopx-section-eyebrow"><i class="ti ti-clipboard-list"></i>Оценки тренеров ({{ coach_evals|length }})</div>
+                <div class="overflow-x-auto mt-2">
+                    <table class="table table-xs">
+                        <thead><tr><th>Тренер</th><th>Тактика</th><th>Замены</th><th>Управление</th><th>Влияние</th><th>Средний балл</th></tr></thead>
+                        <tbody>
+                        {% for ce in coach_evals %}
+                        <tr><td class="font-medium">{{ ce.coach }}</td><td>{{ ce.tactics }}</td><td>{{ ce.substitutions }}</td><td>{{ ce.game_management }}</td><td>{{ ce.impact }}</td><td class="font-mono">{{ ce.average_score|floatformat:1 }}</td></tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if referee_eval or match_eval %}
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-4">
+                <div class="dopx-section-eyebrow"><i class="ti ti-whistle"></i>Судья и матч в целом</div>
+                <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-2 text-xs">
+                    {% if referee_eval %}
+                    <div><span class="opacity-50">Влияние судьи</span><div class="font-medium">{{ referee_eval.influence_score }}/100</div></div>
+                    <div><span class="opacity-50">Качество решений</span><div class="font-medium">{{ referee_eval.decision_quality }}/10</div></div>
+                    {% endif %}
+                    {% if match_eval %}
+                    <div><span class="opacity-50">Зрелищность</span><div class="font-medium">{{ match_eval.entertainment }}/10</div></div>
+                    <div><span class="opacity-50">Напряжение</span><div class="font-medium">{{ match_eval.tension }}/10</div></div>
+                    <div><span class="opacity-50">Справедливость</span><div class="font-medium">{{ match_eval.fairness }}/10</div></div>
+                    <div><span class="opacity-50">Переломный момент</span><div class="font-medium">{{ match_eval.turning_point|yesno:"был,не было" }}</div></div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="card bg-base-100 border border-base-300 h-fit">
+        <div class="card-body p-4">
+            <div class="dopx-section-eyebrow"><i class="ti ti-shield"></i>Модерация</div>
+            <div class="dopx-section-title mb-3">Действия</div>
+
+            <form method="post" action="{% url 'dashboard:evaluation_session_delete' session.id %}"
+                  onsubmit="return confirm('Удалить сессию «' + '{{ session.user.username }} — {{ session.match.home_team.name }} vs {{ session.match.away_team.name }}' + '» вместе со всеми под-оценками? Действие необратимо, агрегаты матча будут пересчитаны.');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-outline btn-error w-full"><i class="ti ti-trash"></i> Удалить сессию</button>
+            </form>
+
+            <a href="{% url 'dashboard:user_detail' session.user.id %}" class="btn btn-sm btn-ghost w-full mt-2"><i class="ti ti-user"></i> Профиль пользователя</a>
+            <a href="{% url 'dashboard:match_detail' session.match.id %}" class="btn btn-sm btn-ghost w-full mt-2"><i class="ti ti-ball-football"></i> Карточка матча</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

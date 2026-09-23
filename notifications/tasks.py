@@ -441,11 +441,13 @@ def notify_voting_closing_soon(self):
         ).values_list('related_match_id', flat=True).distinct()
     )
 
+    from core.models import get_setting
+
     user_ids = [
         str(uid) for uid in User.objects.filter(is_verified=True, email__isnull=False)
         .values_list('id', flat=True)
     ]
-    chunks = _chunked(user_ids, BULK_EMAIL_CHUNK_SIZE)
+    chunks = _chunked(user_ids, get_setting("bulk_email_chunk_size", BULK_EMAIL_CHUNK_SIZE))
 
     queued = 0
     skipped = 0
@@ -566,11 +568,13 @@ def cleanup_old_notifications():
     росла бесконечно. Непрочитанные не трогает — пользователь должен
     успеть их увидеть независимо от возраста.
     """
+    from core.models import get_setting
     from notifications.models import Notification
 
-    cutoff = timezone.now() - timedelta(days=NOTIFICATION_RETENTION_DAYS)
+    retention_days = get_setting("notification_retention_days", NOTIFICATION_RETENTION_DAYS)
+    cutoff = timezone.now() - timedelta(days=retention_days)
     deleted_count, _ = Notification.objects.filter(is_read=True, created_at__lt=cutoff).delete()
-    logger.info(f"🧹 Deleted {deleted_count} old read notification(s) older than {NOTIFICATION_RETENTION_DAYS} days.")
+    logger.info(f"🧹 Deleted {deleted_count} old read notification(s) older than {retention_days} days.")
     return {'deleted': deleted_count}
 
 
@@ -1028,8 +1032,10 @@ def notify_prediction_closing_soon(self):
         logger.info(f"✅ No matches kicking off in the next hour (now={now}).")
         return {'status': 'ok', 'matches_found': 0}
 
+    from core.models import get_setting
     from users.models import User
 
+    chunk_size = get_setting("bulk_email_chunk_size", BULK_EMAIL_CHUNK_SIZE)
     queued = 0
     notified_inapp = 0
     for match in matches:
@@ -1043,7 +1049,7 @@ def notify_prediction_closing_soon(self):
             continue
 
         subject = f'{match.home_team.name} — {match.away_team.name}: как думаете, кто победит?'
-        for chunk in _chunked(user_ids, BULK_EMAIL_CHUNK_SIZE):
+        for chunk in _chunked(user_ids, chunk_size):
             _send_match_email_chunk.delay(chunk, str(match.id), subject, 'emails/prediction_closing.html', 'prediction_closing')
             queued += 1
 

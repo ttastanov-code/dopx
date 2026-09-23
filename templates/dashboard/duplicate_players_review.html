@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+{% comment %}
+templates/dashboard/duplicate_players_review.html
+Очередь «Дубли игроков» (2026-09-22, прямая просьба пользователя после
+"короче 12 эти соединил, но пздц это муторно копировать, вставлять,
+крутить туда сюда нахуй колесико, потом задача ниже и ниже уходит и хер
+ты ее найдешь там в истории. плюс эти UUID огромные не вмещаются внутри
+кнопки"). Флаги — parsers/sportmonks/importers.py::
+_flag_potential_duplicate_player, ставятся автоматически на импорте, когда
+Sportmonks переиздаёт sportmonks_id для того же ФИО в той же команде (см.
+players/management/commands/diagnose_duplicate_players.py — тот же разбор
+цифр по происхождению данных, только там это ручной CLI-отчёт).
+
+Слияние (players/services.py::merge_players) выполняется СИНХРОННО прямо
+в dashboard/views.py::duplicate_players_merge — никакого Celery,
+ManagementCommandRun и поллинга статуса здесь нет вообще, потому что
+нечего поллить: слияние — это несколько быстрых DB-запросов, ответ готов
+сразу же. Кнопка "Оставить эту запись" сама несёт id обеих записей флага
+(hidden-поля формы) — копировать/вставлять UUID руками не нужно. По клику
+карточка пары заменяется маленьким "разобрано"-сообщением на месте (HTMX
+hx-swap="outerHTML"), без перезагрузки страницы и без прокрутки истории
+запусков вниз.
+{% endcomment %}
+
+{% comment %} 2026-09-22: заголовок + счётчик pending_count рендерит .dopx-page-header (_nav.html) — не дублируем. {% endcomment %}
+<div class="card bg-base-100 border border-base-300 mb-4">
+    <div class="card-body p-4">
+        {% comment %}
+        2026-09-23, жалоба пользователя (скриншот, мобильная версия): текст
+        рвался на 3 "колонки" — тот же баг, что уже чинили на antifraud.html
+        (daisyUI/flex докстринг там же): <p class="flex"> с голым текстом
+        ВПЕРЕМЕШКУ со <span> внутри — каждый текстовый узел между
+        элементами становится своим анонимным flex-item'ом и НЕ переносится
+        вместе с соседями. Фикс тот же — весь текст одним <span>, тогда для
+        flex-контейнера это один item, а перенос строк внутри идёт обычным
+        inline-потоком.
+        {% endcomment %}
+        <p class="text-xs opacity-55 flex items-start gap-2">
+            <i class="ti ti-info-circle opacity-50 mt-0.5 shrink-0"></i>
+            <span>Sportmonks иногда переиздаёт <span class="font-mono bg-base-200 rounded px-1 py-0.5">sportmonks_id</span> одному и тому же человеку — так появляются дубли. Выберите, какую запись оставить, вторая сольётся в неё и удалится. Разные люди — отклоните флаг.</span>
+        </p>
+    </div>
+</div>
+
+<div id="duplicate-players-queue">
+    {% if pairs %}
+    <div class="space-y-3">
+        {% for pair in pairs %}
+        {% include 'dashboard/_duplicate_player_pair.html' %}
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-8 text-center">
+            <i class="ti ti-circle-check text-success text-3xl mb-2"></i>
+            <p class="text-sm opacity-60">Дублей на разборе нет — очередь пуста.</p>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

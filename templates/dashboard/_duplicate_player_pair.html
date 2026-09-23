@@ -1,0 +1,38 @@
+{% comment %}
+templates/dashboard/_duplicate_player_pair.html
+Одна пара-кандидат на слияние в очереди «Дубли игроков» (см. докстринг
+duplicate_players_review.html). Контекст — один элемент `pairs` из
+dashboard/views.py::duplicate_players_review: {flag, existing, new}, где
+existing/new — {player, appearances, events_count, evaluations_count,
+aggregates_count} (dashboard/views.py::_player_dup_stats).
+
+id="dup-pair-{{ pair.flag.id }}" — цель hx-swap="outerHTML" обеих форм
+ниже (merge/dismiss из dashboard/views.py) и партиала
+_duplicate_players_resolved.html, которым карточка заменяется после
+решения — без перезагрузки страницы и без прокрутки истории запусков.
+{% endcomment %}
+<div id="dup-pair-{{ pair.flag.id }}" class="card bg-base-100 border border-base-300">
+    <div class="card-body p-4">
+        <div class="flex items-center justify-between mb-3">
+            <span class="text-xs opacity-50">
+                <i class="ti ti-shirt-sport"></i> {{ pair.flag.team_label|default:"—" }}
+                <span class="opacity-30">·</span> флаг {{ pair.flag.created_at|timesince }} назад
+            </span>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {% include 'dashboard/_duplicate_player_side.html' with entry=pair.existing keep_value='existing' flag_id=pair.flag.id %}
+            {% include 'dashboard/_duplicate_player_side.html' with entry=pair.new keep_value='new' flag_id=pair.flag.id %}
+        </div>
+        <div class="flex justify-end mt-3 pt-3 border-t border-base-200">
+            <form
+                hx-post="{% url 'dashboard:duplicate_players_dismiss' pair.flag.id %}"
+                hx-target="#dup-pair-{{ pair.flag.id }}" hx-swap="outerHTML"
+                method="post" action="{% url 'dashboard:duplicate_players_dismiss' pair.flag.id %}">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-ghost btn-outline btn-xs">
+                    <i class="ti ti-users"></i> Это разные люди — отклонить флаг
+                </button>
+            </form>
+        </div>
+    </div>
+</div>

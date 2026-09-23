@@ -1,4 +1,5 @@
 # players/models.py
+from django.conf import settings
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 from core.models import BaseModel, NAME_SOURCE_CHOICES
@@ -188,3 +189,62 @@ class PlayerSidelined(BaseModel):
         if self.end_date and self.end_date < today:
             return False
         return True
+
+
+class PotentialDuplicatePlayer(BaseModel):
+    """Флаг "похоже, это тот же человек, что и другой игрок этой же
+    команды, просто Sportmonks прислал ему НОВЫЙ sportmonks_id" —
+    ставится parsers/sportmonks/importers.py::get_or_create_player ПЕРЕД
+    (точнее, сразу ПОСЛЕ) созданием новой записи Player, если в той же
+    команде уже есть игрок с точно таким же (нормализованным через
+    core.utils.normalize_kz) ФИО.
+
+    2026-09-22, прямая просьба пользователя: обнаружил на карточке
+    команды «Женис» несколько игроков (Николай Горобченко, Ермухаммед
+    Бесенгалиев), у которых статистика/рейтинги размазаны между ДВУМЯ
+    записями Player с разными sportmonks_id — Sportmonks иногда
+    переоформляет id одному и тому же реальному человеку (возврат из
+    аренды, техническая правка на их стороне и т.п.), а наш импортёр
+    матчит строго по sportmonks_id и тихо плодил вторую запись.
+
+    НЕ сливается автоматически — прямое решение пользователя ("флажок на
+    ревью, не автослияние"): риск ошибочно объединить двух РАЗНЫХ людей с
+    одинаковым ФИО в одной команде (реже, но бывает) хуже, чем лишняя
+    запись в базе, которую можно спокойно разобрать вручную. Сама новая
+    запись Player создаётся как обычно — сайт не ломается, просто staff
+    получает сигнал. Разбор — вручную через Django admin (проставить
+    reviewed/note) либо через диагностическую команду
+    players/management/commands/diagnose_duplicate_players.py в разделе
+    "Скрипты и команды" (сама merge-операция сознательно НЕ автоматизирована
+    в этом прогоне — см. её докстринг)."""
+
+    existing_player = models.ForeignKey(
+        'players.Player', on_delete=models.CASCADE, related_name='+',
+        verbose_name=_('Уже существующий игрок'),
+    )
+    new_player = models.ForeignKey(
+        'players.Player', on_delete=models.CASCADE, related_name='+',
+        verbose_name=_('Новая запись (возможно, тот же человек)'),
+    )
+    # Снэпшот — переживает смену/потерю команды у любой из двух записей,
+    # не требует лишнего JOIN в списке админки.
+    team_label = models.CharField(_('Команда (снэпшот)'), max_length=200, blank=True)
+
+    reviewed = models.BooleanField(_('Разобрано'), default=False, db_index=True)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='+',
+        verbose_name=_('Кто разобрал'),
+    )
+    reviewed_at = models.DateTimeField(_('Когда разобрано'), null=True, blank=True)
+    note = models.TextField(_('Заметка'), blank=True, help_text=_('Например: "подтверждено, слил вручную" или "ложное срабатывание — разные люди".'))
+
+    class Meta:
+        verbose_name = _('Возможный дубль игрока')
+        verbose_name_plural = _('Возможные дубли игроков')
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(fields=['existing_player', 'new_player'], name='potential_dup_player_unique_pair'),
+        ]
+
+    def __str__(self):
+        return f"{self.existing_player} ↔ {self.new_player} ({self.team_label})"

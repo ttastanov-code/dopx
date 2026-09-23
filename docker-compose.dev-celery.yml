@@ -40,7 +40,18 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: celery -A dopx worker -l info --concurrency=4
+    # 2026-09-22: было --concurrency=4 — OOM-killer убил SIGKILL'ом один из
+    # форкнутых дочерних процессов (см. подтверждённый в логах
+    # "ForkPoolWorker-3 exited with 'signal 9 (SIGKILL)'") во время тяжёлого
+    # разового прогона verify_names_with_ai --all --limit 0, совпавшего по
+    # времени с периодическими тасками пересчёта агрегатов. Снижено до 2 —
+    # для этой очереди (единичные management-команды + редкие периодические
+    # таски, не высоконагруженный API) параллелизм 4 не нужен, а пиковую
+    # память в момент совпадения нескольких тяжёлых тасков режет вдвое.
+    # Дополнительно поднят Memory limit Docker Desktop с 4GB до 6GB — правка
+    # вне репозитория, сделана пользователем в Docker Desktop → Settings →
+    # Resources.
+    command: celery -A dopx worker -l info --concurrency=2
     env_file:
       - .env
     environment:

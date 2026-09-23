@@ -56,7 +56,8 @@ from events.models import MatchEvent
 from leagues.models import League
 from lineups.models import MatchLineup, MatchLineupPlayer
 from matches.models import Match, MatchPlayerStatistics, MatchTeamStatistics
-from players.models import Player, PlayerSidelined
+from players.models import Player, PlayerSidelined, PotentialDuplicatePlayer
+from core.utils import normalize_kz
 from core.models import (
     NAME_SOURCE_AI_VERIFIED,
     NAME_SOURCE_CLEAN_SOURCE,
@@ -776,6 +777,7 @@ def get_or_create_player(
     player, created = Player.objects.update_or_create(sportmonks_id=str(sm_id), defaults=defaults)
     if created:
         logger.info("Sportmonks: создан игрок %s (sportmonks_id=%s)", player.full_name, sm_id)
+        _flag_potential_duplicate_player(player, team)
     elif not is_more_recent:
         logger.debug(
             "Sportmonks: игрок %s (sportmonks_id=%s) — фикстура %s старше уже известного "
@@ -784,6 +786,56 @@ def get_or_create_player(
             player.full_name, sm_id, match_start_time,
         )
     return player
+
+
+def _flag_potential_duplicate_player(new_player: Player, team: Optional[Team]) -> None:
+    """2026-09-22, прямая просьба пользователя после того, как нашёл на
+    карточке «Женис» несколько игроков (Николай Горобченко, Ермухаммед
+    Бесенгалиев) с одинаковым ФИО, но РАЗНЫМИ sportmonks_id — статистика
+    оказалась размазана между двумя записями Player. get_or_create_player
+    выше матчит строго по sportmonks_id, поэтому новый id для уже
+    известного игроку команды тихо создавал вторую запись.
+
+    НЕ сливает автоматически — прямое решение пользователя: риск случайно
+    объединить двух РАЗНЫХ людей с одинаковым ФИО в одной команде (реже,
+    но бывает — однофамильцы в одном клубе не выдумка) хуже, чем лишняя
+    запись, которую можно спокойно разобрать вручную. Только ставит флаг
+    в PotentialDuplicatePlayer (players/models.py) на ручной разбор через
+    Django admin — сама новая запись Player создаётся как обычно, сайт не
+    ломается.
+
+    Матчит по team + нормализованному (core.utils.normalize_kz — снимает
+    казахские/русские омографы и регистр) ФИО — та же логика, что у
+    players/management/commands/diagnose_duplicate_players.py, только
+    здесь срабатывает СРАЗУ в момент импорта, а не отдельным прогоном."""
+    if team is None:
+        return
+    norm_first = normalize_kz(new_player.first_name.strip())
+    norm_last = normalize_kz(new_player.last_name.strip())
+    if not norm_first or not norm_last:
+        return
+
+    existing_match = None
+    for candidate in Player.objects.filter(team=team).exclude(id=new_player.id).only("id", "first_name", "last_name", "sportmonks_id"):
+        if (
+            normalize_kz(candidate.first_name.strip()) == norm_first
+            and normalize_kz(candidate.last_name.strip()) == norm_last
+        ):
+            existing_match = candidate
+            break
+    if existing_match is None:
+        return
+
+    PotentialDuplicatePlayer.objects.get_or_create(
+        existing_player=existing_match, new_player=new_player,
+        defaults={"team_label": team.name},
+    )
+    logger.warning(
+        "Sportmonks: возможный дубль игрока — %s (id=%s, sm_id=%s) и %s (id=%s, sm_id=%s) в команде «%s» "
+        "— флаг поставлен в PotentialDuplicatePlayer, слияние только вручную",
+        existing_match.full_name, existing_match.id, existing_match.sportmonks_id,
+        new_player.full_name, new_player.id, new_player.sportmonks_id, team.name,
+    )
 
 
 # ============================================================================

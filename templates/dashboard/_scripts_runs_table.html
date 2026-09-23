@@ -1,73 +1,140 @@
+{% load dashboard_extras %}
 {% comment %}
 templates/dashboard/_scripts_runs_table.html
-Партиал истории запусков — цель HTMX-поллинга каждые 4с (см. scripts.html,
-hx-get на #scripts-runs-table) — обновляет PENDING/RUNNING → SUCCESS/FAILED
-без перезагрузки страницы и без сброса заполненных форм команд.
+Партиал истории запусков — цель HTMX-поллинга (см. dashboard/views.py::
+scripts_runs_partial), обновляет PENDING/RUNNING → SUCCESS/FAILED без
+перезагрузки страницы и без сброса заполненных форм команд.
+
+2026-09-23, прямая просьба пользователя: убрать раскрывающуюся кнопку
+"показать" (нативный <details>/<summary> по клику), вывод команды должен
+быть виден сразу и выглядеть "как в редакторе кода" — читабельнее. Заодно
+таблица (плохо ведёт себя на мобильном — жалоба со скриншотом) заменена на
+список карточек: одна карточка на запуск, шапка с метаданными сверху,
+вывод — моноширинной панелью ниже с лейблом stdout/stderr (как вкладки
+терминала в VS Code), без дополнительного клика.
+
+2026-09-23, ВТОРОЙ заход, прямая просьба пользователя: "историю запусков
+с пагинацией, но без перезагрузки всей страницы при перелистывании, и
+чтобы данные продолжали жить в реальном времени". Ключевой трюк —
+поллинг-обёртка (id="scripts-runs-table", hx-trigger="every 4s") теперь
+ЗДЕСЬ, внутри партиала, а не снаружи в scripts.html, и свапается ЦЕЛИКОМ
+(hx-swap="outerHTML", не innerHTML как раньше). Каждый ответ сервера несёт
+СВОЙ СОБСТВЕННЫЙ актуальный номер страницы в hx-get (?page={{
+recent_runs.number }}) — то есть после клика по "Далее" HTMX подменяет
+этот div целиком на версию с hx-get=...page=2, и следующий тик поллинга
+(HTMX сам переинициализирует hx-trigger на свежевставленном элементе после
+swap — штатное поведение) сам бьёт по странице 2, а не сбрасывает на
+первую. Кнопки пагинации — тоже hx-get на этот же URL с hx-target/hx-swap
+на этот же элемент, полной перезагрузки страницы нет вообще.
+
+2026-09-23, ТРЕТИЙ заход, БАГ, КОТОРЫЙ ТУТ БЫЛ (жалоба пользователя:
+"жму «Позже» — ничего не происходит"). Первая гипотеза (гонка poll vs
+click за один hx-sync target) была ПРОВЕРЕНА и ОТБРОШЕНА — добавление
+hx-sync тут же сломало HTMX ещё сильнее ("e.matches is not a function"
+в консоли), плюс живая проверка в браузере (devtools) показала: дело было
+вообще не в гонке запросов — ни поллинг, ни клики НЕ РАБОТАЛИ С САМОГО
+НАЧАЛА, запрос на сервер не уходил ВООБЩЕ (0 сетевых запросов на клик).
+
+НАСТОЯЩАЯ причина (подтверждено вручную через `el['htmx-internal-data']`
+в devtools): где-то в САМОМ НАЧАЛЕ полной загрузки страницы (до этого
+скрипта, скорее всего конфликт очерёдности с Django Debug Toolbar,
+которая довешивает свои панели через AJAX) HTMX ловит необработанное
+исключение ВНУТРИ СВОЕГО СОБСТВЕННОГО бутстрап-обхода document.body и
+обрывается на середине. #scripts-runs-table успевает получить только
+внутренний служебный маркер initHash (HTMX так помечает "этот элемент уже
+видели, повторно process() не нужен"), но НАСТОЯЩИЙ обработчик триггера
+("every 4s"/клики) так и не был повешен — из-за этого initHash все
+последующие вызовы htmx.process() на этом элементе — no-op, элемент
+навсегда "мёртвый", хотя выглядит нормально. Фикс — templates/dashboard/
+scripts.html, инлайновый <script> внизу, на window.load с небольшой
+задержкой: если у #scripts-runs-table внутренний стейт выглядит "пустым"
+(нет реальных полей триггера — только initHash или вообще ничего),
+сбрасываем el['htmx-internal-data'] и зовём htmx.process(el) заново —
+проверено вживую в браузере, полностью чинит и поллинг, и пагинацию.
 {% endcomment %}
+<div id="scripts-runs-table" data-background-poll
+     hx-get="{% url 'dashboard:scripts_runs_partial' %}?page={{ recent_runs.number|default:1 }}"
+     hx-trigger="every 4s" hx-swap="outerHTML">
 {% if recent_runs %}
-<div class="overflow-x-auto">
-    <table class="table table-sm">
-        <thead>
-            <tr>
-                <th>Команда</th>
-                <th>Статус</th>
-                <th>Кто</th>
-                <th>Когда</th>
-                <th>Вывод</th>
-                <th></th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for run in recent_runs %}
-            <tr>
-                <td class="font-mono text-xs whitespace-nowrap">{{ run.command_name }}</td>
-                <td>
-                    <span class="badge badge-sm whitespace-nowrap
-                        {% if run.status == 'success' %}badge-success
-                        {% elif run.status == 'failed' %}badge-error
-                        {% elif run.status == 'running' %}badge-warning
-                        {% else %}badge-ghost{% endif %}">
-                        {% if run.status == 'running' %}<span class="loading loading-spinner loading-xs mr-1"></span>{% endif %}
-                        {{ run.get_status_display }}
-                    </span>
-                </td>
-                <td class="text-xs opacity-70 whitespace-nowrap">{{ run.triggered_by_username|default:"—" }}</td>
-                <td class="text-xs opacity-60 whitespace-nowrap">{{ run.created_at|timesince }} назад</td>
-                <td class="text-xs">
-                    {% if run.stdout or run.stderr %}
-                    <details>
-                        <summary class="cursor-pointer link link-hover">показать</summary>
-                        {% if run.stdout %}<pre class="bg-base-200 rounded p-2 mt-1 max-h-48 overflow-auto whitespace-pre-wrap">{{ run.stdout }}</pre>{% endif %}
-                        {% if run.stderr %}<pre class="bg-error/10 text-error rounded p-2 mt-1 max-h-48 overflow-auto whitespace-pre-wrap">{{ run.stderr }}</pre>{% endif %}
-                    </details>
-                    {% else %}
-                    <span class="opacity-40">—</span>
-                    {% endif %}
-                </td>
-                <td class="whitespace-nowrap">
-                    {% if run.status == 'pending' or run.status == 'running' %}
-                    {% comment %}
-                    2026-09-22: только PENDING/RUNNING — завершённые (success/
-                    failed) отзывать нечего, celery_task_id к тому моменту уже
-                    неактуален. terminate=True жёстко зашит в самой вьюхе
-                    (dashboard/views.py::scripts_revoke_run) — без формы выбора,
-                    см. докстринг там же почему soft-revoke бесполезен для уже
-                    бегущего call_command().
-                    {% endcomment %}
-                    <form method="post" action="{% url 'dashboard:scripts_revoke_run' run.id %}"
-                          onsubmit="return confirm('Остановить «' + '{{ run.command_name }}' + '»? Прервёт процесс прямо посреди выполнения (SIGTERM).');">
-                        {% csrf_token %}
-                        <button type="submit" class="btn btn-error btn-outline btn-xs">
-                            <i class="ti ti-player-stop"></i> Стоп
-                        </button>
-                    </form>
-                    {% endif %}
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+<div class="space-y-2">
+    {% for run in recent_runs %}
+    <div class="rounded-lg border border-base-300 overflow-hidden">
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2 bg-base-200/50">
+            <span class="font-mono text-xs font-semibold">{{ run.command_name }}</span>
+            <span class="badge badge-sm whitespace-nowrap
+                {% if run.status == 'success' %}badge-success
+                {% elif run.status == 'failed' %}badge-error
+                {% elif run.status == 'running' %}badge-warning
+                {% else %}badge-ghost{% endif %}">
+                {% if run.status == 'running' %}<span class="loading loading-spinner loading-xs mr-1"></span>{% endif %}
+                {{ run.get_status_display }}
+            </span>
+            <span class="text-xs opacity-60">{{ run.triggered_by_username|default:"—" }}</span>
+            <span class="text-xs opacity-50">{{ run.created_at|timesince }} назад</span>
+            {% if run.status == 'pending' or run.status == 'running' %}
+            {% comment %}
+            2026-09-22: только PENDING/RUNNING — завершённые (success/
+            failed) отзывать нечего, celery_task_id к тому моменту уже
+            неактуален. terminate=True жёстко зашит в самой вьюхе
+            (dashboard/views.py::scripts_revoke_run) — без формы выбора,
+            см. докстринг там же почему soft-revoke бесполезен для уже
+            бегущего call_command().
+            {% endcomment %}
+            <form method="post" action="{% url 'dashboard:scripts_revoke_run' run.id %}" class="ml-auto"
+                  onsubmit="return confirm('Остановить «' + '{{ run.command_name }}' + '»? Прервёт процесс прямо посреди выполнения (SIGTERM).');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-error btn-outline btn-xs">
+                    <i class="ti ti-player-stop"></i> Стоп
+                </button>
+            </form>
+            {% endif %}
+        </div>
+        {% if run.stdout %}
+        <div class="border-t border-base-300">
+            <div class="px-3 py-1 text-[10px] font-mono uppercase tracking-wide opacity-40 bg-base-100">stdout</div>
+            <div class="px-3 pb-3 pt-1 max-h-72 overflow-auto bg-base-100 font-mono">{{ run.stdout|format_command_output }}</div>
+        </div>
+        {% endif %}
+        {% if run.stderr %}
+        <div class="border-t border-error/20">
+            <div class="px-3 py-1 text-[10px] font-mono uppercase tracking-wide text-error/70 bg-error/5">stderr</div>
+            <div class="px-3 pb-3 pt-1 max-h-72 overflow-auto bg-error/5 font-mono">{{ run.stderr|format_command_output }}</div>
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
 </div>
+
+{% if recent_runs.paginator.num_pages > 1 %}
+{% comment %}
+Тот же паттерн, что "Недавно разобранные" на names_review.html, но hx-get
+вместо обычных href — свап только этого div'а (id="scripts-runs-table"
+выше), без прыжка/перезагрузки страницы. hx-target/hx-swap на САМ СЕБЯ
+(closest — id уже объявлен на обёртке снаружи этого if) через селектор по
+id, не через `this` — кнопки физически внутри обёртки, но swap должен
+заменить её ЦЕЛИКОМ (outerHTML), иначе новый hx-get с обновлённым ?page=
+некуда будет "приземлить" на следующий тик поллинга.
+{% endcomment %}
+<div class="flex items-center justify-center gap-2 mt-3">
+    {% if recent_runs.has_previous %}
+    <button type="button" class="btn btn-xs btn-outline"
+            hx-get="{% url 'dashboard:scripts_runs_partial' %}?page={{ recent_runs.previous_page_number }}"
+            hx-target="#scripts-runs-table" hx-swap="outerHTML">« Раньше</button>
+    {% else %}
+    <span class="btn btn-xs btn-disabled">« Раньше</span>
+    {% endif %}
+    <span class="text-xs opacity-60">Стр. {{ recent_runs.number }} из {{ recent_runs.paginator.num_pages }}</span>
+    {% if recent_runs.has_next %}
+    <button type="button" class="btn btn-xs btn-outline"
+            hx-get="{% url 'dashboard:scripts_runs_partial' %}?page={{ recent_runs.next_page_number }}"
+            hx-target="#scripts-runs-table" hx-swap="outerHTML">Позже »</button>
+    {% else %}
+    <span class="btn btn-xs btn-disabled">Позже »</span>
+    {% endif %}
+</div>
+{% endif %}
+
 {% else %}
 <p class="text-sm opacity-60 py-4 text-center">Команды ещё не запускались</p>
 {% endif %}
+</div>

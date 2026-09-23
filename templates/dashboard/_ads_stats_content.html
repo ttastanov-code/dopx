@@ -6,24 +6,24 @@ templates/dashboard/_ads_stats_content.html
 статистика была видна только построчно в /admin/partners/banner/ и
 /admin/partners/partner/ — здесь сводная картина по всей рекламе сразу.
 {% endcomment %}
-<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-    <div class="stat bg-base-200 rounded-lg p-3">
-        <div class="stat-title text-xs">Показы баннеров</div>
-        <div class="stat-value text-xl">{{ banner_totals.impressions }}</div>
+<div class="dopx-stat-grid mb-4">
+    <div class="dopx-stat">
+        <div class="dopx-stat-label"><i class="ti ti-photo"></i>Показы баннеров</div>
+        <div class="dopx-stat-value">{{ banner_totals.impressions }}</div>
     </div>
-    <div class="stat bg-base-200 rounded-lg p-3">
-        <div class="stat-title text-xs">Клики по баннерам</div>
-        <div class="stat-value text-xl">{{ banner_totals.clicks }}</div>
-        <div class="stat-desc text-xs">CTR {{ banner_totals.ctr_percent }}%</div>
+    <div class="dopx-stat">
+        <div class="dopx-stat-label"><i class="ti ti-click"></i>Клики по баннерам</div>
+        <div class="dopx-stat-value">{{ banner_totals.clicks }}</div>
+        <div class="dopx-stat-delta">CTR {{ banner_totals.ctr_percent }}%</div>
     </div>
-    <div class="stat bg-base-200 rounded-lg p-3">
-        <div class="stat-title text-xs">Визиты по рефералкам</div>
-        <div class="stat-value text-xl">{{ referral_visits_total }}</div>
+    <div class="dopx-stat">
+        <div class="dopx-stat-label"><i class="ti ti-affiliate"></i>Визиты по рефералкам</div>
+        <div class="dopx-stat-value">{{ referral_visits_total }}</div>
     </div>
-    <div class="stat bg-base-200 rounded-lg p-3">
-        <div class="stat-title text-xs">Просмотры виджетов</div>
-        <div class="stat-value text-xl">{{ widget_totals.player|add:widget_totals.team|add:widget_totals.standings }}</div>
-        <div class="stat-desc text-xs">игрок {{ widget_totals.player }} · команда {{ widget_totals.team }} · таблица {{ widget_totals.standings }}</div>
+    <div class="dopx-stat">
+        <div class="dopx-stat-label"><i class="ti ti-code"></i>Просмотры виджетов</div>
+        <div class="dopx-stat-value">{{ widget_totals.player|add:widget_totals.team|add:widget_totals.standings }}</div>
+        <div class="dopx-stat-delta">игрок {{ widget_totals.player }} · команда {{ widget_totals.team }} · таблица {{ widget_totals.standings }}</div>
     </div>
 </div>
 <p class="text-xs opacity-50 mb-4">За последние 30 дней. Показы и клики баннеров, визиты по рефералкам считаются событиями BANNER_IMPRESSION, BANNER_CLICK и PARTNER_REFERRAL_VISIT. Просмотры виджетов считаются событием WIDGET_EMBED_VIEWED (каждая загрузка &lt;iframe&gt; на чужом сайте).</p>

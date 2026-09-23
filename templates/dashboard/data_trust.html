@@ -16,22 +16,22 @@ data_trust_summary докстринг.
 {% block content %}
 {% include 'dashboard/_nav.html' %}
 
-<div class="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6">
-    <div class="stat bg-base-100 border border-error/30 rounded-lg p-3 md:p-4">
-        <div class="stat-title text-[10px] md:text-xs">Открытых жалоб</div>
-        <div class="stat-value text-lg md:text-2xl text-error">{{ trust.data_error_reports_count }}</div>
+<div class="dopx-stat-grid mb-6">
+    <div class="dopx-stat">
+        <div class="dopx-stat-label"><i class="ti ti-flag-3"></i>Открытых жалоб</div>
+        <div class="dopx-stat-value" style="color: var(--color-error)">{{ trust.data_error_reports_count }}</div>
     </div>
-    <div class="stat bg-base-100 border border-base-300 rounded-lg p-3 md:p-4">
-        <div class="stat-title text-[10px] md:text-xs">Всего жалоб / решено</div>
-        <div class="stat-value text-lg md:text-2xl">{{ trust.data_error_reports_resolved_count }}<span class="text-sm opacity-50"> / {{ trust.data_error_reports_total }}</span></div>
+    <div class="dopx-stat">
+        <div class="dopx-stat-label"><i class="ti ti-checklist"></i>Решено / всего</div>
+        <div class="dopx-stat-value">{{ trust.data_error_reports_resolved_count }}<span class="text-sm opacity-50"> / {{ trust.data_error_reports_total }}</span></div>
     </div>
-    <div class="stat bg-base-100 border border-warning/30 rounded-lg p-3 md:p-4 col-span-2 md:col-span-1">
-        <div class="stat-title text-[10px] md:text-xs">Расхождения импорта</div>
-        <div class="stat-value text-lg md:text-2xl text-warning">{{ trust.unreviewed_discrepancies_count }}</div>
+    <div class="dopx-stat">
+        <div class="dopx-stat-label"><i class="ti ti-git-compare"></i>Расхождения</div>
+        <div class="dopx-stat-value" style="color: var(--color-warning)">{{ trust.unreviewed_discrepancies_count }}</div>
     </div>
-    <div class="stat bg-base-100 border border-base-300 rounded-lg p-3 md:p-4">
-        <div class="stat-title text-[10px] md:text-xs">Синк матчей</div>
-        <div class="stat-value text-sm md:text-base">
+    <div class="dopx-stat">
+        <div class="dopx-stat-label"><i class="ti ti-heartbeat"></i>Синк матчей</div>
+        <div class="dopx-stat-value" style="font-size: 1rem;">
             <a href="{% url 'dashboard:data_health' %}" class="link link-hover">Здоровье данных →</a>
         </div>
     </div>
@@ -41,13 +41,14 @@ data_trust_summary докстринг.
 <div class="card bg-base-100 border border-base-300 mb-6">
     <div class="card-body p-4">
         <div class="flex flex-wrap items-center justify-between gap-2 mb-1">
-            <h3 class="font-bold text-sm md:text-base flex items-center gap-2">
-                <i class="ti ti-flag-3 text-error"></i> Жалобы на данные матчей
-            </h3>
-            <div role="tablist" class="tabs tabs-boxed tabs-xs">
-                <a role="tab" href="?report_status=open" class="tab {% if trust.report_status_filter == 'open' %}tab-active{% endif %}">Открытые</a>
-                <a role="tab" href="?report_status=resolved" class="tab {% if trust.report_status_filter == 'resolved' %}tab-active{% endif %}">Решённые</a>
-                <a role="tab" href="?report_status=all" class="tab {% if trust.report_status_filter == 'all' %}tab-active{% endif %}">Все</a>
+            <div>
+                <div class="dopx-section-eyebrow" style="color: var(--color-error)"><i class="ti ti-flag-3"></i>Жалобы</div>
+                <div class="dopx-section-title">На данные матчей</div>
+            </div>
+            <div class="dopx-segment">
+                <a href="?report_status=open" class="dopx-segment__item {% if trust.report_status_filter == 'open' %}dopx-segment__item--active{% endif %}">Открытые</a>
+                <a href="?report_status=resolved" class="dopx-segment__item {% if trust.report_status_filter == 'resolved' %}dopx-segment__item--active{% endif %}">Решённые</a>
+                <a href="?report_status=all" class="dopx-segment__item {% if trust.report_status_filter == 'all' %}dopx-segment__item--active{% endif %}">Все</a>
             </div>
         </div>
         <p class="text-xs opacity-50 mb-3">
@@ -102,9 +103,8 @@ data_trust_summary докстринг.
 <!-- Расхождения импорта -->
 <div class="card bg-base-100 border border-base-300 mb-6">
     <div class="card-body p-4">
-        <h3 class="font-bold text-sm md:text-base mb-1 flex items-center gap-2">
-            <i class="ti ti-git-compare text-warning"></i> Расхождения импорта
-        </h3>
+        <div class="dopx-section-eyebrow" style="color: var(--color-warning)"><i class="ti ti-git-compare"></i>Расхождения</div>
+        <div class="dopx-section-title mb-1">Расхождения импорта</div>
         {% comment %}
         Честно про заморозку очереди (см. dashboard/services.py докстринг):
         писал их только удалённый KFF-импортёр, Sportmonks-пайплайн новых
@@ -158,9 +158,8 @@ data_trust_summary докстринг.
 <!-- История исправлений -->
 <div class="card bg-base-100 border border-base-300">
     <div class="card-body p-4">
-        <h3 class="font-bold text-sm md:text-base mb-1 flex items-center gap-2">
-            <i class="ti ti-history text-info"></i> История исправлений
-        </h3>
+        <div class="dopx-section-eyebrow"><i class="ti ti-history"></i>Журнал</div>
+        <div class="dopx-section-title mb-1">История исправлений</div>
         <p class="text-xs opacity-50 mb-3">
             Последние действия staff по правке данных: закрытие жалобы, разбор расхождения импорта, ручной ресинк матча.
             Полный аудит-лог — на вкладке «Аудит».

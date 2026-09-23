@@ -110,10 +110,31 @@ def run_command_sync(spec: CommandSpec, positional: list, kwargs: dict) -> tuple
     воркером run_management_command для остальных категорий. Возвращает
     (success, stdout, stderr) — CommandError/любое исключение ловим сами и
     кладём текст в stderr, а не роняем вызывающий код (staff должен увидеть
-    ПОЧЕМУ команда упала, а не голый 500)."""
+    ПОЧЕМУ команда упала, а не голый 500).
+
+    2026-09-23, прямая просьба пользователя: "для каждого вида вывода на
+    странице [Скрипты] сделай максимально читабельным и красиво
+    размеченным, где надо подсветить/выделить". Все ~20 management-команд
+    в COMMAND_REGISTRY УЖЕ размечают свой вывод через self.style.SUCCESS/
+    WARNING/ERROR/NOTICE/MIGRATE_HEADING — это чистая семантика ("это
+    успех", "это предупреждение"), не привязанная к конкретному тексту
+    команды. Проблема была не в её отсутствии, а в том, что call_command()
+    писал в io.StringIO() БЕЗ force_color — Django проверяет
+    sys.stdout.isatty() (см. django/core/management/color.py::
+    supports_color) и молча возвращает no-op стили для любого не-TTY
+    получателя, то есть вся разметка каждой команды терялась ДО того, как
+    доходила до нас. force_color=True — штатный stealth-опцион
+    call_command() (BaseCommand.create_parser добавляет --force-color
+    каждой команде) — заставляет Django завернуть текст в настоящие ANSI
+    SGR-коды независимо от получателя; dashboard_extras.py::
+    format_command_output разбирает их обратно в CSS-классы (см. докстринг
+    там же). Работает для ЛЮБОЙ из ~20 команд сразу, без правки каждой
+    поштучно — семантика уже была в самих командах, не хватало только не
+    выбрасывать её на полпути.
+    """
     out, err = io.StringIO(), io.StringIO()
     try:
-        call_command(spec.name, *positional, stdout=out, stderr=err, **kwargs)
+        call_command(spec.name, *positional, stdout=out, stderr=err, force_color=True, **kwargs)
         success = True
     except CommandError as e:
         err.write(f"\nCommandError: {e}")

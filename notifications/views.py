@@ -11,6 +11,7 @@ from django.http import HttpResponse
 from django.template.loader import render_to_string
 from django.db.models import Q
 from urllib.parse import urlencode
+from core.models import get_setting
 from .models import Notification
 
 
@@ -19,6 +20,12 @@ class NotificationListView(LoginRequiredMixin, ListView):
     template_name = 'notifications/list.html'
     context_object_name = 'notifications'
     paginate_by = 20
+
+    def get_paginate_by(self, queryset):
+        # 2026-09-23, «Настройки платформы» — размер страницы управляется
+        # staff без деплоя (core.models.get_setting), paginate_by=20 выше
+        # остаётся запасным значением на случай, если ключ ещё не заведён.
+        return get_setting("user_notifications_page_size", self.paginate_by)
 
     def get_queryset(self):
         queryset = Notification.objects.filter(

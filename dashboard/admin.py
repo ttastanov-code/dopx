@@ -5,7 +5,7 @@ from django.contrib import admin
 from unfold.admin import ModelAdmin
 
 from core.admin_actions import export_as_csv
-from dashboard.models import StaffActionLog
+from dashboard.models import StaffAccessGrant, StaffActionLog
 
 
 @admin.register(StaffActionLog)
@@ -30,3 +30,22 @@ class StaffActionLogAdmin(ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+@admin.register(StaffAccessGrant)
+class StaffAccessGrantAdmin(ModelAdmin):
+    """2026-09-23, прямая просьба пользователя — виден и в Django /admin/,
+    не только на /staff/dashboard/access/. Раздел доступа сам по себе
+    остаётся суперпользовательским: и эта admin-страница, и dashboard-
+    страница видны/доступны только is_superuser (Django admin сам по себе
+    показывает разделы по правам Django-permissions, а не по нашему
+    StaffAccessGrant — эта модель никак не ограничивает саму себя)."""
+
+    list_display = ("user", "section_count", "updated_by", "updated_at")
+    search_fields = ("user__username",)
+    autocomplete_fields = ("user",)
+    readonly_fields = ("updated_at",)
+
+    def section_count(self, obj):
+        return len(obj.allowed_sections)
+    section_count.short_description = "Разделов разрешено"

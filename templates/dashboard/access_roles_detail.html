@@ -1,0 +1,76 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+{% comment %}
+templates/dashboard/access_roles_detail.html
+2026-09-23, раздел «Роли доступа» — карточка прав ОДНОГО сотрудника
+(dashboard/views.py::access_roles_detail). Чекбоксы предзаполнены как
+"всё включено", если у сотрудника ЕЩЁ НЕТ записи StaffAccessGrant (см.
+grandfather-правило) — снятие любого чекбокса и сохранение впервые создаёт
+запись и с этого момента реально ограничивает доступ.
+{% endcomment %}
+
+<div class="mb-4">
+    <a href="{% url 'dashboard:access_roles_list' %}" class="text-xs opacity-60 hover:opacity-100"><i class="ti ti-arrow-left"></i> К списку сотрудников</a>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+    <div class="lg:col-span-2">
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-4">
+                <div class="flex items-center justify-between flex-wrap gap-2">
+                    <div>
+                        <div class="dopx-section-eyebrow"><i class="ti ti-shield-lock"></i>Права доступа</div>
+                        <div class="dopx-section-title">{{ target_user.username }}</div>
+                    </div>
+                    {% if has_restrictions %}
+                    <span class="badge badge-warning">ограничен</span>
+                    {% else %}
+                    <span class="badge badge-success">полный доступ</span>
+                    {% endif %}
+                </div>
+
+                <form method="post" class="mt-3">
+                    {% csrf_token %}
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {% for s in sections %}
+                        <label class="label cursor-pointer justify-start gap-2 rounded-lg border border-base-300 px-3 py-2">
+                            <input type="checkbox" name="section_{{ s.key }}" {% if s.checked %}checked{% endif %} class="checkbox checkbox-sm">
+                            <span class="text-sm">{{ s.label }}</span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                    {% comment %}
+                    2026-09-23, БАГ (жалоба пользователя со скриншотом —
+                    кнопки жмутся друг в друга на мобильном). Причина: два
+                    btn-sm с длинным русским текстом в один flex-row без
+                    возможности сжаться/перенестись — на 375px не помещаются,
+                    иконка/текст одной кнопки наезжают на другую. Фикс —
+                    flex-col на мобильном (кнопки друг под другом, каждая
+                    w-full), sm:flex-row обратно в один ряд на планшете/
+                    десктопе, где места хватает.
+                    {% endcomment %}
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2 mt-4">
+                        <button type="submit" name="action" value="full_access" class="btn btn-sm btn-outline w-full sm:w-auto"><i class="ti ti-shield-off"></i> Снять все ограничения</button>
+                        <button type="submit" class="btn btn-sm btn-primary w-full sm:w-auto"><i class="ti ti-device-floppy"></i> Сохранить выбранные</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="card bg-base-100 border border-base-300 h-fit">
+        <div class="card-body p-4">
+            <div class="dopx-section-eyebrow"><i class="ti ti-info-circle"></i>Справка</div>
+            <p class="text-xs opacity-60 leading-relaxed mt-1">
+                Снятый чекбокс закрывает и вкладку в меню, и прямой переход по ссылке на этот раздел (403). Суперпользователей в этом списке нет — у них всегда полный доступ, это правило нельзя обойти через форму.
+            </p>
+            {% if grant %}
+            <p class="text-xs opacity-40 mt-3">Изменено {{ grant.updated_at|date:"d.m.Y H:i" }}{% if grant.updated_by %} · {{ grant.updated_by.username }}{% endif %}</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

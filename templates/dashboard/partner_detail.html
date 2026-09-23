@@ -1,0 +1,122 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+{% comment %}
+templates/dashboard/partner_detail.html
+2026-09-23, раздел «Партнёры и баннеры» — карточка одного партнёра
+(dashboard/views.py::partner_detail): форма редактирования всех полей +
+список привязанных баннеров (read-only ссылки на их карточки) + удаление.
+Namer/slug: слаг НЕ редактируется здесь (используется в реферальной ссылке
+/go/<slug>/ — уже могла быть роздана партнёру, менять её задним числом
+означало бы молча сломать уже отправленные ссылки; при реальной
+необходимости — через Django admin, осознанно).
+{% endcomment %}
+
+<div class="mb-4">
+    <a href="{% url 'dashboard:partners_list' %}" class="text-xs opacity-60 hover:opacity-100"><i class="ti ti-arrow-left"></i> К списку партнёров</a>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+    <div class="lg:col-span-2 space-y-4">
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-4">
+                <div class="flex items-center justify-between flex-wrap gap-2">
+                    <div>
+                        <div class="dopx-section-eyebrow"><i class="ti ti-building-store"></i>Партнёр</div>
+                        <div class="dopx-section-title">{{ partner.name }}</div>
+                    </div>
+                    <span class="text-xs font-mono opacity-50">/go/{{ partner.slug }}/</span>
+                </div>
+
+                <form method="post" class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                    {% csrf_token %}
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Название</label>
+                        <input type="text" name="name" value="{{ partner.name }}" required class="input input-sm input-bordered w-full">
+                    </div>
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Тип</label>
+                        <select name="partner_type" class="select select-sm select-bordered w-full">
+                            {% for value, label in partner_type_choices %}
+                            <option value="{{ value }}" {% if partner.partner_type == value %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Контактное лицо</label>
+                        <input type="text" name="contact_name" value="{{ partner.contact_name }}" class="input input-sm input-bordered w-full">
+                    </div>
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Email</label>
+                        <input type="email" name="contact_email" value="{{ partner.contact_email }}" class="input input-sm input-bordered w-full">
+                    </div>
+                    <div class="flex flex-col gap-1 sm:col-span-2">
+                        <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Сайт</label>
+                        <input type="url" name="website" value="{{ partner.website }}" class="input input-sm input-bordered w-full">
+                    </div>
+                    <div class="flex flex-col gap-1 sm:col-span-2">
+                        <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Внутренние заметки</label>
+                        <textarea name="notes" rows="3" class="textarea textarea-sm textarea-bordered w-full">{{ partner.notes }}</textarea>
+                    </div>
+                    {% comment %}
+                    2026-09-23, БАГ (найден при мобильном аудите — тот же
+                    класс проблемы, что в match_detail.html: у daisyUI
+                    label-text по умолчанию white-space: nowrap, длинный
+                    текст в скобках не переносился и выталкивал кнопку
+                    «Сохранить» за край экрана на мобильном). Фикс —
+                    flex-col на мобильном (label и кнопка друг под другом),
+                    sm:flex-row обратно в один ряд на десктопе, плюс
+                    whitespace-normal/min-w-0 на span, чтобы сам текст
+                    переносился внутри строки.
+                    {% endcomment %}
+                    <div class="sm:col-span-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <label class="label cursor-pointer gap-2 justify-start items-start">
+                            <input type="checkbox" name="is_active" {% if partner.is_active %}checked{% endif %} class="checkbox checkbox-sm mt-0.5 shrink-0">
+                            <span class="text-xs min-w-0 whitespace-normal">Партнёр активен (выключение сразу останавливает все его баннеры)</span>
+                        </label>
+                        <button type="submit" class="btn btn-sm btn-primary shrink-0"><i class="ti ti-device-floppy"></i> Сохранить</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-4">
+                <div class="flex items-center justify-between">
+                    <div class="dopx-section-eyebrow"><i class="ti ti-photo"></i>Баннеры этого партнёра ({{ banners|length }})</div>
+                    <a href="{% url 'dashboard:banners_list' %}?partner_id={{ partner.id }}" class="text-xs opacity-60 hover:opacity-100">Все баннеры →</a>
+                </div>
+                {% if banners %}
+                <div class="space-y-2 mt-2">
+                    {% for b in banners %}
+                    <a href="{% url 'dashboard:banner_detail' b.id %}" class="flex items-center justify-between gap-2 rounded-lg border border-base-300 p-2.5 text-xs hover:bg-base-200/50">
+                        <span class="font-medium">{{ b.title }}</span>
+                        <span class="opacity-50">{{ b.get_zone_display }}</span>
+                        {% if b.is_currently_active %}<span class="badge badge-sm badge-success">показывается</span>
+                        {% else %}<span class="badge badge-sm badge-ghost">не показывается</span>{% endif %}
+                    </a>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-xs opacity-50 mt-2">Баннеров пока нет</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="card bg-base-100 border border-base-300 h-fit">
+        <div class="card-body p-4">
+            <div class="dopx-section-eyebrow"><i class="ti ti-shield"></i>Опасная зона</div>
+            <div class="dopx-section-title mb-3">Удаление</div>
+            <p class="text-xs opacity-60 mb-3">Баннеры этого партнёра НЕ удалятся — просто потеряют привязку к партнёру (partner.on_delete=SET_NULL).</p>
+            <form method="post" action="{% url 'dashboard:partner_delete' partner.id %}"
+                  onsubmit="return confirm('Удалить партнёра «' + '{{ partner.name }}' + '»? Действие необратимо.');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-outline btn-error w-full"><i class="ti ti-trash"></i> Удалить партнёра</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

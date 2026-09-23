@@ -6,53 +6,52 @@
      (через dashboard/views.py::data_health_partial) — сам по себе, без
      base.html/_nav.html, чтобы HTMX не задваивал шапку/навигацию при свапе. -->
 <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4 mb-6">
-    <div class="stat bg-base-100 border border-base-300 rounded-lg p-3 md:p-4">
-        <div class="stat-title text-[10px] md:text-xs">Последняя синхронизация</div>
+    <div class="dopx-stat">
+        <div class="dopx-stat-label"><i class="ti ti-refresh"></i>Синхронизация</div>
         {% if health.last_run %}
-        <div class="stat-value text-base md:text-xl">{{ health.last_run.created_at|timesince }} назад</div>
-        <div class="stat-desc text-[10px] md:text-xs whitespace-normal">{{ health.last_run.total }} матчей, {{ health.last_run.duration_seconds|floatformat:1 }}с</div>
+        <div class="dopx-stat-value" style="font-size: 1.125rem;">{{ health.last_run.created_at|timesince }} назад</div>
+        <div class="dopx-stat-delta">{{ health.last_run.total }} матчей, {{ health.last_run.duration_seconds|floatformat:1 }}с</div>
         {% else %}
-        <div class="stat-value text-base md:text-xl opacity-40">нет данных</div>
-        <div class="stat-desc text-[10px] md:text-xs whitespace-normal">Синхронизация ещё не запускалась</div>
+        <div class="dopx-stat-value opacity-40" style="font-size: 1.125rem;">нет данных</div>
+        <div class="dopx-stat-delta">ещё не запускалась</div>
         {% endif %}
     </div>
-    <div class="stat bg-base-100 border border-base-300 rounded-lg p-3 md:p-4">
-        <div class="stat-title text-[10px] md:text-xs">Ошибок в последнем запуске</div>
-        <div class="stat-value text-lg md:text-2xl {% if health.last_run.errors %}text-error{% else %}text-success{% endif %}">
+    <div class="dopx-stat">
+        <div class="dopx-stat-label"><i class="ti ti-bug"></i>Ошибок</div>
+        <div class="dopx-stat-value" style="{% if health.last_run.errors %}color: var(--color-error){% else %}color: var(--color-success){% endif %}">
             {{ health.last_run.errors|default:0 }}
         </div>
-        <div class="stat-desc text-[10px] md:text-xs whitespace-normal">{{ health.last_run.error_rate_percent|default:0 }}% от {{ health.last_run.total|default:0 }}</div>
+        <div class="dopx-stat-delta">{{ health.last_run.error_rate_percent|default:0 }}% от {{ health.last_run.total|default:0 }}</div>
     </div>
-    <div class="stat bg-base-100 border border-base-300 rounded-lg p-3 md:p-4">
-        <div class="stat-title text-[10px] md:text-xs">Матчи без составов</div>
-        <div class="stat-value text-lg md:text-2xl {% if health.matches_missing_lineups %}text-warning{% endif %}">
+    <div class="dopx-stat">
+        <div class="dopx-stat-label"><i class="ti ti-users-group"></i>Без составов</div>
+        <div class="dopx-stat-value" style="{% if health.matches_missing_lineups %}color: var(--color-warning){% endif %}">
             {{ health.matches_missing_lineups }}
         </div>
-        <div class="stat-desc text-[10px] md:text-xs whitespace-normal">live/finished, has_lineup=True, но пусто</div>
+        <div class="dopx-stat-delta">live/finished, has_lineup=True</div>
     </div>
-    <div class="stat bg-base-100 border border-base-300 rounded-lg p-3 md:p-4">
-        <div class="stat-title text-[10px] md:text-xs">Матчи без событий</div>
-        <div class="stat-value text-lg md:text-2xl {% if health.matches_missing_events %}text-warning{% endif %}">
+    <div class="dopx-stat">
+        <div class="dopx-stat-label"><i class="ti ti-list-details"></i>Без событий</div>
+        <div class="dopx-stat-value" style="{% if health.matches_missing_events %}color: var(--color-warning){% endif %}">
             {{ health.matches_missing_events }}
         </div>
-        <div class="stat-desc text-[10px] md:text-xs whitespace-normal">live/finished, ни одного MatchEvent</div>
+        <div class="dopx-stat-delta">live/finished, ни одного MatchEvent</div>
     </div>
-    <div class="stat bg-base-100 border border-base-300 rounded-lg p-3 md:p-4">
-        <div class="stat-title text-[10px] md:text-xs">Расхождения импорта</div>
-        <div class="stat-value text-lg md:text-2xl {% if health.unreviewed_discrepancies_count %}text-warning{% else %}text-success{% endif %}">
+    <div class="dopx-stat">
+        <div class="dopx-stat-label"><i class="ti ti-git-compare"></i>Расхождения</div>
+        <div class="dopx-stat-value" style="{% if health.unreviewed_discrepancies_count %}color: var(--color-warning){% else %}color: var(--color-success){% endif %}">
             {{ health.unreviewed_discrepancies_count }}
         </div>
-        <div class="stat-desc text-[10px] md:text-xs whitespace-normal">счёт/статус изменились у уже завершённых</div>
+        <div class="dopx-stat-delta">счёт/статус после завершения</div>
     </div>
 </div>
 
 {% if health.matches_missing_lineups_list or health.matches_missing_events_list %}
 <div class="card bg-base-100 border border-warning/30 mb-6">
     <div class="card-body p-4">
-        <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
-            <i class="ti ti-alert-triangle text-warning"></i> Матчи с пропущенными данными
-        </h3>
-        <p class="text-xs opacity-60 mb-3">Те же матчи, что в карточках выше. Кнопка «Ресинк» запускает полную пересинхронизацию через Sportmonks прямо отсюда, без поиска UUID в Django admin.</p>
+        <div class="dopx-section-eyebrow"><i class="ti ti-alert-triangle"></i>Требуют внимания</div>
+        <div class="dopx-section-title">Матчи с пропущенными данными</div>
+        <p class="dopx-section-desc mb-3">Те же матчи, что в карточках выше. Кнопка «Ресинк» запускает полную пересинхронизацию через Sportmonks прямо отсюда, без поиска UUID в Django admin.</p>
         <div class="overflow-x-auto">
             <table class="table table-sm">
                 <thead>
@@ -104,9 +103,8 @@
 
 <div class="card bg-base-100 border border-base-300 mb-6">
     <div class="card-body p-4">
-        <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
-            <i class="ti ti-server-2 text-primary"></i> Инфраструктура
-        </h3>
+        <div class="dopx-section-eyebrow"><i class="ti ti-server-2"></i>Система</div>
+        <div class="dopx-section-title mb-3">Инфраструктура</div>
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div class="rounded-lg border border-base-300 p-3">
                 <div class="text-xs opacity-60 mb-1 flex items-center gap-1">
@@ -156,10 +154,9 @@
 {% if health.unreviewed_discrepancies_list %}
 <div class="card bg-base-100 border border-warning/30 mb-6">
     <div class="card-body p-4">
-        <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
-            <i class="ti ti-alert-triangle text-warning"></i> Расхождения импорта (нужен ручной разбор)
-        </h3>
-        <p class="text-xs opacity-60 mb-3">Счёт или статус изменились у матча, который уже был завершён — обычный ход матча сюда не попадает, см. parsers/models.py::ParserDiscrepancy. Разбор и отметка «разобрано» — в Django admin.</p>
+        <div class="dopx-section-eyebrow"><i class="ti ti-alert-triangle"></i>Требуют внимания</div>
+        <div class="dopx-section-title">Расхождения импорта</div>
+        <p class="dopx-section-desc mb-3">Счёт или статус изменились у матча, который уже был завершён — обычный ход матча сюда не попадает, см. parsers/models.py::ParserDiscrepancy. Разбор и отметка «разобрано» — в Django admin.</p>
         <div class="overflow-x-auto">
             <table class="table table-sm">
                 <thead>
@@ -190,9 +187,8 @@
 {% if health.recent_error_samples %}
 <div class="card bg-base-100 border border-error/30 mb-6">
     <div class="card-body p-4">
-        <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
-            <i class="ti ti-alert-triangle text-error"></i> Последние ошибки (из последнего запуска)
-        </h3>
+        <div class="dopx-section-eyebrow" style="color: var(--color-error)"><i class="ti ti-alert-triangle"></i>Ошибки</div>
+        <div class="dopx-section-title mb-3">Из последнего запуска</div>
         <div class="overflow-x-auto">
             <table class="table table-sm">
                 <thead>
@@ -223,7 +219,8 @@
 
 <div class="card bg-base-100 border border-base-300">
     <div class="card-body p-4">
-        <h3 class="font-bold text-sm md:text-base mb-3">История запусков</h3>
+        <div class="dopx-section-eyebrow"><i class="ti ti-history"></i>Журнал</div>
+        <div class="dopx-section-title mb-3">История запусков</div>
         <div class="overflow-x-auto">
             <table class="table table-sm">
                 <thead>

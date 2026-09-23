@@ -2,6 +2,7 @@
 from django.db.models import Avg, Count, Q, Sum
 from django.views.generic import ListView, DetailView
 from core.utils import normalize_kz
+from core.models import get_setting
 from referees.models import Referee
 from matches.models import Match
 from aggregates.models import RefereeMatchAggregate
@@ -13,6 +14,10 @@ class RefereeListView(ListView):
     template_name = 'referees/list.html'
     context_object_name = 'referees'
     paginate_by = 20
+
+    def get_paginate_by(self, queryset):
+        # 2026-09-23, «Настройки платформы» — управляется staff без деплоя.
+        return get_setting("referees_list_page_size", self.paginate_by)
 
     def get_queryset(self):
         # 2026-08-23: раньше здесь были Subquery по RefereeEvaluation

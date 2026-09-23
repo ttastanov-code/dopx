@@ -3,6 +3,7 @@ from django.views.generic import ListView, DetailView
 from django.db.models import Count, Avg, F, Q, Sum
 from django.db.models.functions import Coalesce
 from django.core.cache import cache  # ✅ Для кэширования
+from core.models import get_setting
 from leagues.models import League
 from seasons.models import Season
 from matches.models import Match
@@ -21,7 +22,11 @@ class LeagueListView(ListView):
     template_name = 'leagues/list.html'
     context_object_name = 'leagues'
     paginate_by = 20
-    
+
+    def get_paginate_by(self, queryset):
+        # 2026-09-23, «Настройки платформы» — управляется staff без деплоя.
+        return get_setting("leagues_list_page_size", self.paginate_by)
+
     def get_queryset(self):
         return League.objects.all().order_by('name')
     

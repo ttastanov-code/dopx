@@ -264,12 +264,19 @@ def flag_suspicious_wizard_speed_task(session_id: str) -> bool:
     if not session or session.status != "completed":
         return False
 
+    # 2026-09-23, раздел «Настройки платформы» (dashboard) — порог теперь
+    # управляется staff без деплоя через ключ fast_wizard_min_seconds,
+    # MIN_HUMAN_WIZARD_SECONDS остаётся запасным значением, пока в БД нет
+    # такой настройки (см. core.models.get_setting).
+    from core.models import get_setting
+    threshold = get_setting("fast_wizard_min_seconds", MIN_HUMAN_WIZARD_SECONDS)
+
     duration = session.fill_duration_seconds
-    if duration is None or duration >= MIN_HUMAN_WIZARD_SECONDS:
+    if duration is None or duration >= threshold:
         return False
 
     # Чем короче время относительно порога — тем выше скор подозрительности.
-    score = round(max(0.0, min(1.0, 1 - (duration / MIN_HUMAN_WIZARD_SECONDS))), 2)
+    score = round(max(0.0, min(1.0, 1 - (duration / threshold))), 2)
 
     SuspiciousActivityFlag.objects.create(
         user=session.user,
@@ -278,7 +285,7 @@ def flag_suspicious_wizard_speed_task(session_id: str) -> bool:
         score=score,
         details={
             "duration_seconds": round(duration, 2),
-            "threshold_seconds": MIN_HUMAN_WIZARD_SECONDS,
+            "threshold_seconds": threshold,
             "session_id": str(session.id),
             "ip_address": session.ip_address,
         },
@@ -309,10 +316,12 @@ def detect_ip_clusters_task() -> int:
     """
     from collections import defaultdict
 
+    from core.models import get_setting
     from evaluations.models import EvaluationSession
     from users.models import SuspiciousActivityFlag
 
-    since = timezone.now() - timedelta(hours=IP_CLUSTER_LOOKBACK_HOURS)
+    lookback_hours = get_setting("ip_cluster_lookback_hours", IP_CLUSTER_LOOKBACK_HOURS)
+    since = timezone.now() - timedelta(hours=lookback_hours)
     # Самокалибрующийся порог (см. recalibrate_antifraud_thresholds) —
     # IP_CLUSTER_MIN_ACCOUNTS остаётся значением по умолчанию/нижней
     # границей вилки калибровки, а не обязательным действующим числом.
@@ -355,7 +364,7 @@ def detect_ip_clusters_task() -> int:
                     "ip_address": ip_address,
                     "account_count": account_count,
                     "other_user_ids": [str(uid) for uid in user_ids if uid != user_id],
-                    "lookback_hours": IP_CLUSTER_LOOKBACK_HOURS,
+                    "lookback_hours": lookback_hours,
                     "threshold_used": min_accounts,
                 },
             )
@@ -386,11 +395,13 @@ def award_monthly_champion_badge() -> bool:
     """
     from django.db.models import Count
 
+    from core.models import get_setting
     from evaluations.models import EvaluationSession
     from notifications.models import Notification
     from notifications.tasks import send_badge_earned_notification
     from users.models import User, UserBadge
 
+    min_evaluations = get_setting("monthly_champion_min_evaluations", MONTHLY_CHAMPION_MIN_EVALUATIONS)
     now = timezone.now()
     first_of_this_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     first_of_prev_month = (first_of_this_month - timedelta(days=1)).replace(day=1)
@@ -403,7 +414,7 @@ def award_monthly_champion_badge() -> bool:
         )
         .values("user_id")
         .annotate(cnt=Count("id"))
-        .filter(cnt__gte=MONTHLY_CHAMPION_MIN_EVALUATIONS)
+        .filter(cnt__gte=min_evaluations)
         .order_by("-cnt")
         .first()
     )
@@ -543,12 +554,15 @@ def expire_stale_low_score_flags() -> int:
     чтобы в CSV-экспорте/аудите было видно: это была автоматическая уборка,
     а не чья-то оценка "это ложное срабатывание".
     """
+    from core.models import get_setting
     from users.models import SuspiciousActivityFlag
 
-    cutoff = timezone.now() - timedelta(days=ANTIFRAUD_AUTO_EXPIRE_AFTER_DAYS)
+    after_days = get_setting("antifraud_auto_expire_after_days", ANTIFRAUD_AUTO_EXPIRE_AFTER_DAYS)
+    max_score = get_setting("antifraud_auto_expire_max_score", ANTIFRAUD_AUTO_EXPIRE_MAX_SCORE)
+    cutoff = timezone.now() - timedelta(days=after_days)
     stale = SuspiciousActivityFlag.objects.filter(
         status="pending",
-        score__lt=ANTIFRAUD_AUTO_EXPIRE_MAX_SCORE,
+        score__lt=max_score,
         created_at__lt=cutoff,
     ).exclude(source__in=ANTIFRAUD_AUTO_EXPIRE_EXCLUDED_SOURCES)
 

@@ -13,6 +13,7 @@ from teams.models import Team
 from aggregates.models import PlayerMatchAggregate
 from aggregates.services import MIN_VOTES_FOR_DISPLAY
 from core.utils import normalize_kz
+from core.models import get_setting
 from evaluations.models import PlayerEvaluation
 from lineups.models import MatchLineupPlayer
 from players.positions import (
@@ -31,7 +32,11 @@ class PlayerListView(ListView):
     template_name = 'players/list.html'
     context_object_name = 'players'
     paginate_by = 20
-    
+
+    def get_paginate_by(self, queryset):
+        # 2026-09-23, «Настройки платформы» — управляется staff без деплоя.
+        return get_setting("players_list_page_size", self.paginate_by)
+
     def get_queryset(self):
         # Дефолт: только игроки команд текущего сезона главной лиги — тот
         # же паттерн, что и TeamListView (см. teams/views.py), через
@@ -228,8 +233,8 @@ class PlayerDetailView(DetailView):
             'match__season',
             'match__home_team',
             'match__away_team'
-        ).order_by('-match__start_time')[:20]
-        
+        ).order_by('-match__start_time')[:get_setting("player_recent_matches_limit", 20)]
+
         # Общая статистика
         stats_raw = PlayerMatchAggregate.objects.filter(
             player=player

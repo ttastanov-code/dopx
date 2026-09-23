@@ -17,9 +17,11 @@ from __future__ import annotations
 import logging
 
 from django.conf import settings
-from django.shortcuts import redirect
+from django.shortcuts import redirect, render
 from django.urls import reverse
 from django_otp import devices_for_user
+
+from .access import resolve_section_for_path, user_can_access_section
 
 logger = logging.getLogger("django.security")
 
@@ -125,3 +127,52 @@ class StaffTwoFactorEnforcementMiddleware:
 
         next_param = f"?next={request.get_full_path()}"
         return redirect(f"{target}{next_param}")
+
+
+class DashboardSectionAccessMiddleware:
+    """
+    2026-09-23, раздел «Роли доступа» — прямая просьба пользователя заменить
+    единственный переключатель is_staff на гибкие права по разделам
+    дашборда (см. dashboard/models.py::StaffAccessGrant/DASHBOARD_SECTIONS
+    и dashboard/access.py про безопасный дефолт).
+
+    Ставится ПОСЛЕ StaffTwoFactorEnforcementMiddleware — раздел-проверка не
+    имеет смысла раньше, чем staff вообще прошёл 2FA (иначе пришлось бы
+    дублировать её собственную логику редиректа на setup/challenge здесь же).
+
+    Только /staff/dashboard/* — /admin/ (Django admin) НЕ входит в эту
+    систему разделов вообще, у него своя, встроенная (permissions Django
+    admin), эта мидлварь её не трогает и не подменяет.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if self._requires_check(request):
+            response = self._enforce(request)
+            if response is not None:
+                return response
+        return self.get_response(request)
+
+    def _requires_check(self, request) -> bool:
+        if not request.path.startswith("/staff/dashboard/"):
+            return False
+        user = getattr(request, "user", None)
+        if user is None or not user.is_authenticated or not user.is_staff:
+            return False
+        return True
+
+    def _enforce(self, request):
+        section = resolve_section_for_path(request.path)
+        if user_can_access_section(request.user, section):
+            return None
+        logger.warning(
+            f"DASHBOARD ACCESS DENIED: user={request.user.username} "
+            f"path={request.path} section={section}"
+        )
+        return render(
+            request, "dashboard/access_denied.html",
+            {"section_label": section, "page_title": "Доступ запрещён — DOPX Staff"},
+            status=403,
+        )

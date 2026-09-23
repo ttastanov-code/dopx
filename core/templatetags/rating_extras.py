@@ -20,8 +20,23 @@
 from django import template
 
 from aggregates.services import CONFIDENT_VOTES_THRESHOLD, MIN_VOTES_FOR_DISPLAY
+from core.models import get_setting
 
 register = template.Library()
+
+# 2026-09-23, «Настройки платформы» — оба порога читаются через get_setting
+# (core/models.py, кэш 60 сек), константы выше остаются запасным значением
+# на случай, если ключ ещё не заведён в PlatformSetting. get_setting берёт
+# значение из кэша, а не из БД на каждый вызов — можно звать на каждой
+# строке таблицы без просадки производительности.
+
+
+def _min_votes_for_display() -> int:
+    return get_setting("min_votes_for_display", MIN_VOTES_FOR_DISPLAY)
+
+
+def _confident_votes_threshold() -> int:
+    return get_setting("confident_votes_threshold", CONFIDENT_VOTES_THRESHOLD)
 
 # Пороги для человекочитаемого лейбла разброса мнений поверх
 # stability_index = 1/std_dev (aggregates/services.py::recalculate_player_aggregate).
@@ -36,7 +51,7 @@ STABILITY_LOW_THRESHOLD = 0.5
 def has_enough_votes(total_votes) -> bool:
     """True, если голосов достаточно, чтобы показывать рейтинг как число."""
     try:
-        return int(total_votes or 0) >= MIN_VOTES_FOR_DISPLAY
+        return int(total_votes or 0) >= _min_votes_for_display()
     except (TypeError, ValueError):
         return False
 
@@ -44,10 +59,11 @@ def has_enough_votes(total_votes) -> bool:
 @register.simple_tag
 def votes_needed(total_votes) -> int:
     """Сколько ещё голосов не хватает до порога показа (для UI-подсказки)."""
+    threshold = _min_votes_for_display()
     try:
-        remaining = MIN_VOTES_FOR_DISPLAY - int(total_votes or 0)
+        remaining = threshold - int(total_votes or 0)
     except (TypeError, ValueError):
-        remaining = MIN_VOTES_FOR_DISPLAY
+        remaining = threshold
     return max(0, remaining)
 
 
@@ -91,9 +107,9 @@ def _confidence_tier(total_votes) -> str:
         n = int(total_votes or 0)
     except (TypeError, ValueError):
         n = 0
-    if n < MIN_VOTES_FOR_DISPLAY:
+    if n < _min_votes_for_display():
         return "preliminary"
-    if n < CONFIDENT_VOTES_THRESHOLD:
+    if n < _confident_votes_threshold():
         return "basic"
     return "high"
 

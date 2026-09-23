@@ -1,0 +1,123 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+{% comment %}
+templates/dashboard/partners_list.html
+2026-09-23, раздел «Партнёры и баннеры» — список Partner (partners/models.py)
++ форма создания нового (dashboard/views.py::partners_list/partner_create).
+Тот же паттерн, что users_list.html/matches_list.html: поиск + таблица +
+пагинация + переход на карточку по клику.
+{% endcomment %}
+
+<div class="mb-4">
+    <a href="{% url 'dashboard:ads' %}" class="text-xs opacity-60 hover:opacity-100"><i class="ti ti-arrow-left"></i> К разделу «Реклама»</a>
+</div>
+
+<div class="card bg-base-100 border border-base-300 mb-4">
+    <div class="card-body p-4">
+        <div class="dopx-section-eyebrow"><i class="ti ti-building-store-plus"></i>Новый партнёр</div>
+        <form method="post" action="{% url 'dashboard:partner_create' %}" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-2">
+            {% csrf_token %}
+            <div class="flex flex-col gap-1">
+                <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Название</label>
+                <input type="text" name="name" required class="input input-sm input-bordered w-full">
+            </div>
+            <div class="flex flex-col gap-1">
+                <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Слаг (/go/&lt;slug&gt;/)</label>
+                <input type="text" name="slug" required pattern="[a-z0-9\-]+" class="input input-sm input-bordered w-full font-mono">
+            </div>
+            <div class="flex flex-col gap-1">
+                <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Тип</label>
+                <select name="partner_type" class="select select-sm select-bordered w-full">
+                    {% for value, label in partner_type_choices %}
+                    <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="flex items-end gap-2">
+                <label class="label cursor-pointer gap-2 justify-start">
+                    <input type="checkbox" name="is_active" checked class="checkbox checkbox-sm">
+                    <span class="text-xs">Активен</span>
+                </label>
+                <button type="submit" class="btn btn-sm btn-primary ml-auto"><i class="ti ti-plus"></i> Создать</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card bg-base-100 border border-base-300 mb-4">
+    <div class="card-body p-4">
+        <form method="get" class="flex flex-wrap items-end gap-3">
+            <div class="flex flex-col gap-1 flex-1 min-w-[220px]">
+                <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Название или слаг</label>
+                <input type="text" name="q" value="{{ search }}" class="input input-sm input-bordered w-full">
+            </div>
+            <button type="submit" class="btn btn-sm btn-primary"><i class="ti ti-search"></i> Найти</button>
+            {% if search %}
+            <a href="{% url 'dashboard:partners_list' %}" class="btn btn-sm btn-ghost">Сбросить</a>
+            {% endif %}
+        </form>
+    </div>
+</div>
+
+<div class="card bg-base-100 border border-base-300">
+    <div class="card-body p-4">
+        <div class="dopx-section-eyebrow"><i class="ti ti-building-store"></i>Партнёры</div>
+        <div class="dopx-section-title mb-3">{{ partners.paginator.count }} найдено</div>
+
+        {% if partners %}
+        <div class="hidden md:block overflow-x-auto">
+            <table class="table">
+                <thead>
+                    <tr><th>Название</th><th>Тип</th><th>Слаг</th><th>Контакт</th><th>Статус</th><th></th></tr>
+                </thead>
+                <tbody>
+                    {% for p in partners %}
+                    <tr class="cursor-pointer" onclick="window.location.href='{% url 'dashboard:partner_detail' p.id %}'">
+                        <td class="font-medium">{{ p.name }}</td>
+                        <td class="text-xs">{{ p.get_partner_type_display }}</td>
+                        <td class="text-xs font-mono opacity-60">{{ p.slug }}</td>
+                        <td class="text-xs opacity-60">{{ p.contact_email|default:"—" }}</td>
+                        <td>
+                            {% if p.is_active %}<span class="badge badge-sm badge-success">активен</span>
+                            {% else %}<span class="badge badge-sm badge-ghost">выключен</span>{% endif %}
+                        </td>
+                        <td class="text-right"><i class="ti ti-chevron-right opacity-40"></i></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="md:hidden divide-y divide-base-200">
+            {% for p in partners %}
+            <a href="{% url 'dashboard:partner_detail' p.id %}" class="block py-3">
+                <div class="flex items-center justify-between gap-2">
+                    <span class="text-sm font-semibold">{{ p.name }}</span>
+                    {% if p.is_active %}<span class="badge badge-sm badge-success">активен</span>
+                    {% else %}<span class="badge badge-sm badge-ghost">выключен</span>{% endif %}
+                </div>
+                <div class="text-xs opacity-55 mt-1">{{ p.get_partner_type_display }} · {{ p.slug }}</div>
+            </a>
+            {% endfor %}
+        </div>
+
+        {% if partners.paginator.num_pages > 1 %}
+        <div class="flex items-center justify-center gap-2 mt-4">
+            {% if partners.has_previous %}
+            <a href="?{% if search %}q={{ search }}&{% endif %}page={{ partners.previous_page_number }}" class="btn btn-xs btn-outline">« Раньше</a>
+            {% else %}<span class="btn btn-xs btn-disabled">« Раньше</span>{% endif %}
+            <span class="text-xs opacity-60">Стр. {{ partners.number }} из {{ partners.paginator.num_pages }}</span>
+            {% if partners.has_next %}
+            <a href="?{% if search %}q={{ search }}&{% endif %}page={{ partners.next_page_number }}" class="btn btn-xs btn-outline">Позже »</a>
+            {% else %}<span class="btn btn-xs btn-disabled">Позже »</span>{% endif %}
+        </div>
+        {% endif %}
+        {% else %}
+        <p class="text-sm opacity-60 py-4 text-center">Партнёров пока нет</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

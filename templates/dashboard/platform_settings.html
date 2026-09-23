@@ -1,0 +1,217 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+{% comment %}
+templates/dashboard/platform_settings.html
+2026-09-23, раздел «Настройки платформы» (core/models.py::PlatformSetting,
+dashboard/views.py::platform_settings*) — key-value рантайм-конфиг без
+деплоя. Каждая строка — отдельная <form> на сохранение (без общей формы на
+всю таблицу: staff может поправить ОДНУ настройку, не рискуя случайно
+переслать устаревшие значения соседних строк).
+{% endcomment %}
+
+<div class="card bg-base-100 border border-base-300 mb-4">
+    <div class="card-body p-4">
+        <p class="text-xs opacity-55 flex items-start gap-2">
+            <i class="ti ti-info-circle opacity-50 mt-0.5 shrink-0"></i>
+            {% comment %}
+            2026-09-23, БАГ (жалоба пользователя со скриншотом — текст
+            разваливается на криво перенесённые куски): та же причина, что
+            уже разбиралась в dashboard/templatetags/dashboard_extras.py —
+            внутри display:flex-контейнера каждый top-level текстовый узел
+            и каждый inline-элемент-ребёнок становится ОТДЕЛЬНЫМ flex-item
+            со своим независимым переносом строк. Здесь было три таких
+            item'а подряд (текст, потом моноширинный кусок с именем
+            функции, потом снова текст) — визуально три самостоятельных
+            обрывка вместо одного связного абзаца. Фикс — тот же, что уже
+            в audit_log.html/duplicate_players_review.html: весь абзац
+            оборачивается ОДНИМ inline-элементом-обёрткой, тогда flex видит
+            только два item'а (иконка и эта обёртка), а внутри нее текст
+            течёт как обычный inline-поток без разрывов.
+            {% endcomment %}
+            <span>Операционные пороги/флаги, читаемые кодом через <span class="font-mono">core.models.get_setting(key, default)</span> — изменение применяется в течение минуты (короткий кэш), без деплоя. НЕ для секретов (API-ключи/пароли) — те остаются в переменных окружения.</span>
+        </p>
+    </div>
+</div>
+
+{% comment %}
+2026-09-23, прямая просьба пользователя: инструкция на странице, как этим
+пользоваться и что оно даёт. Текст ниже и справочник ключей ниже написаны
+для конкретного случая — без общих фраз про «мощный инструмент» и т.п.
+{% endcomment %}
+<div class="card bg-base-100 border border-base-300 mb-4">
+    <div class="card-body p-4">
+        <div class="dopx-section-eyebrow"><i class="ti ti-book"></i>Как это работает</div>
+        <div class="text-sm leading-relaxed mt-2 space-y-2">
+            <p>Каждая строка таблицы ниже — одна пара «ключ → значение» в БД (модель <span class="font-mono text-xs">PlatformSetting</span>). Код в разных частях сайта при каждом обращении спрашивает: «а какое сейчас значение у ключа X?» — вместо того чтобы иметь это число зашитым в файле. Если строки с таким ключом нет, код берёт значение по умолчанию, зашитое в самом коде, — ничего не ломается.</p>
+            <p>Значение читается функцией <span class="font-mono text-xs">get_setting(key, default)</span> и на 60 секунд кладётся в кэш, чтобы не дёргать базу на каждый заход посетителя. Поэтому правка здесь применяется не мгновенно, а в течение минуты — обновите страницу сайта через минуту и увидите новое значение.</p>
+            <p>Менять здесь стоит только числа и переключатели, влияющие на поведение сайта: сколько строк показывать на странице, сколько дней брать в статистику, с какого порога голосов доверять рейтингу и так далее. Список ниже — все ключи, которые сейчас реально на что-то влияют, с текущим умолчанием (тем значением, что применится, если строку удалить).</p>
+            <p>Пароли, токены и API-ключи сюда не добавляются — они прописаны в переменных окружения на сервере и через эту страницу недоступны и не должны быть доступны.</p>
+        </div>
+    </div>
+</div>
+
+<div class="card bg-base-100 border border-base-300 mb-4">
+    <div class="card-body p-4">
+        <div class="dopx-section-eyebrow"><i class="ti ti-list"></i>Справочник ключей</div>
+        <div class="dopx-section-title mb-2">29 настроек, на которые уже реагирует код</div>
+        <div class="space-y-2 mt-2">
+
+            <details class="group border border-base-300 rounded-lg bg-base-100 open:bg-base-200/30">
+                <summary class="dopx-cmd-summary cursor-pointer list-none flex items-center justify-between gap-2 p-3 text-sm font-semibold">
+                    <span>Размер страниц (пагинация списков)</span>
+                    <i class="ti ti-chevron-down opacity-50 group-open:rotate-180 transition-transform"></i>
+                </summary>
+                <div class="px-3 pb-3 text-xs space-y-1.5">
+                    <p class="opacity-60 mb-2">Сколько строк/карточек показывать на одной странице списка, прежде чем сайт предложит перейти на следующую.</p>
+                    <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] gap-x-3 gap-y-1">
+                        <span class="font-mono">dashboard_users_page_size</span><span class="opacity-50">= 25</span><span class="opacity-70">список пользователей в дашборде</span>
+                        <span class="font-mono">players_list_page_size</span><span class="opacity-50">= 20</span><span class="opacity-70">/players/ на сайте</span>
+                        <span class="font-mono">teams_list_page_size</span><span class="opacity-50">= 20</span><span class="opacity-70">/teams/ на сайте</span>
+                        <span class="font-mono">coaches_list_page_size</span><span class="opacity-50">= 20</span><span class="opacity-70">/coaches/ на сайте</span>
+                        <span class="font-mono">referees_list_page_size</span><span class="opacity-50">= 20</span><span class="opacity-70">/referees/ на сайте</span>
+                        <span class="font-mono">leagues_list_page_size</span><span class="opacity-50">= 20</span><span class="opacity-70">/leagues/ на сайте</span>
+                        <span class="font-mono">matches_public_page_size</span><span class="opacity-50">= 20</span><span class="opacity-70">список матчей на сайте</span>
+                        <span class="font-mono">user_leaderboard_page_size</span><span class="opacity-50">= 20</span><span class="opacity-70">рейтинг болельщиков</span>
+                        <span class="font-mono">player_leaderboard_page_size</span><span class="opacity-50">= 20</span><span class="opacity-70">рейтинг игроков</span>
+                        <span class="font-mono">user_notifications_page_size</span><span class="opacity-50">= 20</span><span class="opacity-70">лента уведомлений пользователя</span>
+                    </div>
+                </div>
+            </details>
+
+            <details class="group border border-base-300 rounded-lg bg-base-100 open:bg-base-200/30">
+                <summary class="dopx-cmd-summary cursor-pointer list-none flex items-center justify-between gap-2 p-3 text-sm font-semibold">
+                    <span>Лимиты вывода (сколько последних записей показывать)</span>
+                    <i class="ti ti-chevron-down opacity-50 group-open:rotate-180 transition-transform"></i>
+                </summary>
+                <div class="px-3 pb-3 text-xs space-y-1.5">
+                    <p class="opacity-60 mb-2">Не пагинация, а жёсткий срез списка — например, «последние N матчей» на странице игрока, без кнопки «дальше».</p>
+                    <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] gap-x-3 gap-y-1">
+                        <span class="font-mono">player_recent_matches_limit</span><span class="opacity-50">= 20</span><span class="opacity-70">блок матчей на странице игрока</span>
+                        <span class="font-mono">team_recent_matches_limit</span><span class="opacity-50">= 10</span><span class="opacity-70">блок матчей на странице команды</span>
+                        <span class="font-mono">match_recent_events_limit</span><span class="opacity-50">= 20</span><span class="opacity-70">лента событий на странице матча</span>
+                        <span class="font-mono">audit_log_entries_limit</span><span class="opacity-50">= 200</span><span class="opacity-70">журнал «Аудит» в дашборде</span>
+                        <span class="font-mono">dashboard_missing_lineups_limit</span><span class="opacity-50">= 20</span><span class="opacity-70">список матчей без составов («Здоровье данных»)</span>
+                        <span class="font-mono">dashboard_missing_events_limit</span><span class="opacity-50">= 20</span><span class="opacity-70">список матчей без событий («Здоровье данных»)</span>
+                        <span class="font-mono">ads_top_items_limit</span><span class="opacity-50">= 10</span><span class="opacity-70">топы в статистике раздела «Реклама»</span>
+                        <span class="font-mono">ads_search_results_limit</span><span class="opacity-50">= 10</span><span class="opacity-70">результаты поиска игрока/команды в «Рекламе»</span>
+                    </div>
+                </div>
+            </details>
+
+            <details class="group border border-base-300 rounded-lg bg-base-100 open:bg-base-200/30">
+                <summary class="dopx-cmd-summary cursor-pointer list-none flex items-center justify-between gap-2 p-3 text-sm font-semibold">
+                    <span>Окна времени и пороги достоверности</span>
+                    <i class="ti ti-chevron-down opacity-50 group-open:rotate-180 transition-transform"></i>
+                </summary>
+                <div class="px-3 pb-3 text-xs space-y-1.5">
+                    <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] gap-x-3 gap-y-1">
+                        <span class="font-mono">ads_stats_window_days</span><span class="opacity-50">= 30</span><span class="opacity-70">за сколько дней считать статистику «Рекламы»</span>
+                        <span class="font-mono">min_votes_for_display</span><span class="opacity-50">= 5</span><span class="opacity-70">минимум оценок, чтобы показать рейтинг числом (иначе — «мало оценок»)</span>
+                        <span class="font-mono">confident_votes_threshold</span><span class="opacity-50">= 15</span><span class="opacity-70">с какого числа оценок рейтинг считается надёжным</span>
+                    </div>
+                </div>
+            </details>
+
+            <details class="group border border-base-300 rounded-lg bg-base-100 open:bg-base-200/30">
+                <summary class="dopx-cmd-summary cursor-pointer list-none flex items-center justify-between gap-2 p-3 text-sm font-semibold">
+                    <span>Антифрод и фоновые задачи</span>
+                    <i class="ti ti-chevron-down opacity-50 group-open:rotate-180 transition-transform"></i>
+                </summary>
+                <div class="px-3 pb-3 text-xs space-y-1.5">
+                    <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] gap-x-3 gap-y-1">
+                        <span class="font-mono">fast_wizard_min_seconds</span><span class="opacity-50">= 20</span><span class="opacity-70">быстрее этого — подозрение на бота в мастере оценки</span>
+                        <span class="font-mono">ip_cluster_lookback_hours</span><span class="opacity-50">= 24</span><span class="opacity-70">за сколько часов искать группы аккаунтов с одного IP</span>
+                        <span class="font-mono">monthly_champion_min_evaluations</span><span class="opacity-50">= 5</span><span class="opacity-70">минимум оценок за месяц для значка «Чемпион месяца»</span>
+                        <span class="font-mono">antifraud_auto_expire_after_days</span><span class="opacity-50">= 14</span><span class="opacity-70">через сколько дней снимать старые флаги подозрений</span>
+                        <span class="font-mono">antifraud_auto_expire_max_score</span><span class="opacity-50">= 0.4</span><span class="opacity-70">снимать автоматически только если счёт подозрения ниже этого</span>
+                    </div>
+                </div>
+            </details>
+
+            <details class="group border border-base-300 rounded-lg bg-base-100 open:bg-base-200/30">
+                <summary class="dopx-cmd-summary cursor-pointer list-none flex items-center justify-between gap-2 p-3 text-sm font-semibold">
+                    <span>Рассылки и уведомления</span>
+                    <i class="ti ti-chevron-down opacity-50 group-open:rotate-180 transition-transform"></i>
+                </summary>
+                <div class="px-3 pb-3 text-xs space-y-1.5">
+                    <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] gap-x-3 gap-y-1">
+                        <span class="font-mono">bulk_email_chunk_size</span><span class="opacity-50">= 50</span><span class="opacity-70">по сколько адресов отправлять письма пачками</span>
+                        <span class="font-mono">notification_retention_days</span><span class="opacity-50">= 90</span><span class="opacity-70">сколько дней хранить старые уведомления, прежде чем удалить</span>
+                    </div>
+                </div>
+            </details>
+
+        </div>
+    </div>
+</div>
+
+<div class="card bg-base-100 border border-base-300 mb-4">
+    <div class="card-body p-4">
+        <div class="dopx-section-eyebrow"><i class="ti ti-plus"></i>Новая настройка</div>
+        <form method="post" action="{% url 'dashboard:platform_settings_create' %}" class="grid grid-cols-1 sm:grid-cols-5 gap-2 mt-2">
+            {% csrf_token %}
+            <input type="text" name="key" placeholder="ключ (snake_case)" class="input input-sm input-bordered font-mono" required>
+            <input type="text" name="value" placeholder="значение" class="input input-sm input-bordered">
+            <select name="value_type" class="select select-sm select-bordered">
+                {% for value, label in type_choices %}
+                <option value="{{ value }}">{{ label }}</option>
+                {% endfor %}
+            </select>
+            <input type="text" name="description" placeholder="описание (необязательно)" class="input input-sm input-bordered sm:col-span-2">
+            <button type="submit" class="btn btn-sm btn-primary sm:col-span-5 sm:w-fit"><i class="ti ti-plus"></i> Добавить</button>
+        </form>
+    </div>
+</div>
+
+<div class="card bg-base-100 border border-base-300">
+    <div class="card-body p-4">
+        <div class="dopx-section-eyebrow"><i class="ti ti-settings"></i>Настройки</div>
+        <div class="dopx-section-title mb-3">{{ settings_list|length }} значений</div>
+
+        {% if settings_list %}
+        <div class="space-y-2">
+            {% for setting in settings_list %}
+            <div class="rounded-lg border border-base-300 p-3">
+                <form method="post" action="{% url 'dashboard:platform_settings_update' setting.key %}" class="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+                    {% csrf_token %}
+                    <div class="sm:col-span-3 font-mono text-xs font-semibold break-all">{{ setting.key }}</div>
+                    <input type="text" name="value" value="{{ setting.value }}" class="input input-sm input-bordered sm:col-span-2 font-mono">
+                    <select name="value_type" class="select select-sm select-bordered sm:col-span-2">
+                        {% for value, label in type_choices %}
+                        <option value="{{ value }}" {% if setting.value_type == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                    <input type="text" name="description" value="{{ setting.description }}" placeholder="описание" class="input input-sm input-bordered sm:col-span-3">
+                    <div class="sm:col-span-2 flex gap-1.5 justify-end">
+                        <button type="submit" class="btn btn-xs btn-primary"><i class="ti ti-device-floppy"></i></button>
+                    </div>
+                </form>
+                <div class="flex items-center justify-between mt-1.5">
+                    <span class="text-[10px] opacity-40">
+                        {% if setting.updated_by %}изменено {{ setting.updated_by.username }} · {% endif %}{{ setting.updated_at|timesince }} назад
+                    </span>
+                    <form method="post" action="{% url 'dashboard:platform_settings_delete' setting.key %}"
+                          onsubmit="return confirm('Удалить настройку «' + '{{ setting.key }}' + '»? Код, читающий её через get_setting(), молча откатится на default-значение.');">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-ghost btn-xs text-error"><i class="ti ti-trash"></i></button>
+                    </form>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-sm opacity-60 py-4 text-center">Настроек ещё нет</p>
+        {% endif %}
+    </div>
+</div>
+
+<style>
+/* Тот же приём, что и в scripts.html: убираем дефолтный маркер-треугольник
+   <summary>, чтобы не дублировался с ti-chevron-down справа. */
+.dopx-cmd-summary::-webkit-details-marker { display: none; }
+.dopx-cmd-summary { list-style: none; }
+</style>
+{% endblock %}

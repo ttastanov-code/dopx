@@ -1,0 +1,128 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+{% comment %}
+templates/dashboard/matches_list.html
+2026-09-23, раздел «Матчи» (см. докстринг dashboard/views.py::matches_list) —
+поиск по названию команды + фильтры статус/сезон, обычная GET-пагинация
+через query string (без HTMX — это полноценная страница-список, не
+живой виджет дашборда, как история запусков скриптов).
+{% endcomment %}
+
+<div class="card bg-base-100 border border-base-300 mb-4">
+    <div class="card-body p-4">
+        <form method="get" class="flex flex-wrap items-end gap-3">
+            <div class="flex flex-col gap-1 flex-1 min-w-[180px]">
+                <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Команда</label>
+                <input type="text" name="q" value="{{ search }}" placeholder="Название команды..." class="input input-sm input-bordered w-full">
+            </div>
+            <div class="flex flex-col gap-1 min-w-[160px]">
+                <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Статус</label>
+                <select name="status" class="select select-sm select-bordered w-full">
+                    <option value="">Любой</option>
+                    {% for value, label in status_choices %}
+                    <option value="{{ value }}" {% if status == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="flex flex-col gap-1 min-w-[180px]">
+                <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Сезон</label>
+                <select name="season" class="select select-sm select-bordered w-full">
+                    <option value="">Любой</option>
+                    {% for s in seasons %}
+                    <option value="{{ s.id }}" {% if season_id == s.id|stringformat:"s" %}selected{% endif %}>{{ s.league.name }} {{ s.year }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button type="submit" class="btn btn-sm btn-primary"><i class="ti ti-search"></i> Найти</button>
+            {% if search or status or season_id %}
+            <a href="{% url 'dashboard:matches_list' %}" class="btn btn-sm btn-ghost">Сбросить</a>
+            {% endif %}
+        </form>
+    </div>
+</div>
+
+<div class="card bg-base-100 border border-base-300">
+    <div class="card-body p-4">
+        <div class="dopx-section-eyebrow"><i class="ti ti-ball-football"></i>Матчи</div>
+        <div class="dopx-section-title mb-3">{{ matches.paginator.count }} найдено</div>
+
+        {% if matches %}
+        <div class="hidden md:block overflow-x-auto">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Матч</th>
+                        <th>Тур</th>
+                        <th>Дата</th>
+                        <th>Счёт</th>
+                        <th>Статус</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for match in matches %}
+                    <tr class="cursor-pointer" onclick="window.location.href='{% url 'dashboard:match_detail' match.id %}'">
+                        <td class="font-medium">{{ match.home_team.name }} — {{ match.away_team.name }}</td>
+                        <td class="text-xs opacity-60">{{ match.tour|default:"—" }}</td>
+                        <td class="text-xs opacity-60 whitespace-nowrap">{{ match.start_time|date:"d.m.Y H:i" }}</td>
+                        <td class="font-mono text-xs">{{ match.get_score_display }}</td>
+                        <td>
+                            <span class="badge badge-sm
+                                {% if match.status == 'finished' %}badge-success
+                                {% elif match.status == 'live' %}badge-warning
+                                {% elif match.status == 'postponed' or match.status == 'cancelled' %}badge-error
+                                {% else %}badge-ghost{% endif %}">
+                                {{ match.get_status_display }}
+                                {% if match.manual_override %}<i class="ti ti-hand-stop ml-1" title="Ручная правка — автосинк не трогает статус/дату"></i>{% endif %}
+                            </span>
+                        </td>
+                        <td class="text-right"><i class="ti ti-chevron-right opacity-40"></i></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="md:hidden divide-y divide-base-200">
+            {% for match in matches %}
+            <a href="{% url 'dashboard:match_detail' match.id %}" class="block py-3">
+                <div class="flex items-center justify-between gap-2">
+                    <span class="text-sm font-semibold">{{ match.home_team.name }} — {{ match.away_team.name }}</span>
+                    <span class="badge badge-sm
+                        {% if match.status == 'finished' %}badge-success
+                        {% elif match.status == 'live' %}badge-warning
+                        {% elif match.status == 'postponed' or match.status == 'cancelled' %}badge-error
+                        {% else %}badge-ghost{% endif %}">{{ match.get_status_display }}</span>
+                </div>
+                <div class="flex items-center justify-between gap-2 text-xs opacity-55 mt-1">
+                    <span>Тур {{ match.tour|default:"—" }} · {{ match.start_time|date:"d.m.Y H:i" }}</span>
+                    <span class="font-mono">{{ match.get_score_display }}</span>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+
+        {% if matches.paginator.num_pages > 1 %}
+        <div class="flex items-center justify-center gap-2 mt-4">
+            {% if matches.has_previous %}
+            <a href="?{% if search %}q={{ search }}&{% endif %}{% if status %}status={{ status }}&{% endif %}{% if season_id %}season={{ season_id }}&{% endif %}page={{ matches.previous_page_number }}" class="btn btn-xs btn-outline">« Раньше</a>
+            {% else %}
+            <span class="btn btn-xs btn-disabled">« Раньше</span>
+            {% endif %}
+            <span class="text-xs opacity-60">Стр. {{ matches.number }} из {{ matches.paginator.num_pages }}</span>
+            {% if matches.has_next %}
+            <a href="?{% if search %}q={{ search }}&{% endif %}{% if status %}status={{ status }}&{% endif %}{% if season_id %}season={{ season_id }}&{% endif %}page={{ matches.next_page_number }}" class="btn btn-xs btn-outline">Позже »</a>
+            {% else %}
+            <span class="btn btn-xs btn-disabled">Позже »</span>
+            {% endif %}
+        </div>
+        {% endif %}
+        {% else %}
+        <p class="text-sm opacity-60 py-4 text-center">Ничего не найдено</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
