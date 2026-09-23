@@ -26,6 +26,12 @@ class PlayerMatchAggregate(BaseModel):
     
     # Вычисляемые индексы
     performance_score = models.FloatField(_('Рейтинг выступления'), default=0.0)
+    # 2026-09-23: сколько авто-поправки (PlayerRatingCorrection) вшито в
+    # performance_score этого матча. Нужно детектору расхождения, чтобы
+    # сравнивать ЧИСТУЮ оценку болельщиков, а не оценку + свою же прошлую
+    # поправку (иначе петля обратной связи: поправка −0.23 тянет рейтинг
+    # вниз → детектор видит "занижен" → ставит +0.25 → и т.д.).
+    rating_correction_applied = models.FloatField(_('Вшитая авто-поправка'), default=0.0)
     risk_index = models.FloatField(_('Индекс риска'), default=0.0)
     maturity_score = models.FloatField(_('Индекс зрелости'), default=0.0)
     stability_index = models.FloatField(_('Индекс стабильности'), default=0.0)
@@ -168,6 +174,9 @@ class TeamMatchAggregate(BaseModel):
         _('Рейтинг команды'), default=0.0,
         help_text=_('Взвешенное и винзоризованное среднее average_score (см. aggregates/services.py)'),
     )
+    # 2026-09-23: см. одноимённое поле PlayerMatchAggregate — защита
+    # детектора расхождения от петли обратной связи с собственной поправкой.
+    rating_correction_applied = models.FloatField(_('Вшитая авто-поправка'), default=0.0)
 
     own_fans_avg = models.FloatField(
         _('Средняя оценка от своих фанатов'), null=True, blank=True,
@@ -359,6 +368,31 @@ class TeamRatingCorrection(BaseModel):
     def __str__(self):
         return f"{self.team}: {self.correction:+.2f}"
 
+    @property
+    def public_explanation(self) -> str:
+        return _correction_public_text(self.correction, self.last_pattern, "команду")
+
+
+def _correction_public_text(correction: float, last_pattern: str, who: str) -> str:
+    """2026-09-23, жалоба "непонятно какого фига корректировка, для чего и
+    почему" — объяснение авто-поправки для обычного посетителя сайта."""
+    up = correction > 0
+    if last_pattern:
+        if up:
+            reason = (f"В последних матчах болельщики оценивали {who} ниже обычного, хотя по статистике "
+                      f"матчей игра была лучше обычной — похоже на массовое занижение оценок.")
+        else:
+            reason = (f"В последних матчах болельщики оценивали {who} выше обычного, хотя по статистике "
+                      f"матчей игра была хуже обычной — похоже на массовую накрутку оценок.")
+    else:
+        reason = "Расхождение оценок со статистикой было замечено раньше и уже пропало — поправка постепенно уходит в ноль."
+    return (
+        f"Автоматическая защита от накрутки. {reason} Поэтому к рейтингу каждого НОВОГО матча система "
+        f"{'добавляет' if up else 'вычитает'} {abs(correction):.2f} балла. Оценки прошлых матчей не меняются. "
+        f"Поправка небольшая (максимум ±0.4), каждый день перепроверяется и сама уменьшается, "
+        f"когда расхождение пропадает. Её проверяет модератор."
+    )
+
 
 class PlayerRatingCorrection(BaseModel):
     """
@@ -419,3 +453,7 @@ class PlayerRatingCorrection(BaseModel):
 
     def __str__(self):
         return f"{self.player}: {self.correction:+.2f}"
+
+    @property
+    def public_explanation(self) -> str:
+        return _correction_public_text(self.correction, self.last_pattern, "игрока")

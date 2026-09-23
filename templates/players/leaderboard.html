@@ -14,13 +14,19 @@
 
     <!-- === TABS === -->
     <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
-        <div class="tabs tabs-boxed">
-            <a href="{% url 'users:leaderboard' %}" class="tab">
+        {% comment %}
+        2026-09-23, тот же фикс видимости, что на users/leaderboard.html
+        (жалоба пользователя "кнопки игроки и пользователи надо сделать
+        более видимыми") — daisyUI .tabs.tabs-boxed заменён на
+        сегментированный пилюля-тумблер (components/_season_scope_toggle.html).
+        {% endcomment %}
+        <div class="inline-flex items-center gap-1 p-1 rounded-lg bg-base-200 text-sm">
+            <a href="{% url 'users:leaderboard' %}" class="px-3 py-1.5 rounded-md font-medium transition-colors flex items-center gap-1.5 opacity-60 hover:opacity-100">
                 <i class="ti ti-users"></i>
                 Пользователи
             </a>
-            <a href="{% url 'users:player_leaderboard' %}" class="tab tab-active">
-                <i class="ti ti ti-play-football"></i>
+            <a href="{% url 'users:player_leaderboard' %}" class="px-3 py-1.5 rounded-md font-medium transition-colors flex items-center gap-1.5 bg-primary text-primary-content shadow-sm">
+                <i class="ti ti-play-football"></i>
                 Игроки
             </a>
         </div>

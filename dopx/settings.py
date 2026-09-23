@@ -725,7 +725,16 @@ VAPID_ADMIN_EMAIL = os.getenv('VAPID_ADMIN_EMAIL', 'admin@dopx.kz')
 # CELERY_BEAT_SCHEDULE, но сам rollback-код теперь тоже вычищен). Никакого
 # circuit breaker/proxy pool здесь нет и не было — против платного
 # разрешённого API это не нужно, см. parsers/sportmonks/client.py.
-SPORTMONKS_API_TOKEN = os.getenv('SPORTMONKS_API_TOKEN', '')
+# Два токена (2026-09-24): SPORTMONKS_API_TOKEN — ОСНОВНОЙ аккаунт, его не
+# трогаем и не перезаписываем. SPORTMONKS_API_TOKEN_TEMP — временный
+# (второй пробный аккаунт на время, пока у основного закончился трайл).
+# Если TEMP задан — работает он, основной просто лежит в .env нетронутым.
+# Вернуться на основной = удалить/закомментировать строку TEMP в .env и
+# перезапустить runserver + Celery.
+SPORTMONKS_API_TOKEN_MAIN = os.getenv('SPORTMONKS_API_TOKEN', '')
+SPORTMONKS_API_TOKEN_TEMP = os.getenv('SPORTMONKS_API_TOKEN_TEMP', '')
+SPORTMONKS_API_TOKEN = SPORTMONKS_API_TOKEN_TEMP or SPORTMONKS_API_TOKEN_MAIN
+SPORTMONKS_API_TOKEN_SOURCE = 'TEMP' if SPORTMONKS_API_TOKEN_TEMP else 'MAIN'
 SPORTMONKS_LEAGUE_ID = int(os.getenv('SPORTMONKS_LEAGUE_ID', '393'))  # Kazakhstan Premier League
 SPORTMONKS_BASE_URL = 'https://api.sportmonks.com/v3/football'
 SPORTMONKS_LOCALE = 'ru'
@@ -864,10 +873,40 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'aggregates.tasks.detect_player_rating_stats_divergence_task',
         'schedule': crontab(minute=45, hour=5),
     },
+    # === 2026-09-24: тот же принцип для ТРЕНЕРОВ (только сигнал модератору,
+    # без авто-поправки) и всплески крайних оценок СУДЬЯМ (общий vote_spike
+    # судей не покрывал — у судьи нет "соседей" в матче). ===
+    'detect-coach-rating-stats-divergence': {
+        'task': 'aggregates.tasks.detect_coach_rating_stats_divergence_task',
+        'schedule': crontab(minute=0, hour=6),
+    },
+    'detect-referee-vote-spikes': {
+        'task': 'aggregates.tasks.detect_referee_vote_spikes_task',
+        'schedule': crontab(minute=20, hour='*/2'),
+    },
     # === Бейдж «Чемпион месяца» — 1-го числа каждого месяца в 03:00 ===
     'award-monthly-champion-badge': {
         'task': 'users.tasks.award_monthly_champion_badge',
         'schedule': crontab(hour=3, minute=0, day_of_month=1),
+    },
+    # === Decay trust_score к нейтральному 1.0 у активных пользователей,
+    # 2026-09-23 (честный аудит формул: "доверие не забывает и не
+    # прощает" — см. докстринг users.tasks.decay_trust_scores_task).
+    # Раз в месяц, сдвинуто на полчаса от champion-badge — не пересекаются
+    # по времени, хотя и не конфликтуют по объекту (разные таблицы). ===
+    'decay-trust-scores': {
+        'task': 'users.tasks.decay_trust_scores_task',
+        'schedule': crontab(hour=3, minute=30, day_of_month=1),
+    },
+    # === Переоценка статусных бейджей (foresight/max_trust/stable_hand/
+    # accurate_analyst/bias_free), 2026-09-23 — см. докстринг
+    # users.tasks.revalidate_status_badges_task / UserBadge.is_stale.
+    # Тот же день, сдвинуто на 15 минут от decay-trust-scores — оба про
+    # "показатель мог измениться со временем", разные таблицы, не
+    # конфликтуют. ===
+    'revalidate-status-badges': {
+        'task': 'users.tasks.revalidate_status_badges_task',
+        'schedule': crontab(hour=3, minute=45, day_of_month=1),
     },
     # === 4 петли удержания (2026-08-21) ===
     # Loop 1: напоминание о закрытии приёма прогнозов — тот же интервал,

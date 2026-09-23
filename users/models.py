@@ -24,6 +24,7 @@ from django.utils.translation import gettext_lazy as _
 
 from core.models import BaseModel
 from users.badges import BADGE_CATALOG, BADGE_TYPE_CHOICES, RARITY_ORDER, BadgeDefinition
+from users.kz_cities import KZ_CITY_CHOICES
 
 # Базовая "цена" уровня в XP. Кумулятивный порог для уровня N:
 #   cumulative_xp_for_level(N) = LEVEL_XP_BASE * N * (N - 1)
@@ -66,7 +67,22 @@ class User(AbstractUser, BaseModel):
     email = models.EmailField(_("Email"), unique=True)
     avatar = models.ImageField(_("Аватар"), upload_to="avatars/", null=True, blank=True)
     bio = models.TextField(_("О себе"), blank=True)
-    city = models.CharField(_("Город"), max_length=120, blank=True)
+    # ИСПРАВЛЕНО (2026-09-23, продуктовый запрос после жалобы на
+    # leaderboard — "город у нас необязательное текстовое поле, можно
+    # убрать, либо доработать чтобы были реальные города всех
+    # пользователей"): было свободным текстом без вариантов — опечатки и
+    # разное написание одного города ("Алматы"/"алматы"/"Алма-Ата")
+    # засоряли выпадающий фильтр городов на leaderboard (users/views.py::
+    # UserLeaderboardView.available_cities). choices — см. users/
+    # kz_cities.py за полным списком и объяснением, почему "авто-
+    # актуализация" здесь означает ручное обновление одного файла-
+    # справочника, а не живую синхронизацию с госреестром (такого API не
+    # существует). blank=True на уровне поля ОСТАЁТСЯ (не переносим сюда
+    # required — это фильтруется формой регистрации, см.
+    # users/forms.py::RegisterForm, чтобы у уже существующих
+    # пользователей со старым свободным текстом в city ничего не
+    # сломалось на save()).
+    city = models.CharField(_("Город"), max_length=120, blank=True, choices=KZ_CITY_CHOICES)
     rating_power = models.FloatField(_("Сила рейтинга"), default=1.0)
     trust_score = models.FloatField(_("Оценка доверия"), default=1.0)
     is_verified = models.BooleanField(_("Верифицирован"), default=False)
@@ -168,18 +184,40 @@ class User(AbstractUser, BaseModel):
         self.total_evaluations += 1
         tour = match.tour
         if tour is not None:
-            if self.last_evaluation_season_id == match.season_id and self.last_evaluation_tour == tour:
+            same_season = self.last_evaluation_season_id == match.season_id
+            if same_season and self.last_evaluation_tour == tour:
                 pass  # тот же тур — уже засчитан, серию не трогаем
             elif (
-                self.last_evaluation_season_id == match.season_id
+                same_season
                 and self.last_evaluation_tour is not None
                 and tour == self.last_evaluation_tour + 1
             ):
                 self.evaluation_streak += 1  # следующий тур подряд в том же сезоне
+                self.last_evaluation_tour = tour
+            elif (
+                same_season
+                and self.last_evaluation_tour is not None
+                and tour < self.last_evaluation_tour
+            ):
+                # 2026-09-23, фикс аудита: пользователь оценил тур МЕНЬШЕ
+                # уже засчитанного максимума — например, наверстал
+                # пропущенный или перенесённый матч из более раннего тура
+                # уже ПОСЛЕ того, как оценил более поздний. Раньше
+                # `last_evaluation_tour` перезаписывался этим меньшим
+                # значением всегда, из-за чего следующая оценка реально
+                # следующего по порядку тура (например, снова тур+1 от
+                # текущего максимума) считалась "разрывом" и сбрасывала
+                # серию — хотя последовательность туров у пользователя была
+                # почти непрерывной. `last_evaluation_tour` — это МАКСИМУМ
+                # оценённого тура, а не "последний по времени клика", поэтому
+                # ни серию, ни максимум тут трогать не нужно: тур уже входит
+                # в диапазон, +1 к серии он не даёт (не продолжение), но и
+                # не разрывает её.
+                pass
             else:
                 self.evaluation_streak = 1  # разрыв, смена сезона или первая оценка
+                self.last_evaluation_tour = tour
             self.last_evaluation_season_id = match.season_id
-            self.last_evaluation_tour = tour
         self.save(update_fields=[
             "total_evaluations", "evaluation_streak",
             "last_evaluation_season_id", "last_evaluation_tour", "updated_at",
@@ -249,6 +287,28 @@ class UserBadge(BaseModel):
     badge_type = models.CharField(_("Тип достижения"), max_length=50, choices=BADGE_TYPES)
     awarded_at = models.DateTimeField(_("Дата получения"), auto_now_add=True)
 
+    # 2026-09-23, фикс аудита: часть достижений (STATUS_BADGE_TYPES в
+    # users/services.py — foresight/max_trust/stable_hand/accurate_analyst/
+    # bias_free) — это не разовая веха ("оценил 10 матчей", навсегда), а
+    # утверждение о ТЕКУЩЕМ качестве пользователя (высокий устойчивый
+    # trust_score, высокая точность прогнозов и т.п.). Раньше такие бейджи
+    # выдавались один раз и оставались в профиле навсегда, даже если
+    # показатель давно упал ниже порога — periodic-задача
+    # revalidate_status_badges_task (users/tasks.py) периодически
+    # перепроверяет условие ТОЛЬКО для этих 5 типов и помечает бейдж
+    # is_stale=True, если условие больше не выполняется (сам объект НЕ
+    # удаляется — это по-прежнему реальное историческое достижение,
+    # которое пользователь заслужил, просто больше не отражает текущее
+    # состояние). Если показатель восстановится — is_stale снова снимается
+    # автоматически, повторно бейдж не выдаётся (get_or_create и так не
+    # создал бы дубликат). Для остальных типов бейджей (разовые вехи) это
+    # поле всегда False и никогда не проверяется.
+    is_stale = models.BooleanField(
+        _("Утратил актуальность"), default=False,
+        help_text=_("Только для статусных достижений — показатель упал ниже порога после получения бейджа."),
+    )
+    stale_since = models.DateTimeField(_("Утратил актуальность с"), null=True, blank=True)
+
     class Meta:
         verbose_name = _("Достижение")
         verbose_name_plural = _("Достижения")
@@ -284,6 +344,23 @@ class UserBadge(BaseModel):
     def get_badge_type_display(self) -> str:  # noqa: D401 — совместимость с шаблонами/старым кодом
         d = self.definition
         return d.name if d else self.badge_type
+
+    @property
+    def tooltip_text(self) -> str:
+        """
+        2026-09-23, фикс аудита: текст для {% tooltip_wrap %} в профиле —
+        вынесен сюда, а не собран прямо в шаблоне через {% if %}, потому
+        что tooltip_wrap — блочный тег (`parser.parse(("endtooltip_wrap",))`,
+        core/templatetags/tooltip_tags.py), который жадно поглощает все
+        токены до своего endtooltip_wrap; условная развилка МЕЖДУ двумя
+        разными открывающими {% tooltip_wrap %} внутри {% if %}/{% else %}
+        ломает парсинг шаблона (второй tooltip_wrap оказывается "внутри"
+        nodelist первого). Один тег — один вычисленный текст.
+        """
+        name = self.get_badge_type_display()
+        if self.is_stale:
+            return f"{name} — временно неактуально: показатель опустился ниже порога"
+        return name
 
 
 class UserXP(BaseModel):
@@ -418,6 +495,7 @@ class SuspiciousActivityFlag(BaseModel):
         ("vote_spike", _("Аномальный всплеск голосования (возможный сговор)")),
         ("stats_divergence", _("Рейтинг команды расходится с объективной статистикой матча")),
         ("player_stats_divergence", _("Рейтинг игрока расходится с объективной статистикой матча")),
+        ("coach_stats_divergence", _("Оценки тренера расходятся с игрой его команды")),
         ("manual", _("Отмечено вручную модератором")),
     ]
     STATUS_CHOICES = [
@@ -510,37 +588,47 @@ class SuspiciousActivityFlag(BaseModel):
 
         subject = str(self.content_object) if self.content_object else (self.user.username if self.user else "—")
 
-        if self.source == "stats_divergence":
-            pattern = d.get("pattern")
-            window_matches = d.get("window_matches", "?")
-            window_rating = num(d.get("window_avg_rating"))
-            baseline_rating = num(d.get("baseline_avg_rating"))
-            dominance = pct(d.get("window_avg_dominance_share"))
-            correction = d.get("correction_applied")
+        if self.source in ("stats_divergence", "player_stats_divergence", "coach_stats_divergence"):
+            return self._divergence_summary(d, subject)
 
-            if pattern == "underrated_despite_dominance":
-                explanation = (
-                    f"За последние {window_matches} матчей «{subject}» объективно доминировала по ударам "
-                    f"и угловым (в среднем {dominance} преимущества над соперником), но сообщество "
-                    f"оценивало её ниже обычного — {window_rating} против обычных {baseline_rating}. "
-                    f"Похоже, рейтинг занижают фанаты соперника."
-                )
-            elif pattern == "overrated_despite_poor_play":
-                explanation = (
-                    f"За последние {window_matches} матчей «{subject}» объективно уступала сопернику по "
-                    f"ударам и угловым, но рейтинг у сообщества выше обычного — {window_rating} против "
-                    f"обычных {baseline_rating}. Похоже, рейтинг завышают свои фанаты."
-                )
-            else:
-                explanation = f"Рейтинг «{subject}» у сообщества расходится с тем, как команда объективно играла."
-
-            if isinstance(correction, (int, float)) and correction:
-                explanation += f" Рейтинг уже автоматически скорректирован на {correction:+.2f} — можно ничего не делать."
-
+        if self.source == "extreme_bias":
+            # 2026-09-23, честный аудит формул рейтингов — раньше этот
+            # источник был объявлен в SOURCE_CHOICES, но нигде в коде не
+            # создавался (мёртвый выбор). Теперь aggregates/services.py::
+            # _maybe_flag_extreme_bias заводит флаг при заметном
+            # градуированном штрафе веса голоса за систематическую
+            # пристрастность — см. её докстринг и _graduated_bias_penalty.
+            mean_diff = num(d.get("mean_diff"))
+            considered = d.get("considered_matches", "?")
+            penalty = d.get("weight_penalty")
+            stdev = d.get("diff_stdev")
+            explanation = (
+                f"За последние {considered} матчей своей команды «{subject}» систематически ставит(ит) "
+                f"своим оценки в среднем на {mean_diff} балла выше, чем сопернику."
+            )
+            if isinstance(stdev, (int, float)) and stdev < 1.0:
+                explanation += " Разница почти не меняется от матча к матчу (даже при поражениях своей команды) — не похоже на живую эмоциональную реакцию."
+            if isinstance(penalty, (int, float)):
+                explanation += f" Вес его/её голоса в общем рейтинге уже автоматически снижен на {penalty:.2f}."
             return {
                 "explanation": explanation,
-                "confirm_hint": "просто фиксирует согласие с сигналом — поправка уже применена автоматически, это её не меняет",
-                "dismiss_hint": "если расхождение объяснимо (травмы, судейство и т.п.) — сразу уберёт автопоправку рейтинга этой команды",
+                "confirm_hint": "фиксирует как подтверждённую накрутку/предвзятость — помогает системе точнее калибровать порог видимости этого сигнала на будущее",
+                "dismiss_hint": "если это обычная искренняя пристрастность фаната (в разумных пределах бывает у всех) — помечает как ложное срабатывание, тоже влияет на будущую калибровку",
+            }
+
+        if self.source == "vote_spike" and d.get("compared_matches"):
+            # 2026-09-24: судья — сравнение не с соседями по матчу, а с
+            # другими недавними матчами лиги (aggregates/tasks.py::detect_referee_vote_spikes_task).
+            explanation = (
+                f"Судейство «{subject}» в этом матче оценили {d.get('window_votes', '?')} человек, и "
+                f"{pct(d.get('extreme_ratio'))} из них поставили крайние оценки (1-2 или 9-10). Это заметно больше, "
+                f"чем обычно бывает у судей в последних {d.get('compared_matches', '?')} матчах лиги. Так выглядит "
+                f"массовый призыв «завалить судью» — но и по-настоящему спорное судейство даёт такую же картину."
+            )
+            return {
+                "explanation": explanation,
+                "confirm_hint": "если оценки похожи на организованную атаку, а не на реакцию на реальные ошибки — рейтинг напрямую не меняет, помогает точнее настроить детектор",
+                "dismiss_hint": "если в матче действительно были спорные решения и реакция болельщиков объяснима",
             }
 
         if self.source == "vote_spike":
@@ -586,6 +674,234 @@ class SuspiciousActivityFlag(BaseModel):
             "dismiss_hint": "отклоняет сигнал как ложное срабатывание",
         }
 
+    @property
+    def live_correction(self) -> float | None:
+        """ТЕКУЩАЯ авто-поправка сущности (из PlayerRatingCorrection/
+        TeamRatingCorrection), а не снимок из details на момент создания
+        флага. Именно её видит пользователь на странице игрока/команды —
+        раньше модератор видел −0.23 из старого снимка, а на профиле
+        висело +0.25 (жалоба 2026-09-23)."""
+        if not self.object_id:
+            return None
+        from aggregates.models import PlayerRatingCorrection, TeamRatingCorrection
+
+        model = {
+            "player_stats_divergence": PlayerRatingCorrection,
+            "stats_divergence": TeamRatingCorrection,
+        }.get(self.source)
+        if model is None:
+            return None
+        fk = "player_id" if model is PlayerRatingCorrection else "team_id"
+        return model.objects.filter(**{fk: self.object_id}).values_list("correction", flat=True).first()
+
+    @property
+    def score_label(self) -> str:
+        """Вместо непонятного "score 0,57" — словами."""
+        if self.score >= 0.7:
+            return f"сильный сигнал ({self.score:.0%})"
+        if self.score >= 0.4:
+            return f"средний сигнал ({self.score:.0%})"
+        return f"слабый сигнал ({self.score:.0%})"
+
+    def _divergence_summary(self, d: dict, subject: str) -> dict:
+        """
+        2026-09-23, жалоба пользователя: "все эти тексты нихуя непонятны —
+        что произошло, почему антифрод сработал, что делать дальше". Текст
+        разбит на 4 блока простым языком: что произошло / почему это
+        подозрительно / что система уже сделала (по ТЕКУЩЕЙ поправке, а не
+        по устаревшему снимку) / что делать модератору.
+        """
+        is_player = self.source == "player_stats_divergence"
+        pattern = d.get("pattern", "")
+        overrated = pattern.startswith("overrated")
+        n_raw = d.get("window_matches")
+        if isinstance(n_raw, int):
+            tail = n_raw % 10
+            word = "матч" if tail == 1 and n_raw % 100 != 11 else (
+                "матча" if 2 <= tail <= 4 and not 12 <= n_raw % 100 <= 14 else "матчей")
+            n = f"{n_raw} {word}"
+        else:
+            n = "несколько матчей"
+        win = d.get("window_avg_rating")
+        base = d.get("baseline_avg_rating")
+        win_s = f"{win:.1f}" if isinstance(win, (int, float)) else "?"
+        base_s = f"{base:.1f}" if isinstance(base, (int, float)) else "?"
+        who = f"«{subject}»"
+
+        if is_player:
+            facts = (
+                "оценка игры по статистике матча" if d.get("objective_source") == "sportmonks_rating"
+                else "голы, передачи, отборы, перехваты, единоборства, сейвы, карточки"
+            )
+        else:
+            facts = "удары, удары в створ, опасные атаки, угловые, владение — насколько команда давила на соперника"
+
+        if overrated:
+            what_happened = (
+                f"Последние {n} болельщики ставили {who} в среднем {win_s} — это выше, чем обычно "
+                f"(обычно {base_s}). А по фактам матча ({facts}) {'он' if is_player else 'команда'} в эти же "
+                f"матчи сыграл{'' if is_player else 'а'} хуже своего обычного уровня. Оценки пошли вверх, а игра — вниз."
+            )
+            why = (
+                "Так выглядит накрутка «за»: фан-клуб или группа людей массово ставят высокие оценки. "
+                "Но бывает и честное объяснение — статистика не всё видит."
+            )
+        else:
+            what_happened = (
+                f"Последние {n} болельщики ставили {who} в среднем {win_s} — это ниже, чем обычно "
+                f"(обычно {base_s}). А по фактам матча ({facts}) {'он' if is_player else 'команда'} в эти же "
+                f"матчи сыграл{'' if is_player else 'а'} лучше своего обычного уровня. Игра пошла вверх, а оценки — вниз."
+            )
+            why = (
+                "Так выглядит накрутка «против»: фанаты соперника или недоброжелатели массово занижают оценки. "
+                "Но бывает и честное объяснение — статистика не всё видит."
+            )
+
+        live = self.live_correction
+        still_active = d.get("pattern_active", True)
+        if live is None or abs(live) < 0.01:
+            system_action = "Сейчас рейтинг НЕ корректируется: поправка уже затухла до нуля."
+        else:
+            direction = "повышает" if live > 0 else "понижает"
+            system_action = (
+                f"Система сама {direction} рейтинг в каждом НОВОМ матче на {abs(live):.2f} балла "
+                f"(именно эта цифра видна на странице {'игрока' if is_player else 'команды'}). "
+                f"Уже выставленные оценки прошлых матчей не меняются. Поправка небольшая (максимум ±0.4) "
+                f"и уменьшается вдвое при каждой ежедневной проверке, если расхождение пропало."
+            )
+            if (live > 0) == overrated:
+                system_action += (
+                    " Внимание: направление поправки не совпадает с описанием выше — описание осталось от первого "
+                    "сигнала, а картина с тех пор поменялась. При следующей ежедневной проверке описание обновится."
+                )
+        if not still_active:
+            system_action = "Расхождение на последней проверке больше не видно. " + system_action
+
+        if is_player:
+            honest_reasons = "травма, игра на непривычной позиции, сильный соперник, или статистика не отражает важный эпизод"
+        else:
+            honest_reasons = "удаление, травмы ключевых игроков, спорное судейство, игра «от обороны» по плану"
+        what_to_do = (
+            f"Откройте последние матчи и сверьте с игрой. Если расхождение объяснимо ({honest_reasons}) — "
+            f"«Отклонить»: поправка сразу снимется, и 30 дней система не будет трогать {'этого игрока' if is_player else 'эту команду'}. "
+            f"Если согласны, что оценки накручены, — «Подтвердить»: рейтинг это не меняет (поправка уже работает), "
+            f"но система учтёт ваше решение и точнее настроит свою чувствительность. Не уверены — можно ничего не делать, "
+            f"поправка сама затухнет, если расхождение уйдёт."
+        )
+
+        if self.source == "coach_stats_divergence":
+            # 2026-09-24: тренер — оценивается против игры ЕГО команды, авто-поправки нет.
+            if overrated:
+                what_happened = (
+                    f"Последние {n} болельщики оценивали тренера {who} в среднем на {win_s} — выше, чем обычно "
+                    f"(обычно {base_s}). А его команда в эти матчи объективно уступала соперникам ({facts})."
+                )
+            else:
+                what_happened = (
+                    f"Последние {n} болельщики оценивали тренера {who} в среднем на {win_s} — ниже, чем обычно "
+                    f"(обычно {base_s}). А его команда в эти матчи объективно превосходила соперников ({facts})."
+                )
+            system_action = (
+                "Оценки тренера автоматически НЕ корректируются — работу тренера по статистике команды можно оценить "
+                "только косвенно, поэтому решение оставлено человеку."
+            )
+            if not still_active:
+                system_action = "Расхождение на последней проверке больше не видно. " + system_action
+            what_to_do = (
+                "Откройте последние матчи команды. Если расхождение объяснимо (замены не сработали, игроки провалили "
+                "установку, травмы) — «Отклонить». Если похоже на организованную накрутку — «Подтвердить»: это помогает "
+                "системе точнее настраивать чувствительность. Рейтинг тренера ни одна из кнопок не меняет."
+            )
+            return {
+                "explanation": what_happened,
+                "what_happened": what_happened,
+                "why": why,
+                "system_action": system_action,
+                "what_to_do": what_to_do,
+                "confirm_hint": "рейтинг не меняет, учитывается для настройки чувствительности",
+                "dismiss_hint": "помечает как ложное срабатывание",
+            }
+
+        return {
+            "explanation": what_happened,
+            "what_happened": what_happened,
+            "why": why,
+            "system_action": system_action,
+            "what_to_do": what_to_do,
+            "confirm_hint": "рейтинг не меняет, только учитывается для настройки чувствительности детектора",
+            "dismiss_hint": "сразу снимает авто-поправку и выключает проверку на 30 дней",
+        }
+
+    # 2026-09-23, честный аудит формул рейтингов (прямая жалоба пользователя
+    # на сырой дамп деталей вида "pattern: underrated_despite_stats
+    # objective_z: 0,64 window_matches: 3..." под сворачивающимся блоком
+    # "Технические детали" в dashboard/antifraud.html): human_summary выше
+    # уже даёт связное объяснение на естественном языке, но само окно с
+    # ключами details ПОД ним всё равно дампилось как есть — понятно только
+    # тому, кто читал этот же код. Единый словарь меток по ВСЕМ ключам,
+    # которые когда-либо пишет любой источник (aggregates/tasks.py,
+    # users/tasks.py), чтобы технический блок был вспомогательным
+    # уточнением для модератора-эксперта, а не единственным источником
+    # смысла для рядового модератора.
+    DETAIL_KEY_LABELS = {
+        "pattern": "Что обнаружено",
+        "objective_source": "По чему оценивали игру",
+        "window_matches": "Сколько последних матчей проверено",
+        "window_avg_rating": "Оценка болельщиков в этих матчах",
+        "baseline_avg_rating": "Обычная оценка болельщиков (более ранние матчи)",
+        "window_avg_objective": "Оценка игры по статистике в этих матчах",
+        "baseline_avg_objective": "Обычная оценка игры по статистике",
+        "window_avg_dominance_share": "Доля команды в игре (удары, атаки, угловые, владение) в этих матчах",
+        "objective_z": "Статистика в сравнении с обычной (0 — как обычно, минус — хуже)",
+        "correction_applied": "Поправка на момент проверки",
+        "pattern_active": "Расхождение видно на последней проверке",
+        "first_detected_at": "Впервые обнаружено",
+        "last_checked_at": "Последняя проверка",
+        "mean_diff": "Средняя разница оценок (свои − чужие)",
+        "diff_stdev": "Разброс разницы от матча к матчу",
+        "considered_matches": "Учтено матчей",
+        "weight_penalty": "Снижение веса голоса",
+        "window_hours": "Окно, часов",
+        "window_votes": "Голосов в окне",
+        "extreme_ratio": "Доля крайних оценок",
+        "account_count": "Аккаунтов",
+        "lookback_hours": "Глубина поиска, часов",
+        "duration_seconds": "Заполнено за, сек",
+        "threshold_seconds": "Порог, сек",
+        "session_id": "ID сессии",
+        "ip_address": "IP-адрес",
+    }
+
+    DETAIL_PATTERN_LABELS = {
+        "underrated_despite_dominance": "оценки ниже обычного, хотя команда играла лучше",
+        "overrated_despite_poor_play": "оценки выше обычного, хотя команда играла хуже",
+        "underrated_despite_stats": "оценки ниже обычного, хотя по статистике играл лучше",
+        "overrated_despite_stats": "оценки выше обычного, хотя по статистике играл хуже",
+    }
+
+    @property
+    def readable_details(self) -> list[tuple[str, str]]:
+        """[(человеко-читаемая метка, отформатированное значение), ...] —
+        см. комментарий у DETAIL_KEY_LABELS выше. Неизвестный ключ (на
+        случай будущего детектора, для которого метку забыли завести)
+        показывается как есть, а не прячется — лучше некрасиво, чем молча
+        потерять информацию."""
+        result = []
+        for key, value in (self.details or {}).items():
+            label = self.DETAIL_KEY_LABELS.get(key, key)
+            if key == "pattern":
+                value = self.DETAIL_PATTERN_LABELS.get(value, value)
+            elif key == "objective_source":
+                value = {"sportmonks_rating": "оценка по статистике (1–10)", "composite": "наша сумма баллов"}.get(value, value)
+            elif key == "pattern_active":
+                value = "да" if value else "нет, поправка затухает"
+            elif key in ("first_detected_at", "last_checked_at") and isinstance(value, str):
+                value = value[:16].replace("T", " ")
+            elif isinstance(value, float):
+                value = f"{value:+.2f}" if key in ("correction_applied", "mean_diff", "weight_penalty") else round(value, 2)
+            result.append((label, value))
+        return result
+
 
 class AntiFraudThreshold(BaseModel):
     """
@@ -602,11 +918,18 @@ class AntiFraudThreshold(BaseModel):
     Калибруется НЕ каждый порог в проекте: адаптация имеет смысл только
     там, где есть земля под ногами — разобранные модератором флаги с
     вердиктом confirmed/dismissed (`SuspiciousActivityFlag.status`). У
-    `vote_spike` и `ip_cluster` такая обратная связь есть. У
-    градуированного штрафа за предвзятость (`aggregates/services.py`)
-    её нет — штраф применяется молча, без очереди на модерацию, поэтому
-    подстраивать там нечего: эти константы остаются осознанно
-    фиксированными в коде.
+    `vote_spike` и `ip_cluster` такая обратная связь есть.
+
+    ИСПРАВЛЕНО (2026-09-23, честный аудит формул рейтингов): до этой даты
+    у градуированного штрафа за предвзятость (`aggregates/services.py::
+    _graduated_bias_penalty`) обратной связи не было вообще — штраф
+    применялся молча, без единого следа в очереди модерации, значит и
+    калибровать было нечего. Теперь заметный штраф (см.
+    `EXTREME_BIAS_FLAG_THRESHOLD`) создаёт `SuspiciousActivityFlag(
+    source="extreme_bias")` — появилась земля под ногами, и ПОРОГ
+    ВИДИМОСТИ (с какого штрафа заводить флаг, не сами константы формулы
+    штрафа BIAS_FREE_DIFF/BIAS_MAX_DIFF) калибруется точно так же, как
+    vote_spike/ip_cluster (ключ `extreme_bias_flag_threshold`).
 
     `min_value`/`max_value` — жёсткие границы, за которые калибровка не
     может выйти, даже если решения модератора массово смещены (случайно

@@ -88,3 +88,6 @@ node_modules/
 
 celerybeat-schedule.db
 dump.rdb
+
+# Полные ответы Sportmonks (python manage.py sportmonks_inspect_stats) — не коммитим
+sportmonks_samples/

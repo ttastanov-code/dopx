@@ -127,6 +127,8 @@ dashboard/views.py::platform_settings*) — key-value рантайм-конфи�
                         <span class="font-mono">monthly_champion_min_evaluations</span><span class="opacity-50">= 5</span><span class="opacity-70">минимум оценок за месяц для значка «Чемпион месяца»</span>
                         <span class="font-mono">antifraud_auto_expire_after_days</span><span class="opacity-50">= 14</span><span class="opacity-70">через сколько дней снимать старые флаги подозрений</span>
                         <span class="font-mono">antifraud_auto_expire_max_score</span><span class="opacity-50">= 0.4</span><span class="opacity-70">снимать автоматически только если счёт подозрения ниже этого</span>
+                        <span class="font-mono">trust_decay_fraction</span><span class="opacity-50">= 0.1</span><span class="opacity-70">доля расстояния до нейтрального доверия (1.0), на которую сдвигается trust_score активного пользователя раз в месяц</span>
+                        <span class="font-mono">trust_decay_lookback_days</span><span class="opacity-50">= 90</span><span class="opacity-70">не «реабилитировать» доверием тех, кто не голосовал дольше этого срока</span>
                     </div>
                 </div>
             </details>
@@ -140,6 +142,7 @@ dashboard/views.py::platform_settings*) — key-value рантайм-конфи�
                     <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] gap-x-3 gap-y-1">
                         <span class="font-mono">bulk_email_chunk_size</span><span class="opacity-50">= 50</span><span class="opacity-70">по сколько адресов отправлять письма пачками</span>
                         <span class="font-mono">notification_retention_days</span><span class="opacity-50">= 90</span><span class="opacity-70">сколько дней хранить старые уведомления, прежде чем удалить</span>
+                        <span class="font-mono">prediction_results_catchup_days</span><span class="opacity-50">= 30</span><span class="opacity-70">на сколько дней назад досылать письма о прогнозах, если воркер простаивал дольше обычных 6 часов</span>
                     </div>
                 </div>
             </details>

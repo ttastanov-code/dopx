@@ -111,40 +111,11 @@ class SuspiciousActivityFlagAdmin(ModelAdmin):
         же баг-предохранитель, один-в-один, но для PlayerRatingCorrection/
         Player вместо TeamRatingCorrection/Team.
         """
-        from django.contrib.contenttypes.models import ContentType
-        from datetime import timedelta
+        # 2026-09-24: логика вынесена в aggregates.tasks.apply_divergence_dismissal —
+        # общая с кнопкой «Отклонить» в дашборде (там её раньше не было вовсе).
+        from aggregates.tasks import apply_divergence_dismissal
 
-        from aggregates.models import PlayerRatingCorrection, TeamRatingCorrection
-        from aggregates.tasks import (
-            PLAYER_STATS_DIVERGENCE_DISMISS_COOLDOWN_DAYS,
-            STATS_DIVERGENCE_DISMISS_COOLDOWN_DAYS,
-        )
-        from players.models import Player
-        from teams.models import Team
-
-        team_content_type = ContentType.objects.get_for_model(Team)
-        divergence_team_ids = [
-            flag.object_id
-            for flag in queryset.filter(source="stats_divergence", content_type=team_content_type)
-        ]
-        if divergence_team_ids:
-            TeamRatingCorrection.objects.filter(team_id__in=divergence_team_ids).update(
-                correction=0.0,
-                last_pattern="",
-                suppressed_until=timezone.now() + timedelta(days=STATS_DIVERGENCE_DISMISS_COOLDOWN_DAYS),
-            )
-
-        player_content_type = ContentType.objects.get_for_model(Player)
-        divergence_player_ids = [
-            flag.object_id
-            for flag in queryset.filter(source="player_stats_divergence", content_type=player_content_type)
-        ]
-        if divergence_player_ids:
-            PlayerRatingCorrection.objects.filter(player_id__in=divergence_player_ids).update(
-                correction=0.0,
-                last_pattern="",
-                suppressed_until=timezone.now() + timedelta(days=PLAYER_STATS_DIVERGENCE_DISMISS_COOLDOWN_DAYS),
-            )
+        apply_divergence_dismissal(list(queryset))
 
         updated = queryset.update(status="dismissed", reviewed_by=request.user, reviewed_at=timezone.now())
         self.message_user(request, f"Отклонено: {updated}")

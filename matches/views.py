@@ -265,7 +265,18 @@ class MatchDetailView(DetailView):
             'player',
             'player__team'
         ).order_by('performance_score')[:3]
-        
+
+        # 2026-09-24: «по статистике» рядом с оценкой болельщиков — см.
+        # matches/stat_ratings.py. Списки материализуем, чтобы повесить
+        # атрибут stat_rating на каждый агрегат (один запрос на матч).
+        from matches.stat_ratings import stat_ratings_for_match
+
+        stat_ratings = stat_ratings_for_match(match)
+        top_players = list(top_players)
+        worst_players = list(worst_players)
+        for agg in top_players + worst_players:
+            agg.stat_rating = stat_ratings.get(agg.player_id)
+
         # Оценки команд за ЭТОТ матч — раньше считались Avg() напрямую по
         # TeamEvaluation (без веса пользователя, без винзоризации, без
         # защиты от сговора фан-базы). 2026-08-23: читаем уже готовый,

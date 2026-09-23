@@ -331,6 +331,40 @@ COMMAND_REGISTRY: dict[str, CommandSpec] = {
             ArgSpec("--merge", "merge", "str", required=True, help="UUID записи, которую сливаем и удаляем."),
         ],
     ),
+    # ============================================================
+    # 2026-09-24: рейтинги / статистика матчей
+    # ============================================================
+    "sportmonks_backfill_stats": CommandSpec(
+        name="sportmonks_backfill_stats", label="Догрузить полную статистику прошлых матчей",
+        category="recalc", danger="safe",
+        description="Для уже сыгранных матчей подтягивает всю статистику игроков и команд (оценка по статистике, отборы, перехваты и т.д.). 1 запрос к API на матч, счёт и составы не трогает.",
+        args=[
+            ArgSpec("--season-only", "season_only", "flag", help="Только текущий сезон."),
+            ArgSpec("--force", "force", "flag", help="Перезалить и матчи, где полная статистика уже есть."),
+            ArgSpec("--limit", "limit", "int", default=0, help="Не больше N матчей (0 — все)."),
+        ],
+    ),
+    "recalculate_history_clean": CommandSpec(
+        name="recalculate_history_clean", label="Пересчитать историю рейтингов без авто-поправок",
+        category="recalc", danger="destructive", has_apply_flag=True,
+        description="Пересчитывает рейтинги игроков и команд по всем завершённым матчам без старых поправок защиты от накрутки — чистая оценка болельщиков. Новые матчи считаются как обычно. Без «Применить» — только показывает число матчей.",
+    ),
+    "calibrate_player_objective_weights": CommandSpec(
+        name="calibrate_player_objective_weights", label="Подобрать веса формулы «по статистике»",
+        category="recalc", danger="safe",
+        description="Подбирает по данным веса запасной формулы оценки игры (когда у матча нет готовой оценки по статистике) и показывает точность. С флагом «сохранить» — записывает в «Настройки платформы».",
+        args=[
+            ArgSpec("--save", "save", "flag", help="Сохранить веса в «Настройки платформы»."),
+        ],
+    ),
+    "sportmonks_inspect_stats": CommandSpec(
+        name="sportmonks_inspect_stats", label="Какая статистика приходит от поставщика данных",
+        category="diagnose", danger="readonly",
+        description="1 запрос по последнему завершённому матчу: список всех видов статистики игроков по амплуа и команд. В базу ничего не пишет, полный ответ сохраняет в файл.",
+        args=[
+            ArgSpec("--fixture", "fixture", "int", help="ID матча у поставщика (пусто — последний завершённый)."),
+        ],
+    ),
 }
 
 

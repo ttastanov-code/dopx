@@ -101,16 +101,28 @@ body {
             {% endif %}
         </div>
 
-        <!-- City (optional) -->
+        <!-- City (обязательно, 2026-09-23) -->
         <div>
-            <label for="id_city" class="block text-sm font-medium mb-1.5">Город <span class="text-base-content/40 font-normal">(необязательно)</span></label>
-            <input type="text"
-                   id="id_city"
-                   name="city"
-                   autocomplete="address-level2"
-                   class="auth-input {% if form.city.errors %}auth-input-error{% endif %}"
-                   placeholder="Например, Алматы"
-                   value="{{ form.city.value|default:'' }}">
+            <label for="id_city" class="block text-sm font-medium mb-1.5">Город</label>
+            {% comment %}
+            2026-09-23, продуктовый запрос: "пользователь должен город
+            указать при регистрации обязательно" + реальные казахстанские
+            города вместо свободного текста (users/kz_cities.py). Раньше
+            здесь был свободный <input type="text">; теперь — выпадающий
+            список из form.city (ChoiceField, users/forms.py), рендерится
+            вручную (как и остальные поля этой формы), но перебирает
+            form.fields.city.choices, а не хардкодит опции в шаблоне —
+            один источник правды.
+            {% endcomment %}
+            <select id="id_city"
+                    name="city"
+                    required
+                    autocomplete="address-level2"
+                    class="auth-input {% if form.city.errors %}auth-input-error{% endif %}">
+                {% for value, label in form.fields.city.choices %}
+                <option value="{{ value }}" {% if form.city.value|stringformat:"s" == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
             {% if form.city.errors %}
             <p class="text-xs text-error mt-1.5">{{ form.city.errors.0 }}</p>
             {% endif %}

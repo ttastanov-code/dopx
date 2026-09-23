@@ -62,12 +62,21 @@ templates/dashboard/scripts.html
                 чтобы визуально остаться в конце строки на обоих режимах.
                 {% endcomment %}
                 <summary class="dopx-cmd-summary cursor-pointer select-none px-3 py-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-                    {% if spec.danger == 'destructive' %}<span class="badge badge-error badge-xs shrink-0 order-1">удаляет</span>
+                    {% comment %}
+                    2026-09-24, жалоба "описание не влезает и уходит под ...":
+                    на sm+ описание стояло в одной строке с названием и
+                    обрезалось через truncate. Теперь описание ВСЕГДА на
+                    своей строке во всю ширину и переносится целиком — на
+                    любом экране. Название тоже может переноситься (min-w-0),
+                    бейдж «необратимо» вместо «удаляет»: не все опасные
+                    команды удаляют (например, пересчёт истории перезаписывает).
+                    {% endcomment %}
+                    {% if spec.danger == 'destructive' %}<span class="badge badge-error badge-xs shrink-0 order-1">необратимо</span>
                     {% elif spec.danger == 'readonly' %}<span class="badge badge-ghost badge-xs shrink-0 order-1">read-only</span>
                     {% else %}<span class="badge badge-success badge-xs shrink-0 order-1">безопасно</span>{% endif %}
-                    <span class="font-medium shrink-0 order-2">{{ spec.label }}</span>
-                    <i class="ti ti-chevron-down text-xs opacity-30 ml-auto shrink-0 order-3 sm:order-5 transition-transform group-open:rotate-180"></i>
-                    <span class="text-xs opacity-45 order-4 basis-full sm:basis-0 sm:min-w-0 sm:flex-1 sm:truncate">{{ spec.description }}</span>
+                    <span class="font-medium min-w-0 flex-1 order-2 leading-snug">{{ spec.label }}</span>
+                    <i class="ti ti-chevron-down text-xs opacity-30 shrink-0 order-3 transition-transform group-open:rotate-180"></i>
+                    <span class="text-xs opacity-45 order-4 basis-full leading-snug break-words">{{ spec.description }}</span>
                 </summary>
                 <div class="px-3 pb-3 pt-2 border-t border-base-300">
                     <form method="post" action="{% url 'dashboard:scripts_trigger' %}" class="space-y-2.5">

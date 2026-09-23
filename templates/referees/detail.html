@@ -19,7 +19,7 @@
             </div>
             <div class="flex-1 text-center md:text-left w-full min-w-0">
                 <h1 class="text-xl md:text-3xl font-bold mb-2 truncate">{{ referee.first_name }} {{ referee.last_name }}</h1>
-                <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
                     <div class="stat bg-base-200 rounded-lg p-2 md:p-3">
                         <div class="stat-title text-xs">Матчей</div>
                         <div class="stat-value text-lg md:text-xl">{{ stats.total_matches|default:0 }}</div>
@@ -35,6 +35,23 @@
                         <div class="stat-title text-xs">Качество</div>
                         <div class="stat-value text-lg md:text-xl text-success">
                             {% if stats.avg_decision_quality %}{{ stats.avg_decision_quality|floatformat:1 }}{% else %}-{% endif %}
+                        </div>
+                    </div>
+                    {% comment %}
+                    2026-09-23, прямая просьба пользователя после аудита
+                    формул ("если performance_score не показывается нигде,
+                    может надо показывать?") — раньше composite-рейтинг
+                    считался (aggregates/tasks.py::recalculate_referee_
+                    aggregates), но нигде не выводился, только влияние и
+                    качество раздельно. Тултип объясняет неочевидную часть
+                    формулы (выше влияние → ниже итоговый балл) прямо тут,
+                    а не заставляет догадываться.
+                    {% endcomment %}
+                    <div class="stat relative bg-base-200 rounded-lg p-2 md:p-3">
+                        <div class="absolute top-2 right-2 z-10">{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.referee.performance_score %}</div>
+                        <div class="stat-title text-xs pr-4">Итоговый рейтинг</div>
+                        <div class="stat-value text-lg md:text-xl text-info">
+                            {% if stats.avg_performance_score %}{{ stats.avg_performance_score|floatformat:1 }}{% else %}-{% endif %}
                         </div>
                     </div>
                 </div>

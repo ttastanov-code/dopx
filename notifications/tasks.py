@@ -1111,6 +1111,18 @@ def notify_prediction_results(self):
     воркера/деплоя между прогонами; повторный прогон в пределах окна не
     дублирует уже обработанные пары благодаря дедупликации выше.
 
+    2026-09-23, фикс аудита: `end_time__gte=lookback` раньше был ЖЁСТКОЙ
+    нижней границей — если воркер/beat не работал дольше 6 часов (инцидент,
+    затянувшийся деплой), матчи, завершившиеся за это время, выпадали из
+    выборки НАВСЕГДА: следующий прогон уже не видел их (`end_time` за
+    пределами lookback), и prediction_streak/бейджи/письма по этим матчам
+    так и оставались необновлёнными без единого признака для админа. Так
+    как дедупликация выше опирается ИСКЛЮЧИТЕЛЬНО на существование
+    `Notification` (не на дату), а не на время — жёсткую нижнюю границу
+    можно расширить без риска задвоения. `CATCHUP_MAX_DAYS` — защитный
+    потолок (не искать несуществующие дыры в данных глубже разумного), а
+    не механизм дедупликации.
+
     БАГ, КОТОРЫЙ ТУТ БЫЛ: сама задача периодическая (`crontab(minute='*/30')`)
     и без Redis-lock — дедупликация по `Notification` (см. выше) защищает от
     задвоения ПОСЛЕ того, как `bulk_create` отработал, но не от гонки: два
@@ -1129,6 +1141,7 @@ def notify_prediction_results(self):
     try:
         from django.urls import reverse
 
+        from core.models import get_setting
         from matches.models import Match
         from notifications.models import Notification
         from predictions.models import MatchPrediction
@@ -1137,6 +1150,14 @@ def notify_prediction_results(self):
 
         now = timezone.now()
         lookback = now - timedelta(hours=6)
+        # 2026-09-23: потолок catch-up'а, не нижняя граница дедупликации
+        # (та полностью опирается на Notification, см. докстринг выше).
+        # Захватывает завершённые матчи глубже 6 часов ТОЛЬКО если они
+        # реально ещё не были уведомлены — обычный (здоровый) прогон почти
+        # всегда обработает их в первый же тик после lookback и дальше
+        # этот более широкий диапазон будет пустым за счёт already_emailed/
+        # existing_by_user дедупликации ниже.
+        catchup_cutoff = now - timedelta(days=get_setting("prediction_results_catchup_days", 30))
 
         # order_by('end_time') — ВАЖНО для серии прогнозов (см. блок ниже,
         # User.update_prediction_stats): если у пользователя в ОДНОМ прогоне
@@ -1144,8 +1165,17 @@ def notify_prediction_results(self):
         # серии должны применяться в том порядке, в котором матчи реально
         # закончились, а не в произвольном порядке из БД.
         matches = Match.objects.filter(
-            status='finished', end_time__isnull=False, end_time__gte=lookback, end_time__lte=now,
+            status='finished', end_time__isnull=False, end_time__gte=catchup_cutoff, end_time__lte=now,
         ).select_related('home_team', 'away_team').order_by('end_time')
+
+        stale_matches = [m for m in matches if m.end_time < lookback]
+        if stale_matches:
+            logger.warning(
+                "notify_prediction_results: catch-up сработал для %d матч(ей) старше "
+                "обычного 6-часового окна (id: %s) — вероятно, воркер/beat простаивал "
+                "дольше обычного; уведомления досылаются задним числом.",
+                len(stale_matches), [m.id for m in stale_matches],
+            )
 
         result_labels = {'1': 'Победа хозяев', 'X': 'Ничья', '2': 'Победа гостей'}
         notified = 0

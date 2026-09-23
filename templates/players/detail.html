@@ -2,6 +2,7 @@
 {% load static rating_extras %}
 {% load math_extras %}
 {% load position_extras %}
+{% load tooltip_tags %}
 {% block schema %}
 {% if schema_json %}
 <script type="application/ld+json">{{ schema_json|safe }}</script>
@@ -156,6 +157,38 @@
                         <div class="stat-value text-xl text-success">
                             {% if stats.total_votes|has_enough_votes %}{{ stats.avg_performance|default_if_none:"—" }}{% else %}н/д{% endif %}
                         </div>
+                        {% comment %}
+                        2026-09-23, честный аудит формул: PlayerRatingCorrection
+                        (см. players/views.py::PlayerDetailView) — единственный
+                        механизм в проекте, который САМ, без модератора, меняет
+                        уже показанный рейтинг (aggregates/tasks.py::
+                        _check_player_stats_divergence сравнивает community-
+                        оценку с объективной статистикой матча). Раньше это
+                        было полностью невидимо — теперь честно показываем
+                        сам факт активной авто-поправки.
+                        {% endcomment %}
+                        {% if rating_correction %}
+                        <div class="mt-1">
+                            {% comment %}2026-09-23: тултип по клику/наведению (работает и на телефоне, в отличие от title) с объяснением простым языком — rating_correction.public_explanation (aggregates/models.py).{% endcomment %}
+                            {% tooltip_wrap rating_correction.public_explanation %}
+                            <span class="badge badge-xs badge-ghost gap-1">
+                                <i class="ti ti-shield-check text-[10px]"></i>
+                                защита от накрутки {% if rating_correction.correction > 0 %}+{% endif %}{{ rating_correction.correction|floatformat:2 }}
+                                <i class="ti ti-info-circle text-[10px] opacity-60"></i>
+                            </span>
+                            {% endtooltip_wrap %}
+                        </div>
+                        {% endif %}
+                        {% if stats.avg_stat_rating %}
+                        {% comment %}2026-09-24: оценка по статистике матча рядом с оценкой трибун — players/views.py, matches/stat_ratings.py.{% endcomment %}
+                        <div class="mt-1">
+                            {% tooltip_wrap INDICATOR_TOOLTIPS.player.stat_rating %}
+                            <span class="text-xs opacity-70 whitespace-nowrap">
+                                <i class="ti ti-chart-bar"></i> по статистике <b>{{ stats.avg_stat_rating|floatformat:2 }}</b>
+                            </span>
+                            {% endtooltip_wrap %}
+                        </div>
+                        {% endif %}
                     </div>
                     <div class="stat relative bg-base-200 rounded-lg p-3">
                         <div class="absolute top-2 right-2 z-10">{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.player.risk %}</div>
@@ -200,6 +233,7 @@
                                 <th>Матч</th>
                                 <th>Дата</th>
                                 <th class="text-center"><span class="inline-flex items-center gap-1 justify-center">Рейтинг выступления{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.aggregate.performance_score %}</span></th>
+                                <th class="text-center"><span class="inline-flex items-center gap-1 justify-center">По статистике{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.player.stat_rating %}</span></th>
                                 <th class="text-center"><span class="inline-flex items-center gap-1 justify-center">Вклад{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.player.avg_contribution %}</span></th>
                                 <th class="text-center"><span class="inline-flex items-center gap-1 justify-center">Риск{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.aggregate.risk_index %}</span></th>
                                 <th class="text-center"><span class="inline-flex items-center gap-1 justify-center">Клатч{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.aggregate.clutch_index %}</span></th>
@@ -227,6 +261,11 @@
                                         {% endif %}
                                         {% confidence_badge agg %}
                                     </div>
+                                </td>
+                                <td class="text-center">
+                                    {% if agg.stat_rating %}
+                                    <span class="font-semibold {% if agg.stat_rating >= 7 %}text-success{% elif agg.stat_rating >= 6 %}text-warning{% else %}text-error{% endif %}">{{ agg.stat_rating|floatformat:1 }}</span>
+                                    {% else %}<span class="opacity-40">—</span>{% endif %}
                                 </td>
                                 <td class="text-center">{{ agg.avg_contribution|floatformat:1 }}</td>
                                 <td class="text-center">{{ agg.risk_index|floatformat:1 }}</td>

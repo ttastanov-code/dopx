@@ -1458,12 +1458,20 @@ def import_statistics(match: Match, fixture_statistics: List[Dict]) -> bool:
     away_sm_id = str(match.away_team.sportmonks_id or "")
 
     by_team: Dict[str, Dict] = {}
+    # 2026-09-24, БАГ: в raw раньше клались только уже разобранные поля
+    # (те же 15, что и в колонках) — всё остальное из ответа Sportmonks
+    # выбрасывалось, хотя docs/sportmonks-migration-plan.md утверждал
+    # обратное. Теперь raw = ВСЕ пришедшие типы по developer_name, чтобы
+    # новые метрики можно было начать использовать без повторных запросов.
+    raw_by_team: Dict[str, Dict] = {}
     for entry in fixture_statistics:
         dev_name = (entry.get("type") or {}).get("developer_name")
+        participant_id = str(entry.get("participant_id") or "")
+        if dev_name:
+            raw_by_team.setdefault(participant_id, {})[dev_name] = (entry.get("data") or {}).get("value")
         field = TEAM_STAT_DEV_NAME_MAP.get(dev_name)
         if not field:
             continue
-        participant_id = str(entry.get("participant_id") or "")
         by_team.setdefault(participant_id, {})[field] = _stat_value(entry)
 
     saved = 0
@@ -1475,7 +1483,7 @@ def import_statistics(match: Match, fixture_statistics: List[Dict]) -> bool:
         else:
             continue
         defaults = dict(fields)
-        defaults["raw"] = dict(fields)
+        defaults["raw"] = raw_by_team.get(participant_id, {})
         MatchTeamStatistics.objects.update_or_create(match=match, team=team, defaults=defaults)
         saved += 1
 
@@ -1512,17 +1520,23 @@ def import_player_statistics(match: Match, lineups_data: List[Dict]) -> bool:
             continue
 
         fields: Dict = {}
+        # 2026-09-24: raw — ВСЕ типы из lineups[].details (отборы, перехваты,
+        # пасы, рейтинг и т.п., что бы Sportmonks ни прислал), а не только
+        # 10 разобранных полей — см. тот же комментарий в import_statistics.
+        raw: Dict = {}
         for d in details:
             dev_name = (d.get("type") or {}).get("developer_name")
+            if dev_name:
+                raw[dev_name] = (d.get("data") or {}).get("value")
             field = PLAYER_STAT_DEV_NAME_MAP.get(dev_name)
             if field:
                 fields[field] = _stat_value(d)
 
-        if not fields:
+        if not fields and not raw:
             continue
         defaults = dict(fields)
         defaults["team"] = team
-        defaults["raw"] = dict(fields)
+        defaults["raw"] = raw
         MatchPlayerStatistics.objects.update_or_create(match=match, player=player, defaults=defaults)
         saved += 1
 

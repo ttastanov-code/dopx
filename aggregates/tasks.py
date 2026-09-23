@@ -90,6 +90,7 @@ PLAYER_AGGREGATE_UPDATE_FIELDS: tuple[str, ...] = (
     "avg_potential",
     "total_votes",
     "performance_score",
+    "rating_correction_applied",
     "risk_index",
     "maturity_score",
     "stability_index",
@@ -119,6 +120,7 @@ TEAM_AGGREGATE_UPDATE_FIELDS: tuple[str, ...] = (
     "avg_mentality",
     "total_votes",
     "performance_score",
+    "rating_correction_applied",
     "own_fans_avg",
     "rival_fans_avg",
     "neutral_avg",
@@ -139,7 +141,7 @@ REFEREE_AGGREGATE_UPDATE_FIELDS: tuple[str, ...] = (
 
 
 @shared_task(bind=True, max_retries=3, rate_limit="10/m")
-def recalculate_player_aggregates(self, match_id: str) -> bool:
+def recalculate_player_aggregates(self, match_id: str, apply_correction: bool = True) -> bool:
     """
     Пересчитывает агрегаты всех игроков матча: 1 запрос на выборку оценок +
     1 batch-upsert, независимо от числа игроков. Формула (вес, винзоризация,
@@ -228,11 +230,19 @@ def recalculate_player_aggregates(self, match_id: str) -> bool:
         # то же место применения, что у TeamRatingCorrection в
         # recalculate_team_aggregates выше: только здесь, на пересчёте, к
         # БУДУЩИМ матчам, никогда не переписывая уже сохранённые прошлые.
-        player_correction = PlayerRatingCorrection.objects.filter(player_id=player_id).values_list(
+        # apply_correction=False — пересчёт истории "начисто" (команда
+        # recalculate_history_clean): старые матчи не должны получать ТЕКУЩУЮ
+        # поправку, она предназначена только для новых матчей.
+        player_correction = (PlayerRatingCorrection.objects.filter(player_id=player_id).values_list(
             "correction", flat=True
-        ).first() or 0.0
+        ).first() or 0.0) if apply_correction else 0.0
+        # Фактически применённая величина (после клампа в [1, 10]) —
+        # сохраняется на агрегате, см. PlayerMatchAggregate.rating_correction_applied.
+        player_correction_applied = 0.0
         if player_correction:
-            performance_score = max(1.0, min(10.0, performance_score + player_correction))
+            corrected = max(1.0, min(10.0, performance_score + player_correction))
+            player_correction_applied = corrected - performance_score
+            performance_score = corrected
 
         # ИСПРАВЛЕНО (2026-09-22, сквозной аудит проекта) — см. полное
         # объяснение в aggregates/services.py::recalculate_player_aggregate
@@ -256,6 +266,7 @@ def recalculate_player_aggregates(self, match_id: str) -> bool:
                 avg_potential=round(avg_potential, 2),
                 total_votes=len(player_evals),
                 performance_score=round(performance_score, 2),
+                rating_correction_applied=round(player_correction_applied, 3),
                 risk_index=round(risk_index_value, 2),
                 maturity_score=round(performance_score - risk_index_value, 2),
                 stability_index=round(stability_index, 2),
@@ -415,7 +426,7 @@ def recalculate_coach_aggregates(self, match_id: str) -> bool:
 
 
 @shared_task(bind=True, max_retries=3)
-def recalculate_team_aggregates(self, match_id: str) -> bool:
+def recalculate_team_aggregates(self, match_id: str, apply_correction: bool = True) -> bool:
     """
     Пересчёт агрегатов КОМАНД матча (TeamEvaluation) — новая задача,
     2026-08-23. До этой задачи у команд вообще не было персистентного
@@ -479,11 +490,14 @@ def recalculate_team_aggregates(self, match_id: str) -> bool:
         # TeamRatingCorrection в aggregates/models.py) — применяется ТОЛЬКО
         # здесь, на пересчёте, к БУДУЩИМ матчам, никогда не переписывая уже
         # сохранённые прошлые. Ограничена диапазоном оценки [1, 10].
-        correction = TeamRatingCorrection.objects.filter(team_id=team_id).values_list(
+        correction = (TeamRatingCorrection.objects.filter(team_id=team_id).values_list(
             "correction", flat=True
-        ).first() or 0.0
+        ).first() or 0.0) if apply_correction else 0.0
+        team_correction_applied = 0.0
         if correction:
-            performance_score = max(1.0, min(10.0, performance_score + correction))
+            corrected = max(1.0, min(10.0, performance_score + correction))
+            team_correction_applied = corrected - performance_score
+            performance_score = corrected
 
         aggregates_to_upsert.append(
             TeamMatchAggregate(
@@ -496,6 +510,7 @@ def recalculate_team_aggregates(self, match_id: str) -> bool:
                 avg_mentality=round(avg_mentality, 2),
                 total_votes=len(team_evals),
                 performance_score=round(performance_score, 2),
+                rating_correction_applied=round(team_correction_applied, 3),
                 own_fans_avg=round(own_fans_avg, 2) if own_fans_avg is not None else None,
                 rival_fans_avg=round(rival_fans_avg, 2) if rival_fans_avg is not None else None,
                 neutral_avg=round(neutral_avg, 2) if neutral_avg is not None else None,
@@ -1114,25 +1129,40 @@ STATS_DIVERGENCE_DISMISS_COOLDOWN_DAYS = 30
 # которые у KFF заполнены стабильнее всего на уровне команды (пас/xG
 # часто null, см. докстринг MatchTeamStatistics). Удары в створ — прямой
 # показатель созидания, угловые — давления/территориального контроля.
-DOMINANCE_SHARE_FIELDS = ("shots_on_goal", "corners")
+# 2026-09-24: расширено — у нового поставщика данных по КПЛ стабильно
+# приходят опасные атаки, все удары и владение (проверено командой
+# sportmonks_inspect_stats). Вес = насколько показатель говорит о реальном
+# преимуществе: удары в створ сильнее всего, владение слабее всего (можно
+# владеть мячом без толку). Поле без данных у одной из команд пропускается,
+# веса перенормируются на оставшиеся.
+DOMINANCE_SHARE_WEIGHTS = {
+    "shots_on_goal": 2.0,
+    "dangerous_attacks": 1.5,
+    "shots": 1.0,
+    "corners": 0.5,
+    "possession_percent": 0.5,
+}
+DOMINANCE_SHARE_FIELDS = tuple(DOMINANCE_SHARE_WEIGHTS)
 
 
 def _team_dominance_share(own_stat: MatchTeamStatistics, opponent_stat: MatchTeamStatistics) -> float | None:
-    """Средняя доля команды в сумме показателей обеих команд по
-    DOMINANCE_SHARE_FIELDS за один матч. None, если ни по одному полю
-    нет данных сразу у ОБЕИХ команд (типично для матчей без детальной
-    статистики от KFF)."""
-    shares = []
-    for field in DOMINANCE_SHARE_FIELDS:
-        own = getattr(own_stat, field)
-        opp = getattr(opponent_stat, field)
+    """Взвешенная доля команды в сумме показателей обеих команд по
+    DOMINANCE_SHARE_WEIGHTS за один матч (0.5 — поровну). None, если ни
+    по одному полю нет данных сразу у ОБЕИХ команд."""
+    weighted = 0.0
+    weight_sum = 0.0
+    for field, weight in DOMINANCE_SHARE_WEIGHTS.items():
+        own = getattr(own_stat, field, None)
+        opp = getattr(opponent_stat, field, None)
         if own is None or opp is None:
             continue
         total = own + opp
-        shares.append(0.5 if total == 0 else own / total)
-    if not shares:
+        share = 0.5 if total == 0 else own / total
+        weighted += share * weight
+        weight_sum += weight
+    if not weight_sum:
         return None
-    return sum(shares) / len(shares)
+    return weighted / weight_sum
 
 
 @shared_task
@@ -1182,13 +1212,69 @@ def detect_rating_stats_divergence_task() -> int:
     return flagged
 
 
-def _decay_team_rating_correction(team_id) -> None:
+def _raw_community_score(agg) -> float:
+    """performance_score БЕЗ вшитой в него авто-поправки — детекторы
+    расхождения должны сравнивать чистую оценку болельщиков со статистикой.
+    До 2026-09-23 они читали performance_score как есть, т.е. вместе с
+    собственной прошлой поправкой: поправка −0.23 тянула рейтинг вниз →
+    на следующем прогоне игрок выглядел "заниженным" → поправка менялась на
+    +0.25 и т.д. (реальный случай, Александр Мартынович)."""
+    return agg.performance_score - (getattr(agg, "rating_correction_applied", 0.0) or 0.0)
+
+
+def _sync_divergence_flag(SuspiciousActivityFlag, content_type, object_id, source, score, details) -> None:
+    """Один открытый (pending) флаг на сущность, всегда с АКТУАЛЬНЫМИ цифрами.
+
+    БАГ, КОТОРЫЙ ТУТ БЫЛ (2026-09-23): флаг создавался один раз, и при
+    повторных срабатываниях его details не обновлялись — модератор видел
+    замороженный снимок двухнедельной давности ("поправка −0.23, завышен"),
+    хотя сама поправка давно пересчиталась (и даже сменила знак на +0.25).
+    Теперь каждый прогон перезаписывает details открытого флага свежим
+    снимком; дата первого обнаружения сохраняется в first_detected_at."""
+    now_iso = timezone.now().isoformat()
+    flag = SuspiciousActivityFlag.objects.filter(
+        content_type=content_type, object_id=str(object_id), source=source, status="pending",
+    ).first()
+    if flag is None:
+        SuspiciousActivityFlag.objects.create(
+            user=None, content_type=content_type, object_id=str(object_id), match=None,
+            source=source, score=score,
+            details={**details, "pattern_active": True, "first_detected_at": now_iso, "last_checked_at": now_iso},
+        )
+        return
+    first_detected = (flag.details or {}).get("first_detected_at") or flag.created_at.isoformat()
+    flag.details = {**details, "pattern_active": True, "first_detected_at": first_detected, "last_checked_at": now_iso}
+    flag.score = score
+    flag.save(update_fields=["details", "score", "updated_at"])
+
+
+def _mark_divergence_flag_inactive(SuspiciousActivityFlag, content_type, object_id, source, current_correction) -> None:
+    """Паттерн на этом прогоне НЕ подтвердился — открытый флаг (если есть)
+    помечается как "сигнал больше не наблюдается" с актуальной (затухающей)
+    поправкой, чтобы модератор не смотрел на устаревшие цифры."""
+    if SuspiciousActivityFlag is None or content_type is None:
+        return
+    flag = SuspiciousActivityFlag.objects.filter(
+        content_type=content_type, object_id=str(object_id), source=source, status="pending",
+    ).first()
+    if flag is None:
+        return
+    details = dict(flag.details or {})
+    details["pattern_active"] = False
+    details["correction_applied"] = round(current_correction, 3)
+    details["last_checked_at"] = timezone.now().isoformat()
+    flag.details = details
+    flag.save(update_fields=["details", "updated_at"])
+
+
+def _decay_team_rating_correction(team_id, content_type=None, SuspiciousActivityFlag=None) -> None:
     """Паттерн на этот прогон не подтвердился (или данных не хватило) —
     существующая поправка (если есть) затухает в STATS_DIVERGENCE_
     CORRECTION_DECAY раз, а не остаётся висеть навсегда. Не создаёт новую
     запись, если её и так не было (незачем заводить строку с нулём)."""
     correction_obj = TeamRatingCorrection.objects.filter(team_id=team_id).first()
     if correction_obj is None or correction_obj.correction == 0.0:
+        _mark_divergence_flag_inactive(SuspiciousActivityFlag, content_type, team_id, "stats_divergence", 0.0)
         return
     new_value = correction_obj.correction * STATS_DIVERGENCE_CORRECTION_DECAY
     if abs(new_value) < STATS_DIVERGENCE_CORRECTION_FLOOR:
@@ -1196,6 +1282,7 @@ def _decay_team_rating_correction(team_id) -> None:
     correction_obj.correction = round(new_value, 3)
     correction_obj.last_pattern = ""
     correction_obj.save(update_fields=["correction", "last_pattern", "updated_at"])
+    _mark_divergence_flag_inactive(SuspiciousActivityFlag, content_type, team_id, "stats_divergence", new_value)
 
 
 def _check_team_stats_divergence(team_id, content_type, SuspiciousActivityFlag) -> int:
@@ -1228,7 +1315,7 @@ def _check_team_stats_divergence(team_id, content_type, SuspiciousActivityFlag) 
         return 0  # недостаточно истории для baseline, не пересекающегося с window — поправку не трогаем
 
     baseline_pool = aggregates[STATS_DIVERGENCE_WINDOW_MATCHES:]
-    baseline_scores = [a.performance_score for a in baseline_pool]
+    baseline_scores = [_raw_community_score(a) for a in baseline_pool]
     baseline_mean = sum(baseline_scores) / len(baseline_scores)
     baseline_std = calculate_std_dev(baseline_scores)
 
@@ -1243,7 +1330,7 @@ def _check_team_stats_divergence(team_id, content_type, SuspiciousActivityFlag) 
         share = _team_dominance_share(own_stat, opponent_stat)
         if share is None:
             continue
-        window_pairs.append((agg.performance_score, share))
+        window_pairs.append((_raw_community_score(agg), share))
 
     if len(window_pairs) < STATS_DIVERGENCE_MIN_WINDOW_MATCHES:
         return 0  # недостаточно матчей с объективной статистикой с обеих сторон — поправку не трогаем
@@ -1267,7 +1354,7 @@ def _check_team_stats_divergence(team_id, content_type, SuspiciousActivityFlag) 
     if pattern is None:
         # Данных было достаточно, но сегодня расхождения нет — если раньше
         # была поправка, она сама угасает, а не остаётся зашитой навсегда.
-        _decay_team_rating_correction(team_id)
+        _decay_team_rating_correction(team_id, content_type, SuspiciousActivityFlag)
         return 0
 
     # Величина поправки пропорциональна тому, насколько разрыв превышает
@@ -1282,20 +1369,9 @@ def _check_team_stats_divergence(team_id, content_type, SuspiciousActivityFlag) 
     correction_obj.last_pattern = pattern
     correction_obj.save(update_fields=["correction", "last_pattern", "updated_at"])
 
-    already_pending = SuspiciousActivityFlag.objects.filter(
-        content_type=content_type, object_id=str(team_id), source="stats_divergence", status="pending",
-    ).exists()
-    if already_pending:
-        return 1  # поправка уже обновлена выше, лишний дублирующий флаг не создаём
-
-    SuspiciousActivityFlag.objects.create(
-        user=None,
-        content_type=content_type,
-        object_id=str(team_id),
-        match=None,
-        source="stats_divergence",
-        score=round(magnitude, 2),
-        details={
+    _sync_divergence_flag(
+        SuspiciousActivityFlag, content_type, team_id, "stats_divergence", round(magnitude, 2),
+        {
             "pattern": pattern,
             "window_matches": len(window_pairs),
             "window_avg_rating": round(window_rating, 2),
@@ -1357,6 +1433,68 @@ PLAYER_OBJECTIVE_SAVE_WEIGHT = 0.4
 PLAYER_OBJECTIVE_FOUL_WEIGHT = -0.2
 PLAYER_OBJECTIVE_MISSED_PENALTY_WEIGHT = -1.0
 
+# 2026-09-24: метрики из MatchPlayerStatistics.raw (developer_name Sportmonks,
+# проверено вживую командой sportmonks_inspect_stats на матче 19681945 —
+# отборы/перехваты/выносы по КПЛ приходят). Полезная работа защитника и
+# опорника, которой раньше в индексе не было вообще.
+# BLOCKED_SHOTS сознательно НЕ используется: по живому ответу непонятно,
+# это заблокированные игроком удары соперника или его собственные удары,
+# которые заблокировали (встречается и у нападающих) — не гадаем.
+PLAYER_OBJECTIVE_RAW_WEIGHTS = {
+    "TACKLES": 0.3,
+    "INTERCEPTIONS": 0.3,
+    "CLEARANCES": 0.15,
+    "DUELS_WON": 0.1,
+    "DUELS_LOST": -0.05,
+    "AERIALS_WON": 0.1,
+    "KEY_PASSES": 0.4,
+    "BIG_CHANCES_CREATED": 0.7,
+    "SUCCESSFUL_DRIBBLES": 0.2,
+    "DISPOSSESSED": -0.1,
+    "ERROR_LEAD_TO_SHOT": -1.0,
+    "SAVES_INSIDE_BOX": 0.2,
+}
+
+# Минимум матчей с рейтингом Sportmonks и в окне, и в базе, чтобы
+# использовать его вместо нашего композитного индекса.
+PLAYER_EXTERNAL_RATING_MIN_SAMPLES = 3
+
+
+def _player_external_rating(match_id, player_id) -> float | None:
+    """Рейтинг игрока за матч от Sportmonks (raw["RATING"], шкала ~1-10).
+
+    Это готовая оценка по десяткам метрик с учётом амплуа — надёжнее нашей
+    ручной суммы баллов, особенно для защитников/опорников. Используется в
+    детекторе расхождения как ОСНОВНОЙ объективный сигнал, если он есть в
+    достаточном числе матчей; иначе — композит _player_objective_score."""
+    raw = (
+        MatchPlayerStatistics.objects.filter(match_id=match_id, player_id=player_id)
+        .values_list("raw", flat=True).first()
+    ) or {}
+    value = raw.get("RATING")
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+def _calibrated_objective_weights() -> dict | None:
+    """Веса из «Настроек платформы» (ключ player_objective_weights, JSON) —
+    None, если калибровка ещё не сохранялась или значение битое."""
+    import json
+
+    from core.models import get_setting
+
+    raw = get_setting("player_objective_weights", "")
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+        return {"intercept": float(data["intercept"]), "weights": {k: float(v) for k, v in data["weights"].items()}}
+    except (ValueError, KeyError, TypeError, AttributeError):
+        return None
+
 
 def _player_objective_score(match_id, player_id) -> float | None:
     """Единый объективный индекс игрока за ОДИН матч — комбинирует и
@@ -1382,6 +1520,19 @@ def _player_objective_score(match_id, player_id) -> float | None:
     if stats is None and not event_types and not assist_count:
         return None
 
+    # 2026-09-24: если веса откалиброваны по данным (команда
+    # calibrate_player_objective_weights) и у матча полный raw — считаем по
+    # ним: результат в той же шкале ~1-10, что и готовая оценка по статистике.
+    calibrated = _calibrated_objective_weights()
+    if calibrated and stats is not None and (stats.raw or {}).get("MINUTES_PLAYED") is not None:
+        raw = stats.raw or {}
+        total = calibrated["intercept"]
+        for key, weight in calibrated["weights"].items():
+            value = raw.get(key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                total += value * weight
+        return total
+
     score = 0.0
     score += event_types.count("goal") * PLAYER_OBJECTIVE_GOAL_WEIGHT
     score += event_types.count("penalty") * PLAYER_OBJECTIVE_GOAL_WEIGHT
@@ -1394,6 +1545,14 @@ def _player_objective_score(match_id, player_id) -> float | None:
         score += (stats.shots_on_target or 0) * PLAYER_OBJECTIVE_SHOT_ON_TARGET_WEIGHT
         score += (stats.saves or 0) * PLAYER_OBJECTIVE_SAVE_WEIGHT
         score += (stats.fouls or 0) * PLAYER_OBJECTIVE_FOUL_WEIGHT
+        # 2026-09-24: защитные/созидательные метрики из полного raw (см.
+        # PLAYER_OBJECTIVE_RAW_WEIGHTS) — раньше их не было вообще, и у
+        # защитников/опорников индекс почти всегда был ~0.
+        raw = stats.raw or {}
+        for key, weight in PLAYER_OBJECTIVE_RAW_WEIGHTS.items():
+            value = raw.get(key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                score += value * weight
         score += (stats.missed_penalty or 0) * PLAYER_OBJECTIVE_MISSED_PENALTY_WEIGHT
 
     return score
@@ -1426,12 +1585,13 @@ def detect_player_rating_stats_divergence_task() -> int:
     return flagged
 
 
-def _decay_player_rating_correction(player_id) -> None:
+def _decay_player_rating_correction(player_id, content_type=None, SuspiciousActivityFlag=None) -> None:
     """Аналог _decay_team_rating_correction — паттерн на этот прогон не
     подтвердился (или данных не хватило), существующая поправка (если
     есть) затухает, а не остаётся висеть навсегда."""
     correction_obj = PlayerRatingCorrection.objects.filter(player_id=player_id).first()
     if correction_obj is None or correction_obj.correction == 0.0:
+        _mark_divergence_flag_inactive(SuspiciousActivityFlag, content_type, player_id, "player_stats_divergence", 0.0)
         return
     new_value = correction_obj.correction * PLAYER_STATS_DIVERGENCE_CORRECTION_DECAY
     if abs(new_value) < PLAYER_STATS_DIVERGENCE_CORRECTION_FLOOR:
@@ -1439,6 +1599,7 @@ def _decay_player_rating_correction(player_id) -> None:
     correction_obj.correction = round(new_value, 3)
     correction_obj.last_pattern = ""
     correction_obj.save(update_fields=["correction", "last_pattern", "updated_at"])
+    _mark_divergence_flag_inactive(SuspiciousActivityFlag, content_type, player_id, "player_stats_divergence", new_value)
 
 
 def _check_player_stats_divergence(player_id, content_type, SuspiciousActivityFlag) -> int:
@@ -1473,28 +1634,48 @@ def _check_player_stats_divergence(player_id, content_type, SuspiciousActivityFl
         return 0
 
     baseline_pool = aggregates[PLAYER_STATS_DIVERGENCE_WINDOW_MATCHES:]
-    baseline_scores = [a.performance_score for a in baseline_pool]
+    baseline_scores = [_raw_community_score(a) for a in baseline_pool]
     baseline_mean = sum(baseline_scores) / len(baseline_scores)
     baseline_std = calculate_std_dev(baseline_scores)
 
-    # Собственная норма ОБЪЕКТИВНОГО индекса — отдельная выборка от рейтинга
-    # (не все матчи baseline_pool обязательно имеют статистику/события).
-    baseline_objective = [
-        obj for obj in (
-            _player_objective_score(agg.match_id, player_id) for agg in baseline_pool
-        ) if obj is not None
+    window_aggs = aggregates[:PLAYER_STATS_DIVERGENCE_WINDOW_MATCHES]
+
+    # 2026-09-24: основной объективный сигнал — рейтинг Sportmonks (учитывает
+    # амплуа, в т.ч. отборы/перехваты защитника). Используем его, только если
+    # он есть в достаточном числе матчей И окна, И базы — смешивать рейтинг
+    # Sportmonks и наш композит в одной выборке нельзя (разные шкалы).
+    ext_baseline = [r for r in (_player_external_rating(a.match_id, player_id) for a in baseline_pool) if r is not None]
+    ext_window = [
+        (_raw_community_score(a), r) for a, r in
+        ((a, _player_external_rating(a.match_id, player_id)) for a in window_aggs) if r is not None
     ]
+    if (
+        len(ext_baseline) >= PLAYER_EXTERNAL_RATING_MIN_SAMPLES
+        and len(ext_window) >= PLAYER_STATS_DIVERGENCE_MIN_WINDOW_MATCHES
+    ):
+        objective_source = "sportmonks_rating"
+        baseline_objective = ext_baseline
+        window_pairs: list[tuple[float, float]] = ext_window
+    else:
+        objective_source = "composite"
+        # Собственная норма ОБЪЕКТИВНОГО индекса — отдельная выборка от рейтинга
+        # (не все матчи baseline_pool обязательно имеют статистику/события).
+        baseline_objective = [
+            obj for obj in (
+                _player_objective_score(agg.match_id, player_id) for agg in baseline_pool
+            ) if obj is not None
+        ]
+        window_pairs = []
+        for agg in window_aggs:
+            obj = _player_objective_score(agg.match_id, player_id)
+            if obj is None:
+                continue
+            window_pairs.append((_raw_community_score(agg), obj))
+
     if len(baseline_objective) < PLAYER_STATS_DIVERGENCE_MIN_BASELINE_OBJECTIVE_SAMPLES:
         return 0  # недостаточно объективных данных даже для собственной нормы — поправку не трогаем
     obj_baseline_mean = sum(baseline_objective) / len(baseline_objective)
     obj_baseline_std = calculate_std_dev(baseline_objective) or 1.0  # защита от деления на 0 при полностью ровной истории
-
-    window_pairs: list[tuple[float, float]] = []
-    for agg in aggregates[:PLAYER_STATS_DIVERGENCE_WINDOW_MATCHES]:
-        obj = _player_objective_score(agg.match_id, player_id)
-        if obj is None:
-            continue
-        window_pairs.append((agg.performance_score, obj))
 
     if len(window_pairs) < PLAYER_STATS_DIVERGENCE_MIN_WINDOW_MATCHES:
         return 0  # недостаточно матчей окна с объективными данными — поправку не трогаем
@@ -1513,7 +1694,7 @@ def _check_player_stats_divergence(player_id, content_type, SuspiciousActivityFl
         pattern = "overrated_despite_stats"
 
     if pattern is None:
-        _decay_player_rating_correction(player_id)
+        _decay_player_rating_correction(player_id, content_type, SuspiciousActivityFlag)
         return 0
 
     magnitude = min(1.0, abs(rating_gap) / (min_gap * 2)) if min_gap else 0.0
@@ -1525,21 +1706,11 @@ def _check_player_stats_divergence(player_id, content_type, SuspiciousActivityFl
     correction_obj.last_pattern = pattern
     correction_obj.save(update_fields=["correction", "last_pattern", "updated_at"])
 
-    already_pending = SuspiciousActivityFlag.objects.filter(
-        content_type=content_type, object_id=str(player_id), source="player_stats_divergence", status="pending",
-    ).exists()
-    if already_pending:
-        return 1  # поправка уже обновлена выше, лишний дублирующий флаг не создаём
-
-    SuspiciousActivityFlag.objects.create(
-        user=None,
-        content_type=content_type,
-        object_id=str(player_id),
-        match=None,
-        source="player_stats_divergence",
-        score=round(magnitude, 2),
-        details={
+    _sync_divergence_flag(
+        SuspiciousActivityFlag, content_type, player_id, "player_stats_divergence", round(magnitude, 2),
+        {
             "pattern": pattern,
+            "objective_source": objective_source,
             "window_matches": len(window_pairs),
             "window_avg_rating": round(window_rating, 2),
             "baseline_avg_rating": round(baseline_mean, 2),
@@ -1550,3 +1721,226 @@ def _check_player_stats_divergence(player_id, content_type, SuspiciousActivityFl
         },
     )
     return 1
+
+
+# ============================================================================
+# 2026-09-24: защита от накрутки для ТРЕНЕРОВ — тот же принцип, что у
+# команды (_check_team_stats_divergence): оценки тренера сравниваются с тем,
+# как его команда объективно играла (доля команды в игре, _team_dominance_
+# share). В отличие от игрока/команды, АВТО-ПОПРАВКИ нет — только сигнал
+# модератору: у тренера нет единого рейтинга выступления (4 отдельные
+# шкалы), и у "объективной игры команды" слабее связь с работой тренера,
+# чем у игрока — с его статистикой. Решает модератор.
+# ============================================================================
+
+COACH_STATS_DIVERGENCE_WINDOW_MATCHES = 6
+COACH_STATS_DIVERGENCE_MIN_WINDOW_MATCHES = 4
+COACH_STATS_DIVERGENCE_BASELINE_MIN_MATCHES = 6
+
+
+def _coach_score(agg) -> float:
+    """Единая оценка тренера за матч — среднее его 4 шкал (та же
+    величина, что average_score в сегментации CoachMatchAggregate)."""
+    return (agg.avg_tactics + agg.avg_substitutions + agg.avg_management + agg.avg_impact) / 4
+
+
+@shared_task
+def detect_coach_rating_stats_divergence_task() -> int:
+    from coaches.models import Coach
+    from users.models import SuspiciousActivityFlag
+
+    since = timezone.now() - timedelta(days=STATS_DIVERGENCE_LOOKBACK_DAYS)
+    coach_ids = list(
+        CoachMatchAggregate.objects.filter(match__status="finished", match__start_time__gte=since)
+        .values_list("coach_id", flat=True).distinct()
+    )
+    content_type = ContentType.objects.get_for_model(Coach)
+    flagged = 0
+    for coach_id in coach_ids:
+        flagged += _check_coach_stats_divergence(coach_id, content_type, SuspiciousActivityFlag)
+    if flagged:
+        logger.warning("Coach stats-divergence antifraud: flagged %d coach signal(s).", flagged)
+    return flagged
+
+
+def _check_coach_stats_divergence(coach_id, content_type, SuspiciousActivityFlag) -> int:
+    from coaches.models import Coach
+
+    coach = Coach.objects.filter(id=coach_id).only("id", "team_id").first()
+    if coach is None or not coach.team_id:
+        return 0
+
+    # Пауза после «Отклонить» — как suppressed_until у игрока/команды, но без
+    # отдельной модели поправки: смотрим на недавно отклонённый флаг тренера.
+    if SuspiciousActivityFlag.objects.filter(
+        content_type=content_type, object_id=str(coach_id), source="coach_stats_divergence",
+        status="dismissed", reviewed_at__gte=timezone.now() - timedelta(days=STATS_DIVERGENCE_DISMISS_COOLDOWN_DAYS),
+    ).exists():
+        return 0
+
+    fetch_limit = (COACH_STATS_DIVERGENCE_WINDOW_MATCHES + COACH_STATS_DIVERGENCE_BASELINE_MIN_MATCHES) * 2
+    aggregates = [
+        a for a in CoachMatchAggregate.objects.filter(coach_id=coach_id, match__status="finished", total_votes__gt=0)
+        .select_related("match").order_by("-match__start_time")[:fetch_limit]
+        # Команда тренера в ЭТОМ матче — только если матч его текущей команды
+        # (история смен тренера у источника данных не хранится, см. coaches/views.py).
+        if coach.team_id in (a.match.home_team_id, a.match.away_team_id)
+    ]
+    if len(aggregates) < COACH_STATS_DIVERGENCE_WINDOW_MATCHES + COACH_STATS_DIVERGENCE_BASELINE_MIN_MATCHES:
+        return 0
+
+    baseline_pool = aggregates[COACH_STATS_DIVERGENCE_WINDOW_MATCHES:]
+    baseline_scores = [_coach_score(a) for a in baseline_pool]
+    baseline_mean = sum(baseline_scores) / len(baseline_scores)
+    baseline_std = calculate_std_dev(baseline_scores)
+
+    window_pairs: list[tuple[float, float]] = []
+    for agg in aggregates[:COACH_STATS_DIVERGENCE_WINDOW_MATCHES]:
+        own_stat = MatchTeamStatistics.objects.filter(match_id=agg.match_id, team_id=coach.team_id).first()
+        opp_stat = MatchTeamStatistics.objects.filter(match_id=agg.match_id).exclude(team_id=coach.team_id).first()
+        if own_stat is None or opp_stat is None:
+            continue
+        share = _team_dominance_share(own_stat, opp_stat)
+        if share is not None:
+            window_pairs.append((_coach_score(agg), share))
+
+    if len(window_pairs) < COACH_STATS_DIVERGENCE_MIN_WINDOW_MATCHES:
+        return 0
+
+    window_rating = sum(p[0] for p in window_pairs) / len(window_pairs)
+    window_dominance = sum(p[1] for p in window_pairs) / len(window_pairs)
+    rating_gap = window_rating - baseline_mean
+    min_gap = max(STATS_DIVERGENCE_MIN_RATING_GAP, STATS_DIVERGENCE_RATING_Z_THRESHOLD * baseline_std)
+
+    pattern = None
+    if window_dominance >= STATS_DIVERGENCE_DOMINANCE_HIGH and rating_gap <= -min_gap:
+        pattern = "underrated_despite_dominance"
+    elif window_dominance <= STATS_DIVERGENCE_DOMINANCE_LOW and rating_gap >= min_gap:
+        pattern = "overrated_despite_poor_play"
+
+    if pattern is None:
+        _mark_divergence_flag_inactive(SuspiciousActivityFlag, content_type, coach_id, "coach_stats_divergence", 0.0)
+        return 0
+
+    magnitude = min(1.0, abs(rating_gap) / (min_gap * 2)) if min_gap else 0.0
+    _sync_divergence_flag(
+        SuspiciousActivityFlag, content_type, coach_id, "coach_stats_divergence", round(magnitude, 2),
+        {
+            "pattern": pattern,
+            "window_matches": len(window_pairs),
+            "window_avg_rating": round(window_rating, 2),
+            "baseline_avg_rating": round(baseline_mean, 2),
+            "window_avg_dominance_share": round(window_dominance, 2),
+        },
+    )
+    return 1
+
+
+# ============================================================================
+# 2026-09-24: всплеск крайних оценок СУДЬЕ. Общий детектор vote_spike
+# (_detect_spikes_for_match) сравнивает сущность с "соседями" в том же
+# матче — у судьи соседей нет (он один на матч), поэтому судьи им не
+# покрывались вообще. Здесь судья сравнивается с тем, как обычно
+# голосуют за судей в других недавних матчах лиги: если доля крайних
+# оценок (1-2 / 9-10) в этом матче — выброс относительно нормы, это
+# сигнал модератору (спорный матч тоже может так выглядеть — решает человек).
+# ============================================================================
+
+REFEREE_SPIKE_BASELINE_MATCHES = 40
+REFEREE_SPIKE_MIN_VOTES = 8
+
+
+def _referee_extreme_ratio(values) -> float:
+    return sum(1 for v in values if v is not None and (v <= 2 or v >= 9)) / len(values)
+
+
+@shared_task
+def detect_referee_vote_spikes_task() -> int:
+    from referees.models import Referee
+    from users.models import SuspiciousActivityFlag
+    from users.tasks import ANTIFRAUD_CALIBRATED_THRESHOLDS, get_antifraud_threshold
+
+    mad_threshold = get_antifraud_threshold(
+        "vote_spike_mad_threshold", ANTIFRAUD_CALIBRATED_THRESHOLDS["vote_spike_mad_threshold"]["default"]
+    )
+    recent_match_ids = list(
+        Match.objects.filter(status="finished", referee__isnull=False)
+        .order_by("-start_time").values_list("id", flat=True)[:REFEREE_SPIKE_BASELINE_MATCHES]
+    )
+    votes_by_match: dict = defaultdict(list)
+    for match_id, value in RefereeEvaluation.objects.filter(match_id__in=recent_match_ids).values_list(
+        "match_id", "decision_quality"
+    ):
+        votes_by_match[match_id].append(value)
+    eligible = {mid: vals for mid, vals in votes_by_match.items() if len(vals) >= REFEREE_SPIKE_MIN_VOTES}
+    if len(eligible) < VOTE_SPIKE_MIN_SIBLINGS:
+        return 0
+
+    match_ids = list(eligible)
+    ratios = [_referee_extreme_ratio(eligible[mid]) for mid in match_ids]
+    z_scores = _modified_z_scores(ratios)
+    referee_by_match = dict(Match.objects.filter(id__in=match_ids).values_list("id", "referee_id"))
+    content_type = ContentType.objects.get_for_model(Referee)
+
+    flagged = 0
+    for match_id, ratio, z in zip(match_ids, ratios, z_scores):
+        if z < mad_threshold:
+            continue
+        referee_id = referee_by_match.get(match_id)
+        if not referee_id:
+            continue
+        exists = SuspiciousActivityFlag.objects.filter(
+            content_type=content_type, object_id=str(referee_id), match_id=match_id, source="vote_spike",
+        ).exists()
+        if exists:
+            continue
+        SuspiciousActivityFlag.objects.create(
+            user=None, content_type=content_type, object_id=str(referee_id), match_id=match_id,
+            source="vote_spike", score=round(min(1.0, z / (mad_threshold * 2)), 2),
+            details={
+                "window_votes": len(eligible[match_id]),
+                "extreme_ratio": round(ratio, 2),
+                "compared_matches": len(match_ids),
+            },
+        )
+        flagged += 1
+    if flagged:
+        logger.warning("Referee vote-spike antifraud: flagged %d signal(s).", flagged)
+    return flagged
+
+
+def apply_divergence_dismissal(flags) -> None:
+    """Последствия «Отклонить» для сигналов расхождения со статистикой —
+    ЕДИНАЯ реализация для Django admin (users/admin.py::mark_dismissed) и
+    дашборда (dashboard/views.py::antifraud_flag_action).
+
+    БАГ, КОТОРЫЙ ТУТ БЫЛ (2026-09-24): кнопка «Отклонить» в дашборде только
+    меняла статус флага — поправку рейтинга снимал и ставил 30-дневную паузу
+    лишь Django admin. Модератор в дашборде читал «поправка сразу снимется»,
+    нажимал — а поправка оставалась.
+
+    Принимает iterable флагов (queryset или список). Для игрока/команды —
+    обнуляет поправку и ставит паузу проверки; для тренера поправки нет,
+    пауза обеспечивается в _check_coach_stats_divergence по дате
+    отклонённого флага."""
+    from aggregates.models import PlayerRatingCorrection, TeamRatingCorrection
+
+    now = timezone.now()
+    team_ct = ContentType.objects.get_for_model(Team)
+    player_ct = ContentType.objects.get_for_model(Player)
+    team_ids, player_ids = [], []
+    for flag in flags:
+        if flag.source == "stats_divergence" and flag.content_type_id == team_ct.id:
+            team_ids.append(flag.object_id)
+        elif flag.source == "player_stats_divergence" and flag.content_type_id == player_ct.id:
+            player_ids.append(flag.object_id)
+    if team_ids:
+        TeamRatingCorrection.objects.filter(team_id__in=team_ids).update(
+            correction=0.0, last_pattern="",
+            suppressed_until=now + timedelta(days=STATS_DIVERGENCE_DISMISS_COOLDOWN_DAYS),
+        )
+    if player_ids:
+        PlayerRatingCorrection.objects.filter(player_id__in=player_ids).update(
+            correction=0.0, last_pattern="",
+            suppressed_until=now + timedelta(days=PLAYER_STATS_DIVERGENCE_DISMISS_COOLDOWN_DAYS),
+        )

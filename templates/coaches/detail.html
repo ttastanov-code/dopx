@@ -184,6 +184,20 @@
         </h3>
         {% if has_evaluations %}
         {% comment %}
+        2026-09-23, фикс аудита: у игроков/команд карточка со средними
+        оценками показывает предупреждение "мало данных", если суммарное
+        число голосов ниже MIN_VOTES_FOR_DISPLAY (aggregates/services.py) —
+        у тренера такого предупреждения не было вообще, хотя используется
+        та же методика усреднения (не взвешенная по явке). has_enough_votes
+        — coaches/views.py::CoachDetailView.get_context_data.
+        {% endcomment %}
+        {% if not has_enough_votes %}
+        <div class="alert alert-warning py-2 px-3 text-xs mb-3">
+          <i class="ti ti-alert-triangle"></i>
+          <span>Мало данных — оценка основана всего на {{ stats.total_votes }} голосах, показатель может быть неустойчивым.</span>
+        </div>
+        {% endif %}
+        {% comment %}
         2026-09-23, найдено сквозным аудитом (жалоба пользователя: "нужно
         проверить ползунки — где надо максимум 10, где 100"). Тот же баг,
         что был на teams/detail.html и (раньше) на referees/detail.html:
