@@ -1,0 +1,109 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+{% comment %}
+templates/dashboard/banner_detail.html
+2026-09-23, раздел «Партнёры и баннеры» — карточка одного баннера
+(dashboard/views.py::banner_detail). Изображение необязательно менять при
+каждом сохранении — поле "image" пустое означает "оставить как есть"
+(см. views.py: image = request.FILES.get("image"); if image: ...).
+{% endcomment %}
+
+<div class="mb-4">
+    <a href="{% url 'dashboard:banners_list' %}" class="text-xs opacity-60 hover:opacity-100"><i class="ti ti-arrow-left"></i> К списку баннеров</a>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+    <div class="lg:col-span-2 space-y-4">
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-4">
+                <div class="flex items-center justify-between flex-wrap gap-2">
+                    <div>
+                        <div class="dopx-section-eyebrow"><i class="ti ti-photo"></i>Баннер</div>
+                        <div class="dopx-section-title">{{ banner.title }}</div>
+                    </div>
+                    {% if banner.is_currently_active %}<span class="badge badge-success">показывается сейчас</span>
+                    {% else %}<span class="badge badge-ghost">не показывается</span>{% endif %}
+                </div>
+
+                <img src="{{ banner.image.url }}" alt="{{ banner.title }}" class="rounded-lg border border-base-300 mt-3 max-h-48 object-contain bg-base-200/40">
+
+                <form method="post" enctype="multipart/form-data" class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                    {% csrf_token %}
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Название</label>
+                        <input type="text" name="title" value="{{ banner.title }}" required class="input input-sm input-bordered w-full">
+                    </div>
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Зона показа</label>
+                        <select name="zone" required class="select select-sm select-bordered w-full">
+                            {% for value, label in zone_choices %}
+                            <option value="{{ value }}" {% if banner.zone == value %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Партнёр</label>
+                        <select name="partner_id" class="select select-sm select-bordered w-full">
+                            <option value="">— собственное промо DOPX —</option>
+                            {% for p in partners_for_select %}
+                            <option value="{{ p.id }}" {% if banner.partner_id == p.id %}selected{% endif %}>{{ p.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Заменить изображение</label>
+                        <input type="file" name="image" accept="image/*" class="file-input file-input-sm file-input-bordered w-full">
+                    </div>
+                    <div class="flex flex-col gap-1 sm:col-span-2">
+                        <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Ссылка перехода</label>
+                        <input type="url" name="target_url" value="{{ banner.target_url }}" required class="input input-sm input-bordered w-full">
+                    </div>
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Показывать с</label>
+                        <input type="datetime-local" name="starts_at" value="{{ banner.starts_at|date:'Y-m-d\TH:i' }}" class="input input-sm input-bordered w-full">
+                    </div>
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Показывать до</label>
+                        <input type="datetime-local" name="ends_at" value="{{ banner.ends_at|date:'Y-m-d\TH:i' }}" class="input input-sm input-bordered w-full">
+                    </div>
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Приоритет</label>
+                        <input type="number" name="priority" value="{{ banner.priority }}" class="input input-sm input-bordered w-full">
+                    </div>
+                    <div class="flex items-end gap-3">
+                        <label class="label cursor-pointer gap-2 justify-start">
+                            <input type="checkbox" name="is_active" {% if banner.is_active %}checked{% endif %} class="checkbox checkbox-sm">
+                            <span class="text-xs">Активен</span>
+                        </label>
+                        <label class="label cursor-pointer gap-2 justify-start">
+                            <input type="checkbox" name="requires_age_disclaimer" {% if banner.requires_age_disclaimer %}checked{% endif %} class="checkbox checkbox-sm">
+                            <span class="text-xs">18+</span>
+                        </label>
+                    </div>
+                    <div class="sm:col-span-2 flex justify-end">
+                        <button type="submit" class="btn btn-sm btn-primary"><i class="ti ti-device-floppy"></i> Сохранить</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="card bg-base-100 border border-base-300 h-fit">
+        <div class="card-body p-4">
+            <div class="dopx-section-eyebrow"><i class="ti ti-shield"></i>Опасная зона</div>
+            <div class="dopx-section-title mb-3">Удаление</div>
+            <form method="post" action="{% url 'dashboard:banner_delete' banner.id %}"
+                  onsubmit="return confirm('Удалить баннер «' + '{{ banner.title }}' + '»? Действие необратимо.');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-outline btn-error w-full"><i class="ti ti-trash"></i> Удалить баннер</button>
+            </form>
+            {% if banner.partner %}
+            <a href="{% url 'dashboard:partner_detail' banner.partner.id %}" class="btn btn-sm btn-ghost w-full mt-2"><i class="ti ti-building-store"></i> Карточка партнёра</a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

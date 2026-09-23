@@ -4,29 +4,30 @@
 {% include 'dashboard/_nav.html' %}
 
 <div class="flex justify-end mb-3">
-    <div role="tablist" class="tabs tabs-boxed tabs-xs sm:tabs-sm w-fit">
+    <div class="dopx-segment">
         {% for preset in day_presets %}
-        <a role="tab" href="?days={{ preset }}" class="tab {% if preset == selected_days %}tab-active{% endif %}">{{ preset }}д</a>
+        <a href="?days={{ preset }}" class="dopx-segment__item {% if preset == selected_days %}dopx-segment__item--active{% endif %}">{{ preset }}д</a>
         {% endfor %}
     </div>
 </div>
 
-<div class="grid grid-cols-2 gap-3 md:gap-4 mb-6">
-    <div class="stat bg-base-100 border border-base-300 rounded-lg p-3 md:p-4">
-        <div class="stat-title text-[10px] md:text-xs">Просмотров страниц</div>
-        <div class="stat-value text-lg md:text-2xl">{{ traffic.total_page_views }}</div>
-        <div class="stat-desc text-[10px] md:text-xs">за {{ selected_days }} дней</div>
+<div class="dopx-stat-grid mb-6" style="grid-template-columns: repeat(2, 1fr);">
+    <div class="dopx-stat">
+        <div class="dopx-stat-label"><i class="ti ti-eye"></i>Просмотров страниц</div>
+        <div class="dopx-stat-value">{{ traffic.total_page_views }}</div>
+        <div class="dopx-stat-delta">за {{ selected_days }} дней</div>
     </div>
-    <div class="stat bg-base-100 border border-base-300 rounded-lg p-3 md:p-4">
-        <div class="stat-title text-[10px] md:text-xs">Уникальных визитов</div>
-        <div class="stat-value text-lg md:text-2xl text-info">{{ traffic.unique_visitors }}</div>
-        <div class="stat-desc text-[10px] md:text-xs">по anonymous_id, вкл. анонимных</div>
+    <div class="dopx-stat">
+        <div class="dopx-stat-label"><i class="ti ti-user"></i>Уникальных визитов</div>
+        <div class="dopx-stat-value" style="color: var(--color-info)">{{ traffic.unique_visitors }}</div>
+        <div class="dopx-stat-delta">по anonymous_id, вкл. анонимных</div>
     </div>
 </div>
 
 <div class="card bg-base-100 border border-base-300 mb-6">
     <div class="card-body p-4">
-        <h3 class="font-bold text-sm md:text-base mb-2">Просмотры страниц по дням</h3>
+        <div class="dopx-section-eyebrow"><i class="ti ti-chart-line"></i>Динамика</div>
+        <div class="dopx-section-title mb-2">Просмотры страниц по дням</div>
         <canvas id="pvChart" height="90"></canvas>
     </div>
 </div>
@@ -34,7 +35,8 @@
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
     <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4">
-            <h3 class="font-bold text-sm md:text-base mb-3">Топ страниц</h3>
+            <div class="dopx-section-eyebrow"><i class="ti ti-file-text"></i>Контент</div>
+            <div class="dopx-section-title mb-3">Топ страниц</div>
             <div class="overflow-x-auto">
                 <table class="table table-sm">
                     <thead><tr><th>Страница</th><th class="text-right">Просмотров</th></tr></thead>
@@ -52,7 +54,8 @@
 
     <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4">
-            <h3 class="font-bold text-sm md:text-base mb-3">Топ рефереров</h3>
+            <div class="dopx-section-eyebrow"><i class="ti ti-link"></i>Источники</div>
+            <div class="dopx-section-title mb-3">Топ рефереров</div>
             <div class="overflow-x-auto">
                 <table class="table table-sm">
                     <thead><tr><th>Источник</th><th class="text-right">Переходов</th></tr></thead>
@@ -70,14 +73,16 @@
 
     <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4">
-            <h3 class="font-bold text-sm md:text-base mb-3">Устройства</h3>
+            <div class="dopx-section-eyebrow"><i class="ti ti-devices"></i>Аудитория</div>
+            <div class="dopx-section-title mb-3">Устройства</div>
             <canvas id="deviceChart" height="140"></canvas>
         </div>
     </div>
 
     <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4">
-            <h3 class="font-bold text-sm md:text-base mb-3">Браузеры</h3>
+            <div class="dopx-section-eyebrow"><i class="ti ti-browser"></i>Аудитория</div>
+            <div class="dopx-section-title mb-3">Браузеры</div>
             <div class="overflow-x-auto">
                 <table class="table table-sm">
                     <thead><tr><th>Браузер</th><th class="text-right">Просмотров</th></tr></thead>
@@ -96,7 +101,8 @@
     {% if traffic.utm_sources %}
     <div class="card bg-base-100 border border-base-300 lg:col-span-2">
         <div class="card-body p-4">
-            <h3 class="font-bold text-sm md:text-base mb-3">UTM-источники</h3>
+            <div class="dopx-section-eyebrow"><i class="ti ti-target-arrow"></i>Кампании</div>
+            <div class="dopx-section-title mb-3">UTM-источники</div>
             <div class="overflow-x-auto">
                 <table class="table table-sm">
                     <thead><tr><th>utm_source</th><th class="text-right">Переходов</th></tr></thead>

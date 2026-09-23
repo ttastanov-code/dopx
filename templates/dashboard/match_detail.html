@@ -1,0 +1,105 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+{% comment %}
+templates/dashboard/match_detail.html
+2026-09-23, раздел «Матчи» — карточка одного матча: правка status/счёт/
+дата/тур + manual_override одной формой (dashboard/views.py::match_detail),
+и отдельная кнопка «Пересчитать агрегаты» (match_trigger_recalc) —
+специально РАЗДЕЛЬНО с сохранением формы: staff может поправить дату, не
+трогая пересчёт (например, перенос без изменения счёта), и наоборот
+пересчитать без правки (если агрегаты просто устарели).
+{% endcomment %}
+
+<div class="mb-4">
+    <a href="{% url 'dashboard:matches_list' %}" class="text-xs opacity-60 hover:opacity-100"><i class="ti ti-arrow-left"></i> К списку матчей</a>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+    <div class="lg:col-span-2 card bg-base-100 border border-base-300">
+        <div class="card-body p-4">
+            <div class="dopx-section-eyebrow"><i class="ti ti-edit"></i>Ручная правка</div>
+            <div class="dopx-section-title mb-3">{{ match.home_team.name }} — {{ match.away_team.name }}</div>
+
+            <form method="post" class="space-y-3">
+                {% csrf_token %}
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Статус</label>
+                        <select name="status" class="select select-sm select-bordered w-full">
+                            {% for value, label in status_choices %}
+                            <option value="{{ value }}" {% if match.status == value %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Тур</label>
+                        <input type="number" name="tour" value="{{ match.tour|default:'' }}" class="input input-sm input-bordered w-full">
+                    </div>
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Счёт {{ match.home_team.name }}</label>
+                        <input type="number" name="home_score" value="{{ match.home_score|default:'' }}" class="input input-sm input-bordered w-full">
+                    </div>
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Счёт {{ match.away_team.name }}</label>
+                        <input type="number" name="away_score" value="{{ match.away_score|default:'' }}" class="input input-sm input-bordered w-full">
+                    </div>
+                    <div class="flex flex-col gap-1 col-span-2">
+                        <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Время начала</label>
+                        <input type="datetime-local" name="start_time" value="{{ match.start_time|date:'Y-m-d\TH:i' }}" class="input input-sm input-bordered w-full">
+                    </div>
+                </div>
+
+                {% comment %}
+                2026-09-23, БАГ (жалоба пользователя со скриншотом — текст
+                чекбокса обрезается/не переносится на мобильном). Настоящая
+                причина (проверено через getComputedStyle в браузере) — у
+                daisyUI-класса label-text по умолчанию white-space: nowrap,
+                он и держит весь текст в одну строку независимо от ширины
+                контейнера; min-w-0 сам по себе тут не помогает, раз перенос
+                строк вообще запрещён. Фикс — whitespace-normal явно
+                перебивает nowrap, plus min-w-0 чтобы flex-item мог сжаться
+                под текст вместо распирания родителя.
+                {% endcomment %}
+                <label class="label cursor-pointer justify-start items-start gap-2 py-1 bg-warning/10 rounded px-2">
+                    <input type="checkbox" name="manual_override" class="checkbox checkbox-xs checkbox-warning mt-0.5 shrink-0" {% if match.manual_override %}checked{% endif %}>
+                    <span class="label-text text-xs font-medium min-w-0 whitespace-normal">Статус/дата правлены вручную — не давать автосинку затирать</span>
+                </label>
+
+                <button type="submit" class="btn btn-sm btn-primary"><i class="ti ti-device-floppy"></i> Сохранить</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="card bg-base-100 border border-base-300 h-fit">
+        <div class="card-body p-4">
+            <div class="dopx-section-eyebrow"><i class="ti ti-refresh"></i>Агрегаты</div>
+            <div class="dopx-section-title mb-2">Пересчёт</div>
+            <p class="text-xs opacity-55 mb-3">Пересчитывает рейтинги игроков/тренеров/команд/судьи по этому матчу и зависящие от него агрегаты (таблица, стрики). Запускается в фоне через Celery.</p>
+            <form method="post" action="{% url 'dashboard:match_trigger_recalc' match.id %}">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-outline btn-warning w-full"><i class="ti ti-refresh"></i> Пересчитать агрегаты</button>
+            </form>
+
+            <div class="divider my-3"></div>
+
+            <div class="text-xs space-y-1.5 opacity-70">
+                <div class="flex justify-between"><span>Лига</span><span class="font-medium">{{ match.league.name }}</span></div>
+                <div class="flex justify-between"><span>Сезон</span><span class="font-medium">{{ match.season.year }}</span></div>
+                <div class="flex justify-between"><span>Судья</span><span class="font-medium">{{ match.referee|default:"—" }}</span></div>
+                <div class="flex justify-between"><span>Есть состав</span><span class="font-medium">{{ match.has_lineup|yesno:"да,нет" }}</span></div>
+                {% if match.decided_administratively %}
+                <div class="flex justify-between text-warning"><span>Решён технически</span><span class="font-medium">да</span></div>
+                {% endif %}
+                {% if match.was_rescheduled %}
+                <div class="flex justify-between text-warning"><span>Перенесён относительно тура</span><span class="font-medium">да</span></div>
+                {% endif %}
+            </div>
+
+            <a href="{% url 'dashboard:data_health' %}" class="text-xs opacity-50 hover:opacity-100 mt-3 inline-block">Полный ресинк с Sportmonks — в «Здоровье данных»</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -4,61 +4,71 @@
 {% block content %}
 {% include 'dashboard/_nav.html' %}
 
-<div class="flex justify-end mb-3">
-    <div role="tablist" class="tabs tabs-boxed tabs-xs sm:tabs-sm w-fit">
+{% comment %}
+2026-09-22, полный редизайн: daisyUI .stat-блоки → .dopx-stat (крупнее
+цифра, воздух, единая карточная тень вместо рамки), .tabs-boxed
+day-preset → компактный сегмент-переключатель в стиле остальных action-
+контролов нового дизайна. Данные/переменные контекста — БЕЗ ИЗМЕНЕНИЙ.
+{% endcomment %}
+<div class="flex justify-end mb-4">
+    <div class="dopx-segment">
         {% for preset in day_presets %}
-        <a role="tab" href="?days={{ preset }}" class="tab {% if preset == selected_days %}tab-active{% endif %}">{{ preset }}д</a>
+        <a href="?days={{ preset }}" class="dopx-segment__item {% if preset == selected_days %}dopx-segment__item--active{% endif %}">{{ preset }} дн</a>
         {% endfor %}
     </div>
 </div>
 
-<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-6">
-    <div class="stat bg-base-100 border border-base-300 rounded-lg p-3 md:p-4">
-        <div class="stat-title text-[10px] md:text-xs">Пользователей всего</div>
-        <div class="stat-value text-lg md:text-2xl">{{ metrics.total_users }}</div>
-        <div class="stat-desc text-[10px] md:text-xs">+{{ metrics.new_users_period }} за {{ selected_days }} дней</div>
+<div class="dopx-stat-grid mb-6">
+    <div class="dopx-stat">
+        <div class="dopx-stat-label"><i class="ti ti-users"></i>Пользователей всего</div>
+        <div class="dopx-stat-value">{{ metrics.total_users }}</div>
+        <div class="dopx-stat-delta dopx-stat-delta--up">+{{ metrics.new_users_period }} за {{ selected_days }} дней</div>
     </div>
-    <div class="stat bg-base-100 border border-base-300 rounded-lg p-3 md:p-4">
-        <div class="stat-title text-[10px] md:text-xs">Верификация email</div>
-        <div class="stat-value text-lg md:text-2xl text-success">{{ metrics.verification_rate_percent }}%</div>
-        <div class="stat-desc text-[10px] md:text-xs">{{ metrics.verified_users }} из {{ metrics.total_users }}</div>
+    <div class="dopx-stat">
+        <div class="dopx-stat-label"><i class="ti ti-mail-check"></i>Верификация email</div>
+        <div class="dopx-stat-value" style="color: var(--color-success)">{{ metrics.verification_rate_percent }}%</div>
+        <div class="dopx-stat-delta">{{ metrics.verified_users }} из {{ metrics.total_users }}</div>
     </div>
-    <div class="stat bg-base-100 border border-base-300 rounded-lg p-3 md:p-4">
-        <div class="stat-title text-[10px] md:text-xs">Оценок всего</div>
-        <div class="stat-value text-lg md:text-2xl">{{ metrics.total_evaluations }}</div>
-        <div class="stat-desc text-[10px] md:text-xs">+{{ metrics.evaluations_period }} за {{ selected_days }} дней</div>
+    <div class="dopx-stat">
+        <div class="dopx-stat-label"><i class="ti ti-star"></i>Оценок всего</div>
+        <div class="dopx-stat-value">{{ metrics.total_evaluations }}</div>
+        <div class="dopx-stat-delta dopx-stat-delta--up">+{{ metrics.evaluations_period }} за {{ selected_days }} дней</div>
     </div>
-    <div class="stat bg-base-100 border border-base-300 rounded-lg p-3 md:p-4">
-        <div class="stat-title text-[10px] md:text-xs">Матчи сейчас</div>
-        <div class="stat-value text-lg md:text-2xl">
-            <span class="text-error">{{ metrics.live_matches }}</span> <span class="text-sm opacity-40">live</span>
+    <div class="dopx-stat">
+        <div class="dopx-stat-label"><i class="ti ti-ball-football"></i>Матчи сейчас</div>
+        <div class="dopx-stat-value">
+            <span style="color: var(--color-error)">{{ metrics.live_matches }}</span> <span class="text-sm opacity-40 font-normal">live</span>
         </div>
-        <div class="stat-desc text-[10px] md:text-xs">{{ metrics.scheduled_matches }} запланировано</div>
+        <div class="dopx-stat-delta">{{ metrics.scheduled_matches }} запланировано</div>
     </div>
 </div>
 
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
     <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4">
-            <h3 class="font-bold text-sm md:text-base mb-2">Активные пользователи по дням (DAU)</h3>
+            <div class="dopx-section-eyebrow">Активность</div>
+            <div class="dopx-section-title mb-3">Ежедневные пользователи (DAU)</div>
             <canvas id="dauChart" height="120"></canvas>
         </div>
     </div>
     <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4">
-            <h3 class="font-bold text-sm md:text-base mb-2">Активные пользователи по неделям (WAU)</h3>
+            <div class="dopx-section-eyebrow">Активность</div>
+            <div class="dopx-section-title mb-3">Еженедельные пользователи (WAU)</div>
             <canvas id="wauChart" height="120"></canvas>
         </div>
     </div>
     <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4">
-            <h3 class="font-bold text-sm md:text-base mb-2">Регистрации по дням</h3>
+            <div class="dopx-section-eyebrow">Рост</div>
+            <div class="dopx-section-title mb-3">Регистрации по дням</div>
             <canvas id="regChart" height="120"></canvas>
         </div>
     </div>
     <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4">
-            <h3 class="font-bold text-sm md:text-base mb-2">Оценки по дням</h3>
+            <div class="dopx-section-eyebrow">Вовлечённость</div>
+            <div class="dopx-section-title mb-3">Оценки по дням</div>
             <canvas id="evalChart" height="120"></canvas>
         </div>
     </div>

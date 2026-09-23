@@ -156,7 +156,12 @@ INSTALLED_APPS = [
 UNFOLD = {
     "SITE_TITLE": "DOPX — администрирование",
     "SITE_HEADER": "DOPX",
-    "SITE_SUBHEADER": "Крауд-рейтинг Премьер-Лиги Казахстана",
+    # 2026-09-23, прямая просьба пользователя: подзаголовок под лого в
+    # /admin/ должен явно называть страницу тем, чем она является
+    # ("Панель администратора"), а не повторять маркетинговый слоган сайта
+    # (тот уже виден любому посетителю на самом сайте, здесь — служебный
+    # раздел не для конечных пользователей).
+    "SITE_SUBHEADER": "Панель администратора",
     "SITE_SYMBOL": "sports_soccer",
     "SHOW_HISTORY": True,
     "SHOW_VIEW_ON_SITE": True,
@@ -189,6 +194,13 @@ UNFOLD = {
             {
                 "title": _("Staff-инструменты"),
                 "separator": True,
+                # 2026-09-23, прямая просьба пользователя: этот список отстал от
+                # реального staff-дашборда (templates/dashboard/_nav.html) — за
+                # сессию там появилось 9 новых разделов (Матчи, Дубли игроков,
+                # Проверка ФИО, Оценки, Пользователи, Объявления, Настройки,
+                # Статус, Скрипты), которых тут не было вообще. Порядок ниже
+                # повторяет порядок вкладок в _nav.html, чтобы не приходилось
+                # держать в голове два разных меню с разной логикой.
                 "items": [
                     {
                         "title": _("Дашборд — обзор"),
@@ -201,6 +213,11 @@ UNFOLD = {
                         "link": reverse_lazy("dashboard:traffic"),
                     },
                     {
+                        "title": _("Матчи"),
+                        "icon": "sports_soccer",
+                        "link": reverse_lazy("dashboard:matches_list"),
+                    },
+                    {
                         "title": _("Здоровье данных"),
                         "icon": "monitor_heart",
                         "link": reverse_lazy("dashboard:data_health"),
@@ -211,9 +228,24 @@ UNFOLD = {
                         "link": reverse_lazy("dashboard:data_trust"),
                     },
                     {
-                        "title": _("Реклама и виджеты"),
-                        "icon": "code",
-                        "link": reverse_lazy("dashboard:ads"),
+                        "title": _("Дубли игроков"),
+                        "icon": "groups",
+                        "link": reverse_lazy("dashboard:duplicate_players_review"),
+                    },
+                    {
+                        "title": _("Проверка ФИО"),
+                        "icon": "auto_awesome",
+                        "link": reverse_lazy("dashboard:names_review"),
+                    },
+                    {
+                        "title": _("Оценки"),
+                        "icon": "checklist",
+                        "link": reverse_lazy("dashboard:evaluation_sessions_list"),
+                    },
+                    {
+                        "title": _("Пользователи"),
+                        "icon": "group",
+                        "link": reverse_lazy("dashboard:users_list"),
                     },
                     {
                         "title": _("Антифрод"),
@@ -226,9 +258,45 @@ UNFOLD = {
                         "link": reverse_lazy("dashboard:parser_tools"),
                     },
                     {
+                        "title": _("Реклама и виджеты"),
+                        "icon": "code",
+                        "link": reverse_lazy("dashboard:ads"),
+                    },
+                    {
                         "title": _("Аудит-лог"),
                         "icon": "history",
                         "link": reverse_lazy("dashboard:audit_log"),
+                    },
+                    {
+                        "title": _("Объявления"),
+                        "icon": "campaign",
+                        "link": reverse_lazy("dashboard:announcements"),
+                    },
+                    {
+                        "title": _("Настройки платформы"),
+                        "icon": "tune",
+                        "link": reverse_lazy("dashboard:platform_settings"),
+                    },
+                    {
+                        "title": _("Системный статус"),
+                        "icon": "monitor_heart",
+                        "link": reverse_lazy("dashboard:system_status"),
+                    },
+                    {
+                        "title": _("Скрипты"),
+                        "icon": "terminal",
+                        "link": reverse_lazy("dashboard:scripts"),
+                    },
+                    # Роли доступа — та же граница, что и в _nav.html
+                    # (dashboard/access.py::SUPERUSER_ONLY_SECTIONS): раздел
+                    # управляет чужими staff-правами, поэтому в меню его видят
+                    # только суперпользователи, а не любой staff с доступом в
+                    # /admin/.
+                    {
+                        "title": _("Роли доступа"),
+                        "icon": "admin_panel_settings",
+                        "link": reverse_lazy("dashboard:access_roles_list"),
+                        "permission": lambda request: request.user.is_superuser,
                     },
                     {
                         "title": _("На сайт"),
@@ -366,6 +434,9 @@ MIDDLEWARE = [
     # idle-таймаут сессии staff — см. dopx/middleware.py. ПОСЛЕДНИЙ из
     # security-мидлварей: должен видеть и request.user, и is_verified().
     'dashboard.middleware.StaffTwoFactorEnforcementMiddleware',
+    # Гибкие права по разделам дашборда (StaffAccessGrant) — ПОСЛЕ 2FA,
+    # см. dashboard/middleware.py::DashboardSectionAccessMiddleware.
+    'dashboard.middleware.DashboardSectionAccessMiddleware',
     'dopx.middleware.StaffSessionSecurityMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',

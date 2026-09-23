@@ -4,15 +4,26 @@
 {% include 'dashboard/_nav.html' %}
 
 <!-- === ЧТО ТУТ === -->
+{% comment %} 2026-09-22: заголовок рендерит .dopx-page-header (_nav.html) — не дублируем.
+
+2026-09-23: две кнопки ниже ("Управление партнёрами"/"Управление баннерами")
+— полноценный CRUD (dashboard/views.py::partners_list/banners_list), раньше
+партнёров/баннеры можно было завести/поправить ТОЛЬКО через Django admin,
+эта страница была read-only статистикой. Отдельной вкладки в главном меню
+НЕТ — .dopx-tabs-row и так на пределе ширины (см. _nav.html), это подраздел
+«Рекламы», не отдельный домен. {% endcomment %}
 <div class="card bg-base-100 border border-base-300 mb-4">
     <div class="card-body p-4">
-        <h3 class="font-bold text-sm md:text-base mb-2 flex items-center gap-2">
-            <i class="ti ti-info-circle text-primary"></i> Реклама и виджеты
-        </h3>
-        <p class="text-xs md:text-sm opacity-70 leading-relaxed">
-            Здесь собраны инструменты продвижения DOPX. Баннеры показываются на сайте, виджеты партнёры размещают у себя,
-            а реферальные ссылки учитывают приведённую аудиторию. Ниже: коды виджетов и статистика за последние 30 дней.
-        </p>
+        <div class="flex items-start justify-between flex-wrap gap-3">
+            <p class="text-xs md:text-sm opacity-55 leading-relaxed flex items-start gap-2 flex-1 min-w-[240px]">
+                <i class="ti ti-info-circle opacity-50 mt-0.5 shrink-0"></i>
+                Баннеры показываются на сайте, виджеты партнёры размещают у себя, реферальные ссылки учитывают приведённую аудиторию. Ниже: коды виджетов и статистика за 30 дней.
+            </p>
+            <div class="flex gap-2 shrink-0">
+                <a href="{% url 'dashboard:partners_list' %}" class="btn btn-sm btn-outline"><i class="ti ti-building-store"></i> Партнёры</a>
+                <a href="{% url 'dashboard:banners_list' %}" class="btn btn-sm btn-outline"><i class="ti ti-photo"></i> Баннеры</a>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -20,10 +31,9 @@
     <!-- === ВИДЖЕТ ИГРОКА === -->
     <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4">
-            <h3 class="font-bold text-sm md:text-base mb-1 flex items-center gap-2">
-                <i class="ti ti-user text-primary"></i> Виджет игрока
-            </h3>
-            <p class="text-xs opacity-60 mb-3">320×180 px. Показывает текущий рейтинг игрока и число оценок.</p>
+            <div class="dopx-section-eyebrow"><i class="ti ti-user"></i>Виджет</div>
+            <div class="dopx-section-title">Игрок</div>
+            <p class="dopx-section-desc mb-3">320×180 px. Текущий рейтинг игрока и число оценок.</p>
 
             <form method="get" class="flex gap-2 mb-3">
                 <input type="hidden" name="q_team" value="{{ q_team }}">
@@ -63,10 +73,9 @@
     <!-- === ВИДЖЕТ КОМАНДЫ === -->
     <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4">
-            <h3 class="font-bold text-sm md:text-base mb-1 flex items-center gap-2">
-                <i class="ti ti-shield text-primary"></i> Виджет команды
-            </h3>
-            <p class="text-xs opacity-60 mb-3">320×180 px. Средняя оценка тактики/усилий/организации/настроя.</p>
+            <div class="dopx-section-eyebrow"><i class="ti ti-shield"></i>Виджет</div>
+            <div class="dopx-section-title">Команда</div>
+            <p class="dopx-section-desc mb-3">320×180 px. Средняя оценка тактики/усилий/организации/настроя.</p>
 
             <form method="get" class="flex gap-2 mb-3">
                 <input type="hidden" name="q_player" value="{{ q_player }}">
@@ -106,10 +115,9 @@
     <!-- === ВИДЖЕТ ТУРНИРНОЙ ТАБЛИЦЫ === -->
     <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4">
-            <h3 class="font-bold text-sm md:text-base mb-1 flex items-center gap-2">
-                <i class="ti ti-table text-primary"></i> Виджет турнирной таблицы
-            </h3>
-            <p class="text-xs opacity-60 mb-3">340×360 px. Топ-10 текущего активного сезона, обновляется автоматически. Поиска нет: таблица одна на весь сайт.</p>
+            <div class="dopx-section-eyebrow"><i class="ti ti-table"></i>Виджет</div>
+            <div class="dopx-section-title">Турнирная таблица</div>
+            <p class="dopx-section-desc mb-3">340×360 px. Топ-10 активного сезона, обновляется сама. Поиска нет: таблица одна на весь сайт.</p>
 
             <div class="mb-3 p-2 bg-base-200 rounded-lg flex justify-center">
                 <iframe src="{% url 'core:standings_widget' %}" width="280" height="300" style="border:none;border-radius:12px" title="Превью виджета таблицы"></iframe>
@@ -128,10 +136,9 @@
     <!-- === ВИДЖЕТ СБОРНОЙ DOPX === -->
     <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4">
-            <h3 class="font-bold text-sm md:text-base mb-1 flex items-center gap-2">
-                <i class="ti ti-shirt-sport text-primary"></i> Виджет сборной DOPX
-            </h3>
-            <p class="text-xs opacity-60 mb-3">300×420 px. Мини-поле 4-3-3 текущего активного сезона, обновляется автоматически. Поиска нет: сборная одна на весь сайт.</p>
+            <div class="dopx-section-eyebrow"><i class="ti ti-shirt-sport"></i>Виджет</div>
+            <div class="dopx-section-title">Сборная DOPX</div>
+            <p class="dopx-section-desc mb-3">300×420 px. Мини-поле 4-3-3 активного сезона, обновляется сама. Поиска нет: сборная одна на весь сайт.</p>
 
             <div class="mb-3 p-2 bg-base-200 rounded-lg flex justify-center">
                 <iframe src="{% url 'season_squad:widget' %}" width="300" height="380" style="border:none;border-radius:16px" title="Превью виджета сборной"></iframe>
@@ -150,10 +157,9 @@
     <!-- === ВИДЖЕТ «DOPX ЛУЧШИЕ ТУРА» === -->
     <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4">
-            <h3 class="font-bold text-sm md:text-base mb-1 flex items-center gap-2">
-                <i class="ti ti-calendar-star text-primary"></i> Виджет «DOPX Лучшие тура»
-            </h3>
-            <p class="text-xs opacity-60 mb-3">320×420 px. Мини-поле 4-3-3 последнего завершённого тура активного сезона, обновляется автоматически.</p>
+            <div class="dopx-section-eyebrow"><i class="ti ti-calendar-star"></i>Виджет</div>
+            <div class="dopx-section-title">«DOPX Лучшие тура»</div>
+            <p class="dopx-section-desc mb-3">320×420 px. Мини-поле 4-3-3 последнего завершённого тура, обновляется сама.</p>
 
             <div class="mb-3 p-2 bg-base-200 rounded-lg flex justify-center">
                 <iframe src="{% url 'round_squad:round_widget' %}" width="300" height="380" style="border:none;border-radius:16px" title="Превью виджета тура"></iframe>
@@ -177,9 +183,8 @@
      только построчно в /admin/partners/. -->
 <div class="card bg-base-100 border border-base-300 mb-4">
     <div class="card-body p-4">
-        <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
-            <i class="ti ti-chart-bar text-primary"></i> Статистика рекламы и виджетов за 30 дней
-        </h3>
+        <div class="dopx-section-eyebrow"><i class="ti ti-chart-bar"></i>За 30 дней</div>
+        <div class="dopx-section-title mb-3">Статистика рекламы и виджетов</div>
         <div id="ads-stats-content" data-background-poll hx-get="{% url 'dashboard:ads_stats_partial' %}" hx-trigger="every 20s" hx-swap="innerHTML">
             {% include 'dashboard/_ads_stats_content.html' %}
         </div>

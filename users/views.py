@@ -39,6 +39,7 @@ from django.views.decorators.http import require_POST
 from analytics.models import EventName
 from analytics.services import track_event
 from core.utils import get_auth_panel_stats, get_client_ip, is_rate_limited
+from core.models import get_setting
 from users.badges import BADGE_CATALOG, RARITY_ORDER
 from users.models import Follow, User, UserBadge, UserXP
 from users.forms import (
@@ -697,6 +698,10 @@ class UserLeaderboardView(ListView):
     context_object_name = 'users'
     paginate_by = 20
 
+    def get_paginate_by(self, queryset):
+        # 2026-09-23, «Настройки платформы» — управляется staff без деплоя.
+        return get_setting("user_leaderboard_page_size", self.paginate_by)
+
     def get_queryset(self):
         # select_related('xp') — шаблон читает user.xp.level на каждой
         # строке (leaderboard.html), иначе N+1 на 20 пользователей страницы.
@@ -729,6 +734,10 @@ class PlayerLeaderboardView(ListView):
     template_name = 'players/leaderboard.html'
     context_object_name = 'players'
     paginate_by = 20
+
+    def get_paginate_by(self, queryset):
+        # 2026-09-23, «Настройки платформы» — управляется staff без деплоя.
+        return get_setting("player_leaderboard_page_size", self.paginate_by)
 
     def get_queryset(self):
         from players.models import Player

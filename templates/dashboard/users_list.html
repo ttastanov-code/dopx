@@ -1,0 +1,106 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+{% comment %}
+templates/dashboard/users_list.html
+2026-09-23, раздел «Пользователи» — поиск по username/email (dashboard/
+services.py::users_queryset), обычная GET-пагинация, тот же паттерн, что
+matches_list.html.
+{% endcomment %}
+
+<div class="card bg-base-100 border border-base-300 mb-4">
+    <div class="card-body p-4">
+        <form method="get" class="flex flex-wrap items-end gap-3">
+            <div class="flex flex-col gap-1 flex-1 min-w-[220px]">
+                <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Username или email</label>
+                <input type="text" name="q" value="{{ search }}" placeholder="username или email..." class="input input-sm input-bordered w-full">
+            </div>
+            <button type="submit" class="btn btn-sm btn-primary"><i class="ti ti-search"></i> Найти</button>
+            {% if search %}
+            <a href="{% url 'dashboard:users_list' %}" class="btn btn-sm btn-ghost">Сбросить</a>
+            {% endif %}
+        </form>
+    </div>
+</div>
+
+<div class="card bg-base-100 border border-base-300">
+    <div class="card-body p-4">
+        <div class="dopx-section-eyebrow"><i class="ti ti-users"></i>Пользователи</div>
+        <div class="dopx-section-title mb-3">{{ users.paginator.count }} найдено</div>
+
+        {% if users %}
+        <div class="hidden md:block overflow-x-auto">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Пользователь</th>
+                        <th>Email</th>
+                        <th>Доверие</th>
+                        <th>Оценок</th>
+                        <th>Статус</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for u in users %}
+                    <tr class="cursor-pointer" onclick="window.location.href='{% url 'dashboard:user_detail' u.id %}'">
+                        <td class="font-medium">{{ u.username }}</td>
+                        <td class="text-xs opacity-60">{{ u.email }}</td>
+                        <td class="font-mono text-xs">{{ u.trust_score|floatformat:2 }}</td>
+                        <td class="text-xs">{{ u.total_evaluations }}</td>
+                        <td>
+                            {% if u.is_active %}
+                            <span class="badge badge-sm badge-success">активен</span>
+                            {% else %}
+                            <span class="badge badge-sm badge-error">заблокирован</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-right"><i class="ti ti-chevron-right opacity-40"></i></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="md:hidden divide-y divide-base-200">
+            {% for u in users %}
+            <a href="{% url 'dashboard:user_detail' u.id %}" class="block py-3">
+                <div class="flex items-center justify-between gap-2">
+                    <span class="text-sm font-semibold">{{ u.username }}</span>
+                    {% if u.is_active %}
+                    <span class="badge badge-sm badge-success">активен</span>
+                    {% else %}
+                    <span class="badge badge-sm badge-error">заблокирован</span>
+                    {% endif %}
+                </div>
+                <div class="flex items-center justify-between gap-2 text-xs opacity-55 mt-1">
+                    <span>{{ u.email }}</span>
+                    <span>доверие {{ u.trust_score|floatformat:2 }} · {{ u.total_evaluations }} оценок</span>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+
+        {% if users.paginator.num_pages > 1 %}
+        <div class="flex items-center justify-center gap-2 mt-4">
+            {% if users.has_previous %}
+            <a href="?{% if search %}q={{ search }}&{% endif %}page={{ users.previous_page_number }}" class="btn btn-xs btn-outline">« Раньше</a>
+            {% else %}
+            <span class="btn btn-xs btn-disabled">« Раньше</span>
+            {% endif %}
+            <span class="text-xs opacity-60">Стр. {{ users.number }} из {{ users.paginator.num_pages }}</span>
+            {% if users.has_next %}
+            <a href="?{% if search %}q={{ search }}&{% endif %}page={{ users.next_page_number }}" class="btn btn-xs btn-outline">Позже »</a>
+            {% else %}
+            <span class="btn btn-xs btn-disabled">Позже »</span>
+            {% endif %}
+        </div>
+        {% endif %}
+        {% else %}
+        <p class="text-sm opacity-60 py-4 text-center">Ничего не найдено</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

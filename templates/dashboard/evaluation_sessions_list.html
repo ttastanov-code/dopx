@@ -1,0 +1,139 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+{% comment %}
+templates/dashboard/evaluation_sessions_list.html
+2026-09-23, раздел «Модерация оценок» — список EvaluationSession
+(evaluations/models.py), одна строка = одна оценка матча одним
+пользователем (уникальна по (user, match)). Поиск по username ИЛИ
+названию команды матча + фильтры статус/режим (dashboard/services.py::
+evaluation_sessions_queryset).
+
+Колонка «Время заполнения» — прямое использование EvaluationSession.
+fill_duration_seconds (уже существующий антифрод-сигнал, см. докстринг
+модели: "физически невозможно осмысленно заполнить 6 шагов... за считаные
+секунды") — подсвечена красным при < 20 секунд, это и есть главная подсказка
+"на что смотреть в первую очередь" при модерации.
+{% endcomment %}
+
+<div class="card bg-base-100 border border-base-300 mb-4">
+    <div class="card-body p-4">
+        <form method="get" class="flex flex-wrap items-end gap-3">
+            <div class="flex flex-col gap-1 flex-1 min-w-[220px]">
+                <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Пользователь или команда</label>
+                <input type="text" name="q" value="{{ search }}" placeholder="username или команда..." class="input input-sm input-bordered w-full">
+            </div>
+            <div class="flex flex-col gap-1">
+                <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Статус</label>
+                <select name="status" class="select select-sm select-bordered">
+                    <option value="">Все</option>
+                    {% for value, label in status_choices %}
+                    <option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="flex flex-col gap-1">
+                <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Режим</label>
+                <select name="mode" class="select select-sm select-bordered">
+                    <option value="">Все</option>
+                    {% for value, label in mode_choices %}
+                    <option value="{{ value }}" {% if mode_filter == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button type="submit" class="btn btn-sm btn-primary"><i class="ti ti-search"></i> Найти</button>
+            {% if search or status_filter or mode_filter %}
+            <a href="{% url 'dashboard:evaluation_sessions_list' %}" class="btn btn-sm btn-ghost">Сбросить</a>
+            {% endif %}
+        </form>
+    </div>
+</div>
+
+<div class="card bg-base-100 border border-base-300">
+    <div class="card-body p-4">
+        <div class="dopx-section-eyebrow"><i class="ti ti-clipboard-check"></i>Оценки</div>
+        <div class="dopx-section-title mb-3">{{ sessions.paginator.count }} найдено</div>
+
+        {% if sessions %}
+        <div class="hidden md:block overflow-x-auto">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Пользователь</th>
+                        <th>Матч</th>
+                        <th>Режим</th>
+                        <th>Статус</th>
+                        <th>Время заполнения</th>
+                        <th>Завершено</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in sessions %}
+                    <tr class="cursor-pointer" onclick="window.location.href='{% url 'dashboard:evaluation_session_detail' s.id %}'">
+                        <td class="font-medium">{{ s.user.username }}</td>
+                        <td class="text-xs">{{ s.match.home_team.name }} — {{ s.match.away_team.name }}</td>
+                        <td class="text-xs">{{ s.get_mode_display }}</td>
+                        <td>
+                            <span class="badge badge-sm {% if s.status == 'completed' %}badge-success{% elif s.status == 'abandoned' %}badge-ghost{% else %}badge-warning{% endif %}">{{ s.get_status_display }}</span>
+                        </td>
+                        <td class="text-xs font-mono">
+                            {% with dur=s.fill_duration_seconds %}
+                            {% if dur is not None %}
+                            <span class="{% if dur < 20 %}text-error font-semibold{% endif %}">{{ dur|floatformat:0 }}с</span>
+                            {% else %}
+                            <span class="opacity-40">—</span>
+                            {% endif %}
+                            {% endwith %}
+                        </td>
+                        <td class="text-xs opacity-60">{{ s.completed_at|timesince|default:"—" }}{% if s.completed_at %} назад{% endif %}</td>
+                        <td class="text-right"><i class="ti ti-chevron-right opacity-40"></i></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="md:hidden divide-y divide-base-200">
+            {% for s in sessions %}
+            <a href="{% url 'dashboard:evaluation_session_detail' s.id %}" class="block py-3">
+                <div class="flex items-center justify-between gap-2">
+                    <span class="text-sm font-semibold">{{ s.user.username }}</span>
+                    <span class="badge badge-sm {% if s.status == 'completed' %}badge-success{% elif s.status == 'abandoned' %}badge-ghost{% else %}badge-warning{% endif %}">{{ s.get_status_display }}</span>
+                </div>
+                <div class="text-xs opacity-60 mt-0.5">{{ s.match.home_team.name }} — {{ s.match.away_team.name }}</div>
+                <div class="flex items-center justify-between gap-2 text-xs opacity-55 mt-1">
+                    <span>{{ s.get_mode_display }}</span>
+                    {% with dur=s.fill_duration_seconds %}
+                    {% if dur is not None %}
+                    <span class="font-mono {% if dur < 20 %}text-error font-semibold{% endif %}">{{ dur|floatformat:0 }}с</span>
+                    {% endif %}
+                    {% endwith %}
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+
+        {% if sessions.paginator.num_pages > 1 %}
+        <div class="flex items-center justify-center gap-2 mt-4">
+            {% if sessions.has_previous %}
+            <a href="?{% if search %}q={{ search }}&{% endif %}{% if status_filter %}status={{ status_filter }}&{% endif %}{% if mode_filter %}mode={{ mode_filter }}&{% endif %}page={{ sessions.previous_page_number }}" class="btn btn-xs btn-outline">« Раньше</a>
+            {% else %}
+            <span class="btn btn-xs btn-disabled">« Раньше</span>
+            {% endif %}
+            <span class="text-xs opacity-60">Стр. {{ sessions.number }} из {{ sessions.paginator.num_pages }}</span>
+            {% if sessions.has_next %}
+            <a href="?{% if search %}q={{ search }}&{% endif %}{% if status_filter %}status={{ status_filter }}&{% endif %}{% if mode_filter %}mode={{ mode_filter }}&{% endif %}page={{ sessions.next_page_number }}" class="btn btn-xs btn-outline">Позже »</a>
+            {% else %}
+            <span class="btn btn-xs btn-disabled">Позже »</span>
+            {% endif %}
+        </div>
+        {% endif %}
+        {% else %}
+        <p class="text-sm opacity-60 py-4 text-center">Ничего не найдено</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

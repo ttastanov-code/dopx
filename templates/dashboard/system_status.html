@@ -1,0 +1,152 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+{% comment %}
+templates/dashboard/system_status.html
+2026-09-23, раздел «Системный статус» — сводка "жива ли платформа
+технически" одним взглядом: Redis (брокер + кэш агрегатов отдельно),
+Celery-воркеры, PostgreSQL, расписание Celery Beat, хвост logs/errors.log,
+версии окружения (dashboard/views.py::system_status,
+dashboard/infra_services.py::system_status_overview). Полностью read-only —
+никаких форм/действий, это диагностика.
+
+Redis/Celery/DB-карточки визуально почти повторяют блок «Инфраструктура»
+на «Здоровье данных» (тот же infra_services.infra_health()) — сделано
+намеренно: там это один блок среди данных синка, здесь — отдельная
+страница-приборка с бОльшим количеством деталей (плюс кэш агрегатов,
+которого там нет вообще).
+{% endcomment %}
+
+<div class="card bg-base-100 border border-base-300 mb-4">
+    <div class="card-body p-4">
+        <div class="dopx-section-eyebrow"><i class="ti ti-server-2"></i>Инфраструктура</div>
+        <div class="dopx-section-title mb-3">Redis · Celery · PostgreSQL</div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+            <div class="rounded-lg border border-base-300 p-3">
+                <div class="text-xs opacity-60 mb-1 flex items-center gap-1">
+                    <span class="inline-block w-2 h-2 rounded-full {% if status.infra.redis.ok %}bg-success{% else %}bg-error{% endif %}"></span>
+                    Redis (брокер + кэш)
+                </div>
+                {% if status.infra.redis.ok %}
+                <div class="text-sm">Память: <b>{{ status.infra.redis.used_memory_human }}</b></div>
+                <div class="text-sm">Клиентов: <b>{{ status.infra.redis.connected_clients }}</b></div>
+                <div class="text-sm">Очередь celery: <b class="{% if status.infra.redis.queue_depth > 50 %}text-warning{% endif %}">{{ status.infra.redis.queue_depth }}</b></div>
+                <div class="text-xs opacity-50 mt-1">uptime {{ status.infra.redis.uptime_days }}д</div>
+                {% else %}
+                <div class="text-xs text-error">{{ status.infra.redis.error }}</div>
+                {% endif %}
+            </div>
+
+            <div class="rounded-lg border border-base-300 p-3">
+                <div class="text-xs opacity-60 mb-1 flex items-center gap-1">
+                    <span class="inline-block w-2 h-2 rounded-full {% if status.aggregates_cache.ok %}bg-success{% else %}bg-error{% endif %}"></span>
+                    {{ status.aggregates_cache.label }}
+                </div>
+                {% if status.aggregates_cache.ok %}
+                <div class="text-sm">Память: <b>{{ status.aggregates_cache.used_memory_human }}</b></div>
+                <div class="text-sm">Клиентов: <b>{{ status.aggregates_cache.connected_clients }}</b></div>
+                <div class="text-sm">Ключей: <b>{{ status.aggregates_cache.keys }}</b></div>
+                {% else %}
+                <div class="text-xs text-error">{{ status.aggregates_cache.error }}</div>
+                {% endif %}
+            </div>
+
+            <div class="rounded-lg border border-base-300 p-3">
+                <div class="text-xs opacity-60 mb-1 flex items-center gap-1">
+                    <span class="inline-block w-2 h-2 rounded-full {% if status.infra.celery.ok and status.infra.celery.workers_online %}bg-success{% elif status.infra.celery.ok %}bg-warning{% else %}bg-error{% endif %}"></span>
+                    Celery
+                </div>
+                {% if status.infra.celery.ok %}
+                <div class="text-sm">Воркеров онлайн: <b class="{% if not status.infra.celery.workers_online %}text-warning{% endif %}">{{ status.infra.celery.workers_online }}</b></div>
+                <div class="text-sm">Активных задач: <b>{{ status.infra.celery.active_tasks }}</b></div>
+                {% if status.infra.celery.worker_names %}
+                <div class="text-xs opacity-50 mt-1 truncate">{{ status.infra.celery.worker_names|join:", " }}</div>
+                {% endif %}
+                {% else %}
+                <div class="text-xs text-error">{{ status.infra.celery.error }}</div>
+                {% endif %}
+            </div>
+
+            <div class="rounded-lg border border-base-300 p-3">
+                <div class="text-xs opacity-60 mb-1 flex items-center gap-1">
+                    <span class="inline-block w-2 h-2 rounded-full {% if status.infra.db.ok %}bg-success{% else %}bg-error{% endif %}"></span>
+                    PostgreSQL
+                </div>
+                {% if status.infra.db.ok %}
+                <div class="text-sm">Размер БД: <b>{{ status.infra.db.size_mb }} МБ</b></div>
+                <div class="text-sm">Соединений: <b>{{ status.infra.db.active_connections }}</b></div>
+                {% else %}
+                <div class="text-xs text-error">{{ status.infra.db.error }}</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4">
+            <div class="dopx-section-eyebrow"><i class="ti ti-clock"></i>Celery Beat</div>
+            <div class="dopx-section-title mb-3">Расписание задач ({{ status.beat_schedule|length }})</div>
+            <div class="space-y-1.5 max-h-96 overflow-auto">
+                {% for entry in status.beat_schedule %}
+                <div class="rounded-lg border border-base-300 p-2.5 text-xs">
+                    <div class="font-semibold">{{ entry.name }}</div>
+                    <div class="opacity-50 font-mono text-[11px] truncate">{{ entry.task }}</div>
+                    <div class="opacity-70 mt-0.5">{{ entry.schedule_display }}</div>
+                </div>
+                {% empty %}
+                <p class="text-sm opacity-60 py-4 text-center">Расписание пусто</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4">
+            <div class="dopx-section-eyebrow"><i class="ti ti-alert-octagon"></i>logs/errors.log</div>
+            <div class="dopx-section-title mb-3">Последние ошибки</div>
+            {% if status.error_log.missing %}
+            <p class="text-sm opacity-60 py-4 text-center">Файл лога ещё не создан — ошибок не было</p>
+            {% elif not status.error_log.ok %}
+            <div class="text-xs text-error">Не удалось прочитать лог: {{ status.error_log.error }}</div>
+            {% elif not status.error_log.entries %}
+            <p class="text-sm opacity-60 py-4 text-center">Ошибок в свежей части лога нет</p>
+            {% else %}
+            <div class="space-y-1.5 max-h-96 overflow-auto">
+                {% for entry in status.error_log.entries %}
+                <div class="rounded-lg border border-error/20 bg-error/5 p-2.5 text-xs">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <span class="badge badge-error badge-xs">{{ entry.level }}</span>
+                        <span class="opacity-50 font-mono text-[10px]">{{ entry.ts }}</span>
+                        <span class="opacity-50 font-mono text-[10px]">{{ entry.module }}</span>
+                    </div>
+                    <div class="mt-1 font-mono whitespace-pre-wrap break-words">{{ entry.message }}</div>
+                    {% if entry.extra %}
+                    <div class="mt-1 opacity-50 font-mono text-[10px] whitespace-pre-wrap break-words">{% for line in entry.extra %}{{ line }}{% if not forloop.last %}<br>{% endif %}{% endfor %}</div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="card bg-base-100 border border-base-300 mt-4">
+    <div class="card-body p-4">
+        <div class="dopx-section-eyebrow"><i class="ti ti-info-circle"></i>Окружение</div>
+        <div class="dopx-section-title mb-3">Версии</div>
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
+            <div><span class="opacity-50">Django</span><div class="font-medium font-mono">{{ status.env.django_version }}</div></div>
+            <div><span class="opacity-50">Python</span><div class="font-medium font-mono">{{ status.env.python_version }}</div></div>
+            <div><span class="opacity-50">DEBUG</span><div class="font-medium {% if status.env.debug %}text-error{% endif %}">{{ status.env.debug|yesno:"ВКЛЮЧЁН ⚠,выключен" }}</div></div>
+            <div><span class="opacity-50">Часовой пояс</span><div class="font-medium font-mono">{{ status.env.time_zone }}</div></div>
+            <div><span class="opacity-50">БД</span><div class="font-medium font-mono">{{ status.env.db_engine }}</div></div>
+        </div>
+    </div>
+</div>
+{% endblock %}

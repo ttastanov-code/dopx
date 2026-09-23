@@ -16,6 +16,7 @@ from lineups.models import MatchLineup
 from seasons.models import Season
 from leagues.models import League
 from core.utils import is_rate_limited
+from core.models import get_setting
 import logging
 from django.views.decorators.http import require_http_methods, require_POST
 
@@ -27,7 +28,11 @@ class MatchListView(ListView):
     template_name = 'matches/list.html'
     context_object_name = 'matches'
     paginate_by = 20
-    
+
+    def get_paginate_by(self, queryset):
+        # 2026-09-23, «Настройки платформы» — управляется staff без деплоя.
+        return get_setting("matches_public_page_size", self.paginate_by)
+
     def get_queryset(self):
         queryset = Match.objects.select_related(
             'home_team',
@@ -347,7 +352,8 @@ class MatchDetailView(DetailView):
             row['pct'] = round(row['count'] / fan_support_total * 100) if fan_support_total else 0
 
         # События матча
-        events = list(match.events.select_related('player').order_by('minute')[:20])
+        # 2026-09-23, «Настройки платформы» — управляется staff без деплоя.
+        events = list(match.events.select_related('player').order_by('minute')[:get_setting("match_recent_events_limit", 20)])
 
         # "ДНК матча" — фаза 1 (docs/PRODUCT_SCOPE_MATCH_DNA_AND_EXPLAINABILITY.md,
         # docs/adr/0028-match-dna-phase1.md). referee_aggregates — единственная

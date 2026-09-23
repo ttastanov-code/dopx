@@ -1,0 +1,72 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+{% comment %}
+templates/dashboard/access_roles_list.html
+2026-09-23, раздел «Роли доступа» — список staff-сотрудников (is_staff=True,
+не-суперпользователи — у суперов всегда полный доступ, см. StaffAccessGrant)
+с текущим статусом прав (dashboard/views.py::access_roles_list). Только для
+суперпользователей — обычный staff сюда физически не попадёт (view кидает
+PermissionDenied), но ссылка в _nav.html тоже скрыта фильтром is_superuser.
+{% endcomment %}
+
+<div class="card bg-base-100 border border-base-300 mb-4">
+    <div class="card-body p-4">
+        <p class="text-xs md:text-sm opacity-55 leading-relaxed flex items-start gap-2">
+            <i class="ti ti-info-circle opacity-50 mt-0.5 shrink-0"></i>
+            По умолчанию у каждого сотрудника с доступом в дашборд — полный доступ ко всем {{ section_count }} разделам (как и раньше, единственным гейтом был is_staff). Ограничения начинаются, только когда вы явно откроете карточку сотрудника и снимете часть разделов.
+        </p>
+    </div>
+</div>
+
+<div class="card bg-base-100 border border-base-300">
+    <div class="card-body p-4">
+        <div class="dopx-section-eyebrow"><i class="ti ti-shield-lock"></i>Сотрудники</div>
+        <div class="dopx-section-title mb-3">{{ staff_users|length }} с доступом в дашборд</div>
+
+        {% if staff_users %}
+        <div class="hidden md:block overflow-x-auto">
+            <table class="table">
+                <thead><tr><th>Username</th><th>Email</th><th>Доступ</th><th></th></tr></thead>
+                <tbody>
+                    {% for u in staff_users %}
+                    <tr class="cursor-pointer" onclick="window.location.href='{% url 'dashboard:access_roles_detail' u.id %}'">
+                        <td class="font-medium">{{ u.username }}</td>
+                        <td class="text-xs opacity-60">{{ u.email }}</td>
+                        <td>
+                            {% if u.dashboard_access_grant %}
+                            <span class="badge badge-sm badge-warning">{{ u.dashboard_access_grant.allowed_sections|length }} из {{ section_count }} разделов</span>
+                            {% else %}
+                            <span class="badge badge-sm badge-success">полный доступ</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-right"><i class="ti ti-chevron-right opacity-40"></i></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="md:hidden divide-y divide-base-200">
+            {% for u in staff_users %}
+            <a href="{% url 'dashboard:access_roles_detail' u.id %}" class="block py-3">
+                <div class="flex items-center justify-between gap-2">
+                    <span class="text-sm font-semibold">{{ u.username }}</span>
+                    {% if u.dashboard_access_grant %}
+                    <span class="badge badge-sm badge-warning">{{ u.dashboard_access_grant.allowed_sections|length }}/{{ section_count }}</span>
+                    {% else %}
+                    <span class="badge badge-sm badge-success">полный</span>
+                    {% endif %}
+                </div>
+                <div class="text-xs opacity-55 mt-0.5">{{ u.email }}</div>
+            </a>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-sm opacity-60 py-4 text-center">Нет staff-сотрудников (кроме суперпользователей)</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

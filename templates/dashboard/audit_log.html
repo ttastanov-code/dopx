@@ -3,17 +3,31 @@
 {% block content %}
 {% include 'dashboard/_nav.html' %}
 
+{% comment %} 2026-09-22: заголовок рендерит .dopx-page-header (_nav.html) — не дублируем. {% endcomment %}
 <div class="card bg-base-100 border border-base-300">
     <div class="card-body p-4">
-        <h3 class="font-bold text-sm md:text-base mb-1 flex items-center gap-2">
-            <i class="ti ti-history text-primary"></i> Журнал действий staff
-        </h3>
-        <p class="text-xs opacity-50 mb-3">
-            Здесь фиксируются действия из staff-дашборда: антифрод, ресинк и ручной запуск задач.
-            Изменения через Django Admin смотрите в
-            <a href="{% url 'admin:index' %}" class="link">истории объекта</a> в самом admin.
+        {% comment %}
+        2026-09-23: тот же flex-split баг, что чинили на antifraud.html и
+        duplicate_players_review.html — голый текст вперемешку с <a> внутри
+        <p class="flex"> рвётся на отдельные анонимные flex-item'ы. Весь
+        текст — одним <span>.
+        {% endcomment %}
+        <p class="text-xs opacity-55 mb-3 flex items-start gap-2">
+            <i class="ti ti-info-circle opacity-50 mt-0.5 shrink-0"></i>
+            <span>Действия из staff-дашборда: антифрод, ресинк, ручной запуск задач. Изменения через Django Admin — в
+            <a href="{% url 'admin:index' %}" class="link">истории объекта</a> там же.</span>
         </p>
-        <div class="overflow-x-auto">
+
+        {% comment %}
+        2026-09-23, жалоба пользователя (скриншот, мобильная версия):
+        overflow-x-auto прятал "Объект"/"IP" за правым краем экрана без
+        подсказки, что таблицу можно проскроллить — выглядело как
+        "пропавшие данные". На узких экранах (<md) таблица теперь скрыта
+        (hidden md:block), вместо неё — список карточек по одной записи на
+        блок: всё видно сразу, скроллить не нужно. На md+ (планшет/десктоп)
+        — обратно обычная таблица, тут места достаточно.
+        {% endcomment %}
+        <div class="hidden md:block overflow-x-auto">
             <table class="table table-sm">
                 <thead>
                     <tr><th>Когда</th><th>Кто</th><th>Действие</th><th>Объект</th><th>IP</th></tr>
@@ -24,14 +38,18 @@
                         <td class="whitespace-nowrap text-xs">{{ entry.created_at|date:"d.m H:i:s" }}</td>
                         <td class="whitespace-nowrap">{{ entry.actor_username|default:"—" }}</td>
                         {% comment %}
-                        2026-09-11 (жалоба пользователя: столбец "Действие"
-                        переполняется на мобильном) — тот же фикс, что в
-                        dashboard/data_trust.html: .badge не растягивается
-                        под перенос, таблица и так скроллится по
-                        горизонтали (overflow-x-auto выше) — не переносим
-                        текст внутри ячейки, а держим в одну строку.
+                        2026-09-23: .badge убран — get_action_display тут не
+                        короткий тег ("новое", "ошибка"), а целое предложение
+                        ("Запуск management-команды из дашборда"), а daisyUI
+                        .badge держит ФИКСИРОВАННУЮ высоту в одну строку —
+                        длинный текст переносился ВНУТРИ пилюли, ломая её
+                        форму (жалоба пользователя, скриншот мобильной
+                        версии; тот же класс бага уже чинили на
+                        antifraud.html и duplicate_players_review.html, см.
+                        докстринги там же). Для предложения — просто текст,
+                        без формы пилюли, которая ему не подходит по смыслу.
                         {% endcomment %}
-                        <td><span class="badge badge-sm badge-ghost whitespace-nowrap">{{ entry.get_action_display }}</span></td>
+                        <td class="text-xs font-medium whitespace-nowrap">{{ entry.get_action_display }}</td>
                         <td class="text-xs opacity-70 max-w-xs truncate" title="{{ entry.target }}">{{ entry.target|default:"—" }}</td>
                         <td class="text-xs opacity-50 font-mono">{{ entry.ip_address|default:"—" }}</td>
                     </tr>
@@ -40,6 +58,32 @@
                     {% endfor %}
                 </tbody>
             </table>
+        </div>
+
+        {% comment %}
+        2026-09-23: .badge вокруг get_action_display убран тут же, по той
+        же причине, что и в десктопной таблице выше (см. докстринг там) —
+        именно перенос длинного текста внутри daisyUI .badge и есть то, что
+        пользователь увидел на скриншоте ("Запуск management..." переломан
+        пополам, полупрозрачная пилюля наехала на время справа). Действие
+        теперь — просто жирная строка сверху карточки, без формы пилюли;
+        остальные поля идут построчно ниже, ничего больше не соревнуется с
+        ним за одну строку.
+        {% endcomment %}
+        <div class="md:hidden divide-y divide-base-200">
+            {% for entry in entries %}
+            <div class="py-2.5 flex flex-col gap-1">
+                <div class="text-sm font-semibold leading-snug">{{ entry.get_action_display }}</div>
+                <div class="flex items-center justify-between gap-2 text-[11px] opacity-50">
+                    <span>{{ entry.actor_username|default:"—" }}</span>
+                    <span class="whitespace-nowrap">{{ entry.created_at|date:"d.m H:i:s" }}</span>
+                </div>
+                <div class="text-xs opacity-70 truncate" title="{{ entry.target }}">{{ entry.target|default:"—" }}</div>
+                {% if entry.ip_address %}<div class="text-[11px] opacity-40 font-mono">{{ entry.ip_address }}</div>{% endif %}
+            </div>
+            {% empty %}
+            <p class="text-center opacity-50 py-6 text-sm">Пока нет ни одной записи</p>
+            {% endfor %}
         </div>
     </div>
 </div>

@@ -1,0 +1,158 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+{% comment %}
+templates/dashboard/banners_list.html
+2026-09-23, раздел «Партнёры и баннеры» — список Banner (partners/models.py)
++ форма создания нового с загрузкой изображения (dashboard/views.py::
+banners_list/banner_create). enctype="multipart/form-data" обязателен —
+без него request.FILES был бы пустым.
+
+«Показывается сейчас» — прямое использование Banner.is_currently_active()
+(уже существующий метод, учитывает is_active + окно starts_at/ends_at +
+активность привязанного партнёра, см. докстринг модели про баг,
+который был найден при аудите) — не пересчитываем ту же логику в шаблоне.
+{% endcomment %}
+
+<div class="mb-4">
+    <a href="{% url 'dashboard:ads' %}" class="text-xs opacity-60 hover:opacity-100"><i class="ti ti-arrow-left"></i> К разделу «Реклама»</a>
+</div>
+
+<div class="card bg-base-100 border border-base-300 mb-4">
+    <div class="card-body p-4">
+        <div class="dopx-section-eyebrow"><i class="ti ti-photo-plus"></i>Новый баннер</div>
+        <form method="post" action="{% url 'dashboard:banner_create' %}" enctype="multipart/form-data" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-2">
+            {% csrf_token %}
+            <div class="flex flex-col gap-1">
+                <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Название</label>
+                <input type="text" name="title" required class="input input-sm input-bordered w-full">
+            </div>
+            <div class="flex flex-col gap-1">
+                <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Зона показа</label>
+                <select name="zone" required class="select select-sm select-bordered w-full">
+                    {% for value, label in zone_choices %}
+                    <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="flex flex-col gap-1">
+                <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Партнёр (необязательно)</label>
+                <select name="partner_id" class="select select-sm select-bordered w-full">
+                    <option value="">— собственное промо DOPX —</option>
+                    {% for p in partners_for_select %}
+                    <option value="{{ p.id }}">{{ p.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="flex flex-col gap-1">
+                <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Изображение</label>
+                <input type="file" name="image" accept="image/*" required class="file-input file-input-sm file-input-bordered w-full">
+            </div>
+            <div class="flex flex-col gap-1 sm:col-span-2 lg:col-span-2">
+                <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Ссылка перехода</label>
+                <input type="url" name="target_url" required class="input input-sm input-bordered w-full">
+            </div>
+            <div class="flex flex-col gap-1">
+                <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Приоритет</label>
+                <input type="number" name="priority" value="0" class="input input-sm input-bordered w-full">
+            </div>
+            <div class="flex items-end gap-3">
+                <label class="label cursor-pointer gap-2 justify-start">
+                    <input type="checkbox" name="is_active" checked class="checkbox checkbox-sm">
+                    <span class="text-xs">Активен</span>
+                </label>
+                <label class="label cursor-pointer gap-2 justify-start">
+                    <input type="checkbox" name="requires_age_disclaimer" class="checkbox checkbox-sm">
+                    <span class="text-xs">18+</span>
+                </label>
+                <button type="submit" class="btn btn-sm btn-primary ml-auto"><i class="ti ti-plus"></i> Создать</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card bg-base-100 border border-base-300 mb-4">
+    <div class="card-body p-4">
+        <form method="get" class="flex flex-wrap items-end gap-3">
+            <div class="flex flex-col gap-1">
+                <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Зона</label>
+                <select name="zone" class="select select-sm select-bordered">
+                    <option value="">Все</option>
+                    {% for value, label in zone_choices %}
+                    <option value="{{ value }}" {% if zone_filter == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button type="submit" class="btn btn-sm btn-primary"><i class="ti ti-filter"></i> Применить</button>
+            {% if zone_filter %}
+            <a href="{% url 'dashboard:banners_list' %}" class="btn btn-sm btn-ghost">Сбросить</a>
+            {% endif %}
+        </form>
+    </div>
+</div>
+
+<div class="card bg-base-100 border border-base-300">
+    <div class="card-body p-4">
+        <div class="dopx-section-eyebrow"><i class="ti ti-photo"></i>Баннеры</div>
+        <div class="dopx-section-title mb-3">{{ banners.paginator.count }} найдено</div>
+
+        {% if banners %}
+        <div class="hidden md:block overflow-x-auto">
+            <table class="table">
+                <thead>
+                    <tr><th>Изображение</th><th>Название</th><th>Зона</th><th>Партнёр</th><th>Приоритет</th><th>Статус</th><th></th></tr>
+                </thead>
+                <tbody>
+                    {% for b in banners %}
+                    <tr class="cursor-pointer" onclick="window.location.href='{% url 'dashboard:banner_detail' b.id %}'">
+                        <td><img src="{{ b.image.url }}" alt="{{ b.title }}" class="h-8 rounded object-cover"></td>
+                        <td class="font-medium">{{ b.title }}</td>
+                        <td class="text-xs">{{ b.get_zone_display }}</td>
+                        <td class="text-xs opacity-60">{{ b.partner.name|default:"— своё промо —" }}</td>
+                        <td class="text-xs font-mono">{{ b.priority }}</td>
+                        <td>
+                            {% if b.is_currently_active %}<span class="badge badge-sm badge-success">показывается</span>
+                            {% else %}<span class="badge badge-sm badge-ghost">не показывается</span>{% endif %}
+                            {% if b.requires_age_disclaimer %}<span class="badge badge-sm badge-warning ml-1">18+</span>{% endif %}
+                        </td>
+                        <td class="text-right"><i class="ti ti-chevron-right opacity-40"></i></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="md:hidden divide-y divide-base-200">
+            {% for b in banners %}
+            <a href="{% url 'dashboard:banner_detail' b.id %}" class="flex items-center gap-3 py-3">
+                <img src="{{ b.image.url }}" alt="{{ b.title }}" class="h-10 w-16 rounded object-cover shrink-0">
+                <div class="min-w-0">
+                    <div class="flex items-center gap-2">
+                        <span class="text-sm font-semibold truncate">{{ b.title }}</span>
+                        {% if b.is_currently_active %}<span class="badge badge-sm badge-success">✓</span>{% else %}<span class="badge badge-sm badge-ghost">✕</span>{% endif %}
+                    </div>
+                    <div class="text-xs opacity-55">{{ b.get_zone_display }} · {{ b.partner.name|default:"своё промо" }}</div>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+
+        {% if banners.paginator.num_pages > 1 %}
+        <div class="flex items-center justify-center gap-2 mt-4">
+            {% if banners.has_previous %}
+            <a href="?{% if zone_filter %}zone={{ zone_filter }}&{% endif %}page={{ banners.previous_page_number }}" class="btn btn-xs btn-outline">« Раньше</a>
+            {% else %}<span class="btn btn-xs btn-disabled">« Раньше</span>{% endif %}
+            <span class="text-xs opacity-60">Стр. {{ banners.number }} из {{ banners.paginator.num_pages }}</span>
+            {% if banners.has_next %}
+            <a href="?{% if zone_filter %}zone={{ zone_filter }}&{% endif %}page={{ banners.next_page_number }}" class="btn btn-xs btn-outline">Позже »</a>
+            {% else %}<span class="btn btn-xs btn-disabled">Позже »</span>{% endif %}
+        </div>
+        {% endif %}
+        {% else %}
+        <p class="text-sm opacity-60 py-4 text-center">Баннеров пока нет</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

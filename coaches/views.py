@@ -2,6 +2,7 @@
 from django.views.generic import ListView, DetailView
 from django.db.models import Count, Avg, Q, Prefetch
 from core.utils import normalize_kz
+from core.models import get_setting
 from coaches.models import Coach
 from teams.models import Team
 from aggregates.models import CoachMatchAggregate
@@ -13,6 +14,10 @@ class CoachListView(ListView):
     template_name = 'coaches/list.html'
     context_object_name = 'coaches'
     paginate_by = 20
+
+    def get_paginate_by(self, queryset):
+        # 2026-09-23, «Настройки платформы» — управляется staff без деплоя.
+        return get_setting("coaches_list_page_size", self.paginate_by)
 
     def get_queryset(self):
         # Дефолт: только тренеры команд текущего сезона главной лиги — тот

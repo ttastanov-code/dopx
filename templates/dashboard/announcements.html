@@ -4,16 +4,12 @@
 {% include 'dashboard/_nav.html' %}
 
 <!-- === ЧТО ТУТ === -->
+{% comment %} 2026-09-22: заголовок рендерит .dopx-page-header (_nav.html) — не дублируем. {% endcomment %}
 <div class="card bg-base-100 border border-base-300 mb-4">
     <div class="card-body p-4">
-        <h3 class="font-bold text-sm md:text-base mb-2 flex items-center gap-2">
-            <i class="ti ti-info-circle text-primary"></i> Объявления
-        </h3>
-        <p class="text-xs md:text-sm opacity-70 leading-relaxed">
-            Способ отправить системную новость платформы (плановые
-            работы, новая фича, важное изменение правил). Уходит всем верифицированным
-            пользователям как in-app-уведомление сразу, и как email — тем, у кого включен
-            тумблер «Важные обновления платформы» в настройках уведомлений.
+        <p class="text-xs md:text-sm opacity-55 leading-relaxed flex items-start gap-2">
+            <i class="ti ti-info-circle opacity-50 mt-0.5 shrink-0"></i>
+            Системная новость платформы — уходит всем верифицированным пользователям как in-app-уведомление сразу, и как email тем, у кого включена «Важные обновления платформы».
         </p>
     </div>
 </div>
@@ -22,9 +18,8 @@
     <div class="lg:col-span-2">
         <div class="card bg-base-100 border border-base-300">
             <div class="card-body p-4">
-                <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
-                    <i class="ti ti-speakerphone text-primary"></i> Новое объявление
-                </h3>
+                <div class="dopx-section-eyebrow"><i class="ti ti-speakerphone"></i>Рассылка</div>
+                <div class="dopx-section-title mb-3">Новое объявление</div>
                 <form method="post"
                       onsubmit="return confirm('Отправить это объявление {{ recipients_count }} пользователям? Отменить рассылку после отправки нельзя.');">
                     {% csrf_token %}
@@ -51,13 +46,10 @@
     <div>
         <div class="card bg-base-100 border border-base-300">
             <div class="card-body p-4">
-                <h3 class="font-bold text-sm mb-2 flex items-center gap-2">
-                    <i class="ti ti-users text-primary"></i> Получатели
-                </h3>
-                <div class="stat p-0">
-                    <div class="stat-value text-3xl">{{ recipients_count }}</div>
-                    <div class="stat-desc">верифицированных пользователей получат in-app-уведомление</div>
-                </div>
+                <div class="dopx-section-eyebrow"><i class="ti ti-users"></i>Аудитория</div>
+                <div class="dopx-section-title mb-2">Получатели</div>
+                <div class="dopx-stat-value">{{ recipients_count }}</div>
+                <div class="dopx-stat-delta">верифицированных пользователей получат in-app-уведомление</div>
                 <p class="text-xs opacity-60 mt-3 leading-relaxed">
                     Email уйдёт только тем, у кого включена настройка «Важные обновления
                     платформы» — их может быть меньше. Письма рассылаются пачками через
@@ -68,9 +60,8 @@
         </div>
         <div class="card bg-base-100 border border-base-300 mt-4">
             <div class="card-body p-4">
-                <h3 class="font-bold text-sm mb-2 flex items-center gap-2">
-                    <i class="ti ti-history text-primary"></i> История
-                </h3>
+                <div class="dopx-section-eyebrow"><i class="ti ti-history"></i>Журнал</div>
+                <div class="dopx-section-title mb-2">История</div>
                 <p class="text-xs opacity-60">
                     Все отправки логируются в
                     <a href="{% url 'dashboard:audit_log' %}" class="link link-primary">Аудите</a>

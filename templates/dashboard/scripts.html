@@ -3,99 +3,115 @@
 {% block content %}
 {% include 'dashboard/_nav.html' %}
 
+{% comment %}
+templates/dashboard/scripts.html
+2026-09-22, редизайн (прямая просьба пользователя: описания команд —
+короче и без "ИИ-паттерна", страница — компактнее, "в целом весь раздел
+дашборд в один стиль классный"). Раньше — 2-колоночная сетка крупных
+карточек с абзацем текста в каждой; теперь — плотный список строк на
+категорию (доступной ширины хватает под 3 колонки на широком экране),
+описание в одну строку рядом с названием. ВСЕ name/id/hx-атрибуты форм и
+скрипт dopxCopyToClipboard ниже — БЕЗ ИЗМЕНЕНИЙ, трогалась только вёрстка
+вокруг них.
+{% endcomment %}
+
+{% comment %}
+2026-09-22: заголовок "Скрипты и команды" теперь рендерит общий
+.dopx-page-header (_nav.html, по page_title из view) — не дублируем его
+здесь второй раз тем же текстом, оставляем только пояснение.
+{% endcomment %}
 <div class="card bg-base-100 border border-base-300 mb-4">
     <div class="card-body p-4">
-        <h3 class="font-bold text-sm md:text-base mb-2 flex items-center gap-2">
-            <i class="ti ti-terminal-2 text-primary"></i> Скрипты и команды
-        </h3>
-        <p class="text-xs opacity-60">
-            Management-команды сервера, запускаемые прямо отсюда — без SSH и терминала. Список — фиксированный allowlist
-            (<span class="font-mono bg-base-200 rounded px-1 py-0.5">dashboard/commands_registry.py</span>), а не произвольная команда:
-            каждая карточка ниже соответствует ровно одному <span class="font-mono bg-base-200 rounded px-1 py-0.5">manage.py</span> на сервере.
-            Команды с «Реально применить» без этой галочки только считают и печатают отчёт (dry-run) — ничего не меняют в базе.
-            Долгие команды (сидирование, очистка) выполняются в фоне через Celery — статус и вывод появятся в истории запусков ниже, обновляется само.
+        <p class="text-xs opacity-55 flex items-start gap-2">
+            <i class="ti ti-info-circle opacity-50 mt-0.5 shrink-0"></i>
+            Фиксированный список management-команд сервера — без SSH и терминала. «Реально применить» не отмечено — только
+            dry-run отчёт. Долгие команды идут в фоне через Celery, статус и вывод обновляются сами в истории ниже.
         </p>
     </div>
 </div>
 
+{% comment %}
+2026-09-22, полный редизайн: цветная полоска слева карточки категории —
+тот же цветовой код, что раньше нёс только мелкий значок в заголовке
+(зелёный=безопасно/seed, красный=cleanup/удаление, жёлтый=recalc,
+синий=diagnose/read-only) — теперь виден сразу, даже свёрнутым взглядом
+по странице, не только при чтении иконки в заголовке.
+{% endcomment %}
 {% for cat_key, cat_label, specs in command_categories %}
-<div class="card bg-base-100 border border-base-300 mb-4">
-    <div class="card-body p-4">
-        <h4 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
-            {% if cat_key == 'seed' %}<i class="ti ti-seeding text-success"></i>
-            {% elif cat_key == 'cleanup' %}<i class="ti ti-trash text-error"></i>
-            {% elif cat_key == 'recalc' %}<i class="ti ti-refresh text-warning"></i>
-            {% else %}<i class="ti ti-stethoscope text-info"></i>{% endif %}
+<div class="card bg-base-100 border border-base-300 mb-3 overflow-hidden" style="border-left: 3px solid {% if cat_key == 'seed' %}var(--color-success){% elif cat_key == 'cleanup' %}var(--color-error){% elif cat_key == 'recalc' %}var(--color-warning){% else %}var(--color-info){% endif %};">
+    <div class="card-body p-3 md:p-4">
+        <div class="dopx-section-eyebrow">
+            {% if cat_key == 'seed' %}<i class="ti ti-seeding"></i>
+            {% elif cat_key == 'cleanup' %}<i class="ti ti-trash"></i>
+            {% elif cat_key == 'recalc' %}<i class="ti ti-refresh"></i>
+            {% else %}<i class="ti ti-stethoscope"></i>{% endif %}
             {{ cat_label }}
-        </h4>
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        </div>
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-2 mt-2">
             {% for spec in specs %}
-            <details class="border border-base-300 rounded-lg">
-                <summary class="cursor-pointer select-none px-3 py-2.5 font-medium text-sm flex items-center gap-2">
-                    {% if spec.danger == 'destructive' %}<span class="badge badge-error badge-xs">удаляет</span>
-                    {% elif spec.danger == 'readonly' %}<span class="badge badge-ghost badge-xs">read-only</span>
-                    {% else %}<span class="badge badge-success badge-xs">безопасно</span>{% endif %}
-                    <span class="flex-1">{{ spec.label }}</span>
-                    <span class="font-mono text-[10px] opacity-40">{{ spec.name }}</span>
+            <details class="group border border-base-300 rounded-lg bg-base-100 open:bg-base-200/30">
+                {% comment %}
+                2026-09-23, жалоба пользователя (скриншот, мобильная версия):
+                на узком экране badge+название+description+шеврон в один
+                flex-ряд без переноса выдавливали описание почти в ноль —
+                "Оцен...", "Точечное гол..." после первых 4-5 символов.
+                Фикс: flex-wrap на summary + description с basis-full — на
+                узких экранах описание уезжает на отдельную строку целиком
+                (без truncate), на sm+ возвращается в исходный однострочный
+                вид (flex-1 + truncate), шеврон переставлен через order,
+                чтобы визуально остаться в конце строки на обоих режимах.
+                {% endcomment %}
+                <summary class="dopx-cmd-summary cursor-pointer select-none px-3 py-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                    {% if spec.danger == 'destructive' %}<span class="badge badge-error badge-xs shrink-0 order-1">удаляет</span>
+                    {% elif spec.danger == 'readonly' %}<span class="badge badge-ghost badge-xs shrink-0 order-1">read-only</span>
+                    {% else %}<span class="badge badge-success badge-xs shrink-0 order-1">безопасно</span>{% endif %}
+                    <span class="font-medium shrink-0 order-2">{{ spec.label }}</span>
+                    <i class="ti ti-chevron-down text-xs opacity-30 ml-auto shrink-0 order-3 sm:order-5 transition-transform group-open:rotate-180"></i>
+                    <span class="text-xs opacity-45 order-4 basis-full sm:basis-0 sm:min-w-0 sm:flex-1 sm:truncate">{{ spec.description }}</span>
                 </summary>
-                <div class="px-3 pb-3 pt-1 border-t border-base-300">
-                    <p class="text-xs opacity-60 mb-3 leading-snug">{{ spec.description }}</p>
-                    <form method="post" action="{% url 'dashboard:scripts_trigger' %}" class="space-y-2">
+                <div class="px-3 pb-3 pt-2 border-t border-base-300">
+                    <form method="post" action="{% url 'dashboard:scripts_trigger' %}" class="space-y-2.5">
                         {% csrf_token %}
                         <input type="hidden" name="command_name" value="{{ spec.name }}">
 
-                        {% for arg in spec.args %}
-                        <div>
-                            {% if arg.kind == 'flag' %}
-                            {% comment %}
-                            2026-09-22, проверено ПРЯМО в исходнике CDN-CSS
-                            (cdn.jsdelivr.net/npm/daisyui@5.7.17): класс
-                            `.label` у daisyUI сам задаёт
-                            `white-space: nowrap` — из-за этого длинный
-                            arg.help (напр. у --all в verify_names_with_ai)
-                            вообще не мог перенестись, сколько ни добавляй
-                            min-w-0/break-words (они трогают другое
-                            CSS-свойство, не white-space, и потому не
-                            перебивали nowrap). Настоящий фикс — явно
-                            перебить nowrap через whitespace-normal ПРЯМО на
-                            span (не на label — white-space наследуется, но
-                            правило .label бьёт по самому label, ставить
-                            override нужно на потомка, который реально
-                            содержит текст).
-                            {% endcomment %}
-                            <label class="label cursor-pointer justify-start items-start gap-2 py-1">
-                                <input type="checkbox" name="{{ arg.dest }}" class="checkbox checkbox-xs mt-0.5">
-                                <span class="label-text text-xs whitespace-normal break-words min-w-0">{{ arg.flag }} — {{ arg.help }}</span>
-                            </label>
-                            {% else %}
-                            <label class="label py-0.5">
-                                <span class="label-text text-xs whitespace-normal break-words min-w-0">
+                        {% comment %} Флаги — компактным рядом чипов-чекбоксов. {% endcomment %}
+                        {% for arg in spec.args %}{% if arg.kind == 'flag' %}
+                        <label class="inline-flex items-start gap-1.5 text-xs cursor-pointer mr-3 mb-1">
+                            <input type="checkbox" name="{{ arg.dest }}" class="checkbox checkbox-xs mt-0.5">
+                            <span class="opacity-70 whitespace-normal break-words">{{ arg.flag }} — {{ arg.help }}</span>
+                        </label>
+                        {% endif %}{% endfor %}
+
+                        {% comment %} Остальные аргументы — плотная сетка полей. {% endcomment %}
+                        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                            {% for arg in spec.args %}{% if arg.kind != 'flag' %}
+                            <div class="flex flex-col gap-0.5 min-w-0">
+                                <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold truncate" title="{{ arg.help }}">
                                     {{ arg.flag }}{% if arg.required %} <span class="text-error">*</span>{% endif %}
-                                    — {{ arg.help }}
-                                </span>
-                            </label>
-                            {% if arg.kind == 'choice' %}
-                            <select name="{{ arg.dest }}" class="select select-xs select-bordered w-full">
-                                <option value="">—</option>
-                                {% for c in arg.choices %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
-                            </select>
-                            {% elif arg.kind == 'list_str' %}
-                            <textarea name="{{ arg.dest }}" rows="2" placeholder="по одному значению на строку" class="textarea textarea-xs textarea-bordered w-full font-mono"></textarea>
-                            {% elif arg.kind == 'int' %}
-                            <input type="number" step="1" name="{{ arg.dest }}" {% if arg.default is not None %}placeholder="по умолчанию {{ arg.default }}"{% endif %} class="input input-xs input-bordered w-full">
-                            {% elif arg.kind == 'float' %}
-                            <input type="number" step="0.01" name="{{ arg.dest }}" {% if arg.default is not None %}placeholder="по умолчанию {{ arg.default }}"{% endif %} class="input input-xs input-bordered w-full">
-                            {% else %}
-                            <input type="text" name="{{ arg.dest }}" class="input input-xs input-bordered w-full">
-                            {% endif %}
-                            {% endif %}
+                                </label>
+                                {% if arg.kind == 'choice' %}
+                                <select name="{{ arg.dest }}" class="select select-xs select-bordered w-full">
+                                    <option value="">—</option>
+                                    {% for c in arg.choices %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+                                </select>
+                                {% elif arg.kind == 'list_str' %}
+                                <textarea name="{{ arg.dest }}" rows="2" placeholder="по одному на строку" class="textarea textarea-xs textarea-bordered w-full font-mono"></textarea>
+                                {% elif arg.kind == 'int' %}
+                                <input type="number" step="1" name="{{ arg.dest }}" {% if arg.default is not None %}placeholder="{{ arg.default }}"{% endif %} class="input input-xs input-bordered w-full">
+                                {% elif arg.kind == 'float' %}
+                                <input type="number" step="0.01" name="{{ arg.dest }}" {% if arg.default is not None %}placeholder="{{ arg.default }}"{% endif %} class="input input-xs input-bordered w-full">
+                                {% else %}
+                                <input type="text" name="{{ arg.dest }}" class="input input-xs input-bordered w-full">
+                                {% endif %}
+                                <span class="text-[10px] opacity-40 leading-tight">{{ arg.help }}</span>
+                            </div>
+                            {% endif %}{% endfor %}
                         </div>
-                        {% endfor %}
 
                         {% if spec.has_apply_flag %}
                         <label class="label cursor-pointer justify-start gap-2 py-1 bg-warning/10 rounded px-2">
                             <input type="checkbox" name="apply" class="checkbox checkbox-xs checkbox-warning">
-                            <span class="label-text text-xs font-medium">Реально применить (--apply) — без галочки только dry-run отчёт</span>
+                            <span class="label-text text-xs font-medium">Реально применить — без галочки только dry-run отчёт</span>
                         </label>
                         {% endif %}
 
@@ -103,15 +119,14 @@
                         <div class="bg-error/10 rounded px-2 py-2">
                             <label class="label py-0.5">
                                 <span class="label-text text-xs font-medium text-error">
-                                    У этой команды нет dry-run — удаляет сразу и безусловно. Впишите
-                                    <span class="font-mono">cleanup_load_test</span> для подтверждения:
+                                    Нет dry-run — удаляет сразу. Впишите <span class="font-mono">cleanup_load_test</span> для подтверждения:
                                 </span>
                             </label>
                             <input type="text" name="confirm_text" placeholder="cleanup_load_test" class="input input-xs input-bordered w-full font-mono">
                         </div>
                         {% endif %}
 
-                        <button type="submit" class="btn btn-xs {% if spec.danger == 'destructive' %}btn-error btn-outline{% else %}btn-primary btn-outline{% endif %} mt-1">
+                        <button type="submit" class="btn btn-xs {% if spec.danger == 'destructive' %}btn-error btn-outline{% else %}btn-primary btn-outline{% endif %}">
                             <i class="ti ti-player-play"></i> Запустить
                         </button>
                     </form>
@@ -125,12 +140,87 @@
 
 <div class="card bg-base-100 border border-base-300">
     <div class="card-body p-4">
-        <h4 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
-            <i class="ti ti-history text-primary"></i> История запусков
-        </h4>
-        <div id="scripts-runs-table" hx-get="{% url 'dashboard:scripts_runs_partial' %}" hx-trigger="every 4s" hx-swap="innerHTML">
-            {% include 'dashboard/_scripts_runs_table.html' %}
-        </div>
+        <div class="dopx-section-eyebrow"><i class="ti ti-history"></i>Журнал</div>
+        <div class="dopx-section-title mb-3">История запусков</div>
+        {% comment %}
+        2026-09-23: обёртка с id="scripts-runs-table"/data-background-poll/
+        hx-get/hx-trigger теперь ВНУТРИ _scripts_runs_table.html, не здесь
+        — партиал свапает себя целиком (hx-swap="outerHTML"), это и даёт
+        пагинации знать, какую страницу поллить дальше (см. докстринг в
+        партиале). Раньше (data-background-poll задним числом, 2026-09-22)
+        обёртка была снаружи с hx-swap="innerHTML" — тогда этого было
+        достаточно, пагинации ещё не было.
+        {% endcomment %}
+        {% include 'dashboard/_scripts_runs_table.html' %}
     </div>
 </div>
+
+<style>
+/* Компактная summary-строка команды (см. докстринг вверху файла про
+   редизайн 2026-09-22) — daisyUI по умолчанию рисует свой маркер-треугольник
+   перед <summary>, дублирующий наш ti-chevron-down справа; списком-
+   свойством ::marker убираем дефолтный, чтобы не было двух стрелок сразу. */
+.dopx-cmd-summary::-webkit-details-marker { display: none; }
+.dopx-cmd-summary { list-style: none; }
+</style>
+
+<script>
+// 2026-09-22, прямая просьба пользователя ("сделай чтобы при клике на
+// UUID он копировался сразу") — копирует значение data-copy кнопки в
+// буфер обмена, используется кнопками "id ..." в раскрашенном выводе
+// команд (dashboard/templatetags/dashboard_extras.py::format_command_output,
+// строки-записи diagnose_duplicate_players). Глобальная функция — вывод
+// команд подгружается через HTMX-поллинг (#scripts-runs-table), новые
+// кнопки появляются в DOM динамически, отдельный addEventListener на
+// конкретные узлы пришлось бы перепривязывать при каждом обновлении,
+// проще один раз объявить функцию и звать её из инлайнового onclick.
+function dopxCopyToClipboard(btn) {
+    const text = btn.dataset.copy;
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
+        const icon = btn.querySelector('i');
+        const prevIconClass = icon ? icon.className : null;
+        btn.classList.add('btn-success');
+        if (icon) icon.className = 'ti ti-check';
+        setTimeout(() => {
+            btn.classList.remove('btn-success');
+            if (icon && prevIconClass) icon.className = prevIconClass;
+        }, 1000);
+    });
+}
+
+// 2026-09-23, БАГФИКС "жму «Позже» в пагинации истории запусков — ничего
+// не происходит" (и поллинг тоже не работал, хотя раньше без пагинации
+// работал). Диагностировано вживую в браузере (devtools): где-то в начальной
+// HTMX-инициализации всей страницы (DOMContentLoaded, до этого скрипта)
+// вылетает необработанное исключение внутри самого htmx.min.js
+// ("TypeError: e.matches is not a function") — от него независимо ни разу
+// не получилось воспроизвести точную причину (минифицированный сторонний
+// код, похоже на конфликт очерёдности с Django Debug Toolbar, которая
+// довешивает свои панели через AJAX уже ПОСЛЕ начала обхода DOM). Эффект:
+// обход обрывается ПОСЕРЕДИНЕ, и #scripts-runs-table (див с hx-trigger=
+// "every 4s") успевает получить только внутренний HTMX-маркер initHash —
+// HTMX считает его "уже проинициализированным" и на все дальнейшие
+// process()-вызовы молча ничего не делает, хотя реальный обработчик
+// триггера (ни поллинг, ни клики по «Позже»/«Раньше» внутри него) так и
+// не был повешен. Подтверждено вручную: если у элемента удалить
+// 'htmx-internal-data' и заново вызвать htmx.process() — всё оживает.
+// Правим защитным самоисцелением на window.load (гарантированно ПОСЛЕ
+// падения бутстрапа) — если внутренний стейт элемента выглядит "пустым"
+// (нет реальных полей триггера, только initHash или вообще ничего),
+// сбрасываем его и переинициализируем заново.
+window.addEventListener('load', function () {
+    setTimeout(function () {
+        const el = document.getElementById('scripts-runs-table');
+        if (!el || typeof htmx === 'undefined') return;
+        const data = el['htmx-internal-data'] || {};
+        const keys = Object.keys(data);
+        const looksUninitialized = keys.length === 0 || (keys.length === 1 && keys[0] === 'initHash');
+        if (looksUninitialized) {
+            delete el['htmx-internal-data'];
+            htmx.process(el);
+        }
+    }, 50);
+}, { once: true });
+</script>
 {% endblock %}

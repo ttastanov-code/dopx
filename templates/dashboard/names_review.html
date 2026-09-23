@@ -14,15 +14,12 @@ ConfirmedNameCorrection (переживает будущие синки) и ср
 Player/Referee/Coach — см. dashboard/views.py::names_review_action.
 {% endcomment %}
 
+{% comment %} 2026-09-22: заголовок рендерит .dopx-page-header (_nav.html) — не дублируем. {% endcomment %}
 <div class="card bg-base-100 border border-base-300 mb-4">
     <div class="card-body p-4">
-        <h3 class="font-bold text-sm md:text-base mb-2 flex items-center gap-2">
-            <i class="ti ti-sparkles text-primary"></i> Проверка ФИО (ИИ)
-        </h3>
-        <p class="text-xs opacity-60">
-            Механическая транслитерация иногда угадывает написание ФИО неверно. Команда «Проверить ФИО через Gemini»
-            (раздел «Скрипты и команды») находит такие записи и спрашивает у Gemini API реальное написание через
-            веб-поиск. Ничего не применяется автоматически — только здесь, после вашего подтверждения.
+        <p class="text-xs opacity-55 flex items-start gap-2">
+            <i class="ti ti-info-circle opacity-50 mt-0.5 shrink-0"></i>
+            Механическая транслитерация иногда угадывает ФИО неверно. Команда «Проверить ФИО через Gemini» находит такие записи и ищет реальное написание в вебе — ничего не применяется без вашего подтверждения здесь.
         </p>
         {% if not gemini_configured %}
         {% comment %}
@@ -44,113 +41,22 @@ Player/Referee/Coach — см. dashboard/views.py::names_review_action.
     </div>
 </div>
 
-<div class="card bg-base-100 border border-base-300 mb-4">
-    <div class="card-body p-4">
-        <h4 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2 flex-wrap">
-            <i class="ti ti-inbox text-warning"></i> Ждут проверки
-            <span class="badge badge-warning badge-sm">{{ pending_suggestions|length }}</span>
-            {% if matches_count > 0 %}
-            {% comment %}
-            2026-09-22, прямая просьба пользователя: массовое "Подтвердить
-            все" — но ТОЛЬКО для карточек, где сам Gemini написал
-            matches_current=True (менять нечего, это просто подтверждение
-            уже верного написания). Настоящие предложения ИЗМЕНИТЬ имя
-            под эту кнопку не попадают — по одной, как и раньше.
-            {% endcomment %}
-            <form method="post" action="{% url 'dashboard:names_review_bulk_confirm_matches' %}" class="ml-auto"
-                  onsubmit="return confirm('Подтвердить все {{ matches_count }} карточки, где Gemini написал «текущее написание верно»? Реальные предложения изменить ФИО это не затронет.');">
-                {% csrf_token %}
-                <button type="submit" class="btn btn-success btn-outline btn-xs">
-                    <i class="ti ti-checks"></i> Подтвердить все совпадающие ({{ matches_count }})
-                </button>
-            </form>
-            {% endif %}
-        </h4>
-
-        {% if pending_suggestions %}
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
-            {% for s in pending_suggestions %}
-            <div class="border border-base-300 rounded-lg p-3">
-                <div class="flex items-center gap-2 mb-2 flex-wrap">
-                    <span class="badge badge-ghost badge-sm">{{ s.get_entity_label_display }}</span>
-                    {% if s.confidence == 'high' %}<span class="badge badge-success badge-sm">Уверенность: высокая</span>
-                    {% elif s.confidence == 'medium' %}<span class="badge badge-warning badge-sm">Уверенность: средняя</span>
-                    {% else %}<span class="badge badge-error badge-outline badge-sm">Уверенность: низкая</span>{% endif %}
-                    {% if s.matches_current %}<span class="badge badge-info badge-sm">Gemini: текущее написание верно</span>{% endif %}
-                </div>
-                <div class="text-sm mb-2">
-                    <span class="opacity-60">Сейчас:</span> <span class="font-medium">{{ s.current_first_name }} {{ s.current_last_name }}</span>
-                    {% if s.sportmonks_id %}<span class="opacity-40 text-xs font-mono ml-1">(sm_id={{ s.sportmonks_id }})</span>{% endif %}
-                </div>
-                {% if s.reasoning %}
-                <p class="text-xs opacity-60 mb-3 leading-snug">{{ s.reasoning }}</p>
-                {% endif %}
-                <form method="post" action="{% url 'dashboard:names_review_action' s.id %}" class="space-y-2">
-                    {% csrf_token %}
-                    <div class="flex gap-2">
-                        <input type="text" name="first_name" value="{{ s.suggested_first_name }}" class="input input-sm input-bordered flex-1" placeholder="Имя">
-                        <input type="text" name="last_name" value="{{ s.suggested_last_name }}" class="input input-sm input-bordered flex-1" placeholder="Фамилия">
-                    </div>
-                    <div class="flex gap-2">
-                        <button type="submit" name="action" value="approve" class="btn btn-sm btn-success btn-outline flex-1">
-                            <i class="ti ti-check"></i> Подтвердить
-                        </button>
-                        <button type="submit" name="action" value="reject" class="btn btn-sm btn-ghost flex-1">
-                            <i class="ti ti-x"></i> Отклонить
-                        </button>
-                    </div>
-                </form>
-            </div>
-            {% endfor %}
-        </div>
-        {% else %}
-        <p class="text-sm opacity-60 py-4 text-center">Очередь пуста — нечего проверять.</p>
-        {% endif %}
-    </div>
+{% comment %}
+2026-09-22, прямая просьба пользователя: "надо чтобы контент весь
+обновлялся в онлайне без обновления страницы" — обёрнуто в HTMX-поллинг
+(тот же приём, что и "История запусков" на "Скрипты и команды"), пока
+verify_names_with_ai крутится в фоне, новые предложения/ошибки
+появляются сами, без ручного F5. См. dashboard/views.py::
+names_review_partial и templates/dashboard/_names_review_queue.html.
+{% endcomment %}
+<div id="names-review-queue" data-background-poll hx-get="{% url 'dashboard:names_review_partial' %}" hx-trigger="every 6s" hx-swap="innerHTML">
+    {% include 'dashboard/_names_review_queue.html' %}
 </div>
-
-{% if failed_suggestions %}
-<div class="card bg-base-100 border border-base-300 mb-4">
-    <div class="card-body p-4">
-        <h4 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
-            <i class="ti ti-alert-triangle text-error"></i> Ошибки запроса к Gemini
-            {% comment %}
-            2026-09-22: бейдж раньше считал len(failed_suggestions), а
-            список в контексте обрезан [:20] — цифра занижалась при
-            больших прогонах. failed_count — честный total .count() до
-            среза, см. dashboard/views.py::names_review.
-            {% endcomment %}
-            <span class="badge badge-error badge-sm">{{ failed_count }}</span>
-        </h4>
-        <p class="text-xs opacity-60 mb-3">
-            Технический сбой вызова (не путать с "Gemini не нашёл человека" — это отдельный, честный результат с низкой уверенностью в очереди выше).
-            {% if failed_count > failed_suggestions|length %}Показаны последние {{ failed_suggestions|length }} из {{ failed_count }} — скрывайте по очереди, остальные появятся.{% endif %}
-            «Скрыть» удаляет запись об ошибке — сущность сама попадёт под проверку при следующем ОБЫЧНОМ прогоне, <span class="font-mono">--recheck</span> для этого не нужен (он заново тратит вызовы и на уже одобренные/отклонённые записи).
-        </p>
-        <div class="space-y-2">
-            {% for s in failed_suggestions %}
-            <div class="flex items-center justify-between gap-3 border border-base-300 rounded-lg p-2 text-xs">
-                <div>
-                    <span class="badge badge-ghost badge-xs mr-1">{{ s.get_entity_label_display }}</span>
-                    <span class="font-medium">{{ s.current_first_name }} {{ s.current_last_name }}</span>
-                    <span class="opacity-60 block mt-0.5">{{ s.error_message }}</span>
-                </div>
-                <form method="post" action="{% url 'dashboard:names_review_action' s.id %}">
-                    {% csrf_token %}
-                    <button type="submit" name="action" value="reject" class="btn btn-xs btn-ghost">Скрыть</button>
-                </form>
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-</div>
-{% endif %}
 
 <div class="card bg-base-100 border border-base-300" id="recent-decided">
     <div class="card-body p-4">
-        <h4 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
-            <i class="ti ti-history text-primary"></i> Недавно разобранные
-        </h4>
+        <div class="dopx-section-eyebrow"><i class="ti ti-history"></i>Журнал</div>
+        <div class="dopx-section-title mb-3">Недавно разобранные</div>
         {% if recent_decided %}
         <div class="overflow-x-auto">
             <table class="table table-sm">

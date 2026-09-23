@@ -9,22 +9,21 @@
     </a>
 </div>
 
-<div class="grid grid-cols-2 gap-3 md:gap-4 mb-6">
-    <div class="stat bg-base-100 border border-warning/30 rounded-lg p-3 md:p-4">
-        <div class="stat-title text-[10px] md:text-xs">Флагов на проверке</div>
-        <div class="stat-value text-lg md:text-2xl text-warning">{{ queue.pending_flags_count }}</div>
+<div class="dopx-stat-grid mb-6" style="grid-template-columns: repeat(2, 1fr);">
+    <div class="dopx-stat">
+        <div class="dopx-stat-label"><i class="ti ti-shield-exclamation"></i>Флагов на проверке</div>
+        <div class="dopx-stat-value" style="color: var(--color-warning)">{{ queue.pending_flags_count }}</div>
     </div>
-    <div class="stat bg-base-100 border border-info/30 rounded-lg p-3 md:p-4">
-        <div class="stat-title text-[10px] md:text-xs">Открытых диспутов по рейтингу</div>
-        <div class="stat-value text-lg md:text-2xl text-info">{{ queue.pending_disputes_count }}</div>
+    <div class="dopx-stat">
+        <div class="dopx-stat-label"><i class="ti ti-gavel"></i>Открытых диспутов</div>
+        <div class="dopx-stat-value" style="color: var(--color-info)">{{ queue.pending_disputes_count }}</div>
     </div>
 </div>
 
 <div class="card bg-base-100 border border-base-300 mb-6">
     <div class="card-body p-4">
-        <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
-            <i class="ti ti-shield-exclamation text-warning"></i> Подозрительная активность на рассмотрении
-        </h3>
+        <div class="dopx-section-eyebrow"><i class="ti ti-shield-exclamation"></i>Антифрод</div>
+        <div class="dopx-section-title mb-3">Подозрительная активность на рассмотрении</div>
         {% if not queue.pending_flags %}
         <p class="text-sm opacity-50 py-6 text-center">Новых флагов нет.</p>
         {% else %}
@@ -80,12 +79,23 @@
                     <form method="post" action="{% url 'dashboard:antifraud_flag_action' flag.id %}">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="dismiss">
-                        <button type="submit" class="btn btn-ghost btn-sm">Отклонить</button>
+                        <button type="submit" class="btn btn-ghost btn-outline btn-sm">
+                            <i class="ti ti-x"></i> Отклонить
+                        </button>
                     </form>
                     <form method="post" action="{% url 'dashboard:antifraud_flag_action' flag.id %}">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="confirm">
-                        <button type="submit" class="btn btn-error btn-sm">Подтвердить</button>
+                        {% comment %}
+                        2026-09-22: было btn-error btn-sm — сплошная заливка даёт крупную
+                        кричащую розовую "таблетку", выбивается из общего аутлайн-стиля
+                        дашборда (см. names_review, scripts.html). btn-outline — тот же
+                        цветовой сигнал (это подтверждение фрода, не нейтральное действие),
+                        но в едином визуальном языке остальных кнопок.
+                        {% endcomment %}
+                        <button type="submit" class="btn btn-error btn-outline btn-sm">
+                            <i class="ti ti-check"></i> Подтвердить
+                        </button>
                     </form>
                 </div>
             </div>
@@ -97,10 +107,9 @@
 
 <div class="card bg-base-100 border border-base-300">
     <div class="card-body p-4">
-        <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
-            <i class="ti ti-gavel text-info"></i> Диспуты по рейтингу («право на ответ»)
-        </h3>
-        <p class="text-xs opacity-50 mb-3">Статус обращения и email-уведомление пользователю обрабатываются в Django admin (там уже есть шаблон письма). Здесь только очередь для контроля.</p>
+        <div class="dopx-section-eyebrow"><i class="ti ti-gavel"></i>Право на ответ</div>
+        <div class="dopx-section-title">Диспуты по рейтингу</div>
+        <p class="dopx-section-desc mb-3">Статус обращения и email-уведомление пользователю — в Django admin, здесь только очередь для контроля.</p>
         {% if not queue.pending_disputes %}
         <p class="text-sm opacity-50 py-6 text-center">Открытых диспутов нет.</p>
         {% else %}

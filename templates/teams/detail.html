@@ -566,34 +566,46 @@ text-anchor="end", подпись растёт влево от фиксиров�
           <i class="ti ti-star mr-2"></i>Оценки болельщиков
         </h3>
         {% if team_evals.total %}
+        {% comment %}
+        2026-09-23, найдено сквозным аудитом (жалоба пользователя: "нужно
+        проверить ползунки — где надо максимум 10, где 100"). TeamEvaluation.
+        tactics/effort/organization/mentality — шкала 1-10 (evaluations/
+        models.py), а ширина полоски раньше подставляла среднее значение
+        НАПРЯМУЮ как проценты: у команды с идеальной тактикой 9.5/10
+        полоска заполнялась всего на 9-10% — выглядело как почти нулевая
+        оценка. Тот же баг уже находили и чинили на referees/detail.html
+        (см. докстринг там же) — {% widthratio %} честно переводит шкалу
+        1-10 в проценты 0-100, тем же приёмом, что на players/detail.html
+        и referees/detail.html.
+        {% endcomment %}
         <div class="space-y-3">
           <div class="flex justify-between items-center">
             <span class="text-sm opacity-60">Тактика</span>
             <span class="font-bold">{{ team_evals.avg_tactics|floatformat:1 }}</span>
           </div>
           <div class="w-full bg-base-200 rounded-full h-2">
-            <div class="bg-primary h-2 rounded-full" style="width: {{ team_evals.avg_tactics|floatformat:0 }}%"></div>
+            <div class="bg-primary h-2 rounded-full" style="width: {% widthratio team_evals.avg_tactics 10 100 %}%"></div>
           </div>
           <div class="flex justify-between items-center">
             <span class="text-sm opacity-60">Самоотдача</span>
             <span class="font-bold">{{ team_evals.avg_effort|floatformat:1 }}</span>
           </div>
           <div class="w-full bg-base-200 rounded-full h-2">
-            <div class="bg-success h-2 rounded-full" style="width: {{ team_evals.avg_effort|floatformat:0 }}%"></div>
+            <div class="bg-success h-2 rounded-full" style="width: {% widthratio team_evals.avg_effort 10 100 %}%"></div>
           </div>
           <div class="flex justify-between items-center">
             <span class="text-sm opacity-60">Организация</span>
             <span class="font-bold">{{ team_evals.avg_organization|floatformat:1 }}</span>
           </div>
           <div class="w-full bg-base-200 rounded-full h-2">
-            <div class="bg-info h-2 rounded-full" style="width: {{ team_evals.avg_organization|floatformat:0 }}%"></div>
+            <div class="bg-info h-2 rounded-full" style="width: {% widthratio team_evals.avg_organization 10 100 %}%"></div>
           </div>
           <div class="flex justify-between items-center">
             <span class="text-sm opacity-60">Менталитет</span>
             <span class="font-bold">{{ team_evals.avg_mentality|floatformat:1 }}</span>
           </div>
           <div class="w-full bg-base-200 rounded-full h-2">
-            <div class="bg-warning h-2 rounded-full" style="width: {{ team_evals.avg_mentality|floatformat:0 }}%"></div>
+            <div class="bg-warning h-2 rounded-full" style="width: {% widthratio team_evals.avg_mentality 10 100 %}%"></div>
           </div>
         </div>
         <div class="text-center mt-4 pt-4 border-t border-base-300">

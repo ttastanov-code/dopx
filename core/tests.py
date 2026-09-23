@@ -189,7 +189,20 @@ class ConfidenceBadgeTooltipTests(SimpleTestCase):
     """confidence_badge() склеивает stability_label + bias_segment_text в
     ОДНО предложение, когда есть оба — регрессия на "Разброс мнений: мнения
     расходятся. Разбивка по лагерям — фанаты игрока: ..." (двумя корявыми
-    фрагментами, см. докстринг confidence_badge в rating_extras.py)."""
+    фрагментами, см. докстринг confidence_badge в rating_extras.py).
+
+    2026-09-23, УПАЛО (найдено пользователем в CI/тестовом прогоне):
+    confidence_badge() теперь читает пороги через core.models.get_setting()
+    (rating_extras.py::_min_votes_for_display/_confident_votes_threshold,
+    «Настройки платформы»), а get_setting при промахе кэша идёт в БД —
+    обычный SimpleTestCase такие запросы запрещает («Database queries to
+    'default' are not allowed»). databases = {"default"} — официальный
+    механизм Django именно для этого случая: разрешить БД конкретному
+    SimpleTestCase, не переводя его в полноценный TestCase с транзакциями/
+    фикстурами, которые здесь не нужны (сами объекты — SimpleNamespace,
+    не ORM-записи)."""
+
+    databases = {"default"}
 
     def _agg(self, total_votes=5, stability_index=0.7, own=8.0, rival=7.0, neutral=7.0):
         return SimpleNamespace(
@@ -212,7 +225,12 @@ class ConfidenceBadgeTooltipTests(SimpleTestCase):
 class ConfidenceBadgeSampleSizeTests(SimpleTestCase):
     """Число оценок — прямо в видимом лейбле бейджа для preliminary-уровня
     (docs/BACKLOG.md: "показывать число оценок и пометку 'предварительный
-    рейтинг' при маленькой выборке"), не только в тултипе по наведению."""
+    рейтинг' при маленькой выборке"), не только в тултипе по наведению.
+
+    2026-09-23 — см. докстринг ConfidenceBadgeTooltipTests.databases выше:
+    та же причина, тот же фикс."""
+
+    databases = {"default"}
 
     def _agg(self, total_votes):
         return SimpleNamespace(

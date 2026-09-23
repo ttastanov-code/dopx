@@ -11,6 +11,7 @@ import csv
 
 from django.contrib import messages
 from django.contrib.admin.views.decorators import staff_member_required
+from django.contrib.auth import get_user_model
 from django.core.paginator import Paginator
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -18,13 +19,19 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
+from django.utils.dateparse import parse_datetime
+
 from core.admin_actions import _csv_safe
-from core.models import NAME_SOURCE_AI_VERIFIED
+from core.models import NAME_SOURCE_AI_VERIFIED, PlatformSetting, get_setting
+from evaluations.models import EvaluationSession
 from matches.models import Match
 from notifications.models import ContactSubmission
 from parsers import name_ai
 from parsers.models import ConfirmedNameCorrection, NameVerificationSuggestion, ParserDiscrepancy
 from parsers.sportmonks.client import get_request_counts
+from players.models import Player, PotentialDuplicatePlayer
+from players.services import merge_players
+from seasons.models import Season
 from users.models import SuspiciousActivityFlag
 
 from . import command_runner, commands_registry, infra_services, parser_tools, services
@@ -70,6 +77,309 @@ def traffic(request):
         "day_presets": OVERVIEW_DAY_PRESETS,
     }
     return render(request, "dashboard/traffic.html", context)
+
+
+# ============================================================
+# 2026-09-23, раздел «Матчи» — прямая просьба пользователя (вопрос "какого
+# раздела не хватает, чтобы админить без кода" -> ответ "правка матчей" ->
+# "да можешь всё сделать"). Раньше единственный способ поправить руками
+# счёт/статус/дату/тур матча — Django admin, БЕЗ последующего пересчёта
+# агрегатов (staff легко забывал, что после ручной правки счёта рейтинги/
+# таблица остаются старыми, пока не отработает следующий celery-тик).
+# Здесь одна форма правит поля И даёт отдельную кнопку «Пересчитать»,
+# запускающую aggregates.tasks.recalculate_all_aggregates_for_match —
+# тот же таск, что при обычном пересчёте после импорта; ничего не
+# дублируем, а зовём существующую логику напрямую.
+# ============================================================
+
+MATCHES_PAGE_SIZE = 25
+
+
+@staff_member_required
+def matches_list(request):
+    search = request.GET.get("q", "").strip()
+    status = request.GET.get("status", "")
+    season_id = request.GET.get("season", "")
+    qs = services.matches_queryset(search=search, status=status, season_id=season_id)
+    matches_page = Paginator(qs, MATCHES_PAGE_SIZE).get_page(request.GET.get("page"))
+    context = {
+        "page_title": "Матчи — DOPX Staff",
+        "active_tab": "matches",
+        "matches": matches_page,
+        "search": search,
+        "status": status,
+        "season_id": season_id,
+        "status_choices": Match.STATUS_CHOICES,
+        "seasons": Season.objects.select_related("league").order_by("-year"),
+    }
+    return render(request, "dashboard/matches_list.html", context)
+
+
+@staff_member_required
+def match_detail(request, match_id):
+    match = get_object_or_404(
+        Match.objects.select_related(
+            "league", "season", "home_team", "away_team", "home_coach", "away_coach", "referee"
+        ),
+        id=match_id,
+    )
+
+    if request.method == "POST":
+        before = {
+            "status": match.status, "home_score": match.home_score, "away_score": match.away_score,
+            "start_time": match.start_time.isoformat() if match.start_time else None,
+            "tour": match.tour, "manual_override": match.manual_override,
+        }
+        errors: list[str] = []
+
+        new_status = request.POST.get("status", match.status)
+        if new_status not in dict(Match.STATUS_CHOICES):
+            errors.append("Недопустимый статус")
+        else:
+            match.status = new_status
+
+        for field in ("home_score", "away_score", "tour"):
+            raw = request.POST.get(field, "").strip()
+            if raw == "":
+                setattr(match, field, None)
+            else:
+                try:
+                    setattr(match, field, int(raw))
+                except ValueError:
+                    errors.append(f"«{field}» — должно быть целым числом")
+
+        start_time_raw = request.POST.get("start_time", "").strip()
+        if start_time_raw:
+            parsed = parse_datetime(start_time_raw)
+            if parsed is None:
+                errors.append("Некорректный формат времени начала (ожидается ГГГГ-ММ-ДДTЧЧ:ММ)")
+            else:
+                match.start_time = timezone.make_aware(parsed) if timezone.is_naive(parsed) else parsed
+
+        # Чекбокс отсутствует в POST-данных вовсе, если снят — стандартная
+        # HTML-семантика, не баг; поэтому проверяем через .get(), а не
+        # полагаемся на "поле было прислано".
+        match.manual_override = request.POST.get("manual_override") in ("on", "1", "true")
+
+        if errors:
+            for err in errors:
+                messages.error(request, err)
+        else:
+            match.save(update_fields=[
+                "status", "home_score", "away_score", "tour", "start_time", "manual_override", "updated_at",
+            ])
+            messages.success(request, "Матч обновлён. Не забудьте «Пересчитать», если поменялся счёт/статус.")
+            log_staff_action(
+                request, AuditAction.MATCH_MANUAL_EDIT,
+                target=str(match),
+                details={"match_id": str(match.id), "before": before, "after": {
+                    "status": match.status, "home_score": match.home_score, "away_score": match.away_score,
+                    "start_time": match.start_time.isoformat() if match.start_time else None,
+                    "tour": match.tour, "manual_override": match.manual_override,
+                }},
+            )
+        return redirect("dashboard:match_detail", match_id=match.id)
+
+    context = {
+        "page_title": f"{match} — DOPX Staff",
+        "active_tab": "matches",
+        "match": match,
+        "status_choices": Match.STATUS_CHOICES,
+    }
+    return render(request, "dashboard/match_detail.html", context)
+
+
+@staff_member_required
+@require_POST
+def match_trigger_recalc(request, match_id):
+    match = get_object_or_404(Match, id=match_id)
+    from aggregates.tasks import recalculate_all_aggregates_for_match
+    recalculate_all_aggregates_for_match.delay(str(match.id))
+    messages.success(request, "Пересчёт агрегатов запущен в фоне — обновится в течение минуты.")
+    log_staff_action(
+        request, AuditAction.MATCH_RECALC_TRIGGERED,
+        target=str(match), details={"match_id": str(match.id)},
+    )
+    return redirect("dashboard:match_detail", match_id=match.id)
+
+
+# ============================================================
+# 2026-09-23, раздел «Настройки платформы» — та же просьба, что и «Матчи»
+# выше. PlatformSetting (core/models.py) — key-value рантайм-конфиг:
+# пороги/веса/флаги, которые раньше можно было поправить ТОЛЬКО правкой
+# исходников + редеплоем. Секреты (API-ключи, пароли) сюда НЕ заводим —
+# только операционные значения, см. докстринг модели.
+# ============================================================
+
+@staff_member_required
+def platform_settings(request):
+    context = {
+        "page_title": "Настройки платформы — DOPX Staff",
+        "active_tab": "platform_settings",
+        "settings_list": PlatformSetting.objects.select_related("updated_by").order_by("key"),
+        "type_choices": PlatformSetting.TYPE_CHOICES,
+    }
+    return render(request, "dashboard/platform_settings.html", context)
+
+
+@staff_member_required
+@require_POST
+def platform_settings_create(request):
+    key = request.POST.get("key", "").strip()
+    if not key:
+        messages.error(request, "Ключ не может быть пустым")
+        return redirect("dashboard:platform_settings")
+    if PlatformSetting.objects.filter(key=key).exists():
+        messages.error(request, f"Настройка «{key}» уже существует")
+        return redirect("dashboard:platform_settings")
+
+    value_type = request.POST.get("value_type", PlatformSetting.TYPE_STRING)
+    if value_type not in dict(PlatformSetting.TYPE_CHOICES):
+        value_type = PlatformSetting.TYPE_STRING
+
+    setting = PlatformSetting.objects.create(
+        key=key,
+        value=request.POST.get("value", "").strip(),
+        value_type=value_type,
+        description=request.POST.get("description", "").strip(),
+        updated_by=request.user,
+    )
+    from django.core.cache import cache
+    cache.delete(f"platform_setting:{key}")
+
+    messages.success(request, f"Настройка «{key}» создана")
+    log_staff_action(
+        request, AuditAction.PLATFORM_SETTING_CREATED,
+        target=key, details={"value": setting.value, "value_type": setting.value_type},
+    )
+    return redirect("dashboard:platform_settings")
+
+
+@staff_member_required
+@require_POST
+def platform_settings_update(request, key):
+    setting = get_object_or_404(PlatformSetting, key=key)
+    before_value = setting.value
+
+    value_type = request.POST.get("value_type", setting.value_type)
+    if value_type in dict(PlatformSetting.TYPE_CHOICES):
+        setting.value_type = value_type
+    setting.value = request.POST.get("value", "").strip()
+    setting.description = request.POST.get("description", "").strip()
+    setting.updated_by = request.user
+    setting.save(update_fields=["value", "value_type", "description", "updated_by", "updated_at"])
+
+    from django.core.cache import cache
+    cache.delete(f"platform_setting:{key}")
+
+    messages.success(request, f"«{key}» обновлена — новое значение применится в течение минуты (кэш)")
+    log_staff_action(
+        request, AuditAction.PLATFORM_SETTING_CHANGED,
+        target=key, details={"before": before_value, "after": setting.value, "value_type": setting.value_type},
+    )
+    return redirect("dashboard:platform_settings")
+
+
+@staff_member_required
+@require_POST
+def platform_settings_delete(request, key):
+    setting = get_object_or_404(PlatformSetting, key=key)
+    setting.delete()
+
+    from django.core.cache import cache
+    cache.delete(f"platform_setting:{key}")
+
+    messages.success(request, f"«{key}» удалена")
+    log_staff_action(request, AuditAction.PLATFORM_SETTING_DELETED, target=key)
+    return redirect("dashboard:platform_settings")
+
+
+# ============================================================
+# 2026-09-23, раздел «Пользователи» — см. докстринг dashboard/services.py::
+# users_queryset. Действия сделаны МЯГКИМИ и обратимыми (is_active=False,
+# не удаление данных) — staff-панель не должна давать необратимо стереть
+# человека в один клик.
+# ============================================================
+
+USERS_PAGE_SIZE = 25
+
+
+@staff_member_required
+def users_list(request):
+    search = request.GET.get("q", "").strip()
+    qs = services.users_queryset(search=search)
+    # 2026-09-23, ЖИВОЙ ПРИМЕР работы раздела «Настройки платформы»
+    # (core.models.get_setting) — по просьбе пользователя объяснить
+    # функционал на конкретном действующем случае, а не только прозой.
+    # Ключ "dashboard_users_page_size" ПОКА не заведён ни у кого в БД —
+    # get_setting() в этом случае просто вернёт запасное значение
+    # USERS_PAGE_SIZE (=25), НИЧЕГО не меняется, пока staff явно не создаст
+    # такую строку в /staff/dashboard/settings/. Как только он это сделает
+    # (тип "Целое число", значение например "10") — в течение минуты
+    # (PLATFORM_SETTING_CACHE_TTL) эта страница начнёт показывать по 10
+    # пользователей вместо 25, БЕЗ перезапуска сервера.
+    page_size = get_setting("dashboard_users_page_size", USERS_PAGE_SIZE)
+    users_page = Paginator(qs, page_size).get_page(request.GET.get("page"))
+    context = {
+        "page_title": "Пользователи — DOPX Staff",
+        "active_tab": "users",
+        "users": users_page,
+        "search": search,
+    }
+    return render(request, "dashboard/users_list.html", context)
+
+
+@staff_member_required
+def user_detail(request, user_id):
+    User = get_user_model()
+    user_obj = get_object_or_404(User.objects.select_related("xp"), id=user_id)
+    context = {
+        "page_title": f"{user_obj.username} — DOPX Staff",
+        "active_tab": "users",
+        "user_obj": user_obj,
+        **services.user_detail_context(user_obj),
+    }
+    return render(request, "dashboard/user_detail.html", context)
+
+
+@staff_member_required
+@require_POST
+def user_toggle_ban(request, user_id):
+    User = get_user_model()
+    user_obj = get_object_or_404(User, id=user_id)
+    # Staff не может забанить сам себя из этой кнопки — иначе легко
+    # случайно отрезать себе доступ без второго staff-аккаунта под рукой,
+    # чтобы откатить.
+    if user_obj.id == request.user.id:
+        messages.error(request, "Нельзя заблокировать самого себя")
+        return redirect("dashboard:user_detail", user_id=user_obj.id)
+
+    user_obj.is_active = not user_obj.is_active
+    user_obj.save(update_fields=["is_active"])
+
+    if user_obj.is_active:
+        messages.success(request, f"{user_obj.username} разблокирован")
+        log_staff_action(request, AuditAction.USER_UNBANNED, target=user_obj.username, details={"user_id": str(user_obj.id)})
+    else:
+        messages.success(request, f"{user_obj.username} заблокирован — вход в аккаунт закрыт")
+        log_staff_action(request, AuditAction.USER_BANNED, target=user_obj.username, details={"user_id": str(user_obj.id)})
+    return redirect("dashboard:user_detail", user_id=user_obj.id)
+
+
+@staff_member_required
+@require_POST
+def user_reset_trust_score(request, user_id):
+    User = get_user_model()
+    user_obj = get_object_or_404(User, id=user_id)
+    before = user_obj.trust_score
+    user_obj.trust_score = 1.0
+    user_obj.save(update_fields=["trust_score"])
+    messages.success(request, f"Оценка доверия {user_obj.username} сброшена на 1.0 (была {before:.2f})")
+    log_staff_action(
+        request, AuditAction.USER_TRUST_SCORE_RESET,
+        target=user_obj.username, details={"user_id": str(user_obj.id), "before": before, "after": 1.0},
+    )
+    return redirect("dashboard:user_detail", user_id=user_obj.id)
 
 
 @staff_member_required
@@ -437,6 +747,25 @@ def parser_revoke_task(request, task_id):
 # диагностики, через Celery — для остального).
 # ============================================================
 
+SCRIPTS_RUNS_PAGE_SIZE = 15
+
+
+def _scripts_runs_page(request):
+    """Общий постраничный запрос истории запусков — используется и при
+    первой загрузке страницы (scripts_view), и при HTMX-поллинге
+    (scripts_runs_partial), чтобы номер страницы не расходился между ними.
+
+    2026-09-23, прямая просьба пользователя: "историю запусков с
+    пагинацией, но чтобы страница при перелистывании не обновлялась
+    целиком, и чтобы данные продолжали жить в реальном времени". Раньше
+    список был жёстко обрезан [:30] без постраничности вообще. Обычный
+    Django Paginator, тот же приём, что и "Недавно разобранные" на
+    names_review.html (Paginator(qs, N).get_page(request.GET.get('page'))).
+    """
+    qs = ManagementCommandRun.objects.select_related("triggered_by").order_by("-created_at")
+    return Paginator(qs, SCRIPTS_RUNS_PAGE_SIZE).get_page(request.GET.get("page"))
+
+
 @staff_member_required
 def scripts_view(request):
     """Главная страница раздела — карточки по категориям (сидирование,
@@ -445,7 +774,7 @@ def scripts_view(request):
         "page_title": "Скрипты и команды — DOPX Staff",
         "active_tab": "scripts",
         "command_categories": commands_registry.categories(),
-        "recent_runs": ManagementCommandRun.objects.select_related("triggered_by")[:30],
+        "recent_runs": _scripts_runs_page(request),
     }
     return render(request, "dashboard/scripts.html", context)
 
@@ -455,8 +784,14 @@ def scripts_runs_partial(request):
     """Таблица последних запусков — цель HTMX-поллинга (hx-get каждые 4с),
     тот же приём, что и «Очередь celery» на странице parser_tools (см.
     parser_tasks_partial выше) — обновляет статус PENDING/RUNNING → SUCCESS/
-    FAILED без перезагрузки всей страницы и без потери заполненных форм."""
-    context = {"recent_runs": ManagementCommandRun.objects.select_related("triggered_by")[:30]}
+    FAILED без перезагрузки всей страницы и без потери заполненных форм.
+
+    2026-09-23: ?page= читается из того же query string, которым бьёт по
+    этому же URL сам поллинг (см. докстринг в _scripts_runs_table.html про
+    hx-swap="outerHTML" — каждый ответ несёт актуальный номер страницы в
+    СВОЕМ СОБСТВЕННОМ hx-get, поэтому следующий тик поллинга сам бьёт по
+    той же странице, что сейчас открыта у staff, а не сбрасывает на 1-ю)."""
+    context = {"recent_runs": _scripts_runs_page(request)}
     return render(request, "dashboard/_scripts_runs_table.html", context)
 
 
@@ -551,8 +886,15 @@ def scripts_revoke_run(request, run_id):
 # докстринг про то, почему автоприменение рискованно.
 # ============================================================
 
-@staff_member_required
-def names_review(request):
+def _names_review_queue_context() -> dict:
+    """Общая часть контекста для names_review (полная страница) и
+    names_review_partial (HTMX-поллинг, см. ниже) — только «живая» часть
+    очереди (Ждут проверки / Ошибки Gemini), которая меняется прямо во
+    время фонового прогона verify_names_with_ai. «Недавно разобранные»
+    сюда намеренно НЕ входит — она с пагинацией (?page=N), и слепой
+    авто-swap каждые N секунд сбрасывал бы пользователя на 1-ю страницу
+    посреди просмотра истории; это не так критично к live-обновлению, как
+    сама очередь."""
     pending = NameVerificationSuggestion.objects.filter(status="pending_review").order_by("-created_at")
     # 2026-09-22, прямая просьба пользователя ("не хватает кнопки
     # подтвердить все/отклонить все"): счётчик для кнопки массового
@@ -571,6 +913,16 @@ def names_review(request):
     failed_qs = NameVerificationSuggestion.objects.filter(status="check_failed").order_by("-created_at")
     failed_count = failed_qs.count()
     failed = failed_qs[:20]
+    return {
+        "pending_suggestions": pending,
+        "failed_suggestions": failed,
+        "failed_count": failed_count,
+        "matches_count": matches_count,
+    }
+
+
+@staff_member_required
+def names_review(request):
     # 2026-09-22, прямая просьба пользователя: "Недавно разобранные" раньше
     # был жёсткий срез [:20] без возможности посмотреть более старые записи
     # — при разовом прогоне --all --limit 0 --recheck по 914 сущностям
@@ -586,14 +938,24 @@ def names_review(request):
     context = {
         "page_title": "Проверка ФИО (ИИ) — DOPX Staff",
         "active_tab": "names_review",
-        "pending_suggestions": pending,
-        "failed_suggestions": failed,
-        "failed_count": failed_count,
-        "matches_count": matches_count,
+        **_names_review_queue_context(),
         "recent_decided": recent_decided,
         "gemini_configured": name_ai.is_configured(),
     }
     return render(request, "dashboard/names_review.html", context)
+
+
+@staff_member_required
+def names_review_partial(request):
+    """Цель HTMX-поллинга (hx-trigger="every 6s") для карточек «Ждут
+    проверки» и «Ошибки запроса к Gemini» на names_review.html — тот же
+    приём, что и scripts_runs_partial для истории запусков: пока в фоне
+    крутится verify_names_with_ai, staff видит новые предложения/ошибки
+    без ручного обновления страницы. 6с (не 4с, как у истории запусков) —
+    внутри карточек есть текстовые поля (staff иногда правит имя/фамилию
+    перед подтверждением); более редкий поллинг снижает шанс перетереть
+    незаконченный ввод слепым swap'ом."""
+    return render(request, "dashboard/_names_review_queue.html", _names_review_queue_context())
 
 
 @staff_member_required
@@ -782,6 +1144,122 @@ def names_review_action(request, suggestion_id):
     return redirect("dashboard:names_review")
 
 
+def _player_dup_stats(player: Player) -> dict:
+    """Те же цифры, что в players/management/commands/diagnose_duplicate_players.py
+    (см. его докстринг про разбивку по ПРОИСХОЖДЕНИЮ данных, не "надёжности") —
+    только не print(), а словарь для шаблона очереди «Дубли игроков»."""
+    return {
+        "player": player,
+        "appearances": player.matchlineupplayer_set.count(),
+        "events_count": player.events.count(),
+        "evaluations_count": player.player_evaluations.count(),
+        "aggregates_count": player.match_aggregates.count(),
+    }
+
+
+@staff_member_required
+def duplicate_players_review(request):
+    """/staff/dashboard/duplicate-players/ — очередь «Дубли игроков»
+    (2026-09-22, прямая просьба пользователя после "пздц это муторно
+    копировать, вставлять... плюс эти UUID огромные не вмещаются"). Флаги —
+    parsers/sportmonks/importers.py::_flag_potential_duplicate_player,
+    ставятся на импорте при повторном совпадении ФИО в команде.
+
+    В отличие от merge_duplicate_players (CLI/"Скрипты и команды"), тут id
+    НЕ вводятся руками — они уже лежат в самом флаге PotentialDuplicatePlayer,
+    а слияние (players/services.py::merge_players) выполняется СИНХРОННО
+    прямо во view — не через Celery/ManagementCommandRun, поллинга статуса
+    тут в принципе нет, потому что нечего поллить: ответ на клик готов
+    сразу же (несколько быстрых DB-запросов, не часовой прогон API)."""
+    flags = list(
+        PotentialDuplicatePlayer.objects.filter(reviewed=False)
+        .select_related("existing_player__team", "new_player__team")
+        .order_by("-created_at")
+    )
+    pairs = [
+        {
+            "flag": flag,
+            "existing": _player_dup_stats(flag.existing_player),
+            "new": _player_dup_stats(flag.new_player),
+        }
+        for flag in flags
+    ]
+    return render(request, "dashboard/duplicate_players_review.html", {
+        "page_title": "Дубли игроков — DOPX Staff",
+        "active_tab": "duplicate_players",
+        "pairs": pairs,
+        "pending_count": len(pairs),
+    })
+
+
+@staff_member_required
+@require_POST
+def duplicate_players_merge(request, flag_id):
+    """`keep=existing|new` — какую из двух записей флага оставляем, вторую
+    сливаем и удаляем (players/services.py::merge_players, apply=True).
+    HTMX-запрос (кнопка в очереди) получает в ответ пустой "разобрано"-
+    партиал для hx-swap на месте карточки — без перезагрузки страницы и без
+    прокрутки истории; обычный POST (JS отключён/недоступен) — редирект
+    обратно в очередь."""
+    flag = get_object_or_404(PotentialDuplicatePlayer, id=flag_id)
+    keep_side = request.POST.get("keep")
+    if keep_side not in ("existing", "new"):
+        messages.error(request, f"Неизвестное значение keep: {keep_side}")
+        return redirect("dashboard:duplicate_players_review")
+
+    if flag.reviewed:
+        messages.warning(request, "Этот флаг уже разобран.")
+        return redirect("dashboard:duplicate_players_review")
+
+    keep, merge = (flag.existing_player, flag.new_player) if keep_side == "existing" else (flag.new_player, flag.existing_player)
+    keep_name, keep_id = keep.full_name, keep.id
+    merge_name, merge_id = merge.full_name, merge.id
+
+    report = merge_players(keep, merge, apply=True)
+    log_staff_action(
+        request, AuditAction.DUPLICATE_PLAYERS_MERGED,
+        target=f"player:{keep_id}",
+        details={"kept": f"{keep_name} ({keep_id})", "merged": f"{merge_name} ({merge_id})", "report": report.lines},
+    )
+
+    if request.headers.get("HX-Request"):
+        return render(request, "dashboard/_duplicate_players_resolved.html", {
+            "message": f"Объединено: {merge_name} → {keep_name}",
+        })
+    messages.success(request, f"Объединено: {merge_name} → {keep_name}")
+    return redirect("dashboard:duplicate_players_review")
+
+
+@staff_member_required
+@require_POST
+def duplicate_players_dismiss(request, flag_id):
+    """Флаг — ложное срабатывание (это реально разные люди с одинаковым
+    ФИО в одной команде, не дубль). Просто помечает reviewed=True, данные
+    игроков не трогает."""
+    flag = get_object_or_404(PotentialDuplicatePlayer, id=flag_id)
+    if flag.reviewed:
+        messages.warning(request, "Этот флаг уже разобран.")
+        return redirect("dashboard:duplicate_players_review")
+
+    flag.reviewed = True
+    flag.reviewed_by = request.user
+    flag.reviewed_at = timezone.now()
+    flag.note = "Отклонено вручную: разные люди."
+    flag.save(update_fields=["reviewed", "reviewed_by", "reviewed_at", "note", "updated_at"])
+    log_staff_action(
+        request, AuditAction.DUPLICATE_PLAYER_FLAG_DISMISSED,
+        target=f"player:{flag.existing_player_id}",
+        details={"existing": str(flag.existing_player_id), "new": str(flag.new_player_id)},
+    )
+
+    if request.headers.get("HX-Request"):
+        return render(request, "dashboard/_duplicate_players_resolved.html", {
+            "message": "Отклонено — это разные люди.",
+        })
+    messages.success(request, "Отклонено — это разные люди.")
+    return redirect("dashboard:duplicate_players_review")
+
+
 # Единая staff-страница по всей партнёрской монетизации: embed-виджеты
 # (инструкция + превью + генератор кода) и баннеры/рефералки (сводные
 # карточки + топ-N из partners/selectors.py) — раньше были не связаны и
@@ -807,8 +1285,13 @@ def _ads_stats_context() -> dict:
     from players.models import Player
     from teams.models import Team
 
-    top_players_raw = top_widget_entities("player", days=30, limit=10)
-    top_teams_raw = top_widget_entities("team", days=30, limit=10)
+    # 2026-09-23, «Настройки платформы» — окно и размер топов управляются
+    # staff без деплоя, 30/10 остаются запасными значениями.
+    window_days = get_setting("ads_stats_window_days", 30)
+    top_limit = get_setting("ads_top_items_limit", 10)
+
+    top_players_raw = top_widget_entities("player", days=window_days, limit=top_limit)
+    top_teams_raw = top_widget_entities("team", days=window_days, limit=top_limit)
 
     players_by_id = {
         str(p.id): p for p in Player.objects.filter(id__in=[r["entity_id"] for r in top_players_raw])
@@ -817,12 +1300,12 @@ def _ads_stats_context() -> dict:
         str(t.id): t for t in Team.objects.filter(id__in=[r["entity_id"] for r in top_teams_raw])
     }
 
-    top_banners_raw = top_banners(days=30, limit=10)
+    top_banners_raw = top_banners(days=window_days, limit=top_limit)
     banners_by_id = {
         str(b.id): b for b in Banner.objects.select_related("partner").filter(id__in=[r["banner_id"] for r in top_banners_raw])
     }
 
-    top_partners_raw = top_partners_by_referral_visits(days=30, limit=10)
+    top_partners_raw = top_partners_by_referral_visits(days=window_days, limit=top_limit)
     partners_by_slug = {
         p.slug: p for p in Partner.objects.filter(slug__in=[r["partner_slug"] for r in top_partners_raw])
     }
@@ -836,13 +1319,13 @@ def _ads_stats_context() -> dict:
             {"entity": teams_by_id[r["entity_id"]], "views": r["views"]}
             for r in top_teams_raw if r["entity_id"] in teams_by_id
         ],
-        "widget_totals": widget_embed_totals(days=30),
-        "banner_totals": banner_totals(days=30),
+        "widget_totals": widget_embed_totals(days=window_days),
+        "banner_totals": banner_totals(days=window_days),
         "top_banners": [
             {"banner": banners_by_id[r["banner_id"]], "impressions": r["impressions"], "clicks": r["clicks"], "ctr_percent": r["ctr_percent"]}
             for r in top_banners_raw if r["banner_id"] in banners_by_id
         ],
-        "referral_visits_total": partner_referral_totals(days=30),
+        "referral_visits_total": partner_referral_totals(days=window_days),
         "top_partners": [
             {"partner": partners_by_slug[r["partner_slug"]], "visits": r["visits"]}
             for r in top_partners_raw if r["partner_slug"] in partners_by_slug
@@ -873,12 +1356,15 @@ def ads(request):
     # (core/utils.py): "Актобе" находит "Ақтөбе" независимо от того, какой
     # раскладкой набирали название/фамилию. Раньше здесь был обычный
     # icontains без нормализации — казахские названия по-русски не находились.
+    # 2026-09-23, «Настройки платформы» — управляется staff без деплоя.
+    search_limit = get_setting("ads_search_results_limit", 10)
+
     if q_player:
         normalized_q = normalize_kz(q_player)
         player_results = [
             p for p in Player.objects.select_related("team").only("id", "first_name", "last_name", "team")
             if normalized_q in normalize_kz(f"{p.first_name} {p.last_name}")
-        ][:10]
+        ][:search_limit]
     else:
         player_results = []
 
@@ -887,7 +1373,7 @@ def ads(request):
         team_results = [
             t for t in Team.objects.only("id", "name")
             if normalized_q in normalize_kz(t.name)
-        ][:10]
+        ][:search_limit]
     else:
         team_results = []
 
@@ -975,7 +1461,10 @@ def audit_log(request):
     ОБЫЧНЫЕ CRUD-изменения через Django admin (add/change/delete любой
     модели) сюда НЕ попадают — они уже логируются самим Django в
     django_admin_log (LogEntry), см. /admin/ → "История" у любого объекта."""
-    entries = list(StaffActionLog.objects.select_related("actor")[:200])
+    # 2026-09-23, «Настройки платформы» — размер журнала управляется staff
+    # без деплоя, 200 остаётся запасным значением, если ключ не заведён.
+    entries_limit = get_setting("audit_log_entries_limit", 200)
+    entries = list(StaffActionLog.objects.select_related("actor")[:entries_limit])
     context = {
         "page_title": "Аудит — DOPX Staff",
         "active_tab": "audit",
@@ -1071,3 +1560,452 @@ def announcements(request):
         "recipients_count": recipients_count,
     }
     return render(request, "dashboard/announcements.html", context)
+
+
+EVALUATION_SESSIONS_PAGE_SIZE = 25
+
+
+@staff_member_required
+def evaluation_sessions_list(request):
+    """2026-09-23, раздел «Модерация оценок» — поиск/фильтр сессий оценки
+    (evaluations.models.EvaluationSession), см. dashboard/services.py::
+    evaluation_sessions_queryset. Свежие сверху (Meta.ordering)."""
+    search = request.GET.get("q", "").strip()
+    status_filter = request.GET.get("status", "").strip()
+    mode_filter = request.GET.get("mode", "").strip()
+    qs = services.evaluation_sessions_queryset(search=search, status=status_filter, mode=mode_filter)
+    sessions_page = Paginator(qs, EVALUATION_SESSIONS_PAGE_SIZE).get_page(request.GET.get("page"))
+    context = {
+        "page_title": "Модерация оценок — DOPX Staff",
+        "active_tab": "evaluation_sessions",
+        "sessions": sessions_page,
+        "search": search,
+        "status_filter": status_filter,
+        "mode_filter": mode_filter,
+        "status_choices": EvaluationSession.STATUS_CHOICES,
+        "mode_choices": EvaluationSession.MODE_CHOICES,
+    }
+    return render(request, "dashboard/evaluation_sessions_list.html", context)
+
+
+@staff_member_required
+def evaluation_session_detail(request, session_id):
+    session = get_object_or_404(
+        EvaluationSession.objects.select_related("user", "match", "match__home_team", "match__away_team"),
+        id=session_id,
+    )
+    context = {
+        "page_title": f"Оценка: {session.user.username} — DOPX Staff",
+        "active_tab": "evaluation_sessions",
+        "session": session,
+        **services.evaluation_session_detail_context(session),
+    }
+    return render(request, "dashboard/evaluation_session_detail.html", context)
+
+
+@staff_member_required
+@require_POST
+def evaluation_session_delete(request, session_id):
+    """Удаляет сессию оценки И все её под-оценки того же (user, match) —
+    "фрод/спам-оценка выпиливается целиком" (см. докстринг services.py::
+    evaluation_session_delete_cascade). После удаления запускаем пересчёт
+    агрегатов матча (той же celery-задачей, что и кнопка «Пересчитать» в
+    «Матчах», см. match_trigger_recalc выше) — удалённые баллы могли влиять
+    на рейтинги игроков/команд этого матча, агрегаты должны это отразить."""
+    session = get_object_or_404(
+        EvaluationSession.objects.select_related("user", "match"), id=session_id,
+    )
+    username = session.user.username
+    match_str = str(session.match)
+    match_id = str(session.match.id)
+    counts = services.evaluation_session_delete_cascade(session)
+
+    from aggregates.tasks import recalculate_all_aggregates_for_match
+    recalculate_all_aggregates_for_match.delay(match_id)
+
+    total_deleted = sum(v for k, v in counts.items() if k != "match_id")
+    messages.success(
+        request,
+        f"Сессия «{username} — {match_str}» удалена вместе с {total_deleted} под-оценками. "
+        f"Пересчёт агрегатов матча запущен в фоне.",
+    )
+    log_staff_action(
+        request, AuditAction.EVALUATION_SESSION_DELETED,
+        target=f"{username} — {match_str}",
+        details={"user": username, "match_id": match_id, **counts},
+    )
+    return redirect("dashboard:evaluation_sessions_list")
+
+
+@staff_member_required
+def system_status(request):
+    """2026-09-23, раздел «Системный статус» — сводка "жива ли платформа
+    технически" на одной странице: Redis/Celery/PostgreSQL (infra_services.
+    infra_health(), уже использовался внутри «Здоровье данных», здесь —
+    отдельная страница-приборка), расписание Celery Beat, хвост logs/
+    errors.log и версии окружения. Полностью read-only — никаких действий
+    и записей в аудит-лог, это диагностика, а не изменение данных."""
+    context = {
+        "page_title": "Системный статус — DOPX Staff",
+        "active_tab": "system_status",
+        "status": infra_services.system_status_overview(),
+    }
+    return render(request, "dashboard/system_status.html", context)
+
+
+# ============================================================
+# 2026-09-23, раздел «Партнёры и баннеры» — CRUD поверх partners.models.
+# Partner/Banner (полный контекст — см. dashboard/services.py::
+# partners_queryset/banners_queryset). До этого staff мог только СМОТРЕТЬ
+# статистику по уже существующим партнёрам/баннерам на странице «Реклама»
+# (ads() выше) — заводить нового партнёра или размещать/снимать баннер
+# можно было только через Django admin. Ссылки на страницы ниже добавлены
+# прямо в ads.html (кнопки "Управление партнёрами"/"Управление баннерами"),
+# отдельной вкладки в главном меню НЕТ — .dopx-tabs-row и так на пределе
+# ширины (см. докстринг _nav.html про 1024px-брейкпоинт), а тематически
+# это подраздел «Рекламы», не отдельный домен.
+# ============================================================
+
+PARTNERS_PAGE_SIZE = 30
+
+
+@staff_member_required
+def partners_list(request):
+    from partners.models import PartnerType
+
+    search = request.GET.get("q", "").strip()
+    qs = services.partners_queryset(search=search)
+    partners_page = Paginator(qs, PARTNERS_PAGE_SIZE).get_page(request.GET.get("page"))
+    context = {
+        "page_title": "Партнёры — DOPX Staff",
+        "active_tab": "ads",
+        "partners": partners_page,
+        "search": search,
+        "partner_type_choices": PartnerType.choices,
+    }
+    return render(request, "dashboard/partners_list.html", context)
+
+
+@staff_member_required
+@require_POST
+def partner_create(request):
+    from django.db import IntegrityError
+
+    from partners.models import Partner, PartnerType
+
+    name = request.POST.get("name", "").strip()
+    slug = request.POST.get("slug", "").strip()
+    partner_type = request.POST.get("partner_type", "").strip()
+
+    if not name or not slug:
+        messages.error(request, "Название и слаг обязательны.")
+        return redirect("dashboard:partners_list")
+    if partner_type not in dict(PartnerType.choices):
+        messages.error(request, "Некорректный тип партнёра.")
+        return redirect("dashboard:partners_list")
+
+    try:
+        partner = Partner.objects.create(
+            name=name, slug=slug, partner_type=partner_type,
+            contact_name=request.POST.get("contact_name", "").strip(),
+            contact_email=request.POST.get("contact_email", "").strip(),
+            website=request.POST.get("website", "").strip(),
+            notes=request.POST.get("notes", "").strip(),
+            is_active=request.POST.get("is_active") in ("on", "1", "true"),
+        )
+    except IntegrityError:
+        messages.error(request, f"Слаг «{slug}» уже занят другим партнёром.")
+        return redirect("dashboard:partners_list")
+
+    messages.success(request, f"Партнёр «{partner.name}» создан.")
+    log_staff_action(
+        request, AuditAction.PARTNER_CREATED,
+        target=partner.name, details={"partner_id": str(partner.id), "slug": partner.slug},
+    )
+    return redirect("dashboard:partner_detail", partner_id=partner.id)
+
+
+@staff_member_required
+def partner_detail(request, partner_id):
+    from partners.models import Partner, PartnerType
+
+    partner = get_object_or_404(Partner, id=partner_id)
+
+    if request.method == "POST":
+        name = request.POST.get("name", "").strip()
+        partner_type = request.POST.get("partner_type", "").strip()
+        if not name:
+            messages.error(request, "Название обязательно.")
+        elif partner_type not in dict(PartnerType.choices):
+            messages.error(request, "Некорректный тип партнёра.")
+        else:
+            before_active = partner.is_active
+            partner.name = name
+            partner.partner_type = partner_type
+            partner.contact_name = request.POST.get("contact_name", "").strip()
+            partner.contact_email = request.POST.get("contact_email", "").strip()
+            partner.website = request.POST.get("website", "").strip()
+            partner.notes = request.POST.get("notes", "").strip()
+            partner.is_active = request.POST.get("is_active") in ("on", "1", "true")
+            partner.save(update_fields=[
+                "name", "partner_type", "contact_name", "contact_email",
+                "website", "notes", "is_active", "updated_at",
+            ])
+            messages.success(request, f"Партнёр «{partner.name}» обновлён.")
+            log_staff_action(
+                request, AuditAction.PARTNER_UPDATED,
+                target=partner.name,
+                details={
+                    "partner_id": str(partner.id),
+                    "is_active_before": before_active, "is_active_after": partner.is_active,
+                },
+            )
+            return redirect("dashboard:partner_detail", partner_id=partner.id)
+
+    context = {
+        "page_title": f"{partner.name} — DOPX Staff",
+        "active_tab": "ads",
+        "partner": partner,
+        "partner_type_choices": PartnerType.choices,
+        "banners": partner.banners.all().order_by("-priority", "-created_at"),
+    }
+    return render(request, "dashboard/partner_detail.html", context)
+
+
+@staff_member_required
+@require_POST
+def partner_delete(request, partner_id):
+    from partners.models import Partner
+
+    partner = get_object_or_404(Partner, id=partner_id)
+    name = partner.name
+    banner_count = partner.banners.count()
+    partner.delete()
+    messages.success(
+        request,
+        f"Партнёр «{name}» удалён" + (f" ({banner_count} баннеров остались без привязки к партнёру)" if banner_count else "") + ".",
+    )
+    log_staff_action(
+        request, AuditAction.PARTNER_DELETED,
+        target=name, details={"partner_id": str(partner_id), "banners_orphaned": banner_count},
+    )
+    return redirect("dashboard:partners_list")
+
+
+BANNERS_PAGE_SIZE = 30
+
+
+@staff_member_required
+def banners_list(request):
+    from partners.models import Banner, BannerZone, Partner
+
+    zone_filter = request.GET.get("zone", "").strip()
+    qs = services.banners_queryset(zone=zone_filter)
+    banners_page = Paginator(qs, BANNERS_PAGE_SIZE).get_page(request.GET.get("page"))
+    context = {
+        "page_title": "Баннеры — DOPX Staff",
+        "active_tab": "ads",
+        "banners": banners_page,
+        "zone_filter": zone_filter,
+        "zone_choices": BannerZone.choices,
+        "partners_for_select": Partner.objects.filter(is_active=True).order_by("name"),
+    }
+    return render(request, "dashboard/banners_list.html", context)
+
+
+def _banner_form_fields(request) -> dict:
+    """Общий парсинг POST-полей формы баннера — переиспользуется в create
+    И update (см. докстринг platform_settings* выше про тот же приём)."""
+    starts_at_raw = request.POST.get("starts_at", "").strip()
+    ends_at_raw = request.POST.get("ends_at", "").strip()
+    starts_at = parse_datetime(starts_at_raw) if starts_at_raw else None
+    ends_at = parse_datetime(ends_at_raw) if ends_at_raw else None
+    if starts_at and timezone.is_naive(starts_at):
+        starts_at = timezone.make_aware(starts_at)
+    if ends_at and timezone.is_naive(ends_at):
+        ends_at = timezone.make_aware(ends_at)
+    partner_id = request.POST.get("partner_id", "").strip()
+    try:
+        priority = int(request.POST.get("priority", "0") or "0")
+    except ValueError:
+        priority = 0
+    return {
+        "zone": request.POST.get("zone", "").strip(),
+        "title": request.POST.get("title", "").strip(),
+        "target_url": request.POST.get("target_url", "").strip(),
+        "partner_id": partner_id or None,
+        "is_active": request.POST.get("is_active") in ("on", "1", "true"),
+        "requires_age_disclaimer": request.POST.get("requires_age_disclaimer") in ("on", "1", "true"),
+        "starts_at": starts_at,
+        "ends_at": ends_at,
+        "priority": priority,
+    }
+
+
+@staff_member_required
+@require_POST
+def banner_create(request):
+    from partners.models import Banner, BannerZone
+
+    fields = _banner_form_fields(request)
+    image = request.FILES.get("image")
+
+    if not fields["title"] or fields["zone"] not in dict(BannerZone.choices) or not fields["target_url"] or not image:
+        messages.error(request, "Название, зона, ссылка перехода и изображение обязательны.")
+        return redirect("dashboard:banners_list")
+
+    banner = Banner.objects.create(image=image, **fields)
+    messages.success(request, f"Баннер «{banner.title}» создан.")
+    log_staff_action(
+        request, AuditAction.BANNER_CREATED,
+        target=banner.title, details={"banner_id": str(banner.id), "zone": banner.zone},
+    )
+    return redirect("dashboard:banner_detail", banner_id=banner.id)
+
+
+@staff_member_required
+def banner_detail(request, banner_id):
+    from partners.models import Banner, BannerZone, Partner
+
+    banner = get_object_or_404(Banner.objects.select_related("partner"), id=banner_id)
+
+    if request.method == "POST":
+        fields = _banner_form_fields(request)
+        if not fields["title"] or fields["zone"] not in dict(BannerZone.choices) or not fields["target_url"]:
+            messages.error(request, "Название, зона и ссылка перехода обязательны.")
+        else:
+            for key, value in fields.items():
+                setattr(banner, key, value)
+            update_fields = list(fields.keys()) + ["updated_at"]
+            image = request.FILES.get("image")
+            if image:
+                banner.image = image
+                update_fields.append("image")
+            banner.save(update_fields=update_fields)
+            messages.success(request, f"Баннер «{banner.title}» обновлён.")
+            log_staff_action(
+                request, AuditAction.BANNER_UPDATED,
+                target=banner.title, details={"banner_id": str(banner.id), "image_replaced": bool(image)},
+            )
+            return redirect("dashboard:banner_detail", banner_id=banner.id)
+
+    context = {
+        "page_title": f"{banner.title} — DOPX Staff",
+        "active_tab": "banners",
+        "banner": banner,
+        "zone_choices": BannerZone.choices,
+        "partners_for_select": Partner.objects.filter(is_active=True).order_by("name"),
+    }
+    return render(request, "dashboard/banner_detail.html", context)
+
+
+@staff_member_required
+@require_POST
+def banner_delete(request, banner_id):
+    from partners.models import Banner
+
+    banner = get_object_or_404(Banner, id=banner_id)
+    title = banner.title
+    banner.delete()
+    messages.success(request, f"Баннер «{title}» удалён.")
+    log_staff_action(
+        request, AuditAction.BANNER_DELETED,
+        target=title, details={"banner_id": str(banner_id)},
+    )
+    return redirect("dashboard:banners_list")
+
+
+# ============================================================
+# 2026-09-23, раздел «Роли доступа» — гибкие права по разделам дашборда
+# вместо единственного is_staff (прямая просьба пользователя, выбран
+# вариант "гибкие права по разделам" из предложенных). Полный контекст
+# безопасного дефолта (grandfather-правило, is_superuser всегда полный
+# доступ) — см. dashboard/models.py::StaffAccessGrant и dashboard/access.py.
+#
+# ВАЖНО: обе вьюхи ниже проверяют request.user.is_superuser НАПРЯМУЮ, а не
+# через user_can_access_section()/DASHBOARD_SECTIONS — "access_roles" не
+# входит в редактируемый список разделов именно поэтому: раздел, который
+# выдаёт доступ к остальным разделам, не должен сам управляться через ту же
+# систему грантов (privilege escalation), см. SUPERUSER_ONLY_SECTIONS в
+# dashboard/access.py.
+# ============================================================
+
+@staff_member_required
+def access_roles_list(request):
+    if not request.user.is_superuser:
+        from django.core.exceptions import PermissionDenied
+        raise PermissionDenied("Управление правами доступа — только для суперпользователей.")
+
+    from .models import DASHBOARD_SECTIONS, StaffAccessGrant
+
+    User = get_user_model()
+    staff_users = (
+        User.objects.filter(is_staff=True, is_superuser=False)
+        .select_related("dashboard_access_grant")
+        .order_by("username")
+    )
+    context = {
+        "page_title": "Роли доступа — DOPX Staff",
+        "active_tab": "access_roles",
+        "staff_users": staff_users,
+        "section_count": len(DASHBOARD_SECTIONS),
+    }
+    return render(request, "dashboard/access_roles_list.html", context)
+
+
+@staff_member_required
+def access_roles_detail(request, user_id):
+    if not request.user.is_superuser:
+        from django.core.exceptions import PermissionDenied
+        raise PermissionDenied("Управление правами доступа — только для суперпользователей.")
+
+    from .models import DASHBOARD_SECTIONS, StaffAccessGrant
+
+    User = get_user_model()
+    target_user = get_object_or_404(User, id=user_id, is_staff=True)
+    grant = StaffAccessGrant.objects.filter(user=target_user).first()
+
+    if request.method == "POST":
+        if request.POST.get("action") == "full_access":
+            # Снимаем ограничения целиком — удаляем запись, пользователь
+            # возвращается под grandfather-правило (полный доступ), см.
+            # докстринг StaffAccessGrant.
+            if grant:
+                grant.delete()
+            messages.success(request, f"«{target_user.username}»: ограничения сняты, полный доступ ко всем разделам.")
+            log_staff_action(
+                request, AuditAction.ACCESS_GRANT_UPDATED,
+                target=target_user.username,
+                details={"user_id": str(target_user.id), "mode": "full_access_restored"},
+            )
+        else:
+            selected = [key for key, _label in DASHBOARD_SECTIONS if request.POST.get(f"section_{key}") in ("on", "1", "true")]
+            if grant:
+                grant.allowed_sections = selected
+                grant.updated_by = request.user
+                grant.save(update_fields=["allowed_sections", "updated_by", "updated_at"])
+            else:
+                grant = StaffAccessGrant.objects.create(
+                    user=target_user, allowed_sections=selected, updated_by=request.user,
+                )
+            messages.success(request, f"«{target_user.username}»: сохранено {len(selected)} из {len(DASHBOARD_SECTIONS)} разделов.")
+            log_staff_action(
+                request, AuditAction.ACCESS_GRANT_UPDATED,
+                target=target_user.username,
+                details={"user_id": str(target_user.id), "allowed_sections": selected},
+            )
+        return redirect("dashboard:access_roles_detail", user_id=target_user.id)
+
+    allowed = set(grant.allowed_sections) if grant else None  # None = полный доступ (нет записи)
+    context = {
+        "page_title": f"Доступ: {target_user.username} — DOPX Staff",
+        "active_tab": "access_roles",
+        "target_user": target_user,
+        "grant": grant,
+        "sections": [
+            {"key": key, "label": label, "checked": allowed is None or key in allowed}
+            for key, label in DASHBOARD_SECTIONS
+        ],
+        "has_restrictions": allowed is not None,
+    }
+    return render(request, "dashboard/access_roles_detail.html", context)

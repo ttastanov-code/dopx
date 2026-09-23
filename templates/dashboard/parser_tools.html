@@ -6,10 +6,9 @@
 
 <div class="card bg-base-100 border border-base-300 mb-4">
     <div class="card-body p-4">
-        <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
-            <i class="ti ti-search text-primary"></i> Поиск матча
-        </h3>
-        <p class="text-xs opacity-60 mb-3">Ищите по названию команды (домашней или гостевой) или по sportmonks_id, чтобы быстро найти UUID матча, не листая сотни строк в Django admin. Поиск по названию ограничен выбранным годом (сезоном). Если у команды много матчей, впишите ОБЕ команды через пробел (например «Қайрат Астана»), чтобы сразу найти нужную встречу. Казахские буквы (Қ, Ә, Ө и т.д.) можно печатать похожими русскими: поиск сам сопоставит. sportmonks_id ищется по всей базе, без ограничения по году.</p>
+        <div class="dopx-section-eyebrow"><i class="ti ti-search"></i>Поиск</div>
+        <div class="dopx-section-title">Поиск матча</div>
+        <p class="dopx-section-desc mb-3">По названию команды (можно обе через пробел, год — ниже) или по sportmonks_id — он ищется по всей базе. Казахские буквы можно печатать похожими русскими.</p>
         <form method="get" action="{% url 'dashboard:parser_tools' %}" class="flex flex-wrap gap-2 items-center mb-3">
             <input type="text" name="q" value="{{ search_query }}" placeholder="Команда, обе команды или sportmonks_id" class="input input-sm input-bordered w-72 max-w-full" autofocus>
             <select name="year" class="select select-sm select-bordered">
@@ -55,68 +54,61 @@
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4 items-start">
     <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4">
-            <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
-                <i class="ti ti-bolt text-primary"></i> Ручной запуск celery-задач
-            </h3>
-            <p class="text-xs opacity-60 mb-3">Дебаунс {{ '60' }} с на задачу: повторный клик по той же задаче до истечения этого времени будет отклонён, чтобы не перегружать очередь.</p>
+            <div class="dopx-section-eyebrow"><i class="ti ti-bolt"></i>Вручную</div>
+            <div class="dopx-section-title">Запуск celery-задач</div>
+            <p class="dopx-section-desc mb-3">Повторный клик по той же задаче раньше чем через 60с отклоняется — защита от перегрузки очереди.</p>
 
-            <h4 class="font-semibold text-xs uppercase opacity-60 mb-2 flex items-center gap-1">
-                <span class="badge badge-success badge-xs"></span> Sportmonks
+            <h4 class="font-semibold text-[11px] uppercase tracking-wide opacity-45 mb-1.5 flex items-center gap-1.5">
+                <span class="w-1.5 h-1.5 rounded-full inline-block" style="background: var(--color-success)"></span> Sportmonks
             </h4>
-            <div class="flex flex-col gap-3 mb-4">
+            <div class="flex flex-col gap-1.5 mb-4">
                 {% for task_name, task_label in sportmonks_triggerable_tasks.items %}
-                <div>
-                    <form method="post" action="{% url 'dashboard:parser_trigger_task' %}" class="flex items-center gap-2">
+                {% comment %}
+                2026-09-22, редизайн (см. докстринг вверху scripts.html про
+                общую просьбу пользователя "компактный, понятный и
+                стильный") — раньше было: гигантская full-width кнопка с
+                текстом внутри + абзац описания под ней. Теперь: компактная
+                строка (лейбл + короткое описание) и маленькая quadratная
+                кнопка-триггер сбоку — тот же паттерн, что список настроек
+                в macOS/iOS. task_name/action/csrf — БЕЗ ИЗМЕНЕНИЙ.
+                {% endcomment %}
+                <div class="flex items-center gap-2.5 rounded-lg border border-base-300 px-3 py-2">
+                    <div class="min-w-0 flex-1">
+                        <div class="text-sm font-medium leading-snug">{{ task_label }}</div>
+                        {% with description=sportmonks_task_descriptions|get_item:task_name %}
+                        {% if description %}<div class="text-[11px] opacity-50 leading-snug mt-0.5">{{ description }}</div>{% endif %}
+                        {% endwith %}
+                    </div>
+                    <form method="post" action="{% url 'dashboard:parser_trigger_task' %}" class="shrink-0">
                         {% csrf_token %}
                         <input type="hidden" name="task_name" value="{{ task_name }}">
-                        {% comment %}
-                        2026-09-11 (жалоба пользователя: "названия всех
-                        кнопок команд криво" в мобильной версии) — daisyUI
-                        .btn держит фиксированную высоту в одну строку;
-                        длинные task_label (например, полные названия
-                        celery-задач) на узком экране переносились и
-                        обрезались. h-auto + whitespace-normal + py-2
-                        позволяют кнопке вырасти под любое число строк. {% endcomment %}
-                        <button type="submit" class="btn btn-sm btn-outline flex-1 justify-start h-auto min-h-9 py-2 whitespace-normal text-left leading-snug">
-                            <i class="ti ti-player-play mr-1 flex-shrink-0"></i> {{ task_label }}
+                        <button type="submit" class="btn btn-xs btn-outline btn-square" title="Запустить">
+                            <i class="ti ti-player-play"></i>
                         </button>
                     </form>
-                    {% with description=sportmonks_task_descriptions|get_item:task_name %}
-                    {% if description %}
-                    <p class="text-xs opacity-60 mt-1 ml-1">{{ description }}</p>
-                    {% endif %}
-                    {% endwith %}
                 </div>
                 {% endfor %}
             </div>
 
-            <h4 class="font-semibold text-xs uppercase opacity-60 mb-2 flex items-center gap-1">
-                <span class="badge badge-ghost badge-xs"></span> Прочие задачи
+            <h4 class="font-semibold text-[11px] uppercase tracking-wide opacity-45 mb-1.5 flex items-center gap-1.5">
+                <span class="w-1.5 h-1.5 rounded-full inline-block bg-base-content/30"></span> Прочие задачи
             </h4>
-            <p class="text-xs opacity-60 mb-3">Диагностика, нотификации и пересчёт составов — не зависят от источника матчей.</p>
-            <div class="flex flex-col gap-3">
+            <div class="flex flex-col gap-1.5">
                 {% for task_name, task_label in triggerable_tasks.items %}
-                <div>
-                    <form method="post" action="{% url 'dashboard:parser_trigger_task' %}" class="flex items-center gap-2">
+                <div class="flex items-center gap-2.5 rounded-lg border border-base-300 px-3 py-2">
+                    <div class="min-w-0 flex-1">
+                        <div class="text-sm font-medium leading-snug">{{ task_label }}</div>
+                        {% with description=task_descriptions|get_item:task_name %}
+                        {% if description %}<div class="text-[11px] opacity-50 leading-snug mt-0.5">{{ description }}</div>{% endif %}
+                        {% endwith %}
+                    </div>
+                    <form method="post" action="{% url 'dashboard:parser_trigger_task' %}" class="shrink-0">
                         {% csrf_token %}
                         <input type="hidden" name="task_name" value="{{ task_name }}">
-                        {% comment %}
-                        2026-09-11 (жалоба пользователя: "названия всех
-                        кнопок команд криво" в мобильной версии) — daisyUI
-                        .btn держит фиксированную высоту в одну строку;
-                        длинные task_label (например, полные названия
-                        celery-задач) на узком экране переносились и
-                        обрезались. h-auto + whitespace-normal + py-2
-                        позволяют кнопке вырасти под любое число строк. {% endcomment %}
-                        <button type="submit" class="btn btn-sm btn-outline flex-1 justify-start h-auto min-h-9 py-2 whitespace-normal text-left leading-snug">
-                            <i class="ti ti-player-play mr-1 flex-shrink-0"></i> {{ task_label }}
+                        <button type="submit" class="btn btn-xs btn-outline btn-square" title="Запустить">
+                            <i class="ti ti-player-play"></i>
                         </button>
                     </form>
-                    {% with description=task_descriptions|get_item:task_name %}
-                    {% if description %}
-                    <p class="text-xs opacity-60 mt-1 ml-1">{{ description }}</p>
-                    {% endif %}
-                    {% endwith %}
                 </div>
                 {% endfor %}
             </div>
@@ -136,10 +128,9 @@
     <div class="flex flex-col gap-4">
     <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4">
-            <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
-                <i class="ti ti-api text-primary"></i> Доступность Sportmonks API
-            </h3>
-            <p class="text-xs opacity-60 mb-3">Живой пинг источника данных (GET /leagues/{id}) с замером времени ответа — быстрый способ проверить "у нас проблема или у них".</p>
+            <div class="dopx-section-eyebrow"><i class="ti ti-api"></i>Sportmonks</div>
+            <div class="dopx-section-title">Доступность API</div>
+            <p class="dopx-section-desc mb-3">Живой пинг источника данных с замером времени ответа — быстрый способ проверить «у нас проблема или у них».</p>
 
             <div id="sportmonks-health-result" class="mb-3">
                 {% include 'dashboard/_sportmonks_health_result.html' %}
@@ -157,7 +148,7 @@
 
             <div class="divider my-3"></div>
 
-            <h4 class="font-semibold text-xs uppercase opacity-60 mb-2">Быстрые факты</h4>
+            <h4 class="font-semibold text-[11px] uppercase tracking-wide opacity-45 mb-2">Быстрые факты</h4>
             <!-- 2026-09-09: раньше был <ul> с самодельными точками-иконками
                  (ti-point-filled — которой, похоже, нет в используемом наборе
                  Tabler Icons, отсюда "криво" в отзыве пользователя) и голым

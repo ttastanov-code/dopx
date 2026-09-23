@@ -528,7 +528,19 @@
     {% include 'components/_navbar.html' %}
     <!-- Messages -->
     {% if messages %}
-    <div class="fixed top-20 right-4 z-50 space-y-2 w-[calc(100%-2rem)] sm:w-auto max-w-sm"
+    {% comment %}
+    2026-09-23, БАГ (найден при аудите адаптивности — всплыл на создании
+    партнёра с длинным названием). w-[calc(100%-2rem)] — произвольное
+    Tailwind-значение, которое НЕ попало в собранный CSS (скорее всего не
+    просканировано JIT/сборка не переснята), поэтому реально применялся
+    только max-w-sm (384px, ФИКСИРОВАННАЯ ширина) — шире, чем 375px-экран,
+    вылезало за край. Фикс — left-4 + right-4 вместо width: на fixed-элементе
+    с обоими заданными left/right браузер сам растягивает ширину между ними
+    БЕЗ участия Tailwind-компиляции произвольных значений, это чистые
+    "ядровые" классы (top-20/right-4/max-w-sm), которые уже точно есть в
+    сборке (иначе бы и текущее right-4 не работало).
+    {% endcomment %}
+    <div class="fixed top-20 left-4 right-4 sm:left-auto z-50 space-y-2 sm:w-auto max-w-sm"
          x-data="dismissible"
          x-show="show"
          x-transition

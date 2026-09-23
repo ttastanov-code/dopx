@@ -8,6 +8,7 @@ from django.views.decorators.clickjacking import xframe_options_exempt
 from django.views.generic import ListView, DetailView
 from django.utils import timezone
 from core.utils import normalize_kz
+from core.models import get_setting
 from teams.models import Team, TeamSeason, TeamSeasonStats
 from players.models import Player
 from matches.models import Match
@@ -33,7 +34,11 @@ class TeamListView(ListView):
     template_name = 'teams/list.html'
     context_object_name = 'teams'
     paginate_by = 20
-    
+
+    def get_paginate_by(self, queryset):
+        # 2026-09-23, «Настройки платформы» — управляется staff без деплоя.
+        return get_setting("teams_list_page_size", self.paginate_by)
+
     def get_queryset(self):
         queryset = Team.objects.all()
 
@@ -310,6 +315,8 @@ class TeamDetailView(DetailView):
         }
         
         # Последние матчи — ТОЛЬКО текущий сезон + finished
+        # 2026-09-23, «Настройки платформы» — управляется staff без деплоя.
+        recent_matches_limit = get_setting("team_recent_matches_limit", 10)
         if current_season:
             recent_matches = Match.objects.filter(
                 Q(home_team=team) | Q(away_team=team),
@@ -320,7 +327,7 @@ class TeamDetailView(DetailView):
                 'away_team',
                 'league',
                 'season'
-            ).order_by('-start_time')[:10]
+            ).order_by('-start_time')[:recent_matches_limit]
         else:
             recent_matches = Match.objects.filter(
                 Q(home_team=team) | Q(away_team=team),
@@ -330,7 +337,7 @@ class TeamDetailView(DetailView):
                 'away_team',
                 'league',
                 'season'
-            ).order_by('-start_time')[:10]
+            ).order_by('-start_time')[:recent_matches_limit]
         
         # Ближайшие матчи
         upcoming_matches = Match.objects.filter(

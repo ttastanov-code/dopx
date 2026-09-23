@@ -1,0 +1,72 @@
+{% comment %}
+templates/dashboard/_duplicate_player_side.html
+Одна из двух колонок в паре дублей (_duplicate_player_pair.html) — карточка
+игрока + кнопка "Оставить эту запись". Контекст: entry ({player,
+appearances, events_count, evaluations_count, aggregates_count} —
+dashboard/views.py::_player_dup_stats), keep_value ('existing'/'new' —
+уходит в hidden-поле keep формы merge), flag_id.
+
+Кнопка сама шлёт keep=existing|new на dashboard:duplicate_players_merge —
+id обеих записей flask уже знает по flag_id в URL, руками их вводить/
+копировать не нужно (см. докстринг duplicate_players_review.html).
+{% endcomment %}
+<div class="rounded-lg border border-base-300 p-3 flex flex-col gap-2">
+    <div class="flex items-center gap-2">
+        {% comment %}
+        entry.player.photo.url без проверки {% if %} падает ValueError для
+        игроков без фото (FieldFile.url на пустом файле) — та же защита,
+        что и везде по проекту (players/detail.html, components/
+        _player_card.html): .url читаем ТОЛЬКО когда photo реально есть.
+        {% endcomment %}
+        {% if entry.player.photo %}
+        {% include 'components/_avatar.html' with photo_url=entry.player.photo.url name=entry.player.full_name size_classes='w-10 h-10 text-sm' %}
+        {% else %}
+        {% include 'components/_avatar.html' with name=entry.player.full_name size_classes='w-10 h-10 text-sm' %}
+        {% endif %}
+        <div class="min-w-0">
+            <div class="font-semibold text-sm truncate">{{ entry.player.full_name }}</div>
+            <div class="text-[11px] opacity-50 font-mono truncate">sportmonks_id={{ entry.player.sportmonks_id|default:"—" }}</div>
+        </div>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-1">
+        <span class="badge badge-outline badge-xs">№{{ entry.player.number|default:"—" }}</span>
+        {% if entry.player.is_active %}
+        <span class="badge badge-success badge-xs">Активен</span>
+        {% else %}
+        <span class="badge badge-ghost badge-xs">Неактивен</span>
+        {% endif %}
+        <span class="badge badge-ghost badge-xs">{{ entry.player.get_name_source_display|default:"источник ФИО неизвестен" }}</span>
+        <span class="text-[10px] opacity-40">создан {{ entry.player.created_at|date:"Y-m-d" }}</span>
+    </div>
+
+    <div class="text-[11px] leading-snug">
+        <div class="flex items-center gap-1.5">
+            <span class="badge badge-ghost badge-xs shrink-0">Протоколы</span>
+            <span class="opacity-70">составов: <b>{{ entry.appearances }}</b> <span class="opacity-30">·</span> событий: <b>{{ entry.events_count }}</b></span>
+        </div>
+        <div class="flex items-center gap-1.5 mt-1">
+            <span class="badge badge-ghost badge-xs shrink-0">Вовлечённость</span>
+            <span class="opacity-70">оценок: <b>{{ entry.evaluations_count }}</b> <span class="opacity-30">·</span> агрегатов: <b>{{ entry.aggregates_count }}</b></span>
+        </div>
+    </div>
+
+    {% comment %}
+    hx-confirm — единственный диалог подтверждения (HTMX перехватывает
+    submit сам и показывает свой confirm() перед AJAX-запросом). Отдельный
+    onsubmit="confirm(...)" сюда НЕ добавляем — оба сработали бы на один
+    клик и показали бы два всплывающих окна подряд.
+    {% endcomment %}
+    <form
+        class="mt-auto pt-1"
+        hx-post="{% url 'dashboard:duplicate_players_merge' flag_id %}"
+        hx-target="#dup-pair-{{ flag_id }}" hx-swap="outerHTML"
+        hx-confirm="Оставить {{ entry.player.full_name }}, а вторую запись слить и удалить? Действие необратимо."
+        method="post" action="{% url 'dashboard:duplicate_players_merge' flag_id %}">
+        {% csrf_token %}
+        <input type="hidden" name="keep" value="{{ keep_value }}">
+        <button type="submit" class="btn btn-primary btn-outline btn-xs w-full">
+            <i class="ti ti-check"></i> Оставить эту запись
+        </button>
+    </form>
+</div>

@@ -17,12 +17,16 @@ from __future__ import annotations
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.db.models.functions import TruncDate
 from django.utils import timezone
 
 from analytics.selectors import daily_active_users, traffic_overview, weekly_active_users
-from evaluations.models import ContextEvaluation, PlayerEvaluation
+from core.models import get_setting
+from evaluations.models import (
+    CoachEvaluation, ContextEvaluation, EvaluationSession, MatchEvaluation,
+    PlayerEvaluation, RefereeEvaluation, TeamEvaluation,
+)
 from matches.models import Match
 from notifications.models import ContactSubmission
 from parsers.models import ParserDiscrepancy, ParserSyncRun
@@ -176,11 +180,16 @@ def data_health_summary(recent_runs: int = 20) -> dict:
     # молча занижалась бы, если проблемных матчей вдруг окажется больше 20.
     matches_missing_lineups_count = matches_missing_lineups_base.count()
     matches_missing_events_count = matches_missing_events_base.count()
+    # 2026-09-23, «Настройки платформы» — управляется staff без деплоя.
     matches_missing_lineups_list = list(
-        matches_missing_lineups_base.select_related("home_team", "away_team").order_by("-start_time")[:20]
+        matches_missing_lineups_base.select_related("home_team", "away_team").order_by("-start_time")[
+            :get_setting("dashboard_missing_lineups_limit", 20)
+        ]
     )
     matches_missing_events_list = list(
-        matches_missing_events_base.select_related("home_team", "away_team").order_by("-start_time")[:20]
+        matches_missing_events_base.select_related("home_team", "away_team").order_by("-start_time")[
+            :get_setting("dashboard_missing_events_limit", 20)
+        ]
     )
 
     # Расхождения импорта (аудит 2026-09-04, см. parsers/models.py::
@@ -310,3 +319,163 @@ def antifraud_queue(limit: int = 25) -> dict:
             category="dispute", status__in=["new", "in_progress"]
         ).count(),
     }
+
+
+# ============================================================
+# 2026-09-23, раздел «Матчи» — ручная правка данных матча + триггер
+# пересчёта без деплоя/кода (прямая просьба пользователя "какого раздела
+# не хватает, чтобы можно было админить без кода" -> "матчи" — приоритет
+# №1). До этого staff мог поправить статус/счёт/дату ТОЛЬКО через Django
+# admin (без пересчёта агрегатов автоматически) либо ждать следующего
+# цикла sportmonks-синка — здесь одна кнопка "Сохранить" правит поля И
+# сразу предлагает пересчитать зависимые агрегаты (рейтинги/таблица).
+# ============================================================
+
+def matches_queryset(search: str = "", status: str = "", season_id: str = ""):
+    """Матчи для списка раздела «Матчи» — поиск по названию команды (домашней
+    ИЛИ гостевой), опциональные фильтры по статусу/сезону. Свежие сверху
+    (Match.Meta.ordering = ['-start_time'] уже это делает, явный order_by
+    не нужен)."""
+    qs = Match.objects.select_related("league", "season", "home_team", "away_team")
+    if search:
+        qs = qs.filter(Q(home_team__name__icontains=search) | Q(away_team__name__icontains=search))
+    if status:
+        qs = qs.filter(status=status)
+    if season_id:
+        qs = qs.filter(season_id=season_id)
+    return qs
+
+
+# ============================================================
+# 2026-09-23, раздел «Пользователи» — второй пункт приоритетного списка
+# (после «Матчи», см. докстринг matches_queryset выше). Раньше найти
+# конкретного пользователя и принять решение по нему (бан/сброс доверия)
+# можно было ТОЛЬКО через Django admin — здесь одна карточка со всей
+# нужной модератору картиной сразу: доверие, бейджи, устройства, открытые
+# антифрод-флаги — без прыжков между таблицами admin.
+# ============================================================
+
+def users_queryset(search: str = ""):
+    """Пользователи для списка раздела «Пользователи» — поиск по username
+    ИЛИ email (два реалистичных способа, которыми staff опишет конкретного
+    человека — "напишите его ник/почту", а не гадать, что именно ввели)."""
+    User = get_user_model()
+    qs = User.objects.all()
+    if search:
+        qs = qs.filter(Q(username__icontains=search) | Q(email__icontains=search))
+    return qs.order_by("-date_joined")
+
+
+def user_detail_context(user) -> dict:
+    """Всё для карточки одного пользователя разом — один вызов из view,
+    вместо россыпи запросов по шаблону (см. тот же принцип, что и
+    antifraud_queue выше)."""
+    return {
+        "badges": list(user.badges.all().order_by("-awarded_at")[:20]),
+        "push_subscriptions": list(user.push_subscriptions.all()),
+        "open_flags": list(
+            SuspiciousActivityFlag.objects.filter(user=user, status="pending").order_by("-created_at")[:10]
+        ),
+        "recent_flags_count": SuspiciousActivityFlag.objects.filter(user=user).count(),
+    }
+
+
+# ============================================================
+# 2026-09-23, раздел «Модерация оценок» — EvaluationSession (evaluations/
+# models.py) это "одна завершённая/начатая оценка матча одним
+# пользователем", уникальна по (user, match). Сами баллы лежат в 6
+# отдельных под-моделях (Context/Team/Player/Coach/Referee/MatchEvaluation),
+# каждая тоже уникальна по (user, match[, сущность]) — своей FK на сессию
+# у них НЕТ, связь только через пару (user, match). Модерация значит
+# "найти подозрительную сессию (см. fill_duration_seconds — антифрод-сигнал
+# 'слишком быстро') и удалить ЦЕЛИКОМ, вместе со всеми под-оценками того
+# же (user, match)" — см. evaluation_session_delete_cascade() ниже.
+# ============================================================
+
+def evaluation_sessions_queryset(search: str = "", status: str = "", mode: str = ""):
+    """Сессии для списка — поиск по username ИЛИ по названию команды
+    (домашней/гостевой) матча, тот же принцип, что matches_queryset/
+    users_queryset выше."""
+    qs = EvaluationSession.objects.select_related(
+        "user", "match", "match__home_team", "match__away_team",
+    )
+    if search:
+        qs = qs.filter(
+            Q(user__username__icontains=search)
+            | Q(match__home_team__name__icontains=search)
+            | Q(match__away_team__name__icontains=search)
+        )
+    if status:
+        qs = qs.filter(status=status)
+    if mode:
+        qs = qs.filter(mode=mode)
+    return qs
+
+
+def evaluation_session_detail_context(session: EvaluationSession) -> dict:
+    """Все под-оценки этого (user, match) разом — сессия сама по себе не
+    хранит баллы, только прогресс/тайминг (см. докстринг модуля)."""
+    user, match = session.user, session.match
+    return {
+        "context_eval": ContextEvaluation.objects.filter(user=user, match=match).select_related("supported_team").first(),
+        "team_evals": list(TeamEvaluation.objects.filter(user=user, match=match).select_related("team")),
+        "player_evals": list(PlayerEvaluation.objects.filter(user=user, match=match).select_related("player").order_by("-contribution")),
+        "coach_evals": list(CoachEvaluation.objects.filter(user=user, match=match).select_related("coach")),
+        "referee_eval": RefereeEvaluation.objects.filter(user=user, match=match).first(),
+        "match_eval": MatchEvaluation.objects.filter(user=user, match=match).first(),
+    }
+
+
+def evaluation_session_delete_cascade(session: EvaluationSession) -> dict:
+    """Удаляет сессию И все её под-оценки того же (user, match) — без FK на
+    сессию обычный session.delete() их бы не тронул (см. докстринг модуля).
+    Возвращает счётчики удалённого для аудит-лога/сообщения staff."""
+    user, match = session.user, session.match
+    counts = {
+        "context": ContextEvaluation.objects.filter(user=user, match=match).count(),
+        "teams": TeamEvaluation.objects.filter(user=user, match=match).count(),
+        "players": PlayerEvaluation.objects.filter(user=user, match=match).count(),
+        "coaches": CoachEvaluation.objects.filter(user=user, match=match).count(),
+        "referee": RefereeEvaluation.objects.filter(user=user, match=match).count(),
+        "match_eval": MatchEvaluation.objects.filter(user=user, match=match).count(),
+    }
+    ContextEvaluation.objects.filter(user=user, match=match).delete()
+    TeamEvaluation.objects.filter(user=user, match=match).delete()
+    PlayerEvaluation.objects.filter(user=user, match=match).delete()
+    CoachEvaluation.objects.filter(user=user, match=match).delete()
+    RefereeEvaluation.objects.filter(user=user, match=match).delete()
+    MatchEvaluation.objects.filter(user=user, match=match).delete()
+    match_id = str(match.id)
+    session.delete()
+    counts["match_id"] = match_id
+    return counts
+
+
+# ============================================================
+# 2026-09-23, раздел «Партнёры и баннеры» — последний пункт приоритетного
+# списка "чего не хватает, чтобы админить без кода". До этого Partner/Banner
+# (partners/models.py) редактировались ТОЛЬКО через Django admin — «Реклама»
+# на дашборде (dashboard/views.py::ads) была read-only статистикой поверх
+# уже существующих партнёров/баннеров, ни одного способа завести НОВОГО
+# партнёра или баннер без похода в /admin/. Локальный импорт partners.models
+# — тот же паттерн, что уже используется в dashboard/views.py::ads/
+# _ads_stats_context (там же поясняется, почему: partners — не входит в
+# "горячий путь" импортов дашборда).
+# ============================================================
+
+def partners_queryset(search: str = ""):
+    from partners.models import Partner
+    qs = Partner.objects.all()
+    if search:
+        qs = qs.filter(Q(name__icontains=search) | Q(slug__icontains=search))
+    return qs
+
+
+def banners_queryset(zone: str = "", partner_id: str = ""):
+    from partners.models import Banner
+    qs = Banner.objects.select_related("partner")
+    if zone:
+        qs = qs.filter(zone=zone)
+    if partner_id:
+        qs = qs.filter(partner_id=partner_id)
+    return qs
