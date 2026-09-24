@@ -138,7 +138,7 @@ def _sportmonks_update_live_impl(self):
         if fixture_league_id is not None and int(fixture_league_id) != league_sm_id:
             logger.warning(
                 "Sportmonks: sportmonks_update_live — fixture %s принадлежит league_id=%s, "
-                "а не нашей лиге (%s), пропущен (см. P0 в код-ревью 2026-09-09)",
+                "а не нашей лиге (%s), пропущен",
                 sm_id, fixture_league_id, league_sm_id,
             )
             continue
@@ -200,7 +200,7 @@ def _sportmonks_update_live_impl(self):
     for match in stuck_live:
         logger.info(
             "Sportmonks: матч %s (sportmonks_id=%s) числится live, но выпал из /livescores/inplay — "
-            "досинхронизирую вне очереди (см. фикс 2026-09-09 про 'вечный live')",
+            "досинхронизирую вне очереди",
             match.id, match.sportmonks_id,
         )
         if _heavy_sync_fixture(client, league, season, match.sportmonks_id):

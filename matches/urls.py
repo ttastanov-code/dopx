@@ -15,7 +15,6 @@ urlpatterns = [
     path('<uuid:match_id>/header/', match_header_partial, name='header'),
     # Live-поллинг карточки матча на главной/в списке — см. components/_match_card.html
     path('<uuid:match_id>/card/', match_card_partial, name='card'),
-    # Реакция сообщества на завершённый матч (редизайн карточки, пункт 11) —
-    # см. templates/matches/_reaction_widget_compact.html
+    # Реакция на завершённый матч (_reaction_widget_compact.html).
     path('<uuid:match_id>/react/', react_to_match, name='react'),
 ]

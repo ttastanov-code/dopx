@@ -179,7 +179,7 @@ COMMAND_REGISTRY: dict[str, CommandSpec] = {
     "cleanup_load_test": CommandSpec(
         name="cleanup_load_test", label="Очистить нагрузочный тест",
         category="cleanup", danger="destructive", has_apply_flag=False,
-        description="Удаляет тестовых пользователей и синтетический матч нагрузочного теста. Без dry-run — нужно подтверждение текстом.",
+        description="Удаляет тестовых пользователей и синтетический матч нагрузочного теста. Удаляет сразу — нужно подтверждение текстом.",
         args=[],
     ),
 

@@ -24,8 +24,7 @@ def resync_match(match) -> tuple[bool, str]:
     if not match.sportmonks_id:
         return False, (
             "У матча нет sportmonks_id — синхронизация невозможна "
-            "(матч, видимо, из истории KFF-эпохи, до 2026-09-09; "
-            "автоматической пересинхронизации для таких матчей больше нет)"
+            "(старый матч из истории KFF)"
         )
 
     try:

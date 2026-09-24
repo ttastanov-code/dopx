@@ -691,7 +691,12 @@ SCRIPTS_RUNS_PAGE_SIZE = 15
 def _scripts_runs_page(request):
     """История запусков с пагинацией — общая для страницы и HTMX-поллинга."""
     qs = ManagementCommandRun.objects.select_related("triggered_by").order_by("-created_at")
-    return Paginator(qs, SCRIPTS_RUNS_PAGE_SIZE).get_page(request.GET.get("page"))
+    page = Paginator(qs, SCRIPTS_RUNS_PAGE_SIZE).get_page(request.GET.get("page"))
+    # Поллим только пока есть незавершённые запуски в системе.
+    page.has_active = ManagementCommandRun.objects.filter(
+        status__in=[ManagementCommandRun.Status.PENDING, ManagementCommandRun.Status.RUNNING]
+    ).exists()
+    return page
 
 
 @staff_member_required

@@ -30,7 +30,7 @@ from core.models import (
     NAME_SOURCE_GUESSED_TRANSLITERATION,
     NAME_SOURCE_LATIN_FOREIGN,
 )
-from parsers.models import get_confirmed_corrections
+from parsers.models import ParserDiscrepancy, get_confirmed_corrections
 from parsers.sportmonks.name_translations import PLAYER_NAME_CORRECTIONS
 from parsers.sportmonks.translit import is_likely_foreign, transliterate_name
 from referees.models import Referee
@@ -609,6 +609,20 @@ def _stat_value(entry: Dict):
 # Матч
 # ============================================================================
 
+def _record_discrepancies(match: Match, before: Match, new_values: Dict) -> None:
+    """Пишет ParserDiscrepancy, если у завершённого матча источник поменял счёт или статус."""
+    label = f"{match.home_team} — {match.away_team}"[:200]
+    for field in ("home_score", "away_score", "status"):
+        old, new = getattr(before, field), new_values.get(field)
+        if old is None or new is None or old == new:
+            continue
+        ParserDiscrepancy.objects.create(
+            match=match, match_label=label, field_name=field,
+            old_value=str(old), new_value=str(new),
+        )
+        logger.warning("Sportmonks: расхождение у завершённого матча %s: %s %s -> %s", match.id, field, old, new)
+
+
 @transaction.atomic
 def import_match_core(fixture_data: Dict, league: League, season: Season) -> Match:
     """Создаёт/обновляет Match по sportmonks_id.
@@ -622,8 +636,7 @@ def import_match_core(fixture_data: Dict, league: League, season: Season) -> Mat
     if fixture_league_id is not None and str(fixture_league_id) != str(league.sportmonks_id):
         raise ValueError(
             f"Fixture {sm_id}: league_id={fixture_league_id} не совпадает с ожидаемой "
-            f"лигой (sportmonks_id={league.sportmonks_id}) — импорт отклонён, см. P0 "
-            f"в код-ревью 2026-09-09 (защита от записи чужой лиги)"
+            f"лигой (sportmonks_id={league.sportmonks_id}) — импорт отклонён"
         )
 
     participants = fixture_data.get("participants") or []
@@ -667,6 +680,7 @@ def import_match_core(fixture_data: Dict, league: League, season: Season) -> Mat
 
     existing = Match.objects.filter(sportmonks_id=sm_id).only(
         "id", "manual_override", "status", "start_time", "end_time", "voting_open_until",
+        "home_score", "away_score",
     ).first()
 
     defaults = {
@@ -704,6 +718,9 @@ def import_match_core(fixture_data: Dict, league: League, season: Season) -> Mat
             defaults["voting_open_until"] = placeholder_start + timedelta(hours=48)
 
     match, created = Match.objects.update_or_create(sportmonks_id=sm_id, defaults=defaults)
+
+    if existing and existing.status == "finished":
+        _record_discrepancies(match, existing, defaults)
 
     TeamSeason.objects.get_or_create(team=home_team, season=season)
     TeamSeason.objects.get_or_create(team=away_team, season=season)

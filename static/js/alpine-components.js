@@ -1,31 +1,8 @@
 // static/js/alpine-components.js
 //
-// Все Alpine.data()-компоненты проекта — единая точка регистрации.
-//
-// ПОЧЕМУ ЭТОТ ФАЙЛ ПОЯВИЛСЯ (2026-08-21): раньше x-data писался ПРЯМО в
-// HTML-атрибутах как инлайновый объектный литерал — `x-data="{ open: false,
-// ... }"`. Обычная (не-CSP) сборка Alpine компилирует КАЖДОЕ такое выражение
-// через `new Function(...)` — это и есть eval с точки зрения браузера,
-// поэтому CSP-политике сайта (dopx/middleware.py::ContentSecurityPolicyMiddleware)
-// приходилось держать 'unsafe-eval' в script-src. Сборка @alpinejs/csp (см.
-// <script> в base.html/base_auth.html) специально ЗАПРЕЩАЕТ инлайновые
-// объектные литералы в x-data — компонент обязан быть зарегистрирован ЗДЕСЬ
-// через Alpine.data(имя, фабрика) и подключаться в HTML как `x-data="имя"`
-// или `x-data="имя(аргумент)"` (документированный поддерживаемый паттерн,
-// см. tooltipTrigger ниже — он и раньше так был устроен).
-//
-// ПРАВИЛО ДЛЯ НОВЫХ КОМПОНЕНТОВ: вся логика — методы/геттеры/init() —
-// должна жить ВНУТРИ фабричной функции (обычный JS-файл, браузер выполняет
-// его напрямую, никакого урезанного CSP-евалуатора здесь нет). В САМИХ
-// HTML-атрибутах (@click=, x-show=, :class=, x-init=) оставляйте только
-// простые выражения — ссылку на свойство, вызов метода, тернарник. Никаких
-// инлайновых стрелочных функций/объектных литералов в атрибутах — именно
-// это раньше требовало eval и не поддерживается CSP-евалуатором.
-//
-// Подключается в <head> ДО скрипта ядра Alpine (оба через defer — порядок
-// выполнения нескольких defer-скриптов соответствует порядку в DOM), чтобы
-// слушатель 'alpine:init' успел навесится до того, как Alpine сам
-// инициализируется.
+// Все Alpine.data()-компоненты проекта (CSP-сборка Alpine не поддерживает x-data="{...}").
+// Логику держать в фабриках; в HTML-атрибутах — только простые выражения.
+// Подключается до ядра Alpine, чтобы успеть подписаться на 'alpine:init'.
 
 document.addEventListener('alpine:init', () => {
     // === Переключатель темы (base.html/base_auth.html, <body>) ===
@@ -82,14 +59,7 @@ document.addEventListener('alpine:init', () => {
     }));
 
     // === Подсказка-пузырь (components/_tooltip_icon.html, tooltip_tags.py) ===
-    // ИСПРАВЛЕНО (2026-08-21, баг "Дербии002Дэксперт" вместо "Дерби-эксперт"):
-    // раньше текст приходил аргументом фабрики — tooltipTrigger('...'),
-    // строка была экранирована через escapejs() на сервере, что для дефиса
-    // даёт `-`. CSP-евалуатор Alpine разбирает x-data-выражение сам
-    // (это не настоящий JS eval) и не раскрывает \uXXXX-эскейпы внутри
-    // строковых литералов — символы утекали в текст как есть. Теперь текст
-    // читается из обычного HTML data-атрибута (штатный HTML-escape на
-    // сервере, никакого JS-парсинга вообще не участвует).
+    // Текст берём из data-атрибута: CSP-евалуатор не раскрывает \uXXXX в аргументах.
     Alpine.data('tooltipTrigger', () => ({
         text: '',
         open: false,
@@ -124,12 +94,7 @@ document.addEventListener('alpine:init', () => {
         },
     }));
 
-    // === Переключатель видимости пароля, форма входа (auth/login.html) ===
-    // Сохраняет 1:1 поведение исходного инлайн-выражения, включая его
-    // особенность: $el — это сама кнопка, а previousElementSibling кнопки —
-    // иконка <i>, НЕ <input> (между ними в разметке лежит иконка). У <i>
-    // нет отражаемого в DOM атрибута/свойства type, так что .type на нём
-    // ни на что не влияет — идентично оригиналу, это НЕ новый баг.
+    // === Показ пароля, форма входа (auth/login.html) ===
     Alpine.data('loginForm', () => ({
         showPassword: false,
         toggleVisibility(btnEl) {
@@ -138,9 +103,8 @@ document.addEventListener('alpine:init', () => {
         },
     }));
 
-    // === Форма регистрации (auth/register.html) — показ/скрытие пароля
-    // здесь идёт через ГЛОБАЛЬНУЮ togglePassword() (base_auth.html), это
-    // компонент только для сверки "пароли совпадают". ===
+    // === Регистрация (auth/register.html): проверка совпадения паролей.
+    // Показ пароля — глобальная togglePassword() в base_auth.html. ===
     Alpine.data('registerForm', () => ({
         password: '',
         confirmPassword: '',
@@ -150,11 +114,7 @@ document.addEventListener('alpine:init', () => {
         },
     }));
 
-    // === Форма сброса пароля (auth/password_reset_confirm.html) — два
-    // независимых поля-пароля, toggle(field, $el) переиспользуется для
-    // обоих вместо копипасты многострокового @click-выражения (которое
-    // раньше делало ДВЕ вещи через ";" — CSP-евалуатор такое не гарантирует
-    // поддерживать, поэтому логика перенесена в метод компонента). ===
+    // === Сброс пароля (auth/password_reset_confirm.html): toggle(field, $el) для обоих полей. ===
     Alpine.data('passwordResetForm', () => ({
         showPassword: false,
         showPassword2: false,
@@ -164,27 +124,13 @@ document.addEventListener('alpine:init', () => {
         },
     }));
 
-    // === Контекст просмотра матча, шаг 1 вайзарда (evaluations/context.html) ===
-    // ИСПРАВЛЕНО (2026-08-21): раньше supportedTeam/watchedType шли
-    // аргументами фабрики через escapejs() — тот же класс бага, что и у
-    // tooltipTrigger (см. комментарий выше), но здесь незаметный: id команды
-    // это UUID С ДЕФИСАМИ, поэтому :class="supportedTeam === '{{ team.id }}'"
-    // мог тихо не совпадать и не подсвечивать выбранную команду. Теперь
-    // читаем исходные значения из data-атрибутов (обычный HTML-escape).
+    // === Контекст просмотра, шаг 1 вайзарда (evaluations/context.html) ===
+    // Начальные значения — из data-атрибутов.
     Alpine.data('matchContextForm', () => ({
         supportedTeam: '',
         watchedType: 'full',
         attendedStadium: false,
-        // evalMode — режим "Быстро/Подробно" (см.
-        // docs/adr/0006-quick-full-evaluation-mode.md и
-        // docs/adr/0031-quick-mode-primary-flow.md), читается
-        // evaluations/views.py::EvaluateContextView.form_valid из POST
-        // ('eval_mode') и пишется в EvaluationSession.mode. Дефолт 'quick'
-        // (с 2026-09-07) — быстрый режим теперь основной сценарий, если
-        // пользователь ничего не выбрал (или JS не выполнился, тогда
-        // радио-инпут просто не рендерится визуально выбранным, но
-        // нативная разметка всё равно шлёт value по умолчанию через
-        // checked-атрибут на сервере — см. context.html).
+        // evalMode — «Быстро/Подробно», уходит в POST как eval_mode. По умолчанию 'quick'.
         evalMode: 'quick',
         init() {
             this.supportedTeam = this.$el.dataset.supportedTeam || '';
@@ -192,16 +138,7 @@ document.addEventListener('alpine:init', () => {
             this.attendedStadium = this.$el.dataset.attendedStadium === 'true';
             this.evalMode = this.$el.dataset.evalMode || 'quick';
 
-            // ИСПРАВЛЕНО (2026-09-11, прямая просьба пользователя — "на
-            // стадионе" + "только голы" не имеет смысла: на трибуне
-            // физически нельзя "посмотреть только голы", этот вариант
-            // рассчитан на просмотр нарезки/нарезанной трансляции дома, не
-            // на живое присутствие). Вариант "Голы" скрывается в разметке
-            // через x-show="!attendedStadium" (context.html) — здесь же
-            // подчищаем само значение, если человек сначала выбрал "Голы",
-            // а потом включил тумблер "Были на стадионе": иначе скрытый, но
-            // всё ещё выбранный вариант ушёл бы на сервер несогласованным
-            // с тем, что видно на экране.
+            // «Были на стадионе» + «Голы» не бывает — сбрасываем на «Полный».
             this.$watch('attendedStadium', (value) => {
                 if (value && this.watchedType === 'highlights') {
                     this.watchedType = 'full';
@@ -210,14 +147,8 @@ document.addEventListener('alpine:init', () => {
         },
     }));
 
-    // === Карточка игрока в вайзарде оценки (evaluations/_player_card.html) —
-    // рендерится в цикле по составу, каждый экземпляр независим. ===
-    // initialEvaluate — режим "Быстро" (см.
-    // docs/adr/0006-quick-full-evaluation-mode.md) предзаполняет тумблер
-    // для небольшого набора заметных игроков; булево значение приходит из
-    // шаблона как литерал true/false (не строка пользовательского ввода —
-    // это безопасно инлайнить прямо в x-data, в отличие от текстовых полей,
-    // см. историю бага с tooltipTrigger/escapejs в docs/BACKLOG.md).
+    // === Карточка игрока в вайзарде (evaluations/_player_card.html) ===
+    // initialEvaluate — предвключённый тумблер для ключевых игроков в режиме «Быстро».
     Alpine.data('playerEvaluationCard', (initialEvaluate) => ({
         evaluate: !!initialEvaluate,
         contribution: 5,
@@ -226,10 +157,7 @@ document.addEventListener('alpine:init', () => {
     }));
 
     // === Форма обратной связи (core/contacts.html) ===
-    // ИСПРАВЛЕНО (2026-08-21): та же категория бага, что у tooltipTrigger —
-    // category/email раньше приходили через escapejs()-аргументы фабрики;
-    // email с дефисом (например "anna-k@example.com") ловил ту же порчу.
-    // Теперь читаем из data-атрибутов.
+    // Начальные значения — из data-атрибутов.
     Alpine.data('contactForm', () => ({
         submitting: false,
         category: 'general',
@@ -239,14 +167,7 @@ document.addEventListener('alpine:init', () => {
         email: '',
         screenshot: null,
         screenshotPreview: null,
-        // НОВОЕ (2026-09-10, запрос пользователя: заменить emoji в
-        // "Тема обращения" на "нормальные солидные премиум обозначения"):
-        // нативный <select><option> физически не умеет рисовать иконки
-        // внутри option (ограничение браузера, не Alpine/CSS) — поэтому
-        // дропдаун теперь кастомный (details/summary, тот же паттерн, что
-        // в components/_navbar.html), а этот массив — единственный
-        // источник правды для его пунктов. value должен совпадать с
-        // notifications/models.py::ContactSubmission.CATEGORY_CHOICES.
+        // Пункты кастомного дропдауна тем. value = ContactSubmission.CATEGORY_CHOICES.
         categoryOptions: [
             { value: 'general', label: 'Общий вопрос', hint: 'Что-то другое или не уверены, куда', icon: 'ti-message-circle', color: 'primary' },
             { value: 'bug', label: 'Сообщение об ошибке', hint: 'Что-то не работает или ведёт себя не так', icon: 'ti-bug', color: 'error' },
@@ -267,10 +188,7 @@ document.addEventListener('alpine:init', () => {
         init() {
             this.category = this.$el.dataset.initialCategory || 'general';
             this.email = this.$el.dataset.initialEmail || '';
-            // НОВОЕ (2026-09-09, Центр доверия к данным): переход с кнопки
-            // "Сообщить об ошибке в данных" на странице матча приносит
-            // готовую тему через data-initial-subject — экономит человеку
-            // набор текста, но остаётся редактируемым полем, не readonly.
+            // Тема из data-initial-subject (кнопка «Сообщить об ошибке в данных»), поле редактируемое.
             this.subject = this.$el.dataset.initialSubject || '';
         },
         handleFileSelect(event) {
@@ -318,10 +236,6 @@ document.addEventListener('alpine:init', () => {
     }));
 
     // === Копирование кода без модалки (dashboard/widgets.html) ===
-    // Та же идея, что у embedModal.copy(), но без open/modal-состояния —
-    // на странице "Виджеты" сразу три независимых блока с готовым кодом
-    // (игрок/команда/таблица), каждому нужна только кнопка "Скопировать"
-    // рядом с textarea, без модалки поверх.
     Alpine.data('copyBox', () => ({
         copied: false,
         copy() {
@@ -333,36 +247,21 @@ document.addEventListener('alpine:init', () => {
         },
     }));
 
-    // === Карточка push-уведомлений (users/notification_settings.html) ===
-    // csrfToken раньше приходил аргументом фабрики через escapejs() — сам
-    // токен Django генерирует из алфавита без спецсимволов, так что этот
-    // конкретный случай на практике не ловил баг tooltipTrigger (см. выше),
-    // но паттерн тот же самый и хрупкий, поэтому на всякий случай тоже
-    // переведён на data-атрибут — единообразно с остальными компонентами.
+    // === Push-уведомления (users/notification_settings.html) ===
+    // csrfToken — из data-атрибута.
     Alpine.data('pushSettings', () => ({
         status: 'checking',
         csrfToken: '',
-        // ДОБАВЛЕНО (2026-09-11, прямая просьба пользователя после вопроса
-        // "можем ли мы сделать пуши как у приложений") — iOS Safari
-        // поддерживает Web Push ТОЛЬКО для сайтов, установленных на экран
-        // "Домой" (iOS 16.4+); просто открытая вкладка Safari пуши слать
-        // не может — это ограничение самого iOS, не баг DOPX. Без этой
-        // подсказки iPhone-пользователь жал бы "Включить" и просто получал
-        // бы 'denied'/'unsupported' без объяснения причины.
+        // iOS: Web Push работает только у сайта, добавленного на экран «Домой».
         isIOS: false,
         isStandalone: false,
         async init() {
             this.csrfToken = this.$el.dataset.csrfToken || '';
             this.isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-            // navigator.standalone — нестандартное свойство именно iOS
-            // Safari (true, когда сайт запущен с иконки на экране "Домой");
-            // display-mode: standalone — тот же признак по стандарту CSS
-            // Media Queries, для остальных браузеров/Android.
+            // navigator.standalone — iOS, display-mode: standalone — остальные браузеры.
             this.isStandalone = window.navigator.standalone === true
                 || window.matchMedia('(display-mode: standalone)').matches;
-            // csrfToken пробрасывается в dopxPushStatus для самолечения
-            // осиротевшей подписки (см. static/js/push.js::dopxPushStatus
-            // за полным объяснением бага, найденного пользователем 2026-09-09).
+            // csrfToken — чтобы dopxPushStatus мог почистить осиротевшую подписку.
             this.status = await window.dopxPushStatus(this.csrfToken);
         },
         async subscribe() {
@@ -382,15 +281,8 @@ document.addEventListener('alpine:init', () => {
         },
     }));
 
-    // === Countdown до стартового свистка (components/_match_card.html,
-    // пункт 7 брифа редизайна карточки матча, 2026-09-10) ===
-    // Дата приходит через data-kickoff (не аргументом фабрики) — та же
-    // защита от бага tooltipTrigger/escapejs (см. комментарии выше в этом
-    // файле): ISO-строка с "c"-форматом Django содержит дефисы/двоеточия,
-    // и хотя конкретно здесь нет escapejs (значит формально бага и не
-    // было бы), проект последовательно читает ЛЮБОЙ строковый аргумент из
-    // data-атрибута — не стоит заводить единственное исключение из этого
-    // правила ради одного компонента.
+    // === Обратный отсчёт до матча (components/_match_card.html) ===
+    // Дата — из data-kickoff.
     Alpine.data('matchCountdown', () => ({
         countdownText: '',
         _timerId: null,
@@ -400,26 +292,9 @@ document.addEventListener('alpine:init', () => {
             const kickoffMs = new Date(kickoffIso).getTime();
             if (Number.isNaN(kickoffMs)) return;
             this._tick(kickoffMs);
-            // 30с достаточно для минутной точности текста ("Через N мин"),
-            // не нужен ежесекундный тик — карточка в списке, не таймер
-            // обратного отсчёта крупным планом.
+            // Тик раз в 30 с — точности до минуты хватает.
             this._timerId = setInterval(() => this._tick(kickoffMs), 30000);
-            // БАГ, КОТОРЫЙ ТУТ БЫЛ (найден 2026-09-21, сквозной аудит): метод
-            // destroy() ниже не является магическим Alpine-лайфхуком — в
-            // отличие от init(), Alpine НЕ вызывает метод с таким именем
-            // автоматически при удалении элемента из DOM. Сейчас это не
-            // проявляется заметно (карточка с этим компонентом ставится
-            // ТОЛЬКО для status=scheduled, а hx-swap="outerHTML" на этой же
-            // карточке — ТОЛЬКО для status=live, оба условия взаимно
-            // исключают друг друга в текущей разметке _match_card.html), но
-            // это latent-утечка: если карточку когда-нибудь начнут удалять/
-            // подменять через htmx, ПОКА статус ещё scheduled (например,
-            // общий hx-swap на весь список), таймер продолжил бы тикать
-            // вечно на отсоединённом узле. htmx документированно шлёт
-            // 'htmx:beforeCleanupElement' на элемент непосредственно перед
-            // тем, как его удалить/подменить — вешаем реальный вызов
-            // очистки на это событие, а не полагаемся на несуществующий
-            // Alpine-хук destroy().
+            // Alpine сам не вызывает destroy() — чистим таймер на htmx:beforeCleanupElement.
             this.$el.addEventListener('htmx:beforeCleanupElement', () => this.destroy(), { once: true });
         },
         destroy() {

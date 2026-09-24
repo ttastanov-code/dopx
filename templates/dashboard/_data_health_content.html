@@ -151,7 +151,7 @@
     <div class="card-body p-4">
         <div class="dopx-section-eyebrow"><i class="ti ti-alert-triangle"></i>Требуют внимания</div>
         <div class="dopx-section-title">Расхождения импорта</div>
-        <p class="dopx-section-desc mb-3">Счёт или статус изменились у матча, который уже был завершён — обычный ход матча сюда не попадает, см. parsers/models.py::ParserDiscrepancy. Разбор и отметка «разобрано» — в Django admin.</p>
+        <p class="dopx-section-desc mb-3">Счёт или статус изменились у матча, который уже был завершён. Разбор — в «Центре доверия к данным».</p>
         <div class="overflow-x-auto">
             <table class="table table-sm">
                 <thead>
@@ -161,7 +161,7 @@
                     {% for d in health.unreviewed_discrepancies_list %}
                     <tr>
                         <td class="whitespace-nowrap">{{ d.match_label }}</td>
-                        <td><span class="badge badge-warning badge-sm badge-outline">{{ d.field_name }}</span></td>
+                        <td><span class="badge badge-warning badge-sm badge-outline">{{ d.field_label }}</span></td>
                         <td class="text-xs opacity-70">{{ d.old_value }}</td>
                         <td class="text-xs font-semibold">{{ d.new_value }}</td>
                         <td class="text-xs opacity-60 whitespace-nowrap">{{ d.created_at|timesince }} назад</td>

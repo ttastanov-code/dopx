@@ -1,22 +1,10 @@
 #!/usr/bin/env bash
 # scripts/vendor_frontend_assets.sh
 #
-# Скачивает закреплённые версии CDN-скриптов/шрифтов (Alpine CSP, Alpine
-# Collapse, HTMX, Tabler Icons webfont) в static/vendor/ — часть миграции с
-# CDN на локально отдаваемые файлы. См.
-# docs/adr/0025-remove-cdn-dependencies.md.
-#
-# В отличие от Tailwind/daisyUI (которым нужна настоящая сборка — см.
-# package.json/static_src/app.css), эти четыре пакета используются как
-# готовые файлы — просто скачать один раз и отдавать со своего /static/,
-# без npm build. SRI (integrity=) после этого не нужен — файлы same-origin,
-# защита от подмены обеспечивается тем, что их вообще не грузят с чужого
-# домена, а не хэшем.
+# Скачивает Alpine CSP, Alpine Collapse, HTMX и Tabler Icons в static/vendor/.
+# Файлы same-origin — SRI не нужен.
 #
 # Использование: bash scripts/vendor_frontend_assets.sh
-# Запускать при первой настройке проекта и при обновлении версии любого
-# из этих пакетов (поменять URL/версию ниже, перезапустить скрипт,
-# закоммитить обновлённые файлы в static/vendor/).
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -40,9 +28,7 @@ echo "Скачиваю Tabler Icons webfont (CSS + шрифты)..."
 curl -sfL "https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.46.0/dist/tabler-icons.min.css" \
     -o "$VENDOR_DIR/tabler-icons/tabler-icons.min.css"
 
-# CSS ссылается на файлы шрифтов относительными путями вида
-# "./fonts/tabler-icons.woff2" — качаем те же имена, чтобы относительные
-# пути в скачанном CSS не пришлось переписывать вручную.
+# Имена шрифтов как в относительных путях CSS.
 for ext in woff2 woff ttf eot; do
     echo "  fonts/tabler-icons.${ext}"
     curl -sfL "https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.46.0/dist/fonts/tabler-icons.${ext}" \

@@ -1,8 +1,5 @@
 // static/js/analytics.js
-// Клиентский трекер продуктовой аналитики DOPX. Отправляет события на
-// /analytics/track/ (analytics/views.py::TrackClientEventView) через
-// sendBeacon — не блокирует навигацию/выгрузку страницы, в отличие от
-// обычного fetch с ожиданием ответа.
+// Трекер продуктовой аналитики: события на /analytics/track/ через sendBeacon.
 (function () {
   const STORAGE_KEY = "dopx_anon_id";
 
