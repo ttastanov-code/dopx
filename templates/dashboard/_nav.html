@@ -1,8 +1,8 @@
 {% load dashboard_extras %}
 {% comment %}
 Меню staff-дашборда: горизонтальные вкладки.
-От 860px — два ряда, на узких экранах — одна прокручиваемая лента.
-Вкладки фильтруются по user|can_access_section (реальная проверка — в middleware).
+Состав — dashboard/nav.py: недоступные вкладки и пустые группы не рендерятся,
+при малом числе вкладок — один ряд. Реальная проверка доступа — в middleware.
 {% endcomment %}
 
 {% if page_title %}
@@ -12,43 +12,22 @@
 </div>
 {% endif %}
 
+{% dashboard_nav user as nav %}
 <div class="dopx-toolbar">
     <nav class="dopx-tabs">
+        {% for row in nav.rows %}
         <div class="dopx-tabs-row">
-            {% if user|can_access_section:"overview" %}<a href="{% url 'dashboard:overview' %}" class="dopx-tab {% if active_tab == 'overview' %}dopx-tab--active{% endif %}"><i class="ti ti-chart-line"></i>Обзор</a>{% endif %}
-            {% if user|can_access_section:"traffic" %}<a href="{% url 'dashboard:traffic' %}" class="dopx-tab {% if active_tab == 'traffic' %}dopx-tab--active{% endif %}"><i class="ti ti-world"></i>Трафик</a>{% endif %}
-            {# «Матчи» #}
-            {% if user|can_access_section:"matches" %}<a href="{% url 'dashboard:matches_list' %}" class="dopx-tab {% if active_tab == 'matches' %}dopx-tab--active{% endif %}"><i class="ti ti-ball-football"></i>Матчи</a>{% endif %}
-
-            <span class="dopx-tabs__divider"></span>
-            {% if user|can_access_section:"data_health" %}<a href="{% url 'dashboard:data_health' %}" class="dopx-tab {% if active_tab == 'data_health' %}dopx-tab--active{% endif %}"><i class="ti ti-activity-heartbeat"></i>Здоровье данных</a>{% endif %}
-            {% if user|can_access_section:"data_trust" %}<a href="{% url 'dashboard:data_trust' %}" class="dopx-tab {% if active_tab == 'data_trust' %}dopx-tab--active{% endif %}"><i class="ti ti-shield-check"></i>Доверие к данным</a>{% endif %}
-            {% if user|can_access_section:"duplicate_players" %}<a href="{% url 'dashboard:duplicate_players_review' %}" class="dopx-tab {% if active_tab == 'duplicate_players' %}dopx-tab--active{% endif %}"><i class="ti ti-users-group"></i>Дубли игроков</a>{% endif %}
-            {% if user|can_access_section:"names_review" %}<a href="{% url 'dashboard:names_review' %}" class="dopx-tab {% if active_tab == 'names_review' %}dopx-tab--active{% endif %}"><i class="ti ti-sparkles"></i>Проверка ФИО</a>{% endif %}
-            {# «Оценки» #}
-            {% if user|can_access_section:"evaluation_sessions" %}<a href="{% url 'dashboard:evaluation_sessions_list' %}" class="dopx-tab {% if active_tab == 'evaluation_sessions' %}dopx-tab--active{% endif %}"><i class="ti ti-clipboard-check"></i>Оценки</a>{% endif %}
+            {% for group in row %}
+            {% if not forloop.first %}<span class="dopx-tabs__divider"></span>{% endif %}
+            {% for item in group %}
+            <a href="{{ item.url }}" class="dopx-tab {% if active_tab == item.key %}dopx-tab--active{% endif %}"><i class="ti {{ item.icon }}"></i>{{ item.label }}</a>
+            {% endfor %}
+            {% endfor %}
+            {% if forloop.last %}{% include 'dashboard/_nav_tail.html' %}{% endif %}
         </div>
-        <div class="dopx-tabs-row">
-            {# «Пользователи» #}
-            {% if user|can_access_section:"users" %}<a href="{% url 'dashboard:users_list' %}" class="dopx-tab {% if active_tab == 'users' %}dopx-tab--active{% endif %}"><i class="ti ti-users"></i>Пользователи</a>{% endif %}
-            {% if user|can_access_section:"antifraud" %}<a href="{% url 'dashboard:antifraud' %}" class="dopx-tab {% if active_tab == 'antifraud' %}dopx-tab--active{% endif %}"><i class="ti ti-shield-exclamation"></i>Антифрод</a>{% endif %}
-            {% if user|can_access_section:"parser_tools" %}<a href="{% url 'dashboard:parser_tools' %}" class="dopx-tab {% if active_tab == 'parser_tools' %}dopx-tab--active{% endif %}"><i class="ti ti-server-cog"></i>Парсер</a>{% endif %}
-            {% if user|can_access_section:"ads" %}<a href="{% url 'dashboard:ads' %}" class="dopx-tab {% if active_tab == 'ads' %}dopx-tab--active{% endif %}"><i class="ti ti-code"></i>Реклама</a>{% endif %}
-
-            <span class="dopx-tabs__divider"></span>
-            {% if user|can_access_section:"audit" %}<a href="{% url 'dashboard:audit_log' %}" class="dopx-tab {% if active_tab == 'audit' %}dopx-tab--active{% endif %}"><i class="ti ti-history"></i>Аудит</a>{% endif %}
-            {% if user|can_access_section:"announcements" %}<a href="{% url 'dashboard:announcements' %}" class="dopx-tab {% if active_tab == 'announcements' %}dopx-tab--active{% endif %}"><i class="ti ti-speakerphone"></i>Объявления</a>{% endif %}
-            {# «Настройки» #}
-            {% if user|can_access_section:"platform_settings" %}<a href="{% url 'dashboard:platform_settings' %}" class="dopx-tab {% if active_tab == 'platform_settings' %}dopx-tab--active{% endif %}"><i class="ti ti-adjustments"></i>Настройки</a>{% endif %}
-            {# «Статус» #}
-            {% if user|can_access_section:"system_status" %}<a href="{% url 'dashboard:system_status' %}" class="dopx-tab {% if active_tab == 'system_status' %}dopx-tab--active{% endif %}"><i class="ti ti-heart-rate-monitor"></i>Статус</a>{% endif %}
-
-            <span class="dopx-tabs__spacer"></span>
-            {% if user|can_access_section:"scripts" %}<a href="{% url 'dashboard:scripts' %}" class="dopx-tab dopx-tab--warn {% if active_tab == 'scripts' %}dopx-tab--active-warn{% endif %}"><i class="ti ti-terminal-2"></i>Скрипты</a>{% endif %}
-            {# «Роли доступа» — только для суперпользователя. #}
-            {% if user.is_superuser %}<a href="{% url 'dashboard:access_roles_list' %}" class="dopx-tab dopx-tab--icon-only {% if active_tab == 'access_roles' %}dopx-tab--active{% endif %}" title="Роли доступа"><i class="ti ti-users-group"></i></a>{% endif %}
-            <a href="{% url 'admin:index' %}" class="dopx-tab dopx-tab--icon-only" title="Django admin"><i class="ti ti-settings"></i></a>
-        </div>
+        {% empty %}
+        <div class="dopx-tabs-row">{% include 'dashboard/_nav_tail.html' %}</div>
+        {% endfor %}
     </nav>
 </div>
 

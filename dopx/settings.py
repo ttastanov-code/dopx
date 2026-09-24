@@ -8,6 +8,7 @@ from celery.schedules import crontab
 from django.core.exceptions import ImproperlyConfigured
 from django.urls import reverse_lazy
 from django.utils.translation import gettext_lazy as _
+from dopx.admin_nav import admin_perm, dashboard_perm
 
 load_dotenv()
 
@@ -151,86 +152,103 @@ UNFOLD = {
                         "title": _("Дашборд — обзор"),
                         "icon": "dashboard",
                         "link": reverse_lazy("dashboard:overview"),
+                        "permission": dashboard_perm("overview"),
                     },
                     {
                         "title": _("Трафик"),
                         "icon": "language",
                         "link": reverse_lazy("dashboard:traffic"),
+                        "permission": dashboard_perm("traffic"),
                     },
                     {
                         "title": _("Матчи"),
                         "icon": "sports_soccer",
                         "link": reverse_lazy("dashboard:matches_list"),
+                        "permission": dashboard_perm("matches"),
                     },
                     {
                         "title": _("Здоровье данных"),
                         "icon": "monitor_heart",
                         "link": reverse_lazy("dashboard:data_health"),
+                        "permission": dashboard_perm("data_health"),
                     },
                     {
                         "title": _("Доверие к данным"),
                         "icon": "verified",
                         "link": reverse_lazy("dashboard:data_trust"),
+                        "permission": dashboard_perm("data_trust"),
                     },
                     {
                         "title": _("Дубли игроков"),
                         "icon": "groups",
                         "link": reverse_lazy("dashboard:duplicate_players_review"),
+                        "permission": dashboard_perm("duplicate_players"),
                     },
                     {
                         "title": _("Проверка ФИО"),
                         "icon": "auto_awesome",
                         "link": reverse_lazy("dashboard:names_review"),
+                        "permission": dashboard_perm("names_review"),
                     },
                     {
                         "title": _("Оценки"),
                         "icon": "checklist",
                         "link": reverse_lazy("dashboard:evaluation_sessions_list"),
+                        "permission": dashboard_perm("evaluation_sessions"),
                     },
                     {
                         "title": _("Пользователи"),
                         "icon": "group",
                         "link": reverse_lazy("dashboard:users_list"),
+                        "permission": dashboard_perm("users"),
                     },
                     {
                         "title": _("Антифрод"),
                         "icon": "shield_moon",
                         "link": reverse_lazy("dashboard:antifraud"),
+                        "permission": dashboard_perm("antifraud"),
                     },
                     {
                         "title": _("Парсер KFF"),
                         "icon": "cable",
                         "link": reverse_lazy("dashboard:parser_tools"),
+                        "permission": dashboard_perm("parser_tools"),
                     },
                     {
                         "title": _("Реклама и виджеты"),
                         "icon": "code",
                         "link": reverse_lazy("dashboard:ads"),
+                        "permission": dashboard_perm("ads"),
                     },
                     {
                         "title": _("Аудит-лог"),
                         "icon": "history",
                         "link": reverse_lazy("dashboard:audit_log"),
+                        "permission": dashboard_perm("audit"),
                     },
                     {
                         "title": _("Объявления"),
                         "icon": "campaign",
                         "link": reverse_lazy("dashboard:announcements"),
+                        "permission": dashboard_perm("announcements"),
                     },
                     {
                         "title": _("Настройки платформы"),
                         "icon": "tune",
                         "link": reverse_lazy("dashboard:platform_settings"),
+                        "permission": dashboard_perm("platform_settings"),
                     },
                     {
                         "title": _("Системный статус"),
                         "icon": "monitor_heart",
                         "link": reverse_lazy("dashboard:system_status"),
+                        "permission": dashboard_perm("system_status"),
                     },
                     {
                         "title": _("Скрипты"),
                         "icon": "terminal",
                         "link": reverse_lazy("dashboard:scripts"),
+                        "permission": dashboard_perm("scripts"),
                     },
                     # Роли доступа — только для суперпользователей.
                     {
@@ -254,13 +272,13 @@ UNFOLD = {
                 "icon": "category",
                 "collapsible": True,
                 "items": [
-                    {"title": _("Лиги"), "icon": "emoji_events", "link": reverse_lazy("admin:leagues_league_changelist")},
-                    {"title": _("Сезоны"), "icon": "calendar_month", "link": reverse_lazy("admin:seasons_season_changelist")},
-                    {"title": _("Команды"), "icon": "groups", "link": reverse_lazy("admin:teams_team_changelist")},
-                    {"title": _("Команды в сезоне"), "icon": "table_rows", "link": reverse_lazy("admin:teams_teamseason_changelist")},
-                    {"title": _("Игроки"), "icon": "sports", "link": reverse_lazy("admin:players_player_changelist")},
-                    {"title": _("Тренеры"), "icon": "assignment_ind", "link": reverse_lazy("admin:coaches_coach_changelist")},
-                    {"title": _("Судьи"), "icon": "sports_score", "link": reverse_lazy("admin:referees_referee_changelist")},
+                    {"title": _("Лиги"), "icon": "emoji_events", "link": reverse_lazy("admin:leagues_league_changelist"), "permission": admin_perm("leagues_league")},
+                    {"title": _("Сезоны"), "icon": "calendar_month", "link": reverse_lazy("admin:seasons_season_changelist"), "permission": admin_perm("seasons_season")},
+                    {"title": _("Команды"), "icon": "groups", "link": reverse_lazy("admin:teams_team_changelist"), "permission": admin_perm("teams_team")},
+                    {"title": _("Команды в сезоне"), "icon": "table_rows", "link": reverse_lazy("admin:teams_teamseason_changelist"), "permission": admin_perm("teams_teamseason")},
+                    {"title": _("Игроки"), "icon": "sports", "link": reverse_lazy("admin:players_player_changelist"), "permission": admin_perm("players_player")},
+                    {"title": _("Тренеры"), "icon": "assignment_ind", "link": reverse_lazy("admin:coaches_coach_changelist"), "permission": admin_perm("coaches_coach")},
+                    {"title": _("Судьи"), "icon": "sports_score", "link": reverse_lazy("admin:referees_referee_changelist"), "permission": admin_perm("referees_referee")},
                 ],
             },
             {
@@ -268,10 +286,14 @@ UNFOLD = {
                 "icon": "scoreboard",
                 "collapsible": True,
                 "items": [
-                    {"title": _("Матчи"), "icon": "sports_soccer", "link": reverse_lazy("admin:matches_match_changelist")},
-                    {"title": _("Составы"), "icon": "assignment", "link": reverse_lazy("admin:lineups_matchlineup_changelist")},
-                    {"title": _("События матчей"), "icon": "bolt", "link": reverse_lazy("admin:events_matchevent_changelist")},
-                    {"title": _("Реакции на события"), "icon": "mood", "link": reverse_lazy("admin:events_eventreaction_changelist")},
+                    {"title": _("Матчи"), "icon": "sports_soccer", "link": reverse_lazy("admin:matches_match_changelist"), "permission": admin_perm("matches_match")},
+                    {"title": _("Составы"), "icon": "assignment", "link": reverse_lazy("admin:lineups_matchlineup_changelist"), "permission": admin_perm("lineups_matchlineup")},
+                    {"title": _("События матчей"), "icon": "bolt", "link": reverse_lazy("admin:events_matchevent_changelist"), "permission": admin_perm("events_matchevent")},
+                    {"title": _("Реакции на события"), "icon": "mood", "link": reverse_lazy("admin:events_eventreaction_changelist"), "permission": admin_perm("events_eventreaction")},
+                    {"title": _("Статистика игроков"), "icon": "leaderboard", "link": reverse_lazy("admin:matches_matchplayerstatistics_changelist"), "permission": admin_perm("matches_matchplayerstatistics")},
+                    {"title": _("Статистика команд"), "icon": "bar_chart", "link": reverse_lazy("admin:matches_matchteamstatistics_changelist"), "permission": admin_perm("matches_matchteamstatistics")},
+                    {"title": _("Реакции на матчи"), "icon": "add_reaction", "link": reverse_lazy("admin:matches_matchreaction_changelist"), "permission": admin_perm("matches_matchreaction")},
+                    {"title": _("Прогнозы"), "icon": "online_prediction", "link": reverse_lazy("admin:predictions_matchprediction_changelist"), "permission": admin_perm("predictions_matchprediction")},
                 ],
             },
             {
@@ -279,13 +301,23 @@ UNFOLD = {
                 "icon": "star_rate",
                 "collapsible": True,
                 "items": [
-                    {"title": _("Сессии оценки"), "icon": "checklist", "link": reverse_lazy("admin:evaluations_evaluationsession_changelist")},
-                    {"title": _("Контекст оценки"), "icon": "visibility", "link": reverse_lazy("admin:evaluations_contextevaluation_changelist")},
-                    {"title": _("Оценки команд"), "icon": "shield", "link": reverse_lazy("admin:evaluations_teamevaluation_changelist")},
-                    {"title": _("Оценки игроков"), "icon": "person", "link": reverse_lazy("admin:evaluations_playerevaluation_changelist")},
-                    {"title": _("Оценки тренеров"), "icon": "badge", "link": reverse_lazy("admin:evaluations_coachevaluation_changelist")},
-                    {"title": _("Оценки судей"), "icon": "gavel", "link": reverse_lazy("admin:evaluations_refereeevaluation_changelist")},
-                    {"title": _("Оценки матча"), "icon": "reviews", "link": reverse_lazy("admin:evaluations_matchevaluation_changelist")},
+                    {"title": _("Сессии оценки"), "icon": "checklist", "link": reverse_lazy("admin:evaluations_evaluationsession_changelist"), "permission": admin_perm("evaluations_evaluationsession")},
+                    {"title": _("Контекст оценки"), "icon": "visibility", "link": reverse_lazy("admin:evaluations_contextevaluation_changelist"), "permission": admin_perm("evaluations_contextevaluation")},
+                    {"title": _("Оценки команд"), "icon": "shield", "link": reverse_lazy("admin:evaluations_teamevaluation_changelist"), "permission": admin_perm("evaluations_teamevaluation")},
+                    {"title": _("Оценки игроков"), "icon": "person", "link": reverse_lazy("admin:evaluations_playerevaluation_changelist"), "permission": admin_perm("evaluations_playerevaluation")},
+                    {"title": _("Оценки тренеров"), "icon": "badge", "link": reverse_lazy("admin:evaluations_coachevaluation_changelist"), "permission": admin_perm("evaluations_coachevaluation")},
+                    {"title": _("Оценки судей"), "icon": "gavel", "link": reverse_lazy("admin:evaluations_refereeevaluation_changelist"), "permission": admin_perm("evaluations_refereeevaluation")},
+                    {"title": _("Оценки матча"), "icon": "reviews", "link": reverse_lazy("admin:evaluations_matchevaluation_changelist"), "permission": admin_perm("evaluations_matchevaluation")},
+                ],
+            },
+            {
+                "title": _("Сборные"),
+                "icon": "military_tech",
+                "collapsible": True,
+                "items": [
+                    {"title": _("Сборные тура"), "icon": "star", "link": reverse_lazy("admin:round_squad_roundbestxi_changelist"), "permission": admin_perm("round_squad_roundbestxi")},
+                    {"title": _("Сборные сезона"), "icon": "workspace_premium", "link": reverse_lazy("admin:season_squad_seasonbestxi_changelist"), "permission": admin_perm("season_squad_seasonbestxi")},
+                    {"title": _("Рейтинг позиций сезона"), "icon": "format_list_numbered", "link": reverse_lazy("admin:season_squad_seasonpositionranking_changelist"), "permission": admin_perm("season_squad_seasonpositionranking")},
                 ],
             },
             {
@@ -293,11 +325,11 @@ UNFOLD = {
                 "icon": "group",
                 "collapsible": True,
                 "items": [
-                    {"title": _("Пользователи"), "icon": "person", "link": reverse_lazy("admin:users_user_changelist")},
-                    {"title": _("Бейджи"), "icon": "military_tech", "link": reverse_lazy("admin:users_userbadge_changelist")},
-                    {"title": _("XP и уровни"), "icon": "trending_up", "link": reverse_lazy("admin:users_userxp_changelist")},
-                    {"title": _("Подписки (follow)"), "icon": "favorite", "link": reverse_lazy("admin:users_follow_changelist")},
-                    {"title": _("Push-подписки"), "icon": "notifications_active", "link": reverse_lazy("admin:users_pushsubscription_changelist")},
+                    {"title": _("Пользователи"), "icon": "person", "link": reverse_lazy("admin:users_user_changelist"), "permission": admin_perm("users_user")},
+                    {"title": _("Бейджи"), "icon": "military_tech", "link": reverse_lazy("admin:users_userbadge_changelist"), "permission": admin_perm("users_userbadge")},
+                    {"title": _("XP и уровни"), "icon": "trending_up", "link": reverse_lazy("admin:users_userxp_changelist"), "permission": admin_perm("users_userxp")},
+                    {"title": _("Подписки (follow)"), "icon": "favorite", "link": reverse_lazy("admin:users_follow_changelist"), "permission": admin_perm("users_follow")},
+                    {"title": _("Push-подписки"), "icon": "notifications_active", "link": reverse_lazy("admin:users_pushsubscription_changelist"), "permission": admin_perm("users_pushsubscription")},
                 ],
             },
             {
@@ -305,9 +337,10 @@ UNFOLD = {
                 "icon": "gpp_maybe",
                 "collapsible": True,
                 "items": [
-                    {"title": _("Подозрительная активность"), "icon": "warning", "link": reverse_lazy("admin:users_suspiciousactivityflag_changelist")},
-                    {"title": _("Обращения"), "icon": "mail", "link": reverse_lazy("admin:notifications_contactsubmission_changelist")},
-                    {"title": _("Уведомления"), "icon": "notifications", "link": reverse_lazy("admin:notifications_notification_changelist")},
+                    {"title": _("Подозрительная активность"), "icon": "warning", "link": reverse_lazy("admin:users_suspiciousactivityflag_changelist"), "permission": admin_perm("users_suspiciousactivityflag")},
+                    {"title": _("Пороги антифрода"), "icon": "rule", "link": reverse_lazy("admin:users_antifraudthreshold_changelist"), "permission": admin_perm("users_antifraudthreshold")},
+                    {"title": _("Обращения"), "icon": "mail", "link": reverse_lazy("admin:notifications_contactsubmission_changelist"), "permission": admin_perm("notifications_contactsubmission")},
+                    {"title": _("Уведомления"), "icon": "notifications", "link": reverse_lazy("admin:notifications_notification_changelist"), "permission": admin_perm("notifications_notification")},
                 ],
             },
             {
@@ -315,10 +348,14 @@ UNFOLD = {
                 "icon": "monitoring",
                 "collapsible": True,
                 "items": [
-                    {"title": _("Агрегаты игроков"), "icon": "query_stats", "link": reverse_lazy("admin:aggregates_playermatchaggregate_changelist")},
-                    {"title": _("Агрегаты тренеров"), "icon": "query_stats", "link": reverse_lazy("admin:aggregates_coachmatchaggregate_changelist")},
-                    {"title": _("Агрегаты матчей"), "icon": "query_stats", "link": reverse_lazy("admin:aggregates_matchaggregate_changelist")},
-                    {"title": _("События аналитики"), "icon": "insights", "link": reverse_lazy("admin:analytics_analyticsevent_changelist")},
+                    {"title": _("Агрегаты игроков"), "icon": "query_stats", "link": reverse_lazy("admin:aggregates_playermatchaggregate_changelist"), "permission": admin_perm("aggregates_playermatchaggregate")},
+                    {"title": _("Агрегаты тренеров"), "icon": "query_stats", "link": reverse_lazy("admin:aggregates_coachmatchaggregate_changelist"), "permission": admin_perm("aggregates_coachmatchaggregate")},
+                    {"title": _("Агрегаты матчей"), "icon": "query_stats", "link": reverse_lazy("admin:aggregates_matchaggregate_changelist"), "permission": admin_perm("aggregates_matchaggregate")},
+                    {"title": _("Агрегаты команд"), "icon": "query_stats", "link": reverse_lazy("admin:aggregates_teammatchaggregate_changelist"), "permission": admin_perm("aggregates_teammatchaggregate")},
+                    {"title": _("Агрегаты судей"), "icon": "query_stats", "link": reverse_lazy("admin:aggregates_refereematchaggregate_changelist"), "permission": admin_perm("aggregates_refereematchaggregate")},
+                    {"title": _("Поправки рейтинга игроков"), "icon": "tune", "link": reverse_lazy("admin:aggregates_playerratingcorrection_changelist"), "permission": admin_perm("aggregates_playerratingcorrection")},
+                    {"title": _("Поправки рейтинга команд"), "icon": "tune", "link": reverse_lazy("admin:aggregates_teamratingcorrection_changelist"), "permission": admin_perm("aggregates_teamratingcorrection")},
+                    {"title": _("События аналитики"), "icon": "insights", "link": reverse_lazy("admin:analytics_analyticsevent_changelist"), "permission": admin_perm("analytics_analyticsevent")},
                 ],
             },
             {
@@ -326,9 +363,9 @@ UNFOLD = {
                 "icon": "handshake",
                 "collapsible": True,
                 "items": [
-                    {"title": _("Партнёры"), "icon": "business_center", "link": reverse_lazy("admin:partners_partner_changelist")},
-                    {"title": _("Баннеры"), "icon": "campaign", "link": reverse_lazy("admin:partners_banner_changelist")},
-                    {"title": _("Реклама и виджеты"), "icon": "code", "link": reverse_lazy("dashboard:ads")},
+                    {"title": _("Партнёры"), "icon": "business_center", "link": reverse_lazy("admin:partners_partner_changelist"), "permission": admin_perm("partners_partner")},
+                    {"title": _("Баннеры"), "icon": "campaign", "link": reverse_lazy("admin:partners_banner_changelist"), "permission": admin_perm("partners_banner")},
+                    {"title": _("Реклама и виджеты"), "icon": "code", "link": reverse_lazy("dashboard:ads"), "permission": dashboard_perm("ads")},
                 ],
             },
             {
@@ -336,9 +373,20 @@ UNFOLD = {
                 "icon": "dns",
                 "collapsible": True,
                 "items": [
-                    {"title": _("Запуски синка (парсер)"), "icon": "sync", "link": reverse_lazy("admin:parsers_parsersyncrun_changelist")},
-                    {"title": _("Аудит-лог staff (полный)"), "icon": "manage_history", "link": reverse_lazy("admin:dashboard_staffactionlog_changelist")},
-                    {"title": _("Попытки входа (axes)"), "icon": "lock_clock", "link": reverse_lazy("admin:axes_accessattempt_changelist")},
+                    {"title": _("Запуски синка (парсер)"), "icon": "sync", "link": reverse_lazy("admin:parsers_parsersyncrun_changelist"), "permission": admin_perm("parsers_parsersyncrun")},
+                    {"title": _("Аудит-лог staff (полный)"), "icon": "manage_history", "link": reverse_lazy("admin:dashboard_staffactionlog_changelist"), "permission": admin_perm("dashboard_staffactionlog")},
+                    {"title": _("Попытки входа (axes)"), "icon": "lock_clock", "link": reverse_lazy("admin:axes_accessattempt_changelist"), "permission": admin_perm("axes_accessattempt")},
+                    {"title": _("Журнал входов (axes)"), "icon": "login", "link": reverse_lazy("admin:axes_accesslog_changelist"), "permission": admin_perm("axes_accesslog")},
+                    {"title": _("Неудачные входы (axes)"), "icon": "no_accounts", "link": reverse_lazy("admin:axes_accessfailurelog_changelist"), "permission": admin_perm("axes_accessfailurelog")},
+                    {"title": _("Настройки платформы"), "icon": "tune", "link": reverse_lazy("admin:core_platformsetting_changelist"), "permission": admin_perm("core_platformsetting")},
+                    {"title": _("Права сотрудников в дашборде"), "icon": "admin_panel_settings", "link": reverse_lazy("admin:dashboard_staffaccessgrant_changelist"), "permission": admin_perm("dashboard_staffaccessgrant")},
+                    {"title": _("Группы прав /admin"), "icon": "group_work", "link": reverse_lazy("admin:auth_group_changelist"), "permission": admin_perm("auth_group")},
+                    {"title": _("Расхождения импорта"), "icon": "difference", "link": reverse_lazy("admin:parsers_parserdiscrepancy_changelist"), "permission": admin_perm("parsers_parserdiscrepancy")},
+                    {"title": _("Предложения ИИ по ФИО"), "icon": "auto_awesome", "link": reverse_lazy("admin:parsers_nameverificationsuggestion_changelist"), "permission": admin_perm("parsers_nameverificationsuggestion")},
+                    {"title": _("Подтверждённые ФИО"), "icon": "spellcheck", "link": reverse_lazy("admin:parsers_confirmednamecorrection_changelist"), "permission": admin_perm("parsers_confirmednamecorrection")},
+                    {"title": _("Дубли игроков"), "icon": "content_copy", "link": reverse_lazy("admin:players_potentialduplicateplayer_changelist"), "permission": admin_perm("players_potentialduplicateplayer")},
+                    {"title": _("2FA: приложения"), "icon": "phonelink_lock", "link": reverse_lazy("admin:otp_totp_totpdevice_changelist"), "permission": admin_perm("otp_totp_totpdevice")},
+                    {"title": _("2FA: резервные коды"), "icon": "password", "link": reverse_lazy("admin:otp_static_staticdevice_changelist"), "permission": admin_perm("otp_static_staticdevice")},
                 ],
             },
         ],
@@ -556,6 +604,19 @@ CELERY_TIMEZONE = TIME_ZONE
 CELERY_ENABLE_UTC = False
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
+# Воркер не набирает задачи впрок — пуш не ждёт за чужой долгой задачей.
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+# Live-опрос и пуши — в отдельной очереди realtime, её слушает отдельный воркер,
+# чтобы долгие пересчёты не задерживали уведомления.
+CELERY_TASK_ROUTES = {
+    'parsers.sportmonks.tasks.sportmonks_update_live': {'queue': 'realtime'},
+    'notifications.tasks.notify_followers_match_event': {'queue': 'realtime'},
+    'notifications.tasks.notify_followers_match_started': {'queue': 'realtime'},
+    'notifications.tasks.notify_followers_lineups_available': {'queue': 'realtime'},
+    'notifications.tasks.notify_followers_match_activity': {'queue': 'realtime'},
+    'notifications.tasks.notify_followers_match_changed': {'queue': 'realtime'},
+    'notifications.tasks.send_push_task': {'queue': 'realtime'},
+}
 
 # В тестах Celery выполняет задачи синхронно, не трогая настоящую очередь.
 if 'test' in sys.argv or 'pytest' in sys.modules:
@@ -602,6 +663,11 @@ CELERY_BEAT_SCHEDULE = {
     'voting-closing-reminders': {
         'task': 'notifications.tasks.notify_voting_closing_soon',
         'schedule': crontab(minute='*/30'),
+    },
+    # Напоминание дооценить матч — за 2 часа до закрытия голосования.
+    'unfinished-evaluation-reminders': {
+        'task': 'notifications.tasks.notify_unfinished_evaluations',
+        'schedule': crontab(minute='*/15'),
     },
     # === Очистка старых данных (каждый день в 03:00) ===
     'cleanup-old-notifications-daily': {
@@ -723,6 +789,8 @@ CELERY_BEAT_SCHEDULE = {
     'sportmonks-update-live': {
         'task': 'parsers.sportmonks.tasks.sportmonks_update_live',
         'schedule': timedelta(seconds=15),
+        # Не выполненный вовремя тик выбрасываем, чтобы не копились.
+        'options': {'expires': 14},
     },
     # === Подтяжка составов для матчей в ближайшие 3 часа. ===
     'sportmonks-update-upcoming': {

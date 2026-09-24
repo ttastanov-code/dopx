@@ -25,7 +25,18 @@ class UserAdmin(ModelAdmin):
     list_filter = ("is_verified",)
     # trust_score только для чтения — считается автоматически.
     readonly_fields = ("trust_score",)
+    # Хэш пароля не редактируем: смена — через сброс пароля.
+    exclude = ("password",)
     actions = [export_as_csv, "verify_selected", "deactivate_selected"]
+
+    # Права и статус меняет только суперпользователь (иначе можно выдать себе superuser).
+    PRIVILEGE_FIELDS = ("is_superuser", "is_staff", "groups", "user_permissions")
+
+    def get_readonly_fields(self, request, obj=None):
+        fields = super().get_readonly_fields(request, obj)
+        if request.user.is_superuser:
+            return fields
+        return (*fields, *self.PRIVILEGE_FIELDS)
 
     @admin.action(description="Отметить как верифицированных")
     def verify_selected(self, request, queryset):

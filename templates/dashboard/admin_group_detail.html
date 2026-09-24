@@ -1,0 +1,101 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+<div class="mb-4">
+    <a href="{% url 'dashboard:admin_groups_list' %}" class="text-xs opacity-60 hover:opacity-100"><i class="ti ti-arrow-left"></i> К группам</a>
+</div>
+
+<form method="post" id="group-form">
+    {% csrf_token %}
+    <div class="card bg-base-100 border border-base-300 mb-4">
+        <div class="card-body p-4">
+            <div class="dopx-section-eyebrow"><i class="ti ti-lock-access"></i>Группа прав /admin</div>
+            <div class="flex flex-col sm:flex-row gap-2 mt-1">
+                <input type="text" name="name" value="{{ group.name }}" required maxlength="150" class="input input-bordered input-sm w-full sm:max-w-sm">
+            </div>
+            <p class="text-xs opacity-55 mt-2">
+                {% if members %}Состоят: {% for m in members %}<a href="{% url 'dashboard:access_roles_detail' m.id %}" class="link">{{ m.username }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}{% else %}В группе пока никого.{% endif %}
+            </p>
+        </div>
+    </div>
+
+    {# Что сюда не входит и почему. #}
+    <div class="alert text-xs md:text-sm mb-3 items-start">
+        <i class="ti ti-info-circle shrink-0 mt-0.5"></i>
+        <div>
+            Здесь только модели, которые есть в /admin. Доступ к <strong>разделам дашборда</strong> выдаётся в карточке сотрудника, не группой.
+            {% if superuser_only %}Эти модели в /admin видит только суперпользователь, работа с ними — в дашборде: {{ superuser_only|join:", " }}.{% endif %}
+            Пользователи и группы, 2FA-устройства и журнал входов — тоже только суперпользователь.
+        </div>
+    </div>
+
+    <div class="space-y-3">
+        {% for app in apps %}
+        <details class="card bg-base-100 border border-base-300" {% if app.checked_count %}open{% endif %} data-perm-app>
+            <summary class="card-body p-4 cursor-pointer flex-row items-center justify-between gap-2">
+                <span class="font-semibold min-w-0 truncate">{{ app.label }}</span>
+                <span class="flex items-center gap-2 shrink-0">
+                    {% if app.checked_count %}<span class="badge badge-sm badge-primary">{{ app.checked_count }}</span>{% endif %}
+                    <i class="ti ti-chevron-down opacity-50"></i>
+                </span>
+            </summary>
+            <div class="px-4 pb-4">
+                <div class="flex flex-wrap gap-2 mb-2">
+                    <button type="button" class="btn btn-xs btn-ghost" data-perm-preset="view">Только просмотр</button>
+                    <button type="button" class="btn btn-xs btn-ghost" data-perm-preset="all">Всё</button>
+                    <button type="button" class="btn btn-xs btn-ghost" data-perm-preset="none">Ничего</button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="table table-sm">
+                        <thead><tr><th>Модель</th>{% for l in crud_labels %}<th class="text-center">{{ l }}</th>{% endfor %}</tr></thead>
+                        <tbody>
+                            {% for m in app.models %}
+                            <tr>
+                                <td class="min-w-[10rem]">
+                                    <span class="text-sm">{{ m.label }}</span>
+                                    {% if m.dangerous %}<span class="badge badge-xs badge-error ml-1" title="Даёт возможность повысить себе права">опасно</span>{% endif %}
+                                    {% for e in m.extra %}
+                                    <label class="flex items-center gap-1.5 mt-1 text-xs opacity-70 cursor-pointer">
+                                        <input type="checkbox" name="perm" value="{{ e.id }}" {% if e.checked %}checked{% endif %} class="checkbox checkbox-xs" data-perm-kind="extra">
+                                        {{ e.name }}
+                                    </label>
+                                    {% endfor %}
+                                </td>
+                                {% for c in m.crud_cells %}
+                                <td class="text-center">
+                                    {% if c %}<input type="checkbox" name="perm" value="{{ c.id }}" {% if c.checked %}checked{% endif %} class="checkbox checkbox-sm" data-perm-kind="{% if forloop.first %}view{% else %}edit{% endif %}" aria-label="{{ c.name }}">{% else %}<span class="opacity-30">—</span>{% endif %}
+                                </td>
+                                {% endfor %}
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </details>
+        {% endfor %}
+    </div>
+</form>
+
+<div class="sticky bottom-0 z-30 mt-4 py-3 bg-base-100/90 backdrop-blur border-t border-base-300 flex flex-col-reverse sm:flex-row sm:justify-between gap-2">
+    <form method="post" onsubmit="return confirm('Удалить группу «{{ group.name|escapejs }}»? Сотрудники потеряют её права.');">
+        {% csrf_token %}
+        <button type="submit" name="action" value="delete" class="btn btn-sm btn-outline btn-error w-full sm:w-auto"><i class="ti ti-trash"></i> Удалить группу</button>
+    </form>
+    <button type="submit" form="group-form" class="btn btn-sm btn-primary w-full sm:w-auto"><i class="ti ti-device-floppy"></i> Сохранить права</button>
+</div>
+
+{# Пресеты чекбоксов внутри одного приложения. #}
+<script>
+document.querySelectorAll('[data-perm-preset]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+        var preset = btn.dataset.permPreset;
+        btn.closest('[data-perm-app]').querySelectorAll('input[name="perm"]').forEach(function (box) {
+            box.checked = preset === 'all' || (preset === 'view' && box.dataset.permKind === 'view');
+        });
+    });
+});
+</script>
+{% endblock %}

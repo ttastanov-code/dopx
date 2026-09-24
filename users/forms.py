@@ -301,40 +301,45 @@ class NotificationSettingsForm(forms.Form):
 
     email_match_finished = forms.BooleanField(
         required=False,
-        label="Матч завершён / Открытие голосования",
+        label="Матч завершён, голосование открыто",
         initial=True,
+        help_text="Письмо со счётом и ссылкой на оценку.",
         widget=forms.CheckboxInput(attrs={"class": "toggle toggle-primary"}),
     )
     email_voting_closing = forms.BooleanField(
         required=False,
-        label="Напоминание о закрытии голосования",
+        label="Голосование скоро закроется",
         initial=True,
+        help_text="За час до конца голосования по матчу.",
         widget=forms.CheckboxInput(attrs={"class": "toggle toggle-primary"}),
     )
     email_new_badge = forms.BooleanField(
         required=False,
-        label="Получение достижений",
+        label="Новые достижения",
         initial=True,
+        help_text="Когда вы получаете новый бейдж.",
         widget=forms.CheckboxInput(attrs={"class": "toggle toggle-primary"}),
     )
     email_level_up = forms.BooleanField(
         required=False,
-        label="Повышение уровня",
+        label="Новый уровень",
         initial=True,
+        help_text="Когда растёт ваш уровень.",
         widget=forms.CheckboxInput(attrs={"class": "toggle toggle-primary"}),
     )
     email_system = forms.BooleanField(
         required=False,
-        label="Системные новости платформы",
+        label="Новости платформы",
         initial=True,
+        help_text="Технические работы, изменения правил.",
         widget=forms.CheckboxInput(attrs={"class": "toggle toggle-primary"}),
     )
     # Дайджест вместо мгновенных писем (достижения/уровень/trust score).
     email_digest_mode = forms.BooleanField(
         required=False,
-        label="Собирать уведомления в дайджест вместо письма на каждое событие",
+        label="Собирать письма в дайджест",
         initial=True,
-        help_text="Рекомендуется — меньше писем, никакой потери информации.",
+        help_text="Достижения, уровни и новости — одним письмом в час вместо отдельных. Рекомендуем.",
         widget=forms.CheckboxInput(attrs={"class": "toggle toggle-primary"}),
     )
     # Retention-уведомления.
@@ -368,6 +373,69 @@ class NotificationSettingsForm(forms.Form):
         widget=forms.CheckboxInput(attrs={"class": "toggle toggle-primary"}),
     )
 
+    # Push по типам — см. notifications.services.PUSH_KIND_SETTING.
+    push_live = forms.BooleanField(
+        required=False, label="Live: старт матча, голы, красные", initial=True,
+        widget=forms.CheckboxInput(attrs={"class": "toggle toggle-primary"}),
+    )
+    push_lineups = forms.BooleanField(
+        required=False, label="Составы объявлены", initial=True,
+        widget=forms.CheckboxInput(attrs={"class": "toggle toggle-primary"}),
+    )
+    push_voting = forms.BooleanField(
+        required=False, label="Финальный счёт и голосование", initial=True,
+        help_text="Финал матча, приглашение оценить, напоминание дооценить.",
+        widget=forms.CheckboxInput(attrs={"class": "toggle toggle-primary"}),
+    )
+    push_predictions = forms.BooleanField(
+        required=False, label="Прогнозы", initial=True,
+        help_text="Приём прогнозов скоро закроется, результат вашего прогноза.",
+        widget=forms.CheckboxInput(attrs={"class": "toggle toggle-primary"}),
+    )
+    push_achievements = forms.BooleanField(
+        required=False, label="Достижения и уровни", initial=True,
+        widget=forms.CheckboxInput(attrs={"class": "toggle toggle-primary"}),
+    )
+    push_round_results = forms.BooleanField(
+        required=False, label="Ваши игроки в сборной тура", initial=True,
+        widget=forms.CheckboxInput(attrs={"class": "toggle toggle-primary"}),
+    )
+    push_match_changes = forms.BooleanField(
+        required=False, label="Перенос или отмена матча", initial=True,
+        widget=forms.CheckboxInput(attrs={"class": "toggle toggle-primary"}),
+    )
+
+    # Поле -> иконка tabler для карточки push в шаблоне.
+    PUSH_FIELDS = {
+        "push_live": "ti-ball-football",
+        "push_lineups": "ti-list-details",
+        "push_voting": "ti-flag-check",
+        "push_predictions": "ti-target-arrow",
+        "push_achievements": "ti-award",
+        "push_round_results": "ti-star",
+        "push_match_changes": "ti-calendar-event",
+    }
+
+    # Группы email-тумблеров для шаблона: (заголовок, [(поле, иконка)]).
+    EMAIL_GROUPS = (
+        ("Матчи", (("email_match_finished", "ti-flag-check"), ("email_voting_closing", "ti-clock"))),
+        ("Прогнозы и итоги", (
+            ("email_prediction_closing", "ti-hourglass"), ("email_prediction_result", "ti-target-arrow"),
+            ("email_round_results", "ti-star"), ("email_weekly_summary", "ti-calendar-stats"),
+        )),
+        ("Прогресс", (("email_new_badge", "ti-award"), ("email_level_up", "ti-trending-up"))),
+        ("Платформа", (("email_system", "ti-speakerphone"),)),
+    )
+
+    # id <form> на странице: поля разнесены по секциям и привязаны атрибутом form.
+    FORM_ID = "notification-settings-form"
+
+    def push_fields(self) -> list[tuple]:
+        return [(self[name], icon) for name, icon in self.PUSH_FIELDS.items()]
+
+    def email_groups(self) -> list[tuple]:
+        return [(title, [(self[name], icon) for name, icon in fields]) for title, fields in self.EMAIL_GROUPS]
+
     def __init__(self, *args, **kwargs):
         user = kwargs.pop("user", None)
         super().__init__(*args, **kwargs)
@@ -375,3 +443,5 @@ class NotificationSettingsForm(forms.Form):
             settings = user.notification_settings
             for field_name in self.fields:
                 self.fields[field_name].initial = settings.get(field_name, True)
+        for field in self.fields.values():
+            field.widget.attrs["form"] = self.FORM_ID

@@ -1,0 +1,5 @@
+{# Правый край меню: скрипты, роли доступа, /admin. #}
+<span class="dopx-tabs__spacer"></span>
+{% if nav.show_scripts %}<a href="{% url 'dashboard:scripts' %}" class="dopx-tab dopx-tab--warn {% if active_tab == 'scripts' %}dopx-tab--active-warn{% endif %}"><i class="ti ti-terminal-2"></i>Скрипты</a>{% endif %}
+{% if user.is_superuser %}<a href="{% url 'dashboard:access_roles_list' %}" class="dopx-tab dopx-tab--icon-only {% if active_tab == 'access_roles' %}dopx-tab--active{% endif %}" title="Роли доступа"><i class="ti ti-user-shield"></i></a>{% endif %}
+{% if nav.show_admin %}<a href="{% url 'admin:index' %}" class="dopx-tab dopx-tab--icon-only" title="Django admin"><i class="ti ti-settings"></i></a>{% endif %}

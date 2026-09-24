@@ -1,0 +1,12 @@
+{% load dashboard_extras %}
+{# Кнопки выхода со страницы 403: доступный раздел дашборда, /admin, главная. #}
+{% staff_exits user as exits %}
+<div class="flex flex-col sm:flex-row gap-2 justify-center">
+    {% if exits.dashboard_url %}
+    <a href="{{ exits.dashboard_url }}" class="btn btn-primary btn-sm"><i class="ti ti-layout-dashboard"></i> В дашборд</a>
+    {% endif %}
+    {% if exits.show_admin %}
+    <a href="{% url 'admin:index' %}" class="btn btn-outline btn-sm"><i class="ti ti-settings"></i> В админку</a>
+    {% endif %}
+    <a href="{% url 'core:home' %}" class="btn btn-ghost btn-sm"><i class="ti ti-home"></i> На сайт</a>
+</div>

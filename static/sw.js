@@ -50,7 +50,13 @@ self.addEventListener('push', (event) => {
         icon: '/static/pwa/icon-192.png',
         badge: '/static/pwa/icon-192.png',
         data: { url: payload.url || '/' },
+        timestamp: Date.now(),
     };
+    // Одинаковый tag заменяет прошлое уведомление (например, новый гол — прошлый счёт).
+    if (payload.tag) {
+        options.tag = payload.tag;
+        options.renotify = true;
+    }
 
     event.waitUntil(self.registration.showNotification(title, options));
 });

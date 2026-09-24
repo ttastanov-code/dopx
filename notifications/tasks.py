@@ -351,6 +351,58 @@ def notify_voting_closing_soon(self):
     }
 
 
+@shared_task(bind=True, max_retries=3)
+def notify_unfinished_evaluations(self):
+    """За 2 часа до закрытия голосования: push + in-app тем, кто начал оценку и бросил.
+    Дедуп — по Notification evaluation_reminder на (матч, пользователь).
+    """
+    from django.urls import reverse
+
+    from evaluations.models import EvaluationSession
+    from matches.models import Match
+    from notifications.models import Notification
+
+    now = timezone.now()
+    matches = list(Match.objects.filter(
+        status='finished', voting_open_until__gt=now, voting_open_until__lte=now + timedelta(hours=2),
+    ).select_related('home_team', 'away_team'))
+
+    reminded = 0
+    for match in matches:
+        user_ids = set(
+            EvaluationSession.objects.filter(match=match, status__in=('started', 'in_progress'))
+            .values_list('user_id', flat=True)
+        )
+        user_ids -= set(
+            EvaluationSession.objects.filter(match=match, status='completed').values_list('user_id', flat=True)
+        )
+        user_ids -= set(
+            Notification.objects.filter(notification_type='evaluation_reminder', related_match=match)
+            .values_list('user_id', flat=True)
+        )
+        if not user_ids:
+            continue
+
+        minutes_left = max(1, int((match.voting_open_until - now).total_seconds() // 60))
+        left = f"{minutes_left // 60} ч {minutes_left % 60} мин" if minutes_left >= 60 else f"{minutes_left} мин"
+        title = f"⏳ Оценка не закончена: {match.home_team.name} — {match.away_team.name}"
+        message = f"Голосование закроется через {left}. Осталось пару шагов."
+        action_url = reverse('matches:detail', args=[match.id])
+
+        Notification.objects.bulk_create([
+            Notification(
+                user_id=uid, notification_type='evaluation_reminder', title=title,
+                message=message, action_url=action_url, related_match=match,
+            )
+            for uid in user_ids
+        ])
+        _push_fan_out(user_ids, title, message, action_url, kind='evaluation_reminder', tag=f'vote-{match.id}')
+        reminded += len(user_ids)
+
+    logger.info(f"notify_unfinished_evaluations: напомнили {reminded} пользователям по {len(matches)} матч(ам)")
+    return {'reminded': reminded, 'matches': len(matches)}
+
+
 @shared_task
 def send_notification_digest():
     """Раз в час собирает неотправленные Notification (new_badge/level_up/system)
@@ -420,6 +472,27 @@ def cleanup_old_notifications():
     return {'deleted': deleted_count}
 
 
+# Пуш о событии матча не шлём, если событие импортировано больше чем столько назад.
+MATCH_EVENT_PUSH_MAX_AGE = timedelta(minutes=10)
+
+
+def _push_fan_out(user_ids, title: str, body: str, url: str, *, kind: str, tag: str | None = None) -> int:
+    """Push best-effort: ошибка не ломает in-app и email."""
+    try:
+        from notifications.services import send_push_to_users
+
+        return send_push_to_users(user_ids, title=title, body=body, url=url, kind=kind, tag=tag)
+    except Exception as exc:
+        logger.warning(f"push fan-out ({kind}) пропущен: {exc}")
+        return 0
+
+
+@shared_task
+def send_push_task(user_ids: list[str], title: str, body: str, url: str = '/', kind: str = 'default', tag: str | None = None) -> int:
+    """Push из синхронного кода (view) — через очередь, чтобы не держать запрос."""
+    return _push_fan_out(user_ids, title, body, url, kind=kind, tag=tag)
+
+
 @shared_task(bind=True, max_retries=3, countdown=5)
 def notify_followers_match_activity(self, match_id: str):
     """Приглашение оценить только что завершённый матч: in-app + push + email.
@@ -461,11 +534,8 @@ def notify_followers_match_activity(self, match_id: str):
     if not audience_user_ids:
         return {'notified': 0}
 
-    title = f"{match.home_team.name} {match.get_score_display()} {match.away_team.name}"
-    message = (
-        "Матч завершён — вы за ним следили или ставили прогноз. "
-        "Голосование открыто 48 часов — поделитесь своим мнением."
-    )
+    title = f"🏁 Финал: {match.home_team.name} {match.get_score_display()} {match.away_team.name}"
+    message = "Оцените игроков — голосование открыто 48 часов."
     action_url = reverse('matches:detail', args=[match.id])
 
     Notification.objects.bulk_create([
@@ -480,15 +550,8 @@ def notify_followers_match_activity(self, match_id: str):
         for uid in audience_user_ids
     ])
 
-    # Push best-effort: ошибки не должны ломать рассылку остальным.
-    try:
-        from notifications.services import send_push_to_user
-        from users.models import User
-
-        for user in User.objects.filter(id__in=audience_user_ids):
-            send_push_to_user(user, title=title, body=message, url=action_url)
-    except Exception as exc:
-        logger.warning(f"notify_followers_match_activity: push fan-out skipped: {exc}")
+    # tag live-* — финал заменяет на устройстве последний пуш о голе.
+    _push_fan_out(audience_user_ids, title, message, action_url, kind='match_finished', tag=f'live-{match.id}')
 
     # Аудитория небольшая — email шлём напрямую, без пачек.
     from users.models import User as _UserModel
@@ -565,14 +628,7 @@ def notify_followers_match_started(self, match_id: str):
         for uid in audience_user_ids
     ])
 
-    try:
-        from notifications.services import send_push_to_user
-        from users.models import User
-
-        for user in User.objects.filter(id__in=audience_user_ids):
-            send_push_to_user(user, title=title, body=message, url=action_url)
-    except Exception as exc:
-        logger.warning(f"notify_followers_match_started: push fan-out skipped: {exc}")
+    _push_fan_out(audience_user_ids, title, message, action_url, kind='match_started', tag=f'live-{match.id}')
 
     logger.info(f"✅ Notified {len(audience_user_ids)} follower(s) about match {match.id} kickoff")
     return {'notified': len(audience_user_ids)}
@@ -611,17 +667,63 @@ def notify_followers_lineups_available(self, match_id: str):
         for uid in audience_user_ids
     ])
 
-    try:
-        from notifications.services import send_push_to_user
-        from users.models import User
-
-        for user in User.objects.filter(id__in=audience_user_ids):
-            send_push_to_user(user, title=title, body=message, url=action_url)
-    except Exception as exc:
-        logger.warning(f"notify_followers_lineups_available: push fan-out skipped: {exc}")
+    _push_fan_out(audience_user_ids, title, message, action_url, kind='lineups_available', tag=f'lineups-{match.id}')
 
     logger.info(f"✅ Notified {len(audience_user_ids)} follower(s) about lineups for match {match.id}")
     return {'notified': len(audience_user_ids)}
+
+
+def _fmt_kickoff(dt) -> str:
+    return timezone.localtime(dt).strftime('%d.%m в %H:%M')
+
+
+@shared_task(bind=True, max_retries=3, countdown=5)
+def notify_followers_match_changed(self, match_id: str, change: str, old_start_iso: str | None = None):
+    """Push + in-app: матч перенесён (postponed), отменён (cancelled) или сдвинуто время (rescheduled).
+    Дедуп — по Notification match_changed с тем же текстом.
+    """
+    from datetime import datetime
+
+    from django.urls import reverse
+
+    from matches.models import Match
+    from notifications.models import Notification
+
+    match = Match.objects.select_related('home_team', 'away_team').filter(id=match_id).first()
+    if not match:
+        return {'notified': 0}
+
+    teams = f"{match.home_team.name} — {match.away_team.name}"
+    if change == 'cancelled':
+        title, message = f"❌ Матч отменён: {teams}", "Матч не состоится — подробности на странице матча."
+    elif change == 'postponed':
+        title, message = f"📅 Матч перенесён: {teams}", "Новую дату сообщим, как только её объявят."
+    else:
+        old = _fmt_kickoff(datetime.fromisoformat(old_start_iso)) if old_start_iso else None
+        title = f"🕒 Новое время матча: {teams}"
+        message = f"Теперь {_fmt_kickoff(match.start_time)}" + (f" (было {old})." if old else ".")
+
+    audience = _match_notification_audience(match)
+    audience -= set(
+        Notification.objects.filter(
+            notification_type='match_changed', related_match=match, title=title, message=message,
+        ).values_list('user_id', flat=True)
+    )
+    if not audience:
+        return {'notified': 0}
+
+    action_url = reverse('matches:detail', args=[match.id])
+    Notification.objects.bulk_create([
+        Notification(
+            user_id=uid, notification_type='match_changed', title=title,
+            message=message, action_url=action_url, related_match=match,
+        )
+        for uid in audience
+    ])
+    _push_fan_out(audience, title, message, action_url, kind='match_changed', tag=f'change-{match.id}')
+
+    logger.info(f"notify_followers_match_changed: {change} матча {match.id}, {len(audience)} получателей")
+    return {'notified': len(audience)}
 
 
 # События матча, по которым шлём live-push.
@@ -703,15 +805,12 @@ def notify_followers_match_event(self, match_id: str, event_id: str):
         for uid in follower_user_ids
     ])
 
-    # Push best-effort.
-    try:
-        from notifications.services import send_push_to_user
-        from users.models import User
-
-        for user in User.objects.filter(id__in=follower_user_ids):
-            send_push_to_user(user, title=title, body=message, url=action_url)
-    except Exception as exc:
-        logger.warning(f"notify_followers_match_event: push fan-out skipped: {exc}")
+    # Устаревшее событие (очередь стояла, сервер лежал) — только in-app, без пуша.
+    if timezone.now() - event.updated_at <= MATCH_EVENT_PUSH_MAX_AGE:
+        # Один tag на матч: новый гол заменяет прошлое уведомление, а не копит пачку.
+        _push_fan_out(follower_user_ids, title, message, action_url, kind='match_event', tag=f'live-{match.id}')
+    else:
+        logger.info(f"notify_followers_match_event: событие {event.id} старше {MATCH_EVENT_PUSH_MAX_AGE}, push пропущен")
 
     logger.info(f"✅ Notified {len(follower_user_ids)} follower(s) about event {event.id} ({event.event_type}) in match {match.id}")
     return {'notified': len(follower_user_ids)}
@@ -725,7 +824,8 @@ def notify_followers_match_event(self, match_id: str, event_id: str):
 @shared_task(bind=True, max_retries=3)
 def notify_prediction_closing_soon(self):
     """Приглашение сделать прогноз примерно за час до матча — тем, кто ещё не сделал.
-    Push + in-app + email. Без дедупа: повтор в узком окне допустим.
+    In-app + email — всем; push — только подписчикам команд матча.
+    Один раз на пару (пользователь, матч): задача идёт каждые 30 мин при окне в час.
     """
     from django.urls import reverse
 
@@ -754,9 +854,13 @@ def notify_prediction_closing_soon(self):
     notified_inapp = 0
     for match in matches:
         already_predicted = MatchPrediction.objects.filter(match=match).values('user_id')
+        already_notified = Notification.objects.filter(
+            related_match=match, notification_type='prediction_closing',
+        ).values('user_id')
         user_ids = [
             str(uid) for uid in User.objects.filter(is_verified=True, email__isnull=False)
             .exclude(id__in=already_predicted)
+            .exclude(id__in=already_notified)
             .values_list('id', flat=True)
         ]
         if not user_ids:
@@ -780,14 +884,14 @@ def notify_prediction_closing_soon(self):
         ])
         notified_inapp += len(user_ids)
 
-        # Push best-effort.
-        try:
-            from notifications.services import send_push_to_user
+        from users.models import Follow
 
-            for user in User.objects.filter(id__in=user_ids):
-                send_push_to_user(user, title=title, body=message, url=action_url)
-        except Exception as exc:
-            logger.warning(f"notify_prediction_closing_soon: push fan-out skipped for match {match.id}: {exc}")
+        push_ids = set(
+            Follow.objects.filter(team_id__in=[match.home_team_id, match.away_team_id], user_id__in=user_ids)
+            .values_list('user_id', flat=True)
+        )
+        if push_ids:
+            _push_fan_out(push_ids, title, message, action_url, kind='prediction_closing', tag=f'predict-{match.id}')
 
     logger.info(
         f"✅ Queued {queued} email chunk(s), {notified_inapp} in-app notification(s) "
@@ -875,6 +979,7 @@ def notify_prediction_results(self):
 
             notif_by_user = {}
             notifications_to_create = []
+            push_groups: dict[tuple[bool, int], list] = {}
             for pred in predictions:
                 is_correct = pred.is_correct
                 title = "✅ Ваш прогноз сбылся!" if is_correct else "Прогноз не сбылся"
@@ -904,8 +1009,24 @@ def notify_prediction_results(self):
                 # Серия прогнозов обновляется один раз — при первом создании Notification.
                 pred.user.update_prediction_stats(is_correct)
                 check_and_award_badges_task.delay(user_id=str(pred.user_id), match_id=str(match.id))
+                push_groups.setdefault((is_correct, pred.user.prediction_streak), []).append(pred.user_id)
 
             Notification.objects.bulk_create(notifications_to_create)
+
+            # Push — только по свежим матчам: досылка старых результатов идёт без пушей.
+            if match.end_time >= lookback:
+                score = f"{match.home_team.name} {match.get_score_display()} {match.away_team.name}"
+                for (is_correct, streak), user_ids in push_groups.items():
+                    if is_correct:
+                        push_title = "✅ Прогноз сбылся!"
+                        push_body = f"{score}. Серия: {streak} подряд 🔥" if streak >= 2 else f"{score}."
+                    else:
+                        push_title = "❌ Прогноз не сбылся"
+                        push_body = f"{score}. Следующий матч — новый шанс."
+                    _push_fan_out(
+                        user_ids, push_title, push_body, action_url,
+                        kind='prediction_result', tag=f'pred-{match.id}',
+                    )
 
             for pred in predictions:
                 sent_ok = _send_email_to_user(

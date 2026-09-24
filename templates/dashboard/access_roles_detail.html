@@ -46,6 +46,41 @@
                 </form>
             </div>
         </div>
+
+        {# Группы Django /admin. #}
+        <div class="card bg-base-100 border border-base-300 mt-4">
+            <div class="card-body p-4">
+                <div class="flex items-center justify-between flex-wrap gap-2">
+                    <div>
+                        <div class="dopx-section-eyebrow"><i class="ti ti-lock-access"></i>Права в /admin</div>
+                        <div class="dopx-section-title">Группы</div>
+                    </div>
+                    <a href="{% url 'dashboard:admin_groups_list' %}" class="btn btn-xs btn-ghost"><i class="ti ti-settings"></i> Настроить группы</a>
+                </div>
+                {% if admin_groups %}
+                <form method="post" action="{% url 'dashboard:access_user_admin_groups' target_user.id %}" class="mt-3">
+                    {% csrf_token %}
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {% for g in admin_groups %}
+                        <label class="label cursor-pointer justify-start gap-2 rounded-lg border border-base-300 px-3 py-2">
+                            <input type="checkbox" name="group" value="{{ g.id }}" {% if g.checked %}checked{% endif %} class="checkbox checkbox-sm">
+                            <span class="text-sm min-w-0 truncate">{{ g.name }}</span>
+                            <span class="text-xs opacity-50 ml-auto shrink-0">{{ g.perm_count }} прав</span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                    <div class="flex justify-end mt-4">
+                        <button type="submit" class="btn btn-sm btn-primary w-full sm:w-auto"><i class="ti ti-device-floppy"></i> Сохранить группы</button>
+                    </div>
+                </form>
+                {% else %}
+                <p class="text-sm opacity-60 mt-3">Групп пока нет. <a href="{% url 'dashboard:admin_groups_list' %}" class="link">Создайте первую</a> — например «Модератор» или «Редактор данных».</p>
+                {% endif %}
+                {% if direct_perm_count %}
+                <p class="text-xs text-warning mt-3"><i class="ti ti-alert-triangle"></i> Ещё {{ direct_perm_count }} прав выдано напрямую, в обход групп — видно и правится только в /admin.</p>
+                {% endif %}
+            </div>
+        </div>
     </div>
 
     <div class="card bg-base-100 border border-base-300 h-fit">
@@ -54,6 +89,14 @@
             <p class="text-xs opacity-60 leading-relaxed mt-1">
                 Снятый чекбокс закрывает и вкладку в меню, и прямой переход по ссылке на этот раздел (403). Суперпользователей в этом списке нет — у них всегда полный доступ, это правило нельзя обойти через форму.
             </p>
+            <p class="text-xs opacity-60 leading-relaxed mt-2">
+                Группы /admin определяют, какие модели сотрудник видит и правит в Django admin. Без групп /admin для него пуст.
+            </p>
+            <form method="post" action="{% url 'dashboard:access_revoke_staff' target_user.id %}" class="mt-4"
+                  onsubmit="return confirm('Снять с «{{ target_user.username|escapejs }}» статус сотрудника? Дашборд и /admin закроются, группы очистятся.');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-outline btn-error w-full"><i class="ti ti-user-minus"></i> Больше не сотрудник</button>
+            </form>
             {% if grant %}
             <p class="text-xs opacity-40 mt-3">Изменено {{ grant.updated_at|date:"d.m.Y H:i" }}{% if grant.updated_by %} · {{ grant.updated_by.username }}{% endif %}</p>
             {% endif %}

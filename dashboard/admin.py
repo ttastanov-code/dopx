@@ -5,11 +5,12 @@ from django.contrib import admin
 from unfold.admin import ModelAdmin
 
 from core.admin_actions import export_as_csv
+from core.admin_mixins import SuperuserOnlyAdminMixin
 from dashboard.models import StaffAccessGrant, StaffActionLog
 
 
 @admin.register(StaffActionLog)
-class StaffActionLogAdmin(ModelAdmin):
+class StaffActionLogAdmin(SuperuserOnlyAdminMixin, ModelAdmin):
     """Аудит-лог — только чтение."""
 
     list_display = ("created_at", "actor_username", "action", "target", "ip_address")
@@ -31,7 +32,7 @@ class StaffActionLogAdmin(ModelAdmin):
 
 
 @admin.register(StaffAccessGrant)
-class StaffAccessGrantAdmin(ModelAdmin):
+class StaffAccessGrantAdmin(SuperuserOnlyAdminMixin, ModelAdmin):
     """Роли доступа в /admin/ — только для суперпользователя."""
 
     list_display = ("user", "section_count", "updated_by", "updated_at")

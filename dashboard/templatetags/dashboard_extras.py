@@ -24,6 +24,24 @@ def can_access_section(user, section_key: str) -> bool:
     from ..access import user_can_access_section as _check
     return _check(user, section_key)
 
+
+@register.simple_tag
+def dashboard_nav(user) -> dict:
+    """{% dashboard_nav user as nav %} — видимые вкладки меню по рядам и группам."""
+    from ..nav import build_nav
+    return build_nav(user)
+
+
+@register.simple_tag
+def staff_exits(user) -> dict:
+    """{% staff_exits user as exits %} — куда вести сотрудника со страницы 403."""
+    from ..nav import build_nav, first_allowed_url
+
+    if not getattr(user, "is_staff", False):
+        return {"dashboard_url": None, "show_admin": False}
+    return {"dashboard_url": first_allowed_url(user), "show_admin": build_nav(user)["show_admin"]}
+
+
 _CHUNK_RE = re.compile(r"^=== чанк (\d+) \(порция ≤(\d+)\) — (.+) ===$")
 _CATEGORY_RE = re.compile(r"^(Игрока|Судьи|Тренера): кандидатов на проверку — (\d+)$")
 _CANDIDATE_RE = re.compile(r"^  (\S+) (.+?) -> (.+)$")
