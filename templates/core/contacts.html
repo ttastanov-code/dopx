@@ -278,13 +278,8 @@
 
 {% block extra_script %}
 <script>
-// Обновление капчи по клику на картинку — тот же паттерн, что и в
-// templates/auth/register.html (см. докстринг там). Виджет
-// django-simple-captcha сам по себе никакого JS не подключает,
-// поэтому дёргаем официальный AJAX-эндпоинт captcha-refresh напрямую
-// и вручную подменяем src картинки + значение скрытого поля с ключом
-// (id_captcha_0). Обязательный заголовок X-Requested-With — без него
-// captcha.views.captcha_refresh отвечает 404.
+// Обновление капчи по клику: captcha-refresh + подмена src и id_captcha_0.
+// Без X-Requested-With эндпоинт отвечает 404.
 document.addEventListener('DOMContentLoaded', () => {
     const captchaImg = document.querySelector('img.captcha');
     const captchaKeyInput = document.getElementById('id_captcha_0');

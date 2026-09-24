@@ -1,13 +1,12 @@
 {% load dashboard_extras %}
 {% comment %}
 История запусков команд — карточки с выводом stdout/stderr.
-Обёртка #scripts-runs-table поллит себя каждые 4 с и свапается целиком (outerHTML),
-hx-get несёт текущую страницу — пагинация без перезагрузки.
-Если HTMX не проинициализировал элемент — см. скрипт восстановления в scripts.html.
+Поллинг (каждые 4 с, outerHTML) только пока есть незавершённые запуски.
+Прокрутка вывода сохраняется между обновлениями — скрипт в scripts.html.
 {% endcomment %}
 <div id="scripts-runs-table" data-background-poll
      hx-get="{% url 'dashboard:scripts_runs_partial' %}?page={{ recent_runs.number|default:1 }}"
-     hx-trigger="every 4s" hx-swap="outerHTML">
+     {% if recent_runs.has_active %}hx-trigger="every 4s"{% endif %} hx-swap="outerHTML">
 {% if recent_runs %}
 <div class="space-y-2">
     {% for run in recent_runs %}
@@ -38,13 +37,13 @@ hx-get несёт текущую страницу — пагинация без 
         {% if run.stdout %}
         <div class="border-t border-base-300">
             <div class="px-3 py-1 text-[10px] font-mono uppercase tracking-wide opacity-40 bg-base-100">stdout</div>
-            <div class="px-3 pb-3 pt-1 max-h-72 overflow-auto bg-base-100 font-mono">{{ run.stdout|format_command_output }}</div>
+            <div data-out-id="{{ run.id }}-out" class="px-3 pb-3 pt-1 max-h-72 overflow-auto bg-base-100 font-mono">{{ run.stdout|format_command_output }}</div>
         </div>
         {% endif %}
         {% if run.stderr %}
         <div class="border-t border-error/20">
             <div class="px-3 py-1 text-[10px] font-mono uppercase tracking-wide text-error/70 bg-error/5">stderr</div>
-            <div class="px-3 pb-3 pt-1 max-h-72 overflow-auto bg-error/5 font-mono">{{ run.stderr|format_command_output }}</div>
+            <div data-out-id="{{ run.id }}-err" class="px-3 pb-3 pt-1 max-h-72 overflow-auto bg-error/5 font-mono">{{ run.stderr|format_command_output }}</div>
         </div>
         {% endif %}
     </div>

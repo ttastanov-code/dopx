@@ -104,6 +104,31 @@ class ImportMatchCoreTests(TestCase):
         self.assertEqual(Team.objects.filter(sportmonks_id="1001").count(), 1)
         self.assertEqual(Team.objects.filter(sportmonks_id="1002").count(), 1)
 
+    def test_finished_match_score_change_records_discrepancy(self):
+        """Счёт завершённого матча поменялся при синке — пишем ParserDiscrepancy."""
+        from parsers.models import ParserDiscrepancy
+
+        import_match_core(_fixture(), self.league, self.season)
+        changed = _fixture()
+        changed["scores"][0]["score"]["goals"] = 3
+        import_match_core(changed, self.league, self.season)
+
+        d = ParserDiscrepancy.objects.get()
+        self.assertEqual((d.field_name, d.old_value, d.new_value), ("home_score", "2", "3"))
+        self.assertEqual(d.field_label, "Голы хозяев")
+
+        # Повторный синк с тем же счётом — новых записей нет.
+        import_match_core(changed, self.league, self.season)
+        self.assertEqual(ParserDiscrepancy.objects.count(), 1)
+
+    def test_live_score_progress_is_not_discrepancy(self):
+        """Обычный ход матча (live) расхождением не считается."""
+        from parsers.models import ParserDiscrepancy
+
+        import_match_core(_fixture(dev_name="INPLAY_1ST_HALF", home_goals=0, away_goals=0), self.league, self.season)
+        import_match_core(_fixture(), self.league, self.season)
+        self.assertFalse(ParserDiscrepancy.objects.exists())
+
     def test_reimport_syncs_logo_url_freely(self):
         """logo_url всегда синкается свежим значением с источника."""
         fixture = _fixture()

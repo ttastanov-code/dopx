@@ -1,14 +1,6 @@
 // static/sw.js
-// Продуктовый аудит, раздел 5c ("PWA + Web Push").
-//
-// Сервис-воркер минимальный НАМЕРЕННО: цель этой итерации — установка
-// сайта на домашний экран (installability) и доставка Web Push, а не
-// полноценный офлайн-режим SPA. DOPX — по сути CRUD-сайт с формами
-// (вайзард оценки матча, вход, регистрация); агрессивное офлайн-кеширование
-// HTML этих страниц через service worker рискует показать пользователю
-// устаревшую версию формы с CSRF-токеном от предыдущей сессии — хуже, чем
-// отсутствие офлайн-режима вообще. Поэтому кешируется только статика
-// (иконки/манифест), а НЕ HTML-страницы.
+// Service worker: установка на экран «Домой» и Web Push.
+// Кешируется только статика, HTML — никогда (устаревшие формы/CSRF).
 const CACHE_NAME = 'dopx-shell-v1';
 const APP_SHELL = [
     '/static/pwa/icon-192.png',
@@ -32,9 +24,7 @@ self.addEventListener('activate', (event) => {
     self.clients.claim();
 });
 
-// Кешируем по принципу "cache falls back to network" ТОЛЬКО для файлов из
-// APP_SHELL (статика) — любой другой запрос (HTML-страницы, HTMX-партиалы,
-// POST-формы) идёт напрямую в сеть без вмешательства воркера.
+// Cache-first только для APP_SHELL, остальное — напрямую в сеть.
 self.addEventListener('fetch', (event) => {
     const url = new URL(event.request.url);
     if (event.request.method !== 'GET' || !APP_SHELL.some((path) => url.pathname === path)) {

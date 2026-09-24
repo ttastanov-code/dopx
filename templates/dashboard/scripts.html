@@ -80,19 +80,17 @@
                         </div>
 
                         {% if spec.has_apply_flag %}
-                        <label class="label cursor-pointer justify-start gap-2 py-1 bg-warning/10 rounded px-2">
-                            <input type="checkbox" name="apply" class="checkbox checkbox-xs checkbox-warning">
-                            <span class="label-text text-xs font-medium">Реально применить — без галочки только dry-run отчёт</span>
+                        <label class="flex items-start gap-2 cursor-pointer py-1.5 bg-warning/10 rounded px-2">
+                            <input type="checkbox" name="apply" class="checkbox checkbox-xs checkbox-warning shrink-0 mt-0.5">
+                            <span class="text-xs font-medium whitespace-normal break-words min-w-0">Реально применить — без галочки только отчёт, без изменений</span>
                         </label>
                         {% endif %}
 
                         {% if spec.name == 'cleanup_load_test' %}
                         <div class="bg-error/10 rounded px-2 py-2">
-                            <label class="label py-0.5">
-                                <span class="label-text text-xs font-medium text-error">
-                                    Нет dry-run — удаляет сразу. Впишите <span class="font-mono">cleanup_load_test</span> для подтверждения:
-                                </span>
-                            </label>
+                            <p class="text-xs font-medium text-error whitespace-normal break-words mb-1.5">
+                                Удаляет сразу, без пробного прогона. Для подтверждения впишите <span class="font-mono break-all">cleanup_load_test</span>:
+                            </p>
                             <input type="text" name="confirm_text" placeholder="cleanup_load_test" class="input input-xs input-bordered w-full font-mono">
                         </div>
                         {% endif %}
@@ -119,24 +117,13 @@
 </div>
 
 <style>
-/* Компактная summary-строка команды (см. докстринг вверху файла про
-   редизайн 2026-09-22) — daisyUI по умолчанию рисует свой маркер-треугольник
-   перед <summary>, дублирующий наш ti-chevron-down справа; списком-
-   свойством ::marker убираем дефолтный, чтобы не было двух стрелок сразу. */
+/* Убираем стандартный маркер <summary> — справа свой шеврон. */
 .dopx-cmd-summary::-webkit-details-marker { display: none; }
 .dopx-cmd-summary { list-style: none; }
 </style>
 
 <script>
-// 2026-09-22, прямая просьба пользователя ("сделай чтобы при клике на
-// UUID он копировался сразу") — копирует значение data-copy кнопки в
-// буфер обмена, используется кнопками "id ..." в раскрашенном выводе
-// команд (dashboard/templatetags/dashboard_extras.py::format_command_output,
-// строки-записи diagnose_duplicate_players). Глобальная функция — вывод
-// команд подгружается через HTMX-поллинг (#scripts-runs-table), новые
-// кнопки появляются в DOM динамически, отдельный addEventListener на
-// конкретные узлы пришлось бы перепривязывать при каждом обновлении,
-// проще один раз объявить функцию и звать её из инлайнового onclick.
+// Копирует data-copy кнопки в буфер (кнопки id в выводе команд). Глобальная — кнопки приходят через HTMX.
 function dopxCopyToClipboard(btn) {
     const text = btn.dataset.copy;
     if (!text) return;
@@ -152,26 +139,7 @@ function dopxCopyToClipboard(btn) {
     });
 }
 
-// 2026-09-23, БАГФИКС "жму «Позже» в пагинации истории запусков — ничего
-// не происходит" (и поллинг тоже не работал, хотя раньше без пагинации
-// работал). Диагностировано вживую в браузере (devtools): где-то в начальной
-// HTMX-инициализации всей страницы (DOMContentLoaded, до этого скрипта)
-// вылетает необработанное исключение внутри самого htmx.min.js
-// ("TypeError: e.matches is not a function") — от него независимо ни разу
-// не получилось воспроизвести точную причину (минифицированный сторонний
-// код, похоже на конфликт очерёдности с Django Debug Toolbar, которая
-// довешивает свои панели через AJAX уже ПОСЛЕ начала обхода DOM). Эффект:
-// обход обрывается ПОСЕРЕДИНЕ, и #scripts-runs-table (див с hx-trigger=
-// "every 4s") успевает получить только внутренний HTMX-маркер initHash —
-// HTMX считает его "уже проинициализированным" и на все дальнейшие
-// process()-вызовы молча ничего не делает, хотя реальный обработчик
-// триггера (ни поллинг, ни клики по «Позже»/«Раньше» внутри него) так и
-// не был повешен. Подтверждено вручную: если у элемента удалить
-// 'htmx-internal-data' и заново вызвать htmx.process() — всё оживает.
-// Правим защитным самоисцелением на window.load (гарантированно ПОСЛЕ
-// падения бутстрапа) — если внутренний стейт элемента выглядит "пустым"
-// (нет реальных полей триггера, только initHash или вообще ничего),
-// сбрасываем его и переинициализируем заново.
+// HTMX мог не проинициализировать #scripts-runs-table при старте страницы — переинициализируем.
 window.addEventListener('load', function () {
     setTimeout(function () {
         const el = document.getElementById('scripts-runs-table');
@@ -185,5 +153,29 @@ window.addEventListener('load', function () {
         }
     }, 50);
 }, { once: true });
+
+// Сохраняем прокрутку вывода команд при обновлении истории.
+(function () {
+    let saved = {};
+    document.body.addEventListener('htmx:beforeSwap', function (e) {
+        if (!e.detail.target || e.detail.target.id !== 'scripts-runs-table') return;
+        saved = {};
+        e.detail.target.querySelectorAll('[data-out-id]').forEach(function (el) {
+            saved[el.dataset.outId] = {
+                top: el.scrollTop,
+                atBottom: el.scrollTop + el.clientHeight >= el.scrollHeight - 4,
+            };
+        });
+    });
+    document.body.addEventListener('htmx:afterSettle', function () {
+        const root = document.getElementById('scripts-runs-table');
+        if (!root) return;
+        root.querySelectorAll('[data-out-id]').forEach(function (el) {
+            const s = saved[el.dataset.outId];
+            if (!s) return;
+            el.scrollTop = s.atBottom && s.top > 0 ? el.scrollHeight : s.top;
+        });
+    });
+})();
 </script>
 {% endblock %}

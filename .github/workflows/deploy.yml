@@ -1,23 +1,8 @@
 # .github/workflows/deploy.yml
 #
-# Что делает: при пуше в main/dev — три независимые проверки параллельно
-# (сборка Docker-образа, реальный прогон manage.py test против настоящих
-# Postgres/Redis, deploy-чеклист Django), и только если ВСЕ прошли — на
-# push в main заходит на сервер по SSH, подтягивает свежий код и
-# перезапускает стек.
-#
-# ПОЧЕМУ ЭТО ЗДЕСЬ (2026-08-28): до этого единственным способом узнать,
-# что тесты вообще проходят, было вручную гонять `manage.py test` на
-# компьютере разработчика и присылать вывод — легко забыть сделать это
-# перед пушем, и тогда сломанный код тихо уезжает в main. Теперь это
-# происходит САМО на каждый push, без человека в цепочке.
-#
-# Пока в настройках репозитория (Settings → Secrets and variables →
-# Actions) не заданы секреты DEPLOY_HOST/DEPLOY_USER/DEPLOY_SSH_KEY/
-# DEPLOY_PATH — шаг деплоя просто пропускается с понятным сообщением,
-# остальные проверки при этом всё равно выполняются. Как только сервер
-# появится и секреты будут добавлены — деплой на каждый push в main
-# включится сам, без единой правки этого файла.
+# На push в main/dev и PR: сборка образа, тесты на Postgres/Redis, deploy-чеклист.
+# Если всё прошло и это push в main — деплой по SSH.
+# Без секретов DEPLOY_HOST/DEPLOY_USER/DEPLOY_SSH_KEY/DEPLOY_PATH деплой пропускается.
 
 name: Build check & deploy
 
@@ -26,13 +11,7 @@ on:
     branches:
       - main
       - dev
-  # ДОБАВЛЕНО (2026-09-07, docs/CODEX_AUDIT_RESPONSE_2026-09-07.md): раньше
-  # проверки запускались только НА push в main/dev — то есть уже ПОСЛЕ
-  # слияния. Плохой код ловился постфактум, а не до того, как он попал в
-  # ветку. pull_request сюда не добавляет новых прав деплою — job `deploy`
-  # ниже проверяет `github.ref == 'refs/heads/main'`, а у pull_request-события
-  # `github.ref` указывает на синтетический merge-ref (`refs/pull/N/merge`),
-  # не на `refs/heads/main` — деплой на PR технически не запустится.
+  # Проверки и на PR. Деплой на PR не запустится: github.ref там refs/pull/N/merge.
   pull_request:
     branches:
       - main
@@ -53,11 +32,7 @@ jobs:
   test:
     name: Тесты + Django deploy-чеклист
     runs-on: ubuntu-latest
-    # Настоящие Postgres/Redis прямо на раннере (не докер-контейнер
-    # приложения) — быстрее собрать, чем гонять тесты внутри уже
-    # собранного образа, и этого достаточно: цель здесь — поймать
-    # логические ошибки в коде, а не проверить сам Dockerfile (это уже
-    # делает job build-check выше).
+    # Postgres/Redis прямо на раннере — проверяем код, Dockerfile проверяет build-check.
     services:
       postgres:
         image: postgres:16-alpine
@@ -82,10 +57,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      # Локальные тестовые значения — не секреты, не имеют отношения к
-      # реальному .env на сервере. ENVIRONMENT=development — чтобы не
-      # сработала проверка "SECRET_KEY обязателен в проде" из settings.py
-      # (см. AUDIT_2026-08.md, раздел 1) при отсутствии реального ключа.
+      # Тестовые значения, не секреты. ENVIRONMENT=development — не требуем прод-SECRET_KEY.
       ENVIRONMENT: development
       DEBUG: "True"
       SECRET_KEY: ci-test-secret-key-not-for-production-use
@@ -116,31 +88,18 @@ jobs:
         run: python manage.py check
 
       - name: Django deploy-чеклист (security-настройки)
-        # Раньше docs/DEPLOYMENT.md утверждал, что этот шаг уже есть в CI, а
-        # в самом workflow его не было (расхождение найдено во внешнем
-        # аудите 2026-09-04, см. docs/CODEX_AUDIT_RESPONSE_2026-09-04.md).
-        # ENVIRONMENT=development выше (см. env: этого job) — предупреждения
-        # по DEBUG/SECRET_KEY/HTTPS здесь ОЖИДАЕМЫ и не про прод-ветку
-        # настроек; смысл шага — не пропустить НОВОЕ предупреждение, которое
-        # появится при следующем изменении dopx/settings.py.
+        # Предупреждения DEBUG/SECRET_KEY/HTTPS здесь ожидаемы (development).
         run: python manage.py check --deploy
 
       - name: Проверка расхождения моделей и миграций
-        # Миграции в этом проекте местами пишутся вручную (см.
-        # docs/BACKLOG.md) — этот шаг ловит именно тот случай, когда
-        # модель поменяли, а миграцию — забыли.
+        # Ловит забытые миграции.
         run: python manage.py makemigrations --check --dry-run
 
       - name: manage.py test
         run: python manage.py test
 
       - name: pip-audit (известные уязвимости в зависимостях)
-        # continue-on-error: пока намеренно НЕ блокирует деплой — у pip-audit
-        # бывают ложные тревоги (advisory на код-путь, которым проект не
-        # пользуется) и находки без доступного фикса. Первый прогон нужно
-        # разобрать вручную (см. вывод в логе этого шага на вкладке Actions),
-        # и только после этого решить, стоит ли убирать continue-on-error и
-        # делать шаг блокирующим.
+        # pip-audit пока не блокирует — бывают ложные срабатывания.
         continue-on-error: true
         run: |
           pip install pip-audit
@@ -149,25 +108,12 @@ jobs:
   production-settings-check:
     name: Django deploy-чеклист под ПРОД-настройками
     runs-on: ubuntu-latest
-    # ДОБАВЛЕНО (2026-09-07, docs/CODEX_AUDIT_RESPONSE_2026-09-07.md): job
-    # `test` выше запускает `check --deploy` с ENVIRONMENT=development —
-    # предупреждения о DEBUG/SECRET_KEY/HTTPS там ОЖИДАЕМЫ и намеренно не
-    # блокируют workflow (см. комментарий в job `test`), то есть тот шаг
-    # никогда не проверял, что настройки БЕЗОПАСНЫ именно в проде — только
-    # что сам чеклист не падает с ошибкой импорта. Этот job — тот же
-    # `check --deploy`, но с ENVIRONMENT=production/DEBUG=False и сильным
-    # SECRET_KEY: `dopx/settings.py` при DEBUG=False сам включает
-    # SESSION_COOKIE_SECURE/CSRF_COOKIE_SECURE/SECURE_SSL_REDIRECT/HSTS —
-    # если что-то из этого сломается будущей правкой settings.py, ИМЕННО
-    # здесь появится новое предупреждение и упадёт CI, а не станет известно
-    # только на реальном сервере. Не требует Postgres/Redis — `manage.py
-    # check` не выполняет запросы к БД/кэшу, только проверяет конфигурацию.
+    # check --deploy с прод-настройками (DEBUG=False): ловит ослабление безопасности в settings.py.
+    # БД и кэш не нужны.
     env:
       ENVIRONMENT: production
       DEBUG: "False"
-      # Тестовый ключ ДЛИНОЙ и энтропией как настоящий (не литерал вида
-      # "test") — секрет не настоящий, никуда не деплоится, но должен
-      # реалистично проходить любые будущие проверки силы SECRET_KEY.
+      # Тестовый ключ реалистичной длины и энтропии.
       SECRET_KEY: "ci-only-production-settings-check-3f8a1c9e7b2d4f60a5e9c1b7d3f082ea"
       ALLOWED_HOSTS: "dopx.kz,www.dopx.kz"
       DB_NAME: dopx_ci_placeholder
@@ -200,17 +146,9 @@ jobs:
     name: Деплой на сервер
     needs: [build-check, test, production-settings-check]
     runs-on: ubuntu-latest
-    # github.event_name != 'pull_request' раньше стояло тут как доп. защита,
-    # но в блоке `on:` этого файла триггера pull_request вообще нет — сборка
-    # запускается только по push/workflow_dispatch, так что условие никогда
-    # не может стать ложным через этот путь. Оставляем только реальную
-    # проверку ветки.
+    # Деплой только из main.
     if: github.ref == 'refs/heads/main'
-    # Таймаут на весь job, а не только на шаг: appleboy/ssh-action сам
-    # умеет ограничивать время SSH-команды (command_timeout), но если
-    # сервер недоступен ещё на этапе установления соединения, джоба иначе
-    # висела бы до дефолтного лимита GitHub (360 минут), впустую занимая
-    # раннер.
+    # Таймаут на весь job — на случай недоступного сервера.
     timeout-minutes: 10
     steps:
       - name: Проверить, настроены ли секреты деплоя
@@ -231,13 +169,7 @@ jobs:
       - name: Деплой по SSH
         if: steps.check.outputs.configured == 'true'
         uses: appleboy/ssh-action@v1.0.3
-        # DEPLOY_PATH идёт через env:/envs:, а не подставляется прямо в
-        # script: как ${{ secrets.DEPLOY_PATH }} — так значение секрета не
-        # попадает буквальным текстом в тело команды (которое иначе можно
-        # было бы случайно засветить в логах экшена или сломать инъекцией,
-        # если в секрете когда-нибудь окажется спецсимвол шелла). appleboy/
-        # ssh-action пробрасывает на удалённый хост только переменные,
-        # явно перечисленные в envs:.
+        # DEPLOY_PATH через envs — секрет не попадает в текст команды.
         env:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         with:
@@ -251,29 +183,16 @@ jobs:
             cd "$DEPLOY_PATH"
             git pull origin main
 
-            # Собираем образ ОТДЕЛЬНО от запуска — если сборка упадёт (битый
-            # Dockerfile, недоступный registry базового образа), сайт
-            # продолжает работать на старом образе, а не падает на середине
-            # `up --build`.
+            # Сборка отдельно от запуска — при ошибке сайт остаётся на старом образе.
             docker compose build web celery celery-beat
 
-            # Миграции — ОТДЕЛЬНЫМ шагом ДО перезапуска web, через
-            # одноразовый контейнер на уже собранном образе (не дожидаясь,
-            # пока entrypoint.sh накатит их сам при старте gunicorn — см.
-            # docs/adr/0003-deploy-migrate-as-explicit-step.md). Если
-            # миграция упадёт — `set -e` останавливает скрипт ЗДЕСЬ, старые
-            # контейнеры остаются работать на старой схеме, а не переходят в
-            # состояние "код уже новый, схема ещё старая".
+            # Миграции отдельным шагом до перезапуска web; при ошибке set -e останавливает деплой.
             docker compose run --rm web python manage.py migrate --noinput
 
             docker compose up -d --build
             docker image prune -f
 
-            # Смоук-тест — веб реально отвечает на новом коде, а не просто
-            # "контейнер запущен" (Docker healthcheck и то, и другое путает:
-            # процесс gunicorn мог стартовать и тут же начать 500-ить).
-            # Ретраи с паузой — gunicorn + миграции collectstatic внутри
-            # entrypoint.sh нужно время на холодный старт.
+            # Смоук-тест: сайт реально отвечает. Ретраи — время на холодный старт.
             for i in 1 2 3 4 5; do
               if curl -fsS -o /dev/null "http://localhost:8000/admin/login/"; then
                 echo "Смоук-тест пройден"

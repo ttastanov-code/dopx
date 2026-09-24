@@ -293,13 +293,7 @@ class TeamRatingCorrection(BaseModel):
     )
     suppressed_until = models.DateTimeField(
         _('Подавлено до'), null=True, blank=True,
-        help_text=_(
-            'БАГ, КОТОРЫЙ ТУТ БЫЛ: mark_dismissed в users/admin.py обнулял correction, '
-            'но не оставлял никакого cooldown — следующий суточный прогон '
-            'detect_rating_stats_divergence_task (aggregates/tasks.py) заново находил тот же '
-            'паттерн и заново перезаписывал correction, тихо отменяя решение модератора. '
-            'Пока это поле в будущем, _check_team_stats_divergence пропускает команду, не трогая поправку.'
-        ),
+        help_text=_('Пока дата в будущем, детектор расхождения не трогает поправку команды (флаг отклонён модератором).'),
     )
 
     class Meta:
@@ -354,11 +348,7 @@ class PlayerRatingCorrection(BaseModel):
     )
     suppressed_until = models.DateTimeField(
         _('Подавлено до'), null=True, blank=True,
-        help_text=_(
-            'Тот же приём, что у TeamRatingCorrection.suppressed_until — пока это поле в будущем, '
-            '_check_player_stats_divergence пропускает игрока, не трогая поправку (модератор явно '
-            'отклонил флаг как объяснимый).'
-        ),
+        help_text=_('Пока дата в будущем, детектор расхождения не трогает поправку игрока (флаг отклонён модератором).'),
     )
 
     class Meta:

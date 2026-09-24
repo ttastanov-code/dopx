@@ -59,9 +59,8 @@ class ParserSyncRun(BaseModel):
 
 
 class ParserDiscrepancy(BaseModel):
-    """Изменение счёта/статуса уже завершённого матча при повторном импорте.
-    Писал только старый KFF-импортёр — новых записей нет, таблица как история.
-    Разбор staff вручную (reviewed/note).
+    """Источник задним числом поменял счёт/статус завершённого матча.
+    Пишет import_match_core; staff разбирает вручную (reviewed/note).
     """
 
     match = models.ForeignKey(
@@ -97,6 +96,12 @@ class ParserDiscrepancy(BaseModel):
         indexes = [
             models.Index(fields=['reviewed', '-created_at'], name='parser_discrepancy_review_idx'),
         ]
+
+    FIELD_LABELS = {"home_score": "Голы хозяев", "away_score": "Голы гостей", "status": "Статус"}
+
+    @property
+    def field_label(self):
+        return self.FIELD_LABELS.get(self.field_name, self.field_name)
 
     def __str__(self):
         return f"{self.match_label}: {self.field_name} {self.old_value} → {self.new_value}"
