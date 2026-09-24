@@ -13,13 +13,7 @@
     </p>
   </div>
 
-  {% comment %}
-  Embed-виджет "Сборной DOPX" (продуктовый запрос 2026-08-22 — "дать
-  возможность вставлять этот модуль на другие сайты") — четвёртый виджет
-  после players/teams/standings, тот же embedModal Alpine-компонент
-  (static/js/alpine-components.js), что у players/detail.html и
-  teams/detail.html. widget_embed_code собран в season_squad/views.py::best_xi.
-  {% endcomment %}
+  {# Embed-код сборной (модалка embedModal). #}
   <div x-data="embedModal" class="shrink-0">
     <button type="button" @click="open = true" class="btn btn-outline btn-sm">
       <i class="ti ti-code"></i> Получить embed-код
@@ -78,7 +72,7 @@
     </div>
   </div>
 
-  <!-- === MAIN === -->
+  {# === ОСНОВНОЕ === #}
   <div class="lg:col-span-3 space-y-6 md:space-y-10">
     <section id="xi" class="scroll-mt-24">
       <div id="best-xi-content" data-background-poll
@@ -88,7 +82,7 @@
       </div>
     </section>
 
-    <!-- Как считается? — методология, чтобы не спорили "почему моего игрока нет" -->
+    {# «Как считается?» — методология. #}
     <section id="methodology" class="scroll-mt-24">
       <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4 md:p-6">

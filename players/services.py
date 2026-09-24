@@ -1,20 +1,5 @@
 # players/services.py
-"""
-merge_players() — вынесено из players/management/commands/
-merge_duplicate_players.py (2026-09-22) в переиспользуемый сервис, чтобы
-ОДНУ и ту же логику слияния мог звать и CLI (для разового ручного разбора
-через терминал), и веб-вьюха dashboard/views.py::duplicate_players_merge
-(2026-09-22, прямая просьба пользователя: "пздц это муторно копировать,
-вставлять... надо оптимизировать" — слияние дублей теперь одна кнопка в
-очереди "Дубли игроков", id берутся из уже существующего флага
-PotentialDuplicatePlayer, руками их вводить/копировать больше не нужно).
-
-merge_players выполняется СИНХРОННО (не через Celery) — это несколько
-быстрых DB-запросов, не часовой прогон внешнего API, лишний асинхронный
-хоп через очередь/поллинг статуса тут не нужен и только добавил бы
-ту самую "крутится, пока не обновишь страницу" задержку, от которой
-пользователь и просил уйти.
-"""
+"""Слияние дублей игроков — используется CLI merge_duplicate_players и дашбордом. Синхронно."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -42,12 +27,9 @@ class MergeReport:
 
 
 def merge_players(keep: Player, merge: Player, *, apply: bool) -> MergeReport:
-    """Переносит связанные данные с `merge` на `keep`; при apply=True
-    реально сохраняет изменения и удаляет `merge` в конце (apply=False —
-    только отчёт, для dry-run CLI). См. подробный разбор КАЖДОЙ связи и
-    почему рискованные (с UniqueConstraint на игрока) переносятся
-    построчно, а не единым bulk .update(), в докстринге старой версии —
-    players/management/commands/merge_duplicate_players.py."""
+    """Переносит связанные данные с merge на keep; apply=True — сохраняет и удаляет merge,
+    apply=False — только отчёт. Связи с UniqueConstraint переносятся построчно.
+    """
     report = MergeReport()
     report.add(f"Оставляем: {keep.full_name} (id={keep.id}, sportmonks_id={keep.sportmonks_id})")
     report.add(f"Сливаем: {merge.full_name} (id={merge.id}, sportmonks_id={merge.sportmonks_id})")

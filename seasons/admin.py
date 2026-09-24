@@ -20,10 +20,7 @@ class SeasonAdmin(ModelAdmin):
         "is_active",
     )
 
-    # year — единственное текстово-осмысленное поле для поиска у Season;
-    # добавлено также затем, что autocomplete_fields на MatchAdmin.season
-    # (matches/admin.py) ТРЕБУЕТ search_fields на целевой модели — без
-    # этого Django бросает SystemCheckError при старте.
+    # search_fields нужен для autocomplete в MatchAdmin.
     search_fields = ("year",)
 
     autocomplete_fields = ("league",)

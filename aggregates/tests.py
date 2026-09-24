@@ -23,7 +23,7 @@ User = get_user_model()
  
  
 class UserWeightTests(TestCase):
-    """Тесты расчёта веса голоса пользователя."""
+    """Вес голоса пользователя."""
  
     def setUp(self):
         self.user = User.objects.create_user(
@@ -46,7 +46,7 @@ class UserWeightTests(TestCase):
         )
  
     def test_base_weight(self):
-        """Базовый вес = 1.0."""
+        """Базовый вес 1.0."""
         context = ContextEvaluation.objects.create(
             user=self.user, match=self.match, watched_type="partial"
         )
@@ -54,7 +54,7 @@ class UserWeightTests(TestCase):
         self.assertEqual(weight, 1.0)
  
     def test_full_match_bonus(self):
-        """Бонус +0.2 за полный матч."""
+        """+0.2 за полный матч."""
         context = ContextEvaluation.objects.create(
             user=self.user, match=self.match, watched_type="full"
         )
@@ -62,7 +62,7 @@ class UserWeightTests(TestCase):
         self.assertEqual(weight, 1.2)
  
     def test_trust_score_bonus(self):
-        """Бонус +0.2 за trust_score > 1.2."""
+        """+0.2 за trust_score > 1.2."""
         self.user.trust_score = 1.3
         self.user.save()
         context = ContextEvaluation.objects.create(
@@ -72,7 +72,7 @@ class UserWeightTests(TestCase):
         self.assertEqual(weight, 1.2)
  
     def test_combined_bonuses(self):
-        """Комбинированные бонусы."""
+        """Бонусы складываются."""
         self.user.trust_score = 1.3
         self.user.save()
         context = ContextEvaluation.objects.create(
@@ -82,10 +82,7 @@ class UserWeightTests(TestCase):
         self.assertEqual(weight, 1.4)
 
     def test_attended_stadium_bonus(self):
-        """ИСПРАВЛЕНО (2026-09-11, прямая просьба пользователя — "мы же
-        пишем, что эти ответы влияют на вес"): attended_stadium раньше
-        сохранялся, но нигде не читался calculate_user_weight — бонус +0.2,
-        тот же вес, что и за watched_type == "full"."""
+        """+0.2 за присутствие на стадионе."""
         context = ContextEvaluation.objects.create(
             user=self.user, match=self.match, watched_type="partial", attended_stadium=True,
         )
@@ -93,10 +90,7 @@ class UserWeightTests(TestCase):
         self.assertEqual(weight, 1.2)
 
     def test_stadium_and_full_match_bonuses_stack(self):
-        """Присутствие на стадионе И просмотр "полного матча" — независимые
-        флаги, оба бонуса складываются (можно уйти со стадиона раньше
-        конца — тогда attended_stadium=True, но watched_type != 'full';
-        здесь проверяем случай, когда досмотрел до конца, будучи там)."""
+        """Стадион и полный матч — оба бонуса."""
         context = ContextEvaluation.objects.create(
             user=self.user, match=self.match, watched_type="full", attended_stadium=True,
         )
@@ -113,7 +107,7 @@ class UserWeightTests(TestCase):
  
 @override_settings(CELERY_TASK_ALWAYS_EAGER=True, CELERY_TASK_EAGER_PROPAGATES=True)
 class AggregateCalculationTests(TestCase):
-    """Тесты расчёта агрегатов."""
+    """Расчёт агрегатов."""
  
     def setUp(self):
         self.user1 = User.objects.create_user(
@@ -141,7 +135,7 @@ class AggregateCalculationTests(TestCase):
         self.player = Player.objects.create(first_name="Test", last_name="Player", team=self.team1)
  
     def test_player_aggregate_calculation(self):
-        """Расчёт агрегатов игрока (синхронная функция из services.py)."""
+        """Агрегаты игрока (services.py)."""
         ContextEvaluation.objects.create(user=self.user1, match=self.match, watched_type="partial")
         ContextEvaluation.objects.create(user=self.user2, match=self.match, watched_type="full")
  
@@ -156,14 +150,13 @@ class AggregateCalculationTests(TestCase):
  
         self.assertIsNotNone(aggregate)
         self.assertEqual(aggregate.total_votes, 2)
-        # Взвешенное среднее: user1 (weight=1.0), user2 (weight=1.4)
-        # contribution: (7*1.0 + 9*1.4) / 2.4 = 19.6/2.4 = 8.17
+        # Веса 1.0 и 1.4: (7*1.0 + 9*1.4) / 2.4 = 8.17
         self.assertAlmostEqual(aggregate.avg_contribution, 8.17, places=1)
         self.assertEqual(aggregate.performance_score, aggregate.avg_contribution)
         self.assertGreater(aggregate.maturity_score, 0)  # contribution - risk
  
     def test_match_aggregate_drama_index(self):
-        """Расчёт drama index матча (Celery-задача из tasks.py, EAGER-режим)."""
+        """drama_index матча (tasks.py, eager)."""
         ContextEvaluation.objects.create(user=self.user1, match=self.match, watched_type="full")
  
         MatchEvaluation.objects.create(
@@ -174,21 +167,11 @@ class AggregateCalculationTests(TestCase):
         self.assertTrue(result)
  
         aggregate = MatchAggregate.objects.get(match=self.match)
-        # drama_index = entertainment * tension = 8 * 9 = 72
+        # drama_index = 8 * 9 = 72
         self.assertEqual(aggregate.drama_index, 72.0)
  
     def test_clutch_index_stays_on_same_scale_as_performance_score(self):
-        """2026-09-22, найдено сквозным аудитом проекта (не жалобой
-        пользователя): drama_index — шкала 0..100 (avg_entertainment *
-        avg_tension, оба 1-10, см. test_match_aggregate_drama_index выше:
-        8*9=72), а НЕ 0..10. Формула clutch_index = performance_score *
-        (drama_index / N) должна использовать N=100, чтобы множитель лежал
-        в 0..1 и clutch_index оставался того же порядка величины, что и
-        performance_score — та же 1-10-шкальная колонка на странице игрока
-        (templates/players/detail.html, "Клатч" рядом с "Рейтинг
-        выступления"/"Вклад"/"Риск"). Со старой формулой (/10.0) drama_index
-        =72 давало бы множитель 7.2 — clutch_index в разы больше
-        performance_score, откровенно не на своём месте в таблице."""
+        """clutch_index = performance_score * drama_index / 100 (drama_index — шкала 0..100)."""
         MatchEvaluation.objects.create(
             user=self.user1, match=self.match, entertainment=8, tension=9, fairness=7
         )
@@ -200,9 +183,7 @@ class AggregateCalculationTests(TestCase):
         )
 
         aggregate = recalculate_player_aggregate(self.player, self.match)
-        # performance_score == avg_contribution с одним голосующим (без
-        # нейтрального якоря — вес 1.0 у единственного оценившего) == 8.0.
-        # multiplier = 72/100 = 0.72 -> clutch_index = 8.0 * 0.72 = 5.76.
+        # 8.0 * 0.72 = 5.76
         self.assertAlmostEqual(aggregate.clutch_index, 5.76, places=1)
         self.assertLess(
             aggregate.clutch_index, 10.0,
@@ -210,12 +191,7 @@ class AggregateCalculationTests(TestCase):
         )
 
     def test_clutch_index_scale_fix_applies_to_bulk_task_too(self):
-        """Формула была продублирована в aggregates/tasks.py::
-        recalculate_player_aggregates (batch-путь, используется в проде) —
-        отдельный тест на ЭТОТ путь, а не только на recalculate_player_
-        aggregate из services.py (единичный путь, используется в тестах
-        выше) — оба места чинились одним и тем же коммитом, регрессия в
-        одном без другого была бы возможна при будущей правке одного файла."""
+        """Та же формула в batch-пути recalculate_player_aggregates."""
         MatchEvaluation.objects.create(
             user=self.user1, match=self.match, entertainment=8, tension=9, fairness=7
         )
@@ -230,7 +206,7 @@ class AggregateCalculationTests(TestCase):
         self.assertAlmostEqual(aggregate.clutch_index, 5.76, places=1)
 
     def test_recalculate_all_aggregates(self):
-        """Полный пересчёт агрегатов для матча (Celery-цепочка, EAGER-режим)."""
+        """Полный пересчёт агрегатов матча (eager)."""
         ContextEvaluation.objects.create(user=self.user1, match=self.match, watched_type="full")
  
         PlayerEvaluation.objects.create(

@@ -1,9 +1,5 @@
 # partners/services.py
-"""
-Сервисный слой партнёрской инфраструктуры: выбор баннера для показа,
-трекинг impression/click/referral-визита через analytics.track_event
-(см. partners/models.py — почему не отдельные таблицы).
-"""
+"""Партнёры: выбор баннера, трекинг показов/кликов/переходов через analytics.track_event."""
 from __future__ import annotations
 
 import random
@@ -16,19 +12,13 @@ from analytics.services import track_event
 
 from .models import Banner, BannerZone, Partner
 
-# Имя cookie реферальной атрибуции — читается в users/views.py при
-# регистрации, чтобы привязать USER_REGISTERED к партнёру, приведшему
-# визит, а не только сам факт визита по /go/<slug>/.
+# Cookie реферальной атрибуции (читается при регистрации).
 REFERRAL_COOKIE_NAME = "dopx_ref"
 REFERRAL_COOKIE_MAX_AGE = 60 * 60 * 24 * 30  # 30 дней
 
 
 def get_active_banner_for_zone(zone: str) -> Banner | None:
-    """
-    Взвешенный случайный выбор одного активного баннера зоны. Вес —
-    priority + 1 (баннер с priority=0 всё равно участвует в розыгрыше,
-    просто с наименьшим весом, а не исключается).
-    """
+    """Взвешенный случайный выбор активного баннера зоны (вес = priority + 1)."""
     candidates = list(
         Banner.objects.filter(zone=zone, is_active=True).select_related("partner")
     )
@@ -58,12 +48,7 @@ def track_banner_click(banner: Banner, request: HttpRequest) -> None:
 
 
 def build_click_redirect_url(banner: Banner) -> str:
-    """
-    target_url партнёра + utm_source/utm_medium/utm_campaign, если их там
-    ещё нет — чтобы партнёр в СВОЕЙ аналитике тоже видел трафик от DOPX
-    (двусторонняя атрибуция, а не только наша). Не перетирает существующие
-    utm-параметры, если рекламодатель уже проставил свои.
-    """
+    """target_url + utm-метки, если их там ещё нет."""
     parsed = urlparse(banner.target_url)
     query_params = dict(parse_qsl(parsed.query))
     query_params.setdefault("utm_source", "dopx")
@@ -81,15 +66,7 @@ def track_partner_referral_visit(partner: Partner, request: HttpRequest, *, next
 
 
 def build_content_feed(partner: Partner, request: HttpRequest, *, limit: int = 10) -> list[dict]:
-    """
-    Закрытый контент-фид (partners/views.py::PartnerContentFeedView) — НЕ
-    публичный API поверх спарсенных у KFF данных, а готовые брендированные
-    ассеты под последние завершённые матчи: ссылка на PNG-карточку матча
-    (core/views.py::MatchShareCardView, уже с логотипом DOPX и подписью
-    dopx.kz) + подпись с НАШЕЙ аналитикой (drama_index, итоговый счёт), а не
-    сырые оценки/статистика. Партнёр получает контент для своего канала на
-    каждый тур, не доступ к базе.
-    """
+    """Контент-фид: последние завершённые матчи — ссылка на PNG-карточку + подпись с нашей аналитикой."""
     from django.urls import reverse
 
     from matches.models import Match
@@ -107,15 +84,7 @@ def build_content_feed(partner: Partner, request: HttpRequest, *, limit: int = 1
         drama_index = getattr(getattr(match, "aggregate", None), "drama_index", None)
         caption = f"{match.home_team.name} {match.home_score}:{match.away_score} {match.away_team.name}"
         if drama_index:
-            # БАГ, КОТОРЫЙ ТУТ БЫЛ (найден 2026-09-21, сквозной аудит): было
-            # "{drama_index:.1f}/10" — та же ошибка масштаба, что чинили в
-            # aggregates/services.py::clutch_index (см. коммент там же).
-            # drama_index = avg_entertainment * avg_tension, оба поля 1-10,
-            # реальная шкала — 0..100 (aggregates/tests.py::
-            # test_match_aggregate_drama_index, подтверждает 72.0 для 8×9;
-            # core/context_processors.py прямо подписывает "макс. 100").
-            # Партнёрский фид отдавал "72.0/10" вместо "72/100" во ВСЕ
-            # брендированные подписи для внешних каналов партнёров.
+            # drama_index — шкала 0..100.
             caption += f" — индекс драмы {drama_index:.0f}/100 по мнению болельщиков DOPX"
         items.append({
             "match_id": str(match.id),
@@ -128,10 +97,7 @@ def build_content_feed(partner: Partner, request: HttpRequest, *, limit: int = 1
 
 
 def track_partner_feed_access(partner: Partner, request: HttpRequest, *, feed_type: str = "content") -> None:
-    """:param feed_type: 'content' (build_content_feed, готовые PNG-карточки)
-    или 'mood_index' (build_mood_index_feed, см. ниже) — один event_name,
-    различаем через properties, тот же принцип, что PREDICTION_MADE (см.
-    докстринг EventName) — не плодим каталог событий ради v1-фичи."""
+    """:param feed_type: 'content' или 'mood_index' — одно событие, различаем по properties."""
     track_event(
         EventName.PARTNER_FEED_ACCESSED, request=request,
         properties={"partner_slug": partner.slug, "feed_type": feed_type},
@@ -139,21 +105,8 @@ def track_partner_feed_access(partner: Partner, request: HttpRequest, *, feed_ty
 
 
 def build_mood_index_feed(partner: Partner, team, season) -> dict:
-    """
-    "Индекс настроения клуба" — B2B v1 (docs/adr/0034-club-mood-index-v2.md,
-    раздел B2B): ТОТ ЖЕ анонимизированный агрегат, что уже показывается на
-    публичной странице команды (teams/services.py::compute_mood_series,
-    find_season_controversial_matches) — никаких новых вычислений и никаких
-    данных на уровне пользователя (ни одного user_id/username в структуре
-    ниже, только числа и названия команд/матчей).
-
-    СОЗНАТЕЛЬНО НЕ полноценный B2B-продукт: нет отдельной модели тарифов,
-    контракта доступа сверх уже существующего Partner.feed_token, лимитов
-    запросов сверх общего рейт-лимита партнёрских эндпоинтов. Это тот же
-    принцип, что `build_content_feed` выше — готовый, работающий срез
-    данных для реального партнёра уже сегодня, а не спроектированная
-    заранее, но ещё не нужная инфраструктура биллинга/контрактов (эти
-    решения — бизнесовые, не решаются кодом за продукт).
+    """Индекс настроения клуба для партнёра — тот же агрегат, что на странице команды,
+    без данных пользователей.
     """
     from teams.services import build_sparkline_points, compute_mood_series, find_season_controversial_matches
 
@@ -182,13 +135,8 @@ def build_mood_index_feed(partner: Partner, team, season) -> dict:
 
 
 def track_widget_embed_view(*, widget_type: str, entity_id: str, request: HttpRequest) -> None:
-    """
-    Трекинг открытия embed-виджета. `widget_type` — 'player'/'team'/'standings'
-    (players/views.py::player_rating_widget, teams/views.py::team_rating_widget,
-    core/views.py::standings_widget). HTTP_REFERER на iframe-запросе — это
-    URL страницы, которая ЕГО встроила (домен встраивающего партнёра), а не
-    наша страница — именно этого не хватало до продуктового аудита "канал
-    привлечения" (2026-08-21), чтобы вообще узнать, кто и где использует виджет.
+    """Трекинг открытия embed-виджета. widget_type — 'player'/'team'/'standings',
+    HTTP_REFERER — страница, где встроен виджет.
     """
     track_event(
         EventName.WIDGET_EMBED_VIEWED,

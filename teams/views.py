@@ -21,37 +21,24 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# 2026-09-10 (см. коммент у current_roster_ids в TeamDetailView) — сколько
-# времени без единого матча за клуб игрок ещё считается "живым составом"
-# без прямого доказательства (просто team+is_active, без матча В ЭТОМ
-# сезоне). ~15 месяцев — с запасом на долгую травму/дисквалификацию
-# длиной в межсезонье, но достаточно короткий, чтобы не показывать игроков,
-# явно завершивших карьеру/пропавших без следа год-два назад.
+# Сколько без матчей игрок ещё считается в составе (~15 месяцев).
 ROSTER_STALE_THRESHOLD = timedelta(days=450)
 
 class TeamListView(ListView):
-    """Список всех команд"""
+    """Список команд."""
     model = Team
     template_name = 'teams/list.html'
     context_object_name = 'teams'
     paginate_by = 20
 
     def get_paginate_by(self, queryset):
-        # 2026-09-23, «Настройки платформы» — управляется staff без деплоя.
+        # Размер страницы — из настроек платформы.
         return get_setting("teams_list_page_size", self.paginate_by)
 
     def get_queryset(self):
         queryset = Team.objects.all()
 
-        # Дефолт: только команды текущего сезона главной лиги (через
-        # TeamSeason — реально заполняется на каждом импорте матча, см.
-        # parsers/sportmonks/importers.py; до 2026-09-09 то же самое делал
-        # parsers/kff/importers.py::import_match_core, теперь удалён). Без
-        # этого список
-        # копил бы вперемешку команды разных сезонов/дивизионов без
-        # возможности отличить, кто играет сейчас. Переключатель ?season=all
-        # возвращает полный список — нужен, например, чтобы найти вылетевший
-        # клуб. См. docs/BACKLOG.md, находка 3.
+        # По умолчанию — команды текущего сезона (TeamSeason). ?season=all — все.
         self.active_season = Season.get_primary_active()
         self.show_all = self.request.GET.get('season') == 'all'
         if self.active_season and not self.show_all:
@@ -59,26 +46,14 @@ class TeamListView(ListView):
 
         search = self.request.GET.get('q')
         if search:
-            # normalize_kz — казахские буквы (Қ/Ә/Ұ и т.д.) и их русские
-            # "омографы" дают одинаковую строку, "Кайрат" находит
-            # "Қайрат" независимо от раскладки (см. core/utils.py).
-            # Команд немного (десятки) — дешевле отфильтровать в Python,
-            # чем городить SQL TRANSLATE().
+            # Поиск через normalize_kz (Кайрат = Қайрат), фильтруем в Python.
             normalized_query = normalize_kz(search)
             matching_ids = [
                 t.id for t in Team.objects.only('id', 'name')
                 if normalized_query in normalize_kz(t.name)
             ]
             queryset = queryset.filter(id__in=matching_ids)
-        # 2026-09-09 (жалоба пользователя после полного бэкафилла 3 сезонов):
-        # счётчик матчей в списке считал ВСЮ историю команды разом (3 сезона
-        # сразу), а не текущий — на списке команд это выглядит как "у клуба
-        # уже 90 матчей" через неделю после старта сезона. При show_all=True
-        # (флаг того же ?season=all, что фильтрует сам queryset выше) счётчик
-        # честно тоже становится за всю историю — иначе цифра не совпадала
-        # бы с тем, что реально выбрано. Q-путь ОБЯЗАН идти через тот же
-        # related_name, что и сам Count (home_matches__season, не просто
-        # season — у Team такого поля нет), иначе Django упадёт FieldError.
+        # Матчи за текущий сезон; при ?season=all — за всю историю.
         home_season_q = Q(home_matches__season=self.active_season) if self.active_season and not self.show_all else Q()
         away_season_q = Q(away_matches__season=self.active_season) if self.active_season and not self.show_all else Q()
         queryset = queryset.annotate(
@@ -101,16 +76,11 @@ class TeamListView(ListView):
         context['search_query'] = self.request.GET.get('q', '')
         context['active_season'] = self.active_season
         context['show_all'] = self.show_all
-        # Фильтр по городу убран: источник не присылает city на уровне
-        # команды (то же самое было верно и для KFF, теперь удалён), поле
-        # Team.city реально всегда пустое, показывать нерабочий dropdown
-        # было бы обманом пользователя. (2026-09-09: раньше city заполнялся
-        # хотя бы у Stadium — модель убрана из проекта целиком, см.
-        # matches/models.py.)
+        # Фильтра по городу нет — источник не присылает city для команд.
         return context
 
 class TeamDetailView(DetailView):
-    """Детальная страница команды со статистикой за текущий сезон."""
+    """Страница команды со статистикой за сезон."""
     model = Team
     template_name = 'teams/detail.html'
     context_object_name = 'team'
@@ -123,24 +93,18 @@ class TeamDetailView(DetailView):
         team = self.object
         now = timezone.now()
         
-        # ✅ ПОЛУЧАЕМ ТЕКУЩИЙ АКТИВНЫЙ СЕЗОН
+        # Текущий активный сезон
         active_season = Season.objects.filter(is_active=True).first()
 
-        # ВЫБОР СЕЗОНА (2026-09-09, продуктовый фидбек: "внутри страницы
-        # команды должна быть статистика по сезонам", тот же паттерн, что и
-        # ?season=<год> на странице лиги, leagues/views.py::LeagueDetailView).
-        # team_seasons — только сезоны, в которых команда реально участвовала
-        # (через TeamSeason), а не вообще все сезоны лиги — иначе в
-        # переключателе были бы годы, когда эта команда, например, играла в
-        # другом дивизионе или ещё не существовала.
+        # Выбор сезона — только сезоны, где команда участвовала.
         team_seasons = Season.objects.filter(teamseason__team=team).distinct().order_by('-year')
         season_param = self.request.GET.get('season', '').strip()
         selected_season = team_seasons.filter(year=season_param).first() if season_param else None
         if selected_season is None:
             selected_season = active_season
-        current_season = selected_season  # см. ниже — исторически весь блок ссылался на "current_season"
+        current_season = selected_season  # дальше по коду называется current_season
 
-        # ✅ ФИЛЬТР МАТЧЕЙ: только выбранный сезон + завершённые
+        # Матчи выбранного сезона, только завершённые
         if current_season:
             matches_filter = Q(
                 Q(home_team=team) | Q(away_team=team),
@@ -148,13 +112,13 @@ class TeamDetailView(DetailView):
                 status='finished'
             )
         else:
-            # Если нет активного сезона, берём все завершённые
+            # Нет активного сезона — все завершённые
             matches_filter = Q(
                 Q(home_team=team) | Q(away_team=team),
                 status='finished'
             )
         
-        # ✅ СТАТИСТИКА ЧЕРЕЗ AGGREGATE (эффективно и правильно)
+        # Статистика через aggregate
         stats_data = Match.objects.filter(matches_filter).aggregate(
             played=Count('id'),
             wins=Count('id', filter=(
@@ -177,7 +141,7 @@ class TeamDetailView(DetailView):
             ),
         )
         
-        # ✅ ОБРАБОТКА NULL ЗНАЧЕНИЙ
+        # NULL -> 0
         total_matches = stats_data['played'] or 0
         wins = stats_data['wins'] or 0
         goals_scored = (stats_data['goals_scored'] or 0)
@@ -186,80 +150,17 @@ class TeamDetailView(DetailView):
         logger.info(f"📊 Team {team.name} stats (season {current_season.year if current_season else 'N/A'}): "
                    f"Matches={total_matches}, Wins={wins}, Scored={goals_scored}, Conceded={goals_conceded}")
         
-        # Игроки команды.
-        # ИСПРАВЛЕНО (2026-09-09, жалоба пользователя "при переключении
-        # сезона состав не меняется"): раньше здесь всегда был просто
-        # ТЕКУЩИЙ живой ростер (team=team, is_active=True) — независимо от
-        # выбранного в переключателе сезона. Для прошлых сезонов это
-        # означало, что состав либо совпадал с сегодняшним (неверно, если
-        # были трансферы), либо вовсе не включал игроков, которые с тех
-        # пор ушли из клуба. Правильный источник состава конкретного
-        # сезона — кто РЕАЛЬНО выходил в заявке на матчи этой команды в
-        # этом сезоне (MatchLineupPlayer), тот же принцип, что уже
-        # использовался для top_players ниже (см. docs/adr/0014).
+        # Состав команды за выбранный сезон.
         if current_season and not current_season.is_active:
-            # Прошлый сезон: только те, кто реально играл за эту команду
-            # именно в этом сезоне — team=team текущего Player тут не
-            # подходит (у трансферных игроков FK уже указывает на новый
-            # клуб).
+            # Прошлый сезон — кто реально играл за команду в этом сезоне.
             players = Player.objects.filter(
                 matchlineupplayer__lineup__team=team,
                 matchlineupplayer__lineup__match__season=current_season,
             ).distinct().order_by('number')
         else:
-            # Текущий/активный сезон: берём живой ростер (включая
-            # новичков, ещё не сыгравших ни одного матча) + тех, кто уже
-            # успел сыграть за клуб в этом сезоне, но с тех пор ушёл —
-            # иначе они пропали бы из состава сезона сразу в день ухода.
-            #
-            # ИСПРАВЛЕНО (2026-09-10, жалоба пользователя со скриншотами —
-            # "Виктор Васин" и "Иброхимхалил Йолдошев" висели в составе
-            # "Кайрат" сезона 2026, хотя последний раз реально играли за
-            # клуб в 2024): is_active=True раньше был БЕССРОЧНЫМ сигналом —
-            # KFF-скрапер, который когда-то снимал is_active у ушедших
-            # игроков (роскомментарий у Player.roster_absence_streak),
-            # удалён из проекта вместе с parsers/kff, ничего больше
-            # is_active в False не переводит.
-            #
-            # ИСПРАВЛЕНО ВТОРОЙ РАЗ (2026-09-11, следующий конкретный
-            # пример от пользователя — "Офри Арад" всё ещё в составе
-            # "Кайрат" ТЕКУЩЕГО сезона, хотя последний раз реально играл в
-            # сезоне 2025): промежуточная версия фикса проверяла "давность"
-            # через last_match_at не старше ROSTER_STALE_THRESHOLD (~15
-            # месяцев) — это ВРЕМЕННОЕ окно, не привязка к КОНКРЕТНОМУ
-            # сезону. Если прошлый сезон закончился, скажем, 7 месяцев
-            # назад, его последний матч легко укладывается в 15-месячное
-            # окно "не устарело" — фильтр не мог отличить "играл в ЭТОМ
-            # сезоне" от "играл где-то за последние 1.5 года". Тот же
-            # класс бага уже нашёлся и был исправлен на /players/ (см.
-            # players/views.py::PlayerListView) — здесь тот же фикс, у
-            # первоисточника этой логики.
-            #
-            # Новая логика — БЕЗ временных допущений, только факты по
-            # заявкам на матчи: (а) played_this_season_ids ниже — реально
-            # выходил в заявке на матч ИМЕННО текущего сезона за эту
-            # команду; (б) never_played_ids — у игрока вообще НЕТ ни одной
-            # записи в MatchLineupPlayer — единственный случай, где
-            # сезонных данных не существует (новичок, ещё не
-            # дебютировавший), тогда и только тогда доверяем team FK.
-            # Игрок с историей, но НЕ в текущем сезоне (как Арад — есть
-            # записи, но только за 2025) — не попадает ни в (а), ни в (б),
-            # корректно исключается из состава.
-            #
-            # ИСПРАВЛЕНО ТРЕТИЙ РАЗ (2026-09-11, конкретный пример от
-            # пользователя — "Исмаил Бекболат" реально играет за "Кайрат"
-            # (9 матчей в этом сезоне, подтверждено и на его собственной
-            # странице), но не показывался в составе на странице команды).
-            # Причина — [:25] ниже: у "Кайрат" 44 игрока за сезон (большой
-            # клуб — основа + ротация + вызовы из дубля), запрос выше и так
-            # уже честно отбирает только сезонных игроков, но потом СРЕЗАЛ
-            # результат до первых 25 по возрастанию номера. Бекболат играет
-            # под номером 81 — высокий номер уходил в самый конец сортировки
-            # и обрезался, хотя объективно один из сильнейших игроков клуба
-            # в сезоне (рейтинг 8,1). Это не "топ-N игроков" виджет (тот
-            # ниже, top_players, честно сортирует по рейтингу) — это
-            # "Состав команды", список должен быть ПОЛНЫМ, а не первыми 25
-            # по случайному для отбора критерию (номер на майке).
+            # Текущий сезон: игравшие за команду в этом сезоне
+            # + игроки команды без единой записи в составах (новички).
+            # Список полный, без среза.
             never_played_ids = Player.objects.filter(
                 team=team, is_active=True, matchlineupplayer__isnull=True,
             ).values_list('id', flat=True)
@@ -273,10 +174,7 @@ class TeamDetailView(DetailView):
                 Q(id__in=never_played_ids) | Q(id__in=played_this_season_ids)
             ).distinct().order_by('number')
         
-        # Топ-5 игроков: матч засчитывается команде, за которую он реально
-        # сыгран (MatchLineupPlayer.lineup.team), не текущему клубу игрока —
-        # иначе трансфер задним числом переписывает историю. См.
-        # docs/adr/0014-team-top-players-transfer-fix.md.
+        # Топ-5 игроков: матч засчитывается команде, за которую сыгран.
         played_for_this_team = MatchLineupPlayer.objects.filter(
             player_id=OuterRef('player_id'),
             lineup__team=team,
@@ -291,15 +189,7 @@ class TeamDetailView(DetailView):
             'match'
         ).order_by('-performance_score')[:5]
         
-        # Оценки команд (средние за карьеру) — 2026-08-23: раньше считались
-        # Avg() НАПРЯМУЮ по всей истории TeamEvaluation синхронно на каждый
-        # рендер страницы — без веса пользователя, без винзоризации, без
-        # защиты от сговора фан-базы. Теперь среднее берётся по уже
-        # готовым, взвешенным TeamMatchAggregate.performance_score за
-        # каждый матч (см. aggregates/tasks.py::recalculate_team_aggregates)
-        # — total считаем как СУММУ голосов по матчам, а не Count() по
-        # TeamEvaluation, чтобы гейт MIN_VOTES_FOR_DISPLAY остался
-        # осмысленным (число реальных оценок, а не число матчей).
+        # Средние оценки команды по TeamMatchAggregate (взвешенные), total — сумма голосов.
         team_match_aggs = TeamMatchAggregate.objects.filter(team=team).aggregate(
             avg_tactics=vote_weighted_avg('avg_tactics'),
             avg_effort=vote_weighted_avg('avg_effort'),
@@ -315,8 +205,7 @@ class TeamDetailView(DetailView):
             'total': team_match_aggs['total'] or 0,
         }
         
-        # Последние матчи — ТОЛЬКО текущий сезон + finished
-        # 2026-09-23, «Настройки платформы» — управляется staff без деплоя.
+        # Последние матчи текущего сезона. Лимит — из настроек платформы.
         recent_matches_limit = get_setting("team_recent_matches_limit", 10)
         if current_season:
             recent_matches = Match.objects.filter(
@@ -358,12 +247,7 @@ class TeamDetailView(DetailView):
             teamseason__team=team
         ).first()
 
-        # Позиция в турнирной таблице — читает готовую TeamSeasonStats
-        # (recalculate_season_standings, Celery Beat каждые 10 минут — но
-        # ТОЛЬКО для активного сезона, см. aggregates/tasks.py). Для
-        # завершённых сезонов, только что подтянутых бэкафиллом, строк
-        # может не быть вообще — досчитываем синхронно один раз при первом
-        # заходе (тот же приём, что и в leagues/views.py::LeagueDetailView).
+        # Место в таблице из TeamSeasonStats; нет строк — досчитываем один раз.
         season_stats = None
         if current_season:
             if not TeamSeasonStats.objects.filter(season=current_season).exists():
@@ -378,10 +262,7 @@ class TeamDetailView(DetailView):
                 season=current_season
             ).count()
 
-        # Матч этой команды, который прямо сейчас можно оценить (для CTA
-        # в пустом состоянии карточки "Оценки болельщиков") — НЕ просто
-        # последний сыгранный, а именно тот, где voting_open_until ещё не
-        # истёк, иначе кнопка вела бы на уже закрытое голосование.
+        # Матч команды, открытый для оценки (CTA).
         votable_match = next((m for m in recent_matches if m.is_voting_open), None)
 
         is_following = False
@@ -389,28 +270,18 @@ class TeamDetailView(DetailView):
             from users.models import Follow
             is_following = Follow.objects.filter(user=self.request.user, team=team).exists()
 
-        # Индекс настроения клуба — v1 тренд-бейдж (docs/adr/0029) + v2
-        # график/доверие/ожидания/спорные решения сезона (docs/adr/0034-club-mood-index-v2.md).
-        # Бейдж и график сознательно СОСУЩЕСТВУЮТ (не заменяют друг друга) —
-        # бейдж отвечает на "как дела ПРЯМО СЕЙЧАС" одним взглядом у
-        # заголовка, график — на "как это выглядело за сезон", разные места
-        # на странице для разных вопросов.
+        # Индекс настроения клуба: бейдж (сейчас) + график (за сезон).
         from teams.services import (
             compute_mood_trend, compute_mood_series, build_mood_chart,
             find_season_controversial_matches, get_team_form,
         )
 
-        # Форма команды (фаза 5, docs/sportmonks-migration-plan.md) — на лету
-        # из уже посчитанного recent_matches выше, без нового запроса.
+        # Форма команды из recent_matches.
         team_form = get_team_form(team, recent_matches)
 
         mood_trend = compute_mood_trend(team)
         mood_series = compute_mood_series(team)
-        # build_mood_chart (teams/services.py) — премиальный редизайн
-        # 2026-09-07 (продуктовый фидбек: "график уродский и непонятный")
-        # взамен сборки словаря из отдельных build_sparkline_points-вызовов
-        # прямо здесь: вся геометрия (сетка, точки, заливка) теперь считается
-        # в одном месте, а не размазана между view и шаблоном.
+        # График настроения (teams/services.py::build_mood_chart).
         mood_chart = build_mood_chart(mood_series)
         controversial_matches = (
             find_season_controversial_matches(team, current_season) if current_season else []
@@ -441,15 +312,13 @@ class TeamDetailView(DetailView):
             'page_title': f'{team.name} — DOPX',
         })
 
-        # 2026-09-23, честный аудит формул рейтингов — см. тот же
-        # комментарий в players/views.py::PlayerDetailView.
+        # Активная поправка рейтинга — значок «скорректировано».
         rating_correction = getattr(team, 'rating_correction', None)
         if rating_correction is not None and abs(rating_correction.correction) < 0.01:
             rating_correction = None
         context['rating_correction'] = rating_correction
 
-        # Готовая строка <iframe> для кнопки "Получить embed-код" — тот же
-        # паттерн, что у players/views.py::PlayerDetailView.
+        # Embed-код виджета.
         widget_url = self.request.build_absolute_uri(reverse('teams:widget', args=[team.id]))
         context['widget_embed_code'] = (
             f'<iframe src="{widget_url}" width="320" height="180" '
@@ -461,22 +330,8 @@ class TeamDetailView(DetailView):
 
 @xframe_options_exempt
 def team_rating_widget(request, pk):
-    """
-    Embeddable-виджет команды (продуктовый аудит "канал привлечения",
-    2026-08-21) — второй виджет после players:widget. Клубный паблик хочет
-    виджет СВОЕЙ команды, не абстрактного игрока, поэтому расширение
-    embed-инфраструктуры начинается именно отсюда. @xframe_options_exempt —
-    тот же аргумент, что у players/views.py::player_rating_widget: страница
-    read-only, без форм и действий, снятие защиты не создаёт поверхность
-    для clickjacking.
-
-    Рейтинг — среднее по TeamMatchAggregate.performance_score (уже
-    взвешенное и винзоризованное per-match значение, не PlayerMatchAggregate
-    — это ОЦЕНКА КОМАНДЫ целиком, а не агрегат по игрокам). 2026-08-23:
-    раньше здесь тоже был live Avg() напрямую по TeamEvaluation — та же
-    дыра, что была на TeamDetailView, см. её докстринг выше. Гейт
-    MIN_VOTES_FOR_DISPLAY тот же порог, что и везде на сайте —
-    единообразие важнее точного числа голосов именно на этом виджете.
+    """Виджет команды для чужих сайтов. Рейтинг — среднее TeamMatchAggregate.performance_score.
+    @xframe_options_exempt — страница read-only.
     """
     team = get_object_or_404(Team, pk=pk)
 

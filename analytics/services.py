@@ -1,6 +1,5 @@
 # analytics/services.py
-"""Единая точка входа для трекинга — используется ВЕЗДЕ вместо
-`AnalyticsEvent.objects.create()` напрямую."""
+"""Трекинг событий — только через track_event()."""
 from __future__ import annotations
 
 import hashlib
@@ -15,7 +14,7 @@ from analytics.tasks import persist_event_task
 
 
 def hash_ip(ip: str) -> str:
-    """Необратимый хэш IP — в БД никогда не попадает сырой адрес (PII)."""
+    """Хэш IP — сырой адрес в БД не пишем."""
     return hashlib.sha256(f"{ip}{settings.SECRET_KEY}".encode()).hexdigest()
 
 
@@ -27,26 +26,14 @@ def track_event(
     anonymous_id: str | uuid.UUID | None = None,
     properties: dict[str, Any] | None = None,
 ) -> None:
-    """
-    :param request: если передан — из него достаются IP/UA/referrer/session/UTM.
-    :param user: явный пользователь, если request.user недоступен (сигналы, Celery).
-    :param properties: произвольные JSON-сериализуемые доп. данные события.
-
-    Запись всегда асинхронная (fire-and-forget через Celery) — событие
-    аналитики никогда не должно быть узким местом request-response цикла,
-    особенно на 6-шаговом вайзарде оценки.
+    """:param request: источник IP/UA/referrer/session/UTM.
+    :param user: пользователь, если request нет (сигналы, Celery).
+    :param properties: доп. данные события.
+    Запись асинхронная через Celery.
     """
     payload: dict[str, Any] = {"event_name": str(event_name), "properties": properties or {}}
 
-    # 2026-08-28: TrackClientEventView (analytics/views.py) сознательно
-    # обнуляет authentication_classes у DRF APIView (иначе SessionAuthentication
-    # требует CSRF, которого sendBeacon дать не может) — но это же приводит
-    # к тому, что DRF `Request._authenticate()` с пустым списком authenticators
-    # никогда не пытается достать пользователя из сессии, и `request.user`
-    # (DRF-обёртка) всегда резолвится в AnonymousUser, даже для залогиненных.
-    # `request._request` — нижележащий Django HttpRequest (стабильный
-    # публичный атрибут DRF Request), у него `.user` берётся напрямую из
-    # AuthenticationMiddleware/сессии, минуя DRF-аутентификацию.
+    # У DRF-вьюхи трекинга нет аутентификаторов — пользователя берём из request._request.
     resolved_user = user or (getattr(getattr(request, "_request", request), "user", None) if request else None)
     if resolved_user is not None and getattr(resolved_user, "is_authenticated", False):
         payload["user_id"] = str(resolved_user.id)
@@ -55,12 +42,9 @@ def track_event(
         payload["anonymous_id"] = str(anonymous_id)
 
     if request is not None:
-        from core.utils import get_client_ip  # локальный импорт — избегаем циклических зависимостей
+        from core.utils import get_client_ip  # от циклического импорта
 
-        # request — это запрос К /analytics/track/, не к странице события,
-        # поэтому request.path/HTTP_REFERER всегда указывают на сам трекинг-
-        # эндпоинт. Реальные path/referrer клиент кладёт в properties
-        # (см. static/js/analytics.js), request.* — только fallback.
+        # path/referrer — из properties, request.* — fallback.
         session_id = request.session.session_key or ""
         payload["session_id"] = session_id
         properties_in = payload["properties"]

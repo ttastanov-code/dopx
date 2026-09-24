@@ -1,12 +1,6 @@
 # notifications/models.py
-"""
-Notification.email_sent_at различает уведомления, по которым письмо уже
-отправлено (дайджестом или мгновенно), от тех, что ещё предстоят —
-без него send_notification_digest (notifications/tasks.py) дублировал бы
-или пропускал письма. null=True у существующих записей — считаются уже
-обработанными, чтобы не заспамить всех историей при первом запуске дайджеста.
-NOTIFICATION_TYPES включает voting_open/aggregate_updated/top_performance/
-verification_required — фильтр в NotificationListView их уже ожидал.
+"""Уведомления и обращения пользователей.
+email_sent_at — письмо уже ушло (мгновенно или дайджестом); null у старых записей = обработано.
 """
 from django.db import models
 from django.conf import settings
@@ -14,7 +8,7 @@ from django.utils.translation import gettext_lazy as _
 from core.models import BaseModel
 
 class Notification(BaseModel):
-    """Модель уведомлений пользователей"""
+    """Уведомление пользователя."""
     NOTIFICATION_TYPES = [
         ('welcome', _('Приветственное письмо')),
         ('match_finished', _('Матч завершён / Голосование открыто')),
@@ -26,26 +20,15 @@ class Notification(BaseModel):
         ('top_performance', _('Топ-выступление')),
         ('verification_required', _('Требуется подтверждение email')),
         ('system', _('Системное уведомление')),
-        # НОВОЕ (4 петли удержания, 2026-08-21) — см. notifications/tasks.py
-        # NOTIFICATION_TYPE_TO_SETTINGS_KEY/DIGESTIBLE_NOTIFICATION_TYPES,
-        # там же полное описание задач, которые их создают.
+        # Retention-уведомления (notifications/tasks.py).
         ('prediction_closing', _('Скоро закроется приём прогнозов')),
         ('weekly_digest', _('Персональная сводка недели')),
         ('prediction_result', _('Прогноз vs результат матча')),
-        # НОВОЕ (2026-08-22) — итоги «DOPX Лучшие тура» при автоматической
-        # финализации, см. round_squad/services.py::recompute_round и
-        # notifications/tasks.py::send_round_results_notification.
+        # Итоги «DOPX Лучшие тура».
         ('round_results', _('Итоги «DOPX Лучшие тура»')),
-        # НОВОЕ (2026-09-01) — live-события матча (гол/автогол/пенальти/
-        # отменённый гол/красная карточка) для подписчиков команды или
-        # игрока, см. notifications/tasks.py::notify_followers_match_event.
-        # Отдельный тип от 'voting_open' (тот шлётся ОДИН раз при финальном
-        # свистке с приглашением оценить) — этот может прилететь несколько
-        # раз за матч, пока он идёт.
+        # Live-события матча для подписчиков (может быть несколько за матч).
         ('match_event', _('Live-событие матча')),
-        # НОВОЕ (2026-09-21, аудит пуш-системы по жалобе пользователя) —
-        # см. notifications/tasks.py::notify_followers_match_started/
-        # notify_followers_lineups_available.
+        # «Матч начался» и «Составы объявлены».
         ('match_started', _('Матч начался')),
         ('lineups_available', _('Составы объявлены')),
     ]
@@ -63,7 +46,7 @@ class Notification(BaseModel):
     related_match = models.ForeignKey(
         'matches.Match', on_delete=models.CASCADE, null=True, blank=True, related_name='notifications', verbose_name=_('Матч')
     )
-    # НОВОЕ: см. пункт 1 докстринга модуля.
+    # См. докстринг модуля.
     email_sent_at = models.DateTimeField(_('Email отправлен'), null=True, blank=True)
 
     class Meta:
@@ -81,7 +64,7 @@ class Notification(BaseModel):
 
 
 class ContactSubmission(BaseModel):
-    """Обращение пользователя (без изменений)"""
+    """Обращение пользователя."""
     STATUS_CHOICES = [
         ('new', _('Новое')),
         ('in_progress', _('В работе')),
@@ -94,19 +77,9 @@ class ContactSubmission(BaseModel):
         ('feature', _('Предложение функции')),
         ('evaluation', _('Проблема с оценкой матча')),
         ('account', _('Вопрос по аккаунту')),
-        # Отдельная категория, не 'evaluation' — юридически значимые
-        # обращения должны быть отличимы в фильтре админки, а не
-        # угадываться модератором по тексту сообщения.
+        # «Право на ответ» — отдельная категория для фильтра.
         ('dispute', _('Оспорить рейтинг / право на ответ')),
-        # НОВОЕ (2026-09-09, "Центр доверия к данным" — рекомендация из
-        # код-ревью Codex, дополнительно запрошено пользователем явно):
-        # отдельная категория для "у этого матча неверные данные" —
-        # неправильный стадион/счёт/состав/событие. Отличается от 'bug'
-        # (баг сайта) и 'evaluation' (несогласие с чужой оценкой): здесь
-        # речь о фактической ошибке в данных ИСТОЧНИКА (Sportmonks) или
-        # нашего импорта, попадает в отдельную очередь на дашборде
-        # (dashboard/services.py::data_trust_summary), а не в общую очередь
-        # поддержки.
+        # Ошибка в данных матча — отдельная очередь в «Центре доверия к данным».
         ('data_error', _('Ошибка в данных матча')),
         ('other', _('Другое')),
     ]
@@ -120,12 +93,7 @@ class ContactSubmission(BaseModel):
     admin_response = models.TextField(_('Ответ админа'), blank=True, help_text=_('Внутренний ответ для истории'))
     ip_address = models.GenericIPAddressField(_('IP адрес'), null=True, blank=True)
     user_agent = models.TextField(_('User Agent'), blank=True)
-    # НОВОЕ (2026-09-09, Центр доверия к данным): опциональная привязка к
-    # конкретному матчу — заполняется, только когда обращение пришло с
-    # кнопки "Сообщить об ошибке в данных" на странице матча (см.
-    # templates/matches/_match_header.html, core/views.py::ContactsView.post).
-    # SET_NULL, а не CASCADE — жалоба как факт обращения переживает удаление
-    # матча (тот же принцип, что Notification.related_match).
+    # Матч, к которому относится жалоба (SET_NULL).
     related_match = models.ForeignKey(
         'matches.Match', on_delete=models.SET_NULL, null=True, blank=True,
         related_name='data_error_reports', verbose_name=_('Матч (если жалоба на данные)'),

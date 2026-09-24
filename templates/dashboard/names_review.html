@@ -4,17 +4,11 @@
 {% include 'dashboard/_nav.html' %}
 
 {% comment %}
-templates/dashboard/names_review.html
-Очередь «Проверка ФИО (ИИ)» (2026-09-22, прямая просьба пользователя после
-жалобы "Сергий Малий" вместо "Сергий Малый") — заполняется командой
-parsers/management/commands/verify_names_with_ai.py (запускается вручную из
-"Скрипты и команды" или по расписанию), staff подтверждает/отклоняет
-каждое предложение здесь. Approve пишет parsers/models.py::
-ConfirmedNameCorrection (переживает будущие синки) и сразу обновляет
-Player/Referee/Coach — см. dashboard/views.py::names_review_action.
+Очередь «Проверка ФИО (ИИ)» — предложения verify_names_with_ai.
+Подтверждение пишет ConfirmedNameCorrection и обновляет запись (names_review_action).
 {% endcomment %}
 
-{% comment %} 2026-09-22: заголовок рендерит .dopx-page-header (_nav.html) — не дублируем. {% endcomment %}
+{# Заголовок — в _nav.html. #}
 <div class="card bg-base-100 border border-base-300 mb-4">
     <div class="card-body p-4">
         <p class="text-xs opacity-55 flex items-start gap-2">
@@ -22,14 +16,7 @@ Player/Referee/Coach — см. dashboard/views.py::names_review_action.
             Механическая транслитерация иногда угадывает ФИО неверно. Команда «Проверить ФИО через Gemini» находит такие записи и ищет реальное написание в вебе — ничего не применяется без вашего подтверждения здесь.
         </p>
         {% if not gemini_configured %}
-        {% comment %}
-        2026-09-22: alert — display:flex (daisyUI), поэтому "голые" текстовые
-        узлы вперемешку с <span> в теле алерта становятся отдельными
-        anonymous flex-item'ами и разъезжаются по строке как самостоятельные
-        чипы вместо связного предложения. Фикс — обернуть весь текст в один
-        <span>, чтобы для flex-контейнера это был один item, а перенос строк
-        внутри шёл обычным inline-потоком.
-        {% endcomment %}
+        {# Весь текст в одном <span> — иначе flex разбивает его на куски. #}
         <div class="alert alert-warning mt-3 text-xs">
             <i class="ti ti-alert-triangle"></i>
             <span>
@@ -41,14 +28,7 @@ Player/Referee/Coach — см. dashboard/views.py::names_review_action.
     </div>
 </div>
 
-{% comment %}
-2026-09-22, прямая просьба пользователя: "надо чтобы контент весь
-обновлялся в онлайне без обновления страницы" — обёрнуто в HTMX-поллинг
-(тот же приём, что и "История запусков" на "Скрипты и команды"), пока
-verify_names_with_ai крутится в фоне, новые предложения/ошибки
-появляются сами, без ручного F5. См. dashboard/views.py::
-names_review_partial и templates/dashboard/_names_review_queue.html.
-{% endcomment %}
+{# Очередь обновляется HTMX-поллингом (names_review_partial). #}
 <div id="names-review-queue" data-background-poll hx-get="{% url 'dashboard:names_review_partial' %}" hx-trigger="every 6s" hx-swap="innerHTML">
     {% include 'dashboard/_names_review_queue.html' %}
 </div>
@@ -80,30 +60,9 @@ names_review_partial и templates/dashboard/_names_review_queue.html.
                 </tbody>
             </table>
         </div>
-        {% comment %}
-        2026-09-22, прямая просьба пользователя: раньше был жёсткий срез
-        [:20] без пагинации — при большом прогоне (--all --limit 0
-        --recheck) список решённых быстро уходит далеко за 20, а старые
-        записи посмотреть было нельзя вообще. recent_decided — теперь
-        Django Page-объект (dashboard/views.py::names_review), а не
-        плоский список — у него есть has_previous/has_next/number/
-        paginator.num_pages "из коробки".
-        {% endcomment %}
+        {# Решённые — с пагинацией (recent_decided — Page). #}
         {% if recent_decided.paginator.num_pages > 1 %}
-        {% comment %}
-        2026-09-22: daisyUI `.join` намеренно склеивает кнопки в один
-        сегмент без зазоров (как у переключателя вкладок) — пользователю
-        такой вид не понравился ("прилипшие друг к другу"), заменил на
-        обычный flex с gap, как в остальных группах кнопок по проекту
-        (см. templates/dashboard/scripts.html — "flex gap-2").
-
-        #recent-decided в конце href (якорь на id этой же карточки выше) —
-        без этого переход по ?page=N перезагружает всю страницу, браузер
-        по умолчанию скроллит в самый верх, и после каждого клика "Позже"/
-        "Раньше" приходится заново скроллить вниз до этой же таблицы —
-        жалоба пользователя. С якорем браузер сам прыгает сюда после
-        загрузки страницы.
-        {% endcomment %}
+        {# Кнопки через flex gap; #recent-decided — вернуться к таблице после перехода. #}
         <div class="flex items-center justify-center gap-2 mt-3">
             {% if recent_decided.has_previous %}
             <a href="?page={{ recent_decided.previous_page_number }}#recent-decided" class="btn btn-xs btn-outline">« Раньше</a>

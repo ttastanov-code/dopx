@@ -1,27 +1,9 @@
 # core/management/commands/backfill_substitute_zones.py
-"""
-manage.py backfill_substitute_zones [--apply] [--match-id ID]
+"""manage.py backfill_substitute_zones [--apply] [--match-id ID]
 
-2026-09-21, продолжение жалобы пользователя ("некоторые игроки стоят
-например на правом полузащитнике, а сам игрок не играет там вообще") —
-теперь для УЖЕ импортированных вышедших на замену игроков.
-
-parsers/sportmonks/importers.py::import_events теперь наследует зону поля
-(field_position, L/C/R) для вошедшего на замену от игрока, которого он
-заменил (см. докстринг в import_events, ветка event_type == "substitution") —
-но это применяется только на будущих импортах/пересинках. Все уже
-сохранённые MatchLineupPlayer-строки для замен, у которых field_position
-пустой, так и останутся пустыми без разовой чистки — эта команда её делает.
-
-Источник данных: уже сохранённые MatchEvent с event_type="substitution" —
-там уже есть и player (вошедший), и player_out (вышедший), сохранять
-или перезапрашивать у Sportmonks заново ничего не нужно.
-
-Как и dedupe_match_events.py/dedupe_referees_coaches.py — по умолчанию
-ТОЛЬКО отчёт, --apply реально записывает изменения. После применения имеет
-смысл прогнать recompute_closed_rounds (и/или дождаться следующего
-планового пересчёта сезонной сборной) — сама эта команда только чинит
-field_position, к пересчёту сборных не притрагивается.
+Проставляет field_position вышедшим на замену по игроку, которого они заменили
+(по сохранённым событиям substitution). Без --apply — dry-run.
+Сборные не пересчитывает.
 """
 from __future__ import annotations
 

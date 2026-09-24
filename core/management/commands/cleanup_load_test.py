@@ -1,15 +1,8 @@
 # core/management/commands/cleanup_load_test.py
-"""
-Удаляет ВСЕ данные, созданные setup_load_test.py и последующим прогоном
-Locust: тестовых пользователей (username startswith 'loadtest_') — вместе с
-ними каскадом уходят их оценки, XP, уведомления, подписки, сессии вайзарда,
-флаги антифрода, аналитика (всё, что висит на FK к User). Отдельно удаляет
-синтетический load-test матч и всё привязанное к нему (состав, команды,
-тренеров, судью, лигу, сезон) — строго по фиксированным UUID из
-setup_load_test.py, поэтому реальные данные парсера гарантированно не
-затрагиваются (случайные UUID реальных объектов с этими не пересекаются).
+"""manage.py cleanup_load_test
 
-Запуск: python manage.py cleanup_load_test
+Удаляет пользователей loadtest_* (с каскадом) и синтетический матч
+с его данными по фиксированным UUID из setup_load_test.
 """
 from __future__ import annotations
 
@@ -50,7 +43,7 @@ class Command(BaseCommand):
                 if count:
                     self.stdout.write(f"  {model_label}: {count}")
 
-            # Явно, детьми вперёд — на случай, если где-то PROTECT вместо CASCADE.
+            # Дети первыми — на случай PROTECT.
             MatchLineupPlayer.objects.filter(lineup__match_id=LOAD_TEST_MATCH_ID).delete()
             MatchLineup.objects.filter(match_id=LOAD_TEST_MATCH_ID).delete()
             match_deleted, _ = Match.objects.filter(id=LOAD_TEST_MATCH_ID).delete()
@@ -58,9 +51,7 @@ class Command(BaseCommand):
 
             Player.objects.filter(team_id__in=[LOAD_TEST_HOME_TEAM_ID, LOAD_TEST_AWAY_TEAM_ID]).delete()
             Coach.objects.filter(team_id__in=[LOAD_TEST_HOME_TEAM_ID, LOAD_TEST_AWAY_TEAM_ID]).delete()
-            # Судья не привязан к команде load-test'а — узнаём по имени,
-            # заданному в setup_load_test.py (единственное место, где оно
-            # создаётся, коллизия с реальным судьёй практически исключена).
+            # Судью ищем по имени из setup_load_test.
             Referee.objects.filter(first_name="Load", last_name="Referee").delete()
             Team.objects.filter(id__in=[LOAD_TEST_HOME_TEAM_ID, LOAD_TEST_AWAY_TEAM_ID]).delete()
             Season.objects.filter(league_id=LOAD_TEST_LEAGUE_ID).delete()

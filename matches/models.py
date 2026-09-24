@@ -11,7 +11,7 @@ from referees.models import Referee
 
 
 class Match(BaseModel):
-    """Футбольный матч"""
+    """Футбольный матч."""
     STATUS_CHOICES = [
         ("scheduled", _("Запланирован")),
         ("live", _("Идёт")),
@@ -20,11 +20,7 @@ class Match(BaseModel):
         ("cancelled", _("Отменён")),
     ]
     
-    # БАГ, КОТОРЫЙ ТУТ БЫЛ: on_delete=CASCADE на справочных сущностях League/
-    # Season — удаление ОДНОЙ League/Season сносило ВСЕ матчи этой лиги/
-    # сезона (и каскадно всё, что висит на матчах: события, составы,
-    # статистику, оценки). PROTECT — Django не даст удалить League/Season,
-    # пока на них ссылаются матчи, что и требуется для справочных сущностей.
+    # PROTECT — нельзя удалить лигу/сезон, пока на них есть матчи.
     league = models.ForeignKey(League, on_delete=models.PROTECT, verbose_name=_('Лига'))
     season = models.ForeignKey(Season, on_delete=models.PROTECT, verbose_name=_('Сезон'))
     home_team = models.ForeignKey(
@@ -71,20 +67,8 @@ class Match(BaseModel):
     home_score = models.IntegerField(_('Счёт дома'), null=True, blank=True, default=0)
     away_score = models.IntegerField(_('Счёт гостей'), null=True, blank=True, default=0)
     has_lineup = models.BooleanField(_('Есть состав'), default=False)
-    # НАЙДЕНО (2026-09-10, расследование алерта sync_monitoring "12 матчей
-    # без составов за 24ч", parsers/tasks.py::check_sync_errors_and_alert):
-    # матч со state.developer_name AWARDED/WO/ABANDONED (техническое
-    # поражение/неявка/матч прерван и засчитан техническим результатом,
-    # см. STATE_MAP в parsers/sportmonks/importers.py) у Sportmonks
-    # ЗАКОННО не имеет данных lineups — состав никогда не выходил на поле,
-    # присылать его неоткуда. До этого поля такие матчи были неотличимы от
-    # матчей status='finished' обычным путём (мы мапили developer_name
-    # только в укрупнённый status, исходный dev_name нигде не сохранялся)
-    # — значит has_lineup=False на них "утекало" в алерт check_sync_errors_
-    # and_alert как будто это баг синхронизации, хотя это ожидаемая
-    # характеристика конкретного типа результата, а не сбой. Проставляется
-    # в import_match_core; используется только для фильтрации таких
-    # алертов (см. parsers/tasks.py) — на остальную логику сайта не влияет.
+    # Исходный статус Sportmonks для технических результатов (AWARDED/WO/ABANDONED).
+    # У таких матчей законно нет составов — не алертим.
     decided_administratively = models.BooleanField(
         _('Решён технически (неявка/тех. поражение)'),
         default=False,
@@ -102,9 +86,7 @@ class Match(BaseModel):
         null=True,
         blank=True
     )
-    # См. комментарий у League.sportmonks_id (leagues/models.py) — тот же
-    # принцип, external_id выше остаётся за KFF-историей, новые матчи с
-    # переходом на Sportmonks пишут сюда (docs/sportmonks-migration-plan.md).
+    # ID матча в Sportmonks (external_id — старые KFF-данные).
     sportmonks_id = models.CharField(
         _('Sportmonks ID'),
         max_length=100,
@@ -112,39 +94,14 @@ class Match(BaseModel):
         null=True,
         blank=True
     )
-    # НОВОЕ (переход на Sportmonks): в отличие от KFF, Sportmonks отдаёт
-    # полную бригаду судей на матч (главный + 2 ассистента + четвёртый
-    # судья, каждый со своим id и именем — проверено вживую на реальных
-    # матчах КПЛ, 25/25 матчей с полной бригадой). Модель Referee и FK
-    # `referee` выше остаются как есть и хранят ТОЛЬКО главного судью
-    # (type_id=6 у Sportmonks) — заводить отдельную M2M-модель под
-    # ассистентов ради вывода имён на странице матча избыточно, простой
-    # JSON с готовыми именами дешевле и не требует новой связной модели.
-    # Ожидаемая форма: {"assistant_1": "...", "assistant_2": "...", "fourth_official": "..."}.
+    # Бригада судей: {"assistant_1": ..., "assistant_2": ..., "fourth_official": ...}.
+    # Главный судья — в FK referee.
     referee_crew = models.JSONField(
         _('Бригада судей (ассистенты, 4-й судья)'),
         null=True,
         blank=True,
     )
-    # УДАЛЕНО (2026-09-09, решение пользователя): поле stadium убрано
-    # полностью — данные Sportmonks по стадионам КПЛ оказались
-    # непригодны для отображения (клубы реально играют "домашние" матчи
-    # на разных стадионах в разных городах в течение одного сезона —
-    # не просто "неверное название", а сама модель "у команды один
-    # домашний стадион" не соответствует реальности лиги). См. миграцию
-    # matches/migrations/0011_remove_match_stadium.py и удалённую модель
-    # core/models_stadium.py::Stadium (core/migrations/0004_delete_stadium.py).
-    # KFF публикует "перенесён на неопределённый срок" как текстовый
-    # баннер на странице матча ЗАДОЛГО до того, как структурные поля
-    # status/date в их API меняются (проверено вручную пользователем на
-    # kff.kz — дата/статус конкретного матча остаются старыми, меняется
-    # только баннер). Значит staff узнаёт о переносе раньше парсера и
-    # правит статус вручную в админке — но БЕЗ этого флага
-    # update_match_statuses на следующем цикле тихо откатил бы правку
-    # обратно в "scheduled", т.к. api_status у KFF всё ещё "scheduled".
-    # Пока флаг True, автосинк пропускает статус/дату этого матча целиком
-    # (см. parsers/tasks.py::update_match_statuses) — снимается вручную,
-    # когда KFF наконец опубликует настоящую новую дату.
+    # Если True — автосинк не трогает статус и дату (правка staff вручную).
     manual_override = models.BooleanField(
         _('Статус вручную (не трогать автосинком)'),
         default=False,
@@ -155,28 +112,10 @@ class Match(BaseModel):
             'автоматическая синхронизация не трогает статус и дату этого матча.'
         ),
     )
-    # KFF отдавал номер тура прямо в /games/{id} (поле "tour"), просто раньше
-    # никто его не читал и не сохранял. Пользователь запросил явно
-    # 2026-08-21: при переносе матча start_time перестаёт быть надёжным
-    # ориентиром "какой это тур" (перенесённый матч может сыграться в дату
-    # совсем другого тура) — номер тура от источника не меняется вместе с
-    # датой, поэтому это единственный устойчивый признак. С 2026-09-08
-    # источник — Sportmonks: номер тура приходит в fixture.round.name,
-    # парсится parsers/sportmonks/importers.py::_extract_tour — то же поле
-    # модели, тот же смысл, просто другой путь до значения в сыром JSON.
+    # Номер тура от источника — устойчив к переносам дат.
     tour = models.PositiveSmallIntegerField(_('Тур'), null=True, blank=True)
 
-    # НАЙДЕНО (2026-09-01, жалоба пользователя: матч тура 6 "Каспий —
-    # Қайрат" играется 05.09, хотя весь остальной тур 6 отыгран ещё 18-19
-    # апреля — на сайте это никак не помечено). `status='postponed'`
-    # для этого не годится: как только KFF подтверждает окончательную дату,
-    # `is_schedule_tentative` снимается (см. parsers/tasks.py) и матч ДОЛЖЕН
-    # вернуться в 'scheduled' — иначе `is_prediction_open()` (matches/
-    # models.py) никогда не откроет приём прогнозов, она требует именно
-    # `status == 'scheduled'`. Поэтому это ОТДЕЛЬНЫЙ, липкий (не снимается
-    # автосинком) флаг поверх обычного статуса — вычисляется сравнением даты
-    # матча с датами остальных матчей того же тура (см. parsers/tasks.py::
-    # update_match_statuses, _detect_rescheduled_outlier).
+    # Матч перенесён относительно своего тура. Флаг липкий, автосинк его не снимает.
     was_rescheduled = models.BooleanField(
         _('Перенесён относительно своего тура'),
         default=False,
@@ -201,90 +140,45 @@ class Match(BaseModel):
         return f"{self.home_team} vs {self.away_team}"
     
     def get_score_display(self):
-        """Корректное отображение счёта"""
+        """Счёт для отображения."""
         home = self.home_score if self.home_score is not None else '-'
         away = self.away_score if self.away_score is not None else '-'
         return f"{home} : {away}"
 
     @property
     def is_derby(self) -> bool:
-        """
-        НОВОЕ: матч между "принципиальными соперниками" (`Team.rivals`,
-        см. teams/models.py и teams/admin.py::TeamAdmin.filter_horizontal).
-        Раньше пары соперников можно было проставить только в админке, но
-        нигде на сайте это никак не отображалось — бейдж "Дерби-эксперт"
-        (users/badges.py) начислялся полностью незаметно для пользователя,
-        который не мог понять, какие матчи вообще считаются "дерби".
-        Используется в шаблонах списка/детали матча. Дёшево при
-        prefetch_related('home_team__rivals') в queryset вьюхи — иначе один
-        доп. запрос на матч (rivals редко больше 1-2 записей на команду).
-        """
+        """Матч между соперниками (Team.rivals). Нужен prefetch home_team__rivals."""
         if not self.home_team_id or not self.away_team_id:
             return False
         return any(r.id == self.away_team_id for r in self.home_team.rivals.all())
 
     def is_voting_open(self):
-        """Проверка открыто ли голосование"""
+        """Открыто ли голосование."""
         from django.utils import timezone
         return self.status == 'finished' and timezone.now() <= self.voting_open_until
 
-    # Сколько дней ДО стартового свистка открывается приём прогнозов 1X2.
-    # ИЗМЕНЕНО (2026-08-21, по прямому запросу продукта): раньше окно не
-    # имело нижней границы вообще — прогноз можно было отдать хоть за год
-    # вперёд, что бессмысленно (расписание может измениться, состав
-    # неизвестен и т.д.) и обесценивает саму механику "прогноз вслепую
-    # незадолго до игры". Значение подобрано как разумный баланс: достаточно
-    # заранее, чтобы прогноз пожил и набрал голосов сообщества к матчу, но
-    # не настолько рано, чтобы это было гаданием на кофейной гуще.
+    # За сколько дней до старта открываются прогнозы 1X2.
     PREDICTION_WINDOW_DAYS = 5
 
     def prediction_opens_at(self):
-        """Момент открытия окна прогноза — используется и в is_prediction_open(),
-        и в шаблоне виджета для сообщения "прогнозы откроются <дата>"."""
+        """Момент открытия прогнозов."""
         from datetime import timedelta
         return self.start_time - timedelta(days=self.PREDICTION_WINDOW_DAYS)
 
     def is_prediction_open(self):
-        """
-        Окно для краудсорс-прогноза 1X2 (predictions app, задача "Прогнозы
-        на матчи в стиле Sofascore") — симметрично `is_voting_open()`, но
-        для ПРОТИВОПОЛОЖНОГО края жизни матча: прогноз на исход имеет
-        смысл только ДО стартового свистка, тогда как оценка (evaluations)
-        возможна только ПОСЛЕ него.
-
-        Намеренно НЕ используем только `status == 'scheduled'` без проверки
-        верхней границы времени: `manual_override`-матч мог быть вручную
-        помечен 'scheduled' с устаревшей `start_time` в прошлом (см.
-        коммент у `manual_override` выше) — секундная проверка
-        `timezone.now() < self.start_time` подстраховывает от приёма
-        прогнозов на матч, который по факту уже должен был начаться, даже
-        если статус ещё не синхронизирован.
-
-        НИЖНЯЯ граница — `prediction_opens_at()` (см. `PREDICTION_WINDOW_DAYS`
-        выше) — добавлена 2026-08-21: без неё голосовать можно было хоть за
-        год вперёд.
-        """
+        """Можно ли сейчас сделать прогноз: окно открыто и матч ещё не начался."""
         from django.utils import timezone
         now = timezone.now()
         return self.status == 'scheduled' and self.prediction_opens_at() <= now < self.start_time
 
     def prediction_window_not_yet_open(self):
-        """Отдельно от `is_prediction_open()` — виджету (_prediction_widget.html)
-        нужно различать ДВЕ разных причины "кнопки задизейблены": окно ещё не
-        наступило (этот метод) vs уже закрылось после старта матча. Разные
-        сообщения пользователю, поэтому не сворачиваем в одно bool-значение."""
+        """Окно прогнозов ещё не открылось (для текста виджета)."""
         from django.utils import timezone
         return self.status == 'scheduled' and timezone.now() < self.prediction_opens_at()
 
     @property
     def final_result(self):
-        """
-        '1' (победа хозяев) / 'X' (ничья) / '2' (победа гостей) для сверки
-        с прогнозами пользователей, либо None, если матч ещё не завершён
-        или счёт по какой-то причине не заполнен (не должно происходить у
-        `finished`-матча в норме, но `home_score`/`away_score` формально
-        nullable — лучше явно вернуть None, чем уронить сравнение).
-        """
+        """'1' / 'X' / '2' или None, если матч не завершён или нет счёта."""
         if self.status != 'finished' or self.home_score is None or self.away_score is None:
             return None
         if self.home_score > self.away_score:
@@ -295,33 +189,8 @@ class Match(BaseModel):
 
 
 class MatchReaction(BaseModel):
-    """
-    Реакция сообщества на ЗАВЕРШЁННЫЙ матч целиком — "Матч тура" /
-    "Неожиданный результат" / "Скучный матч" (редизайн карточки матча,
-    прямая просьба пользователя 2026-09-09, пункт 11 брифа). Один
-    пользователь — один (актуальный) выбор на матч, тот же принцип, что и
-    `predictions.MatchPrediction` (НЕ toggle-off, как `events.EventReaction`
-    — "передумал" здесь означает смену выбора через update_or_create, а не
-    отмену; "у меня нет мнения" не более осмысленно, чем "я не прогнозировал",
-    той же кнопки/состояния для этого не предусмотрено).
-
-    ПОЧЕМУ ОТДЕЛЬНАЯ МОДЕЛЬ, А НЕ `events.EventReaction`/`predictions.
-    MatchPrediction`: `EventReaction` привязана к конкретному MatchEvent
-    (пульс "на бегу" по ходу трансляции), а не к матчу целиком, и до трёх
-    вариантов выбора там нет (только like/dislike). `MatchPrediction`
-    закрывается ДО старта матча (`is_prediction_open`) — семантика
-    противоположная: это реакция ПОСЛЕ финального свистка, когда исход уже
-    известен. Общей модели, которая покрывала бы оба момента жизни матча
-    осмысленно, в проекте нет — заводить её ради экономии одной модели
-    было бы менее понятно, чем две маленьких с ясной границей ответственности.
-
-    НЕ отдельное Django-приложение (как `predictions`/`events`) — модель
-    живёт прямо в `matches`, т.к. она принадлежит ИМЕННО матчу как сущности
-    (в отличие от `predictions`, у которой есть собственный небольшой
-    сервисный/вью-слой и HTMX-эндпоинты вне контекста одной карточки). См.
-    также урок этой же сессии (dopx/celery.py, autodiscover_tasks) — лишние
-    подпакеты добавляют риск конфигурационных ошибок без реальной пользы,
-    когда модель и так тесно связана с одним существующим приложением.
+    """Реакция на завершённый матч: «Матч тура» / «Неожиданно» / «Скучно».
+    Один пользователь — один актуальный выбор на матч.
     """
     REACTION_MATCH_OF_ROUND = 'match_of_round'
     REACTION_UPSET = 'upset'
@@ -347,10 +216,7 @@ class MatchReaction(BaseModel):
             models.UniqueConstraint(fields=['match', 'user'], name='unique_match_reaction'),
         ]
         indexes = [
-            # Явное имя — миграции в проекте пишутся вручную (нет доступа к
-            # makemigrations на реальной БД), тот же принцип, что и у
-            # остальных явных индексов проекта (см. match_prediction_choice_idx,
-            # event_reaction_type_idx).
+            # Явное имя индекса.
             models.Index(fields=['match', 'reaction'], name='match_reaction_type_idx'),
         ]
 
@@ -359,35 +225,9 @@ class MatchReaction(BaseModel):
 
 
 class MatchTeamStatistics(BaseModel):
-    """
-    Объективная статистика КОМАНДЫ за матч (не оценки пользователей — факты
-    игры: удары, владение, карточки и т.д.). Модель источник-агностична —
-    заполнялась через GET /api/v1/games/{id}/stats (parsers/kff/client.py::
-    get_stats) на старте проекта, с 2026-09-08 (docs/sportmonks-migration-plan.md,
-    фаза 3/6) АКТИВНЫЙ источник — Sportmonks (parsers/sportmonks/importers.py::
-    import_statistics), тот же набор полей, тот же import_or_update по
-    (match, team). KFF-путь не удалён (аварийный откат, см. ADR-0044), но
-    больше не запускается по расписанию.
-
-    2026-08-23, независимый внешний сигнал для антифрода: пользовательские
-    оценки (TeamMatchAggregate.performance_score) — субъективны и уязвимы к
-    координированной накрутке/занижению (см. aggregates/services.py —
-    градуированный штраф веса, нейтральный якорь, винзоризация). Эта
-    модель — единственный источник данных в проекте, который НЕ зависит
-    от голосов пользователей DOPX вообще: если сообщество массово занижает
-    команду, которая объективно доминировала по ударам/угловым, это
-    конкретный, проверяемый признак предвзятости — используется в
-    aggregates/tasks.py::detect_rating_stats_divergence_task (и, с
-    2026-09-08, аналогичный сигнал на уровне игрока — см.
-    detect_player_rating_stats_divergence_task, ADR-0045).
-
-    Поля намеренно nullable — реальный ответ источника на разных матчах
-    отдаёт разный набор полей (например, у одного из матчей KFF-эпохи
-    передачи/xG были null, хотя удары/угловые/карточки — заполнены). Не все
-    поля JSON вынесены отдельными колонками — только те, что нужны для
-    антифрод-сигнала и отображения; полный сырой объект сохраняется в `raw`
-    (тот же паттерн, что events.models.MatchEvent.extra_data) на случай
-    будущего расширения без новой миграции.
+    """Объективная статистика команды за матч (удары, владение, карточки...).
+    Источник — Sportmonks. Используется в антифроде как независимый сигнал.
+    Поля nullable — набор зависит от матча. Полный ответ — в raw.
     """
     match = models.ForeignKey(
         Match,
@@ -418,12 +258,7 @@ class MatchTeamStatistics(BaseModel):
     pass_accuracy = models.FloatField(_('Точность передач, %'), null=True, blank=True)
     key_passes = models.IntegerField(_('Ключевые передачи'), null=True, blank=True)
     crosses = models.IntegerField(_('Кроссы'), null=True, blank=True)
-    # НОВОЕ (2026-09-09, аудит неиспользуемых полей Sportmonks по прямой
-    # просьбе пользователя) — число "опасных атак" (атака, едва не
-    # завершившаяся голом), тип DANGEROUS_ATTACKS у Sportmonks. У KFF
-    # аналога не было. Используется как премиальный визуальный индикатор
-    # "накала матча" на редизайненной странице матча (см.
-    # templates/matches/_match_stats.html), не только числом в таблице.
+    # Опасные атаки (DANGEROUS_ATTACKS).
     dangerous_attacks = models.IntegerField(_('Опасные атаки'), null=True, blank=True)
     raw = models.JSONField(_('Сырые данные из API'), default=dict, blank=True)
 
@@ -439,24 +274,8 @@ class MatchTeamStatistics(BaseModel):
 
 
 class MatchPlayerStatistics(BaseModel):
-    """
-    Объективная статистика ИГРОКА за матч — тот же источник-агностичный
-    принцип и то же назначение, что MatchTeamStatistics выше (см. её
-    докстринг про переход KFF -> Sportmonks), только на уровне игрока. У
-    KFF на уровне игрока набор полей был уже и стабильнее заполнен, чем на
-    уровне команды (пас/xG там почти всегда null) — поэтому колонок
-    меньше. У Sportmonks (parsers/sportmonks/importers.py::
-    import_player_statistics) те же поля приходят внутри lineups[].details,
-    не отдельным statistics-массивом — см. докстринг того импортёра.
-    Дополнительно с 2026-09-08 используется evaluations/views.py (карточка
-    игрока при быстрой оценке — справочные бейджи, НЕ автозаполнение) и
-    aggregates/tasks.py::detect_player_rating_stats_divergence_task
-    (ADR-0045).
-
-    `team` продублирован рядом с `player` (а не читается через
-    player.team) специально — состав игрока может смениться ПОСЛЕ матча
-    (трансфер), а статистика должна навсегда остаться привязана к той
-    команде, за которую он играл В ЭТОМ конкретном матче.
+    """Объективная статистика игрока за матч.
+    team хранится отдельно — игрок мог перейти в другой клуб.
     """
     match = models.ForeignKey(
         Match,

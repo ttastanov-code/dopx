@@ -1,4 +1,5 @@
 # aggregates/management/commands/recalculate_aggregates.py
+# Пересчёт агрегатов выбранных матчей (синхронно или через Celery).
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from datetime import timedelta

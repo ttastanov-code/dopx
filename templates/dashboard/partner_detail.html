@@ -3,16 +3,7 @@
 {% block content %}
 {% include 'dashboard/_nav.html' %}
 
-{% comment %}
-templates/dashboard/partner_detail.html
-2026-09-23, раздел «Партнёры и баннеры» — карточка одного партнёра
-(dashboard/views.py::partner_detail): форма редактирования всех полей +
-список привязанных баннеров (read-only ссылки на их карточки) + удаление.
-Namer/slug: слаг НЕ редактируется здесь (используется в реферальной ссылке
-/go/<slug>/ — уже могла быть роздана партнёру, менять её задним числом
-означало бы молча сломать уже отправленные ссылки; при реальной
-необходимости — через Django admin, осознанно).
-{% endcomment %}
+{# Карточка партнёра: форма, баннеры, удаление. slug не редактируется — он в уже розданных ссылках. #}
 
 <div class="mb-4">
     <a href="{% url 'dashboard:partners_list' %}" class="text-xs opacity-60 hover:opacity-100"><i class="ti ti-arrow-left"></i> К списку партнёров</a>
@@ -60,17 +51,7 @@ Namer/slug: слаг НЕ редактируется здесь (использ�
                         <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Внутренние заметки</label>
                         <textarea name="notes" rows="3" class="textarea textarea-sm textarea-bordered w-full">{{ partner.notes }}</textarea>
                     </div>
-                    {% comment %}
-                    2026-09-23, БАГ (найден при мобильном аудите — тот же
-                    класс проблемы, что в match_detail.html: у daisyUI
-                    label-text по умолчанию white-space: nowrap, длинный
-                    текст в скобках не переносился и выталкивал кнопку
-                    «Сохранить» за край экрана на мобильном). Фикс —
-                    flex-col на мобильном (label и кнопка друг под другом),
-                    sm:flex-row обратно в один ряд на десктопе, плюс
-                    whitespace-normal/min-w-0 на span, чтобы сам текст
-                    переносился внутри строки.
-                    {% endcomment %}
+                    {# Label и кнопка столбиком на мобильном; текст переносится. #}
                     <div class="sm:col-span-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                         <label class="label cursor-pointer gap-2 justify-start items-start">
                             <input type="checkbox" name="is_active" {% if partner.is_active %}checked{% endif %} class="checkbox checkbox-sm mt-0.5 shrink-0">

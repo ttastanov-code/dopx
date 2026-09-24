@@ -1,4 +1,5 @@
 # referees/urls.py
+# Список и страница судьи.
 from django.urls import path
 from referees.views import RefereeListView, RefereeDetailView
 

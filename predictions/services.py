@@ -1,6 +1,5 @@
 # predictions/services.py
-"""Сервисный слой прогнозов 1X2 — та же граница ответственности, что и
-events/services.py: views.py не трогает модель напрямую."""
+"""Сервисный слой прогнозов 1X2."""
 from __future__ import annotations
 
 from django.db.models import Count, Q
@@ -9,30 +8,10 @@ from .models import MatchPrediction
 
 
 def submit_prediction(*, user, match, choice: str) -> tuple[MatchPrediction, bool] | tuple[None, bool]:
-    """
-    Ставит или меняет прогноз пользователя на матч. В отличие от
-    `events/services.py::toggle_reaction` — здесь НЕТ toggle-off повторным
-    выбором той же опции: формальный прогноз, снятый без замены другим,
-    не имеет смысла (это не лайк "на эмоции"). Повторный POST с уже
-    выбранной опцией — no-op через `update_or_create` (перезаписывает
-    той же самой строкой).
-
-    Окно голосования проверяется ЗДЕСЬ ЕЩЁ РАЗ, не только в
-    views.py/шаблоне: HTMX POST можно отправить напрямую (curl/devtools),
-    минуя задизейбленную в UI кнопку — см. `Match.is_prediction_open()`.
-    Возвращает `(None, False)`, если окно уже закрыто (гонка: пользователь
-    открыл страницу до старта, кликнул уже после) — вызывающий код
-    (views.py) решает, как это показать.
-
-    Возвращает флаг `created` ОТДЕЛЬНО от самого прогноза — views.py должен
-    проверить бейдж "первая ставка" (`check_and_award_badges_task`) только
-    при ПЕРВОЙ ставке на этот матч, не при каждой смене выбора. Серия
-    прогнозов (`User.update_prediction_stats()`) — БОЛЬШЕ НЕ здесь и не в
-    views.py: она означает "подряд угаданных исходов" и обновляется только
-    когда матч завершается, см. notifications/tasks.py::
-    notify_prediction_results. Сама функция НЕ трогает `User`/Celery — это
-    HTTP-независимый сервисный слой, побочные эффекты уровня "пользователь
-    + асинхронные задачи" остаются в views.py, как и у evaluations/events.
+    """Ставит или меняет прогноз. Снять прогноз нельзя, повторный выбор — no-op.
+    Окно проверяется здесь (POST можно отправить в обход UI).
+    Возвращает (prediction, created) или (None, False), если окно закрыто.
+    User и Celery не трогает — это делает views.py.
     """
     if not match.is_prediction_open():
         return None, False
@@ -43,19 +22,7 @@ def submit_prediction(*, user, match, choice: str) -> tuple[MatchPrediction, boo
 
 
 def prediction_counts(match) -> dict:
-    """
-    Один запрос на матч — доли голосов по каждой из трёх опций. Проценты
-    округляются до целого (`round()`, не `floatformat`) прямо в Python, а
-    не в шаблоне — три отдельных float-деления в шаблоне менее читаемы и
-    не гарантируют согласованность округления между барами.
-
-    Сознательно НЕ материализуется в отдельную agregate-модель (в отличие
-    от `aggregates.MatchAggregate`) — три `COUNT(...) FILTER(...)` в одном
-    запросе достаточно дёшевы, чтобы считать на каждый рендер виджета;
-    материализация добавила бы Celery-таск + сигнал ради счётчика, который
-    и так меняется только по прямому действию пользователя (в отличие от
-    оценок, которые пересчитываются пачками после вайзарда).
-    """
+    """Доли голосов по трём исходам одним запросом, проценты округлены в Python."""
     row = MatchPrediction.objects.filter(match=match).aggregate(
         home=Count('id', filter=Q(choice=MatchPrediction.CHOICE_HOME)),
         draw=Count('id', filter=Q(choice=MatchPrediction.CHOICE_DRAW)),
@@ -74,28 +41,15 @@ def prediction_counts(match) -> dict:
 
 
 def user_prediction(user, match) -> MatchPrediction | None:
-    """Прогноз ИМЕННО этого пользователя — для подсветки его выбора и
-    сверки "совпал/не совпал" после матча."""
+    """Прогноз текущего пользователя."""
     if not user or not user.is_authenticated:
         return None
     return MatchPrediction.objects.filter(match=match, user=user).first()
 
 
 def bulk_prediction_data(matches, user) -> dict:
-    """
-    Bulk-версия prediction_counts()/user_prediction() выше — для встроенного
-    компактного виджета прогноза прямо на карточке матча в списке
-    (matches/views.py::MatchListView, задача "прогноз без перехода на
-    страницу матча"). Без неё каждая карточка страницы делала бы свои
-    2 запроса (agregate + прогноз пользователя) — до 40 лишних запросов на
-    страницу из 20 матчей. Здесь на всю страницу — максимум 2 запроса
-    суммарно, и только для матчей, где match.is_prediction_open() (обычно
-    считанные единицы — окно прогноза всего 5 дней, см.
-    Match.PREDICTION_WINDOW_DAYS).
-
-    Возвращает {match.id: {'counts': dict, 'my_prediction': MatchPrediction|None}}
-    — ключи ТОЛЬКО для матчей с открытым окном прогноза, остальные в списке
-    просто не должны рисовать виджет (см. шаблон).
+    """Bulk prediction_counts + user_prediction для карточек списка — максимум 2 запроса.
+    {match.id: {'counts': dict, 'my_prediction': MatchPrediction|None}} — только матчи с открытым окном.
     """
     open_matches = [m for m in matches if m.is_prediction_open()]
     if not open_matches:
@@ -141,23 +95,10 @@ def bulk_prediction_data(matches, user) -> dict:
 
 
 def bulk_final_prediction_counts(match_ids) -> dict:
-    """Bulk-версия `prediction_counts()` БЕЗ гейта `is_prediction_open()` —
-    в отличие от `bulk_prediction_data()` выше (который сознательно
-    пропускает матчи с закрытым окном, см. её докстринг), эта функция нужна
-    редизайну карточки ЗАВЕРШЁННОГО матча (индекс сенсации, пункт 12 брифа
-    2026-09-10) — там нужно распределение голосов, отданных ДО матча, ПОСЛЕ
-    того как он уже сыгран, окно закрыто уже давно. Строки `MatchPrediction`
-    никуда не удаляются после закрытия окна, поэтому это тот же самый
-    единственный запрос, что и в `bulk_prediction_data`, просто без фильтра
-    по `is_prediction_open()` на входном списке матчей.
+    """Bulk prediction_counts без проверки окна — для завершённых матчей (индекс сенсации).
 
-    :param match_ids: голые id (не объекты Match — вызывающей стороне
-        (`matches/card_services.py`) не нужно тут второй раз фильтровать
-        по статусу, она уже отобрала завершённые матчи сама).
-    :return: {match_id: counts_dict} — тот же формат dict, что и один вызов
-        `prediction_counts()`, но на весь список одним запросом. Матч без
-        единого прогноза просто не попадёт в словарь (вызывающая сторона
-        трактует отсутствие ключа как "прогнозов не было").
+    :param match_ids: id матчей.
+    :return: {match_id: counts_dict}; матча без прогнозов в словаре нет.
     """
     match_ids = list(match_ids)
     if not match_ids:

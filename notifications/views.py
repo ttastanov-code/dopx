@@ -22,9 +22,7 @@ class NotificationListView(LoginRequiredMixin, ListView):
     paginate_by = 20
 
     def get_paginate_by(self, queryset):
-        # 2026-09-23, «Настройки платформы» — размер страницы управляется
-        # staff без деплоя (core.models.get_setting), paginate_by=20 выше
-        # остаётся запасным значением на случай, если ключ ещё не заведён.
+        # Размер страницы — из настроек платформы.
         return get_setting("user_notifications_page_size", self.paginate_by)
 
     def get_queryset(self):
@@ -35,7 +33,7 @@ class NotificationListView(LoginRequiredMixin, ListView):
             'related_match__away_team'
         )
         
-        # === ФИЛЬТР ПО ТИПУ УВЕДОМЛЕНИЯ ===
+        # === ФИЛЬТР ПО ТИПУ ===
         notification_type = self.request.GET.get('type')
         if notification_type:
             type_map = {
@@ -59,7 +57,7 @@ class NotificationListView(LoginRequiredMixin, ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # Сохраняем параметры фильтров для пагинации
+        # Параметры фильтров для пагинации
         query_params = self.request.GET.copy()
         if 'page' in query_params:
             del query_params['page']
@@ -70,13 +68,12 @@ class NotificationListView(LoginRequiredMixin, ListView):
             is_read=False
         ).count()
 
-        # notifications (context_object_name) — уже нарезанный пагинацией
-        # QuerySet, у него нет .paginator. Общий счётчик — context['paginator'].
+        # Общее число — из context['paginator'].
         total_count = context['paginator'].count if context.get('paginator') else context['notifications'].count()
         context['total_count'] = total_count
         context['read_count'] = max(total_count - context['unread_count'], 0)
 
-        # Не {{ notifications|length }} — это длина текущей страницы пагинации.
+        # Не |length — это только текущая страница.
         context['week_count'] = Notification.objects.filter(
             user=self.request.user,
             created_at__gte=timezone.now() - timedelta(days=7)
@@ -89,28 +86,9 @@ class NotificationListView(LoginRequiredMixin, ListView):
 
 
 def _oob_counters_html(user) -> str:
-    """
-    Общие "хвостовые" OOB-фрагменты (out-of-band swap), которые HTMX-ответы
-    отметки прочитанным ВСЕГДА добавляют вслед за основным контентом —
-    ПЕРЕСОБРАНО 2026-08-21 по прямому запросу пользователя ("кнопки кривые,
-    непонятно, нельзя прочитать прямо в дропдауне"). Раньше отметка
-    прочитанным нигде не обновляла счётчик на колокольчике мгновенно — сам
-    механизм "живого" обновления был мёртвым кодом (JS слушал htmx:afterSwap
-    на #notification-badge-container, элемента с таким id не существовало
-    нигде в DOM, см. подробности в components/_notification_unread_badge.html).
-
-    Три цели по id, которые обновляет htmx через hx-swap-oob="true"
-    (безвредно, если конкретного id сейчас нет на странице — OOB-фрагмент
-    просто игнорируется):
-      1. #notif-unread-badge — красный счётчик на колокольчике.
-      2. #notif-count-text — "N непрочитанных" в шапке дропдауна (если открыт).
-      3. #stat-unread-count / #stat-read-count — карточки статистики на
-         полной странице /notifications/ (если сейчас на ней).
-
-    Вызывается из МЕСТ, где сработала любая отметка прочитанным — и из
-    одиночной (MarkAsReadView), и из массовой (MarkAllAsReadView) — чтобы
-    поведение было идентичным независимо от того, где кликнул пользователь:
-    в дропдауне колокольчика или на полной странице.
+    """OOB-фрагменты счётчиков после отметки прочитанным:
+    #notif-unread-badge, #notif-count-text, #stat-unread-count / #stat-read-count.
+    Отсутствующий на странице id просто игнорируется.
     """
     unread_count = user.notifications.filter(is_read=False).count()
     total_count = user.notifications.count()
@@ -131,25 +109,9 @@ def _oob_counters_html(user) -> str:
 
 
 class MarkAsReadView(LoginRequiredMixin, View):
-    """
-    ПЕРЕСОБРАНО 2026-08-21 — раньше единственный способ "перейти по
-    уведомлению" был анкор с hx-post + hx-swap="none": хрупкий паттерн,
-    у которого нет гарантии, что htmx не перехватит клик по <a href> и не
-    отменит обычную навигацию браузера (htmx это делает для ссылок с
-    hx-атрибутами в некоторых конфигурациях). Теперь переход — это ОБЫЧНЫЙ
-    `<form method="post">` с `next` в скрытом поле: работает без единой
-    строчки JS/htmx, 100% предсказуемо. `next` проверяется через
-    `url_has_allowed_host_and_scheme` (open redirect защита), хотя сейчас
-    `action_url` всегда генерируется на сервере — задел на будущее, если
-    появится сценарий, где значение может прийти менее доверенным путём.
-
-    Отдельно — HTMX-запрос от маленькой кнопки "отметить прочитанным без
-    перехода" (components/_notification_item.html) — возвращает саму
-    строку уведомления в новом (прочитанном) виде ПЛЮС OOB-хвост счётчиков
-    (см. `_oob_counters_html`). `compact` в query string — тот же флаг, что
-    и в шаблоне партиала: определяет, какой вариант вёрстки перерендерить
-    (дропдаун колокольчика/полная страница), чтобы ответ визуально совпадал
-    с тем, что уже было в DOM.
+    """Отметить прочитанным.
+    Обычный POST — переход на next (проверяется от open redirect).
+    HTMX — строка уведомления в новом виде + OOB-счётчики; compact — вариант вёрстки.
     """
     def post(self, request, pk):
         notification = get_object_or_404(Notification, pk=pk, user=request.user)
@@ -170,7 +132,7 @@ class MarkAsReadView(LoginRequiredMixin, View):
         ):
             return redirect(next_url)
 
-        # Возвращаемся с сохранением фильтров
+        # Назад с сохранением фильтров
         referer = request.META.get('HTTP_REFERER', '')
         if 'notifications' in referer:
             return redirect(referer)
@@ -178,17 +140,7 @@ class MarkAsReadView(LoginRequiredMixin, View):
 
 
 class MarkAllAsReadView(LoginRequiredMixin, View):
-    """
-    HTMX-ветка добавлена 2026-08-21 — раньше "Прочитать все" существовала
-    ТОЛЬКО на полной странице (обычный POST + редирект), в дропдауне
-    колокольчика такой кнопки не было вообще. Дропдаун теперь тоже её
-    получил: HTMX-запрос перерисовывает превью последних 5 уведомлений
-    (все уже прочитаны) на месте, без закрытия дропдауна и без перезагрузки
-    страницы. Обычный (не-HTMX) POST с полной страницы — поведение не
-    менялось: mark-all уведомлений (не только видимых на текущей
-    странице/фильтре — это осознанно "все", не "все отфильтрованные"),
-    полный редирект.
-    """
+    """Прочитать все. HTMX — перерисовка превью в дропдауне, обычный POST — редирект."""
     def post(self, request):
         count = Notification.objects.filter(
             user=request.user,
@@ -207,16 +159,7 @@ class MarkAllAsReadView(LoginRequiredMixin, View):
 
 
 class UnreadCountBadgeView(LoginRequiredMixin, View):
-    """
-    Лёгкий партиал ТОЛЬКО счётчика на колокольчике (components/
-    _notification_unread_badge.html) — добавлено 2026-08-21. Раньше
-    "живое" обновление количества было мёртвым кодом (см. докстринг
-    _oob_counters_html выше) — счётчик обновлялся только на полной
-    перезагрузке страницы. Теперь сам счётчик — самостоятельный маленький
-    HTMX-виджет (`hx-trigger="every 30s"`), не требует перерисовки всего
-    дропдауна (что закрывало бы его, если он открыт в момент поллинга —
-    Alpine `open`-состояние живёт на родительском узле, вне этого поддерева).
-    """
+    """Партиал счётчика на колокольчике (поллинг каждые 30 с)."""
     def get(self, request):
         unread_count = request.user.notifications.filter(is_read=False).count()
         html = render_to_string('components/_notification_unread_badge.html', {

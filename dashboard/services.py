@@ -1,16 +1,6 @@
 # dashboard/services.py
-"""
-Агрегирующий слой для staff-дашборда (/staff/dashboard/...). Чистые функции
-без обращения к request/response — та же дисциплина, что в
-`aggregates/services.py` и `analytics/selectors.py`: вьюхи (`views.py`)
-остаются тонкими диспетчерами HTTP, вся бизнес-логика подсчёта здесь, легко
-тестируется без моков Django-вьюх.
-
-Три раздела, три функции верхнего уровня:
-  - overview_metrics()      — П.1 продуктовые метрики (DAU/WAU, рост, оценки)
-  - data_health_summary()   — П.2 здоровье синка матчей (ParserSyncRun,
-    источник-агностично — см. её собственный докстринг ниже про cutover)
-  - antifraud_queue()       — П.3 быстрый триаж SuspiciousActivityFlag/диспутов
+"""Бизнес-логика staff-дашборда: метрики, здоровье данных, антифрод, разделы управления.
+Без request/response — вьюхи тонкие.
 """
 from __future__ import annotations
 
@@ -37,7 +27,7 @@ User = get_user_model()
 
 
 # ============================================================
-# П.1 — Обзор метрик продукта
+# Обзор метрик продукта
 # ============================================================
 
 def overview_metrics(days: int = 14) -> dict:
@@ -82,10 +72,8 @@ def overview_metrics(days: int = 14) -> dict:
 
 
 # ============================================================
-# Контентные метрики — для главной /admin/ (продуктовый апгрейд, "метрики
-# по контенту": какие матчи/игроки набирают больше всего оценок, как
-# распределены выставленные оценки, у скольких сыгранных матчей вообще
-# нет ни одной оценки от пользователей.
+# Контентные метрики: самые оцениваемые матчи/игроки, распределение оценок,
+# матчи без оценок
 # ============================================================
 
 def content_metrics(limit: int = 8) -> dict:
@@ -98,9 +86,7 @@ def content_metrics(limit: int = 8) -> dict:
         .annotate(evals=Count("id")).order_by("-evals")[:limit]
     )
 
-    # Распределение оценок игроков по "вкладу" (contribution, 1-10) — из
-    # трёх полей PlayerEvaluation (contribution/risk/potential) contribution
-    # ближе всего к общей "итоговой оценке" в восприятии staff.
+    # Распределение по contribution (1-10).
     bucket_labels = ["1-2", "3-4", "5-6", "7-8", "9-10"]
     buckets = {label: 0 for label in bucket_labels}
     for value in PlayerEvaluation.objects.values_list("contribution", flat=True):
@@ -144,43 +130,25 @@ def content_metrics(limit: int = 8) -> dict:
 
 
 # ============================================================
-# П.2 — Здоровье данных / синк матчей
+# Здоровье данных / синк матчей (ParserSyncRun)
 # ============================================================
-# 2026-09-09: KFF-парсер физически удалён (по решению пользователя),
-# Sportmonks — единственный источник, пишущий в ParserSyncRun (поле source
-# на модели по-прежнему различает исторические KFF-строки от новых, но
-# писать в него "kff" больше некому, см. parsers/models.py). "Последний
-# запуск" — живой индикатор синка (см. parsers/sportmonks/tasks.py::
-# _record_sync_run).
 
 def data_health_summary(recent_runs: int = 20) -> dict:
     runs = list(ParserSyncRun.objects.all()[:recent_runs])
     last_run = runs[0] if runs else None
 
-    # "Матчи без составов" — только те, для которых Sportmonks уже
-    # подтвердил, что состав ДОЛЖЕН быть (has_lineup=True), но у нас пока
-    # нет ни одной строки MatchLineup: started_at здесь не проверяем
-    # отдельно, has_lineup выставляется импортёром ТОЛЬКО когда реально
-    # есть что тянуть (parsers/sportmonks/importers.py::import_lineups),
-    # так что пересечение с отсутствием строк состава уже точное. У
-    # матчей из KFF-истории (до 2026-09-09) has_lineup тоже мог быть
-    # выставлен старым, уже удалённым импортёром — поле на модели не
-    # трогали, значение осталось.
-    #
-    # Отдаём не только .count(), но и сам queryset (топ-N) — чтобы в
-    # шаблоне сразу дать ссылку на матч + кнопку ресинка, без похода в admin.
+    # Матчи без составов: has_lineup=True, но строк MatchLineup нет.
+    # Отдаём и count, и топ-N для ссылок и ресинка.
     matches_missing_lineups_base = Match.objects.filter(
         status__in=["live", "finished"], has_lineup=True, lineups__isnull=True
     )
     matches_missing_events_base = Match.objects.filter(
         status__in=["live", "finished"], events__isnull=True
     )
-    # Точный счётчик — отдельный .count() (индексированный запрос, дешёвый),
-    # НЕ len() от обрезанного [:20]-списка ниже — иначе цифра на карточке
-    # молча занижалась бы, если проблемных матчей вдруг окажется больше 20.
+    # Точный счётчик через .count(), а не len() среза.
     matches_missing_lineups_count = matches_missing_lineups_base.count()
     matches_missing_events_count = matches_missing_events_base.count()
-    # 2026-09-23, «Настройки платформы» — управляется staff без деплоя.
+    # Лимит — из настроек платформы.
     matches_missing_lineups_list = list(
         matches_missing_lineups_base.select_related("home_team", "away_team").order_by("-start_time")[
             :get_setting("dashboard_missing_lineups_limit", 20)
@@ -192,11 +160,7 @@ def data_health_summary(recent_runs: int = 20) -> dict:
         ]
     )
 
-    # Расхождения импорта (аудит 2026-09-04, см. parsers/models.py::
-    # ParserDiscrepancy) — правки счёта/статуса задним числом поверх уже
-    # завершённых матчей. Отдельная карточка на дашборде, не смешиваем со
-    # "статистикой синка" выше: это не ошибка запроса к API, а сигнал
-    # "данные пришли успешно, но разошлись с тем, что мы уже считали фактом".
+    # Расхождения импорта (ParserDiscrepancy).
     unreviewed_discrepancies = ParserDiscrepancy.objects.filter(reviewed=False)
 
     return {
@@ -213,32 +177,9 @@ def data_health_summary(recent_runs: int = 20) -> dict:
 
 
 # ============================================================
-# Центр доверия к данным (2026-09-09) — MVP из рекомендации Codex-ревью,
-# явно подтверждённой пользователем как отдельная задача, затем расширен
-# по прямой просьбе пользователя ("сделай страницу более функциональной").
-# Намеренно НЕ дублирует data_health_summary() выше: та отвечает "синк
-# работает технически?" (ошибки API, отсутствующие составы/события), эта —
-# "можно ли доверять УЖЕ импортированным данным конкретного матча?".
-#
-# УДАЛЕНО (2026-09-09, решение пользователя): очередь "Стадионы, требующие
-# проверки" убрана вместе со всей моделью Stadium — оказалось, что проблема
-# была не в отдельных ошибках сопоставления, а принципиальная: клубы КПЛ
-# реально играют "домашние" матчи на разных стадионах в разных городах в
-# течение сезона, доверять venue-данным Sportmonks в принципе нельзя. См.
-# matches/models.py и core/models_stadium.py (модель удалена).
-#
-# Две живые очереди + расширенная история:
-#   1. ContactSubmission(category='data_error') — жалобы пользователей на
-#      конкретный матч (see notifications/models.py, templates/matches/
-#      _match_header.html — кнопка "Сообщить об ошибке в данных"). Теперь с
-#      фильтром "открытые/решённые/все" (data_trust_summary(status_filter=)).
-#   2. ParserDiscrepancy — расхождения импорта. ВАЖНО: писал их только
-#      старый KFF-импортёр (удалён 2026-09-09) — очередь ЗАМОРОЖЕНА,
-#      Sportmonks-пайплайн новых строк сюда не пишет. Показываем как
-#      историю, честно помечено в шаблоне, но действие "разобрать" полезно
-#      и для старых записей. Раньше здесь был только счётчик+ссылка на
-#      data-health — теперь полноценная queue с действием прямо на этой
-#      странице (не нужно уходить в admin ради одного клика).
+# Центр доверия к данным
+# 1. Жалобы пользователей на данные матча (ContactSubmission data_error).
+# 2. ParserDiscrepancy — история, новые записи не появляются.
 # ============================================================
 
 DATA_TRUST_HISTORY_ACTIONS = [
@@ -282,13 +223,11 @@ def data_trust_summary(limit: int = 25, report_status: str = "open") -> dict:
 
 
 # ============================================================
-# П.3 — Очередь антифрода
+# Очередь антифрода
 # ============================================================
 
 # ============================================================
-# Трафик и посещаемость — тонкая обёртка над analytics.selectors.traffic_overview,
-# сохраняем единый паттерн вызова services.X() из dashboard/views.py, как и
-# у трёх функций выше.
+# Трафик — обёртка над analytics.selectors.traffic_overview
 # ============================================================
 
 def traffic_summary(days: int = 14) -> dict:
@@ -296,11 +235,7 @@ def traffic_summary(days: int = 14) -> dict:
 
 
 def antifraud_queue(limit: int = 25) -> dict:
-    # select_related("content_type") — GenericForeignKey (content_object)
-    # сам по себе не поддерживает select_related, но подгрузка ContentType
-    # заранее убирает один из двух хопов, которые Django делает при первом
-    # обращении к flag.content_object в шаблоне (см. anti-brigading,
-    # source="vote_spike" — entity-level флаги без user).
+    # select_related(content_type) — меньше запросов на flag.content_object.
     pending_flags = list(
         SuspiciousActivityFlag.objects.filter(status="pending")
         .select_related("user", "match", "content_type")
@@ -322,20 +257,11 @@ def antifraud_queue(limit: int = 25) -> dict:
 
 
 # ============================================================
-# 2026-09-23, раздел «Матчи» — ручная правка данных матча + триггер
-# пересчёта без деплоя/кода (прямая просьба пользователя "какого раздела
-# не хватает, чтобы можно было админить без кода" -> "матчи" — приоритет
-# №1). До этого staff мог поправить статус/счёт/дату ТОЛЬКО через Django
-# admin (без пересчёта агрегатов автоматически) либо ждать следующего
-# цикла sportmonks-синка — здесь одна кнопка "Сохранить" правит поля И
-# сразу предлагает пересчитать зависимые агрегаты (рейтинги/таблица).
+# Раздел «Матчи»: ручная правка + пересчёт
 # ============================================================
 
 def matches_queryset(search: str = "", status: str = "", season_id: str = ""):
-    """Матчи для списка раздела «Матчи» — поиск по названию команды (домашней
-    ИЛИ гостевой), опциональные фильтры по статусу/сезону. Свежие сверху
-    (Match.Meta.ordering = ['-start_time'] уже это делает, явный order_by
-    не нужен)."""
+    """Матчи для списка: поиск по командам, фильтры по статусу/сезону."""
     qs = Match.objects.select_related("league", "season", "home_team", "away_team")
     if search:
         qs = qs.filter(Q(home_team__name__icontains=search) | Q(away_team__name__icontains=search))
@@ -347,18 +273,11 @@ def matches_queryset(search: str = "", status: str = "", season_id: str = ""):
 
 
 # ============================================================
-# 2026-09-23, раздел «Пользователи» — второй пункт приоритетного списка
-# (после «Матчи», см. докстринг matches_queryset выше). Раньше найти
-# конкретного пользователя и принять решение по нему (бан/сброс доверия)
-# можно было ТОЛЬКО через Django admin — здесь одна карточка со всей
-# нужной модератору картиной сразу: доверие, бейджи, устройства, открытые
-# антифрод-флаги — без прыжков между таблицами admin.
+# Раздел «Пользователи»
 # ============================================================
 
 def users_queryset(search: str = ""):
-    """Пользователи для списка раздела «Пользователи» — поиск по username
-    ИЛИ email (два реалистичных способа, которыми staff опишет конкретного
-    человека — "напишите его ник/почту", а не гадать, что именно ввели)."""
+    """Поиск пользователей по username или email."""
     User = get_user_model()
     qs = User.objects.all()
     if search:
@@ -367,9 +286,7 @@ def users_queryset(search: str = ""):
 
 
 def user_detail_context(user) -> dict:
-    """Всё для карточки одного пользователя разом — один вызов из view,
-    вместо россыпи запросов по шаблону (см. тот же принцип, что и
-    antifraud_queue выше)."""
+    """Все данные для карточки пользователя одним вызовом."""
     return {
         "badges": list(user.badges.all().order_by("-awarded_at")[:20]),
         "push_subscriptions": list(user.push_subscriptions.all()),
@@ -381,21 +298,13 @@ def user_detail_context(user) -> dict:
 
 
 # ============================================================
-# 2026-09-23, раздел «Модерация оценок» — EvaluationSession (evaluations/
-# models.py) это "одна завершённая/начатая оценка матча одним
-# пользователем", уникальна по (user, match). Сами баллы лежат в 6
-# отдельных под-моделях (Context/Team/Player/Coach/Referee/MatchEvaluation),
-# каждая тоже уникальна по (user, match[, сущность]) — своей FK на сессию
-# у них НЕТ, связь только через пару (user, match). Модерация значит
-# "найти подозрительную сессию (см. fill_duration_seconds — антифрод-сигнал
-# 'слишком быстро') и удалить ЦЕЛИКОМ, вместе со всеми под-оценками того
-# же (user, match)" — см. evaluation_session_delete_cascade() ниже.
+# Раздел «Модерация оценок»
+# EvaluationSession уникальна по (user, match). Под-оценки связаны с ней
+# только через (user, match), FK нет.
 # ============================================================
 
 def evaluation_sessions_queryset(search: str = "", status: str = "", mode: str = ""):
-    """Сессии для списка — поиск по username ИЛИ по названию команды
-    (домашней/гостевой) матча, тот же принцип, что matches_queryset/
-    users_queryset выше."""
+    """Сессии для списка: поиск по username или командам."""
     qs = EvaluationSession.objects.select_related(
         "user", "match", "match__home_team", "match__away_team",
     )
@@ -413,8 +322,7 @@ def evaluation_sessions_queryset(search: str = "", status: str = "", mode: str =
 
 
 def evaluation_session_detail_context(session: EvaluationSession) -> dict:
-    """Все под-оценки этого (user, match) разом — сессия сама по себе не
-    хранит баллы, только прогресс/тайминг (см. докстринг модуля)."""
+    """Все под-оценки этого (user, match)."""
     user, match = session.user, session.match
     return {
         "context_eval": ContextEvaluation.objects.filter(user=user, match=match).select_related("supported_team").first(),
@@ -427,9 +335,7 @@ def evaluation_session_detail_context(session: EvaluationSession) -> dict:
 
 
 def evaluation_session_delete_cascade(session: EvaluationSession) -> dict:
-    """Удаляет сессию И все её под-оценки того же (user, match) — без FK на
-    сессию обычный session.delete() их бы не тронул (см. докстринг модуля).
-    Возвращает счётчики удалённого для аудит-лога/сообщения staff."""
+    """Удаляет сессию и все её под-оценки. Возвращает счётчики удалённого."""
     user, match = session.user, session.match
     counts = {
         "context": ContextEvaluation.objects.filter(user=user, match=match).count(),
@@ -452,15 +358,7 @@ def evaluation_session_delete_cascade(session: EvaluationSession) -> dict:
 
 
 # ============================================================
-# 2026-09-23, раздел «Партнёры и баннеры» — последний пункт приоритетного
-# списка "чего не хватает, чтобы админить без кода". До этого Partner/Banner
-# (partners/models.py) редактировались ТОЛЬКО через Django admin — «Реклама»
-# на дашборде (dashboard/views.py::ads) была read-only статистикой поверх
-# уже существующих партнёров/баннеров, ни одного способа завести НОВОГО
-# партнёра или баннер без похода в /admin/. Локальный импорт partners.models
-# — тот же паттерн, что уже используется в dashboard/views.py::ads/
-# _ads_stats_context (там же поясняется, почему: partners — не входит в
-# "горячий путь" импортов дашборда).
+# Раздел «Партнёры и баннеры»
 # ============================================================
 
 def partners_queryset(search: str = ""):

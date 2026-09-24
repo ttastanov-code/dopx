@@ -1,15 +1,6 @@
 # dashboard/views_2fa.py
-"""
-Самостоятельная настройка и проверка 2FA для staff. Сюда редиректит
-`dashboard/middleware.py::StaffTwoFactorEnforcementMiddleware`, когда
-staff-пользователь ещё не прошёл OTP-проверку в текущей сессии.
-
-ВАЖНО: используем `@login_required` + ручную проверку `is_staff`, а НЕ
-`@staff_member_required` — оба варианта эквивалентны по факту (оба проверяют
-is_staff), но `staff_member_required` формально завязан на admin-специфичный
-`login_url='admin:login'`; здесь это неважно, но ручная проверка чуть яснее
-показывает, что доступ сюда НЕ требует пройденной OTP (иначе замкнутый круг:
-мидлварь редиректит на эту страницу именно потому, что OTP ещё не пройдена).
+"""Настройка и проверка 2FA для staff (сюда редиректит StaffTwoFactorEnforcementMiddleware).
+@login_required + проверка is_staff — OTP здесь не требуется.
 """
 from __future__ import annotations
 
@@ -30,8 +21,7 @@ from django_otp.plugins.otp_totp.models import TOTPDevice
 
 
 def _safe_next(request, fallback: str) -> str:
-    """Простая защита от open redirect — принимаем только относительный
-    путь, начинающийся с "/" (не "//evil.com", не абсолютный URL)."""
+    """Только относительный путь с "/" (не "//...")."""
     candidate = request.GET.get("next") or request.POST.get("next") or fallback
     if not candidate.startswith("/") or candidate.startswith("//"):
         return fallback
@@ -39,19 +29,7 @@ def _safe_next(request, fallback: str) -> str:
 
 
 def _throttle_wait_seconds(device) -> int | None:
-    """
-    django-otp троттлит КАЖДОЕ устройство отдельно: после неудачной попытки
-    verify_token() следующая проверка блокируется на
-    throttle_factor * 2^(failure_count-1) секунд с момента последней ошибки
-    — даже если новый код абсолютно верный (см. ThrottlingMixin.verify_is_allowed
-    в django_otp/models.py). Без этой проверки пользователь видит то же самое
-    "Неверный код", что и при опечатке, и не понимает, что дело не в коде, а
-    в паузе — ловили именно это на реальном инциденте (12 неудачных попыток
-    → ~34 минуты блокировки TOTP-устройства).
-
-    Возвращает None, если устройство сейчас НЕ заблокировано, иначе — сколько
-    секунд осталось ждать.
-    """
+    """Сколько секунд устройство ещё заблокировано троттлингом django-otp (None — не заблокировано)."""
     allowed, info = device.verify_is_allowed()
     if allowed:
         return None
@@ -66,9 +44,7 @@ def two_factor_setup(request):
     if not request.user.is_staff:
         return HttpResponseForbidden("Только для сотрудников")
 
-    # Уже есть подтверждённое устройство — первичный бутстрап пройден,
-    # повторный визит уводим на challenge. any(), не if <генератор> — см.
-    # docs/adr/0012-2fa-setup-guards.md, находка №1.
+    # Подтверждённое устройство уже есть — на challenge.
     if any(devices_for_user(request.user, confirmed=True)):
         return redirect("dashboard:two_factor_challenge")
 
@@ -80,9 +56,7 @@ def two_factor_setup(request):
         token = request.POST.get("token", "").strip()
         wait = _throttle_wait_seconds(device)
         if wait is not None:
-            # Отдельное сообщение от "неверный код" — иначе пользователь
-            # правильно введённым кодом продолжает биться в закрытую дверь,
-            # думая, что ошибся сам (см. _throttle_wait_seconds выше).
+            # Отдельное сообщение про блокировку.
             messages.error(
                 request,
                 f"Слишком много неверных попыток подряд. Устройство временно "
@@ -93,9 +67,7 @@ def two_factor_setup(request):
             device.confirmed = True
             device.save(update_fields=["confirmed"])
 
-            # Явная зачистка перед созданием новых backup-кодов — иначе
-            # повторный setup копит дублирующиеся StaticDevice/StaticToken.
-            # См. docs/adr/0012-2fa-setup-guards.md, находка №2.
+            # Удаляем старые backup-коды перед созданием новых.
             StaticDevice.objects.filter(user=request.user).delete()
             static_device = StaticDevice.objects.create(user=request.user, name="backup", confirmed=True)
             backup_tokens = []
@@ -125,10 +97,7 @@ def two_factor_setup(request):
 
 @login_required
 def two_factor_backup_codes(request):
-    """Единственный показ backup-кодов — сразу после подтверждения
-    устройства. Читаем из сессии и СРАЗУ удаляем: обновление страницы или
-    повторный визит их больше не покажет (они уже сохранены в БД как хэш
-    сравнения, но сам открытый текст живёт только в этом одном ответе)."""
+    """Backup-коды показываются один раз: читаем из сессии и сразу удаляем."""
     if not request.user.is_staff:
         return HttpResponseForbidden("Только для сотрудников")
     tokens = request.session.pop("_2fa_backup_tokens_shown", None)
@@ -153,17 +122,8 @@ def two_factor_challenge(request):
     if request.method == "POST":
         token = request.POST.get("token", "").strip()
         matched_device = None
-        # Перебираем TOTP И static (backup) устройства одним и тем же
-        # verify_token — пользователь может ввести и 6-значный код из
-        # приложения, и один из заранее сохранённых backup-кодов, форма
-        # не различает их специально (меньше UI, один инпут).
-        #
-        # У каждого устройства СВОЙ троттлинг (см. _throttle_wait_seconds) —
-        # пропускаем заблокированные, не тратя на них verify_token(), и
-        # запоминаем минимальное время ожидания среди них. Если проверить
-        # код в итоге было НЕКЕМ (все устройства заблокированы) — это
-        # отдельная ситуация от "код неверный", и пользователю нужно сказать
-        # именно про неё, а не заставлять его думать, что он ошибся сам.
+        # Проверяем код по TOTP и backup-устройствам; заблокированные пропускаем.
+        # Все заблокированы — отдельное сообщение.
         min_wait = None
         any_checked = False
         for device in devices_for_user(request.user, confirmed=True):

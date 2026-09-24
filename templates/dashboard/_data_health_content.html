@@ -1,10 +1,5 @@
-<!-- templates/dashboard/_data_health_content.html -->
-<!-- Вынесено из data_health.html для realtime-обновления через HTMX
-     (см. dashboard/data_health.html — hx-get на dashboard:data_health_partial,
-     hx-trigger="every 15s"). Этот файл рендерится ОБА раза: при первой
-     загрузке страницы (через include-тег шаблона) и при каждом poll-запросе
-     (через dashboard/views.py::data_health_partial) — сам по себе, без
-     base.html/_nav.html, чтобы HTMX не задваивал шапку/навигацию при свапе. -->
+{# Содержимое «Здоровья данных» #}
+{# Рендерится при загрузке и при поллинге (data_health_partial), без base.html. #}
 <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4 mb-6">
     <div class="dopx-stat">
         <div class="dopx-stat-label"><i class="ti ti-refresh"></i>Синхронизация</div>

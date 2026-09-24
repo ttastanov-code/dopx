@@ -1,15 +1,6 @@
 # dashboard/infra_services.py
-"""
-Операционные метрики платформы (продуктовый апгрейд, "куча полезных
-метрик... операционные" — техническое здоровье системы, а не продуктовые
-цифры типа DAU/выручки). Три источника: Redis (брокер celery + кэш),
-Celery (воркеры/очередь), PostgreSQL (размер БД, соединения).
-
-ВАЖНО: каждая функция ловит СВОИ исключения и возвращает {"ok": False,
-"error": ...} вместо падения — эта секция дашборда сама по себе диагностика
-инфраструктуры, она не должна ломаться ИМЕННО тогда, когда инфраструктура
-уже нездорова (Redis недоступен → страница здоровья не должна превращаться
-в 500-ю ошибку, а обязана явно показать "Redis недоступен").
+"""Операционные метрики: Redis, Celery, PostgreSQL, расписание, лог ошибок, окружение.
+Каждая функция ловит свои исключения и возвращает {"ok": False, "error": ...}.
 """
 from __future__ import annotations
 
@@ -30,10 +21,7 @@ def _redis_stats() -> dict:
             settings.CELERY_BROKER_URL, socket_connect_timeout=2, socket_timeout=2,
         )
         info = client.info()
-        # 'celery' — имя очереди по умолчанию (CELERY_TASK_DEFAULT_QUEUE не
-        # переопределён нигде в settings.py, значит используется дефолт).
-        # Это LIST в Redis — необработанные таски лежат в нём, пока воркер
-        # их не заберёт; глубина = сколько задач ЖДУТ, а не выполняются.
+        # Длина очереди 'celery' в Redis — сколько задач ждут.
         queue_depth = client.llen("celery")
         return {
             "ok": True,
@@ -51,9 +39,7 @@ def _celery_stats() -> dict:
     from dopx.celery import app
 
     try:
-        # Короткий timeout намеренно: control.inspect() рассылает broadcast
-        # всем воркерам и ЖДЁТ ответа — без явного лимита один зависший
-        # воркер способен подвесить загрузку всей страницы data-health.
+        # Короткий timeout — зависший воркер не должен подвесить страницу.
         inspector = app.control.inspect(timeout=1.5)
         active = inspector.active() or {}
         stats = inspector.stats() or {}
@@ -98,21 +84,12 @@ def infra_health() -> dict:
 
 
 # =============================================================================
-# 2026-09-23, раздел «Системный статус» (dashboard/views.py::system_status) —
-# отдельная страница-сводка "жива ли платформа технически", а не только
-# кусок инфры внутри «Здоровье данных» (там infra_health() уже был, но
-# посреди данных синка, без расписания задач/логов ошибок/версий). Новые
-# функции ниже, infra_health() выше переиспользуется как есть.
+# Раздел «Системный статус»
 # =============================================================================
 
 
 def _cache_stats(alias: str, label: str) -> dict:
-    """Redis-статистика произвольного cache alias из settings.CACHES —
-    ОТДЕЛЬНО от _redis_stats() выше (тот всегда смотрит на CELERY_BROKER_
-    URL, т.е. на брокер задач). 'aggregates' — физически другая БД Redis
-    (redis://.../2, см. докстринг про баг с совпавшими дефолтами в
-    dopx/settings.py::CACHES) — может быть недоступна независимо от
-    брокера/дефолтного кэша, поэтому статус нужен отдельным блоком."""
+    """Статус произвольного cache alias (напр. 'aggregates' — отдельная БД Redis)."""
     import redis
 
     location = settings.CACHES.get(alias, {}).get("LOCATION", "")
@@ -134,17 +111,7 @@ def _cache_stats(alias: str, label: str) -> dict:
 
 
 def beat_schedule_overview() -> list[dict]:
-    """Человекочитаемый список периодических задач из settings.CELERY_BEAT_
-    SCHEDULE — единственный источник расписания в проекте (django_celery_
-    beat не установлен, планировщик встроенный файловый, задачи целиком
-    статичны в settings.py, правятся только деплоем). Показываем "что
-    вообще должно выполняться и когда" без похода в код.
-
-    Намеренно БЕЗ "последний запуск": персистентная история есть только у
-    Sportmonks-синка (ParserSyncRun, см. «Здоровье данных») — у остальных
-    задач (пересчёт агрегатов, антифрод, дайджесты) нет своей модели-лога,
-    только строки в logs/celery.log. Добавлять фейковое "последний раз: ?"
-    хуже, чем не добавлять ничего — тут только факт расписания."""
+    """Расписание Celery Beat из settings (без «последнего запуска» — истории нет)."""
     entries = []
     for name, cfg in settings.CELERY_BEAT_SCHEDULE.items():
         schedule = cfg.get("schedule")
@@ -156,10 +123,8 @@ def beat_schedule_overview() -> list[dict]:
     return sorted(entries, key=lambda e: e["name"])
 
 
-# Формат из dopx/settings.py::LOGGING → 'verbose' → '{levelname} {asctime}
-# {module} {message}', напр. "ERROR 2026-09-23 08:32:10,123 tasks Что-то
-# упало". Любая строка БЕЗ этого префикса (traceback от exc_info=True)
-# считается продолжением предыдущей записи, см. recent_error_log_entries().
+# Префикс записи verbose-форматтера: "ERROR 2026-09-23 08:32:10,123 module message".
+# Строки без префикса — продолжение предыдущей записи (traceback).
 _ERROR_LOG_LINE_RE = re.compile(
     r"^(?P<level>DEBUG|INFO|WARNING|ERROR|CRITICAL)\s+"
     r"(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d+)\s+"
@@ -168,17 +133,7 @@ _ERROR_LOG_LINE_RE = re.compile(
 
 
 def recent_error_log_entries(limit: int = 15) -> dict:
-    """Хвост logs/errors.log (RotatingFileHandler, только уровня ERROR —
-    см. LOGGING в dopx/settings.py) — "что реально падало на сервере за
-    последнее время" прямо на дашборде, без похода за файлом руками.
-
-    Читаем ТОЛЬКО последние ~300КБ файла (не весь — ротация на 10МБ,
-    целиком парсить незачем), группируем построчно в записи: новая
-    запись начинается со строки в формате verbose-форматтера, все
-    последующие строки без этого префикса (Python-traceback) — хвост
-    предыдущей записи. Ловит и логгирует СВОЮ ошибку, а не падает —
-    страница статуса не должна класть саму себя, если файл лога вдруг
-    недоступен (см. докстринг модуля)."""
+    """Последние записи logs/errors.log (читаем ~300 КБ хвоста). Ошибки чтения не роняют страницу."""
     path = settings.LOGS_DIR / "errors.log"
     if not path.exists():
         return {"ok": True, "entries": [], "missing": True}
@@ -187,7 +142,7 @@ def recent_error_log_entries(limit: int = 15) -> dict:
         with open(path, "r", errors="replace") as f:
             if size > 300_000:
                 f.seek(size - 300_000)
-                f.readline()  # отбрасываем обрезанную первую строку
+                f.readline()  # первая строка может быть обрезана
             raw_lines = f.read().split("\n")
     except Exception as e:
         logger.warning(f"infra_services.recent_error_log_entries: {e}")
@@ -216,17 +171,13 @@ def recent_error_log_entries(limit: int = 15) -> dict:
 
     entries.reverse()  # новые сверху
     for e in entries:
-        # Полный traceback всё равно живёт в самом файле на сервере —
-        # на дашборде достаточно первых нескольких строк, чтобы понять,
-        # что это было, без простыни на весь экран.
+        # На дашборде — только первые строки traceback.
         e["extra"] = e["extra"][:6]
     return {"ok": True, "entries": entries[:limit], "missing": False, "truncated_scan": size > 300_000}
 
 
 def environment_info() -> dict:
-    """Версии/окружение — быстро сверить "что реально задеплоено" без
-    SSH на сервер (особенно DEBUG: если он вдруг True в проде — это
-    security-инцидент, а не мелочь, поэтому подсвечивается отдельно)."""
+    """Версии и окружение; DEBUG=True подсвечивается."""
     import platform
 
     import django as django_module

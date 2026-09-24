@@ -1,18 +1,7 @@
 # users/services.py
-"""
-Проверка и выдача достижений. accurate_analyst/bias_free группируют оценки
-по match_id одним запросом (.values().annotate()), не N+1 в цикле по
-матчам; bias_free переиспользует aggregates.services.compute_bias_score —
-единый источник исторического bias-score. check_and_award_badges вызывается
-только асинхронно из users/tasks.py::check_and_award_badges_task
-(transaction.on_commit в evaluations/views.py) — до ~100 запросов, которые
-раньше блокировали HTTP-цикл на каждом завершении оценки.
-
-founder выдаётся отдельно при верификации email (VerifyEmailView), не
-здесь — разовое событие. monthly_champion — отдельная периодическая задача
-(award_monthly_champion_badge), тоже не событие на оценку. derby_hunter
-считает дерби-матчи в Python по Team.rivals — join по M2M здесь менее
-читаем, чем цикл по небольшому ограниченному списку пар.
+"""Проверка и выдача достижений.
+Вызывается только асинхронно (users/tasks.py::check_and_award_badges_task).
+founder и monthly_champion выдаются отдельно.
 """
 from __future__ import annotations
 
@@ -28,10 +17,7 @@ from users.models import UserBadge
 
 logger = logging.getLogger(__name__)
 
-# 2026-09-23, фикс аудита — см. докстринг UserBadge.is_stale
-# (users/models.py). Эти 5 типов — утверждения о ТЕКУЩЕМ качестве
-# пользователя, а не разовые вехи, поэтому единственные, кого касается
-# периодическая переоценка (revalidate_status_badges ниже).
+# Статусные бейджи — периодически перепроверяются (revalidate_status_badges).
 STATUS_BADGE_TYPES = frozenset({"foresight", "max_trust", "stable_hand", "accurate_analyst", "bias_free"})
 
 ACCURATE_ANALYST_LOOKBACK = 20
@@ -39,7 +25,7 @@ ACCURATE_ANALYST_MAX_DEVIATION = 1.0
 ACCURATE_ANALYST_MIN_ACCURATE_RATIO = 0.8
 
 BIAS_FREE_LOOKBACK = 15
-BIAS_FREE_MAX_SCORE = 0.15  # см. пункт 2 докстринга — доля матчей с ЭКСТРЕМАЛЬНЫМ перекосом
+BIAS_FREE_MAX_SCORE = 0.15  # доля матчей с экстремальным перекосом
 
 FORESIGHT_MIN_EVALUATIONS = 30
 FORESIGHT_MIN_TRUST_SCORE = 1.6
@@ -49,31 +35,23 @@ POLYGLOT_MIN_TEAMS = 8
 
 DERBY_HUNTER_MIN_MATCHES = 5
 
-# --- НОВОЕ (2026-09-01, продуктовый запрос "достижения по оценкам и
-# прогнозам + супер-ультра уровень") — константы для 11 новых достижений
-# (users/badges.py). Обоснование каждого порога — в докстринге
-# соответствующей _maybe_award_* функции ниже.
+# --- Пороги новых достижений (users/badges.py) ---
 COACH_EXPERT_MIN_COUNT = 25
 BOTH_SIDES_MIN_MATCHES = 15
-FULL_SEASON_MIN_TOURS = 10  # отсекаем куцые/недоигранные сезоны от срабатывания "задаром"
-SEASON_COMPLETIONIST_MIN_MATCHES = 30  # тот же смысл, для "Стоглазого"
+FULL_SEASON_MIN_TOURS = 10  # отсекаем короткие сезоны
+SEASON_COMPLETIONIST_MIN_MATCHES = 30  # то же для «Стоглазого»
 STABLE_HAND_MIN_PREDICTIONS = 50
 STABLE_HAND_MIN_ACCURACY = 0.85
 DERBY_PROPHET_MIN_CORRECT = 5
-AGAINST_THE_TIDE_MIN_TOTAL_PREDICTIONS = 5  # чтобы "меньшинство" было осмысленным, не 1 из 2
+AGAINST_THE_TIDE_MIN_TOTAL_PREDICTIONS = 5  # минимум голосов на матче, чтобы «меньшинство» было осмысленным
 PERFECT_TOUR_MIN_MATCHES = 6
-MAX_TRUST_THRESHOLD = 1.95  # потолок формулы — 2.0 (см. User.trust_score/update_evaluation_stats)
+MAX_TRUST_THRESHOLD = 1.95  # потолок trust_score — 2.0
 MAX_TRUST_MIN_EVALUATIONS = 100
 
 
 def check_and_award_badges(user) -> list[UserBadge]:
-    """
-    Проверяет условия и выдаёт достижения. Возвращает список только что
-    созданных объектов `UserBadge` (уже существовавшие — не возвращаются).
-
-    ВАЖНО: вызывать эту функцию нужно ТОЛЬКО из асинхронного контекста
-    (Celery-задача), не из HTTP request-response цикла — см. пункт 3
-    докстринга модуля.
+    """Проверяет условия и выдаёт достижения. Возвращает только новые UserBadge.
+    Вызывать только из Celery-задачи.
     """
     awarded: list[UserBadge] = []
     total = user.total_evaluations
@@ -156,17 +134,7 @@ def check_and_award_badges(user) -> list[UserBadge]:
         if total >= DERBY_HUNTER_MIN_MATCHES:
             _maybe_award_derby_hunter(user, awarded)
 
-        # НОВОЕ (retention loop "Серии", 2026-08-21; семантика поля
-        # ПЕРЕСМОТРЕНА 2026-08-31): прогнозы 1X2 — ПАРАЛЛЕЛЬНЫЙ набор
-        # бейджей поверх user.prediction_streak (см. users/models.py::
-        # User.update_prediction_stats — с 2026-08-31 это подряд УГАДАННЫЕ
-        # исходы, не дни активности), тот же порог 7/30/100, что и у
-        # streak_7/30/100, но осознанно НЕ переиспользует их — прогноз и
-        # оценка разная активность, см. докстринг у поля.
-        # Не отдельный денормализованный счётчик на User (в отличие от
-        # total_evaluations) — прогнозов на порядки меньше оценок за один
-        # матч (одна запись MatchPrediction на пару user+match), COUNT()
-        # здесь дешёвый и не требует поддерживать ещё одно поле в синхроне.
+        # Серии угаданных прогнозов (7/30/100) — отдельно от серий оценок.
         if user.match_predictions.exists():
             b, created = UserBadge.objects.get_or_create(user=user, badge_type="first_prediction")
             if created:
@@ -186,10 +154,7 @@ def check_and_award_badges(user) -> list[UserBadge]:
             if created:
                 awarded.append(b)
 
-        # --- НОВОЕ (2026-09-01) — 11 достижений поверх существовавших 20,
-        # включая 5 legendary ("супер ультра"). Пороги/названия — см.
-        # users/badges.py, обоснование каждого условия — в докстринге
-        # соответствующей _maybe_award_* функции ниже.
+        # --- Новые достижения, включая legendary ---
         if streak >= 250:
             b, created = UserBadge.objects.get_or_create(user=user, badge_type="streak_250")
             if created:
@@ -225,19 +190,7 @@ def check_and_award_badges(user) -> list[UserBadge]:
         if user.match_predictions.filter(match__status="finished").count() >= DERBY_PROPHET_MIN_CORRECT:
             _maybe_award_derby_prophet(user, awarded)
 
-        # БАГ, КОТОРЫЙ ТУТ БЫЛ: внешний гейт сравнивал СОБСТВЕННОЕ число
-        # прогнозов пользователя с AGAINST_THE_TIDE_MIN_TOTAL_PREDICTIONS —
-        # но этот порог относится к ДРУГОЙ величине: минимальному числу
-        # голосов СООБЩЕСТВА на ОДНОМ матче (см. докстринг
-        # `_maybe_award_against_the_tide` — "чтобы меньшинство было
-        # осмысленным"), а не к количеству прогнозов самого пользователя.
-        # Бейдж по определению можно получить и с ОДНИМ угаданным прогнозом
-        # (если на тот конкретный матч сообщество проголосовало 5+ раз) —
-        # гейт `count() >= 5` ошибочно скрывал функцию именно для таких
-        # пользователей (мало своих прогнозов, но заслуживших бейдж).
-        # Как и у perfect_tour, единственное реально необходимое условие —
-        # что у пользователя есть хотя бы один угаданный прогноз; точную
-        # проверку порога делает сама `_maybe_award_against_the_tide`.
+        # Гейт — хотя бы один угаданный прогноз; порог голосов проверяет сама функция.
         if user.match_predictions.filter(match__status="finished").exists():
             _maybe_award_against_the_tide(user, awarded)
 
@@ -251,18 +204,8 @@ def check_and_award_badges(user) -> list[UserBadge]:
 
 
 def _maybe_award_both_sides(user, awarded: list[UserBadge]) -> None:
-    """
-    Бейдж «Обе стороны»: в ≥`BOTH_SIDES_MIN_MATCHES` матчах пользователь
-    оценил игроков ОБЕИХ команд, а не только своих фанатов/одной стороны.
-
-    Команда игрока НА КОНКРЕТНЫЙ МАТЧ берётся через `MatchLineupPlayer.
-    lineup.team` (та же логика, что и career_by_season в players/views.py,
-    и фикс "топ игроков команды" в teams/views.py от 2026-09-01) — НЕ через
-    текущий `Player.team`, который может не совпадать с командой на момент
-    того конкретного матча при трансфере игрока в межсезонье.
-
-    2 запроса всего (не N+1 по матчам): один batch на все пары (player,
-    match) пользователя, один batch на связку с MatchLineupPlayer.
+    """«Обе стороны»: в N матчах оценены игроки обеих команд.
+    Команда игрока на матч — через составы. 2 запроса без N+1.
     """
     from lineups.models import MatchLineupPlayer
 
@@ -298,18 +241,7 @@ def _maybe_award_both_sides(user, awarded: list[UserBadge]) -> None:
 
 
 def _maybe_award_full_season(user, awarded: list[UserBadge]) -> None:
-    """
-    Бейдж «Полный сезон»: хотя бы один оценённый матч в КАЖДОМ туре, где в
-    сезоне вообще были матчи (без пропусков — необязательно подряд по
-    датам, в отличие от streak_*, который рвётся при любом пропущенном
-    туре). Источник "оценил матч" — `EvaluationSession.status='completed'`,
-    тот же, что и `stats.total_matches` в профиле (users/views.py), а не
-    факт наличия любых evaluation-строк.
-
-    `FULL_SEASON_MIN_TOURS` отсекает куцые/ещё не доигранные сезоны — иначе
-    в первом же туре нового сезона любой активный пользователь получил бы
-    "полный сезон" из одного матча.
-    """
+    """«Полный сезон»: хотя бы одна оценка в каждом туре сезона."""
     from matches.models import Match
 
     season_ids = list(
@@ -340,14 +272,7 @@ def _maybe_award_full_season(user, awarded: list[UserBadge]) -> None:
 
 
 def _maybe_award_season_completionist(user, awarded: list[UserBadge]) -> None:
-    """
-    Legendary-бейдж «Стоглазый»: оценены ВСЕ без исключения завершённые
-    матчи одного полного сезона — не по одному на тур (это «Полный сезон»
-    выше), а буквально каждый сыгранный матч. Знаменатель —
-    `Match.status='finished'` в сезоне (перенесённые/отменённые не в счёт,
-    их физически нельзя оценить); `SEASON_COMPLETIONIST_MIN_MATCHES`
-    защищает от срабатывания на сезоне, где сыграно всего пара туров.
-    """
+    """«Стоглазый» (legendary): оценены все завершённые матчи сезона."""
     from matches.models import Match
 
     season_ids = list(
@@ -375,15 +300,8 @@ def _maybe_award_season_completionist(user, awarded: list[UserBadge]) -> None:
 
 
 def _maybe_award_stable_hand(user, awarded: list[UserBadge]) -> None:
-    """
-    Бейдж «Стабильная рука»: ≥`STABLE_HAND_MIN_PREDICTIONS` прогнозов на
-    завершённые матчи с точностью ≥`STABLE_HAND_MIN_ACCURACY`. В отличие от
-    prediction_streak_* (рвётся при ЛЮБОЙ ошибке), это метрика качества НА
-    ОБЪЁМЕ — позволяет редкие промахи, если общая точность всё равно высокая.
-
-    `MatchPrediction.is_correct` — property, не поле БД (сверяет `choice` с
-    `match.final_result`, тоже property) — посчитать через `.filter()`
-    нельзя, поэтому один проход по `select_related('match')`, без N+1.
+    """«Стабильная рука»: >= N прогнозов с точностью >= порога.
+    is_correct — property, считаем в Python.
     """
     predictions = user.match_predictions.filter(match__status="finished").select_related("match")
     total = 0
@@ -402,11 +320,7 @@ def _maybe_award_stable_hand(user, awarded: list[UserBadge]) -> None:
 
 
 def _maybe_award_derby_prophet(user, awarded: list[UserBadge]) -> None:
-    """
-    Бейдж «Дерби-пророк»: ≥`DERBY_PROPHET_MIN_CORRECT` угаданных прогнозов
-    на матчи между принципиальными соперниками (`Team.rivals`) — прогнозный
-    аналог `derby_hunter` (тот про оценки, этот про прогнозы).
-    """
+    """«Дерби-пророк»: N угаданных прогнозов на дерби."""
     from teams.models import Team
 
     rival_pairs: set[frozenset] = {
@@ -429,14 +343,7 @@ def _maybe_award_derby_prophet(user, awarded: list[UserBadge]) -> None:
 
 
 def _maybe_award_against_the_tide(user, awarded: list[UserBadge]) -> None:
-    """
-    Бейдж «Против течения»: хотя бы ОДИН раз пользователь угадал исход,
-    когда его выбор был в МЕНЬШИНСТВЕ голосов сообщества по этому матчу
-    (contrarian call, который сбылся). "Меньшинство" — выбор пользователя
-    НЕ совпадает с вариантом, набравшим больше всего голосов среди ВСЕХ
-    прогнозов на этот матч. `AGAINST_THE_TIDE_MIN_TOTAL_PREDICTIONS`
-    защищает от тривиального случая "нас было двое, я не как он".
-    """
+    """«Против течения»: угадал исход, будучи в меньшинстве голосов по матчу."""
     from django.db.models import Count
 
     from predictions.models import MatchPrediction
@@ -463,14 +370,7 @@ def _maybe_award_against_the_tide(user, awarded: list[UserBadge]) -> None:
         total_votes = sum(counts.values())
         if total_votes < AGAINST_THE_TIDE_MIN_TOTAL_PREDICTIONS:
             continue
-        # 2026-09-23, фикс аудита: раньше `max(counts, key=counts.get)`
-        # был недетерминирован при точной ничьей голосов за первое место
-        # (порядок зависит от порядка ключей словаря, который зависит от
-        # порядка строк из БД) — один и тот же набор голосов мог в разных
-        # прогонах то засчитывать, то не засчитывать бейдж. При ничьей
-        # реального "большинства" нет вообще, поэтому выбор пользователя
-        # логически не может быть "против течения" — пропускаем матч, а
-        # не гадаем, какой из вариантов считать большинством.
+        # Ничья за первое место — большинства нет, матч пропускаем.
         max_count = max(counts.values())
         leaders = [choice for choice, c in counts.items() if c == max_count]
         if len(leaders) != 1:
@@ -484,13 +384,7 @@ def _maybe_award_against_the_tide(user, awarded: list[UserBadge]) -> None:
 
 
 def _maybe_award_perfect_tour(user, awarded: list[UserBadge]) -> None:
-    """
-    Legendary-бейдж «Идеальный тур»: пользователь спрогнозировал АБСОЛЮТНО
-    ВСЕ матчи одного тура (не часть — именно все, при размере тура
-    ≥`PERFECT_TOUR_MIN_MATCHES`) и угадал исход КАЖДОГО. Перебираем только
-    (сезон, тур) пары, где пользователь вообще что-то прогнозировал — не
-    гоняем по всем турам лиги без разбора.
-    """
+    """«Идеальный тур» (legendary): спрогнозированы и угаданы все матчи тура."""
     from matches.models import Match
 
     tour_season_pairs = (
@@ -508,7 +402,7 @@ def _maybe_award_perfect_tour(user, awarded: list[UserBadge]) -> None:
             for p in user.match_predictions.filter(match_id__in=tour_match_ids).select_related("match")
         }
         if set(user_predictions.keys()) != tour_match_ids:
-            continue  # спрогнозировал не ВСЕ матчи тура
+            continue  # спрогнозированы не все матчи тура
         if all(p.is_correct for p in user_predictions.values()):
             b, created = UserBadge.objects.get_or_create(user=user, badge_type="perfect_tour")
             if created:
@@ -517,13 +411,7 @@ def _maybe_award_perfect_tour(user, awarded: list[UserBadge]) -> None:
 
 
 def _maybe_award_accurate_analyst(user, awarded: list[UserBadge]) -> None:
-    """
-    Бейдж «Точный аналитик»: отклонение ≤1.0 от среднего сообщества
-    (БЕЗ учёта собственной оценки пользователя) в ≥80% из последних 20
-    матчей, где пользователь указывал контекст просмотра.
-
-    2 запроса ВСЕГО вместо до 40 (см. пункт 1 докстринга модуля).
-    """
+    """«Точный аналитик»: отклонение <= 1.0 от среднего сообщества в >= 80% из последних 20 матчей."""
     recent_match_ids = list(
         ContextEvaluation.objects.filter(user=user, match__isnull=False)
         .order_by("-created_at")
@@ -561,11 +449,7 @@ def _maybe_award_accurate_analyst(user, awarded: list[UserBadge]) -> None:
 
 
 def _maybe_award_bias_free(user, awarded: list[UserBadge]) -> None:
-    """
-    Бейдж «Без предвзятости»: `compute_bias_score` (единая реализация из
-    `aggregates.services`, см. пункт 2 докстринга модуля) по последним
-    матчам поддерживаемой команды ниже `BIAS_FREE_MAX_SCORE`.
-    """
+    """«Без предвзятости»: compute_bias_score по матчам своей команды ниже порога."""
     latest_context = (
         ContextEvaluation.objects.filter(user=user, supported_team__isnull=False, match__isnull=False)
         .select_related("match")
@@ -583,16 +467,7 @@ def _maybe_award_bias_free(user, awarded: list[UserBadge]) -> None:
 
 
 def _maybe_award_derby_hunter(user, awarded: list[UserBadge]) -> None:
-    """
-    Бейдж «Дерби-эксперт»: оценено ≥`DERBY_HUNTER_MIN_MATCHES` матчей между
-    командами, отмеченными друг у друга как соперники (`Team.rivals`,
-    проставляется вручную в админке — см. `teams/admin.py`). Список
-    соперничеств — продуктовое решение, не автоматика.
-
-    Список пар соперников в лиге заведомо маленький (десятки, не тысячи) —
-    поэтому сравнение "матч — это дерби?" делается один раз в Python по
-    множеству пар, а не через `.filter()` с M2M-джойном на каждый матч.
-    """
+    """«Дерби-эксперт»: N оценённых матчей между соперниками (Team.rivals)."""
     from matches.models import Match
     from teams.models import Team
 
@@ -621,15 +496,8 @@ def _maybe_award_derby_hunter(user, awarded: list[UserBadge]) -> None:
             awarded.append(b)
 
 
-# --- Переоценка статусных бейджей (2026-09-23, фикс аудита) ---
-# Ниже — те же условия, что в _maybe_award_foresight/max_trust/stable_hand/
-# accurate_analyst/bias_free выше, но БЕЗ побочного эффекта (не выдают и не
-# создают UserBadge) — только возвращают bool "условие сейчас выполняется".
-# Дублирование логики условия (а не переиспользование _maybe_award_*)
-# осознанное: _maybe_award_* принимают список `awarded` и делают
-# get_or_create с намерением ВЫДАТЬ бейдж — семантически "проверка для
-# отзыва уже выданного" это другая операция, смешивать её с выдачей было бы
-# менее явным.
+# --- Переоценка статусных бейджей ---
+# Те же условия, что в _maybe_award_*, но без выдачи — только bool.
 
 def _check_foresight_condition(user) -> bool:
     return user.total_evaluations >= FORESIGHT_MIN_EVALUATIONS and user.trust_score >= FORESIGHT_MIN_TRUST_SCORE
@@ -708,16 +576,7 @@ _STATUS_BADGE_CHECKS = {
 
 
 def revalidate_status_badges(user) -> dict[str, list[str]]:
-    """
-    Перепроверяет условия УЖЕ ВЫДАННЫХ пользователю статусных бейджей
-    (STATUS_BADGE_TYPES) и помечает is_stale=True, если показатель упал
-    ниже порога, или снимает пометку, если показатель восстановился.
-
-    Не создаёт новые UserBadge (если бейджа ещё не было — его выдаст
-    check_and_award_badges в обычном порядке при следующей оценке/прогнозе,
-    это не задача переоценки). Вызывается из
-    users/tasks.py::revalidate_status_badges_task.
-    """
+    """Ставит/снимает is_stale у уже выданных статусных бейджей. Новые не выдаёт."""
     existing = {
         b.badge_type: b
         for b in UserBadge.objects.filter(user=user, badge_type__in=STATUS_BADGE_TYPES)

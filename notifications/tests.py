@@ -1,33 +1,6 @@
 # notifications/tests.py
-"""
-notifications/ был единственным приложением в проекте без единого теста,
-хотя именно в notifications/tasks.py недавно чинили баг "не приходит email
-при открытии голосования на команду, на которую подписан пользователь"
-(см. докстринг notify_followers_match_activity, раздел "ИСПРАВЛЕНО"). Ниже —
-регрессионный набор на самые уязвимые с точки зрения тихого молчания места:
-адресную рассылку подписчикам (email+push+in-app), дедупликацию
-периодических задач по Notification и Redis-lock (cache.add()) от гонки
-двух параллельных прогонов одной и той же periodic-задачи.
-
-Все Celery-таски вызываются НАПРЯМУЮ (не через .delay/.apply_async) — тот же
-паттерн, что в aggregates/tests.py: @shared_task(bind=True) оборачивает
-функцию в Task.run, и вызов task(...) без явного self работает точно так же,
-как в проде. CELERY_TASK_ALWAYS_EAGER нужен только там, где сама задача
-внутри себя ставит в очередь под-задачи через .delay() (fan-out на чанки —
-_send_match_email_chunk в notify_voting_closing_soon); notify_followers_
-match_activity рассылает email синхронным циклом внутри себя и eager-режима
-не требует.
-
-EMAIL_HOST_USER явно переопределён в тестах, которые проверяют реальную
-отправку письма: `_send_email_to_user` (notifications/tasks.py) считает
-почтовый бэкенд "консольным dev-режимом" и просто логирует, БЕЗ реального
-вызова email.send(), если `not settings.EMAIL_HOST_USER` — в проде это
-настраивается переменной окружения, но в тестовом окружении её обычно нет,
-и тогда `django.core.mail.outbox` остался бы пустым независимо от того,
-работает ли рассылка правильно (тест бы молча "зеленел", ничего не проверив).
-Тот же принцип, что и LOCMEM_CACHES ниже (core/tests.py) — тест не должен
-зависеть от того, что случайно прописано/не прописано в окружении, где
-запускается `manage.py test`.
+"""Тесты notifications: рассылка подписчикам (email+push+in-app), дедуп, Redis-lock.
+Задачи вызываются напрямую. EMAIL_HOST_USER задан, иначе письма не попадут в outbox.
 """
 from __future__ import annotations
 
@@ -60,10 +33,7 @@ from .tasks import (
 
 User = get_user_model()
 
-# Общий LocMemCache для всех тестов, которые трогают cache.add()-локи —
-# прод использует Redis (dopx/settings.py::CACHES), но сама блокировка
-# работает через одинаковый Django cache API, а тест не должен требовать
-# поднятого Redis (тот же паттерн, что LOCMEM_CACHES в core/tests.py).
+# LocMemCache для cache.add()-локов — без Redis.
 LOCMEM_CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
@@ -71,9 +41,7 @@ LOCMEM_CACHES = {
     }
 }
 
-# EMAIL_HOST_USER — см. докстринг модуля: без непустого значения
-# _send_email_to_user считает это "консольным dev-режимом" и не пишет в
-# mail.outbox вовсе.
+# Без EMAIL_HOST_USER _send_email_to_user не пишет в outbox.
 EMAIL_TEST_SETTINGS = dict(
     EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
     EMAIL_HOST_USER="test-smtp-user",
@@ -91,13 +59,7 @@ def _make_league_season_teams():
 
 @override_settings(**EMAIL_TEST_SETTINGS)
 class NotifyFollowersMatchActivityTests(TestCase):
-    """
-    notify_followers_match_activity — адресная рассылка подписчикам команд/
-    игроков И тем, кто предсказал матч (не всем верифицированным), три
-    канала разом: in-app Notification, best-effort push, email. Именно
-    здесь чинили баг "нет email при открытии голосования на команду,
-    на которую подписан пользователь" — эти тесты закрывают его напрямую.
-    """
+    """notify_followers_match_activity: адресная рассылка подписчикам и предсказавшим."""
 
     def setUp(self):
         self.league, self.season, self.home, self.away = _make_league_season_teams()
@@ -126,14 +88,7 @@ class NotifyFollowersMatchActivityTests(TestCase):
         )
 
     def test_follower_gets_email_and_inapp_notification_on_voting_open(self):
-        """
-        ГЛАВНЫЙ regression-тест: подписчик команды, сыгравшей матч, должен
-        получить email именно в момент ОТКРЫТИЯ голосования — до фикса этот
-        email никогда не отправлялся (были только in-app+push), хотя про
-        ЗАКРЫТИЕ голосования того же матча письмо всегда уходило (см.
-        NotifyVotingBothDirectionsRegressionTests ниже — сравнение обеих
-        точек жизни голосования).
-        """
+        """Подписчик получает email при открытии голосования."""
         result = notify_followers_match_activity(str(self.match.id))
 
         self.assertEqual(result["notified"], 1)
@@ -145,8 +100,7 @@ class NotifyFollowersMatchActivityTests(TestCase):
         self.assertEqual(notif.notification_type, "voting_open")
 
     def test_non_follower_receives_nothing(self):
-        """Пользователь, не подписанный ни на одну из играющих команд, не должен
-        получить ни in-app уведомление, ни email — рассылка адресная, не broadcast."""
+        """Неподписанный ничего не получает."""
         notify_followers_match_activity(str(self.match.id))
 
         self.assertFalse(Notification.objects.filter(user=self.non_follower).exists())
@@ -154,7 +108,7 @@ class NotifyFollowersMatchActivityTests(TestCase):
         self.assertNotIn(self.non_follower.email, mail.outbox[0].to)
 
     def test_follower_of_away_team_is_also_notified(self):
-        """Follow.team может указывать на ЛЮБУЮ из двух играющих команд, не только home."""
+        """Подписка на любую из двух команд."""
         away_follower = User.objects.create_user(
             username="away_fan", email="away_fan@example.com", password="pass12345", is_verified=True,
         )
@@ -162,12 +116,11 @@ class NotifyFollowersMatchActivityTests(TestCase):
 
         result = notify_followers_match_activity(str(self.match.id))
 
-        self.assertEqual(result["notified"], 2)  # home follower + away follower
+        self.assertEqual(result["notified"], 2)  # подписчик хозяев + подписчик гостей
         self.assertTrue(Notification.objects.filter(user=away_follower).exists())
 
     def test_follower_of_player_in_lineup_is_notified(self):
-        """Follow может быть на игрока (не команду) — follow-граф проверяет
-        состав матча (MatchLineupPlayer), не только home_team/away_team."""
+        """Подписка на игрока — через состав матча."""
         player = Player.objects.create(first_name="Test", last_name="Player", team=self.home)
         lineup = MatchLineup.objects.create(match=self.match, team=self.home, side="home")
         MatchLineupPlayer.objects.create(lineup=lineup, player=player, is_starting=True)
@@ -180,17 +133,11 @@ class NotifyFollowersMatchActivityTests(TestCase):
         result = notify_followers_match_activity(str(self.match.id))
 
         self.assertTrue(Notification.objects.filter(user=player_follower).exists())
-        # follower команды (self.follower) + follower игрока — оба уникальные, без задвоения
+        # подписчик команды + подписчик игрока, без дублей
         self.assertEqual(result["notified"], 2)
 
     def test_unverified_follower_gets_inapp_but_no_email(self):
-        """
-        is_verified=False пропускается ТОЛЬКО почтовым каналом
-        (_send_match_email_chunk/`_UserModel.objects.filter(..., is_verified=True,
-        email__isnull=False)` в notify_followers_match_activity) — in-app
-        Notification создаётся для ВСЕХ подписчиков без разбора, независимо
-        от верификации. Проверяем это по факту кода, а не предположению.
-        """
+        """Неверифицированный не получает email, но in-app получает."""
         unverified = User.objects.create_user(
             username="unverified", email="unverified@example.com", password="pass12345",
             is_verified=False,
@@ -204,19 +151,7 @@ class NotifyFollowersMatchActivityTests(TestCase):
         self.assertNotIn(unverified.email, all_recipients)
 
     def test_bot_pool_follower_gets_inapp_but_no_email(self):
-        """
-        2026-09-07, продуктовый запрос: "надо исключить рассылку писем на
-        тестовых ботов". Сид-боты (aggregates/management/commands/
-        seed_match_votes.py, core/management/commands/seed_full_history.py)
-        создаются с is_verified=True и правдоподобным на вид email
-        (`test_user_bot_NNNN@test.dopx.local`) — БЕЗ этого фикса такой
-        follower проходил бы через `is_verified=True` фильтр наравне с
-        настоящим пользователем и реально получал бы письмо. Как и у
-        is_verified=False выше — блокируется ТОЛЬКО email-канал
-        (notifications/tasks.py::_send_email_to_user, единственная точка
-        отправки, см. core.utils.is_synthetic_test_email), in-app
-        Notification создаётся как обычно.
-        """
+        """Боты (test_user_bot_*@test.dopx.local) не получают email, in-app — да."""
         bot_follower = User.objects.create_user(
             username="test_user_bot_0001", email="test_user_bot_0001@test.dopx.local",
             password="pass12345", is_verified=True,
@@ -230,11 +165,7 @@ class NotifyFollowersMatchActivityTests(TestCase):
         self.assertNotIn(bot_follower.email, all_recipients)
 
     def test_follower_with_email_channel_disabled_gets_inapp_but_no_email(self):
-        """
-        Настройка email_match_finished=False (см. NOTIFICATION_TYPE_TO_SETTINGS_KEY
-        ['voting_open']) должна отключать именно email-канал, in-app и push
-        не завязаны на пользовательские email-настройки вообще.
-        """
+        """email_match_finished=False отключает только email."""
         opted_out = User.objects.create_user(
             username="opted_out", email="opted_out@example.com", password="pass12345",
             is_verified=True,
@@ -250,27 +181,20 @@ class NotifyFollowersMatchActivityTests(TestCase):
         self.assertNotIn(opted_out.email, all_recipients)
 
     def test_push_is_attempted_for_every_follower_best_effort(self):
-        """
-        Push — best-effort канал (см. докстринг notify_followers_match_activity
-        и notifications/services.py::send_push_to_user): без VAPID-ключей
-        (пусто по умолчанию в dopx/settings.py) send_push_to_user тихо
-        возвращает 0 и не должен ронять всю задачу — здесь патчим её, чтобы
-        явно убедиться, что вызов происходит для каждого подписчика, а не
-        просто "тихо ничего не падает и непонятно, вызывался ли код вообще".
-        """
+        """Push вызывается для каждого подписчика."""
         from unittest.mock import patch
 
         with patch("notifications.services.send_push_to_user") as mocked_push:
             mocked_push.return_value = 0
             result = notify_followers_match_activity(str(self.match.id))
 
-        self.assertEqual(mocked_push.call_count, 1)  # один подписчик — self.follower
+        self.assertEqual(mocked_push.call_count, 1)  # один подписчик
         called_user = mocked_push.call_args.args[0]
         self.assertEqual(called_user.id, self.follower.id)
         self.assertEqual(result["notified"], 1)
 
     def test_no_match_found_returns_zero_without_error(self):
-        """Матч уже удалён/id битый — задача не должна падать, просто no-op."""
+        """Нет матча — no-op."""
         import uuid
 
         result = notify_followers_match_activity(str(uuid.uuid4()))
@@ -278,16 +202,7 @@ class NotifyFollowersMatchActivityTests(TestCase):
         self.assertEqual(len(mail.outbox), 0)
 
     def test_predictor_without_follow_is_also_notified(self):
-        """
-        РАСШИРЕНО (2026-09-01, прямая жалоба пользователя: email
-        верифицирован, прогноз стоял, но push с приглашением оценить не
-        пришёл): пользователь, поставивший MatchPrediction на этот матч, но
-        НЕ подписанный через Follow ни на одну из команд — тоже должен
-        попасть в аудиторию. Раньше аудитория была строго Follow-only, и
-        для предсказавших-но-не-подписанных пользователей рассылка не
-        срабатывала вообще — не из-за бага в коде, а по дизайну, который на
-        практике ощущается как "push не работает".
-        """
+        """Предсказавший без подписки тоже в аудитории."""
         predictor = User.objects.create_user(
             username="predictor", email="predictor@example.com", password="pass12345",
             is_verified=True,
@@ -299,13 +214,12 @@ class NotifyFollowersMatchActivityTests(TestCase):
         result = notify_followers_match_activity(str(self.match.id))
 
         self.assertTrue(Notification.objects.filter(user=predictor, related_match=self.match).exists())
-        self.assertEqual(result["notified"], 2)  # follower + predictor, без задвоения
+        self.assertEqual(result["notified"], 2)  # подписчик + предсказавший, без дублей
         all_recipients = [addr for msg in mail.outbox for addr in msg.to]
         self.assertIn(predictor.email, all_recipients)
 
     def test_follower_who_also_predicted_is_not_double_counted(self):
-        """Follow + MatchPrediction от одного и того же пользователя — не
-        задвоение (set-объединение, не сумма списков)."""
+        """Подписка + прогноз от одного пользователя — одно уведомление."""
         MatchPrediction.objects.create(
             match=self.match, user=self.follower, choice=MatchPrediction.CHOICE_HOME,
         )
@@ -318,12 +232,7 @@ class NotifyFollowersMatchActivityTests(TestCase):
 
 @override_settings(**EMAIL_TEST_SETTINGS)
 class NotifyFollowersMatchStartedAndLineupsAvailableTests(TestCase):
-    """2026-09-21, аудит пуш-системы (прямая жалоба пользователя: "надо
-    наладить пуши... о начале матча, тоже нет пушей! ... о том что составы
-    доступны"). Та же таргетинг-логика, что и у notify_followers_match_
-    activity (Follow на команду/игрока ОБЪЕДИНЁННЫЕ с предсказавшими), но
-    БЕЗ email-канала (см. докстринг обеих задач в notifications/tasks.py —
-    "начался"/"составы доступны" ценны только в моменте)."""
+    """Пуши «матч начался» / «составы» — та же аудитория, без email."""
 
     def setUp(self):
         self.league, self.season, self.home, self.away = _make_league_season_teams()
@@ -347,7 +256,7 @@ class NotifyFollowersMatchStartedAndLineupsAvailableTests(TestCase):
         notif = Notification.objects.get(user=self.follower, related_match=self.match)
         self.assertEqual(notif.notification_type, "match_started")
         self.assertFalse(Notification.objects.filter(user=self.non_follower).exists())
-        # Никакого email — см. докстринг задачи.
+        # Email не шлём.
         self.assertEqual(len(mail.outbox), 0)
 
     def test_started_notifies_predictor_without_follow_too(self):
@@ -358,7 +267,7 @@ class NotifyFollowersMatchStartedAndLineupsAvailableTests(TestCase):
 
         result = notify_followers_match_started(str(self.match.id))
 
-        self.assertEqual(result["notified"], 2)  # follower + predictor
+        self.assertEqual(result["notified"], 2)  # подписчик + предсказавший
         self.assertTrue(Notification.objects.filter(user=predictor, related_match=self.match).exists())
 
     def test_started_push_is_attempted_best_effort(self):
@@ -389,18 +298,7 @@ class NotifyFollowersMatchStartedAndLineupsAvailableTests(TestCase):
 @override_settings(**EMAIL_TEST_SETTINGS, CACHES=LOCMEM_CACHES,
                     CELERY_TASK_ALWAYS_EAGER=True, CELERY_TASK_EAGER_PROPAGATES=True)
 class NotifyVotingBothDirectionsRegressionTests(TestCase):
-    """
-    Прямой regression-тест на баг из докстринга notify_followers_match_activity
-    (раздел "ИСПРАВЛЕНО", AUDIT_2026-08.md раздел 4): раньше подписчик получал
-    email про ЗАКРЫТИЕ голосования (notify_voting_closing_soon — broadcast,
-    всем верифицированным), но НИКОГДА про ОТКРЫТИЕ (notify_followers_
-    match_activity — раньше только in-app+push). Тест воспроизводит ОБЕ точки
-    жизни голосования одного и того же матча и проверяет, что письмо уходит
-    в обоих случаях — если кто-то в будущем случайно вернёт email в
-    notify_followers_match_activity под force=False с настройкой, которая по
-    умолчанию выключена, или уберёт вызов _send_email_to_user, один из этих
-    тестов упадёт.
-    """
+    """Письмо уходит и при открытии, и при закрытии голосования."""
 
     def setUp(self):
         cache.clear()
@@ -430,10 +328,7 @@ class NotifyVotingBothDirectionsRegressionTests(TestCase):
             start_time=now - timedelta(hours=50), end_time=now - timedelta(hours=48), status="finished",
             home_score=1, away_score=0, voting_open_until=now + timedelta(minutes=30),
         )
-        # notify_voting_closing_soon — broadcast всем верифицированным с
-        # email, follow здесь не требуется (в отличие от notify_followers_
-        # match_activity выше) — именно поэтому раньше их поведение
-        # расходилось: закрытие слало письма всем, а открытие — никому.
+        # notify_voting_closing_soon — всем верифицированным, подписка не нужна.
 
         notify_voting_closing_soon()
 
@@ -449,14 +344,7 @@ class NotifyVotingBothDirectionsRegressionTests(TestCase):
 @override_settings(**EMAIL_TEST_SETTINGS, CACHES=LOCMEM_CACHES,
                     CELERY_TASK_ALWAYS_EAGER=True, CELERY_TASK_EAGER_PROPAGATES=True)
 class NotifyVotingClosingSoonDedupTests(TestCase):
-    """
-    notify_voting_closing_soon гоняется каждые 30 минут (crontab(minute='*/30')),
-    а окно выборки — 1 час: без дедупликации один и тот же закрывающийся
-    матч почти всегда попадает в выборку ДВАЖДЫ подряд на соседних тиках и
-    письмо уходит всем пользователям дважды (см. "БАГ, КОТОРЫЙ ТУТ БЫЛ" в
-    докстринге задачи). Дедуп — по наличию Notification(notification_type=
-    'voting_closing', related_match=match), созданного прошлым прогоном.
-    """
+    """Задача каждые 30 минут, окно 1 час — дедуп по Notification('voting_closing')."""
 
     def setUp(self):
         cache.clear()
@@ -496,22 +384,14 @@ class NotifyVotingClosingSoonDedupTests(TestCase):
 
 @override_settings(**EMAIL_TEST_SETTINGS, CACHES=LOCMEM_CACHES)
 class SendNotificationDigestTests(TestCase):
-    """
-    send_notification_digest — периодическая задача (раз в час), собирающая
-    непрочитанные-по-email Notification типов new_badge/level_up/system для
-    пользователей с email_digest_mode=True в одно письмо вместо N отдельных.
-    Плюс Redis-lock (cache.add()) — БАГ, КОТОРЫЙ ТУТ БЫЛ (см. докстринг
-    задачи): без него два параллельных прогона (плановый тик + повторная
-    доставка at-least-once) могли прочитать один и тот же набор "ещё не
-    отправленных" Notification и разослать дублирующие письма-сводки.
-    """
+    """send_notification_digest: сводка раз в час для email_digest_mode=True + Redis-lock."""
 
     def setUp(self):
         cache.clear()
         self.user = User.objects.create_user(
             username="digest_user", email="digest@example.com", password="pass12345",
             is_verified=True,
-        )  # email_digest_mode=True по умолчанию (DEFAULT_NOTIFICATION_SETTINGS)
+        )  # email_digest_mode=True по умолчанию
 
     def test_pending_notifications_are_collected_into_one_email(self):
         n1 = Notification.objects.create(
@@ -534,8 +414,7 @@ class SendNotificationDigestTests(TestCase):
         self.assertIsNotNone(n2.email_sent_at)
 
     def test_user_with_digest_mode_disabled_is_skipped(self):
-        """email_digest_mode=False — пользователь предпочитает мгновенные письма,
-        дайджест не должен собирать и отправлять за него сводку задним числом."""
+        """Без дайджест-режима сводка не шлётся."""
         self.user.notification_settings = {"email_digest_mode": False}
         self.user.save()
         Notification.objects.create(
@@ -548,8 +427,7 @@ class SendNotificationDigestTests(TestCase):
         self.assertEqual(len(mail.outbox), 0)
 
     def test_already_sent_notifications_are_not_included(self):
-        """email_sent_at уже проставлен — значит письмо про это уведомление уже
-        ушло (мгновенно или прошлым дайджестом), повторно включать в сводку не нужно."""
+        """Уже отправленное в сводку не попадает."""
         Notification.objects.create(
             user=self.user, notification_type="new_badge", title="Старый бейдж", message="msg",
             email_sent_at=timezone.now(),
@@ -561,11 +439,7 @@ class SendNotificationDigestTests(TestCase):
         self.assertEqual(len(mail.outbox), 0)
 
     def test_lock_makes_concurrent_run_a_no_op(self):
-        """
-        Симулируем "другой воркер уже держит лок" явным cache.add() до вызова
-        задачи — воспроизводит гонку двух параллельных прогонов детерминированно,
-        без реальной многопоточности в тесте.
-        """
+        """Лок уже взят «другим воркером» — задача ничего не делает."""
         Notification.objects.create(
             user=self.user, notification_type="new_badge", title="Бейдж 1", message="msg1",
         )
@@ -577,8 +451,7 @@ class SendNotificationDigestTests(TestCase):
         self.assertEqual(len(mail.outbox), 0)
 
     def test_lock_is_released_after_run_allowing_next_tick(self):
-        """Лок снимается в finally — следующий (не параллельный, а последующий по
-        времени) прогон обязан отработать нормально, а не оставаться заблокированным навечно."""
+        """Лок снимается в finally — следующий прогон отрабатывает."""
         Notification.objects.create(
             user=self.user, notification_type="new_badge", title="Бейдж 1", message="msg1",
         )
@@ -596,14 +469,7 @@ class SendNotificationDigestTests(TestCase):
 
 @override_settings(**EMAIL_TEST_SETTINGS, CACHES=LOCMEM_CACHES)
 class NotifyPredictionResultsLockTests(TestCase):
-    """
-    notify_prediction_results — тот же cache.add()-lock-паттерн, что и
-    send_notification_digest выше (см. "БАГ, КОТОРЫЙ ТУТ БЫЛ" в докстринге
-    задачи): дедуп по Notification(notification_type='prediction_result')
-    защищает от задвоения ПОСЛЕ bulk_create, но не от гонки ДО него — два
-    параллельных прогона могли одновременно прочитать одну и ту же ещё не
-    обработанную пару (match, user) и оба отправить письмо.
-    """
+    """notify_prediction_results: такой же lock от параллельных прогонов."""
 
     def setUp(self):
         cache.clear()

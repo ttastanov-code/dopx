@@ -3,10 +3,10 @@
 <footer class="bg-base-200 border-t border-base-300 mt-auto">
     <div class="container mx-auto px-4 py-12">
         
-        <!-- === ВЕРХНЯЯ ЧАСТЬ: Колонки === -->
+        {# === КОЛОНКИ === #}
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-8">
             
-            <!-- Колонка 1: О проекте -->
+            {# О проекте #}
             <div>
                 <div class="mb-4">
                     {% include 'components/_brand.html' with variant='footer' icon_size='h-9 w-9' text_size='text-xl' %}
@@ -15,7 +15,7 @@
                     Голос трибун измеряем. Независимый рейтинг матчей, команд и игроков на основе мнения болельщиков.
                 </p>
                 
-                <!-- Соцсети: по запросу оставлены только Telegram и Threads -->
+                {# Соцсети: Telegram и Threads #}
                 <div class="flex gap-3">
                     <a href="#" class="btn btn-ghost btn-circle btn-sm" aria-label="Telegram">
                         <i class="ti ti-brand-telegram text-lg"></i>
@@ -26,7 +26,7 @@
                 </div>
             </div>
             
-            <!-- Колонка 2: Навигация -->
+            {# Навигация #}
             <div>
                 <h4 class="font-semibold mb-4">Навигация</h4>
                 <ul class="space-y-2 text-sm">
@@ -58,7 +58,7 @@
                 </ul>
             </div>
             
-            <!-- Колонка 3: Аналитика -->
+            {# Аналитика #}
             <div>
                 <h4 class="font-semibold mb-4">Аналитика</h4>
                 <ul class="space-y-2 text-sm">
@@ -90,7 +90,7 @@
                 </ul>
             </div>
             
-            <!-- Колонка 4: Информация -->
+            {# Информация #}
             <div>
                 <h4 class="font-semibold mb-4">Информация</h4>
                 <ul class="space-y-2 text-sm">
@@ -118,38 +118,24 @@
             </div>
         </div>
         
-        <!-- === РАЗДЕЛИТЕЛЬ === -->
+        {# === РАЗДЕЛИТЕЛЬ === #}
         <div class="border-t border-base-300 pt-8">
             
-            <!-- === НИЖНЯЯ ЧАСТЬ: Копирайт === -->
+            {# === КОПИРАЙТ === #}
             <div class="flex flex-col md:flex-row justify-center items-center gap-4">
 
-                <!-- Копирайт -->
+                {# Копирайт #}
                 <div class="text-sm opacity-60">
                     © {% now 'Y' %} DOPX. Все права защищены.
                 </div>
             </div>
         </div>
         
-        <!-- === ТЕХНИЧЕСКАЯ ИНФОРМАЦИЯ (для dev) === -->
+        {# === ТЕХ. ИНФО (dev) === #}
         {% if debug %}
         <div class="border-t border-base-300 mt-8 pt-4">
             <div class="text-xs opacity-40 font-mono">
-                {% comment %}
-                БАГ, КОТОРЫЙ ТУТ БЫЛ (найдено 2026-09-21, UI/UX-аудит):
-                версии HTMX и DaisyUI были захардкожены (2.0.4 и 4.12
-                соответственно) и разошлись с реально подключёнными в
-                base.html CDN-версиями (htmx.org@2.0.8, daisyui@5.7.17) —
-                эта строка обновлялась в base.html при апгрейдах пакетов,
-                а здесь, в отдельном дублирующем месте, забыли. `django_
-                version` вообще никогда не передаётся ни одним context
-                processor'ом — фоллбэк-значение '6.0.3' показывалось
-                ВСЕГДА, и оно тоже устарело относительно реально
-                установленной версии (requirements.txt: Django==6.0.8).
-                Раз единственный источник правды по факту — этот фоллбэк,
-                обновляем его на реальную версию вместо того, чтобы заводить
-                отдельный context processor только для строки в dev-панели.
-                {% endcomment %}
+                {# Версии — как в base.html и requirements.txt, обновлять вручную. #}
                 <div class="flex flex-wrap gap-4">
                     <span>Django {{ django_version|default:'6.0.8' }}</span>
                     <span>•</span>
@@ -171,7 +157,7 @@
     </div>
 </footer>
 
-<!-- === Scroll to Top Button === -->
+{# === Кнопка наверх === #}
 <button 
     id="scroll-to-top"
     class="fixed bottom-6 right-6 btn btn-circle btn-primary btn-sm shadow-lg opacity-0 pointer-events-none transition-all duration-300 z-40"

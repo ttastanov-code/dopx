@@ -1,19 +1,8 @@
 # users/tasks.py
-"""
-Celery-задачи для домена пользователей.
+"""Celery-задачи пользователей: бейджи, антифрод-детекторы, decay trust_score, калибровка порогов.
 
-`check_and_award_badges_task` — асинхронный враппер над `users.services.
-check_and_award_badges`, вызывается через `transaction.on_commit(...)` из
-`evaluations/views.py::EvaluateMatchFinalView.form_valid`, не из HTTP-цикла.
-Здесь же создаются in-app `Notification` о новых достижениях и ставятся в
-очередь email-уведомления.
-
-Дайджест: если у пользователя включён `email_digest_mode` (см.
-`users/models.py::User.DEFAULT_NOTIFICATION_SETTINGS`), мгновенное письмо
-не ставится в очередь — только `Notification` с `email_sent_at=None`,
-которую подхватит `notifications/tasks.py::send_notification_digest`. Если
-дайджест выключен — письмо уходит сразу, и `email_sent_at` проставляется
-сразу же, чтобы дайджест не отправил его повторно.
+При включённом email_digest_mode письмо не шлём сразу — его заберёт
+notifications.tasks.send_notification_digest.
 """
 from __future__ import annotations
 
@@ -25,70 +14,42 @@ from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
-# Минимальное время (в секундах), за которое человек физически способен
-# осмысленно пройти весь вайзард оценки (контекст → команды → до 22+
-# игроков по 3 поля → тренеры → судья → финал). Меньше — сильный сигнал
-# скрипта/бота, а не редкого быстрого человека.
+# Минимальное реальное время прохождения вайзарда. Быстрее — похоже на бота.
 MIN_HUMAN_WIZARD_SECONDS = 20
 
-# IP-кластерный антифрод: сколько РАЗНЫХ аккаунтов, завершивших оценку
-# ОДНОГО матча с ОДНОГО IP за LOOKBACK часов, считается подозрительным
-# кластером (не "минимум 2" — соседи по квартире/офис/общага законно
-# оценивают матчи с одного IP, порог должен ловить именно фермы).
+# Сколько разных аккаунтов с одного IP на один матч за окно считаем кластером.
+# Не 2 — соседи/офис легально голосуют с одного IP.
 IP_CLUSTER_LOOKBACK_HOURS = 24
 IP_CLUSTER_MIN_ACCOUNTS = 3
 
-# 2026-09-23, честный аудит формул рейтингов — доля расстояния до
-# нейтрального trust_score=1.0, на которую сдвигается счёт АКТИВНОГО
-# пользователя за один прогон decay_trust_scores_task (раз в месяц). См.
-# докстринг задачи ниже за полным объяснением, почему decay нужен вообще.
+# Доля расстояния до trust_score=1.0, на которую сдвигаем активного пользователя за прогон decay.
 TRUST_DECAY_FRACTION = 0.1
-# Не трогаем decay'ем тех, кто не голосовал последние N дней — иначе
-# пользователь, который просто ушёл с платформы, "реабилитировался" бы
-# без единого нового добросовестного голоса.
+# Неактивных не трогаем — иначе «реабилитация» без новых голосов.
 TRUST_DECAY_LOOKBACK_DAYS = 90
 
-# Бейдж «Чемпион месяца»: не выдаём тому, кто "занял первое место" с
-# одной-двумя оценками в мёртвом месяце — минимальная активность для
-# зачёта результата.
+# Минимум оценок за месяц для бейджа «Чемпион месяца».
 MONTHLY_CHAMPION_MIN_EVALUATIONS = 5
 
-# --- Самокалибрующиеся антифрод-пороги (см. users/models.py::AntiFraudThreshold) ---
+# --- Самокалибрующиеся пороги (users/models.py::AntiFraudThreshold) ---
 
-ANTIFRAUD_THRESHOLD_CACHE_TTL = 600  # секунд — не бить в БД на каждый вызов детектора
+ANTIFRAUD_THRESHOLD_CACHE_TTL = 600  # кэш, сек
 
-# Сколько разобранных (confirmed/dismissed) флагов нужно накопить за
-# LOOKBACK, прежде чем на их основе вообще двигать порог — меньше
-# статистически ничего не значит, порог в этот раз просто не трогаем.
+# Минимум разобранных флагов за окно, чтобы двигать порог.
 ANTIFRAUD_RECALIBRATION_MIN_SAMPLE = 20
 ANTIFRAUD_RECALIBRATION_LOOKBACK_DAYS = 90
-# Ниже этой доли confirmed — сигнал в основном ложные тревоги, порог
-# ужесточаем (менее чувствителен). Выше верхней — сигнал явно надёжный,
-# порог смягчаем (ловим больше, раз почти всегда попадаем в цель).
+# Доля confirmed ниже LOW — ужесточаем порог, выше HIGH — смягчаем.
 ANTIFRAUD_RECALIBRATION_LOW_CONFIRM_RATE = 0.2
 ANTIFRAUD_RECALIBRATION_HIGH_CONFIRM_RATE = 0.8
 
-# 2026-08-24, продуктовый запрос "модерация антифрода должна быть
-# максимально простой и не затратной по времени" — см.
-# expire_stale_low_score_flags() ниже. Источники, которые ВСЕГДА требуют
-# явного решения человека, никогда не авто-закрываются: vote_spike/
-# ip_cluster — единственные два сигнала, у которых решение модератора
-# ЕЩЁ И кормит самокалибровку выше (без решения calibration застаивается),
-# а "manual" — флаг, который человек и так завёл сам, тихо его закрыть
-# значило бы просто проигнорировать то, что сотрудник явно отметил.
+# Эти источники никогда не закрываем автоматически:
+# vote_spike/ip_cluster кормят калибровку, manual завёл человек.
 ANTIFRAUD_AUTO_EXPIRE_EXCLUDED_SOURCES = ("vote_spike", "ip_cluster", "manual")
-# "Низкий score" — тот же порог, что уже используется в UI очереди
-# (templates/dashboard/antifraud.html — ниже него бейдж серый/"ghost", не
-# жёлтый и не красный) — не придумываем новую границу, используем ту, что
-# сотрудник и так визуально считает "неважным".
+# Порог «низкого» score — тот же, что в UI очереди (серый бейдж).
 ANTIFRAUD_AUTO_EXPIRE_MAX_SCORE = 0.4
 ANTIFRAUD_AUTO_EXPIRE_AFTER_DAYS = 14
 
-# Реестр калибруемых порогов: ключ в БД -> источник флагов для обратной
-# связи, шаг одной корректировки и жёсткая вилка (min/max), за которую
-# калибровка не может выйти. default совпадает со старой константой,
-# которая жила здесь/в aggregates/tasks.py до самокалибровки — это
-# стартовая точка, а не потолок.
+# Калибруемые пороги: ключ -> источник флагов, шаг, вилка min/max.
+# default — стартовое значение.
 ANTIFRAUD_CALIBRATED_THRESHOLDS = {
     "vote_spike_mad_threshold": {
         "source": "vote_spike",
@@ -100,23 +61,12 @@ ANTIFRAUD_CALIBRATED_THRESHOLDS = {
     "ip_cluster_min_accounts": {
         "source": "ip_cluster",
         "step": 1.0,
-        # Нижняя граница НЕ 2 — умышленно, см. докстринг IP_CLUSTER_MIN_ACCOUNTS
-        # выше: порог "минимум 2" ловит законных соседей по IP (общага/офис).
+        # Нижняя граница не 2 — см. IP_CLUSTER_MIN_ACCOUNTS.
         "min": 3.0,
         "max": 6.0,
         "default": float(IP_CLUSTER_MIN_ACCOUNTS),
     },
-    # 2026-09-23, честный аудит формул рейтингов: раньше градуированный
-    # штраф за фан-bias (aggregates/services.py::_graduated_bias_penalty)
-    # был единственным антифрод-сигналом БЕЗ очереди модерации и, как
-    # следствие, без обратной связи для калибровки (см. старый докстринг
-    # AntiFraudThreshold). Теперь _maybe_flag_extreme_bias создаёт
-    # SuspiciousActivityFlag(source="extreme_bias") при заметном штрафе —
-    # у этого порога появилась земля под ногами, как у vote_spike/
-    # ip_cluster. Калибруется ПОРОГ ВИДИМОСТИ (с какого штрафа создавать
-    # флаг), а не сами константы формулы штрафа (BIAS_FREE_DIFF и т.д.) —
-    # тронуть саму формулу автоматически было бы более рискованно, чем
-    # калибровать, что показывать модератору.
+    # Калибруется порог видимости флага extreme_bias, а не сама формула штрафа.
     "extreme_bias_flag_threshold": {
         "source": "extreme_bias",
         "step": 0.05,
@@ -128,17 +78,8 @@ ANTIFRAUD_CALIBRATED_THRESHOLDS = {
 
 
 def get_antifraud_threshold(key: str, default: float) -> float:
-    """
-    Текущее (возможно, уже откалиброванное) значение антифрод-порога.
-    Читает `AntiFraudThreshold` с коротким кэшем — вызывается на каждый
-    прогон детектора (`detect_ip_clusters_task`, `aggregates.tasks.
-    detect_vote_velocity_anomalies_task`), поэтому лишний SELECT на каждый
-    вызов был бы расточительным.
-
-    При отсутствии строки в БД (порог этого ключа ещё ни разу не
-    калибровался) возвращает `default`, ничего не создавая и не трогая
-    БД — инициализация строки принадлежит `recalibrate_antifraud_thresholds`
-    (или ручному вводу в admin), а не побочному эффекту чтения.
+    """Текущее значение антифрод-порога (с кэшем).
+    Если строки в БД нет — возвращает default, ничего не создаёт.
     """
     from django.core.cache import cache
 
@@ -157,13 +98,10 @@ def get_antifraud_threshold(key: str, default: float) -> float:
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=30)
 def check_and_award_badges_task(self, user_id: str, match_id: str | None = None) -> bool:
-    """
-    Проверяет достижения пользователя и уведомляет о новых.
+    """Проверяет достижения пользователя и создаёт уведомления о новых.
 
-    :param user_id: UUID пользователя строкой.
-    :param match_id: UUID матча, в контексте которого выданы достижения
-        (опционально — используется только для привязки уведомления к
-        конкретному матчу через `Notification.related_match`).
+    :param user_id: UUID пользователя.
+    :param match_id: UUID матча для привязки уведомления (опционально).
     """
     from matches.models import Match
     from notifications.models import Notification
@@ -201,9 +139,7 @@ def check_and_award_badges_task(self, user_id: str, match_id: str | None = None)
             action_url="/users/profile/",
             is_read=False,
             related_match=match,
-            # Если дайджест выключен, письмо уйдёт мгновенно ниже — сразу
-            # помечаем как "отправлено", иначе send_notification_digest
-            # разослала бы его ЕЩЁ РАЗ при следующем прогоне.
+            # Письмо уйдёт сразу — помечаем отправленным, чтобы дайджест не продублировал.
             email_sent_at=timezone.now() if not digest_mode else None,
         )
         for badge in awarded
@@ -226,24 +162,8 @@ def check_and_award_badges_task(self, user_id: str, match_id: str | None = None)
 
 @shared_task(bind=True, max_retries=3)
 def award_founder_badge_if_eligible(self, user_id: str, founder_threshold: int = 500) -> bool:
-    """
-    Разовая проверка бейджа «Первопроходец» — вызывается ТОЛЬКО из
-    `users/views.py::VerifyEmailView` в момент первой верификации email
-    (не из `check_and_award_badges`, потому что это событие происходит один
-    раз в жизни аккаунта, а не пересчитывается на каждой оценке).
-
-    2026-09-23, фикс аудита: раньше ранг считался только среди УЖЕ
-    верифицированных пользователей (`is_verified=True, date_joined__lte=...`).
-    Из-за этого сам факт "входишь ли ты в первые `founder_threshold`" зависел
-    не от даты регистрации, а от того, кто ещё успел подтвердить почту к
-    моменту проверки — задержка с верификацией со стороны настоящих ранних
-    пользователей уменьшала знаменатель и позволяла объективно более поздним
-    пользователям (например, 800-му по счёту) проскочить в "первые 500", а
-    ранний пользователь мог откладывать верификацию сколь угодно долго без
-    риска потерять статус. Правило «один из первых N зарегистрированных»
-    должно опираться на `date_joined` СРЕДИ ВСЕХ зарегистрированных
-    аккаунтов (независимо от того, верифицированы они или нет) — тогда ранг
-    фиксирован в момент регистрации и не плавает от чужих действий.
+    """Бейдж «Первопроходец» — вызывается из VerifyEmailView при первой верификации.
+    Ранг считаем по date_joined среди всех аккаунтов, а не только верифицированных.
     """
     from users.models import User, UserBadge
 
@@ -280,17 +200,8 @@ def award_founder_badge_if_eligible(self, user_id: str, founder_threshold: int =
 
 @shared_task
 def flag_suspicious_wizard_speed_task(session_id: str) -> bool:
-    """
-    Антифрод-сигнал «слишком быстрое заполнение вайзарда» по
-    `EvaluationSession.started_at`/`completed_at`.
-
-    Не блокирует пользователя и не отменяет сохранённые оценки — только
-    создаёт запись в очереди модерации (`SuspiciousActivityFlag`) с
-    непрерывным скором; решение по флагу — за модератором, ложные
-    срабатывания (быстрый, но настоящий пользователь) возможны.
-
-    Вызывается через `transaction.on_commit(...)` из
-    `evaluations/views.py::EvaluateMatchFinalView`, не блокирует ответ.
+    """Флаг «слишком быстрое заполнение вайзарда».
+    Никого не блокирует — только создаёт SuspiciousActivityFlag для модерации.
     """
     from evaluations.models import EvaluationSession
     from users.models import SuspiciousActivityFlag
@@ -303,10 +214,7 @@ def flag_suspicious_wizard_speed_task(session_id: str) -> bool:
     if not session or session.status != "completed":
         return False
 
-    # 2026-09-23, раздел «Настройки платформы» (dashboard) — порог теперь
-    # управляется staff без деплоя через ключ fast_wizard_min_seconds,
-    # MIN_HUMAN_WIZARD_SECONDS остаётся запасным значением, пока в БД нет
-    # такой настройки (см. core.models.get_setting).
+    # Порог — из настроек платформы, константа как fallback.
     from core.models import get_setting
     threshold = get_setting("fast_wizard_min_seconds", MIN_HUMAN_WIZARD_SECONDS)
 
@@ -314,7 +222,6 @@ def flag_suspicious_wizard_speed_task(session_id: str) -> bool:
     if duration is None or duration >= threshold:
         return False
 
-    # Чем короче время относительно порога — тем выше скор подозрительности.
     score = round(max(0.0, min(1.0, 1 - (duration / threshold))), 2)
 
     SuspiciousActivityFlag.objects.create(
@@ -338,20 +245,8 @@ def flag_suspicious_wizard_speed_task(session_id: str) -> bool:
 
 @shared_task
 def detect_ip_clusters_task() -> int:
-    """
-    Антифрод-сигнал «кластер аккаунтов с одного IP»: за последние
-    `IP_CLUSTER_LOOKBACK_HOURS` часов ищет пары (матч, IP), с которых
-    оценку завершили ≥`IP_CLUSTER_MIN_ACCOUNTS` РАЗНЫХ аккаунтов — сигнал
-    накрутки голосования фермой аккаунтов.
-
-    Один запрос ко всей таблице за окно + группировка в Python, не N
-    запросов на кластер.
-
-    Как и `flag_suspicious_wizard_speed_task`, никого не блокирует — только
-    создаёт `SuspiciousActivityFlag(source="ip_cluster")` для ручного
-    разбора модератором. Если по паре (пользователь, матч) уже есть
-    неразобранный (`status="pending"`) флаг — новый не создаётся, чтобы
-    периодический прогон не плодил дубли.
+    """Флаг «кластер аккаунтов с одного IP» за последние IP_CLUSTER_LOOKBACK_HOURS.
+    Один запрос + группировка в Python. Дубли pending-флагов не создаём.
     """
     from collections import defaultdict
 
@@ -361,9 +256,7 @@ def detect_ip_clusters_task() -> int:
 
     lookback_hours = get_setting("ip_cluster_lookback_hours", IP_CLUSTER_LOOKBACK_HOURS)
     since = timezone.now() - timedelta(hours=lookback_hours)
-    # Самокалибрующийся порог (см. recalibrate_antifraud_thresholds) —
-    # IP_CLUSTER_MIN_ACCOUNTS остаётся значением по умолчанию/нижней
-    # границей вилки калибровки, а не обязательным действующим числом.
+    # Порог самокалибрующийся, константа — дефолт.
     min_accounts = get_antifraud_threshold(
         "ip_cluster_min_accounts", ANTIFRAUD_CALIBRATED_THRESHOLDS["ip_cluster_min_accounts"]["default"]
     )
@@ -384,7 +277,7 @@ def detect_ip_clusters_task() -> int:
         if account_count < min_accounts:
             continue
 
-        # Непрерывный скор: ровно на пороге — 0.5, дальше растёт до 1.0.
+        # Скор: на пороге 0.5, дальше растёт до 1.0.
         score = round(min(1.0, account_count / (min_accounts * 2)), 2)
 
         for user_id in user_ids:
@@ -418,19 +311,8 @@ def detect_ip_clusters_task() -> int:
 
 @shared_task
 def award_monthly_champion_badge() -> bool:
-    """
-    Бейдж «Чемпион месяца»: разово (как и `founder`) выдаётся тому, кто
-    завершил больше всех оценок за прошедший календарный месяц. Запускается
-    1-го числа каждого месяца в 03:00 (см. `CELERY_BEAT_SCHEDULE` в
-    `dopx/settings.py`).
-
-    Метрика — количество завершённых `EvaluationSession` за месяц, не XP:
-    `UserXP` хранит только текущий суммарный `total_xp`, отдельная
-    помесячная таблица-леджер ради одной метрики избыточна, а завершённые
-    оценки отражают ту же активность.
-
-    Если лидер прошлого месяца уже получал этот бейдж — новый не выдаётся
-    (статусный бейдж "было хотя бы раз", не помесячная история побед).
+    """Бейдж «Чемпион месяца» — лидеру по завершённым оценкам за прошлый месяц.
+    Запуск 1-го числа в 03:00. Повторно одному и тому же не выдаётся.
     """
     from django.db.models import Count
 
@@ -497,34 +379,9 @@ def award_monthly_champion_badge() -> bool:
 
 @shared_task
 def decay_trust_scores_task() -> int:
-    """
-    Раз в месяц, 1-го числа (см. `CELERY_BEAT_SCHEDULE`) — плавно тянет
-    `trust_score` каждого АКТИВНОГО пользователя к нейтральному 1.0.
-
-    2026-09-23, честный аудит формул рейтингов (прямая просьба
-    пользователя): "доверие пользователя не забывает и не прощает" —
-    `calculate_user_trust_adjustment` (aggregates/services.py) двигает
-    trust_score крошечными шагами (±0.05 за завершённую сессию оценки), но
-    НИКАК не возвращается к центру со временем. Без decay человек,
-    голосовавший предвзято когда-то давно и с тех пор исправившийся, весит
-    в формуле ровно так же мало, как и вчера, — а добросовестный, который
-    один раз ошибся, тащит это на себе неограниченно долго.
-
-    Decay работает СИММЕТРИЧНО в обе стороны, поэтому не открывает лазейку
-    сильнее, чем закрывает несправедливость: тот, кто ПРОДОЛЖАЕТ голосовать
-    предвзято, получает новые -0.05 каждую сессию быстрее, чем decay успевает
-    их компенсировать (0.05 за голос против 10% расстояния до 1.0 раз в
-    месяц), а тот, кто перестал — постепенно возвращается к базовому весу.
-    Экспоненциальный шаг (доля РАССТОЯНИЯ до 1.0, не фиксированное число) —
-    чем дальше от центра, тем заметнее шаг, чем ближе — тем меньше,
-    никогда не перескочит через 1.0 и не требует отдельного клампа.
-
-    Намеренно НЕ трогаем пользователей без единой завершённой оценки за
-    TRUST_DECAY_LOOKBACK_DAYS — decay должен возвращать к нейтральности
-    только действующих участников; для того, кто месяцами не голосует, это
-    было бы наградой без всякого нового добросовестного поведения (и
-    симметрично — не поводом отменить прошлое наказание неактивному
-    нарушителю, если он просто исчез, а не изменился).
+    """Раз в месяц тянет trust_score активных пользователей к 1.0.
+    Шаг — доля расстояния до 1.0 (TRUST_DECAY_RATE), работает в обе стороны.
+    Неактивных за TRUST_DECAY_LOOKBACK_DAYS не трогаем.
     """
     from core.models import get_setting
     from evaluations.models import EvaluationSession
@@ -558,16 +415,8 @@ def decay_trust_scores_task() -> int:
 
 @shared_task
 def revalidate_status_badges_task() -> dict:
-    """
-    Раз в месяц (см. `CELERY_BEAT_SCHEDULE`, тот же день, что и
-    decay_trust_scores_task, — обе задачи про "показатель мог измениться со
-    временем, перепроверим") — перепроверяет условия уже выданных статусных
-    бейджей (`users.services.STATUS_BADGE_TYPES`) и помечает is_stale, если
-    показатель упал ниже порога. См. докстринг `UserBadge.is_stale`
-    (users/models.py) и `users.services.revalidate_status_badges`.
-
-    Проходит только по пользователям, у которых ЕСТЬ хотя бы один из этих
-    5 типов бейджей — не по всей таблице User.
+    """Раз в месяц перепроверяет статусные бейджи и ставит is_stale, если показатель упал.
+    Идём только по владельцам таких бейджей.
     """
     from users.models import User, UserBadge
     from users.services import STATUS_BADGE_TYPES, revalidate_status_badges
@@ -604,7 +453,7 @@ def revalidate_status_badges_task() -> dict:
 
 
 def _notify_status_badges_stale(user, badge_types: list[str]) -> None:
-    """Мягкое (не наказывающее) in-app уведомление — бейдж остаётся в профиле, просто помечен."""
+    """Мягкое уведомление — бейдж остаётся, просто помечен."""
     from notifications.models import Notification
     from users.badges import get_badge_definition
 
@@ -644,23 +493,9 @@ def _notify_status_badges_reactivated(user, badge_types: list[str]) -> None:
 
 @shared_task
 def recalibrate_antifraud_thresholds() -> dict:
-    """
-    Еженедельная самокалибровка порогов vote_spike/ip_cluster на основе
-    ФАКТИЧЕСКИХ решений модератора (confirmed/dismissed за последние
-    `ANTIFRAUD_RECALIBRATION_LOOKBACK_DAYS` дней), см. докстринг
-    `users.models.AntiFraudThreshold`:
-
-    - Доля confirmed низкая (детектор в основном создаёт ложные тревоги)
-      → порог сдвигается в сторону "строже" (менее чувствительно).
-    - Доля confirmed высокая (сигнал явно надёжный) → порог сдвигается в
-      сторону "чувствительнее" (можно ловить больше, раз почти всегда
-      попадаем в цель).
-    - Решений меньше `ANTIFRAUD_RECALIBRATION_MIN_SAMPLE` — калибровка
-      этого порога в этот раз пропускается, ничего не трогаем: на
-      маленькой выборке confirm_rate статистически ничего не значит.
-
-    Жёсткие min/max в `ANTIFRAUD_CALIBRATED_THRESHOLDS` не дают уйти в
-    бессмысленную/опасную зону, даже если решения модератора смещены.
+    """Еженедельная калибровка порогов по решениям модератора за окно.
+    Мало confirmed — ужесточаем, много — смягчаем. Мало решений — пропускаем.
+    Вилка min/max не даёт уйти в опасную зону.
     """
     from users.models import AntiFraudThreshold, SuspiciousActivityFlag
 
@@ -720,25 +555,9 @@ def recalibrate_antifraud_thresholds() -> dict:
 
 @shared_task
 def expire_stale_low_score_flags() -> int:
-    """
-    2026-08-24, продуктовый запрос "модерация антифрода должна быть
-    максимально простой и не затратной по времени": очередь `pending`
-    иначе только растёт — старые слабые сигналы, на которые никто не
-    отреагировал, годами висят и создают ложное ощущение "накопился
-    большой долг", хотя реальной ценности в их разборе уже нет.
-
-    Раз в сутки автоматически закрывает флаги, которые ОДНОВРЕМЕННО:
-    - старше ANTIFRAUD_AUTO_EXPIRE_AFTER_DAYS дней;
-    - со score ниже ANTIFRAUD_AUTO_EXPIRE_MAX_SCORE (в UI такие и так
-      серые/"неважные", не жёлтые/красные);
-    - источник НЕ в ANTIFRAUD_AUTO_EXPIRE_EXCLUDED_SOURCES (vote_spike/
-      ip_cluster всегда ждут явного решения человека — оно ещё и кормит
-      самокалибровку; manual — человек завёл сам).
-
-    Статус становится "dismissed", но НЕ как решение модератора — reviewed_by
-    остаётся None, а в `details` добавляется явная пометка `auto_expired`,
-    чтобы в CSV-экспорте/аудите было видно: это была автоматическая уборка,
-    а не чья-то оценка "это ложное срабатывание".
+    """Раз в сутки закрывает старые слабые флаги (возраст > AUTO_EXPIRE_AFTER_DAYS,
+    score < AUTO_EXPIRE_MAX_SCORE, источник не из EXCLUDED_SOURCES).
+    Статус dismissed, reviewed_by=None, в details пометка auto_expired.
     """
     from core.models import get_setting
     from users.models import SuspiciousActivityFlag

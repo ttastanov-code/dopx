@@ -1,10 +1,5 @@
 # dashboard/views.py
-"""
-Staff-only дашборд. Тонкие вьюхи — вся агрегация в `services.py`.
-`staff_member_required` (встроенный django.contrib.admin декоратор) —
-редиректит на `/admin/login/` неавторизованных/не-staff, тот же контракт
-доступа, что уже используется для `/api/docs/` и т.п. (см. dopx/urls.py).
-"""
+"""Staff-дашборд. Вьюхи тонкие, агрегация — в services.py."""
 from __future__ import annotations
 
 import csv
@@ -39,8 +34,7 @@ from . import command_runner, commands_registry, infra_services, parser_tools, s
 from .audit import log_staff_action
 from .models import AuditAction, ManagementCommandRun, StaffActionLog
 
-# Пресеты диапазона для overview — используются и во вьюхе, и в шаблоне
-# (кнопки переключения), единый источник правды на оба конца.
+# Пресеты периода для обзора (вьюха + кнопки в шаблоне).
 OVERVIEW_DAY_PRESETS = [7, 14, 30, 90]
 
 
@@ -81,16 +75,7 @@ def traffic(request):
 
 
 # ============================================================
-# 2026-09-23, раздел «Матчи» — прямая просьба пользователя (вопрос "какого
-# раздела не хватает, чтобы админить без кода" -> ответ "правка матчей" ->
-# "да можешь всё сделать"). Раньше единственный способ поправить руками
-# счёт/статус/дату/тур матча — Django admin, БЕЗ последующего пересчёта
-# агрегатов (staff легко забывал, что после ручной правки счёта рейтинги/
-# таблица остаются старыми, пока не отработает следующий celery-тик).
-# Здесь одна форма правит поля И даёт отдельную кнопку «Пересчитать»,
-# запускающую aggregates.tasks.recalculate_all_aggregates_for_match —
-# тот же таск, что при обычном пересчёте после импорта; ничего не
-# дублируем, а зовём существующую логику напрямую.
+# Матчи: ручная правка и пересчёт агрегатов
 # ============================================================
 
 MATCHES_PAGE_SIZE = 25
@@ -157,9 +142,7 @@ def match_detail(request, match_id):
             else:
                 match.start_time = timezone.make_aware(parsed) if timezone.is_naive(parsed) else parsed
 
-        # Чекбокс отсутствует в POST-данных вовсе, если снят — стандартная
-        # HTML-семантика, не баг; поэтому проверяем через .get(), а не
-        # полагаемся на "поле было прислано".
+        # Снятый чекбокс не приходит в POST.
         match.manual_override = request.POST.get("manual_override") in ("on", "1", "true")
 
         if errors:
@@ -205,11 +188,7 @@ def match_trigger_recalc(request, match_id):
 
 
 # ============================================================
-# 2026-09-23, раздел «Настройки платформы» — та же просьба, что и «Матчи»
-# выше. PlatformSetting (core/models.py) — key-value рантайм-конфиг:
-# пороги/веса/флаги, которые раньше можно было поправить ТОЛЬКО правкой
-# исходников + редеплоем. Секреты (API-ключи, пароли) сюда НЕ заводим —
-# только операционные значения, см. докстринг модели.
+# Настройки платформы (PlatformSetting). Секреты сюда не кладём.
 # ============================================================
 
 @staff_member_required
@@ -296,10 +275,7 @@ def platform_settings_delete(request, key):
 
 
 # ============================================================
-# 2026-09-23, раздел «Пользователи» — см. докстринг dashboard/services.py::
-# users_queryset. Действия сделаны МЯГКИМИ и обратимыми (is_active=False,
-# не удаление данных) — staff-панель не должна давать необратимо стереть
-# человека в один клик.
+# Пользователи. Действия обратимые (is_active=False, без удаления).
 # ============================================================
 
 USERS_PAGE_SIZE = 25
@@ -309,16 +285,7 @@ USERS_PAGE_SIZE = 25
 def users_list(request):
     search = request.GET.get("q", "").strip()
     qs = services.users_queryset(search=search)
-    # 2026-09-23, ЖИВОЙ ПРИМЕР работы раздела «Настройки платформы»
-    # (core.models.get_setting) — по просьбе пользователя объяснить
-    # функционал на конкретном действующем случае, а не только прозой.
-    # Ключ "dashboard_users_page_size" ПОКА не заведён ни у кого в БД —
-    # get_setting() в этом случае просто вернёт запасное значение
-    # USERS_PAGE_SIZE (=25), НИЧЕГО не меняется, пока staff явно не создаст
-    # такую строку в /staff/dashboard/settings/. Как только он это сделает
-    # (тип "Целое число", значение например "10") — в течение минуты
-    # (PLATFORM_SETTING_CACHE_TTL) эта страница начнёт показывать по 10
-    # пользователей вместо 25, БЕЗ перезапуска сервера.
+    # Размер страницы — из настроек платформы (dashboard_users_page_size), по умолчанию 25.
     page_size = get_setting("dashboard_users_page_size", USERS_PAGE_SIZE)
     users_page = Paginator(qs, page_size).get_page(request.GET.get("page"))
     context = {
@@ -348,9 +315,7 @@ def user_detail(request, user_id):
 def user_toggle_ban(request, user_id):
     User = get_user_model()
     user_obj = get_object_or_404(User, id=user_id)
-    # Staff не может забанить сам себя из этой кнопки — иначе легко
-    # случайно отрезать себе доступ без второго staff-аккаунта под рукой,
-    # чтобы откатить.
+    # Нельзя забанить самого себя.
     if user_obj.id == request.user.id:
         messages.error(request, "Нельзя заблокировать самого себя")
         return redirect("dashboard:user_detail", user_id=user_obj.id)
@@ -396,11 +361,7 @@ def data_health(request):
 
 @staff_member_required
 def data_health_partial(request):
-    """Той же контент, что и data_health(), но без base.html/_nav.html —
-    цель HTMX-поллинга (hx-get каждые 15с, см. templates/dashboard/
-    data_health.html). Тот же паттерн, что уже используется для
-    live-обновления шапки/событий матча (templates/matches/_match_header.html,
-    _match_events.html)."""
+    """Содержимое data_health без обёртки — для HTMX-поллинга."""
     context = {
         "health": services.data_health_summary(),
         "infra": infra_services.infra_health(),
@@ -409,13 +370,7 @@ def data_health_partial(request):
 
 
 def _resolve_match_for_resync(match_id: str) -> Match | None:
-    """Резолвит матч для кнопки «Досинхронизировать» (см. докстринг
-    data_health_resync_match ниже про то, откуда берётся match_id и почему
-    он не всегда UUID). Сначала пробуем как настоящий Match.id (UUID) —
-    актуальный путь для всех НОВЫХ ссылок в шаблоне. Если строка не
-    парсится как UUID (или под таким UUID матча нет), пробуем как
-    sportmonks_id — путь для legacy-записей в ParserSyncRun.error_samples,
-    оставшихся от удалённого KFF-парсера."""
+    """Ищет матч по UUID, затем по sportmonks_id (старые записи ошибок синка)."""
     import uuid as uuid_module
 
     match = None
@@ -431,29 +386,9 @@ def _resolve_match_for_resync(match_id: str) -> Match | None:
 @staff_member_required
 @require_POST
 def data_health_resync_match(request, match_id):
-    """Кнопка «Досинхронизировать» у конкретного матча в data-health —
-    синхронный full-ресинк через Sportmonks (см. dashboard/parser_tools.py::
-    resync_match), не ждём celery beat. Подходит для точечного случая (1-2
-    проблемных матча); для массового резинка — кнопка «Sportmonks: Сверить
-    календарь сезона» из вкладки «Парсер».
-
-    ИСПРАВЛЕНО (2026-09-22, жалоба пользователя со скриншотом Django 404
-    "Page not found", POST .../matches/19681947/resync/): раньше URL был
-    <uuid:match_id>, а сама кнопка в шаблоне рендерится из ДВУХ разных
-    источников (templates/dashboard/_data_health_content.html) — секция
-    "Матчи с пропущенными данными" всегда даёт настоящий Match.id (UUID),
-    а секция "Последние ошибки" (err.match_id) читает сырое поле
-    ParserSyncRun.error_samples — JSONField, куда УДАЛЁННЫЙ 2026-09-09
-    KFF-парсер когда-то писал числовой id матча (свой собственный, не наш
-    UUID), а текущий Sportmonks-код вообще не пишет error_samples (см.
-    parsers/sportmonks/tasks.py::_record_sync_run). На проде это скрыто
-    (там всегда есть свежие Sportmonks-прогоны с error_samples=[]), но на
-    локальной машине пользователя без запущенного Celery beat "последним
-    прогоном" в БД так и остаётся старая KFF-строка с этими числовыми id
-    — отсюда 404 именно при локальном тестировании. См. _resolve_match_for_
-    resync() выше — пробуем сначала UUID (актуальный путь), затем
-    sportmonks_id (путь для legacy-данных) — вместо того чтобы вообще
-    ронять запрос на уровне роутинга."""
+    """Синхронный полный ресинк одного матча из data-health.
+    match_id — UUID или sportmonks_id (старые записи в error_samples).
+    """
     match = _resolve_match_for_resync(match_id)
     if match is None:
         messages.error(request, f"Матч с id={match_id} не найден (возможно, устаревшая запись об ошибке).")
@@ -481,10 +416,7 @@ def antifraud(request):
 @staff_member_required
 @require_POST
 def antifraud_flag_action(request, flag_id):
-    """Одна кнопка = одно решение. Логика 1:1 с `users/admin.py::
-    SuspiciousActivityFlagAdmin.mark_confirmed/mark_dismissed` — тот же
-    контракт (status + reviewed_by + reviewed_at), просто без захода в
-    Django admin ради разового триажа."""
+    """Подтвердить/отклонить флаг — та же логика, что в админке."""
     flag = get_object_or_404(SuspiciousActivityFlag, id=flag_id)
     action = request.POST.get("action")
 
@@ -498,16 +430,12 @@ def antifraud_flag_action(request, flag_id):
     flag.save(update_fields=["status", "reviewed_by", "reviewed_at", "updated_at"])
 
     if action == "dismiss":
-        # 2026-09-24, БАГ: раньше здесь только менялся статус — поправка
-        # рейтинга оставалась, хотя карточка обещала "сразу снимется".
+        # «Отклонить» снимает авто-поправку рейтинга.
         from aggregates.tasks import apply_divergence_dismissal
 
         apply_divergence_dismissal([flag])
 
-    # 2026-08-23, anti-brigading: flag.user может быть None у entity-level
-    # сигналов (source="vote_spike" — аномалия у игрока/команды/тренера,
-    # а не у конкретного пользователя, см. users/models.py::
-    # SuspiciousActivityFlag). target — content_object в этом случае.
+    # У entity-сигналов (vote_spike и т.п.) user пустой — цель это content_object.
     flag_target = flag.user.username if flag.user else str(flag.content_object or flag.get_source_display())
 
     messages.success(
@@ -525,9 +453,7 @@ def antifraud_flag_action(request, flag_id):
 
 @staff_member_required
 def antifraud_export_csv(request):
-    """Выгрузка текущей очереди (флаги + диспуты) в CSV — нужно для разбора
-    вне браузера (Excel/Google Sheets) или передачи саппорту/юристам без
-    доступа в Django admin."""
+    """Выгрузка очереди антифрода (флаги + диспуты) в CSV."""
     queue = services.antifraud_queue(limit=1000)
 
     response = HttpResponse(content_type="text/csv")
@@ -537,11 +463,9 @@ def antifraud_export_csv(request):
     writer = csv.writer(response)
     writer.writerow(["Тип", "ID", "Пользователь", "Источник/тема", "Создано"])
     for flag in queue["pending_flags"]:
-        # flag.user может быть None у entity-level сигналов (vote_spike) —
-        # см. коммент в antifraud_flag_action выше.
+        # У entity-сигналов user пустой.
         who = flag.user.username if flag.user else f"[сущность] {flag.content_object or '—'}"
-        # _csv_safe — защита от CSV/formula injection (see core/admin_actions.py):
-        # who/subject приходят из пользовательского ввода (username, тема диспута).
+        # _csv_safe — защита от formula injection.
         writer.writerow([_csv_safe(v) for v in (
             "Флаг", flag.id, who, flag.get_source_display(), flag.created_at.isoformat(),
         )])
@@ -558,8 +482,7 @@ def antifraud_export_csv(request):
 
 
 # ============================================================
-# Центр доверия к данным (2026-09-09) — см. services.data_trust_summary
-# докстринг для разделения ответственности с data_health.
+# Центр доверия к данным
 # ============================================================
 
 @staff_member_required
@@ -578,11 +501,7 @@ def data_trust(request):
 @staff_member_required
 @require_POST
 def data_trust_resolve_report(request, submission_id):
-    """Закрыть жалобу «Ошибка в данных матча» из очереди — staff уже
-    проверил/исправил данные (в /admin/matches/match/ и т.п.), это просто
-    снимает пункт с очереди с отметкой, кто и когда. status берётся из
-    формы ('resolved' по умолчанию, 'closed' — для явно нерелевантных
-    обращений без содержательного ответа)."""
+    """Закрыть жалобу на данные матча. status: 'resolved' (по умолчанию) или 'closed'."""
     submission = get_object_or_404(ContactSubmission, id=submission_id, category="data_error")
     new_status = request.POST.get("status", "resolved")
     if new_status not in ("resolved", "closed"):
@@ -605,11 +524,7 @@ def data_trust_resolve_report(request, submission_id):
 @staff_member_required
 @require_POST
 def data_trust_review_discrepancy(request, discrepancy_id):
-    """Тот же экшен, что parsers/admin.py::ParserDiscrepancyAdmin.mark_reviewed
-    (по одной записи, не bulk), но без захода в Django admin — очередь
-    теперь полноценно живёт на этой странице (2026-09-09, запрошено
-    пользователем: "сделай страницу более функциональной"), не просто
-    счётчик+ссылка, как раньше."""
+    """Отметить расхождение импорта как разобранное."""
     discrepancy = get_object_or_404(ParserDiscrepancy, id=discrepancy_id)
     discrepancy.reviewed = True
     discrepancy.reviewed_by = request.user
@@ -625,24 +540,15 @@ def data_trust_review_discrepancy(request, discrepancy_id):
 
 
 # ============================================================
-# Парсер-тулинг: поиск матча, ручной ресинк, ручной запуск задач
+# Инструменты парсера: поиск матча, ресинк, ручной запуск задач
 # ============================================================
 
 @staff_member_required
 def parser_tools_view(request):
-    """Единая страница инструментов парсера (задача #91/#92/#93, расширено
-    задачей "польза для решения проблем проекта" — добавлены поиск матча,
-    live-проверка API и инспекция очереди celery; 2026-09-09 — вся KFF-часть
-    (сырой JSON-вьюер, отдельный health-check, KFF-задачи) физически удалена
-    по решению пользователя, Sportmonks остался единственным источником):
-      - поиск матча по названию команд/sportmonks_id → UUID и быстрые ссылки;
-      - живая (синхронная) проверка доступности Sportmonks API;
-      - список активных/зарезервированных celery-задач с revoke;
-      - кнопки ручного запуска celery-задач синка (с дебаунсом).
-    Ресинк конкретного матча живёт на вкладке data-health (там есть список
-    матчей под рукой), сюда вынесены только "безадресные" инструменты."""
-    # Поиск матча — не логируем в аудит (read-only просмотр, тот же
-    # уровень чувствительности, что и обычный список в Django admin).
+    """Страница инструментов парсера: поиск матча, проверка API,
+    очередь celery с отзывом задач, ручной запуск задач синка.
+    """
+    # Поиск в аудит не пишем.
     search_query = request.GET.get("q", "").strip()
     search_year_param = request.GET.get("year", "")
     search_year = int(search_year_param) if search_year_param.isdigit() else None
@@ -665,18 +571,9 @@ def parser_tools_view(request):
         "search_available_years": parser_tools.available_search_years(),
         "celery_tasks": parser_tools.list_active_celery_tasks(),
         "sportmonks_health": parser_tools.get_cached_sportmonks_health(),
-        # НЕ через кэш health-check (тот снимок делается только по клику
-        # «Проверить доступность» и тогда быстро устаревает) — читаем
-        # счётчик напрямую при КАЖДОЙ загрузке страницы, дёшево (два
-        # cache.get) и всегда актуально, т.к. инкрементируется в фоне из
-        # любой задачи синка/live-опроса (2026-09-09, баг найден
-        # пользователем: "вообще не сходится кол-во запросов", см.
-        # parsers/sportmonks/client.py::get_request_counts докстринг).
+        # Счётчик запросов к API читаем напрямую из кэша при каждой загрузке.
         "sportmonks_request_counts": get_request_counts(),
-        # Рубильник синка (2026-09-23) — читаем через тот же get_setting(),
-        # что и сама задача-гейт, чтобы карточка на странице ВСЕГДА
-        # показывала то же значение, что реально видят celery-задачи (а не
-        # отдельный прямой ORM-запрос, который мог бы разойтись с кэшем).
+        # Рубильник синка — через get_setting(), как и сами задачи.
         "sportmonks_sync_enabled": get_setting("sportmonks_sync_enabled", True),
     }
     return render(request, "dashboard/parser_tools.html", context)
@@ -684,10 +581,7 @@ def parser_tools_view(request):
 
 @staff_member_required
 def parser_tasks_partial(request):
-    """Карточка «Очередь celery» на странице parser_tools — цель
-    HTMX-поллинга (hx-get каждые 10с). Только этот кусок, а не вся
-    страница — иначе перетирались бы форма поиска, которую staff мог
-    только что заполнить (см. комментарий в _celery_tasks_card.html)."""
+    """Карточка очереди celery для HTMX-поллинга."""
     context = {"celery_tasks": parser_tools.list_active_celery_tasks()}
     return render(request, "dashboard/_celery_tasks_card.html", context)
 
@@ -708,17 +602,9 @@ def parser_trigger_task(request):
 @staff_member_required
 @require_POST
 def parser_sportmonks_health_check(request):
-    """Живая проверка "это мы или у них API лежит" — синхронный вызов.
-
-    ПЕРЕДЕЛАНО (2026-09-09, жалоба пользователя на карточку "Доступность
-    Sportmonks API": "огромная пустота и кнопка в самом низу" — у карточки
-    не было НИКАКОГО контента, кроме заголовка/описания/кнопки, а результат
-    уходил в messages где-то в другом месте страницы, визуально никак не
-    привязанный к самой карточке): теперь при HTMX-запросе (кнопка на
-    странице — hx-post) отдаём partial с результатом ПРЯМО в карточку
-    (см. _sportmonks_health_result.html), a не редиректим всю страницу.
-    Обычный (не-HTMX) POST — на случай отключённого JS/прямого curl —
-    по-прежнему работает через messages+redirect, как раньше."""
+    """Синхронная проверка доступности Sportmonks API.
+    HTMX-запрос получает результат прямо в карточку, обычный POST — messages + redirect.
+    """
     result = parser_tools.sportmonks_api_health_check()
     log_staff_action(
         request, AuditAction.SPORTMONKS_HEALTH_CHECK,
@@ -741,28 +627,12 @@ SPORTMONKS_SYNC_ENABLED_KEY = "sportmonks_sync_enabled"
 @user_passes_test(lambda u: u.is_superuser)
 @require_POST
 def sportmonks_sync_toggle(request):
-    """Рубильник синка с Sportmonks (2026-09-23, прямая просьба пользователя:
-    "у меня закончилась пробная подписка на sportmonks. Сыпятся ошибки...
-    можем сделать кнопку которая включает и выключает парсер? без
-    перезагрузки сервисов и тд?").
+    """Включить/выключить синк с Sportmonks (только суперпользователь).
 
-    Только is_superuser (не просто staff) — это способен полностью
-    остановить обновление данных на всём сайте, а не точечное действие.
-
-    Механизм — обычный PlatformSetting (bool), читаемый функцией
-    parsers/sportmonks/tasks.py::_sync_enabled() первой строкой в КАЖДОЙ из
-    6 задач синка (live-опрос, до-синк статистики, составы, календарь,
-    травмы/дисквалификации, health-check). Без перезапуска воркеров/beat:
-    тикер Celery Beat продолжает срабатывать по расписанию как раньше, но
-    тело задачи сразу выходит, не делая ни одного запроса к API — то же
-    60-секундное кэширование, что у всех остальных настроек платформы (см.
-    core.models.get_setting), так что выключение применяется практически
-    сразу, а не мгновенно в течение секунды.
-
-    НЕ трогает: sportmonks_sync_coach_activity (не ходит в API, чистая
-    гигиена локальной БД) и ручную кнопку "Проверить доступность" в
-    parser_tools.py (осознанная диагностика должна работать всегда, в т.ч.
-    чтобы понять, что пора включать синк обратно)."""
+    PlatformSetting sportmonks_sync_enabled проверяется в начале каждой задачи синка,
+    перезапуск воркеров не нужен (кэш настроек — 60 с). Не влияет на
+    sportmonks_sync_coach_activity и ручную проверку доступности API.
+    """
     setting, created = PlatformSetting.objects.get_or_create(
         key=SPORTMONKS_SYNC_ENABLED_KEY,
         defaults={
@@ -799,10 +669,7 @@ def sportmonks_sync_toggle(request):
 @staff_member_required
 @require_POST
 def parser_revoke_task(request, task_id):
-    """Отзыв/остановка конкретной celery-задачи по id (из таблицы "Активные
-    задачи" на этой же странице). terminate=True — только по явному чекбоксу
-    в форме, см. комментарий в parser_tools.py::revoke_celery_task про риск
-    SIGKILL посреди транзакции."""
+    """Отзыв celery-задачи. terminate=True — только по явному чекбоксу."""
     terminate = request.POST.get("terminate") == "1"
     success, message = parser_tools.revoke_celery_task(task_id, terminate=terminate)
     (messages.success if success else messages.error)(request, message)
@@ -814,37 +681,22 @@ def parser_revoke_task(request, task_id):
 
 
 # ============================================================
-# "Скрипты и команды" — management-команды из staff-панели
-# (2026-09-22, прямая просьба пользователя: seed_full_history с
-# настройками + очистка/удаление + все тестовые скрипты в один раздел).
-# См. dashboard/commands_registry.py (allowlist + схема аргументов) и
-# dashboard/command_runner.py (валидация + запуск, sync для readonly-
-# диагностики, через Celery — для остального).
+# Скрипты и команды: запуск management-команд из дашборда.
+# См. commands_registry.py и command_runner.py.
 # ============================================================
 
 SCRIPTS_RUNS_PAGE_SIZE = 15
 
 
 def _scripts_runs_page(request):
-    """Общий постраничный запрос истории запусков — используется и при
-    первой загрузке страницы (scripts_view), и при HTMX-поллинге
-    (scripts_runs_partial), чтобы номер страницы не расходился между ними.
-
-    2026-09-23, прямая просьба пользователя: "историю запусков с
-    пагинацией, но чтобы страница при перелистывании не обновлялась
-    целиком, и чтобы данные продолжали жить в реальном времени". Раньше
-    список был жёстко обрезан [:30] без постраничности вообще. Обычный
-    Django Paginator, тот же приём, что и "Недавно разобранные" на
-    names_review.html (Paginator(qs, N).get_page(request.GET.get('page'))).
-    """
+    """История запусков с пагинацией — общая для страницы и HTMX-поллинга."""
     qs = ManagementCommandRun.objects.select_related("triggered_by").order_by("-created_at")
     return Paginator(qs, SCRIPTS_RUNS_PAGE_SIZE).get_page(request.GET.get("page"))
 
 
 @staff_member_required
 def scripts_view(request):
-    """Главная страница раздела — карточки по категориям (сидирование,
-    очистка, пересчёт, диагностика) + история последних запусков."""
+    """Раздел «Скрипты и команды»: команды по категориям + история запусков."""
     context = {
         "page_title": "Скрипты и команды — DOPX Staff",
         "active_tab": "scripts",
@@ -856,16 +708,7 @@ def scripts_view(request):
 
 @staff_member_required
 def scripts_runs_partial(request):
-    """Таблица последних запусков — цель HTMX-поллинга (hx-get каждые 4с),
-    тот же приём, что и «Очередь celery» на странице parser_tools (см.
-    parser_tasks_partial выше) — обновляет статус PENDING/RUNNING → SUCCESS/
-    FAILED без перезагрузки всей страницы и без потери заполненных форм.
-
-    2026-09-23: ?page= читается из того же query string, которым бьёт по
-    этому же URL сам поллинг (см. докстринг в _scripts_runs_table.html про
-    hx-swap="outerHTML" — каждый ответ несёт актуальный номер страницы в
-    СВОЕМ СОБСТВЕННОМ hx-get, поэтому следующий тик поллинга сам бьёт по
-    той же странице, что сейчас открыта у staff, а не сбрасывает на 1-ю)."""
+    """Таблица запусков для HTMX-поллинга. ?page= сохраняется между тиками."""
     context = {"recent_runs": _scripts_runs_page(request)}
     return render(request, "dashboard/_scripts_runs_table.html", context)
 
@@ -873,12 +716,9 @@ def scripts_runs_partial(request):
 @staff_member_required
 @require_POST
 def scripts_trigger(request):
-    """Запуск одной команды из allowlist'а COMMAND_REGISTRY. `apply`
-    приходит отдельным чекбоксом формы — команды с has_apply_flag=True без
-    него всегда делают dry-run (см. докстринг CommandSpec.danger в
-    commands_registry.py). cleanup_load_test — единственная команда без
-    своего --apply вообще, поэтому для неё форма требует вписать имя
-    команды текстом (сверяем здесь, а не полагаемся только на JS)."""
+    """Запуск команды из COMMAND_REGISTRY. Без чекбокса apply опасные команды
+    делают dry-run. Для cleanup_load_test нужно вписать имя команды.
+    """
     command_name = request.POST.get("command_name", "")
     spec = commands_registry.get_command(command_name)
     if spec is None:
@@ -908,23 +748,9 @@ def scripts_trigger(request):
 @staff_member_required
 @require_POST
 def scripts_revoke_run(request, run_id):
-    """Остановить уже поставленную/выполняющуюся команду из "Скрипты и
-    команды" (2026-09-22, прямая просьба пользователя — при разовом прогоне
-    verify_names_with_ai --all --limit 0 не было способа прервать). Команда
-    выполняется синхронным Python-циклом (call_command внутри celery-таска,
-    см. dashboard/tasks.py::run_management_command) — она НЕ проверяет
-    какой-либо "флаг отмены" между итерациями, поэтому мягкий
-    app.control.revoke() (terminate=False) тут бесполезен для УЖЕ
-    запущенной задачи: он только помешал бы ей стартовать, если бы она
-    ещё была в очереди. Раз статус RUNNING — процесс уже внутри цикла,
-    единственный реальный способ прервать — terminate=True (SIGTERM
-    воркеру), поэтому здесь жёстко используем terminate=True без формы
-    выбора (в отличие от parser_revoke_task, где soft-revoke имеет смысл
-    для задач, которые могут быть ещё в очереди). SIGTERM посреди
-    call_command может прервать сохранение ОДНОЙ NameVerificationSuggestion
-    на середине — не хуже, чем оставить бежать 40+ минут без возможности
-    остановить, и в любом случае каждая suggestion сохраняется по одной за
-    раз (см. verify_names_with_ai.py), а не одной большой транзакцией."""
+    """Остановить запущенную команду. Команда крутится в синхронном цикле внутри
+    celery-задачи, поэтому только terminate=True (SIGTERM).
+    """
     run = get_object_or_404(ManagementCommandRun, id=run_id)
 
     if run.status not in (ManagementCommandRun.Status.PENDING, ManagementCommandRun.Status.RUNNING):
@@ -951,40 +777,17 @@ def scripts_revoke_run(request, run_id):
 
 
 # ============================================================
-# "Проверка ФИО (ИИ)" — очередь на подтверждение предложений Gemini
-# (2026-09-22, прямая просьба пользователя после жалобы "Сергий Малий"
-# вместо "Сергий Малый"). Заполняется командой verify_names_with_ai
-# (запускается вручную из "Скрипты и команды" — dashboard/
-# commands_registry.py::COMMAND_REGISTRY["verify_names_with_ai"]).
-# Approve/reject ПРИНЦИПИАЛЬНО ручные — прямое решение пользователя
-# ("всегда через ручное подтверждение в дашборде"), см. parsers/name_ai.py
-# докстринг про то, почему автоприменение рискованно.
+# Проверка ФИО (ИИ): ручное подтверждение предложений Gemini.
 # ============================================================
 
 def _names_review_queue_context() -> dict:
-    """Общая часть контекста для names_review (полная страница) и
-    names_review_partial (HTMX-поллинг, см. ниже) — только «живая» часть
-    очереди (Ждут проверки / Ошибки Gemini), которая меняется прямо во
-    время фонового прогона verify_names_with_ai. «Недавно разобранные»
-    сюда намеренно НЕ входит — она с пагинацией (?page=N), и слепой
-    авто-swap каждые N секунд сбрасывал бы пользователя на 1-ю страницу
-    посреди просмотра истории; это не так критично к live-обновлению, как
-    сама очередь."""
+    """Живая часть очереди (ждут проверки / ошибки Gemini) для страницы и HTMX-поллинга.
+    «Недавно разобранные» с пагинацией сюда не входят.
+    """
     pending = NameVerificationSuggestion.objects.filter(status="pending_review").order_by("-created_at")
-    # 2026-09-22, прямая просьба пользователя ("не хватает кнопки
-    # подтвердить все/отклонить все"): счётчик для кнопки массового
-    # подтверждения — только те pending_review, где сам Gemini сказал
-    # matches_current=True (текущее написание и так верное, менять
-    # нечего). Настоящие ПРЕДЛОЖЕНИЯ ИЗМЕНЕНИЙ под это не попадают —
-    # они по-прежнему разбираются по одному, см. names_review_bulk_confirm_matches.
+    # Для массового подтверждения — только где Gemini согласен с текущим написанием.
     matches_count = pending.filter(matches_current=True).count()
-    # 2026-09-22: бейдж в шаблоне раньше считал len(failed_suggestions) —
-    # а список уже обрезан [:20] ради производительности страницы, поэтому
-    # цифра в бейдже молчаливо занижалась на всё, что после 20-й записи
-    # (при разовом прогоне --all --limit 0 ошибок вполне может быть больше
-    # 20 за раз). Отдельный .count() ДО среза — честное общее число,
-    # список ниже как был ограничен 20 (это разумно — не рендерить сотни
-    # карточек), просто бейдж и рендер теперь не одно и то же.
+    # Честный общий счётчик ошибок до среза [:20].
     failed_qs = NameVerificationSuggestion.objects.filter(status="check_failed").order_by("-created_at")
     failed_count = failed_qs.count()
     failed = failed_qs[:20]
@@ -998,12 +801,7 @@ def _names_review_queue_context() -> dict:
 
 @staff_member_required
 def names_review(request):
-    # 2026-09-22, прямая просьба пользователя: "Недавно разобранные" раньше
-    # был жёсткий срез [:20] без возможности посмотреть более старые записи
-    # — при разовом прогоне --all --limit 0 --recheck по 914 сущностям
-    # список решённых быстро растёт далеко за 20, а посмотреть, что было
-    # решено вчера/позавчера, было нельзя вообще. Обычный Django Paginator
-    # — постранично, 20 на страницу, ?page=N в query string.
+    # «Недавно разобранные» — постранично по 20.
     recent_decided_qs = (
         NameVerificationSuggestion.objects.filter(status__in=["approved", "rejected"])
         .select_related("reviewed_by").order_by("-reviewed_at")
@@ -1022,38 +820,17 @@ def names_review(request):
 
 @staff_member_required
 def names_review_partial(request):
-    """Цель HTMX-поллинга (hx-trigger="every 6s") для карточек «Ждут
-    проверки» и «Ошибки запроса к Gemini» на names_review.html — тот же
-    приём, что и scripts_runs_partial для истории запусков: пока в фоне
-    крутится verify_names_with_ai, staff видит новые предложения/ошибки
-    без ручного обновления страницы. 6с (не 4с, как у истории запусков) —
-    внутри карточек есть текстовые поля (staff иногда правит имя/фамилию
-    перед подтверждением); более редкий поллинг снижает шанс перетереть
-    незаконченный ввод слепым swap'ом."""
+    """Карточки очереди для HTMX-поллинга (раз в 6 с — внутри есть поля ввода)."""
     return render(request, "dashboard/_names_review_queue.html", _names_review_queue_context())
 
 
 @staff_member_required
 @require_POST
 def names_review_bulk_confirm_matches(request):
-    """Массовое подтверждение (2026-09-22, прямая просьба пользователя —
-    при --all кандидатов, где Gemini лишь подтвердил уже верное написание,
-    набирается много, и щёлкать «Подтвердить» по одной неудобно).
-
-    ВАЖНО: трогает ТОЛЬКО pending_review с matches_current=True — то есть
-    сам Gemini сказал "менять нечего". Настоящие предложения ИЗМЕНИТЬ
-    написание сюда не попадают ни при каких условиях — они по-прежнему
-    идут через ручное подтверждение по одной карточке (прямое решение
-    пользователя "всегда через ручное подтверждение", см. докстринг
-    parsers/name_ai.py). Это чисто веб-вьюха (без Celery) — можно жать в
-    любой момент, даже пока в фоне ещё работает verify_names_with_ai.
-
-    Раньше (до этого бака) name_source не обновлялся, если итоговое имя
-    совпадало с текущим (see names_review_action — там update_fields
-    остаётся пустым и entity.save() не вызывается вовсе). Здесь — ровно
-    противоположный случай: сам факт "Gemini подтвердил" — это и есть
-    полноценная верификация, поэтому name_source обновляется на
-    ai_verified ВСЕГДА, даже если текст ФИО не изменился ни на символ."""
+    """Массово подтверждает только те предложения, где Gemini сказал, что текущее
+    написание верное. Реальные исправления разбираются по одному.
+    name_source всегда становится ai_verified.
+    """
     qs = NameVerificationSuggestion.objects.filter(status="pending_review", matches_current=True)
     confirmed = 0
     skipped = 0
@@ -1108,17 +885,10 @@ def names_review_bulk_confirm_matches(request):
 @staff_member_required
 @require_POST
 def names_review_action(request, suggestion_id):
-    """`action=approve` — пишет ConfirmedNameCorrection (переживает будущие
-    синки, см. parsers/sportmonks/importers.py::_apply_known_name_corrections)
-    И СРАЗУ обновляет саму сущность, не дожидаясь следующего импорта.
-    `action=reject`/дисмисс check_failed — только меняет статус очереди,
-    данные сайта не трогает.
-
-    first_name/last_name в POST — ПРЕДЗАПОЛНЕНЫ предложением Gemini в форме
-    (names_review.html), но staff мог поправить их перед кликом
-    «Подтвердить» (Gemini тоже может почти угадать, но не идеально) —
-    сверяем именно с ЭТИМИ значениями, не с suggestion.suggested_*, чтобы
-    ручная правка не терялась."""
+    """approve — пишет ConfirmedNameCorrection и сразу обновляет сущность.
+    reject/скрыть ошибку — только очередь, данные сайта не трогает.
+    Имя берём из формы: staff мог поправить предложение Gemini.
+    """
     suggestion = get_object_or_404(NameVerificationSuggestion, id=suggestion_id)
     action = request.POST.get("action")
 
@@ -1131,19 +901,8 @@ def names_review_action(request, suggestion_id):
         return redirect("dashboard:names_review")
 
     if action == "reject":
-        # 2026-09-22: "Скрыть" у check_failed (технический сбой вызова
-        # Gemini — 429/сеть/невалидный JSON) шлёт ТУ ЖЕ форму с action=
-        # reject, что и настоящее "Отклонить" у pending_review (staff
-        # осознанно решил, что текущее написание верное). Раньше оба
-        # случая безусловно превращались в status="rejected" — а это
-        # НЕ check_failed, значит запись начинала считаться "уже
-        # разобранной" в verify_names_with_ai.py::already_suggested_ids
-        # и переставала сама попадать в обычный (без --recheck) прогон.
-        # Технический сбой — это не решение по ФИО, удаляем запись
-        # целиком вместо подмены статуса: следующий обычный прогон
-        # увидит "предложения по этой сущности вообще нет" и проверит
-        # заново сам, без --recheck (который бы дополнительно тратил
-        # вызовы на уже одобренные/отклонённые записи).
+        # «Скрыть» у технической ошибки Gemini удаляет запись, чтобы следующий
+        # обычный прогон проверил сущность заново.
         if suggestion.status == "check_failed":
             target = f"{suggestion.entity_label}:{suggestion.object_id}"
             details = {
@@ -1167,7 +926,6 @@ def names_review_action(request, suggestion_id):
         messages.success(request, "Предложение отклонено.")
         return redirect("dashboard:names_review")
 
-    # action == "approve"
     final_first = (request.POST.get("first_name") or suggestion.suggested_first_name or "").strip()
     final_last = (request.POST.get("last_name") or suggestion.suggested_last_name or "").strip()
     if not final_first and not final_last:
@@ -1220,9 +978,7 @@ def names_review_action(request, suggestion_id):
 
 
 def _player_dup_stats(player: Player) -> dict:
-    """Те же цифры, что в players/management/commands/diagnose_duplicate_players.py
-    (см. его докстринг про разбивку по ПРОИСХОЖДЕНИЮ данных, не "надёжности") —
-    только не print(), а словарь для шаблона очереди «Дубли игроков»."""
+    """Сводка по дублям игроков для очереди."""
     return {
         "player": player,
         "appearances": player.matchlineupplayer_set.count(),
@@ -1234,18 +990,9 @@ def _player_dup_stats(player: Player) -> dict:
 
 @staff_member_required
 def duplicate_players_review(request):
-    """/staff/dashboard/duplicate-players/ — очередь «Дубли игроков»
-    (2026-09-22, прямая просьба пользователя после "пздц это муторно
-    копировать, вставлять... плюс эти UUID огромные не вмещаются"). Флаги —
-    parsers/sportmonks/importers.py::_flag_potential_duplicate_player,
-    ставятся на импорте при повторном совпадении ФИО в команде.
-
-    В отличие от merge_duplicate_players (CLI/"Скрипты и команды"), тут id
-    НЕ вводятся руками — они уже лежат в самом флаге PotentialDuplicatePlayer,
-    а слияние (players/services.py::merge_players) выполняется СИНХРОННО
-    прямо во view — не через Celery/ManagementCommandRun, поллинга статуса
-    тут в принципе нет, потому что нечего поллить: ответ на клик готов
-    сразу же (несколько быстрых DB-запросов, не часовой прогон API)."""
+    """Очередь «Дубли игроков». Флаги ставит импорт при совпадении ФИО в команде.
+    Слияние выполняется синхронно во вьюхе.
+    """
     flags = list(
         PotentialDuplicatePlayer.objects.filter(reviewed=False)
         .select_related("existing_player__team", "new_player__team")
@@ -1270,12 +1017,9 @@ def duplicate_players_review(request):
 @staff_member_required
 @require_POST
 def duplicate_players_merge(request, flag_id):
-    """`keep=existing|new` — какую из двух записей флага оставляем, вторую
-    сливаем и удаляем (players/services.py::merge_players, apply=True).
-    HTMX-запрос (кнопка в очереди) получает в ответ пустой "разобрано"-
-    партиал для hx-swap на месте карточки — без перезагрузки страницы и без
-    прокрутки истории; обычный POST (JS отключён/недоступен) — редирект
-    обратно в очередь."""
+    """keep=existing|new — какую запись оставить, вторая сливается и удаляется.
+    HTMX получает пустой партиал на место карточки, обычный POST — редирект.
+    """
     flag = get_object_or_404(PotentialDuplicatePlayer, id=flag_id)
     keep_side = request.POST.get("keep")
     if keep_side not in ("existing", "new"):
@@ -1308,9 +1052,7 @@ def duplicate_players_merge(request, flag_id):
 @staff_member_required
 @require_POST
 def duplicate_players_dismiss(request, flag_id):
-    """Флаг — ложное срабатывание (это реально разные люди с одинаковым
-    ФИО в одной команде, не дубль). Просто помечает reviewed=True, данные
-    игроков не трогает."""
+    """Не дубль (разные люди) — просто отмечаем флаг разобранным."""
     flag = get_object_or_404(PotentialDuplicatePlayer, id=flag_id)
     if flag.reviewed:
         messages.warning(request, "Этот флаг уже разобран.")
@@ -1335,19 +1077,10 @@ def duplicate_players_dismiss(request, flag_id):
     return redirect("dashboard:duplicate_players_review")
 
 
-# Единая staff-страница по всей партнёрской монетизации: embed-виджеты
-# (инструкция + превью + генератор кода) и баннеры/рефералки (сводные
-# карточки + топ-N из partners/selectors.py) — раньше были не связаны и
-# частично вообще без staff-UI.
+# Реклама и виджеты: embed-виджеты и баннеры/рефералки на одной странице.
 
 def _ads_stats_context() -> dict:
-    """
-    Вся статистика за 30 дней (виджеты + баннеры + рефералки) — вынесена
-    из ads() отдельно, чтобы её могли считать И обычный рендер страницы
-    (первая отрисовка), И ads_stats_partial() (HTMX-поллинг, тот же
-    паттерн, что у data_health_partial()/_data_health_content.html) без
-    дублирования логики batch-резолва id → объект.
-    """
+    """Статистика за период (виджеты, баннеры, рефералки) — для страницы и HTMX-поллинга."""
     from partners.selectors import (
         banner_totals,
         partner_referral_totals,
@@ -1360,8 +1093,7 @@ def _ads_stats_context() -> dict:
     from players.models import Player
     from teams.models import Team
 
-    # 2026-09-23, «Настройки платформы» — окно и размер топов управляются
-    # staff без деплоя, 30/10 остаются запасными значениями.
+    # Период и размер топов — из настроек платформы.
     window_days = get_setting("ads_stats_window_days", 30)
     top_limit = get_setting("ads_top_items_limit", 10)
 
@@ -1410,12 +1142,8 @@ def _ads_stats_context() -> dict:
 
 @staff_member_required
 def ads(request):
-    """
-    /staff/dashboard/ads/ — центральная страница по рекламе и виджетам.
-    q_player/q_team — независимые поля поиска (не один общий q, т.к. это
-    два разных типа сущностей с разным embed-кодом); выбранный результат
-    кладём в контекст, чтобы staff сразу видел готовый код и живое превью,
-    не уходя на сайт искать нужного игрока/команду вручную.
+    """/staff/dashboard/ads/. q_player/q_team — отдельный поиск игрока и команды
+    для генератора embed-кода.
     """
     from core.utils import normalize_kz
     from players.models import Player
@@ -1426,12 +1154,7 @@ def ads(request):
     player_id = request.GET.get("player_id", "")
     team_id = request.GET.get("team_id", "")
 
-    # normalize_kz — тот же паттерн, что уже используется в поиске команд/
-    # игроков/тренеров/судей на сайте и в парсер-тулинге staff-дашборда
-    # (core/utils.py): "Актобе" находит "Ақтөбе" независимо от того, какой
-    # раскладкой набирали название/фамилию. Раньше здесь был обычный
-    # icontains без нормализации — казахские названия по-русски не находились.
-    # 2026-09-23, «Настройки платформы» — управляется staff без деплоя.
+    # Поиск через normalize_kz (казахские буквы). Размер выдачи — из настроек.
     search_limit = get_setting("ads_search_results_limit", 10)
 
     if q_player:
@@ -1452,11 +1175,7 @@ def ads(request):
     else:
         team_results = []
 
-    # Превью по умолчанию (страница без поиска) — берём произвольного
-    # игрока/команду с данными, чтобы виджет не пустовал при первом заходе.
-    # player_id/team_id — явный выбор ОДНОГО конкретного результата из
-    # списка совпадений поиска (клик по бейджу в шаблоне), без него по
-    # умолчанию берётся первый найденный.
+    # Без поиска — превью на произвольном игроке/команде с данными.
     preview_player = None
     if player_id:
         preview_player = next((p for p in player_results if str(p.id) == player_id), None)
@@ -1488,16 +1207,11 @@ def ads(request):
     standings_url = request.build_absolute_uri(reverse("core:standings_widget"))
     standings_embed = _embed_code(standings_url, "Турнирная таблица КПЛ на DOPX", width=340, height=360)
 
-    # Четвёртый виджет (продуктовый запрос 2026-08-22 — "дать возможность
-    # вставлять сборную DOPX на другие сайты"): season_id не передаём —
-    # widget всегда берёт активный сезон главной лиги (Season.get_primary_active),
-    # тот же принцип "без выбора", что и у standings_embed выше.
+    # Виджет сборной сезона — всегда активный сезон.
     best_xi_url = request.build_absolute_uri(reverse("season_squad:widget"))
     best_xi_embed = _embed_code(best_xi_url, "Сборная DOPX сезона на DOPX", width=320, height=420)
 
-    # Пятый виджет (продуктовый запрос 2026-08-22): "DOPX Лучшие тура" —
-    # season_id/tour не передаём, тот же принцип "без выбора" (активный
-    # сезон главной лиги + последний завершённый тур), что у best_xi_embed.
+    # Виджет лучших тура — активный сезон, последний завершённый тур.
     round_url = request.build_absolute_uri(reverse("round_squad:round_widget"))
     round_embed = _embed_code(round_url, "DOPX Лучшие тура", width=320, height=420)
 
@@ -1522,22 +1236,14 @@ def ads(request):
 
 @staff_member_required
 def ads_stats_partial(request):
-    """Тот же контент, что и статистический блок ads(), без base.html/
-    _nav.html — цель HTMX-поллинга (hx-get каждые 20с на этом же блоке),
-    тот же паттерн, что и dashboard:data_health_partial. Поиск/превью
-    виджета НЕ в зоне автообновления — если staff начал набирать имя
-    игрока, очередной poll не должен затирать недопечатанное значение."""
+    """Блок статистики ads() для HTMX-поллинга (поиск и превью не обновляются)."""
     return render(request, "dashboard/_ads_stats_content.html", _ads_stats_context())
 
 
 @staff_member_required
 def audit_log(request):
-    """Вкладка «Аудит» — журнал кастомных staff-экшенов (StaffActionLog).
-    ОБЫЧНЫЕ CRUD-изменения через Django admin (add/change/delete любой
-    модели) сюда НЕ попадают — они уже логируются самим Django в
-    django_admin_log (LogEntry), см. /admin/ → "История" у любого объекта."""
-    # 2026-09-23, «Настройки платформы» — размер журнала управляется staff
-    # без деплоя, 200 остаётся запасным значением, если ключ не заведён.
+    """Журнал кастомных staff-действий (StaffActionLog). CRUD из админки — в django_admin_log."""
+    # Размер журнала — из настроек платформы.
     entries_limit = get_setting("audit_log_entries_limit", 200)
     entries = list(StaffActionLog.objects.select_related("actor")[:entries_limit])
     context = {
@@ -1549,32 +1255,14 @@ def audit_log(request):
 
 
 # ============================================================
-# Объявления: единственное место в проекте, где staff может реально
-# написать и разослать "системную новость платформы" — тумблер
-# email_system (users/models.py::DEFAULT_NOTIFICATION_SETTINGS,
-# templates/users/notification_settings.html) существовал давно, но
-# notification_type='system' до этой страницы использовался только для
-# АВТОМАТИЧЕСКОГО уведомления об изменении Trust Score
-# (evaluations/views.py) — никакого способа отправить настоящую новость
-# не было. См. users/tasks.py про check_and_award_badges_task как пример
-# похожего fan-out-триггера из dashboard-вьюхи.
+# Объявления: системная рассылка всем пользователям.
 # ============================================================
 
 @staff_member_required
 def announcements(request):
-    """
-    /staff/dashboard/announcements/ — форма "заголовок + текст" → уходит
-    ВСЕМ верифицированным пользователям: in-app-уведомление создаётся
-    синхронно (дёшево, один bulk_create — должно появиться у пользователя
-    сразу, не ждать Celery), email — fan-out пачками, тот же паттерн, что
-    у notify_prediction_closing_soon (notifications/tasks.py), с уважением
-    к тумблеру email_system у каждого получателя персонально
-    (_send_email_to_user проверяет его сама).
-
-    Рейт-лимит на самого staff-пользователя (не на IP — это авторизованный
-    2FA-защищённый staff, не аноним) — защита не от злоупотребления, а от
-    случайного двойного сабмита формы (нет прогресс-бара/дизейбла кнопки
-    на время отправки), который иначе продублировал бы рассылку.
+    """Рассылка объявления всем верифицированным пользователям.
+    In-app — сразу одним bulk_create, email — пачками через Celery (с учётом
+    email_system). Рейт-лимит на staff защищает от двойной отправки.
     """
     from core.utils import is_rate_limited
     from notifications.models import Notification
@@ -1594,10 +1282,7 @@ def announcements(request):
         else:
             verified_users = list(User.objects.filter(is_verified=True))
 
-            # In-app — ВСЕМ верифицированным сразу, синхронно. email_system
-            # управляет только email-копией (см. докстринг выше) — так же,
-            # как остальные "email_*"-настройки нигде не скрывают саму
-            # in-app-строку, только письмо.
+            # In-app всем сразу; email_system влияет только на письмо.
             Notification.objects.bulk_create([
                 Notification(
                     user=u, notification_type='system',
@@ -1642,9 +1327,7 @@ EVALUATION_SESSIONS_PAGE_SIZE = 25
 
 @staff_member_required
 def evaluation_sessions_list(request):
-    """2026-09-23, раздел «Модерация оценок» — поиск/фильтр сессий оценки
-    (evaluations.models.EvaluationSession), см. dashboard/services.py::
-    evaluation_sessions_queryset. Свежие сверху (Meta.ordering)."""
+    """Модерация оценок: поиск и фильтр сессий, свежие сверху."""
     search = request.GET.get("q", "").strip()
     status_filter = request.GET.get("status", "").strip()
     mode_filter = request.GET.get("mode", "").strip()
@@ -1681,12 +1364,7 @@ def evaluation_session_detail(request, session_id):
 @staff_member_required
 @require_POST
 def evaluation_session_delete(request, session_id):
-    """Удаляет сессию оценки И все её под-оценки того же (user, match) —
-    "фрод/спам-оценка выпиливается целиком" (см. докстринг services.py::
-    evaluation_session_delete_cascade). После удаления запускаем пересчёт
-    агрегатов матча (той же celery-задачей, что и кнопка «Пересчитать» в
-    «Матчах», см. match_trigger_recalc выше) — удалённые баллы могли влиять
-    на рейтинги игроков/команд этого матча, агрегаты должны это отразить."""
+    """Удаляет сессию оценки со всеми её оценками и запускает пересчёт матча."""
     session = get_object_or_404(
         EvaluationSession.objects.select_related("user", "match"), id=session_id,
     )
@@ -1714,12 +1392,9 @@ def evaluation_session_delete(request, session_id):
 
 @staff_member_required
 def system_status(request):
-    """2026-09-23, раздел «Системный статус» — сводка "жива ли платформа
-    технически" на одной странице: Redis/Celery/PostgreSQL (infra_services.
-    infra_health(), уже использовался внутри «Здоровье данных», здесь —
-    отдельная страница-приборка), расписание Celery Beat, хвост logs/
-    errors.log и версии окружения. Полностью read-only — никаких действий
-    и записей в аудит-лог, это диагностика, а не изменение данных."""
+    """Системный статус: Redis/Celery/PostgreSQL, расписание Beat, хвост errors.log.
+    Только чтение.
+    """
     context = {
         "page_title": "Системный статус — DOPX Staff",
         "active_tab": "system_status",
@@ -1729,16 +1404,7 @@ def system_status(request):
 
 
 # ============================================================
-# 2026-09-23, раздел «Партнёры и баннеры» — CRUD поверх partners.models.
-# Partner/Banner (полный контекст — см. dashboard/services.py::
-# partners_queryset/banners_queryset). До этого staff мог только СМОТРЕТЬ
-# статистику по уже существующим партнёрам/баннерам на странице «Реклама»
-# (ads() выше) — заводить нового партнёра или размещать/снимать баннер
-# можно было только через Django admin. Ссылки на страницы ниже добавлены
-# прямо в ads.html (кнопки "Управление партнёрами"/"Управление баннерами"),
-# отдельной вкладки в главном меню НЕТ — .dopx-tabs-row и так на пределе
-# ширины (см. докстринг _nav.html про 1024px-брейкпоинт), а тематически
-# это подраздел «Рекламы», не отдельный домен.
+# Партнёры и баннеры (CRUD). Вход — со страницы «Реклама».
 # ============================================================
 
 PARTNERS_PAGE_SIZE = 30
@@ -1889,8 +1555,7 @@ def banners_list(request):
 
 
 def _banner_form_fields(request) -> dict:
-    """Общий парсинг POST-полей формы баннера — переиспользуется в create
-    И update (см. докстринг platform_settings* выше про тот же приём)."""
+    """Разбор POST-полей формы баннера (create и update)."""
     starts_at_raw = request.POST.get("starts_at", "").strip()
     ends_at_raw = request.POST.get("ends_at", "").strip()
     starts_at = parse_datetime(starts_at_raw) if starts_at_raw else None
@@ -1991,18 +1656,8 @@ def banner_delete(request, banner_id):
 
 
 # ============================================================
-# 2026-09-23, раздел «Роли доступа» — гибкие права по разделам дашборда
-# вместо единственного is_staff (прямая просьба пользователя, выбран
-# вариант "гибкие права по разделам" из предложенных). Полный контекст
-# безопасного дефолта (grandfather-правило, is_superuser всегда полный
-# доступ) — см. dashboard/models.py::StaffAccessGrant и dashboard/access.py.
-#
-# ВАЖНО: обе вьюхи ниже проверяют request.user.is_superuser НАПРЯМУЮ, а не
-# через user_can_access_section()/DASHBOARD_SECTIONS — "access_roles" не
-# входит в редактируемый список разделов именно поэтому: раздел, который
-# выдаёт доступ к остальным разделам, не должен сам управляться через ту же
-# систему грантов (privilege escalation), см. SUPERUSER_ONLY_SECTIONS в
-# dashboard/access.py.
+# Роли доступа staff по разделам. Проверяем is_superuser напрямую:
+# раздел выдачи прав не управляется той же системой прав.
 # ============================================================
 
 @staff_member_required
@@ -2042,9 +1697,7 @@ def access_roles_detail(request, user_id):
 
     if request.method == "POST":
         if request.POST.get("action") == "full_access":
-            # Снимаем ограничения целиком — удаляем запись, пользователь
-            # возвращается под grandfather-правило (полный доступ), см.
-            # докстринг StaffAccessGrant.
+            # Удаляем запись — пользователь снова получает полный доступ.
             if grant:
                 grant.delete()
             messages.success(request, f"«{target_user.username}»: ограничения сняты, полный доступ ко всем разделам.")
@@ -2071,7 +1724,7 @@ def access_roles_detail(request, user_id):
             )
         return redirect("dashboard:access_roles_detail", user_id=target_user.id)
 
-    allowed = set(grant.allowed_sections) if grant else None  # None = полный доступ (нет записи)
+    allowed = set(grant.allowed_sections) if grant else None  # None — полный доступ
     context = {
         "page_title": f"Доступ: {target_user.username} — DOPX Staff",
         "active_tab": "access_roles",

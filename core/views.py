@@ -1,11 +1,5 @@
 # core/views.py
-"""
-standings_preview читает уже готовый TeamSeasonStats (считает
-aggregates/tasks.py::recalculate_season_standings по расписанию Celery Beat),
-а не пересчитывает таблицу заново на каждый промах кэша — иначе формула
-очков могла бы разъехаться между двумя местами.
-IP клиента — через core.utils.get_client_ip, единая реализация на проект.
-"""
+"""Общие страницы: главная, правила, контакты, политика, антифрод, share-карточки, виджеты."""
 import logging
 import os
 from datetime import timedelta
@@ -41,14 +35,13 @@ logger = logging.getLogger(__name__)
 
 
 class HomeView(TemplateView):
-    """Главная страница — дашборд"""
+    """Главная страница."""
     template_name = 'core/home.html'
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         now = timezone.now()
 
-        # === Существующие данные ===
         recent_matches = list(Match.objects.filter(
             status='finished', start_time__lte=now
         ).select_related('home_team', 'away_team', 'league', 'season'
@@ -59,41 +52,22 @@ class HomeView(TemplateView):
         ).select_related('home_team', 'away_team', 'league', 'season'
         ).prefetch_related('home_team__rivals').order_by('start_time')[:4])
 
-        # НАЙДЕНО (2026-09-01, жалоба пользователя: "на главной не
-        # отображаются live матчи, приходится лезть в /matches/ и искать по
-        # фильтру"): для live матчей на главной не было ни одной query вообще
-        # — только 'finished' (recent_matches) и 'scheduled' (upcoming_matches
-        # выше). Матч, который вот прямо сейчас идёт, был самой "горячей"
-        # информацией на сайте, но полностью отсутствовал на дашборде.
-        # _match_card.html уже умеет рендерить live-бейдж (match-card--live,
-        # match-card__live-dot) — не хватало только самой выборки.
+        # Live-матчи для главной.
         live_matches = list(Match.objects.filter(
             status='live'
         ).select_related('home_team', 'away_team', 'league', 'season'
         ).prefetch_related('home_team__rivals').order_by('start_time'))
 
-        # ИСПРАВЛЕНО (2026-09-10, редизайн карточки матча, полный бриф из 14
-        # пунктов): раньше "Оценить"/"уже оценено" считались тут отдельным
-        # inline-кодом ТОЛЬКО для recent_matches, а инлайн-прогноз 1X2
-        # (list_prediction_counts) на главной вообще не вызывался — из-за
-        # этого виджет прогноза молча не показывался на дашборде, хотя
-        # прекрасно работал на /matches/ (см. matches/views.py::
-        # MatchListView). Один общий вызов на все три списка сразу —
-        # тот же bulk-принцип, что и был, но без дублирования и без
-        # пропавшей фичи. См. matches/card_services.py::attach_card_extras.
+        # Данные карточек для всех трёх списков — одним вызовом attach_card_extras.
         from matches.card_services import attach_card_extras
 
         attach_card_extras(recent_matches + upcoming_matches + live_matches, self.request)
 
-        # total_votes__gte=MIN_VOTES_FOR_DISPLAY — без этого гейта "Топ
-        # игроков" на главной ранжируется наравне с единичными накрученными
-        # голосами (тот же класс бага, что был закрыт для топа игроков
-        # команды, см. docs/adr/0014-team-top-players-transfer-fix.md).
+        # Только игроки с достаточным числом голосов.
         top_players = PlayerMatchAggregate.objects.select_related(
             'player', 'player__team'
         ).filter(total_votes__gte=MIN_VOTES_FOR_DISPLAY).order_by('-performance_score')[:5]
 
-        # === НОВАЯ СТАТИСТИКА ===
         total_evals = (
             MatchEvaluation.objects.count() +
             TeamEvaluation.objects.count() +
@@ -104,8 +78,7 @@ class HomeView(TemplateView):
             context_evaluations__created_at__gte=now - timedelta(days=7)
         ).distinct().count()
 
-        # Только матчи с реальными голосами — иначе Avg=None превращается в
-        # "0,0" на главной, что читается как низкий балл, а не как "нет данных".
+        # Только матчи с голосами, иначе Avg=None превратится в «0,0».
         match_aggs_with_votes = MatchAggregate.objects.filter(total_votes__gt=0)
         avg_entertainment = match_aggs_with_votes.aggregate(
             avg=Avg('avg_entertainment')
@@ -128,7 +101,7 @@ class HomeView(TemplateView):
             'active_users': active_users,
         }
 
-        # === ТОП КОМАНД ПО ОЦЕНКАМ ===
+        # Топ команд по оценкам.
         top_teams = Team.objects.annotate(
             avg_rating=Avg(
                 (F('team_evaluations__tactics') +
@@ -141,10 +114,7 @@ class HomeView(TemplateView):
             is_active=True
         ).order_by('-avg_rating')[:5]
 
-        # === Активная сессия пользователя ===
-        # Фильтр по voting_open_until — незавершённая сессия по уже
-        # закрывшемуся голосованию не должна предлагаться к продолжению
-        # (тот же паттерн в profile/dashboard::ProfileView).
+        # Незавершённая сессия пользователя — только если голосование ещё открыто.
         active_match_id = None
         if self.request.user.is_authenticated:
             active_session = EvaluationSession.objects.filter(
@@ -156,18 +126,10 @@ class HomeView(TemplateView):
             if active_session:
                 active_match_id = active_session.match.id
 
-        # === НОМИНАЦИИ СЕЗОНА ===
-        # Витрина "интересных фактов" по всей платформе (без фильтра по
-        # лиге/сезону) — см. core/nominations.py за полным объяснением
-        # идеи и статистической защиты (MIN_VOTES).
+        # Номинации сезона (core/nominations.py).
         nominations = get_nominations()
 
-        # Готовая строка <iframe> для кнопки "Получить embed-код" у
-        # турнирной таблицы — тот же паттерн, что у players/teams (см.
-        # players/views.py::PlayerDetailView, teams/views.py::TeamDetailView).
-        # Раньше standings-виджет был доступен только по прямому URL
-        # /widget/standings/ без единой ссылки на сайте — партнёр физически
-        # не мог узнать, что он существует.
+        # Embed-код турнирной таблицы.
         widget_url = self.request.build_absolute_uri(reverse('core:standings_widget'))
         standings_widget_embed_code = (
             f'<iframe src="{widget_url}" width="340" height="360" '
@@ -194,12 +156,8 @@ class HomeView(TemplateView):
 
 
 def standings_preview(request):
-    """HTMX partial превью турнирной таблицы — читает готовую TeamSeasonStats, не пересчитывает на лету."""
-    # Раньше: Season.objects.filter(is_active=True).first() без фильтра
-    # по лиге — с одной лигой на сайте это случайно давало верный ответ,
-    # но как только появится вторая лига со своим активным сезоном (Кубок
-    # Казахстана и т.п.), выбор таблицы стал бы зависеть от Season.Meta.ordering,
-    # а не от осмысленного решения. См. docs/BACKLOG.md, находка 1.
+    """HTMX-превью турнирной таблицы из готовой TeamSeasonStats."""
+    # Активный сезон основной лиги (Season.get_primary_active).
     season = Season.get_primary_active()
     if not season:
         return HttpResponse('''
@@ -250,16 +208,7 @@ def standings_preview(request):
 
 @xframe_options_exempt
 def standings_widget(request):
-    """
-    Embeddable-виджет турнирной таблицы (продуктовый аудит "канал
-    привлечения", 2026-08-21) — третий виджет после players/teams. Спортивные
-    медиа хотят таблицу тура на своей странице обзора тура, не отдельного
-    игрока/команды. Переиспользует те же TeamSeasonStats и Season.get_primary_active,
-    что и standings_preview (см. её докстринг про единый источник данных),
-    но НЕ тот же HTTP-эндпоинт — standings_preview это HTMX-partial ВНУТРИ
-    сайта (наследует CSP/X-Frame-Options сайта), а этот — отдельный
-    изолированный документ для чужого <iframe>, как players:widget.
-    """
+    """Embed-виджет турнирной таблицы для чужого <iframe>."""
     season = Season.get_primary_active()
     standings_list = []
     if season:
@@ -293,7 +242,7 @@ def standings_widget(request):
 
 
 class RulesView(TemplateView):
-    """Страница правил платформы. XP-таблица и бейджи приходят из кода (evaluations/views.py, users/badges.py::BADGE_CATALOG), не захардкожены в шаблоне."""
+    """Правила платформы. XP и бейджи берутся из кода, не из шаблона."""
     template_name = 'core/rules.html'
 
     def get_context_data(self, **kwargs):
@@ -319,9 +268,7 @@ class RulesView(TemplateView):
             XP_CONTEXT_STEP + XP_TEAMS_STEP + XP_PLAYERS_STEP_MAX
             + XP_COACHES_STEP + XP_REFEREE_STEP + XP_FINAL_STEP
         )
-        # Пара примеров кумулятивного порога уровня — для наглядной иллюстрации
-        # растущего шага кривой `LEVEL_XP_BASE * N * (N-1)`, вместо словесного
-        # описания формулы.
+        # Примеры порогов уровня для иллюстрации кривой XP.
         context['level_examples'] = [
             {'level': n, 'xp': cumulative_xp_for_level(n)} for n in (2, 3, 4, 5, 10)
         ]
@@ -330,19 +277,14 @@ class RulesView(TemplateView):
             ('engagement', 'Вовлечённость', 'ti-flame', [
                 'first_evaluation', 'active_fan_10', 'active_fan_50', 'active_fan_150',
                 'streak_7', 'streak_30', 'streak_100',
-                # НОВОЕ (2026-09-01, "супер ультра" достижения):
                 'full_season',
             ]),
             ('quality', 'Качество и точность', 'ti-target-arrow', [
                 'accurate_analyst', 'foresight', 'bias_free', 'early_bird',
                 'judge_of_judges', 'polyglot',
-                # НОВОЕ (2026-09-01):
                 'coach_expert', 'both_sides',
             ]),
-            # НОВОЕ (2026-09-01): раньше прогнозные достижения не показывались
-            # на этой странице вообще (были только в общем каталоге,
-            # users/badge_catalog.html) — добавляем отдельной категорией,
-            # заодно с тремя новыми.
+            # Прогнозные достижения — отдельной категорией.
             ('predictions', 'Прогнозы', 'ti-chart-line', [
                 'first_prediction', 'prediction_streak_7', 'prediction_streak_30', 'prediction_streak_100',
                 'stable_hand', 'derby_prophet', 'against_the_tide',
@@ -353,25 +295,13 @@ class RulesView(TemplateView):
             ('secret', 'Секретные', 'ti-lock-question', [
                 'founder',
             ]),
-            # НОВОЕ (2026-09-01): топ-уровень редкости "legendary" —
-            # отдельная категория с особым визуалом на странице (см.
-            # rarity == 'legendary' в шаблоне ниже, static/css/badges.css).
+            # Легендарные — отдельная категория с особым визуалом.
             ('legendary', 'Легендарные', 'ti-diamond', [
                 'perfect_tour', 'streak_250', 'prediction_streak_200',
                 'season_completionist', 'max_trust',
             ]),
         ]
-        # ВАЖНО (2026-09-01, найдено пользователем через tooltip на проде):
-        # эта страница НЕ персонализирована (доступна анонимам, не проверяет
-        # request.user), поэтому подставлять сюда "получено/не получено" для
-        # секретных бейджей нельзя технически — а значит показывать их
-        # РЕАЛЬНОЕ имя тут нельзя вообще никому и никогда, иначе секретность
-        # (BadgeDefinition.is_secret) не имеет смысла: раньше `badge.name`
-        # для 'founder' уходил прямо в {% tooltip_wrap %} и был виден любому
-        # посетителю /rules/ без входа в аккаунт. Маскируем так же, как
-        # BadgeCatalogView делает для ЕЩЁ НЕ полученных секретных бейджей
-        # (users/views.py) — только тут это применяется безусловно, ко ВСЕМ
-        # секретным бейджам, т.к. "получено" тут проверить не у кого.
+        # Страница публичная — имена секретных бейджей маскируем всегда.
         def _safe_badge(code: str) -> dict:
             d = BADGE_CATALOG[code]
             return {
@@ -396,37 +326,17 @@ class RulesView(TemplateView):
 
 
 class ContactsView(TemplateView):
-    """Страница обратной связи"""
+    """Страница обратной связи."""
     template_name = 'core/contacts.html'
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Контакты — DOPX'
-        # Свежая форма на каждый рендер: и initial-таймстемп time-trap'а,
-        # и картинка капчи должны быть новыми (в т.ч. после редиректа
-        # обратно сюда из post() при ошибке — см. ContactAntiBotForm).
+        # Новая форма на каждый рендер — свежие time-trap и капча.
         context['antibot_form'] = ContactAntiBotForm()
 
-        # НОВОЕ (2026-09-09, Центр доверия к данным): переход по кнопке
-        # "Сообщить об ошибке в данных" со страницы матча
-        # (templates/matches/_match_header.html) приносит ?category=
-        # data_error&match=<uuid> — подставляем матч в контекст, чтобы
-        # шаблон мог и показать явный контекст жалобы человеку, и передать
-        # id матча в форму скрытым полем (см. ниже, post()). Если id битый
-        # или матча уже нет — просто не подставляем, форма всё равно
-        # работает как обычное обращение.
-        # БАГ, КОТОРЫЙ ТУТ БЫЛ (найден 2026-09-21, сквозной аудит): Match.id —
-        # UUIDField (core/models.py::BaseModel), а `?match=` приходит сырой
-        # строкой из GET. `.filter(id=match_id)` с НЕвалидным UUID (битая
-        # ссылка, отредактированный вручную URL, случайный текст) падает
-        # `django.core.exceptions.ValidationError` прямо из ORM ДО выполнения
-        # запроса — Django не превращает это в 404 автоматически, вся
-        # страница /contacts/ отдавала 500 вместо обычной формы обратной
-        # связи. Тот же класс бага, что чинили в dashboard/views.py::
-        # _resolve_match_for_resync (там — POST на несуществующий/legacy id,
-        # здесь — GET-параметр с произвольным содержимым). Явный try/except
-        # вокруг парсинга UUID — минимальная защита: битый/отсутствующий id
-        # просто не подставляет контекст жалобы, форма всё равно работает.
+        # ?category=data_error&match=<uuid> — жалоба на данные матча.
+        # Битый UUID просто игнорируем.
         context['related_match'] = None
         match_id = self.request.GET.get('match', '').strip()
         if match_id:
@@ -458,17 +368,14 @@ class ContactsView(TemplateView):
         return context
 
     def post(self, request, *args, **kwargs):
-        """Обработка формы обратной связи"""
-        # Анти-бот проверка — первой, до чтения остальных полей. Тот же
-        # трёхуровневый паттерн (honeypot + time-trap + капча), что и в
-        # users/forms.py::UserRegistrationForm, см. core/forms.py.
+        """Обработка формы обратной связи."""
+        # Анти-бот (honeypot + time-trap + капча) — первым делом.
         antibot_form = ContactAntiBotForm(request.POST)
         if not antibot_form.is_valid():
             if 'captcha' in antibot_form.errors:
                 messages.error(request, 'Неверный текст с картинки. Попробуйте ещё раз.')
             else:
-                # honeypot или time-trap сработали — боту осмысленная
-                # причина ошибки не нужна, ведём себя как при капче.
+                # Боту подробности не нужны — отвечаем как при неверной капче.
                 messages.error(request, 'Не удалось обработать форму. Попробуйте ещё раз.')
             return redirect('core:contacts')
 
@@ -478,19 +385,7 @@ class ContactsView(TemplateView):
         message = request.POST.get('message', '').strip()
         screenshot = request.FILES.get('screenshot')
 
-        # НОВОЕ (2026-09-09, Центр доверия к данным): скрытое поле формы,
-        # заполняется только если пришли с кнопки "Сообщить об ошибке в
-        # данных" на странице матча. Не доверяем слепо id из POST — как и с
-        # GET-параметром выше, просто резолвим через БД и молча игнорируем,
-        # если матча с таким id нет (подделанный/устаревший id не должен
-        # ронять всю отправку формы).
-        # БАГ, КОТОРЫЙ ТУТ БЫЛ (тот же, что в get_context_data выше для
-        # GET-параметра `match`): комментарий обещал "молча игнорируем,
-        # если матча с таким id нет", но невалидный UUID (не "матч не
-        # найден", а "это вообще не UUID") падал `ValidationError` прямо из
-        # `.filter(id=...)`, роняя ВСЮ отправку формы обратной связи в 500
-        # — то есть ключевой канал связи с пользователем не работал именно
-        # тогда, когда скрытое поле было повреждено/подделано.
+        # Скрытое поле с id матча. Невалидный/несуществующий id игнорируем.
         related_match = None
         related_match_id = request.POST.get('related_match', '').strip()
         if related_match_id:
@@ -513,7 +408,7 @@ class ContactsView(TemplateView):
             messages.error(request, 'Укажите email для связи.')
             return redirect('core:contacts')
 
-        # Проверка размера файла (макс. 5MB)
+        # Файл не больше 5 МБ
         if screenshot and screenshot.size > 5 * 1024 * 1024:
             messages.error(request, 'Файл слишком большой. Максимум 5 МБ.')
             return redirect('core:contacts')
@@ -531,7 +426,7 @@ class ContactsView(TemplateView):
                 user_agent=request.META.get('HTTP_USER_AGENT', '')[:500],
             )
 
-            # ✅ СОХРАНЯЕМ ФАЙЛ
+            # Сохраняем файл
             if screenshot:
                 submission.attachment.save(
                     screenshot.name,
@@ -540,17 +435,10 @@ class ContactsView(TemplateView):
                 )
                 logger.info(f"✅ Файл сохранён: {submission.attachment.name}")
 
-            # Отправка email админу
+            # Письмо админу
             self.send_admin_notification(submission)
 
-            # Подтверждение получателю обращения — раньше отправлялось
-            # ТОЛЬКО верифицированным зарегистрированным пользователям
-            # (`if user and user.is_verified`), поэтому гости и
-            # неверифицированные пользователи отправляли обращение и не
-            # получали вообще ничего на почту, кроме будущих писем о смене
-            # статуса — баг, найденный пользователем 2026-09-02. Подтверждение
-            # получения не требует верификации: это просто вежливое "мы вас
-            # услышали", а не действие с побочным эффектом.
+            # Подтверждение получения — всем, включая гостей.
             self.send_user_confirmation(submission)
 
             messages.success(request, 'Сообщение отправлено. Мы ответим вам на почту.')
@@ -560,10 +448,7 @@ class ContactsView(TemplateView):
             )
 
         except Exception as e:
-            # Пользователю — общая формулировка без деталей исключения (не
-            # премиально и потенциально небезопасно показывать сырой текст
-            # ошибки в интерфейсе); техническая суть уже есть в logger.error
-            # выше для диагностики.
+            # Пользователю — общий текст, детали в логе.
             logger.error(f"Contact form error: {type(e).__name__}: {e}", exc_info=True)
             messages.error(request, 'Не удалось отправить сообщение. Напишите нам на support@dopx.kz.')
             return redirect('core:contacts')
@@ -571,13 +456,12 @@ class ContactsView(TemplateView):
         return redirect('core:contacts')
 
     def send_admin_notification(self, submission):
-        """Отправка уведомления админу"""
+        """Письмо админу об обращении."""
         admin_email = getattr(settings, 'CONTACT_EMAIL', 'admin@dopx.kz')
         from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@dopx.kz')
         site_url = getattr(settings, 'SITE_URL', 'https://dopx.kz')
 
-        # "Право на ответ" — юридически значимая категория, письмо должно
-        # выделяться в почте founder'а среди обычных багрепортов.
+        # «Право на ответ» — выделяем в теме письма.
         urgency_prefix = "ПРАВО НА ОТВЕТ" if submission.category == 'dispute' else "Новое обращение"
         subject = f"{urgency_prefix} #{str(submission.id)[:8]} ({submission.get_category_display()})"
 
@@ -593,9 +477,7 @@ class ContactsView(TemplateView):
         })
 
         email = EmailMultiAlternatives(
-            # body=strip_tags(html) вместо '' — пустой text/plain рядом с
-            # html-альтернативой сам по себе спам-сигнал (см. аналогичный
-            # коммент в notifications/tasks.py::_send_email_to_user).
+            # text/plain из html — пустая текстовая часть выглядит как спам.
             subject=subject,
             body=strip_tags(html_message),
             from_email=from_email,
@@ -603,7 +485,7 @@ class ContactsView(TemplateView):
         )
         email.attach_alternative(html_message, "text/html")
 
-        # Прикрепляем файл к письму
+        # Прикрепляем файл
         if submission.attachment:
             try:
                 submission.attachment.open('rb')
@@ -621,16 +503,7 @@ class ContactsView(TemplateView):
         logger.info(f"✅ Admin notification sent to {admin_email}")
 
     def send_user_confirmation(self, submission):
-        """
-        Подтверждение получения обращения — на `submission.contact_email`
-        (property из ContactSubmission: email пользователя, если он есть,
-        иначе введённый гостем email), а НЕ только на email
-        верифицированного пользователя, как было раньше. Гость, указавший
-        свой email при отправке формы, ждёт то же самое подтверждение, что
-        и залогиненный пользователь — верификация аккаунта тут ни при чём,
-        это просто вежливое "мы получили ваше сообщение", без каких-либо
-        побочных эффектов, требующих доверия к адресу.
-        """
+        """Подтверждение получения на submission.contact_email (пользователь или гость)."""
         recipient = submission.contact_email
         if not recipient:
             return
@@ -658,7 +531,7 @@ class ContactsView(TemplateView):
 
 
 class ContactSubmissionDetailView(View):
-    """Просмотр обращения (для пользователя)"""
+    """Просмотр обращения пользователем."""
     def get(self, request, pk):
         submission = get_object_or_404(
             ContactSubmission,
@@ -672,7 +545,7 @@ class ContactSubmissionDetailView(View):
 
 
 class PrivacyPolicyView(TemplateView):
-    """Страница Политики конфиденциальности"""
+    """Политика конфиденциальности."""
     template_name = 'core/privacy.html'
 
     def get_context_data(self, **kwargs):
@@ -682,12 +555,7 @@ class PrivacyPolicyView(TemplateView):
 
 
 def robots_txt(request):
-    """
-    Отдельная FBV, без лишнего TemplateView ради 8 строк текста.
-    Явно закрываем то же самое, что уже не публично в UI (admin/api/
-    личный кабинет/DjDT) — от индексации это тоже должно быть спрятано,
-    иначе Google с радостью проиндексирует страницу входа в чужой профиль.
-    """
+    """robots.txt: закрываем admin/api/кабинет от индексации."""
     lines = [
         "User-agent: *", "Allow: /",
         "Disallow: /admin/", "Disallow: /api/", "Disallow: /users/profile/", "Disallow: /__debug__/",
@@ -697,18 +565,7 @@ def robots_txt(request):
 
 
 def service_worker(request):
-    """
-    Продуктовый аудит, раздел 5c ("PWA + Web Push"): отдаёт `static/sw.js`
-    с URL `/sw.js` (КОРЕНЬ сайта), а не `/static/sw.js`. Это НЕ косметика —
-    scope service worker'а по умолчанию равен директории, из которой он
-    был запрошен браузером: зарегистрированный с `/static/sw.js` контролировал
-    бы только `/static/*` и никогда не увидел бы навигацию по обычным
-    страницам сайта, а `manifest.json.start_url: "/"` требует, чтобы
-    именно `/` попадал под scope зарегистрированного воркера — иначе
-    браузер не посчитает сайт "installable" (условие PWA-манифеста).
-    Заголовок `Service-Worker-Allowed: /` — явное подтверждение того же
-    для браузеров, которые проверяют его строже, чем просто путь запроса.
-    """
+    """Отдаёт static/sw.js по /sw.js — чтобы scope service worker'а был весь сайт."""
     sw_path = settings.BASE_DIR / 'static' / 'sw.js'
     try:
         with open(sw_path, 'r', encoding='utf-8') as f:
@@ -723,12 +580,7 @@ def service_worker(request):
 
 
 class AntiFraudView(TemplateView):
-    """
-    Публичная страница "Как мы боремся с накруткой" — продаёт trust_score/
-    SuspiciousActivityFlag как реальное отличие от "ещё одного форума
-    фанатов", а не маркетинговую фразу без данных. Живые цифры конвертят
-    скептиков лучше общих слов о честности.
-    """
+    """Публичная страница «Как мы боремся с накруткой» с живыми цифрами."""
     template_name = "core/anti_fraud.html"
 
     def get_context_data(self, **kwargs):
@@ -738,8 +590,7 @@ class AntiFraudView(TemplateView):
             "Методология DOPX: взвешенное голосование по Trust Score, "
             "анти-фрод очередь модерации, защита от накрутки оценок."
         )
-        # Кэш 1ч: публичная страница, свежесть до часа более чем достаточна,
-        # не считаем агрегаты при каждом заходе бота/пользователя.
+        # Кэш на час.
         context["stats"] = cache.get_or_set("anti_fraud_public_stats", self._compute_stats, timeout=3600)
         return context
 
@@ -761,9 +612,7 @@ class AntiFraudView(TemplateView):
 
 
 class MatchShareCardView(View):
-    """/share/match/<uuid:match_id>/card.png — редирект на закэшированную
-    карточку. Используется и как og:image страницы матча, и как прямая
-    ссылка при шеринге в Telegram/WhatsApp."""
+    """/share/match/<id>/card.png — редирект на закэшированную карточку матча (og:image, шеринг)."""
 
     def get(self, request, match_id):
         from core.services.share_cards import build_match_share_card
@@ -783,18 +632,8 @@ class MatchShareCardView(View):
 
 
 class MatchDNAShareCardView(View):
-    """
-    /share/match/<uuid:match_id>/dna-card.png — "ДНК матча" фаза 2
-    (docs/adr/0033-match-dna-phase2.md): отдельная карточка от
-    MatchShareCardView выше (та — счёт+топ-игрок для og:image ссылки), эта —
-    контент секции "ДНК матча" самой (drama/герой/самый заметный факт),
-    предназначена под прямой шеринг картинки (см. кнопку "Поделиться" на
-    templates/matches/detail.html — Web Share API на URL этой вьюхи).
-
-    404, если по матчу ещё нет ни одного голоса (то же условие, что
-    matches/services.py::build_match_dna использует, чтобы не рендерить
-    пустую секцию на странице матча) — карточку про несуществующие данные
-    шерить нечего.
+    """/share/match/<id>/dna-card.png — карточка «ДНК матча».
+    404, если по матчу нет голосов.
     """
 
     def get(self, request, match_id):
@@ -812,15 +651,7 @@ class MatchDNAShareCardView(View):
 
         events = list(match.events.select_related("player").order_by("minute")[:20])
         referee_agg = match.referee_aggregates.first()
-        # ИСПРАВЛЕНО (фаза 3, docs/adr/0034): раньше здесь был свой отдельный
-        # порог `total_votes__gte=1` вместо MIN_VOTES_FOR_DISPLAY, которым
-        # страница матча (MatchDetailView) фильтрует top_players/worst_players.
-        # Из-за этого расхождения герой на карточке мог оказаться игроком,
-        # который на самой странице матча вообще не попал бы в топ (1 голос
-        # "10/10 от друга" легко обходит честного игрока с 20 оценками) —
-        # тот же класс бага, который MIN_VOTES_FOR_DISPLAY закрывает везде
-        # остальных местах сайта. Теперь оба списка и порог — те же самые,
-        # что использует MatchDetailView.
+        # Тот же порог голосов, что на странице матча.
         top_players = list(
             PlayerMatchAggregate.objects.filter(match=match, total_votes__gte=MIN_VOTES_FOR_DISPLAY)
             .select_related("player").order_by("-performance_score")[:1]
@@ -847,10 +678,7 @@ class MatchDNAShareCardView(View):
         if match_dna is None:
             raise Http404("Нет голосов по этому матчу")
 
-        # Приоритет "самого заметного факта" карточки — то же, в каком
-        # порядке эти строки идут на самой странице матча (см.
-        # templates/matches/detail.html): спорный эпизод заметнее общей
-        # фразы про расхождение мнений, та — заметнее переломного момента.
+        # Приоритет «самого заметного факта» — как порядок блоков на странице матча.
         headline = (
             match_dna["controversial_episode"]
             or match_dna["referee_divergence"]
@@ -874,20 +702,8 @@ class MatchDNAShareCardView(View):
 
 
 class StreakShareCardView(View):
-    """
-    /share/streak/<username>/<streak_type>/card.png — карточка серии
-    (retention loop "Серии", 2026-08-21), тот же редирект-на-
-    закэшированный-PNG паттерн, что и `MatchShareCardView` выше.
-
-    С 2026-08-31 обе серии — НЕ "дней подряд" (см. докстринг
-    `build_streak_share_card`, core/services/share_cards.py):
-    `evaluation_streak` — туров подряд, `prediction_streak` — угаданных
-    прогнозов подряд.
-
-    ВАЖНО: число БЕРЁТСЯ ИЗ БД (`user.evaluation_streak`/
-    `prediction_streak`), а не из URL — иначе кто угодно мог бы
-    сгенерировать (и закэшировать под чужим username) карточку с любым
-    числом простой подменой параметра в адресной строке.
+    """/share/streak/<username>/<streak_type>/card.png — карточка серии.
+    Число берём из БД, не из URL.
     """
 
     def get(self, request, username, streak_type):

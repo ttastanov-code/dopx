@@ -1,14 +1,7 @@
-<!-- templates/emails/staff_antifraud_digest.html — ПОЛНЫЙ РЕДИЗАЙН
-     2026-09-02, см. докстринг templates/emails/welcome.html про общий
-     каркас в partials/. Внутреннее операционное письмо для staff — тот же
-     визуальный язык (логотип, типографика, отступы), что у пользовательских
-     писем, но без "тёплой" подписи/ссылки на настройки уведомлений (это не
-     то, что сотрудник может отключить — force=True, см.
-     notifications/tasks.py::send_staff_antifraud_digest) и с явной
-     STAFF-меткой в шапке.
-
-     Контекст: total_new, by_source (dict), top_flags (список
-     SuspiciousActivityFlag), open_disputes. -->
+{% comment %}
+Дайджест антифрода для staff (всегда отправляется).
+Контекст: total_new, by_source, top_flags, open_disputes.
+{% endcomment %}
 <!DOCTYPE html>
 <html lang="ru">
 {% include "emails/partials/_head.html" %}

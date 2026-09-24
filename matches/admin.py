@@ -9,10 +9,7 @@ from .models import Match, MatchPlayerStatistics, MatchReaction, MatchTeamStatis
 
 
 class MatchEventInline(TabularInline):
-    """События матча прямо на странице матча — раньше редактировались
-    только отдельным списком в events/admin.py, приходилось помнить
-    UUID матча и фильтровать. extra=0 — не плодить пустые черновые строки
-    на каждый заход (у "живого" матча уже могут быть десятки событий)."""
+    """События матча инлайном. extra=0."""
     model = MatchEvent
     extra = 0
     fields = ("minute", "event_type", "team_side", "player", "assist_player")
@@ -28,9 +25,7 @@ class MatchLineupInline(TabularInline):
 
 
 class MatchTeamStatisticsInline(TabularInline):
-    """Объективная статистика команд (KFF) прямо на странице матча —
-    для сверки "что видит staff" при разборе флагов stats_divergence
-    (dashboard/antifraud), не пересчитывается тут, только read-friendly."""
+    """Статистика команд инлайном — для разбора флагов stats_divergence."""
     model = MatchTeamStatistics
     extra = 0
     fields = ("team", "possession_percent", "shots", "shots_on_goal", "corners", "fouls", "yellow_cards", "red_cards")
@@ -63,13 +58,7 @@ class MatchAdmin(ModelAdmin):
         "external_id",
     )
 
-    # Match — самая "central hub" модель проекта (6 FK, было 7 — stadium
-    # убран полностью 2026-09-09, см. модель) — до этого ни один из них не
-    # был autocomplete, значит редактирование матча грузило ПОЛНЫЙ <select>
-    # со всеми командами/тренерами/судьями в БД разом. Все целевые модели
-    # уже имеют search_fields (проверено/дополнено в leagues/seasons/teams/
-    # coaches/referees admin.py) — обязательное условие для
-    # autocomplete_fields, иначе Django падает системной проверкой.
+    # autocomplete_fields — без огромных <select>. У целевых моделей есть search_fields.
     autocomplete_fields = (
         "league", "season", "home_team", "away_team",
         "home_coach", "away_coach", "referee",
@@ -81,16 +70,7 @@ class MatchAdmin(ModelAdmin):
 
     @admin.action(description="⏸️ Пометить перенесённым вручную (снять с автосинка)")
     def mark_postponed_manually(self, request, queryset):
-        """Для случаев вроде обнаруженного 2026-08-21: источник данных
-        показывает на своей странице матча баннер "перенесён на
-        неопределённый срок" ЗАДОЛГО до того, как реально меняет структурные
-        status/date в API — sportmonks_update_live/sportmonks_sync_season
-        видят прежний статус ещё много дней и молча откатывали бы ручную
-        правку статуса обратно. Это действие ставит status='postponed' И
-        manual_override=True разом — второе обязательно, иначе первое
-        переживёт максимум один цикл автосинка (1-2 минуты). Снимается
-        действием ниже, когда источник наконец опубликует настоящую новую
-        дату."""
+        """status='postponed' + manual_override=True, чтобы автосинк не откатил."""
         updated = queryset.update(status="postponed", manual_override=True)
         self.message_user(
             request,
@@ -100,23 +80,13 @@ class MatchAdmin(ModelAdmin):
 
     @admin.action(description="▶️ Снять ручную пометку — вернуть под автосинк")
     def clear_manual_override(self, request, queryset):
-        """Снимает manual_override — используйте, когда источник данных
-        наконец опубликовал реальную новую дату/статус, и матч можно снова
-        доверить автосинку (см. mark_postponed_manually выше про то, какой
-        источник сейчас активен)."""
+        """Снимает manual_override — матч снова под автосинком."""
         updated = queryset.update(manual_override=False)
         self.message_user(request, f"Ручная пометка снята: {updated}. Матч(и) снова под автосинком.")
 
     @admin.action(description="Пересинхронизировать выбранные матчи")
     def resync_selected(self, request, queryset):
-        """Массовый ресинк — та же логика, что кнопка «Досинхронизировать»
-        на /staff/dashboard/data-health/ (dashboard/parser_tools.py::resync_match),
-        просто применённая сразу к нескольким матчам из списка admin. Работает
-        только для матчей с sportmonks_id (KFF-парсер удалён 2026-09-09 —
-        матчи без sportmonks_id из старой истории пересинхронизировать
-        больше нечем). Синхронно, один HTTP-запрос staff = ожидание N
-        матчей — ок для точечной работы с десятком строк, для массового
-        полного синка сезона — management-команда sync_sportmonks_season."""
+        """Ресинк выбранных матчей (только с sportmonks_id), синхронно."""
         from dashboard.audit import log_staff_action
         from dashboard.models import AuditAction
         from dashboard.parser_tools import resync_match
@@ -137,9 +107,7 @@ class MatchAdmin(ModelAdmin):
 
 @admin.register(MatchTeamStatistics)
 class MatchTeamStatisticsAdmin(ModelAdmin):
-    """Отдельный список (не только инлайн на матче) — для точечного поиска
-    "какая команда/матч уже досинхронизированы объективной статистикой",
-    используется при разборе флагов stats_divergence."""
+    """Статистика команд отдельным списком."""
 
     list_display = ("team", "match", "possession_percent", "shots", "shots_on_goal", "corners", "fouls", "yellow_cards")
     list_filter = ("team",)
@@ -159,9 +127,7 @@ class MatchPlayerStatisticsAdmin(ModelAdmin):
 
 @admin.register(MatchReaction)
 class MatchReactionAdmin(ModelAdmin):
-    """Редизайн карточки матча (2026-09-10), пункт 11 — реакция сообщества
-    на завершённый матч. Только для просмотра/модерации, тот же уровень
-    админки, что у остальных пользовательских голосов проекта."""
+    """Реакции на завершённый матч — просмотр/модерация."""
     list_display = ("match", "user", "reaction", "created_at")
     list_filter = ("reaction",)
     search_fields = ("match__home_team__name", "match__away_team__name", "user__username")

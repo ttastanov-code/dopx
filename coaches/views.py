@@ -18,21 +18,15 @@ class CoachListView(ListView):
     paginate_by = 20
 
     def get_paginate_by(self, queryset):
-        # 2026-09-23, «Настройки платформы» — управляется staff без деплоя.
+        # Размер страницы — из настроек платформы.
         return get_setting("coaches_list_page_size", self.paginate_by)
 
     def get_queryset(self):
-        # Дефолт: только тренеры команд текущего сезона главной лиги — тот
-        # же паттерн, что и TeamListView/PlayerListView, через TeamSeason
-        # по team_id тренера. ?season=all снимает фильтр (нужно, например,
-        # чтобы найти тренера вылетевшей команды). См. docs/BACKLOG.md,
-        # находка 3.
+        # По умолчанию — тренеры команд текущего сезона. ?season=all — все.
         self.active_season = Season.get_primary_active()
         self.show_all = self.request.GET.get('season') == 'all'
 
-        # Prefetch для coach.match_aggregates.first (карточка "Тактика" в
-        # шаблоне) — без него N+1 на каждого тренера. Ordering модели
-        # (-match__start_time) даёт тот же "последний матч", что и без prefetch.
+        # Prefetch последнего агрегата — без N+1.
         queryset = Coach.objects.filter(
             is_active=True
         ).prefetch_related(
@@ -43,33 +37,15 @@ class CoachListView(ListView):
                 )
             )
         ).annotate(
-            # РАНЬШЕ здесь был match_count через Match.home_coach/away_coach
-            # — убран намеренно, не чиниться: источник данных (изначально
-            # KFF, найдено и подтверждено там; поведение Sportmonks не
-            # перепроверялось отдельно, но исходная причина не связана с
-            # конкретным парсером) не хранит историю смен тренера у команды,
-            # при смене тренера старые матчи в ИХ системе задним числом
-            # переприкрепляются к новому — то есть "21 матч" у тренера,
-            # отработавшего 2, был не багом нашего импорта, а честным
-            # отражением того, что отдаёт источник данных. Подтверждено
-            # вручную (сверка с сайтом KFF), см. docs/BACKLOG.md, находка 4.
-            # evaluations_count — единственная
-            # ПРАВДИВО тренеро-специфичная метрика: пользователь оценивает
-            # конкретного тренера в момент, близкий к матчу, эта привязка
-            # не переписывается задним числом.
+            # Число матчей тренера не показываем — источник не хранит историю смен тренеров.
+            # evaluations_count — достоверная метрика.
             evaluations_count=Count('coach_evaluations', distinct=True)
         )
 
         if self.active_season and not self.show_all:
             queryset = queryset.filter(team__teamseason__season=self.active_season)
 
-        # БАГ, КОТОРЫЙ ТУТ БЫЛ: поиск и фильтр по команде рисовались в
-        # шаблоне (templates/coaches/list.html), но здесь никогда не
-        # читались — форма молча ничего не делала. Coach.team — реальный
-        # FK (parsers/sportmonks/importers.py::get_or_create_coach его
-        # заполняет, когда источник присылает состав с тренерами; до
-        # 2026-09-09 то же самое делал parsers/kff/importers.py), так что
-        # фильтр физически имеет смысл, просто не был подключен.
+        # Поиск и фильтр по команде.
         search = self.request.GET.get('q')
         if search:
             normalized_query = normalize_kz(search)
@@ -90,17 +66,7 @@ class CoachListView(ListView):
         context['search_query'] = self.request.GET.get('q', '')
         context['active_season'] = self.active_season
         context['show_all'] = self.show_all
-        # Только команды, у которых реально есть привязанный тренер —
-        # иначе в списке снова были бы варианты, ничего не находящие.
-        #
-        # ИСПРАВЛЕНО (2026-09-10, жалоба пользователя — "в фильтре по
-        # командам тоже все команды всех сезонов, а не текущий сезон"):
-        # раньше фильтр `coaches__isnull=False` брал ЛЮБУЮ команду за всю
-        # историю импорта, включая команды прошлых/вылетевших сезонов —
-        # тот же класс бага, что был на странице "Игроки" (см.
-        # players/views.py::PlayerListView.get_context_data). Теперь, как и
-        # там, дополнительно ограничиваем текущим сезоном (тот же паттерн,
-        # что и TeamListView/PlayerListView), кроме режима ?season=all.
+        # Команды с тренером в текущем сезоне (кроме ?season=all).
         teams_qs = Team.objects.filter(coaches__isnull=False)
         if self.active_season and not self.show_all:
             teams_qs = teams_qs.filter(teamseason__season=self.active_season)
@@ -116,17 +82,7 @@ class CoachDetailView(DetailView):
         context = super().get_context_data(**kwargs)
         coach = self.object
 
-        # РАНЬШЕ здесь был "matches" тренера через Match.home_coach/
-        # away_coach — убрано намеренно, не баг для починки: KFF не хранит
-        # историю смен тренера, при смене тренера в клубе старые матчи в
-        # ИХ системе задним числом переприкрепляются к новому. Проверено
-        # вручную (сверка с сайтом KFF) — на конкретном примере тренер,
-        # отработавший 2 матча, показывал 21 (весь сезон клуба), потому
-        # что "чей это матч" технически не сохраняется нигде, включая
-        # источник данных. См. docs/BACKLOG.md, находка 4.
-        #
-        # Вместо личной истории тренера — форма ТЕКУЩЕЙ команды, честно
-        # подписанная как командная, а не персональная статистика.
+        # Вместо матчей тренера — форма текущей команды (подписана как командная).
         team_matches = []
         if coach.team_id:
             team_matches = Match.objects.filter(
@@ -136,18 +92,14 @@ class CoachDetailView(DetailView):
                 'home_team', 'away_team', 'league', 'season'
             ).order_by('-start_time')[:10]
 
-        # Агрегаты (для оценок) — ПРАВДИВО тренеро-специфичны: пользователь
-        # оценивает конкретного тренера вскоре после матча, эта привязка не
-        # переписывается задним числом при смене тренерского штаба.
+        # Агрегаты оценок тренера.
         aggregates = CoachMatchAggregate.objects.filter(
             coach=coach
         ).select_related('match').order_by('-match__start_time')[:10]
 
         agg_totals = CoachMatchAggregate.objects.filter(coach=coach).aggregate(
             total_evaluations=Count('id'),
-            # Алиас НЕ total_votes: иначе vote_weighted_avg ниже внутри
-            # Sum('total_votes') ссылается на этот агрегат, а не на поле
-            # ("Cannot compute Sum('total_votes'): 'total_votes' is an aggregate").
+            # Алиас не total_votes — иначе конфликт с Sum('total_votes') в vote_weighted_avg.
             votes_sum=Sum('total_votes'),
             avg_tactics=vote_weighted_avg('avg_tactics'),
             avg_substitutions=vote_weighted_avg('avg_substitutions'),
@@ -162,18 +114,10 @@ class CoachDetailView(DetailView):
             'avg_management': agg_totals['avg_management'],
             'avg_impact': agg_totals['avg_impact'],
         }
-        # Условие видимости карточки "Средние оценки" — есть ли оценки
-        # (total_evaluations): без оценок avg_* = None, и width: % в
-        # прогресс-барах ломается на пустой строке.
+        # Карточка «Средние оценки» — только если есть оценки.
         has_evaluations = stats['total_evaluations'] > 0
 
-        # 2026-09-23, фикс аудита: та же логика, что и у players/teams
-        # (players/views.py::has_enough_votes, MIN_VOTES_FOR_DISPLAY) — но
-        # раньше у тренера её не было вообще, карточка "Средние оценки"
-        # могла уверенно показать число на основании единственного матча с
-        # 1 голосом. `has_evaluations` (>=1 матч оценён) остаётся условием
-        # видимости самой карточки; `has_enough_votes` (>=MIN_VOTES_FOR_
-        # DISPLAY суммарных голосов) — условием доверия к цифре внутри неё.
+        # has_enough_votes — можно ли доверять цифре (MIN_VOTES_FOR_DISPLAY).
         has_enough_votes = stats['total_votes'] >= MIN_VOTES_FOR_DISPLAY
 
         context.update({

@@ -4,12 +4,8 @@
 {% include 'dashboard/_nav.html' %}
 
 {% comment %}
-templates/dashboard/access_roles_detail.html
-2026-09-23, раздел «Роли доступа» — карточка прав ОДНОГО сотрудника
-(dashboard/views.py::access_roles_detail). Чекбоксы предзаполнены как
-"всё включено", если у сотрудника ЕЩЁ НЕТ записи StaffAccessGrant (см.
-grandfather-правило) — снятие любого чекбокса и сохранение впервые создаёт
-запись и с этого момента реально ограничивает доступ.
+Права одного сотрудника. Без записи StaffAccessGrant все чекбоксы включены;
+первое сохранение создаёт запись.
 {% endcomment %}
 
 <div class="mb-4">
@@ -42,16 +38,7 @@ grandfather-правило) — снятие любого чекбокса и с
                         </label>
                         {% endfor %}
                     </div>
-                    {% comment %}
-                    2026-09-23, БАГ (жалоба пользователя со скриншотом —
-                    кнопки жмутся друг в друга на мобильном). Причина: два
-                    btn-sm с длинным русским текстом в один flex-row без
-                    возможности сжаться/перенестись — на 375px не помещаются,
-                    иконка/текст одной кнопки наезжают на другую. Фикс —
-                    flex-col на мобильном (кнопки друг под другом, каждая
-                    w-full), sm:flex-row обратно в один ряд на планшете/
-                    десктопе, где места хватает.
-                    {% endcomment %}
+                    {# Кнопки столбиком на мобильном. #}
                     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2 mt-4">
                         <button type="submit" name="action" value="full_access" class="btn btn-sm btn-outline w-full sm:w-auto"><i class="ti ti-shield-off"></i> Снять все ограничения</button>
                         <button type="submit" class="btn btn-sm btn-primary w-full sm:w-auto"><i class="ti ti-device-floppy"></i> Сохранить выбранные</button>

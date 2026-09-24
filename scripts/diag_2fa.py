@@ -1,10 +1,7 @@
 # scripts/diag_2fa.py
 #
-# Диагностика текущего состояния 2FA-устройств для одного пользователя.
-# Только чтение, ничего не меняет.
-#
-# Запуск: python manage.py shell < scripts/diag_2fa.py
-# (перед запуском поменяйте USERNAME ниже на свой логин)
+# Состояние 2FA-устройств пользователя (read-only).
+# Запуск: python manage.py shell < scripts/diag_2fa.py (поменяйте USERNAME).
 
 USERNAME = "admin"  # <-- замените
 

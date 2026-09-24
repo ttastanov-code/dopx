@@ -1,15 +1,7 @@
-<!-- templates/components/_season_scope_toggle.html
-     Переключатель "текущий сезон / показать всех" для списков команд,
-     игроков, тренеров и судей (teams/players/coaches/referees list.html) —
-     контекст: active_season (Season|None), show_all (bool). См.
-     docs/BACKLOG.md, находка 3.
-
-     ПЕРЕДЕЛАНО (2026-09-09, жалоба пользователя: "кнопку надо переделать
-     нормально" — раньше это была голая гиперссылка с иконкой, без единого
-     признака кликабельного контрола): теперь сегментированный тумблер из
-     двух пилюль, как переключатель сезонов на странице лиги (leagues/
-     detail.html) — активный сегмент подсвечен, оба варианта видны сразу
-     (не нужно гадать, что скрывается за единственной ссылкой). -->
+{% comment %}
+Переключатель «текущий сезон / все» для списков команд, игроков, тренеров, судей.
+Контекст: active_season, show_all.
+{% endcomment %}
 {% load querystring_extras %}
 {% if active_season %}
 <div class="inline-flex items-center gap-1 p-1 rounded-lg bg-base-200 mb-4 md:mb-6 mx-2 sm:mx-0 text-xs sm:text-sm">

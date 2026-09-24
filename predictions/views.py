@@ -1,10 +1,5 @@
 # predictions/views.py
-"""
-Краудсорс-прогноз 1X2. Тот же паттерн, что и `events/views.py`: клик по
-опции обновляет одну строку в БД и возвращает крошечный HTML-партиал
-(виджет целиком, не всю страницу матча), HTMX сам меняет DOM
-(`hx-swap="outerHTML"`).
-"""
+"""Прогноз 1X2: клик обновляет строку в БД и возвращает виджет (hx-swap=outerHTML)."""
 from functools import partial
 
 from django.db import transaction
@@ -21,11 +16,7 @@ from users.tasks import check_and_award_badges_task
 from .models import MatchPrediction
 from .services import prediction_counts, submit_prediction, user_prediction
 
-# По user.id — эндпоинт требует аутентификации (см. predict() ниже), так
-# что user.id уже доступен и точнее IP (NAT/мобильные сети), тот же выбор,
-# что и у events/views.py::REACT_RATE_LIMIT. Лимит щедрее, чем у реакций,
-# потому что переголосовать можно максимум 3 раза осмысленно (П1→Х→П2), а
-# не десятками кликов по ленте событий.
+# Rate-limit по user.id.
 PREDICT_RATE_LIMIT = 20
 PREDICT_RATE_LIMIT_WINDOW_SECONDS = 60
 
@@ -40,26 +31,17 @@ def _widget_context(request, match):
 
 @require_GET
 def prediction_widget_partial(request, match_id):
-    """HTMX-партиал для ленивой загрузки виджета на странице матча
-    (`hx-trigger="load"`, тот же паттерн, что `events:pulse`)."""
+    """Ленивая загрузка виджета (hx-trigger=load)."""
     match = get_object_or_404(Match, id=match_id)
     return render(request, 'predictions/_prediction_widget.html', _widget_context(request, match))
 
 
 @require_POST
 def predict(request, match_id):
-    """
-    Клик по П1/Х/П2. Возвращает обновлённый виджет целиком (проценты
-    меняются у ВСЕХ трёх опций разом при каждом новом голосе, в отличие от
-    events:react, где можно обновить один счётчик).
-    """
+    """Клик по П1/Х/П2 — возвращает виджет целиком."""
     match = get_object_or_404(Match, id=match_id)
 
-    # compact=1 — запрос с инлайн-виджета на карточке в списке матчей
-    # (см. templates/predictions/_prediction_widget_compact.html и
-    # matches/views.py::MatchListView) — ответ должен заменить себя таким
-    # же компактным партиалом, а не полноразмерным виджетом со страницы
-    # матча (иначе после первого клика карточка в списке "разбухала бы").
+    # compact=1 — ответ компактным виджетом для карточки в списке.
     compact = request.POST.get('compact') == '1'
     widget_template = 'predictions/_prediction_widget_compact.html' if compact else 'predictions/_prediction_widget.html'
     login_template = (
@@ -68,8 +50,7 @@ def predict(request, match_id):
     )
 
     if not request.user.is_authenticated:
-        # status=200, не 401 — HTMX по умолчанию свапает контент только на
-        # 2xx, см. идентичный комментарий в events/views.py::react_to_event.
+        # 200, не 401 — HTMX свапает только 2xx.
         return render(request, login_template, {'match': match}, status=200)
 
     if is_rate_limited(
@@ -88,15 +69,10 @@ def predict(request, match_id):
             properties={'match_id': str(match.id), 'choice': choice},
         )
         if created:
-            # Серия прогнозов обновляется в notify_prediction_results (после
-            # завершения матча, не здесь) — см. докстринг
-            # User.update_prediction_stats. Бейдж first_prediction не зависит
-            # от серии, проверяется сразу асинхронно через transaction.on_commit.
+            # Серия обновляется после матча; бейдж first_prediction — через on_commit.
             transaction.on_commit(
                 partial(check_and_award_badges_task.delay, user_id=str(request.user.id), match_id=str(match.id))
             )
-    # prediction is None, если окно голосования закрылось между открытием
-    # страницы и кликом (гонка на старте матча) — виджет просто
-    # перерисуется в закрытом состоянии, без ошибки пользователю.
+    # None — окно закрылось между загрузкой и кликом.
 
     return render(request, widget_template, _widget_context(request, match))

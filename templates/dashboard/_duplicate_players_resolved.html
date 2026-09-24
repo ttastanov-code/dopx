@@ -1,11 +1,4 @@
-{% comment %}
-templates/dashboard/_duplicate_players_resolved.html
-Замена карточки пары дублей после решения (merge или dismiss) —
-dashboard/views.py::duplicate_players_merge/duplicate_players_dismiss,
-ответ на HTMX-запрос (hx-target="#dup-pair-{{ flag.id }}" hx-swap="outerHTML"
-в _duplicate_player_pair.html). Никакой перезагрузки страницы, никакого
-поллинга статуса — пара просто исчезает из очереди в момент клика.
-{% endcomment %}
+{# Замена карточки пары после слияния/отклонения (HTMX outerHTML). #}
 <div class="alert alert-success text-xs py-2 px-3">
     <i class="ti ti-check"></i>
     <span>{{ message }}</span>

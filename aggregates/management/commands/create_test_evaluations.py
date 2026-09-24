@@ -1,11 +1,6 @@
 # aggregates/management/commands/create_test_evaluations.py
 #
-# Для наполнения матча РЕАЛИСТИЧНЫМ и/или БОЛЬШИМ числом голосов (разброс
-# оценок, переиспользуемый пул ботов, несколько матчей за один запуск,
-# сегментация по поддерживаемой команде) — см. seed_match_votes.py в этой
-# же папке, он написан позже специально под эти сценарии. Эта команда
-# осталась для быстрого "накинуть N одинаковых по духу голосов на один
-# матч" без лишних флагов.
+# Быстро накинуть N голосов на один матч. Для реалистичных данных — seed_match_votes.
 from django.core.management.base import BaseCommand
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -37,14 +32,14 @@ class Command(BaseCommand):
         match_id = options['match_id']
         num_users = options['users']
         
-        # 🔧 Поиск по UUID или external_id
+        # Поиск по UUID или external_id
         match = None
         try:
-            # Сначала пробуем как UUID
+            # Сначала как UUID
             from uuid import UUID
             match = Match.objects.get(id=UUID(match_id))
         except (ValueError, Match.DoesNotExist):
-            # Если не получилось — ищем по external_id
+            # Иначе по external_id
             try:
                 match = Match.objects.get(external_id=match_id)
             except Match.DoesNotExist:
@@ -55,7 +50,7 @@ class Command(BaseCommand):
         self.stdout.write(f"Статус: {match.status}")
         self.stdout.write(f"Счёт: {match.home_score}:{match.away_score}")
 
-        # Создаём тестовых пользователей
+        # Тестовые пользователи
         self.stdout.write(f"Создание {num_users} тестовых пользователей...")
         test_users = []
         for i in range(num_users):
@@ -64,7 +59,7 @@ class Command(BaseCommand):
                 username=username,
                 defaults={
                     'email': f'{username}@test.com',
-                    'trust_score': 1.0 + (i * 0.1),  # Разный trust_score
+                    'trust_score': 1.0 + (i * 0.1),  # разный trust_score
                     'is_verified': True,
                 }
             )
@@ -74,18 +69,18 @@ class Command(BaseCommand):
                 user.save()
         self.stdout.write(self.style.SUCCESS(f"Пользователи созданы: {len(test_users)}"))
 
-        # Получаем игроков матча из lineup
+        # Игроки матча из состава
         players = Player.objects.filter(
             matchlineupplayer__lineup__match=match
         ).distinct()
         self.stdout.write(f"Игроков для оценки: {players.count()}")
 
-        # Создаём оценки для каждого пользователя
+        # Оценки каждого пользователя
         for user in test_users:
-            # user.id — UUID, не int; % нужен int
+            # user.id — UUID, для % нужен int
             user_hash = user.id.int % 100
             
-            # Context
+            # Контекст
             watched_types = ['full', 'highlights', 'partial']
             context, _ = ContextEvaluation.objects.update_or_create(
                 user=user,
@@ -96,7 +91,7 @@ class Command(BaseCommand):
                 }
             )
 
-            # Match Evaluation
+            # Оценка матча
             MatchEvaluation.objects.update_or_create(
                 user=user,
                 match=match,
@@ -108,7 +103,7 @@ class Command(BaseCommand):
                 }
             )
 
-            # 🆕 Team Evaluations (для обеих команд)
+            # Оценки команд
             for team in [match.home_team, match.away_team]:
                 TeamEvaluation.objects.update_or_create(
                     user=user,
@@ -122,17 +117,17 @@ class Command(BaseCommand):
                     }
                 )
 
-            # 🆕 Referee Evaluation
+            # Оценка судьи
             RefereeEvaluation.objects.update_or_create(
                 user=user,
                 match=match,
                 defaults={
                     'influence_score': random.randint(40, 90),  # 0-100
-                    'decision_quality': random.randint(6, 10),   # 1-10
+                    'decision_quality': random.randint(6, 10),  # 1-10
                 }
             )
 
-            # Player Evaluations
+            # Оценки игроков
             for player in players:
                 contribution = random.randint(5, 10)
                 risk = random.randint(1, 5)
@@ -149,7 +144,7 @@ class Command(BaseCommand):
                     }
                 )
 
-            # Coach Evaluations (если есть тренеры)
+            # Оценки тренеров (если есть)
             for coach in [match.home_coach, match.away_coach]:
                 if coach:
                     CoachEvaluation.objects.update_or_create(

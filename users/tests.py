@@ -1,21 +1,6 @@
 # users/tests.py
-"""
-Регрессионные тесты ядра продукта: возрастающая кривая XP/уровней, выдача
-достижений, анти-фрод барьеры регистрации (honeypot/time-trap), валидация
-аватарки (task #132, эта сессия) и rate-limit на password-reset/verify-email/
-toggle_follow (task #133, эта сессия).
-
-ПОЧЕМУ ИМЕННО ЭТО: users — самое часто правимое ядро продукта (trust_score,
-XP, бейджи, антифрод), и за эту сессию именно в нём нашлось больше всего
-тонких багов (StaffSessionSecurityMiddleware, CASCADE на реакциях, ValueError
-на verify-email) — без регрессионного щита каждая следующая правка идёт
-вслепую. is_rate_limited сама по себе покрыта отдельно в core/tests.py —
-здесь только интеграционные тесты того, что 4 новых эндпоинта реально её
-вызывают с правильным ключом/лимитом.
-
-CACHES переопределён на LocMemCache во всех тестах, трогающих is_rate_limited
-— прод использует Redis (dopx/settings.py), тесты не должны зависеть от того,
-поднят ли Redis на машине, где запускается `manage.py test`.
+"""Тесты users: кривая XP, достижения, антибот регистрации, аватарка, rate-limit.
+CACHES -> LocMemCache, чтобы не зависеть от Redis.
 """
 from __future__ import annotations
 
@@ -61,10 +46,7 @@ LOCMEM_CACHES = {
 
 def _make_match(league=None, home=None, away=None):
     league = league or League.objects.create(name="Test League", country="KZ")
-    # get_or_create, не create() — Season имеет UniqueConstraint(league, year)
-    # (seasons/models.py::unique_league_season). Тесты вроде judge_of_judges
-    # вызывают _make_match() в цикле с одной и той же лигой — create() падал
-    # бы IntegrityError уже на второй итерации.
+    # get_or_create — у Season уникальность (league, year).
     season, _created = Season.objects.get_or_create(league=league, year="2026")
     home = home or Team.objects.create(name="Home")
     away = away or Team.objects.create(name="Away")
@@ -84,11 +66,10 @@ def _make_player(team=None):
 # ---------------------------------------------------------------------------
 
 class LevelCurveTests(TestCase):
-    """cumulative_xp_for_level / level_for_total_xp — чистые функции, но
-    именно на них построено ВСЁ начисление опыта (UserXP.add_xp)."""
+    """cumulative_xp_for_level / level_for_total_xp."""
 
     def test_cumulative_xp_matches_documented_curve(self):
-        # Докстринг models.py: 2 уровень — 100 XP, 3 — 300, 4 — 600, 5 — 1000.
+        # 2 уровень — 100 XP, 3 — 300, 4 — 600, 5 — 1000.
         self.assertEqual(cumulative_xp_for_level(1), 0)
         self.assertEqual(cumulative_xp_for_level(2), 100)
         self.assertEqual(cumulative_xp_for_level(3), 300)
@@ -100,8 +81,7 @@ class LevelCurveTests(TestCase):
         self.assertEqual(level_for_total_xp(99), 1)
 
     def test_level_for_total_xp_exact_boundary_rounds_up(self):
-        """Ровно на пороге уровня — уже НОВЫЙ уровень (`<=` в cumulative
-        сравнении), не старый."""
+        """Ровно на пороге — уже новый уровень."""
         self.assertEqual(level_for_total_xp(100), 2)
         self.assertEqual(level_for_total_xp(300), 3)
 
@@ -110,9 +90,7 @@ class LevelCurveTests(TestCase):
         self.assertEqual(level_for_total_xp(599), 3)
 
     def test_round_trip_stable_for_first_30_levels(self):
-        """Каждый уровень: XP ровно на его пороге должен репортить именно
-        этот уровень — ловит погрешность float в math.sqrt (см. докстринг
-        level_for_total_xp про IEEE 754 на границе)."""
+        """На пороге каждого уровня — именно этот уровень (погрешность float)."""
         for level in range(1, 31):
             threshold = cumulative_xp_for_level(level)
             self.assertEqual(
@@ -140,8 +118,7 @@ class UserXPAddXPTests(TestCase):
         self.assertEqual(result["levels_gained"], [2])
 
     def test_add_xp_crossing_multiple_levels_at_once(self):
-        """Большой разовый прирост (например, бонус) должен корректно
-        перечислить ВСЕ пройденные уровни, не только конечный."""
+        """Большой прирост перечисляет все пройденные уровни."""
         result = self.xp.add_xp(650)  # порог 4 уровня — 600
         self.assertEqual(self.xp.level, 4)
         self.assertEqual(result["levels_gained"], [2, 3, 4])
@@ -153,17 +130,17 @@ class UserXPAddXPTests(TestCase):
         self.assertEqual(self.xp.level, 1)
 
     def test_progress_percent_zero_at_level_start(self):
-        self.xp.add_xp(100)  # ровно порог 2 уровня — 0% прогресса ВНУТРИ уровня 2
+        self.xp.add_xp(100)  # ровно порог 2 уровня — 0% прогресса
         self.assertEqual(self.xp.progress_percent, 0)
 
     def test_progress_percent_full_just_before_next_level(self):
-        self.xp.add_xp(299)  # уровень 2, почти вплотную к порогу уровня 3 (300)
+        self.xp.add_xp(299)  # почти порог 3 уровня (300)
         self.assertGreaterEqual(self.xp.progress_percent, 90)
         self.assertLess(self.xp.progress_percent, 100)
 
 
 class UserXpMultiplierAndTrustLevelTests(TestCase):
-    """Чистые вычисления над `trust_score` — не требуют сохранения в БД."""
+    """Вычисления над trust_score без БД."""
 
     def test_xp_multiplier_at_floor(self):
         self.assertEqual(User(trust_score=0.5).xp_multiplier(), 0.8)
@@ -175,8 +152,7 @@ class UserXpMultiplierAndTrustLevelTests(TestCase):
         self.assertEqual(User(trust_score=1.25).xp_multiplier(), 1.0)
 
     def test_xp_multiplier_clamps_below_floor(self):
-        """trust_score в проекте всегда в [0.5, 2.0], но на вход может
-        прийти что угодно (баг в другом месте) — clamp должен спасти."""
+        """Значение вне [0.5, 2.0] клампится."""
         self.assertEqual(User(trust_score=0.1).xp_multiplier(), User(trust_score=0.5).xp_multiplier())
 
     def test_xp_multiplier_clamps_above_ceiling(self):
@@ -229,15 +205,13 @@ class CheckAndAwardBadgesCountThresholdTests(TestCase):
         self.assertNotIn("streak_7", self._award())
 
     def test_idempotent_second_call_returns_no_new_badges(self):
-        """get_or_create внутри check_and_award_badges — повторный вызов с
-        тем же состоянием не должен ни падать на UniqueConstraint, ни
-        возвращать уже выданные бейджи повторно."""
+        """Повторный вызов не падает и не выдаёт бейджи повторно."""
         self.user.total_evaluations = 10
         first_call = self._award()
         self.assertIn("first_evaluation", first_call)
         second_call = self._award()
         self.assertEqual(second_call, set(), "повторный вызов не должен возвращать уже выданные бейджи")
-        # И не должно быть дублей в БД (UniqueConstraint отловил бы это как IntegrityError раньше).
+        # Дублей в БД нет.
         self.assertEqual(UserBadge.objects.filter(user=self.user, badge_type="first_evaluation").count(), 1)
 
     def test_foresight_requires_both_volume_and_trust(self):
@@ -252,16 +226,14 @@ class CheckAndAwardBadgesCountThresholdTests(TestCase):
 
 
 class CheckAndAwardBadgesRelatedModelTests(TestCase):
-    """judge_of_judges/polyglot требуют реальных PlayerEvaluation/
-    RefereeEvaluation — количество различных матчей/команд, не просто
-    счётчик на User."""
+    """judge_of_judges/polyglot — по реальным оценкам."""
 
     def setUp(self):
         self.user = User.objects.create_user(username="u1", email="u1@example.com", password="pass123")
         self.league = League.objects.create(name="L", country="KZ")
 
     def test_judge_of_judges_awarded_at_25_referee_evaluations(self):
-        self.user.total_evaluations = 25  # разблокирует ветку judge_of_judges в check_and_award_badges
+        self.user.total_evaluations = 25  # включает ветку judge_of_judges
         for _ in range(25):
             match = _make_match(league=self.league)
             RefereeEvaluation.objects.create(user=self.user, match=match, influence_score=50, decision_quality=5)
@@ -302,9 +274,7 @@ class CheckAndAwardBadgesRelatedModelTests(TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Новые достижения (2026-09-01, "супер ультра" + прогнозы) — 11 бейджей
-# поверх существовавших 20, включая 5 legendary. Пороги/обоснование каждого
-# условия — users/services.py, докстринги _maybe_award_* функций.
+# Новые достижения (включая legendary)
 # ---------------------------------------------------------------------------
 
 def _make_finished_match(league, season, tour=None, home=None, away=None, home_score=1, away_score=0):
@@ -354,8 +324,7 @@ class CheckAndAwardBadgesNewAchievementsTests(TestCase):
     # --- both_sides ---
 
     def test_both_sides_awarded_when_both_teams_evaluated_in_15_matches(self):
-        """Команда игрока НА МАТЧ берётся через MatchLineupPlayer.lineup.team,
-        не через текущий Player.team — создаём составы явно."""
+        """Команда игрока на матч — через составы."""
         self.user.total_evaluations = 15
         for _ in range(15):
             match = _make_finished_match(self.league, self.season)
@@ -389,15 +358,12 @@ class CheckAndAwardBadgesNewAchievementsTests(TestCase):
         self.assertIn("full_season", self._award())
 
     def test_full_season_not_awarded_with_one_missing_tour(self):
-        # total_evaluations должен остаться >= FULL_SEASON_MIN_TOURS (10), иначе внешний
-        # гейт в check_and_award_badges вообще не вызовет _maybe_award_full_season, и
-        # тест будет проходить тривиально, не проверяя логику "не хватает одного тура".
+        # total_evaluations >= 10, иначе проверка не вызовется вовсе.
         self.user.total_evaluations = 10
-        for tour in list(range(1, 10)) + [11]:  # тур 10 пропущен, но туров в сезоне всё равно 10
+        for tour in list(range(1, 10)) + [11]:  # тур 10 пропущен, туров в сезоне 10
             match = _make_finished_match(self.league, self.season, tour=tour)
             EvaluationSession.objects.create(user=self.user, match=match, status="completed")
-        # Создадим ещё и сам недостающий 10-й тур (матч существует, но НЕ оценён) —
-        # иначе "все туры сезона" совпадут с "все оценённые туры" случайно.
+        # 10-й тур существует, но не оценён.
         _make_finished_match(self.league, self.season, tour=10)
         self.assertNotIn("full_season", self._award())
 
@@ -409,21 +375,19 @@ class CheckAndAwardBadgesNewAchievementsTests(TestCase):
         self.assertIn("season_completionist", self._award())
 
     def test_season_completionist_not_awarded_with_one_unevaluated_match(self):
-        # total_evaluations должен остаться >= SEASON_COMPLETIONIST_MIN_MATCHES (30),
-        # иначе внешний гейт не вызовет _maybe_award_season_completionist и тест
-        # пройдёт тривиально, не проверяя логику "не хватает одного матча".
+        # total_evaluations >= 30, иначе проверка не вызовется вовсе.
         self.user.total_evaluations = 30
         for _ in range(30):
             match = _make_finished_match(self.league, self.season)
             EvaluationSession.objects.create(user=self.user, match=match, status="completed")
-        _make_finished_match(self.league, self.season)  # 31-й матч сезона — НЕ оценён
+        _make_finished_match(self.league, self.season)  # 31-й матч не оценён
         self.assertNotIn("season_completionist", self._award())
 
     # --- stable_hand ---
 
     def test_stable_hand_awarded_at_50_predictions_85_percent_accuracy(self):
         for i in range(50):
-            correct = i < 43  # 43/50 = 86% >= STABLE_HAND_MIN_ACCURACY (0.85)
+            correct = i < 43  # 43/50 = 86% >= 85%
             match = _make_finished_match(self.league, self.season, home_score=1, away_score=0)  # final_result='1'
             MatchPrediction.objects.create(user=self.user, match=match, choice="1" if correct else "2")
         self.assertIn("stable_hand", self._award())
@@ -450,7 +414,7 @@ class CheckAndAwardBadgesNewAchievementsTests(TestCase):
 
     def test_derby_prophet_not_awarded_without_rival_teams(self):
         home = Team.objects.create(name="Home")
-        away = Team.objects.create(name="Away")  # НЕ соперники — rivals не проставлены
+        away = Team.objects.create(name="Away")  # не соперники
         for _ in range(5):
             match = _make_finished_match(self.league, self.season, home=home, away=away, home_score=2, away_score=0)
             MatchPrediction.objects.create(user=self.user, match=match, choice="1")
@@ -459,17 +423,13 @@ class CheckAndAwardBadgesNewAchievementsTests(TestCase):
     # --- against_the_tide ---
 
     def test_against_the_tide_awarded_for_correct_minority_pick(self):
-        # Внешний гейт в check_and_award_badges считает ОБЩЕЕ число прогнозов
-        # ПОЛЬЗОВАТЕЛЯ (user.match_predictions), а не число голосов на конкретный
-        # матч — поэтому у self.user должно быть >= AGAINST_THE_TIDE_MIN_TOTAL_PREDICTIONS (5)
-        # собственных прогнозов на завершённые матчи, иначе _maybe_award_against_the_tide
-        # вообще не вызывается.
+        # Нужно >= 5 собственных прогнозов, иначе проверка не вызовется.
         for _ in range(4):
             filler = _make_finished_match(self.league, self.season, home_score=1, away_score=0)
             MatchPrediction.objects.create(user=self.user, match=filler, choice="1")
         match = _make_finished_match(self.league, self.season, home_score=0, away_score=1)  # final_result='2'
         MatchPrediction.objects.create(user=self.user, match=match, choice="2")  # меньшинство, но угадал
-        for i in range(4):  # большинство (4 из 5) поставили на хозяев
+        for i in range(4):  # 4 из 5 на хозяев
             other = User.objects.create_user(username=f"other{i}", email=f"o{i}@example.com", password="x")
             MatchPrediction.objects.create(user=other, match=match, choice="1")
         self.assertIn("against_the_tide", self._award())
@@ -541,13 +501,11 @@ class CheckAndAwardBadgesNewAchievementsTests(TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Анти-фрод регистрации: honeypot + time-trap
+# Антибот регистрации: honeypot + time-trap
 # ---------------------------------------------------------------------------
 
 class RegistrationAntiFraudFormTests(TestCase):
-    """Тестируются clean_website()/clean_form_rendered_at() напрямую (минуя
-    is_valid()), т.к. captcha-поле формы требует реального ответа с картинки
-    — не имеет отношения к проверяемой здесь антибот-логике."""
+    """Проверяем clean_*() напрямую — капча требует реального ответа."""
 
     def test_honeypot_empty_passes(self):
         form = UserRegistrationForm()
@@ -574,7 +532,7 @@ class RegistrationAntiFraudFormTests(TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Валидация аватарки (task #132)
+# Валидация аватарки
 # ---------------------------------------------------------------------------
 
 def _valid_png_upload(name="avatar.png"):
@@ -600,19 +558,15 @@ class AvatarValidationFormTests(TestCase):
 
     @mock.patch("users.forms.MAX_AVATAR_SIZE_BYTES", 10)
     def test_oversized_file_rejected(self):
-        """MAX_AVATAR_SIZE_BYTES патчится на 10 байт, чтобы не гонять
-        реальные 5МБ+ в памяти теста ради проверки одной ветки."""
+        """MAX_AVATAR_SIZE_BYTES = 10 байт, чтобы не создавать большой файл."""
         form = UserProfileForm()
-        upload = _valid_png_upload()  # заведомо больше 10 байт
+        upload = _valid_png_upload()  # больше 10 байт
         form.cleaned_data = {"avatar": upload}
         with self.assertRaises(ValidationError):
             form.clean_avatar()
 
     def test_untouched_existing_avatar_not_revalidated(self):
-        """Если пользователь не трогал поле avatar — cleaned_data содержит
-        уже сохранённый ImageFieldFile (не UploadedFile), и его не нужно
-        (и физически нельзя, т.к. файла на диске тестового окружения нет)
-        повторно прогонять через Pillow.verify()."""
+        """Без нового файла Pillow.verify() не вызывается."""
         user = User.objects.create_user(username="u1", email="u1@example.com", password="pass123")
         user.avatar.name = "avatars/existing.png"
         form = UserProfileForm(instance=user)
@@ -622,7 +576,7 @@ class AvatarValidationFormTests(TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Rate-limit (task #133): password-reset, verify-email, toggle_follow
+# Rate-limit: password-reset, verify-email, toggle_follow
 # ---------------------------------------------------------------------------
 
 @override_settings(CACHES=LOCMEM_CACHES)
@@ -640,18 +594,14 @@ class PasswordResetRateLimitTests(TestCase):
         response = self.client.post(url, {"email": "flood@example.com"})
         self.assertRedirects(response, url)
 
-        # Второй заблокированный запрос, но уже с follow=True — сообщение
-        # об ошибке должно быть в отрендеренном next-ответе.
+        # Сообщение об ошибке — в next-ответе.
         response_followed = self.client.post(url, {"email": "flood2@example.com"}, follow=True)
         self.assertContains(response_followed, "Слишком много попыток")
 
 
 @override_settings(CACHES=LOCMEM_CACHES)
 class VerifyEmailRateLimitTests(TestCase):
-    """Различаем 'лимит сработал' от 'токен просто не найден' по
-    ПОБОЧНОМУ ЭФФЕКТУ: если бы лимит НЕ сработал, валидный токен верифицировал
-    бы пользователя. Если лимит сработал — запрос обязан развернуться ДО
-    похода в БД за пользователем, и is_verified должен остаться False."""
+    """Лимит сработал — пользователь не верифицирован, хотя токен валидный."""
 
     def setUp(self):
         cache.clear()
@@ -662,19 +612,13 @@ class VerifyEmailRateLimitTests(TestCase):
     def test_exceeding_limit_blocks_before_user_lookup(self):
         import uuid
 
-        # "Разогрев" бакета ЧУЖИМ/несуществующим токеном — ключ лимита в
-        # VerifyEmailView построен по IP, а не по токену (см. docstring
-        # класса), так что для исчерпания бакета не важно, какой токен
-        # использовать. Реальный токен пользователя намеренно бережём
-        # нетронутым до последнего запроса — иначе он верифицировался бы
-        # уже на первом же "разогревочном" вызове и тест перестал бы что-
-        # либо проверять (is_verified стал бы True ДО проверки лимита).
+        # Лимит по IP — выбираем бакет чужим токеном, настоящий бережём до конца.
         bogus_url = reverse("users:verify_email", args=[uuid.uuid4()])
         for _ in range(self.limit):
             self.client.get(bogus_url)
 
         real_url = reverse("users:verify_email", args=[self.user.verification_token])
-        self.client.get(real_url)  # (limit+1)-й запрос с тем же IP — должен быть заблокирован
+        self.client.get(real_url)  # (limit+1)-й запрос — блок
         self.user.refresh_from_db()
         self.assertFalse(
             self.user.is_verified,
@@ -717,21 +661,8 @@ class ToggleFollowRateLimitTests(TestCase):
 
 
 class BadgeShareCardViewTests(TestCase):
-    """
-    BadgeShareCardView (users/views.py) — доступ и генерация премиальной
-    PNG-карточки достижения (продуктовый запрос 2026-09-01). Каждый успешный
-    self.client.get реально рендерит PNG через Pillow и сохраняет его в
-    default_storage (build_badge_share_card, core/services/share_cards.py) —
-    так же, как это произошло бы в проде при первом клике "Поделиться".
-
-    'polyglot' — реальный НЕсекретный код из BADGE_CATALOG (users/badges.py),
-    'founder' — реальный СЕКРЕТНЫЙ код (is_secret=True) — используем его
-    только там, где секретность и есть предмет теста. ВАЖНО: изначально тут
-    ошибочно использовался 'founder' и для тестов публичного доступа —
-    секретный бейдж 404-ит любого не-владельца независимо от
-    is_profile_public, из-за чего оба теста "чужой/аноним видит публичный
-    бейдж" падали бы на самом деле проверяя не то, что заявлено. Исправлено:
-    для проверки видимости чужому/анониму используется НЕсекретный код.
+    """BadgeShareCardView: доступ и генерация PNG.
+    'polyglot' — обычный бейдж, 'founder' — секретный.
     """
 
     def setUp(self):
@@ -742,8 +673,7 @@ class BadgeShareCardViewTests(TestCase):
         UserBadge.objects.create(user=self.owner, badge_type="polyglot")
 
     def test_owner_can_view_own_card_even_if_profile_private(self):
-        """StreakShareCardView (core/views.py) 404-ит владельцу приватного
-        профиля — сознательно НЕ повторяем эту недоработку здесь."""
+        """Владелец видит свою карточку и при приватном профиле."""
         self.owner.is_profile_public = False
         self.owner.save(update_fields=["is_profile_public"])
         self.client.force_login(self.owner)
@@ -772,10 +702,7 @@ class BadgeShareCardViewTests(TestCase):
         self.assertEqual(response.status_code, 404)
 
     def test_unearned_badge_404s(self):
-        # 'founder' существует в каталоге, но owner его не получал (в setUp
-        # выдан только 'polyglot'). Секретность 'founder' тут ни при чём —
-        # владелец обходит проверку is_secret, 404 будет из-за отсутствия
-        # самой записи UserBadge.
+        # 'founder' не выдан — 404 из-за отсутствия UserBadge.
         self.client.force_login(self.owner)
         response = self.client.get(reverse("users:badge_share_card", args=[self.owner.username, "founder"]))
         self.assertEqual(response.status_code, 404)
@@ -798,24 +725,9 @@ class BadgeShareCardViewTests(TestCase):
 
 
 class ProfileEditViewOtpCollisionTests(TestCase):
-    """Регрессия (2026-09-11, реальная ошибка пользователя на проде):
-    ValidationError "...functools.partial(<function is_verified...>)
-    должно быть True или False" при сохранении /users/profile/edit/.
-
-    Причина — django_otp.middleware.OTPMiddleware (стоит в MIDDLEWARE ради
-    2FA staff, см. dopx/settings.py) на КАЖДОМ аутентифицированном запросе
-    подменяет атрибут request.user.is_verified на functools.partial(...)
-    (её штатный способ добавить user.is_verified() для проверки OTP-статуса)
-    — имя случайно совпало с НАШИМ полем User.is_verified (флаг
-    подтверждения email). ProfileEditView.get_object() раньше возвращал
-    request.user НАПРЯМУЮ — тот же самый "отравленный" объект; полный
-    Model.save() (без update_fields) сериализует ВСЕ поля, и
-    BooleanField.get_prep_value() вызывает to_python() на этом мусорном
-    значении. Ломалось у ЛЮБОГО пользователя при любом сохранении профиля,
-    где email не менялся (единственная ветка, которая перезаписывала
-    is_verified реальным bool перед save). Тест обязательно идёт через
-    self.client (полный стек middleware, включая OTPMiddleware) — прямой
-    вызов вьюхи/формы в обход middleware не воспроизвёл бы баг."""
+    """Регрессия: OTPMiddleware подменяет request.user.is_verified на partial,
+    сохранение профиля падало. Тест через self.client — с полным стеком middleware.
+    """
 
     def setUp(self):
         self.user = User.objects.create_user(
@@ -827,7 +739,7 @@ class ProfileEditViewOtpCollisionTests(TestCase):
 
     def test_saving_profile_without_changing_email_does_not_crash(self):
         response = self.client.post(self.url, {
-            "email": self.user.email,  # email НЕ меняется — эта ветка не трогает is_verified вручную
+            "email": self.user.email,  # email не меняется
             "city": "Алматы",
             "bio": "Тест",
             "is_profile_public": "on",
@@ -839,10 +751,7 @@ class ProfileEditViewOtpCollisionTests(TestCase):
         self.assertTrue(self.user.is_verified, "is_verified не должен был затронуться, раз email не менялся")
 
     def test_get_object_returns_fresh_instance_not_middleware_patched_request_user(self):
-        # Симулируем ТОЧНО то, что делает django_otp.middleware.OTPMiddleware.
-        # _init_user_fields (см. app_venv/.../django_otp/middleware.py) —
-        # подменяем is_verified на functools.partial прямо на объекте
-        # self.user, как это происходит с request.user на живом запросе.
+        # Имитируем OTPMiddleware: is_verified -> functools.partial.
         import functools
         poisoned_user = User.objects.get(pk=self.user.pk)
         poisoned_user.is_verified = functools.partial(lambda u: True, poisoned_user)

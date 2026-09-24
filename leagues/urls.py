@@ -1,4 +1,5 @@
 # leagues/urls.py
+# Список и страница лиги.
 from django.urls import path
 from leagues.views import LeagueListView, LeagueDetailView
 

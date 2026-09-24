@@ -1,22 +1,8 @@
 # aggregates/management/commands/calibrate_player_objective_weights.py
-"""
-Подбор весов запасной формулы «оценки игры по статистике» — 2026-09-24.
+"""manage.py calibrate_player_objective_weights [--save]
 
-Зачем: когда у игрока в матче нет готовой оценки по статистике (RATING в
-MatchPlayerStatistics.raw), детектор расхождения (aggregates/tasks.py::
-_player_objective_score) считает свою сумму баллов. Раньше веса этой суммы
-были подобраны «на глаз». Эта команда подбирает их по данным: линейная
-регрессия (с небольшим сглаживанием, ridge) метрик матча на готовую оценку
-по статистике — на тех матчах, где есть и то, и другое. Итоговая формула
-выдаёт число в той же шкале ~1-10.
-
-Результат сохраняется в «Настройки платформы» (ключ
-player_objective_weights) — формула начинает его использовать без деплоя.
-Удалить ключ в настройках = вернуться к весам «на глаз».
-
-Использование:
-    python manage.py calibrate_player_objective_weights          # только показать результат
-    python manage.py calibrate_player_objective_weights --save   # сохранить в настройки
+Подбор весов запасной формулы оценки по статистике (ridge-регрессия метрик на RATING).
+--save — в настройки платформы (player_objective_weights). Удалить ключ — вернуть веса по умолчанию.
 """
 import json
 
@@ -46,7 +32,7 @@ def _num(v) -> float:
 
 
 def _solve(a, b):
-    """Решение СЛАУ a·x = b методом Гаусса с выбором главного элемента."""
+    """Решение СЛАУ методом Гаусса с выбором главного элемента."""
     n = len(b)
     m = [row[:] + [b[i]] for i, row in enumerate(a)]
     for col in range(n):

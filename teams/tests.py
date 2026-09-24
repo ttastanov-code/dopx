@@ -1,9 +1,5 @@
 # teams/tests.py
-"""
-Тесты teams/services.py::compute_mood_trend (Индекс настроения клуба, MVP
-тренд-бейдж, docs/adr/0029-club-mood-index-mvp.md). TestCase — нужен
-реальный TeamMatchAggregate (Meta.ordering читается по match__start_time).
-"""
+"""Тесты teams: индекс настроения клуба, график, состав команды, таблица перед матчем."""
 from __future__ import annotations
 
 from datetime import timedelta
@@ -87,15 +83,14 @@ class MoodTrendServiceTests(TestCase):
     def test_zero_vote_aggregates_excluded(self):
         self._make_match_agg(days_ago=2, score=9.0, total_votes=0)
         self._make_match_agg(days_ago=1, score=5.0)
-        # Только 1 строка с total_votes > 0 — недостаточно для тренда.
+        # Одна строка с голосами — мало для тренда.
         self.assertIsNone(compute_mood_trend(self.team))
 
     def test_result_is_cached(self):
         self._make_match_agg(days_ago=2, score=5.0)
         self._make_match_agg(days_ago=1, score=8.0)
         first = compute_mood_trend(self.team)
-        # Добавляем ещё одну (более свежую) строку — если бы результат не
-        # кэшировался, второй вызов увидел бы её и мог дать другой ответ.
+        # Проверяем кэш: новая строка не должна повлиять.
         self._make_match_agg(days_ago=0, score=1.0)
         second = compute_mood_trend(self.team)
         self.assertEqual(first, second)
@@ -103,7 +98,7 @@ class MoodTrendServiceTests(TestCase):
 
 @override_settings(CACHES=LOCMEM_CACHES)
 class MoodSeriesServiceTests(TestCase):
-    """docs/adr/0034-club-mood-index-v2.md — time series (не один бейдж)."""
+    """Time series настроения клуба."""
 
     def setUp(self):
         cache.clear()
@@ -134,7 +129,7 @@ class MoodSeriesServiceTests(TestCase):
         self._make_match_agg(days_ago=1, mood_score=8.0, trust_score=9.0)
         series = compute_mood_series(self.team)
         self.assertEqual(len(series), 2)
-        # Хронологический порядок — старый матч первым (график слева-направо).
+        # Старые матчи первыми.
         self.assertEqual(series[0]["mood"], 6.0)
         self.assertEqual(series[1]["mood"], 8.0)
         self.assertEqual(series[0]["trust"], 7.0)
@@ -158,8 +153,7 @@ class MoodSeriesServiceTests(TestCase):
         MatchPrediction.objects.create(match=match, user=user_away, choice=MatchPrediction.CHOICE_AWAY)
 
         series = compute_mood_series(self.team)
-        # self.team — домашняя команда (match.home_team=self.team), 3 из 4
-        # прогнозов — на её победу (CHOICE_HOME) => 75%.
+        # 3 из 4 прогнозов на победу хозяев => 75%.
         self.assertEqual(series[0]["expectation_pct"], 75.0)
         self.assertEqual(series[0]["total_predictions"], 4)
 
@@ -179,34 +173,21 @@ class BuildSparklinePointsTests(SimpleTestCase):
         self.assertNotEqual(points, "")
         coords = [tuple(map(float, p.split(","))) for p in points.split(" ")]
         self.assertEqual(len(coords), 2)
-        # value=0 -> внизу (y большой), value=value_max -> вверху (y малый).
+        # 0 — внизу, value_max — вверху.
         self.assertGreater(coords[0][1], coords[1][1])
 
     def test_gap_in_series_skipped_without_breaking_positions(self):
         series = [{"v": 5.0}, {"v": None}, {"v": 8.0}]
         points = build_sparkline_points(series, "v", value_max=10.0)
         coords = [tuple(map(float, p.split(","))) for p in points.split(" ")]
-        self.assertEqual(len(coords), 2)  # средняя точка (None) пропущена
+        self.assertEqual(len(coords), 2)  # точка с None пропущена
 
 
 class BuildMoodChartTests(SimpleTestCase):
-    """teams/services.py::build_mood_chart — премиальный редизайн графика
-    "Индекс настроения клуба", ПЕРЕСОБРАН ВТОРОЙ РАЗ 2026-09-07 (живой скрин:
-    "10" рисовалось битым текстом, бары "ожиданий" были невидимы, потом —
-    один закрашенный бар на фоне девяти пустых заглушек). Тесты обновлены
-    под ТЕКУЩИЙ контракт build_mood_chart:
-      · `mood`/`trust` — ВСЕГДА dict (никогда `None`) при непустом `series`,
-        внутри свой флаг `has_data` (линию рисовать или нет) и своя
-        `gridlines` — mood/trust больше не делят один список сетки на весь
-        chart, у каждого своя (см. докстринг _build_series_chart).
-      · `expectation` — dict с `bars` (список, включая записи `has_data=False`
-        для матчей без прогнозов — их не исключают, а помечают).
-      · `has_expectation_data` — требует МИНИМАЛЬНОГО покрытия (не любое
-        ненулевое количество), иначе секция с одним баром на фоне девяти
-        пустых читалась как "почти всё сломано" (EXPECTATION_MIN_COVERAGE_*).
-      · `latest_mood`/`latest_trust` — последнее РЕАЛЬНО известное значение
-        (сканирование с конца), а не `series[-1][key]` без проверки на
-        `None` — та самая причина пустого "Доверие сейчас: /10" на скрине."""
+    """build_mood_chart: mood/trust — всегда dict с has_data и своей сеткой;
+    expectation.bars включает матчи без прогнозов (has_data=False);
+    latest_* — последнее реально известное значение.
+    """
 
     def _point(self, label="01.09", opponent="Соперник", mood=6.0, trust=None, expectation_pct=None):
         return {"label": label, "opponent": opponent, "mood": mood, "trust": trust, "expectation_pct": expectation_pct}
@@ -218,16 +199,15 @@ class BuildMoodChartTests(SimpleTestCase):
         series = [self._point(mood=6.0), self._point(mood=7.0)]
         chart = build_mood_chart(series)
         self.assertTrue(chart["mood"]["has_data"])
-        self.assertIsNotNone(chart["trust"])  # dict, не None — шаблон читает .has_data
+        self.assertIsNotNone(chart["trust"])  # dict, не None
         self.assertFalse(chart["trust"]["has_data"])
 
     def test_single_trust_point_insufficient_for_line(self):
-        # Один валидный trust на фоне двух mood — линию из одной точки не
-        # построить (тот же порог "меньше 2 точек", что у build_sparkline_points).
+        # Одна точка trust — линию не строим.
         series = [self._point(mood=6.0, trust=5.0), self._point(mood=7.0, trust=None)]
         chart = build_mood_chart(series)
         self.assertFalse(chart["trust"]["has_data"])
-        self.assertEqual(chart["latest_trust"], 5.0)  # число всё равно доступно
+        self.assertEqual(chart["latest_trust"], 5.0)  # число доступно
 
     def test_both_series_present_with_two_plus_points(self):
         series = [self._point(mood=6.0, trust=5.0), self._point(mood=7.0, trust=6.0)]
@@ -238,8 +218,7 @@ class BuildMoodChartTests(SimpleTestCase):
         self.assertEqual(len(chart["trust"]["dots"]), 2)
 
     def test_mood_gridlines_are_whole_numbers_only(self):
-        # Только 0/5/10 — БЕЗ дробных 2.5/7.5 (см. докстринг модуля,
-        # пункт 2 — дробная точка была на грани обрезания при масштабировании).
+        # Только 0/5/10.
         series = [self._point(mood=6.0), self._point(mood=7.0)]
         chart = build_mood_chart(series)
         labels = [g["label"] for g in chart["mood"]["gridlines"]]
@@ -252,8 +231,7 @@ class BuildMoodChartTests(SimpleTestCase):
         self.assertEqual(labels, ["0", "10"])
 
     def test_expectation_bars_include_no_data_entries_not_excluded(self):
-        # pct=None не выкидывается из bars — попадает как has_data=False, шаблон
-        # рисует ему пунктирную заглушку вместо провала в ряду.
+        # pct=None остаётся в bars с has_data=False.
         series = [self._point(mood=6.0, expectation_pct=40.0), self._point(mood=7.0, expectation_pct=None)]
         chart = build_mood_chart(series)
         bars = chart["expectation"]["bars"]
@@ -268,13 +246,7 @@ class BuildMoodChartTests(SimpleTestCase):
         self.assertFalse(chart["has_expectation_data"])
 
     def test_has_expectation_data_true_even_with_single_data_point(self):
-        # ИСТОРИЯ (2026-09-07): сначала секцию прятали при низком покрытии
-        # (порог "минимум 3 точки и 30%"), но продуктовый фидбек был обратный
-        # — "а где эти проценты?". Порог вернули к "показываем, если есть
-        # хоть одна точка" (см. докстринг EXPECTATION_MIN_COVERAGE_* в
-        # teams/services.py) — 1 бар из 10 с приглушёнными прочерками рядом
-        # уже не выглядит поломкой теперь, когда его цвет (--color-secondary)
-        # не совпадает с --color-success графика "Доверие".
+        # Секция ожиданий показывается при хотя бы одной точке.
         series = [self._point(mood=6.0, expectation_pct=50.0)] + [self._point(mood=6.0) for _ in range(9)]
         chart = build_mood_chart(series)
         self.assertTrue(chart["has_expectation_data"])
@@ -283,9 +255,7 @@ class BuildMoodChartTests(SimpleTestCase):
         self.assertTrue(all(not b["has_data"] for b in bars[1:]))
 
     def test_latest_uses_last_non_null_value_not_series_tail(self):
-        # Ровно баг со скриншота: у самого свежего матча trust отсутствует, у
-        # более раннего — есть. latest_trust должен взять более раннее
-        # значение, а не показать пустоту при формально непустом chart["trust"].
+        # latest_trust берёт более раннее известное значение.
         series = [
             self._point(label="01.09", opponent="A", mood=6.0, trust=5.0),
             self._point(label="08.09", opponent="B", mood=7.5, trust=None),
@@ -356,12 +326,7 @@ class SeasonControversialMatchesTests(TestCase):
 
 
 class TeamDetailViewRosterTests(TestCase):
-    """Регрессия для teams/views.py::TeamDetailView, блок "состав команды"
-    в активном сезоне — до этого теста не было НИ ОДНОГО, хотя сама логика
-    минимум трижды переписывалась в ответ на баг-репорты пользователя (см.
-    комментарии в самой вьюхе, 2026-09-09/10/11 — "Виктор Васин", затем
-    "Офри Арад" дважды: сперва на /players/, потом здесь же, в исходном
-    месте этой логики)."""
+    """Состав команды в активном сезоне (TeamDetailView)."""
 
     def setUp(self):
         self.league = League.objects.create(name="КПЛ", country="Казахстан", is_primary=True)
@@ -374,15 +339,7 @@ class TeamDetailViewRosterTests(TestCase):
         return list(response.context['players'])
 
     def test_player_who_only_played_past_season_excluded(self):
-        """ИСПРАВЛЕНО (2026-09-11, конкретный пример пользователя —
-        "Офри Арад" всё ещё в составе "Кайрат" ТЕКУЩЕГО сезона на странице
-        команды, хотя последний раз реально играл в сезоне 2025):
-        промежуточная версия фикса проверяла last_match_at не старше
-        ROSTER_STALE_THRESHOLD (~15 месяцев) — временное окно, а не
-        привязка к конкретному сезону; сезон 2025 легко укладывался в это
-        окно. Игрок с реальной историей матчей, но НЕ в активном сезоне,
-        не должен попадать в текущий состав, даже если Player.team
-        формально указывает на эту команду."""
+        """Игрок с историей, но не в активном сезоне — не в составе."""
         from lineups.models import MatchLineup, MatchLineupPlayer
 
         past_season = Season.objects.create(league=self.league, year="2025", is_active=False)
@@ -400,15 +357,12 @@ class TeamDetailViewRosterTests(TestCase):
         self.assertNotIn(arad, self._get_players())
 
     def test_new_signee_with_no_history_shown(self):
-        """Новичок, ещё не дебютировавший — team FK уже указывает на эту
-        команду, истории в MatchLineupPlayer вообще нет — единственный
-        случай, где доверяем team FK как есть, должен показываться."""
+        """Новичок без матчей — в составе."""
         rookie = Player.objects.create(first_name="Новичок", last_name="БезМатчей", team=self.team)
         self.assertIn(rookie, self._get_players())
 
     def test_player_who_played_this_season_shown(self):
-        """Игрок реально выходил в заявке на матч ИМЕННО текущего сезона —
-        должен показываться, даже если это был единственный его матч."""
+        """Сыграл в текущем сезоне — в составе."""
         from lineups.models import MatchLineup, MatchLineupPlayer
 
         played = Player.objects.create(first_name="Игрок", last_name="ТекущегоСезона", team=self.team)
@@ -425,11 +379,7 @@ class TeamDetailViewRosterTests(TestCase):
         self.assertIn(played, self._get_players())
 
     def test_player_who_transferred_away_after_playing_this_season_still_shown(self):
-        """Игрок сыграл за команду в ЭТОМ сезоне, но Player.team с тех пор
-        уже указывает на ДРУГОЙ клуб (трансфер в разгар сезона) — должен
-        всё равно оставаться в составе сезона у ПРЕЖНЕГО клуба (тот же
-        принцип, что описан в комментарии вьюхи: "иначе они пропали бы из
-        состава сезона сразу в день ухода")."""
+        """Ушёл по ходу сезона — остаётся в составе прежнего клуба за этот сезон."""
         from lineups.models import MatchLineup, MatchLineupPlayer
 
         other_team = Team.objects.create(name="Новый клуб")
@@ -449,15 +399,7 @@ class TeamDetailViewRosterTests(TestCase):
         self.assertIn(transferred, self._get_players())
 
     def test_large_squad_not_truncated_to_25(self):
-        """Регрессия (2026-09-11, конкретный пример пользователя — "Исмаил
-        Бекболат" реально играет за "Кайрат" (9 матчей в сезоне), но не
-        показывался в составе на странице команды). Причина — players
-        когда-то был срезан [:25] по возрастанию номера; у большого клуба
-        сезонных игроков легко больше 25 (основа + ротация + вызовы из
-        дубля), игрок с высоким номером на майке (как реальный Бекболат —
-        №81) физически не помещался в первые 25 и молча пропадал из
-        "полного" состава команды. Явно воспроизводим: 30 игроков этого
-        сезона, номера 1..30 — 26-й и далее раньше исчезали."""
+        """Состав не режется до 25 игроков."""
         from lineups.models import MatchLineup, MatchLineupPlayer
 
         opponent = Team.objects.create(name="Соперник (большой состав)")
@@ -480,23 +422,15 @@ class TeamDetailViewRosterTests(TestCase):
 
         players = self._get_players()
         self.assertEqual(len(players), 30, "состав команды не должен обрезаться искусственным лимитом")
-        last_player = squad[-1]  # номер 30 — раньше падал за пределы [:25]
+        last_player = squad[-1]  # номер 30
         self.assertIn(last_player, players)
 
     def test_large_squad_not_truncated_to_25_for_past_season_too(self):
-        """Тот же [:25] стоял и в ветке прошлого сезона (не только
-        активного) — на всякий случай закрываем тестом и её."""
+        """То же для прошлого сезона."""
         from lineups.models import MatchLineup, MatchLineupPlayer
 
         past_season = Season.objects.create(league=self.league, year="2025", is_active=False)
-        # Без этой строки TeamDetailView не находит 2025 в team_seasons
-        # (views.py:130 строит список сезонов команды именно из TeamSeason,
-        # а не из факта наличия сыгранных матчей) — ?season=2025 молча
-        # игнорируется, view откатывается на активный сезон, и тест ловит
-        # 0 игроков вместо 30 не из-за [:25], а из-за пропущенной здесь
-        # связки TeamSeason. Реальные данные всегда получают TeamSeason
-        # через синк (см. setUp класса — TeamSeason создаётся и для
-        # активного сезона тоже), тест обязан воспроизводить это же условие.
+        # Нужен TeamSeason, иначе ?season=2025 игнорируется.
         TeamSeason.objects.create(team=self.team, season=past_season)
         opponent = Team.objects.create(name="Соперник (прошлый сезон)")
         match = Match.objects.create(
@@ -523,9 +457,7 @@ class TeamDetailViewRosterTests(TestCase):
 
 
 class GetPreMatchStandingsSnapshotTests(TestCase):
-    """2026-09-11, прямая просьба пользователя: страница ещё не начавшегося
-    матча "скучно и пусто" — новый виджет "Турнирная таблица перед матчем"
-    (get_pre_match_standings_snapshot)."""
+    """Виджет «Турнирная таблица перед матчем»."""
 
     def setUp(self):
         self.league = League.objects.create(name="League", country="KZ")
@@ -537,8 +469,7 @@ class GetPreMatchStandingsSnapshotTests(TestCase):
             TeamSeason.objects.create(team=team, season=self.season)
 
     def test_none_when_no_matches_played_yet(self):
-        """1-й тур сезона — таблица "все по 0" неинформативна, виджет не
-        должен показываться вообще."""
+        """1-й тур — виджет не показываем."""
         upcoming = Match.objects.create(
             league=self.league, season=self.season,
             home_team=self.team_a, away_team=self.team_b,
@@ -548,7 +479,7 @@ class GetPreMatchStandingsSnapshotTests(TestCase):
         self.assertIsNone(get_pre_match_standings_snapshot(upcoming))
 
     def test_snapshot_reflects_standings_right_before_this_match(self):
-        # team_a громит team_c 3:0 — задаёт таблицу "до".
+        # team_a — team_c 3:0.
         Match.objects.create(
             league=self.league, season=self.season,
             home_team=self.team_a, away_team=self.team_c,
@@ -556,7 +487,7 @@ class GetPreMatchStandingsSnapshotTests(TestCase):
             voting_open_until=timezone.now() - timedelta(days=9),
             home_score=3, away_score=0,
         )
-        # team_b обыгрывает team_c 1:0.
+        # team_b — team_c 1:0.
         Match.objects.create(
             league=self.league, season=self.season,
             home_team=self.team_b, away_team=self.team_c,
@@ -570,8 +501,7 @@ class GetPreMatchStandingsSnapshotTests(TestCase):
             status='scheduled', start_time=timezone.now() + timedelta(days=1),
             voting_open_until=timezone.now() + timedelta(days=2),
         )
-        # Матч, сыгранный ПОСЛЕ upcoming (например, перенос другого тура) —
-        # не должен влиять на снимок таблицы перед upcoming.
+        # Матч после upcoming не влияет на снимок.
         Match.objects.create(
             league=self.league, season=self.season,
             home_team=self.team_c, away_team=self.team_b,

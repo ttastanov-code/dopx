@@ -5,15 +5,12 @@
 <html lang="ru" data-theme="light">
 <head>
     <meta charset="UTF-8">
-    <!-- WCAG 2.1 SC 1.4.4: жест масштабирования (pinch-zoom) должен работать
-         всегда — maximum-scale=1.0 + user-scalable=no раньше блокировали
-         его для всех, это особенно бьёт по людям со слабым зрением. -->
+    {# Без maximum-scale/user-scalable=no — pinch-zoom должен работать (WCAG 1.4.4). #}
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#000000">
-    <!-- SEO -->
+    {# SEO #}
     <title>{% block title %}{{ page_title|default:'DOPX' }}{% endblock %}</title>
-    <!-- meta_description/og_image приходят из контекста конкретной вьюхи
-         (matches/views.py, players/views.py) с этим текстом как дефолтом. -->
+    {# meta_description/og_image — из контекста вьюхи, иначе дефолт. #}
     <meta name="description" content="{{ meta_description|default:'DOPX: измеряем голос трибун казахстанского футбола' }}">
     <meta property="og:type" content="website">
     <meta property="og:title" content="{{ page_title|default:'DOPX' }}">
@@ -22,98 +19,45 @@
     <meta name="twitter:card" content="summary_large_image">
     <link rel="canonical" href="{{ request.build_absolute_uri }}">
     {% block schema %}{% endblock %}
-    <!-- Манифест грузится из /static/, но регистрируется service worker'ом
-         с /sw.js — см. core/views.py::service_worker про разницу путей. -->
+    {# Service worker регистрируется с /sw.js (core/views.py::service_worker). #}
     <link rel="manifest" href="{% static 'manifest.json' %}">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="DOPX">
-    <!-- Favicon -->
+    {# Favicon #}
     <link rel="icon" type="image/png" href="{% static 'favicons/favicon-32x32.png' %}" sizes="32x32">
     <link rel="icon" type="image/png" href="{% static 'favicons/favicon-16x16.png' %}" sizes="16x16">
     <link rel="apple-touch-icon" href="{% static 'favicons/apple-touch-icon.png' %}">
-    <!-- Tailwind CSS -->
-    {% comment %}
-    Версии CDN-пакетов закреплены точно (не @4/@5/@latest) — плавающий тег
-    рассинхронизирует SRI-хэш с первым же апдейтом пакета.
-
-    ВНИМАНИЕ: integrity= у этого тега временно убран — был плейсхолдером
-    sha384-REPLACE_*, который заблокировал бы загрузку ресурса целиком.
-    CSP по-прежнему ограничивает домены-источники — реальный хэш нужно
-    посчитать и проверить до деплоя (scripts/generate_sri.sh). Готовый
-    план полного перехода на локальную сборку (снимет и эту CDN-
-    зависимость целиком) — docs/adr/0025-remove-cdn-dependencies.md.
-    {% endcomment %}
+    {# Tailwind CSS #}
+    {# Версии CDN закреплены точно. integrity временно нет — посчитать через scripts/generate_sri.sh. #}
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.3" integrity="sha384-aJ9rL4k6lF+91guGvUFVSkpIcge7Zd9EiI4TQDLoK9kFaFJgKHgjEXVvG/qA5COj" crossorigin="anonymous"></script>
-    <!-- DaisyUI -->
+    {# DaisyUI #}
     <link href="https://cdn.jsdelivr.net/npm/daisyui@5.7.17" rel="stylesheet" type="text/css" integrity="sha384-39M1LQqzp+SSirSevKD4gsadFB7kgKzMiPY7o6hVhOXuRthgtd1oohKwlosU9KHi" crossorigin="anonymous" />
     <link href="https://cdn.jsdelivr.net/npm/daisyui@5.7.17/themes.css" rel="stylesheet" type="text/css" integrity="sha384-HhSoSsQclUlsqy8Gyz+E2oVSebHT4dv3MJ+NdUjV9mh1twUK4UPKQgmj0dHDKe0Y" crossorigin="anonymous" />
-    <!-- Tabler Icons -->
+    {# Tabler Icons #}
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.46.0/dist/tabler-icons.min.css" integrity="sha384-ND+q1IVc0KDElX60dZaqKc7Xl9cdxd2PpU2JfVUHcurCkFVtVLFdt9vJfxtHSL3p" crossorigin="anonymous">
-    <!-- Карточка матча (components/_match_card.html) — общий стиль, см.
-         докстринг static/css/match-card.css про то, почему это отдельный
-         файл, а не инлайн-<style> в компоненте. -->
+    {# Карточка матча #}
     <link rel="stylesheet" href="{% static_v 'css/match-card.css' %}">
-    <!-- Вайзард оценки матча (evaluations/*.html) — кастомные слайдеры,
-         прогресс-степпер, sticky-нижний бар. См. докстринг static/css/
-         wizard.css. -->
+    {# Вайзард оценки #}
     <link rel="stylesheet" href="{% static_v 'css/wizard.css' %}">
-    <!-- Страница матча (matches/detail.html, _match_header.html,
-         _match_events.html) — hero-баннер, timeline событий,
-         карточки метрик. См. докстринг static/css/match-detail.css. -->
+    {# Страница матча #}
     <link rel="stylesheet" href="{% static_v 'css/match-detail.css' %}">
-    <!-- Достижения уровня "legendary" (users/badges.py) — анимированная
-         градиентная рамка/свечение, единственное, чего не сделать
-         Tailwind-утилитами. См. докстринг static/css/badges.css. -->
+    {# Legendary-бейджи #}
     <link rel="stylesheet" href="{% static_v 'css/badges.css' %}">
-    <!-- static_v (core/templatetags/asset_extras.py) вместо static —
-         добавляет ?v=<mtime файла> к URL, чтобы браузер/nginx не
-         продолжали отдавать закэшированную версию файла после правки
-         (см. докстринг asset_extras.py — конкретный баг, из-за
-         которого это появилось: тиснение гербов в шапке матча). -->
+    {# static_v — добавляет ?v=<mtime> для сброса кэша. #}
 
-    <!-- Alpine.js -->
-    {% comment %}
-    Плагин Collapse нужно подключать ДО ядра Alpine (таков порядок для всех
-    плагинов Alpine через CDN) — иначе директива x-collapse (используется в
-    evaluations/_player_card.html для плавного разворачивания слайдеров
-    оценки игрока) молча игнорируется и раскрытие происходит без анимации.
-    {% endcomment %}
+    {# Alpine.js #}
+    {# Collapse — до ядра Alpine, иначе x-collapse не работает. #}
     <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/collapse@3.15.8/dist/cdn.min.js" integrity="sha384-NArNwzWsUSF+kY2lgW4YriEkjLqi+J+za6HrENUn/3nZqkBnWbxV22kCJEK5Uu6n" crossorigin="anonymous"></script>
-    {% comment %}
-    static/js/alpine-components.js — регистрирует ВСЕ Alpine.data()-компоненты
-    (навешивает слушатель на 'alpine:init'). Обязан идти ДО ядра Alpine ниже:
-    несколько defer-скриптов выполняются строго в порядке появления в DOM, а
-    ядро само вызывает Alpine.start() (событие 'alpine:init' стреляет внутри
-    него) сразу после своего выполнения — если поменять порядок, компоненты
-    зарегистрируются слишком поздно и x-data="имяКомпонента" по всему сайту
-    упадёт с "Alpine Expression Error: имяКомпонента is not defined".
-    {% endcomment %}
+    {# alpine-components.js — до ядра Alpine, иначе компоненты не успеют зарегистрироваться. #}
     <script defer src="{% static_v 'js/alpine-components.js' %}"></script>
-    {% comment %}
-    @alpinejs/csp, не обычная сборка — не требует 'unsafe-eval' в CSP
-    script-src (dopx/middleware.py), но не поддерживает инлайновые
-    x-data="{ ... }" — все x-data переведены на компоненты из
-    alpine-components.js. integrity= здесь и у htmx.min.js — sha256, не
-    sha384 (сеть для пересчёта была недоступна в момент подсчёта; значение
-    из официального API jsDelivr, тот же файл, другой алгоритм — валидно
-    по спецификации SRI). Перед деплоем: bash scripts/generate_sri.sh.
-    {% endcomment %}
+    {# @alpinejs/csp — без 'unsafe-eval'; x-data только через компоненты из alpine-components.js. #}
     <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/csp@3.15.8/dist/cdn.min.js" integrity="sha256-h9+HB497OogOke73+whm9Qht5S+SibyWUDYIMRgQp/w=" crossorigin="anonymous"></script>
-    <!-- HTMX -->
+    {# HTMX #}
     <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.8/dist/htmx.min.js" integrity="sha256-Iig+9oy3VFkU8KiKG97cclanA9HVgMHSVSF9ClDTExM=" crossorigin="anonymous"></script>
-    {% comment %}
-    Заголовок вкладки с числом непрочитанных уведомлений — единственный
-    слушатель htmx:afterSwap на #notif-unread-badge, см. подробный
-    докстринг в самом файле. defer — скрипт обращается к document.body
-    напрямую при выполнении, без defer он выполнился бы раньше, чем <body>
-    существует (этот <script> лежит в <head>).
-    {% endcomment %}
+    {# Счётчик непрочитанных в заголовке вкладки. #}
     <script defer src="{% static_v 'js/notifications.js' %}"></script>
-    <!-- Без tailwind.config — это Tailwind v4 (@tailwindcss/browser@4),
-         JS-конфига в v4 не существует (тема настраивается через CSS
-         @theme), window.tailwind не создаётся. Цвета берутся из тем DaisyUI
-         (<link> ниже); переопределять их — через API кастомных тем DaisyUI. -->
+    {# Tailwind v4 — без JS-конфига, цвета из тем DaisyUI. #}
     <script>
         const savedTheme = localStorage.getItem('theme') || 'light';
         document.documentElement.setAttribute('data-theme', savedTheme);
@@ -127,11 +71,11 @@
     <script defer src="{% static_v 'js/scroll-restore.js' %}"></script>
     <script defer src="{% static_v 'js/smart-back-links.js' %}"></script>
     <script defer src="{% static_v 'js/wizard-sliders.js' %}"></script>
-    <!-- Google Fonts -->
+    {# Google Fonts #}
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Кастомные стили -->
+    {# Кастомные стили #}
     <style>
         /* Базовые стили */
         * {
@@ -520,26 +464,15 @@
     data-vapid-public-key="{{ VAPID_PUBLIC_KEY|default:'' }}"
     x-data="themeSwitcher">
     
-    <!-- Сохраняем оригинальный title для JS уведомлений -->
+    {# Оригинальный title для JS уведомлений #}
     <meta name="original-title" content="{{ page_title|default:'DOPX' }}">
 
     {% block body_content %}
-    <!-- Navbar -->
+    {# Navbar #}
     {% include 'components/_navbar.html' %}
-    <!-- Messages -->
+    {# Messages #}
     {% if messages %}
-    {% comment %}
-    2026-09-23, БАГ (найден при аудите адаптивности — всплыл на создании
-    партнёра с длинным названием). w-[calc(100%-2rem)] — произвольное
-    Tailwind-значение, которое НЕ попало в собранный CSS (скорее всего не
-    просканировано JIT/сборка не переснята), поэтому реально применялся
-    только max-w-sm (384px, ФИКСИРОВАННАЯ ширина) — шире, чем 375px-экран,
-    вылезало за край. Фикс — left-4 + right-4 вместо width: на fixed-элементе
-    с обоими заданными left/right браузер сам растягивает ширину между ними
-    БЕЗ участия Tailwind-компиляции произвольных значений, это чистые
-    "ядровые" классы (top-20/right-4/max-w-sm), которые уже точно есть в
-    сборке (иначе бы и текущее right-4 не работало).
-    {% endcomment %}
+    {# left-4 + right-4 — ширина между краями, влезает на 375px. #}
     <div class="fixed top-20 left-4 right-4 sm:left-auto z-50 space-y-2 sm:w-auto max-w-sm"
          x-data="dismissible"
          x-show="show"
@@ -547,14 +480,7 @@
          @click.outside="show = false">
         {% for message in messages %}
         <div class="alert alert-{{ message.tags|default:'info' }} shadow-lg text-sm sm:text-base">
-            {% comment %}
-            БАГ, КОТОРЫЙ ТУТ БЫЛ — см. докстринг message_icon() в
-            core/templatetags/asset_extras.py: тег сообщения Django
-            (debug/info/success/warning/error) НЕ является именем иконки
-            Tabler, .ti-success/.ti-error/.ti-warning не существуют
-            вообще — иконка была невидимым пустым квадратом на каждом
-            flash-сообщении сайта.
-            {% endcomment %}
+            {# Иконка по тегу сообщения — через message_icon. #}
             <i class="ti ti-{{ message.tags|default:'info'|message_icon }}"></i>
             <span class="break-words">{{ message }}</span>
             <button @click="show = false" class="btn btn-sm btn-ghost shrink-0">✕</button>
@@ -562,24 +488,21 @@
         {% endfor %}
     </div>
     {% endif %}
-    <!-- Main Content -->
+    {# Main Content #}
     <main class="container mx-auto px-3 sm:px-4 py-4 sm:py-6 w-full">
         {% block content %}{% endblock %}
     </main>
-    <!-- Footer -->
+    {# Footer #}
     {% include 'components/_footer.html' %}
-    <!-- Плашка о cookie (строго необходимые: sessionid + csrftoken) -->
+    {# Плашка о cookie (sessionid + csrftoken) #}
     {% include 'components/_cookie_banner.html' %}
-    <!-- Loading Indicator (глобальный) -->
+    {# Глобальный индикатор загрузки #}
     <div id="global-loader" class="htmx-indicator fixed inset-0 bg-base-100/80 z-[100] flex items-center justify-center">
         <span class="loading loading-spinner loading-lg text-primary"></span>
     </div>
     {% endblock %}
-    <!-- tooltipTrigger (components/_tooltip_icon.html) теперь регистрируется
-         в static/js/alpine-components.js вместе со всеми остальными
-         Alpine.data()-компонентами — см. комментарий в <head> про CSP-safe
-         сборку Alpine. -->
-    <!-- Скрипты -->
+    {# tooltipTrigger — в alpine-components.js. #}
+    {# Скрипты #}
     <script>
         // HTMX события
         document.body.addEventListener('htmx:configRequest', (event) => {
@@ -670,20 +593,14 @@
             }
         }
     </script>
-    {% comment %}
-    extra_script держится СНАРУЖИ предыдущего <script>, не внутри — вложенные
-    <script> в HTML не работают (парсер закрывает внешний тег по первому
-    попавшемуся </script>). Дочерние шаблоны сами оборачивают свой JS.
-    {% endcomment %}
+    {# extra_script — снаружи <script>, дочерние шаблоны оборачивают свой JS сами. #}
     {% block extra_script %}{% endblock %}
     {% if request.resolver_match.app_name == 'notifications' %}
     <script src="{% static_v 'js/tickets.js' %}"></script>
     {% endif %}
-    <!-- Событийная аналитика продукта (analytics/views.py) — sendBeacon,
-         не блокирует ничего на странице. -->
+    {# Продуктовая аналитика (sendBeacon). #}
     <script src="{% static_v 'js/analytics.js' %}"></script>
-    <!-- Регистрирует /sw.js на каждой странице; подписка на push — по
-         явному действию пользователя, см. static/js/push.js. -->
+    {# Регистрация /sw.js; подписка на push — по действию пользователя (push.js). #}
     <script src="{% static_v 'js/push.js' %}"></script>
 </body>
 </html>

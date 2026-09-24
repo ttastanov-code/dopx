@@ -1,24 +1,10 @@
 {% comment %}
-templates/components/_tooltip_icon.html
-Переиспользуемая подсказка. Подключается директивой include с параметром
-text (имя переменной, содержащей текст подсказки).
-Ставить РЯДОМ с текстом/лейблом, который она поясняет, не оборачивать в
-неё сам лейбл (оборачивание ломало flex-вёрстку и обрезало подсказки по
-краю экрана — см. base.html).
-
-ВАЖНО: не писать здесь как текст пример вызова этого же партиала внутри
-директив шаблонного языка — движок парсит такие конструкции даже внутри
-однострочного комментария, из-за чего партиал однажды уже включал сам
-себя рекурсивно (RecursionError). Не писать также буквальный текст,
-похожий на закрывающую директиву этого блока, где-либо внутри него.
+Подсказка-иконка. Параметр text — текст подсказки.
+Ставить рядом с лейблом, не оборачивать его.
+Внутри этого комментария не писать шаблонные теги — движок их парсит.
 {% endcomment %}
 {% if text %}
-{% comment %}
-Текст в data-tooltip-text, НЕ аргументом функции в x-data — см. подробное
-объяснение в core/templatetags/tooltip_tags.py (баг "Дербии002Дэксперт",
-2026-08-21): CSP-евалуатор Alpine не раскрывает \uXXXX-эскейпы escapejs()
-внутри строковых литералов x-data-выражения.
-{% endcomment %}
+{# Текст в data-tooltip-text, не аргументом x-data. #}
 <span class="relative inline-flex align-middle"
       x-data="tooltipTrigger"
       data-tooltip-text="{{ text }}"
@@ -35,29 +21,12 @@ text (имя переменной, содержащей текст подска�
         <i class="ti ti-info-circle text-[13px] leading-none"></i>
     </button>
     <template x-teleport="body">
-        {% comment %}
-        Видимость управляется ВРУЧНУЮ через display в :style, а не через
-        x-show/x-transition. Причина: на телепортированном (x-teleport)
-        узле связка x-show + x-transition оказалась ненадёжной — display
-        молча залипал на block даже когда open становился false (проверено
-        вживую). Ручное управление через один и тот же реактивный
-        :style-объект работает предсказуемо.
-        {% endcomment %}
+        {# Видимость через display в :style — x-show на телепортированном узле ненадёжен. #}
         <div x-ref="bubble"
              x-cloak
              :style="{ position: 'fixed', top: pos.top + 'px', left: pos.left + 'px', display: open ? 'block' : 'none' }"
              class="z-[9999] max-w-[280px] rounded-md bg-neutral text-neutral-content text-xs leading-snug px-2.5 py-2 shadow-lg pointer-events-none">
-            {% comment %}
-            white-space: pre-line (2026-09-09, жалоба "текст как куча букв
-            без структуры и нечитабельно") — раньше длинные пояснения
-            (season_squad/round_squad "почему в составе") приходили одной
-            строкой без переносов и превращались в нечитаемую простыню
-            текста в узком пузыре. pre-line уважает переносы \n внутри
-            {{ text }} (см. season_squad/services.py::_build_explanation —
-            теперь каждый факт на отдельной строке), но по-прежнему схлопывает
-            обычные пробелы — короткие однострочные подсказки (без \n)
-            выглядят как раньше, ничего не ломает для них.
-            {% endcomment %}
+            {# white-space: pre-line — переносы \n в тексте сохраняются. #}
             <span x-text="text" style="white-space: pre-line;"></span>
         </div>
     </template>

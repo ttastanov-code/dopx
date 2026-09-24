@@ -1,14 +1,6 @@
 {% comment %}
-templates/dashboard/_names_review_queue.html
-«Живая» часть очереди «Проверка ФИО (ИИ)» — карточки «Ждут проверки» и
-«Ошибки запроса к Gemini». Вынесено из names_review.html в отдельный
-партиал (2026-09-22, прямая просьба пользователя: "надо чтобы контент
-обновлялся в онлайне без обновления страницы") — цель HTMX-поллинга
-(dashboard/views.py::names_review_partial, hx-trigger="every 6s" в
-names_review.html), тот же приём, что и «История запусков» на странице
-"Скрипты и команды" (_scripts_runs_table.html). «Недавно разобранные»
-(с пагинацией) сюда намеренно не входит — см. докстринг
-_names_review_queue_context в dashboard/views.py.
+Живая часть очереди «Проверка ФИО (ИИ)»: «Ждут проверки» и «Ошибки запроса».
+Цель HTMX-поллинга (names_review_partial, каждые 6 с).
 {% endcomment %}
 <div class="card bg-base-100 border border-base-300 mb-4">
     <div class="card-body p-4">
@@ -18,13 +10,7 @@ _names_review_queue_context в dashboard/views.py.
                 <div class="dopx-section-title">Ждут проверки <span class="badge badge-warning badge-sm align-middle">{{ pending_suggestions|length }}</span></div>
             </div>
             {% if matches_count > 0 %}
-            {% comment %}
-            2026-09-22, прямая просьба пользователя: массовое "Подтвердить
-            все" — но ТОЛЬКО для карточек, где сам Gemini написал
-            matches_current=True (менять нечего, это просто подтверждение
-            уже верного написания). Настоящие предложения ИЗМЕНИТЬ имя
-            под эту кнопку не попадают — по одной, как и раньше.
-            {% endcomment %}
+            {# «Подтвердить все» — только для карточек, где имя уже верное (matches_current=True). #}
             <form method="post" action="{% url 'dashboard:names_review_bulk_confirm_matches' %}" class="ml-auto"
                   onsubmit="return confirm('Подтвердить все {{ matches_count }} карточки, где Gemini написал «текущее написание верно»? Реальные предложения изменить ФИО это не затронет.');">
                 {% csrf_token %}
@@ -83,12 +69,7 @@ _names_review_queue_context в dashboard/views.py.
         <div class="dopx-section-eyebrow" style="color: var(--color-error)"><i class="ti ti-alert-triangle"></i>Ошибки</div>
         <div class="dopx-section-title mb-3">
             Запросы к Gemini
-            {% comment %}
-            2026-09-22: бейдж раньше считал len(failed_suggestions), а
-            список в контексте обрезан [:20] — цифра занижалась при
-            больших прогонах. failed_count — честный total .count() до
-            среза, см. dashboard/views.py::names_review.
-            {% endcomment %}
+            {# failed_count — полный .count(), не длина среза. #}
             <span class="badge badge-error badge-sm align-middle">{{ failed_count }}</span>
         </div>
         <p class="text-xs opacity-60 mb-3">

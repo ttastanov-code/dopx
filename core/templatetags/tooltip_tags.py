@@ -1,15 +1,6 @@
 # core/templatetags/tooltip_tags.py
-"""
-Тег {% tooltip_wrap "текст подсказки" %}...{% endtooltip_wrap %}.
-
-Для случаев, когда подсказка должна всплывать при наведении/тапе на сам
-элемент целиком (например бейдж-иконка без подписи рядом — вешать
-отдельную info-иконку некуда и незачем, сам бейдж и есть триггер).
-
-Для случаев "текст/лейбл + маленькая info-иконка рядом" используйте вместо
-этого components/_tooltip_icon.html (см. комментарий в base.html о том,
-почему подсказки больше не реализованы через CSS-класс `tooltip` +
-`data-tip`).
+"""{% tooltip_wrap "текст" %}...{% endtooltip_wrap %} — подсказка на весь элемент.
+Для «лейбл + info-иконка» — components/_tooltip_icon.html.
 """
 from django import template
 from django.utils.html import escape
@@ -27,16 +18,9 @@ class TooltipWrapNode(template.Node):
         inner = self.nodelist.render(context)
         if not text:
             return inner
-        # Текст идёт в data-атрибут + HTML-escape, не аргументом x-data —
-        # CSP-сборка Alpine не раскрывает \uXXXX внутри строковых литералов
-        # аргументов. См. docs/adr/0019-alpine-csp-data-passing.md.
+        # Текст в data-атрибут с экранированием, не аргументом x-data.
         safe_text = escape(text)
-        # Видимость управляется вручную через display в :style (объектом),
-        # а не через x-show/x-transition — на телепортированном (x-teleport)
-        # узле эта связка оказалась ненадёжной: display молча "залипал" на
-        # block даже когда open становился false (проверено вживую). Один
-        # и тот же реактивный :style-объект для позиции и display работает
-        # предсказуемо. См. подробный комментарий в _tooltip_icon.html.
+        # Видимость через display в :style (x-show на телепортированном узле ненадёжен).
         return (
             f'<span class="relative inline-flex" x-data="tooltipTrigger" data-tooltip-text="{safe_text}" @click.outside="hide()">'
             f'<span tabindex="0" x-ref="trigger" class="cursor-help outline-none" '

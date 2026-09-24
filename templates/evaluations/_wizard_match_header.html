@@ -1,14 +1,7 @@
 {% load match_extras %}
 {% comment %}
-Шапка матча для вайзарда оценки — общий партиал вместо 6 копий одного и
-того же ~35-строчного блока (context/teams/players/coaches/referee/
-match_final.html держали каждый свою вставку — герб 32px, имя обрезано
-до 12 символов, счёт text-sm — едва читаемо и рассинхронизировалось бы
-при следующей правке). РЕДИЗАЙН (2026-08-31, второй проход): крупнее,
-воздуха больше, полное имя команды видно на любом экране (перенос строк
-вместо обрезки).
-
-Использование: {% include 'evaluations/_wizard_match_header.html' with match=match %}
+Шапка матча для шагов вайзарда.
+{% include 'evaluations/_wizard_match_header.html' with match=match %}
 {% endcomment %}
 <div class="wz-hero flex items-center justify-between gap-2 sm:gap-4">
     <div class="flex-1 min-w-0 flex flex-col items-center gap-1.5 text-center">

@@ -1,24 +1,7 @@
 {% comment %}
-templates/components/_notification_item.html
-Единая вёрстка ОДНОЙ строки уведомления — переиспользуется И в дропдауне
-колокольчика (_notification_dropdown_items.html, compact=True), И на
-полной странице /notifications/ (list.html, compact=False). Раньше это
-были две независимые вёрстки с разным поведением (в дропдауне нельзя было
-отметить прочитанным без перехода на отдельную страницу) — единый партиал
-устраняет расхождение на уровне разметки.
-
-Переход по уведомлению — обычная HTML-форма (POST + редирект на next), не
-hx-post на <a href> — надёжнее, без риска, что htmx перехватит клик и
-отменит браузерную навигацию (см. notifications/views.py::MarkAsReadView).
-
-Быстрая отметка "прочитано" (без перехода) — icon-кнопка, HTMX hx-post +
-hx-swap="outerHTML" на саму строку: ответ сервера — эта же строка в
-прочитанном виде + OOB-хвост счётчиков (notifications/views.py::_oob_counters_html).
-
-Контекст:
-  notification — объект Notification.
-  compact — bool (default False) — влияет только на плотность вёрстки
-    (дропдаун ужат, без даты/матча вторым планом).
+Строка уведомления — в дропдауне (compact=True) и на /notifications/ (compact=False).
+Переход — POST-форма с next. «Прочитано» — hx-post, ответ: строка + OOB-счётчики.
+Контекст: notification, compact.
 {% endcomment %}
 <div id="notification-{{ notification.id }}"
      class="flex items-start gap-2.5 sm:gap-3
@@ -30,7 +13,7 @@ hx-swap="outerHTML" на саму строку: ответ сервера — э
               {% if not notification.is_read %}border-primary/40 bg-primary/5{% else %}border-base-300{% endif %}
             {% endif %}">
 
-    {% comment %} Иконка типа уведомления {% endcomment %}
+    {# Иконка типа #}
     <div class="{% if compact %}w-9 h-9{% else %}w-10 h-10 md:w-12 md:h-12{% endif %} rounded-xl flex items-center justify-center flex-shrink-0
         {% if notification.notification_type == 'match_finished' %}bg-success/10 text-success
         {% elif notification.notification_type == 'voting_open' %}bg-primary/10 text-primary
@@ -65,7 +48,7 @@ hx-swap="outerHTML" на саму строку: ответ сервера — э
             {% else %}ti-bell{% endif %} {% if compact %}text-base{% else %}text-lg md:text-xl{% endif %}"></i>
     </div>
 
-    {% comment %} Контент — заголовок/текст/мета, кликабельный только если есть action_url {% endcomment %}
+    {# Контент; кликабелен, если есть action_url #}
     <div class="flex-1 min-w-0">
         <div class="flex items-center gap-2">
             <h3 class="font-semibold {% if compact %}text-sm{% else %}text-sm md:text-base{% endif %} truncate {% if not notification.is_read %}text-primary{% endif %}">
@@ -91,7 +74,7 @@ hx-swap="outerHTML" на саму строку: ответ сервера — э
             {% endif %}
         </div>
 
-        {% comment %} На полной странице действия идут ПОД текстом, единой строкой — не отдельным правым столбцом, который на мобильном разъезжался в "кривые" разноширокие кнопки. {% endcomment %}
+        {# На полной странице действия под текстом. #}
         {% if not compact %}
         <div class="flex items-center gap-2 mt-3">
             {% if notification.action_url %}
@@ -121,7 +104,7 @@ hx-swap="outerHTML" на саму строку: ответ сервера — э
         {% endif %}
     </div>
 
-    {% comment %} В дропдауне действие — маленькая иконка справа, компактно {% endcomment %}
+    {# В дропдауне — иконка справа. #}
     {% if compact %}
         {% if not notification.is_read %}
         <button type="button"
@@ -134,13 +117,7 @@ hx-swap="outerHTML" на саму строку: ответ сервера — э
         </button>
         {% endif %}
         {% if notification.action_url %}
-        {% comment %}
-        ФОРМА, не <a href> — тот же паттерн "POST → mark-as-read →
-        редирект на next", что и на полной странице (см. докстринг вверху
-        файла): гарантирует и переход, и отметку прочитанным одним кликом,
-        без зависимости от того, как именно htmx обработал бы клик по
-        ссылке с hx-атрибутами.
-        {% endcomment %}
+        {# Форма, не ссылка: переход + отметка прочитанным одним кликом. #}
         <form method="post" action="{% url 'notifications:read' notification.id %}" class="inline">
             {% csrf_token %}
             <input type="hidden" name="next" value="{{ notification.action_url }}">

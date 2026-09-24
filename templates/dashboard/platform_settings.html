@@ -3,44 +3,19 @@
 {% block content %}
 {% include 'dashboard/_nav.html' %}
 
-{% comment %}
-templates/dashboard/platform_settings.html
-2026-09-23, раздел «Настройки платформы» (core/models.py::PlatformSetting,
-dashboard/views.py::platform_settings*) — key-value рантайм-конфиг без
-деплоя. Каждая строка — отдельная <form> на сохранение (без общей формы на
-всю таблицу: staff может поправить ОДНУ настройку, не рискуя случайно
-переслать устаревшие значения соседних строк).
-{% endcomment %}
+{# Настройки платформы (PlatformSetting). Каждая строка — своя форма сохранения. #}
 
 <div class="card bg-base-100 border border-base-300 mb-4">
     <div class="card-body p-4">
         <p class="text-xs opacity-55 flex items-start gap-2">
             <i class="ti ti-info-circle opacity-50 mt-0.5 shrink-0"></i>
-            {% comment %}
-            2026-09-23, БАГ (жалоба пользователя со скриншотом — текст
-            разваливается на криво перенесённые куски): та же причина, что
-            уже разбиралась в dashboard/templatetags/dashboard_extras.py —
-            внутри display:flex-контейнера каждый top-level текстовый узел
-            и каждый inline-элемент-ребёнок становится ОТДЕЛЬНЫМ flex-item
-            со своим независимым переносом строк. Здесь было три таких
-            item'а подряд (текст, потом моноширинный кусок с именем
-            функции, потом снова текст) — визуально три самостоятельных
-            обрывка вместо одного связного абзаца. Фикс — тот же, что уже
-            в audit_log.html/duplicate_players_review.html: весь абзац
-            оборачивается ОДНИМ inline-элементом-обёрткой, тогда flex видит
-            только два item'а (иконка и эта обёртка), а внутри нее текст
-            течёт как обычный inline-поток без разрывов.
-            {% endcomment %}
+            {# Абзац одним inline-элементом (flex). #}
             <span>Операционные пороги/флаги, читаемые кодом через <span class="font-mono">core.models.get_setting(key, default)</span> — изменение применяется в течение минуты (короткий кэш), без деплоя. НЕ для секретов (API-ключи/пароли) — те остаются в переменных окружения.</span>
         </p>
     </div>
 </div>
 
-{% comment %}
-2026-09-23, прямая просьба пользователя: инструкция на странице, как этим
-пользоваться и что оно даёт. Текст ниже и справочник ключей ниже написаны
-для конкретного случая — без общих фраз про «мощный инструмент» и т.п.
-{% endcomment %}
+{# Инструкция по разделу. #}
 <div class="card bg-base-100 border border-base-300 mb-4">
     <div class="card-body p-4">
         <div class="dopx-section-eyebrow"><i class="ti ti-book"></i>Как это работает</div>

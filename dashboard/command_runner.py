@@ -1,16 +1,7 @@
 # dashboard/command_runner.py
-"""
-Валидация/сборка аргументов из POST-формы (dashboard/commands_registry.py::
-ArgSpec) в позиционные/именованные аргументы call_command(), плюс запуск
-самой команды — синхронно для readonly-диагностики (staff должен сразу
-увидеть отчёт, без лишнего Celery-хопа на дешёвой read-only операции) и
-асинхронно через Celery (dashboard/tasks.py::run_management_command) для
-всего остального, что реально может занять больше пары секунд.
-
-Никакого произвольного текста командной строки от staff не принимается —
-только значения под уже описанные в COMMAND_REGISTRY поля конкретной
-команды (dashboard/commands_registry.py — тот же принцип allowlist'а, что
-и у dashboard/parser_tools.py::TRIGGERABLE_TASKS для celery-задач).
+"""Сборка аргументов call_command() из POST по ArgSpec и запуск команды:
+readonly — синхронно, остальное — через Celery (dashboard/tasks.py::run_management_command).
+Принимаются только описанные в COMMAND_REGISTRY поля.
 """
 from __future__ import annotations
 
@@ -47,12 +38,9 @@ def _coerce_value(arg: ArgSpec, raw: str) -> Any:
 
 
 def build_command_args(spec: CommandSpec, post_data, apply: bool = False) -> tuple[list, dict]:
-    """post_data — dict-подобный объект (request.POST), поля названы по
-    ArgSpec.dest (для list_str — многострочный textarea с тем же именем).
-    Возвращает (positional_args, kwargs) готовые для call_command(spec.name,
-    *positional_args, **kwargs). Бросает ValidationError со списком человеко-
-    читаемых сообщений, если что-то не проходит валидацию — форма
-    перерисовывается с этими сообщениями, call_command вообще не вызывается."""
+    """post_data — request.POST, поля по ArgSpec.dest.
+    Возвращает (positional_args, kwargs) или бросает ValidationError со списком сообщений.
+    """
     positional: list[Any] = []
     kwargs: dict[str, Any] = {}
     errors: list[str] = []
@@ -81,7 +69,7 @@ def build_command_args(spec: CommandSpec, post_data, apply: bool = False) -> tup
             if arg.required:
                 errors.append(f"«{arg.help or arg.dest}» — обязательное поле")
             elif arg.positional:
-                pass  # опциональный позиционный (nargs='?') — просто не передаём
+                pass  # необязательный позиционный — не передаём
             continue
 
         try:
@@ -105,32 +93,8 @@ def build_command_args(spec: CommandSpec, post_data, apply: bool = False) -> tup
 
 
 def run_command_sync(spec: CommandSpec, positional: list, kwargs: dict) -> tuple[bool, str, str]:
-    """Прямой вызов call_command() в текущем процессе — используется для
-    readonly-диагностики (быстро, staff должен увидеть отчёт немедленно) и
-    воркером run_management_command для остальных категорий. Возвращает
-    (success, stdout, stderr) — CommandError/любое исключение ловим сами и
-    кладём текст в stderr, а не роняем вызывающий код (staff должен увидеть
-    ПОЧЕМУ команда упала, а не голый 500).
-
-    2026-09-23, прямая просьба пользователя: "для каждого вида вывода на
-    странице [Скрипты] сделай максимально читабельным и красиво
-    размеченным, где надо подсветить/выделить". Все ~20 management-команд
-    в COMMAND_REGISTRY УЖЕ размечают свой вывод через self.style.SUCCESS/
-    WARNING/ERROR/NOTICE/MIGRATE_HEADING — это чистая семантика ("это
-    успех", "это предупреждение"), не привязанная к конкретному тексту
-    команды. Проблема была не в её отсутствии, а в том, что call_command()
-    писал в io.StringIO() БЕЗ force_color — Django проверяет
-    sys.stdout.isatty() (см. django/core/management/color.py::
-    supports_color) и молча возвращает no-op стили для любого не-TTY
-    получателя, то есть вся разметка каждой команды терялась ДО того, как
-    доходила до нас. force_color=True — штатный stealth-опцион
-    call_command() (BaseCommand.create_parser добавляет --force-color
-    каждой команде) — заставляет Django завернуть текст в настоящие ANSI
-    SGR-коды независимо от получателя; dashboard_extras.py::
-    format_command_output разбирает их обратно в CSS-классы (см. докстринг
-    там же). Работает для ЛЮБОЙ из ~20 команд сразу, без правки каждой
-    поштучно — семантика уже была в самих командах, не хватало только не
-    выбрасывать её на полпути.
+    """call_command() в текущем процессе. Возвращает (success, stdout, stderr); исключения — в stderr.
+    force_color=True — сохраняем ANSI-стили команд для разметки вывода.
     """
     out, err = io.StringIO(), io.StringIO()
     try:
@@ -147,10 +111,9 @@ def run_command_sync(spec: CommandSpec, positional: list, kwargs: dict) -> tuple
 
 
 def trigger_command(request, command_name: str, apply: bool = False) -> tuple[bool, str, "ManagementCommandRun | None"]:  # noqa: F821
-    """Точка входа из view (scripts_trigger). Валидирует POST против
-    COMMAND_REGISTRY, создаёт ManagementCommandRun (PENDING), и либо
-    выполняет её сразу (readonly), либо ставит в очередь Celery
-    (dashboard/tasks.py::run_management_command)."""
+    """Точка входа из scripts_trigger: валидирует, создаёт ManagementCommandRun (PENDING),
+    запускает сразу (readonly) или ставит в очередь.
+    """
     from .models import ManagementCommandRun
 
     spec = get_command(command_name)
@@ -171,8 +134,7 @@ def trigger_command(request, command_name: str, apply: bool = False) -> tuple[bo
     )
 
     if spec.danger == "readonly":
-        # Синхронно — дёшево, и staff должен увидеть отчёт диагностики
-        # сразу на той же странице, без лишнего похода через очередь.
+        # readonly — синхронно, отчёт сразу.
         run.status = ManagementCommandRun.Status.RUNNING
         run.started_at = timezone.now()
         run.save(update_fields=["status", "started_at"])

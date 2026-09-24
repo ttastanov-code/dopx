@@ -1,26 +1,11 @@
 # parsers/management/commands/sportmonks_backfill_stats.py
-"""
-Догрузка ПОЛНОЙ статистики (весь raw: рейтинг Sportmonks, отборы,
-перехваты, выносы и т.д.) для уже сыгранных матчей — 2026-09-24.
+"""Догрузка полной статистики (весь raw) для сыгранных матчей — 1 запрос на матч.
+Составы, события и счёт не трогает.
 
-До этого дня импорт выбрасывал всё, кроме ~10 полей игрока и ~15 полей
-команды, поэтому у прошлых матчей в raw нет RATING/TACKLES/INTERCEPTIONS.
-Без них детектор расхождения (aggregates/tasks.py::
-_check_player_stats_divergence) не может сравнить защитника с его же нормой.
-
-Что делает: для каждого завершённого матча с sportmonks_id — 1 лёгкий
-запрос (только statistics + lineups.details, без событий/составов) и
-перезапись MatchTeamStatistics/MatchPlayerStatistics. Составы, события,
-счёт НЕ трогает.
-
-Расход лимита: 1 запрос на матч. Лимит Sportmonks — ~3000 запросов в час
-на сущность, сезон КПЛ — ~180 матчей, укладывается с запасом.
-
-Использование:
-    python manage.py sportmonks_backfill_stats              # все завершённые матчи без полного raw
+    python manage.py sportmonks_backfill_stats               # матчи без полного raw
     python manage.py sportmonks_backfill_stats --season-only # только текущий сезон
-    python manage.py sportmonks_backfill_stats --force       # перезалить и те, где raw уже полный
-    python manage.py sportmonks_backfill_stats --limit 20    # первые 20 (для пробы)
+    python manage.py sportmonks_backfill_stats --force       # перезалить все
+    python manage.py sportmonks_backfill_stats --limit 20    # первые 20
 """
 import time
 
@@ -59,8 +44,7 @@ class Command(BaseCommand):
 
         matches = list(qs)
         if not options["force"]:
-            # "Полный raw" = у матча есть статистика хотя бы одного игрока с
-            # ключом RATING/MINUTES_PLAYED (старый импорт такие не сохранял).
+            # Полный raw — есть RATING/MINUTES_PLAYED хотя бы у одного игрока.
             done_ids = set(
                 MatchPlayerStatistics.objects.filter(match__in=matches)
                 .filter(raw__has_key="MINUTES_PLAYED")

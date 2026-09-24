@@ -1,34 +1,10 @@
 {% comment %}
-Виджет краудсорс-прогноза 1X2 (в стиле Sofascore) — три опции П1/Х/П2 с
-процентом голосов сообщества под каждой. Рендерится и как часть
-_match_header.html (первичная загрузка через hx-get="...widget/"
-hx-trigger="load"), и как ответ на сам POST predictions:predict — тот же
-партиал целиком заменяет себя через hx-swap="outerHTML", как
-events/_reaction_buttons.html.
-
-Контекст: match, counts (dict из predictions/services.py::prediction_counts
-— home/draw/away/total + home_pct/draw_pct/away_pct), my_prediction
-(MatchPrediction пользователя или None).
-
-Четыре состояния виджета (добавлено состояние 0 — 2026-08-21, окно прогноза
-получило нижнюю границу `Match.PREDICTION_WINDOW_DAYS`, раньше можно было
-голосовать хоть за год вперёд):
-0. match.prediction_window_not_yet_open() — матч ещё далеко, окно не
-   наступило: кнопки задизейблены, поясняем когда прогнозы откроются.
-1. match.is_prediction_open() — кнопки кликабельны (hx-post), можно менять
-   выбор до стартового свистка.
-2. Голосование закрыто, но матч ещё не завершён (live) — только проценты,
-   без кнопок, с пояснением "Голосование закрыто".
-3. Матч завершён (match.final_result не None) — опция, совпавшая с реальным
-   исходом, подсвечивается зелёной рамкой + иконкой, плюс если пользователь
-   голосовал — явный бейдж "Ваш прогноз совпал/не совпал".
-
-2026-09-09: корневой div раньше был отдельной daisyUI .card — "карточка
-в карточке" внутри hero (жалоба Codex-брифа: "большой чистый hero без
-вложенной карточки"). Теперь просто блок с разделительной линией сверху —
-классы здесь ДОЛЖНЫ совпадать с плейсхолдером-скелетоном в
-_match_header.html (тот же id, та же mt/pt/border-t), иначе после
-hx-swap="outerHTML" отступ/линия при первой подгрузке "прыгнут".
+Виджет прогноза 1X2: П1/Х/П2 с процентами сообщества. Подгружается в _match_header.html
+и возвращается на POST predictions:predict (outerHTML).
+Контекст: match, counts, my_prediction.
+Состояния: окно ещё не открыто / открыто (кнопки) / закрыто (live, только проценты) /
+матч завершён (подсветка исхода + «совпал/не совпал»).
+Классы корня совпадают со скелетоном в _match_header.html.
 {% endcomment %}
 <div id="prediction-widget-{{ match.id }}" class="mt-5 sm:mt-8 pt-5 sm:pt-8 border-t border-base-300">
         <div class="flex items-center justify-between mb-2 sm:mb-3">
@@ -37,15 +13,15 @@ hx-swap="outerHTML" отступ/линия при первой подгрузк
                 <span>Прогноз сообщества</span>
             </h3>
             {% if counts.total %}
-            {% comment %}Инвариантная форма "прогнозов" вместо согласования по числу — тот же упрощённый подход, что и у "{{ count }} непрочитанных" в components/_notification_badge.html.{% endcomment %}
+            {# Форма «прогнозов» без склонения по числу. #}
             <span class="text-[10px] sm:text-xs opacity-50">{{ counts.total }} прогнозов</span>
             {% endif %}
         </div>
 
         <div class="grid grid-cols-3 gap-1.5 sm:gap-2">
-            {% comment %}Три блока прописаны явно (не циклом) — у каждого своя подпись команды/счёта и своя логика подсветки, цикл только усложнил бы читаемость ради сомнительного DRY.{% endcomment %}
+            {# Три блока явно — у каждого свои подписи. #}
 
-            <!-- П1: победа хозяев -->
+            {# П1: победа хозяев #}
             <button type="button"
                     {% if match.is_prediction_open %}
                     hx-post="{% url 'predictions:predict' match.id %}"
@@ -70,7 +46,7 @@ hx-swap="outerHTML" отступ/линия при первой подгрузк
                 {% endif %}
             </button>
 
-            <!-- Х: ничья -->
+            {# Х: ничья #}
             <button type="button"
                     {% if match.is_prediction_open %}
                     hx-post="{% url 'predictions:predict' match.id %}"
@@ -95,7 +71,7 @@ hx-swap="outerHTML" отступ/линия при первой подгрузк
                 {% endif %}
             </button>
 
-            <!-- П2: победа гостей -->
+            {# П2: победа гостей #}
             <button type="button"
                     {% if match.is_prediction_open %}
                     hx-post="{% url 'predictions:predict' match.id %}"

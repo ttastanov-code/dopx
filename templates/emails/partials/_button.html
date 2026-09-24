@@ -1,9 +1,4 @@
-<!-- templates/emails/partials/_button.html
-     Единая CTA-кнопка (передаётся `button_url`/`button_label`, опционально
-     `button_color`). `bgcolor` атрибут ПОМИМО inline `background-color` —
-     Outlook (движок Word) игнорирует background-color в CSS у <td>, но
-     уважает HTML-атрибут bgcolor; без него кнопка в Outlook просто теряет
-     заливку и остаётся кликабельной, но невидимой на белом фоне. -->
+{# CTA-кнопка: button_url, button_label, button_color. bgcolor — для Outlook. #}
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin: 4px auto 0;">
     <tr>
         <td align="center" bgcolor="{{ button_color|default:'#6366F1' }}" style="background-color: {{ button_color|default:'#6366F1' }}; border-radius: 8px;">

@@ -23,14 +23,14 @@ from django.views.decorators.http import require_http_methods, require_POST
 logger = logging.getLogger(__name__)
 
 class MatchListView(ListView):
-    """Список всех матчей с фильтрами"""
+    """Список матчей с фильтрами."""
     model = Match
     template_name = 'matches/list.html'
     context_object_name = 'matches'
     paginate_by = 20
 
     def get_paginate_by(self, queryset):
-        # 2026-09-23, «Настройки платформы» — управляется staff без деплоя.
+        # Размер страницы — из настроек платформы.
         return get_setting("matches_public_page_size", self.paginate_by)
 
     def get_queryset(self):
@@ -41,24 +41,24 @@ class MatchListView(ListView):
             'season',
         ).prefetch_related(
             'aggregate',
-            'home_team__rivals',  # для match.is_derby — иначе N+1 на каждой карточке
+            'home_team__rivals',  # для match.is_derby без N+1
         )
         
         # Фильтр по статусу
         status = self.request.GET.get('status')
         
         if status == 'scheduled':
-            # Запланированные - от начала года до конца
+            # Запланированные — ближайшие сначала
             queryset = queryset.filter(status='scheduled').order_by('start_time')
         elif status == 'live':
-            # Live - сначала матчи, которые раньше начались
+            # Live — раньше начавшиеся сначала
             queryset = queryset.filter(status='live').order_by('start_time')
         elif status == 'finished':
-            # Завершенные - ближе к сегодняшнему дню сначала
+            # Завершённые — свежие сначала
             queryset = queryset.filter(status='finished').order_by('-start_time')
         elif status == 'postponed':
-            # 'postponed' ИЛИ (was_rescheduled=True и ещё не сыгран/не отменён)
-            # — см. docs/adr/0013-match-list-filter-and-sort-fixes.md, находка №1.
+            # Перенесённые: 'postponed' или was_rescheduled и ещё не сыгран.
+            # См. docs/adr/0013-match-list-filter-and-sort-fixes.md.
             queryset = queryset.filter(
                 Q(status='postponed') |
                 Q(was_rescheduled=True, status__in=['scheduled', 'live'])
@@ -66,18 +66,12 @@ class MatchListView(ListView):
         elif status == 'cancelled':
             queryset = queryset.filter(status='cancelled').order_by('-start_time')
         elif status == 'votable':
-            # Матчи, доступные для оценки прямо сейчас — то же условие, что
-            # и Match.is_voting_open() и stats.active_voting (core/views.py),
-            # чтобы число на карточке и список за ней совпадали 1:1.
-            # Сортировка по остатку времени — те, что вот-вот закроются, первыми.
+            # Доступные для оценки — то же условие, что Match.is_voting_open(). Скоро закрывающиеся первыми.
             queryset = queryset.filter(
                 status='finished', voting_open_until__gte=timezone.now()
             ).order_by('voting_open_until')
         elif status == 'evaluated':
-            # Виртуальный статус (не поле Match.status), только по прямой
-            # ссылке из profile/dashboard.html. Источник истины —
-            # EvaluationSession.status='completed'. См.
-            # docs/adr/0013-match-list-filter-and-sort-fixes.md, находка №2.
+            # Виртуальный статус «оценённые мной» (по EvaluationSession completed).
             if self.request.user.is_authenticated:
                 queryset = queryset.filter(
                     evaluation_sessions__user=self.request.user,
@@ -86,10 +80,8 @@ class MatchListView(ListView):
             else:
                 queryset = queryset.none()
         else:
-            # Монотонный порядок по start_time (не по близости к "сейчас" —
-            # ломало {% regroup %} по дате). "Актуальное первым" достигается
-            # стартовой страницей в paginate_queryset(), не сортировкой. См.
-            # docs/adr/0013-match-list-filter-and-sort-fixes.md, находка №3.
+            # Порядок по start_time (иначе ломается {% regroup %} по дате).
+            # Стартовая страница — см. paginate_queryset().
             queryset = queryset.order_by('start_time')
         
         # Фильтр по лиге
@@ -102,11 +94,7 @@ class MatchListView(ListView):
         if season_id:
             queryset = queryset.filter(season_id=season_id)
 
-        # Фильтр по туру — прямой ответ на "непонятно какой тур из-за
-        # переносов": группировка списка по дате (ниже, {% regroup %})
-        # разваливается для перенесённого матча — start_time может
-        # оказаться где угодно. Номер тура — устойчивый ориентир, не
-        # меняется вместе с датой (см. Match.tour, docs/BACKLOG.md).
+        # Фильтр по туру — устойчив к переносам дат.
         tour = self.request.GET.get('tour')
         if tour:
             queryset = queryset.filter(tour=tour)
@@ -114,37 +102,7 @@ class MatchListView(ListView):
         return queryset
 
     def paginate_queryset(self, queryset, page_size):
-        """
-        Дефолтный список (без ?status=) отсортирован хронологически по
-        возрастанию (см. get_queryset()) — без вмешательства первая
-        страница показывала бы самые старые матчи всего сезона, а не то,
-        что реально интересно пользователю прямо сейчас. Подбираем номер
-        страницы так, чтобы открыться на той, что содержит первый ещё не
-        начавшийся матч (т.е. "сегодня/дальше").
-
-        НАЙДЕНО (2026-09-01, жалоба пользователя: "открывает на одну
-        страницу раньше сегодняшней даты"): раньше здесь ЕЩЁ и отступали на
-        3 позиции назад (`count() - 3`) "чтобы несколько последних
-        результатов тоже было видно сразу". Но при фиксированных страницах
-        паджинатора отступ на 3 позиции НАЗАД иногда означает отступ на
-        ЦЕЛУЮ СТРАНИЦУ назад — ровно когда индекс первого будущего матча
-        оказывается близко к границе страницы (остаток от деления на
-        page_size — 0, 1 или 2). Например при page_size=20 и 40 уже прошедших
-        матчах: индекс первого будущего — 40, "минус 3" даёт 37, а 37 и 40
-        лежат на РАЗНЫХ страницах паджинатора (2-я и 3-я) — открывалась 2-я,
-        где вообще нет ни одного будущего матча, только прошедшие. Смысла в
-        отступе назад при фиксированных страницах нет вообще: если индекс
-        первого будущего матча не у самой границы страницы, несколько
-        прошедших и так попадают на ту же страницу естественным образом;
-        если он у границы — искусственный отступ ломает страницу целиком,
-        а не помогает. Проще и правильнее: открывать страницу, которая
-        СОДЕРЖИТ первый будущий матч, без искусственного отступа.
-
-        Работает только пока пользователь НЕ указал ни свою страницу, ни
-        фильтр по статусу явно — у статусных веток (scheduled/finished/…)
-        сортировка уже осмысленная сама по себе (ближайшие/самые свежие
-        сверху), там "прыжок" на нужную страницу не нужен.
-        """
+        """Без ?status= и ?page= открываем страницу, где первый ещё не начавшийся матч."""
         page_requested = self.kwargs.get(self.page_kwarg) or self.request.GET.get(self.page_kwarg)
         if not page_requested and not self.request.GET.get('status'):
             first_upcoming_index = queryset.filter(start_time__lt=timezone.now()).count()
@@ -163,20 +121,9 @@ class MatchListView(ListView):
         context['current_season'] = self.request.GET.get('season', '')
         context['current_tour'] = self.request.GET.get('tour', '')
         context['leagues'] = League.objects.all()[:10]
-        # ИСПРАВЛЕНО (2026-09-09, баг найден пользователем — "в фильтрах
-        # только один сезон, текущий"): is_active=True — ровно ОДИН сезон на
-        # лигу (Season.save() сам это гарантирует, см. seasons/models.py),
-        # так что этот фильтр физически не мог показать больше одного
-        # варианта. После бэкафилла 3 сезонов КПЛ (2024/2025/2026) в фильтре
-        # должны быть видны все, не только текущий — иначе старые сезоны
-        # вообще нельзя выбрать на этой странице.
+        # Все сезоны лиги (активный — только один).
         context['seasons'] = Season.objects.order_by('-year')[:10]
-        # Туры — сезона, выбранного В ФИЛЬТРЕ (а не всегда активного): иначе
-        # при выборе прошлого сезона список туров молча остался бы от
-        # текущего и не совпадал бы с тем, что реально есть в выбранном
-        # сезоне. Без выбора сезона в фильтре — поведение как раньше (туры
-        # активного сезона, самый частый случай). У матчей без tour (ещё не
-        # пересинканы после добавления поля) exclude(tour__isnull=True).
+        # Туры выбранного в фильтре сезона (без фильтра — активного).
         season_param = self.request.GET.get('season', '').strip()
         if season_param:
             tours_season = Season.objects.filter(id=season_param).first()
@@ -188,22 +135,15 @@ class MatchListView(ListView):
         context['tours'] = tours_qs.values_list('tour', flat=True).distinct().order_by('tour')
         context['now'] = timezone.now()
 
-        # ИСПРАВЛЕНО (2026-09-10, редизайн карточки матча, полный бриф из
-        # 14 пунктов): инлайн-прогноз 1X2 + "уже оценено" + все новые
-        # сигналы (интрига, H2H, форма, вовлечённость, "ваша команда",
-        # герой матча, мини-ДНК, реакция сообщества, индекс сенсации,
-        # влияние на таблицу, CTA) теперь считаются ОДНИМ общим вызовом —
-        # см. matches/card_services.py::attach_card_extras, тот же bulk-
-        # принцип, что был здесь раньше (bulk_prediction_data +
-        # EvaluationSession bulk), просто вынесенный в общую с HomeView
-        # функцию, чтобы не дублировать код и не дать им разойтись.
+        # Данные карточек (прогноз, форма, H2H, мини-ДНК и т.д.) — одним bulk-вызовом
+        # matches/card_services.py::attach_card_extras.
         page_matches = context.get(self.context_object_name) or []
         attach_card_extras(page_matches, self.request)
 
         return context
 
 class MatchDetailView(DetailView):
-    """Детальная страница матча + результаты оценок"""
+    """Страница матча."""
     model = Match
     template_name = 'matches/detail.html'
     context_object_name = 'match'
@@ -226,10 +166,7 @@ class MatchDetailView(DetailView):
             'events',
             'coach_aggregates__coach',
             'home_team__rivals',  # для match.is_derby
-            # Фаза 5 (docs/sportmonks-migration-plan.md) — объективная
-            # статистика команд за матч (владение/удары/угловые/xG и т.д.),
-            # данные уже импортируются в фазе 3 (importers.import_statistics),
-            # тут только подтягиваем для шаблона.
+            # Статистика команд за матч.
             'team_statistics__team',
         )
     
@@ -238,17 +175,12 @@ class MatchDetailView(DetailView):
         match = self.object
         now = timezone.now()
 
-        # voting_open / user_has_evaluated / user_has_pulse_reactions / share_text —
-        # общая функция match_action_context, используется и здесь, и в
-        # match_header_partial (live-поллинг шапки), чтобы обе точки входа
-        # считали CTA одинаково.
+        # CTA-флаги — общая функция со шапкой для live-поллинга.
         action_context = match_action_context(self.request, match)
 
-        # Агрегаты матча
         match_agg = getattr(match, 'aggregate', None)
         
-        # Топ 5 игроков матча. total_votes__gte=MIN_VOTES_FOR_DISPLAY — иначе
-        # один голос "10/10 от друга" обходит игрока с 40 честными оценками.
+        # Топ-5 игроков матча (только с достаточным числом голосов).
         from aggregates.services import MIN_VOTES_FOR_DISPLAY
 
         top_players = PlayerMatchAggregate.objects.filter(
@@ -258,7 +190,7 @@ class MatchDetailView(DetailView):
             'player__team'
         ).order_by('-performance_score')[:5]
 
-        # Худшие 3 игрока — та же логика: не топить в антирейтинге по 1-2 предвзятым оценкам.
+        # Худшие 3 — с тем же порогом голосов.
         worst_players = PlayerMatchAggregate.objects.filter(
             match=match, total_votes__gte=MIN_VOTES_FOR_DISPLAY
         ).select_related(
@@ -266,9 +198,7 @@ class MatchDetailView(DetailView):
             'player__team'
         ).order_by('performance_score')[:3]
 
-        # 2026-09-24: «по статистике» рядом с оценкой болельщиков — см.
-        # matches/stat_ratings.py. Списки материализуем, чтобы повесить
-        # атрибут stat_rating на каждый агрегат (один запрос на матч).
+        # Оценка «по статистике» для топ/антитоп игроков (matches/stat_ratings.py).
         from matches.stat_ratings import stat_ratings_for_match
 
         stat_ratings = stat_ratings_for_match(match)
@@ -277,13 +207,7 @@ class MatchDetailView(DetailView):
         for agg in top_players + worst_players:
             agg.stat_rating = stat_ratings.get(agg.player_id)
 
-        # Оценки команд за ЭТОТ матч — раньше считались Avg() напрямую по
-        # TeamEvaluation (без веса пользователя, без винзоризации, без
-        # защиты от сговора фан-базы). 2026-08-23: читаем уже готовый,
-        # взвешенный и винзоризованный TeamMatchAggregate (пересчитывается
-        # асинхронно, см. aggregates/tasks.py::recalculate_team_aggregates) —
-        # словарь с теми же ключами (avg_tactics/avg_effort/avg_organization/
-        # avg_mentality/total), чтобы не трогать шаблон.
+        # Оценки команд из TeamMatchAggregate (взвешенные и защищённые).
         team_aggs_by_team_id = {
             agg.team_id: agg
             for agg in TeamMatchAggregate.objects.filter(match=match)
@@ -304,18 +228,13 @@ class MatchDetailView(DetailView):
         home_team_evals = _team_evals_dict(match.home_team_id)
         away_team_evals = _team_evals_dict(match.away_team_id)
         
-        # Оценки тренеров
         coach_aggregates = match.coach_aggregates.select_related('coach').all()[:2]
         
-        # Статистика оценок
         total_match_evals = MatchEvaluation.objects.filter(match=match).count()
         total_player_evals = PlayerEvaluation.objects.filter(match=match).count()
         total_context_evals = ContextEvaluation.objects.filter(match=match).count()
         
-        # Составы. side — CharField с choices "home"/"away" (lineups/models.py),
-        # обычный .order_by('side') сортирует по алфавиту строк, а "away" <
-        # "home" — гостевой состав всегда оказывался выше домашнего. Явно
-        # мапим порядок через Case/When: home=0, away=1.
+        # Составы: хозяева сначала.
         lineups = MatchLineup.objects.filter(
             match=match
         ).prefetch_related(
@@ -330,9 +249,7 @@ class MatchDetailView(DetailView):
             )
         ).order_by('side_order')
         
-        # Мнение большинства (за кого болели). list() сразу — переиспользуем
-        # тот же материализованный список и в контексте шаблона, и ниже в
-        # build_match_dna (фаза 3, fan_mood_text) без второго запроса.
+        # За кого болели — список нужен и шаблону, и build_match_dna.
         fan_support = list(ContextEvaluation.objects.filter(
             match=match
         ).exclude(
@@ -344,42 +261,19 @@ class MatchDetailView(DetailView):
             count=Count('id')
         ).order_by('-count')[:2])
 
-        # БАГ, КОТОРЫЙ ТУТ БЫЛ (найдено 2026-09-21, UI/UX-аудит matches/
-        # detail.html): шаблон рисовал ширину полоски "За кого болели" как
-        # `style="width: {{ support.count }}%"` — то есть напрямую брал
-        # АБСОЛЮТНОЕ число голосов за команду и подставлял его как ПРОЦЕНТ
-        # ширины. Правильная пропорция (голоса за эту команду / голоса за
-        # обе показанные команды) уже считается ЗДЕСЬ РЯДОМ, в этом же
-        # файле фичи — matches/services.py::_describe_fan_mood (`pct =
-        # round(dominant["count"] / total * 100)`) — просто для полоски
-        # эта пропорция не считалась вообще. При total > 100 голосов полоска
-        # лидера "переполнялась" бы за 100% (визуально срезалась
-        # overflow-hidden, неотличимо от полоски с ЛЮБЫМ количеством голосов
-        # ≥100), а при малом числе голосов (типично — до первых десятков
-        # оценок) обе полоски были почти невидимыми огрызками, даже если
-        # реальный перекос трибун — 3:1 или больше.
+        # Ширина полоски «За кого болели» — доля голосов, а не абсолютное число.
         fan_support_total = sum(row['count'] for row in fan_support)
         for row in fan_support:
             row['pct'] = round(row['count'] / fan_support_total * 100) if fan_support_total else 0
 
-        # События матча
-        # 2026-09-23, «Настройки платформы» — управляется staff без деплоя.
+        # События матча (лимит — из настроек платформы).
         events = list(match.events.select_related('player').order_by('minute')[:get_setting("match_recent_events_limit", 20)])
 
-        # "ДНК матча" — фаза 1 (docs/PRODUCT_SCOPE_MATCH_DNA_AND_EXPLAINABILITY.md,
-        # docs/adr/0028-match-dna-phase1.md). referee_aggregates — единственная
-        # строка на матч (unique_together referee+match), один точечный
-        # .first() по уже отфильтрованному match.referee_aggregates, не
-        # отдельный запрос по всей таблице.
+        # «ДНК матча».
         from matches.services import build_match_dna
 
         referee_agg = match.referee_aggregates.first()
-        # Фаза 2 (docs/adr/0033-match-dna-phase2.md): consensus_level
-        # нужен разброс СЫРЫХ голосов, MatchAggregate его не хранит — один
-        # лёгкий точечный запрос на страницу матча (.only() — только 3
-        # нужных числовых поля, без join'ов). top_players уже посчитан выше
-        # для блока "Топ игроков матча" — передаём тот же список, не считаем
-        # заново для hero.
+        # Для консенсуса нужны сырые голоса MatchEvaluation.
         match_evaluations = list(MatchEvaluation.objects.filter(match=match).only('entertainment', 'tension', 'fairness'))
         match_dna = build_match_dna(
             match, match_agg, events, referee_agg,
@@ -387,27 +281,20 @@ class MatchDetailView(DetailView):
             worst_players=list(worst_players), fan_support=fan_support,
         )
 
-        # Абсолютный URL PNG-карточки ДНК матча (только если есть что
-        # шерить — match_dna может быть None до первого голоса) — та же
-        # причина абсолютного адреса, что у og_image ниже (Web Share API
-        # ждёт полный URL, не относительный путь).
+        # Абсолютный URL карточки ДНК (для Web Share API).
         match_dna_share_url = (
             self.request.build_absolute_uri(reverse('core:match_dna_share_card', args=[match.id]))
             if match_dna else ''
         )
 
-        # Фаза 5 — объективная статистика команд за матч (см. prefetch выше).
-        # dict по team_id, а не список — шаблону нужно достать статистику
-        # конкретно домашней/гостевой команды, не перебирать все строки.
+        # Статистика по team_id.
         team_stats_by_team_id = {
             stat.team_id: stat for stat in match.team_statistics.all()
         }
         home_team_stats = team_stats_by_team_id.get(match.home_team_id)
         away_team_stats = team_stats_by_team_id.get(match.away_team_id)
 
-        # Строки для templates/matches/_match_statistics_card.html — собраны
-        # тут, а не в шаблоне, чтобы не плодить 10 одинаковых {% with %}
-        # блоков на каждое поле; шаблон просто перебирает готовый список.
+        # Строки для карточки статистики матча.
         def _stat_pair(field, label, suffix=''):
             return {
                 'label': label,
@@ -418,11 +305,7 @@ class MatchDetailView(DetailView):
 
         stat_rows = [
             _stat_pair('possession_percent', 'Владение мячом', '%'),
-            # НОВОЕ (2026-09-09, аудит неиспользуемых полей Sportmonks по
-            # просьбе пользователя) — dangerous_attacks: тип DANGEROUS_ATTACKS
-            # у Sportmonks, которого не было у KFF. Сразу под владением —
-            # тот же уровень "темп матча", что и possession, а не в конце
-            # списка вперемешку с карточками/офсайдами.
+            # Опасные атаки — рядом с владением.
             _stat_pair('dangerous_attacks', 'Опасные атаки'),
             _stat_pair('shots', 'Удары'),
             _stat_pair('shots_on_goal', 'Удары в створ'),
@@ -433,36 +316,17 @@ class MatchDetailView(DetailView):
             _stat_pair('red_cards', 'Красные карточки'),
             _stat_pair('xg', 'Ожидаемые голы (xG)'),
             _stat_pair('pass_accuracy', 'Точность передач', '%'),
-            # НОВОЕ (тот же аудит) — колонка key_passes существовала в
-            # модели ещё с KFF-эпохи, но у Sportmonks маппинг на неё
-            # никогда не был прописан (см. parsers/sportmonks/importers.py::
-            # TEAM_STAT_DEV_NAME_MAP) — поле молча оставалось null.
             _stat_pair('key_passes', 'Ключевые передачи'),
         ]
         has_match_statistics = any(row['home'] is not None or row['away'] is not None for row in stat_rows)
 
-        # Форма команд (последние 5 W/D/L) ДО этого матча — на лету, без
-        # отдельного хранимого поля (см. teams/services.py::get_team_form
-        # и план фаза 5, раздел 7). start_time__lt=match.start_time — форма
-        # "на момент этого матча", а не "по состоянию на сегодня" (иначе
-        # форма перед матчем недельной давности показывала бы будущее
-        # относительно него самого).
+        # Форма команд на момент матча.
         from teams.services import get_team_form, get_pre_match_standings_snapshot
 
-        # "Турнирная таблица перед матчем" (2026-09-11, прямая просьба
-        # пользователя — страница ещё не начавшегося матча "скучно и
-        # пусто"): позиция/очки/разница мячей обеих команд НА МОМЕНТ этого
-        # матча, тем же "as of cutoff" алгоритмом, что и
-        # compute_match_table_impact_positions (см. её докстринг). Не
-        # только для scheduled — на live/finished тоже полезный контекст
-        # "как выглядела таблица перед стартовым свистком".
+        # Турнирная таблица на момент матча.
         standings_snapshot = get_pre_match_standings_snapshot(match)
 
-        # "Личные встречи" — последние очные матчи этих же двух команд
-        # (в любом сезоне/турнире), с полными объектами Match (не срез
-        # .values(), как в card_services._recent_meetings — там для
-        # карточек списка хватает сырых чисел, тут на детальной странице
-        # нужны ссылки/гербы/названия команд, поэтому select_related).
+        # Личные встречи этих команд.
         h2h_matches = list(
             Match.objects.filter(
                 Q(home_team=match.home_team, away_team=match.away_team)
@@ -523,19 +387,12 @@ class MatchDetailView(DetailView):
             'now': now,
         })
 
-        # SEO: meta_description + schema.org (SportsEvent) — используются в
-        # <head> базового шаблона (см. templates/base.html) и в
-        # templates/matches/detail.html через {% block schema %}. Через
-        # json.dumps, а не ручную интерполяцию Django-переменных внутри
-        # <script> — сырая подстановка имени команды/игрока со спецсимволами
-        # (кавычки, </script>) могла бы сломать JSON или открыть XSS.
+        # SEO: meta_description и schema.org SportsEvent (через json.dumps — без XSS).
         context['meta_description'] = (
             f"Оценка матча {match.home_team.name} {match.get_score_display()} "
             f"{match.away_team.name} от болельщиков DOPX. Рейтинги игроков, тренеров и судьи."
         )
-        # Шер-карточка (core/services/share_cards.py) — абсолютный URL,
-        # соцсети-скрейперы (Telegram/WhatsApp) не резолвят относительные
-        # og:image. Тот же путь используется и на кнопках "Поделиться" ниже.
+        # Абсолютный URL карточки для og:image.
         context['og_image'] = self.request.build_absolute_uri(
             reverse('core:match_share_card', args=[match.id])
         )
@@ -544,11 +401,7 @@ class MatchDetailView(DetailView):
             "@type": "SportsEvent",
             "name": f"{match.home_team.name} vs {match.away_team.name}",
             "startDate": match.start_time.isoformat(),
-            # УДАЛЕНО (2026-09-09): match.stadium убран из проекта целиком
-            # (данные Sportmonks по стадионам КПЛ ненадёжны — команда может
-            # играть "домашние" матчи на разных стадионах в разных городах
-            # в течение одного сезона). location — просто город домашней
-            # команды, без привязки к конкретной площадке.
+            # location — город домашней команды.
             "location": {"@type": "Place", "name": match.home_team.city or "Казахстан"},
             "competitor": [
                 {"@type": "SportsTeam", "name": match.home_team.name},
@@ -556,16 +409,13 @@ class MatchDetailView(DetailView):
             ],
             "description": context['meta_description'],
         }
-        # .replace('</', '<\/') — json.dumps НЕ экранирует '</', поэтому
-        # название команды вида "</script><script>..." могло бы оборвать тег
-        # application/ld+json раньше конца JSON (шаблон рендерит эту строку
-        # через |safe, см. templates/matches/detail.html).
+        # Экранируем '</' — строка вставляется через |safe в <script>.
         context['schema_json'] = json.dumps(schema, ensure_ascii=False).replace('</', '<\\/')
         return context
 
 @require_http_methods(["GET"])
 def match_events_partial(request, match_id):
-    """HTMX partial для событий матча"""
+    """HTMX-партиал событий матча."""
     match = get_object_or_404(Match, id=match_id)
     events = match.events.select_related(
         'player', 'assist_player', 'player_out'
@@ -577,7 +427,7 @@ def match_events_partial(request, match_id):
 
 
 def match_action_context(request, match):
-    """CTA-флаги матча (голосование/оценка/пульс). Общий код для MatchDetailView и match_header_partial."""
+    """CTA-флаги матча (голосование/оценка/пульс)."""
     voting_open = match.voting_open_until > timezone.now() and match.status == 'finished'
     user_has_evaluated = False
     user_has_pulse_reactions = False
@@ -603,12 +453,12 @@ def match_action_context(request, match):
 
 @require_http_methods(["GET"])
 def match_header_partial(request, match_id):
-    """Live-partial шапки матча: счёт, статус, CTA. Опрашивается каждые 20с, пока матч live."""
+    """Live-партиал шапки матча (опрос каждые 20 с, пока матч live)."""
     match = get_object_or_404(
         Match.objects.select_related(
             'home_team', 'away_team', 'league', 'season',
             'home_coach', 'away_coach', 'referee',
-        ).prefetch_related('home_team__rivals'),  # rivals нужен для match.is_derby
+        ).prefetch_related('home_team__rivals'),  # для match.is_derby
         id=match_id,
     )
     context = match_action_context(request, match)
@@ -618,19 +468,8 @@ def match_header_partial(request, match_id):
 
 @require_http_methods(["GET"])
 def match_card_partial(request, match_id):
-    """Live-поллинг карточки матча (components/_match_card.html) — на
-    главной и в /matches/ (2026-09-12, жалоба пользователя: "по факту счёт
-    1-0, но на главной 0-0 пока не обновишь страницу"). Тот же принцип,
-    что и match_header_partial выше (страница матча уже поллилась), только
-    для компактной карточки списков — компонент сам добавляет
-    hx-trigger="every 15s" на корневой <a>, ТОЛЬКО пока match.status ==
-    'live' (см. components/_match_card.html), поэтому обычные scheduled/
-    finished карточки лишних запросов не создают.
-
-    attach_card_extras — та же bulk-функция, что и у MatchListView/
-    HomeView, здесь вызвана на список из одного матча: карточка после
-    обновления не "худеет" (сохраняются форма/H2H/прогноз/вовлечённость),
-    просто счёт/статус подтягиваются заново из БД.
+    """Live-поллинг карточки матча в списках (каждые 15 с, только для live).
+    attach_card_extras на одном матче — карточка сохраняет все блоки.
     """
     match = get_object_or_404(
         Match.objects.select_related('home_team', 'away_team', 'league', 'season').prefetch_related(
@@ -642,8 +481,7 @@ def match_card_partial(request, match_id):
     return render(request, 'components/_match_card.html', {'match': match})
 
 
-# По user.id — тот же выбор, что и у predictions/views.py::PREDICT_RATE_LIMIT
-# (эндпоинт требует аутентификации, id доступен и точнее IP).
+# Лимит по user.id.
 REACT_TO_MATCH_RATE_LIMIT = 20
 REACT_TO_MATCH_RATE_LIMIT_WINDOW_SECONDS = 60
 
@@ -658,21 +496,14 @@ def _reaction_widget_context(request, match):
 
 @require_POST
 def react_to_match(request, match_id):
-    """
-    Пункт 11 брифа редизайна карточки матча (2026-09-10) — "Матч тура" /
-    "Неожиданный результат" / "Скучный матч". Тот же HTMX-паттерн, что
-    predictions/views.py::predict — клик возвращает обновлённый партиал
-    целиком (проценты меняются у всех трёх опций разом), compact=1
-    отличает инлайн-виджет карточки списка от возможной полноразмерной
-    версии на странице матча (сейчас используется только compact-вариант,
-    см. templates/matches/_reaction_widget_compact.html).
+    """Реакция на завершённый матч («Матч тура» / «Неожиданно» / «Скучно»).
+    Возвращает обновлённый HTMX-партиал.
     """
     match = get_object_or_404(Match, id=match_id)
     widget_template = 'matches/_reaction_widget_compact.html'
 
     if not request.user.is_authenticated:
-        # status=200, не 401 — тот же приём, что у predictions/events (HTMX
-        # свапает контент только на 2xx).
+        # 200, а не 401 — HTMX свапает только 2xx.
         return render(request, 'matches/_reaction_login_prompt_compact.html', {'match': match}, status=200)
 
     if is_rate_limited(
@@ -685,9 +516,6 @@ def react_to_match(request, match_id):
         return HttpResponse(status=400)
 
     submit_match_reaction(user=request.user, match=match, reaction=reaction)
-    # Матч не 'finished' — submit_match_reaction() тихо вернула None, форма
-    # просто перерисуется в исходном состоянии (кнопки всё равно
-    # задизейблены в шаблоне для нефинишированных матчей, см. is_finished
-    # ниже — гонка практически невозможна, но не должна падать ошибкой).
+    # Матч не завершён — форма просто перерисуется.
 
     return render(request, widget_template, _reaction_widget_context(request, match))

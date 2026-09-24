@@ -3,7 +3,7 @@
 {% load math_extras %}
 {% load tooltip_tags %}
 {% block content %}
-<!-- === HEADER === -->
+{# === ШАПКА === #}
 <div class="mb-8">
     <h1 class="text-3xl font-bold mb-2">
         <i class="ti ti-user mr-2"></i>
@@ -12,14 +12,14 @@
     <p class="opacity-60">{{ user.username }} · Личный кабинет</p>
 </div>
 
-<!-- === ДВЕ КОЛОНКИ === -->
+{# === ДВЕ КОЛОНКИ === #}
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-    <!-- === ЛЕВАЯ КОЛОНКА: Инфо === -->
+    {# === ЛЕВАЯ КОЛОНКА: Инфо === #}
     <div class="space-y-6">
-        <!-- Карточка пользователя -->
+        {# Карточка пользователя #}
         <div class="card bg-base-100 border border-base-300">
             <div class="card-body p-6 text-center">
-                <!-- Аватар -->
+                {# Аватар #}
                 <div class="avatar mb-4 flex justify-center">
                     <div class="w-24 h-24 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2 overflow-hidden">
                         {% if user.avatar %}
@@ -39,7 +39,7 @@
                     <span>{{ user.city }}</span>
                 </div>
                 {% endif %}
-                <!-- Trust Score Badge -->
+                {# Trust Score #}
                 <div class="mt-4">
                     <div class="text-sm opacity-60 mb-1">Trust Score</div>
                     <div class="text-3xl font-bold {% if stats.trust_score >= 1.5 %}text-success{% elif stats.trust_score >= 1.2 %}text-warning{% else %}text-base-content{% endif %}">
@@ -49,7 +49,7 @@
                         {{ stats.trust_level.1 }}
                     </div>
                 </div>
-                <!-- Level & XP -->
+                {# Уровень и XP #}
                 {% if xp %}
                 <div class="mt-4 pt-4 border-t border-base-300">
                     <div class="flex items-center justify-between mb-2">
@@ -59,14 +59,7 @@
                     <div class="w-full bg-base-200 rounded-full h-2">
                         <div class="bg-primary h-2 rounded-full" style="width: {{ xp.progress_percent }}%"></div>
                     </div>
-                    {% comment %}
-                    2026-09-23, фикс аудита: XP за шаги вайзарда начисляется
-                    сразу на каждом пройденном шаге, ДО завершения всей
-                    оценки (users/views.py::ProfileView.get_context_data —
-                    incomplete_sessions_count). Явно предупреждаем, что
-                    часть XP выше может быть из вайзардов, которые так и не
-                    были доведены до конца.
-                    {% endcomment %}
+                    {# Предупреждение: часть XP — из незавершённых вайзардов. #}
                     {% if incomplete_sessions_count %}
                     {% tooltip_wrap "XP начисляется по мере прохождения шагов вайзарда, ещё до его завершения — эти сессии не учитываются в счётчике «Матчей» и не влияют на Trust Score/достижения." %}
                     <div class="text-xs opacity-50 mt-2 flex items-center gap-1 cursor-help">
@@ -83,22 +76,8 @@
                 {% endif %}
             </div>
         </div>
-        <!-- Быстрые статистики -->
-        {% comment %}
-        НАЙДЕНО (2026-09-01, жалоба пользователя: "непонятно нифига что за
-        оценок, что за матчей, что за игроков"): "Оценок" и "Матчей" раньше
-        показывали ОДНО И ТО ЖЕ число (см. подробный комментарий в
-        users/views.py::ProfileView) — заменено на total_ratings_given
-        (реально другая метрика). Плюс подсказки на каждую плитку — раньше
-        не было вообще ни одной, только голые подписи.
-
-        БАГ, КОТОРЫЙ ТУТ БЫЛ, ИТОГОВАЯ ВЕРСИЯ (2026-09-22) — тот же фикс,
-        что и в templates/players/detail.html / templates/users/
-        public_profile.html: иконка вынесена из текстового потока
-        заголовка и абсолютно спозиционирована в углу карточки (.stat
-        relative + иконка absolute top-2 right-2), заголовок свободно
-        переносится на любое число строк независимо от иконки.
-        {% endcomment %}
+        {# Быстрая статистика #}
+        {# Плитки с подсказками; иконка в углу карточки (absolute). #}
         <div class="grid grid-cols-2 gap-4">
             <div class="stat relative bg-base-100 border border-base-300 p-4">
                 <div class="absolute top-2 right-2 z-10">{% include 'components/_tooltip_icon.html' with text="Сколько отдельных оценок вы поставили — игрокам, командам, тренерам и судьям суммарно за все матчи" %}</div>
@@ -131,9 +110,7 @@
                 <div class="stat-value text-2xl text-secondary">{{ stats.prediction_streak }}</div>
             </div>
         </div>
-        <!-- Поделиться серией (retention loop "Серии", 2026-08-21) —
-             показываем кнопку только для той серии, которая реально ≥1,
-             карточка на "0 дней подряд" никому не интересна делиться. -->
+        {# Поделиться серией — только если серия >= 1. #}
         {% if stats.evaluation_streak > 0 or stats.prediction_streak > 0 %}
         <div class="flex flex-wrap gap-2">
             {% if stats.evaluation_streak > 0 %}
@@ -148,12 +125,8 @@
             {% endif %}
         </div>
         {% endif %}
-        <!-- Достижения -->
-        {% comment %}
-        badge.rarity/is_secret — properties поверх users/badges.py::
-        BADGE_CATALOG (см. докстринг UserBadge). Цвет иконки/рамки отражает
-        редкость (bronze/silver/gold/platinum/secret).
-        {% endcomment %}
+        {# Достижения #}
+        {# Цвет — по редкости бейджа. #}
         <div class="card bg-base-100 border border-base-300">
             <div class="card-body p-4">
                 <h3 class="font-bold text-lg mb-4 flex items-center justify-between">
@@ -166,21 +139,9 @@
                 </h3>
                 <div class="flex flex-wrap gap-2">
                     {% for badge in badges %}
-                    {% comment %}
-                    2026-09-23, фикс аудита: badge.tooltip_text/is_stale —
-                    см. докстринг UserBadge.tooltip_text (users/models.py) и
-                    UserBadge.is_stale — 5 "статусных" достижений
-                    (foresight/max_trust/stable_hand/accurate_analyst/
-                    bias_free) могут временно "выцвести", если показатель
-                    упал ниже порога после выдачи; сам бейдж не пропадает.
-                    {% endcomment %}
+                    {# Статусный бейдж может быть «выцветшим» (is_stale). #}
                     {% tooltip_wrap badge.tooltip_text %}
-                    {% comment %}
-                    ДОБАВЛЕНО (2026-09-01, "супер ультра" достижения):
-                    legendary — единственный уровень с анимированной рамкой
-                    (dopx-legendary-chip/-icon, static/css/badges.css),
-                    остальные уровни не меняли — Tailwind-утилиты справа.
-                    {% endcomment %}
+                    {# legendary — анимированная рамка (badges.css). #}
                     <div class="w-12 h-12 rounded-lg flex items-center justify-center border-2 relative
                         {% if badge.is_stale %}opacity-40 grayscale{% endif %}
                         {% if badge.rarity == 'legendary' %}dopx-legendary-chip dopx-legendary-icon
@@ -209,9 +170,9 @@
             </div>
         </div>
     </div>
-    <!-- === ПРАВАЯ КОЛОНКА: Активность === -->
+    {# === ПРАВАЯ КОЛОНКА: Активность === #}
     <div class="lg:col-span-2 space-y-6">
-        <!-- Активные сессии -->
+        {# Незавершённые сессии #}
         {% if active_sessions %}
         <div class="card bg-base-100 border border-base-300">
             <div class="card-body p-4">
@@ -238,7 +199,7 @@
             </div>
         </div>
         {% endif %}
-        <!-- Последние оценки -->
+        {# Последние оценки #}
         <div class="card bg-base-100 border border-base-300">
             <div class="card-body p-4">
                 <div class="flex items-center justify-between mb-4">
@@ -246,15 +207,7 @@
                         <i class="ti ti-history mr-2"></i>
                         Последние оценки
                     </h3>
-                    {% comment %}
-                    НАЙДЕНО (2026-09-01): вела на общий список всех матчей —
-                    "Последние оценки" выше показывает только последние 10
-                    (recent_evaluations, см. users/views.py::ProfileView),
-                    а ссылка должна вести на ПОЛНЫЙ список именно оценённых
-                    пользователем матчей. status=evaluated — виртуальный
-                    фильтр (matches/views.py), тот же приём, что и у
-                    status=votable на главной странице.
-                    {% endcomment %}
+                    {# Ссылка на все оценённые матчи (status=evaluated). #}
                     <a href="{% url 'matches:list' %}?status=evaluated" class="btn btn-ghost btn-sm">
                         Все матчи
                     </a>
@@ -302,7 +255,7 @@
                 </div>
             </div>
         </div>
-        <!-- Настройки профиля -->
+        {# Настройки профиля #}
         <div class="card bg-base-100 border border-base-300">
             <div class="card-body p-4">
                 <h3 class="font-bold text-lg mb-4">
@@ -317,13 +270,7 @@
                         </div>
                         <i class="ti ti-chevron-right opacity-60"></i>
                     </a>
-                    {% comment %}
-                    НАЙДЕНО (2026-09-01, замечание пользователя): страница
-                    за этой ссылкой (templates/users/notification_settings.html)
-                    — это не только email-тумблеры, там же управление
-                    push-подписками устройств. "Email уведомления" описывала
-                    только часть страницы.
-                    {% endcomment %}
+                    {# Уведомления: email и push. #}
                     <a href="{% url 'users:notification_settings' %}" class="flex items-center justify-between p-3 bg-base-200 rounded-lg hover:bg-base-300 transition-all">
                         <div class="flex items-center gap-3">
                             <i class="ti ti-bell"></i>

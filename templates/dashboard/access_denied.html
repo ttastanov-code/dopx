@@ -1,16 +1,7 @@
 {% extends 'base.html' %}
 
 {% block content %}
-{% comment %}
-templates/dashboard/access_denied.html
-2026-09-23, раздел «Роли доступа» — рендерится dashboard/middleware.py::
-DashboardSectionAccessMiddleware (403), когда у staff нет доступа к
-запрошенному разделу (dashboard/access.py::user_can_access_section
-вернула False). НАМЕРЕННО без {% include 'dashboard/_nav.html' %} — раз
-человеку запрещён этот раздел, не показываем полную панель разделов вокруг
-отказа, только путь назад на «Обзор» (тот всегда разрешён по умолчанию,
-см. grandfather-правило в StaffAccessGrant).
-{% endcomment %}
+{# 403 для раздела без доступа (DashboardSectionAccessMiddleware). Без меню — только ссылка на «Обзор». #}
 <div class="max-w-md mx-auto mt-16 text-center">
     <div class="text-5xl mb-4"><i class="ti ti-lock text-error"></i></div>
     <h1 class="text-xl font-bold mb-2">Доступ запрещён</h1>

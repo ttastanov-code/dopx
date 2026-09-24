@@ -22,26 +22,14 @@ from .services import (
     track_partner_referral_visit,
 )
 
-# Лимит на накрутку статистики переходов/кликов скриптом с одного IP по
-# одному slug/uuid — см. докстринги вьюх ниже. Redirect остаётся плавным
-# для пользователя в любом случае (не 429) — лимитируется только запись в
-# статистику (core/utils.py::is_rate_limited, тот же паттерн, что
-# users/views.py::RegisterView/VerifyEmailView).
+# Лимит записи статистики переходов/кликов с одного IP. Редирект работает всегда.
 PARTNER_STATS_RATE_LIMIT = 30
 PARTNER_STATS_RATE_LIMIT_WINDOW_SECONDS = 60
 
 
 class PartnerReferralRedirectView(View):
-    """
-    /go/<slug>/ — реферальная ссылка для партнёра. Логирует визит
-    (partners/services.py::track_partner_referral_visit) и кладёт cookie
-    атрибуции на REFERRAL_COOKIE_MAX_AGE — users/views.py::RegisterView
-    читает её при регистрации, чтобы привязать сам факт регистрации
-    к партнёру, а не только визит.
-
-    ?next=/some/path — куда редиректить после атрибуции (по умолчанию —
-    главная). Валидируется через url_has_allowed_host_and_scheme, чтобы
-    партнёрская ссылка не превратилась в open redirect.
+    """/go/<slug>/ — реферальная ссылка партнёра: логирует визит и ставит cookie атрибуции
+    (читает RegisterView). ?next= проверяется от open redirect.
     """
 
     def get(self, request: HttpRequest, slug: str) -> HttpResponse:
@@ -55,12 +43,7 @@ class PartnerReferralRedirectView(View):
         else:
             redirect_to = reverse("core:home")
 
-        # БАГ, КОТОРЫЙ ТУТ БЫЛ: без rate-limit скрипт мог долбить /go/<slug>/
-        # в цикле и накручивать track_partner_referral_visit — статистика
-        # партнёра (переходы) становилась недостоверной. Лимитируем именно
-        # запись в статистику, а не сам редирект: пользователь ничего не
-        # замечает (нет 429/ошибки), просто повторные визиты сверх лимита с
-        # одного IP по этому же slug не засчитываются как "новые".
+        # Сверх лимита визит не засчитываем, редирект всё равно делаем.
         client_ip = get_client_ip(request)
         if not client_ip or not is_rate_limited(
             f'partner_referral:{partner.slug}:{client_ip}',
@@ -69,28 +52,14 @@ class PartnerReferralRedirectView(View):
             track_partner_referral_visit(partner, request, next_path=redirect_to)
 
         response = redirect(redirect_to)
-        # БАГ, КОТОРЫЙ ТУТ БЫЛ: cookie ставилась НЕподписанной (set_cookie) —
-        # любой мог вручную выставить себе `dopx_ref=<slug другого партнёра>`
-        # в браузере (или скриптом, минуя /go/<slug>/ вообще) и приписать
-        # свою регистрацию произвольному партнёру в обход track_partner_
-        # referral_visit — попадание в комиссионные/отчётность партнёра без
-        # реального перехода по его ссылке. set_signed_cookie подписывает
-        # значение секретом Django (SECRET_KEY + salt) — подделать его без
-        # знания секрета нельзя; users/views.py::RegisterView.form_valid
-        # соответственно читает её через get_signed_cookie (см. там же).
+        # Подписанная cookie — чужой slug не подставить.
         response.set_signed_cookie(
             REFERRAL_COOKIE_NAME,
             partner.slug,
             salt="partners.referral",
             max_age=REFERRAL_COOKIE_MAX_AGE,
             samesite="Lax",
-            # httponly — эта cookie нужна только серверу (users/views.py::
-            # RegisterView читает её при регистрации), фронтенду её
-            # содержимое никогда не требуется читать через JS, значит нет
-            # причины оставлять её доступной для XSS. secure — тот же
-            # паттерн, что и SESSION_COOKIE_SECURE/CSRF_COOKIE_SECURE в
-            # settings.py (not DEBUG, а не жёсткий True, иначе cookie не
-            # ставится на локальном http-сервере разработки).
+            # httponly; secure — не в DEBUG.
             httponly=True,
             secure=not settings.DEBUG,
         )
@@ -98,17 +67,11 @@ class PartnerReferralRedirectView(View):
 
 
 class BannerClickRedirectView(View):
-    """
-    /ad/<uuid:pk>/click/ — все клики по баннерам идут через этот роут
-    вместо прямой ссылки на target_url, иначе клик невозможно посчитать
-    (partners/selectors.py::banner_stats нужен для любого разговора с
-    партнёром про эффективность размещения).
-    """
+    """/ad/<uuid>/click/ — учёт клика по баннеру и редирект на target_url."""
 
     def get(self, request: HttpRequest, pk) -> HttpResponse:
         banner = get_object_or_404(Banner, pk=pk)
-        # Тот же принцип, что в PartnerReferralRedirectView выше: лимит на
-        # накрутку клика по счётчику, редирект на target_url всегда плавный.
+        # Лимит засчитывания клика, редирект всегда.
         client_ip = get_client_ip(request)
         if not client_ip or not is_rate_limited(
             f'banner_click:{banner.pk}:{client_ip}',
@@ -119,48 +82,27 @@ class BannerClickRedirectView(View):
 
 
 class PartnerContentFeedView(View):
-    """
-    /partners/<slug>/feed/<token>/ — закрытый JSON-фид готовых брендированных
-    ассетов под последние матчи (partners/services.py::build_content_feed).
-    Токен — Partner.feed_token (UUID, генерируется автоматически, отдельно
-    от публичного slug), а не Basic Auth/API-ключ в заголовке: партнёр без
-    техотдела может просто дать эту ссылку своему SMM-редактору или
-    подключить её как источник в Zapier/Make без настройки авторизации.
+    """/partners/<slug>/feed/<token>/ — JSON-фид ассетов по последним матчам.
+    Доступ по Partner.feed_token в URL.
     """
 
     def get(self, request: HttpRequest, slug: str, token: str) -> HttpResponse:
         partner = get_object_or_404(Partner, slug=slug, is_active=True)
         if str(partner.feed_token) != str(token):
-            # 404, а не 403 — не подтверждаем существование партнёра с этим
-            # slug тому, кто подбирает токен наугад.
+            # 404, а не 403 — не раскрываем существование партнёра.
             raise Http404()
 
         track_partner_feed_access(partner, request)
         items = build_content_feed(partner, request)
         response = JsonResponse({"partner": partner.name, "items": items})
-        # Токен доступа — часть URL (partners/services.py::build_content_feed
-        # докстринг объясняет, почему так удобнее партнёру). Минус — ссылка с
-        # токеном может осесть в истории браузера, логах прокси/CDN на
-        # СТОРОНЕ партнёра, системах веб-аналитики. no-store запрещает
-        # кэширование ответа где бы то ни было по цепочке — снижает шанс,
-        # что содержимое (пусть и не сверхсекретное) утечёт через чужой кэш.
+        # no-store — токен в URL, ответ нигде не кэшируем.
         response["Cache-Control"] = "no-store"
         return response
 
 
 class PartnerMoodIndexFeedView(View):
-    """
-    /partners/<slug>/feed/<token>/mood/<uuid:team_id>/ — B2B v1 (docs/adr/0034-club-mood-index-v2.md):
-    тот же токен-доступ, что PartnerContentFeedView выше (Partner.feed_token —
-    один токен на партнёра для ВСЕХ его фидов, не заводим отдельный токен на
-    каждый вид фида), но отдаёт "Индекс настроения клуба" — уже
-    анонимизированный агрегат по конкретной команде (см. докстринг
-    partners/services.py::build_mood_index_feed про то, что здесь НЕТ данных
-    уровня пользователя).
-
-    Сезон — текущий активный (`Season.get_primary_active`), без параметра в
-    URL: партнёру нужен "сейчас", а не произвольный сезон в истории — то же
-    решение, что core/views.py::standings_widget.
+    """/partners/<slug>/feed/<token>/mood/<team_id>/ — индекс настроения клуба
+    (агрегат без данных пользователей), активный сезон.
     """
 
     def get(self, request: HttpRequest, slug: str, token: str, team_id) -> HttpResponse:

@@ -1,8 +1,5 @@
 # season_squad/tests.py
-"""
-Тесты season_squad/services.py::_describe_top_matches ("Почему он в
-сборной?", docs/adr/0030-rich-squad-explanation.md).
-"""
+"""Тесты season_squad/services.py: лучшие матчи, ближайший конкурент, позиция сезона."""
 from __future__ import annotations
 
 from datetime import timedelta
@@ -58,12 +55,7 @@ class DescribeTopMatchesTests(TestCase):
         text = _describe_top_matches(str(self.player.id), self.season)
         self.assertIn("9.5", text)
         self.assertIn("8.0", text)
-        # БАГ ТЕСТА (найден пользователем, 2026-09-07): assertNotIn("6.0", text)
-        # ложно падал — дата третьего матча форматируется как "06.09", а эта
-        # строка САМА содержит подстроку "6.0" (символы '6','.','0' из "06.09"),
-        # никак не связанную с исключённым счётом 6.0. Оценка всегда идёт в
-        # формате "{score} — {date}", поэтому "6.0 —" однозначно ловит именно
-        # счёт, а не случайное совпадение с датой.
+        # Ищем «6.0 —», а не «6.0» — иначе совпадает с датой «06.09».
         self.assertNotIn("6.0 —", text)
         self.assertIn("Opponent2", text)
 
@@ -84,8 +76,7 @@ def _candidate(name="Конкурент"):
 
 
 class DescribeNearestCompetitorTests(SimpleTestCase):
-    """"Сравнение с ближайшим конкурентом" (docs/adr/0032-squad-explainability-v2.md)
-    — чистая функция над уже посчитанными числами, БД не нужна."""
+    """Ближайший конкурент — без БД."""
 
     def test_no_runner_up_returns_empty(self):
         self.assertEqual(_describe_nearest_competitor(8.0, None), "")
@@ -97,20 +88,12 @@ class DescribeNearestCompetitorTests(SimpleTestCase):
         self.assertIn("7.90", text)
 
     def test_zero_or_negative_gap_returns_empty(self):
-        """occupant слота по построению ранг №1 — нулевая/отрицательная
-        разница означает эффект округления в _rank_pool, а не реальную
-        ничью; вводящую в заблуждение фразу "обошёл на 0.00" не показываем."""
+        """gap <= 0 — фразу не показываем."""
         self.assertEqual(_describe_nearest_competitor(8.0, (_candidate(), 8.0)), "")
 
 
 class PlayerSeasonPositionTests(TestCase):
-    """2026-09-21, прямая жалоба пользователя: "некоторые игроки стоят
-    например на правом полузащитнике, а сам игрок например не играет там
-    вообще". Одна из двух корневых причин (вторая — в players/positions.py::
-    SLOT_PROCESSING_ORDER, см. round_squad/tests.py) — _player_season_
-    position раньше считал моду позиции по ВСЕМ строкам MatchLineupPlayer,
-    включая невышедших запасных, у которых нет вообще никакой информации
-    о реальном амплуа на поле."""
+    """Позиция сезона считается только по реально сыгранным матчам."""
 
     def setUp(self):
         self.league = League.objects.create(name="League", country="KZ")
@@ -129,11 +112,7 @@ class PlayerSeasonPositionTests(TestCase):
         )
 
     def test_unused_bench_appearances_do_not_dominate_mode(self):
-        """Игрок 5 раз был в заявке невышедшим запасным под общим "AM"
-        (голое амплуа без стороны — так регистрируется скамейка, см.
-        докстринг _player_season_position) и всего 1 раз реально вышел на
-        поле — на левом фланге защиты (D:L). Сезонная позиция должна быть
-        D:L, а не "AM" по большинству строк скамейки."""
+        """5 раз на скамейке как «AM», 1 раз сыграл D:L — позиция D:L."""
         for i in range(5):
             match = self._make_match(days_ago=10 + i)
             lineup = MatchLineup.objects.create(match=match, team=self.team, side="home")
@@ -152,9 +131,7 @@ class PlayerSeasonPositionTests(TestCase):
         self.assertEqual(result[str(self.player.id)], "D:L")
 
     def test_substitute_appearance_counts_toward_mode(self):
-        """Контрольная проверка: реальный выход на замену (minute_in
-        задан) — это НЕ невышедшая скамейка, такая строка должна
-        по-прежнему учитываться в моде."""
+        """Выход на замену учитывается."""
         match = self._make_match(days_ago=1)
         lineup = MatchLineup.objects.create(match=match, team=self.team, side="home")
         MatchLineupPlayer.objects.create(

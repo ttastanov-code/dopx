@@ -1,58 +1,18 @@
 # loadtest/locustfile.py
-"""
-Нагрузочное тестирование DOPX через Locust — имитация реальных
-пользователей (браузинг + логин + голосование за события + полное
-прохождение вайзарда оценки матча, включая "фрод"-сценарий для проверки
-анти-фрод сигнала по скорости).
+"""Нагрузочный тест Locust: браузинг, логин, реакции, вайзард оценки (в т.ч. «фрод»-боты).
 
-ПОДГОТОВКА (один раз перед первым запуском, и повторно если нужно больше
-тестовых аккаунтов):
+Подготовка:
     python manage.py setup_load_test --users 200
-
-ЗАПУСК:
+Запуск:
     pip install locust
     locust -f loadtest/locustfile.py --host http://127.0.0.1:8000
+UI — http://localhost:8089. Ступенчатый рост — --headless (StagedLoadShape).
 
-Откройте http://localhost:8089 — там задаётся число пользователей и
-скорость набора (spawn rate) ЖИВЬЁМ, можно менять на лету, не
-перезапуская. Для автоматического ступенчатого роста (10 -> 100 -> 300 ->
-1000) используйте headless-режим с классом StagedLoadShape ниже:
-
-    locust -f loadtest/locustfile.py --host http://127.0.0.1:8000 --headless
-
-ВАЖНО про окружение:
-- `manage.py runserver` — МНОГОпоточный (не однопоточный, как тут было
-  написано раньше — неточность), но каждый поток может открыть СВОЁ
-  соединение к Postgres (CONN_MAX_AGE=600 в settings.py держит их живыми),
-  и это соединение НИЧЕМ не ограничено сверху. При 100+ конкурентных ботах
-  это легко упирается в max_connections Postgres ("too many clients
-  already") — под нагрузочным тестом это ОЖИДАЕМЫЙ артефакт runserver, а
-  не баг проекта: в проде вы будете стоять за gunicorn с ФИКСИРОВАННЫМ
-  числом воркеров, там соединений ровно столько, сколько воркеров, и
-  никакого исчерпания. Чтобы получить локально ЧИСТЫЕ, заслуживающие
-  доверия цифры — гоняйте через gunicorn с ограниченным числом воркеров
-  (`gunicorn dopx.wsgi -w 4 --threads 2`), а не через runserver. Финальный
-  контрольный прогон — уже на арендованном VPS, один в один как в проде.
-- Часть системы (django-axes, rate-limit, honeypot+капча на регистрации)
-  СОЗНАТЕЛЬНО мешает грубому боту — это не баг теста. Капчу автоматически
-  не проходим (см. ниже) — регистрация через UI тестируется вручную
-  отдельно, не этим инструментом.
-- Локально все боты идут с одного IP (127.0.0.1) — IP-based rate-limit
-  (password-reset, verify-email) будет валиться быстрее, чем в проде с
-  реальными разными IP. В сценарии ниже такие эндпоинты не гоняем массово
-  по этой же причине — тест был бы не про ёмкость системы, а про то, что
-  один IP тут же упирается в лимит (ожидаемо и уже проверено).
-
-ЧТО СМОТРЕТЬ ВО ВРЕМЯ ТЕСТА:
-- Locust Web UI: RPS, время ответа (p50/p95/p99), % failures — по каждому
-  эндпоинту отдельно.
-- Консоль `manage.py runserver`/gunicorn: warning-и от QueryCountMiddleware
-  (SLOW/HIGH-QUERY REQUEST) и CacheHitMiddleware (LOW CACHE HIT RATE) —
-  оба уже встроены в проект (dopx/middleware.py) специально для этого.
-- Django admin -> Staff-дашборд -> Здоровье данных / Антифрод — там будет
-  видно, как реагирует flag_suspicious_wizard_speed_task на "фрод"-ботов.
-- Postgres/Redis: `top`/`htop`, число активных соединений к Postgres
-  (`SELECT count(*) FROM pg_stat_activity;`) — не должно расти неограниченно.
+Для честных цифр — gunicorn с фиксированным числом воркеров, не runserver
+(runserver упирается в max_connections Postgres).
+Локально все боты с одного IP — IP rate-limit срабатывает быстрее.
+Смотреть: RPS/p95 в Locust, warning-и QueryCountMiddleware/CacheHitMiddleware,
+антифрод в дашборде, число соединений в pg_stat_activity.
 """
 from __future__ import annotations
 
@@ -62,32 +22,27 @@ import re
 import gevent
 from locust import HttpUser, LoadTestShape, task, between
 
-# Должны совпадать с core/management/commands/setup_load_test.py
+# Совпадают с core/management/commands/setup_load_test.py
 LOAD_TEST_MATCH_ID = "10000000-0000-0000-0000-000000000001"
-LOAD_TEST_USER_COUNT = 200  # держите в синхроне с --users при запуске setup_load_test
+LOAD_TEST_USER_COUNT = 200  # в синхроне с --users у setup_load_test
 LOAD_TEST_PASSWORD = "LoadTest2026!"
 
 WIZARD_STEPS = ["context", "teams", "players", "coaches", "referee", "match_eval"]
 
 
 def _csrf_headers(client) -> dict:
-    """Django принимает CSRF-токен из cookie через заголовок X-CSRFToken —
-    не нужно парсить hidden input из HTML на каждый шаг."""
+    """CSRF-токен из cookie в заголовке X-CSRFToken."""
     token = client.cookies.get("csrftoken")
     return {"X-CSRFToken": token} if token else {}
 
 
 class DopxUser(HttpUser):
-    """
-    Обычный пользователь: логинится один раз тестовым аккаунтом, дальше
-    браузит сайт и изредка голосует/реагирует. Вес задач подобран так, чтобы
-    чтение сильно преобладало над записью — как в реальном трафике.
-    """
+    """Обычный пользователь: логин, в основном чтение, изредка запись."""
     wait_time = between(1, 4)
 
     def on_start(self):
         username = f"loadtest_{random.randint(1, LOAD_TEST_USER_COUNT):04d}"
-        # GET нужен, чтобы получить csrftoken-cookie перед POST /users/login/.
+        # GET — чтобы получить csrftoken перед логином.
         self.client.get("/users/login/", name="/users/login/ [GET]")
         self.client.post(
             "/users/login/",
@@ -97,7 +52,7 @@ class DopxUser(HttpUser):
         )
         self.username = username
 
-    # --- Чтение (основной вес) -------------------------------------------------
+    # --- Чтение -----------------------------------------------------------------
 
     @task(10)
     def browse_home(self):
@@ -113,7 +68,7 @@ class DopxUser(HttpUser):
 
     @task(3)
     def view_match_events_partial(self):
-        # То же, что live-пульс на странице матча опрашивает в фоне.
+        # Фоновый live-пульс страницы матча.
         self.client.get(f"/matches/{LOAD_TEST_MATCH_ID}/events/", name="/matches/<id>/events/ [live-poll]")
 
     @task(4)
@@ -132,12 +87,11 @@ class DopxUser(HttpUser):
     def view_notifications(self):
         self.client.get("/notifications/", name="/notifications/")
 
-    # --- Запись (реже) ----------------------------------------------------------
+    # --- Запись ----------------------------------------------------------------
 
     @task(4)
     def react_to_random_event(self):
-        # match_events_partial отдаёт HTML с data-event-id — вытаскиваем
-        # регуляркой, чтобы не хардкодить ID событий (их создаёт парсер).
+        # ID событий берём из HTML (data-event-id).
         resp = self.client.get(f"/matches/{LOAD_TEST_MATCH_ID}/events/", name="/matches/<id>/events/ [для react]")
         event_ids = re.findall(r'data-event-id="([0-9a-f-]{36})"', resp.text)
         if not event_ids:
@@ -153,11 +107,7 @@ class DopxUser(HttpUser):
 
 
 class HumanWizardUser(DopxUser):
-    """
-    Проходит вайзард оценки как обычный человек — с реалистичной паузой
-    между шагами (2-8с на шаг, читает, крутит слайдеры). Большая часть
-    "голосующих" ботов должна быть такого типа.
-    """
+    """Проходит вайзард с человеческими паузами."""
     weight = 5
 
     @task(1)
@@ -166,14 +116,7 @@ class HumanWizardUser(DopxUser):
 
 
 class FraudWizardUser(DopxUser):
-    """
-    Намеренно "жульничает" — проходит весь 6-шаговый вайзард почти без
-    пауз (как реальный скрипт-накрутчик). Меньшинство ботов такого типа —
-    именно для проверки, что flag_suspicious_wizard_speed_task ловит это
-    ПОД НАГРУЗКОЙ (не только в единичном запросе, как в тестах evaluations),
-    и что это не создаёт гонки/дедлоков на EvaluationSession под
-    конкурентным доступом нескольких таких ботов одновременно.
-    """
+    """Проходит вайзард почти без пауз — проверка антифрода под нагрузкой."""
     weight = 1
 
     @task(1)
@@ -182,12 +125,7 @@ class FraudWizardUser(DopxUser):
 
 
 def _run_wizard(client, human_pace: bool) -> None:
-    """
-    human_pace=True — реалистичная пауза 2-6с между шагами (читает,
-    двигает слайдеры). human_pace=False — пауза ~0.05-0.2с, имитация
-    скрипта-накрутчика: именно эту разницу должен ловить
-    flag_suspicious_wizard_speed_task на шаге 6.
-    """
+    """human_pace=True — пауза 2-6 с, False — ~0.05-0.2 с (как скрипт)."""
     def _between_steps():
         gevent.sleep(random.uniform(2.0, 6.0) if human_pace else random.uniform(0.05, 0.2))
 
@@ -203,9 +141,7 @@ def _run_wizard(client, human_pace: bool) -> None:
     )
     _between_steps()
 
-    # Шаг 2: команды (динамические поля по обеим командам матча — имена полей
-    # заранее известны только для LOAD_TEST_MATCH_ID, т.к. читаем их из
-    # setup_load_test.py: home/away team id зашиты туда же).
+    # Шаг 2: команды (id команд — из setup_load_test.py).
     from_home = "10000000-0000-0000-0000-000000000003"
     from_away = "10000000-0000-0000-0000-000000000004"
     team_payload = {}
@@ -219,9 +155,7 @@ def _run_wizard(client, human_pace: bool) -> None:
     )
     _between_steps()
 
-    # Шаг 3: игроки — достаём реальные player_id со страницы (генерятся
-    # setup_load_test.py неслучайно, но проще прочитать со страницы, чем
-    # дублировать логику присвоения ID).
+    # Шаг 3: игроки — id читаем со страницы.
     resp = client.get(f"/evaluations/match/{match_id}/players/", name="/evaluations/.../players/ [GET]")
     player_ids = re.findall(r'data-player-id="([0-9a-f-]{36})"', resp.text)
     players_payload = {}
@@ -236,8 +170,7 @@ def _run_wizard(client, human_pace: bool) -> None:
     )
     _between_steps()
 
-    # Шаг 4: тренеры (coach id тоже стабильны только по имени — читаем со
-    # страницы, чтобы не хардкодить).
+    # Шаг 4: тренеры — id читаем со страницы.
     resp = client.get(f"/evaluations/match/{match_id}/coaches/", name="/evaluations/.../coaches/ [GET]")
     coach_ids = set(re.findall(r'coach_([0-9a-f-]{36})_tactics', resp.text))
     coaches_payload = {}
@@ -259,7 +192,7 @@ def _run_wizard(client, human_pace: bool) -> None:
     )
     _between_steps()
 
-    # Шаг 6: финал — именно тут ставится flag_suspicious_wizard_speed_task.
+    # Шаг 6: финал — здесь срабатывает проверка скорости.
     client.get(f"/evaluations/match/{match_id}/match/", name="/evaluations/.../match/ [GET]")
     client.post(
         f"/evaluations/match/{match_id}/match/",
@@ -273,17 +206,8 @@ def _run_wizard(client, human_pace: bool) -> None:
 
 
 class StagedLoadShape(LoadTestShape):
-    """
-    Ступенчатый рост нагрузки для headless-режима: 10 -> 50 -> 100 -> 300 ->
-    1000 одновременных "пользователей", каждая ступень держится 3 минуты,
-    прирост (spawn rate) — по 10 пользователей/сек. Чтобы не участвовала в
-    обычном Web-UI режиме (там числа задаются руками) — Locust сам не
-    подключает LoadTestShape, если запущен НЕ headless и вы явно не выбрали
-    его в UI, так что этот класс безопасно оставлять в файле всегда.
-    """
-    # "duration" здесь — АБСОЛЮТНАЯ метка времени с начала прогона (не длина
-    # самой ступени), поэтому значения по возрастанию: до 180с держим 10
-    # пользователей, с 180 до 360с — 50, и т.д.
+    """Ступенчатая нагрузка для headless: 10 -> 50 -> 100 -> 300 -> 1000, по 3 минуты."""
+    # duration — время от начала прогона, а не длина ступени.
     stages = [
         {"duration": 180, "users": 10, "spawn_rate": 5},
         {"duration": 360, "users": 50, "spawn_rate": 10},

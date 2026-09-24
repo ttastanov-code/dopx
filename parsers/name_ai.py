@@ -1,43 +1,7 @@
 # parsers/name_ai.py
-"""
-Проверка правильного кириллического написания ФИО игрока/судьи/тренера
-через Gemini API (2026-09-22, прямая просьба пользователя после жалобы
-"Сергий Малий" вместо "Сергий Малый" — механическая транслитерация
-(parsers/sportmonks/translit.py) в принципе не может быть 100% верной,
-реальное написание нужно ПРОВЕРЯТЬ по внешнему источнику, не гадать по
-буквам ещё точнее).
-
-ПОЧЕМУ GEMINI, А НЕ АВТОМАТИЗАЦИЯ ЧАТ-ИНТЕРФЕЙСА: пользователь сначала
-предлагал "открывать чат ChatGPT Go/Gemini/Claude Pro и слать запрос" —
-это прямое нарушение пользовательского соглашения любого из этих
-потребительских продуктов (автоматизация веб-чата ботом запрещена),
-технически хрупко (headless-браузер, живая сессия, капча) и не то, на чём
-стоит строить рабочую фичу сайта. Осознанный выбор — официальный Gemini
-API (aistudio.google.com), бесплатный тариф, БЕЗ привязки к личной
-подписке пользователя.
-
-ПОЧЕМУ БЕЗ ВНЕШНЕЙ БИБЛИОТЕКИ google-generativeai: Gemini API — обычный
-REST/JSON эндпоинт, `requests` (уже используется в parsers/sportmonks/
-client.py — тот же принцип) достаточно, не тянем новую зависимость ради
-одного эндпоинта.
-
-ПОЧЕМУ РЕЗУЛЬТАТ НЕ ПРИМЕНЯЕТСЯ АВТОМАТИЧЕСКИ: явное решение пользователя
-("всегда через ручное подтверждение в дашборде") — LLM тоже может
-ошибиться/не найти редкого игрока, автоприменение непроверенной догадки
-поверх уже испорченного механической транслитерацией имени рискует
-заменить одну ошибку на другую, никем не замеченную. Эта функция только
-ВОЗВРАЩАЕТ предложение — запись в базу и в ConfirmedNameCorrection делает
-dashboard/views.py::names_review_approve ПОСЛЕ явного клика staff (см.
-parsers/models.py::NameVerificationSuggestion).
-
-ВАЖНО ПРО ИНСТРУМЕНТ ПОИСКА: код ниже посылает Gemini `tools: [{"google_
-search": {}}]` — актуальное имя server-side инструмента веб-поиска для
-моделей семейства Gemini 1.5-002+/2.0/2.5. Название/доступность
-инструментов у Google периодически меняются, а живого API-ключа в
-песочнице этой сессии нет — проверить вживую было нельзя. Если после
-получения реального ключа Gemini будет возвращать ошибку про неизвестный
-инструмент — см. актуальную документацию на ai.google.dev и поправьте
-GOOGLE_SEARCH_TOOL ниже (единственное место, где инструмент описан).
+"""Проверка кириллического ФИО через Gemini API (REST через requests, с веб-поиском).
+Результат только предлагается — применяется после подтверждения staff в дашборде.
+Если Gemini ругается на инструмент поиска — поправить GOOGLE_SEARCH_TOOL.
 """
 from __future__ import annotations
 
@@ -54,18 +18,15 @@ logger = logging.getLogger(__name__)
 GEMINI_ENDPOINT_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 REQUEST_TIMEOUT_SECONDS = 30
 
-# См. докстринг модуля выше про возможную смену имени инструмента.
+# Имя инструмента веб-поиска Gemini.
 GOOGLE_SEARCH_TOOL = {"google_search": {}}
 
 
 @dataclass
 class NameVerificationResult:
-    """Результат ОДНОЙ проверки. `ok=False` — вызов не удался технически
-    (нет ключа, сеть, невалидный JSON) — это НЕ то же самое, что "Gemini
-    не нашёл человека": в последнем случае `ok=True`, но `confidence="low"`
-    и `reasoning` объясняет, что источники не найдены/противоречивы —
-    staff в дашборде видит оба случая по-разному (ошибка вызова vs честное
-    "не уверен")."""
+    """Результат проверки. ok=False — техническая ошибка вызова;
+    ok=True с confidence="low" — Gemini не уверен.
+    """
 
     ok: bool
     first_name: str = ""
@@ -84,11 +45,7 @@ def verify_name(
     entity_label: str, first_name: str, last_name: str,
     *, team_name: str = "", extra_context: str = "",
 ) -> NameVerificationResult:
-    """entity_label — человекочитаемое "игрока"/"судьи"/"тренера" (падеж
-    как в parsers/sportmonks/importers.py::_resolve_cyrillic_name, чтобы
-    промпт читался естественно). team_name/extra_context — любой
-    дополнительный контекст, который поможет отличить полного тёзку
-    (клуб, страна, позиция и т.п.) — не обязателен."""
+    """entity_label — «игрока»/«судьи»/«тренера». team_name/extra_context — для отличия тёзок."""
     if not is_configured():
         return NameVerificationResult(ok=False, error="GEMINI_API_KEY не задан в настройках (см. dopx/settings.py)")
 
@@ -106,11 +63,7 @@ def verify_name(
         data = response.json()
     except requests.RequestException as exc:
         logger.error("Gemini: запрос не удался (%s %r %r): %s", entity_label, first_name, last_name, exc)
-        # 2026-09-22: для 429/4xx/5xx достаём тело ответа — там у Gemini
-        # обычно лежит status ("RESOURCE_EXHAUSTED" и т.п.) и quotaMetric,
-        # по которому видно, упёрлись в per-minute или per-day лимит
-        # (просто "429 Too Many Requests" из str(exc) этого не говорит —
-        # снаружи неотличимо, увеличивать --delay бесполезно или нет).
+        # Тело ответа при ошибке — там видно, какой лимит упёрся (минута/сутки).
         detail = ""
         response = getattr(exc, "response", None)
         if response is not None:
@@ -119,7 +72,7 @@ def verify_name(
             except Exception:
                 pass
         return NameVerificationResult(ok=False, error=f"{type(exc).__name__}: {exc}{detail}")
-    except ValueError as exc:  # response.json() — невалидный JSON от сервера
+    except ValueError as exc:  # невалидный JSON
         logger.error("Gemini: невалидный JSON в HTTP-ответе (%s %r %r): %s", entity_label, first_name, last_name, exc)
         return NameVerificationResult(ok=False, error=f"невалидный JSON HTTP-ответа: {exc}")
 
@@ -170,7 +123,7 @@ def _parse_response(data: dict, entity_label: str, first_name: str, last_name: s
         suffix = f" (finishReason={finish_reason})" if finish_reason else ""
         return NameVerificationResult(ok=False, error=f"Gemini вернул пустой текст{suffix}")
 
-    # Модель иногда оборачивает JSON в ```json ... ``` несмотря на явную просьбу не делать этого.
+    # Модель иногда оборачивает JSON в ```json ... ```.
     cleaned = text.strip()
     if cleaned.startswith("```"):
         cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", cleaned, flags=re.MULTILINE).strip()

@@ -1,26 +1,8 @@
 # coaches/management/commands/refresh_coach_activity.py
-"""
-Синхронная обёртка над coaches/services.py::refresh_coach_activity() —
-та же логика, что кнопка "Обновить статус тренеров" на /staff/dashboard/
-parser/ (dashboard/parser_tools.py::SPORTMONKS_TRIGGERABLE_TASKS ->
-parsers.sportmonks.tasks.sportmonks_sync_coach_activity), но выполняется
-СРАЗУ в текущем процессе, а не ставится в очередь Celery.
+"""manage.py refresh_coach_activity
 
-ЗАЧЕМ ЭТА КОМАНДА (2026-09-09, жалоба пользователя — "статусы тренеров
-обновлял через команду в дашборде, но ничего не случилось"): кнопка на
-дашборде вызывает `task_fn.delay()` (dashboard/parser_tools.py::
-trigger_task) — это ставит задачу в очередь Celery (Redis) и требует
-ОТДЕЛЬНОГО запущенного воркера (`celery -A dopx worker`), чтобы она
-реально выполнилась. Если локально запущен только `manage.py runserver`
-без воркера — задача тихо лежит в очереди и никогда не исполняется, кнопка
-при этом не сообщает об ошибке (она и не ошиблась — просто поставила в
-очередь, как и было запрограммировано). Не баг логики пересчёта самого по
-себе, а несоответствие ожиданиям в локальной разработке без воркера. Эта
-команда — прямой путь получить результат немедленно, без Celery вообще
-(тот же принцип, что sync_sportmonks_season для полного бэкафилла).
-
-Использование:
-    python manage.py refresh_coach_activity
+Синхронный пересчёт активности тренеров (coaches.services.refresh_coach_activity),
+без Celery — кнопка в дашборде требует запущенного воркера.
 """
 from django.core.management.base import BaseCommand
 

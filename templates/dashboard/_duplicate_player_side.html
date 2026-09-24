@@ -1,23 +1,11 @@
 {% comment %}
-templates/dashboard/_duplicate_player_side.html
-Одна из двух колонок в паре дублей (_duplicate_player_pair.html) — карточка
-игрока + кнопка "Оставить эту запись". Контекст: entry ({player,
-appearances, events_count, evaluations_count, aggregates_count} —
-dashboard/views.py::_player_dup_stats), keep_value ('existing'/'new' —
-уходит в hidden-поле keep формы merge), flag_id.
-
-Кнопка сама шлёт keep=existing|new на dashboard:duplicate_players_merge —
-id обеих записей flask уже знает по flag_id в URL, руками их вводить/
-копировать не нужно (см. докстринг duplicate_players_review.html).
+Колонка пары дублей: карточка игрока + «Оставить эту запись».
+Контекст: entry {player, appearances, events_count, evaluations_count, aggregates_count},
+keep_value ('existing'/'new'), flag_id.
 {% endcomment %}
 <div class="rounded-lg border border-base-300 p-3 flex flex-col gap-2">
     <div class="flex items-center gap-2">
-        {% comment %}
-        entry.player.photo.url без проверки {% if %} падает ValueError для
-        игроков без фото (FieldFile.url на пустом файле) — та же защита,
-        что и везде по проекту (players/detail.html, components/
-        _player_card.html): .url читаем ТОЛЬКО когда photo реально есть.
-        {% endcomment %}
+        {# .url только если фото есть — иначе ValueError. #}
         {% if entry.player.photo %}
         {% include 'components/_avatar.html' with photo_url=entry.player.photo.url name=entry.player.full_name size_classes='w-10 h-10 text-sm' %}
         {% else %}
@@ -51,12 +39,7 @@ id обеих записей flask уже знает по flag_id в URL, рук
         </div>
     </div>
 
-    {% comment %}
-    hx-confirm — единственный диалог подтверждения (HTMX перехватывает
-    submit сам и показывает свой confirm() перед AJAX-запросом). Отдельный
-    onsubmit="confirm(...)" сюда НЕ добавляем — оба сработали бы на один
-    клик и показали бы два всплывающих окна подряд.
-    {% endcomment %}
+    {# Только hx-confirm, без onsubmit — иначе два диалога. #}
     <form
         class="mt-auto pt-1"
         hx-post="{% url 'dashboard:duplicate_players_merge' flag_id %}"

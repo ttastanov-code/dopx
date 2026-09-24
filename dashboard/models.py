@@ -1,15 +1,7 @@
 # dashboard/models.py
-"""
-Аудит-лог действий staff (продуктовый апгрейд, "защита на высшем уровне" —
-не только КТО может зайти, но и КТО ЧТО сделал внутри). Django admin сам
-пишет CRUD-изменения моделей в свою `django_admin_log` (LogEntry) — это
-покрывает обычные add/change/delete через ModelAdmin автоматически и
-переиспользуется как есть, БЕЗ дублирования здесь.
-
-Но кастомные экшены staff-дашборда (dashboard/views.py, parser_tools.py) —
-подтверждение/отклонение антифрод-флага, ручной ресинк матча, ручной запуск
-celery-задачи — идут в обход ModelAdmin и в LogEntry не попадают вообще.
-StaffActionLog закрывает именно этот пробел. См. dashboard/audit.py::log_staff_action.
+"""Модели staff-дашборда: аудит-лог, запуски команд, роли доступа.
+CRUD через ModelAdmin и так пишется в django_admin_log;
+StaffActionLog — для кастомных действий дашборда (dashboard/audit.py::log_staff_action).
 """
 from __future__ import annotations
 
@@ -22,9 +14,7 @@ from django.utils.translation import gettext_lazy as _
 
 
 class AuditAction(models.TextChoices):
-    """Единый каталог экшенов — как и analytics.EventName, пишите action
-    ТОЛЬКО через этот Enum, иначе через полгода в таблице будет разнобой
-    в написании одного и того же действия."""
+    """Каталог действий для аудита. Писать action только через этот Enum."""
 
     ANTIFRAUD_FLAG_CONFIRMED = "antifraud_flag_confirmed", _("Флаг подтверждён")
     ANTIFRAUD_FLAG_DISMISSED = "antifraud_flag_dismissed", _("Флаг отклонён")
@@ -33,84 +23,47 @@ class AuditAction(models.TextChoices):
     CELERY_TASK_REVOKED = "celery_task_revoked", _("Отзыв/остановка celery-задачи")
     SPORTMONKS_HEALTH_CHECK = "sportmonks_health_check", _("Проверка доступности Sportmonks API")
     SYSTEM_ANNOUNCEMENT_SENT = "system_announcement_sent", _("Отправлено системное объявление")
-    # НОВОЕ (2026-09-09, Центр доверия к данным) — dashboard/views.py::
-    # data_trust, dashboard/views.py::data_trust_report_action,
-    # dashboard/views.py::data_trust_discrepancy_review.
+    # Центр доверия к данным.
     DATA_ERROR_REPORT_RESOLVED = "data_error_report_resolved", _("Жалоба на данные матча закрыта")
     PARSER_DISCREPANCY_REVIEWED = "parser_discrepancy_reviewed", _("Расхождение импорта разобрано")
-    # НОВОЕ (2026-09-22, прямая просьба пользователя: "seed_full_history
-    # надо вывести в дашборд... все наши тестовые скрипты и команды в
-    # отдельный раздел") — см. dashboard/commands_registry.py,
-    # dashboard/command_runner.py, ManagementCommandRun ниже.
+    # Скрипты и команды.
     MANAGEMENT_COMMAND_TRIGGERED = "management_command_triggered", _("Запуск management-команды из дашборда")
-    # НОВОЕ (2026-09-22, очередь «Проверка ФИО (ИИ)») — см. parsers/models.py::
-    # NameVerificationSuggestion, dashboard/views.py::names_review_action.
+    # Проверка ФИО (ИИ).
     NAME_SUGGESTION_APPROVED = "name_suggestion_approved", _("Предложение ИИ по ФИО подтверждено")
     NAME_SUGGESTION_REJECTED = "name_suggestion_rejected", _("Предложение ИИ по ФИО отклонено")
-    # НОВОЕ (2026-09-22, очередь «Дубли игроков») — см. players/models.py::
-    # PotentialDuplicatePlayer, players/services.py::merge_players,
-    # dashboard/views.py::duplicate_players_merge/duplicate_players_dismiss.
+    # Дубли игроков.
     DUPLICATE_PLAYERS_MERGED = "duplicate_players_merged", _("Дубли игроков объединены")
     DUPLICATE_PLAYER_FLAG_DISMISSED = "duplicate_player_flag_dismissed", _("Флаг дубля игрока отклонён (разные люди)")
-    # НОВОЕ (2026-09-23, раздел «Матчи») — см. dashboard/views.py::match_detail/
-    # match_trigger_recalc. MATCH_MANUAL_EDIT — правка полей матча (статус/
-    # счёт/дата/тур) отдельно от MATCH_RESYNC (тот — full re-fetch с
-    # Sportmonks, этот — staff вписал значения руками).
+    # Раздел «Матчи». MATCH_MANUAL_EDIT — ручная правка, MATCH_RESYNC — перезагрузка с Sportmonks.
     MATCH_MANUAL_EDIT = "match_manual_edit", _("Матч отредактирован вручную")
     MATCH_RECALC_TRIGGERED = "match_recalc_triggered", _("Ручной пересчёт агрегатов матча")
-    # НОВОЕ (2026-09-23, раздел «Настройки платформы») — см. core/models.py::
-    # PlatformSetting, dashboard/views.py::platform_settings*.
+    # Настройки платформы.
     PLATFORM_SETTING_CREATED = "platform_setting_created", _("Создана настройка платформы")
     PLATFORM_SETTING_CHANGED = "platform_setting_changed", _("Изменена настройка платформы")
     PLATFORM_SETTING_DELETED = "platform_setting_deleted", _("Удалена настройка платформы")
-    # НОВОЕ (2026-09-23, раздел «Пользователи») — см. dashboard/views.py::
-    # user_detail/user_toggle_ban/user_reset_trust_score.
+    # Пользователи.
     USER_BANNED = "user_banned", _("Пользователь заблокирован")
     USER_UNBANNED = "user_unbanned", _("Пользователь разблокирован")
     USER_TRUST_SCORE_RESET = "user_trust_score_reset", _("Оценка доверия пользователя сброшена")
-    # НОВОЕ (2026-09-23, раздел «Модерация оценок») — см. evaluations/
-    # models.py::EvaluationSession, dashboard/views.py::
-    # evaluation_session_delete. Удаление сессии удаляет и все связанные
-    # под-оценки (Context/Team/Player/Coach/Referee/MatchEvaluation) того
-    # же (user, match) — фрод/спам-оценка выпиливается целиком, не по частям.
+    # Модерация оценок. Удаление сессии удаляет и все её под-оценки.
     EVALUATION_SESSION_DELETED = "evaluation_session_deleted", _("Сессия оценки удалена (модерация)")
-    # НОВОЕ (2026-09-23, раздел «Партнёры и баннеры») — см. partners/
-    # models.py::Partner/Banner, dashboard/views.py::partner_create/
-    # partner_update/partner_delete/banner_create/banner_update/banner_delete.
+    # Партнёры и баннеры.
     PARTNER_CREATED = "partner_created", _("Партнёр создан")
     PARTNER_UPDATED = "partner_updated", _("Партнёр изменён")
     PARTNER_DELETED = "partner_deleted", _("Партнёр удалён")
     BANNER_CREATED = "banner_created", _("Баннер создан")
     BANNER_UPDATED = "banner_updated", _("Баннер изменён")
     BANNER_DELETED = "banner_deleted", _("Баннер удалён")
-    # НОВОЕ (2026-09-23, раздел «Роли доступа») — см. StaffAccessGrant ниже,
-    # dashboard/views.py::access_roles_update.
+    # Роли доступа.
     ACCESS_GRANT_UPDATED = "access_grant_updated", _("Права доступа сотрудника изменены")
-    # НОВОЕ (2026-09-23, прямая просьба пользователя: закончилась пробная
-    # подписка Sportmonks, сыплются ошибки — нужен рубильник синка без
-    # перезапуска Celery) — см. core.models.PlatformSetting("sportmonks_sync_
-    # enabled"), parsers/sportmonks/tasks.py::_sync_enabled(),
-    # dashboard/views.py::sportmonks_sync_toggle.
+    # Вкл/выкл синка Sportmonks.
     SPORTMONKS_SYNC_TOGGLED = "sportmonks_sync_toggled", _("Синк с Sportmonks включён/выключен")
 
-    # 2026-09-09: RAW_KFF_LOOKUP/KFF_HEALTH_CHECK удалены вместе со всем
-    # KFF-парсером (по решению пользователя). STADIUM_MARKED_REVIEWED
-    # удалён в тот же день вместе со всей моделью Stadium (см.
-    # matches/models.py, core/models_stadium.py — принципиальная проблема
-    # с venue-данными КПЛ, не просто отдельные ошибки сопоставления). Уже
-    # существующие строки StaffActionLog с этими значениями в БД не трогаем
-    # и не удаляем — они просто перестают резолвиться в красивый label
-    # через get_action_display() и будут показывать сырое значение
-    # ("raw_kff_lookup"/"kff_health_check"/"stadium_marked_reviewed") в
-    # истории аудита. Это осознанный компромисс: исторический лог
-    # неизменяем (см. докстринг StaffActionLog), а не повод держать мёртвые
-    # choices вечно.
+    # Старые значения (KFF, стадионы) удалены из choices; строки в логе остаются как есть.
 
 
 class StaffActionLog(models.Model):
-    """Единичная запись аудита. BigAutoField + без `updated_at` — та же
-    логика, что и `analytics.models.AnalyticsEvent`: append-only таблица,
-    запись неизменяема после создания."""
+    """Запись аудита. Append-only, после создания не меняется."""
 
     id = models.BigAutoField(primary_key=True)
     created_at = models.DateTimeField(_("Когда"), auto_now_add=True, db_index=True)
@@ -118,25 +71,11 @@ class StaffActionLog(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="staff_action_logs", verbose_name=_("Кто"),
     )
-    # Денормализованный снимок логина — переживает удаление/переименование
-    # аккаунта, лог не должен становиться нечитаемым при офбординге сотрудника.
+    # Снимок логина — лог читаем и после удаления аккаунта.
     actor_username = models.CharField(_("Логин (снимок)"), max_length=150, blank=True)
     action = models.CharField(_("Действие"), max_length=50, choices=AuditAction.choices, db_index=True)
     target = models.CharField(_("Объект действия"), max_length=300, blank=True)
-    # НАЙДЕНО (2026-09-23, пользователь заметил ошибку в списке ошибок
-    # дашборда): "Object of type datetime is not JSON serializable" — без
-    # encoder здесь JSONField сериализует через обычный json.dumps, который
-    # не умеет datetime/UUID/Decimal. dashboard/views.py::
-    # parser_sportmonks_health_check передаёт в details весь результат
-    # health-check'а как есть, а там результат содержит "checked_at" —
-    # РЕАЛЬНЫЙ datetime-объект (нужен таким для фильтра |timesince в
-    # шаблоне, не может быть строкой). Падение происходило именно на этом
-    # поле. Систематический фикс — на самой модели, а не на одном call
-    # site: у log_staff_action (dashboard/audit.py) ~25 мест вызова по
-    # всему дашборду, каждое передаёт свой произвольный словарь details, и
-    # в любом из них рано или поздно может оказаться datetime/UUID/Decimal
-    # без ручного приведения к строке — DjangoJSONEncoder умеет все три
-    # типа "из коробки", закрывает весь класс бага разом.
+    # DjangoJSONEncoder — в details бывают datetime/UUID/Decimal.
     details = models.JSONField(_("Детали"), default=dict, blank=True, encoder=DjangoJSONEncoder)
     ip_address = models.GenericIPAddressField(_("IP"), null=True, blank=True)
 
@@ -154,24 +93,10 @@ class StaffActionLog(models.Model):
 
 
 class ManagementCommandRun(models.Model):
-    """Один запуск management-команды из раздела "Скрипты и команды"
-    (dashboard/commands_registry.py — allowlist команд + их аргументов,
-    dashboard/command_runner.py — сборка call_command()/запуск,
-    dashboard/tasks.py::run_management_command — сам Celery-таск).
-
-    Асинхронное выполнение (а не синхронный call_command() прямо во view) —
-    принципиально: seed_full_history на пару туров истории может идти
-    минуты, HTTP-запрос staff-панели не должен висеть всё это время (и
-    упадёт по таймауту прокси/gunicorn раньше, чем команда реально
-    закончит). Строка создаётся статусом PENDING синхронно (staff сразу
-    видит её в истории), сам вызов исполняется воркером, а страница
-    поллит статус через scripts_run_status_partial (тот же приём, что
-    celery-задачи парсера — dashboard/_celery_tasks_card.html).
-
-    `stdout`/`stderr` — реальный вывод call_command(..., stdout=StringIO(),
-    stderr=StringIO()) — большинство наших команд печатают отчёт (сколько
-    записей создано/удалено/пропущено) именно туда, это и есть "результат"
-    для staff, не только факт success/failure."""
+    """Запуск management-команды из «Скриптов и команд».
+    Выполняется в Celery (dashboard/tasks.py::run_management_command), страница поллит статус.
+    stdout/stderr — вывод команды.
+    """
 
     class Status(models.TextChoices):
         PENDING = "pending", _("В очереди")
@@ -181,9 +106,7 @@ class ManagementCommandRun(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     command_name = models.CharField(_("Команда"), max_length=100, db_index=True)
-    # Аргументы, с которыми запущена команда — снимок того, что реально
-    # ушло в call_command() (уже провалидированное/приведённое к типам
-    # dashboard/commands_registry.py, а не сырой request.POST).
+    # Аргументы после валидации в commands_registry.
     args = models.JSONField(_("Аргументы"), default=dict, blank=True)
     status = models.CharField(_("Статус"), max_length=10, choices=Status.choices, default=Status.PENDING, db_index=True)
     stdout = models.TextField(_("Вывод"), blank=True)
@@ -211,19 +134,8 @@ class ManagementCommandRun(models.Model):
 
 
 # =============================================================================
-# 2026-09-23, раздел «Роли доступа» — прямая просьба пользователя заменить
-# единственный переключатель is_staff ("всё или ничего") на гибкие права по
-# разделам дашборда: сотрудник может модерировать пользователей, но не
-# видеть Скрипты/Настройки платформы, например. DASHBOARD_SECTIONS — единый
-# каталог разделов (тот же принцип, что AuditAction выше — ключи здесь
-# используются И в проверке доступа (dashboard/access.py), И в шаблоне
-# «Роли доступа», И в _nav.html при решении, какие вкладки показывать).
-#
-# Сознательно БЕЗ builtin Django permissions/Groups — тем нужен отдельный
-# Permission-объект на каждый раздел + Group-модель + UI их назначения,
-# избыточно для ~17 плоских разделов одного дашборда. JSONField-список
-# ключей — простой, читаемый в БД без джойнов, и правится тем же паттерном
-# редактирования, что PlatformSetting/остальные новые разделы этой сессии.
+# Роли доступа: права staff по разделам дашборда.
+# DASHBOARD_SECTIONS используется в dashboard/access.py, шаблоне ролей и _nav.html.
 # =============================================================================
 
 DASHBOARD_SECTIONS = [
@@ -249,22 +161,10 @@ DASHBOARD_SECTION_KEYS = [key for key, _label in DASHBOARD_SECTIONS]
 
 
 class StaffAccessGrant(models.Model):
-    """Список разделов дашборда, доступных КОНКРЕТНОМУ staff-пользователю.
-
-    ВАЖНО, безопасный дефолт (dashboard/access.py::user_can_access_section):
-    - is_superuser=True — ВСЕГДА полный доступ, эта модель на них не
-      действует вообще (нельзя случайно закрыть себе или другому
-      суперпользователю весь дашборд через форму).
-    - Staff БЕЗ записи StaffAccessGrant — тоже полный доступ (grandfather-
-      правило: раньше единственным гейтом был is_staff, у всех уже
-      работающих сотрудников был доступ ко всему; включение этой модели не
-      должно НИКОГО молча отрезать от разделов, которыми он уже пользуется).
-      Ограничение начинается ТОЛЬКО когда админ явно создал для человека
-      запись и снял чекбоксы конкретных разделов — opt-in restriction, а не
-      opt-out.
-    - allowed_sections=[] на СУЩЕСТВУЮЩЕЙ записи — осознанно означает "нет
-      доступа никуда" (админ явно сохранил пустой список), это НЕ то же
-      самое, что отсутствие записи выше.
+    """Разделы дашборда, доступные staff-пользователю.
+    - суперпользователь — всегда полный доступ;
+    - нет записи — полный доступ;
+    - allowed_sections=[] — доступа нет никуда.
     """
 
     user = models.OneToOneField(

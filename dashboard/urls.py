@@ -35,15 +35,7 @@ urlpatterns = [
     path("access/<uuid:user_id>/", views.access_roles_detail, name="access_roles_detail"),
     path("data-health/", views.data_health, name="data_health"),
     path("data-health/partial/", views.data_health_partial, name="data_health_partial"),
-    # НЕ <uuid:match_id> (см. докстринг views.data_health_resync_match про
-    # причину 404 2026-09-22) — эта кнопка получает id из ДВУХ разных
-    # источников: свежие ("Матчи с пропущенными данными") всегда шлют
-    # настоящий UUID (Match.id), а "Последние ошибки" читает сырой JSON
-    # ParserSyncRun.error_samples, где ещё живут строки времён удалённого
-    # KFF-парсера с ЧИСЛОВЫМ id матча вместо UUID — <uuid:...> отбраковывал
-    # такой запрос ДО того, как он вообще доходил до view (роутинг-404, а
-    # не 404 из get_object_or_404), само тело view при этом ни разу не
-    # запускалось.
+    # Не <uuid:...> — сюда приходят и старые числовые id матчей.
     path("data-health/matches/<str:match_id>/resync/", views.data_health_resync_match, name="data_health_resync_match"),
     path("ads/", views.ads, name="ads"),
     path("ads/stats/partial/", views.ads_stats_partial, name="ads_stats_partial"),
@@ -67,17 +59,13 @@ urlpatterns = [
     path("names-review/partial/", views.names_review_partial, name="names_review_partial"),
     path("names-review/bulk-confirm-matches/", views.names_review_bulk_confirm_matches, name="names_review_bulk_confirm_matches"),
     path("names-review/<uuid:suggestion_id>/action/", views.names_review_action, name="names_review_action"),
-    # 2026-09-22, очередь «Дубли игроков» — флаги ставятся на импорте
-    # (parsers/sportmonks/importers.py::_flag_potential_duplicate_player),
-    # слияние синхронное (players/services.py::merge_players), без
-    # Celery/поллинга: см. dashboard/views.py::duplicate_players_review.
+    # Очередь «Дубли игроков».
     path("duplicate-players/", views.duplicate_players_review, name="duplicate_players_review"),
     path("duplicate-players/<uuid:flag_id>/merge/", views.duplicate_players_merge, name="duplicate_players_merge"),
     path("duplicate-players/<uuid:flag_id>/dismiss/", views.duplicate_players_dismiss, name="duplicate_players_dismiss"),
     path("audit/", views.audit_log, name="audit_log"),
     path("announcements/", views.announcements, name="announcements"),
-    # 2FA (security-стек) — ЭТИ пути освобождены от самой OTP-проверки в
-    # EXEMPT_PATH_PREFIXES (dashboard/middleware.py), иначе замкнутый круг.
+    # 2FA — пути без OTP-проверки.
     path("security/2fa/setup/", views_2fa.two_factor_setup, name="two_factor_setup"),
     path("security/2fa/backup-codes/", views_2fa.two_factor_backup_codes, name="two_factor_backup_codes"),
     path("security/2fa/verify/", views_2fa.two_factor_challenge, name="two_factor_challenge"),

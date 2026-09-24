@@ -1,22 +1,5 @@
 # api/serializers.py
-"""
-DRF-сериалайзеры.
-
-DRF-COMPLIANCE FIX: во ВСЕХ сериалайзерах `read_only_fields` были заданы как
-Python `list` (`[...]`), а не `tuple` (`(...,)`), как того требует соглашение
-Meta-опций DRF (в официальной документации и исходниках DRF `read_only_fields`
-трактуется как неизменяемая последовательность). Практическое следствие:
-1) `drf-spectacular` при интроспекции Meta-класса в отдельных версиях
-   полагается на неизменяемость этого атрибута при построении схемы и кэша
-   полей сериалайзера — list, будучи мутабельным, может быть случайно
-   изменён где-то в рантайме (например, `+= ['field']` в наследнике или в
-   миксине), что молча испортит схему OpenAPI для ВСЕХ последующих
-   запросов, использующих тот же класс (Meta-атрибуты живут на уровне
-   класса, а не экземпляра).
-2) list как дефолтный мутабельный аргумент класса — источник классической
-   Python-ошибки "shared mutable state" при наследовании сериалайзеров.
-Исправление: везде заменено на `tuple`.
-"""
+"""DRF-сериалайзеры. read_only_fields — tuple, не list (общий мутабельный атрибут класса)."""
 from __future__ import annotations
 
 from rest_framework import serializers
@@ -42,11 +25,7 @@ from matches.models import Match
 
 
 def _run_policy(check, *args) -> None:
-    """Прогоняет одну проверку из evaluations/policies.py и переводит её
-    исключение в serializers.ValidationError — единственное место, где
-    политика "знает" про DRF (сам модуль policies.py от DRF не зависит,
-    его же вызывает и evaluations/forms.py, где нужен forms.ValidationError).
-    См. docs/adr/0001-evaluation-policy-single-source-of-truth.md."""
+    """Проверка из evaluations/policies.py -> serializers.ValidationError."""
     try:
         check(*args)
     except EvaluationPolicyError as e:
@@ -54,26 +33,9 @@ def _run_policy(check, *args) -> None:
 
 
 def _forbid_identity_field_changes(instance, data: dict, field_names: tuple[str, ...]) -> None:
-    """Запрещает менять поля, определяющие ЛИЧНОСТЬ оценки (какой матч/кого
-    оценивают), при PATCH/PUT уже существующей записи — см.
-    docs/adr/0027-lock-evaluation-identity-fields-on-update.md.
-
-    Найдено внешним аудитом (docs/CODEX_AUDIT_RESPONSE_2026-09-07.md):
-    validate() ниже брал match/player/team/coach из `data.get(...)`, и при
-    partial-обновлении (PATCH) с полем, ОТСУТСТВУЮЩИМ в теле запроса,
-    `data.get(...)` возвращал None — вся проверка `if user and match: ...`
-    (включая EvaluationPolicy: assert_player_in_squad и т.д.) тихо
-    пропускалась целиком. Хуже того: даже если поле ПРИСУТСТВОВАЛО в PATCH
-    (например, "player": 999 без "match"), уникальность и принадлежность
-    матчу всё равно не проверялись, потому что match отсутствовал в data.
-    Итог: владелец собственной оценки мог создать её честно, а затем прямым
-    PATCH подменить player/team/coach/match на что угодно — агрегаты и
-    сезонная сборная не отличили бы такую оценку от настоящей.
-
-    Фикс — не пытаться закрыть все комбинации в самой validate() (легко
-    забыть новую), а полностью запретить менять эти поля после создания:
-    после POST разрешено менять только сами баллы. Сравнение через `_id`,
-    а не сам объект — чтобы не делать лишний SELECT, если поле не менялось."""
+    """При PATCH/PUT нельзя менять поля, определяющие оценку (match/player/team/coach/supported_team) —
+    меняются только баллы.
+    """
     if instance is None:
         return
     for field_name in field_names:
@@ -89,7 +51,7 @@ def _forbid_identity_field_changes(instance, data: dict, field_names: tuple[str,
 
 
 class MatchSerializer(serializers.ModelSerializer):
-    """Сериалайзер матча для вложенных данных."""
+    """Матч для вложенных данных."""
 
     home_team_name = serializers.CharField(source="home_team.name", read_only=True)
     away_team_name = serializers.CharField(source="away_team.name", read_only=True)
@@ -112,7 +74,7 @@ class MatchSerializer(serializers.ModelSerializer):
 
 
 class ContextEvaluationSerializer(serializers.ModelSerializer):
-    """Сериалайзер контекста просмотра матча."""
+    """Контекст просмотра матча."""
 
     match_details = MatchSerializer(source="match", read_only=True)
     supported_team_name = serializers.CharField(
@@ -139,9 +101,7 @@ class ContextEvaluationSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, data: dict) -> dict:
-        """Проверка уникальности: user + match, и что выбранная
-        поддерживаемая команда реально участвовала в матче (см.
-        docs/adr/0001-evaluation-policy-single-source-of-truth.md)."""
+        """Уникальность user + match и supported_team из этого матча."""
         _forbid_identity_field_changes(self.instance, data, ("match", "supported_team"))
 
         request = self.context.get("request")
@@ -159,7 +119,7 @@ class ContextEvaluationSerializer(serializers.ModelSerializer):
 
 
 class PlayerEvaluationSerializer(serializers.ModelSerializer):
-    """Сериалайзер оценки игрока."""
+    """Оценка игрока."""
 
     player_name = serializers.CharField(source="player.first_name", read_only=True)
     player_last_name = serializers.CharField(source="player.last_name", read_only=True)
@@ -221,7 +181,7 @@ class PlayerEvaluationSerializer(serializers.ModelSerializer):
 
 
 class TeamEvaluationSerializer(serializers.ModelSerializer):
-    """Сериалайзер оценки команды."""
+    """Оценка команды."""
 
     team_name = serializers.CharField(source="team.name", read_only=True)
     match_details = MatchSerializer(source="match", read_only=True)
@@ -273,7 +233,7 @@ class TeamEvaluationSerializer(serializers.ModelSerializer):
 
 
 class CoachEvaluationSerializer(serializers.ModelSerializer):
-    """Сериалайзер оценки тренера."""
+    """Оценка тренера."""
 
     coach_name = serializers.CharField(source="coach.first_name", read_only=True)
     coach_last_name = serializers.CharField(source="coach.last_name", read_only=True)
@@ -318,10 +278,7 @@ class CoachEvaluationSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError("Вы уже оценили этого тренера в данном матче")
 
             if not self.instance:
-                # Единообразие с Player/Team-оценками (см.
-                # docs/CODEX_AUDIT_RESPONSE_2026-09-07.md): контекст
-                # просмотра — элемент доверия к голосу, требуется для
-                # ЛЮБОГО типа предметной оценки, не только для игрока/команды.
+                # Нужен контекст просмотра.
                 context_exists = ContextEvaluation.objects.filter(user=user, match=match).exists()
                 _run_policy(assert_context_exists, context_exists)
 
@@ -331,7 +288,7 @@ class CoachEvaluationSerializer(serializers.ModelSerializer):
 
 
 class RefereeEvaluationSerializer(serializers.ModelSerializer):
-    """Сериалайзер оценки судейства."""
+    """Оценка судейства."""
 
     match_details = MatchSerializer(source="match", read_only=True)
 
@@ -364,8 +321,7 @@ class RefereeEvaluationSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError("Вы уже оценили судейство этого матча")
 
             if not self.instance:
-                # Единообразие с остальными типами оценок — см.
-                # docs/CODEX_AUDIT_RESPONSE_2026-09-07.md.
+                # Нужен контекст просмотра.
                 context_exists = ContextEvaluation.objects.filter(user=user, match=match).exists()
                 _run_policy(assert_context_exists, context_exists)
 
@@ -376,7 +332,7 @@ class RefereeEvaluationSerializer(serializers.ModelSerializer):
 
 
 class MatchEvaluationSerializer(serializers.ModelSerializer):
-    """Сериалайзер общей оценки матча."""
+    """Общая оценка матча."""
 
     match_details = MatchSerializer(source="match", read_only=True)
     drama_index = serializers.IntegerField(read_only=True)
@@ -413,8 +369,7 @@ class MatchEvaluationSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError("Вы уже оценили этот матч")
 
             if not self.instance:
-                # Единообразие с остальными типами оценок — см.
-                # docs/CODEX_AUDIT_RESPONSE_2026-09-07.md.
+                # Нужен контекст просмотра.
                 context_exists = ContextEvaluation.objects.filter(user=user, match=match).exists()
                 _run_policy(assert_context_exists, context_exists)
         return data
@@ -426,7 +381,7 @@ class MatchEvaluationSerializer(serializers.ModelSerializer):
 
 
 class PlayerMatchAggregateSerializer(serializers.ModelSerializer):
-    """Сериалайзер агрегатов игрока."""
+    """Агрегаты игрока."""
 
     player_name = serializers.CharField(source="player.first_name", read_only=True)
     player_last_name = serializers.CharField(source="player.last_name", read_only=True)
@@ -497,7 +452,7 @@ class PlayerMatchAggregateSerializer(serializers.ModelSerializer):
 
 
 class MatchAggregateSerializer(serializers.ModelSerializer):
-    """Сериалайзер агрегатов матча."""
+    """Агрегаты матча."""
 
     match_details = MatchSerializer(source="match", read_only=True)
 
@@ -514,7 +469,6 @@ class MatchAggregateSerializer(serializers.ModelSerializer):
             "total_votes",
             "drama_index",
         )
-        # FIX: read_only_fields — tuple, а не list (см. docstring модуля)
         read_only_fields = (
             "id",
             "match",
@@ -529,7 +483,7 @@ class MatchAggregateSerializer(serializers.ModelSerializer):
 
 
 class CoachMatchAggregateSerializer(serializers.ModelSerializer):
-    """Сериалайзер агрегатов тренера."""
+    """Агрегаты тренера."""
 
     coach_name = serializers.CharField(source="coach.first_name", read_only=True)
     coach_last_name = serializers.CharField(source="coach.last_name", read_only=True)
@@ -550,7 +504,6 @@ class CoachMatchAggregateSerializer(serializers.ModelSerializer):
             "avg_impact",
             "total_votes",
         )
-        # FIX: read_only_fields — tuple, а не list (см. docstring модуля)
         read_only_fields = (
             "id",
             "coach",

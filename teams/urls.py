@@ -1,4 +1,5 @@
 # teams/urls.py
+# Список, страница и виджет команды.
 from django.urls import path
 from .views import TeamListView, TeamDetailView, team_rating_widget
 

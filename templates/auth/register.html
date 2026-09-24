@@ -51,23 +51,16 @@ body {
           @submit="checkMatch()">
         {% csrf_token %}
 
-        <!-- АНТИ-БОТ: honeypot-поле, невидимое человеку (визуально
-             скрыто и вынесено из потока табуляции), но доступное
-             примитивному боту, слепо заполняющему все input'ы формы.
-             Поле ОБЯЗАНО остаться пустым — см.
-             users/forms.py::UserRegistrationForm.clean_website. -->
+        {# Антибот: honeypot, должно остаться пустым. #}
         <div style="position:absolute; left:-9999px; top:-9999px;" aria-hidden="true">
             <label for="id_website">Website</label>
             <input type="text" id="id_website" name="website" tabindex="-1" autocomplete="off">
         </div>
 
-        <!-- АНТИ-БОТ: time-trap — момент рендера формы, см.
-             users/forms.py::UserRegistrationForm.clean_form_rendered_at.
-             Отправка формы быстрее нескольких секунд после рендера
-             физически невозможна для человека. -->
+        {# Антибот: time-trap. #}
         {{ form.form_rendered_at }}
 
-        <!-- Username -->
+        {# Username #}
         <div>
             <label for="id_username" class="block text-sm font-medium mb-1.5">Имя пользователя</label>
             <input type="text"
@@ -85,7 +78,7 @@ body {
             {% endif %}
         </div>
 
-        <!-- Email -->
+        {# Email #}
         <div>
             <label for="id_email" class="block text-sm font-medium mb-1.5">Email</label>
             <input type="email"
@@ -101,19 +94,10 @@ body {
             {% endif %}
         </div>
 
-        <!-- City (обязательно, 2026-09-23) -->
+        {# Город (обязательно) #}
         <div>
             <label for="id_city" class="block text-sm font-medium mb-1.5">Город</label>
-            {% comment %}
-            2026-09-23, продуктовый запрос: "пользователь должен город
-            указать при регистрации обязательно" + реальные казахстанские
-            города вместо свободного текста (users/kz_cities.py). Раньше
-            здесь был свободный <input type="text">; теперь — выпадающий
-            список из form.city (ChoiceField, users/forms.py), рендерится
-            вручную (как и остальные поля этой формы), но перебирает
-            form.fields.city.choices, а не хардкодит опции в шаблоне —
-            один источник правды.
-            {% endcomment %}
+            {# Список городов из form.fields.city.choices. #}
             <select id="id_city"
                     name="city"
                     required
@@ -128,7 +112,7 @@ body {
             {% endif %}
         </div>
 
-        <!-- Пароли: рядом на широких экранах, друг под другом на узких -->
+        {# Пароли #}
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
                 <label for="id_password1" class="block text-sm font-medium mb-1.5">Пароль</label>
@@ -176,12 +160,7 @@ body {
         <p class="text-xs text-base-content/40 -mt-2">Минимум 8 символов, не только цифры</p>
         <p class="text-xs text-error -mt-2" x-show="confirmPassword && password !== confirmPassword">Пароли не совпадают</p>
 
-        <!-- CAPTCHA: self-hosted (django-simple-captcha), картинка
-             рисуется Pillow'ом на сервере, без внешних API-ключей.
-             Клик по картинке обновляет её через встроенный AJAX-
-             эндпоинт пакета (captcha-refresh) — см. JS в конце
-             шаблона. Медиа-объект формы для этого поля в этой
-             версии пакета пуст, полагаться на него было ошибкой. -->
+        {# Капча, клик обновляет картинку. #}
         <div>
             <label for="id_captcha_1" class="block text-sm font-medium mb-1.5">Подтвердите, что вы не робот</label>
             <div class="flex items-center gap-3">
@@ -193,7 +172,7 @@ body {
             <p class="text-xs text-base-content/40 mt-1.5">Не видно текст? Кликните по картинке, чтобы обновить.</p>
         </div>
 
-        <!-- Terms -->
+        {# Условия #}
         <label class="flex items-start gap-2.5 pt-1 cursor-pointer">
             <input type="checkbox" required class="checkbox checkbox-sm checkbox-primary mt-0.5">
             <span class="text-sm text-base-content/70">
@@ -202,12 +181,12 @@ body {
             </span>
         </label>
 
-        <!-- Non-field errors -->
+        {# Общие ошибки #}
         {% if form.non_field_errors %}
         <p class="text-sm text-error">{{ form.non_field_errors.0 }}</p>
         {% endif %}
 
-        <!-- Submit Button -->
+        {# Кнопка #}
         <button type="submit"
                 class="btn btn-primary w-full h-12 min-h-0 rounded-xl text-[15px] font-semibold shadow-none"
                 :disabled="password !== confirmPassword">

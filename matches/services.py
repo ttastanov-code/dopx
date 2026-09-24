@@ -1,18 +1,8 @@
 # matches/services.py
-"""
-"ДНК матча" — фаза 1 (docs/PRODUCT_SCOPE_MATCH_DNA_AND_EXPLAINABILITY.md,
-раздел 2). Не новые данные — новая композиция уже посчитанного: drama_index
-(MatchAggregate, уже существовал), momentum-точки (группировка MatchEvent
-по 15-минутным окнам — та же идея, что group-by в
-evaluations/views.py::_compute_key_player_ids, только по времени, а не по
-типу), и расхождение мнений болельщиков о судействе (RefereeMatchAggregate.
-home_fans_avg/away_fans_avg — уже посчитанный сигнал, ранее нигде не
-показывался пользователю как отдельная история).
+"""«ДНК матча» и тексты для карточек матчей.
 
-Фаза 1 сознательно текстовая, без шаринговой карточки — см. "Риск" в
-scope-документе: цена ошибки на карточке (дизайн/шрифты/легибилити) выше,
-чем на текстовой секции, поэтому карточка (фаза 2) — только после проверки,
-что эта секция вообще востребована.
+Собирает уже посчитанные сигналы (drama_index, события, оценки судейства,
+топ/антитоп игроков, настроение фанатов) в короткие фразы. Новых данных не считает.
 """
 from __future__ import annotations
 
@@ -24,39 +14,21 @@ from django.db.models import Count, Q
 from matches.models import Match, MatchReaction
 
 MOMENTUM_WINDOW_MINUTES = 15
-# Меньше двух событий в окне — не "момент", просто одно событие тайм-лайна,
-# отдельно уже видное в блоке "События матча".
+# Меньше двух событий в окне — не «момент».
 MOMENTUM_MIN_EVENTS = 2
-# Разница средних оценок судейства двумя лагерями меньше этого — в пределах
-# обычного шума мнений, не стоит подавать как "разошлись во мнениях".
+# Разница оценок судейства лагерями меньше этого — шум.
 REFEREE_DIVERGENCE_MIN_GAP = 1.5
 
-DRAMA_HIGH_THRESHOLD = 60.0   # напр. avg_entertainment=8 * avg_tension=7.5
-DRAMA_MEDIUM_THRESHOLD = 30.0  # напр. 6 * 5
+DRAMA_HIGH_THRESHOLD = 60.0
+DRAMA_MEDIUM_THRESHOLD = 30.0
 
-# "ДНК матча" фаза 2 (docs/adr/0033-match-dna-phase2.md, раздел
-# Match DNA) — герой матча/переломный момент/консенсус/спорный эпизод.
-# Порог "достаточно голосов, чтобы называть кого-то героем" — тот же
-# MIN_VOTES_FOR_DISPLAY, что уже применяется к top_players на странице
-# матча (matches/views.py), передаём готовый отфильтрованный список, а не
-# фильтруем повторно здесь.
+# Герой/антигерой берутся из уже отфильтрованных top/worst_players (MIN_VOTES_FOR_DISPLAY).
 TURNING_POINT_MIN_RATIO = 0.3
-# Разброс (population stdev) композитной оценки матча voter'ом
-# ((entertainment+tension+fairness)/3) по шкале 1-10. <= HIGH — мнения
-# почти совпадают, >= LOW — мнения разошлись сильно, между — средний
-# консенсус. Подобрано по тому же принципу, что и пороги драмы выше —
-# ориентир на разницу в 1-2.5 балла по 10-балльной шкале, а не строгая
-# статистическая калибровка (данных для неё пока недостаточно).
+# Пороги консенсуса по разбросу (stdev) оценки матча голосующими.
 CONSENSUS_HIGH_STDEV = 1.0
 CONSENSUS_LOW_STDEV = 2.5
 
-# "ДНК матча" фаза 3 (docs/adr/0034-match-dna-phase3-antihero-fan-mood.md) —
-# антигерой матча и настроение фанатов. Третий аудит (Codex, 2026-09-07)
-# отдельно назвал их недостающими в шаринговой карточке. Порог "достаточно
-# голосов за поддерживаемую команду, чтобы подавать процент как факт" —
-# тот же принцип, что и у остальных гейтов этого модуля (REFEREE_DIVERGENCE_MIN_GAP,
-# TURNING_POINT_MIN_RATIO): маленькая выборка не должна выглядеть как
-# уверенное утверждение.
+# Минимум голосов по поддерживаемой команде для «настроения фанатов».
 FAN_MOOD_MIN_VOTES = 3
 
 
@@ -77,10 +49,7 @@ def _pluralize_goals(n: int) -> str:
 
 
 def _describe_momentum(events) -> list[str]:
-    """events — итерируемый список MatchEvent (не queryset, чтобы не бить
-    по БД повторно, если вызывающая сторона уже материализовала список для
-    _match_events.html). Возвращает 0-2 строки, отсортированные по числу
-    событий в 15-минутном окне (см. MOMENTUM_WINDOW_MINUTES)."""
+    """0-2 самых насыщенных событиями 15-минутных окна. events — список, не queryset."""
     buckets: dict[int, list] = defaultdict(list)
     for event in events:
         window_start = (event.minute // MOMENTUM_WINDOW_MINUTES) * MOMENTUM_WINDOW_MINUTES
@@ -101,11 +70,7 @@ def _describe_momentum(events) -> list[str]:
 
 
 def _describe_referee_divergence(match, referee_agg) -> str:
-    """RefereeMatchAggregate.home_fans_avg/away_fans_avg — уже посчитанный
-    сигнал (aggregates/tasks.py::recalculate_referee_aggregates), просто
-    никогда не выводился пользователю как отдельная история. Гейт "меньше
-    2 сегментов — сравнивать не с чем" — тот же принцип, что у
-    core/templatetags/rating_extras.py::bias_segment_text."""
+    """Расхождение оценок судейства фанатами хозяев и гостей."""
     if referee_agg is None:
         return ""
     home_avg = referee_agg.home_fans_avg
@@ -122,11 +87,7 @@ def _describe_referee_divergence(match, referee_agg) -> str:
 
 
 def _describe_hero(top_players: list) -> dict | None:
-    """"Герой матча" — просто первая строка уже отфильтрованного и
-    отсортированного `top_players` (matches/views.py: PlayerMatchAggregate
-    с total_votes >= MIN_VOTES_FOR_DISPLAY, order_by('-performance_score')) —
-    никакого нового запроса, тот же список, что уже рендерится в "Топ
-    игроков матча" чуть ниже на странице."""
+    """Герой матча — первый из top_players."""
     if not top_players:
         return None
     hero_agg = top_players[0]
@@ -134,19 +95,7 @@ def _describe_hero(top_players: list) -> dict | None:
 
 
 def _describe_antihero(top_players: list, worst_players: list) -> dict | None:
-    """"Антигерой матча" — первая строка уже отфильтрованного и
-    отсортированного ПО ВОЗРАСТАНИЮ `worst_players` (тот же порог
-    total_votes >= MIN_VOTES_FOR_DISPLAY, что и у top_players/_describe_hero —
-    `matches/views.py::MatchDetailView` уже считает этот список для
-    антифрод/качественной витрины, но до фазы 3 нигде его не показывал:
-    данные были, витрины не было — та же формулировка, что и у
-    _describe_turning_point до фазы 2).
-
-    Не показываем антигероя, если он оказался ТЕМ ЖЕ игроком, что и герой —
-    это происходит, когда после фильтра по MIN_VOTES_FOR_DISPLAY остался
-    только один игрок: "антигерой" и "герой" совпадали бы, что вводит в
-    заблуждение (не "второй полюс", а тот же самый человек).
-    """
+    """Антигерой — первый из worst_players. Не показываем, если это тот же игрок, что герой."""
     if not worst_players:
         return None
     antihero_agg = worst_players[0]
@@ -157,18 +106,10 @@ def _describe_antihero(top_players: list, worst_players: list) -> dict | None:
 
 
 def _describe_fan_mood(match_aggregate, fan_support: list) -> str:
-    """"Настроение фанатов" — зрелищность матча (MatchAggregate.avg_entertainment,
-    уже посчитана) плюс перекос трибун (ContextEvaluation.supported_team) —
-    тот же агрегат, что matches/views.py уже считает для блока "За кого
-    болели" (fan_support: до 2 строк вида {'supported_team__name', 'count'},
-    отсортированных по count по убыванию), просто раньше не соединялся с
-    зрелищностью в одну "настроенческую" фразу нигде на странице.
+    """Настроение фанатов: зрелищность + за кого болели.
 
-    :param fan_support: список dict'ов (не queryset — вызывающая сторона
-        уже материализовала его для шаблона, здесь только читаем).
-    :return: пустая строка, если голосов за поддерживаемую команду меньше
-        FAN_MOOD_MIN_VOTES (шум) — то же решение "не гадать", что у
-        _describe_referee_divergence/_describe_turning_point.
+    :param fan_support: до 2 dict {'supported_team__name', 'count'}.
+    :return: пустая строка, если голосов мало.
     """
     if not fan_support:
         return ""
@@ -184,10 +125,7 @@ def _describe_fan_mood(match_aggregate, fan_support: list) -> str:
 
 
 def _describe_consensus_text(consensus_level: str | None) -> str:
-    """Текстовая версия `_consensus_level` (та возвращает только 'high'/
-    'medium'/'low'/None — для бейджа на странице этого достаточно, но
-    шаринговая карточка (Pillow, `core/services/share_cards.py`) рисует
-    обычный текст, не бейджи с цветом)."""
+    """Текстовая версия _consensus_level (для карточки-картинки)."""
     if consensus_level == "high":
         return "Болельщики почти единодушны в оценке этого матча."
     if consensus_level == "low":
@@ -198,11 +136,7 @@ def _describe_consensus_text(consensus_level: str | None) -> str:
 
 
 def _describe_turning_point(match_aggregate) -> str:
-    """turning_point_ratio — уже посчитанное поле MatchAggregate (доля
-    голосовавших, отметивших чекбокс "был переломный момент?" на
-    match_final.html), посчитанное, но нигде не показанное пользователю до
-    этой правки (см. docs/CODEX_AUDIT_RESPONSE_2026-09-07.md — данные есть,
-    витрины не было)."""
+    """Переломный момент — доля отметивших его в финальной оценке."""
     ratio = match_aggregate.turning_point_ratio
     if ratio < TURNING_POINT_MIN_RATIO:
         return ""
@@ -211,13 +145,7 @@ def _describe_turning_point(match_aggregate) -> str:
 
 
 def _consensus_level(match_evaluations: list) -> str | None:
-    """"Уровень консенсуса" — population stdev композитной оценки
-    ((entertainment+tension+fairness)/3) КАЖДОГО голосовавшего, а не stdev
-    уже усреднённых чисел (это было бы стандартной ошибкой средних, не
-    разбросом мнений). :param match_evaluations: сырые MatchEvaluation этого
-    матча (matches/views.py передаёт `.only(...)` по трём полям — читать
-    их всё равно нужно построчно, агрегат MatchAggregate такого разброса не
-    хранит). :return: None при < 2 голосах (сравнивать не с чем)."""
+    """Уровень консенсуса по разбросу оценок матча голосующими. None при < 2 голосах."""
     composites = [(e.entertainment + e.tension + e.fairness) / 3 for e in match_evaluations]
     if len(composites) < 2:
         return None
@@ -230,21 +158,10 @@ def _consensus_level(match_evaluations: list) -> str | None:
 
 
 def _describe_controversial_episode(events: list, referee_aggregate) -> str:
-    """"Главный спорный эпизод" — эвристика на основе уже существующих
-    сигналов, НЕ отдельное голосование за "самый спорный момент" (такого
-    механизма в продукте нет, честно отмечаем это ограничение здесь, а не
-    выдаём эвристику за точный факт):
-
-    1. Отменённый гол (event_type='disallowed_goal') — самый однозначный
-       прокси "спорности" из доступных: решение под вопросом ПО
-       ОПРЕДЕЛЕНИЮ (VAR/офсайд/повтор), не требует доп. сигналов.
-    2. Иначе, только если фанаты разошлись во мнениях о судействе
-       (см. _describe_referee_divergence — тот же порог REFEREE_DIVERGENCE_MIN_GAP,
-       переиспользуем как признак "было о чём спорить") — берём первую
-       красную карточку матча как вероятную причину этого расхождения.
-       Без гейта на расхождение красная карточка сама по себе слишком
-       обычное событие футбола, чтобы называть её "спорной".
-    3. Если ни то, ни другое — возвращаем "", не гадаем.
+    """Главный спорный эпизод (эвристика):
+    1. Отменённый гол.
+    2. Первая красная — только если фанаты разошлись в оценке судейства.
+    3. Иначе пустая строка.
     """
     disallowed = [e for e in events if e.event_type == "disallowed_goal"]
     if disallowed:
@@ -272,37 +189,13 @@ def build_match_dna(
     match_evaluations: list | None = None, top_players: list | None = None,
     worst_players: list | None = None, fan_support: list | None = None,
 ) -> dict | None:
-    """Собирает контекст для секции "ДНК матча" на странице матча.
+    """Контекст секции «ДНК матча» на странице матча.
 
-    :param match_aggregate: уже полученный `match.aggregate` (MatchAggregate
-        либо None) — не делаем повторный запрос, вызывающая сторона
-        (matches/views.py::MatchDetailView) его и так уже получает.
-    :param events: список/queryset MatchEvent этого матча (для momentum и,
-        с фазы 2, controversial_episode).
-    :param referee_aggregate: `match.referee_aggregates.first()` либо None.
-    :param match_evaluations: сырые MatchEvaluation этого матча (фаза 2,
-        для consensus_level) — `None`/пустой список даёт consensus_level=None,
-        секция при этом не ломается, просто не показывает эту строку.
-    :param top_players: уже отфильтрованный/отсортированный список
-        PlayerMatchAggregate (фаза 2, для hero) — тот же список, что
-        matches/views.py передаёт в шаблон как `top_players`.
-    :param worst_players: список PlayerMatchAggregate, отсортированный ПО
-        ВОЗРАСТАНИЮ performance_score, тот же порог total_votes, что и
-        top_players (фаза 3, для antihero) — matches/views.py уже считает
-        его как `worst_players`, просто раньше нигде не показывал.
-    :param fan_support: до 2 dict'ов {'supported_team__name', 'count'} —
-        тот же агрегат, что matches/views.py считает для блока "За кого
-        болели" (фаза 3, для fan_mood_text).
-    :return: None, если голосов по матчу ещё нет вообще (нечего показывать —
-        секция не должна рендериться пустой рамкой), иначе dict с ключами
-        drama_index, drama_level ('high'/'medium'/'low'), momentum_points
-        (list[str], может быть пустым), referee_divergence (str, может быть
-        пустой), hero (dict{'player','score'} | None), antihero
-        (dict{'player','score'} | None), turning_point_text (str, может быть
-        пустой), consensus_level ('high'/'medium'/'low'/None), consensus_text
-        (str, может быть пустой — текстовая версия consensus_level),
-        fan_mood_text (str, может быть пустой), controversial_episode (str,
-        может быть пустой).
+    Все входные данные уже получены во вьюхе (агрегат, события, оценки, top/worst_players,
+    fan_support). Возвращает None, если голосов нет, иначе dict: drama_index,
+    drama_level, momentum_points, referee_divergence, hero, antihero,
+    turning_point_text, consensus_level, consensus_text, fan_mood_text,
+    controversial_episode.
     """
     if match_aggregate is None or match_aggregate.total_votes == 0:
         return None
@@ -326,74 +219,40 @@ def build_match_dna(
 
 
 # ---------------------------------------------------------------------------
-# РЕДИЗАЙН КАРТОЧКИ МАТЧА (2026-09-10, прямая просьба пользователя, полный
-# бриф из 14 пунктов — "интрига, прогноз сообщества, игрок матча DOPX,
-# Match DNA, индекс сенсации и т.д."). Функции ниже — чистая композиция уже
-# существующих сигналов в короткие фразы/бейджи ДЛЯ КАРТОЧКИ СПИСКА
-# (upcoming/finished), сознательно ОТДЕЛЬНО от build_match_dna() выше:
-# та функция — полная секция страницы одного матча (требует events,
-# match_evaluations и т.д. — дорого на карточку в списке из 20 штук),
-# здесь — минимальный бесплатный набор, безопасный для рендера пачками
-# (см. matches/card_services.py — bulk-оркестрация для списка матчей).
+# Короткие тексты и бейджи для карточек матчей в списках.
+# Только из уже загруженных данных — безопасно рендерить пачками
+# (оркестрация — matches/card_services.py).
 # ---------------------------------------------------------------------------
 
-# Минимум голосов, чтобы карточка вообще показывала мини-ДНК — тот же
-# принцип "маленькая выборка не должна выглядеть уверенным утверждением",
-# что и FAN_MOOD_MIN_VOTES выше, только применённый к total_votes матча
-# целиком, а не к одной подгруппе.
+# Минимум голосов для мини-ДНК на карточке.
 CARD_DNA_MIN_VOTES = 3
 
-# Минимум прогнозов, чтобы индекс сенсации вообще что-то значил — один
-# голос "против" не делает результат сенсацией, просто у него мало данных.
+# Минимум прогнозов для индекса сенсации.
 SENSATION_MIN_PREDICTIONS = 5
 
-# С какой минуты гол считается "поздним/решающим" для карточки "главный
-# момент" — тот же порядок величины, что MOMENTUM_WINDOW_MINUTES*5 (75-90'
-# уже используется как пример "концовка" в других местах проекта, см.
-# докстринг _describe_momentum выше).
+# С какой минуты гол считается поздним.
 LATE_GOAL_MINUTE_THRESHOLD = 75
 
-# "Битва за топ-N" / "матч за выживание" — пороги позиций в таблице.
+# Пороги позиций для «битвы за топ» и «матча за выживание».
 INTRIGUE_TOP_BATTLE_POSITION = 3
 INTRIGUE_RELEGATION_ZONE_SIZE = 3
-# Разница мячей в предыдущей очной встрече, начиная с которой имеет смысл
-# подавать следующую игру как "реванш" — 1-2 гола это обычный футбольный
-# результат, не повод для отдельного нарратива.
+# С какой разницы мячей прошлой встречи подписываем «реванш».
 INTRIGUE_REVENGE_MARGIN = 3
 
-# Реакции сообщества как источник сигналов (2026-09-10, прямая просьба
-# пользователя после вопроса "а мы эти данные где-то используем?") —
-# тот же принцип, что и у остальных гейтов модуля: маленькая выборка не
-# должна выглядеть уверенным утверждением. REACTION_BADGE_MIN_PCT — порог
-# "явного большинства" среди трёх вариантов (при 33/33/34 сигнала нет,
-# при 40%+ один вариант заметно вырывается вперёд).
+# Пороги бейджей по реакциям сообщества (явное большинство).
 REACTION_BADGE_MIN_VOTES = 5
 REACTION_BADGE_MIN_PCT = 40
 
 
 def describe_intrigue(match, *, home_position=None, away_position=None, total_teams=None, last_meeting=None) -> str | None:
-    """Пункт 1 брифа — короткий тег интриги под составом. Приоритет (первое
-    подходящее побеждает — карточка показывает ОДИН тег, не список):
+    """Тег интриги для карточки (один, по приоритету):
+    1. Дерби (Team.rivals).
+    2. Битва за топ-N.
+    3. Матч за выживание.
+    4. Реванш за крупное поражение в прошлой встрече.
 
-    1. Дерби (`match.is_derby` — уже существующий сигнал, админский список
-       `Team.rivals`, полностью переиспользуется, не дублируется).
-    2. Битва за топ-N — обе команды сейчас входят в верхние
-       INTRIGUE_TOP_BATTLE_POSITION мест таблицы.
-    3. Матч за выживание — обе команды в нижних INTRIGUE_RELEGATION_ZONE_SIZE
-       местах (зона вычисляется от `total_teams`, а не захардкожена — число
-       команд в лиге не константа проекта).
-    4. Реванш — последняя очная встреча закончилась разгромом (>= INTRIGUE_
-       REVENGE_MARGIN мячей) в пользу ТЕКУЩЕГО соперника проигравшей тогда
-       команды: следующая игра между теми же командами подписывается как
-       "Реванш за X:Y".
-
-    :param home_position, away_position: текущая позиция в таблице
-        (TeamSeasonStats.position) — None, если ещё не посчитана.
-    :param last_meeting: dict {'home_team_id', 'away_team_id', 'home_score',
-        'away_score'} последней очной встречи ДО этого матча (любой из двух
-        мог тогда играть дома) либо None, если очных встреч не было.
-    :return: готовая строка тега либо None — карточка просто не показывает
-        блок интриги, не показывает пустой тег.
+    :param last_meeting: последняя очная встреча или None.
+    :return: строка или None.
     """
     if getattr(match, 'is_derby', False):
         return 'Дерби'
@@ -415,11 +274,7 @@ def describe_intrigue(match, *, home_position=None, away_position=None, total_te
         if home_score is not None and away_score is not None and home_score != away_score:
             margin = abs(home_score - away_score)
             if margin >= INTRIGUE_REVENGE_MARGIN:
-                # ИСПРАВЛЕНО (2026-09-10, жалоба пользователя — "метки не
-                # всегда понятны, из чего складываются"): раньше тег был
-                # просто "Реванш за 0:4" без имени команды — непонятно, КТО
-                # тогда проиграл и жаждёт реванша. Теперь называем
-                # проигравшую тогда сторону явно ("Реванш Жениса за 0:4").
+                # Называем проигравшую тогда команду.
                 if home_score < away_score:
                     loser_team_id, loser_score, winner_score = last_meeting['home_team_id'], home_score, away_score
                 else:
@@ -431,13 +286,7 @@ def describe_intrigue(match, *, home_position=None, away_position=None, total_te
 
 
 def _parse_score(score_str: str | None) -> tuple[int, int] | None:
-    """'2-1' -> (2, 1). `score_str` — MatchEvent.score_after, заполняется
-    Sportmonks-импортёром из поля `result` события (parsers/sportmonks/
-    importers.py) — НЕ заполнялось старым (удалённым 2026-09-09) KFF-
-    парсером, поэтому у части исторических матчей это поле пустое.
-    Возвращаем None на пустой/неожиданный формат — вызывающий код обязан
-    трактовать это как "не можем проверить", а не гадать (тот же принцип
-    "не сочиняем историю на пустом месте", что и во всей этой функции)."""
+    """'2-1' -> (2, 1). None, если строка пустая или в другом формате."""
     if not score_str:
         return None
     parts = score_str.split('-')
@@ -458,17 +307,10 @@ def _score_outcome(home: int, away: int) -> str:
 
 
 def _goal_changed_outcome(goals: list, last_goal) -> bool:
-    """Гол реально "решил исход", только если категория результата
-    (победа хозяев / ничья / победа гостей) ДО этого гола отличается от
-    итоговой. Жалоба пользователя 2026-09-11: поздний консольный гол в
-    уже решённом матче (3:0 -> 3:1) подписывался "решил исход", хотя
-    победитель не менялся ни на секунду. Опираемся на score_after
-    (авторитетный счёт от источника данных на момент события), а не на
-    team_side/event_type голов самостоятельно — знак автогола (кому он
-    засчитан) не наш домен знаний, его лучше не реконструировать вручную."""
+    """True, если гол изменил исход (победа/ничья/поражение) по score_after."""
     after = _parse_score(last_goal.score_after)
     if after is None:
-        return False  # не можем проверить — не заявляем
+        return False  # не можем проверить
 
     idx = goals.index(last_goal)
     before = (0, 0) if idx == 0 else _parse_score(goals[idx - 1].score_after)
@@ -479,26 +321,13 @@ def _goal_changed_outcome(goals: list, last_goal) -> bool:
 
 
 def describe_key_moment(match, events: list) -> str | None:
-    """Пункт 8 брифа — "главный момент" завершённого матча одной строкой.
-    Эвристика (та же дисциплина, что у `_describe_controversial_episode`
-    выше — явный приоритет, "" вместо гадания, если ничего не подходит):
+    """Главный момент завершённого матча:
+    1. Поздний гол, реально изменивший исход.
+    2. Красная карточка.
+    3. Реализованный пенальти.
+    4. Иначе None.
 
-    1. Поздний гол (>= LATE_GOAL_MINUTE_THRESHOLD'), который РЕАЛЬНО менял
-       категорию результата (см. `_goal_changed_outcome` — ничья/победа
-       любой из сторон), а не просто последний по времени гол на такой
-       минуте. ИСПРАВЛЕНО (2026-09-11, жалоба пользователя): раньше любой
-       поздний гол автоматически подписывался "решил исход", даже когда
-       команда уже проигрывала с разгромным счётом и гол лишь сократил
-       разрыв (3:0 -> 3:1) — исход при этом не менялся ни разу.
-    2. Красная карточка — карточка меняет ход игры сама по себе, даже без
-       дальнейшего гола.
-    3. Пенальти (реализованный) — редкое, заметное событие.
-    4. Иначе — None, не сочиняем историю на пустом месте (например, сухая
-       ничья без единого примечательного события, или поздний гол, чей
-       score_after не удалось разобрать/сверить).
-
-    :param events: список MatchEvent (не queryset), отсортированный по
-        минуте — обычной страницы события уже приходят так (Meta.ordering).
+    :param events: список MatchEvent по минутам.
     """
     if match.decided_administratively or not events:
         return None
@@ -526,19 +355,7 @@ def describe_key_moment(match, events: list) -> str | None:
 
 
 def describe_card_dna_traits(aggregate) -> list[str]:
-    """Пункт 10 брифа — мини-версия "ДНК матча" ПРЯМО НА КАРТОЧКЕ (не
-    путать с полным виджетом `_match_dna_card.html`/`build_match_dna()`
-    выше — это два разных места, см. их докстринги). Специально считается
-    ТОЛЬКО из уже загруженных полей `MatchAggregate` (drama_index,
-    avg_tension, avg_fairness, turning_point_ratio) — БЕЗ единого
-    дополнительного запроса на карточку (ни events, ни MatchEvaluation):
-    на странице списка из 10-20 карточек лишний запрос на каждую было бы
-    ровно тем N+1, из-за которого в проекте уже есть `bulk_prediction_data`
-    и подобные bulk-функции.
-
-    :return: 0-3 коротких строки-трейта (может быть пустым — карточка
-        просто не показывает блок).
-    """
+    """Мини-ДНК на карточке: 0-3 фразы только из полей MatchAggregate, без запросов."""
     if aggregate is None or aggregate.total_votes < CARD_DNA_MIN_VOTES:
         return []
 
@@ -547,19 +364,9 @@ def describe_card_dna_traits(aggregate) -> list[str]:
     if level == 'high':
         traits.append('Высокая драма')
     elif level == 'medium':
-        # ИСПРАВЛЕНО (2026-09-10, жалоба пользователя на нечитаемость меток):
-        # раньше здесь было "Умеренная интрига" — то же слово "интрига", что
-        # и у отдельного тега card_intrigue (Дерби/Битва за топ-N/Реванш и
-        # т.д., см. describe_intrigue выше). Два разных смысла под одним
-        # словом в разных местах карточки путали пользователя. Теперь
-        # трейт называется в стиле "Высокая драма" выше — один и тот же
-        # смысловой ряд ("уровень драмы"), без пересечения с интригой.
+        # «Средняя драма», чтобы не путать с тегом интриги.
         traits.append('Умеренная драма')
 
-    # 0 < avg_fairness — при total_votes >= CARD_DNA_MIN_VOTES это всегда
-    # настоящее среднее по шкале 1-10 (см. _consensus_level выше), не
-    # дефолтное 0.0 "голосов нет" — та ветка уже отсечена гейтом выше,
-    # поэтому здесь достаточно сравнения без доп. truthy-проверки.
     if 0 < aggregate.avg_fairness <= 5.0:
         traits.append('Жёсткая игра')
 
@@ -570,34 +377,10 @@ def describe_card_dna_traits(aggregate) -> list[str]:
 
 
 def compute_sensation_index(match, counts: dict | None, reaction_counts: dict | None = None) -> int | None:
-    """Пункт 12 брифа — "Индекс сенсации", 0-100, показывается ТОЛЬКО когда
-    итог разошёлся с ожиданиями сообщества (см. return None ниже). Формула
-    — эвристика, не строгая статистика (тот же честный принцип, что у
-    `_describe_referee_divergence`/`find_season_controversial_matches`:
-    открыто фиксируем ограничение прямо в докстринге, а не выдаём число за
-    точную науку): "насколько уверенно сообщество ошиблось" — доля голосов
-    за фаворита (по прогнозам ДО матча), который в итоге НЕ выиграл.
-    Чем увереннее (выше %) было ошибочное большинство — тем выше сенсация.
+    """Индекс сенсации 0-100: насколько уверенно сообщество ошиблось с фаворитом.
 
-    :param counts: dict от `predictions.services.prediction_counts()`/
-        `bulk_final_prediction_counts()` (home/draw/away/total/*_pct) —
-        распределение прогнозов ДО матча, а не гейтовано `is_prediction_open`
-        (окно давно закрыто у завершённого матча, но строки прогнозов
-        остаются — см. докстринг `bulk_final_prediction_counts`).
-    :param reaction_counts: dict от `reaction_counts()`/`bulk_reaction_data()`
-        (2026-09-10, доп. предложение по вопросу пользователя "а данные
-        реакций мы где-то используем?") — ЗАПАСНОЙ источник, применяется
-        ТОЛЬКО когда прогнозов до матча физически мало (см. return None
-        ниже): если сообщество ПОСЛЕ матча явным большинством отметило
-        "Неожиданно" — это тот же по сути сигнал ("итог разошёлся с
-        ожиданиями"), просто с другого конца временной шкалы. Прогнозы до
-        матча остаются основным источником там, где их достаточно — они
-        собраны ДО того, как исход стал известен, это более чистый сигнал,
-        чем реакция постфактум.
-    :return: None, если данных недостаточно ни по прогнозам, ни (запасным
-        путём) по реакциям, либо если фаворит сообщества и совпал с
-        реальным исходом (предсказуемый результат — по определению не
-        сенсация, бейдж вообще не должен показываться).
+    Основной источник — прогнозы до матча, запасной — реакция «Неожиданно» после.
+    None, если данных мало или фаворит победил.
     """
     if not counts or counts.get('total', 0) < SENSATION_MIN_PREDICTIONS:
         if (
@@ -615,17 +398,13 @@ def compute_sensation_index(match, counts: dict | None, reaction_counts: dict | 
     pct_by_choice = {'1': counts['home_pct'], 'X': counts['draw_pct'], '2': counts['away_pct']}
     favorite_choice = max(pct_by_choice, key=pct_by_choice.get)
     if favorite_choice == final_result:
-        return None  # сообщество угадало фаворита — предсказуемый результат
+        return None  # фаворит победил
 
     return round(pct_by_choice[favorite_choice])
 
 
 def describe_reaction_badge(counts: dict | None) -> str | None:
-    """Доп. предложение (2026-09-10, прямая просьба пользователя после
-    вопроса "а мы эти данные где-то используем?") — видимый бейдж "Матч
-    тура" в верхней строке карточки, когда сообщество явным большинством
-    (см. REACTION_BADGE_MIN_PCT/REACTION_BADGE_MIN_VOTES) отметило именно
-    этот вариант реакции, а не просто хранит нули в БД без применения."""
+    """Бейдж «Матч тура», если это явное большинство реакций."""
     if not counts or counts.get('total', 0) < REACTION_BADGE_MIN_VOTES:
         return None
     if (
@@ -638,14 +417,7 @@ def describe_reaction_badge(counts: dict | None) -> str | None:
 
 
 def describe_table_impact(team, before_position: int | None, after_position: int | None) -> str | None:
-    """Пункт 13 брифа — "Изменил таблицу" (чистая функция, без запросов —
-    позиции считает вызывающая сторона, см. matches/card_services.py и
-    teams/services.py::compute_match_table_impact_positions).
-
-    ИСПРАВЛЕНО (2026-09-11): `after_position` — позиция СРАЗУ ПОСЛЕ этого
-    конкретного матча (раньше сюда передавали сегодняшнюю позицию команды
-    в лиге — см. докстринг compute_match_table_impact_positions про баг,
-    который это вызывало)."""
+    """Бейдж «Изменил таблицу». after_position — позиция сразу после этого матча."""
     if before_position is None or after_position is None or before_position == after_position:
         return None
     if after_position < before_position:
@@ -654,25 +426,16 @@ def describe_table_impact(team, before_position: int | None, after_position: int
 
 
 def describe_finished_cta(has_hero: bool, has_dna: bool) -> dict:
-    """Пункт 14 брифа — замена бейджа "Голосование закрыто" на CTA со
-    смыслом. Карточка и так целиком <a> на страницу матча (см.
-    components/_match_card.html) — это НЕ отдельная ссылка, а более
-    информативный ярлык того же места, куда клик уже ведёт."""
+    """Подпись CTA на карточке вместо «Голосование закрыто»."""
     if has_hero or has_dna:
         return {'icon': 'ti-chart-bar', 'label': 'Разобрать матч'}
     return {'icon': 'ti-star', 'label': 'Смотреть оценки игроков'}
 
 
-# --- Реакция сообщества на завершённый матч (пункт 11 брифа) — тот же
-# сервисный паттерн, что predictions/services.py::submit_prediction/
-# prediction_counts/bulk_prediction_data, только на модели MatchReaction. ---
+# --- Реакции сообщества на завершённый матч ---
 
 def submit_match_reaction(*, user, match, reaction: str):
-    """Ставит/меняет реакцию пользователя на завершённый матч. Доступно
-    только для `status='finished'` — реагировать "скучный матч"/"матч тура"
-    до финального свистка не имеет смысла (в отличие от прогноза, у
-    реакции нет собственного окна времени — единственное условие это сам
-    факт, что матч уже сыгран)."""
+    """Ставит/меняет реакцию пользователя. Только для завершённых матчей."""
     if match.status != 'finished':
         return None
     reaction_codes = dict(MatchReaction.REACTION_CHOICES)
@@ -685,8 +448,7 @@ def submit_match_reaction(*, user, match, reaction: str):
 
 
 def reaction_counts(match) -> dict:
-    """Один матч — распределение реакций сообщества, тот же принцип
-    округления в Python, что `predictions.services.prediction_counts()`."""
+    """Распределение реакций по одному матчу."""
     row = MatchReaction.objects.filter(match=match).aggregate(
         match_of_round=Count('id', filter=Q(reaction=MatchReaction.REACTION_MATCH_OF_ROUND)),
         upset=Count('id', filter=Q(reaction=MatchReaction.REACTION_UPSET)),
@@ -713,12 +475,7 @@ def user_match_reaction(user, match):
 
 
 def bulk_reaction_data(matches, user) -> dict:
-    """Bulk-версия reaction_counts()/user_match_reaction() выше — тот же
-    принцип, что predictions.services.bulk_prediction_data() (см. её
-    докстринг про N+1 на карточках списка), но БЕЗ фильтра по открытому
-    окну (у реакции нет окна — единственное условие уже применено
-    вызывающей стороной, matches/card_services.py, которая передаёт сюда
-    только status='finished' матчи)."""
+    """reaction_counts/user_match_reaction пачкой для списка матчей."""
     matches = list(matches)
     if not matches:
         return {}
@@ -756,25 +513,10 @@ def bulk_reaction_data(matches, user) -> dict:
 
 
 def top_reaction_matches(season, reaction: str, limit: int = 5, min_votes: int = REACTION_BADGE_MIN_VOTES) -> list:
-    """Топ матчей сезона по конкретной реакции сообщества — доп. предложение
-    (2026-09-10, прямая просьба пользователя после вопроса "а мы эти данные
-    где-то используем? неплохо было бы"). ПОКА НИГДЕ НЕ ПОДКЛЮЧЕНО В UI —
-    честно: это готовый строительный блок для будущей витрины ("Топ матчей
-    сезона" на странице лиги/сезона), а не законченная фича с собственной
-    страницей — витрины для неё пока нет, заводить её без запроса
-    пользователя было бы лишним скоупом.
+    """Топ матчей сезона по реакции (пока не используется в UI).
+    Сортировка по числу голосов, не по проценту.
 
-    Сортировка по ЧИСЛУ голосов за реакцию, а не по проценту — иначе матч
-    с 1 голосом "за" из 1 (100%) обходил бы матч с 40 голосами "за" из 50
-    (80%), хотя очевидно второй — куда более уверенный "топ".
-
-    :param reaction: одно из MatchReaction.REACTION_* значений.
-    :param min_votes: тот же гейт "маленькая выборка не в топ", что и у
-        REACTION_BADGE_MIN_VOTES выше, вынесен параметром на случай, если
-        будущая витрина захочет свой порог (напр. пошире для нового сезона
-        с малым числом голосов вообще).
-    :return: список `Match` (с `select_related('home_team', 'away_team')`),
-        отсортированный по убыванию голосов за `reaction`, максимум `limit`.
+    :param min_votes: минимум голосов за реакцию.
     """
     rows = (
         MatchReaction.objects.filter(match__season=season, reaction=reaction)
@@ -787,5 +529,5 @@ def top_reaction_matches(season, reaction: str, limit: int = 5, min_votes: int =
     matches_by_id = {
         m.id: m for m in Match.objects.filter(id__in=match_ids).select_related('home_team', 'away_team')
     }
-    # Порядок — по числу голосов (см. rows выше), не порядок БД по id.
+    # Порядок по числу голосов.
     return [matches_by_id[m_id] for m_id in match_ids if m_id in matches_by_id]

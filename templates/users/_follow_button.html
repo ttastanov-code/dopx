@@ -1,8 +1,4 @@
-{% comment %}
-Кнопка подписки на игрока/команду (Follow-граф). Рендерится и при первой
-загрузке страницы, и как HTMX-ответ на POST users:toggle_follow (outerHTML).
-Контекст: target_type ('player'|'team'), target_id, following (bool).
-{% endcomment %}
+{# Кнопка подписки. Контекст: target_type ('player'|'team'), target_id, following. #}
 {% if request.user.is_authenticated %}
 <button type="button"
         id="follow-btn-{{ target_type }}-{{ target_id }}"

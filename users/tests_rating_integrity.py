@@ -1,8 +1,6 @@
 # users/tests_rating_integrity.py
-"""
-Тесты на исправления аудита достижений/серий/прогнозов (2026-09-23/24):
-ранг «Первопроходца», серия оценок при оценке пропущенного тура, ничья в
-«Против течения», переоценка статусных бейджей.
+"""Тесты: ранг «Первопроходца», серия при оценке пропущенного тура,
+ничья в «Против течения», переоценка статусных бейджей.
 """
 from datetime import timedelta
 
@@ -44,9 +42,7 @@ class _MatchFixture(TestCase):
 
 class FounderRankTests(TestCase):
     def test_rank_counts_unverified_earlier_registrations(self):
-        """Регрессия: раньше ранг считался только среди верифицированных —
-        поздний пользователь проскакивал в «первые N», пока ранние тянули
-        с подтверждением почты."""
+        """Ранг — по всем зарегистрированным."""
         base = timezone.now() - timedelta(days=10)
         early1 = _user("early1", is_verified=False)
         early2 = _user("early2", is_verified=False)
@@ -62,8 +58,7 @@ class FounderRankTests(TestCase):
 
 class EvaluationStreakTests(_MatchFixture):
     def test_catching_up_earlier_tour_does_not_break_streak(self):
-        """Регрессия: оценка пропущенного тура 4 после тура 6 откатывала
-        last_evaluation_tour назад, и тур 7 уже считался разрывом серии."""
+        """Оценка пропущенного тура не откатывает last_evaluation_tour."""
         user = _user("streaker")
         for tour in (5, 6):
             user.update_evaluation_stats(self.make_match(tour=tour))

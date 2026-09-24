@@ -1,53 +1,7 @@
 # api/tests.py
-"""
-Тесты публичного DRF API (api/), который читают embed-виджеты на сторонних
-сайтах и через который проходит запись голосов вайзарда оценки матча.
-
-До этой сессии здесь не было ни одного теста, при этом это единственное
-приложение, чьи write-эндпоинты защищены НЕ голым `IsAuthenticated`, а
-кастомным `IsAuthenticatedAndVerified` (api/permissions.py) — специально,
-чтобы неверифицированный (не подтвердивший email) аккаунт не мог голосовать
-через прямой вызов API в обход html-вайзарда (см. докстринг api/views.py).
-Раз весь смысл этого класса — в дополнительной проверке `is_verified`, а не
-только `is_authenticated`, ключевой тест здесь — именно связка "authenticated,
-но НЕ verified" должна блокироваться так же, как анонимный запрос.
-
-Разделение по классам:
-  * `IsAuthenticatedAndVerifiedSweepTests` — прогоняет анонимный /
-    неверифицированный / верифицированный доступ по ВСЕМ 6 write-ViewSet'ам
-    (Context/Team/Player/Coach/Referee/MatchEval) одним циклом, а не 6
-    почти идентичными классами: permission_classes у них буквально одна и
-    та же строка (`[IsAuthenticatedAndVerified, VotingOpenPermission]`),
-    дублировать проверку 6 раз — не добавлять сигнала, а увеличивать
-    поверхность, которую придётся чинить при следующем рефакторинге.
-  * `ContextEvaluationAPITests` / `PlayerEvaluationAPITests` — один
-    представитель write-эндпоинта разобран подробно (create, дубликат,
-    голосование закрыто, поля сериалайзера), плюс кастомные @action
-    (`by_match`, `analytics`) у PlayerEvaluationViewSet.
-  * `VotingOpenPermissionObjectLevelTests` — отдельная проверка
-    object-level части permission-стека: `VotingOpenPermission` блокирует
-    ИЗМЕНЕНИЕ уже существующей оценки после закрытия голосования, даже
-    владельцу (has_object_permission, а не has_permission — другой путь
-    в DRF, стоит отдельного теста).
-  * `AggregateViewSetsPublicAccessTests` — три read-only ViewSet'а
-    (MatchAggregate/PlayerAggregate/CoachAggregate) — это ОСОЗНАННО
-    публичные (`permissions.AllowAny`) эндпоинты для embed-виджетов на
-    сторонних сайтах, тесты фиксируют это как ожидаемое поведение и
-    проверяют, что наружу течёт только предназначенный для паблика набор
-    полей (никаких `user`, email, IP и т.п. — их в сериалайзерах и так нет,
-    но именно ЭТО и должно остаться неизменным инвариантом).
-  * `SerializerFieldLeakageTests` — по каждому сериалайзеру оценок отдельно
-    проверяет отсутствие чувствительных полей в `.data` на реальном
-    экземпляре, а не только "не упомянуто в Meta.fields" (человек, читающий
-    код, мог упустить, что поле утекает окольным путём через SerializerMethodField
-    или related-объект).
-
-CACHES переопределены на LocMemCache (как в core/tests.py): прод использует
-Redis (dopx/settings.py::CACHES), но почти каждый write/read метод во
-`api/views.py` явно трогает `django.core.cache.cache` (инвалидация агрегатов,
-кэширование ответов `by_match`/`analytics`/`recent`/`top_players`) и throttle-
-классы DRF тоже читают/пишут через cache-backend — тест не должен зависеть от
-того, поднят ли Redis на машине, где запускается `manage.py test`.
+"""Тесты DRF API: права доступа (IsAuthenticatedAndVerified, VotingOpenPermission),
+публичные агрегаты, отсутствие утечки личных полей, EvaluationPolicy.
+CACHES -> LocMemCache.
 """
 from __future__ import annotations
 
@@ -79,9 +33,7 @@ LOCMEM_CACHES = {
 
 
 def _make_match(voting_open_until=None, start_time=None):
-    """Лига/сезон/команды создаются по одной на вызов (никаких get_or_create по
-    имени) — совпадение имён между тестами не должно склеивать fixtures разных
-    тестовых методов через общий UniqueConstraint."""
+    """Фикстуры создаются заново на каждый вызов."""
     n = Match.objects.count()
     league = League.objects.create(name=f"League-{n}", country="KZ")
     season = Season.objects.create(league=league, year="2026")
@@ -116,37 +68,8 @@ def _make_unverified_user(username="unverified"):
 
 @override_settings(CACHES=LOCMEM_CACHES)
 class IsAuthenticatedAndVerifiedSweepTests(APITestCase):
-    """
-    Один и тот же permission-стек (`[IsAuthenticatedAndVerified,
-    VotingOpenPermission]`) висит буквально на всех 6 write-ViewSet'ов оценок
-    — проверяем это одним циклом по `list`-эндпоинту каждого (не требует
-    создания объектов, GET тоже блокируется, т.к. IsAuthenticatedAndVerified
-    проверяется в `has_permission`, до диспетчеризации по методу).
-
-    Ожидаемые статусы:
-      * анонимный запрос -> 403, НЕ 401. Изначально здесь ожидался 401 —
-        рассуждение было "BasicAuthentication зарегистрирован → он отдаёт
-        WWW-Authenticate → NotAuthenticated (401)". Реальный прогон против
-        Postgres (2026-08-28) это опроверг: DRF выбирает заголовок
-        WWW-Authenticate не у ЛЮБОГО настроенного authenticator'а, а строго у
-        ПЕРВОГО в списке (`APIView.get_authenticate_header()` →
-        `self.get_authenticators()[0].authenticate_header(request)`). В
-        dopx/settings.py::REST_FRAMEWORK['DEFAULT_AUTHENTICATION_CLASSES']
-        первым стоит `SessionAuthentication`, а у него `authenticate_header()`
-        не переопределён (наследует `BaseAuthentication`, который возвращает
-        `None` — у сессионной аутентификации нет протокола "предъявить
-        challenge браузеру"). Раз заголовка нет — `APIView.handle_exception()`
-        сам понижает `NotAuthenticated` до `PermissionDenied` (403), даже
-        притом что `BasicAuthentication` вторым в списке МОГ БЫ отдать
-        `WWW-Authenticate`, если бы его спросили. На реальный контроль
-        доступа это не влияет: анонимный запрос в обоих случаях отклоняется,
-        разница чисто в HTTP-статусе. Если когда-нибудь понадобится
-        настоящий 401 (например, для стороннего клиента, ожидающего RFC
-        7235-corrent поведение) — исправление в one line: поменять местами
-        `SessionAuthentication`/`BasicAuthentication` в settings.py.
-      * authenticated, но is_verified=False -> 403 (`successful_authenticator`
-        уже есть, дальше именно `PermissionDenied`, тут разногласий не было).
-      * authenticated и is_verified=True -> 200.
+    """Все 6 write-ViewSet'ов оценок: аноним -> 403, неверифицированный -> 403, верифицированный -> 200.
+    403, а не 401 — первым стоит SessionAuthentication, у него нет WWW-Authenticate.
     """
 
     def setUp(self):
@@ -165,9 +88,7 @@ class IsAuthenticatedAndVerifiedSweepTests(APITestCase):
         for url_name in self.WRITE_LIST_URL_NAMES:
             with self.subTest(url_name=url_name):
                 response = self.client.get(reverse(url_name))
-                # 403, не 401 — см. докстринг класса выше про порядок
-                # DEFAULT_AUTHENTICATION_CLASSES. Важно то, что запрос
-                # ОТКЛОНЁН, а не конкретный код.
+                # 403, не 401 — важно, что запрос отклонён.
                 self.assertEqual(
                     response.status_code, status.HTTP_403_FORBIDDEN,
                     f"{url_name}: анонимный доступ должен быть отклонён (403), а не {response.status_code}",
@@ -196,9 +117,7 @@ class IsAuthenticatedAndVerifiedSweepTests(APITestCase):
 
 @override_settings(CACHES=LOCMEM_CACHES)
 class ContextEvaluationAPITests(APITestCase):
-    """ContextEvaluationViewSet — первый шаг вайзарда, разобран подробно как
-    представитель write-эндпоинта: создание, дубликат, закрытое голосование,
-    и что конкретно отдаёт сериалайзер."""
+    """ContextEvaluationViewSet: создание, дубликат, закрытое голосование, поля ответа."""
 
     def setUp(self):
         cache.clear()
@@ -218,9 +137,7 @@ class ContextEvaluationAPITests(APITestCase):
         )
 
     def test_duplicate_context_evaluation_rejected(self):
-        """Уникальность user+match обеспечена и на уровне БД (UniqueConstraint),
-        и на уровне сериалайзера (validate()) — второй голос за тот же матч
-        должен быть отклонён валидацией (400), а не 500 от IntegrityError."""
+        """Повторный голос за матч — 400, а не IntegrityError."""
         ContextEvaluation.objects.create(user=self.user, match=self.match, watched_type="full")
         url = reverse("api:context-eval-list")
         response = self.client.post(url, {"match": str(self.match.id), "watched_type": "highlights"})
@@ -243,9 +160,7 @@ class ContextEvaluationAPITests(APITestCase):
         self.assertEqual(len(results), 1)
 
     def test_response_does_not_leak_user_field(self):
-        """ContextEvaluationSerializer.Meta.fields не перечисляет `user` —
-        подтверждаем это на реальном ответе, не только чтением исходника:
-        чужой email/username/id не должен утекать через API оценок."""
+        """В ответе нет user."""
         response = self.client.post(
             reverse("api:context-eval-list"), {"match": str(self.match.id), "watched_type": "full"}
         )
@@ -256,9 +171,7 @@ class ContextEvaluationAPITests(APITestCase):
 
 @override_settings(CACHES=LOCMEM_CACHES)
 class PlayerEvaluationAPITests(APITestCase):
-    """PlayerEvaluationViewSet — самый насыщенный write-ViewSet: требует
-    предварительного ContextEvaluation, диапазон 1..10 на все три поля,
-    плюс два кастомных read-@action (by_match, analytics)."""
+    """PlayerEvaluationViewSet: нужен ContextEvaluation, диапазон 1..10, by_match и analytics."""
 
     def setUp(self):
         from lineups.models import MatchLineup, MatchLineupPlayer
@@ -268,17 +181,12 @@ class PlayerEvaluationAPITests(APITestCase):
         self.client.force_authenticate(user=self.user)
         self.match = _make_match()
         self.player = _make_player(self.match.home_team)
-        # EvaluationPolicy.assert_player_in_squad (docs/adr/0001) требует
-        # реальной записи в заявке матча — без неё все "успешные" тесты
-        # этого класса ловили бы 400 "не входил в заявку", а не ту причину,
-        # которую они на самом деле проверяют.
+        # Игрок должен быть в заявке матча.
         lineup = MatchLineup.objects.create(match=self.match, team=self.match.home_team, side="home")
         MatchLineupPlayer.objects.create(lineup=lineup, player=self.player, is_starting=True, shirt_number=10)
 
     def test_create_without_prior_context_evaluation_rejected(self):
-        """PlayerEvaluationSerializer.validate() требует, чтобы ContextEvaluation
-        для этого матча уже существовал ("Сначала укажите контекст просмотра
-        матча") — прямой вызов API в обход шага 1 вайзарда должен падать."""
+        """Без ContextEvaluation — 400."""
         url = reverse("api:player-eval-list")
         response = self.client.post(
             url,
@@ -297,9 +205,7 @@ class PlayerEvaluationAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
 
     def test_contribution_out_of_range_rejected(self):
-        """Модель ограничивает 1..10 валидаторами, но проверяем это через API,
-        а не только на уровне модели — именно сюда прилетает необработанный
-        пользовательский ввод."""
+        """Диапазон 1..10 проверяется на уровне API."""
         ContextEvaluation.objects.create(user=self.user, match=self.match, watched_type="full")
         url = reverse("api:player-eval-list")
         response = self.client.post(
@@ -309,15 +215,11 @@ class PlayerEvaluationAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_by_match_action_requires_verified_account(self):
-        """`by_match` — read-эндпоинт, но наследует permission_classes всего
-        ViewSet'а (никакого override на @action) — значит тоже закрыт
-        IsAuthenticatedAndVerified, а не публичный, в отличие от аггрегатов."""
+        """by_match закрыт так же, как весь ViewSet."""
         self.client.force_authenticate(user=None)
         url = reverse("api:player-eval-by-match")
         response = self.client.get(url, {"match_id": str(self.match.id)})
-        # 403, не 401 — см. докстринг IsAuthenticatedAndVerifiedSweepTests
-        # (порядок DEFAULT_AUTHENTICATION_CLASSES понижает NotAuthenticated
-        # до PermissionDenied). Важно, что запрос отклонён.
+        # 403, не 401 — важно, что запрос отклонён.
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_by_match_action_returns_evaluations_for_match(self):
@@ -352,12 +254,7 @@ class PlayerEvaluationAPITests(APITestCase):
 
 @override_settings(CACHES=LOCMEM_CACHES)
 class VotingOpenPermissionObjectLevelTests(APITestCase):
-    """`VotingOpenPermission.has_object_permission` — отдельный путь в DRF от
-    `has_permission` (проверяется в `get_object()`, только для retrieve/
-    update/destroy УЖЕ существующего объекта, не для list/create). Владелец
-    не должен иметь возможность отредактировать свою же оценку ПОСЛЕ того,
-    как окно голосования для матча закрылось — иначе 48-часовой лимит
-    голосования ничего не защищает."""
+    """После закрытия голосования владелец не может изменить оценку."""
 
     def setUp(self):
         cache.clear()
@@ -375,8 +272,7 @@ class VotingOpenPermissionObjectLevelTests(APITestCase):
         self.assertEqual(evaluation.watched_type, "full", "оценка не должна была измениться")
 
     def test_owner_can_still_read_after_voting_closed(self):
-        """SAFE_METHODS всегда разрешены в VotingOpenPermission — просмотр
-        уже поставленной оценки не должен пропадать после закрытия окна."""
+        """Чтение разрешено всегда."""
         match = _make_match(voting_open_until=timezone.now() - timedelta(hours=1))
         evaluation = ContextEvaluation.objects.create(user=self.user, match=match, watched_type="full")
 
@@ -393,8 +289,7 @@ class VotingOpenPermissionObjectLevelTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     def test_cannot_access_another_users_evaluation_by_id(self):
-        """get_queryset() фильтрует по `user=self.request.user` — чужой id в
-        detail-URL должен давать 404, а не 200 с чужими данными или 403."""
+        """Чужой id -> 404."""
         other = _make_verified_user(username="other-owner")
         match = _make_match()
         other_evaluation = ContextEvaluation.objects.create(user=other, match=match, watched_type="full")
@@ -406,11 +301,7 @@ class VotingOpenPermissionObjectLevelTests(APITestCase):
 
 @override_settings(CACHES=LOCMEM_CACHES)
 class AggregateViewSetsPublicAccessTests(APITestCase):
-    """MatchAggregate/PlayerAggregate/CoachAggregate ViewSet'ы — ОСОЗНАННО
-    `permissions.AllowAny` (см. api/views.py): это готовые агрегаты без
-    персональных данных, предназначенные для встраиваемых виджетов на
-    сторонних сайтах, у которых нет сессии/логина DOPX. Тесты фиксируют это
-    поведение как намеренное, а не как забытый permission_classes."""
+    """Агрегаты — намеренно публичные (AllowAny) для embed-виджетов."""
 
     def setUp(self):
         cache.clear()
@@ -450,11 +341,7 @@ class AggregateViewSetsPublicAccessTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     def test_player_aggregate_public_fields_only(self):
-        """Публичный embed-эндпоинт не должен отдавать ничего, кроме того,
-        что явно перечислено в PlayerMatchAggregateSerializer — никакого
-        `user`/email/IP какого-либо голосовавшего (агрегат в принципе не
-        привязан к конкретному голосовавшему, но фиксируем инвариант explicitly,
-        чтобы будущий SerializerMethodField не добавил его случайно)."""
+        """Публичный агрегат не отдаёт ничего лишнего."""
         from aggregates.models import PlayerMatchAggregate
 
         PlayerMatchAggregate.objects.create(
@@ -471,13 +358,7 @@ class AggregateViewSetsPublicAccessTests(APITestCase):
 
 @override_settings(CACHES=LOCMEM_CACHES)
 class SerializerFieldLeakageTests(APITestCase):
-    """
-    Точечная проверка на уровне сериалайзера (не только "не в Meta.fields",
-    а прямо в `.data`) — по каждому из 6 сериалайзеров оценок. Виджеты,
-    встраиваемые на СТОРОННИХ сайтах, читают этот же JSON — случайно
-    добавленное `user`/email в любом из них означало бы утечку личных
-    данных пользователей DOPX на чужие сайты.
-    """
+    """Ни один сериалайзер оценок не отдаёт личные поля."""
 
     FORBIDDEN_KEYS = ("user", "user_id", "email", "password", "password_hash", "ip_address", "registration_ip")
 
@@ -491,7 +372,7 @@ class SerializerFieldLeakageTests(APITestCase):
     def _assert_no_forbidden_keys(self, data: dict):
         for key in self.FORBIDDEN_KEYS:
             self.assertNotIn(key, data)
-        # match_details — вложенный MatchSerializer, тоже проверяем.
+        # Вложенный match_details тоже проверяем.
         if "match_details" in data and data["match_details"]:
             for key in self.FORBIDDEN_KEYS:
                 self.assertNotIn(key, data["match_details"])
@@ -553,23 +434,14 @@ class SerializerFieldLeakageTests(APITestCase):
 
 @override_settings(CACHES=LOCMEM_CACHES)
 class EvaluationPolicyAPITests(APITestCase):
-    """
-    Регрессия на дыру из внешнего аудита (2026-09-04, см.
-    docs/adr/0001-evaluation-policy-single-source-of-truth.md): до
-    evaluations/policies.py эти сериалайзеры проверяли только уникальность
-    голоса и открытое окно голосования, но НЕ принадлежность сущности
-    (игрок/команда/тренер) конкретному матчу. Каждый тест здесь — попытка
-    оценить сущность, которая физически не участвовала в матче, и должен
-    получать 400, а не 201.
-    """
+    """EvaluationPolicy: сущность не из матча -> 400."""
 
     def setUp(self):
         cache.clear()
         self.user = _make_verified_user()
         self.client.force_authenticate(user=self.user)
         self.match = _make_match()
-        # Второй, полностью не связанный с self.match матч/команда/игрок/
-        # тренер — источник "чужих" ID для попыток нарушения политики.
+        # Чужой матч/команда/игрок/тренер для негативных кейсов.
         self.other_match = _make_match()
         self.other_team = Team.objects.create(name="Стороння команда")
         self.other_player = _make_player(self.other_team)
@@ -580,9 +452,7 @@ class EvaluationPolicyAPITests(APITestCase):
         )
 
     def test_player_not_in_squad_rejected(self):
-        """Игрок из другого матча (даже не в заявке self.match) не должен
-        приниматься — раньше принимался, единственная проверка была
-        "уже голосовали?"."""
+        """Игрок не из заявки матча — отклоняется."""
         self._add_context()
         url = reverse("api:player-eval-list")
         response = self.client.post(
@@ -601,8 +471,7 @@ class EvaluationPolicyAPITests(APITestCase):
         )
 
     def test_player_in_squad_accepted(self):
-        """Контрольный позитивный кейс — реальный игрок заявки матча
-        по-прежнему проходит (политика не должна ловить и легитимные оценки)."""
+        """Игрок из заявки — проходит."""
         from lineups.models import MatchLineup, MatchLineupPlayer
 
         lineup = MatchLineup.objects.create(match=self.match, team=self.match.home_team, side="home")
@@ -691,8 +560,7 @@ class EvaluationPolicyAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
 
     def test_supported_team_not_in_match_rejected(self):
-        """ContextEvaluation.supported_team — команда должна быть домашней
-        или гостевой в ЭТОМ матче, не в произвольном другом."""
+        """supported_team — только хозяева или гости этого матча."""
         url = reverse("api:context-eval-list")
         response = self.client.post(
             url,
@@ -701,9 +569,7 @@ class EvaluationPolicyAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
 
     def test_coach_evaluation_without_context_rejected(self):
-        """Единообразие с Player/Team (docs/CODEX_AUDIT_RESPONSE_2026-09-07.md,
-        docs/adr/0027): контекст просмотра требуется для ЛЮБОГО типа
-        предметной оценки, не только игрока/команды."""
+        """Контекст просмотра нужен для любого типа оценки."""
         from coaches.models import Coach
 
         home_coach = Coach.objects.create(first_name="Свой", last_name="Тренер", team=self.match.home_team)
@@ -737,18 +603,7 @@ class EvaluationPolicyAPITests(APITestCase):
 
 @override_settings(CACHES=LOCMEM_CACHES)
 class EvaluationIdentityImmutableOnUpdateAPITests(APITestCase):
-    """
-    Регрессия на дыру из внешнего аудита (2026-09-07, см.
-    docs/adr/0027-lock-evaluation-identity-fields-on-update.md): validate()
-    брал match/player/team/coach из data.get(...), который при PATCH с
-    ОТСУТСТВУЮЩИМ в теле полем возвращает None — EvaluationPolicy тихо не
-    выполнялась вовсе. Владелец собственной оценки мог создать её честно
-    POST'ом, а затем PATCH'ом подменить player/team/coach/match/
-    supported_team на что угодно. Каждый тест здесь: создать оценку,
-    попытаться PATCH'ем подменить identity-поле — должно быть 400, объект
-    в БД не должен измениться; отдельный тест подтверждает, что PATCH самих
-    баллов по-прежнему работает.
-    """
+    """PATCH не может подменить identity-поля (match/player/team/coach/supported_team)."""
 
     def setUp(self):
         from lineups.models import MatchLineup, MatchLineupPlayer
@@ -770,9 +625,7 @@ class EvaluationIdentityImmutableOnUpdateAPITests(APITestCase):
         ContextEvaluation.objects.create(user=self.user, match=self.other_match, watched_type="full")
 
     def test_cannot_change_player_via_patch(self):
-        """other_player тоже реально в заявке self.match — если бы проверка
-        не запрещала смену identity-поля вовсе, EvaluationPolicy пропустила
-        бы такую подмену (оба игрока валидны для матча)."""
+        """other_player тоже в заявке — проверка именно на запрет смены поля."""
         obj = PlayerEvaluation.objects.create(
             user=self.user, match=self.match, player=self.player, contribution=8, risk=3, potential=7
         )
@@ -793,8 +646,7 @@ class EvaluationIdentityImmutableOnUpdateAPITests(APITestCase):
         self.assertEqual(obj.match_id, self.match.id)
 
     def test_can_still_patch_score_fields(self):
-        """Сам фикс не должен запрещать легитимное изменение баллов своей
-        же оценки — только identity-поля."""
+        """PATCH баллов работает."""
         obj = PlayerEvaluation.objects.create(
             user=self.user, match=self.match, player=self.player, contribution=8, risk=3, potential=7
         )
@@ -876,11 +728,7 @@ class EvaluationIdentityImmutableOnUpdateAPITests(APITestCase):
 
 @override_settings(CACHES=LOCMEM_CACHES)
 class MatchEvaluationSummaryActionTests(APITestCase):
-    """`MatchEvaluationViewSet.summary` — сводка по матчу (используется на
-    странице результатов вайзарда). Как и `by_match`/`analytics` у
-    PlayerEvaluationViewSet, это read-действие, но наследует
-    permission_classes всего ViewSet'а — значит тоже требует верифицированный
-    аккаунт, а не публичный агрегат."""
+    """MatchEvaluationViewSet.summary закрыт так же, как весь ViewSet."""
 
     def setUp(self):
         cache.clear()
@@ -890,9 +738,7 @@ class MatchEvaluationSummaryActionTests(APITestCase):
     def test_summary_requires_authentication(self):
         url = reverse("api:match-eval-summary")
         response = self.client.get(url, {"match_id": str(self.match.id)})
-        # 403, не 401 — см. докстринг IsAuthenticatedAndVerifiedSweepTests
-        # (порядок DEFAULT_AUTHENTICATION_CLASSES понижает NotAuthenticated
-        # до PermissionDenied). Важно, что запрос отклонён.
+        # 403, не 401 — важно, что запрос отклонён.
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_summary_requires_match_id_param(self):

@@ -1,50 +1,20 @@
 # aggregates/management/commands/seed_match_votes.py
-"""
-manage.py seed_match_votes --match-id X [--match-id Y ...] [--voters N] [...]
+"""manage.py seed_match_votes --match-id X [--match-id Y ...] [--voters N] [...]
 manage.py seed_match_votes --status finished --limit N [...]
 
-Наполняет реальные (или любые) матчи РАЗНЫМ количеством синтетических
-голосов — продуктовый запрос: "хочу видеть, как выглядит рейтинг с большим
-числом оценок, не создавая тестовые аккаунты вручную и не боясь чистить их
-потом". Два прежних инструмента (`create_test_evaluations.py`,
-`users/create_test_users.py`) уже решали смежные задачи, но по отдельности:
-первый не даёт управлять реализмом/разбросом голосов и плодит НОВЫЙ пул
-пользователей на каждый запуск (по одному match_id в username), второй не
-создаёт сами оценки. Эта команда объединяет оба шага и добавляет то, чего
-не было ни у одного: переиспользуемый пул ботов, разную "явку" по игрокам
-внутри одного матча, распределение по лагерям поддержки (для проверки
-own/rival-сегментации), и мгновенный синхронный пересчёт агрегатов — без
-Celery/Redis в цикле ожидания.
+Синтетические голоса ботов для матчей: общий пул test_user_bot_NNNN (создаётся один раз),
+разная явка по игрокам, распределение по лагерям, синхронный пересчёт агрегатов.
+Боты создаются через ORM — без писем.
 
-ПОЧЕМУ НЕ РЕГИСТРАЦИЯ ЧЕРЕЗ ФОРМУ/ВЬЮХУ: пользователи создаются напрямую
-через ORM (`User.objects.get_or_create`), как и во всех остальных
-`create_test_*`/`setup_load_test` командах проекта — это НЕ проходит через
-`RegisterView`/email-верификацию, поэтому не отправляет ни одного письма и
-не падает на неверно настроенном локальном SMTP. `users/signals.py` не
-регистрирует ни одного `post_save`-получателя на `User` (см.
-docs/adr/0001) — создание пользователя через ORM гарантированно не имеет
-побочных эффектов.
-
-ПОЧЕМУ ЭТО НЕ "СОЗДАНИЕ ТЕСТОВЫХ АККАУНТОВ, КОТОРЫЕ ПОТОМ ТЯЖЕЛО ЧИСТИТЬ":
-все боты используют один и тот же префикс username — `test_user_bot_NNNN`
-(попадает под критерий уже существующей `cleanup_test_users.py`, дефолтный
-`--prefix test_user`). Пул СОЗДАЁТСЯ ОДИН РАЗ (`get_or_create`, идемпотентно)
-и переиспользуется между запусками на РАЗНЫХ матчах — повторный прогон
-команды на 10 матчах не плодит 10 новых наборов пользователей, только новые
-строки оценок. Сброс — см. "Как сбросить" ниже.
-
-Запуск:
+Примеры:
   python manage.py seed_match_votes --match-id <uuid> --voters 40
   python manage.py seed_match_votes --status finished --limit 5 --voters 15
-  python manage.py seed_match_votes --match-id <uuid> --voters 3   # мало голосов — проверить "предварительный рейтинг"
+  python manage.py seed_match_votes --match-id <uuid> --voters 3
   python manage.py seed_match_votes --match-id <uuid> --voters 60 --single-inflated-player <player_uuid>
 
-Как сбросить (не трогая реальные голоса):
-  python manage.py cleanup_test_users --apply           # удаляет всех test_user_bot_* и их оценки
-  python manage.py recalculate_aggregates --all-active   # либо --sync-recalc уже сделал это сам при сидировании
-
-  Либо — полный сброс ВСЕХ оценок, кроме одного реального аккаунта:
-  python manage.py reset_ratings_data --keep-user t.tastanov@gmail.com --apply
+Сброс:
+  python manage.py cleanup_test_users --apply
+  python manage.py recalculate_aggregates --all-active
 """
 from __future__ import annotations
 
@@ -74,7 +44,7 @@ User = get_user_model()
 
 BOT_USERNAME_PREFIX = "test_user_bot_"
 BOT_EMAIL_DOMAIN = "test.dopx.local"
-WATCHED_TYPES = ["full", "full", "full", "highlights", "partial"]  # смещено в сторону "full" — реалистичнее
+WATCHED_TYPES = ["full", "full", "full", "highlights", "partial"]  # чаще "full"
 
 
 class Command(BaseCommand):
@@ -193,8 +163,7 @@ class Command(BaseCommand):
         return list(qs[: options["limit"]])
 
     def _ensure_bot_pool(self, pool_size: int) -> list:
-        """Идемпотентно: повторный запуск с тем же/меньшим --pool-size не
-        создаёт новых пользователей, только дозаполняет недостающих."""
+        """Идемпотентно: создаёт только недостающих ботов."""
         existing = list(User.objects.filter(username__startswith=BOT_USERNAME_PREFIX).order_by("username"))
         if len(existing) >= pool_size:
             return existing[:pool_size]
@@ -207,9 +176,7 @@ class Command(BaseCommand):
                 defaults={
                     "email": f"{username}@{BOT_EMAIL_DOMAIN}",
                     "is_verified": True,
-                    # Разброс trust_score — часть ботов проходит порог >1.2 в
-                    # calculate_user_weight (aggregates/services.py), часть нет,
-                    # для реалистичного разброса весов голосов.
+                    # Разброс trust_score — разные веса голосов.
                     "trust_score": round(random.uniform(0.7, 1.5), 2),
                 },
             )
@@ -230,9 +197,7 @@ class Command(BaseCommand):
             .values_list("player_id", flat=True)
         )
 
-        # "Истинное качество" каждого игрока — фиксируется один раз на
-        # матч, голоса шумят вокруг него (gauss), а не берутся из чистого
-        # uniform-шума. Даёт различимый, а не плоский рейтинг между игроками.
+        # «Истинное качество» игрока на матч, голоса — шум вокруг него.
         player_quality = {p.id: random.uniform(3.0, 9.0) for p in lineup_players}
 
         with transaction.atomic():
@@ -289,7 +254,7 @@ class Command(BaseCommand):
                     )
                 for player in lineup_players:
                     if random.random() > coverage:
-                        continue  # этот бот "не заметил"/не стал оценивать этого игрока
+                        continue  # бот пропустил игрока
                     quality = player_quality[player.id]
                     PlayerEvaluation.objects.update_or_create(
                         user=voter, match=match, player=player,
@@ -306,10 +271,7 @@ class Command(BaseCommand):
         return len(voters)
 
     def _add_single_inflated_vote(self, match: Match, player: Player) -> None:
-        """Отдельный, вне обычного пула, бот с ОДНИМ экстремальным голосом —
-        воспроизводит ровно сценарий core/tests.py::HomeTopPlayersVoteGateTests
-        ("единичный накрученный голос обходит честные десятки оценок"),
-        но на реальном матче, для визуальной проверки гейта глазами."""
+        """Отдельный бот с одним экстремальным голосом — проверка порога голосов."""
         username = f"{BOT_USERNAME_PREFIX}inflated_{match.id.hex[:8]}_{player.id.hex[:8]}"
         bot, _ = User.objects.get_or_create(
             username=username,
@@ -327,13 +289,7 @@ class Command(BaseCommand):
         ))
 
     def _recalculate_synchronously(self, match_ids: list[str]) -> None:
-        """Прямой синхронный вызов (НЕ .delay()) — не требует поднятого
-        Celery/Redis, результат виден сразу после завершения команды.
-        recalculate_match_aggregate сама планирует recalculate_player_aggregates
-        через .delay() последней строкой — это ожидаемо может упасть, если
-        Redis недоступен; мы и так уже вызвали player-пересчёт синхронно
-        строкой выше, так что эта ошибка (если возникнет) ни на что не влияет
-        и только логируется, не прерывает команду."""
+        """Синхронный пересчёт без Celery. Ошибка .delay() внутри — только в лог."""
         from aggregates.tasks import (
             recalculate_coach_aggregates,
             recalculate_match_aggregate,

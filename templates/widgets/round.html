@@ -5,23 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Сборная DOPX{% if tour %} {{ tour }}-го{% endif %} тура</title>
-    {% comment %}
-    templates/widgets/round.html
-    Пятый embed-виджет (продуктовый запрос 2026-08-22 — "embed код нужен на
-    тур тоже"), тот же изолированный документ, что и widgets/best_xi.html:
-    своя CDN-загрузка Tailwind/daisyUI, прозрачный фон, без наследования
-    base.html, без Alpine.js (только рейтинг цифрой под именем, без
-    тултипов-объяснений — подробности по клику на бренд-ссылку "DOPX").
-    Только 11 полевых слотов (без тренера) — та же логика "без лишнего
-    веса на маленькой карточке", что у best_xi.html.
-    {% endcomment %}
-    {% comment %}
-    Версии и SRI-хэши те же, что в base.html (см. scripts/generate_sri.sh) —
-    было @4/@5/@latest без integrity вообще: плавающий тег отдаёт другой
-    файл без предупреждения, а виджет встраивается на СТОРОННИХ сайтах
-    (iframe), где подмену CDN-файла некому заметить. Обновлять версию здесь
-    и в base.html/base_auth.html синхронно.
-    {% endcomment %}
+    {# Embed-виджет «DOPX Лучшие тура»: 11 слотов, без base.html и Alpine. #}
+    {# Версии CDN как в base.html — обновлять синхронно. #}
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.3" integrity="sha384-aJ9rL4k6lF+91guGvUFVSkpIcge7Zd9EiI4TQDLoK9kFaFJgKHgjEXVvG/qA5COj" crossorigin="anonymous"></script>
     <link href="https://cdn.jsdelivr.net/npm/daisyui@5.7.17" rel="stylesheet" type="text/css" integrity="sha384-39M1LQqzp+SSirSevKD4gsadFB7kgKzMiPY7o6hVhOXuRthgtd1oohKwlosU9KHi" crossorigin="anonymous" />
     <link href="https://cdn.jsdelivr.net/npm/daisyui@5.7.17/themes.css" rel="stylesheet" type="text/css" integrity="sha384-HhSoSsQclUlsqy8Gyz+E2oVSebHT4dv3MJ+NdUjV9mh1twUK4UPKQgmj0dHDKe0Y" crossorigin="anonymous" />

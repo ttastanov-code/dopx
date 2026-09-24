@@ -1,70 +1,12 @@
 # core/management/commands/reset_ratings_data.py
-"""
-manage.py reset_ratings_data [--apply] [--keep-user EMAIL_OR_USERNAME]
+"""manage.py reset_ratings_data [--apply] [--keep-user EMAIL_OR_USERNAME]
 
-Точечная чистка "мусора" от голосований/тестовых оценок, накопленного за
-цикл разработки (2026-09-01, продуктовый запрос: "почистить базу от оценок
-и агрегатов") — БЕЗ полного `manage.py flush`. Полный flush снёс бы заодно
-матчи/команды/игроков/составы, которые долго и с трудом синкались из
-хрупкого KFF API (см. вся эта переписка про 403/circuit breaker) — их
-пришлось бы полностью пересинкать с нуля. Эта команда трогает только
-голоса и производные от них рейтинги, оставляя справочные данные
-(League/Season/Team/Player/Coach/Referee/Match/составы) как есть.
-
---keep-user — исключить оценки ОДНОГО пользователя (свои — "мои могут
-оставаться") из удаления. Остальные пользователи чистятся полностью.
-
-Удаляет:
-  · evaluations.* — ContextEvaluation, TeamEvaluation, PlayerEvaluation,
-    CoachEvaluation, RefereeEvaluation, MatchEvaluation, EvaluationSession
-    (сами голоса и сессии вайзарда) — везде, КРОМЕ --keep-user, если задан.
-  · aggregates.* — PlayerMatchAggregate, CoachMatchAggregate,
-    TeamMatchAggregate, RefereeMatchAggregate, MatchAggregate,
-    TeamRatingCorrection — ВСЕГДА целиком, без исключений. У этих моделей
-    нет поля user (это агрегат по МАТЧУ, а не по голосующему), выборочно
-    оставить тут нечего — пересчитываются заново из оставшихся оценок
-    (`manage.py recalculate_aggregates`, либо дождаться планового прогона).
-
-НАЙДЕНО (2026-09-01, жалоба пользователя: "удалял в админке сессии
-голосования и проходил заново, могут быть дубликаты"): дубликатов СТРОК в
-evaluations быть не может — везде unique_together(user, match[, entity]) +
-update_or_create (см. evaluations/views.py), повторное прохождение вайзарда
-просто ПЕРЕЗАПИСЫВАЕТ те же строки новыми значениями, а не плодит копии.
-РЕАЛЬНАЯ порча — в счётчиках на User/UserXP, потому что удаление
-EvaluationSession в админке в обход штатного flow (evaluations/views.py:
-`if session.status == 'completed': ... redirect`) снимает единственную
-защиту от повторного начисления: `update_evaluation_stats()`
-(total_evaluations/evaluation_streak — чистые аккумуляторы, +1 при КАЖДОМ
-вызове, не count() по факту) и `UserXP.add_xp()` на последнем шаге вайзарда
-срабатывают заново при каждом повторном прохождении одного и того же матча.
-С --keep-user эта команда сама пересчитывает total_evaluations/
-evaluation_streak/last_evaluation_season_id/last_evaluation_tour у
-оставленного пользователя ЗАНОВО из его реальных MatchEvaluation (по
-`created_at` — auto_now_add, не трогается повторным update_or_create,
-значит порядок первого прохождения каждого матча восстановим корректно,
-несмотря на все передвижения).
-
-total_xp/trust_score НЕ пересчитываются автоматически — в отличие от
-total_evaluations/evaluation_streak (чистая функция от списка матчей),
-их формулы зависят от `xp_multiplier()`/`trust_score` НА МОМЕНТ каждого
-начисления, то есть корректно "переиграть" всю историю задним числом
-нельзя — только заново решить, какое значение считать правильным (сбросить
-на дефолт 1.0 / обнулить и дать накопиться заново на реальных данных /
-оставить как есть). Сознательно не гадаю тут — команда только предупреждает
-в конце, финальное решение за вами.
-
-НЕ трогает (сознательно, отдельным решением, не по умолчанию):
-  · UserBadge — не все бейджи про количество оценок (founder/
-    monthly_champion и т.п. — про другое), огульно удалять нельзя.
-  · predictions.* — отдельная фича, не оценки выступления.
-  · round_squad/season_squad ("Сборная тура/сезона") — снэпшот без FK на
-    aggregates, не каскадит, но покажет старые составы до пересчёта:
-    `manage.py shell -c "from round_squad.tasks import recompute_active_rounds; recompute_active_rounds()"`
-    (аналогично `season_squad.tasks.recompute_all_active_best_xi`).
-
-Без --apply — dry-run: только считает и печатает количество строк по
-каждой модели, ничего не удаляет (тот же паттерн, что у
-cleanup_test_users.py/clear_player_photos.py).
+Удаляет оценки и агрегаты, справочные данные и матчи не трогает.
+  evaluations.* — всё, кроме оценок --keep-user;
+  aggregates.*  — всё (пересчитать: recalculate_aggregates).
+Для --keep-user пересчитывает total_evaluations/evaluation_streak по его MatchEvaluation.
+total_xp/trust_score, бейджи, прогнозы, сборные — не трогает.
+Без --apply — dry-run.
 """
 from __future__ import annotations
 
@@ -93,10 +35,7 @@ from evaluations.models import (
 
 User = get_user_model()
 
-# Порядок важен только для читаемости вывода — все FK здесь CASCADE,
-# Django сам разрулит порядок реального удаления в транзакции. Все модели
-# ниже имеют поле `user` — фильтр --keep-user (`exclude(user=keep_user)`)
-# применим к каждой одинаково.
+# Порядок — только для вывода. У всех моделей есть user.
 EVALUATION_MODELS = [
     ContextEvaluation, TeamEvaluation, PlayerEvaluation,
     CoachEvaluation, RefereeEvaluation, MatchEvaluation, EvaluationSession,
@@ -108,16 +47,7 @@ AGGREGATE_MODELS = [
 
 
 def _recompute_evaluation_stats(user) -> None:
-    """
-    Пересчитывает total_evaluations/evaluation_streak/
-    last_evaluation_season_id/last_evaluation_tour у `user` заново, реплеем
-    того же алгоритма, что и `User.update_evaluation_stats()` (users/models.py),
-    но по РЕАЛЬНЫМ оставшимся MatchEvaluation в порядке `created_at`
-    (auto_now_add — фиксируется при первой оценке этого матча, повторное
-    прохождение вайзарда через update_or_create его не сдвигает). Это и
-    восстанавливает корректную серию/счётчик независимо от того, сколько
-    раз матч переоценивался.
-    """
+    """Пересчёт счётчиков оценок пользователя по MatchEvaluation в порядке created_at."""
     evaluations = (
         MatchEvaluation.objects.filter(user=user)
         .select_related("match")
@@ -131,7 +61,7 @@ def _recompute_evaluation_stats(user) -> None:
         total += 1
         tour = ev.match.tour
         if tour is None:
-            continue  # как и в оригинале — нет тура, серию не трогаем
+            continue  # нет тура — серию не трогаем
         if last_season_id == ev.match.season_id and last_tour == tour:
             continue
         elif (

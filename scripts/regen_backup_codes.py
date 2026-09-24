@@ -1,13 +1,9 @@
 # scripts/regen_backup_codes.py
 #
-# Удаляет старые backup-коды и создаёт чистую пачку из 8 новых.
-# Печатает их в открытом виде — это единственный момент, когда это можно
-# сделать (потом в БД остаётся только сам StaticToken, без "показать снова").
-#
-# Запуск: python manage.py shell < scripts/regen_backup_codes.py
-# (перед запуском поменяйте USERNAME ниже на свой логин)
+# Пересоздаёт 8 backup-кодов 2FA и печатает их (показ только сейчас).
+# Запуск: python manage.py shell < scripts/regen_backup_codes.py (поменяйте USERNAME).
 
-USERNAME = "admin"  # <-- замените, если логин другой
+USERNAME = "admin"  # ваш логин
 
 from django.contrib.auth import get_user_model
 from django_otp.plugins.otp_static.models import StaticDevice, StaticToken

@@ -1,16 +1,6 @@
 {% comment %}
-Плашка о cookie — переиспользуемый компонент, подключается в base.html
-после футера.
-
-Собираем только sessionid и csrftoken — оба строго необходимые
-("strictly necessary"), поэтому это не GDPR opt-in с переключателями
-категорий, а компактное уведомление с подтверждением.
-
-Версионированный ключ (`dopx_cookie_notice_ack_v1`) — при появлении
-не строго необходимых cookie в будущем достаточно поднять версию
-(`..._v2`), и баннер снова всплывёт всем, кто принял старую версию, без
-миграций и серверного состояния. Хранится в localStorage, не в cookie —
-проще и не увеличивает вес каждого запроса.
+Плашка о cookie (только sessionid и csrftoken — строго необходимые).
+Подтверждение хранится в localStorage (dopx_cookie_notice_ack_v1); поднять версию — показать снова.
 {% endcomment %}
 <div
     x-data="cookieBanner"
@@ -28,7 +18,7 @@
 >
     <div class="max-w-3xl mx-auto bg-base-100 border border-base-300 rounded-2xl shadow-2xl p-4 sm:p-5">
         <div class="flex items-start gap-3 sm:gap-4">
-            {% comment %}bg-gradient-to-br/from-primary — не работает в Tailwind v4 для daisyUI-цветов, см. комментарий в evaluations/complete.html{% endcomment %}
+            {# Градиент через inline style (Tailwind v4 не видит цвета daisyUI). #}
             <div class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-primary-content" style="background-image: linear-gradient(to bottom right, var(--color-primary), var(--color-secondary));">
                 <i class="ti ti-cookie text-lg"></i>
             </div>

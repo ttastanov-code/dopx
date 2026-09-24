@@ -1,23 +1,6 @@
 # coaches/tests.py
-"""
-Общий контекст — см. докстринг teams/tests.py. Здесь — coaches/views.py.
-
-Особенности coaches относительно teams/players:
-- CoachListView.get_context_data честно признаёт в комментарии БАГ,
-  КОТОРЫЙ ТУТ БЫЛ: поиск (`q`) и фильтр по команде (`team`) рисовались в
-  шаблоне, но queryset их не читал — форма молча ничего не делала. Код уже
-  подключён (см. текущий текст views.py), но именно поэтому регрессионные
-  тесты на оба параметра здесь особенно важны — это ровно тот баг, который
-  легко случайно вернуть при следующей правке get_queryset.
-- CoachDetailView.has_evaluations — НЕ MIN_VOTES_FOR_DISPLAY-гейт (в отличие
-  от team_rating_widget/player_rating_widget). total_evaluations считается
-  как Count('id') строк CoachMatchAggregate (число ОЦЕНЁННЫХ МАТЧЕЙ), не
-  сумма голосов — карточка "Средние оценки" появляется, как только есть
-  хотя бы один оценённый матч, независимо от числа голосов в нём.
-- У тренера НЕТ личной истории матчей (KFF не хранит историю смены
-  тренера — см. комментарий в coaches/views.py, "находка 4" в
-  docs/BACKLOG.md) — team_matches сознательно берутся из МАТЧЕЙ КОМАНДЫ,
-  это не баг для починки.
+"""Тесты coaches/views.py: поиск и фильтр по команде, карточка оценок.
+У тренера нет личной истории матчей — показываются матчи команды.
 """
 from __future__ import annotations
 
@@ -51,8 +34,7 @@ class CoachesFixtureMixin:
 
 
 class CoachSearchKazakhHomographTests(CoachesFixtureMixin, TestCase):
-    """normalize_kz: "Кайрат"/"Гани" (русские буквы) должны находить
-    тренера "Қайрат"/"Ғани" (казахские Қ/Ғ)."""
+    """«Кайрат»/«Гани» находят «Қайрат»/«Ғани»."""
 
     def test_russian_spelling_finds_kazakh_named_coach(self):
         coach = self._coach("Ғани", "Қайратұлы")
@@ -71,9 +53,7 @@ class CoachSearchKazakhHomographTests(CoachesFixtureMixin, TestCase):
 
 
 class CoachListTeamFilterConnectedTests(CoachesFixtureMixin, TestCase):
-    """Регрессия на конкретный БАГ, КОТОРЫЙ ТУТ БЫЛ (см. докстринг модуля):
-    ?team=<id> должен реально фильтровать queryset, а не быть декоративным
-    параметром, который шаблон рисует, но view игнорирует."""
+    """?team=<id> фильтрует список."""
 
     def test_team_filter_excludes_coaches_of_other_teams(self):
         own = self._coach("Свой", "Тренер")
@@ -123,10 +103,7 @@ class CoachDetailNotFoundTests(TestCase):
 
 
 class CoachDetailHasEvaluationsGateTests(CoachesFixtureMixin, TestCase):
-    """has_evaluations = total_evaluations > 0, где total_evaluations —
-    Count('id') строк CoachMatchAggregate (число оценённых МАТЧЕЙ), а не
-    сумма голосов — в отличие от MIN_VOTES_FOR_DISPLAY-гейта у команд/
-    игроков, здесь достаточно одного оценённого матча с любым total_votes."""
+    """has_evaluations — есть хотя бы один оценённый матч."""
 
     def setUp(self):
         super().setUp()

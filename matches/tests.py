@@ -1,11 +1,5 @@
 # matches/tests.py
-"""
-Тесты matches/services.py::build_match_dna ("ДНК матча", фаза 1,
-docs/adr/0028-match-dna-phase1.md). Все функции модуля читают только
-переданные объекты — build_match_dna сам по себе не делает запросов к БД
-(это забота вызывающей стороны, MatchDetailView) — SimpleTestCase с
-SimpleNamespace вместо реальных Django-моделей, БД не нужна.
-"""
+"""Тесты build_match_dna (без БД, на SimpleNamespace)."""
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -57,7 +51,7 @@ class DescribeMomentumTests(SimpleTestCase):
         self.assertEqual(_describe_momentum([]), [])
 
     def test_single_event_in_window_not_a_momentum_point(self):
-        """Одно событие в окне — не "момент", просто строка таймлайна."""
+        """Одно событие в окне — не «момент»."""
         self.assertEqual(_describe_momentum([_event(10)]), [])
 
     def test_two_goals_same_window_described_as_goals(self):
@@ -75,9 +69,9 @@ class DescribeMomentumTests(SimpleTestCase):
 
     def test_returns_at_most_two_points(self):
         events = [
-            _event(5), _event(7),      # окно 0-15
-            _event(20), _event(22),    # окно 15-30
-            _event(80), _event(82),    # окно 75-90
+            _event(5), _event(7),  # окно 0-15
+            _event(20), _event(22),  # окно 15-30
+            _event(80), _event(82),  # окно 75-90
         ]
         self.assertLessEqual(len(_describe_momentum(events)), 2)
 
@@ -126,14 +120,12 @@ class BuildMatchDnaTests(SimpleTestCase):
         self.assertEqual(result["drama_index"], 65.0)
         self.assertIsInstance(result["momentum_points"], list)
         self.assertEqual(result["referee_divergence"], "")
-        # Фаза 2 (docs/adr/0033) — новые ключи присутствуют, даже когда
-        # соответствующего сигнала нет (не ломаем контракт словаря).
+        # Ключи фазы 2 есть и без данных.
         self.assertIsNone(result["hero"])
         self.assertEqual(result["turning_point_text"], "")
         self.assertIsNone(result["consensus_level"])
         self.assertEqual(result["controversial_episode"], "")
-        # Фаза 3 (docs/adr/0034) — то же самое: ключи есть, но пустые/None,
-        # когда worst_players/fan_support не переданы вызывающей стороной.
+        # Ключи фазы 3 есть и без данных.
         self.assertIsNone(result["antihero"])
         self.assertEqual(result["consensus_text"], "")
         self.assertEqual(result["fan_mood_text"], "")
@@ -175,8 +167,7 @@ class ConsensusLevelTests(SimpleTestCase):
         self.assertEqual(_consensus_level(evals), "low")
 
     def test_moderate_spread_medium_consensus(self):
-        # Композиты 8/5/6 -> population stdev ~1.25 — строго между
-        # CONSENSUS_HIGH_STDEV=1.0 и CONSENSUS_LOW_STDEV=2.5.
+        # stdev ~1.25 — между порогами консенсуса.
         evals = [_evaluation(8, 8, 8), _evaluation(5, 5, 5), _evaluation(6, 6, 6)]
         self.assertEqual(_consensus_level(evals), "medium")
 
@@ -205,7 +196,7 @@ class DescribeControversialEpisodeTests(SimpleTestCase):
 
 
 class DescribeAntiheroTests(SimpleTestCase):
-    """Фаза 3 (docs/adr/0034-match-dna-phase3-antihero-fan-mood.md)."""
+    """Антигерой и настроение фанатов."""
 
     def _agg(self, player_id, score):
         return SimpleNamespace(player=SimpleNamespace(id=player_id), player_id=player_id, performance_score=score)
@@ -221,14 +212,12 @@ class DescribeAntiheroTests(SimpleTestCase):
         self.assertIs(result["player"], worst_agg.player)
 
     def test_same_player_as_hero_returns_none(self):
-        """Единственный отфильтрованный игрок матча — герой и антигерой
-        совпадали бы, вводя в заблуждение. Не показываем антигероя."""
+        """Единственный игрок — антигероя не показываем."""
         only_agg = self._agg(1, 6.0)
         self.assertIsNone(_describe_antihero([only_agg], [only_agg]))
 
     def test_no_hero_still_returns_antihero(self):
-        """top_players пуст (герой не посчитан), но worst_players есть —
-        антигерой не должен зависеть от наличия героя."""
+        """Антигерой не зависит от героя."""
         worst_agg = self._agg(2, 2.0)
         result = _describe_antihero([], [worst_agg])
         self.assertEqual(result["score"], 2.0)
@@ -271,9 +260,7 @@ class DescribeConsensusTextTests(SimpleTestCase):
 
 
 class BuildMatchDnaPhase3Tests(SimpleTestCase):
-    """Сквозная проверка, что build_match_dna действительно прокидывает
-    worst_players/fan_support в новые поля, а не только что сами хелперы
-    работают в изоляции (см. классы выше)."""
+    """build_match_dna прокидывает worst_players/fan_support."""
 
     def _match(self):
         return SimpleNamespace(home_team=SimpleNamespace(name="Кайрат"), away_team=SimpleNamespace(name="Актобе"))

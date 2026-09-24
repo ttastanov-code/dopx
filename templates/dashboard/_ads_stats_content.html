@@ -1,11 +1,4 @@
-{% comment %}
-templates/dashboard/_ads_stats_content.html
-Вся статистика за 30 дней (баннеры + партнёрские рефералки + embed-виджеты)
-одним блоком — цель HTMX-поллинга (dashboard/views.py::ads_stats_partial),
-тот же паттерн, что и dashboard/_data_health_content.html. Раньше баннерная
-статистика была видна только построчно в /admin/partners/banner/ и
-/admin/partners/partner/ — здесь сводная картина по всей рекламе сразу.
-{% endcomment %}
+{# Статистика за 30 дней: баннеры, рефералки, виджеты. Цель поллинга ads_stats_partial. #}
 <div class="dopx-stat-grid mb-4">
     <div class="dopx-stat">
         <div class="dopx-stat-label"><i class="ti ti-photo"></i>Показы баннеров</div>

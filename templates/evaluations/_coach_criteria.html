@@ -1,10 +1,6 @@
 {% comment %}
-Четыре критерия оценки тренера — вынесено из coaches.html в отдельный
-партиал (2026-09-04, режим "Быстро", см.
-docs/adr/0006-quick-full-evaluation-mode.md), чтобы не дублировать одну и
-ту же разметку в двух местах (обычный режим — сразу видно, быстрый режим —
-под "Настроить каждый критерий вручную").
-Использование: {% include 'evaluations/_coach_criteria.html' with coach=coach %}
+Критерии тренера (обычный и быстрый режим).
+{% include 'evaluations/_coach_criteria.html' with coach=coach %}
 {% endcomment %}
 <div class="wz-accent-accent wz-slider-card">
     <div class="flex justify-between items-center mb-2">

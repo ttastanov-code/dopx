@@ -9,19 +9,10 @@
 {% endif %}
 {% endblock %}
 {% block content %}
-{% comment %}
-РЕДИЗАЙН (2026-08-31, третий проход — полный пересмотр страницы матча):
-раньше вся страница была набором одинаковых daisyUI `card bg-base-100
-border` блоков — шапка, состав, события, статистика визуально ничем не
-отличались друг от друга, каждый блок боролся за то же самое внимание.
-Теперь у каждого типа контента свой визуальный язык (см. static/css/
-match-detail.css): hero-баннер для шапки, timeline для событий, карточки
-метрик для статистики оценок, ростер с номерами для составов, единый
-.md-side-card для правой колонки, медальные бейджи для топа игроков.
-{% endcomment %}
-<!-- max-w-7xl + overflow-hidden — от горизонтального скролла на мобильных -->
+{# Страница матча. Стили — static/css/match-detail.css. #}
+{# max-w-7xl + overflow-hidden — без горизонтального скролла на мобильном #}
 <div class="w-full max-w-7xl mx-auto px-2 sm:px-4 overflow-hidden">
-    <!-- === НАВИГАЦИЯ === -->
+    {# === НАВИГАЦИЯ === #}
     <div class="mb-3 sm:mb-6">
         <a href="{% url 'matches:list' %}" class="back-link" data-back-link>
             <span class="back-link__icon"><i class="ti ti-arrow-left"></i></span>
@@ -29,28 +20,18 @@ match-detail.css): hero-баннер для шапки, timeline для собы
         </a>
     </div>
 
-    <!-- === MATCH HERO (live-поллинг счёта/статуса — см. _match_header.html) === -->
+    {# === ШАПКА (live-поллинг — _match_header.html) === #}
     {% include 'matches/_match_header.html' %}
 
-    <!-- === ДВЕ КОЛОНКИ (min-w-0 обязательно!) ===
-         ИСПРАВЛЕНО (2026-09-07): раньше здесь была плоская CSS grid-сетка
-         из 11 карточек с `order`/`col-start` на каждой — сломала десктоп
-         (огромные пустые блоки из-за синхронизации строк grid между
-         колонками разной высоты, см. подробный докстринг в
-         templates/matches/_match_dna_card.html). Вернул простые
-         независимые block-колонки со `space-y-*`, как было изначально.
-         "ДНК матча" вынесена в отдельный partial и включена ДВАЖДЫ (по
-         разу в каждую колонку, показывается только одна копия через
-         `lg:hidden`/`hidden lg:block`) — так карточка стоит в разных
-         местах DOM на мобильном и десктопе без поломки высоты колонок. -->
+    {% comment %}
+    === ДВЕ КОЛОНКИ (min-w-0 обязательно) ===
+    Независимые колонки. «ДНК матча» включена дважды — по копии на мобильный и десктоп.
+    {% endcomment %}
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4 lg:gap-6 min-w-0 w-full">
-        <!-- === ЛЕВАЯ КОЛОНКА (2/3) === -->
+        {# === ЛЕВАЯ КОЛОНКА (2/3) === #}
         <div class="lg:col-span-2 space-y-3 sm:space-y-4 lg:space-y-6 min-w-0">
 
-            <!-- === РЕЗУЛЬТАТЫ ОЦЕНОК ===
-                 Поднято наверх колонки (2026-08-31, по просьбе пользователя) —
-                 итоговые цифры матча логичнее видеть сразу под шапкой, а не
-                 пролистав составы/live-пульс/ленту событий. -->
+            {# === РЕЗУЛЬТАТЫ ОЦЕНОК === #}
             {% if match_aggregate %}
             <div class="md-side-card">
                 <div class="md-side-card__head flex items-center gap-2">
@@ -78,16 +59,10 @@ match-detail.css): hero-баннер для шапки, timeline для собы
             </div>
             {% endif %}
 
-            <!-- === ТУРНИРНАЯ ТАБЛИЦА ПЕРЕД МАТЧЕМ ===
-                 2026-09-11 (прямая просьба пользователя: "страница матча
-                 который ещё не наступил как-то скучно и пусто") — на
-                 странице предстоящего матча почти все блоки выше скрыты
-                 (нет оценок/составов/событий), а "форма" в шапке — просто
-                 5 кружков без контекста таблицы. Показываем позицию/очки/
-                 разницу мячей обеих команд НА МОМЕНТ этого матча (см.
-                 teams/services.py::get_pre_match_standings_snapshot) — не
-                 только для scheduled, полезный контекст и для live/
-                 finished ("как выглядела таблица перед игрой"). -->
+            {% comment %}
+            === ТУРНИРНАЯ ТАБЛИЦА ПЕРЕД МАТЧЕМ ===
+            Позиции команд на момент матча (get_pre_match_standings_snapshot).
+            {% endcomment %}
             {% if standings_snapshot %}
             <div class="md-side-card">
                 <div class="md-side-card__head flex items-center gap-2">
@@ -111,9 +86,7 @@ match-detail.css): hero-баннер для шапки, timeline для собы
             </div>
             {% endif %}
 
-            <!-- === ЛИЧНЫЕ ВСТРЕЧИ ===
-                 Тот же повод (2026-09-11) — последние очные матчи этих
-                 команд, независимо от статуса текущего матча. -->
+            {# === ЛИЧНЫЕ ВСТРЕЧИ === #}
             {% if h2h_matches %}
             <div class="md-side-card">
                 <div class="md-side-card__head flex items-center justify-between gap-2 flex-wrap">
@@ -141,20 +114,10 @@ match-detail.css): hero-баннер для шапки, timeline для собы
             </div>
             {% endif %}
 
-            <!-- === СТАТИСТИКА МАТЧА (фаза 5) ===
-                 2026-09-09 (жалоба пользователя: "статистика в самом низу,
-                 чтобы добраться нужно крутить все события" + бриф Codex:
-                 "не портянка, удобно и комфортно"). Раньше стояла ПОСЛЕ
-                 составов, live-пульса, ленты событий и ДНК матча — почти в
-                 самом конце левой колонки. Объективные факты матча (удары,
-                 владение, опасные атаки и т.д.) — такая же "итоговая
-                 сводка", как "Результаты оценок" сразу над ней, только с
-                 другой стороны (факты игры vs. мнение болельщиков) —
-                 логично держать их РЯДОМ, а не разносить на разные концы
-                 страницы. -->
+            {# === СТАТИСТИКА МАТЧА === (рядом с результатами оценок) #}
             {% include 'matches/_match_statistics_card.html' %}
 
-            <!-- === СОСТАВЫ === -->
+            {# === СОСТАВЫ === #}
             {% if lineups %}
             <div class="md-side-card">
                 <div class="md-side-card__head flex items-center gap-2">
@@ -167,12 +130,7 @@ match-detail.css): hero-баннер для шапки, timeline для собы
                         <div class="md-lineup__head flex items-center justify-between">
                             <a href="{% url 'teams:detail' lineup.team.id %}" class="font-bold text-sm md:text-base truncate hover:underline hover:text-primary">{{ lineup.team.name }}</a>
                             <span class="text-xs opacity-60 font-medium flex items-center gap-1.5">
-                                {% comment %}
-                                Формация (фаза 5/новые фичи) — приходит отдельным include
-                                'formations' от Sportmonks (parsers/sportmonks/importers.py::
-                                import_lineups), подтверждено вживую 2026-09-08, но раньше
-                                нигде не выводилась на странице, хотя уже сохранялась в БД.
-                                {% endcomment %}
+                                {# Формация (Sportmonks formations). #}
                                 {% if lineup.formation %}
                                 <span class="badge badge-ghost badge-xs font-mono">{{ lineup.formation }}</span>
                                 {% endif %}
@@ -180,7 +138,7 @@ match-detail.css): hero-баннер для шапки, timeline для собы
                             </span>
                         </div>
                         <div class="p-2.5 md:p-3">
-                            <!-- Стартовый состав -->
+                            {# Стартовый состав #}
                             <div class="mb-3">
                                 <div class="text-[10px] font-bold uppercase tracking-wider opacity-50 mb-1.5 flex items-center gap-1">
                                     <i class="ti ti-circle-filled text-[6px] flex-shrink-0"></i>
@@ -203,7 +161,7 @@ match-detail.css): hero-баннер для шапки, timeline для собы
                                     {% endfor %}
                                 </div>
                             </div>
-                            <!-- Запасные -->
+                            {# Запасные #}
                             <div>
                                 <div class="text-[10px] font-bold uppercase tracking-wider opacity-40 mb-1.5 flex items-center gap-1">
                                     <i class="ti ti-circle text-[6px] flex-shrink-0"></i>
@@ -228,7 +186,7 @@ match-detail.css): hero-баннер для шапки, timeline для собы
             </div>
             {% endif %}
 
-            <!-- === LIVE-ПУЛЬС === -->
+            {# === LIVE-ПУЛЬС === #}
             {% if match.status == 'live' %}
             <div class="md-side-card border-error/30" style="background-image: linear-gradient(to bottom right, color-mix(in oklab, var(--color-error) 6%, transparent), transparent);">
                 <div class="p-3 sm:p-4">
@@ -252,7 +210,7 @@ match-detail.css): hero-баннер для шапки, timeline для собы
             </div>
             {% endif %}
 
-            <!-- === СОБЫТИЯ МАТЧА === -->
+            {# === СОБЫТИЯ МАТЧА === #}
             <div class="md-side-card">
                 <div class="md-side-card__head flex items-center justify-between">
                     <h3 class="font-extrabold text-base md:text-lg flex items-center gap-2">
@@ -267,7 +225,7 @@ match-detail.css): hero-баннер для шапки, timeline для собы
                         <i class="ti ti-refresh"></i>
                     </button>
                 </div>
-                <!-- Контейнер событий (скролл только внутри) -->
+                {# Контейнер событий (скролл внутри) #}
                 <div class="p-3 sm:p-5 overflow-x-auto">
                     <div id="events-container" hx-get="{% url 'matches:events' match.id %}" hx-trigger="load" hx-swap="outerHTML">
                         <div class="flex justify-center py-8">
@@ -277,15 +235,10 @@ match-detail.css): hero-баннер для шапки, timeline для собы
                 </div>
             </div>
 
-            <!-- === ДНК МАТЧА (мобильная копия) ===
-                 Фаза 1 (docs/PRODUCT_SCOPE_MATCH_DNA_AND_EXPLAINABILITY.md,
-                 docs/adr/0028-match-dna-phase1.md). На мобильном стоит тут
-                 же, где стояла исторически — сразу после "События матча".
-                 На десктопе (lg:) скрыта — вместо неё видна вторая копия
-                 в правой колонке, см. ниже и docstring в partial. -->
+            {# === ДНК МАТЧА (мобильная копия) === #}
             {% include 'matches/_match_dna_card.html' with extra_class="lg:hidden" %}
 
-            <!-- === ТОП ИГРОКИ === -->
+            {# === ТОП ИГРОКИ === #}
             {% if top_players %}
             <div class="md-side-card">
                 <div class="md-side-card__head flex items-center gap-2">
@@ -294,14 +247,7 @@ match-detail.css): hero-баннер для шапки, timeline для собы
                 </div>
                 <div class="p-3 sm:p-4 space-y-2">
                     {% for agg in top_players %}
-                    {% comment %}
-                    Растянутая ссылка вместо единого <a> вокруг карточки —
-                    см. подробный комментарий в templates/players/detail.html
-                    у блока "Лучшие матчи": и {% confidence_badge %}, и
-                    _tooltip_icon.html сами содержат интерактивные элементы
-                    (<a>/<button>), вложенность которых в <a> невалидна и
-                    рвёт flex-вёрстку в браузере на несколько кусков.
-                    {% endcomment %}
+                    {# Растянутая ссылка — внутри уже есть <a>/<button>. #}
                     <div class="relative flex items-center gap-2 md:gap-4 p-2 md:p-3 rounded-xl hover:bg-base-200 transition-all">
                         <a href="{% url 'players:detail' agg.player.id %}" class="absolute inset-0 rounded-xl"
                            aria-label="{{ agg.player }}"></a>
@@ -318,7 +264,7 @@ match-detail.css): hero-баннер для шапки, timeline для собы
                             </div>
                             <div class="text-[10px] md:text-xs opacity-60 hidden sm:block pointer-events-none">{{ agg.total_votes }} оценок</div>
                             {% if agg.stat_rating %}
-                            {% comment %}2026-09-24: оценка по статистике матча (matches/stat_ratings.py) — независимый ориентир рядом с оценкой трибун.{% endcomment %}
+                            {# Оценка по статистике матча рядом с оценкой болельщиков. #}
                             <div class="text-[10px] md:text-xs opacity-70 pointer-events-none whitespace-nowrap">
                                 <i class="ti ti-chart-bar"></i> по статистике <b>{{ agg.stat_rating|floatformat:1 }}</b>
                             </div>
@@ -332,10 +278,10 @@ match-detail.css): hero-баннер для шапки, timeline для собы
             {% endif %}
         </div>
 
-        <!-- === ПРАВАЯ КОЛОНКА (1/3) === -->
+        {# === ПРАВАЯ КОЛОНКА (1/3) === #}
         <div class="space-y-3 sm:space-y-4 lg:space-y-6 min-w-0">
             {% render_banner "match_detail" %}
-            <!-- === СТАТИСТИКА ОЦЕНОК === -->
+            {# === СТАТИСТИКА ОЦЕНОК === #}
             <div class="md-side-card">
                 <div class="md-side-card__head flex items-center gap-2">
                     <i class="ti ti-users"></i>
@@ -357,7 +303,7 @@ match-detail.css): hero-баннер для шапки, timeline для собы
                 </div>
             </div>
 
-            <!-- === МНЕНИЕ БОЛЕЛЬЩИКОВ === -->
+            {# === МНЕНИЕ БОЛЕЛЬЩИКОВ === #}
             {% if fan_support %}
             <div class="md-side-card">
                 <div class="md-side-card__head flex items-center gap-2">
@@ -369,16 +315,7 @@ match-detail.css): hero-баннер для шапки, timeline для собы
                     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-2">
                         <span class="text-xs md:text-sm truncate font-medium">{{ support.supported_team__name }}</span>
                         <div class="flex items-center gap-2 w-full sm:w-auto">
-                            {% comment %}
-                            БАГ, КОТОРЫЙ ТУТ БЫЛ — ширина рисовалась от
-                            АБСОЛЮТНОГО числа голосов (support.count),
-                            подставленного напрямую как %. support.pct
-                            (matches/views.py) — реальная доля голосов за
-                            эту команду от суммы голосов за обе показанные
-                            команды, тот же расчёт, что уже используется в
-                            тексте "настроения фанатов" (matches/
-                            services.py::_describe_fan_mood).
-                            {% endcomment %}
+                            {# Ширина — доля голосов (support.pct). #}
                             <div class="w-full sm:w-24 h-2 bg-base-200 rounded-full overflow-hidden">
                                 <div class="h-full bg-primary rounded-full"
                                      style="width: {{ support.pct }}%"></div>
@@ -391,14 +328,10 @@ match-detail.css): hero-баннер для шапки, timeline для собы
             </div>
             {% endif %}
 
-            <!-- === ДНК МАТЧА (десктопная копия) ===
-                 На десктопе (lg:) стоит здесь, между "За кого болели" и
-                 "Оценки команд" — так просил пользователь. На мобильном
-                 скрыта (её показывает первая копия в левой колонке, см.
-                 её комментарий выше и docstring в partial). -->
+            {# === ДНК МАТЧА (десктопная копия) === #}
             {% include 'matches/_match_dna_card.html' with extra_class="hidden lg:block" %}
 
-            <!-- === ОЦЕНКИ КОМАНД === -->
+            {# === ОЦЕНКИ КОМАНД === #}
             {% if home_team_evals.total or away_team_evals.total %}
             <div class="md-side-card">
                 <div class="md-side-card__head flex items-center gap-2">
@@ -456,7 +389,7 @@ match-detail.css): hero-баннер для шапки, timeline для собы
             </div>
             {% endif %}
 
-            <!-- === ОЦЕНКИ ТРЕНЕРОВ === -->
+            {# === ОЦЕНКИ ТРЕНЕРОВ === #}
             {% if coach_aggregates %}
             <div class="md-side-card">
                 <div class="md-side-card__head flex items-center gap-2">

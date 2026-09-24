@@ -2,13 +2,7 @@
 {% load static %}
 {% load tooltip_tags %}
 {% block content %}
-{% comment %}
-templates/users/public_profile.html
-Публичная (только чтение) версия профиля — см. users/views.py::PublicProfileView.
-Сознательно НЕ показывает email и не даёт ссылок на смену пароля/настроек —
-это видит только владелец через users:profile. Секретные бейджи чужому
-посетителю не показываются (профиль_view уже отфильтровал их).
-{% endcomment %}
+{# Публичный профиль (только чтение). Без email и ссылок на настройки; секретные бейджи отфильтрованы во вьюхе. #}
 <div class="mb-6">
     <a href="{% url 'users:leaderboard' %}" class="back-link" data-back-link>
         <span class="back-link__icon"><i class="ti ti-arrow-left"></i></span>
@@ -17,7 +11,7 @@ templates/users/public_profile.html
 </div>
 
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-    <!-- === ЛЕВАЯ КОЛОНКА: Инфо === -->
+    {# === ЛЕВАЯ КОЛОНКА: Инфо === #}
     <div class="space-y-6">
         <div class="card bg-base-100 border border-base-300">
             <div class="card-body p-6 text-center">
@@ -68,21 +62,7 @@ templates/users/public_profile.html
             </div>
         </div>
 
-        {% comment %}
-        См. подробный комментарий в templates/profile/dashboard.html —
-        тот же баг ("Оценок"/"Матчей" показывали одно и то же число).
-
-        БАГ, КОТОРЫЙ ТУТ БЫЛ, ИТОГОВАЯ ВЕРСИЯ (2026-09-22): промежуточный
-        фикс (whitespace-normal + flex-wrap ПРЯМО в потоке текста
-        заголовка) на странице игрока показал себя плохо — при переносе
-        заголовка иконка всё равно норовила "оторваться" на отдельную
-        строку. Правильное решение — вынести иконку ИЗ текстового потока
-        вообще: она абсолютно спозиционирована в фиксированном углу
-        карточки (.stat теперь relative, иконка — absolute top-2 right-2),
-        заголовок при этом свободно переносится на любое число строк, не
-        влияя на позицию иконки вообще. См. подробный докстринг в
-        templates/players/detail.html рядом с тем же фиксом.
-        {% endcomment %}
+        {# Плитки статистики; иконка в углу карточки (absolute). #}
         <div class="grid grid-cols-2 gap-4">
             <div class="stat relative bg-base-100 border border-base-300 p-4">
                 <div class="absolute top-2 right-2 z-10">{% include 'components/_tooltip_icon.html' with text="Сколько отдельных оценок поставлено — игрокам, командам, тренерам и судьям суммарно за все матчи" %}</div>
@@ -115,15 +95,7 @@ templates/users/public_profile.html
                 </h3>
                 <div class="flex flex-wrap gap-2">
                     {% for badge in badges %}
-                    {% comment %}
-                    2026-09-23, фикс аудита: у 5 "статусных" бейджей
-                    (foresight/max_trust/stable_hand/accurate_analyst/
-                    bias_free) показатель мог упасть ниже порога после
-                    выдачи — badge.is_stale (см. UserBadge.is_stale,
-                    users/models.py). Сам бейдж не скрываем (это реальное
-                    историческое достижение), но визуально приглушаем и
-                    объясняем в тултипе, что он сейчас не актуален.
-                    {% endcomment %}
+                    {# Статусный бейдж может быть «выцветшим» (is_stale) — пояснение в тултипе. #}
                     {% tooltip_wrap badge.tooltip_text %}
                     <div class="w-12 h-12 rounded-lg flex items-center justify-center border-2 relative
                         {% if badge.is_stale %}opacity-40 grayscale{% endif %}
@@ -149,7 +121,7 @@ templates/users/public_profile.html
         </div>
     </div>
 
-    <!-- === ПРАВАЯ КОЛОНКА: Активность === -->
+    {# === ПРАВАЯ КОЛОНКА: Активность === #}
     <div class="lg:col-span-2 space-y-6">
         <div class="card bg-base-100 border border-base-300">
             <div class="card-body p-4">

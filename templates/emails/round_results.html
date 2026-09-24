@@ -1,11 +1,4 @@
-<!-- templates/emails/round_results.html — ПОЛНЫЙ РЕДИЗАЙН 2026-09-02, см.
-     докстринг templates/emails/welcome.html про общий каркас в partials/.
-
-     Итоги «DOPX Лучшие тура» — письмо отправляется ОДИН раз, в момент
-     автоматической финализации тура (round_squad/services.py::
-     recompute_round). Контекст: round_xi (round_squad.models.RoundBestXI,
-     select_related season/most_dramatic_match/teams) — см.
-     round_squad/tasks.py::_send_round_results_email_chunk. -->
+{# Итоги «DOPX Лучшие тура», отправляется при финализации тура. Контекст: round_xi. #}
 <!DOCTYPE html>
 <html lang="ru">
 {% include "emails/partials/_head.html" %}

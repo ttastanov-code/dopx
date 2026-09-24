@@ -1,33 +1,11 @@
 # parsers/management/commands/sync_sportmonks_season.py
-"""
-Бэкафилл истории КПЛ из Sportmonks (фаза 3, docs/sportmonks-migration-plan.md).
+"""Бэкафилл истории КПЛ из Sportmonks. Сезоны читаются из /leagues/393?include=seasons.
 
-База пустая (manage.py flush перед началом работ) — пользователь решил
-затянуть все 3 доступных на Starter-плане без доп. оплаты сезона: 2024,
-2025, 2026 (id сезонов читаются динамически из /leagues/393?include=seasons,
-НЕ хардкодятся — состав сезонов на стороне Sportmonks может отличаться от
-предположений).
-
-Использование:
-    python manage.py sync_sportmonks_season                      # все сезоны
-    python manage.py sync_sportmonks_season --year 2026          # один сезон
+    python manage.py sync_sportmonks_season                        # все сезоны
+    python manage.py sync_sportmonks_season --year 2026            # один сезон
     python manage.py sync_sportmonks_season --year 2026 --limit 5  # тест на 5 матчах
 
-РЕКОМЕНДАЦИЯ (см. план, фаза 3 — "тестировать на 5-6 уже сыгранных матчах
-текущего сезона плюс 1-2 матчах сезона 2024/2025, сверяя руками с тем, что
-показывает сайт Sportmonks и текущая версия страницы матча на DOPX"):
-    python manage.py sync_sportmonks_season --year 2026 --limit 6
-и только после ручной проверки результата на странице матча — полный прогон
-без --limit по всем трём сезонам.
-
-ВАЖНО про расход лимита (см. client.py и план, фаза 3/4): один вызов
-get_fixture(..., include=HEAVY_FIXTURE_INCLUDE) на КАЖДЫЙ матч сезона — это
-осознанно, бэкафилл истории делается ОДИН РАЗ и не подчиняется правилу
-двухуровневого live-опроса (то правило — только для фазы 4, регулярного
-поллинга). Сезон КПЛ — around 200-240 матчей, 3 сезона — до ~700 тяжёлых
-запросов суммарно, далеко от лимита 2000/час на entity Fixture (см.
-SportmonksClient._log_rate_limit_if_low — если лимит всё же начнёт
-подходить к концу, в лог уйдёт warning).
+Один тяжёлый get_fixture на матч — для разового бэкафилла это нормально.
 """
 import logging
 from datetime import date, datetime, timedelta
@@ -40,19 +18,12 @@ from parsers.sportmonks.client import SportmonksAPIError, SportmonksClient
 
 logger = logging.getLogger(__name__)
 
-# НАЙДЕНО ВЖИВУЮ (2026-09-08, первый реальный прогон): /fixtures/between
-# отказывает с HTTP 422, если диапазон дат шире 100 дней ("You requested a
-# date range of 238 days. The maximum range is 100 days") — это не было
-# видно ни в документации, ни в предыдущих тестах (там диапазоны были
-# короче). Полный сезон КПЛ (март-октябрь) — почти 240 дней, то есть
-# ВСЕГДА шире лимита. Дробим на куски по 90 дней (с запасом от границы в
-# 100) и склеиваем результат, а не гадаем маленький лимит впритык.
+# /fixtures/between принимает диапазон не больше 100 дней — режем по 90.
 MAX_DATE_RANGE_DAYS = 90
 
 
 def _chunk_date_range(date_from: str, date_to: str, max_days: int = MAX_DATE_RANGE_DAYS):
-    """Дробит [date_from, date_to] ("YYYY-MM-DD") на последовательные куски
-    не длиннее max_days дней каждый, включительно с обеих сторон."""
+    """Делит [date_from, date_to] на куски не длиннее max_days дней."""
     start = datetime.strptime(date_from, "%Y-%m-%d").date()
     end = datetime.strptime(date_to, "%Y-%m-%d").date()
     cursor = start
@@ -63,15 +34,7 @@ def _chunk_date_range(date_from: str, date_to: str, max_days: int = MAX_DATE_RAN
 
 
 def _resolve_current_season_id(all_seasons_data: list):
-    """НАЙДЕННЫЙ БАГ (2026-09-08, пользователь: "страницы сборная сезона и
-    тура выдают ошибку потому что пустые"): этот командный файл раньше
-    вызывал get_or_create_season БЕЗ is_current вообще — ни один сезон не
-    получал is_active=True, Season.get_primary_active() всегда возвращал
-    None, страницы season_squad/round_squad (которые резолвят сезон по
-    умолчанию именно через неё) не находили сезон. Здесь определяем
-    "текущий" сезон по датам (сегодня внутри [starting_at, ending_at]),
-    независимо от --year фильтра пользователя (даже если гоняем только
-    --year 2024, 2026 должен остаться активным, а 2024 — нет)."""
+    """Текущий сезон — тот, в чьи даты попадает сегодня (is_active), независимо от --year."""
     today = date.today()
     fallback: tuple | None = None
     for s in all_seasons_data:

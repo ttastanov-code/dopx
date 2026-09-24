@@ -36,23 +36,17 @@ urlpatterns = [
     path('leaderboard/', UserLeaderboardView.as_view(), name='leaderboard'),
     path('players/leaderboard/', PlayerLeaderboardView.as_view(), name='player_leaderboard'),
 
-    # Follow-граф — один эндпоинт на оба типа цели, см. docstring toggle_follow.
+    # Подписки
     path('follow/<str:target_type>/<uuid:target_id>/', toggle_follow, name='toggle_follow'),
 
-    # Web Push — см. static/js/push.js.
+    # Web Push
     path('push/subscribe/', push_subscribe, name='push_subscribe'),
     path('push/unsubscribe/', push_unsubscribe, name='push_unsubscribe'),
     path('push/devices/<uuid:subscription_id>/revoke/', push_revoke_device, name='push_revoke_device'),
 
-    # Публичный профиль по username (только чтение), см. докстринг
-    # PublicProfileView. Префикс 'u/', а не 'profile/<username>/' — иначе
-    # пересечётся с 'profile/edit/', 'profile/password/' и т.д.
+    # Публичный профиль: префикс u/, чтобы не пересекаться с profile/edit/ и т.п.
     path('u/<str:username>/', PublicProfileView.as_view(), name='public_profile'),
 
-    # Премиальная шеринг-карточка достижения (PNG), см. докстринг
-    # BadgeShareCardView. Отдельный сегмент 'badges/<code>/card.png' ПОСЛЕ
-    # 'u/<username>/' — конфликта нет: <str:username> не матчит '/', так что
-    # 'u/vasya/' и 'u/vasya/badges/founder/card.png' резолвятся однозначно
-    # независимо от порядка объявления, порядок тут только для читаемости.
+    # PNG-карточка достижения.
     path('u/<str:username>/badges/<str:code>/card.png', BadgeShareCardView.as_view(), name='badge_share_card'),
 ]

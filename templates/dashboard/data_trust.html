@@ -1,16 +1,7 @@
 {% extends 'base.html' %}
 {% comment %}
-templates/dashboard/data_trust.html — Центр доверия к данным (2026-09-09,
-MVP из рекомендации Codex-ревью, расширен по прямой просьбе пользователя
-"сделай страницу более функциональной"). НЕ дублирует data_health.html (та
-отвечает "синк работает технически?"): здесь — "можно ли доверять уже
-импортированным данным конкретного матча" — см. dashboard/services.py::
-data_trust_summary докстринг.
-
-2026-09-09: карточка "Стадионы, требующие проверки" убрана вместе со всей
-моделью Stadium (решение пользователя) — проблема оказалась принципиальной
-(клубы КПЛ играют "домашние" матчи на разных стадионах в разных городах в
-течение сезона), а не набором отдельных ошибок сопоставления.
+Центр доверия к данным: жалобы пользователей на данные матчей,
+расхождения импорта, история исправлений.
 {% endcomment %}
 
 {% block content %}
@@ -37,7 +28,7 @@ data_trust_summary докстринг.
     </div>
 </div>
 
-<!-- Жалобы пользователей на данные матчей -->
+{# Жалобы на данные матчей #}
 <div class="card bg-base-100 border border-base-300 mb-6">
     <div class="card-body p-4">
         <div class="flex flex-wrap items-center justify-between gap-2 mb-1">
@@ -100,17 +91,12 @@ data_trust_summary докстринг.
     </div>
 </div>
 
-<!-- Расхождения импорта -->
+{# Расхождения импорта #}
 <div class="card bg-base-100 border border-base-300 mb-6">
     <div class="card-body p-4">
         <div class="dopx-section-eyebrow" style="color: var(--color-warning)"><i class="ti ti-git-compare"></i>Расхождения</div>
         <div class="dopx-section-title mb-1">Расхождения импорта</div>
-        {% comment %}
-        Честно про заморозку очереди (см. dashboard/services.py докстринг):
-        писал их только удалённый KFF-импортёр, Sportmonks-пайплайн новых
-        строк сюда не пишет. Полезна как историческая очередь на разбор, не
-        как живой сигнал текущего состояния синка.
-        {% endcomment %}
+        {# Новых записей нет — очередь историческая. #}
         <p class="text-xs opacity-50 mb-3">
             Правки счёта/статуса задним числом поверх уже завершённого матча. <strong>Историческая очередь</strong> —
             писал только старый KFF-парсер (удалён 2026-09-09), новых строк Sportmonks-пайплайн сюда не добавляет.
@@ -155,7 +141,7 @@ data_trust_summary докстринг.
     </div>
 </div>
 
-<!-- История исправлений -->
+{# История исправлений #}
 <div class="card bg-base-100 border border-base-300">
     <div class="card-body p-4">
         <div class="dopx-section-eyebrow"><i class="ti ti-history"></i>Журнал</div>
@@ -177,18 +163,7 @@ data_trust_summary докстринг.
                     <tr>
                         <td class="text-xs opacity-70 whitespace-nowrap">{{ entry.created_at|date:"d.m.Y H:i" }}</td>
                         <td class="text-xs">{{ entry.actor_username|default:"—" }}</td>
-                        {% comment %}
-                        2026-09-11 (жалоба пользователя, скриншот: строки
-                        таблицы наезжали друг на друга) — daisyUI .badge
-                        держит фиксированную высоту в одну строку; в узкой
-                        ячейке длинный get_action_display ("Ручной ресинк
-                        матча") переносился на 2 строки и вылезал в
-                        соседнюю строку таблицы. Таблица и так скроллится
-                        по горизонтали (overflow-x-auto на обёртке) —
-                        правильное мобильное поведение здесь не "перенести
-                        текст", а "не переносить, скроллить" — как уже
-                        сделано для колонки "Когда".
-                        {% endcomment %}
+                        {# Действие без переноса — таблица скроллится по горизонтали. #}
                         <td><span class="badge badge-sm badge-ghost whitespace-nowrap">{{ entry.get_action_display }}</span></td>
                         <td class="text-xs truncate max-w-[240px]">{{ entry.target|default:"—" }}</td>
                     </tr>

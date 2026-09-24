@@ -1,9 +1,4 @@
-<!-- templates/emails/ticket_status_change.html — ПОЛНЫЙ РЕДИЗАЙН 2026-09-02,
-     см. докстринг templates/emails/welcome.html про общий каркас в
-     partials/. Контекст: ticket, new_status, old_status (см.
-     notifications/admin.py::_send_status_change_email). Без `user` в
-     контексте (получатель — contact_email обращения, не обязательно
-     зарегистрированный пользователь) — футер и приветствие это учитывают. -->
+{# Смена статуса обращения. Контекст: ticket, new_status, old_status (без user). #}
 <!DOCTYPE html>
 <html lang="ru">
 {% include "emails/partials/_head.html" %}

@@ -1,14 +1,7 @@
 # parsers/management/commands/tests_apply_cyrillic_names.py
+"""Тесты apply_cyrillic_names: запись из словаря применяется, даже если текущее имя
+уже чистая кириллица.
 """
-ИСПРАВЛЕНО (2026-09-10, реальный баг — "Григоры Московченко" вместо
-"Григорий", хотя REFEREE_TRANSLATIONS[27929] уже содержал верное значение
-задолго до жалобы): `_apply()` в apply_cyrillic_names.py проверяла "текущее
-значение уже чистая кириллица?" ПЕРВОЙ, до того как вообще посмотреть в
-словарь — "Григоры" полностью кириллическая строка (не смесь алфавитов),
-поэтому проверка считала её "уже готовой" и словарь для этой записи НИКОГДА
-не проверялся, никаким набором флагов. Тесты ниже — регрессия именно на
-эту последовательность, не на работу словаря/транслитератора саму по себе
-(это уже покрыто вручную выверенными данными в name_translations.py)."""
 from __future__ import annotations
 
 from unittest.mock import patch
@@ -25,9 +18,7 @@ class ApplyCyrillicNamesDictPriorityTests(TestCase):
 
     @patch("parsers.management.commands.apply_cyrillic_names.REFEREE_TRANSLATIONS", {12345: ("Григорий", "Московченко", "high")})
     def test_dict_entry_overrides_existing_clean_but_wrong_cyrillic(self):
-        """ГЛАВНЫЙ РЕГРЕССИОННЫЙ ТЕСТ: текущее значение — ПОЛНОСТЬЮ
-        кириллическое (не смесь алфавитов), но неверное. Раньше это делало
-        запись невидимой для словаря навсегда."""
+        """Кириллическое, но неверное имя исправляется по словарю."""
         ref = Referee.objects.create(sportmonks_id="12345", first_name="Григоры", last_name="Московченко")
         self._run("--apply")
         ref.refresh_from_db()
@@ -43,9 +34,7 @@ class ApplyCyrillicNamesDictPriorityTests(TestCase):
 
     @patch("parsers.management.commands.apply_cyrillic_names.REFEREE_TRANSLATIONS", {})
     def test_record_not_in_dictionary_with_clean_cyrillic_is_left_alone(self):
-        """Защита ручной правки staff / уже верного значения — НЕ в словаре
-        и уже кириллица -> не трогаем (контрольная проверка, что фикс не
-        снёс эту защиту вообще)."""
+        """Не в словаре и уже кириллица — не трогаем."""
         ref = Referee.objects.create(sportmonks_id="99999", first_name="Иван", last_name="Петров")
         self._run("--apply")
         ref.refresh_from_db()

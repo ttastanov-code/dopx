@@ -1,18 +1,10 @@
 # round_squad/services.py
-"""
-Алгоритм «Тура недели»: лучший состав 4-3-3 + тренер + «игрок тура» +
-самый драматичный матч ОДНОГО тура (см. докстринг round_squad/models.py
-про отличие от season_squad — сглаживание идёт по ГОЛОСАМ, а не по числу
-матчей, потому что в туре у игрока почти всегда ровно один матч).
+"""«Тур недели»: лучший состав 4-3-3, тренер, игрок тура и самый драматичный матч.
 
+Сглаживание по голосам:
     round_score = (v / (v + C)) * raw_avg + (C / (v + C)) * pool_avg
-
-где v — число голосов за кандидата В ЭТОМ ТУРЕ, raw_avg — средняя оценка
-по этим голосам, pool_avg — средняя по всем кандидатам ТОГО ЖЕ пула
-(взвешенная по голосам каждого), C — «виртуальные голоса»: чем их больше,
-тем сильнее к pool_avg притягиваются кандидаты с малым числом голосов.
-Ровно тот же принцип, что у season_squad._bayes_score, просто с другой
-единицей измерения «объёма данных».
+v — голоса за кандидата в туре, pool_avg — среднее по пулу позиции,
+C — «виртуальные голоса».
 """
 from __future__ import annotations
 
@@ -42,43 +34,20 @@ from round_squad.models import RoundBestXI, RoundBestXISlot, RoundPositionRankin
 
 logger = logging.getLogger(__name__)
 
-# «Виртуальные голоса» в байесовском сглаживании тура — см. докстринг
-# модуля. Меньше, чем season_squad.SHRINKAGE_C=6.0 «виртуальных матчей»,
-# осознанно: единица измерения тут другая (голоса, а не матчи), а типичный
-# рядовой матч тура собирает 5-15 голосов за игрока — C=6 голосов даёт
-# сопоставимую по силе поправку, не «усредняя всех в кашу» на достаточно
-# оценённых матчах.
+# «Виртуальные голоса» сглаживания.
 ROUND_VOTE_SHRINKAGE_C = 6.0
 
-# Минимум голосов за кандидата в этом туре, чтобы он вообще участвовал в
-# подборе — отдельно от сглаживания: 1-2 голоса (в т.ч. один троллинг-голос)
-# не должны решать, кто «игрок тура».
+# Минимум голосов за кандидата в туре.
 ROUND_MIN_VOTES_FOR_CANDIDATE = 3
 
-# Порог «данных достаточно» для кольца доверия на карточке — ниже, чем
-# season_squad.CONFIDENT_VOTES_THRESHOLD=15, потому что весь объём данных
-# тура физически меньше объёма данных сезона (один матч, а не десять+).
+# Порог «данных достаточно» для индикатора доверия на карточке.
 ROUND_CONFIDENT_VOTES_THRESHOLD = 10
 
-# Порог «тур практически сыгран» для дефолтного выбора тура на странице
-# без явного номера в URL (round_squad/views.py::_resolve_latest_tour).
-# Не 100% — календарь КПЛ регулярно переносит 1-2 матча тура на другую
-# дату, и требование "ВСЕ матчи тура завершены" держит дефолтную страницу
-# на давно устаревшем туре, пока не доиграется последний хвост (баг,
-# пойманный на прогоне 2026-08-22: реальный календарь на 22 туре, "все
-# матчи завершены" держало страницу на туре 5 из-за одного зависшего
-# переноса в туре 6). 0.75 — терпимо к одному перенесённому матчу из
-# типичных 8 в туре КПЛ, но не пропускает туры, где сыграна лишь
-# случайная горстка (как у тура с одним заранее сыгранным перенесённым
-# матчем).
+# Тур считается практически сыгранным при такой доле завершённых матчей
+# (терпимо к 1-2 перенесённым матчам).
 ROUND_CURRENT_TOUR_MIN_COMPLETION_RATIO = 0.75
 
-# "Почему он в сборной?" (docs/PRODUCT_SCOPE_MATCH_DNA_AND_EXPLAINABILITY.md,
-# раздел 1) — тот же список, что и season_squad/services.py и
-# evaluations/views.py::_compute_key_player_ids (docs/adr/0006). Дублируется
-# небольшой константой намеренно, а не импортируется из season_squad —
-# round_squad и season_squad не должны зависеть друг от друга ради одного
-# списка строк.
+# Заметные события для объяснения «почему он в сборной».
 NOTABLE_EVENT_TYPES = ("goal", "yellow_card", "red_card", "own_goal", "disallowed_goal")
 NOTABLE_EVENT_LABELS = {
     "goal": "гол",
@@ -88,36 +57,13 @@ NOTABLE_EVENT_LABELS = {
     "disallowed_goal": "отменённый гол",
 }
 
-# Сколько кандидатов пула сохранять в снимок RoundPositionRanking — тот же
-# смысл и то же число, что season_squad.RANKING_POOL_DEPTH (не импортируем
-# оттуда — см. докстринг про независимость round_squad/season_squad).
+# Сколько кандидатов пула сохранять в снимок рейтинга позиции.
 RANKING_POOL_DEPTH = 10
 
 
 def resolve_current_tour(season) -> int | None:
-    """
-    Единая точка входа "какой тур сейчас показывать по умолчанию" — и для
-    кнопки в шапке (core/context_processors.py::current_round_squad), и
-    для страницы /round/ без явного номера тура в URL
-    (round_squad/views.py::_resolve_latest_tour), и для embed-виджета
-    (round_squad/views.py::round_widget).
-
-    БАГ, КОТОРЫЙ ТУТ БЫЛ (обнаружено 2026-08-31 на реальном календаре: тур
-    22 зафиксирован, тур 23 целиком перенесён на октябрь-ноябрь без единого
-    сыгранного матча, тур 24 сыгран на 7 из 8 матчей): эти два места
-    раньше решали вопрос порознь и расходились в приоритете.
-    core/context_processors.py сначала смотрел на RoundBestXI.is_final и
-    откатывался на resolve_practically_closed_tour() только если в сезоне
-    ВООБЩЕ нет ни одного зафиксированного тура. round_squad/views.py звал
-    resolve_practically_closed_tour() напрямую, вообще не глядя на
-    is_final. В описанной ситуации кнопка в шапке честно показывала «22-й
-    тур» (пока 24-й не зафиксируется — после закрытия окна голосования по
-    его последнему матчу), а страница /round/ без номера в URL уже тихо
-    показывала ПРЕДВАРИТЕЛЬНЫЙ, ещё не зафиксированный состав 24-го — два
-    разных ответа на один и тот же вопрос "какой тур сейчас". Общая
-    функция ниже убирает расхождение: оба места используют один и тот же
-    приоритет (сначала официально зафиксированный тур, и только при его
-    полном отсутствии — эвристика "практически сыгран").
+    """Какой тур показывать по умолчанию (шапка, /round/, виджет): последний
+    зафиксированный, а если таких нет — практически сыгранный.
     """
     tour = (
         RoundBestXI.objects
@@ -132,26 +78,7 @@ def resolve_current_tour(season) -> int | None:
 
 
 def resolve_practically_closed_tour(season) -> int | None:
-    """
-    Номер тура, который на практике уже сыгран (см. докстринг константы
-    ROUND_CURRENT_TOUR_MIN_COMPLETION_RATIO выше и историю багов в
-    round_squad/views.py::_resolve_latest_tour, откуда эта функция
-    вынесена сюда как публичный селектор, 2026-08-26).
-
-    Используется в двух местах с разными требованиями к строгости:
-    1) round_squad/views.py — дефолтный тур для страницы без явного
-       номера в URL;
-    2) core/context_processors.py::current_round_squad — запасной вариант
-       для кнопки в шапке, когда ЕЩЁ НИ ОДИН тур не зафиксирован через
-       RoundBestXI.is_final (тот флаг взводит периодическая Celery-задача
-       раз в 15 минут — до её первого прогона после того, как тур
-       практически завершился, кнопка иначе застряла бы на дефолтном
-       "Тур недели", хотя реальный номер уже известен по данным Match).
-
-    Сканирует туры от большего к меньшему и возвращает первый, где доля
-    завершённых матчей проходит порог — см. полное обоснование алгоритма
-    в _resolve_latest_tour.
-    """
+    """Последний тур с долей завершённых матчей не ниже ROUND_CURRENT_TOUR_MIN_COMPLETION_RATIO."""
     tour_rows = (
         Match.objects.filter(season=season, tour__isnull=False)
         .values('tour')
@@ -167,8 +94,7 @@ def resolve_practically_closed_tour(season) -> int | None:
 
 @dataclass
 class RoundCandidate:
-    """Кандидат тура, приведённый к общему виду (см. _rank_round_pool).
-    object_id — строка (UUID BaseModel)."""
+    """Кандидат тура."""
     content_type_id: int
     object_id: str
     name: str
@@ -188,8 +114,7 @@ def _round_bayes_score(raw_avg: float, votes: int, pool_avg: float, c: float = R
 
 
 def _rank_round_pool(candidates: list[RoundCandidate]) -> list[tuple[RoundCandidate, float]]:
-    """Тот же принцип, что season_squad._rank_pool, но pool_avg и вес
-    сглаживания считаются по голосам, а не по числу матчей."""
+    """Ранжирование пула со сглаживанием по голосам."""
     eligible = [c for c in candidates if c.votes >= ROUND_MIN_VOTES_FOR_CANDIDATE]
     if not eligible:
         return []
@@ -204,26 +129,15 @@ def _rank_round_pool(candidates: list[RoundCandidate]) -> list[tuple[RoundCandid
 
 
 def _round_is_complete(season, tour: int) -> bool:
-    """Тур считается закрытым, когда у ВСЕХ его матчей voting_open_until
-    в прошлом — новых голосов по сыгранным матчам тура физически больше не
-    будет, донакручивать состав нечем. voting_open_until — обязательное
-    поле Match (см. matches/models.py), поэтому проверка не зависит от
-    статуса конкретного матча (finished/postponed/cancelled — не важно,
-    важно только что окно голосования закрыто)."""
+    """Тур закрыт, когда у всех его матчей закрыто голосование."""
     now = timezone.now()
     matches = Match.objects.filter(season=season, tour=tour)
     return matches.exists() and not matches.filter(voting_open_until__gte=now).exists()
 
 
 def _build_round_player_data(season, tour: int):
-    """Возвращает (player_stats, pool_by_code):
-      · player_stats — dict[player_id] -> RoundCandidate, ПЛОСКИЙ список
-        независимо от позиции — источник для «игрока тура» (ранжируется
-        целиком, а не внутри пула одной позиции).
-      · pool_by_code — тот же набор кандидатов, сгруппированный по коду
-        позиции (только те, у кого позиция вообще резолвится из состава) —
-        источник для greedy-заполнения 11 слотов формации, тот же принцип,
-        что season_squad._build_player_pool_by_code.
+    """Возвращает (player_stats, pool_by_code): плоский список для «игрока тура»
+    и кандидатов по кодам позиций для заполнения слотов.
     """
     stats_rows = (
         PlayerMatchAggregate.objects
@@ -231,16 +145,7 @@ def _build_round_player_data(season, tour: int):
         .values("player_id")
         .annotate(raw_avg=Avg("performance_score"), votes=Sum("total_votes"))
     )
-    # ИСПРАВЛЕНО (2026-09-21, жалоба пользователя: "игрок стоит на позиции,
-    # на которой вообще не играет") — тот же фикс, что и в season_squad/
-    # services.py::_player_season_position: строка невышедшего запасного
-    # (is_starting=False И ни разу не вышел на замену, minute_in IS NULL)
-    # не говорит НИЧЕГО о том, где игрок реально играл — это его
-    # номинальное амплуа в заявке, а не факт игры. Без этого фильтра такой
-    # игрок мог зарегистрироваться в pool_by_code под голым (без стороны)
-    # кодом и — в сочетании со старым фолбэком на голые коды у RW/LW/RB/LB
-    # (см. players/positions.py::SLOT_PROCESSING_ORDER, исправлено тем же
-    # днём) — оказаться "лучшим на фланге тура", ни разу не выйдя на поле.
+    # Позицию берём только из строк, где игрок реально выходил на поле.
     lineup_rows = (
         MatchLineupPlayer.objects
         .filter(lineup__match__season=season, lineup__match__tour=tour)
@@ -248,9 +153,7 @@ def _build_round_player_data(season, tour: int):
         .filter(Q(is_starting=True) | Q(minute_in__isnull=False))
         .values_list("player_id", "position", "field_position", "lineup__team__name")
     )
-    # codes теперь список (см. resolve_lineup_codes) — обычно один элемент,
-    # но храним как список, чтобы pool_by_code мог зарегистрировать
-    # кандидата под всеми применимыми кодами без дублирования логики.
+    # codes — список кодов позиции.
     position_and_team: dict[str, tuple[list[str], str]] = {}
     for player_id, position, field_position, team_name in lineup_rows:
         pid = str(player_id)
@@ -281,10 +184,7 @@ def _build_round_player_data(season, tour: int):
             position_code=codes[0] if codes else '',
         )
         player_stats[pid] = candidate
-        # codes — список из resolve_lineup_codes(): обычно один элемент
-        # ("D:L" для новых записей с известным field_position, либо голый
-        # "D" для старых) — регистрируем под всеми, на случай если в
-        # будущем resolve_lineup_codes станет возвращать несколько.
+        # Регистрируем кандидата под всеми кодами.
         for code in codes:
             pool_by_code[code].append(candidate)
 
@@ -335,13 +235,9 @@ def _build_round_coach_pool(season, tour: int) -> list[RoundCandidate]:
 
 
 def _find_most_dramatic_match(season, tour: int):
-    """:return: (Match | None, drama_score | None, votes | None). Индекс
-    драмы матча — MatchEvaluation.entertainment * MatchEvaluation.tension
-    (см. evaluations/models.py::MatchEvaluation.drama_index), усреднённый
-    по всем оценившим матч; F(...)*F(...) считается прямо в БД, а не по
-    объекту, чтобы не тянуть все строки MatchEvaluation в память. Требуем
-    ROUND_MIN_VOTES_FOR_CANDIDATE оценок матча — тот же принцип "не решать
-    по 1-2 голосам", что и у игроков/тренера тура."""
+    """Самый драматичный матч тура: (match, drama_score, votes) по среднему
+    entertainment * tension, с минимумом голосов.
+    """
     best = (
         MatchEvaluation.objects
         .filter(match__season=season, match__tour=tour)
@@ -361,8 +257,7 @@ def _find_most_dramatic_match(season, tour: int):
 
 
 def _describe_nearest_competitor_round(score: float, runner_up: tuple[RoundCandidate, float] | None) -> str:
-    """Тот же смысл, что season_squad._describe_nearest_competitor — см. её
-    докстринг про причину гейта `gap <= 0`."""
+    """Ближайший конкурент в объяснении."""
     if runner_up is None:
         return ""
     competitor, competitor_score = runner_up
@@ -373,12 +268,9 @@ def _describe_nearest_competitor_round(score: float, runner_up: tuple[RoundCandi
 
 
 def _describe_round_rank_change(rank_change: str, rank_change_delta: int | None) -> str:
-    """"Изменение позиции" тур-к-туру (docs/adr/0032-squad-explainability-v2.md)
-    — см. докстринг RoundBestXISlot.RANK_CHANGE_CHOICES про то, почему
-    сравнение идёт с прошлым ЗАФИКСИРОВАННЫМ туром, а не с прошлым
-    прогоном recompute этого же тура."""
+    """Изменение позиции относительно прошлого зафиксированного тура."""
     if rank_change == RoundBestXISlot.RANK_CHANGE_NEW:
-        return ""  # "не играл в прошлом туре" — не показываем как отдельную фразу, это не всегда значимо (травма/ротация/только начал сезон)
+        return ""  # не играл в прошлом туре — не показываем
     if rank_change == RoundBestXISlot.RANK_CHANGE_UP and rank_change_delta:
         matches_word = "место" if rank_change_delta == 1 else "места"
         return f"Поднялся на {rank_change_delta} {matches_word} по сравнению с прошлым туром."
@@ -390,10 +282,7 @@ def _build_round_explanation(
     rank_change: str = RoundBestXISlot.RANK_CHANGE_NEW, rank_change_delta: int | None = None,
     runner_up: tuple[RoundCandidate, float] | None = None,
 ) -> str:
-    """2026-09-09 (та же жалоба, что чинили в season_squad::_build_explanation
-    — "куча тире, текст нечитабелен"): было одно предложение, собранное
-    через += с " — " и " " внутри — теперь список фактов, каждый на своей
-    строке (см. white-space: pre-line в components/_tooltip_icon.html)."""
+    """Объяснение для слота — список фактов, по одному на строку."""
     lines = [
         f"Рейтинг {score:.2f} на позиции «{label}» в этом туре: среднее по "
         f"{candidate.votes} голосам с поправкой на их число."
@@ -415,10 +304,7 @@ def _build_round_explanation(
 
 
 def _describe_notable_events_in_round(player_id: str, season, tour: int) -> str:
-    """Тот же принцип, что season_squad._describe_top_matches, но в туре
-    игрок физически участвует ровно в ОДНОМ матче — вместо "топ-N матчей"
-    просто перечисляем его заметные события (см. NOTABLE_EVENT_TYPES) в
-    этом единственном матче."""
+    """Заметные события игрока в его матче тура."""
     match_id = (
         PlayerMatchAggregate.objects
         .filter(player_id=player_id, match__season=season, match__tour=tour)
@@ -446,9 +332,7 @@ def _store_round_ranking_batch(
     slot_code: str,
     ranked: list[tuple[RoundCandidate, float]],
 ) -> None:
-    """Тот же принцип, что season_squad._store_ranking_batch, но без
-    computed_at — на (тур, слот) всегда ровно один актуальный снимок (см.
-    докстринг RoundPositionRanking про delete+bulk_create в recompute_round)."""
+    """Снимок рейтинга позиции (delete + bulk_create на каждый пересчёт)."""
     for rank, (candidate, score) in enumerate(ranked[:RANKING_POOL_DEPTH], start=1):
         buffer.append(RoundPositionRanking(
             round_best_xi=round_best_xi,
@@ -513,30 +397,11 @@ def _apply_round_slot(
 
 
 def recompute_round(season, tour: int, *, force: bool = False) -> RoundBestXI:
-    """Точка входа — вызывается из round_squad/tasks.py (Celery Beat) и из
-    админского действия «Пересчитать сейчас». Идемпотентна, как и
-    season_squad.recompute_best_xi: безопасно вызывать чаще, чем нужно.
+    """Пересчёт тура. Идемпотентна.
 
-    ДОБАВЛЕНО (2026-09-21, прямая просьба пользователя: "команду, которая
-    перерасчёт делает всех закрытых туров сборные"): по умолчанию (force=
-    False) поведение не изменилось — уже зафиксированный (is_final=True)
-    тур пропускается, донакручивать состав нечем, т.к. голосование
-    закрыто. `force=True` (используется ТОЛЬКО из recompute_all_closed_
-    rounds ниже) обходит этот ранний выход и пересчитывает состав заново
-    — например, после того как задним числом поправили данные матча
-    (событие, состав), из-за которых голоса были посчитаны неверно, и тур
-    к моменту первой фиксации закрылся с ошибочными данными.
-
-    КРИТИЧНО: force=True НЕ должен приводить к повторной рассылке письма
-    «итоги тура» (send_round_results_notification) — see `just_finalized`
-    ниже, которое теперь считается через `was_final_before` (снимок ДО
-    пересчёта), а не через сам факт входа в `if _round_is_complete(...)`
-    (тур с уже закрытым голосованием ВСЕГДА "complete", так что при
-    force=True этот if сработает при каждом пересчёте — количество
-    попаданий в него не может служить сигналом "только что закрылся").
-    Та же причина, по которой finalized_at не перезаписывается на `now`,
-    если тур уже был финализирован раньше — дата реальной фиксации тура
-    не должна "уезжать" на дату ручного пересчёта."""
+    force=True пересчитывает и уже зафиксированный тур (для recompute_all_closed_rounds),
+    но не меняет finalized_at и не рассылает письмо об итогах повторно.
+    """
     round_best_xi, _created = RoundBestXI.objects.get_or_create(season=season, tour=tour)
     was_final_before = round_best_xi.is_final
     if was_final_before and not force:
@@ -547,11 +412,7 @@ def recompute_round(season, tour: int, *, force: bool = False) -> RoundBestXI:
     player_stats, pool_by_code = _build_round_player_data(season, tour)
     coach_pool = _build_round_coach_pool(season, tour)
 
-    # "Изменение позиции" тур-к-туру (docs/adr/0032-squad-explainability-v2.md)
-    # — снимок ПРЕДЫДУЩЕГО тура (не предыдущего прогона ЭТОГО ЖЕ тура, см.
-    # докстринг RoundBestXISlot.RANK_CHANGE_CHOICES). Если предыдущего тура
-    # нет вообще (первый тур сезона) — previous_ranks остаётся пустым,
-    # rank_change для всех слотов корректно схлопывается в NEW.
+    # Снимок прошлого тура для «изменения позиции».
     previous_round = (
         RoundBestXI.objects.filter(season=season, tour__lt=tour).order_by('-tour').first()
     )
@@ -562,14 +423,11 @@ def recompute_round(season, tour: int, *, force: bool = False) -> RoundBestXI:
         ).values("slot_code", "content_type_id", "object_id", "rank"):
             previous_ranks[(row["slot_code"], row["content_type_id"], str(row["object_id"]))] = row["rank"]
 
-    # Снимок ЭТОГО тура полностью перезаписывается на каждый пересчёт (см.
-    # докстринг RoundPositionRanking) — предыдущий прогон ЭТОГО ЖЕ тура нам
-    # не нужен ни для чего, "предыдущее" всегда означает прошлый тур.
+    # Снимок этого тура перезаписывается полностью.
     RoundPositionRanking.objects.filter(round_best_xi=round_best_xi).delete()
     ranking_buffer: list[RoundPositionRanking] = []
 
-    # ---- 11 полевых слотов формации 4-3-3 — жадное распределение, тот же
-    # принцип и тот же SLOT_PROCESSING_ORDER, что у season_squad. ----
+    # ---- 11 слотов 4-3-3: жадное заполнение по SLOT_PROCESSING_ORDER ----
     assigned: set[str] = set()
     for slot_code, raw_codes in SLOT_PROCESSING_ORDER:
         candidates: list[RoundCandidate] = []
@@ -591,7 +449,7 @@ def recompute_round(season, tour: int, *, force: bool = False) -> RoundBestXI:
         else:
             _apply_round_slot(round_best_xi, slot_code, None, None, season, tour, previous_ranks, None)
 
-    # ---- Тренер тура — отдельный пул, не пересекается с игроками ----
+    # ---- Тренер тура ----
     coach_ranked = _rank_round_pool(coach_pool)
     _store_round_ranking_batch(ranking_buffer, round_best_xi, "COACH", coach_ranked)
     if coach_ranked:
@@ -603,7 +461,7 @@ def recompute_round(season, tour: int, *, force: bool = False) -> RoundBestXI:
 
     RoundPositionRanking.objects.bulk_create(ranking_buffer, batch_size=200)
 
-    # ---- «Игрок тура» — плоский пул, независимо от позиции/слота ----
+    # ---- Игрок тура (по всему пулу) ----
     flat_ranked = _rank_round_pool(list(player_stats.values()))
     if flat_ranked:
         top_player, player_score = flat_ranked[0]
@@ -616,8 +474,7 @@ def recompute_round(season, tour: int, *, force: bool = False) -> RoundBestXI:
         round_best_xi.player_of_round_profile_url = top_player.profile_url
         round_best_xi.player_of_round_score = player_score
         round_best_xi.player_of_round_votes = top_player.votes
-        # 2026-09-09 (та же жалоба "стена тире, нечитабельно") — список строк
-        # вместо конкатенации предложений через + и " — ".
+        # Объяснение — список строк.
         player_of_round_lines = [
             f"Лучший результат тура среди всех позиций: {player_score:.2f} "
             f"по {top_player.votes} голосам."
@@ -626,9 +483,7 @@ def recompute_round(season, tour: int, *, force: bool = False) -> RoundBestXI:
             "Голосов достаточно, чтобы доверять этому выбору." if is_confident
             else "Голосов пока немного: выбор может измениться."
         )
-        # "Игрок тура" — плоский пул независимо от слота/позиции, поэтому
-        # ближайший конкурент здесь — flat_ranked[1] (второй ЛУЧШИЙ РЕЗУЛЬТАТ
-        # ТУРА в целом), а не runner_up внутри одного слота формации.
+        # Ближайший конкурент игрока тура — второй в общем рейтинге.
         flat_runner_up = flat_ranked[1] if len(flat_ranked) > 1 else None
         competitor_text = _describe_nearest_competitor_round(player_score, flat_runner_up)
         if competitor_text:
@@ -661,21 +516,10 @@ def recompute_round(season, tour: int, *, force: bool = False) -> RoundBestXI:
     else:
         round_best_xi.most_dramatic_match_explanation = ""
 
-    # ---- Финализация: закрываем тур, если голосование по всем матчам
-    # уже закрыто — донакручивать состав больше нечем (см. докстринг
-    # round_squad/models.py про автоматический is_final). Функция выходит
-    # раньше (см. самое начало), если round_best_xi.is_final уже был True
-    # до этого вызова — значит, если мы дошли досюда и тур комплектен,
-    # это ПЕРВЫЙ раз, когда тур закрывается, и именно здесь нужно один раз
-    # разослать письмо с итогами (см. just_finalized ниже). ----
+    # ---- Финализация: голосование по всем матчам закрыто — фиксируем тур ----
     just_finalized = False
     if _round_is_complete(season, tour):
-        # was_final_before, не факт попадания в этот if — см. докстринг
-        # функции про force=True: с ним сюда заходят и при повторных
-        # пересчётах уже закрытого тура (голосование закрыто НАВСЕГДА,
-        # значит _round_is_complete() истинно при КАЖДОМ вызове), поэтому
-        # "только что закрылся" может значить только "не был закрыт до
-        # ЭТОГО конкретного вызова".
+        # «Только что закрылся» — по состоянию до вызова, а не по входу в этот if.
         just_finalized = not was_final_before
         round_best_xi.is_final = True
         if just_finalized:
@@ -694,26 +538,20 @@ def recompute_round(season, tour: int, *, force: bool = False) -> RoundBestXI:
                 ),
             )
         except Exception:
-            # Генерация share-карточки — не критичный путь: тур должен
-            # зафиксироваться и без картинки, если Pillow/диск подвели.
+            # Карточка не критична — тур фиксируется и без неё.
             logger.exception("Тур %s сезона %s: не удалось собрать share-карточку", tour, season)
 
     round_best_xi.last_computed_at = now
     round_best_xi.save()
 
     if just_finalized:
-        # Ставим В ОЧЕРЕДЬ ПОСЛЕ .save() выше, не раньше: fan-out таска
-        # читает RoundBestXI из БД по id (round_squad/tasks.py::
-        # _send_round_results_email_chunk) — если поставить .delay() до
-        # save(), воркер может забрать задачу раньше, чем транзакция
-        # долетит до диска, и прочитать ещё старые (is_final=False) данные.
+        # Ставим после save(), чтобы воркер прочитал уже сохранённые данные.
         try:
             from round_squad.tasks import send_round_results_notification
 
             send_round_results_notification.delay(str(round_best_xi.id))
         except Exception:
-            # Рассылка — не критичный путь: тур должен остаться
-            # зафиксированным, даже если Celery/брокер сейчас недоступны.
+            # Рассылка не критична — тур остаётся зафиксированным.
             logger.exception("Тур %s сезона %s: не удалось поставить в очередь рассылку итогов", tour, season)
 
     logger.info(
@@ -724,25 +562,10 @@ def recompute_round(season, tour: int, *, force: bool = False) -> RoundBestXI:
 
 
 def recompute_all_closed_rounds() -> int:
-    """2026-09-21, прямая просьба пользователя: "команда, которая
-    перерасчёт делает всех закрытых туров сборные". Проходит по ВСЕМ уже
-    зафиксированным (is_final=True) RoundBestXI — по всем сезонам и лигам,
-    без ограничения "только активный сезон" (в отличие от recompute_
-    active_rounds в tasks.py, которая специально пропускает финализированные
-    туры) — и пересчитывает каждый через recompute_round(force=True).
-
-    Зачем это вообще нужно: тур мог закрыться с данными, которые потом
-    поправили задним числом (например, найденную ошибку в статистике/
-    составе матча, см. parsers/sportmonks/tasks.py::sportmonks_resync_
-    recent_stats и подобные истории в этом проекте) — сам PlayerMatchAggregate
-    пересчитывается при таких правках, но уже зафиксированный RoundBestXI
-    никогда сам не подхватит новые цифры, раз голосование в нём формально
-    закрыто.
-
-    Безопасно вызывать когда угодно: force=True внутри recompute_round
-    НЕ перезаписывает finalized_at и НЕ ставит повторную рассылку письма
-    «итоги тура» — см. докстринг recompute_round про just_finalized/
-    was_final_before. Возвращает количество реально пересчитанных туров."""
+    """Пересчитывает все зафиксированные туры (force=True) — после исправления
+    данных задним числом. Письма повторно не рассылаются.
+    Возвращает число пересчитанных туров.
+    """
     closed = list(
         RoundBestXI.objects.filter(is_final=True).select_related('season').order_by('season_id', 'tour')
     )

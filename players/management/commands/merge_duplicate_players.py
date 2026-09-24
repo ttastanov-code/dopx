@@ -1,20 +1,7 @@
 # players/management/commands/merge_duplicate_players.py
-"""
-manage.py merge_duplicate_players --keep <uuid> --merge <uuid> [--apply]
+"""manage.py merge_duplicate_players --keep <uuid> --merge <uuid> [--apply]
 
-2026-09-22, прямая просьба пользователя после diagnose_duplicate_players.
-Тонкая CLI-обёртка над players/services.py::merge_players — сама логика
-переноса связей (составы/события/оценки/агрегаты/подписки, включая
-построчный перенос для связей с UniqueConstraint на игрока) живёт там же,
-её же использует dashboard/views.py::duplicate_players_merge — очередь
-«Дубли игроков» на дашборде, где слияние делается одной кнопкой прямо из
-флага PotentialDuplicatePlayer, без ручного ввода id (2026-09-22, прямая
-просьба пользователя: "пздц это муторно копировать, вставлять... надо
-оптимизировать"). Эта команда — для разового ручного разбора через
-терминал, когда id уже известны и очередь на дашборде не нужна.
-
-Без --apply — только отчёт (что будет перенесено/сколько конфликтов),
-ничего не меняется.
+CLI-обёртка над players.services.merge_players. Без --apply — только отчёт.
 """
 from __future__ import annotations
 

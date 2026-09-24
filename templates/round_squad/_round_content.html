@@ -1,9 +1,4 @@
-{% comment %}
-templates/round_squad/_round_content.html
-Партиал «DOPX Лучшие тура» — вынесен для HTMX-поллинга, тот же принцип,
-что season_squad/_best_xi_content.html (без base.html, чтобы HTMX не
-задваивал шапку сайта при свапе).
-{% endcomment %}
+{# Партиал «DOPX Лучшие тура» для HTMX-поллинга. #}
 <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
     <div class="flex items-center gap-2 text-xs md:text-sm opacity-60">
         <i class="ti ti-refresh"></i>
@@ -13,11 +8,7 @@ templates/round_squad/_round_content.html
             Пока не пересчитывался. Первый пересчёт запустится в ближайшие 15 минут
         {% endif %}
     </div>
-    {% comment %}
-    2026-09-11: та же правка, что и season_squad/_best_xi_content.html —
-    daisyUI .badge держит фиксированную высоту в одну строку, на узком
-    экране длинный {{ round_xi.brand_title }} переносится и обрезается.
-    Ручная pill-разметка растягивается под любое число строк. {% endcomment %}
+    {# Своя пилюля вместо .badge — переносится на мобильном. #}
     {% if round_xi.is_final %}
     <span class="inline-flex items-center gap-1.5 rounded-full border border-success/40 bg-success/10 text-success px-3 py-1.5 text-xs sm:text-sm leading-snug">
         <i class="ti ti-lock flex-shrink-0"></i> {{ round_xi.brand_title }} зафиксированы
@@ -29,7 +20,7 @@ templates/round_squad/_round_content.html
     {% endif %}
 </div>
 
-<!-- === ИГРОК ТУРА + САМЫЙ ДРАМАТИЧНЫЙ МАТЧ === -->
+{# === ИГРОК ТУРА + САМЫЙ ДРАМАТИЧНЫЙ МАТЧ === #}
 <div class="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 mb-6">
     <div class="card bg-linear-to-br from-primary/15 to-transparent border border-primary/20">
         <div class="card-body p-4 md:p-5">
@@ -75,21 +66,14 @@ templates/round_squad/_round_content.html
     </div>
 </div>
 
-<!-- === ПОЛЕ: 4-3-3 (без вратаря/защиты — состав тура тот же принцип, что у сборной сезона) === -->
+{# === ПОЛЕ: 4-3-3 === #}
 <div class="relative overflow-hidden rounded-3xl p-4 py-8 md:p-10 mb-6 shadow-lg"
      style="background: repeating-linear-gradient(to bottom,
                 color-mix(in oklab, var(--color-info) 28%, #05202f) 0px,
                 color-mix(in oklab, var(--color-info) 28%, #05202f) 64px,
                 color-mix(in oklab, var(--color-info) 18%, #05202f) 64px,
                 color-mix(in oklab, var(--color-info) 18%, #05202f) 128px);">
-    {% comment %}
-    БАГ, КОТОРЫЙ ТУТ БЫЛ — та же проблема, что в season_squad/
-    _best_xi_content.html (см. её докстринг рядом с этим тегом): на
-    портретных мобильных пропорциях карточки поля preserveAspectRatio=
-    "none" растягивает центральный круг и рамки штрафных до прорезающих
-    ряды игроков дуг/рамок. Скрываем декорацию до md:, показываем только
-    там, где карточка поля действительно широкая (landscape).
-    {% endcomment %}
+    {# Разметка поля только от md:. #}
     <svg class="hidden md:block absolute inset-0 w-full h-full pointer-events-none opacity-20" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
         <line x1="0" y1="50" x2="100" y2="50" stroke="white" stroke-width="0.25" />
         <circle cx="50" cy="50" r="9" fill="none" stroke="white" stroke-width="0.25" />
@@ -98,36 +82,15 @@ templates/round_squad/_round_content.html
         <rect x="0" y="0" width="100" height="100" fill="none" stroke="white" stroke-width="0.25" />
     </svg>
 
-    {% comment %}
-    space-y уменьшен с 7/12 до 5/10 — та же причина, что в season_squad/
-    _best_xi_content.html: карточки стали компактнее, прежний межрядовый
-    зазор был откалиброван под более высокие карточки.
-    {% endcomment %}
+    {# Отступы между рядами. #}
     <div class="relative space-y-5 md:space-y-10">
         {% for row in pitch_rows %}
         <div class="grid gap-2 md:gap-4 justify-items-center" style="grid-template-columns: repeat({{ row.slots|length }}, minmax(0, 1fr));">
             {% for card in row.slots %}
             <div class="group flex flex-col items-center text-center w-full max-w-[110px] md:max-w-[130px]">
-                {% comment %}
-                Подпись слота (card.label) убрана — та же причина, что и в
-                season_squad/_best_xi_content.html (2026-08-23): KFF не
-                различает фланги/точную роль, явный текстовый ярлык
-                "вингер"/"защитник" на карточке конкретного игрока был бы
-                категоричным утверждением, которое мы не можем подтвердить.
-                {% endcomment %}
+                {# Подпись слота не показываем — сторона приблизительная. #}
 
-                {% comment %}
-                ПЕРЕОСМЫСЛЕНО ЦЕЛИКОМ — та же переработка, что в
-                season_squad/_best_xi_content.html (см. её докстринг рядом
-                с этим блоком, там подробно расписаны все три раунда
-                фидбека: "криво" → truncate → "ФИО обрезанные не делай" →
-                "круги-буквы не нужны, аватарок всё равно нет"). Круг
-                аватара без фото показывает РЕЙТИНГ (fallback_text) вместо
-                случайных инициалов — не декорация, а главная цифра
-                карточки. Имя — целиком, без truncate, свободно
-                переносится. Клуб (надёжно короткий) + инфо-иконка — один
-                общий ряд, иконка больше никогда не "отрывается".
-                {% endcomment %}
+                {# Карточка: в круге фото или рейтинг, полное имя, клуб + инфо-иконка. #}
                 {% include 'components/_avatar.html' with photo_url=card.occupant_photo_url name=card.occupant_name size_classes='w-14 h-14 md:w-16 md:h-16 text-sm md:text-base' ring_style=card.ring_style fallback_text=card.round_score|floatformat:1 %}
 
                 {% if card.filled %}
@@ -135,15 +98,7 @@ templates/round_squad/_round_content.html
                    class="mt-1.5 block w-full max-w-full text-center font-medium text-[11px] md:text-sm leading-snug text-white/90 hover:opacity-70 transition-opacity">{{ card.occupant_name }}</a>
                 <div class="flex items-center justify-center gap-1 mt-0.5 max-w-full">
                     <span class="text-[9px] md:text-[11px] text-white/45 truncate">{{ card.occupant_team_name|default:"—" }}</span>
-                    {% comment %}
-                    БАГ, КОТОРЫЙ ТУТ БЫЛ — та же проблема, что в
-                    season_squad/_best_xi_content.html: _tooltip_icon.html
-                    сам себя не красит, наследует цвет от родителя — на
-                    тёмно-зелёном поле наследовался обычный тёмный
-                    text-base-content, тёмная иконка на тёмном фоне была
-                    невидима. text-white/70 задаёт цвет локально, сам
-                    компонент не трогаем.
-                    {% endcomment %}
+                    {# text-white/70 — иконка видна на тёмном поле. #}
                     {% if card.explanation %}<span class="text-white/70">{% include 'components/_tooltip_icon.html' with text=card.explanation %}</span>{% endif %}
                 </div>
                 {% else %}
@@ -156,7 +111,7 @@ templates/round_squad/_round_content.html
     </div>
 </div>
 
-<!-- === ТРЕНЕР ТУРА === -->
+{# === ТРЕНЕР ТУРА === #}
 <div class="flex items-center gap-3 p-3 md:p-4 rounded-2xl bg-base-100 border border-base-300/50 mb-4">
     <div class="flex-shrink-0">
         {% include 'components/_avatar.html' with photo_url=coach_card.occupant_photo_url name=coach_card.occupant_name size_classes='w-12 h-12 md:w-14 md:h-14 text-base' ring_style=coach_card.ring_style %}
@@ -180,7 +135,7 @@ templates/round_squad/_round_content.html
     </div>
 </div>
 
-<!-- Telegram/WhatsApp — тот же паттерн, что у matches/_match_header.html -->
+{# Telegram/WhatsApp #}
 <div class="flex flex-wrap justify-center gap-2">
     <a href="https://t.me/share/url?url={{ request.build_absolute_uri|urlencode }}&text={{ share_text|urlencode }}"
        target="_blank" rel="noopener" class="btn btn-sm btn-outline"

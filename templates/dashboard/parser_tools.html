@@ -63,15 +63,7 @@
             </h4>
             <div class="flex flex-col gap-1.5 mb-4">
                 {% for task_name, task_label in sportmonks_triggerable_tasks.items %}
-                {% comment %}
-                2026-09-22, редизайн (см. докстринг вверху scripts.html про
-                общую просьбу пользователя "компактный, понятный и
-                стильный") — раньше было: гигантская full-width кнопка с
-                текстом внутри + абзац описания под ней. Теперь: компактная
-                строка (лейбл + короткое описание) и маленькая quadratная
-                кнопка-триггер сбоку — тот же паттерн, что список настроек
-                в macOS/iOS. task_name/action/csrf — БЕЗ ИЗМЕНЕНИЙ.
-                {% endcomment %}
+                {# Строка задачи: название + описание, кнопка запуска сбоку. #}
                 <div class="flex items-center gap-2.5 rounded-lg border border-base-300 px-3 py-2">
                     <div class="min-w-0 flex-1">
                         <div class="text-sm font-medium leading-snug">{{ task_label }}</div>
@@ -115,43 +107,17 @@
         </div>
     </div>
 
-    {% comment %}
-    2026-09-09 (запрос пользователя: "перенеси 'Очередь celery: что
-    выполняется сейчас' под 'Доступность Sportmonks API'") — обёртка
-    flex-col вокруг ОБЕИХ карточек правой колонки: без неё третий прямой
-    child grid-контейнера (grid-cols-2, auto-flow row) ушёл бы в НОВУЮ
-    строку начиная с ПЕРВОЙ колонки (под "Ручной запуск celery-задач"),
-    а не под эту карточку — обычное поведение CSS grid auto-placement,
-    не то, что нужно здесь. Обёртка делает правую колонку самостоятельным
-    вертикальным стеком, независимым от высоты левой.
-    {% endcomment %}
+    {# Правая колонка — отдельный вертикальный стек. #}
     <div class="flex flex-col gap-4">
     {% if user.is_superuser %}
-    {% comment %}
-    2026-09-23, прямая просьба пользователя: "у меня закончилась пробная
-    подписка на sportmonks. Сыпятся ошибки... сделать кнопку которая
-    включает и выключает парсер? без перезагрузки сервисов? для
-    суперпользователя". Только is_superuser (не is_staff) — см. докстринг
-    dashboard/views.py::sportmonks_sync_toggle. Карточка стоит первой в
-    правой колонке — намеренно: это главный рубильник, важнее
-    диагностического пинга под ней.
-    {% endcomment %}
+    {# Вкл/выкл синка Sportmonks — только для суперпользователя. #}
     <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4">
             <div class="dopx-section-eyebrow"><i class="ti ti-power"></i>Sportmonks</div>
             <div class="dopx-section-title">Синк с API</div>
             <p class="dopx-section-desc mb-3">Общий рубильник всех 6 фоновых задач синка (live-опрос, статистика, составы, календарь, травмы, health-check). Выключение применяется в течение минуты, без перезапуска celery — полезно, если кончилась подписка/квота у Sportmonks.</p>
 
-            {% comment %}
-            2026-09-23, правка по отзыву пользователя ("че за страшная
-            кнопка") — обычная кнопка pause/play с предупреждающим цветом
-            выглядела как алерт об ошибке, а не как штатный переключатель.
-            Заменено на daisyUI toggle (обычный iOS-style свитч) — стандартный
-            паттерн вкл/выкл, без тревожных цветов и текста на самой кнопке;
-            чекбокс шлёт форму сразу при клике через onchange, confirm()
-            остаётся (необратимое по сути действие — останавливает обновление
-            данных на сайте).
-            {% endcomment %}
+            {# Toggle-свитч, отправка формы по onchange с confirm(). #}
             <form method="post" action="{% url 'dashboard:sportmonks_sync_toggle' %}" id="sportmonks-sync-toggle-form">
                 {% csrf_token %}
                 <div class="flex items-center justify-between gap-3 rounded-lg border border-base-300 px-3 py-2.5">
@@ -186,12 +152,7 @@
             <div class="divider my-3"></div>
 
             <h4 class="font-semibold text-[11px] uppercase tracking-wide opacity-45 mb-2">Быстрые факты</h4>
-            <!-- 2026-09-09: раньше был <ul> с самодельными точками-иконками
-                 (ti-point-filled — которой, похоже, нет в используемом наборе
-                 Tabler Icons, отсюда "криво" в отзыве пользователя) и голым
-                 <code> без фона. Заменено на простые строки label/value —
-                 без риска на несуществующие иконки, тот же паттерн, что уже
-                 используется в карточке "Статистика" на teams/detail.html. -->
+            {# Строки label/value. #}
             <div class="space-y-2 text-xs">
                 <div class="flex justify-between gap-3">
                     <span class="opacity-60">Live-опрос</span>
@@ -201,25 +162,7 @@
                     <span class="opacity-60">Лимит API</span>
                     <span class="font-medium text-right">2000 запросов/час на сущность</span>
                 </div>
-                {% comment %}
-                2026-09-09, ВТОРОЙ баг в этой карточке (после "не увидел
-                кол-во запросов"): первая попытка показывала
-                sportmonks_health.rate_limit_used — но это остаток лимита
-                ТОЛЬКО той entity, которую задел последний вызов проверки
-                доступности (всегда "League", один get_league()), а не
-                суммарный расход. Пользователь сверил с собственной
-                статистикой на портале Sportmonks (871 запрос за день) и
-                увидел у нас "1" — числа принципиально не могли совпасть.
-                Sportmonks не отдаёт агрегированный расход через API вообще
-                (только remaining по entity последнего запроса) — считаем
-                сами: свой счётчик в Redis, инкрементируется на КАЖДЫЙ
-                факт. HTTP-запрос из ЛЮБОЙ задачи/команды (см.
-                parsers/sportmonks/client.py::_track_request/
-                get_request_counts). Не будет побитово совпадать с
-                порталом Sportmonks (у них могут быть другие границы
-                часа/суток), но отражает реальный порядок расхода, а не
-                артефакт одного health-check вызова.
-                {% endcomment %}
+                {# Расход запросов — наш счётчик в Redis (get_request_counts). #}
                 <div class="flex justify-between gap-3 items-start">
                     <span class="opacity-60 flex-shrink-0">Наши запросы</span>
                     <span class="font-medium text-right">

@@ -1,16 +1,6 @@
 # dashboard/middleware.py
-"""
-Принудительная 2FA для staff-доступа (продуктовый апгрейд, "защита на
-высшем уровне") — django-otp сам по себе НИЧЕГО не блокирует, он только
-прикрепляет `request.user.is_verified()` к запросу (см. OTPMiddleware в
-MIDDLEWARE, dopx/settings.py). Фактическое принудительное требование
-пройти OTP-проверку — это наш код, здесь.
-
-Сознательно НЕ используем `django_otp.admin.OTPAdminSite` (стандартный
-рецепт django-otp для admin) — он бы защищал ТОЛЬКО /admin/, а нам нужна
-единая защита и для /admin/, и для /staff/dashboard/ одним и тем же
-механизмом (сотрудник логинится один раз, проходит OTP один раз, дальше
-у него есть доступ в обе панели в рамках одной сессии).
+"""Принудительная 2FA для staff на /admin/, /staff/dashboard/ и схеме/доках API
++ проверка доступа к разделам дашборда.
 """
 from __future__ import annotations
 
@@ -25,21 +15,12 @@ from .access import resolve_section_for_path, user_can_access_section
 
 logger = logging.getLogger("django.security")
 
-# Пути, которые ДОЛЖНЫ оставаться доступны БЕЗ пройденной OTP-проверки —
-# иначе сотрудник, ещё не прошедший challenge, не сможет даже дойти до
-# страницы, где эту проверку проходят (классический lockout-баг).
+# Пути без OTP — страницы самой 2FA.
 EXEMPT_PATH_PREFIXES = (
     "/staff/dashboard/security/",
 )
 
-# БАГ, КОТОРЫЙ ТУТ БЫЛ (найден полным аудитом, август 2026): схема/доки API
-# (dopx/urls.py::schema_patterns) защищены только permission_classes=[IsAdminUser]
-# (is_staff=True), но не входили в список путей, проверяемых этой мидлварью —
-# staff-аккаунт с украденным/угнанным паролем, но без пройденной 2FA, мог
-# получить SQL-структуру и всю карту API через /api/schema/, /api/docs/,
-# /api/redoc/, хотя тот же аккаунт был бы остановлен challenge/setup на
-# /admin/ и /staff/dashboard/. Добавлены в список принудительно проверяемых
-# префиксов наравне с админкой и дашбордом.
+# Схема и доки API тоже требуют 2FA.
 ENFORCED_PATH_PREFIXES = (
     "/admin/",
     "/staff/dashboard/",
@@ -50,20 +31,12 @@ ENFORCED_PATH_PREFIXES = (
 
 
 class StaffTwoFactorEnforcementMiddleware:
-    """
-    Для каждого staff-запроса к /admin/, /staff/dashboard/ или схеме/докам
-    API (/api/schema/, /api/docs/, /api/redoc/) — кроме вьюх самой
-    2FA-подсистемы:
-      1. Если STAFF_2FA_ENFORCED=False (аварийный рубильник) — пропускаем.
-      2. Если запрос не от аутентифицированного staff — пропускаем
-         (авторизацией дальше по цепочке занимается staff_member_required
-         / admin login, это не забота этой мидлвари).
-      3. Если у пользователя уже пройдена OTP-проверка в ЭТОЙ сессии
-         (request.user.is_verified(), выставляется OTPMiddleware) — пропускаем.
-      4. Если у пользователя есть подтверждённое TOTP-устройство — редирект
-         на страницу ввода кода (challenge).
-      5. Иначе — у пользователя ВООБЩЕ нет настроенной 2FA — принудительный
-         редирект на страницу первичной настройки (setup), обхода нет.
+    """Для staff на защищённых путях:
+    1. STAFF_2FA_ENFORCED=False — пропускаем;
+    2. не staff — пропускаем;
+    3. OTP уже пройден — пропускаем;
+    4. есть устройство — на challenge;
+    5. нет устройства — на setup.
     """
 
     def __init__(self, get_response):
@@ -84,9 +57,7 @@ class StaffTwoFactorEnforcementMiddleware:
             return False
         if any(path.startswith(prefix) for prefix in EXEMPT_PATH_PREFIXES):
             return False
-        # /admin/login/ и /admin/logout/ должны быть доступны без OTP —
-        # иначе незалогиненный пользователь не может даже дойти до формы
-        # входа (пароль ещё не введён, откуда взяться OTP-сессии).
+        # Вход/выход в админку — без OTP.
         if path in (reverse("admin:login"), reverse("admin:logout")):
             return False
         user = getattr(request, "user", None)
@@ -99,11 +70,7 @@ class StaffTwoFactorEnforcementMiddleware:
         if user.is_verified():
             return None
 
-        # confirmed=True (по умолчанию в django_otp) — устройства, ещё не
-        # прошедшие первичное подтверждение кодом, не считаются: пользователь
-        # с "недоделанным" TOTP-устройством должен попасть на setup заново,
-        # а не зависнуть в challenge с устройством, для которого он никогда
-        # не подтверждал секрет.
+        # Только подтверждённые устройства.
         confirmed_devices = list(devices_for_user(user, confirmed=True))
         has_confirmed_device = bool(confirmed_devices)
         target = (
@@ -112,10 +79,7 @@ class StaffTwoFactorEnforcementMiddleware:
             else reverse("dashboard:two_factor_setup")
         )
 
-        # Диагностический лог — временно, чтобы поймать баг, из-за которого
-        # staff однажды увидел challenge вместо setup при пустой базе
-        # устройств. Убрать после подтверждения, что решение маршрутизации
-        # стабильно совпадает с реальным состоянием БД.
+        # Временный диагностический лог маршрутизации challenge/setup.
         logger.warning(
             f"2FA ROUTING: user={user.username} path={request.path} "
             f"is_verified={user.is_verified()} confirmed_devices={confirmed_devices} "
@@ -130,19 +94,8 @@ class StaffTwoFactorEnforcementMiddleware:
 
 
 class DashboardSectionAccessMiddleware:
-    """
-    2026-09-23, раздел «Роли доступа» — прямая просьба пользователя заменить
-    единственный переключатель is_staff на гибкие права по разделам
-    дашборда (см. dashboard/models.py::StaffAccessGrant/DASHBOARD_SECTIONS
-    и dashboard/access.py про безопасный дефолт).
-
-    Ставится ПОСЛЕ StaffTwoFactorEnforcementMiddleware — раздел-проверка не
-    имеет смысла раньше, чем staff вообще прошёл 2FA (иначе пришлось бы
-    дублировать её собственную логику редиректа на setup/challenge здесь же).
-
-    Только /staff/dashboard/* — /admin/ (Django admin) НЕ входит в эту
-    систему разделов вообще, у него своя, встроенная (permissions Django
-    admin), эта мидлварь её не трогает и не подменяет.
+    """Доступ к разделам /staff/dashboard/ по StaffAccessGrant.
+    Стоит после 2FA-мидлвари. /admin/ не касается.
     """
 
     def __init__(self, get_response):

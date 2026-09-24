@@ -17,12 +17,7 @@
     </div>
   </div>
   {% else %}
-  {% comment %}
-  Продуктовый аудит, раздел 5d ("Автогенерируемый season recap") —
-  "DOPX Wrapped" для одного игрока. Тот же фикс градиента, что и на
-  rules.html/anti_fraud.html/privacy.html: text-primary-content на
-  card-body, иначе текст сливается с фоном на светлой теме.
-  {% endcomment %}
+  {# Итоги сезона игрока. text-primary-content — читаемо на градиенте. #}
   <div class="card mb-6" style="background-image: linear-gradient(to bottom right, var(--color-primary), color-mix(in oklab, var(--color-secondary) 70%, var(--color-primary)));">
     <div class="card-body p-6 text-center text-primary-content">
       <p class="uppercase tracking-wide text-xs opacity-80 mb-1">Итоги сезона {{ season.year }}</p>

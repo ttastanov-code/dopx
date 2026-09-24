@@ -1,8 +1,4 @@
-<!-- templates/emails/verify_email.html — ПОЛНЫЙ РЕДИЗАЙН 2026-09-02, см.
-     докстринг templates/emails/welcome.html про общий каркас в partials/.
-     Контекст: user, verify_url (уже готовая абсолютная ссылка — см.
-     notifications/tasks.py::send_email_verification и
-     users/views.py::VerifyEmailView). -->
+{# Подтверждение email. Контекст: user, verify_url. #}
 <!DOCTYPE html>
 <html lang="ru">
 {% include "emails/partials/_head.html" %}

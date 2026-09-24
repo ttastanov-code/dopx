@@ -1,15 +1,8 @@
 # users/forms.py
-"""
-UserRegistrationForm — три антибот-барьера, ни один не требует внешнего сервиса:
-
-1. Honeypot-поле website — скрыто CSS, вне табуляции; реальный пользователь
-   его не заполнит, простой бот, слепо заполняющий все поля, заполнит.
-   Непустое значение — форма невалидна без объяснения причины.
-2. Time-trap form_rendered_at — серверный timestamp рендера формы; отправка
-   быстрее MIN_FORM_FILL_SECONDS физически невозможна для человека.
-3. CAPTCHA (django-simple-captcha, self-hosted, без стороннего провайдера) —
-   основной барьер; honeypot/time-trap выше — доп. фильтр для ботов, не
-   доходящих даже до решения капчи.
+"""Формы пользователей. Регистрация защищена тремя барьерами:
+1. honeypot-поле website (скрыто, должно остаться пустым);
+2. time-trap form_rendered_at (быстрее MIN_FORM_FILL_SECONDS — бот);
+3. self-hosted капча (django-simple-captcha).
 """
 from __future__ import annotations
 
@@ -31,13 +24,13 @@ from users.models import User
 
 MIN_FORM_FILL_SECONDS = 3
 
-# Аватарки: лимит размера + проверка реального содержимого файла.
+# Аватарки: лимит размера + проверка содержимого.
 MAX_AVATAR_SIZE_BYTES = 5 * 1024 * 1024  # 5 МБ
 ALLOWED_AVATAR_FORMATS = {"JPEG", "PNG", "WEBP", "GIF"}
 
 
 class UserRegistrationForm(UserCreationForm):
-    """Форма регистрации пользователя."""
+    """Форма регистрации."""
 
     email = forms.EmailField(
         required=True,
@@ -50,26 +43,16 @@ class UserRegistrationForm(UserCreationForm):
             }
         ),
     )
-    # ИСПРАВЛЕНО (2026-09-23, продуктовый запрос: "пользователь должен
-    # город указать при регистрации обязательно" + "реальные казахстанские
-    # города" — см. полный контекст в users/kz_cities.py и докстринге
-    # User.city в users/models.py): было CharField со свободным текстом
-    # (required=False) — теперь обязательный выбор из справочника
-    # реальных городов РК, тот же источник choices, что и на самой модели,
-    # так что форма и модель не могут разойтись.
+    # Город — обязательный выбор из справочника (users/kz_cities.py).
     city = forms.ChoiceField(
-        # Пустой первый пункт — иначе браузер по умолчанию выбрал бы ПЕРВЫЙ
-        # реальный город списка (Абай, по алфавиту) без осознанного выбора
-        # пользователя; required=True отклонит форму, если это пустое
-        # значение так и останется выбранным.
+        # Пустой первый пункт — чтобы выбор был осознанным.
         choices=[("", "— Выберите город —")] + KZ_CITY_CHOICES,
         required=True,
         label="Город",
         widget=forms.Select(attrs={"class": "input-dopx w-full"}),
     )
 
-    # --- Анти-бот поля (не показываются в списке fields ниже намеренно,
-    # рендерятся отдельно в шаблоне вручную, см. комментарий в docstring) ---
+    # --- Антибот-поля (рендерятся в шаблоне вручную) ---
     website = forms.CharField(
         required=False,
         label="",
@@ -77,17 +60,14 @@ class UserRegistrationForm(UserCreationForm):
             attrs={
                 "autocomplete": "off",
                 "tabindex": "-1",
-                "class": "hp-field",  # в CSS: .hp-field { position:absolute; left:-9999px; }
+                "class": "hp-field",  # CSS: .hp-field { position:absolute; left:-9999px; }
                 "aria-hidden": "true",
             }
         ),
     )
     form_rendered_at = forms.FloatField(widget=forms.HiddenInput(), required=False)
 
-    # НОВОЕ: self-hosted капча (см. пункт 3 докстринга модуля). Рендерится
-    # отдельно в шаблоне (`{{ form.captcha }}`), как и остальные анти-бот
-    # поля выше, а не через Meta.fields — так уже устроены website/
-    # form_rendered_at, оставляем единый паттерн.
+    # Капча — тоже рендерится в шаблоне отдельно.
     captcha = CaptchaField(
         label="Введите текст с картинки",
         error_messages={"invalid": "Неверный текст с картинки. Попробуйте ещё раз."},
@@ -134,8 +114,7 @@ class UserRegistrationForm(UserCreationForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Текущий момент "прошивается" в скрытое поле при каждом рендере
-        # формы (GET на страницу регистрации) — точка отсчёта для time-trap.
+        # Время рендера формы — точка отсчёта для time-trap.
         self.fields["form_rendered_at"].initial = time.time()
 
     def clean_email(self):
@@ -145,16 +124,15 @@ class UserRegistrationForm(UserCreationForm):
         return email
 
     def clean_website(self):
-        """Honeypot: поле обязано остаться пустым."""
+        """Honeypot должен остаться пустым."""
         value = self.cleaned_data.get("website")
         if value:
-            # Намеренно генетическая формулировка ошибки — не даём боту
-            # понять, что именно его выдало.
+            # Общая формулировка — не подсказываем боту.
             raise forms.ValidationError("Не удалось обработать форму. Попробуйте ещё раз.")
         return value
 
     def clean_form_rendered_at(self):
-        """Time-trap: форма не может быть отправлена мгновенно после рендера."""
+        """Time-trap: слишком быстрая отправка."""
         rendered_at = self.cleaned_data.get("form_rendered_at")
         if rendered_at:
             elapsed = time.time() - rendered_at
@@ -164,13 +142,8 @@ class UserRegistrationForm(UserCreationForm):
 
 
 class UserLoginForm(AuthenticationForm):
-    """
-    Форма входа. Лейбл поля обещает "Имя пользователя или Email" —
-    clean_username() сначала пытается резолвить введённое значение как
-    email в username, иначе ModelBackend (ищет строго по username) отклонит
-    любой ввод почты. Если email не найден, значение уходит как есть —
-    намеренно не различаем "нет такого email" и "нет такого username" в
-    ответе, чтобы не палить существующие адреса.
+    """Форма входа: username или email. Email резолвим в username;
+    не найден — отдаём как есть (не раскрываем существование адресов).
     """
 
     username = forms.CharField(
@@ -228,10 +201,7 @@ class UserProfileForm(forms.ModelForm):
         }
         widgets = {
             "email": forms.EmailInput(attrs={"class": "input input-bordered w-full"}),
-            # 2026-09-23 — тот же справочник, что и в форме регистрации
-            # (users/kz_cities.py), не свободный текст: иначе профиль можно
-            # было бы отредактировать обратно на произвольную строку сразу
-            # после регистрации, обесценив весь смысл выбора из списка.
+            # Город — из того же справочника.
             "city": forms.Select(attrs={"class": "select select-bordered w-full"}),
             "bio": forms.Textarea(
                 attrs={
@@ -251,24 +221,7 @@ class UserProfileForm(forms.ModelForm):
             self.fields["delete_avatar"].widget = forms.HiddenInput()
 
     def clean_avatar(self):
-        """
-        Раньше avatar принимался без единой проверки: ImageField без
-        validators=, без clean_avatar(), без лимита размера — можно было
-        залить что угодно с расширением .jpg (вплоть до файла, который
-        Pillow потом уронит при генерации шер-карточки, или огромный файл,
-        забивающий диск).
-
-        Срабатывает только на свежую загрузку (UploadedFile) — если поле
-        не тронуто, cleaned_data содержит уже сохранённый ImageFieldFile
-        с диска, повторно валидировать (и заново читать в память) его не
-        нужно.
-
-        Два барьера:
-        1. Лимит размера — до чтения содержимого файла.
-        2. Image.verify() (Pillow, уже используется для шер-карточек) —
-           проверяет РЕАЛЬНУЮ структуру файла, а не расширение/content-type
-           из формы, которые легко подделать.
-        """
+        """Проверка аватара при новой загрузке: лимит размера, затем Image.verify()."""
         avatar = self.cleaned_data.get("avatar")
         if not avatar or not isinstance(avatar, UploadedFile):
             return avatar
@@ -292,14 +245,13 @@ class UserProfileForm(forms.ModelForm):
                 f"Разрешены: JPEG, PNG, WEBP, GIF."
             )
 
-        # verify() потребляет файловый указатель — возвращаем в начало,
-        # иначе ImageField.save() запишет на диск пустой/обрезанный файл.
+        # verify() двигает указатель — возвращаем в начало.
         avatar.seek(0)
         return avatar
 
 
 class CustomPasswordChangeForm(PasswordChangeForm):
-    """Форма изменения пароля."""
+    """Форма смены пароля."""
 
     old_password = forms.CharField(
         label="Текущий пароль",
@@ -345,7 +297,7 @@ class CustomPasswordResetForm(PasswordResetForm):
 
 
 class NotificationSettingsForm(forms.Form):
-    """Форма настроек уведомлений (без welcome — он всегда включён)."""
+    """Настройки уведомлений (welcome всегда включён)."""
 
     email_match_finished = forms.BooleanField(
         required=False,
@@ -377,8 +329,7 @@ class NotificationSettingsForm(forms.Form):
         initial=True,
         widget=forms.CheckboxInput(attrs={"class": "toggle toggle-primary"}),
     )
-    # НОВОЕ: дайджест вместо мгновенных писем на каждое мелкое событие
-    # (достижения/уровень/trust score) — см. notifications_tasks.py.
+    # Дайджест вместо мгновенных писем (достижения/уровень/trust score).
     email_digest_mode = forms.BooleanField(
         required=False,
         label="Собирать уведомления в дайджест вместо письма на каждое событие",
@@ -386,8 +337,7 @@ class NotificationSettingsForm(forms.Form):
         help_text="Рекомендуется — меньше писем, никакой потери информации.",
         widget=forms.CheckboxInput(attrs={"class": "toggle toggle-primary"}),
     )
-    # НОВОЕ (4 петли удержания, 2026-08-21) — см. users/models.py::User.
-    # DEFAULT_NOTIFICATION_SETTINGS и notifications/tasks.py.
+    # Retention-уведомления.
     email_prediction_closing = forms.BooleanField(
         required=False,
         label="Напоминание о закрытии приёма прогнозов",
@@ -409,7 +359,7 @@ class NotificationSettingsForm(forms.Form):
         help_text="После финального свистка — совпал ли ваш прогноз и как проголосовало сообщество.",
         widget=forms.CheckboxInput(attrs={"class": "toggle toggle-primary"}),
     )
-    # НОВОЕ (2026-08-22): см. users/models.py::User.DEFAULT_NOTIFICATION_SETTINGS.
+    # См. User.DEFAULT_NOTIFICATION_SETTINGS.
     email_round_results = forms.BooleanField(
         required=False,
         label="Итоги «DOPX Лучшие тура»",

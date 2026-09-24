@@ -2,7 +2,7 @@
 {% load static %}
 {% load tooltip_tags %}
 {% block content %}
-<!-- === HEADER === -->
+{# === ШАПКА === #}
 <div class="mb-6 md:mb-8 px-2 sm:px-0">
   <h1 class="text-2xl md:text-3xl font-bold mb-2 flex items-center gap-2">
     <i class="ti ti-file-text mr-2"></i> Правила платформы
@@ -10,9 +10,9 @@
   <p class="opacity-60 text-sm md:text-base">Как работают оценки, доверие, опыт и достижения на DOPX.</p>
 </div>
 
-<!-- === CONTENT === -->
+{# === КОНТЕНТ === #}
 <div class="grid grid-cols-1 lg:grid-cols-4 gap-4 md:gap-8 px-2 sm:px-0">
-  <!-- === SIDEBAR: Навигация (скрыт на мобильных) === -->
+  {# === НАВИГАЦИЯ (скрыта на мобильных) === #}
   <div class="lg:col-span-1 hidden lg:block">
     <div class="card bg-base-100 border border-base-300 sticky top-24">
       <div class="card-body p-4">
@@ -30,9 +30,9 @@
     </div>
   </div>
 
-  <!-- === MAIN CONTENT === -->
+  {# === ОСНОВНОЙ ТЕКСТ === #}
   <div class="lg:col-span-3 space-y-6 md:space-y-10">
-    <!-- Принципы -->
+    {# Принципы #}
     <section id="principles" class="scroll-mt-24">
       <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4 md:p-6">
@@ -47,7 +47,7 @@
       </div>
     </section>
 
-    <!-- Оценка матчей -->
+    {# Оценка матчей #}
     <section id="evaluation" class="scroll-mt-24">
       <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4 md:p-6">
@@ -106,7 +106,7 @@
       </div>
     </section>
 
-    <!-- Trust Score -->
+    {# Trust Score #}
     <section id="trust" class="scroll-mt-24">
       <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4 md:p-6">
@@ -145,12 +145,12 @@
           </p>
           <p class="text-xs opacity-50 mb-4 md:mb-6">Итоговый вес всегда ограничен диапазоном 0.3 – 2.0. Ни один голос не может занулиться или перевесить остальные в разы.</p>
 
-          <div class="alert alert-info text-xs md:text-sm"><i class="ti ti-info-circle"></i><div><h3 class="font-bold">Как повысить Trust Score?</h3><ul class="mt-2 space-y-1"><li>• Оценивайте матчи регулярно — Trust Score пересчитывается после каждого нового матча по тому, насколько ваши оценки совпали с общим мнением сообщества.</li><li>• По возможности смотрите матч целиком.</li><li>• Не завышайте оценки своей команде и не занижайте сопернику.</li><li>• Оценивайте последовательно от матча к матчу.</li></ul></div></div>
+          <div class="alert alert-info text-xs md:text-sm"><i class="ti ti-info-circle"></i><div><h3 class="font-bold">Как повысить Trust Score?</h3><ul class="mt-2 space-y-1"><li>• Оценивайте матчи регулярно — Trust Score пересчитывается после каждого нового матча по тому, насколько ваши оценки совпали с общим мнением сообщества.</li><li>• По возможности смотрите матч целиком.</li><li>• Не завышайте оценки своей команде и не занижайте сопернику.</li><li>• Оценивайте последовательно от матча к матчу.</li><li>• Если Trust Score снизился, просто продолжайте честно оценивать: раз в месяц он плавно возвращается к нейтральному уровню у всех активных пользователей.</li></ul></div></div>
         </div>
       </div>
     </section>
 
-    <!-- Геймификация -->
+    {# Геймификация #}
     <section id="gamification" class="scroll-mt-24">
       <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4 md:p-6">
@@ -202,12 +202,12 @@
             </div>
             {% endfor %}
           </div>
-          <p class="text-xs opacity-50 mt-3 md:mt-4">Наведите на значок, чтобы увидеть название. Полное описание условий смотрите в своём профиле.</p>
+          <p class="text-xs opacity-50 mt-3 md:mt-4">Наведите на значок, чтобы увидеть название. Полное описание условий смотрите в своём профиле. Достижения за качество оценок и прогнозов («Провидец», «Точный аналитик», «Без предвзятости», «Стабильная рука», «Максимальное доверие») перепроверяются раз в месяц: если показатель опустился ниже порога, значок остаётся в профиле, но помечается как временно неактуальный, и снова становится активным, когда показатель восстановится.</p>
         </div>
       </div>
     </section>
 
-    <!-- Fair Play -->
+    {# Fair Play #}
     <section id="fairplay" class="scroll-mt-24">
       <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4 md:p-6">
@@ -221,8 +221,7 @@
       </div>
     </section>
 
-    <!-- Дисклеймер о природе рейтинга — юридически значимая секция, поэтому
-         на видном месте, не мелким шрифтом внизу страницы. -->
+    {# Дисклеймер о природе рейтинга — на видном месте. #}
     <section id="disclaimer" class="scroll-mt-24">
       <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4 md:p-6">
@@ -239,14 +238,14 @@
       </div>
     </section>
 
-    <!-- Конфиденциальность (краткая версия — полный текст на отдельной странице) -->
+    {# Конфиденциальность (кратко) #}
     <section id="privacy" class="scroll-mt-24">
       <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4 md:p-6">
           <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4 flex items-center gap-2"><i class="ti ti-lock text-neutral"></i> Конфиденциальность</h2>
           <p class="opacity-70 text-sm md:text-base mb-4">Мы собираем только данные, необходимые для работы платформы (оценки, контекст просмотра, технические данные для безопасности), не продаём их третьим лицам и удаляем аккаунт по запросу в течение 30 дней.</p>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 mb-4 md:mb-6">
-            <div class="p-3 md:p-4 bg-base-200 rounded-lg"><h3 class="font-semibold mb-2 text-sm"><i class="ti ti-eye text-success mr-1"></i> Публично</h3><p class="text-xs opacity-70">Имя пользователя, Trust Score, число оценок, достижения, уровень</p></div>
+            <div class="p-3 md:p-4 bg-base-200 rounded-lg"><h3 class="font-semibold mb-2 text-sm"><i class="ti ti-eye text-success mr-1"></i> Публично</h3><p class="text-xs opacity-70">Имя пользователя, город, Trust Score, число оценок, достижения, уровень</p></div>
             <div class="p-3 md:p-4 bg-base-200 rounded-lg"><h3 class="font-semibold mb-2 text-sm"><i class="ti ti-eye-off text-error mr-1"></i> Приватно</h3><p class="text-xs opacity-70">Email, пароль (хэшируется), IP-адрес, история сессий, настройки уведомлений</p></div>
           </div>
           <a href="{% url 'core:privacy' %}" class="btn btn-outline btn-sm">
@@ -256,13 +255,9 @@
       </div>
     </section>
 
-    <!-- CTA -->
-    {% comment %}bg-gradient-to-br/from-primary — не работает в Tailwind v4 для daisyUI-цветов, см. комментарий в evaluations/complete.html{% endcomment %}
-    {% comment %}
-    text-primary-content на card-body — контрастный цвет текста под primary-
-    фон (daisyUI сам подбирает под тему); кнопка инвертирована (светлая
-    заливка/тёмный текст), чтобы не сливаться со сплошным primary-фоном.
-    {% endcomment %}
+    {# CTA #}
+    {# Градиент через inline style. #}
+    {# Текст primary-content, кнопка инвертирована. #}
     <div class="card" style="background-image: linear-gradient(to bottom right, var(--color-primary), color-mix(in oklab, var(--color-primary) 80%, transparent));">
       <div class="card-body p-4 md:p-6 text-center text-primary-content">
         <h3 class="text-xl md:text-2xl font-bold mb-2">Готовы начать?</h3>

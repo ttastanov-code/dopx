@@ -1,11 +1,5 @@
 # events/views.py
-"""
-Live-пульс. Тап по реакции меняет одну строку в БД и возвращает крошечный
-HTML-фрагмент (пара кнопок), не всю страницу — иначе на популярном матче
-с сотнями одновременных тапов каждый гонял бы лишние килобайты разметки.
-Опрос every 15s (templates/events/_live_pulse.html) вместо WebSocket/Channels
-— на таком интервале это избыточная инфраструктура.
-"""
+"""Live-пульс: тап меняет одну строку и возвращает пару кнопок. Опрос каждые 15 с."""
 from django.http import HttpResponse, HttpResponseNotAllowed
 from django.shortcuts import get_object_or_404, render
 from django.views.decorators.http import require_GET, require_POST
@@ -16,21 +10,18 @@ from matches.models import Match
 from .models import EventReaction, MatchEvent
 from .services import reaction_counts, toggle_reaction, user_reactions_map
 
-# Показываем реакции только у "крупных" событий — гол, пенальти, карточки,
-# VAR. Замены/автоголы формально MatchEvent, но эмоционально нейтральны,
-# реагировать на них 👍/👎 бессмысленно и засоряет ленту пульса.
+# Реакции только у крупных событий (голы, пенальти, карточки, VAR).
 PULSE_EVENT_TYPES = ["goal", "penalty", "own_goal", "yellow_card", "red_card", "var_check"]
 PULSE_EVENTS_LIMIT = 12
 
-# По user.id, не по IP — react_to_event требует аутентификации (см. ниже),
-# так что user.id уже доступен и точнее IP (NAT/мобильные сети).
+# Rate-limit по user.id.
 REACT_RATE_LIMIT = 30
 REACT_RATE_LIMIT_WINDOW_SECONDS = 60
 
 
 @require_GET
 def pulse_partial(request, match_id):
-    """HTMX-партиал: последние live-события матча с кнопками реакции."""
+    """HTMX-партиал: последние события с кнопками реакций."""
     match = get_object_or_404(Match, id=match_id)
     events = list(
         match.events.filter(event_type__in=PULSE_EVENT_TYPES)
@@ -51,19 +42,9 @@ def pulse_partial(request, match_id):
 
 @require_POST
 def react_to_event(request, event_id):
-    """
-    Тап по 👍/👎. Возвращает обновлённую пару кнопок для ОДНОГО события.
-
-    Rate-limit (30/мин на user.id) — без него `toggle_reaction` можно было
-    дёргать скриптом без ограничений на любое MatchEvent; сам toggle
-    идемпотентен по паре (user, event), но каждый вызов — это write в БД.
-    429 без тела: та же логика, что и в toggle_follow — HTMX не свапает
-    вне 2xx, кнопки просто не обновятся вместо падения partial'а.
-    """
+    """Тап по 👍/👎 — обновлённая пара кнопок. Лимит 30/мин; при превышении 429."""
     if not request.user.is_authenticated:
-        # status=200, не 401 — HTMX по умолчанию swap'ает контент только на
-        # 2xx (htmx.config.responseHandling), иначе призыв войти рендерится,
-        # но клиент его молча отбрасывает.
+        # 200, не 401 — HTMX свапает только 2xx.
         return render(
             request, 'events/_reaction_login_prompt.html', {'event_id': event_id}, status=200
         )

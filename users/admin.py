@@ -1,10 +1,5 @@
 # users/admin.py
-"""
-rating_power не в list_display — поле есть в схеме, но нигде не читается/не
-пишется кроме дефолта 1.0, показывать его как метрику вводит в заблуждение
-(колонку не дропаем — отдельное решение). registration_ip в list_display/
-search — для разбора жалоб на подозрительные регистрации.
-"""
+"""Админка users. rating_power не показываем — поле не используется."""
 from __future__ import annotations
 
 from django.contrib import admin
@@ -28,8 +23,7 @@ class UserAdmin(ModelAdmin):
     )
     search_fields = ("username", "email", "registration_ip")
     list_filter = ("is_verified",)
-    # trust_score считается автоматически (антифрод-сигналы), ручное
-    # редактирование из формы могло бы разойтись с реальной историей флагов.
+    # trust_score только для чтения — считается автоматически.
     readonly_fields = ("trust_score",)
     actions = [export_as_csv, "verify_selected", "deactivate_selected"]
 
@@ -40,9 +34,7 @@ class UserAdmin(ModelAdmin):
 
     @admin.action(description="Деактивировать (is_active=False)")
     def deactivate_selected(self, request, queryset):
-        # НЕ используем queryset.delete() — деактивация всегда обратима,
-        # массовое удаление аккаунтов из списка admin слишком опасная
-        # операция, чтобы предлагать её одной кнопкой без подтверждения.
+        # Только деактивация, без массового удаления.
         updated = queryset.update(is_active=False)
         self.message_user(request, f"Деактивировано: {updated}")
 
@@ -61,15 +53,14 @@ class UserXPAdmin(ModelAdmin):
     list_display = ("user", "level", "total_xp", "progress_percent")
     search_fields = ("user__username", "user__email")
     autocomplete_fields = ("user",)
-    # total_xp/level начисляются только по событиям (XP-движок), ручная
-    # правка из формы разошлась бы с историей начислений.
+    # total_xp/level только для чтения — начисляются событиями.
     readonly_fields = ("total_xp", "level")
     actions = [export_as_csv]
 
 
 @admin.register(SuspiciousActivityFlag)
 class SuspiciousActivityFlagAdmin(ModelAdmin):
-    """Очередь ручной модерации анти-фрод сигналов."""
+    """Очередь модерации антифрод-флагов."""
 
     list_display = ("user", "source", "score", "status", "match", "created_at")
     list_filter = ("source", "status")
@@ -85,34 +76,10 @@ class SuspiciousActivityFlagAdmin(ModelAdmin):
 
     @admin.action(description="Отметить как ложное срабатывание")
     def mark_dismissed(self, request, queryset):
+        """Отклонить флаги. Для stats_divergence / player_stats_divergence
+        дополнительно снимается поправка рейтинга и ставится cooldown.
         """
-        2026-08-24: для source="stats_divergence" (aggregates/tasks.py::
-        detect_rating_stats_divergence_task) отклонение флага ДОПОЛНИТЕЛЬНО
-        обнуляет TeamRatingCorrection сущности — в отличие от остальных
-        источников, у этого сигнала есть автоматическое последствие
-        (небольшая поправка к performance_score, см. докстринг модели в
-        aggregates/models.py), и "отклонить как ложное срабатывание" без
-        отмены самой поправки было бы половинчатым решением — расхождение
-        сочли объяснимым, значит компенсировать его не нужно. Поправка всё
-        равно сама через день-два начнёт затухать, если её не трогать, но
-        явный "Отклонить" должен снимать её сразу, а не ждать угасания.
-
-        БАГ, КОТОРЫЙ ТУТ БЫЛ: обнуление correction ничем не защищалось от
-        detect_rating_stats_divergence_task — следующий же суточный прогон
-        заново находил тот же паттерн (объективные факты матча не
-        изменились) и заново перезаписывал correction, тихо отменяя решение
-        модератора буквально на следующий день. Теперь дополнительно
-        проставляем suppressed_until на STATS_DIVERGENCE_DISMISS_COOLDOWN_DAYS
-        вперёд — _check_team_stats_divergence пропускает команду, пока
-        cooldown не истёк.
-
-        2026-09-08: source="player_stats_divergence" (aggregates/tasks.py::
-        detect_player_rating_stats_divergence_task) — тот же принцип, тот
-        же баг-предохранитель, один-в-один, но для PlayerRatingCorrection/
-        Player вместо TeamRatingCorrection/Team.
-        """
-        # 2026-09-24: логика вынесена в aggregates.tasks.apply_divergence_dismissal —
-        # общая с кнопкой «Отклонить» в дашборде (там её раньше не было вовсе).
+        # Общая логика с дашбордом — aggregates.tasks.apply_divergence_dismissal.
         from aggregates.tasks import apply_divergence_dismissal
 
         apply_divergence_dismissal(list(queryset))
@@ -123,14 +90,8 @@ class SuspiciousActivityFlagAdmin(ModelAdmin):
 
 @admin.register(AntiFraudThreshold)
 class AntiFraudThresholdAdmin(ModelAdmin):
-    """
-    Текущие значения самокалибрующихся антифрод-порогов — см. докстринг
-    модели. list_editable на value/min_value/max_value: staff может
-    вручную переопределить значение (например, сразу после инцидента,
-    не дожидаясь еженедельного пересчёта), но не может задать его вне
-    вилки min_value/max_value — форма/clean этого не проверяет здесь
-    специально, полагаясь на то, что калибровка сама вернёт его в вилку
-    на следующем прогоне, если staff всё же поставит значение снаружи.
+    """Самокалибрующиеся антифрод-пороги. Значения можно править вручную;
+    выход за min/max исправит следующая калибровка.
     """
 
     list_display = ("key", "value", "default_value", "min_value", "max_value", "last_note", "updated_at")
@@ -142,7 +103,7 @@ class AntiFraudThresholdAdmin(ModelAdmin):
 
 @admin.register(Follow)
 class FollowAdmin(ModelAdmin):
-    """Follow-граф — кто на кого подписан."""
+    """Подписки."""
 
     list_display = ("user", "player", "team", "created_at")
     list_filter = ("created_at",)

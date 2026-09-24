@@ -1,3 +1,4 @@
+# analytics/urls.py — Приём клиентских событий аналитики.
 from django.urls import path
 
 from analytics.views import TrackClientEventView

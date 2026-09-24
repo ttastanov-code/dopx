@@ -32,14 +32,7 @@
         {% endfor %}
     </div>
     
-    {% comment %}
-    'in' на строковом литерале — substring-membership, не list-membership
-    (случайно работало, т.к. ни один статус не подстрока другого) — заменено
-    явными сравнениями. ВНИМАНИЕ: этот шаблон нигде не рендерится (grep по
-    репозиторию — ни одного render()) и ссылается на поля, которых нет у
-    ContactSubmission (assigned_to, messages/is_admin_message) — похоже на
-    не до конца подключённую фичу тикетов. Оставлено как есть до подключения.
-    {% endcomment %}
+    {# Шаблон нигде не рендерится (незаконченная фича тикетов). Сравнения статусов — явные. #}
     {% if ticket.status != 'closed' and ticket.status != 'resolved' %}
     <h3>Действия</h3>
     <form method="post" style="margin-top: 20px;">

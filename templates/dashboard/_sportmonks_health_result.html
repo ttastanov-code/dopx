@@ -1,9 +1,5 @@
-<!-- templates/dashboard/_sportmonks_health_result.html -->
-<!-- Вынесено из parser_tools.html — результат live-проверки Sportmonks API,
-     рендерится и при первой загрузке страницы (из кэша, см. dashboard/
-     parser_tools.py::get_cached_sportmonks_health), и inline через HTMX
-     сразу после клика «Проверить доступность» (dashboard/views.py::
-     parser_sportmonks_health_check), без перезагрузки всей страницы. -->
+{# Результат проверки Sportmonks API #}
+{# Рендерится из кэша при загрузке и через HTMX после «Проверить доступность». #}
 {% if sportmonks_health %}
 <div class="rounded-lg border p-3 flex items-start gap-3 {% if sportmonks_health.ok %}border-success/30 bg-success/5{% else %}border-error/30 bg-error/5{% endif %}">
     <i class="ti {% if sportmonks_health.ok %}ti-circle-check text-success{% else %}ti-circle-x text-error{% endif %} text-lg flex-shrink-0 mt-0.5"></i>
@@ -16,15 +12,7 @@
             {{ sportmonks_health.elapsed_ms }} мс · проверено {{ sportmonks_health.checked_at|timesince }} назад
         </p>
         {% if sportmonks_health.rate_limit_remaining is not None %}
-        {% comment %}
-        2026-09-09: раньше называлось "использовано X из 2000" — но это
-        остаток ТОЛЬКО по entity этого одного вызова (get_league(), всегда
-        "League"), не суммарный расход по всем задачам. Пользователь сверил
-        с порталом Sportmonks (871/день) и число не сошлось от слова
-        совсем — переименовано в "остаток", суммарный расход теперь
-        отдельной строкой в карточке "Быстрые факты" ниже (свой счётчик,
-        см. parsers/sportmonks/client.py::get_request_counts).
-        {% endcomment %}
+        {# Остаток лимита по entity этого вызова; общий расход — в «Быстрых фактах». #}
         <p class="text-xs opacity-50 mt-1">
             <i class="ti ti-gauge"></i>
             Остаток лимита{% if sportmonks_health.rate_limit_entity %} ({{ sportmonks_health.rate_limit_entity }}){% endif %}:

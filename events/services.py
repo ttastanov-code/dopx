@@ -1,5 +1,5 @@
 # events/services.py
-"""Сервисный слой live-пульса: тап/подсчёт реакций, отдельно от views.py."""
+"""Live-пульс: реакции на события."""
 from __future__ import annotations
 
 from django.db import IntegrityError, transaction
@@ -9,22 +9,10 @@ from .models import EventReaction, MatchEvent
 
 
 def toggle_reaction(*, user, match_event: MatchEvent, reaction: str) -> str | None:
+    """Тап по 👍/👎: повтор той же — снимает, противоположная — заменяет.
+    Возвращает 'like' / 'dislike' / None.
     """
-    Тап по 👍/👎. Идемпотентно относительно повторного тапа по ТОЙ ЖЕ
-    реакции — второй тап по 👍 убирает реакцию (toggle-off), а не создаёт
-    дубликат/ошибку UniqueConstraint. Тап по противоположной реакции
-    ЗАМЕНЯЕТ существующую (нельзя одновременно 👍 и 👎 одно и то же
-    событие — это не два независимых счётчика лайков и дизлайков, а один
-    выбор стороны).
-
-    Возвращает итоговую реакцию пользователя после тапа: 'like' / 'dislike'
-    / None (если реакция была снята).
-    """
-    # БАГ, КОТОРЫЙ ТУТ БЫЛ: gонка между filter(...).first() и .create() без
-    # select_for_update/get_or_create/обработки IntegrityError — два
-    # параллельных запроса (двойной тап на мобильном) оба видели
-    # existing=None и оба пытались create(); второй падал IntegrityError по
-    # unique_event_reaction наружу как 500 вместо нормального toggle.
+    # Двойной тап — обрабатываем IntegrityError.
     with transaction.atomic():
         existing = EventReaction.objects.select_for_update().filter(
             match_event=match_event, user=user
@@ -32,9 +20,7 @@ def toggle_reaction(*, user, match_event: MatchEvent, reaction: str) -> str | No
 
         if existing is None:
             try:
-                # Savepoint: если параллельный запрос успел вставить строку
-                # первым, INSERT здесь упадёт IntegrityError-ом, но не должен
-                # сломать всю внешнюю транзакцию — только этот savepoint.
+                # Savepoint — ошибка вставки не ломает внешнюю транзакцию.
                 with transaction.atomic():
                     EventReaction.objects.create(match_event=match_event, user=user, reaction=reaction)
                 return reaction
@@ -53,11 +39,7 @@ def toggle_reaction(*, user, match_event: MatchEvent, reaction: str) -> str | No
 
 
 def reaction_counts(match_event_ids: list) -> dict:
-    """
-    Один запрос на список событий вместо N — та же логика экономии
-    запросов, что в `aggregates/services.py::_build_user_weight_map`.
-    Возвращает {event_id: {'like': N, 'dislike': N}}.
-    """
+    """Счётчики реакций для списка событий одним запросом: {event_id: {'like', 'dislike'}}."""
     rows = (
         EventReaction.objects.filter(match_event_id__in=match_event_ids)
         .values('match_event_id')
@@ -73,8 +55,7 @@ def reaction_counts(match_event_ids: list) -> dict:
 
 
 def user_reactions_map(user, match_event_ids: list) -> dict:
-    """{event_id: 'like'|'dislike'} только для реакций ЭТОГО пользователя —
-    нужно, чтобы подсветить кнопку, которую он уже нажал."""
+    """{event_id: 'like'|'dislike'} текущего пользователя."""
     if not user or not user.is_authenticated:
         return {}
     return dict(

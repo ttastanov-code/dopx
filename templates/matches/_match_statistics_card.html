@@ -1,19 +1,6 @@
 {% comment %}
-templates/matches/_match_statistics_card.html
-Фаза 5 (docs/sportmonks-migration-plan.md, раздел 7): "Статистика матча
-рядом с ДНК матча — данные уже приходят через фазу 3, тут только
-фронтенд/шаблон." Источник — MatchTeamStatistics (matches/models.py),
-заполняется parsers/sportmonks/importers.py::import_statistics.
-
-Показывается ТОЛЬКО если хотя бы одна из команд имеет запись статистики —
-на старых/неполных матчах (или пока не подтянута тяжёлая догрузка) карточки
-просто не будет, а не пустых нулей, которые выглядели бы как "0:0 по всем
-показателям" (обманчиво, будто это реальный факт, а не отсутствие данных).
-
-Принимает: stat_rows (список dict {label, suffix, home, away} —
-собран в matches/views.py::MatchDetailView, чтобы не плодить в шаблоне
-одинаковый {% with %} на каждое поле) и has_match_statistics (bool,
-предпосчитанный флаг "есть хоть одна ненулевая строка").
+Статистика матча (MatchTeamStatistics). Нет данных — карточки нет.
+Контекст: stat_rows [{label, suffix, home, away}], has_match_statistics.
 {% endcomment %}
 {% if has_match_statistics %}
 <div class="md-side-card">
@@ -22,13 +9,7 @@ templates/matches/_match_statistics_card.html
         <h3 class="font-extrabold text-base md:text-lg">Статистика матча</h3>
     </div>
     <div class="p-3 sm:p-4 space-y-3">
-        {% comment %}
-        Каждая строка — пара значений с пропорциональной полоской между
-        ними. {% widthratio %} — встроенный тег Django, не нужен кастомный
-        фильтр деления, чтобы посчитать долю home/away в сумме двух чисел.
-        Пропускаем строку целиком, если ОБА значения null (см. докстринг
-        MatchTeamStatistics — не все поля приходят на каждом матче).
-        {% endcomment %}
+        {# Строка: значения + пропорциональная полоска. Оба null — строку пропускаем. #}
         {% for row in stat_rows %}
         {% if row.home != None or row.away != None %}
         <div>

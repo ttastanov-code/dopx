@@ -4,7 +4,7 @@ from django.utils.translation import gettext_lazy as _
 from core.models import BaseModel
 
 class PlayerMatchAggregate(BaseModel):
-    """Агрегированные оценки игрока за матч"""
+    """Агрегированные оценки игрока за матч."""
     player = models.ForeignKey(
         'players.Player',
         on_delete=models.CASCADE,
@@ -26,21 +26,14 @@ class PlayerMatchAggregate(BaseModel):
     
     # Вычисляемые индексы
     performance_score = models.FloatField(_('Рейтинг выступления'), default=0.0)
-    # 2026-09-23: сколько авто-поправки (PlayerRatingCorrection) вшито в
-    # performance_score этого матча. Нужно детектору расхождения, чтобы
-    # сравнивать ЧИСТУЮ оценку болельщиков, а не оценку + свою же прошлую
-    # поправку (иначе петля обратной связи: поправка −0.23 тянет рейтинг
-    # вниз → детектор видит "занижен" → ставит +0.25 → и т.д.).
+    # Вшитая в performance_score поправка — детектор сравнивает чистую оценку.
     rating_correction_applied = models.FloatField(_('Вшитая авто-поправка'), default=0.0)
     risk_index = models.FloatField(_('Индекс риска'), default=0.0)
     maturity_score = models.FloatField(_('Индекс зрелости'), default=0.0)
     stability_index = models.FloatField(_('Индекс стабильности'), default=0.0)
     clutch_index = models.FloatField(_('Индекс решающих моментов'), default=0.0)
 
-    # Сегментация contribution по лагерю голосующего (свои фанаты / фанаты
-    # соперника / нейтралы) — не меняет formula performance_score, чисто
-    # разрез для отображения в дерби, где расхождение мнений подрывает
-    # доверие к общему рейтингу. null=True: не в каждом сегменте есть голоса.
+    # Средние по лагерям (свои / соперник / нейтралы). Не влияют на performance_score.
     own_fans_avg = models.FloatField(
         _('Средняя оценка от фанатов игрока'), null=True, blank=True,
         help_text=_('avg(contribution) от зрителей, поддержавших команду игрока'),
@@ -77,7 +70,7 @@ class PlayerMatchAggregate(BaseModel):
 
 
 class CoachMatchAggregate(BaseModel):
-    """Агрегированные оценки тренера за матч"""
+    """Агрегированные оценки тренера за матч."""
     coach = models.ForeignKey(
         'coaches.Coach',
         on_delete=models.CASCADE,
@@ -96,12 +89,7 @@ class CoachMatchAggregate(BaseModel):
     avg_impact = models.FloatField(_('Среднее влияние'), default=0.0)
     total_votes = models.IntegerField(_('Всего голосов'), default=0)
 
-    # Сегментация по лагерю голосующего — тот же разрез, что у
-    # PlayerMatchAggregate (own_fans_avg/rival_fans_avg/neutral_avg, см.
-    # 0002_playermatchaggregate_bias_segments) — 2026-08-23, продуктовый
-    # запрос на защиту от сговора фан-базы попросил ту же прозрачность не
-    # только для игроков. average_score здесь используется как единое
-    # значение "оценки тренера" для сегментации (среднее 4 полей).
+    # Средние по лагерям, как у игрока.
     own_fans_avg = models.FloatField(
         _('Средняя оценка от фанатов команды тренера'), null=True, blank=True,
         help_text=_('avg(average_score) от зрителей, поддержавших команду тренера'),
@@ -137,21 +125,8 @@ class CoachMatchAggregate(BaseModel):
 
 
 class TeamMatchAggregate(BaseModel):
-    """
-    Агрегированные оценки КОМАНДЫ за матч (TeamEvaluation: тактика/
-    самоотдача/организация/менталитет).
-
-    2026-08-23: до этой модели рейтинг команды нигде не кэшировался и не
-    защищался — teams/views.py::TeamDetailView и team_rating_widget
-    считали `Avg()` НАПРЯМУЮ по всем TeamEvaluation команды за всю
-    карьеру синхронно на каждый рендер страницы: без веса пользователя,
-    без винзоризации, без сегментации свои/чужие — тот же класс дыры, что
-    был у игроков/тренеров (см. aggregates/services.py), только команды
-    не имели вообще никакого промежуточного агрегата, даже наивного.
-    Заведена по образцу CoachMatchAggregate — тот же паттерн: пересчёт
-    ПЕР МАТЧ асинхронной Celery-задачей (recalculate_team_aggregates),
-    профиль команды/виджет читают уже готовый рейтинг по матчам, а не
-    считают его на лету.
+    """Агрегированные оценки команды за матч (тактика/самоотдача/организация/менталитет).
+    Пересчёт — recalculate_team_aggregates.
     """
     team = models.ForeignKey(
         'teams.Team',
@@ -174,8 +149,7 @@ class TeamMatchAggregate(BaseModel):
         _('Рейтинг команды'), default=0.0,
         help_text=_('Взвешенное и винзоризованное среднее average_score (см. aggregates/services.py)'),
     )
-    # 2026-09-23: см. одноимённое поле PlayerMatchAggregate — защита
-    # детектора расхождения от петли обратной связи с собственной поправкой.
+    # Вшитая поправка — см. PlayerMatchAggregate.
     rating_correction_applied = models.FloatField(_('Вшитая авто-поправка'), default=0.0)
 
     own_fans_avg = models.FloatField(
@@ -208,21 +182,8 @@ class TeamMatchAggregate(BaseModel):
 
 
 class RefereeMatchAggregate(BaseModel):
-    """
-    Агрегированные оценки СУДЕЙСТВА за матч (RefereeEvaluation:
-    decision_quality/influence_score + fairness с MatchEvaluation).
-
-    2026-08-23: та же дыра, что и у команд — referees/views.py и
-    season_squad/services.py::_build_referee_pool оба считали формулу
-    судейского рейтинга НАПРЯМУЮ из RefereeEvaluation/MatchEvaluation на
-    лету (и вдобавок ДВАЖДЫ дублировали одну и ту же формулу в двух
-    файлах). Формула перенесена сюда в одно место, пересчитывается
-    асинхронно per-match вместе с остальными агрегатами.
-
-    Сегментация — не "свои/чужие" (у судьи нет своей команды), а
-    "домашние/гостевые фанаты/нейтралы": обе стороны матча могут
-    считать, что судья был предвзят именно ПРОТИВ них — расхождение
-    home_fans_avg/away_fans_avg наглядно это показывает.
+    """Агрегированные оценки судейства за матч.
+    Лагеря: болельщики хозяев / гостей / нейтралы.
     """
     referee = models.ForeignKey(
         'referees.Referee',
@@ -281,7 +242,7 @@ class RefereeMatchAggregate(BaseModel):
 
 
 class MatchAggregate(BaseModel):
-    """Агрегированные оценки матча"""
+    """Агрегированные оценки матча."""
     match = models.OneToOneField(
         'matches.Match',
         on_delete=models.CASCADE,
@@ -311,30 +272,10 @@ class MatchAggregate(BaseModel):
 
 
 class TeamRatingCorrection(BaseModel):
-    """
-    Автоматическая, самозатухающая поправка к performance_score команды —
-    структурный ответ на detect_rating_stats_divergence_task (aggregates/
-    tasks.py::_check_team_stats_divergence), а НЕ ручной переключатель.
-
-    2026-08-24, продуктовое решение: раньше stats_divergence был чисто
-    информационным сигналом (создавал флаг в очереди и всё) — пользователь
-    справедливо указал, что без действия это бесполезно, а "разбирать
-    руками каждое совпадение" не вариант. Теперь этот сигнал работает как
-    остальные структурные слои защиты (винзоризация, нейтральный якорь):
-    применяется САМ, без участия модератора, ограничен по величине (см.
-    STATS_DIVERGENCE_MAX_CORRECTION в aggregates/tasks.py) и САМ затухает
-    к нулю на следующих прогонах, если расхождение перестало наблюдаться —
-    никто не должен "выключать" её вручную.
-
-    Поправка применяется ТОЛЬКО к будущим матчам, пересчитываемым ПОСЛЕ
-    её обновления (recalculate_team_aggregates читает текущее значение на
-    каждый пересчёт) — уже показанные исторические рейтинги задним числом
-    не переписываются, это было бы менее прозрачно.
-
-    Модератор всё ещё может вмешаться: действие "Отклонить" на флаге
-    stats_divergence в admin (users/admin.py::SuspiciousActivityFlagAdmin)
-    обнуляет поправку конкретной команды, если решил, что расхождение
-    объяснимо (травмы, судейство и т.д.) и его не нужно компенсировать.
+    """Авто-поправка к performance_score команды при расхождении со статистикой.
+    Ограничена STATS_DIVERGENCE_MAX_CORRECTION, сама затухает.
+    Применяется к пересчётам, история не переписывается.
+    «Отклонить» флага обнуляет поправку.
     """
     team = models.OneToOneField(
         'teams.Team',
@@ -374,8 +315,7 @@ class TeamRatingCorrection(BaseModel):
 
 
 def _correction_public_text(correction: float, last_pattern: str, who: str) -> str:
-    """2026-09-23, жалоба "непонятно какого фига корректировка, для чего и
-    почему" — объяснение авто-поправки для обычного посетителя сайта."""
+    """Пояснение поправки для посетителей."""
     up = correction > 0
     if last_pattern:
         if up:
@@ -395,34 +335,8 @@ def _correction_public_text(correction: float, last_pattern: str, who: str) -> s
 
 
 class PlayerRatingCorrection(BaseModel):
-    """
-    Аналог TeamRatingCorrection (см. её докстринг выше — та же механика
-    один-в-один), но на уровне ИГРОКА — 2026-09-08, по прямой просьбе
-    пользователя ("статистику матча... использовать при рекомендации
-    быстрой оценки игроков... против накрутки и неадекватной оценки").
-
-    Структурный ответ на detect_player_rating_stats_divergence_task
-    (aggregates/tasks.py) — сравнивает тренд community-рейтинга игрока
-    (PlayerMatchAggregate.performance_score) с его же ОБЪЕКТИВНЫМ игровым
-    индексом за те же матчи (composite из MatchPlayerStatistics + событий
-    MatchEvent — голы/ассисты/карточки, см. _player_objective_score).
-
-    ВАЖНОЕ ОТЛИЧИЕ от команды: у TeamRatingCorrection объективный сигнал —
-    "доля доминирования" (0..1, сравнение с СОПЕРНИКОМ в том же матче,
-    DOMINANCE_SHARE_FIELDS). У игрока нет естественного аналога "доли" —
-    вратарь и нападающий структурно дают разные абсолютные цифры статистики
-    (сейвы vs удары), сравнивать их напрямую бессмысленно. Поэтому здесь
-    объективный индекс сравнивается НЕ с чужим, а с СОБСТВЕННОЙ историей
-    игрока (self-relative z-score, _check_player_stats_divergence) — это
-    само по себе корректно учитывает амплуа без отдельной калибровки по
-    позиции.
-
-    Применяется и затухает по абсолютно той же схеме: небольшая, жёстко
-    ограниченная (PLAYER_STATS_DIVERGENCE_MAX_CORRECTION), самозатухающая
-    поправка к performance_score, применяется ТОЛЬКО к будущим пересчётам
-    (recalculate_player_aggregates), не переписывает уже сохранённую
-    историю. Модератор может отклонить флаг (users/admin.py::
-    mark_dismissed) — обнуляет correction и ставит cooldown, как у команды.
+    """То же для игрока: объективный индекс сравнивается с историей самого игрока (z-score).
+    Ограничена PLAYER_STATS_DIVERGENCE_MAX_CORRECTION, сама затухает.
     """
     player = models.OneToOneField(
         'players.Player',

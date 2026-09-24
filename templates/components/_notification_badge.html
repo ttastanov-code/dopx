@@ -1,16 +1,10 @@
 {% comment %}
-Компонент уведомлений: триггер + дропдаун. Клик — через Alpine (x-data), не
-HTMX. На мобильных дропдаун fixed по центру, на десктопе absolute справа.
-
-Строки — общий партиал components/_notification_item.html (compact=True),
-тот же, что на полной странице /notifications/. Счётчик — отдельный
-самополлящийся партиал components/_notification_unread_badge.html
-(обновляется каждые 30с и мгновенно после отметки прочитанным через
-out-of-band swap, см. notifications/views.py::_oob_counters_html).
+Колокольчик уведомлений: триггер + дропдаун (Alpine).
+Строки — _notification_item.html (compact), счётчик — _notification_unread_badge.html.
 {% endcomment %}
 <div class="dropdown dropdown-end relative" id="notification-wrapper" x-data="notificationDropdown" @click.outside="open = false">
 
-    <!-- === ТРИГГЕР (Иконка) === -->
+    {# === ТРИГГЕР === #}
     <div @click="open = !open"
          class="btn btn-ghost btn-circle relative flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 cursor-pointer"
          :class="open ? 'bg-base-200' : ''">
@@ -18,29 +12,17 @@ out-of-band swap, см. notifications/views.py::_oob_counters_html).
         {% include 'components/_notification_unread_badge.html' with count=count %}
     </div>
 
-    {% comment %}
-    2026-09-11 (жалоба пользователя: при обновлении/открытии страницы на
-    мобильном видно, как центр уведомлений "открывается и закрывается").
-    Причина — классический Alpine FOUC: alpine-components.js и сам Alpine
-    core грузятся с defer (см. base.html), поэтому браузер успевает
-    отрисовать сырой HTML ДО того, как Alpine выполнится и применит
-    x-show="open" (изначально false). У обоих блоков ниже не было
-    x-cloak — они на долю секунды показывались в своём "естественном"
-    (видимом) состоянии, потом Alpine их прятал — то самое мигание.
-    x-cloak скрывает их чисто через CSS ([x-cloak]{display:none!important},
-    см. <style> в base.html) СРАЗУ, без ожидания JS, и Alpine сам снимает
-    атрибут при инициализации — эффект первого кадра пропадает полностью.
-    {% endcomment %}
-    <!-- === BACKDROP (для мобильных, закрывает при клике вне) === -->
-    <!-- На мобильных это затемняет экран, на десктопе скрыт -->
+    {# x-cloak — без мигания до инициализации Alpine. #}
+    {# === ФОН (мобильные) === #}
+    {# Затемнение на мобильном, на десктопе скрыт #}
     <div x-show="open"
          x-cloak
          x-transition.opacity
          class="fixed inset-0 bg-black/30 z-[90] sm:hidden"
          @click="open = false"></div>
 
-    <!-- === ДРОПДАУН КОНТЕНТ === -->
-    <!-- Контейнер: на мобильных FIXED (по центру), на десктопе ABSOLUTE (справа) -->
+    {# === ДРОПДАУН === #}
+    {# Мобильные — fixed по центру, десктоп — absolute справа #}
     <div x-show="open"
          x-cloak
          x-transition:enter="transition ease-out duration-200"
@@ -53,35 +35,16 @@ out-of-band swap, см. notifications/views.py::_oob_counters_html).
          class="z-[100] bg-base-100 border border-base-300 shadow-2xl rounded-box overflow-hidden
                 fixed inset-x-4 top-[60px] w-auto max-h-[70vh] sm:absolute sm:inset-auto sm:top-full sm:right-0 sm:mt-2 sm:w-80 sm:max-h-[80vh]">
 
-        <!-- Заголовок -->
+        {# Заголовок #}
         <div class="p-3 border-b border-base-300 flex items-center justify-between sticky top-0 bg-base-100 z-10">
             <div>
                 <div class="font-semibold text-sm">Уведомления</div>
                 <div class="text-xs opacity-60" id="notif-count-text">{{ count|default:0 }} непрочитанных</div>
             </div>
-            <!-- 2026-08-31: было ДВЕ ссылки на один и тот же
-                 notifications:list — эта иконка-кнопка "Все" здесь в
-                 шапке, и полноразмерная "Все уведомления" внизу списка
-                 (_notification_dropdown_items.html). Дубль без причины
-                 (жалоба пользователя: "зачем две кнопки все
-                 уведомления?") — убрана шапочная, оставлена нижняя: она
-                 крупнее, с текстом всегда видимым (не прячется под
-                 .hidden.sm:inline) и стоит логично последней строкой
-                 после списка. Заодно "Прочитать все" переведена с
-                 btn-ghost на btn-outline — та же причина невидимости в
-                 состоянии покоя, что и на полной странице /notifications/
-                 (см. комментарий там). -->
+            {# Ссылка «Все уведомления» — только внизу списка. #}
             <div class="flex items-center gap-1">
                 {% if count > 0 %}
-                {% comment %}
-                2026-09-11 (жалоба пользователя: "кнопка «прочитать все»
-                просто с иконкой без текста и непонятно что за кнопка") —
-                title-тултип на touch-устройствах не показывается вообще
-                (нет hover), поэтому .hidden.sm:inline на мобильном
-                оставлял голую иконку без единой подсказки, что она
-                делает. Текст теперь виден всегда — места в шапке дропдауна
-                достаточно (см. inset-x-4 выше, почти вся ширина экрана).
-                {% endcomment %}
+                {# Текст кнопки виден всегда (на тач-устройствах нет title). #}
                 <button type="button"
                         title="Прочитать все"
                         class="btn btn-outline btn-xs"
@@ -98,7 +61,7 @@ out-of-band swap, см. notifications/views.py::_oob_counters_html).
             </div>
         </div>
 
-        <!-- Список -->
+        {# Список #}
         {% include 'components/_notification_dropdown_items.html' with notifications=user.notifications.all|slice:":5" count=count %}
     </div>
 </div>

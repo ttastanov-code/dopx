@@ -1,34 +1,13 @@
 {% load avatar_extras %}
 {% comment %}
-templates/components/_avatar.html
-Единый генеративный аватар (градиент + инициалы) — замена автоматически
-импортированным фото (см. core/templatetags/avatar_extras.py — решение
-2026-08-21 отказаться от скрапинга фото с kffleague.kz). Параметры include:
-  name         — полное имя (обязательно, по нему считается цвет и буквы)
-  photo_url    — URL фото, ЕСЛИ оно есть; пусто/не передан → генеративный
-                 аватар. Фото по-прежнему поддерживается (например, staff
-                 вручную загрузил через админку) — просто больше ничего не
-                 подтягивает его автоматически.
-  size_classes — Tailwind-классы размера/шрифта, по умолчанию 'w-12 h-12 text-lg'
-  ring_classes — необязательные классы кольца (ring ring-primary ...)
-  fallback_text — необязательная замена инициалам, когда фото нет (например,
-                  рейтинг "6.4" вместо букв — см. season_squad/
-                  _best_xi_content.html и round_squad/_round_content.html:
-                  на "поле" сборной тура/сезона фото у игроков почти
-                  никогда нет, а инициалы двух случайных цветных букв не
-                  несут пользы ("нахуй не нужны" — жалоба пользователя
-                  2026-09-21), в отличие от рейтинга, который и так рядом
-                  показывается текстом. Не передан — поведение как раньше,
-                  инициалы по имени (все остальные вызовы этого партиала
-                  по сайту не меняются).
-  ring_style   — необязательная СЫРАЯ CSS-строка для кольца через outline
-                 (например "outline: 2px solid var(--color-success);
-                 outline-offset: 2px;"), а не через Tailwind-класс
-                 ring-{цвет} (см. docs/adr/0021-tailwind-runtime-daisyui-colors.md).
-                 outline, а не box-shadow-ring — overflow-hidden на этом
-                 div обрезал бы box-shadow-кольцо, outline рисуется поверх.
-Вызывать ТОЛЬКО через {% include %}, не напрямую — как и другие партиалы
-в этой папке (см. _confidence_badge.html).
+Аватар: фото или генеративный (градиент + инициалы).
+Параметры include:
+  name          — имя (цвет и буквы);
+  photo_url     — фото, если есть;
+  size_classes  — размер, по умолчанию 'w-12 h-12 text-lg';
+  ring_classes  — классы кольца;
+  fallback_text — вместо инициалов, например рейтинг;
+  ring_style    — сырой CSS кольца через outline.
 {% endcomment %}
 <div class="rounded-full overflow-hidden flex items-center justify-center font-bold text-white shrink-0 {{ size_classes|default:'w-12 h-12 text-lg' }} {{ ring_classes }}"
      style="{% if not photo_url %}background: {{ name|avatar_gradient }};{% endif %}{{ ring_style }}">

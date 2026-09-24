@@ -4,18 +4,8 @@
 {% include 'dashboard/_nav.html' %}
 
 {% comment %}
-templates/dashboard/evaluation_sessions_list.html
-2026-09-23, раздел «Модерация оценок» — список EvaluationSession
-(evaluations/models.py), одна строка = одна оценка матча одним
-пользователем (уникальна по (user, match)). Поиск по username ИЛИ
-названию команды матча + фильтры статус/режим (dashboard/services.py::
-evaluation_sessions_queryset).
-
-Колонка «Время заполнения» — прямое использование EvaluationSession.
-fill_duration_seconds (уже существующий антифрод-сигнал, см. докстринг
-модели: "физически невозможно осмысленно заполнить 6 шагов... за считаные
-секунды") — подсвечена красным при < 20 секунд, это и есть главная подсказка
-"на что смотреть в первую очередь" при модерации.
+Список сессий оценки: поиск по username/команде, фильтры статус/режим.
+Время заполнения < 20 с подсвечено красным.
 {% endcomment %}
 
 <div class="card bg-base-100 border border-base-300 mb-4">

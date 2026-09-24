@@ -5,17 +5,13 @@
 {% load tooltip_tags %}
 {% load l10n %}
 {% block content %}
-<!-- === НАВИГАЦИЯ === -->
+{# === НАВИГАЦИЯ === #}
 <div class="mb-4 md:mb-6 px-2 sm:px-0 flex items-center justify-between flex-wrap gap-2">
   <a href="{% url 'teams:list' %}" class="back-link" data-back-link>
     <span class="back-link__icon"><i class="ti ti-arrow-left"></i></span>
     <span>Назад к командам</span>
   </a>
-  {% comment %}
-  Embed-виджет команды (продуктовый аудит "канал привлечения", 2026-08-21) —
-  второй виджет после players/detail.html, тот же паттерн Alpine-модалки
-  embedModal (static/js/alpine-components.js).
-  {% endcomment %}
+  {# Embed-виджет команды (модалка embedModal). #}
   <div x-data="embedModal">
     <button type="button" @click="open = true" class="btn btn-outline btn-sm">
       <i class="ti ti-code"></i> Получить embed-код
@@ -40,7 +36,7 @@
   </div>
 </div>
 
-<!-- === HEADER КОМАНДЫ === -->
+{# === ШАПКА КОМАНДЫ === #}
 <div class="card bg-base-100 border border-base-300 mb-4 md:mb-6 px-2 sm:px-0">
   <div class="card-body p-4 md:p-6">
     <div class="flex flex-col md:flex-row items-center gap-4 md:gap-6">
@@ -56,20 +52,7 @@
           <h1 class="text-xl md:text-3xl font-bold truncate">{{ team.name }}</h1>
           {% include 'users/_follow_button.html' with target_type='team' target_id=team.id following=is_following %}
           {% if mood_trend %}
-          {% comment %}
-          Индекс настроения клуба — MVP тренд-бейдж (docs/adr/0029-club-mood-index-mvp.md),
-          НЕ полноценный индекс с историей — просто ↑/↓/→ по последним
-          нескольким матчам, посчитанный на лету (teams/services.py::compute_mood_trend).
-
-          БЫЛО (2026-09-07, продуктовый фидбек: "надпись 'Падает' — что
-          падает? нормально надо писать"): бейдж показывал голое "Падает"/
-          "Растёт"/"Стабильно" без подлежащего — объяснение существовало
-          ТОЛЬКО в hover-title, невидимом на мобильных (тач вообще не имеет
-          hover) и просто нигде не бросающемся в глаза. Текст самого бейджа
-          теперь называет метрику явно ("Настроение падает"), title остаётся
-          как дополнительная деталь (число матчей), а не единственный
-          источник смысла.
-          {% endcomment %}
+          {# Тренд настроения клуба (↑/↓/→ по последним матчам). #}
           <span class="badge {% if mood_trend.direction == 'up' %}badge-success{% elif mood_trend.direction == 'down' %}badge-error{% else %}badge-ghost{% endif %} gap-1"
                 title="По последним {{ mood_trend.matches_considered }} оцененным матчам, изменение {{ mood_trend.delta }} балла">
             {% if mood_trend.direction == 'up' %}
@@ -105,26 +88,12 @@
             <div class="stat-value text-lg md:text-xl text-error">{{ goals_conceded }}</div>
           </div>
         </div>
-        {% comment %}
-        Форма команды (фаза 5, docs/sportmonks-migration-plan.md) — последние
-        5 W/D/L, считается на лету из recent_matches (teams/services.py::
-        get_team_form), без отдельного поля/запроса к API.
-        {% endcomment %}
+        {# Форма: последние 5 W/D/L. #}
         {% if team_form %}
         <div class="flex items-center justify-center md:justify-start gap-1.5 mt-3">
           <span class="text-xs opacity-50 mr-1">Форма:</span>
           {% for item in team_form %}
-          {% comment %}
-          2026-09-11 (жалоба пользователя: "буквы криво стоят" в кружках
-          формы на мобильном) — без leading-none браузер использует
-          обычный line-height шрифта (обычно 1.2-1.5), а не 1: в таком
-          маленьком фиксированном круге (w-6 h-6) это визуально сдвигает
-          букву вниз от центра, даже при flex items-center. leading-none
-          убирает лишнюю высоту строки — буква реально по центру. Заодно
-          textwrap убран (перевод строки в шаблоне между {{ item.result }}
-          и тегами добавлял пробельный текстовый узел внутри круга, что
-          при таком мелком размере тоже чуть смещало букву).
-          {% endcomment %}
+          {# leading-none — буква по центру круга. #}
           <a href="{% url 'matches:detail' item.match.id %}"
              title="{% if item.is_home %}{{ team.name }} {{ item.score_display }} {{ item.opponent.name }}{% else %}{{ item.opponent.name }} {{ item.score_display }} {{ team.name }}{% endif %}"
              class="w-6 h-6 rounded-full flex items-center justify-center leading-none text-xs font-bold text-white flex-shrink-0
@@ -137,27 +106,7 @@
   </div>
 </div>
 
-{% comment %}
-Индекс настроения клуба v2 (docs/adr/0034-club-mood-index-v2.md) — настоящий
-time-series вместо одного бейджа-стрелки (тот остался у заголовка выше,
-см. mood_trend — быстрый ответ "как дела сейчас", это же — "как это
-выглядело за сезон"). SVG строится СЕРВЕРОМ (teams/services.py::build_mood_chart)
-— никакой клиентской JS-библиотеки графиков, ADR-0025 убрал рантайм-
-зависимость от внешних CDN и новый чарт не должен её возвращать.
-
-ПЕРЕСОБРАНО 2026-09-07 второй раз (живой скрин, продуктовый фидбек: "график
-уродский, синий и зелёный сливаются, пустые квадраты в ожиданиях перед
-матчем") — см. подробный докстринг в teams/services.py над build_mood_chart
-про каждый конкретный баг и почему он был. Коротко: (1) mood/trust теперь
-ДВА независимых мини-графика вместо одной общей оси — они физически не
-могут "слиться"; (2) сетка — только целые 0/5/10 с широким левым отступом и
-text-anchor="end", подпись растёт влево от фиксированной точки, обрезаться
-не обо что; (3) числа "сейчас" показываются по факту наличия значения
-(`latest_mood`/`latest_trust` не `None`), а не по факту существования
-графика — не бывает пустого "/10"; (4) "Ожидания перед матчем" — тоже SVG
-(`<rect>` с посчитанными на сервере координатами), а не HTML div с
-`height: N%` во flex-контейнере, которая на скрине не рендерилась вообще.
-{% endcomment %}
+{# Настроение клуба за сезон. SVG строится на сервере (teams/services.py::build_mood_chart). #}
 {% if mood_chart %}
 <div class="card bg-base-100 border border-base-300 mb-4 md:mb-6 px-2 sm:px-0">
   <div class="card-body p-4 md:p-6">
@@ -170,12 +119,7 @@ text-anchor="end", подпись растёт влево от фиксиров�
       </div>
     </div>
 
-    {% comment %}
-    MOOD — главный, крупный график. Заголовок метрики + число "сейчас"
-    стоят НАД её собственным графиком (не общим блоком справа сверху, как
-    раньше) — так с первого взгляда понятно, какое число к какой линии
-    относится, ещё одна причина прошлой путаницы.
-    {% endcomment %}
+    {# Настроение — основной график, число «сейчас» над ним. #}
     <div class="mt-3">
       <div class="flex items-baseline justify-between">
         <span class="flex items-center gap-1.5 text-xs font-semibold">
@@ -187,20 +131,7 @@ text-anchor="end", подпись растёт влево от фиксиров�
         {% endif %}
       </div>
       <div class="overflow-x-auto mt-1">
-        {% comment %}
-        localize off — БАГ, КОТОРЫЙ ТУТ БЫЛ (2026-09-07, живой скрин: "10"
-        рисовалось как "1"/"0" на разных строках, бары в "ожиданиях" пропали
-        совсем). Причина оказалась не в геометрии и не в CSS, а в том, что
-        сайт локализован под ru/kk (запятая как десятичный разделитель) —
-        Django `{{ }}` рендерит ЛЮБОЙ float через текущую локаль, поэтому
-        `grid.y = 16.0` печаталось как `y="16,0"`, `bar.height = 15.2` как
-        `height="15,2"` — ЗАПЯТАЯ В XML-АТРИБУТЕ SVG невалидна, парсер её не
-        принимает, и координаты/размеры уезжают в никуда. `{% load l10n %}`
-        (см. верх файла) + `{% localize off %}` здесь заставляет Django
-        печатать те же float обычной точкой ТОЛЬКО внутри самого SVG —
-        пользовательские "2,5/10" рядом (latest_mood/latest_trust с запятой,
-        это корректно и обязано остаться) сюда не попадают, они снаружи блока.
-        {% endcomment %}
+        {# localize off — в SVG-атрибутах нужна точка, а не запятая. #}
         {% localize off %}
         <svg viewBox="0 0 {{ mood_chart.mood.width }} {{ mood_chart.mood.height }}" class="w-full min-w-[480px]" style="max-height: 160px">
           <defs>
@@ -211,7 +142,7 @@ text-anchor="end", подпись растёт влево от фиксиров�
           </defs>
           {% for grid in mood_chart.mood.gridlines %}
           <line x1="0" y1="{{ grid.y }}" x2="{{ mood_chart.mood.width }}" y2="{{ grid.y }}" stroke="currentColor" stroke-opacity="0.08" stroke-width="1" />
-          {% comment %} text-anchor="end" — подпись растёт ВЛЕВО от фиксированной точки, широкий левый отступ гарантирует, что даже "10" помещается целиком. {% endcomment %}
+          {# text-anchor=end — подпись растёт влево. #}
           <text x="24" y="{{ grid.y }}" text-anchor="end" dominant-baseline="middle" font-size="11" font-weight="600" fill="currentColor" opacity="0.4">{{ grid.label }}</text>
           {% endfor %}
           {% if mood_chart.mood.has_data %}
@@ -228,12 +159,7 @@ text-anchor="end", подпись растёт влево от фиксиров�
       </div>
     </div>
 
-    {% comment %}
-    TRUST — компактный, приглушённый мини-график СВОЕЙ высоты под mood, а не
-    вторая линия на той же оси (это и была причина "сливаются" на скрине).
-    Если валидных точек меньше 2 — показываем текстовое пояснение вместо
-    пустого места, чтобы блок не выглядел сломанным.
-    {% endcomment %}
+    {# Доверие — отдельный мини-график. Меньше 2 точек — текст вместо графика. #}
     <div class="mt-3 pt-3 border-t border-base-200">
       <div class="flex items-baseline justify-between">
         <span class="flex items-center gap-1.5 text-xs font-semibold opacity-70">
@@ -276,34 +202,17 @@ text-anchor="end", подпись растёт влево от фиксиров�
     </div>
 
     {% if mood_chart.has_expectation_data %}
-    {% comment %} Ожидания перед матчем — отдельный SVG-блок, метрика другой природы (% прогнозов ДО игры, не 0-10 оценка ПОСЛЕ). {% endcomment %}
+    {# Ожидания перед матчем — % прогнозов до игры. #}
     <div class="mt-4 pt-3 border-t border-base-200">
       <div class="text-xs font-bold uppercase tracking-wide opacity-50 mb-2">Ожидания перед матчем — % прогнозов на победу</div>
       <div class="overflow-x-auto pb-1">
         {% localize off %}
-        {% comment %}
-        w-full + min-w вместо фиксированной ширины/высоты — тот же паттерн,
-        что у mood/trust svg выше: на мобильном (узкий контейнер) SVG
-        пропорционально сжимается вместо того, чтобы вылезать за экран.
-        overflow-x-auto на родителе — подстраховка на случай, если бар
-        много и даже min-w не спасает (тогда просто появляется горизонтальный
-        скролл, а не обрезанный/сплющенный контент).
-        {% endcomment %}
+        {# w-full + min-w — SVG сжимается на мобильном, overflow-x-auto на крайний случай. #}
         <svg viewBox="0 0 {{ mood_chart.expectation.width }} {{ mood_chart.expectation.height }}" class="w-full min-w-[280px]" style="max-height: 90px">
           <line x1="0" y1="{{ mood_chart.expectation.baseline_y }}" x2="{{ mood_chart.expectation.width }}" y2="{{ mood_chart.expectation.baseline_y }}" stroke="currentColor" stroke-opacity="0.12" stroke-width="1" />
           {% for bar in mood_chart.expectation.bars %}
           {% if bar.has_data %}
-          {% comment %}
-          БАГ, КОТОРЫЙ ТУТ БЫЛ (живой скрин 2026-09-07): использовался
-          `var(--color-accent, #a78bfa)` — фиолетовый фолбэк никогда не
-          применялся, потому что в РЕАЛЬНОЙ теме сайта --color-accent
-          определён и оказался teal/бирюзовым (oklch hue≈182), почти
-          неотличимым от --color-success (hue≈163) — бар "ожиданий" сливался
-          по цвету с графиком "Доверие" прямо под ним. --color-secondary в
-          этой же теме — розовый (hue≈354), гарантированно контрастирует и с
-          primary (синий, hue≈277), и с success/accent (teal) — проверено
-          напрямую в живом DOM через getComputedStyle.
-          {% endcomment %}
+          {# --color-secondary — контрастирует с графиком доверия. #}
           <rect x="{{ bar.x }}" y="{{ bar.y }}" width="{{ bar.width }}" height="{{ bar.height }}" rx="4" fill="var(--color-secondary, #ec4899)">
             <title>{{ bar.opponent }} {{ bar.label }} — {{ bar.pct|floatformat:0 }}% ждали победу</title>
           </rect>
@@ -345,21 +254,8 @@ text-anchor="end", подпись растёт влево от фиксиров�
 </div>
 {% endif %}
 
-<!-- === ПЕРЕКЛЮЧАТЕЛЬ СЕЗОНА === -->
-<!-- 2026-09-09 (продуктовый фидбек: "внутри страницы команды должна быть
-     статистика по сезонам", + кривая кнопка "Сезон 2026 Показать всех"
-     переделана нормально) — тот же паттерн кликабельных пилюль, что и на
-     странице лиги (leagues/detail.html): переключает ?season=<год> на этой
-     же странице, teams/views.py::TeamDetailView пересчитывает "Позицию в
-     лиге"/"Последние матчи"/"Спорные решения" под выбранный сезон.
-     2026-09-09 (жалоба пользователя "состав не меняется при смене сезона"):
-     "Состав команды" теперь тоже честно переключается — для прошлых сезонов
-     показывает тех, кто реально играл за клуб в заявках именно в этом
-     сезоне (а не сегодняшний живой ростер), см. teams/views.py::players.
-     Карьерные метрики (оценки болельщиков, топ-5 игроков, настроение
-     клуба) по-прежнему сознательно НЕ переключаются — это статистика за
-     всё время, не за сезон (иначе на сезонах с малым числом голосов эти
-     цифры были бы слишком шумными). -->
+{# === ПЕРЕКЛЮЧАТЕЛЬ СЕЗОНА === #}
+{# ?season=<год>. Состав, позиция, матчи — по сезону; оценки, топ-5 и настроение — за всё время. #}
 {% if team_seasons|length > 1 %}
 <div class="flex flex-wrap items-center gap-2 mb-4 md:mb-6 px-2 sm:px-0">
   <span class="text-xs opacity-60 flex-shrink-0"><i class="ti ti-calendar mr-1"></i>Сезон:</span>
@@ -372,14 +268,12 @@ text-anchor="end", подпись растёт влево от фиксиров�
 </div>
 {% endif %}
 
-<!-- === ДВЕ КОЛОНКИ === -->
+{# === ДВЕ КОЛОНКИ === #}
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6 px-2 sm:px-0 min-w-0">
-  <!-- === ЛЕВАЯ КОЛОНКА (2/3) ===
-       2026-09-11: тот же паттерн, что в players/coaches/referees detail.html
-       — статистика/позиция в таблице должны быть выше на мобильном. -->
+  {# === ЛЕВАЯ КОЛОНКА (2/3) === #}
   <div class="order-2 lg:order-1 lg:col-span-2 space-y-4 md:space-y-6 min-w-0">
     
-    <!-- === СОСТАВ КОМАНДЫ === -->
+    {# === СОСТАВ КОМАНДЫ === #}
     {% if players %}
     <div class="card bg-base-100 border border-base-300">
       <div class="card-body p-3 md:p-4">
@@ -401,24 +295,7 @@ text-anchor="end", подпись растёт влево от фиксиров�
               <tr>
                 <td class="font-mono">{{ player.number|default:"-" }}</td>
                 <td>
-                  {% comment %}
-                  2026-09-21, жалоба пользователя: "имена игроков в
-                  составе не вмещаются" — `truncate` (однострочный обрез
-                  с многоточием) в паре с фиксированным max-w-[150px] БЕЗ
-                  responsive-вариантов резал длинные имена ("Луис
-                  Алехандро Герра Ромеро", "Александр Широбоков") на всех
-                  экранах, включая десктоп с кучей свободного места. Тот
-                  же паттерн (truncate + фиксированный max-w) был раньше
-                  уместен для ВТОРИЧНОГО текста (например, названия команды
-                  рядом с судьёй/тренером), но тут это ОСНОВНОЕ имя
-                  сущности — по остальному проекту такое не обрезают (см.
-                  templates/players/list.html — имя игрока без truncate
-                  вообще) или переносят на 2 строки (templates/round_squad/
-                  _round_content.html — line-clamp-2 break-words), а не
-                  обрубают. Заменил обрезание на перенос по словам с узким
-                  max-w только на мобильном (чтобы одно длинное имя не
-                  разъезжало всю таблицу) — на md+ ширина не ограничена.
-                  {% endcomment %}
+                  {# Имя переносится по словам; узкий max-w только на мобильном. #}
                   <a href="{% url 'players:detail' player.id %}" class="hover:text-primary transition-colors block max-w-[110px] sm:max-w-[160px] md:max-w-none whitespace-normal break-words leading-tight">
                     {{ player.first_name }} {{ player.last_name }}
                   </a>
@@ -442,7 +319,7 @@ text-anchor="end", подпись растёт влево от фиксиров�
     </div>
     {% endif %}
 
-    <!-- === ПОСЛЕДНИЕ МАТЧИ === -->
+    {# === ПОСЛЕДНИЕ МАТЧИ === #}
     {% if recent_matches %}
     <div class="card bg-base-100 border border-base-300">
       <div class="card-body p-3 md:p-4">
@@ -454,20 +331,20 @@ text-anchor="end", подпись растёт влево от фиксиров�
           {% for match in recent_matches %}
           <a href="{% url 'matches:detail' match.id %}"
              class="group flex flex-col sm:flex-row sm:items-center gap-2 p-3 bg-base-200 rounded-lg hover:bg-base-300 transition-all">
-            <!-- Дата -->
+            {# Дата #}
             <div class="flex items-center gap-2 w-full sm:w-24 flex-shrink-0">
               <i class="ti ti-calendar text-xs opacity-50 sm:hidden"></i>
               <span class="text-xs sm:text-sm font-mono opacity-60 text-center sm:text-left">
                 {{ match.start_time|date:"d.m.Y" }}
               </span>
             </div>
-            <!-- Команды (с обрезкой) -->
+            {# Команды #}
             <div class="flex-1 min-w-0">
               <span class="font-medium text-sm sm:text-base truncate block group-hover:text-primary transition-colors">
                 {{ match.home_team.name }} vs {{ match.away_team.name }}
               </span>
             </div>
-            <!-- Счёт / Статус -->
+            {# Счёт / статус #}
             <div class="flex items-center justify-between sm:justify-end gap-2 sm:gap-3 w-full sm:w-auto mt-1 sm:mt-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-base-300/50">
               {% if match.status == 'finished' %}
               <span class="font-bold font-mono text-base sm:text-lg">{% render_score match.home_score match.away_score %}</span>
@@ -487,7 +364,7 @@ text-anchor="end", подпись растёт влево от фиксиров�
     </div>
     {% endif %}
 
-    <!-- === БЛИЖАЙШИЕ МАТЧИ === -->
+    {# === БЛИЖАЙШИЕ МАТЧИ === #}
     {% if upcoming_matches %}
     <div class="card bg-base-100 border border-base-300">
       <div class="card-body p-3 md:p-4">
@@ -521,14 +398,10 @@ text-anchor="end", подпись растёт влево от фиксиров�
     {% endif %}
   </div>
 
-  <!-- === ПРАВАЯ КОЛОНКА (1/3) === -->
+  {# === ПРАВАЯ КОЛОНКА (1/3) === #}
   <div class="order-1 lg:order-2 space-y-4 md:space-y-6 min-w-0">
 
-    {% comment %}
-    Позиция в турнирной таблице — TeamSeasonStats, тот же источник, что и
-    таблица на главной. Показывается всегда, пока команда в текущем сезоне,
-    без зависимости от того, есть ли уже оценки болельщиков.
-    {% endcomment %}
+    {# Место в таблице (TeamSeasonStats). #}
     {% if season_stats %}
     <div class="card bg-base-100 border border-base-300">
       <div class="card-body p-3 md:p-4">
@@ -567,18 +440,7 @@ text-anchor="end", подпись растёт влево от фиксиров�
           <i class="ti ti-star mr-2"></i>Оценки болельщиков
         </h3>
         {% if team_evals.total %}
-        {% comment %}
-        2026-09-23, найдено сквозным аудитом (жалоба пользователя: "нужно
-        проверить ползунки — где надо максимум 10, где 100"). TeamEvaluation.
-        tactics/effort/organization/mentality — шкала 1-10 (evaluations/
-        models.py), а ширина полоски раньше подставляла среднее значение
-        НАПРЯМУЮ как проценты: у команды с идеальной тактикой 9.5/10
-        полоска заполнялась всего на 9-10% — выглядело как почти нулевая
-        оценка. Тот же баг уже находили и чинили на referees/detail.html
-        (см. докстринг там же) — {% widthratio %} честно переводит шкалу
-        1-10 в проценты 0-100, тем же приёмом, что на players/detail.html
-        и referees/detail.html.
-        {% endcomment %}
+        {# Шкала 1-10 -> проценты через widthratio. #}
         <div class="space-y-3">
           <div class="flex justify-between items-center">
             <span class="text-sm opacity-60">Тактика</span>
@@ -611,13 +473,7 @@ text-anchor="end", подпись растёт влево от фиксиров�
         </div>
         <div class="text-center mt-4 pt-4 border-t border-base-300">
           <span class="text-xs opacity-60">Всего оценок: {{ team_evals.total }}</span>
-          {% comment %}
-          2026-09-23, честный аудит формул: TeamRatingCorrection —
-          единственный механизм, который САМ, без модератора, меняет уже
-          показанный итоговый рейтинг команды (performance_score, используется
-          в рейтингах/сравнениях) — см. players/detail.html за тем же
-          комментарием и teams/views.py::TeamDetailView.
-          {% endcomment %}
+          {# Значок активной поправки рейтинга. #}
           {% if rating_correction %}
           <div class="mt-1.5">
             {% tooltip_wrap rating_correction.public_explanation %}
@@ -652,12 +508,7 @@ text-anchor="end", подпись растёт влево от фиксиров�
         {% if top_players %}
         <div class="space-y-2 md:space-y-3">
           {% for agg in top_players %}
-          {% comment %}
-          Растянутая ссылка вместо единого <a> вокруг карточки — см. подробный
-          комментарий в templates/players/detail.html у аналогичного блока
-          "Лучшие матчи": {% confidence_badge %} сам содержит <a>, вложенность
-          <a> в <a> невалидна и ломает flex-вёрстку в браузере.
-          {% endcomment %}
+          {# Растянутая ссылка — внутри confidence_badge уже есть <a>. #}
           <div class="relative flex items-center gap-2 md:gap-3 p-2 rounded-lg hover:bg-base-200 transition-all">
             <a href="{% url 'players:detail' agg.player.id %}" class="absolute inset-0 rounded-lg"
                aria-label="{{ agg.player.first_name }} {{ agg.player.last_name }}"></a>

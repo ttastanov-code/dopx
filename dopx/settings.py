@@ -13,14 +13,7 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# БАГ, КОТОРЫЙ ТУТ БЫЛ: дефолты DEBUG/ALLOWED_HOSTS/SECRET_KEY были рассчитаны
-# на удобство локальной разработки, но срабатывают точно так же и на проде,
-# если .env по любой причине не подхватился (опечатка в пути, не тот systemd
-# unit, контейнер поднят без env_file) — сайт в этом случае молча стартует
-# в DEBUG=True, с ALLOWED_HOSTS="*" и с публично известным SECRET_KEY, что
-# полностью снимает защиту от CSRF/session-подделки и раскрывает трассировки
-# с кодом и переменными окружения любому посетителю. Найдено при аудите,
-# см. AUDIT_2026-08.md.
+# Безопасные дефолты: без .env сайт не должен стартовать в DEBUG с публичным ключом.
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 
 if ENVIRONMENT == "development":
@@ -36,23 +29,15 @@ else:
         )
 
 DEBUG = os.getenv("DEBUG", "False") == "True"
-# Дефолт "localhost,127.0.0.1", а не "*" — на проде ALLOWED_HOSTS ОБЯЗАН быть
-# задан явно (домен сайта); "*" отключает защиту Django от Host-заголовка
-# подделки (HTTP Host header attacks) и годится только для локальной отладки.
+# На проде ALLOWED_HOSTS задаётся явно; «*» только для локальной отладки.
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 
-# CSRF_TRUSTED_ORIGINS нигде в проекте не был задан. На локальной разработке
-# (HTTP, DEBUG=True) это незаметно — Django сверяет CSRF только для HTTPS-
-# запросов. На проде за nginx/HTTPS без этой настройки ЛЮБОЙ POST (вход,
-# регистрация, отправка оценки матча, голосование) отвечал бы
-# "CSRF verification failed" из-за несовпадения Origin/Referer с ожидаемым
-# доменом. Формат — полные origin'ы через запятую в .env, например:
-# CSRF_TRUSTED_ORIGINS=https://dopx.kz,https://www.dopx.kz
+# Нужен за HTTPS, иначе любой POST падает на CSRF.
+# Пример: CSRF_TRUSTED_ORIGINS=https://dopx.kz,https://www.dopx.kz
 _csrf_trusted = os.getenv("CSRF_TRUSTED_ORIGINS", "")
 CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in _csrf_trusted.split(",") if origin.strip()]
 
-# Sentry — инициализация до импорта Django-приложений, чтобы ловить ошибки
-# даже на этапе загрузки INSTALLED_APPS. Без SENTRY_DSN блок — no-op.
+# Sentry инициализируется до загрузки приложений. Без SENTRY_DSN — no-op.
 SENTRY_DSN = os.getenv("SENTRY_DSN", "")
 if SENTRY_DSN:
     import sentry_sdk
@@ -65,29 +50,19 @@ if SENTRY_DSN:
         integrations=[
             DjangoIntegration(),
             CeleryIntegration(monitor_beat_tasks=True),
-            # breadcrumb с уровня WARNING (обычные логи-заметки для контекста),
-            # событие в Sentry — только с ERROR (не заваливаем проект каждым
-            # logger.warning() из парсера, их и так много в штатной работе).
+            # Breadcrumbs с WARNING, события — только с ERROR.
             LoggingIntegration(level=None, event_level="ERROR"),
         ],
         environment=ENVIRONMENT,
-        # 10% трейсов достаточно для профиля производительности при
-        # умеренном трафике staff-дашборда и матчей; не 100% — иначе на
-        # каждый HTTP-запрос идёт лишний исходящий вызов к Sentry.
+        # 10% трейсов.
         traces_sample_rate=0.1,
-        # PII (email, IP) в события НЕ отправляем по умолчанию — те же
-        # соображения приватности, что и hash_ip() в analytics/services.py.
+        # PII не отправляем.
         send_default_pii=False,
     )
 
 # Application definition
 INSTALLED_APPS = [
-    # django-unfold ДОЛЖЕН стоять ПЕРЕД django.contrib.admin — его шаблоны
-    # (admin/base.html и т.д.) переопределяют стандартные через APP_DIRS,
-    # порядок INSTALLED_APPS определяет приоритет поиска шаблонов между
-    # приложениями. Существующие ModelAdmin-классы (30+ по проекту) не
-    # требуют переписывания — Unfold работает поверх django.contrib.admin
-    # без миграции, тема применяется даже без замены base admin.ModelAdmin.
+    # unfold должен стоять перед django.contrib.admin (приоритет шаблонов).
     'unfold',
     'django.contrib.admin',
     'django.contrib.auth',
@@ -100,9 +75,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'drf_spectacular',
     'django_filters',
-    # Self-hosted CAPTCHA (django-simple-captcha) — рисует картинку самим
-    # Pillow'ом, никакого внешнего сервиса/API-ключа не требует (в отличие
-    # от Cloudflare Turnstile/hCaptcha/reCAPTCHA). См. блок CAPTCHA_* ниже.
+    # Self-hosted CAPTCHA (картинка рисуется Pillow, без внешних сервисов).
     'captcha',
     # Local apps
     'core',
@@ -124,20 +97,13 @@ INSTALLED_APPS = [
     'lineups',
     'notifications',
     'dashboard',
-    # "Живая сборная сезона" (продуктовая фича, 2026-08-21): расчёт лучшего
-    # состава 4-3-3 сезона на основе оценок пользователей (Байес-сглаживание
-    # по числу голосов) + скрапинг/обработка фото игроков с kffleague.kz.
+    # Сборная сезона.
     'season_squad',
-    # "DOPX Лучшие тура" (продуктовый запрос 2026-08-22, по мотивам ревью
-    # Codex по season_squad): "Сборная тура"/"Игрок тура" — та же механика,
-    # но по одному туру, со сглаживанием по голосам, а не по числу матчей
-    # (см. докстринг round_squad/models.py).
+    # Сборная и игрок тура.
     'round_squad',
-    # Партнёрская инфраструктура (продуктовый аудит "канал привлечения",
-    # 2026-08-21): Partner + Banner, атрибуция рефералов, баннерная ротация.
+    # Партнёры и баннеры.
     'partners',
-    # Security-стек (продуктовый апгрейд, "защита на высшем уровне" для
-    # staff): axes — брутфорс-лок логина, django_otp — 2FA (TOTP + backup-коды).
+    # axes — защита от перебора паролей, django_otp — 2FA.
     'axes',
     'django_otp',
     'django_otp.plugins.otp_totp',
@@ -145,30 +111,17 @@ INSTALLED_APPS = [
 ]
 
 # ============================================================
-# django-unfold — тема Django admin (продуктовый апгрейд, "оба: admin +
-# ссылка на dashboard" → полноценный редизайн). Работает ПОВЕРХ обычного
-# django.contrib.admin, существующие ModelAdmin-классы (30+ по проекту)
-# не требуют переписывания под unfold.admin.ModelAdmin — тема применяется
-# автоматически. SIDEBAR ниже — официальный способ Unfold добавлять свои
-# пункты меню, вместо кастомного templates/admin/base_site.html (убран —
-# конфликтовал бы с шаблонами unfold, см. git-историю этого файла).
+# django-unfold — тема админки. SIDEBAR — своё меню админки.
 # ============================================================
 UNFOLD = {
     "SITE_TITLE": "DOPX — администрирование",
     "SITE_HEADER": "DOPX",
-    # 2026-09-23, прямая просьба пользователя: подзаголовок под лого в
-    # /admin/ должен явно называть страницу тем, чем она является
-    # ("Панель администратора"), а не повторять маркетинговый слоган сайта
-    # (тот уже виден любому посетителю на самом сайте, здесь — служебный
-    # раздел не для конечных пользователей).
     "SITE_SUBHEADER": "Панель администратора",
     "SITE_SYMBOL": "sports_soccer",
     "SHOW_HISTORY": True,
     "SHOW_VIEW_ON_SITE": True,
     "SHOW_BACK_BUTTON": True,
-    # Палитра под daisyUI-тему сайта (primary — indigo/violet), см.
-    # templates/base.html / daisyui@5 CDN. Формат — RGB-триплеты без
-    # запятых, как того требует Unfold (CSS-переменные rgb(var(--c) / a)).
+    # Палитра под daisyUI-тему сайта (RGB-триплеты без запятых, как требует Unfold).
     "COLORS": {
         "primary": {
             "50": "238 242 255",
@@ -186,21 +139,13 @@ UNFOLD = {
     },
     "SIDEBAR": {
         "show_search": True,
-        # False — не дублировать автосгенерированный алфавитный список apps
-        # под кастомной навигацией: у каждой модели уже есть место в
-        # бизнес-группах ниже.
+        # Не показываем автоматический список приложений — модели разложены по группам ниже.
         "show_all_applications": False,
         "navigation": [
             {
                 "title": _("Staff-инструменты"),
                 "separator": True,
-                # 2026-09-23, прямая просьба пользователя: этот список отстал от
-                # реального staff-дашборда (templates/dashboard/_nav.html) — за
-                # сессию там появилось 9 новых разделов (Матчи, Дубли игроков,
-                # Проверка ФИО, Оценки, Пользователи, Объявления, Настройки,
-                # Статус, Скрипты), которых тут не было вообще. Порядок ниже
-                # повторяет порядок вкладок в _nav.html, чтобы не приходилось
-                # держать в голове два разных меню с разной логикой.
+                # Разделы staff-дашборда — в том же порядке, что в templates/dashboard/_nav.html.
                 "items": [
                     {
                         "title": _("Дашборд — обзор"),
@@ -287,11 +232,7 @@ UNFOLD = {
                         "icon": "terminal",
                         "link": reverse_lazy("dashboard:scripts"),
                     },
-                    # Роли доступа — та же граница, что и в _nav.html
-                    # (dashboard/access.py::SUPERUSER_ONLY_SECTIONS): раздел
-                    # управляет чужими staff-правами, поэтому в меню его видят
-                    # только суперпользователи, а не любой staff с доступом в
-                    # /admin/.
+                    # Роли доступа — только для суперпользователей.
                     {
                         "title": _("Роли доступа"),
                         "icon": "admin_panel_settings",
@@ -306,14 +247,7 @@ UNFOLD = {
                 ],
             },
             # ------------------------------------------------------------
-            # Дальше — бизнес-группировка Django-моделей (продуктовый
-            # апгрейд). Раньше сайдбар admin показывал сырой список
-            # Django-приложений в алфавитном порядке (Aggregates, Analytics,
-            # Axes, Coaches...) — технически корректно, но staff приходится
-            # знать НАЗВАНИЕ ПРИЛОЖЕНИЯ, чтобы найти нужную модель. Ниже —
-            # те же ~30 моделей, сгруппированные по СМЫСЛУ использования.
-            # collapsible=True — группы свёрнуты по умолчанию, разворачивать
-            # по мере надобности, а не листать длинный список каждый раз.
+            # Модели Django, сгруппированные по смыслу (группы свёрнуты по умолчанию).
             # ------------------------------------------------------------
             {
                 "title": _("Справочники"),
@@ -402,9 +336,6 @@ UNFOLD = {
                 "icon": "dns",
                 "collapsible": True,
                 "items": [
-                    # 2026-09-08 (cutover, ADR-0044): ParserSyncRun пишут ОБА
-                    # источника (см. поле source, parsers/0003) — название
-                    # раньше было "Запуски синка KFF", когда писал только он.
                     {"title": _("Запуски синка (парсер)"), "icon": "sync", "link": reverse_lazy("admin:parsers_parsersyncrun_changelist")},
                     {"title": _("Аудит-лог staff (полный)"), "icon": "manage_history", "link": reverse_lazy("admin:dashboard_staffactionlog_changelist")},
                     {"title": _("Попытки входа (axes)"), "icon": "lock_clock", "link": reverse_lazy("admin:axes_accessattempt_changelist")},
@@ -417,25 +348,19 @@ UNFOLD = {
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    # CSP-заголовок — чистая функция от response, не завязана на
-    # request.user/сессию, поэтому стоит рядом с SecurityMiddleware.
+    # CSP-заголовок.
     'dopx.middleware.ContentSecurityPolicyMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
-    # django-axes — блокировка брутфорса логина. Обязательно ПОСЛЕ
-    # AuthenticationMiddleware (нужен request.user для отслеживания попыток).
+    # axes — после AuthenticationMiddleware.
     'axes.middleware.AxesMiddleware',
-    # django-otp — прикрепляет OTP-состояние (request.user.is_verified())
-    # к сессии. ПОСЛЕ AuthenticationMiddleware, ДО нашей проверки ниже.
+    # django-otp — после AuthenticationMiddleware.
     'django_otp.middleware.OTPMiddleware',
-    # Принудительная OTP-проверка для /admin/ и /staff/dashboard/ + sliding
-    # idle-таймаут сессии staff — см. dopx/middleware.py. ПОСЛЕДНИЙ из
-    # security-мидлварей: должен видеть и request.user, и is_verified().
+    # Обязательная 2FA для /admin/ и /staff/dashboard/ + idle-таймаут staff.
     'dashboard.middleware.StaffTwoFactorEnforcementMiddleware',
-    # Гибкие права по разделам дашборда (StaffAccessGrant) — ПОСЛЕ 2FA,
-    # см. dashboard/middleware.py::DashboardSectionAccessMiddleware.
+    # Права staff по разделам дашборда (после 2FA).
     'dashboard.middleware.DashboardSectionAccessMiddleware',
     'dopx.middleware.StaffSessionSecurityMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
@@ -496,48 +421,26 @@ AUTH_PASSWORD_VALIDATORS = [
 
 AUTH_USER_MODEL = "users.User"
 
-# LOGIN_URL не был задан НИГДЕ в проекте — Django молча падал на дефолт
-# '/accounts/login/', которого в проекте не существует (сайт использует
-# кастомный логин на /users/login/, см. users/urls.py). Это означало, что
-# ЛЮБОЙ @login_required-вью (не только новые 2FA-страницы) для неавторизованного
-# пользователя отдавал 404 вместо редиректа на форму входа — найдено при
-# отладке 2FA (dashboard/views_2fa.py), но баг системный, чинится здесь один раз.
+# Наш логин живёт на /users/login/.
 LOGIN_URL = 'users:login'
 
 # =============================================================================
-# django-axes — блокировка брутфорса логина (продуктовый апгрейд, "высший
-# уровень" защиты staff-доступа). AxesStandaloneBackend ОБЯЗАТЕЛЬНО ПЕРВЫМ —
-# он перехватывает попытку аутентификации ДО ModelBackend и отклоняет её,
-# если по этому username/IP уже превышен лимит неудачных попыток, независимо
-# от того, правильный пароль или нет. ModelBackend ниже — стандартный
-# бэкенд, до сих пор неявно применявшийся по умолчанию (AUTHENTICATION_BACKENDS
-# не был задан явно нигде в проекте) — явно перечисляем, чтобы не потерять.
+# django-axes: AxesStandaloneBackend обязательно первым.
 # =============================================================================
 AUTHENTICATION_BACKENDS = [
     'axes.backends.AxesStandaloneBackend',
     'django.contrib.auth.backends.ModelBackend',
 ]
 
-# 5 неудачных попыток за 1 час → блокировка на 1 час. Блокируем по паре
-# username+IP (COOLOFF применяется к комбинации) — так один скомпрометированный
-# пароль не блокирует легитимного сотрудника с другого IP, но и не даёт
-# атакующему перебирать пароли с одного IP по разным username бесконечно.
+# 5 неудачных попыток за час -> блокировка на час.
 AXES_FAILURE_LIMIT = 5
 AXES_COOLOFF_TIME = 1  # часы
-# БАГ, КОТОРЫЙ ТУТ БЫЛ: единственное правило ['username', 'ip_address']
-# блокирует только конкретную пару — атакующий, перебирающий пароль одного
-# (в т.ч. staff) аккаунта и меняющий/ротирующий IP между попытками, никогда
-# не набирал 5 попыток на одну пару и не блокировался вовсе. Список из двух
-# правил в django-axes 8.3.1 (см. axes/helpers.get_lockout_parameters —
-# список списков возвращается как есть и правила проверяются как OR)
-# блокирует, если сработало ЛЮБОЕ из них: по паре username+IP (как раньше)
-# ИЛИ отдельно по одному username — так ротация IP больше не даёт обходить лимит.
+# Блокируем и по паре username+IP, и по одному username (ротация IP не помогает).
 AXES_LOCKOUT_PARAMETERS = [['username'], ['username', 'ip_address']]
 AXES_RESET_COOLOFF_ON_FAILURE_DURING_LOCKOUT = True
-# Сбрасывать счётчик попыток при успешном входе — иначе одна забытая старая
-# неудачная попытка месяц назад тихо накапливалась бы к следующей блокировке.
+# Успешный вход сбрасывает счётчик.
 AXES_RESET_ON_SUCCESS = True
-AXES_LOCKOUT_TEMPLATE = None  # используем дефолтный ответ axes (403 + сообщение), без кастомного шаблона
+AXES_LOCKOUT_TEMPLATE = None  # стандартный ответ axes (403)
 
 
 LANGUAGE_CODE = 'ru'
@@ -552,9 +455,7 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
-# Django-дефолт 2.5 МБ отклонял аватарки/баннеры ДО валидации формы, с
-# общей ошибкой вместо понятного сообщения. См.
-# docs/adr/0017-upload-size-limits.md.
+# Лимиты загрузки файлов. См. docs/adr/0017-upload-size-limits.md.
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
 
@@ -573,10 +474,7 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'anon': '100/hour',
         'user': '1000/hour',
-        # Отдельный, более щедрый лимит для событийной аналитики
-        # (analytics/views.py::ClientEventThrottle) — на 6-шаговом
-        # вайзарде легитимный юзер легко даёт 15-20 событий за визит,
-        # глобального anon-лимита в 100/hour ему не хватит.
+        # Отдельный лимит для событий аналитики — вайзард легко даёт 15-20 событий за визит.
         'analytics_events': '300/hour',
     },
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
@@ -595,79 +493,48 @@ REST_FRAMEWORK = {
 CSRF_COOKIE_HTTPONLY = False
 
 # =============================================================================
-# Security hardening (продуктовый апгрейд — "защита на высшем уровне" для
-# staff-доступа). Django НЕ включает Secure/SameSite-флаги на cookie по
-# умолчанию — их приходится выставлять явно. `not DEBUG` — на локальной
-# разработке (HTTP, без TLS) Secure-cookie просто не отправлялся бы браузером
-# вообще, залогиниться было бы невозможно; в проде (DEBUG=False, обязательно
-# за HTTPS) это критичный минимум.
+# Безопасные cookie и заголовки (только в проде, без DEBUG).
 # =============================================================================
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = 'Lax'
 CSRF_COOKIE_SAMESITE = 'Lax'
-# Обычная сессия — 2 недели (типичный UX сайта с оценками матчей, никто не
-# хочет логиниться каждый день). Для staff — отдельный, СИЛЬНО более короткий
-# sliding-таймаут накладывается через StaffSessionSecurityMiddleware ниже
-# (dopx/middleware.py), а не через этот глобальный SESSION_COOKIE_AGE — он
-# бьёт по ВСЕМ пользователям одинаково, укорачивать его ради staff нельзя.
+# Обычная сессия — 2 недели. Для staff отдельный idle-таймаут (dopx/middleware.py).
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 14
-SESSION_SAVE_EVERY_REQUEST = True  # нужно, чтобы sliding-таймаут ниже реально скользил
+SESSION_SAVE_EVERY_REQUEST = True
 
 X_FRAME_OPTIONS = 'DENY'
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = 'same-origin'
 
-# True — заголовок уходит как Content-Security-Policy-Report-Only (браузер
-# только логирует нарушения в консоль, ничего не блокирует). См.
-# dopx/middleware.py::ContentSecurityPolicyMiddleware. Полезно включить на
-# первый прогон после изменения политики — прежде чем блокировать по-настоящему.
+# True — CSP только логирует нарушения (Report-Only).
 CSP_REPORT_ONLY = os.getenv('CSP_REPORT_ONLY', 'False') == 'True'
 
-# Домены, которым разрешено встраивать наши embed-виджеты (players/teams/
-# standings/best-xi/round) в <iframe> — см.
-# dopx/middleware.py::ContentSecurityPolicyMiddleware.WIDGET_POLICY.
-# Пусто (по умолчанию) — держим "frame-ancestors *" как сейчас: партнёров
-# ещё нет, ограничивать физически некого, а голый allow-list с самим DOPX
-# внутри был бы бесполезен для той же цели, что и сейчас (виджеты открыто
-# публичные и предназначены для встраивания куда угодно). Как только
-# появится первый партнёр — прописать его домен(ы) через запятую в
-# WIDGET_ALLOWED_ORIGINS, и middleware сам переключится на точный список
-# вместо "*". Заведено заранее (аудит 2026-09-04), чтобы включение allow-list
-# было изменением конфигурации, а не кода.
+# Кому можно встраивать наши виджеты в iframe. Пусто — всем (frame-ancestors *).
+# Домены партнёров — через запятую в WIDGET_ALLOWED_ORIGINS.
 WIDGET_ALLOWED_ORIGINS = [
     origin.strip() for origin in os.getenv('WIDGET_ALLOWED_ORIGINS', '').split(',') if origin.strip()
 ]
 
 if not DEBUG:
-    # HSTS и proxy-заголовок SSL — только в проде за реальным TLS-терминатором
-    # (nginx/ALB), на DEBUG-окружении без сертификата это уронит локальный сервер.
+    # HSTS и SSL-заголовок прокси — только в проде за TLS.
     SECURE_SSL_REDIRECT = os.getenv('SECURE_SSL_REDIRECT', 'True') == 'True'
     SECURE_HSTS_SECONDS = 31536000
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
-# get_client_ip берёт IP с конца X-Forwarded-For (TRUSTED_PROXY_COUNT
-# позиций), не первый элемент — иначе клиент подделывает заголовок и
-# обходит rate limit. См. docs/adr/0018-trusted-proxy-xff-parsing.md.
+# IP клиента берётся с конца X-Forwarded-For. См. docs/adr/0018-trusted-proxy-xff-parsing.md.
 TRUSTED_PROXY_COUNT = int(os.getenv('TRUSTED_PROXY_COUNT', 1))
 
-# Idle-таймаут сессии ТОЛЬКО для staff (is_staff=True) — обычные пользователи
-# сайта под этот лимит не попадают. См. dopx/middleware.py::StaffSessionSecurityMiddleware.
+# Idle-таймаут сессии только для staff.
 STAFF_SESSION_IDLE_TIMEOUT_SECONDS = int(os.getenv('STAFF_SESSION_IDLE_TIMEOUT_SECONDS', 30 * 60))
 
-# Feature-флаг для 2FA (dashboard/middleware.py::StaffTwoFactorEnforcementMiddleware).
-# По умолчанию ВКЛЮЧЕНО — таково явное требование задачи. Флаг существует
-# как аварийный рубильник: если после деплоя что-то пойдёт не так с QR/TOTP
-# и staff массово не может зайти, можно временно выставить
-# STAFF_2FA_ENFORCED=False в .env и перезапустить сервер БЕЗ отката кода,
-# пока разбираемся — типовая enterprise-практика для рискованных security-фич.
+# Обязательная 2FA для staff. STAFF_2FA_ENFORCED=False — аварийное отключение.
 STAFF_2FA_ENFORCED = os.getenv('STAFF_2FA_ENFORCED', 'True') == 'True'
 
-# Название, которое увидит staff в приложении-аутентификаторе (Google
-# Authenticator/Authy) рядом с кодом — иначе там был бы generic "unknown".
+# Имя в приложении-аутентификаторе.
 OTP_TOTP_ISSUER = 'DOPX'
 
 SPECTACULAR_SETTINGS = {
@@ -690,46 +557,19 @@ CELERY_ENABLE_UTC = False
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
 
-# НАЙДЕНО (2026-09-07, пользователь заметил спам "Season X not found" в
-# celery.log): `manage.py test` НИЧЕМ не отличался от прода в части Celery —
-# CELERY_BROKER_URL один и тот же (redis://localhost:6379/0), поэтому каждый
-# apply_async()/.delay(), вызванный сигналом внутри теста (например,
-# aggregates/signals.py::on_match_status_changed на TestCase-фикстуре Match
-# со status='finished'), реально уходил в ОЧЕРЕДЬ НАСТОЯЩЕГО celery-воркера,
-# который выполнял его позже (после countdown) уже против прод-БД — с id
-# Season/Match, существовавшими только внутри отложенной (и затем
-# ROLLBACK-нутой) транзакции теста. Отсюда сотни "Season <мусорный uuid> not
-# found": воркер честно пытался пересчитать турнирную таблицу для сезона,
-# которого к моменту выполнения задачи уже (и никогда по-настоящему) не
-# существовало. Это НЕ баг рассылки заданий самой по себе — это отсутствие
-# изоляции тестов от реальной очереди. Фикс: в тестовом прогоне Celery
-# выполняет задачи СИНХРОННО и IN-PROCESS (eager), вообще не касаясь redis
-# и не переживая настоящий воркер — ровно то же самое TestCase-изолирование,
-# что Django даёт для БД (rollback), но для Celery.
+# В тестах Celery выполняет задачи синхронно, не трогая настоящую очередь.
 if 'test' in sys.argv or 'pytest' in sys.modules:
     CELERY_TASK_ALWAYS_EAGER = True
     CELERY_TASK_EAGER_PROPAGATES = True
 
-# Web Push. Ключи — одни на проект (не на пользователя), генерируются
-# командой `vapid --gen` (py-vapid). Без них send_push_to_user
-# (notifications/services.py) логирует и no-op'ает, а не роняет вызывающий код.
+# Web Push: VAPID-ключи генерируются `vapid --gen`. Без них пуши не отправляются.
 VAPID_PUBLIC_KEY = os.getenv('VAPID_PUBLIC_KEY', '')
 VAPID_PRIVATE_KEY = os.getenv('VAPID_PRIVATE_KEY', '')
 VAPID_ADMIN_EMAIL = os.getenv('VAPID_ADMIN_EMAIL', 'admin@dopx.kz')
 
-# Настройки Sportmonks (docs/sportmonks-migration-plan.md) — единственный
-# источник данных матчей с 2026-09-09 (KFF-парсер и вся его инфраструктура —
-# client.py с circuit breaker/proxy pool, PARSER_SETTINGS, management-команды —
-# физически удалены по решению пользователя, см. историю чата; переход был
-# завершён ранее как cutover с оставленным rollback-путём через
-# CELERY_BEAT_SCHEDULE, но сам rollback-код теперь тоже вычищен). Никакого
-# circuit breaker/proxy pool здесь нет и не было — против платного
-# разрешённого API это не нужно, см. parsers/sportmonks/client.py.
-# Два токена (2026-09-24): SPORTMONKS_API_TOKEN — ОСНОВНОЙ аккаунт, его не
-# трогаем и не перезаписываем. SPORTMONKS_API_TOKEN_TEMP — временный
-# (второй пробный аккаунт на время, пока у основного закончился трайл).
-# Если TEMP задан — работает он, основной просто лежит в .env нетронутым.
-# Вернуться на основной = удалить/закомментировать строку TEMP в .env и
+# Sportmonks — единственный источник данных матчей.
+# SPORTMONKS_API_TOKEN — основной токен. SPORTMONKS_API_TOKEN_TEMP — временный:
+# если задан, используется он. Вернуться на основной — убрать TEMP из .env и
 # перезапустить runserver + Celery.
 SPORTMONKS_API_TOKEN_MAIN = os.getenv('SPORTMONKS_API_TOKEN', '')
 SPORTMONKS_API_TOKEN_TEMP = os.getenv('SPORTMONKS_API_TOKEN_TEMP', '')
@@ -739,45 +579,24 @@ SPORTMONKS_LEAGUE_ID = int(os.getenv('SPORTMONKS_LEAGUE_ID', '393'))  # Kazakhst
 SPORTMONKS_BASE_URL = 'https://api.sportmonks.com/v3/football'
 SPORTMONKS_LOCALE = 'ru'
 
-# Проверка написания ФИО через Gemini API (2026-09-22, прямая просьба
-# пользователя после жалобы "Сергий Малий" вместо "Сергий Малый" — см.
-# parsers/name_ai.py, parsers/models.py::NameVerificationSuggestion,
-# parsers/management/commands/verify_names_with_ai.py). Бесплатный тариф
-# (aistudio.google.com), а не платный Anthropic/OpenAI — осознанный выбор
-# пользователя. GEMINI_API_KEY пуст по умолчанию — parsers/name_ai.py
-# логирует и НЕ падает, если ключ не задан (та же защита, что у VAPID_*
-# выше — отсутствующий ключ отключает фичу, не роняет сайт). Модель — через
-# env, а не хардкод: доступность конкретных моделей на бесплатном тарифе
-# меняется, обновить можно без деплоя кода.
+# Проверка ФИО через Gemini (parsers/name_ai.py). Без GEMINI_API_KEY функция отключена.
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
-# 2026-09-22: 'gemini-2.5-flash' — 404 Not Found на generateContent, хотя
-# ListModels её ещё показывает (модель уже снята с генерации, просто не
-# убрана из листинга). Проверено официальной документацией ai.google.dev —
-# текущий актуальный пример в quickstart уже на gemini-3.8-flash. Сменили
-# дефолт на неё; при необходимости откатить/сменить — через env, без деплоя.
+# Модель задаётся через env.
 GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-3.8-flash')
 
 CELERY_BEAT_SCHEDULE = {
     # =========================================================================
-    # KFF-парсер и весь его rollback-путь физически удалены (2026-09-09, по
-    # явному решению пользователя — "полностью выпилить и заменить на наш
-    # новый API"). Единственный источник синхронизации матчей — Sportmonks
-    # (записи sportmonks-* ниже). recalculate-standings/recalculate-aggregates
-    # и всё остальное не зависящее от источника данных матчей — продолжают
-    # работать с Match независимо от того, кто её туда пишет.
+    # Celery Beat
     # =========================================================================
-    # === Пересчёт таблицы (каждые 10 минут) — ✅ АВТО-СЕЗОН ===
+    # === Пересчёт таблицы (каждые 10 минут, все активные сезоны) ===
     'recalculate-standings': {
         'task': 'aggregates.tasks.recalculate_season_standings',
         'schedule': crontab(minute='*/10'),
-        # ✅ Убрано kwargs с season_id — теперь авто-детекция
-        # 'options': {'queue': 'default'}
     },
     # === Пересчёт агрегатов (каждые 10 минут) ===
     'recalculate-aggregates': {
         'task': 'aggregates.tasks.recalculate_all_aggregates',
         'schedule': crontab(minute='*/10'),
-        # 'options': {'queue': 'default'}
     },
     # === Уведомления (каждые 6 часов) ===
     'voting-closing-reminders': {
@@ -792,90 +611,54 @@ CELERY_BEAT_SCHEDULE = {
     # === Отправка дайджеста уведомлений (каждый час) ===
     'notification-digest-hourly': {
         'task': 'notifications.tasks.send_notification_digest',
-        'schedule': crontab(minute=0),  # раз в час, на весь час
+        'schedule': crontab(minute=0),
     },
     # === Мониторинг ошибок синхронизации (каждые 4 часа) ===
     'sync-error-monitor': {
         'task': 'parsers.tasks.check_sync_errors_and_alert',
         'schedule': crontab(minute=0, hour='*/4'),
-        # 'options': {'queue': 'default'}
     },
-    # === Проверка ФИО (ИИ) через Gemini — раз в месяц (2026-09-22, прямая
-    # просьба пользователя: "надо раз в месяц даже сделать") — ловит новых
-    # игроков/судей/тренеров, пришедших за месяц через трансферы/новый
-    # сезон, чьё ФИО механическая транслитерация могла угадать неверно.
-    # НЕ --all (тот прогонялся один раз вручную по всей уже существующей
-    # базе) — см. докстринг parsers/tasks.py::verify_names_with_ai_monthly. ===
+    # === Проверка ФИО (ИИ) — раз в месяц, только новые записи ===
     'verify-names-with-ai-monthly': {
         'task': 'parsers.tasks.verify_names_with_ai_monthly',
         'schedule': crontab(day_of_month=1, hour=3, minute=0),
     },
-    # === Очистка просроченных CAPTCHA-записей (раз в час) ===
-    # django-simple-captcha сама не удаляет истёкшие челленджи — таблица
-    # captcha_captchastore росла бы бесконечно без этой задачи.
+    # === Очистка просроченных CAPTCHA (раз в час) ===
     'cleanup-expired-captchas': {
         'task': 'core.tasks.cleanup_expired_captchas',
-        'schedule': crontab(minute=15),  # раз в час, со сдвигом от дайджеста
+        'schedule': crontab(minute=15),
     },
     # === Антифрод: поиск кластеров аккаунтов с одного IP (каждые 6 часов) ===
     'detect-ip-clusters': {
         'task': 'users.tasks.detect_ip_clusters_task',
         'schedule': crontab(minute=30, hour='*/6'),
     },
-    # === Anti-brigading: детект аномальных всплесков голосования
-    # (сговор фан-базы), 2026-08-23 — чаще, чем IP-кластер (раз в 6 часов),
-    # т.к. окно детекта самого всплеска короткое (VOTE_SPIKE_WINDOW_HOURS=2
-    # в aggregates/tasks.py) — реже проверять означало бы пропускать
-    # всплески между прогонами. ===
+    # === Всплески крайних оценок (окно детекта короткое, поэтому часто) ===
     'detect-vote-velocity-anomalies': {
         'task': 'aggregates.tasks.detect_vote_velocity_anomalies_task',
         'schedule': crontab(minute=45, hour='*/2'),
     },
-    # === Самокалибровка порогов vote_spike/ip_cluster по решениям
-    # модератора, 2026-08-23 (см. users/models.py::AntiFraudThreshold) —
-    # раз в неделю: чаще бессмысленно (нужно накопить ANTIFRAUD_
-    # RECALIBRATION_MIN_SAMPLE новых разобранных флагов, это не
-    # событие одного дня), реже — калибровка отстаёт от реальности. ===
+    # === Калибровка антифрод-порогов по решениям модераторов (раз в неделю) ===
     'recalibrate-antifraud-thresholds': {
         'task': 'users.tasks.recalibrate_antifraud_thresholds',
         'schedule': crontab(minute=0, hour=4, day_of_week=1),
     },
-    # 2026-08-24, продуктовый запрос "модерация антифрода должна быть
-    # максимально простой и не затратной по времени" — раз в сутки чистит
-    # старые слабые флаги, чтобы очередь не копилась вечно (см. докстринг
-    # users.tasks.expire_stale_low_score_flags). До ежедневного
-    # detect-rating-stats-divergence (05:30) — независимые друг от друга
-    # задачи, порядок не важен, просто развели по времени.
+    # === Автозакрытие старых слабых флагов (раз в сутки) ===
     'expire-stale-antifraud-flags': {
         'task': 'users.tasks.expire_stale_low_score_flags',
         'schedule': crontab(minute=20, hour=4),
     },
-    # === Независимый внешний сигнал — расхождение рейтинга сообщества с
-    # объективной статистикой матчей (aggregates/tasks.py::
-    # detect_rating_stats_divergence_task, см. её докстринг), 2026-08-23,
-    # источник данных статистики — Sportmonks с 2026-09-08 (был KFF).
-    # Раз в сутки: это МЕДЛЕННЫЙ трендовый сигнал (нужно несколько матчей
-    # команды), не привязан к конкретному свежему событию, как vote_spike —
-    # чаще пересчитывать бессмысленно. ===
+    # === Расхождение оценок команд со статистикой (раз в сутки) ===
     'detect-rating-stats-divergence': {
         'task': 'aggregates.tasks.detect_rating_stats_divergence_task',
         'schedule': crontab(minute=30, hour=5),
     },
-    # === Тот же принцип, но на уровне ИГРОКА (2026-09-08, по просьбе
-    # пользователя — "статистику матча... против накрутки и неадекватной
-    # оценки"): aggregates/tasks.py::detect_player_rating_stats_divergence_task,
-    # объективный сигнал — MatchPlayerStatistics + события матча вместо
-    # "доли доминирования" (см. докстринг PlayerRatingCorrection). Сдвинуто
-    # на 15 минут от командной версии — не пересекаются по времени, обе
-    # читают один и тот же ContentType-реестр (SuspiciousActivityFlag),
-    # не хочется гонки на запись, хотя они и не конфликтуют по объекту. ===
+    # === То же для игроков ===
     'detect-player-rating-stats-divergence': {
         'task': 'aggregates.tasks.detect_player_rating_stats_divergence_task',
         'schedule': crontab(minute=45, hour=5),
     },
-    # === 2026-09-24: тот же принцип для ТРЕНЕРОВ (только сигнал модератору,
-    # без авто-поправки) и всплески крайних оценок СУДЬЯМ (общий vote_spike
-    # судей не покрывал — у судьи нет "соседей" в матче). ===
+    # === То же для тренеров (только флаг) и всплески оценок судьям ===
     'detect-coach-rating-stats-divergence': {
         'task': 'aggregates.tasks.detect_coach_rating_stats_divergence_task',
         'schedule': crontab(minute=0, hour=6),
@@ -889,110 +672,54 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'users.tasks.award_monthly_champion_badge',
         'schedule': crontab(hour=3, minute=0, day_of_month=1),
     },
-    # === Decay trust_score к нейтральному 1.0 у активных пользователей,
-    # 2026-09-23 (честный аудит формул: "доверие не забывает и не
-    # прощает" — см. докстринг users.tasks.decay_trust_scores_task).
-    # Раз в месяц, сдвинуто на полчаса от champion-badge — не пересекаются
-    # по времени, хотя и не конфликтуют по объекту (разные таблицы). ===
+    # === Возврат trust_score к нейтральному (раз в месяц) ===
     'decay-trust-scores': {
         'task': 'users.tasks.decay_trust_scores_task',
         'schedule': crontab(hour=3, minute=30, day_of_month=1),
     },
-    # === Переоценка статусных бейджей (foresight/max_trust/stable_hand/
-    # accurate_analyst/bias_free), 2026-09-23 — см. докстринг
-    # users.tasks.revalidate_status_badges_task / UserBadge.is_stale.
-    # Тот же день, сдвинуто на 15 минут от decay-trust-scores — оба про
-    # "показатель мог измениться со временем", разные таблицы, не
-    # конфликтуют. ===
+    # === Переоценка статусных достижений (раз в месяц) ===
     'revalidate-status-badges': {
         'task': 'users.tasks.revalidate_status_badges_task',
         'schedule': crontab(hour=3, minute=45, day_of_month=1),
     },
-    # === 4 петли удержания (2026-08-21) ===
-    # Loop 1: напоминание о закрытии приёма прогнозов — тот же интервал,
-    # что и у voting-closing-reminders выше (симметричная задача, окно
-    # закрытия «на другом конце» жизни матча — см. notify_prediction_closing_soon).
+    # === Петли удержания ===
+    # Напоминание о закрытии приёма прогнозов.
     'prediction-closing-reminders': {
         'task': 'notifications.tasks.notify_prediction_closing_soon',
         'schedule': crontab(minute='*/30'),
     },
-    # Loop 3: «ваш прогноз vs результат» — раз в 30 минут достаточно: окно
-    # дедупликации внутри задачи (Notification уже создан для пары
-    # match+user) не даёт дублей при более частых прогонах, а более редкие
-    # прогоны просто увеличили бы задержку между финальным свистком и письмом.
+    # Результат прогноза — дедупликация внутри задачи.
     'prediction-results': {
         'task': 'notifications.tasks.notify_prediction_results',
         'schedule': crontab(minute='*/30'),
     },
-    # Loop 2: персональная сводка недели — раз в неделю, понедельник в
-    # 10:00 (по аналогии с ежемесячным award-monthly-champion-badge выше,
-    # но чаще — недельный, а не месячный ритм активности).
+    # Персональная сводка недели — понедельник 10:00.
     'weekly-summary': {
         'task': 'notifications.tasks.send_weekly_summary',
         'schedule': crontab(day_of_week=1, hour=10, minute=0),
     },
-    # 2026-08-24, продуктовый запрос "модерация антифрода должна быть
-    # максимально простой и не затратной по времени" — раз в неделю письмо
-    # с короткой сводкой новых сигналов, не нужно самому помнить зайти на
-    # /staff/dashboard/antifraud/. Понедельник в 09:00, до weekly-summary
-    # (10:00) и после ежесуточного detect-rating-stats-divergence (05:30) —
-    # цифры в письме успевают учесть свежий прогон.
+    # Недельная сводка антифрода для модераторов — понедельник 09:00.
     'staff-antifraud-digest': {
         'task': 'notifications.tasks.send_staff_antifraud_digest',
         'schedule': crontab(day_of_week=1, hour=9, minute=0),
     },
-    # === «Сборная DOPX» — пересчёт лучшего XI (каждые 15 минут) ===
-    # Не привязан к сигналу "оценка сохранена" (как aggregates.signals) —
-    # пересчёт всего состава недёшев (несколько GROUP BY по сезону), гонять
-    # его на каждый голос — лишняя нагрузка. 15 минут — тот же порядок,
-    # что у recalculate-standings/recalculate-aggregates выше, достаточно
-    # часто, чтобы плашка "обновлено N минут назад" не выглядела мёртвой.
+    # === Сборная сезона (каждые 15 минут) ===
     'recompute-live-best-xi': {
         'task': 'season_squad.tasks.recompute_all_active_best_xi',
         'schedule': crontab(minute='*/15'),
     },
-    # === «DOPX Лучшие тура» — тот же 15-минутный ритм, что у сборной сезона ===
-    # (round_squad.tasks.recompute_active_rounds сам находит незакрытые
-    # туры и дёшево пропускает уже зафиксированные — см. докстринг задачи).
+    # === Лучшие тура (каждые 15 минут) ===
     'recompute-round-of-week': {
         'task': 'round_squad.tasks.recompute_active_rounds',
         'schedule': crontab(minute='*/15'),
     },
     # =========================================================================
-    # Sportmonks (docs/sportmonks-migration-plan.md) — единственный источник
-    # синхронизации матчей. Двухуровневая схема: лёгкий bulk-опрос ловит
-    # изменения, тяжёлая догрузка (per-fixture) идёт только для реально
-    # изменившихся матчей — см. докстринг parsers/sportmonks/tasks.py.
+    # Sportmonks: лёгкий bulk-опрос ловит изменения, тяжёлая догрузка — только
+    # для изменившихся матчей (parsers/sportmonks/tasks.py).
     # =========================================================================
-    # === ЛЁГКИЙ live-опрос — один bulk-вызов get_livescores() на всю лигу
-    # вместо цикла по матчам (см. докстринг sportmonks_update_live).
-    #
-    # ИЗМЕНЕНО ВТОРОЙ РАЗ (2026-09-21, прямой вопрос пользователя "может
-    # опрашивать как рекомендуют раз в 10 или 15 сек, но надо посчитать
-    # лимиты"): crontab не умеет секундной гранулярности — schedule здесь
-    # обычный `timedelta` (Celery Beat поддерживает его нативно как "запускать
-    # каждые N секунд", без crontab).
-    #
-    # РАСЧЁТ ЛИМИТА (см. client.py — 2000 запросов/час НА КАЖДУЮ entity
-    # отдельно, подтверждено вживую тестовым ключом): 15 секунд = 3600/15 =
-    # 240 запросов/час — ОДИН и тот же bulk-вызов независимо от числа live-
-    # матчей (см. докстринг get_livescores), то есть 12% от лимита entity,
-    # который он расходует. Даже 10 секунд (рекомендация самого Sportmonks
-    # для live-опроса, см. их блог "Building a real-time Livescore app") —
-    # 360/час, 18% лимита. Огромный запас на случай нескольких одновременных
-    # матчей тура. Тяжёлая догрузка (_heavy_sync_fixture, entity Fixture) от
-    # частоты ЭТОГО опроса не растёт пропорционально — она срабатывает не
-    # чаще, чем реально происходят события в матче (десяток-два за игру),
-    # более частый лёгкий опрос лишь ЗАМЕЧАЕТ их быстрее, а не размножает.
-    #
-    # Раньше здесь было crontab(minute='*/1') (до того — */2, см. первую
-    # правку ниже по истории) — гол/карточка могли ждать пуша до минуты.
-    # 15 секунд — тот же порядок задержки, что видит пользователь Sofascore.
-    #
-    # ВАЖНО: при такой частоте сама задача теперь берёт короткий Redis-лок
-    # на время своего выполнения (см. _LIVE_POLL_OVERLAP_LOCK_KEY в
-    # sportmonks_update_live) — без него медленный ответ API мог бы привести
-    # к тому, что несколько тиков выполняются одновременно.
+    # === Live-опрос каждые 15 секунд ===
+    # Один bulk-вызов на всю лигу: ~240 запросов/час при лимите 2000/час на entity.
+    # Задача держит Redis-лок, чтобы тики не выполнялись параллельно.
     'sportmonks-update-live': {
         'task': 'parsers.sportmonks.tasks.sportmonks_update_live',
         'schedule': timedelta(seconds=15),
@@ -1002,16 +729,12 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'parsers.sportmonks.tasks.sportmonks_update_upcoming',
         'schedule': crontab(minute='*/30'),
     },
-    # === Досинк статистики недавно завершившихся матчей (2026-09-13,
-    # жалоба пользователя на заниженные удары в матче Ордабасы-Астана) —
-    # см. докстринг STATS_RESYNC_WINDOW в parsers/sportmonks/tasks.py. ===
+    # === Досинк статистики недавно завершившихся матчей ===
     'sportmonks-resync-recent-stats': {
         'task': 'parsers.sportmonks.tasks.sportmonks_resync_recent_stats',
         'schedule': crontab(minute='*/15'),
     },
-    # === Суточная сверка календаря активного сезона (перенос дат/новые
-    # матчи) — ночью в 03:30, до cleanup-old-notifications-daily (04:00),
-    # чтобы не толкаться с ней за воркер одновременно. ===
+    # === Сверка календаря сезона (ночью) ===
     'sportmonks-sync-season': {
         'task': 'parsers.sportmonks.tasks.sportmonks_sync_season',
         'schedule': crontab(hour=3, minute=30),
@@ -1026,10 +749,7 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'parsers.sportmonks.tasks.sportmonks_sync_sidelined',
         'schedule': crontab(hour=4, minute=0),
     },
-    # === Гигиена Coach.is_active/team (2026-09-09, найдено пользователем:
-    # тренеры, ушедшие из клуба, вечно показывались активными — источник не
-    # присылает явное "уволен", см. coaches/services.py::refresh_coach_activity
-    # за полным объяснением) — раз в сутки, без обращения к API. ===
+    # === Актуализация активности тренеров (без запросов к API) ===
     'sportmonks-sync-coach-activity': {
         'task': 'parsers.sportmonks.tasks.sportmonks_sync_coach_activity',
         'schedule': crontab(hour=4, minute=30),
@@ -1037,16 +757,10 @@ CELERY_BEAT_SCHEDULE = {
 }
 
 # =============================================================================
-# CAPTCHA (django-simple-captcha) — self-hosted, без внешних API-ключей
+# CAPTCHA (django-simple-captcha) — self-hosted, без внешних ключей
 # =============================================================================
-# Почему не Cloudflare Turnstile/hCaptcha/reCAPTCHA: оба требуют регистрации
-# аккаунта у стороннего провайдера и получения API-ключей — сознательно
-# отказались от этого варианта (см. просьбу пользователя). django-simple-
-# captcha рисует картинку самим Pillow'ом (уже есть в requirements.txt)
-# прямо на сервере, без внешних сетевых вызовов и без передачи данных
-# пользователей третьей стороне.
 CAPTCHA_LENGTH = 5
-CAPTCHA_TIMEOUT = 5  # минут — сколько живёт сгенерированный челлендж
+CAPTCHA_TIMEOUT = 5  # минут жизни челленджа
 CAPTCHA_FONT_SIZE = 26
 CAPTCHA_LETTER_ROTATION = (-35, 35)
 CAPTCHA_FOREGROUND_COLOR = '#001100'
@@ -1073,17 +787,7 @@ CACHES = {
     },
     'aggregates': {
         'BACKEND': 'django.core.cache.backends.redis.RedisCache',
-        # БАГ, найденный при аудите перед докеризацией: раньше здесь тоже
-        # стоял os.getenv('REDIS_URL', ...) — та же переменная, что и у
-        # 'default' выше, просто с другим дефолтным номером БД (/2 вместо
-        # /1). Пока REDIS_URL не был задан явно нигде, дефолты и правда
-        # расходились — но как только REDIS_URL присутствует в окружении
-        # (а в докер-стеке он ЗАДАН явно, см. docker-compose.yml), ОБА
-        # cache alias'а схлопывались на одну и ту же логическую БД Redis
-        # (/1). Ключи не пересекались (разные KEY_PREFIX), но два
-        # логически независимых кэша переставали быть физически
-        # изолированными — например, FLUSHDB на этой БД задел бы оба
-        # сразу. Отдельная переменная — правильное решение.
+        # Отдельная переменная, чтобы кэши не схлопнулись в одну БД Redis.
         'LOCATION': os.getenv('REDIS_AGGREGATES_URL', 'redis://localhost:6379/2'),
         'KEY_PREFIX': 'dopx_agg',
         'TIMEOUT': 300,
@@ -1096,25 +800,7 @@ CACHES = {
 LOGS_DIR = BASE_DIR / 'logs'
 LOGS_DIR.mkdir(exist_ok=True)
 
-# ИСПРАВЛЕНО (2026-09-10, жалоба пользователя "надо кстати почистить логи",
-# в контексте пасты sync_monitoring-алерта): `celery_file`/`error_file`
-# были обычным `logging.FileHandler` — БЕЗ ротации вообще. При активном
-# Celery Beat (задачи каждые 1-2 минуты, см. parsers/sportmonks/tasks.py)
-# `logs/celery.log` растёт БЕСКОНЕЧНО с момента первого деплоя, ничем не
-# ограничен — рано или поздно съедает диск сервера целиком. `RotatingFile
-# Handler` — тот же формат записи, но при достижении `maxBytes` переименовывает
-# файл в `celery.log.1` и начинает новый, храня не больше `backupCount`
-# старых копий — суммарный потолок на диске: `maxBytes * (backupCount + 1)`.
-# 10 МБ × 6 файлов = 60 МБ на celery.log (обычно достаточно для нескольких
-# дней INFO-логов при текущей частоте задач), 10 МБ × 4 на errors.log
-# (ошибок меньше по объёму, но полезно хранить историю подольше для
-# расследований вроде этого). УЖЕ НАКОПЛЕННЫЕ (до этой правки) `logs/
-# celery.log`/`logs/errors.log` на сервере эта правка не тронет сама по
-# себе — сама по себе ротация активируется только когда файл СЛЕДУЮЩИЙ РАЗ
-# достигнет maxBytes; если текущие файлы уже большие, стоит один раз вручную
-# обрезать/удалить их после деплоя (например: `truncate -s 0 logs/celery.log
-# logs/errors.log`, или просто удалить — Django/Celery создадут их заново
-# сами при следующей записи, см. `LOGS_DIR.mkdir(exist_ok=True)` выше).
+# Логи с ротацией: celery.log до 60 МБ (10 МБ × 6), errors.log до 40 МБ.
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -1150,12 +836,7 @@ LOGGING = {
         'celery': {
             'handlers': ['celery_file', 'console'],
             'level': 'INFO',
-            # 2026-09-22: было True — при "зависшей" verify_names_with_ai
-            # искали причину именно в этом файле и выяснили, что тут
-            # писались только эти три явно перечисленных логгера. Раз уже
-            # добавляем 'dashboard'/'parsers' как catch-all ниже, отключаем
-            # propagate здесь же — иначе сообщения этого логгера пошли бы
-            # ещё и вверх по иерархии и задваивались бы в celery_file.
+            # propagate=False — чтобы не задваивать сообщения.
             'propagate': False,
         },
         'aggregates.tasks': {
@@ -1168,19 +849,7 @@ LOGGING = {
             'level': 'INFO',
             'propagate': False,
         },
-        # 2026-09-22: расследование "зависшей на 1ч08м verify_names_with_ai"
-        # — grep по logs/celery.log ничего не нашёл по run_management_command
-        # /verify_names, хотя сам файл оказался живым и пишущимся (см.
-        # aggregates.tasks строки выше). Причина: dashboard.tasks (где
-        # живёт run_management_command), dashboard.command_runner,
-        # parsers.management.commands.verify_names_with_ai и
-        # parsers.name_ai вообще не были перечислены в loggers — их
-        # logger.error/warning уходили в никуда, независимо от Docker и
-        # от того, жив ли ещё тот же контейнер. Настоящую причину гибели
-        # контейнера это задним числом не восстановит (тот лог уже удалён
-        # вместе с заменённым `docker compose up --build` контейнером), но
-        # закрывает дыру на будущее — теперь любая ошибка из этих модулей
-        # тоже попадёт в logs/celery.log и logs/errors.log.
+        # Логгеры дашборда и парсеров — чтобы их ошибки попадали в файлы.
         'dashboard': {
             'handlers': ['celery_file', 'console', 'error_file'],
             'level': 'INFO',
@@ -1199,19 +868,12 @@ if DEBUG:
     MIDDLEWARE += ['debug_toolbar.middleware.DebugToolbarMiddleware']
     INTERNAL_IPS = ['127.0.0.1']
     DEBUG_TOOLBAR_CONFIG = {
-        # БАГ, КОТОРЫЙ ТУТ БЫЛ: колбэк проверял только Accept-заголовок, из-за
-        # чего debug_toolbar (SQL-запросы, настройки, переменные окружения)
-        # рендерился ЛЮБОМУ посетителю с обычным браузерным Accept, а не
-        # только с localhost — вернули обратно проверку REMOTE_ADDR по
-        # INTERNAL_IPS, как и задумано штатным поведением django-debug-toolbar.
+        # Тулбар только для INTERNAL_IPS.
         'SHOW_TOOLBAR_CALLBACK': lambda request: (
             request.META.get('HTTP_ACCEPT') != 'application/json'
             and request.META.get('REMOTE_ADDR') in INTERNAL_IPS
         ),
-        # test runner форсит DEBUG=False на время тестов, из-за чего
-        # debug_toolbar.E001 путает это с "тулбар остался в проде".
-        # IS_RUNNING_TESTS=False — штатный флаг django-debug-toolbar,
-        # отключающий именно эту проверку под manage.py test.
+        # В тестах отключаем проверку тулбара (DEBUG там принудительно False).
         'IS_RUNNING_TESTS': False,
     }
 

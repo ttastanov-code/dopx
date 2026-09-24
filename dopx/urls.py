@@ -16,9 +16,7 @@ sitemaps = {
     "teams": TeamSitemap, "coaches": CoachSitemap, "static": StaticViewSitemap,
 }
 
-# Схема/доки API — только staff (IsAdminUser). Публичного API для внешних
-# интеграторов нет, список эндпоинтов в открытом доступе — готовая
-# шпаргалка для ботов, автоматизирующих накрутку голосов.
+# Схема/доки API — только staff.
 schema_patterns = [
     path('api/schema/', SpectacularAPIView.as_view(throttle_classes=[], permission_classes=[IsAdminUser]), name='schema'),
     path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema', throttle_classes=[], permission_classes=[IsAdminUser]), name='swagger-ui'),
@@ -36,45 +34,30 @@ urlpatterns = [
     path('coaches/', include('coaches.urls')),
     path('referees/', include('referees.urls')),
     path('leagues/', include('leagues.urls')),
-    # «Живая сборная сезона» — /season/best-xi/ (активный сезон по
-    # умолчанию) и /season/<uuid>/best-xi/ (конкретный сезон/лига).
+    # «Живая сборная сезона»: активный сезон или конкретный.
     path('season/', include('season_squad.urls')),
-    # «DOPX Лучшие тура» — /season/round/ (последний завершённый тур
-    # активного сезона) и /season/<uuid>/round/<tour>/ — та же логика
-    # умолчания, отдельное приложение round_squad (см. докстринг
-    # round_squad/models.py про отличие от season_squad).
+    # «DOPX Лучшие тура»: текущий тур или конкретный.
     path('season/', include('round_squad.urls')),
     path('notifications/', include('notifications.urls')),
     path('api/', include('api.urls')),
     path('analytics/', include('analytics.urls')),
-    # namespace 'events' — не путать с matches:events (лента ВСЕХ событий матча).
+    # namespace 'events' — не путать с matches:events.
     path('events/', include('events.urls')),
-    # Краудсорс-прогноз 1X2 (Sofascore-style) — отдельное приложение
-    # predictions/, тот же принцип разделения, что и у events/.
+    # Прогнозы 1X2.
     path('predictions/', include('predictions.urls')),
-    # Партнёрская инфраструктура: /go/<slug>/ (реферальная ссылка) и
-    # /ad/<uuid>/click/ (клик по баннеру) — короткие корневые пути
-    # намеренно, а не /partners/go/<slug>/: партнёр публикует эту ссылку
-    # у себя, лишний сегмент в URL не добавляет ничего кроме длины.
+    # Партнёры: /go/<slug>/ и /ad/<uuid>/click/ — короткие корневые пути.
     path('', include('partners.urls')),
-    # Staff-дашборд (метрики продукта, здоровье синка матчей, антифрод-очередь).
-    # Доступ — staff_member_required на каждой вьюхе (dashboard/views.py),
-    # не на уровне URL-конфига, чтобы поведение было явным и тестируемым.
+    # Staff-дашборд (доступ проверяется во вьюхах).
     path('staff/dashboard/', include('dashboard.urls')),
-    # SEO: sitemap кэшируется на 12ч — пересчитывать на каждый заход бота
-    # бессмысленно, список завершённых матчей/игроков не меняется поминутно.
+    # sitemap кэшируется на 12 ч.
     path('sitemap.xml', cache_page(60 * 60 * 12)(sitemap), {'sitemaps': sitemaps}, name='sitemap'),
     path('robots.txt', robots_txt, name='robots'),
-    # Self-hosted CAPTCHA (django-simple-captcha) — картинка + refresh-эндпоинт.
+    # Капча.
     path('captcha/', include('captcha.urls')),
 ] + schema_patterns
 
 if 'debug_toolbar' in settings.INSTALLED_APPS:
-    # Проверка по INSTALLED_APPS, а не по settings.DEBUG: urls.py грузится
-    # лениво, при первом резолве URL, что в тестах происходит уже ПОСЛЕ
-    # того, как test runner форсит DEBUG=False — settings.DEBUG здесь и в
-    # settings.py (где решается MIDDLEWARE) давали бы разный ответ в разный
-    # момент времени, и middleware пытался бы рендерить несуществующий 'djdt:...'.
+    # Debug Toolbar — по INSTALLED_APPS, не по DEBUG (в тестах DEBUG меняется позже).
     import debug_toolbar
     urlpatterns = [path('__debug__/', include('debug_toolbar.urls'))] + urlpatterns
 

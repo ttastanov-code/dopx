@@ -1,3 +1,4 @@
+# predictions/admin.py — Админка прогнозов 1X2.
 from django.contrib import admin
 from unfold.admin import ModelAdmin
 

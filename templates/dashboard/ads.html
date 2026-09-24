@@ -3,15 +3,8 @@
 {% block content %}
 {% include 'dashboard/_nav.html' %}
 
-<!-- === ЧТО ТУТ === -->
-{% comment %} 2026-09-22: заголовок рендерит .dopx-page-header (_nav.html) — не дублируем.
-
-2026-09-23: две кнопки ниже ("Управление партнёрами"/"Управление баннерами")
-— полноценный CRUD (dashboard/views.py::partners_list/banners_list), раньше
-партнёров/баннеры можно было завести/поправить ТОЛЬКО через Django admin,
-эта страница была read-only статистикой. Отдельной вкладки в главном меню
-НЕТ — .dopx-tabs-row и так на пределе ширины (см. _nav.html), это подраздел
-«Рекламы», не отдельный домен. {% endcomment %}
+{# === ЧТО ТУТ === #}
+{# Заголовок — в _nav.html. Кнопки управления партнёрами и баннерами (CRUD). #}
 <div class="card bg-base-100 border border-base-300 mb-4">
     <div class="card-body p-4">
         <div class="flex items-start justify-between flex-wrap gap-3">
@@ -28,7 +21,7 @@
 </div>
 
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
-    <!-- === ВИДЖЕТ ИГРОКА === -->
+    {# === ВИДЖЕТ ИГРОКА === #}
     <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4">
             <div class="dopx-section-eyebrow"><i class="ti ti-user"></i>Виджет</div>
@@ -70,7 +63,7 @@
         </div>
     </div>
 
-    <!-- === ВИДЖЕТ КОМАНДЫ === -->
+    {# === ВИДЖЕТ КОМАНДЫ === #}
     <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4">
             <div class="dopx-section-eyebrow"><i class="ti ti-shield"></i>Виджет</div>
@@ -112,7 +105,7 @@
         </div>
     </div>
 
-    <!-- === ВИДЖЕТ ТУРНИРНОЙ ТАБЛИЦЫ === -->
+    {# === ВИДЖЕТ ТАБЛИЦЫ === #}
     <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4">
             <div class="dopx-section-eyebrow"><i class="ti ti-table"></i>Виджет</div>
@@ -133,7 +126,7 @@
         </div>
     </div>
 
-    <!-- === ВИДЖЕТ СБОРНОЙ DOPX === -->
+    {# === ВИДЖЕТ СБОРНОЙ === #}
     <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4">
             <div class="dopx-section-eyebrow"><i class="ti ti-shirt-sport"></i>Виджет</div>
@@ -154,7 +147,7 @@
         </div>
     </div>
 
-    <!-- === ВИДЖЕТ «DOPX ЛУЧШИЕ ТУРА» === -->
+    {# === ВИДЖЕТ «ЛУЧШИЕ ТУРА» === #}
     <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4">
             <div class="dopx-section-eyebrow"><i class="ti ti-calendar-star"></i>Виджет</div>
@@ -176,11 +169,8 @@
     </div>
 </div>
 
-<!-- === СВОДНАЯ СТАТИСТИКА === -->
-<!-- Живое обновление — тот же паттерн, что и dashboard:data_health_partial
-     (hx-get каждые 20с, подменяет только этот блок). Теперь сюда же
-     подтянута статистика баннеров и партнёрских рефералок, раньше видная
-     только построчно в /admin/partners/. -->
+{# === СВОДНАЯ СТАТИСТИКА === #}
+{# Обновление каждые 20 с: баннеры, рефералки, виджеты. #}
 <div class="card bg-base-100 border border-base-300 mb-4">
     <div class="card-body p-4">
         <div class="dopx-section-eyebrow"><i class="ti ti-chart-bar"></i>За 30 дней</div>

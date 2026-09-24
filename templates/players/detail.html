@@ -9,17 +9,13 @@
 {% endif %}
 {% endblock %}
 {% block content %}
-<!-- === НАВИГАЦИЯ === -->
+{# === НАВИГАЦИЯ === #}
 <div class="mb-6 flex items-center justify-between flex-wrap gap-2">
     <a href="{% url 'players:list' %}" class="back-link" data-back-link>
         <span class="back-link__icon"><i class="ti ti-arrow-left"></i></span>
         <span>Назад к игрокам</span>
     </a>
-    {% comment %}
-    Продуктовый аудит, раздел 5 ("Рост"): embeddable-виджет. Модалка с
-    готовым <iframe>-кодом и кнопкой копирования — фан-паблики/клубные
-    сайты вставляют рейтинг игрока к себе без интеграции с DOPX API.
-    {% endcomment %}
+    {# Embed-виджет: модалка с кодом <iframe>. #}
     <div class="flex items-center gap-2">
     <a href="{% url 'players:season_recap' player.id %}" class="btn btn-outline btn-sm">
         <i class="ti ti-sparkles"></i> Итоги сезона
@@ -49,18 +45,18 @@
     </div>
 </div>
 
-<!-- === HEADER ИГРОКА === -->
+{# === ШАПКА ИГРОКА === #}
 <div class="card bg-base-100 border border-base-300 mb-6">
     <div class="card-body p-6">
         <div class="flex flex-col md:flex-row items-center gap-6">
-            <!-- Фото / генеративный аватар -->
+            {# Фото / генеративный аватар #}
             {% if player.photo %}
             {% include 'components/_avatar.html' with photo_url=player.photo.url name=player.full_name size_classes='w-32 h-32 text-5xl' ring_classes='ring ring-primary ring-offset-base-100 ring-offset-2' %}
             {% else %}
             {% include 'components/_avatar.html' with name=player.full_name size_classes='w-32 h-32 text-5xl' ring_classes='ring ring-primary ring-offset-base-100 ring-offset-2' %}
             {% endif %}
             
-            <!-- Информация -->
+            {# Информация #}
             <div class="flex-1 text-center md:text-left">
                 <div class="flex flex-wrap items-center justify-center md:justify-start gap-2 mb-2">
                     <h1 class="text-3xl font-bold">{{ player.first_name }} {{ player.last_name }}</h1>
@@ -75,13 +71,7 @@
                         </a>
                     {% endif %}
                     {% if active_sidelined %}
-                    {% comment %}
-                    Бейдж "недоступен" (фаза 5, docs/sportmonks-migration-plan.md) —
-                    активная травма/дисквалификация из PlayerSidelined
-                    (players/views.py::PlayerDetailView). НЕ путать с
-                    "Покинул клуб" ниже — это временный статус, не связан
-                    с Player.is_active.
-                    {% endcomment %}
+                    {# Травма/дисквалификация (PlayerSidelined). Не связано с is_active. #}
                     <span class="badge badge-lg badge-error badge-outline"
                           title="{% if active_sidelined.start_date %}С {{ active_sidelined.start_date|date:'d.m.Y' }}{% endif %}{% if active_sidelined.end_date %} по {{ active_sidelined.end_date|date:'d.m.Y' }}{% endif %}">
                         {% if active_sidelined.category == 'injury' %}
@@ -94,12 +84,7 @@
                     </span>
                     {% endif %}
                     {% if not player.is_active %}
-                        {% comment %}
-                        НАЙДЕНО (2026-09-01): player.team — последняя ИЗВЕСТНАЯ
-                        команда, не обязательно текущая (см. players/views.py) —
-                        без этого бейджа страница выглядела бы так, будто игрок
-                        всё ещё выступает за этот клуб.
-                        {% endcomment %}
+                        {# player.team — последняя известная команда, поэтому бейдж «Покинул клуб». #}
                         <span class="badge badge-lg badge-warning badge-outline"
                               title="Больше не найден в текущем составе — сменил клуб или покинул КПЛ">
                             <i class="ti ti-door-exit"></i>
@@ -122,30 +107,8 @@
                     {% endif %}
                 </div>
                 
-                <!-- Общая статистика -->
-                {% comment %}
-                БАГ, КОТОРЫЙ ТУТ БЫЛ, ВЕРСИЯ 2 (2026-09-22): предыдущий фикс
-                (whitespace-normal + flex-wrap прямо в потоке текста
-                заголовка) убрал overflow за край карточки, но не саму
-                кривизну — при переносе "Рейтинг выступления" на две строки
-                иконке банально не хватало места и на второй строке, она
-                падала на СВОЮ, третью, строку — снова разнобой, только
-                теперь без overflow.
-
-                Корневая ошибка была в самом ПОДХОДЕ: иконка была частью
-                одного текстового потока с заголовком переменной длины —
-                любая раскладка внутри потока (flex, inline, что угодно)
-                при достаточно длинном/переносящемся заголовке рано или
-                поздно вытолкнет иконку в неудобное место. Правильное
-                решение — вообще вынести иконку ИЗ потока текста: теперь
-                она абсолютно спозиционирована в фиксированном углу
-                карточки (position: absolute, top-2 right-2 у самой
-                .stat), а не идёт следом за заголовком. Заголовок при этом
-                свободно переносится на сколько угодно строк — иконку это
-                больше никак не касается, её позиция не зависит от длины
-                текста вообще. `pr-4` у заголовка — чтобы длинный текст не
-                подтекал ПОД иконку в углу.
-                {% endcomment %}
+                {# Общая статистика #}
+                {# Иконка в углу карточки (absolute), заголовок переносится свободно; pr-4 — чтобы не залезал под иконку. #}
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div class="stat bg-base-200 rounded-lg p-3">
                         <div class="stat-title text-xs">Матчей</div>
@@ -157,19 +120,10 @@
                         <div class="stat-value text-xl text-success">
                             {% if stats.total_votes|has_enough_votes %}{{ stats.avg_performance|default_if_none:"—" }}{% else %}н/д{% endif %}
                         </div>
-                        {% comment %}
-                        2026-09-23, честный аудит формул: PlayerRatingCorrection
-                        (см. players/views.py::PlayerDetailView) — единственный
-                        механизм в проекте, который САМ, без модератора, меняет
-                        уже показанный рейтинг (aggregates/tasks.py::
-                        _check_player_stats_divergence сравнивает community-
-                        оценку с объективной статистикой матча). Раньше это
-                        было полностью невидимо — теперь честно показываем
-                        сам факт активной авто-поправки.
-                        {% endcomment %}
+                        {# Значок активной авто-поправки рейтинга. #}
                         {% if rating_correction %}
                         <div class="mt-1">
-                            {% comment %}2026-09-23: тултип по клику/наведению (работает и на телефоне, в отличие от title) с объяснением простым языком — rating_correction.public_explanation (aggregates/models.py).{% endcomment %}
+                            {# Пояснение поправки в тултипе (работает и на телефоне). #}
                             {% tooltip_wrap rating_correction.public_explanation %}
                             <span class="badge badge-xs badge-ghost gap-1">
                                 <i class="ti ti-shield-check text-[10px]"></i>
@@ -180,7 +134,7 @@
                         </div>
                         {% endif %}
                         {% if stats.avg_stat_rating %}
-                        {% comment %}2026-09-24: оценка по статистике матча рядом с оценкой трибун — players/views.py, matches/stat_ratings.py.{% endcomment %}
+                        {# Оценка по статистике рядом с оценкой болельщиков. #}
                         <div class="mt-1">
                             {% tooltip_wrap INDICATOR_TOOLTIPS.player.stat_rating %}
                             <span class="text-xs opacity-70 whitespace-nowrap">
@@ -206,19 +160,15 @@
     </div>
 </div>
 
-<!-- === ДВЕ КОЛОНКИ === -->
+{# === ДВЕ КОЛОНКИ === #}
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <!-- === ЛЕВАЯ КОЛОНКА (2/3) ===
-         2026-09-11 (жалоба пользователя на те же страницы тренера/судьи —
-         "и у игроков если там не так"): та же перестановка, что в
-         referees/detail.html и coaches/detail.html — order-2 lg:order-1
-         показывает профиль/статистику ВЫШЕ истории на мобильном. -->
+    {% comment %}
+    === ЛЕВАЯ КОЛОНКА (2/3) ===
+    order-2 lg:order-1 — на мобильном профиль выше истории.
+    {% endcomment %}
     <div class="order-2 lg:order-1 lg:col-span-2 space-y-6">
-        <!-- === ИСТОРИЯ ВЫСТУПЛЕНИЙ === -->
-        {% comment %}
-        Карточка всегда видна, даже без оценок (пустое состояние + CTA), не
-        прячем условием на aggregates — тот же паттерн, что на странице команды.
-        {% endcomment %}
+        {# === ИСТОРИЯ ВЫСТУПЛЕНИЙ === #}
+        {# Карточка видна всегда — пустое состояние с CTA. #}
         <div class="card bg-base-100 border border-base-300">
             <div class="card-body p-4">
                 <h3 class="font-bold text-lg mb-4">
@@ -289,16 +239,8 @@
             </div>
         </div>
 
-        <!-- === ПО СЕЗОНАМ === -->
-        {% comment %}
-        task #148 (мультисезонность): в отличие от тренеров (docs/BACKLOG.md,
-        находка 4 — KFF не хранит историю назначений вообще), у игроков
-        команда-по-сезонам реально восстановима из MatchLineupPlayer, где
-        каждая запись жёстко привязана к факту участия в конкретном матче
-        конкретного сезона и не переписывается задним числом при трансфере.
-        Если игрок менял клуб в разгар сезона — увидит две отдельные строки
-        за один и тот же год, это корректное отображение, не баг.
-        {% endcomment %}
+        {# === ПО СЕЗОНАМ === #}
+        {# Команда по сезонам — из составов. При трансфере в сезоне — две строки. #}
         {% if career_by_season %}
         <div class="card bg-base-100 border border-base-300">
             <div class="card-body p-4">
@@ -323,25 +265,7 @@
                                 <td>
                                     {% if stint.team %}
                                     <a href="{% url 'teams:detail' stint.team.id %}" class="hover:text-primary transition-colors">{{ stint.team.name }}</a>
-                                    {% comment %}
-                                    2026-09-11, прямая просьба пользователя — таблица теперь
-                                    строго хронологическая (см. players/views.py::
-                                    PlayerDetailView.get_context_data, career_by_season), первая
-                                    строка — самый свежий клуб.
-
-                                    ИСПРАВЛЕНО (тот же день, следующая жалоба пользователя —
-                                    "это ведь не факт, например Офри Арад ушёл в другую лигу
-                                    вообще, его нет в КПЛ"): раньше бейдж сверял stint.team с
-                                    `player.team` (FK) — но ОБА эти сигнала могут одинаково
-                                    "застрять" на старом клубе и молча согласиться друг с
-                                    другом, будучи одинаково неверными. Честный признак "это
-                                    прямо сейчас его клуб" — реальное совпадение сезона этой
-                                    строки с активным сезоном лиги (лежат ли у игрока матчи в
-                                    ТЕКУЩЕМ сезоне вообще, а не что написано в FK). Если у
-                                    Арада последний stint — сезон 2025, а активный сезон 2026,
-                                    бейдж теперь не покажется — и это правда, а не то, что нам
-                                    просто хочется думать.
-                                    {% endcomment %}
+                                    {# Хронология: свежий клуб первым. «Текущая» — только если сезон строки активный. #}
                                     {% if forloop.first and active_season and stint.season.id == active_season.id %}
                                     <span class="badge badge-primary badge-xs ml-1">Текущая</span>
                                     {% endif %}
@@ -360,7 +284,7 @@
         </div>
         {% endif %}
 
-        <!-- === ЛУЧШИЕ МАТЧИ === -->
+        {# === ЛУЧШИЕ МАТЧИ === #}
         {% if best_matches %}
         <div class="card bg-base-100 border border-base-300">
             <div class="card-body p-4">
@@ -370,14 +294,7 @@
                 </h3>
                 <div class="space-y-3">
                     {% for agg in best_matches %}
-                    {% comment %}
-                    НЕ единый <a> вокруг всей карточки — {% confidence_badge %}
-                    сам рендерит <a>, вложенный <a> в <a> — невалидный HTML5
-                    (браузер молча разрывает внешнюю ссылку, ломая flex-
-                    разметку). Паттерн "растянутая ссылка": пустая
-                    <a class="absolute inset-0"> ловит клик по всей карточке;
-                    {% confidence_badge %} рисуется поверх и ловит клик первым.
-                    {% endcomment %}
+                    {# Растянутая ссылка — внутри confidence_badge уже есть <a>. #}
                     <div class="relative flex items-center justify-between p-3 bg-base-200 rounded-lg hover:bg-base-300 transition-all">
                         <a href="{% url 'matches:detail' agg.match.id %}" class="absolute inset-0 rounded-lg"
                            aria-label="{{ agg.match.home_team.name }} vs {{ agg.match.away_team.name }}"></a>
@@ -402,12 +319,12 @@
         {% endif %}
     </div>
 
-    <!-- === ПРАВАЯ КОЛОНКА (1/3) === -->
+    {# === ПРАВАЯ КОЛОНКА (1/3) === #}
     <div class="order-1 lg:order-2 space-y-6">
-        <!-- === МИНИ-СХЕМА ПОЗИЦИЙ === -->
+        {# === МИНИ-СХЕМА ПОЗИЦИЙ === #}
         {% include 'players/_position_map.html' %}
 
-        <!-- === РАДАР МЕТРИК === -->
+        {# === РАДАР МЕТРИК === #}
         <div class="card bg-base-100 border border-base-300">
             <div class="card-body p-4">
                 <h3 class="font-bold text-lg mb-4">
@@ -416,7 +333,7 @@
                 </h3>
                 {% if has_evaluations %}
                 <div class="space-y-4">
-                    <!-- Вклад -->
+                    {# Вклад #}
                     <div>
                         <div class="flex justify-between text-sm mb-1">
                             <span>Вклад</span>
@@ -428,7 +345,7 @@
                         </div>
                     </div>
 
-                    <!-- Риск -->
+                    {# Риск #}
                     <div>
                         <div class="flex justify-between text-sm mb-1">
                             <span>Риск</span>
@@ -440,11 +357,7 @@
                         </div>
                     </div>
 
-                    <!-- Зрелость — двуполярная метрика (вклад минус риск, см.
-                         evaluations/models.py::maturity_score), диапазон
-                         примерно [-9, +9], а не [0, 10] — обычный widthratio
-                         тут ломается на отрицательных значениях (см.
-                         core/templatetags/math_extras.py::bipolar_bar_pct). -->
+                    {# Зрелость — от -9 до +9, полоса через bipolar_bar_pct. #}
                     <div>
                         <div class="flex justify-between text-sm mb-1">
                             <span>Зрелость</span>
@@ -456,7 +369,7 @@
                         </div>
                     </div>
 
-                    <!-- Потенциал -->
+                    {# Потенциал #}
                     <div>
                         <div class="flex justify-between text-sm mb-1">
                             <span>Потенциал</span>
@@ -476,7 +389,7 @@
             </div>
         </div>
 
-        <!-- === СТАТИСТИКА === -->
+        {# === СТАТИСТИКА === #}
         <div class="card bg-base-100 border border-base-300">
             <div class="card-body p-4">
                 <h3 class="font-bold text-lg mb-4">

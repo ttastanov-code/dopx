@@ -1,20 +1,6 @@
 # dashboard/parser_tools.py
-"""
-Ручное управление парсером из staff-панели. Sportmonks — ЕДИНСТВЕННЫЙ
-источник данных матчей (2026-09-09: KFF-парсер, его клиент, импортёры и весь
-rollback-путь физически удалены по решению пользователя — см. историю чата
-и ADR-0044/0045, которые описывают уже устаревшее двух-источниковое
-состояние проекта).
-
-  - SPORTMONKS_TRIGGERABLE_TASKS / sportmonks_api_health_check() — ручной
-    запуск лёгких/безопасных задач синка и live-пинг API. Сырого JSON-вьюера
-    нет: у Sportmonks-клиента разные сигнатуры на метод (fixture_id,
-    диапазон дат, include-строка) — общий выпадающий список по одному
-    external_id тут не подходит (в отличие от того, что было у KFF).
-  - resync_match() — точечный ресинк ОДНОГО матча по его sportmonks_id.
-  - TRIGGERABLE_TASKS — источник-агностичные задачи (диагностика,
-    нотификации, пересчёт составов), не связанные с конкретным парсером.
-  - Инспекция/отмена celery-задач — общая для всей очереди.
+"""Ручное управление парсером Sportmonks из staff-панели:
+запуск задач, health-check API, ресинк матча, инспекция и отмена celery-задач.
 """
 from __future__ import annotations
 
@@ -30,14 +16,9 @@ logger = logging.getLogger(__name__)
 
 
 def resync_match(match) -> tuple[bool, str]:
-    """Полный ресинк ОДНОГО матча — вызывается и из admin (matches/admin.py::
-    resync_selected), и из /staff/dashboard/data-health/ (кнопка
-    «Досинхронизировать» у каждого проблемного матча). Тот же тяжёлый вызов
-    (полный include), что и _heavy_sync_fixture в parsers/sportmonks/tasks.py,
-    но league/season берём напрямую с самого матча (Match.league/
-    Match.season), а не через _get_league_and_season() — та функция
-    резолвит ТЕКУЩИЙ активный сезон, здесь же нужен сезон КОНКРЕТНОГО матча
-    (может быть архивным)."""
+    """Полный ресинк одного матча (из админки и из «Здоровья данных»).
+    Лигу/сезон берём с самого матча — он может быть архивным.
+    """
     from parsers.sportmonks import importers
 
     if not match.sportmonks_id:
@@ -67,14 +48,7 @@ def resync_match(match) -> tuple[bool, str]:
 
 TASK_DEBOUNCE_SECONDS = 60
 
-# Все 4 задачи ниже — намеренно только "лёгкие"/инкрементальные: полный
-# бэкафилл сезона с нуля — отдельная management-команда
-# (sync_sportmonks_season), а не кнопка в UI — риск случайного клика на
-# тяжёлую операцию слишком высок.
-# 2026-09-22: короче исходных ("Обновить live-матчи (лёгкий bulk-опрос +
-# тяжёлая догрузка изменившихся)" и т.п.) — та же просьба пользователя, что
-# и у TASK_DESCRIPTIONS ниже: короткая подпись кнопки, без пояснения "как
-# это работает" прямо в лейбле (это теперь в SPORTMONKS_TASK_DESCRIPTIONS).
+# Только лёгкие задачи. Полный бэкафилл — через команду sync_sportmonks_season.
 SPORTMONKS_TRIGGERABLE_TASKS = {
     "sportmonks_update_live": "Обновить live-матчи",
     "sportmonks_update_upcoming": "Подтянуть ближайшие составы",
@@ -84,12 +58,7 @@ SPORTMONKS_TRIGGERABLE_TASKS = {
     "sportmonks_resync_recent_stats": "Досинкать статистику недавних матчей",
 }
 
-# 2026-09-22, прямая просьба пользователя: "описания команд надо переписать
-# на более короткие, емкие, понятные и без ИИ паттерна" — короткая строка
-# по делу вместо абзаца. Полное обоснование каждой задачи (почему она
-# нужна именно в таком виде) осталось выше, в Python-комментариях у
-# TRIGGERABLE_TASKS/SPORTMONKS_TRIGGERABLE_TASKS — staff это в браузере не
-# читает, а будущему разработчику эти комментарии никуда не делись.
+# Короткие описания под кнопками.
 SPORTMONKS_TASK_DESCRIPTIONS: dict[str, str] = {
     "sportmonks_update_live": "Один запрос по всем live-матчам сразу, при расхождении — полная догрузка. Тикает само каждые 1-2 мин.",
     "sportmonks_update_upcoming": "Подтягивает составы, как только Sportmonks их публикует — обычно за 10-15 мин до старта.",
@@ -99,50 +68,24 @@ SPORTMONKS_TASK_DESCRIPTIONS: dict[str, str] = {
     "sportmonks_resync_recent_stats": "Досчитывает статистику матчей, завершившихся за последние 3 часа — Sportmonks иногда уточняет цифры уже после финального свистка.",
 }
 
-# Источник-агностичные задачи: не привязаны к конкретному парсеру, поэтому
-# живут отдельно от SPORTMONKS_TRIGGERABLE_TASKS выше.
-# 2026-09-22: короче исходных, та же логика, что у SPORTMONKS_TRIGGERABLE_TASKS
-# выше — подробности остались в комментариях/TASK_DESCRIPTIONS, а не в
-# самом лейбле кнопки.
+# Задачи, не привязанные к парсеру.
 TRIGGERABLE_TASKS = {
     "check_sync_errors_and_alert": "Проверить ошибки синка за 24ч",
-    # 2026-09-09 (продуктовый фидбек: "не хватает кнопки пересчёта агрегатов,
-    # мы синк сделали, а таблица не пересчитанная") — TeamSeasonStats
-    # (турнирная таблица) пересчитывается по расписанию раз в 10 минут
-    # ТОЛЬКО для активного сезона (aggregates/tasks.py::
-    # recalculate_season_standings), после ручного бэкафилла нескольких
-    # сезонов сразу ждать тик неудобно — кнопка форсирует прямо сейчас.
+    # Пересчёт турнирной таблицы сейчас (обычно — раз в 10 минут для активного сезона).
     "recalculate_season_standings": "Пересчитать турнирную таблицу",
-    # Retention loops (2026-08-21) — ручной прогон для тестирования без
-    # ожидания реального крон-тика (см. core/management/commands/
-    # simulate_match_timing.py — двигает существующий матч по времени,
-    # чтобы эти задачи нашли что обработать, затем жмём кнопку здесь).
+    # Retention-задачи — для ручной проверки без ожидания крона.
     "notify_prediction_closing_soon": "Прогнозы: приглашение за час до старта",
     "notify_prediction_results": "Прогнозы: результат vs прогноз",
     "send_weekly_summary": "Недельная сводка активности",
-    # "Живая сборная сезона" (2026-08-21) — ручной пересчёт вне 15-минутного
-    # крон-тика, полезно сразу после массового прогона оценок в тестах.
+    # Пересчёт сборной сезона.
     "recompute_all_active_best_xi": "Сборная DOPX: пересчитать сейчас",
-    # "DOPX Лучшие тура" (2026-08-22) — тот же принцип, что и у сборной
-    # сезона выше: не ждать 15-минутный крон-тик, полезно сразу после
-    # прогона тестовых голосований (see users/management/commands/
-    # create_test_users.py + aggregates/management/commands/simulate_evaluations.py).
+    # Пересчёт сборных открытых туров.
     "recompute_active_rounds": "DOPX Лучшие тура: пересчитать сейчас",
-    # 2026-09-21, прямая просьба пользователя: "команда, которая перерасчёт
-    # делает всех закрытых туров сборные... вывести на дашборд" — в
-    # отличие от recompute_active_rounds выше, эта кнопка ИМЕННО для уже
-    # зафиксированных (is_final=True) туров, которые обычный крон-тик
-    # больше никогда не трогает (см. round_squad/services.py::
-    # recompute_all_closed_rounds).
+    # Пересчёт сборных закрытых туров (is_final=True).
     "recompute_all_closed_rounds_task": "DOPX Лучшие тура: пересчитать закрытые туры",
 }
 
-# Короткие пояснения под кнопками (2026-08-21, продуктовый фидбек: "не
-# всегда понятно, что именно выполняют") — что реально делает задача,
-# откуда берёт данные и когда результат будет заметен на сайте. Ключи
-# СТРОГО совпадают с TRIGGERABLE_TASKS.
-# См. комментарий у SPORTMONKS_TASK_DESCRIPTIONS выше про формат — короткая
-# строка "что делает", без истории решений.
+# Описания под кнопками. Ключи совпадают с TRIGGERABLE_TASKS.
 TASK_DESCRIPTIONS: dict[str, str] = {
     "check_sync_errors_and_alert": "Смотрит на матчи за 24ч, шлёт алерт админу при проблемах. Только диагностика, ничего не меняет.",
     "recalculate_season_standings": "Пересчитывает турнирную таблицу по активным сезонам. Тикает само каждые 10 мин — жать нужно только сразу после бэкафилла.",
@@ -154,9 +97,7 @@ TASK_DESCRIPTIONS: dict[str, str] = {
     "recompute_all_closed_rounds_task": "Пересчитывает состав ВСЕХ уже закрытых туров — для случаев, когда данные матча поправили постфактум. Письма повторно не шлёт.",
 }
 
-# Модуль, откуда импортировать функцию задачи — по умолчанию parsers.tasks
-# (check_sync_errors_and_alert), явная маршрутизация для задач из других
-# приложений.
+# Модуль задачи; по умолчанию parsers.tasks.
 _TASK_MODULES = {
     "notify_prediction_closing_soon": "notifications.tasks",
     "notify_prediction_results": "notifications.tasks",
@@ -176,9 +117,7 @@ _DEFAULT_TASK_MODULE = "parsers.tasks"
 
 
 def trigger_task(task_name: str) -> tuple[bool, str]:
-    # Единый lookup по объединению обоих словарей (Sportmonks + общие) —
-    # держим одну функцию/один URL для обеих групп, а не дублируем
-    # view+debounce+audit-логирование под каждую с нуля.
+    # Общий lookup по обоим словарям.
     all_tasks = {**TRIGGERABLE_TASKS, **SPORTMONKS_TRIGGERABLE_TASKS}
     if task_name not in all_tasks:
         return False, f"Неизвестная задача: {task_name}"
@@ -196,12 +135,11 @@ def trigger_task(task_name: str) -> tuple[bool, str]:
 
 
 # ============================================================
-# Поиск матча — найти UUID по названию команд
+# Поиск матча по названию команд
 # ============================================================
 
 def available_search_years() -> list[int]:
-    """Годы, за которые в базе вообще есть матчи — для выпадающего списка
-    в форме поиска (самый свежий год первым)."""
+    """Годы, за которые есть матчи (свежие первыми)."""
     from matches.models import Match
 
     years = Match.objects.dates("start_time", "year", order="DESC")
@@ -209,17 +147,8 @@ def available_search_years() -> list[int]:
 
 
 def search_matches(query: str, year: int | None = None) -> dict:
-    """
-    Поиск матча по названию команд для staff. Чистое число трактуется как
-    sportmonks_id — точное совпадение без ограничения по году.
-
-    Иначе — фильтр по календарному году start_time (по умолчанию текущий,
-    совпадает с Season.year) вместо произвольного числового лимита: год —
-    естественная граница, двухкруговой турнир не даёт сотен матчей одной
-    команды за год, а лимит вида [:30] тихо резал старые матчи без намёка,
-    что список обрезан. Каждое слово запроса — отдельное AND-условие
-    (совпадает с домашней или гостевой), матчинг идёт по normalize_kz()
-    в Python (команд — десятки, дешевле, чем SQL TRANSLATE()/unaccent).
+    """Поиск матча для staff. Число — sportmonks_id.
+    Иначе фильтр по году и словам запроса (каждое слово — AND, по normalize_kz).
     """
     from django.db.models import Q
     from django.utils import timezone
@@ -240,16 +169,12 @@ def search_matches(query: str, year: int | None = None) -> dict:
         qs = qs.filter(start_time__year=year)
 
         all_teams = list(Team.objects.only("id", "name"))
-        # Каждое слово запроса — отдельное AND-условие (совпадает ИЛИ с
-        # домашней, ИЛИ с гостевой командой). Одно слово — старое
-        # поведение "любая из команд"; несколько слов — сужение до
-        # конкретной пары команд.
+        # Каждое слово — отдельное AND-условие (хозяева ИЛИ гости).
         for token in query.split():
             normalized_token = normalize_kz(token)
             matching_ids = [t.id for t in all_teams if normalized_token in normalize_kz(t.name)]
             if not matching_ids:
-                # Ни одна команда не подходит под этот токен — результатов
-                # точно не будет, дальше можно не фильтровать.
+                # Ни одна команда не подошла — дальше не ищем.
                 return {"results": [], "total_count": 0, "year": year}
             qs = qs.filter(Q(home_team_id__in=matching_ids) | Q(away_team_id__in=matching_ids))
 
@@ -258,44 +183,24 @@ def search_matches(query: str, year: int | None = None) -> dict:
 
 
 # ============================================================
-# Живая проверка доступности Sportmonks API (не через очередь celery)
+# Проверка доступности Sportmonks API (синхронно)
 # ============================================================
 
-# Кэшируем результат последней проверки (без TTL — переживает рестарт
-# воркера/дев-сервера ничем не хуже, чем "неизвестно совсем", устаревшее
-# значение с явным "проверено N назад" полезнее пустой карточки при первом
-# заходе на страницу). Ключ намеренно НЕ завязан на request/пользователя —
-# это глобальный факт про API, а не персональное состояние staff.
-# Подтверждено вживую тестовым ключом на реальных данных КПЛ (см. докстринг
-# модуля parsers/sportmonks/client.py) — 2000 запросов в час НА КАЖДУЮ entity
-# отдельно. Sportmonks не отдаёт сам лимит в ответе (только remaining), так
-# что "израсходовано" считаем сами как total - remaining.
+# Последняя проверка хранится без TTL. Лимит — 2000 запросов/час на entity.
 SPORTMONKS_HOURLY_LIMIT = 2000
 
 SPORTMONKS_HEALTH_CACHE_KEY = "dashboard:sportmonks_health_last"
 
 
 def get_cached_sportmonks_health() -> dict | None:
-    """Последний результат sportmonks_api_health_check() (сам вызов или
-    ручной клик «Проверить») — для отрисовки карточки на /staff/dashboard/
-    parser-tools/ БЕЗ похода в сеть при каждой загрузке страницы. None,
-    если проверка не запускалась вообще ни разу с последнего сброса кэша."""
+    """Последний результат проверки или None."""
     return cache.get(SPORTMONKS_HEALTH_CACHE_KEY)
 
 
 def sportmonks_api_health_check() -> dict:
-    """Синхронный вызов — staff жмёт кнопку и сразу видит результат, а не
-    ставит задачу в очередь и потом гадает, выполнилась ли она (celery-
-    версия — sportmonks_health_check в parsers/sportmonks/tasks.py — только
-    логирует результат). Замеряем latency отдельно — "работает, но 8 секунд
-    на один запрос" тоже диагностически ценный ответ. Дергаем get_league() —
-    самый дешёвый содержательный вызов (не livescores/fixtures, которые
-    могут легитимно вернуть пустой список и тогда latency-замер ничего не
-    скажет о самом факте доступности API).
-
-    Результат кэшируется (см. SPORTMONKS_HEALTH_CACHE_KEY выше) с меткой
-    времени — чтобы карточка на странице показывала последний известный
-    статус сразу при загрузке, а не пустое место до первого клика."""
+    """Синхронная проверка API через get_league(): статус, latency, расход лимита.
+    Результат кэшируется.
+    """
     from django.utils import timezone as _timezone
 
     client = SportmonksClient()
@@ -319,38 +224,18 @@ def sportmonks_api_health_check() -> dict:
         logger.error(f"sportmonks_api_health_check: {e}", exc_info=True)
         result = {"ok": False, "status": f"{type(e).__name__}: {e}", "elapsed_ms": elapsed_ms}
 
-    # Расход лимита (2026-09-09, продуктовый фидбек: "было бы неплохо
-    # подключить текущее кол-во запросов") — Sportmonks кладёт остаток в
-    # КАЖДЫЙ ответ (client.py::_log_rate_limit_if_low), клиент сохраняет
-    # последний себе в last_rate_limit. None, если поле отсутствует в
-    # ответе (например при ошибке до получения payload). ИСПРАВЛЕНО
-    # (2026-09-09, баг найден пользователем — last_rate_limit никогда
-    # фактически не присваивался, см. client.py::_log_rate_limit_if_low).
+    # Остаток лимита из последнего ответа.
     rate_limit = client.last_rate_limit or {}
     remaining = rate_limit.get("remaining")
     result["rate_limit_remaining"] = remaining
     result["rate_limit_entity"] = rate_limit.get("requested_entity")
-    # "Кол-во уже израсходованных запросов" — прямо запрошено пользователем,
-    # remaining-only было недостаточно наглядно. SPORTMONKS_HOURLY_LIMIT —
-    # подтверждено вживую тестовым ключом на реальных данных КПЛ (см.
-    # докстринг модуля client.py, "2000 запросов в час на каждую entity
-    # отдельно"), Sportmonks не отдаёт сам лимит в ответе, только remaining.
+    # Израсходовано = лимит - остаток.
     result["rate_limit_used"] = (
         SPORTMONKS_HOURLY_LIMIT - remaining if remaining is not None else None
     )
     result["rate_limit_total"] = SPORTMONKS_HOURLY_LIMIT
 
-    # ИСПРАВЛЕНО (2026-09-09, баг найден пользователем — "вообще не
-    # сходится кол-во запросов израсходованных", сравнил со своим порталом
-    # Sportmonks: 871 запрос за день против нашего "1"): rate_limit_used
-    # выше — это остаток ТОЛЬКО по entity последнего вызова (здесь всегда
-    # "League", т.к. health-check делает один get_league()), а не суммарный
-    # расход. request_counts — наш собственный счётчик (client.py::
-    # get_request_counts/_track_request), инкрементируется на КАЖДЫЙ
-    # реальный HTTP-запрос к Sportmonks из ЛЮБОЙ задачи/команды, не только
-    # из этой проверки — тот показатель, который реально сопоставим с
-    # порталом Sportmonks (хотя и не побитово идентичен — другие границы
-    # часа/суток на их стороне).
+    # Наш счётчик запросов за час/сутки (по всем задачам).
     result["request_counts"] = get_request_counts()
 
     result["checked_at"] = _timezone.now()
@@ -359,15 +244,11 @@ def sportmonks_api_health_check() -> dict:
 
 
 # ============================================================
-# Инспекция очереди celery — что выполняется/ждёт ПРЯМО СЕЙЧАС
+# Очередь celery — что выполняется/ждёт сейчас
 # ============================================================
 
 def list_active_celery_tasks() -> dict:
-    """active() — уже выполняются воркером, reserved() — забраны воркером,
-    но ещё не стартовали (например, ждут rate_limit). Разделяем эти два
-    состояния в UI, потому что диагностика разная: если задача "активна"
-    20 минут — она зависла и кандидат на revoke; если она "зарезервирована"
-    — это нормально, просто ждёт своей очереди по rate_limit."""
+    """active() — уже выполняются, reserved() — взяты воркером, но ещё не стартовали."""
     from dopx.celery import app
 
     try:
@@ -395,12 +276,7 @@ def list_active_celery_tasks() -> dict:
 
 
 def revoke_celery_task(task_id: str, terminate: bool = False) -> tuple[bool, str]:
-    """Снять задачу с выполнения/из очереди. `terminate=False` по умолчанию
-    — мягкая отмена (задача, которая ещё не началась, просто не запустится;
-    уже выполняющаяся — доработает текущий шаг). SIGKILL воркера посреди
-    записи в БД может оставить транзакцию в неопределённом состоянии,
-    поэтому terminate=True не выставляем по умолчанию из UI — только явный
-    флаг, если staff осознанно решит, что задача зависла безнадёжно."""
+    """Отменить задачу. По умолчанию мягко (terminate=False)."""
     from dopx.celery import app
 
     if not task_id:

@@ -1,10 +1,5 @@
-{% comment %}
-Два критерия оценки судейства — вынесено из referee.html в отдельный
-партиал (2026-09-04, режим "Быстро", см.
-docs/adr/0006-quick-full-evaluation-mode.md), см. тот же приём в
-evaluations/_coach_criteria.html.
-{% endcomment %}
-<!-- Влияние на матч -->
+{# Критерии судейства (для обоих режимов). #}
+{# Влияние на матч #}
 <div class="wz-accent-neutral wz-slider-card">
     <div class="flex justify-between items-center mb-2">
         <label class="text-sm font-semibold flex items-center gap-1.5">
@@ -21,7 +16,7 @@ evaluations/_coach_criteria.html.
     </div>
 </div>
 
-<!-- Качество решений -->
+{# Качество решений #}
 <div class="wz-accent-success wz-slider-card">
     <div class="flex justify-between items-center mb-2">
         <label class="text-sm font-semibold flex items-center gap-1.5">
@@ -30,14 +25,7 @@ evaluations/_coach_criteria.html.
         </label>
         <span class="wz-slider-card__value" id="quality_value">5</span>
     </div>
-    {% comment %}
-    data-wz-invert="true" — БАГФИКС 2026-09-07 (см. комментарий в
-    static/js/wizard-sliders.js про причину): "Качество решений" растёт в
-    ПРОТИВОПОЛОЖНУЮ сторону от "Влияния на матч" — незаметный судья (низкое
-    влияние) обычно означает хорошее качество, а не плохое. Без этого
-    атрибута кнопки "Слабо/Обычно/Сильно повлиял" тянули оба слайдера в
-    одну сторону, что было семантически неверно.
-    {% endcomment %}
+    {# data-wz-invert — пресеты двигают этот слайдер в обратную сторону от влияния. #}
     <input type="range" name="decision_quality" min="1" max="10" value="5"
            class="wizard-slider" data-wz-invert="true"
            oninput="document.getElementById('quality_value').textContent = this.value">

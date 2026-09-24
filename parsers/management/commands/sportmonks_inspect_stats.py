@@ -1,22 +1,8 @@
 # parsers/management/commands/sportmonks_inspect_stats.py
-"""
-Разовый "рентген" ответа Sportmonks по статистике — 2026-09-24.
+"""manage.py sportmonks_inspect_stats [--fixture ID]
 
-Зачем: раньше импорт сохранял только заранее разобранные поля и выбрасывал
-всё остальное, поэтому по базе нельзя было понять, присылает ли Sportmonks
-по КПЛ отборы/перехваты/выносы и прочие защитные метрики. Команда делает
-ОДИН запрос (1 единица лимита) по одному завершённому матчу и:
-  1) печатает ВСЕ типы статистики игроков (developer_name) с числом игроков,
-     у которых они пришли, отдельно по амплуа (GK/D/M/F);
-  2) печатает все типы командной статистики;
-  3) сохраняет полный JSON-ответ в sportmonks_samples/fixture_<id>.json
-     (папка в .gitignore), чтобы больше не нужно было повторять запрос.
-
-В базу НИЧЕГО не пишет.
-
-Использование:
-    python manage.py sportmonks_inspect_stats                 # последний завершённый матч КПЛ из нашей БД
-    python manage.py sportmonks_inspect_stats --fixture 19681993
+Один запрос по завершённому матчу: печатает все типы статистики игроков (по амплуа)
+и команд, сохраняет JSON в sportmonks_samples/fixture_<id>.json. В БД не пишет.
 """
 import json
 from collections import defaultdict

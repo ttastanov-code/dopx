@@ -1,9 +1,4 @@
-{% comment %}
-templates/dashboard/_widgets_stats_content.html
-Содержимое карточки "Просмотры встроенных виджетов" без base.html/_nav.html —
-цель HTMX-поллинга (dashboard/views.py::widgets_stats_partial), тот же
-паттерн, что и dashboard/_data_health_content.html.
-{% endcomment %}
+{# Просмотры виджетов — цель поллинга widgets_stats_partial. #}
 <div class="grid grid-cols-3 gap-3 mb-4">
     <div class="stat bg-base-200 rounded-lg p-3">
         <div class="stat-title text-xs">Игроки</div>

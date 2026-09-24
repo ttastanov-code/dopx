@@ -1,10 +1,5 @@
 # partners/tests.py
-"""
-Тесты B2B v1 (docs/adr/0034-club-mood-index-v2.md) —
-partners/views.py::PartnerMoodIndexFeedView и
-partners/services.py::build_mood_index_feed. Тот же токен-доступ, что
-PartnerContentFeedView (Partner.feed_token, не отдельная модель авторизации).
-"""
+"""Тесты фида индекса настроения для партнёров."""
 from __future__ import annotations
 
 import json
@@ -59,8 +54,7 @@ class PartnerMoodIndexFeedViewTests(TestCase):
         self.assertEqual(response["Cache-Control"], "no-store")
 
     def test_feed_contains_no_user_level_fields(self):
-        """B2B-фид должен быть анонимизированным агрегатом — ни одного
-        поля вида user/username/email/ip нигде в структуре ответа."""
+        """В ответе нет данных пользователей."""
         response = self.client.get(self._url())
         raw = response.content.decode()
         for forbidden in ("username", "\"email\"", "\"user\"", "ip_address"):

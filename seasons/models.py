@@ -5,7 +5,7 @@ from core.models import BaseModel
 from leagues.models import League
 
 class Season(BaseModel):
-    """Сезон лиги"""
+    """Сезон лиги."""
     league = models.ForeignKey(
         League,
         on_delete=models.CASCADE,
@@ -21,9 +21,7 @@ class Season(BaseModel):
         null=True,
         blank=True
     )
-    # См. комментарий у League.sportmonks_id (leagues/models.py) — тот же
-    # принцип, отдельное поле под id из Sportmonks, external_id остаётся
-    # за KFF.
+    # ID в Sportmonks.
     sportmonks_id = models.CharField(
         _('Sportmonks ID'),
         max_length=100,
@@ -44,14 +42,7 @@ class Season(BaseModel):
         return f"{self.league.name} {self.year}"
 
     def save(self, *args, **kwargs):
-        """
-        При сохранении с is_active=True все остальные сезоны этой лиги
-        атомарно снимаются с активности — гарантирует ровно один активный
-        сезон на лигу при любом пути создания (парсер, админка, скрипт).
-        recalculate_season_standings (aggregates/tasks.py, без явного
-        season_id) и сайдбар лиги (templates/leagues/detail.html)
-        полагаются именно на это.
-        """
+        """Активный сезон на лигу только один — у остальных флаг снимается."""
         super().save(*args, **kwargs)
         if self.is_active:
             Season.objects.filter(
@@ -60,14 +51,9 @@ class Season(BaseModel):
 
     @classmethod
     def get_primary_active(cls):
-        """Единая точка правды "какой сезон сейчас показываем по умолчанию"
-        — активный сезон ГЛАВНОЙ лиги сайта (League.is_primary). До этого
-        по всему проекту было разбросано Season.objects.filter(is_active=True)
-        .first() без фильтра по лиге, что молча ломалось бы при появлении
-        второй лиги со своим активным сезоном (см. docs/BACKLOG.md, находка 1).
-        Fallback на случай, если is_primary ещё не проставлен ни у одной
-        лиги (миграция данных не прогнана) — деградируем к старому
-        поведению вместо пустого результата."""
+        """Сезон по умолчанию — активный сезон главной лиги.
+        Fallback, если главная лига не отмечена.
+        """
         season = cls.objects.filter(is_active=True, league__is_primary=True).select_related('league').first()
         if season:
             return season

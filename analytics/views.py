@@ -1,4 +1,4 @@
-# analytics/views.py — приёмник клиентских событий (sendBeacon)
+# analytics/views.py — приём клиентских событий (sendBeacon)
 from __future__ import annotations
 
 from drf_spectacular.utils import extend_schema
@@ -16,39 +16,22 @@ logger = logging.getLogger(__name__)
 
 
 class ClientEventThrottle(AnonRateThrottle):
-    """Отдельный, более щедрый лимит, чем глобальный anon (100/hour) —
-    на 6-шаговом вайзарде легитимный юзер легко даёт 15-20 событий за визит."""
+    """Отдельный лимит — вайзард даёт 15-20 событий за визит."""
     scope = "analytics_events"
     rate = "300/hour"
 
 
 class TrackClientEventView(APIView):
-    """
-    Публичный (AllowAny) — события идут и от анонимов до регистрации, иначе
-    не посчитать конверсию "визит → регистрация".
-
-    authentication_classes = [] — иначе DRF наследует SessionAuthentication,
-    которая требует CSRF-токен даже при AllowAny. sendBeacon (см.
-    static/js/analytics.js) не умеет слать кастомные заголовки, так что с
-    аутентификацией по умолчанию каждый трек от залогиненного юзера падал 403.
-    """
+    """Публичный эндпоинт. authentication_classes = [] — sendBeacon не шлёт CSRF."""
     permission_classes = [AllowAny]
     authentication_classes = []
     throttle_classes = [ClientEventThrottle]
 
     @extend_schema(exclude=True)
-    # exclude=True — не GenericAPIView, request.data произвольный, никакого
-    # публичного контракта нет (эндпоинт дергает только static/js/analytics.js
-    # через sendBeacon). Без этой аннотации drf-spectacular не мог угадать
-    # сериализатор и падал в WARNING (drf_spectacular.W002), который CI
-    # ("Django deploy-чеклист под ПРОД-настройками") валит через
-    # `manage.py check --deploy --fail-level WARNING`.
+    # exclude=True — эндпоинт не для публичной схемы.
     def post(self, request):
         event_name = request.data.get("event_name")
-        # Allow-list: EventName.choices на модели НЕ проверяется Django на
-        # .objects.create() (только на full_clean()/ModelForm), так что
-        # раньше сюда долетала любая строка от анонимного клиента — см.
-        # analytics/validators.py.
+        # Валидация event_name/properties — analytics/validators.py.
         if not is_valid_event_name(event_name):
             return Response(status=400)
 

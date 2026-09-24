@@ -3,19 +3,19 @@
 {% load match_extras %}
 
 {% block content %}
-<!-- === PROGRESS === -->
+{# === ПРОГРЕСС === #}
 <div class="max-w-2xl mx-auto mb-5 px-3">
     {% include 'evaluations/_evaluation_progress.html' with step=1 total_steps=6 progress=progress %}
 </div>
 
-<!-- === ШАПКА МАТЧА === -->
+{# === ШАПКА МАТЧА === #}
 <div class="max-w-2xl mx-auto mb-5 px-3">
     <div class="wz-hero-card">
         {% include 'evaluations/_wizard_match_header.html' with match=match %}
     </div>
 </div>
 
-<!-- === FORM === -->
+{# === ФОРМА === #}
 <div class="max-w-2xl mx-auto px-3">
     <div class="wz-shell card bg-base-100 border border-base-200 shadow-sm">
         <div class="card-body p-4 sm:p-6">
@@ -27,10 +27,7 @@
                 <p class="text-sm text-base-content/60">Пара вопросов о контексте вашего просмотра</p>
             </div>
 
-            {% comment %}
-            Исходные значения — в data-атрибутах, не аргументами x-data(...).
-            См. docs/adr/0019-alpine-csp-data-passing.md.
-            {% endcomment %}
+            {# Начальные значения — в data-атрибутах. #}
             <form method="post" action="{% url 'evaluations:context' match.id %}"
                   class="space-y-6"
                   x-data="matchContextForm"
@@ -40,7 +37,7 @@
                   data-eval-mode="{{ mode|default:'quick' }}">
                 {% csrf_token %}
 
-                <!-- Быстро или подробно? -->
+                {# Быстро или подробно? #}
                 <div>
                     <label class="text-sm font-bold mb-3 flex items-center gap-1.5">
                         <i class="ti ti-adjustments text-primary"></i>Как хотите оценить матч?
@@ -77,7 +74,7 @@
                     </div>
                 </div>
 
-                <!-- За какую команду болеете? -->
+                {# За какую команду болеете? #}
                 <div>
                     <label class="text-sm font-bold mb-3 flex items-center gap-1.5">
                         <i class="ti ti-heart text-error"></i>За какую команду болеете?
@@ -119,35 +116,14 @@
                     </div>
                 </div>
 
-                <!-- Как вы смотрели матч? -->
+                {# Как смотрели матч? #}
                 <div>
                     <label class="text-sm font-bold mb-3 flex items-center gap-1.5">
                         <i class="ti ti-device-tv text-info"></i>Как вы смотрели матч?
                     </label>
                     {% comment %}
-                    ИСПРАВЛЕНО (2026-09-11, прямая просьба пользователя —
-                    "был на стадионе и фрагменты или голы это как?"):
-                    "Голы" рассчитан на просмотр нарезки/трансляции дома —
-                    на трибуне физически нельзя "посмотреть только голы",
-                    комбинация с "Были на стадионе" выглядела абсурдной.
-                    Вариант скрывается, когда включён тумблер ниже (см.
-                    matchContextForm в static/js/alpine-components.js — там
-                    же автосброс значения, если "Голы" был выбран раньше).
-                    Сетка переключается на 2 колонки, чтобы не оставлять
-                    пустое место на месте скрытой карточки.
-
-                    ИСПРАВЛЕНО (тот же день, следующая жалоба пользователя —
-                    "убрать +20% на кнопке 'Полный', это влечёт указать
-                    неправдивую информацию ради рейтинга, типа посмотрел
-                    обзор, но указал ради +20% полный матч"): бейдж "+20%"
-                    прямо на кнопке самоотчёта — это прямой стимул соврать
-                    в свою пользу в момент заполнения формы, а честность
-                    этого самого поля потом ЖЕ используется для повышения
-                    доверия к оценке (calculate_user_weight). Сам бонус к
-                    весу голоса за просмотр целиком никуда не делся (см.
-                    templates/core/rules.html, раздел "Из чего складывается
-                    вес голоса") — просто больше не рекламируется прямо на
-                    кнопке выбора, провоцируя врать.
+                    «Голы» скрываются при «Были на стадионе» (matchContextForm).
+                    Бонус к весу за полный просмотр на кнопке не показываем — чтобы не провоцировать.
                     {% endcomment %}
                     <div class="grid gap-2.5" :class="attendedStadium ? 'grid-cols-2' : 'grid-cols-3'">
                         <label class="cursor-pointer">
@@ -192,7 +168,7 @@
                     </div>
                 </div>
 
-                <!-- Были на стадионе? -->
+                {# Были на стадионе? #}
                 <div class="w-full">
                     <label class="wz-toggle-row cursor-pointer flex items-center justify-between p-4"
                            :class="attendedStadium && 'wz-toggle-row--active'">
@@ -211,13 +187,13 @@
                     </label>
                 </div>
 
-                <!-- Info Alert -->
+                {# Инфо #}
                 <div class="alert alert-info rounded-xl">
                     <i class="ti ti-info-circle flex-shrink-0"></i>
                     <span class="text-xs">Эти ответы влияют на вес вашей оценки в общем рейтинге</span>
                 </div>
 
-                <!-- Navigation -->
+                {# Навигация #}
                 <div class="wz-sticky-nav">
                     <button type="submit" class="btn btn-primary btn-lg w-full">
                         Далее <i class="ti ti-arrow-right"></i>

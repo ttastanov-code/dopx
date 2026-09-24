@@ -1,11 +1,7 @@
 # parsers/management/commands/sportmonks_smoke_test.py
-"""
-Быстрая проверка фазы 1 миграции на Sportmonks (docs/sportmonks-migration-plan.md):
-токен настроен, лига видна, текущий сезон определяется. НИЧЕГО не пишет в
-базу — только читает и печатает, безопасно гонять сколько угодно раз.
+"""manage.py sportmonks_smoke_test
 
-Использование:
-    python manage.py sportmonks_smoke_test
+Проверка Sportmonks: токен, лига, текущий сезон. Ничего не пишет.
 """
 import logging
 

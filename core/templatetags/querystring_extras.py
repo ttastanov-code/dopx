@@ -1,13 +1,5 @@
 # core/templatetags/querystring_extras.py
-"""
-query_transform — переиспользуемый тег для ссылок-переключателей (сезон,
-пагинация и т.п.), которые должны сохранить все текущие GET-параметры
-(поиск, фильтры), поменяв только один. Без него каждая страница со
-списком (teams/players/coaches) городила бы свою ручную склейку
-"{% if request.GET.q %}&q={{ request.GET.q }}{% endif %}" на каждый
-параметр — уже было так в пагинации до этого тега, легко забыть параметр
-и незаметно потерять фильтр при переходе на следующую страницу/сезон.
-"""
+"""query_transform — ссылка с текущими GET-параметрами и изменением одного."""
 from django import template
 
 register = template.Library()
@@ -15,10 +7,7 @@ register = template.Library()
 
 @register.simple_tag(takes_context=True)
 def query_transform(context, **kwargs):
-    """Возвращает querystring текущего запроса с применёнными изменениями.
-    query_transform(season='all') сохранит ?q=...&team=...&season=all,
-    убрав пустые/None-значения. Всегда сбрасывает page — смена фильтра
-    должна возвращать на первую страницу результатов."""
+    """query_transform(season='all') -> ?q=...&team=...&season=all; пустые убираются, page сбрасывается."""
     request = context['request']
     params = request.GET.copy()
     params.pop('page', None)

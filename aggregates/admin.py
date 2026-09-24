@@ -72,11 +72,7 @@ class RefereeMatchAggregateAdmin(ModelAdmin):
 
 @admin.register(TeamRatingCorrection)
 class TeamRatingCorrectionAdmin(ModelAdmin):
-    """Текущие автопоправки от независимого внешнего сигнала (см. её
-    докстринг) — для наглядности и ручного override через действие ниже.
-    list_editable на correction: можно обнулить/поправить руками сразу,
-    не дожидаясь следующего ночного прогона detect_rating_stats_
-    divergence_task."""
+    """Авто-поправки рейтинга команд; correction можно поправить вручную."""
 
     list_display = ('team', 'correction', 'last_pattern', 'updated_at')
     search_fields = ('team__name',)
@@ -92,9 +88,7 @@ class TeamRatingCorrectionAdmin(ModelAdmin):
 
 @admin.register(PlayerRatingCorrection)
 class PlayerRatingCorrectionAdmin(ModelAdmin):
-    """Аналог TeamRatingCorrectionAdmin выше — та же механика ручного
-    override, теперь на уровне игрока (2026-09-08, detect_player_rating_
-    stats_divergence_task)."""
+    """То же для игроков."""
 
     list_display = ('player', 'correction', 'last_pattern', 'updated_at')
     search_fields = ('player__first_name', 'player__last_name')
