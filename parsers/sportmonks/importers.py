@@ -623,6 +623,26 @@ def _record_discrepancies(match: Match, before: Match, new_values: Dict) -> None
         logger.warning("Sportmonks: расхождение у завершённого матча %s: %s %s -> %s", match.id, field, old, new)
 
 
+# Сдвиг времени начала, о котором сообщаем подписчикам, и горизонт «ближайших» матчей.
+KICKOFF_SHIFT_NOTIFY_MIN = timedelta(minutes=60)
+KICKOFF_SHIFT_NOTIFY_HORIZON = timedelta(days=14)
+
+
+def _detect_match_change(before: Match, match: Match) -> str | None:
+    """postponed / cancelled / rescheduled — если это стоит сообщить подписчикам, иначе None."""
+    now = timezone.now()
+    if before.status == "scheduled" and match.status in ("postponed", "cancelled"):
+        return match.status if before.start_time and before.start_time > now - timedelta(hours=3) else None
+    if before.status in ("scheduled", "postponed") and match.status == "scheduled":
+        if not before.start_time or not match.start_time or match.start_time <= now:
+            return None
+        if match.start_time - now > KICKOFF_SHIFT_NOTIFY_HORIZON and before.start_time - now > KICKOFF_SHIFT_NOTIFY_HORIZON:
+            return None
+        if before.status == "postponed" or abs(match.start_time - before.start_time) >= KICKOFF_SHIFT_NOTIFY_MIN:
+            return "rescheduled"
+    return None
+
+
 @transaction.atomic
 def import_match_core(fixture_data: Dict, league: League, season: Season) -> Match:
     """Создаёт/обновляет Match по sportmonks_id.
@@ -721,6 +741,14 @@ def import_match_core(fixture_data: Dict, league: League, season: Season) -> Mat
 
     if existing and existing.status == "finished":
         _record_discrepancies(match, existing, defaults)
+
+    change = _detect_match_change(existing, match) if existing and not existing.manual_override else None
+    if change:
+        from notifications.tasks import notify_followers_match_changed
+        old_start = existing.start_time.isoformat() if existing.start_time else None
+        transaction.on_commit(
+            lambda: notify_followers_match_changed.delay(str(match.id), change, old_start)
+        )
 
     TeamSeason.objects.get_or_create(team=home_team, season=season)
     TeamSeason.objects.get_or_create(team=away_team, season=season)
@@ -1215,7 +1243,9 @@ def import_full_fixture(fixture_data: Dict, league: League, season: Season) -> M
     import_statistics(match, fixture_data.get("statistics") or [])
     import_player_statistics(match, fixture_data.get("lineups") or [])
 
-    if match.status == "finished" and not was_finished_before:
+    # Приглашение оценить — только пока голосование открыто (бэкафилл старых матчей не спамит).
+    voting_open = bool(match.voting_open_until and match.voting_open_until > timezone.now())
+    if match.status == "finished" and not was_finished_before and voting_open:
         from notifications.tasks import notify_followers_match_activity
         transaction.on_commit(lambda: notify_followers_match_activity.delay(str(match.id)))
 
@@ -1229,7 +1259,9 @@ def import_full_fixture(fixture_data: Dict, league: League, season: Season) -> M
         from notifications.tasks import notify_followers_lineups_available
         transaction.on_commit(lambda: notify_followers_lineups_available.delay(str(match.id)))
 
-    if push_worthy_events:
+    # Live-пуши о событиях — только пока матч идёт. Досинк завершённого матча
+    # (сервер лежал, бэкафилл) не должен присылать пачку старых голов.
+    if push_worthy_events and match.status == "live":
         from notifications.tasks import PUSH_WORTHY_EVENT_TYPES, notify_followers_match_event
         for event in push_worthy_events:
             if event.event_type in PUSH_WORTHY_EVENT_TYPES:

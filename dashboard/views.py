@@ -1673,12 +1673,15 @@ def access_roles_list(request):
         from django.core.exceptions import PermissionDenied
         raise PermissionDenied("Управление правами доступа — только для суперпользователей.")
 
+    from django.contrib.auth.models import Group
+
     from .models import DASHBOARD_SECTIONS, StaffAccessGrant
 
     User = get_user_model()
     staff_users = (
         User.objects.filter(is_staff=True, is_superuser=False)
         .select_related("dashboard_access_grant")
+        .prefetch_related("groups")
         .order_by("username")
     )
     context = {
@@ -1686,6 +1689,7 @@ def access_roles_list(request):
         "active_tab": "access_roles",
         "staff_users": staff_users,
         "section_count": len(DASHBOARD_SECTIONS),
+        "group_count": Group.objects.count(),
     }
     return render(request, "dashboard/access_roles_list.html", context)
 
@@ -1731,7 +1735,10 @@ def access_roles_detail(request, user_id):
             )
         return redirect("dashboard:access_roles_detail", user_id=target_user.id)
 
+    from .admin_access import groups_with_counts
+
     allowed = set(grant.allowed_sections) if grant else None  # None — полный доступ
+    user_group_ids = set(target_user.groups.values_list("id", flat=True))
     context = {
         "page_title": f"Доступ: {target_user.username} — DOPX Staff",
         "active_tab": "access_roles",
@@ -1742,5 +1749,10 @@ def access_roles_detail(request, user_id):
             for key, label in DASHBOARD_SECTIONS
         ],
         "has_restrictions": allowed is not None,
+        "admin_groups": [
+            {"id": g.id, "name": g.name, "perm_count": g.perm_count, "checked": g.id in user_group_ids}
+            for g in groups_with_counts()
+        ],
+        "direct_perm_count": target_user.user_permissions.count(),
     }
     return render(request, "dashboard/access_roles_detail.html", context)

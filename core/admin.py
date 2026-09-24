@@ -2,11 +2,12 @@
 from django.contrib import admin
 from unfold.admin import ModelAdmin
 
+from core.admin_mixins import SuperuserOnlyAdminMixin
 from core.models import PlatformSetting
 
 
 @admin.register(PlatformSetting)
-class PlatformSettingAdmin(ModelAdmin):
+class PlatformSettingAdmin(SuperuserOnlyAdminMixin, ModelAdmin):
     """Настройки платформы в /admin/. Правка отсюда не сбрасывает кэш —
     применится в течение 60 с.
     """

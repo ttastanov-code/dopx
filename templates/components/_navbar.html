@@ -70,10 +70,11 @@
                     {% endif %}
                 </div>
             </label>
-            <ul tabindex="0" class="menu menu-sm dropdown-content mt-2 z-[100] p-2 shadow-2xl bg-base-100 rounded-box w-56 border border-base-300">
-                <li class="p-3 border-b border-base-300">
-                    <div class="font-semibold truncate">{{ user.username }}</div>
-                    <div class="text-xs opacity-60 truncate">{{ user.email }}</div>
+            {# Шапка вне ul.menu: стили пунктов menu ломают обрезку длинного email. #}
+            <div tabindex="0" class="dropdown-content mt-2 z-[100] w-64 max-w-[calc(100vw-1rem)] shadow-2xl bg-base-100 rounded-box border border-base-300 overflow-hidden">
+                <div class="px-4 py-3 border-b border-base-300 min-w-0">
+                    <div class="font-semibold truncate" title="{{ user.username }}">{{ user.username }}</div>
+                    <div class="text-xs opacity-60 truncate" title="{{ user.email }}">{{ user.email }}</div>
                     {% if user.trust_score %}
                     <div class="mt-2 flex items-center gap-2">
                         <span class="text-xs">Доверие:</span>
@@ -82,15 +83,17 @@
                         </span>
                     </div>
                     {% endif %}
-                </li>
-                <li><a href="{% url 'users:profile' %}"><i class="ti ti-user"></i> Профиль</a></li>
-                <li><a href="{% url 'users:leaderboard' %}"><i class="ti ti-trophy"></i> Рейтинг</a></li>
-                <li><a href="{% url 'notifications:list' %}"><i class="ti ti-bell"></i> Уведомления {% with unread=user.notifications|unread_count %}{% if unread %}<span class="badge badge-sm badge-error ml-auto">{{ unread }}</span>{% endif %}{% endwith %}</a></li>
-                {% if user.is_staff %}
-                <li class="border-t border-base-300"><a href="{% url 'dashboard:overview' %}"><i class="ti ti-layout-dashboard"></i> Staff-дашборд</a></li>
-                {% endif %}
-                <li class="border-t border-base-300"><a href="{% url 'users:logout' %}" class="text-error"><i class="ti ti-logout"></i> Выйти</a></li>
-            </ul>
+                </div>
+                <ul class="menu menu-sm w-full p-2">
+                    <li><a href="{% url 'users:profile' %}"><i class="ti ti-user"></i> Профиль</a></li>
+                    <li><a href="{% url 'users:leaderboard' %}"><i class="ti ti-trophy"></i> Рейтинг</a></li>
+                    <li><a href="{% url 'notifications:list' %}"><i class="ti ti-bell"></i> Уведомления {% with unread=user.notifications|unread_count %}{% if unread %}<span class="badge badge-sm badge-error ml-auto">{{ unread }}</span>{% endif %}{% endwith %}</a></li>
+                    {% if user.is_staff %}
+                    <li class="border-t border-base-300 mt-1 pt-1"><a href="{% url 'dashboard:overview' %}"><i class="ti ti-layout-dashboard"></i> Staff-дашборд</a></li>
+                    {% endif %}
+                    <li class="border-t border-base-300 mt-1 pt-1"><a href="{% url 'users:logout' %}" class="text-error"><i class="ti ti-logout"></i> Выйти</a></li>
+                </ul>
+            </div>
         </div>
         {% else %}
         <a href="{% url 'users:login' %}" class="btn btn-ghost btn-xs sm:btn-sm hidden sm:inline-flex"><i class="ti ti-login"></i> Войти</a>

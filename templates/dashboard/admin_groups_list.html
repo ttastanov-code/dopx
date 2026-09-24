@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+{% include 'dashboard/_access_subnav.html' with current='groups' %}
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+    <div class="lg:col-span-2 card bg-base-100 border border-base-300">
+        <div class="card-body p-4">
+            <div class="dopx-section-eyebrow"><i class="ti ti-lock-access"></i>Группы прав /admin</div>
+            <div class="dopx-section-title mb-3">Групп: {{ groups|length }}</div>
+            {% if groups %}
+            <div class="divide-y divide-base-200">
+                {% for g in groups %}
+                <a href="{% url 'dashboard:admin_group_detail' g.id %}" class="flex items-center justify-between gap-3 py-3 hover:bg-base-200/50 rounded-lg px-2 -mx-2">
+                    <div class="min-w-0">
+                        <div class="font-medium truncate">{{ g.name }}</div>
+                        <div class="text-xs opacity-55">{{ g.perm_count }} прав · {{ g.user_count }} сотрудн.</div>
+                    </div>
+                    <i class="ti ti-chevron-right opacity-40 shrink-0"></i>
+                </a>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-sm opacity-60 py-4 text-center">Групп пока нет — создайте первую справа.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="card bg-base-100 border border-base-300 h-fit">
+        <div class="card-body p-4">
+            <div class="dopx-section-eyebrow"><i class="ti ti-plus"></i>Новая группа</div>
+            <form method="post" class="flex flex-col gap-2 mt-1">
+                {% csrf_token %}
+                <input type="text" name="name" required maxlength="150" placeholder="Например: Модератор" class="input input-bordered input-sm w-full">
+                <button type="submit" class="btn btn-sm btn-primary w-full"><i class="ti ti-plus"></i> Создать</button>
+            </form>
+            <p class="text-xs opacity-55 leading-relaxed mt-3">
+                Группа — набор прав на модели в /admin (просмотр, создание, изменение, удаление).
+                Сотруднику назначаете группы в его карточке во вкладке «Сотрудники».
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}

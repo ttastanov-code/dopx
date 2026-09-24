@@ -4,6 +4,7 @@ from django.utils import timezone
 from unfold.admin import ModelAdmin
 
 from core.admin_actions import export_as_csv
+from core.admin_mixins import SuperuserOnlyAdminMixin
 
 from .models import ConfirmedNameCorrection, NameVerificationSuggestion, ParserDiscrepancy, ParserSyncRun
 
@@ -30,7 +31,7 @@ class ParserSyncRunAdmin(ModelAdmin):
 
 
 @admin.register(ParserDiscrepancy)
-class ParserDiscrepancyAdmin(ModelAdmin):
+class ParserDiscrepancyAdmin(SuperuserOnlyAdminMixin, ModelAdmin):
     """Расхождения импорта: staff отмечает reviewed и пишет note."""
 
     list_display = ('match_label', 'field_name', 'old_value', 'new_value', 'created_at', 'reviewed')
@@ -57,7 +58,7 @@ class ParserDiscrepancyAdmin(ModelAdmin):
 
 
 @admin.register(NameVerificationSuggestion)
-class NameVerificationSuggestionAdmin(ModelAdmin):
+class NameVerificationSuggestionAdmin(SuperuserOnlyAdminMixin, ModelAdmin):
     """Предложения ИИ — просмотр; рабочий интерфейс в дашборде."""
 
     list_display = ('entity_label', 'current_first_name', 'current_last_name', 'suggested_first_name', 'suggested_last_name', 'confidence', 'status', 'created_at')
@@ -69,7 +70,7 @@ class NameVerificationSuggestionAdmin(ModelAdmin):
 
 
 @admin.register(ConfirmedNameCorrection)
-class ConfirmedNameCorrectionAdmin(ModelAdmin):
+class ConfirmedNameCorrectionAdmin(SuperuserOnlyAdminMixin, ModelAdmin):
     """Подтверждённые поправки имён; ручное добавление разрешено."""
 
     list_display = ('wrong_text', 'correct_text', 'source_suggestion', 'created_by', 'created_at')

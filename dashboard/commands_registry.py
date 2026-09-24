@@ -244,6 +244,21 @@ COMMAND_REGISTRY: dict[str, CommandSpec] = {
             ArgSpec("--limit", "limit", "int", default=5, help="Сколько матчей показать."),
         ],
     ),
+    "send_test_push": CommandSpec(
+        name="send_test_push", label="Тестовый push",
+        category="diagnose", danger="safe",
+        description="Шлёт тестовое уведомление на все устройства пользователя и показывает результат.",
+        args=[
+            ArgSpec("username", "username", "str", positional=True, required=True, help="Логин пользователя."),
+            ArgSpec("--kind", "kind", "choice", default="match_event",
+                    choices=[
+                        "match_event", "match_started", "lineups_available", "prediction_closing", "voting_open",
+                        "match_finished", "evaluation_reminder", "prediction_result", "achievement",
+                        "round_results", "match_changed", "default",
+                    ],
+                    help="Профиль доставки (TTL и срочность)."),
+        ],
+    ),
     "diagnose_nominations": CommandSpec(
         name="diagnose_nominations", label="Номинации сезона",
         category="diagnose", danger="readonly",

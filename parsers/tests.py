@@ -69,6 +69,12 @@ def _fixture(
     }
 
 
+def _recent_start(hours_ago: int = 2) -> str:
+    """starting_at недавнего матча — голосование по нему ещё открыто."""
+    from datetime import datetime, timedelta, timezone as dt_tz
+    return (datetime.now(dt_tz.utc) - timedelta(hours=hours_ago)).strftime("%Y-%m-%d %H:%M:%S")
+
+
 class ImportMatchCoreTests(TestCase):
     """import_match_core: создание, идемпотентность, manual_override, защита от чужой лиги."""
 
@@ -236,12 +242,12 @@ class ImportFullFixtureNotificationWiringTests(TestCase):
 
     @patch("notifications.tasks.notify_followers_match_activity.delay")
     def test_first_transition_to_finished_queues_activity_notification(self, mock_delay):
-        fixture = _fixture(sm_id=777000111, dev_name="INPLAY_2ND_HALF")
+        fixture = _fixture(sm_id=777000111, dev_name="INPLAY_2ND_HALF", starting_at=_recent_start())
         match = import_full_fixture(fixture, self.league, self.season)
         self.assertEqual(match.status, "live")
         mock_delay.assert_not_called()
 
-        finished_fixture = _fixture(sm_id=777000111, dev_name="FT")
+        finished_fixture = _fixture(sm_id=777000111, dev_name="FT", starting_at=_recent_start())
         with self.captureOnCommitCallbacks(execute=True):
             match = import_full_fixture(finished_fixture, self.league, self.season)
 
@@ -251,14 +257,30 @@ class ImportFullFixtureNotificationWiringTests(TestCase):
     @patch("notifications.tasks.notify_followers_match_activity.delay")
     def test_reimporting_already_finished_match_does_not_requeue(self, mock_delay):
         """Досинк завершённого матча не шлёт повторное приглашение оценить."""
-        fixture = _fixture(sm_id=777000222, dev_name="FT")
+        fixture = _fixture(sm_id=777000222, dev_name="FT", starting_at=_recent_start())
         with self.captureOnCommitCallbacks(execute=True):
             import_full_fixture(fixture, self.league, self.season)
         self.assertEqual(mock_delay.call_count, 1)
 
         with self.captureOnCommitCallbacks(execute=True):
-            import_full_fixture(_fixture(sm_id=777000222, dev_name="FT"), self.league, self.season)
+            import_full_fixture(_fixture(sm_id=777000222, dev_name="FT", starting_at=_recent_start()), self.league, self.season)
         self.assertEqual(mock_delay.call_count, 1)
+
+    @patch("notifications.tasks.notify_followers_match_activity.delay")
+    def test_old_finished_match_backfill_does_not_invite_to_vote(self, mock_delay):
+        """Бэкафилл старого матча (голосование закрыто) — приглашения оценить нет."""
+        with self.captureOnCommitCallbacks(execute=True):
+            import_full_fixture(_fixture(sm_id=777009001, dev_name="FT"), self.league, self.season)
+        mock_delay.assert_not_called()
+
+    @patch("notifications.tasks.notify_followers_match_event.delay")
+    def test_goals_of_finished_match_do_not_queue_live_push(self, mock_delay):
+        """Досинк завершённого матча не присылает пачку старых голов."""
+        fixture = _fixture(sm_id=777009002, dev_name="FT", starting_at=_recent_start())
+        fixture["events"] = [_goal_event(minute=87, participant_id=fixture["participants"][0]["id"])]
+        with self.captureOnCommitCallbacks(execute=True):
+            import_full_fixture(fixture, self.league, self.season)
+        mock_delay.assert_not_called()
 
     @patch("notifications.tasks.notify_followers_match_event.delay")
     def test_new_goal_event_queues_push_worthy_notification(self, mock_delay):

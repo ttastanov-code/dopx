@@ -63,5 +63,6 @@ if 'debug_toolbar' in settings.INSTALLED_APPS:
 
 urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
+handler403 = 'core.views.handler_403'
 handler404 = 'core.views.handler_404'
 handler500 = 'core.views.handler_500'

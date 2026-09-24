@@ -45,7 +45,7 @@ from events.models import MatchEvent
 from lineups.models import MatchLineupPlayer
 from matches.models import Match, MatchPlayerStatistics
 from notifications.models import Notification
-from notifications.tasks import send_level_up_notification
+from notifications.tasks import send_level_up_notification, send_push_task
 from users.models import UserXP
 from users.tasks import check_and_award_badges_task, flag_suspicious_wizard_speed_task
 
@@ -687,6 +687,17 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
                 properties={"match_id": str(self.match.id)},
             )
         )
+
+        # 7.2. Push о новом уровне — сразу, независимо от дайджеста.
+        if xp_result.get('level_increased'):
+            top_level = max(xp_result['levels_gained'])
+            transaction.on_commit(
+                partial(
+                    send_push_task.delay, [str(user.id)],
+                    f'⬆️ Новый уровень {top_level}!', f'У вас {xp.total_xp} XP — так держать.',
+                    '/users/profile/', 'achievement', f'level-{user.id}',
+                )
+            )
 
         # 8. Мгновенные письма о новом уровне — только без дайджеста.
         if xp_result.get('level_increased') and not digest_mode:

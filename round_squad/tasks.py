@@ -105,6 +105,68 @@ def _send_round_results_email_chunk(self, user_ids: list[str], round_best_xi_id:
     return sent
 
 
+def notify_round_xi_followers(round_xi) -> int:
+    """In-app + push подписчикам игроков сборной тура и их команд.
+    Дедуп — по Notification round_results с тем же action_url.
+    """
+    from django.contrib.contenttypes.models import ContentType
+    from django.urls import reverse
+
+    from notifications.models import Notification
+    from notifications.tasks import _push_fan_out
+    from players.models import Player
+    from users.models import Follow
+
+    player_ct = ContentType.objects.get_for_model(Player)
+    player_ids = list(
+        round_xi.slots.filter(content_type=player_ct, object_id__isnull=False).values_list('object_id', flat=True)
+    )
+    if not player_ids:
+        return 0
+
+    players = {p.id: p for p in Player.objects.filter(id__in=player_ids).select_related('team')}
+    team_players: dict = {}
+    for p in players.values():
+        if p.team_id:
+            team_players.setdefault(p.team_id, []).append(p)
+
+    # Одна причина на пользователя: подписка на игрока важнее подписки на команду.
+    reason_by_user: dict = {}
+    for f in Follow.objects.filter(player_id__in=players.keys()).select_related('player'):
+        reason_by_user.setdefault(f.user_id, f"⭐ {f.player.full_name} — в сборной тура")
+    for f in Follow.objects.filter(team_id__in=team_players.keys()).select_related('team'):
+        in_xi = team_players[f.team_id]
+        reason = f"⭐ {f.team.name}: {len(in_xi)} в сборной тура" if len(in_xi) > 1 else f"⭐ {in_xi[0].full_name} — в сборной тура"
+        reason_by_user.setdefault(f.user_id, reason)
+
+    action_url = reverse('round_squad:round', args=[round_xi.season_id, round_xi.tour])
+    already = set(
+        Notification.objects.filter(
+            notification_type='round_results', action_url=action_url, user_id__in=reason_by_user.keys(),
+        ).values_list('user_id', flat=True)
+    )
+    reason_by_user = {uid: r for uid, r in reason_by_user.items() if uid not in already}
+    if not reason_by_user:
+        return 0
+
+    body = f"{round_xi.brand_title} готовы — посмотрите состав."
+    Notification.objects.bulk_create([
+        Notification(
+            user_id=uid, notification_type='round_results', title=title, message=body, action_url=action_url,
+        )
+        for uid, title in reason_by_user.items()
+    ])
+
+    by_title: dict = {}
+    for uid, title in reason_by_user.items():
+        by_title.setdefault(title, []).append(uid)
+    for title, uids in by_title.items():
+        _push_fan_out(uids, title, body, action_url, kind='round_results', tag=f'round-{round_xi.id}')
+
+    logger.info("notify_round_xi_followers: %d подписчиков для %s", len(reason_by_user), round_xi.brand_title)
+    return len(reason_by_user)
+
+
 @shared_task(bind=True, max_retries=3, countdown=5)
 def send_round_results_notification(self, round_best_xi_id: str) -> dict:
     """Рассылка итогов тура всем верифицированным — при финализации тура
@@ -136,6 +198,8 @@ def send_round_results_notification(self, round_best_xi_id: str) -> dict:
         chunks = _chunked(user_ids, BULK_EMAIL_CHUNK_SIZE)
         for chunk in chunks:
             _send_round_results_email_chunk.delay(chunk, str(round_xi.id), subject)
+
+        notify_round_xi_followers(round_xi)
 
         logger.info(
             "send_round_results_notification: поставлено %d пачек (%d пользователей) для %s",

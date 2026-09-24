@@ -1,0 +1,7 @@
+{# Подразделы «Ролей доступа». Параметр: current = 'staff' | 'groups'. #}
+<div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+    <div class="dopx-segment">
+        <a href="{% url 'dashboard:access_roles_list' %}" class="dopx-segment__item {% if current == 'staff' %}dopx-segment__item--active{% endif %}"><i class="ti ti-users"></i> Сотрудники</a>
+        <a href="{% url 'dashboard:admin_groups_list' %}" class="dopx-segment__item {% if current == 'groups' %}dopx-segment__item--active{% endif %}"><i class="ti ti-lock-access"></i> Группы прав /admin</a>
+    </div>
+</div>

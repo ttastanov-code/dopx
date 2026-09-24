@@ -1,7 +1,7 @@
 # dashboard/urls.py
 from django.urls import path
 
-from . import views, views_2fa
+from . import access_views, views, views_2fa
 
 app_name = "dashboard"
 
@@ -33,6 +33,11 @@ urlpatterns = [
     path("banners/<uuid:banner_id>/delete/", views.banner_delete, name="banner_delete"),
     path("access/", views.access_roles_list, name="access_roles_list"),
     path("access/<uuid:user_id>/", views.access_roles_detail, name="access_roles_detail"),
+    path("access/<uuid:user_id>/admin-groups/", access_views.access_user_admin_groups, name="access_user_admin_groups"),
+    path("access/<uuid:user_id>/revoke-staff/", access_views.access_revoke_staff, name="access_revoke_staff"),
+    path("access/grant-staff/", access_views.access_grant_staff, name="access_grant_staff"),
+    path("access/groups/", access_views.admin_groups_list, name="admin_groups_list"),
+    path("access/groups/<int:group_id>/", access_views.admin_group_detail, name="admin_group_detail"),
     path("data-health/", views.data_health, name="data_health"),
     path("data-health/partial/", views.data_health_partial, name="data_health_partial"),
     # Не <uuid:...> — сюда приходят и старые числовые id матчей.

@@ -145,6 +145,15 @@ def check_and_award_badges_task(self, user_id: str, match_id: str | None = None)
         for badge in awarded
     ])
 
+    from notifications.tasks import _push_fan_out
+
+    names = ", ".join(str(b.get_badge_type_display()) for b in awarded)
+    _push_fan_out(
+        [user.id],
+        "🎖️ Новое достижение!" if len(awarded) == 1 else f"🎖️ Новые достижения: {len(awarded)}",
+        names, "/users/profile/", kind="achievement", tag=f"badge-{user.id}",
+    )
+
     if not digest_mode:
         for badge in awarded:
             send_badge_earned_notification.delay(

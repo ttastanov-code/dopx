@@ -184,13 +184,14 @@ class NotifyFollowersMatchActivityTests(TestCase):
         """Push вызывается для каждого подписчика."""
         from unittest.mock import patch
 
-        with patch("notifications.services.send_push_to_user") as mocked_push:
+        with patch("notifications.services.send_push_to_users") as mocked_push:
             mocked_push.return_value = 0
             result = notify_followers_match_activity(str(self.match.id))
 
-        self.assertEqual(mocked_push.call_count, 1)  # один подписчик
-        called_user = mocked_push.call_args.args[0]
-        self.assertEqual(called_user.id, self.follower.id)
+        self.assertEqual(mocked_push.call_count, 1)
+        self.assertEqual(set(mocked_push.call_args.args[0]), {self.follower.id})  # один подписчик
+        self.assertEqual(mocked_push.call_args.kwargs["kind"], "match_finished")
+        self.assertEqual(mocked_push.call_args.kwargs["tag"], f"live-{self.match.id}")
         self.assertEqual(result["notified"], 1)
 
     def test_no_match_found_returns_zero_without_error(self):
@@ -273,12 +274,13 @@ class NotifyFollowersMatchStartedAndLineupsAvailableTests(TestCase):
     def test_started_push_is_attempted_best_effort(self):
         from unittest.mock import patch
 
-        with patch("notifications.services.send_push_to_user") as mocked_push:
+        with patch("notifications.services.send_push_to_users") as mocked_push:
             mocked_push.return_value = 0
             notify_followers_match_started(str(self.match.id))
 
         self.assertEqual(mocked_push.call_count, 1)
-        self.assertEqual(mocked_push.call_args.args[0].id, self.follower.id)
+        self.assertEqual(set(mocked_push.call_args.args[0]), {self.follower.id})
+        self.assertEqual(mocked_push.call_args.kwargs["kind"], "match_started")
 
     def test_lineups_available_creates_inapp_for_follower_only(self):
         result = notify_followers_lineups_available(str(self.match.id))

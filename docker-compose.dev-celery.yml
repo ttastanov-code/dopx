@@ -14,7 +14,30 @@ services:
       context: .
       dockerfile: Dockerfile
     # concurrency=2 — при 4 тяжёлые задачи ловили OOM.
-    command: celery -A dopx worker -l info --concurrency=2
+    command: celery -A dopx worker -l info --concurrency=2 -Q realtime,celery
+    env_file:
+      - .env
+    environment:
+      # localhost внутри контейнера — сам контейнер, поэтому host.docker.internal.
+      DB_HOST: host.docker.internal
+      DB_PORT: "5432"
+      REDIS_URL: redis://host.docker.internal:6379/0
+      REDIS_AGGREGATES_URL: redis://host.docker.internal:6379/2
+      CELERY_BROKER_URL: redis://host.docker.internal:6379/0
+      CELERY_RESULT_BACKEND: redis://host.docker.internal:6379/0
+    extra_hosts:
+      # host-gateway — на случай нестандартной конфигурации Docker.
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./media:/app/media
+      - ./logs:/app/logs
+
+  celery_realtime_dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # Только live-опрос и пуши — не ждут за долгими задачами.
+    command: celery -A dopx worker -l info --concurrency=2 -Q realtime -n realtime@%h
     env_file:
       - .env
     environment:

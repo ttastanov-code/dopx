@@ -184,7 +184,7 @@ jobs:
             git pull origin main
 
             # Сборка отдельно от запуска — при ошибке сайт остаётся на старом образе.
-            docker compose build web celery celery-beat
+            docker compose build web celery_worker celery_realtime celery_beat
 
             # Миграции отдельным шагом до перезапуска web; при ошибке set -e останавливает деплой.
             docker compose run --rm web python manage.py migrate --noinput

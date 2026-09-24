@@ -3,6 +3,7 @@ from django.utils import timezone
 from unfold.admin import ModelAdmin
 
 from core.admin_actions import export_as_csv
+from core.admin_mixins import SuperuserOnlyAdminMixin
 
 from .models import Player, PotentialDuplicatePlayer
 
@@ -53,7 +54,7 @@ def mark_reviewed(modeladmin, request, queryset):
 
 
 @admin.register(PotentialDuplicatePlayer)
-class PotentialDuplicatePlayerAdmin(ModelAdmin):
+class PotentialDuplicatePlayerAdmin(SuperuserOnlyAdminMixin, ModelAdmin):
 
     list_display = (
         "existing_player",

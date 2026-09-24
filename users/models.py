@@ -106,6 +106,14 @@ class User(AbstractUser, BaseModel):
         "email_prediction_result": True,  # результат прогноза
         # итоги «Лучшие тура»
         "email_round_results": True,
+        # Push по типам; ключи — notifications.services.PUSH_KIND_SETTING.
+        "push_live": True,
+        "push_lineups": True,
+        "push_voting": True,
+        "push_predictions": True,
+        "push_achievements": True,
+        "push_round_results": True,
+        "push_match_changes": True,
     }
 
     @property

@@ -3,14 +3,29 @@
 {% block content %}
 {% include 'dashboard/_nav.html' %}
 
-{# Список staff и их прав. Только для суперпользователей. #}
+{% include 'dashboard/_access_subnav.html' with current='staff' %}
 
-<div class="card bg-base-100 border border-base-300 mb-4">
-    <div class="card-body p-4">
-        <p class="text-xs md:text-sm opacity-55 leading-relaxed flex items-start gap-2">
-            <i class="ti ti-info-circle opacity-50 mt-0.5 shrink-0"></i>
-            По умолчанию у каждого сотрудника с доступом в дашборд — полный доступ ко всем {{ section_count }} разделам (как и раньше, единственным гейтом был is_staff). Ограничения начинаются, только когда вы явно откроете карточку сотрудника и снимете часть разделов.
-        </p>
+{# Два уровня прав: разделы дашборда (StaffAccessGrant) и группы Django /admin. #}
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4">
+            <div class="dopx-section-eyebrow"><i class="ti ti-info-circle"></i>Как устроен доступ</div>
+            <ul class="text-xs md:text-sm opacity-70 leading-relaxed space-y-1.5 mt-1">
+                <li><strong>Дашборд</strong> — какие разделы видит сотрудник. По умолчанию все {{ section_count }}; ограничить — в карточке сотрудника.</li>
+                <li><strong>/admin</strong> — что можно смотреть и править в Django admin. Права выдаются через группы ({{ group_count }} шт.).</li>
+            </ul>
+        </div>
+    </div>
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4">
+            <div class="dopx-section-eyebrow"><i class="ti ti-user-plus"></i>Новый сотрудник</div>
+            <form method="post" action="{% url 'dashboard:access_grant_staff' %}" class="flex flex-col sm:flex-row gap-2 mt-1">
+                {% csrf_token %}
+                <input type="text" name="user" required maxlength="254" placeholder="username или email" class="input input-bordered input-sm w-full">
+                <button type="submit" class="btn btn-sm btn-primary w-full sm:w-auto"><i class="ti ti-shield-plus"></i> Сделать сотрудником</button>
+            </form>
+            <p class="text-xs opacity-50 mt-2">Даёт вход в дашборд и /admin (is_staff). Суперпользователя здесь не назначить.</p>
+        </div>
     </div>
 </div>
 
@@ -22,7 +37,7 @@
         {% if staff_users %}
         <div class="hidden md:block overflow-x-auto">
             <table class="table">
-                <thead><tr><th>Username</th><th>Email</th><th>Доступ</th><th></th></tr></thead>
+                <thead><tr><th>Username</th><th>Email</th><th>Дашборд</th><th>Группы /admin</th><th></th></tr></thead>
                 <tbody>
                     {% for u in staff_users %}
                     <tr class="cursor-pointer" onclick="window.location.href='{% url 'dashboard:access_roles_detail' u.id %}'">
@@ -35,6 +50,7 @@
                             <span class="badge badge-sm badge-success">полный доступ</span>
                             {% endif %}
                         </td>
+                        <td class="text-xs">{% for g in u.groups.all %}<span class="badge badge-sm badge-ghost mr-1">{{ g.name }}</span>{% empty %}<span class="opacity-40">—</span>{% endfor %}</td>
                         <td class="text-right"><i class="ti ti-chevron-right opacity-40"></i></td>
                     </tr>
                     {% endfor %}
@@ -53,7 +69,8 @@
                     <span class="badge badge-sm badge-success">полный</span>
                     {% endif %}
                 </div>
-                <div class="text-xs opacity-55 mt-0.5">{{ u.email }}</div>
+                <div class="text-xs opacity-55 mt-0.5 truncate">{{ u.email }}</div>
+                {% if u.groups.all %}<div class="flex flex-wrap gap-1 mt-1">{% for g in u.groups.all %}<span class="badge badge-xs badge-ghost">{{ g.name }}</span>{% endfor %}</div>{% endif %}
             </a>
             {% endfor %}
         </div>

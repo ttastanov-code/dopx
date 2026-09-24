@@ -31,6 +31,8 @@ class Notification(BaseModel):
         # «Матч начался» и «Составы объявлены».
         ('match_started', _('Матч начался')),
         ('lineups_available', _('Составы объявлены')),
+        ('evaluation_reminder', _('Незавершённая оценка')),
+        ('match_changed', _('Матч перенесён / отменён')),
     ]
 
     user = models.ForeignKey(
