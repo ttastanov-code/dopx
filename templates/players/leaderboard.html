@@ -14,17 +14,7 @@
 
     {# === ВКЛАДКИ === #}
     <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
-        {# Сегментированный переключатель вкладок. #}
-        <div class="inline-flex items-center gap-1 p-1 rounded-lg bg-base-200 text-sm">
-            <a href="{% url 'users:leaderboard' %}" class="px-3 py-1.5 rounded-md font-medium transition-colors flex items-center gap-1.5 opacity-60 hover:opacity-100">
-                <i class="ti ti-users"></i>
-                Пользователи
-            </a>
-            <a href="{% url 'users:player_leaderboard' %}" class="px-3 py-1.5 rounded-md font-medium transition-colors flex items-center gap-1.5 bg-primary text-primary-content shadow-sm">
-                <i class="ti ti-play-football"></i>
-                Игроки
-            </a>
-        </div>
+        {% include 'components/_leaderboard_tabs.html' with active='players' %}
 
         {# Фильтр по лиге (?league=). #}
         {% if available_leagues %}

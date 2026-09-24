@@ -3,7 +3,7 @@ from django.urls import path
 from .views import (
     RegisterView, LoginView, LogoutView, ProfileView, PublicProfileView, BadgeCatalogView,
     BadgeShareCardView,
-    UserLeaderboardView, PlayerLeaderboardView,
+    UserLeaderboardView, PlayerLeaderboardView, CityLeaderboardView,
     ProfileEditView, PasswordChangeViewCustom,
     PasswordResetViewCustom, PasswordResetDoneViewCustom,
     PasswordResetConfirmViewCustom, PasswordResetCompleteViewCustom,
@@ -35,6 +35,7 @@ urlpatterns = [
     
     path('leaderboard/', UserLeaderboardView.as_view(), name='leaderboard'),
     path('players/leaderboard/', PlayerLeaderboardView.as_view(), name='player_leaderboard'),
+    path('leaderboard/cities/', CityLeaderboardView.as_view(), name='city_leaderboard'),
 
     # Подписки
     path('follow/<str:target_type>/<uuid:target_id>/', toggle_follow, name='toggle_follow'),

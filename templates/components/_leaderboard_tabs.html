@@ -1,0 +1,12 @@
+{# Вкладки рейтингов. Параметр active: 'users' | 'players' | 'cities'. На мобильном — три равные колонки. #}
+<div class="grid grid-cols-3 w-full sm:inline-flex sm:w-auto items-center gap-1 p-1 rounded-lg bg-base-200 text-xs sm:text-sm">
+    <a href="{% url 'users:leaderboard' %}" class="px-1.5 sm:px-3 py-2 sm:py-1.5 rounded-md font-medium transition-colors flex items-center justify-center gap-1 sm:gap-1.5 whitespace-nowrap min-w-0 {% if active == 'users' %}bg-primary text-primary-content shadow-sm{% else %}opacity-60 hover:opacity-100{% endif %}">
+        <i class="ti ti-users shrink-0"></i><span class="truncate">Пользователи</span>
+    </a>
+    <a href="{% url 'users:player_leaderboard' %}" class="px-1.5 sm:px-3 py-2 sm:py-1.5 rounded-md font-medium transition-colors flex items-center justify-center gap-1 sm:gap-1.5 whitespace-nowrap min-w-0 {% if active == 'players' %}bg-primary text-primary-content shadow-sm{% else %}opacity-60 hover:opacity-100{% endif %}">
+        <i class="ti ti-play-football shrink-0"></i><span class="truncate">Игроки</span>
+    </a>
+    <a href="{% url 'users:city_leaderboard' %}" class="px-1.5 sm:px-3 py-2 sm:py-1.5 rounded-md font-medium transition-colors flex items-center justify-center gap-1 sm:gap-1.5 whitespace-nowrap min-w-0 {% if active == 'cities' %}bg-primary text-primary-content shadow-sm{% else %}opacity-60 hover:opacity-100{% endif %}">
+        <i class="ti ti-building-community shrink-0"></i><span class="truncate">Города</span>
+    </a>
+</div>

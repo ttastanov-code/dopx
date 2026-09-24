@@ -1,0 +1,107 @@
+{% extends 'base.html' %}
+{% load partner_tags %}
+
+{% block content %}
+
+{# === ШАПКА === #}
+<div class="mb-8">
+    <h1 class="text-3xl font-bold mb-2">
+        <i class="ti ti-building-community mr-2"></i>
+        Битва городов
+    </h1>
+    <p class="opacity-60">Какой город активнее всех оценивает матчи КПЛ</p>
+</div>
+
+{# === ВКЛАДКИ === #}
+<div class="mb-4">
+    {% include 'components/_leaderboard_tabs.html' with active='cities' %}
+</div>
+
+{# Период. #}
+<div class="grid grid-cols-3 w-full sm:inline-flex sm:w-auto items-center gap-1 p-1 rounded-lg bg-base-200 text-xs sm:text-sm mb-6">
+    {% for key, opt in periods.items %}
+    <a href="?period={{ key }}"
+       class="px-1.5 sm:px-3 py-2 sm:py-1.5 rounded-md font-medium transition-colors flex items-center justify-center whitespace-nowrap {% if key == selected_period %}bg-primary text-primary-content shadow-sm{% else %}opacity-60 hover:opacity-100{% endif %}">
+        {{ opt.label }}
+    </a>
+    {% endfor %}
+</div>
+
+<div class="mb-6">
+    {% render_banner "leaderboard" %}
+</div>
+
+{% if cities %}
+
+{# Подиум топ-3. #}
+{% if cities|length >= 3 %}
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+    {% for c in cities|slice:":3" %}
+    <a href="{% url 'users:leaderboard' %}?city={{ c.city|urlencode }}"
+       class="card border {% if forloop.counter == 1 %}border-warning bg-warning/5 sm:order-2 sm:-mt-3{% elif forloop.counter == 2 %}border-base-300 bg-base-100 sm:order-1{% else %}border-base-300 bg-base-100 sm:order-3{% endif %}">
+        <div class="card-body p-4 items-center text-center">
+            <div class="text-3xl">{% if forloop.counter == 1 %}🥇{% elif forloop.counter == 2 %}🥈{% else %}🥉{% endif %}</div>
+            <div class="font-bold text-lg break-words">{{ c.city }}</div>
+            <div class="text-2xl font-bold text-primary">{{ c.per_user }}</div>
+            <div class="text-xs opacity-60">оценок на болельщика</div>
+            <div class="text-xs opacity-50 mt-1">{{ c.users }} болельщиков · {{ c.evaluations }} оценок</div>
+        </div>
+    </a>
+    {% endfor %}
+</div>
+{% endif %}
+
+{# === ТАБЛИЦА === #}
+<div class="card bg-base-100 border border-base-300">
+    <div class="card-body p-0">
+        <div class="overflow-x-auto">
+            <table class="table">
+                <thead>
+                <tr>
+                    <th class="w-12">#</th>
+                    <th>Город</th>
+                    <th class="text-center">На болельщика</th>
+                    <th class="text-center hidden sm:table-cell">Оценок</th>
+                    <th class="text-center hidden sm:table-cell">Болельщиков</th>
+                    <th class="text-center">Точность прогнозов</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for c in cities %}
+                <tr class="{% if c.city == my_city %}bg-primary/5{% endif %}">
+                    <td class="font-bold opacity-60">{{ c.rank }}</td>
+                    <td>
+                        <a href="{% url 'users:leaderboard' %}?city={{ c.city|urlencode }}" class="font-medium link link-hover">{{ c.city }}</a>
+                        {% if c.city == my_city %}<span class="badge badge-xs badge-primary ml-1">ваш город</span>{% endif %}
+                        <div class="text-xs opacity-50 sm:hidden">{{ c.users }} болельщиков · {{ c.evaluations }} оценок</div>
+                    </td>
+                    <td class="text-center font-bold text-primary">{{ c.per_user }}</td>
+                    <td class="text-center hidden sm:table-cell">{{ c.evaluations }}</td>
+                    <td class="text-center hidden sm:table-cell">{{ c.users }}</td>
+                    <td class="text-center">{% if c.accuracy is not None %}{{ c.accuracy }}%{% else %}<span class="opacity-40">—</span>{% endif %}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% else %}
+<div class="card bg-base-100 border border-base-300">
+    <div class="card-body items-center text-center py-12">
+        <i class="ti ti-building-community text-5xl opacity-30"></i>
+        <p class="font-medium mt-2">Пока ни в одном городе нет {{ min_users }} болельщиков</p>
+        <p class="text-sm opacity-60">Город появится в рейтинге, как только в нём наберётся {{ min_users }} участников.</p>
+    </div>
+</div>
+{% endif %}
+
+{# === ИНФО === #}
+<div class="alert mt-6 text-sm">
+    <i class="ti ti-info-circle"></i>
+    <span>Места — по числу завершённых оценок на одного болельщика, чтобы маленький город мог обойти большой.
+        В рейтинге только города, где не меньше {{ min_users }} участников. Точность прогнозов — при 20+ прогнозах.</span>
+</div>
+
+{% endblock %}

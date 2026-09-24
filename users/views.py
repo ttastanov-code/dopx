@@ -648,6 +648,29 @@ class UserLeaderboardView(ListView):
         return context
 
 
+class CityLeaderboardView(TemplateView):
+    """Битва городов: рейтинг городов по оценкам на пользователя. ?period= — month/season/all."""
+    template_name = 'users/city_leaderboard.html'
+
+    def get_context_data(self, **kwargs):
+        from users.city_stats import BATTLE_PERIODS, city_battle, city_min_users
+
+        context = super().get_context_data(**kwargs)
+        period = self.request.GET.get('period', 'month')
+        if period not in BATTLE_PERIODS:
+            period = 'month'
+        rows = city_battle(period)
+        context.update({
+            'page_title': 'Битва городов — DOPX',
+            'cities': rows,
+            'periods': BATTLE_PERIODS,
+            'selected_period': period,
+            'min_users': city_min_users(),
+            'my_city': getattr(self.request.user, 'city', '') if self.request.user.is_authenticated else '',
+        })
+        return context
+
+
 class PlayerLeaderboardView(ListView):
     template_name = 'players/leaderboard.html'
     context_object_name = 'players'

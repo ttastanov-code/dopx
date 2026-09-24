@@ -500,6 +500,42 @@
       </div>
     </div>
 
+    {# Где болеют: города болельщиков клуба (users/city_stats.py). #}
+    {% if fan_geography %}
+    <div class="card bg-base-100 border border-base-300">
+      <div class="card-body p-3 md:p-4">
+        <h3 class="font-bold text-base md:text-lg mb-1">
+          <i class="ti ti-map-pin mr-2"></i>Где болеют за {{ team.name }}
+        </h3>
+        <p class="text-xs opacity-50 mb-3">{{ fan_geography.total }} болельщиков указали команду своей при оценке</p>
+        <div class="space-y-2.5">
+          {% for r in fan_geography.rows %}
+          <div>
+            <div class="flex justify-between items-center text-sm mb-1 gap-2">
+              <span class="min-w-0 break-words">{{ r.city }}</span>
+              <span class="font-medium shrink-0">{{ r.percent }}%</span>
+            </div>
+            <div class="w-full bg-base-200 rounded-full h-2">
+              <div class="bg-primary h-2 rounded-full" style="width: {{ r.percent }}%"></div>
+            </div>
+          </div>
+          {% endfor %}
+          {% if fan_geography.other_fans %}
+          <div>
+            <div class="flex justify-between items-center text-sm mb-1 opacity-60">
+              <span>Другие города</span>
+              <span class="font-medium">{{ fan_geography.other_percent }}%</span>
+            </div>
+            <div class="w-full bg-base-200 rounded-full h-2">
+              <div class="bg-base-content/30 h-2 rounded-full" style="width: {{ fan_geography.other_percent }}%"></div>
+            </div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
     <div class="card bg-base-100 border border-base-300">
       <div class="card-body p-3 md:p-4">
         <h3 class="font-bold text-base md:text-lg mb-3 md:mb-4">

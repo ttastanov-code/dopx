@@ -318,6 +318,10 @@ class TeamDetailView(DetailView):
             rating_correction = None
         context['rating_correction'] = rating_correction
 
+        # Где болеют: города болельщиков (None — мало данных).
+        from users.city_stats import team_fan_geography
+        context['fan_geography'] = team_fan_geography(team)
+
         # Embed-код виджета.
         widget_url = self.request.build_absolute_uri(reverse('teams:widget', args=[team.id]))
         context['widget_embed_code'] = (
