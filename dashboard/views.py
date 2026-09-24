@@ -29,6 +29,7 @@ from players.models import Player, PotentialDuplicatePlayer
 from players.services import merge_players
 from seasons.models import Season
 from users.models import SuspiciousActivityFlag
+from users.city_stats import dashboard_city_breakdown
 
 from . import command_runner, commands_registry, infra_services, parser_tools, services
 from .audit import log_staff_action
@@ -50,6 +51,7 @@ def overview(request):
         "page_title": "Обзор — DOPX Staff",
         "active_tab": "overview",
         "metrics": services.overview_metrics(days=days),
+        "cities": dashboard_city_breakdown(days=days),
         "selected_days": days,
         "day_presets": OVERVIEW_DAY_PRESETS,
     }

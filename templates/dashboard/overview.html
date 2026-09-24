@@ -69,6 +69,49 @@
     </div>
 </div>
 
+{# Пользователи по городам за выбранный период. #}
+<div class="card bg-base-100 border border-base-300 mb-6">
+    <div class="card-body p-4">
+        <div class="dopx-section-eyebrow"><i class="ti ti-map-pin"></i>География</div>
+        <div class="dopx-section-title mb-1">Пользователи по городам</div>
+        <p class="text-xs opacity-50 mb-3">
+            {{ cities.cities_count }} городов{% if cities.no_city_users %} · без города: {{ cities.no_city_users }}{% endif %}.
+            Конверсия — доля пользователей города, завершивших хотя бы одну оценку.
+        </p>
+        {% if cities.rows %}
+        <div class="overflow-x-auto">
+            <table class="table table-sm">
+                <thead>
+                <tr>
+                    <th>Город</th>
+                    <th class="text-right">Пользователей</th>
+                    <th class="text-right">Новых за {{ selected_days }} дн</th>
+                    <th class="text-right">Активных за {{ selected_days }} дн</th>
+                    <th class="text-right">Конверсия</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for r in cities.rows %}
+                <tr class="{% if r.city == 'Не указан' %}opacity-50{% endif %}">
+                    <td class="font-medium whitespace-nowrap">{{ r.city }}</td>
+                    <td class="text-right">{{ r.users }}</td>
+                    <td class="text-right">{% if r.new_users %}+{{ r.new_users }}{% else %}<span class="opacity-40">0</span>{% endif %}</td>
+                    <td class="text-right">{{ r.active_period }}</td>
+                    <td class="text-right">
+                        <span class="{% if r.conversion_percent >= 50 %}text-success{% elif r.conversion_percent < 20 %}text-error{% endif %} font-medium">{{ r.conversion_percent }}%</span>
+                        <span class="text-xs opacity-40">({{ r.evaluated_ever }})</span>
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-sm opacity-50 py-4 text-center">Пользователей пока нет.</p>
+        {% endif %}
+    </div>
+</div>
+
 {{ metrics.dau|json_script:"dau-data" }}
 {{ metrics.wau|json_script:"wau-data" }}
 {{ metrics.registrations_by_day|json_script:"reg-data" }}

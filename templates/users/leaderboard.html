@@ -18,17 +18,7 @@
 
 {# === ВКЛАДКИ === #}
 <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
-    {# Сегментированный переключатель, активный — залит primary. #}
-    <div class="inline-flex items-center gap-1 p-1 rounded-lg bg-base-200 text-sm">
-        <a href="{% url 'users:leaderboard' %}" class="px-3 py-1.5 rounded-md font-medium transition-colors flex items-center gap-1.5 bg-primary text-primary-content shadow-sm">
-            <i class="ti ti-users"></i>
-            Пользователи
-        </a>
-        <a href="{% url 'users:player_leaderboard' %}" class="px-3 py-1.5 rounded-md font-medium transition-colors flex items-center gap-1.5 opacity-60 hover:opacity-100">
-            <i class="ti ti-play-football"></i>
-            Игроки
-        </a>
-    </div>
+    {% include 'components/_leaderboard_tabs.html' with active='users' %}
 
     {# Фильтр по городу (?city=), auto-submit. #}
     {% if available_cities %}
@@ -49,12 +39,13 @@
 </div>
 
 {# Срез рейтинга: trust/active/streak (SORT_OPTIONS). #}
-<div class="inline-flex items-center gap-1 p-1 rounded-lg bg-base-200 text-sm mb-6 flex-wrap">
+{# На мобильном — три равные колонки на всю ширину, на sm+ — компактный ряд. #}
+<div class="grid grid-cols-3 w-full sm:inline-flex sm:w-auto items-center gap-1 p-1 rounded-lg bg-base-200 text-xs sm:text-sm mb-6">
     {% for key, opt in sort_options.items %}
     <a href="?sort={{ key }}{% if selected_city %}&city={{ selected_city }}{% endif %}"
-       class="px-3 py-1.5 rounded-md font-medium transition-colors flex items-center gap-1.5 {% if key == selected_sort %}bg-primary text-primary-content shadow-sm{% else %}opacity-60 hover:opacity-100{% endif %}">
-        <i class="ti {{ opt.icon }}"></i>
-        {{ opt.label }}
+       class="px-1.5 sm:px-3 py-2 sm:py-1.5 rounded-md font-medium transition-colors flex items-center justify-center gap-1 sm:gap-1.5 whitespace-nowrap min-w-0 {% if key == selected_sort %}bg-primary text-primary-content shadow-sm{% else %}opacity-60 hover:opacity-100{% endif %}">
+        <i class="ti {{ opt.icon }} shrink-0"></i>
+        <span class="truncate">{{ opt.label }}</span>
     </a>
     {% endfor %}
 </div>
