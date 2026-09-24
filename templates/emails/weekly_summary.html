@@ -1,14 +1,7 @@
-<!-- templates/emails/weekly_summary.html — ПОЛНЫЙ РЕДИЗАЙН 2026-09-02, см.
-     докстринг templates/emails/welcome.html про общий каркас в partials/.
-     Блок из 3 колонок-статистик раньше был на flexbox (.stats{display:flex}) —
-     не работает в Outlook; переведён на table-based 3-колоночную вёрстку.
-
-     Retention loop 2 ("персональная недельная сводка"), 2026-08-21.
-     Контекст собирается в notifications/tasks.py::send_weekly_summary на
-     каждого пользователя: evaluations_count, predictions_count,
-     accuracy_pct (None, если за неделю не было прогнозов со известным
-     исходом), top_match (Match или None — общий "матч недели", одинаковый
-     для всех писем этой рассылки). -->
+{% comment %}
+Недельная сводка. Контекст: evaluations_count, predictions_count, accuracy_pct (или None), top_match.
+Колонки — таблицей (flexbox не работает в Outlook).
+{% endcomment %}
 <!DOCTYPE html>
 <html lang="ru">
 {% include "emails/partials/_head.html" %}

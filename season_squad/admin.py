@@ -18,9 +18,7 @@ class SeasonBestXISlotInline(TabularInline):
     ordering = ('order',)
 
     def has_add_permission(self, request, obj=None):
-        # Слоты создаёт/обновляет только recompute_best_xi (services.py) —
-        # ручное добавление строки из админки создало бы слот без
-        # content_type/object_id и сломало бы уникальность (best_xi, slot_code).
+        # Слоты создаёт только recompute_best_xi.
         return False
 
 
@@ -41,14 +39,7 @@ class SeasonBestXIAdmin(ModelAdmin):
 
     @admin.action(description='Пересчитать сейчас')
     def recompute_now(self, request, queryset):
-        # БАГ, КОТОРЫЙ ТУТ БЫЛ: recompute_best_xi(best_xi.season) вызывалась
-        # напрямую, в обход Redis-lock из season_squad/tasks.py::recompute_best_xi_task
-        # — если стафф жал это действие ровно в момент планового прогона
-        # Celery Beat (recompute_all_active_best_xi, каждые 15 минут), два
-        # пересчёта одного сезона выполнялись параллельно и портили
-        # rank_change/rank_change_delta (см. докстринг recompute_best_xi_task).
-        # Теперь ставим ту же задачу в очередь — лок общий для admin-триггера
-        # и Celery Beat.
+        # Пересчёт через задачу — общий Redis-lock с Celery Beat.
         from season_squad.tasks import recompute_best_xi_task
 
         done = 0
@@ -80,9 +71,7 @@ class SeasonBestXIAdmin(ModelAdmin):
 
 @admin.register(SeasonPositionRanking)
 class SeasonPositionRankingAdmin(ModelAdmin):
-    """Служебная модель (полная история ранжирования для расчёта ↑/↓) —
-    в основном для отладки алгоритма, не для повседневного использования
-    стаффом. Список без inline-редактирования, только просмотр."""
+    """Ранжирование — только просмотр, для отладки."""
     list_display = ('best_xi', 'slot_code', 'rank', 'season_score', 'matches_count', 'votes_count', 'computed_at')
     list_filter = ('slot_code', 'best_xi__season')
     ordering = ('-computed_at', 'slot_code', 'rank')

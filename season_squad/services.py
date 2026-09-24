@@ -1,36 +1,12 @@
 # season_squad/services.py
-"""
-Алгоритм "Живая сборная сезона": пересчитывает лучший состав 4-3-3 +
-тренера + судью на основе накопленных оценок пользователей.
+"""«Живая сборная сезона»: 4-3-3 + тренер + судья по оценкам пользователей.
 
-Ключевая методологическая проблема, которую явно обозначил продакт: "нельзя
-брать просто максимальную среднюю оценку — игрок с одним матчем и 10/10
-обгонит игрока, который стабильно играл весь сезон". Решение — байесовское
-сглаживание (тот же принцип, что у IMDB weighted rating):
-
+Байесовское сглаживание (как weighted rating у IMDB):
     season_score = (m / (m + C)) * raw_avg + (C / (m + C)) * pool_avg
+m — оценённых матчей у кандидата, pool_avg — среднее по его пулу (взвешенное по матчам).
 
-где m — число оцененных матчей игрока/тренера/судьи в сезоне, raw_avg — его
-собственное среднее по этим матчам, pool_avg — среднее по всем кандидатам
-в ТОМ ЖЕ пуле (вратарей сравниваем со вратарями, а не со всеми подряд,
-взвешенное по числу матчей каждого — иначе один кандидат с 1 матчем имел
-бы такой же вес в pool_avg, как игрок с 20 матчами), C — константа
-"виртуальных матчей": чем она больше, тем сильнее к pool_avg притягиваются
-кандидаты с малым числом матчей. При m >> C формула стремится к чистому
-raw_avg (устоявшийся игрок оценивается по своим фактическим результатам);
-при m << C — почти целиком к pool_avg (один суперматч не выносит игрока
-в топ). Это ровно то же самое семейство методов, что у "средневзвешенного
-рейтинга" IMDB/BGG — публично объяснимо и не выглядит как чёрный ящик,
-важно для раздела "Как считается?" на странице.
-
-Слот занимает игрок с максимальным season_score в своём пуле кандидатов;
-после назначения игрок исключается из пулов ВСЕХ ОСТАЛЬНЫХ слотов этого же
-прогона (см. players/positions.py::SLOT_PROCESSING_ORDER — порядок
-обработки слотов специально идёт от узких амплуа к широким, чтобы игрок
-с точным кодом позиции не терялся в общем "фолбэк"-пуле).
-
-Про rank_change (стрелки ↑/«вошёл в состав» на карточках) — см. докстринг
-season_squad/models.py::SeasonBestXISlot и docstring ниже у _apply_slot.
+Слоты заполняются жадно в порядке SLOT_PROCESSING_ORDER (от узких амплуа к широким),
+назначенный игрок выбывает из остальных пулов.
 """
 from __future__ import annotations
 
@@ -61,34 +37,19 @@ from season_squad.models import SeasonBestXI, SeasonBestXISlot, SeasonPositionRa
 
 logger = logging.getLogger(__name__)
 
-# "Виртуальные матчи" в байесовском сглаживании — см. докстринг модуля.
-# 6 подобрано эмпирически: в первые недели сезона у большинства игроков
-# 1-3 оцененных матча, C=6 достаточно, чтобы не пускать в топ игрока
-# с одним матчем 10/10, но не "усредняет всех в кашу" к середине сезона,
-# когда у стабильных игроков уже 10+ матчей.
+# C для байесовского сглаживания — «виртуальные матчи».
 SHRINKAGE_C = 6.0
 
-# Минимум оцененных матчей, чтобы кандидат вообще участвовал в подборе
-# состава — отдельно от числа голосов: даже 20 голосов за один-единственный
-# матч не делает игрока "стабильным весь сезон".
+# Минимум оценённых матчей для участия в подборе.
 MIN_MATCHES_FOR_CANDIDATE = 2
 
-# Сколько последних "партий" (batch = один computed_at на весь прогон)
-# ранжирования хранить в SeasonPositionRanking — старше чистит recompute.
+# Сколько последних батчей ранжирования хранить.
 RANKING_BATCHES_TO_KEEP = 5
 
-# Сколько кандидатов пула сохранять в снимок ранжирования — карточкам
-# нужен только occupant (ранг 1), топ-10 с запасом на будущий блок
-# "кто ещё претендует на позицию".
+# Сколько кандидатов пула сохранять в снимок.
 RANKING_POOL_DEPTH = 10
 
-# "Почему он в сборной?" (docs/PRODUCT_SCOPE_MATCH_DNA_AND_EXPLAINABILITY.md,
-# раздел 1) — тот же список заметных событий, что и в
-# evaluations/views.py::_compute_key_player_ids (docs/adr/0006): самый
-# дешёвый доступный прокси "заметности" на основе уже посчитанных данных,
-# без новой метрики. Не переиспользуем импортом из evaluations/ напрямую —
-# evaluations/views.py тянет за собой Django-view-слой (сессии вайзарда,
-# HttpRequest), совершенно не нужный здесь для одной константы.
+# Заметные события для блока «Почему он в сборной?».
 NOTABLE_EVENT_TYPES = ("goal", "yellow_card", "red_card", "own_goal", "disallowed_goal")
 NOTABLE_EVENT_LABELS = {
     "goal": "гол",
@@ -102,8 +63,7 @@ TOP_MATCHES_FOR_EXPLANATION = 2
 
 @dataclass
 class Candidate:
-    """Игрок / тренер / судья, приведённые к общему виду для подбора
-    состава (см. _rank_pool). object_id — строка (UUID БазовыхMoделей)."""
+    """Кандидат (игрок/тренер/судья) в общем виде для _rank_pool."""
     content_type_id: int
     object_id: str
     name: str
@@ -123,9 +83,7 @@ def _bayes_score(raw_avg: float, matches: int, pool_avg: float, c: float = SHRIN
 
 
 def _rank_pool(candidates: list[Candidate]) -> list[tuple[Candidate, float]]:
-    """Считает Байес-скор для каждого кандидата пула (pool_avg — среднее
-    raw_avg по ЭТОМУ ЖЕ пулу, взвешенное по числу матчей каждого) и
-    возвращает список (candidate, score), отсортированный по убыванию."""
+    """Байес-скор для каждого кандидата пула, по убыванию."""
     eligible = [c for c in candidates if c.matches >= MIN_MATCHES_FOR_CANDIDATE]
     if not eligible:
         return []
@@ -140,29 +98,9 @@ def _rank_pool(candidates: list[Candidate]) -> list[tuple[Candidate, float]]:
 
 
 def _player_season_position(season) -> dict[str, str]:
-    """player_id (строкой) -> самый частый (мода) КОД позиции этого игрока
-    в сезоне, по фактическим составам (MatchLineupPlayer).
-
-    2026-08-23: код теперь берётся через resolve_lineup_codes(position,
-    field_position) — там, где известна сторона поля (см.
-    players/positions.py), это комбинированный код "D:L", иначе — голый
-    амплуа-код, как раньше. Мода считается по этим кодам напрямую, а не
-    по голому амплуа: если игрок почти всегда выходил на левом фланге
-    защиты, его код сезона — "D:L", и он корректно конкурирует именно за
-    LB, а не размывается в общий пул CB1/CB2/RB/LB.
-
-    ИСПРАВЛЕНО (2026-09-21, жалоба пользователя: "игрок стоит на позиции,
-    на которой вообще не играет"). КОРНЕВАЯ ПРИЧИНА — раньше строки
-    невышедших запасных (is_starting=False И ни разу не вышел на замену,
-    minute_in IS NULL) считались наравне со стартовыми и реальными
-    выходами на замену. У НЕВЫШЕДШЕГО запасного нет НИКАКОЙ информации о
-    том, где он играл — это просто его номинальное амплуа в заявке на
-    матч, а не факт игры. Игрок, часто попадавший в заявку, но редко
-    выходивший на поле, мог набрать больше "голосов" в моде просто за счёт
-    количества строк на скамейке, чем за счёт немногих реальных выходов на
-    совсем другой позиции — и получал в сезонный код позицию, на которой
-    фактически ни разу не играл. Теперь считаем моду ТОЛЬКО по строкам, где
-    игрок реально вышел на поле (is_starting=True ИЛИ minute_in задан)."""
+    """player_id -> самый частый код позиции в сезоне (с учётом стороны, напр. 'D:L').
+    Считаем только по матчам, где игрок реально выходил на поле.
+    """
     rows = (
         MatchLineupPlayer.objects
         .filter(lineup__match__season=season)
@@ -180,16 +118,7 @@ def _player_season_position(season) -> dict[str, str]:
 
 
 def _player_season_team_name(season) -> dict[str, str]:
-    """player_id (строкой) -> название команды, за которую игрок выходил в
-    САМОМ ПОЗДНЕМ по дате матче этого сезона (MatchLineupPlayer, а не
-    player.team — текущая команда в справочнике). Продуктовое ревью
-    2026-08-22: игрок мог перейти в другой клуб в середине или сразу
-    после сезона — карточка "Сборной DOPX" должна показывать клуб, за
-    который он реально заработал этот рейтинг В ЭТОМ СЕЗОНЕ, а не куда
-    он сейчас числится в БД. order_by('player_id', '-...start_time') +
-    "первая встреченная строка на игрока" — тот же трюк, что мода в
-    _player_season_position, только вместо Counter берём просто самую
-    свежую запись (без доп. GROUP BY/window-function)."""
+    """player_id -> клуб из последнего матча сезона (а не текущий player.team)."""
     rows = (
         MatchLineupPlayer.objects
         .filter(lineup__match__season=season)
@@ -205,13 +134,7 @@ def _player_season_team_name(season) -> dict[str, str]:
 
 
 def _coach_season_team_name(season) -> dict[str, str]:
-    """То же самое, что _player_season_team_name, но для тренеров — у них
-    нет отдельной модели "состав на матч", привязка тренер/команда идёт
-    прямо через Match.home_coach/away_coach + Match.home_team/away_team.
-    Именно поэтому Codex-ревью отдельно предупреждал "требует осторожности
-    из-за ограничений данных KFF": здесь привязка грубее (только на уровне
-    матча целиком, не факта присутствия), но источник для КОНКРЕТНОГО
-    матча всё равно надёжнее, чем текущее coach.team на момент пересчёта."""
+    """То же для тренеров — через Match.home_coach/away_coach."""
     rows = (
         Match.objects
         .filter(season=season)
@@ -256,13 +179,7 @@ def _build_player_pool_by_code(season, player_ct: ContentType) -> dict[str, list
             content_type_id=player_ct.id,
             object_id=pid,
             name=player.full_name,
-            # Клуб В ЭТОМ СЕЗОНЕ (по факту составов), а не текущий
-            # player.team — см. докстринг _player_season_team_name.
-            # Фолбэк на player.team — на случай если у игрока есть
-            # PlayerMatchAggregate, но почему-то нет ни одной строки
-            # MatchLineupPlayer в этом сезоне (не должно происходить в
-            # норме, т.к. агрегаты считаются по составам, но не полагаемся
-            # на это молча).
+            # Клуб за этот сезон; player.team — запасной вариант.
             team_name=team_name_by_player.get(pid) or (player.team.name if player.team else ""),
             photo_url=player.photo.url if player.photo else "",
             profile_url=reverse("players:detail", args=[player.id]),
@@ -293,9 +210,7 @@ def _build_coach_pool(season, coach_ct: ContentType) -> list[Candidate]:
         coach = coaches.get(cid)
         if not coach:
             continue
-        # Среднее по средним = среднее по матчам благодаря линейности
-        # (average_score каждого матча — уже (t+s+m+i)/4), пересчитывать
-        # через сырые оценки построчно не нужно.
+        # Среднее по матчам — пересчитывать из сырых оценок не нужно.
         raw_avg = (
             (row["avg_t"] or 0.0) + (row["avg_s"] or 0.0)
             + (row["avg_m"] or 0.0) + (row["avg_i"] or 0.0)
@@ -315,23 +230,8 @@ def _build_coach_pool(season, coach_ct: ContentType) -> list[Candidate]:
 
 
 def _build_referee_pool(season, referee_ct: ContentType) -> list[Candidate]:
-    """Продуктовое ревью 2026-08-22: "лучший судья" не должен считаться
-    только по decision_quality ("качество решений") — формула учитывает
-    ещё influence_score ("влияние на матч": хороший судья по общему
-    футбольному консенсусу должен быть "невидимым") и fairness с
-    MatchEvaluation ("Справедливость" матча — воспринимаемая
-    несправедливость почти всегда именно про судейство):
-
-        0.6 * decision_quality + 0.3 * fairness + 0.1 * (10 - influence/10)
-
-    2026-08-23: сама формула и её взвешенный/винзоризованный расчёт
-    ПЕРЕЕХАЛИ в aggregates/tasks.py::recalculate_referee_aggregates —
-    раньше она дублировалась ЗДЕСЬ (и второй раз ещё в referees/views.py)
-    заново на каждый пересчёт, каждый раз заново примитивным Avg() без
-    веса пользователя/винзоризации. Теперь читаем уже готовый
-    RefereeMatchAggregate.performance_score и просто усредняем по матчам
-    сезона (не по голосам — так матч с 20 голосами не "перевешивает" матч
-    с 3 голосами, тот же принцип, что у PlayerMatchAggregate).
+    """Лучший судья — по готовому RefereeMatchAggregate.performance_score,
+    усреднение по матчам сезона.
     """
     match_level = (
         RefereeMatchAggregate.objects
@@ -366,17 +266,9 @@ def _build_referee_pool(season, referee_ct: ContentType) -> list[Candidate]:
 
 
 def _describe_nearest_competitor(score: float, runner_up: tuple[Candidate, float] | None) -> str:
-    """"Сравнение с ближайшим конкурентом" (docs/adr/0032-squad-explainability-v2.md,
-    продуктовый запрос по итогам второго аудита). `runner_up` — ранг №2 из
-    того же пула, что и occupant слота (см. `_rank_pool` — уже посчитанный,
-    отсортированный список, второй элемент даром, без нового запроса).
-
-    Не показываем фразу, если runner_up отсутствует (пул из одного
-    кандидата — сравнивать не с кем) или если gap получился <= 0 — по
-    построению occupant это ранг №1, поэтому такое означает не реальную
-    ничью, а гонку за третьим знаком после округления `_rank_pool` (`round`
-    в scored), и вводящая в заблуждение фраза "обошёл на 0.00 балла" хуже,
-    чем её отсутствие."""
+    """Фраза «обошёл ближайшего конкурента на N».
+    Не показываем без runner_up или при gap <= 0.
+    """
     if runner_up is None:
         return ""
     competitor, competitor_score = runner_up
@@ -395,24 +287,9 @@ def _build_explanation(
     rank_change_delta: int | None,
     runner_up: tuple[Candidate, float] | None = None,
 ) -> str:
-    """Собирает ЕДИНОЕ пояснение для тултипа на карточке — раньше confidence
-    (бейдж "достаточно/мало данных") и rank_change (бейдж "вошёл в состав"/
-    "↑ N") были отдельными текстовыми бейджами прямо на карточке, что и
-    вызвало жалобу продакта ("вошёл в состав — непонятно о чём"): сама по
-    себе фраза не объясняет, что это про место в рейтинге. Теперь вся эта
-    информация — один связный текст под одной иконкой-подсказкой, а на
-    карточке остаётся только цвет кольца аватара (тонкий сигнал, не текст).
-
-    2026-09-09 (жалоба пользователя со скриншотом тултипа: "куча тире
-    дефисов явный ИИ паттерн и текст как куча букв без структуры и
-    нечитабельно") — раньше все предложения склеивались ПРОБЕЛОМ в один
-    плотный абзац внутри узкого 240px-пузыря (components/_tooltip_icon.html),
-    и почти каждое предложение отдельно использовало " — " как разделитель
-    внутри себя — при вёрстке в одну строку это давало сплошную стену из
-    тире. Теперь: (1) каждый факт — отдельная строка, СОЕДИНЯЮТСЯ ПЕРЕНОСОМ
-    "\\n" (тултип рендерит их раздельными строками, см. white-space:
-    pre-line в _tooltip_icon.html), (2) формулировки внутри предложений по
-    возможности без тире — двоеточие вместо " — "."""
+    """Текст тултипа карточки: уверенность, rank_change и т.д.
+    Каждый факт — отдельная строка.
+    """
     label = BEST_XI_SLOT_LABELS.get(slot_code, slot_code)
     lines = [
         f"Рейтинг {score:.2f} на позиции «{label}»: среднее за сезон "
@@ -438,16 +315,7 @@ def _build_explanation(
 
 
 def _describe_top_matches(player_id: str, season, limit: int = TOP_MATCHES_FOR_EXPLANATION) -> str:
-    """"Почему он в сборной?" — расширение _build_explanation ниже.
-    season_score — одно число ("средняя с поправкой на объём выборки"), но
-    само по себе не объясняет, ЗА ЧТО именно игрок получил высокие оценки.
-    Берём топ-N матчей по performance_score из тех, что вошли в усреднение
-    (те же PlayerMatchAggregate, что уже посчитаны _build_player_pool_by_code
-    — никаких новых полей/агрегатов), с датой/соперником и заметными
-    событиями (см. NOTABLE_EVENT_TYPES выше). Соперник определяется через
-    факт участия в составе (MatchLineupPlayer), а не через player.team —
-    та же причина, что в _player_season_team_name (переход в другой клуб
-    в середине сезона не должен искажать историю ПРОШЛЫХ матчей)."""
+    """Лучшие матчи игрока в сезоне для тултипа (дата, соперник, события)."""
     top = list(
         PlayerMatchAggregate.objects
         .filter(player_id=player_id, match__season=season)
@@ -472,10 +340,7 @@ def _describe_top_matches(player_id: str, season, limit: int = TOP_MATCHES_FOR_E
     ):
         events_by_match[event.match_id].append(event)
 
-    # 2026-09-09 (та же жалоба на "стену тире") — раньше строка выглядела
-    # "8.9 — 20.03 vs Иртыш; 8.8 — 19.04 vs Атырау." (тире + "vs" + ";" —
-    # три разных разделителя вперемешку). Теперь каждый матч — своя строка
-    # с маркером "·", факты внутри строки — через скобки/запятую, без тире.
+    # Каждый матч — своя строка с маркером «·».
     pieces = []
     for pma in top:
         match = pma.match
@@ -524,15 +389,8 @@ def _apply_slot(
     season,
     runner_up: tuple[Candidate, float] | None = None,
 ) -> None:
-    """Записывает/обновляет денормализованную карточку слота.
-
-    rank_change: occupant слота — по определению ранг №1 в своём пуле НА
-    ЭТОТ МОМЕНТ, поэтому относительно предыдущего пересчёта он либо "уже
-    был №1" (SAME), либо "поднялся с ранга N" (UP, delta=N-1), либо "не
-    участвовал в прошлом пересчёте вообще" (NEW — не хватало матчей или
-    отсутствовал в лиге). DOWN технически недостижим для occupant'а этим
-    алгоритмом (см. докстринг season_squad/models.py) — оставлен в схеме
-    для возможного будущего блока "кто вылетел из состава".
+    """Записывает карточку слота.
+    rank_change: SAME / UP (delta=N-1) / NEW. DOWN для occupant недостижим.
     """
     order = BEST_XI_SLOT_DISPLAY_ORDER.get(slot_code, 99)
 
@@ -563,13 +421,10 @@ def _apply_slot(
     is_confident = candidate.votes >= CONFIDENT_VOTES_THRESHOLD
     explanation = _build_explanation(slot_code, candidate, score, is_confident, rank_change, delta, runner_up)
     if slot_code not in ("COACH", "REFEREE"):
-        # Обогащение только для игроков — у тренера/судьи нет
-        # персональных MatchEvent (голы/карточки привязаны к players.Player).
+        # Матчи с событиями — только для игроков.
         top_matches_text = _describe_top_matches(candidate.object_id, season)
         if top_matches_text:
-            # Пустая строка — визуальный отступ между блоком "почему в
-            # составе" и блоком "лучшие матчи" в тултипе (white-space:
-            # pre-line превращает "\n\n" в пустую строку, а не схлопывает).
+            # Пустая строка-разделитель между блоками тултипа.
             explanation = f"{explanation}\n\n{top_matches_text}"
     SeasonBestXISlot.objects.update_or_create(
         best_xi=best_xi, slot_code=slot_code,
@@ -600,11 +455,7 @@ def _prune_old_rankings(best_xi: SeasonBestXI, keep_batches: int = RANKING_BATCH
 
 
 def recompute_best_xi(season) -> SeasonBestXI:
-    """Точка входа — вызывается из season_squad/tasks.py (Celery Beat) и из
-    админского действия "Пересчитать сейчас". Идемпотентна: безопасно
-    вызывать чаще, чем раз в период — если данные не изменились, состав
-    просто перезапишется теми же значениями (rank_change корректно
-    схлопнется в SAME)."""
+    """Пересчёт сборной. Вызывается из Celery Beat и из админки. Идемпотентна."""
     best_xi, _created = SeasonBestXI.objects.get_or_create(season=season)
     if best_xi.is_final:
         logger.info("Сборная сезона %s зафиксирована как итоговая — пересчёт пропущен", season)
@@ -619,8 +470,7 @@ def recompute_best_xi(season) -> SeasonBestXI:
     coach_pool = _build_coach_pool(season, coach_ct)
     referee_pool = _build_referee_pool(season, referee_ct)
 
-    # Батч предыдущего пересчёта — снимаем ДО записи нового, иначе он же
-    # окажется "предыдущим самому себе".
+    # Предыдущий батч — берём до записи нового.
     previous_batch_at = (
         SeasonPositionRanking.objects
         .filter(best_xi=best_xi)
@@ -637,12 +487,10 @@ def recompute_best_xi(season) -> SeasonBestXI:
 
     assigned: set[tuple[int, str]] = set()
     ranking_buffer: list[SeasonPositionRanking] = []
-    # 4-й элемент — runner_up (ранг №2 того же пула, для "Обошёл ближайшего
-    # конкурента" в _build_explanation) — уже посчитан внутри `ranked`,
-    # просто прокидываем дальше без нового запроса.
+    # 4-й элемент — runner_up для _build_explanation.
     slot_results: list[tuple[str, Candidate | None, float | None, tuple[Candidate, float] | None]] = []
 
-    # ---- 11 полевых слотов формации 4-3-3 — жадное распределение ----
+    # ---- 11 слотов 4-3-3 — жадное распределение ----
     for slot_code, raw_codes in SLOT_PROCESSING_ORDER:
         candidates: list[Candidate] = []
         seen: set[tuple[int, str]] = set()
@@ -664,7 +512,7 @@ def recompute_best_xi(season) -> SeasonBestXI:
         else:
             slot_results.append((slot_code, None, None, None))
 
-    # ---- Тренер и судья — отдельные пулы, не пересекаются с игроками ----
+    # ---- Тренер и судья — отдельные пулы ----
     for slot_code, pool in (("COACH", coach_pool), ("REFEREE", referee_pool)):
         ranked = _rank_pool(pool)
         _store_ranking_batch(ranking_buffer, best_xi, slot_code, ranked, now)
@@ -684,25 +532,14 @@ def recompute_best_xi(season) -> SeasonBestXI:
 
     best_xi.last_computed_at = now
     best_xi.save(update_fields=["last_computed_at"])
-    # БАГ, КОТОРЫЙ ТУТ БЫЛ (найден 2026-09-21, сквозной аудит): было
-    # `len(assigned) + 2` — жёстко предполагало, что слоты COACH и REFEREE
-    # ВСЕГДА заполняются, хотя чуть выше `slot_results` явно допускает для
-    # них `(slot_code, None, None, None)`, если пул кандидатов пуст (нет
-    # оцененных тренеров/судей в сезоне на момент пересчёта, например самое
-    # начало сезона). В этом случае лог рапортовал на 1-2 "заполненных
-    # слота" больше реальности — не влияет на данные карточек (там честный
-    # None), только на диагностическое число в логах. Считаем реальное
-    # число непустых слотов из уже посчитанного slot_results.
+    # Считаем реально заполненные слоты (тренер/судья могут быть пустыми).
     filled_slots = sum(1 for _, candidate, _, _ in slot_results if candidate is not None)
     logger.info("Живая сборная сезона %s пересчитана: %d слотов заполнено", season, filled_slots)
     return best_xi
 
 
 def finalize_best_xi(season) -> SeasonBestXI:
-    """Замораживает текущую живую сборную как итоговую — вызывается стаффом
-    вручную из админки после окончания сезона и закрытия последних
-    голосований (см. season_squad/admin.py). После этого recompute_best_xi
-    для этого сезона становится no-op."""
+    """Фиксирует сборную как итоговую (из админки после сезона). Дальше recompute — no-op."""
     best_xi = SeasonBestXI.objects.get(season=season)
     best_xi.is_final = True
     best_xi.finalized_at = timezone.now()

@@ -4,7 +4,7 @@ from django.utils.translation import gettext_lazy as _
 from core.models import BaseModel
 
 class League(BaseModel):
-    """Футбольная лига"""
+    """Футбольная лига."""
     name = models.CharField(_('Название'), max_length=255)
     country = models.CharField(_('Страна'), max_length=255)
     logo = models.ImageField(_('Логотип'), upload_to='leagues/', null=True, blank=True)
@@ -15,12 +15,7 @@ class League(BaseModel):
         null=True,
         blank=True
     )
-    # НОВОЕ (переход с KFF на Sportmonks): отдельное поле, НЕ переиспользуем
-    # external_id выше — там уже лежат id из JSON API KFF, у Sportmonks
-    # совершенно другая нумерация в том же типе (integer as string), и
-    # переиспользование поля рано или поздно столкнуло бы id разных
-    # источников. sportmonks_id заполняется параллельно, старые записи с
-    # external_id продолжают резолвиться как раньше, пока идёт миграция.
+    # ID в Sportmonks (external_id — старые KFF-данные).
     sportmonks_id = models.CharField(
         _('Sportmonks ID'),
         max_length=100,
@@ -28,14 +23,7 @@ class League(BaseModel):
         null=True,
         blank=True
     )
-    # Какая лига считается "главной" для сайта — используется вместо
-    # Season.objects.filter(is_active=True).first() (без фильтра по лиге)
-    # в core/views.py::standings_preview и core/views.py (главная страница):
-    # с одной лигой на сайте .first() случайно давал правильный ответ, но
-    # как только появится вторая лига с собственным активным сезоном
-    # (например, Кубок Казахстана), выбор таблицы на главной стал бы
-    # зависеть от Season.Meta.ordering, а не от осмысленного решения.
-    # См. docs/BACKLOG.md, находка 1.
+    # Главная лига сайта (таблица на главной, сезон по умолчанию).
     is_primary = models.BooleanField(
         _('Главная лига сайта'),
         default=False,
@@ -51,10 +39,7 @@ class League(BaseModel):
         return self.name
 
     def save(self, *args, **kwargs):
-        """При сохранении с is_primary=True все остальные лиги атомарно
-        снимаются с этого флага — гарантирует ровно одну главную лигу
-        сайта при любом пути создания (админка, миграция, скрипт), тот же
-        паттерн, что и Season.is_active (seasons/models.py)."""
+        """Главная лига только одна — у остальных флаг снимается."""
         super().save(*args, **kwargs)
         if self.is_primary:
             League.objects.filter(is_primary=True).exclude(pk=self.pk).update(is_primary=False)

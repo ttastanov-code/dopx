@@ -1,11 +1,8 @@
 # core/management/commands/setup_push_keys.py
-"""
-Ручная точка входа для генерации VAPID-ключей. core/apps.py::CoreConfig.
-ready() уже генерирует их автоматически на post_migrate, так что команда
-не обязательна для обычного деплоя — полезна для явного вывода в консоль
-и для --force (осознанный перевыпуск, например при утечке
-.vapid/private_key.pem). --force ломает все существующие push-подписки,
-поэтому не делается автоматически сигналом.
+"""manage.py setup_push_keys [--force]
+
+Генерация VAPID-ключей вручную. Обычно создаются автоматически на post_migrate.
+--force ломает существующие push-подписки.
 """
 from __future__ import annotations
 
@@ -43,10 +40,7 @@ class Command(BaseCommand):
             ))
             return
 
-        # generate_and_persist_vapid_keys() возвращает (raw base64url
-        # приватный ключ, application server key) — первое значение НЕ
-        # выводим в консоль (это секрет, а не путь, см. БАГ в
-        # core/services/vapid.py::generate_and_persist_vapid_keys).
+        # Приватный ключ в консоль не выводим.
         generate_and_persist_vapid_keys()
 
         self.stdout.write(self.style.SUCCESS(

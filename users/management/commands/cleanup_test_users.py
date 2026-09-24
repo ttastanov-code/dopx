@@ -1,51 +1,9 @@
 # users/management/commands/cleanup_test_users.py
-"""
-manage.py cleanup_test_users [--apply] [--prefix test_user] [--domain test.dopx.kz]
+"""manage.py cleanup_test_users [--apply] [--prefix test_user] [--domain test.dopx.kz]
 
-Точечная чистка тестовых аккаунтов и их данных ПОСЛЕ раунда тестирования
-(нагрузочного или ручного) — без полного flush всей БД (продуктовый запрос
-2026-08-22: "загнать тестовых пользователей, сделать тестовые голосования,
-а по завершению тестов очистить БД от тестовых голосов и пользователей, не
-чистя всё"). Раньше эта команда удаляла ВСЕХ non-staff/non-superuser
-пользователей без разбора — это ломало реальные аккаунты, если к моменту
-чистки на сайте уже завелись настоящие первые пользователи. Теперь критерий
-сужен до опознаваемых тестовых аккаунтов.
-
-Критерий "тестовый" — совпадение ЛЮБОГО из условий:
-  · username начинается с --prefix (по умолчанию 'test_user' — тот же
-    префикс, что create_test_users.py и create_test_evaluations.py
-    используют при создании: 'test_user_...')
-  · email заканчивается на @--domain (по умолчанию 'test.dopx.kz' —
-    домен из create_test_users.py; create_test_evaluations.py по
-    привычке иногда сажает на @test.com, поэтому email-фильтр смотрит
-    на любой домен, начинающийся с 'test.')
-
-Staff/superuser никогда не попадают под удаление независимо от имени —
-доп. страховка на случай, если кто-то создаст staff-аккаунт с тестовым
-префиксом вручную.
-
-Удаление User каскадно чистит все связанные данные (PlayerEvaluation/
-MatchEvaluation/TeamEvaluation/CoachEvaluation/RefereeEvaluation/
-ContextEvaluation, UserBadge/UserXP, EvaluationSession, Follow,
-PushSubscription, Notification, Prediction — везде on_delete=CASCADE на
-пользователя, см. users/models.py, evaluations/models.py, notifications/
-models.py, predictions/models.py; исключение — AnalyticsEvent.user и
-dashboard.StaffAuditLog.user, там on_delete=SET_NULL, события/лог остаются
-анонимными записями, а не удаляются). Это и есть причина, по которой после
-чистки тестовых пользователей стоит запустить пересчёт агрегатов и «Сборной
-DOPX» вручную (dashboard → Парсер → «Сборная DOPX: пересчитать сейчас», или
-manage.py recalculate_aggregates для конкретных матчей) — иначе рейтинги
-будут отражать удалённые тестовые голоса ещё до следующего планового
-пересчёта.
-
-Без --apply — dry-run: только считает и печатает список, ничего не
-удаляет (тот же паттерн, что у clear_player_photos.py и
-backfill_player_positions.py).
-
-Полный flush всей БД (manage.py flush) остаётся отдельным, более тяжёлым
-инструментом для "почистить вообще всё перед боевым запуском" — эта
-команда для многократного цикла "насеяли тестовых → проверили → убрали
-только тестовое" без риска задеть реальные данные.
+Удаляет тестовые аккаунты: username с --prefix или email на test.* домене.
+staff/superuser не трогает. Связанные данные удаляются каскадом.
+После — пересчитать агрегаты и сборные. Без --apply — dry-run.
 """
 from __future__ import annotations
 

@@ -3,7 +3,7 @@
 {% block content %}
 {% include 'dashboard/_nav.html' %}
 
-<!-- === ЧТО ТАКОЕ ВИДЖЕТЫ === -->
+{# === ЧТО ТАКОЕ ВИДЖЕТЫ === #}
 <div class="card bg-base-100 border border-base-300 mb-4">
     <div class="card-body p-4">
         <h3 class="font-bold text-sm md:text-base mb-2 flex items-center gap-2">
@@ -18,7 +18,7 @@
 </div>
 
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
-    <!-- === ВИДЖЕТ ИГРОКА === -->
+    {# === ВИДЖЕТ ИГРОКА === #}
     <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4">
             <h3 class="font-bold text-sm md:text-base mb-1 flex items-center gap-2">
@@ -61,7 +61,7 @@
         </div>
     </div>
 
-    <!-- === ВИДЖЕТ КОМАНДЫ === -->
+    {# === ВИДЖЕТ КОМАНДЫ === #}
     <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4">
             <h3 class="font-bold text-sm md:text-base mb-1 flex items-center gap-2">
@@ -104,7 +104,7 @@
         </div>
     </div>
 
-    <!-- === ВИДЖЕТ ТУРНИРНОЙ ТАБЛИЦЫ === -->
+    {# === ВИДЖЕТ ТАБЛИЦЫ === #}
     <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4">
             <h3 class="font-bold text-sm md:text-base mb-1 flex items-center gap-2">
@@ -126,7 +126,7 @@
         </div>
     </div>
 
-    <!-- === ВИДЖЕТ СБОРНОЙ DOPX === -->
+    {# === ВИДЖЕТ СБОРНОЙ === #}
     <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4">
             <h3 class="font-bold text-sm md:text-base mb-1 flex items-center gap-2">
@@ -149,26 +149,14 @@
     </div>
 </div>
 
-<!-- === СТАТИСТИКА ВСТРАИВАНИЙ === -->
-<!-- Живое обновление — тот же паттерн, что и dashboard:data_health_partial
-     (hx-get каждые 20с, подменяет только этот блок). Раньше цифры и топ-N
-     считались один раз на загрузку страницы и не менялись без ручного
-     обновления — в отличие от остальных разделов дашборда. -->
+{# === СТАТИСТИКА ВСТРАИВАНИЙ === #}
+{# Обновление каждые 20 с. #}
 <div class="card bg-base-100 border border-base-300 mb-4">
     <div class="card-body p-4">
         <h3 class="font-bold text-sm md:text-base mb-3 flex items-center gap-2">
             <i class="ti ti-chart-bar text-primary"></i> Просмотры встроенных виджетов за 30 дней
         </h3>
-        {% comment %}
-        dashboard:widgets_stats_partial никогда не существовал как имя URL —
-        эта страница (widgets.html) нигде не рендерится ни одной view
-        (мертва, см. dashboard/urls.py: для неё вообще нет path()), функционал
-        полностью перенесён в единую страницу dashboard/ads.html + её
-        живое обновление dashboard:ads_stats_partial (dashboard/views.py::
-        ads_stats_partial → _ads_stats_content.html, надмножество того, что
-        показывал этот блок). Если эту страницу когда-нибудь подключат
-        обратно — {% url %} ниже не должен падать NoReverseMatch.
-        {% endcomment %}
+        {# Страница не подключена (функционал в ads.html); url не должен падать. #}
         <div id="widgets-stats-content" data-background-poll hx-get="{% url 'dashboard:ads_stats_partial' %}" hx-trigger="every 20s" hx-swap="innerHTML">
             {% include 'dashboard/_widgets_stats_content.html' %}
         </div>

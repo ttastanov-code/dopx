@@ -1,8 +1,8 @@
-<!-- templates/core/contacts.html -->
+{# Страница обратной связи. #}
 {% extends 'base.html' %}
 {% load static %}
 {% block content %}
-<!-- === ЗАГОЛОВОК === -->
+{# === ЗАГОЛОВОК === #}
 <div class="mb-6 md:mb-10 text-center max-w-3xl mx-auto px-2">
   <div class="w-16 h-16 md:w-20 md:h-20 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-3 md:mb-4">
     <i class="ti ti-message-circle text-3xl md:text-4xl text-primary"></i>
@@ -13,9 +13,9 @@
   </p>
 </div>
 
-<!-- === ДВЕ КОЛОНКИ === -->
+{# === ДВЕ КОЛОНКИ === #}
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-8 max-w-7xl mx-auto px-2 sm:px-0">
-  <!-- === ЛЕВАЯ КОЛОНКА (2/3): Форма === -->
+  {# === ЛЕВАЯ КОЛОНКА: форма === #}
   <div class="lg:col-span-2 space-y-4 md:space-y-6">
     <div class="card bg-base-100 border border-base-300 shadow-lg">
       <div class="card-body p-4 md:p-6">
@@ -24,12 +24,7 @@
           Написать сообщение
         </h2>
         
-        {% comment %}
-        Исходные значения — в data-атрибутах, не аргументами x-data(...).
-        Тот же класс бага, что "Дербии002Дэксперт" у tooltipTrigger (см.
-        core/templatetags/tooltip_tags.py): email с дефисом ловил бы порчу
-        через escapejs() внутри строкового литерала аргумента.
-        {% endcomment %}
+        {# Начальные значения — в data-атрибутах, не аргументами x-data. #}
         <form method="post"
               enctype="multipart/form-data"
               action="{% url 'core:contacts' %}"
@@ -54,45 +49,24 @@
           </div>
           {% endif %}
 
-          <!-- АНТИ-БОТ: honeypot-поле, невидимое человеку (визуально
-               скрыто и вынесено из потока табуляции), но доступное
-               примитивному боту, слепо заполняющему все input'ы формы.
-               Поле ОБЯЗАНО остаться пустым — см.
-               core/forms.py::ContactAntiBotForm.clean_website. -->
+          {# Антибот: honeypot, должно остаться пустым. #}
           <div style="position:absolute; left:-9999px; top:-9999px;" aria-hidden="true">
             <label for="id_website">Website</label>
             <input type="text" id="id_website" name="website" tabindex="-1" autocomplete="off">
           </div>
 
-          <!-- АНТИ-БОТ: time-trap — момент рендера формы, см.
-               core/forms.py::ContactAntiBotForm.clean_form_rendered_at.
-               Отправка формы быстрее нескольких секунд после рендера
-               физически невозможна для человека. -->
+          {# Антибот: time-trap. #}
           {{ antibot_form.form_rendered_at }}
 
-          <!-- Категория обращения -->
+          {# Категория #}
           <div class="form-control">
             <label class="label py-1 md:py-2">
               <span class="label-text font-medium text-sm md:text-base">Тема обращения <span class="text-error">*</span></span>
             </label>
-            <!-- ИСПРАВЛЕНО (2026-09-10, запрос пользователя: "убери эти
-                 эмодзи... сделай нормальные солидные премиум обозначения",
-                 затем уточнение: "я сказал сделать другое что-то премиум
-                 солидное ВМЕСТО эмодзи", т.е. просто убрать текст без
-                 замены было недостаточно): нативный <select><option>
-                 физически не умеет рисовать иконки внутри option — это
-                 ограничение браузера, не CSS/Tailwind. Поэтому это больше
-                 не <select>, а кастомный дропдаун на Alpine (тот же
-                 визуальный паттерн, что в components/_navbar.html —
-                 иконка Tabler в цветном скруглённом квадрате + подпись),
-                 с иконкой Tabler вместо эмодзи. Состояние/опции — в
-                 alpine-components.js::contactForm (categoryOptions,
-                 selectedCategory, selectCategory). Значения value=
-                 остались ТЕ ЖЕ, что и в CATEGORY_CHOICES модели (см.
-                 notifications/models.py::ContactSubmission) — меняется
-                 только визуал, не БД. Скрытый input ниже нужен, т.к. это
-                 больше не <select> — ContactsView.post() (core/views.py)
-                 читает category как обычное поле формы. -->
+            {% comment %}
+            Кастомный дропдаун с иконками (contactForm в alpine-components.js).
+            Значения — из CATEGORY_CHOICES, скрытый input отправляет category.
+            {% endcomment %}
             <input type="hidden" name="category" x-model="category">
             <div class="relative" @click.outside="categoryOpen = false" @keydown.escape.window="categoryOpen = false">
               <button
@@ -146,7 +120,7 @@
             </p>
           </div>
 
-          <!-- Тема -->
+          {# Тема #}
           <div class="form-control">
             <label class="label py-1 md:py-2">
               <span class="label-text font-medium text-sm md:text-base">Тема <span class="text-error">*</span></span>
@@ -158,7 +132,7 @@
             <input type="text" name="subject" x-model="subject" required minlength="5" maxlength="100" placeholder="Кратко опишите суть обращения" class="input input-bordered input-sm md:input-md w-full focus:input-primary" :disabled="submitting">
           </div>
 
-          <!-- Email для ответа -->
+          {# Email для ответа #}
           <div class="form-control">
             <label class="label py-1 md:py-2">
               <span class="label-text font-medium text-sm md:text-base">Email для ответа{% if not user.is_authenticated %} <span class="text-error">*</span>{% endif %}</span>
@@ -171,7 +145,7 @@
             {% endif %}
           </div>
 
-          <!-- Сообщение -->
+          {# Сообщение #}
           <div class="form-control">
             <label class="label py-1 md:py-2">
               <span class="label-text font-medium text-sm md:text-base">Сообщение <span class="text-error">*</span></span>
@@ -183,7 +157,7 @@
             <textarea name="message" x-model="message" required minlength="20" maxlength="2000" rows="5" class="textarea textarea-bordered textarea-sm md:textarea-md w-full focus:textarea-primary resize-none" placeholder="Опишите ваш вопрос подробно..." :disabled="submitting"></textarea>
           </div>
 
-          <!-- Прикрепить файл -->
+          {# Файл #}
           <div class="form-control">
             <label class="label py-1 md:py-2">
               <span class="label-text font-medium text-sm md:text-base">Прикрепить файл</span>
@@ -208,11 +182,7 @@
             </div>
           </div>
 
-          <!-- CAPTCHA: self-hosted (django-simple-captcha), картинка
-               рисуется Pillow'ом на сервере, без внешних API-ключей.
-               Клик по картинке обновляет её через встроенный AJAX-
-               эндпоинт пакета (captcha-refresh) — см. JS в конце
-               шаблона. Тот же паттерн, что и в templates/auth/register.html. -->
+          {# Капча (django-simple-captcha), клик обновляет картинку. #}
           <div class="form-control">
             <label for="id_captcha_1" class="label py-1 md:py-2">
               <span class="label-text font-medium text-sm md:text-base">Подтвердите, что вы не робот <span class="text-error">*</span></span>
@@ -226,7 +196,7 @@
             <p class="text-xs opacity-40 mt-1.5">Не видно текст? Кликните по картинке, чтобы обновить.</p>
           </div>
 
-          <!-- Согласие на обработку данных -->
+          {# Согласие на обработку данных #}
         <div class="form-control w-full">
         <div class="flex items-center gap-3 p-4 rounded-lg border border-base-300">
             <input type="checkbox" required class="checkbox checkbox-primary checkbox-md flex-shrink-0" :disabled="submitting">
@@ -237,7 +207,7 @@
         </div>
         </div>
 
-          <!-- Кнопка отправки -->
+          {# Отправка #}
           <div class="pt-2 md:pt-4">
             <button type="submit" class="btn btn-primary btn-md md:btn-lg w-full" :disabled="!canSubmit">
               <span x-show="!submitting" class="flex items-center justify-center gap-2"><i class="ti ti-send"></i> Отправить сообщение</span>
@@ -249,9 +219,9 @@
     </div>
   </div>
 
-  <!-- === ПРАВАЯ КОЛОНКА (1/3): Информация === -->
+  {# === ПРАВАЯ КОЛОНКА: информация === #}
   <div class="space-y-4 md:space-y-6">
-    <!-- Что дальше -->
+    {# Что дальше #}
     <div class="card bg-base-100 border border-base-300">
       <div class="card-body p-4 md:p-5">
         <h3 class="font-bold text-base md:text-lg mb-3 md:mb-4 flex items-center gap-2">
@@ -274,7 +244,7 @@
       </div>
     </div>
 
-    <!-- Статистика -->
+    {# Статистика #}
     <div class="card bg-base-100 border border-base-300">
       <div class="card-body p-4 md:p-5">
         <h3 class="font-bold text-base md:text-lg mb-3 md:mb-4 flex items-center gap-2">
@@ -289,8 +259,8 @@
       </div>
     </div>
 
-    <!-- Прямая почта -->
-    {% comment %}bg-gradient-to-br/from-primary — не работает в Tailwind v4 для daisyUI-цветов, см. комментарий в evaluations/complete.html{% endcomment %}
+    {# Почта #}
+    {# Градиент через inline style (Tailwind v4 не видит цвета daisyUI). #}
     <div class="card border border-primary/20" style="background-image: linear-gradient(to bottom right, color-mix(in oklab, var(--color-primary) 10%, transparent), color-mix(in oklab, var(--color-primary) 5%, transparent));">
       <div class="card-body p-4 md:p-5">
         <h3 class="font-bold text-base md:text-lg mb-2 md:mb-3 flex items-center gap-2">

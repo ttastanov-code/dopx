@@ -1,5 +1,5 @@
 # notifications/services.py
-"""Web Push: чистые функции, тестируемые отдельно от Celery-обвязки в tasks.py."""
+"""Web Push."""
 from __future__ import annotations
 
 import json
@@ -11,17 +11,8 @@ logger = logging.getLogger(__name__)
 
 
 def send_push_to_user(user, *, title: str, body: str, url: str = '/') -> int:
-    """
-    Отправляет Web Push ВСЕМ активным подпискам пользователя (телефон +
-    ноутбук и т.д. — см. докстринг `users.models.PushSubscription`).
-
-    Намеренно НЕ бросает исключение наружу при отсутствии VAPID-ключей или
-    при ошибке одной конкретной подписки — вызывающий код (`notifications/
-    tasks.py::notify_followers_match_activity`) уже создал основной канал
-    уведомления (in-app `Notification`), push — это ДОПОЛНИТЕЛЬНЫЙ канал,
-    его сбой не должен ронять всю задачу через retry.
-
-    Возвращает число успешно отправленных push (для логирования/метрик).
+    """Push на все подписки пользователя. Исключения наружу не бросает.
+    Возвращает число успешных отправок.
     """
     if not settings.VAPID_PRIVATE_KEY or not settings.VAPID_PUBLIC_KEY:
         logger.debug("send_push_to_user: VAPID-ключи не настроены, пропуск (see VAPID_PUBLIC_KEY в settings.py)")
@@ -58,10 +49,7 @@ def send_push_to_user(user, *, title: str, body: str, url: str = '/') -> int:
         except WebPushException as exc:
             status_code = getattr(exc.response, 'status_code', None)
             if status_code in (404, 410):
-                # 404/410 — push-сервис браузера подтверждает, что подписка
-                # больше не существует (пользователь снёс приложение/
-                # почистил данные браузера без явного unsubscribe на
-                # сайте) — чистим "мёртвую" запись, а не ретраим её вечно.
+                # 404/410 — подписка мертва, удаляем.
                 stale_ids.append(sub.id)
             else:
                 logger.warning(f"send_push_to_user: push failed for subscription {sub.id}: {exc}")

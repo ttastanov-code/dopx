@@ -15,7 +15,7 @@ from lineups.models import MatchLineupPlayer
 
 
 class ContextEvaluationForm(forms.ModelForm):
-    """Шаг 1: Контекст просмотра матча"""
+    """Шаг 1: контекст просмотра."""
     
     class Meta:
         model = ContextEvaluation
@@ -49,14 +49,7 @@ class ContextEvaluationForm(forms.ModelForm):
             self.fields['supported_team'].empty_label = 'Не болею ни за кого'
 
     def clean_supported_team(self):
-        """Queryset выше уже гарантирует это (ModelChoiceField сам отклонит
-        значение вне queryset) — вызов политики здесь избыточен СЕЙЧАС, но
-        это единственное поле во всём вайзарде, где ID сущности вообще
-        приходит от клиента напрямую (остальные формы — TeamEvaluationForm/
-        PlayerEvaluationForm/CoachEvaluationForm — генерируют поля по
-        реальным сущностям матча, подменить там нечего). Если queryset
-        когда-нибудь расширят по невнимательности — политика всё равно
-        поймает нарушение. См. docs/adr/0001-evaluation-policy-single-source-of-truth.md."""
+        """Проверка политики — на случай, если queryset когда-нибудь расширят."""
         team = self.cleaned_data.get('supported_team')
         if team is not None and self.match is not None:
             try:
@@ -66,17 +59,7 @@ class ContextEvaluationForm(forms.ModelForm):
         return team
 
     def clean(self):
-        """ИСПРАВЛЕНО (2026-09-11, прямая просьба пользователя — "был на
-        стадионе и только голы это как?"): "Голы" рассчитан на просмотр
-        нарезки/трансляции дома — на трибуне физически нельзя "посмотреть
-        только голы". Клиентская форма (templates/evaluations/context.html
-        + matchContextForm в static/js/alpine-components.js) прячет этот
-        вариант и сама сбрасывает его на "Полный", если человек включает
-        тумблер "Были на стадионе" уже после выбора "Голы" — здесь та же
-        подстраховка на случай отключённого JS или прямого POST мимо формы
-        (не ошибка валидации, тихая нормализация — то же поведение, что и
-        на клиенте, не хотим наказывать человека отказом в сохранении
-        оценки из-за формулировки вопроса)."""
+        """Стадион + «только голы» -> «полный матч» (тихая нормализация)."""
         cleaned_data = super().clean()
         if cleaned_data.get('attended_stadium') and cleaned_data.get('watched_type') == 'highlights':
             cleaned_data['watched_type'] = 'full'
@@ -84,16 +67,13 @@ class ContextEvaluationForm(forms.ModelForm):
 
 
 class TeamEvaluationForm(forms.Form):
-    """
-    Шаг 2: Оценка команд
-    Динамически создаёт поля для ОБЕИХ команд матча
-    """
+    """Шаг 2: оценка команд — поля для обеих команд."""
     def __init__(self, *args, **kwargs):
         self.match = kwargs.pop('match', None)
         super().__init__(*args, **kwargs)
         
         if self.match:
-            # Создаём поля для домашней команды
+            # Поля домашней команды
             home_prefix = f'team_{self.match.home_team.id}'
             self.fields[f'{home_prefix}_tactics'] = forms.IntegerField(
                 min_value=1, 
@@ -144,7 +124,7 @@ class TeamEvaluationForm(forms.Form):
                 })
             )
             
-            # Создаём поля для гостевой команды
+            # Поля гостевой команды
             away_prefix = f'team_{self.match.away_team.id}'
             self.fields[f'{away_prefix}_tactics'] = forms.IntegerField(
                 min_value=1, 
@@ -197,16 +177,13 @@ class TeamEvaluationForm(forms.Form):
 
 
 class PlayerEvaluationForm(forms.Form):
-    """
-    Шаг 3: Оценка игроков
-    Динамически создаёт поля для ВСЕХ игроков в составе
-    """
+    """Шаг 3: оценка игроков — поля для всех игроков состава."""
     def __init__(self, *args, **kwargs):
         self.match = kwargs.pop('match', None)
         super().__init__(*args, **kwargs)
         
         if self.match:
-            # Получаем игроков из состава
+            # Игроки из состава
             lineup_players = MatchLineupPlayer.objects.filter(
                 lineup__match=self.match
             ).select_related('player__team').order_by('is_starting', 'shirt_number')
@@ -215,7 +192,7 @@ class PlayerEvaluationForm(forms.Form):
                 player = lp.player
                 prefix = f'player_{player.id}'
                 
-                # Чекбокс для включения оценки игрока
+                # Чекбокс «оценить игрока»
                 self.fields[f'{prefix}_evaluate'] = forms.BooleanField(
                     required=False,
                     initial=False,
@@ -276,10 +253,7 @@ class PlayerEvaluationForm(forms.Form):
 
 
 class CoachEvaluationForm(forms.Form):
-    """
-    Шаг 4: Оценка тренеров
-    Динамически создаёт поля для ОБОИХ тренеров матча
-    """
+    """Шаг 4: оценка тренеров — поля для обоих тренеров."""
     def __init__(self, *args, **kwargs):
         self.match = kwargs.pop('match', None)
         super().__init__(*args, **kwargs)
@@ -348,7 +322,7 @@ class CoachEvaluationForm(forms.Form):
 
 
 class MatchEvaluationForm(forms.ModelForm):
-    """Шаг 6: Общая оценка матча"""
+    """Шаг 6: общая оценка матча."""
     
     class Meta:
         model = MatchEvaluation
@@ -385,7 +359,7 @@ class MatchEvaluationForm(forms.ModelForm):
 
 
 class RefereeEvaluationForm(forms.ModelForm):
-    """Шаг 5: Оценка судейства"""
+    """Шаг 5: оценка судейства."""
     
     class Meta:
         model = RefereeEvaluation

@@ -1,28 +1,8 @@
 # parsers/management/commands/list_latin_names.py
-"""
-Находит записи Referee/Coach/Player, чьё имя сейчас НЕ является чистой
-кириллицей (латиница целиком, либо смесь латиницы/кириллицы вроде
-"Марин Беланчић" — см. parsers/sportmonks/importers.py::_is_clean_cyrillic
-и разбор в чате с пользователем 2026-09-08).
+"""manage.py list_latin_names [--only referees|coaches|players]
 
-Судьи/тренеры почти всегда будут тут появляться (Sportmonks не переводит их
-имена — см. importers.py::get_or_create_referee/get_or_create_coach) —
-использовать вместе с parsers/sportmonks/name_translations.py +
-apply_cyrillic_names.py: если новый sportmonks_id появился здесь и его нет
-в name_translations.py — значит это НОВЫЙ судья/тренер, которого ещё не
-переводили, нужно добавить вручную.
-
-Игроки в норме почти все переведены (Sportmonks переводит игроков), но не
-все — свежие трансферы и часть иностранных имён (сербские/хорватские с
-диакритикой в "name", см. докстринг _resolve_cyrillic_name) могут повиснуть
-тут надолго, если сам источник так и не разберётся с переводом — это не
-баг, а видимость проблемы для ручной правки в админке.
-
-Использование:
-    python manage.py list_latin_names                 # все три типа
-    python manage.py list_latin_names --only referees
-    python manage.py list_latin_names --only coaches
-    python manage.py list_latin_names --only players
+Записи с именем не на чистой кириллице. Новых судей/тренеров отсюда добавлять
+в name_translations.py.
 """
 import re
 

@@ -20,16 +20,7 @@
 </div>
 
 {% if legendary_catalog %}
-{% comment %}
-ДОБАВЛЕНО (2026-09-01, продуктовый запрос "супер ультра" достижения —
-новый топ-уровень редкости "legendary", users/badges.py): выводятся
-отдельной витриной над обычной сеткой, они и есть та самая "витрина", ради
-которой их вводили. legendary_catalog/other_catalog собраны в
-users/views.py::BadgeCatalogView — так надёжнее и читаемее, чем считать
-"первый легендарный элемент" через forloop внутри вложенных {% for %}.
-Визуал (dopx-legendary-*) — static/css/badges.css, Tailwind-утилитами
-анимированную градиентную рамку не сделать.
-{% endcomment %}
+{# Легендарные бейджи — отдельной витриной сверху (legendary_catalog/other_catalog из вьюхи). #}
 <div class="mb-3 flex items-center gap-2">
     <i class="ti ti-crown text-lg" style="background: linear-gradient(135deg, #f59e0b, #a855f7); -webkit-background-clip: text; background-clip: text; color: transparent;"></i>
     <h2 class="font-bold text-lg" style="background: linear-gradient(135deg, #f59e0b, #a855f7); -webkit-background-clip: text; background-clip: text; color: transparent;">Легендарные</h2>
@@ -52,14 +43,7 @@ users/views.py::BadgeCatalogView — так надёжнее и читаемее
                 <p class="text-[10px] text-success mt-2">
                     <i class="ti ti-check"></i> Получено {{ badge.awarded_at|date:"d.m.Y" }}
                 </p>
-                {% comment %}
-                Кнопка "Поделиться" (продуктовый запрос 2026-09-01) — тот же
-                Web Share API + фолбэк на window.open, что уже используется в
-                templates/players/season_recap.html. У карточки достижения нет
-                отдельной HTML-страницы (в отличие от season_recap) — шерим
-                напрямую URL PNG-карточки (badge.share_url, см.
-                BadgeCatalogView.get_context_data), а не window.location.href.
-                {% endcomment %}
+                {# «Поделиться» — Web Share API на PNG-карточку (badge.share_url), fallback window.open. #}
                 <button type="button" class="btn btn-xs dopx-legendary-pill mt-2"
                         onclick="if(window.dopxTrack){dopxTrack('share_clicked', {channel: 'native', context: 'badge', badge_code: '{{ badge.code }}'})}; navigator.share ? navigator.share({title: 'Достижение «{{ badge.name }}» на DOPX', url: '{{ badge.share_url }}'}) : window.open('{{ badge.share_url }}', '_blank')">
                     <i class="ti ti-share"></i> Поделиться
@@ -108,7 +92,7 @@ users/views.py::BadgeCatalogView — так надёжнее и читаемее
                 <p class="text-[10px] text-success mt-2">
                     <i class="ti ti-check"></i> Получено {{ badge.awarded_at|date:"d.m.Y" }}
                 </p>
-                {% comment %}См. подробный комментарий у той же кнопки в legendary-секции выше.{% endcomment %}
+                {# См. кнопку в легендарной секции. #}
                 <button type="button" class="btn btn-xs btn-outline mt-2"
                         onclick="if(window.dopxTrack){dopxTrack('share_clicked', {channel: 'native', context: 'badge', badge_code: '{{ badge.code }}'})}; navigator.share ? navigator.share({title: 'Достижение «{{ badge.name }}» на DOPX', url: '{{ badge.share_url }}'}) : window.open('{{ badge.share_url }}', '_blank')">
                     <i class="ti ti-share"></i> Поделиться

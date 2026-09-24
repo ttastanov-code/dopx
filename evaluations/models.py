@@ -1,5 +1,5 @@
 # evaluations/models.py
-"""Модели вайзарда оценки матча. EvaluationSession.fill_duration_seconds — основа антифрод-сигнала "слишком быстрое заполнение"."""
+"""Модели вайзарда оценки матча."""
 from django.db import models
 from django.conf import settings
 from django.core.validators import MinValueValidator, MaxValueValidator
@@ -8,7 +8,7 @@ from django.utils.translation import gettext_lazy as _
 from core.models import BaseModel
 
 class ContextEvaluation(BaseModel):
-    """Контекст просмотра матча пользователем"""
+    """Контекст просмотра матча."""
     WATCHED_TYPE_CHOICES = [
         ('full', _('Полный матч')),
         ('highlights', _('Только голы')),
@@ -56,7 +56,7 @@ class ContextEvaluation(BaseModel):
 
 
 class TeamEvaluation(BaseModel):
-    """Оценка команды пользователем"""
+    """Оценка команды."""
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -97,7 +97,7 @@ class TeamEvaluation(BaseModel):
 
 
 class PlayerEvaluation(BaseModel):
-    """Оценка игрока пользователем"""
+    """Оценка игрока."""
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -154,7 +154,7 @@ class PlayerEvaluation(BaseModel):
 
 
 class CoachEvaluation(BaseModel):
-    """Оценка тренера пользователем"""
+    """Оценка тренера."""
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -195,24 +195,9 @@ class CoachEvaluation(BaseModel):
 
 
 class RefereeEvaluation(BaseModel):
-    """
-    Оценка судейства пользователем.
-
-    ВНИМАНИЕ (2026-09-23, честный аудит формул рейтингов — мелкая
-    несостыковка, найдена до того, как стала багом): `influence_score`
-    здесь — шкала 0-100, а `decision_quality` НИЖЕ, в этой же модели, —
-    шкала 1-10. `RefereeMatchAggregate.performance_score` (aggregates/
-    models.py) считает формулу из ОБЕИХ шкал разом:
-    `0.6*avg_decision_quality + 0.3*avg_fairness + 0.1*(10 - avg_influence/10)`
-    — `avg_influence` (0-100) делится на 10, явно нормализуясь к шкале
-    0-10 ПЕРЕД использованием вместе с остальными полями.
-    При любой будущей правке этой модели (новое поле, смена диапазона)
-    проверьте aggregates/tasks.py — формула перформанса ожидает именно
-    эти две разные шкалы, смешивать их напрямую без нормализации нельзя.
-    `fairness` в формуле — вообще из ДРУГОЙ модели (MatchEvaluation, тоже
-    1-10, см. её докстринг ниже) — та же причина: разные модели, разные
-    голосующие, разные шкалы, встречаются вместе только в конечной
-    формуле в aggregates/tasks.py.
+    """Оценка судейства.
+    influence_score — шкала 0-100, decision_quality — 1-10.
+    В формуле performance_score (aggregates/tasks.py) influence делится на 10.
     """
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -250,7 +235,7 @@ class RefereeEvaluation(BaseModel):
 
 
 class MatchEvaluation(BaseModel):
-    """Общая оценка матча пользователем"""
+    """Общая оценка матча."""
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -285,7 +270,7 @@ class MatchEvaluation(BaseModel):
 
 
 class EvaluationSession(BaseModel):
-    """Отслеживание прогресса оценки пользователя"""
+    """Прогресс оценки пользователя."""
     STATUS_CHOICES = [
         ('started', _('Начато')),
         ('in_progress', _('В процессе')),
@@ -293,20 +278,7 @@ class EvaluationSession(BaseModel):
         ('abandoned', _('Заброшено')),
     ]
 
-    # Режим "Быстро/Подробно" (2026-09-04, см.
-    # docs/adr/0006-quick-full-evaluation-mode.md) — НЕ отдельный функционал
-    # параллельно текущему вайзарду, а один и тот же визард с разной
-    # разметкой на шаге "Игроки" (в 'quick' изначально свёрнут весь состав,
-    # кроме стартовых игроков, плюс отдельный выбор "лучший/худший игрок
-    # матча") и другими виджетами на шагах "Тренеры"/"Судья"/"Оценка матча"
-    # (три крупные кнопки вместо отдельных шкал на каждый под-критерий).
-    #
-    # 2026-09-07 (docs/adr/0031-quick-mode-primary-flow.md): по аудиту
-    # default сменён с 'full' на 'quick' — быстрый режим теперь основной
-    # сценарий, "Подробно" остаётся опцией для вовлечённых пользователей.
-    # Миграция default'а не трогает уже сохранённые строки — влияет только
-    # на новые EvaluationSession и на случай, когда eval_mode не пришёл
-    # в POST на шаге 1.
+    # Режим «Быстро/Подробно» — один вайзард с разной разметкой шагов. По умолчанию 'quick'.
     MODE_CHOICES = [
         ('full', _('Подробно')),
         ('quick', _('Быстро')),
@@ -369,15 +341,7 @@ class EvaluationSession(BaseModel):
 
     @property
     def fill_duration_seconds(self) -> float | None:
-        """
-        Сколько секунд заняло прохождение вайзарда целиком (от `started_at`
-        до `completed_at`). `None`, если сессия ещё не завершена.
-
-        Используется как антифрод-сигнал: физически невозможно осмысленно
-        заполнить 6 шагов (контекст, команды, до 22+ игроков, тренеры, судья,
-        финал) за считаные секунды — см.
-        `evaluations/views.py::EvaluateMatchFinalView._flag_if_suspicious`.
-        """
+        """Длительность прохождения вайзарда в секундах (None — не завершён). Антифрод-сигнал."""
         if not self.completed_at:
             return None
         return (self.completed_at - self.started_at).total_seconds()

@@ -1,14 +1,6 @@
 # dashboard/admin_callback.py
-"""
-UNFOLD["DASHBOARD_CALLBACK"] (см. dopx/settings.py) — Unfold вызывает эту
-функцию при рендере /admin/ (главная страница) и передаёт результат в
-контекст шаблона. Переиспользуем те же агрегаты, что и /staff/dashboard/
-overview (dashboard/services.py) — одна и та же цифра "верификация email"
-не должна тихо разъезжаться между двумя разными способами её посчитать.
-
-Контракт Unfold: callback(request, context) -> dict (context с добавками).
-Намеренно НЕ бросаем исключения наружу — если что-то в агрегатах сломается,
-это не должно ронять /admin/ целиком (страница входа в систему буквально).
+"""UNFOLD["DASHBOARD_CALLBACK"]: данные для главной /admin/ из dashboard/services.py.
+Ошибки не пробрасываются — /admin/ не должен падать.
 """
 from __future__ import annotations
 
@@ -50,13 +42,12 @@ def dashboard_callback(request, context):
                 },
             ],
             "dopx_last_sync": health["last_run"],
-            # Графики (те же данные, что на /staff/dashboard/) — рендерятся
-            # Chart.js прямо в templates/admin/index.html через json_script.
+            # Графики для Chart.js в templates/admin/index.html.
             "dopx_dau": metrics["dau"],
             "dopx_wau": metrics["wau"],
             "dopx_registrations_by_day": metrics["registrations_by_day"],
             "dopx_evaluations_by_day": metrics["evaluations_by_day"],
-            # Контентные метрики (продуктовый апгрейд — "метрики по контенту").
+            # Контентные метрики.
             "dopx_top_matches": content["top_matches"],
             "dopx_top_players": content["top_players"],
             "dopx_rating_distribution": content["rating_distribution"],

@@ -1,42 +1,10 @@
 # dashboard/templatetags/dashboard_extras.py
-"""
-Шаблонные фильтры для раздела "Скрипты и команды" — в первую очередь
-format_command_output (2026-09-22, прямая просьба пользователя: "визуально
-не нравится... надо более красиво, понятно и читабельно" — сырой
-plain-text <pre> с выводом читать было тяжело).
+"""Фильтры для «Скриптов и команд»: разметка вывода команд.
 
-БАГ, КОТОРЫЙ ТУТ БЫЛ (2026-09-22, живой репорт пользователя — скопировал
-вывод diagnose_duplicate_players из браузера и вставил в чат, все
-key=value пары оказались склеены БЕЗ пробелов: "id=...sportmonks_id=...").
-Причина — по спецификации CSS Flexbox, текстовые узлы, состоящие ТОЛЬКО
-из пробельных символов, между прямыми детьми flex-контейнера при рендере
-полностью удаляются из дерева — визуально пробел между соседними
-<span>-бейджами держался только на CSS `gap`, а не на реальном пробельном
-символе, поэтому при выделении/копировании текста браузером пробела там
-физически не было. Фикс — разделители между элементами внутри
-`display:flex`-контейнеров теперь либо настоящий видимый символ (" · "),
-либо контейнер вообще не flex (обычный инлайновый поток, где пробелы
-сохраняются браузером как обычно).
-
-Разбирает несколько строго известных форматов (заголовки чанков
-verify_names_with_ai, строки кандидатов, строки-отчёты
-diagnose_duplicate_players/merge_duplicate_players) в раскрашенный HTML.
-
-2026-09-23, прямая просьба пользователя: "для каждого вида вывода на
-странице сделай максимально читабельным и красиво размеченным, где надо —
-подсветить/подчеркнуть/выделить". Специфичных regex'ов на ~20 команд не
-напасёшься — вместо этого используем разметку, которая УЖЕ есть в каждой
-команде: self.style.SUCCESS/WARNING/ERROR/NOTICE/MIGRATE_HEADING
-(dashboard/command_runner.py теперь зовёт call_command(..., force_color=
-True) — см. докстринг там же про то, почему это раньше терялось). ANSI
-SGR-коды (`\x1b[NNm`), которые из-за этого оказываются в run.stdout/
-run.stderr, разбираются функцией _strip_ansi ДО прогона через все regex'ы
-ниже — сами regex'ы матчат чистый текст, как и раньше, без изменений. Если
-строка была стилизована, но ни один специфичный формат её не узнал (это и
-есть "длинный хвост" из простых информационных строк большинства команд) —
-используем сохранённый ANSI-класс как есть, просто как ЦВЕТ текста
-(_render_line, самый конец). Для ЛЮБОГО совсем не стилизованного вывода —
-как раньше, моноширинным текстом без раскраски.
+Команды запускаются с force_color=True — по ANSI-цвету строки (SUCCESS/WARNING/ERROR)
+подбираем стиль. Отдельные известные форматы (verify_names_with_ai,
+diagnose/merge_duplicate_players) размечаются специально.
+Во flex-контейнерах разделители — видимый символ, иначе пробелы теряются при копировании.
 """
 from __future__ import annotations
 
@@ -52,11 +20,7 @@ register = template.Library()
 
 @register.filter
 def can_access_section(user, section_key: str) -> bool:
-    """{{ user|can_access_section:"matches" }} — используется в _nav.html,
-    чтобы не показывать вкладки разделов, к которым у текущего staff нет
-    доступа (dashboard/access.py::user_can_access_section — та же функция,
-    которую реально enforce'ит DashboardSectionAccessMiddleware; здесь она
-    только про то, что видно в меню, не про саму границу безопасности)."""
+    """{{ user|can_access_section:"matches" }} — скрывает недоступные вкладки в меню."""
     from ..access import user_can_access_section as _check
     return _check(user, section_key)
 
@@ -70,46 +34,34 @@ _LIMIT_HIT_RE = re.compile(r"^Достигнут --limit=.+$")
 _DRYRUN_RE = re.compile(r"^\[dry-run\] (.+)$")
 
 _GENERIC_HEADER_RE = re.compile(r"^=== (.+) ===$")
-# 2026-09-22, прямая просьба пользователя (diagnose_duplicate_players
-# нечитаем) — специальный разбор для "  id=<uuid> sportmonks_id=... "
-# строк: id — отдельная кнопка "скопировать" (клик → clipboard), не голый
-# текст (36-значный UUID глазами не читают и руками не копируют).
+# Строки «  id=<uuid> sportmonks_id=...» — id как кнопка копирования.
 _PLAYER_RECORD_RE = re.compile(
     r"^  id=([0-9a-fA-F-]{36}) sportmonks_id=(\S+) номер=(\S+) активен=(\S+) источник_фио=(\S+) создан=(\S+)$"
 )
-# "    тип=протоколы составов=8 событий=1 последний_матч=..." /
-# "    тип=вовлечённость оценок=264 агрегатов=8" — см. diagnose_duplicate_players.py.
+# Строки «тип=...» из diagnose_duplicate_players.
 _TYPED_STAT_RE = re.compile(r"^    тип=(\S+) (.+)$")
 _KV_LINE_RE = re.compile(r"^\s*(?:\S+=\S+\s*)+$")
 _KV_TOKEN_RE = re.compile(r"(\S+?)=(\S+)")
 
-# ANSI SGR-коды, которые реально встречаются в выводе Django management-
-# команд — только то, что генерирует django.utils.termcolors.PALETTES
-# (DEFAULT_PALETTE=dark): fg-цвет (30-37), опционально ";1" (bold). Код
-# строится в django/utils/termcolors.py::colorize как "<fg>[;1]" — тот же
-# порядок здесь. "0" — RESET, сбрасывает текущий стиль.
+# ANSI SGR-коды Django: цвет 30-37, опционально ;1 (bold), 0 — reset.
 _ANSI_RE = re.compile(r"\x1b\[([0-9;]*)m")
 _ANSI_CLASS = {
-    # SUCCESS (fg=green, bold)
+    # SUCCESS (green, bold)
     "32;1": "text-success font-semibold",
     "1;32": "text-success font-semibold",
-    # WARNING (fg=yellow, bold)
+    # WARNING (yellow, bold)
     "33;1": "text-warning font-semibold",
     "1;33": "text-warning font-semibold",
-    # ERROR (fg=red, bold)
+    # ERROR (red, bold)
     "31;1": "text-error font-semibold",
     "1;31": "text-error font-semibold",
-    # NOTICE (fg=red, без bold — используется реже ERROR, тот же цвет, но менее "кричащий")
+    # NOTICE (red)
     "31": "text-error",
-    # MIGRATE_HEADING (fg=cyan, bold) — у нас нет миграций в этих командах,
-    # но diagnose_nominations.py использует его как раздел-заголовок
-    # ("1. Реальные номинации...", "2. Проверка...") — своя обработка ниже
-    # (_render_line), не просто цвет текста.
+    # MIGRATE_HEADING (cyan, bold) — заголовок раздела.
     "36;1": "__heading__",
     "1;36": "__heading__",
     "36": "text-info",
-    # голый bold без цвета (MIGRATE_LABEL/SQL_TABLE/HTTP_INFO — в наших
-    # командах практически не встречается, но на всякий случай)
+    # bold без цвета
     "1": "font-semibold",
     "35;1": "text-secondary font-semibold",
     "1;35": "text-secondary font-semibold",
@@ -118,12 +70,7 @@ _ANSI_CLASS = {
 
 
 def _strip_ansi(line: str) -> tuple[str, str | None]:
-    """Убирает ANSI SGR-коды из строки, возвращает (чистый_текст, css_класс).
-    css_класс — None, если строка не была стилизована ни в какой цвет
-    (RESET-только код "0" не считается стилем). Django оборачивает СТИЛЕМ
-    ВСЮ строку целиком в self.style.X(text) — заходов с несколькими
-    цветами внутри одной строки в реальных командах проекта не бывает,
-    поэтому достаточно взять первый нетривиальный код."""
+    """Убирает ANSI-коды, возвращает (текст, css_класс). Класс None — строка без стиля."""
     codes = _ANSI_RE.findall(line)
     plain = _ANSI_RE.sub("", line)
     css_class = None
@@ -147,15 +94,13 @@ _STAT_TYPE_LABELS = {
 
 _ACTIVE_LABELS = {"True": ("Активен", "badge-success"), "False": ("Неактивен", "badge-ghost")}
 
-# Разделитель между элементами ВНУТРИ flex-контейнеров — видимый символ,
-# не голый пробел (см. докстринг модуля про баг с flexbox).
+# Видимый разделитель внутри flex.
 _DOT_SEP = mark_safe(' <span class="opacity-20">·</span> ')
 
 
 @register.filter
 def format_command_output(text: str):
-    """{{ run.stdout|format_command_output }} — используется в
-    _scripts_runs_table.html вместо голого {{ run.stdout }} внутри <pre>."""
+    """{{ run.stdout|format_command_output }}"""
     if not text:
         return ""
     parts = []
@@ -169,11 +114,7 @@ def format_command_output(text: str):
 
 def _render_line(line: str, ansi_class: str | None = None) -> str:
     if ansi_class == "__heading__":
-        # MIGRATE_HEADING — используется как раздел-заголовок вручную
-        # написанных диагностических отчётов (diagnose_nominations.py:
-        # "1. Реальные номинации...", "2. Проверка..."), тот же визуальный
-        # приём, что уже есть у _GENERIC_HEADER_RE ("=== X ===") ниже —
-        # разделитель, а не просто цветной текст.
+        # MIGRATE_HEADING — как заголовок раздела.
         return format_html('<div class="divider text-xs font-semibold text-info my-2">{}</div>', line)
 
     m = _CHUNK_RE.match(line)
@@ -258,16 +199,7 @@ def _render_line(line: str, ansi_class: str | None = None) -> str:
         except ValueError:
             valid_uuid = False
         active_label, active_badge = _ACTIVE_LABELS.get(active, (active, "badge-ghost"))
-        # 2026-09-23, прямая просьба пользователя ("видно только начало
-        # UUID, остальное спрятано под ...; но и не огромная кнопка") —
-        # ДВЕ проблемы разом: (1) "btn-2xs" не существующий в daisyUI класс
-        # (реальные размеры — xs/sm/md/lg), поэтому кнопка рендерилась
-        # ДЕФОЛТНЫМ (крупным) размером — вот и "огромная" при одной
-        # короткой видимой части id; (2) текст обрезался вручную до 8
-        # символов + "…". Фикс: настоящий btn-xs (минимальная реальная
-        # высота в daisyUI) + мелкий моноширинный шрифт — весь 36-значный
-        # UUID помещается на одну строку компактной кнопки, ничего не
-        # скрыто, копирование по клику — как раньше.
+        # btn-xs + моноширинный мелкий шрифт — UUID целиком.
         copy_button = (
             format_html(
                 '<button type="button" class="btn btn-outline btn-xs font-mono gap-1 text-[10px] leading-none" '
@@ -318,13 +250,7 @@ def _render_line(line: str, ansi_class: str | None = None) -> str:
                 " ml-4" if indent else "", badges,
             )
 
-    # Строка не подошла ни под один известный паттерн — но у большинства
-    # команд УЖЕ есть смысловая пометка через self.style.SUCCESS/WARNING/
-    # ERROR (см. докстринг модуля) — ansi_class несёт этот цвет, даже когда
-    # текст произвольный. Иконка — тот же визуальный язык, что и у
-    # "Готово:" (alert-success) выше, но в одну строку, не отдельным
-    # блоком: этих строк в выводе команд обычно много подряд (по одной на
-    # матч/сущность), полноразмерный alert на каждую был бы слишком тяжёлым.
+    # Неизвестный формат, но есть цвет — строка с иконкой.
     if ansi_class:
         icon = ""
         if "text-success" in ansi_class:
@@ -338,7 +264,5 @@ def _render_line(line: str, ansi_class: str | None = None) -> str:
             ansi_class, mark_safe(icon), line,
         )
 
-    # Обычная нестилизованная строка — моноширинным текстом, как раньше
-    # (обычный инлайновый поток, не flex — пробелы внутри сохраняются
-    # браузером сами по себе).
+    # Обычная строка без стиля.
     return format_html('<div class="text-xs font-mono py-0.5 whitespace-pre-wrap">{}</div>', line)

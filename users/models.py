@@ -1,14 +1,6 @@
 # users/models.py
-"""
-User.registration_ip/registration_user_agent — для сопоставления кластеров
-аккаунтов с одного IP (см. users/views.py::RegisterView). UserBadge.BADGE_TYPES
-строится из единого каталога users/badges.py; rarity/is_secret/description —
-properties поверх каталога, не колонки БД. UserXP — возрастающая (треугольная)
-кривая уровней, progress_percent считается от реальных границ текущего и
-следующего уровня, а не total_xp % 100. SuspiciousActivityFlag — очередь
-ручной модерации антифрод-сигналов поверх trust_score (см. users/admin.py).
-
-Требует `python manage.py makemigrations users` после применения.
+"""Модели пользователей: User, достижения, опыт, подписки, push-подписки,
+антифрод-флаги и калибруемые пороги.
 """
 from __future__ import annotations
 
@@ -26,29 +18,21 @@ from core.models import BaseModel
 from users.badges import BADGE_CATALOG, BADGE_TYPE_CHOICES, RARITY_ORDER, BadgeDefinition
 from users.kz_cities import KZ_CITY_CHOICES
 
-# Базовая "цена" уровня в XP. Кумулятивный порог для уровня N:
-#   cumulative_xp_for_level(N) = LEVEL_XP_BASE * N * (N - 1)
-# т.е. 2 уровень — 100 XP, 3 — 300, 4 — 600, 5 — 1000 и т.д. — растущий шаг.
+# Кумулятивный порог уровня N: LEVEL_XP_BASE * N * (N - 1)
+# (2 уровень — 100 XP, 3 — 300, 4 — 600, ...).
 LEVEL_XP_BASE = 50
 
 
 def cumulative_xp_for_level(level: int) -> int:
-    """Сколько суммарного XP нужно, чтобы ДОСТИЧЬ указанного уровня."""
+    """Сколько суммарного XP нужно для уровня."""
     if level <= 1:
         return 0
     return LEVEL_XP_BASE * level * (level - 1)
 
 
 def level_for_total_xp(total_xp: int) -> int:
-    """
-    Обратная функция к `cumulative_xp_for_level`: уровень по накопленному XP.
-
-    Решает квадратное уравнение `LEVEL_XP_BASE * n * (n-1) <= total_xp`
-    относительно `n` аналитически, а затем ПОДСТРАХОВЫВАЕТСЯ целочисленной
-    коррекцией на случай погрешности плавающей точки ровно на границе
-    уровня (`math.sqrt` от точного квадрата не всегда даёт ровно целое
-    число из-за IEEE 754) — без коррекции пользователь мог бы на одной
-    конкретной сумме XP видеть на 1 уровень меньше положенного.
+    """Уровень по накопленному XP. Аналитическое решение + целочисленная
+    коррекция от ошибок float на границе уровня.
     """
     if total_xp <= 0:
         return 1
@@ -67,26 +51,12 @@ class User(AbstractUser, BaseModel):
     email = models.EmailField(_("Email"), unique=True)
     avatar = models.ImageField(_("Аватар"), upload_to="avatars/", null=True, blank=True)
     bio = models.TextField(_("О себе"), blank=True)
-    # ИСПРАВЛЕНО (2026-09-23, продуктовый запрос после жалобы на
-    # leaderboard — "город у нас необязательное текстовое поле, можно
-    # убрать, либо доработать чтобы были реальные города всех
-    # пользователей"): было свободным текстом без вариантов — опечатки и
-    # разное написание одного города ("Алматы"/"алматы"/"Алма-Ата")
-    # засоряли выпадающий фильтр городов на leaderboard (users/views.py::
-    # UserLeaderboardView.available_cities). choices — см. users/
-    # kz_cities.py за полным списком и объяснением, почему "авто-
-    # актуализация" здесь означает ручное обновление одного файла-
-    # справочника, а не живую синхронизацию с госреестром (такого API не
-    # существует). blank=True на уровне поля ОСТАЁТСЯ (не переносим сюда
-    # required — это фильтруется формой регистрации, см.
-    # users/forms.py::RegisterForm, чтобы у уже существующих
-    # пользователей со старым свободным текстом в city ничего не
-    # сломалось на save()).
+    # Город — из справочника users/kz_cities.py. blank=True оставлен ради старых
+    # записей; обязателен только в форме регистрации.
     city = models.CharField(_("Город"), max_length=120, blank=True, choices=KZ_CITY_CHOICES)
     rating_power = models.FloatField(_("Сила рейтинга"), default=1.0)
     trust_score = models.FloatField(_("Оценка доверия"), default=1.0)
     is_verified = models.BooleanField(_("Верифицирован"), default=False)
-    # default=True — не ломает уже расшаренные ссылки на существующие профили.
     is_profile_public = models.BooleanField(
         _("Публичный профиль"), default=True,
         help_text=_("Если выключено — /u/<username>/ отдаёт 404 для всех, кроме вас самих"),
@@ -98,7 +68,7 @@ class User(AbstractUser, BaseModel):
         _("Дата создания токена"), auto_now_add=True
     )
 
-    # НОВОЕ: антифрод — см. пункт 1 в докстринге модуля.
+    # Для поиска кластеров аккаунтов с одного IP.
     registration_ip = models.GenericIPAddressField(
         _("IP при регистрации"), null=True, blank=True
     )
@@ -110,11 +80,8 @@ class User(AbstractUser, BaseModel):
 
     total_evaluations = models.IntegerField(_("Всего оценок"), default=0)
 
-    # Серия оценок считается по турам чемпионата, не по календарным дням.
-    # См. docs/adr/0022-streak-semantics-redesign.md.
+    # Серия оценок — по турам чемпионата. См. docs/adr/0022-streak-semantics-redesign.md.
     evaluation_streak = models.IntegerField(_("Серия оценок"), default=0)
-    # UUIDField, не IntegerField — Season.id UUID, не autoincrement integer.
-    # См. docs/adr/0022-streak-semantics-redesign.md, дополнение.
     last_evaluation_season_id = models.UUIDField(
         _("Сезон последней оценки"), null=True, blank=True
     )
@@ -122,9 +89,7 @@ class User(AbstractUser, BaseModel):
         _("Тур последней оценки"), null=True, blank=True
     )
 
-    # Серия угаданных исходов подряд, не дней активности — считается при
-    # завершении матча (final_result), не в момент ставки. См.
-    # docs/adr/0022-streak-semantics-redesign.md.
+    # Серия угаданных исходов подряд (считается после матча).
     prediction_streak = models.IntegerField(_("Серия угаданных прогнозов"), default=0)
 
     DEFAULT_NOTIFICATION_SETTINGS = {
@@ -133,17 +98,13 @@ class User(AbstractUser, BaseModel):
         "email_new_badge": True,
         "email_level_up": True,
         "email_system": True,
-        # НОВОЕ: см. notifications/tasks.py::send_notification_digest.
-        # Если True — badge/level_up/trust-письма собираются в периодический
-        # дайджест вместо мгновенной отправки на каждое событие.
+        # True — письма о бейджах/уровнях/системные собираются в дайджест.
         "email_digest_mode": True,
-        # НОВОЕ (2026-08-21) — 4 петли удержания, см.
-        # docs/BACKLOG.md и notifications/tasks.py:
-        "email_prediction_closing": True,  # loop 1: скоро закроется приём прогнозов на матч
-        "email_weekly_summary": True,       # loop 2: персональная сводка недели
-        "email_prediction_result": True,    # loop 3: ваш прогноз vs исход/сообщество
-        # НОВОЕ (2026-08-22): итоги «DOPX Лучшие тура» — письмо при
-        # автоматической финализации тура (round_squad/services.py).
+        # Петли удержания:
+        "email_prediction_closing": True,  # скоро закроется приём прогнозов
+        "email_weekly_summary": True,  # сводка недели
+        "email_prediction_result": True,  # результат прогноза
+        # итоги «Лучшие тура»
         "email_round_results": True,
     }
 
@@ -170,52 +131,33 @@ class User(AbstractUser, BaseModel):
         )
 
     def update_evaluation_stats(self, match) -> None:
-        """
-        Обновляет статистику оценок. Достижения проверяются отдельно.
+        """Обновляет счётчик оценок и серию по турам.
 
-        `match` — матч, который только что оценили (нужны его `season_id`/
-        `tour` для серии по турам, см. докстринг `evaluation_streak` выше).
-        Если у матча не проставлен `tour` (бывает у кубковых/переносимых
-        матчей, ещё не досинхронизированных с KFF) — серию НЕ трогаем
-        вообще (ни +1, ни сброс): нет надёжной единицы сравнения, а молча
-        обнулять серию из-за дыры в данных парсера было бы несправедливо
-        по отношению к пользователю.
+        Если у матча нет тура — серию не трогаем. Оценка более раннего тура,
+        чем уже засчитанный (пропущенный/перенесённый матч), серию не рвёт.
         """
         self.total_evaluations += 1
         tour = match.tour
         if tour is not None:
             same_season = self.last_evaluation_season_id == match.season_id
             if same_season and self.last_evaluation_tour == tour:
-                pass  # тот же тур — уже засчитан, серию не трогаем
+                pass  # тот же тур
             elif (
                 same_season
                 and self.last_evaluation_tour is not None
                 and tour == self.last_evaluation_tour + 1
             ):
-                self.evaluation_streak += 1  # следующий тур подряд в том же сезоне
+                self.evaluation_streak += 1  # следующий тур подряд
                 self.last_evaluation_tour = tour
             elif (
                 same_season
                 and self.last_evaluation_tour is not None
                 and tour < self.last_evaluation_tour
             ):
-                # 2026-09-23, фикс аудита: пользователь оценил тур МЕНЬШЕ
-                # уже засчитанного максимума — например, наверстал
-                # пропущенный или перенесённый матч из более раннего тура
-                # уже ПОСЛЕ того, как оценил более поздний. Раньше
-                # `last_evaluation_tour` перезаписывался этим меньшим
-                # значением всегда, из-за чего следующая оценка реально
-                # следующего по порядку тура (например, снова тур+1 от
-                # текущего максимума) считалась "разрывом" и сбрасывала
-                # серию — хотя последовательность туров у пользователя была
-                # почти непрерывной. `last_evaluation_tour` — это МАКСИМУМ
-                # оценённого тура, а не "последний по времени клика", поэтому
-                # ни серию, ни максимум тут трогать не нужно: тур уже входит
-                # в диапазон, +1 к серии он не даёт (не продолжение), но и
-                # не разрывает её.
+                # Тур раньше уже засчитанного максимума — серию не трогаем.
                 pass
             else:
-                self.evaluation_streak = 1  # разрыв, смена сезона или первая оценка
+                self.evaluation_streak = 1  # разрыв, новый сезон или первая оценка
                 self.last_evaluation_tour = tour
             self.last_evaluation_season_id = match.season_id
         self.save(update_fields=[
@@ -224,17 +166,8 @@ class User(AbstractUser, BaseModel):
         ])
 
     def update_prediction_stats(self, is_correct: bool) -> None:
-        """
-        Обновляет `prediction_streak` — ТЕКУЩУЮ беспрерывную серию УГАДАННЫХ
-        прогнозов 1X2 подряд (см. докстринг `prediction_streak` выше).
-
-        Вызывается ТОЛЬКО из `notifications/tasks.py::notify_prediction_results`,
-        когда у матча уже точно известен исход (`status='finished'`) — НЕ из
-        `predictions/views.py` в момент самой ставки, там `is_correct` ещё
-        не может быть определён. Матчи в этой задаче обрабатываются в
-        порядке `end_time` — важно для правильного порядка +1/сброса, если
-        у пользователя в одном прогоне сразу несколько свежезавершённых
-        матчей.
+        """Серия угаданных прогнозов подряд. Вызывается из notify_prediction_results
+        после завершения матча, по порядку end_time.
         """
         if is_correct:
             self.prediction_streak += 1
@@ -252,16 +185,7 @@ class User(AbstractUser, BaseModel):
         return "new", _("Новичок")
 
     def xp_multiplier(self) -> float:
-        """
-        Множитель начисляемого XP от `trust_score`, диапазон 0.8..1.2.
-
-        Прямая связь "чем точнее ваши оценки, тем быстрее растёт уровень" —
-        и дополнительный мягкий анти-фрод стимул: аккаунт с низким
-        trust_score (подозрение в накрутке/невнимательности) прокачивается
-        медленнее, даже если продолжает активно голосовать.
-        `trust_score` в проекте всегда в диапазоне [0.5, 2.0] (см. clamp в
-        `evaluations/views.py`), но на всякий случай клампим и здесь.
-        """
+        """Множитель XP от trust_score (0.8..1.2): точнее оценки — быстрее рост уровня."""
         clamped = min(max(self.trust_score, 0.5), 2.0)
         return round(0.8 + (clamped - 0.5) / 1.5 * 0.4, 3)
 
@@ -287,22 +211,9 @@ class UserBadge(BaseModel):
     badge_type = models.CharField(_("Тип достижения"), max_length=50, choices=BADGE_TYPES)
     awarded_at = models.DateTimeField(_("Дата получения"), auto_now_add=True)
 
-    # 2026-09-23, фикс аудита: часть достижений (STATUS_BADGE_TYPES в
-    # users/services.py — foresight/max_trust/stable_hand/accurate_analyst/
-    # bias_free) — это не разовая веха ("оценил 10 матчей", навсегда), а
-    # утверждение о ТЕКУЩЕМ качестве пользователя (высокий устойчивый
-    # trust_score, высокая точность прогнозов и т.п.). Раньше такие бейджи
-    # выдавались один раз и оставались в профиле навсегда, даже если
-    # показатель давно упал ниже порога — periodic-задача
-    # revalidate_status_badges_task (users/tasks.py) периодически
-    # перепроверяет условие ТОЛЬКО для этих 5 типов и помечает бейдж
-    # is_stale=True, если условие больше не выполняется (сам объект НЕ
-    # удаляется — это по-прежнему реальное историческое достижение,
-    # которое пользователь заслужил, просто больше не отражает текущее
-    # состояние). Если показатель восстановится — is_stale снова снимается
-    # автоматически, повторно бейдж не выдаётся (get_or_create и так не
-    # создал бы дубликат). Для остальных типов бейджей (разовые вехи) это
-    # поле всегда False и никогда не проверяется.
+    # Для статусных достижений (users/services.py::STATUS_BADGE_TYPES): если показатель
+    # упал ниже порога, бейдж остаётся, но помечается неактуальным. Переоценка —
+    # revalidate_status_badges_task (раз в месяц).
     is_stale = models.BooleanField(
         _("Утратил актуальность"), default=False,
         help_text=_("Только для статусных достижений — показатель упал ниже порога после получения бейджа."),
@@ -347,16 +258,7 @@ class UserBadge(BaseModel):
 
     @property
     def tooltip_text(self) -> str:
-        """
-        2026-09-23, фикс аудита: текст для {% tooltip_wrap %} в профиле —
-        вынесен сюда, а не собран прямо в шаблоне через {% if %}, потому
-        что tooltip_wrap — блочный тег (`parser.parse(("endtooltip_wrap",))`,
-        core/templatetags/tooltip_tags.py), который жадно поглощает все
-        токены до своего endtooltip_wrap; условная развилка МЕЖДУ двумя
-        разными открывающими {% tooltip_wrap %} внутри {% if %}/{% else %}
-        ломает парсинг шаблона (второй tooltip_wrap оказывается "внутри"
-        nodelist первого). Один тег — один вычисленный текст.
-        """
+        """Текст подсказки для бейджа (с пометкой, если он неактуален)."""
         name = self.get_badge_type_display()
         if self.is_stale:
             return f"{name} — временно неактуально: показатель опустился ниже порога"
@@ -364,7 +266,7 @@ class UserBadge(BaseModel):
 
 
 class UserXP(BaseModel):
-    """Опыт и рейтинг пользователя. Кривая уровней — см. `level_for_total_xp` выше."""
+    """Опыт и уровень пользователя."""
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="xp", verbose_name=_("Пользователь"))
     total_xp = models.IntegerField(_("Всего опыта"), default=0)
@@ -375,23 +277,10 @@ class UserXP(BaseModel):
         verbose_name_plural = _("Опыт пользователей")
 
     def add_xp(self, amount: int) -> dict:
-        """
-        Начисляет XP и пересчитывает уровень по возрастающей кривой.
+        """Начисляет XP и пересчитывает уровень. Под select_for_update —
+        параллельные начисления не теряются.
 
-        :param amount: количество XP к начислению (может быть уже умножено
-            на `User.xp_multiplier()` вызывающим кодом — см.
-            `evaluations/views.py`).
-
-        БАГ, КОТОРЫЙ ТУТ БЫЛ: read-modify-write без блокировки — `self.total_xp`
-        читался из уже полученного (возможно устаревшего) инстанса и сразу
-        сохранялся обратно. При двух параллельных начислениях одному и тому же
-        пользователю (например, два шага вайзарда, обработанных гонкой
-        воркеров) оба процесса стартовали с одинакового total_xp и оба
-        сохраняли свой результат — выигрывал тот, кто сохранил последним, а
-        второе начисление молча терялось. Теперь фактическое
-        чтение+изменение+запись всегда идёт под `select_for_update()` внутри
-        `transaction.atomic()` по актуальной строке из БД, а не по тому, что
-        было в `self` на момент вызова.
+        :param amount: XP (обычно уже умножен на xp_multiplier).
         """
         with transaction.atomic():
             locked = UserXP.objects.select_for_update().get(pk=self.pk)
@@ -407,9 +296,7 @@ class UserXP(BaseModel):
 
             locked.save(update_fields=["level", "total_xp", "updated_at"])
 
-        # Синхронизируем текущий (возможно, устаревший) инстанс с тем, что
-        # реально сохранено в БД — вызывающий код читает self.total_xp/self.level
-        # сразу после add_xp() без явного refresh_from_db() (см. users/tests.py).
+        # Синхронизируем инстанс с сохранённым в БД.
         self.total_xp = locked.total_xp
         self.level = locked.level
 
@@ -433,11 +320,7 @@ class UserXP(BaseModel):
 
     @property
     def progress_percent(self) -> int:
-        """
-        Прогресс внутри текущего уровня, 0..100 — от реальных границ
-        текущего/следующего уровня, не total_xp % 100 (это верно только
-        для фиксированного шага, а кривая уровней — возрастающая).
-        """
+        """Прогресс внутри текущего уровня, 0..100."""
         span = self.xp_for_next_level - self.xp_for_current_level
         if span <= 0:
             return 100
@@ -448,44 +331,11 @@ class UserXP(BaseModel):
 
 
 class SuspiciousActivityFlag(BaseModel):
-    """
-    Очередь сигналов возможной накрутки/бот-активности для ручной модерации.
-    По конкретному источнику (скорость заполнения вайзарда, IP-кластер и
-    т.д.) — непрерывный score и статус ручного разбора.
+    """Очередь антифрод-сигналов для модерации.
 
-    2026-08-23, anti-brigading: добавлен источник "vote_spike" (см.
-    aggregates/tasks.py::detect_vote_velocity_anomalies_task) — сигнал не
-    про КОНКРЕТНОГО пользователя, а про АНОМАЛИЮ У СУЩНОСТИ (игрок/
-    команда/тренер получили статистически выбивающийся всплеск
-    экстремальных оценок в коротком окне — сигнатура координированного
-    призыва в соцсетях/телеграм-чате, а не бот-фермы или предвзятого
-    индивида). Поэтому:
-    - `user` стал nullable — entity-level флаги не привязаны к одному
-      пользователю (наоборот, к МНОЖЕСТВУ голосовавших).
-    - Добавлен generic FK (content_type/object_id/content_object) на
-      сущность — Player/Team/Coach (используется content_type-агностично,
-      как в round_squad.RoundCandidate, тот же паттерн в проекте).
-
-    2026-08-23, источник "stats_divergence" (aggregates/tasks.py::
-    detect_rating_stats_divergence_task): единственный источник этого
-    флага, который сравнивает рейтинг сообщества не с самим собой
-    (остальными голосами/историей пользователя), а с ОБЪЕКТИВНЫМИ фактами
-    матча (matches.models.MatchTeamStatistics) — не зависит от голосов
-    DOPX вообще, поэтому его нельзя обмануть, просто договорившись ставить
-    "умеренные" оценки (см. VOTE_SPIKE/extreme_bias/градуированный штраф
-    веса в aggregates/services.py — все они так или иначе смотрят на сами
-    голоса). Как и vote_spike — сущность (Team), не пользователь.
-    2026-09-08: источник данных статистики сменился с KFF на Sportmonks
-    (docs/sportmonks-migration-plan.md) — MatchTeamStatistics осталась той
-    же моделью, менять тут нечего, кроме формулировки в SOURCE_CHOICES
-    ниже (была явно "...от KFF", больше не соответствует действительности).
-
-    2026-09-08, источник "player_stats_divergence" (aggregates/tasks.py::
-    detect_player_rating_stats_divergence_task) — тот же принцип, что у
-    "stats_divergence", но на уровне ИГРОКА и с другим объективным
-    сигналом (MatchPlayerStatistics + события матча вместо "доли
-    доминирования" — см. докстринг aggregates.models.PlayerRatingCorrection
-    про то, почему у игрока нет прямого аналога team dominance share).
+    Сигналы бывают про пользователя (fast_wizard, ip_cluster, extreme_bias) и
+    про сущность — игрока/команду/тренера/судью (vote_spike, *_stats_divergence);
+    у сущностных user пустой, а цель — в content_object.
     """
 
     SOURCE_CHOICES = [
@@ -504,8 +354,7 @@ class SuspiciousActivityFlag(BaseModel):
         ("dismissed", _("Отклонено — ложное срабатывание")),
     ]
 
-    # null=True — см. докстринг класса: entity-level флаги (vote_spike) не
-    # привязаны к одному пользователю.
+    # Пусто у сигналов про сущность.
     user = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
@@ -522,9 +371,7 @@ class SuspiciousActivityFlag(BaseModel):
         related_name="suspicious_activity_flags",
         verbose_name=_("Матч"),
     )
-    # Generic FK на сущность (Player/Team/Coach) — только для entity-level
-    # сигналов (vote_spike). Оба поля null=True/blank=True — user-level
-    # сигналы (fast_wizard/ip_cluster/extreme_bias) их не используют.
+    # Цель сигнала про сущность (игрок/команда/тренер/судья).
     content_type = models.ForeignKey(
         "contenttypes.ContentType",
         on_delete=models.CASCADE,
@@ -563,20 +410,8 @@ class SuspiciousActivityFlag(BaseModel):
         return f"{self.get_source_display()} — {subject} ({self.score:.2f})"
 
     def human_summary(self) -> dict:
-        """
-        Человеко-читаемое объяснение флага — раньше дашборд просто дампил
-        сырой `details` dict построчно (`pattern: underrated_despite_
-        dominance`, `window_matches: 8`...). Живой фидбэк пользователя
-        2026-08-24: "если посадить человека со стороны и сказать модерируй,
-        он ничего не поймёт". Возвращает {"explanation", "confirm_hint",
-        "dismiss_hint"} — специфично для source, потому что смысл и РЕАЛЬНЫЕ
-        последствия кнопок разные у разных сигналов: например, у
-        stats_divergence "Отклонить" в самом деле снимает автопоправку
-        рейтинга (users/admin.py::mark_dismissed), а у остальных источников
-        решение рейтинг напрямую не трогает — только копится в статистике
-        для еженедельной самокалибровки порогов (recalibrate_antifraud_
-        thresholds). Явно говорим об этом в hint'ах, а не оставляем
-        человека додумывать.
+        """Объяснение флага для модератора: {explanation, confirm_hint, dismiss_hint}
+        (для расхождений со статистикой — ещё what_happened/why/system_action/what_to_do).
         """
         d = self.details or {}
 
@@ -592,12 +427,6 @@ class SuspiciousActivityFlag(BaseModel):
             return self._divergence_summary(d, subject)
 
         if self.source == "extreme_bias":
-            # 2026-09-23, честный аудит формул рейтингов — раньше этот
-            # источник был объявлен в SOURCE_CHOICES, но нигде в коде не
-            # создавался (мёртвый выбор). Теперь aggregates/services.py::
-            # _maybe_flag_extreme_bias заводит флаг при заметном
-            # градуированном штрафе веса голоса за систематическую
-            # пристрастность — см. её докстринг и _graduated_bias_penalty.
             mean_diff = num(d.get("mean_diff"))
             considered = d.get("considered_matches", "?")
             penalty = d.get("weight_penalty")
@@ -617,8 +446,7 @@ class SuspiciousActivityFlag(BaseModel):
             }
 
         if self.source == "vote_spike" and d.get("compared_matches"):
-            # 2026-09-24: судья — сравнение не с соседями по матчу, а с
-            # другими недавними матчами лиги (aggregates/tasks.py::detect_referee_vote_spikes_task).
+            # Судья: сравнение с другими матчами лиги.
             explanation = (
                 f"Судейство «{subject}» в этом матче оценили {d.get('window_votes', '?')} человек, и "
                 f"{pct(d.get('extreme_ratio'))} из них поставили крайние оценки (1-2 или 9-10). Это заметно больше, "
@@ -676,11 +504,7 @@ class SuspiciousActivityFlag(BaseModel):
 
     @property
     def live_correction(self) -> float | None:
-        """ТЕКУЩАЯ авто-поправка сущности (из PlayerRatingCorrection/
-        TeamRatingCorrection), а не снимок из details на момент создания
-        флага. Именно её видит пользователь на странице игрока/команды —
-        раньше модератор видел −0.23 из старого снимка, а на профиле
-        висело +0.25 (жалоба 2026-09-23)."""
+        """Текущая авто-поправка сущности (та же, что на её странице), а не снимок из details."""
         if not self.object_id:
             return None
         from aggregates.models import PlayerRatingCorrection, TeamRatingCorrection
@@ -696,7 +520,7 @@ class SuspiciousActivityFlag(BaseModel):
 
     @property
     def score_label(self) -> str:
-        """Вместо непонятного "score 0,57" — словами."""
+        """Сила сигнала словами."""
         if self.score >= 0.7:
             return f"сильный сигнал ({self.score:.0%})"
         if self.score >= 0.4:
@@ -704,12 +528,8 @@ class SuspiciousActivityFlag(BaseModel):
         return f"слабый сигнал ({self.score:.0%})"
 
     def _divergence_summary(self, d: dict, subject: str) -> dict:
-        """
-        2026-09-23, жалоба пользователя: "все эти тексты нихуя непонятны —
-        что произошло, почему антифрод сработал, что делать дальше". Текст
-        разбит на 4 блока простым языком: что произошло / почему это
-        подозрительно / что система уже сделала (по ТЕКУЩЕЙ поправке, а не
-        по устаревшему снимку) / что делать модератору.
+        """Объяснение сигнала расхождения со статистикой в 4 блоках:
+        что произошло, почему подозрительно, что сделала система, что делать модератору.
         """
         is_player = self.source == "player_stats_divergence"
         pattern = d.get("pattern", "")
@@ -790,7 +610,7 @@ class SuspiciousActivityFlag(BaseModel):
         )
 
         if self.source == "coach_stats_divergence":
-            # 2026-09-24: тренер — оценивается против игры ЕГО команды, авто-поправки нет.
+            # Тренер: только флаг, без авто-поправки.
             if overrated:
                 what_happened = (
                     f"Последние {n} болельщики оценивали тренера {who} в среднем на {win_s} — выше, чем обычно "
@@ -832,17 +652,7 @@ class SuspiciousActivityFlag(BaseModel):
             "dismiss_hint": "сразу снимает авто-поправку и выключает проверку на 30 дней",
         }
 
-    # 2026-09-23, честный аудит формул рейтингов (прямая жалоба пользователя
-    # на сырой дамп деталей вида "pattern: underrated_despite_stats
-    # objective_z: 0,64 window_matches: 3..." под сворачивающимся блоком
-    # "Технические детали" в dashboard/antifraud.html): human_summary выше
-    # уже даёт связное объяснение на естественном языке, но само окно с
-    # ключами details ПОД ним всё равно дампилось как есть — понятно только
-    # тому, кто читал этот же код. Единый словарь меток по ВСЕМ ключам,
-    # которые когда-либо пишет любой источник (aggregates/tasks.py,
-    # users/tasks.py), чтобы технический блок был вспомогательным
-    # уточнением для модератора-эксперта, а не единственным источником
-    # смысла для рядового модератора.
+    # Понятные подписи для ключей details в блоке «Цифры и как считается».
     DETAIL_KEY_LABELS = {
         "pattern": "Что обнаружено",
         "objective_source": "По чему оценивали игру",
@@ -881,11 +691,7 @@ class SuspiciousActivityFlag(BaseModel):
 
     @property
     def readable_details(self) -> list[tuple[str, str]]:
-        """[(человеко-читаемая метка, отформатированное значение), ...] —
-        см. комментарий у DETAIL_KEY_LABELS выше. Неизвестный ключ (на
-        случай будущего детектора, для которого метку забыли завести)
-        показывается как есть, а не прячется — лучше некрасиво, чем молча
-        потерять информацию."""
+        """[(подпись, значение)] для details. Неизвестные ключи показываются как есть."""
         result = []
         for key, value in (self.details or {}).items():
             label = self.DETAIL_KEY_LABELS.get(key, key)
@@ -904,37 +710,11 @@ class SuspiciousActivityFlag(BaseModel):
 
 
 class AntiFraudThreshold(BaseModel):
-    """
-    Самокалибрующиеся пороги детекторов накрутки — 2026-08-23, продуктовый
-    запрос "пороги не должны быть высечены в коде навечно — тот, кто
-    прочитает исходники, получает готовую инструкцию, как оставаться
-    чуть ниже границы обнаружения". Хранит ТЕКУЩЕЕ действующее значение
-    порога; еженедельная задача `users.tasks.recalibrate_antifraud_thresholds`
-    подстраивает его на основе РЕАЛЬНЫХ решений модератора (доля
-    подтверждённых накруток против отклонённых как ложная тревога у
-    сигналов этого источника) — не наугад и не "просто чтобы двигалось",
-    а по фактической точности сигнала.
+    """Калибруемые пороги антифрод-детекторов.
 
-    Калибруется НЕ каждый порог в проекте: адаптация имеет смысл только
-    там, где есть земля под ногами — разобранные модератором флаги с
-    вердиктом confirmed/dismissed (`SuspiciousActivityFlag.status`). У
-    `vote_spike` и `ip_cluster` такая обратная связь есть.
-
-    ИСПРАВЛЕНО (2026-09-23, честный аудит формул рейтингов): до этой даты
-    у градуированного штрафа за предвзятость (`aggregates/services.py::
-    _graduated_bias_penalty`) обратной связи не было вообще — штраф
-    применялся молча, без единого следа в очереди модерации, значит и
-    калибровать было нечего. Теперь заметный штраф (см.
-    `EXTREME_BIAS_FLAG_THRESHOLD`) создаёт `SuspiciousActivityFlag(
-    source="extreme_bias")` — появилась земля под ногами, и ПОРОГ
-    ВИДИМОСТИ (с какого штрафа заводить флаг, не сами константы формулы
-    штрафа BIAS_FREE_DIFF/BIAS_MAX_DIFF) калибруется точно так же, как
-    vote_spike/ip_cluster (ключ `extreme_bias_flag_threshold`).
-
-    `min_value`/`max_value` — жёсткие границы, за которые калибровка не
-    может выйти, даже если решения модератора массово смещены (случайно
-    или намеренно): без них порог можно было бы медленно сдвинуть,
-    систематически подсовывая модератору пограничные случаи.
+    Еженедельная задача recalibrate_antifraud_thresholds двигает порог по доле
+    подтверждённых модератором сигналов источника. min_value/max_value —
+    жёсткие границы калибровки.
     """
 
     key = models.CharField(_("Ключ порога"), max_length=64, unique=True)
@@ -957,17 +737,8 @@ class AntiFraudThreshold(BaseModel):
 
 
 class Follow(BaseModel):
-    """
-    Продуктовый аудит, раздел 5b ("Follow-граф"): подписка пользователя на
-    игрока ИЛИ команду. Одна модель с двумя nullable FK (а не GenericForeignKey
-    или две отдельные модели PlayerFollow/TeamFollow) — компромисс,
-    оправданный тем, что в проекте больше нигде нет GenericForeignKey (не
-    хотим вводить новый паттерн ради одной фичи), а единый queryset
-    `user.follows.all()` нужен для страницы "На кого вы подписаны" без
-    UNION двух таблиц. Ровно одно из полей заполнено — гарантируется
-    `CheckConstraint` на уровне БД, а не только валидацией в форме/view,
-    чтобы прямая запись в БД (миграции данных, консоль) не могла создать
-    "подписку в никуда".
+    """Подписка пользователя на игрока или команду. Заполнено ровно одно поле —
+    гарантирует CheckConstraint.
     """
 
     user = models.ForeignKey(
@@ -995,10 +766,7 @@ class Follow(BaseModel):
                 condition=models.Q(team__isnull=False),
             ),
             models.CheckConstraint(
-                # `condition=`, не `check=` — kwarg `check` был удалён в
-                # Django 6.0 (deprecated с 5.1), этот проект на Django 6.0.3
-                # (см. заголовки существующих миграций "Generated by Django
-                # 6.0.3").
+                # condition=, а не check= (Django 6).
                 condition=(
                     models.Q(player__isnull=False, team__isnull=True)
                     | models.Q(player__isnull=True, team__isnull=False)
@@ -1007,9 +775,7 @@ class Follow(BaseModel):
             ),
         ]
         indexes = [
-            # Явное имя — та же причина, что у event_reaction_type_idx в
-            # events/models.py: миграции пишутся вручную без доступа к
-            # реальной БД, автогенерируемый Django-хеш здесь непредсказуем.
+            # Явное имя индекса — миграции пишутся вручную.
             models.Index(fields=['user'], name='follow_user_idx'),
         ]
 
@@ -1019,17 +785,8 @@ class Follow(BaseModel):
 
 
 class PushSubscription(BaseModel):
-    """
-    Продуктовый аудит, раздел 5c ("PWA + Web Push"): подписка браузера
-    пользователя на Web Push (Push API). `endpoint` — уникальный URL,
-    выданный push-сервисом браузера (FCM для Chrome, Mozilla push service
-    для Firefox и т.д.) — это и есть "адрес", на который сервер шлёт push
-    через `pywebpush` (см. `notifications/services.py::send_push_to_user`).
-
-    Один пользователь может иметь НЕСКОЛЬКО подписок одновременно (телефон
-    + ноутбук + другой браузер) — поэтому `user` НЕ уникален сам по себе,
-    уникален `endpoint` (одна и та же связка браузер+устройство физически
-    не может быть подписана дважды).
+    """Push-подписка браузера. У пользователя может быть несколько (разные устройства),
+    уникален endpoint.
     """
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='push_subscriptions',
@@ -1052,23 +809,7 @@ class PushSubscription(BaseModel):
 
     @property
     def friendly_label(self) -> str:
-        """
-        Человекочитаемое "Chrome · macOS" вместо сырого user_agent — для
-        страницы настроек уведомлений (2026-08-31, по запросу пользователя
-        после реального инцидента: подписка с Chrome на Mac молча висела в
-        БД, пользователь зашёл через Safari на том же Mac и не мог понять,
-        откуда взялось "устройство подключено" на странице настроек — это
-        было не багом статуса текущего браузера (тот и так проверяется
-        честно через PushManager.getSubscription(), см. докстринг в
-        notification_settings.html), а отсутствием видимости СПИСКА чужих
-        подписок: пользователь не мог посмотреть, что именно подписано, и
-        отключить конкретное устройство, не трогая своё текущее.
-
-        Ленивый импорт `user_agents` — та же тяжёлая либа с regex-базой
-        ua-parser, что уже используется в analytics/selectors.py::
-        _device_breakdown для трафика, тот же паттерн (не грузим на каждый
-        импорт users/models.py, если админка/дашборд её не смотрит).
-        """
+        """«Chrome · macOS» из user_agent — для списка устройств в настройках уведомлений."""
         if not self.user_agent:
             return 'Неизвестное устройство'
         try:

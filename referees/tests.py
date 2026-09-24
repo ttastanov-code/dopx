@@ -1,26 +1,5 @@
 # referees/tests.py
-"""
-Общий контекст — см. докстринг teams/tests.py. Здесь — referees/views.py.
-
-Особенности referees относительно teams/players/coaches:
-- Referee НЕ привязан к Team/TeamSeason — у судьи нет "своей команды"
-  (см. referees/models.py), поэтому у RefereeListView НЕТ сезонного
-  фильтра списка вообще (в отличие от TeamListView/PlayerListView/
-  CoachListView) — соответствующего теста здесь намеренно нет, это не
-  забытая фича, а отсутствующая по смыслу сущности.
-- RefereeListView.get_queryset честно признаёт в комментарии БАГ, КОТОРЫЙ
-  ТУТ БЫЛ: строка поиска рисовалась в шаблоне, но queryset её не читал —
-  поиск был чисто декоративным. Код уже подключён, регрессионный тест на
-  это — приоритет, чтобы будущая правка get_queryset не отключила поиск
-  повторно.
-- RefereeDetailView разделяет ФАКТ (total_matches — сколько матчей реально
-  отсудил, из Match.objects.filter(referee=referee)) и МНЕНИЕ
-  (total_evaluations — Sum(total_votes) по RefereeMatchAggregate). Гейт
-  видимости карточки "Средние оценки" в шаблоне — total_evaluations > 0,
-  а не MIN_VOTES_FOR_DISPLAY (в отличие от team_rating_widget/
-  player_rating_widget), поэтому тестируем именно эту, отличную от
-  команд/игроков, логику.
-"""
+"""Тесты referees/views.py: поиск, матчи (факт) vs оценки (мнение), сезонный фильтр."""
 from __future__ import annotations
 
 import uuid
@@ -39,8 +18,7 @@ from teams.models import Team
 
 
 class RefereeSearchKazakhHomographTests(TestCase):
-    """normalize_kz: "Гали" (русские буквы) должен находить судью "Ғали"
-    (казахская Ғ)."""
+    """«Гали» находит «Ғали»."""
 
     def test_russian_spelling_finds_kazakh_named_referee(self):
         referee = Referee.objects.create(first_name="Ғали", last_name="Өтегенов")
@@ -59,8 +37,7 @@ class RefereeSearchKazakhHomographTests(TestCase):
 
 
 class RefereeListSearchConnectedTests(TestCase):
-    """Регрессия на конкретный БАГ, КОТОРЫЙ ТУТ БЫЛ (см. докстринг модуля):
-    ?q= должен реально фильтровать queryset, а не быть декоративным полем."""
+    """?q= фильтрует список."""
 
     def test_search_excludes_non_matching_referees(self):
         target = Referee.objects.create(first_name="Асан", last_name="Асанов")
@@ -101,9 +78,7 @@ class RefereeMatchFixtureMixin:
 
 
 class RefereeDetailFactsVsOpinionsTests(RefereeMatchFixtureMixin, TestCase):
-    """total_matches (факт) и total_evaluations (мнение) — независимые
-    числа: отсуженный матч без единой оценки болельщиков должен считаться
-    в total_matches, но не создавать total_evaluations."""
+    """Матч без оценок — в total_matches, но не в total_evaluations."""
 
     def test_refereed_match_without_evaluations_counts_as_match_not_as_evaluation(self):
         response = self.client.get(reverse('referees:detail', args=[self.referee.id]))
@@ -113,9 +88,7 @@ class RefereeDetailFactsVsOpinionsTests(RefereeMatchFixtureMixin, TestCase):
 
 
 class RefereeDetailHasEvaluationsGateTests(RefereeMatchFixtureMixin, TestCase):
-    """Карточка "Средние оценки" в шаблоне гейтится stats.total_evaluations
-    > 0 (Sum(total_votes) по RefereeMatchAggregate), НЕ MIN_VOTES_FOR_DISPLAY
-    — отличается от гейта на виджетах team/player."""
+    """Карточка «Средние оценки» — при total_evaluations > 0."""
 
     def test_no_aggregate_gives_zero_evaluations(self):
         response = self.client.get(reverse('referees:detail', args=[self.referee.id]))
@@ -131,13 +104,7 @@ class RefereeDetailHasEvaluationsGateTests(RefereeMatchFixtureMixin, TestCase):
 
 
 class RefereeListVsDetailSeasonCountTests(TestCase):
-    """Регрессия (2026-09-11, жалоба пользователя: "на странице судья у
-    Нурзатбек Абдыкадырова в столбце матчей 0, а если открыть его страницу
-    то там 1"). Причина: RefereeListView считал total_matches ТОЛЬКО за
-    активный сезон (см. комментарий 2026-09-09 в get_queryset), а
-    RefereeDetailView — за всю историю разом. Для судьи, чей единственный
-    матч был в прошлом сезоне, список показывал 0, страница — 1. Оба места
-    теперь должны сходиться: 0 по умолчанию, 1 при ?season=all."""
+    """Список и страница судьи считают матчи одинаково: 0 по умолчанию, 1 при ?season=all."""
 
     def setUp(self):
         self.league = League.objects.create(name="КПЛ", country="Казахстан", is_primary=True)

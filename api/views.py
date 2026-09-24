@@ -1,15 +1,8 @@
 # api/views.py
-"""
-DRF ViewSets.
+"""DRF ViewSets.
 
-only() на всех ViewSet'ах явно перечисляет поля связанных моделей
-(`related__field`) — без этого Django дефердит колонки, полученные через
-select_related(), и сериалайзер бьёт по БД отдельным запросом на каждый
-объект (маскированный N+1, select_related() в коде при этом выглядит
-корректно). Write-эндпоинты используют IsAuthenticatedAndVerified
-(api/permissions.py), а не голый IsAuthenticated — иначе неверифицированный
-(в т.ч. не подтвердивший email) аккаунт может голосовать через API в обход
-гейта, которым html-визард (evaluations/views.py) прикрыт на уровне LoginView.
+.only() перечисляет и поля связанных моделей — иначе select_related не спасает от N+1.
+Write-эндпоинты — IsAuthenticatedAndVerified.
 """
 from __future__ import annotations
 
@@ -50,10 +43,7 @@ from .serializers import (
 
 logger = logging.getLogger(__name__)
 
-# Набор полей Match, необходимых MatchSerializer (используется как
-# `match_details` практически во всех сериалайзерах ниже). Вынесен в
-# константу, чтобы не рассинхронизировать .only() и MatchSerializer.fields
-# в будущем, если один из них поменяют, а про второй забудут.
+# Поля Match для MatchSerializer — держать в синхроне с .only().
 MATCH_DETAIL_ONLY_FIELDS = (
     "match__start_time",
     "match__voting_open_until",
@@ -75,7 +65,7 @@ class AggregateRateThrottle(AnonRateThrottle):
 
 
 class StandardUserRateThrottle(throttling.UserRateThrottle):
-    """Не называть UserRateThrottle — затирает одноимённый импорт из rest_framework.throttling."""
+    """Не называть UserRateThrottle — затрёт импорт из DRF."""
 
     rate = "100/hour"
 
@@ -125,17 +115,7 @@ class PlayerEvaluationViewSet(viewsets.ModelViewSet):
     throttle_classes = [EvaluationRateThrottle]
 
     def get_queryset(self):
-        # БАГ, КОТОРЫЙ ТУТ БЫЛ (найден тестами api.tests.PlayerEvaluationAPITests,
-        # 2026-08-28): select_related("user") тянул JOIN на users_user, но
-        # PlayerEvaluationSerializer (см. api/serializers.py) НЕ сериализует
-        # поле user вообще (сознательно — чтобы не утекал user_id/email других
-        # людей через публичный API). .only() ниже поэтому не перечислял ни
-        # одного user__* поля — а без них Django не может достроить JOIN,
-        # который сам же запросил select_related("user"), и падает с
-        # `Field PlayerEvaluation.user cannot be both deferred and traversed
-        # using select_related at the same time` на КАЖДОМ обращении к этому
-        # эндпоинту. Раз поле нигде не используется — просто убираем лишний
-        # JOIN, а не подгружаем ненужные данные о пользователе.
+        # Без select_related("user") — user не сериализуется, а с .only() JOIN падает.
         user = self.request.user
         return (
             PlayerEvaluation.objects.filter(user=user)
@@ -175,9 +155,7 @@ class PlayerEvaluationViewSet(viewsets.ModelViewSet):
 
         evaluations = (
             PlayerEvaluation.objects.filter(match_id=match_id)
-            # select_related("user") убран — та же причина, что в get_queryset()
-            # выше: поле не сериализуется, а без него в .only() JOIN не может
-            # быть достроен (см. докстринг там).
+            # Без select_related("user") — см. get_queryset().
             .select_related("player", *MATCH_DETAIL_SELECT_RELATED)
             .order_by("-contribution")
             .only(
@@ -227,14 +205,7 @@ class PlayerEvaluationViewSet(viewsets.ModelViewSet):
                 *MATCH_DETAIL_ONLY_FIELDS,
             )
         )
-        # БАГ, КОТОРЫЙ ТУТ БЫЛ (найден 2026-09-21, сквозной аудит): было
-        # `Count("total_votes")` — total_votes всегда НЕ NULL (default=0 на
-        # PlayerMatchAggregate), поэтому Count() считал число СТРОК агрегата
-        # (то же самое, что и matches_count ниже), а не сумму реальных
-        # голосов по всем матчам игрока. Тот же класс бага уже был найден и
-        # исправлен в players/views.py::PlayerDetailView (см. её комментарий
-        # "Sum, не Count — total_votes всегда не NULL...") — здесь, в
-        # публичном API-эндпоинте /api/.../analytics/, он остался.
+        # Sum, а не Count — нужна сумма голосов.
         summary_data = PlayerMatchAggregate.objects.filter(player_id=player_id).aggregate(
             total_votes=Sum("total_votes"),
             avg_performance=Avg("performance_score"),
@@ -427,7 +398,7 @@ class MatchEvaluationViewSet(viewsets.ModelViewSet):
 # MatchAggregateViewSet
 # ============================================================================
 class MatchAggregateViewSet(viewsets.ReadOnlyModelViewSet):
-    """ViewSet для агрегатов матча — с полным кэшированием."""
+    """Агрегаты матча с кэшированием."""
 
     queryset = MatchAggregate.objects.all()
     serializer_class = MatchAggregateSerializer
@@ -435,20 +406,7 @@ class MatchAggregateViewSet(viewsets.ReadOnlyModelViewSet):
     throttle_classes = [AggregateRateThrottle]
 
     def get_queryset(self):
-        """
-        Срез [:11] внутри Prefetch убран корректно предыдущим автором: слайсинг
-        queryset'а, переданного в `Prefetch(..., queryset=...)`, применяется
-        Django ГЛОБАЛЬНО (лимит на весь набор строк по всем матчам сразу), а
-        не "топ-11 на каждый матч", как ожидалось изначально — это либо
-        тихо возвращало неверные данные, либо (для part Django/DB backend
-        комбинаций) вовсе бросало исключение при попытке пагинации.
-
-        Дополнительно: убраны неиспользуемые JOIN'ы `match__league`,
-        `match__season`, `match__stadium` — `MatchAggregateSerializer` их не
-        сериализует (см. MatchSerializer.fields); добавлены недостающие
-        поля в `.only()` для `match__home_team__name` / `away_team__name`,
-        которые реально идут в ответ через `match_details`.
-        """
+        """Без среза внутри Prefetch — он применяется ко всему набору, а не к каждому матчу."""
         return (
             MatchAggregate.objects.select_related(*MATCH_DETAIL_SELECT_RELATED)
             .prefetch_related(
@@ -485,14 +443,7 @@ class MatchAggregateViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=["get"])
     def recent(self, request):
-        """
-        ПРИМЕЧАНИЕ по слайсингу и prefetch: `self.get_queryset()[:limit]`
-        — это срез ВНЕШНЕГО (корневого) queryset'а, а не queryset'а внутри
-        Prefetch. Django корректно применяет prefetch_related ПОСЛЕ того,
-        как основной запрос (с уже применённым LIMIT) выполнен — то есть
-        такой срез безопасен и не "роняет" prefetch-контекст, в отличие от
-        среза внутри самого Prefetch(queryset=...) (см. докстринг выше).
-        """
+        """Срез внешнего queryset безопасен для prefetch."""
         limit = int(request.query_params.get("limit", 10))
         cache_key = f"recent_match_aggregates_{limit}"
         cached_data = cache.get(cache_key)
@@ -514,17 +465,7 @@ class PlayerAggregateViewSet(viewsets.ReadOnlyModelViewSet):
     throttle_classes = [AggregateRateThrottle]
 
     def get_queryset(self):
-        # БАГ, КОТОРЫЙ ТУТ БЫЛ (найден тестами api.tests.AggregateViewSetsPublicAccessTests,
-        # 2026-08-28): select_related("player__team") тянул JOIN на teams_team
-        # через players_player, но PlayerMatchAggregateSerializer (см.
-        # api/serializers.py) вообще не сериализует команду игрока — только
-        # player_name/player_last_name. .only() ниже не перечислял ни одного
-        # player__team* поля, и Django не мог достроить JOIN, который сам же
-        # запросил select_related("player__team") — падение с `Field
-        # Player.team cannot be both deferred and traversed using
-        # select_related at the same time` на КАЖДОМ обращении к этому
-        # ПУБЛИЧНОМУ (AllowAny, встраивается на сторонние сайты как виджет)
-        # эндпоинту. Убран неиспользуемый JOIN.
+        # Без select_related("player__team") — команда не сериализуется.
         return (
             PlayerMatchAggregate.objects.select_related(
                 "player", *MATCH_DETAIL_SELECT_RELATED
@@ -585,8 +526,7 @@ class PlayerAggregateViewSet(viewsets.ReadOnlyModelViewSet):
 
         aggregates = (
             PlayerMatchAggregate.objects.filter(match__season_id=season_id)
-            # select_related("player__team") убран — та же причина, что в
-            # get_queryset() выше: команда игрока нигде не сериализуется.
+            # Без select_related("player__team").
             .select_related("player", *MATCH_DETAIL_SELECT_RELATED)
             .order_by("-performance_score")[:limit]
         )
@@ -605,10 +545,7 @@ class CoachAggregateViewSet(viewsets.ReadOnlyModelViewSet):
     throttle_classes = [AggregateRateThrottle]
 
     def get_queryset(self):
-        # БАГ, КОТОРЫЙ ТУТ БЫЛ: то же самое, что в PlayerAggregateViewSet
-        # выше — select_related("coach__team") тянул JOIN, которого нет в
-        # CoachMatchAggregateSerializer, и .only() не мог его закрыть.
-        # Публичный (AllowAny) эндпоинт падал на каждом обращении.
+        # Без select_related("coach__team") — команда не сериализуется.
         return (
             CoachMatchAggregate.objects.select_related(
                 "coach", *MATCH_DETAIL_SELECT_RELATED

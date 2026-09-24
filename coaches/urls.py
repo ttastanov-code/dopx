@@ -1,4 +1,5 @@
 # coaches/urls.py
+# Список и страница тренера.
 from django.urls import path
 from coaches.views import CoachListView, CoachDetailView
 

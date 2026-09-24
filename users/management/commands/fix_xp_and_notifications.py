@@ -14,7 +14,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         self.stdout.write('\n🔧 Исправление XP и уведомлений...\n')
 
-        # === 1. Создаём UserXP для всех пользователей ===
+        # === 1. UserXP для всех пользователей ===
         users_without_xp = User.objects.filter(xp__isnull=True)
         created_count = 0
         for user in users_without_xp:
@@ -23,34 +23,9 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS(f'✅ Создано {created_count} UserXP профилей'))
 
-        # === 2. Пересчитываем XP на основе оценок ===
-        # БАГ, КОТОРЫЙ ТУТ БЫЛ (найден 2026-09-21, сквозной аудит): ДВЕ
-        # отдельные проблемы в этом старом, ещё не приведённом к текущим
-        # конвенциям (нет --apply/dry-run, в отличие от ВСЕХ остальных
-        # management-команд проекта) скрипте.
-        #
-        # 1) `expected_xp = evaluation_count * 10` — грубая линейная
-        #    прикидка из ранней версии продукта. Реальная система начисления
-        #    (evaluations/views.py::_award_step_xp) с тех пор стала
-        #    многошаговой и взвешенной: XP_CONTEXT_STEP=2, XP_TEAMS_STEP=2,
-        #    XP_PLAYERS_STEP_MAX=3 (масштабируется по факту оценённых
-        #    игроков, не фиксировано), XP_COACHES_STEP=1, XP_REFEREE_STEP=1,
-        #    XP_FINAL_STEP=1 * user.xp_multiplier() (0.8..1.2 от trust_score
-        #    НА МОМЕНТ начисления). "10 XP за оценку" не совпадает с этой
-        #    формулой почти ни для одного реального пользователя — команда
-        #    систематически искажала бы total_xp, если её запустить.
-        # 2) `xp.level = (xp.total_xp // 100) + 1` — вообще другая формула
-        #    уровня, чем канонический `level_for_total_xp()` (users/models.py:
-        #    кумулятивный порог уровня N растёт как `LEVEL_XP_BASE*N*(N-1)`,
-        #    т.е. 2 ур.=100 XP, 3 ур.=300, 4 ур.=600 — НЕ линейно по 100).
-        #    Эта команда молча выставляла бы пользователям неверный уровень.
-        #
-        # Полностью реализовать историческую верную сумму XP здесь (заново
-        # проиграть каждый шаг вайзарда с trust_score на момент оценки)
-        # нецелесообразно — оставляем total_xp как есть, если он уже не
-        # меньше грубой оценки, но ЛЮБОЕ значение total_xp теперь конвертим
-        # в level через тот же канонический level_for_total_xp(), которым
-        # пользуется весь остальной сайт, а не через independent-формулу.
+        # === 2. XP и уровень ===
+        # Оценка XP грубая (10 за оценку) — total_xp только повышаем до неё.
+        # Уровень — через level_for_total_xp(), как на сайте.
         self.stdout.write('\n📊 Пересчёт XP на основе оценок...')
         for user in User.objects.all():
             xp, _ = UserXP.objects.get_or_create(user=user)
@@ -71,7 +46,7 @@ class Command(BaseCommand):
                     f'уровень {old_level} → {xp.level}'
                 )
         
-        # === 3. Создаём уведомления для достижений ===
+        # === 3. Уведомления о достижениях ===
         self.stdout.write('\n🔔 Создание уведомлений для достижений...')
         badges_without_notification = 0
         for badge in UserBadge.objects.all():

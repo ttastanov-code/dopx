@@ -1,58 +1,14 @@
 # core/management/commands/simulate_match_timing.py
-"""
-ТОЛЬКО для локального/staging тестирования — см. docs/BACKLOG.md, раздел
-"Как тестировать retention loops без реальных матчей" (2026-08-21).
-
-Реальные матчи приходят по расписанию активного источника — раз в несколько
-дней или неделю, и виджет прогнозов (predictions app), и все Celery-таски
-retention loops (notify_prediction_closing_soon, notify_prediction_results,
-send_weekly_summary — см. notifications/tasks.py) завязаны на РЕАЛЬНОЕ
-время (`Match.start_time`/`status`/`end_time`), поэтому без матча "прямо
-сейчас, на нужной стадии" их руками не потрогать.
-
-Эта команда НЕ создаёт синтетический матч с нуля (риск нарушить допущения
-аггрегатов/парсера про реальные team/league/season FK, на которые опираются
-многие queryset'ы по всему проекту) — она берёт УЖЕ существующий в БД матч
-(любого статуса) и двигает его по времени/статусу/счёту, выставляя
-`manual_override=True` (то же поле, что для матчей с перенесённой датой —
-см. докстринг у поля в matches/models.py), чтобы автосинк не перезаписал
-подделанные данные реальными на следующем цикле парсера. С 2026-09-08
-(cutover, ADR-0044) активный автосинк — Sportmonks (parsers/sportmonks/
-tasks.py::sportmonks_update_live/sportmonks_sync_season); KFF-эквивалент
-(parsers/tasks.py::update_match_statuses) снят с расписания, но остаётся
-рабочим rollback-путём — manual_override уважают ОБА импортёра одинаково,
-так что эта команда работает независимо от того, какой источник сейчас
-активен.
-
-После тестов подделанный матч стоит либо вернуть `--release`, либо (если
-это тестовая учебная запись, а не настоящий будущий матч из расписания) не
-трогать — очередной реальный прогон парсера всё равно не заденет его, пока
-manual_override не снят вручную.
-
-Первый аргумент принимает внутренний UUID (первичный ключ, обычно не виден
-пользователю) ЛИБО числовой внешний id — `external_id` (KFF-история) или
-`sportmonks_id` (матчи с 2026-09-08), оба видны в админке/
-`/staff/dashboard/parser/` — например `1053`.
+"""Только для локальной отладки retention-задач и виджета прогнозов.
+Двигает существующий матч по времени/статусу/счёту и ставит manual_override=True,
+чтобы автосинк не перезаписал. Id — UUID, external_id или sportmonks_id.
 
 Примеры:
-
-  # Не знаете id? Список последних матчей:
-  python manage.py simulate_match_timing
-
-  # Матч стартует через 50 минут — открывает окно прогноза (виджет на
-  # странице матча) и заодно окно "закрывается через час" для ручного
-  # запуска notify_prediction_closing_soon через /staff/dashboard/parser/:
+  python manage.py simulate_match_timing                     # последние матчи
   python manage.py simulate_match_timing <id> --status scheduled --start-in-minutes 50
-
-  # Матч только что завершился 2:1 — для notify_prediction_results:
   python manage.py simulate_match_timing <id> --status finished --home-score 2 --away-score 1
-
-  # Матч ещё далеко (за пределами PREDICTION_WINDOW_DAYS) — проверить
-  # сообщение "прогнозы откроются позже" в виджете:
   python manage.py simulate_match_timing <id> --status scheduled --start-in-minutes 20160
-
-  # Вернуть матч под управление автосинка после тестов:
-  python manage.py simulate_match_timing <id> --release
+  python manage.py simulate_match_timing <id> --release       # вернуть автосинку
 """
 from datetime import timedelta
 
@@ -101,15 +57,7 @@ class Command(BaseCommand):
             self._list_recent()
             return
 
-        # Принимает внутренний UUID (первичный ключ, скрыт от пользователя в
-        # обычном UI) или числовой внешний id — но у матча ДВА разных
-        # числовых id в зависимости от того, каким источником он был
-        # изначально создан: external_id (KFF-история) или sportmonks_id
-        # (матчи с 2026-09-08, cutover ADR-0044). Числовые ID у двух
-        # источников не пересекаются по значению лишь случайно, поэтому
-        # пробуем оба, а не только external_id, как раньше (до этой правки
-        # команда не находила матчи, созданные уже после переключения на
-        # Sportmonks, если вводили их sportmonks_id).
+        # UUID, external_id или sportmonks_id.
         import uuid as uuid_module
 
         try:
@@ -163,9 +111,7 @@ class Command(BaseCommand):
             ))
             return
 
-        # Иначе следующий прогон автосинка (sportmonks_update_live/
-        # sportmonks_sync_season — активный источник с 2026-09-08, ADR-0044)
-        # может тут же перезаписать подделанные данные реальными.
+        # Иначе автосинк перезапишет данные.
         match.manual_override = True
         update_fields.append('manual_override')
 

@@ -1,23 +1,7 @@
 # teams/management/commands/diagnose_team_roster.py
-"""
-manage.py diagnose_team_roster <название или id команды>
+"""manage.py diagnose_team_roster <название или id команды>
 
-ТОЛЬКО ЧТЕНИЕ, ничего не меняет. Создан 2026-09-10 по прямому запросу
-пользователя ("с хуя ли ничего не исправляется?" после того, как
-`fix_stale_player_teams --apply` отчитался "0 исправлено, 836 уже
-корректно") — это ожидаемый и ПРАВИЛЬНЫЙ результат, если last_match_at
-уже был выставлен раньше (например, обычным ходом импорта — get_or_create_
-player в parsers/sportmonks/importers.py проставляет last_match_at при
-КАЖДОМ импорте матча, не только этой командой), НЕ признак того, что фикс
-не сработал. Но проверить это на словах нельзя — нужно посмотреть на
-реальные данные.
-
-Печатает РОВНО ТУ ЖЕ логику, что teams/views.py::TeamDetailView использует
-для "текущего состава" (current_roster_ids/played_this_season_ids), но с
-разбивкой по каждому игроку и явной причиной "включён"/"исключён" — чтобы
-можно было увидеть напрямую в базе, а не гадать, сработал фикс или нет,
-и не зависеть от того, перезапущен ли gunicorn/celery с новым кодом
-(команда всегда читает АКТУАЛЬНЫЙ код на диске в момент запуска).
+Read-only: та же логика состава, что в TeamDetailView, с причиной включения/исключения по каждому игроку.
 """
 from __future__ import annotations
 
@@ -101,9 +85,7 @@ class Command(BaseCommand):
         for line in excluded:
             self.stdout.write(line)
 
-        # Последняя реальная запись MatchLineupPlayer на игрока, у которого
-        # is_active=True, но он всё равно исключён "по возрасту" — чтобы
-        # видно было, откуда взялась дата last_match_at, не поверив ей на слово.
+        # Последний матч игрока из составов — откуда взялся last_match_at.
         stale_active = [
             p for p in all_team_players
             if p.is_active and p.last_match_at is not None and p.last_match_at < cutoff

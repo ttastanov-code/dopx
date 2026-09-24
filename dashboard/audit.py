@@ -1,7 +1,5 @@
 # dashboard/audit.py
-"""Единая точка записи в StaffActionLog — используется ВЕЗДЕ вместо
-`StaffActionLog.objects.create()` напрямую (тот же принцип, что
-analytics.services.track_event для AnalyticsEvent)."""
+"""Запись в StaffActionLog — только через log_staff_action()."""
 from __future__ import annotations
 
 import logging
@@ -22,14 +20,7 @@ def log_staff_action(
     target: str = "",
     details: dict[str, Any] | None = None,
 ) -> None:
-    """Синхронная запись (не Celery) — экшены staff единичны и редки
-    (десятки в день, не тысячи в секунду как продуктовая аналитика), лишний
-    async-хоп через очередь тут не нужен и только замедлил бы обратную связь
-    в UI (staff должен видеть свой же экшен в аудит-логе сразу после клика).
-
-    НЕ бросаем исключения наружу — сбой записи аудита не должен блокировать
-    сам экшен (подтверждение флага/ресинк матча всё равно должны отработать).
-    """
+    """Синхронная запись. Исключения не пробрасываются — сбой аудита не блокирует действие."""
     try:
         StaffActionLog.objects.create(
             actor=request.user if request.user.is_authenticated else None,

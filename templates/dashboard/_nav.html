@@ -1,48 +1,8 @@
 {% load dashboard_extras %}
 {% comment %}
-templates/dashboard/_nav.html
-
-2026-09-23, СЕДЬМОЙ заход, раздел «Роли доступа» — каждая вкладка ниже
-теперь обёрнута в {% if user|can_access_section:"KEY" %} (dashboard/
-templatetags/dashboard_extras.py, dashboard/access.py) — сотрудник с
-ограниченными правами (StaffAccessGrant) просто не видит вкладки разделов,
-к которым у него нет доступа (реальная граница — DashboardSectionAccessMiddleware,
-это только про то, что показывает меню). У суперпользователей и у staff
-БЕЗ явно созданного StaffAccessGrant фильтр всегда пропускает — grandfather-
-правило, см. докстринг StaffAccessGrant в dashboard/models.py.
-Навигация staff-дашборда — горизонтальная панель вкладок (НЕ сайдбар).
-
-2026-09-22, ТРЕТИЙ заход. Второй (фиксированный левый сайдбар) сломал
-страницу дважды: (1) второй "логотип"-блок прямо под настоящим логотипом
-сайта — визуально два бренда подряд; (2) сайдбар был position:fixed с
-height:100vh, то есть висел на всю высоту ЭКРАНА независимо от прокрутки
-и НАКРЫВАЛ СОБОЙ футер сайта (components/_footer.html), когда контент
-страницы заканчивался раньше вьюпорта. Прямая просьба пользователя после
-этого: "делаешь нормальное меню - не сайдбар". Обратно к горизонтальной
-панели, но не к плоскому ряду пилюль (первый неудачный заход) — теперь
-это единая лента вкладок с подчёркиванием активной (как вкладки GitHub/
-Linear), группы разделены тонкой вертикальной чертой БЕЗ отдельных
-"островков"-контейнеров, никакого второго бренд-блока — только мелкая
-серая подпись "Панель сотрудника" слева, не соперничающая с логотипом
-DOPX в шапке сайта. Полностью в потоке документа (НЕ position:fixed) —
-структурно не может наехать на футер, что бы ни было ниже по странице.
-
-2026-09-23, ШЕСТОЙ заход, прямая просьба пользователя: заход №5 (всегда
-горизонтальный скролл, без видимого скроллбара) пользователь сам оценил
-как "классно работает на тачпадах/тачскринах, но с мышкой нет" — мышью
-нет ни свайпа, ни драга, ни видимого скроллбара, колесо мыши крутит
-страницу вертикально, а не ленту вкладок горизонтально, поэтому пункты за
-кромкой экрана мышью физически недостижимы. Пользователь выбрал вариант
-"компактная сетка в 2 ряда" явно (см. AskUserQuestion). ВАЖНО: не переделываем
-то, что уже хвалили — на узких экранах (тач/трекпад) поведение остаётся
-ТЕМ ЖЕ самым скроллом в одну ленту, что и было (см. .dopx-tabs-row { display:
-contents } в мобильной ветке ниже — обёртки строк "растворяются", все
-пункты снова текут в одну scroll-ленту). Двухрядная сетка включается
-ТОЛЬКО от 860px (десктоп/мышь), через отдельный .dopx-tabs-row {display:flex}
-на каждую из двух строк — без flex-wrap и без auto-flow угадывания:
-разбивка на 2 ряда сделана вручную по смысловым группам (ряд 1 — обзор и
-качество данных, ряд 2 — защита/инструменты), поэтому ничего никогда не
-"сиротеет" и не переносится непредсказуемо, как было в заходе №4.
+Меню staff-дашборда: горизонтальные вкладки.
+От 860px — два ряда, на узких экранах — одна прокручиваемая лента.
+Вкладки фильтруются по user|can_access_section (реальная проверка — в middleware).
 {% endcomment %}
 
 {% if page_title %}
@@ -57,12 +17,7 @@ contents } в мобильной ветке ниже — обёртки стро
         <div class="dopx-tabs-row">
             {% if user|can_access_section:"overview" %}<a href="{% url 'dashboard:overview' %}" class="dopx-tab {% if active_tab == 'overview' %}dopx-tab--active{% endif %}"><i class="ti ti-chart-line"></i>Обзор</a>{% endif %}
             {% if user|can_access_section:"traffic" %}<a href="{% url 'dashboard:traffic' %}" class="dopx-tab {% if active_tab == 'traffic' %}dopx-tab--active{% endif %}"><i class="ti ti-world"></i>Трафик</a>{% endif %}
-            {% comment %}
-            2026-09-23: «Матчи» — новый раздел (dashboard/views.py::matches_list/
-            match_detail), ручная правка счёта/статуса/даты + пересчёт агрегатов
-            без Django admin. Добавлена в ряд 1 (не ряд 2) — это core-раздел
-            управления данными, логичнее рядом с Обзор/Трафик, чем с Аудитом.
-            {% endcomment %}
+            {# «Матчи» #}
             {% if user|can_access_section:"matches" %}<a href="{% url 'dashboard:matches_list' %}" class="dopx-tab {% if active_tab == 'matches' %}dopx-tab--active{% endif %}"><i class="ti ti-ball-football"></i>Матчи</a>{% endif %}
 
             <span class="dopx-tabs__divider"></span>
@@ -70,20 +25,11 @@ contents } в мобильной ветке ниже — обёртки стро
             {% if user|can_access_section:"data_trust" %}<a href="{% url 'dashboard:data_trust' %}" class="dopx-tab {% if active_tab == 'data_trust' %}dopx-tab--active{% endif %}"><i class="ti ti-shield-check"></i>Доверие к данным</a>{% endif %}
             {% if user|can_access_section:"duplicate_players" %}<a href="{% url 'dashboard:duplicate_players_review' %}" class="dopx-tab {% if active_tab == 'duplicate_players' %}dopx-tab--active{% endif %}"><i class="ti ti-users-group"></i>Дубли игроков</a>{% endif %}
             {% if user|can_access_section:"names_review" %}<a href="{% url 'dashboard:names_review' %}" class="dopx-tab {% if active_tab == 'names_review' %}dopx-tab--active{% endif %}"><i class="ti ti-sparkles"></i>Проверка ФИО</a>{% endif %}
-            {% comment %}
-            2026-09-23: «Оценки» — модерация EvaluationSession (dashboard/
-            views.py::evaluation_sessions_list) — та же смысловая группа
-            "разбор очередей/сигналов качества", что «Дубли игроков» и
-            «Проверка ФИО» рядом.
-            {% endcomment %}
+            {# «Оценки» #}
             {% if user|can_access_section:"evaluation_sessions" %}<a href="{% url 'dashboard:evaluation_sessions_list' %}" class="dopx-tab {% if active_tab == 'evaluation_sessions' %}dopx-tab--active{% endif %}"><i class="ti ti-clipboard-check"></i>Оценки</a>{% endif %}
         </div>
         <div class="dopx-tabs-row">
-            {% comment %}
-            2026-09-23: «Пользователи» — поиск/карточка/модерация конкретного
-            человека (dashboard/views.py::users_list/user_detail). Рядом с
-            Антифрод — тот же смысловой блок "решения про пользователей".
-            {% endcomment %}
+            {# «Пользователи» #}
             {% if user|can_access_section:"users" %}<a href="{% url 'dashboard:users_list' %}" class="dopx-tab {% if active_tab == 'users' %}dopx-tab--active{% endif %}"><i class="ti ti-users"></i>Пользователи</a>{% endif %}
             {% if user|can_access_section:"antifraud" %}<a href="{% url 'dashboard:antifraud' %}" class="dopx-tab {% if active_tab == 'antifraud' %}dopx-tab--active{% endif %}"><i class="ti ti-shield-exclamation"></i>Антифрод</a>{% endif %}
             {% if user|can_access_section:"parser_tools" %}<a href="{% url 'dashboard:parser_tools' %}" class="dopx-tab {% if active_tab == 'parser_tools' %}dopx-tab--active{% endif %}"><i class="ti ti-server-cog"></i>Парсер</a>{% endif %}
@@ -92,28 +38,14 @@ contents } в мобильной ветке ниже — обёртки стро
             <span class="dopx-tabs__divider"></span>
             {% if user|can_access_section:"audit" %}<a href="{% url 'dashboard:audit_log' %}" class="dopx-tab {% if active_tab == 'audit' %}dopx-tab--active{% endif %}"><i class="ti ti-history"></i>Аудит</a>{% endif %}
             {% if user|can_access_section:"announcements" %}<a href="{% url 'dashboard:announcements' %}" class="dopx-tab {% if active_tab == 'announcements' %}dopx-tab--active{% endif %}"><i class="ti ti-speakerphone"></i>Объявления</a>{% endif %}
-            {% comment %}
-            2026-09-23: «Настройки» — раздел «Настройки платформы»
-            (core.models.PlatformSetting) — рантайм-конфиг без деплоя.
-            {% endcomment %}
+            {# «Настройки» #}
             {% if user|can_access_section:"platform_settings" %}<a href="{% url 'dashboard:platform_settings' %}" class="dopx-tab {% if active_tab == 'platform_settings' %}dopx-tab--active{% endif %}"><i class="ti ti-adjustments"></i>Настройки</a>{% endif %}
-            {% comment %}
-            2026-09-23: «Статус» — сводка инфраструктуры (Redis/Celery/БД,
-            расписание Celery Beat, хвост логов ошибок, версии окружения),
-            dashboard/views.py::system_status. Рядом с Настройками — тот же
-            смысловой блок "платформа как система", не про конкретные
-            сущности (матчи/пользователей).
-            {% endcomment %}
+            {# «Статус» #}
             {% if user|can_access_section:"system_status" %}<a href="{% url 'dashboard:system_status' %}" class="dopx-tab {% if active_tab == 'system_status' %}dopx-tab--active{% endif %}"><i class="ti ti-heart-rate-monitor"></i>Статус</a>{% endif %}
 
             <span class="dopx-tabs__spacer"></span>
             {% if user|can_access_section:"scripts" %}<a href="{% url 'dashboard:scripts' %}" class="dopx-tab dopx-tab--warn {% if active_tab == 'scripts' %}dopx-tab--active-warn{% endif %}"><i class="ti ti-terminal-2"></i>Скрипты</a>{% endif %}
-            {% comment %}
-            2026-09-23: «Роли доступа» — иконка-only, ТОЛЬКО для
-            is_superuser (не через can_access_section — этот раздел
-            намеренно не в DASHBOARD_SECTIONS, см. SUPERUSER_ONLY_SECTIONS
-            в dashboard/access.py, privilege-escalation risk).
-            {% endcomment %}
+            {# «Роли доступа» — только для суперпользователя. #}
             {% if user.is_superuser %}<a href="{% url 'dashboard:access_roles_list' %}" class="dopx-tab dopx-tab--icon-only {% if active_tab == 'access_roles' %}dopx-tab--active{% endif %}" title="Роли доступа"><i class="ti ti-users-group"></i></a>{% endif %}
             <a href="{% url 'admin:index' %}" class="dopx-tab dopx-tab--icon-only" title="Django admin"><i class="ti ti-settings"></i></a>
         </div>
@@ -340,28 +272,8 @@ body:has(.dopx-toolbar) .table tbody tr:hover { background: color-mix(in oklab, 
 </style>
 
 {% comment %}
-2026-09-23, прямая просьба пользователя: меню скроллится по горизонтали
-(на мобильном — вся лента, на десктопе 1024px+ — каждая из двух строк по
-отдельности, см. докстрайты выше), но при переходе на другую страницу
-браузер каждый раз рендерит меню заново с нулевой прокруткой — активная
-вкладка может оказаться за пределами видимой области, и приходится
-скроллить туда-сюда, чтобы её увидеть. Фикс — при загрузке страницы сразу
-прокручиваем активную вкладку в видимую зону. scrollIntoView с block:
-"nearest" ЛЕЧИТ ТОЛЬКО горизонтальную прокрутку самого меню, а не всей
-страницы (без него на мобильных Safari встречается баг, когда
-scrollIntoView тянет заодно и вертикальный скролл окна к меню наверх).
-behavior: "instant" — без анимации, чтобы не было заметного "проезда"
-ленты при каждом переходе.
-
-НАЙДЕНО (живая проверка в браузере, 2026-09-23): скрипт раньше стоял ДО
-блока <style> выше. Document parsing выполняет <script> в момент, когда до
-него дошёл парсер, — а <style> с overflow-x:auto/flex-nowrap для
-.dopx-tabs ещё не был вставлен в DOM. scrollIntoView видел контейнер БЕЗ
-переполнения (браузерная раскладка по умолчанию, ничего не скроллить) и
-ничего не делал — к моменту, когда стили наконец применялись, скрипт уже
-отработал вхолостую. Скрипт перенесён ПОСЛЕ <style>, плюс двойной
-requestAnimationFrame — ждём, пока браузер закоммитит layout с уже
-применёнными стилями, прежде чем измерять переполнение.
+Прокручиваем активную вкладку в видимую зону.
+Скрипт после <style> + двойной rAF — ждём применения стилей.
 {% endcomment %}
 <script>
 (function () {

@@ -1,14 +1,5 @@
 # dashboard/tests.py
-"""
-Тесты агрегирующего слоя staff-дашборда (`dashboard/services.py`). Основной
-риск здесь — тихое расхождение между "точным счётчиком" на карточке
-(`.count()`) и обрезанным списком под ней (`[:20]`) при доработке дашборда
-"как найти конкретный проблемный матч" (см. docstring
-`data_health_summary`): если разработчик в будущем случайно заменит
-раздельные `.count()`/`[:20]` на `len()` от одного и того же обрезанного
-списка, цифра на карточке начнёт молча занижаться при >20 проблемных
-матчах. DataHealthCountVsListTests закрывает именно это.
-"""
+"""Тесты dashboard/services.py: счётчик проблемных матчей не зависит от среза списка."""
 from __future__ import annotations
 
 from datetime import timedelta
@@ -57,17 +48,13 @@ class MissingLineupsDetectionTests(DataHealthFixtureMixin, TestCase):
         self.assertNotIn(match, health["matches_missing_lineups_list"])
 
     def test_scheduled_match_never_flagged_even_without_lineup(self):
-        """has_lineup=True на scheduled-матче не бывает в реальных данных
-        (KFF выставляет флаг только когда состав реально опубликован), но
-        фильтр всё равно должен требовать live/finished явно — это защита
-        от будущих аномальных данных, а не проверка текущего инварианта."""
+        """scheduled с has_lineup=True не считается."""
         self._make_match(status="scheduled", has_lineup=True)
         health = data_health_summary()
         self.assertEqual(health["matches_missing_lineups"], 0)
 
     def test_match_without_declared_lineup_not_flagged(self):
-        """has_lineup=False — KFF ещё не опубликовал состав, это не ошибка
-        синка, это нормальное состояние матча."""
+        """has_lineup=False — нормальное состояние, не ошибка."""
         self._make_match(status="finished", has_lineup=False)
         health = data_health_summary()
         self.assertEqual(health["matches_missing_lineups"], 0)
@@ -88,16 +75,14 @@ class MissingEventsDetectionTests(DataHealthFixtureMixin, TestCase):
         self.assertNotIn(match, health["matches_missing_events_list"])
 
     def test_live_match_without_events_is_also_flagged(self):
-        """live, а не только finished — матч уже идёт, событий пока нет,
-        это тоже сигнал проблемы синка, не только для завершённых."""
+        """live без событий — тоже проблема."""
         self._make_match(status="live")
         health = data_health_summary()
         self.assertEqual(health["matches_missing_events"], 1)
 
 
 class DataHealthCountVsListTests(DataHealthFixtureMixin, TestCase):
-    """Регрессия: счётчик на карточке должен оставаться точным даже когда
-    проблемных матчей больше, чем лимит списка под ней ([:20])."""
+    """Счётчик точный и при числе матчей больше лимита списка."""
 
     def test_count_not_undercounted_beyond_list_limit(self):
         for i in range(25):
@@ -150,14 +135,7 @@ class LastSyncRunTests(TestCase):
 
 
 class ResolveMatchForResyncTests(DataHealthFixtureMixin, TestCase):
-    """2026-09-22, жалоба пользователя со скриншотом Django 404 "Page not
-    found" на POST .../matches/19681947/resync/. КОРНЕВАЯ ПРИЧИНА — URL
-    кнопки «Ресинк» был <uuid:match_id>, а секция «Последние ошибки» на
-    странице «Здоровье данных» рендерит эту кнопку из ParserSyncRun.
-    error_samples (см. LastSyncRunTests выше) — сырого JSON, где всё ещё
-    живут записи удалённого KFF-парсера с ЧИСЛОВЫМ id матча вместо нашего
-    UUID. dashboard/views.py::_resolve_match_for_resync — функция, которая
-    теперь принимает оба варианта вместо жёсткого <uuid:...> в роутинге."""
+    """Ресинк принимает и UUID, и старый числовой id (_resolve_match_for_resync)."""
 
     def test_resolves_by_real_uuid(self):
         from dashboard.views import _resolve_match_for_resync
@@ -167,8 +145,7 @@ class ResolveMatchForResyncTests(DataHealthFixtureMixin, TestCase):
         self.assertEqual(found, match)
 
     def test_resolves_by_legacy_sportmonks_numeric_id(self):
-        """Именно сценарий с реального скриншота — match_id из URL был
-        сырым числом (19681947), не UUID."""
+        """Числовой match_id."""
         from dashboard.views import _resolve_match_for_resync
 
         match = self._make_match(status="finished")

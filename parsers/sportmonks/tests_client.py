@@ -1,19 +1,5 @@
 # parsers/sportmonks/tests_client.py
-"""
-ИСПРАВЛЕНО (2026-09-10, реальный краш в проде): `SportmonksClient.get_player`
-(и 6 других одиночных геттеров — get_league/get_standings/get_fixture/
-get_team/get_referee/get_coach) индексировали `payload['data']` напрямую —
-если Sportmonks ответил HTTP 200, но тело ответа не содержит "data" (не
-воспроизведено вживую в этой песочнице — нет сети, см. докстринг ниже — но
-РЕАЛЬНО случилось на проде при прогоне `fix_foreign_names --all` на первом
-же из 836 игроков), голый `['data']` падал НЕПОЙМАННЫМ KeyError и обрывал
-весь batch-прогон, вместо того чтобы поймать SportmonksAPIError на одной
-записи и продолжить остальные 835.
-
-Тест ниже мокает HTTP-уровень (requests.Session.get), НЕ настоящую сеть —
-подтверждает именно контракт `_get_data()`: отсутствие "data" в теле ответа
-даёт SportmonksAPIError (которую вызывающий код умеет ловить), а не
-KeyError (которую не ловит никто)."""
+"""Тесты SportmonksClient: ответ без "data" -> SportmonksAPIError, а не KeyError."""
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -47,7 +33,7 @@ class GetDataMissingKeyTests(TestCase):
             self.assertIn("subscription required", str(ctx.exception))
 
     def test_normal_response_with_data_key_still_works(self):
-        """Контрольная проверка — не сломали обычный успешный путь."""
+        """Обычный ответ работает."""
         client = SportmonksClient()
         with patch.object(client.session, "get", return_value=_fake_response(200, {"data": {"id": 1, "name": "Test"}})):
             result = client.get_player(1)

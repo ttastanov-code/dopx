@@ -1,47 +1,9 @@
 # parsers/management/commands/fix_known_wrong_names.py
-"""
-manage.py fix_known_wrong_names [--apply]
+"""manage.py fix_known_wrong_names [--apply]
 
-Разовая коррекция УЖЕ СОХРАНЁННЫХ в базе записей Player/Referee/Coach,
-испорченных известными ошибками перевода САМОГО Sportmonks (найдено
-пользователем 2026-09-10 — на сайте у четырёх казахских игроков неверная
-кириллица: "Эркин" вместо "Еркин" (Тапалов), "Рафаел" вместо "Рафаэль"
-(Уразбахтин), "Аскхат" вместо "Асхат" (Тагыберген), "Мукагалы" вместо
-"Мукагали" (Пангерей)).
-
-КОРЕНЬ ПРОБЛЕМЫ (см. подробный докстринг parsers/sportmonks/importers.py::
-_apply_known_name_corrections и parsers/sportmonks/name_translations.py::
-PLAYER_NAME_CORRECTIONS): Sportmonks для казахских игроков сам присылает
-готовый, но иногда наивный/неверный кириллический перевод — _resolve_
-cyrillic_name принимал ЛЮБОЙ "полностью кириллический" текст как
-корректный (валидность букв — не то же самое, что правильность перевода).
-
-ИСПРАВЛЕНО ВТОРОЙ РАЗ (2026-09-10, тот же день — "у нас всё ещё Эркин
-Тапалов" ПОСЛЕ первого прогона этой команды с --apply): первая версия этой
-команды и PLAYER_NAME_CORRECTIONS в name_translations.py были ДВУМЯ
-РАЗНЫМИ словарями — эта команда матчила по УЖЕ ПЕРЕВЕДЁННОЙ (неверной)
-кириллице напрямую, а словарь в импортёре — по СЫРОЙ ЛАТИНИЦЕ firstname/
-lastname. Для Тапалова и остальных Sportmonks шлёт готовую кириллицу ПРЯМО
-в firstname/lastname (не латиницу), поэтому латинская сверка на импорте
-никогда не совпадала, а get_or_create_player обновляет имя игрока
-ЗАНОВО при КАЖДОМ синке (см. её докстринг) — значит первый же следующий
-импорт откатывал то, что эта команда только что исправила напрямую в базе.
-Теперь ОБА места (эта команда и _apply_known_name_corrections в importers.py)
-используют ОДИН словарь PLAYER_NAME_CORRECTIONS (сам он теперь тоже
-ключуется по неверной кириллице, не по латинице) — правка на импорте
-больше не может разойтись с разовой коррекцией и откатить её.
-
-ЧЕМ ЭТА КОМАНДА ОТЛИЧАЕТСЯ ОТ apply_cyrillic_names.py: та команда (и
-стоящий за ней словарь REFEREE_TRANSLATIONS/COACH_TRANSLATIONS) покрывает
-ТОЛЬКО Referee/Coach, ключуется по sportmonks_id и по докстрингу вообще не
-касается Player. Эта команда проверяет ВСЕ ТРИ модели (Player/Referee/
-Coach — на случай, если то же самое имя/фамилия когда-нибудь встретится у
-судьи или тренера) и матчит напрямую по ТЕКУЩЕМУ (уже испорченному)
-кириллическому значению поля.
-
-Использование:
-    python manage.py fix_known_wrong_names              # только отчёт (dry-run)
-    python manage.py fix_known_wrong_names --apply       # применить изменения
+Исправляет в базе известные ошибки кириллицы от Sportmonks (Player/Referee/Coach)
+по словарю PLAYER_NAME_CORRECTIONS — тот же словарь применяется на импорте.
+Без --apply — dry-run.
 """
 from __future__ import annotations
 
@@ -52,11 +14,7 @@ from parsers.sportmonks.name_translations import PLAYER_NAME_CORRECTIONS
 from players.models import Player
 from referees.models import Referee
 
-# Единый источник истины — см. parsers/sportmonks/name_translations.py::
-# PLAYER_NAME_CORRECTIONS (ключ — неверная кириллица в нижнем регистре,
-# значение — верная). Ключи в этой команде сравниваются case-insensitive
-# (.lower()) на случай, если в базе значение отличается регистром от
-# канонической записи в словаре.
+# Словарь: неверная кириллица (нижний регистр) -> верная.
 KNOWN_WRONG_CYRILLIC = PLAYER_NAME_CORRECTIONS
 
 
@@ -89,9 +47,7 @@ class Command(BaseCommand):
             update_fields = []
             old_first, old_last = obj.first_name, obj.last_name
 
-            # .lower() — словарь теперь ключуется в нижнем регистре (см.
-            # PLAYER_NAME_CORRECTIONS), а в базе значения нормально
-            # капитализированы ("Эркин", не "эркин").
+            # Сравнение в нижнем регистре.
             new_first = KNOWN_WRONG_CYRILLIC.get((obj.first_name or "").strip().lower())
             if new_first is not None and new_first != obj.first_name:
                 obj.first_name = new_first

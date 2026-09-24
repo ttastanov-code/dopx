@@ -15,11 +15,7 @@
     </p>
   </div>
 
-  {% comment %}
-  Embed-виджет «DOPX Лучшие тура» — тот же embedModal Alpine-компонент
-  (static/js/alpine-components.js), что у season_squad/best_xi.html и
-  players/teams detail. widget_embed_code собран в round_squad/views.py::round_of_week.
-  {% endcomment %}
+  {# Embed-код (модалка embedModal). #}
   <div x-data="embedModal" class="shrink-0">
     <button type="button" @click="open = true" class="btn btn-outline btn-sm">
       <i class="ti ti-code"></i> Получить embed-код

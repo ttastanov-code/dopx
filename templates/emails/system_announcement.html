@@ -1,17 +1,7 @@
-<!-- templates/emails/system_announcement.html — ПОЛНЫЙ РЕДИЗАЙН 2026-09-02,
-     см. докстринг templates/emails/welcome.html про общий каркас в
-     partials/.
-
-     Системное объявление платформы (staff-broadcast, /staff/dashboard/announcements/,
-     dashboard/views.py::announcements). Текст переменной body приходит от
-     staff-пользователя через обычный textarea — это НЕ доверенный HTML,
-     поэтому ниже рендерим через фильтр linebreaksbr с обычным
-     автоэкранированием Django-шаблонов (НЕ через safe), а не подставляем
-     как готовый HTML. НЕ УБИРАТЬ linebreaksbr в пользу safe при следующей
-     правке — это единственное, что защищает всех верифицированных
-     пользователей от XSS через это письмо. Контекст: user, title, body
-     (см. dashboard/views.py, notifications/tasks.py::
-     _send_system_announcement_chunk). -->
+{% comment %}
+Системное объявление. body — текст от staff, выводим через linebreaksbr с автоэкранированием.
+Не заменять на safe (XSS). Контекст: user, title, body.
+{% endcomment %}
 <!DOCTYPE html>
 <html lang="ru">
 {% include "emails/partials/_head.html" %}

@@ -1,4 +1,5 @@
 # predictions/urls.py
+# Виджет прогноза и отправка прогноза.
 from django.urls import path
 
 from .views import predict, prediction_widget_partial

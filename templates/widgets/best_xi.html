@@ -6,28 +6,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Сборная DOPX{% if season %} {{ season.year }}{% endif %}</title>
     {% comment %}
-    templates/widgets/best_xi.html
-    Четвёртый embed-виджет (продуктовый запрос 2026-08-22 — "дать
-    возможность вставлять этот модуль на другие сайты"), тот же
-    изолированный документ, что и widgets/standings.html,
-    widgets/player_rating.html, widgets/team_rating.html: своя CDN-загрузка
-    Tailwind/daisyUI, прозрачный фон, без наследования base.html (чужой
-    <iframe> не должен тянуть за собой шапку/меню сайта).
-    В отличие от трёх предыдущих виджетов (одна таблица/одна карточка) —
-    мини-версия поля 4-3-3 с 11 позициями, переиспользует season_squad/
-    views.py::_slot_to_card. Без Alpine.js — только рейтинг цифрой под
-    именем, подробности по клику на бренд-ссылку "DOPX" (полная страница).
-
-    Только фамилия (core/templatetags/name_extras.py::surname), не полное
-    имя — не помещалось в карточку шириной 60-90px.
+    Embed-виджет сборной для чужих сайтов: поле 4-3-3 с 11 позициями, без base.html и Alpine.
+    Только фамилия — полное имя не помещается.
     {% endcomment %}
-    {% comment %}
-    Версии и SRI-хэши те же, что в base.html (см. scripts/generate_sri.sh) —
-    было @4/@5/@latest без integrity вообще: плавающий тег отдаёт другой
-    файл без предупреждения, а виджет встраивается на СТОРОННИХ сайтах
-    (iframe), где подмену CDN-файла некому заметить. Обновлять версию здесь
-    и в base.html/base_auth.html синхронно.
-    {% endcomment %}
+    {# Версии CDN как в base.html — обновлять синхронно. #}
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.3" integrity="sha384-aJ9rL4k6lF+91guGvUFVSkpIcge7Zd9EiI4TQDLoK9kFaFJgKHgjEXVvG/qA5COj" crossorigin="anonymous"></script>
     <link href="https://cdn.jsdelivr.net/npm/daisyui@5.7.17" rel="stylesheet" type="text/css" integrity="sha384-39M1LQqzp+SSirSevKD4gsadFB7kgKzMiPY7o6hVhOXuRthgtd1oohKwlosU9KHi" crossorigin="anonymous" />
     <link href="https://cdn.jsdelivr.net/npm/daisyui@5.7.17/themes.css" rel="stylesheet" type="text/css" integrity="sha384-HhSoSsQclUlsqy8Gyz+E2oVSebHT4dv3MJ+NdUjV9mh1twUK4UPKQgmj0dHDKe0Y" crossorigin="anonymous" />

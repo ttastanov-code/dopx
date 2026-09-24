@@ -1,56 +1,9 @@
 {% load dashboard_extras %}
 {% comment %}
-templates/dashboard/_scripts_runs_table.html
-Партиал истории запусков — цель HTMX-поллинга (см. dashboard/views.py::
-scripts_runs_partial), обновляет PENDING/RUNNING → SUCCESS/FAILED без
-перезагрузки страницы и без сброса заполненных форм команд.
-
-2026-09-23, прямая просьба пользователя: убрать раскрывающуюся кнопку
-"показать" (нативный <details>/<summary> по клику), вывод команды должен
-быть виден сразу и выглядеть "как в редакторе кода" — читабельнее. Заодно
-таблица (плохо ведёт себя на мобильном — жалоба со скриншотом) заменена на
-список карточек: одна карточка на запуск, шапка с метаданными сверху,
-вывод — моноширинной панелью ниже с лейблом stdout/stderr (как вкладки
-терминала в VS Code), без дополнительного клика.
-
-2026-09-23, ВТОРОЙ заход, прямая просьба пользователя: "историю запусков
-с пагинацией, но без перезагрузки всей страницы при перелистывании, и
-чтобы данные продолжали жить в реальном времени". Ключевой трюк —
-поллинг-обёртка (id="scripts-runs-table", hx-trigger="every 4s") теперь
-ЗДЕСЬ, внутри партиала, а не снаружи в scripts.html, и свапается ЦЕЛИКОМ
-(hx-swap="outerHTML", не innerHTML как раньше). Каждый ответ сервера несёт
-СВОЙ СОБСТВЕННЫЙ актуальный номер страницы в hx-get (?page={{
-recent_runs.number }}) — то есть после клика по "Далее" HTMX подменяет
-этот div целиком на версию с hx-get=...page=2, и следующий тик поллинга
-(HTMX сам переинициализирует hx-trigger на свежевставленном элементе после
-swap — штатное поведение) сам бьёт по странице 2, а не сбрасывает на
-первую. Кнопки пагинации — тоже hx-get на этот же URL с hx-target/hx-swap
-на этот же элемент, полной перезагрузки страницы нет вообще.
-
-2026-09-23, ТРЕТИЙ заход, БАГ, КОТОРЫЙ ТУТ БЫЛ (жалоба пользователя:
-"жму «Позже» — ничего не происходит"). Первая гипотеза (гонка poll vs
-click за один hx-sync target) была ПРОВЕРЕНА и ОТБРОШЕНА — добавление
-hx-sync тут же сломало HTMX ещё сильнее ("e.matches is not a function"
-в консоли), плюс живая проверка в браузере (devtools) показала: дело было
-вообще не в гонке запросов — ни поллинг, ни клики НЕ РАБОТАЛИ С САМОГО
-НАЧАЛА, запрос на сервер не уходил ВООБЩЕ (0 сетевых запросов на клик).
-
-НАСТОЯЩАЯ причина (подтверждено вручную через `el['htmx-internal-data']`
-в devtools): где-то в САМОМ НАЧАЛЕ полной загрузки страницы (до этого
-скрипта, скорее всего конфликт очерёдности с Django Debug Toolbar,
-которая довешивает свои панели через AJAX) HTMX ловит необработанное
-исключение ВНУТРИ СВОЕГО СОБСТВЕННОГО бутстрап-обхода document.body и
-обрывается на середине. #scripts-runs-table успевает получить только
-внутренний служебный маркер initHash (HTMX так помечает "этот элемент уже
-видели, повторно process() не нужен"), но НАСТОЯЩИЙ обработчик триггера
-("every 4s"/клики) так и не был повешен — из-за этого initHash все
-последующие вызовы htmx.process() на этом элементе — no-op, элемент
-навсегда "мёртвый", хотя выглядит нормально. Фикс — templates/dashboard/
-scripts.html, инлайновый <script> внизу, на window.load с небольшой
-задержкой: если у #scripts-runs-table внутренний стейт выглядит "пустым"
-(нет реальных полей триггера — только initHash или вообще ничего),
-сбрасываем el['htmx-internal-data'] и зовём htmx.process(el) заново —
-проверено вживую в браузере, полностью чинит и поллинг, и пагинацию.
+История запусков команд — карточки с выводом stdout/stderr.
+Обёртка #scripts-runs-table поллит себя каждые 4 с и свапается целиком (outerHTML),
+hx-get несёт текущую страницу — пагинация без перезагрузки.
+Если HTMX не проинициализировал элемент — см. скрипт восстановления в scripts.html.
 {% endcomment %}
 <div id="scripts-runs-table" data-background-poll
      hx-get="{% url 'dashboard:scripts_runs_partial' %}?page={{ recent_runs.number|default:1 }}"
@@ -72,14 +25,7 @@ scripts.html, инлайновый <script> внизу, на window.load с не
             <span class="text-xs opacity-60">{{ run.triggered_by_username|default:"—" }}</span>
             <span class="text-xs opacity-50">{{ run.created_at|timesince }} назад</span>
             {% if run.status == 'pending' or run.status == 'running' %}
-            {% comment %}
-            2026-09-22: только PENDING/RUNNING — завершённые (success/
-            failed) отзывать нечего, celery_task_id к тому моменту уже
-            неактуален. terminate=True жёстко зашит в самой вьюхе
-            (dashboard/views.py::scripts_revoke_run) — без формы выбора,
-            см. докстринг там же почему soft-revoke бесполезен для уже
-            бегущего call_command().
-            {% endcomment %}
+            {# Отозвать — только PENDING/RUNNING. terminate=True во вьюхе. #}
             <form method="post" action="{% url 'dashboard:scripts_revoke_run' run.id %}" class="ml-auto"
                   onsubmit="return confirm('Остановить «' + '{{ run.command_name }}' + '»? Прервёт процесс прямо посреди выполнения (SIGTERM).');">
                 {% csrf_token %}
@@ -106,15 +52,7 @@ scripts.html, инлайновый <script> внизу, на window.load с не
 </div>
 
 {% if recent_runs.paginator.num_pages > 1 %}
-{% comment %}
-Тот же паттерн, что "Недавно разобранные" на names_review.html, но hx-get
-вместо обычных href — свап только этого div'а (id="scripts-runs-table"
-выше), без прыжка/перезагрузки страницы. hx-target/hx-swap на САМ СЕБЯ
-(closest — id уже объявлен на обёртке снаружи этого if) через селектор по
-id, не через `this` — кнопки физически внутри обёртки, но swap должен
-заменить её ЦЕЛИКОМ (outerHTML), иначе новый hx-get с обновлённым ?page=
-некуда будет "приземлить" на следующий тик поллинга.
-{% endcomment %}
+{# Пагинация через hx-get на ту же обёртку (outerHTML). #}
 <div class="flex items-center justify-center gap-2 mt-3">
     {% if recent_runs.has_previous %}
     <button type="button" class="btn btn-xs btn-outline"

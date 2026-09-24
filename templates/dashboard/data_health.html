@@ -3,17 +3,12 @@
 {% block content %}
 {% include 'dashboard/_nav.html' %}
 
-<!-- Realtime: содержимое опрашивает dashboard:data_health_partial каждые
-     15с и подменяет себя целиком (hx-swap="innerHTML" на этом же div) —
-     staff видит новые ошибки синка/статус инфраструктуры без ручного
-     обновления страницы. Кнопки «Ресинк» внутри — обычные <form
-     method="post">, полный редирект по сабмиту, HTMX-поллингу не мешают. -->
+{# Поллинг каждые 15 с (data_health_partial). #}
 <div id="data-health-content" data-background-poll hx-get="{% url 'dashboard:data_health_partial' %}" hx-trigger="every 15s" hx-swap="innerHTML">
     {% include 'dashboard/_data_health_content.html' %}
 </div>
 
-<!-- Вне зоны автообновления намеренно — если staff начал вводить UUID,
-     очередной poll не должен стирать недопечатанное значение. -->
+{# Поле ввода вне автообновления — чтобы не стирать ввод. #}
 <div class="card bg-base-100 border border-base-300 mb-6 mt-6">
     <div class="card-body p-4">
         <div class="dopx-section-eyebrow"><i class="ti ti-refresh-dot"></i>Вручную</div>

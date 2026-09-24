@@ -3,7 +3,7 @@
 {% load position_extras %}
 {% load partner_tags %}
 {% block content %}
-    <!-- === HEADER === -->
+    {# === ШАПКА === #}
     <div class="mb-8">
         <h1 class="text-3xl font-bold mb-2">
             <i class="ti ti-player mr-2"></i>
@@ -12,14 +12,9 @@
         <p class="opacity-60">Топ футболистов по рейтингу выступления</p>
     </div>
 
-    <!-- === TABS === -->
+    {# === ВКЛАДКИ === #}
     <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
-        {% comment %}
-        2026-09-23, тот же фикс видимости, что на users/leaderboard.html
-        (жалоба пользователя "кнопки игроки и пользователи надо сделать
-        более видимыми") — daisyUI .tabs.tabs-boxed заменён на
-        сегментированный пилюля-тумблер (components/_season_scope_toggle.html).
-        {% endcomment %}
+        {# Сегментированный переключатель вкладок. #}
         <div class="inline-flex items-center gap-1 p-1 rounded-lg bg-base-200 text-sm">
             <a href="{% url 'users:leaderboard' %}" class="px-3 py-1.5 rounded-md font-medium transition-colors flex items-center gap-1.5 opacity-60 hover:opacity-100">
                 <i class="ti ti-users"></i>
@@ -31,9 +26,7 @@
             </a>
         </div>
 
-        <!-- НОВОЕ: рейтинг игроков в разрезе лиги — ?league= читается в
-             PlayerLeaderboardView.get_queryset() (фильтрует и агрегаты
-             performance_score именно по матчам этой лиги). -->
+        {# Фильтр по лиге (?league=). #}
         {% if available_leagues %}
         <form method="get" class="flex items-center gap-2">
             <label class="text-sm opacity-60 hidden sm:inline" for="league-filter"><i class="ti ti-trophy"></i></label>
@@ -50,14 +43,12 @@
         {% endif %}
     </div>
 
-    <!-- Та же зона "leaderboard", что и на /users/leaderboard/ — раньше
-         баннер тут вообще не подключался, хотя это тот же продуктовый
-         раздел (рейтинг), просто другая вкладка/URL. -->
+    {# Баннер зоны leaderboard. #}
     <div class="mb-6">
         {% render_banner "leaderboard" %}
     </div>
 
-    <!-- === ТАБЛИЦА === -->
+    {# === ТАБЛИЦА === #}
     <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-0">
             <div class="overflow-x-auto">
@@ -145,7 +136,7 @@
         </div>
     </div>
 
-    <!-- === PAGINATION === -->
+    {# === ПАГИНАЦИЯ === #}
     {% if is_paginated %}
         <div class="flex justify-center mt-8">
             <div class="join">

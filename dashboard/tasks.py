@@ -1,12 +1,5 @@
 # dashboard/tasks.py
-"""
-Celery-таск для раздела "Скрипты и команды" (dashboard/command_runner.py::
-trigger_command). ЯВНО отдельный модуль `dashboard/tasks.py` — 'dashboard'
-сам по себе приложение в INSTALLED_APPS (в отличие от parsers.sportmonks,
-см. подробный докстринг dopx/celery.py про баг с автодискавери
-вложенных пакетов) — `app.autodiscover_tasks()` без доп. аргументов
-находит его как обычно, отдельная регистрация не нужна.
-"""
+"""Celery-задача для «Скриптов и команд»."""
 from __future__ import annotations
 
 import re
@@ -14,39 +7,19 @@ import re
 from celery import shared_task
 from django.utils import timezone
 
-# 2026-09-22: парсим "Готово: проверено N, ..." (verify_names_with_ai.py,
-# style.SUCCESS-строка в конце handle()) — единственный сигнал "чанк
-# уткнулся в свой --limit, возможно есть ещё кандидаты" без отдельного
-# API/поля прогресса. Если формат вывода команды когда-то изменится и
-# регулярка перестанет матчиться — chunking просто тихо остановится после
-# первого чанка (see checked_this_chunk is None ниже), не зависнет молча.
+# Строка «Готово: проверено N, ...» из verify_names_with_ai — признак, что могли остаться кандидаты.
+# Не распарсилась — чанкинг останавливается после первой порции.
 _CHECKED_RE = re.compile(r"проверено (\d+)", re.IGNORECASE)
-# Предохранитель на случай гипотетического бага в дедупликации команды
-# (кандидат почему-то никогда не исключается из следующего чанка) — без
-# этого потенциальный бесконечный цикл чанков. 50 чанков * 40 = 2000
-# кандидатов, с большим запасом выше текущих ~914 сущностей в базе.
+# Предохранитель от бесконечного цикла чанков.
 _MAX_CHUNKS = 50
 
 
 @shared_task(bind=True, max_retries=0)
 def run_management_command(self, run_id: str) -> None:
-    """Выполняет ОДИН ранее провалидированный и сохранённый
-    ManagementCommandRun (см. dashboard/command_runner.py::trigger_command —
-    args там уже собраны и провалидированы ДО постановки в очередь, здесь
-    просто call_command(*positional, **kwargs) по сохранённому снимку).
-
-    2026-09-22, прямая просьба пользователя после нескольких зависаний
-    verify_names_with_ai --all --limit 0 (часы ОДНИМ синхронным процессом —
-    OOM/SIGKILL форкнутого дочернего процесса воркера убивал прогон
-    целиком без возможности продолжить, статус навсегда оставался
-    RUNNING — полный разбор в истории чата): для команд с
-    CommandSpec.auto_chunk_limit каждый вызов таска обрабатывает только
-    ОДНУ короткую порцию, а не весь объём — и, если похоже, что кандидаты
-    ещё остались, сам ставит в очередь следующую порцию (apply_async).
-    Одна и та же ManagementCommandRun-запись живёт все чанки — status
-    остаётся RUNNING, stdout/stderr дописываются, celery_task_id каждый
-    раз обновляется на актуальный (чтобы "Стоп" останавливал именно
-    текущую/следующую порцию, а не первую)."""
+    """Выполняет сохранённый ManagementCommandRun (аргументы уже провалидированы).
+    Для команд с auto_chunk_limit — одна порция за вызов, следующую ставит сама;
+    запись одна на все порции, stdout/stderr дописываются.
+    """
     from .command_runner import run_command_sync
     from .commands_registry import get_command
     from .models import ManagementCommandRun
@@ -64,9 +37,7 @@ def run_management_command(self, run_id: str) -> None:
         run.save(update_fields=["status", "stderr", "finished_at"])
         return
 
-    # "Стоп" мог сработать МЕЖДУ чанками — следующая порция уже стояла в
-    # очереди (countdown=5) до того, как staff нажал кнопку. Проверяем: раз
-    # scripts_revoke_run уже выставил FAILED, просто не выполняем эту порцию.
+    # Запуск остановили между порциями — эту не выполняем.
     if run.status == ManagementCommandRun.Status.FAILED:
         return
 
@@ -87,11 +58,7 @@ def run_management_command(self, run_id: str) -> None:
 
     chunk_index = run.args.get("_chunk_index", 0) + 1
     if chunked:
-        # timezone.now() при USE_TZ=True (dopx/settings.py) возвращает
-        # время в UTC, а не в TIME_ZONE="Asia/Almaty" — без localtime() в
-        # заголовке чанка показывалось бы время на 5 часов меньше
-        # реального (было замечено пользователем: "09:19" вместо
-        # фактических ~14:19).
+        # localtime() — время в Asia/Almaty, а не UTC.
         header = f"\n=== чанк {chunk_index} (порция ≤{spec.auto_chunk_limit}) — {timezone.localtime():%Y-%m-%d %H:%M:%S} ===\n"
         run.stdout = (run.stdout or "") + header + out
         run.stderr = (run.stderr or "") + (header + err if err else "")

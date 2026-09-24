@@ -1,18 +1,8 @@
 # users/views.py
-"""
-RegisterView: rate-limit по IP через `core.utils.is_rate_limited` (не более
-REGISTER_RATE_LIMIT регистраций с одного IP за REGISTER_RATE_LIMIT_WINDOW_
-SECONDS), сохранение registration_ip/registration_user_agent на созданном
-пользователе — антифрод-данные для IP-кластерного анализа (users/tasks.py::
-detect_ip_clusters_task). Honeypot/time-trap проверяются самой формой
-(users/forms.py) через стандартный form_invalid.
+"""Регистрация, вход, профиль, лидерборды, подписки и push.
 
-VerifyEmailView: после верификации ставит в очередь
-users.tasks.award_founder_badge_if_eligible (бейдж «Первопроходец»).
-
-NotificationSettingsView.form_valid: словарь настроек строится из
-User.DEFAULT_NOTIFICATION_SETTINGS.keys(), не хардкодом — новое поле в форме
-подхватывается без правки этого метода.
+При регистрации сохраняем IP и user-agent (антифрод), лимит регистраций с IP.
+После верификации email проверяется бейдж «Первопроходец».
 """
 from __future__ import annotations
 
@@ -56,10 +46,7 @@ logger = logging.getLogger(__name__)
 REGISTER_RATE_LIMIT = 5
 REGISTER_RATE_LIMIT_WINDOW_SECONDS = 60 * 60  # 1 час
 
-# password-reset, verify-email — по IP: анонимные эндпоинты, до request.user
-# добраться нельзя. toggle_follow, react_to_event — по user.id: за декоратором
-# @login_required, IP менее показателен (NAT/мобильные сети), а сам факт
-# аутентификации уже отсекает анонимный флуд.
+# Лимиты: анонимные эндпоинты — по IP, эндпоинты за логином — по user.id.
 PASSWORD_RESET_RATE_LIMIT = 5
 PASSWORD_RESET_RATE_LIMIT_WINDOW_SECONDS = 60 * 60  # 1 час
 VERIFY_EMAIL_RATE_LIMIT = 20
@@ -69,15 +56,14 @@ FOLLOW_RATE_LIMIT_WINDOW_SECONDS = 60
 
 
 class RegisterView(CreateView):
-    """Регистрация нового пользователя с обязательной верификацией почты"""
+    """Регистрация с обязательной верификацией почты."""
     model = User
     form_class = UserRegistrationForm
     template_name = 'auth/register.html'
     success_url = reverse_lazy('users:verify_email_sent')
 
     def dispatch(self, request, *args, **kwargs):
-        # Rate-limit ДО обработки формы — не тратим время на валидацию
-        # (и не даём боту вообще понять, что его лимитировали по форме).
+        # Лимит до обработки формы.
         client_ip = get_client_ip(request)
         if request.method == 'POST' and client_ip:
             if is_rate_limited(f'register:{client_ip}', REGISTER_RATE_LIMIT, REGISTER_RATE_LIMIT_WINDOW_SECONDS):
@@ -88,35 +74,20 @@ class RegisterView(CreateView):
 
     def form_valid(self, form):
         user = form.save(commit=False)
-        user.is_verified = False  # Аккаунт создан, но не активирован
+        user.is_verified = False  # Аккаунт не активирован до подтверждения почты
         user.set_password(form.cleaned_data['password1'])
-        # Антифрод-данные регистрации, см. докстринг модуля.
+        # Антифрод-данные регистрации.
         user.registration_ip = get_client_ip(self.request)
         user.registration_user_agent = self.request.META.get('HTTP_USER_AGENT', '')[:1000]
         user.save()
-        # Создаем базовые профили
         UserXP.objects.get_or_create(user=user)
 
-        # Продуктовая аналитика: первый шаг воронки "визит → регистрация →
-        # первая оценка" (см. analytics/selectors.py::registration_funnel).
-        # Здесь без transaction.on_commit — у RegisterView нет обёртывающего
-        # transaction.atomic(), user.save() уже закоммичен к этому моменту.
-        # ref — партнёрская атрибуция (partners/services.py::REFERRAL_COOKIE_NAME):
-        # если пользователь пришёл по /go/<slug>/ за последние 30 дней, здесь
-        # видно, что визит по партнёрской ссылке КОНВЕРТИРОВАЛСЯ в регистрацию,
-        # а не просто засчитался как переход.
+        # Аналитика: шаг воронки «регистрация». ref — партнёрская атрибуция из cookie.
         from django.core.signing import BadSignature
 
         from partners.services import REFERRAL_COOKIE_NAME
 
-        # БАГ, КОТОРЫЙ ТУТ БЫЛ: cookie читалась как обычная (COOKIES.get) —
-        # см. partners/views.py::PartnerReferralRedirectView, где её теперь
-        # ставят через set_signed_cookie(salt='partners.referral'). Здесь
-        # соответственно читаем через get_signed_cookie с тем же salt;
-        # BadSignature (кто-то подделал/отредактировал cookie вручную —
-        # значение не совпадает с подписью) просто игнорируем, как будто
-        # cookie не было — не должно ронять регистрацию из-за чужого мусора
-        # в cookies.
+        # Cookie реферала подписанная; подделанную игнорируем.
         try:
             referral_slug = self.request.get_signed_cookie(REFERRAL_COOKIE_NAME, salt='partners.referral', default="")
         except BadSignature:
@@ -126,14 +97,14 @@ class RegisterView(CreateView):
             properties={"ref": referral_slug} if referral_slug else None,
         )
 
-        # Отправляем письмо верификации (асинхронно, КРИТИЧЕСКОЕ - force=True)
+        # Письмо верификации (асинхронно).
         try:
             from notifications.tasks import send_email_verification
             send_email_verification.delay(str(user.id), str(user.verification_token))
             logger.info(f"Verification email queued for {user.email}")
         except Exception as e:
             logger.error(f"Failed to queue verification email: {e}")
-            # Фоллбэк: синхронно, чтобы не потерять пользователя
+            # Не удалось поставить в очередь — отправляем синхронно.
             try:
                 from notifications.tasks import _send_email_to_user
                 site_url = getattr(settings, 'SITE_URL', 'http://127.0.0.1:8000')
@@ -161,15 +132,7 @@ class VerifyEmailSentView(TemplateView):
 
 
 class VerifyEmailView(View):
-    """
-    Обработка клика по ссылке из письма для верификации.
-
-    Токен — непредсказуемый UUID, поэтому основная угроза не подбор
-    конкретного токена, а перебор случайных UUID с одного IP в расчёте
-    когда-нибудь попасть в чужой активный токен (или просто нагрузить
-    User.objects.get() запросами). Лимит по IP, а не по токену/юзеру —
-    до аутентификации никакого юзера ещё нет.
-    """
+    """Подтверждение email по ссылке из письма. Лимит по IP — от перебора токенов."""
     def get(self, request, token):
         client_ip = get_client_ip(request)
         if client_ip and is_rate_limited(
@@ -180,23 +143,19 @@ class VerifyEmailView(View):
             return redirect('users:verify_email_invalid')
         try:
             user = User.objects.get(verification_token=token, is_verified=False)
-            # Проверка срока действия токена (48 часов)
+            # Токен живёт 48 часов.
             token_age = timezone.now() - user.verification_token_created_at
             if token_age > timedelta(hours=48):
                 messages.error(request, 'Ссылка для подтверждения устарела. Зарегистрируйтесь заново.')
                 return redirect('users:register')
 
-            # Активируем аккаунт
             user.is_verified = True
             user.save(update_fields=['is_verified', 'updated_at'])
 
-            # Автоматический вход по ссылке из письма, без вызова authenticate()
-            # (пароль тут не проверяется) — user.backend не выставлен сам, а
-            # AUTHENTICATION_BACKENDS содержит два бэкенда (axes + ModelBackend),
-            # так что login() без явного backend бросает ValueError.
+            # Вход без authenticate(), поэтому backend указываем явно (их два).
             login(request, user, backend='django.contrib.auth.backends.ModelBackend')
 
-            # Приветственное уведомление (критическое, не отключается)
+            # Приветственное уведомление.
             Notification.objects.create(
                 user=user,
                 notification_type='welcome',
@@ -206,7 +165,7 @@ class VerifyEmailView(View):
                 is_read=False,
             )
 
-            # Разовая проверка бейджа «Первопроходец», асинхронно.
+            # Проверка бейджа «Первопроходец».
             try:
                 from users.tasks import award_founder_badge_if_eligible
                 award_founder_badge_if_eligible.delay(str(user.id))
@@ -229,13 +188,13 @@ class VerifyEmailInvalidView(TemplateView):
 
 
 class LoginView(AuthLoginView):
-    """Вход с проверкой верификации почты"""
+    """Вход с проверкой подтверждения почты."""
     template_name = 'auth/login.html'
     authentication_form = UserLoginForm
 
     def form_valid(self, form):
         user = form.get_user()
-        # БЛОКИРОВКА: Если почта не подтверждена — не пускаем
+        # Почта не подтверждена — не пускаем.
         if not user.is_verified:
             try:
                 from notifications.tasks import send_email_verification
@@ -278,8 +237,7 @@ class ProfileView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         user = self.request.user
-        # "Оценок" — сумма отдельных оценок (игрокам/командам/тренерам/
-        # судьям), не то же число, что "Матчей" (матчей оценено целиком).
+        # «Оценок» — сумма оценок сущностей, «Матчей» — завершённые оценки матчей.
         # См. docs/adr/0024-profile-stats-ratings-vs-matches.md.
         total_ratings_given = (
             user.player_evaluations.count()
@@ -295,48 +253,26 @@ class ProfileView(LoginRequiredMixin, TemplateView):
             'trust_level': user.get_trust_level(),
             'evaluation_streak': user.evaluation_streak,
             'total_matches': user.evaluation_sessions.filter(status='completed').count(),
-            # НОВОЕ (retention loop "Серии", 2026-08-21) — прямой аналог
-            # evaluation_streak выше, для прогнозов 1X2 (predictions app).
             'prediction_streak': user.prediction_streak,
             'total_predictions': user.match_predictions.count(),
         }
-        # user.context_evaluations не годится источником: ContextEvaluation
-        # создаётся уже на первом шаге вайзарда (evaluations/views.py::
-        # EvaluateContextView.form_valid), т.е. существует и для брошенных
-        # на полпути оценок. Берём только реально завершённые сессии.
+        # Только завершённые сессии (ContextEvaluation есть и у брошенных).
         recent_evaluations = user.evaluation_sessions.filter(
             status='completed'
         ).select_related(
             'match__home_team', 'match__away_team', 'match__league'
         ).order_by('-completed_at')[:10]
-        # rarity/is_secret — properties поверх users/badges.py::BADGE_CATALOG,
-        # доступны в шаблоне как badge.rarity / badge.is_secret / badge.description.
         badges = UserBadge.objects.filter(user=user).order_by('-awarded_at')
         xp, _ = UserXP.objects.get_or_create(user=user)
-        # Та же логика, что и на главной (core/views.py::HomeView): не
-        # показываем сессии, чью voting_open_until уже прошло — Continue
-        # вёл бы в тупик, EvaluationWizardMixin.check_voting_access всё
-        # равно заблокирует первый шаг.
+        # Незавершённые сессии с ещё открытым голосованием.
         active_sessions = user.evaluation_sessions.filter(
             status__in=['started', 'in_progress'],
             match__voting_open_until__gte=timezone.now(),
             match__status='finished',
         ).select_related('match').order_by('-created_at')[:5]
 
-        # 2026-09-23, фикс аудита: XP за шаги вайзарда (context/teams/
-        # players/coaches/referee) начисляется СРАЗУ на каждом пройденном
-        # шаге (evaluations/views.py::_award_step_xp), а не по факту
-        # завершения всей оценки — см. докстринг UserXP.add_xp. Если
-        # пользователь бросает вайзард до последнего шага, эти сессии
-        # остаются в status='started'/'in_progress' НАВСЕГДА: они не входят
-        # в total_evaluations/trust-корректировку/бейджи по числу оценок,
-        # но уже полученный за них XP остаётся в total_xp неотличимым от
-        # XP за реально завершённые оценки. Раньше это нигде не было видно
-        # пользователю — теперь считаем и явно показываем в профиле.
-        # `match__voting_open_until__gte` НЕ применяем здесь специально (в
-        # отличие от active_sessions выше) — нас интересуют ВСЕ сессии,
-        # включая те, где окно голосования уже закрылось и продолжить
-        # больше нельзя, но XP за пройденные шаги уже необратимо начислен.
+        # Незавершённые сессии (включая с закрытым голосованием): XP за их шаги
+        # уже начислен, показываем это в профиле.
         incomplete_sessions = user.evaluation_sessions.filter(status__in=['started', 'in_progress'])
         incomplete_sessions_count = incomplete_sessions.count()
 
@@ -354,11 +290,7 @@ class ProfileView(LoginRequiredMixin, TemplateView):
 
 
 class BadgeCatalogView(LoginRequiredMixin, TemplateView):
-    """
-    Полный каталог достижений (`users/badges.py::BADGE_CATALOG`) с отметкой
-    "получено/не получено". Секретные достижения, которые пользователь ещё
-    не получил, показываются как "???" — иначе теряется смысл секретности.
-    """
+    """Каталог достижений с отметкой «получено». Неполученные секретные — «???»."""
     template_name = 'users/badge_catalog.html'
 
     def get_context_data(self, **kwargs):
@@ -380,18 +312,13 @@ class BadgeCatalogView(LoginRequiredMixin, TemplateView):
                 'is_secret': definition.is_secret,
                 'earned': is_earned,
                 'awarded_at': earned.get(code),
-                # Ссылка на премиальную PNG-карточку (BadgeShareCardView) —
-                # только для полученных ачивок, иначе кнопка "Поделиться" вела
-                # бы на 404 (карточка требует существующую UserBadge-запись).
+                # Ссылка на карточку — только для полученных достижений.
                 'share_url': self.request.build_absolute_uri(
                     reverse('users:badge_share_card', args=[self.request.user.username, code])
                 ) if is_earned else None,
             })
         catalog.sort(key=lambda b: (not b['earned'], -RARITY_ORDER.get(b['rarity'], 0), b['name']))
-        # НОВОЕ (2026-09-01, "супер ультра" достижения): легендарные выводятся
-        # отдельной витриной над обычной сеткой — разбиваем список тут, в
-        # Python, а не городим подсчёт "первого легендарного элемента" в
-        # шаблоне через forloop (ненадёжно и нечитаемо при вложенных {% for %}).
+        # Легендарные — отдельной витриной.
         legendary_catalog = [b for b in catalog if b['rarity'] == 'legendary']
         other_catalog = [b for b in catalog if b['rarity'] != 'legendary']
         context.update({
@@ -406,33 +333,22 @@ class BadgeCatalogView(LoginRequiredMixin, TemplateView):
 
 
 class PublicProfileView(TemplateView):
-    """
-    Публичный (только для чтения) профиль ЛЮБОГО пользователя по username.
-
-    ProfileView всегда рендерит только request.user — для перехода в чужой
-    профиль (со страницы рейтинга) нужен отдельный маршрут без параметров.
-    Набор данных минимальный и без приватной информации (email, настройки,
-    кнопки редактирования — только в ProfileView, только для себя).
-    """
+    """Публичный профиль любого пользователя (без приватных данных)."""
     template_name = 'users/public_profile.html'
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         profile_user = get_object_or_404(User, username=kwargs['username'], is_active=True)
-        # is_profile_public не применяется к владельцу — он видит свою
-        # страницу даже при выключенной видимости. 404, а не редирект на
-        # логин — не палим гостю разницу между "не существует" и "скрыт".
+        # Владелец видит свой профиль даже скрытым. Остальным — 404.
         if not profile_user.is_profile_public and self.request.user != profile_user:
             from django.http import Http404
             raise Http404("Профиль скрыт владельцем")
-        # Продуктовая аналитика: кто-то открыл публичный профиль — вход в
-        # воронку "лидерборд/шер → чужой профиль → регистрация".
+        # Аналитика: просмотр чужого профиля.
         track_event(
             EventName.PROFILE_VIEWED, request=self.request,
             properties={"viewed_username": profile_user.username},
         )
-        # См. подробный комментарий у той же конструкции в ProfileView
-        # (тот же баг: "Оценок" и "Матчей" показывали одно и то же число).
+        # См. ProfileView.
         total_ratings_given = (
             profile_user.player_evaluations.count()
             + profile_user.team_evaluations.count()
@@ -451,8 +367,7 @@ class PublicProfileView(TemplateView):
             'total_predictions': profile_user.match_predictions.count(),
         }
         badges = list(UserBadge.objects.filter(user=profile_user).order_by('-awarded_at'))
-        # Секретные бейджи не палим до их получения посторонним — только
-        # владельцу профиля (см. UserBadge.is_secret / users/badges.py).
+        # Секретные бейджи показываем только владельцу.
         if self.request.user != profile_user:
             badges = [b for b in badges if not b.is_secret]
         xp, _ = UserXP.objects.get_or_create(user=profile_user)
@@ -473,26 +388,9 @@ class PublicProfileView(TemplateView):
 
 
 class BadgeShareCardView(View):
-    """
-    /u/<username>/badges/<code>/card.png — премиальная PNG-карточка
-    достижения для шеринга (продуктовый запрос 2026-09-01, "красивая супер
-    по дизайну карточка премиальная"). Тот же редирект-на-закэшированный-PNG
-    паттерн, что и MatchShareCardView/StreakShareCardView (core/views.py) и
-    player_season_recap_card (players/views.py).
-
-    Доступ: владелец видит свою карточку всегда, независимо от
-    is_profile_public; чужой профиль — только если is_profile_public=True
-    (тот же принцип, что PublicProfileView.get_context_data выше). ВАЖНО:
-    StreakShareCardView НЕ делает исключение для владельца приватного
-    профиля (`get_object_or_404(User, username=username,
-    is_profile_public=True)`) — это существующая недоработка, которую мы
-    сознательно НЕ повторяем здесь: иначе пользователь, выключивший
-    публичность профиля, не смог бы поделиться даже собственным
-    достижением.
-
-    Секретные ачивки (`is_secret`) чужому посетителю не показываем и не
-    рендерим по прямой ссылке на код, даже если профиль публичный — тот же
-    принцип фильтрации, что для `badges` в PublicProfileView выше.
+    """PNG-карточка достижения для шеринга (редирект на закэшированный файл).
+    Владелец видит свою всегда, чужую — только при публичном профиле.
+    Секретные достижения чужим не отдаём.
     """
 
     def get(self, request, username, code):
@@ -533,38 +431,13 @@ class ProfileEditView(LoginRequiredMixin, UpdateView):
     success_url = reverse_lazy('users:profile')
 
     def get_object(self):
-        # ИСПРАВЛЕНО (2026-09-11, реальная ошибка пользователя:
-        # ValidationError "...functools.partial(<function is_verified...>)
-        # должно быть True или False" при сохранении формы). Причина —
-        # django_otp.middleware.OTPMiddleware (см. MIDDLEWARE в
-        # dopx/settings.py, используется для 2FA staff) на КАЖДОМ
-        # аутентифицированном запросе подменяет атрибут
-        # request.user.is_verified на functools.partial(...) — это её
-        # штатный способ добавить метод "user.is_verified()" для проверки
-        # OTP-статуса (см. django_otp/middleware.py::_init_user_fields),
-        # который случайно совпал по имени с НАШИМ полем User.is_verified
-        # (флаг подтверждения email, см. users/models.py). request.user —
-        # тот же самый объект, что мутировала OTPMiddleware; Model.save()
-        # без update_fields сериализует ВСЕ поля через get_prep_value(), а
-        # BooleanField.get_prep_value() сам вызывает to_python() — падает
-        # на этом "испорченном" значении. Ломалось у ЛЮБОГО пользователя
-        # при любом сохранении профиля, где email не менялся (единственная
-        # ветка form_valid ниже, которая перезаписывала is_verified
-        # реальным bool перед save). Берём свежий экземпляр из БД, которого
-        # OTPMiddleware никогда не касалась, вместо заведомо "отравленного"
-        # self.request.user.
+        # Берём свежий объект из БД: OTPMiddleware подменяет request.user.is_verified
+        # на функцию, и save() падает на BooleanField.
         return User.objects.get(pk=self.request.user.pk)
 
     def form_valid(self, form):
-        # БАГ, КОТОРЫЙ ТУТ БЫЛ (найден полным аудитом, август 2026): смена
-        # email в этой форме сохранялась без сброса is_verified — пользователь
-        # мог вписать чужой/недоступный ему адрес и его аккаунт остался бы
-        # помечен как "верифицирован" для НЕподтверждённого нового email
-        # (is_verified=True рассылки/публичный листинг is_verified=True
-        # используют этот флаг как сигнал доверия). Старый email берём
-        # из БД, а не из self.object — ModelForm уже переписал
-        # self.object.email новым значением на этапе form.is_valid()
-        # (_post_clean), до вызова form_valid().
+        # Смена email сбрасывает is_verified. Старый email берём из БД — форма уже
+        # перезаписала self.object.email.
         old_email = User.objects.get(pk=self.object.pk).email
         new_email = form.cleaned_data.get('email')
         email_changed = new_email and new_email != old_email
@@ -619,31 +492,18 @@ class PasswordChangeViewCustom(LoginRequiredMixin, FormView):
 
 
 class PasswordResetViewCustom(PasswordResetView):
-    """
-    Django's PasswordResetForm молча "успешна" на несуществующий email (не
-    палит, зарегистрирован ли адрес) — это же свойство делает эндпоинт
-    удобной пушкой для флуда: без лимита можно было прогнать тысячи чужих
-    email через форму за минуты и завалить исходящую почтовую очередь
-    (Celery/notifications) чужими "инструкциями по сбросу".
-    """
+    """Сброс пароля с лимитом по IP (иначе флуд письмами на чужие адреса)."""
     template_name = 'auth/password_reset.html'
     email_template_name = 'emails/password_reset_email.txt'
     html_email_template_name = 'emails/password_reset_email.html'
     subject_template_name = 'emails/password_reset_subject.txt'
     success_url = reverse_lazy('users:password_reset_done')
     form_class = CustomPasswordResetForm
-    # Единый визуальный каркас писем (templates/emails/partials/_header.html,
-    # _footer.html — редизайн 2026-09-02) читает site_url из контекста
-    # письма, а Django здесь этот ключ сам не передаёт (в отличие от
-    # notifications/tasks.py::_send_email_to_user, который прокидывает его
-    # во ВСЕ остальные письма проекта) — добавляем его через штатный для
-    # PasswordResetView механизм extra_email_context, а не правим сами
-    # partials под этот один шаблон.
+    # site_url для общих шапки/подвала письма.
     extra_email_context = {'site_url': getattr(settings, 'SITE_URL', 'https://dopx.kz')}
 
     def dispatch(self, request, *args, **kwargs):
-        # Тот же паттерн, что в RegisterView.dispatch — лимит ДО валидации
-        # формы.
+        # Лимит до валидации формы.
         client_ip = get_client_ip(request)
         if request.method == 'POST' and client_ip:
             if is_rate_limited(
@@ -684,41 +544,30 @@ class NotificationSettingsView(LoginRequiredMixin, FormView):
 
     def form_valid(self, form):
         user = self.request.user
-        # Ключи берутся из User.DEFAULT_NOTIFICATION_SETTINGS, не хардкодом —
-        # новое поле формы подхватывается без правки этого метода.
+        # Ключи — из User.DEFAULT_NOTIFICATION_SETTINGS.
         user._notification_settings = {
             key: form.cleaned_data.get(key, True)
             for key in User.DEFAULT_NOTIFICATION_SETTINGS
         }
         user.save(update_fields=['_notification_settings', 'updated_at'])
-        user.refresh_from_db()  # Сбрасываем кэш свойств
+        user.refresh_from_db()
         messages.success(self.request, 'Настройки уведомлений сохранены.')
         return super().form_valid(form)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Настройки уведомлений — DOPX'
-        # has_push_subscription питает Alpine-стейт кнопки в шаблоне
-        # (notification_settings.html) — есть ли активная подписка хоть с
-        # одного устройства пользователя, не только текущего браузера.
+        # Есть ли активная push-подписка хоть на одном устройстве.
         push_subscriptions = self.request.user.push_subscriptions.order_by('-created_at')
         context['has_push_subscription'] = push_subscriptions.exists()
-        # push_subscriptions — реальный список подписанных устройств для
-        # карточки "Ваши устройства" (2026-08-31, по запросу пользователя:
-        # раньше про "другие устройства" была только одна невнятная
-        # строка текста, без возможности посмотреть, что именно подписано,
-        # и отключить конкретное устройство удалённо).
+        # Список подписанных устройств для карточки «Ваши устройства».
         context['push_subscriptions'] = push_subscriptions
         return context
 
 
 class UserLeaderboardView(ListView):
-    """
-    2026-09-23, продуктовый запрос ("сделать leaderboard интереснее —
-    больше срезов рейтинга, своя позиция и соседи"): раньше единственный
-    возможный порядок — trust_score. SORT_OPTIONS — реестр доступных
-    срезов, каждый со своим order_by и подписью для UI; ?sort= выбирает
-    срез, по умолчанию исторический (доверие).
+    """Лидерборд пользователей. SORT_OPTIONS — доступные срезы, ?sort= выбирает срез,
+    ?city= — фильтр по городу.
     """
     model = User
     template_name = 'users/leaderboard.html'
@@ -733,7 +582,7 @@ class UserLeaderboardView(ListView):
     DEFAULT_SORT = 'trust'
 
     def get_paginate_by(self, queryset):
-        # 2026-09-23, «Настройки платформы» — управляется staff без деплоя.
+        # Размер страницы — из настроек платформы.
         return get_setting("user_leaderboard_page_size", self.paginate_by)
 
     def _sort_key(self):
@@ -741,14 +590,11 @@ class UserLeaderboardView(ListView):
         return key if key in self.SORT_OPTIONS else self.DEFAULT_SORT
 
     def _base_queryset(self):
-        # select_related('xp') — шаблон читает user.xp.level на каждой
-        # строке (leaderboard.html), иначе N+1 на 20 пользователей страницы.
+        # select_related('xp') — уровень выводится в каждой строке.
         qs = User.objects.filter(is_active=True, is_verified=True).select_related('xp').annotate(
             eval_count=Count('context_evaluations', distinct=True)
         ).filter(eval_count__gte=1)
-        # ?city= — локальный рейтинг "лучшие болельщики моего города".
-        # Точное совпадение, не icontains: фильтр приходит из выпадающего
-        # списка существующих значений city, не из свободного текста.
+        # ?city= — точное совпадение (значение из выпадающего списка).
         city = self.request.GET.get('city', '').strip()
         if city:
             qs = qs.filter(city__iexact=city)
@@ -764,25 +610,15 @@ class UserLeaderboardView(ListView):
         context['selected_city'] = self.request.GET.get('city', '').strip()
         context['sort_options'] = self.SORT_OPTIONS
         context['selected_sort'] = self._sort_key()
-        # Список городов для выпадающего фильтра — только те, что реально
-        # встречаются у активных верифицированных пользователей (не пустой
-        # справочник административных единиц Казахстана "на будущее").
+        # Только города, которые реально есть у пользователей.
         context['available_cities'] = (
             User.objects.filter(is_active=True, is_verified=True)
             .exclude(city='').values_list('city', flat=True).distinct().order_by('city')
         )
 
-        # "Твоя позиция и соседи" — 2026-09-23, прямая просьба
-        # пользователя. Считаем номер строки через оконную функцию
-        # RowNumber() по ТОМУ ЖЕ порядку/фильтру, что и основной список
-        # (город + выбранный срез). Django не даёт фильтровать queryset
-        # ПО САМОЙ window-аннотации в WHERE того же запроса ("Window is
-        # disallowed in the filter clause") — поэтому забираем ВЕСЬ
-        # пронумерованный список одним лёгким запросом (только id+rank,
-        # без остальных полей) и режем окно вокруг пользователя уже в
-        # Python. Для реального объёма пользователей платформы (не
-        # десятки миллионов) это дешевле, чем городить subquery-обвязку
-        # вокруг ограничения ORM.
+        # «Твоя позиция и соседи»: ранжируем RowNumber() по тому же порядку и фильтру.
+        # Фильтровать по window-аннотации Django не даёт, поэтому берём список (id, rank)
+        # и вырезаем окно в Python.
         context['my_rank_neighbors'] = []
         user = self.request.user
         if user.is_authenticated:
@@ -797,10 +633,7 @@ class UserLeaderboardView(ListView):
             rank_by_id = dict(ranked_list)
             my_rank = rank_by_id.get(user.id)
             if my_rank is not None:
-                # Показываем блок только если пользователь НЕ виден на
-                # текущей открытой странице — иначе получилось бы
-                # дублирование той же строки, которая и так уже в таблице
-                # ниже.
+                # Блок показываем, только если пользователя нет на текущей странице.
                 page_size = self.get_paginate_by(None)
                 page_number = context['page_obj'].number if context.get('page_obj') else 1
                 visible_range = range((page_number - 1) * page_size + 1, page_number * page_size + 1)
@@ -821,7 +654,7 @@ class PlayerLeaderboardView(ListView):
     paginate_by = 20
 
     def get_paginate_by(self, queryset):
-        # 2026-09-23, «Настройки платформы» — управляется staff без деплоя.
+        # Размер страницы — из настроек платформы.
         return get_setting("player_leaderboard_page_size", self.paginate_by)
 
     def get_queryset(self):
@@ -836,11 +669,8 @@ class PlayerLeaderboardView(ListView):
             avg_performance__isnull=False,
             total_matches__gte=1
         ).order_by('-avg_performance')
-        # ?league= — рейтинг игроков в разрезе лиги. У Player/Team нет
-        # прямого FK на League (лига — атрибут матча, не команды), поэтому
-        # фильтруем через match_aggregates__match__league, не team__league.
-        # distinct() — игрок может встретиться в лиге по нескольким матчам,
-        # без него JOIN размножил бы строки и annotate() выше считал бы неверно.
+        # ?league= — фильтр через матчи агрегатов (у игрока нет FK на лигу).
+        # distinct() — чтобы JOIN не размножил строки.
         league_id = self.request.GET.get('league', '').strip()
         if league_id:
             qs = qs.filter(match_aggregates__match__league_id=league_id).distinct()
@@ -858,19 +688,8 @@ class PlayerLeaderboardView(ListView):
 @require_POST
 @login_required
 def toggle_follow(request, target_type, target_id):
-    """
-    Продуктовый аудит, раздел 5b ("Follow-граф"): тап на кнопку "Подписаться"
-    на странице игрока/команды. Один эндпоинт на оба типа целей (а не
-    `toggle_player_follow`/`toggle_team_follow` дублирующимися вьюхами) —
-    логика идентична, различается только модель, на которую смотрим.
-    Возвращает HTMX-партиал с новым состоянием кнопки (та же схема, что
-    `events:react` — мгновенный свап без перезагрузки страницы).
-
-    Rate-limit по user.id (30/мин) — без него скрипт мог бы задиспэтчить
-    Follow.objects.create/delete по кругу без ограничений (дешёвый способ
-    засорить follow-граф и очередь персонализированных уведомлений,
-    users/tasks.py). 429 без тела — HTMX по умолчанию не свапает контент
-    вне 2xx, кнопка просто не обновится вместо падения страницы.
+    """Подписаться/отписаться на игрока или команду. Возвращает HTMX-партиал кнопки.
+    Лимит 30/мин на пользователя; при превышении 429 — кнопка просто не обновится.
     """
     from django.http import Http404
 
@@ -906,14 +725,7 @@ def toggle_follow(request, target_type, target_id):
 @require_POST
 @login_required
 def push_subscribe(request):
-    """
-    Продуктовый аудит, раздел 5c ("PWA + Web Push"): сохраняет подписку,
-    присланную `static/js/push.js::dopxSubscribePush` (JSON-тело —
-    результат `PushSubscription.toJSON()` из Push API браузера).
-    `update_or_create` по `endpoint` — повторная подписка с того же
-    браузера (например, после очистки локальной БД воркера) обновляет
-    ключи, а не падает на UniqueConstraint.
-    """
+    """Сохраняет push-подписку браузера (update_or_create по endpoint)."""
     import json
 
     from users.models import PushSubscription
@@ -942,7 +754,7 @@ def push_subscribe(request):
 @require_POST
 @login_required
 def push_unsubscribe(request):
-    """Удаляет подписку по endpoint (см. dopxUnsubscribePush)."""
+    """Удаляет push-подписку по endpoint."""
     import json
 
     from users.models import PushSubscription
@@ -960,28 +772,7 @@ def push_unsubscribe(request):
 @require_POST
 @login_required
 def push_revoke_device(request, subscription_id):
-    """
-    Отключить КОНКРЕТНОЕ устройство по id записи PushSubscription — в
-    отличие от push_unsubscribe (который работает только для ТЕКУЩЕГО
-    браузера, через его собственный PushManager.getSubscription()), эта
-    вьюха вызывается из обычной POST-формы на странице настроек и удаляет
-    запись без участия Push API браузера. Это осознанно: пользователь
-    должен иметь возможность отключить старый/чужой/потерянный телефон,
-    сидя за ноутбуком — без этого единственный способ снять подписку с
-    устройства был "открыть настройки именно на нём" (2026-08-31, по
-    запросу пользователя после того, как обнаружил забытую подписку
-    Chrome, зайдя с Safari на том же компьютере).
-
-    Со стороны браузера, чья подписка отозвана так — "тихо" продолжает
-    считать себя подписанным (localStorage/Push API не в курсе), пока
-    push реально не придёт: send_push_to_user (notifications/services.py)
-    получит 404/410 от push-сервиса на несуществующий endpoint и удалит
-    "осиротевшую" запись сам (см. её докстринг) — но т.к. записи уже нет,
-    это просто no-op. Разряженный edge-case (тот браузер решит, что он
-    "включён", хотя реально push до него больше не дойдёт), приемлем ради
-    простоты — то же самое происходит и у любого сервиса с "выйти со всех
-    устройств".
-    """
+    """Отключить конкретное устройство по id подписки (из настроек, с любого устройства)."""
     from users.models import PushSubscription
 
     deleted, _ = PushSubscription.objects.filter(user=request.user, id=subscription_id).delete()

@@ -1,3 +1,4 @@
+# coaches/admin.py — Админка тренеров.
 from django.contrib import admin
 from unfold.admin import ModelAdmin
 

@@ -1,8 +1,7 @@
-<!-- templates/emails/contact_form.html — ПОЛНЫЙ РЕДИЗАЙН 2026-09-02, см.
-     докстринг templates/emails/welcome.html про общий каркас в partials/.
-     Внутреннее письмо для founder/staff о новом обращении (см.
-     core/views.py::send_admin_notification). Контекст: submission,
-     category, email, username, has_attachment, site_name, site_url. -->
+{% comment %}
+Письмо staff о новом обращении.
+Контекст: submission, category, email, username, has_attachment, site_name, site_url.
+{% endcomment %}
 <!DOCTYPE html>
 <html lang="ru">
 {% include "emails/partials/_head.html" %}

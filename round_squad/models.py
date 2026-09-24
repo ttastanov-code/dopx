@@ -1,43 +1,8 @@
 # round_squad/models.py
-"""
-"DOPX Лучшие тура" (бренд-название; до правки 2026-08-22 называлось "Тур
-недели" — переименовано намеренно, см. ниже про переносы) — снимок лучшего
-состава ОДНОГО тура чемпионата. Продуктовый запрос 2026-08-22 (по мотивам
-ревью ChatGPT Codex по season_squad): "Сборная тура"/"Игрок тура" — тот же
-принцип, что Sofascore Team of the Week, поверх уже накопленной
-инфраструктуры season_squad (переиспользуем players/positions.py::
-SLOT_PROCESSING_ORDER и паттерн денормализации карточек через
-GenericForeignKey — см. докстринг season_squad/models.py).
-
-ПОЧЕМУ НЕ "Тур НЕДЕЛИ": на одной календарной неделе из-за переносов матчей
-могут играться матчи РАЗНЫХ туров одновременно (перенесённый матч 5-го тура
-может сыграться в календарную неделю 9-го) — название "тур недели"
-подразумевает привязку к календарю, которой в модели данных нет и не
-должно быть: единственный устойчивый идентификатор — Match.tour (номер
-тура от источника — KFF исторически, Sportmonks с 2026-09-08 — не
-меняется при переносе, см. matches/models.py::Match.tour).
-RoundBestXI ключуется строго по (season, tour), никогда по диапазону дат —
-поэтому переименование в "DOPX Лучшие N тура" не требует правок алгоритма,
-только копирайта: механика и раньше была тур-центричной, только название
-вводило в заблуждение.
-
-КЛЮЧЕВОЕ ОТЛИЧИЕ ОТ season_squad: там кандидат копит рейтинг за МНОГО
-матчей сезона, и число матчей — прямой сигнал надёжности (байесовское
-сглаживание по SHRINKAGE_C "виртуальных матчей"). В туре у игрока почти
-всегда РОВНО один оценённый матч — число матчей тут бесполезно как сигнал.
-Сигнал надёжности здесь — число ГОЛОСОВ за этот единственный матч
-(зрелищное дерби соберёт 40+ голосов, рядовой матч в будний день — 5).
-Поэтому round_squad/services.py сглаживает по голосам (ROUND_VOTE_SHRINKAGE_C),
-а не по матчам — это осознанно другая ось, не переиспользуем season_squad.SHRINKAGE_C.
-
-ЖИЗНЕННЫЙ ЦИКЛ RoundBestXI.is_final — тоже отличается от season_squad, где
-это ручное действие стаффа после конца сезона. Тур закрывается САМ: как
-только у ВСЕХ матчей этого тура voting_open_until в прошлом, донакрутить
-состав больше нечем (новых голосов по сыгранным матчам тура уже не будет),
-и recompute_round() в round_squad/services.py взводит is_final=True
-автоматически при следующем прогоне. До этого момента recompute можно
-вызывать сколько угодно раз (Celery Beat, см. round_squad/tasks.py) — тур
-"живой", как и live-сборная сезона.
+"""«DOPX Лучшие тура» — лучший состав одного тура.
+Ключ — (season, tour), не даты: перенесённые матчи остаются в своём туре.
+Сглаживание — по числу голосов за матч (ROUND_VOTE_SHRINKAGE_C).
+Тур финализируется сам (is_final), когда у всех его матчей закрыто голосование.
 """
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
@@ -48,7 +13,7 @@ from core.models import BaseModel
 
 
 class RoundBestXI(BaseModel):
-    """Контейнер «DOPX Лучшие тура» — один на пару (сезон, номер тура)."""
+    """«DOPX Лучшие тура» — один на (сезон, тур)."""
 
     season = models.ForeignKey(
         'seasons.Season',
@@ -70,11 +35,7 @@ class RoundBestXI(BaseModel):
     finalized_at = models.DateTimeField(_('Зафиксирован'), null=True, blank=True)
     last_computed_at = models.DateTimeField(_('Последний пересчёт'), null=True, blank=True)
 
-    # --- «Игрок тура» — лучший ОБЩИЙ результат тура, независимо от позиции
-    # и слота в формации (может как совпадать, так и не совпадать с
-    # occupant'ом соответствующего слота в RoundBestXISlot — см. докстринг
-    # round_squad/services.py::_rank_round_pool). Денормализовано по тому
-    # же принципу, что и RoundBestXISlot ниже — без join'ов для рендера.
+    # --- «Игрок тура» — лучший результат тура вне зависимости от позиции ---
     player_of_round_content_type = models.ForeignKey(
         ContentType, on_delete=models.SET_NULL, null=True, blank=True, related_name='+',
     )
@@ -88,8 +49,7 @@ class RoundBestXI(BaseModel):
     player_of_round_votes = models.PositiveIntegerField(_('Голосов'), default=0)
     player_of_round_explanation = models.TextField(_('Почему игрок тура'), blank=True)
 
-    # --- Самый драматичный матч тура — по MatchEvaluation.entertainment *
-    # MatchEvaluation.tension, усреднённому по матчу (см. services.py).
+    # --- Самый драматичный матч тура (entertainment * tension) ---
     most_dramatic_match = models.ForeignKey(
         'matches.Match', on_delete=models.SET_NULL, null=True, blank=True, related_name='+',
         verbose_name=_('Самый драматичный матч'),
@@ -97,11 +57,7 @@ class RoundBestXI(BaseModel):
     most_dramatic_match_score = models.FloatField(_('Индекс драмы'), null=True, blank=True)
     most_dramatic_match_explanation = models.TextField(_('Почему этот матч'), blank=True)
 
-    # Путь в MEDIA к готовой PNG-карточке для шеринга (core/services/share_cards.py
-    # ::build_round_squad_share_card) — генерируется один раз при взведении
-    # is_final, тот же ленивый принцип "по первому запросу", что у остальных
-    # share-карточек (см. докстринг share_cards.py), только триггер здесь —
-    # не HTTP-запрос, а сам момент финализации тура в recompute_round().
+    # PNG для шеринга, генерируется при финализации тура.
     share_card_path = models.CharField(_('Путь к share-карточке'), max_length=255, blank=True)
 
     class Meta:
@@ -118,27 +74,14 @@ class RoundBestXI(BaseModel):
 
     @property
     def brand_title(self) -> str:
-        """Единая точка правды для названия — используется на странице,
-        в embed-виджете, share-карточке, письме и админке, чтобы бренд
-        не разъехался по копипастам (см. докстринг модуля про
-        переименование из "Тур недели")."""
+        """Название для страницы, виджета, карточки, письма и админки."""
         return f"DOPX Лучшие {self.tour}-го тура"
 
 
 class RoundBestXISlot(BaseModel):
-    """Одна карточка состава тура: 11 полевых позиций + тренер тура (без
-    судьи — Codex-ревью и продуктовый запрос про «DOPX Лучшие тура»
-    ограничили первую версию игроками/тренером/самым драматичным матчем)."""
+    """Карточка слота: 11 позиций + тренер тура."""
 
-    # "Изменение позиции" (docs/adr/0032-squad-explainability-v2.md) — те же
-    # 4 значения, что у season_squad.SeasonBestXISlot.RANK_CHANGE_CHOICES,
-    # НАМЕРЕННО не импортируются оттуда (round_squad и season_squad не
-    # должны зависеть друг от друга ради одной константы — тот же принцип,
-    # что у NOTABLE_EVENT_TYPES в round_squad/services.py). Сравнение здесь
-    # идёт тур-к-туру (см. RoundPositionRanking ниже), а не батч-к-батчу
-    # внутри одного тура, как в season_squad — тур пересчитывается много раз
-    # ДО финализации, но "предыдущий" для rank_change — это прошлый
-    # ЗАФИКСИРОВАННЫЙ тур, а не предыдущий прогон recompute этого же тура.
+    # Изменение позиции относительно прошлого зафиксированного тура.
     RANK_CHANGE_NEW = 'new'
     RANK_CHANGE_UP = 'up'
     RANK_CHANGE_DOWN = 'down'
@@ -194,16 +137,7 @@ class RoundBestXISlot(BaseModel):
 
 
 class RoundPositionRanking(BaseModel):
-    """Полный ранжированный снимок кандидатов на слот ОДНОГО тура — тот же
-    смысл, что season_squad.SeasonPositionRanking, но партия сравнения
-    здесь не "предыдущий прогон recompute", а "предыдущий тур" (см.
-    докстринг RoundBestXISlot.RANK_CHANGE_CHOICES выше): round_squad/services.py
-    пересчитывает один и тот же тур много раз до финализации, поэтому
-    сравнивать с "прошлым прогоном ЭТОГО ЖЕ тура" бесполезно — почти всегда
-    SAME. recompute_round полностью перезаписывает строки этого тура на
-    каждый вызов (delete + bulk_create), в отличие от season_squad, который
-    хранит несколько последних батчей — здесь на слот/тур нужен только один
-    актуальный снимок, "предыдущая партия" всегда однозначно тур-1."""
+    """Ранжирование кандидатов на слот одного тура. Перезаписывается при каждом пересчёте."""
 
     round_best_xi = models.ForeignKey(
         RoundBestXI, on_delete=models.CASCADE, related_name='rankings', verbose_name=_('Тур'),

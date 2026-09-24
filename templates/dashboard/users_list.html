@@ -3,12 +3,7 @@
 {% block content %}
 {% include 'dashboard/_nav.html' %}
 
-{% comment %}
-templates/dashboard/users_list.html
-2026-09-23, раздел «Пользователи» — поиск по username/email (dashboard/
-services.py::users_queryset), обычная GET-пагинация, тот же паттерн, что
-matches_list.html.
-{% endcomment %}
+{# Список пользователей: поиск по username/email, GET-пагинация. #}
 
 <div class="card bg-base-100 border border-base-300 mb-4">
     <div class="card-body p-4">

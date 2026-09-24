@@ -1,9 +1,6 @@
 {% comment %}
-Live-пульс: крупные события (гол/пенальти/карточки/VAR) с реакциями 👍/👎,
-отдельно от полной ленты `_match_events.html`. Кнопки реакций —
-HTMX-острова (`_reaction_buttons.html`), обновляются мгновенно, не
-дожидаясь следующего опроса ленты. Поллинг самозавершающийся, как в
-_match_header.html — атрибуты на корне живут только пока матч live.
+Live-пульс: крупные события с реакциями 👍/👎. Кнопки — _reaction_buttons.html.
+Поллинг только пока матч live.
 {% endcomment %}
 <div id="live-pulse-container" class="space-y-2"
      {% if match.status == 'live' %}

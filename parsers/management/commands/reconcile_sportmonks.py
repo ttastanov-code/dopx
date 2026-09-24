@@ -1,35 +1,10 @@
 # parsers/management/commands/reconcile_sportmonks.py
-"""
-manage.py reconcile_sportmonks --entity {teams,referees,coaches,players,all} [--apply] [--fuzzy]
+"""manage.py reconcile_sportmonks --entity {teams,referees,coaches,players,all} [--apply] [--fuzzy]
 
-Фаза 2 миграции на Sportmonks (docs/sportmonks-migration-plan.md). Цель —
-проставить sportmonks_id на УЖЕ СУЩЕСТВУЮЩИЕ записи Team/Referee/Coach/Player,
-которые годами копились через импорт из KFF, чтобы дальнейший импорт из
-Sportmonks (фаза 3) писал историю ратингов в ТЕ ЖЕ строки, а не плодил
-дубликаты рядом со старыми.
-
-Тот же принцип осторожности, что и в core/management/commands/
-dedupe_referees_coaches.py, который эта команда сознательно копирует:
-
-1. Без --apply — только отчёт (dry-run), ничего не пишет.
-2. Точное совпадение по normalize_kz(имя) — единственное, что пишется
-   под --apply. Для команд сопоставление дополнительно ограничено
-   контекстом (их всего 16, полный список печатается всегда, даже без
-   --fuzzy, чтобы можно было свериться глазами перед --apply).
-3. --fuzzy — печатает похожие, но не идентичные пары (порог 0.82, тот же,
-   что в dedupe_referees_coaches.py) — ТОЛЬКО отчёт, никогда не пишется
-   автоматически. Опечатка неотличима от two разных людей по строке.
-4. Игроков намеренно матчим В ГРАНИЦАХ команды (не по всей базе разом) —
-   пары "Александр Иванов" в разных клубах не должны склеиваться только
-   по совпадению имени. Матчинг игроков имеет смысл запускать после того,
-   как команды уже сверены (--entity teams --apply), иначе для команд без
-   sportmonks_id игроков сопоставлять не с чем.
-
-Ничего не удаляет и не создаёт новых записей — только проставляет
-sportmonks_id на уже существующие. Если для sportmonks-сущности не нашлось
-локальной пары (например, судья, который никогда раньше не судил матчи в
-нашей истории KFF) — это НЕ ошибка, такая запись будет создана позже самим
-импортёром (фаза 3) при первом реальном матче с этим судьёй.
+Проставляет sportmonks_id существующим Team/Referee/Coach/Player по normalize_kz(имя).
+Без --apply — отчёт. --fuzzy — похожие пары (>= 0.82), только отчёт.
+Игроки сопоставляются в пределах команды — сначала сверить команды.
+Ничего не создаёт и не удаляет.
 """
 from __future__ import annotations
 
@@ -123,15 +98,11 @@ class Command(BaseCommand):
             )
 
     # ------------------------------------------------------------------
-    # Судьи и тренеры — собираем распределённый по матчам сезона список
+    # Судьи и тренеры — по матчам сезона
     # ------------------------------------------------------------------
 
     def _collect_officials_from_season(self, season_id: int) -> tuple[dict, dict]:
-        """Один проход по всем матчам сезона (включая ещё не сыгранные —
-        у них просто не будет referees/coaches в ответе, не ошибка) —
-        собирает уникальных судей и тренеров, встретившихся хотя бы раз.
-        Дешевле, чем отдельный запрос на каждый матч: это ровно тот же
-        принцип "один bulk-вызов вместо цикла", что и в client.py."""
+        """Один проход по матчам сезона: уникальные судьи и тренеры."""
         league = self.client.get_league(include="currentSeason")
         season = league.get("currentseason") or {}
         date_from = (season.get("starting_at") or "")[:10]
@@ -208,7 +179,7 @@ class Command(BaseCommand):
             self._fuzzy_report(list(sm_coaches.items()), [(c.id, c.full_name) for c in local], "Тренеры")
 
     # ------------------------------------------------------------------
-    # Игроки — строго в границах команды, команды должны быть уже сверены
+    # Игроки — в пределах команды
     # ------------------------------------------------------------------
 
     def _reconcile_players(self, season_id: int):
@@ -266,16 +237,14 @@ class Command(BaseCommand):
         ))
 
     # ------------------------------------------------------------------
-    # Общая логика сопоставления (используется всеми сущностями выше)
+    # Общая логика сопоставления
     # ------------------------------------------------------------------
 
     @staticmethod
     def _match(sm_items: list[tuple], local_items: list[tuple]):
-        """sm_items/local_items — списки (id, name). Возвращает
-        (matches, unmatched_sm, unmatched_local), matches — список
-        (sm_id, sm_name, local_id, local_name). Точное совпадение —
-        ровно как в dedupe_referees_coaches.py: normalize_kz(name)
-        совпадает буквально, без фаззи (фаззи — отдельно, только отчёт)."""
+        """sm_items/local_items — списки (id, name).
+        Возвращает (matches, unmatched_sm, unmatched_local); точное совпадение normalize_kz.
+        """
         local_by_key = defaultdict(list)
         for local_id, name in local_items:
             local_by_key[normalize_kz(name)].append((local_id, name))
@@ -304,7 +273,7 @@ class Command(BaseCommand):
             for local_id, local_name in local_items:
                 local_key = normalize_kz(local_name or "")
                 if sm_key == local_key:
-                    continue  # точное совпадение — уже обработано выше
+                    continue  # точное — уже обработано
                 ratio = difflib.SequenceMatcher(None, sm_key, local_key).ratio()
                 if ratio >= FUZZY_THRESHOLD:
                     found = True

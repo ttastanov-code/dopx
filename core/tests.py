@@ -1,17 +1,6 @@
 # core/tests.py
-"""
-is_rate_limited — единственный rate-limiter в проекте (см. docstring
-core/utils.py), в этой сессии подключённый ещё к 4 эндпоинтам (регистрация
-уже была прикрыта раньше; password-reset, verify-email, toggle_follow,
-react_to_event — новые потребители). Ошибка в самой примитиве расползлась
-бы сразу на все 5 точек, поэтому логика fixed-window тестируется отдельно,
-на уровне core, а не по одному разу в каждом потребителе.
-
-CACHES переопределён на LocMemCache через @override_settings — прод
-использует Redis (dopx/settings.py::CACHES), но сама логика is_rate_limited
-работает с любым Django cache-backend через одинаковый API (get/set/incr),
-так что тест не должен зависеть от того, поднят ли Redis на машине, где
-запускается `manage.py test`.
+"""Тесты core: is_rate_limited, is_synthetic_test_email, тексты бейджа надёжности.
+CACHES -> LocMemCache.
 """
 from __future__ import annotations
 
@@ -42,10 +31,7 @@ LOCMEM_CACHES = {
 
 
 class IsSyntheticTestEmailTests(SimpleTestCase):
-    """core.utils.is_synthetic_test_email — единая проверка, которой
-    notifications/tasks.py::_send_email_to_user исключает бот-пул
-    (seed_match_votes.py/seed_full_history.py) и нагрузочные аккаунты
-    (setup_load_test.py) из реальных рассылок (2026-09-07)."""
+    """is_synthetic_test_email — исключение ботов и нагрузочных аккаунтов из рассылок."""
 
     def test_bot_pool_email_is_synthetic(self):
         self.assertTrue(is_synthetic_test_email("test_user_bot_0001@test.dopx.local"))
@@ -60,8 +46,7 @@ class IsSyntheticTestEmailTests(SimpleTestCase):
         self.assertFalse(is_synthetic_test_email("timur@gmail.com"))
 
     def test_similar_but_different_domain_is_not_synthetic(self):
-        """"dopx.local.evil.com" — суффикс НЕ должен матчить произвольный
-        домен, просто содержащий "dopx.local" где-то в середине строки."""
+        """Суффикс не должен совпадать с «dopx.local» в середине домена."""
         self.assertFalse(is_synthetic_test_email("someone@notdopx.local"))
         self.assertFalse(is_synthetic_test_email("someone@dopx.local.evil.com"))
 
@@ -79,9 +64,7 @@ class IsSyntheticTestEmailTests(SimpleTestCase):
 @override_settings(CACHES=LOCMEM_CACHES)
 class IsRateLimitedTests(SimpleTestCase):
     def setUp(self):
-        # LocMemCache — общий процесс кэша на все тесты класса (LOCATION
-        # одна и та же), без ручной очистки между тестами один тест мог бы
-        # унаследовать бакет предыдущего и получить ложный False/True.
+        # Чистим кэш между тестами.
         from django.core.cache import cache
         cache.clear()
 
@@ -95,13 +78,13 @@ class IsRateLimitedTests(SimpleTestCase):
     def test_exceeds_limit_on_the_next_call(self):
         for _ in range(3):
             is_rate_limited("k3", limit=3, window_seconds=60)
-        # 4-й вызов в том же окне — лимит уже исчерпан.
+        # 4-й вызов в окне — лимит исчерпан.
         self.assertTrue(is_rate_limited("k3", limit=3, window_seconds=60))
 
     def test_different_keys_have_independent_buckets(self):
         for _ in range(3):
             is_rate_limited("bucket_a", limit=3, window_seconds=60)
-        # bucket_a исчерпан, но bucket_b — отдельный ключ, свежий бакет.
+        # Другой ключ — свой бакет.
         self.assertFalse(is_rate_limited("bucket_b", limit=3, window_seconds=60))
 
     def test_resets_after_window_expires(self):
@@ -117,26 +100,13 @@ class IsRateLimitedTests(SimpleTestCase):
 
 
 class BiasSegmentTextTests(SimpleTestCase):
-    """
-    НАЙДЕНО (2026-09-01, жалоба пользователя: "фанаты игрока тоже неверно
-    — это могут быть фанаты команды, а не конкретного игрока" + "описание
-    вообще нихера непонятное"): `own_fans_avg`/`rival_fans_avg` — это
-    фанаты КОМАНДЫ сущности (aggregates/services.py::
-    segment_evaluations_by_side, entity_team_id), не персонально игрока.
-    Поле есть не только на PlayerMatchAggregate, но и на
-    TeamMatchAggregate/CoachMatchAggregate (aggregates/models.py) — старая
-    подпись "фанаты игрока" была прямо неверной для рейтинга команды/
-    тренера, не только неточной для игрока. Используем SimpleNamespace
-    вместо реальных Django-моделей — bias_segment_text читает только эти
-    три плоских поля, полноценная фикстура с БД не нужна.
-    """
+    """bias_segment_text: «свои болельщики» — болельщики команды сущности."""
 
     def _agg(self, own=None, rival=None, neutral=None):
         return SimpleNamespace(own_fans_avg=own, rival_fans_avg=rival, neutral_avg=neutral)
 
     def test_no_generic_player_wording_used(self):
-        """Регрессия на буквальную формулировку из жалобы — "фанаты игрока"
-        не должно встречаться вообще, независимо от типа сущности."""
+        """Фразы «фанаты игрока» быть не должно."""
         text = bias_segment_text(self._agg(own=8.0, rival=7.0, neutral=7.0))
         self.assertNotIn("фанаты игрока", text)
         self.assertIn("свои болельщики", text)
@@ -149,7 +119,7 @@ class BiasSegmentTextTests(SimpleTestCase):
         self.assertIn("7.0", text)
 
     def test_fewer_than_two_segments_returns_empty(self):
-        """Один сегмент — сравнивать не с чем, подсказка была бы бесполезна."""
+        """Один сегмент — пустая строка."""
         self.assertEqual(bias_segment_text(self._agg(own=8.0)), "")
         self.assertEqual(bias_segment_text(None), "")
 
@@ -160,13 +130,7 @@ class BiasSegmentTextTests(SimpleTestCase):
 
 class StabilityLabelTests(SimpleTestCase):
     def test_label_does_not_repeat_word_mneniya(self):
-        """
-        НАЙДЕНО (2026-09-01): раньше stability_label() возвращала "мнения
-        расходятся" целиком, а confidence_badge() собирал "Разброс мнений:
-        {label}" — получалось задвоенное "мнения мнения" по смыслу
-        ("Разброс мнений: мнения расходятся"). Слово "мнения" теперь
-        только в confidence_badge, сама метка — просто прилагательное.
-        """
+        """stability_label возвращает только прилагательное."""
         self.assertNotIn("мнения", stability_label(0.3))
         self.assertNotIn("мнения", stability_label(0.7))
         self.assertNotIn("мнения", stability_label(1.5))
@@ -186,21 +150,9 @@ class StabilityLabelTests(SimpleTestCase):
 
 
 class ConfidenceBadgeTooltipTests(SimpleTestCase):
-    """confidence_badge() склеивает stability_label + bias_segment_text в
-    ОДНО предложение, когда есть оба — регрессия на "Разброс мнений: мнения
-    расходятся. Разбивка по лагерям — фанаты игрока: ..." (двумя корявыми
-    фрагментами, см. докстринг confidence_badge в rating_extras.py).
-
-    2026-09-23, УПАЛО (найдено пользователем в CI/тестовом прогоне):
-    confidence_badge() теперь читает пороги через core.models.get_setting()
-    (rating_extras.py::_min_votes_for_display/_confident_votes_threshold,
-    «Настройки платформы»), а get_setting при промахе кэша идёт в БД —
-    обычный SimpleTestCase такие запросы запрещает («Database queries to
-    'default' are not allowed»). databases = {"default"} — официальный
-    механизм Django именно для этого случая: разрешить БД конкретному
-    SimpleTestCase, не переводя его в полноценный TestCase с транзакциями/
-    фикстурами, которые здесь не нужны (сами объекты — SimpleNamespace,
-    не ORM-записи)."""
+    """confidence_badge: разброс и лагеря одним предложением.
+    databases = {"default"} — get_setting ходит в БД.
+    """
 
     databases = {"default"}
 
@@ -215,7 +167,7 @@ class ConfidenceBadgeTooltipTests(SimpleTestCase):
         tooltip = result["tooltip_text"]
         self.assertIn("Мнения расходятся: свои болельщики — 8.0", tooltip)
         self.assertNotIn("фанаты игрока", tooltip)
-        # Не должно остаться старого задвоения "Разброс мнений: мнения ...".
+        # Без задвоения «мнения».
         self.assertNotIn("мнения мнения", tooltip.lower())
 
     def test_none_aggregate_hides_badge(self):
@@ -223,12 +175,9 @@ class ConfidenceBadgeTooltipTests(SimpleTestCase):
 
 
 class ConfidenceBadgeSampleSizeTests(SimpleTestCase):
-    """Число оценок — прямо в видимом лейбле бейджа для preliminary-уровня
-    (docs/BACKLOG.md: "показывать число оценок и пометку 'предварительный
-    рейтинг' при маленькой выборке"), не только в тултипе по наведению.
-
-    2026-09-23 — см. докстринг ConfidenceBadgeTooltipTests.databases выше:
-    та же причина, тот же фикс."""
+    """Для preliminary число оценок в самом лейбле.
+    databases = {"default"} — та же причина.
+    """
 
     databases = {"default"}
 
@@ -241,10 +190,7 @@ class ConfidenceBadgeSampleSizeTests(SimpleTestCase):
     def test_preliminary_tier_shows_vote_count_in_label(self):
         result = confidence_badge(self._agg(3))
         self.assertEqual(result["tier"], "preliminary")
-        # 2026-09-10: метки переименованы (жалоба "нихуя не понятно что
-        # надежно... создается впечатление, что это типа рейтинг такой") —
-        # каждая метка теперь явно содержит слово "оценок", см. коммент у
-        # _TIER_META в rating_extras.py.
+        # В каждой метке слово «оценок».
         self.assertEqual(result["tier_label"], "Мало оценок · 3")
 
     def test_basic_tier_label_has_no_inline_count(self):
@@ -259,10 +205,7 @@ class ConfidenceBadgeSampleSizeTests(SimpleTestCase):
 
 
 class HomeTopPlayersVoteGateTests(TestCase):
-    """HomeView.top_players — тот же класс проблемы, что чинили для топа
-    игроков команды (docs/adr/0014-team-top-players-transfer-fix.md):
-    без гейта по total_votes единичный накрученный голос обходит в топе
-    игрока с честными десятками оценок."""
+    """Топ игроков на главной — только с достаточным числом голосов."""
 
     def setUp(self):
         league = League.objects.create(name="League", country="KZ")

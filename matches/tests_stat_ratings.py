@@ -1,6 +1,5 @@
 # matches/tests_stat_ratings.py
-"""Оценка «по статистике» (matches/stat_ratings.py) и сохранение полного
-ответа поставщика данных в raw при импорте статистики (2026-09-24)."""
+"""Тесты оценки «по статистике» и сохранения полного raw при импорте."""
 from datetime import timedelta
 
 from django.test import TestCase

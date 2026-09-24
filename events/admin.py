@@ -1,3 +1,4 @@
+# events/admin.py — Админка событий матча и реакций.
 from django.contrib import admin
 from unfold.admin import ModelAdmin
 

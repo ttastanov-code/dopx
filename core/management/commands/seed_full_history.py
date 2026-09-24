@@ -1,105 +1,20 @@
 # core/management/commands/seed_full_history.py
-"""
-manage.py seed_full_history [--season-id UUID] [--tour-from N] [--tour-to N]
+"""manage.py seed_full_history [--season-id UUID] [--tour-from N] [--tour-to N]
                              [--pool-size N] [--seed N] [--no-recalc] [--no-badges]
 
-Продуктовый запрос (2026-09-07): "надо как-то наполнить нашу базу оценками,
-прогнозами и тд за все туры которые были чтобы полноценно посмотреть
-функционал как работает. Нужна прям качественная имитация" — в отличие от
-`seed_match_votes` (наполняет ВЫБРАННЫЕ матчи оценками, ничего не знает про
-прогнозы/серии/бейджи/XP и не трогает сборные тура/сезона), эта команда
-прогоняет ВСЮ историю сезона одним связным проходом, чтобы после неё было
-осмысленно смотреть не только "рейтинг игрока", но и серии, достижения,
-уровень/XP, "сборную тура", "сборную сезона" и турнирную таблицу.
+Наполняет историю сезона тестовыми данными ботов, тур за туром:
+  1. оценки + EvaluationSession(completed) + update_evaluation_stats;
+  2. XP одним вызовом add_xp на матч;
+  3. прогнозы на завершённые матчи + update_prediction_stats;
+  4. синхронный пересчёт агрегатов матча;
+  5. сборная тура; 6. сборная сезона и таблица;
+  7. check_and_award_badges напрямую (без уведомлений).
 
-ЧТО ИМЕННО ДЕЛАЕТ, по каждому завершённому матчу сезона, В ПОРЯДКЕ ТУРОВ
-(порядок туров критичен — evaluation_streak/prediction_streak считаются
-как "подряд", см. ниже):
-  1. Оценки (evaluations) — тот же реализм, что и в `seed_match_votes`
-     (Gaussian вокруг "истинного качества" игрока, разный "охват" по
-     игрокам), но ДОПОЛНИТЕЛЬНО создаёт `EvaluationSession(status=
-     'completed')` и вызывает `User.update_evaluation_stats(match)` —
-     ровно то же, что делает реальный вайзард на шаге "Матч" (см.
-     `evaluations/views.py::EvaluateMatchFinalView.form_valid`). Без этого
-     `total_evaluations`/`evaluation_streak` остались бы нулями и все
-     завязанные на них бейджи (`active_fan_*`, `streak_*`, `foresight`,
-     `full_season`, `season_completionist`, `max_trust`) никогда бы не
-     выдались — ровно то, что мешало "полноценно посмотреть функционал".
-  2. XP — тот же порядок величины, что и реальный вайзард (`XP_CONTEXT_STEP
-     + XP_TEAMS_STEP + XP_PLAYERS_STEP_MAX + XP_COACHES_STEP +
-     XP_REFEREE_STEP + XP_FINAL_STEP` = 10, умноженное на
-     `user.xp_multiplier()`) — НЕ пошаговое начисление за каждый под-шаг
-     (это увеличило бы число запросов в десятки раз без видимой пользы для
-     "посмотреть как работает уровень/XP"), а один агрегированный вызов
-     `UserXP.add_xp()` на матч.
-  3. Прогнозы (predictions) — НОВОЕ, этого не было ни в одной существующей
-     команде (grep `MatchPrediction` по `*/management/commands/*.py` не
-     находил ничего). У каждого бота — детерминированная (не хранится в
-     БД, см. `_bot_traits`) "меткость" вокруг 47% (реалистично для 1X2 в
-     футболе — не 33% чистой случайности и не завышенная экспертность),
-     плюс ничья выбирается заметно реже как "случайная ошибка", как и у
-     живых болельщиков. После создания прогноза на уже завершённый матч —
-     сразу `User.update_prediction_stats(is_correct)`, ЕДИНСТВЕННЫЙ по
-     проекту вызывающий код помимо `notifications/tasks.py::
-     notify_prediction_results` (см. докстринг метода) — семантика
-     идентична: серия обновляется в порядке РЕАЛЬНОГО завершения матчей.
-  4. Синхронный пересчёт агрегатов матча (`aggregates.tasks.recalculate_*`
-     напрямую, не `.delay()` — тот же приём, что в `seed_match_votes.
-     _recalculate_synchronously`, не требует поднятого Celery/Redis).
-  5. После всех матчей тура — `round_squad.services.recompute_round`
-     (идемпотентна, сама пропускает уже зафиксированные `is_final` туры —
-     ничего не сломает в туре 24, который уже зафиксирован вручную ранее).
-  6. После всех туров сезона — `season_squad.services.recompute_best_xi` и
-     `aggregates.tasks.recalculate_season_standings`.
-  7. В самом конце — `users.services.check_and_award_badges(user)`
-     НАПРЯМУЮ (не `check_and_award_badges_task.delay(...)`) для каждого
-     затронутого пользователя. Специально не через Celery-таску: она же
-     создаёт `Notification`/шлёт email через `send_badge_earned_notification`
-     — для сотен ботов это бессмысленный спам самому себе на несуществующий
-     SMTP. Прямой вызов `check_and_award_badges()` — чистая проверка и
-     `UserBadge.objects.get_or_create()`, без побочных уведомлений (тот же
-     принцип "создание бота через ORM не имеет побочных эффектов", что и в
-     `seed_match_votes.py`).
+Пул ботов общий с seed_match_votes (test_user_bot_NNNN@test.dopx.local).
+Трейты бота (вовлечённость, меткость) детерминированы от username.
+trust_score не пересчитывается по формуле — только начальный разброс.
 
-ПОЧЕМУ ПЕРЕИСПОЛЬЗУЕТСЯ ТОТ ЖЕ ПУЛ БОТОВ, ЧТО И `seed_match_votes.py`
-(`test_user_bot_NNNN` / `test.dopx.local`): чтобы у одного и того же бота
-могла накопиться связная история (оценки + прогнозы + серии + бейджи) на
-ОДНОМ аккаунте, а не расползаться по нескольким несвязанным пулам, и чтобы
-единственная команда очистки (`cleanup_test_users --apply`) гарантированно
-сносила вообще всё — она удаляет пользователя, а не отдельные записи, все
-FK (`MatchEvaluation`, `MatchPrediction`, `EvaluationSession`, `UserBadge`,
-`UserXP`) каскадятся сами.
-
-"ВОВЛЕЧЁННОСТЬ" БОТА БЕЗ НОВЫХ ПОЛЕЙ В БД: у каждого бота — своя
-вероятность участвовать в КОНКРЕТНОМ матче (`engagement`, свой для оценок
-И для прогнозов — реалистично, что активный болельщик активен и там, и
-там) и своя "меткость" прогнозов (`accuracy`). Оба значения вычисляются
-детерминированно из `username` через ОТДЕЛЬНЫЙ `random.Random(username)`,
-не из глобального `random` — иначе порядок глобальных вызовов (сколько раз
-дёрнули `random.random()` до этого бота в этом матче) влиял бы на трейты
-бота, и результат переставал бы быть воспроизводимым по `--seed` при
-малейшем изменении в другом месте кода. Так трейты бота одинаковы при
-каждом запуске независимо от остального рандома — только сам факт "решил
-участвовать в этом матче" зависит от `--seed`.
-
-ЧТО СОЗНАТЕЛЬНО НЕ ДЕЛАЕТСЯ (упрощения, а не забытое):
-  · `trust_score` НЕ корректируется по формуле `calculate_user_trust_adjustment`
-    на каждую оценку (как в реальном вайзарде) — только начальный разброс
-    0.7-1.5 при создании бота (общий с `seed_match_votes`). Формула
-    завязана на отклонение от community average, которое само зависит от
-    уже посчитанных агрегатов — воспроизводить это пошагово задним числом
-    для тысяч строк не даёт ничего сверх уже имеющегося разброса для
-    проверки анти-фрод гейтов и `max_trust`/`foresight` бейджей (у них
-    порог `MAX_TRUST_THRESHOLD`/`FORESIGHT_MIN_TRUST_SCORE` — можно
-    подобрать `--pool-size` и просто дождаться, пока часть ботов попадёт
-    в верхний хвост начального разброса).
-  · Прогнозы создаются ТОЛЬКО на уже завершённые матчи (нужен
-    `match.final_result` для честного is_correct). Прогнозы на будущие/
-    текущие матчи — отдельная, гораздо менее интересная для "посмотреть
-    функционал" история (там просто % голосов без результата).
-
-Как сбросить — та же команда, что и у `seed_match_votes`:
-  python manage.py cleanup_test_users --apply
+Очистка: python manage.py cleanup_test_users --apply
 """
 from __future__ import annotations
 
@@ -131,25 +46,16 @@ BOT_USERNAME_PREFIX = "test_user_bot_"
 BOT_EMAIL_DOMAIN = "test.dopx.local"
 WATCHED_TYPES = ["full", "full", "full", "highlights", "partial"]
 
-# Сумма XP_CONTEXT_STEP..XP_FINAL_STEP из evaluations/views.py на момент
-# написания (2+2+3+1+1+1) — держим числом здесь, а не импортируем оттуда,
-# чтобы не тянуть view-модуль (с его формами/миксинами) в management-команду
-# ради пяти констант; если реальные веса шагов поменяются, это упрощение
-# просто станет чуть менее точным, не сломается.
+# Сумма XP за все шаги вайзарда (2+2+3+1+1+1).
 EVALUATION_XP_PER_MATCH = 10
 
-# Средняя "меткость" прогнозов 1X2 у обычного болельщика — не 33% (чистая
-# случайность) и не завышенная экспертность, реалистичный ориентир для
-# футбольных предсказаний. Разброс по σ=0.10 даёт часть ботов ощутимо точнее
-# среднего (для stable_hand/derby_prophet/perfect_tour) и часть заметно хуже.
+# Средняя меткость прогнозов 1X2 и её разброс.
 PREDICTION_BASE_ACCURACY = 0.47
 PREDICTION_ACCURACY_STDDEV = 0.10
 PREDICTION_ACCURACY_MIN = 0.28
 PREDICTION_ACCURACY_MAX = 0.72
 
-# При ошибке прогноза — ничья выбирается реже, чем вторая "не угаданная"
-# сторона (1/2), как и у живых людей: угадать/промахнуться мимо ничьей
-# психологически другое, чем перепутать сторону победы.
+# При промахе ничья выбирается реже.
 WRONG_CHOICE_WEIGHTS = {"1": 1.0, "X": 0.5, "2": 1.0}
 
 
@@ -281,9 +187,7 @@ class Command(BaseCommand):
         return list(qs)
 
     def _ensure_bot_pool(self, pool_size: int) -> list:
-        """Идентична `seed_match_votes._ensure_bot_pool` — намеренно тот же
-        префикс/домен/паттерн get_or_create, чтобы пул был ОБЩИЙ между
-        командами (см. докстринг модуля)."""
+        """Тот же пул, что в seed_match_votes._ensure_bot_pool."""
         existing = list(User.objects.filter(username__startswith=BOT_USERNAME_PREFIX).order_by("username"))
         if len(existing) >= pool_size:
             return existing[:pool_size]
@@ -307,8 +211,7 @@ class Command(BaseCommand):
         return created
 
     def _bot_traits(self, user) -> tuple[float, float]:
-        """Детерминированные "вовлечённость"/"меткость" бота — см. докстринг
-        модуля. Отдельный `random.Random`, НЕ глобальный `random.seed()`."""
+        """Детерминированные трейты бота через отдельный random.Random(username)."""
         r = random.Random(user.username)
         engagement = min(0.95, r.random() ** 1.7)
         accuracy = max(
@@ -328,20 +231,16 @@ class Command(BaseCommand):
             Player.objects.filter(matchlineupplayer__lineup__match=match).distinct()
         )
         player_quality = {p.id: random.uniform(3.0, 9.0) for p in lineup_players}
-        coverage = random.uniform(0.5, 0.85)  # разный "охват" по игрокам от матча к матчу
+        coverage = random.uniform(0.5, 0.85)  # разный охват игроков от матча к матчу
 
         n_created = 0
         with transaction.atomic():
             for voter in pool:
                 engagement, _accuracy = self._bot_traits(voter)
                 if random.random() >= engagement:
-                    continue  # этот бот "пропустил" этот матч
+                    continue  # бот пропустил матч
 
-                # Идемпотентность: если сессия уже 'completed' — матч этим
-                # ботом уже обработан в прошлом прогоне, пропускаем ЦЕЛИКОМ
-                # (иначе update_evaluation_stats/add_xp удвоили бы счётчики —
-                # они чистые аккумуляторы, не count() по факту, см.
-                # reset_ratings_data.py про ровно эту опасность).
+                # Сессия уже completed — матч обработан, пропускаем (иначе счётчики удвоятся).
                 session, session_created = EvaluationSession.objects.get_or_create(
                     user=voter, match=match,
                     defaults={
@@ -419,10 +318,7 @@ class Command(BaseCommand):
                         },
                     )
 
-                # Ровно то же самое, что делает реальный вайзард на
-                # последнем шаге (evaluations/views.py::
-                # EvaluateMatchFinalView.form_valid) — без этого серии/
-                # total_evaluations/XP остались бы нулями.
+                # Как на последнем шаге реального вайзарда.
                 voter.update_evaluation_stats(match)
                 voter.refresh_from_db()
                 xp, _ = UserXP.objects.get_or_create(user=voter)
@@ -435,12 +331,10 @@ class Command(BaseCommand):
     def _seed_predictions(self, match: Match, pool: list, touched: set[str]) -> int:
         final_result = match.final_result
         if final_result is None:
-            return 0  # см. докстринг модуля — прогнозы только на матчи с известным исходом
+            return 0  # прогнозы только на матчи с известным исходом
 
         n_created = 0
-        # Порядок ВНУТРИ одного матча не важен для корректности серии — она
-        # зависит только от порядка МАТЧЕЙ (гарантирован циклом по турам в
-        # handle()), не от порядка пользователей внутри одного матча.
+        # Для серии важен только порядок матчей, не пользователей.
         with transaction.atomic():
             for predictor in pool:
                 engagement, accuracy = self._bot_traits(predictor)
@@ -449,7 +343,7 @@ class Command(BaseCommand):
 
                 if MatchPrediction.objects.filter(user=predictor, match=match).exists():
                     touched.add(str(predictor.id))
-                    continue  # уже спрогнозировано в прошлом прогоне — не трогаем, иначе удвоим серию
+                    continue  # уже есть прогноз — не трогаем, иначе серия удвоится
 
                 if random.random() < accuracy:
                     choice = final_result
@@ -461,8 +355,7 @@ class Command(BaseCommand):
                 MatchPrediction.objects.create(user=predictor, match=match, choice=choice)
                 is_correct = choice == final_result
 
-                # Единственный, кроме notify_prediction_results, вызывающий
-                # код — см. докстринг User.update_prediction_stats.
+                # См. User.update_prediction_stats.
                 predictor.update_prediction_stats(is_correct)
 
                 touched.add(str(predictor.id))

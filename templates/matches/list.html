@@ -2,17 +2,9 @@
 {% load static %}
 {% load match_extras %}
 {% block content %}
-{% comment %}
-max-w-3xl mx-auto оборачивает всю страницу (2026-08-31): без ограничения
-ширины список матчей растягивался на всю ширину контейнера (container
-mx-auto в base.html — на широких мониторах это 1280px+), и одна строка
-"Команда — счёт — Команда" с логотипами и коротким текстом смотрелась
-разрежённой и разбалансированной — ровно то, о чём сообщил пользователь
-("карточки очень уродливые"). На главной той же проблемы не было, потому
-что там колонка с матчами уже сама по себе уже (2/3 от 3-колоночной сетки).
-{% endcomment %}
+{# max-w-3xl — список не растягивается на широком экране. #}
 <div class="max-w-3xl mx-auto">
-<!-- === HEADER === -->
+{# === ШАПКА === #}
 <div class="mb-6 px-2 sm:px-0">
     <h1 class="text-2xl md:text-3xl font-bold mb-2 flex items-center gap-2">
         <i class="ti ti-trophy mr-2"></i>
@@ -21,11 +13,11 @@ mx-auto в base.html — на широких мониторах это 1280px+),
     <p class="opacity-60 text-sm md:text-base">Все матчи платформы с оценками болельщиков</p>
 </div>
 
-<!-- === ФИЛЬТРЫ === -->
+{# === ФИЛЬТРЫ === #}
 <div class="card bg-base-100 border border-base-300 mb-4 md:mb-6 px-2 sm:px-0">
     <div class="card-body p-3 md:p-4">
         <form method="get" class="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-4">
-            <!-- Статус -->
+            {# Статус #}
             <select name="status" class="select select-bordered select-sm w-full sm:w-auto min-w-[140px]">
                 <option value="">Все статусы</option>
                 <option value="scheduled" {% if current_status == 'scheduled' %}selected{% endif %}>Запланированные</option>
@@ -35,7 +27,7 @@ mx-auto в base.html — на широких мониторах это 1280px+),
                 <option value="cancelled" {% if current_status == 'cancelled' %}selected{% endif %}>Отменённые</option>
             </select>
             
-            <!-- Лига -->
+            {# Лига #}
             <select name="league" class="select select-bordered select-sm w-full sm:w-auto min-w-[140px]">
                 <option value="">Все лиги</option>
                 {% for league in leagues %}
@@ -45,7 +37,7 @@ mx-auto в base.html — на широких мониторах это 1280px+),
                 {% endfor %}
             </select>
             
-            <!-- Сезон -->
+            {# Сезон #}
             <select name="season" class="select select-bordered select-sm w-full sm:w-auto min-w-[140px]">
                 <option value="">Все сезоны</option>
                 {% for season in seasons %}
@@ -55,7 +47,7 @@ mx-auto в base.html — на широких мониторах это 1280px+),
                 {% endfor %}
             </select>
 
-            <!-- Тур — прямой ориентир, который не путается при переносе матча -->
+            {# Тур #}
             {% if tours %}
             <select name="tour" class="select select-bordered select-sm w-full sm:w-auto min-w-[120px]">
                 <option value="">Все туры</option>
@@ -67,7 +59,7 @@ mx-auto в base.html — на широких мониторах это 1280px+),
             </select>
             {% endif %}
 
-            <!-- Кнопка -->
+            {# Кнопка #}
             <button type="submit" class="btn btn-primary btn-sm w-full sm:w-auto">
                 <i class="ti ti-search"></i>
                 <span class="hidden sm:inline">Найти</span>
@@ -76,13 +68,8 @@ mx-auto в base.html — на широких мониторах это 1280px+),
     </div>
 </div>
 
-<!-- === СПИСОК МАТЧЕЙ (сгруппирован по игровому дню) === -->
-{% comment %}
-Группировка по игровому дню (как в sofascore/fotmob), заголовок —
-"Сегодня"/"Завтра"/"Вчера"/дата через matchday_label. Регруппируем по
-строке даты через фильтр date (локальный часовой пояс) — иначе можно
-неправильно резать матчи около полуночи UTC.
-{% endcomment %}
+{# === СПИСОК МАТЧЕЙ ПО ДНЯМ === #}
+{# Группировка по дню (Сегодня/Завтра/Вчера/дата), по локальной дате. #}
 {% regroup matches by start_time|date:"d.m.Y" as date_groups %}
 <div class="space-y-4 md:space-y-6 px-2 sm:px-0">
     {% for group in date_groups %}
@@ -111,7 +98,7 @@ mx-auto в base.html — на широких мониторах это 1280px+),
     {% endfor %}
 </div>
 
-<!-- === PAGINATION === -->
+{# === ПАГИНАЦИЯ === #}
 {% if is_paginated %}
 <div class="flex justify-center mt-6 md:mt-8 px-2">
     <div class="join">

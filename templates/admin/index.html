@@ -1,25 +1,8 @@
 {% extends "admin/index.html" %}
 {% comment %}
-Кастомная сводка на главной /admin/ — данные приходят через
-UNFOLD["DASHBOARD_CALLBACK"] = dashboard.admin_callback.dashboard_callback
-(см. dopx/settings.py и dashboard/admin_callback.py), который добавляет
-`dopx_kpi` (список карточек) и `dopx_last_sync` в контекст.
-
-Безопасность переопределения: `{% extends "admin/index.html" %}` внутри
-файла, который САМ называется "admin/index.html" — НЕ бесконечная
-рекурсия. Django передаёт `skip` дальше по цепочке загрузчиков шаблонов
-(см. django.template.loaders.base.Loader.get_template), поэтому extends
-находит СЛЕДУЮЩЕЕ совпадение (шаблон unfold/django.contrib.admin), а не
-этот же файл — официально документированный паттерн Django/Unfold для
-переопределения admin-шаблонов.
-
-Стандартный список приложений/моделей (unfold/helpers/app_list_default.html,
-он же родительский `{{ block.super }}`) сюда НЕ включаем — это дублирует
-наш бизнес-сгруппированный сайдбар (UNFOLD["SIDEBAR"] в settings.py) и
-превращает главную страницу в барахолку. Виджет "Recent actions" (история
-последних изменений через django_admin_log) — полезен сам по себе и не
-дублирует сайдбар, поэтому оставляем его через прямой include, в обход
-блока целиком.
+Главная /admin/: KPI-карточки из dashboard_callback (dopx_kpi, dopx_last_sync).
+extends сам на себя — Django берёт следующий шаблон в цепочке (Unfold).
+Список приложений не выводим — есть сайдбар; «Recent actions» — include.
 {% endcomment %}
 
 {% block content %}
@@ -46,7 +29,7 @@ UNFOLD["DASHBOARD_CALLBACK"] = dashboard.admin_callback.dashboard_callback
     </a>
 </div>
 
-{# Графики — те же данные, что на /staff/dashboard/ (dashboard/admin_callback.py передаёт их через dashboard_callback) #}
+{# Графики — данные из dashboard_callback #}
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
     <div class="rounded-default border border-base-200 dark:border-base-700 bg-white dark:bg-base-900 p-4">
         <h3 class="text-sm font-semibold text-font-important-light dark:text-font-important-dark mb-2">Активные пользователи по дням (DAU)</h3>
@@ -66,7 +49,7 @@ UNFOLD["DASHBOARD_CALLBACK"] = dashboard.admin_callback.dashboard_callback
     </div>
 </div>
 
-{# Контентные метрики — что именно оценивают пользователи #}
+{# Контентные метрики #}
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
     <div class="rounded-default border border-base-200 dark:border-base-700 bg-white dark:bg-base-900 p-4">
         <h3 class="text-sm font-semibold text-font-important-light dark:text-font-important-dark mb-3">Топ матчей по числу оценок</h3>
@@ -116,15 +99,7 @@ UNFOLD["DASHBOARD_CALLBACK"] = dashboard.admin_callback.dashboard_callback
 {{ dopx_registrations_by_day|json_script:"dopx-reg-data" }}
 {{ dopx_evaluations_by_day|json_script:"dopx-eval-data" }}
 {{ dopx_rating_distribution|json_script:"dopx-rating-data" }}
-<!-- dist/chart.umd.js (не chart.umd.min.js — этого файла нет в npm-пакете
-     chart.js@4.4.4, ".min.js" здесь был синтетическим URL, который jsDelivr
-     минифицирует на лету; такой файл не имеет фиксированного хэша в
-     метаданных пакета и не годится для integrity=. dist/chart.umd.js — это
-     реальный файл пакета, УЖЕ минифицированный сборкой (rollup-plugin-terser,
-     ~205KB), тот же browser-бандл, что был бы получен через ".min.js".
-     integrity= — sha256 из data.jsdelivr.com (см. комментарий про HTMX/
-     Alpine в base.html: сеть для curl+openssl/scripts/generate_sri.sh была
-     недоступна, значения взяты из официального API jsDelivr). -->
+{# dist/chart.umd.js — реальный файл пакета (уже минифицирован), integrity — sha256 jsDelivr. #}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.js" integrity="sha256-/tanOfjQ8GhxdN5s0UdF/A/HgJFEqxE9IpCKJr8Nf+o=" crossorigin="anonymous"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {

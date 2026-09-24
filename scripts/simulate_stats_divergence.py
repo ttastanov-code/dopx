@@ -1,33 +1,12 @@
 # scripts/simulate_stats_divergence.py
 #
-# Проверить detect_rating_stats_divergence_task и автопоправку
-# TeamRatingCorrection, не дожидаясь, пока команда реально 8+ матчей
-# подряд объективно разойдётся с рейтингом сообщества (в жизни редкое,
-# растянутое на недели событие).
-#
-# Что делает:
-#  1. Создаёт тестовую команду и 16 тестовых матчей (все с external_id,
-#     начинающимся на "test-divergence-", чтобы легко почистить):
-#     - 8 "старых" — нормальный рейтинг (7.5), это войдёт в baseline;
-#     - 8 "недавних" — команда объективно ДОМИНИРУЕТ по ударам/угловым,
-#       а рейтинг у сообщества низкий (4.5) — сценарий "занижают".
-#  2. Вызывает сам детектор напрямую (без ожидания Celery Beat) и
-#     печатает результат: сработал ли паттерн и какая поправка легла в
-#     TeamRatingCorrection.
-#  3. "Чинит" недавние матчи (делает статистику нейтральной) и вызывает
-#     детектор ещё раз — показывает, что поправка САМА уменьшается
-#     (затухание), без ручного вмешательства.
+# Проверка детектора расхождения рейтинга команды со статистикой и затухания поправки.
+# Создаёт тестовую команду и 16 матчей (external_id "test-divergence-*"),
+# запускает детектор, затем «чинит» статистику и запускает снова.
 #
 # Запуск:  python manage.py shell < scripts/simulate_stats_divergence.py
-#
-# Очистка тестовых данных (когда закончите):
-#   python manage.py shell -c "
-#   from matches.models import Match
-#   Match.objects.filter(external_id__startswith='test-divergence-').delete()
-#   "
-# (TeamMatchAggregate и MatchTeamStatistics удалятся каскадом вместе с
-# матчами — команды "Тестовая команда (расхождение)" и её "соперника"
-# можно оставить, следующий запуск скрипта их переиспользует.)
+# Очистка:
+#   python manage.py shell -c "from matches.models import Match; Match.objects.filter(external_id__startswith='test-divergence-').delete()"
 
 from datetime import timedelta
 
@@ -44,7 +23,7 @@ from users.models import SuspiciousActivityFlag
 
 MARKER = "test-divergence-"
 
-# --- чистим хвосты предыдущего запуска, если он был ---
+# --- чистим данные прошлого запуска ---
 Match.objects.filter(external_id__startswith=MARKER).delete()
 
 league = League.objects.first()

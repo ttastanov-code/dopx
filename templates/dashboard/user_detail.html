@@ -3,14 +3,7 @@
 {% block content %}
 {% include 'dashboard/_nav.html' %}
 
-{% comment %}
-templates/dashboard/user_detail.html
-2026-09-23, раздел «Пользователи» — карточка одного пользователя
-(dashboard/views.py::user_detail). Действия — бан/разбан (is_active,
-мягкое и обратимое — НЕ удаление аккаунта) и сброс оценки доверия на
-нейтральное значение 1.0 (см. users/models.py::User.get_trust_level —
-1.0 это ровно граница "Стандартный").
-{% endcomment %}
+{# Карточка пользователя: бан/разбан (is_active) и сброс доверия на 1.0. #}
 
 <div class="mb-4">
     <a href="{% url 'dashboard:users_list' %}" class="text-xs opacity-60 hover:opacity-100"><i class="ti ti-arrow-left"></i> К списку пользователей</a>
@@ -20,16 +13,7 @@ templates/dashboard/user_detail.html
     <div class="lg:col-span-2 space-y-4">
         <div class="card bg-base-100 border border-base-300">
             <div class="card-body p-4">
-                {% comment %}
-                2026-09-23, БАГ (жалоба пользователя — длинное имя криво
-                отображается). Причина: items-center + без min-w-0/wrap —
-                длинный username в flex-item не мог сжаться и наезжал на
-                бейдж статуса справа. Фикс: items-start (бейдж не прыгает по
-                вертикали, если заголовок переносится на 2 строки), min-w-0
-                на блок с заголовком (разрешает ему сжаться и перенести
-                текст), break-words на сам заголовок, shrink-0 на бейдж
-                (никогда не сжимается сам, всегда виден целиком).
-                {% endcomment %}
+                {# min-w-0 + break-words — длинное имя переносится, бейдж не сжимается. #}
                 <div class="flex items-start justify-between gap-2">
                     <div class="min-w-0">
                         <div class="dopx-section-eyebrow"><i class="ti ti-user"></i>Профиль</div>
@@ -41,18 +25,7 @@ templates/dashboard/user_detail.html
                     <span class="badge badge-error shrink-0">заблокирован</span>
                     {% endif %}
                 </div>
-                {% comment %}
-                2026-09-23, БАГ (жалоба пользователя со скриншотом — email
-                наезжает на «Город» на мобильном). Причина: grid-cols-2 на
-                мобильном без min-w-0 на ячейках — CSS Grid по умолчанию не
-                даёт треку сжаться уже содержимого (min-width: auto), а у
-                длинного email нет пробелов для естественного переноса
-                строки, поэтому он вылезает за границы своей ячейки поверх
-                соседней. Фикс — min-w-0 на каждой ячейке (разрешает треку
-                сжаться до ширины колонки) + break-words на значении
-                (разрешает перенос ВНУТРИ длинного "слова" типа email/IP,
-                когда других точек переноса нет).
-                {% endcomment %}
+                {# min-w-0 на ячейках + break-words — длинный email не наезжает. #}
                 <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-3 text-xs">
                     <div class="min-w-0"><span class="opacity-50">Email</span><div class="font-medium break-words">{{ user_obj.email }}</div></div>
                     <div class="min-w-0"><span class="opacity-50">Город</span><div class="font-medium break-words">{{ user_obj.city|default:"—" }}</div></div>

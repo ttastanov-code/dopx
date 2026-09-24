@@ -20,9 +20,7 @@ class TeamAdmin(ModelAdmin):
         "city",
     )
 
-    # НОВОЕ: один раз проставить пары дерби-соперников для бейджа
-    # "derby_hunter" (users/badges.py) — удобный виджет "выбрать несколько
-    # из списка" вместо голого multiple-select.
+    # Пары соперников (дерби) — filter_horizontal.
     filter_horizontal = ("rivals",)
 
     actions = [export_as_csv]

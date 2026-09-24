@@ -1,13 +1,4 @@
-{% comment %}
-HTMX partial для прогресс-бара wizard-оценки
-Использование: hx-get="{% url 'evaluations:context' match.id %}" hx-target="#progress-container"
-
-Именной степпер: крупная подпись текущего шага сверху, градиентная линия-
-рельс с иконками-станциями вместо цифр, пройденные шаги — галочка на
-заливке success. Иконки те же, что на заголовках страниц шага
-(context=eye, teams=shield, players=users, coaches=clipboard-list,
-referee=gavel, final=star).
-{% endcomment %}
+{# Прогресс-бар вайзарда: подпись шага + линия с иконками шагов. #}
 <div id="progress-container" class="px-1 sm:px-0">
     <div class="flex items-center justify-between mb-3 sm:mb-4">
         <div class="flex items-baseline gap-2 min-w-0">

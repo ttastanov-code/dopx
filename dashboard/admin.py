@@ -10,9 +10,7 @@ from dashboard.models import StaffAccessGrant, StaffActionLog
 
 @admin.register(StaffActionLog)
 class StaffActionLogAdmin(ModelAdmin):
-    """Read-only — записи создаются ТОЛЬКО через dashboard.audit.log_staff_action,
-    ручное редактирование/удаление аудит-лога через admin запрещено намеренно
-    (иначе аудит перестаёт быть аудитом)."""
+    """Аудит-лог — только чтение."""
 
     list_display = ("created_at", "actor_username", "action", "target", "ip_address")
     list_filter = ("action", "created_at")
@@ -34,12 +32,7 @@ class StaffActionLogAdmin(ModelAdmin):
 
 @admin.register(StaffAccessGrant)
 class StaffAccessGrantAdmin(ModelAdmin):
-    """2026-09-23, прямая просьба пользователя — виден и в Django /admin/,
-    не только на /staff/dashboard/access/. Раздел доступа сам по себе
-    остаётся суперпользовательским: и эта admin-страница, и dashboard-
-    страница видны/доступны только is_superuser (Django admin сам по себе
-    показывает разделы по правам Django-permissions, а не по нашему
-    StaffAccessGrant — эта модель никак не ограничивает саму себя)."""
+    """Роли доступа в /admin/ — только для суперпользователя."""
 
     list_display = ("user", "section_count", "updated_by", "updated_at")
     search_fields = ("user__username",)

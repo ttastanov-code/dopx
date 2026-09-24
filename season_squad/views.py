@@ -9,10 +9,7 @@ from season_squad.models import SeasonBestXI
 from season_squad.services import MIN_MATCHES_FOR_CANDIDATE, SHRINKAGE_C
 from seasons.models import Season
 
-# Раскладка карточек на поле сверху вниз (атака -> защита -> вратарь) —
-# CM1/CM2 и CB1/CB2 из одного пула кандидатов (players/positions.py::
-# SLOT_PROCESSING_ORDER), но разные карточки, поэтому просто два кода в
-# одном ряду, без разницы "кто слева/справа" (алгоритм её не определяет).
+# Ряды на поле сверху вниз (атака -> защита -> вратарь).
 PITCH_ROWS = [
     ('attack', ['LW', 'ST', 'RW']),
     ('midfield', ['CM2', 'DM', 'CM1']),
@@ -22,35 +19,20 @@ PITCH_ROWS = [
 
 
 def _resolve_season(season_id):
-    """Явный season_id в URL — get_object_or_404 (неверный UUID ЭТО и есть
-    404: такого сезона не существует). Без season_id (URL умолчания) —
-    Season.get_primary_active() может честно вернуть None (например, сразу
-    после миграции на Sportmonks ни один сезон ещё не помечен is_active,
-    см. чат с пользователем 2026-09-08 "страницы сборная сезона... выдают
-    ошибку потому что пустые") — раньше это оборачивалось в Http404, из-за
-    чего страница выглядела сломанной, хотя это ожидаемое "данных пока
-    нет" состояние, а не ошибка запроса. Вызывающий код (best_xi и т.д.)
-    обязан явно проверить None и отрендерить дружелюбное пустое состояние,
-    а не 404/500."""
+    """Сезон из URL (404 для неверного id) или активный. None — данных нет, не ошибка."""
     if season_id:
         return get_object_or_404(Season.objects.select_related('league'), pk=season_id)
     return Season.get_primary_active()
 
 
-# ring_style — сырой CSS через var(--color-*), не Tailwind-класс
-# ring-success (Tailwind runtime не знает про daisyUI-цвета — класс тихо
-# схлопывается в нейтральный дефолт). См.
-# docs/adr/0021-tailwind-runtime-daisyui-colors.md.
+# ring_style — сырой CSS через var(--color-*): Tailwind runtime не знает цвета daisyUI.
 _RING_STYLE_EMPTY = 'outline: 2px dashed rgba(255,255,255,.35); outline-offset: 2px;'
 _RING_STYLE_CONFIDENT = 'outline: 2px solid var(--color-success); outline-offset: 2px;'
 _RING_STYLE_LOW_CONFIDENCE = 'outline: 2px solid var(--color-warning); outline-offset: 2px;'
 
 
 def _slot_to_card(slot, slot_code):
-    """Приводит SeasonBestXISlot (или его отсутствие — слот ещё не
-    посчитан) к плоскому dict. Django-шаблоны резолвят и dict-ключи, и
-    атрибуты объекта через один и тот же синтаксис `card.field`, поэтому
-    единый dict для "заполнен"/"пусто" убирает ветвление в шаблоне."""
+    """Слот (или его отсутствие) -> плоский dict для шаблона."""
     label = BEST_XI_SLOT_LABELS.get(slot_code, slot_code)
     if slot is None or not slot.content_type_id:
         return {
@@ -73,8 +55,7 @@ def _slot_to_card(slot, slot_code):
 
 
 def _best_xi_context(season_id):
-    """None — легитимный результат (нет активного сезона), НЕ ошибка.
-    Вызывающие views обязаны проверить None перед рендером."""
+    """None — нет активного сезона, вызывающий код проверяет."""
     season = _resolve_season(season_id)
     if season is None:
         return None
@@ -92,9 +73,7 @@ def _best_xi_context(season_id):
         'pitch_rows': pitch_rows,
         'coach_card': _slot_to_card(slots_by_code.get('COACH'), 'COACH'),
         'referee_card': _slot_to_card(slots_by_code.get('REFEREE'), 'REFEREE'),
-        # Для раздела "Как считается?" — те же числа, что реально использует
-        # алгоритм (season_squad/services.py), чтобы методология на странице
-        # не разъехалась с кодом при будущих правках констант.
+        # Методология — те же константы, что в services.py.
         'shrinkage_c': SHRINKAGE_C,
         'min_matches_for_candidate': MIN_MATCHES_FOR_CANDIDATE,
         'min_votes_for_display': MIN_VOTES_FOR_DISPLAY,
@@ -103,7 +82,7 @@ def _best_xi_context(season_id):
 
 
 def best_xi(request, season_id=None):
-    """Публичная страница «Живая сборная сезона»."""
+    """Страница «Живая сборная сезона»."""
     context = _best_xi_context(season_id)
     if context is None:
         return render(request, 'season_squad/no_data.html', {
@@ -111,9 +90,7 @@ def best_xi(request, season_id=None):
             'message': 'Пока нет активного сезона с данными — загляните чуть позже.',
         })
 
-    # Готовая строка <iframe> для кнопки "Получить embed-код" — тот же
-    # паттерн, что у players/views.py::PlayerDetailView и
-    # teams/views.py::TeamDetailView (см. best_xi_widget выше).
+    # Embed-код.
     season = context['season']
     widget_url_name = 'season_squad:widget'
     widget_url = (
@@ -129,11 +106,7 @@ def best_xi(request, season_id=None):
 
 
 def best_xi_partial(request, season_id=None):
-    """HTMX-партиал — только карточки поля, для фонового поллинга (см.
-    шаблон best_xi.html, hx-trigger="every 60s"). Сам пересчёт идёт на
-    сервере раз в 15 минут по расписанию Celery Beat (season_squad/tasks.py)
-    — частый опрос здесь просто ловит момент готовности нового пересчёта,
-    а не запускает его сам."""
+    """HTMX-партиал для поллинга (каждые 60 с). Пересчёт — Celery Beat раз в 15 минут."""
     context = _best_xi_context(season_id)
     if context is None:
         return render(request, 'season_squad/_no_data_partial.html')
@@ -142,20 +115,7 @@ def best_xi_partial(request, season_id=None):
 
 @xframe_options_exempt
 def best_xi_widget(request, season_id=None):
-    """
-    Embeddable-виджет «Сборной DOPX» — продуктовый запрос 2026-08-22 ("дать
-    возможность вставлять этот модуль на другие сайты"), четвёртый виджет
-    после players:widget/teams:widget/core:standings_widget (тот же паттерн
-    — @xframe_options_exempt, отдельный изолированный HTML-документ,
-    трекинг через partners/services.py::track_widget_embed_view). В отличие
-    от них — не одна цифра/таблица, а мини-поле 4-3-3 с 11 позициями,
-    поэтому переиспользует ту же раскладку и _slot_to_card, что и публичная
-    страница, но БЕЗ тренера/судьи (не часть формации, для виджета это
-    лишний вес) и без тултипов-объяснений: сам HTML-документ виджета не
-    подключает Alpine.js (см. widgets/best_xi.html) — интерактивные
-    подсказки там технически не заработают, а рейтинг цифрой под именем и
-    так самодостаточен для беглого взгляда на чужом сайте.
-    """
+    """Виджет сборной для чужих сайтов: 11 слотов, без тренера/судьи и тултипов."""
     if season_id:
         season = get_object_or_404(Season.objects.select_related('league'), pk=season_id)
     else:
@@ -179,11 +139,7 @@ def best_xi_widget(request, season_id=None):
         request=request,
     )
 
-    # Абсолютная ссылка "DOPX" в шапке виджета — ведёт на полную страницу
-    # с методологией/тултипами, которых в самом iframe нет (см. докстринг
-    # widgets/best_xi.html). Собираем её здесь, а не через {% url %} внутри
-    # шаблона виджета — у него нет доступа к `request`, чтобы получить
-    # абсолютный (не относительный) адрес.
+    # Абсолютная ссылка на полную страницу.
     season_url = (
         request.build_absolute_uri(reverse('season_squad:best_xi', args=[season.id]))
         if season else request.build_absolute_uri(reverse('season_squad:best_xi'))

@@ -12,14 +12,7 @@ _WEEKDAYS_RU = [
 
 @register.filter
 def matchday_label(value):
-    """
-    Человекочитаемый заголовок игрового дня для группировки списка матчей
-    (как в sofascore/fotmob: "Сегодня", "Завтра", "Вчера", иначе дата с
-    днём недели). Используется в matches/list.html через {% regroup %},
-    группирующий соседние по дате матчи под общим заголовком — вместо
-    плоского списка из 20 карточек, где дату матча приходится читать
-    в каждой карточке отдельно.
-    """
+    """Заголовок игрового дня: «Сегодня»/«Завтра»/«Вчера» или дата с днём недели."""
     if not value:
         return ''
     target = timezone.localtime(value).date() if timezone.is_aware(value) else value.date() if hasattr(value, 'date') else value
@@ -36,12 +29,7 @@ def matchday_label(value):
 
 @register.simple_tag
 def render_score(home_score, away_score, show_zero=True):
-    """
-    Корректное отображение счёта:
-    - Если оба счёта известны: "2 : 0"
-    - Если матч не начался: "0 : 0"
-    - show_zero=True показывает 0 вместо "-"
-    """
+    """Счёт: "2 : 0"; до матча "0 : 0"; show_zero — 0 вместо "-"."""
     home = home_score if home_score is not None else 0
     away = away_score if away_score is not None else 0
     return f"{home} : {away}"
@@ -49,7 +37,7 @@ def render_score(home_score, away_score, show_zero=True):
 
 @register.simple_tag
 def render_score_short(home_score, away_score):
-    """Короткое отображение счёта для компактных карточек"""
+    """Короткий счёт для компактных карточек."""
     home = home_score if home_score is not None else 0
     away = away_score if away_score is not None else 0
     return f"{home}:{away}"
@@ -57,5 +45,5 @@ def render_score_short(home_score, away_score):
 
 @register.filter
 def score_value(score):
-    """Фильтр для отображения отдельного значения счёта"""
+    """Отдельное значение счёта."""
     return score if score is not None else 0

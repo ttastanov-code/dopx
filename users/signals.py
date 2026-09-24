@@ -9,7 +9,4 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Проверка достижений — централизованно в evaluations/views.py после
-# полного завершения оценки матча, не через post_save-сигнал (дубликаты
-# уведомлений/race conditions при частичном сохранении вайзарда).
-# Для асинхронной проверки в других местах: users.tasks.check_badges_async.delay(user_id).
+# Достижения проверяются после завершения оценки (evaluations/views.py), не сигналом.

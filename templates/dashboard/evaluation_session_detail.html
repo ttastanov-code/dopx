@@ -4,18 +4,8 @@
 {% include 'dashboard/_nav.html' %}
 
 {% comment %}
-templates/dashboard/evaluation_session_detail.html
-2026-09-23, раздел «Модерация оценок» — карточка одной сессии
-(dashboard/views.py::evaluation_session_detail). Сама сессия не хранит
-баллы (только прогресс/тайминг) — под-оценки (Context/Team/Player/Coach/
-Referee/MatchEvaluation) подтягиваются ОТДЕЛЬНЫМИ запросами по (user,
-match), см. dashboard/services.py::evaluation_session_detail_context.
-
-Единственное действие — «Удалить сессию» (evaluation_session_delete):
-удаляет ВСЕ под-оценки этого (user, match) разом и запускает пересчёт
-агрегатов матча. Необратимо, поэтому подтверждение через confirm() с явным
-именем пользователя и матча в тексте — тот же паттерн, что бан пользователя/
-удаление настройки.
+Сессия оценки: под-оценки по (user, match). «Удалить сессию» удаляет их все и
+запускает пересчёт агрегатов, с confirm().
 {% endcomment %}
 
 <div class="mb-4">
@@ -33,16 +23,7 @@ match), см. dashboard/services.py::evaluation_session_detail_context.
                     </div>
                     <span class="badge {% if session.status == 'completed' %}badge-success{% elif session.status == 'abandoned' %}badge-ghost{% else %}badge-warning{% endif %}">{{ session.get_status_display }}</span>
                 </div>
-                {% comment %}
-                2026-09-23, тот же класс бага, что нашли на user_detail.html
-                (жалоба пользователя — email наезжал на соседнюю ячейку):
-                grid-cols-2 на мобильном без min-w-0 не даёт треку сжаться,
-                а у длинного значения без пробелов (IP-адрес, особенно
-                IPv6) нет естественной точки переноса — вылезает на
-                соседа. min-w-0 на ячейке + break-words на значении — тот
-                же фикс, для профилактики применён сразу везде на этой
-                странице, а не только там, где уже жаловались.
-                {% endcomment %}
+                {# min-w-0 + break-words — длинные значения не наезжают. #}
                 <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-3 text-xs">
                     <div class="min-w-0"><span class="opacity-50">Режим</span><div class="font-medium break-words">{{ session.get_mode_display }}</div></div>
                     <div class="min-w-0"><span class="opacity-50">Прогресс</span><div class="font-medium break-words">{{ session.progress_percentage }}%</div></div>

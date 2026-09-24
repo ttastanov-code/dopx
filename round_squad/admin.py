@@ -20,8 +20,7 @@ class RoundBestXISlotInline(TabularInline):
     ordering = ('order',)
 
     def has_add_permission(self, request, obj=None):
-        # Слоты создаёт/обновляет только recompute_round (services.py) —
-        # ручное добавление сломало бы уникальность (round_best_xi, slot_code).
+        # Слоты создаёт только recompute_round.
         return False
 
 
@@ -46,14 +45,7 @@ class RoundBestXIAdmin(ModelAdmin):
 
     @admin.action(description='Пересчитать сейчас')
     def recompute_now(self, request, queryset):
-        # БАГ, КОТОРЫЙ ТУТ БЫЛ: recompute_round(round_xi.season, round_xi.tour)
-        # вызывалась напрямую, в обход Redis-lock из
-        # round_squad/tasks.py::recompute_round_task — при совпадении по
-        # времени с плановым прогоном Celery Beat (recompute_active_rounds)
-        # два пересчёта одного тура могли выполниться параллельно и испортить
-        # денормализованные карточки (см. докстринг round_squad/tasks.py).
-        # Теперь ставим ту же задачу в очередь — лок общий для admin-триггера
-        # и Celery Beat.
+        # Пересчёт через задачу — общий Redis-lock с Celery Beat.
         from round_squad.tasks import recompute_round_task
 
         done = 0
@@ -71,21 +63,9 @@ class RoundBestXIAdmin(ModelAdmin):
 
     @admin.action(description='Зафиксировать вручную (без ожидания закрытия голосования)')
     def force_finalize(self, request, queryset):
-        """Ручной аналог автофиксации в recompute_round (см. докстринг
-        round_squad/models.py) — для случаев, когда стафф хочет закрыть тур
-        раньше, чем voting_open_until истечёт у всех матчей. Как и в
-        автоматическом пути, при первой фиксации собираем share-карточку и
-        ставим в очередь рассылку итогов (round_squad/tasks.py::
-        send_round_results_notification) — те же побочные эффекты, только
-        триггер другой.
-
-        2026-08-28: массовый выбор строк раньше рассылал письма ВСЕМ
-        верифицированным подписчикам без единого предупреждения — добавлен
-        промежуточный confirm-экран (стандартный паттерн Django admin
-        actions, см. django.contrib.admin.actions.delete_selected):
-        первый POST (без `confirm=yes`) только показывает, что будет
-        зафиксировано и разослано, реальное действие выполняется только
-        вторым POST с подтверждением."""
+        """Ручная фиксация тура: share-карточка + рассылка итогов.
+        Сначала экран подтверждения, действие — после confirm=yes.
+        """
         from django.utils import timezone
 
         from core.services.share_cards import build_round_squad_share_card

@@ -1,42 +1,12 @@
 # parsers/management/commands/verify_names_with_ai.py
-"""
-manage.py verify_names_with_ai [--all] [--entity player|referee|coach]
-                                [--limit N] [--delay SECONDS] [--recheck]
-                                [--dry-run]
+"""manage.py verify_names_with_ai [--all] [--entity player|referee|coach]
+                               [--limit N] [--delay SECONDS] [--recheck] [--dry-run]
 
-Находит Player/Referee/Coach, чьё текущее ФИО НЕ подтверждено внешним
-источником (name_source='guessed_transliteration' — см. core/models.py::
-NAME_SOURCE_CHOICES и докстринг parsers/sportmonks/importers.py::
-_resolve_cyrillic_name), и запрашивает у Gemini API (parsers/name_ai.py)
-реальное написание с веб-поиском. Результат ложится в
-NameVerificationSuggestion — НЕ применяется автоматически, staff
-подтверждает/отклоняет в очереди на дашборде (dashboard/views.py::
-names_review, прямое решение пользователя: "всегда через ручное
-подтверждение").
-
-2026-09-22, прямая просьба пользователя после жалобы "Сергий Малий" вместо
-"Сергий Малый": "надо что-то 100% рабочее придумать... уйти от того что мы
-персонально каждого обрабатываем и сидим ищем". См. полный разбор вариантов
-(браузерная автоматизация ChatGPT/Gemini/Claude Pro отклонена как нарушение
-ToS + технически хрупко) в докстринге parsers/name_ai.py.
-
---all — разовый полный прогон по ВСЕМ записям с sportmonks_id (не только
-guessed_transliteration) — по прямой просьбе пользователя "плюс разовый
-прогон по всем уже существующим записям".
-
-ДЕДУПЛИКАЦИЯ: пропускает сущности, у которых УЖЕ есть хотя бы одна
-NameVerificationSuggestion (в любом статусе) — если staff уже отклонил
-предложение (решил, что текущее написание верное) или уже одобрил, повторный
-прогон не должен снова тратить запрос к API на ту же запись. --recheck
-снимает это ограничение (например, после того как исходные данные у
-Sportmonks сами изменились).
-
-RATE LIMIT: бесплатный тариф Gemini API ограничен по запросам в
-минуту/день — точные текущие цифры не проверить без живого ключа (в
-песочнице этой сессии его нет, см. parsers/name_ai.py). --delay (по
-умолчанию 4 секунды между вызовами) — консервативная защита с запасом;
-если бесплатный тариф окажется жёстче, уменьшите --limit и запускайте
-почаще, а не увеличивайте риск словить 429.
+Проверяет ФИО через Gemini (parsers/name_ai.py) и создаёт NameVerificationSuggestion
+для ручного подтверждения в дашборде.
+По умолчанию — только name_source='guessed_transliteration'; --all — все с sportmonks_id.
+Записи с уже имеющимся предложением пропускаются (кроме check_failed); --recheck — проверить заново.
+--delay — пауза между вызовами (лимиты бесплатного тарифа).
 """
 from __future__ import annotations
 
@@ -86,12 +56,7 @@ class Command(BaseCommand):
             return
 
         entities = [options["entity"]] if options["entity"] else list(_ENTITY_CONFIG.keys())
-        # 2026-09-22: --limit 0 (или отрицательный) — "без ограничения", не
-        # "ноль вызовов". Раньше `checked >= limit` при limit=0 обрывало
-        # прогон СРАЗУ на первой же итерации (0 >= 0 — True), и --all
-        # --limit 0 молча проверял 0 записей вместо ожидаемого "прогнать
-        # всю базу" — ровно та ситуация, для которой --all и придумывался.
-        # float('inf') с int'ом сравнивается нормально, просто снимает cap.
+        # --limit 0 — без ограничения.
         limit = options["limit"] if options["limit"] > 0 else float("inf")
         delay = options["delay"]
         recheck = options["recheck"]
@@ -114,22 +79,13 @@ class Command(BaseCommand):
                 qs = qs.filter(name_source=NAME_SOURCE_GUESSED_TRANSLITERATION)
 
             if not recheck:
-                # 2026-09-22: check_failed — ТЕХНИЧЕСКИЙ сбой (429/сеть/
-                # невалидный JSON), не настоящий ответ Gemini — не считаем
-                # его "уже проверено". Раньше exclude() здесь не было, и
-                # запись с 429 навсегда пропадала из обычных прогонов —
-                # единственный способ перепроверить был --recheck, который
-                # заново дёргает Gemini ВООБЩЕ по всем (включая уже
-                # успешно подтверждённые/отклонённые), зря тратя дневной
-                # лимит. Теперь упавшие сами попадают в следующий обычный
-                # прогон, а pending_review/approved/rejected — реальные
-                # исходы, их по-прежнему не трогаем без --recheck.
+                # check_failed — технический сбой, такие записи проверяем снова.
                 already_suggested_ids = set(
                     NameVerificationSuggestion.objects.filter(content_type=content_type)
                     .exclude(status="check_failed")
                     .values_list("object_id", flat=True)
                 )
-                # object_id хранится как str (CharField) — сравниваем по str(id).
+                # object_id — строка.
                 qs = [obj for obj in qs if str(obj.id) not in already_suggested_ids]
             else:
                 qs = list(qs)
@@ -186,8 +142,7 @@ class Command(BaseCommand):
                 try:
                     suggestion.save()
                 except IntegrityError:
-                    # Гонка с --recheck/параллельным запуском — уже есть
-                    # pending_review для этой же сущности, тихо пропускаем.
+                    # Уже есть pending_review — пропускаем.
                     self.stdout.write(self.style.WARNING(f"  {cfg['label_ru']} {obj.first_name} {obj.last_name} — уже есть предложение на проверке, пропуск"))
 
                 if checked < limit and delay > 0:

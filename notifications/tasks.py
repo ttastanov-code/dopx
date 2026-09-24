@@ -1,25 +1,10 @@
 # notifications/tasks.py
-"""
-_send_email_to_user проверяет настройку через явный notification_type
-(маппинг на ключ настроек словарём), не парсит тему письма строкой — иначе
-письмо о закрытии голосования содержит слово "Голосование" и попадает не
-в ту ветку. Массовые рассылки (например, notify_voting_closing_soon,
-notify_prediction_closing_soon) — fan-out: родительская задача ставит в очередь
-пачки по BULK_EMAIL_CHUNK_SIZE через _send_match_email_chunk, каждая со
-своим rate_limit — иначе риск упереться в CELERY_TASK_TIME_LIMIT и при
-ретрае разослать всё заново. send_notification_digest — периодическая
-задача, собирает не отправленные по email Notification для пользователей
-с email_digest_mode=True в одно письмо вместо N отдельных.
+"""Celery-задачи уведомлений: email, push, in-app.
 
-_send_email_to_user — ЕДИНСТВЕННОЕ место в проекте, где реально уходит
-письмо конкретному User (см. её тело) — поэтому именно здесь, а не в
-каждой аудиторной выборке по отдельности, стоит проверка
-core.utils.is_synthetic_test_email: тестовые/сид-боты (seed_match_votes.py,
-seed_full_history.py, setup_load_test.py) создаются с is_verified=True и
-похожим на настоящий email, поэтому свободно проходят фильтры audience-
-запросов (`is_verified=True, email__isnull=False`) наравне с реальными
-пользователями — без этой проверки массовая рассылка пыталась бы слать
-письма на заведомо несуществующие адреса.
+_send_email_to_user — единственная точка отправки письма пользователю: проверяет
+настройки по notification_type и не шлёт тестовым ботам. Массовые рассылки идут
+пачками (BULK_EMAIL_CHUNK_SIZE) через отдельные задачи. Пользователям с
+email_digest_mode письма о бейджах/уровнях собираются в дайджест.
 """
 from __future__ import annotations
 
@@ -38,10 +23,7 @@ from django.utils.html import strip_tags
 
 logger = logging.getLogger(__name__)
 
-# Временные (retry-able) сетевые сбои — не голый OSError (задел бы и
-# нетранзиентные ошибки) и не SMTP-отказы вида Refused/DataError
-# (постоянны, ретраить бессмысленно). См.
-# docs/adr/0020-prediction-result-email-dedup.md.
+# Временные сетевые ошибки, на которых есть смысл ретраить.
 TRANSIENT_EMAIL_ERRORS = (
     socket.gaierror,
     ConnectionError,
@@ -53,49 +35,24 @@ TRANSIENT_EMAIL_ERRORS = (
 
 
 class TransientEmailError(Exception):
-    """
-    Сетевой/протокольный сбой при отправке письма (см. `TRANSIENT_EMAIL_ERRORS`).
+    """Временный сбой отправки письма.
 
-    БАГ, КОТОРЫЙ ТУТ БЫЛ (Sentry, 2026-08-30 — see incident): `_send_email_
-    to_user` ловил ЛЮБОЕ исключение внутри себя и просто возвращал False —
-    ни одна вызывающая celery-задача не узнавала, что отправка сорвалась
-    из-за временного сбоя (ноутбук с dev-сервером заснул/потерял сеть на
-    ночь, пока Celery Beat продолжал тикать по расписанию), поэтому письмо
-    терялось насовсем, а не переоправлялось. Теперь `_send_email_to_user`
-    поднимает это исключение, если вызвана с `raise_on_transient=True`, —
-    вызывающая задача ловит его и ретраит через `self.retry(...)` с
-    backoff (см. `send_badge_earned_notification`, `_send_match_email_chunk`
-    и т.д.). Для мест, где нельзя безопасно ретраить целиком (циклы по
-    множеству пользователей в одной задаче — `notify_prediction_results` и
-    похожие), исключение НЕ поднимается (используется дефолт
-    `raise_on_transient=False`); там устойчивость к сбоям обеспечена иначе:
-    "email_sent_at" проставляется только после реального успеха отправки, и
-    непровалившиеся ранее адресаты естественным образом подхватываются
-    следующим плановым прогоном той же периодической задачи.
+    Поднимается из _send_email_to_user при raise_on_transient=True, чтобы задача
+    на одного получателя (или пачку) могла сделать retry. В циклах по многим
+    пользователям не поднимается — там email_sent_at ставится только после
+    успеха, и следующий прогон досылает.
     """
 
-# Сколько получателей в одной "пачке" при fan-out массовой рассылки —
-# см. пункт 2 докстринга модуля.
+# Размер пачки при массовой рассылке.
 BULK_EMAIL_CHUNK_SIZE = 50
 
-# Redis-lock TTL для периодических задач ниже (notify_prediction_results,
-# send_notification_digest) — тот же cache.add()-паттерн (атомарный SETNX),
-# что в season_squad/tasks.py::RECOMPUTE_LOCK_TIMEOUT и
-# round_squad/tasks.py::ROUND_RECOMPUTE_LOCK_TIMEOUT: без лока два
-# параллельных прогона (плановый тик Celery Beat + повторная доставка
-# сообщения at-least-once) могли одновременно прочитать одну и ту же
-# "необработанную" партию ДО того, как первый прогон успеет проставить
-# признак обработки (создать Notification / выставить email_sent_at), и
-# оба разослать письма. Значение — с запасом от реальной длительности
-# одного прогона (обычно секунды-десятки секунд на текущих объёмах).
+# TTL Redis-лока для периодических задач (защита от двойного прогона).
 NOTIFY_TASK_LOCK_TIMEOUT = 600
 
-# Сколько дней хранить уже прочитанные уведомления — см. пункт 4.
+# Сколько дней хранить прочитанные уведомления.
 NOTIFICATION_RETENTION_DAYS = 90
 
-# Единственное место маппинга "тип уведомления -> ключ настройки" —
-# см. пункт 1 докстринга модуля. `None` — уведомление всегда критическое,
-# отправляется только через force=True и сюда не попадает.
+# Тип уведомления -> ключ настройки пользователя. None — только через force=True.
 NOTIFICATION_TYPE_TO_SETTINGS_KEY: dict[str, str] = {
     "match_finished": "email_match_finished",
     "voting_open": "email_match_finished",
@@ -103,17 +60,13 @@ NOTIFICATION_TYPE_TO_SETTINGS_KEY: dict[str, str] = {
     "new_badge": "email_new_badge",
     "level_up": "email_level_up",
     "system": "email_system",
-    # НОВОЕ (4 петли удержания, 2026-08-21):
     "prediction_closing": "email_prediction_closing",
     "prediction_result": "email_prediction_result",
     "weekly_digest": "email_weekly_summary",
-    # НОВОЕ (2026-08-22): итоги «DOPX Лучшие тура», см. round_squad/tasks.py
-    # ::send_round_results_notification.
     "round_results": "email_round_results",
 }
 
-# Уведомления этих типов собираются в дайджест (см. пункт 3), а не
-# отправляются мгновенно, если у пользователя включён `email_digest_mode`.
+# Типы, которые при email_digest_mode уходят в дайджест.
 DIGESTIBLE_NOTIFICATION_TYPES = ("new_badge", "level_up", "system")
 
 
@@ -126,44 +79,17 @@ def _send_email_to_user(
     force: bool = False,
     raise_on_transient: bool = False,
 ) -> bool:
-    """
-    Безопасная отправка email.
+    """Отправка письма пользователю.
 
-    :param notification_type: явный тип уведомления (см.
-        `NOTIFICATION_TYPE_TO_SETTINGS_KEY`) — используется для проверки
-        настроек пользователя ВМЕСТО парсинга текста темы письма (см. пункт
-        1 докстринга модуля). Игнорируется, если `force=True`.
-    :param force: игнорирует настройки пользователя (для верификации,
-        сброса пароля и т.д.).
-    :param raise_on_transient: True — при сетевом/протокольном сбое (см.
-        `TRANSIENT_EMAIL_ERRORS`) поднять `TransientEmailError` вместо того,
-        чтобы молча вернуть False. Включать там, где вызывающая
-        celery-задача обрабатывает ОДНОГО получателя (или небольшую пачку) и
-        может безопасно ретраить именно эту задачу — см. докстринг
-        `TransientEmailError`.
+    :param notification_type: тип для проверки настроек (NOTIFICATION_TYPE_TO_SETTINGS_KEY).
+    :param force: игнорировать настройки (верификация, сброс пароля).
+    :param raise_on_transient: при сетевом сбое поднять TransientEmailError вместо False.
     """
     if not user or not user.email:
         logger.warning("⚠️ Cannot send email: user or email is missing")
         return False
 
-    # ИСКЛЮЧАЕМ ТЕСТОВЫХ БОТОВ (2026-09-07, продуктовый запрос: "надо
-    # исключить рассылку писем на тестовых ботов"). Бот-пул seed_match_votes.py/
-    # seed_full_history.py создаётся с `is_verified=True` и реальным на вид
-    # email (`test_user_bot_NNNN@test.dopx.local`), поэтому ДО этой правки
-    # свободно проходил через все аудиторные фильтры массовых рассылок
-    # (`User.objects.filter(..., is_verified=True, email__isnull=False)` —
-    # см. `_send_match_email_chunk`/`_send_system_announcement_chunk` и
-    # другие ниже) наравне с настоящими пользователями. Проверка — здесь, в
-    # ЕДИНСТВЕННОЙ точке фактической отправки (см. докстринг модуля про
-    # "единственное место"), а не в каждой аудиторной queryset-выборке по
-    # отдельности — гарантирует, что письмо к боту не уйдёт независимо от
-    # того, из какого места кода (их больше десятка) пришёл вызов, и не
-    # требует держать этот список мест в актуальном состоянии. Возвращаем
-    # False БЕЗ рендеринга шаблона/похода в SMTP — та же "тихая, не
-    # ошибочная" семантика, что у остальных ранних return False выше и
-    # ниже в этой функции (вызывающий код просто не засчитывает письмо
-    # отправленным, ретраев не будет — см. TransientEmailError про то, что
-    # раздельно обрабатываются именно СЕТЕВЫЕ сбои, не бизнес-пропуски).
+    # Тестовым ботам не отправляем.
     from core.utils import is_synthetic_test_email
 
     if is_synthetic_test_email(user.email):
@@ -195,12 +121,7 @@ def _send_email_to_user(
         })
 
         email = EmailMultiAlternatives(
-            # Пустой text/plain-body ПОМИМО html-альтернативы — сигнал
-            # спам-фильтров (письмо "только HTML", без единого читаемого
-            # текста без рендеринга разметки, типично для спама/фишинга).
-            # strip_tags() — быстрый, "достаточно хороший" plain-text из
-            # уже отрендеренного HTML вместо поддержки отдельного .txt на
-            # каждый из полутора десятков шаблонов писем в проекте.
+            # text/plain-версия из HTML — письмо только с HTML похоже на спам.
             subject=subject,
             body=strip_tags(html_message),
             from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@dopx.kz'),
@@ -212,9 +133,7 @@ def _send_email_to_user(
         logger.info(f"✅ Email sent successfully to {user.email}: {subject}")
         return True
     except TRANSIENT_EMAIL_ERRORS as e:
-        # warning, не error — это ожидаемо восстанавливаемый сбой (см.
-        # TransientEmailError), а не баг в коде. logger.error() шёл бы в
-        # Sentry с тем же уровнем тревожности, что и настоящая поломка.
+        # warning, а не error — сбой временный.
         logger.warning(
             f"⚠️ Временный сбой при отправке письма {user.email} (сеть/SMTP, "
             f"похоже на обрыв соединения, а не ошибку в коде): {type(e).__name__}: {e}"
@@ -229,15 +148,7 @@ def _send_email_to_user(
 
 @shared_task(bind=True, max_retries=3, countdown=10)
 def send_badge_earned_notification(self, user_id: str, badge_type: str, badge_name: str):
-    """
-    Отправка МГНОВЕННОГО письма о достижении.
-
-    Вызывается только если у пользователя ВЫКЛЮЧЕН `email_digest_mode` —
-    иначе письмо соберётся в `send_notification_digest` (проверка теперь
-    делается на стороне вызывающего кода — `users/tasks.py::
-    check_and_award_badges_task`, — чтобы не ставить в очередь лишнюю
-    задачу, которая всё равно ничего не отправит).
-    """
+    """Мгновенное письмо о достижении (когда у пользователя выключен дайджест)."""
     try:
         from users.models import User
         user = User.objects.get(id=user_id)
@@ -257,7 +168,7 @@ def send_badge_earned_notification(self, user_id: str, badge_type: str, badge_na
 
 @shared_task(bind=True, max_retries=3, countdown=10)
 def send_level_up_notification(self, user_id: str, new_level: int, total_xp: int):
-    """Отправка МГНОВЕННОГО письма о повышении уровня (см. докстринг `send_badge_earned_notification`)."""
+    """Мгновенное письмо о новом уровне."""
     try:
         from users.models import User
         user = User.objects.get(id=user_id)
@@ -277,7 +188,7 @@ def send_level_up_notification(self, user_id: str, new_level: int, total_xp: int
 
 @shared_task(bind=True, max_retries=3, countdown=5)
 def send_email_verification(self, user_id: str, token: str):
-    """Критическое письмо верификации (force=True — не подчиняется настройкам/дайджесту)."""
+    """Письмо верификации (force=True)."""
     try:
         from users.models import User
         user = User.objects.get(id=user_id)
@@ -303,25 +214,8 @@ def _send_match_email_chunk(
     template_name: str,
     notification_type: str,
 ) -> int:
-    """
-    Отправляет письмо одной пачке пользователей (см. пункт 2 докстринга
-    модуля). `rate_limit='60/m'` — троттлинг на уровне Celery ограничивает,
-    сколько ТАКИХ пачек может исполняться в минуту суммарно по всем
-    воркерам, независимо от того, сколько пачек поставлено в очередь сразу.
-
-    Ретраи при сетевых сбоях (см. `TransientEmailError`): это самый
-    высокообъёмный путь доставки писем в проекте — через него идут
-    voting_open/voting_closing/prediction_closing, то есть большинство
-    реальных email-уведомлений. `raise_on_transient=True` — при обрыве
-    DNS/TCP посреди цикла прерываем пачку и ретраим её целиком через
-    self.retry с экспоненциальным backoff, вместо того чтобы тихо потерять
-    письма всем, кто шёл в списке ПОСЛЕ сбойнувшего адреса (именно так
-    терялись письма в инциденте 2026-08-30 — Sentry поймал gaierror/
-    SMTPServerDisconnected, а задача просто продолжала цикл дальше, будто
-    ничего не случилось). Компромисс: получатели из ЭТОЙ пачки (≤50 chelovek,
-    см. BULK_EMAIL_CHUNK_SIZE), которым письмо уже ушло до обрыва, при
-    ретрае получат его повторно — безобидный дубль, не критичная операция,
-    дешевле, чем насовсем потерянные письма.
+    """Письмо одной пачке пользователей. rate_limit ограничивает число пачек в минуту.
+    При сетевом сбое пачка ретраится целиком (возможен безобидный дубль).
     """
     from matches.models import Match
     from users.models import User
@@ -355,19 +249,8 @@ def _chunked(items: list, size: int) -> list[list]:
 
 @shared_task(bind=True, max_retries=3, rate_limit='60/m')
 def _send_system_announcement_chunk(self, user_ids: list[str], subject: str, title: str, body: str) -> int:
-    """
-    Пачка писем для staff-broadcast (см. dashboard/views.py::announcements —
-    единственный вызывающий). Тот же fan-out-паттерн, что и
-    `_send_match_email_chunk` выше, просто без привязки к конкретному
-    матчу — контекст письма (`title`/`body`) один и тот же для всех пачек
-    одной рассылки, передаётся напрямую, а не читается заново из БД.
-
-    In-app-строки Notification создаются заранее, СИНХРОННО, одним
-    bulk_create в самой вьюхе (не здесь) — они должны появиться у
-    пользователя сразу после нажатия «Отправить», не ждать, пока Celery
-    разберёт очередь чанков. Здесь — только email, с уважением к тумблеру
-    `email_system` (см. `notification_type='system'` → `_send_email_to_user`
-    → `NOTIFICATION_TYPE_TO_SETTINGS_KEY`).
+    """Пачка писем для системного объявления из дашборда. In-app уведомления
+    создаёт сама вьюха, здесь только email (с учётом email_system).
     """
     from users.models import User
 
@@ -391,28 +274,8 @@ def _send_system_announcement_chunk(self, user_ids: list[str], subject: str, tit
 
 @shared_task(bind=True, max_retries=3)
 def notify_voting_closing_soon(self):
-    """
-    Напоминание о скором закрытии голосования — тоже fan-out на уровне
-    пачек, плюс явный notification_type='voting_closing'.
-
-    Расписание (АКТУАЛЬНО): `crontab(minute='*/30')` — каждые 30 минут, см.
-    `dopx/settings.py::CELERY_BEAT_SCHEDULE['voting-closing-reminders']`.
-    Комментарий-заголовок секции рядом с этой записью в CELERY_BEAT_SCHEDULE
-    ("каждые 6 часов") устарел и реальному crontab не соответствует — здесь
-    эту цифру не повторяем, чтобы не тиражировать ту же ошибку дальше.
-
-    БАГ, КОТОРЫЙ ТУТ БЫЛ: окно выборки — 1 час (`closing_threshold`), а сама
-    задача гоняется каждые 30 минут → без дедупликации один и тот же
-    закрывающийся матч почти всегда попадал в выборку ДВАЖДЫ подряд (на двух
-    соседних тиках) и рассылка уходила всем пользователям дважды. Дедуп —
-    тот же принцип, что в `notify_prediction_results` выше: перед постановкой
-    email-чанков в очередь для конкретного матча проверяем, нет ли уже
-    `Notification(notification_type='voting_closing', related_match=match)`
-    — если есть, матч уже обработан прошлым тиком, пропускаем. Заодно теперь
-    создаём эти Notification (по одной на пользователя) — раньше это
-    напоминание существовало ТОЛЬКО как email, без in-app записи, хотя
-    `notification_type='voting_closing'` в `NOTIFICATION_TYPES`
-    (notifications/models.py) был заведён именно под него.
+    """Напоминание о скором закрытии голосования (каждые 30 минут).
+    Дедуп: если Notification voting_closing для матча уже есть — матч пропускаем.
     """
     from django.urls import reverse
 
@@ -461,8 +324,7 @@ def notify_voting_closing_soon(self):
             _send_match_email_chunk.delay(chunk, str(match.id), subject, 'emails/voting_closing.html', 'voting_closing')
             queued += 1
 
-        # Дедуп-маркер для будущих прогонов (см. докстринг выше) — заодно
-        # закрывает пробел с отсутствием in-app уведомления для этого типа.
+        # Notification — заодно маркер дедупа для следующих прогонов.
         action_url = reverse('matches:detail', args=[match.id])
         Notification.objects.bulk_create([
             Notification(
@@ -491,19 +353,8 @@ def notify_voting_closing_soon(self):
 
 @shared_task
 def send_notification_digest():
-    """
-    Периодическая задача: собирает Notification (email_sent_at__isnull=True)
-    типов new_badge/level_up/system по пользователям с email_digest_mode=True
-    и шлёт одно письмо-сводку вместо N мгновенных.
-
-    БАГ, КОТОРЫЙ ТУТ БЫЛ: периодическая задача (`crontab(minute=0)`, раз в
-    час) без Redis-lock — при двух параллельных прогонах (плановый тик +
-    повторная доставка сообщения at-least-once) оба могли прочитать один и
-    тот же набор "ещё не отправленных" Notification ДО того, как первый
-    прогон успеет проставить `email_sent_at`, и разослать дублирующие
-    письма-сводки. Лок — тот же cache.add()-паттерн, что в
-    season_squad/tasks.py::recompute_best_xi_task и
-    notify_prediction_results выше.
+    """Раз в час собирает неотправленные Notification (new_badge/level_up/system)
+    пользователей с email_digest_mode в одно письмо. С Redis-локом.
     """
     lock_key = "notifications:lock:send_notification_digest"
     if not cache.add(lock_key, "1", timeout=NOTIFY_TASK_LOCK_TIMEOUT):
@@ -535,9 +386,7 @@ def send_notification_digest():
             if not user.email or not user.is_verified:
                 continue
             if not user.get_notification_setting('email_digest_mode', True):
-                # Пользователь предпочитает мгновенные письма — дайджест их не трогает
-                # (они уже были отправлены мгновенно и помечены email_sent_at при
-                # создании — см. users/tasks.py, evaluations/views.py).
+                # Пользователь без дайджеста — ему письма уже ушли сразу.
                 continue
 
             sent = _send_email_to_user(
@@ -560,14 +409,7 @@ def send_notification_digest():
 
 @shared_task
 def cleanup_old_notifications():
-    """
-    НОВОЕ — реальная реализация вместо несуществующей задачи, на которую
-    годами ссылался `CELERY_BEAT_SCHEDULE['voting-reminders']` (см. пункт 4
-    докстринга модуля). Удаляет ПРОЧИТАННЫЕ уведомления старше
-    `NOTIFICATION_RETENTION_DAYS` дней, чтобы таблица `Notification` не
-    росла бесконечно. Непрочитанные не трогает — пользователь должен
-    успеть их увидеть независимо от возраста.
-    """
+    """Удаляет прочитанные уведомления старше NOTIFICATION_RETENTION_DAYS."""
     from core.models import get_setting
     from notifications.models import Notification
 
@@ -580,41 +422,11 @@ def cleanup_old_notifications():
 
 @shared_task(bind=True, max_retries=3, countdown=5)
 def notify_followers_match_activity(self, match_id: str):
-    """
-    Приглашение оценить только что завершённый матч — in-app + push + email.
-    Ставится в очередь, подстраховкой, из `parsers/sportmonks/importers.py`
-    через `transaction.on_commit` в момент первого перехода матча в
-    'finished' (до 2026-09-09 то же самое умел `parsers/tasks.py::
-    update_match_statuses` и `parsers/kff/importers.py::import_match_core`
-    — оба удалены вместе с KFF-парсером).
+    """Приглашение оценить только что завершённый матч: in-app + push + email.
 
-    РАСШИРЕНО (2026-09-01, прямая жалоба пользователя: email верифицирован,
-    прогноз стоял, а пуша с приглашением оценить матч не пришло вообще).
-    Раньше аудитория была ТОЛЬКО подписчики (`Follow`) на одну из играющих
-    команд или на игрока в составе — так и было изначально задумано
-    продуктом ("если человек подписан на команду или игроков"). На практике
-    это означало, что пользователь, который просто поставил прогноз на матч
-    (самый частый и очевидный кандидат на "пригласить оценить"), но не
-    оформил отдельную Follow-подписку на команду, никогда не попадал в
-    аудиторию — push для него не приходил не из-за бага, а по дизайну,
-    который на практике ощущается как "не работает". Аудитория теперь —
-    объединение (без дублей) подписчиков команд/игроков И всех, кто
-    отправил `MatchPrediction` на этот матч.
-
-    Раньше здесь ещё и разбирался мёртвый `send_voting_open_notification`
-    (широковещательная email-рассылка ВСЕМ верифицированным пользователям,
-    ни разу не вызывалась ни из кода, ни из CELERY_BEAT_SCHEDULE) — вместо
-    того, чтобы оставлять его висеть как источник путаницы, функция удалена
-    целиком (см. git-историю), а её часть аудитории (широковещательная)
-    сознательно НЕ перенесена сюда: рассылать это буквально всем
-    верифицированным пользователям при завершении КАЖДОГО матча тура — это
-    email-спам для тех, кто вообще не интересовался этим конкретным матчем.
-    Возврат к Follow + предсказавшим — таргетинг на тех, кому эта конкретная
-    игра реально интересна.
-
-    Email уважает пользовательскую настройку `email_match_finished`
-    (см. NOTIFICATION_TYPE_TO_SETTINGS_KEY['voting_open']) — как и любой
-    другой канал в этом модуле.
+    Вызывается из импорта при переходе матча в finished. Аудитория — подписчики
+    команд/игроков матча и все, кто ставил прогноз на этот матч.
+    Email учитывает email_match_finished.
     """
     from django.db.models import Q
     from django.urls import reverse
@@ -668,12 +480,7 @@ def notify_followers_match_activity(self, match_id: str):
         for uid in audience_user_ids
     ])
 
-    # Push — лучшее из двух миров с in-app: следящий за игроком/предсказавший
-    # пользователь часто НЕ сидит на сайте в момент финального свистка.
-    # Best-effort: ошибка одного пользователя (устаревшая подписка и т.д.)
-    # не должна прерывать рассылку остальным — см. try/except внутри
-    # send_push_to_user самого по себе; здесь дополнительно оборачиваем весь
-    # цикл на случай отсутствия pywebpush/VAPID-ключей в окружении.
+    # Push best-effort: ошибки не должны ломать рассылку остальным.
     try:
         from notifications.services import send_push_to_user
         from users.models import User
@@ -683,9 +490,7 @@ def notify_followers_match_activity(self, match_id: str):
     except Exception as exc:
         logger.warning(f"notify_followers_match_activity: push fan-out skipped: {exc}")
 
-    # Email — аудитория здесь (подписчики + предсказавшие на конкретный
-    # матч) обычно единицы-десятки пользователей, поэтому шлём напрямую, без
-    # chunked fan-out паттерна, которым пользуются широковещательные рассылки.
+    # Аудитория небольшая — email шлём напрямую, без пачек.
     from users.models import User as _UserModel
 
     emailed = 0
@@ -704,13 +509,7 @@ def notify_followers_match_activity(self, match_id: str):
 
 
 def _match_notification_audience(match) -> set[str]:
-    """Общая аудитория для пред-/около-матчевых пушей (старт матча, составы
-    доступны) — подписчики домашней/гостевой команды или игрока в составе
-    (когда он уже есть) ОБЪЕДИНЁННЫЕ с теми, кто поставил прогноз на этот
-    матч. Тот же принцип таргетинга, что и в notify_followers_match_activity
-    выше (см. её докстринг про расширение аудитории 2026-09-01) — не только
-    формальные подписчики, но и все, кто уже проявил интерес к конкретной
-    игре."""
+    """Аудитория для пушей вокруг матча: подписчики команд/игроков + сделавшие прогноз."""
     from django.db.models import Q
 
     from lineups.models import MatchLineupPlayer
@@ -735,21 +534,7 @@ def _match_notification_audience(match) -> set[str]:
 
 @shared_task(bind=True, max_retries=3, countdown=5)
 def notify_followers_match_started(self, match_id: str):
-    """
-    НОВОЕ (2026-09-21, прямая жалоба пользователя: "надо наладить пуши...
-    о начале матча, тоже нет пушей!" — полный аудит пуш-системы по образцу
-    Sofascore). Push + in-app в момент первого перехода матча в 'live' —
-    ставится из `parsers/sportmonks/importers.py::import_full_fixture`
-    через `transaction.on_commit`, тем же способом, что и
-    `notify_followers_match_activity` (финал) и `notify_followers_match_event`
-    (голы/карточки) — единственное место, физически видящее переход
-    'scheduled' → 'live' (двухуровневая live-схема Sportmonks, см. докстринг
-    parsers/sportmonks/tasks.py).
-
-    Только push + in-app, БЕЗ email — "матч начался" ценно только в моменте,
-    письмо пришло бы, когда матч уже давно идёт (та же логика, что у
-    notify_followers_match_event).
-    """
+    """Push + in-app при старте матча (переход scheduled -> live). Без email."""
     from django.urls import reverse
 
     from matches.models import Match
@@ -795,14 +580,7 @@ def notify_followers_match_started(self, match_id: str):
 
 @shared_task(bind=True, max_retries=3, countdown=5)
 def notify_followers_lineups_available(self, match_id: str):
-    """
-    НОВОЕ (2026-09-21, тот же аудит, что и notify_followers_match_started
-    выше — прямая жалоба пользователя "о том что составы доступны" нет
-    пуша). Ставится из `import_full_fixture` в момент первого перехода
-    `Match.has_lineup` False → True, ТОЛЬКО пока матч ещё не завершился
-    (см. проверку в import_full_fixture — для уже завершённого/пропущенного
-    вперёд матча "составы доступны" не несёт смысла, это прошлое, а не
-    приглашение посмотреть перед стартом)."""
+    """Push + in-app, когда появились составы (только пока матч не завершён)."""
     from django.urls import reverse
 
     from matches.models import Match
@@ -846,34 +624,15 @@ def notify_followers_lineups_available(self, match_id: str):
     return {'notified': len(audience_user_ids)}
 
 
-# Какие типы событий вообще стоят push-уведомления в реальном времени —
-# см. докстринг notify_followers_match_event ниже. Вынесено на уровень
-# модуля, чтобы parsers/tasks.py::update_match_statuses могло фильтровать
-# ДО постановки задачи в очередь, не гоняя воркер зря на жёлтых карточках/
-# заменах/сырых VAR-проверках без исхода.
+# События матча, по которым шлём live-push.
 PUSH_WORTHY_EVENT_TYPES = frozenset({'goal', 'own_goal', 'penalty', 'disallowed_goal', 'red_card'})
 
 
 @shared_task(bind=True, max_retries=2)
 def notify_followers_match_event(self, match_id: str, event_id: str):
-    """
-    Продуктовый аудит (2026-09-01, прямой запрос пользователя): live push
-    ПО ХОДУ матча — гол/автогол/пенальти/отменённый (VAR) гол/красная
-    карточка — подписчикам одной из играющих команд ИЛИ конкретного
-    игрока, к которому относится событие. В отличие от
-    `notify_followers_match_activity` (шлётся РОВНО ОДИН раз, в момент
-    финального свистка, с приглашением оценить матч), эта задача может
-    сработать много раз за один матч — по разу на каждое подходящее
-    событие, см. `PUSH_WORTHY_EVENT_TYPES` выше и точку постановки в
-    очередь — `parsers/tasks.py::update_match_statuses`, сразу после
-    `import_events_and_minutes(..., on_event_created=...)`, СТРОГО для
-    событий, которые только что реально впервые созданы (не для
-    докрутки деталей у давно существующих).
-
-    Только push + in-app, БЕЗ email — в отличие от голосования (редкое,
-    важное событие, есть смысл слать письмо), гол по ходу матча — частый
-    и мгновенный by design сигнал; письмо на каждый гол было бы спамом
-    и пришло бы с опозданием, когда матч давно ушёл дальше.
+    """Live-push по событию матча (гол, автогол, пенальти, отменённый гол, красная)
+    подписчикам команд или игрока. Только push + in-app, без email.
+    Ставится из импорта для новых событий.
     """
     from django.db.models import Q
     from django.urls import reverse
@@ -892,10 +651,7 @@ def notify_followers_match_event(self, match_id: str, event_id: str):
 
     match = event.match
     if str(match.id) != str(match_id):
-        # Защита от рассинхрона id при вызове — не должно случаться в
-        # нормальном потоке (event.match_id и есть match_id, которым
-        # ставилась задача), но лучше явно отказаться, чем молча уведомить
-        # не про тот матч.
+        # Защита от рассинхрона match_id.
         logger.error(f"notify_followers_match_event: event {event_id} belongs to match {match.id}, not {match_id}")
         return {'notified': 0}
 
@@ -910,12 +666,7 @@ def notify_followers_match_event(self, match_id: str, event_id: str):
     score = match.get_score_display()
     home = match.home_team.name
     away = match.away_team.name
-    # 2026-09-21 (жалоба пользователя, скриншот: "45' Гол" без имени
-    # забившего) — event.player бывает None, если наш локальный поиск по
-    # sportmonks_id не нашёл игрока (см. докстринг MatchEvent.player_display_
-    # name в events/models.py), хотя само имя Sportmonks реально присылает.
-    # Раньше пуш в этом случае тихо терял имя целиком ("Гол на 45-й минуте."
-    # вместо "Иванов забивает..."), хотя оно было доступно в extra_data.
+    # Если игрок не найден локально — имя берём из extra_data события.
     player_name = event.player_display_name
 
     if event.event_type == 'goal':
@@ -934,10 +685,7 @@ def notify_followers_match_event(self, match_id: str, event_id: str):
         title = f"🟥 Красная карточка — {home} {score} {away}"
         message = f"{player_name} получает красную карточку на {event.display_minute}-й минуте." if player_name else f"Красная карточка на {event.display_minute}-й минуте."
     else:
-        # PUSH_WORTHY_EVENT_TYPES фильтрует это на этапе постановки задачи —
-        # сюда попасть не должно, но лучше тихо выйти, чем разослать
-        # уведомление без осмысленного текста, если фильтр когда-нибудь
-        # разойдётся с этим списком.
+        # Неподходящий тип — тихо выходим.
         logger.warning(f"notify_followers_match_event: неожиданный event_type={event.event_type!r} для события {event.id}, пропуск")
         return {'notified': 0}
 
@@ -955,9 +703,7 @@ def notify_followers_match_event(self, match_id: str, event_id: str):
         for uid in follower_user_ids
     ])
 
-    # Push — best-effort, тот же паттерн, что notify_followers_match_activity
-    # выше: сбой одной подписки/отсутствие VAPID-ключей не должен ронять
-    # рассылку остальным подписчикам.
+    # Push best-effort.
     try:
         from notifications.services import send_push_to_user
         from users.models import User
@@ -972,46 +718,14 @@ def notify_followers_match_event(self, match_id: str, event_id: str):
 
 
 # ============================================================
-# 4 петли удержания (retention loops), 2026-08-21 — задача пользователя:
-# "нужна регулярная причина вернуться: прогнозы, персональная недельная
-# сводка, «ваш прогноз/оценка против сообщества», серии". Ниже — loop 1
-# (дедлайн прогноза) и loop 3 (прогноз vs результат). Loop 2 (недельная
-# сводка) — тоже здесь, ниже. Loop 4 (серии) не требует отдельной задачи —
-# начисление стрика синхронное (users/models.py::User.update_prediction_
-# stats), а майлстоуны 7/30/100 идут через УЖЕ существующий пайплайн
-# бейджей (check_and_award_badges_task → notification_type='new_badge'),
-# см. users/badges.py и users/services.py.
+# Петли удержания: приглашение к прогнозу, результат прогноза, недельная сводка.
+# Серии начисляются синхронно, майлстоуны — через бейджи.
 # ============================================================
 
 @shared_task(bind=True, max_retries=3)
 def notify_prediction_closing_soon(self):
-    """
-    Loop 1 / приглашение к прогнозу в стиле Sofascore — ПЕРЕОСМЫСЛЕНО
-    2026-08-21 по прямому запросу продукта (по мотивам того, как Sofascore
-    шлёт пуш за час до матча: "команда А играет с командой Б — как вы
-    думаете, кто победит?"). Раньше это письмо было чисто про срочность
-    ("закрывается через час, успевайте") и только по email — теперь это
-    ПРИГЛАШЕНИЕ поучаствовать, с тем же самым триггером по времени (~1 час
-    до `Match.start_time`, только для тех, кто ещё не предсказал — см.
-    `Match.is_prediction_open()`), но на два канала сразу: push (best-effort,
-    тот же паттерн, что `notify_followers_match_activity`) + in-app
-    `Notification`, ПЛЮС email с переписанным приглашающим текстом вместо
-    urgency-формулировки (см. templates/emails/prediction_closing.html).
-
-    С добавлением нижней границы окна прогноза (`Match.PREDICTION_WINDOW_DAYS`,
-    matches/models.py) этот час перед стартом — по сути последний реалистичный
-    момент напомнить: раньше — уже открыто и, скорее всего, увидено на
-    странице матча, позже — уже поздно, прогноз закрылся вместе со стартовым
-    свистком.
-
-    Дедупликация НЕ нужна (в отличие от `notify_prediction_results`, где
-    контент завязан на итоговый счёт и повтор был бы бессмысленным спамом):
-    `crontab(minute='*/30')` может застать один и тот же матч в пределах
-    часового окна дважды — оба раза увидит тех же ещё-не-предсказавших
-    пользователей и пришлёт приглашение повторно. Это осознанно (и было так
-    же у email-канала до этой правки) — короткое повторное напоминание в
-    узком окне ближе к Sofascore-паттерну, чем риск ни разу не достучаться
-    из-за пропущенного тика воркера.
+    """Приглашение сделать прогноз примерно за час до матча — тем, кто ещё не сделал.
+    Push + in-app + email. Без дедупа: повтор в узком окне допустим.
     """
     from django.urls import reverse
 
@@ -1066,9 +780,7 @@ def notify_prediction_closing_soon(self):
         ])
         notified_inapp += len(user_ids)
 
-        # Push — см. идентичный try/except-обёртку и обоснование в
-        # notify_followers_match_activity выше: best-effort, сбой одного
-        # пользователя/отсутствие VAPID-ключей не должен ронять всю задачу.
+        # Push best-effort.
         try:
             from notifications.services import send_push_to_user
 
@@ -1089,49 +801,11 @@ def notify_prediction_closing_soon(self):
 
 @shared_task(bind=True, max_retries=3)
 def notify_prediction_results(self):
-    """
-    Loop 3: «ваш прогноз vs сообщество/результат» — персонализированное
-    письмо+in-app уведомление КАЖДОМУ, кто ставил прогноз на матч, который
-    недавно завершился.
+    """Результат прогноза каждому, кто его ставил: in-app + email.
 
-    В отличие от `notify_followers_match_activity`/`send_voting_open_
-    notification` (одна и та же тема/шаблон для всех адресатов, fan-out
-    пачками), здесь контент у каждого получателя РАЗНЫЙ (свой выбор,
-    совпал/не совпал) — фан-аут пачками неприменим без готового шаблона
-    "письмо на пачку", поэтому цикл идёт по каждому предсказавшему
-    напрямую внутри задачи (тот же стиль, что и `send_notification_digest`
-    ниже — периодическая задача с прямым циклом рассылки, а не
-    delegation на суб-задачи).
-
-    Дедупликация БЕЗ отдельного булева флага на `MatchPrediction`: если
-    для пары (match, user) уже существует `Notification(notification_type=
-    'prediction_result', related_match=match, user=user)` — значит, письмо
-    уже отправлено, повторный прогон `crontab(minute='*/30')` эту пару
-    пропустит. `lookback` — 6 часов, не 1 — с запасом на случай простоя
-    воркера/деплоя между прогонами; повторный прогон в пределах окна не
-    дублирует уже обработанные пары благодаря дедупликации выше.
-
-    2026-09-23, фикс аудита: `end_time__gte=lookback` раньше был ЖЁСТКОЙ
-    нижней границей — если воркер/beat не работал дольше 6 часов (инцидент,
-    затянувшийся деплой), матчи, завершившиеся за это время, выпадали из
-    выборки НАВСЕГДА: следующий прогон уже не видел их (`end_time` за
-    пределами lookback), и prediction_streak/бейджи/письма по этим матчам
-    так и оставались необновлёнными без единого признака для админа. Так
-    как дедупликация выше опирается ИСКЛЮЧИТЕЛЬНО на существование
-    `Notification` (не на дату), а не на время — жёсткую нижнюю границу
-    можно расширить без риска задвоения. `CATCHUP_MAX_DAYS` — защитный
-    потолок (не искать несуществующие дыры в данных глубже разумного), а
-    не механизм дедупликации.
-
-    БАГ, КОТОРЫЙ ТУТ БЫЛ: сама задача периодическая (`crontab(minute='*/30')`)
-    и без Redis-lock — дедупликация по `Notification` (см. выше) защищает от
-    задвоения ПОСЛЕ того, как `bulk_create` отработал, но не от гонки: два
-    параллельных прогона (плановый тик + повторная доставка сообщения
-    at-least-once) могли одновременно прочитать одну и ту же "ещё не
-    уведомлённую" пару (match, user) ДО того, как один из них успеет создать
-    Notification, и оба отправить письмо. Лок — тот же cache.add()-паттерн,
-    что в season_squad/tasks.py::recompute_best_xi_task /
-    round_squad/tasks.py::recompute_round_task.
+    Дедуп — по существующей Notification prediction_result для пары (матч, user),
+    плюс Redis-лок от параллельных прогонов. Обычное окно — 6 часов, но матчи
+    старше досылаются (до prediction_results_catchup_days), если воркер простаивал.
     """
     lock_key = "notifications:lock:notify_prediction_results"
     if not cache.add(lock_key, "1", timeout=NOTIFY_TASK_LOCK_TIMEOUT):
@@ -1150,20 +824,10 @@ def notify_prediction_results(self):
 
         now = timezone.now()
         lookback = now - timedelta(hours=6)
-        # 2026-09-23: потолок catch-up'а, не нижняя граница дедупликации
-        # (та полностью опирается на Notification, см. докстринг выше).
-        # Захватывает завершённые матчи глубже 6 часов ТОЛЬКО если они
-        # реально ещё не были уведомлены — обычный (здоровый) прогон почти
-        # всегда обработает их в первый же тик после lookback и дальше
-        # этот более широкий диапазон будет пустым за счёт already_emailed/
-        # existing_by_user дедупликации ниже.
+        # Потолок досылки при простое воркера; дедуп — по Notification.
         catchup_cutoff = now - timedelta(days=get_setting("prediction_results_catchup_days", 30))
 
-        # order_by('end_time') — ВАЖНО для серии прогнозов (см. блок ниже,
-        # User.update_prediction_stats): если у пользователя в ОДНОМ прогоне
-        # этой задачи сразу несколько свежезавершившихся матчей, +1/сброс
-        # серии должны применяться в том порядке, в котором матчи реально
-        # закончились, а не в произвольном порядке из БД.
+        # Порядок по end_time важен для серии прогнозов.
         matches = Match.objects.filter(
             status='finished', end_time__isnull=False, end_time__gte=catchup_cutoff, end_time__lte=now,
         ).select_related('home_team', 'away_team').order_by('end_time')
@@ -1181,10 +845,7 @@ def notify_prediction_results(self):
         notified = 0
 
         for match in matches:
-            # Дедуп по факту УСПЕШНОЙ отправки (email_sent_at), не по факту
-            # создания записи — иначе сетевой сбой при отправке навсегда
-            # блокирует переотправку. См.
-            # docs/adr/0020-prediction-result-email-dedup.md.
+            # Дедуп по успешной отправке (email_sent_at). См. docs/adr/0020-prediction-result-email-dedup.md.
             already_emailed = Notification.objects.filter(
                 notification_type='prediction_result', related_match=match, email_sent_at__isnull=False,
             ).values('user_id')
@@ -1215,7 +876,7 @@ def notify_prediction_results(self):
             notif_by_user = {}
             notifications_to_create = []
             for pred in predictions:
-                is_correct = pred.is_correct  # bool, т.к. match.final_result уже точно известен (status='finished')
+                is_correct = pred.is_correct
                 title = "✅ Ваш прогноз сбылся!" if is_correct else "Прогноз не сбылся"
                 message = (
                     f"{match.home_team.name} {match.get_score_display()} {match.away_team.name} — "
@@ -1224,13 +885,8 @@ def notify_prediction_results(self):
                 )
                 existing = existing_by_user.get(pred.user_id)
                 if existing:
-                    # Строка от прошлого прогона, которому не удалось отправить
-                    # письмо (email_sent_at пуст, иначе pred не попал бы сюда
-                    # через already_emailed выше) — просто пробуем письмо снова.
-                    # Серию НЕ трогаем повторно — она уже обновлена ниже, в
-                    # ветке, где notification создаётся ВПЕРВЫЕ (см. коммент
-                    # у update_prediction_stats() чуть ниже): иначе ретрай
-                    # неудавшегося письма удвоил бы +1/сброс серии.
+                    # Запись от прошлого прогона без отправленного письма — только повторяем письмо,
+                    # серию второй раз не трогаем.
                     notif_by_user[pred.user_id] = existing
                     continue
                 notif = Notification(
@@ -1240,21 +896,12 @@ def notify_prediction_results(self):
                     message=message,
                     action_url=action_url,
                     related_match=match,
-                    # email_sent_at НЕ проставляем здесь — только после
-                    # реального успеха отправки ниже (см. докстринг-блок
-                    # "БАГ, КОТОРЫЙ ТУТ БЫЛ" выше).
+                    # email_sent_at ставим только после успешной отправки.
                 )
                 notifications_to_create.append(notif)
                 notif_by_user[pred.user_id] = notif
 
-                # Серия прогнозов (loop 4, "Серии") — обновляем РОВНО ОДИН
-                # раз на результат, привязано к первому созданию этой
-                # Notification (а не к успеху отправки письма — иначе
-                # ретрай сорвавшегося письма удвоил бы счётчик, см. коммент
-                # в ветке `if existing` выше). is_correct уже точно известен
-                # (match.status == 'finished'), поэтому это безопасное место
-                # для +1/сброса — единственный вызывающий
-                # User.update_prediction_stats() во всём проекте.
+                # Серия прогнозов обновляется один раз — при первом создании Notification.
                 pred.user.update_prediction_stats(is_correct)
                 check_and_award_badges_task.delay(user_id=str(pred.user_id), match_id=str(match.id))
 
@@ -1288,23 +935,8 @@ def notify_prediction_results(self):
 
 @shared_task(bind=True, max_retries=3)
 def send_weekly_summary(self):
-    """
-    Loop 2: персональная недельная сводка — сколько оценок/прогнозов сделал
-    пользователь за последние 7 дней, точность прогнозов, "матч недели"
-    (общий для всех, по средней вовлечённости из `aggregates.MatchAggregate`).
-
-    Намеренно НЕ участвует в `send_notification_digest` (см. пункт 3
-    докстринга модуля) — это САМА ПО СЕБЕ агрегированная сводка raz в
-    неделю, оборачивать её ЕЩЁ раз в дайджест бессмысленно; письмо уходит
-    сразу всем, кто включил `email_weekly_summary`, независимо от
-    `email_digest_mode` (та же логика, что у мгновенных писем о
-    завершении матча).
-
-    Синхронный цикл по пользователям в одной задаче (не fan-out пачками)
-    — контент персонализирован на каждого, как и `notify_prediction_
-    results` выше; при росте базы пользователей на порядки это стоит
-    переделать на chunked sub-tasks, для текущего масштаба KPL-аудитории
-    один проход раз в неделю укладывается в `CELERY_TASK_TIME_LIMIT`.
+    """Персональная сводка недели: оценки, прогнозы, точность, матч недели.
+    Вне дайджеста, только для включивших email_weekly_summary.
     """
     from django.db.models import Count, Q
 
@@ -1316,8 +948,7 @@ def send_weekly_summary(self):
     now = timezone.now()
     week_ago = now - timedelta(days=7)
 
-    # "Матч недели" — один и тот же для всех писем этой рассылки, поэтому
-    # считается ОДИН раз до цикла по пользователям, не на каждого.
+    # Матч недели считаем один раз на всю рассылку.
     top_match = (
         Match.objects.filter(
             status='finished', end_time__gte=week_ago, end_time__lte=now,
@@ -1344,10 +975,7 @@ def send_weekly_summary(self):
         ).select_related('match')
         predictions_count = week_predictions.count()
 
-        # Точность считается только по прогнозам с УЖЕ известным исходом
-        # (match.final_result может быть None, если матч ещё не завершился
-        # к моменту рассылки) — иначе делитель включал бы прогнозы, которые
-        # физически не могли ни сбыться, ни провалиться.
+        # Точность — только по матчам с известным исходом.
         decided = [p for p in week_predictions if p.match.final_result is not None]
         accuracy_pct = None
         if decided:
@@ -1355,8 +983,7 @@ def send_weekly_summary(self):
             accuracy_pct = round(correct * 100 / len(decided))
 
         if evaluations_count == 0 and predictions_count == 0:
-            # Ничего не произошло за неделю — письмо "у вас 0 всего" не
-            # несёт ценности и выглядит как упрёк, а не приглашение вернуться.
+            # Нет активности за неделю — письмо не шлём.
             continue
 
         if _send_email_to_user(
@@ -1379,25 +1006,8 @@ def send_weekly_summary(self):
 
 @shared_task(bind=True, max_retries=3)
 def send_staff_antifraud_digest(self):
-    """
-    2026-08-24, продуктовый запрос "хочу, чтобы модерация антифрода была
-    максимально простой и не затратной по времени": раньше единственный
-    способ узнать о новых флагах — самому не забыть зайти на
-    /staff/dashboard/antifraud/. Теперь раз в неделю письмо с короткой
-    сводкой само приходит на почту — не нужно ничего держать в голове.
-
-    Считает то, что РЕАЛЬНО появилось за последние 7 дней (не всю
-    вечно растущую очередь pending — иначе письмо распухнет и его
-    перестанут читать), группирует по источнику, отдельно — топ-3 по
-    score (самое подозрительное) и число открытых диспутов по рейтингу.
-    Если за неделю не появилось вообще ничего нового — письмо не
-    отправляется (см. `send_weekly_summary` выше — тот же принцип: "у вас
-    0 всего" не несёт ценности).
-
-    force=True — это операционное письмо для сотрудников, а не
-    предпочтение пользователя, которое можно выключить через
-    /notifications/settings/ (тех настроек для staff-ролей в проекте и
-    нет).
+    """Недельная сводка антифрода для staff: новые сигналы за 7 дней по источникам,
+    топ-3 по score, открытые диспуты. Пустую сводку не шлём. force=True.
     """
     from django.contrib.contenttypes.models import ContentType
 

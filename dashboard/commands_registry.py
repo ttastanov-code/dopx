@@ -1,44 +1,12 @@
 # dashboard/commands_registry.py
-"""
-Allowlist management-команд, которые staff может запускать из
-/staff/dashboard/scripts/ (раздел "Скрипты и команды", 2026-09-22, прямая
-просьба пользователя: "seed_full_history надо вывести в дашборд... команду
-очистки удаления и тд, все наши тестовые скрипты и команды в отдельный
-раздел").
+"""Allowlist management-команд для «Скриптов и команд».
+Только команды из COMMAND_REGISTRY и только описанные аргументы.
 
-Тот же принцип allowlist'а, что уже используется для celery-задач
-(dashboard/parser_tools.py::TRIGGERABLE_TASKS) — НИКАКОГО произвольного
-`manage.py <что угодно>` из UI, только команды из COMMAND_REGISTRY ниже,
-с аргументами СТРОГО из их описанной схемы (dashboard/command_runner.py
-валидирует и то, и другое перед call_command()).
-
-Каждый арг описан достаточно, чтобы:
-  1) сгенерировать поле формы (kind → тип input'а в scripts.html);
-  2) провалидировать/привести пришедшее из POST значение к нужному типу;
-  3) собрать позиционные/именованные аргументы для call_command() с
-     ПРАВИЛЬНЫМ dest (argparse иногда переопределяет его явно — например
-     seed_match_votes::--match-id → dest="match_ids" — простое
-     "замени дефис на подчёркивание" тут дало бы неверный kwarg).
-
-`label`/`description`/`ArgSpec.help` — ТЕКСТ ДЛЯ STAFF В UI (scripts.html).
-2026-09-22, прямая просьба пользователя: "все описания команд надо
-переписать на более короткие, емкие, понятные и без ИИ паттерна" —
-короткое предложение по делу, БЕЗ обоснований "почему это нужно"/истории
-решений (та история и так есть рядом в виде Python-комментариев в этом
-файле — staff, читающий кнопку в браузере, её не видит и не должен, ему
-нужно только "что делает").
-
-`danger`:
-  - "readonly"    — ничего не меняет (diagnose_*), можно гонять без опаски.
-  - "safe"        — меняет данные, но безопасно/идемпотентно/легко обратимо
-                     (пересчёты, сидирование новых тестовых сущностей).
-  - "destructive" — реально удаляет данные. У всех таких команд, КРОМЕ
-                     cleanup_load_test, есть свой --apply (без флага —
-                     dry-run отчёт, ничего не трогает) — форма всегда
-                     сначала предлагает dry-run, апply — отдельный чекбокс.
-                     cleanup_load_test у cамой команды такого флага нет
-                     (см. её докстринг) — UI требует ручного подтверждения
-                     текстом вместо чекбокса.
+danger:
+  readonly    — ничего не меняет;
+  safe        — меняет, но безопасно/идемпотентно;
+  destructive — удаляет. Обычно есть --apply (без него — dry-run);
+                у cleanup_load_test вместо этого подтверждение текстом.
 """
 from __future__ import annotations
 
@@ -53,7 +21,7 @@ _MATCH_STATUS_CHOICES = [choice[0] for choice in Match.STATUS_CHOICES]
 @dataclass(frozen=True)
 class ArgSpec:
     flag: str  # "--season-id" или имя позиционного ("team")
-    dest: str  # ключ, под которым уйдёт в call_command()
+    dest: str  # kwarg для call_command()
     kind: str  # "str" | "int" | "float" | "flag" | "choice" | "list_str"
     positional: bool = False
     required: bool = False
@@ -64,28 +32,18 @@ class ArgSpec:
 
 @dataclass(frozen=True)
 class CommandSpec:
-    name: str  # имя команды для call_command() — совпадает с именем файла
+    name: str  # имя команды для call_command()
     label: str
     category: str  # "seed" | "cleanup" | "recalc" | "diagnose"
     danger: str  # "readonly" | "safe" | "destructive"
     description: str
     args: list[ArgSpec] = field(default_factory=list)
     has_apply_flag: bool = False  # есть свой --apply (dry-run по умолчанию)
-    # 2026-09-22, прямая просьба пользователя после повторных зависаний
-    # verify_names_with_ai --all --limit 0 (см. её докстринг ниже и
-    # dashboard/tasks.py::run_management_command): если задано — реальный
-    # вызов ВСЕГДА режется на порции по auto_chunk_limit штук вместо
-    # одного многочасового синхронного прохода, независимо от того, что
-    # staff ввёл в поле --limit формы. Один упавший/убитый OOM'ом чанк
-    # теряет минуты работы, а не часы, и не оставляет запись "зависшей"
-    # навсегда — дедупликация внутри самой команды делает продолжение
-    # автоматическим.
+    # Если задано — запуск режется на порции такого размера.
     auto_chunk_limit: int | None = None
 
 
-# 2026-09-22: короче исходных ("Сидирование и симуляция тестовых данных" и
-# т.п.) — те же длинные подписи, что жаловался пользователь у самих команд,
-# только на уровень выше (заголовок секции на scripts.html).
+# Заголовки секций.
 CATEGORY_LABELS = {
     "seed": "Тестовые данные",
     "cleanup": "Удаление",
@@ -255,20 +213,13 @@ COMMAND_REGISTRY: dict[str, CommandSpec] = {
     ),
 
     # ============================================================
-    # ПРОВЕРКА ФИО (ИИ) — 2026-09-22, прямая просьба пользователя после
-    # жалобы "Сергий Малий" вместо "Сергий Малый" (см. parsers/name_ai.py
-    # и parsers/models.py::NameVerificationSuggestion за полным разбором).
+    # ПРОВЕРКА ФИО (ИИ)
     # ============================================================
     "verify_names_with_ai": CommandSpec(
         name="verify_names_with_ai", label="Проверить ФИО через Gemini",
         category="ai_names", danger="safe",
         description="Ищет реальное написание ФИО через веб-поиск. Не меняет ничего напрямую — кладёт предложения в очередь на подтверждение. Нужен GEMINI_API_KEY.",
-        # 2026-09-22: большие прогоны (--all --limit 0) несколько раз
-        # зависали и умирали часами позже (OOM/SIGKILL одного из форкнутых
-        # процессов воркера — см. историю в чате) без возможности
-        # продолжить. auto_chunk_limit=40 автоматически режет ЛЮБОЙ запуск
-        # этой команды из дашборда на куски по 40 кандидатов (~7 минут при
-        # --delay 10) — что бы staff ни ввёл в поле --limit ниже.
+        # Порции по 40 кандидатов — долгие прогоны падали по OOM.
         auto_chunk_limit=40,
         args=[
             ArgSpec("--all", "all", "flag", help="Прогон по всем записям, не только угаданным."),
@@ -332,7 +283,7 @@ COMMAND_REGISTRY: dict[str, CommandSpec] = {
         ],
     ),
     # ============================================================
-    # 2026-09-24: рейтинги / статистика матчей
+    # РЕЙТИНГИ / СТАТИСТИКА МАТЧЕЙ
     # ============================================================
     "sportmonks_backfill_stats": CommandSpec(
         name="sportmonks_backfill_stats", label="Догрузить полную статистику прошлых матчей",
@@ -373,8 +324,7 @@ def get_command(name: str) -> CommandSpec | None:
 
 
 def categories() -> list[tuple[str, str, list[CommandSpec]]]:
-    """[(category_key, category_label, [CommandSpec, ...]), ...] в порядке
-    CATEGORY_LABELS — для рендера страницы по секциям."""
+    """[(ключ, подпись, [CommandSpec, ...]), ...] в порядке CATEGORY_LABELS."""
     result = []
     for key, label in CATEGORY_LABELS.items():
         specs = [spec for spec in COMMAND_REGISTRY.values() if spec.category == key]

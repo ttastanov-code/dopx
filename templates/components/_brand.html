@@ -1,18 +1,6 @@
 {% comment %}
-Логотип DOPX — переиспользуемый компонент (навбар + футер), см.
-templates/components/_navbar.html и templates/components/_footer.html.
-
-SVG-значок (векторный, не растровый PNG — не размывается на маленьких
-размерах) + текстовый wordmark, оба всегда видны на любом экране, просто
-в разном масштабе.
-
-Параметры (передаются через {% include %} with):
-- variant (обязателен) — 'nav' / 'footer' / любой уникальный суффикс
-  для id SVG-градиента. Нужен потому что навбар и футер присутствуют
-  на одной странице ОДНОВРЕМЕННО — id в SVG обязаны быть уникальны в
-  рамках документа, иначе browsers могут рассинхронить градиенты.
-- icon_size, text_size — Tailwind-классы размера (опционально,
-  дефолты подобраны под навбар).
+Логотип DOPX (навбар и футер): SVG-значок + текст.
+Параметры: variant (обязателен, уникальный id градиента), icon_size, text_size.
 {% endcomment %}
 <div class="flex items-center gap-2 min-w-0">
     <svg viewBox="0 0 32 32" class="{{ icon_size|default:'h-7 w-7 sm:h-8 sm:w-8' }} shrink-0" aria-hidden="true">

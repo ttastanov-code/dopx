@@ -1,17 +1,8 @@
 # scripts/simulate_staff_idle_timeout.py
 #
-# Чтобы не ждать реальные "несколько часов" простоя — искусственно
-# состариваем метку активности (_staff_last_activity) в ВАШЕЙ текущей
-# сессии, чтобы на следующий заход на /staff/dashboard/ или /admin/
-# сработала ветка idle-таймаута в StaffSessionSecurityMiddleware. Ничего не
-# ломает: просто выставляет одно значение в сессии на "давно".
-#
-# Запуск: python manage.py shell < scripts/simulate_staff_idle_timeout.py
-# Затем в БРАУЗЕРЕ (в котором вы залогинены) откройте /staff/dashboard/ —
-# должно сработать: logout -> редирект на /admin/login/?next=/staff/dashboard/&session_expired=1
-# (next теперь ЕСТЬ — раньше его тут не было, в этом был баг).
-# Войдите заново — должны попасть на страницу ввода 2FA-кода с next,
-# а после кода — прямо на /staff/dashboard/, а не на 404.
+# Состаривает _staff_last_activity в вашей сессии, чтобы проверить idle-таймаут staff.
+# Запуск: python manage.py shell < scripts/simulate_staff_idle_timeout.py,
+# затем откройте /staff/dashboard/ — должен быть logout и редирект с next.
 
 from datetime import timedelta
 

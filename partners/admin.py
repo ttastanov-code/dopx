@@ -1,10 +1,5 @@
 # partners/admin.py
-"""
-Admin для партнёрской инфраструктуры. Основной сценарий работы staff:
-завести Partner → сразу добавить его баннер(ы) инлайном на той же
-странице → скопировать готовые ссылки (реферальную и фида) одной кнопкой,
-не собирая их вручную из slug/токена.
-"""
+"""Админка партнёров: партнёр + баннеры инлайном + копирование ссылок."""
 import uuid
 
 from django.contrib import admin
@@ -22,15 +17,8 @@ from .models import Banner, Partner
 from .selectors import banner_stats, partner_referral_visits
 
 
-# Зоны показа баннера + рекомендуемый размер/пояснение + демо-картинка
-# (static/img/banner-examples/<slug>.png, сгенерирована один раз скриптом
-# Pillow под реальные габариты контейнера каждой зоны — см. точные
-# CSS-контейнеры в templates/core/home.html, templates/matches/detail.html,
-# templates/users/leaderboard.html). Один источник правды на обе формы
-# (BannerAdmin.zone_guide ниже) — если появится новая BannerZone, картинку
-# и строку сюда нужно добавить вручную, автогенерации из модели нет
-# намеренно: у каждой зоны свой контейнер на сайте, это нельзя вывести
-# автоматически из одного только текста choice.
+# Зоны баннеров: размер, пояснение, демо-картинка (static/img/banner-examples/<slug>.png).
+# Новую зону добавлять сюда вручную.
 BANNER_ZONE_GUIDE = [
     (
         "home_hero", "Главная — верх", "1200 × 300 px",
@@ -55,10 +43,7 @@ BANNER_ZONE_GUIDE = [
 
 
 def _zone_guide_html() -> str:
-    # object-fit:contain (не cover!) — иначе высокие/узкие картинки зон
-    # (sidebar 300×600, match_detail 300×250) обрезаются почти целиком под
-    # фиксированную высоту превью. contain показывает картинку целиком,
-    # letterbox-фон #f3f4f6 заполняет пустоты по бокам/сверху-снизу.
+    # object-fit:contain — картинка видна целиком.
     cards = [
         format_html(
             '<div style="border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;background:#fff;">'
@@ -77,9 +62,7 @@ def _zone_guide_html() -> str:
         '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-bottom:14px;">{}</div>',
         mark_safe("".join(cards)),
     )
-    # Статичный HTML без подстановок — format_html() под Django 6.0.3 требует
-    # хотя бы один арг/kwarg (см. тот же баг, уже пойманный на is_active_badge/
-    # is_currently_active_badge выше), mark_safe — правильный инструмент здесь.
+    # Статичный HTML — mark_safe (format_html без аргументов падает).
     rules = mark_safe(
         '<div style="font-size:12px;opacity:.7;line-height:1.6;">'
         '<b>Формат файла:</b> jpg/png/webp, без жёстких требований — картинка растягивается по ширине '
@@ -99,7 +82,7 @@ def _zone_guide_html() -> str:
 
 
 def _copyable(url: str) -> str:
-    """<code> с абсолютным URL + кнопка «Копировать» (просто clipboard API, без зависимостей от Alpine — админка Unfold её не гарантированно подключает на каждой странице)."""
+    """<code> с абсолютным URL + кнопка «Копировать» (clipboard API)."""
     return format_html(
         '<span style="display:inline-flex;align-items:center;gap:6px;">'
         '<code style="font-size:12px;">{}</code>'
@@ -112,8 +95,7 @@ def _copyable(url: str) -> str:
 
 
 class BannerInline(TabularInline):
-    """Баннеры партнёра прямо на его странице — основной сценарий "завёл
-    партнёра, тут же добавил ему баннер", без прыжков между разделами."""
+    """Баннеры инлайном на странице партнёра."""
     model = Banner
     extra = 0
     fields = ('zone', 'title', 'image_preview_inline', 'is_active', 'priority', 'requires_age_disclaimer')
@@ -132,10 +114,7 @@ class BannerInline(TabularInline):
 
 @admin.register(Partner)
 class PartnerAdmin(ModelAdmin):
-    # Unfold-хук: рендерится в {% include %} над таблицей списка, тот же
-    # request/context, что и у самой changelist-страницы — см. docstring
-    # BANNER_ZONE_GUIDE выше про то, почему инструкция картинками не
-    # генерируется из Python, а лежит прямо в шаблоне.
+    # Unfold-хук: инструкция над таблицей списка.
     list_before_template = "admin/partners/partner/list_before.html"
     list_display = ('name', 'partner_type', 'slug', 'banner_count', 'visits_30d', 'is_active_badge')
     list_filter = ('partner_type', 'is_active')
@@ -158,13 +137,7 @@ class PartnerAdmin(ModelAdmin):
     actions = [export_as_csv, 'regenerate_feed_token']
 
     def get_queryset(self, request):
-        # N+1: раньше banner_count() дёргал obj.banners.count() отдельным
-        # запросом НА КАЖДУЮ строку списка. banners — обычная FK-связь, тут
-        # annotate() безопасен (просто доп. колонка в том же SQL-запросе,
-        # ни на что другое не влияет). visits_30d/stats_30d (ниже, у Banner)
-        # так же одним annotate() не убрать — они считаются по AnalyticsEvent
-        # (другое приложение, группировка по JSONField properties), это уже
-        # требует более широкого рефакторинга selectors — оставлено как есть.
+        # banner_count через annotate — без N+1.
         return super().get_queryset(request).annotate(_banner_count=Count('banners', distinct=True))
 
     def banner_count(self, obj):
@@ -173,10 +146,7 @@ class PartnerAdmin(ModelAdmin):
     banner_count.admin_order_field = '_banner_count'
 
     def referral_url_display(self, obj):
-        # obj.pk у BaseModel — UUID с default=uuid.uuid4, он уже проставлен
-        # ДАЖЕ на несохранённом объекте (в отличие от обычного AutoField) —
-        # проверять нужно obj._state.adding, а не "if not obj.pk", иначе
-        # на форме добавления получаем NoReverseMatch (slug ещё пустой).
+        # UUID pk есть и у несохранённого объекта — проверяем _state.adding.
         if obj._state.adding or not obj.slug:
             return '— появится после сохранения —'
         url = f"{settings.SITE_URL.rstrip('/')}{reverse('partners:referral_redirect', args=[obj.slug])}"
@@ -211,12 +181,7 @@ class PartnerAdmin(ModelAdmin):
 
 
 class ActivelyShowingFilter(admin.SimpleListFilter):
-    """
-    is_active=True — не то же самое, что "показывается прямо сейчас": баннер
-    может быть активен, но ещё не наступило starts_at или уже прошло ends_at.
-    Стандартный list_filter по is_active это не различает, отдельный фильтр
-    нужен, чтобы staff быстро увидел именно то, что видят пользователи сайчас.
-    """
+    """Фильтр «показывается сейчас»: is_active + окно starts_at/ends_at."""
     title = 'Показывается сейчас'
     parameter_name = 'showing_now'
 

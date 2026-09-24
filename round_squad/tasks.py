@@ -1,13 +1,5 @@
 # round_squad/tasks.py
-"""
-Периодический пересчёт «DOPX Лучшие тура» — тот же Redis-lock-паттерн, что
-и season_squad/tasks.py (продуктовый ревью 2026-08-22 отдельно отметило
-гонку при параллельном пересчёте одной и той же сущности как главный
-риск для истории/консистентности денормализованных карточек). Плюс
-fan-out рассылка письма с итогами тура (send_round_results_notification) —
-тот же паттерн пачек, что notifications/tasks.py::notify_prediction_closing_soon,
-переиспользуем оттуда _send_email_to_user/_chunked/BULK_EMAIL_CHUNK_SIZE.
-"""
+"""Пересчёт «DOPX Лучшие тура» с Redis-lock и рассылка итогов тура пачками."""
 from __future__ import annotations
 
 import logging
@@ -17,33 +9,19 @@ from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
-# Тот же принцип, что RECOMPUTE_LOCK_TIMEOUT в season_squad/tasks.py —
-# страховка на случай, если воркер упадёт посреди пересчёта одного тура.
+# TTL лока пересчёта тура.
 ROUND_RECOMPUTE_LOCK_TIMEOUT = 300
 
-# Аналогичный лок для send_round_results_notification ниже — та задача не
-# пересчитывает данные, а ставит в очередь fan-out рассылку писем, поэтому
-# отдельная константа (не переиспользуем ROUND_RECOMPUTE_LOCK_TIMEOUT, чтобы
-# смысл имени в логах/коде был однозначным).
+# TTL лока рассылки итогов.
 ROUND_NOTIFY_LOCK_TIMEOUT = 600
 
-# Лок для recompute_all_closed_rounds_task ниже — отдельная константа (не
-# ROUND_RECOMPUTE_LOCK_TIMEOUT, тот рассчитан на ОДИН тур): редкая ручная
-# операция "пересчитать вообще все закрытые туры сразу" может задеть
-# десятки туров за несколько сезонов подряд — с запасом относительно
-# ROUND_RECOMPUTE_LOCK_TIMEOUT=300, чтобы не словить ложное "уже
-# выполняется" на честно длинном прогоне.
+# TTL лока пересчёта всех закрытых туров — с запасом.
 ALL_CLOSED_ROUNDS_LOCK_TIMEOUT = 1800
 
 
 @shared_task
 def recompute_round_task(season_id: str, tour: int) -> None:
-    """Пересчёт одного тура — отдельная задача (не инлайн-цикл в
-    recompute_active_rounds), по тем же причинам, что у season_squad:
-    зависание/ошибка на одном туре не блокирует остальные, ретраится
-    Celery независимо. lock_key включает и сезон, и номер тура — два
-    разных тура одного сезона пересчитываются параллельно без конфликта,
-    гонка возможна только у ДВУХ прогонов ОДНОГО И ТОГО ЖЕ тура."""
+    """Пересчёт одного тура. Лок по (сезон, тур)."""
     lock_key = f"round_squad:recompute:{season_id}:{tour}"
     if not cache.add(lock_key, "1", timeout=ROUND_RECOMPUTE_LOCK_TIMEOUT):
         logger.info("recompute_round_task: тур %s сезона %s уже пересчитывается — пропускаем", tour, season_id)
@@ -66,18 +44,7 @@ def recompute_round_task(season_id: str, tour: int) -> None:
 
 @shared_task
 def recompute_all_closed_rounds_task() -> int:
-    """2026-09-21, прямая просьба пользователя ("команда, которая
-    перерасчёт делает всех закрытых туров сборные... вывести на дашборд")
-    — ручной пересчёт ВСЕХ уже зафиксированных туров (не только активных
-    сезонов, в отличие от recompute_active_rounds ниже, которая специально
-    их пропускает). Без обязательных аргументов — вызывается с дашборда
-    через dashboard/parser_tools.py::trigger_task как task_fn.delay(),
-    без параметров, тот же контракт, что у остальных кнопок там.
-
-    Один общий лок на всю операцию (не по каждому туру отдельно, как у
-    recompute_round_task) — это редкая ручная операция "пересчитать всё"
-    (не крон-тик по одному туру), от нескольких одновременных полных
-    прогонов защищаемся целиком, а не по кусочкам."""
+    """Пересчёт всех зафиксированных туров (кнопка в дашборде). Один лок на всю операцию."""
     lock_key = "round_squad:recompute_all_closed:running"
     if not cache.add(lock_key, "1", timeout=ALL_CLOSED_ROUNDS_LOCK_TIMEOUT):
         logger.info("recompute_all_closed_rounds_task: уже выполняется — пропускаем")
@@ -92,13 +59,7 @@ def recompute_all_closed_rounds_task() -> int:
 
 @shared_task
 def recompute_active_rounds() -> int:
-    """Точка входа для Celery Beat — находит пары (сезон, тур), у которых
-    есть хотя бы один завершённый матч, и RoundBestXI для которых ещё НЕ
-    зафиксирован (is_final=False или ещё не существует), ставит по одной
-    задаче на каждую. В отличие от season_squad.recompute_all_active_best_xi
-    (там пересчитываются ВСЕ активные сезоны целиком каждый раз), здесь
-    важно не пересчитывать бесконечно уже закрытые старые туры — set-разность
-    finalized_pairs держит это дёшево даже к концу долгого сезона."""
+    """Для Celery Beat: ставит пересчёт каждого незафиксированного тура с завершёнными матчами."""
     from matches.models import Match
     from round_squad.models import RoundBestXI
 
@@ -120,11 +81,7 @@ def recompute_active_rounds() -> int:
 
 @shared_task(bind=True, max_retries=3, rate_limit='60/m')
 def _send_round_results_email_chunk(self, user_ids: list[str], round_best_xi_id: str, subject: str) -> int:
-    """Отправляет письмо одной пачке пользователей — тот же принцип, что
-    notifications/tasks.py::_send_match_email_chunk. round_best_xi ГОТОВ и
-    сохранён к моменту вызова (см. send_round_results_notification и
-    round_squad/services.py::recompute_round, где .delay() ставится ПОСЛЕ
-    .save())."""
+    """Письма одной пачке пользователей."""
     from notifications.tasks import _send_email_to_user
     from round_squad.models import RoundBestXI
     from users.models import User
@@ -150,24 +107,8 @@ def _send_round_results_email_chunk(self, user_ids: list[str], round_best_xi_id:
 
 @shared_task(bind=True, max_retries=3, countdown=5)
 def send_round_results_notification(self, round_best_xi_id: str) -> dict:
-    """
-    Fan-out рассылка итогов тура — вызывается ОДИН раз из
-    round_squad/services.py::recompute_round в момент, когда тур переходит
-    в is_final=True (и из round_squad/admin.py::force_finalize при ручной
-    фиксации стаффом). Широковещательно всем верифицированным
-    пользователям с email, не только тем, кто голосовал за этот тур —
-    итоги тура релевантны всей аудитории платформы, а не только
-    участвовавшим (те же получатели, что у "Матч завершён").
-
-    БАГ, КОТОРЫЙ ТУТ БЫЛ: без Redis-lock — задача вызывается и из
-    round_squad/services.py::recompute_round (автофиксация тура), и из
-    round_squad/admin.py::force_finalize (ручная фиксация стаффом); при
-    двойном триггере для одного и того же RoundBestXI (например, ретрай
-    Celery или клик стаффом одновременно с автофиксацией) fan-out пачки
-    ставились в очередь дважды — все верифицированные пользователи получали
-    письмо с итогами тура дважды. Лок — тот же cache.add()-паттерн, что у
-    recompute_round_task выше (по round_best_xi_id, т.к. задача
-    параметризована).
+    """Рассылка итогов тура всем верифицированным — при финализации тура
+    (recompute_round или force_finalize в админке). Лок по round_best_xi_id от дублей.
     """
     from notifications.tasks import BULK_EMAIL_CHUNK_SIZE, _chunked
     from round_squad.models import RoundBestXI
@@ -202,6 +143,5 @@ def send_round_results_notification(self, round_best_xi_id: str) -> dict:
         )
         return {'queued_chunks': len(chunks), 'total_users': len(user_ids)}
     finally:
-        # Не ждём TTL — следующая легитимная рассылка (другой тур) не должна
-        # блокироваться остатком лока текущей.
+        # Снимаем лок сразу, не ждём TTL.
         cache.delete(lock_key)

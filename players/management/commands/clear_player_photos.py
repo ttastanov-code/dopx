@@ -1,22 +1,8 @@
 # players/management/commands/clear_player_photos.py
-"""
-manage.py clear_player_photos [--apply]
+"""manage.py clear_player_photos [--apply]
 
-Разовая чистка фото игроков, оставшихся от отменённого автоматического
-импорта с kffleague.kz (решение 2026-08-21 — см. core/templatetags/
-avatar_extras.py и parsers/kff/photo_scraper.py: скачивание фото убрано
-из кода, но уже СКАЧАННЫЕ файлы и заполненное поле Player.photo в БД
-код сам по себе не трогает — понадобился отдельный разовый прогон).
-
-Без --apply — dry-run: только считает, сколько игроков затронет, ничего
-не удаляет и не пишет в БД (тот же паттерн, что у dedupe_referees_coaches.py
-и sync_kff_player_meta.py, бывшей scrape_kff_photos.py). --apply — реально удаляет файл с диска
-(player.photo.delete) и очищает поле, после чего на сайте у этих игроков
-показывается генеративный аватар (градиент + инициалы) вместо фото — см.
-templates/components/_avatar.html.
-
-НЕ трогает Coach.photo — те фото не из отменённого KFF-скрапера (он работал
-только с Player), их удаление не входило в задачу отката.
+Удаляет фото игроков, оставшиеся от старого импорта с kffleague.kz
+(файл + поле). Coach.photo не трогает. Без --apply — dry-run.
 """
 from __future__ import annotations
 
@@ -54,9 +40,7 @@ class Command(BaseCommand):
 
         cleared = 0
         for player in players_with_photo.iterator():
-            # delete(save=False) — сначала удаляем файл с диска/стораджа,
-            # save() вызываем один раз сами ниже вместе с очисткой поля,
-            # чтобы не делать два отдельных UPDATE на каждого игрока.
+            # Файл удаляем без save, поле очищаем одним save ниже.
             player.photo.delete(save=False)
             player.photo = None
             player.save(update_fields=["photo"])

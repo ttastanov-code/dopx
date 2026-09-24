@@ -24,10 +24,7 @@
                     <i class="ti ti-gavel text-2xl text-neutral"></i>
                 </div>
                 <h2 class="text-xl sm:text-2xl font-extrabold mb-1">Оценка судейства</h2>
-                {% comment %}
-                match.referee показывается явно, как на шаге "Тренеры" — не
-                просим оценить "главного судью" вслепую.
-                {% endcomment %}
+                {# Судья показан явно. #}
                 {% if match.referee %}
                 <p class="text-sm font-semibold">{{ match.referee.first_name }} {{ match.referee.last_name }}</p>
                 <p class="text-xs text-base-content/60">Оцените работу главного судьи</p>
@@ -47,13 +44,7 @@
                         <button type="button" class="btn btn-sm btn-outline" data-wz-preset-value="55">Обычно</button>
                         <button type="button" class="btn btn-sm btn-outline" data-wz-preset-value="90">Сильно повлиял</button>
                     </div>
-                    {% comment %}
-                    Чип "Настроить вручную" — см. тот же фикс в match_final.html
-                    (задача #70, 2026-09-07): было text-xs text-base-content/50,
-                    почти невидимый текст. Контурный чип с иконкой заметнее, но
-                    всё ещё вторичное действие (мелко, без заливки, приглушённый
-                    цвет — в отличие от btn-outline пресетов выше).
-                    {% endcomment %}
+                    {# «Настроить вручную» — контурный чип. #}
                     <details>
                         <summary class="cursor-pointer list-none inline-flex items-center gap-1.5 px-3 py-1.5 mb-2 rounded-full border border-base-content/15 text-xs font-semibold text-base-content/70 hover:bg-base-200 hover:text-base-content transition-colors">
                             <i class="ti ti-adjustments-horizontal text-[13px]"></i>

@@ -38,23 +38,14 @@ class NotificationAdmin(ModelAdmin):
         return '—'
     
     def is_read_badge(self, obj):
-        # БАГ, КОТОРЫЙ ТУТ БЫЛ: format_html() без единого аргумента/kwarg
-        # (строка — просто статичная разметка, подставлять нечего) — в
-        # Django 6 это TypeError "args or kwargs must be provided"
-        # (django/utils/html.py::format_html), а не молчаливый no-op, как
-        # было раньше. format_html специально требует хотя бы один
-        # экранируемый аргумент — иначе это неотличимо от случайного
-        # format_html(user_input), который выглядел бы "безопасным", но
-        # не экранировал бы ничего. Раз подставлять действительно нечего —
-        # используем mark_safe напрямую на статичной, целиком нашей же
-        # HTML-строке (без пользовательского ввода внутри).
+        # Статичный HTML — mark_safe (format_html без аргументов падает).
         if obj.is_read:
             return mark_safe('<span style="color:#10b981;">✓ Прочитано</span>')
         return mark_safe('<span style="color:#f59e0b;">● Непрочитано</span>')
 
 
 class ContactSubmissionForm(forms.ModelForm):
-    """Форма обращения с опцией отправки email при изменении статуса"""
+    """Форма обращения с опцией письма при смене статуса."""
     send_status_email = forms.BooleanField(
         required=False,
         initial=True,
@@ -90,8 +81,7 @@ class ContactSubmissionAdmin(ModelAdmin):
     )
     list_filter = ('status', 'category', 'created_at', 'user__is_verified')
     search_fields = ('subject', 'message', 'user__username', 'guest_email')
-    # related_match — см. модель, заполняется кнопкой "Сообщить об ошибке в
-    # данных" на странице матча (Центр доверия к данным, 2026-09-09).
+    # related_match — из кнопки «Сообщить об ошибке в данных».
     autocomplete_fields = ('related_match',)
     readonly_fields = (
         'created_at',
@@ -144,7 +134,7 @@ class ContactSubmissionAdmin(ModelAdmin):
     status_badge.short_description = 'Статус'
     
     def attachment_link(self, obj):
-        """Показывает ссылку на файл"""
+        """Ссылка на файл."""
         if obj.attachment and obj.attachment.storage.exists(obj.attachment.name):
             filename = os.path.basename(obj.attachment.name)
             return format_html(
@@ -156,7 +146,7 @@ class ContactSubmissionAdmin(ModelAdmin):
     attachment_link.short_description = 'Файл'
     
     def save_model(self, request, obj, form, change):
-        """Сохранение модели + отправка email при изменении статуса"""
+        """Сохранение + письмо при смене статуса."""
         old_status = None
         if change:
             try:
@@ -165,17 +155,17 @@ class ContactSubmissionAdmin(ModelAdmin):
             except ContactSubmission.DoesNotExist:
                 pass
         
-        # Сохраняем объект
+        # Сохраняем
         super().save_model(request, obj, form, change)
         
-        # Отправляем email при изменении статуса (если отмечено)
+        # Письмо при смене статуса (если отмечено)
         if change and old_status != obj.status:
             send_status_email = form.cleaned_data.get('send_status_email', False)
             if send_status_email and obj.contact_email:
                 self._send_status_change_email(obj, old_status, request)
     
     def _send_status_change_email(self, ticket: ContactSubmission, old_status: str, request=None):
-        """Отправка email при изменении статуса обращения"""
+        """Письмо о смене статуса обращения."""
         try:
             recipient = ticket.contact_email
             if not recipient:
@@ -213,16 +203,7 @@ class ContactSubmissionAdmin(ModelAdmin):
     actions = ['mark_as_in_progress', 'mark_as_resolved', 'mark_as_closed', export_as_csv]
 
     def _bulk_set_status(self, request, queryset, new_status: str) -> int:
-        """
-        БАГ, КОТОРЫЙ ТУТ БЫЛ: экшены ниже делали queryset.update(status=...) —
-        это прямой UPDATE в БД в обход save_model()/obj.save(), поэтому
-        _send_status_change_email() (см. save_model выше) никогда не
-        вызывалась при массовой смене статуса из списка. Теперь идём по
-        queryset поштучно и сохраняем объект как обычно — та же логика
-        уведомления, что и при ручном изменении статуса в форме, только
-        без чекбокса send_status_email (в bulk-экшене формы нет, письмо
-        шлём всегда, если статус реально изменился).
-        """
+        """Массовая смена статуса — поштучный save(), чтобы ушли письма."""
         updated = 0
         for ticket in queryset:
             old_status = ticket.status

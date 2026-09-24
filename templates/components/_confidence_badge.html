@@ -1,21 +1,6 @@
-{% comment %}
-templates/components/_confidence_badge.html
-Градуированный индикатор надёжности рейтинга (продуктовый аудит "доверие к
-рейтингу", 2026-08-21). НЕ подключать через {% include %} напрямую — это
-партиал для inclusion_tag {% confidence_badge agg %} из
-core/templatetags/rating_extras.py, который сам считает контекст (tier,
-tier_label, badge_class, tooltip_text). Шаблон должен быть загружен через
-{% load rating_extras %}.
-{% endcomment %}
+{# Бейдж надёжности рейтинга. Только через {% confidence_badge agg %} (rating_extras). #}
 {% if show %}
-{% comment %}
-shrink-0 (2026-09-09, "из-за бейджей ломаются таблицы") — вторая линия
-защиты сверх укороченных меток в _TIER_META: в flex-row-контейнере
-(таблица/карточка) без shrink-0 браузер иногда всё равно ужимает соседей,
-а не сам бейдж, если ему не сказано явно не сжиматься неравномерно —
-здесь наоборот, явно разрешаем бейджу остаться compact intrinsic-width,
-не растягиваясь и не сжимаясь непредсказуемо относительно соседей.
-{% endcomment %}
+{# shrink-0 — бейдж не сжимается. #}
 <span class="inline-flex items-center gap-1 align-middle shrink-0">
     <a href="{% url 'core:anti_fraud' %}#rating-confidence"
        class="badge badge-xs md:badge-sm {{ badge_class }} whitespace-nowrap no-underline hover:opacity-80"

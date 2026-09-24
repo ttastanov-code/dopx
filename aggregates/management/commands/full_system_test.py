@@ -92,7 +92,7 @@ class Command(BaseCommand):
         from io import StringIO
         
         total_evals = 0
-        for match in matches[:2]:  # Тестируем на 2 матчах
+        for match in matches[:2]:  # 2 матча
             for user in users[:10]:  # 10 пользователей на матч
                 try:
                     # Context
@@ -136,7 +136,7 @@ class Command(BaseCommand):
         from aggregates.tasks import recalculate_all_aggregates_for_match
         for match in matches[:2]:
             recalculate_all_aggregates_for_match.delay(str(match.id))
-        time.sleep(3)  # Ждём выполнения задач
+        time.sleep(3)  # ждём задачи
         
         aggregates_created = MatchAggregate.objects.filter(
             match__in=matches[:2]

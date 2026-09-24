@@ -10,7 +10,7 @@
   <p class="opacity-50 text-xs md:text-sm max-w-2xl mt-2">Эти механизмы проверяют надёжность голосов. Они не оценивают профессиональные качества игроков, тренеров и судей. Подробнее в разделе <a href="{% url 'core:rules' %}#disclaimer" class="link link-primary">«Что такое рейтинг DOPX»</a>.</p>
 </div>
 
-<!-- === ЖИВЫЕ ЦИФРЫ (мобильный/планшет — полная ширина, на десктопе уходят в сайдбар ниже) === -->
+{# === ЖИВЫЕ ЦИФРЫ (мобильный; на десктопе — в сайдбаре) === #}
 <div class="grid grid-cols-2 lg:hidden gap-3 mb-6 px-2 sm:px-0">
   <div class="card bg-base-100 border border-base-300">
     <div class="card-body p-4 text-center">
@@ -38,10 +38,10 @@
   </div>
 </div>
 
-<!-- === СЕТКА: сайдбар (цифры + навигация) + контент === -->
+{# === СЕТКА: сайдбар + контент === #}
 <div class="grid grid-cols-1 lg:grid-cols-4 gap-4 md:gap-8 px-2 sm:px-0">
 
-  <!-- === SIDEBAR (только desktop) === -->
+  {# === САЙДБАР (десктоп) === #}
   <div class="hidden lg:block lg:col-span-1">
     <div class="lg:sticky lg:top-24 space-y-4">
       <div class="card bg-base-100 border border-base-300">
@@ -92,7 +92,7 @@
     </div>
   </div>
 
-  <!-- === MAIN CONTENT === -->
+  {# === ОСНОВНОЕ === #}
   <div class="lg:col-span-3 space-y-6 md:space-y-10">
 
     <!-- Вес голоса -->
@@ -165,7 +165,7 @@
             </div>
             <div class="p-4 bg-base-200/60 rounded-lg text-sm opacity-70 flex items-start gap-2">
               <i class="ti ti-refresh text-info flex-shrink-0 mt-0.5"></i>
-              <span>Есть и вторая проверка, которая работает постоянно. Trust Score подстраивается под то, насколько ваши оценки совпадают с общим мнением сообщества. Оцениваете похоже на других: доверие растёт. Систематически расходитесь с большинством: снижается.</span>
+              <span>Есть и вторая проверка, которая работает постоянно. Trust Score подстраивается под то, насколько ваши оценки совпадают с общим мнением сообщества. Оцениваете похоже на других: доверие растёт. Систематически расходитесь с большинством: снижается. Со временем Trust Score активных пользователей плавно возвращается к нейтральному уровню: старые ошибки не тянутся за вами вечно.</span>
             </div>
           </div>
         </div>
@@ -180,7 +180,7 @@
             <div class="w-10 h-10 rounded-lg bg-error/10 flex items-center justify-center flex-shrink-0"><i class="ti ti-users-group text-error"></i></div>
             Защита от сговора
           </h2>
-          <p class="opacity-70 text-sm md:text-base mb-4">Болельщики иногда договариваются в соцсетях или чатах, чтобы массово занизить или завысить чью-то оценку. Это не бот-ферма: здесь стоят реальные люди с разных устройств, и обычная защита от ботов тут не спасает. Против этого у нас четыре независимых механизма.</p>
+          <p class="opacity-70 text-sm md:text-base mb-4">Болельщики иногда договариваются в соцсетях или чатах, чтобы массово занизить или завысить чью-то оценку. Это не бот-ферма: здесь стоят реальные люди с разных устройств, и обычная защита от ботов тут не спасает. Против этого у нас пять независимых механизмов.</p>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
             <div class="p-4 bg-base-200 rounded-lg">
               <div class="w-9 h-9 rounded-full bg-error text-error-content flex items-center justify-center font-bold mb-3"><i class="ti ti-crop text-sm"></i></div>
@@ -190,7 +190,7 @@
             <div class="p-4 bg-base-200 rounded-lg">
               <div class="w-9 h-9 rounded-full bg-error text-error-content flex items-center justify-center font-bold mb-3"><i class="ti ti-chart-dots text-sm"></i></div>
               <h3 class="font-semibold text-sm mb-1.5">Всплески видны на фоне матча</h3>
-              <p class="text-xs opacity-60">Мы сравниваем всплески оценок с общей картиной того же матча. Если кто-то резко выбивается из неё, сигнал уходит на проверку модератору.</p>
+              <p class="text-xs opacity-60">Мы сравниваем всплески оценок с общей картиной того же матча, а оценки судье — с тем, как обычно оценивают судей в лиге. Если кто-то резко выбивается, сигнал уходит на проверку модератору.</p>
             </div>
             <div class="p-4 bg-base-200 rounded-lg">
               <div class="w-9 h-9 rounded-full bg-error text-error-content flex items-center justify-center font-bold mb-3"><i class="ti ti-arrow-bar-to-down text-sm"></i></div>
@@ -202,10 +202,15 @@
               <h3 class="font-semibold text-sm mb-1.5">Якорь на нейтральных зрителей</h3>
               <p class="text-xs opacity-60">Если среди голосующих мало нейтральных зрителей, итоговый рейтинг подтягивается к их мнению. Это работает, даже если обе фан-базы пытаются накрутить оценку одновременно.</p>
             </div>
+            <div class="p-4 bg-base-200 rounded-lg md:col-span-2">
+              <div class="w-9 h-9 rounded-full bg-error text-error-content flex items-center justify-center font-bold mb-3"><i class="ti ti-chart-bar text-sm"></i></div>
+              <h3 class="font-semibold text-sm mb-1.5">Сверка со статистикой матча</h3>
+              <p class="text-xs opacity-60">Оценки игроков и команд за последние матчи сравниваются с тем, как они сыграли по статистике: голы, передачи, отборы, удары, опасные атаки. Если оценки систематически идут в одну сторону, а игра — в другую, к рейтингу новых матчей добавляется небольшая поправка (не больше ±0.4). Она видна на странице с пометкой «защита от накрутки», сама уходит, когда расхождение пропадает, и её проверяет модератор. Для тренеров и судей такие сигналы только уходят на проверку, рейтинг автоматически не меняется.</p>
+            </div>
           </div>
           <div class="mt-4 p-3 bg-base-200/60 rounded-lg text-xs md:text-sm opacity-70 flex gap-2">
             <i class="ti ti-bulb text-warning flex-shrink-0 mt-0.5"></i>
-            <span>Все четыре механизма работают автоматически, ещё до того, как сигнал доходит до модератора.</span>
+            <span>Все пять механизмов работают автоматически, ещё до того, как сигнал доходит до модератора. Средний рейтинг за сезон считается с учётом числа голосов в каждом матче: матч с парой оценок не перевешивает матч, который оценили сотни зрителей.</span>
           </div>
         </div>
       </div>
@@ -257,10 +262,8 @@
       </div>
     </section>
 
-    <!-- CTA (мобильный/планшет — на десктопе есть в сайдбаре) -->
-    {% comment %}
-    text-primary-content — см. аналогичный комментарий в rules.html.
-    {% endcomment %}
+    {# CTA (мобильный) #}
+    {# Текст primary-content. #}
     <div class="card lg:hidden" style="background-image: linear-gradient(to bottom right, var(--color-primary), color-mix(in oklab, var(--color-primary) 80%, transparent));">
       <div class="card-body p-4 md:p-6 text-center text-primary-content">
         <h3 class="text-xl md:text-2xl font-bold mb-2">Хотите разобраться в деталях?</h3>

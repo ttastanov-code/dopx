@@ -5,10 +5,10 @@ from core.models import BaseModel, NAME_SOURCE_CHOICES
 from teams.models import Team
 
 class Coach(BaseModel):
-    """Футбольный тренер"""
+    """Футбольный тренер."""
     first_name = models.CharField(_('Имя'), max_length=120)
     last_name = models.CharField(_('Фамилия'), max_length=120)
-    # См. core/models.py::NAME_SOURCE_CHOICES.
+    # Источник ФИО.
     name_source = models.CharField(
         _('Источник ФИО'), max_length=30, choices=NAME_SOURCE_CHOICES, blank=True, db_index=True,
     )
@@ -19,9 +19,7 @@ class Coach(BaseModel):
         related_name="coaches",
         verbose_name=_('Команда')
     )
-    # KFF фото есть только у игроков (см. season_squad/photo_scraper.py) —
-    # у тренеров нет публичного источника фото, поле для ручной загрузки
-    # стаффом через админку (нужно карточке "Живой сборной сезона").
+    # Фото — только ручная загрузка.
     photo = models.ImageField(_('Фото'), upload_to="coaches/", null=True, blank=True)
     is_active = models.BooleanField(_('Активен'), default=True)
     external_id = models.CharField(
@@ -31,10 +29,7 @@ class Coach(BaseModel):
         null=True,
         blank=True
     )
-    # См. комментарий у League.sportmonks_id (leagues/models.py). У KFF
-    # тренер не всегда приходил со стабильным id — Sportmonks отдаёт
-    # стабильный id всегда, но исторические записи всё равно нужно один
-    # раз сверить скриптом реконсиляции (фаза 2 плана), не заводить дублей.
+    # ID в Sportmonks.
     sportmonks_id = models.CharField(
         _('Sportmonks ID'),
         max_length=100,

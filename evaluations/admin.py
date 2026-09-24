@@ -71,17 +71,7 @@ class MatchEvaluationAdmin(ModelAdmin):
 
 @admin.register(EvaluationSession)
 class EvaluationSessionAdmin(ModelAdmin):
-    """
-    БАГ, КОТОРЫЙ ТУТ БЫЛ: модель отслеживания прогресса вайзарда нигде не
-    была зарегистрирована в админке — были видны только шесть моделей с
-    самими оценками (ContextEvaluation/TeamEvaluation/...), а запись,
-    которая реально решает "уже оценил / ещё нет"
-    (status='completed' в EvaluationSession — см. gate в
-    evaluations/views.py::EvaluateContextView.dispatch()), нигде не
-    отображалась и не редактировалась. Из-за этого не было простого способа
-    сбросить свою тестовую оценку и пройти вайзард заново — приходилось
-    лезть напрямую в БД.
-    """
+    """Сессии оценки — можно сбросить свою тестовую оценку и пройти вайзард заново."""
     list_display = ('user', 'match', 'status', 'progress_percentage', 'started_at', 'completed_at', 'fill_duration_seconds')
     list_filter = ('status',)
     search_fields = (

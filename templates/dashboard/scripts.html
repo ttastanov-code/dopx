@@ -3,23 +3,9 @@
 {% block content %}
 {% include 'dashboard/_nav.html' %}
 
-{% comment %}
-templates/dashboard/scripts.html
-2026-09-22, редизайн (прямая просьба пользователя: описания команд —
-короче и без "ИИ-паттерна", страница — компактнее, "в целом весь раздел
-дашборд в один стиль классный"). Раньше — 2-колоночная сетка крупных
-карточек с абзацем текста в каждой; теперь — плотный список строк на
-категорию (доступной ширины хватает под 3 колонки на широком экране),
-описание в одну строку рядом с названием. ВСЕ name/id/hx-атрибуты форм и
-скрипт dopxCopyToClipboard ниже — БЕЗ ИЗМЕНЕНИЙ, трогалась только вёрстка
-вокруг них.
-{% endcomment %}
+{# Скрипты и команды: список команд по категориям, формы запуска, история запусков. #}
 
-{% comment %}
-2026-09-22: заголовок "Скрипты и команды" теперь рендерит общий
-.dopx-page-header (_nav.html, по page_title из view) — не дублируем его
-здесь второй раз тем же текстом, оставляем только пояснение.
-{% endcomment %}
+{# Заголовок рендерит _nav.html, здесь только пояснение. #}
 <div class="card bg-base-100 border border-base-300 mb-4">
     <div class="card-body p-4">
         <p class="text-xs opacity-55 flex items-start gap-2">
@@ -30,13 +16,7 @@ templates/dashboard/scripts.html
     </div>
 </div>
 
-{% comment %}
-2026-09-22, полный редизайн: цветная полоска слева карточки категории —
-тот же цветовой код, что раньше нёс только мелкий значок в заголовке
-(зелёный=безопасно/seed, красный=cleanup/удаление, жёлтый=recalc,
-синий=diagnose/read-only) — теперь виден сразу, даже свёрнутым взглядом
-по странице, не только при чтении иконки в заголовке.
-{% endcomment %}
+{# Цветная полоска категории: зелёный — seed, красный — cleanup, жёлтый — recalc, синий — diagnose. #}
 {% for cat_key, cat_label, specs in command_categories %}
 <div class="card bg-base-100 border border-base-300 mb-3 overflow-hidden" style="border-left: 3px solid {% if cat_key == 'seed' %}var(--color-success){% elif cat_key == 'cleanup' %}var(--color-error){% elif cat_key == 'recalc' %}var(--color-warning){% else %}var(--color-info){% endif %};">
     <div class="card-body p-3 md:p-4">
@@ -50,27 +30,9 @@ templates/dashboard/scripts.html
         <div class="grid grid-cols-1 xl:grid-cols-2 gap-2 mt-2">
             {% for spec in specs %}
             <details class="group border border-base-300 rounded-lg bg-base-100 open:bg-base-200/30">
-                {% comment %}
-                2026-09-23, жалоба пользователя (скриншот, мобильная версия):
-                на узком экране badge+название+description+шеврон в один
-                flex-ряд без переноса выдавливали описание почти в ноль —
-                "Оцен...", "Точечное гол..." после первых 4-5 символов.
-                Фикс: flex-wrap на summary + description с basis-full — на
-                узких экранах описание уезжает на отдельную строку целиком
-                (без truncate), на sm+ возвращается в исходный однострочный
-                вид (flex-1 + truncate), шеврон переставлен через order,
-                чтобы визуально остаться в конце строки на обоих режимах.
-                {% endcomment %}
+                {# На узких экранах описание уходит на отдельную строку. #}
                 <summary class="dopx-cmd-summary cursor-pointer select-none px-3 py-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-                    {% comment %}
-                    2026-09-24, жалоба "описание не влезает и уходит под ...":
-                    на sm+ описание стояло в одной строке с названием и
-                    обрезалось через truncate. Теперь описание ВСЕГДА на
-                    своей строке во всю ширину и переносится целиком — на
-                    любом экране. Название тоже может переноситься (min-w-0),
-                    бейдж «необратимо» вместо «удаляет»: не все опасные
-                    команды удаляют (например, пересчёт истории перезаписывает).
-                    {% endcomment %}
+                    {# Описание всегда на своей строке и переносится целиком. Бейдж «необратимо» для destructive. #}
                     {% if spec.danger == 'destructive' %}<span class="badge badge-error badge-xs shrink-0 order-1">необратимо</span>
                     {% elif spec.danger == 'readonly' %}<span class="badge badge-ghost badge-xs shrink-0 order-1">read-only</span>
                     {% else %}<span class="badge badge-success badge-xs shrink-0 order-1">безопасно</span>{% endif %}
@@ -83,7 +45,7 @@ templates/dashboard/scripts.html
                         {% csrf_token %}
                         <input type="hidden" name="command_name" value="{{ spec.name }}">
 
-                        {% comment %} Флаги — компактным рядом чипов-чекбоксов. {% endcomment %}
+                        {# Флаги — ряд чекбоксов. #}
                         {% for arg in spec.args %}{% if arg.kind == 'flag' %}
                         <label class="inline-flex items-start gap-1.5 text-xs cursor-pointer mr-3 mb-1">
                             <input type="checkbox" name="{{ arg.dest }}" class="checkbox checkbox-xs mt-0.5">
@@ -91,7 +53,7 @@ templates/dashboard/scripts.html
                         </label>
                         {% endif %}{% endfor %}
 
-                        {% comment %} Остальные аргументы — плотная сетка полей. {% endcomment %}
+                        {# Остальные аргументы — сетка полей. #}
                         <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
                             {% for arg in spec.args %}{% if arg.kind != 'flag' %}
                             <div class="flex flex-col gap-0.5 min-w-0">
@@ -151,15 +113,7 @@ templates/dashboard/scripts.html
     <div class="card-body p-4">
         <div class="dopx-section-eyebrow"><i class="ti ti-history"></i>Журнал</div>
         <div class="dopx-section-title mb-3">История запусков</div>
-        {% comment %}
-        2026-09-23: обёртка с id="scripts-runs-table"/data-background-poll/
-        hx-get/hx-trigger теперь ВНУТРИ _scripts_runs_table.html, не здесь
-        — партиал свапает себя целиком (hx-swap="outerHTML"), это и даёт
-        пагинации знать, какую страницу поллить дальше (см. докстринг в
-        партиале). Раньше (data-background-poll задним числом, 2026-09-22)
-        обёртка была снаружи с hx-swap="innerHTML" — тогда этого было
-        достаточно, пагинации ещё не было.
-        {% endcomment %}
+        {# Обёртка поллинга — внутри _scripts_runs_table.html. #}
         {% include 'dashboard/_scripts_runs_table.html' %}
     </div>
 </div>

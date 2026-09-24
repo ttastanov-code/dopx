@@ -1,4 +1,5 @@
 # aggregates/management/commands/open_voting_for_past_matches.py
+# Открывает голосование для завершённых матчей (выставляет voting_open_until).
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from datetime import timedelta

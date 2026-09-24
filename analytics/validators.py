@@ -1,17 +1,6 @@
 # analytics/validators.py
-"""
-Валидация публичных данных для /analytics/track/.
-
-БАГ, КОТОРЫЙ ТУТ БЫЛ (закрыт 2026-08-21, см. docs/BACKLOG.md): эндпоинт —
-AllowAny и без аутентификации (sendBeacon не умеет кастомные заголовки, см.
-analytics/views.py), поэтому event_name и properties фактически приходят
-от анонимного клиента без какого-либо контроля. `EventName.choices` на
-модели (analytics/models.py) создавал ложное чувство защиты — Django НЕ
-проверяет choices при `.objects.create()`, только при `full_clean()`/
-ModelForm, так что ЛЮБАЯ строка долетала до БД как event_name. `properties`
-был вообще неограниченным JSONField — один недобросовестный клиент мог
-годами раздувать таблицу произвольными вложенными структурами и портить
-любую агрегацию по event_name.
+"""Валидация данных для /analytics/track/ (эндпоинт публичный):
+event_name — только из EventName, properties — ограниченный JSON.
 """
 from __future__ import annotations
 
@@ -24,16 +13,12 @@ MAX_PROPERTIES_KEYS = 20
 MAX_PROPERTY_KEY_LENGTH = 100
 MAX_PROPERTY_STRING_VALUE_LENGTH = 500
 MAX_PROPERTIES_JSON_BYTES = 4096
-# properties — плоский набор метаданных события ("шаг вайзарда", "канал
-# шеринга" и т.п.), не произвольный JSON-документ. Глубина 2 покрывает
-# редкий вложенный случай (например, {"context": {"step": 3}}) и при этом
-# не даёт прислать сколь угодно вложенную структуру ради раздувания записи.
+# Максимальная глубина вложенности properties.
 MAX_PROPERTIES_DEPTH = 2
 
 
 def is_valid_event_name(event_name: str) -> bool:
-    """Allow-list — событие обязано быть одним из EventName.values, иначе
-    воронка через полгода зарастает произвольными вариантами написания."""
+    """event_name — только из EventName.values."""
     return isinstance(event_name, str) and event_name in EventName.values
 
 
@@ -48,8 +33,7 @@ def _check_depth(value, depth: int = 0) -> bool:
 
 
 def validate_properties(properties) -> tuple[bool, str]:
-    """Возвращает (валидно, причина отказа для лога — наружу не отдаём,
-    чтобы не подсказывать атакующему точные границы)."""
+    """(валидно, причина отказа для лога)."""
     if not isinstance(properties, dict):
         return False, "properties must be an object"
     if len(properties) > MAX_PROPERTIES_KEYS:
@@ -71,9 +55,7 @@ def validate_properties(properties) -> tuple[bool, str]:
 
 
 def clean_anonymous_id(anonymous_id) -> str | None:
-    """Мусорный/невалидный anonymous_id молча отбрасываем (не критичное
-    поле, ронять из-за него всё событие незачем), а не пропускаем как есть
-    — иначе он долетел бы до БД в анонимной колонке произвольной строкой."""
+    """Невалидный anonymous_id отбрасываем."""
     if not anonymous_id:
         return None
     try:

@@ -1,19 +1,5 @@
 # evaluations/tests.py
-"""
-Регрессионные тесты вайзарда оценки матча — самой часто правимой и самой
-"денежной" для продукта логики (voting_open-гейт, порядок шагов, начисление
-XP, антифрод-флаг скорости заполнения). До этой сессии здесь не было ни
-одного теста, при этом сама эта сессия несколько раз показала, насколько
-тонкие баги здесь возможны (см. users/tests.py докстринг).
-
-Полные end-to-end прохождения всех 6 шагов через HTTP (с реальными составами
-игроков/тренеров) сюда намеренно не включены — это отдельная, кратно более
-тяжёлая инфраструктура (MatchLineup/MatchLineupPlayer/Coach), которая скорее
-поле для интеграционных/E2E тестов, чем для юнит-регрессии. Здесь — то, что
-реально ломалось или могло сломаться незаметно: гейт голосования, СТРОГИЙ
-порядок прохождения шагов (нельзя перепрыгнуть), компонентное начисление XP
-и идемпотентность повторного прохождения уже пройденного шага.
-"""
+"""Тесты вайзарда оценки: гейт голосования, порядок шагов, XP, антифрод скорости."""
 from __future__ import annotations
 
 from datetime import timedelta
@@ -51,7 +37,7 @@ def _make_match(status="finished", voting_open_until=None, has_lineup=False):
 
 
 # ---------------------------------------------------------------------------
-# EvaluationSession — прогресс и антифрод-таймер
+# EvaluationSession — прогресс и таймер
 # ---------------------------------------------------------------------------
 
 class EvaluationSessionModelTests(TestCase):
@@ -81,7 +67,7 @@ class EvaluationSessionModelTests(TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Гейт голосования — единственная точка входа во весь вайзард
+# Гейт голосования
 # ---------------------------------------------------------------------------
 
 class VotingAccessGateTests(TestCase):
@@ -112,7 +98,7 @@ class VotingAccessGateTests(TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Строгий порядок прохождения шагов — нельзя перепрыгнуть вперёд
+# Строгий порядок шагов
 # ---------------------------------------------------------------------------
 
 class StepOrderGatingTests(TestCase):
@@ -127,18 +113,7 @@ class StepOrderGatingTests(TestCase):
         )
 
     def _assert_redirects_to(self, response, expected_url):
-        """
-        Прямая проверка (status_code + .url) вместо assertRedirects().
-
-        assertRedirects() по умолчанию САМ делает GET по целевому URL и
-        требует от него 200 — но целевые шаги вайзарда (players/teams/...)
-        имеют СВОИ гейты (см. test_coaches_blocked_without_players: coaches
-        корректно редиректит на players, но players САМ редиректит дальше
-        на matches:detail, т.к. has_lineup=False по умолчанию в
-        _make_match()). Тест здесь проверяет ТОЛЬКО факт и адрес редиректа
-        с текущего шага — не поведение шага, на который редиректнули (оно
-        покрыто отдельными тестами).
-        """
+        """Проверяем только код и адрес редиректа — у целевого шага свои гейты."""
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.url, expected_url)
 
@@ -158,10 +133,7 @@ class StepOrderGatingTests(TestCase):
         self._assert_redirects_to(response, reverse("evaluations:teams", args=[self.match.id]))
 
     def test_players_blocked_without_lineup_even_with_teams_done(self):
-        """has_lineup=False (см. _make_match по умолчанию) — шаг не пускает,
-        даже если шаг 'teams' уже пройден: иначе можно формально "пройти"
-        шаг игроков с пустым составом и получить полный XP (см. докстринг
-        EvaluatePlayersView в evaluations/views.py)."""
+        """has_lineup=False — шаг игроков не пускает."""
         self._session(["context", "teams"])
         response = self.client.get(reverse("evaluations:players", args=[self.match.id]))
         self._assert_redirects_to(response, reverse("matches:detail", kwargs={"pk": self.match.id}))
@@ -195,15 +167,12 @@ class StepOrderGatingTests(TestCase):
 
 
 # ---------------------------------------------------------------------------
-# XP-начисление по шагам — компонентное, не фиксированное
+# Начисление XP по шагам
 # ---------------------------------------------------------------------------
 
 class ContextStepXPTests(TestCase):
     def setUp(self):
-        # trust_score=1.25 — ровно середина диапазона [0.5, 2.0] у
-        # xp_multiplier(), множитель == 1.0 (см. users/tests.py::
-        # UserXpMultiplierAndTrustLevelTests) — убирает multiplier как
-        # переменную и делает ожидаемое значение точным.
+        # trust_score=1.25 — множитель XP ровно 1.0.
         self.user = User.objects.create_user(
             username="u1", email="u1@example.com", password="pass123", trust_score=1.25
         )
@@ -220,10 +189,7 @@ class ContextStepXPTests(TestCase):
         self.assertEqual(self.user.xp.total_xp, XP_CONTEXT_STEP)
 
     def test_resubmitting_context_step_does_not_double_award_xp(self):
-        """is_new_step в EvaluateContextView.form_valid проверяет 'context'
-        не в completed_steps ДО апдейта сессии — повторное сохранение того
-        же шага (например, пользователь вернулся назад и поменял ответ)
-        не должно начислять XP второй раз."""
+        """Повторное сохранение шага не начисляет XP второй раз."""
         url = reverse("evaluations:context", args=[self.match.id])
         self.client.post(url, {"watched_type": "full"})
         self.client.post(url, {"watched_type": "highlights"})
@@ -236,7 +202,7 @@ class ContextStepXPTests(TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Режим "Быстро/Подробно" (см. docs/adr/0006-quick-full-evaluation-mode.md)
+# Режим «Быстро/Подробно»
 # ---------------------------------------------------------------------------
 
 class QuickModeSelectionTests(TestCase):
@@ -246,14 +212,7 @@ class QuickModeSelectionTests(TestCase):
         self.match = _make_match()
 
     def test_default_mode_is_quick_without_eval_mode_in_post(self):
-        """Старые закладки/JS не выполнился — eval_mode просто не приходит в
-        POST. Сессия должна остаться в дефолтном режиме.
-
-        2026-09-07 (docs/adr/0031-quick-mode-primary-flow.md): дефолт
-        намеренно сменён с 'full' на 'quick' — быстрый режим теперь
-        основной сценарий по аудиту UX. Это НЕ регресс, а сознательная
-        смена поведения; было test_default_mode_is_full_without_eval_mode_in_post
-        с assertEqual(session.mode, "full")."""
+        """Без eval_mode в POST — дефолтный режим 'quick'."""
         url = reverse("evaluations:context", args=[self.match.id])
         self.client.post(url, {"watched_type": "full"})
         session = EvaluationSession.objects.get(user=self.user, match=self.match)
@@ -272,12 +231,7 @@ class QuickModeSelectionTests(TestCase):
         self.assertEqual(session.mode, "quick")
 
     def test_garbage_eval_mode_value_ignored(self):
-        """Произвольная строка в eval_mode (испорченный запрос, не
-        значение из EvaluationSession.MODE_CHOICES) не должна попасть в БД —
-        MODE_CHOICES на уровне модели этого и так не пропустил бы при
-        full_clean(), но save() без него не проверяет choices сам по себе.
-        Сессия остаётся на дефолте модели ('quick', см. ADR-0031), т.к.
-        мусорное значение просто игнорируется и mode не переписывается."""
+        """Мусор в eval_mode игнорируется."""
         url = reverse("evaluations:context", args=[self.match.id])
         self.client.post(url, {"watched_type": "full", "eval_mode": "ultra-mega-mode"})
         session = EvaluationSession.objects.get(user=self.user, match=self.match)
@@ -285,8 +239,7 @@ class QuickModeSelectionTests(TestCase):
 
 
 class KeyPlayerSelectionTests(TestCase):
-    """EvaluatePlayersView._compute_key_player_ids — курируемый набор для
-    режима 'Быстро' (см. docs/adr/0006-quick-full-evaluation-mode.md)."""
+    """_compute_key_player_ids — ключевые игроки для режима «Быстро»."""
 
     def setUp(self):
         self.user = User.objects.create_user(username="u1", email="u1@example.com", password="pass123")
@@ -310,18 +263,14 @@ class KeyPlayerSelectionTests(TestCase):
     def test_full_mode_has_no_key_player_preselection(self):
         from events.models import MatchEvent
 
-        # mode='full' явно указан: с 2026-09-07 (docs/adr/0031)
-        # EvaluationSession.mode по умолчанию 'quick', так что для этого
-        # теста ("full" -> пустой key_player_ids) режим нужно фиксировать
-        # явно, а не полагаться на дефолт модели.
+        # Режим 'full' явно — дефолт теперь 'quick'.
         EvaluationSession.objects.create(
             user=self.user, match=self.match, mode="full",
             completed_steps=["context", "teams"],
         )
         home_players = self._make_lineup("home", self.match.home_team, starters=5, bench=2)
         self._make_lineup("away", self.match.away_team, starters=5, bench=2)
-        # Гол забил игрок под номером 5 (последний из стартовых, обычным
-        # "первые по номеру" эвристика его бы не выбрала).
+        # Гол забил игрок №5 — эвристика «первые по номеру» его бы не выбрала.
         scorer = home_players[4]
         MatchEvent.objects.create(
             match=self.match, event_type="goal", team_side="home",
@@ -330,8 +279,7 @@ class KeyPlayerSelectionTests(TestCase):
 
         response = self.client.get(reverse("evaluations:players", args=[self.match.id]))
         key_ids = response.context["key_player_ids"]
-        # В режиме 'full' key_player_ids должен быть пустым — предвыбор
-        # ключевых игроков это фича режима 'quick'.
+        # В режиме 'full' key_player_ids пустой.
         self.assertEqual(key_ids, set())
 
     def test_quick_mode_includes_scorer_and_caps_per_side(self):
@@ -354,18 +302,11 @@ class KeyPlayerSelectionTests(TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Пикер "Лучший/худший игрок матча" (docs/adr/0031-quick-mode-primary-flow.md)
-# — сам пикер это клиентский JS (players.html), недоступный из Python-теста
-# без DOM; здесь проверяется РЕЗУЛЬТАТ отправки формы теми же значениями,
-# что JS-пресеты (BEST_PRESET/WORST_PRESET) проставили бы в реальном
-# браузере — т.е. что EvaluatePlayersView.post корректно сохраняет ровно
-# две PlayerEvaluation с этими баллами, как обычную оценку через слайдеры.
+# Пикер «Лучший/худший игрок» — проверяем результат POST с пресетными значениями
 # ---------------------------------------------------------------------------
 
 class PlayerBestWorstPickerSubmissionTests(TestCase):
-    # Те же числа, что в players.html::BEST_PRESET/WORST_PRESET — если
-    # эти константы поменяются в JS, тест стоит обновить синхронно, иначе
-    # он перестанет отражать реальный пресет.
+    # Совпадает с BEST_PRESET/WORST_PRESET в players.html.
     BEST_PRESET = {'contribution': 9, 'risk': 2, 'potential': 8}
     WORST_PRESET = {'contribution': 3, 'risk': 8, 'potential': 3}
 
@@ -399,12 +340,7 @@ class PlayerBestWorstPickerSubmissionTests(TestCase):
             f'{prefix}_contribution': str(preset['contribution']),
             f'{prefix}_risk': str(preset['risk']),
             f'{prefix}_potential': str(preset['potential']),
-            # Специально БЕЗ "{field}__touched" — applyPreset() в
-            # players.html диспатчит настоящие input-события, которые
-            # ensureTouchedTracking (ADR-0005) ловит и проставляет их сам;
-            # здесь достаточно проверить деградацию "JS не прислал
-            # __touched вообще ни для одного поля" (см. _touched_fields) —
-            # это НЕ должно блокировать сохранение пресетных значений.
+            # Без __touched — сохранение пресетов не должно блокироваться.
         }
         return data
 
@@ -436,8 +372,7 @@ class PlayerBestWorstPickerSubmissionTests(TestCase):
         self.assertEqual(worst_eval.potential, self.WORST_PRESET['potential'])
 
     def test_untouched_players_not_evaluated(self):
-        """Остальной состав (не выбранный ни лучшим, ни худшим) не должен
-        попасть в БД — evaluate-тумблер для них не включён."""
+        """Остальные игроки не сохраняются."""
         from evaluations.models import PlayerEvaluation
 
         home_players = self._make_lineup("home", self.match.home_team, count=3)
@@ -452,7 +387,7 @@ class PlayerBestWorstPickerSubmissionTests(TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Антифрод: слишком быстрое заполнение вайзарда
+# Антифрод: слишком быстрое заполнение
 # ---------------------------------------------------------------------------
 
 class FastWizardAntiFraudTaskTests(TestCase):
@@ -488,13 +423,7 @@ class FastWizardAntiFraudTaskTests(TestCase):
 
 
 # ---------------------------------------------------------------------------
-# EvaluationPolicy — принадлежность сущности матчу (см.
-# docs/adr/0001-evaluation-policy-single-source-of-truth.md). Дубль этого же
-# правила на стороне API — api/tests.py::EvaluationPolicyAPITests. Здесь —
-# именно веб-форма, единственное место вайзарда, где ID сущности вообще
-# приходит от клиента напрямую (остальные формы генерируют поля по реальным
-# сущностям матча — подменить там нечего, см. докстринг
-# ContextEvaluationForm.clean_supported_team).
+# EvaluationPolicy — сущность должна принадлежать матчу
 # ---------------------------------------------------------------------------
 
 class ContextFormPolicyTests(TestCase):
@@ -503,11 +432,7 @@ class ContextFormPolicyTests(TestCase):
         self.outside_team = Team.objects.create(name="Сторонняя команда")
 
     def test_supported_team_outside_match_rejected_even_if_queryset_bypassed(self):
-        """ModelChoiceField сам отклонил бы значение вне queryset ДО того,
-        как дошло бы до clean_supported_team — но именно поэтому здесь
-        тестируем сам метод политики напрямую, а не через form.is_valid()
-        (иначе тест проверял бы только ModelChoiceField, а не
-        assert_team_in_match)."""
+        """Проверяем метод политики напрямую, минуя ModelChoiceField."""
         from evaluations.forms import ContextEvaluationForm
         from evaluations.policies import EvaluationPolicyError, assert_team_in_match
 
@@ -528,9 +453,7 @@ class ContextFormPolicyTests(TestCase):
         self.assertTrue(form.is_valid(), form.errors)
 
     def test_supported_team_outside_match_rejected_by_queryset(self):
-        """End-to-end через форму: ModelChoiceField (queryset ограничен
-        домашней/гостевой командой) отклоняет чужую команду ещё до
-        clean_supported_team — обе линии защиты работают."""
+        """Через форму: чужую команду отклоняет ModelChoiceField."""
         from evaluations.forms import ContextEvaluationForm
 
         form = ContextEvaluationForm(
@@ -545,11 +468,7 @@ class ContextFormPolicyTests(TestCase):
         self.assertIn("supported_team", form.errors)
 
     def test_stadium_plus_highlights_normalized_to_full(self):
-        """ИСПРАВЛЕНО (2026-09-11, прямая просьба пользователя — "был на
-        стадионе и только голы это как?"): комбинация бессмысленна (на
-        трибуне нельзя "посмотреть только голы"), клиент её прячет и сам
-        нормализует, но это же должно работать и при прямом POST мимо
-        JS/формы — тихая нормализация, не ошибка валидации."""
+        """«Стадион» + «только голы» тихо нормализуется."""
         from evaluations.forms import ContextEvaluationForm
 
         form = ContextEvaluationForm(
@@ -564,8 +483,7 @@ class ContextFormPolicyTests(TestCase):
         self.assertEqual(form.cleaned_data["watched_type"], "full")
 
     def test_stadium_plus_partial_left_untouched(self):
-        """"Фрагменты" остаётся допустимой комбинацией со стадионом
-        (пришёл позже/ушёл раньше) — нормализуется только "Голы"."""
+        """«Стадион» + «фрагменты» — допустимо."""
         from evaluations.forms import ContextEvaluationForm
 
         form = ContextEvaluationForm(
@@ -581,11 +499,7 @@ class ContextFormPolicyTests(TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Анти-шум ползунков (см. docs/adr/0005-anti-noise-touched-tracking.md) —
-# нетронутый критерий не должен сохраняться как настоящая оценка "5 из 10".
-# Разобрано подробно на шаге "Команды" (представитель паттерна,
-# см. evaluations/views.py::_touched_fields — используется идентично в
-# Teams/Coaches/Referee/Players).
+# Анти-шум ползунков: нетронутый критерий не сохраняется
 # ---------------------------------------------------------------------------
 
 class AntiNoiseTouchedTrackingTests(TestCase):
@@ -608,8 +522,7 @@ class AntiNoiseTouchedTrackingTests(TestCase):
         return data
 
     def test_untouched_sliders_create_no_team_evaluation(self):
-        """JS выполнился (есть __touched-поля), но ни одно не '1' — ни для
-        одной из команд не должно появиться записи с дефолтными значениями."""
+        """Есть __touched, но все '0' — ничего не сохраняется."""
         from evaluations.models import TeamEvaluation
 
         home_prefix = f"team_{self.match.home_team_id}"
@@ -623,8 +536,7 @@ class AntiNoiseTouchedTrackingTests(TestCase):
         self.assertEqual(TeamEvaluation.objects.filter(user=self.user, match=self.match).count(), 0)
 
     def test_touching_one_criterion_saves_that_team(self):
-        """Домашнюю команду тронули (хотя бы один критерий), гостевую — нет:
-        должна сохраниться только домашняя."""
+        """Тронута только домашняя — сохраняется только она."""
         from evaluations.models import TeamEvaluation
 
         home_prefix = f"team_{self.match.home_team_id}"
@@ -643,10 +555,7 @@ class AntiNoiseTouchedTrackingTests(TestCase):
         )
 
     def test_no_javascript_fallback_still_saves_both_teams(self):
-        """Ни одного '__touched'-поля в POST вообще (JS не выполнился) —
-        деградация к прежнему поведению: обе команды сохраняются, как до
-        анти-шум фикса. Иначе пользователи без JS молча теряли бы свои
-        честно выставленные оценки."""
+        """Нет __touched вообще (JS не сработал) — сохраняются обе."""
         from evaluations.models import TeamEvaluation
 
         data = self._team_post_data()

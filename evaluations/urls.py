@@ -1,4 +1,5 @@
 # evaluations/urls.py
+# Шаги вайзарда оценки матча.
 from django.urls import path
 from .views import (
     EvaluateContextView, EvaluateTeamsView, EvaluatePlayersView,

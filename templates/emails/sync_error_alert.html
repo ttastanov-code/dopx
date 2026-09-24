@@ -1,11 +1,4 @@
-<!-- templates/emails/sync_error_alert.html — ПОЛНЫЙ РЕДИЗАЙН 2026-09-02, см.
-     докстринг templates/emails/welcome.html про общий каркас в partials/.
-     Внутренний алерт мониторинга парсера (см. parsers/tasks.py::
-     _send_sync_error_alert) — тот же визуальный язык, что у остальных
-     писем, красный акцент оставлен намеренно (единственное письмо в
-     проекте про реальный сбой системы, а не про пользовательское событие).
-     Контекст: alert_type, error_message, extra_data (dict|None), timestamp,
-     site_url. Без `user` в контексте — footer/подпись это учитывают. -->
+{# Алерт о сбое синка (parsers/tasks.py). Контекст: alert_type, error_message, extra_data, timestamp, site_url. #}
 <!DOCTYPE html>
 <html lang="ru">
 {% include "emails/partials/_head.html" %}

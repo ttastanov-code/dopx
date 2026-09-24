@@ -1,3 +1,4 @@
+# lineups/admin.py — Админка составов на матч.
 from django.contrib import admin
 from unfold.admin import ModelAdmin, TabularInline
 

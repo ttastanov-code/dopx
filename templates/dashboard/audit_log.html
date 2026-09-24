@@ -3,30 +3,17 @@
 {% block content %}
 {% include 'dashboard/_nav.html' %}
 
-{% comment %} 2026-09-22: заголовок рендерит .dopx-page-header (_nav.html) — не дублируем. {% endcomment %}
+{# Заголовок — в _nav.html. #}
 <div class="card bg-base-100 border border-base-300">
     <div class="card-body p-4">
-        {% comment %}
-        2026-09-23: тот же flex-split баг, что чинили на antifraud.html и
-        duplicate_players_review.html — голый текст вперемешку с <a> внутри
-        <p class="flex"> рвётся на отдельные анонимные flex-item'ы. Весь
-        текст — одним <span>.
-        {% endcomment %}
+        {# Текст одним <span> (flex). #}
         <p class="text-xs opacity-55 mb-3 flex items-start gap-2">
             <i class="ti ti-info-circle opacity-50 mt-0.5 shrink-0"></i>
             <span>Действия из staff-дашборда: антифрод, ресинк, ручной запуск задач. Изменения через Django Admin — в
             <a href="{% url 'admin:index' %}" class="link">истории объекта</a> там же.</span>
         </p>
 
-        {% comment %}
-        2026-09-23, жалоба пользователя (скриншот, мобильная версия):
-        overflow-x-auto прятал "Объект"/"IP" за правым краем экрана без
-        подсказки, что таблицу можно проскроллить — выглядело как
-        "пропавшие данные". На узких экранах (<md) таблица теперь скрыта
-        (hidden md:block), вместо неё — список карточек по одной записи на
-        блок: всё видно сразу, скроллить не нужно. На md+ (планшет/десктоп)
-        — обратно обычная таблица, тут места достаточно.
-        {% endcomment %}
+        {# На мобильном — карточки вместо таблицы. #}
         <div class="hidden md:block overflow-x-auto">
             <table class="table table-sm">
                 <thead>
@@ -37,18 +24,7 @@
                     <tr>
                         <td class="whitespace-nowrap text-xs">{{ entry.created_at|date:"d.m H:i:s" }}</td>
                         <td class="whitespace-nowrap">{{ entry.actor_username|default:"—" }}</td>
-                        {% comment %}
-                        2026-09-23: .badge убран — get_action_display тут не
-                        короткий тег ("новое", "ошибка"), а целое предложение
-                        ("Запуск management-команды из дашборда"), а daisyUI
-                        .badge держит ФИКСИРОВАННУЮ высоту в одну строку —
-                        длинный текст переносился ВНУТРИ пилюли, ломая её
-                        форму (жалоба пользователя, скриншот мобильной
-                        версии; тот же класс бага уже чинили на
-                        antifraud.html и duplicate_players_review.html, см.
-                        докстринги там же). Для предложения — просто текст,
-                        без формы пилюли, которая ему не подходит по смыслу.
-                        {% endcomment %}
+                        {# Действие — обычный текст, не .badge (длинное). #}
                         <td class="text-xs font-medium whitespace-nowrap">{{ entry.get_action_display }}</td>
                         <td class="text-xs opacity-70 max-w-xs truncate" title="{{ entry.target }}">{{ entry.target|default:"—" }}</td>
                         <td class="text-xs opacity-50 font-mono">{{ entry.ip_address|default:"—" }}</td>
@@ -60,16 +36,7 @@
             </table>
         </div>
 
-        {% comment %}
-        2026-09-23: .badge вокруг get_action_display убран тут же, по той
-        же причине, что и в десктопной таблице выше (см. докстринг там) —
-        именно перенос длинного текста внутри daisyUI .badge и есть то, что
-        пользователь увидел на скриншоте ("Запуск management..." переломан
-        пополам, полупрозрачная пилюля наехала на время справа). Действие
-        теперь — просто жирная строка сверху карточки, без формы пилюли;
-        остальные поля идут построчно ниже, ничего больше не соревнуется с
-        ним за одну строку.
-        {% endcomment %}
+        {# Действие — жирная строка сверху карточки. #}
         <div class="md:hidden divide-y divide-base-200">
             {% for entry in entries %}
             <div class="py-2.5 flex flex-col gap-1">

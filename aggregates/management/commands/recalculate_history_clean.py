@@ -1,24 +1,9 @@
 # aggregates/management/commands/recalculate_history_clean.py
-"""
-Пересчёт рейтингов игроков и команд по ВСЕМ завершённым матчам БЕЗ
-авто-поправки от защиты от накрутки — 2026-09-24.
+"""manage.py recalculate_history_clean [--apply]
 
-Зачем: до поля rating_correction_applied (миграция aggregates/0008) нигде
-не записывалось, сколько поправки вшито в рейтинг каждого матча. Поэтому в
-истории игроков/команд лежат рейтинги с поправками, которые с тех пор могли
-смениться (у Мартыновича: сначала −0.23, потом +0.25). Этот пересчёт
-приводит историю к чистой оценке болельщиков (с той же защитой от выбросов
-и сговора фанатов — она зависит только от самих голосов). Новые матчи
-дальше считаются как обычно — с текущей поправкой, если она есть.
-
-Синхронно, без Celery. В БД меняет только PlayerMatchAggregate и
-TeamMatchAggregate (performance_score и связанные индексы). Составы
-«Лучшие тура» и сборные сезона НЕ пересобирает — при желании запустите
-соответствующий пересчёт из «Скриптов» в дашборде.
-
-Использование:
-    python manage.py recalculate_history_clean           # только посчитать, сколько матчей
-    python manage.py recalculate_history_clean --apply   # пересчитать (так же — кнопка «Применить» в дашборде)
+Пересчёт рейтингов игроков и команд по всем завершённым матчам без авто-поправки.
+Меняет только PlayerMatchAggregate и TeamMatchAggregate. Сборные не пересобирает.
+Без --apply — только число матчей.
 """
 from django.core.management.base import BaseCommand
 
@@ -46,7 +31,7 @@ class Command(BaseCommand):
 
         ok = 0
         for i, match_id in enumerate(match_ids, 1):
-            # .run — синхронный вызов тела задачи (без брокера и rate_limit).
+            # .run — синхронный вызов задачи.
             p = recalculate_player_aggregates.run(str(match_id), apply_correction=False)
             t = recalculate_team_aggregates.run(str(match_id), apply_correction=False)
             if p or t:

@@ -40,16 +40,7 @@
                             {{ flag.content_object|default:"—" }}
                         </span>
                         {% endif %}
-                        {% comment %}
-                        2026-09-11 (жалоба пользователя: длинный источник
-                        сигнала "Рейтинг игрока расходится с объективной
-                        статистикой матча" вылезал за рамки) — daisyUI
-                        .badge держит фиксированную высоту в одну строку,
-                        длинные SOURCE_CHOICES-подписи (users/models.py::
-                        SuspiciousActivityFlag) переносились и обрезались.
-                        Ручная pill-разметка растягивается под любое число
-                        строк — тот же приём, что уже применён на карточках
-                        матча/сборной. {% endcomment %}
+                        {# Своя пилюля вместо .badge — длинные подписи источника. #}
                         <span class="inline-flex items-center rounded-full bg-base-300 px-2 py-0.5 text-xs leading-snug max-w-full">{{ flag.get_source_display }}</span>
                         <span class="badge badge-sm {% if flag.score >= 0.7 %}badge-error{% elif flag.score >= 0.4 %}badge-warning{% else %}badge-ghost{% endif %}">
                             {{ flag.score_label }}
@@ -58,13 +49,7 @@
                     </div>
                     {% with summary=flag.human_summary %}
                     {% if summary.what_happened %}
-                    {% comment %}
-                    2026-09-23, жалоба "ничего не понятно — что произошло,
-                    почему сработало, что делать" — для сигналов расхождения
-                    с объективной статистикой текст разбит на 4 блока, а
-                    поправка берётся ТЕКУЩАЯ (flag.live_correction), та же,
-                    что видна на странице игрока/команды.
-                    {% endcomment %}
+                    {# Расхождение со статистикой: 4 блока текста, поправка — текущая (live_correction). #}
                     <div class="text-sm mt-2 leading-snug space-y-2 max-w-3xl">
                         <div><span class="font-semibold">Что произошло.</span> {{ summary.what_happened }}</div>
                         <div class="opacity-80"><span class="font-semibold">Почему это подозрительно.</span> {{ summary.why }}</div>
@@ -81,26 +66,9 @@
                     {% endwith %}
                     {% if flag.details %}
                     <details class="mt-2">
-                        {% comment %}
-                        2026-09-23, честный аудит формул: раньше здесь
-                        напрямую дампился flag.details.items (сырые ключи
-                        из кода вида "objective_z: 0.64" — жалоба
-                        пользователя "никто не поймет вообще"). Объяснение
-                        на человеческом языке — в flag.human_summary выше,
-                        этот блок остаётся вспомогательным для
-                        модератора-эксперта, но теперь тоже с понятными
-                        подписями (users/models.py::readable_details).
-                        {% endcomment %}
+                        {# Детали — с понятными подписями (readable_details). #}
                         <summary class="text-[11px] opacity-40 cursor-pointer select-none">Цифры и как считается</summary>
-                        {% comment %}
-                        2026-09-24, жалоба "текст насаживается друг на друга":
-                        значение было в одной строке с подписью и с shrink-0 —
-                        длинное текстовое значение ("оценки выше обычного,
-                        хотя...") не переносилось и залезало на соседнюю
-                        колонку. Теперь каждая пара — отдельная плашка:
-                        подпись сверху мелким, значение под ней, оба
-                        переносятся. 1 колонка на телефоне, 2 — с sm.
-                        {% endcomment %}
+                        {# Каждая пара — отдельная плашка: подпись сверху, значение ниже. #}
                         <div class="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 max-w-3xl">
                             {% for label, value in flag.readable_details %}
                             <div class="min-w-0 rounded-md bg-base-100 px-2.5 py-1.5">
@@ -142,13 +110,7 @@
                     <form method="post" action="{% url 'dashboard:antifraud_flag_action' flag.id %}">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="confirm">
-                        {% comment %}
-                        2026-09-22: было btn-error btn-sm — сплошная заливка даёт крупную
-                        кричащую розовую "таблетку", выбивается из общего аутлайн-стиля
-                        дашборда (см. names_review, scripts.html). btn-outline — тот же
-                        цветовой сигнал (это подтверждение фрода, не нейтральное действие),
-                        но в едином визуальном языке остальных кнопок.
-                        {% endcomment %}
+                        {# btn-outline — в стиле остальных кнопок. #}
                         <button type="submit" class="btn btn-error btn-outline btn-sm">
                             <i class="ti ti-check"></i> Подтвердить
                         </button>

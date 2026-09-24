@@ -10,12 +10,7 @@ register = template.Library()
 
 @register.inclusion_tag("components/_banner.html", takes_context=True)
 def render_banner(context, zone: str):
-    """
-    {% render_banner "sidebar" %} — рендерит один активный баннер зоны
-    (ротация по priority, см. partners/services.py::get_active_banner_for_zone)
-    и логирует показ. takes_context=True — импрессия трекается тем же
-    request, что и рендер страницы, без отдельного JS-пинга.
-    """
+    """{% render_banner "sidebar" %} — активный баннер зоны + учёт показа."""
     request = context.get("request")
     banner = get_active_banner_for_zone(zone)
     if banner is None:

@@ -1,30 +1,11 @@
 # core/management/commands/dedupe_referees_coaches.py
-"""
-manage.py dedupe_referees_coaches [--apply] [--fuzzy] [--merge ID1 ID2]
+"""manage.py dedupe_referees_coaches [--apply] [--fuzzy] [--merge ID1 ID2]
 
-Судьи и тренеры без стабильного external_id (KFF шлёт судью свободной
-строкой всегда; тренера — не всегда) матчились по first_name/last_name
-через __iexact, который не считал казахские буквы-омографы ("Сакен"/
-"Сәкен" — разные Unicode-символы) одинаковыми. Каждое новое написание
-плодило новую запись. parsers/kff/importers.py уже переведён на
-normalize_kz (core/utils.py) — это чинит НОВЫЕ импорты.
-
-Три режима, три разных уровня доверия:
-
-1. Без флагов — только отчёт по ТОЧНЫМ дублям (normalize_kz совпадает
-   полностью — казахские омографы, регистр). Ничего не меняет.
-2. --apply — реально объединяет ТОЧНЫЕ дубли из режима 1.
-3. --fuzzy — отдельно, по ОПЕЧАТКАМ (не омографам): "Булат"/"Болат",
-   "Ыскакаов"/"Ыскаков" — normalize_kz их не ловит, это разные буквы, а
-   не варианты одной. Похожие по написанию пары ищутся через
-   difflib.SequenceMatcher (порог 0.82) и только ПЕЧАТАЮТСЯ для ручной
-   проверки — НИКОГДА не объединяются автоматически, даже под --apply.
-   Причина: опечатка неотличима от двух РАЗНЫХ людей с похожими
-   фамилиями чисто по строке, авто-слияние тут рискует смешать разных
-   реальных людей. Решение остаётся за человеком.
-4. --merge ID1 ID2 — после того как поверили --fuzzy-пару глазами,
-   объединить ИМЕННО эти два id (оба Referee либо оба Coach, определяется
-   автоматически). Используется тот же перенос ссылок, что и в режиме 2.
+Дубли судей/тренеров:
+1. без флагов — отчёт по точным дублям (совпадение normalize_kz);
+2. --apply — слить точные дубли;
+3. --fuzzy — похожие пары (SequenceMatcher >= 0.82), только отчёт, не сливаются;
+4. --merge ID1 ID2 — слить конкретную пару вручную.
 """
 from __future__ import annotations
 
@@ -84,7 +65,7 @@ class Command(BaseCommand):
         self._dedupe_coaches(apply_changes)
 
     # ============================================================
-    # Точные дубли (normalize_kz совпадает полностью)
+    # Точные дубли (normalize_kz совпадает)
     # ============================================================
 
     @staticmethod
@@ -145,22 +126,20 @@ class Command(BaseCommand):
             self._recalculate_coach_aggregates(affected_match_ids)
 
     # ============================================================
-    # Похожие, но не идентичные — только отчёт, руками через --merge
+    # Похожие пары — только отчёт, слияние через --merge
     # ============================================================
 
     def _fuzzy_report(self, queryset, label: str):
         self.stdout.write(self.style.MIGRATE_HEADING(f"\n=== {label}: похожие написания (проверить руками) ==="))
         objs = [o for o in queryset if (o.first_name or o.last_name)]
-        # Точные normalize_kz-совпадения уже покрыты обычным режимом — здесь
-        # интересны только пары, которые НЕ совпадают после normalize_kz, но
-        # почти совпадают по написанию (опечатка на 1-2 буквы).
+        # Только пары, не совпадающие после normalize_kz, но близкие по написанию.
         found = False
         for i in range(len(objs)):
             name_i = normalize_kz(f"{objs[i].first_name} {objs[i].last_name}")
             for j in range(i + 1, len(objs)):
                 name_j = normalize_kz(f"{objs[j].first_name} {objs[j].last_name}")
                 if name_i == name_j:
-                    continue  # это точный дубль — им занимается основной режим
+                    continue  # точный дубль — это основной режим
                 ratio = difflib.SequenceMatcher(None, name_i, name_j).ratio()
                 if ratio >= FUZZY_THRESHOLD:
                     found = True
@@ -204,8 +183,7 @@ class Command(BaseCommand):
         )
 
     # ============================================================
-    # Ранжирование группы (кто канонический) — общее для точного и
-    # ручного (--merge) путей
+    # Выбор канонической записи
     # ============================================================
 
     @staticmethod
@@ -225,8 +203,7 @@ class Command(BaseCommand):
 
         ranked = sorted(
             ((c, match_count(c)) for c in dupes),
-            # запись с external_id приоритетнее (надёжный идентификатор),
-            # затем — у кого больше сыгранных матчей, затем — старше
+            # Приоритет: есть external_id, больше матчей, старше.
             key=lambda t: (t[0].external_id is None, -t[1], t[0].created_at),
         )
         canonical = ranked[0][0]
@@ -234,20 +211,12 @@ class Command(BaseCommand):
         return canonical, others
 
     # ============================================================
-    # Собственно перенос ссылок + удаление дубля
+    # Перенос ссылок и удаление дубля
     # ============================================================
 
     def _merge_referees(self, canonical, others) -> set:
-        """
-        2026-08-23, anti-brigading: RefereeMatchAggregate (новая модель,
-        aggregates/tasks.py::recalculate_referee_aggregates) хранит прямую
-        FK на Referee с on_delete=CASCADE — `dup.delete()` ниже удалит её
-        агрегаты вместе с судьёй, оставляя переехавшие на canonical матчи
-        БЕЗ агрегата, пока не пересчитать заново (RefereeEvaluation не
-        привязана к судье напрямую, только через match.referee — сами
-        оценки не нужно переносить, в отличие от CoachEvaluation).
-        Возвращает affected_match_ids — тот же контракт, что и
-        _merge_coaches, чтобы handle()/_manual_merge могли пересчитать.
+        """Переносит матчи на канонического судью. Агрегаты дубля удаляются каскадом —
+        возвращает affected_match_ids для пересчёта.
         """
         affected_match_ids: set = set()
         with transaction.atomic():
@@ -282,10 +251,7 @@ class Command(BaseCommand):
                 home_moved = Match.objects.filter(home_coach=dup).update(home_coach=canonical)
                 away_moved = Match.objects.filter(away_coach=dup).update(away_coach=canonical)
 
-                # CoachEvaluation.coach: unique(user, match, coach) — если
-                # пользователь уже оценил канонического тренера за этот же
-                # матч, дубль-оценку просто убираем, а не переносим (иначе
-                # save() упадёт на constraint).
+                # Если у канонического тренера уже есть оценка этого пользователя за матч — дубль удаляем.
                 for ev in CoachEvaluation.objects.filter(coach=dup):
                     if CoachEvaluation.objects.filter(user=ev.user, match=ev.match, coach=canonical).exists():
                         ev.delete()
@@ -294,8 +260,7 @@ class Command(BaseCommand):
                         ev.save(update_fields=["coach"])
                     affected_match_ids.add(ev.match_id)
 
-                # Агрегаты дубля больше не актуальны — пересчитаем для
-                # канонического ниже, из перенесённых CoachEvaluation.
+                # Агрегаты пересчитаем ниже.
                 CoachMatchAggregate.objects.filter(coach=dup).delete()
 
                 self.stdout.write(f"    id={dup.id}: перенесено матчей home={home_moved} away={away_moved}")

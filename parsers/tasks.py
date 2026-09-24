@@ -1,35 +1,6 @@
 # parsers/tasks.py
-"""
-2026-09-09: KFF-парсер и вся его инфраструктура (client.py, importers.py,
-pipeline.py, photo_scraper.py, все Celery-задачи синхронизации матчей отсюда)
-физически удалены по явному решению пользователя — Sportmonks остаётся
-ЕДИНСТВЕННЫМ источником данных матчей (см. parsers/sportmonks/tasks.py).
-
-Здесь остаётся только check_sync_errors_and_alert — она НЕ была привязана к
-конкретному источнику: читает Match/MatchEvent общими полями (status,
-created_at, has_lineup), не знает и не спрашивает, кто именно записал эти
-строки (KFF или Sportmonks — см. ParserSyncRun.source, parsers/models.py).
-Поэтому это единственная задача из старого файла, которую можно было
-оставить как есть, не переписывая заново под Sportmonks.
-
-ВАЖНОЕ ПОСЛЕДСТВИЕ УДАЛЕНИЯ (зафиксировано, чтобы не потерялось): вместе с
-parsers/kff/importers.py::import_match_core ушла и единственная реализация
-детектора ParserDiscrepancy (правка счёта/статуса задним числом поверх уже
-завершённого матча, см. её докстринг в parsers/models.py) — на стороне
-Sportmonks-импортёра (parsers/sportmonks/importers.py) аналогичного детектора
-НЕТ. Карточка "Расхождения импорта" на /staff/dashboard/data-health/
-продолжит работать (сам ParserDiscrepancy.objects.filter(reviewed=False) в
-dashboard/services.py ничего не знает про источник), но новых записей в неё
-писать больше некому. Если нужно закрыть этот пробел — это отдельная,
-самостоятельная задача (добавить эквивалентную проверку в
-parsers/sportmonks/importers.py::import_match_core), не восстановление
-удалённого кода.
-
-Аналогично: `Match.was_rescheduled` (см. её докстринг в matches/models.py)
-раньше проставлялся `_detect_rescheduled_outlier` внутри KFF-шной
-update_match_statuses — тоже удалено вместе с задачей. Поле на модели
-осталось (историческая разметка уже импортированных матчей не трогается),
-но новые переносы дат Sportmonks-эпохи этим способом больше не ловятся.
+"""Общие задачи парсера, не зависящие от источника: алерт по ошибкам синка,
+ежемесячная проверка ФИО через ИИ.
 """
 from __future__ import annotations
 
@@ -48,30 +19,13 @@ logger = logging.getLogger(__name__)
 
 @shared_task
 def check_sync_errors_and_alert():
-    """Проверка ошибок синхронизации за последние 24 часа и алерт при
-    необходимости. Источник-агностично: считает по Match/MatchEvent, не
-    важно, кто их создал (Sportmonks — единственный активный синк, но поле
-    ParserSyncRun.source в принципе позволяет иметь несколько)."""
+    """Ошибки синка за 24 часа и алерт при необходимости."""
     from matches.models import Match
 
     now = timezone.now()
     cutoff = now - timedelta(hours=24)
 
-    # ИСПРАВЛЕНО (2026-09-10, расследование алерта "12 матчей без составов
-    # за 24ч" — жалоба пользователя "не работает парсер или че"): матчи с
-    # Match.decided_administratively=True (неявка/техническое поражение/
-    # прерван и засчитан, см. её докстринг в matches/models.py) у
-    # Sportmonks НИКОГДА не будут иметь lineups/events — состав/события
-    # неоткуда взять для матча, который по факту не доигрывался в обычном
-    # режиме. Без этого исключения такие матчи инфлировали счётчик как
-    # будто это сбой синхронизации, хотя это ожидаемая характеристика
-    # результата. Поле появилось только 2026-09-10 — на старых Match-
-    # записях (импортированных до этой правки) оно останется False, даже
-    # если матч на самом деле техническое поражение; разовая коррекция для
-    # уже накопленных записей — повторный прогон daily sportmonks_sync_
-    # season (parsers/sportmonks/tasks.py) сам переустановит его при
-    # следующем обновлении фикстуры, специальная management-команда не
-    # нужна (все фикстуры сезона синкаются каждую ночь в 03:30).
+    # Технические результаты (decided_administratively) без составов — не ошибка.
     matches_without_lineups = Match.objects.filter(
         status="finished",
         created_at__gte=cutoff,
@@ -123,33 +77,9 @@ def check_sync_errors_and_alert():
 
 @shared_task(bind=True, max_retries=0)
 def verify_names_with_ai_monthly(self):
-    """Ежемесячный автопрогон «Проверка ФИО (ИИ)» (2026-09-22, прямая
-    просьба пользователя: "надо раз в месяц даже сделать", после того как
-    сделали разовый ручной прогон по всей базе через дашборд).
-
-    НЕ `--all` — обычный режим команды (parsers/management/commands/
-    verify_names_with_ai.py) и так сам проверяет только НОВОЕ:
-    name_source=guessed_transliteration (свежепришедшие через трансферы/
-    новые сезоны игроки, угаданные транслитерацией) плюс записи с прошлым
-    check_failed (см. дедупликацию в самой команде — 2026-09-22 фикс,
-    исключающий check_failed из "уже проверено"). Уже одобренные/
-    отклонённые staff записи не трогает. --all запускался ОДИН раз вручную
-    для разового прохода по уже существующей базе — сюда его сознательно
-    не добавляем, иначе каждый месяц заново тратились бы вызовы на давно
-    подтверждённые записи. `limit=100` — защитный потолок на случай
-    аномального наплыва новых записей за месяц (обычный трансферный поток
-    КПЛ таким лимитом даже близко не исчерпывается), не даёт задаче
-    случайно улететь в сотни вызовов без присмотра.
-
-    Пишет ManagementCommandRun как обычный ручной запуск (тот же
-    dashboard/command_runner.py::run_command_sync) — результат виден в
-    "Скрипты и команды" → История запусков, с triggered_by_username=
-    "celery-beat (ежемесячно)" вместо логина staff, чтобы сразу было
-    видно, что запуск автоматический. log_staff_action сюда НЕ пишем —
-    это не действие staff (нет request/user), тот же принцип, что и у
-    остальных периодических задач этого файла/parsers.sportmonks.tasks —
-    видимость через ParserSyncRun/ManagementCommandRun, не через
-    StaffActionLog."""
+    """Ежемесячный прогон verify_names_with_ai (только новые/упавшие записи, limit=100).
+    Пишет ManagementCommandRun с triggered_by «celery-beat (ежемесячно)».
+    """
     from dashboard.command_runner import run_command_sync
     from dashboard.commands_registry import get_command
     from dashboard.models import ManagementCommandRun
@@ -183,7 +113,7 @@ def verify_names_with_ai_monthly(self):
 
 
 def _send_sync_error_alert(error_message: str, alert_type: str, extra_data: dict = None):
-    """Отправка email-алерта админу при критических ошибках синка."""
+    """Email-алерт админу."""
     if not getattr(settings, "ENABLE_SYNC_ERROR_ALERTS", True):
         return
 

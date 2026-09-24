@@ -2,11 +2,11 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 from core.models import BaseModel
-from seasons.models import Season  # ✅ Импортируем Season
+from seasons.models import Season  # Season
 
 
 class Team(BaseModel):
-    """Футбольная команда"""
+    """Футбольная команда."""
     
     name = models.CharField(
         max_length=255,
@@ -45,23 +45,13 @@ class Team(BaseModel):
         unique=True,
         verbose_name=_('Внешний ID')
     )
-    # ВАЖНО: это ДРУГОЙ id, чем external_id выше. external_id — id команды
-    # в JSON API KFF (parsers/kff/client.py, используется для импорта
-    # матчей). kff_website_id — id той же команды на публичном сайте
-    # kffleague.kz (URL вида /ru/team/{id}) — отдельная нумерация в другом
-    # бэкенде того же KFF, нужна ТОЛЬКО для скрапинга фото игроков
-    # (parsers/kff/photo_scraper.py), заполняется автоматически при первом
-    # запуске скрапера через сопоставление названий команд.
+    # ID команды на сайте kffleague.kz (для фото), не external_id.
     kff_website_id = models.CharField(
         _('ID команды на сайте KFF'),
         max_length=20, blank=True, null=True, unique=True,
         help_text=_('Числовой id из URL kffleague.kz/ru/team/<id> — для скрапинга фото игроков.'),
     )
-    # См. комментарий у League.sportmonks_id (leagues/models.py). Для
-    # команд заполняется один раз вручную по итогам сверки 16 клубов КПЛ
-    # (docs/sportmonks-migration-plan.md, фаза 2) — список маленький и
-    # стабильный, автоматический fuzzy-мэтчинг тут не нужен и рискованнее
-    # ручной проверки.
+    # ID в Sportmonks.
     sportmonks_id = models.CharField(
         _('Sportmonks ID'),
         max_length=100, blank=True, null=True, unique=True,
@@ -70,13 +60,7 @@ class Team(BaseModel):
         default=True,
         verbose_name=_('Активна')
     )
-    # НОВОЕ: продуктовое решение (не автоматика) — какие пары команд
-    # считаются принципиальными соперниками ("дерби"), проставляется один
-    # раз вручную в админке (см. teams/admin.py::TeamAdmin.filter_horizontal).
-    # Используется бейджем "derby_hunter" (users/badges.py). Самоссылочное
-    # ManyToManyField по умолчанию симметрично: если A добавлен в rivals B,
-    # то B автоматически оказывается в rivals A — отдельный related_name не
-    # нужен.
+    # Принципиальные соперники (дерби), задаётся в админке. Симметрично.
     rivals = models.ManyToManyField(
         'self',
         blank=True,
@@ -93,26 +77,12 @@ class Team(BaseModel):
     
     @property
     def logo_display(self):
-        """Возвращает логотип (файл или URL).
-
-        ВАЖНО (2026-09-09, вопрос пользователя "менеджер сказал логотипы
-        обновят за 24 часа, но мы вроде сделали так, чтобы не
-        обновлялись"): `logo_url` теперь СВОБОДНО перезаписывается каждым
-        синком Sportmonks (см. parsers/sportmonks/importers.py::
-        get_or_create_team) — если источник обновит герб, это само
-        подтянется на сайт. Защита от затирания переехала сюда: `logo`
-        (загруженный вручную в админке файл) — это staff-override, и он
-        ВСЕГДА в приоритете над `logo_url`, независимо от того, что
-        прислал Sportmonks. Раньше приоритет был обратный (logo_url
-        всегда выигрывал), из-за чего ручная загрузка файла в админке
-        молча игнорировалась на странице — то был реальный баг, а не
-        просто "защита от обновлений", извиняюсь за путаницу.
-        """
+        """Логотип: загруженный файл (logo) в приоритете над logo_url из синка."""
         return (self.logo.url if self.logo else None) or self.logo_url
 
 
 class TeamSeason(BaseModel):
-    """Привязка команды к сезону"""
+    """Привязка команды к сезону."""
     team = models.ForeignKey(
         Team,
         on_delete=models.CASCADE,
@@ -138,9 +108,9 @@ class TeamSeason(BaseModel):
         return f"{self.team} — {self.season}"
 
 
-# ✅ НОВАЯ МОДЕЛЬ: Кэшированная статистика команды в сезоне
+# Кэш статистики команды в сезоне
 class TeamSeasonStats(BaseModel):
-    """Кэшированная статистика команды в сезоне (для турнирной таблицы)"""
+    """Статистика команды в сезоне (для турнирной таблицы)."""
     
     team = models.ForeignKey(
         Team,
@@ -148,7 +118,7 @@ class TeamSeasonStats(BaseModel):
         verbose_name=_('Команда')
     )
     season = models.ForeignKey(
-        'seasons.Season',  # ✅ ПРАВИЛЬНО: 'app.Model'
+        'seasons.Season',
         on_delete=models.CASCADE,
         verbose_name=_('Сезон')
     )
@@ -215,7 +185,7 @@ class TeamSeasonStats(BaseModel):
         return f"{self.team} — {self.season} ({self.points} очков)"
     
     def update_stats(self):
-        """Пересчитывает статистику из матчей"""
+        """Пересчитывает статистику по матчам."""
         from matches.models import Match
         from django.db.models import F, Q, Count, Sum, Coalesce
         

@@ -3,13 +3,7 @@
 {% block content %}
 {% include 'dashboard/_nav.html' %}
 
-{% comment %}
-templates/dashboard/partners_list.html
-2026-09-23, раздел «Партнёры и баннеры» — список Partner (partners/models.py)
-+ форма создания нового (dashboard/views.py::partners_list/partner_create).
-Тот же паттерн, что users_list.html/matches_list.html: поиск + таблица +
-пагинация + переход на карточку по клику.
-{% endcomment %}
+{# Список партнёров + форма создания. #}
 
 <div class="mb-4">
     <a href="{% url 'dashboard:ads' %}" class="text-xs opacity-60 hover:opacity-100"><i class="ti ti-arrow-left"></i> К разделу «Реклама»</a>

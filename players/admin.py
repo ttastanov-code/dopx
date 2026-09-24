@@ -7,15 +7,7 @@ from core.admin_actions import export_as_csv
 from .models import Player, PotentialDuplicatePlayer
 
 
-# НОВОЕ (2026-08-31): "ушедшие игроки" — parsers/kff/photo_scraper.py
-# автоматически снимает is_active игроку, которого N прогонов подряд не
-# находит в актуальном составе на kffleague.kz (см. docstring
-# match_and_fetch_players_for_team). Это эвристика, а не стопроцентный
-# факт — если staff видит ложное срабатывание (например KFF сам не
-# успел обновить страницу, или игрок долго восстанавливался после травмы
-# и его временно убрали со страницы состава), это действие возвращает
-# игрока в активный состав и обнуляет счётчик отсутствия, чтобы отсчёт
-# начался заново со следующего прогона.
+# Вернуть игрока в активный состав и обнулить счётчик отсутствия.
 @admin.action(description="↩️ Вернуть в активный состав (сбросить счётчик отсутствия)")
 def reactivate_player(modeladmin, request, queryset):
     updated = queryset.update(is_active=True, roster_absence_streak=0)
@@ -51,13 +43,7 @@ class PlayerAdmin(ModelAdmin):
     actions = [export_as_csv, reactivate_player]
 
 
-# 2026-09-22, прямая просьба пользователя после обнаружения дублей
-# (Горобченко/Бесенгалиев в «Женисе») — очередь ручного разбора флагов,
-# которые ставит parsers/sportmonks/importers.py::get_or_create_player.
-# НЕ сливает записи автоматически (см. докстринг PotentialDuplicatePlayer
-# в players/models.py) — админка тут только для того, чтобы отметить
-# запись разобранной с заметкой, само слияние/удаление staff делает
-# вручную через обычный интерфейс редактирования Player.
+# Флаги возможных дублей — отметить разобранными; слияние — в дашборде.
 @admin.action(description="✅ Отметить разобранным")
 def mark_reviewed(modeladmin, request, queryset):
     updated = queryset.filter(reviewed=False).update(

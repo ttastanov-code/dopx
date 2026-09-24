@@ -1,11 +1,7 @@
 # aggregates/tests_rating_integrity.py
-"""
-Тесты на исправления честности рейтингов и антифрода (2026-09-23/24):
-средние с учётом голосов, запись вшитой поправки и защита детектора от
-петли обратной связи, актуализация флага, «Отклонить» в дашборде,
-рейтинг «по статистике» как объективный сигнал, расширенная доля
-доминирования, тренерский детектор, всплески оценок судье, калибровка
-запасной формулы.
+"""Тесты честности рейтингов и антифрода: средние с учётом голосов, вшитая поправка,
+актуализация флага, «Отклонить» в дашборде, оценка по статистике, доминирование,
+детекторы тренеров и судей, калибровка весов.
 """
 from datetime import timedelta
 from io import StringIO
@@ -88,7 +84,7 @@ class VoteWeightedAverageTests(_Fixture):
 
 @override_settings(CELERY_TASK_ALWAYS_EAGER=True, CELERY_TASK_EAGER_PROPAGATES=True)
 class CorrectionAppliedTests(_Fixture):
-    """Поправка записывается на агрегат, и детектор видит чистую оценку."""
+    """Поправка пишется на агрегат, детектор видит чистую оценку."""
 
     def setUp(self):
         super().setUp()
@@ -110,8 +106,7 @@ class CorrectionAppliedTests(_Fixture):
 
         self.assertAlmostEqual(corrected.performance_score - clean.performance_score, 0.3, places=2)
         self.assertAlmostEqual(corrected.rating_correction_applied, 0.3, places=2)
-        # Детектор должен видеть ту же оценку, что и без поправки — иначе
-        # поправка сама себя "подтверждает" или переворачивает (петля).
+        # Детектор видит ту же оценку, что без поправки.
         self.assertAlmostEqual(agg_tasks._raw_community_score(corrected), clean.performance_score, places=2)
 
     def test_history_recalc_without_correction(self):
@@ -173,7 +168,7 @@ class DivergenceFlagSyncTests(_Fixture):
         flag = SuspiciousActivityFlag.objects.get(source="player_stats_divergence")
         self.assertFalse(flag.details["pattern_active"])
         self.assertAlmostEqual(flag.details["correction_applied"], 0.2)
-        # Текущая поправка в карточке антифрода = та, что на профиле игрока.
+        # Поправка в антифроде = поправка на профиле игрока.
         self.assertAlmostEqual(flag.live_correction, 0.2)
 
 
@@ -192,8 +187,7 @@ class DismissalTests(_Fixture):
         self.assertGreater(corr.suppressed_until, timezone.now())
 
     def test_dashboard_dismiss_button_removes_correction(self):
-        """Регрессия: кнопка «Отклонить» в дашборде раньше только меняла
-        статус флага, поправка оставалась."""
+        """«Отклонить» в дашборде снимает поправку."""
         from dashboard import views as dashboard_views
 
         PlayerRatingCorrection.objects.create(player=self.player, correction=-0.25, last_pattern="overrated_despite_stats")
@@ -214,19 +208,19 @@ class DismissalTests(_Fixture):
 
 
 class PlayerDivergenceDetectorTests(_Fixture):
-    """Детектор игрока: основной сигнал — оценка по статистике (RATING)."""
+    """Детектор игрока: основной сигнал — RATING."""
 
     def setUp(self):
         super().setUp()
         self.ct = ContentType.objects.get_for_model(Player)
 
     def _history(self, window_score, window_applied=0.0):
-        # 5 более ранних матчей: оценка болельщиков 6.0, по статистике 6.5
+        # 5 ранних матчей: болельщики 6.0, статистика 6.5
         for i in range(5):
             m = self.make_match(days_ago=20 + i)
             PlayerMatchAggregate.objects.create(player=self.player, match=m, performance_score=6.0, total_votes=10)
             MatchPlayerStatistics.objects.create(match=m, player=self.player, team=self.home, raw={"RATING": 6.5, "MINUTES_PLAYED": 90})
-        # 5 последних матчей: по статистике хуже (5.5), оценки — window_score
+        # 5 последних: статистика 5.5, оценки — window_score
         for i in range(5):
             m = self.make_match(days_ago=1 + i)
             PlayerMatchAggregate.objects.create(
@@ -245,9 +239,8 @@ class PlayerDivergenceDetectorTests(_Fixture):
         self.assertLess(PlayerRatingCorrection.objects.get(player=self.player).correction, 0)
 
     def test_own_correction_does_not_trigger_detector(self):
-        """Регрессия (Мартынович): рейтинг выше только из-за вшитой поправки —
-        это не накрутка, детектор не должен срабатывать."""
-        self._history(window_score=7.5, window_applied=1.5)  # чистая оценка = 6.0, как обычно
+        """Рейтинг выше только из-за вшитой поправки — флага нет."""
+        self._history(window_score=7.5, window_applied=1.5)  # чистая оценка 6.0
         result = agg_tasks._check_player_stats_divergence(self.player.id, self.ct, SuspiciousActivityFlag)
         self.assertEqual(result, 0)
         self.assertFalse(SuspiciousActivityFlag.objects.filter(source="player_stats_divergence").exists())
@@ -258,12 +251,12 @@ class CoachDivergenceTests(_Fixture):
         super().setUp()
         self.coach = Coach.objects.create(first_name="Тренер", last_name="Тренеров", team=self.home)
         self.ct = ContentType.objects.get_for_model(Coach)
-        for i in range(6):  # ранние матчи: обычная оценка 6.0
+        for i in range(6):  # ранние матчи: 6.0
             m = self.make_match(days_ago=30 + i)
             CoachMatchAggregate.objects.create(
                 coach=self.coach, match=m, avg_tactics=6, avg_substitutions=6, avg_management=6, avg_impact=6, total_votes=10,
             )
-        for i in range(6):  # последние: оценки 8.0, а команда объективно уступала
+        for i in range(6):  # последние: оценки 8.0, команда уступала
             m = self.make_match(days_ago=1 + i)
             CoachMatchAggregate.objects.create(
                 coach=self.coach, match=m, avg_tactics=8, avg_substitutions=8, avg_management=8, avg_impact=8, total_votes=10,
@@ -293,7 +286,7 @@ class RefereeVoteSpikeTests(_Fixture):
         users = [self.make_user(f"ref_voter_{i}") for i in range(8)]
         matches = [self.make_match(days_ago=i + 1, referee=referee) for i in range(6)]
         for idx, match in enumerate(matches):
-            quality = 1 if idx == 0 else 6  # первый матч — "завалить судью"
+            quality = 1 if idx == 0 else 6  # первый матч — «завалить судью»
             for u in users:
                 RefereeEvaluation.objects.create(user=u, match=match, influence_score=50, decision_quality=quality)
 
@@ -322,8 +315,7 @@ class CalibrationTests(_Fixture):
                     raw={"GOALS": goals, "TACKLES": tackles, "MINUTES_PLAYED": 90, "RATING": 6 + goals + 0.2 * tackles},
                 )
 
-        # Кэш настроек живёт между тестами (locmem) — не даём откалиброванным
-        # весам "протечь" в другие тесты после отката БД.
+        # Сбрасываем кэш настроек после теста.
         self.addCleanup(cache.delete, "platform_setting:player_objective_weights")
         with mock.patch.object(cmd, "MIN_SAMPLES", 10):
             call_command("calibrate_player_objective_weights", save=True, stdout=StringIO())

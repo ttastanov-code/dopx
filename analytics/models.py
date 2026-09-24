@@ -1,17 +1,6 @@
 # analytics/models.py
-"""
-Событийная аналитика продукта — единая точка данных для продуктовой
-воронки (визит → регистрация → первая оценка → шеринг), которую сторонние
-инструменты (GA4, Яндекс.Метрика) не знают в принципе, потому что не видят
-доменных событий вроде "шаг вайзарда завершён" или "шер-карточка открыта".
-
-AnalyticsEvent НЕ наследует core.models.BaseModel намеренно:
-1. BigAutoField вместо UUID PK — append-only таблица с ожидаемым объёмом
-   в десятки/сотни тысяч строк в месяц; UUID PK здесь даёт заметно худшую
-   производительность вставки без единого практического плюса (событие
-   никогда не адресуется по PK извне).
-2. Нет updated_at — событие неизменяемо после записи, поле было бы мёртвым
-   весом на каждой строке огромной таблицы.
+"""Продуктовая аналитика (воронка: визит -> регистрация -> оценка -> шеринг).
+AnalyticsEvent без BaseModel: BigAutoField и без updated_at — append-only таблица.
 """
 from __future__ import annotations
 
@@ -21,12 +10,7 @@ from django.utils.translation import gettext_lazy as _
 
 
 class EventName(models.TextChoices):
-    """
-    Единый каталог событий продукта. Пишите event_name ТОЛЬКО через этот
-    Enum — иначе через полгода в таблице будет 5 вариантов написания
-    одного события ('signup', 'sign_up', 'user_registered') и воронка
-    станет нечитаемой.
-    """
+    """Каталог событий. event_name — только через этот Enum."""
 
     PAGE_VIEW = "page_view", _("Просмотр страницы")
     USER_REGISTERED = "user_registered", _("Регистрация")
@@ -39,17 +23,9 @@ class EventName(models.TextChoices):
     SHARE_CLICKED = "share_clicked", _("Клик 'Поделиться'")
     PROFILE_VIEWED = "profile_viewed", _("Просмотр публичного профиля")
     LEADERBOARD_VIEWED = "leaderboard_viewed", _("Просмотр лидерборда")
-    # 2026-08-21: краудсорс-прогноз 1X2 (predictions app). Один choice —
-    # первая ставка И смена прогноза до старта матча (submit_prediction
-    # использует update_or_create) — воронке для MVP достаточно факта
-    # "пользователь взаимодействовал с прогнозами", не нужно различать эти
-    # два случая отдельными event_name.
+    # Прогноз 1X2 (и новый, и смена).
     PREDICTION_MADE = "prediction_made", _("Прогноз на матч сделан")
-    # 2026-08-21: партнёрская инфраструктура (partners app). Переиспользуем
-    # AnalyticsEvent вместо отдельных таблиц BannerImpression/BannerClick —
-    # тот же принцип, что и для остальной продуктовой воронки: один источник
-    # событий, а не параллельные таблицы счётчиков. partner_id/banner_id/zone
-    # кладутся в properties, см. partners/services.py.
+    # Партнёры: показы/клики баннеров, данные — в properties.
     WIDGET_EMBED_VIEWED = "widget_embed_viewed", _("Открытие embed-виджета")
     PARTNER_REFERRAL_VISIT = "partner_referral_visit", _("Переход по партнёрской ссылке")
     BANNER_IMPRESSION = "banner_impression", _("Показ баннера")
@@ -58,7 +34,7 @@ class EventName(models.TextChoices):
 
 
 class AnalyticsEvent(models.Model):
-    """Единичное событие продуктовой аналитики."""
+    """Событие аналитики."""
 
     id = models.BigAutoField(primary_key=True)
     created_at = models.DateTimeField(_("Создано"), auto_now_add=True, db_index=True)
@@ -68,9 +44,7 @@ class AnalyticsEvent(models.Model):
         related_name="analytics_events", verbose_name=_("Пользователь"),
         help_text=_("SET_NULL: агрегаты должны переживать удаление аккаунта"),
     )
-    # Клиентский UUID из localStorage — единственная связка между анонимным
-    # визитом ДО регистрации и залогиненными событиями ПОСЛЕ. Без него
-    # невозможна воронка "визит → регистрация → первая оценка".
+    # UUID из localStorage — связывает анонимный визит и события после входа.
     anonymous_id = models.UUIDField(_("Анонимный ID"), null=True, blank=True, db_index=True)
     session_id = models.CharField(max_length=40, blank=True)
     properties = models.JSONField(_("Свойства"), default=dict, blank=True)
@@ -89,12 +63,7 @@ class AnalyticsEvent(models.Model):
         verbose_name = _("Событие аналитики")
         verbose_name_plural = _("События аналитики")
         indexes = [
-            # ПРИМЕЧАНИЕ: имена индексов заданы явно (а не оставлены на
-            # авто-хэш Django), потому что миграция 0001_initial написана
-            # вручную (в песочнице разработки нет сетевого доступа к
-            # PyPI/Postgres для `manage.py makemigrations` — см. коммент в
-            # самой миграции) и должна детерминированно совпадать с
-            # состоянием модели без раунд-трипа через реальный Django.
+            # Явные имена индексов.
             models.Index(fields=["event_name", "created_at"], name="analytics_event_created_idx"),
             models.Index(fields=["user", "created_at"], name="analytics_user_created_idx"),
             models.Index(fields=["anonymous_id", "created_at"], name="analytics_anon_created_idx"),

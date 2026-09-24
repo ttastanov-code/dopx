@@ -9,7 +9,7 @@ import logging
 import time
 from django.conf import settings
 
-# === ВСЕ ИМПОРТЫ В НАЧАЛЕ ===
+# === ИМПОРТЫ ===
 from matches.models import Match
 from evaluations.models import ContextEvaluation, EvaluationSession
 from users.models import UserXP, UserBadge
@@ -41,13 +41,13 @@ class Command(BaseCommand):
         num_matches = options['matches']
         target_level = options['force_level']
         test_email = options['test_email']
-        sync_notifications = options['sync_notifications'] or True  # ✅ По умолчанию синхронно для тестов
+        sync_notifications = options['sync_notifications'] or True  # по умолчанию синхронно
 
         self.stdout.write('\n' + '=' * 80)
         self.stdout.write('🧪 DOPX FULL USER JOURNEY — ИНТЕГРАЦИОННЫЙ ТЕСТ')
         self.stdout.write('=' * 80 + '\n')
 
-        # === ШАГ 0: Подготовка пользователя ===
+        # === ШАГ 0: пользователь ===
         self.stdout.write('📍 ШАГ 0: Создание/подготовка пользователя')
         user, created = User.objects.get_or_create(
             username=username,
@@ -65,7 +65,7 @@ class Command(BaseCommand):
             UserXP.objects.get_or_create(user=user)
             self.stdout.write(self.style.SUCCESS(f'   ✅ Пользователь создан: {username} ({email})'))
         else:
-            # СБРОС для чистого теста
+            # Сброс для чистого теста
             user.email = email
             user.is_verified = True
             user.trust_score = 1.0
@@ -84,7 +84,7 @@ class Command(BaseCommand):
             user.set_password(password)
             user.save()
 
-        # === ШАГ 1: Логин ===
+        # === ШАГ 1: логин ===
         self.stdout.write('\n📍 ШАГ 1: Вход в систему')
         client = Client()
         if not client.login(username=username, password=password):
@@ -92,7 +92,7 @@ class Command(BaseCommand):
             return
         self.stdout.write(self.style.SUCCESS('   ✅ Вход успешен'))
 
-        # === ШАГ 2: Подготовка матчей ===
+        # === ШАГ 2: матчи ===
         self.stdout.write('\n📍 ШАГ 2: Поиск матчей с открытым голосованием')
         now = timezone.now()
         matches = Match.objects.filter(
@@ -105,7 +105,7 @@ class Command(BaseCommand):
             return
         self.stdout.write(self.style.SUCCESS(f'   ✅ Найдено {matches.count()} матчей'))
 
-        # === ШАГ 3: Симуляция оценок ===
+        # === ШАГ 3: оценки ===
         self.stdout.write(f'\n📍 ШАГ 3: Симуляция {num_matches} оценок')
         results = {
             'evaluations_completed': 0,
@@ -121,14 +121,14 @@ class Command(BaseCommand):
 
         for idx, match in enumerate(matches, 1):
             try:
-                # 🔹 Шаг 1: Контекст
+                # Шаг 1: контекст
                 client.post(f'/evaluations/match/{match.id}/context/', {
                     'supported_team': str(match.home_team.id) if idx % 3 == 0 else '',
                     'watched_type': 'full' if idx % 4 != 0 else 'highlights',
                     'attended_stadium': idx % 10 == 0,
                 }, follow=True)
 
-                # 🔹 Шаг 2: Команды
+                # Шаг 2: команды
                 teams_data = {}
                 for team in [match.home_team, match.away_team]:
                     prefix = f'team_{team.id}'
@@ -140,7 +140,7 @@ class Command(BaseCommand):
                     })
                 client.post(f'/evaluations/match/{match.id}/teams/', teams_data, follow=True)
 
-                # 🔹 Шаг 3: Игроки
+                # Шаг 3: игроки
                 lineup_players = MatchLineupPlayer.objects.filter(
                     lineup__match=match
                 ).select_related('player')[:7]
@@ -153,7 +153,7 @@ class Command(BaseCommand):
                     players_data[f'{prefix}_potential'] = 7 + (idx % 4)
                 client.post(f'/evaluations/match/{match.id}/players/', players_data, follow=True)
 
-                # 🔹 Шаг 4: Тренеры
+                # Шаг 4: тренеры
                 coaches_data = {}
                 for coach in [match.home_coach, match.away_coach]:
                     if coach:
@@ -167,13 +167,13 @@ class Command(BaseCommand):
                 if coaches_data:
                     client.post(f'/evaluations/match/{match.id}/coaches/', coaches_data, follow=True)
 
-                # 🔹 Шаг 5: Судья
+                # Шаг 5: судья
                 client.post(f'/evaluations/match/{match.id}/referee/', {
                     'influence_score': 45 + (idx % 10),
                     'decision_quality': 7 + (idx % 4),
                 }, follow=True)
 
-                # 🔹 Шаг 6: Финал — здесь происходит начисление XP, достижений, уведомлений!
+                # Шаг 6: финал — XP, достижения, уведомления
                 final_resp = client.post(f'/evaluations/match/{match.id}/match/', {
                     'entertainment': 7 + (idx % 4),
                     'tension': 6 + (idx % 4),
@@ -184,11 +184,11 @@ class Command(BaseCommand):
                 if final_resp.status_code == 200:
                     results['evaluations_completed'] += 1
                     
-                    # ✅ СИНХРОННОЕ СОЗДАНИЕ УВЕДОМЛЕНИЙ (для тестов)
+                    # Уведомления синхронно
                     if sync_notifications:
                         self._create_sync_notifications(user, match, idx)
                     
-                    time.sleep(0.3)  # Пауза для обработки задач
+                    time.sleep(0.3)  # пауза для задач
                     if idx % 6 == 0:
                         self.stdout.write(f'   ✅ Пройдено {idx} оценок...')
                 else:
@@ -197,7 +197,7 @@ class Command(BaseCommand):
                 results['errors'].append(f'Match {idx}: {str(e)}')
                 continue
 
-        # === ШАГ 4: Принудительное достижение уровня ===
+        # === ШАГ 4: повышение уровня ===
         user.refresh_from_db()
         xp = UserXP.objects.filter(user=user).first()
         if xp and target_level > xp.level:
@@ -209,7 +209,7 @@ class Command(BaseCommand):
                 xp.save()
                 self.stdout.write(self.style.SUCCESS(f'   ✅ XP: {target_xp}, Уровень: {target_level}'))
                 
-                # ✅ Создаём уведомление о повышении уровня СИНХРОННО
+                # Уведомление о уровне синхронно
                 if sync_notifications:
                     Notification.objects.create(
                         user=user,
@@ -221,7 +221,7 @@ class Command(BaseCommand):
                     results['notifications_created'] += 1
                     self.stdout.write('   ✅ Уведомление о повышении уровня создано')
 
-        # === ШАГ 5: Проверка достижений ===
+        # === ШАГ 5: достижения ===
         self.stdout.write('\n📍 ШАГ 5: Проверка достижений')
         expected_badges = {
             'first_evaluation': 'Первая оценка',
@@ -240,7 +240,7 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.SUCCESS(f'   ✅ {badge_name}'))
                 results['badges_earned'].append(badge_name)
                 
-                # ✅ Создаём уведомление о достижении СИНХРОННО
+                # Уведомление о достижении синхронно
                 if sync_notifications:
                     Notification.objects.create(
                         user=user,
@@ -253,7 +253,7 @@ class Command(BaseCommand):
             else:
                 self.stdout.write(self.style.WARNING(f'   ⚠️  {badge_name} — не получен'))
 
-        # === ШАГ 6: Проверка уведомлений ===
+        # === ШАГ 6: уведомления ===
         self.stdout.write('\n📍 ШАГ 6: Проверка уведомлений')
         notifications = Notification.objects.filter(user=user)
         results['notifications_created'] = notifications.count()
@@ -264,7 +264,7 @@ class Command(BaseCommand):
         else:
             self.stdout.write(self.style.WARNING('   ⚠️  Уведомления не созданы!'))
 
-        # === ШАГ 7: Итоговая статистика ===
+        # === ШАГ 7: итоги ===
         user.refresh_from_db()
         if xp:
             xp.refresh_from_db()
@@ -286,13 +286,13 @@ class Command(BaseCommand):
         for key, value in results['final_state'].items():
             self.stdout.write(f'   {key}: {value}')
 
-        # === Сохранение отчёта ===
+        # === Отчёт ===
         report_file = f'user_journey_{username}_report.json'
         with open(report_file, 'w', encoding='utf-8') as f:
             json.dump(results, f, indent=2, ensure_ascii=False, default=str)
         self.stdout.write(f'\n📄 Отчёт сохранён: {report_file}')
 
-        # === ФИНАЛЬНЫЙ ЧЕКЛИСТ ===
+        # === ЧЕКЛИСТ ===
         self.stdout.write('\n' + '=' * 80)
         self.stdout.write('✅ ЧЕКЛИСТ ДЛЯ ПРОВЕРКИ ВРУЧНУЮ')
         self.stdout.write('=' * 80)
@@ -315,8 +315,8 @@ class Command(BaseCommand):
                 self.stdout.write(f'   • {err}')
 
     def _create_sync_notifications(self, user, match, idx):
-        """Создаёт тестовые уведомления синхронно (без Celery)"""
-        # Уведомление об оценке матча
+        """Тестовые уведомления без Celery."""
+        # Уведомление об оценке
         Notification.objects.get_or_create(
             user=user,
             match=match,
@@ -329,8 +329,8 @@ class Command(BaseCommand):
             }
         )
         
-        # С некоторой вероятностью — уведомление о достижении
-        if idx % 5 == 0:  # Каждые 5 оценок
+        # Иногда — уведомление о достижении
+        if idx % 5 == 0:  # каждые 5 оценок
             badge_name = 'Активный фанат' if idx >= 10 else 'Точный аналитик'
             Notification.objects.get_or_create(
                 user=user,

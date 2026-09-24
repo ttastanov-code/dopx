@@ -1,14 +1,7 @@
-<!-- templates/emails/prediction_result.html — ПОЛНЫЙ РЕДИЗАЙН 2026-09-02, см.
-     докстринг templates/emails/welcome.html про общий каркас в partials/.
-     Полосы распределения прогнозов сообщества раньше были на flexbox
-     (.bar-row { display:flex }) — flexbox НЕ поддерживается ни одним
-     движком Outlook (Word-рендерер) и рядом других почтовых клиентов;
-     переведено на table-based вёрстку (единственный по-настоящему надёжный
-     способ строить горизонтальные "полосы" в email).
-
-     Контекст: match, counts (predictions.services.prediction_counts),
-     is_correct (bool), your_choice_label (см. notifications/tasks.py::
-     notify_prediction_results). -->
+{% comment %}
+Результат прогноза. Полосы — таблицей (flexbox не работает в Outlook).
+Контекст: match, counts, is_correct, your_choice_label.
+{% endcomment %}
 <!DOCTYPE html>
 <html lang="ru">
 {% include "emails/partials/_head.html" %}

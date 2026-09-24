@@ -12,10 +12,7 @@ from round_squad.services import (
     ROUND_VOTE_SHRINKAGE_C,
     resolve_current_tour,
 )
-# Осознанно переиспользуем раскладку поля и стили кольца доверия из
-# season_squad.views — тот же визуальный язык на "DOPX Лучшие тура", что и
-# на "Сборной DOPX сезона", дублировать их здесь смысла нет (см. докстринг
-# season_squad/views.py::_slot_to_card про причину raw CSS в ring_style).
+# Раскладка поля и стиль кольца — из season_squad.views.
 from season_squad.views import (
     PITCH_ROWS,
     _RING_STYLE_CONFIDENT,
@@ -26,67 +23,19 @@ from seasons.models import Season
 
 
 def _resolve_season(season_id):
-    """См. тот же принцип в season_squad/views.py::_resolve_season — None
-    без season_id в URL легитимен ("нет активного сезона" — данные ещё не
-    подъехали, не ошибка запроса), Http404 остаётся только для явно
-    неверного season_id."""
+    """Сезон из URL или активный. None — данных нет, 404 только для неверного id."""
     if season_id:
         return get_object_or_404(Season.objects.select_related('league'), pk=season_id)
     return Season.get_primary_active()
 
 
 def _resolve_latest_tour(season):
-    """Тур для дефолтного показа (URL без явного номера тура).
-
-    ЧЕТВЁРТАЯ версия этой функции — предыдущие три ловили баги ровно на
-    переносах матчей, которые сами и должны были обходить (см. докстринг
-    round_squad/models.py про причину ребрендинга "не тур недели"):
-
-    1) "последний тур с хотя бы одним завершённым матчем" (`-tour` по
-       Match) — перенос ВПЕРЁД (матч сыгран заранее, до своего тура)
-       ломает: одиночный завершённый матч тура 25 перебивал реально
-       идущий тур 22.
-    2) "последний ЗАФИКСИРОВАННЫЙ тур по finalized_at" — ломается на
-       исторических турах без реальных голосов: Celery Beat при первом
-       проходе взводит is_final у любого древнего тура, где voting_open_until
-       формально истёк, и finalized_at там — момент пересчёта, а не игры
-       (страница внезапно показала тур 17 вместо 22-го).
-    3) "календарный фронтир" (тур N при условии, что 1..N завершены на
-       100%) — тоже ломается, но зеркально: перенос НАЗАД (матч тура 6
-       не доигран, перенесён на другую дату) блокирует фронтир целиком —
-       страница застревает на туре 5, хотя туры 7-22 давно сыграны
-       (баг, пойманный на прогоне 2026-08-22).
-
-    Правильный критерий — не "100% завершено" и не "хотя бы один матч
-    завершён", а "тур завершён НА ПРАКТИКЕ" (доля завершённых матчей >=
-    ROUND_CURRENT_TOUR_MIN_COMPLETION_RATIO=0.75, см. round_squad/services.py),
-    и ищем СВЕРХУ ВНИЗ — от самого большого номера тура, первый тур,
-    прошедший этот порог:
-      · перенос ВПЕРЁД (тур 25, 1 из 8 матчей = 12.5%) порог не проходит —
-        сканирование идёт дальше вниз, к реальному текущему туру;
-      · перенос НАЗАД внутри тура (тур 6, 7 из 8 = 87.5%) порог проходит —
-        не блокирует, в отличие от строгих 100% фронтира;
-      · так как сканируем сверху вниз, а не строим фронтир снизу вверх,
-        одиночный "застрявший" ранний тур больше не может остановить
-        весь расчёт для всех туров выше него.
-
-    2026-08-26: сам расчёт вынесен в round_squad/services.py::
-    resolve_practically_closed_tour — понадобился ещё и в
-    core/context_processors.py для кнопки в шапке (см. докстринг там).
-    Эта функция оставлена как тонкая обёртка, чтобы не трогать вызовы
-    ниже по файлу.
-
-    2026-08-31: обёртка переключена на round_squad/services.py::
-    resolve_current_tour — см. её докстринг про баг рассинхрона с кнопкой
-    в шапке (эта страница показывала практически-сыгранный, но ещё НЕ
-    зафиксированный тур, пока кнопка держалась на последнем официально
-    зафиксированном — два разных ответа на "какой тур сейчас")."""
+    """Тур по умолчанию — resolve_current_tour (как у кнопки в шапке)."""
     return resolve_current_tour(season)
 
 
 def _slot_to_card(slot, slot_code):
-    """Тот же принцип, что season_squad/views.py::_slot_to_card — плоский
-    dict для единообразного рендера заполненного/пустого слота."""
+    """Слот -> плоский dict для рендера."""
     label = BEST_XI_SLOT_LABELS.get(slot_code, slot_code)
     if slot is None or not slot.content_type_id:
         return {
@@ -106,12 +55,7 @@ def _slot_to_card(slot, slot_code):
 
 
 def _round_context(season_id, tour):
-    """None — легитимный результат в ДВУХ случаях: нет активного сезона, или
-    сезон есть, но ещё ни один тур не сыгран настолько, чтобы его показать
-    (см. _resolve_latest_tour). Оба — "данных пока нет", не ошибка запроса
-    (тот же принцип, что season_squad/views.py::_best_xi_context) — Http404
-    здесь раньше делал страницу похожей на сломанную сразу после миграции
-    на Sportmonks, когда сыграно всего несколько матчей."""
+    """Контекст страницы. None — нет сезона или ни одного сыгранного тура."""
     season = _resolve_season(season_id)
     if season is None:
         return None
@@ -153,9 +97,7 @@ def _round_context(season_id, tour):
         'player_of_round_card': player_of_round_card,
         'dramatic_match': round_xi.most_dramatic_match,
         'dramatic_match_explanation': round_xi.most_dramatic_match_explanation,
-        # Методология — те же числа, что реально использует алгоритм
-        # (round_squad/services.py), чтобы раздел "Как считается?" не
-        # разъехался с кодом.
+        # Методология — те же константы, что в services.py.
         'round_vote_shrinkage_c': ROUND_VOTE_SHRINKAGE_C,
         'round_min_votes_for_candidate': ROUND_MIN_VOTES_FOR_CANDIDATE,
         'round_confident_votes_threshold': ROUND_CONFIDENT_VOTES_THRESHOLD,
@@ -163,7 +105,7 @@ def _round_context(season_id, tour):
 
 
 def round_of_week(request, season_id=None, tour=None):
-    """Публичная страница «DOPX Лучшие тура»."""
+    """Страница «DOPX Лучшие тура»."""
     context = _round_context(season_id, tour)
     if context is None:
         return render(request, 'round_squad/no_data.html', {
@@ -181,8 +123,7 @@ def round_of_week(request, season_id=None, tour=None):
     )
     context['page_title'] = f"{round_xi.brand_title} — {context['season'].league.name}"
 
-    # Готовая строка <iframe> для кнопки "Получить embed-код" — тот же
-    # паттерн, что у season_squad/views.py::best_xi.
+    # Embed-код.
     widget_url = request.build_absolute_uri(
         reverse('round_squad:round_widget', args=[context['season'].id, context['tour']])
     )
@@ -195,8 +136,7 @@ def round_of_week(request, season_id=None, tour=None):
 
 
 def round_of_week_partial(request, season_id=None, tour=None):
-    """HTMX-партиал для фонового поллинга, тот же принцип, что
-    season_squad/views.py::best_xi_partial."""
+    """HTMX-партиал для поллинга."""
     context = _round_context(season_id, tour)
     if context is None:
         return render(request, 'round_squad/_no_data_partial.html')
@@ -205,14 +145,8 @@ def round_of_week_partial(request, season_id=None, tour=None):
 
 @xframe_options_exempt
 def round_widget(request, season_id=None, tour=None):
-    """
-    Embeddable-виджет «DOPX Лучшие тура» для чужих сайтов — тот же паттерн,
-    что season_squad/views.py::best_xi_widget (см. докстринг там):
-    @xframe_options_exempt + отдельная CSP-политика для этого пути
-    (dopx/middleware.py::WIDGET_PATH_PATTERN), изолированный HTML-документ
-    без Alpine.js, трекинг через partners/services.py::track_widget_embed_view.
-    Без тренера — только 11 полевых слотов, тот же принцип "без лишнего
-    веса на маленькой карточке", что и у best_xi_widget.
+    """Виджет для чужих сайтов: 11 слотов без тренера.
+    @xframe_options_exempt + своя CSP (WIDGET_PATH_PATTERN).
     """
     season = _resolve_season(season_id) if season_id else Season.get_primary_active()
     if tour is None and season is not None:

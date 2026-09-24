@@ -1,11 +1,9 @@
-<!-- ============================================================================
-FILE: templates/notifications/list.html (ENTERPRISE - v2.1 IMPROVED)
-============================================================================ -->
+{# Страница уведомлений. #}
 {% extends 'base.html' %}
 {% load static %}
 {% block content %}
 {% load math_extras %}
-<!-- === ЗАГОЛОВОК === -->
+{# === ЗАГОЛОВОК === #}
 <div class="mb-4 md:mb-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 md:gap-4 px-2 sm:px-0">
   <div>
     <h1 class="text-2xl md:text-3xl font-bold flex items-center gap-2">
@@ -16,23 +14,11 @@ FILE: templates/notifications/list.html (ENTERPRISE - v2.1 IMPROVED)
       {{ unread_count }} непрочитанных • {{ total_count|default:0 }} всего
     </p>
   </div>
-  <!-- Массовые действия — btn-outline, а не btn-ghost: у .btn-ghost в
-       состоянии покоя (не hover) нет ни рамки, ни залитого фона, только
-       текст цветом base-content поверх daisyUI-приглушения — на белой
-       карточке заголовка выходит почти невидимо (жалоба пользователя
-       2026-08-31: "их не видно же нихера"). .btn-outline уже получает
-       рамку currentColor от daisyUI "из коробки" + tinted-тень при hover
-       (см. .btn-outline:hover выше в этом файле) — видно сразу, без
-       нового глобального класса и без риска задеть остальные ~145
-       .btn-ghost по сайту, где приглушённый вид как раз уместен. -->
+  {# Массовые действия — btn-outline (видны без hover). #}
   <div class="flex gap-2 w-full md:w-auto">
     <form method="post" action="{% url 'notifications:read-all' %}" class="inline flex-1 md:flex-initial">
       {% csrf_token %}
-      {% comment %}
-      2026-09-11 (жалоба пользователя: кнопка "просто с иконкой без
-      текста и непонятно что за кнопка") — кнопка и так w-full на
-      мобильном, места под текст достаточно, прятать его было незачем.
-      {% endcomment %}
+      {# Текст кнопки виден и на мобильном. #}
       <button type="submit" class="btn btn-outline btn-sm w-full md:w-auto">
         <i class="ti ti-checks"></i>
         <span>Прочитать все</span>
@@ -44,9 +30,9 @@ FILE: templates/notifications/list.html (ENTERPRISE - v2.1 IMPROVED)
   </div>
 </div>
 
-<!-- === СТАТИСТИКА (карточки) === -->
+{# === СТАТИСТИКА === #}
 <div class="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4 mb-4 md:mb-6 px-2 sm:px-0">
-  <!-- Все уведомления -->
+  {# Все #}
   <div class="card bg-base-100 border border-base-300">
     <div class="card-body p-3 md:p-4">
       <div class="flex items-center gap-2 md:gap-3">
@@ -60,7 +46,7 @@ FILE: templates/notifications/list.html (ENTERPRISE - v2.1 IMPROVED)
       </div>
     </div>
   </div>
-  <!-- Непрочитанные -->
+  {# Непрочитанные #}
   <div class="card bg-base-100 border border-base-300">
     <div class="card-body p-3 md:p-4">
       <div class="flex items-center gap-2 md:gap-3">
@@ -74,7 +60,7 @@ FILE: templates/notifications/list.html (ENTERPRISE - v2.1 IMPROVED)
       </div>
     </div>
   </div>
-  <!-- Прочитанные -->
+  {# Прочитанные #}
   <div class="card bg-base-100 border border-base-300">
     <div class="card-body p-3 md:p-4">
       <div class="flex items-center gap-2 md:gap-3">
@@ -90,7 +76,7 @@ FILE: templates/notifications/list.html (ENTERPRISE - v2.1 IMPROVED)
       </div>
     </div>
   </div>
-  <!-- За неделю -->
+  {# За неделю #}
   <div class="card bg-base-100 border border-base-300">
     <div class="card-body p-3 md:p-4">
       <div class="flex items-center gap-2 md:gap-3">
@@ -108,38 +94,38 @@ FILE: templates/notifications/list.html (ENTERPRISE - v2.1 IMPROVED)
   </div>
 </div>
 
-<!-- === ФИЛЬТРЫ === -->
+{# === ФИЛЬТРЫ === #}
 <div class="card bg-base-100 border border-base-300 mb-4 md:mb-6 px-2 sm:px-0">
   <div class="card-body p-3 md:p-4">
     <div class="flex flex-wrap gap-2">
-      <!-- Все -->
+      {# Все #}
       <a href="?" class="btn btn-sm {% if not request.GET.type %}btn-primary{% else %}btn-ghost{% endif %}">
         <i class="ti ti-list"></i>
         <span class="hidden sm:inline">Все</span>
       </a>
-      <!-- Матчи -->
+      {# Матчи #}
       <a href="?type=match" class="btn btn-sm {% if request.GET.type == 'match' %}btn-primary{% else %}btn-ghost{% endif %}">
         <i class="ti ti-trophy"></i>
         <span class="hidden sm:inline">Матчи</span>
       </a>
-      <!-- Голосование -->
+      {# Голосование #}
       <a href="?type=voting" class="btn btn-sm {% if request.GET.type == 'voting' %}btn-primary{% else %}btn-ghost{% endif %}">
         <i class="ti ti-star"></i>
         <span class="hidden sm:inline">Голосование</span>
       </a>
-      <!-- Достижения -->
+      {# Достижения #}
       <a href="?type=badge" class="btn btn-sm {% if request.GET.type == 'badge' %}btn-primary{% else %}btn-ghost{% endif %}">
         <i class="ti ti-medal"></i>
         <span class="hidden sm:inline">Достижения</span>
       </a>
-      <!-- Разделитель -->
+      {# Разделитель #}
       <div class="divider divider-horizontal mx-1 hidden sm:block"></div>
-      <!-- Непрочитанные -->
+      {# Непрочитанные #}
       <a href="?status=unread" class="btn btn-sm {% if request.GET.status == 'unread' %}btn-primary{% else %}btn-ghost{% endif %}">
         <i class="ti ti-circle"></i>
         <span class="hidden sm:inline">Непрочитанные</span>
       </a>
-      <!-- Прочитанные -->
+      {# Прочитанные #}
       <a href="?status=read" class="btn btn-sm {% if request.GET.status == 'read' %}btn-primary{% else %}btn-ghost{% endif %}">
         <i class="ti ti-check"></i>
         <span class="hidden sm:inline">Прочитанные</span>
@@ -148,16 +134,13 @@ FILE: templates/notifications/list.html (ENTERPRISE - v2.1 IMPROVED)
   </div>
 </div>
 
-<!-- === СПИСОК УВЕДОМЛЕНИЙ === -->
-<!-- Каждая карточка — общий партиал components/_notification_item.html
-     (compact=False), тот же, что используется в дропдауне колокольчика
-     (compact=True) — единая логика/стиль кнопок вместо двух разошедшихся
-     копий вёрстки, см. докстринг партиала. -->
+{# === СПИСОК === #}
+{# Карточка — _notification_item.html (compact=False). #}
 <div class="space-y-2 md:space-y-3 px-2 sm:px-0">
   {% for notification in notifications %}
     {% include 'components/_notification_item.html' with notification=notification compact=False %}
   {% empty %}
-  <!-- Пустой список -->
+  {# Пусто #}
   <div class="card bg-base-100 border border-base-300">
     <div class="card-body p-8 md:p-12 text-center">
       <div class="w-16 h-16 md:w-20 md:h-20 rounded-full bg-base-200 flex items-center justify-center mx-auto mb-4">
@@ -182,7 +165,7 @@ FILE: templates/notifications/list.html (ENTERPRISE - v2.1 IMPROVED)
   {% endfor %}
 </div>
 
-<!-- === PAGINATION === -->
+{# === ПАГИНАЦИЯ === #}
 {% if is_paginated %}
 <div class="flex justify-center mt-6 md:mt-8 px-2">
   <div class="join">
@@ -205,19 +188,12 @@ FILE: templates/notifications/list.html (ENTERPRISE - v2.1 IMPROVED)
     {% endif %}
   </div>
 </div>
-<!-- Инфо о странице -->
+{# Инфо о странице #}
 <div class="text-center text-xs md:text-sm opacity-60 mt-2 md:mt-3">
   Страница {{ page_obj.number }} из {{ page_obj.paginator.num_pages }}
   · всего {{ page_obj.paginator.count }}
 </div>
 {% endif %}
 
-{% comment %}
-Мёртвый код (поллер + inline-<script>, привязанные к никогда не
-существовавшему id) удалён отсюда — счётчик поллится в
-_notification_unread_badge.html (все страницы через _navbar.html),
-заголовок вкладки — static/js/notifications.js, клики — настоящие
-интерактивные элементы в _notification_item.html. showBrowserNotification
-не перенесён — дублировал бы уже существующий Web Push (static/js/push.js).
-{% endcomment %}
+{# Счётчик поллится в _notification_unread_badge.html, заголовок вкладки — notifications.js. #}
 {% endblock %}

@@ -1,14 +1,6 @@
 {% comment %}
-Компактная версия виджета прогноза 1X2 (см. _prediction_widget.html) —
-встраивается в карточку матча в списке (matches/list.html). Тот же
-id/hx-swap="outerHTML" паттерн: predictions/views.py::predict получает
-compact=1 в POST и рендерит этот партиал, а не полноразмерный.
-
-Контекст: match, counts, my_prediction — как у _prediction_widget.html.
-
-Карточка матча — это <a href="...">, контейнер виджета останавливает
-всплытие клика (event.stopPropagation()) — иначе клик по кнопке уводил
-бы на страницу матча, тот же приём, что у кнопки "Оценить" на карточке.
+Компактный виджет прогноза для карточки в списке матчей (POST с compact=1).
+Контекст: match, counts, my_prediction. Клик не всплывает к ссылке карточки.
 {% endcomment %}
 <div id="prediction-widget-{{ match.id }}"
      class="grid grid-cols-3 gap-1 sm:gap-1.5 mt-2 pt-2 border-t border-base-300"

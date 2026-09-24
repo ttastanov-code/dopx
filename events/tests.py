@@ -1,14 +1,5 @@
 # events/tests.py
-"""
-Тесты MatchEvent.player_display_name/assist_display_name/player_out_display_name
-(2026-09-21, жалоба пользователя со скриншотом: "45' Гол" в ленте событий
-без имени забившего). См. полный разбор в докстринге этих свойств
-(events/models.py) — Sportmonks реально присылает `player_name`/
-`related_player_name` в сыром событии, но наш `player`/`assist_player`/
-`player_out` (FK на локального Player по sportmonks_id) остаются NULL,
-если локальный поиск не находит совпадения — раньше в этом случае имя
-терялось насовсем, хотя оно уже сохранено в `extra_data` (import_events).
-"""
+"""Тесты имён в событиях: если Player не найден, берём имя из extra_data."""
 from __future__ import annotations
 
 from datetime import timedelta
@@ -46,9 +37,7 @@ class MatchEventDisplayNameFallbackTests(TestCase):
         self.assertEqual(event.player_display_name, "Иван Иванов")
 
     def test_player_display_name_falls_back_to_raw_extra_data_when_player_missing(self):
-        """ГЛАВНАЯ ПРОВЕРКА: player=None (локальный поиск по sportmonks_id
-        не нашёл игрока), но extra_data содержит сырое имя от Sportmonks —
-        свойство должно вернуть его, а не None."""
+        """player=None, имя из extra_data."""
         event = MatchEvent.objects.create(
             match=self.match, minute=45, event_type="goal", team_side="home",
             player=None, extra_data={"player_name": "Новый Легионер"},
@@ -72,8 +61,7 @@ class MatchEventDisplayNameFallbackTests(TestCase):
         self.assertEqual(event.assist_display_name, "Ассистент")
 
     def test_player_out_display_name_falls_back_for_substitutions(self):
-        """Для замен related_player_name относится к УШЕДШЕМУ с поля
-        игроку (player_out), не к ассисту — см. докстринг import_events."""
+        """Для замен related_player_name — ушедший игрок."""
         event = MatchEvent.objects.create(
             match=self.match, minute=60, event_type="substitution", team_side="away",
             player=None, player_out=None,

@@ -24,15 +24,7 @@
         </div>
 
         <!-- Rewards Card -->
-        {% comment %}
-        xp_gained/trust_delta — реальные цифры из EvaluationCompleteView, не
-        захардкоженные.
-
-        Градиенты — инлайновый linear-gradient(var(--color-primary), ...),
-        не bg-gradient-to-*/from-primary: в Tailwind v4 from-*/to-* не
-        генерируются для daisyUI-цветов (primary — не Tailwind theme-токен),
-        класс .from-primary отсутствовал в CSS, фон резолвился в none.
-        {% endcomment %}
+        {# xp_gained/trust_delta — из EvaluationCompleteView. Градиенты — inline linear-gradient. #}
         <div class="card bg-base-100 border border-base-200 shadow-lg mb-4">
             <div class="card-body p-4">
                 <h3 class="font-bold text-sm mb-3 text-center">🎁 Ваши награды</h3>
@@ -107,10 +99,7 @@
         </div>
 
         <!-- Progress Stats -->
-        {% comment %}
-        xp_progress_percent = UserXP.progress_percent — реальный прогресс до
-        следующего уровня, от границ текущего/следующего (users/models.py).
-        {% endcomment %}
+        {# Прогресс до следующего уровня (UserXP.progress_percent). #}
         <div class="mt-5 p-3 bg-base-200 rounded-xl">
             <div class="text-[9px] text-base-content/50 mb-1">Ваш прогресс</div>
             <div class="flex justify-between items-center mb-1">

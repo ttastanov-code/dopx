@@ -1,17 +1,6 @@
 # matches/tests_card_services.py
-"""
-Регрессионные тесты редизайна карточки матча (2026-09-10, прямая просьба
-пользователя, полный бриф из 14 пунктов — "делай всё сразу, без косяков").
-
-Пользователь несколько раз за эту сессию ловил регрессии от "исправлений
-методом тыка" без тестов (транслитерация, apply_cyrillic_names) — эта
-секция сессии написана с самого начала СРАЗУ с тестами на самую рискованную
-логику: приоритет тегов интриги/CTA/ключевого момента, формула индекса
-сенсации, алгоритм "было/стало" в таблице (должен ТОЧНО совпадать с
-aggregates/tasks.py::_recalculate_standings_for_season — иначе факт "поднялся
-на N место" будет противоречить настоящей турнирной таблице сайта).
-
-Запуск: python manage.py test matches.tests_card_services
+"""Тесты данных карточки матча: интрига, CTA, ключевой момент, сенсация,
+влияние на таблицу (тот же алгоритм, что _recalculate_standings_for_season).
 """
 from __future__ import annotations
 
@@ -52,9 +41,7 @@ from users.models import User
 
 
 class CardServicesTestCase(TestCase):
-    """Общая фикстура — тот же приём прямого построения через ORM, что и
-    predictions/tests.py::PredictionsTestCase (см. её докстринг за
-    обоснованием: быстрее и точнее полного HTTP-цикла)."""
+    """Общая фикстура через ORM."""
 
     def setUp(self):
         self.league = League.objects.create(name="Test League", country="KZ")
@@ -87,7 +74,7 @@ class CardServicesTestCase(TestCase):
 
 
 class DescribeFormStreakTests(TestCase):
-    """teams/services.py::describe_form_streak — чистая функция, без БД."""
+    """describe_form_streak — без БД."""
 
     def _entry(self, result):
         return {'result': result, 'match': None, 'opponent': None, 'is_home': True, 'score_display': ''}
@@ -96,8 +83,7 @@ class DescribeFormStreakTests(TestCase):
         self.assertIsNone(describe_form_streak([]))
 
     def test_win_streak_text(self):
-        # get_team_form() отдаёт СТАРЫЕ -> НОВЫЕ (см. её докстринг) — три
-        # победы подряд, самая свежая последняя.
+        # get_team_form отдаёт от старых к новым.
         form = [self._entry('L'), self._entry('W'), self._entry('W'), self._entry('W')]
         self.assertEqual(describe_form_streak(form), '3 победы подряд')
 
@@ -119,18 +105,10 @@ class DescribeFormStreakTests(TestCase):
 
 
 class DescribeSeasonFormStreakTests(CardServicesTestCase):
-    """ИСПРАВЛЕНО (2026-09-11, прямая просьба пользователя — "стрик из
-    побед только в рамках 5 матчей пишем, хотя по факту в этом сезоне
-    стрик из 10 побед подряд"): describe_form_streak(get_team_form(...))
-    искусственно резал историю до TEAM_FORM_RECENT_MATCHES=5.
-    describe_season_form_streak должна считать по ВСЕМ переданным матчам,
-    без этого среза."""
+    """describe_season_form_streak считает по всем матчам сезона, без среза до 5."""
 
     def test_streak_longer_than_five_is_reported_in_full(self):
-        # Опонент здесь — self.team_b: в отличие от ComputeStandingsAsofTests
-        # (где важна изоляция через общего "мальчика для битья", см. её
-        # докстринг), тут считаем серию только team_a — кто соперник,
-        # не имеет значения, отдельный team_c не нужен.
+        # Соперник не важен — считаем серию только team_a.
         cutoff = timezone.now()
         matches = []
         for i in range(10, 0, -1):
@@ -138,7 +116,7 @@ class DescribeSeasonFormStreakTests(CardServicesTestCase):
                 status='finished', start_time=cutoff - timedelta(days=i),
                 home_team=self.team_a, away_team=self.team_b, home_score=2, away_score=0,
             ))
-        # describe_season_form_streak ожидает -start_time (новые первыми).
+        # Ожидается -start_time (новые первыми).
         matches_desc = list(reversed(matches))
         self.assertEqual(
             describe_season_form_streak(self.team_a, matches_desc),
@@ -147,7 +125,7 @@ class DescribeSeasonFormStreakTests(CardServicesTestCase):
 
     def test_streak_broken_by_older_loss_stops_there(self):
         cutoff = timezone.now()
-        # От старых к новым: поражение, потом 6 побед подряд.
+        # От старых к новым: поражение, потом 6 побед.
         loss = self.make_match(
             status='finished', start_time=cutoff - timedelta(days=7),
             home_team=self.team_a, away_team=self.team_b, home_score=0, away_score=2,
@@ -170,12 +148,9 @@ class DescribeSeasonFormStreakTests(CardServicesTestCase):
 
 
 class ComputeStandingsAsofTests(CardServicesTestCase):
-    """ГЛАВНЫЙ РЕГРЕССИОННЫЙ ТЕСТ — compute_standings_asof() должен считать
-    позиции ТОЧНО тем же алгоритмом, что настоящий пересчёт таблицы
-    (aggregates/tasks.py::_recalculate_standings_for_season): сортировка
-    -points/-goal_diff/-goals_scored. Если когда-нибудь кто-то поменяет
-    один алгоритм и забудет другой — карточка матча будет врать про
-    "поднялся на N место" вопреки настоящей турнирной таблице сайта."""
+    """compute_standings_asof сортирует так же, как настоящая таблица:
+    -points / -goal_diff / -goals_scored.
+    """
 
     def setUp(self):
         super().setUp()
@@ -185,44 +160,31 @@ class ComputeStandingsAsofTests(CardServicesTestCase):
 
     def test_position_only_counts_matches_before_cutoff(self):
         cutoff = timezone.now()
-        # Матч ДО cutoff: A обыгрывает B 2:0 — A получает 3 очка.
+        # До cutoff: A обыгрывает B 2:0.
         self.make_match(
             status='finished', start_time=cutoff - timedelta(days=10),
             home_score=2, away_score=0,
         )
-        # Матч ПОСЛЕ cutoff: не должен учитываться в "было".
+        # После cutoff — не учитывается.
         self.make_match(
             status='finished', start_time=cutoff + timedelta(days=1),
             home_team=self.team_b, away_team=self.team_c, home_score=5, away_score=0,
         )
         positions = compute_standings_asof(self.season, cutoff)
         self.assertEqual(positions[self.team_a.id], 1)  # 3 очка
-        # B и C — по 0 очков на момент cutoff, разница мячей 0:0 у обоих —
-        # порядок между ними не гарантирован (тай-брейк дальше не задан),
-        # важно только что A строго впереди.
+        # Порядок B и C не важен, A строго впереди.
         self.assertGreater(positions[self.team_b.id], positions[self.team_a.id])
         self.assertGreater(positions[self.team_c.id], positions[self.team_a.id])
 
     def test_tie_break_matches_goal_diff_then_goals_scored(self):
-        # ИСПРАВЛЕНО (баг найден пользователем реальным прогоном — assertEqual
-        # 2 != 1): у обоих матчей ниже ОБЩИЙ противник (team_c), а не team_b
-        # против team_a напрямую — раньше первый матч был "A против B", а
-        # значит A и B оба УЖЕ участвовали в нём (A победитель, B проигравший)
-        # ещё ДО второго матча "B против C" — ожидаемые очки/разница мячей в
-        # комментариях не учитывали это участие team_b в первом матче, из-за
-        # чего ожидание теста было арифметически неверным (сама функция
-        # compute_standings_asof считала правильно, ошибка была в тесте).
-        # Теперь team_a и team_b встречаются только с общим "мальчиком для
-        # битья" team_c — их результаты друг на друга не влияют, тай-брейк
-        # проверяется чисто.
+        # A и B играют только с общим соперником C — не влияют друг на друга.
         cutoff = timezone.now()
-        # A громит C 3:1 -> A: points=3, gd=+2, gs=3.
+        # A — C 3:1 -> points=3, gd=+2, gs=3.
         self.make_match(
             status='finished', start_time=cutoff - timedelta(days=5),
             home_team=self.team_a, away_team=self.team_c, home_score=3, away_score=1,
         )
-        # B громит C 4:1 -> B: points=3, gd=+3, gs=4. Очков поровну (3=3),
-        # но goal_diff у B (+3) больше, чем у A (+2) -> B должен быть выше A.
+        # B — C 4:1 -> points=3, gd=+3. Очков поровну, у B лучше разница — B выше.
         self.make_match(
             status='finished', start_time=cutoff - timedelta(days=4),
             home_team=self.team_b, away_team=self.team_c, home_score=4, away_score=1,
@@ -254,23 +216,19 @@ class DescribeIntrigueTests(CardServicesTestCase):
 
     def test_relegation_battle_tag(self):
         match = self.make_match()
-        # total_teams=16, зона вылета — 14,15,16
+        # 16 команд, зона вылета — 14-16
         tag = describe_intrigue(match, home_position=15, away_position=16, total_teams=16)
         self.assertEqual(tag, 'Матч за выживание')
 
     def test_revenge_tag_needs_big_margin(self):
         match = self.make_match()
-        # Разгром 4:0 — прошлый раз домашняя команда ТЕКУЩЕГО матча (team_a)
-        # играла в гостях и проиграла 0:4.
+        # Прошлая встреча: team_a в гостях проиграла 0:4.
         last_meeting = {
             'home_team_id': self.team_b.id, 'away_team_id': self.team_a.id,
             'home_score': 4, 'away_score': 0,
         }
         tag = describe_intrigue(match, last_meeting=last_meeting)
-        # ИСПРАВЛЕНО (2026-09-10, жалоба пользователя — "Реванш за 0:4" не
-        # называл, кто именно жаждёт реванша): теперь тег называет
-        # проигравшую тогда команду явно — team_a ("Алатау") тогда играла
-        # в гостях и проиграла 0:4.
+        # Тег реванша называет проигравшую команду.
         self.assertEqual(tag, 'Реванш Алатау за 0:4')
 
     def test_small_margin_is_not_a_revenge(self):
@@ -288,9 +246,7 @@ class DescribeIntrigueTests(CardServicesTestCase):
 
 class DescribeKeyMomentTests(CardServicesTestCase):
     def test_late_goal_wins_priority(self):
-        # 1:1 -> 2:1 на 88-й — категория результата реально сменилась
-        # (ничья -> победа хозяев), score_after заполнен как у настоящего
-        # Sportmonks-события (parsers/sportmonks/importers.py).
+        # 1:1 -> 2:1 на 88-й — исход изменился.
         match = self.make_match(status='finished', home_score=2, away_score=1)
         player = self.make_player(self.team_a)
         MatchEvent.objects.create(
@@ -308,11 +264,7 @@ class DescribeKeyMomentTests(CardServicesTestCase):
         self.assertIn("решил исход матча", text)
 
     def test_late_consolation_goal_is_not_decisive(self):
-        # 2026-09-11, прямая жалоба пользователя: "гол 90+6 такой-то решил
-        # исход матча, но по факту он не решил, потому его команда
-        # проигрывала 3-0, а он сделал 3-1" — категория результата (победа
-        # хозяев) не менялась НИ до, НИ после этого гола, значит это не
-        # "ключевой момент" в смысле решающего гола.
+        # 0:3 -> 1:3 — исход не изменился, это не ключевой момент.
         match = self.make_match(status='finished', home_score=3, away_score=1)
         player = self.make_player(self.team_b)
         MatchEvent.objects.create(
@@ -332,8 +284,7 @@ class DescribeKeyMomentTests(CardServicesTestCase):
         self.assertIsNone(text)
 
     def test_missing_score_after_does_not_claim_decisive(self):
-        # Исторические матчи со старого (удалённого) KFF-парсера никогда не
-        # заполняли score_after — не можем проверить, значит не заявляем.
+        # Нет score_after — ключевой момент не заявляем.
         match = self.make_match(status='finished', home_score=2, away_score=1)
         player = self.make_player(self.team_a)
         MatchEvent.objects.create(match=match, minute=10, event_type='goal', team_side='home', player=player)
@@ -399,8 +350,7 @@ class ComputeSensationIndexTests(CardServicesTestCase):
         counts = {'total': 20, 'home_pct': 65, 'draw_pct': 15, 'away_pct': 20}
         self.assertIsNone(compute_sensation_index(match, counts))
 
-    # --- Доп. предложение (2026-09-10) — реакции как запасной источник,
-    # когда прогнозов до матча было мало. ---
+    # --- Реакции как запасной источник сенсации при малом числе прогнозов ---
 
     def test_reaction_fallback_used_when_too_few_predictions(self):
         match = self.make_match(status='finished', home_score=0, away_score=2)
@@ -412,9 +362,7 @@ class ComputeSensationIndexTests(CardServicesTestCase):
         self.assertEqual(compute_sensation_index(match, counts, reaction_counts_dict), 80)
 
     def test_reaction_fallback_ignored_when_predictions_sufficient(self):
-        # Прогнозов достаточно и фаворит угадан — сенсации нет, даже если
-        # реакции сообщества почему-то говорят об обратном (прогнозы до
-        # матча остаются основным источником при достаточной выборке).
+        # Прогнозов достаточно и фаворит выиграл — сенсации нет.
         match = self.make_match(status='finished', home_score=2, away_score=0)  # final_result = '1'
         counts = {'total': 20, 'home_pct': 70, 'draw_pct': 15, 'away_pct': 15}
         reaction_counts_dict = {
@@ -426,13 +374,13 @@ class ComputeSensationIndexTests(CardServicesTestCase):
     def test_reaction_fallback_requires_min_votes_and_plurality(self):
         match = self.make_match(status='finished', home_score=0, away_score=2)
         counts = {'total': 2, 'home_pct': 70, 'draw_pct': 10, 'away_pct': 20}
-        # Мало голосов реакции (< REACTION_BADGE_MIN_VOTES=5) — не считаем.
+        # Меньше REACTION_BADGE_MIN_VOTES — не считаем.
         few_votes = {
             'match_of_round': 0, 'upset': 2, 'boring': 0, 'total': 2,
             'match_of_round_pct': 0, 'upset_pct': 100, 'boring_pct': 0,
         }
         self.assertIsNone(compute_sensation_index(match, counts, few_votes))
-        # Голосов достаточно, но "Неожиданно" не в большинстве — не считаем.
+        # «Неожиданно» не в большинстве — не считаем.
         no_plurality = {
             'match_of_round': 3, 'upset': 2, 'boring': 0, 'total': 5,
             'match_of_round_pct': 60, 'upset_pct': 40, 'boring_pct': 0,
@@ -449,9 +397,7 @@ class DescribeReactionBadgeTests(CardServicesTestCase):
         self.assertIsNone(describe_reaction_badge(counts))
 
     def test_none_when_another_reaction_has_more_votes(self):
-        # match_of_round_pct=40 формально проходит порог REACTION_BADGE_MIN_PCT,
-        # но по факту голосов МЕНЬШЕ, чем у upset (2 против 3) — не плюральность,
-        # округление процента здесь вводило бы в заблуждение.
+        # Процент проходит порог, но голосов меньше, чем у upset — не большинство.
         counts = {
             'match_of_round': 2, 'upset': 3, 'boring': 0, 'total': 5,
             'match_of_round_pct': 40, 'upset_pct': 60, 'boring_pct': 0,
@@ -475,7 +421,7 @@ class DescribeReactionBadgeTests(CardServicesTestCase):
 
 class TopReactionMatchesTests(CardServicesTestCase):
     def test_orders_by_vote_count_not_percent(self):
-        # match_small: 1 голос из 1 (100%). match_big: 4 голоса из 5 (80%).
+        # match_small: 1 из 1 (100%), match_big: 4 из 5 (80%).
         match_small = self.make_match(status='finished', home_score=1, away_score=0)
         match_big = self.make_match(status='finished', home_score=2, away_score=1)
         submit_match_reaction(user=self.make_user(), match=match_small, reaction=MatchReaction.REACTION_MATCH_OF_ROUND)
@@ -514,13 +460,7 @@ class DescribeTableImpactTests(CardServicesTestCase):
 
 
 class ComputeMatchTableImpactPositionsTests(CardServicesTestCase):
-    """2026-09-11, регрессия на жалобу пользователя: "Кайрат поднялся на
-    1 место" показывалось на ВСЕХ исторических матчах команды, потому что
-    "стало" бралось из сегодняшней позиции в лиге, а не из позиции сразу
-    после конкретного матча. Проверяем, что
-    compute_match_table_impact_positions считает "после" именно по
-    результату ЭТОГО матча, независимо от того, что произошло в лиге
-    ПОСЛЕ него."""
+    """Позиция «после» считается по этому матчу, а не по сегодняшней таблице."""
 
     def setUp(self):
         super().setUp()
@@ -528,20 +468,17 @@ class ComputeMatchTableImpactPositionsTests(CardServicesTestCase):
         TeamSeason.objects.create(team=self.team_b, season=self.season)
 
     def test_after_position_reflects_only_this_match_not_later_ones(self):
-        # Очень старый матч: team_b обыгрывает team_a 1:0 — задаёт "до"
-        # для старого матча ниже (team_b лидирует).
+        # Старый матч: team_b — team_a 1:0.
         self.make_match(
             status='finished', start_time=timezone.now() - timedelta(days=800),
             home_score=0, away_score=1, home_team=self.team_a, away_team=self.team_b,
         )
-        # Матч, факт про который проверяем: team_a громит team_b 3:0.
+        # Проверяемый матч: team_a — team_b 3:0.
         old_match = self.make_match(
             status='finished', start_time=timezone.now() - timedelta(days=400),
             home_score=3, away_score=0, home_team=self.team_a, away_team=self.team_b,
         )
-        # Гораздо более поздний матч — переворачивает СЕГОДНЯШНЮЮ таблицу
-        # обратно, но НЕ должен влиять на факт про old_match, сыгранный
-        # намного раньше (именно это раньше ломалось).
+        # Поздний матч не должен влиять на факт про old_match.
         self.make_match(
             status='finished', start_time=timezone.now() - timedelta(days=1),
             home_score=0, away_score=5, home_team=self.team_a, away_team=self.team_b,
@@ -549,13 +486,11 @@ class ComputeMatchTableImpactPositionsTests(CardServicesTestCase):
 
         before, after = compute_match_table_impact_positions(old_match)
 
-        # До old_match: только старый матч учтён — team_b (3 очка) лидирует.
+        # До: лидирует team_b.
         self.assertEqual(before[self.team_b.id], 1)
         self.assertEqual(before[self.team_a.id], 2)
 
-        # После old_match: у обеих по 3 очка, но у team_a разница мячей
-        # лучше (+2 против -2) — team_a выходит на 1-е место. Более
-        # поздний матч (день -1) в этот расчёт попадать не должен.
+        # После: очков поровну, у team_a лучше разница — 1-е место.
         self.assertEqual(after[self.team_a.id], 1)
         self.assertEqual(after[self.team_b.id], 2)
 
@@ -587,7 +522,7 @@ class MatchReactionServiceTests(CardServicesTestCase):
         user = self.make_user()
         submit_match_reaction(user=user, match=match, reaction=MatchReaction.REACTION_BORING)
         submit_match_reaction(user=user, match=match, reaction=MatchReaction.REACTION_MATCH_OF_ROUND)
-        # Один пользователь — одна (актуальная) запись, не две.
+        # Одна актуальная запись на пользователя.
         self.assertEqual(MatchReaction.objects.filter(match=match, user=user).count(), 1)
         stored = user_match_reaction(user, match)
         self.assertEqual(stored.reaction, MatchReaction.REACTION_MATCH_OF_ROUND)
@@ -632,10 +567,7 @@ class ReactToMatchViewTests(CardServicesTestCase):
 
 
 class AttachCardExtrasIntegrationTests(CardServicesTestCase):
-    """Не проверяет каждую цифру (это уже покрыто юнит-тестами выше) —
-    смоук-тест на то, что attach_card_extras() не падает на смешанном
-    наборе матчей (scheduled + finished) и реально навешивает ожидаемые
-    атрибуты, которые читает шаблон components/_match_card.html."""
+    """Смоук: attach_card_extras не падает и навешивает атрибуты для шаблона."""
 
     def _request(self, user=None):
         from django.test import RequestFactory
@@ -661,7 +593,7 @@ class AttachCardExtrasIntegrationTests(CardServicesTestCase):
 
         attach_card_extras([upcoming, finished], self._request())
 
-        # Не падает и проставляет базовые атрибуты, которые читает шаблон.
+        # Базовые атрибуты на месте.
         self.assertTrue(upcoming.card_home_form_text is None or isinstance(upcoming.card_home_form_text, str))
         self.assertIsInstance(finished.card_dna_traits, list)
         self.assertIsNotNone(finished.card_hero)
@@ -670,5 +602,5 @@ class AttachCardExtrasIntegrationTests(CardServicesTestCase):
         self.assertFalse(finished.user_has_evaluated)
 
     def test_empty_list_is_a_noop(self):
-        # Не должно падать на пустом списке (граница, которую легко забыть).
+        # Пустой список — не падает.
         attach_card_extras([], self._request())

@@ -1,8 +1,5 @@
 # round_squad/tests.py
-"""
-Тесты round_squad/services.py::_describe_notable_events_in_round ("Почему
-он в сборной?" для тура, docs/adr/0030-rich-squad-explanation.md).
-"""
+"""Тесты round_squad: пояснения к сборной тура, rank_change, пересчёт закрытых туров, стороны слотов."""
 from __future__ import annotations
 
 from datetime import timedelta
@@ -74,8 +71,7 @@ def _round_candidate(name="Конкурент"):
 
 
 class DescribeNearestCompetitorRoundTests(SimpleTestCase):
-    """docs/adr/0032-squad-explainability-v2.md — тот же принцип, что
-    season_squad._describe_nearest_competitor, для тура."""
+    """Фраза про ближайшего конкурента."""
 
     def test_no_runner_up_returns_empty(self):
         self.assertEqual(_describe_nearest_competitor_round(8.0, None), "")
@@ -91,8 +87,7 @@ class DescribeNearestCompetitorRoundTests(SimpleTestCase):
 
 class DescribeRoundRankChangeTests(SimpleTestCase):
     def test_new_returns_empty(self):
-        """'new' сознательно НЕ показывается отдельной фразой — "не играл в
-        прошлом туре" не всегда значимый факт (см. докстринг функции)."""
+        """'new' отдельной фразой не показываем."""
         self.assertEqual(_describe_round_rank_change(RoundBestXISlot.RANK_CHANGE_NEW, None), "")
 
     def test_same_returns_empty(self):
@@ -109,9 +104,7 @@ class DescribeRoundRankChangeTests(SimpleTestCase):
 
 
 class RoundRankChangeAcrossToursTests(TestCase):
-    """Интеграционный тест: recompute_round должен сравнивать с прошлым
-    ЗАФИКСИРОВАННЫМ туром (не прошлым прогоном этого же тура), см.
-    докстринг RoundBestXISlot.RANK_CHANGE_CHOICES."""
+    """rank_change — относительно прошлого зафиксированного тура."""
 
     def setUp(self):
         self.league = League.objects.create(name="League", country="KZ")
@@ -123,7 +116,7 @@ class RoundRankChangeAcrossToursTests(TestCase):
         return Match.objects.create(
             league=self.league, season=self.season, home_team=self.home, away_team=self.away,
             start_time=timezone.now() - timedelta(days=1),
-            voting_open_until=timezone.now() - timedelta(hours=1),  # тур уже закрыт
+            voting_open_until=timezone.now() - timedelta(hours=1),  # тур закрыт
             status="finished", tour=tour,
         )
 
@@ -155,11 +148,7 @@ class RoundRankChangeAcrossToursTests(TestCase):
 
 
 class RecomputeClosedRoundForceTests(TestCase):
-    """2026-09-21, прямая просьба пользователя: "команда, которая
-    перерасчёт делает всех закрытых туров сборные". Главные гарантии
-    force=True (см. докстринг recompute_round): (1) реально пересчитывает
-    уже закрытый тур на новых данных, (2) НЕ трогает finalized_at,
-    (3) НЕ ставит повторную рассылку send_round_results_notification."""
+    """force=True: пересчитывает закрытый тур, не трогает finalized_at, не шлёт письмо повторно."""
 
     def setUp(self):
         self.league = League.objects.create(name="League", country="KZ")
@@ -169,7 +158,7 @@ class RecomputeClosedRoundForceTests(TestCase):
         self.match = Match.objects.create(
             league=self.league, season=self.season, home_team=self.home, away_team=self.away,
             start_time=timezone.now() - timedelta(days=1),
-            voting_open_until=timezone.now() - timedelta(hours=1),  # тур уже закрыт
+            voting_open_until=timezone.now() - timedelta(hours=1),  # тур закрыт
             status="finished", tour=7,
         )
         self.player = Player.objects.create(first_name="Игрок", last_name="Тестов", team=self.home)
@@ -183,7 +172,7 @@ class RecomputeClosedRoundForceTests(TestCase):
 
     @patch("round_squad.tasks.send_round_results_notification.delay")
     def test_without_force_already_final_round_is_skipped(self, mock_delay):
-        recompute_round(self.season, 7)  # первый вызов — тур закрывается
+        recompute_round(self.season, 7)  # первый вызов закрывает тур
         round_xi = RoundBestXI.objects.get(season=self.season, tour=7)
         self.assertTrue(round_xi.is_final)
         first_computed_at = round_xi.last_computed_at
@@ -192,23 +181,22 @@ class RecomputeClosedRoundForceTests(TestCase):
         self.aggregate.performance_score = 9.9
         self.aggregate.save(update_fields=["performance_score"])
 
-        recompute_round(self.season, 7)  # без force — должен молча пропустить
+        recompute_round(self.season, 7)  # без force — пропуск
 
         round_xi.refresh_from_db()
         self.assertEqual(round_xi.last_computed_at, first_computed_at, "без force пересчёта быть не должно")
-        mock_delay.assert_called_once()  # всё ещё ровно один вызов
+        mock_delay.assert_called_once()  # по-прежнему один вызов
 
     @patch("round_squad.tasks.send_round_results_notification.delay")
     def test_force_recomputes_without_resending_or_changing_finalized_at(self, mock_delay):
-        recompute_round(self.season, 7)  # первый вызов — тур закрывается, письмо ставится в очередь
+        recompute_round(self.season, 7)  # первый вызов — тур закрыт, письмо в очереди
         round_xi = RoundBestXI.objects.get(season=self.season, tour=7)
         self.assertTrue(round_xi.is_final)
         original_finalized_at = round_xi.finalized_at
         self.assertIsNotNone(original_finalized_at)
         mock_delay.assert_called_once()
 
-        # Правим данные задним числом — ровно тот сценарий из просьбы
-        # пользователя ("данные матча поправили, а тур уже закрылся").
+        # Правим данные уже после закрытия тура.
         self.aggregate.performance_score = 9.9
         self.aggregate.save(update_fields=["performance_score"])
 
@@ -224,7 +212,7 @@ class RecomputeClosedRoundForceTests(TestCase):
             round_xi.player_of_round_score, 9.9,
             "force ДОЛЖЕН пересчитать состав на новых данных",
         )
-        # ГЛАВНАЯ ГАРАНТИЯ: письмо с итогами тура не улетело второй раз.
+        # Письмо не отправлено второй раз.
         mock_delay.assert_called_once()
 
     @patch("round_squad.tasks.send_round_results_notification.delay")
@@ -234,7 +222,7 @@ class RecomputeClosedRoundForceTests(TestCase):
         recompute_round(self.season, 7)  # закрывает тур 7
         mock_delay.assert_called_once()
 
-        # Незакрытый тур в том же сезоне — не должен помешать/задеться.
+        # Незакрытый тур не затрагивается.
         open_match = Match.objects.create(
             league=self.league, season=self.season, home_team=self.home, away_team=self.away,
             start_time=timezone.now() + timedelta(days=1),
@@ -254,17 +242,7 @@ class RecomputeClosedRoundForceTests(TestCase):
 
 
 class SideSlotRequiresSideEvidenceTests(TestCase):
-    """2026-09-21, прямая жалоба пользователя: "некоторые игроки стоят
-    например на правом полузащитнике, а сам игрок например не играет там
-    вообще". КОРНЕВАЯ ПРИЧИНА — players/positions.py::SLOT_PROCESSING_ORDER
-    у RW/LW/RB/LB раньше доходил до голых (без стороны) кодов "AM"/"F"/"D"/
-    "DF" как фолбэка, и жадный алгоритм ранжирует ВСЕХ кандидатов из ВСЕХ
-    допустимых кодов слота ВМЕСТЕ (не "сначала точный код, потом голый
-    только если точных нет") — значит игрок без НИКАКОЙ информации о
-    стороне поля мог обойти по рейтингу реального флангового игрока просто
-    потому, что был выше по очкам. Голые коды убраны из фолбэка сторонних
-    слотов (см. докстринг SLOT_PROCESSING_ORDER) — этот тест подтверждает
-    итоговый эффект на реальном пересчёте тура, а не только состав списка."""
+    """На боковой слот не попадает игрок без подтверждённой стороны."""
 
     def setUp(self):
         self.league = League.objects.create(name="League", country="KZ")
@@ -280,8 +258,7 @@ class SideSlotRequiresSideEvidenceTests(TestCase):
         self.lineup = MatchLineup.objects.create(match=self.match, team=self.home, side="home")
 
     def test_bare_code_player_does_not_win_side_slot_over_specific_winger(self):
-        # Игрок БЕЗ информации о стороне (старые данные/невышедший
-        # запасной без field_position) — намеренно ВЫШЕ по рейтингу.
+        # Игрок без стороны — выше по рейтингу.
         no_side_info = Player.objects.create(first_name="Без", last_name="Стороны", team=self.home)
         MatchLineupPlayer.objects.create(
             lineup=self.lineup, player=no_side_info, is_starting=True, shirt_number=17,
@@ -291,7 +268,7 @@ class SideSlotRequiresSideEvidenceTests(TestCase):
             player=no_side_info, match=self.match, performance_score=9.5, total_votes=10,
         )
 
-        # Настоящий правый вингер — ниже по рейтингу, но с подтверждённой стороной.
+        # Правый вингер — ниже, но со стороной.
         real_winger = Player.objects.create(first_name="Настоящий", last_name="Вингер", team=self.home)
         MatchLineupPlayer.objects.create(
             lineup=self.lineup, player=real_winger, is_starting=True, shirt_number=7,

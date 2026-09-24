@@ -1,4 +1,5 @@
 # events/urls.py
+# Live-пульс и реакции на события.
 from django.urls import path
 
 from .views import pulse_partial, react_to_event

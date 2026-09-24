@@ -1,21 +1,8 @@
 # round_squad/management/commands/recompute_closed_rounds.py
-"""
-manage.py recompute_closed_rounds [--season-id ID] [--tour N]
+"""manage.py recompute_closed_rounds [--season-id ID] [--tour N]
 
-2026-09-21, прямая просьба пользователя: "можешь мне написать команду,
-которая перерасчёт делает всех закрытых туров сборные?" — до этой команды
-единственным способом было руками снять is_final в админке и запустить
-обычный пересчёт, что ПОВТОРНО рассылало письмо «итоги тура» всем
-верифицированным пользователям (см. round_squad/services.py::recompute_round
-и send_round_results_notification) — плохой способ для рутинной операции.
-
-Эта команда вызывает recompute_round(..., force=True) — обходит ранний
-выход по is_final, но НЕ трогает finalized_at и НЕ ставит повторную
-рассылку (see докстринг recompute_round про was_final_before/just_finalized).
-Без флагов — пересчитывает ВСЕ закрытые туры по всем сезонам/лигам (то же,
-что делает кнопка на дашборде через round_squad.tasks.
-recompute_all_closed_rounds_task, см. dashboard/parser_tools.py). Флаги —
-для точечного пересчёта одного сезона/тура без затрагивания остальных.
+Пересчёт закрытых туров (recompute_round с force=True): finalized_at не меняется,
+письмо не отправляется повторно. Без флагов — все закрытые туры.
 """
 from __future__ import annotations
 

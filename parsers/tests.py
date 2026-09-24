@@ -1,21 +1,5 @@
 # parsers/tests.py
-"""
-Автотесты для Sportmonks-импортёра (parsers/sportmonks/importers.py).
-
-Файл был удалён в более ранней сессии вместе со старым KFF-импортёром и с
-тех пор отсутствовал — пункт P1 из код-ревью 2026-09-09 ("нет полноценного
-автоматического тестового набора"). Создан заново с нуля, покрывает
-конкретные риски, которые реально всплывали в этом проекте (см. ссылки в
-докстринге каждого теста), а не абстрактный чек-лист.
-
-ВАЖНО: в песочнице разработки этой сессии нет сетевого доступа к PyPI
-(подтверждено: `pip install -r requirements.txt` падает с ProxyError/403),
-поэтому здесь Django install отсутствует и `manage.py test` в сандбоксе
-запустить нельзя. Этот файл проверен только на синтаксическую корректность
-(`python3 -m py_compile parsers/tests.py`). Запустите
-`python manage.py test parsers` на своей машине, чтобы реально исполнить
-тесты.
-"""
+"""Тесты импортёра Sportmonks (parsers/sportmonks/importers.py)."""
 from __future__ import annotations
 
 from unittest.mock import patch
@@ -54,9 +38,7 @@ def _fixture(
     away_goals: int = 1,
     round_name: str = "21",
 ) -> dict:
-    """Минимальный, но реалистичный fixture_data — форма подтверждена вживую
-    2026-09-08 прямым запросом к GET /fixtures/{id} (см. докстринг модуля
-    parsers/sportmonks/importers.py), не придумана."""
+    """Минимальный fixture в формате GET /fixtures/{id}."""
     return {
         "id": sm_id,
         "league_id": league_id,
@@ -88,8 +70,7 @@ def _fixture(
 
 
 class ImportMatchCoreTests(TestCase):
-    """import_match_core: создание, идемпотентность повторного импорта,
-    manual_override, и P0-защита от чужой лиги (Codex-ревью 2026-09-09)."""
+    """import_match_core: создание, идемпотентность, manual_override, защита от чужой лиги."""
 
     def setUp(self):
         self.league = _make_league()
@@ -108,7 +89,7 @@ class ImportMatchCoreTests(TestCase):
         self.assertEqual(match.home_score, 2)
         self.assertEqual(match.away_score, 1)
         self.assertEqual(match.tour, 21)
-        # end_time/voting_open_until должны выставляться для finished-матча
+        # У finished-матча должны быть end_time и voting_open_until
         self.assertIsNotNone(match.end_time)
         self.assertIsNotNone(match.voting_open_until)
 
@@ -119,21 +100,12 @@ class ImportMatchCoreTests(TestCase):
 
         self.assertEqual(first.id, second.id)
         self.assertEqual(Match.objects.filter(sportmonks_id="19681993").count(), 1)
-        # Команды тоже не должны дублироваться при повторном импорте.
+        # Команды не дублируются при повторном импорте.
         self.assertEqual(Team.objects.filter(sportmonks_id="1001").count(), 1)
         self.assertEqual(Team.objects.filter(sportmonks_id="1002").count(), 1)
 
     def test_reimport_syncs_logo_url_freely(self):
-        """ОБНОВЛЕНО (2026-09-09, вопрос пользователя "менеджер сказал, что
-        логотипы обновят за 24 часа, но мы вроде сделали так, чтобы не
-        обновлялись — как быть, если я сам захочу загрузить лого?"):
-        раньше logo_url писался только один раз (если было пусто) — из-за
-        этого НИКОГДА не подхватывались настоящие обновления логотипа от
-        Sportmonks, что и было жалобой. Теперь logo_url ВСЕГДА синкается
-        свежим значением с источника — тест ниже фиксирует именно это
-        (старая версия этого теста проверяла противоположное и была
-        переписана вместе с самим поведением, не по ошибке отдельно).
-        Staff-защита переехала на ДРУГОЕ поле — см. следующий тест."""
+        """logo_url всегда синкается свежим значением с источника."""
         fixture = _fixture()
         match = import_match_core(fixture, self.league, self.season)
         team = match.home_team
@@ -146,12 +118,7 @@ class ImportMatchCoreTests(TestCase):
         self.assertEqual(team.logo_url, "https://example.com/home-updated.png")
 
     def test_reimport_preserves_manually_uploaded_logo(self):
-        """Ручная защита теперь — файл `Team.logo` (загруженный в админке),
-        НЕ строковый `logo_url` (см. тест выше и teams/models.py::
-        Team.logo_display докстринг). `logo_display` всегда предпочитает
-        загруженный файл over logo_url, а синк из Sportmonks вообще не
-        трогает поле `logo` — так что оно переживает любое число
-        повторных импортов независимо от того, что присылает источник."""
+        """Загруженный вручную Team.logo импорт не трогает."""
         from django.core.files.uploadedfile import SimpleUploadedFile
 
         fixture = _fixture()
@@ -176,8 +143,7 @@ class ImportMatchCoreTests(TestCase):
         match.save(update_fields=["manual_override", "status"])
         original_start = match.start_time
 
-        # Источник теперь говорит "матч сыгран" — но manual_override должен
-        # заблокировать перезапись статуса/даты (тот же guard, что у KFF).
+        # manual_override блокирует перезапись статуса и даты.
         updated_fixture = _fixture(dev_name="FT", starting_at="2026-09-01 10:00:00")
         result = import_match_core(updated_fixture, self.league, self.season)
 
@@ -186,30 +152,21 @@ class ImportMatchCoreTests(TestCase):
         self.assertEqual(result.start_time, original_start)
 
     def test_foreign_league_fixture_is_rejected(self):
-        """P0 (Codex-ревью 2026-09-09): fixture с league_id, не совпадающим
-        с ожидаемой лигой, должен быть отклонён с ValueError — это третий,
-        последний барьер защиты от записи чужой лиги под видом КПЛ (первые
-        два — client.py::get_livescores фильтр-параметр и explicit-проверка
-        в parsers/sportmonks/tasks.py::sportmonks_update_live)."""
+        """Fixture чужой лиги отклоняется с ValueError."""
         foreign_fixture = _fixture(league_id=999)
         with self.assertRaises(ValueError):
             import_match_core(foreign_fixture, self.league, self.season)
         self.assertFalse(Match.objects.filter(sportmonks_id="19681993").exists())
 
     def test_missing_league_id_in_fixture_does_not_raise(self):
-        """Не все include гарантируют поле league_id — его отсутствие не
-        должно считаться ошибкой (два других барьера всё ещё в строю)."""
+        """Отсутствие league_id — не ошибка."""
         fixture = _fixture()
         del fixture["league_id"]
         match = import_match_core(fixture, self.league, self.season)
         self.assertEqual(match.league_id, self.league.id)
 
     def test_unknown_state_defaults_to_scheduled_without_crashing(self):
-        """Неизвестный developer_name (например, новый статус, который
-        Sportmonks добавит позже и который ещё не попал в STATE_MAP) не
-        должен ронять импорт — только залогировать warning и по умолчанию
-        считать матч 'scheduled' (тот же паттерн диагностики, что STATUS_MAP
-        у KFF-импортёра)."""
+        """Неизвестный статус — warning и 'scheduled', без падения."""
         fixture = _fixture(dev_name="SOME_NEW_STATE_CODE")
         match = import_match_core(fixture, self.league, self.season)
         self.assertEqual(match.status, "scheduled")
@@ -230,12 +187,7 @@ def _goal_event(
     minute: int = 87, participant_id: int = 1001, dev_name: str = "GOAL",
     event_id: int = 90000001,
 ) -> dict:
-    """Минимальная форма события Sportmonks (см. EVENT_DEV_NAME_MAP,
-    подтверждено вживую — см. докстринг модуля importers.py).
-
-    event_id — стабильный id самого события (Sportmonks гарантирует его на
-    каждый events[], см. docstring import_events, 2026-09-21) — по нему
-    теперь в первую очередь сопоставляется повторный импорт."""
+    """Минимальное событие Sportmonks. event_id — ключ сопоставления при повторном импорте."""
     return {
         "id": event_id,
         "type": {"developer_name": dev_name},
@@ -249,20 +201,9 @@ def _goal_event(
 
 
 class ImportFullFixtureNotificationWiringTests(TestCase):
-    """ИСПРАВЛЕНО (2026-09-10, жалоба "не работают пушы по событиям!!!"):
-    regression-тест ИМЕННО на факт вызова — не на то, что сами задачи
-    notify_followers_match_activity/notify_followers_match_event правильно
-    формируют уведомления (это уже покрыто notifications/tests.py), а на то,
-    что import_full_fixture их РЕАЛЬНО СТАВИТ В ОЧЕРЕДЬ. Баг был именно в
-    этом: обе задачи были рабочими и протестированными по отдельности, но
-    их никто не вызывал — см. полный разбор в докстринге import_events и
-    import_full_fixture (parsers/sportmonks/importers.py).
-
-    django.test.TestCase.captureOnCommitCallbacks(execute=True) — без этого
-    transaction.on_commit(...) внутри теста никогда бы не выполнился (тест
-    сам обёрнут в незакоммиченную транзакцию с rollback в конце) и тест бы
-    "зеленел", даже если постановка в очередь физически отсутствует —
-    ложноположительный тест хуже отсутствующего, поэтому это не опционально."""
+    """import_full_fixture ставит пуш-задачи в очередь.
+    captureOnCommitCallbacks(execute=True) обязателен — иначе on_commit не выполнится.
+    """
 
     def setUp(self):
         self.league = _make_league()
@@ -284,9 +225,7 @@ class ImportFullFixtureNotificationWiringTests(TestCase):
 
     @patch("notifications.tasks.notify_followers_match_activity.delay")
     def test_reimporting_already_finished_match_does_not_requeue(self, mock_delay):
-        """Досинхронизация уже завершённого матча (например, догрузка
-        статистики отдельным тяжёлым вызовом после финального свистка) НЕ
-        должна слать повторное приглашение оценить матч."""
+        """Досинк завершённого матча не шлёт повторное приглашение оценить."""
         fixture = _fixture(sm_id=777000222, dev_name="FT")
         with self.captureOnCommitCallbacks(execute=True):
             import_full_fixture(fixture, self.league, self.season)
@@ -298,11 +237,7 @@ class ImportFullFixtureNotificationWiringTests(TestCase):
 
     @patch("notifications.tasks.notify_followers_match_event.delay")
     def test_new_goal_event_queues_push_worthy_notification(self, mock_delay):
-        # dev_name='INPLAY_2ND_HALF' (матч ещё ИДЁТ, не 'FT') — намеренно:
-        # события/голы происходят ПО ХОДУ игры, а не только к финальному
-        # свистку, и это же исключает побочное срабатывание проверки
-        # "match.status == finished" (activity-уведомление) в этом тесте —
-        # она проверяется отдельно выше, тестам на события тут делать нечего.
+        # Матч ещё идёт — чтобы не сработало activity-уведомление о завершении.
         fixture = _fixture(sm_id=777000333, dev_name="INPLAY_2ND_HALF")
         fixture["events"] = [_goal_event(minute=87, participant_id=fixture["participants"][0]["id"])]
 
@@ -318,10 +253,7 @@ class ImportFullFixtureNotificationWiringTests(TestCase):
 
     @patch("notifications.tasks.notify_followers_match_event.delay")
     def test_non_push_worthy_event_type_does_not_queue(self, mock_delay):
-        """Жёлтая карточка — реальное, сохраняемое событие, но НЕ входит в
-        PUSH_WORTHY_EVENT_TYPES (см. notifications/tasks.py) — гол/автогол/
-        пенальти/отменённый гол/красная карточка только. Живой пуш на каждую
-        жёлтую карточку был бы шумом, не сигналом."""
+        """Жёлтая карточка сохраняется, но пуш не шлёт."""
         fixture = _fixture(sm_id=777000444, dev_name="INPLAY_2ND_HALF")
         fixture["events"] = [_goal_event(minute=54, participant_id=fixture["participants"][0]["id"], dev_name="YELLOWCARD")]
 
@@ -332,9 +264,7 @@ class ImportFullFixtureNotificationWiringTests(TestCase):
 
     @patch("notifications.tasks.notify_followers_match_event.delay")
     def test_reimporting_same_event_does_not_requeue(self, mock_delay):
-        """import_events обновляет уже существующее событие НА МЕСТЕ
-        (см. её докстринг про идемпотентность) — повторный импорт того же
-        гола не должен слать пуш во второй раз."""
+        """Повторный импорт того же гола не шлёт второй пуш."""
         fixture = _fixture(sm_id=777000555, dev_name="INPLAY_2ND_HALF")
         fixture["events"] = [_goal_event(minute=23, participant_id=fixture["participants"][0]["id"])]
 
@@ -348,10 +278,7 @@ class ImportFullFixtureNotificationWiringTests(TestCase):
 
     @patch("notifications.tasks.notify_followers_match_started.delay")
     def test_first_transition_to_live_queues_started_notification(self, mock_delay):
-        """2026-09-21, аудит пуш-системы (жалоба пользователя: "о начале
-        матча тоже нет пушей!") — матч создаётся 'scheduled' (обычный
-        путь — составы/расписание подтягиваются заранее задолго до
-        стартового свистка), затем реально стартует."""
+        """Переход scheduled -> live шлёт пуш «матч начался»."""
         scheduled_fixture = _fixture(sm_id=777000666, dev_name="NS")
         match = import_full_fixture(scheduled_fixture, self.league, self.season)
         self.assertEqual(match.status, "scheduled")
@@ -374,8 +301,7 @@ class ImportFullFixtureNotificationWiringTests(TestCase):
             import_full_fixture(live_fixture, self.league, self.season)
         self.assertEqual(mock_delay.call_count, 1)
 
-        # Досинк того же live-матча (например, следующий тик light-опроса) —
-        # НЕ должен слать повторный "матч начался".
+        # Повторный тик live-матча не шлёт «матч начался» снова.
         with self.captureOnCommitCallbacks(execute=True):
             import_full_fixture(
                 _fixture(sm_id=777000777, dev_name="INPLAY_2ND_HALF"), self.league, self.season,
@@ -384,11 +310,7 @@ class ImportFullFixtureNotificationWiringTests(TestCase):
 
     @patch("notifications.tasks.notify_followers_match_started.delay")
     def test_match_created_directly_as_live_does_not_fire_started(self, mock_delay):
-        """Первый ЛИБО-КОГДА-ЛИБО импорт фикстуры сразу в статусе 'live'
-        (например, бэкафилл истории, где матч у нас никогда не был
-        'scheduled') — не "только что начался" с точки зрения пользователя,
-        started-пуш не должен слаться (см. was_scheduled_before в
-        import_full_fixture)."""
+        """Первый импорт сразу в live (бэкафилл) — пуша нет."""
         fixture = _fixture(sm_id=777000888, dev_name="INPLAY_1ST_HALF")
         with self.captureOnCommitCallbacks(execute=True):
             import_full_fixture(fixture, self.league, self.season)
@@ -396,10 +318,7 @@ class ImportFullFixtureNotificationWiringTests(TestCase):
 
     @patch("notifications.tasks.notify_followers_match_started.delay")
     def test_match_skipping_straight_to_finished_does_not_fire_started(self, mock_delay):
-        """Сервер был выключен весь матч (жалоба пользователя про
-        нестабильную работу пушей на локальной среде) — досинк подхватывает
-        сразу 'finished', минуя 'live'. "Матч начался" для уже прошедшей
-        игры не имеет смысла."""
+        """scheduled -> finished без live — «матч начался» не шлём."""
         scheduled_fixture = _fixture(sm_id=777000999, dev_name="NS")
         import_full_fixture(scheduled_fixture, self.league, self.season)
 
@@ -411,10 +330,7 @@ class ImportFullFixtureNotificationWiringTests(TestCase):
     @patch("parsers.sportmonks.importers.import_lineups")
     @patch("notifications.tasks.notify_followers_lineups_available.delay")
     def test_lineups_becoming_available_queues_notification(self, mock_delay, mock_import_lineups):
-        """2026-09-21, тот же аудит (жалоба: "о том что составы доступны"
-        нет пуша). import_lineups мокнут — реальный парсинг сырых lineups[]
-        покрыт отдельно, здесь важен только сам факт перехода has_lineup
-        False -> True и постановка задачи в очередь."""
+        """has_lineup False -> True ставит пуш «составы объявлены»."""
         def _fake_import_lineups(match, lineups_data, formations_data=None):
             match.has_lineup = True
             match.save(update_fields=["has_lineup", "updated_at"])
@@ -452,9 +368,7 @@ class ImportFullFixtureNotificationWiringTests(TestCase):
     @patch("parsers.sportmonks.importers.import_lineups")
     @patch("notifications.tasks.notify_followers_lineups_available.delay")
     def test_lineups_available_not_fired_for_already_finished_match(self, mock_delay, mock_import_lineups):
-        """Составы досинкались ВМЕСТЕ с уже завершённым матчем (постфактум
-        досинк истории) — "составы объявлены" для прошедшей игры не имеет
-        смысла как приглашение посмотреть перед стартом."""
+        """Составы вместе с завершённым матчем — пуша нет."""
         def _fake_import_lineups(match, lineups_data, formations_data=None):
             match.has_lineup = True
             match.save(update_fields=["has_lineup", "updated_at"])
@@ -472,13 +386,7 @@ class ImportFullFixtureNotificationWiringTests(TestCase):
 
     @patch("notifications.tasks.notify_followers_match_event.delay")
     def test_goal_disallowed_event_is_imported_and_queues_push(self, mock_delay):
-        """2026-09-21, регрессия на реальную дыру в EVENT_DEV_NAME_MAP:
-        Sportmonks шлёт отменённый после VAR гол отдельным событием
-        developer_name='GOAL_DISALLOWED' — раньше маппинга не было вообще,
-        событие тихо отбрасывалось как "неизвестный тип", и пуш "гол
-        отменён" никогда не срабатывал, хотя вся остальная инфраструктура
-        под него уже была готова (PUSH_WORTHY_EVENT_TYPES/notify_followers_
-        match_event/EVENT_TYPES)."""
+        """GOAL_DISALLOWED маппится и шлёт пуш «гол отменён»."""
         fixture = _fixture(sm_id=777001444, dev_name="INPLAY_2ND_HALF")
         fixture["events"] = [
             _goal_event(minute=54, participant_id=fixture["participants"][0]["id"], dev_name="GOAL_DISALLOWED"),
@@ -494,15 +402,7 @@ class ImportFullFixtureNotificationWiringTests(TestCase):
 
     @patch("notifications.tasks.notify_followers_match_event.delay")
     def test_var_card_upgrade_updates_same_event_no_duplicate(self, mock_delay):
-        """2026-09-21, жалоба пользователя со скриншотом (матч Астана-
-        Кайрат): судья показал жёлтую, после просмотра VAR заменил её на
-        красную ТОМУ ЖЕ игроку — в ленте остались ОБЕ карточки, будто было
-        два разных нарушения. КОРНЕВАЯ ПРИЧИНА — сопоставление "то же самое
-        событие" шло по (minute, event_type, team_side): смена event_type
-        ломала совпадение. Теперь сопоставление в первую очередь идёт по
-        sportmonks_id (см. import_events) — при повторном импорте с тем же
-        event id, но другим developer_name, должна обновиться ОДНА и та же
-        запись, а не появиться вторая."""
+        """VAR: жёлтая -> красная с тем же event id обновляет одну запись, а не создаёт вторую."""
         fixture = _fixture(sm_id=777001555, dev_name="INPLAY_2ND_HALF")
         fixture["events"] = [
             _goal_event(minute=9, participant_id=fixture["participants"][0]["id"],
@@ -516,10 +416,10 @@ class ImportFullFixtureNotificationWiringTests(TestCase):
         event = MatchEvent.objects.get(match=match)
         self.assertEqual(event.event_type, "yellow_card")
         event_pk = event.id
-        # Жёлтая не push-достойна — до апгрейда пуш не улетал.
+        # Жёлтая — без пуша.
         mock_delay.assert_not_called()
 
-        # VAR пересматривает то же событие (тот же id!) и меняет его на красную.
+        # VAR меняет то же событие (тот же id) на красную.
         fixture["events"] = [
             _goal_event(minute=11, participant_id=fixture["participants"][0]["id"],
                         dev_name="REDCARD", event_id=55123456),
@@ -532,27 +432,11 @@ class ImportFullFixtureNotificationWiringTests(TestCase):
         self.assertEqual(event.id, event_pk, "должна обновиться та же запись, не создаться новая")
         self.assertEqual(event.event_type, "red_card")
         self.assertEqual(event.minute, 11)
-        # Красная push-достойна — коррекция должна была отправить пуш.
+        # Красная — пуш должен уйти.
         mock_delay.assert_called_once_with(str(match.id), str(event_pk))
 
     def test_blank_resend_of_same_event_id_does_not_erase_real_data(self):
-        """2026-09-21, жалоба пользователя со скриншотом РЕАЛЬНОГО матча
-        (Кайрат 1:4 Тобыл, 13.09.2026) — на 45' и 81' минуте в ленте "Гол"
-        без имени забившего, хотя на 44'/80' минутой раньше уже есть
-        настоящий гол. Сырой extra_data (снят через diagnose_match_events)
-        показал: у "пустого" и настоящего события ОДИН И ТОТ ЖЕ sportmonks
-        id, но у "пустого" все поля игрока — null, а минута сдвинута на 1.
-        Похоже на недообогащённый промежуточный снимок с другого момента
-        live-цикла Sportmonks.
-
-        Раньше (сопоставление по minute/type/side) это создавало дубль-
-        строку — уже исправлено отдельно (см. test_var_card_upgrade_...
-        выше, сопоставление теперь по id). Но сопоставление по id само по
-        себе создало НОВЫЙ риск: если "пустой" повтор придёт ПОСЛЕ того,
-        как мы уже сохранили содержательную версию, он найдётся по тому же
-        id и затрёт настоящие данные пустотой. Этот тест — на защиту от
-        именно такой регрессии (см. комментарий "ЗАЩИТА ОТ РЕГРЕССИИ" в
-        import_events)."""
+        """«Пустой» повтор события с тем же id не затирает уже сохранённые данные игрока."""
         from events.models import MatchEvent
         from players.models import Player
 
@@ -578,9 +462,7 @@ class ImportFullFixtureNotificationWiringTests(TestCase):
         self.assertEqual(event.player_id, scorer.id)
         event_pk = event.id
 
-        # Точная копия того же raw-события от Sportmonks — тот же id, но
-        # минута +1 и все поля игрока обнулены (ровно как в реальном
-        # ответе API, см. докстринг теста).
+        # Тот же id, минута +1, поля игрока пустые — как в реальном ответе API.
         blank_resend_event = {
             "id": 157899217,
             "type": {"developer_name": "GOAL"},
@@ -606,13 +488,7 @@ class ImportFullFixtureNotificationWiringTests(TestCase):
         self.assertEqual(event.minute, 44, "пустой повтор не должен сдвигать минуту настоящего события")
 
     def test_substitute_inherits_zone_from_outgoing_player(self):
-        """2026-09-21, продолжение той же жалобы пользователя ("некоторые
-        игроки стоят например на правом полузащитнике, а сам игрок не
-        играет там вообще") — теперь для вышедших НА ЗАМЕНУ игроков.
-        Sportmonks в принципе не отдаёт зону (L/C/R) для замен — поле
-        formation_field есть только у стартовой расстановки. Единственный
-        разумный источник — зона игрока, которого заменили (см. докстринг
-        в import_events, ветка event_type == "substitution")."""
+        """Вышедший на замену наследует зону (L/C/R) заменённого игрока."""
         from lineups.models import MatchLineup, MatchLineupPlayer
         from parsers.sportmonks.importers import import_events
         from players.models import Player
@@ -653,9 +529,7 @@ class ImportFullFixtureNotificationWiringTests(TestCase):
         self.assertEqual(outgoing_row.minute_out, 60)
 
     def test_substitute_existing_zone_is_not_overwritten(self):
-        """Контроль: если у вошедшего зона УЖЕ известна (например, сам
-        Sportmonks прислал detailedPosition с явной стороной для этой
-        замены) — наследование от ушедшего не должно её затирать."""
+        """Уже известная зона вошедшего не затирается."""
         from lineups.models import MatchLineup, MatchLineupPlayer
         from parsers.sportmonks.importers import import_events
         from players.models import Player
@@ -694,12 +568,7 @@ class ImportFullFixtureNotificationWiringTests(TestCase):
 
 
 class DecidedAdministrativelyTests(TestCase):
-    """ИСПРАВЛЕНО (2026-09-10, расследование алерта "12 матчей без составов
-    за 24ч"): матчи, завершённые техническим решением (неявка/техническое
-    поражение/прерван и засчитан), законно не имеют lineups/events — не
-    должны считаться ошибкой синхронизации. См. docstring Match.
-    decided_administratively (matches/models.py) и правку в parsers/tasks.py
-    ::check_sync_errors_and_alert."""
+    """Технические поражения без составов не считаются ошибкой синка."""
 
     def setUp(self):
         self.league = _make_league()
@@ -723,9 +592,7 @@ class DecidedAdministrativelyTests(TestCase):
 
     @patch("parsers.tasks._send_sync_error_alert")
     def test_alert_excludes_walkover_matches_without_lineup(self, mock_alert):
-        """6 обычных finished-матчей без состава ПРЕВЫШАЮТ порог (5, см.
-        check_sync_errors_and_alert) — но если это технические поражения,
-        алерт не должен сработать вообще."""
+        """6 технических матчей без состава — алерта нет."""
         for i in range(6):
             match = import_match_core(_fixture(sm_id=800000000 + i, dev_name="WO"), self.league, self.season)
             self.assertFalse(match.has_lineup)
@@ -736,9 +603,7 @@ class DecidedAdministrativelyTests(TestCase):
 
     @patch("parsers.tasks._send_sync_error_alert")
     def test_alert_still_fires_for_genuine_missing_lineups(self, mock_alert):
-        """Контрольная проверка: та же ситуация, но с НЕадминистративными
-        finished-матчами без состава — алерт должен сработать как раньше,
-        фикс не должен был случайно заглушить реальные сбои синка."""
+        """Контроль: обычные матчи без состава — алерт есть."""
         for i in range(6):
             import_match_core(_fixture(sm_id=810000000 + i, dev_name="FT"), self.league, self.season)
 
@@ -757,64 +622,39 @@ def _sportmonks_player(
 
 
 class PlayerNameCorrectionTests(TestCase):
-    """ИСПРАВЛЕНО ВТОРОЙ РАЗ (2026-09-10, жалоба "у нас всё ещё Эркин
-    Тапалов вместо Еркин" — уже ПОСЛЕ того, как fix_known_wrong_names
-    --apply отчитался об успешном исправлении именно этой записи в базе).
-    КОРЕНЬ: первая версия PLAYER_NAME_CORRECTIONS была ключована по сырому
-    ЛАТИНСКОМУ firstname/lastname, но Sportmonks для этих игроков шлёт
-    ГОТОВУЮ КИРИЛЛИЦУ прямо в firstname/lastname — сверка с латинскими
-    ключами никогда не совпадала, поправка молча не срабатывала на
-    импорте, и разовое исправление в базе откатывалось первым же
-    следующим синком (get_or_create_player обновляет имя КАЖДЫЙ раз, см.
-    её докстринг). Тесты ниже воспроизводят ИМЕННО этот сценарий — не
-    "правильно ли считает транслитерация", а "переживает ли исправленное
-    имя повторный импорт с теми же неверными сырыми данными от источника"."""
+    """PLAYER_NAME_CORRECTIONS переживает повторный импорт с теми же неверными данными."""
 
     def test_cyrillic_wrong_name_from_sportmonks_firstname_lastname_is_corrected(self):
-        """ГЛАВНЫЙ РЕГРЕССИОННЫЙ ТЕСТ: Sportmonks шлёт ГОТОВУЮ (неверную)
-        кириллицу прямо в firstname/lastname (не латиницу) — ровно так, как
-        оказалось на реальном матче с Тапаловым."""
+        """Источник шлёт готовую неверную кириллицу — поправка срабатывает."""
         player_data = _sportmonks_player(9001001, firstname="Эркин", lastname="Тапалов")
         player = get_or_create_player(player_data)
         self.assertEqual(player.first_name, "Еркин")
         self.assertEqual(player.last_name, "Тапалов")
 
     def test_correction_survives_reimport_with_same_wrong_raw_data(self):
-        """ГЛАВНАЯ ПРОВЕРКА "не откатывается на следующем синке" — повторный
-        импорт с ТЕМИ ЖЕ сырыми (неверными) данными от источника не должен
-        отменить исправление. Раньше именно это и происходило."""
+        """Повторный импорт не откатывает исправление."""
         player_data = _sportmonks_player(9001002, firstname="Эркин", lastname="Тапалов")
         get_or_create_player(player_data)
 
-        # Второй "синк" — Sportmonks по-прежнему присылает то же самое
-        # неверное "Эркин" (источник не поменялся, поправка — только у нас).
+        # Второй синк с тем же неверным «Эркин».
         player = get_or_create_player(_sportmonks_player(9001002, firstname="Эркин", lastname="Тапалов"))
         self.assertEqual(player.first_name, "Еркин")
 
         self.assertEqual(Player.objects.filter(sportmonks_id="9001002").count(), 1)
 
     def test_manually_corrected_db_record_is_not_reverted_by_next_sync(self):
-        """Симуляция ТОЧНОЙ последовательности инцидента: 1) в базе уже
-        лежит исправленное вручную имя (как после fix_known_wrong_names
-        --apply), 2) прилетает обычный синк с сырыми данными, которые ДО
-        фикса откатывали имя назад."""
+        """В базе уже исправленное имя, прилетает обычный синк — имя не откатывается."""
         Player.objects.create(sportmonks_id="9001003", first_name="Еркин", last_name="Тапалов")
         player = get_or_create_player(_sportmonks_player(9001003, firstname="Эркин", lastname="Тапалов"))
         self.assertEqual(player.first_name, "Еркин")
 
     def test_transliteration_typo_is_also_corrected_via_same_mechanism(self):
-        """"Rafael" транслитерируется алгоритмом в "Рафаел" (без смягчения
-        на конце, известный пробел в translit.py) — поправка теперь сверяет
-        РЕЗУЛЬТАТ, а не сырой источник, поэтому ловит и этот случай тем же
-        словарём, без отдельной латинской ветки."""
+        """«Rafael» -> «Рафаел» ловится тем же словарём по результату транслитерации."""
         player = get_or_create_player(_sportmonks_player(9001004, firstname="Rafael", lastname="Testov"))
         self.assertEqual(player.first_name, "Рафаэль")
 
     def test_unrelated_slavic_name_is_not_affected(self):
-        """Контрольная проверка: "Pavel" -> "Павел" получается тем же
-        транслитератором и НЕ должен задеваться поправкой (её вообще нет в
-        словаре как ключа) — иначе легко было бы случайно "смягчить" славянское
-        имя тем же правилом, что и заимствованное "Rafael"."""
+        """«Павел» поправка не задевает."""
         player = get_or_create_player(_sportmonks_player(9001005, firstname="Pavel", lastname="Testov"))
         self.assertEqual(player.first_name, "Павел")
         self.assertEqual(player.first_name, "Павел")

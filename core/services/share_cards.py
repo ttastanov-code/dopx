@@ -1,20 +1,8 @@
 # core/services/share_cards.py
-"""
-Рендерим PNG на лету при первом запросе и кэшируем результат в MEDIA по
-детерминированному хэшу контента — не генерируем карточки для всех матчей
-заранее по крону: шерят малую долю оценок, предрендер всего — трата
-CPU/диска впустую.
+"""Генерация PNG-карточек для шеринга (матч, ДНК матча, серии, тур, итоги сезона, достижения).
 
-ШРИФТЫ: сайт в остальных местах использует Inter (webfont с Google Fonts
-CDN), но Pillow не умеет рисовать текст веб-шрифтом — нужен локальный
-.ttf-файл. Настоящих файлов Inter-*.ttf в репозитории нет и добавить их
-сейчас неоткуда (нет сетевого доступа для скачивания). Используем
-Liberation Sans — метрически близкий к Arial/Helvetica шрифт, уже
-использовавшийся в проекте как замена Inter при генерации favicon/лого
-(см. `static/img/dopx-logo.png`). Если/когда в репозиторий добавят
-настоящие `static/fonts/Inter-Bold.ttf` и `Inter-Regular.ttf` — достаточно
-поменять две строки в `_font()` ниже, остальной код не завязан на
-конкретный файл.
+Карточка рендерится при первом запросе и кэшируется в MEDIA по хэшу содержимого.
+Шрифты — локальные TTF (Liberation Sans / DejaVu Sans): Pillow не умеет веб-шрифты.
 """
 from __future__ import annotations
 
@@ -27,53 +15,20 @@ from django.conf import settings
 from django.core.files.storage import default_storage
 from PIL import Image, ImageColor, ImageDraw, ImageFilter, ImageFont
 
-CARD_SIZE = (1200, 630)  # стандартный OG-image размер (финальный, на диске)
-# Карточка достижения (build_badge_share_card, ниже) — единственная в этом
-# модуле портретная: сделана под шеринг в мессенджеры/сторис (продуктовый
-# запрос 2026-09-01, "не хуже, а лучше" референсного макета пользователя),
-# а не под og:image превью ссылки — поэтому у неё свой размер, отдельный от
-# общего CARD_SIZE, чтобы не задевать остальные 4 функции файла.
-BADGE_CARD_SIZE = (1080, 1360)  # финальный размер (на диске)
+CARD_SIZE = (1200, 630)  # OG-image
+# Карточка достижения — портретная, под мессенджеры и сторис.
+BADGE_CARD_SIZE = (1080, 1360)
 
-# СУПЕРСЕМПЛИНГ (фикс "пиксельного" вида карточек, продуктовый репорт
-# 2026-09-10: "генерируемый контент текст и тд пиксельный и выглядит
-# уебански"). Причина: PIL/Pillow-примитивы `ImageDraw.ellipse/polygon/
-# rounded_rectangle/line` НЕ сглаживаются (no anti-aliasing) — в отличие от
-# текста, который сглаживает сам FreeType. При рендере сразу в целевом
-# разрешении (CARD_SIZE/BADGE_CARD_SIZE) это даёт рваный, "пиксельный" край
-# у кружков-маркеров (`_fact_row`), граней процедурного кристалла
-# (`_draw_gem`), скруглённых панелей/пилюль и тонких линий-разделителей —
-# именно на них жалоба и была заметнее всего; мелкий текст (16-22pt) страдал
-# той же болезнью слабее.
-#
-# Фикс — стандартный приём: рендерим ВСЮ карточку на холсте в SS_SCALE раз
-# больше целевого (`_CARD_RENDER_SIZE`/`_BADGE_RENDER_SIZE` ниже),
-# пропорционально увеличивая абсолютно всё — кегли шрифтов (см. `_font`/
-# `_badge_font`, масштабируются автоматически для любого вызова), толщину
-# линий, радиусы скругления/блюра, отступы и координаты — а затем ОДИН раз
-# в самом конце уменьшаем готовое изображение до целевого размера через
-# `Image.LANCZOS` (качественный resampling-фильтр с честной фильтрацией по
-# соседним пикселям, а не дефолтный NEAREST) — рваные края превращаются в
-# плавный, настоящий antialiasing. Тот же принцип, что SSAA в 3D-рендеринге,
-# применённый к 2D-холсту Pillow. Все функции build_*_share_card в этом
-# файле следуют одному паттерну: `S = SS_SCALE` в начале, все "сырые"
-# пиксельные литералы (координаты/радиусы/толщины/блюр), которые не
-# выражены как доля W/H, домножаются на `S`, `img.resize(<финальный размер>,
-# Image.LANCZOS)` перед сохранением.
+# Суперсэмплинг: Pillow не сглаживает фигуры, поэтому рисуем на холсте в SS_SCALE раз
+# больше и в конце уменьшаем через LANCZOS. Все «сырые» пиксельные значения
+# (координаты, радиусы, толщины) в build_* функциях умножаются на S = SS_SCALE.
 SS_SCALE = 3
 _CARD_RENDER_SIZE = (CARD_SIZE[0] * SS_SCALE, CARD_SIZE[1] * SS_SCALE)
 _BADGE_RENDER_SIZE = (BADGE_CARD_SIZE[0] * SS_SCALE, BADGE_CARD_SIZE[1] * SS_SCALE)
 FONTS_DIR = Path(settings.BASE_DIR) / "static" / "fonts"
 
-# Достижения (build_badge_share_card, ниже) — визуальная система "от бронзы
-# к легендарному": ПОЛНЫЙ РЕДИЗАЙН 2026-09-01 (первая версия с плоским
-# кружком-монограммой была признана "скучной, дизайн бедный" — пользователь
-# прислал референс премиального макета с гранёным кристаллом/трофеем,
-# лавровым венком и цитатой). top/bot — двухцветный градиент кристалла,
-# ТЕ ЖЕ hex у legendary, что в static/css/badges.css (#f59e0b/#a855f7) —
-# фирменный цвет должен совпадать на сайте и на шеренной карточке.
-# Насыщенность/сложность возрастают по списку: bronze примитивнее и тише
-# любого следующего уровня — в этом весь смысл прогрессии редкости.
+# Оформление достижений по редкости: чем выше редкость, тем богаче карточка.
+# Цвета legendary совпадают с static/css/badges.css.
 BADGE_RARITY_LABELS = {
     "bronze": "БРОНЗА", "silver": "СЕРЕБРО", "gold": "ЗОЛОТО",
     "platinum": "ПЛАТИНА", "secret": "СЕКРЕТНОЕ", "legendary": "ЛЕГЕНДАРНОЕ",
@@ -110,11 +65,7 @@ BADGE_RARITY_META = {
         wreath=True, sparkles=4,
     ),
 }
-# Короткие флейвор-цитаты по редкости (не по конкретной ачивке — 31 своя
-# цитата means продуктовый/копирайтинг объём за пределами этой задачи).
-# Роль та же, что в референсном макете пользователя: премиальный акцент в
-# нижней панели карточки, а не описание условия получения (оно уже есть
-# отдельной строкой над карточкой).
+# Цитаты в нижней панели карточки — по редкости, не по конкретному достижению.
 BADGE_RARITY_QUOTES = {
     "bronze": "Каждая легенда начинается с одной оценки.",
     "silver": "Постоянство — это тоже мастерство.",
@@ -128,30 +79,14 @@ BADGE_RARITY_QUOTES = {
 _FONT_FILES = {
     "bold": "LiberationSans-Bold.ttf",
     "regular": "LiberationSans-Regular.ttf",
-    # 'italic' добавлен 2026-09-01 вместе с редизайном build_badge_share_card
-    # (курсивная цитата в нижней панели) — тот же файл, что и Bold/Regular,
-    # скопирован из системного пакета Liberation в репозиторий (лицензия
-    # SIL OFL, свободно распространяется — те же условия, что у уже
-    # существующих Bold/Regular).
     "italic": "LiberationSans-Italic.ttf",
 }
 
 
 def _font(name: str, size: int) -> ImageFont.FreeTypeFont:
-    """
-    :param name: 'bold', 'regular' или 'italic'.
-    :param size: кегль в "целевых" (1x, финальных) пунктах — вызывающий код
-        во всём этом модуле всегда указывает размер, каким текст должен
-        выглядеть на готовой (уже уменьшенной) карточке. Фактически шрифт
-        грузится в `size * SS_SCALE` пунктов, потому что рисуется на
-        supersampled-холсте в SS_SCALE раз больше целевого (см. докстринг
-        `SS_SCALE` в начале модуля) — сами вызовы `_font(...)` по всему
-        файлу от этого не меняются.
-
-    Не падает, если TTF-файла нет на диске (например, в свежем клоне
-    репозитория до первого `collectstatic`) — молча откатывается на
-    growing default bitmap-шрифт Pillow, чтобы генерация карточки не
-    роняла запрос целиком из-за отсутствующего файла шрифта.
+    """:param name: 'bold', 'regular' или 'italic'.
+    :param size: кегль на финальной карточке (внутри умножается на SS_SCALE).
+    Если TTF нет — откатывается на стандартный шрифт Pillow.
     """
     filename = _FONT_FILES.get(name, _FONT_FILES["regular"])
     try:
@@ -160,9 +95,7 @@ def _font(name: str, size: int) -> ImageFont.FreeTypeFont:
         return ImageFont.load_default(size=size * SS_SCALE)
 
 
-# Второе семейство шрифтов — только для build_badge_share_card (DejaVu Sans,
-# не Poppins — Poppins не прошёл проверку кириллицы через fontTools cmap).
-# См. docs/adr/0011-badge-share-card-legibility.md.
+# DejaVu Sans для карточки достижения — в нём есть кириллица.
 _BADGE_FONT_FILES = {
     "bold": "DejaVuSans-Bold.ttf",
     "regular": "DejaVuSans.ttf",
@@ -173,8 +106,7 @@ _BADGE_FONT_FILES = {
 
 
 def _badge_font(name: str, size: int) -> ImageFont.FreeTypeFont:
-    """:param size: кегль в целевых (1x) пунктах — см. докстринг `_font`
-    про автоматическое масштабирование на `size * SS_SCALE`."""
+    """:param size: кегль на финальной карточке (умножается на SS_SCALE)."""
     filename = _BADGE_FONT_FILES.get(name, _BADGE_FONT_FILES["regular"])
     try:
         return ImageFont.truetype(str(FONTS_DIR / filename), size * SS_SCALE)
@@ -187,20 +119,7 @@ def _cache_key(*parts: str) -> str:
 
 
 def _linear_gradient(size: tuple[int, int], color_a: str, color_b: str, angle: float = 135) -> Image.Image:
-    """
-    Линейный градиент без numpy (её нет в зависимостях проекта, добавлять
-    ради одной декоративной функции нецелесообразно) — стандартный
-    Pillow-приём: строим чёрно-белый линейный градиент через
-    `Image.linear_gradient`, поворачиваем на нужный угол и используем как
-    альфа-маску между двумя сплошными заливками через `Image.composite`.
-
-    `expand=True` при повороте увеличивает холст — берём центральный вырез
-    нужного размера. Если после поворота холст МЕНЬШЕ целевого размера
-    (типично для широких карточек 1200x630 при повороте квадрата 256x256) —
-    просто растягиваем поворот на весь размер: направление градиента чуть
-    исказится при неравномерном масштабировании, но для декоративного фона
-    это не критично, а объект остаётся плавным без резких переходов.
-    """
+    """Линейный градиент без numpy: повёрнутая маска Image.linear_gradient + composite."""
     base = Image.linear_gradient("L").rotate(angle, resample=Image.BICUBIC, expand=True)
     bw, bh = base.size
     left, top = (bw - size[0]) // 2, (bh - size[1]) // 2
@@ -209,11 +128,7 @@ def _linear_gradient(size: tuple[int, int], color_a: str, color_b: str, angle: f
 
 
 def _wrap_text(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont, max_width: int, max_lines: int = 2) -> list[str]:
-    """
-    Простой word-wrap по фактической ширине текста (Pillow не переносит
-    текст сам). Обрезает по `max_lines` с многоточием на последней строке,
-    чтобы длинное описание достижения не вылезало за пределы карточки.
-    """
+    """Перенос текста по ширине с обрезкой по max_lines (многоточие в конце)."""
     words = text.split()
     lines: list[str] = []
     current = ""
@@ -228,7 +143,7 @@ def _wrap_text(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFon
             current = ""
     if current:
         lines.append(current)
-    if idx < len(words) and lines:  # текст не поместился целиком — обрезали
+    if idx < len(words) and lines:
         last = lines[-1]
         while draw.textlength(last + "…", font=font) > max_width and len(last) > 1:
             last = last[:-1]
@@ -237,10 +152,7 @@ def _wrap_text(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFon
 
 
 def _fit_single_line(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont, max_width: int) -> str:
-    """Однострочный аналог `_wrap_text` — обрезает с многоточием, если текст
-    не влезает в `max_width` целиком, вместо переноса. Нужен для `@username`
-    на карточке серии (`build_streak_share_card`): произвольной длины ник не
-    должен наезжать на бренд-марку слева или вылезать за правый край."""
+    """Одна строка с многоточием, если не влезает в max_width."""
     if draw.textlength(text, font=font) <= max_width:
         return text
     trimmed = text
@@ -260,14 +172,7 @@ def _clamp_rgb(c: tuple[float, float, float]) -> tuple[int, int, int]:
 
 def _tracked_text(draw: ImageDraw.ImageDraw, xy: tuple[float, float], text: str,
                    font: ImageFont.FreeTypeFont, fill, tracking: float = 0) -> float:
-    """
-    Текст с ручным трекингом (letter-spacing) — Pillow не умеет это нативно.
-    Использовано для капса (DOPX, эпиграф, футер, rarity-пилюля) в
-    премиальной карточке достижения: именно широкий трекинг капса даёт тот
-    "дорогой" визуальный эффект даже на обычном геометрическом шрифте без
-    засечек (Liberation Sans — единственный доступный в репозитории).
-    :return: итоговая ширина отрисованного текста.
-    """
+    """Текст с межбуквенным интервалом (Pillow этого не умеет). Возвращает ширину."""
     x, y = xy
     for ch in text:
         draw.text((x, y), ch, font=font, fill=fill)
@@ -286,35 +191,10 @@ def _draw_gem(
     color_top: tuple[int, int, int], color_bot: tuple[int, int, int],
     n_sides: int, seed: int, glow_alpha: int, glow_scale: float,
 ) -> Image.Image:
-    """
-    Гранёный "кристалл-трофей" — центральная иллюстрация премиальной
-    карточки достижения, полностью процедурная (без внешних .png/.svg
-    ассетов — в песочнице разработки нет сети, чтобы их скачать, а
-    хардкодить бинарник в репозиторий не хочется). Геометрия: вершина
-    сверху, три "кольца" вершин по эллипсам убывающего/растущего радиуса
-    (верхнее/среднее/нижнее), вершина снизу — треугольные грани между
-    соседними кольцами дают классический low-poly кристалл.
+    """Процедурный гранёный кристалл для карточки достижения.
 
-    Освещение фасетов — направленное (имитация источника света сверху
-    слева: `light = -dx*0.65 + (0.35-dy)*0.55`), а не чисто случайное:
-    ранняя версия с полностью рандомным затемнением/осветлением давала
-    отдельные "грязно-серые" грани там, где яркая случайная добавка ложилась
-    поверх уже тёмного случайного фасета. Небольшая случайная добавка
-    (`+r*0.18`) поверх направленного света оставлена для лёгкой фактуры.
-
-    :param seed: детерминированный (НЕ основанный на времени/случайности)
-        параметр вариации граней — один и тот же rarity должен давать
-        визуально одинаковый кристалл у всех пользователей, а не
-        "случайную" форму при каждой перегенерации кэша.
-
-    Все геометрические параметры (`cx`, `cy_center`, `height`, `width`) —
-    уже физические (supersampled) пиксели: вызывающая сторона
-    (`build_badge_share_card`) домножает их на `SS_SCALE` перед вызовом
-    (см. докстринг `SS_SCALE` в начале модуля), поэтому вся геометрия ниже,
-    вычисленная относительно них, масштабируется автоматически — домножать
-    на `SS_SCALE` внутри этой функции нужно только "сырые" абсолютные
-    литералы, не привязанные ни к одному параметру (радиусы блюра, отступы
-    тени ниже).
+    seed детерминированный — у одной редкости кристалл всегда одинаковый.
+    Геометрические параметры уже в масштабе SS_SCALE.
     """
     top_y = cy_center - height / 2
     bot_y = cy_center + height / 2
@@ -385,8 +265,7 @@ def _draw_gem(
     else:
         img_rgba = img.convert("RGBA")
 
-    # "Заземляющая" тень под кристаллом — без неё гем визуально парит без
-    # опоры на плоском тёмном фоне.
+    # Тень под кристаллом.
     shadow = Image.new("RGBA", img.size, (0, 0, 0, 0))
     ImageDraw.Draw(shadow).ellipse(
         [cx - width * 0.42, bot_y - 16 * SS_SCALE, cx + width * 0.42, bot_y + 40 * SS_SCALE], fill=(0, 0, 0, 150),
@@ -411,12 +290,7 @@ def _leaf_polygon(length: float, width: float) -> list[tuple[float, float]]:
 
 
 def _draw_laurel(img: Image.Image, cx: int, cy: int, scale: float, color: tuple[int, int, int]) -> Image.Image:
-    """
-    Лавровый венок — пара зеркальных вееров заострённых листьев, простая
-    векторная замена настоящей иллюстрации (см. докстринг `_draw_gem` про
-    отсутствие сети для внешних ассетов). Ставится рядом с `@username` в
-    нижней панели карточки — как "печать" полученного достижения.
-    """
+    """Лавровый венок — fallback, если нет логотипа DOPX."""
     layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(layer)
     n_leaves = 4
@@ -440,22 +314,8 @@ _brand_icon_cache: dict[int, Image.Image | None] = {}
 
 
 def _load_brand_mark(size: int) -> Image.Image | None:
-    """
-    Настоящая иконка DOPX (`static/img/dopx-logo-icon.png`, 1024x1024 RGBA)
-    вместо процедурного лаврового венка (`_draw_laurel`) рядом с
-    `@username` в нижней панели — второй раунд правок 2026-09-01, продуктовый
-    фидбэк "какая-то хуйня которая выглядит дешево, вместо него надо наш
-    логотип поставить". Готовый бренд-ассет вместо очередной векторной
-    самоделки — та же логика, что и переход на AI-фоны вместо процедурного
-    кристалла: где есть настоящий ассет, он всегда выигрывает у Pillow-примитива.
-
-    Кэшируется по `size` в памяти процесса на весь его жизненный цикл — тот
-    же смысл, что у py-уровневого кэша шрифтов в Pillow, лишний диск-I/O и
-    ресайз на каждый вызов `build_badge_share_card` не нужны.
-
-    :return: `None`, если файла нет на диске — тот же отказоустойчивый
-        паттерн, что у `_font()`/`_load_custom_badge_background`; вызывающий
-        код должен откатиться на `_draw_laurel` в этом случае.
+    """Логотип DOPX (static/img/dopx-logo-icon.png) нужного размера, кэшируется в памяти.
+    None, если файла нет — тогда рисуем _draw_laurel.
     """
     if size in _brand_icon_cache:
         return _brand_icon_cache[size]
@@ -469,9 +329,7 @@ def _load_brand_mark(size: int) -> Image.Image | None:
 
 
 def _draw_sparkle(draw: ImageDraw.ImageDraw, cx: float, cy: float, r: float, color: tuple[int, int, int], alpha: int = 200) -> None:
-    """Маленький 4-лучевой блик-ромб — декоративная "искра" у кристалла на
-    более высоких rarity. Не unicode-символ ("✦"/"★"): у Liberation Sans нет
-    этих глифов (см. докстринг модуля про emoji/tofu)."""
+    """Декоративный блик-ромб (unicode-звёзд нет в шрифте)."""
     pts = [
         (cx, cy - r), (cx + r * 0.22, cy - r * 0.22), (cx + r, cy), (cx + r * 0.22, cy + r * 0.22),
         (cx, cy + r), (cx - r * 0.22, cy + r * 0.22), (cx - r, cy), (cx - r * 0.22, cy - r * 0.22),
@@ -485,16 +343,9 @@ def _rounded_alpha_mask(size: tuple[int, int], radius: int) -> Image.Image:
     return mask
 
 
-# Легибилити-фиксы build_badge_share_card (edge vignette + text scrim) —
-# см. docs/adr/0011-badge-share-card-legibility.md.
+# Затемнение краёв и подложка под текст — см. docs/adr/0011-badge-share-card-legibility.md.
 def _edge_vignette(img: Image.Image, inset: int = 90, strength: float = 0.65) -> Image.Image:
-    """
-    Затемняет края/углы изображения независимо от их фактического
-    содержимого — блюрим маску скруглённого прямоугольника и по ней мешаем
-    оригинал с почти-чёрной подложкой. `inset` — насколько маска "отступает"
-    от края (больше = темнее у самой рамки), `strength` — сила затемнения
-    (1.0 — полностью заменить края почти-чёрным, 0.0 — не менять).
-    """
+    """Затемняет края изображения через размытую маску. strength — сила (0..1)."""
     w, h = img.size
     mask = Image.new("L", (w, h), 0)
     ImageDraw.Draw(mask).rounded_rectangle([inset, inset, w - inset, h - inset], radius=inset, fill=255)
@@ -505,15 +356,7 @@ def _edge_vignette(img: Image.Image, inset: int = 90, strength: float = 0.65) ->
 
 
 def _legibility_scrim(size: tuple[int, int], start_alpha: int = 225, end_fraction: float = 0.60) -> Image.Image:
-    """
-    Точный (не через rotate — см. докстринг `_linear_gradient` про
-    неточность этого метода на широких холстах) горизонтальный
-    alpha-градиент: непрозрачно-чёрный у x=0 (левая часть карточки — весь
-    текст), полностью прозрачный начиная с `end_fraction` ширины (правая
-    часть — иллюстрация/кристалл, её не нужно затемнять). Строим построчно
-    через `putdata` на изображении высотой 1px и растягиваем по вертикали —
-    так гарантированно нет ступенчатости/бандинга от поворота.
-    """
+    """Горизонтальный градиент-подложка: чёрный слева (текст), прозрачный с end_fraction ширины."""
     w, h = size
     cutoff = max(1, int(w * end_fraction))
     row = [max(0, int(start_alpha * (1 - x / cutoff))) if x < cutoff else 0 for x in range(w)]
@@ -528,10 +371,7 @@ def _legibility_scrim(size: tuple[int, int], start_alpha: int = 225, end_fractio
 def _shadow_text(draw: ImageDraw.ImageDraw, xy: tuple[float, float], text: str,
                   font: ImageFont.FreeTypeFont, fill, shadow_alpha: int = 170,
                   offset: tuple[int, int] = (0, 3 * SS_SCALE)) -> None:
-    """Текст с тёмной смещённой "подложкой" под ним — гарантирует контраст
-    независимо от яркости/пестроты фона под конкретным символом (в отличие
-    от одного сплошного `_legibility_scrim`, который защищает всю зону, но не
-    каждую конкретную букву у своей границы)."""
+    """Текст с тёмной тенью — читается на любом фоне."""
     draw.text((xy[0] + offset[0], xy[1] + offset[1]), text, font=font, fill=(0, 0, 0, shadow_alpha))
     draw.text(xy, text, font=font, fill=fill)
 
@@ -543,25 +383,13 @@ def _shadow_tracked_text(draw: ImageDraw.ImageDraw, xy: tuple[float, float], tex
     return _tracked_text(draw, xy, text, font, fill, tracking=tracking)
 
 
-# Опциональные AI-сгенерированные фоны достижений (2026-09-01, продуктовый
-# запрос "прям крутые карточки, не пиксельная хрень" — процедурный low-poly
-# кристалл ниже визуально не дотягивает до референса пользователя, Pillow
-# не умеет рендерить свет/материалы/отражения, только плоские полигоны).
-# См. докстринг `_load_custom_badge_background` — если сюда положить
-# bronze.png/silver.png/gold.png/platinum.png/secret.png/legendary.png,
-# карточка автоматически возьмёт готовую картинку вместо процедурной.
+# Готовые фоны достижений: static/img/badge-cards/<rarity>.png.
+# Если файла нет — рисуется процедурный фон с кристаллом.
 BADGE_CARD_BACKGROUNDS_DIR = Path(settings.BASE_DIR) / "static" / "img" / "badge-cards"
 
 
 def _cover_resize(img: Image.Image, target_size: tuple[int, int]) -> Image.Image:
-    """
-    Resize+crop "cover" (как CSS `background-size: cover`) — заполняет
-    `target_size` целиком, обрезая излишек по центру, без искажения
-    пропорций. Нужен для пользовательских AI-сгенерированных фонов
-    произвольного размера/соотношения сторон, чтобы они не растягивались и
-    не оставляли пустых полос независимо от того, какой именно размер
-    вернул генератор изображений.
-    """
+    """Ресайз «cover» с обрезкой по центру (как CSS background-size: cover)."""
     src_w, src_h = img.size
     target_w, target_h = target_size
     scale = max(target_w / src_w, target_h / src_h)
@@ -572,18 +400,8 @@ def _cover_resize(img: Image.Image, target_size: tuple[int, int]) -> Image.Image
 
 
 def _load_custom_badge_background(rarity: str) -> tuple[Image.Image, float] | None:
-    """
-    Ищет `static/img/badge-cards/<rarity>.png` — если файл есть, используем
-    его КАК ЕСТЬ вместо процедурного фона+кристалла в `build_badge_share_card`
-    (текст/панель/футер поверх рисуются одинаково в обоих случаях). Если
-    файла нет — молча возвращаем `None` (та же схема отказоустойчивости, что
-    у `_font()` при отсутствии .ttf) — отсутствие ассета никогда не должно
-    ронять генерацию карточки.
-
-    :return: пара (изображение, mtime файла) или `None`. mtime участвует в
-        кэш-ключе карточки — если пользователь позже заменит PNG на новый
-        (например, перегенерирует более удачный вариант), старые
-        закэшированные карточки автоматически не переиспользуются.
+    """Готовый фон достижения static/img/badge-cards/<rarity>.png.
+    Возвращает (изображение, mtime) или None. mtime входит в ключ кэша.
     """
     path = BADGE_CARD_BACKGROUNDS_DIR / f"{rarity}.png"
     if not path.exists():
@@ -593,27 +411,11 @@ def _load_custom_badge_background(rarity: str) -> tuple[Image.Image, float] | No
         mtime = path.stat().st_mtime
     except OSError:
         return None
-    # _BADGE_RENDER_SIZE (не BADGE_CARD_SIZE) — фон компонуется на
-    # supersampled-холсте, см. докстринг SS_SCALE в начале модуля; заодно
-    # LANCZOS-ресайз самого фона (уже используется в _cover_resize) при
-    # таком целевом размере даёт более чёткую картинку после финального
-    # downscale, чем апскейл уже уменьшенного фона.
     return _cover_resize(img, _BADGE_RENDER_SIZE), mtime
 
 
 def _cover_resize_right(img: Image.Image, target_size: tuple[int, int]) -> Image.Image:
-    """
-    То же самое, что `_cover_resize`, но обрезка НЕ по центру, а с привязкой
-    к ПРАВОМУ краю — для фонов серий (см. `_load_streak_background` ниже:
-    `prediction_strick.png`/`evaluation_strick.png`, 2026-09-07). Оба фона —
-    широкие AI-баннеры с ключевой иллюстрацией (растущий график/стадион-
-    голограмма), прижатой к правому краю, и почти сплошной чёрной левой
-    половиной под текст. Центральный кроп `_cover_resize` срезал бы кусок
-    именно с ПРАВОГО края (там, где содержимое) при кадрировании 2000x745 в
-    1200x630 — с привязкой вправо в кадр всегда попадает вся иллюстрация
-    целиком, а обрезается только лишний чёрный фон слева, который и так
-    визуально пуст.
-    """
+    """Как _cover_resize, но с привязкой к правому краю (иллюстрация фона справа)."""
     src_w, src_h = img.size
     target_w, target_h = target_size
     scale = max(target_w / src_w, target_h / src_h)
@@ -624,15 +426,8 @@ def _cover_resize_right(img: Image.Image, target_size: tuple[int, int]) -> Image
     return resized.crop((left, top, left + target_w, top + target_h))
 
 
-# Фоны карточек серий (2026-09-07, продуктовый запрос: "добавил
-# prediction_strick.png и evaluation_strick.png в static/img/badge-cards,
-# нужно сделать карточки поверх этого дизайна, чтобы текст не сливался и
-# выглядело премиально") — та же папка и тот же принцип отказоустойчивости
-# (файла нет → тихий None → `build_streak_share_card` откатывается на
-# плоский тёмный фон), что `_load_custom_badge_background` для достижений.
-# Имена файлов — опечатка пользователя ("strick" вместо "streak"), но это
-# просто имя файла на диске, а не публичный API — оставлено как есть,
-# чтобы не заставлять пользователя переименовывать уже загруженные ассеты.
+# Фоны карточек серий: prediction_strick.png / evaluation_strick.png
+# («strick» — так названы файлы). Нет файла — плоский тёмный фон.
 STREAK_CARD_BACKGROUNDS = {
     "prediction": "prediction_strick.png",
     "evaluation": "evaluation_strick.png",
@@ -640,10 +435,7 @@ STREAK_CARD_BACKGROUNDS = {
 
 
 def _load_streak_background(streak_type: str) -> tuple[Image.Image, float] | None:
-    """:return: пара (готовый фон CARD_SIZE, mtime файла) или `None`, если
-    файла нет на диске. mtime — часть кэш-ключа карточки, тот же смысл, что
-    у `_load_custom_badge_background`: замена PNG на новый вариант не должна
-    обслуживаться из кэша со старой картинкой."""
+    """Возвращает (фон, mtime) или None."""
     filename = STREAK_CARD_BACKGROUNDS.get(streak_type)
     if not filename:
         return None
@@ -655,8 +447,6 @@ def _load_streak_background(streak_type: str) -> tuple[Image.Image, float] | Non
         mtime = path.stat().st_mtime
     except OSError:
         return None
-    # _CARD_RENDER_SIZE (см. докстринг SS_SCALE) — фон компонуется на
-    # supersampled-холсте build_streak_share_card, не на финальном CARD_SIZE.
     return _cover_resize_right(img, _CARD_RENDER_SIZE), mtime
 
 
@@ -664,23 +454,8 @@ MATCH_DNA_BACKGROUND_FILENAME = "match_dna.png"
 
 
 def _load_match_dna_background() -> tuple[Image.Image, float] | None:
-    """
-    Ищет `static/img/badge-cards/match_dna.png` — премиальный AI-фон карточки
-    "ДНК матча" (продуктовый запрос 2026-09-07: "загрузил в static/img/
-    badge-cards файл match_dna.png это карточка, под ее дизайн теперь надо
-    красиво текст генерировать"). Тот же принцип отказоустойчивости, что у
-    `_load_custom_badge_background`/`_load_streak_background`: файла нет на
-    диске → `None` → `build_match_dna_share_card` откатывается на плоский
-    тёмный фон вместо падения.
-
-    `_cover_resize_right`, а не центральный `_cover_resize` — композиция
-    фона (ДНК-спираль + мяч) сосредоточена в ПРАВОЙ половине картинки, левая
-    почти сплошного чёрного цвета под текст (тот же формат, что у
-    `prediction_strick.png`/`evaluation_strick.png`, см. докстринг
-    `_cover_resize_right`) — исходное соотношение сторон файла (1728×910)
-    почти совпадает с `CARD_SIZE` (1200×630), так что кроп минимальный.
-
-    :return: пара (готовый фон CARD_SIZE, mtime файла) или `None`.
+    """Фон карточки «ДНК матча» (static/img/badge-cards/match_dna.png).
+    Иллюстрация справа, поэтому обрезка с привязкой вправо. Возвращает (фон, mtime) или None.
     """
     path = BADGE_CARD_BACKGROUNDS_DIR / MATCH_DNA_BACKGROUND_FILENAME
     if not path.exists():
@@ -690,8 +465,6 @@ def _load_match_dna_background() -> tuple[Image.Image, float] | None:
         mtime = path.stat().st_mtime
     except OSError:
         return None
-    # _CARD_RENDER_SIZE (см. докстринг SS_SCALE) — фон компонуется на
-    # supersampled-холсте build_match_dna_share_card, не на финальном CARD_SIZE.
     return _cover_resize_right(img, _CARD_RENDER_SIZE), mtime
 
 
@@ -699,15 +472,13 @@ def build_match_share_card(
     *, home_team: str, away_team: str, home_score: int, away_score: int,
     top_player_name: str, top_player_score: float,
 ) -> str:
-    """:return: относительный путь в MEDIA к готовому PNG."""
+    """Возвращает путь в MEDIA к готовому PNG."""
     key = _cache_key(home_team, away_team, str(home_score), str(away_score), top_player_name, str(top_player_score))
     relative_path = f"share-cards/match_{key}.png"
     if default_storage.exists(relative_path):
         return relative_path
 
-    # Рендерим на холсте в SS_SCALE раз больше целевого CARD_SIZE (см.
-    # докстринг SS_SCALE в начале модуля) — координаты ниже домножены на S,
-    # шрифты сами масштабируются внутри _font().
+    # Рисуем в масштабе SS_SCALE, в конце уменьшаем.
     S = SS_SCALE
     img = Image.new("RGB", _CARD_RENDER_SIZE, color="#0a0a0a")
     draw = ImageDraw.Draw(img)
@@ -717,14 +488,11 @@ def build_match_share_card(
 
     draw.text((60 * S, 50 * S), "DOPX", font=font_bold, fill="#ffffff")
     draw.text((60 * S, 190 * S), f"{home_team} {home_score}:{away_score} {away_team}", font=font_bold, fill="#ffffff")
-    # Без emoji ("⭐"): Liberation Sans не содержит emoji-глифов, Pillow
-    # отрисовал бы нечитаемый "tofu"-квадрат вместо звезды.
+    # Без emoji — в шрифте их нет.
     draw.text((60 * S, 290 * S), f"Лучший на поле: {top_player_name} — {top_player_score:.1f}/10", font=font_regular, fill="#60a5fa")
     draw.text((60 * S, _CARD_RENDER_SIZE[1] - 50 * S), "Голос трибун измеряем — dopx.kz", font=font_small, fill="#737373")
 
-    # Downscale физического (SS_SCALE×) холста до целевого CARD_SIZE через
-    # LANCZOS — этот шаг и убирает рваные края текста/линий (см. докстринг
-    # SS_SCALE выше про supersampling).
+    # Уменьшаем до финального размера (сглаживание).
     img = img.resize(CARD_SIZE, Image.LANCZOS)
     buffer = BytesIO()
     img.save(buffer, format="PNG", optimize=True)
@@ -739,56 +507,16 @@ def build_match_dna_share_card(
     headline: str, antihero_name: str = "", antihero_score: float | None = None,
     fan_mood_text: str = "", consensus_text: str = "",
 ) -> str:
-    """
-    "ДНК матча" — фаза 2 шеринга (docs/adr/0033-match-dna-phase2.md),
-    контентно расширена в фазе 3 (docs/adr/0035-match-dna-phase3-antihero-fan-mood.md)
-    антигероем/настроением фанатов/разрывом мнений, ВИЗУАЛЬНО полностью
-    переделана в фазе 4 (docs/adr/0036-match-dna-share-card-premium.md,
-    продуктовый запрос 2026-09-07: "карточка пздц страшная... финальный на
-    выходе должен выглядеть премиум супер красиво"). Раньше — голый чёрный
-    прямоугольник с обычным `draw.text` без тени/трекинга/иерархии, из-за
-    чего все строки визуально сливались в один блок. Теперь — тот же
-    премиальный визуальный язык, что уже одобрен пользователем для
-    `build_badge_share_card`/`build_streak_share_card`: готовый AI-фон
-    (`static/img/badge-cards/match_dna.png`, см. `_load_match_dna_background`)
-    + `_edge_vignette`/`_legibility_scrim` для читаемости + `_badge_font`
-    (кириллица) + `_shadow_text`/`_shadow_tracked_text` для контраста
-    независимо от фона под конкретной буквой + пилюли/бейджи вместо голого
-    текста + чёткая типографическая иерархия (эйброу → счёт → драма-пилюля →
-    герой/антигерой → настроение/консенсус → цитата-хедлайн → футер).
+    """Карточка «ДНК матча»: счёт, драма, герой/антигерой, настроение фанатов,
+    расхождение мнений и главный факт (headline, выбирается во view).
 
-    Отдельная от `build_match_share_card` карточка (та осталась og:image
-    ссылки на страницу матча со счётом+топ-игроком), эта — контент самой
-    секции "ДНК матча" (drama_level/герой/антигерой/настроение фанатов/
-    разрыв мнений/самый заметный факт секции — controversial_episode, иначе
-    turning_point_text, иначе referee_divergence, выбор — в вызывающей
-    стороне, core/views.py::MatchDNAShareCardView, а не здесь, чтобы функция
-    генерации карточки не знала о приоритете полей match_dna).
-
-    Параметры антигероя/настроения/консенсуса — с дефолтами (пустая строка /
-    None), а не обязательные позиционные: у матча может не быть антигероя
-    (после фильтра MIN_VOTES_FOR_DISPLAY остался только герой), настроения
-    фанатов (меньше FAN_MOOD_MIN_VOTES проголосовавших "за кого болели") или
-    разброса мнений (< 2 MatchEvaluation) — карточка не должна падать,
-    просто пропускает отсутствующую строку (динамический курсор `y`, см.
-    ниже — следующий присутствующий факт поднимается выше, а не оставляет
-    пустой промежуток).
-
-    :param headline: одна строка — то, ради чего карточку хочется переслать
-        (спорный эпизод / переломный момент / расхождение мнений о судействе),
-        уже выбранная и обрезанная вызывающей стороной. Может быть пустой,
-        если по матчу есть только базовые drama_index/hero — карточка всё
-        равно валидна без неё.
-    :return: относительный путь в MEDIA к готовому PNG.
+    Необязательные строки просто пропускаются. Возвращает путь в MEDIA.
     """
     drama_label = {"high": "Высокая драма", "medium": "Средняя драма", "low": "Спокойный матч"}.get(drama_level, "")
     hero_label = f"{hero_name} — {hero_score:.1f}/10" if hero_name and hero_score is not None else ""
     antihero_label = f"{antihero_name} — {antihero_score:.1f}/10" if antihero_name and antihero_score is not None else ""
-    # DOPX-фиолетовый — цвет ДНК-спирали на самом фоне (см.
-    # _load_match_dna_background), используется как identity-акцент
-    # карточки (эйброу/цитата), НЕЗАВИСИМО от акцента драмы ниже (тот
-    # красный/жёлтый/серый — семантика конкретного матча, не бренда).
-    brand_accent = (167, 139, 250)  # #a78bfa
+    # Фирменный фиолетовый — акцент бренда (цвет драмы — отдельно).
+    brand_accent = (167, 139, 250)
     drama_accent = {
         "high": (248, 113, 113), "medium": (251, 191, 36), "low": (163, 163, 163),
     }.get(drama_level, (163, 163, 163))
@@ -798,51 +526,31 @@ def build_match_dna_share_card(
     key = _cache_key(
         home_team, away_team, str(home_score), str(away_score),
         drama_level, str(drama_index), hero_name, str(hero_score), headline,
-        # v3 (фаза 4) — визуальный редизайн целиком, не только новые поля:
-        # карточки, закэшированные ДО этой правки (даже "v2" фазы 3),
-        # выглядели совсем иначе и не должны отдаваться из кэша.
+        # Версия в ключе кэша — при смене дизайна старые карточки не отдаются.
         "v3", antihero_name, str(antihero_score), fan_mood_text, consensus_text, bg_marker,
     )
     relative_path = f"share-cards/match_dna_{key}.png"
     if default_storage.exists(relative_path):
         return relative_path
 
-    # Тот же supersampling-паттерн, что в остальных функциях модуля (см.
-    # докстринг SS_SCALE): все "сырые" пиксельные литералы ниже домножены
-    # на S, W/H и MARGIN уже физического (SS_SCALE×) масштаба, поэтому вся
-    # относительная арифметика (W * 0.56, H - 250 и т.п.) масштабируется
-    # автоматически.
     S = SS_SCALE
     W, H = _CARD_RENDER_SIZE
     MARGIN = 64 * S
 
     img = custom_bg[0] if custom_bg is not None else Image.new("RGB", _CARD_RENDER_SIZE, (10, 10, 10))
 
-    # Та же легибильность-связка, что в build_streak_share_card: затемняем
-    # края независимо от содержимого фона, затем горизонтальный scrim —
-    # непрозрачно слева (где весь текст), прозрачно справа (где спираль/
-    # мяч из иллюстрации, её не нужно затемнять). На плоском фолбэк-фоне
-    # оба шага — no-op (фон и так однотонный).
+    # Затемнение краёв + подложка слева под текст.
     img = _edge_vignette(img, inset=36 * S, strength=0.45)
     scrim = _legibility_scrim(_CARD_RENDER_SIZE, start_alpha=235, end_fraction=0.54)
     img = Image.alpha_composite(img.convert("RGBA"), scrim).convert("RGB")
 
     draw = ImageDraw.Draw(img, "RGBA")
-    # Иллюстрация (ДНК-спираль/мяч) занимает правую часть фона, scrim гасит
-    # её влияние на читаемость текста примерно до end_fraction=0.54 ширины —
-    # текстовая колонка чуть уже этого, чтобы не заезжать на полупрозрачную
-    # границу перехода.
+    # Текстовая колонка слева, иллюстрация справа.
     text_max_w = int(W * 0.56) - MARGIN
-    # Ниже этой линии ничего не рисуем — граница футера (см. `y` в конце
-    # функции). Не все факты влезают одновременно на самых длинных данных
-    # (антигерой + двухстрочные настроение/хедлайн разом) — при нехватке
-    # места пропускаем менее приоритетные хвостовые блоки целиком (не
-    # обрезаем ИХ ТЕКСТ на середине слова, что выглядело бы неряшливо),
-    # а не позволяем им наехать на футер.
+    # Нижняя граница контента (над футером). Не влезающие блоки пропускаем целиком.
     CONTENT_BOTTOM = H - 78 * S
 
-    # Бренд-марка (логотип DOPX) + wordmark — тот же верхний элемент, что в
-    # build_streak_share_card/build_badge_share_card.
+    # Логотип + название.
     font_brand = _badge_font("cond_bold", 24)
     logo_size = 38 * S
     logo = _load_brand_mark(logo_size)
@@ -856,27 +564,20 @@ def build_match_dna_share_card(
         brand_x = MARGIN
     _tracked_text(draw, (brand_x, 58 * S), "DOPX", font_brand, (240, 238, 244, 255), tracking=5 * S)
 
-    # Эйброу "ДНК МАТЧА" с подчёркиванием — фирменный фиолетовый, тот же
-    # паттерн, что "СЕРИЯ ПРОГНОЗОВ"/"ДОСТИЖЕНИЕ ПОЛУЧЕНО" в остальных
-    # премиальных карточках модуля.
+    # Заголовок-эйброу.
     font_eyebrow = _badge_font("cond_bold", 19)
     ey_y = 120 * S
     _shadow_tracked_text(draw, (MARGIN, ey_y), "ДНК МАТЧА", font_eyebrow, brand_accent + (255,), tracking=4 * S)
     draw.line([(MARGIN + 2 * S, ey_y + 32 * S), (MARGIN + 90 * S, ey_y + 32 * S)], fill=brand_accent + (255,), width=3 * S)
 
-    # Счёт — заголовок карточки. _fit_single_line (не wrap): держим ровно
-    # одну строку с гарантированной высотой, чтобы курсор ниже был
-    # предсказуем независимо от длины названий клубов (у KFF они короткие,
-    # но карточка не должна ломаться, если когда-нибудь окажутся длиннее).
+    # Счёт — всегда одна строка.
     font_title = _badge_font("bold", 42)
     title_text = _fit_single_line(draw, f"{home_team} {home_score}:{away_score} {away_team}", font_title, text_max_w)
     y = 158 * S
     _shadow_text(draw, (MARGIN, y), title_text, font_title, (250, 248, 252, 255), shadow_alpha=190, offset=(0, 3 * S))
     y += 64 * S
 
-    # Драма-пилюля — та же капсула с обводкой, что rarity-пилюля в
-    # build_badge_share_card, цвет — по drama_level (не бренд-фиолетовый:
-    # это оценка конкретного матча, а не идентичность DOPX).
+    # Пилюля драмы, цвет по drama_level.
     if drama_label:
         font_pill = _badge_font("cond_bold", 20)
         pill_text = f"{drama_label} · индекс {drama_index:.0f}"
@@ -889,10 +590,7 @@ def build_match_dna_share_card(
         _tracked_text(draw, (MARGIN + 20 * S, y + 11 * S), pill_text, font_pill, drama_accent + (255,), tracking=2 * S)
         y += pill_h + 18 * S
 
-    # Герой/антигерой — компактные строки с цветной точкой-маркером вместо
-    # Tabler-иконки (DejaVu Sans не содержит их глифов, см. докстринг
-    # _badge_font) — простой закрашенный кружок тем же приёмом, что и
-    # ромб-маркер rarity-пилюли выше по файлу.
+    # Герой/антигерой с цветной точкой-маркером.
     font_fact_label = _badge_font("cond_bold", 16)
     font_fact_value = _badge_font("bold", 24)
 
@@ -911,18 +609,12 @@ def build_match_dna_share_card(
     if antihero_label and y + 48 * S <= CONTENT_BOTTOM:
         y = _fact_row("Антигерой", antihero_label, (248, 113, 113), y)
 
-    # Место, которое нужно оставить под headline (см. ниже) — 2 строки
-    # цитаты плюс её собственный отступ сверху. Настроение фанатов/разрыв
-    # мнений — младший приоритет, чем headline (самый цитируемый факт
-    # секции): если места на всё не хватает, урезаем/пропускаем ИХ, а не
-    # headline (см. докстринг CONTENT_BOTTOM выше про общий принцип).
+    # Резервируем место под headline (2 строки) — он важнее настроения и консенсуса.
     HEADLINE_RESERVE = (8 + 26 + 50) * S if headline else 0
 
     font_meta = _badge_font("regular", 20)
     if fan_mood_text and y + 26 * S + HEADLINE_RESERVE <= CONTENT_BOTTOM:
         y += 6 * S
-        # 2 строки, только если headline после этого всё ещё получит свои
-        # полные 2 строки — иначе 1 (короче, но не в ущерб headline).
         fan_lines_budget = 2 if y + 26 * 2 * S + HEADLINE_RESERVE <= CONTENT_BOTTOM else 1
         for line in _wrap_text(draw, fan_mood_text, font_meta, text_max_w, max_lines=fan_lines_budget):
             draw.text((MARGIN, y), line, font=font_meta, fill=(210, 208, 220, 255))
@@ -933,12 +625,7 @@ def build_match_dna_share_card(
         draw.text((MARGIN, y), line, font=font_meta, fill=(160, 158, 168, 255))
         y += 28 * S
 
-    # Headline — "цитата" (тот же приём, что флейвор-цитата в
-    # build_badge_share_card: открывающая кавычка акцентным цветом + курсив)
-    # — самый заметный отдельный факт секции (спорный эпизод/переломный
-    # момент/расхождение мнений о судействе), поэтому визуально выделен, а
-    # не просто ещё одна строка в общем списке. Приоритет НАД fan_mood/
-    # consensus_text выше — ей всегда зарезервированы полные 2 строки.
+    # Headline — цитатой с акцентной кавычкой.
     if headline and y + 40 * S <= CONTENT_BOTTOM:
         y += 8 * S
         font_quote_mark = _badge_font("bold", 32)
@@ -950,16 +637,14 @@ def build_match_dna_share_card(
             draw.text((MARGIN + 28 * S, qy), line, font=font_quote, fill=(224, 222, 232, 255))
             qy += 25 * S
 
-    # Футер — разнос по краям с разделительной линией, тот же паттерн, что
-    # у остальных премиальных карточек модуля.
+    # Футер.
     font_footer = _badge_font("cond", 16)
     _tracked_text(draw, (MARGIN, H - 52 * S), "ГОЛОС ТРИБУН ИЗМЕРЯЕМ", font_footer, (170, 168, 178, 255), tracking=3 * S)
     kz_w = _tracked_text_width(draw, "DOPX.KZ", font_footer, tracking=3 * S)
     _tracked_text(draw, (W - MARGIN - kz_w, H - 52 * S), "DOPX.KZ", font_footer, brand_accent + (255,), tracking=3 * S)
     draw.line([(MARGIN, H - 64 * S), (W - MARGIN, H - 64 * S)], fill=(255, 255, 255, 25), width=1 * S)
 
-    # Downscale физического (SS_SCALE×) холста до целевого CARD_SIZE через
-    # LANCZOS — см. докстринг SS_SCALE в начале модуля.
+    # Уменьшаем до финального размера.
     img = img.resize(CARD_SIZE, Image.LANCZOS)
     buffer = BytesIO()
     img.save(buffer, format="PNG", optimize=True)
@@ -969,58 +654,26 @@ def build_match_dna_share_card(
 
 
 def build_streak_share_card(*, username: str, streak_type: str, streak_count: int) -> str:
-    """
-    Retention loop "Серии" — карточка серии для шеринга в соцсети, тот же
-    кэш-по-хэшу принцип, что у остальных функций модуля. :param streak_type:
-    'evaluation' | 'prediction' — подпись и цвет акцента РАЗНЫЕ и по смыслу,
-    не только по цвету:
+    """Карточка серии для шеринга.
 
-    - 'evaluation': "туров подряд" — evaluation_streak считается по турам
-      чемпионата, а не по дням (см. докстринг User.evaluation_streak,
-      users/models.py) — матчи бывают 1–2 дня в неделю, дневная подпись
-      была бы неверна почти всегда.
-    - 'prediction': "угаданных подряд" — prediction_streak считается по
-      подряд идущим ВЕРНЫМ прогнозам 1X2, а не по дням активности (см.
-      докстринг User.prediction_streak) — "N дней подряд" тут вводило бы в
-      заблуждение (можно прогнозировать каждый день и всегда ошибаться).
-
-    ПЕРЕДЕЛАНО 2026-09-07 (продуктовый запрос: добавлены AI-фоны
-    `static/img/badge-cards/prediction_strick.png` и `evaluation_strick.png`
-    — "нужно сделать карточки поверх этого дизайна, чтобы текст не сливался
-    и выглядело премиально"; первая версия ниже была плоским тёмным фоном с
-    текстом без всякой подложки под легибильность). Композиция и приёмы
-    легибильности переиспользуют premium-паттерн `build_badge_share_card`
-    (`_edge_vignette` + `_legibility_scrim` + `_shadow_text`/
-    `_shadow_tracked_text`, шрифты `_badge_font`), а не более простой стиль
-    остальных OG-карточек этого модуля — задача явно сформулирована как
-    "премиально", тот же уровень полировки, что уже был одобрен для
-    карточки достижения. `_load_streak_background` отказоустойчиво (см. её
-    докстринг): если PNG удалят с диска, карточка молча откатится на
-    плоский тёмный фон вместо падения.
-
-    :return: относительный путь в MEDIA к готовому PNG.
+    :param streak_type: 'evaluation' (туров подряд) или 'prediction' (угаданных подряд).
+    Фон — готовая картинка, если есть. Возвращает путь в MEDIA.
     """
     if streak_type == "evaluation":
         eyebrow, label_line1, label_line2 = "СЕРИЯ ОЦЕНОК", "туров подряд", "оценили матч"
-        accent = (96, 165, 250)  # #60a5fa
+        accent = (96, 165, 250)
     else:
         eyebrow, label_line1, label_line2 = "СЕРИЯ ПРОГНОЗОВ", "прогнозов подряд", "угадали исход"
-        accent = (167, 139, 250)  # #a78bfa
+        accent = (167, 139, 250)
 
     custom_bg = _load_streak_background(streak_type)
-    # mtime готового фона — часть кэш-ключа, тот же смысл, что у
-    # build_badge_share_card::bg_marker: замена PNG на диске не должна
-    # обслуживаться из кэша со старой картинкой. "v2" — версия карточки
-    # (переход с плоского фона на premium-редизайн) — иначе уже выпущенные
-    # карточки продолжили бы отдаваться из кэша со старым видом.
+    # mtime фона и версия дизайна — в ключе кэша.
     bg_marker = f"custom-{custom_bg[1]}" if custom_bg else "flat"
     key = _cache_key(username, streak_type, str(streak_count), "v2", bg_marker)
     relative_path = f"share-cards/streak_{key}.png"
     if default_storage.exists(relative_path):
         return relative_path
 
-    # Тот же supersampling-паттерн, что в остальных функциях модуля (см.
-    # докстринг SS_SCALE): "сырые" пиксельные литералы ниже домножены на S.
     S = SS_SCALE
     W, H = _CARD_RENDER_SIZE
     MARGIN = 64 * S
@@ -1030,20 +683,14 @@ def build_streak_share_card(*, username: str, streak_type: str, streak_count: in
     else:
         img = Image.new("RGB", _CARD_RENDER_SIZE, (10, 10, 10))
 
-    # Та же легибильность-связка, что в build_badge_share_card: затемняем
-    # края независимо от содержимого фона, затем горизонтальный scrim
-    # (непрозрачно слева, где текст — прозрачно справа, где иллюстрация).
-    # На плоском фолбэк-фоне оба шага — не более чем no-op (фон и так
-    # однотонный), поэтому применяем их безусловно, не разветвляя код.
+    # Затемнение краёв + подложка слева.
     img = _edge_vignette(img, inset=36 * S, strength=0.45)
     scrim = _legibility_scrim(_CARD_RENDER_SIZE, start_alpha=235, end_fraction=0.50)
     img = Image.alpha_composite(img.convert("RGBA"), scrim).convert("RGB")
 
     draw = ImageDraw.Draw(img, "RGBA")
 
-    # Бренд-марка (настоящий логотип DOPX, не текст) + wordmark слева сверху —
-    # тот же элемент, что в нижней панели build_badge_share_card, здесь наверху,
-    # поскольку у этой карточки нет отдельной нижней панели.
+    # Логотип + название слева сверху.
     font_brand = _badge_font("cond_bold", 26)
     logo_size = 40 * S
     logo = _load_brand_mark(logo_size)
@@ -1057,11 +704,7 @@ def build_streak_share_card(*, username: str, streak_type: str, streak_count: in
         brand_x = MARGIN
     _tracked_text(draw, (brand_x, 62 * S), "DOPX", font_brand, (240, 238, 244, 255), tracking=6 * S)
 
-    # @username — верх справа, обрезается многоточием (_fit_single_line),
-    # если ник слишком длинный, на собственной полупрозрачной "таблетке"
-    # для гарантированной читаемости независимо от того, что там на фоне
-    # (в отличие от остального текста, эта зона не защищена scrim'ом —
-    # scrim гасит только левую часть карточки).
+    # @username справа сверху на полупрозрачной плашке.
     font_user = _badge_font("regular", 22)
     user_text = _fit_single_line(draw, f"@{username}", font_user, W * 0.40)
     uw = draw.textlength(user_text, font=font_user)
@@ -1072,22 +715,13 @@ def build_streak_share_card(*, username: str, streak_type: str, streak_count: in
     draw.rounded_rectangle([px0, py0, px1, py1], radius=(py1 - py0) // 2, fill=(6, 5, 10, 140))
     draw.text((px0 + pad_x, py0 + pad_y - 2 * S), user_text, font=font_user, fill=(225, 223, 232, 255))
 
-    # Эйброу-лейбл ("СЕРИЯ ПРОГНОЗОВ"/"СЕРИЯ ОЦЕНОК") с подчёркиванием —
-    # тот же паттерн, что "ДОСТИЖЕНИЕ ПОЛУЧЕНО" в build_badge_share_card.
+    # Заголовок-эйброу.
     font_eyebrow = _badge_font("cond_bold", 20)
     ey_y = 168 * S
     _shadow_tracked_text(draw, (MARGIN, ey_y), eyebrow, font_eyebrow, accent + (255,), tracking=4 * S)
     draw.line([(MARGIN + 2 * S, ey_y + 34 * S), (MARGIN + 94 * S, ey_y + 34 * S)], fill=accent + (255,), width=3 * S)
 
-    # Большое число — размер шрифта уменьшается с числом цифр, а подпись
-    # стоит СТРОГО НИЖЕ числа (не сбоку), поэтому рост числа вширь при
-    # 3+ цифрах никогда не толкает подпись в иллюстрацию фона — раньше
-    # (плоский фон, число+подпись в один ряд) это было не важно, с
-    # premium-фоном справа съехавшая от числа подпись перекрывала бы
-    # график/стадион-голограмму.
-    # digits/number_size — размер шрифта числа СЕРИИ в цифрах ниже (не
-    # шкала pixel-геометрии): _badge_font сам домножает на SS_SCALE (см. её
-    # докстринг), поэтому значения словаря остаются "логическими" (1x).
+    # Число серии: кегль уменьшается с числом цифр, подпись под числом.
     digits = len(str(streak_count))
     number_size = {1: 240, 2: 240, 3: 200}.get(digits, 160)
     font_number = _badge_font("bold", number_size)
@@ -1101,23 +735,17 @@ def build_streak_share_card(*, username: str, streak_type: str, streak_count: in
     _shadow_text(draw, (MARGIN, label_y), label_line1, font_label, (245, 244, 248, 255), shadow_alpha=150, offset=(0, 2 * S))
     _shadow_text(draw, (MARGIN, label_y + 42 * S), label_line2, font_label, (245, 244, 248, 255), shadow_alpha=150, offset=(0, 2 * S))
 
-    # Футер — тот же "ГОЛОС ТРИБУН ИЗМЕРЯЕМ" / "DOPX.KZ" разнос по краям с
-    # разделительной линией, что в build_badge_share_card, адаптированный
-    # под ширину этой (не портретной) карточки.
+    # Футер.
     font_footer = _badge_font("cond", 17)
     _tracked_text(draw, (MARGIN, H - 52 * S), "ГОЛОС ТРИБУН ИЗМЕРЯЕМ", font_footer, (170, 168, 178, 255), tracking=3 * S)
     kz_w = _tracked_text_width(draw, "DOPX.KZ", font_footer, tracking=3 * S)
     _tracked_text(draw, (W - MARGIN - kz_w, H - 52 * S), "DOPX.KZ", font_footer, accent + (255,), tracking=3 * S)
     draw.line([(MARGIN, H - 64 * S), (W - MARGIN, H - 64 * S)], fill=(255, 255, 255, 25), width=1 * S)
 
-    # Тонкая рамка по всему периметру — финальный штрих полировки, тот же
-    # приём, что фаска build_badge_share_card, без скругления (эта карточка
-    # служит og:image, как остальные CARD_SIZE-карточки модуля, а не
-    # шерится напрямую как самостоятельное изображение).
+    # Тонкая рамка по периметру.
     draw.rectangle([1 * S, 1 * S, W - 2 * S, H - 2 * S], outline=(255, 255, 255, 30), width=1 * S)
 
-    # Downscale физического (SS_SCALE×) холста до целевого CARD_SIZE через
-    # LANCZOS — см. докстринг SS_SCALE в начале модуля.
+    # Уменьшаем до финального размера.
     img = img.resize(CARD_SIZE, Image.LANCZOS)
     buffer = BytesIO()
     img.save(buffer, format="PNG", optimize=True)
@@ -1130,17 +758,8 @@ def build_round_squad_share_card(
     *, season_year: str, tour: int, player_of_round_name: str,
     player_of_round_score: float | None, dramatic_match_label: str,
 ) -> str:
-    """
-    "DOPX Лучшие тура" (продуктовый запрос 2026-08-22, по мотивам ревью Codex) —
-    та же кэш-по-хэшу схема, что у трёх функций выше. Вызывается один раз
-    из round_squad/services.py::recompute_round, в момент когда тур
-    закрывается (is_final=True) — не по HTTP-запросу, как остальные
-    карточки, поэтому кэш по хэшу тут в первую очередь защита от лишней
-    перезаписи файла при повторных safety-вызовах recompute на
-    уже зафиксированном туре (recompute_round при is_final=True выходит
-    раньше, но кэш всё равно на месте для симметрии с остальными функциями).
-
-    :return: относительный путь в MEDIA к готовому PNG.
+    """Карточка «DOPX Лучшие тура». Вызывается из round_squad/services.py при закрытии тура.
+    Возвращает путь в MEDIA.
     """
     score_label = f"{player_of_round_score:.1f}/10" if player_of_round_score is not None else "—"
     key = _cache_key(season_year, str(tour), player_of_round_name, score_label, dramatic_match_label)
@@ -1148,8 +767,6 @@ def build_round_squad_share_card(
     if default_storage.exists(relative_path):
         return relative_path
 
-    # Тот же supersampling-паттерн, что build_match_share_card выше (см.
-    # докстринг SS_SCALE в начале модуля).
     S = SS_SCALE
     img = Image.new("RGB", _CARD_RENDER_SIZE, color="#0a0a0a")
     draw = ImageDraw.Draw(img)
@@ -1185,23 +802,13 @@ def build_player_season_recap_card(
     *, player_name: str, team_name: str, season_label: str,
     matches_played: int, avg_performance: float | None, goals: int,
 ) -> str:
-    """
-    Продуктовый аудит, раздел 5d ("Автогенерируемый season recap") —
-    "DOPX Wrapped" для одного игрока: карточка сезонной статистики,
-    сгенерированная и закэшированная по тому же принципу, что
-    `build_match_share_card` выше (детерминированный хэш параметров,
-    рендер только по первому запросу).
-
-    :return: относительный путь в MEDIA к готовому PNG.
-    """
+    """Карточка итогов сезона игрока. Возвращает путь в MEDIA."""
     performance_label = f"{avg_performance:.1f}/10" if avg_performance is not None else "нет данных"
     key = _cache_key(player_name, team_name, season_label, str(matches_played), performance_label, str(goals))
     relative_path = f"share-cards/season_recap_{key}.png"
     if default_storage.exists(relative_path):
         return relative_path
 
-    # Тот же supersampling-паттерн, что build_match_share_card выше (см.
-    # докстринг SS_SCALE в начале модуля).
     S = SS_SCALE
     img = Image.new("RGB", _CARD_RENDER_SIZE, color="#0a0a0a")
     draw = ImageDraw.Draw(img)
@@ -1214,8 +821,7 @@ def build_player_season_recap_card(
     draw.text((60 * S, 120 * S), player_name, font=font_name, fill="#ffffff")
     draw.text((60 * S, 195 * S), team_name, font=font_label, fill="#a3a3a3")
 
-    # Три колонки статистики — тот же макет, что "карточки цифр" на
-    # anti_fraud.html/HTML-версии этой страницы, только растрированный.
+    # Три колонки статистики.
     columns = [
         ("Матчей сыграно", str(matches_played)),
         ("Средний рейтинг", performance_label),
@@ -1241,68 +847,29 @@ def build_badge_share_card(
     *, username: str, badge_code: str, badge_name: str, badge_description: str,
     rarity: str, is_secret: bool, awarded_at,
 ) -> str:
-    """
-    Премиальная шеринг-карточка достижения — ПОЛНЫЙ РЕДИЗАЙН 2026-09-01
-    поверх первой версии (плоский кружок-монограмма был признан пользователем
-    "скучным, дизайн бедный"; прислан референсный премиальный макет —
-    портретная карточка с гранёным кристаллом/трофеем, лавровым венком у
-    имени и цитатой в нижней панели). Задача явно сформулирована как "от
-    обычных по возрастанию к легендарным" — визуальная сложность нарастает
-    по `BADGE_RARITY_META` монотонно: у bronze самый маленький кристалл,
-    минимум граней, никакого свечения/зерна/луча/венка/искр; у legendary —
-    максимум всего перечисленного разом.
+    """Портретная карточка достижения.
 
-    Портретный формат (`BADGE_CARD_SIZE`, НЕ общий `CARD_SIZE`) — карточка
-    рассчитана на шеринг в мессенджеры и сторис, а не на og:image превью
-    ссылки (в отличие от остальных функций файла).
+    Чем выше редкость (BADGE_RARITY_META), тем больше эффектов: свечение, зерно,
+    луч, искры. Фон — готовая картинка по редкости, если есть, иначе процедурный
+    кристалл. Ключ кэша включает пользователя и дату получения.
 
-    Слои карточки (снизу вверх): тёмный фон конкретного оттенка rarity →
-    два угловых цветных свечения (GaussianBlur) → диагональный световой
-    луч и зерно (grain, `Image.effect_noise`) у более высоких rarity →
-    тонкая цветная "корешковая" полоса по левому краю → процедурный
-    гранёный кристалл (`_draw_gem`) с собственным свечением и тенью →
-    декоративные искры (`_draw_sparkle`) → текстовые блоки (бренд, rarity-
-    пилюля, эпиграф, заголовок, описание) → нижняя панель (лавровый венок +
-    `@username` + дата, разделитель, цитата) → футер → скруглённые прозрачные
-    углы всей карточки (`_rounded_alpha_mask`) в самом конце.
-
-    Кристалл и венок — полностью процедурная векторная графика (треугольные
-    грани + направленное освещение, см. докстринг `_draw_gem`), не растеризация
-    готовых иллюстраций: в песочнице разработки нет сетевого доступа, чтобы
-    добавить в репозиторий готовые ассеты, а хардкодить сюда бинарные файлы
-    "трофея" отдельным PR — избыточно для одной функции.
-
-    Кэш по хэшу — тот же принцип, что и в остальных функциях модуля; хэш
-    включает дату получения, чтобы разные пользователи с одинаковым именем
-    ачивки не переиспользовали чужой файл (username тоже участвует).
-
-    :param awarded_at: `UserBadge.awarded_at` — только для подписи даты на
-        карточке, в бизнес-логике не участвует.
-    :return: относительный путь в MEDIA к готовому PNG.
+    :param awarded_at: только для подписи даты.
+    Возвращает путь в MEDIA.
     """
     rarity = rarity if rarity in BADGE_RARITY_META else "bronze"
     meta = BADGE_RARITY_META[rarity]
     date_label = awarded_at.strftime("%d.%m.%Y") if awarded_at else ""
 
     custom_bg = _load_custom_badge_background(rarity)
-    # mtime готового фона (если есть) — часть кэш-ключа, см. докстринг
-    # `_load_custom_badge_background`: замена PNG на новый вариант не должна
-    # обслуживаться из кэша со старой картинкой.
+    # mtime фона — в ключе кэша.
     bg_marker = f"custom-{custom_bg[1]}" if custom_bg else "procedural"
-    # "v4" — версия кэша поднята вместе с третьим раундом правок (усиленный
-    # `_edge_vignette` strength 0.65→0.85 + настоящий логотип DOPX вместо
-    # процедурного венка, см. докстринги обоих изменений) — иначе уже
-    # выпущенные карточки продолжили бы отдаваться из кэша со старым видом.
+    # Версия дизайна в ключе кэша.
     key = _cache_key(username, badge_code, rarity, date_label, "v4", bg_marker)
     relative_path = f"share-cards/badge_{key}.png"
     if default_storage.exists(relative_path):
         return relative_path
 
-    # Тот же supersampling-паттерн, что в остальных функциях модуля (см.
-    # докстринг SS_SCALE): "сырые" пиксельные литералы ниже домножены на S;
-    # `meta["gem_h"]`/`meta["gem_w"]` — абсолютные размеры в BADGE_RARITY_META
-    # (логические, 1x) — домножаются на S в вызове `_draw_gem` ниже, а не в
-    # самом словаре, чтобы не задваивать источник истины.
+    # Размеры кристалла из BADGE_RARITY_META умножаются на S при вызове _draw_gem.
     S = SS_SCALE
     W, H = _BADGE_RENDER_SIZE
     top, bot = meta["top"], meta["bot"]
@@ -1312,9 +879,7 @@ def build_badge_share_card(
     else:
         img = Image.new("RGB", _BADGE_RENDER_SIZE, meta["base_bg"])
 
-        # Два угловых свечения (верх-право тёплый/верхний цвет градиента,
-        # низ-лево — нижний) — общая атмосфера карточки, независимая от
-        # самого кристалла (тот рисуется поверх со своим свечением).
+        # Два угловых свечения.
         glow_layer = Image.new("RGBA", _BADGE_RENDER_SIZE, (0, 0, 0, 0))
         gd = ImageDraw.Draw(glow_layer)
         gd.ellipse([W * 0.62 - 260 * S, 60 * S - 260 * S, W * 0.62 + 260 * S, 60 * S + 260 * S], fill=top + (45,))
@@ -1332,18 +897,12 @@ def build_badge_share_card(
             img = Image.alpha_composite(img.convert("RGBA"), beam_layer).convert("RGB")
 
         if meta["grain"]:
-            # Лёгкое зерно (film grain) — премиальная фактура у более высоких
-            # rarity; для bronze/silver сознательно выключено (см. докстринг
-            # BADGE_RARITY_META про монотонно нарастающую сложность). Sigma
-            # (16) — амплитуда шума на пиксель, не пространственная величина,
-            # супersampling её не касается.
+            # Зерно — только для высоких редкостей.
             noise = Image.effect_noise(_BADGE_RENDER_SIZE, 16).convert("L")
             noise_rgb = Image.merge("RGB", (noise, noise, noise))
             img = Image.blend(img, noise_rgb, alpha=0.025)
 
-        # Тонкая цветная полоса-"корешок" по левому краю — единственный
-        # элемент оформления, присутствующий у ВСЕХ rarity без исключения
-        # (даже bronze), чтобы карточка не выглядела голой на простом уровне.
+        # Цветная полоса по левому краю (есть у всех редкостей).
         img.paste(Image.new("RGB", (8 * S, H), top), (0, 0))
 
         gem_cy = 430 * S
@@ -1360,10 +919,7 @@ def build_badge_share_card(
                 sx, sy, sr = positions[i % len(positions)]
                 _draw_sparkle(draw_s, sx, sy, sr, top, alpha=180)
 
-    # edge_vignette + legibility_scrim применяются одинаково к кастомному
-    # AI-фону и к процедурному фолбэку, до любого текста. strength=0.85 (не
-    # 0.65 — недостаточно на скруглённом вырезе). См.
-    # docs/adr/0011-badge-share-card-legibility.md.
+    # Затемнение краёв и подложка под текст — до любого текста.
     img = _edge_vignette(img, inset=90 * S, strength=0.85)
     scrim = _legibility_scrim(_BADGE_RENDER_SIZE, start_alpha=225, end_fraction=0.60)
     img = Image.alpha_composite(img.convert("RGBA"), scrim).convert("RGB")
@@ -1373,10 +929,7 @@ def build_badge_share_card(
     font_brand = _badge_font("cond_bold", 30)
     _shadow_tracked_text(draw, (56 * S, 52 * S), "DOPX", font_brand, (240, 232, 215, 255), tracking=9 * S)
 
-    # Rarity-пилюля справа сверху. Без символа-звёздочки/иконки — у DejaVu
-    # (см. докстринг `_badge_font`) нет декоративных глифов "★"/"✦"/Tabler
-    # Icons, Pillow отрисовал бы нечитаемый "tofu"-квадрат вместо них.
-    # Маленький закрашенный ромб рисуем сами (полигон), а не unicode-символом.
+    # Пилюля редкости. Ромб рисуем полигоном — в шрифте нет символов.
     font_pill = _badge_font("cond_bold", 21)
     pill_label = BADGE_RARITY_LABELS.get(rarity, rarity.upper())
     pill_w = _tracked_text_width(draw, pill_label, font_pill, tracking=3 * S) + 56 * S
@@ -1407,21 +960,13 @@ def build_badge_share_card(
         _shadow_text(draw, (56 * S, ty), line, font_desc, (198, 196, 206, 255), shadow_alpha=160, offset=(0, 2 * S))
         ty += 33 * S
 
-    # Нижняя панель: слева бренд-марка DOPX + @username + дата получения;
-    # справа — короткая флейвор-цитата по редкости (BADGE_RARITY_QUOTES),
-    # визуально отделённая тонкой вертикальной чертой.
+    # Нижняя панель: логотип + @username + дата, справа цитата.
     panel_y0, panel_y1 = H - 250 * S, H - 120 * S
     draw.rounded_rectangle([56 * S, panel_y0, W - 56 * S, panel_y1], radius=22 * S, fill=(10, 9, 14, 205), outline=(255, 255, 255, 25), width=1 * S)
     mid_x = (56 * S + W - 56 * S) // 2
     draw.line([(mid_x, panel_y0 + 22 * S), (mid_x, panel_y1 - 22 * S)], fill=(255, 255, 255, 35), width=1 * S)
 
-    # Настоящий логотип DOPX вместо процедурного лаврового венка (второй
-    # раунд правок 2026-09-01 — см. докстринг `_load_brand_mark`: венок
-    # "выглядел дешево", готовый бренд-ассет полностью его заменяет).
-    # `meta["wreath"]` (раньше включал/выключал венок по rarity) больше не
-    # используется здесь: бренд-марка — это печать подлинности DOPX, а не
-    # элемент нарастающей сложности редкости, поэтому она теперь одинаково
-    # показывается на ВСЕХ карточках, включая bronze.
+    # Логотип DOPX — на всех редкостях.
     mark_size = 52 * S
     mark = _load_brand_mark(mark_size)
     mark_x, mark_y = 56 * S + 24 * S, (panel_y0 + panel_y1) // 2 - mark_size // 2
@@ -1432,9 +977,7 @@ def build_badge_share_card(
         draw = ImageDraw.Draw(img, "RGBA")
         ux = mark_x + mark_size + 20 * S
     elif meta["wreath"]:
-        # Отказоустойчивый фолбэк, если бренд-ассет вдруг отсутствует на
-        # диске (см. докстринг `_load_brand_mark`) — старый венок лучше,
-        # чем пустое место.
+        # Fallback — венок, если логотипа нет.
         img = _draw_laurel(img, 56 * S + 58 * S, (panel_y0 + panel_y1) // 2 - 6 * S, 42 * S, top)
         draw = ImageDraw.Draw(img, "RGBA")
         ux = 56 * S + 140 * S
@@ -1462,22 +1005,15 @@ def build_badge_share_card(
     _tracked_text(draw, (W - 56 * S - kz_w, H - 56 * S), "DOPX.KZ", font_footer, top, tracking=3 * S)
     draw.line([(320 * S, H - 46 * S), (W - 56 * S - kz_w - 24 * S, H - 46 * S)], fill=(255, 255, 255, 25), width=1 * S)
 
-    # Тонкая полупрозрачная белая рамка-фаска чуть внутри края — финальный
-    # штрих премиальной полировки, добавлен вместе со вторым раундом правок.
+    # Тонкая внутренняя рамка.
     draw.rounded_rectangle([2 * S, 2 * S, W - 3 * S, H - 3 * S], radius=34 * S, outline=(255, 255, 255, 25), width=1 * S)
 
-    # Скруглённые прозрачные углы у ВСЕЙ карточки — последний шаг: карточка
-    # не служит og:image (в отличие от остальных 4 функций файла), а
-    # открывается напрямую/шарится через Web Share API (см.
-    # templates/users/badge_catalog.html), поэтому прозрачность по углам не
-    # ломает превью ссылок и придаёт вид "плавающей" премиальной карточки.
+    # Скруглённые прозрачные углы (карточка не используется как og:image).
     mask = _rounded_alpha_mask(_BADGE_RENDER_SIZE, 36 * S)
     out = Image.new("RGBA", _BADGE_RENDER_SIZE, (0, 0, 0, 0))
     out.paste(img, (0, 0), mask)
 
-    # Downscale физического (SS_SCALE×) холста до целевого BADGE_CARD_SIZE
-    # через LANCZOS — см. докстринг SS_SCALE в начале модуля. RGBA (углы с
-    # прозрачностью) — LANCZOS у Pillow корректно ресемплит и альфа-канал.
+    # Уменьшаем до финального размера (RGBA).
     out = out.resize(BADGE_CARD_SIZE, Image.LANCZOS)
     buffer = BytesIO()
     out.save(buffer, format="PNG", optimize=True)

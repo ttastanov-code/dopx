@@ -1,90 +1,20 @@
 {% load static %}
 {% load match_extras %}
 {% comment %}
-Карточка матча — общий компонент для главной страницы (ближайшие/
-последние матчи) и /matches/ (полный список с фильтрами).
+Карточка матча (главная и /matches/).
+{% include 'components/_match_card.html' with match=match %}
 
-Использование: {% include 'components/_match_card.html' with match=match %}
-
-ПОЛНЫЙ РЕДИЗАЙН 2026-09-09 (прямая просьба пользователя + бриф Codex —
-см. докстринг static/css/match-card.css за развёрнутым обоснованием).
-Раньше — вертикальная композиция (герб/имя/герб над крупным счётом),
-тяжёлые градиенты, декоративная "перфорация" слева, круглые медальоны
-гербов. Теперь — компактная ОДНА строка (герб-имя-VS/счёт-имя-герб-
-стрелка), спокойная белая поверхность, статус выражен точечно (пилюля
-даты/времени, live-точка, цвет счёта), не заливкой всей карточки.
-
-ВТОРОЙ РЕДИЗАЙН 2026-09-10 (прямая просьба пользователя, полный бриф из
-14 пунктов — "интрига, прогноз сообщества, игрок матча DOPX, Match DNA,
-индекс сенсации и т.д., делай всё сразу, без косяков") — карточка "живёт"
-за счёт мнения болельщиков и контекста, а не только сухих фактов. ВСЕ
-новые поля ниже вычисляются ОДНИМ bulk-вызовом на страницу — см.
-matches/card_services.py::attach_card_extras (matches/views.py::
-MatchListView и core/views.py::HomeView вызывают его перед рендером
-списка) — компонент НИЧЕГО не запрашивает сам, только читает уже
-навешанные атрибуты `card_*`, ровно как и раньше с list_prediction_counts/
-user_has_evaluated.
-
-Ожидаемые поля объекта `match` (все, кроме home_team/away_team/status/
-start_time, — опциональны, компонент проверяет их через {% if %}):
-  home_team, away_team — с .name и опционально .logo_url
-  status — 'scheduled' | 'live' | 'finished' | 'postponed' | 'cancelled'
-  home_score, away_score
-  league — с .name
-  tour — номер тура (int) или None
-  aggregate — с .total_votes
-  is_voting_open — окно оценки матча ещё открыто
-  user_has_evaluated — пользователь уже оценил этот матч
-  is_derby — пара соперников из Team.rivals (админка)
-  was_rescheduled — матч перенесён относительно тура
-  list_prediction_counts / list_my_prediction — инлайн-прогноз 1X2
-  card_intrigue — str|None, короткий тег интриги (п.1)
-  card_h2h — dict{count,home_wins,draws,away_wins}|None (п.3)
-  card_home_form_text / card_away_form_text — str|None (п.4)
-  card_engagement — str|None, статус вовлечённости (п.5)
-  card_followed_teams — list[str], имена подписанных команд (п.6)
-  card_key_moment — str|None, только finished (п.8)
-  card_hero — dict{player,score}|None, только finished (п.9)
-  card_dna_traits — list[str], только finished (п.10)
-  card_reaction_counts / card_my_reaction — только finished (п.11)
-  card_reaction_badge — str|None, "Матч тура по мнению болельщиков" при явном
-    большинстве реакций, только finished (доп. предложение 2026-09-10)
-  card_sensation — int|None, только finished (п.12)
-  card_table_impact — str|None, только finished (п.13)
-  card_cta — dict{icon,label}, только finished (п.14)
-  Countdown (п.7) считается на клиенте Alpine-компонентом matchCountdown
-  (static/js/alpine-components.js) прямо из match.start_time — без
-  серверного поля, badge всегда содержит дату/время как надёжный fallback.
+Все card_* поля навешивает matches/card_services.py::attach_card_extras —
+компонент сам ничего не запрашивает. Опциональные поля проверяются через {% if %}:
+card_intrigue, card_h2h, card_home_form_text / card_away_form_text, card_engagement,
+card_followed_teams, card_key_moment, card_hero, card_dna_traits,
+card_reaction_counts / card_my_reaction, card_reaction_badge, card_sensation,
+card_table_impact, card_cta, list_prediction_counts / list_my_prediction.
+Обратный отсчёт — Alpine matchCountdown.
 {% endcomment %}
 {% comment %}
-2026-09-12 (жалоба пользователя: "по факту счёт 1-0, но на главной 0-0
-пока не обновишь страницу") — карточка рендерится один раз на загрузке
-страницы и больше никогда не перечитывает БД, в отличие от шапки страницы
-матча (templates/matches/_match_header.html), которая уже поллит себя
-каждые 20с через hx-trigger="every 20s". Тот же приём здесь: пока матч
-live — hx-get на сам корневой <a> с hx-trigger="every 15s" (короче, чем
-у шапки — на списке из нескольких live-карточек это по-прежнему один
-лёгкий запрос на карточку, зато счёт обновляется быстрее там, где обычно
-СРАЗУ несколько глаз следят за табло), hx-swap="outerHTML" целиком
-подменяет карточку на свежую (matches:card, см. matches/views.py::
-match_card_partial). id нужен для валидного outerHTML-таргета и на случай,
-если один и тот же матч отрисован дважды на странице (не должно
-случаться, но id уникален по match.id, а не по позиции в списке).
-hx-trigger="every 15s" ПОЛНОСТЬЮ заменяет дефолтный триггер <a> (click) —
-обычный переход по клику на карточку продолжает работать нативно, HTMX
-его не перехватывает.
-
-ИСПРАВЛЕНО (2026-09-12, жалоба пользователя сразу следом: "страница прям
-обновляется, что мешает работе на сайте" — и на мобильном, и на десктопе):
-`data-background-poll` был забыт здесь. Без него templates/base.html
-считает этот hx-get обычным пользовательским запросом (клик/сабмит) и
-вешает на body класс, который показывает #global-loader — ПОЛНОЭКРАННЫЙ
-полупрозрачный оверлей со спиннером (z-[100], перекрывает всю страницу и
-блокирует клики). На странице с несколькими live-карточками это давало
-видимую "вспышку" каждые 15с у каждой из них — то же самое, из-за чего
-раньше был баг в дашборде (см. комментарий у htmx:beforeRequest ниже по
-файлу про isBackgroundPoll). С data-background-poll фоновый свап карточки
-проходит тихо — меняется только сама карточка, экран не мигает.
+Live-карточка обновляет себя каждые 15 с (matches:card).
+data-background-poll — без глобального лоадера.
 {% endcomment %}
 <a href="{% url 'matches:detail' match.id %}"
    id="match-card-{{ match.id }}"
@@ -102,7 +32,7 @@ hx-trigger="every 15s" ПОЛНОСТЬЮ заменяет дефолтный т
    hx-swap="outerHTML"
    {% endif %}>
 
-    <!-- === ВЕРХНЯЯ СТРОКА: лига/тур слева, статус справа === -->
+    {# === ВЕРХНЯЯ СТРОКА: лига/тур слева, статус справа === #}
     <div class="mrow__top">
         <span class="mrow__meta">
             <i class="ti ti-trophy flex-shrink-0"></i>
@@ -110,12 +40,7 @@ hx-trigger="every 15s" ПОЛНОСТЬЮ заменяет дефолтный т
             {% if match.is_derby %}
             <i class="ti ti-flame text-error flex-shrink-0" title="Дерби"></i>
             {% endif %}
-            {% comment %}
-            ⚠️ 2026-09-09: авто-детект was_rescheduled для новых матчей
-            больше не работает (см. templates/matches/_match_header.html),
-            бейдж продолжит показываться только на исторических матчах,
-            у которых поле уже стоит True.
-            {% endcomment %}
+            {# Бейдж переноса — только у старых матчей с was_rescheduled. #}
             {% if match.was_rescheduled and match.status != 'postponed' %}
             <i class="ti ti-calendar-exclamation text-warning flex-shrink-0" title="Дата перенесена относительно тура"></i>
             {% endif %}
@@ -130,27 +55,14 @@ hx-trigger="every 15s" ПОЛНОСТЬЮ заменяет дефолтный т
             {% elif match.status == 'cancelled' %}
             <i class="ti ti-ban"></i> Отменён
             {% else %}
-            {% comment %}
-            Пункт 7 брифа — countdown до стартового свистка вместо голой
-            даты. x-text перезаписывает текст ПОСЛЕ гидратации Alpine
-            (см. matchCountdown в alpine-components.js); дата/время внутри
-            <span> — надёжный fallback без JS/до гидратации, тот же
-            принцип прогрессивного улучшения, что и у остальных Alpine-
-            компонентов сайта.
-            {% endcomment %}
+            {# Обратный отсчёт; дата внутри — fallback без JS. #}
             <i class="ti ti-clock"></i> <span x-text="countdownText">{{ match.start_time|date:"d.m" }} · {{ match.start_time|time:"H:i" }}</span>
             {% endif %}
         </span>
     </div>
 
     {% if match.card_intrigue or match.card_followed_teams or match.card_reaction_badge %}
-    {% comment %}
-    Пункты 1 и 6 брифа — тег интриги и "Ваша команда", отдельной тонкой
-    строкой между статусом и составом. Плюс бейдж "Матч тура" (2026-09-10,
-    доп. предложение по вопросу пользователя об использовании реакций) —
-    для finished-матчей, где card_intrigue не считается, но сам ряд-тегов
-    тот же самый, уместен и здесь.
-    {% endcomment %}
+    {# Тег интриги, «Ваша команда», «Матч тура». #}
     <div class="mrow__tags-row">
         {% if match.card_intrigue %}
         <span class="mrow__intrigue-tag" title="Почему это интересный матч">
@@ -170,7 +82,7 @@ hx-trigger="every 15s" ПОЛНОСТЬЮ заменяет дефолтный т
     </div>
     {% endif %}
 
-    <!-- === ГЛАВНАЯ СТРОКА: герб — имя — VS/счёт — имя — герб — стрелка === -->
+    {# === ГЛАВНАЯ СТРОКА: герб — имя — VS/счёт — имя — герб — стрелка === #}
     <div class="mrow__main">
         <div class="mrow__team mrow__team--home">
             {% if match.home_team.logo_url %}
@@ -210,16 +122,7 @@ hx-trigger="every 15s" ПОЛНОСТЬЮ заменяет дефолтный т
     </div>
 
     {% if match.card_home_form_text or match.card_away_form_text or match.card_h2h %}
-    {% comment %}
-    Пункты 3 и 4 брифа — форма команд и очный баланс, только для ещё не
-    сыгранных матчей (см. attach_card_extras). ИСПРАВЛЕНО (2026-09-10,
-    жалоба пользователя — было "просто набор слов и букв, не влезает") —
-    каждый факт теперь своя строка с иконкой, направление стрелки формы
-    читаем прямо из текста ("Не побеждает..." → вниз, иначе → вверх), а не
-    заводим для этого отдельное поле на бэкенде — фраза и так однозначно
-    говорит о направлении, дублировать её отдельным булевым флагом было бы
-    лишней сущностью ради того же самого факта.
-    {% endcomment %}
+    {# Форма команд и очные встречи — только для несыгранных матчей. #}
     <div class="mrow__context">
         {% if match.card_home_form_text %}
         <div class="mrow__context-row" title="Форма {{ match.home_team.name }} за последние матчи">
@@ -242,14 +145,7 @@ hx-trigger="every 15s" ПОЛНОСТЬЮ заменяет дефолтный т
         </div>
         {% endif %}
         {% if match.card_h2h %}
-        {% comment %}
-        ИСПРАВЛЕНО (2026-09-10, жалоба пользователя — "на мобильном title
-        не увидеть, наведением мыши не воспользуешься, всё должно быть
-        понятно и так"): раньше подпись "Последние 5: ..." объясняла себя
-        только через title-тултип (недоступен на тач-устройствах). Теперь
-        сама надпись прямо называет, что это — "Очные встречи", без
-        необходимости наводить курсор.
-        {% endcomment %}
+        {# Подпись видна сразу, без title. #}
         <div class="mrow__context-row" title="Очные встречи этих команд за последние {{ match.card_h2h.count }} матчей">
             <i class="ti ti-history"></i>
             <span>Очные встречи ({{ match.card_h2h.count }}): <strong>{{ match.home_team.name }} {{ match.card_h2h.home_wins }}</strong> · Ничьи {{ match.card_h2h.draws }} · <strong>{{ match.away_team.name }} {{ match.card_h2h.away_wins }}</strong></span>
@@ -259,7 +155,7 @@ hx-trigger="every 15s" ПОЛНОСТЬЮ заменяет дефолтный т
     {% endif %}
 
     {% if match.status == 'finished' %}
-    {% comment %}Пункты 8, 9, 10, 12, 13 брифа — только для завершённых матчей, каждый блок рендерится независимо (может не быть данных для какого-то одного).{% endcomment %}
+    {# Блоки завершённого матча — каждый рендерится независимо. #}
     {% if match.card_key_moment %}
     <div class="mrow__key-moment" title="Момент, который определил исход матча">
         <i class="ti ti-bolt"></i><span>{{ match.card_key_moment }}</span>
@@ -281,12 +177,7 @@ hx-trigger="every 15s" ПОЛНОСТЬЮ заменяет дефолтный т
     {% endif %}
 
     {% if match.card_dna_traits %}
-    {% comment %}
-    ИСПРАВЛЕНО (2026-09-10, жалоба пользователя — "на мобильном title не
-    наведёшь, должно быть понятно и так"): раньше источник чипов ("Высокая
-    драма" и т.д.) объяснялся только через title. Теперь подпись
-    "по оценкам болельщиков" видна сразу, без наведения.
-    {% endcomment %}
+    {# Подпись источника видна сразу. #}
     <div class="mrow__dna-traits">
         <span class="mrow__dna-caption">ДНК матча по оценкам болельщиков:</span>
         <div class="mrow__dna-chips">
@@ -296,11 +187,7 @@ hx-trigger="every 15s" ПОЛНОСТЬЮ заменяет дефолтный т
     {% endif %}
 
     {% if match.card_sensation %}
-    {% comment %}
-    ИСПРАВЛЕНО (2026-09-10, та же жалоба) — раньше "Сенсация N/100" была
-    самодостаточна только с title. Добавлена короткая поясняющая фраза
-    прямо в тексте, работает и без наведения.
-    {% endcomment %}
+    {# Пояснение к индексу сенсации в тексте. #}
     <div class="mrow__sensation" title="Насколько итог разошёлся с ожиданиями болельщиков — по прогнозам до матча или по голосованию после него">
         <i class="ti ti-alert-triangle flex-shrink-0"></i>
         <span>Сенсация {{ match.card_sensation }}/100 — итог удивил большинство болельщиков</span>
@@ -314,12 +201,7 @@ hx-trigger="every 15s" ПОЛНОСТЬЮ заменяет дефолтный т
     {% endif %}
     {% endif %}
 
-    {% comment %}
-    Второй уровень информации (не конкурирует с составом/счётом выше) —
-    дерби/голоса слева, статус оценки/CTA справа. Рендерится, только
-    когда реально есть что показать хотя бы с одной стороны — пустая
-    карточка не тянет за собой пустую полосу с border-top.
-    {% endcomment %}
+    {# Нижняя строка — только если есть что показать. #}
     {% if match.aggregate.total_votes or match.user_has_evaluated or match.status == 'finished' or match.card_engagement %}
     <div class="mrow__footer">
         <div class="mrow__footer-meta">
@@ -329,7 +211,7 @@ hx-trigger="every 15s" ПОЛНОСТЬЮ заменяет дефолтный т
                 {{ match.aggregate.total_votes }}
             </span>
             {% endif %}
-            {% comment %}Пункт 5 брифа — статус вовлечённости в прогноз ("Прогнозов: 247" / "Вы ещё не сделали прогноз").{% endcomment %}
+            {# Вовлечённость в прогноз. #}
             {% if match.card_engagement %}
             <span class="mrow__engagement">{{ match.card_engagement }}</span>
             {% endif %}
@@ -341,12 +223,7 @@ hx-trigger="every 15s" ПОЛНОСТЬЮ заменяет дефолтный т
                 <span class="hidden sm:inline">Оценено</span>
             </span>
             {% elif match.status == 'finished' and match.is_voting_open %}
-            {% comment %}
-            НЕ <a> — карточка уже сама <a> (см. выше), а вложенные <a>
-            внутри <a> — невалидный HTML, ломает вёрстку в браузере (см.
-            исторический комментарий в предыдущей версии файла). <button>
-            с переходом через JS ведёт себя как ссылка, но не рвёт вложенность.
-            {% endcomment %}
+            {# <button>, а не <a> — карточка уже ссылка. #}
             <button type="button"
                     onclick="event.stopPropagation(); window.location.href='{% url 'evaluations:context' match.id %}'"
                     class="mrow__cta btn btn-xs btn-primary shrink-0">
@@ -354,15 +231,7 @@ hx-trigger="every 15s" ПОЛНОСТЬЮ заменяет дефолтный т
                 <span class="hidden sm:inline">Оценить</span>
             </button>
             {% elif match.status == 'finished' %}
-            {% comment %}
-            ИСПРАВЛЕНО (2026-09-10, пункт 14 брифа — "убери 'Голосование
-            закрыто', замени на CTA со смыслом"): раньше здесь всегда был
-            один и тот же бейдж-заглушка независимо от того, есть ли на
-            карточке разбор матча. card_cta (matches/services.py::
-            describe_finished_cta) выбирает копию по факту наличия данных
-            — карточка и так целиком ссылка на страницу матча, это не
-            новый переход, а более честная подпись существующего клика.
-            {% endcomment %}
+            {# CTA завершённого матча (describe_finished_cta). #}
             <span class="badge badge-ghost badge-xs shrink-0">
                 <i class="ti {{ match.card_cta.icon|default:'ti-lock' }} flex-shrink-0"></i>
                 <span class="hidden sm:inline">{{ match.card_cta.label|default:"Матч завершён" }}</span>
@@ -373,18 +242,12 @@ hx-trigger="every 15s" ПОЛНОСТЬЮ заменяет дефолтный т
     {% endif %}
 
     {% if match.list_prediction_counts %}
-    {% comment %}
-    Инлайн-прогноз 1X2 — второй уровень. Партиал сам рисует свой
-    mt-2/pt-2/border-t (см. predictions/_prediction_widget_compact.html) —
-    без внешней обёртки здесь, иначе получится двойная разделительная
-    линия, когда .mrow__footer выше уже нарисовал свою. Виджет сам
-    останавливает всплытие клика по своим кнопкам.
-    {% endcomment %}
+    {# Инлайн-прогноз 1X2. Разделитель рисует сам партиал. #}
     {% include 'predictions/_prediction_widget_compact.html' with counts=match.list_prediction_counts my_prediction=match.list_my_prediction %}
     {% endif %}
 
     {% if match.status == 'finished' and match.card_reaction_counts %}
-    {% comment %}Пункт 11 брифа — реакция сообщества, тот же паттерн, что и прогноз выше.{% endcomment %}
+    {# Реакция сообщества. #}
     {% include 'matches/_reaction_widget_compact.html' with match=match counts=match.card_reaction_counts my_reaction=match.card_my_reaction %}
     {% endif %}
 </a>

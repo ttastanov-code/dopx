@@ -4,12 +4,7 @@
 {% block content %}
 {% include 'dashboard/_nav.html' %}
 
-{% comment %}
-2026-09-22, полный редизайн: daisyUI .stat-блоки → .dopx-stat (крупнее
-цифра, воздух, единая карточная тень вместо рамки), .tabs-boxed
-day-preset → компактный сегмент-переключатель в стиле остальных action-
-контролов нового дизайна. Данные/переменные контекста — БЕЗ ИЗМЕНЕНИЙ.
-{% endcomment %}
+{# Обзор метрик: .dopx-stat карточки и переключатель периода. #}
 <div class="flex justify-end mb-4">
     <div class="dopx-segment">
         {% for preset in day_presets %}
@@ -81,8 +76,7 @@ day-preset → компактный сегмент-переключатель в
 {% endblock %}
 
 {% block extra_script %}
-<!-- dist/chart.umd.js вместо chart.umd.min.js + integrity= — см. подробный
-     комментарий в templates/admin/index.html. -->
+{# dist/chart.umd.js + integrity — см. templates/admin/index.html. #}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.js" integrity="sha256-/tanOfjQ8GhxdN5s0UdF/A/HgJFEqxE9IpCKJr8Nf+o=" crossorigin="anonymous"></script>
 <script>
 (function () {

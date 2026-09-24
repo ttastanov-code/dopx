@@ -1,13 +1,6 @@
 # analytics/tests.py
-"""
-Регрессия на баг из этой сессии: `track_event()` писал в `url_path`/
-`referrer` данные о ЗАПРОСЕ К ТРЕКИНГ-ЭНДПОИНТУ (`/analytics/track/` и его
-same-origin referrer), а не о реальной странице, на которой произошло
-событие — из-за чего "топ страниц" в разделе "Трафик" staff-дашборда
-всегда показывал один и тот же путь. Фикс — читать `properties.path`/
-`properties.referrer` (клиент кладёт туда `location.pathname`/
-`document.referrer`), с `request.path`/`HTTP_REFERER` только как fallback.
-См. `analytics/services.py::track_event` и `static/js/analytics.js`.
+"""Тесты track_event: url_path/referrer берутся из properties (реальная страница),
+а не из запроса к /analytics/track/.
 """
 from __future__ import annotations
 
@@ -23,9 +16,7 @@ User = get_user_model()
 
 
 def _request_with_session(**meta):
-    """RequestFactory не подключает SessionMiddleware сам — `track_event`
-    читает `request.session.session_key`, без сессии тест упал бы
-    AttributeError раньше, чем дошёл бы до проверяемого бага."""
+    """RequestFactory без сессии — добавляем SessionMiddleware."""
     factory = RequestFactory()
     request = factory.get("/analytics/track/", **meta)
     SessionMiddleware(lambda r: None).process_request(request)
@@ -36,8 +27,7 @@ def _request_with_session(**meta):
 
 @override_settings(CELERY_TASK_ALWAYS_EAGER=True, CELERY_TASK_EAGER_PROPAGATES=True)
 class TrackEventUrlPathTests(TestCase):
-    """`request.path` ВСЕГДА равен '/analytics/track/' — это НЕ настоящий
-    путь страницы, на которой произошло событие."""
+    """request.path всегда '/analytics/track/'."""
 
     def test_uses_properties_path_when_provided(self):
         request = _request_with_session()
@@ -48,9 +38,7 @@ class TrackEventUrlPathTests(TestCase):
         self.assertNotEqual(event.url_path, "/analytics/track/")
 
     def test_falls_back_to_request_path_when_properties_path_missing(self):
-        """Fallback существует для событий, где клиент не передал path
-        (например, серверные события из Celery-сигналов) — НЕ для
-        обычного /analytics/track/ трафика, где properties.path обязателен."""
+        """Fallback на request.path — для событий без properties.path."""
         request = _request_with_session()
         track_event(EventName.PAGE_VIEW, request=request, properties={})
 
@@ -60,9 +48,7 @@ class TrackEventUrlPathTests(TestCase):
 
 @override_settings(CELERY_TASK_ALWAYS_EAGER=True, CELERY_TASK_EAGER_PROPAGATES=True)
 class TrackEventReferrerTests(TestCase):
-    """`HTTP_REFERER` заголовка fetch/sendBeacon-запроса К /analytics/track/
-    всегда same-origin (текущая страница сама себя) — это НЕ настоящий
-    внешний referrer визита."""
+    """HTTP_REFERER запроса к трекеру — не настоящий referrer."""
 
     def test_uses_properties_referrer_over_same_origin_header(self):
         request = _request_with_session(HTTP_REFERER="http://127.0.0.1:8000/matches/")
@@ -84,8 +70,7 @@ class TrackEventReferrerTests(TestCase):
 
 @override_settings(CELERY_TASK_ALWAYS_EAGER=True, CELERY_TASK_EAGER_PROPAGATES=True)
 class TrackEventPrivacyTests(TestCase):
-    """IP пишется ТОЛЬКО в хэшированном виде (см. analytics/services.py::
-    hash_ip) — сырой адрес в БД попадать не должен ни в одно поле."""
+    """IP только в виде хэша."""
 
     def test_ip_is_stored_hashed_not_raw(self):
         request = _request_with_session(REMOTE_ADDR="203.0.113.42")
@@ -105,9 +90,7 @@ class TrackEventUserTests(TestCase):
         track_event(EventName.EVALUATION_COMPLETED, request=request, properties={"path": "/matches/x/"})
 
         event = AnalyticsEvent.objects.get()
-        # str() — не полагаемся на то, конвертирует ли бэкенд UUIDField
-        # обратно в uuid.UUID при чтении из БД или оставляет строкой;
-        # для этой проверки важна только логическая эквивалентность ID.
+        # Сравниваем через str().
         self.assertEqual(str(event.user_id), str(user.id))
 
     def test_anonymous_request_has_no_user(self):

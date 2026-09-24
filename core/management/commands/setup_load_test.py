@@ -1,22 +1,10 @@
 # core/management/commands/setup_load_test.py
-"""
-Готовит данные для нагрузочного тестирования (см. loadtest/locustfile.py):
+"""manage.py setup_load_test [--users 100]
 
-1. N тестовых пользователей (loadtest_0001..loadtest_000N) с известным
-   паролем, email verified=True, с UserXP — заходят в систему БЕЗ капчи и
-   без email-верификации, потому что это НЕ тест самой формы регистрации
-   (капчу ботом не пройти по дизайну — это отдельный, ручной тест защиты),
-   а тест системы под нагрузкой ЛОГИНОМ и обычными действиями.
-2. Один синтетический "load-test матч" с ФИКСИРОВАННЫМ UUID — полностью
-   завершённый, с открытым голосованием, полным составом (11+11 игроков),
-   тренерами и судьёй — чтобы вайзард оценки был доступен ботам стабильно,
-   независимо от реальных данных парсера и их таймингов.
-
-Идемпотентно: можно запускать повторно, ничего не дублирует
-(get_or_create везде). Порядок: League -> Season -> Team x2 -> Coach x2 ->
-Referee -> Player x22 -> Match -> MatchLineup x2 -> MatchLineupPlayer x22.
-
-Запуск: python manage.py setup_load_test [--users 100]
+Данные для нагрузочного теста (loadtest/locustfile.py):
+N пользователей loadtest_NNNN (верифицированы, известный пароль) и
+один завершённый матч с фиксированным UUID, составами, тренерами и судьёй.
+Идемпотентно.
 """
 from __future__ import annotations
 
@@ -40,16 +28,14 @@ from users.models import UserXP
 
 User = get_user_model()
 
-# Фиксированный UUID — один и тот же load-test матч при каждом запуске
-# команды и в locustfile.py. Не пересекается с реальными данными (парсер
-# генерирует свои UUID случайно), поэтому коллизия исключена.
+# Фиксированный UUID матча — тот же в locustfile.py.
 LOAD_TEST_MATCH_ID = uuid.UUID("10000000-0000-0000-0000-000000000001")
 LOAD_TEST_LEAGUE_ID = uuid.UUID("10000000-0000-0000-0000-000000000002")
 LOAD_TEST_HOME_TEAM_ID = uuid.UUID("10000000-0000-0000-0000-000000000003")
 LOAD_TEST_AWAY_TEAM_ID = uuid.UUID("10000000-0000-0000-0000-000000000004")
 
 LOAD_TEST_USERNAME_PREFIX = "loadtest_"
-LOAD_TEST_PASSWORD = "LoadTest2026!"  # только для локальных/тестовых прогонов
+LOAD_TEST_PASSWORD = "LoadTest2026!"  # только для локальных прогонов
 
 
 class Command(BaseCommand):
@@ -120,9 +106,7 @@ class Command(BaseCommand):
                 "status": "finished",
                 "home_score": 2,
                 "away_score": 1,
-                # Далеко в будущее — голосование НИКОГДА не закрывается само
-                # по себе для этого матча, чтобы повторные прогоны нагрузки
-                # не упирались в check_voting_access().
+                # Голосование открыто на годы вперёд.
                 "voting_open_until": now + timedelta(days=3650),
                 "has_lineup": True,
             },

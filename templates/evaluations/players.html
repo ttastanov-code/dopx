@@ -3,12 +3,12 @@
 {% load match_extras %}
 
 {% block content %}
-<!-- === PROGRESS === -->
+{# === ПРОГРЕСС === #}
 <div class="max-w-7xl mx-auto mb-5 px-3">
     {% include 'evaluations/_evaluation_progress.html' with step=3 total_steps=6 progress=progress %}
 </div>
 
-<!-- === ШАПКА МАТЧА === -->
+{# === ШАПКА МАТЧА === #}
 <div class="max-w-7xl mx-auto mb-5 px-3">
     <div class="wz-hero-card">
         {% include 'evaluations/_wizard_match_header.html' with match=match %}
@@ -24,12 +24,12 @@
     {% endif %}
 </div>
 
-<!-- === FORM === -->
+{# === ФОРМА === #}
 <form method="post" action="{% url 'evaluations:players' match.id %}" class="max-w-7xl mx-auto px-3" id="players-form"
       data-wz-untouched-hint="Потяните хотя бы один ползунок — иначе этот критерий не будет учтён">
     {% csrf_token %}
 
-    <!-- Live Counter -->
+    {# Счётчик выбранных #}
     <div class="sticky top-16 z-30 mb-5 bg-base-100/95 backdrop-blur border border-base-300 rounded-2xl px-4 py-3 flex items-center justify-between shadow-sm">
         <span class="text-sm font-bold flex items-center gap-2">
             <i class="ti ti-checklist text-primary"></i>
@@ -39,13 +39,10 @@
     </div>
 
     {% if mode == 'quick' %}
-    <!-- === ЛУЧШИЙ / ХУДШИЙ ИГРОК МАТЧА ===
-         Главный сценарий "Быстрой" оценки (см. docs/adr/0031-quick-mode-primary-flow.md):
-         не листать карточки со слайдерами, а выбрать двух игроков из
-         выпадающих списков — под капотом это те же PlayerEvaluation
-         (contribution/risk/potential), просто с преднастроенными
-         значениями (см. <script> ниже), заполняемыми в скрытые поля УЖЕ
-         существующих карточек состава (никаких изменений на бэкенде). -->
+    {% comment %}
+    === ЛУЧШИЙ / ХУДШИЙ ИГРОК ===
+    Быстрый режим: выбор двух игроков заполняет скрытые поля карточек пресетами.
+    {% endcomment %}
     <div class="card bg-base-100 border-2 border-primary/30 shadow-sm mb-5">
         <div class="card-body p-4 sm:p-5">
             <h3 class="font-extrabold text-base sm:text-lg mb-3.5 flex items-center gap-2">
@@ -108,17 +105,17 @@
     {% endif %}
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <!-- Домашняя команда -->
+        {# Хозяева #}
         <div class="space-y-4">
             <h2 class="font-extrabold text-lg flex items-center gap-2.5 pb-3 border-b-2 border-primary/20">
                 {% if match.home_team.logo_url %}
-                {# alt="" — герб декоративный, название команды идёт текстом рядом (см. UI/UX-аудит 2026-09-21). #}
+                {# alt="" — герб декоративный. #}
                 <img src="{{ match.home_team.logo_url }}" alt="" class="w-6 h-6 object-contain">
                 {% endif %}
                 <span class="truncate">{{ match.home_team.name }}</span>
             </h2>
 
-            <!-- Старт -->
+            {# Старт #}
             <div>
                 <h3 class="text-xs font-bold uppercase tracking-wider text-success/80 mb-2.5 flex items-center gap-1.5">
                     <i class="ti ti-circle-filled text-[7px]"></i> Стартовый состав
@@ -132,7 +129,7 @@
                 </div>
             </div>
 
-            <!-- Запас -->
+            {# Запас #}
             <div>
                 <h3 class="text-xs font-bold uppercase tracking-wider text-info/80 mb-2.5 flex items-center gap-1.5">
                     <i class="ti ti-clock text-[11px]"></i> Запасные
@@ -147,17 +144,17 @@
             </div>
         </div>
 
-        <!-- Гостевая команда -->
+        {# Гости #}
         <div class="space-y-4">
             <h2 class="font-extrabold text-lg flex items-center gap-2.5 pb-3 border-b-2 border-secondary/20">
                 {% if match.away_team.logo_url %}
-                {# alt="" — та же причина, что у домашней команды выше. #}
+                {# alt="" — герб декоративный. #}
                 <img src="{{ match.away_team.logo_url }}" alt="" class="w-6 h-6 object-contain">
                 {% endif %}
                 <span class="truncate">{{ match.away_team.name }}</span>
             </h2>
 
-            <!-- Старт -->
+            {# Старт #}
             <div>
                 <h3 class="text-xs font-bold uppercase tracking-wider text-success/80 mb-2.5 flex items-center gap-1.5">
                     <i class="ti ti-circle-filled text-[7px]"></i> Стартовый состав
@@ -171,7 +168,7 @@
                 </div>
             </div>
 
-            <!-- Запас -->
+            {# Запас #}
             <div>
                 <h3 class="text-xs font-bold uppercase tracking-wider text-info/80 mb-2.5 flex items-center gap-1.5">
                     <i class="ti ti-clock text-[11px]"></i> Запасные
@@ -191,7 +188,7 @@
     </details>
     {% endif %}
 
-    <!-- Navigation Buttons -->
+    {# Навигация #}
     <div class="wz-sticky-nav flex gap-2">
         <a href="{% url 'evaluations:teams' match.id %}" class="btn btn-ghost btn-lg flex-1">
             <i class="ti ti-arrow-left"></i> Назад

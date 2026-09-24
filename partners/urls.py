@@ -1,4 +1,5 @@
 # partners/urls.py
+# Реферальные ссылки, клики по баннерам, фиды партнёров.
 from django.urls import path
 
 from . import views

@@ -1,9 +1,4 @@
-<!-- templates/emails/voting_open.html — ПОЛНЫЙ РЕДИЗАЙН 2026-09-02, см.
-     докстринг templates/emails/welcome.html про общий каркас в partials/.
-     Контекст: match, title (см. notifications/tasks.py::
-     notify_followers_match_activity). Ссылка на настройки уведомлений
-     ИСПРАВЛЕНА на канонический /users/profile/notifications/ (было
-     /users/settings/ — несуществующий в проекте путь, см. users/urls.py). -->
+{# Голосование открыто. Контекст: match, title. #}
 <!DOCTYPE html>
 <html lang="ru">
 {% include "emails/partials/_head.html" %}

@@ -4,7 +4,7 @@
 
 {% block content %}
 
-<!-- === HEADER === -->
+{# === ШАПКА === #}
 <div class="mb-8">
     <h1 class="text-3xl font-bold mb-2">
         <i class="ti ti-trophy mr-2"></i>
@@ -16,18 +16,9 @@
     </p>
 </div>
 
-<!-- === TABS === -->
+{# === ВКЛАДКИ === #}
 <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
-    {% comment %}
-    2026-09-23, жалоба пользователя: "кнопки игроки и пользователи надо
-    сделать более видимыми" — daisyUI .tabs.tabs-boxed даёт слишком
-    ненавязчивый активный сегмент (тонкая подложка, почти не отличить от
-    неактивного на некоторых темах). Тот же сегментированный
-    пилюля-тумблер, что уже используется и проверен на components/
-    _season_scope_toggle.html (там была точно такая же жалоба про
-    "кнопку надо переделать нормально") — активный сегмент явно залит
-    primary-цветом, а не еле заметным оттенком фона.
-    {% endcomment %}
+    {# Сегментированный переключатель, активный — залит primary. #}
     <div class="inline-flex items-center gap-1 p-1 rounded-lg bg-base-200 text-sm">
         <a href="{% url 'users:leaderboard' %}" class="px-3 py-1.5 rounded-md font-medium transition-colors flex items-center gap-1.5 bg-primary text-primary-content shadow-sm">
             <i class="ti ti-users"></i>
@@ -39,8 +30,7 @@
         </a>
     </div>
 
-    <!-- Локальный рейтинг по городу — form с auto-submit, без JS,
-         ?city= читается в UserLeaderboardView.get_queryset(). -->
+    {# Фильтр по городу (?city=), auto-submit. #}
     {% if available_cities %}
     <form method="get" class="flex items-center gap-2">
         {% if selected_sort != 'trust' %}<input type="hidden" name="sort" value="{{ selected_sort }}">{% endif %}
@@ -58,12 +48,7 @@
     {% endif %}
 </div>
 
-{% comment %}
-2026-09-23, продуктовый запрос "больше срезов рейтинга" — переключатель
-между trust/active/streak (users/views.py::UserLeaderboardView.SORT_OPTIONS),
-тот же визуальный паттерн пилюль-сегментов, что и вкладки
-Пользователи/Игроки выше (уже проверенный фикс видимости).
-{% endcomment %}
+{# Срез рейтинга: trust/active/streak (SORT_OPTIONS). #}
 <div class="inline-flex items-center gap-1 p-1 rounded-lg bg-base-200 text-sm mb-6 flex-wrap">
     {% for key, opt in sort_options.items %}
     <a href="?sort={{ key }}{% if selected_city %}&city={{ selected_city }}{% endif %}"
@@ -74,20 +59,12 @@
     {% endfor %}
 </div>
 
-<!-- Раньше был max-w-md (448px) — узкая полоска над широкой таблицей
-     смотрелась чужеродно и не имела отношения к реальной ширине контента.
-     Зона "leaderboard" теперь во всю ширину контента (как и таблица под
-     ней) — рекомендуемый формат баннера 728×90 (классический "leaderboard"
-     из IAB-стандартов), картинка тянется по ширине без искажений. -->
+{# Баннер во всю ширину (728×90). #}
 <div class="mb-6">
     {% render_banner "leaderboard" %}
 </div>
 
-{% comment %}
-2026-09-23, продуктовый запрос "визуальный редизайн карточек/таблицы" —
-подиум топ-3 карточками, только на 1-й странице (дальше это уже не топ-3,
-а обычные строки, ниже раскрытые полностью в таблице).
-{% endcomment %}
+{# Подиум топ-3 — только на первой странице. #}
 {% if page_obj.number == 1 and users|length >= 3 %}
 <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
     {% for user in users|slice:":3" %}
@@ -116,12 +93,7 @@
 </div>
 {% endif %}
 
-{% comment %}
-2026-09-23, продуктовый запрос "своя позиция и соседи по рейтингу" —
-показывается только если текущий пользователь авторизован, попадает в
-активный (город+срез) фильтр, но НЕ виден на открытой странице таблицы
-ниже (см. UserLeaderboardView.get_context_data — сам расчёт окна).
-{% endcomment %}
+{# Своя позиция и соседи — если пользователя нет на текущей странице. #}
 {% if my_rank_neighbors %}
 <div class="card bg-primary/5 border border-primary/30 mb-6">
     <div class="card-body p-4">
@@ -156,7 +128,7 @@
 </div>
 {% endif %}
 
-<!-- === ТАБЛИЦА === -->
+{# === ТАБЛИЦА === #}
 <div class="card bg-base-100 border border-base-300">
     <div class="card-body p-0">
         <div class="overflow-x-auto">
@@ -174,14 +146,7 @@
                 </thead>
                 <tbody>
                     {% for user in users %}
-                    {% comment %}
-                    2026-09-23, попутный фикс: forloop.counter даёт номер
-                    В ПРЕДЕЛАХ страницы (1,2,3... заново на каждой странице
-                    пагинации) — раньше медали 🥇🥈🥉 повторно рисовались на
-                    первых трёх строках КАЖДОЙ страницы, не только реального
-                    топ-3 всего рейтинга. page_obj.start_index — с какого
-                    номера начинается текущая страница в общем списке.
-                    {% endcomment %}
+                    {# Номер места — page_obj.start_index + counter, медали только у реального топ-3. #}
                     {% with global_rank=page_obj.start_index|add:forloop.counter0|default:forloop.counter %}
                     <tr class="hover {% if global_rank <= 3 %}bg-warning/10{% endif %}">
                         <td>
@@ -196,7 +161,7 @@
                             {% endif %}
                         </td>
                         <td>
-                            {% comment %}users:public_profile — см. users/views.py::PublicProfileView.{% endcomment %}
+                            {# Публичный профиль. #}
                             <a href="{% url 'users:public_profile' user.username %}" class="flex items-center gap-3 hover:text-primary transition-colors">
                                 <div class="avatar">
                                     <div class="w-10 rounded-full">
@@ -266,7 +231,7 @@
     </div>
 </div>
 
-<!-- === PAGINATION === -->
+{# === ПАГИНАЦИЯ === #}
 {% if is_paginated %}
 <div class="flex justify-center mt-8">
     <div class="join">
@@ -293,7 +258,7 @@
 </div>
 {% endif %}
 
-<!-- === INFO BOX === -->
+{# === ИНФО === #}
 <div class="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4">
     <div class="card bg-base-100 border border-base-300 p-4">
         <div class="flex items-center gap-3">
