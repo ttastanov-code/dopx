@@ -87,31 +87,9 @@
                 <p x-show="status === 'timeout'" x-cloak class="text-xs text-warning mt-2">Не удалось проверить service worker за 4 секунды. Проверьте в консоли браузера (F12 → Application → Service Workers), зарегистрирован ли /sw.js.</p>
                 <button type="button" @click="subscribe()" x-show="status === 'timeout'" x-cloak class="btn btn-outline btn-sm mt-1 self-start">Всё равно включить</button>
 
-                {% if push_subscriptions %}
-                <div class="border-t border-base-300 mt-4 pt-4">
-                    <h3 class="font-semibold mb-2 text-sm">Все ваши устройства с push</h3>
-                    <div class="space-y-2">
-                        {% for sub in push_subscriptions %}
-                        <div class="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-base-200/60">
-                            <div class="flex items-center gap-3 min-w-0">
-                                <i class="ti ti-device-desktop opacity-60 flex-shrink-0"></i>
-                                <div class="min-w-0">
-                                    <div class="font-medium text-sm truncate">{{ sub.friendly_label }}</div>
-                                    <div class="text-xs opacity-50">Подключено {{ sub.created_at|date:"d.m.Y" }}</div>
-                                </div>
-                            </div>
-                            <form method="post" action="{% url 'users:push_revoke_device' sub.id %}"
-                                  onsubmit="return confirm('Отключить это устройство от push-уведомлений?');">
-                                {% csrf_token %}
-                                <button type="submit" class="btn btn-ghost btn-xs opacity-60 flex-shrink-0">
-                                    <i class="ti ti-x"></i><span>Отключить</span>
-                                </button>
-                            </form>
-                        </div>
-                        {% endfor %}
-                    </div>
+                <div data-push-devices data-url="{% url 'users:push_devices' %}">
+                    {% include 'users/_push_devices.html' %}
                 </div>
-                {% endif %}
             </div>
         </div>
 

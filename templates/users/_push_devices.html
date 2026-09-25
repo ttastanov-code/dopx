@@ -1,0 +1,29 @@
+{# Устройства с push. Бейдж «это устройство» проставляет pushSettings по data-push-endpoint. #}
+{% if push_subscriptions %}
+<div class="border-t border-base-300 mt-4 pt-4">
+    <h3 class="font-semibold mb-2 text-sm">Все ваши устройства с push</h3>
+    <div class="space-y-2">
+        {% for sub in push_subscriptions %}
+        <div class="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-base-200/60" data-push-endpoint="{{ sub.endpoint }}">
+            <div class="flex items-center gap-3 min-w-0">
+                <i class="ti {% if 'телефон' in sub.friendly_label %}ti-device-mobile{% else %}ti-device-desktop{% endif %} opacity-60 flex-shrink-0"></i>
+                <div class="min-w-0">
+                    <div class="font-medium text-sm truncate">
+                        {{ sub.friendly_label }}
+                        <span class="hidden badge badge-xs badge-primary ml-1 align-middle" data-push-current>это устройство</span>
+                    </div>
+                    <div class="text-xs opacity-50">Подключено {{ sub.created_at|date:"d.m.Y" }}</div>
+                </div>
+            </div>
+            <form method="post" action="{% url 'users:push_revoke_device' sub.id %}"
+                  onsubmit="return confirm('Отключить это устройство от push-уведомлений?');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-ghost btn-xs opacity-60 flex-shrink-0">
+                    <i class="ti ti-x"></i><span>Отключить</span>
+                </button>
+            </form>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}

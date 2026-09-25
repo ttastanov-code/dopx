@@ -1,111 +1,227 @@
 {% comment %}
-Карточка «ДНК матча». Включается дважды в matches/detail.html (в левую колонку
-на мобильном и в правую на десктопе), видимость — через extra_class.
+Карточка «ДНК матча». Включается дважды в matches/detail.html (мобильная и десктопная копии),
+видимость — через extra_class. Стили — .dna-* в static/css/match-detail.css.
 {% endcomment %}
 {% if match_dna %}
-{# Две колонки по ширине самой карточки (@container/@md), а не вьюпорта. #}
 <div class="md-side-card @container {{ extra_class }}">
     <div class="md-side-card__head flex items-center justify-between gap-2">
-        <div class="flex items-center gap-2">
-            <span class="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                <i class="ti ti-activity text-primary text-sm"></i>
+        <div class="flex items-center gap-2 min-w-0">
+            <span class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                <i class="ti ti-dna-2 text-primary"></i>
             </span>
-            <h3 class="font-extrabold text-base md:text-lg">ДНК матча</h3>
+            <div class="min-w-0">
+                <h3 class="font-extrabold text-base md:text-lg leading-tight">ДНК матча</h3>
+                <div class="text-[11px] opacity-50">по {{ match_dna.total_votes }} оценкам болельщиков</div>
+            </div>
         </div>
-        {# «Поделиться» — Web Share API на PNG core:match_dna_share_card, fallback window.open. #}
-        <button type="button" class="btn btn-ghost btn-xs"
+        {# Web Share API на PNG core:match_dna_share_card, fallback window.open. #}
+        <button type="button" class="btn btn-ghost btn-sm btn-square @xs:w-auto @xs:px-3" title="Поделиться"
                 onclick="if(window.dopxTrack){dopxTrack('share_clicked', {channel: 'native', context: 'match_dna', match_id: '{{ match.id }}'})}; navigator.share ? navigator.share({title: 'ДНК матча на DOPX', url: '{{ match_dna_share_url }}'}) : window.open('{{ match_dna_share_url }}', '_blank')">
-            <i class="ti ti-share"></i> Поделиться
+            <i class="ti ti-share"></i><span class="hidden @xs:inline">Поделиться</span>
         </button>
     </div>
-    <div class="p-3 sm:p-4 space-y-3">
-        <div class="flex items-center flex-wrap gap-2">
-            {% if match_dna.drama_level == 'high' %}
-            <span class="badge badge-error badge-lg font-bold">Высокая драма</span>
-            {% elif match_dna.drama_level == 'medium' %}
-            <span class="badge badge-warning badge-lg font-bold">Средняя драма</span>
-            {% else %}
-            <span class="badge badge-ghost badge-lg font-bold">Спокойный матч</span>
+
+    {# === Формула матча + индекс драмы === #}
+    <div class="dna-block space-y-4">
+        {% with a=match_dna.archetype %}
+        {% if a %}
+        <div class="dna-verdict dna-tone-{{ a.tone }}">
+            <span class="dna-verdict__icon"><i class="ti {{ a.icon }}"></i></span>
+            <div class="min-w-0">
+                <div class="text-[11px] uppercase tracking-wider font-bold opacity-50">Формула матча</div>
+                <div class="dna-verdict__title">{{ a.title }}</div>
+                <p class="text-xs opacity-70 mt-0.5 leading-snug">{{ a.text }}</p>
+            </div>
+        </div>
+        {% endif %}
+        {% endwith %}
+
+        <div>
+            <div class="flex items-end justify-between gap-3">
+                <div>
+                    <div class="dna-eyebrow mb-1">Индекс драмы</div>
+                    <span class="dna-meter__value">{{ match_dna.drama_index|floatformat:0 }}</span><span class="dna-meter__max">/100</span>
+                </div>
+                <div class="flex flex-col items-end gap-1 text-right">
+                    {% if match_dna.drama_level == 'high' %}
+                    <span class="badge badge-error badge-sm font-bold gap-1"><i class="ti ti-flame"></i> Высокая драма</span>
+                    {% elif match_dna.drama_level == 'medium' %}
+                    <span class="badge badge-warning badge-sm font-bold gap-1"><i class="ti ti-bolt"></i> Средняя драма</span>
+                    {% else %}
+                    <span class="badge badge-ghost badge-sm font-bold gap-1"><i class="ti ti-leaf"></i> Спокойный матч</span>
+                    {% endif %}
+                    {% if match_dna.consensus_level == 'high' %}
+                    <span class="text-[11px] text-success flex items-center gap-1"><i class="ti ti-users"></i> Болельщики единодушны</span>
+                    {% elif match_dna.consensus_level == 'medium' %}
+                    <span class="text-[11px] opacity-60 flex items-center gap-1"><i class="ti ti-users"></i> Мнения умеренно разошлись</span>
+                    {% elif match_dna.consensus_level == 'low' %}
+                    <span class="text-[11px] text-error flex items-center gap-1"><i class="ti ti-users"></i> Мнения сильно разошлись</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="dna-meter__track" role="img" aria-label="Индекс драмы {{ match_dna.drama_index|floatformat:0 }} из 100">
+                <span class="dna-meter__marker" style="left: {{ match_dna.drama_index|floatformat:0 }}%"></span>
+            </div>
+            <div class="dna-meter__scale"><span>спокойно</span><span>напряжённо</span><span>драма</span></div>
+        </div>
+    </div>
+
+    {# === Профиль: оси оценок (шкала 1-10 -> % через widthratio) === #}
+    {% if match_dna.entertainment %}
+    <div class="dna-block">
+        <div class="dna-eyebrow mb-2.5">Профиль матча</div>
+        <div class="space-y-2">
+            <div class="dna-axis">
+                <span class="opacity-70 flex items-center gap-1.5"><i class="ti ti-sparkles opacity-60"></i>Зрелищность</span>
+                <div class="dna-bar" style="--dna-bar: var(--color-secondary)"><span style="width: {% widthratio match_dna.entertainment 10 100 %}%"></span></div>
+                <span class="dna-axis__value">{{ match_dna.entertainment|floatformat:1 }}</span>
+            </div>
+            {% if match_dna.tension %}
+            <div class="dna-axis">
+                <span class="opacity-70 flex items-center gap-1.5"><i class="ti ti-heartbeat opacity-60"></i>Напряжение</span>
+                <div class="dna-bar" style="--dna-bar: var(--color-error)"><span style="width: {% widthratio match_dna.tension 10 100 %}%"></span></div>
+                <span class="dna-axis__value">{{ match_dna.tension|floatformat:1 }}</span>
+            </div>
             {% endif %}
-            <span class="text-xs opacity-60">индекс драмы {{ match_dna.drama_index|floatformat:0 }}</span>
-            {% if match_dna.consensus_level == 'high' %}
-            <span class="badge badge-success badge-sm gap-1"><i class="ti ti-users"></i> Высокий консенсус</span>
-            {% elif match_dna.consensus_level == 'low' %}
-            <span class="badge badge-error badge-sm gap-1"><i class="ti ti-users"></i> Мнения разошлись</span>
-            {% elif match_dna.consensus_level == 'medium' %}
-            <span class="badge badge-ghost badge-sm gap-1"><i class="ti ti-users"></i> Средний консенсус</span>
+            {% if match_dna.fairness %}
+            <div class="dna-axis">
+                <span class="opacity-70 flex items-center gap-1.5"><i class="ti ti-scale opacity-60"></i>Честность игры</span>
+                <div class="dna-bar" style="--dna-bar: var(--color-info)"><span style="width: {% widthratio match_dna.fairness 10 100 %}%"></span></div>
+                <span class="dna-axis__value">{{ match_dna.fairness|floatformat:1 }}</span>
+            </div>
             {% endif %}
         </div>
-        {% if match_dna.hero or match_dna.antihero %}
+    </div>
+    {% endif %}
+
+    {# === Ожидания vs итог: прогнозы и xG === #}
+    {% if match_dna.expectations or match_dna.xg %}
+    <div class="dna-block space-y-3">
+        <div class="dna-eyebrow">Ожидания и итог</div>
+        {% with e=match_dna.expectations %}
+        {% if e %}
+        <div>
+            <div class="dna-split" role="img" aria-label="Прогнозы: П1 {{ e.home_pct }}%, ничья {{ e.draw_pct }}%, П2 {{ e.away_pct }}%">
+                <span class="{% if e.result == '1' %}is-result{% endif %}" style="flex: {{ e.home_pct|default:1 }}">П1 {{ e.home_pct }}%</span>
+                <span class="{% if e.result == 'X' %}is-result{% endif %}" style="flex: {{ e.draw_pct|default:1 }}">X {{ e.draw_pct }}%</span>
+                <span class="{% if e.result == '2' %}is-result{% endif %}" style="flex: {{ e.away_pct|default:1 }}">П2 {{ e.away_pct }}%</span>
+            </div>
+            <p class="text-xs mt-1.5 leading-snug">
+                <span class="font-semibold">Угадали {{ e.guessed_pct }}%</span>
+                <span class="opacity-60">из {{ e.total }} прогнозов · фаворит — {{ e.favorite_title }} ({{ e.favorite_pct }}%)</span>
+            </p>
+        </div>
+        {% endif %}
+        {% endwith %}
+        {% with x=match_dna.xg %}
+        {% if x %}
+        <div class="flex items-start gap-3">
+            <div class="dna-stat shrink-0 text-center py-1.5">
+                <div class="dna-stat__label justify-center">xG</div>
+                <div class="font-extrabold text-sm tabular-nums">{{ x.home|floatformat:1 }} : {{ x.away|floatformat:1 }}</div>
+            </div>
+            <p class="text-xs leading-snug pt-1 {% if x.verdict == 'unfair' %}text-warning{% else %}opacity-75{% endif %}">
+                {% if x.verdict == 'unfair' %}<i class="ti ti-alert-triangle"></i>{% endif %}{{ x.text }}
+            </p>
+        </div>
+        {% endif %}
+        {% endwith %}
+    </div>
+    {% endif %}
+
+    {# === Лица матча === #}
+    {% if match_dna.hero or match_dna.antihero %}
+    <div class="dna-block">
+        <div class="dna-eyebrow mb-2.5">Лица матча</div>
+        {# Колонки — по ширине карточки (@container), не вьюпорта. #}
         <div class="grid grid-cols-1 {% if match_dna.hero and match_dna.antihero %}@md:grid-cols-2{% endif %} gap-2">
             {% if match_dna.hero %}
-            <div class="flex items-center gap-2.5 bg-warning/5 border border-warning/20 rounded-xl p-2.5">
-                <div class="w-8 h-8 rounded-full bg-warning/15 flex items-center justify-center flex-shrink-0">
-                    <i class="ti ti-crown text-warning"></i>
-                </div>
-                <div class="min-w-0">
-                    <div class="text-[10px] uppercase tracking-wide opacity-50">Герой матча</div>
-                    <a href="{% url 'players:detail' match_dna.hero.player.id %}" class="font-semibold text-sm hover:underline">
-                        {{ match_dna.hero.player }} — {{ match_dna.hero.score|floatformat:1 }}
-                    </a>
-                </div>
-            </div>
+            <a href="{% url 'players:detail' match_dna.hero.player.id %}" class="dna-person dna-person--hero">
+                <span class="dna-person__icon"><i class="ti ti-crown"></i></span>
+                <span class="min-w-0">
+                    <span class="block text-[11px] opacity-55">Герой</span>
+                    <span class="dna-person__name block">{{ match_dna.hero.player }}</span>
+                    {% if match_dna.hero.stat_rating %}<span class="dna-person__vs block">по статистике {{ match_dna.hero.stat_rating|floatformat:1 }}</span>{% endif %}
+                </span>
+                <span class="dna-person__score" title="Оценка болельщиков">{{ match_dna.hero.score|floatformat:1 }}</span>
+            </a>
             {% endif %}
-            {# Антигерой. None, если совпадает с героем. #}
+            {# Антигерой — None, если совпадает с героем. #}
             {% if match_dna.antihero %}
-            <div class="flex items-center gap-2.5 bg-error/5 border border-error/20 rounded-xl p-2.5">
-                <div class="w-8 h-8 rounded-full bg-error/15 flex items-center justify-center flex-shrink-0">
-                    <i class="ti ti-mood-sad text-error"></i>
-                </div>
-                <div class="min-w-0">
-                    <div class="text-[10px] uppercase tracking-wide opacity-50">Антигерой матча</div>
-                    <a href="{% url 'players:detail' match_dna.antihero.player.id %}" class="font-semibold text-sm hover:underline">
-                        {{ match_dna.antihero.player }} — {{ match_dna.antihero.score|floatformat:1 }}
-                    </a>
-                </div>
-            </div>
+            <a href="{% url 'players:detail' match_dna.antihero.player.id %}" class="dna-person dna-person--anti">
+                <span class="dna-person__icon"><i class="ti ti-mood-sad"></i></span>
+                <span class="min-w-0">
+                    <span class="block text-[11px] opacity-55">Антигерой</span>
+                    <span class="dna-person__name block">{{ match_dna.antihero.player }}</span>
+                    {% if match_dna.antihero.stat_rating %}<span class="dna-person__vs block">по статистике {{ match_dna.antihero.stat_rating|floatformat:1 }}</span>{% endif %}
+                </span>
+                <span class="dna-person__score" title="Оценка болельщиков">{{ match_dna.antihero.score|floatformat:1 }}</span>
+            </a>
             {% endif %}
         </div>
-        {% endif %}
-        {% if match_dna.fan_mood_text %}
-        <p class="text-sm opacity-80 flex items-start gap-2">
-            <i class="ti ti-heart text-secondary mt-0.5 flex-shrink-0"></i>
-            <span>{{ match_dna.fan_mood_text }}</span>
-        </p>
-        {% endif %}
-        {% if match_dna.momentum_points %}
-        <ul class="text-sm space-y-1.5">
-            {% for point in match_dna.momentum_points %}
-            <li class="flex items-start gap-2">
-                <i class="ti ti-bolt text-warning mt-0.5 flex-shrink-0"></i>
-                <span>{{ point }}</span>
-            </li>
+    </div>
+    {% endif %}
+
+    {# === Ход матча: хозяева вверх, гости вниз === #}
+    {% if match_dna.timeline %}
+    <div class="dna-block">
+        <div class="flex items-center justify-between gap-2 mb-2.5">
+            <div class="dna-eyebrow">Ход матча</div>
+            <div class="flex items-center gap-3 text-[11px] opacity-70 min-w-0">
+                <span class="flex items-center gap-1 min-w-0"><span class="dna-dot bg-primary"></span><span class="truncate">{{ match.home_team.name }}</span></span>
+                <span class="flex items-center gap-1 min-w-0"><span class="dna-dot bg-secondary"></span><span class="truncate">{{ match.away_team.name }}</span></span>
+            </div>
+        </div>
+        <div class="dna-duel" role="img" aria-label="События матча по 15-минутным отрезкам: хозяева сверху, гости снизу">
+            {% for w in match_dna.timeline %}
+            <div class="dna-duel__col {% if w.hot %}dna-duel__col--hot{% endif %}"
+                 title="{{ w.label }}': {{ match.home_team.name }} — {{ w.home }}, {{ match.away_team.name }} — {{ w.away }}{% if w.goals %}; голов: {{ w.goals }}{% endif %}">
+                <div class="dna-duel__half dna-duel__half--home">
+                    {% if w.home_goals %}<span class="dna-duel__goal"><i class="ti ti-ball-football"></i>{% if w.home_goals > 1 %}×{{ w.home_goals }}{% endif %}</span>{% endif %}
+                    <span class="dna-duel__bar" style="height: {{ w.home_height }}%"></span>
+                </div>
+                <div class="dna-duel__half dna-duel__half--away">
+                    <span class="dna-duel__bar" style="height: {{ w.away_height }}%"></span>
+                    {% if w.away_goals %}<span class="dna-duel__goal"><i class="ti ti-ball-football"></i>{% if w.away_goals > 1 %}×{{ w.away_goals }}{% endif %}</span>{% endif %}
+                </div>
+            </div>
             {% endfor %}
-        </ul>
-        {% endif %}
-        {# Дополнительные заметки — одна группа с одним разделителем. #}
-        {% if match_dna.controversial_episode or match_dna.referee_divergence or match_dna.turning_point_text %}
-        <div class="border-t border-base-300 pt-2.5 space-y-2">
-            {% if match_dna.controversial_episode %}
-            <p class="text-sm opacity-80 flex items-start gap-2">
-                <i class="ti ti-alert-triangle text-error mt-0.5 flex-shrink-0"></i>
-                <span>{{ match_dna.controversial_episode }}</span>
-            </p>
-            {% endif %}
-            {% if match_dna.referee_divergence %}
-            <p class="text-sm opacity-80 flex items-start gap-2">
-                <i class="ti ti-scale mt-0.5 flex-shrink-0"></i>
-                <span>{{ match_dna.referee_divergence }}</span>
-            </p>
-            {% endif %}
-            {% if match_dna.turning_point_text %}
-            <p class="text-sm opacity-80 flex items-start gap-2">
-                <i class="ti ti-refresh text-info mt-0.5 flex-shrink-0"></i>
-                <span>{{ match_dna.turning_point_text }}</span>
-            </p>
-            {% endif %}
+        </div>
+        <div class="dna-duel__labels">
+            {% for w in match_dna.timeline %}<span>{{ w.label }}</span>{% endfor %}
+        </div>
+        {% if match_dna.momentum_points %}
+        <div class="flex flex-wrap gap-1.5 mt-3">
+            {% for point in match_dna.momentum_points %}
+            <span class="badge badge-sm badge-warning badge-soft gap-1 h-auto py-1"><i class="ti ti-bolt"></i>{{ point }}</span>
+            {% endfor %}
         </div>
         {% endif %}
     </div>
+    {% endif %}
+
+    {# === Заметки === #}
+    {% if match_dna.controversial_episode or match_dna.referee_divergence or match_dna.turning_point_text %}
+    <div class="dna-block space-y-2.5">
+        {% if match_dna.turning_point_text %}
+        <div class="dna-note dna-tone-info">
+            <span class="dna-note__icon"><i class="ti ti-arrows-exchange"></i></span>
+            <span>{{ match_dna.turning_point_text }}</span>
+        </div>
+        {% endif %}
+        {% if match_dna.controversial_episode %}
+        <div class="dna-note dna-tone-error">
+            <span class="dna-note__icon"><i class="ti ti-alert-triangle"></i></span>
+            <span>{{ match_dna.controversial_episode }}</span>
+        </div>
+        {% endif %}
+        {% if match_dna.referee_divergence %}
+        <div class="dna-note dna-tone-neutral">
+            <span class="dna-note__icon"><i class="ti ti-gavel"></i></span>
+            <span>{{ match_dna.referee_divergence }}</span>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
 </div>
 {% endif %}

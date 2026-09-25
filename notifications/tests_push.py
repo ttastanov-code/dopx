@@ -139,3 +139,26 @@ class PredictionClosingSoonTests(TestCase):
         self.assertEqual(
             Notification.objects.filter(related_match=self.match, notification_type="prediction_closing").count(), 2,
         )
+
+
+class PushDevicesEndpointTests(TestCase):
+    def setUp(self):
+        self.user = _user("dev")
+        self.client.force_login(self.user)
+        self.payload = {"endpoint": "https://fcm.googleapis.com/fcm/send/abc", "keys": {"p256dh": "k", "auth": "a"}}
+
+    def _subscribe(self):
+        import json
+
+        return self.client.post("/users/push/subscribe/", data=json.dumps(self.payload), content_type="application/json").json()
+
+    def test_subscribe_reports_created_once(self):
+        self.assertTrue(self._subscribe()["created"])
+        self.assertFalse(self._subscribe()["created"])
+        self.assertEqual(PushSubscription.objects.filter(user=self.user).count(), 1)
+
+    def test_devices_partial_lists_endpoint(self):
+        self._subscribe()
+        resp = self.client.get("/users/push/devices/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'data-push-endpoint="https://fcm.googleapis.com/fcm/send/abc"')

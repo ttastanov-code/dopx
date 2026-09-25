@@ -272,13 +272,21 @@ class MatchDetailView(DetailView):
         # «ДНК матча».
         from matches.services import build_match_dna
 
+        from predictions.services import prediction_counts
+
         referee_agg = match.referee_aggregates.first()
         # Для консенсуса нужны сырые голоса MatchEvaluation.
         match_evaluations = list(MatchEvaluation.objects.filter(match=match).only('entertainment', 'tension', 'fairness'))
+        # Ход матча — по всем событиям, а не по обрезанной ленте.
+        all_events = list(match.events.select_related('player').order_by('minute'))
+        dna_team_stats = {stat.team_id: stat for stat in match.team_statistics.all()}
         match_dna = build_match_dna(
-            match, match_agg, events, referee_agg,
+            match, match_agg, all_events, referee_agg,
             match_evaluations=match_evaluations, top_players=list(top_players),
             worst_players=list(worst_players), fan_support=fan_support,
+            team_stats=(dna_team_stats.get(match.home_team_id), dna_team_stats.get(match.away_team_id)),
+            prediction_counts=prediction_counts(match) if match.status == 'finished' else None,
+            reactions=reaction_counts(match) if match.status == 'finished' else None,
         )
 
         # Абсолютный URL карточки ДНК (для Web Share API).
@@ -288,9 +296,7 @@ class MatchDetailView(DetailView):
         )
 
         # Статистика по team_id.
-        team_stats_by_team_id = {
-            stat.team_id: stat for stat in match.team_statistics.all()
-        }
+        team_stats_by_team_id = dna_team_stats
         home_team_stats = team_stats_by_team_id.get(match.home_team_id)
         away_team_stats = team_stats_by_team_id.get(match.away_team_id)
 

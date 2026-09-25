@@ -86,6 +86,9 @@
             </div>
             {% endif %}
 
+            {# === ДНК МАТЧА (мобильная копия) — сразу после результатов оценок === #}
+            {% include 'matches/_match_dna_card.html' with extra_class="lg:hidden" %}
+
             {# === ЛИЧНЫЕ ВСТРЕЧИ === #}
             {% if h2h_matches %}
             <div class="md-side-card">
@@ -234,9 +237,6 @@
                     </div>
                 </div>
             </div>
-
-            {# === ДНК МАТЧА (мобильная копия) === #}
-            {% include 'matches/_match_dna_card.html' with extra_class="lg:hidden" %}
 
             {# === ТОП ИГРОКИ === #}
             {% if top_players %}
