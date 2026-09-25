@@ -261,8 +261,30 @@ document.addEventListener('alpine:init', () => {
             // navigator.standalone — iOS, display-mode: standalone — остальные браузеры.
             this.isStandalone = window.navigator.standalone === true
                 || window.matchMedia('(display-mode: standalone)').matches;
-            // csrfToken — чтобы dopxPushStatus мог почистить осиротевшую подписку.
+            // Список устройств перерисовываем при любом изменении подписок.
+            document.addEventListener('dopx:push-devices-changed', () => this.refreshDevices());
+            // csrfToken — чтобы dopxPushStatus мог восстановить запись на сервере.
             this.status = await window.dopxPushStatus(this.csrfToken);
+            this.markCurrentDevice();
+        },
+        async refreshDevices() {
+            const box = this.$el.querySelector('[data-push-devices]');
+            if (!box) return;
+            try {
+                const res = await fetch(box.dataset.url, { headers: { 'X-Requested-With': 'fetch' } });
+                if (res.ok) box.innerHTML = await res.text();
+            } catch (err) {
+                console.warn('DOPX: push devices refresh failed', err);
+            }
+            this.markCurrentDevice();
+        },
+        // Бейдж «это устройство» у записи с endpoint текущего браузера.
+        markCurrentDevice() {
+            const endpoint = window.dopxPushEndpoint;
+            this.$el.querySelectorAll('[data-push-endpoint]').forEach((row) => {
+                const badge = row.querySelector('[data-push-current]');
+                if (badge) badge.classList.toggle('hidden', !endpoint || row.dataset.pushEndpoint !== endpoint);
+            });
         },
         async subscribe() {
             this.status = 'loading';

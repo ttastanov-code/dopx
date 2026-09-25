@@ -14,6 +14,10 @@ from matches.services import (
     _describe_fan_mood,
     _describe_hero,
     _describe_momentum,
+    _match_timeline,
+    _describe_archetype,
+    _describe_expectations,
+    _describe_xg,
     _describe_referee_divergence,
     _describe_turning_point,
     _drama_level,
@@ -65,7 +69,7 @@ class DescribeMomentumTests(SimpleTestCase):
         events = [_event(10, "yellow_card"), _event(12, "yellow_card")]
         points = _describe_momentum(events)
         self.assertEqual(len(points), 1)
-        self.assertIn("событий", points[0])
+        self.assertIn("2 события", points[0])
 
     def test_returns_at_most_two_points(self):
         events = [
@@ -74,6 +78,71 @@ class DescribeMomentumTests(SimpleTestCase):
             _event(80), _event(82),  # окно 75-90
         ]
         self.assertLessEqual(len(_describe_momentum(events)), 2)
+
+
+class MatchTimelineTests(SimpleTestCase):
+    def _ev(self, minute, event_type="yellow_card", side="home"):
+        e = _event(minute, event_type)
+        e.team_side = side
+        return e
+
+    def test_empty_events_no_timeline(self):
+        self.assertEqual(_match_timeline([]), [])
+
+    def test_split_by_team_goals_and_hot(self):
+        events = [
+            self._ev(5), self._ev(78, "goal"), self._ev(80, side="away"), self._ev(92, "goal", side="away"),
+        ]
+        timeline = _match_timeline(events)
+
+        self.assertEqual(len(timeline), 6)
+        last = timeline[5]  # 92' — в последнем отрезке
+        self.assertEqual((last["home"], last["away"]), (1, 2))
+        self.assertEqual((last["home_goals"], last["away_goals"]), (1, 1))
+        self.assertEqual(last["goals"], 2)
+        self.assertTrue(last["hot"])
+        self.assertEqual(last["away_height"], 100)
+        self.assertEqual(last["home_height"], 50)
+        self.assertEqual(timeline[1]["events"], 0)
+
+    def test_extra_time_adds_windows(self):
+        self.assertEqual(len(_match_timeline([_event(110)])), 8)
+
+
+class DnaInsightsTests(SimpleTestCase):
+    def _match(self, home_score, away_score):
+        result = "1" if home_score > away_score else ("2" if home_score < away_score else "X")
+        return SimpleNamespace(
+            home_team=SimpleNamespace(name="Кайрат"), away_team=SimpleNamespace(name="Актобе"),
+            home_score=home_score, away_score=away_score, final_result=result,
+        )
+
+    def _counts(self, home_pct, draw_pct, away_pct, total=20):
+        return {"total": total, "home_pct": home_pct, "draw_pct": draw_pct, "away_pct": away_pct}
+
+    def test_xg_unfair_score(self):
+        xg = _describe_xg(self._match(0, 1), SimpleNamespace(xg=2.1), SimpleNamespace(xg=0.4))
+        self.assertEqual(xg["verdict"], "unfair")
+        self.assertIn("Кайрат", xg["text"])
+
+    def test_xg_deserved_and_missing(self):
+        self.assertEqual(_describe_xg(self._match(2, 0), SimpleNamespace(xg=1.9), SimpleNamespace(xg=0.5))["verdict"], "deserved")
+        self.assertIsNone(_describe_xg(self._match(2, 0), SimpleNamespace(xg=None), SimpleNamespace(xg=0.5)))
+
+    def test_expectations_and_sensation_archetype(self):
+        match = self._match(0, 1)
+        exp = _describe_expectations(match, self._counts(70, 20, 10), None)
+        self.assertEqual(exp["guessed_pct"], 10)
+        self.assertEqual(exp["favorite_label"], "Кайрат")
+        self.assertEqual(exp["sensation"], 70)
+        self.assertEqual(_describe_archetype(match, "medium", exp, None, None)["title"], "Сенсация")
+
+    def test_expectations_need_min_predictions(self):
+        self.assertIsNone(_describe_expectations(self._match(1, 0), self._counts(50, 25, 25, total=2), None))
+
+    def test_archetype_thriller_and_rout(self):
+        self.assertEqual(_describe_archetype(self._match(3, 2), "high", None, None, None)["title"], "Триллер до конца")
+        self.assertEqual(_describe_archetype(self._match(4, 0), "medium", None, None, None)["title"], "Разгром")
 
 
 class DescribeRefereeDivergenceTests(SimpleTestCase):

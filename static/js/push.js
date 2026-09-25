@@ -32,20 +32,46 @@
                 userVisibleOnly: true,
                 applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
             });
-            const res = await fetch('/users/push/subscribe/', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
-                body: JSON.stringify(subscription.toJSON()),
-            });
-            return { ok: res.ok };
+            window.dopxPushEndpoint = subscription.endpoint;
+            const ok = await sendSubscription(subscription, csrfToken);
+            notifyDevicesChanged();
+            return { ok };
         } catch (err) {
             console.warn('DOPX: push subscribe failed', err);
             return { ok: false, reason: 'error' };
         }
     };
 
+    // Сообщает странице, что список устройств на сервере изменился.
+    function notifyDevicesChanged() {
+        document.dispatchEvent(new CustomEvent('dopx:push-devices-changed'));
+    }
+
+    async function sendSubscription(subscription, csrfToken) {
+        const res = await fetch('/users/push/subscribe/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+            body: JSON.stringify(subscription.toJSON()),
+        });
+        const data = res.ok ? await res.json() : {};
+        if (data.created) notifyDevicesChanged();
+        return res.ok;
+    }
+
+    // Подписка сделана под другим VAPID-ключом — push на неё не доходят.
+    function keyMismatch(subscription) {
+        const vapidKey = document.body.dataset.vapidPublicKey;
+        const current = subscription.options && subscription.options.applicationServerKey;
+        if (!vapidKey || !current) return false;
+        const expected = urlBase64ToUint8Array(vapidKey);
+        const actual = new Uint8Array(current);
+        return expected.length !== actual.length || expected.some((b, i) => b !== actual[i]);
+    }
+
     // Статус подписки именно этого браузера — PushManager.getSubscription().
+    // Endpoint текущей подписки — в window.dopxPushEndpoint.
     window.dopxPushStatus = async function (csrfToken) {
+        window.dopxPushEndpoint = null;
         if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
             return 'unsupported';
         }
@@ -55,17 +81,20 @@
             const result = await Promise.race([
                 (async () => {
                     const registration = await navigator.serviceWorker.ready;
-                    const subscription = await registration.pushManager.getSubscription();
+                    let subscription = await registration.pushManager.getSubscription();
                     if (!subscription) return 'idle';
-                    // Подписка браузера есть, а записи в БД может не быть — переотправляем её на сервер
-                    // (push_subscribe идемпотентен по endpoint).
+                    if (keyMismatch(subscription) && Notification.permission === 'granted') {
+                        await subscription.unsubscribe();
+                        subscription = await registration.pushManager.subscribe({
+                            userVisibleOnly: true,
+                            applicationServerKey: urlBase64ToUint8Array(document.body.dataset.vapidPublicKey),
+                        });
+                    }
+                    window.dopxPushEndpoint = subscription.endpoint;
+                    // Записи в БД может не быть (удалена как мёртвая) — переотправляем, subscribe идемпотентен.
                     if (csrfToken) {
                         try {
-                            await fetch('/users/push/subscribe/', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
-                                body: JSON.stringify(subscription.toJSON()),
-                            });
+                            await sendSubscription(subscription, csrfToken);
                         } catch (err) {
                             console.warn('DOPX: push self-heal re-register failed', err);
                         }
@@ -96,6 +125,8 @@
                 });
                 await subscription.unsubscribe();
             }
+            window.dopxPushEndpoint = null;
+            notifyDevicesChanged();
             return { ok: true };
         } catch (err) {
             console.warn('DOPX: push unsubscribe failed', err);

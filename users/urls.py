@@ -8,7 +8,7 @@ from .views import (
     PasswordResetViewCustom, PasswordResetDoneViewCustom,
     PasswordResetConfirmViewCustom, PasswordResetCompleteViewCustom,
     NotificationSettingsView, VerifyEmailView, VerifyEmailSentView, VerifyEmailInvalidView,
-    toggle_follow, push_subscribe, push_unsubscribe, push_revoke_device,
+    toggle_follow, push_subscribe, push_unsubscribe, push_revoke_device, push_devices_partial,
 )
 
 app_name = 'users'
@@ -43,6 +43,7 @@ urlpatterns = [
     # Web Push
     path('push/subscribe/', push_subscribe, name='push_subscribe'),
     path('push/unsubscribe/', push_unsubscribe, name='push_unsubscribe'),
+    path('push/devices/', push_devices_partial, name='push_devices'),
     path('push/devices/<uuid:subscription_id>/revoke/', push_revoke_device, name='push_revoke_device'),
 
     # Публичный профиль: префикс u/, чтобы не пересекаться с profile/edit/ и т.п.

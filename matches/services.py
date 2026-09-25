@@ -48,6 +48,51 @@ def _pluralize_goals(n: int) -> str:
     return "голов"
 
 
+def _pluralize_events(n: int) -> str:
+    if n % 10 == 1 and n % 100 != 11:
+        return "событие"
+    if 2 <= n % 10 <= 4 and not (12 <= n % 100 <= 14):
+        return "события"
+    return "событий"
+
+
+# Отрезки шкалы «Ход матча»; события позже 95' — дополнительное время.
+TIMELINE_REGULAR_WINDOWS = 6
+TIMELINE_EXTRA_TIME_FROM = 95
+GOAL_EVENT_TYPES = frozenset({"goal", "own_goal", "penalty"})
+
+
+def _match_timeline(events) -> list[dict]:
+    """Отрезки по 15 минут: события и голы хозяев/гостей, высоты столбиков в % от максимума."""
+    events = [e for e in events if getattr(e, "minute", None) is not None]
+    if not events:
+        return []
+    extra_time = max(e.minute for e in events) > TIMELINE_EXTRA_TIME_FROM
+    n = TIMELINE_REGULAR_WINDOWS + (2 if extra_time else 0)
+    windows = [{"home": 0, "away": 0, "home_goals": 0, "away_goals": 0} for _ in range(n)]
+    for e in events:
+        w = windows[min(e.minute // MOMENTUM_WINDOW_MINUTES, n - 1)]
+        side = "away" if getattr(e, "team_side", None) == "away" else "home"
+        w[side] += 1
+        if e.event_type in GOAL_EVENT_TYPES:
+            w[f"{side}_goals"] += 1
+    peak_side = max(max(w["home"], w["away"]) for w in windows)
+    peak_total = max(w["home"] + w["away"] for w in windows)
+    result = []
+    for i, w in enumerate(windows):
+        total = w["home"] + w["away"]
+        result.append({
+            **w,
+            "label": f"{i * MOMENTUM_WINDOW_MINUTES}–{(i + 1) * MOMENTUM_WINDOW_MINUTES}",
+            "events": total,
+            "goals": w["home_goals"] + w["away_goals"],
+            "home_height": round(w["home"] / peak_side * 100) if peak_side else 0,
+            "away_height": round(w["away"] / peak_side * 100) if peak_side else 0,
+            "hot": total == peak_total and total >= MOMENTUM_MIN_EVENTS,
+        })
+    return result
+
+
 def _describe_momentum(events) -> list[str]:
     """0-2 самых насыщенных событиями 15-минутных окна. events — список, не queryset."""
     buckets: dict[int, list] = defaultdict(list)
@@ -65,7 +110,8 @@ def _describe_momentum(events) -> list[str]:
         if goals >= 2:
             points.append(f"{goals} {_pluralize_goals(goals)} в отрезке {window_start}–{window_end}'")
         else:
-            points.append(f"{len(bucket_events)} событий в отрезке {window_start}–{window_end}'")
+            n = len(bucket_events)
+            points.append(f"{n} {_pluralize_events(n)} в отрезке {window_start}–{window_end}'")
     return points
 
 
@@ -91,7 +137,8 @@ def _describe_hero(top_players: list) -> dict | None:
     if not top_players:
         return None
     hero_agg = top_players[0]
-    return {"player": hero_agg.player, "score": hero_agg.performance_score}
+    return {"player": hero_agg.player, "score": hero_agg.performance_score,
+            "stat_rating": getattr(hero_agg, "stat_rating", None)}
 
 
 def _describe_antihero(top_players: list, worst_players: list) -> dict | None:
@@ -102,7 +149,8 @@ def _describe_antihero(top_players: list, worst_players: list) -> dict | None:
     hero_agg = top_players[0] if top_players else None
     if hero_agg is not None and antihero_agg.player_id == hero_agg.player_id:
         return None
-    return {"player": antihero_agg.player, "score": antihero_agg.performance_score}
+    return {"player": antihero_agg.player, "score": antihero_agg.performance_score,
+            "stat_rating": getattr(antihero_agg, "stat_rating", None)}
 
 
 def _describe_fan_mood(match_aggregate, fan_support: list) -> str:
@@ -122,6 +170,15 @@ def _describe_fan_mood(match_aggregate, fan_support: list) -> str:
         f"Зрелищность матча болельщики оценили на {match_aggregate.avg_entertainment:.1f}/10, "
         f"{pct}% из проголосовавших за команду поддерживали {dominant['supported_team__name']}."
     )
+
+
+def _fan_support_summary(fan_support: list) -> dict | None:
+    """За кого болели голосовавшие: лидер и его доля. None, если голосов мало."""
+    total = sum(row["count"] for row in fan_support)
+    if total < FAN_MOOD_MIN_VOTES:
+        return None
+    dominant = fan_support[0]
+    return {"team": dominant["supported_team__name"], "pct": round(dominant["count"] / total * 100), "total": total}
 
 
 def _describe_consensus_text(consensus_level: str | None) -> str:
@@ -184,10 +241,86 @@ def _describe_controversial_episode(events: list, referee_aggregate) -> str:
     return ""
 
 
+# xG: разница, начиная с которой одна команда явно создала больше.
+XG_CLEAR_GAP = 0.7
+
+
+def _describe_xg(match, home_stats, away_stats) -> dict | None:
+    """Справедливость счёта по xG. None, если xG нет у обеих команд."""
+    home_xg = getattr(home_stats, "xg", None)
+    away_xg = getattr(away_stats, "xg", None)
+    if home_xg is None or away_xg is None or match.home_score is None or match.away_score is None:
+        return None
+    gap = home_xg - away_xg
+    score_gap = match.home_score - match.away_score
+    home, away = match.home_team.name, match.away_team.name
+    if abs(gap) < XG_CLEAR_GAP:
+        verdict = "equal"
+        text = "По моментам команды шли на равных." if score_gap == 0 else "По моментам почти поровну — счёт решили детали."
+    else:
+        leader = home if gap > 0 else away
+        won_by_leader = (score_gap > 0 and gap > 0) or (score_gap < 0 and gap < 0)
+        if won_by_leader:
+            verdict, text = "deserved", f"Победа {leader} заслуженная — моментов было заметно больше."
+        else:
+            verdict, text = "unfair", f"Счёт несправедлив к {leader}: моментов у них было больше."
+    return {"home": home_xg, "away": away_xg, "verdict": verdict, "text": text}
+
+
+def _describe_expectations(match, counts: dict | None, reactions: dict | None) -> dict | None:
+    """Прогнозы сообщества против итога. None, если прогнозов мало."""
+    if not counts or counts.get("total", 0) < SENSATION_MIN_PREDICTIONS or match.final_result is None:
+        return None
+    pct = {"1": counts["home_pct"], "X": counts["draw_pct"], "2": counts["away_pct"]}
+    favorite = max(pct, key=pct.get)
+    labels = {"1": match.home_team.name, "X": "ничью", "2": match.away_team.name}
+    return {
+        "total": counts["total"],
+        "home_pct": counts["home_pct"], "draw_pct": counts["draw_pct"], "away_pct": counts["away_pct"],
+        "result": match.final_result,
+        "guessed_pct": pct[match.final_result],
+        "favorite_label": labels[favorite],
+        "favorite_title": "ничья" if favorite == "X" else labels[favorite],
+        "favorite_pct": pct[favorite],
+        "sensation": compute_sensation_index(match, counts, reactions),
+    }
+
+
+def _describe_archetype(match, drama_level: str, expectations: dict | None, xg: dict | None,
+                        reactions: dict | None) -> dict:
+    """Формула матча одной строкой: {title, text, icon, tone}."""
+    home_score, away_score = match.home_score or 0, match.away_score or 0
+    margin = abs(home_score - away_score)
+    if expectations and expectations["sensation"]:
+        return {"title": "Сенсация", "icon": "ti-bolt", "tone": "error",
+                "text": f"Сообщество ставило на {expectations['favorite_label']} — {expectations['favorite_pct']}% прогнозов."}
+    if xg and xg["verdict"] == "unfair":
+        return {"title": "Несправедливый счёт", "icon": "ti-scale", "tone": "warning", "text": xg["text"]}
+    if drama_level == "high" and margin <= 1:
+        return {"title": "Триллер до конца", "icon": "ti-flame", "tone": "error",
+                "text": "Высокое напряжение и минимальная разница в счёте."}
+    if describe_reaction_badge(reactions):
+        return {"title": "Матч тура", "icon": "ti-trophy", "tone": "warning",
+                "text": "Большинство болельщиков назвали его лучшим матчем тура."}
+    if margin >= 3:
+        return {"title": "Разгром", "icon": "ti-hammer", "tone": "primary",
+                "text": f"Победа с разницей +{margin} — убедительнее не бывает."}
+    if drama_level == "low":
+        title = "Тактическая ничья" if margin == 0 else "Спокойный матч"
+        return {"title": title, "icon": "ti-chess", "tone": "neutral", "text": "Без больших эмоций — матч на контроле."}
+    if margin == 0:
+        return {"title": "Боевая ничья", "icon": "ti-swords", "tone": "info", "text": "Равная борьба без победителя."}
+    if xg and xg["verdict"] == "deserved":
+        return {"title": "Заслуженная победа", "icon": "ti-circle-check", "tone": "success", "text": xg["text"]}
+    return {"title": "Рабочая победа", "icon": "ti-check", "tone": "success", "text": "Результат без лишнего драматизма."}
+
+
 def build_match_dna(
     match, match_aggregate, events, referee_aggregate=None,
     match_evaluations: list | None = None, top_players: list | None = None,
     worst_players: list | None = None, fan_support: list | None = None,
+    team_stats: tuple | None = None, prediction_counts: dict | None = None,
+    reactions: dict | None = None,
 ) -> dict | None:
     """Контекст секции «ДНК матча» на странице матча.
 
@@ -195,17 +328,22 @@ def build_match_dna(
     fan_support). Возвращает None, если голосов нет, иначе dict: drama_index,
     drama_level, momentum_points, referee_divergence, hero, antihero,
     turning_point_text, consensus_level, consensus_text, fan_mood_text,
-    controversial_episode.
+    controversial_episode, total_votes, entertainment, tension, fairness, fan_support, timeline,
+    xg, expectations, archetype.
     """
     if match_aggregate is None or match_aggregate.total_votes == 0:
         return None
 
     top_players = top_players or []
     consensus_level = _consensus_level(match_evaluations or [])
+    drama_level = _drama_level(match_aggregate.drama_index)
+    home_stats, away_stats = team_stats or (None, None)
+    xg = _describe_xg(match, home_stats, away_stats) if team_stats else None
+    expectations = _describe_expectations(match, prediction_counts, reactions)
 
     return {
         "drama_index": match_aggregate.drama_index,
-        "drama_level": _drama_level(match_aggregate.drama_index),
+        "drama_level": drama_level,
         "momentum_points": _describe_momentum(events),
         "referee_divergence": _describe_referee_divergence(match, referee_aggregate),
         "hero": _describe_hero(top_players),
@@ -215,6 +353,17 @@ def build_match_dna(
         "consensus_text": _describe_consensus_text(consensus_level),
         "fan_mood_text": _describe_fan_mood(match_aggregate, fan_support or []),
         "controversial_episode": _describe_controversial_episode(events, referee_aggregate),
+        # Структурные поля для карточки на странице матча.
+        "total_votes": match_aggregate.total_votes,
+        "entertainment": getattr(match_aggregate, "avg_entertainment", None),
+        "fan_support": _fan_support_summary(fan_support or []),
+        "timeline": _match_timeline(events),
+        "tension": getattr(match_aggregate, "avg_tension", None),
+        "fairness": getattr(match_aggregate, "avg_fairness", None),
+        "xg": xg,
+        "expectations": expectations,
+        "archetype": _describe_archetype(match, drama_level, expectations, xg, reactions)
+        if getattr(match, "final_result", None) is not None else None,
     }
 
 

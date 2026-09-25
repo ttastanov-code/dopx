@@ -762,7 +762,7 @@ def push_subscribe(request):
     except (json.JSONDecodeError, KeyError, TypeError):
         return JsonResponse({'ok': False, 'error': 'invalid payload'}, status=400)
 
-    PushSubscription.objects.update_or_create(
+    _sub, created = PushSubscription.objects.update_or_create(
         endpoint=endpoint,
         defaults={
             'user': request.user,
@@ -771,7 +771,16 @@ def push_subscribe(request):
             'user_agent': request.META.get('HTTP_USER_AGENT', '')[:255],
         },
     )
-    return JsonResponse({'ok': True})
+    # created — фронт перерисует список устройств.
+    return JsonResponse({'ok': True, 'created': created})
+
+
+@login_required
+def push_devices_partial(request):
+    """Список устройств с push — перерисовка без перезагрузки страницы."""
+    return render(request, 'users/_push_devices.html', {
+        'push_subscriptions': request.user.push_subscriptions.order_by('-created_at'),
+    })
 
 
 @require_POST
