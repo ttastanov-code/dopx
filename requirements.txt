@@ -20,9 +20,7 @@ click-plugins==1.1.1.2
 click-repl==0.3.0
 cryptography==50.0.0
 Django==6.0.8
-# Security-стек (продуктовый апгрейд, раздел "защита на высшем уровне"):
-# axes — брутфорс-лок логина; otp[qrcode] — 2FA (TOTP + QR-код enrollment,
-# extra "qrcode" тянет пакет qrcode для генерации PNG на лету).
+# axes — блокировка перебора паролей; otp[qrcode] — 2FA (TOTP + QR-код).
 django-axes==8.3.1
 django-debug-toolbar==6.2.0
 django-filter==25.2
@@ -32,14 +30,8 @@ django-unfold==0.104.1
 djangorestframework==3.16.1
 drf-spectacular==0.29.0
 frozenlist==1.8.0
-gevent==25.9.1
-# gunicorn — production WSGI-сервер (docker/Dockerfile). До докеризации
-# проект запускался только через `manage.py runserver`, который сам Django
-# явно запрещает использовать в бою (однопоточный, не рассчитан на нагрузку,
-# без грациозного рестарта воркеров). gunicorn с несколькими воркерами —
-# минимальный стандарт для прод-WSGI, дальше это то, что стоит за nginx.
+# Прод-WSGI-сервер (Dockerfile).
 gunicorn==23.0.0
-greenlet==3.3.2
 h11==0.16.0
 h2==4.4.1
 hpack==4.2.0
@@ -53,7 +45,6 @@ Jinja2==3.1.6
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
 kombu==5.6.2
-locust==2.43.3
 lxml==6.1.0
 MarkupSafe==3.0.3
 msgpack==1.2.1
@@ -61,14 +52,10 @@ multidict==6.7.1
 packaging==26.0
 pillow==12.3.0
 pluggy==1.6.0
-# Web Push (продуктовый аудит, раздел 5c) — используется в
-# notifications/services.py::send_push_to_user. Тянет py-vapid (VAPID-ключи,
-# см. VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY в dopx/settings.py) и http_ece как
-# транзитивные зависимости.
+# Web Push (notifications/services.py).
 pywebpush==2.0.3
 prompt_toolkit==3.0.52
 propcache==0.4.1
-psutil==7.2.2
 psycopg==3.3.3
 pycparser==3.0
 pyee==13.0.1
@@ -79,22 +66,11 @@ python-dotenv==1.2.2
 python-engineio==4.13.2
 python-socketio==5.16.2
 PyYAML==6.0.3
-pyzmq==27.1.0
 redis==7.3.0
 referencing==0.37.0
 requests==2.33.0
-# НАЙДЕНО (2026-09-01): kffleague.kz начал банить запросы parsers/kff/client.py
-# по TLS/HTTP2-отпечатку (Cloudflare Bot Management) — с ТЕМИ ЖЕ заголовками
-# тот же IP через настоящий браузер получает 200, а через requests — 403.
-# `requests` (urllib3+ssl) физически не может воспроизвести TLS ClientHello
-# настоящего Chrome. curl_cffi — опциональная зависимость (client.py работает
-# и без неё, просто менее устойчиво к таким блокировкам): pip install
-# curl_cffi, дальше клиент подхватит её сам, без дополнительных правок кода.
-# ВРЕМЕННОЕ решение, пока не куплена официальная подписка Stratorium API.
-curl_cffi==0.16.2
 rpds-py==0.30.0
-# Sentry error tracking (dopx/settings.py::SENTRY_DSN) — no-op без ключа в
-# .env, см. комментарий в settings.py про переход с email-алертов.
+# Sentry: без SENTRY_DSN в .env ничего не делает.
 sentry-sdk==2.62.0
 simple-websocket==1.1.0
 six==1.17.0
@@ -105,14 +81,10 @@ tzdata==2025.3
 tzlocal==5.3.1
 uritemplate==4.2.0
 urllib3==2.7.0
-# Парсинг User-Agent для разбивки трафика по устройствам/браузерам
-# (staff-дашборд, вкладка «Трафик») — тянет ua-parser как транзитивную
-# зависимость, PyYAML для его регекс-базы уже есть в requirements.txt выше.
+# Разбор User-Agent для вкладки «Трафик» дашборда.
 user-agents==2.2.0
 vine==5.1.0
 wcwidth==0.6.0
 websocket-client==1.9.0
 wsproto==1.3.2
 yarl==1.23.0
-zope.event==6.1
-zope.interface==8.2

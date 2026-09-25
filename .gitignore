@@ -8,33 +8,17 @@ __pycache__/
 db.sqlite3
 *.sqlite3
 media/
-# staticfiles/ — это STATIC_ROOT (см. dopx/settings.py): выход
-# `collectstatic`, генерируется на сервере, в git не нужен.
+# STATIC_ROOT — результат collectstatic. static/ (исходники) коммитится.
 staticfiles/
-# ИСПРАВЛЕНО: строка `static/` здесь игнорировала ИСХОДНУЮ директорию
-# STATICFILES_DIRS (логотип, favicon, шрифты, JS, теперь ещё manifest.json/
-# sw.js/push.js/PWA-иконки) — не выход сборки, а РУЧНЫЕ файлы репозитория.
-# `git ls-files static/` до этой правки возвращал 0 файлов: весь каталог
-# никогда не попадал в git. При клонировании на отдельный сервер сайт
-# развернулся бы БЕЗ статики вообще (ни логотипа, ни JS, ни PWA-манифеста) —
-# именно тот класс проблем "на деплое", которого стоит избегать сейчас,
-# пока каталог static/ не разросся ещё больше.
 
-# Environment
+# Окружение. .env.example — публичный шаблон, коммитится.
 .env
 .env.*
 .envrc
 .env.local
 .env.production
-# БАГ, найденный при аудите перед докеризацией: правило `.env.*` выше
-# случайно матчило и .env.example — файл, который СПЕЦИАЛЬНО создан
-# для того, чтобы лежать в git как публичный шаблон переменных окружения
-# (без секретов). Без этой строчки `git add .` тихо пропускал бы его
-# навсегда, и любой, кто клонирует репозиторий, не увидел бы вообще
-# никакого шаблона .env.
 !.env.example
-# VAPID приватный ключ (core/management/commands/setup_push_keys.py) —
-# секрет уровня .env, но живёт отдельным .pem-файлом, а не переменной.
+# Приватный VAPID-ключ для push.
 .vapid/
 venv/
 app_venv/
@@ -42,54 +26,39 @@ app_venv/
 # macOS
 .DS_Store
 
-# IDE
+# IDE и локальные настройки Claude Code
 .vscode/
 .idea/
+.claude/
 
 # Python build
 build/
 dist/
 *.egg-info/
 
-# Celery
+# Celery и Redis
 celerybeat-schedule
+celerybeat-schedule.db
+dump.rdb
 
 # Testing
 .pytest_cache/
 .coverage
 htmlcov/
-# Отчёты scripts/verify_local.sh — локальный вывод одного прогона на
-# конкретной машине разработчика, не артефакт для git (файл целиком
-# копируется в чат вручную, когда нужно поделиться результатом).
+# Отчёты scripts/verify_local.sh.
 scripts/verify_reports/
 
 # Type checking
 .mypy_cache/
 
-# Logs — игнорируем директорию целиком (сохраняем только .gitkeep).
-# ИСПРАВЛЕНО (2026-09-23, пользователь поймал на "git checkout main"
-# отказ "your local changes to logs/celery.log.1 would be overwritten"):
-# старый паттерн `logs/*.log` ловил только файлы, ЗАКАНЧИВАЮЩИЕСЯ на
-# .log — но логротация (см. logging.handlers.RotatingFileHandler в
-# dopx/settings.py) переименовывает старые файлы в celery.log.1,
-# celery.log.2 и т.д. (суффикс — число, не .log), которые под паттерн
-# не подпадали и поэтому раньше по ошибке закоммитились. `logs/*` ловит
-# все файлы в каталоге без исключений (и .log, и ротированные .log.N).
+# Логи — весь каталог, включая ротированные celery.log.N.
 logs/*
 !logs/.gitkeep
 
-# Node — только для сборки static/css/app.css (Tailwind v4 + daisyUI), см.
-# docs/adr/0025-remove-cdn-dependencies.md. static/css/app.css и
-# static/vendor/ (Alpine/HTMX/Tabler Icons) — КОММИТЯТСЯ в git, как и
-# остальные файлы в static/css/ (это не выход сборки на сервере, а
-# зафиксированный собранный/скачанный ассет; пересобирается вручную через
-# npm run build:css / scripts/vendor_frontend_assets.sh при изменениях).
+# Node — только для сборки CSS (npm run build:css).
 node_modules/
 
-celerybeat-schedule.db
-dump.rdb
-
-# Полные ответы Sportmonks (python manage.py sportmonks_inspect_stats) — не коммитим
+# Сырые ответы Sportmonks (sportmonks_inspect_stats).
 sportmonks_samples/
 
 # Промо-ролики /brag
