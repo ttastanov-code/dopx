@@ -1,7 +1,7 @@
 // static/sw.js
 // Service worker: установка на экран «Домой» и Web Push.
 // Кешируется только статика, HTML — никогда (устаревшие формы/CSRF).
-const CACHE_NAME = 'dopx-shell-v1';
+const CACHE_NAME = 'dopx-shell-v2';
 const APP_SHELL = [
     '/static/pwa/icon-192.png',
     '/static/pwa/icon-512.png',
@@ -48,7 +48,8 @@ self.addEventListener('push', (event) => {
     const options = {
         body: payload.body || '',
         icon: '/static/pwa/icon-192.png',
-        badge: '/static/pwa/icon-192.png',
+        // Значок в статус-баре Android — монохромный, иначе белый квадрат.
+        badge: '/static/pwa/badge-96.png',
         data: { url: payload.url || '/' },
         timestamp: Date.now(),
     };
@@ -63,17 +64,26 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
     event.notification.close();
-    const targetUrl = (event.notification.data && event.notification.data.url) || '/';
+    const target = new URL((event.notification.data && event.notification.data.url) || '/', self.location.origin).href;
     event.waitUntil(
         self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-            for (const client of clientList) {
-                if (client.url === targetUrl && 'focus' in client) {
-                    return client.focus();
-                }
-            }
-            if (self.clients.openWindow) {
-                return self.clients.openWindow(targetUrl);
-            }
+            // Уже открыта эта страница — фокус; открыт сайт — переходим в той же вкладке.
+            const exact = clientList.find((c) => c.url === target);
+            if (exact && 'focus' in exact) return exact.focus();
+            const sameSite = clientList.find((c) => new URL(c.url).origin === self.location.origin && 'navigate' in c);
+            if (sameSite) return sameSite.navigate(target).then((c) => (c || sameSite).focus());
+            if (self.clients.openWindow) return self.clients.openWindow(target);
         })
     );
+});
+
+// Браузер сменил подписку — переподписываемся тем же ключом; на сервер её
+// отправит push.js при следующем открытии сайта.
+self.addEventListener('pushsubscriptionchange', (event) => {
+    const options = event.oldSubscription && event.oldSubscription.options;
+    if (!options || !options.applicationServerKey) return;
+    event.waitUntil(self.registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: options.applicationServerKey,
+    }));
 });

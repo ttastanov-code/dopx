@@ -393,7 +393,7 @@ class NotificationSettingsForm(forms.Form):
     )
     push_voting = forms.BooleanField(
         required=False, label="Финальный счёт и голосование", initial=True,
-        help_text="Финал матча, приглашение оценить, напоминание дооценить.",
+        help_text="Финал матча, приглашение оценить, напоминание перед закрытием голосования.",
         widget=forms.CheckboxInput(attrs={"class": "toggle toggle-primary"}),
     )
     push_predictions = forms.BooleanField(
@@ -413,6 +413,11 @@ class NotificationSettingsForm(forms.Form):
         required=False, label="Перенос или отмена матча", initial=True,
         widget=forms.CheckboxInput(attrs={"class": "toggle toggle-primary"}),
     )
+    push_results = forms.BooleanField(
+        required=False, label="Итоги оценок матча", initial=True,
+        help_text="Голосование закрылось — рейтинги открыты, игрок матча и ваша оценка рядом с общей.",
+        widget=forms.CheckboxInput(attrs={"class": "toggle toggle-primary"}),
+    )
 
     # Поле -> иконка tabler для карточки push в шаблоне.
     PUSH_FIELDS = {
@@ -423,6 +428,7 @@ class NotificationSettingsForm(forms.Form):
         "push_achievements": "ti-award",
         "push_round_results": "ti-star",
         "push_match_changes": "ti-calendar-event",
+        "push_results": "ti-chart-bar",
     }
 
     # Группы email-тумблеров для шаблона: (заголовок, [(поле, иконка)]).

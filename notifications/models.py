@@ -33,6 +33,8 @@ class Notification(BaseModel):
         ('lineups_available', _('Составы объявлены')),
         ('evaluation_reminder', _('Незавершённая оценка')),
         ('match_changed', _('Матч перенесён / отменён')),
+        ('ratings_published', _('Рейтинги матча опубликованы')),
+        ('contact_reply', _('Ответ на обращение')),
     ]
 
     user = models.ForeignKey(

@@ -305,38 +305,52 @@ def notify_voting_closing_soon(self):
     )
 
     from core.models import get_setting
+    from evaluations.models import EvaluationSession
 
-    user_ids = [
+    verified_ids = [
         str(uid) for uid in User.objects.filter(is_verified=True, email__isnull=False)
         .values_list('id', flat=True)
     ]
-    chunks = _chunked(user_ids, get_setting("bulk_email_chunk_size", BULK_EMAIL_CHUNK_SIZE))
+    chunk_size = get_setting("bulk_email_chunk_size", BULK_EMAIL_CHUNK_SIZE)
 
     queued = 0
     skipped = 0
+    pushed = 0
     for match in matches:
-        if match.id in already_notified_match_ids:
+        # Кэш-ключ — дедуп и когда уведомлять некого (все уже оценили).
+        if match.id in already_notified_match_ids or not cache.add(f'notify:voting_closing:{match.id}', 1, 3 * 60 * 60):
             skipped += 1
             continue
 
+        sessions = EvaluationSession.objects.filter(match=match)
+        rated = {str(uid) for uid in sessions.filter(status='completed').values_list('user_id', flat=True)}
+        # Начавшим оценку отдельно напоминает notify_unfinished_evaluations.
+        started = {str(uid) for uid in sessions.filter(status__in=('started', 'in_progress')).values_list('user_id', flat=True)}
+        user_ids = [uid for uid in verified_ids if uid not in rated]
+
         subject = f'Голосование за матч {match.home_team.name} vs {match.away_team.name} скоро закроется'
-        for chunk in chunks:
+        for chunk in _chunked(user_ids, chunk_size):
             _send_match_email_chunk.delay(chunk, str(match.id), subject, 'emails/voting_closing.html', 'voting_closing')
             queued += 1
 
         # Notification — заодно маркер дедупа для следующих прогонов.
         action_url = reverse('matches:detail', args=[match.id])
+        message = 'Голосование за этот матч закрывается в течение часа — успейте оценить, пока не поздно.'
         Notification.objects.bulk_create([
             Notification(
-                user_id=uid,
-                notification_type='voting_closing',
-                title=subject,
-                message='Голосование за этот матч закрывается в течение часа — успейте оценить, пока не поздно.',
-                action_url=action_url,
-                related_match=match,
+                user_id=uid, notification_type='voting_closing', title=subject,
+                message=message, action_url=action_url, related_match=match,
             )
             for uid in user_ids
         ])
+
+        push_ids = {str(uid) for uid in _match_notification_audience(match)} - rated - started
+        if push_ids:
+            pushed += _push_fan_out(
+                push_ids, f"⏳ Последний час: {match.home_team.name} — {match.away_team.name}",
+                "Голосование скоро закроется — оцените матч, пока ваш голос учитывается.",
+                action_url, kind='voting_closing', tag=f'vote-{match.id}',
+            )
 
     matches_processed = len(matches) - skipped
     logger.info(
@@ -348,6 +362,7 @@ def notify_voting_closing_soon(self):
         'matches_processed': matches_processed,
         'chunks_queued': queued,
         'skipped_already_notified': skipped,
+        'pushed': pushed,
     }
 
 
@@ -529,7 +544,7 @@ def notify_followers_match_activity(self, match_id: str):
     predictor_user_ids = set(
         MatchPrediction.objects.filter(match=match).values_list('user_id', flat=True)
     )
-    audience_user_ids = follower_user_ids | predictor_user_ids
+    audience_user_ids = _not_yet_notified(follower_user_ids | predictor_user_ids, match, 'voting_open')
 
     if not audience_user_ids:
         return {'notified': 0}
@@ -571,6 +586,17 @@ def notify_followers_match_activity(self, match_id: str):
     return {'notified': len(audience_user_ids), 'emailed': emailed}
 
 
+def _not_yet_notified(user_ids, match, notification_type: str) -> set:
+    """Убирает тех, кому уведомление этого типа по матчу уже создано (повторный синк, гонка задач)."""
+    from notifications.models import Notification
+
+    done = set(
+        Notification.objects.filter(notification_type=notification_type, related_match=match)
+        .values_list('user_id', flat=True)
+    )
+    return {uid for uid in user_ids if uid not in done}
+
+
 def _match_notification_audience(match) -> set[str]:
     """Аудитория для пушей вокруг матча: подписчики команд/игроков + сделавшие прогноз."""
     from django.db.models import Q
@@ -608,7 +634,7 @@ def notify_followers_match_started(self, match_id: str):
         logger.error(f"notify_followers_match_started: match {match_id} not found")
         return {'notified': 0}
 
-    audience_user_ids = _match_notification_audience(match)
+    audience_user_ids = _not_yet_notified(_match_notification_audience(match), match, 'match_started')
     if not audience_user_ids:
         return {'notified': 0}
 
@@ -647,7 +673,7 @@ def notify_followers_lineups_available(self, match_id: str):
         logger.error(f"notify_followers_lineups_available: match {match_id} not found")
         return {'notified': 0}
 
-    audience_user_ids = _match_notification_audience(match)
+    audience_user_ids = _not_yet_notified(_match_notification_audience(match), match, 'lineups_available')
     if not audience_user_ids:
         return {'notified': 0}
 
@@ -1176,3 +1202,91 @@ def send_staff_antifraud_digest(self):
 
     logger.info(f"✅ send_staff_antifraud_digest: sent to {sent} staff member(s), {len(new_flags)} new flag(s) this week.")
     return {'sent': sent, 'new_flags': len(new_flags)}
+
+# Рейтинги объявляем с задержкой после закрытия голосования — чтобы пересчёт агрегатов успел.
+RATINGS_PUBLISH_DELAY = timedelta(minutes=15)
+RATINGS_PUBLISH_WINDOW = timedelta(hours=6)
+
+
+@shared_task(bind=True, max_retries=3)
+def notify_ratings_published(self):
+    """Голосование закрылось — рейтинги открыты: in-app + push оценившим и болельщикам матча.
+    Игрок матча — в тексте. Старые матчи (вне окна) не трогаем, дедуп — по Notification.
+    """
+    lock_key = "notifications:lock:notify_ratings_published"
+    if not cache.add(lock_key, "1", timeout=NOTIFY_TASK_LOCK_TIMEOUT):
+        return {'notified': 0, 'skipped_locked': True}
+    try:
+        from django.urls import reverse
+
+        from aggregates.models import PlayerMatchAggregate
+        from aggregates.services import min_votes_for_display
+        from evaluations.models import EvaluationSession
+        from matches.models import Match
+        from notifications.models import Notification
+
+        now = timezone.now()
+        matches = Match.objects.filter(
+            status='finished',
+            voting_open_until__lte=now - RATINGS_PUBLISH_DELAY,
+            voting_open_until__gte=now - RATINGS_PUBLISH_WINDOW,
+        ).select_related('home_team', 'away_team')
+
+        notified = 0
+        for match in matches:
+            raters = set(
+                EvaluationSession.objects.filter(match=match, status='completed').values_list('user_id', flat=True)
+            )
+            audience = _not_yet_notified(raters | _match_notification_audience(match), match, 'ratings_published')
+            if not audience:
+                continue
+
+            mvp = (
+                PlayerMatchAggregate.objects.filter(match=match, total_votes__gte=min_votes_for_display())
+                .select_related('player').order_by('-performance_score').first()
+            )
+            title = f"📊 Итоги оценок: {match.home_team.name} {match.get_score_display()} {match.away_team.name}"
+            message = (
+                f"Игрок матча — {mvp.player.full_name} ({mvp.performance_score:.1f}). Сравните со своими оценками."
+                if mvp else "Голосование закрыто — рейтинги игроков открыты для всех."
+            )
+            action_url = reverse('matches:detail', args=[match.id])
+            Notification.objects.bulk_create([
+                Notification(
+                    user_id=uid, notification_type='ratings_published', title=title,
+                    message=message, action_url=action_url, related_match=match,
+                )
+                for uid in audience
+            ])
+            _push_fan_out(audience, title, message, action_url, kind='ratings_published', tag=f'ratings-{match.id}')
+            notified += len(audience)
+
+        logger.info(f"notify_ratings_published: {notified} получателей")
+        return {'notified': notified}
+    finally:
+        cache.delete(lock_key)
+
+
+CONTACT_RESOLVED_TEXT = {
+    'data_error': ("✅ Данные матча исправлены", "Спасибо, что сообщили об ошибке — мы её проверили и исправили."),
+    'dispute': ("Ваше обращение рассмотрено", "Мы разобрали ваше обращение по рейтингу. Подробности — в письме."),
+}
+
+
+def notify_contact_resolved(ticket) -> None:
+    """In-app + push автору обращения, когда его решили. Гостям (без аккаунта) — только письмо из админки."""
+    if not ticket.user_id or ticket.status != 'resolved':
+        return
+    from django.urls import reverse
+
+    from notifications.models import Notification
+
+    title, message = CONTACT_RESOLVED_TEXT.get(
+        ticket.category, ("Обращение решено", f"«{ticket.subject}» — вопрос решён. Спасибо, что написали нам."),
+    )
+    url = reverse('matches:detail', args=[ticket.related_match_id]) if ticket.related_match_id else reverse('notifications:list')
+    Notification.objects.create(
+        user_id=ticket.user_id, notification_type='contact_reply', title=title, message=message,
+        action_url=url, related_match_id=ticket.related_match_id,
+    )
+    send_push_task.delay([str(ticket.user_id)], title, message, url, 'default', f'contact-{ticket.id}')

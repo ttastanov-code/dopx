@@ -123,6 +123,7 @@ class User(AbstractUser, BaseModel):
         "push_achievements": True,
         "push_round_results": True,
         "push_match_changes": True,
+        "push_results": True,
     }
 
     @property

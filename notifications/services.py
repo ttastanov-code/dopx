@@ -28,6 +28,8 @@ PUSH_PROFILES = {
     'achievement': {'ttl': 24 * 60 * 60, 'urgency': 'normal'},
     'round_results': {'ttl': 24 * 60 * 60, 'urgency': 'normal'},
     'match_changed': {'ttl': 12 * 60 * 60, 'urgency': 'normal'},
+    'voting_closing': {'ttl': 60 * 60, 'urgency': 'high'},
+    'ratings_published': {'ttl': 24 * 60 * 60, 'urgency': 'normal'},
     'default': {'ttl': 6 * 60 * 60, 'urgency': 'normal'},
 }
 
@@ -44,6 +46,8 @@ PUSH_KIND_SETTING = {
     'achievement': 'push_achievements',
     'round_results': 'push_round_results',
     'match_changed': 'push_match_changes',
+    'voting_closing': 'push_voting',
+    'ratings_published': 'push_results',
 }
 
 

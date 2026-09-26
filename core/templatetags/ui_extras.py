@@ -44,3 +44,10 @@ def nomination_groups(nominations) -> list:
     """Номинации по категориям (судьи, команды, …) — см. core.nominations.group_nominations."""
     from core.nominations import group_nominations
     return group_nominations(nominations)
+
+
+@register.filter
+def nomination_highlights(nominations) -> list:
+    """Лучший в каждой категории — вкладка «Главное»."""
+    from core.nominations import nomination_highlights as highlights
+    return highlights(nominations)

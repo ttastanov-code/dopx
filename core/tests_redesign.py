@@ -155,3 +155,19 @@ class NominationGroupsTests(TestCase):
         self.assertEqual([g["title"] for g in groups], ["Судьи", "Команды"])
         self.assertEqual([n["key"] for n in groups[1]["items"]], ["fighting", "passive"])
 
+
+
+class NominationsQueryTests(TestCase):
+    def test_empty_db_returns_no_nominations(self):
+        from core.nominations import get_nominations
+        cache.clear()
+        self.assertEqual(get_nominations(), [])
+
+    def test_groups_and_highlights(self):
+        from core.nominations import group_nominations, nomination_highlights
+        noms = [{"entity_kind": "player", "sentiment": "positive", "key": k} for k in ("rising_talent", "player_of_season")]
+        noms += [{"entity_kind": "player", "sentiment": "negative", "key": "player_disappointment"},
+                 {"entity_kind": "team", "sentiment": "positive", "key": "team_of_season"}]
+        groups = group_nominations(noms)
+        self.assertEqual([n["key"] for n in groups[1]["items"]], ["player_of_season", "rising_talent", "player_disappointment"])
+        self.assertEqual([n["key"] for n in nomination_highlights(noms)], ["player_of_season", "team_of_season"])

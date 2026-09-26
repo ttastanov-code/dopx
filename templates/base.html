@@ -396,7 +396,8 @@
 <body
     class="bg-base-100 text-base-content antialiased{% if show_tabbar %} has-tabbar{% endif %}"
     hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
-    data-vapid-public-key="{{ VAPID_PUBLIC_KEY|default:'' }}"
+    data-vapid-public-key="{{ VAPID_PUBLIC_KEY|default:'' }}"{% if user.is_authenticated %}
+    data-auth="1"{% endif %}
     x-data="themeSwitcher">
     
     {# Оригинальный title для JS уведомлений #}
