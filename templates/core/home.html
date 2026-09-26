@@ -420,8 +420,8 @@
             </div>
         </section>
 
-        {# === НОМИНАЦИИ СЕЗОНА === #}
-        <section>
+        {# === НОМИНАЦИИ СЕЗОНА — на ПК липкие, едут рядом с лентой матчей. === #}
+        <section class="dx-sticky-lg">
             {% if nominations %}
             {% url 'leagues:list' as leagues_url %}
             {% include 'components/_nominations.html' with nom_more_url=leagues_url %}

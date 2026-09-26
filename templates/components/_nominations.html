@@ -1,42 +1,56 @@
 {% load ui_extras %}
 {% comment %}
-Номинации сезона по категориям: в панели сначала лучшие, потом антирекорды.
+Номинации сезона: карточка с вкладками «Главное» + категории. Вкладки — радио-кнопки (без JS).
 Контекст: nominations, nom_season (опц.), nom_more_url (опц.). Стили — css/ui.css (dx-noms).
 {% endcomment %}
+{% with groups=nominations|nomination_groups highlights=nominations|nomination_highlights %}
 <section class="dx-noms" aria-labelledby="noms-title">
+    <input type="radio" name="dx-noms-tab" id="dx-nt-main" class="dx-noms__radio" checked>
+    {% for group in groups %}<input type="radio" name="dx-noms-tab" id="dx-nt-{{ group.kind }}" class="dx-noms__radio">{% endfor %}
+
     <header class="dx-noms__head">
-        <div class="min-w-0">
+        <span class="dx-noms__crest"><i class="ti ti-crown"></i></span>
+        <div class="min-w-0 flex-1">
             <h2 id="noms-title" class="dx-noms__title">Номинации сезона{% if nom_season %} <span class="dx-noms__season">{{ nom_season }}</span>{% endif %}</h2>
-            <p class="dx-noms__legend">
-                <span class="dx-noms__key dx-noms__key--best"><i class="ti ti-trophy"></i> лучшие</span>
-                <span class="dx-noms__key dx-noms__key--worst"><i class="ti ti-trending-down"></i> антирекорды</span>
-                <span class="dx-noms__note">по оценкам болельщиков</span>
-            </p>
+            <p class="dx-noms__sub">{{ nominations|length }} {{ nominations|length|ru_plural:"звание,звания,званий" }} · по оценкам болельщиков</p>
         </div>
-        {% if nom_more_url %}<a href="{{ nom_more_url }}" class="dx-noms__more">По лигам <i class="ti ti-chevron-right"></i></a>{% endif %}
+        {% if nom_more_url %}<a href="{{ nom_more_url }}" class="dx-noms__more" aria-label="Номинации по лигам">По лигам <i class="ti ti-chevron-right"></i></a>{% endif %}
     </header>
 
-    <div class="dx-noms__grid">
-        {% for group in nominations|nomination_groups %}
-        <div class="dx-noms__cat">
-            <div class="dx-noms__cat-head"><i class="ti {{ group.icon }}"></i> {{ group.title }}</div>
-            {% for nom in group.items %}
-            <a href="{% url nom.entity_url_name nom.entity_id %}" class="dx-nom {% if nom.sentiment == 'negative' %}is-worst{% else %}is-best{% endif %}" title="{{ nom.subtitle }} · {{ nom.votes }} {{ nom.votes|ru_plural:'голос,голоса,голосов' }}">
-                <span class="dx-nom__ava{% if nom.images|length > 1 %} dx-nom__ava--pair{% endif %}">
-                    {% for img in nom.images %}<img src="{{ img }}" alt="" loading="lazy">{% empty %}<span class="dx-nom__initials">{{ nom.initials|default:"?" }}</span>{% endfor %}
-                    <span class="dx-nom__badge"><i class="ti {{ nom.icon }}"></i></span>
-                </span>
-                <span class="dx-nom__text">
-                    <span class="dx-nom__award">{{ nom.title }}</span>
-                    <span class="dx-nom__name">{{ nom.entity_name }}</span>
-                </span>
-                <span class="dx-nom__score">
-                    <b>{{ nom.value|default:nom.value_label }}</b>{% if nom.scale %}<small>/{{ nom.scale }}</small>{% endif %}
-                    <span class="dx-nom__votes">{{ nom.votes }} {{ nom.votes|ru_plural:"голос,голоса,голосов" }}</span>
-                </span>
-            </a>
-            {% endfor %}
-        </div>
+    <div class="dx-noms__tabs" aria-label="Категории номинаций">
+        <label for="dx-nt-main" class="dx-noms__tab dx-noms__tab--main" title="Лучшие в каждой категории"><i class="ti ti-sparkles"></i><span>Главное</span></label>
+        {% for group in groups %}
+        <label for="dx-nt-{{ group.kind }}" class="dx-noms__tab dx-noms__tab--{{ group.kind }}" title="{{ group.title }}: {{ group.items|length }} {{ group.items|length|ru_plural:'звание,звания,званий' }}"><i class="ti {{ group.icon }}"></i><span>{{ group.title }}</span></label>
         {% endfor %}
     </div>
+
+    <div class="dx-noms__panel dx-noms__panel--main">
+        {% with hero=highlights.0 %}
+        {% if hero %}
+        <a href="{% url hero.entity_url_name hero.entity_id %}" class="dx-noms__hero" title="{{ hero.subtitle }}">
+            <span class="dx-noms__hero-ava{% if hero.images|length > 1 %} dx-nom__ava--pair{% endif %}">
+                {% for img in hero.images %}<img src="{{ img }}" alt="" loading="lazy">{% empty %}<span class="dx-nom__initials">{{ hero.initials|default:"?" }}</span>{% endfor %}
+            </span>
+            <span class="dx-noms__hero-text">
+                <span class="dx-noms__hero-award"><i class="ti {{ hero.icon }}"></i> {{ hero.title }}</span>
+                <span class="dx-noms__hero-name">{{ hero.entity_name }}</span>
+                <span class="dx-noms__hero-why">{{ hero.subtitle }}</span>
+            </span>
+            <span class="dx-noms__hero-score"><b>{{ hero.value|default:hero.value_label }}</b>{% if hero.scale %}<small>/{{ hero.scale }}</small>{% endif %}<span>{{ hero.votes }} {{ hero.votes|ru_plural:"голос,голоса,голосов" }}</span></span>
+        </a>
+        {% endif %}
+        {% endwith %}
+        <div class="dx-noms__list">
+            {% for nom in highlights|slice:"1:" %}{% include 'components/_nomination_row.html' %}{% endfor %}
+        </div>
+    </div>
+
+    {% for group in groups %}
+    <div class="dx-noms__panel dx-noms__panel--{{ group.kind }}">
+        <div class="dx-noms__list">
+            {% for nom in group.items %}{% include 'components/_nomination_row.html' %}{% endfor %}
+        </div>
+    </div>
+    {% endfor %}
 </section>
+{% endwith %}

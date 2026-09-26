@@ -1,0 +1,16 @@
+{% load ui_extras %}
+{# Строка номинации в панели категории; nom — dict из core/nominations.py. #}
+<a href="{% url nom.entity_url_name nom.entity_id %}" class="dx-nom {% if nom.sentiment == 'negative' %}is-worst{% else %}is-best{% endif %}" title="{{ nom.subtitle }} · {{ nom.votes }} {{ nom.votes|ru_plural:'голос,голоса,голосов' }}">
+    <span class="dx-nom__ava{% if nom.images|length > 1 %} dx-nom__ava--pair{% endif %}">
+        {% for img in nom.images %}<img src="{{ img }}" alt="" loading="lazy">{% empty %}<span class="dx-nom__initials">{{ nom.initials|default:"?" }}</span>{% endfor %}
+        <span class="dx-nom__badge"><i class="ti {{ nom.icon }}"></i></span>
+    </span>
+    <span class="dx-nom__text">
+        <span class="dx-nom__award">{{ nom.title }}</span>
+        <span class="dx-nom__name">{{ nom.entity_name }}</span>
+    </span>
+    <span class="dx-nom__score">
+        <b>{{ nom.value|default:nom.value_label }}</b>{% if nom.scale %}<small>/{{ nom.scale }}</small>{% endif %}
+        <span class="dx-nom__votes">{{ nom.votes }} {{ nom.votes|ru_plural:"голос,голоса,голосов" }}</span>
+    </span>
+</a>

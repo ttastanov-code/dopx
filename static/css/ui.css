@@ -978,25 +978,51 @@ body.has-tabbar .dx-sticky-cta { bottom: calc(4.9rem + env(safe-area-inset-botto
     background: color-mix(in oklab, var(--color-info) 14%, transparent);
 }
 
-/* ---------- Номинации сезона: панели по категориям ---------- */
-.dx-noms { --best: var(--color-warning); --worst: var(--color-error); }
-.dx-noms__head { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
-.dx-noms__title { margin: 0; font-size: 1.25rem; font-weight: 800; letter-spacing: -.02em; line-height: 1.2; }
-@media (min-width: 768px) { .dx-noms__title { font-size: 1.5rem; } }
+/* ---------- Номинации сезона: карточка с вкладками ---------- */
+.dx-noms {
+    --best: var(--color-warning);
+    --worst: var(--color-error);
+    --gold: #c9951c;
+    container-type: inline-size;
+    position: relative;
+    padding: 1.1rem 1rem 1rem;
+    border-radius: 1.5rem;
+    background:
+        radial-gradient(90% 50% at 100% 0%, color-mix(in oklab, var(--best) 10%, transparent), transparent 70%),
+        var(--color-base-100);
+    border: 1px solid color-mix(in oklab, var(--color-base-content) 8%, transparent);
+    box-shadow: 0 1px 2px rgb(0 0 0 / .04), 0 18px 40px -28px rgb(0 0 0 / .35);
+}
+@media (min-width: 768px) { .dx-noms { padding: 1.35rem 1.25rem 1.1rem; } }
+/* На ПК — едет рядом с лентой матчей. */
+@media (min-width: 1024px) { .dx-sticky-lg { position: sticky; top: 5.5rem; } }
+.dx-noms__radio { position: absolute; opacity: 0; pointer-events: none; }
+
+.dx-noms__head { display: flex; align-items: center; gap: .8rem; margin-bottom: .9rem; padding: 0 .15rem; }
+.dx-noms__crest {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: .85rem;
+    font-size: 1.3rem;
+    color: #fff;
+    background: linear-gradient(145deg, #f7cf5a, var(--gold));
+    box-shadow: 0 8px 18px -8px color-mix(in oklab, var(--gold) 90%, transparent), inset 0 1px 0 rgb(255 255 255 / .45);
+}
+.dx-noms__title { margin: 0; font-size: 1.125rem; font-weight: 800; letter-spacing: -.02em; line-height: 1.2; }
 .dx-noms__season { color: color-mix(in oklab, var(--color-base-content) 40%, transparent); }
-.dx-noms__legend { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .75rem; margin: .35rem 0 0; font-size: .75rem; }
-.dx-noms__key { display: inline-flex; align-items: center; gap: .25rem; font-weight: 600; }
-.dx-noms__key--best { color: color-mix(in oklab, var(--best) 85%, var(--color-base-content)); }
-.dx-noms__key--worst { color: var(--worst); }
-.dx-noms__note { color: color-mix(in oklab, var(--color-base-content) 50%, transparent); }
+.dx-noms__sub { margin: .15rem 0 0; font-size: .75rem; color: color-mix(in oklab, var(--color-base-content) 52%, transparent); }
 .dx-noms__more {
     display: inline-flex;
     align-items: center;
-    gap: .15rem;
+    gap: .1rem;
     flex-shrink: 0;
-    padding: .4rem .75rem;
+    padding: .35rem .65rem;
     border-radius: 9999px;
-    font-size: .8125rem;
+    font-size: .75rem;
     font-weight: 600;
     color: var(--color-primary);
     background: color-mix(in oklab, var(--color-primary) 9%, transparent);
@@ -1004,51 +1030,132 @@ body.has-tabbar .dx-sticky-cta { bottom: calc(4.9rem + env(safe-area-inset-botto
 }
 .dx-noms__more:hover { background: color-mix(in oklab, var(--color-primary) 15%, transparent); }
 
-/* Телефон — лента панелей со снапом; ПК — сетка. */
-.dx-noms__grid {
+/* Сегментный переключатель: равные ячейки, всё видно без прокрутки — мышь, тачпад, палец. */
+.dx-noms__tabs {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: .2rem;
+    margin-bottom: .8rem;
+    padding: .25rem;
+    border-radius: 1rem;
+    background: color-mix(in oklab, var(--color-base-content) 5.5%, transparent);
+}
+.dx-noms__tab {
     display: flex;
-    align-items: flex-start;
-    gap: .75rem;
-    margin: 0 -.5rem;
-    padding: 0 .5rem .5rem;
-    overflow-x: auto;
-    scroll-snap-type: x mandatory;
-    scroll-padding-inline: .5rem;
-    scrollbar-width: none;
-}
-.dx-noms__grid::-webkit-scrollbar { display: none; }
-@media (min-width: 768px) {
-    .dx-noms__grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
-        gap: 1rem;
-        margin: 0;
-        padding: 0;
-        overflow: visible;
-    }
-}
-.dx-noms__cat {
-    flex: 0 0 86%;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: .15rem;
     min-width: 0;
-    padding: .35rem;
-    border-radius: 1.25rem;
-    scroll-snap-align: start;
-    background: var(--color-base-100);
-    border: 1px solid color-mix(in oklab, var(--color-base-content) 8%, transparent);
-    box-shadow: 0 1px 2px rgb(0 0 0 / .03), 0 8px 24px -18px rgb(0 0 0 / .18);
+    padding: .45rem 0 .4rem;
+    border-radius: .8rem;
+    font-size: .65rem;
+    font-weight: 600;
+    letter-spacing: -.01em;
+    line-height: 1.1;
+    cursor: pointer;
+    user-select: none;
+    color: color-mix(in oklab, var(--color-base-content) 58%, transparent);
+    transition: background .2s ease, color .2s ease, box-shadow .2s ease;
 }
-.dx-noms__cat-head {
+.dx-noms__tab i { font-size: 1.1rem; }
+.dx-noms__tab span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dx-noms__tab:hover { color: var(--color-base-content); background: color-mix(in oklab, var(--color-base-100) 55%, transparent); }
+.dx-noms__panel { display: none; animation: dx-noms-in .22s ease; }
+@keyframes dx-noms-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+
+#dx-nt-main:checked ~ .dx-noms__tabs .dx-noms__tab--main,
+#dx-nt-referee:checked ~ .dx-noms__tabs .dx-noms__tab--referee,
+#dx-nt-team:checked ~ .dx-noms__tabs .dx-noms__tab--team,
+#dx-nt-coach:checked ~ .dx-noms__tabs .dx-noms__tab--coach,
+#dx-nt-player:checked ~ .dx-noms__tabs .dx-noms__tab--player,
+#dx-nt-match:checked ~ .dx-noms__tabs .dx-noms__tab--match {
+    color: var(--color-base-content);
+    background: var(--color-base-100);
+    box-shadow: 0 1px 2px rgb(0 0 0 / .08), 0 4px 12px -4px rgb(0 0 0 / .18);
+}
+#dx-nt-main:checked ~ .dx-noms__panel--main,
+#dx-nt-referee:checked ~ .dx-noms__panel--referee,
+#dx-nt-team:checked ~ .dx-noms__panel--team,
+#dx-nt-coach:checked ~ .dx-noms__panel--coach,
+#dx-nt-player:checked ~ .dx-noms__panel--player,
+#dx-nt-match:checked ~ .dx-noms__panel--match { display: block; }
+#dx-nt-main:focus-visible ~ .dx-noms__tabs .dx-noms__tab--main,
+#dx-nt-referee:focus-visible ~ .dx-noms__tabs .dx-noms__tab--referee,
+#dx-nt-team:focus-visible ~ .dx-noms__tabs .dx-noms__tab--team,
+#dx-nt-coach:focus-visible ~ .dx-noms__tabs .dx-noms__tab--coach,
+#dx-nt-player:focus-visible ~ .dx-noms__tabs .dx-noms__tab--player,
+#dx-nt-match:focus-visible ~ .dx-noms__tabs .dx-noms__tab--match { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+
+#dx-nt-main:checked ~ .dx-noms__tabs .dx-noms__tab--main i,
+#dx-nt-referee:checked ~ .dx-noms__tabs .dx-noms__tab--referee i,
+#dx-nt-team:checked ~ .dx-noms__tabs .dx-noms__tab--team i,
+#dx-nt-coach:checked ~ .dx-noms__tabs .dx-noms__tab--coach i,
+#dx-nt-player:checked ~ .dx-noms__tabs .dx-noms__tab--player i,
+#dx-nt-match:checked ~ .dx-noms__tabs .dx-noms__tab--match i { color: var(--gold); }
+
+/* Hero «Главного»: лучший из лучших — крупно. */
+.dx-noms__hero {
     display: flex;
     align-items: center;
-    gap: .45rem;
-    padding: .6rem .7rem .4rem;
-    font-size: .75rem;
+    gap: .9rem;
+    margin-bottom: .35rem;
+    padding: .9rem;
+    border-radius: 1.15rem;
+    background:
+        linear-gradient(135deg, color-mix(in oklab, var(--best) 16%, transparent), color-mix(in oklab, var(--best) 4%, transparent));
+    border: 1px solid color-mix(in oklab, var(--best) 22%, transparent);
+    transition: transform .2s ease, box-shadow .2s ease;
+}
+.dx-noms__hero:hover { transform: translateY(-1px); box-shadow: 0 12px 26px -18px color-mix(in oklab, var(--gold) 90%, transparent); }
+.dx-noms__hero-ava { position: relative; display: inline-flex; flex-shrink: 0; width: 3.5rem; height: 3.5rem; }
+.dx-noms__hero-ava img,
+.dx-noms__hero-ava .dx-nom__initials {
+    width: 100%;
+    height: 100%;
+    border-radius: 9999px;
+    object-fit: cover;
+    background: var(--color-base-100);
+    box-shadow: 0 0 0 2px var(--color-base-100), 0 0 0 4px color-mix(in oklab, var(--gold) 70%, transparent);
+}
+.dx-noms__hero-ava.dx-nom__ava--pair img { width: 2.4rem; height: 2.4rem; object-fit: contain; }
+.dx-noms__hero-text { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.dx-noms__hero-award {
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
+    font-size: .6875rem;
     font-weight: 700;
     letter-spacing: .06em;
     text-transform: uppercase;
-    color: color-mix(in oklab, var(--color-base-content) 50%, transparent);
+    color: color-mix(in oklab, var(--gold) 85%, var(--color-base-content));
 }
-.dx-noms__cat-head i { font-size: 1rem; }
+.dx-noms__hero-name { font-size: 1.0625rem; font-weight: 800; letter-spacing: -.01em; line-height: 1.25; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.dx-noms__hero-why { margin-top: .1rem; font-size: .75rem; color: color-mix(in oklab, var(--color-base-content) 55%, transparent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dx-noms__hero-score { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: baseline; flex-shrink: 0; max-width: 5.5rem; text-align: right; font-variant-numeric: tabular-nums; }
+.dx-noms__hero-score b { font-size: 1.6rem; font-weight: 800; letter-spacing: -.03em; line-height: 1; }
+.dx-noms__hero-score small { font-size: .75rem; color: color-mix(in oklab, var(--color-base-content) 45%, transparent); }
+.dx-noms__hero-score span { flex-basis: 100%; margin-top: .2rem; font-size: .6875rem; color: color-mix(in oklab, var(--color-base-content) 45%, transparent); }
+
+/* Узкая карточка (телефон) — без герба и пояснения, имени больше места. */
+@container (max-width: 26rem) {
+    .dx-noms__crest, .dx-noms__hero-why { display: none; }
+    .dx-noms__tabs { gap: .1rem; padding: .2rem; }
+    .dx-noms__tab { font-size: .6rem; letter-spacing: -.02em; }
+    .dx-noms__hero { gap: .75rem; padding: .8rem; }
+    .dx-noms__hero-ava { width: 3rem; height: 3rem; }
+    .dx-noms__hero-award { white-space: nowrap; }
+    .dx-noms__hero-score { max-width: 4.5rem; }
+    .dx-noms__hero-score b { font-size: 1.35rem; }
+}
+
+/* Широкий контейнер (страница лиги) — строки в две колонки. */
+.dx-noms__list { display: grid; grid-template-columns: minmax(0, 1fr); column-gap: 1rem; }
+@container (min-width: 44rem) {
+    .dx-noms__list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .dx-noms__list .dx-nom + .dx-nom::before { display: none; }
+}
 
 .dx-nom {
     --tone: var(--best);
@@ -1151,7 +1258,6 @@ body.has-tabbar .dx-sticky-cta { bottom: calc(4.9rem + env(safe-area-inset-botto
 .dx-nom__votes { flex-basis: 100%; font-size: .6875rem; color: color-mix(in oklab, var(--color-base-content) 45%, transparent); }
 /* Телефон: ширина — имени (в две строки), голоса — в подсказке строки. */
 @media (max-width: 767px) {
-    .dx-noms__cat { flex-basis: 90%; }
     .dx-nom { gap: .7rem; padding: .55rem .6rem; }
     .dx-nom__votes { display: none; }
     .dx-nom__name { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
@@ -1164,12 +1270,29 @@ body.has-tabbar .dx-sticky-cta { bottom: calc(4.9rem + env(safe-area-inset-botto
 
 /* ---------- Настроение болельщиков (страница команды) ---------- */
 .dx-mood__kpis { display: grid; gap: .5rem; grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr)); margin-bottom: 1.1rem; }
-/* На телефоне — компактные плитки в ряд: без пояснений, короче подписи. */
+/* На телефоне — список «подпись — значение»: ровные строки при любой длине подписи. */
 @media (max-width: 639px) {
-    .dx-mood__kpis { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
-    .dx-mood__kpis .dx-kpi { padding: .65rem .7rem; }
-    .dx-mood__kpis .dx-kpi__label { font-size: .6875rem; line-height: 1.25; align-items: flex-start; }
-    .dx-mood__kpis .dx-kpi__value { font-size: 1.35rem; }
+    .dx-mood__kpis {
+        grid-template-columns: 1fr;
+        gap: 0;
+        padding: .15rem .85rem;
+        border-radius: 1rem;
+        background: color-mix(in oklab, var(--color-base-content) 3.5%, transparent);
+    }
+    .dx-mood__kpis .dx-kpi {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        column-gap: .75rem;
+        padding: .6rem 0;
+        border-radius: 0;
+        background: none;
+    }
+    .dx-mood__kpis .dx-kpi + .dx-kpi { border-top: 1px solid color-mix(in oklab, var(--color-base-content) 7%, transparent); }
+    .dx-mood__kpis .dx-kpi__label { font-size: .8125rem; align-items: center; }
+    .dx-mood__kpis .dx-kpi__label .dx-kpi__dot { margin-top: 0; }
+    .dx-mood__kpis .dx-kpi__value { grid-column: 2; grid-row: 1 / span 2; font-size: 1.25rem; text-align: right; }
+    .dx-mood__kpis .dx-kpi__trend { grid-column: 1; margin-left: 1rem; }
     .dx-mood__kpis .dx-kpi__hint,
     .dx-mood__kpis .dx-kpi__trend-note { display: none; }
 }

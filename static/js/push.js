@@ -9,7 +9,23 @@
         navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch((err) => {
             console.warn('DOPX: service worker registration failed', err);
         });
+        setTimeout(autoResync, 3000);
     });
+
+    // Раз в сутки тихо сверяем подписку с сервером: браузер мог сменить endpoint,
+    // а сервер — удалить запись как мёртвую. Разрешение не запрашиваем.
+    const RESYNC_KEY = 'dopx:push-resync';
+    const RESYNC_EVERY_MS = 24 * 60 * 60 * 1000;
+    function autoResync() {
+        if (document.body.dataset.auth !== '1' || !('Notification' in window) || Notification.permission !== 'granted') return;
+        try {
+            if (Date.now() - Number(localStorage.getItem(RESYNC_KEY) || 0) < RESYNC_EVERY_MS) return;
+            localStorage.setItem(RESYNC_KEY, String(Date.now()));
+        } catch (e) { /* без localStorage — сверяем каждый раз, это дёшево */ }
+        let csrf = '';
+        try { csrf = JSON.parse(document.body.getAttribute('hx-headers') || '{}')['X-CSRFToken'] || ''; } catch (e) { /* нет токена */ }
+        if (csrf && window.dopxPushStatus) window.dopxPushStatus(csrf);
+    }
 
     function urlBase64ToUint8Array(base64String) {
         const padding = '='.repeat((4 - (base64String.length % 4)) % 4);

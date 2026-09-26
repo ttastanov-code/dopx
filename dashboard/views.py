@@ -526,6 +526,8 @@ def data_trust_resolve_report(request, submission_id):
         new_status = "resolved"
     submission.status = new_status
     submission.save(update_fields=["status", "updated_at"])
+    from notifications.tasks import notify_contact_resolved
+    notify_contact_resolved(submission)
     messages.success(request, f"Жалоба «{submission.subject}» закрыта")
     log_staff_action(
         request, AuditAction.DATA_ERROR_REPORT_RESOLVED,

@@ -76,6 +76,7 @@ TRIGGERABLE_TASKS = {
     "notify_prediction_closing_soon": "Прогнозы: приглашение за час до старта",
     "notify_prediction_results": "Прогнозы: результат vs прогноз",
     "send_weekly_summary": "Недельная сводка активности",
+    "notify_ratings_published": "Push: рейтинги матча открыты",
     # Пересчёт сборной сезона.
     "recompute_all_active_best_xi": "Сборная DOPX: пересчитать сейчас",
     # Пересчёт сборных открытых туров.
@@ -91,6 +92,7 @@ TASK_DESCRIPTIONS: dict[str, str] = {
     "notify_prediction_closing_soon": "Приглашение сделать прогноз тем, у кого матч через час, а прогноза ещё нет.",
     "notify_prediction_results": "«Ваш прогноз vs результат» по завершённым матчам.",
     "send_weekly_summary": "Персональная сводка активности за неделю всем активным пользователям.",
+    "notify_ratings_published": "Оценившим и болельщикам — итоги по матчам, где голосование закрылось за последние 6 часов. Повторно не шлёт.",
     "recompute_all_active_best_xi": "Пересчитывает «Сборную DOPX» по активным сезонам сейчас, не дожидаясь тика раз в 15 мин.",
     "recompute_active_rounds": "Пересчитывает туры с завершённым матчем, но ещё не зафиксированным составом. Закрытые туры пропускает.",
     "recompute_all_closed_rounds_task": "Пересчитывает состав ВСЕХ уже закрытых туров — для случаев, когда данные матча поправили постфактум. Письма повторно не шлёт.",
@@ -101,6 +103,7 @@ _TASK_MODULES = {
     "notify_prediction_closing_soon": "notifications.tasks",
     "notify_prediction_results": "notifications.tasks",
     "send_weekly_summary": "notifications.tasks",
+    "notify_ratings_published": "notifications.tasks",
     "recompute_all_active_best_xi": "season_squad.tasks",
     "recompute_active_rounds": "round_squad.tasks",
     "recompute_all_closed_rounds_task": "round_squad.tasks",

@@ -679,6 +679,11 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'notifications.tasks.notify_unfinished_evaluations',
         'schedule': crontab(minute='*/15'),
     },
+    # Голосование закрылось — рейтинги открыты.
+    'ratings-published': {
+        'task': 'notifications.tasks.notify_ratings_published',
+        'schedule': crontab(minute='*/15'),
+    },
     # === Очистка старых данных (каждый день в 03:00) ===
     'cleanup-old-notifications-daily': {
         'task': 'notifications.tasks.cleanup_old_notifications',
@@ -875,6 +880,13 @@ CACHES = {
         'TIMEOUT': 300,
     }
 }
+
+# Тесты — свой кэш в памяти: не чистят и не засоряют Redis dev-сервера.
+if 'test' in sys.argv or 'pytest' in sys.modules:
+    CACHES = {
+        'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache', 'LOCATION': 'tests-default'},
+        'aggregates': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache', 'LOCATION': 'tests-aggregates'},
+    }
 
 # =============================================================================
 # Logging

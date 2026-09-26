@@ -15,6 +15,7 @@ import os
 from core.admin_actions import export_as_csv
 
 from .models import Notification, ContactSubmission
+from .tasks import notify_contact_resolved
 
 logger = logging.getLogger(__name__)
 
@@ -163,6 +164,8 @@ class ContactSubmissionAdmin(ModelAdmin):
             send_status_email = form.cleaned_data.get('send_status_email', False)
             if send_status_email and obj.contact_email:
                 self._send_status_change_email(obj, old_status, request)
+            if send_status_email:
+                notify_contact_resolved(obj)
     
     def _send_status_change_email(self, ticket: ContactSubmission, old_status: str, request=None):
         """Письмо о смене статуса обращения."""
@@ -213,6 +216,7 @@ class ContactSubmissionAdmin(ModelAdmin):
             ticket.save(update_fields=['status', 'updated_at'])
             if ticket.contact_email:
                 self._send_status_change_email(ticket, old_status, request)
+            notify_contact_resolved(ticket)
             updated += 1
         return updated
 
