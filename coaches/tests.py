@@ -123,6 +123,8 @@ class CoachDetailHasEvaluationsGateTests(CoachesFixtureMixin, TestCase):
         self.assertEqual(response.context['stats']['total_evaluations'], 0)
 
     def test_single_match_with_one_vote_still_counts_as_has_evaluations(self):
+        # Рейтинги матча публичны после закрытия голосования.
+        Match.objects.filter(pk=self.match.pk).update(voting_open_until=timezone.now() - timedelta(minutes=1))
         CoachMatchAggregate.objects.create(
             coach=self.coach, match=self.match,
             avg_tactics=6.0, avg_substitutions=6.0, avg_management=6.0, avg_impact=6.0,

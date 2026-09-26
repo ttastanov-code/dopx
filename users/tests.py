@@ -28,6 +28,7 @@ from predictions.models import MatchPrediction
 from seasons.models import Season
 from teams.models import Team
 from matches.models import Match
+from core.utils import sign_form_timestamp
 from users.forms import MIN_FORM_FILL_SECONDS, UserProfileForm, UserRegistrationForm
 from users.models import (
     UserBadge, UserXP, cumulative_xp_for_level, level_for_total_xp,
@@ -520,15 +521,30 @@ class RegistrationAntiFraudFormTests(TestCase):
 
     def test_time_trap_instant_submit_rejected(self):
         form = UserRegistrationForm()
-        form.cleaned_data = {"form_rendered_at": time.time()}
+        form.cleaned_data = {"form_rendered_at": sign_form_timestamp()}
         with self.assertRaises(ValidationError):
             form.clean_form_rendered_at()
 
     def test_time_trap_after_min_fill_seconds_passes(self):
         form = UserRegistrationForm()
-        rendered_at = time.time() - MIN_FORM_FILL_SECONDS - 1
-        form.cleaned_data = {"form_rendered_at": rendered_at}
-        self.assertEqual(form.clean_form_rendered_at(), rendered_at)
+        token = sign_form_timestamp()
+        later = time.time() + MIN_FORM_FILL_SECONDS + 1
+        with mock.patch("django.core.signing.time.time", return_value=later):
+            form.cleaned_data = {"form_rendered_at": token}
+            self.assertEqual(form.clean_form_rendered_at(), token)
+
+    def test_time_trap_forged_timestamp_rejected(self):
+        # Метку времени подписывает сервер — старое число от клиента не проходит.
+        form = UserRegistrationForm()
+        form.cleaned_data = {"form_rendered_at": str(time.time() - 60)}
+        with self.assertRaises(ValidationError):
+            form.clean_form_rendered_at()
+
+    def test_time_trap_missing_rejected(self):
+        form = UserRegistrationForm()
+        form.cleaned_data = {"form_rendered_at": ""}
+        with self.assertRaises(ValidationError):
+            form.clean_form_rendered_at()
 
 
 # ---------------------------------------------------------------------------

@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% load static %}
+{% load ui_extras %}
 {% load match_extras %}
 {% block content %}
 {# === НАВИГАЦИЯ === #}
@@ -49,18 +50,113 @@
 
 {# === НОМИНАЦИИ СЕЗОНА === #}
 {% if nominations %}
-<div class="mb-6 px-2 sm:px-0">
-    <div class="flex items-center justify-between mb-3 md:mb-4">
-        <h2 class="text-xl md:text-2xl font-bold flex items-center gap-2">
-            <i class="ti ti-award"></i>
-            Номинации сезона
-        </h2>
-        {% if selected_season %}
-        <span class="badge badge-sm {% if selected_season.is_active %}badge-warning{% else %}badge-ghost{% endif %}">{{ selected_season.year }}</span>
+<div class="mb-6 mx-2 sm:mx-0">
+    {% include 'components/_nominations.html' with nom_season=selected_season.year %}
+</div>
+{% endif %}
+
+{# === СБОРНАЯ СЕЗОНА И ЛУЧШИЕ ТУРОВ — для любого выбранного сезона, включая прошлые. Стили — css/ui.css (dx-*). === #}
+{% if season_best_xi or season_rounds %}
+<section class="dx-card mb-6 mx-2 sm:mx-0" aria-labelledby="season-xi-title">
+    <header class="dx-card__head">
+        <div class="dx-card__title-wrap">
+            <span class="dx-icon-tile dx-icon-tile--amber"><i class="ti ti-shirt"></i></span>
+            <div class="min-w-0">
+                <h2 id="season-xi-title" class="dx-card__title">Сборная DOPX сезона {{ selected_season.year }}</h2>
+                <p class="dx-card__subtitle">
+                    {% if season_best_xi.is_final and season_xi_lines %}
+                    <span class="dx-status dx-status--final"><i class="ti ti-lock"></i> Итоговая</span>
+                    Состав зафиксирован по итогам сезона
+                    {% elif season_best_xi.is_final %}
+                    Сезон завершён
+                    {% elif season_xi_lines %}
+                    <span class="dx-status dx-status--live"><span class="dx-status__dot"></span> Живая</span>
+                    Меняется с каждой новой оценкой
+                    {% else %}
+                    Лучший состав 4-3-3 по оценкам болельщиков
+                    {% endif %}
+                </p>
+            </div>
+        </div>
+        {% if season_xi_lines %}
+        <a href="{% url 'season_squad:best_xi' selected_season.id %}" class="dx-link-button">
+            Открыть <i class="ti ti-arrow-right"></i>
+        </a>
+        {% endif %}
+    </header>
+
+    {% if season_xi_lines %}
+    <div class="dx-xi">
+        {% for line in season_xi_lines %}
+        <div class="dx-xi__line">
+            <div class="dx-xi__label">{{ line.label }}</div>
+            <div class="dx-xi__cards">
+                {% for card in line.cards %}
+                <a href="{{ card.slot.occupant_profile_url|default:'#' }}" class="dx-person" title="{{ card.label }}">
+                    <span class="dx-person__avatar">
+                        {% if card.slot.occupant_photo_url %}
+                        <img src="{{ card.slot.occupant_photo_url }}" alt="" loading="lazy">
+                        {% else %}
+                        {{ card.slot.occupant_name|slice:":1" }}
+                        {% endif %}
+                    </span>
+                    <span class="dx-person__body">
+                        <span class="dx-person__role">{{ card.label }}</span>
+                        <span class="dx-person__name">{{ card.slot.occupant_name }}</span>
+                        {% if card.slot.occupant_team_name %}<span class="dx-person__meta">{{ card.slot.occupant_team_name }}</span>{% endif %}
+                    </span>
+                    {% if card.slot.season_score is not None %}
+                    <span class="dx-person__score">{{ card.slot.season_score|floatformat:1 }}</span>
+                    {% endif %}
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="dx-empty">
+        <span class="dx-empty__icon"><i class="ti ti-users-group"></i></span>
+        {% if season_best_xi.is_final %}
+        <div>
+            <div class="dx-empty__title">Сборная сезона не сложилась</div>
+            <p class="dx-empty__text">За сезон ни у одного игрока не набралось {{ season_xi_min_matches }} {{ season_xi_min_matches|ru_plural:"оценённого матча,оценённых матчей,оценённых матчей" }} с достаточным числом голосов.</p>
+        </div>
+        {% else %}
+        <div>
+            <div class="dx-empty__title">Сборная ещё собирается</div>
+            <p class="dx-empty__text">Игрок попадает в состав, когда у него наберётся {{ season_xi_min_matches }} {{ season_xi_min_matches|ru_plural:"оценённый матч,оценённых матча,оценённых матчей" }} с достаточным числом голосов.</p>
+        </div>
         {% endif %}
     </div>
-    {% include 'components/_nominations.html' %}
-</div>
+    {% endif %}
+
+    {% if season_rounds %}
+    <div class="dx-section">
+        <div class="dx-section__head">
+            <h3 class="dx-section__title"><i class="ti ti-star"></i> Лучшие туров</h3>
+            <span class="dx-section__meta">{{ season_rounds|length }} {{ season_rounds|length|ru_plural:"тур,тура,туров" }}</span>
+        </div>
+        {# Лента со snap-прокруткой; последний тур выделен. Стрелки — на десктопе при наведении. #}
+        <div class="dx-rail-wrap" x-data="railScroller">
+        <button type="button" class="dx-rail-btn dx-rail-btn--prev" x-show="canPrev" x-cloak @click="scrollPrev" aria-label="Предыдущие туры"><i class="ti ti-chevron-left"></i></button>
+        <button type="button" class="dx-rail-btn dx-rail-btn--next" x-show="canNext" x-cloak @click="scrollNext" aria-label="Следующие туры"><i class="ti ti-chevron-right"></i></button>
+        <div class="dx-rail" role="list" x-ref="rail">
+            {% for r in season_rounds reversed %}
+            <a role="listitem" href="{% url 'round_squad:round' selected_season.id r.tour %}"
+               class="dx-tour{% if forloop.first %} dx-tour--latest{% endif %}">
+                <span class="dx-tour__num">{{ r.tour }}</span>
+                <span class="dx-tour__label">тур</span>
+                {% if r.player_of_round_name %}
+                <span class="dx-tour__hero" title="Игрок тура">{{ r.player_of_round_name }}</span>
+                {% endif %}
+            </a>
+            {% endfor %}
+        </div>
+        </div>
+    </div>
+    {% endif %}
+</section>
 {% endif %}
 
 {# === ДВЕ КОЛОНКИ === #}
@@ -301,8 +397,8 @@
                     {% for player in top_scorers %}
                     <a href="{% url 'players:detail' player.id %}" class="flex items-center gap-2 p-2 rounded-lg hover:bg-base-200 transition-colors">
                         <span class="w-5 text-center text-xs font-bold opacity-50">{{ forloop.counter }}</span>
-                        {% if player.photo %}
-                        <img src="{{ player.photo.url }}" alt="{{ player.full_name }}" class="w-7 h-7 rounded-full object-cover flex-shrink-0">
+                        {% if player.photo_display %}
+                        <img src="{{ player.photo_display }}" alt="{{ player.full_name }}" class="w-7 h-7 rounded-full object-cover flex-shrink-0">
                         {% else %}
                         <div class="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary flex-shrink-0">
                             {{ player.first_name|first|upper }}{{ player.last_name|first|upper }}

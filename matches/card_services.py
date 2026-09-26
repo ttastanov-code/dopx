@@ -11,9 +11,10 @@ from __future__ import annotations
 from collections import defaultdict
 
 from django.db.models import Count, Q
+from django.utils import timezone
 
 from aggregates.models import PlayerMatchAggregate
-from aggregates.services import MIN_VOTES_FOR_DISPLAY
+from aggregates.services import min_votes_for_display
 from evaluations.models import EvaluationSession
 from events.models import MatchEvent
 from matches.models import Match
@@ -218,10 +219,20 @@ def _attach_finished_extras(finished, user) -> None:
 
     finished_ids = [m.id for m in finished]
 
+    # Рейтинги матча с идущим голосованием видит только тот, кто уже его оценил.
+    now = timezone.now()
+    evaluated_ids = set()
+    if user is not None and user.is_authenticated:
+        evaluated_ids = set(
+            EvaluationSession.objects.filter(user=user, match_id__in=finished_ids, status='completed')
+            .values_list('match_id', flat=True)
+        )
+    visible_ids = {m.id for m in finished if m.voting_open_until < now or m.id in evaluated_ids}
+
     # --- лучший игрок (bulk) ---
     hero_rows = (
         PlayerMatchAggregate.objects.filter(
-            match_id__in=finished_ids, total_votes__gte=MIN_VOTES_FOR_DISPLAY,
+            match_id__in=visible_ids, total_votes__gte=min_votes_for_display(),
         ).select_related('player', 'player__team').order_by('match_id', '-performance_score')
     )
     hero_by_match = {}
@@ -253,7 +264,9 @@ def _attach_finished_extras(finished, user) -> None:
         events = events_by_match.get(match.id, [])
         match.card_key_moment = describe_key_moment(match, events)
 
-        match.card_dna_traits = describe_card_dna_traits(getattr(match, 'aggregate', None))
+        match.card_dna_traits = (
+            describe_card_dna_traits(getattr(match, 'aggregate', None)) if match.id in visible_ids else None
+        )
 
         reaction_entry = reaction_data.get(match.id)
         match.card_reaction_counts = reaction_entry['counts'] if reaction_entry else None

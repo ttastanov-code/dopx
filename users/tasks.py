@@ -386,6 +386,47 @@ def award_monthly_champion_badge() -> bool:
     return True
 
 
+# За один прогон — не больше стольких сессий (остальные на следующем).
+TRUST_SETTLE_BATCH_SIZE = 500
+
+
+@shared_task
+def settle_trust_scores_task() -> int:
+    """Trust score по завершённым оценкам матчей, где голосование уже закрыто:
+    сравнение с итоговым консенсусом (aggregates.services.calculate_user_trust_adjustment).
+    """
+    from django.db import transaction
+
+    from aggregates.services import calculate_user_trust_adjustment
+    from evaluations.models import EvaluationSession
+    from users.models import User
+
+    now = timezone.now()
+    sessions = list(
+        EvaluationSession.objects.filter(
+            status="completed", trust_settled_at__isnull=True, match__voting_open_until__lt=now,
+        ).select_related("match").order_by("completed_at")[:TRUST_SETTLE_BATCH_SIZE]
+    )
+    settled = 0
+    for session in sessions:
+        with transaction.atomic():
+            locked = EvaluationSession.objects.select_for_update().get(pk=session.pk)
+            if locked.trust_settled_at is not None:
+                continue
+            user = User.objects.select_for_update().get(pk=session.user_id)
+            if user.is_active:
+                adjustment = calculate_user_trust_adjustment(user, session.match)
+                new_trust = max(0.5, min(2.0, user.trust_score + adjustment))
+                if abs(new_trust - user.trust_score) >= 0.001:
+                    User.objects.filter(pk=user.pk).update(trust_score=new_trust)
+            locked.trust_settled_at = now
+            locked.save(update_fields=["trust_settled_at", "updated_at"])
+        settled += 1
+    if settled:
+        logger.info("settle_trust_scores_task: учтено %d сессий.", settled)
+    return settled
+
+
 @shared_task
 def decay_trust_scores_task() -> int:
     """Раз в месяц тянет trust_score активных пользователей к 1.0.

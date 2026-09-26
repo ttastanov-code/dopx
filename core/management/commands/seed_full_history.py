@@ -39,6 +39,7 @@ from players.models import Player
 from predictions.models import MatchPrediction
 from seasons.models import Season
 from users.models import UserXP
+from core.management.seed_guard import ensure_seed_allowed
 
 User = get_user_model()
 
@@ -57,7 +58,6 @@ PREDICTION_ACCURACY_MAX = 0.72
 
 # При промахе ничья выбирается реже.
 WRONG_CHOICE_WEIGHTS = {"1": 1.0, "X": 0.5, "2": 1.0}
-
 
 class Command(BaseCommand):
     help = (
@@ -98,6 +98,7 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        ensure_seed_allowed()
         if options["seed"] is not None:
             random.seed(options["seed"])
 

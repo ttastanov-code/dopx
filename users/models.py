@@ -45,10 +45,19 @@ def level_for_total_xp(total_xp: int) -> int:
     return level
 
 
+def is_email_verified(user) -> bool:
+    """Подтверждена ли почта — из БД: OTPMiddleware подменяет request.user.is_verified функцией."""
+    if user is None or not getattr(user, "is_authenticated", False):
+        return False
+    return User.objects.filter(pk=user.pk, is_verified=True).exists()
+
+
 class User(AbstractUser, BaseModel):
     """Пользователь платформы."""
 
     email = models.EmailField(_("Email"), unique=True)
+    # Нормализованный email (core.utils.canonical_email) — поиск дублей ящика.
+    email_canonical = models.CharField(_("Email (нормализованный)"), max_length=254, blank=True, db_index=True, editable=False)
     avatar = models.ImageField(_("Аватар"), upload_to="avatars/", null=True, blank=True)
     bio = models.TextField(_("О себе"), blank=True)
     # Город — из справочника users/kz_cities.py. blank=True оставлен ради старых
@@ -136,6 +145,26 @@ class User(AbstractUser, BaseModel):
         """Безопасное получение настройки уведомления."""
         return self.notification_settings.get(
             key, default if default is not None else self.DEFAULT_NOTIFICATION_SETTINGS.get(key, False)
+        )
+
+    def save(self, *args, **kwargs):
+        from core.utils import canonical_email
+
+        self.email_canonical = canonical_email(self.email)
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None and "email" in update_fields:
+            kwargs["update_fields"] = {*update_fields, "email_canonical"}
+        super().save(*args, **kwargs)
+
+    def refresh_verification_token(self) -> None:
+        """Новый токен подтверждения почты со свежим сроком жизни."""
+        from django.utils import timezone
+
+        self.verification_token = uuid.uuid4()
+        self.verification_token_created_at = timezone.now()
+        type(self).objects.filter(pk=self.pk).update(
+            verification_token=self.verification_token,
+            verification_token_created_at=self.verification_token_created_at,
         )
 
     def update_evaluation_stats(self, match) -> None:
@@ -279,12 +308,14 @@ class UserXP(BaseModel):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="xp", verbose_name=_("Пользователь"))
     total_xp = models.IntegerField(_("Всего опыта"), default=0)
     level = models.IntegerField(_("Уровень"), default=1)
+    # Дробная часть начислений (0..1) — копится, а не теряется при округлении.
+    xp_remainder = models.FloatField(_("Дробный остаток XP"), default=0.0)
 
     class Meta:
         verbose_name = _("Опыт пользователя")
         verbose_name_plural = _("Опыт пользователей")
 
-    def add_xp(self, amount: int) -> dict:
+    def add_xp(self, amount: float) -> dict:
         """Начисляет XP и пересчитывает уровень. Под select_for_update —
         параллельные начисления не теряются.
 
@@ -296,17 +327,21 @@ class UserXP(BaseModel):
             old_level = locked.level
             old_total_xp = locked.total_xp
 
-            locked.total_xp = max(0, locked.total_xp + int(round(amount)))
+            carried = (locked.xp_remainder or 0.0) + amount
+            whole = math.floor(carried + 1e-9)
+            locked.xp_remainder = max(0.0, carried - whole)
+            locked.total_xp = max(0, locked.total_xp + whole)
             new_level = level_for_total_xp(locked.total_xp)
 
             levels_gained = list(range(old_level + 1, new_level + 1)) if new_level > old_level else []
             locked.level = new_level
 
-            locked.save(update_fields=["level", "total_xp", "updated_at"])
+            locked.save(update_fields=["level", "total_xp", "xp_remainder", "updated_at"])
 
         # Синхронизируем инстанс с сохранённым в БД.
         self.total_xp = locked.total_xp
         self.level = locked.level
+        self.xp_remainder = locked.xp_remainder
 
         return {
             "level_increased": bool(levels_gained),
@@ -449,7 +484,7 @@ class SuspiciousActivityFlag(BaseModel):
                 explanation += f" Вес его/её голоса в общем рейтинге уже автоматически снижен на {penalty:.2f}."
             return {
                 "explanation": explanation,
-                "confirm_hint": "фиксирует как подтверждённую накрутку/предвзятость — помогает системе точнее калибровать порог видимости этого сигнала на будущее",
+                "confirm_hint": "фиксирует как подтверждённую накрутку/предвзятость — голоса пользователя в этом матче перестают учитываться в рейтинге, решение идёт в калибровку порога",
                 "dismiss_hint": "если это обычная искренняя пристрастность фаната (в разумных пределах бывает у всех) — помечает как ложное срабатывание, тоже влияет на будущую калибровку",
             }
 
@@ -488,7 +523,7 @@ class SuspiciousActivityFlag(BaseModel):
             )
             return {
                 "explanation": explanation,
-                "confirm_hint": "фиксирует как подтверждённую накрутку — помогает системе точнее калибровать чувствительность детектора на будущее",
+                "confirm_hint": "фиксирует как подтверждённую накрутку — голоса пользователя в этом матче перестают учитываться в рейтинге, решение идёт в калибровку детектора",
                 "dismiss_hint": "если это объяснимо (например, семья или общежитие с одним IP) — помечает как ложное срабатывание",
             }
 
@@ -500,7 +535,7 @@ class SuspiciousActivityFlag(BaseModel):
             )
             return {
                 "explanation": explanation,
-                "confirm_hint": "фиксирует как подтверждённое подозрительное поведение этого пользователя",
+                "confirm_hint": "фиксирует как подтверждённое подозрительное поведение — голоса пользователя в этом матче перестают учитываться в рейтинге",
                 "dismiss_hint": "если пользователь объяснил задержку (например, знал матч наизусть) — помечает как ложное срабатывание",
             }
 
@@ -611,7 +646,7 @@ class SuspiciousActivityFlag(BaseModel):
             honest_reasons = "удаление, травмы ключевых игроков, спорное судейство, игра «от обороны» по плану"
         what_to_do = (
             f"Откройте последние матчи и сверьте с игрой. Если расхождение объяснимо ({honest_reasons}) — "
-            f"«Отклонить»: поправка сразу снимется, и 30 дней система не будет трогать {'этого игрока' if is_player else 'эту команду'}. "
+            f"«Отклонить»: поправка сразу снимется (и с уже посчитанных матчей), и 30 дней система не будет трогать {'этого игрока' if is_player else 'эту команду'}. "
             f"Если согласны, что оценки накручены, — «Подтвердить»: рейтинг это не меняет (поправка уже работает), "
             f"но система учтёт ваше решение и точнее настроит свою чувствительность. Не уверены — можно ничего не делать, "
             f"поправка сама затухнет, если расхождение уйдёт."
@@ -657,7 +692,7 @@ class SuspiciousActivityFlag(BaseModel):
             "system_action": system_action,
             "what_to_do": what_to_do,
             "confirm_hint": "рейтинг не меняет, только учитывается для настройки чувствительности детектора",
-            "dismiss_hint": "сразу снимает авто-поправку и выключает проверку на 30 дней",
+            "dismiss_hint": "сразу снимает авто-поправку (и с прошлых матчей) и выключает проверку на 30 дней",
         }
 
     # Понятные подписи для ключей details в блоке «Цифры и как считается».

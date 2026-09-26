@@ -223,15 +223,32 @@ class PlayerEvaluationAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_by_match_action_returns_evaluations_for_match(self):
+        from evaluations.models import EvaluationSession
+
         ContextEvaluation.objects.create(user=self.user, match=self.match, watched_type="full")
         PlayerEvaluation.objects.create(
             user=self.user, match=self.match, player=self.player, contribution=8, risk=3, potential=7
         )
+        EvaluationSession.objects.create(
+            user=self.user, match=self.match, status="completed", completed_at=timezone.now(),
+        )
+        Match.objects.filter(pk=self.match.pk).update(voting_open_until=timezone.now() - timedelta(hours=1))
         url = reverse("api:player-eval-by-match")
         response = self.client.get(url, {"match_id": str(self.match.id)})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 1)
         self.assertNotIn("user", response.data[0])
+
+    def test_by_match_hidden_while_voting_open(self):
+        # Пока голосование открыто, чужие голоса не отдаём — иначе под них подстраиваются.
+        url = reverse("api:player-eval-by-match")
+        response = self.client.get(url, {"match_id": str(self.match.id)})
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_by_match_invalid_id_is_404_not_500(self):
+        url = reverse("api:player-eval-by-match")
+        response = self.client.get(url, {"match_id": "not-a-uuid"})
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_by_match_action_requires_match_id_param(self):
         url = reverse("api:player-eval-by-match")
@@ -344,8 +361,9 @@ class AggregateViewSetsPublicAccessTests(APITestCase):
         """Публичный агрегат не отдаёт ничего лишнего."""
         from aggregates.models import PlayerMatchAggregate
 
+        Match.objects.filter(pk=self.match.pk).update(voting_open_until=timezone.now() - timedelta(minutes=1))
         PlayerMatchAggregate.objects.create(
-            player=self.player, match=self.match, avg_contribution=7.5, total_votes=3, performance_score=6.2
+            player=self.player, match=self.match, avg_contribution=7.5, total_votes=5, performance_score=6.2
         )
         response = self.client.get(reverse("api:player-aggregate-list"))
         self.assertEqual(response.status_code, status.HTTP_200_OK)

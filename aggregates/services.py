@@ -4,10 +4,11 @@
 Вес голоса (build_user_weight_map) считается один раз на матч и зависит от
 просмотра, trust_score и истории предвзятости пользователя.
 Дополнительные слои защиты:
+- в расчёт идут только голоса завершённых сессий без исключённых аккаунтов (countable_evaluations);
 - винзоризация хвостов (а для 3-9 голосов — клиппинг по медиане/MAD);
 - градуированный штраф веса за систематическую предвзятость к своей команде;
 - нейтральный якорь: при большой доле фанатов обеих сторон итог
-  подтягивается к мнению нейтральных зрителей.
+  подтягивается к мнению нейтральных зрителей с историей оценок.
 """
 from __future__ import annotations
 
@@ -15,27 +16,30 @@ import logging
 import math
 import statistics
 import uuid
+from collections import Counter, defaultdict
 from typing import Iterable
 
+from django.conf import settings
 from django.core.cache import cache
-from django.db.models import Avg, ExpressionWrapper, F, FloatField, Q, Sum
-from django.db.models.functions import NullIf
+from django.db.models import Avg, Count, ExpressionWrapper, F, FloatField, OuterRef, Q, Subquery, Sum, UUIDField
+from django.db.models.functions import Coalesce, NullIf
 
-from evaluations.models import ContextEvaluation, PlayerEvaluation
+from evaluations.models import ContextEvaluation, EvaluationSession, PlayerEvaluation
 from users.models import User
 
 logger = logging.getLogger(__name__)
 
 
-def vote_weighted_avg(field: str, votes_field: str = "total_votes") -> ExpressionWrapper:
+def vote_weighted_avg(field: str, votes_field: str = "total_votes", filter: Q | None = None) -> ExpressionWrapper:
     """Среднее по матчам с учётом числа голосов: Σ(значение × голосов) / Σ(голосов).
 
     Для полей через связь передавайте votes_field с тем же префиксом.
-    Нет голосов — None. Не объявляйте в том же запросе алиас total_votes раньше
-    этого выражения — Django примет его за агрегат и упадёт.
+    filter — какие строки агрегатов учитывать. Нет голосов — None. Не объявляйте в том же
+    запросе алиас total_votes раньше этого выражения — Django примет его за агрегат и упадёт.
     """
     return ExpressionWrapper(
-        Sum(F(field) * F(votes_field), output_field=FloatField()) / NullIf(Sum(votes_field), 0),
+        Sum(F(field) * F(votes_field), output_field=FloatField(), filter=filter)
+        / NullIf(Sum(votes_field, filter=filter), 0),
         output_field=FloatField(),
     )
 
@@ -66,13 +70,179 @@ EXTREME_BIAS_FLAG_THRESHOLD = 0.2
 NEUTRAL_ANCHOR_MIN_VOTES = 3
 # Максимальная сила подтягивания к нейтральному среднему.
 NEUTRAL_ANCHOR_MAX_PULL = 0.4
+# Нейтралом-якорем считаем только аккаунт с таким числом завершённых оценок других матчей.
+NEUTRAL_ANCHOR_MIN_USER_HISTORY = 3
 
-# Минимум голосов, чтобы показывать рейтинг.
+# Минимум голосов, чтобы показывать рейтинг (значение по умолчанию; см. min_votes_for_display).
 MIN_VOTES_FOR_DISPLAY = 5
 
 # Порог для бейджа «Оценок много» (между ним и MIN_VOTES_FOR_DISPLAY — «Оценок хватает»).
 CONFIDENT_VOTES_THRESHOLD = 15
 
+# Trust: минимум чужих голосов за игрока, чтобы сравнивать с консенсусом.
+TRUST_MIN_COMMUNITY_VOTES = 3
+
+# Источники флагов про пользователя: подтверждённый флаг исключает его голоса.
+USER_FLAG_SOURCES = ("fast_wizard", "ip_cluster", "extreme_bias", "manual")
+
+
+def min_votes_for_display() -> int:
+    """Порог показа рейтинга: настройка платформы или MIN_VOTES_FOR_DISPLAY."""
+    from core.models import get_setting
+
+    return int(get_setting("min_votes_for_display", MIN_VOTES_FOR_DISPLAY))
+
+
+# ---------------------------------------------------------------------------
+# Публикация рейтингов матча
+# ---------------------------------------------------------------------------
+
+def published_q(prefix: str = "match__") -> Q:
+    """Рейтинги матча публичны после закрытия голосования — до этого под них подстраиваются."""
+    from django.utils import timezone
+
+    return Q(**{f"{prefix}voting_open_until__lt": timezone.now()})
+
+
+def ratings_hidden_for(user, match) -> bool:
+    """Голосование идёт, а пользователь ещё не завершил свою оценку этого матча."""
+    from django.utils import timezone
+
+    if match.voting_open_until < timezone.now():
+        return False
+    if user is None or not getattr(user, "is_authenticated", False):
+        return True
+    return not EvaluationSession.objects.filter(user=user, match=match, status="completed").exists()
+
+
+# ---------------------------------------------------------------------------
+# Допустимые голоса
+# ---------------------------------------------------------------------------
+
+def excluded_voters_q(match_id) -> Q:
+    """Q для исключения голосов, которые не должны влиять на рейтинг матча:
+    заблокированные аккаунты, подтверждённая накрутка (по матчу или глобально),
+    синтетические аккаунты в проде.
+    """
+    from users.models import SuspiciousActivityFlag
+
+    confirmed_user_ids = SuspiciousActivityFlag.objects.filter(
+        status="confirmed", user__isnull=False, source__in=USER_FLAG_SOURCES,
+    ).filter(Q(match_id=match_id) | Q(match__isnull=True)).values("user_id")
+
+    q = Q(user__is_active=False) | Q(user_id__in=confirmed_user_ids)
+    if not getattr(settings, "COUNT_SYNTHETIC_VOTES", True):
+        from core.utils import synthetic_users_q
+
+        q |= synthetic_users_q("user__")
+    return q
+
+
+def countable_evaluations(queryset, match_id):
+    """Оценки матча, которые идут в рейтинг: только из завершённой сессии вайзарда
+    (там IP и проверка скорости) и без исключённых голосующих.
+    """
+    completed_user_ids = EvaluationSession.objects.filter(
+        match_id=match_id, status="completed",
+    ).values("user_id")
+    return queryset.filter(user_id__in=completed_user_ids).exclude(excluded_voters_q(match_id))
+
+
+# ---------------------------------------------------------------------------
+# Команда сущности в конкретном матче
+# ---------------------------------------------------------------------------
+
+def lineup_team_subquery(match_ref: str = "match_id", player_ref: str = "player_id") -> Subquery:
+    """Команда игрока в матче по заявке."""
+    from lineups.models import MatchLineupPlayer
+
+    return Subquery(
+        MatchLineupPlayer.objects.filter(
+            lineup__match_id=OuterRef(match_ref), player_id=OuterRef(player_ref),
+        ).values("lineup__team_id")[:1]
+    )
+
+
+def player_team_map_for_match(match_id) -> dict:
+    """{player_id: team_id} по заявке матча — не по текущему клубу игрока."""
+    from lineups.models import MatchLineupPlayer
+
+    return dict(
+        MatchLineupPlayer.objects.filter(lineup__match_id=match_id)
+        .values_list("player_id", "lineup__team_id")
+    )
+
+
+def coach_team_for_match(coach, match):
+    """Команда тренера в этом матче: по home_coach/away_coach, иначе текущая."""
+    if coach.id == getattr(match, "home_coach_id", None):
+        return match.home_team_id
+    if coach.id == getattr(match, "away_coach_id", None):
+        return match.away_team_id
+    return coach.team_id
+
+
+# ---------------------------------------------------------------------------
+# Принадлежность к лагерю
+# ---------------------------------------------------------------------------
+
+def build_allegiance(user_ids: Iterable, match) -> tuple[dict, set]:
+    """({user_id: команда болельщика или None}, {id нейтралов с историей}).
+
+    Команда — заявленная в этом матче, а если заявлен «никто» — та из команд матча,
+    за которую пользователь болел в других матчах (чаще другой). Так «нейтральным»
+    не становится фанат, просто не отметивший команду.
+    """
+    user_ids = set(user_ids)
+    if not user_ids:
+        return {}, set()
+    match_team_ids = (match.home_team_id, match.away_team_id)
+
+    declared = dict(
+        ContextEvaluation.objects.filter(match_id=match.id, user_id__in=user_ids)
+        .values_list("user_id", "supported_team_id")
+    )
+    supported = {uid: declared.get(uid) for uid in user_ids}
+
+    undeclared = [uid for uid, team_id in supported.items() if team_id is None]
+    if undeclared:
+        history: dict = defaultdict(Counter)
+        rows = (
+            ContextEvaluation.objects.filter(user_id__in=undeclared, supported_team_id__in=match_team_ids)
+            .exclude(match_id=match.id)
+            .values("user_id", "supported_team_id")
+            .annotate(n=Count("id"))
+        )
+        for row in rows:
+            history[row["user_id"]][row["supported_team_id"]] = row["n"]
+        for uid, counter in history.items():
+            top = counter.most_common(2)
+            if len(top) == 1 or top[0][1] > top[1][1]:
+                supported[uid] = top[0][0]
+
+    neutral_ids = [uid for uid, team_id in supported.items() if team_id is None]
+    established = set()
+    if neutral_ids:
+        established = {
+            row["user_id"]
+            for row in EvaluationSession.objects.filter(user_id__in=neutral_ids, status="completed")
+            .exclude(match_id=match.id)
+            .values("user_id")
+            .annotate(n=Count("id"))
+            .filter(n__gte=NEUTRAL_ANCHOR_MIN_USER_HISTORY)
+        }
+    return supported, established
+
+
+def effective_supported_team_id(user, match):
+    """Команда болельщика для одного пользователя (см. build_allegiance)."""
+    supported, _established = build_allegiance([user.id], match)
+    return supported.get(user.id)
+
+
+# ---------------------------------------------------------------------------
+# Вес голоса и предвзятость
+# ---------------------------------------------------------------------------
 
 def calculate_user_weight(
     user: User, context_eval: ContextEvaluation | None, match=None
@@ -128,45 +298,41 @@ def _maybe_flag_extreme_bias(user: User, match, profile: dict, penalty: float) -
 def compute_bias_profile(
     user: User, match, lookback: int = FAN_BIAS_LOOKBACK_MATCHES
 ) -> dict:
-    """Статистика предвзятости пользователя по последним матчам его команды.
+    """Статистика предвзятости пользователя по матчам его команды до этого матча.
 
-    - extreme_ratio: доля матчей со «своим» ≥9 и «чужим» ≤3 (старый бинарный сигнал);
+    - extreme_ratio: доля матчей со «своим» ≥9 и «чужим» ≤3;
     - mean_diff: средняя разница «свои − чужие»;
     - diff_stdev: разброс этой разницы (низкий при высоком mean_diff — похоже на накрутку).
 
-    mean_diff/diff_stdev = None, если истории мало.
+    «Свои/чужие» — по заявке того матча, а не по текущему клубу игрока.
+    considered < FAN_BIAS_MIN_HISTORY_MATCHES — истории мало, mean_diff/diff_stdev = None.
     """
     empty = {"considered": 0, "extreme_ratio": 0.0, "mean_diff": None, "diff_stdev": None}
 
-    context = (
-        ContextEvaluation.objects.filter(user=user, match=match)
-        .only("supported_team_id")
-        .first()
-    )
-    supported_team_id = context.supported_team_id if context else None
+    supported_team_id = effective_supported_team_id(user, match)
     if not supported_team_id:
         return empty
 
-    recent_match_ids = list(
-        match.__class__.objects.filter(
-            Q(home_team_id=supported_team_id) | Q(away_team_id=supported_team_id),
-            status="finished",
-        )
-        .order_by("-start_time")
-        .values_list("id", flat=True)[:lookback]
+    recent_qs = match.__class__.objects.filter(
+        Q(home_team_id=supported_team_id) | Q(away_team_id=supported_team_id),
+        status="finished",
     )
+    start_time = getattr(match, "start_time", None)
+    if start_time is not None:
+        # Только матчи не позже текущего: пересчёт истории не должен зависеть от будущего.
+        recent_qs = recent_qs.filter(start_time__lte=start_time)
+    recent_match_ids = list(recent_qs.order_by("-start_time").values_list("id", flat=True)[:lookback])
 
     if len(recent_match_ids) < FAN_BIAS_MIN_HISTORY_MATCHES:
         return empty
 
     per_match_stats = (
         PlayerEvaluation.objects.filter(user=user, match_id__in=recent_match_ids)
+        .annotate(side_team_id=Coalesce(lineup_team_subquery(), F("player__team_id"), output_field=UUIDField()))
         .values("match_id")
         .annotate(
-            team_avg=Avg("contribution", filter=Q(player__team_id=supported_team_id)),
-            opponent_avg=Avg(
-                "contribution", filter=~Q(player__team_id=supported_team_id)
-            ),
+            team_avg=Avg("contribution", filter=Q(side_team_id=supported_team_id)),
+            opponent_avg=Avg("contribution", filter=~Q(side_team_id=supported_team_id)),
         )
     )
 
@@ -184,7 +350,7 @@ def compute_bias_profile(
 
     considered = len(diffs)
     if considered < FAN_BIAS_MIN_HISTORY_MATCHES:
-        return empty
+        return {**empty, "considered": considered}
 
     return {
         "considered": considered,
@@ -196,14 +362,17 @@ def compute_bias_profile(
 
 def compute_bias_score(
     user: User, match, lookback: int = FAN_BIAS_LOOKBACK_MATCHES
-) -> float:
-    """Только extreme_ratio (для бейджа bias_free)."""
-    return compute_bias_profile(user, match, lookback)["extreme_ratio"]
+) -> float | None:
+    """extreme_ratio для бейджа bias_free; None — истории для вывода мало."""
+    profile = compute_bias_profile(user, match, lookback)
+    if profile["considered"] < FAN_BIAS_MIN_HISTORY_MATCHES:
+        return None
+    return profile["extreme_ratio"]
 
 
 def _bias_profile_cached(user: User, match) -> dict:
     """compute_bias_profile с кэшем (не пересчитывать на каждую сущность матча)."""
-    cache_key = f"fan_bias_profile:{user.id}:{match.id}"
+    cache_key = f"fan_bias_profile:v2:{user.id}:{match.id}"
     cached_value = cache.get(cache_key)
     if cached_value is not None:
         return cached_value
@@ -232,7 +401,7 @@ def _graduated_bias_penalty(profile: dict) -> float:
     return min(penalty, BIAS_CONTINUOUS_MAX_PENALTY * BIAS_LOW_VARIANCE_MULTIPLIER)
 
 
-def build_user_weight_map(evaluations: list[PlayerEvaluation], match) -> dict[uuid.UUID, float]:
+def build_user_weight_map(evaluations: list, match) -> dict[uuid.UUID, float]:
     """{user_id: вес}, один раз на матч."""
     unique_user_ids = {e.user_id for e in evaluations}
 
@@ -246,16 +415,18 @@ def build_user_weight_map(evaluations: list[PlayerEvaluation], match) -> dict[uu
     }
 
     weight_map: dict[uuid.UUID, float] = {}
-    seen_users: set[uuid.UUID] = set()
     for eval_obj in evaluations:
-        if eval_obj.user_id in seen_users:
+        if eval_obj.user_id in weight_map:
             continue
-        seen_users.add(eval_obj.user_id)
         context = context_map.get(eval_obj.user_id)
         weight_map[eval_obj.user_id] = calculate_user_weight(eval_obj.user, context, match)
 
     return weight_map
 
+
+# ---------------------------------------------------------------------------
+# Статистика
+# ---------------------------------------------------------------------------
 
 def winsorize_values(values: list[float], pct: float = 0.1, min_n: int = 10) -> list[float]:
     """Винзоризация: крайние значения подрезаются до перцентилей pct, а не выбрасываются.
@@ -297,7 +468,7 @@ def _clip_small_sample_outliers(values: list[float], min_n: int = 3, mad_k: floa
 
 
 def calculate_weighted_average(
-    evaluations: list[PlayerEvaluation],
+    evaluations: list,
     field_name: str,
     weight_map: dict[uuid.UUID, float],
     winsorize: bool = True,
@@ -325,7 +496,7 @@ def calculate_weighted_average(
 
 
 def calculate_std_dev(values: Iterable[float]) -> float:
-    """Стандартное отклонение выборки."""
+    """Стандартное отклонение (по генеральной совокупности, делим на n)."""
     values = list(values)
     n = len(values)
     if n < 2:
@@ -335,11 +506,25 @@ def calculate_std_dev(values: Iterable[float]) -> float:
     return math.sqrt(variance)
 
 
+def stability_index_for(values: list[float]) -> float:
+    """1/σ голосов; мало голосов — 0 (не «идеальная» стабильность), σ=0 — 10."""
+    if len(values) < MIN_VOTES_FOR_DISPLAY:
+        return 0.0
+    std_dev = calculate_std_dev(values)
+    return 1.0 / std_dev if std_dev > 0 else 10.0
+
+
+# ---------------------------------------------------------------------------
+# Сегментация и нейтральный якорь
+# ---------------------------------------------------------------------------
+
 def segment_evaluations_by_side_multi(
-    evaluations: list, value_fields: tuple[str, ...], entity_team_id, match
+    evaluations: list, value_fields: tuple[str, ...], entity_team_id, match, allegiance=None,
 ) -> dict[str, tuple[float | None, float | None, float | None, int, int, int]]:
     """Сегментация «свои/чужие/нейтральные» сразу для нескольких полей за один проход.
 
+    Нейтрал без истории оценок не попадает ни в один лагерь — якорем быть не может.
+    :param allegiance: результат build_allegiance (передавайте один на матч).
     :return: {поле: (own_mean, rival_mean, neutral_mean, own_n, rival_n, neutral_n)};
     пусто, если нет entity_team_id или оценок.
     """
@@ -350,14 +535,9 @@ def segment_evaluations_by_side_multi(
     opponent_team_id = (
         match.away_team_id if match.home_team_id == entity_team_id else match.home_team_id
     )
-
-    user_ids = {e.user_id for e in evaluations}
-    supported_team_map: dict[uuid.UUID, uuid.UUID | None] = {
-        ce["user_id"]: ce["supported_team_id"]
-        for ce in ContextEvaluation.objects.filter(
-            match_id=match.id, user_id__in=user_ids
-        ).values("user_id", "supported_team_id")
-    }
+    if allegiance is None:
+        allegiance = build_allegiance({e.user_id for e in evaluations}, match)
+    supported_team_map, established_neutrals = allegiance
 
     buckets: dict[str, dict[str, list[float]]] = {
         f: {"own": [], "rival": [], "neutral": []} for f in value_fields
@@ -368,11 +548,13 @@ def segment_evaluations_by_side_multi(
             side = "own"
         elif supported_team_id == opponent_team_id:
             side = "rival"
-        else:
+        elif eval_obj.user_id in established_neutrals:
             side = "neutral"
+        else:
+            continue
         for field_name in value_fields:
             value = getattr(eval_obj, field_name, None)
-            if not value:
+            if value is None:
                 continue
             buckets[field_name][side].append(value)
 
@@ -389,24 +571,12 @@ def segment_evaluations_by_side_multi(
 
 
 def segment_evaluations_by_side(
-    evaluations: list, value_field: str, entity_team_id, match
+    evaluations: list, value_field: str, entity_team_id, match, allegiance=None,
 ) -> tuple[float | None, float | None, float | None, int, int, int]:
-    """Сегментация «свои/чужие/нейтральные» для одного поля.
-    Средние внутри лагеря без весов.
-
-    :param entity_team_id: None — сегментация невозможна.
-    :return: (own_mean, rival_mean, neutral_mean, own_n, rival_n, neutral_n)
-    """
-    return segment_evaluations_by_side_multi(evaluations, (value_field,), entity_team_id, match)[
-        value_field
-    ]
-
-
-def _segment_by_fan_side(
-    evaluations: list[PlayerEvaluation], player, match
-) -> tuple[float | None, float | None, float | None, int, int, int]:
-    """Обёртка для игрока (совместимость с recalculate_player_aggregate и тестами)."""
-    return segment_evaluations_by_side(evaluations, "contribution", player.team_id, match)
+    """Сегментация «свои/чужие/нейтральные» для одного поля. Средние внутри лагеря без весов."""
+    return segment_evaluations_by_side_multi(
+        evaluations, (value_field,), entity_team_id, match, allegiance
+    )[value_field]
 
 
 def apply_neutral_anchor(
@@ -417,11 +587,10 @@ def apply_neutral_anchor(
     neutral_n: int,
 ) -> float:
     """Подтягивает итог к среднему нейтральных зрителей пропорционально доле
-    фанатов обеих сторон (до NEUTRAL_ANCHOR_MAX_PULL). Не требует истории
-    пользователей и одинаково гасит перекос в обе стороны.
+    фанатов обеих сторон (до NEUTRAL_ANCHOR_MAX_PULL).
 
     :param pooled_score: взвешенное и винзоризованное среднее.
-    :param neutral_avg: среднее нейтральных; мало голосов — без коррекции.
+    :param neutral_avg: среднее нейтралов с историей; мало голосов — без коррекции.
     """
     if neutral_avg is None or neutral_n < NEUTRAL_ANCHOR_MIN_VOTES:
         return pooled_score
@@ -436,112 +605,53 @@ def apply_neutral_anchor(
 
 
 def recalculate_player_aggregate(player, match):
-    """Пересчёт агрегата игрока за матч (синхронная версия, используется в тестах)."""
-    from .models import MatchAggregate, PlayerMatchAggregate
+    """Агрегат игрока за матч — тот же расчёт, что в Celery-задаче (синхронно)."""
+    from .models import PlayerMatchAggregate
+    from .tasks import recalculate_player_aggregates
 
-    match_id = str(match.id)
+    recalculate_player_aggregates(str(match.id))
+    return PlayerMatchAggregate.objects.filter(player=player, match=match).first()
 
-    evaluations = list(
-        PlayerEvaluation.objects.filter(player=player, match=match).select_related("user")
-    )
-    if not evaluations:
-        return None
 
-    weight_map = build_user_weight_map(evaluations, match)
-
-    avg_contribution = calculate_weighted_average(evaluations, "contribution", weight_map)
-    avg_risk = calculate_weighted_average(evaluations, "risk", weight_map)
-    avg_potential = calculate_weighted_average(evaluations, "potential", weight_map)
-
-    # contribution и risk сегментируем за один проход.
-    segments = segment_evaluations_by_side_multi(
-        evaluations, ("contribution", "risk"), player.team_id, match
-    )
-    own_fans_avg, rival_fans_avg, neutral_avg, own_n, rival_n, neutral_n = segments["contribution"]
-    _, _, neutral_risk_avg, risk_own_n, risk_rival_n, risk_neutral_n = segments["risk"]
-
-    contributions = [e.contribution for e in evaluations if e.contribution]
-    std_dev = calculate_std_dev(contributions)
-    # Мало голосов — стабильность 0, а не «идеальная».
-    if len(evaluations) < MIN_VOTES_FOR_DISPLAY:
-        stability_index = 0.0
-    else:
-        stability_index = 1.0 / std_dev if std_dev > 0 else 10.0
-
-    drama_index = cache.get(f"match_agg_{match_id}")
-    if drama_index is None:
-        match_agg = MatchAggregate.objects.filter(match=match).only("drama_index").first()
-        # Fallback drama_index — середина шкалы 0..100.
-        drama_index = match_agg.drama_index if match_agg else 50.0
-        cache.set(f"match_agg_{match_id}", drama_index, 600)
-
-    # performance_score и risk_index подтянуты к якорю; avg_* — без якоря.
-    performance_score = apply_neutral_anchor(avg_contribution, neutral_avg, own_n, rival_n, neutral_n)
-    risk_index_value = apply_neutral_anchor(
-        avg_risk, neutral_risk_avg, risk_own_n, risk_rival_n, risk_neutral_n
-    )
-    maturity_score = performance_score - risk_index_value
-    # drama_index в шкале 0..100 — делим на 100.
-    clutch_index = performance_score * (drama_index / 100.0)
-
-    aggregate, _created = PlayerMatchAggregate.objects.update_or_create(
-        player=player,
-        match=match,
-        defaults={
-            "avg_contribution": round(avg_contribution, 2),
-            "avg_risk": round(avg_risk, 2),
-            "avg_potential": round(avg_potential, 2),
-            "total_votes": len(evaluations),
-            "performance_score": round(performance_score, 2),
-            "risk_index": round(risk_index_value, 2),
-            "maturity_score": round(maturity_score, 2),
-            "stability_index": round(stability_index, 2),
-            "clutch_index": round(clutch_index, 2),
-            "own_fans_avg": round(own_fans_avg, 2) if own_fans_avg is not None else None,
-            "rival_fans_avg": round(rival_fans_avg, 2) if rival_fans_avg is not None else None,
-            "neutral_avg": round(neutral_avg, 2) if neutral_avg is not None else None,
-        },
-    )
-
-    cache.set(
-        f"player_agg_{player.id}_{match_id}",
-        {
-            "id": str(aggregate.id),
-            "performance_score": aggregate.performance_score,
-            "total_votes": aggregate.total_votes,
-        },
-        300,
-    )
-
-    return aggregate
-
+# ---------------------------------------------------------------------------
+# Trust score
+# ---------------------------------------------------------------------------
 
 def calculate_user_trust_adjustment(user, match) -> float:
-    """Корректировка trust_score по точности оценок (RMSE от сообщества по каждому игроку)."""
+    """Корректировка trust_score после закрытия голосования.
+
+    RMSE по «независимым» оценкам игроков: только тем, что пользователь поставил, пока
+    рейтинг игрока ещё не был публичным (чужих голосов меньше порога показа). Консенсус —
+    среднее допустимых чужих голосов. Подсмотренные цифры доверия не приносят.
+    """
     user_evals = list(
         PlayerEvaluation.objects.filter(user=user, match=match).values(
-            "player_id", "contribution"
+            "player_id", "contribution", "updated_at"
         )
     )
     if not user_evals:
         return 0.0
 
     player_ids = [e["player_id"] for e in user_evals]
+    others = countable_evaluations(
+        PlayerEvaluation.objects.filter(match=match, player_id__in=player_ids).exclude(user=user),
+        match.id,
+    ).values_list("player_id", "contribution", "created_at")
 
-    # Без самого пользователя.
-    community_avg_by_player: dict[uuid.UUID, float] = {
-        row["player_id"]: row["avg"]
-        for row in PlayerEvaluation.objects.filter(match=match, player_id__in=player_ids)
-        .exclude(user=user)
-        .values("player_id")
-        .annotate(avg=Avg("contribution"))
-    }
+    by_player: dict = defaultdict(list)
+    for player_id, contribution, created_at in others:
+        by_player[player_id].append((contribution, created_at))
 
+    visible_threshold = min_votes_for_display()
     squared_errors = []
     for row in user_evals:
-        community_avg = community_avg_by_player.get(row["player_id"])
-        if community_avg is None:
-            continue  # единственный оценивший
+        votes = by_player.get(row["player_id"], [])
+        if len(votes) < TRUST_MIN_COMMUNITY_VOTES:
+            continue
+        seen_before = sum(1 for _c, created_at in votes if created_at < row["updated_at"])
+        if seen_before >= visible_threshold:
+            continue  # рейтинг уже был виден — оценка не независимая
+        community_avg = sum(c for c, _t in votes) / len(votes)
         squared_errors.append((row["contribution"] - community_avg) ** 2)
 
     if not squared_errors:
@@ -549,7 +659,7 @@ def calculate_user_trust_adjustment(user, match) -> float:
 
     rmse = math.sqrt(sum(squared_errors) / len(squared_errors))
 
-    # Нормализация на 0..1 (максимальная ошибка — 9).
+    # Нормализация на 0..1 (RMSE 5 и больше — 1.0).
     normalized_deviation = min(rmse / 5.0, 1.0)
 
     if normalized_deviation < 0.3:
@@ -557,40 +667,3 @@ def calculate_user_trust_adjustment(user, match) -> float:
     if normalized_deviation < 0.6:
         return 0.0
     return -0.05  # систематически расходится
-
-
-def detect_fan_bias(user, match, supported_team=None) -> dict:
-    """Предвзятость в одном матче (для модерации)."""
-    if not supported_team:
-        context = ContextEvaluation.objects.filter(user=user, match=match).first()
-        supported_team = context.supported_team if context else None
-
-    if not supported_team:
-        return {"is_biased": False, "score": 0.0}
-
-    own_team_evals = (
-        PlayerEvaluation.objects.filter(
-            user=user, match=match, player__team=supported_team
-        ).aggregate(avg=Avg("contribution"))["avg"]
-        or 0
-    )
-
-    opponent_team = (
-        match.away_team if match.home_team_id == supported_team.id else match.home_team
-    )
-    opponent_evals = (
-        PlayerEvaluation.objects.filter(
-            user=user, match=match, player__team=opponent_team
-        ).aggregate(avg=Avg("contribution"))["avg"]
-        or 0
-    )
-
-    bias_score = own_team_evals - opponent_evals
-    is_biased = bias_score > 4.0
-
-    return {
-        "is_biased": is_biased,
-        "score": bias_score,
-        "own_team_avg": own_team_evals,
-        "opponent_avg": opponent_evals,
-    }

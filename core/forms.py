@@ -4,10 +4,11 @@
 """
 from __future__ import annotations
 
-import time
 
 from captcha.fields import CaptchaField, CaptchaTextInput
 from django import forms
+
+from core.utils import form_timestamp_is_valid, sign_form_timestamp
 
 # Минимальное время заполнения формы, сек.
 MIN_FORM_FILL_SECONDS = 3
@@ -21,7 +22,8 @@ class ContactAntiBotForm(forms.Form):
     """
 
     website = forms.CharField(required=False, label="")
-    form_rendered_at = forms.FloatField(widget=forms.HiddenInput(), required=False)
+    # Подписанная метка времени рендера (core.utils.sign_form_timestamp).
+    form_rendered_at = forms.CharField(widget=forms.HiddenInput(), required=False)
     captcha = CaptchaField(
         label="Введите текст с картинки",
         error_messages={"invalid": "Неверный текст с картинки. Попробуйте ещё раз."},
@@ -35,7 +37,7 @@ class ContactAntiBotForm(forms.Form):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Время рендера — только для GET; при POST приходит из скрытого поля.
-        self.fields["form_rendered_at"].initial = time.time()
+        self.fields["form_rendered_at"].initial = sign_form_timestamp()
 
     def clean_website(self):
         value = self.cleaned_data.get("website")
@@ -45,9 +47,7 @@ class ContactAntiBotForm(forms.Form):
         return value
 
     def clean_form_rendered_at(self):
-        rendered_at = self.cleaned_data.get("form_rendered_at")
-        if rendered_at:
-            elapsed = time.time() - rendered_at
-            if 0 <= elapsed < MIN_FORM_FILL_SECONDS:
-                raise forms.ValidationError("Не удалось обработать форму. Попробуйте ещё раз.")
-        return rendered_at
+        token = self.cleaned_data.get("form_rendered_at")
+        if not form_timestamp_is_valid(token, MIN_FORM_FILL_SECONDS):
+            raise forms.ValidationError("Не удалось обработать форму. Попробуйте ещё раз.")
+        return token

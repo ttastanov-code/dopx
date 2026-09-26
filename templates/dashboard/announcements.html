@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load ui_extras %}
 
 {% block content %}
 {% include 'dashboard/_nav.html' %}
@@ -21,7 +22,7 @@
                 <div class="dopx-section-eyebrow"><i class="ti ti-speakerphone"></i>Рассылка</div>
                 <div class="dopx-section-title mb-3">Новое объявление</div>
                 <form method="post"
-                      onsubmit="return confirm('Отправить это объявление {{ recipients_count }} пользователям? Отменить рассылку после отправки нельзя.');">
+                      onsubmit="return confirm('Отправить это объявление {{ recipients_count }} {{ recipients_count|ru_plural:"пользователю,пользователям,пользователям" }}? Отменить рассылку после отправки нельзя.');">
                     {% csrf_token %}
                     <div class="form-control mb-3">
                         <label class="label py-1"><span class="label-text text-xs font-semibold">Заголовок</span></label>
@@ -36,7 +37,7 @@
                                   class="textarea textarea-bordered w-full"></textarea>
                     </div>
                     <button type="submit" class="btn btn-primary w-full sm:w-auto">
-                        <i class="ti ti-send"></i> Отправить {{ recipients_count }} пользователям
+                        <i class="ti ti-send"></i> Отправить {{ recipients_count }} {{ recipients_count|ru_plural:"пользователю,пользователям,пользователям" }}
                     </button>
                 </form>
             </div>

@@ -6,6 +6,7 @@
 матч завершён (подсветка исхода + «совпал/не совпал»).
 Классы корня совпадают со скелетоном в _match_header.html.
 {% endcomment %}
+{% load ui_extras %}
 <div id="prediction-widget-{{ match.id }}" class="mt-5 sm:mt-8 pt-5 sm:pt-8 border-t border-base-300">
         <div class="flex items-center justify-between mb-2 sm:mb-3">
             <h3 class="font-bold text-sm sm:text-base flex items-center gap-2">
@@ -13,8 +14,7 @@
                 <span>Прогноз сообщества</span>
             </h3>
             {% if counts.total %}
-            {# Форма «прогнозов» без склонения по числу. #}
-            <span class="text-[10px] sm:text-xs opacity-50">{{ counts.total }} прогнозов</span>
+            <span class="text-[10px] sm:text-xs opacity-50">{{ counts.total }} {{ counts.total|ru_plural:"прогноз,прогноза,прогнозов" }}</span>
             {% endif %}
         </div>
 
@@ -114,7 +114,9 @@
         <p class="mt-2 sm:mt-3 text-[11px] sm:text-xs opacity-50 flex items-center gap-1.5">
             <i class="ti ti-lock"></i> Прогнозы закрыты: матч уже начался.
         </p>
-        {% elif not counts.total %}
+        {% elif not counts.total and match.is_prediction_open %}
         <p class="mt-2 sm:mt-3 text-[11px] sm:text-xs opacity-50">Сделайте первый прогноз на этот матч.</p>
+        {% elif not counts.total %}
+        <p class="mt-2 sm:mt-3 text-[11px] sm:text-xs opacity-50">На этот матч прогнозов не было.</p>
         {% endif %}
 </div>

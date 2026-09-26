@@ -1,8 +1,40 @@
 {% extends 'base.html' %}
 {% load static %}
+{% load asset_extras %}
+{% load ui_extras %}
 
 {% block content %}
 {% include 'dashboard/_nav.html' %}
+
+{# «Требует внимания» — незакрытые задачи по доступным разделам. Стили — css/ui.css (dx-attention). #}
+<section class="dx-card mb-4" aria-labelledby="attention-title">
+    <div class="dx-section__head" style="margin-bottom:.75rem">
+        <h2 id="attention-title" class="dx-section__title"><i class="ti ti-bell-ringing" style="color:var(--color-primary)"></i> Требует внимания</h2>
+        {% if attention %}<span class="dx-section__meta">{{ attention|length }} {{ attention|length|ru_plural:"пункт,пункта,пунктов" }}</span>{% endif %}
+    </div>
+    {% if attention %}
+    <div class="dx-attention">
+        {% for item in attention %}
+        <a href="{{ item.url }}" class="dx-attention__item dx-attention__item--{{ item.tone }}">
+            <span class="dx-attention__icon"><i class="ti {{ item.icon }}"></i></span>
+            <span class="dx-attention__body">
+                <span class="dx-attention__title">{{ item.title }}</span>
+                <span class="dx-attention__hint">{{ item.hint }}</span>
+            </span>
+            <span class="dx-attention__count">{{ item.count }}</span>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="dx-empty">
+        <span class="dx-empty__icon" style="color:var(--color-success)"><i class="ti ti-circle-check"></i></span>
+        <div>
+            <div class="dx-empty__title">Всё разобрано</div>
+            <p class="dx-empty__text">Нет открытых сигналов, жалоб, расхождений и упавших скриптов.</p>
+        </div>
+    </div>
+    {% endif %}
+</section>
 
 {# Обзор метрик: .dopx-stat карточки и переключатель периода. #}
 <div class="flex justify-end mb-4">
@@ -17,7 +49,7 @@
     <div class="dopx-stat">
         <div class="dopx-stat-label"><i class="ti ti-users"></i>Пользователей всего</div>
         <div class="dopx-stat-value">{{ metrics.total_users }}</div>
-        <div class="dopx-stat-delta dopx-stat-delta--up">+{{ metrics.new_users_period }} за {{ selected_days }} дней</div>
+        <div class="dopx-stat-delta dopx-stat-delta--up">+{{ metrics.new_users_period }} за {{ selected_days }} {{ selected_days|default:0|ru_plural:"день,дня,дней" }}</div>
     </div>
     <div class="dopx-stat">
         <div class="dopx-stat-label"><i class="ti ti-mail-check"></i>Верификация email</div>
@@ -27,7 +59,7 @@
     <div class="dopx-stat">
         <div class="dopx-stat-label"><i class="ti ti-star"></i>Оценок всего</div>
         <div class="dopx-stat-value">{{ metrics.total_evaluations }}</div>
-        <div class="dopx-stat-delta dopx-stat-delta--up">+{{ metrics.evaluations_period }} за {{ selected_days }} дней</div>
+        <div class="dopx-stat-delta dopx-stat-delta--up">+{{ metrics.evaluations_period }} за {{ selected_days }} {{ selected_days|default:0|ru_plural:"день,дня,дней" }}</div>
     </div>
     <div class="dopx-stat">
         <div class="dopx-stat-label"><i class="ti ti-ball-football"></i>Матчи сейчас</div>
@@ -121,41 +153,14 @@
 {% block extra_script %}
 {# dist/chart.umd.js + integrity — см. templates/admin/index.html. #}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.js" integrity="sha256-/tanOfjQ8GhxdN5s0UdF/A/HgJFEqxE9IpCKJr8Nf+o=" crossorigin="anonymous"></script>
+<script src="{% static_v 'js/charts.js' %}"></script>
 <script>
 (function () {
-    function lineChart(canvasId, dataId, label, color) {
-        const el = document.getElementById(canvasId);
-        if (!el) return;
-        const points = JSON.parse(document.getElementById(dataId).textContent);
-        const isActivity = Object.prototype.hasOwnProperty.call(points[0] || {}, 'active_users');
-        const labels = points.map((p) => p.period);
-        const values = points.map((p) => isActivity ? p.active_users : p.count);
-        new Chart(el.getContext('2d'), {
-            type: 'line',
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: label,
-                    data: values,
-                    borderColor: color,
-                    backgroundColor: color + '33',
-                    tension: 0.3,
-                    fill: true,
-                    pointRadius: 2,
-                }],
-            },
-            options: {
-                responsive: true,
-                plugins: { legend: { display: false } },
-                scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
-            },
-        });
-    }
-
-    lineChart('dauChart', 'dau-data', 'DAU', '#6366f1');
-    lineChart('wauChart', 'wau-data', 'WAU', '#8b5cf6');
-    lineChart('regChart', 'reg-data', 'Регистрации', '#10b981');
-    lineChart('evalChart', 'eval-data', 'Оценки', '#f59e0b');
+    const data = (id) => JSON.parse(document.getElementById(id).textContent);
+    dopxCharts.line('dauChart', data('dau-data'), {label: 'DAU', color: '#6366f1'});
+    dopxCharts.line('wauChart', data('wau-data'), {label: 'WAU', color: '#8b5cf6'});
+    dopxCharts.line('regChart', data('reg-data'), {label: 'Регистрации', color: '#10b981'});
+    dopxCharts.line('evalChart', data('eval-data'), {label: 'Оценки', color: '#f59e0b'});
 })();
 </script>
 {% endblock %}

@@ -368,6 +368,20 @@ def get_or_create_team(team_data: Dict) -> Team:
 
 
 
+def sportmonks_photo_url(entity_data: Optional[Dict]) -> str:
+    """image_path, если это настоящее фото, а не заглушка Sportmonks."""
+    path = (entity_data or {}).get("image_path") or ""
+    return "" if not path or "placeholder" in path else path
+
+
+def _sync_photo_url(obj, entity_data: Optional[Dict], update_fields: list) -> None:
+    # Только реальное фото: заглушка в ответе не стирает уже известное.
+    url = sportmonks_photo_url(entity_data)
+    if url and obj.photo_url != url:
+        obj.photo_url = url
+        update_fields.append("photo_url")
+
+
 def get_or_create_referee(referee_data: Optional[Dict]) -> Optional[Referee]:
     """Судья матчится по sportmonks_id.
 
@@ -382,15 +396,19 @@ def get_or_create_referee(referee_data: Optional[Dict]) -> Optional[Referee]:
 
     referee = Referee.objects.filter(sportmonks_id=str(sm_id)).first()
     if referee is not None:
+        update_fields = []
         if not referee.is_active:
             referee.is_active = True
-            referee.save(update_fields=["is_active", "updated_at"])
+            update_fields.append("is_active")
+        _sync_photo_url(referee, referee_data, update_fields)
+        if update_fields:
+            referee.save(update_fields=update_fields + ["updated_at"])
         return referee
 
     first_name, last_name, name_source = _resolve_cyrillic_name(referee_data, "судьи")
     referee = Referee.objects.create(
         sportmonks_id=str(sm_id), first_name=first_name, last_name=last_name, is_active=True,
-        name_source=name_source,
+        name_source=name_source, photo_url=sportmonks_photo_url(referee_data),
     )
     logger.info("Sportmonks: создан судья %s (sportmonks_id=%s)", referee.full_name, sm_id)
     return referee
@@ -415,6 +433,7 @@ def get_or_create_coach(coach_data: Optional[Dict], team: Optional[Team] = None)
         if team is not None and coach.team_id != team.id:
             coach.team = team
             update_fields.append("team")
+        _sync_photo_url(coach, coach_data, update_fields)
         if update_fields:
             coach.save(update_fields=update_fields + ["updated_at"])
         return coach
@@ -422,7 +441,7 @@ def get_or_create_coach(coach_data: Optional[Dict], team: Optional[Team] = None)
     first_name, last_name, name_source = _resolve_cyrillic_name(coach_data, "тренера")
     coach = Coach.objects.create(
         sportmonks_id=str(sm_id), first_name=first_name, last_name=last_name,
-        is_active=True, team=team, name_source=name_source,
+        is_active=True, team=team, name_source=name_source, photo_url=sportmonks_photo_url(coach_data),
     )
     logger.info("Sportmonks: создан тренер %s (sportmonks_id=%s)", coach.full_name, sm_id)
     return coach
@@ -460,6 +479,8 @@ def get_or_create_player(
         "name_source": name_source,
         "is_active": True,
     }
+    if sportmonks_photo_url(player_data):
+        defaults["photo_url"] = sportmonks_photo_url(player_data)
     if is_more_recent:
         defaults["position"] = POSITION_ID_MAP.get(player_data.get("position_id"), "")
         if team is not None:

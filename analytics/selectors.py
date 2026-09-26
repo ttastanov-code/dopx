@@ -7,7 +7,7 @@ from datetime import timedelta
 from typing import TypedDict
 
 from django.db.models.functions import TruncDate, TruncWeek
-from django.db.models import Count
+from django.db.models import Q, Count
 from django.utils import timezone
 
 from analytics.models import AnalyticsEvent, EventName
@@ -128,7 +128,10 @@ def traffic_overview(days: int = 14) -> dict:
     устройства, браузеры. Визит — по anonymous_id.
     """
     since = timezone.now() - timedelta(days=days)
-    page_views = AnalyticsEvent.objects.filter(event_name=EventName.PAGE_VIEW, created_at__gte=since)
+    # Служебные разделы (дашборд, админка) — не трафик аудитории.
+    page_views = AnalyticsEvent.objects.filter(event_name=EventName.PAGE_VIEW, created_at__gte=since).exclude(
+        Q(url_path__startswith="/staff/") | Q(url_path__startswith="/admin/")
+    )
 
     total_page_views = page_views.count()
     unique_visitors = page_views.filter(anonymous_id__isnull=False).values("anonymous_id").distinct().count()

@@ -1,13 +1,13 @@
 # core/nominations.py
 """Номинации сезона: лучшие и худшие по критериям оценки (судьи, команды, тренеры, игроки, матчи).
 Используется на главной (вся платформа) и на странице лиги (активный сезон).
-Читает взвешенные per-match агрегаты, а не сырые оценки.
-Ниже MIN_VOTES номинацию не показываем.
+Читает per-match агрегаты: учитываются только матчи с порогом голосов, среднее — с весом
+по голосам; кандидату нужно MIN_VOTES голосов и MIN_MATCHES таких матчей.
 """
 from __future__ import annotations
 
 from django.core.cache import cache
-from django.db.models import Avg, QuerySet, Sum
+from django.db.models import Count, QuerySet, Sum
 
 from aggregates.models import (
     CoachMatchAggregate,
@@ -16,12 +16,18 @@ from aggregates.models import (
     RefereeMatchAggregate,
     TeamMatchAggregate,
 )
+from aggregates.services import CONFIDENT_VOTES_THRESHOLD, min_votes_for_display, published_q, vote_weighted_avg
 
-MIN_VOTES = 3
+# Минимум голосов за кандидата суммарно — одна «спорная» игра не делает номинанта.
+MIN_VOTES = CONFIDENT_VOTES_THRESHOLD
+# Минимум матчей с достаточным числом голосов.
+MIN_MATCHES = 3
 CACHE_TTL = 300  # 5 минут
 
 
 def _scope(qs: QuerySet, league, season) -> QuerySet:
+    # Только матчи с закрытым голосованием и порогом голосов.
+    qs = qs.filter(published_q(), total_votes__gte=min_votes_for_display())
     if league is not None:
         qs = qs.filter(match__league=league)
     if season is not None:
@@ -30,15 +36,15 @@ def _scope(qs: QuerySet, league, season) -> QuerySet:
 
 
 def _aggregate(qs: QuerySet, group_field: str, metric: str, extra_values: tuple[str, ...]):
-    """Группирует агрегаты по group_field: среднее metric по матчам,
-    n = Sum(total_votes) — реальное число оценок.
+    """Группирует агрегаты по group_field: среднее metric с весом по голосам,
+    n = Sum(total_votes) — реальное число оценок, matches — число матчей.
     """
     values = (group_field,) + extra_values
     return (
         qs.exclude(**{f'{group_field}__isnull': True})
         .values(*values)
-        .annotate(avg_value=Avg(metric), n=Sum('total_votes'))
-        .filter(n__gte=MIN_VOTES)
+        .annotate(avg_value=vote_weighted_avg(metric), n=Sum('total_votes'), matches=Count('id'))
+        .filter(n__gte=MIN_VOTES, matches__gte=MIN_MATCHES)
     )
 
 
@@ -62,7 +68,7 @@ def _best_only(qs: QuerySet, group_field: str, metric: str, extra_values: tuple[
 def get_nominations(*, league=None, season=None) -> list[dict]:
     """Список номинаций. Элемент:
     {key, title, subtitle, icon, sentiment, entity_kind, entity_url_name,
-     entity_id, entity_name, entity_extra, value_label, votes}
+     entity_id, entity_name, entity_extra, value_label, value, scale, initials, images, votes}
     """
     if league is not None and season is not None:
         cache_key = f'nominations_league_{league.id}_season_{season.id}'
@@ -121,9 +127,9 @@ def get_nominations(*, league=None, season=None) -> list[dict]:
         nominations.append({
             'key': 'influential_referee',
             'title': 'Главный герой матчей',
-            'subtitle': 'Болельщики считают, что этот судья сильнее всех влияет на исход',
+            'subtitle': 'Сильнее всех влияет на исход матчей — хороший судья незаметен',
             'icon': 'ti-gavel',
-            'sentiment': 'neutral',
+            'sentiment': 'negative',
             'entity_kind': 'referee',
             'entity_url_name': 'referees:detail',
             'entity_id': top_influence['referee'],
@@ -264,7 +270,7 @@ def get_nominations(*, league=None, season=None) -> list[dict]:
         })
 
     # --- Матчи: честность игры (1-10) ---
-    # MatchAggregate — одна строка на матч, порог проверяем по её total_votes.
+    # MatchAggregate — одна строка на матч: нужен MIN_VOTES голосов за сам матч.
     match_agg_qs = (
         _scope(MatchAggregate.objects.all(), league, season)
         .filter(total_votes__gte=MIN_VOTES)
@@ -305,5 +311,64 @@ def get_nominations(*, league=None, season=None) -> list[dict]:
             'votes': worst_fair.total_votes,
         })
 
+    # Число и шкала отдельно («8.4/10» -> 8.4, 10) — для крупной цифры в карточке.
+    for nom in nominations:
+        nom['value'], nom['scale'] = nom['value_label'].split('/')
+        nom['initials'] = ''.join(word[0] for word in nom['entity_name'].split()[:2] if word[:1].isalnum()).upper()
+    _attach_images(nominations)
+
     cache.set(cache_key, nominations, CACHE_TTL)
     return nominations
+
+
+def _attach_images(nominations: list[dict]) -> None:
+    """images — URL логотипов/фото (у матча — оба клуба), пустой список, если картинок нет."""
+    from coaches.models import Coach
+    from matches.models import Match
+    from players.models import Player
+    from referees.models import Referee
+    from teams.models import Team
+
+    def photo(obj):
+        return obj.photo_display if obj else None
+
+    ids: dict[str, set] = {}
+    for nom in nominations:
+        ids.setdefault(nom['entity_kind'], set()).add(nom['entity_id'])
+    teams = Team.objects.in_bulk(ids.get('team', ()))
+    players = Player.objects.in_bulk(ids.get('player', ()))
+    coaches = Coach.objects.in_bulk(ids.get('coach', ()))
+    referees = Referee.objects.in_bulk(ids.get('referee', ()))
+    matches = Match.objects.select_related('home_team', 'away_team').in_bulk(ids.get('match', ()))
+
+    for nom in nominations:
+        kind, pk = nom['entity_kind'], nom['entity_id']
+        if kind == 'team':
+            urls = [teams[pk].logo_display if pk in teams else None]
+        elif kind == 'match' and pk in matches:
+            urls = [matches[pk].home_team.logo_display, matches[pk].away_team.logo_display]
+        else:
+            source = {'player': players, 'coach': coaches, 'referee': referees}.get(kind, {})
+            urls = [photo(source.get(pk))]
+        nom['images'] = [u for u in urls if u]
+
+
+# Порядок и подписи категорий в блоке номинаций.
+CATEGORIES = (
+    ('referee', 'Судьи', 'ti-cards'),
+    ('team', 'Команды', 'ti-shield'),
+    ('coach', 'Тренеры', 'ti-clipboard-list'),
+    ('player', 'Игроки', 'ti-shirt-sport'),
+    ('match', 'Матчи', 'ti-ball-football'),
+)
+
+
+def group_nominations(nominations: list[dict]) -> list[dict]:
+    """Номинации по категориям: внутри сначала лучшие, потом антирекорды."""
+    groups = []
+    for kind, title, icon in CATEGORIES:
+        items = [n for n in nominations if n['entity_kind'] == kind]
+        if items:
+            items.sort(key=lambda n: n['sentiment'] == 'negative')
+            groups.append({'kind': kind, 'title': title, 'icon': icon, 'items': items})
+    return groups

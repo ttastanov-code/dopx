@@ -1,5 +1,5 @@
 # season_squad/tasks.py
-"""Пересчёт «Живой сборной сезона» каждые 15 минут, по всем активным сезонам всех лиг."""
+"""Пересчёт «Живой сборной сезона» каждые 15 минут и фиксация итоговой после конца сезона."""
 from __future__ import annotations
 
 import logging
@@ -37,13 +37,56 @@ def recompute_best_xi_task(season_id: str) -> None:
         cache.delete(lock_key)
 
 
+def season_is_over(season) -> bool:
+    """Сезон неактивен, все его матчи сыграны (или отменены) и голосование по ним закрыто."""
+    from django.utils import timezone
+
+    from matches.models import Match
+
+    if season.is_active:
+        return False
+    matches = Match.objects.filter(season=season)
+    return not (
+        matches.filter(status__in=('scheduled', 'live')).exists()
+        or matches.filter(voting_open_until__gte=timezone.now(), status='finished').exists()
+    )
+
+
+@shared_task
+def finalize_season_best_xi_task(season_id: str) -> bool:
+    """Последний пересчёт и фиксация итоговой сборной завершённого сезона."""
+    from seasons.models import Season
+    from season_squad.services import finalize_best_xi, recompute_best_xi
+
+    season = Season.objects.select_related('league').filter(pk=season_id).first()
+    if season is None or not season_is_over(season):
+        return False
+    recompute_best_xi(season)
+    finalize_best_xi(season)
+    logger.info("Итоговая сборная сезона %s зафиксирована", season)
+    return True
+
+
 @shared_task
 def recompute_all_active_best_xi() -> int:
-    """Для Celery Beat: задача на каждый активный сезон. Возвращает число задач."""
+    """Для Celery Beat: пересчёт живых сборных — активных сезонов и только что закончившихся
+    (пока по ним идёт голосование); закончившиеся полностью фиксируются как итоговые.
+    """
     from seasons.models import Season
+    from season_squad.models import SeasonBestXI
 
-    season_ids = list(Season.objects.filter(is_active=True).values_list('id', flat=True))
-    for season_id in season_ids:
-        recompute_best_xi_task.delay(str(season_id))
-    logger.info("recompute_all_active_best_xi: поставлено %d задач пересчёта", len(season_ids))
-    return len(season_ids)
+    final_ids = set(SeasonBestXI.objects.filter(is_final=True).values_list('season_id', flat=True))
+    queued = 0
+    for season in Season.objects.filter(match__isnull=False).distinct():
+        if season.id in final_ids:
+            continue
+        if season.is_active:
+            recompute_best_xi_task.delay(str(season.id))
+        elif season_is_over(season):
+            finalize_season_best_xi_task.delay(str(season.id))
+        else:
+            # Сезон уже не активен, но голосование по последним матчам ещё идёт.
+            recompute_best_xi_task.delay(str(season.id))
+        queued += 1
+    logger.info("recompute_all_active_best_xi: поставлено %d задач", queued)
+    return queued

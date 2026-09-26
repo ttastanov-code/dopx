@@ -4,6 +4,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 import random
 import string
+from core.management.seed_guard import ensure_seed_allowed
 
 User = get_user_model()
 
@@ -30,6 +31,7 @@ class Command(BaseCommand):
         )
     
     def handle(self, *args, **options):
+        ensure_seed_allowed()
         count = options['count']
         verified = options['verified']
         prefix = options['prefix']

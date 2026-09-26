@@ -1,10 +1,10 @@
 # core/templatetags/rating_extras.py
 """Теги для рейтингов: порог голосов для показа, бейдж надёжности, тултип по лагерям.
-Ниже MIN_VOTES_FOR_DISPLAY рейтинг числом не показываем.
+Ниже min_votes_for_display() рейтинг числом не показываем.
 """
 from django import template
 
-from aggregates.services import CONFIDENT_VOTES_THRESHOLD, MIN_VOTES_FOR_DISPLAY
+from aggregates.services import CONFIDENT_VOTES_THRESHOLD, min_votes_for_display
 from core.models import get_setting
 
 register = template.Library()
@@ -13,7 +13,7 @@ register = template.Library()
 
 
 def _min_votes_for_display() -> int:
-    return get_setting("min_votes_for_display", MIN_VOTES_FOR_DISPLAY)
+    return min_votes_for_display()
 
 
 def _confident_votes_threshold() -> int:

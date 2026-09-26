@@ -705,3 +705,27 @@ class PlayerNameCorrectionTests(TestCase):
         player = get_or_create_player(_sportmonks_player(9001005, firstname="Pavel", lastname="Testov"))
         self.assertEqual(player.first_name, "Павел")
         self.assertEqual(player.first_name, "Павел")
+
+
+class SportmonksPhotoTests(TestCase):
+    PHOTO = "https://cdn.sportmonks.com/images/soccer/players/21/136053.png"
+    PLACEHOLDER = "https://cdn.sportmonks.com/images/soccer/placeholder.png"
+
+    def test_player_photo_set_and_not_erased_by_placeholder(self):
+        data = {"id": 555, "name": "Иван Петров", "common_name": "Иван Петров", "image_path": self.PLACEHOLDER}
+        player = get_or_create_player(data)
+        self.assertEqual(player.photo_url, "")
+        self.assertIsNone(player.photo_display)
+        player = get_or_create_player({**data, "image_path": self.PHOTO})
+        self.assertEqual(player.photo_display, self.PHOTO)
+        player = get_or_create_player(data)
+        self.assertEqual(player.photo_url, self.PHOTO)
+
+    def test_referee_photo_updated_on_repeat_sync(self):
+        from parsers.sportmonks.importers import get_or_create_referee
+        data = {"id": 77, "name": "Ivan Ivanov", "image_path": self.PLACEHOLDER}
+        referee = get_or_create_referee(data)
+        self.assertEqual(referee.photo_url, "")
+        referee = get_or_create_referee({**data, "image_path": self.PHOTO})
+        referee.refresh_from_db()
+        self.assertEqual(referee.photo_url, self.PHOTO)

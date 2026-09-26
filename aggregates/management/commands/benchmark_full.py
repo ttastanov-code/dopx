@@ -12,6 +12,7 @@ import statistics
 import json
 from matches.models import Match
 from evaluations.models import PlayerEvaluation, MatchEvaluation, ContextEvaluation
+from core.management.seed_guard import ensure_seed_allowed
 
 User = get_user_model()
 
@@ -19,6 +20,7 @@ class Command(BaseCommand):
     help = 'Полный бенчмарк производительности API'
     
     def handle(self, *args, **options):
+        ensure_seed_allowed()
         self.stdout.write('\n' + '=' * 80)
         self.stdout.write('🚀 DOPX FULL PERFORMANCE BENCHMARK')
         self.stdout.write('=' * 80 + '\n')

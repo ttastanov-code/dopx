@@ -95,6 +95,8 @@ class RefereeDetailHasEvaluationsGateTests(RefereeMatchFixtureMixin, TestCase):
         self.assertEqual(response.context['stats']['total_evaluations'], 0)
 
     def test_aggregate_with_single_vote_is_already_counted(self):
+        # Рейтинги матча публичны после закрытия голосования.
+        Match.objects.filter(pk=self.match.pk).update(voting_open_until=timezone.now() - timedelta(minutes=1))
         RefereeMatchAggregate.objects.create(
             referee=self.referee, match=self.match,
             avg_influence=5.0, avg_decision_quality=7.0, total_votes=1,

@@ -1,5 +1,9 @@
 {% extends "admin/base.html" %}
+{% load i18n %}
 {% comment %}
 Брендинг и навигация admin управляются через UNFOLD-конфиг в dopx/settings.py
 (UNFOLD["SIDEBAR"]), не через переопределение блоков здесь.
 {% endcomment %}
+
+{# Заголовок вкладки, как в стандартном admin/base_site.html (без него у списков и форм пустой title). #}
+{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}

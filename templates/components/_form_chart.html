@@ -1,0 +1,26 @@
+{% load ui_extras %}
+{% comment %}
+«Форма по матчам»: столбики рейтинга, старые слева. Данные — core/form_chart.py::build_form_points.
+Параметры: form_points, show_stat (метка «по статистике»). Стили — css/ui.css (dx-form).
+{% endcomment %}
+{% if form_points %}
+<div class="dx-form" role="list" aria-label="Рейтинг по последним матчам">
+    {% for p in form_points %}
+    <a href="{{ p.url }}" role="listitem" class="dx-form__col"
+       title="{{ p.opponent_full }} · {{ p.date|date:'d.m.Y' }} · {% if p.score is not None %}рейтинг {{ p.score|floatformat:1 }}{% else %}мало голосов{% endif %}{% if show_stat and p.stat %} · по статистике {{ p.stat|floatformat:1 }}{% endif %} · {{ p.votes }} {{ p.votes|ru_plural:'голос,голоса,голосов' }}">
+        <span class="dx-form__value">{% if p.score is not None %}{{ p.score|floatformat:1 }}{% else %}—{% endif %}</span>
+        <span class="dx-form__track">
+            <span class="dx-form__bar dx-form__bar--{{ p.tone }}" style="height: {{ p.height }}%"></span>
+            {% if show_stat and p.stat_pos is not None %}<span class="dx-form__stat" style="bottom: {{ p.stat_pos }}%"></span>{% endif %}
+        </span>
+        <span class="dx-form__label">{{ p.opponent }}</span>
+        <span class="dx-form__date">{{ p.date|date:"d.m" }}</span>
+    </a>
+    {% endfor %}
+</div>
+<div class="dx-form__legend">
+    <span><i class="dx-form__swatch dx-form__swatch--bar"></i> Оценка болельщиков</span>
+    {% if show_stat %}<span><i class="dx-form__swatch dx-form__swatch--stat"></i> По статистике</span>{% endif %}
+    <span><i class="dx-form__swatch dx-form__swatch--none"></i> Мало голосов</span>
+</div>
+{% endif %}

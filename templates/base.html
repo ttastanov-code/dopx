@@ -1,12 +1,13 @@
 {% load static %}
 {% load match_extras %}
 {% load asset_extras %}
+{% load ui_extras %}
 <!DOCTYPE html>
 <html lang="ru" data-theme="light">
 <head>
     <meta charset="UTF-8">
     {# Без maximum-scale/user-scalable=no — pinch-zoom должен работать (WCAG 1.4.4). #}
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="theme-color" content="#000000">
     {# SEO #}
     <title>{% block title %}{{ page_title|default:'DOPX' }}{% endblock %}</title>
@@ -44,6 +45,8 @@
     <link rel="stylesheet" href="{% static_v 'css/match-detail.css' %}">
     {# Legendary-бейджи #}
     <link rel="stylesheet" href="{% static_v 'css/badges.css' %}">
+    {# Общие компоненты интерфейса (dx-*). #}
+    <link rel="stylesheet" href="{% static_v 'css/ui.css' %}">
     {# static_v — добавляет ?v=<mtime> для сброса кэша. #}
 
     {# Alpine.js #}
@@ -69,6 +72,7 @@
     <script defer src="{% static_v 'js/scroll-restore.js' %}"></script>
     <script defer src="{% static_v 'js/smart-back-links.js' %}"></script>
     <script defer src="{% static_v 'js/wizard-sliders.js' %}"></script>
+    <script defer src="{% static_v 'js/wizard-draft.js' %}"></script>
     {# Google Fonts #}
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -374,11 +378,23 @@
             .input, .select, .textarea, .checkbox, .radio, .toggle { transition: none !important; }
             .checkbox:active, .radio:active, .toggle:active { transform: none !important; }
         }
+        /* Индикатор загрузки: полоса сверху, класс ставит JS с задержкой. */
+        #global-loader {
+            position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 100;
+            pointer-events: none; opacity: 0; transition: opacity .15s ease;
+            background: linear-gradient(90deg, transparent, var(--color-primary), transparent);
+            background-size: 50% 100%; background-repeat: no-repeat;
+        }
+        body.dopx-loading #global-loader { opacity: 1; animation: dopx-loader 1s linear infinite; }
+        @keyframes dopx-loader { from { background-position: -50% 0; } to { background-position: 150% 0; } }
+        @media (prefers-reduced-motion: reduce) {
+            body.dopx-loading #global-loader { animation: none; background-size: 100% 100%; }
+        }
         {% block extra_style %}{% endblock %}
     </style>
 </head>
 <body
-    class="bg-base-100 text-base-content antialiased"
+    class="bg-base-100 text-base-content antialiased{% if show_tabbar %} has-tabbar{% endif %}"
     hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
     data-vapid-public-key="{{ VAPID_PUBLIC_KEY|default:'' }}"
     x-data="themeSwitcher">
@@ -392,8 +408,11 @@
     {# Messages #}
     {% if messages %}
     {# left-4 + right-4 — ширина между краями, влезает на 375px. #}
+    {# Сами скрываются: ошибки — через 9 с, остальное — через 5 с. #}
     <div class="fixed top-20 left-4 right-4 sm:left-auto z-50 space-y-2 sm:w-auto max-w-sm"
          x-data="dismissible"
+         data-autohide="{{ messages|autohide_ms }}"
+         @mouseenter="pause" @mouseleave="start"
          x-show="show"
          x-transition
          @click.outside="show = false">
@@ -412,13 +431,13 @@
         {% block content %}{% endblock %}
     </main>
     {# Footer #}
-    {% include 'components/_footer.html' %}
+    {# В staff-дашборде футер публичного сайта не нужен. #}
+    {% if request.resolver_match.app_name != 'dashboard' %}{% include 'components/_footer.html' %}{% endif %}
+    {% if show_tabbar %}{% include 'components/_mobile_tabbar.html' %}{% endif %}
     {# Плашка о cookie (sessionid + csrftoken) #}
     {% include 'components/_cookie_banner.html' %}
-    {# Глобальный индикатор загрузки #}
-    <div id="global-loader" class="htmx-indicator fixed inset-0 bg-base-100/80 z-[100] flex items-center justify-center">
-        <span class="loading loading-spinner loading-lg text-primary"></span>
-    </div>
+    {# Индикатор загрузки: тонкая полоса сверху, только если запрос дольше LOADER_DELAY_MS. #}
+    <div id="global-loader" aria-hidden="true"></div>
     {% endblock %}
     {# tooltipTrigger — в alpine-components.js. #}
     {# Скрипты #}
@@ -427,25 +446,38 @@
         document.body.addEventListener('htmx:configRequest', (event) => {
             event.detail.headers['X-CSRFToken'] = '{{ csrf_token }}';
         });
-        // Фоновый поллинг (data-background-poll) не показывает глобальный лоадер — только клики и сабмиты.
+        // Фоновые обновления (data-background-poll) индикатор не показывают — только действия пользователя.
+        // Быстрые ответы (< LOADER_DELAY_MS) тоже без индикатора, чтобы не мигало.
+        const LOADER_DELAY_MS = 350;
+        let loaderTimer = null;
+        let pendingRequests = 0;
         function isBackgroundPoll(event) {
             return !!event.detail.elt.closest('[data-background-poll]');
         }
-        document.body.addEventListener('htmx:beforeRequest', (event) => {
+        function requestStarted(event) {
             if (isBackgroundPoll(event)) return;
-            document.body.classList.add('htmx-request');
-        });
-        document.body.addEventListener('htmx:afterRequest', (event) => {
+            pendingRequests += 1;
+            if (!loaderTimer) {
+                loaderTimer = setTimeout(() => document.body.classList.add('dopx-loading'), LOADER_DELAY_MS);
+            }
+        }
+        function requestFinished(event) {
             if (isBackgroundPoll(event)) return;
-            document.body.classList.remove('htmx-request');
-        });
-        document.body.addEventListener('htmx:responseError', (event) => {
-            if (isBackgroundPoll(event)) return;
-            document.body.classList.remove('htmx-request');
-        });
-        document.body.addEventListener('htmx:timeout', (event) => {
-            if (isBackgroundPoll(event)) return;
-            document.body.classList.remove('htmx-request');
+            pendingRequests = Math.max(0, pendingRequests - 1);
+            if (pendingRequests === 0) {
+                clearTimeout(loaderTimer);
+                loaderTimer = null;
+                document.body.classList.remove('dopx-loading');
+            }
+        }
+        document.body.addEventListener('htmx:beforeRequest', requestStarted);
+        document.body.addEventListener('htmx:afterRequest', requestFinished);
+        // Вернулись на вкладку — фоновые блоки обновляются сразу, не дожидаясь очередного тика.
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState !== 'visible' || !window.htmx) return;
+            document.querySelectorAll('[data-background-poll][hx-trigger*="dopx:wake"]').forEach((el) => {
+                htmx.trigger(el, 'dopx:wake');
+            });
         });
         // Сессия истекла (вход в другой вкладке): фоновый запрос вернул страницу логина после редиректа.
         // Не вставляем её во фрагмент, а переходим на страницу входа.

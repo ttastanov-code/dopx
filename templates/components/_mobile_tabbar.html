@@ -1,0 +1,32 @@
+{% comment %}
+Нижняя панель вкладок (только телефон, < md). Стили — css/ui.css (dx-tabbar).
+Контекст — core.context_processors.mobile_tabbar.
+{% endcomment %}
+<nav class="dx-tabbar md:hidden" aria-label="Основные разделы">
+    <a href="{% url 'core:home' %}" class="dx-tabbar__item{% if tabbar_section == 'core' and tabbar_url_name == 'home' %} is-active{% endif %}"
+       {% if tabbar_section == 'core' and tabbar_url_name == 'home' %}aria-current="page"{% endif %}>
+        <i class="ti ti-home"></i><span>Главная</span>
+    </a>
+    <a href="{% url 'matches:list' %}" class="dx-tabbar__item{% if tabbar_section == 'matches' and request.GET.status != 'votable' %} is-active{% endif %}">
+        <i class="ti ti-ball-football"></i><span>Матчи</span>
+    </a>
+    <a href="{% url 'matches:list' %}?status=votable" class="dx-tabbar__item dx-tabbar__item--center{% if tabbar_section == 'matches' and request.GET.status == 'votable' %} is-active{% endif %}">
+        <span class="dx-tabbar__fab">
+            <i class="ti ti-star"></i>
+            {% if tabbar_pending_count %}<span class="dx-tabbar__badge">{{ tabbar_pending_count|truncatechars:3 }}</span>{% endif %}
+        </span>
+        <span>Оценить</span>
+    </a>
+    <a href="{% url 'round_squad:round' %}" class="dx-tabbar__item{% if tabbar_section == 'round_squad' or tabbar_section == 'season_squad' %} is-active{% endif %}">
+        <i class="ti ti-shirt"></i><span>Лучшие</span>
+    </a>
+    {% if user.is_authenticated %}
+    <a href="{% url 'users:profile' %}" class="dx-tabbar__item{% if tabbar_section == 'users' %} is-active{% endif %}">
+        <i class="ti ti-user-circle"></i><span>Профиль</span>
+    </a>
+    {% else %}
+    <a href="{% url 'users:login' %}" class="dx-tabbar__item{% if tabbar_section == 'users' %} is-active{% endif %}">
+        <i class="ti ti-login"></i><span>Войти</span>
+    </a>
+    {% endif %}
+</nav>

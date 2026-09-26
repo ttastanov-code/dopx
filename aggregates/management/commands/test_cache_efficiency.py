@@ -6,6 +6,7 @@ from django.test import Client
 from django.contrib.auth import get_user_model
 from django.db import connection
 import time
+from core.management.seed_guard import ensure_seed_allowed
 
 User = get_user_model()
 
@@ -13,6 +14,7 @@ class Command(BaseCommand):
     help = 'Тест эффективности кэширования'
     
     def handle(self, *args, **options):
+        ensure_seed_allowed()
         self.stdout.write('\n' + '=' * 60)
         self.stdout.write('📦 CACHE EFFICIENCY TEST')
         self.stdout.write('=' * 60 + '\n')

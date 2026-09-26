@@ -20,6 +20,7 @@ from evaluations.models import (
     EvaluationSession
 )
 from aggregates.tasks import recalculate_all_aggregates_for_match
+from core.management.seed_guard import ensure_seed_allowed
 
 User = get_user_model()
 
@@ -51,6 +52,7 @@ class Command(BaseCommand):
         )
     
     def handle(self, *args, **options):
+        ensure_seed_allowed()
         users_count = options['users']
         matches_count = options['matches']
         match_ids = options.get('match_ids')

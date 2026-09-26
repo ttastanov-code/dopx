@@ -13,6 +13,7 @@ from django.contrib.auth.decorators import login_required
 from django.http import HttpResponseForbidden
 from django.shortcuts import redirect, render
 from django.urls import reverse
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils import timezone
 from django_otp import devices_for_user
 from django_otp import login as otp_login
@@ -21,9 +22,11 @@ from django_otp.plugins.otp_totp.models import TOTPDevice
 
 
 def _safe_next(request, fallback: str) -> str:
-    """Только относительный путь с "/" (не "//...")."""
+    """Только относительный путь своего сайта (отсекает "//host" и "/\\host")."""
     candidate = request.GET.get("next") or request.POST.get("next") or fallback
-    if not candidate.startswith("/") or candidate.startswith("//"):
+    if not candidate.startswith("/") or not url_has_allowed_host_and_scheme(
+        candidate, allowed_hosts={request.get_host()}, require_https=request.is_secure(),
+    ):
         return fallback
     return candidate
 

@@ -44,7 +44,7 @@ class MoodTrendServiceTests(TestCase):
             league=self.league, season=self.season,
             home_team=self.team, away_team=self.opponent,
             start_time=timezone.now() - timedelta(days=days_ago),
-            voting_open_until=timezone.now() + timedelta(days=1),
+            voting_open_until=timezone.now() - timedelta(minutes=1),
             status="finished",
         )
         return TeamMatchAggregate.objects.create(
@@ -112,7 +112,7 @@ class MoodSeriesServiceTests(TestCase):
             league=self.league, season=self.season,
             home_team=self.team, away_team=self.opponent,
             start_time=timezone.now() - timedelta(days=days_ago),
-            voting_open_until=timezone.now() + timedelta(days=1),
+            voting_open_until=timezone.now() - timedelta(minutes=1),
             status="finished",
         )
         TeamMatchAggregate.objects.create(
@@ -217,18 +217,22 @@ class BuildMoodChartTests(SimpleTestCase):
         self.assertEqual(len(chart["mood"]["dots"]), 2)
         self.assertEqual(len(chart["trust"]["dots"]), 2)
 
-    def test_mood_gridlines_are_whole_numbers_only(self):
-        # Только 0/5/10.
+    def test_domain_fits_data_with_whole_gridlines(self):
         series = [self._point(mood=6.0), self._point(mood=7.0)]
         chart = build_mood_chart(series)
-        labels = [g["label"] for g in chart["mood"]["gridlines"]]
-        self.assertEqual(labels, ["0", "5", "10"])
+        self.assertEqual([g["label"] for g in chart["mood"]["gridlines"]], ["4", "6", "8"])
 
-    def test_trust_gridlines_are_minimal(self):
-        series = [self._point(mood=6.0, trust=5.0), self._point(mood=7.0, trust=6.0)]
+    def test_domain_clamped_to_scale_and_shared_with_trust(self):
+        series = [self._point(mood=9.6, trust=0.4), self._point(mood=9.8, trust=1.0)]
         chart = build_mood_chart(series)
-        labels = [g["label"] for g in chart["trust"]["gridlines"]]
-        self.assertEqual(labels, ["0", "10"])
+        self.assertEqual([g["label"] for g in chart["mood"]["gridlines"]], ["0", "5", "10"])
+        self.assertEqual(chart["mood"]["gridlines"], chart["trust"]["gridlines"])
+
+    def test_points_span_full_width(self):
+        series = [self._point(mood=6.0), self._point(mood=6.5), self._point(mood=7.0)]
+        dots = build_mood_chart(series)["mood"]["dots"]
+        self.assertEqual((dots[0]["x"], dots[-1]["x"]), (0, 640))
+        self.assertTrue(dots[-1]["is_last"])
 
     def test_expectation_bars_include_no_data_entries_not_excluded(self):
         # pct=None остаётся в bars с has_data=False.
@@ -289,7 +293,7 @@ class SeasonControversialMatchesTests(TestCase):
             league=self.league, season=self.season,
             home_team=self.team, away_team=self.opponent,
             start_time=timezone.now() - timedelta(days=1),
-            voting_open_until=timezone.now() + timedelta(days=1),
+            voting_open_until=timezone.now() - timedelta(minutes=1),
             status="finished", home_score=1, away_score=0,
         )
         RefereeMatchAggregate.objects.create(
@@ -315,7 +319,7 @@ class SeasonControversialMatchesTests(TestCase):
             league=self.league, season=self.season,
             home_team=self.team, away_team=self.opponent,
             start_time=timezone.now() - timedelta(days=1),
-            voting_open_until=timezone.now() + timedelta(days=1),
+            voting_open_until=timezone.now() - timedelta(minutes=1),
             status="finished",
         )
         RefereeMatchAggregate.objects.create(

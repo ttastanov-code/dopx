@@ -79,6 +79,74 @@ def is_synthetic_test_email(email: str | None) -> bool:
     return domain == "dopx.local" or domain.endswith(TEST_EMAIL_DOMAIN_SUFFIX)
 
 
+# Почтовые сервисы, где точки в имени ящика не значимы.
+DOTLESS_EMAIL_DOMAINS = {"gmail.com", "googlemail.com"}
+
+
+def canonical_email(email: str | None) -> str:
+    """Один ящик — одна строка: регистр, «+метка», точки у Gmail. Для поиска дублей аккаунтов."""
+    email = (email or "").strip().lower()
+    if "@" not in email:
+        return email
+    local, domain = email.rsplit("@", 1)
+    local = local.split("+", 1)[0]
+    if domain in DOTLESS_EMAIL_DOMAINS:
+        local = local.replace(".", "")
+        domain = "gmail.com"
+    return f"{local}@{domain}"
+
+
+FORM_TIMESTAMP_SALT = "core.form-rendered-at"
+# Форма старше — считаем устаревшей (перезагрузить страницу).
+FORM_TIMESTAMP_MAX_AGE_SECONDS = 6 * 60 * 60
+
+
+def sign_form_timestamp() -> str:
+    """Подписанное время рендера формы для time-trap (клиент его не подделает)."""
+    from django.core import signing
+
+    return signing.TimestampSigner(salt=FORM_TIMESTAMP_SALT).sign("form")
+
+
+def form_timestamp_is_valid(token: str | None, min_seconds: float) -> bool:
+    """Подпись верна, форма не устарела и заполнялась не быстрее min_seconds."""
+    from django.core import signing
+
+    if not token:
+        return False
+    signer = signing.TimestampSigner(salt=FORM_TIMESTAMP_SALT)
+    try:
+        signer.unsign(token, max_age=FORM_TIMESTAMP_MAX_AGE_SECONDS)
+    except signing.BadSignature:
+        return False
+    try:
+        signer.unsign(token, max_age=min_seconds)
+    except signing.SignatureExpired:
+        return True  # прошло больше min_seconds — человек
+    except signing.BadSignature:
+        return False
+    return False
+
+
+# Префиксы username сид/нагрузочных команд.
+SYNTHETIC_USERNAME_PREFIXES = ("test_user", "loadtest_")
+# Домены email тестовых команд вне .dopx.local.
+SYNTHETIC_EMAIL_DOMAINS = ("test.dopx.kz", "test.com")
+
+
+def synthetic_users_q(prefix: str = ""):
+    """Q синтетических аккаунтов (боты, нагрузочные, тестовые). prefix — путь до пользователя, напр. "user__"."""
+    from django.db.models import Q
+
+    q = Q(**{f"{prefix}email__iendswith": TEST_EMAIL_DOMAIN_SUFFIX}) | Q(**{f"{prefix}email__iendswith": "@dopx.local"})
+    for domain in SYNTHETIC_EMAIL_DOMAINS:
+        q |= Q(**{f"{prefix}email__iendswith": f"@{domain}"})
+    for username_prefix in SYNTHETIC_USERNAME_PREFIXES:
+        q |= Q(**{f"{prefix}username__startswith": username_prefix})
+    # Сотрудники синтетическими не бывают.
+    return q & Q(**{f"{prefix}is_staff": False}) & Q(**{f"{prefix}is_superuser": False})
+
+
 def is_rate_limited(key: str, limit: int, window_seconds: int) -> bool:
     """Rate-limiter fixed window на Django cache.
 

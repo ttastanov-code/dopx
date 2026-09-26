@@ -4,7 +4,8 @@
 {% endcomment %}
 <span id="notif-unread-badge"
       {% if oob %}hx-swap-oob="true"{% endif %}
+      data-background-poll
       hx-get="{% url 'notifications:unread_count_partial' %}"
-      hx-trigger="every 30s"
+      hx-trigger="every 30s [document.visibilityState === 'visible'], dopx:wake"
       hx-swap="outerHTML"
       class="badge badge-sm badge-error absolute -top-0.5 -right-0.5 text-white min-w-[1rem] h-4 flex items-center justify-center text-[10px] pointer-events-none {% if not count %}hidden{% endif %}">{{ count|default:0|truncatechars:2 }}</span>

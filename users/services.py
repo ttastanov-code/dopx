@@ -460,7 +460,8 @@ def _maybe_award_bias_free(user, awarded: list[UserBadge]) -> None:
         return
 
     bias_score = compute_bias_score(user, latest_context.match, lookback=BIAS_FREE_LOOKBACK)
-    if bias_score <= BIAS_FREE_MAX_SCORE:
+    # None — истории мало: «без предвзятости» ещё нечем подтвердить.
+    if bias_score is not None and bias_score <= BIAS_FREE_MAX_SCORE:
         b, created = UserBadge.objects.get_or_create(user=user, badge_type="bias_free")
         if created:
             awarded.append(b)
@@ -563,7 +564,7 @@ def _check_bias_free_condition(user) -> bool:
     if not latest_context or not latest_context.match_id:
         return False
     bias_score = compute_bias_score(user, latest_context.match, lookback=BIAS_FREE_LOOKBACK)
-    return bias_score <= BIAS_FREE_MAX_SCORE
+    return bias_score is not None and bias_score <= BIAS_FREE_MAX_SCORE
 
 
 _STATUS_BADGE_CHECKS = {

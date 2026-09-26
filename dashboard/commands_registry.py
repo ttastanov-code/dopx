@@ -153,12 +153,16 @@ COMMAND_REGISTRY: dict[str, CommandSpec] = {
     # ОЧИСТКА / УДАЛЕНИЕ
     # ============================================================
     "cleanup_test_users": CommandSpec(
-        name="cleanup_test_users", label="Удалить тестовых пользователей",
+        name="cleanup_test_users", label="Удалить ботов и тестовые аккаунты",
         category="cleanup", danger="destructive", has_apply_flag=True,
-        description="Удаляет тестовые аккаунты и их данные. Без «Реально применить» — только список.",
+        description="Удаляет ботов/тестовые аккаунты со всеми их данными и пересчитывает затронутые рейтинги, "
+                    "сборные и туры. Без «Реально применить» — только список.",
         args=[
-            ArgSpec("--prefix", "prefix", "str", default="test_user", help="Префикс username."),
-            ArgSpec("--domain", "domain", "str", default="test.dopx.kz", help="Домен email."),
+            ArgSpec("--no-recalc", "no_recalc", "flag", help="Не пересчитывать рейтинги (сделать потом)."),
+            ArgSpec("--recalc-all", "recalc_all", "flag",
+                    help="Пересчитать все матчи с рейтингами, сборные и туры (если пересчёт прервался)."),
+            ArgSpec("--reset-corrections", "reset_corrections", "flag",
+                    help="Обнулить авто-поправки и снять необработанные сигналы по сущностям (посчитаны и по голосам ботов)."),
             ArgSpec("--limit-preview", "limit_preview", "int", default=50, help="Строк в предпросмотре (0 — все)."),
         ],
     ),
@@ -210,6 +214,12 @@ COMMAND_REGISTRY: dict[str, CommandSpec] = {
         category="recalc", danger="safe",
         description="Обновляет «активен» по последнему матчу команды. Без обращения к внешнему API.",
         args=[],
+    ),
+    "sync_sportmonks_photos": CommandSpec(
+        name="sync_sportmonks_photos", label="Догрузить фото из Sportmonks",
+        category="recalc", danger="safe", has_apply_flag=True,
+        description="Фото игроков (по составам сезона), судей и тренеров. Заглушки пропускает. Обращается к API Sportmonks.",
+        args=[ArgSpec("--entity", "entity", "choice", default="all", choices=["all", "players", "referees", "coaches"])],
     ),
 
     # ============================================================
@@ -334,14 +344,23 @@ COMMAND_REGISTRY: dict[str, CommandSpec] = {
 }
 
 
+def _is_available(spec: CommandSpec) -> bool:
+    """Сиды и симуляции подделывают голоса — вне ALLOW_SEED_COMMANDS их нет."""
+    from django.conf import settings
+
+    return spec.category != "seed" or getattr(settings, "ALLOW_SEED_COMMANDS", False)
+
+
 def get_command(name: str) -> CommandSpec | None:
-    return COMMAND_REGISTRY.get(name)
+    spec = COMMAND_REGISTRY.get(name)
+    return spec if spec is not None and _is_available(spec) else None
 
 
 def categories() -> list[tuple[str, str, list[CommandSpec]]]:
     """[(ключ, подпись, [CommandSpec, ...]), ...] в порядке CATEGORY_LABELS."""
     result = []
     for key, label in CATEGORY_LABELS.items():
-        specs = [spec for spec in COMMAND_REGISTRY.values() if spec.category == key]
-        result.append((key, label, specs))
+        specs = [spec for spec in COMMAND_REGISTRY.values() if spec.category == key and _is_available(spec)]
+        if specs:
+            result.append((key, label, specs))
     return result

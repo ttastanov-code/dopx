@@ -139,7 +139,7 @@ class ContactSubmissionAdmin(ModelAdmin):
             filename = os.path.basename(obj.attachment.name)
             return format_html(
                 '<a href="{}" target="_blank" style="color:#3b82f6;text-decoration:underline;">📎 Скачать {}</a>',
-                obj.attachment.url,
+                reverse('notifications:contact_attachment', args=[obj.pk]),
                 filename
             )
         return '—'

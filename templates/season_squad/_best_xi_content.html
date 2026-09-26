@@ -1,4 +1,5 @@
 {% load rating_extras %}
+{% load ui_extras %}
 {% comment %}
 Карточки «Живой сборной сезона». Рендерится в best_xi.html и в HTMX-поллинге
 (season_squad/views.py::best_xi_partial). Пояснения — в тултипе (_build_explanation).
@@ -7,7 +8,7 @@
     <div class="flex items-center gap-2 text-xs md:text-sm opacity-60">
         <i class="ti ti-refresh"></i>
         {% if best_xi.last_computed_at %}
-            Обновлено {{ best_xi.last_computed_at|timesince }} назад · по оценкам сообщества DOPX
+            Обновлено {{ best_xi.last_computed_at|ago }} · по оценкам сообщества DOPX
         {% else %}
             Пока не пересчитывалась, первый пересчёт запустится в ближайшие 15 минут
         {% endif %}
@@ -23,6 +24,17 @@
     </span>
     {% endif %}
 </div>
+
+{% if not has_filled_slots %}
+{# Одно объяснение вместо подписи под каждым пустым слотом. #}
+<div class="dx-empty mb-4">
+    <span class="dx-empty__icon"><i class="ti ti-users-group"></i></span>
+    <div>
+        <div class="dx-empty__title">{% if best_xi.is_final %}Сборная сезона не сложилась{% else %}Сборная ещё собирается{% endif %}</div>
+        <p class="dx-empty__text">{% if best_xi.is_final %}За сезон не набралось достаточно оценок. {% endif %}Игрок попадает в состав, когда у него наберётся {{ min_matches_for_candidate }} {{ min_matches_for_candidate|ru_plural:"оценённый матч,оценённых матча,оценённых матчей" }} с достаточным числом голосов.</p>
+    </div>
+</div>
+{% endif %}
 
 {# === ПОЛЕ: 4-3-3 === #}
 <div class="relative overflow-hidden rounded-3xl p-4 py-8 md:p-10 mb-6 shadow-lg"
@@ -60,7 +72,7 @@
                     {% if card.explanation %}<span class="text-white/70">{% include 'components/_tooltip_icon.html' with text=card.explanation %}</span>{% endif %}
                 </div>
                 {% else %}
-                <div class="mt-2 text-[9px] md:text-xs text-white/35 leading-tight">Пока недостаточно<br>оценённых матчей</div>
+                <div class="mt-2 text-[9px] md:text-xs text-white/40 leading-tight">{{ card.label }}</div>
                 {% endif %}
             </div>
             {% endfor %}

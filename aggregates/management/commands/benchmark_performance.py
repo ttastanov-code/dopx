@@ -7,6 +7,7 @@ from django.core.cache import cache
 import time
 import statistics
 import json
+from core.management.seed_guard import ensure_seed_allowed
 
 User = get_user_model()
 
@@ -14,6 +15,7 @@ class Command(BaseCommand):
     help = 'Бенчмарк производительности API'
     
     def handle(self, *args, **options):
+        ensure_seed_allowed()
         client = Client()
         
         # Создаём тестового пользователя

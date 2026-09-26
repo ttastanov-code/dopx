@@ -3,6 +3,7 @@ from django.apps import AppConfig
 
 class CoreConfig(AppConfig):
     name = 'core'
+    verbose_name = 'Платформа'
 
     def ready(self):
         # Генерация VAPID-ключей на post_migrate (один раз за прогон, sender=self).

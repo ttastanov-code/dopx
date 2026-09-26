@@ -3,12 +3,12 @@ Live-пульс: крупные события с реакциями 👍/👎. 
 Поллинг только пока матч live.
 {% endcomment %}
 <div id="live-pulse-container" class="space-y-2"
-     {% if match.status == 'live' %}
+{% with poll=match.live_poll_seconds %}{% if poll %}
      data-background-poll
      hx-get="{% url 'events:pulse' match.id %}"
-     hx-trigger="every 15s"
+     hx-trigger="every {{ poll }}s [document.visibilityState === 'visible'], dopx:wake"
      hx-swap="outerHTML"
-     {% endif %}>
+     {% endif %}{% endwith %}>
     {% for event in events %}
     <div class="flex items-center gap-2 md:gap-3 p-2 md:p-3 rounded-lg bg-base-200/60">
         <div class="font-mono font-bold text-sm w-9 text-right shrink-0 opacity-70">

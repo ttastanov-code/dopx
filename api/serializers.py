@@ -32,6 +32,14 @@ def _run_policy(check, *args) -> None:
         raise serializers.ValidationError(str(e)) from e
 
 
+def _forbid_after_completion(user, match) -> None:
+    """Завершённую оценку матча не меняем ни через сайт, ни через API."""
+    from evaluations.models import EvaluationSession
+
+    if user and match and EvaluationSession.objects.filter(user=user, match=match, status="completed").exists():
+        raise serializers.ValidationError("Оценка этого матча уже завершена — изменить её нельзя")
+
+
 def _forbid_identity_field_changes(instance, data: dict, field_names: tuple[str, ...]) -> None:
     """При PATCH/PUT нельзя менять поля, определяющие оценку (match/player/team/coach/supported_team) —
     меняются только баллы.
@@ -103,6 +111,11 @@ class ContextEvaluationSerializer(serializers.ModelSerializer):
     def validate(self, data: dict) -> dict:
         """Уникальность user + match и supported_team из этого матча."""
         _forbid_identity_field_changes(self.instance, data, ("match", "supported_team"))
+        request = self.context.get("request")
+        _forbid_after_completion(
+            request.user if request else None,
+            data.get("match") or (self.instance.match if self.instance else None),
+        )
 
         request = self.context.get("request")
         user = request.user if request else None
@@ -154,6 +167,11 @@ class PlayerEvaluationSerializer(serializers.ModelSerializer):
 
     def validate(self, data: dict) -> dict:
         _forbid_identity_field_changes(self.instance, data, ("match", "player"))
+        request = self.context.get("request")
+        _forbid_after_completion(
+            request.user if request else None,
+            data.get("match") or (self.instance.match if self.instance else None),
+        )
 
         request = self.context.get("request")
         user = request.user if request else None
@@ -211,6 +229,11 @@ class TeamEvaluationSerializer(serializers.ModelSerializer):
 
     def validate(self, data: dict) -> dict:
         _forbid_identity_field_changes(self.instance, data, ("match", "team"))
+        request = self.context.get("request")
+        _forbid_after_completion(
+            request.user if request else None,
+            data.get("match") or (self.instance.match if self.instance else None),
+        )
 
         request = self.context.get("request")
         user = request.user if request else None
@@ -265,6 +288,11 @@ class CoachEvaluationSerializer(serializers.ModelSerializer):
 
     def validate(self, data: dict) -> dict:
         _forbid_identity_field_changes(self.instance, data, ("match", "coach"))
+        request = self.context.get("request")
+        _forbid_after_completion(
+            request.user if request else None,
+            data.get("match") or (self.instance.match if self.instance else None),
+        )
 
         request = self.context.get("request")
         user = request.user if request else None
@@ -311,6 +339,11 @@ class RefereeEvaluationSerializer(serializers.ModelSerializer):
 
     def validate(self, data: dict) -> dict:
         _forbid_identity_field_changes(self.instance, data, ("match",))
+        request = self.context.get("request")
+        _forbid_after_completion(
+            request.user if request else None,
+            data.get("match") or (self.instance.match if self.instance else None),
+        )
 
         request = self.context.get("request")
         user = request.user if request else None
@@ -359,6 +392,11 @@ class MatchEvaluationSerializer(serializers.ModelSerializer):
 
     def validate(self, data: dict) -> dict:
         _forbid_identity_field_changes(self.instance, data, ("match",))
+        request = self.context.get("request")
+        _forbid_after_completion(
+            request.user if request else None,
+            data.get("match") or (self.instance.match if self.instance else None),
+        )
 
         request = self.context.get("request")
         user = request.user if request else None

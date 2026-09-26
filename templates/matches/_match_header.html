@@ -10,12 +10,12 @@
             {% elif match.status == 'postponed' %}md-hero--postponed
             {% elif match.status == 'cancelled' %}md-hero--cancelled
             {% else %}md-hero--scheduled{% endif %}"
-     {% if match.status == 'live' %}
+{% with poll=match.live_poll_seconds %}{% if poll %}
      data-background-poll
      hx-get="{% url 'matches:header' match.id %}"
-     hx-trigger="every 20s"
+     hx-trigger="every {{ poll }}s [document.visibilityState === 'visible'], dopx:wake"
      hx-swap="outerHTML"
-     {% endif %}>
+     {% endif %}{% endwith %}>
     {# Одно едва заметное световое пятно. #}
     <div class="md-hero__glow md-hero__glow--a"></div>
 
@@ -176,8 +176,11 @@
         {% if match.status != 'cancelled' %}
         {# Прогноз 1X2 — ленивая HTMX-подгрузка, кроме отменённых матчей. #}
         {# Блок с разделителем, не отдельная карточка. #}
+        {# hx-preserve: при фоновом обновлении шапки до старта уже загруженный виджет не перерисовывается. #}
         <div id="prediction-widget-{{ match.id }}"
              class="mt-5 sm:mt-8 pt-5 sm:pt-8 border-t border-base-300 animate-pulse"
+             data-background-poll
+             {% if match.status == 'scheduled' %}hx-preserve="true"{% endif %}
              hx-get="{% url 'predictions:widget' match.id %}"
              hx-trigger="load"
              hx-swap="outerHTML">

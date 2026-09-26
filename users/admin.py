@@ -45,9 +45,30 @@ class UserAdmin(ModelAdmin):
 
     @admin.action(description="Деактивировать (is_active=False)")
     def deactivate_selected(self, request, queryset):
-        # Только деактивация, без массового удаления.
+        # Только деактивация, без массового удаления. Сотрудников — только суперпользователь.
+        if not request.user.is_superuser:
+            queryset = queryset.filter(is_staff=False, is_superuser=False)
+        queryset = queryset.exclude(pk=request.user.pk)
+        user_ids = list(queryset.values_list("id", flat=True))
         updated = queryset.update(is_active=False)
+        _recalculate_for_users(user_ids)
         self.message_user(request, f"Деактивировано: {updated}")
+
+    def save_model(self, request, obj, form, change):
+        # Смена is_active меняет состав допустимых голосов.
+        active_changed = change and "is_active" in form.changed_data
+        super().save_model(request, obj, form, change)
+        if active_changed:
+            _recalculate_for_users([obj.id])
+
+
+def _recalculate_for_users(user_ids) -> None:
+    from django.db import transaction
+
+    from aggregates.tasks import recalculate_matches_for_user
+
+    for user_id in user_ids:
+        transaction.on_commit(lambda uid=str(user_id): recalculate_matches_for_user.delay(uid))
 
 
 @admin.register(UserBadge)
@@ -82,7 +103,11 @@ class SuspiciousActivityFlagAdmin(ModelAdmin):
 
     @admin.action(description="Отметить как подтверждённую накрутку")
     def mark_confirmed(self, request, queryset):
+        from aggregates.tasks import schedule_recalculation_for_flags
+
+        flags = list(queryset)
         updated = queryset.update(status="confirmed", reviewed_by=request.user, reviewed_at=timezone.now())
+        schedule_recalculation_for_flags(flags)
         self.message_user(request, f"Подтверждено: {updated}")
 
     @admin.action(description="Отметить как ложное срабатывание")
@@ -93,9 +118,13 @@ class SuspiciousActivityFlagAdmin(ModelAdmin):
         # Общая логика с дашбордом — aggregates.tasks.apply_divergence_dismissal.
         from aggregates.tasks import apply_divergence_dismissal
 
-        apply_divergence_dismissal(list(queryset))
+        from aggregates.tasks import schedule_recalculation_for_flags
+
+        flags = list(queryset)
+        apply_divergence_dismissal(flags)
 
         updated = queryset.update(status="dismissed", reviewed_by=request.user, reviewed_at=timezone.now())
+        schedule_recalculation_for_flags(flags)
         self.message_user(request, f"Отклонено: {updated}")
 
 

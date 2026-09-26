@@ -79,11 +79,9 @@ class StaffTwoFactorEnforcementMiddleware:
             else reverse("dashboard:two_factor_setup")
         )
 
-        # Временный диагностический лог маршрутизации challenge/setup.
-        logger.warning(
-            f"2FA ROUTING: user={user.username} path={request.path} "
-            f"is_verified={user.is_verified()} confirmed_devices={confirmed_devices} "
-            f"has_confirmed_device={has_confirmed_device} -> target={target}"
+        logger.debug(
+            "2FA routing: user=%s path=%s has_confirmed_device=%s -> %s",
+            user.username, request.path, has_confirmed_device, target,
         )
 
         if request.path == target:

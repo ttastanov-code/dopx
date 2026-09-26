@@ -25,7 +25,7 @@
 </div>
 
 {# === ФОРМА === #}
-<form method="post" action="{% url 'evaluations:players' match.id %}" class="max-w-7xl mx-auto px-3" id="players-form"
+<form method="post" data-wizard-draft action="{% url 'evaluations:players' match.id %}" class="max-w-7xl mx-auto px-3" id="players-form"
       data-wz-untouched-hint="Потяните хотя бы один ползунок — иначе этот критерий не будет учтён">
     {% csrf_token %}
 

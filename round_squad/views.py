@@ -11,6 +11,7 @@ from round_squad.services import (
     ROUND_MIN_VOTES_FOR_CANDIDATE,
     ROUND_VOTE_SHRINKAGE_C,
     resolve_current_tour,
+    resolve_default_round,
 )
 # Раскладка поля и стиль кольца — из season_squad.views.
 from season_squad.views import (
@@ -56,12 +57,13 @@ def _slot_to_card(slot, slot_code):
 
 def _round_context(season_id, tour):
     """Контекст страницы. None — нет сезона или ни одного сыгранного тура."""
-    season = _resolve_season(season_id)
-    if season is None:
-        return None
-    if tour is None:
-        tour = _resolve_latest_tour(season)
-    if tour is None:
+    if season_id is None and tour is None:
+        season, tour = resolve_default_round()
+    else:
+        season = _resolve_season(season_id)
+        if season is not None and tour is None:
+            tour = _resolve_latest_tour(season)
+    if season is None or tour is None:
         return None
 
     round_xi, _created = RoundBestXI.objects.get_or_create(season=season, tour=tour)
@@ -93,6 +95,7 @@ def _round_context(season_id, tour):
         'tour': tour,
         'round_xi': round_xi,
         'pitch_rows': pitch_rows,
+        'has_filled_slots': any(slot.content_type_id for slot in slots_by_code.values()),
         'coach_card': _slot_to_card(slots_by_code.get('COACH'), 'COACH'),
         'player_of_round_card': player_of_round_card,
         'dramatic_match': round_xi.most_dramatic_match,
@@ -148,9 +151,12 @@ def round_widget(request, season_id=None, tour=None):
     """Виджет для чужих сайтов: 11 слотов без тренера.
     @xframe_options_exempt + своя CSP (WIDGET_PATH_PATTERN).
     """
-    season = _resolve_season(season_id) if season_id else Season.get_primary_active()
-    if tour is None and season is not None:
-        tour = _resolve_latest_tour(season)
+    if season_id:
+        season = _resolve_season(season_id)
+        if tour is None:
+            tour = _resolve_latest_tour(season)
+    else:
+        season, tour = resolve_default_round()
 
     pitch_rows = []
     round_xi = None

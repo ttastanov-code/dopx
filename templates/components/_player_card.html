@@ -8,8 +8,8 @@
         <div class="flex items-center gap-4">
             {# Фото / аватар #}
             <div class="entity-avatar-ring flex-shrink-0">
-                {% if player.photo %}
-                {% include 'components/_avatar.html' with photo_url=player.photo.url name=player.full_name size_classes='w-14 h-14 text-lg' %}
+                {% if player.photo_display %}
+                {% include 'components/_avatar.html' with photo_url=player.photo_display name=player.full_name size_classes='w-14 h-14 text-lg' %}
                 {% else %}
                 {% include 'components/_avatar.html' with name=player.full_name size_classes='w-14 h-14 text-lg' %}
                 {% endif %}

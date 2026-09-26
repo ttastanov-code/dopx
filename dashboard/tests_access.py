@@ -35,9 +35,17 @@ class DashboardNavTests(TestCase):
         self.assertTrue(nav["show_scripts"])
 
     def test_full_access_uses_two_rows(self):
-        nav = build_nav(_staff("full"))
+        from .models import DASHBOARD_SECTION_KEYS
+
+        nav = build_nav(_staff("full", list(DASHBOARD_SECTION_KEYS)))
         self.assertGreater(nav["total"], SINGLE_ROW_MAX_ITEMS)
         self.assertEqual(len(nav["rows"]), 2)
+
+    def test_staff_without_grant_has_no_sections(self):
+        # Нет StaffAccessGrant — доступа нет (разделы выдаются явно).
+        nav = build_nav(_staff("nogrant"))
+        self.assertEqual(nav["rows"], [])
+        self.assertFalse(nav["show_scripts"])
 
     def test_no_sections_no_rows(self):
         nav = build_nav(_staff("none", []))

@@ -18,7 +18,8 @@ from django.contrib.auth.views import (
 from django.contrib import messages
 from django.views.generic import CreateView, TemplateView, ListView, UpdateView, FormView, View
 from django.urls import reverse_lazy
-from django.db.models import Count, Avg, Q, F, Window
+from django.utils.http import url_has_allowed_host_and_scheme
+from django.db.models import Count, Avg, Q, F, Sum, Window
 from aggregates.services import vote_weighted_avg
 from django.db.models.functions import RowNumber
 from django.utils import timezone
@@ -51,7 +52,11 @@ PASSWORD_RESET_RATE_LIMIT = 5
 PASSWORD_RESET_RATE_LIMIT_WINDOW_SECONDS = 60 * 60  # 1 час
 VERIFY_EMAIL_RATE_LIMIT = 20
 VERIFY_EMAIL_RATE_LIMIT_WINDOW_SECONDS = 60 * 10  # 10 минут
+RESEND_VERIFICATION_RATE_LIMIT = 3
+RESEND_VERIFICATION_RATE_LIMIT_WINDOW_SECONDS = 60 * 60  # 1 час
 FOLLOW_RATE_LIMIT = 30
+# Минимум матчей с достаточным числом голосов для рейтинга игроков.
+PLAYER_LEADERBOARD_MIN_MATCHES = 3
 FOLLOW_RATE_LIMIT_WINDOW_SECONDS = 60
 
 
@@ -146,8 +151,8 @@ class VerifyEmailView(View):
             # Токен живёт 48 часов.
             token_age = timezone.now() - user.verification_token_created_at
             if token_age > timedelta(hours=48):
-                messages.error(request, 'Ссылка для подтверждения устарела. Зарегистрируйтесь заново.')
-                return redirect('users:register')
+                messages.error(request, 'Ссылка для подтверждения устарела. Войдите с паролем — мы пришлём новую.')
+                return redirect('users:login')
 
             user.is_verified = True
             user.save(update_fields=['is_verified', 'updated_at'])
@@ -196,11 +201,18 @@ class LoginView(AuthLoginView):
         user = form.get_user()
         # Почта не подтверждена — не пускаем.
         if not user.is_verified:
+            if is_rate_limited(
+                f'resend_verification:{user.id}',
+                RESEND_VERIFICATION_RATE_LIMIT, RESEND_VERIFICATION_RATE_LIMIT_WINDOW_SECONDS,
+            ):
+                messages.warning(self.request, 'Почта не подтверждена. Письмо уже отправлено — проверьте почту и папку «Спам».')
+                return redirect('users:login')
+            user.refresh_verification_token()
             try:
                 from notifications.tasks import send_email_verification
                 send_email_verification.delay(str(user.id), str(user.verification_token))
             except Exception:
-                pass
+                logger.error("Failed to queue verification email on login", exc_info=True)
             messages.warning(self.request, 'Почта не подтверждена. Мы отправили новое письмо со ссылкой.')
             return redirect('users:login')
 
@@ -214,8 +226,13 @@ class LoginView(AuthLoginView):
         return response
 
     def get_success_url(self):
-        next_url = self.request.GET.get('next')
-        return next_url if next_url else reverse_lazy('core:home')
+        # Только свой хост — иначе ?next= уводит на чужой сайт после входа.
+        next_url = self.request.POST.get('next') or self.request.GET.get('next')
+        if next_url and url_has_allowed_host_and_scheme(
+            next_url, allowed_hosts={self.request.get_host()}, require_https=self.request.is_secure(),
+        ):
+            return next_url
+        return reverse_lazy('core:home')
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -225,7 +242,8 @@ class LoginView(AuthLoginView):
 
 
 class LogoutView(LoginRequiredMixin, View):
-    def get(self, request, *args, **kwargs):
+    """Выход только POST — GET-ссылкой можно разлогинить с чужой страницы."""
+    def post(self, request, *args, **kwargs):
         logout(request)
         messages.info(request, 'Вы вышли из аккаунта.')
         return redirect('core:home')
@@ -452,6 +470,7 @@ class ProfileEditView(LoginRequiredMixin, UpdateView):
         response = super().form_valid(form)
 
         if email_changed:
+            self.object.refresh_verification_token()
             try:
                 from notifications.tasks import send_email_verification
                 send_email_verification.delay(str(self.object.id), str(self.object.verification_token))
@@ -682,22 +701,30 @@ class PlayerLeaderboardView(ListView):
 
     def get_queryset(self):
         from players.models import Player
-        from aggregates.models import PlayerMatchAggregate
-        from django.db.models import Avg, Count, Sum, Q
-        qs = Player.objects.filter(is_active=True).annotate(
-            avg_performance=vote_weighted_avg('match_aggregates__performance_score', 'match_aggregates__total_votes'),
-            total_matches=Count('match_aggregates', distinct=True),
-            total_votes=Sum('match_aggregates__total_votes')
-        ).filter(
-            avg_performance__isnull=False,
-            total_matches__gte=1
-        ).order_by('-avg_performance')
-        # ?league= — фильтр через матчи агрегатов (у игрока нет FK на лигу).
-        # distinct() — чтобы JOIN не размножил строки.
+        from aggregates.services import min_votes_for_display, published_q
+
+        # В рейтинг идут только матчи с достаточным числом голосов, и нужно несколько таких матчей —
+        # иначе наверху окажется игрок с одной «десяткой» от одного голоса.
+        counted = Q(match_aggregates__total_votes__gte=min_votes_for_display()) & published_q('match_aggregates__match__')
+        # ?league= — внутри того же фильтра агрегации (у игрока нет FK на лигу).
         league_id = self.request.GET.get('league', '').strip()
         if league_id:
-            qs = qs.filter(match_aggregates__match__league_id=league_id).distinct()
-        return qs
+            import uuid
+            try:
+                counted &= Q(match_aggregates__match__league_id=uuid.UUID(league_id))
+            except ValueError:
+                pass  # мусорный ?league= — без фильтра
+        min_matches = get_setting("player_leaderboard_min_matches", PLAYER_LEADERBOARD_MIN_MATCHES)
+        return Player.objects.filter(is_active=True).annotate(
+            avg_performance=vote_weighted_avg(
+                'match_aggregates__performance_score', 'match_aggregates__total_votes', filter=counted,
+            ),
+            total_matches=Count('match_aggregates', filter=counted, distinct=True),
+            total_votes=Sum('match_aggregates__total_votes', filter=counted),
+        ).filter(
+            avg_performance__isnull=False,
+            total_matches__gte=min_matches,
+        ).order_by('-avg_performance', '-total_votes')
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

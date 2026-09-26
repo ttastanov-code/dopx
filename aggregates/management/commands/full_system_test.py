@@ -13,6 +13,7 @@ import logging
 from matches.models import Match
 from evaluations.models import ContextEvaluation, MatchEvaluation, PlayerEvaluation
 from aggregates.models import MatchAggregate, PlayerMatchAggregate
+from core.management.seed_guard import ensure_seed_allowed
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -26,6 +27,7 @@ class Command(BaseCommand):
         parser.add_argument('--output', type=str, default='test_report.json')
     
     def handle(self, *args, **options):
+        ensure_seed_allowed()
         self.stdout.write('\n' + '=' * 80)
         self.stdout.write('🚀 DOPX FULL SYSTEM TEST')
         self.stdout.write('=' * 80 + '\n')

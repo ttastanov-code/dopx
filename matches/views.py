@@ -84,20 +84,21 @@ class MatchListView(ListView):
             # Стартовая страница — см. paginate_queryset().
             queryset = queryset.order_by('start_time')
         
-        # Фильтр по лиге
-        league_id = self.request.GET.get('league')
-        if league_id:
-            queryset = queryset.filter(league_id=league_id)
-        
-        # Фильтр по сезону
-        season_id = self.request.GET.get('season')
-        if season_id:
-            queryset = queryset.filter(season_id=season_id)
+        # Лига/сезон/тур; мусорные значения из URL игнорируем, а не отдаём 500.
+        import uuid as uuid_module
+
+        for param, field in (('league', 'league_id'), ('season', 'season_id')):
+            value = self.request.GET.get(param)
+            if value:
+                try:
+                    queryset = queryset.filter(**{field: uuid_module.UUID(value)})
+                except ValueError:
+                    pass
 
         # Фильтр по туру — устойчив к переносам дат.
         tour = self.request.GET.get('tour')
-        if tour:
-            queryset = queryset.filter(tour=tour)
+        if tour and tour.isdigit():
+            queryset = queryset.filter(tour=int(tour))
 
         return queryset
 
@@ -126,7 +127,11 @@ class MatchListView(ListView):
         # Туры выбранного в фильтре сезона (без фильтра — активного).
         season_param = self.request.GET.get('season', '').strip()
         if season_param:
-            tours_season = Season.objects.filter(id=season_param).first()
+            import uuid as uuid_module
+            try:
+                tours_season = Season.objects.filter(id=uuid_module.UUID(season_param)).first()
+            except ValueError:
+                tours_season = None
         else:
             tours_season = Season.objects.filter(is_active=True).first()
         tours_qs = Match.objects.exclude(tour__isnull=True)
@@ -134,6 +139,20 @@ class MatchListView(ListView):
             tours_qs = tours_qs.filter(season=tours_season)
         context['tours'] = tours_qs.values_list('tour', flat=True).distinct().order_by('tour')
         context['now'] = timezone.now()
+
+        # Вкладки статуса вместо выпадающего списка; «Оценить» и «Мои оценки» — только вошедшим.
+        status_tabs = [
+            ('', 'Все', 'ti-list'),
+            ('live', 'Идут', 'ti-broadcast'),
+            ('scheduled', 'Предстоящие', 'ti-calendar-event'),
+            ('finished', 'Завершённые', 'ti-flag-3'),
+        ]
+        if self.request.user.is_authenticated:
+            status_tabs.insert(2, ('votable', 'Оценить', 'ti-star'))
+            status_tabs.append(('evaluated', 'Мои оценки', 'ti-circle-check'))
+        status_tabs += [('postponed', 'Перенесённые', 'ti-calendar-time'), ('cancelled', 'Отменённые', 'ti-ban')]
+        context['status_tabs'] = status_tabs
+        context['live_count'] = Match.objects.filter(status='live').count()
 
         # Данные карточек (прогноз, форма, H2H, мини-ДНК и т.д.) — одним bulk-вызовом
         # matches/card_services.py::attach_card_extras.
@@ -179,12 +198,19 @@ class MatchDetailView(DetailView):
         action_context = match_action_context(self.request, match)
 
         match_agg = getattr(match, 'aggregate', None)
+        # Пустой агрегат (голосов нет) — блок результатов не показываем, вместо «0,0».
+        if match_agg is not None and not match_agg.total_votes:
+            match_agg = None
+
+        # Пока идёт голосование, цифры видит только тот, кто уже оценил матч.
+        from aggregates.services import ratings_hidden_for
+        ratings_hidden = ratings_hidden_for(self.request.user, match)
         
         # Топ-5 игроков матча (только с достаточным числом голосов).
-        from aggregates.services import MIN_VOTES_FOR_DISPLAY
+        from aggregates.services import min_votes_for_display
 
         top_players = PlayerMatchAggregate.objects.filter(
-            match=match, total_votes__gte=MIN_VOTES_FOR_DISPLAY
+            match=match, total_votes__gte=min_votes_for_display()
         ).select_related(
             'player',
             'player__team'
@@ -192,7 +218,7 @@ class MatchDetailView(DetailView):
 
         # Худшие 3 — с тем же порогом голосов.
         worst_players = PlayerMatchAggregate.objects.filter(
-            match=match, total_votes__gte=MIN_VOTES_FOR_DISPLAY
+            match=match, total_votes__gte=min_votes_for_display()
         ).select_related(
             'player',
             'player__team'
@@ -229,25 +255,18 @@ class MatchDetailView(DetailView):
         away_team_evals = _team_evals_dict(match.away_team_id)
         
         coach_aggregates = match.coach_aggregates.select_related('coach').all()[:2]
+
+        if ratings_hidden:
+            match_agg = None
+            top_players, worst_players, coach_aggregates = [], [], []
+            home_team_evals = away_team_evals = _team_evals_dict(None)
         
         total_match_evals = MatchEvaluation.objects.filter(match=match).count()
         total_player_evals = PlayerEvaluation.objects.filter(match=match).count()
         total_context_evals = ContextEvaluation.objects.filter(match=match).count()
         
         # Составы: хозяева сначала.
-        lineups = MatchLineup.objects.filter(
-            match=match
-        ).prefetch_related(
-            'players__player',
-            'players__player__team'
-        ).annotate(
-            side_order=Case(
-                When(side='home', then=Value(0)),
-                When(side='away', then=Value(1)),
-                default=Value(2),
-                output_field=IntegerField(),
-            )
-        ).order_by('side_order')
+        lineups = lineups_with_side_order(match)
         
         # За кого болели — список нужен и шаблону, и build_match_dna.
         fan_support = list(ContextEvaluation.objects.filter(
@@ -274,7 +293,7 @@ class MatchDetailView(DetailView):
 
         from predictions.services import prediction_counts
 
-        referee_agg = match.referee_aggregates.first()
+        referee_agg = None if ratings_hidden else match.referee_aggregates.first()
         # Для консенсуса нужны сырые голоса MatchEvaluation.
         match_evaluations = list(MatchEvaluation.objects.filter(match=match).only('entertainment', 'tension', 'fairness'))
         # Ход матча — по всем событиям, а не по обрезанной ленте.
@@ -292,7 +311,8 @@ class MatchDetailView(DetailView):
         # Абсолютный URL карточки ДНК (для Web Share API).
         match_dna_share_url = (
             self.request.build_absolute_uri(reverse('core:match_dna_share_card', args=[match.id]))
-            if match_dna else ''
+            # Публичная карточка — только после закрытия голосования.
+            if match_dna and match.voting_open_until < timezone.now() else ''
         )
 
         # Статистика по team_id.
@@ -367,6 +387,7 @@ class MatchDetailView(DetailView):
         context.update(action_context)
         context.update({
             'match_aggregate': match_agg,
+            'ratings_hidden': ratings_hidden,
             'match_dna': match_dna,
             'match_dna_share_url': match_dna_share_url,
             'top_players': top_players,
@@ -470,6 +491,30 @@ def match_header_partial(request, match_id):
     context = match_action_context(request, match)
     context['match'] = match
     return render(request, 'matches/_match_header.html', context)
+
+
+def lineups_with_side_order(match):
+    """Составы матча, хозяева первыми."""
+    return MatchLineup.objects.filter(
+        match=match
+    ).prefetch_related(
+        'players__player',
+        'players__player__team'
+    ).annotate(
+        side_order=Case(
+            When(side='home', then=Value(0)),
+            When(side='away', then=Value(1)),
+            default=Value(2),
+            output_field=IntegerField(),
+        )
+    ).order_by('side_order')
+
+
+@require_http_methods(["GET"])
+def match_lineups_partial(request, match_id):
+    """Фоновая догрузка составов до старта матча."""
+    match = get_object_or_404(Match, id=match_id)
+    return render(request, 'matches/_lineups.html', {'match': match, 'lineups': lineups_with_side_order(match)})
 
 
 @require_http_methods(["GET"])

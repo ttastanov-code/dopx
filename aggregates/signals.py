@@ -1,6 +1,6 @@
 # aggregates/signals.py
 from django.core.cache import cache
-from django.db.models.signals import post_save
+from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 from django.utils import timezone
 from matches.models import Match
@@ -103,3 +103,13 @@ def on_match_voting_deadline_changed(sender, instance, created=False, update_fie
             trigger_aggregate_recalculation.delay(match_id)
         else:
             _schedule_recalculation(match_id, countdown=60)
+
+
+@receiver(post_delete, sender=PlayerEvaluation)
+@receiver(post_delete, sender=MatchEvaluation)
+@receiver(post_delete, sender=CoachEvaluation)
+@receiver(post_delete, sender=TeamEvaluation)
+@receiver(post_delete, sender=RefereeEvaluation)
+def on_evaluation_deleted(sender, instance, **kwargs):
+    """Удалённая оценка -> пересчёт (устаревшие агрегаты удалит сам пересчёт)."""
+    _schedule_recalculation(str(instance.match_id), countdown=30)

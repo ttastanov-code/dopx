@@ -3,7 +3,7 @@ from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.views.decorators.clickjacking import xframe_options_exempt
 
-from aggregates.services import CONFIDENT_VOTES_THRESHOLD, MIN_VOTES_FOR_DISPLAY
+from aggregates.services import CONFIDENT_VOTES_THRESHOLD, min_votes_for_display
 from players.positions import BEST_XI_SLOT_LABELS
 from season_squad.models import SeasonBestXI
 from season_squad.services import MIN_MATCHES_FOR_CANDIDATE, SHRINKAGE_C
@@ -67,16 +67,24 @@ def _best_xi_context(season_id):
         for name, codes in PITCH_ROWS
     ]
 
+    # Другие сезоны со сборной — для переключателя и архива.
+    other_seasons = list(
+        Season.objects.filter(best_xi__slots__content_type__isnull=False)
+        .exclude(pk=season.pk).select_related('league').distinct().order_by('-year')
+    )
+
     return {
         'season': season,
         'best_xi': best_xi,
+        'other_seasons': other_seasons,
+        'has_filled_slots': any(s.content_type_id for s in slots_by_code.values()),
         'pitch_rows': pitch_rows,
         'coach_card': _slot_to_card(slots_by_code.get('COACH'), 'COACH'),
         'referee_card': _slot_to_card(slots_by_code.get('REFEREE'), 'REFEREE'),
         # Методология — те же константы, что в services.py.
         'shrinkage_c': SHRINKAGE_C,
         'min_matches_for_candidate': MIN_MATCHES_FOR_CANDIDATE,
-        'min_votes_for_display': MIN_VOTES_FOR_DISPLAY,
+        'min_votes_for_display': min_votes_for_display(),
         'confident_votes_threshold': CONFIDENT_VOTES_THRESHOLD,
     }
 
@@ -102,6 +110,7 @@ def best_xi(request, season_id=None):
         f'style="border:none;border-radius:16px;overflow:hidden" '
         f'title="Сборная DOPX сезона {season.year} на DOPX"></iframe>'
     )
+    context['page_title'] = f"Сборная DOPX сезона {season.year} — {season.league.name}"
     return render(request, 'season_squad/best_xi.html', context)
 
 

@@ -1,6 +1,8 @@
 {% extends 'base.html' %}
 {% load static %}
 {% load match_extras %}
+{% load querystring_extras %}
+{% load ui_extras %}
 {% block content %}
 {# max-w-3xl — список не растягивается на широком экране. #}
 <div class="max-w-3xl mx-auto">
@@ -13,59 +15,45 @@
     <p class="opacity-60 text-sm md:text-base">Все матчи платформы с оценками болельщиков</p>
 </div>
 
-{# === ФИЛЬТРЫ === #}
-<div class="card bg-base-100 border border-base-300 mb-4 md:mb-6 px-2 sm:px-0">
-    <div class="card-body p-3 md:p-4">
-        <form method="get" class="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-4">
-            {# Статус #}
-            <select name="status" class="select select-bordered select-sm w-full sm:w-auto min-w-[140px]">
-                <option value="">Все статусы</option>
-                <option value="scheduled" {% if current_status == 'scheduled' %}selected{% endif %}>Запланированные</option>
-                <option value="live" {% if current_status == 'live' %}selected{% endif %}>Live</option>
-                <option value="finished" {% if current_status == 'finished' %}selected{% endif %}>Завершённые</option>
-                <option value="postponed" {% if current_status == 'postponed' %}selected{% endif %}>Перенесённые</option>
-                <option value="cancelled" {% if current_status == 'cancelled' %}selected{% endif %}>Отменённые</option>
-            </select>
-            
-            {# Лига #}
-            <select name="league" class="select select-bordered select-sm w-full sm:w-auto min-w-[140px]">
-                <option value="">Все лиги</option>
-                {% for league in leagues %}
-                <option value="{{ league.id }}" {% if current_league == league.id|stringformat:"s" %}selected{% endif %}>
-                    {{ league.name }}
-                </option>
-                {% endfor %}
-            </select>
-            
-            {# Сезон #}
-            <select name="season" class="select select-bordered select-sm w-full sm:w-auto min-w-[140px]">
-                <option value="">Все сезоны</option>
-                {% for season in seasons %}
-                <option value="{{ season.id }}" {% if current_season == season.id|stringformat:"s" %}selected{% endif %}>
-                    {{ season.year }}
-                </option>
-                {% endfor %}
-            </select>
-
-            {# Тур #}
-            {% if tours %}
-            <select name="tour" class="select select-bordered select-sm w-full sm:w-auto min-w-[120px]">
-                <option value="">Все туры</option>
-                {% for tour in tours %}
-                <option value="{{ tour }}" {% if current_tour == tour|stringformat:"s" %}selected{% endif %}>
-                    {{ tour }}-й тур
-                </option>
-                {% endfor %}
-            </select>
-            {% endif %}
-
-            {# Кнопка #}
-            <button type="submit" class="btn btn-primary btn-sm w-full sm:w-auto">
-                <i class="ti ti-search"></i>
-                <span class="hidden sm:inline">Найти</span>
-            </button>
-        </form>
-    </div>
+{# === ФИЛЬТРЫ: вкладки статуса + лига/сезон/тур, применяются сразу при выборе. Стили — css/ui.css. === #}
+<div class="mb-4 md:mb-6 px-2 sm:px-0">
+    <nav class="dx-chips" aria-label="Статус матчей">
+        {% for value, label, icon in status_tabs %}
+        <a href="?{% query_transform status=value %}" class="dx-chip{% if current_status == value %} is-active{% endif %}"
+           {% if current_status == value %}aria-current="page"{% endif %}>
+            <i class="ti {{ icon }}"></i>{{ label }}
+            {% if value == 'live' and live_count %}<span class="dx-chip__count dx-chip__count--live">{{ live_count }}</span>{% endif %}
+        </a>
+        {% endfor %}
+    </nav>
+    <form method="get" class="dx-filters">
+        {% if current_status %}<input type="hidden" name="status" value="{{ current_status }}">{% endif %}
+        <select name="league" class="select select-bordered select-sm" aria-label="Лига" onchange="this.form.requestSubmit()">
+            <option value="">Все лиги</option>
+            {% for league in leagues %}
+            <option value="{{ league.id }}" {% if current_league == league.id|stringformat:"s" %}selected{% endif %}>{{ league.name }}</option>
+            {% endfor %}
+        </select>
+        <select name="season" class="select select-bordered select-sm" aria-label="Сезон" onchange="this.form.requestSubmit()">
+            <option value="">Все сезоны</option>
+            {% for season in seasons %}
+            <option value="{{ season.id }}" {% if current_season == season.id|stringformat:"s" %}selected{% endif %}>{{ season.year }}</option>
+            {% endfor %}
+        </select>
+        {% if tours %}
+        <select name="tour" class="select select-bordered select-sm" aria-label="Тур" onchange="this.form.requestSubmit()">
+            <option value="">Все туры</option>
+            {% for tour in tours %}
+            <option value="{{ tour }}" {% if current_tour == tour|stringformat:"s" %}selected{% endif %}>{{ tour }}-й тур</option>
+            {% endfor %}
+        </select>
+        {% endif %}
+        {# Без JS фильтры применяются кнопкой. #}
+        <noscript><button type="submit" class="btn btn-primary btn-sm"><i class="ti ti-search"></i> Показать</button></noscript>
+        {% if current_league or current_season or current_tour %}
+        <a href="?{% query_transform league='' season='' tour='' %}" class="dx-filters__reset"><i class="ti ti-x"></i> Сбросить</a>
+        {% endif %}
+    </form>
 </div>
 
 {# === СПИСОК МАТЧЕЙ ПО ДНЯМ === #}
@@ -74,10 +62,11 @@
 <div class="space-y-4 md:space-y-6 px-2 sm:px-0">
     {% for group in date_groups %}
     <div>
-        <div class="flex items-center gap-2 mb-2 md:mb-3 px-1">
-            <i class="ti ti-calendar-event text-primary text-sm"></i>
-            <h3 class="font-bold text-sm md:text-base">{{ group.list.0.start_time|matchday_label }}</h3>
-            <span class="text-xs opacity-40">{{ group.grouper }}</span>
+        {# Липкий заголовок дня: «Сегодня · 13 сентября». #}
+        <div class="dx-dayhead">
+            <h3 class="dx-dayhead__label">{{ group.list.0.start_time|matchday_label }}</h3>
+            <span class="dx-dayhead__date">{{ group.list.0.start_time|matchday_date }}</span>
+            <span class="dx-dayhead__count">{{ group.list|length }} {{ group.list|length|ru_plural:"матч,матча,матчей" }}</span>
         </div>
         <div class="space-y-3 md:space-y-4">
         {% for match in group.list %}

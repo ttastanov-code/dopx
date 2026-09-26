@@ -12,12 +12,14 @@ from players.models import Player
 from teams.models import Team
 from evaluations.models import (
     ContextEvaluation,
+    EvaluationSession,
     PlayerEvaluation,
     MatchEvaluation,
     CoachEvaluation,
     TeamEvaluation,
     RefereeEvaluation
 )
+from core.management.seed_guard import ensure_seed_allowed
 
 User = get_user_model()
 
@@ -29,6 +31,7 @@ class Command(BaseCommand):
         parser.add_argument('--users', type=int, default=5, help='Количество тестовых пользователей')
 
     def handle(self, *args, **options):
+        ensure_seed_allowed()
         match_id = options['match_id']
         num_users = options['users']
         
@@ -89,6 +92,13 @@ class Command(BaseCommand):
                     'watched_type': watched_types[user_hash % 3],
                     'attended_stadium': user_hash % 4 == 0,
                 }
+            )
+            # В рейтинг идут только голоса завершённых сессий.
+            now = timezone.now()
+            session, _ = EvaluationSession.objects.get_or_create(user=user, match=match)
+            EvaluationSession.objects.filter(pk=session.pk).update(
+                status='completed', completed_at=now, started_at=now - timedelta(minutes=3),
+                trust_settled_at=now,
             )
 
             # Оценка матча

@@ -6,8 +6,8 @@ keep_value ('existing'/'new'), flag_id.
 <div class="rounded-lg border border-base-300 p-3 flex flex-col gap-2">
     <div class="flex items-center gap-2">
         {# .url только если фото есть — иначе ValueError. #}
-        {% if entry.player.photo %}
-        {% include 'components/_avatar.html' with photo_url=entry.player.photo.url name=entry.player.full_name size_classes='w-10 h-10 text-sm' %}
+        {% if entry.player.photo_display %}
+        {% include 'components/_avatar.html' with photo_url=entry.player.photo_display name=entry.player.full_name size_classes='w-10 h-10 text-sm' %}
         {% else %}
         {% include 'components/_avatar.html' with name=entry.player.full_name size_classes='w-10 h-10 text-sm' %}
         {% endif %}

@@ -16,12 +16,11 @@ class EvaluationPolicyError(Exception):
 
 
 def assert_voting_open(match: Match) -> None:
-    """Матч начат и голосование ещё открыто."""
-    now = timezone.now()
-    if now < match.start_time:
-        raise EvaluationPolicyError('Голосование откроется после начала матча')
-    if now > match.voting_open_until:
+    """Матч завершён и голосование ещё открыто — одно правило для сайта и API."""
+    if timezone.now() > match.voting_open_until:
         raise EvaluationPolicyError('Голосование для этого матча закрыто')
+    if match.status != 'finished':
+        raise EvaluationPolicyError('Голосование доступно только для завершённых матчей')
 
 
 def assert_context_exists(context_evaluation_exists: bool) -> None:

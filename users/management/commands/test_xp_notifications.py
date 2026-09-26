@@ -5,6 +5,7 @@ from django.utils import timezone
 from users.models import UserXP, UserBadge
 from notifications.models import Notification
 import logging
+from core.management.seed_guard import ensure_seed_allowed
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -19,6 +20,7 @@ class Command(BaseCommand):
         parser.add_argument('--send-notification', action='store_true', help='Отправить тестовое уведомление')
     
     def handle(self, *args, **options):
+        ensure_seed_allowed()
         username = options.get('username')
         xp_amount = options.get('xp_amount')
         create_badge = options.get('create_badge')

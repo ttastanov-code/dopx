@@ -377,3 +377,62 @@ def banners_queryset(zone: str = "", partner_id: str = ""):
     if partner_id:
         qs = qs.filter(partner_id=partner_id)
     return qs
+
+
+# ============================================================
+# «Требует внимания» на обзоре
+# ============================================================
+
+def attention_items(user) -> list[dict]:
+    """Незакрытые задачи staff по разделам, куда у пользователя есть доступ; только ненулевые."""
+    from datetime import timedelta
+
+    from django.urls import reverse
+    from django.utils import timezone
+
+    from parsers.models import NameVerificationSuggestion, ParserDiscrepancy
+    from players.models import PotentialDuplicatePlayer
+    from users.models import SuspiciousActivityFlag
+
+    from .access import user_can_access_section
+    from .models import ManagementCommandRun
+
+    open_statuses = ("new", "in_progress")
+    candidates = [
+        ("antifraud", "ti-shield-exclamation", "error", "Сигналы антифрода",
+         "Ждут решения: подтвердить или отклонить",
+         lambda: SuspiciousActivityFlag.objects.filter(status="pending").count(), "dashboard:antifraud"),
+        ("antifraud", "ti-message-report", "error", "Споры о рейтинге",
+         "Право на ответ — отвечаем в первую очередь",
+         lambda: ContactSubmission.objects.filter(category="dispute", status__in=open_statuses).count(),
+         "dashboard:antifraud"),
+        ("data_trust", "ti-flag", "warning", "Жалобы на данные матчей",
+         "Проверить первоисточник и поправить",
+         lambda: ContactSubmission.objects.filter(category="data_error", status__in=open_statuses).count(),
+         "dashboard:data_trust"),
+        ("data_trust", "ti-arrows-diff", "warning", "Расхождения импорта",
+         "Источник изменил счёт или статус завершённого матча",
+         lambda: ParserDiscrepancy.objects.filter(reviewed=False).count(), "dashboard:data_trust"),
+        ("names_review", "ti-sparkles", "info", "ФИО на проверке",
+         "Предложения ИИ по написанию имён",
+         lambda: NameVerificationSuggestion.objects.filter(status="pending_review").count(), "dashboard:names_review"),
+        ("duplicate_players", "ti-users", "info", "Возможные дубли игроков",
+         "Объединить или отклонить",
+         lambda: PotentialDuplicatePlayer.objects.filter(reviewed=False).count(), "dashboard:duplicate_players_review"),
+        ("scripts", "ti-terminal-2", "error", "Упавшие скрипты за сутки",
+         "Посмотреть вывод и перезапустить",
+         lambda: ManagementCommandRun.objects.filter(
+             status=ManagementCommandRun.Status.FAILED, created_at__gte=timezone.now() - timedelta(days=1),
+         ).count(), "dashboard:scripts"),
+    ]
+    items = []
+    for section, icon, tone, title, hint, count_fn, url_name in candidates:
+        if not user_can_access_section(user, section):
+            continue
+        count = count_fn()
+        if count:
+            items.append({
+                "icon": icon, "tone": tone, "title": title, "hint": hint,
+                "count": count, "url": reverse(url_name),
+            })
+    return items

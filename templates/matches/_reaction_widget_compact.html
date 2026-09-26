@@ -1,26 +1,21 @@
 {% comment %}
-Реакция на матч: Матч тура / Неожиданно / Скучно (hx-swap=outerHTML).
+Реакция на матч: Матч тура / Неожиданно / Скучно (hx-swap=outerHTML). Стили — css/ui.css (dx-react).
 Контекст: match, counts, my_reaction. Клик не всплывает к ссылке карточки.
-При total=0 — «—» вместо 0%.
+Проценты и заливка — только когда реакции уже есть.
 {% endcomment %}
-<div id="reaction-widget-{{ match.id }}"
-     class="mt-2 pt-2 border-t border-base-300"
-     onclick="event.stopPropagation()">
-    <div class="text-[9px] font-semibold opacity-50 mb-1">
-        {% if counts.total %}Мнение болельщиков{% else %}Оцените матч первым{% endif %}
-    </div>
-    <div class="grid grid-cols-3 gap-1 sm:gap-1.5">
+<div id="reaction-widget-{{ match.id }}" class="dx-react" onclick="event.stopPropagation()">
+    <span class="dx-react__label">{% if counts.total %}Мнение болельщиков{% else %}Как вам матч?{% endif %}</span>
+    <div class="dx-react__options">
     <button type="button"
             hx-post="{% url 'matches:react' match.id %}"
             hx-vals='{"reaction": "match_of_round"}'
             hx-target="#reaction-widget-{{ match.id }}"
             hx-swap="outerHTML"
             title="Один из лучших матчей тура"
-            class="flex flex-col items-center gap-0.5 py-1 px-1 rounded-lg border transition-all
-                   {% if my_reaction.reaction == 'match_of_round' %}border-success bg-success/10{% else %}border-base-300{% endif %}">
-        <i class="ti ti-trophy text-xs"></i>
-        <span class="text-[9px] font-semibold opacity-60 truncate max-w-full">Матч тура</span>
-        <span class="text-xs font-bold">{% if counts.total %}{{ counts.match_of_round_pct }}%{% else %}—{% endif %}</span>
+            class="dx-react__btn dx-react__btn--success{% if my_reaction.reaction == 'match_of_round' %} is-selected{% endif %}"
+            {% if counts.total %}style="--fill: {{ counts.match_of_round_pct }}%"{% endif %}
+            {% if my_reaction.reaction == 'match_of_round' %}aria-pressed="true"{% else %}aria-pressed="false"{% endif %}>
+        <i class="ti ti-trophy"></i><span>Матч тура</span>{% if counts.total %}<b>{{ counts.match_of_round_pct }}%</b>{% endif %}
     </button>
     <button type="button"
             hx-post="{% url 'matches:react' match.id %}"
@@ -28,11 +23,10 @@
             hx-target="#reaction-widget-{{ match.id }}"
             hx-swap="outerHTML"
             title="Результат стал неожиданностью"
-            class="flex flex-col items-center gap-0.5 py-1 px-1 rounded-lg border transition-all
-                   {% if my_reaction.reaction == 'upset' %}border-warning bg-warning/10{% else %}border-base-300{% endif %}">
-        <i class="ti ti-bolt text-xs"></i>
-        <span class="text-[9px] font-semibold opacity-60 truncate max-w-full">Неожиданно</span>
-        <span class="text-xs font-bold">{% if counts.total %}{{ counts.upset_pct }}%{% else %}—{% endif %}</span>
+            class="dx-react__btn dx-react__btn--warning{% if my_reaction.reaction == 'upset' %} is-selected{% endif %}"
+            {% if counts.total %}style="--fill: {{ counts.upset_pct }}%"{% endif %}
+            {% if my_reaction.reaction == 'upset' %}aria-pressed="true"{% else %}aria-pressed="false"{% endif %}>
+        <i class="ti ti-bolt"></i><span>Неожиданно</span>{% if counts.total %}<b>{{ counts.upset_pct }}%</b>{% endif %}
     </button>
     <button type="button"
             hx-post="{% url 'matches:react' match.id %}"
@@ -40,11 +34,10 @@
             hx-target="#reaction-widget-{{ match.id }}"
             hx-swap="outerHTML"
             title="Матч получился скучным"
-            class="flex flex-col items-center gap-0.5 py-1 px-1 rounded-lg border transition-all
-                   {% if my_reaction.reaction == 'boring' %}border-neutral bg-neutral/10{% else %}border-base-300{% endif %}">
-        <i class="ti ti-moon text-xs"></i>
-        <span class="text-[9px] font-semibold opacity-60 truncate max-w-full">Скучный</span>
-        <span class="text-xs font-bold">{% if counts.total %}{{ counts.boring_pct }}%{% else %}—{% endif %}</span>
+            class="dx-react__btn dx-react__btn--neutral{% if my_reaction.reaction == 'boring' %} is-selected{% endif %}"
+            {% if counts.total %}style="--fill: {{ counts.boring_pct }}%"{% endif %}
+            {% if my_reaction.reaction == 'boring' %}aria-pressed="true"{% else %}aria-pressed="false"{% endif %}>
+        <i class="ti ti-moon"></i><span>Скучный</span>{% if counts.total %}<b>{{ counts.boring_pct }}%</b>{% endif %}
     </button>
     </div>
 </div>

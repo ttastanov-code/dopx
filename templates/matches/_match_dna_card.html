@@ -1,3 +1,4 @@
+{% load ui_extras %}
 {% comment %}
 Карточка «ДНК матча». Включается дважды в matches/detail.html (мобильная и десктопная копии),
 видимость — через extra_class. Стили — .dna-* в static/css/match-detail.css.
@@ -108,7 +109,7 @@
             </div>
             <p class="text-xs mt-1.5 leading-snug">
                 <span class="font-semibold">Угадали {{ e.guessed_pct }}%</span>
-                <span class="opacity-60">из {{ e.total }} прогнозов · фаворит — {{ e.favorite_title }} ({{ e.favorite_pct }}%)</span>
+                <span class="opacity-60">из {{ e.total }} {{ e.total|ru_plural:"прогноза,прогнозов,прогнозов" }} · фаворит — {{ e.favorite_title }} ({{ e.favorite_pct }}%)</span>
             </p>
         </div>
         {% endif %}

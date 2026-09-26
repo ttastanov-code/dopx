@@ -17,7 +17,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from matches.models import Match
-
+from core.management.seed_guard import ensure_seed_allowed
 
 class Command(BaseCommand):
     help = (
@@ -51,6 +51,7 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        ensure_seed_allowed()
         match_id = options['match_id']
 
         if not match_id:

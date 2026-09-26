@@ -20,9 +20,45 @@ document.addEventListener('alpine:init', () => {
         },
     }));
 
+    // === Горизонтальная лента с кнопками прокрутки (css/ui.css, .dx-rail-wrap) ===
+    Alpine.data('railScroller', () => ({
+        canPrev: false,
+        canNext: false,
+        init() {
+            this.update();
+            this.$refs.rail.addEventListener('scroll', () => this.update(), { passive: true });
+            window.addEventListener('resize', () => this.update(), { passive: true });
+        },
+        update() {
+            const rail = this.$refs.rail;
+            this.canPrev = rail.scrollLeft > 4;
+            this.canNext = rail.scrollLeft + rail.clientWidth < rail.scrollWidth - 4;
+        },
+        scrollPrev() {
+            this.$refs.rail.scrollBy({ left: -this.$refs.rail.clientWidth * 0.8, behavior: 'smooth' });
+        },
+        scrollNext() {
+            this.$refs.rail.scrollBy({ left: this.$refs.rail.clientWidth * 0.8, behavior: 'smooth' });
+        },
+    }));
+
     // === Дублирующийся тост-блок flash-сообщений (base.html/base_auth.html) ===
+    // data-autohide — через сколько мс скрыть; наведение ставит таймер на паузу.
     Alpine.data('dismissible', () => ({
         show: true,
+        timer: null,
+        init() {
+            this.delay = Number(this.$el.dataset.autohide || 0);
+            this.start();
+        },
+        start() {
+            if (!this.delay) return;
+            clearTimeout(this.timer);
+            this.timer = setTimeout(() => { this.show = false; }, this.delay);
+        },
+        pause() {
+            clearTimeout(this.timer);
+        },
     }));
 
     // === Плашка cookie (components/_cookie_banner.html) ===

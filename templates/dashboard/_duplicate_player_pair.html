@@ -1,3 +1,4 @@
+{% load ui_extras %}
 {% comment %}
 Пара дублей. Контекст: pair {flag, existing, new}.
 id dup-pair-<flag.id> — цель hx-swap формы слияния/отклонения.
@@ -7,7 +8,7 @@ id dup-pair-<flag.id> — цель hx-swap формы слияния/откло�
         <div class="flex items-center justify-between mb-3">
             <span class="text-xs opacity-50">
                 <i class="ti ti-shirt-sport"></i> {{ pair.flag.team_label|default:"—" }}
-                <span class="opacity-30">·</span> флаг {{ pair.flag.created_at|timesince }} назад
+                <span class="opacity-30">·</span> флаг {{ pair.flag.created_at|ago }}
             </span>
         </div>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">

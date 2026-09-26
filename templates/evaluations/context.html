@@ -28,7 +28,7 @@
             </div>
 
             {# Начальные значения — в data-атрибутах. #}
-            <form method="post" action="{% url 'evaluations:context' match.id %}"
+            <form method="post" data-wizard-draft action="{% url 'evaluations:context' match.id %}"
                   class="space-y-6"
                   x-data="matchContextForm"
                   data-supported-team="{{ form.supported_team.value|default:'' }}"
