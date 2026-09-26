@@ -31,12 +31,19 @@ from aggregates.models import (
     TeamRatingCorrection,
 )
 from aggregates.services import (
+    USER_FLAG_SOURCES,
     apply_neutral_anchor,
+    build_allegiance,
     build_user_weight_map,
     calculate_std_dev,
     calculate_weighted_average,
+    coach_team_for_match,
+    countable_evaluations,
+    min_votes_for_display,
+    player_team_map_for_match,
     segment_evaluations_by_side,
     segment_evaluations_by_side_multi,
+    stability_index_for,
 )
 from evaluations.models import (
     CoachEvaluation,
@@ -111,7 +118,27 @@ REFEREE_AGGREGATE_UPDATE_FIELDS: tuple[str, ...] = (
 )
 
 
-@shared_task(bind=True, max_retries=3, rate_limit="10/m")
+MATCH_RECALC_ONLY_FIELDS = (
+    "id", "status", "start_time", "home_team_id", "away_team_id",
+    "home_coach_id", "away_coach_id", "referee_id",
+)
+
+
+def _load_match(match_id: str, task_name: str):
+    """(match_uuid, match) или (None, None), если id невалиден или матча нет."""
+    try:
+        match_uuid = uuid.UUID(match_id)
+    except (ValueError, AttributeError, TypeError):
+        logger.error("Invalid match_id passed to %s: %r", task_name, match_id)
+        return None, None
+    match = Match.objects.filter(id=match_uuid).only(*MATCH_RECALC_ONLY_FIELDS).first()
+    if not match:
+        logger.error("Match not found: %s", match_id)
+        return None, None
+    return match_uuid, match
+
+
+@shared_task(bind=True, max_retries=3, rate_limit="10/m", acks_late=True, reject_on_worker_lost=True)
 def recalculate_player_aggregates(self, match_id: str, apply_correction: bool = True) -> bool:
     """Пересчитывает агрегаты всех игроков матча одним batch-upsert.
 
@@ -119,32 +146,32 @@ def recalculate_player_aggregates(self, match_id: str, apply_correction: bool = 
     :param apply_correction: False — без авто-поправки (пересчёт истории).
     :return: False, если матч не найден или id невалиден.
     """
-    try:
-        match_uuid = uuid.UUID(match_id)
-    except (ValueError, AttributeError, TypeError):
-        logger.error("Invalid match_id passed to recalculate_player_aggregates: %r", match_id)
-        return False
-
-    match = Match.objects.filter(id=match_uuid).only(
-        "id", "status", "home_team_id", "away_team_id"
-    ).first()
+    match_uuid, match = _load_match(match_id, "recalculate_player_aggregates")
     if not match:
-        logger.error("Match not found: %s", match_id)
         return False
 
     logger.info("Starting player aggregate recalculation for match %s", match_id)
 
     evaluations = list(
-        PlayerEvaluation.objects.filter(match_id=match_uuid)
+        countable_evaluations(PlayerEvaluation.objects.filter(match_id=match_uuid), match_uuid)
         .select_related("user", "player")
-        .only("user_id", "player_id", "contribution", "risk", "potential", "player__team_id")
+        .only("user_id", "player_id", "contribution", "risk", "potential", "player__team_id", "user__trust_score")
     )
 
+    # Сущности без допустимых голосов — агрегат устарел.
+    stale_qs = PlayerMatchAggregate.objects.filter(match_id=match_uuid).exclude(
+        player_id__in={e.player_id for e in evaluations}
+    )
+    stale_qs.delete()
+
     if not evaluations:
-        logger.info("No player evaluations for match %s", match_id)
+        cache.delete(f"match_player_aggregates_{match_id}")
+        logger.info("No countable player evaluations for match %s", match_id)
         return True
 
     weight_map = build_user_weight_map(evaluations, match)
+    allegiance = build_allegiance({e.user_id for e in evaluations}, match)
+    team_by_player = player_team_map_for_match(match_uuid)
 
     # Группируем оценки по игроку одним проходом по списку.
     player_eval_map: dict[uuid.UUID, list[PlayerEvaluation]] = {}
@@ -152,6 +179,10 @@ def recalculate_player_aggregates(self, match_id: str, apply_correction: bool = 
         player_eval_map.setdefault(eval_obj.player_id, []).append(eval_obj)
 
     drama_index = _get_match_drama_index(match_id, match_uuid)  # вес считаем один раз на матч
+    corrections = (
+        dict(PlayerRatingCorrection.objects.filter(player_id__in=player_eval_map).values_list("player_id", "correction"))
+        if apply_correction else {}
+    )
 
     now = timezone.now()
     aggregates_to_upsert: list[PlayerMatchAggregate] = []
@@ -162,14 +193,12 @@ def recalculate_player_aggregates(self, match_id: str, apply_correction: bool = 
         avg_potential = calculate_weighted_average(player_evals, "potential", weight_map)
 
         # Разброс — по сырым голосам, без винзоризации.
-        contributions = [e.contribution for e in player_evals]
-        std_dev = calculate_std_dev(contributions)
-        stability_index = 1.0 / std_dev if std_dev > 0 else 10.0
+        stability_index = stability_index_for([e.contribution for e in player_evals])
 
-        player_team_id = player_evals[0].player.team_id
-        # contribution и risk сегментируем за один проход — risk тоже защищаем якорем.
+        # Команда игрока в этом матче (заявка), а не текущий клуб.
+        player_team_id = team_by_player.get(player_id) or player_evals[0].player.team_id
         segments = segment_evaluations_by_side_multi(
-            player_evals, ("contribution", "risk"), player_team_id, match
+            player_evals, ("contribution", "risk"), player_team_id, match, allegiance
         )
         own_fans_avg, rival_fans_avg, neutral_avg, own_n, rival_n, neutral_n = segments["contribution"]
         _, _, neutral_risk_avg, risk_own_n, risk_rival_n, risk_neutral_n = segments["risk"]
@@ -182,12 +211,8 @@ def recalculate_player_aggregates(self, match_id: str, apply_correction: bool = 
             avg_risk, neutral_risk_avg, risk_own_n, risk_rival_n, risk_neutral_n
         )
 
-        # Авто-поправка от детектора расхождения со статистикой.
-        # apply_correction=False — пересчёт истории без поправки.
-        player_correction = (PlayerRatingCorrection.objects.filter(player_id=player_id).values_list(
-            "correction", flat=True
-        ).first() or 0.0) if apply_correction else 0.0
-        # Сколько поправки реально применено (после клампа 1..10) — детектор её вычитает.
+        # Авто-поправка от детектора расхождения; сколько реально применено — после клампа 1..10.
+        player_correction = corrections.get(player_id) or 0.0
         player_correction_applied = 0.0
         if player_correction:
             corrected = max(1.0, min(10.0, performance_score + player_correction))
@@ -231,6 +256,8 @@ def recalculate_player_aggregates(self, match_id: str, apply_correction: bool = 
         )
 
     cache.delete(f"match_player_aggregates_{match_id}")
+    for player_id in player_eval_map:
+        cache.delete(f"player_aggregate_{player_id}_{match_id}")
 
     logger.info(
         "Upserted %d player aggregates for match %s in a single batch query (weighted+winsorized)",
@@ -241,42 +268,41 @@ def recalculate_player_aggregates(self, match_id: str, apply_correction: bool = 
 
 
 def _get_match_drama_index(match_id: str, match_uuid: uuid.UUID) -> float:
-    """drama_index матча из кэша или БД. Fallback 50.0 — середина шкалы 0..100."""
+    """drama_index матча из кэша или БД. Нет оценок матча — 50.0, середина шкалы 0..100."""
     cached = cache.get(f"match_aggregate_{match_id}")
     if cached:
         return cached.get("drama_index", 50.0)
-    match_agg = MatchAggregate.objects.filter(match_id=match_uuid).only("drama_index").first()
-    return match_agg.drama_index if match_agg else 50.0
+    match_agg = MatchAggregate.objects.filter(match_id=match_uuid).only("drama_index", "total_votes").first()
+    if not match_agg or not match_agg.total_votes:
+        return 50.0
+    return match_agg.drama_index
 
 
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=3, acks_late=True, reject_on_worker_lost=True)
 def recalculate_coach_aggregates(self, match_id: str) -> bool:
     """Пересчёт агрегатов тренеров матча (вес, винзоризация, сегментация)."""
-    try:
-        match_uuid = uuid.UUID(match_id)
-    except (ValueError, AttributeError, TypeError):
-        logger.error("Invalid match_id passed to recalculate_coach_aggregates: %r", match_id)
-        return False
-
-    match = Match.objects.filter(id=match_uuid).only(
-        "id", "home_team_id", "away_team_id"
-    ).first()
+    match_uuid, match = _load_match(match_id, "recalculate_coach_aggregates")
     if not match:
         return False
 
     evaluations = list(
-        CoachEvaluation.objects.filter(match_id=match_uuid)
+        countable_evaluations(CoachEvaluation.objects.filter(match_id=match_uuid), match_uuid)
         .select_related("user", "coach")
         .only(
             "user_id", "coach_id", "tactics", "substitutions",
-            "game_management", "impact", "coach__team_id",
+            "game_management", "impact", "coach__team_id", "user__trust_score",
         )
     )
+
+    CoachMatchAggregate.objects.filter(match_id=match_uuid).exclude(
+        coach_id__in={e.coach_id for e in evaluations}
+    ).delete()
 
     if not evaluations:
         return True
 
     weight_map = build_user_weight_map(evaluations, match)
+    allegiance = build_allegiance({e.user_id for e in evaluations}, match)
 
     coach_eval_map: dict[uuid.UUID, list[CoachEvaluation]] = {}
     for eval_obj in evaluations:
@@ -291,13 +317,15 @@ def recalculate_coach_aggregates(self, match_id: str) -> bool:
         pooled_management = calculate_weighted_average(coach_evals, "game_management", weight_map)
         pooled_impact = calculate_weighted_average(coach_evals, "impact", weight_map)
 
-        coach_team_id = coach_evals[0].coach.team_id
+        # Команда тренера в этом матче (home_coach/away_coach), а не текущая.
+        coach_team_id = coach_team_for_match(coach_evals[0].coach, match)
         # Номинации читают avg_* напрямую, поэтому якорим каждое поле отдельно.
         segments = segment_evaluations_by_side_multi(
             coach_evals,
             ("average_score", "tactics", "substitutions", "game_management", "impact"),
             coach_team_id,
             match,
+            allegiance,
         )
         own_fans_avg, rival_fans_avg, neutral_avg, _, _, _ = segments["average_score"]
 
@@ -345,38 +373,40 @@ def recalculate_coach_aggregates(self, match_id: str) -> bool:
     return True
 
 
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=3, acks_late=True, reject_on_worker_lost=True)
 def recalculate_team_aggregates(self, match_id: str, apply_correction: bool = True) -> bool:
     """Пересчёт агрегатов команд матча.
 
     :param apply_correction: False — без авто-поправки (пересчёт истории).
     """
-    try:
-        match_uuid = uuid.UUID(match_id)
-    except (ValueError, AttributeError, TypeError):
-        logger.error("Invalid match_id passed to recalculate_team_aggregates: %r", match_id)
-        return False
-
-    match = Match.objects.filter(id=match_uuid).only(
-        "id", "home_team_id", "away_team_id"
-    ).first()
+    match_uuid, match = _load_match(match_id, "recalculate_team_aggregates")
     if not match:
         return False
 
     evaluations = list(
-        TeamEvaluation.objects.filter(match_id=match_uuid)
+        countable_evaluations(TeamEvaluation.objects.filter(match_id=match_uuid), match_uuid)
         .select_related("user", "team")
-        .only("user_id", "team_id", "tactics", "effort", "organization", "mentality")
+        .only("user_id", "team_id", "tactics", "effort", "organization", "mentality", "user__trust_score")
     )
+
+    TeamMatchAggregate.objects.filter(match_id=match_uuid).exclude(
+        team_id__in={e.team_id for e in evaluations}
+    ).delete()
 
     if not evaluations:
         return True
 
     weight_map = build_user_weight_map(evaluations, match)
+    allegiance = build_allegiance({e.user_id for e in evaluations}, match)
 
     team_eval_map: dict[uuid.UUID, list[TeamEvaluation]] = {}
     for eval_obj in evaluations:
         team_eval_map.setdefault(eval_obj.team_id, []).append(eval_obj)
+
+    corrections = (
+        dict(TeamRatingCorrection.objects.filter(team_id__in=team_eval_map).values_list("team_id", "correction"))
+        if apply_correction else {}
+    )
 
     now = timezone.now()
     aggregates_to_upsert: list[TeamMatchAggregate] = []
@@ -390,7 +420,7 @@ def recalculate_team_aggregates(self, match_id: str, apply_correction: bool = Tr
         pooled_performance_score = (avg_tactics + avg_effort + avg_organization + avg_mentality) / 4
 
         own_fans_avg, rival_fans_avg, neutral_avg, own_n, rival_n, neutral_n = (
-            segment_evaluations_by_side(team_evals, "average_score", team_id, match)
+            segment_evaluations_by_side(team_evals, "average_score", team_id, match, allegiance)
         )
         # Подтягиваем к нейтральному якорю при высокой доле пристрастных голосов.
         performance_score = apply_neutral_anchor(
@@ -398,9 +428,7 @@ def recalculate_team_aggregates(self, match_id: str, apply_correction: bool = Tr
         )
 
         # Авто-поправка от детектора расхождения (ограничена диапазоном 1..10).
-        correction = (TeamRatingCorrection.objects.filter(team_id=team_id).values_list(
-            "correction", flat=True
-        ).first() or 0.0) if apply_correction else 0.0
+        correction = corrections.get(team_id) or 0.0
         team_correction_applied = 0.0
         if correction:
             corrected = max(1.0, min(10.0, performance_score + correction))
@@ -442,62 +470,79 @@ def recalculate_team_aggregates(self, match_id: str, apply_correction: bool = Tr
     return True
 
 
-@shared_task(bind=True, max_retries=3)
+def referee_performance_formula(decision_quality: float, fairness: float, influence: float) -> float:
+    """0.6*decision_quality + 0.3*fairness + 0.1*(10 - influence/10). influence — шкала 0..100."""
+    return 0.6 * decision_quality + 0.3 * fairness + 0.1 * (10 - influence / 10)
+
+
+@shared_task(bind=True, max_retries=3, acks_late=True, reject_on_worker_lost=True)
 def recalculate_referee_aggregates(self, match_id: str) -> bool:
     """Пересчёт агрегата судейства матча.
 
-    Формула: 0.6*decision_quality + 0.3*fairness + 0.1*(10 - influence/10).
-    Сегментация по фанатам хозяев/гостей/нейтральным.
+    Каждая шкала (решения, влияние, справедливость) якорится к своим нейтралам отдельно,
+    потом собирается формулой referee_performance_formula.
     """
-    try:
-        match_uuid = uuid.UUID(match_id)
-    except (ValueError, AttributeError, TypeError):
-        logger.error("Invalid match_id passed to recalculate_referee_aggregates: %r", match_id)
+    match_uuid, match = _load_match(match_id, "recalculate_referee_aggregates")
+    if not match:
         return False
 
-    match = Match.objects.filter(id=match_uuid).only(
-        "id", "referee_id", "home_team_id", "away_team_id"
-    ).first()
-    if not match or not match.referee_id:
+    # Агрегат другого судьи (судью матча поменяли) — устарел.
+    stale_qs = RefereeMatchAggregate.objects.filter(match_id=match_uuid)
+    if match.referee_id:
+        stale_qs = stale_qs.exclude(referee_id=match.referee_id)
+    stale_qs.delete()
+    if not match.referee_id:
         return True  # у матча нет судьи
 
     referee_evals = list(
-        RefereeEvaluation.objects.filter(match_id=match_uuid)
+        countable_evaluations(RefereeEvaluation.objects.filter(match_id=match_uuid), match_uuid)
         .select_related("user")
-        .only("user_id", "influence_score", "decision_quality")
+        .only("user_id", "influence_score", "decision_quality", "user__trust_score")
     )
     if not referee_evals:
+        RefereeMatchAggregate.objects.filter(match_id=match_uuid).delete()
         return True
 
     weight_map = build_user_weight_map(referee_evals, match)
 
-    avg_influence = calculate_weighted_average(referee_evals, "influence_score", weight_map)
-    avg_decision_quality = calculate_weighted_average(referee_evals, "decision_quality", weight_map)
-
     # fairness берём из MatchEvaluation со своим weight_map.
     match_evals = list(
-        MatchEvaluation.objects.filter(match_id=match_uuid)
+        countable_evaluations(MatchEvaluation.objects.filter(match_id=match_uuid), match_uuid)
         .select_related("user")
-        .only("user_id", "fairness")
+        .only("user_id", "fairness", "user__trust_score")
     )
+    allegiance = build_allegiance({e.user_id for e in referee_evals} | {e.user_id for e in match_evals}, match)
+
+    # «Свои» для судьи — болельщики хозяев.
+    ref_segments = segment_evaluations_by_side_multi(
+        referee_evals, ("decision_quality", "influence_score"), match.home_team_id, match, allegiance
+    )
+
+    def _anchor(pooled_value: float, segment) -> float:
+        _, _, neutral_value, home_n, away_n, neutral_n = segment
+        return apply_neutral_anchor(pooled_value, neutral_value, home_n, away_n, neutral_n)
+
+    avg_influence = _anchor(
+        calculate_weighted_average(referee_evals, "influence_score", weight_map), ref_segments["influence_score"]
+    )
+    avg_decision_quality = _anchor(
+        calculate_weighted_average(referee_evals, "decision_quality", weight_map), ref_segments["decision_quality"]
+    )
+
     if match_evals:
         fairness_weight_map = build_user_weight_map(match_evals, match)
-        avg_fairness = calculate_weighted_average(match_evals, "fairness", fairness_weight_map)
+        fairness_segment = segment_evaluations_by_side(
+            match_evals, "fairness", match.home_team_id, match, allegiance
+        )
+        avg_fairness = _anchor(
+            calculate_weighted_average(match_evals, "fairness", fairness_weight_map), fairness_segment
+        )
     else:
         # Нет оценок fairness — подставляем decision_quality.
         avg_fairness = avg_decision_quality
 
-    pooled_performance_score = (
-        0.6 * avg_decision_quality + 0.3 * avg_fairness + 0.1 * (10 - avg_influence / 10)
-    )
-
-    home_fans_avg, away_fans_avg, neutral_avg, home_n, away_n, neutral_n = (
-        segment_evaluations_by_side(referee_evals, "decision_quality", match.home_team_id, match)
-    )
-    # Нейтральный якорь: гасит перекос и фанатов хозяев, и гостей.
-    performance_score = apply_neutral_anchor(
-        pooled_performance_score, neutral_avg, home_n, away_n, neutral_n
-    )
+    performance_score = referee_performance_formula(avg_decision_quality, avg_fairness, avg_influence)
+    home_fans_avg, away_fans_avg, neutral_avg = ref_segments["decision_quality"][:3]
 
     now = timezone.now()
     RefereeMatchAggregate.objects.update_or_create(
@@ -520,25 +565,17 @@ def recalculate_referee_aggregates(self, match_id: str) -> bool:
     return True
 
 
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=3, acks_late=True, reject_on_worker_lost=True)
 def recalculate_match_aggregate(self, match_id: str) -> bool:
     """Пересчёт общего агрегата матча (с весами пользователей, без сегментации)."""
-    try:
-        match_uuid = uuid.UUID(match_id)
-    except (ValueError, AttributeError, TypeError):
-        logger.error("Invalid match_id passed to recalculate_match_aggregate: %r", match_id)
-        return False
-
-    match = Match.objects.filter(id=match_uuid).only(
-        "id", "home_team_id", "away_team_id"
-    ).first()
+    match_uuid, match = _load_match(match_id, "recalculate_match_aggregate")
     if not match:
         return False
 
     evaluations = list(
-        MatchEvaluation.objects.filter(match_id=match_uuid)
+        countable_evaluations(MatchEvaluation.objects.filter(match_id=match_uuid), match_uuid)
         .select_related("user")
-        .only("user_id", "entertainment", "tension", "fairness", "turning_point")
+        .only("user_id", "entertainment", "tension", "fairness", "turning_point", "user__trust_score")
     )
 
     if not evaluations:
@@ -553,6 +590,8 @@ def recalculate_match_aggregate(self, match_id: str) -> bool:
                 "drama_index": 0.0,
             },
         )
+        cache.delete(f"match_aggregate_{match_id}")
+        recalculate_player_aggregates.delay(match_id)
         return True
 
     weight_map = build_user_weight_map(evaluations, match)
@@ -590,7 +629,7 @@ def recalculate_match_aggregate(self, match_id: str) -> bool:
     return True
 
 
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=3, acks_late=True, reject_on_worker_lost=True)
 def recalculate_all_aggregates_for_match(self, match_id: str) -> bool:
     """Полный пересчёт всех агрегатов матча: Match(→Player) / Coach / Team / Referee."""
     logger.info("Starting full aggregate recalculation for match %s", match_id)
@@ -600,6 +639,47 @@ def recalculate_all_aggregates_for_match(self, match_id: str) -> bool:
     recalculate_referee_aggregates.delay(match_id)
     logger.info("Queued aggregate recalculation tasks for match %s", match_id)
     return True
+
+
+def recalculate_match_now(match_id: str) -> None:
+    """Синхронный полный пересчёт одного матча (без очереди): для действий модератора и чистки."""
+    match_id = str(match_id)
+    recalculate_match_aggregate.run(match_id)
+    recalculate_player_aggregates.run(match_id)
+    recalculate_team_aggregates.run(match_id)
+    recalculate_coach_aggregates.run(match_id)
+    recalculate_referee_aggregates.run(match_id)
+
+
+def user_evaluated_match_ids(user_id) -> set:
+    """Все матчи, где у пользователя есть хоть одна оценка."""
+    match_ids: set = set()
+    for model in (ContextEvaluation, PlayerEvaluation, TeamEvaluation, CoachEvaluation,
+                  RefereeEvaluation, MatchEvaluation):
+        match_ids.update(model.objects.filter(user_id=user_id).values_list("match_id", flat=True).distinct())
+    return match_ids
+
+
+@shared_task
+def recalculate_matches_for_user(user_id: str, match_id: str | None = None) -> int:
+    """Пересчёт рейтингов после бана/разбана или решения по флагу пользователя.
+    match_id — только этот матч, иначе все матчи с его оценками.
+    """
+    match_ids = {match_id} if match_id else user_evaluated_match_ids(user_id)
+    for mid in match_ids:
+        recalculate_all_aggregates_for_match.delay(str(mid))
+    return len(match_ids)
+
+
+def schedule_recalculation_for_flags(flags) -> None:
+    """После решения модератора по флагам пользователей — пересчитать затронутые матчи."""
+    for flag in flags:
+        if not flag.user_id or flag.source not in USER_FLAG_SOURCES:
+            continue
+        transaction.on_commit(
+            lambda uid=str(flag.user_id), mid=(str(flag.match_id) if flag.match_id else None):
+            recalculate_matches_for_user.delay(uid, mid)
+        )
 
 
 @shared_task
@@ -632,7 +712,7 @@ def cleanup_old_sessions() -> bool:
     return True
 
 
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=3, acks_late=True, reject_on_worker_lost=True)
 def trigger_aggregate_recalculation(self, match_id: str) -> bool:
     """Триггер пересчёта агрегатов, используется из aggregates/signals.py."""
     try:
@@ -665,16 +745,20 @@ def recalculate_season_standings(season_id: int | None = None) -> dict:
 
 def _recalculate_standings_for_season(season: Season) -> dict:
     """Пересчёт турнирной таблицы одного сезона одним запросом по всем матчам.
-    Голы/результат считаются только если счёт не NULL.
+    Матч без счёта в таблицу не идёт (иначе засчитался бы поражением обеим командам).
     """
     season_id = season.id
-    teams = list(Team.objects.filter(teamseason__season=season, is_active=True))
+    # Прошлый сезон — все участники: выбывшую/неактивную команду из истории не выкидываем.
+    team_qs = Team.objects.filter(teamseason__season=season)
+    if season.is_active:
+        team_qs = team_qs.filter(is_active=True)
+    teams = list(team_qs.distinct())
     team_ids = {team.id for team in teams}
 
     with transaction.atomic():
-        matches_qs = Match.objects.filter(season=season, status="finished").values(
-            "home_team_id", "away_team_id", "home_score", "away_score"
-        )
+        matches_qs = Match.objects.filter(
+            season=season, status="finished", home_score__isnull=False, away_score__isnull=False,
+        ).values("home_team_id", "away_team_id", "home_score", "away_score")
 
         stats_by_team = {
             team_id: {"played": 0, "wins": 0, "draws": 0, "goals_scored": 0, "goals_conceded": 0}
@@ -682,36 +766,22 @@ def _recalculate_standings_for_season(season: Season) -> dict:
         }
 
         for m in matches_qs:
-            home_id = m["home_team_id"]
-            away_id = m["away_team_id"]
             home_score = m["home_score"]
             away_score = m["away_score"]
-
-            if home_id in stats_by_team:
-                s = stats_by_team[home_id]
+            for team_id, scored, conceded in (
+                (m["home_team_id"], home_score, away_score),
+                (m["away_team_id"], away_score, home_score),
+            ):
+                s = stats_by_team.get(team_id)
+                if s is None:
+                    continue
                 s["played"] += 1
-                if home_score is not None:
-                    s["goals_scored"] += home_score
-                if away_score is not None:
-                    s["goals_conceded"] += away_score
-                if home_score is not None and away_score is not None:
-                    if home_score > away_score:
-                        s["wins"] += 1
-                    elif home_score == away_score:
-                        s["draws"] += 1
-
-            if away_id in stats_by_team:
-                s = stats_by_team[away_id]
-                s["played"] += 1
-                if away_score is not None:
-                    s["goals_scored"] += away_score
-                if home_score is not None:
-                    s["goals_conceded"] += home_score
-                if home_score is not None and away_score is not None:
-                    if away_score > home_score:
-                        s["wins"] += 1
-                    elif away_score == home_score:
-                        s["draws"] += 1
+                s["goals_scored"] += scored
+                s["goals_conceded"] += conceded
+                if scored > conceded:
+                    s["wins"] += 1
+                elif scored == conceded:
+                    s["draws"] += 1
 
         for team in teams:
             s = stats_by_team[team.id]
@@ -1053,7 +1123,10 @@ def _check_team_stats_divergence(team_id, content_type, SuspiciousActivityFlag) 
 
     fetch_limit = max(STATS_DIVERGENCE_WINDOW_MATCHES, STATS_DIVERGENCE_BASELINE_MIN_MATCHES) * 3
     aggregates = list(
-        TeamMatchAggregate.objects.filter(team_id=team_id, match__status="finished")
+        # Матчи с малым числом голосов — шум, а не сигнал.
+        TeamMatchAggregate.objects.filter(
+            team_id=team_id, match__status="finished", total_votes__gte=min_votes_for_display(),
+        )
         .select_related("match")
         .order_by("-match__start_time")[:fetch_limit]
     )
@@ -1306,7 +1379,9 @@ def _check_player_stats_divergence(player_id, content_type, SuspiciousActivityFl
 
     fetch_limit = max(PLAYER_STATS_DIVERGENCE_WINDOW_MATCHES, PLAYER_STATS_DIVERGENCE_BASELINE_MIN_MATCHES) * 3
     aggregates = list(
-        PlayerMatchAggregate.objects.filter(player_id=player_id, match__status="finished")
+        PlayerMatchAggregate.objects.filter(
+            player_id=player_id, match__status="finished", total_votes__gte=min_votes_for_display(),
+        )
         .select_related("match")
         .order_by("-match__start_time")[:fetch_limit]
     )
@@ -1451,7 +1526,9 @@ def _check_coach_stats_divergence(coach_id, content_type, SuspiciousActivityFlag
 
     fetch_limit = (COACH_STATS_DIVERGENCE_WINDOW_MATCHES + COACH_STATS_DIVERGENCE_BASELINE_MIN_MATCHES) * 2
     aggregates = [
-        a for a in CoachMatchAggregate.objects.filter(coach_id=coach_id, match__status="finished", total_votes__gt=0)
+        a for a in CoachMatchAggregate.objects.filter(
+            coach_id=coach_id, match__status="finished", total_votes__gte=min_votes_for_display(),
+        )
         .select_related("match").order_by("-match__start_time")[:fetch_limit]
         # Берём только матчи текущей команды тренера.
         if coach.team_id in (a.match.home_team_id, a.match.away_team_id)
@@ -1574,10 +1651,30 @@ def detect_referee_vote_spikes_task() -> int:
     return flagged
 
 
+def strip_applied_corrections(model, entity_field: str, entity_ids) -> int:
+    """Убирает уже вшитую авто-поправку из агрегатов сущностей (после «Отклонить»)."""
+    updated = 0
+    for agg in model.objects.filter(**{f"{entity_field}__in": entity_ids}).exclude(rating_correction_applied=0):
+        applied = agg.rating_correction_applied or 0.0
+        old_score = agg.performance_score
+        agg.performance_score = round(old_score - applied, 2)
+        fields = ["performance_score", "rating_correction_applied", "updated_at"]
+        if model is PlayerMatchAggregate:
+            agg.maturity_score = round(agg.maturity_score - applied, 2)
+            # clutch пропорционален performance_score.
+            if old_score:
+                agg.clutch_index = round(agg.clutch_index * agg.performance_score / old_score, 2)
+            fields += ["maturity_score", "clutch_index"]
+        agg.rating_correction_applied = 0.0
+        agg.save(update_fields=fields)
+        updated += 1
+    return updated
+
+
 def apply_divergence_dismissal(flags) -> None:
     """Последствия «Отклонить» для сигналов расхождения — общая логика для админки и дашборда.
 
-    Игрок/команда: поправка обнуляется, проверка на паузе.
+    Игрок/команда: поправка обнуляется (и в прошлых матчах), проверка на паузе.
     Тренер: поправки нет, пауза считается по дате отклонённого флага.
     """
     from aggregates.models import PlayerRatingCorrection, TeamRatingCorrection
@@ -1596,8 +1693,11 @@ def apply_divergence_dismissal(flags) -> None:
             correction=0.0, last_pattern="",
             suppressed_until=now + timedelta(days=STATS_DIVERGENCE_DISMISS_COOLDOWN_DAYS),
         )
+        # Ложное срабатывание — поправку снимаем и с уже посчитанных матчей.
+        strip_applied_corrections(TeamMatchAggregate, "team_id", team_ids)
     if player_ids:
         PlayerRatingCorrection.objects.filter(player_id__in=player_ids).update(
             correction=0.0, last_pattern="",
             suppressed_until=now + timedelta(days=PLAYER_STATS_DIVERGENCE_DISMISS_COOLDOWN_DAYS),
         )
+        strip_applied_corrections(PlayerMatchAggregate, "player_id", player_ids)

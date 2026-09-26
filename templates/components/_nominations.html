@@ -1,116 +1,42 @@
+{% load ui_extras %}
 {% comment %}
-Номинации сезона (главная и страница лиги).
-Контекст: nominations — список dict (может быть пустым).
-Стили встроены — цвета через var(--color-*).
+Номинации сезона по категориям: в панели сначала лучшие, потом антирекорды.
+Контекст: nominations, nom_season (опц.), nom_more_url (опц.). Стили — css/ui.css (dx-noms).
 {% endcomment %}
-<style>
-    .nom-card {
-        position: relative;
-        overflow: hidden;
-        isolation: isolate;
-        display: block;
-        border-radius: 1.25rem;
-        background: var(--color-base-100);
-        border: 1px solid var(--color-base-300);
-        transition: transform .35s cubic-bezier(.16,1,.3,1),
-                    box-shadow .35s cubic-bezier(.16,1,.3,1),
-                    border-color .35s ease;
-        animation: nom-rise .6s cubic-bezier(.16,1,.3,1) backwards;
-    }
-    .nom-card:hover, .nom-card:focus-visible {
-        transform: translateY(-6px);
-        box-shadow: 0 24px 48px -16px rgba(0,0,0,.28);
-        border-color: color-mix(in oklab, var(--nom-accent, var(--color-primary)) 45%, var(--color-base-300));
-    }
-    .nom-card:focus-visible {
-        outline: 2px solid var(--nom-accent, var(--color-primary));
-        outline-offset: 3px;
-    }
-    .nom-positive { --nom-accent: var(--color-success); }
-    .nom-negative { --nom-accent: var(--color-error); }
-    .nom-neutral  { --nom-accent: var(--color-info); }
-
-    .nom-glow {
-        position: absolute;
-        top: -45%;
-        right: -25%;
-        width: 70%;
-        padding-bottom: 70%;
-        border-radius: 9999px;
-        background: var(--nom-accent, var(--color-primary));
-        filter: blur(44px);
-        opacity: .16;
-        transition: opacity .4s ease, transform .5s cubic-bezier(.16,1,.3,1);
-        pointer-events: none;
-        z-index: 0;
-    }
-    .nom-card:hover .nom-glow { opacity: .32; transform: scale(1.15); }
-
-    .nom-icon-orb {
-        background: color-mix(in oklab, var(--nom-accent, var(--color-primary)) 15%, transparent);
-        color: var(--nom-accent, var(--color-primary));
-        border: 1px solid color-mix(in oklab, var(--nom-accent, var(--color-primary)) 32%, transparent);
-        transition: transform .35s cubic-bezier(.16,1,.3,1);
-    }
-    .nom-card:hover .nom-icon-orb { transform: scale(1.1) rotate(-4deg); }
-
-    .nom-value {
-        font-weight: 900;
-        letter-spacing: -0.03em;
-        background: linear-gradient(135deg,
-            var(--nom-accent, var(--color-primary)),
-            color-mix(in oklab, var(--nom-accent, var(--color-primary)) 55%, white 45%));
-        -webkit-background-clip: text;
-        background-clip: text;
-        color: transparent;
-    }
-
-    @keyframes nom-rise {
-        from { opacity: 0; transform: translateY(16px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
-    @media (prefers-reduced-motion: reduce) {
-        .nom-card { animation: none !important; opacity: 1; transform: none; }
-        .nom-card, .nom-glow, .nom-icon-orb { transition: none !important; }
-    }
-</style>
-
-<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5">
-    {% for nom in nominations %}
-    <a href="{% url nom.entity_url_name nom.entity_id %}"
-       class="nom-card p-4 md:p-5
-              {% if nom.sentiment == 'positive' %}nom-positive
-              {% elif nom.sentiment == 'negative' %}nom-negative
-              {% else %}nom-neutral{% endif %}"
-       style="animation-delay: {% widthratio forloop.counter0 1 60 %}ms;">
-        <div class="nom-glow"></div>
-        <div class="relative" style="z-index: 1;">
-            <div class="flex items-start justify-between gap-3 mb-5">
-                <span class="text-[10px] font-bold uppercase tracking-[0.15em] opacity-50 pt-2">
-                    {% if nom.entity_kind == 'referee' %}Судья
-                    {% elif nom.entity_kind == 'team' %}Команда
-                    {% elif nom.entity_kind == 'coach' %}Тренер
-                    {% elif nom.entity_kind == 'player' %}Игрок
-                    {% elif nom.entity_kind == 'match' %}Матч
-                    {% else %}{{ nom.entity_kind }}{% endif %}
-                </span>
-                <div class="nom-icon-orb w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0">
-                    <i class="ti {{ nom.icon }} text-xl"></i>
-                </div>
-            </div>
-
-            <div class="nom-value text-4xl md:text-5xl leading-none mb-3">{{ nom.value_label }}</div>
-
-            <h4 class="font-bold text-sm md:text-base mb-1 leading-tight">{{ nom.title }}</h4>
-            <p class="text-xs opacity-60 leading-snug mb-4">{{ nom.subtitle }}</p>
-
-            <div class="flex items-center justify-between gap-2 pt-3 border-t border-base-300/60">
-                <span class="text-sm font-semibold truncate">{{ nom.entity_name }}</span>
-                <span class="text-[10px] opacity-50 flex-shrink-0 flex items-center gap-1">
-                    <i class="ti ti-users"></i>{{ nom.votes }}
-                </span>
-            </div>
+<section class="dx-noms" aria-labelledby="noms-title">
+    <header class="dx-noms__head">
+        <div class="min-w-0">
+            <h2 id="noms-title" class="dx-noms__title">Номинации сезона{% if nom_season %} <span class="dx-noms__season">{{ nom_season }}</span>{% endif %}</h2>
+            <p class="dx-noms__legend">
+                <span class="dx-noms__key dx-noms__key--best"><i class="ti ti-trophy"></i> лучшие</span>
+                <span class="dx-noms__key dx-noms__key--worst"><i class="ti ti-trending-down"></i> антирекорды</span>
+                <span class="dx-noms__note">по оценкам болельщиков</span>
+            </p>
         </div>
-    </a>
-    {% endfor %}
-</div>
+        {% if nom_more_url %}<a href="{{ nom_more_url }}" class="dx-noms__more">По лигам <i class="ti ti-chevron-right"></i></a>{% endif %}
+    </header>
+
+    <div class="dx-noms__grid">
+        {% for group in nominations|nomination_groups %}
+        <div class="dx-noms__cat">
+            <div class="dx-noms__cat-head"><i class="ti {{ group.icon }}"></i> {{ group.title }}</div>
+            {% for nom in group.items %}
+            <a href="{% url nom.entity_url_name nom.entity_id %}" class="dx-nom {% if nom.sentiment == 'negative' %}is-worst{% else %}is-best{% endif %}" title="{{ nom.subtitle }} · {{ nom.votes }} {{ nom.votes|ru_plural:'голос,голоса,голосов' }}">
+                <span class="dx-nom__ava{% if nom.images|length > 1 %} dx-nom__ava--pair{% endif %}">
+                    {% for img in nom.images %}<img src="{{ img }}" alt="" loading="lazy">{% empty %}<span class="dx-nom__initials">{{ nom.initials|default:"?" }}</span>{% endfor %}
+                    <span class="dx-nom__badge"><i class="ti {{ nom.icon }}"></i></span>
+                </span>
+                <span class="dx-nom__text">
+                    <span class="dx-nom__award">{{ nom.title }}</span>
+                    <span class="dx-nom__name">{{ nom.entity_name }}</span>
+                </span>
+                <span class="dx-nom__score">
+                    <b>{{ nom.value|default:nom.value_label }}</b>{% if nom.scale %}<small>/{{ nom.scale }}</small>{% endif %}
+                    <span class="dx-nom__votes">{{ nom.votes }} {{ nom.votes|ru_plural:"голос,голоса,голосов" }}</span>
+                </span>
+            </a>
+            {% endfor %}
+        </div>
+        {% endfor %}
+    </div>
+</section>

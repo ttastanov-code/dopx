@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load ui_extras %}
 
 {% block content %}
 {% include 'dashboard/_nav.html' %}
@@ -72,7 +73,7 @@
                 </div>
                 <div class="flex items-center justify-between gap-2 text-xs opacity-55 mt-1">
                     <span>{{ u.email }}</span>
-                    <span>доверие {{ u.trust_score|floatformat:2 }} · {{ u.total_evaluations }} оценок</span>
+                    <span>доверие {{ u.trust_score|floatformat:2 }} · {{ u.total_evaluations }} {{ u.total_evaluations|default:0|ru_plural:"оценка,оценки,оценок" }}</span>
                 </div>
             </a>
             {% endfor %}

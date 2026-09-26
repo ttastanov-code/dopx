@@ -1,4 +1,7 @@
 {% extends 'base.html' %}
+{% load static %}
+{% load asset_extras %}
+{% load ui_extras %}
 
 {% block content %}
 {% include 'dashboard/_nav.html' %}
@@ -15,7 +18,7 @@
     <div class="dopx-stat">
         <div class="dopx-stat-label"><i class="ti ti-eye"></i>Просмотров страниц</div>
         <div class="dopx-stat-value">{{ traffic.total_page_views }}</div>
-        <div class="dopx-stat-delta">за {{ selected_days }} дней</div>
+        <div class="dopx-stat-delta">за {{ selected_days }} {{ selected_days|default:0|ru_plural:"день,дня,дней" }}</div>
     </div>
     <div class="dopx-stat">
         <div class="dopx-stat-label"><i class="ti ti-user"></i>Уникальных визитов</div>
@@ -126,50 +129,14 @@
 <!-- dist/chart.umd.js вместо chart.umd.min.js + integrity= — см. подробный
      комментарий в templates/admin/index.html. -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.js" integrity="sha256-/tanOfjQ8GhxdN5s0UdF/A/HgJFEqxE9IpCKJr8Nf+o=" crossorigin="anonymous"></script>
+<script src="{% static_v 'js/charts.js' %}"></script>
 <script>
 (function () {
-    const pvEl = document.getElementById('pvChart');
-    if (pvEl) {
-        const points = JSON.parse(document.getElementById('pv-data').textContent);
-        new Chart(pvEl.getContext('2d'), {
-            type: 'line',
-            data: {
-                labels: points.map((p) => p.period),
-                datasets: [{
-                    label: 'Просмотры',
-                    data: points.map((p) => p.count),
-                    borderColor: '#6366f1',
-                    backgroundColor: '#6366f133',
-                    tension: 0.3,
-                    fill: true,
-                    pointRadius: 2,
-                }],
-            },
-            options: {
-                responsive: true,
-                plugins: { legend: { display: false } },
-                scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
-            },
-        });
-    }
-
-    const deviceEl = document.getElementById('deviceChart');
-    if (deviceEl) {
-        const devices = JSON.parse(document.getElementById('device-data').textContent);
-        const labels = Object.keys(devices);
-        const values = Object.values(devices);
-        new Chart(deviceEl.getContext('2d'), {
-            type: 'doughnut',
-            data: {
-                labels: labels,
-                datasets: [{
-                    data: values,
-                    backgroundColor: ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#94a3b8'],
-                }],
-            },
-            options: { responsive: true, plugins: { legend: { position: 'bottom' } } },
-        });
-    }
+    const data = (id) => JSON.parse(document.getElementById(id).textContent);
+    dopxCharts.line('pvChart', data('pv-data'), {label: 'Просмотры', color: '#6366f1', valueKey: 'count'});
+    const devices = data('device-data');
+    dopxCharts.doughnut('deviceChart', Object.keys(devices), Object.values(devices),
+        ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#94a3b8']);
 })();
 </script>
 {% endblock %}

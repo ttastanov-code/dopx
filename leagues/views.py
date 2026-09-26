@@ -9,11 +9,22 @@ from seasons.models import Season
 from matches.models import Match
 from teams.models import Team, TeamSeason, TeamSeasonStats
 from aggregates.models import MatchAggregate
+from aggregates.services import published_q
 from players.models import Player
 from core.nominations import get_nominations
+from season_squad.services import MIN_MATCHES_FOR_CANDIDATE
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Линии сборной сезона на странице лиги: от атаки к вратарю, штаб отдельно.
+SEASON_XI_LINES = (
+    ('Атака', ('LW', 'ST', 'RW')),
+    ('Полузащита', ('CM2', 'DM', 'CM1')),
+    ('Защита', ('LB', 'CB1', 'CB2', 'RB')),
+    ('Вратарь', ('GK',)),
+    ('Штаб', ('COACH', 'REFEREE')),
+)
 
 
 class LeagueListView(ListView):
@@ -136,6 +147,7 @@ class LeagueDetailView(DetailView):
                 # Настроение сезона — средние зрелищность/напряжение/драма по матчам с total_votes >= 3.
                 MIN_VOTES_FOR_MOOD = 3
                 mood_agg = MatchAggregate.objects.filter(
+                    published_q(),
                     match__league=league,
                     match__season=selected_season,
                     total_votes__gte=MIN_VOTES_FOR_MOOD,
@@ -154,6 +166,7 @@ class LeagueDetailView(DetailView):
                 # Самый драматичный матч сезона.
                 dramatic = (
                     MatchAggregate.objects.filter(
+                        published_q(),
                         match__league=league,
                         match__season=selected_season,
                         total_votes__gte=MIN_VOTES_FOR_MOOD,
@@ -194,6 +207,32 @@ class LeagueDetailView(DetailView):
         # core/nominations.py с фильтром по лиге и выбранному сезону.
         nominations = get_nominations(league=league, season=selected_season) if selected_season else []
 
+        # === СБОРНАЯ СЕЗОНА И ЛУЧШИЕ ТУРОВ (в том числе прошлых сезонов) ===
+        season_best_xi, season_xi_lines, season_rounds = None, [], []
+        if selected_season:
+            from players.positions import BEST_XI_SLOT_LABELS
+            from round_squad.models import RoundBestXI
+            from season_squad.models import SeasonBestXI
+
+            season_best_xi = SeasonBestXI.objects.filter(season=selected_season).first()
+            if season_best_xi:
+                slots = {
+                    slot.slot_code: slot
+                    for slot in season_best_xi.slots.exclude(content_type__isnull=True)
+                }
+                for line_label, codes in SEASON_XI_LINES:
+                    cards = [
+                        {'code': code, 'label': BEST_XI_SLOT_LABELS.get(code, code), 'slot': slots[code]}
+                        for code in codes if code in slots
+                    ]
+                    if cards:
+                        season_xi_lines.append({'label': line_label, 'cards': cards})
+            season_rounds = list(
+                RoundBestXI.objects.filter(season=selected_season, is_final=True)
+                .order_by('tour')
+                .values('tour', 'player_of_round_name', 'player_of_round_score')
+            )
+
         context.update({
             'seasons': seasons,
             'active_season': active_season,
@@ -207,6 +246,10 @@ class LeagueDetailView(DetailView):
             'best_defense': best_defense,
             'avg_goals_per_match': avg_goals_per_match,
             'nominations': nominations,
+            'season_best_xi': season_best_xi,
+            'season_xi_lines': season_xi_lines,
+            'season_rounds': season_rounds,
+            'season_xi_min_matches': MIN_MATCHES_FOR_CANDIDATE,
             'page_title': f'{league.name} — DOPX',
         })
         return context

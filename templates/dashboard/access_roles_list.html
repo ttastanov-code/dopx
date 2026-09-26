@@ -11,7 +11,7 @@
         <div class="card-body p-4">
             <div class="dopx-section-eyebrow"><i class="ti ti-info-circle"></i>Как устроен доступ</div>
             <ul class="text-xs md:text-sm opacity-70 leading-relaxed space-y-1.5 mt-1">
-                <li><strong>Дашборд</strong> — какие разделы видит сотрудник. По умолчанию все {{ section_count }}; ограничить — в карточке сотрудника.</li>
+                <li><strong>Дашборд</strong> — какие разделы видит сотрудник. Новому сотруднику разделы не открыты — отметьте нужные в его карточке (всего {{ section_count }}).</li>
                 <li><strong>/admin</strong> — что можно смотреть и править в Django admin. Права выдаются через группы ({{ group_count }} шт.).</li>
             </ul>
         </div>
@@ -47,7 +47,7 @@
                             {% if u.dashboard_access_grant %}
                             <span class="badge badge-sm badge-warning">{{ u.dashboard_access_grant.allowed_sections|length }} из {{ section_count }} разделов</span>
                             {% else %}
-                            <span class="badge badge-sm badge-success">полный доступ</span>
+                            <span class="badge badge-sm badge-ghost">нет доступа</span>
                             {% endif %}
                         </td>
                         <td class="text-xs">{% for g in u.groups.all %}<span class="badge badge-sm badge-ghost mr-1">{{ g.name }}</span>{% empty %}<span class="opacity-40">—</span>{% endfor %}</td>
@@ -66,7 +66,7 @@
                     {% if u.dashboard_access_grant %}
                     <span class="badge badge-sm badge-warning">{{ u.dashboard_access_grant.allowed_sections|length }}/{{ section_count }}</span>
                     {% else %}
-                    <span class="badge badge-sm badge-success">полный</span>
+                    <span class="badge badge-sm badge-ghost">нет</span>
                     {% endif %}
                 </div>
                 <div class="text-xs opacity-55 mt-0.5 truncate">{{ u.email }}</div>

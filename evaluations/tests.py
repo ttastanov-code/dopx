@@ -42,7 +42,7 @@ def _make_match(status="finished", voting_open_until=None, has_lineup=False):
 
 class EvaluationSessionModelTests(TestCase):
     def setUp(self):
-        self.user = User.objects.create_user(username="u1", email="u1@example.com", password="pass123")
+        self.user = User.objects.create_user(username="u1", email="u1@example.com", password="pass123", is_verified=True)
         self.match = _make_match()
 
     def test_progress_percentage_zero_with_no_steps(self):
@@ -72,7 +72,7 @@ class EvaluationSessionModelTests(TestCase):
 
 class VotingAccessGateTests(TestCase):
     def setUp(self):
-        self.user = User.objects.create_user(username="u1", email="u1@example.com", password="pass123")
+        self.user = User.objects.create_user(username="u1", email="u1@example.com", password="pass123", is_verified=True)
         self.client.force_login(self.user)
 
     def test_voting_closed_redirects_to_match_detail(self):
@@ -103,7 +103,7 @@ class VotingAccessGateTests(TestCase):
 
 class StepOrderGatingTests(TestCase):
     def setUp(self):
-        self.user = User.objects.create_user(username="u1", email="u1@example.com", password="pass123")
+        self.user = User.objects.create_user(username="u1", email="u1@example.com", password="pass123", is_verified=True)
         self.client.force_login(self.user)
         self.match = _make_match()
 
@@ -174,7 +174,7 @@ class ContextStepXPTests(TestCase):
     def setUp(self):
         # trust_score=1.25 — множитель XP ровно 1.0.
         self.user = User.objects.create_user(
-            username="u1", email="u1@example.com", password="pass123", trust_score=1.25
+            username="u1", email="u1@example.com", password="pass123", trust_score=1.25, is_verified=True,
         )
         UserXP.objects.create(user=self.user)
         self.client.force_login(self.user)
@@ -207,7 +207,7 @@ class ContextStepXPTests(TestCase):
 
 class QuickModeSelectionTests(TestCase):
     def setUp(self):
-        self.user = User.objects.create_user(username="u1", email="u1@example.com", password="pass123")
+        self.user = User.objects.create_user(username="u1", email="u1@example.com", password="pass123", is_verified=True)
         self.client.force_login(self.user)
         self.match = _make_match()
 
@@ -242,7 +242,7 @@ class KeyPlayerSelectionTests(TestCase):
     """_compute_key_player_ids — ключевые игроки для режима «Быстро»."""
 
     def setUp(self):
-        self.user = User.objects.create_user(username="u1", email="u1@example.com", password="pass123")
+        self.user = User.objects.create_user(username="u1", email="u1@example.com", password="pass123", is_verified=True)
         self.client.force_login(self.user)
         self.match = _make_match(has_lineup=True)
 
@@ -311,7 +311,7 @@ class PlayerBestWorstPickerSubmissionTests(TestCase):
     WORST_PRESET = {'contribution': 3, 'risk': 8, 'potential': 3}
 
     def setUp(self):
-        self.user = User.objects.create_user(username="u1", email="u1@example.com", password="pass123")
+        self.user = User.objects.create_user(username="u1", email="u1@example.com", password="pass123", is_verified=True)
         self.client.force_login(self.user)
         self.match = _make_match(has_lineup=True)
         EvaluationSession.objects.create(
@@ -392,7 +392,7 @@ class PlayerBestWorstPickerSubmissionTests(TestCase):
 
 class FastWizardAntiFraudTaskTests(TestCase):
     def setUp(self):
-        self.user = User.objects.create_user(username="u1", email="u1@example.com", password="pass123")
+        self.user = User.objects.create_user(username="u1", email="u1@example.com", password="pass123", is_verified=True)
         self.match = _make_match()
 
     def _completed_session(self, duration_seconds):
@@ -504,7 +504,7 @@ class ContextFormPolicyTests(TestCase):
 
 class AntiNoiseTouchedTrackingTests(TestCase):
     def setUp(self):
-        self.user = User.objects.create_user(username="u1", email="u1@example.com", password="pass123")
+        self.user = User.objects.create_user(username="u1", email="u1@example.com", password="pass123", is_verified=True)
         self.client.force_login(self.user)
         self.match = _make_match()
         EvaluationSession.objects.create(

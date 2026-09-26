@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% load static rating_extras %}
+{% load ui_extras %}
 {% load match_extras %}
 {% load position_extras %}
 {% load tooltip_tags %}
@@ -106,152 +107,128 @@
   </div>
 </div>
 
-{# Настроение клуба за сезон. SVG строится на сервере (teams/services.py::build_mood_chart). #}
+{# Настроение болельщиков: цифры + общий график. Геометрия — teams/services.py::build_mood_chart. #}
 {% if mood_chart %}
-<div class="card bg-base-100 border border-base-300 mb-4 md:mb-6 px-2 sm:px-0">
-  <div class="card-body p-4 md:p-6">
-    <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 mb-1">
-      <div>
-        <h3 class="font-bold text-base md:text-lg flex items-center gap-2">
-          <i class="ti ti-chart-line"></i> Индекс настроения клуба
-        </h3>
-        <p class="text-xs opacity-50 mt-0.5">Последние {{ mood_chart.match_count }} оценённых матчей — не официальная статистика, а мнение болельщиков DOPX</p>
+<section class="dx-card mb-4 md:mb-6 mx-2 sm:mx-0" aria-labelledby="mood-title">
+  <header class="dx-card__head">
+    <div class="dx-card__title-wrap">
+      <span class="dx-icon-tile"><i class="ti ti-heart-rate-monitor"></i></span>
+      <div class="min-w-0">
+        <h2 id="mood-title" class="dx-card__title">Настроение болельщиков</h2>
+        <p class="dx-card__subtitle">{{ mood_chart.match_count }} {{ mood_chart.match_count|ru_plural:"последний матч,последних матча,последних матчей" }} · мнение болельщиков DOPX, не официальная статистика</p>
       </div>
     </div>
+  </header>
 
-    {# Настроение — основной график, число «сейчас» над ним. #}
-    <div class="mt-3">
-      <div class="flex items-baseline justify-between">
-        <span class="flex items-center gap-1.5 text-xs font-semibold">
-          <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background: var(--color-primary, #60a5fa)"></span>
-          Реакция после матча
-        </span>
-        {% if mood_chart.latest_mood != None %}
-        <span class="text-xl font-bold" style="color: var(--color-primary, #60a5fa)">{{ mood_chart.latest_mood|floatformat:1 }}<span class="text-xs opacity-40 font-normal">/10</span></span>
-        {% endif %}
-      </div>
-      <div class="overflow-x-auto mt-1">
-        {# localize off — в SVG-атрибутах нужна точка, а не запятая. #}
-        {% localize off %}
-        <svg viewBox="0 0 {{ mood_chart.mood.width }} {{ mood_chart.mood.height }}" class="w-full min-w-[480px]" style="max-height: 160px">
-          <defs>
-            <linearGradient id="moodFill-{{ team.id }}" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" style="stop-color: var(--color-primary, #60a5fa); stop-opacity: 0.30" />
-              <stop offset="100%" style="stop-color: var(--color-primary, #60a5fa); stop-opacity: 0" />
-            </linearGradient>
-          </defs>
-          {% for grid in mood_chart.mood.gridlines %}
-          <line x1="0" y1="{{ grid.y }}" x2="{{ mood_chart.mood.width }}" y2="{{ grid.y }}" stroke="currentColor" stroke-opacity="0.08" stroke-width="1" />
-          {# text-anchor=end — подпись растёт влево. #}
-          <text x="24" y="{{ grid.y }}" text-anchor="end" dominant-baseline="middle" font-size="11" font-weight="600" fill="currentColor" opacity="0.4">{{ grid.label }}</text>
-          {% endfor %}
-          {% if mood_chart.mood.has_data %}
-          <path d="{{ mood_chart.mood.area_path }}" fill="url(#moodFill-{{ team.id }})" stroke="none" />
-          <polyline points="{{ mood_chart.mood.polyline }}" fill="none" stroke="var(--color-primary, #60a5fa)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" />
-          {% for dot in mood_chart.mood.dots %}
-          <circle cx="{{ dot.x }}" cy="{{ dot.y }}" r="3.5" fill="var(--color-primary, #60a5fa)" stroke="var(--color-base-100, #fff)" stroke-width="1.5"><title>{{ dot.opponent }} {{ dot.label }} — реакция {{ dot.value|floatformat:1 }}/10</title></circle>
-          {% endfor %}
-          {% else %}
-          <text x="{{ mood_chart.mood.width|add:'-32' }}" y="{{ mood_chart.mood.baseline_y }}" text-anchor="end" font-size="11" fill="currentColor" opacity="0.35">Нужно ещё оценённых матчей</text>
-          {% endif %}
-        </svg>
-        {% endlocalize %}
-      </div>
-    </div>
-
-    {# Доверие — отдельный мини-график. Меньше 2 точек — текст вместо графика. #}
-    <div class="mt-3 pt-3 border-t border-base-200">
-      <div class="flex items-baseline justify-between">
-        <span class="flex items-center gap-1.5 text-xs font-semibold opacity-70">
-          <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background: var(--color-success, #4ade80)"></span>
-          Доверие своих болельщиков
-        </span>
-        {% if mood_chart.latest_trust != None %}
-        <span class="text-base font-bold opacity-80" style="color: var(--color-success, #4ade80)">{{ mood_chart.latest_trust|floatformat:1 }}<span class="text-xs opacity-40 font-normal">/10</span></span>
-        {% endif %}
-      </div>
-      {% if mood_chart.trust.has_data %}
-      <div class="overflow-x-auto mt-1">
-        {% localize off %}
-        <svg viewBox="0 0 {{ mood_chart.trust.width }} {{ mood_chart.trust.height }}" class="w-full min-w-[480px]" style="max-height: 70px">
-          <defs>
-            <linearGradient id="trustFill-{{ team.id }}" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" style="stop-color: var(--color-success, #4ade80); stop-opacity: 0.18" />
-              <stop offset="100%" style="stop-color: var(--color-success, #4ade80); stop-opacity: 0" />
-            </linearGradient>
-          </defs>
-          {% for grid in mood_chart.trust.gridlines %}
-          <text x="24" y="{{ grid.y }}" text-anchor="end" dominant-baseline="middle" font-size="9" fill="currentColor" opacity="0.35">{{ grid.label }}</text>
-          {% endfor %}
-          <path d="{{ mood_chart.trust.area_path }}" fill="url(#trustFill-{{ team.id }})" stroke="none" />
-          <polyline points="{{ mood_chart.trust.polyline }}" fill="none" stroke="var(--color-success, #4ade80)" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" />
-          {% for dot in mood_chart.trust.dots %}
-          <circle cx="{{ dot.x }}" cy="{{ dot.y }}" r="2.5" fill="var(--color-success, #4ade80)"><title>{{ dot.opponent }} {{ dot.label }} — доверие {{ dot.value|floatformat:1 }}/10</title></circle>
-          {% endfor %}
-        </svg>
-        {% endlocalize %}
-      </div>
-      {% else %}
-      <p class="text-[11px] opacity-35 mt-1.5">Пока недостаточно данных — нужно минимум 2 оценённых матча.</p>
+  <div class="dx-mood__kpis">
+    <div class="dx-kpi">
+      <span class="dx-kpi__label"><i class="dx-kpi__dot" style="background:var(--color-primary)"></i> Реакция после матча</span>
+      <span class="dx-kpi__value">{% if mood_chart.latest_mood != None %}{{ mood_chart.latest_mood|floatformat:1 }}<small>/10</small>{% else %}—{% endif %}</span>
+      {% if mood_trend %}
+      <span class="dx-kpi__trend dx-kpi__trend--{{ mood_trend.direction }}">
+        {% if mood_trend.direction == 'up' %}<i class="ti ti-trending-up"></i> +{{ mood_trend.delta|floatformat:1 }}
+        {% elif mood_trend.direction == 'down' %}<i class="ti ti-trending-down"></i> {{ mood_trend.delta|floatformat:1 }}
+        {% else %}<i class="ti ti-minus"></i> стабильно{% endif %}
+        <span class="dx-kpi__trend-note">к прошлым матчам</span>
+      </span>
       {% endif %}
     </div>
-
-    <div class="flex justify-between text-[10px] opacity-40 mt-2 px-1">
-      <span>{{ mood_chart.oldest_label }}</span>
-      <span>{{ mood_chart.newest_label }}</span>
+    <div class="dx-kpi">
+      <span class="dx-kpi__label"><i class="dx-kpi__dot dx-kpi__dot--dashed"></i> Доверие фанатов</span>
+      <span class="dx-kpi__value">{% if mood_chart.latest_trust != None %}{{ mood_chart.latest_trust|floatformat:1 }}<small>/10</small>{% else %}—{% endif %}</span>
+      <span class="dx-kpi__hint">как оценивают команду её фанаты</span>
     </div>
-
-    {% if mood_chart.has_expectation_data %}
-    {# Ожидания перед матчем — % прогнозов до игры. #}
-    <div class="mt-4 pt-3 border-t border-base-200">
-      <div class="text-xs font-bold uppercase tracking-wide opacity-50 mb-2">Ожидания перед матчем — % прогнозов на победу</div>
-      <div class="overflow-x-auto pb-1">
-        {% localize off %}
-        {# w-full + min-w — SVG сжимается на мобильном, overflow-x-auto на крайний случай. #}
-        <svg viewBox="0 0 {{ mood_chart.expectation.width }} {{ mood_chart.expectation.height }}" class="w-full min-w-[280px]" style="max-height: 90px">
-          <line x1="0" y1="{{ mood_chart.expectation.baseline_y }}" x2="{{ mood_chart.expectation.width }}" y2="{{ mood_chart.expectation.baseline_y }}" stroke="currentColor" stroke-opacity="0.12" stroke-width="1" />
-          {% for bar in mood_chart.expectation.bars %}
-          {% if bar.has_data %}
-          {# --color-secondary — контрастирует с графиком доверия. #}
-          <rect x="{{ bar.x }}" y="{{ bar.y }}" width="{{ bar.width }}" height="{{ bar.height }}" rx="4" fill="var(--color-secondary, #ec4899)">
-            <title>{{ bar.opponent }} {{ bar.label }} — {{ bar.pct|floatformat:0 }}% ждали победу</title>
-          </rect>
-          <text x="{{ bar.cx }}" y="{{ bar.y }}" dy="-4" text-anchor="middle" font-size="10" font-weight="700" fill="currentColor" opacity="0.65">{{ bar.pct|floatformat:0 }}%</text>
-          {% else %}
-          <line x1="{{ bar.x }}" y1="{{ mood_chart.expectation.baseline_y }}" x2="{{ bar.x|add:bar.width }}" y2="{{ mood_chart.expectation.baseline_y }}" stroke="currentColor" stroke-opacity="0.25" stroke-width="2" stroke-dasharray="2 2" />
-          <text x="{{ bar.cx }}" y="{{ mood_chart.expectation.baseline_y }}" dy="-6" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.3">—</text>
-          {% endif %}
-          <text x="{{ bar.cx }}" y="{{ mood_chart.expectation.baseline_y }}" dy="14" text-anchor="middle" font-size="9" fill="currentColor" opacity="0.4">{{ bar.label }}</text>
-          {% endfor %}
-        </svg>
-        {% endlocalize %}
-      </div>
-    </div>
-    {% endif %}
-
-    {% if controversial_matches %}
-    <div class="mt-4 pt-3 border-t border-base-200">
-      <div class="text-xs font-bold uppercase tracking-wide opacity-50 mb-2 flex items-center gap-1.5">
-        <i class="ti ti-alert-triangle text-error"></i> Самые спорные решения сезона
-      </div>
-      <p class="text-[11px] opacity-40 mb-2">
-        Матчи, где мнения домашних и гостевых болельщиков о судействе разошлись сильнее всего —
-        это разброс мнений аудитории, а не подтверждённая судейская ошибка.
-      </p>
-      <ul class="space-y-1.5">
-        {% for item in controversial_matches %}
-        <li class="text-sm">
-          <a href="{% url 'matches:detail' item.match.id %}" class="hover:text-primary transition-colors">
-            {{ item.label }}
-          </a>
-          <span class="text-xs opacity-50">— расхождение {{ item.gap }} балла, {{ item.date|date:"d.m" }}</span>
-        </li>
-        {% endfor %}
-      </ul>
+    {% if mood_chart.avg_expectation != None %}
+    <div class="dx-kpi">
+      <span class="dx-kpi__label"><i class="ti ti-crystal-ball"></i> Ждали победу</span>
+      <span class="dx-kpi__value">{{ mood_chart.avg_expectation }}<small>%</small></span>
+      <span class="dx-kpi__hint">в среднем по прогнозам перед матчем</span>
     </div>
     {% endif %}
   </div>
-</div>
+
+  {% if mood_chart.mood.has_data %}
+  <div class="dx-mood__chart">
+    {# localize off — в SVG-атрибутах и style нужна точка, а не запятая. #}
+    {% localize off %}
+    <div class="dx-mood__plot">
+      <svg viewBox="0 0 {{ mood_chart.mood.width }} {{ mood_chart.mood.height }}" preserveAspectRatio="none" class="dx-mood__svg" role="img" aria-label="График реакции и доверия болельщиков по матчам">
+        <defs>
+          <linearGradient id="moodFill-{{ team.id }}" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" style="stop-color: var(--color-primary); stop-opacity: .22" />
+            <stop offset="100%" style="stop-color: var(--color-primary); stop-opacity: 0" />
+          </linearGradient>
+        </defs>
+        {% for grid in mood_chart.mood.gridlines %}
+        <line x1="0" y1="{{ grid.y }}" x2="{{ mood_chart.mood.width }}" y2="{{ grid.y }}" stroke="currentColor" stroke-opacity="{% if forloop.last %}.14{% else %}.07{% endif %}" stroke-dasharray="{% if forloop.last %}0{% else %}3 4{% endif %}" vector-effect="non-scaling-stroke" />
+        {% endfor %}
+        <path d="{{ mood_chart.mood.area_path }}" fill="url(#moodFill-{{ team.id }})" />
+        {% if mood_chart.trust.has_data %}
+        <polyline points="{{ mood_chart.trust.polyline }}" fill="none" stroke="var(--color-success)" stroke-width="2" stroke-dasharray="6 5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+        {% endif %}
+        <polyline points="{{ mood_chart.mood.polyline }}" fill="none" stroke="var(--color-primary)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+      </svg>
+      {% for grid in mood_chart.mood.gridlines %}
+      <span class="dx-mood__grid-label" style="top: {% widthratio grid.y mood_chart.mood.height 100 %}%">{{ grid.label }}</span>
+      {% endfor %}
+      {# Точки — HTML поверх SVG: не растягиваются; подсказка по наведению/тапу. #}
+      {% for dot in mood_chart.mood.dots %}
+      <button type="button" class="dx-mood__dot{% if forloop.first %} dx-mood__dot--start{% elif forloop.last %} dx-mood__dot--end{% endif %}{% if dot.is_last %} is-last{% endif %}"
+              style="left: {% widthratio dot.x mood_chart.mood.width 100 %}%; top: {% widthratio dot.y mood_chart.mood.height 100 %}%"
+              aria-label="{{ dot.opponent }} {{ dot.label }}: реакция {{ dot.value|floatformat:1 }}{% if dot.trust != None %}, доверие {{ dot.trust|floatformat:1 }}{% endif %}">
+        <span class="dx-mood__tip" role="tooltip">
+          <span class="dx-mood__tip-head">{{ dot.opponent }} · {{ dot.label }}</span>
+          <span class="dx-mood__tip-row"><i class="dx-kpi__dot" style="background:var(--color-primary)"></i> Реакция <b>{{ dot.value|floatformat:1 }}</b></span>
+          {% if dot.trust != None %}<span class="dx-mood__tip-row"><i class="dx-kpi__dot dx-kpi__dot--dashed"></i> Доверие <b>{{ dot.trust|floatformat:1 }}</b></span>{% endif %}
+        </span>
+      </button>
+      {% endfor %}
+    </div>
+    <div class="dx-mood__axis">
+      {% for dot in mood_chart.mood.dots %}
+      <span class="dx-mood__tick{% if forloop.first %} dx-mood__tick--start{% elif forloop.last %} dx-mood__tick--end{% endif %}" style="left: {% widthratio dot.x mood_chart.mood.width 100 %}%">{% if forloop.first or forloop.last %}<b>{{ dot.opponent }}</b> {% endif %}{{ dot.label }}</span>
+      {% endfor %}
+    </div>
+    {% endlocalize %}
+  </div>
+  {% else %}
+  <div class="dx-empty"><span class="dx-empty__icon"><i class="ti ti-chart-line"></i></span>
+    <div><div class="dx-empty__title">График появится после двух оценённых матчей</div></div></div>
+  {% endif %}
+
+  {% if mood_chart.has_expectation_data %}
+  <details class="dx-disclosure">
+    <summary><i class="ti ti-chevron-right"></i> Ожидания перед каждым матчем</summary>
+    <div class="dx-expect">
+      {% for bar in mood_chart.expectation.bars %}
+      <div class="dx-expect__row" title="{{ bar.opponent }} {{ bar.label }}">
+        <span class="dx-expect__name">{{ bar.opponent }} <small>{{ bar.label }}</small></span>
+        <span class="dx-expect__track">{% if bar.has_data %}<span class="dx-expect__fill" style="width: {{ bar.pct|floatformat:0 }}%"></span>{% endif %}</span>
+        <span class="dx-expect__pct">{% if bar.has_data %}{{ bar.pct|floatformat:0 }}%{% else %}—{% endif %}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </details>
+  {% endif %}
+
+  {% if controversial_matches %}
+  <div class="dx-section">
+    <div class="dx-section__head">
+      <h3 class="dx-section__title"><i class="ti ti-alert-triangle" style="color:var(--color-error)"></i> Самые спорные решения сезона</h3>
+    </div>
+    <p class="dx-card__subtitle" style="margin:-.25rem 0 .6rem">Где мнения домашних и гостевых болельщиков о судействе разошлись сильнее всего — это разброс мнений, а не подтверждённая ошибка.</p>
+    <div class="dx-list">
+      {% for item in controversial_matches %}
+      <a href="{% url 'matches:detail' item.match.id %}" class="dx-list__item">
+        <span class="dx-list__title">{{ item.label }}</span>
+        <span class="dx-list__meta">{{ item.date|date:"d.m" }}</span>
+        <span class="dx-list__badge">±{{ item.gap }}</span>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</section>
 {% endif %}
 
 {# === ПЕРЕКЛЮЧАТЕЛЬ СЕЗОНА === #}
@@ -484,6 +461,15 @@
             </span>
             {% endtooltip_wrap %}
           </div>
+          {% elif corrected_matches_count %}
+          <div class="mt-1.5">
+              {% tooltip_wrap "Автоматическая защита от накрутки сейчас не действует, но в этих матчах рейтинг был скорректирован (до ±0.4), пока она работала. Модератор может снять поправку, если сочтёт её ошибочной." %}
+              <span class="badge badge-xs badge-ghost gap-1">
+                  <i class="ti ti-shield-check text-[10px]"></i>
+                  поправка в {{ corrected_matches_count }} матч{{ corrected_matches_count|pluralize:"е,ах" }}
+              </span>
+              {% endtooltip_wrap %}
+          </div>
           {% endif %}
         </div>
         {% else %}
@@ -553,7 +539,7 @@
             </div>
             <div class="relative flex-1 min-w-0 pointer-events-none">
               <div class="font-medium text-sm truncate">{{ agg.player.first_name }} {{ agg.player.last_name }}</div>
-              <div class="text-xs opacity-60">{{ agg.match.start_time|date:"d.m" }} · {{ agg.total_votes }} оценок</div>
+              <div class="text-xs opacity-60">{{ agg.match.start_time|date:"d.m" }} · {{ agg.total_votes }} {{ agg.total_votes|default:0|ru_plural:"оценка,оценки,оценок" }}</div>
             </div>
             <div class="relative text-right flex-shrink-0">
               <div class="font-bold text-success text-sm md:text-base pointer-events-none">{{ agg.performance_score|floatformat:1 }}</div>

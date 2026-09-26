@@ -1,4 +1,5 @@
 {% load dashboard_extras %}
+{% load ui_extras %}
 {% comment %}
 История запусков команд — карточки с выводом stdout/stderr.
 Поллинг (каждые 4 с, outerHTML) только пока есть незавершённые запуски.
@@ -22,7 +23,7 @@
                 {{ run.get_status_display }}
             </span>
             <span class="text-xs opacity-60">{{ run.triggered_by_username|default:"—" }}</span>
-            <span class="text-xs opacity-50">{{ run.created_at|timesince }} назад</span>
+            <span class="text-xs opacity-50">{{ run.created_at|ago }}</span>
             {% if run.status == 'pending' or run.status == 'running' %}
             {# Отозвать — только PENDING/RUNNING. terminate=True во вьюхе. #}
             <form method="post" action="{% url 'dashboard:scripts_revoke_run' run.id %}" class="ml-auto"

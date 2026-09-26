@@ -215,7 +215,7 @@ class HomeTopPlayersVoteGateTests(TestCase):
         self.match = Match.objects.create(
             league=league, season=season, home_team=home, away_team=away,
             start_time=timezone.now(), status="finished",
-            voting_open_until=timezone.now() + timedelta(hours=48),
+            voting_open_until=timezone.now() - timedelta(minutes=1),
         )
         self.underdog = Player.objects.create(first_name="Under", last_name="Dog", team=home)
         self.star = Player.objects.create(first_name="Star", last_name="Player", team=away)

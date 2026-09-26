@@ -23,6 +23,8 @@ class Player(BaseModel):
     position = models.CharField(_('Позиция'), max_length=50, blank=True)
     number = models.IntegerField(_('Номер'), null=True, blank=True)
     photo = models.ImageField(_('Фото'), upload_to="players/", null=True, blank=True)
+    # Фото из Sportmonks; обновляется синком. Загруженное вручную photo — в приоритете.
+    photo_url = models.URLField(_('URL фото (Sportmonks)'), blank=True, default='')
     is_active = models.BooleanField(_('Активен'), default=True)
     external_id = models.CharField(
         _('Внешний ID'),
@@ -68,6 +70,11 @@ class Player(BaseModel):
 
     def __str__(self):
         return f"{self.first_name} {self.last_name}"
+
+    @property
+    def photo_display(self):
+        """Фото для показа: ручная загрузка, иначе из Sportmonks."""
+        return (self.photo.url if self.photo else None) or self.photo_url or None
 
     @property
     def full_name(self):

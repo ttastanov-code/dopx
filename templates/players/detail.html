@@ -50,8 +50,8 @@
     <div class="card-body p-6">
         <div class="flex flex-col md:flex-row items-center gap-6">
             {# Фото / генеративный аватар #}
-            {% if player.photo %}
-            {% include 'components/_avatar.html' with photo_url=player.photo.url name=player.full_name size_classes='w-32 h-32 text-5xl' ring_classes='ring ring-primary ring-offset-base-100 ring-offset-2' %}
+            {% if player.photo_display %}
+            {% include 'components/_avatar.html' with photo_url=player.photo_display name=player.full_name size_classes='w-32 h-32 text-5xl' ring_classes='ring ring-primary ring-offset-base-100 ring-offset-2' %}
             {% else %}
             {% include 'components/_avatar.html' with name=player.full_name size_classes='w-32 h-32 text-5xl' ring_classes='ring ring-primary ring-offset-base-100 ring-offset-2' %}
             {% endif %}
@@ -132,6 +132,15 @@
                             </span>
                             {% endtooltip_wrap %}
                         </div>
+                        {% elif corrected_matches_count %}
+                        <div class="mt-1">
+                            {% tooltip_wrap "Автоматическая защита от накрутки сейчас не действует, но в этих матчах рейтинг был скорректирован (до ±0.4), пока она работала. Модератор может снять поправку, если сочтёт её ошибочной." %}
+                            <span class="badge badge-xs badge-ghost gap-1">
+                                <i class="ti ti-shield-check text-[10px]"></i>
+                                поправка в {{ corrected_matches_count }} матч{{ corrected_matches_count|pluralize:"е,ах" }}
+                            </span>
+                            {% endtooltip_wrap %}
+                        </div>
                         {% endif %}
                         {% if stats.avg_stat_rating %}
                         {# Оценка по статистике рядом с оценкой болельщиков. #}
@@ -167,6 +176,17 @@
     order-2 lg:order-1 — на мобильном профиль выше истории.
     {% endcomment %}
     <div class="order-2 lg:order-1 lg:col-span-2 space-y-6">
+        {# === ФОРМА ПО МАТЧАМ === #}
+        {% if form_points %}
+        <section class="dx-card">
+            <div class="dx-section__head">
+                <h3 class="dx-section__title"><i class="ti ti-chart-bar" style="color:var(--color-primary)"></i> Форма по матчам</h3>
+                <span class="dx-section__meta">последние {{ form_points|length }}</span>
+            </div>
+            {% include 'components/_form_chart.html' with show_stat=True %}
+        </section>
+        {% endif %}
+
         {# === ИСТОРИЯ ВЫСТУПЛЕНИЙ === #}
         {# Карточка видна всегда — пустое состояние с CTA. #}
         <div class="card bg-base-100 border border-base-300">

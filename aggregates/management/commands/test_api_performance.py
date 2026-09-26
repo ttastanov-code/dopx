@@ -4,6 +4,7 @@ from django.test import Client
 from django.contrib.auth import get_user_model
 import time
 import statistics
+from core.management.seed_guard import ensure_seed_allowed
 
 User = get_user_model()
 
@@ -11,6 +12,7 @@ class Command(BaseCommand):
     help = 'Тестирование производительности API'
     
     def handle(self, *args, **options):
+        ensure_seed_allowed()
         client = Client()
         
         # Создаём тестового пользователя

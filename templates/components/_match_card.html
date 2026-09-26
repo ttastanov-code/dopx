@@ -25,12 +25,12 @@ data-background-poll — без глобального лоадера.
           {% elif match.status == 'cancelled' %}mrow--cancelled
           {% else %}mrow--scheduled{% endif %}"
    {% if match.status == 'scheduled' %}x-data="matchCountdown" data-kickoff="{{ match.start_time|date:'c' }}"{% endif %}
-   {% if match.status == 'live' %}
-   data-background-poll
-   hx-get="{% url 'matches:card' match.id %}"
-   hx-trigger="every 15s"
-   hx-swap="outerHTML"
-   {% endif %}>
+{% with poll=match.live_poll_seconds %}{% if poll %}
+     data-background-poll
+     hx-get="{% url 'matches:card' match.id %}"
+     hx-trigger="every {{ poll }}s [document.visibilityState === 'visible'], dopx:wake"
+     hx-swap="outerHTML"
+     {% endif %}{% endwith %}>
 
     {# === ВЕРХНЯЯ СТРОКА: лига/тур слева, статус справа === #}
     <div class="mrow__top">
@@ -164,8 +164,8 @@ data-background-poll — без глобального лоадера.
 
     {% if match.card_hero %}
     <div class="mrow__hero" title="Лучший по оценкам болельщиков DOPX среди игроков этого матча">
-        {% if match.card_hero.player.photo %}
-        <img src="{{ match.card_hero.player.photo.url }}" alt="" class="mrow__hero-photo">
+        {% if match.card_hero.player.photo_display %}
+        <img src="{{ match.card_hero.player.photo_display }}" alt="" class="mrow__hero-photo">
         {% else %}
         <div class="mrow__hero-photo-fallback">{{ match.card_hero.player.first_name|first|upper }}</div>
         {% endif %}

@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% load static %}
+{% load ui_extras %}
 {% load match_extras %}
 
 {% block content %}
@@ -24,7 +25,7 @@
         </div>
 
         <!-- Rewards Card -->
-        {# xp_gained/trust_delta — из EvaluationCompleteView. Градиенты — inline linear-gradient. #}
+        {# xp_gained — из EvaluationCompleteView; trust считается после закрытия голосования. Градиенты — inline linear-gradient. #}
         <div class="card bg-base-100 border border-base-200 shadow-lg mb-4">
             <div class="card-body p-4">
                 <h3 class="font-bold text-sm mb-3 text-center">🎁 Ваши награды</h3>
@@ -37,9 +38,9 @@
                     <div class="flex flex-col items-center p-3 rounded-xl" style="background-image: linear-gradient(to bottom right, color-mix(in oklab, var(--color-secondary) 10%, transparent), color-mix(in oklab, var(--color-secondary) 5%, transparent));">
                         <i class="ti ti-shield-check text-2xl text-secondary mb-1"></i>
                         <span class="font-bold text-xl text-secondary">
-                            {% if trust_delta > 0 %}+{{ trust_delta }}{% elif trust_delta == 0 %}±0{% elif trust_delta %}{{ trust_delta }}{% else %}—{% endif %}
+                            <i class="ti ti-hourglass"></i>
                         </span>
-                        <span class="text-[9px] text-base-content/50">Trust Score</span>
+                        <span class="text-[9px] text-base-content/50 text-center">Trust Score — после закрытия голосования</span>
                     </div>
                 </div>
             </div>
@@ -103,7 +104,7 @@
         <div class="mt-5 p-3 bg-base-200 rounded-xl">
             <div class="text-[9px] text-base-content/50 mb-1">Ваш прогресс</div>
             <div class="flex justify-between items-center mb-1">
-                <span class="font-bold text-xs">Уровень {{ user_level }} · {{ user.total_evaluations|default:0 }} оценок</span>
+                <span class="font-bold text-xs">Уровень {{ user_level }} · {{ user.total_evaluations|default:0 }} {{ user.total_evaluations|default:0|ru_plural:"оценка,оценки,оценок" }}</span>
                 <span class="text-[9px] text-base-content/50">Серия: {{ user.evaluation_streak|default:0 }}</span>
             </div>
             <div class="w-full bg-base-300 rounded-full h-1.5 overflow-hidden">

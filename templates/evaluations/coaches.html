@@ -22,7 +22,7 @@
 
 <!-- === FORM === -->
 <div class="max-w-3xl mx-auto px-3">
-    <form method="post" action="{% url 'evaluations:coaches' match.id %}" class="space-y-5"
+    <form method="post" data-wizard-draft action="{% url 'evaluations:coaches' match.id %}" class="space-y-5"
           data-wz-untouched-hint="Потяните, чтобы оценить — иначе этот критерий не будет учтён">
         {% csrf_token %}
 

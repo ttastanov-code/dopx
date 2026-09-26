@@ -1,0 +1,157 @@
+# core/tests_redesign.py
+"""Панель «Ваш день», нижняя панель вкладок, липкая кнопка оценки, «Требует внимания», продолжение оценки."""
+from datetime import timedelta
+
+from django.contrib.auth import get_user_model
+from django.core.cache import cache
+from django.test import RequestFactory, TestCase
+from django.urls import reverse
+from django.utils import timezone
+
+from core.personal import personal_summary
+from dashboard.models import StaffAccessGrant
+from dashboard.services import attention_items
+from evaluations.models import EvaluationSession
+from leagues.models import League
+from matches.models import Match
+from seasons.models import Season
+from teams.models import Team
+from users.models import SuspiciousActivityFlag
+
+User = get_user_model()
+
+
+class _Base(TestCase):
+    def setUp(self):
+        cache.clear()
+        league = League.objects.create(name="L", country="KZ", is_primary=True)
+        self.season = Season.objects.create(league=league, year="2026", is_active=True)
+        self.league = league
+        self.home = Team.objects.create(name="Хозяева")
+        self.away = Team.objects.create(name="Гости")
+        self.user = User.objects.create_user(username="fan", email="fan@example.com", password="x", is_verified=True)
+
+    def match(self, **extra):
+        defaults = dict(
+            league=self.league, season=self.season, home_team=self.home, away_team=self.away,
+            status="finished", start_time=timezone.now() - timedelta(hours=3),
+            voting_open_until=timezone.now() + timedelta(hours=20),
+        )
+        defaults.update(extra)
+        return Match.objects.create(**defaults)
+
+
+class PersonalPanelTests(_Base):
+    def test_summary_counts_only_unrated_open_matches(self):
+        rated, open_one = self.match(), self.match()
+        self.match(voting_open_until=timezone.now() - timedelta(hours=1))  # закрыт
+        EvaluationSession.objects.create(user=self.user, match=rated, status="completed", completed_at=timezone.now())
+        summary = personal_summary(self.user)
+        self.assertEqual(summary["pending_count"], 1)
+        self.assertEqual(summary["next_match"], open_one)
+
+    def test_home_shows_panel_for_user_and_promo_for_guest(self):
+        self.match()
+        self.assertContains(self.client.get(reverse("core:home")), "Голос трибун")
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("core:home"))
+        self.assertContains(response, "Привет, fan")
+        self.assertContains(response, "1 матч ждёт вашей оценки")
+
+    def test_resume_url_points_to_first_unfinished_step(self):
+        match = self.match()
+        session = EvaluationSession.objects.create(user=self.user, match=match, completed_steps=["context"])
+        self.assertEqual(session.next_step_url(match.id), reverse("evaluations:teams", args=[match.id]))
+        session.completed_steps = ["context", "teams", "players", "coaches", "referee"]
+        self.assertEqual(session.next_step_url(match.id), reverse("evaluations:match_eval", args=[match.id]))
+
+
+class TabbarAndStickyCtaTests(_Base):
+    def test_tabbar_on_site_with_pending_badge_not_in_wizard(self):
+        match = self.match()
+        self.client.force_login(self.user)
+        html = self.client.get(reverse("core:home")).content.decode()
+        self.assertIn("dx-tabbar", html)
+        self.assertIn('class="dx-tabbar__badge">1<', html)
+        wizard = self.client.get(reverse("evaluations:context", args=[match.id])).content.decode()
+        self.assertNotIn('class="dx-tabbar ', wizard)
+
+    def test_sticky_cta_only_while_voting_and_not_rated(self):
+        match = self.match()
+        self.client.force_login(self.user)
+        url = reverse("matches:detail", args=[match.id])
+        self.assertContains(self.client.get(url), "dx-sticky-cta")
+        EvaluationSession.objects.create(user=self.user, match=match, status="completed", completed_at=timezone.now())
+        self.assertNotContains(self.client.get(url), 'class="dx-sticky-cta')
+
+
+class AttentionTests(_Base):
+    def test_items_respect_section_access_and_hide_zero(self):
+        SuspiciousActivityFlag.objects.create(source="manual", status="pending")
+        staff = User.objects.create_user(username="s", email="s@example.com", password="x", is_staff=True)
+        StaffAccessGrant.objects.create(user=staff, allowed_sections=["overview", "names_review"])
+        self.assertEqual(attention_items(staff), [])
+        boss = User.objects.create_superuser(username="boss", email="b@example.com", password="x")
+        items = attention_items(boss)
+        self.assertEqual([(i["title"], i["count"]) for i in items], [("Сигналы антифрода", 1)])
+
+
+class ReactionWidgetTests(_Base):
+    def test_reaction_selected_with_fill(self):
+        match = self.match(voting_open_until=timezone.now() - timedelta(days=1), home_score=1, away_score=0)
+        self.client.force_login(self.user)
+        response = self.client.post(reverse("matches:react", args=[match.id]), {"reaction": "upset"})
+        html = response.content.decode()
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("dx-react__btn--warning is-selected", html)
+        self.assertIn("--fill: 100%", html)
+        self.assertIn("<b>100%</b>", html)
+
+
+class MatchListTabsTests(_Base):
+    def test_status_tabs_and_bad_season_param(self):
+        self.match()
+        response = self.client.get(reverse("matches:list"), {"season": "junk"})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "dx-chip is-active")
+        self.client.force_login(self.user)
+        self.assertContains(self.client.get(reverse("matches:list")), "Оценить")
+
+
+class FormChartTests(_Base):
+    def test_player_form_points_chronological_with_opponent_from_lineup(self):
+        from aggregates.models import PlayerMatchAggregate
+        from lineups.models import MatchLineup, MatchLineupPlayer
+        from players.models import Player
+
+        player = Player.objects.create(first_name="Иван", last_name="Форма", team=self.home)
+        closed = timezone.now() - timedelta(days=1)
+        old = self.match(start_time=timezone.now() - timedelta(days=10), voting_open_until=closed)
+        new = self.match(start_time=timezone.now() - timedelta(days=3), voting_open_until=closed)
+        for m, score, votes in ((old, 6.0, 8), (new, 8.0, 2)):
+            lineup = MatchLineup.objects.create(match=m, team=self.away, side="away")
+            MatchLineupPlayer.objects.create(lineup=lineup, player=player, is_starting=True)
+            PlayerMatchAggregate.objects.create(player=player, match=m, performance_score=score, total_votes=votes)
+        response = self.client.get(reverse("players:detail", args=[player.id]))
+        points = response.context["form_points"]
+        self.assertEqual([p["url"] for p in points], [reverse("matches:detail", args=[old.id]), reverse("matches:detail", args=[new.id])])
+        # В этих матчах играл за «Гостей» — соперник «Хозяева».
+        self.assertEqual(points[0]["opponent_full"], "Хозяева")
+        self.assertEqual(points[0]["score"], 6.0)
+        self.assertIsNone(points[1]["score"])  # мало голосов
+        self.assertContains(response, "Форма по матчам")
+
+
+class NominationGroupsTests(TestCase):
+    def test_grouped_by_category_best_first(self):
+        from core.nominations import group_nominations
+        noms = [
+            {"entity_kind": "team", "sentiment": "negative", "key": "passive"},
+            {"entity_kind": "referee", "sentiment": "negative", "key": "influential_referee"},
+            {"entity_kind": "team", "sentiment": "positive", "key": "fighting"},
+            {"entity_kind": "referee", "sentiment": "positive", "key": "fair"},
+        ]
+        groups = group_nominations(noms)
+        self.assertEqual([g["title"] for g in groups], ["Судьи", "Команды"])
+        self.assertEqual([n["key"] for n in groups[1]["items"]], ["fighting", "passive"])
+

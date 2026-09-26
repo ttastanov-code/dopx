@@ -29,6 +29,7 @@ from django.utils import timezone
 
 from evaluations.models import (
     ContextEvaluation,
+    EvaluationSession,
     CoachEvaluation,
     MatchEvaluation,
     PlayerEvaluation,
@@ -39,12 +40,23 @@ from lineups.models import MatchLineupPlayer
 from matches.models import Match
 from players.models import Player
 from users.models import UserXP
+from core.management.seed_guard import ensure_seed_allowed
 
 User = get_user_model()
 
 BOT_USERNAME_PREFIX = "test_user_bot_"
 BOT_EMAIL_DOMAIN = "test.dopx.local"
 WATCHED_TYPES = ["full", "full", "full", "highlights", "partial"]  # чаще "full"
+
+def _complete_session(user, match) -> None:
+    """Завершённая сессия вайзарда (ретро-время — без флага «слишком быстро»)."""
+    now = timezone.now()
+    session, _ = EvaluationSession.objects.get_or_create(user=user, match=match)
+    EvaluationSession.objects.filter(pk=session.pk).update(
+        status="completed", completed_at=now, started_at=now - timedelta(minutes=3),
+        completed_steps=["context", "teams", "players", "coaches", "referee", "match_eval"],
+        trust_settled_at=now,
+    )
 
 
 class Command(BaseCommand):
@@ -96,6 +108,7 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        ensure_seed_allowed()
         if options["seed"] is not None:
             random.seed(options["seed"])
 
@@ -213,6 +226,8 @@ class Command(BaseCommand):
                         "supported_team": supported_team,
                     },
                 )
+                # В рейтинг идут только голоса завершённых сессий.
+                _complete_session(voter, match)
                 MatchEvaluation.objects.update_or_create(
                     user=voter, match=match,
                     defaults={
@@ -280,6 +295,7 @@ class Command(BaseCommand):
         ContextEvaluation.objects.update_or_create(
             user=bot, match=match, defaults={"watched_type": "full"}
         )
+        _complete_session(bot, match)
         PlayerEvaluation.objects.update_or_create(
             user=bot, match=match, player=player,
             defaults={"contribution": 10, "risk": 1, "potential": 10},

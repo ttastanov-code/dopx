@@ -1,3 +1,4 @@
+{% load ui_extras %}
 {% comment %}
 Строка уведомления — в дропдауне (compact=True) и на /notifications/ (compact=False).
 Переход — POST-форма с next. «Прочитано» — hx-post, ответ: строка + OOB-счётчики.
@@ -68,7 +69,7 @@
             {% if compact %}{{ notification.message|truncatechars:72 }}{% else %}{{ notification.message }}{% endif %}
         </p>
         <div class="flex flex-wrap items-center gap-2 md:gap-3 text-[10px] md:text-xs opacity-50">
-            <span class="flex items-center gap-1"><i class="ti ti-clock"></i>{{ notification.created_at|timesince }} назад</span>
+            <span class="flex items-center gap-1"><i class="ti ti-clock"></i>{{ notification.created_at|ago }}</span>
             {% if not compact %}
             <span class="font-mono hidden sm:inline">{{ notification.created_at|date:"d.m.Y H:i" }}</span>
             {% if notification.related_match %}

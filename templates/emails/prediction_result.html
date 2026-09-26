@@ -1,3 +1,4 @@
+{% load ui_extras %}
 {% comment %}
 Результат прогноза. Полосы — таблицей (flexbox не работает в Outlook).
 Контекст: match, counts, is_correct, your_choice_label.
@@ -29,7 +30,7 @@
                                 </tr>
                             </table>
 
-                            <p style="margin: 0 0 12px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; font-weight: 600; color: #18181B;">Как проголосовало сообщество ({{ counts.total }} прогнозов):</p>
+                            <p style="margin: 0 0 12px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; font-weight: 600; color: #18181B;">Как проголосовало сообщество ({{ counts.total }} {{ counts.total|ru_plural:"прогноз,прогноза,прогнозов" }}):</p>
 
                             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 8px;">
                                 <tr>

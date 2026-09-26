@@ -147,6 +147,28 @@ class Match(BaseModel):
             return False
         return any(r.id == self.away_team_id for r in self.home_team.rivals.all())
 
+    # Живое обновление начинается заранее и держится после расчётного конца — статус приходит с задержкой.
+    LIVE_POLL_BEFORE_KICKOFF_HOURS = 2
+    LIVE_POLL_AFTER_KICKOFF_HOURS = 3
+    LIVE_POLL_SECONDS = 15
+    PRE_MATCH_POLL_SECONDS = 60
+
+    @property
+    def live_poll_seconds(self) -> int | None:
+        """Интервал фонового обновления блоков матча, сек; None — обновлять не нужно."""
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        if self.status == 'live':
+            return self.LIVE_POLL_SECONDS
+        if self.status == 'scheduled' and self.start_time:
+            now = timezone.now()
+            if (self.start_time - timedelta(hours=self.LIVE_POLL_BEFORE_KICKOFF_HOURS)
+                    <= now <= self.start_time + timedelta(hours=self.LIVE_POLL_AFTER_KICKOFF_HOURS)):
+                return self.PRE_MATCH_POLL_SECONDS
+        return None
+
     def is_voting_open(self):
         """Открыто ли голосование."""
         from django.utils import timezone

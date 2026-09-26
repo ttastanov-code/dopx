@@ -30,7 +30,10 @@
     }
   };
 
-  document.addEventListener("DOMContentLoaded", () =>
-    window.dopxTrack("page_view", { path: location.pathname, referrer: document.referrer })
-  );
+  // Служебные разделы — не трафик аудитории.
+  const isStaffPath = /^\/(staff|admin)\//.test(location.pathname);
+  document.addEventListener("DOMContentLoaded", () => {
+    if (isStaffPath) return;
+    window.dopxTrack("page_view", { path: location.pathname, referrer: document.referrer });
+  });
 })();

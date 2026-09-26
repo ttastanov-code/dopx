@@ -17,6 +17,7 @@ from notifications.models import Notification
 from lineups.models import MatchLineupPlayer
 from aggregates.tasks import recalculate_all_aggregates_for_match
 from aggregates.services import calculate_user_trust_adjustment
+from core.management.seed_guard import ensure_seed_allowed
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -35,6 +36,7 @@ class Command(BaseCommand):
                           help='Создавать уведомления синхронно (для тестов без Celery)')
 
     def handle(self, *args, **options):
+        ensure_seed_allowed()
         username = options['username']
         password = options['password']
         email = options['email']

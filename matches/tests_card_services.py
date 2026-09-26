@@ -582,7 +582,7 @@ class AttachCardExtrasIntegrationTests(CardServicesTestCase):
 
         upcoming = self.make_match(status='scheduled', start_time=timezone.now() + timedelta(days=3))
         finished = self.make_match(
-            status='finished', start_time=timezone.now() - timedelta(days=1),
+            status='finished', start_time=timezone.now() - timedelta(days=4),
             home_score=2, away_score=1,
         )
         player = self.make_player(self.team_a)

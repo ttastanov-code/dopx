@@ -1,4 +1,5 @@
 {% load static %}
+{% load ui_extras %}
 <!DOCTYPE html>
 <html lang="ru" data-theme="light">
 <head>
@@ -40,7 +41,7 @@
                 {% endif %}
             </div>
             <div class="flex items-center justify-between text-[10px] opacity-50">
-                <span>{{ total_votes }} голосов</span>
+                <span>{{ total_votes }} {{ total_votes|default:0|ru_plural:"голос,голоса,голосов" }}</span>
                 <span class="flex items-center gap-1 font-semibold"><i class="ti ti-external-link"></i> DOPX</span>
             </div>
         </div>

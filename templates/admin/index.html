@@ -1,4 +1,7 @@
 {% extends "admin/index.html" %}
+{% load ui_extras %}
+{% load static %}
+{% load asset_extras %}
 {% comment %}
 Главная /admin/: KPI-карточки из dashboard_callback (dopx_kpi, dopx_last_sync).
 extends сам на себя — Django берёт следующий шаблон в цепочке (Unfold).
@@ -22,7 +25,7 @@ extends сам на себя — Django берёт следующий шабло
     </a>
     <a href="{% url 'dashboard:data_health' %}" class="inline-flex items-center gap-2 rounded-default border border-base-200 dark:border-base-700 text-sm font-medium px-4 py-2 hover:bg-base-50 dark:hover:bg-base-800 transition-colors">
         <span class="material-symbols-outlined text-base">monitor_heart</span>
-        {% if dopx_last_sync %}Синхронизация {{ dopx_last_sync.created_at|timesince }} назад{% else %}Здоровье данных{% endif %}
+        {% if dopx_last_sync %}Синхронизация {{ dopx_last_sync.created_at|ago }}{% else %}Здоровье данных{% endif %}
     </a>
     <a href="{% url 'dashboard:antifraud' %}" class="inline-flex items-center gap-2 rounded-default border border-base-200 dark:border-base-700 text-sm font-medium px-4 py-2 hover:bg-base-50 dark:hover:bg-base-800 transition-colors">
         <span class="material-symbols-outlined text-base">shield_moon</span> Антифрод-очередь
@@ -101,61 +104,17 @@ extends сам на себя — Django берёт следующий шабло
 {{ dopx_rating_distribution|json_script:"dopx-rating-data" }}
 {# dist/chart.umd.js — реальный файл пакета (уже минифицирован), integrity — sha256 jsDelivr. #}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.js" integrity="sha256-/tanOfjQ8GhxdN5s0UdF/A/HgJFEqxE9IpCKJr8Nf+o=" crossorigin="anonymous"></script>
+<script src="{% static_v 'js/charts.js' %}"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    function lineChart(canvasId, dataId, label, color) {
-        const el = document.getElementById(canvasId);
-        if (!el || typeof Chart === 'undefined') return;
-        const points = JSON.parse(document.getElementById(dataId).textContent);
-        const isActivity = Object.prototype.hasOwnProperty.call(points[0] || {}, 'active_users');
-        new Chart(el.getContext('2d'), {
-            type: 'line',
-            data: {
-                labels: points.map((p) => p.period),
-                datasets: [{
-                    label: label,
-                    data: points.map((p) => isActivity ? p.active_users : p.count),
-                    borderColor: color,
-                    backgroundColor: color + '33',
-                    tension: 0.3,
-                    fill: true,
-                    pointRadius: 2,
-                }],
-            },
-            options: {
-                responsive: true,
-                plugins: { legend: { display: false } },
-                scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
-            },
-        });
-    }
-
-    lineChart('dopxDauChart', 'dopx-dau-data', 'DAU', '#6366f1');
-    lineChart('dopxWauChart', 'dopx-wau-data', 'WAU', '#8b5cf6');
-    lineChart('dopxRegChart', 'dopx-reg-data', 'Регистрации', '#10b981');
-    lineChart('dopxEvalChart', 'dopx-eval-data', 'Оценки', '#f59e0b');
-
-    const ratingEl = document.getElementById('dopxRatingChart');
-    if (ratingEl && typeof Chart !== 'undefined') {
-        const distribution = JSON.parse(document.getElementById('dopx-rating-data').textContent);
-        new Chart(ratingEl.getContext('2d'), {
-            type: 'bar',
-            data: {
-                labels: Object.keys(distribution),
-                datasets: [{
-                    label: 'Оценок',
-                    data: Object.values(distribution),
-                    backgroundColor: '#6366f1',
-                    borderRadius: 4,
-                }],
-            },
-            options: {
-                responsive: true,
-                plugins: { legend: { display: false } },
-                scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
-            },
-        });
-    }
+    if (!window.dopxCharts) return;
+    const data = (id) => JSON.parse(document.getElementById(id).textContent);
+    dopxCharts.line('dopxDauChart', data('dopx-dau-data'), {label: 'DAU', color: '#6366f1'});
+    dopxCharts.line('dopxWauChart', data('dopx-wau-data'), {label: 'WAU', color: '#8b5cf6'});
+    dopxCharts.line('dopxRegChart', data('dopx-reg-data'), {label: 'Регистрации', color: '#10b981'});
+    dopxCharts.line('dopxEvalChart', data('dopx-eval-data'), {label: 'Оценки', color: '#f59e0b'});
+    const distribution = data('dopx-rating-data');
+    dopxCharts.bar('dopxRatingChart', Object.keys(distribution), Object.values(distribution), {label: 'Оценок', color: '#6366f1'});
 });
 </script>
 {% endif %}

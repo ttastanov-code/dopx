@@ -1,9 +1,10 @@
+{% load ui_extras %}
 {# Партиал «DOPX Лучшие тура» для HTMX-поллинга. #}
 <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
     <div class="flex items-center gap-2 text-xs md:text-sm opacity-60">
         <i class="ti ti-refresh"></i>
         {% if round_xi.last_computed_at %}
-            Обновлено {{ round_xi.last_computed_at|timesince }} назад
+            Обновлено {{ round_xi.last_computed_at|ago }}
         {% else %}
             Пока не пересчитывался. Первый пересчёт запустится в ближайшие 15 минут
         {% endif %}
@@ -66,6 +67,17 @@
     </div>
 </div>
 
+{% if not has_filled_slots %}
+{# Одно объяснение вместо подписи под каждым пустым слотом. #}
+<div class="dx-empty mb-4">
+    <span class="dx-empty__icon"><i class="ti ti-users-group"></i></span>
+    <div>
+        <div class="dx-empty__title">Сборная тура не набралась</div>
+        <p class="dx-empty__text">В состав тура попадают игроки, за которых отдали хотя бы {{ round_min_votes_for_candidate }} {{ round_min_votes_for_candidate|ru_plural:"голос,голоса,голосов" }} после закрытия голосования.</p>
+    </div>
+</div>
+{% endif %}
+
 {# === ПОЛЕ: 4-3-3 === #}
 <div class="relative overflow-hidden rounded-3xl p-4 py-8 md:p-10 mb-6 shadow-lg"
      style="background: repeating-linear-gradient(to bottom,
@@ -102,7 +114,7 @@
                     {% if card.explanation %}<span class="text-white/70">{% include 'components/_tooltip_icon.html' with text=card.explanation %}</span>{% endif %}
                 </div>
                 {% else %}
-                <div class="mt-2 text-[9px] md:text-xs text-white/35 leading-tight">Пока недостаточно<br>голосов</div>
+                <div class="mt-2 text-[9px] md:text-xs text-white/40 leading-tight">{{ card.label }}</div>
                 {% endif %}
             </div>
             {% endfor %}

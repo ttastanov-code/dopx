@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% load partner_tags %}
+{% load ui_extras %}
 
 {% block content %}
 
@@ -44,7 +45,7 @@
             <div class="font-bold text-lg break-words">{{ c.city }}</div>
             <div class="text-2xl font-bold text-primary">{{ c.per_user }}</div>
             <div class="text-xs opacity-60">оценок на болельщика</div>
-            <div class="text-xs opacity-50 mt-1">{{ c.users }} болельщиков · {{ c.evaluations }} оценок</div>
+            <div class="text-xs opacity-50 mt-1">{{ c.users }} {{ c.users|default:0|ru_plural:"болельщик,болельщика,болельщиков" }} · {{ c.evaluations }} {{ c.evaluations|default:0|ru_plural:"оценка,оценки,оценок" }}</div>
         </div>
     </a>
     {% endfor %}
@@ -73,7 +74,7 @@
                     <td>
                         <a href="{% url 'users:leaderboard' %}?city={{ c.city|urlencode }}" class="font-medium link link-hover">{{ c.city }}</a>
                         {% if c.city == my_city %}<span class="badge badge-xs badge-primary ml-1">ваш город</span>{% endif %}
-                        <div class="text-xs opacity-50 sm:hidden">{{ c.users }} болельщиков · {{ c.evaluations }} оценок</div>
+                        <div class="text-xs opacity-50 sm:hidden">{{ c.users }} {{ c.users|default:0|ru_plural:"болельщик,болельщика,болельщиков" }} · {{ c.evaluations }} {{ c.evaluations|default:0|ru_plural:"оценка,оценки,оценок" }}</div>
                     </td>
                     <td class="text-center font-bold text-primary">{{ c.per_user }}</td>
                     <td class="text-center hidden sm:table-cell">{{ c.evaluations }}</td>

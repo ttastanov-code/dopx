@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% load static rating_extras %}
+{% load ui_extras %}
 {% load match_extras %}
 {% load position_extras %}
 {% load partner_tags %}
@@ -55,6 +56,22 @@
                         <div class="text-[10px] md:text-xs opacity-60 flex items-center gap-1 mb-1">Всего оценок{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.aggregate.total_votes %}</div>
                         <div class="md-metric__value text-xl md:text-3xl">{{ match_aggregate.total_votes }}</div>
                     </div>
+                </div>
+            </div>
+            {% elif ratings_hidden %}
+            {# Пока идёт голосование, цифры видит только тот, кто уже оценил матч — чтобы не подстраиваться. #}
+            <div class="md-side-card">
+                <div class="md-side-card__head flex items-center gap-2">
+                    <i class="ti ti-eye-off"></i>
+                    <h3 class="font-extrabold text-base md:text-lg">Рейтинги скрыты до вашей оценки</h3>
+                </div>
+                <div class="p-4 sm:p-5">
+                    <p class="text-sm opacity-70 leading-relaxed">Пока идёт голосование, оценки игроков, команд, тренеров и судьи видны только тем, кто уже оценил матч, — так никто не подстраивается под чужое мнение. После закрытия голосования рейтинги откроются всем.</p>
+                    {% if voting_open and user.is_authenticated %}
+                    <a href="{% url 'evaluations:context' match.id %}" class="btn btn-primary btn-sm mt-3 w-full sm:w-auto"><i class="ti ti-star"></i> Оценить матч</a>
+                    {% elif voting_open %}
+                    <a href="{% url 'users:login' %}?next={{ request.path|urlencode }}" class="btn btn-primary btn-sm mt-3 w-full sm:w-auto"><i class="ti ti-login"></i> Войти и оценить</a>
+                    {% endif %}
                 </div>
             </div>
             {% endif %}
@@ -121,76 +138,10 @@
             {% include 'matches/_match_statistics_card.html' %}
 
             {# === СОСТАВЫ === #}
-            {% if lineups %}
-            <div class="md-side-card">
-                <div class="md-side-card__head flex items-center gap-2">
-                    <i class="ti ti-users"></i>
-                    <h3 class="font-extrabold text-base md:text-lg">Составы команд</h3>
-                </div>
-                <div class="p-3 sm:p-4 grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
-                    {% for lineup in lineups %}
-                    <div class="md-lineup {% if lineup.side == 'home' %}md-lineup--home{% else %}md-lineup--away{% endif %}">
-                        <div class="md-lineup__head flex items-center justify-between">
-                            <a href="{% url 'teams:detail' lineup.team.id %}" class="font-bold text-sm md:text-base truncate hover:underline hover:text-primary">{{ lineup.team.name }}</a>
-                            <span class="text-xs opacity-60 font-medium flex items-center gap-1.5">
-                                {# Формация (Sportmonks formations). #}
-                                {% if lineup.formation %}
-                                <span class="badge badge-ghost badge-xs font-mono">{{ lineup.formation }}</span>
-                                {% endif %}
-                                {{ lineup.get_side_display }}
-                            </span>
-                        </div>
-                        <div class="p-2.5 md:p-3">
-                            {# Стартовый состав #}
-                            <div class="mb-3">
-                                <div class="text-[10px] font-bold uppercase tracking-wider opacity-50 mb-1.5 flex items-center gap-1">
-                                    <i class="ti ti-circle-filled text-[6px] flex-shrink-0"></i>
-                                    Стартовый состав
-                                </div>
-                                <div>
-                                    {% for lp in lineup.players.all|dictsort:"shirt_number" %}
-                                        {% if lp.is_starting %}
-                                        <a href="{% url 'players:detail' lp.player.id %}"
-                                           class="md-lineup__row md-lineup__row--starting flex text-sm hover:text-primary transition-colors group">
-                                            <span class="md-lineup__num">{{ lp.shirt_number|default:"-" }}</span>
-                                            <span class="truncate ml-2">{{ lp.player }}</span>
-                                            {% with lp_position=lp.position|position_label %}
-                                            {% if lp_position %}
-                                            <span class="text-[9px] opacity-40 bg-base-200 px-1.5 py-0.5 rounded ml-auto flex-shrink-0 hidden sm:inline">{{ lp_position }}</span>
-                                            {% endif %}
-                                            {% endwith %}
-                                        </a>
-                                        {% endif %}
-                                    {% endfor %}
-                                </div>
-                            </div>
-                            {# Запасные #}
-                            <div>
-                                <div class="text-[10px] font-bold uppercase tracking-wider opacity-40 mb-1.5 flex items-center gap-1">
-                                    <i class="ti ti-circle text-[6px] flex-shrink-0"></i>
-                                    Запасные
-                                </div>
-                                <div>
-                                    {% for lp in lineup.players.all|dictsort:"shirt_number" %}
-                                        {% if not lp.is_starting %}
-                                        <a href="{% url 'players:detail' lp.player.id %}"
-                                           class="md-lineup__row flex text-sm hover:text-primary transition-colors group opacity-65 hover:opacity-100">
-                                            <span class="md-lineup__num">{{ lp.shirt_number|default:"-" }}</span>
-                                            <span class="truncate ml-2">{{ lp.player }}</span>
-                                        </a>
-                                        {% endif %}
-                                    {% endfor %}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
-            {% endif %}
+            {% include 'matches/_lineups.html' %}
 
-            {# === LIVE-ПУЛЬС === #}
-            {% if match.status == 'live' %}
+            {# === LIVE-ПУЛЬС === — и незадолго до старта, чтобы включиться без перезагрузки. #}
+            {% if match.live_poll_seconds %}
             <div class="md-side-card border-error/30" style="background-image: linear-gradient(to bottom right, color-mix(in oklab, var(--color-error) 6%, transparent), transparent);">
                 <div class="p-3 sm:p-4">
                     <div class="flex items-center justify-between mb-2 md:mb-3">
@@ -201,12 +152,14 @@
                         <span class="text-xs opacity-60">Обновляется автоматически</span>
                     </div>
                     <p class="text-xs opacity-60 mb-3">Реагируйте на моменты матча прямо сейчас. Полную оценку составов дайте после финального свистка.</p>
-                    <div id="live-pulse-container"
+                    <div id="live-pulse-container" data-background-poll
                          hx-get="{% url 'events:pulse' match.id %}"
                          hx-trigger="load"
                          hx-swap="outerHTML">
-                        <div class="flex justify-center py-4">
-                            <span class="loading loading-spinner loading-sm"></span>
+                        <div class="dx-skel" aria-busy="true" aria-label="Загрузка">
+                        <span class="dx-skel__row"></span>
+                        <span class="dx-skel__row"></span>
+                        <span class="dx-skel__row"></span>
                         </div>
                     </div>
                 </div>
@@ -230,9 +183,13 @@
                 </div>
                 {# Контейнер событий (скролл внутри) #}
                 <div class="p-3 sm:p-5 overflow-x-auto">
-                    <div id="events-container" hx-get="{% url 'matches:events' match.id %}" hx-trigger="load" hx-swap="outerHTML">
-                        <div class="flex justify-center py-8">
-                            <span class="loading loading-spinner loading-md"></span>
+                    <div id="events-container" data-background-poll hx-get="{% url 'matches:events' match.id %}" hx-trigger="load" hx-swap="outerHTML">
+                        <div class="dx-skel" aria-busy="true" aria-label="Загрузка событий">
+                        <span class="dx-skel__row"></span>
+                        <span class="dx-skel__row"></span>
+                        <span class="dx-skel__row"></span>
+                        <span class="dx-skel__row"></span>
+                        <span class="dx-skel__row"></span>
                         </div>
                     </div>
                 </div>
@@ -262,7 +219,7 @@
                             <div class="font-extrabold text-primary text-sm md:text-lg inline-flex items-center gap-1">
                                 <span class="pointer-events-none">{{ agg.performance_score|floatformat:1 }}</span>{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.aggregate.performance_score %}
                             </div>
-                            <div class="text-[10px] md:text-xs opacity-60 hidden sm:block pointer-events-none">{{ agg.total_votes }} оценок</div>
+                            <div class="text-[10px] md:text-xs opacity-60 hidden sm:block pointer-events-none">{{ agg.total_votes }} {{ agg.total_votes|default:0|ru_plural:"оценка,оценки,оценок" }}</div>
                             {% if agg.stat_rating %}
                             {# Оценка по статистике матча рядом с оценкой болельщиков. #}
                             <div class="text-[10px] md:text-xs opacity-70 pointer-events-none whitespace-nowrap">
@@ -426,4 +383,18 @@
         </div>
     </div>
 </div>
+{# Липкая кнопка оценки на телефоне: пока идёт голосование и матч ещё не оценён. Стили — css/ui.css. #}
+{% if voting_open and not user_has_evaluated %}
+<div class="dx-sticky-cta md:hidden">
+    <div class="dx-sticky-cta__text">
+        <span class="dx-sticky-cta__title">Оцените матч</span>
+        <span class="dx-sticky-cta__meta">Голосование закроется через {{ match.voting_open_until|timeuntil }}</span>
+    </div>
+    {% if user.is_authenticated %}
+    <a href="{% url 'evaluations:context' match.id %}" class="dx-sticky-cta__button"><i class="ti ti-star"></i> Оценить</a>
+    {% else %}
+    <a href="{% url 'users:login' %}?next={{ request.path|urlencode }}" class="dx-sticky-cta__button"><i class="ti ti-login"></i> Войти</a>
+    {% endif %}
+</div>
+{% endif %}
 {% endblock %}

@@ -163,8 +163,7 @@ DASHBOARD_SECTION_KEYS = [key for key, _label in DASHBOARD_SECTIONS]
 class StaffAccessGrant(models.Model):
     """Разделы дашборда, доступные staff-пользователю.
     - суперпользователь — всегда полный доступ;
-    - нет записи — полный доступ;
-    - allowed_sections=[] — доступа нет никуда.
+    - нет записи или allowed_sections=[] — доступа нет никуда.
     """
 
     user = models.OneToOneField(

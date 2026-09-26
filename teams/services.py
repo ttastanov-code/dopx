@@ -5,12 +5,14 @@
 """
 from __future__ import annotations
 
+import math
 from collections import defaultdict
 
 from django.core.cache import cache
 from django.db.models import Count, Q
 
 from aggregates.models import RefereeMatchAggregate, TeamMatchAggregate
+from aggregates.services import published_q
 
 # Сколько последних матчей берём для тренда.
 MOOD_TREND_RECENT_MATCHES = 5
@@ -32,7 +34,7 @@ def compute_mood_trend(team) -> dict | None:
         return cached
 
     recent = list(
-        TeamMatchAggregate.objects.filter(team=team, total_votes__gt=0)
+        TeamMatchAggregate.objects.filter(published_q(), team=team, total_votes__gt=0)
         .order_by("-match__start_time")[:MOOD_TREND_RECENT_MATCHES]
     )
     if len(recent) < 2:
@@ -87,7 +89,7 @@ def compute_mood_series(team, *, limit: int = MOOD_SERIES_MATCHES) -> list[dict]
         return cached
 
     aggs = list(
-        TeamMatchAggregate.objects.filter(team=team, total_votes__gt=0)
+        TeamMatchAggregate.objects.filter(published_q(), team=team, total_votes__gt=0)
         .select_related("match", "match__home_team", "match__away_team")
         .order_by("-match__start_time")[:limit]
     )
@@ -153,21 +155,16 @@ def build_sparkline_points(
     return " ".join(f"{x:.1f},{y:.1f}" for x, y in coords)
 
 
-# Геометрия графика «Индекс настроения клуба»: mood и trust — два отдельных
-# мини-графика со своей сеткой; сетка только 0/5/10; «ожидания» — SVG-бары.
-# Всё считается на сервере, без JS-библиотек.
+# Геометрия графика настроения: реакция и доверие на общей шкале, считается на сервере.
 MOOD_CHART_WIDTH = 640
-# mood — крупный график, trust — компактный и приглушённый.
-MOOD_MAIN_HEIGHT = 148
-MOOD_TRUST_HEIGHT = 64
-# Левый отступ под подпись «10».
-MOOD_CHART_PAD_X = 32
-MOOD_CHART_PAD_TOP = 16
-MOOD_CHART_PAD_BOTTOM = 16
+MOOD_MAIN_HEIGHT = 160
+# Отступы внутри SVG: сверху/снизу — чтобы точки на краях шкалы не обрезались.
+MOOD_CHART_PAD_X = 0
+MOOD_CHART_PAD_TOP = 12
+MOOD_CHART_PAD_BOTTOM = 12
 MOOD_CHART_VALUE_MAX = 10.0
-# Сетка только по целым значениям.
-MOOD_CHART_GRID_VALUES = (0, 5, 10)
-MOOD_TRUST_GRID_VALUES = (0, 10)
+# Минимальный размах шкалы: иначе шум в 0.2 балла выглядит обвалом.
+MOOD_CHART_MIN_SPAN = 4
 
 EXPECTATION_BAR_WIDTH = 30
 EXPECTATION_BAR_GAP = 16
@@ -184,7 +181,7 @@ EXPECTATION_MIN_COVERAGE_RATIO = 0.0
 def _build_series_chart(
     series: list[dict], key: str, *,
     width: int, height: int, pad_x: int, pad_top: int, pad_bottom: int,
-    value_max: float = MOOD_CHART_VALUE_MAX, grid_values: tuple = MOOD_CHART_GRID_VALUES,
+    value_min: float = 0.0, value_max: float = MOOD_CHART_VALUE_MAX, grid_values: tuple = (0, 5, 10),
 ) -> dict:
     """Геометрия одного мини-графика. latest/latest_point — последняя известная
     точка ряда (даже если рисовать линию не из чего).
@@ -195,8 +192,8 @@ def _build_series_chart(
     baseline_y = pad_top + plot_h
 
     def scale_y(value: float) -> float:
-        clamped = max(0.0, min(value_max, value))
-        return pad_top + plot_h - (clamped / value_max) * plot_h
+        clamped = max(value_min, min(value_max, value))
+        return pad_top + plot_h - ((clamped - value_min) / (value_max - value_min)) * plot_h
 
     gridlines = [{"y": round(scale_y(v), 1), "label": f"{v:g}"} for v in grid_values]
 
@@ -226,7 +223,8 @@ def _build_series_chart(
     area_cmds += [f"L {x:.1f},{y:.1f}" for x, y, _ in pts]
     area_cmds.append(f"L {pts[-1][0]:.1f},{baseline_y:.1f} Z")
     dots = [
-        {"x": round(x, 1), "y": round(y, 1), "value": point[key], "label": point["label"], "opponent": point["opponent"]}
+        {"x": round(x, 1), "y": round(y, 1), "value": point[key], "label": point["label"],
+         "opponent": point["opponent"], "trust": point.get("trust"), "is_last": point is series[-1]}
         for x, y, point in pts
     ]
     result["polyline"] = polyline
@@ -264,23 +262,36 @@ def _build_expectation_bars(series: list[dict]) -> dict:
     }
 
 
+def _mood_domain(series: list[dict]) -> tuple[int, int]:
+    """Целочисленная шкала по данным (±1 балл запаса) в пределах 0–10, размах не меньше MOOD_CHART_MIN_SPAN."""
+    values = [p[k] for p in series for k in ("mood", "trust") if p.get(k) is not None]
+    if not values:
+        return 0, int(MOOD_CHART_VALUE_MAX)
+    top = int(MOOD_CHART_VALUE_MAX)
+    lo = max(0, math.floor(min(values)) - 1)
+    hi = min(top, math.ceil(max(values)) + 1)
+    while hi - lo < MOOD_CHART_MIN_SPAN:
+        if lo > 0:
+            lo -= 1
+        if hi - lo < MOOD_CHART_MIN_SPAN and hi < top:
+            hi += 1
+    return lo, hi
+
+
 def build_mood_chart(series: list[dict]) -> dict | None:
     """Данные для графика настроения клуба. None, если оценённых матчей нет."""
     if not series:
         return None
 
-    mood = _build_series_chart(
-        series, "mood",
+    lo, hi = _mood_domain(series)
+    geometry = dict(
         width=MOOD_CHART_WIDTH, height=MOOD_MAIN_HEIGHT,
         pad_x=MOOD_CHART_PAD_X, pad_top=MOOD_CHART_PAD_TOP, pad_bottom=MOOD_CHART_PAD_BOTTOM,
-        grid_values=MOOD_CHART_GRID_VALUES,
+        value_min=lo, value_max=hi, grid_values=(lo, round((lo + hi) / 2), hi),
     )
-    trust = _build_series_chart(
-        series, "trust",
-        width=MOOD_CHART_WIDTH, height=MOOD_TRUST_HEIGHT,
-        pad_x=MOOD_CHART_PAD_X, pad_top=10, pad_bottom=12,
-        grid_values=MOOD_TRUST_GRID_VALUES,
-    )
+    mood = _build_series_chart(series, "mood", **geometry)
+    # Та же шкала: линия доверия накладывается на общий график.
+    trust = _build_series_chart(series, "trust", **geometry)
     expectation = _build_expectation_bars(series)
     expectation_covered = sum(1 for point in series if point["expectation_pct"] is not None)
     has_expectation_data = (
@@ -288,10 +299,15 @@ def build_mood_chart(series: list[dict]) -> dict | None:
         and expectation_covered / len(series) >= EXPECTATION_MIN_COVERAGE_RATIO
     )
 
+    expectations = [point["expectation_pct"] for point in series if point["expectation_pct"] is not None]
+    # Подписи оси X: соперник и дата — первые/последние, середину пропускаем при тесноте.
+    axis = [{"opponent": point["opponent"], "label": point["label"]} for point in series]
     return {
         "mood": mood,
         "trust": trust,
         "expectation": expectation,
+        "avg_expectation": round(sum(expectations) / len(expectations)) if expectations else None,
+        "axis": axis,
         "has_expectation_data": has_expectation_data,
         "latest_mood": mood["latest"],
         "latest_trust": trust["latest"],
@@ -306,7 +322,7 @@ def find_season_controversial_matches(team, season, *, limit: int = 3) -> list[d
     хозяев и гостей. Это разброс мнений, а не факт судейской ошибки.
     """
     aggs = list(
-        RefereeMatchAggregate.objects.filter(match__season=season)
+        RefereeMatchAggregate.objects.filter(published_q(), match__season=season)
         .filter(Q(match__home_team=team) | Q(match__away_team=team))
         .select_related("match", "match__home_team", "match__away_team")
     )

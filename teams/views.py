@@ -14,7 +14,7 @@ from players.models import Player
 from matches.models import Match
 from aggregates.models import PlayerMatchAggregate, MatchAggregate, TeamMatchAggregate
 from lineups.models import MatchLineupPlayer
-from aggregates.services import MIN_VOTES_FOR_DISPLAY
+from aggregates.services import min_votes_for_display, published_q
 from aggregates.services import vote_weighted_avg
 from seasons.models import Season
 import logging
@@ -183,14 +183,14 @@ class TeamDetailView(DetailView):
         top_players = PlayerMatchAggregate.objects.annotate(
             played_for_this_team=Exists(played_for_this_team)
         ).filter(
-            played_for_this_team=True, total_votes__gte=MIN_VOTES_FOR_DISPLAY
+            published_q(), played_for_this_team=True, total_votes__gte=min_votes_for_display()
         ).select_related(
             'player',
             'match'
         ).order_by('-performance_score')[:5]
         
         # Средние оценки команды по TeamMatchAggregate (взвешенные), total — сумма голосов.
-        team_match_aggs = TeamMatchAggregate.objects.filter(team=team).aggregate(
+        team_match_aggs = TeamMatchAggregate.objects.filter(published_q(), team=team).aggregate(
             avg_tactics=vote_weighted_avg('avg_tactics'),
             avg_effort=vote_weighted_avg('avg_effort'),
             avg_organization=vote_weighted_avg('avg_organization'),
@@ -317,6 +317,9 @@ class TeamDetailView(DetailView):
         if rating_correction is not None and abs(rating_correction.correction) < 0.01:
             rating_correction = None
         context['rating_correction'] = rating_correction
+        context['corrected_matches_count'] = TeamMatchAggregate.objects.filter(team=team).filter(
+            Q(rating_correction_applied__gte=0.01) | Q(rating_correction_applied__lte=-0.01)
+        ).count()
 
         # Где болеют: города болельщиков (None — мало данных).
         from users.city_stats import team_fan_geography
@@ -339,11 +342,11 @@ def team_rating_widget(request, pk):
     """
     team = get_object_or_404(Team, pk=pk)
 
-    evals_stats = TeamMatchAggregate.objects.filter(team=team).aggregate(
+    evals_stats = TeamMatchAggregate.objects.filter(published_q(), team=team).aggregate(
         avg_score=vote_weighted_avg('performance_score'), total_votes=Sum('total_votes'),
     )
     total_votes = evals_stats['total_votes'] or 0
-    has_enough_votes = total_votes >= MIN_VOTES_FOR_DISPLAY
+    has_enough_votes = total_votes >= min_votes_for_display()
 
     from partners.services import track_widget_embed_view
 

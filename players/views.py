@@ -11,7 +11,7 @@ from django.utils import timezone
 from players.models import Player
 from teams.models import Team
 from aggregates.models import PlayerMatchAggregate
-from aggregates.services import MIN_VOTES_FOR_DISPLAY
+from aggregates.services import min_votes_for_display, published_q
 from aggregates.services import vote_weighted_avg
 from core.utils import normalize_kz
 from core.models import get_setting
@@ -54,7 +54,7 @@ class PlayerListView(ListView):
             # Prefetch с [:1] — только лучший агрегат на игрока.
             models.Prefetch(
                 'match_aggregates',
-                queryset=PlayerMatchAggregate.objects.order_by('-performance_score').only(
+                queryset=PlayerMatchAggregate.objects.filter(published_q()).order_by('-performance_score').only(
                     'id', 'performance_score', 'player_id', 'total_votes'
                 )[:1],
                 to_attr='best_aggregate'
@@ -159,8 +159,9 @@ class PlayerDetailView(DetailView):
         ).filter(actually_played).count()
         
         # Агрегаты игрока по матчам
+        # Только матчи с закрытым голосованием — до этого рейтинг матча не публикуется.
         aggregates = PlayerMatchAggregate.objects.filter(
-            player=player
+            published_q(), player=player
         ).select_related(
             'match__league',
             'match__season',
@@ -170,7 +171,7 @@ class PlayerDetailView(DetailView):
 
         # Общая статистика
         stats_raw = PlayerMatchAggregate.objects.filter(
-            player=player
+            published_q(), player=player
         ).aggregate(
             avg_performance=vote_weighted_avg('performance_score'),
             avg_risk=vote_weighted_avg('risk_index'),
@@ -207,9 +208,20 @@ class PlayerDetailView(DetailView):
         for agg in aggregates:
             agg.stat_rating = per_match_stat.get(agg.match_id)
 
+        # «Форма по матчам»: соперник — по заявке того матча (после трансфера подписи верные).
+        from core.form_chart import build_form_points
+        team_by_match = dict(
+            MatchLineupPlayer.objects.filter(player=player, lineup__match_id__in=[a.match_id for a in aggregates])
+            .values_list('lineup__match_id', 'lineup__team_id')
+        )
+        form_points = []
+        for agg in aggregates[:10]:
+            form_points += build_form_points([agg], team_by_match.get(agg.match_id, player.team_id), min_votes_for_display())
+        form_points.reverse()
+
         # Лучшие матчи игрока
         best_matches = PlayerMatchAggregate.objects.filter(
-            player=player
+            published_q(), player=player
         ).select_related(
             'match__home_team',
             'match__away_team'
@@ -309,6 +321,11 @@ class PlayerDetailView(DetailView):
             'is_following': is_following,
             'active_sidelined': active_sidelined,
             'rating_correction': rating_correction,
+            'form_points': form_points,
+            # Поправка уже вшита в рейтинг прошлых матчей — показываем, даже если сейчас её нет.
+            'corrected_matches_count': PlayerMatchAggregate.objects.filter(player=player).filter(
+                Q(rating_correction_applied__gte=0.01) | Q(rating_correction_applied__lte=-0.01)
+            ).count(),
             'page_title': f'{player.first_name} {player.last_name} — DOPX',
         })
 
@@ -368,7 +385,7 @@ class PlayerSeasonRecapView(DetailView):
             context.update({'season': None})
             return context
 
-        aggregates_qs = PlayerMatchAggregate.objects.filter(player=player, match__season=season)
+        aggregates_qs = PlayerMatchAggregate.objects.filter(published_q(), player=player, match__season=season)
         stats = aggregates_qs.aggregate(
             avg_performance=vote_weighted_avg('performance_score'),
             total_votes=Sum('total_votes'),
@@ -381,11 +398,11 @@ class PlayerSeasonRecapView(DetailView):
             Q(is_starting=True) | Q(minute_in__isnull=False)
         ).values('lineup__match_id').distinct().count()
 
-        has_enough_votes = (stats['total_votes'] or 0) >= MIN_VOTES_FOR_DISPLAY
+        has_enough_votes = (stats['total_votes'] or 0) >= min_votes_for_display()
         best_match = None
         if has_enough_votes:
             best_match = (
-                aggregates_qs.filter(total_votes__gte=MIN_VOTES_FOR_DISPLAY)
+                aggregates_qs.filter(total_votes__gte=min_votes_for_display())
                 .select_related('match__home_team', 'match__away_team')
                 .order_by('-performance_score')
                 .first()
@@ -426,11 +443,11 @@ def player_season_recap_card(request, pk, season_id):
     player = get_object_or_404(Player.objects.select_related('team'), pk=pk)
     season = get_object_or_404(Season, pk=season_id)
 
-    stats = PlayerMatchAggregate.objects.filter(player=player, match__season=season).aggregate(
+    stats = PlayerMatchAggregate.objects.filter(published_q(), player=player, match__season=season).aggregate(
         avg_performance=vote_weighted_avg('performance_score'),
         total_votes=Sum('total_votes'),
     )
-    has_enough_votes = (stats['total_votes'] or 0) >= MIN_VOTES_FOR_DISPLAY
+    has_enough_votes = (stats['total_votes'] or 0) >= min_votes_for_display()
     # Только реально сыгранные матчи — как на странице итогов.
     matches_played = MatchLineupPlayer.objects.filter(
         player=player, lineup__match__season=season, lineup__match__status='finished'
@@ -462,11 +479,11 @@ def player_rating_widget(request, pk):
     """
     player = get_object_or_404(Player.objects.select_related('team'), pk=pk)
 
-    stats = PlayerMatchAggregate.objects.filter(player=player).aggregate(
+    stats = PlayerMatchAggregate.objects.filter(published_q(), player=player).aggregate(
         avg_performance=vote_weighted_avg('performance_score'),
         total_votes=Sum('total_votes'),
     )
-    has_enough_votes = (stats['total_votes'] or 0) >= MIN_VOTES_FOR_DISPLAY
+    has_enough_votes = (stats['total_votes'] or 0) >= min_votes_for_display()
 
     # Считаем показы виджета по HTTP_REFERER.
     from partners.services import track_widget_embed_view

@@ -91,7 +91,11 @@
                     {% if user.is_staff %}
                     <li class="border-t border-base-300 mt-1 pt-1"><a href="{% url 'dashboard:overview' %}"><i class="ti ti-layout-dashboard"></i> Staff-дашборд</a></li>
                     {% endif %}
-                    <li class="border-t border-base-300 mt-1 pt-1"><a href="{% url 'users:logout' %}" class="text-error"><i class="ti ti-logout"></i> Выйти</a></li>
+                    <li class="border-t border-base-300 mt-1 pt-1">
+                        <form method="post" action="{% url 'users:logout' %}" class="p-0">{% csrf_token %}
+                            <button type="submit" class="text-error w-full text-left"><i class="ti ti-logout"></i> Выйти</button>
+                        </form>
+                    </li>
                 </ul>
             </div>
         </div>
@@ -161,9 +165,11 @@
             <a href="{% url 'users:profile' %}" class="flex items-center gap-3 p-3 rounded-lg hover:bg-base-200">
                 <i class="ti ti-user text-xl"></i><span>Профиль</span>
             </a>
-            <a href="{% url 'users:logout' %}" class="flex items-center gap-3 p-3 rounded-lg hover:bg-error/10 text-error">
-                <i class="ti ti-logout text-xl"></i><span>Выйти</span>
-            </a>
+            <form method="post" action="{% url 'users:logout' %}">{% csrf_token %}
+                <button type="submit" class="flex w-full items-center gap-3 p-3 rounded-lg hover:bg-error/10 text-error">
+                    <i class="ti ti-logout text-xl"></i><span>Выйти</span>
+                </button>
+            </form>
         </div>
         {% endif %}
     </div>

@@ -26,7 +26,7 @@ from aggregates.services import vote_weighted_avg
 from aggregates import tasks as agg_tasks
 from coaches.models import Coach
 from core.models import PlatformSetting
-from evaluations.models import ContextEvaluation, PlayerEvaluation, RefereeEvaluation
+from evaluations.models import EvaluationSession, ContextEvaluation, PlayerEvaluation, RefereeEvaluation
 from leagues.models import League
 from matches.models import Match, MatchPlayerStatistics, MatchTeamStatistics
 from players.models import Player
@@ -91,6 +91,10 @@ class CorrectionAppliedTests(_Fixture):
         self.match = self.make_match(0)
         user = self.make_user("voter")
         ContextEvaluation.objects.create(user=user, match=self.match, watched_type="partial")
+        # В рейтинг идут только голоса завершённых сессий.
+        EvaluationSession.objects.create(
+            user=user, match=self.match, status="completed", completed_at=timezone.now(),
+        )
         PlayerEvaluation.objects.create(
             user=user, match=self.match, player=self.player, contribution=6, risk=3, potential=6
         )

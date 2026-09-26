@@ -20,7 +20,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from aggregates.models import CoachMatchAggregate, PlayerMatchAggregate, RefereeMatchAggregate
-from aggregates.services import CONFIDENT_VOTES_THRESHOLD
+from aggregates.services import CONFIDENT_VOTES_THRESHOLD, min_votes_for_display, published_q
 from coaches.models import Coach
 from events.models import MatchEvent
 from lineups.models import MatchLineupPlayer
@@ -36,6 +36,11 @@ from referees.models import Referee
 from season_squad.models import SeasonBestXI, SeasonBestXISlot, SeasonPositionRanking
 
 logger = logging.getLogger(__name__)
+
+
+def _participants_q(season) -> Q:
+    """Активный сезон — только действующие; завершённый — все, кто играл (история не должна меняться)."""
+    return Q(is_active=True) if season.is_active else Q()
 
 # C для байесовского сглаживания — «виртуальные матчи».
 SHRINKAGE_C = 6.0
@@ -160,11 +165,12 @@ def _build_player_pool_by_code(season, player_ct: ContentType) -> dict[str, list
     team_name_by_player = _player_season_team_name(season)
     stats = (
         PlayerMatchAggregate.objects
-        .filter(match__season=season)
+        # Матчи с закрытым голосованием и порогом голосов — одиночный голос не делает сезон.
+        .filter(published_q(), match__season=season, total_votes__gte=min_votes_for_display())
         .values("player_id")
         .annotate(raw_avg=Avg("performance_score"), matches=Count("id"), votes=Sum("total_votes"))
     )
-    players = {str(p.id): p for p in Player.objects.filter(is_active=True).select_related("team")}
+    players = {str(p.id): p for p in Player.objects.filter(_participants_q(season)).select_related("team")}
 
     pool: dict[str, list[Candidate]] = defaultdict(list)
     for row in stats:
@@ -194,7 +200,8 @@ def _build_coach_pool(season, coach_ct: ContentType) -> list[Candidate]:
     team_name_by_coach = _coach_season_team_name(season)
     stats = (
         CoachMatchAggregate.objects
-        .filter(match__season=season)
+        # Матчи с закрытым голосованием и порогом голосов — одиночный голос не делает сезон.
+        .filter(published_q(), match__season=season, total_votes__gte=min_votes_for_display())
         .values("coach_id")
         .annotate(
             avg_t=Avg("avg_tactics"), avg_s=Avg("avg_substitutions"),
@@ -202,7 +209,7 @@ def _build_coach_pool(season, coach_ct: ContentType) -> list[Candidate]:
             matches=Count("id"), votes=Sum("total_votes"),
         )
     )
-    coaches = {str(c.id): c for c in Coach.objects.filter(is_active=True).select_related("team")}
+    coaches = {str(c.id): c for c in Coach.objects.filter(_participants_q(season)).select_related("team")}
 
     pool = []
     for row in stats:
@@ -235,7 +242,8 @@ def _build_referee_pool(season, referee_ct: ContentType) -> list[Candidate]:
     """
     match_level = (
         RefereeMatchAggregate.objects
-        .filter(match__season=season)
+        # Матчи с закрытым голосованием и порогом голосов — одиночный голос не делает сезон.
+        .filter(published_q(), match__season=season, total_votes__gte=min_votes_for_display())
         .values("referee_id")
         .annotate(
             avg_performance=Avg("performance_score"),
@@ -244,7 +252,7 @@ def _build_referee_pool(season, referee_ct: ContentType) -> list[Candidate]:
         )
     )
 
-    referees = {str(r.id): r for r in Referee.objects.filter(is_active=True)}
+    referees = {str(r.id): r for r in Referee.objects.filter(_participants_q(season))}
     pool = []
     for row in match_level:
         rid = str(row["referee_id"])
@@ -454,10 +462,12 @@ def _prune_old_rankings(best_xi: SeasonBestXI, keep_batches: int = RANKING_BATCH
         SeasonPositionRanking.objects.filter(best_xi=best_xi, computed_at__in=stale).delete()
 
 
-def recompute_best_xi(season) -> SeasonBestXI:
-    """Пересчёт сборной. Вызывается из Celery Beat и из админки. Идемпотентна."""
+def recompute_best_xi(season, *, force: bool = False) -> SeasonBestXI:
+    """Пересчёт сборной. Вызывается из Celery Beat и из админки. Идемпотентна.
+    force=True пересчитывает и итоговую (после чистки данных); фиксация сохраняется.
+    """
     best_xi, _created = SeasonBestXI.objects.get_or_create(season=season)
-    if best_xi.is_final:
+    if best_xi.is_final and not force:
         logger.info("Сборная сезона %s зафиксирована как итоговая — пересчёт пропущен", season)
         return best_xi
 

@@ -13,14 +13,14 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 
 from django.contrib.contenttypes.models import ContentType
-from django.db.models import Avg, Count, F, FloatField, Q, Sum
+from django.db.models import Avg, Count, Q, Sum
 from django.urls import reverse
 from django.utils import timezone
 
-from aggregates.models import CoachMatchAggregate, PlayerMatchAggregate
+from aggregates.models import CoachMatchAggregate, MatchAggregate, PlayerMatchAggregate
+from aggregates.services import published_q
 from coaches.models import Coach
 from events.models import MatchEvent
-from evaluations.models import MatchEvaluation
 from lineups.models import MatchLineupPlayer
 from matches.models import Match
 from players.models import Player
@@ -33,6 +33,11 @@ from players.positions import (
 from round_squad.models import RoundBestXI, RoundBestXISlot, RoundPositionRanking
 
 logger = logging.getLogger(__name__)
+
+
+def _participants_q(season) -> Q:
+    """Активный сезон — только действующие; завершённый — все, кто играл (история не должна меняться)."""
+    return Q(is_active=True) if season.is_active else Q()
 
 # «Виртуальные голоса» сглаживания.
 ROUND_VOTE_SHRINKAGE_C = 6.0
@@ -75,6 +80,28 @@ def resolve_current_tour(season) -> int | None:
     if tour is not None:
         return tour
     return resolve_practically_closed_tour(season)
+
+
+def resolve_default_round():
+    """(сезон, тур) по умолчанию: текущий тур активного сезона, а в начале нового
+    сезона, пока туров нет, — последний зафиксированный тур предыдущего. (None, None) — данных нет.
+    """
+    from seasons.models import Season
+
+    season = Season.get_primary_active()
+    if season is not None:
+        tour = resolve_current_tour(season)
+        if tour is not None:
+            return season, tour
+    last_final = (
+        RoundBestXI.objects.filter(is_final=True)
+        .select_related('season__league')
+        .order_by('-finalized_at', '-tour')
+        .first()
+    )
+    if last_final is None:
+        return None, None
+    return last_final.season, last_final.tour
 
 
 def resolve_practically_closed_tour(season) -> int | None:
@@ -141,7 +168,8 @@ def _build_round_player_data(season, tour: int):
     """
     stats_rows = (
         PlayerMatchAggregate.objects
-        .filter(match__season=season, match__tour=tour)
+        # Рейтинги матча публичны только после закрытия голосования.
+        .filter(published_q(), match__season=season, match__tour=tour)
         .values("player_id")
         .annotate(raw_avg=Avg("performance_score"), votes=Sum("total_votes"))
     )
@@ -161,7 +189,7 @@ def _build_round_player_data(season, tour: int):
             codes = resolve_lineup_codes(position, field_position)
             position_and_team[pid] = (codes, team_name or '')
 
-    players = {str(p.id): p for p in Player.objects.filter(is_active=True).select_related("team")}
+    players = {str(p.id): p for p in Player.objects.filter(_participants_q(season)).select_related("team")}
 
     player_stats: dict[str, RoundCandidate] = {}
     pool_by_code: dict[str, list[RoundCandidate]] = defaultdict(list)
@@ -195,7 +223,8 @@ def _build_round_coach_pool(season, tour: int) -> list[RoundCandidate]:
     coach_ct = ContentType.objects.get_for_model(Coach)
     rows = (
         CoachMatchAggregate.objects
-        .filter(match__season=season, match__tour=tour)
+        # Рейтинги матча публичны только после закрытия голосования.
+        .filter(published_q(), match__season=season, match__tour=tour)
         .values(
             "coach_id", "avg_tactics", "avg_substitutions", "avg_management", "avg_impact", "total_votes",
             "match__home_coach_id", "match__home_team__name", "match__away_team__name",
@@ -215,7 +244,7 @@ def _build_round_coach_pool(season, tour: int) -> list[RoundCandidate]:
         is_home = row["coach_id"] == row["match__home_coach_id"]
         bucket["team_name"] = row["match__home_team__name"] if is_home else row["match__away_team__name"]
 
-    coaches = {str(c.id): c for c in Coach.objects.filter(is_active=True)}
+    coaches = {str(c.id): c for c in Coach.objects.filter(_participants_q(season))}
     pool = []
     for cid, bucket in agg.items():
         coach = coaches.get(cid)
@@ -235,25 +264,20 @@ def _build_round_coach_pool(season, tour: int) -> list[RoundCandidate]:
 
 
 def _find_most_dramatic_match(season, tour: int):
-    """Самый драматичный матч тура: (match, drama_score, votes) по среднему
-    entertainment * tension, с минимумом голосов.
+    """Самый драматичный матч тура: (match, drama_score, votes) по drama_index агрегата
+    (entertainment * tension), с минимумом голосов.
     """
+    # MatchAggregate — те же допустимые и взвешенные голоса, что в рейтингах.
     best = (
-        MatchEvaluation.objects
-        .filter(match__season=season, match__tour=tour)
-        .values("match_id")
-        .annotate(
-            votes=Count("id"),
-            drama_avg=Avg(F("entertainment") * F("tension"), output_field=FloatField()),
-        )
-        .filter(votes__gte=ROUND_MIN_VOTES_FOR_CANDIDATE)
-        .order_by("-drama_avg")
+        MatchAggregate.objects
+        .filter(published_q(), match__season=season, match__tour=tour, total_votes__gte=ROUND_MIN_VOTES_FOR_CANDIDATE)
+        .select_related("match__home_team", "match__away_team")
+        .order_by("-drama_index")
         .first()
     )
     if not best:
         return None, None, None
-    match = Match.objects.select_related("home_team", "away_team").filter(pk=best["match_id"]).first()
-    return match, best["drama_avg"], best["votes"]
+    return best.match, best.drama_index, best.total_votes
 
 
 def _describe_nearest_competitor_round(score: float, runner_up: tuple[RoundCandidate, float] | None) -> str:

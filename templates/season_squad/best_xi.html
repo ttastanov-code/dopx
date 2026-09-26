@@ -8,9 +8,29 @@
       <i class="ti ti-shirt mr-2 text-warning"></i> Сборная DOPX сезона {{ season.year }}
     </h1>
     <p class="opacity-60 text-sm md:text-base">
+      {% if best_xi.is_final %}
+      {{ season.league.name }}: итоговый состав 4-3-3 сезона по оценкам болельщиков DOPX. Сезон завершён, состав зафиксирован.
+      {% else %}
       {{ season.league.name }}: лучший состав 4-3-3 по оценкам болельщиков DOPX. Голосование продолжается,
       состав пересчитывается автоматически и может измениться.
+      {% endif %}
     </p>
+    {% if best_xi.is_final %}<span class="badge badge-success badge-sm mt-2"><i class="ti ti-lock mr-1"></i> Итоговая</span>{% endif %}
+    {# Архив: сборные других сезонов. #}
+    {% if other_seasons %}
+    <div class="flex flex-wrap items-center gap-1.5 mt-3">
+      <span class="text-xs opacity-60">Другие сезоны:</span>
+      {% for other in other_seasons %}
+      <a href="{% url 'season_squad:best_xi' other.id %}" class="badge badge-outline badge-sm hover:badge-primary">{{ other.year }}</a>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if not has_filled_slots and other_seasons and not best_xi.is_final %}
+    <div class="alert alert-info text-xs md:text-sm mt-3">
+      <i class="ti ti-info-circle"></i>
+      <span>Сезон {{ season.year }} только начался — для сборной нужно минимум {{ min_matches_for_candidate }} оценённых матча у игрока. Пока можно посмотреть итоговую сборную сезона {{ other_seasons.0.year }}.</span>
+    </div>
+    {% endif %}
   </div>
 
   {# Embed-код сборной (модалка embedModal). #}
@@ -77,7 +97,7 @@
     <section id="xi" class="scroll-mt-24">
       <div id="best-xi-content" data-background-poll
            hx-get="{% if season %}{% url 'season_squad:best_xi_partial' season.id %}{% endif %}"
-           hx-trigger="every 60s" hx-swap="innerHTML">
+           hx-trigger="every 60s [document.visibilityState === 'visible'], dopx:wake" hx-swap="innerHTML">
         {% include 'season_squad/_best_xi_content.html' %}
       </div>
     </section>

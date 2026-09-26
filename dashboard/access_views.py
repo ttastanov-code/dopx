@@ -127,7 +127,7 @@ def access_grant_staff(request):
         user.is_staff = True
         user.save(update_fields=["is_staff"])
         _audit(request, user.username, mode="staff_granted")
-        messages.success(request, f"«{user.username}» теперь сотрудник. По умолчанию — полный доступ к дашборду; ограничьте ниже.")
+        messages.success(request, f"«{user.username}» теперь сотрудник. Разделов дашборда пока нет — отметьте нужные ниже.")
     return redirect("dashboard:access_roles_detail", user_id=user.id)
 
 

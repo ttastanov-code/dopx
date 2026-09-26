@@ -308,6 +308,8 @@ class EvaluationSession(BaseModel):
     started_at = models.DateTimeField(_('Начато'), auto_now_add=True)
     completed_at = models.DateTimeField(_('Завершено'), null=True, blank=True)
     ip_address = models.GenericIPAddressField(_('IP адрес завершения'), null=True, blank=True)  # антифрод-сигнал
+    # Trust score по этому матчу учтён (после закрытия голосования).
+    trust_settled_at = models.DateTimeField(_('Trust score учтён'), null=True, blank=True)
 
     class Meta:
         verbose_name = _('Сессия оценки')
@@ -329,15 +331,17 @@ class EvaluationSession(BaseModel):
         completed = len(self.completed_steps)
         return int((completed / total_steps) * 100)
 
+    # Шаги вайзарда по порядку (имена URL в evaluations/urls.py).
+    WIZARD_STEPS = ('context', 'teams', 'players', 'coaches', 'referee', 'match_eval')
+
     def next_step_url(self, match_id):
-        steps = ['context', 'teams', 'players', 'coaches', 'referee', 'match_eval', 'complete']
-        next_idx = len(self.completed_steps) + 1
-        if next_idx >= len(steps):
-            return None
-        step_name = steps[next_idx]
-        if step_name == 'complete':
-            return f'/evaluations/complete/{match_id}/'
-        return f'/evaluations/match/{match_id}/{step_name}/'
+        """Первый непройденный шаг вайзарда (для «Продолжить оценку»)."""
+        from django.urls import reverse
+
+        for step in self.WIZARD_STEPS:
+            if step not in self.completed_steps:
+                return reverse(f'evaluations:{step}', args=[match_id])
+        return reverse('evaluations:match_eval', args=[match_id])
 
     @property
     def fill_duration_seconds(self) -> float | None:

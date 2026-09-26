@@ -19,9 +19,12 @@ from django.utils.html import strip_tags
 from django.core.files.storage import default_storage
 
 from aggregates.models import MatchAggregate, PlayerMatchAggregate
-from aggregates.services import MIN_VOTES_FOR_DISPLAY
+from aggregates.services import min_votes_for_display, published_q, vote_weighted_avg
+
+# Минимум оценённых матчей команды для «Топа команд» на главной.
+TOP_TEAMS_MIN_MATCHES = 3
 from core.forms import ContactAntiBotForm
-from core.nominations import MIN_VOTES as NOMINATION_MIN_VOTES, get_nominations
+from core.nominations import MIN_MATCHES as NOMINATION_MIN_MATCHES, MIN_VOTES as NOMINATION_MIN_VOTES, get_nominations
 from core.utils import get_client_ip
 from evaluations.models import ContextEvaluation, EvaluationSession, MatchEvaluation, PlayerEvaluation, TeamEvaluation
 from matches.models import Match
@@ -66,7 +69,7 @@ class HomeView(TemplateView):
         # Только игроки с достаточным числом голосов.
         top_players = PlayerMatchAggregate.objects.select_related(
             'player', 'player__team'
-        ).filter(total_votes__gte=MIN_VOTES_FOR_DISPLAY).order_by('-performance_score')[:5]
+        ).filter(published_q(), total_votes__gte=min_votes_for_display()).order_by('-performance_score')[:5]
 
         total_evals = (
             MatchEvaluation.objects.count() +
@@ -79,7 +82,7 @@ class HomeView(TemplateView):
         ).distinct().count()
 
         # Только матчи с голосами, иначе Avg=None превратится в «0,0».
-        match_aggs_with_votes = MatchAggregate.objects.filter(total_votes__gt=0)
+        match_aggs_with_votes = MatchAggregate.objects.filter(published_q(), total_votes__gt=0)
         avg_entertainment = match_aggs_with_votes.aggregate(
             avg=Avg('avg_entertainment')
         )['avg']
@@ -101,18 +104,16 @@ class HomeView(TemplateView):
             'active_users': active_users,
         }
 
-        # Топ команд по оценкам.
-        top_teams = Team.objects.annotate(
-            avg_rating=Avg(
-                (F('team_evaluations__tactics') +
-                 F('team_evaluations__effort') +
-                 F('team_evaluations__organization') +
-                 F('team_evaluations__mentality')) / 4.0
-            )
-        ).filter(
-            avg_rating__isnull=False,
-            is_active=True
-        ).order_by('-avg_rating')[:5]
+        # Топ команд — по защищённым агрегатам закрытых матчей (вес по голосам), не по сырым оценкам.
+        counted_team_aggs = published_q('match_aggregates__match__') & Q(
+            match_aggregates__total_votes__gte=min_votes_for_display()
+        )
+        top_teams = Team.objects.filter(is_active=True).annotate(
+            avg_rating=vote_weighted_avg(
+                'match_aggregates__performance_score', 'match_aggregates__total_votes', filter=counted_team_aggs,
+            ),
+            rated_matches=Count('match_aggregates', filter=counted_team_aggs),
+        ).filter(avg_rating__isnull=False, rated_matches__gte=TOP_TEAMS_MIN_MATCHES).order_by('-avg_rating')[:5]
 
         # Незавершённая сессия пользователя — только если голосование ещё открыто.
         active_match_id = None
@@ -125,6 +126,12 @@ class HomeView(TemplateView):
             ).select_related('match').first()
             if active_session:
                 active_match_id = active_session.match.id
+
+        # Личная панель «Ваш день» вместо общего промо-блока.
+        personal = None
+        if self.request.user.is_authenticated:
+            from core.personal import personal_summary
+            personal = personal_summary(self.request.user)
 
         # Номинации сезона (core/nominations.py).
         nominations = get_nominations()
@@ -146,8 +153,10 @@ class HomeView(TemplateView):
             'stats': stats,
             'metrics': metrics,
             'active_match_id': active_match_id,
+            'personal': personal,
             'nominations': nominations,
             'nomination_min_votes': NOMINATION_MIN_VOTES,
+            'nomination_min_matches': NOMINATION_MIN_MATCHES,
             'standings_widget_embed_code': standings_widget_embed_code,
             'page_title': 'DOPX — Голос трибун измеряем',
             'now': now,
@@ -322,6 +331,7 @@ class RulesView(TemplateView):
         ]
         context['badge_total_count'] = len(BADGE_CATALOG)
         context['nomination_min_votes'] = NOMINATION_MIN_VOTES
+        context['nomination_min_matches'] = NOMINATION_MIN_MATCHES
         return context
 
 
@@ -381,7 +391,7 @@ class ContactsView(TemplateView):
 
         category = request.POST.get('category', 'general')
         email = request.POST.get('email', '').strip()
-        subject = request.POST.get('subject', 'Обращение через сайт').strip()
+        subject = request.POST.get('subject', 'Обращение через сайт').strip()[:255]
         message = request.POST.get('message', '').strip()
         screenshot = request.FILES.get('screenshot')
 
@@ -408,10 +418,18 @@ class ContactsView(TemplateView):
             messages.error(request, 'Укажите email для связи.')
             return redirect('core:contacts')
 
-        # Файл не больше 5 МБ
-        if screenshot and screenshot.size > 5 * 1024 * 1024:
-            messages.error(request, 'Файл слишком большой. Максимум 5 МБ.')
-            return redirect('core:contacts')
+        # Проверка содержимого и случайное имя — вложения не должны исполняться в браузере.
+        attachment_name = None
+        if screenshot:
+            from core.uploads import AttachmentRejected, validate_attachment
+            try:
+                attachment_name = validate_attachment(screenshot)
+            except AttachmentRejected as e:
+                messages.error(request, str(e))
+                return redirect('core:contacts')
+
+        if category not in dict(ContactSubmission.CATEGORY_CHOICES):
+            category = 'general'
 
         try:
             # Создаём обращение
@@ -429,7 +447,7 @@ class ContactsView(TemplateView):
             # Сохраняем файл
             if screenshot:
                 submission.attachment.save(
-                    screenshot.name,
+                    attachment_name,
                     screenshot,
                     save=True
                 )
@@ -618,10 +636,13 @@ class MatchShareCardView(View):
         from core.services.share_cards import build_match_share_card
 
         match = get_object_or_404(Match.objects.select_related("home_team", "away_team"), pk=match_id)
-        top = (
-            PlayerMatchAggregate.objects.filter(match=match)
-            .select_related("player").order_by("-performance_score").first()
-        )
+        # Карточка публичная: лучший игрок — только после закрытия голосования и с порогом голосов.
+        top = None
+        if match.voting_open_until < timezone.now():
+            top = (
+                PlayerMatchAggregate.objects.filter(match=match, total_votes__gte=min_votes_for_display())
+                .select_related("player").order_by("-performance_score").first()
+            )
         path = build_match_share_card(
             home_team=match.home_team.name, away_team=match.away_team.name,
             home_score=match.home_score or 0, away_score=match.away_score or 0,
@@ -648,16 +669,19 @@ class MatchDNAShareCardView(View):
         match_agg = getattr(match, "aggregate", None)
         if match_agg is None or match_agg.total_votes == 0:
             raise Http404("Нет голосов по этому матчу")
+        # ДНК содержит рейтинги — публично только после закрытия голосования.
+        if match.voting_open_until >= timezone.now():
+            raise Http404("Итоги матча откроются после закрытия голосования")
 
         events = list(match.events.select_related("player").order_by("minute")[:20])
         referee_agg = match.referee_aggregates.first()
         # Тот же порог голосов, что на странице матча.
         top_players = list(
-            PlayerMatchAggregate.objects.filter(match=match, total_votes__gte=MIN_VOTES_FOR_DISPLAY)
+            PlayerMatchAggregate.objects.filter(match=match, total_votes__gte=min_votes_for_display())
             .select_related("player").order_by("-performance_score")[:1]
         )
         worst_players = list(
-            PlayerMatchAggregate.objects.filter(match=match, total_votes__gte=MIN_VOTES_FOR_DISPLAY)
+            PlayerMatchAggregate.objects.filter(match=match, total_votes__gte=min_votes_for_display())
             .select_related("player").order_by("performance_score")[:1]
         )
         fan_support = list(ContextEvaluation.objects.filter(

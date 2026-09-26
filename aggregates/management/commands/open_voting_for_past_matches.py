@@ -5,6 +5,7 @@ from django.utils import timezone
 from datetime import timedelta
 from matches.models import Match
 import logging
+from core.management.seed_guard import ensure_seed_allowed
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ class Command(BaseCommand):
         )
     
     def handle(self, *args, **options):
+        ensure_seed_allowed()
         hours = options['hours']
         all_matches = options['all']
         days = options['days']

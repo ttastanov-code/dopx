@@ -9,6 +9,7 @@ from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import user_passes_test
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -51,6 +52,7 @@ def overview(request):
         "page_title": "Обзор — DOPX Staff",
         "active_tab": "overview",
         "metrics": services.overview_metrics(days=days),
+        "attention": services.attention_items(request.user),
         "cities": dashboard_city_breakdown(days=days),
         "selected_days": days,
         "day_presets": OVERVIEW_DAY_PRESETS,
@@ -321,9 +323,18 @@ def user_toggle_ban(request, user_id):
     if user_obj.id == request.user.id:
         messages.error(request, "Нельзя заблокировать самого себя")
         return redirect("dashboard:user_detail", user_id=user_obj.id)
+    # Сотрудников и суперпользователей блокирует только суперпользователь.
+    if (user_obj.is_staff or user_obj.is_superuser) and not request.user.is_superuser:
+        messages.error(request, "Блокировать сотрудников может только суперпользователь")
+        return redirect("dashboard:user_detail", user_id=user_obj.id)
 
     user_obj.is_active = not user_obj.is_active
     user_obj.save(update_fields=["is_active"])
+
+    # Голоса заблокированных в рейтинг не идут — пересчитываем его матчи.
+    from aggregates.tasks import recalculate_matches_for_user
+    user_id_str = str(user_obj.id)
+    transaction.on_commit(lambda: recalculate_matches_for_user.delay(user_id_str))
 
     if user_obj.is_active:
         messages.success(request, f"{user_obj.username} разблокирован")
@@ -436,6 +447,11 @@ def antifraud_flag_action(request, flag_id):
         from aggregates.tasks import apply_divergence_dismissal
 
         apply_divergence_dismissal([flag])
+
+    # Подтверждённая накрутка исключает голоса пользователя — пересчёт затронутых матчей.
+    from aggregates.tasks import schedule_recalculation_for_flags
+
+    schedule_recalculation_for_flags([flag])
 
     # У entity-сигналов (vote_spike и т.п.) user пустой — цель это content_object.
     flag_target = flag.user.username if flag.user else str(flag.content_object or flag.get_source_display())
@@ -1378,16 +1394,19 @@ def evaluation_session_delete(request, session_id):
     username = session.user.username
     match_str = str(session.match)
     match_id = str(session.match.id)
-    counts = services.evaluation_session_delete_cascade(session)
+    with transaction.atomic():
+        counts = services.evaluation_session_delete_cascade(session)
 
-    from aggregates.tasks import recalculate_all_aggregates_for_match
-    recalculate_all_aggregates_for_match.delay(match_id)
+    # Сразу, а не очередью: у закрытого матча фонового пересчёта больше не будет, и потерянная задача
+    # оставила бы в рейтинге удалённые голоса.
+    from aggregates.tasks import recalculate_match_now
+    recalculate_match_now(match_id)
 
     total_deleted = sum(v for k, v in counts.items() if k != "match_id")
     messages.success(
         request,
         f"Сессия «{username} — {match_str}» удалена вместе с {total_deleted} под-оценками. "
-        f"Пересчёт агрегатов матча запущен в фоне.",
+        f"Рейтинги матча пересчитаны.",
     )
     log_staff_action(
         request, AuditAction.EVALUATION_SESSION_DELETED,
@@ -1708,9 +1727,10 @@ def access_roles_detail(request, user_id):
 
     if request.method == "POST":
         if request.POST.get("action") == "full_access":
-            # Удаляем запись — пользователь снова получает полный доступ.
-            if grant:
-                grant.delete()
+            all_sections = [key for key, _label in DASHBOARD_SECTIONS]
+            StaffAccessGrant.objects.update_or_create(
+                user=target_user, defaults={"allowed_sections": all_sections, "updated_by": request.user},
+            )
             messages.success(request, f"«{target_user.username}»: ограничения сняты, полный доступ ко всем разделам.")
             log_staff_action(
                 request, AuditAction.ACCESS_GRANT_UPDATED,
@@ -1737,7 +1757,7 @@ def access_roles_detail(request, user_id):
 
     from .admin_access import groups_with_counts
 
-    allowed = set(grant.allowed_sections) if grant else None  # None — полный доступ
+    allowed = set(grant.allowed_sections) if grant else set()
     user_group_ids = set(target_user.groups.values_list("id", flat=True))
     context = {
         "page_title": f"Доступ: {target_user.username} — DOPX Staff",
@@ -1745,10 +1765,10 @@ def access_roles_detail(request, user_id):
         "target_user": target_user,
         "grant": grant,
         "sections": [
-            {"key": key, "label": label, "checked": allowed is None or key in allowed}
+            {"key": key, "label": label, "checked": key in allowed}
             for key, label in DASHBOARD_SECTIONS
         ],
-        "has_restrictions": allowed is not None,
+        "has_restrictions": len(allowed) < len(DASHBOARD_SECTIONS),
         "admin_groups": [
             {"id": g.id, "name": g.name, "perm_count": g.perm_count, "checked": g.id in user_group_ids}
             for g in groups_with_counts()

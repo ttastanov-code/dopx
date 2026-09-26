@@ -1,11 +1,12 @@
+{% load ui_extras %}
 {# Содержимое «Здоровья данных» #}
 {# Рендерится при загрузке и при поллинге (data_health_partial), без base.html. #}
 <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4 mb-6">
     <div class="dopx-stat">
         <div class="dopx-stat-label"><i class="ti ti-refresh"></i>Синхронизация</div>
         {% if health.last_run %}
-        <div class="dopx-stat-value" style="font-size: 1.125rem;">{{ health.last_run.created_at|timesince }} назад</div>
-        <div class="dopx-stat-delta">{{ health.last_run.total }} матчей, {{ health.last_run.duration_seconds|floatformat:1 }}с</div>
+        <div class="dopx-stat-value" style="font-size: 1.125rem;">{{ health.last_run.created_at|ago }}</div>
+        <div class="dopx-stat-delta">{{ health.last_run.total }} {{ health.last_run.total|default:0|ru_plural:"матч,матча,матчей" }}, {{ health.last_run.duration_seconds|floatformat:1 }}с</div>
         {% else %}
         <div class="dopx-stat-value opacity-40" style="font-size: 1.125rem;">нет данных</div>
         <div class="dopx-stat-delta">ещё не запускалась</div>
@@ -164,7 +165,7 @@
                         <td><span class="badge badge-warning badge-sm badge-outline">{{ d.field_label }}</span></td>
                         <td class="text-xs opacity-70">{{ d.old_value }}</td>
                         <td class="text-xs font-semibold">{{ d.new_value }}</td>
-                        <td class="text-xs opacity-60 whitespace-nowrap">{{ d.created_at|timesince }} назад</td>
+                        <td class="text-xs opacity-60 whitespace-nowrap">{{ d.created_at|ago }}</td>
                         <td>
                             <a href="{% url 'admin:parsers_parserdiscrepancy_change' d.id %}" class="btn btn-xs btn-outline" target="_blank">
                                 <i class="ti ti-eye"></i> Разобрать

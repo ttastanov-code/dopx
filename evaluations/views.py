@@ -4,7 +4,9 @@
 XP начисляется по шагам (контекст +2, команды +2, игроки до +3 пропорционально
 оценённым, тренеры +1, судья +1, финал +1) и умножается на xp_multiplier().
 Достижения проверяются асинхронно после коммита. Финальный шаг ставит
-антифрод-проверку скорости заполнения.
+антифрод-проверку скорости заполнения. Trust score пересчитывается после
+закрытия голосования (users.tasks.settle_trust_scores_task).
+После завершения оценку изменить нельзя.
 """
 from __future__ import annotations
 
@@ -19,11 +21,11 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.generic import FormView, TemplateView
 
-from aggregates.services import calculate_user_trust_adjustment
 from aggregates.tasks import recalculate_all_aggregates_for_match
 from analytics.models import EventName
 from analytics.services import track_event
 from core.utils import get_client_ip
+from evaluations.policies import EvaluationPolicyError, assert_voting_open
 from evaluations.forms import (
     CoachEvaluationForm,
     ContextEvaluationForm,
@@ -46,7 +48,7 @@ from lineups.models import MatchLineupPlayer
 from matches.models import Match, MatchPlayerStatistics
 from notifications.models import Notification
 from notifications.tasks import send_level_up_notification, send_push_task
-from users.models import UserXP
+from users.models import UserXP, is_email_verified
 from users.tasks import check_and_award_badges_task, flag_suspicious_wizard_speed_task
 
 import logging
@@ -95,22 +97,28 @@ def _player_stats_badges(stats: "MatchPlayerStatistics") -> list[str]:
     return badges
 
 
-def _track_wizard_xp(request, amount: float) -> None:
-    """Копит начисленный XP за текущее прохождение в сессии — финальный шаг показывает сумму."""
+def _wizard_xp_key(request) -> str:
+    # Ключ по матчу: брошенный вайзард другого матча не попадает в сводку.
+    return f"wizard_xp_earned:{request.resolver_match.kwargs['match_id']}"
+
+
+def _track_wizard_xp(request, amount: int) -> None:
+    """Копит зачисленный XP за текущее прохождение — финальный шаг показывает сумму."""
     if amount <= 0:
         return
-    request.session['wizard_xp_earned'] = request.session.get('wizard_xp_earned', 0) + amount
+    key = _wizard_xp_key(request)
+    request.session[key] = request.session.get(key, 0) + amount
 
 
-def _award_step_xp(request, base_amount: float) -> None:
-    """Начисляет XP за шаг с учётом xp_multiplier(). Нет UserXP — тихо выходит."""
+def _award_step_xp(request, base_amount: float) -> dict | None:
+    """Начисляет XP за шаг с учётом xp_multiplier(); в сводку идёт реально зачисленное."""
     if base_amount <= 0:
-        return
+        return None
     user = request.user
     xp, _created = UserXP.objects.get_or_create(user=user)
-    gained = base_amount * user.xp_multiplier()
-    xp.add_xp(gained)
-    _track_wizard_xp(request, gained)
+    result = xp.add_xp(base_amount * user.xp_multiplier())
+    _track_wizard_xp(request, result["new_total_xp"] - result["old_total_xp"])
+    return result
 
 
 def _touched_fields(post_data, field_names: list) -> list:
@@ -124,15 +132,47 @@ def _touched_fields(post_data, field_names: list) -> list:
     return [name for name in field_names if post_data.get(f'{name}__touched') == '1']
 
 
+# Шаг -> имя URL, куда вернуть, если он не пройден.
+STEP_URL_NAMES = {
+    'context': 'context', 'teams': 'teams', 'players': 'players',
+    'coaches': 'coaches', 'referee': 'referee',
+}
+
+
 class EvaluationWizardMixin:
     def require_login_or_redirect(self, request):
         """Редирект на логин для анонима до обращения к сессии в dispatch().
         LoginRequiredMixin срабатывает позже, а запрос с AnonymousUser падает.
+        Неподтверждённая почта (например, после смены email) — голосовать нельзя.
         """
-        if request.user.is_authenticated:
-            return None
-        messages.info(request, 'Войдите, чтобы оценить матч.')
-        return self.handle_no_permission()
+        if not request.user.is_authenticated:
+            messages.info(request, 'Войдите, чтобы оценить матч.')
+            return self.handle_no_permission()
+        if not is_email_verified(request.user):
+            messages.warning(request, 'Подтвердите почту по ссылке из письма, чтобы оценивать матчи.')
+            return redirect('matches:detail', pk=request.resolver_match.kwargs['match_id'])
+        return None
+
+    def prepare_step(self, request, match_id, required_step: str | None):
+        """Общие проверки шага: вход, почта, окно голосования, порядок шагов, завершённость.
+        Возвращает redirect или None.
+        """
+        redirect_response = self.require_login_or_redirect(request)
+        if redirect_response is not None:
+            return redirect_response
+        self.match = get_object_or_404(Match, id=match_id)
+        can_vote, error_msg = self.check_voting_access()
+        if not can_vote:
+            messages.error(request, error_msg)
+            return redirect('matches:detail', pk=self.match.id)
+        session = self.get_or_create_session()
+        # Завершённую оценку не меняем: иначе можно подстроиться под общий рейтинг задним числом.
+        if session.status == 'completed':
+            messages.info(request, 'Вы уже оценили этот матч.')
+            return redirect('matches:detail', pk=self.match.id)
+        if required_step and required_step not in session.completed_steps:
+            return redirect(f'evaluations:{STEP_URL_NAMES[required_step]}', match_id=self.match.id)
+        return None
 
     def get_or_create_session(self):
         session, created = EvaluationSession.objects.get_or_create(
@@ -154,11 +194,10 @@ class EvaluationWizardMixin:
         session.save(update_fields=['status', 'completed_at', 'ip_address', 'updated_at'])
 
     def check_voting_access(self):
-        now = timezone.now()
-        if self.match.voting_open_until < now:
-            return False, "Голосование для этого матча закрыто"
-        if self.match.status != 'finished':
-            return False, "Голосование доступно только для завершённых матчей"
+        try:
+            assert_voting_open(self.match)
+        except EvaluationPolicyError as e:
+            return False, str(e)
         return True, None
 
 
@@ -167,17 +206,9 @@ class EvaluateContextView(LoginRequiredMixin, FormView, EvaluationWizardMixin):
     form_class = ContextEvaluationForm
 
     def dispatch(self, request, *args, **kwargs):
-        redirect_response = self.require_login_or_redirect(request)
+        redirect_response = self.prepare_step(request, kwargs['match_id'], None)
         if redirect_response is not None:
             return redirect_response
-        self.match = get_object_or_404(Match, id=kwargs['match_id'])
-        can_vote, error_msg = self.check_voting_access()
-        if not can_vote:
-            messages.error(request, error_msg)
-            return redirect('matches:detail', pk=self.match.id)
-        if EvaluationSession.objects.filter(user=request.user, match=self.match, status='completed').exists():
-            messages.info(request, 'Вы уже оценили этот матч.')
-            return redirect('matches:detail', pk=self.match.id)
         return super().dispatch(request, *args, **kwargs)
 
     def get_form_kwargs(self):
@@ -226,17 +257,9 @@ class EvaluateTeamsView(LoginRequiredMixin, TemplateView, EvaluationWizardMixin)
     template_name = 'evaluations/teams.html'
 
     def dispatch(self, request, *args, **kwargs):
-        redirect_response = self.require_login_or_redirect(request)
+        redirect_response = self.prepare_step(request, kwargs['match_id'], 'context')
         if redirect_response is not None:
             return redirect_response
-        self.match = get_object_or_404(Match, id=kwargs['match_id'])
-        can_vote, error_msg = self.check_voting_access()
-        if not can_vote:
-            messages.error(request, error_msg)
-            return redirect('matches:detail', pk=self.match.id)
-        session = self.get_or_create_session()
-        if 'context' not in session.completed_steps:
-            return redirect('evaluations:context', match_id=self.match.id)
         return super().dispatch(request, *args, **kwargs)
 
     def post(self, request, *args, **kwargs):
@@ -299,17 +322,9 @@ class EvaluatePlayersView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
     template_name = 'evaluations/players.html'
 
     def dispatch(self, request, *args, **kwargs):
-        redirect_response = self.require_login_or_redirect(request)
+        redirect_response = self.prepare_step(request, kwargs['match_id'], 'teams')
         if redirect_response is not None:
             return redirect_response
-        self.match = get_object_or_404(Match, id=kwargs['match_id'])
-        can_vote, error_msg = self.check_voting_access()
-        if not can_vote:
-            messages.error(request, error_msg)
-            return redirect('matches:detail', pk=self.match.id)
-        session = self.get_or_create_session()
-        if 'teams' not in session.completed_steps:
-            return redirect('evaluations:teams', match_id=self.match.id)
         # Без состава шаг пройти нельзя.
         if not self.match.has_lineup:
             messages.warning(
@@ -443,17 +458,9 @@ class EvaluateCoachesView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
     template_name = 'evaluations/coaches.html'
 
     def dispatch(self, request, *args, **kwargs):
-        redirect_response = self.require_login_or_redirect(request)
+        redirect_response = self.prepare_step(request, kwargs['match_id'], 'players')
         if redirect_response is not None:
             return redirect_response
-        self.match = get_object_or_404(Match, id=kwargs['match_id'])
-        can_vote, error_msg = self.check_voting_access()
-        if not can_vote:
-            messages.error(request, error_msg)
-            return redirect('matches:detail', pk=self.match.id)
-        session = self.get_or_create_session()
-        if 'players' not in session.completed_steps:
-            return redirect('evaluations:players', match_id=self.match.id)
         return super().dispatch(request, *args, **kwargs)
 
     def post(self, request, *args, **kwargs):
@@ -520,17 +527,9 @@ class EvaluateRefereeView(LoginRequiredMixin, FormView, EvaluationWizardMixin):
     form_class = RefereeEvaluationForm
 
     def dispatch(self, request, *args, **kwargs):
-        redirect_response = self.require_login_or_redirect(request)
+        redirect_response = self.prepare_step(request, kwargs['match_id'], 'coaches')
         if redirect_response is not None:
             return redirect_response
-        self.match = get_object_or_404(Match, id=kwargs['match_id'])
-        can_vote, error_msg = self.check_voting_access()
-        if not can_vote:
-            messages.error(request, error_msg)
-            return redirect('matches:detail', pk=self.match.id)
-        session = self.get_or_create_session()
-        if 'coaches' not in session.completed_steps:
-            return redirect('evaluations:coaches', match_id=self.match.id)
         return super().dispatch(request, *args, **kwargs)
 
     def form_valid(self, form):
@@ -575,21 +574,9 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
     form_class = MatchEvaluationForm
 
     def dispatch(self, request, *args, **kwargs):
-        redirect_response = self.require_login_or_redirect(request)
+        redirect_response = self.prepare_step(request, kwargs['match_id'], 'referee')
         if redirect_response is not None:
             return redirect_response
-        self.match = get_object_or_404(Match, id=kwargs['match_id'])
-        can_vote, error_msg = self.check_voting_access()
-        if not can_vote:
-            messages.error(request, error_msg)
-            return redirect('matches:detail', pk=self.match.id)
-        session = self.get_or_create_session()
-        if 'referee' not in session.completed_steps:
-            return redirect('evaluations:referee', match_id=self.match.id)
-        # Завершённую сессию повторно не принимаем (иначе XP и trust начислятся дважды).
-        if session.status == 'completed':
-            messages.info(request, 'Вы уже оценили этот матч.')
-            return redirect('matches:detail', pk=self.match.id)
         return super().dispatch(request, *args, **kwargs)
 
     def form_valid(self, form):
@@ -602,8 +589,6 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
             if session.status == 'completed':
                 messages.info(self.request, 'Вы уже оценили этот матч')
                 return redirect('matches:detail', pk=self.match.id)
-
-            old_trust = user.trust_score
 
             # 1. Финальная оценка матча
             MatchEvaluation.objects.update_or_create(
@@ -621,25 +606,17 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
             user.update_evaluation_stats(self.match)
             user.refresh_from_db()
 
-            # 3. Trust Score
-            adjustment = calculate_user_trust_adjustment(user, self.match)
-            new_trust = max(0.5, min(2.0, user.trust_score + adjustment))
-            if abs(new_trust - user.trust_score) >= 0.01:
-                user.trust_score = new_trust
-                user.save(update_fields=['trust_score', 'updated_at'])
+            # 3. Trust Score — после закрытия голосования, по итоговому консенсусу.
 
             # 4. XP за финальный шаг. Достижения — асинхронно (п. 7).
-            xp, _ = UserXP.objects.get_or_create(user=user)
-            final_step_gained = XP_FINAL_STEP * user.xp_multiplier()
-            xp_result = xp.add_xp(final_step_gained)
-            _track_wizard_xp(self.request, final_step_gained)
+            xp_result = _award_step_xp(self.request, XP_FINAL_STEP)
+            xp = UserXP.objects.get(user=user)
 
             # Награда передаётся подписанным токеном в ссылке редиректа.
             # См. docs/adr/0015-evaluation-wizard-concurrency-and-reward-delivery.md.
-            xp_gained = round(self.request.session.pop('wizard_xp_earned', 0), 1)
-            trust_delta = round(new_trust - old_trust, 3)
+            xp_gained = int(self.request.session.pop(_wizard_xp_key(self.request), 0))
 
-            # 5. Уведомления о новом уровне и изменении Trust Score.
+            # 5. Уведомления о новом уровне.
             # При email_digest_mode письмо уходит в дайджест (email_sent_at=None).
             digest_mode = user.get_notification_setting('email_digest_mode', True)
             notification_sent_at = None if digest_mode else timezone.now()
@@ -658,21 +635,12 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
                         email_sent_at=notification_sent_at,
                     ))
 
-            # 6. Уведомление об изменении Trust Score
-            if abs(user.trust_score - old_trust) >= 0.1:
-                notifications_to_create.append(Notification(
-                    user=user,
-                    notification_type='system',
-                    title='🛡️ Ваш Trust Score обновлён',
-                    message=f'Ваш уровень доверия: {round(old_trust, 2)} → {round(user.trust_score, 2)}',
-                    action_url='/users/profile/',
-                    is_read=False,
-                    related_match=self.match,
-                    email_sent_at=notification_sent_at,
-                ))
-
             if notifications_to_create:
                 Notification.objects.bulk_create(notifications_to_create)
+
+        # Счётчик «ждут оценки» в навигации.
+        from core.personal import forget_pending_count
+        transaction.on_commit(partial(forget_pending_count, user.id))
 
         # 7. Достижения — асинхронно после коммита.
         transaction.on_commit(
@@ -732,10 +700,7 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
         total_rated = 1 + sum(rated_counts.values())
 
         reward_token = signing.dumps(
-            {
-                'xp_gained': xp_gained, 'trust_delta': trust_delta,
-                'rated_counts': rated_counts, 'total_rated': total_rated,
-            },
+            {'xp_gained': xp_gained, 'rated_counts': rated_counts, 'total_rated': total_rated},
             salt='evaluations.reward',
         )
         complete_url = reverse('evaluations:complete', args=[self.match.id])
@@ -771,7 +736,6 @@ class EvaluationCompleteView(LoginRequiredMixin, TemplateView):
             except (signing.BadSignature, signing.SignatureExpired):
                 reward = None
         context['xp_gained'] = reward['xp_gained'] if reward else None
-        context['trust_delta'] = reward['trust_delta'] if reward else None
         context['rated_counts'] = reward.get('rated_counts') if reward else None
         context['total_rated'] = reward.get('total_rated') if reward else None
 

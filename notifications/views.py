@@ -7,7 +7,8 @@ from django.views.generic import ListView, View
 from django.contrib import messages
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
-from django.http import HttpResponse
+from django.contrib.admin.views.decorators import staff_member_required
+from django.http import FileResponse, Http404, HttpResponse
 from django.template.loader import render_to_string
 from django.db.models import Q
 from urllib.parse import urlencode
@@ -176,3 +177,20 @@ class NotificationBadgePartialView(LoginRequiredMixin, View):
             'user': request.user,
         }, request=request)
         return HttpResponse(html)
+
+@staff_member_required
+def contact_attachment_download(request, pk):
+    """Вложение обращения — только staff и только скачиванием (не открывается как страница)."""
+    import os
+
+    from .models import ContactSubmission
+
+    submission = get_object_or_404(ContactSubmission, pk=pk)
+    if not submission.attachment or not submission.attachment.storage.exists(submission.attachment.name):
+        raise Http404("Вложение не найдено")
+    response = FileResponse(
+        submission.attachment.open('rb'), as_attachment=True,
+        filename=os.path.basename(submission.attachment.name),
+    )
+    response['X-Content-Type-Options'] = 'nosniff'
+    return response

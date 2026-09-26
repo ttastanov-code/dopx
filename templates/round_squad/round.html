@@ -80,7 +80,7 @@
     <section id="round" class="scroll-mt-24">
       <div id="round-content" data-background-poll
            hx-get="{% if season %}{% url 'round_squad:round_partial' season.id tour %}{% endif %}"
-           hx-trigger="every 60s" hx-swap="innerHTML">
+           hx-trigger="every 60s [document.visibilityState === 'visible'], dopx:wake" hx-swap="innerHTML">
         {% include 'round_squad/_round_content.html' %}
       </div>
     </section>

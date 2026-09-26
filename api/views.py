@@ -11,12 +11,14 @@ import logging
 from django.core.cache import cache
 from django.db.models import Avg, Count, Max, Prefetch, Sum
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import permissions, status, throttling, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle as DRFUserRateThrottle
 
 from aggregates.models import CoachMatchAggregate, MatchAggregate, PlayerMatchAggregate
+from aggregates.services import countable_evaluations, min_votes_for_display, published_q, vote_weighted_avg
 from evaluations.models import (
     CoachEvaluation,
     ContextEvaluation,
@@ -70,12 +72,50 @@ class StandardUserRateThrottle(throttling.UserRateThrottle):
     rate = "100/hour"
 
 
+# Потолок ?limit= — иначе один запрос выгружает всю таблицу.
+MAX_LIST_LIMIT = 100
+
+
+def _parse_limit(request, default: int) -> int:
+    """?limit= в пределах 1..MAX_LIST_LIMIT; мусор — default."""
+    try:
+        value = int(request.query_params.get("limit", default))
+    except (TypeError, ValueError):
+        return default
+    return max(1, min(value, MAX_LIST_LIMIT))
+
+
+def _parse_uuid(value):
+    """UUID из параметра запроса или None (вместо 500 на кривом id)."""
+    import uuid
+
+    try:
+        return uuid.UUID(str(value))
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+class NoChangesAfterCompletionMixin:
+    """Удаление оценки после завершения сессии запрещено, как и правка."""
+
+    def perform_destroy(self, instance):
+        from rest_framework.exceptions import ValidationError
+
+        from evaluations.models import EvaluationSession
+
+        if EvaluationSession.objects.filter(
+            user=self.request.user, match_id=instance.match_id, status="completed",
+        ).exists():
+            raise ValidationError("Оценка этого матча уже завершена — изменить её нельзя")
+        instance.delete()
+
+
 
 
 # ============================================================================
 # ContextEvaluationViewSet
 # ============================================================================
-class ContextEvaluationViewSet(viewsets.ModelViewSet):
+class ContextEvaluationViewSet(NoChangesAfterCompletionMixin, viewsets.ModelViewSet):
     queryset = ContextEvaluation.objects.all()
     serializer_class = ContextEvaluationSerializer
     permission_classes = [IsAuthenticatedAndVerified, VotingOpenPermission]
@@ -108,7 +148,7 @@ class ContextEvaluationViewSet(viewsets.ModelViewSet):
 # ============================================================================
 # PlayerEvaluationViewSet
 # ============================================================================
-class PlayerEvaluationViewSet(viewsets.ModelViewSet):
+class PlayerEvaluationViewSet(NoChangesAfterCompletionMixin, viewsets.ModelViewSet):
     queryset = PlayerEvaluation.objects.all()
     serializer_class = PlayerEvaluationSerializer
     permission_classes = [IsAuthenticatedAndVerified, VotingOpenPermission]
@@ -147,14 +187,21 @@ class PlayerEvaluationViewSet(viewsets.ModelViewSet):
         match_id = request.query_params.get("match_id")
         if not match_id:
             return Response({"error": "match_id required"}, status=status.HTTP_400_BAD_REQUEST)
+        match_uuid = _parse_uuid(match_id)
+        match = Match.objects.filter(id=match_uuid).only("id", "voting_open_until").first() if match_uuid else None
+        if match is None:
+            return Response({"error": "match not found"}, status=status.HTTP_404_NOT_FOUND)
+        # Пока голосование открыто, чужие голоса не показываем — иначе подстраиваются под них.
+        if match.voting_open_until >= timezone.now():
+            return Response({"error": "Оценки откроются после закрытия голосования"}, status=status.HTTP_403_FORBIDDEN)
 
-        cache_key = f"player_evaluations_by_match_{match_id}"
+        cache_key = f"player_evaluations_by_match_{match_uuid}"
         cached_data = cache.get(cache_key)
         if cached_data:
             return Response(cached_data)
 
         evaluations = (
-            PlayerEvaluation.objects.filter(match_id=match_id)
+            countable_evaluations(PlayerEvaluation.objects.filter(match_id=match_uuid), match_uuid)
             # Без select_related("user") — см. get_queryset().
             .select_related("player", *MATCH_DETAIL_SELECT_RELATED)
             .order_by("-contribution")
@@ -179,6 +226,8 @@ class PlayerEvaluationViewSet(viewsets.ModelViewSet):
         player_id = request.query_params.get("player_id")
         if not player_id:
             return Response({"error": "player_id required"}, status=status.HTTP_400_BAD_REQUEST)
+        if _parse_uuid(player_id) is None:
+            return Response({"error": "invalid player_id"}, status=status.HTTP_400_BAD_REQUEST)
 
         cache_key = f"player_analytics_{player_id}"
         cached_data = cache.get(cache_key)
@@ -186,7 +235,7 @@ class PlayerEvaluationViewSet(viewsets.ModelViewSet):
             return Response(cached_data)
 
         aggregates = (
-            PlayerMatchAggregate.objects.filter(player_id=player_id)
+            PlayerMatchAggregate.objects.filter(published_q(), player_id=player_id)
             .select_related(*MATCH_DETAIL_SELECT_RELATED)
             .order_by("-match__start_time")
             .only(
@@ -206,11 +255,13 @@ class PlayerEvaluationViewSet(viewsets.ModelViewSet):
             )
         )
         # Sum, а не Count — нужна сумма голосов.
-        summary_data = PlayerMatchAggregate.objects.filter(player_id=player_id).aggregate(
-            total_votes=Sum("total_votes"),
-            avg_performance=Avg("performance_score"),
-            avg_risk=Avg("risk_index"),
-            avg_maturity=Avg("maturity_score"),
+        summary_data = PlayerMatchAggregate.objects.filter(published_q(), player_id=player_id).aggregate(
+            # Алиас не total_votes — иначе конфликт с Sum('total_votes') в vote_weighted_avg.
+            votes_sum=Sum("total_votes"),
+            # Те же средние, что на сайте: с весом по числу голосов.
+            avg_performance=vote_weighted_avg("performance_score"),
+            avg_risk=vote_weighted_avg("risk_index"),
+            avg_maturity=vote_weighted_avg("maturity_score"),
             max_clutch=Max("clutch_index"),
             matches_count=Count("id"),
         )
@@ -221,7 +272,7 @@ class PlayerEvaluationViewSet(viewsets.ModelViewSet):
             "aggregates": serializer.data,
             "summary": {
                 "total_matches": summary_data["matches_count"] or 0,
-                "total_votes": summary_data["total_votes"] or 0,
+                "total_votes": summary_data["votes_sum"] or 0,
                 "avg_performance_score": round(summary_data["avg_performance"] or 0, 2),
                 "avg_risk_index": round(summary_data["avg_risk"] or 0, 2),
                 "avg_maturity_score": round(summary_data["avg_maturity"] or 0, 2),
@@ -235,7 +286,7 @@ class PlayerEvaluationViewSet(viewsets.ModelViewSet):
 # ============================================================================
 # TeamEvaluationViewSet
 # ============================================================================
-class TeamEvaluationViewSet(viewsets.ModelViewSet):
+class TeamEvaluationViewSet(NoChangesAfterCompletionMixin, viewsets.ModelViewSet):
     queryset = TeamEvaluation.objects.all()
     serializer_class = TeamEvaluationSerializer
     permission_classes = [IsAuthenticatedAndVerified, VotingOpenPermission]
@@ -268,7 +319,7 @@ class TeamEvaluationViewSet(viewsets.ModelViewSet):
 # ============================================================================
 # CoachEvaluationViewSet
 # ============================================================================
-class CoachEvaluationViewSet(viewsets.ModelViewSet):
+class CoachEvaluationViewSet(NoChangesAfterCompletionMixin, viewsets.ModelViewSet):
     queryset = CoachEvaluation.objects.all()
     serializer_class = CoachEvaluationSerializer
     permission_classes = [IsAuthenticatedAndVerified, VotingOpenPermission]
@@ -302,7 +353,7 @@ class CoachEvaluationViewSet(viewsets.ModelViewSet):
 # ============================================================================
 # RefereeEvaluationViewSet
 # ============================================================================
-class RefereeEvaluationViewSet(viewsets.ModelViewSet):
+class RefereeEvaluationViewSet(NoChangesAfterCompletionMixin, viewsets.ModelViewSet):
     queryset = RefereeEvaluation.objects.all()
     serializer_class = RefereeEvaluationSerializer
     permission_classes = [IsAuthenticatedAndVerified, VotingOpenPermission]
@@ -330,7 +381,7 @@ class RefereeEvaluationViewSet(viewsets.ModelViewSet):
 # ============================================================================
 # MatchEvaluationViewSet
 # ============================================================================
-class MatchEvaluationViewSet(viewsets.ModelViewSet):
+class MatchEvaluationViewSet(NoChangesAfterCompletionMixin, viewsets.ModelViewSet):
     queryset = MatchEvaluation.objects.all()
     serializer_class = MatchEvaluationSerializer
     permission_classes = [IsAuthenticatedAndVerified, VotingOpenPermission]
@@ -369,16 +420,20 @@ class MatchEvaluationViewSet(viewsets.ModelViewSet):
         if cached_data:
             return Response(cached_data)
 
+        match_uuid = _parse_uuid(match_id)
+        if match_uuid is None:
+            return Response({"error": "invalid match_id"}, status=status.HTTP_400_BAD_REQUEST)
         match = get_object_or_404(
-            Match.objects.select_related("home_team", "away_team"), id=match_id
+            Match.objects.select_related("home_team", "away_team"), id=match_uuid
         )
-        match_agg = MatchAggregate.objects.filter(match=match).first()
-        stats = MatchEvaluation.objects.filter(match=match).aggregate(
+        # До закрытия голосования агрегат матча не публикуем.
+        match_agg = MatchAggregate.objects.filter(published_q(), match=match).first()
+        stats = countable_evaluations(MatchEvaluation.objects.filter(match=match), match.id).aggregate(
             total_match_evals=Count("id"),
             avg_entertainment=Avg("entertainment"),
             avg_tension=Avg("tension"),
         )
-        player_evals_count = PlayerEvaluation.objects.filter(match=match).count()
+        player_evals_count = countable_evaluations(PlayerEvaluation.objects.filter(match=match), match.id).count()
 
         response_data = {
             "match": MatchSerializer(match).data,
@@ -386,8 +441,9 @@ class MatchEvaluationViewSet(viewsets.ModelViewSet):
             "stats": {
                 "total_match_evaluations": stats["total_match_evals"] or 0,
                 "total_player_evaluations": player_evals_count,
-                "avg_entertainment": round(stats["avg_entertainment"] or 0, 2),
-                "avg_tension": round(stats["avg_tension"] or 0, 2),
+                # Средние — только после закрытия голосования.
+                "avg_entertainment": round(stats["avg_entertainment"] or 0, 2) if match_agg else None,
+                "avg_tension": round(stats["avg_tension"] or 0, 2) if match_agg else None,
             },
         }
         cache.set(cache_key, response_data, timeout=300)
@@ -408,7 +464,7 @@ class MatchAggregateViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         """Без среза внутри Prefetch — он применяется ко всему набору, а не к каждому матчу."""
         return (
-            MatchAggregate.objects.select_related(*MATCH_DETAIL_SELECT_RELATED)
+            MatchAggregate.objects.filter(published_q()).select_related(*MATCH_DETAIL_SELECT_RELATED)
             .prefetch_related(
                 Prefetch(
                     "match__player_aggregates",
@@ -444,7 +500,7 @@ class MatchAggregateViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=False, methods=["get"])
     def recent(self, request):
         """Срез внешнего queryset безопасен для prefetch."""
-        limit = int(request.query_params.get("limit", 10))
+        limit = _parse_limit(request, 10)
         cache_key = f"recent_match_aggregates_{limit}"
         cached_data = cache.get(cache_key)
         if cached_data:
@@ -466,8 +522,9 @@ class PlayerAggregateViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         # Без select_related("player__team") — команда не сериализуется.
+        # Ниже порога голосов рейтинг и на сайте не показываем.
         return (
-            PlayerMatchAggregate.objects.select_related(
+            PlayerMatchAggregate.objects.filter(published_q(), total_votes__gte=min_votes_for_display()).select_related(
                 "player", *MATCH_DETAIL_SELECT_RELATED
             )
             .order_by("-performance_score")
@@ -502,7 +559,7 @@ class PlayerAggregateViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=["get"])
     def top_players(self, request):
-        limit = int(request.query_params.get("limit", 10))
+        limit = _parse_limit(request, 10)
         cache_key = f"top_players_{limit}"
         cached_data = cache.get(cache_key)
         if cached_data:
@@ -515,9 +572,11 @@ class PlayerAggregateViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=False, methods=["get"])
     def by_season(self, request):
         season_id = request.query_params.get("season_id")
-        limit = int(request.query_params.get("limit", 20))
+        limit = _parse_limit(request, 20)
         if not season_id:
             return Response({"error": "season_id required"}, status=status.HTTP_400_BAD_REQUEST)
+        if _parse_uuid(season_id) is None:
+            return Response({"error": "invalid season_id"}, status=status.HTTP_400_BAD_REQUEST)
 
         cache_key = f"player_aggregates_season_{season_id}_{limit}"
         cached_data = cache.get(cache_key)
@@ -525,7 +584,7 @@ class PlayerAggregateViewSet(viewsets.ReadOnlyModelViewSet):
             return Response(cached_data)
 
         aggregates = (
-            PlayerMatchAggregate.objects.filter(match__season_id=season_id)
+            PlayerMatchAggregate.objects.filter(published_q(), match__season_id=season_id, total_votes__gte=min_votes_for_display())
             # Без select_related("player__team").
             .select_related("player", *MATCH_DETAIL_SELECT_RELATED)
             .order_by("-performance_score")[:limit]
@@ -547,7 +606,7 @@ class CoachAggregateViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         # Без select_related("coach__team") — команда не сериализуется.
         return (
-            CoachMatchAggregate.objects.select_related(
+            CoachMatchAggregate.objects.filter(published_q(), total_votes__gte=min_votes_for_display()).select_related(
                 "coach", *MATCH_DETAIL_SELECT_RELATED
             )
             .order_by("-match__start_time")

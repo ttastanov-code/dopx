@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.utils import timezone
  
-from evaluations.models import ContextEvaluation, MatchEvaluation, PlayerEvaluation
+from evaluations.models import ContextEvaluation, EvaluationSession, MatchEvaluation, PlayerEvaluation
 from leagues.models import League
 from matches.models import Match
 from players.models import Player
@@ -133,6 +133,11 @@ class AggregateCalculationTests(TestCase):
             voting_open_until=timezone.now() + timedelta(hours=48),
         )
         self.player = Player.objects.create(first_name="Test", last_name="Player", team=self.team1)
+        # В рейтинг идут только голоса завершённых сессий.
+        for user in (self.user1, self.user2):
+            EvaluationSession.objects.create(
+                user=user, match=self.match, status="completed", completed_at=timezone.now(),
+            )
  
     def test_player_aggregate_calculation(self):
         """Агрегаты игрока (services.py)."""

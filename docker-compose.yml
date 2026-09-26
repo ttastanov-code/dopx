@@ -2,7 +2,7 @@
 #
 # Прод-стек: docker compose up -d --build. Сервисы в сети dopx_net видят друг друга по именам.
 # Наружу — только nginx на 127.0.0.1:8080 (публично проксирует aaPanel).
-# Без aaPanel: порт nginx "80:80" и TRUSTED_PROXY_COUNT=1.
+# Без aaPanel: порт nginx "80:80" и TRUSTED_PROXY_COUNT=1 в .env.
 
 services:
   # ==========================================================================
@@ -62,6 +62,8 @@ services:
       REDIS_AGGREGATES_URL: redis://redis:6379/2
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
+      # aaPanel + nginx — два доверенных прокси в X-Forwarded-For.
+      TRUSTED_PROXY_COUNT: ${TRUSTED_PROXY_COUNT:-2}
     volumes:
       - static_volume:/app/staticfiles
       - ./media:/app/media

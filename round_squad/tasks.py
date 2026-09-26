@@ -18,6 +18,9 @@ ROUND_NOTIFY_LOCK_TIMEOUT = 600
 # TTL лока пересчёта всех закрытых туров — с запасом.
 ALL_CLOSED_ROUNDS_LOCK_TIMEOUT = 1800
 
+# Сколько дней после закрытия голосования тур неактивного сезона ещё может зафиксироваться.
+ROUND_CLOSE_GRACE_DAYS = 14
+
 
 @shared_task
 def recompute_round_task(season_id: str, tour: int) -> None:
@@ -63,8 +66,18 @@ def recompute_active_rounds() -> int:
     from matches.models import Match
     from round_squad.models import RoundBestXI
 
+    from datetime import timedelta
+
+    from django.db.models import Q
+    from django.utils import timezone
+
+    # Плюс туры прошлого сезона: после смены активного сезона их последние туры ещё закрываются.
+    recent = timezone.now() - timedelta(days=ROUND_CLOSE_GRACE_DAYS)
     candidate_pairs = set(
-        Match.objects.filter(season__is_active=True, tour__isnull=False, status='finished')
+        Match.objects.filter(
+            Q(season__is_active=True) | Q(voting_open_until__gte=recent),
+            tour__isnull=False, status='finished',
+        )
         .values_list('season_id', 'tour').distinct()
     )
     finalized_pairs = set(

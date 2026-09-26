@@ -14,8 +14,9 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Безопасные дефолты: без .env сайт не должен стартовать в DEBUG с публичным ключом.
-ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+# Без явного ENVIRONMENT считаем окружение боевым: небезопасные дефолты только по явному development.
+ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
+IS_PRODUCTION = ENVIRONMENT == "production"
 
 if ENVIRONMENT == "development":
     # Только для локальной разработки без .env — небезопасный дефолт ОК.
@@ -436,6 +437,7 @@ TEMPLATES = [
                 'core.context_processors.indicator_tooltips',
                 'core.context_processors.pwa_settings',
                 'core.context_processors.current_round_squad',
+                'core.context_processors.mobile_tabbar',
             ],
         },
     },
@@ -492,6 +494,8 @@ AXES_LOCKOUT_TEMPLATE = None  # стандартный ответ axes (403)
 
 
 LANGUAGE_CODE = 'ru'
+# Свои переводы (в т.ч. строки темы Unfold, у которой нет русской локали).
+LOCALE_PATHS = [BASE_DIR / 'locale']
 TIME_ZONE = "Asia/Almaty"
 USE_I18N = True
 USE_TZ = True
@@ -512,8 +516,8 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticatedOrReadOnly',
     ],
     'DEFAULT_AUTHENTICATION_CLASSES': [
+        # Только сессия: BasicAuth обходил 2FA и проверку подтверждения почты.
         'rest_framework.authentication.SessionAuthentication',
-        'rest_framework.authentication.BasicAuthentication',
     ],
     'DEFAULT_THROTTLE_CLASSES': [
         'rest_framework.throttling.AnonRateThrottle',
@@ -574,7 +578,13 @@ if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 # IP клиента берётся с конца X-Forwarded-For. См. docs/adr/0018-trusted-proxy-xff-parsing.md.
+# За aaPanel -> nginx прокси два (docker-compose.yml задаёт 2).
 TRUSTED_PROXY_COUNT = int(os.getenv('TRUSTED_PROXY_COUNT', 1))
+
+# Голоса синтетических аккаунтов (core.utils.synthetic_users_q) в рейтингах — только вне прода.
+COUNT_SYNTHETIC_VOTES = os.getenv('COUNT_SYNTHETIC_VOTES', str(not IS_PRODUCTION)) == 'True'
+# Сид-команды ботов (seed_*, simulate_*, create_test_*) — только вне прода.
+ALLOW_SEED_COMMANDS = os.getenv('ALLOW_SEED_COMMANDS', str(not IS_PRODUCTION)) == 'True'
 
 # Idle-таймаут сессии только для staff.
 STAFF_SESSION_IDLE_TIMEOUT_SECONDS = int(os.getenv('STAFF_SESSION_IDLE_TIMEOUT_SECONDS', 30 * 60))
@@ -739,6 +749,10 @@ CELERY_BEAT_SCHEDULE = {
         'schedule': crontab(hour=3, minute=0, day_of_month=1),
     },
     # === Возврат trust_score к нейтральному (раз в месяц) ===
+    'settle-trust-scores': {
+        'task': 'users.tasks.settle_trust_scores_task',
+        'schedule': crontab(minute='5,35'),
+    },
     'decay-trust-scores': {
         'task': 'users.tasks.decay_trust_scores_task',
         'schedule': crontab(hour=3, minute=30, day_of_month=1),
@@ -937,9 +951,11 @@ if DEBUG:
     INTERNAL_IPS = ['127.0.0.1']
     DEBUG_TOOLBAR_CONFIG = {
         # Тулбар только для INTERNAL_IPS.
+        # Через туннель (ngrok) REMOTE_ADDR тоже 127.0.0.1 — отличаем по X-Forwarded-For.
         'SHOW_TOOLBAR_CALLBACK': lambda request: (
             request.META.get('HTTP_ACCEPT') != 'application/json'
             and request.META.get('REMOTE_ADDR') in INTERNAL_IPS
+            and not request.META.get('HTTP_X_FORWARDED_FOR')
         ),
         # В тестах отключаем проверку тулбара (DEBUG там принудительно False).
         'IS_RUNNING_TESTS': False,

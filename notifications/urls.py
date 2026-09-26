@@ -5,6 +5,7 @@ from .views import (
     MarkAllAsReadView,
     NotificationBadgePartialView,
     UnreadCountBadgeView,
+    contact_attachment_download,
 )
 
 app_name = 'notifications'
@@ -16,4 +17,5 @@ urlpatterns = [
     path('badge-partial/', NotificationBadgePartialView.as_view(), name='badge_partial'),
     # Счётчик непрочитанных (UnreadCountBadgeView).
     path('unread-count/', UnreadCountBadgeView.as_view(), name='unread_count_partial'),
+    path('contact-attachment/<uuid:pk>/', contact_attachment_download, name='contact_attachment'),
 ]

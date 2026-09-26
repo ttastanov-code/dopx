@@ -6,7 +6,7 @@ from core.models import get_setting
 from referees.models import Referee
 from matches.models import Match
 from aggregates.models import RefereeMatchAggregate
-from aggregates.services import vote_weighted_avg
+from aggregates.services import published_q, vote_weighted_avg
 from seasons.models import Season
 
 
@@ -31,8 +31,15 @@ class RefereeListView(ListView):
         ).annotate(
             # Имя аннотации совпадает с шаблоном
             total_matches=Count('match', filter=season_q, distinct=True),
-            avg_influence=vote_weighted_avg('match_aggregates__avg_influence', 'match_aggregates__total_votes'),
-            avg_decision_quality=vote_weighted_avg('match_aggregates__avg_decision_quality', 'match_aggregates__total_votes'),
+            # Только матчи с закрытым голосованием.
+            avg_influence=vote_weighted_avg(
+                'match_aggregates__avg_influence', 'match_aggregates__total_votes',
+                filter=published_q('match_aggregates__match__'),
+            ),
+            avg_decision_quality=vote_weighted_avg(
+                'match_aggregates__avg_decision_quality', 'match_aggregates__total_votes',
+                filter=published_q('match_aggregates__match__'),
+            ),
         )
 
         # Поиск.
@@ -80,12 +87,12 @@ class RefereeDetailView(DetailView):
         # Оценки — агрегат по матчу (RefereeMatchAggregate), одна строка = один матч.
         eval_season_kwargs = {'match__season': active_season} if active_season and not show_all else {}
         evaluations = RefereeMatchAggregate.objects.filter(
-            referee=referee, **eval_season_kwargs
+            published_q(), referee=referee, **eval_season_kwargs
         ).select_related('match').order_by('-match__start_time')[:10]
 
         # Статистика: матчи и оценки отдельно
         agg_totals = RefereeMatchAggregate.objects.filter(
-            referee=referee, **eval_season_kwargs
+            published_q(), referee=referee, **eval_season_kwargs
         ).aggregate(
             total_evaluations=Sum('total_votes'),
             avg_influence=vote_weighted_avg('avg_influence'),

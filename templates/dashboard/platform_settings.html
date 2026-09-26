@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load ui_extras %}
 
 {% block content %}
 {% include 'dashboard/_nav.html' %}
@@ -171,7 +172,7 @@
                 </form>
                 <div class="flex items-center justify-between mt-1.5">
                     <span class="text-[10px] opacity-40">
-                        {% if setting.updated_by %}изменено {{ setting.updated_by.username }} · {% endif %}{{ setting.updated_at|timesince }} назад
+                        {% if setting.updated_by %}изменено {{ setting.updated_by.username }} · {% endif %}{{ setting.updated_at|ago }}
                     </span>
                     <form method="post" action="{% url 'dashboard:platform_settings_delete' setting.key %}"
                           onsubmit="return confirm('Удалить настройку «' + '{{ setting.key }}' + '»? Код, читающий её через get_setting(), молча откатится на default-значение.');">

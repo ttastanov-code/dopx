@@ -31,7 +31,10 @@ class IsAuthenticatedAndVerified(permissions.BasePermission):
     message = "Требуется верифицированный аккаунт"
     
     def has_permission(self, request, view):
-        return request.user and request.user.is_authenticated and request.user.is_verified
+        # Из БД: OTPMiddleware подменяет request.user.is_verified функцией (всегда truthy).
+        from users.models import is_email_verified
+
+        return bool(request.user and request.user.is_authenticated and is_email_verified(request.user))
 
 class HasCompletedContext(permissions.BasePermission):
     """Проверка: пользователь создал ContextEvaluation для матча"""

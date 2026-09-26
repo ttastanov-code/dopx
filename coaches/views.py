@@ -6,7 +6,7 @@ from core.models import get_setting
 from coaches.models import Coach
 from teams.models import Team
 from aggregates.models import CoachMatchAggregate
-from aggregates.services import MIN_VOTES_FOR_DISPLAY
+from aggregates.services import min_votes_for_display, published_q
 from aggregates.services import vote_weighted_avg
 from matches.models import Match
 from seasons.models import Season
@@ -32,7 +32,7 @@ class CoachListView(ListView):
         ).prefetch_related(
             Prefetch(
                 'match_aggregates',
-                queryset=CoachMatchAggregate.objects.select_related('match').only(
+                queryset=CoachMatchAggregate.objects.filter(published_q()).select_related('match').only(
                     'id', 'avg_tactics', 'coach_id', 'match_id', 'match__start_time'
                 )
             )
@@ -93,11 +93,12 @@ class CoachDetailView(DetailView):
             ).order_by('-start_time')[:10]
 
         # Агрегаты оценок тренера.
+        # Только матчи с закрытым голосованием.
         aggregates = CoachMatchAggregate.objects.filter(
-            coach=coach
+            published_q(), coach=coach
         ).select_related('match').order_by('-match__start_time')[:10]
 
-        agg_totals = CoachMatchAggregate.objects.filter(coach=coach).aggregate(
+        agg_totals = CoachMatchAggregate.objects.filter(published_q(), coach=coach).aggregate(
             total_evaluations=Count('id'),
             # Алиас не total_votes — иначе конфликт с Sum('total_votes') в vote_weighted_avg.
             votes_sum=Sum('total_votes'),
@@ -118,7 +119,7 @@ class CoachDetailView(DetailView):
         has_evaluations = stats['total_evaluations'] > 0
 
         # has_enough_votes — можно ли доверять цифре (MIN_VOTES_FOR_DISPLAY).
-        has_enough_votes = stats['total_votes'] >= MIN_VOTES_FOR_DISPLAY
+        has_enough_votes = stats['total_votes'] >= min_votes_for_display()
 
         context.update({
             'team_matches': team_matches,

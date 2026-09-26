@@ -55,6 +55,6 @@ def user_can_access_section(user, section_key: str) -> bool:
     try:
         grant = user.dashboard_access_grant
     except StaffAccessGrant.DoesNotExist:
-        # Нет записи StaffAccessGrant — полный доступ.
-        return True
+        # Нет записи — доступа нет: разделы выдаёт суперпользователь явно.
+        return False
     return grant.has_section(section_key)

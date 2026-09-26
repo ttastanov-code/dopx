@@ -25,6 +25,7 @@ from referees.models import Referee
 from seasons.models import Season
 from teams.models import Team
 from users.models import UserXP
+from core.management.seed_guard import ensure_seed_allowed
 
 User = get_user_model()
 
@@ -37,7 +38,6 @@ LOAD_TEST_AWAY_TEAM_ID = uuid.UUID("10000000-0000-0000-0000-000000000004")
 LOAD_TEST_USERNAME_PREFIX = "loadtest_"
 LOAD_TEST_PASSWORD = "LoadTest2026!"  # только для локальных прогонов
 
-
 class Command(BaseCommand):
     help = "Готовит тестовых пользователей и синтетический матч для нагрузочного тестирования (Locust)."
 
@@ -45,6 +45,7 @@ class Command(BaseCommand):
         parser.add_argument("--users", type=int, default=200, help="Сколько тестовых аккаунтов создать (по умолчанию 200).")
 
     def handle(self, *args, **options):
+        ensure_seed_allowed()
         n_users = options["users"]
 
         with transaction.atomic():

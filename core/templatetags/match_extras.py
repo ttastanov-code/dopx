@@ -12,7 +12,7 @@ _WEEKDAYS_RU = [
 
 @register.filter
 def matchday_label(value):
-    """Заголовок игрового дня: «Сегодня»/«Завтра»/«Вчера» или дата с днём недели."""
+    """Заголовок игрового дня: «Сегодня»/«Завтра»/«Вчера» или день недели (дата — matchday_date)."""
     if not value:
         return ''
     target = timezone.localtime(value).date() if timezone.is_aware(value) else value.date() if hasattr(value, 'date') else value
@@ -24,8 +24,25 @@ def matchday_label(value):
         return 'Завтра'
     if delta == -1:
         return 'Вчера'
-    weekday = _WEEKDAYS_RU[target.weekday()]
-    return f"{target.strftime('%d.%m.%Y')}, {weekday}"
+    return _WEEKDAYS_RU[target.weekday()].capitalize()
+
+
+_MONTHS_GENITIVE_RU = (
+    'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+    'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
+)
+
+
+@register.filter
+def matchday_date(value):
+    """«13 сентября» (+ год, если не текущий) — подпись под matchday_label."""
+    if not value:
+        return ''
+    target = timezone.localtime(value).date() if timezone.is_aware(value) else value.date() if hasattr(value, 'date') else value
+    text = f"{target.day} {_MONTHS_GENITIVE_RU[target.month - 1]}"
+    if target.year != timezone.localdate().year:
+        text += f" {target.year}"
+    return text
 
 @register.simple_tag
 def render_score(home_score, away_score, show_zero=True):

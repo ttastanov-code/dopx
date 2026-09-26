@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load ui_extras %}
 {% load math_extras %}
 
 {% block content %}
@@ -175,7 +176,7 @@
                     <span class="opacity-60 flex-shrink-0" title="Остаток лимита по последнему вызову проверки доступности (entity {{ sportmonks_health.rate_limit_entity|default:'—' }}) — НЕ суммарный расход, у каждой сущности свой пул 2000/час">Остаток по «{{ sportmonks_health.rate_limit_entity|default:"—" }}»</span>
                     <span class="font-medium text-right">
                         {{ sportmonks_health.rate_limit_remaining }} из {{ sportmonks_health.rate_limit_total }}/час
-                        <span class="opacity-50">· проверено {{ sportmonks_health.checked_at|timesince }} назад</span>
+                        <span class="opacity-50">· проверено {{ sportmonks_health.checked_at|ago }}</span>
                     </span>
                 </div>
                 {% endif %}

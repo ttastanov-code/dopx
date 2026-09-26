@@ -6,10 +6,10 @@
 """
 from __future__ import annotations
 
-import time
 
 from captcha.fields import CaptchaField, CaptchaTextInput
 from django import forms
+from django.db.models import Q
 from django.contrib.auth.forms import (
     AuthenticationForm,
     PasswordChangeForm,
@@ -19,6 +19,7 @@ from django.contrib.auth.forms import (
 from django.core.files.uploadedfile import UploadedFile
 from PIL import Image, UnidentifiedImageError
 
+from core.utils import canonical_email, form_timestamp_is_valid, sign_form_timestamp
 from users.kz_cities import KZ_CITY_CHOICES
 from users.models import User
 
@@ -65,7 +66,8 @@ class UserRegistrationForm(UserCreationForm):
             }
         ),
     )
-    form_rendered_at = forms.FloatField(widget=forms.HiddenInput(), required=False)
+    # Подписанная метка времени рендера (core.utils.sign_form_timestamp).
+    form_rendered_at = forms.CharField(widget=forms.HiddenInput(), required=False)
 
     # Капча — тоже рендерится в шаблоне отдельно.
     captcha = CaptchaField(
@@ -115,11 +117,12 @@ class UserRegistrationForm(UserCreationForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Время рендера формы — точка отсчёта для time-trap.
-        self.fields["form_rendered_at"].initial = time.time()
+        self.fields["form_rendered_at"].initial = sign_form_timestamp()
 
     def clean_email(self):
-        email = self.cleaned_data.get("email")
-        if User.objects.filter(email=email).exists():
+        # Один ящик — один аккаунт: регистр, «+метки» и точки Gmail не делают адрес новым.
+        email = (self.cleaned_data.get("email") or "").strip()
+        if User.objects.filter(Q(email__iexact=email) | Q(email_canonical=canonical_email(email))).exists():
             raise forms.ValidationError("Этот email уже зарегистрирован")
         return email
 
@@ -133,12 +136,10 @@ class UserRegistrationForm(UserCreationForm):
 
     def clean_form_rendered_at(self):
         """Time-trap: слишком быстрая отправка."""
-        rendered_at = self.cleaned_data.get("form_rendered_at")
-        if rendered_at:
-            elapsed = time.time() - rendered_at
-            if 0 <= elapsed < MIN_FORM_FILL_SECONDS:
-                raise forms.ValidationError("Не удалось обработать форму. Попробуйте ещё раз.")
-        return rendered_at
+        token = self.cleaned_data.get("form_rendered_at")
+        if not form_timestamp_is_valid(token, MIN_FORM_FILL_SECONDS):
+            raise forms.ValidationError("Не удалось обработать форму. Попробуйте ещё раз.")
+        return token
 
 
 class UserLoginForm(AuthenticationForm):
@@ -170,10 +171,9 @@ class UserLoginForm(AuthenticationForm):
     def clean_username(self):
         identifier = (self.cleaned_data.get("username") or "").strip()
         if "@" in identifier:
-            try:
-                return User.objects.get(email__iexact=identifier).username
-            except User.DoesNotExist:
-                pass
+            user = User.objects.filter(email__iexact=identifier).order_by("date_joined").first()
+            if user is not None:
+                return user.username
         return identifier
 
 
@@ -219,6 +219,15 @@ class UserProfileForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         if not self.instance.avatar:
             self.fields["delete_avatar"].widget = forms.HiddenInput()
+
+    def clean_email(self):
+        email = (self.cleaned_data.get("email") or "").strip()
+        taken = User.objects.filter(
+            Q(email__iexact=email) | Q(email_canonical=canonical_email(email))
+        ).exclude(pk=self.instance.pk)
+        if taken.exists():
+            raise forms.ValidationError("Этот email уже используется другим аккаунтом")
+        return email
 
     def clean_avatar(self):
         """Проверка аватара при новой загрузке: лимит размера, затем Image.verify()."""

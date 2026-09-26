@@ -3,20 +3,16 @@ from django.conf import settings
 
 
 def current_round_squad(request):
-    """Номер текущего тура для кнопки «DOPX Лучшие N-го тура» (resolve_current_tour).
+    """Номер текущего тура для кнопки «DOPX Лучшие N-го тура» (resolve_default_round).
     Ссылка — на этот тур явно. Импорты внутри функции — от циклических импортов.
     """
     from types import SimpleNamespace
 
-    from round_squad.services import resolve_current_tour
-    from seasons.models import Season
+    from round_squad.services import resolve_default_round
 
-    season = Season.get_primary_active()
-    if season is None:
-        return {}
-
-    tour = resolve_current_tour(season)
-    if tour is None:
+    # В начале сезона, пока туров нет, — последний зафиксированный тур прошлого сезона.
+    season, tour = resolve_default_round()
+    if season is None or tour is None:
         return {}
     return {
         'nav_current_round': SimpleNamespace(
@@ -99,3 +95,22 @@ def indicator_tooltips(request):
     }
     
     return context
+
+# Разделы, где нижняя панель вкладок не нужна (свои кнопки или служебный интерфейс).
+TABBAR_HIDDEN_APPS = {'dashboard', 'admin', 'evaluations'}
+
+
+def mobile_tabbar(request):
+    """Нижняя панель вкладок на телефоне: показывать ли и счётчик «ждут оценки»."""
+    match = getattr(request, 'resolver_match', None)
+    app_name = match.app_name if match else ''
+    if app_name in TABBAR_HIDDEN_APPS or request.path.startswith('/admin/'):
+        return {'show_tabbar': False}
+    from core.personal import pending_evaluations_count
+
+    return {
+        'show_tabbar': True,
+        'tabbar_pending_count': pending_evaluations_count(request.user),
+        'tabbar_section': app_name,
+        'tabbar_url_name': match.url_name if match else '',
+    }

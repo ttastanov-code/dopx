@@ -4,12 +4,12 @@
 {% endcomment %}
 
 <div id="events-container"
-     {% if match.status == 'live' %}
+{% with poll=match.live_poll_seconds %}{% if poll %}
      data-background-poll
      hx-get="{% url 'matches:events' match.id %}"
-     hx-trigger="every 15s"
+     hx-trigger="every {{ poll }}s [document.visibilityState === 'visible'], dopx:wake"
      hx-swap="outerHTML"
-     {% endif %}>
+     {% endif %}{% endwith %}>
 <div class="md-timeline">
     {% for event in events %}
 
