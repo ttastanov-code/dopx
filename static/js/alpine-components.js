@@ -364,6 +364,9 @@ document.addEventListener('alpine:init', () => {
             if (diffMs <= 0) {
                 this.countdownText = 'Начинается';
                 if (this._timerId) clearInterval(this._timerId);
+                // Карточка перерисуется сама (статус live, счёт) — без перезагрузки страницы.
+                const el = this.$el;
+                setTimeout(() => { if (el.isConnected && window.htmx) htmx.trigger(el, 'dopx:wake'); }, 20000);
                 return;
             }
             const totalMinutes = Math.floor(diffMs / 60000);

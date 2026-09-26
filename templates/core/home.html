@@ -6,89 +6,7 @@
 {% block content %}
 {# === ВАШ ДЕНЬ — для вошедших; гостю — промо-блок ниже. Стили — css/ui.css (dx-hello). === #}
 {% if personal %}
-<section class="dx-hello mb-6 md:mb-8" aria-labelledby="hello-title">
-    <div class="dx-hello__top">
-        <div class="min-w-0">
-            <h1 id="hello-title" class="dx-hello__title">Привет, {{ user.username }}</h1>
-            <p class="dx-hello__subtitle">
-                {% if personal.pending_count %}
-                {{ personal.pending_count }} {{ personal.pending_count|ru_plural:"матч ждёт,матча ждут,матчей ждут" }} вашей оценки
-                {% else %}
-                Все доступные матчи оценены — отличная работа
-                {% endif %}
-            </p>
-        </div>
-        <a href="{% url 'users:profile' %}" class="dx-level" title="Ваш уровень и опыт">
-            <span class="dx-level__ring" style="--p: {{ personal.xp_progress }}"><span>{{ personal.level }}</span></span>
-            <span class="dx-level__text">
-                <span class="dx-level__label">Уровень {{ personal.level }}</span>
-                <span class="dx-level__meta">ещё {{ personal.xp_to_next }} XP{% if personal.streak %} · серия {{ personal.streak }} {{ personal.streak|ru_plural:"тур,тура,туров" }}{% endif %}</span>
-            </span>
-        </a>
-    </div>
-
-    <div class="dx-hello__grid">
-        {% if personal.in_progress %}
-        {% with m=personal.in_progress.match %}
-        <a href="{{ personal.resume_url|default:'#' }}" class="dx-action dx-action--primary">
-            <span class="dx-action__icon"><i class="ti ti-player-play"></i></span>
-            <span class="dx-action__body">
-                <span class="dx-action__eyebrow">Продолжить оценку</span>
-                <span class="dx-action__title">{{ m.home_team.name }} — {{ m.away_team.name }}</span>
-                <span class="dx-action__meta">Голосование закроется через {{ m.voting_open_until|timeuntil }}</span>
-            </span>
-            <i class="ti ti-chevron-right dx-action__chevron"></i>
-        </a>
-        {% endwith %}
-        {% elif personal.next_match %}
-        {% with m=personal.next_match %}
-        <a href="{% url 'evaluations:context' m.id %}" class="dx-action dx-action--primary">
-            <span class="dx-action__icon"><i class="ti ti-star"></i></span>
-            <span class="dx-action__body">
-                <span class="dx-action__eyebrow">Оценить матч</span>
-                <span class="dx-action__title">{{ m.home_team.name }} {{ m.get_score_display }} {{ m.away_team.name }}</span>
-                <span class="dx-action__meta">Голосование закроется через {{ m.voting_open_until|timeuntil }}</span>
-            </span>
-            <i class="ti ti-chevron-right dx-action__chevron"></i>
-        </a>
-        {% endwith %}
-        {% else %}
-        <a href="{% url 'matches:list' %}?status=scheduled" class="dx-action">
-            <span class="dx-action__icon"><i class="ti ti-calendar-event"></i></span>
-            <span class="dx-action__body">
-                <span class="dx-action__eyebrow">Оценивать пока нечего</span>
-                <span class="dx-action__title">Ближайшие матчи</span>
-                <span class="dx-action__meta">Голосование открывается после финального свистка</span>
-            </span>
-            <i class="ti ti-chevron-right dx-action__chevron"></i>
-        </a>
-        {% endif %}
-
-        {% if personal.next_prediction %}
-        {% with m=personal.next_prediction %}
-        <a href="{% url 'matches:detail' m.id %}" class="dx-action">
-            <span class="dx-action__icon dx-action__icon--violet"><i class="ti ti-crystal-ball"></i></span>
-            <span class="dx-action__body">
-                <span class="dx-action__eyebrow">{{ personal.predictions_count }} {{ personal.predictions_count|ru_plural:"матч ждёт,матча ждут,матчей ждут" }} прогноза</span>
-                <span class="dx-action__title">{{ m.home_team.name }} — {{ m.away_team.name }}</span>
-                <span class="dx-action__meta">Старт через {{ m.start_time|timeuntil }}</span>
-            </span>
-            <i class="ti ti-chevron-right dx-action__chevron"></i>
-        </a>
-        {% endwith %}
-        {% endif %}
-
-        <a href="{% url 'users:leaderboard' %}" class="dx-action">
-            <span class="dx-action__icon dx-action__icon--amber"><i class="ti ti-trophy"></i></span>
-            <span class="dx-action__body">
-                <span class="dx-action__eyebrow">Доверие: {{ personal.trust_level|lower }}</span>
-                <span class="dx-action__title">Рейтинг болельщиков</span>
-                <span class="dx-action__meta">Точные оценки повышают вес вашего голоса</span>
-            </span>
-            <i class="ti ti-chevron-right dx-action__chevron"></i>
-        </a>
-    </div>
-</section>
+{% include 'core/_personal_panel.html' %}
 {% else %}
 {# === HERO === #}
 <section class="hero min-h-[300px] md:min-h-[400px] bg-base-200 rounded-xl md:rounded-2xl mb-6 md:mb-8 relative overflow-hidden">
@@ -129,7 +47,7 @@
             {# Быстрая статистика #}
             <div class="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4 mt-8 md:mt-12 px-2">
                 <div class="stat bg-base-100 rounded-lg md:rounded-xl p-2 md:p-4">
-                    <div class="stat-title text-[10px] md:text-xs">Всего матчей</div>
+                    <div class="stat-title text-[10px] md:text-xs">Сыграно матчей</div>
                     <div class="stat-value text-lg md:text-2xl">{{ stats.total_matches|default:0 }}</div>
                 </div>
                 <a href="{% url 'matches:list' %}?status=votable" class="stat bg-base-100 rounded-lg md:rounded-xl p-2 md:p-4 hover:bg-base-200 transition-colors">
@@ -155,30 +73,6 @@
 <div class="mb-6 md:mb-8 px-2 sm:px-0">
     {% render_banner "home_hero" %}
 </div>
-
-{# === НЕЗАВЕРШЁННАЯ ОЦЕНКА === #}
-{% if user.is_authenticated and active_match_id %}
-<section class="mb-6 md:mb-8 px-2 sm:px-0">
-    <div class="alert alert-warning shadow-lg flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4 p-4 md:p-5">
-        {# Иконка и текст #}
-        <div class="flex items-start sm:items-center gap-3 sm:gap-4 w-full sm:w-auto">
-            <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-warning/20 flex items-center justify-center flex-shrink-0">
-                <i class="ti ti-clock text-lg sm:text-xl"></i>
-            </div>
-            <div class="flex-1 min-w-0 text-center sm:text-left">
-                <h3 class="font-bold text-base sm:text-lg">У вас есть активная оценка!</h3>
-                <p class="text-xs sm:text-sm opacity-80 mt-0.5">Завершите оценку матча, чтобы получить XP</p>
-            </div>
-        </div>
-        {# «Продолжить» — btn-primary, контрастирует с жёлтым фоном. #}
-        <a href="{% url 'evaluations:context' active_match_id %}"
-           class="btn btn-sm btn-primary btn-block sm:btn-auto whitespace-nowrap flex-shrink-0 w-full sm:w-auto">
-            <i class="ti ti-arrow-right"></i>
-            Продолжить
-        </a>
-    </div>
-</section>
-{% endif %}
 
 {# === ДВЕ КОЛОНКИ === #}
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6 px-2 md:px-0">

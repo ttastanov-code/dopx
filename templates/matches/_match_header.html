@@ -15,6 +15,12 @@
      hx-get="{% url 'matches:header' match.id %}"
      hx-trigger="every {{ poll }}s [document.visibilityState === 'visible'], dopx:wake"
      hx-swap="outerHTML"
+     {% elif match.poll_wake_at %}
+     data-background-poll
+     hx-get="{% url 'matches:header' match.id %}"
+     hx-trigger="dopx:wake"
+     hx-swap="outerHTML"
+     data-wake-at="{{ match.poll_wake_at|date:'c' }}"
      {% endif %}{% endwith %}>
     {# Одно едва заметное световое пятно. #}
     <div class="md-hero__glow md-hero__glow--a"></div>

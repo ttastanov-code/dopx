@@ -50,7 +50,8 @@
                 </div>
                 {% if status.infra.celery.ok %}
                 <div class="text-sm">Воркеров онлайн: <b class="{% if not status.infra.celery.workers_online %}text-warning{% endif %}">{{ status.infra.celery.workers_online }}</b></div>
-                <div class="text-sm">Активных задач: <b>{{ status.infra.celery.active_tasks }}</b></div>
+                <div class="text-sm">Выполняется сейчас: <b>{{ status.infra.celery.active_tasks }}</b></div>
+                <div class="text-sm">Взято в работу: <b>{{ status.infra.celery.reserved_tasks|default:0 }}</b> · отложено: <b>{{ status.infra.celery.scheduled_tasks|default:0 }}</b></div>
                 {% if status.infra.celery.worker_names %}
                 <div class="text-xs opacity-50 mt-1 truncate">{{ status.infra.celery.worker_names|join:", " }}</div>
                 {% endif %}
@@ -79,13 +80,20 @@
     <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4">
             <div class="dopx-section-eyebrow"><i class="ti ti-clock"></i>Celery Beat</div>
-            <div class="dopx-section-title mb-3">Расписание задач ({{ status.beat_schedule|length }})</div>
+            <div class="dopx-section-title mb-3">Расписание задач ({{ status.beat_schedule|length }}) <span class="text-xs font-normal opacity-50">— ближайшие сверху</span></div>
             <div class="space-y-1.5 max-h-96 overflow-auto">
                 {% for entry in status.beat_schedule %}
                 <div class="rounded-lg border border-base-300 p-2.5 text-xs">
-                    <div class="font-semibold">{{ entry.name }}</div>
-                    <div class="opacity-50 font-mono text-[11px] truncate">{{ entry.task }}</div>
-                    <div class="opacity-70 mt-0.5">{{ entry.schedule_display }}</div>
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="font-semibold text-[13px] leading-snug">{{ entry.description|default:entry.name }}</div>
+                        {% if entry.next_run %}
+                        <span class="flex-shrink-0 opacity-60 whitespace-nowrap" title="{{ entry.next_run|date:'d.m.Y H:i' }}"><span data-countdown="{{ entry.next_run|date:'c' }}" data-countdown-prefix="через " data-countdown-done="запускается…">через {{ entry.next_run|timeuntil }}</span></span>
+                        {% else %}
+                        <span class="flex-shrink-0 inline-flex items-center gap-1 text-success whitespace-nowrap"><span class="w-1.5 h-1.5 rounded-full bg-success"></span>работает постоянно</span>
+                        {% endif %}
+                    </div>
+                    <div class="mt-1 flex items-center gap-1.5 text-primary font-medium"><i class="ti ti-clock"></i>{{ entry.schedule_display }}</div>
+                    <div class="mt-1 opacity-40 font-mono text-[10.5px] truncate" title="{{ entry.task }}">{{ entry.name }} · {{ entry.task }}</div>
                 </div>
                 {% empty %}
                 <p class="text-sm opacity-60 py-4 text-center">Расписание пусто</p>

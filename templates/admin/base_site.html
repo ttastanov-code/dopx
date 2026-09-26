@@ -1,5 +1,5 @@
 {% extends "admin/base.html" %}
-{% load i18n %}
+{% load i18n asset_extras %}
 {% comment %}
 Брендинг и навигация admin управляются через UNFOLD-конфиг в dopx/settings.py
 (UNFOLD["SIDEBAR"]), не через переопределение блоков здесь.
@@ -7,3 +7,13 @@
 
 {# Заголовок вкладки, как в стандартном admin/base_site.html (без него у списков и форм пустой title). #}
 {% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{# Мягкое обновление списков и дашборда админки без перезагрузки (формы редактирования исключены в скрипте). #}
+{% block extrahead %}
+{{ block.super }}
+{% if request.user.is_authenticated %}
+<script>window.DOPX_LIVE = { interval: 30, target: '#content' };</script>
+<script defer src="https://cdn.jsdelivr.net/npm/idiomorph@0.7.4/dist/idiomorph.min.js" integrity="sha384-YWh9vmu1Q6BptPp1emqfsNatFASVLolFKP/5f4LWR6eGMLEhBDh1zcwU2OzfVCe9" crossorigin="anonymous"></script>
+<script defer src="{% static_v 'js/live-refresh.js' %}"></script>
+{% endif %}
+{% endblock %}

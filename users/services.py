@@ -12,6 +12,7 @@ from django.utils import timezone
 from datetime import timedelta
 
 from aggregates.services import compute_bias_score
+from evaluations.completed import completed_only
 from evaluations.models import ContextEvaluation, CoachEvaluation, PlayerEvaluation, RefereeEvaluation
 from users.models import UserBadge
 
@@ -85,11 +86,11 @@ def check_and_award_badges(user) -> list[UserBadge]:
             _maybe_award_bias_free(user, awarded)
 
         if total >= 5:
-            early_count = ContextEvaluation.objects.filter(
+            early_count = completed_only(ContextEvaluation.objects.filter(
                 user=user,
                 match__end_time__isnull=False,
                 created_at__lte=F("match__end_time") + timedelta(hours=2),
-            ).count()
+            )).count()
             if early_count >= 5:
                 b, created = UserBadge.objects.get_or_create(user=user, badge_type="early_bird")
                 if created:
@@ -115,13 +116,13 @@ def check_and_award_badges(user) -> list[UserBadge]:
             if created:
                 awarded.append(b)
 
-        if RefereeEvaluation.objects.filter(user=user).count() >= JUDGE_OF_JUDGES_MIN_COUNT:
+        if completed_only(RefereeEvaluation.objects.filter(user=user)).count() >= JUDGE_OF_JUDGES_MIN_COUNT:
             b, created = UserBadge.objects.get_or_create(user=user, badge_type="judge_of_judges")
             if created:
                 awarded.append(b)
 
         distinct_teams = (
-            PlayerEvaluation.objects.filter(user=user)
+            completed_only(PlayerEvaluation.objects.filter(user=user))
             .values("player__team_id")
             .distinct()
             .count()
@@ -165,7 +166,7 @@ def check_and_award_badges(user) -> list[UserBadge]:
             if created:
                 awarded.append(b)
 
-        if CoachEvaluation.objects.filter(user=user).count() >= COACH_EXPERT_MIN_COUNT:
+        if completed_only(CoachEvaluation.objects.filter(user=user)).count() >= COACH_EXPERT_MIN_COUNT:
             b, created = UserBadge.objects.get_or_create(user=user, badge_type="coach_expert")
             if created:
                 awarded.append(b)
@@ -210,7 +211,7 @@ def _maybe_award_both_sides(user, awarded: list[UserBadge]) -> None:
     from lineups.models import MatchLineupPlayer
 
     pairs = list(
-        PlayerEvaluation.objects.filter(user=user)
+        completed_only(PlayerEvaluation.objects.filter(user=user))
         .values("match_id", "player_id")
         .distinct()
     )
@@ -413,7 +414,7 @@ def _maybe_award_perfect_tour(user, awarded: list[UserBadge]) -> None:
 def _maybe_award_accurate_analyst(user, awarded: list[UserBadge]) -> None:
     """«Точный аналитик»: отклонение <= 1.0 от среднего сообщества в >= 80% из последних 20 матчей."""
     recent_match_ids = list(
-        ContextEvaluation.objects.filter(user=user, match__isnull=False)
+        completed_only(ContextEvaluation.objects.filter(user=user, match__isnull=False))
         .order_by("-created_at")
         .values_list("match_id", flat=True)[:ACCURATE_ANALYST_LOOKBACK]
     )
@@ -421,13 +422,13 @@ def _maybe_award_accurate_analyst(user, awarded: list[UserBadge]) -> None:
         return
 
     user_avg_by_match = dict(
-        PlayerEvaluation.objects.filter(user=user, match_id__in=recent_match_ids)
+        completed_only(PlayerEvaluation.objects.filter(user=user, match_id__in=recent_match_ids))
         .values("match_id")
         .annotate(avg=Avg("contribution"))
         .values_list("match_id", "avg")
     )
     community_avg_by_match = dict(
-        PlayerEvaluation.objects.filter(match_id__in=recent_match_ids)
+        completed_only(PlayerEvaluation.objects.filter(match_id__in=recent_match_ids))
         .exclude(user=user)
         .values("match_id")
         .annotate(avg=Avg("contribution"))
@@ -451,7 +452,7 @@ def _maybe_award_accurate_analyst(user, awarded: list[UserBadge]) -> None:
 def _maybe_award_bias_free(user, awarded: list[UserBadge]) -> None:
     """«Без предвзятости»: compute_bias_score по матчам своей команды ниже порога."""
     latest_context = (
-        ContextEvaluation.objects.filter(user=user, supported_team__isnull=False, match__isnull=False)
+        completed_only(ContextEvaluation.objects.filter(user=user, supported_team__isnull=False, match__isnull=False))
         .select_related("match")
         .order_by("-created_at")
         .first()
@@ -480,7 +481,7 @@ def _maybe_award_derby_hunter(user, awarded: list[UserBadge]) -> None:
         return
 
     evaluated_matches = (
-        Match.objects.filter(context_evaluations__user=user)
+        Match.objects.filter(evaluation_sessions__user=user, evaluation_sessions__status="completed")
         .values_list("id", "home_team_id", "away_team_id")
         .distinct()
     )
@@ -524,7 +525,7 @@ def _check_stable_hand_condition(user) -> bool:
 
 def _check_accurate_analyst_condition(user) -> bool:
     recent_match_ids = list(
-        ContextEvaluation.objects.filter(user=user, match__isnull=False)
+        completed_only(ContextEvaluation.objects.filter(user=user, match__isnull=False))
         .order_by("-created_at")
         .values_list("match_id", flat=True)[:ACCURATE_ANALYST_LOOKBACK]
     )
@@ -532,13 +533,13 @@ def _check_accurate_analyst_condition(user) -> bool:
         return False
 
     user_avg_by_match = dict(
-        PlayerEvaluation.objects.filter(user=user, match_id__in=recent_match_ids)
+        completed_only(PlayerEvaluation.objects.filter(user=user, match_id__in=recent_match_ids))
         .values("match_id")
         .annotate(avg=Avg("contribution"))
         .values_list("match_id", "avg")
     )
     community_avg_by_match = dict(
-        PlayerEvaluation.objects.filter(match_id__in=recent_match_ids)
+        completed_only(PlayerEvaluation.objects.filter(match_id__in=recent_match_ids))
         .exclude(user=user)
         .values("match_id")
         .annotate(avg=Avg("contribution"))
@@ -556,7 +557,7 @@ def _check_accurate_analyst_condition(user) -> bool:
 
 def _check_bias_free_condition(user) -> bool:
     latest_context = (
-        ContextEvaluation.objects.filter(user=user, supported_team__isnull=False, match__isnull=False)
+        completed_only(ContextEvaluation.objects.filter(user=user, supported_team__isnull=False, match__isnull=False))
         .select_related("match")
         .order_by("-created_at")
         .first()

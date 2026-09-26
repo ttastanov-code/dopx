@@ -2,10 +2,9 @@
 """Общие страницы: главная, правила, контакты, политика, антифрод, share-карточки, виджеты."""
 import logging
 import os
-from datetime import timedelta
 from django.conf import settings
 from django.contrib import messages
-from django.db.models import Count, Avg, F, Q, Sum
+from django.db.models import Count, Q
 from django.core.cache import cache
 from django.http import HttpResponse, Http404
 from django.shortcuts import redirect, render, get_object_or_404
@@ -18,7 +17,7 @@ from django.core.mail import send_mail, EmailMultiAlternatives
 from django.utils.html import strip_tags
 from django.core.files.storage import default_storage
 
-from aggregates.models import MatchAggregate, PlayerMatchAggregate
+from aggregates.models import PlayerMatchAggregate
 from aggregates.services import min_votes_for_display, published_q, vote_weighted_avg
 
 # Минимум оценённых матчей команды для «Топа команд» на главной.
@@ -26,7 +25,6 @@ TOP_TEAMS_MIN_MATCHES = 3
 from core.forms import ContactAntiBotForm
 from core.nominations import MIN_MATCHES as NOMINATION_MIN_MATCHES, MIN_VOTES as NOMINATION_MIN_VOTES, get_nominations
 from core.utils import get_client_ip
-from evaluations.models import ContextEvaluation, EvaluationSession, MatchEvaluation, PlayerEvaluation, TeamEvaluation
 from matches.models import Match
 from seasons.models import Season
 from teams.models import Team, TeamSeasonStats
@@ -71,38 +69,10 @@ class HomeView(TemplateView):
             'player', 'player__team'
         ).filter(published_q(), total_votes__gte=min_votes_for_display()).order_by('-performance_score')[:5]
 
-        total_evals = (
-            MatchEvaluation.objects.count() +
-            TeamEvaluation.objects.count() +
-            PlayerEvaluation.objects.count()
-        )
+        from core.stats import platform_stats
 
-        active_users = User.objects.filter(
-            context_evaluations__created_at__gte=now - timedelta(days=7)
-        ).distinct().count()
-
-        # Только матчи с голосами, иначе Avg=None превратится в «0,0».
-        match_aggs_with_votes = MatchAggregate.objects.filter(published_q(), total_votes__gt=0)
-        avg_entertainment = match_aggs_with_votes.aggregate(
-            avg=Avg('avg_entertainment')
-        )['avg']
-        avg_drama = match_aggs_with_votes.aggregate(
-            avg=Avg('drama_index')
-        )['avg']
-
-        metrics = {
-            'avg_entertainment': round(avg_entertainment, 1) if avg_entertainment is not None else None,
-            'avg_drama': round(avg_drama, 0) if avg_drama is not None else None,
-        }
-
-        stats = {
-            'total_matches': Match.objects.count(),
-            'active_voting': Match.objects.filter(
-                voting_open_until__gte=now, status='finished'
-            ).count(),
-            'total_evaluations': total_evals,
-            'active_users': active_users,
-        }
+        stats = platform_stats()
+        metrics = {'avg_entertainment': stats['avg_entertainment'], 'avg_drama': stats['avg_drama']}
 
         # Топ команд — по защищённым агрегатам закрытых матчей (вес по голосам), не по сырым оценкам.
         counted_team_aggs = published_q('match_aggregates__match__') & Q(
@@ -114,18 +84,6 @@ class HomeView(TemplateView):
             ),
             rated_matches=Count('match_aggregates', filter=counted_team_aggs),
         ).filter(avg_rating__isnull=False, rated_matches__gte=TOP_TEAMS_MIN_MATCHES).order_by('-avg_rating')[:5]
-
-        # Незавершённая сессия пользователя — только если голосование ещё открыто.
-        active_match_id = None
-        if self.request.user.is_authenticated:
-            active_session = EvaluationSession.objects.filter(
-                user=self.request.user,
-                status__in=['started', 'in_progress'],
-                match__voting_open_until__gte=now,
-                match__status='finished',
-            ).select_related('match').first()
-            if active_session:
-                active_match_id = active_session.match.id
 
         # Личная панель «Ваш день» вместо общего промо-блока.
         personal = None
@@ -152,7 +110,6 @@ class HomeView(TemplateView):
             'top_teams': top_teams,
             'stats': stats,
             'metrics': metrics,
-            'active_match_id': active_match_id,
             'personal': personal,
             'nominations': nominations,
             'nomination_min_votes': NOMINATION_MIN_VOTES,
@@ -360,21 +317,9 @@ class ContactsView(TemplateView):
                     'home_team', 'away_team'
                 ).first()
 
-        now = timezone.now()
-        context['stats'] = {
-            'total_matches': Match.objects.count(),
-            'total_evaluations': (
-                MatchEvaluation.objects.count() +
-                PlayerEvaluation.objects.count() +
-                TeamEvaluation.objects.count()
-            ),
-            'active_users': User.objects.filter(
-                context_evaluations__created_at__gte=now - timedelta(days=7)
-            ).distinct().count(),
-            'avg_drama': MatchAggregate.objects.aggregate(
-                avg=Avg('drama_index')
-            )['avg'] or 0,
-        }
+        from core.stats import platform_stats
+
+        context['stats'] = platform_stats()
         return context
 
     def post(self, request, *args, **kwargs):
@@ -614,8 +559,10 @@ class AntiFraudView(TemplateView):
 
     @staticmethod
     def _compute_stats() -> dict:
+        from core.stats import platform_stats
+
         total_flags = SuspiciousActivityFlag.objects.count()
-        total_evaluations = ContextEvaluation.objects.count()
+        total_evaluations = platform_stats()["total_evaluations"]
         by_status = dict(
             SuspiciousActivityFlag.objects.values_list("status").annotate(count=Count("id")).order_by()
         )
@@ -684,15 +631,17 @@ class MatchDNAShareCardView(View):
             PlayerMatchAggregate.objects.filter(match=match, total_votes__gte=min_votes_for_display())
             .select_related("player").order_by("performance_score")[:1]
         )
-        fan_support = list(ContextEvaluation.objects.filter(
+        from evaluations.completed import completed_only
+
+        fan_support = list(completed_only(ContextEvaluation.objects.filter(
             match=match
-        ).exclude(
+        )).exclude(
             supported_team__isnull=True
         ).values(
             "supported_team__id", "supported_team__name"
         ).annotate(count=Count("id")).order_by("-count")[:2])
         match_evaluations = list(
-            MatchEvaluation.objects.filter(match=match).only("entertainment", "tension", "fairness")
+            completed_only(MatchEvaluation.objects.filter(match=match)).only("entertainment", "tension", "fairness")
         )
         match_dna = build_match_dna(
             match, match_agg, events, referee_agg,
@@ -755,3 +704,11 @@ def handler_403(request, exception=None):
 
 def handler_500(request):
     return render(request, 'errors/500.html', status=500)
+
+def personal_panel(request):
+    """Фрагмент «Ваш день» для фонового обновления на главной."""
+    from core.personal import personal_summary
+
+    if not request.user.is_authenticated:
+        return HttpResponse(status=204)
+    return render(request, 'core/_personal_panel.html', {'personal': personal_summary(request.user)})

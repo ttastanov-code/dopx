@@ -180,25 +180,22 @@ class ContextStepXPTests(TestCase):
         self.client.force_login(self.user)
         self.match = _make_match()
 
-    def test_completing_context_step_awards_xp(self):
+    def test_context_step_xp_is_pending_until_completion(self):
         url = reverse("evaluations:context", args=[self.match.id])
         response = self.client.post(url, {"watched_type": "full"})
         self.assertRedirects(response, reverse("evaluations:teams", args=[self.match.id]))
 
         self.user.xp.refresh_from_db()
-        self.assertEqual(self.user.xp.total_xp, XP_CONTEXT_STEP)
+        self.assertEqual(self.user.xp.total_xp, 0)  # незавершённая оценка XP не даёт
+        session = EvaluationSession.objects.get(user=self.user, match=self.match)
+        self.assertEqual(session.pending_xp, XP_CONTEXT_STEP)
 
-    def test_resubmitting_context_step_does_not_double_award_xp(self):
-        """Повторное сохранение шага не начисляет XP второй раз."""
+    def test_resubmitting_context_step_does_not_double_pending_xp(self):
+        """Повторное сохранение шага не добавляет XP второй раз."""
         url = reverse("evaluations:context", args=[self.match.id])
         self.client.post(url, {"watched_type": "full"})
         self.client.post(url, {"watched_type": "highlights"})
-
-        self.user.xp.refresh_from_db()
-        self.assertEqual(
-            self.user.xp.total_xp, XP_CONTEXT_STEP,
-            "повторное прохождение уже пройденного шага начислило XP снова",
-        )
+        self.assertEqual(EvaluationSession.objects.get(user=self.user, match=self.match).pending_xp, XP_CONTEXT_STEP)
 
 
 # ---------------------------------------------------------------------------

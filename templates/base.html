@@ -51,6 +51,9 @@
 
     {# Alpine.js #}
     {# Collapse — до ядра Alpine, иначе x-collapse не работает. #}
+    {# Мягкое обновление страницы (Idiomorph) — раньше Alpine: снимок исходной разметки компонентов. #}
+    <script defer src="https://cdn.jsdelivr.net/npm/idiomorph@0.7.4/dist/idiomorph.min.js" integrity="sha384-YWh9vmu1Q6BptPp1emqfsNatFASVLolFKP/5f4LWR6eGMLEhBDh1zcwU2OzfVCe9" crossorigin="anonymous"></script>
+    <script defer src="{% static_v 'js/live-refresh.js' %}"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/collapse@3.15.8/dist/cdn.min.js" integrity="sha384-NArNwzWsUSF+kY2lgW4YriEkjLqi+J+za6HrENUn/3nZqkBnWbxV22kCJEK5Uu6n" crossorigin="anonymous"></script>
     {# alpine-components.js — до ядра Alpine, иначе компоненты не успеют зарегистрироваться. #}
     <script defer src="{% static_v 'js/alpine-components.js' %}"></script>
@@ -396,7 +399,8 @@
 <body
     class="bg-base-100 text-base-content antialiased{% if show_tabbar %} has-tabbar{% endif %}"
     hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
-    data-vapid-public-key="{{ VAPID_PUBLIC_KEY|default:'' }}"{% if user.is_authenticated %}
+    data-vapid-public-key="{{ VAPID_PUBLIC_KEY|default:'' }}"
+    data-live-refresh="{% block live_refresh %}{% if request.path|slice:':17' == '/staff/dashboard/' %}10{% else %}30{% endif %}{% endblock %}"{% if user.is_authenticated %}
     data-auth="1"{% endif %}
     x-data="themeSwitcher">
     
@@ -476,6 +480,8 @@
         // Вернулись на вкладку — фоновые блоки обновляются сразу, не дожидаясь очередного тика.
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState !== 'visible' || !window.htmx) return;
+            // Блоки с будущим data-wake-at будит свой таймер (live-time.js).
+            if (window.dopxWakeAll) { window.dopxWakeAll(); return; }
             document.querySelectorAll('[data-background-poll][hx-trigger*="dopx:wake"]').forEach((el) => {
                 htmx.trigger(el, 'dopx:wake');
             });
@@ -517,5 +523,7 @@
     <script src="{% static_v 'js/analytics.js' %}"></script>
     {# Регистрация /sw.js; подписка на push — по действию пользователя (push.js). #}
     <script src="{% static_v 'js/push.js' %}"></script>
+    {# Живые отсчёты «через …» и пробуждение фоновых блоков к старту матча. #}
+    <script src="{% static_v 'js/live-time.js' %}"></script>
 </body>
 </html>

@@ -1,4 +1,6 @@
 {% extends 'base.html' %}
+{# Вайзард: черновик и ползунки — фоновое обновление выключено. #}
+{% block live_refresh %}off{% endblock %}
 {% load static %}
 {% load match_extras %}
 
@@ -53,10 +55,9 @@
                 {% include 'evaluations/_match_eval_criteria.html' %}
                 {% endif %}
 
-                {# Переломный момент #}
-                <div class="w-full">
-                    <label class="wz-toggle-row cursor-pointer flex items-center justify-between p-4"
-                           x-data="{ tp: false }" :class="tp && 'wz-toggle-row--active'">
+                {# Переломный момент: да/нет, затем — что именно (событие матча или универсальный вариант). #}
+                <div class="w-full" x-data="{ tp: false }">
+                    <label class="wz-toggle-row cursor-pointer flex items-center justify-between p-4" :class="tp && 'wz-toggle-row--active'">
                         <div class="flex items-center gap-3 flex-1 min-w-0">
                             <div class="w-10 h-10 rounded-xl bg-error/10 flex items-center justify-center flex-shrink-0">
                                 <i class="ti ti-refresh text-error text-lg"></i>
@@ -68,6 +69,32 @@
                         </div>
                         <input type="checkbox" name="turning_point" class="toggle toggle-primary flex-shrink-0" x-model="tp">
                     </label>
+
+                    <div class="dx-tp" x-show="tp" x-cloak>
+                        <div class="dx-tp__title">Что стало переломом? <span>необязательно</span></div>
+                        {% if turning_point_events %}
+                        <div class="dx-tp__group">События матча</div>
+                        <div class="dx-tp__options">
+                            {% for event in turning_point_events %}
+                            <label class="dx-tp__opt dx-tp__opt--{{ event.team_side }}">
+                                <input type="radio" name="turning_point_choice" value="event:{{ event.id }}">
+                                <span class="dx-tp__minute">{{ event.display_minute }}'</span>
+                                <span class="dx-tp__text"><b>{{ event.get_event_type_display }}</b>{% if event.player_display_name %} {{ event.player_display_name }}{% endif %}</span>
+                                <span class="dx-tp__side">{% if event.team_side == 'home' %}{{ match.home_team.name }}{% else %}{{ match.away_team.name }}{% endif %}</span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="dx-tp__group">{% if turning_point_events %}Или другое{% else %}Что именно{% endif %}</div>
+                        <div class="dx-tp__chips">
+                            {% for key, label, icon in turning_point_kinds %}
+                            <label class="dx-tp__chip">
+                                <input type="radio" name="turning_point_choice" value="kind:{{ key }}">
+                                <i class="ti {{ icon }}"></i>{{ label }}
+                            </label>
+                            {% endfor %}
+                        </div>
+                    </div>
                 </div>
 
                 {# Инфо #}

@@ -635,3 +635,25 @@ def expire_stale_low_score_flags() -> int:
     if expired:
         logger.info("expire_stale_low_score_flags: auto-closed %d stale low-score flag(s).", expired)
     return expired
+
+# Пачка удалений (все сессии разом) -> один пересчёт через несколько секунд.
+PROGRESS_RECOMPUTE_DELAY = 10
+
+
+def schedule_progress_recompute(user_id: str) -> None:
+    from django.core.cache import cache
+
+    if cache.add(f"users:progress_recompute:{user_id}", 1, PROGRESS_RECOMPUTE_DELAY):
+        recompute_user_progress_task.apply_async(args=[user_id], countdown=PROGRESS_RECOMPUTE_DELAY)
+
+
+@shared_task(bind=True, max_retries=3, acks_late=True, reject_on_worker_lost=True)
+def recompute_user_progress_task(self, user_id: str) -> dict | None:
+    """Пересчёт XP, серий и достижений (users/progress.py)."""
+    from users.models import User
+    from users.progress import recompute_user_progress
+
+    user = User.objects.filter(pk=user_id).first()
+    if user is None:
+        return None
+    return recompute_user_progress(user)

@@ -31,6 +31,9 @@ def track_event(
     :param properties: доп. данные события.
     Запись асинхронная через Celery.
     """
+    # Фоновое мягкое обновление страницы (live-refresh.js) — не действие пользователя.
+    if request is not None and request.headers.get("X-Live-Refresh"):
+        return
     payload: dict[str, Any] = {"event_name": str(event_name), "properties": properties or {}}
 
     # У DRF-вьюхи трекинга нет аутентификаторов — пользователя берём из request._request.

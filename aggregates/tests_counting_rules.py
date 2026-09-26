@@ -362,6 +362,7 @@ class BiasProfileWithHistoryTests(_Base):
             ContextEvaluation.objects.create(user=fan, match=past, supported_team=self.home)
             PlayerEvaluation.objects.create(user=fan, match=past, player=self.player, contribution=9, risk=3, potential=5)
             PlayerEvaluation.objects.create(user=fan, match=past, player=rival_player, contribution=3, risk=3, potential=5)
+            EvaluationSession.objects.create(user=fan, match=past, status="completed")
         current = self.make_match(0)
         ContextEvaluation.objects.create(user=fan, match=current, supported_team=self.home)
         profile = compute_bias_profile(fan, current)

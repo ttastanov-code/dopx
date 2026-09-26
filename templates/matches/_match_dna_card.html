@@ -207,7 +207,22 @@
         {% if match_dna.turning_point_text %}
         <div class="dna-note dna-tone-info">
             <span class="dna-note__icon"><i class="ti ti-arrows-exchange"></i></span>
-            <span>{{ match_dna.turning_point_text }}</span>
+            <div class="min-w-0 flex-1">
+                <span>{{ match_dna.turning_point_text }}</span>
+                {% if match_dna.turning_points %}
+                <div class="dx-tp-result mt-2">
+                    {% for tp in match_dna.turning_points %}
+                    <div class="dx-tp-result__row">
+                        <i class="ti {{ tp.icon }}"></i>
+                        <span class="dx-tp-result__label">{{ tp.label }}</span>
+                        <span class="dx-tp-result__pct">{{ tp.pct }}%</span>
+                        <span></span>
+                        <span class="dx-tp-result__bar"><span style="width: {{ tp.pct }}%"></span></span>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
         </div>
         {% endif %}
         {% if match_dna.controversial_episode %}

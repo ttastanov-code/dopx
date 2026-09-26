@@ -388,7 +388,7 @@
 <div class="dx-sticky-cta md:hidden">
     <div class="dx-sticky-cta__text">
         <span class="dx-sticky-cta__title">Оцените матч</span>
-        <span class="dx-sticky-cta__meta">Голосование закроется через {{ match.voting_open_until|timeuntil }}</span>
+        <span class="dx-sticky-cta__meta"><span data-countdown="{{ match.voting_open_until|date:'c' }}" data-countdown-prefix="Голосование закроется через " data-countdown-done="Голосование закрывается">Голосование закроется через {{ match.voting_open_until|timeuntil }}</span></span>
     </div>
     {% if user.is_authenticated %}
     <a href="{% url 'evaluations:context' match.id %}" class="dx-sticky-cta__button"><i class="ti ti-star"></i> Оценить</a>

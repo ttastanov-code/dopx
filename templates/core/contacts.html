@@ -251,10 +251,10 @@
           <i class="ti ti-chart-bar text-success"></i> Платформа в цифрах
         </h3>
         <div class="grid grid-cols-2 gap-2 md:gap-4">
-          <div class="text-center p-2 md:p-3 bg-base-200 rounded-lg"><div class="text-xl md:text-2xl font-bold text-primary">{{ stats.total_matches|default:0 }}</div><div class="text-[10px] md:text-xs opacity-60">Матчей</div></div>
+          <div class="text-center p-2 md:p-3 bg-base-200 rounded-lg"><div class="text-xl md:text-2xl font-bold text-primary">{{ stats.total_matches|default:0 }}</div><div class="text-[10px] md:text-xs opacity-60">Сыграно матчей</div></div>
           <div class="text-center p-2 md:p-3 bg-base-200 rounded-lg"><div class="text-xl md:text-2xl font-bold text-success">{{ stats.total_evaluations|default:0 }}</div><div class="text-[10px] md:text-xs opacity-60">Оценок</div></div>
-          <div class="text-center p-2 md:p-3 bg-base-200 rounded-lg"><div class="text-xl md:text-2xl font-bold text-info">{{ stats.active_users|default:0 }}</div><div class="text-[10px] md:text-xs opacity-60">Пользователей</div></div>
-          <div class="text-center p-2 md:p-3 bg-base-200 rounded-lg"><div class="text-xl md:text-2xl font-bold text-warning">{{ stats.avg_drama|floatformat:0|default:0 }}</div><div class="text-[10px] md:text-xs opacity-60">Средняя драма</div></div>
+          <div class="text-center p-2 md:p-3 bg-base-200 rounded-lg"><div class="text-xl md:text-2xl font-bold text-info">{{ stats.total_users|default:0 }}</div><div class="text-[10px] md:text-xs opacity-60">Пользователей</div></div>
+          <div class="text-center p-2 md:p-3 bg-base-200 rounded-lg"><div class="text-xl md:text-2xl font-bold text-warning">{{ stats.avg_drama|default:"—" }}</div><div class="text-[10px] md:text-xs opacity-60">Средняя драма</div></div>
         </div>
       </div>
     </div>

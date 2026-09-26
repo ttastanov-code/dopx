@@ -9,6 +9,7 @@ from django.db.models import Case, CharField, Count, F, Q, Value, When
 from django.utils import timezone
 
 from core.models import get_setting
+from evaluations.completed import completed_only
 from evaluations.models import ContextEvaluation, EvaluationSession
 from predictions.models import MatchPrediction
 from users.models import User
@@ -183,7 +184,7 @@ def team_fan_geography(team) -> dict | None:
     if cached is not None:
         return cached or None
 
-    fan_ids = ContextEvaluation.objects.filter(supported_team=team).values("user_id").distinct()
+    fan_ids = completed_only(ContextEvaluation.objects.filter(supported_team=team)).values("user_id").distinct()
     by_city = list(
         _real_users().filter(id__in=fan_ids)
         .values("city").annotate(fans=Count("id")).order_by("-fans", "city")

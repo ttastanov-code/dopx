@@ -4,6 +4,7 @@ from django.urls import path
 from .views import (
     EvaluateContextView, EvaluateTeamsView, EvaluatePlayersView,
     EvaluateCoachesView, EvaluateRefereeView, EvaluateMatchFinalView,
+    EvaluationCancelView,
     EvaluationCompleteView,
 )
 
@@ -17,4 +18,5 @@ urlpatterns = [
     path('match/<uuid:match_id>/referee/', EvaluateRefereeView.as_view(), name='referee'),
     path('match/<uuid:match_id>/match/', EvaluateMatchFinalView.as_view(), name='match_eval'),
     path('complete/<uuid:match_id>/', EvaluationCompleteView.as_view(), name='complete'),
+    path('match/<uuid:match_id>/cancel/', EvaluationCancelView.as_view(), name='cancel'),
 ]

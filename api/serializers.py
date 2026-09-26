@@ -379,12 +379,15 @@ class MatchEvaluationSerializer(serializers.ModelSerializer):
             "entertainment",
             "tension",
             "turning_point",
+            "turning_point_event",
+            "turning_point_kind",
             "fairness",
             "drama_index",
             "created_at",
             "updated_at",
         )
         read_only_fields = ("id", "created_at", "updated_at", "drama_index")
+        extra_kwargs = {"turning_point_event": {"required": False, "allow_null": True}}
 
     def validate_match(self, value: Match) -> Match:
         _run_policy(assert_voting_open, value)
@@ -410,7 +413,26 @@ class MatchEvaluationSerializer(serializers.ModelSerializer):
                 # Нужен контекст просмотра.
                 context_exists = ContextEvaluation.objects.filter(user=user, match=match).exists()
                 _run_policy(assert_context_exists, context_exists)
+        self._validate_turning_point(data)
         return data
+
+    def _validate_turning_point(self, data: dict) -> None:
+        """Перелом — событие этого матча из допустимых типов или известный вариант; без флага — очищаем."""
+        from evaluations.turning_points import EVENT_TYPES, KIND_LABELS
+
+        turning_point = data.get("turning_point", getattr(self.instance, "turning_point", False))
+        if not turning_point:
+            data["turning_point_event"], data["turning_point_kind"] = None, ""
+            return
+        match = data.get("match") or getattr(self.instance, "match", None)
+        event = data.get("turning_point_event")
+        if event is not None and (event.match_id != getattr(match, "id", None) or event.event_type not in EVENT_TYPES):
+            raise serializers.ValidationError({"turning_point_event": "Событие не из этого матча"})
+        kind = data.get("turning_point_kind", "")
+        if kind and kind not in KIND_LABELS:
+            raise serializers.ValidationError({"turning_point_kind": "Неизвестный вариант"})
+        if event is not None:
+            data["turning_point_kind"] = ""
 
 
 # ============================================================================
@@ -504,6 +526,7 @@ class MatchAggregateSerializer(serializers.ModelSerializer):
             "avg_tension",
             "avg_fairness",
             "turning_point_ratio",
+            "turning_points",
             "total_votes",
             "drama_index",
         )
@@ -515,6 +538,7 @@ class MatchAggregateSerializer(serializers.ModelSerializer):
             "avg_tension",
             "avg_fairness",
             "turning_point_ratio",
+            "turning_points",
             "total_votes",
             "drama_index",
         )
