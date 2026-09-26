@@ -3,6 +3,7 @@ from django.urls import path
 from .views import (
     HomeView, RulesView, ContactsView, PrivacyPolicyView, AntiFraudView,
     MatchShareCardView, MatchDNAShareCardView, StreakShareCardView, standings_preview, standings_widget,
+    personal_panel,
     handler_404, handler_500, service_worker,
 )
 
@@ -22,6 +23,7 @@ urlpatterns = [
     # converter ради двух значений.
     path('share/streak/<str:username>/<str:streak_type>/card.png', StreakShareCardView.as_view(), name='streak_share_card'),
     path('api/standings-preview/', standings_preview, name='standings_preview'),
+    path('api/personal-panel/', personal_panel, name='personal_panel'),
     # Embed-виджет турнирной таблицы для партнёров — см. docstring standings_widget.
     path('widget/standings/', standings_widget, name='standings_widget'),
 ]

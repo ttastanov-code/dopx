@@ -49,4 +49,12 @@
             {% endfor %}
         </div>
     </div>
+    {% if match %}
+    {# Отмена: удаляет черновик оценки, чтобы он не висел незавершённым. #}
+    <form method="post" action="{% url 'evaluations:cancel' match.id %}" class="dx-wz-cancel"
+          onsubmit="return confirm('Отменить оценку? Заполненные шаги будут удалены.')">
+        {% csrf_token %}
+        <button type="submit"><i class="ti ti-x"></i> Отменить оценку</button>
+    </form>
+    {% endif %}
 </div>

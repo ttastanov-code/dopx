@@ -140,6 +140,7 @@ class TeamFanGeographyTests(CityStatsTestCase):
         match = self.make_match()
         for u in users:
             ContextEvaluation.objects.create(user=u, match=match, supported_team=team, watched_type="full")
+            EvaluationSession.objects.get_or_create(user=u, match=match, defaults={"status": "completed"})
 
     def test_hidden_below_min_fans(self):
         self.support(self.make_users("Алматы", 9), self.home)

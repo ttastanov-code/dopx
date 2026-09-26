@@ -215,6 +215,12 @@ COMMAND_REGISTRY: dict[str, CommandSpec] = {
         description="Обновляет «активен» по последнему матчу команды. Без обращения к внешнему API.",
         args=[],
     ),
+    "recompute_user_progress": CommandSpec(
+        name="recompute_user_progress", label="Пересчитать XP, серии и достижения",
+        category="recalc", danger="safe", has_apply_flag=True,
+        description="Из фактических данных: завершённые оценки и прогнозы. Нужно после удаления сессий/прогнозов вручную.",
+        args=[ArgSpec("--user", "user", "str", help="username; пусто — все пользователи")],
+    ),
     "sync_sportmonks_photos": CommandSpec(
         name="sync_sportmonks_photos", label="Догрузить фото из Sportmonks",
         category="recalc", danger="safe", has_apply_flag=True,

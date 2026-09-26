@@ -171,3 +171,99 @@ class NominationsQueryTests(TestCase):
         groups = group_nominations(noms)
         self.assertEqual([n["key"] for n in groups[1]["items"]], ["player_of_season", "rising_talent", "player_disappointment"])
         self.assertEqual([n["key"] for n in nomination_highlights(noms)], ["player_of_season", "team_of_season"])
+
+
+class PlatformStatsTests(_Base):
+    def test_counts_completed_evaluations_and_real_users(self):
+        from core.stats import platform_stats
+        match = self.match()
+        EvaluationSession.objects.create(user=self.user, match=match, status="completed", completed_at=timezone.now())
+        EvaluationSession.objects.create(user=User.objects.create_user(username="q", email="q@example.com", password="x"), match=match)
+        User.objects.create_user(username="off", email="off@example.com", password="x", is_active=False)
+        cache.clear()
+        stats = platform_stats()
+        self.assertEqual(stats["total_evaluations"], 1)
+        self.assertEqual(stats["active_users"], 1)
+        self.assertEqual(stats["total_users"], 2)
+        self.assertEqual(stats["total_matches"], 1)
+
+
+class DataHealthStaleTests(_Base):
+    def test_stale_live_and_scheduled_counted(self):
+        from dashboard.services import data_health_summary
+        self.match(status="live", start_time=timezone.now() - timedelta(hours=5))
+        self.match(status="scheduled", start_time=timezone.now() - timedelta(hours=4))
+        self.match(status="live", start_time=timezone.now() - timedelta(minutes=30))
+        self.assertEqual(data_health_summary()["stale_matches"], 2)
+
+
+class LeaderboardCountsCompletedOnlyTests(_Base):
+    def test_unfinished_evaluation_not_in_leaderboard(self):
+        match = self.match()
+        EvaluationSession.objects.create(user=self.user, match=match, status="in_progress")
+        self.assertEqual(list(self.client.get(reverse("users:leaderboard")).context["users"]), [])
+        EvaluationSession.objects.filter(user=self.user).update(status="completed", completed_at=timezone.now())
+        users = list(self.client.get(reverse("users:leaderboard")).context["users"])
+        self.assertEqual([(u.username, u.eval_count) for u in users], [("fan", 1)])
+
+    def test_next_other_skips_started_match(self):
+        started, other = self.match(), self.match()
+        EvaluationSession.objects.create(user=self.user, match=started, status="in_progress")
+        self.assertEqual(personal_summary(self.user)["next_other"], other)
+
+
+class LiveRefreshTests(_Base):
+    def test_far_match_gets_wake_at_near_match_polls(self):
+        far = self.match(status="scheduled", start_time=timezone.now() + timedelta(days=2))
+        near = self.match(status="scheduled", start_time=timezone.now() + timedelta(minutes=30))
+        self.assertIsNotNone(far.poll_wake_at)
+        self.assertIsNone(near.poll_wake_at)
+        self.assertIsNotNone(near.live_poll_seconds)
+        html = self.client.get(reverse("matches:card", args=[far.id])).content.decode()
+        self.assertIn("data-wake-at=", html)
+
+    def test_personal_panel_partial(self):
+        self.assertEqual(self.client.get(reverse("core:personal_panel")).status_code, 204)
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("core:personal_panel"))
+        self.assertContains(response, 'id="personal-panel"')
+        self.assertContains(response, "Привет, fan")
+
+
+class LiveRefreshSetupTests(_Base):
+    def test_interval_attribute_and_wizard_off(self):
+        self.assertContains(self.client.get(reverse("core:home")), 'data-live-refresh="30"')
+        match = self.match()
+        self.client.force_login(self.user)
+        self.assertContains(self.client.get(reverse("evaluations:context", args=[match.id])), 'data-live-refresh="off"')
+
+    def test_background_refresh_not_tracked(self):
+        from unittest.mock import patch
+        from django.test import RequestFactory
+        from analytics.services import track_event
+        request = RequestFactory().get("/", HTTP_X_LIVE_REFRESH="1")
+        with patch("analytics.tasks.persist_event_task.delay") as delay:
+            track_event("page_view", request=request)
+        delay.assert_not_called()
+
+
+class HumanizeScheduleTests(TestCase):
+    def test_common_crontabs_and_intervals(self):
+        from celery.schedules import crontab
+        from dashboard.infra_services import BEAT_TASK_TITLES, beat_schedule_overview, humanize_schedule
+        cases = {
+            "каждые 10 минут": crontab(minute="*/10"),
+            "каждый час в :05 и :35": crontab(minute="5,35"),
+            "каждый день в 04:00": crontab(minute=0, hour=4),
+            "по понедельникам в 10:00": crontab(minute=0, hour=10, day_of_week=1),
+            "1-го числа каждого месяца в 03:00": crontab(minute=0, hour=3, day_of_month=1),
+            "каждые 2 часа, в :15": crontab(minute=15, hour="*/2"),
+            "каждые 15 секунд": 15.0,
+        }
+        for expected, schedule in cases.items():
+            self.assertEqual(humanize_schedule(schedule), expected)
+        entries = beat_schedule_overview()
+        live = next(e for e in entries if e["name"] == "sportmonks-update-live")
+        self.assertIsNone(live["next_run"])  # интервал: прошлый запуск неизвестен — без выдуманного отсчёта
+        self.assertTrue(all(e["next_run"] for e in entries if not e["is_interval"]))
+        self.assertTrue(all(e["description"] for e in entries))

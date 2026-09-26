@@ -43,9 +43,11 @@ def overview_metrics(days: int = 14) -> dict:
         .annotate(count=Count("id"))
         .order_by("period")
     )
+    # Оценка = завершённая сессия; брошенные не считаем.
+    completed = EvaluationSession.objects.filter(status="completed")
     evaluations_by_day = list(
-        ContextEvaluation.objects.filter(created_at__gte=since)
-        .annotate(period=TruncDate("created_at"))
+        completed.filter(completed_at__gte=since)
+        .annotate(period=TruncDate("completed_at"))
         .values("period")
         .annotate(count=Count("id"))
         .order_by("period")
@@ -56,8 +58,8 @@ def overview_metrics(days: int = 14) -> dict:
         "verified_users": verified_users,
         "verification_rate_percent": round(verified_users / total_users * 100, 1) if total_users else 0.0,
         "new_users_period": User.objects.filter(date_joined__gte=since).count(),
-        "total_evaluations": ContextEvaluation.objects.count(),
-        "evaluations_period": ContextEvaluation.objects.filter(created_at__gte=since).count(),
+        "total_evaluations": completed.count(),
+        "evaluations_period": completed.filter(completed_at__gte=since).count(),
         "live_matches": Match.objects.filter(status="live").count(),
         "scheduled_matches": Match.objects.filter(status="scheduled").count(),
         "registrations_by_day": [
@@ -77,19 +79,24 @@ def overview_metrics(days: int = 14) -> dict:
 # ============================================================
 
 def content_metrics(limit: int = 8) -> dict:
+    """Только оценки из завершённых сессий."""
+    from evaluations.completed import completed_only
+
+    completed = EvaluationSession.objects.filter(status="completed")
+    player_evals = completed_only(PlayerEvaluation.objects.all())
     top_matches = list(
-        ContextEvaluation.objects.values("match_id", "match__home_team__name", "match__away_team__name")
+        completed.values("match_id", "match__home_team__name", "match__away_team__name")
         .annotate(evals=Count("id")).order_by("-evals")[:limit]
     )
     top_players = list(
-        PlayerEvaluation.objects.values("player_id", "player__first_name", "player__last_name")
+        player_evals.values("player_id", "player__first_name", "player__last_name")
         .annotate(evals=Count("id")).order_by("-evals")[:limit]
     )
 
     # Распределение по contribution (1-10).
     bucket_labels = ["1-2", "3-4", "5-6", "7-8", "9-10"]
     buckets = {label: 0 for label in bucket_labels}
-    for value in PlayerEvaluation.objects.values_list("contribution", flat=True):
+    for value in player_evals.values_list("contribution", flat=True):
         if value <= 2:
             buckets["1-2"] += 1
         elif value <= 4:
@@ -103,7 +110,7 @@ def content_metrics(limit: int = 8) -> dict:
 
     matches_without_evaluations = (
         Match.objects.filter(status="finished")
-        .exclude(id__in=ContextEvaluation.objects.values("match_id"))
+        .exclude(id__in=completed.values("match_id"))
         .count()
     )
 
@@ -132,6 +139,10 @@ def content_metrics(limit: int = 8) -> dict:
 # ============================================================
 # Здоровье данных / синк матчей (ParserSyncRun)
 # ============================================================
+
+# Матч длится ~2 часа; позже этого live/scheduled — признак застрявшего синка.
+STALE_MATCH_AFTER = timedelta(hours=3)
+
 
 def data_health_summary(recent_runs: int = 20) -> dict:
     runs = list(ParserSyncRun.objects.all()[:recent_runs])
@@ -163,7 +174,12 @@ def data_health_summary(recent_runs: int = 20) -> dict:
     # Расхождения импорта (ParserDiscrepancy).
     unreviewed_discrepancies = ParserDiscrepancy.objects.filter(reviewed=False)
 
+    # Зависшие: давно начались, а статус всё ещё live/scheduled — синк их не обновил.
+    stale_before = timezone.now() - STALE_MATCH_AFTER
+    stale_matches = Match.objects.filter(status__in=["live", "scheduled"], start_time__lt=stale_before)
+
     return {
+        "stale_matches": stale_matches.count(),
         "last_run": last_run,
         "recent_runs": runs,
         "matches_missing_lineups": matches_missing_lineups_count,

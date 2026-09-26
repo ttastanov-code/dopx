@@ -169,39 +169,35 @@ class User(AbstractUser, BaseModel):
         )
 
     def update_evaluation_stats(self, match) -> None:
-        """Обновляет счётчик оценок и серию по турам.
+        """Счётчик оценок и серия по турам после завершённой оценки."""
+        self.apply_evaluation_to_streak(match)
+        self.save(update_fields=[
+            "total_evaluations", "evaluation_streak",
+            "last_evaluation_season_id", "last_evaluation_tour", "updated_at",
+        ])
+
+    def apply_evaluation_to_streak(self, match) -> None:
+        """Шаг серии без сохранения (используется и при пересчёте истории, users/progress.py).
 
         Если у матча нет тура — серию не трогаем. Оценка более раннего тура,
         чем уже засчитанный (пропущенный/перенесённый матч), серию не рвёт.
         """
         self.total_evaluations += 1
         tour = match.tour
-        if tour is not None:
-            same_season = self.last_evaluation_season_id == match.season_id
-            if same_season and self.last_evaluation_tour == tour:
-                pass  # тот же тур
-            elif (
-                same_season
-                and self.last_evaluation_tour is not None
-                and tour == self.last_evaluation_tour + 1
-            ):
-                self.evaluation_streak += 1  # следующий тур подряд
-                self.last_evaluation_tour = tour
-            elif (
-                same_season
-                and self.last_evaluation_tour is not None
-                and tour < self.last_evaluation_tour
-            ):
-                # Тур раньше уже засчитанного максимума — серию не трогаем.
-                pass
-            else:
-                self.evaluation_streak = 1  # разрыв, новый сезон или первая оценка
-                self.last_evaluation_tour = tour
-            self.last_evaluation_season_id = match.season_id
-        self.save(update_fields=[
-            "total_evaluations", "evaluation_streak",
-            "last_evaluation_season_id", "last_evaluation_tour", "updated_at",
-        ])
+        if tour is None:
+            return
+        same_season = self.last_evaluation_season_id == match.season_id
+        if same_season and self.last_evaluation_tour == tour:
+            pass  # тот же тур
+        elif same_season and self.last_evaluation_tour is not None and tour == self.last_evaluation_tour + 1:
+            self.evaluation_streak += 1  # следующий тур подряд
+            self.last_evaluation_tour = tour
+        elif same_season and self.last_evaluation_tour is not None and tour < self.last_evaluation_tour:
+            pass  # тур раньше уже засчитанного максимума — серию не трогаем
+        else:
+            self.evaluation_streak = 1  # разрыв, новый сезон или первая оценка
+            self.last_evaluation_tour = tour
+        self.last_evaluation_season_id = match.season_id
 
     def update_prediction_stats(self, is_correct: bool) -> None:
         """Серия угаданных прогнозов подряд. Вызывается из notify_prediction_results

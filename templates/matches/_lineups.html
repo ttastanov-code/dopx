@@ -8,6 +8,12 @@
      hx-get="{% url 'matches:lineups' match.id %}"
      hx-trigger="every {{ match.PRE_MATCH_POLL_SECONDS }}s [document.visibilityState === 'visible'], dopx:wake"
      hx-swap="outerHTML"
+     {% elif not lineups and match.poll_wake_at %}
+     data-background-poll
+     hx-get="{% url 'matches:lineups' match.id %}"
+     hx-trigger="dopx:wake"
+     hx-swap="outerHTML"
+     data-wake-at="{{ match.poll_wake_at|date:'c' }}"
      {% endif %}>
 {% if lineups %}
             <div class="md-side-card">

@@ -45,6 +45,15 @@ LOCMEM_CACHES = {
 }
 
 
+
+def _complete_sessions(user):
+    """Оценки считаются только из завершённых сессий — досоздаём их для всех оценённых матчей."""
+    match_ids = set()
+    for model in (PlayerEvaluation, RefereeEvaluation, CoachEvaluation):
+        match_ids |= set(model.objects.filter(user=user).values_list("match_id", flat=True))
+    for match_id in match_ids:
+        EvaluationSession.objects.get_or_create(user=user, match_id=match_id, defaults={"status": "completed"})
+
 def _make_match(league=None, home=None, away=None):
     league = league or League.objects.create(name="Test League", country="KZ")
     # get_or_create — у Season уникальность (league, year).
@@ -177,6 +186,7 @@ class CheckAndAwardBadgesCountThresholdTests(TestCase):
         self.user = User.objects.create_user(username="u1", email="u1@example.com", password="pass123")
 
     def _award(self):
+        _complete_sessions(self.user)
         return {b.badge_type for b in check_and_award_badges(self.user)}
 
     def test_no_evaluations_no_badges(self):
@@ -238,6 +248,7 @@ class CheckAndAwardBadgesRelatedModelTests(TestCase):
         for _ in range(25):
             match = _make_match(league=self.league)
             RefereeEvaluation.objects.create(user=self.user, match=match, influence_score=50, decision_quality=5)
+        _complete_sessions(self.user)
         awarded = {b.badge_type for b in check_and_award_badges(self.user)}
         self.assertIn("judge_of_judges", awarded)
 
@@ -258,6 +269,7 @@ class CheckAndAwardBadgesRelatedModelTests(TestCase):
             PlayerEvaluation.objects.create(
                 user=self.user, match=match, player=player, contribution=5, risk=5, potential=5
             )
+        _complete_sessions(self.user)
         awarded = {b.badge_type for b in check_and_award_badges(self.user)}
         self.assertIn("polyglot", awarded)
 
@@ -296,6 +308,7 @@ class CheckAndAwardBadgesNewAchievementsTests(TestCase):
         self.season, _ = Season.objects.get_or_create(league=self.league, year="2026")
 
     def _award(self):
+        _complete_sessions(self.user)
         return {b.badge_type for b in check_and_award_badges(self.user)}
 
     # --- coach_expert ---

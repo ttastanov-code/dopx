@@ -253,6 +253,8 @@ class MatchAggregate(BaseModel):
     avg_tension = models.FloatField(_('Среднее напряжение'), default=0.0)
     avg_fairness = models.FloatField(_('Средняя справедливость'), default=0.0)
     turning_point_ratio = models.FloatField(_('Доля переломных моментов'), default=0.0)
+    # Топ названных переломов: [{key, label, icon, count, pct}].
+    turning_points = models.JSONField(_('Переломные моменты'), default=list, blank=True)
     total_votes = models.IntegerField(_('Всего голосов'), default=0)
     drama_index = models.FloatField(_('Индекс драмы'), default=0.0)
     

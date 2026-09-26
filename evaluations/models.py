@@ -251,6 +251,12 @@ class MatchEvaluation(BaseModel):
     entertainment = models.IntegerField(_('Зрелищность'), validators=[MinValueValidator(1), MaxValueValidator(10)])
     tension = models.IntegerField(_('Напряжение'), validators=[MinValueValidator(1), MaxValueValidator(10)])
     turning_point = models.BooleanField(_('Переломный момент'), default=False)
+    # Что именно стало переломом: событие матча или универсальный вариант (evaluations/turning_points.py).
+    turning_point_event = models.ForeignKey(
+        'events.MatchEvent', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='turning_point_votes', verbose_name=_('Переломное событие'),
+    )
+    turning_point_kind = models.CharField(_('Тип перелома'), max_length=20, blank=True, default='')
     fairness = models.IntegerField(_('Справедливость'), validators=[MinValueValidator(1), MaxValueValidator(10)])
 
     class Meta:
@@ -304,6 +310,8 @@ class EvaluationSession(BaseModel):
         default='started'
     )
     completed_steps = models.JSONField(_('Завершённые шаги'), default=list)
+    # XP за пройденные шаги; зачисляется при завершении оценки.
+    pending_xp = models.FloatField(_('Накопленный XP'), default=0)
     current_step = models.CharField(_('Текущий шаг'), max_length=50, default='context')
     started_at = models.DateTimeField(_('Начато'), auto_now_add=True)
     completed_at = models.DateTimeField(_('Завершено'), null=True, blank=True)

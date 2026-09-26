@@ -169,6 +169,18 @@ class Match(BaseModel):
                 return self.PRE_MATCH_POLL_SECONDS
         return None
 
+    @property
+    def poll_wake_at(self):
+        """Когда запланированный матч войдёт в окно фонового опроса (для data-wake-at); None — уже в окне или не нужно."""
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        if self.status != 'scheduled' or not self.start_time or self.live_poll_seconds:
+            return None
+        wake = self.start_time - timedelta(hours=self.LIVE_POLL_BEFORE_KICKOFF_HOURS)
+        return wake if wake > timezone.now() else None
+
     def is_voting_open(self):
         """Открыто ли голосование."""
         from django.utils import timezone

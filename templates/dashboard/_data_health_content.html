@@ -1,7 +1,7 @@
 {% load ui_extras %}
 {# Содержимое «Здоровья данных» #}
 {# Рендерится при загрузке и при поллинге (data_health_partial), без base.html. #}
-<div class="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4 mb-6">
+<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 md:gap-4 mb-6">
     <div class="dopx-stat">
         <div class="dopx-stat-label"><i class="ti ti-refresh"></i>Синхронизация</div>
         {% if health.last_run %}
@@ -39,6 +39,13 @@
             {{ health.unreviewed_discrepancies_count }}
         </div>
         <div class="dopx-stat-delta">счёт/статус после завершения</div>
+    </div>
+    <div class="dopx-stat">
+        <div class="dopx-stat-label"><i class="ti ti-clock-exclamation"></i>Зависшие</div>
+        <div class="dopx-stat-value" style="{% if health.stale_matches %}color: var(--color-error){% else %}color: var(--color-success){% endif %}">
+            {{ health.stale_matches }}
+        </div>
+        <div class="dopx-stat-delta">live/scheduled спустя 3 ч после старта</div>
     </div>
 </div>
 
@@ -123,7 +130,8 @@
                 </div>
                 {% if infra.celery.ok %}
                 <div class="text-sm">Воркеров онлайн: <b class="{% if not infra.celery.workers_online %}text-warning{% endif %}">{{ infra.celery.workers_online }}</b></div>
-                <div class="text-sm">Активных задач: <b>{{ infra.celery.active_tasks }}</b></div>
+                <div class="text-sm">Выполняется сейчас: <b>{{ infra.celery.active_tasks }}</b></div>
+                <div class="text-sm">Взято в работу: <b>{{ infra.celery.reserved_tasks|default:0 }}</b> · отложено: <b>{{ infra.celery.scheduled_tasks|default:0 }}</b></div>
                 {% if infra.celery.worker_names %}
                 <div class="text-xs opacity-50 mt-1 truncate">{{ infra.celery.worker_names|join:", " }}</div>
                 {% endif %}

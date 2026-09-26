@@ -349,6 +349,8 @@ def build_match_dna(
         "hero": _describe_hero(top_players),
         "antihero": _describe_antihero(top_players, worst_players or []),
         "turning_point_text": _describe_turning_point(match_aggregate),
+        # Что болельщики назвали переломом (топ-3 с долей).
+        "turning_points": getattr(match_aggregate, "turning_points", None) or [],
         "consensus_level": consensus_level,
         "consensus_text": _describe_consensus_text(consensus_level),
         "fan_mood_text": _describe_fan_mood(match_aggregate, fan_support or []),

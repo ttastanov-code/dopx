@@ -419,15 +419,10 @@
     font-size: .9375rem;
     color: color-mix(in oklab, var(--color-base-content) 62%, transparent);
 }
-.dx-hello__grid {
-    display: grid;
-    gap: .625rem;
-    grid-template-columns: 1fr;
-}
-@media (min-width: 768px) {
-    /* Карточек 2 или 3 — занимают всю ширину. */
-    .dx-hello__grid { grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: .75rem; }
-}
+/* Flex с переносом: оставшиеся карточки делят строку поровну, одиночная — на всю ширину. */
+.dx-hello__grid { display: flex; flex-wrap: wrap; gap: .625rem; }
+.dx-hello__grid > * { flex: 1 1 15rem; min-width: 0; }
+@media (min-width: 768px) { .dx-hello__grid { gap: .75rem; } }
 
 /* Кольцо уровня: прогресс XP через conic-gradient (--p — проценты). */
 .dx-level {
@@ -512,17 +507,21 @@
     margin-top: .1rem;
     font-size: .9375rem;
     font-weight: 700;
-    white-space: nowrap;
+    /* Две строки вместо многоточия — на телефоне подпись читается целиком. */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
     overflow: hidden;
-    text-overflow: ellipsis;
 }
 .dx-action__meta {
     margin-top: .1rem;
-    font-size: .75rem;
+    font-size: .8125rem;
     color: color-mix(in oklab, var(--color-base-content) 58%, transparent);
-    white-space: nowrap;
+    /* Две строки вместо многоточия — на телефоне подпись читается целиком. */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
     overflow: hidden;
-    text-overflow: ellipsis;
 }
 .dx-action__chevron { flex-shrink: 0; opacity: .35; transition: transform .25s cubic-bezier(.16, 1, .3, 1), opacity .2s ease; }
 .dx-action:hover .dx-action__chevron { opacity: .8; transform: translateX(2px); }
@@ -834,6 +833,25 @@ body.has-tabbar .dx-sticky-cta { bottom: calc(4.9rem + env(safe-area-inset-botto
 }
 .dx-react__label { font-size: .6875rem; font-weight: 600; color: color-mix(in oklab, var(--color-base-content) 50%, transparent); }
 .dx-react__options { display: flex; flex-wrap: wrap; gap: .35rem; }
+/* Телефон — три равные ячейки в одну линию; иконка, подпись и процент столбиком. */
+@media (max-width: 639px) {
+    .dx-react { flex-direction: column; align-items: stretch; }
+    .dx-react__options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .4rem; }
+    .dx-react .dx-react__btn {
+        flex-direction: column;
+        justify-content: center;
+        gap: .1rem;
+        min-width: 0;
+        padding: .45rem .25rem;
+        border-radius: .85rem;
+        font-size: .6875rem;
+        line-height: 1.15;
+        text-align: center;
+        background: linear-gradient(0deg, color-mix(in oklab, var(--tone) 14%, transparent) var(--fill), transparent var(--fill));
+    }
+    .dx-react .dx-react__btn span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dx-react .dx-react__btn i { font-size: 1rem; }
+}
 .dx-react__btn {
     --tone: var(--color-base-content);
     --fill: 0%;
@@ -1467,3 +1485,204 @@ body.has-tabbar .dx-sticky-cta { bottom: calc(4.9rem + env(safe-area-inset-botto
     color: var(--color-error);
     background: color-mix(in oklab, var(--color-error) 12%, transparent);
 }
+
+/* ---------- Переломный момент (финальный шаг вайзарда) ---------- */
+.dx-tp {
+    margin-top: .6rem;
+    padding: .9rem;
+    border-radius: 1rem;
+    background: color-mix(in oklab, var(--color-base-content) 3.5%, transparent);
+}
+.dx-tp__title { font-size: .875rem; font-weight: 700; }
+.dx-tp__title span { margin-left: .3rem; font-size: .75rem; font-weight: 500; color: color-mix(in oklab, var(--color-base-content) 50%, transparent); }
+.dx-tp__group {
+    margin: .8rem 0 .4rem;
+    font-size: .6875rem;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: color-mix(in oklab, var(--color-base-content) 50%, transparent);
+}
+.dx-tp input[type="radio"] { position: absolute; opacity: 0; pointer-events: none; }
+.dx-tp__options { display: flex; flex-direction: column; gap: .35rem; }
+.dx-tp__opt {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: .65rem;
+    padding: .55rem .7rem;
+    border-radius: .8rem;
+    cursor: pointer;
+    background: var(--color-base-100);
+    border: 1px solid color-mix(in oklab, var(--color-base-content) 9%, transparent);
+    transition: border-color .15s ease, box-shadow .15s ease;
+}
+.dx-tp__minute {
+    flex-shrink: 0;
+    min-width: 2.6rem;
+    padding: .1rem .35rem;
+    border-radius: .5rem;
+    font-size: .75rem;
+    font-weight: 800;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    background: color-mix(in oklab, var(--color-base-content) 6%, transparent);
+}
+.dx-tp__text { flex: 1; min-width: 0; font-size: .8125rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dx-tp__side { flex-shrink: 0; max-width: 35%; font-size: .6875rem; color: color-mix(in oklab, var(--color-base-content) 50%, transparent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dx-tp__chips { display: flex; flex-wrap: wrap; gap: .35rem; }
+.dx-tp__chip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: .3rem;
+    padding: .4rem .7rem;
+    border-radius: 9999px;
+    font-size: .75rem;
+    font-weight: 600;
+    cursor: pointer;
+    background: var(--color-base-100);
+    border: 1px solid color-mix(in oklab, var(--color-base-content) 10%, transparent);
+    transition: border-color .15s ease, color .15s ease;
+}
+.dx-tp__opt:hover, .dx-tp__chip:hover { border-color: color-mix(in oklab, var(--color-primary) 40%, transparent); }
+.dx-tp__opt:has(input:checked),
+.dx-tp__chip:has(input:checked) {
+    border-color: var(--color-primary);
+    box-shadow: inset 0 0 0 1px var(--color-primary);
+    color: var(--color-base-content);
+}
+.dx-tp__opt:has(input:checked) .dx-tp__minute { color: var(--color-primary-content); background: var(--color-primary); }
+.dx-tp__chip:has(input:checked) i { color: var(--color-primary); }
+.dx-tp__opt:has(input:focus-visible), .dx-tp__chip:has(input:focus-visible) { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+
+/* Итоги: что болельщики назвали переломом. */
+.dx-tp-result { display: flex; flex-direction: column; gap: .4rem; }
+.dx-tp-result__row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: .6rem; font-size: .8125rem; }
+.dx-tp-result__row i { color: var(--color-error); }
+.dx-tp-result__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.dx-tp-result__bar { grid-column: 2 / 4; height: .35rem; border-radius: 9999px; background: color-mix(in oklab, var(--color-base-content) 7%, transparent); overflow: hidden; }
+.dx-tp-result__bar span { display: block; height: 100%; border-radius: inherit; background: var(--color-error); }
+.dx-tp-result__pct { font-weight: 800; font-variant-numeric: tabular-nums; }
+
+/* ---------- «Продолжить оценку» (панель «Ваш день») ---------- */
+.dx-resume-wrap { position: relative; flex-basis: 100% !important; display: flex; }
+.dx-resume-wrap > .dx-resume { flex: 1; }
+.dx-resume {
+    flex-basis: 100% !important;
+    position: relative;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: .9rem 1rem;
+    padding: 1rem 1.1rem;
+    border-radius: 1.25rem;
+    overflow: hidden;
+    color: #fff;
+    background:
+        radial-gradient(120% 140% at 100% 0%, rgb(255 255 255 / .16), transparent 55%),
+        linear-gradient(135deg, var(--color-primary), color-mix(in oklab, var(--color-primary) 70%, #0b0730));
+    box-shadow: 0 14px 30px -18px color-mix(in oklab, var(--color-primary) 90%, transparent);
+    transition: transform .2s ease, box-shadow .2s ease;
+}
+.dx-resume:hover { transform: translateY(-1px); box-shadow: 0 18px 34px -18px color-mix(in oklab, var(--color-primary) 95%, transparent); }
+.dx-resume:active { transform: scale(.99); }
+@media (min-width: 640px) { .dx-resume { grid-template-columns: auto minmax(0, 1fr) auto; padding: 1.1rem 1.25rem; } }
+
+/* Два герба внахлёст. */
+.dx-resume__crest { position: relative; display: inline-flex; width: 3.25rem; height: 3.25rem; flex-shrink: 0; }
+.dx-resume__crest > * {
+    position: absolute;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    padding: .2rem;
+    border-radius: 9999px;
+    object-fit: contain;
+    font-weight: 800;
+    color: var(--color-primary);
+    background: #fff;
+    box-shadow: 0 4px 10px -4px rgb(0 0 0 / .35);
+}
+.dx-resume__crest > :first-child { top: 0; left: 0; }
+.dx-resume__crest > :last-child { right: 0; bottom: 0; }
+
+.dx-resume__body { display: flex; flex-direction: column; gap: .25rem; min-width: 0; }
+.dx-resume__eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    font-size: .6875rem;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: rgb(255 255 255 / .78);
+}
+.dx-resume__dot { width: .45rem; height: .45rem; border-radius: 9999px; background: #fbbf24; box-shadow: 0 0 0 3px rgb(251 191 36 / .3); animation: dx-resume-pulse 1.8s ease-in-out infinite; }
+@keyframes dx-resume-pulse { 50% { box-shadow: 0 0 0 6px rgb(251 191 36 / 0); } }
+@media (prefers-reduced-motion: reduce) { .dx-resume__dot { animation: none; } }
+.dx-resume__title { font-size: 1.0625rem; font-weight: 800; letter-spacing: -.01em; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dx-resume__title b { padding: 0 .15rem; font-variant-numeric: tabular-nums; }
+.dx-resume__progress { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: .25rem; margin-top: .2rem; max-width: 18rem; }
+.dx-resume__progress span { height: .3rem; border-radius: 9999px; background: rgb(255 255 255 / .22); }
+.dx-resume__progress span.is-done { background: #fff; }
+.dx-resume__meta { font-size: .75rem; color: rgb(255 255 255 / .75); }
+.dx-resume__cta {
+    grid-column: 1 / -1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .35rem;
+    padding: .65rem 1.1rem;
+    border-radius: 9999px;
+    font-size: .875rem;
+    font-weight: 700;
+    color: var(--color-primary);
+    background: #fff;
+    box-shadow: 0 6px 16px -8px rgb(0 0 0 / .4);
+    transition: transform .2s ease;
+}
+.dx-resume:hover .dx-resume__cta i { transform: translateX(2px); }
+.dx-resume__cta i { transition: transform .2s ease; }
+@media (min-width: 640px) { .dx-resume__cta { grid-column: auto; } }
+
+/* Отмена оценки: крестик на карточке и ссылка под шагами вайзарда. */
+.dx-resume__cancel { position: absolute; top: .6rem; right: .6rem; z-index: 1; }
+.dx-resume__cancel button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 9999px;
+    color: rgb(255 255 255 / .8);
+    background: rgb(255 255 255 / .12);
+    transition: background .15s ease, color .15s ease;
+}
+.dx-resume__cancel button:hover { color: #fff; background: rgb(255 255 255 / .25); }
+@media (min-width: 640px) {
+    /* На ПК крестик не наезжает на кнопку «Продолжить». */
+    .dx-resume { padding-right: 3rem; }
+}
+.dx-wz-cancel { display: flex; justify-content: center; margin-top: .6rem; }
+.dx-wz-cancel button {
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
+    padding: .25rem .6rem;
+    border-radius: 9999px;
+    font-size: .75rem;
+    font-weight: 600;
+    color: color-mix(in oklab, var(--color-base-content) 50%, transparent);
+    transition: color .15s ease, background .15s ease;
+}
+.dx-wz-cancel button:hover { color: var(--color-error); background: color-mix(in oklab, var(--color-error) 8%, transparent); }
+
+/* Живые значения (live-refresh.js): новое значение мягко проявляется, как сегмент табло. */
+@keyframes dx-live-tick { from { opacity: .35; filter: blur(1.2px); } to { opacity: 1; filter: none; } }
+.dx-live-tick { animation: dx-live-tick .45s ease-out; }
+@media (prefers-reduced-motion: reduce) { .dx-live-tick { animation: none; } }
+/* Цифры одинаковой ширины: при смене значения соседний текст не сдвигается. */
+body { font-variant-numeric: tabular-nums; }

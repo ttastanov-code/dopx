@@ -9,25 +9,11 @@ from django.http import HttpRequest
 
 
 def get_auth_panel_stats() -> dict:
-    """Три реальных числа платформы для панели на страницах входа/регистрации.
-    Кэш 10 минут. Импорты моделей внутри функции — модуль грузится рано.
-    """
-    cache_key = 'auth_panel_stats_v1'
-    cached = cache.get(cache_key)
-    if cached is not None:
-        return cached
+    """Цифры платформы для панели входа/регистрации — см. core.stats.platform_stats."""
+    from core.stats import platform_stats
 
-    from evaluations.models import MatchEvaluation
-    from matches.models import Match
-    from users.models import User
+    return platform_stats()
 
-    stats = {
-        'total_matches': Match.objects.filter(status='finished').count(),
-        'total_evaluations': MatchEvaluation.objects.count(),
-        'total_users': User.objects.filter(is_verified=True).count(),
-    }
-    cache.set(cache_key, stats, 600)
-    return stats
 
 # Казахские буквы (Ә Ғ Қ Ң Ө Ұ Ү Һ І) схлопываем в русские аналоги.
 KAZAKH_LOOKALIKE_MAP = str.maketrans({

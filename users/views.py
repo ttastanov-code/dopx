@@ -20,6 +20,8 @@ from django.views.generic import CreateView, TemplateView, ListView, UpdateView,
 from django.urls import reverse_lazy
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.db.models import Count, Avg, Q, F, Sum, Window
+
+from evaluations.completed import completed_only
 from aggregates.services import vote_weighted_avg
 from django.db.models.functions import RowNumber
 from django.utils import timezone
@@ -257,16 +259,14 @@ class ProfileView(LoginRequiredMixin, TemplateView):
         user = self.request.user
         # «Оценок» — сумма оценок сущностей, «Матчей» — завершённые оценки матчей.
         # См. docs/adr/0024-profile-stats-ratings-vs-matches.md.
-        total_ratings_given = (
-            user.player_evaluations.count()
-            + user.team_evaluations.count()
-            + user.coach_evaluations.count()
-            + user.referee_evaluations.count()
+        total_ratings_given = sum(
+            completed_only(rel.all()).count()
+            for rel in (user.player_evaluations, user.team_evaluations, user.coach_evaluations, user.referee_evaluations)
         )
         stats = {
-            'total_evaluations': user.total_evaluations,
+            'total_evaluations': user.evaluation_sessions.filter(status='completed').count(),
             'total_ratings_given': total_ratings_given,
-            'total_players': user.player_evaluations.values('player').distinct().count(),
+            'total_players': completed_only(user.player_evaluations.all()).values('player').distinct().count(),
             'trust_score': round(user.trust_score, 2),
             'trust_level': user.get_trust_level(),
             'evaluation_streak': user.evaluation_streak,
@@ -367,16 +367,14 @@ class PublicProfileView(TemplateView):
             properties={"viewed_username": profile_user.username},
         )
         # См. ProfileView.
-        total_ratings_given = (
-            profile_user.player_evaluations.count()
-            + profile_user.team_evaluations.count()
-            + profile_user.coach_evaluations.count()
-            + profile_user.referee_evaluations.count()
+        total_ratings_given = sum(
+            completed_only(rel.all()).count()
+            for rel in (profile_user.player_evaluations, profile_user.team_evaluations, profile_user.coach_evaluations, profile_user.referee_evaluations)
         )
         stats = {
-            'total_evaluations': profile_user.total_evaluations,
+            'total_evaluations': profile_user.evaluation_sessions.filter(status='completed').count(),
             'total_ratings_given': total_ratings_given,
-            'total_players': profile_user.player_evaluations.values('player').distinct().count(),
+            'total_players': completed_only(profile_user.player_evaluations.all()).values('player').distinct().count(),
             'trust_score': round(profile_user.trust_score, 2),
             'trust_level': profile_user.get_trust_level(),
             'evaluation_streak': profile_user.evaluation_streak,
@@ -610,8 +608,9 @@ class UserLeaderboardView(ListView):
 
     def _base_queryset(self):
         # select_related('xp') — уровень выводится в каждой строке.
+        # Оценка = завершённая сессия вайзарда; брошенные на середине не считаются.
         qs = User.objects.filter(is_active=True, is_verified=True).select_related('xp').annotate(
-            eval_count=Count('context_evaluations', distinct=True)
+            eval_count=Count('evaluation_sessions', filter=Q(evaluation_sessions__status='completed'), distinct=True)
         ).filter(eval_count__gte=1)
         # ?city= — точное совпадение (значение из выпадающего списка).
         city = self.request.GET.get('city', '').strip()

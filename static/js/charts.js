@@ -5,6 +5,12 @@
     const MONTHS = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
 
     // Цвет текста/сетки из темы daisyUI; в админке (без токенов) — нейтральный серый.
+    // Повторная инициализация (мягкое обновление страницы) — старый график на canvas убираем.
+    function destroyExisting(el) {
+        const prev = el && window.Chart && Chart.getChart(el);
+        if (prev) prev.destroy();
+    }
+
     function themeColor(alpha) {
         const raw = getComputedStyle(document.documentElement).getPropertyValue('--color-base-content').trim();
         return raw ? `color-mix(in oklab, ${raw} ${Math.round(alpha * 100)}%, transparent)` : `rgba(100, 116, 139, ${alpha})`;
@@ -79,6 +85,7 @@
 
     function line(canvasId, points, opts) {
         const el = document.getElementById(canvasId);
+        destroyExisting(el);
         if (!el || typeof Chart === 'undefined') return null;
         const valueKey = opts.valueKey || (Object.prototype.hasOwnProperty.call(points[0] || {}, 'active_users') ? 'active_users' : 'count');
         const values = points.map((p) => p[valueKey]);
@@ -114,6 +121,7 @@
 
     function bar(canvasId, labels, values, opts) {
         const el = document.getElementById(canvasId);
+        destroyExisting(el);
         if (!el || typeof Chart === 'undefined') return null;
         const options = baseOptions();
         options.scales.x.ticks.callback = function (value) { return this.getLabelForValue(value); };
@@ -131,6 +139,7 @@
 
     function doughnut(canvasId, labels, values, colors) {
         const el = document.getElementById(canvasId);
+        destroyExisting(el);
         if (!el || typeof Chart === 'undefined') return null;
         return new Chart(el.getContext('2d'), {
             type: 'doughnut',

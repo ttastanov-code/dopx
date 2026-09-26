@@ -6,6 +6,7 @@ from django.utils import timezone
 from matches.models import Match
 from evaluations.models import (
     CoachEvaluation,
+    EvaluationSession,
     MatchEvaluation,
     PlayerEvaluation,
     RefereeEvaluation,
@@ -113,3 +114,10 @@ def on_match_voting_deadline_changed(sender, instance, created=False, update_fie
 def on_evaluation_deleted(sender, instance, **kwargs):
     """Удалённая оценка -> пересчёт (устаревшие агрегаты удалит сам пересчёт)."""
     _schedule_recalculation(str(instance.match_id), countdown=30)
+
+
+@receiver(post_delete, sender=EvaluationSession)
+def on_session_deleted(sender, instance, **kwargs):
+    """Без завершённой сессии оценки не считаются — рейтинг матча пересчитываем."""
+    if instance.status == "completed":
+        _schedule_recalculation(str(instance.match_id), countdown=30)

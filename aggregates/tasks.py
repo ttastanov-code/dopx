@@ -53,6 +53,7 @@ from evaluations.models import (
     RefereeEvaluation,
     TeamEvaluation,
 )
+from evaluations.turning_points import top_turning_points
 from events.models import MatchEvent
 from matches.models import Match, MatchPlayerStatistics, MatchTeamStatistics
 from players.models import Player
@@ -138,7 +139,8 @@ def _load_match(match_id: str, task_name: str):
     return match_uuid, match
 
 
-@shared_task(bind=True, max_retries=3, rate_limit="10/m", acks_late=True, reject_on_worker_lost=True)
+# Без rate_limit: задача быстрая (десятки мс), а лимит держал очередь celery и всё, что за ней.
+@shared_task(bind=True, max_retries=3, acks_late=True, reject_on_worker_lost=True)
 def recalculate_player_aggregates(self, match_id: str, apply_correction: bool = True) -> bool:
     """Пересчитывает агрегаты всех игроков матча одним batch-upsert.
 
@@ -574,8 +576,11 @@ def recalculate_match_aggregate(self, match_id: str) -> bool:
 
     evaluations = list(
         countable_evaluations(MatchEvaluation.objects.filter(match_id=match_uuid), match_uuid)
-        .select_related("user")
-        .only("user_id", "entertainment", "tension", "fairness", "turning_point", "user__trust_score")
+        .select_related("user", "turning_point_event__player")
+        .only(
+            "user_id", "entertainment", "tension", "fairness", "turning_point", "turning_point_kind",
+            "turning_point_event", "user__trust_score",
+        )
     )
 
     if not evaluations:
@@ -586,6 +591,7 @@ def recalculate_match_aggregate(self, match_id: str) -> bool:
                 "avg_tension": 0.0,
                 "avg_fairness": 0.0,
                 "turning_point_ratio": 0.0,
+                "turning_points": [],
                 "total_votes": 0,
                 "drama_index": 0.0,
             },
@@ -610,6 +616,7 @@ def recalculate_match_aggregate(self, match_id: str) -> bool:
             "avg_tension": round(avg_tension, 2),
             "avg_fairness": round(avg_fairness, 2),
             "turning_point_ratio": round(turning_point_ratio, 2),
+            "turning_points": top_turning_points(evaluations),
             "total_votes": len(evaluations),
             "drama_index": round(drama_index, 2),
         },

@@ -75,11 +75,17 @@ def personal_summary(user) -> dict:
     xp = getattr(user, 'xp', None)
     return {
         'pending_count': votable.count(),
+        # Следующий матч для оценки, кроме уже начатого.
+        'next_other': votable.exclude(id=in_progress.match_id).first() if in_progress else None,
         'next_match': next_match,
         'next_deadline': next_match.voting_open_until if next_match else None,
         'in_progress': in_progress,
         # Продолжить с первого непройденного шага.
         'resume_url': (in_progress.next_step_url(in_progress.match_id) if in_progress else None),
+        # Прогресс для карточки «Продолжить оценку»: сегменты по шагам вайзарда.
+        'resume_done': min(len(in_progress.completed_steps), len(EvaluationSession.WIZARD_STEPS) - 1) if in_progress else 0,
+        'resume_total': len(EvaluationSession.WIZARD_STEPS),
+        'resume_steps': range(1, len(EvaluationSession.WIZARD_STEPS) + 1),
         'predictions_count': predictable.count(),
         'next_prediction': predictable.first(),
         'level': xp.level if xp else 1,

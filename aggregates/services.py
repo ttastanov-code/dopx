@@ -326,8 +326,10 @@ def compute_bias_profile(
     if len(recent_match_ids) < FAN_BIAS_MIN_HISTORY_MATCHES:
         return empty
 
+    from evaluations.completed import completed_only
+
     per_match_stats = (
-        PlayerEvaluation.objects.filter(user=user, match_id__in=recent_match_ids)
+        completed_only(PlayerEvaluation.objects.filter(user=user, match_id__in=recent_match_ids))
         .annotate(side_team_id=Coalesce(lineup_team_subquery(), F("player__team_id"), output_field=UUIDField()))
         .values("match_id")
         .annotate(

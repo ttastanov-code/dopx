@@ -1,0 +1,115 @@
+{% load ui_extras %}
+{# «Ваш день»: фоновое обновление раз в минуту и по dopx:wake (истёк отсчёт, вернулись на вкладку). #}
+<section id="personal-panel" class="dx-hello mb-6 md:mb-8" aria-labelledby="hello-title"
+         data-background-poll
+         hx-get="{% url 'core:personal_panel' %}"
+         hx-trigger="every 60s [document.visibilityState === 'visible'], dopx:wake"
+         hx-swap="outerHTML">
+    <div class="dx-hello__top">
+        <div class="min-w-0">
+            <h1 id="hello-title" class="dx-hello__title">Привет, {{ user.username }}</h1>
+            <p class="dx-hello__subtitle">
+                {% if personal.pending_count %}
+                {{ personal.pending_count }} {{ personal.pending_count|ru_plural:"матч ждёт,матча ждут,матчей ждут" }} вашей оценки
+                {% else %}
+                Все доступные матчи оценены — отличная работа
+                {% endif %}
+            </p>
+        </div>
+        <a href="{% url 'users:profile' %}" class="dx-level" title="Ваш уровень и опыт">
+            <span class="dx-level__ring" style="--p: {{ personal.xp_progress }}"><span>{{ personal.level }}</span></span>
+            <span class="dx-level__text">
+                <span class="dx-level__label">Уровень {{ personal.level }}</span>
+                <span class="dx-level__meta">ещё {{ personal.xp_to_next }} XP{% if personal.streak %} · серия {{ personal.streak }} {{ personal.streak|ru_plural:"тур,тура,туров" }}{% endif %}</span>
+            </span>
+        </a>
+    </div>
+
+    <div class="dx-hello__grid">
+        {% if personal.in_progress %}
+        {% with m=personal.in_progress.match %}
+        <div class="dx-resume-wrap">
+        <form method="post" action="{% url 'evaluations:cancel' m.id %}" class="dx-resume__cancel"
+              onsubmit="return confirm('Отменить оценку? Заполненные шаги будут удалены.')">
+            {% csrf_token %}
+            <button type="submit" title="Отменить оценку" aria-label="Отменить оценку"><i class="ti ti-x"></i></button>
+        </form>
+        <a href="{{ personal.resume_url|default:'#' }}" class="dx-resume">
+            <span class="dx-resume__crest">
+                {% if m.home_team.logo_display %}<img src="{{ m.home_team.logo_display }}" alt="" loading="lazy">{% else %}<span>{{ m.home_team.name|slice:":1" }}</span>{% endif %}
+                {% if m.away_team.logo_display %}<img src="{{ m.away_team.logo_display }}" alt="" loading="lazy">{% else %}<span>{{ m.away_team.name|slice:":1" }}</span>{% endif %}
+            </span>
+            <span class="dx-resume__body">
+                <span class="dx-resume__eyebrow"><span class="dx-resume__dot"></span> Оценка не закончена</span>
+                <span class="dx-resume__title">{{ m.home_team.name }} <b>{{ m.get_score_display }}</b> {{ m.away_team.name }}</span>
+                <span class="dx-resume__progress" aria-label="Пройдено шагов: {{ personal.resume_done }} из {{ personal.resume_total }}">
+                    {% for i in personal.resume_steps %}<span class="{% if i <= personal.resume_done %}is-done{% endif %}"></span>{% endfor %}
+                </span>
+                <span class="dx-resume__meta">Шаг {{ personal.resume_done|add:1 }} из {{ personal.resume_total }} · <span data-countdown="{{ m.voting_open_until|date:'c' }}" data-countdown-prefix="закроется через " data-countdown-done="голосование закрывается">закроется через {{ m.voting_open_until|timeuntil }}</span></span>
+            </span>
+            <span class="dx-resume__cta">Продолжить <i class="ti ti-arrow-right"></i></span>
+        </a>
+        </div>
+        {% endwith %}
+        {% if personal.next_other %}
+        {% with m=personal.next_other %}
+        <a href="{% url 'evaluations:context' m.id %}" class="dx-action">
+            <span class="dx-action__icon"><i class="ti ti-star"></i></span>
+            <span class="dx-action__body">
+                <span class="dx-action__eyebrow">Дальше в очереди</span>
+                <span class="dx-action__title">{{ m.home_team.name }} {{ m.get_score_display }} {{ m.away_team.name }}</span>
+                <span class="dx-action__meta"><span data-countdown="{{ m.voting_open_until|date:'c' }}" data-countdown-prefix="Закроется через " data-countdown-done="Голосование закрывается">Закроется через {{ m.voting_open_until|timeuntil }}</span></span>
+            </span>
+            <i class="ti ti-chevron-right dx-action__chevron"></i>
+        </a>
+        {% endwith %}
+        {% endif %}
+        {% elif personal.next_match %}
+        {% with m=personal.next_match %}
+        <a href="{% url 'evaluations:context' m.id %}" class="dx-action dx-action--primary">
+            <span class="dx-action__icon"><i class="ti ti-star"></i></span>
+            <span class="dx-action__body">
+                <span class="dx-action__eyebrow">Оценить матч</span>
+                <span class="dx-action__title">{{ m.home_team.name }} {{ m.get_score_display }} {{ m.away_team.name }}</span>
+                <span class="dx-action__meta"><span data-countdown="{{ m.voting_open_until|date:'c' }}" data-countdown-prefix="Голосование закроется через " data-countdown-done="Голосование закрывается">Голосование закроется через {{ m.voting_open_until|timeuntil }}</span></span>
+            </span>
+            <i class="ti ti-chevron-right dx-action__chevron"></i>
+        </a>
+        {% endwith %}
+        {% else %}
+        <a href="{% url 'matches:list' %}?status=scheduled" class="dx-action">
+            <span class="dx-action__icon"><i class="ti ti-calendar-event"></i></span>
+            <span class="dx-action__body">
+                <span class="dx-action__eyebrow">Оценивать пока нечего</span>
+                <span class="dx-action__title">Ближайшие матчи</span>
+                <span class="dx-action__meta">Голосование открывается после финального свистка</span>
+            </span>
+            <i class="ti ti-chevron-right dx-action__chevron"></i>
+        </a>
+        {% endif %}
+
+        {% if personal.next_prediction %}
+        {% with m=personal.next_prediction %}
+        <a href="{% url 'matches:detail' m.id %}" class="dx-action">
+            <span class="dx-action__icon dx-action__icon--violet"><i class="ti ti-crystal-ball"></i></span>
+            <span class="dx-action__body">
+                <span class="dx-action__eyebrow">{{ personal.predictions_count }} {{ personal.predictions_count|ru_plural:"матч ждёт,матча ждут,матчей ждут" }} прогноза</span>
+                <span class="dx-action__title">{{ m.home_team.name }} — {{ m.away_team.name }}</span>
+                <span class="dx-action__meta"><span data-countdown="{{ m.start_time|date:'c' }}" data-countdown-prefix="Старт через " data-countdown-done="Матч начинается">Старт через {{ m.start_time|timeuntil }}</span></span>
+            </span>
+            <i class="ti ti-chevron-right dx-action__chevron"></i>
+        </a>
+        {% endwith %}
+        {% endif %}
+
+        <a href="{% url 'users:leaderboard' %}" class="dx-action">
+            <span class="dx-action__icon dx-action__icon--amber"><i class="ti ti-trophy"></i></span>
+            <span class="dx-action__body">
+                <span class="dx-action__eyebrow">Доверие: {{ personal.trust_level|lower }}</span>
+                <span class="dx-action__title">Рейтинг болельщиков</span>
+                <span class="dx-action__meta">Точные оценки повышают вес вашего голоса</span>
+            </span>
+            <i class="ti ti-chevron-right dx-action__chevron"></i>
+        </a>
+    </div>
+</section>

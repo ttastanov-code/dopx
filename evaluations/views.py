@@ -19,6 +19,7 @@ from django.db import transaction
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils import timezone
+from django.views import View
 from django.views.generic import FormView, TemplateView
 
 from aggregates.tasks import recalculate_all_aggregates_for_match
@@ -47,6 +48,7 @@ from events.models import MatchEvent
 from lineups.models import MatchLineupPlayer
 from matches.models import Match, MatchPlayerStatistics
 from notifications.models import Notification
+from evaluations.turning_points import KINDS as TURNING_POINT_KINDS, match_events as turning_point_events, resolve_choice as resolve_turning_point
 from notifications.tasks import send_level_up_notification, send_push_task
 from users.models import UserXP, is_email_verified
 from users.tasks import check_and_award_badges_task, flag_suspicious_wizard_speed_task
@@ -110,13 +112,21 @@ def _track_wizard_xp(request, amount: int) -> None:
     request.session[key] = request.session.get(key, 0) + amount
 
 
-def _award_step_xp(request, base_amount: float) -> dict | None:
-    """Начисляет XP за шаг с учётом xp_multiplier(); в сводку идёт реально зачисленное."""
-    if base_amount <= 0:
+def _award_step_xp(request, base_amount: float, session, final: bool = False) -> dict | None:
+    """XP за шаги копится в сессии и зачисляется только на финальном шаге — брошенная оценка XP не даёт."""
+    if not final:
+        if base_amount > 0:
+            session.pending_xp = (session.pending_xp or 0) + base_amount
+            session.save(update_fields=['pending_xp', 'updated_at'])
+        return None
+    amount = (session.pending_xp or 0) + base_amount
+    session.pending_xp = 0
+    session.save(update_fields=['pending_xp', 'updated_at'])
+    if amount <= 0:
         return None
     user = request.user
     xp, _created = UserXP.objects.get_or_create(user=user)
-    result = xp.add_xp(base_amount * user.xp_multiplier())
+    result = xp.add_xp(amount * user.xp_multiplier())
     _track_wizard_xp(request, result["new_total_xp"] - result["old_total_xp"])
     return result
 
@@ -238,7 +248,7 @@ class EvaluateContextView(LoginRequiredMixin, FormView, EvaluationWizardMixin):
                 session.save(update_fields=['mode', 'updated_at'])
             self.update_session(session, 'context')
             if is_new_step:
-                _award_step_xp(self.request, XP_CONTEXT_STEP)
+                _award_step_xp(self.request, XP_CONTEXT_STEP, session)
         messages.success(self.request, 'Контекст сохранён.')
         return redirect('evaluations:teams', match_id=self.match.id)
 
@@ -293,7 +303,7 @@ class EvaluateTeamsView(LoginRequiredMixin, TemplateView, EvaluationWizardMixin)
                 rated_teams += 1
             self.update_session(session, 'teams')
             if is_new_step:
-                _award_step_xp(request, XP_TEAMS_STEP)
+                _award_step_xp(request, XP_TEAMS_STEP, session)
         if rated_teams:
             messages.success(request, f'Оценки команд сохранены: {rated_teams} из 2.')
         else:
@@ -373,7 +383,7 @@ class EvaluatePlayersView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
             self.update_session(session, 'players')
             if is_new_step and lineup_total:
                 # XP пропорционален доле оценённых игроков состава.
-                _award_step_xp(request, XP_PLAYERS_STEP_MAX * (count / lineup_total))
+                _award_step_xp(request, XP_PLAYERS_STEP_MAX * (count / lineup_total), session)
         messages.success(request, f'Оценено игроков: {count}.')
         return redirect('evaluations:coaches', match_id=self.match.id)
 
@@ -500,7 +510,7 @@ class EvaluateCoachesView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
                     rated_coaches += 1
             self.update_session(session, 'coaches')
             if is_new_step:
-                _award_step_xp(request, XP_COACHES_STEP)
+                _award_step_xp(request, XP_COACHES_STEP, session)
         if total_coaches == 0:
             messages.info(request, 'Тренеры этого матча пока не загружены в базу.')
         elif rated_coaches:
@@ -550,7 +560,7 @@ class EvaluateRefereeView(LoginRequiredMixin, FormView, EvaluationWizardMixin):
                 )
             self.update_session(session, 'referee')
             if is_new_step:
-                _award_step_xp(self.request, XP_REFEREE_STEP)
+                _award_step_xp(self.request, XP_REFEREE_STEP, session)
         if touched:
             messages.success(self.request, 'Оценка судейства сохранена.')
         else:
@@ -591,12 +601,19 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
                 return redirect('matches:detail', pk=self.match.id)
 
             # 1. Финальная оценка матча
+            turning_point = form.cleaned_data.get('turning_point', False)
+            tp_event, tp_kind = (
+                resolve_turning_point(self.request.POST.get('turning_point_choice'), self.match)
+                if turning_point else (None, '')
+            )
             MatchEvaluation.objects.update_or_create(
                 user=user, match=self.match,
                 defaults={
                     'entertainment': form.cleaned_data.get('entertainment', 5),
                     'tension': form.cleaned_data.get('tension', 5),
-                    'turning_point': form.cleaned_data.get('turning_point', False),
+                    'turning_point': turning_point,
+                    'turning_point_event': tp_event,
+                    'turning_point_kind': tp_kind,
                     'fairness': form.cleaned_data.get('fairness', 5),
                 }
             )
@@ -608,8 +625,8 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
 
             # 3. Trust Score — после закрытия голосования, по итоговому консенсусу.
 
-            # 4. XP за финальный шаг. Достижения — асинхронно (п. 7).
-            xp_result = _award_step_xp(self.request, XP_FINAL_STEP)
+            # 4. XP за всю оценку (копился по шагам) — только сейчас. Достижения — асинхронно (п. 7).
+            xp_result = _award_step_xp(self.request, XP_FINAL_STEP, session, final=True)
             xp = UserXP.objects.get(user=user)
 
             # Награда передаётся подписанным токеном в ссылке редиректа.
@@ -714,6 +731,8 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
             'step': 6, 'total_steps': 6, 'progress': 100, 'prev_step': 'evaluations:referee',
             # Кнопки-пресеты на финальном шаге (docs/adr/0031-quick-mode-primary-flow.md).
             'mode': session.mode,
+            'turning_point_events': list(turning_point_events(self.match)),
+            'turning_point_kinds': TURNING_POINT_KINDS,
         })
         return context
 
@@ -746,3 +765,23 @@ class EvaluationCompleteView(LoginRequiredMixin, TemplateView):
 
         context['page_title'] = 'Спасибо! — DOPX'
         return context
+
+class EvaluationCancelView(LoginRequiredMixin, View):
+    """Отмена незавершённой оценки: удаляет сессию и черновые оценки матча (XP за шаги не начислялся)."""
+
+    http_method_names = ['post']
+
+    def post(self, request, match_id):
+        session = EvaluationSession.objects.filter(
+            user=request.user, match_id=match_id, status__in=['started', 'in_progress'],
+        ).first()
+        if session is None:
+            messages.info(request, 'Незавершённой оценки этого матча нет.')
+            return redirect('matches:detail', pk=match_id)
+        with transaction.atomic():
+            for model in (ContextEvaluation, TeamEvaluation, PlayerEvaluation, CoachEvaluation, RefereeEvaluation, MatchEvaluation):
+                model.objects.filter(user=request.user, match_id=match_id).delete()
+            session.delete()
+        request.session.pop(f"wizard_xp_earned:{match_id}", None)
+        messages.success(request, 'Оценка отменена. Её можно начать заново, пока открыто голосование.')
+        return redirect('matches:detail', pk=match_id)
