@@ -13,6 +13,7 @@ from django.db.models import Count, Q
 
 from aggregates.models import RefereeMatchAggregate, TeamMatchAggregate
 from aggregates.services import published_q
+from core.live import versioned
 
 # Сколько последних матчей берём для тренда.
 MOOD_TREND_RECENT_MATCHES = 5
@@ -28,7 +29,7 @@ def compute_mood_trend(team) -> dict | None:
     """Тренд настроения по последним матчам.
     :return: None, если матчей меньше 2, иначе {direction, delta, matches_considered}.
     """
-    cache_key = f"team_mood_trend_{team.id}"
+    cache_key = versioned(f"team_mood_trend_{team.id}")
     cached = cache.get(cache_key, "__unset__")
     if cached != "__unset__":
         return cached
@@ -83,7 +84,7 @@ def compute_mood_series(team, *, limit: int = MOOD_SERIES_MATCHES) -> list[dict]
 
     :return: список dict в хронологическом порядке.
     """
-    cache_key = f"team_mood_series_{team.id}_{limit}"
+    cache_key = versioned(f"team_mood_series_{team.id}_{limit}")
     cached = cache.get(cache_key, "__unset__")
     if cached != "__unset__":
         return cached

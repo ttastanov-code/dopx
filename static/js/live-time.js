@@ -31,12 +31,14 @@
         return `${mins} мин`;
     }
 
-    function wakeAll() {
+    // force — данные изменились (версия, live-refresh.js): будим всех, даже с будущим data-wake-at
+    // (матч мог начаться раньше расписания).
+    function wakeAll(force) {
         if (!window.htmx) return;
         const now = Date.now();
         document.querySelectorAll('[data-background-poll][hx-trigger*="dopx:wake"]').forEach((el) => {
             const wakeAt = el.dataset.wakeAt && Date.parse(el.dataset.wakeAt);
-            if (wakeAt && wakeAt > now) return; // ещё рано — у него свой таймер
+            if (!force && wakeAt && wakeAt > now) return; // ещё рано — у него свой таймер
             htmx.trigger(el, 'dopx:wake');
         });
     }

@@ -32,7 +32,9 @@ def pending_evaluations_count(user) -> int:
     """Сколько матчей ждут оценки пользователя (кэш на минуту)."""
     if not getattr(user, 'is_authenticated', False):
         return 0
-    key = f'personal:pending_evals:{user.pk}'
+    from core.live import versioned
+
+    key = versioned(f'personal:pending_evals:{user.pk}')
     count = cache.get(key)
     if count is None:
         count = votable_matches_for(user).count()
@@ -42,7 +44,9 @@ def pending_evaluations_count(user) -> int:
 
 def forget_pending_count(user_id) -> None:
     """Сбросить кэш счётчика (после завершения оценки)."""
-    cache.delete(f'personal:pending_evals:{user_id}')
+    from core.live import versioned
+
+    cache.delete(versioned(f'personal:pending_evals:{user_id}'))
 
 
 def personal_summary(user) -> dict:

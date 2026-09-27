@@ -118,3 +118,38 @@ def get_setting(key: str, default=None):
 # Строка, а не object(): после pickle через Redis identity теряется.
 _MISSING_SENTINEL = "__platform_setting_missing__"
 
+
+
+class MourningMode(models.Model):
+    """Режим траура — одна запись (pk=1). Включение вручную или по периоду; см. core/mourning.py."""
+
+    DEFAULT_MESSAGE = "День общенационального траура"
+
+    is_enabled = models.BooleanField(_("Включён"), default=False)
+    message = models.CharField(_("Текст плашки"), max_length=255, default=DEFAULT_MESSAGE)
+    starts_at = models.DateTimeField(_("Начало"), null=True, blank=True, help_text=_("Пусто — сразу"))
+    ends_at = models.DateTimeField(_("Окончание"), null=True, blank=True, help_text=_("Пусто — до ручного выключения"))
+    grayscale = models.BooleanField(_("Монохромный сайт"), default=True)
+    hide_ads = models.BooleanField(_("Скрыть рекламу и баннеры"), default=True)
+    mute_push = models.BooleanField(_("Приглушить развлекательные push"), default=True)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+        verbose_name=_("Изменил"),
+    )
+    updated_at = models.DateTimeField(_("Изменено"), auto_now=True)
+
+    class Meta:
+        verbose_name = _("Режим траура")
+        verbose_name_plural = _("Режим траура")
+
+    def __str__(self):
+        return f"Режим траура ({'включён' if self.is_enabled else 'выключен'})"
+
+    def is_active_at(self, moment) -> bool:
+        if not self.is_enabled:
+            return False
+        if self.starts_at and moment < self.starts_at:
+            return False
+        if self.ends_at and moment >= self.ends_at:
+            return False
+        return True

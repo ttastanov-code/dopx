@@ -101,7 +101,7 @@ data-background-poll — без глобального лоадера.
             </span>
         </div>
 
-        <div class="mrow__center">
+        <div class="mrow__center" data-live-pop>
             {% if match.status == 'finished' or match.status == 'live' %}
             {% render_score_short match.home_score match.away_score %}
             {% elif match.status == 'postponed' %}

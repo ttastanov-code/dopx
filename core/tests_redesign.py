@@ -267,3 +267,23 @@ class HumanizeScheduleTests(TestCase):
         self.assertIsNone(live["next_run"])  # интервал: прошлый запуск неизвестен — без выдуманного отсчёта
         self.assertTrue(all(e["next_run"] for e in entries if not e["is_interval"]))
         self.assertTrue(all(e["description"] for e in entries))
+
+
+class LiveVersionTests(_Base):
+    def test_version_bumps_on_content_change_and_resets_caches(self):
+        from core.live import GATE_KEY, data_version
+        from core.stats import platform_stats
+        cache.clear()
+        v1 = data_version()
+        before = platform_stats()["total_matches"]
+        cache.delete(GATE_KEY)
+        self.match()  # Match.post_save
+        cache.delete(GATE_KEY)
+        v2 = data_version()
+        self.assertGreater(v2, v1)
+        self.assertEqual(platform_stats()["total_matches"], before + 1)  # кэш сброшен версией
+
+    def test_endpoint(self):
+        response = self.client.get(reverse("core:live_version"))
+        self.assertEqual(response["Cache-Control"], "no-store")
+        self.assertIn("v", response.json())

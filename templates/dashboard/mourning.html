@@ -1,0 +1,104 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+{# Режим траура: монохромный сайт, плашка, без рекламы и развлекательных push. #}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+    <div class="lg:col-span-2 space-y-4">
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-4">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <div class="dopx-section-eyebrow"><i class="ti ti-ribbon-health"></i>Состояние</div>
+                        <div class="dopx-section-title">
+                            {% if mourning_state == 'active' %}Режим траура включён
+                            {% elif mourning_state == 'scheduled' %}Запланирован с {{ mourning_obj.starts_at|date:"d.m.Y H:i" }}
+                            {% elif mourning_state == 'finished' %}Период завершён {{ mourning_obj.ends_at|date:"d.m.Y H:i" }}
+                            {% else %}Выключен{% endif %}
+                        </div>
+                        {% if mourning_obj.updated_by %}<p class="text-xs opacity-50 mt-1">Изменил {{ mourning_obj.updated_by.username }}, {{ mourning_obj.updated_at|date:"d.m.Y H:i" }}</p>{% endif %}
+                    </div>
+                    <div class="flex gap-2">
+                        {% if mourning_state == 'active' or mourning_state == 'scheduled' %}
+                        <form method="post" onsubmit="return confirm('Выключить режим траура на сайте?')">
+                            {% csrf_token %}<input type="hidden" name="action" value="disable">
+                            <button type="submit" class="btn btn-sm btn-outline">Выключить</button>
+                        </form>
+                        {% else %}
+                        <form method="post" onsubmit="return confirm('Включить режим траура на всём сайте прямо сейчас?')">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="enable">
+                            <input type="hidden" name="message" value="{{ mourning_obj.message }}">
+                            {% if mourning_obj.grayscale %}<input type="hidden" name="grayscale" value="on">{% endif %}
+                            {% if mourning_obj.hide_ads %}<input type="hidden" name="hide_ads" value="on">{% endif %}
+                            {% if mourning_obj.mute_push %}<input type="hidden" name="mute_push" value="on">{% endif %}
+                            <button type="submit" class="btn btn-sm btn-neutral"><i class="ti ti-ribbon-health"></i> Включить сейчас</button>
+                        </form>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-4">
+                <div class="dopx-section-eyebrow"><i class="ti ti-adjustments"></i>Настройки</div>
+                <div class="dopx-section-title mb-3">Текст, период и что приглушить</div>
+                <form method="post" class="space-y-4">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="save">
+                    <div class="form-control">
+                        <label class="label py-1"><span class="label-text text-xs font-semibold">Текст плашки</span></label>
+                        <input type="text" name="message" maxlength="255" value="{{ mourning_obj.message }}" class="input input-bordered input-sm w-full"
+                               placeholder="27 сентября — день общенационального траура">
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div class="form-control">
+                            <label class="label py-1"><span class="label-text text-xs font-semibold">Начало</span><span class="label-text-alt opacity-50">пусто — сразу</span></label>
+                            <input type="datetime-local" name="starts_at" value="{{ mourning_obj.starts_at|date:'Y-m-d\TH:i' }}" class="input input-bordered input-sm w-full">
+                        </div>
+                        <div class="form-control">
+                            <label class="label py-1"><span class="label-text text-xs font-semibold">Окончание</span><span class="label-text-alt opacity-50">пусто — до выключения</span></label>
+                            <input type="datetime-local" name="ends_at" value="{{ mourning_obj.ends_at|date:'Y-m-d\TH:i' }}" class="input input-bordered input-sm w-full">
+                        </div>
+                    </div>
+                    <div class="space-y-2">
+                        <label class="flex items-start gap-3 cursor-pointer">
+                            <input type="checkbox" name="is_enabled" class="toggle toggle-sm mt-0.5" {% if mourning_obj.is_enabled %}checked{% endif %}>
+                            <span class="text-sm"><b>Режим включён</b><span class="block text-xs opacity-55">С периодом — включится и выключится сам по времени.</span></span>
+                        </label>
+                        <label class="flex items-start gap-3 cursor-pointer">
+                            <input type="checkbox" name="grayscale" class="toggle toggle-sm mt-0.5" {% if mourning_obj.grayscale %}checked{% endif %}>
+                            <span class="text-sm"><b>Монохромный сайт</b><span class="block text-xs opacity-55">Все цвета, логотипы и фото — в оттенках серого.</span></span>
+                        </label>
+                        <label class="flex items-start gap-3 cursor-pointer">
+                            <input type="checkbox" name="hide_ads" class="toggle toggle-sm mt-0.5" {% if mourning_obj.hide_ads %}checked{% endif %}>
+                            <span class="text-sm"><b>Скрыть рекламу и баннеры партнёров</b></span>
+                        </label>
+                        <label class="flex items-start gap-3 cursor-pointer">
+                            <input type="checkbox" name="mute_push" class="toggle toggle-sm mt-0.5" {% if mourning_obj.mute_push %}checked{% endif %}>
+                            <span class="text-sm"><b>Приглушить развлекательные push</b><span class="block text-xs opacity-55">Голы, достижения, прогнозы, напоминания. Перенос и отмена матча приходят всегда.</span></span>
+                        </label>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm">Сохранить</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="space-y-4">
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body p-4">
+                <div class="dopx-section-eyebrow"><i class="ti ti-eye"></i>Как увидят посетители</div>
+                <div class="mt-2">{% with mourning=mourning_obj %}{% include 'components/_mourning_banner.html' %}{% endwith %}</div>
+                <ul class="text-xs opacity-65 space-y-1.5 leading-relaxed mt-1">
+                    <li>• Плашка — вверху каждой страницы сайта и дашборда.</li>
+                    <li>• Открытые вкладки включат и выключат режим сами, без перезагрузки.</li>
+                    <li>• Все изменения пишутся в «Аудит».</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

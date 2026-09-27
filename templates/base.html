@@ -3,7 +3,7 @@
 {% load asset_extras %}
 {% load ui_extras %}
 <!DOCTYPE html>
-<html lang="ru" data-theme="light">
+<html lang="ru" data-theme="light"{% if mourning and mourning.grayscale %} data-mourning{% endif %}{% if mourning_next %} data-mourning-next="{{ mourning_next|date:'c' }}"{% endif %}>
 <head>
     <meta charset="UTF-8">
     {# Без maximum-scale/user-scalable=no — pinch-zoom должен работать (WCAG 1.4.4). #}
@@ -400,6 +400,7 @@
     class="bg-base-100 text-base-content antialiased{% if show_tabbar %} has-tabbar{% endif %}"
     hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
     data-vapid-public-key="{{ VAPID_PUBLIC_KEY|default:'' }}"
+    data-live-version="{{ live_version }}"
     data-live-refresh="{% block live_refresh %}{% if request.path|slice:':17' == '/staff/dashboard/' %}10{% else %}30{% endif %}{% endblock %}"{% if user.is_authenticated %}
     data-auth="1"{% endif %}
     x-data="themeSwitcher">
@@ -433,6 +434,7 @@
     {% endif %}
     {# Main Content #}
     <main class="container mx-auto px-3 sm:px-4 py-4 sm:py-6 w-full">
+        {% if mourning %}{% include 'components/_mourning_banner.html' %}{% endif %}
         {% block content %}{% endblock %}
     </main>
     {# Footer #}

@@ -42,6 +42,7 @@ NAV_ROWS: tuple[tuple[tuple[NavItem, ...], ...], ...] = (
         (
             NavItem("audit", "dashboard:audit_log", "ti-history", "Аудит"),
             NavItem("announcements", "dashboard:announcements", "ti-speakerphone", "Объявления"),
+            NavItem("mourning", "dashboard:mourning", "ti-ribbon-health", "Траур"),
             NavItem("platform_settings", "dashboard:platform_settings", "ti-adjustments", "Настройки"),
             NavItem("system_status", "dashboard:system_status", "ti-heart-rate-monitor", "Статус"),
         ),

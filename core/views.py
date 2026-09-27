@@ -31,6 +31,7 @@ from teams.models import Team, TeamSeasonStats
 from users.models import SuspiciousActivityFlag, User
 
 from notifications.models import ContactSubmission
+from core.live import versioned
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +134,7 @@ def standings_preview(request):
         </div>
         ''')
 
-    cache_key = f'league_{season.league.id}_season_{season.id}_standings_preview'
+    cache_key = versioned(f'league_{season.league.id}_season_{season.id}_standings_preview')
     cached_html = cache.get(cache_key)
 
     if cached_html:
@@ -712,3 +713,14 @@ def personal_panel(request):
     if not request.user.is_authenticated:
         return HttpResponse(status=204)
     return render(request, 'core/_personal_panel.html', {'personal': personal_summary(request.user)})
+
+
+def live_version(request):
+    """Текущая версия данных: вкладки пингуют раз в несколько секунд и мягко обновляются при смене."""
+    from django.http import JsonResponse
+
+    from core.live import data_version
+
+    response = JsonResponse({'v': data_version()})
+    response['Cache-Control'] = 'no-store'
+    return response

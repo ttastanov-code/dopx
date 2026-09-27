@@ -114,3 +114,17 @@ def mobile_tabbar(request):
         'tabbar_section': app_name,
         'tabbar_url_name': match.url_name if match else '',
     }
+
+
+def live_version(request):
+    """Версия данных на момент рендера — стартовая точка для пинга live-refresh.js."""
+    from core.live import data_version
+
+    return {'live_version': data_version()}
+
+
+def mourning(request):
+    """Режим траура (core/mourning.py): плашка, монохром, без рекламы."""
+    from core.mourning import current_mourning, next_transition
+
+    return {'mourning': current_mourning(), 'mourning_next': next_transition()}

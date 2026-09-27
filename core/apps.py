@@ -12,3 +12,8 @@ class CoreConfig(AppConfig):
         from core.services.vapid import ensure_vapid_keys_on_startup
 
         post_migrate.connect(ensure_vapid_keys_on_startup, sender=self)
+
+        # Версия данных для живого обновления страниц (core/live.py).
+        from core.live_signals import connect as connect_live_signals
+
+        connect_live_signals()

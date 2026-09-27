@@ -20,6 +20,7 @@ urlpatterns = [
     path("users/<uuid:user_id>/toggle-ban/", views.user_toggle_ban, name="user_toggle_ban"),
     path("users/<uuid:user_id>/reset-trust/", views.user_reset_trust_score, name="user_reset_trust_score"),
     path("system-status/", views.system_status, name="system_status"),
+    path("mourning/", views.mourning_mode, name="mourning"),
     path("evaluations/", views.evaluation_sessions_list, name="evaluation_sessions_list"),
     path("evaluations/<uuid:session_id>/", views.evaluation_session_detail, name="evaluation_session_detail"),
     path("evaluations/<uuid:session_id>/delete/", views.evaluation_session_delete, name="evaluation_session_delete"),

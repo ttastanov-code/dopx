@@ -17,6 +17,7 @@ from aggregates.models import (
     RefereeMatchAggregate,
     TeamMatchAggregate,
 )
+from core.live import versioned
 from aggregates.services import CONFIDENT_VOTES_THRESHOLD, min_votes_for_display, published_q, vote_weighted_avg
 
 # Минимум голосов за кандидата суммарно — одна «спорная» игра не делает номинанта.
@@ -201,6 +202,7 @@ def get_nominations(*, league=None, season=None) -> list[dict]:
     else:
         cache_key = f'nominations_league_{getattr(league, "id", "x")}_season_{getattr(season, "id", "x")}'
 
+    cache_key = versioned(cache_key)
     cached = cache.get(cache_key)
     if cached is not None:
         return cached

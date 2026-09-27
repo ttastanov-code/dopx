@@ -13,6 +13,7 @@ from evaluations.completed import completed_only
 from evaluations.models import ContextEvaluation, EvaluationSession
 from predictions.models import MatchPrediction
 from users.models import User
+from core.live import versioned
 
 # Город показываем публично только при таком числе пользователей в нём.
 CITY_MIN_USERS_DEFAULT = 10
@@ -60,7 +61,7 @@ def city_battle(period: str = "month") -> list[dict]:
     if period not in BATTLE_PERIODS:
         period = "month"
     min_users = city_min_users()
-    cache_key = f"city_battle:{period}:{min_users}"
+    cache_key = versioned(f"city_battle:{period}:{min_users}")
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
@@ -179,7 +180,7 @@ def team_fan_geography(team) -> dict | None:
     если болельщиков с городом меньше team_fan_geo_min_fans().
     """
     min_fans = team_fan_geo_min_fans()
-    cache_key = f"team_fan_geo:{team.pk}:{min_fans}"
+    cache_key = versioned(f"team_fan_geo:{team.pk}:{min_fans}")
     cached = cache.get(cache_key)
     if cached is not None:
         return cached or None

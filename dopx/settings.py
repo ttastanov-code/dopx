@@ -438,6 +438,8 @@ TEMPLATES = [
                 'core.context_processors.pwa_settings',
                 'core.context_processors.current_round_squad',
                 'core.context_processors.mobile_tabbar',
+                'core.context_processors.live_version',
+                'core.context_processors.mourning',
             ],
         },
     },

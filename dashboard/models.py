@@ -23,6 +23,7 @@ class AuditAction(models.TextChoices):
     CELERY_TASK_REVOKED = "celery_task_revoked", _("Отзыв/остановка celery-задачи")
     SPORTMONKS_HEALTH_CHECK = "sportmonks_health_check", _("Проверка доступности Sportmonks API")
     SYSTEM_ANNOUNCEMENT_SENT = "system_announcement_sent", _("Отправлено системное объявление")
+    MOURNING_CHANGED = "mourning_changed", _("Изменён режим траура")
     # Центр доверия к данным.
     DATA_ERROR_REPORT_RESOLVED = "data_error_report_resolved", _("Жалоба на данные матча закрыта")
     PARSER_DISCREPANCY_REVIEWED = "parser_discrepancy_reviewed", _("Расхождение импорта разобрано")
@@ -153,6 +154,7 @@ DASHBOARD_SECTIONS = [
     ("ads", _("Реклама (+ партнёры/баннеры)")),
     ("audit", _("Аудит")),
     ("announcements", _("Объявления")),
+    ("mourning", _("Режим траура")),
     ("platform_settings", _("Настройки платформы")),
     ("system_status", _("Системный статус")),
     ("scripts", _("Скрипты и команды")),

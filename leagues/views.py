@@ -14,6 +14,7 @@ from players.models import Player
 from core.nominations import get_nominations
 from season_squad.services import MIN_MATCHES_FOR_CANDIDATE
 import logging
+from core.live import versioned
 
 logger = logging.getLogger(__name__)
 
@@ -123,7 +124,7 @@ class LeagueDetailView(DetailView):
         avg_goals_per_match = None
 
         if selected_season:
-            cache_key = f'league_{league.id}_season_{selected_season.id}_analytics'
+            cache_key = versioned(f'league_{league.id}_season_{selected_season.id}_analytics')
             cached = cache.get(cache_key)
 
             if cached is not None:

@@ -12,6 +12,10 @@ register = template.Library()
 def render_banner(context, zone: str):
     """{% render_banner "sidebar" %} — активный баннер зоны + учёт показа."""
     request = context.get("request")
+    # В режим траура реклама не показывается.
+    mourning = context.get("mourning")
+    if mourning and mourning.get("hide_ads"):
+        return {"show": False}
     banner = get_active_banner_for_zone(zone)
     if banner is None:
         return {"show": False}

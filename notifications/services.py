@@ -99,6 +99,11 @@ def send_push_to_users(
 
     from users.models import PushSubscription
 
+    from core.mourning import push_allowed
+
+    if not push_allowed(kind):
+        logger.info("push: режим траура, тип %s приглушён", kind)
+        return 0
     allowed_ids = _users_allowing(list(user_ids), kind)
     if not allowed_ids:
         return 0

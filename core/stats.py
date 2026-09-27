@@ -26,7 +26,10 @@ def real_users():
 
 def platform_stats() -> dict:
     """Оценка = завершённая оценка матча (сессия вайзарда), а не строки по каждому игроку."""
-    cached = cache.get(PLATFORM_STATS_CACHE_KEY)
+    from core.live import versioned
+
+    cache_key = versioned(PLATFORM_STATS_CACHE_KEY)
+    cached = cache.get(cache_key)
     if cached is not None:
         return cached
 
@@ -50,5 +53,5 @@ def platform_stats() -> dict:
         'avg_drama': round(published['drama']) if published['drama'] is not None else None,
         'avg_entertainment': round(published['entertainment'], 1) if published['entertainment'] is not None else None,
     }
-    cache.set(PLATFORM_STATS_CACHE_KEY, stats, PLATFORM_STATS_TTL)
+    cache.set(cache_key, stats, PLATFORM_STATS_TTL)
     return stats
