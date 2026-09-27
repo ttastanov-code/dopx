@@ -1744,3 +1744,144 @@ html[data-mourning] { filter: grayscale(1); }
 @media (max-width: 639px) { .dx-mourning { border-radius: 1.1rem; padding: .6rem .9rem .6rem .6rem; } }
 @keyframes dx-mourning-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .dx-mourning { animation: none; } }
+
+/* ---------- Мобильное меню (панель слева) ---------- */
+.dx-drawer { position: fixed; inset: 0; z-index: 60; pointer-events: none; }
+.dx-drawer.is-open { pointer-events: auto; }
+.dx-drawer__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgb(0 0 0 / .42);
+    backdrop-filter: blur(3px);
+    opacity: 0;
+    transition: opacity .3s ease;
+}
+.dx-drawer.is-open .dx-drawer__backdrop { opacity: 1; }
+.dx-drawer__panel {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    max-height: 88vh;
+    margin: 0 auto;
+    width: 100%;
+    max-width: 34rem;
+    background: var(--color-base-100);
+    border-radius: 1.6rem 1.6rem 0 0;
+    box-shadow: 0 -24px 60px -24px rgb(0 0 0 / .45);
+    transform: translateY(102%);
+    transition: transform .42s cubic-bezier(.16, 1, .3, 1);
+    padding-bottom: env(safe-area-inset-bottom);
+}
+.dx-drawer__grabber {
+    display: block;
+    width: 2.4rem;
+    height: .3rem;
+    margin: .55rem auto 0;
+    border-radius: 9999px;
+    background: color-mix(in oklab, var(--color-base-content) 18%, transparent);
+}
+.dx-drawer.is-open .dx-drawer__panel { transform: none; }
+html.dx-drawer-lock, html.dx-drawer-lock body { overflow: hidden; }
+@media (prefers-reduced-motion: reduce) { .dx-drawer__panel, .dx-drawer__backdrop { transition: none; } }
+
+.dx-drawer__head { display: flex; align-items: center; justify-content: space-between; padding: .35rem .85rem .5rem 1rem; }
+.dx-drawer__brand { display: inline-flex; align-items: center; }
+.dx-drawer__close {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 2.25rem; height: 2.25rem; border-radius: 9999px; font-size: 1.15rem;
+    background: color-mix(in oklab, var(--color-base-content) 7%, transparent);
+    transition: background .15s ease;
+}
+.dx-drawer__close:active { background: color-mix(in oklab, var(--color-base-content) 14%, transparent); }
+.dx-drawer__scroll { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: .25rem .75rem 1rem; }
+
+/* Карточка пользователя. */
+.dx-drawer__me {
+    display: flex; align-items: center; gap: .8rem;
+    padding: .85rem; border-radius: 1.1rem;
+    background: color-mix(in oklab, var(--color-base-content) 4.5%, transparent);
+}
+.dx-drawer__me-body { display: flex; flex-direction: column; flex: 1; min-width: 0; gap: .15rem; }
+.dx-drawer__me-name { font-size: 1rem; font-weight: 800; letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dx-drawer__me-meta { font-size: .75rem; color: color-mix(in oklab, var(--color-base-content) 55%, transparent); }
+.dx-drawer__xp { display: block; height: .3rem; margin-top: .3rem; border-radius: 9999px; overflow: hidden; background: color-mix(in oklab, var(--color-base-content) 9%, transparent); }
+.dx-drawer__xp span { display: block; height: 100%; border-radius: inherit; background: var(--color-primary); }
+
+/* Гость. */
+.dx-drawer__guest {
+    padding: 1rem; border-radius: 1.1rem; color: #fff;
+    background:
+        radial-gradient(120% 120% at 100% 0%, rgb(255 255 255 / .18), transparent 55%),
+        linear-gradient(135deg, var(--color-primary), color-mix(in oklab, var(--color-primary) 65%, #0b0730));
+}
+.dx-drawer__guest-title { font-size: 1rem; font-weight: 800; letter-spacing: -.01em; }
+.dx-drawer__guest-text { margin-top: .25rem; font-size: .8125rem; line-height: 1.4; color: rgb(255 255 255 / .8); }
+.dx-drawer__guest-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; margin-top: .85rem; }
+.dx-drawer__btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: .6rem .75rem; border-radius: .8rem; font-size: .875rem; font-weight: 700;
+    color: #fff; background: rgb(255 255 255 / .16);
+}
+.dx-drawer__btn--primary { color: var(--color-primary); background: #fff; }
+
+/* Группы строк, как в «Настройках». */
+.dx-drawer__group-title {
+    margin: 1.1rem .35rem .4rem; font-size: .6875rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+    color: color-mix(in oklab, var(--color-base-content) 45%, transparent);
+}
+.dx-drawer__group--mt { margin-top: .75rem; }
+.dx-drawer__count {
+    margin-left: auto; min-width: 1.35rem; padding: 0 .4rem; border-radius: 9999px;
+    font-size: .6875rem; font-weight: 800; line-height: 1.35rem; text-align: center;
+    color: #fff; background: var(--color-error);
+}
+.dx-drawer__count + .dx-drawer__chev { margin-left: .35rem; }
+.dx-drawer__group { border-radius: 1.1rem; overflow: hidden; background: color-mix(in oklab, var(--color-base-content) 4.5%, transparent); }
+.dx-drawer__row {
+    position: relative;
+    display: flex; align-items: center; gap: .75rem;
+    padding: .7rem .85rem; font-size: .9375rem; font-weight: 500;
+    transition: background .15s ease;
+}
+.dx-drawer__row + .dx-drawer__row::before {
+    content: ""; position: absolute; top: 0; left: 3.35rem; right: 0;
+    border-top: 1px solid color-mix(in oklab, var(--color-base-content) 8%, transparent);
+}
+.dx-drawer__row:active { background: color-mix(in oklab, var(--color-base-content) 7%, transparent); }
+.dx-drawer__row.is-active { font-weight: 700; color: var(--color-primary); }
+.dx-drawer__ico {
+    display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+    width: 1.85rem; height: 1.85rem; border-radius: .55rem; font-size: 1.05rem;
+    color: var(--c); background: color-mix(in oklab, var(--c) 14%, transparent);
+}
+.dx-drawer__chev { margin-left: auto; font-size: 1rem; opacity: .3; }
+
+/* Низ: тема и выход. */
+.dx-drawer__foot {
+    display: flex; align-items: center; gap: .6rem;
+    padding: .75rem; border-top: 1px solid color-mix(in oklab, var(--color-base-content) 7%, transparent);
+}
+.dx-drawer__seg {
+    flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: .2rem; padding: .2rem;
+    border-radius: .9rem; background: color-mix(in oklab, var(--color-base-content) 6%, transparent);
+}
+.dx-drawer__seg button {
+    display: inline-flex; align-items: center; justify-content: center; gap: .35rem;
+    padding: .5rem; border-radius: .7rem; font-size: .8125rem; font-weight: 600;
+    color: color-mix(in oklab, var(--color-base-content) 60%, transparent);
+    transition: background .2s ease, color .2s ease, box-shadow .2s ease;
+}
+.dx-drawer__seg button.is-on { color: var(--color-base-content); background: var(--color-base-100); box-shadow: 0 1px 2px rgb(0 0 0 / .08), 0 3px 10px -4px rgb(0 0 0 / .2); }
+.dx-drawer__logout {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 2.6rem; height: 2.6rem; border-radius: .9rem; font-size: 1.15rem;
+    color: var(--color-error); background: color-mix(in oklab, var(--color-error) 10%, transparent);
+}
+
+/* Бургер в шапке: на телефоне меню — в «Ещё» нижней панели; бургер там, где панели нет. */
+@media (max-width: 767px) { .dx-burger:not(.dx-burger--always) { display: none; } }
+/* «Ещё» в нижней панели — кнопка, без стандартного вида. */
+button.dx-tabbar__item { background: none; border: 0; font-family: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }

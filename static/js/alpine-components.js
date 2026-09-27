@@ -18,6 +18,10 @@ document.addEventListener('alpine:init', () => {
         toggleTheme() {
             this.theme = this.theme === 'light' ? 'dark' : 'light';
         },
+        setLight() { this.theme = 'light'; },
+        setDark() { this.theme = 'dark'; },
+        get isLight() { return this.theme === 'light'; },
+        get isDark() { return this.theme === 'dark'; },
     }));
 
     // === Горизонтальная лента с кнопками прокрутки (css/ui.css, .dx-rail-wrap) ===

@@ -20,13 +20,8 @@
     <a href="{% url 'round_squad:round' %}" class="dx-tabbar__item{% if tabbar_section == 'round_squad' or tabbar_section == 'season_squad' %} is-active{% endif %}">
         <i class="ti ti-shirt"></i><span>Лучшие</span>
     </a>
-    {% if user.is_authenticated %}
-    <a href="{% url 'users:profile' %}" class="dx-tabbar__item{% if tabbar_section == 'users' %} is-active{% endif %}">
-        <i class="ti ti-user-circle"></i><span>Профиль</span>
-    </a>
-    {% else %}
-    <a href="{% url 'users:login' %}" class="dx-tabbar__item{% if tabbar_section == 'users' %} is-active{% endif %}">
-        <i class="ti ti-login"></i><span>Войти</span>
-    </a>
-    {% endif %}
+    {# Всё остальное — в шторке «Ещё» (components/_navbar.html, #mobile-menu). #}
+    <button type="button" class="dx-tabbar__item{% if tabbar_section == 'users' or tabbar_section == 'notifications' or tabbar_section == 'teams' or tabbar_section == 'players' or tabbar_section == 'coaches' or tabbar_section == 'referees' or tabbar_section == 'leagues' %} is-active{% endif %}" data-drawer-open aria-controls="mobile-menu">
+        <i class="ti ti-layout-grid"></i><span>Ещё</span>
+    </button>
 </nav>
