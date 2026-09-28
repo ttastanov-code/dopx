@@ -17,8 +17,12 @@
     <meta property="og:title" content="{{ page_title|default:'DOPX' }}">
     <meta property="og:description" content="{{ meta_description|default:'DOPX: измеряем голос трибун казахстанского футбола' }}">
     <meta property="og:image" content="{% if og_image %}{{ og_image }}{% else %}{{ request.scheme }}://{{ request.get_host }}{% static 'img/dopx-logo.png' %}{% endif %}">
+    <meta property="og:site_name" content="DOPX">
+    <meta property="og:locale" content="ru_RU">
+    <meta property="og:url" content="{{ request.scheme }}://{{ request.get_host }}{{ request.path }}">
     <meta name="twitter:card" content="summary_large_image">
-    <link rel="canonical" href="{{ request.build_absolute_uri }}">
+    {# Canonical без query: ?challenge=, ?page= и т.п. не плодят дубли. #}
+    <link rel="canonical" href="{{ request.scheme }}://{{ request.get_host }}{{ request.path }}">
     {% block schema %}{% endblock %}
     {# Service worker регистрируется с /sw.js (core/views.py::service_worker). #}
     <link rel="manifest" href="{% static 'manifest.json' %}">
@@ -527,5 +531,6 @@
     <script src="{% static_v 'js/push.js' %}"></script>
     {# Живые отсчёты «через …» и пробуждение фоновых блоков к старту матча. #}
     <script src="{% static_v 'js/live-time.js' %}"></script>
+    <script src="{% static_v 'js/share.js' %}"></script>
 </body>
 </html>

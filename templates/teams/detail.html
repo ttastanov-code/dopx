@@ -5,6 +5,9 @@
 {% load position_extras %}
 {% load tooltip_tags %}
 {% load l10n %}
+{% block schema %}
+{% if schema_json %}<script type="application/ld+json">{{ schema_json|safe }}</script>{% endif %}
+{% endblock %}
 {% block content %}
 {# === НАВИГАЦИЯ === #}
 <div class="mb-4 md:mb-6 px-2 sm:px-0 flex items-center justify-between flex-wrap gap-2">
@@ -25,6 +28,15 @@
           <iframe src="{% url 'teams:widget' team.id %}" width="300" height="150" style="border:none;border-radius:12px" title="Превью виджета"></iframe>
         </div>
         <textarea x-ref="embedCode" readonly onclick="this.select()" class="textarea textarea-bordered w-full font-mono text-xs" rows="3">{{ widget_embed_code }}</textarea>
+        <div class="mt-4 pt-4 border-t border-base-300">
+          <h4 class="font-bold text-sm mb-1"><i class="ti ti-users mr-1"></i> Рейтинг игроков клуба</h4>
+          <p class="text-xs opacity-60 mb-2">Топ-10 игроков {{ team.name }} по оценкам болельщиков.</p>
+          <textarea readonly onclick="this.select()" class="textarea textarea-bordered w-full font-mono text-xs" rows="3">{{ players_widget_embed_code }}</textarea>
+          <div class="flex gap-2 mt-2">
+            <button type="button" class="btn btn-outline btn-xs" data-copy="{{ players_widget_embed_code }}"><i class="ti ti-copy"></i> <span data-share-label>Копировать код</span></button>
+            <a href="{{ players_widget_url }}" target="_blank" rel="noopener" class="btn btn-ghost btn-xs"><i class="ti ti-external-link"></i> Открыть превью</a>
+          </div>
+        </div>
         <div class="modal-action">
           <button type="button" @click="copy()" class="btn btn-primary btn-sm" :class="copied && 'btn-success'">
             <i class="ti" :class="copied ? 'ti-check' : 'ti-copy'"></i>
@@ -216,7 +228,7 @@
     <div class="dx-section__head">
       <h3 class="dx-section__title"><i class="ti ti-alert-triangle" style="color:var(--color-error)"></i> Самые спорные решения сезона</h3>
     </div>
-    <p class="dx-card__subtitle" style="margin:-.25rem 0 .6rem">Где мнения домашних и гостевых болельщиков о судействе разошлись сильнее всего — это разброс мнений, а не подтверждённая ошибка.</p>
+    <p class="dx-card__subtitle" style="margin:-.25rem 0 .6rem">Матчи, где болельщики двух команд оценили судейство совсем по-разному. Это спор болельщиков, а не доказанная ошибка судьи.</p>
     <div class="dx-list">
       {% for item in controversial_matches %}
       <a href="{% url 'matches:detail' item.match.id %}" class="dx-list__item">
@@ -473,18 +485,13 @@
           {% endif %}
         </div>
         {% else %}
-        <div class="text-center py-6 opacity-60">
-          <i class="ti ti-star-off text-3xl mb-2"></i>
-          <p class="text-sm">Пока никто не оценил игру этой команды</p>
-          {% if votable_match %}
-          <a href="{% url 'evaluations:context' votable_match.id %}" class="btn btn-primary btn-xs mt-3">
-            <i class="ti ti-star"></i> Оценить последний матч
-          </a>
-          {% endif %}
-        </div>
+        {% if votable_match %}{% url 'evaluations:context' votable_match.id as first_vote_url %}{% endif %}
+        {% include 'components/_first_vote.html' with text="Рейтинг команды сложится из оценок болельщиков после матчей." url=first_vote_url cta="Оценить матч" %}
         {% endif %}
       </div>
     </div>
+
+    {% include 'teams/_fan_zone.html' %}
 
     {# Где болеют: города болельщиков клуба (users/city_stats.py). #}
     {% if fan_geography %}
@@ -549,10 +556,7 @@
           {% endfor %}
         </div>
         {% else %}
-        <div class="text-center py-6 opacity-60">
-          <i class="ti ti-medal text-3xl mb-2"></i>
-          <p class="text-sm">Пока нет данных по игрокам матча</p>
-        </div>
+        {% include 'components/_first_vote.html' with text="Лучшие игроки клуба появятся, когда болельщики оценят матчи." url=first_vote_url cta="Оценить матч" %}
         {% endif %}
       </div>
     </div>

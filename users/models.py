@@ -124,6 +124,9 @@ class User(AbstractUser, BaseModel):
         "push_round_results": True,
         "push_match_changes": True,
         "push_results": True,
+        "push_streak": True,
+        "push_social": True,
+        "push_daily": True,
     }
 
     @property
@@ -339,6 +342,13 @@ class UserXP(BaseModel):
         self.total_xp = locked.total_xp
         self.level = locked.level
         self.xp_remainder = locked.xp_remainder
+
+        # Любой заработанный XP идёт и в сезонный пропуск (engagement/season.py).
+        gained = locked.total_xp - old_total_xp
+        if gained > 0:
+            from engagement.season import add_season_xp
+
+            transaction.on_commit(lambda: add_season_xp(self.user_id, gained))
 
         return {
             "level_increased": bool(levels_gained),

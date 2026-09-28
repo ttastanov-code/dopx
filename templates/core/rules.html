@@ -7,7 +7,7 @@
   <h1 class="text-2xl md:text-3xl font-bold mb-2 flex items-center gap-2">
     <i class="ti ti-file-text mr-2"></i> Правила платформы
   </h1>
-  <p class="opacity-60 text-sm md:text-base">Как работают оценки, доверие, опыт и достижения на DOPX.</p>
+  <p class="opacity-60 text-sm md:text-base">Как устроены оценки, доверие, опыт и достижения на DOPX.</p>
 </div>
 
 {# === КОНТЕНТ === #}
@@ -22,6 +22,7 @@
           <li><a href="#evaluation"><i class="ti ti-star"></i> Оценка матчей</a></li>
           <li><a href="#trust"><i class="ti ti-shield-check"></i> Trust Score</a></li>
           <li><a href="#gamification"><i class="ti ti-trophy"></i> Опыт и достижения</a></li>
+          <li><a href="#season"><i class="ti ti-ticket"></i> Сезон, задания, друзья</a></li>
           <li><a href="#fairplay"><i class="ti ti-scale"></i> Fair Play</a></li>
           <li><a href="#disclaimer"><i class="ti ti-info-circle"></i> Что такое рейтинг DOPX</a></li>
           <li><a href="#privacy"><i class="ti ti-lock"></i> Конфиденциальность</a></li>
@@ -38,10 +39,10 @@
         <div class="card-body p-4 md:p-6">
           <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4 flex items-center gap-2"><i class="ti ti-target text-primary"></i> Принципы платформы</h2>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
-            <div class="flex gap-3"><div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0"><i class="ti ti-users text-primary"></i></div><div><h3 class="font-semibold text-sm md:text-base">Народная оценка</h3><p class="text-xs md:text-sm opacity-60">Мнение болельщиков формирует объективную картину матча</p></div></div>
-            <div class="flex gap-3"><div class="w-10 h-10 rounded-lg bg-secondary/10 flex items-center justify-center flex-shrink-0"><i class="ti ti-shield-check text-secondary"></i></div><div><h3 class="font-semibold text-sm md:text-base">Прозрачность</h3><p class="text-xs md:text-sm opacity-60">Все агрегаты и вес голоса считаются по открытым, воспроизводимым формулам</p></div></div>
-            <div class="flex gap-3"><div class="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center flex-shrink-0"><i class="ti ti-scale text-accent"></i></div><div><h3 class="font-semibold text-sm md:text-base">Справедливость</h3><p class="text-xs md:text-sm opacity-60">Система автоматически учитывает предвзятость и контекст просмотра</p></div></div>
-            <div class="flex gap-3"><div class="w-10 h-10 rounded-lg bg-warning/10 flex items-center justify-center flex-shrink-0"><i class="ti ti-clock text-warning"></i></div><div><h3 class="font-semibold text-sm md:text-base">48 часов</h3><p class="text-xs md:text-sm opacity-60">Голосование открыто 48 часов после завершения матча</p></div></div>
+            <div class="flex gap-3"><div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0"><i class="ti ti-users text-primary"></i></div><div><h3 class="font-semibold text-sm md:text-base">Оценивают болельщики</h3><p class="text-xs md:text-sm opacity-60">Рейтинг складывается из голосов тех, кто смотрел матч.</p></div></div>
+            <div class="flex gap-3"><div class="w-10 h-10 rounded-lg bg-secondary/10 flex items-center justify-center flex-shrink-0"><i class="ti ti-shield-check text-secondary"></i></div><div><h3 class="font-semibold text-sm md:text-base">Понятный расчёт</h3><p class="text-xs md:text-sm opacity-60">Из чего складывается вес голоса, написано ниже. Пороги антифрода мы не раскрываем.</p></div></div>
+            <div class="flex gap-3"><div class="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center flex-shrink-0"><i class="ti ti-scale text-accent"></i></div><div><h3 class="font-semibold text-sm md:text-base">Поправка на пристрастность</h3><p class="text-xs md:text-sm opacity-60">Учитываем, за кого вы болеете и как смотрели матч.</p></div></div>
+            <div class="flex gap-3"><div class="w-10 h-10 rounded-lg bg-warning/10 flex items-center justify-center flex-shrink-0"><i class="ti ti-clock text-warning"></i></div><div><h3 class="font-semibold text-sm md:text-base">Двое суток на оценку</h3><p class="text-xs md:text-sm opacity-60">Голосование закрывается через 48 часов после начала матча.</p></div></div>
           </div>
         </div>
       </div>
@@ -52,26 +53,27 @@
       <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4 md:p-6">
           <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4 flex items-center gap-2"><i class="ti ti-star text-warning"></i> Как оценивать матчи</h2>
+          <p class="opacity-60 text-xs md:text-sm mb-4">Есть два режима. «Быстро»: ключевые игроки, тренеры и судья за пару минут. «Подробно»: весь состав и каждый критерий отдельно.</p>
           <div class="space-y-4 md:space-y-6">
             <div class="flex gap-3 md:gap-4">
               <div class="w-10 h-10 md:w-12 md:h-12 rounded-full bg-primary text-primary-content flex items-center justify-center font-bold flex-shrink-0">1</div>
               <div class="flex-1">
                 <div class="flex items-center justify-between gap-2 mb-1 md:mb-2">
-                  <h3 class="font-semibold text-base md:text-lg">Контекст просмотра</h3>
+                  <h3 class="font-semibold text-base md:text-lg">Как смотрели</h3>
                   <span class="badge badge-primary badge-outline badge-xs md:badge-sm whitespace-nowrap">+{{ xp_steps.context }} XP</span>
                 </div>
-                <p class="opacity-60 text-xs md:text-sm mb-2 md:mb-3">Укажите, как вы смотрели матч и за какую команду болеете</p>
-                <div class="flex flex-wrap gap-2"><span class="badge badge-xs md:badge-sm badge-outline">Полный матч</span><span class="badge badge-xs md:badge-sm badge-outline">Только голы</span><span class="badge badge-xs md:badge-sm badge-outline">Фрагменты</span><span class="badge badge-xs md:badge-sm badge-outline">На стадионе</span></div>
+                <p class="opacity-60 text-xs md:text-sm mb-2 md:mb-3">Отметьте, как смотрели матч и за кого болеете. Если были на стадионе, поставьте галочку.</p>
+                <div class="flex flex-wrap gap-2"><span class="badge badge-xs md:badge-sm badge-outline">Полный матч</span><span class="badge badge-xs md:badge-sm badge-outline">Только голы</span><span class="badge badge-xs md:badge-sm badge-outline">Фрагменты</span><span class="badge badge-xs md:badge-sm badge-outline">Был на стадионе</span></div>
               </div>
             </div>
             <div class="flex gap-3 md:gap-4">
               <div class="w-10 h-10 md:w-12 md:h-12 rounded-full bg-primary text-primary-content flex items-center justify-center font-bold flex-shrink-0">2</div>
               <div class="flex-1">
                 <div class="flex items-center justify-between gap-2 mb-1 md:mb-2">
-                  <h3 class="font-semibold text-base md:text-lg">Оценка команд</h3>
+                  <h3 class="font-semibold text-base md:text-lg">Команды</h3>
                   <span class="badge badge-primary badge-outline badge-xs md:badge-sm whitespace-nowrap">+{{ xp_steps.teams }} XP</span>
                 </div>
-                <p class="opacity-60 text-xs md:text-sm mb-2 md:mb-3">Оцените обе команды по 4 критериям (1-10)</p>
+                <p class="opacity-60 text-xs md:text-sm mb-2 md:mb-3">Обе команды по четырём критериям, от 1 до 10.</p>
                 <div class="grid grid-cols-2 gap-2 text-xs md:text-sm"><div class="flex items-center gap-2"><i class="ti ti-chess opacity-60"></i><span>Тактика</span></div><div class="flex items-center gap-2"><i class="ti ti-flame opacity-60"></i><span>Самоотдача</span></div><div class="flex items-center gap-2"><i class="ti ti-network opacity-60"></i><span>Организация</span></div><div class="flex items-center gap-2"><i class="ti ti-brain opacity-60"></i><span>Менталитет</span></div></div>
               </div>
             </div>
@@ -79,10 +81,10 @@
               <div class="w-10 h-10 md:w-12 md:h-12 rounded-full bg-primary text-primary-content flex items-center justify-center font-bold flex-shrink-0">3</div>
               <div class="flex-1">
                 <div class="flex items-center justify-between gap-2 mb-1 md:mb-2">
-                  <h3 class="font-semibold text-base md:text-lg">Оценка игроков</h3>
+                  <h3 class="font-semibold text-base md:text-lg">Игроки</h3>
                   <span class="badge badge-primary badge-outline badge-xs md:badge-sm whitespace-nowrap">до +{{ xp_steps.players }} XP</span>
                 </div>
-                <p class="opacity-60 text-xs md:text-sm mb-2 md:mb-3">Оценивайте только тех игроков, которых запомнили. XP за этот шаг зависит от доли оценённого состава, а не фиксирован</p>
+                <p class="opacity-60 text-xs md:text-sm mb-2 md:mb-3">Оценивайте тех, кого запомнили. Чем больше игроков состава оценено, тем больше XP за шаг.</p>
                 <div class="flex flex-wrap gap-2"><span class="badge badge-xs md:badge-sm badge-outline">Вклад (1-10)</span><span class="badge badge-xs md:badge-sm badge-outline">Риск (1-10)</span><span class="badge badge-xs md:badge-sm badge-outline">Потенциал (1-10)</span></div>
               </div>
             </div>
@@ -90,18 +92,23 @@
               <div class="w-10 h-10 md:w-12 md:h-12 rounded-full bg-primary text-primary-content flex items-center justify-center font-bold flex-shrink-0">4-6</div>
               <div class="flex-1">
                 <div class="flex items-center justify-between gap-2 mb-1 md:mb-2">
-                  <h3 class="font-semibold text-base md:text-lg">Тренеры, судья, финал</h3>
+                  <h3 class="font-semibold text-base md:text-lg">Тренеры, судья, впечатления</h3>
                   <span class="badge badge-primary badge-outline badge-xs md:badge-sm whitespace-nowrap">+{{ xp_steps.coaches|add:xp_steps.referee|add:xp_steps.final }} XP</span>
                 </div>
-                <p class="opacity-60 text-xs md:text-sm mb-2 md:mb-3">Завершите оценку тренеров, судейства и общих впечатлений о матче</p>
+                <p class="opacity-60 text-xs md:text-sm mb-2 md:mb-3">Работа тренеров, судейство и общее впечатление от игры.</p>
                 <div class="flex flex-wrap gap-2"><span class="badge badge-xs md:badge-sm badge-outline">Тактика тренера</span><span class="badge badge-xs md:badge-sm badge-outline">Влияние судьи</span><span class="badge badge-xs md:badge-sm badge-outline">Зрелищность</span><span class="badge badge-xs md:badge-sm badge-outline">Напряжение</span></div>
               </div>
             </div>
           </div>
           <div class="alert alert-info mt-4 md:mt-6 text-xs md:text-sm">
             <i class="ti ti-info-circle"></i>
-            <span>Полное прохождение всех шагов даёт до <strong>{{ xp_full_match_total }} XP</strong> за матч. Итог умножается на ваш персональный коэффициент опыта (см. ниже).</span>
+            <span>За полностью пройденный матч можно получить до <strong>{{ xp_full_match_total }} XP</strong>. Сумма умножается на ваш коэффициент опыта, о нём ниже. XP начисляется, когда вы завершаете оценку. Брошенная на середине оценка в рейтинг не идёт.</span>
           </div>
+          <ul class="text-xs md:text-sm opacity-70 space-y-1.5 mt-4">
+            <li>• Пока идёт голосование, чужие оценки видны только тем, кто уже оценил матч. Так на ваше мнение не влияют чужие цифры.</li>
+            <li>• Рейтинг игрока в матче показываем, когда за него проголосовали хотя бы {{ min_votes }} человек.</li>
+            <li>• Завершённую оценку изменить нельзя.</li>
+          </ul>
         </div>
       </div>
     </section>
@@ -111,41 +118,39 @@
       <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4 md:p-6">
           <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4 flex items-center gap-2"><i class="ti ti-shield-check text-success"></i> Trust Score и вес голоса</h2>
-          <p class="opacity-60 mb-4 md:mb-6 text-sm md:text-base">Trust Score показывает надёжность ваших оценок: чем ближе они к консенсусу сообщества, тем он выше. От него зависит вес вашего голоса в средних оценках и скорость роста уровня.</p>
+          <p class="opacity-60 mb-4 md:mb-6 text-sm md:text-base">Trust Score показывает, насколько ваши оценки совпадают с итоговым мнением болельщиков. У новых пользователей он равен 1.0 и меняется в пределах от 0.5 до 2.0. От него зависят вес голоса и скорость роста уровня.</p>
 
           <div class="overflow-x-auto -mx-2 px-2 md:mx-0 md:px-0 mb-4 md:mb-6">
             <table class="table table-zebra min-w-[520px]">
               <thead><tr><th>Диапазон</th><th>Уровень</th><th>Что значит</th></tr></thead>
               <tbody>
-                <tr class="bg-success/10"><td class="font-mono">≥ 1.8</td><td><span class="badge badge-sm md:badge-md badge-success">Эксперт</span></td><td class="text-xs md:text-sm">Стабильно высокая точность оценок</td></tr>
-                <tr class="bg-warning/10"><td class="font-mono">1.4 – 1.79</td><td><span class="badge badge-sm md:badge-md badge-warning">Надёжный</span></td><td class="text-xs md:text-sm">Стабильные, последовательные оценки</td></tr>
-                <tr><td class="font-mono">1.0 – 1.39</td><td><span class="badge badge-sm md:badge-md badge-ghost">Стандарт</span></td><td class="text-xs md:text-sm">Базовый уровень доверия</td></tr>
-                <tr class="bg-error/10"><td class="font-mono">&lt; 1.0</td><td><span class="badge badge-sm md:badge-md badge-error">Новичок</span></td><td class="text-xs md:text-sm">Пока недостаточно данных, чтобы судить о точности</td></tr>
+                <tr class="bg-success/10"><td class="font-mono">1.8 и выше</td><td><span class="badge badge-sm md:badge-md badge-success">Эксперт</span></td><td class="text-xs md:text-sm">Оценки стабильно совпадают с итогом</td></tr>
+                <tr class="bg-warning/10"><td class="font-mono">1.4 – 1.79</td><td><span class="badge badge-sm md:badge-md badge-warning">Надёжный</span></td><td class="text-xs md:text-sm">Оценки чаще совпадают, чем расходятся</td></tr>
+                <tr><td class="font-mono">1.0 – 1.39</td><td><span class="badge badge-sm md:badge-md badge-ghost">Стандартный</span></td><td class="text-xs md:text-sm">Стартовый уровень у всех</td></tr>
+                <tr class="bg-error/10"><td class="font-mono">ниже 1.0</td><td><span class="badge badge-sm md:badge-md badge-error">Новичок</span></td><td class="text-xs md:text-sm">Оценки часто расходятся с большинством</td></tr>
               </tbody>
             </table>
           </div>
 
-          <h3 class="font-semibold text-sm md:text-base mb-2 md:mb-3">Из чего складывается вес вашего голоса</h3>
+          <h3 class="font-semibold text-sm md:text-base mb-2 md:mb-3">Из чего складывается вес голоса</h3>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 md:gap-3 mb-4 md:mb-6">
             <div class="flex items-center justify-between gap-2 p-3 bg-base-200 rounded-lg"><span class="text-xs md:text-sm opacity-70">Базовый вес</span><span class="font-mono font-bold text-sm">1.0</span></div>
-            <div class="flex items-center justify-between gap-2 p-3 bg-base-200 rounded-lg"><span class="text-xs md:text-sm opacity-70">Смотрели полный матч</span><span class="font-mono font-bold text-sm text-success">+0.2</span></div>
+            <div class="flex items-center justify-between gap-2 p-3 bg-base-200 rounded-lg"><span class="text-xs md:text-sm opacity-70">Смотрели матч целиком</span><span class="font-mono font-bold text-sm text-success">+0.2</span></div>
             <div class="flex items-center justify-between gap-2 p-3 bg-base-200 rounded-lg"><span class="text-xs md:text-sm opacity-70">Были на стадионе</span><span class="font-mono font-bold text-sm text-success">+0.2</span></div>
-            <div class="flex items-center justify-between gap-2 p-3 bg-base-200 rounded-lg"><span class="text-xs md:text-sm opacity-70">Trust Score &gt; 1.2</span><span class="font-mono font-bold text-sm text-success">+0.2</span></div>
-            <div class="flex items-center justify-between gap-2 p-3 bg-base-200 rounded-lg"><span class="text-xs md:text-sm opacity-70">Признаки предвзятости к своей команде</span><span class="font-mono font-bold text-sm text-error">до −0.625</span></div>
+            <div class="flex items-center justify-between gap-2 p-3 bg-base-200 rounded-lg"><span class="text-xs md:text-sm opacity-70">Trust Score выше 1.2</span><span class="font-mono font-bold text-sm text-success">+0.2</span></div>
+            <div class="flex items-center justify-between gap-2 p-3 bg-base-200 rounded-lg"><span class="text-xs md:text-sm opacity-70">Предвзятость к своей команде</span><span class="font-mono font-bold text-sm text-error">до −0.625</span></div>
           </div>
           <p class="text-xs opacity-50 mb-2">
-            Бонусы за просмотр независимы друг от друга и складываются: если вы были на стадионе
-            и досмотрели матч до конца, получите оба +0.2 сразу.
+            Бонусы складываются. Если вы были на стадионе и досмотрели матч, получите оба +0.2.
           </p>
           <p class="text-xs opacity-50 mb-2">
-            Штраф за предвзятость не фиксированный — он плавно растёт вместе с тем, насколько
-            систематически ваши оценки завышают свою команду и занижают соперника в предыдущих матчах,
-            и выше, если разрыв подозрительно одинаковый от матча к матчу (похоже на накрутку, а не на
-            искреннюю пристрастность). Небольшая тёплая пристрастность к своей команде не штрафуется вовсе.
+            Штраф за предвзятость растёт постепенно. Он зависит от того, насколько в прошлых матчах вы завышали
+            свою команду и занижали соперника. Если разрыв почти одинаковый от матча к матчу, штраф больше:
+            так обычно выглядит накрутка. Лёгкая симпатия к своему клубу не штрафуется.
           </p>
-          <p class="text-xs opacity-50 mb-4 md:mb-6">Итоговый вес всегда ограничен диапазоном 0.3 – 2.0. Ни один голос не может занулиться или перевесить остальные в разы.</p>
+          <p class="text-xs opacity-50 mb-4 md:mb-6">Итоговый вес всегда в пределах от 0.3 до 2.0. Голос не может обнулиться или перевесить остальные.</p>
 
-          <div class="alert alert-info text-xs md:text-sm"><i class="ti ti-info-circle"></i><div><h3 class="font-bold">Как повысить Trust Score?</h3><ul class="mt-2 space-y-1"><li>• Оценивайте матчи регулярно — Trust Score пересчитывается после закрытия голосования по матчу: учитываются оценки, которые вы поставили до того, как рейтинг игрока стал публичным.</li><li>• В рейтинг идут только завершённые оценки матча; после завершения изменить их нельзя.</li><li>• По возможности смотрите матч целиком.</li><li>• Не завышайте оценки своей команде и не занижайте сопернику.</li><li>• Оценивайте последовательно от матча к матчу.</li><li>• Если Trust Score снизился, просто продолжайте честно оценивать: раз в месяц он плавно возвращается к нейтральному уровню у всех активных пользователей.</li></ul></div></div>
+          <div class="alert alert-info text-xs md:text-sm"><i class="ti ti-info-circle"></i><div><h3 class="font-bold">Как меняется Trust Score</h3><ul class="mt-2 space-y-1"><li>• Его пересчитывают после закрытия голосования по матчу. В расчёт идут оценки, которые вы поставили до публикации рейтинга.</li><li>• Если ваши оценки совпадают с итогом, он растёт. Если регулярно расходятся, снижается.</li><li>• Раз в месяц Trust Score активных пользователей немного сдвигается к 1.0, поэтому старые промахи со временем забываются.</li><li>• Чтобы он рос: смотрите матчи целиком, не завышайте своих и не занижайте соперника.</li></ul></div></div>
         </div>
       </div>
     </section>
@@ -156,7 +161,7 @@
         <div class="card-body p-4 md:p-6">
           <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4 flex items-center gap-2"><i class="ti ti-trophy text-warning"></i> Опыт и достижения</h2>
 
-          <h3 class="font-semibold text-base md:text-lg mb-2 md:mb-3">Система опыта (XP)</h3>
+          <h3 class="font-semibold text-base md:text-lg mb-2 md:mb-3">Опыт (XP) за оценку матча</h3>
           <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs md:text-sm mb-3 md:mb-4">
             <div class="flex justify-between p-2 bg-base-200 rounded"><span>Контекст</span><span class="font-bold text-primary">+{{ xp_steps.context }}</span></div>
             <div class="flex justify-between p-2 bg-base-200 rounded"><span>Команды</span><span class="font-bold text-primary">+{{ xp_steps.teams }}</span></div>
@@ -165,7 +170,7 @@
             <div class="flex justify-between p-2 bg-base-200 rounded"><span>Судья</span><span class="font-bold text-primary">+{{ xp_steps.referee }}</span></div>
             <div class="flex justify-between p-2 bg-base-200 rounded"><span>Финал</span><span class="font-bold text-primary">+{{ xp_steps.final }}</span></div>
           </div>
-          <p class="text-xs md:text-sm opacity-60 mb-4 md:mb-6">Итог за полностью пройденный матч: до <strong>{{ xp_full_match_total }} XP</strong>, умноженных на ваш коэффициент опыта (<strong>×0.8 – ×1.2</strong> в зависимости от Trust Score). Чем точнее ваши оценки, тем быстрее растёт уровень.</p>
+          <p class="text-xs md:text-sm opacity-60 mb-4 md:mb-6">XP за оценку умножается на коэффициент от <strong>×0.8</strong> до <strong>×1.2</strong>: он зависит от Trust Score. Награды за серию дней, задания и приглашения начисляются без коэффициента.</p>
 
           <h3 class="font-semibold text-base md:text-lg mb-2 md:mb-3">Уровни</h3>
           <div class="overflow-x-auto -mx-2 px-2 md:mx-0 md:px-0 mb-2">
@@ -174,7 +179,7 @@
               <tbody><tr><td class="opacity-60">Суммарный XP</td>{% for ex in level_examples %}<td class="text-center font-mono">{{ ex.xp }}</td>{% endfor %}</tr></tbody>
             </table>
           </div>
-          <p class="text-xs opacity-50 mb-6 md:mb-8">Порог каждого уровня растёт. Чтобы дойти до высоких уровней, нужна реальная многомесячная вовлечённость, а не разовый всплеск активности.</p>
+          <p class="text-xs opacity-50 mb-6 md:mb-8">С каждым уровнем порог растёт. Высокие уровни набираются за месяцы, за один вечер их не взять.</p>
 
           <div class="flex items-center justify-between gap-2 mb-2 md:mb-3">
             <h3 class="font-semibold text-base md:text-lg">Достижения</h3>
@@ -202,7 +207,23 @@
             </div>
             {% endfor %}
           </div>
-          <p class="text-xs opacity-50 mt-3 md:mt-4">Наведите на значок, чтобы увидеть название. Полное описание условий смотрите в своём профиле. Достижения за качество оценок и прогнозов («Провидец», «Точный аналитик», «Без предвзятости», «Стабильная рука», «Максимальное доверие») перепроверяются раз в месяц: если показатель опустился ниже порога, значок остаётся в профиле, но помечается как временно неактуальный, и снова становится активным, когда показатель восстановится.</p>
+          <p class="text-xs opacity-50 mt-3 md:mt-4">Наведите на значок, чтобы увидеть название. Условия получения есть в каталоге достижений в профиле. Пять достижений за качество («Провидец», «Точный аналитик», «Без предвзятости», «Стабильная рука», «Максимальное доверие») перепроверяются в начале каждого месяца. Если показатель упал ниже порога, значок остаётся в профиле с пометкой «временно неактуально» и снова становится активным, когда показатель вернётся.</p>
+        </div>
+      </div>
+    </section>
+
+    {# Механики вовлечения #}
+    <section id="season" class="scroll-mt-24">
+      <div class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4 md:p-6">
+          <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4 flex items-center gap-2"><i class="ti ti-ticket text-warning"></i> Сезон, задания, друзья</h2>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 text-xs md:text-sm">
+            <div class="p-3 md:p-4 bg-base-200 rounded-lg"><h3 class="font-semibold mb-1"><i class="ti ti-flame text-warning mr-1"></i> Серия дней</h3><p class="opacity-70">Заходите на сайт каждый день, и серия растёт. За каждые {{ engagement_rules.freeze_every }} дней подряд даём заморозку (максимум {{ engagement_rules.max_freezes }}): она спасает серию, если вы пропустили день.</p></div>
+            <div class="p-3 md:p-4 bg-base-200 rounded-lg"><h3 class="font-semibold mb-1"><i class="ti ti-checklist text-primary mr-1"></i> Задания дня</h3><p class="opacity-70">Каждый день {{ engagement_rules.quests_per_day }} задания: оценить матч, сделать прогноз, проголосовать в опросе и другие. За каждое даём XP, а за все сразу ещё +{{ engagement_rules.all_done_xp }} XP.</p></div>
+            <div class="p-3 md:p-4 bg-base-200 rounded-lg"><h3 class="font-semibold mb-1"><i class="ti ti-ticket text-warning mr-1"></i> Сезонный пропуск</h3><p class="opacity-70">{{ engagement_rules.pass_levels }} уровней по {{ engagement_rules.xp_per_level }} XP. Весь XP, заработанный в сезоне, идёт и в пропуск. Награды: рамки аватара, достижения, золотой ник. Каждый сезон пропуск начинается с нуля, а уровень профиля и достижения остаются.</p></div>
+            <div class="p-3 md:p-4 bg-base-200 rounded-lg"><h3 class="font-semibold mb-1"><i class="ti ti-users-group text-info mr-1"></i> Друзья и прогнозы</h3><p class="opacity-70">Прогноз на исход матча (П1, Х, П2) принимается до стартового свистка. В лигах с друзьями за каждый угаданный исход даём очко. Если друг зарегистрируется по вашей ссылке и оценит первый матч, вы оба получите по {{ engagement_rules.referral_xp }} XP.</p></div>
+          </div>
+          <p class="text-xs opacity-50 mt-3">По вторникам и средам выходят опросы недели: «Спорный момент» по эпизоду прошлого тура и «Дуэль тура» двух игроков. Голос в опросе на рейтинги не влияет.</p>
         </div>
       </div>
     </section>
@@ -213,9 +234,9 @@
         <div class="card-body p-4 md:p-6">
           <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4 flex items-center gap-2"><i class="ti ti-scale text-info"></i> Fair Play</h2>
           <div class="space-y-3 md:space-y-4">
-            <div class="alert alert-warning text-xs md:text-sm"><i class="ti ti-alert-triangle"></i><div><h3 class="font-bold">Запрещено</h3><ul class="mt-2 space-y-1"><li>• Массовая накрутка оценок (боты, скрипты)</li><li>• Координация оценок в чатах и группах</li><li>• Создание множественных аккаунтов</li><li>• Систематическая предвзятость к своей команде</li></ul></div></div>
-            <div class="alert alert-success text-xs md:text-sm"><i class="ti ti-check"></i><div><h3 class="font-bold">Поощряется</h3><ul class="mt-2 space-y-1"><li>• Честные и объективные оценки</li><li>• Регулярное участие</li><li>• Просмотр полных матчей</li><li>• Оценка разных команд и игроков</li></ul></div></div>
-            <p class="text-xs opacity-50">Подозрительная активность (нетипичная скорость заполнения формы, кластеры аккаунтов с одного IP и похожие сигналы) выявляется автоматически и снижает вес голоса или приводит к ограничению аккаунта.</p>
+            <div class="alert alert-warning text-xs md:text-sm"><i class="ti ti-alert-triangle"></i><div><h3 class="font-bold">Запрещено</h3><ul class="mt-2 space-y-1"><li>• Накручивать оценки ботами и скриптами</li><li>• Договариваться в чатах, кому и как ставить оценки</li><li>• Заводить несколько аккаунтов</li><li>• Систематически завышать свою команду</li></ul></div></div>
+            <div class="alert alert-success text-xs md:text-sm"><i class="ti ti-check"></i><div><h3 class="font-bold">Приветствуется</h3><ul class="mt-2 space-y-1"><li>• Честные оценки</li><li>• Регулярное участие</li><li>• Просмотр матчей целиком</li><li>• Оценки разных команд и игроков</li></ul></div></div>
+            <p class="text-xs opacity-50">Подозрительную активность система замечает сама: слишком быстрое заполнение формы, много аккаунтов с одного IP и другие признаки. Такие голоса весят меньше, а аккаунт могут ограничить. Подробнее на <a href="{% url 'core:anti_fraud' %}" class="link">странице о защите от накрутки</a>.</p>
           </div>
         </div>
       </div>
@@ -225,12 +246,12 @@
     <section id="disclaimer" class="scroll-mt-24">
       <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4 md:p-6">
-          <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4 flex items-center gap-2"><i class="ti ti-info-circle text-neutral"></i> Что такое рейтинг DOPX (и чем он не является)</h2>
+          <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4 flex items-center gap-2"><i class="ti ti-info-circle text-neutral"></i> Что показывает рейтинг DOPX</h2>
           <div class="alert alert-info text-xs md:text-sm mb-4">
             <i class="ti ti-info-circle"></i>
-            <span>Оценки на DOPX: агрегированное субъективное мнение зрительской аудитории, а не факт о профессиональной компетенции игрока, тренера или судьи. Цифра на странице игрока показывает, как матч увидели болельщики, а не официальную экспертную оценку клуба, лиги или федерации.</span>
+            <span>Рейтинг на DOPX показывает, как матч увидели болельщики. Это сводка субъективных мнений зрителей. Он не оценивает профессиональный уровень игрока, тренера или судьи и не заменяет мнение клуба, лиги или федерации.</span>
           </div>
-          <p class="opacity-70 text-sm md:text-base mb-3">Мы серьёзно относимся к точности данных (см. раздел выше и <a href="{% url 'core:anti_fraud' %}" class="link link-primary">страницу о борьбе с накруткой</a>), но методология DOPX остаётся статистикой мнений, а не судейским или экспертным заключением. Если вы упомянуты на платформе как игрок, тренер, судья или представитель клуба и считаете, что рейтинг или данные о вас некорректны, у вас есть право на ответ.</p>
+          <p class="opacity-70 text-sm md:text-base mb-3">Мы следим за качеством данных (см. <a href="{% url 'core:anti_fraud' %}" class="link link-primary">как мы боремся с накруткой</a>), но это всё равно статистика мнений. Если вы игрок, тренер, судья или представитель клуба и считаете, что рейтинг или данные о вас неверны, напишите нам. Мы ответим.</p>
           <a href="{% url 'core:contacts' %}?category=dispute" class="btn btn-outline btn-sm">
             <i class="ti ti-message-report"></i> Оспорить рейтинг / написать нам
           </a>
@@ -243,10 +264,10 @@
       <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4 md:p-6">
           <h2 class="text-xl md:text-2xl font-bold mb-3 md:mb-4 flex items-center gap-2"><i class="ti ti-lock text-neutral"></i> Конфиденциальность</h2>
-          <p class="opacity-70 text-sm md:text-base mb-4">Мы собираем только данные, необходимые для работы платформы (оценки, контекст просмотра, технические данные для безопасности), не продаём их третьим лицам и удаляем аккаунт по запросу в течение 30 дней.</p>
+          <p class="opacity-70 text-sm md:text-base mb-4">Мы храним то, без чего сайт не работает: аккаунт, оценки, прогнозы, технические данные для защиты от накрутки. Данные не продаём. Аккаунт удаляем по запросу в течение 30 дней.</p>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 mb-4 md:mb-6">
-            <div class="p-3 md:p-4 bg-base-200 rounded-lg"><h3 class="font-semibold mb-2 text-sm"><i class="ti ti-eye text-success mr-1"></i> Публично</h3><p class="text-xs opacity-70">Имя пользователя, город, Trust Score, число оценок, достижения, уровень</p></div>
-            <div class="p-3 md:p-4 bg-base-200 rounded-lg"><h3 class="font-semibold mb-2 text-sm"><i class="ti ti-eye-off text-error mr-1"></i> Приватно</h3><p class="text-xs opacity-70">Email, пароль (хэшируется), IP-адрес, история сессий, настройки уведомлений</p></div>
+            <div class="p-3 md:p-4 bg-base-200 rounded-lg"><h3 class="font-semibold mb-2 text-sm"><i class="ti ti-eye text-success mr-1"></i> Видно другим</h3><p class="text-xs opacity-70">Имя пользователя, город, Trust Score, число оценок, уровень, достижения, место в рейтингах и лигах. Страницу профиля можно закрыть в настройках, имя в рейтингах при этом останется.</p></div>
+            <div class="p-3 md:p-4 bg-base-200 rounded-lg"><h3 class="font-semibold mb-2 text-sm"><i class="ti ti-eye-off text-error mr-1"></i> Видно только вам</h3><p class="text-xs opacity-70">Email, пароль (хранится в виде хеша), IP-адрес, настройки уведомлений, ваши голоса в опросах.</p></div>
           </div>
           <a href="{% url 'core:privacy' %}" class="btn btn-outline btn-sm">
             <i class="ti ti-file-text"></i> Полная политика конфиденциальности
@@ -260,8 +281,8 @@
     {# Текст primary-content, кнопка инвертирована. #}
     <div class="card" style="background-image: linear-gradient(to bottom right, var(--color-primary), color-mix(in oklab, var(--color-primary) 80%, transparent));">
       <div class="card-body p-4 md:p-6 text-center text-primary-content">
-        <h3 class="text-xl md:text-2xl font-bold mb-2">Готовы начать?</h3>
-        <p class="opacity-90 mb-3 md:mb-4 text-sm md:text-base">Оцените свой первый матч и получите первые XP и бейдж «Первая оценка»</p>
+        <h3 class="text-xl md:text-2xl font-bold mb-2">С чего начать</h3>
+        <p class="opacity-90 mb-3 md:mb-4 text-sm md:text-base">Оцените первый матч: получите XP и достижение «Первая оценка».</p>
         <a href="{% url 'matches:list' %}?status=finished" class="btn btn-md md:btn-lg bg-primary-content text-primary border-none hover:opacity-90">К матчам</a>
       </div>
     </div>

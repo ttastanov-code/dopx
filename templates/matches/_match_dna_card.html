@@ -103,13 +103,13 @@
         {% if e %}
         <div>
             <div class="dna-split" role="img" aria-label="Прогнозы: П1 {{ e.home_pct }}%, ничья {{ e.draw_pct }}%, П2 {{ e.away_pct }}%">
-                <span class="{% if e.result == '1' %}is-result{% endif %}" style="flex: {{ e.home_pct|default:1 }}">П1 {{ e.home_pct }}%</span>
-                <span class="{% if e.result == 'X' %}is-result{% endif %}" style="flex: {{ e.draw_pct|default:1 }}">X {{ e.draw_pct }}%</span>
-                <span class="{% if e.result == '2' %}is-result{% endif %}" style="flex: {{ e.away_pct|default:1 }}">П2 {{ e.away_pct }}%</span>
+                <span class="{% if e.result == '1' %}is-result{% endif %}" style="flex-grow: {{ e.home_pct|default:1 }}">П1 {{ e.home_pct }}%</span>
+                <span class="{% if e.result == 'X' %}is-result{% endif %}" style="flex-grow: {{ e.draw_pct|default:1 }}">X {{ e.draw_pct }}%</span>
+                <span class="{% if e.result == '2' %}is-result{% endif %}" style="flex-grow: {{ e.away_pct|default:1 }}">П2 {{ e.away_pct }}%</span>
             </div>
             <p class="text-xs mt-1.5 leading-snug">
                 <span class="font-semibold">Угадали {{ e.guessed_pct }}%</span>
-                <span class="opacity-60">из {{ e.total }} {{ e.total|ru_plural:"прогноза,прогнозов,прогнозов" }} · фаворит — {{ e.favorite_title }} ({{ e.favorite_pct }}%)</span>
+                <span class="opacity-60">из {{ e.total }} {{ e.total|ru_plural:"прогноза,прогнозов,прогнозов" }} · фаворит: {{ e.favorite_title }} ({{ e.favorite_pct }}%)</span>
             </p>
         </div>
         {% endif %}

@@ -22,10 +22,20 @@ PREDICT_RATE_LIMIT_WINDOW_SECONDS = 60
 
 
 def _widget_context(request, match):
+    my_prediction = user_prediction(request.user, match)
+    challenge_url = ''
+    if my_prediction and match.is_prediction_open:
+        from django.urls import reverse
+
+        from engagement.referrals import code_for
+        challenge_url = request.build_absolute_uri(
+            reverse('engagement:challenge', args=[code_for(request.user), match.id])
+        )
     return {
         'match': match,
         'counts': prediction_counts(match),
-        'my_prediction': user_prediction(request.user, match),
+        'my_prediction': my_prediction,
+        'challenge_url': challenge_url,
     }
 
 

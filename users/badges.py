@@ -53,7 +53,7 @@ BADGE_CATALOG: dict[str, BadgeDefinition] = {
     "active_fan_150": BadgeDefinition(
         code="active_fan_150",
         name="Легенда трибун",
-        description="Оценили 150 матчей — вы часть истории платформы.",
+        description="Оценили 150 матчей.",
         rarity="gold",
     ),
     # Серия — по турам, а не по дням.
@@ -79,19 +79,19 @@ BADGE_CATALOG: dict[str, BadgeDefinition] = {
     "accurate_analyst": BadgeDefinition(
         code="accurate_analyst",
         name="Точный аналитик",
-        description="Ваши оценки стабильно близки к консенсусу сообщества.",
+        description="Ваши оценки обычно близки к итоговому рейтингу.",
         rarity="silver",
     ),
     "foresight": BadgeDefinition(
         code="foresight",
         name="Провидец",
-        description="Высокий устойчивый trust score на большой выборке оценок.",
+        description="Высокий Trust Score, который держится много матчей.",
         rarity="gold",
     ),
     "bias_free": BadgeDefinition(
         code="bias_free",
         name="Без предвзятости",
-        description="Оцениваете свою команду и соперника объективно.",
+        description="Не завышаете свою команду и не занижаете соперника.",
         rarity="silver",
     ),
     "early_bird": BadgeDefinition(
@@ -109,7 +109,7 @@ BADGE_CATALOG: dict[str, BadgeDefinition] = {
     "polyglot": BadgeDefinition(
         code="polyglot",
         name="Полиглот лиги",
-        description="Оценили игроков 8+ разных команд КПЛ — широкий, непредвзятый взгляд.",
+        description="Оценили игроков из 8 и более команд КПЛ.",
         rarity="gold",
     ),
     # --- Прогнозы ---
@@ -170,7 +170,7 @@ BADGE_CATALOG: dict[str, BadgeDefinition] = {
     "both_sides": BadgeDefinition(
         code="both_sides",
         name="Обе стороны",
-        description="В 15+ матчах оценили игроков ОБЕИХ команд, а не только своих.",
+        description="В 15 и более матчах оценили игроков обеих команд.",
         rarity="silver",
     ),
     "full_season": BadgeDefinition(
@@ -201,7 +201,7 @@ BADGE_CATALOG: dict[str, BadgeDefinition] = {
     "perfect_tour": BadgeDefinition(
         code="perfect_tour",
         name="Идеальный тур",
-        description="Угадали исход АБСОЛЮТНО ВСЕХ матчей одного тура чемпионата.",
+        description="Угадали исход всех матчей одного тура.",
         rarity="legendary",
     ),
     "streak_250": BadgeDefinition(
@@ -219,7 +219,7 @@ BADGE_CATALOG: dict[str, BadgeDefinition] = {
     "season_completionist": BadgeDefinition(
         code="season_completionist",
         name="Стоглазый",
-        description="Оценили ВСЕ завершённые матчи одного полного сезона — без единого пропуска.",
+        description="Оценили все завершённые матчи одного сезона, без пропусков.",
         rarity="legendary",
     ),
     "max_trust": BadgeDefinition(
@@ -227,6 +227,42 @@ BADGE_CATALOG: dict[str, BadgeDefinition] = {
         name="Максимальное доверие",
         description="Достигли максимального уровня доверия платформы на большой выборке оценок.",
         rarity="legendary",
+    ),
+    # --- Серия дней (engagement/streaks.py) ---
+    "day_streak_7": BadgeDefinition(
+        code="day_streak_7", name="Неделя с DOPX", description="Заходили на DOPX 7 дней подряд.", rarity="bronze",
+    ),
+    "day_streak_30": BadgeDefinition(
+        code="day_streak_30", name="Месяц на трибуне", description="Заходили на DOPX 30 дней подряд.", rarity="silver",
+    ),
+    "day_streak_100": BadgeDefinition(
+        code="day_streak_100", name="Сто дней с командой", description="Заходили на DOPX 100 дней подряд.", rarity="gold",
+    ),
+    "day_streak_365": BadgeDefinition(
+        code="day_streak_365", name="Год без пропусков", description="Заходили на DOPX 365 дней подряд.", rarity="legendary",
+    ),
+    # --- Приглашения (engagement/referrals.py) ---
+    "came_with_friend": BadgeDefinition(
+        code="came_with_friend", name="Пришёл с другом", description="Присоединились по приглашению и оценили первый матч.", rarity="bronze",
+    ),
+    "recruiter_1": BadgeDefinition(
+        code="recruiter_1", name="Позвал на трибуну", description="Приглашённый вами друг оценил свой первый матч.", rarity="bronze",
+    ),
+    "recruiter_5": BadgeDefinition(
+        code="recruiter_5", name="Заводила сектора", description="Пятеро приглашённых друзей оценили матчи.", rarity="gold",
+    ),
+    "recruiter_20": BadgeDefinition(
+        code="recruiter_20", name="Капо фанатов", description="Двадцать приглашённых друзей оценили матчи.", rarity="legendary",
+    ),
+    # --- Сезонный пропуск (engagement/season.py) ---
+    "season_pass_10": BadgeDefinition(
+        code="season_pass_10", name="Болельщик сезона", description="Достигли 10 уровня сезонного пропуска.", rarity="silver",
+    ),
+    "season_pass_20": BadgeDefinition(
+        code="season_pass_20", name="Опора трибун", description="Достигли 20 уровня сезонного пропуска.", rarity="gold",
+    ),
+    "season_pass_30": BadgeDefinition(
+        code="season_pass_30", name="Легенда сезона", description="Прошли все 30 уровней сезонного пропуска.", rarity="legendary",
     ),
 }
 

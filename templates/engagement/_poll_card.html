@@ -1,0 +1,29 @@
+{% comment %}
+Опрос недели (engagement/polls.py): один тап — голос, сразу результат. Стили — css/ui.css (dx-poll).
+Контекст: item = {poll, my, results}.
+{% endcomment %}
+{% load ui_extras %}
+{% with poll=item.poll r=item.results %}
+<article id="poll-{{ poll.id }}" class="dx-poll dx-poll--{{ poll.kind }}">
+    <div class="dx-poll__eyebrow">
+        <i class="ti {% if poll.kind == 'episode' %}ti-scale{% else %}ti-swords{% endif %}"></i>
+        {{ poll.get_kind_display }}
+        {% if r %}<span class="dx-poll__total">{{ r.total }} {{ r.total|ru_plural:"голос,голоса,голосов" }}</span>{% endif %}
+    </div>
+    <h3 class="dx-poll__q">{{ poll.question }}</h3>
+    {% if poll.kind == 'episode' %}
+    <a href="{% url 'matches:detail' poll.match_id %}" class="dx-poll__ctx">{{ poll.context }}</a>
+    {% elif poll.context %}
+    <p class="dx-poll__ctx">{{ poll.context }}</p>
+    {% endif %}
+    <div class="dx-poll__opts">
+        {% include 'engagement/_poll_option.html' with key='a' label=poll.option_a detail=poll.detail_a pct=r.pct_a player=poll.player_a %}
+        {% include 'engagement/_poll_option.html' with key='b' label=poll.option_b detail=poll.detail_b pct=r.pct_b player=poll.player_b %}
+    </div>
+    {% if not user.is_authenticated %}
+    <p class="dx-poll__hint"><a href="{% url 'users:login' %}?next={{ request.path|urlencode }}">Войдите</a> и голосуйте. Результат увидите сразу.</p>
+    {% elif r %}
+    <p class="dx-poll__hint">Голос учтён. Опрос открыт до {{ poll.closes_at|date:"d.m" }}.</p>
+    {% endif %}
+</article>
+{% endwith %}

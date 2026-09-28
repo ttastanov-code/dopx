@@ -28,7 +28,7 @@
     {% if not has_filled_slots and other_seasons and not best_xi.is_final %}
     <div class="alert alert-info text-xs md:text-sm mt-3">
       <i class="ti ti-info-circle"></i>
-      <span>Сезон {{ season.year }} только начался — для сборной нужно минимум {{ min_matches_for_candidate }} оценённых матча у игрока. Пока можно посмотреть итоговую сборную сезона {{ other_seasons.0.year }}.</span>
+      <span>Сезон {{ season.year }} только начался. Чтобы попасть в сборную, игроку нужно хотя бы {{ min_matches_for_candidate }} оценённых матча. Пока можно посмотреть итоговую сборную сезона {{ other_seasons.0.year }}.</span>
     </div>
     {% endif %}
   </div>
@@ -74,11 +74,10 @@
       </div>
       <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4">
-          <h3 class="font-bold mb-2 text-sm flex items-center gap-1.5"><i class="ti ti-info-circle text-info"></i> Это не официальная сборная</h3>
+          <h3 class="font-bold mb-2 text-sm flex items-center gap-1.5"><i class="ti ti-info-circle text-info"></i> Неофициальная сборная</h3>
           <p class="text-xs opacity-60">
-            Это не выбор клуба, лиги или федерации. Это состав по оценкам болельщиков DOPX. Пока сезон {{ season.year }}
-            идёт, состав живой: любая новая оценка может поднять или опустить игрока, вплоть до замены в составе.
-            Когда сезон закончится, состав зафиксируется как «Сборная DOPX сезона {{ season.year }}».
+            Состав собран по оценкам болельщиков DOPX, клуб, лига и федерация его не выбирали. Пока сезон {{ season.year }}
+            идёт, новые оценки могут поменять состав. После сезона он зафиксируется как «Сборная DOPX сезона {{ season.year }}».
           </p>
         </div>
       </div>
@@ -142,8 +141,8 @@
               <div class="flex-1">
                 <h3 class="font-semibold text-base md:text-lg mb-1">Один игрок, один слот</h3>
                 <p class="opacity-60 text-xs md:text-sm">
-                  Слоты формации заполняются по очереди, от самых узких амплуа к самым широким. Игрок, занявший
-                  позицию, не может занять другую: состав всегда состоит из 11 разных футболистов.
+                  Позиции заполняем по очереди, начиная с самых узких амплуа. Один игрок занимает одну позицию,
+                  поэтому в составе всегда 11 разных футболистов.
                 </p>
               </div>
             </div>
@@ -152,8 +151,7 @@
               <div class="flex-1">
                 <h3 class="font-semibold text-base md:text-lg mb-1">Пересчёт каждые 15 минут</h3>
                 <p class="opacity-60 text-xs md:text-sm">
-                  Состав пересчитывается по расписанию, а не после каждого голоса. Отметка «обновлено N минут назад»
-                  вверху страницы показывает время последнего пересчёта.
+                  Отметка «обновлено N минут назад» вверху страницы показывает, когда был последний пересчёт.
                 </p>
               </div>
             </div>

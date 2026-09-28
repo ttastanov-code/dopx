@@ -27,6 +27,7 @@ SECTION_PATH_MAP: list[tuple[str, str]] = [
     ("/staff/dashboard/audit/", "audit"),
     ("/staff/dashboard/announcements/", "announcements"),
     ("/staff/dashboard/mourning/", "mourning"),
+    ("/staff/dashboard/social/", "social_content"),
     ("/staff/dashboard/settings/", "platform_settings"),
     ("/staff/dashboard/system-status/", "system_status"),
     ("/staff/dashboard/scripts/", "scripts"),

@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+{# Готовые посты по итогам тура: engagement/social.py. Каждый понедельник собирает Celery. #}
+<div class="flex flex-wrap items-end justify-between gap-3 mb-4">
+    <div>
+        <div class="dopx-section-eyebrow"><i class="ti ti-photo-share"></i>Контент для соцсетей</div>
+        <div class="dopx-section-title">{% if content %}{{ content.title }}{% if not content.is_final %} · тур ещё не зафиксирован{% endif %}{% else %}Данных тура пока нет{% endif %}</div>
+        <p class="text-xs opacity-55 mt-1">Картинка 1200×630 + подпись. Собирается автоматически по понедельникам в 10:00.</p>
+    </div>
+    <form method="post">{% csrf_token %}<button type="submit" class="btn btn-sm btn-outline"><i class="ti ti-refresh"></i> Пересобрать</button></form>
+</div>
+
+{% if content and content.posts %}
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    {% for post in content.posts %}
+    <div class="card bg-base-100 border border-base-300 overflow-hidden">
+        <img src="{{ post.image }}" alt="{{ post.title }}" class="w-full aspect-[1200/630] object-cover bg-base-200" loading="lazy">
+        <div class="card-body p-4 gap-3">
+            <div class="font-bold flex items-center gap-2"><i class="ti {{ post.icon }} text-primary"></i>{{ post.title }}</div>
+            <textarea readonly rows="4" class="textarea textarea-bordered text-sm w-full" onclick="this.select()">{{ post.caption }}</textarea>
+            <div class="flex flex-wrap gap-2">
+                <button type="button" class="btn btn-sm btn-primary" data-copy="{{ post.caption }}"><i class="ti ti-copy"></i> <span data-share-label>Копировать подпись</span></button>
+                <a href="{{ post.image }}" download class="btn btn-sm btn-outline"><i class="ti ti-download"></i> Скачать картинку</a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="card bg-base-100 border border-base-300"><div class="card-body p-6 text-center opacity-60 text-sm">Как только появятся оценки тура, здесь будут готовые посты.</div></div>
+{% endif %}
+{% endblock %}

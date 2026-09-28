@@ -307,7 +307,7 @@ class EvaluateTeamsView(LoginRequiredMixin, TemplateView, EvaluationWizardMixin)
         if rated_teams:
             messages.success(request, f'Оценки команд сохранены: {rated_teams} из 2.')
         else:
-            messages.info(request, 'Команды пропущены — ни один критерий не был отмечен.')
+            messages.info(request, 'Команды пропущены: вы не отметили ни одного критерия.')
         return redirect('evaluations:players', match_id=self.match.id)
 
     def get_context_data(self, **kwargs):
@@ -516,7 +516,7 @@ class EvaluateCoachesView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
         elif rated_coaches:
             messages.success(request, f'Оценки тренеров сохранены: {rated_coaches} из {total_coaches}.')
         else:
-            messages.info(request, 'Тренеры пропущены — ни один критерий не был отмечен.')
+            messages.info(request, 'Тренеры пропущены: вы не отметили ни одного критерия.')
         return redirect('evaluations:referee', match_id=self.match.id)
 
     def get_context_data(self, **kwargs):
@@ -564,7 +564,7 @@ class EvaluateRefereeView(LoginRequiredMixin, FormView, EvaluationWizardMixin):
         if touched:
             messages.success(self.request, 'Оценка судейства сохранена.')
         else:
-            messages.info(self.request, 'Судейство пропущено — ни один критерий не был отмечен.')
+            messages.info(self.request, 'Судейство пропущено: вы не отметили ни одного критерия.')
         return redirect('evaluations:match_eval', match_id=self.match.id)
 
     def get_context_data(self, **kwargs):
@@ -679,7 +679,7 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
             transaction.on_commit(
                 partial(
                     send_push_task.delay, [str(user.id)],
-                    f'⬆️ Новый уровень {top_level}!', f'У вас {xp.total_xp} XP — так держать.',
+                    f'⬆️ Новый уровень {top_level}!', f'Всего {xp.total_xp} XP.',
                     '/users/profile/', 'achievement', f'level-{user.id}',
                 )
             )

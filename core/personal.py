@@ -76,8 +76,13 @@ def personal_summary(user) -> dict:
         .order_by('start_time')
     )
 
+    from engagement import quests, season, streaks
+
     xp = getattr(user, 'xp', None)
     return {
+        'quests': quests.today_quests(user),
+        'day_streak': streaks.state(user),
+        'season_pass': season.overview(user),
         'pending_count': votable.count(),
         # Следующий матч для оценки, кроме уже начатого.
         'next_other': votable.exclude(id=in_progress.match_id).first() if in_progress else None,

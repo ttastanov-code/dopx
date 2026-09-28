@@ -49,6 +49,7 @@ urlpatterns = [
     path('', include('partners.urls')),
     # Staff-дашборд (доступ проверяется во вьюхах).
     path('staff/dashboard/', include('dashboard.urls')),
+    path('', include('engagement.urls')),
     # sitemap кэшируется на 12 ч.
     path('sitemap.xml', cache_page(60 * 60 * 12)(sitemap), {'sitemaps': sitemaps}, name='sitemap'),
     path('robots.txt', robots_txt, name='robots'),

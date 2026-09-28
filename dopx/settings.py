@@ -103,6 +103,7 @@ INSTALLED_APPS = [
     'season_squad',
     # Сборная и игрок тура.
     'round_squad',
+    'engagement',
     # Партнёры и баннеры.
     'partners',
     # axes — защита от перебора паролей, django_otp — 2FA.
@@ -309,6 +310,12 @@ UNFOLD = {
                     {"title": _("Оценки тренеров"), "icon": "badge", "link": reverse_lazy("admin:evaluations_coachevaluation_changelist"), "permission": admin_perm("evaluations_coachevaluation")},
                     {"title": _("Оценки судей"), "icon": "gavel", "link": reverse_lazy("admin:evaluations_refereeevaluation_changelist"), "permission": admin_perm("evaluations_refereeevaluation")},
                     {"title": _("Оценки матча"), "icon": "reviews", "link": reverse_lazy("admin:evaluations_matchevaluation_changelist"), "permission": admin_perm("evaluations_matchevaluation")},
+                    {"title": _("Мнения экспертов"), "icon": "record_voice_over", "link": reverse_lazy("admin:engagement_experttake_changelist"), "permission": admin_perm("engagement_experttake")},
+                    {"title": _("Лиги с друзьями"), "icon": "groups", "link": reverse_lazy("admin:engagement_friendleague_changelist"), "permission": admin_perm("engagement_friendleague")},
+                    {"title": _("Приглашения"), "icon": "person_add", "link": reverse_lazy("admin:engagement_referral_changelist"), "permission": admin_perm("engagement_referral")},
+                    {"title": _("Серии дней"), "icon": "local_fire_department", "link": reverse_lazy("admin:engagement_dailystreak_changelist"), "permission": admin_perm("engagement_dailystreak")},
+                    {"title": _("Опросы недели"), "icon": "how_to_vote", "link": reverse_lazy("admin:engagement_dailypoll_changelist"), "permission": admin_perm("engagement_dailypoll")},
+                    {"title": _("Сезонный пропуск"), "icon": "confirmation_number", "link": reverse_lazy("admin:engagement_seasonpass_changelist"), "permission": admin_perm("engagement_seasonpass")},
                 ],
             },
             {
@@ -403,6 +410,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'engagement.middleware.DailyStreakMiddleware',
     # axes — после AuthenticationMiddleware.
     'axes.middleware.AxesMiddleware',
     # django-otp — после AuthenticationMiddleware.
@@ -658,6 +666,21 @@ GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
 GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-3.8-flash')
 
 CELERY_BEAT_SCHEDULE = {
+    # Контент для соцсетей по итогам тура — понедельник утром.
+    # Опросы недели: вт — спорный момент, ср — дуэль тура.
+    'weekly-polls': {
+        'task': 'engagement.tasks.publish_weekly_polls',
+        'schedule': crontab(hour=12, minute=0, day_of_week='2,3'),
+    },
+    # Серия дней под угрозой — вечером.
+    'streaks-at-risk': {
+        'task': 'engagement.tasks.notify_streaks_at_risk',
+        'schedule': crontab(hour=19, minute=0),
+    },
+    'weekly-social-content': {
+        'task': 'engagement.tasks.generate_weekly_social_content',
+        'schedule': crontab(hour=10, minute=0, day_of_week=1),
+    },
     # =========================================================================
     # Celery Beat
     # =========================================================================

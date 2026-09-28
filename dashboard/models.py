@@ -155,6 +155,7 @@ DASHBOARD_SECTIONS = [
     ("audit", _("Аудит")),
     ("announcements", _("Объявления")),
     ("mourning", _("Режим траура")),
+    ("social_content", _("Контент для соцсетей")),
     ("platform_settings", _("Настройки платформы")),
     ("system_status", _("Системный статус")),
     ("scripts", _("Скрипты и команды")),

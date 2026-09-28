@@ -335,7 +335,7 @@ def notify_voting_closing_soon(self):
 
         # Notification — заодно маркер дедупа для следующих прогонов.
         action_url = reverse('matches:detail', args=[match.id])
-        message = 'Голосование за этот матч закрывается в течение часа — успейте оценить, пока не поздно.'
+        message = 'Меньше чем через час голосование закроется. Успейте оценить матч.'
         Notification.objects.bulk_create([
             Notification(
                 user_id=uid, notification_type='voting_closing', title=subject,
@@ -348,7 +348,7 @@ def notify_voting_closing_soon(self):
         if push_ids:
             pushed += _push_fan_out(
                 push_ids, f"⏳ Последний час: {match.home_team.name} — {match.away_team.name}",
-                "Голосование скоро закроется — оцените матч, пока ваш голос учитывается.",
+                "Голосование скоро закроется. Оцените матч, пока голос ещё засчитывается.",
                 action_url, kind='voting_closing', tag=f'vote-{match.id}',
             )
 
@@ -550,7 +550,7 @@ def notify_followers_match_activity(self, match_id: str):
         return {'notified': 0}
 
     title = f"🏁 Финал: {match.home_team.name} {match.get_score_display()} {match.away_team.name}"
-    message = "Оцените игроков — голосование открыто 48 часов."
+    message = "Оцените игроков, пока открыто голосование."
     action_url = reverse('matches:detail', args=[match.id])
 
     Notification.objects.bulk_create([
@@ -575,7 +575,7 @@ def notify_followers_match_activity(self, match_id: str):
     for user in _UserModel.objects.filter(id__in=audience_user_ids, is_verified=True, email__isnull=False):
         if _send_email_to_user(
             user,
-            f'{title} — голосование открыто',
+            f'{title}: голосование открыто',
             'emails/voting_open.html',
             {'match': match, 'title': title},
             notification_type='voting_open',
@@ -639,7 +639,7 @@ def notify_followers_match_started(self, match_id: str):
         return {'notified': 0}
 
     title = f"⚽️ Матч начался: {match.home_team.name} — {match.away_team.name}"
-    message = "Стартовый свисток прозвучал — следите за матчем в реальном времени."
+    message = "Матч начался. Счёт и события обновляются на сайте в прямом эфире."
     action_url = reverse('matches:detail', args=[match.id])
 
     Notification.objects.bulk_create([
@@ -678,7 +678,7 @@ def notify_followers_lineups_available(self, match_id: str):
         return {'notified': 0}
 
     title = f"📋 Составы объявлены: {match.home_team.name} — {match.away_team.name}"
-    message = "Стартовые составы уже на сайте — посмотрите, кто выйдет на поле."
+    message = "Стартовые составы уже на сайте."
     action_url = reverse('matches:detail', args=[match.id])
 
     Notification.objects.bulk_create([
@@ -721,7 +721,7 @@ def notify_followers_match_changed(self, match_id: str, change: str, old_start_i
 
     teams = f"{match.home_team.name} — {match.away_team.name}"
     if change == 'cancelled':
-        title, message = f"❌ Матч отменён: {teams}", "Матч не состоится — подробности на странице матча."
+        title, message = f"❌ Матч отменён: {teams}", "Матч не состоится. Подробности на странице матча."
     elif change == 'postponed':
         title, message = f"📅 Матч перенесён: {teams}", "Новую дату сообщим, как только её объявят."
     else:
@@ -802,15 +802,15 @@ def notify_followers_match_event(self, match_id: str, event_id: str):
         message = f"{player_name} забивает на {event.display_minute}-й минуте." if player_name else f"Гол на {event.display_minute}-й минуте."
     elif event.event_type == 'own_goal':
         title = f"⚽ Автогол! {home} {score} {away}"
-        message = f"{player_name} — автогол на {event.display_minute}-й минуте." if player_name else f"Автогол на {event.display_minute}-й минуте."
+        message = f"Автогол: {player_name}, {event.display_minute}-я минута." if player_name else f"Автогол на {event.display_minute}-й минуте."
     elif event.event_type == 'penalty':
         title = f"🎯 Пенальти! {home} {score} {away}"
         message = f"{player_name} с пенальти на {event.display_minute}-й минуте." if player_name else f"Пенальти на {event.display_minute}-й минуте."
     elif event.event_type == 'disallowed_goal':
-        title = f"❌ Гол отменён (VAR) — {home} {score} {away}"
+        title = f"❌ Гол отменён (VAR). {home} {score} {away}"
         message = f"Гол на {event.display_minute}-й минуте отменён после проверки VAR."
     elif event.event_type == 'red_card':
-        title = f"🟥 Красная карточка — {home} {score} {away}"
+        title = f"🟥 Красная карточка. {home} {score} {away}"
         message = f"{player_name} получает красную карточку на {event.display_minute}-й минуте." if player_name else f"Красная карточка на {event.display_minute}-й минуте."
     else:
         # Неподходящий тип — тихо выходим.
@@ -897,7 +897,7 @@ def notify_prediction_closing_soon(self):
             _send_match_email_chunk.delay(chunk, str(match.id), subject, 'emails/prediction_closing.html', 'prediction_closing')
             queued += 1
 
-        title = f'{match.home_team.name} vs {match.away_team.name} — кто победит?'
+        title = f'{match.home_team.name} vs {match.away_team.name}: кто победит?'
         message = 'Матч начинается через час. Успейте поставить прогноз на исход, пока приём открыт.'
         action_url = reverse('matches:detail', args=[match.id])
 
@@ -1048,7 +1048,7 @@ def notify_prediction_results(self):
                         push_body = f"{score}. Серия: {streak} подряд 🔥" if streak >= 2 else f"{score}."
                     else:
                         push_title = "❌ Прогноз не сбылся"
-                        push_body = f"{score}. Следующий матч — новый шанс."
+                        push_body = f"{score}. В следующий раз повезёт."
                     _push_fan_out(
                         user_ids, push_title, push_body, action_url,
                         kind='prediction_result', tag=f'pred-{match.id}',
@@ -1247,8 +1247,8 @@ def notify_ratings_published(self):
             )
             title = f"📊 Итоги оценок: {match.home_team.name} {match.get_score_display()} {match.away_team.name}"
             message = (
-                f"Игрок матча — {mvp.player.full_name} ({mvp.performance_score:.1f}). Сравните со своими оценками."
-                if mvp else "Голосование закрыто — рейтинги игроков открыты для всех."
+                f"Игрок матча: {mvp.player.full_name} ({mvp.performance_score:.1f}). Сравните со своими оценками."
+                if mvp else "Голосование закрыто, рейтинги игроков открыты."
             )
             action_url = reverse('matches:detail', args=[match.id])
             Notification.objects.bulk_create([
@@ -1268,8 +1268,8 @@ def notify_ratings_published(self):
 
 
 CONTACT_RESOLVED_TEXT = {
-    'data_error': ("✅ Данные матча исправлены", "Спасибо, что сообщили об ошибке — мы её проверили и исправили."),
-    'dispute': ("Ваше обращение рассмотрено", "Мы разобрали ваше обращение по рейтингу. Подробности — в письме."),
+    'data_error': ("✅ Данные матча исправлены", "Спасибо, что написали. Мы проверили и исправили данные."),
+    'dispute': ("Ваше обращение рассмотрено", "Мы разобрали ваше обращение по рейтингу. Подробности в письме."),
 }
 
 
@@ -1282,7 +1282,7 @@ def notify_contact_resolved(ticket) -> None:
     from notifications.models import Notification
 
     title, message = CONTACT_RESOLVED_TEXT.get(
-        ticket.category, ("Обращение решено", f"«{ticket.subject}» — вопрос решён. Спасибо, что написали нам."),
+        ticket.category, ("Обращение решено", f"Обращение «{ticket.subject}» закрыто. Спасибо, что написали."),
     )
     url = reverse('matches:detail', args=[ticket.related_match_id]) if ticket.related_match_id else reverse('notifications:list')
     Notification.objects.create(

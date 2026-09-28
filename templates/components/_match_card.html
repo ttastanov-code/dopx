@@ -137,7 +137,7 @@ data-background-poll — без глобального лоадера.
             {% else %}
             <i class="ti ti-trending-up"></i>
             {% endif %}
-            <span><strong>{{ match.home_team.name }}</strong> — {{ match.card_home_form_text }}</span>
+            <span><strong>{{ match.home_team.name }}</strong>: {{ match.card_home_form_text }}</span>
         </div>
         {% endif %}
         {% if match.card_away_form_text %}
@@ -147,7 +147,7 @@ data-background-poll — без глобального лоадера.
             {% else %}
             <i class="ti ti-trending-up"></i>
             {% endif %}
-            <span><strong>{{ match.away_team.name }}</strong> — {{ match.card_away_form_text }}</span>
+            <span><strong>{{ match.away_team.name }}</strong>: {{ match.card_away_form_text }}</span>
         </div>
         {% endif %}
         {% if match.card_h2h %}
@@ -194,9 +194,9 @@ data-background-poll — без глобального лоадера.
 
     {% if match.card_sensation %}
     {# Пояснение к индексу сенсации в тексте. #}
-    <div class="mrow__sensation" title="Насколько итог разошёлся с ожиданиями болельщиков — по прогнозам до матча или по голосованию после него">
+    <div class="mrow__sensation" title="Насколько результат удивил болельщиков. Считаем по прогнозам до матча или по голосованию после него">
         <i class="ti ti-alert-triangle flex-shrink-0"></i>
-        <span>Сенсация {{ match.card_sensation }}/100 — итог удивил большинство болельщиков</span>
+        <span>Сенсация {{ match.card_sensation }}/100: такого исхода мало кто ждал</span>
     </div>
     {% endif %}
 

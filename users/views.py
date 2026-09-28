@@ -17,7 +17,7 @@ from django.contrib.auth.views import (
 )
 from django.contrib import messages
 from django.views.generic import CreateView, TemplateView, ListView, UpdateView, FormView, View
-from django.urls import reverse_lazy
+from django.urls import reverse, reverse_lazy
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.db.models import Count, Avg, Q, F, Sum, Window
 
@@ -89,6 +89,19 @@ class RegisterView(CreateView):
         user.save()
         UserXP.objects.get_or_create(user=user)
 
+        # Приглашение друга и лига, по ссылке которой пришли (engagement).
+        from engagement import friend_leagues, referrals
+        from engagement.models import FriendLeague
+
+        referrals.attach(self.request, user)
+        league_code = self.request.session.pop('join_league_after_signup', None)
+        league = FriendLeague.objects.filter(invite_code=league_code).first() if league_code else None
+        if league:
+            try:
+                friend_leagues.join(user, league)
+            except friend_leagues.LeagueError:
+                pass
+
         # Аналитика: шаг воронки «регистрация». ref — партнёрская атрибуция из cookie.
         from django.core.signing import BadSignature
 
@@ -153,7 +166,7 @@ class VerifyEmailView(View):
             # Токен живёт 48 часов.
             token_age = timezone.now() - user.verification_token_created_at
             if token_age > timedelta(hours=48):
-                messages.error(request, 'Ссылка для подтверждения устарела. Войдите с паролем — мы пришлём новую.')
+                messages.error(request, 'Ссылка для подтверждения устарела. Войдите с паролем, и мы пришлём новую.')
                 return redirect('users:login')
 
             user.is_verified = True
@@ -207,7 +220,7 @@ class LoginView(AuthLoginView):
                 f'resend_verification:{user.id}',
                 RESEND_VERIFICATION_RATE_LIMIT, RESEND_VERIFICATION_RATE_LIMIT_WINDOW_SECONDS,
             ):
-                messages.warning(self.request, 'Почта не подтверждена. Письмо уже отправлено — проверьте почту и папку «Спам».')
+                messages.warning(self.request, 'Почта не подтверждена. Письмо уже отправлено, проверьте входящие и папку «Спам».')
                 return redirect('users:login')
             user.refresh_verification_token()
             try:
@@ -289,19 +302,36 @@ class ProfileView(LoginRequiredMixin, TemplateView):
             match__status='finished',
         ).select_related('match').order_by('-created_at')[:5]
 
-        # Незавершённые сессии (включая с закрытым голосованием): XP за их шаги
-        # уже начислен, показываем это в профиле.
-        incomplete_sessions = user.evaluation_sessions.filter(status__in=['started', 'in_progress'])
-        incomplete_sessions_count = incomplete_sessions.count()
+        from engagement import season, streaks
+        from predictions.services import correct_predictions_count
+
+        brags = []
+        if user.is_profile_public:
+            def _brag(kind, number, title, text):
+                brags.append({
+                    'kind': kind, 'number': number, 'title': title, 'text': text,
+                    'image': self.request.build_absolute_uri(reverse('engagement:brag_card', args=[user.username, kind])),
+                })
+            hits = correct_predictions_count(user)
+            if hits:
+                _brag('predictions', hits, 'прогноз сбылся', f'Мой прогноз сбылся уже {hits} раз на DOPX. Сможешь лучше?')
+            day = streaks.state(user)
+            if day and day['current'] >= 2:
+                _brag('day_streak', day['current'], 'дней подряд', f'{day["current"]} дней подряд на DOPX без пропусков!')
+            pass_data = season.overview(user)
+            if pass_data and pass_data['xp'] > 0:
+                _brag('season', pass_data['level'], 'уровень сезона', f'Уровень {pass_data["level"]} сезонного пропуска DOPX')
+        profile_url = self.request.build_absolute_uri(reverse('users:public_profile', args=[user.username]))
 
         context.update({
+            'brags': brags,
+            'profile_share_url': profile_url,
             'user': user,
             'stats': stats,
             'recent_evaluations': recent_evaluations,
             'badges': badges,
             'xp': xp,
             'active_sessions': active_sessions,
-            'incomplete_sessions_count': incomplete_sessions_count,
             'page_title': f'Профиль — {user.username}'
         })
         return context
@@ -325,7 +355,7 @@ class BadgeCatalogView(LoginRequiredMixin, TemplateView):
             catalog.append({
                 'code': code,
                 'name': definition.name if (is_earned or not definition.is_secret) else '???',
-                'description': definition.description if (is_earned or not definition.is_secret) else 'Секретное достижение — условия получения не раскрываются заранее.',
+                'description': definition.description if (is_earned or not definition.is_secret) else 'Секретное достижение. Условия узнаете, когда получите его.',
                 'rarity': definition.rarity,
                 'is_secret': definition.is_secret,
                 'earned': is_earned,

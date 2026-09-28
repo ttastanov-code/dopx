@@ -185,7 +185,7 @@
         {% if not has_enough_votes %}
         <div class="alert alert-warning py-2 px-3 text-xs mb-3">
           <i class="ti ti-alert-triangle"></i>
-          <span>Мало данных — оценка основана всего на {{ stats.total_votes }} голосах, показатель может быть неустойчивым.</span>
+          <span>Голосов пока мало ({{ stats.total_votes }}), поэтому цифра может сильно меняться.</span>
         </div>
         {% endif %}
         {# Шкала 1-10 -> проценты через widthratio. #}

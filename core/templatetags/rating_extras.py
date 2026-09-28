@@ -53,11 +53,11 @@ def bias_segment_text(aggregate) -> str:
         return ""
     parts = []
     if aggregate.own_fans_avg is not None:
-        parts.append(f"свои болельщики — {aggregate.own_fans_avg:.1f}")
+        parts.append(f"свои болельщики {aggregate.own_fans_avg:.1f}")
     if aggregate.rival_fans_avg is not None:
-        parts.append(f"болельщики соперника — {aggregate.rival_fans_avg:.1f}")
+        parts.append(f"болельщики соперника {aggregate.rival_fans_avg:.1f}")
     if aggregate.neutral_avg is not None:
-        parts.append(f"нейтральные зрители — {aggregate.neutral_avg:.1f}")
+        parts.append(f"нейтральные зрители {aggregate.neutral_avg:.1f}")
     if len(parts) < 2:
         # Меньше 2 сегментов — сравнивать не с чем.
         return ""

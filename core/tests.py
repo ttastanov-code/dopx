@@ -165,7 +165,7 @@ class ConfidenceBadgeTooltipTests(SimpleTestCase):
     def test_tooltip_merges_stability_and_segments_into_one_sentence(self):
         result = confidence_badge(self._agg())
         tooltip = result["tooltip_text"]
-        self.assertIn("Мнения расходятся: свои болельщики — 8.0", tooltip)
+        self.assertIn("Мнения расходятся: свои болельщики 8.0", tooltip)
         self.assertNotIn("фанаты игрока", tooltip)
         # Без задвоения «мнения».
         self.assertNotIn("мнения мнения", tooltip.lower())

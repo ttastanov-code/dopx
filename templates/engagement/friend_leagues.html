@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+{% load ui_extras %}
+
+{% block content %}
+{# Лиги прогнозистов с друзьями: engagement/friend_leagues.py. #}
+<div class="max-w-3xl mx-auto px-2 sm:px-0 space-y-5">
+    <section class="dx-pass-hero dx-pass-hero--leagues">
+        <div class="dx-pass-hero__main">
+            <div class="dx-pass-hero__eyebrow"><i class="ti ti-users-group"></i> Лиги с друзьями</div>
+            <h1 class="dx-pass-hero__title">Кто из вас лучше угадывает матчи?</h1>
+            <p class="dx-pass-hero__meta">Создайте лигу и киньте ссылку в чат. За каждый угаданный исход даём очко, таблица обновляется после каждого тура.</p>
+            <p class="dx-pass-hero__hint">Например: «Сектор B», «Офис», «Одноклассники».</p>
+            <form method="post" class="dx-league-create">
+                {% csrf_token %}
+                <input type="text" name="name" maxlength="60" required placeholder="Название лиги" aria-label="Название лиги">
+                <button type="submit"><i class="ti ti-plus"></i> Создать</button>
+            </form>
+        </div>
+    </section>
+
+    {% if leagues %}
+    <section class="space-y-2">
+        {% for item in leagues %}
+        <a href="{% url 'engagement:friend_league' item.league.invite_code %}" class="dx-league-row">
+            <span class="dx-league-row__ico"><i class="ti ti-trophy"></i></span>
+            <span class="dx-league-row__body">
+                <span class="dx-league-row__name">{{ item.league.name }}</span>
+                <span class="dx-league-row__meta">{{ item.members }} {{ item.members|ru_plural:"участник,участника,участников" }}{% if item.leader and item.leader.points %} · лидер {{ item.leader.user.username }} ({{ item.leader.points }}){% endif %}</span>
+            </span>
+            {% if item.my_place %}<span class="dx-league-row__place"><b>{{ item.my_place }}</b><small>место</small></span>{% endif %}
+            <i class="ti ti-chevron-right opacity-30"></i>
+        </a>
+        {% endfor %}
+    </section>
+    {% else %}
+    <div class="dx-card text-center py-8">
+        <i class="ti ti-users-group text-3xl opacity-30"></i>
+        <p class="mt-2 text-sm opacity-60">Вы пока не состоите ни в одной лиге. Создать свою можно за пару секунд.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

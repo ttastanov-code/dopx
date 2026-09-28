@@ -47,7 +47,7 @@
                             {% with season_id=round_xi.season_id|stringformat:"s" tour=round_xi.tour|stringformat:"s" %}
                             {% include "emails/partials/_button.html" with button_url=site_url|add:"/season/"|add:season_id|add:"/round/"|add:tour|add:"/" button_label="Смотреть полный состав тура" %}
                             {% endwith %}
-                            <p style="margin: 32px 0 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; font-style: italic; color: #A1A1AA;">— Команда DOPX</p>
+                            <p style="margin: 32px 0 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; font-style: italic; color: #A1A1AA;">Команда DOPX</p>
                         </td>
                     </tr>
                     {% include "emails/partials/_footer.html" with show_notification_settings=True %}

@@ -2,9 +2,22 @@
 """Сервисный слой прогнозов 1X2."""
 from __future__ import annotations
 
-from django.db.models import Count, Q
+from django.db.models import Count, F, Q
 
 from .models import MatchPrediction
+
+
+def correct_prediction_q() -> Q:
+    """Фильтр угаданных прогнозов по счёту матча (для матчей со статусом finished)."""
+    return (
+        Q(choice="1", match__home_score__gt=F("match__away_score"))
+        | Q(choice="2", match__away_score__gt=F("match__home_score"))
+        | Q(choice="X", match__home_score=F("match__away_score"))
+    )
+
+
+def correct_predictions_count(user) -> int:
+    return MatchPrediction.objects.filter(user=user, match__status="finished").filter(correct_prediction_q()).count()
 
 
 def submit_prediction(*, user, match, choice: str) -> tuple[MatchPrediction, bool] | tuple[None, bool]:

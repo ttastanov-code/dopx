@@ -59,16 +59,12 @@
                     <div class="w-full bg-base-200 rounded-full h-2">
                         <div class="bg-primary h-2 rounded-full" style="width: {{ xp.progress_percent }}%"></div>
                     </div>
-                    {# Предупреждение: часть XP — из незавершённых вайзардов. #}
-                    {% if incomplete_sessions_count %}
-                    {% tooltip_wrap "XP начисляется по мере прохождения шагов вайзарда, ещё до его завершения — эти сессии не учитываются в счётчике «Матчей» и не влияют на Trust Score/достижения." %}
+                    {# Незавершённые оценки с открытым голосованием: XP за них ещё не начислен. #}
+                    {% if active_sessions %}
+                    {% tooltip_wrap "XP за шаги копится и начисляется, когда вы завершите оценку. Если голосование закроется раньше, оценка и XP не засчитаются." %}
                     <div class="text-xs opacity-50 mt-2 flex items-center gap-1 cursor-help">
                         <i class="ti ti-info-circle"></i>
-                        {% if incomplete_sessions_count == 1 %}
-                        Часть XP — из 1 незавершённой оценки
-                        {% else %}
-                        Часть XP — из {{ incomplete_sessions_count }} незавершённых оценок
-                        {% endif %}
+                        Незавершённых оценок: {{ active_sessions|length }}. Завершите их, чтобы получить XP
                     </div>
                     {% endtooltip_wrap %}
                     {% endif %}
@@ -80,7 +76,7 @@
         {# Плитки с подсказками; иконка в углу карточки (absolute). #}
         <div class="grid grid-cols-2 gap-4">
             <div class="stat relative bg-base-100 border border-base-300 p-4">
-                <div class="absolute top-2 right-2 z-10">{% include 'components/_tooltip_icon.html' with text="Сколько отдельных оценок вы поставили — игрокам, командам, тренерам и судьям суммарно за все матчи" %}</div>
+                <div class="absolute top-2 right-2 z-10">{% include 'components/_tooltip_icon.html' with text="Сколько оценок вы поставили игрокам, командам, тренерам и судьям за все матчи" %}</div>
                 <div class="stat-title text-xs whitespace-normal leading-snug pr-4">Оценок</div>
                 <div class="stat-value text-2xl">{{ stats.total_ratings_given }}</div>
             </div>
@@ -90,12 +86,12 @@
                 <div class="stat-value text-2xl">{{ stats.total_players }}</div>
             </div>
             <div class="stat relative bg-base-100 border border-base-300 p-4">
-                <div class="absolute top-2 right-2 z-10">{% include 'components/_tooltip_icon.html' with text="Сколько матчей вы оценили полностью — прошли вайзард оценки до конца" %}</div>
+                <div class="absolute top-2 right-2 z-10">{% include 'components/_tooltip_icon.html' with text="Сколько матчей вы оценили до конца" %}</div>
                 <div class="stat-title text-xs whitespace-normal leading-snug pr-4">Матчей</div>
                 <div class="stat-value text-2xl">{{ stats.total_matches }}</div>
             </div>
             <div class="stat relative bg-base-100 border border-base-300 p-4">
-                <div class="absolute top-2 right-2 z-10">{% include 'components/_tooltip_icon.html' with text="Сколько туров чемпионата подряд вы оценивали хотя бы один матч — пропущенный тур сбрасывает серию" %}</div>
+                <div class="absolute top-2 right-2 z-10">{% include 'components/_tooltip_icon.html' with text="Сколько туров подряд вы оценивали хотя бы один матч. Пропустили тур, и серия начинается заново" %}</div>
                 <div class="stat-title text-xs whitespace-normal leading-snug pr-4">Серия оценок</div>
                 <div class="stat-value text-2xl text-accent">{{ stats.evaluation_streak }}</div>
             </div>
@@ -105,7 +101,7 @@
                 <div class="stat-value text-2xl">{{ stats.total_predictions }}</div>
             </div>
             <div class="stat relative bg-base-100 border border-base-300 p-4">
-                <div class="absolute top-2 right-2 z-10">{% include 'components/_tooltip_icon.html' with text="Сколько прогнозов подряд вы угадали — первая же ошибка сбрасывает серию в 0" %}</div>
+                <div class="absolute top-2 right-2 z-10">{% include 'components/_tooltip_icon.html' with text="Сколько прогнозов подряд вы угадали. Первая ошибка обнуляет серию" %}</div>
                 <div class="stat-title text-xs whitespace-normal leading-snug pr-4">Серия прогнозов</div>
                 <div class="stat-value text-2xl text-secondary">{{ stats.prediction_streak }}</div>
             </div>
@@ -124,6 +120,20 @@
             </a>
             {% endif %}
         </div>
+        {% endif %}
+        {% if brags %}
+        {# Карточки «похвастаться» — картинка для сторис + ссылка на профиль. #}
+        <div class="dx-brags">
+            {% for b in brags %}
+            <div class="dx-brag dx-brag--{{ b.kind }}">
+                <div class="dx-brag__num">{{ b.number }}</div>
+                <div class="dx-brag__title">{{ b.title }}</div>
+                {% include 'components/_share_sheet.html' with url=profile_share_url text=b.text image=b.image label="Похвастаться" %}
+            </div>
+            {% endfor %}
+        </div>
+        {% elif not user.is_profile_public %}
+        <p class="text-xs opacity-60">Откройте профиль в настройках, чтобы делиться карточками достижений.</p>
         {% endif %}
         {# Достижения #}
         {# Цвет — по редкости бейджа. #}

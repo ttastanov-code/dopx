@@ -12,9 +12,21 @@
                 {% if personal.pending_count %}
                 {{ personal.pending_count }} {{ personal.pending_count|ru_plural:"матч ждёт,матча ждут,матчей ждут" }} вашей оценки
                 {% else %}
-                Все доступные матчи оценены — отличная работа
+                Все доступные матчи оценены
                 {% endif %}
             </p>
+            <div class="dx-hello__chips">
+                {% if personal.day_streak and personal.day_streak.current %}
+                <span class="dx-chip-stat dx-chip-stat--flame{% if not personal.day_streak.done_today %} is-cold{% endif %}" title="Серия дней. Заходите каждый день. Рекорд: {{ personal.day_streak.best }}">
+                    <i class="ti ti-flame"></i>{{ personal.day_streak.current }} {{ personal.day_streak.current|ru_plural:"день,дня,дней" }}
+                    {% if personal.day_streak.freezes %}<span class="dx-chip-stat__freeze" title="Заморозки: закроют пропущенный день"><i class="ti ti-snowflake"></i>{{ personal.day_streak.freezes }}</span>{% endif %}
+                </span>
+                {% endif %}
+                {% if personal.season_pass %}
+                <a href="{% url 'engagement:season_pass' %}" class="dx-chip-stat dx-chip-stat--season"><i class="ti ti-ticket"></i>Сезон · ур. {{ personal.season_pass.level }}</a>
+                {% endif %}
+                <a href="{% url 'engagement:friend_leagues' %}" class="dx-chip-stat"><i class="ti ti-users-group"></i>Лиги с друзьями</a>
+            </div>
         </div>
         <a href="{% url 'users:profile' %}" class="dx-level" title="Ваш уровень и опыт">
             <span class="dx-level__ring" style="--p: {{ personal.xp_progress }}"><span>{{ personal.level }}</span></span>
@@ -112,4 +124,25 @@
             <i class="ti ti-chevron-right dx-action__chevron"></i>
         </a>
     </div>
+
+    {% if personal.quests.items %}
+    <div class="dx-quests">
+        <div class="dx-quests__head">
+            <span class="dx-quests__title"><i class="ti ti-checklist"></i> Задания дня</span>
+            <span class="dx-quests__meta">{% if personal.quests.all_done %}Все выполнены · +{{ personal.quests.bonus_xp }} XP бонус получен{% else %}{{ personal.quests.done }} из {{ personal.quests.total }} · за все +{{ personal.quests.bonus_xp }} XP{% endif %}</span>
+        </div>
+        <div class="dx-quests__list">
+            {% for q in personal.quests.items %}
+            <a href="{{ q.url|default:'#' }}" class="dx-quest{% if q.done %} is-done{% endif %}">
+                <span class="dx-quest__ico"><i class="ti {% if q.done %}ti-check{% else %}{{ q.icon }}{% endif %}"></i></span>
+                <span class="dx-quest__body">
+                    <span class="dx-quest__title">{{ q.title }}</span>
+                    <span class="dx-quest__bar"><span style="width: {{ q.percent }}%"></span></span>
+                </span>
+                <span class="dx-quest__xp">{% if q.target > 1 %}<small>{{ q.progress }}/{{ q.target }}</small>{% endif %}+{{ q.xp }}</span>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
 </section>

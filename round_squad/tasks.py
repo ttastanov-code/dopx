@@ -146,10 +146,10 @@ def notify_round_xi_followers(round_xi) -> int:
     # Одна причина на пользователя: подписка на игрока важнее подписки на команду.
     reason_by_user: dict = {}
     for f in Follow.objects.filter(player_id__in=players.keys()).select_related('player'):
-        reason_by_user.setdefault(f.user_id, f"⭐ {f.player.full_name} — в сборной тура")
+        reason_by_user.setdefault(f.user_id, f"⭐ {f.player.full_name} в сборной тура")
     for f in Follow.objects.filter(team_id__in=team_players.keys()).select_related('team'):
         in_xi = team_players[f.team_id]
-        reason = f"⭐ {f.team.name}: {len(in_xi)} в сборной тура" if len(in_xi) > 1 else f"⭐ {in_xi[0].full_name} — в сборной тура"
+        reason = f"⭐ {f.team.name}: {len(in_xi)} в сборной тура" if len(in_xi) > 1 else f"⭐ {in_xi[0].full_name} в сборной тура"
         reason_by_user.setdefault(f.user_id, reason)
 
     action_url = reverse('round_squad:round', args=[round_xi.season_id, round_xi.tour])
@@ -162,7 +162,7 @@ def notify_round_xi_followers(round_xi) -> int:
     if not reason_by_user:
         return 0
 
-    body = f"{round_xi.brand_title} готовы — посмотрите состав."
+    body = f"{round_xi.brand_title} уже на сайте."
     Notification.objects.bulk_create([
         Notification(
             user_id=uid, notification_type='round_results', title=title, message=body, action_url=action_url,

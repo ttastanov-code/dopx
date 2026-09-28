@@ -14,7 +14,7 @@
             <h1 class="text-2xl font-bold mb-1">Матч оценён!</h1>
             {% if total_rated %}
             <p class="text-xs text-base-content/60">
-                Вы вошли в <span class="font-bold text-base-content/80">{{ total_rated }}</span> оценок этого матча —
+                Вы вошли в <span class="font-bold text-base-content/80">{{ total_rated }}</span> оценок этого матча:
                 {% with p=rated_counts.players t=rated_counts.teams c=rated_counts.coaches r=rated_counts.referee %}
                 {% if p %}игроков: {{ p }}{% endif %}{% if p and t %}, {% endif %}{% if t %}команд: {{ t }}{% endif %}{% if c %}{% if p or t %}, {% endif %}тренеров: {{ c }}{% endif %}{% if r %}{% if p or t or c %}, {% endif %}судья{% endif %}
                 {% endwith %}
@@ -40,7 +40,7 @@
                         <span class="font-bold text-xl text-secondary">
                             <i class="ti ti-hourglass"></i>
                         </span>
-                        <span class="text-[9px] text-base-content/50 text-center">Trust Score — после закрытия голосования</span>
+                        <span class="text-[9px] text-base-content/50 text-center">Trust Score обновится после голосования</span>
                     </div>
                 </div>
             </div>

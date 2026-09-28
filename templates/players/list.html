@@ -83,7 +83,7 @@
           {# Бейдж «Покинул клуб» для is_active=False — рейтинг таких игроков остаётся. #}
           {% if not player.is_active %}
           <span class="inline-flex items-center gap-1 text-[10px] font-semibold text-warning opacity-80 mt-0.5"
-                title="Больше не найден в текущем составе — сменил клуб или покинул КПЛ">
+                title="Нет в текущем составе: сменил клуб или ушёл из КПЛ">
             <i class="ti ti-door-exit"></i> покинул клуб
           </span>
           {% endif %}

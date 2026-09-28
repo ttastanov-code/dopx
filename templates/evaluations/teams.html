@@ -20,13 +20,13 @@
 
 <div class="max-w-4xl mx-auto px-3 text-center mb-5">
     <h2 class="text-xl sm:text-2xl font-extrabold mb-1">Оцените игру команд</h2>
-    <p class="text-sm text-base-content/60">По каждому пункту — от 1 до 10</p>
+    <p class="text-sm text-base-content/60">Каждый пункт от 1 до 10</p>
 </div>
 
 <!-- === FORM === -->
 <div class="max-w-4xl mx-auto px-3">
     <form method="post" data-wizard-draft action="{% url 'evaluations:teams' match.id %}" class="space-y-5"
-          data-wz-untouched-hint="Потяните, чтобы оценить — иначе этот критерий не будет учтён">
+          data-wz-untouched-hint="Потяните ползунок, иначе критерий не засчитается">
         {% csrf_token %}
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">

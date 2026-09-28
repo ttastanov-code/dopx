@@ -6,8 +6,8 @@
   <h1 class="text-2xl md:text-3xl font-bold mb-2 flex items-center gap-2">
     <i class="ti ti-shield-check mr-2"></i> Защита от накрутки
   </h1>
-  <p class="opacity-60 text-sm md:text-base max-w-2xl">Рейтинг DOPX учитывает не только средний балл, но и качество выборки. Здесь рассказываем, как мы считаем оценки и защищаем рейтинг от накрутки.</p>
-  <p class="opacity-50 text-xs md:text-sm max-w-2xl mt-2">Эти механизмы проверяют надёжность голосов. Они не оценивают профессиональные качества игроков, тренеров и судей. Подробнее в разделе <a href="{% url 'core:rules' %}#disclaimer" class="link link-primary">«Что такое рейтинг DOPX»</a>.</p>
+  <p class="opacity-60 text-sm md:text-base max-w-2xl">Как мы считаем рейтинг и что делаем, чтобы его нельзя было накрутить.</p>
+  <p class="opacity-50 text-xs md:text-sm max-w-2xl mt-2">Всё описанное ниже проверяет голоса, а не игроков, тренеров и судей. Что показывает сам рейтинг, написано в разделе <a href="{% url 'core:rules' %}#disclaimer" class="link link-primary">«Что показывает рейтинг DOPX»</a>.</p>
 </div>
 
 {# === ЖИВЫЕ ЦИФРЫ (мобильный; на десктопе — в сайдбаре) === #}
@@ -83,7 +83,7 @@
       <div class="card bg-base-100 border border-base-300">
         <div class="card-body p-4">
           <h3 class="font-bold text-sm mb-2">Хотите подробнее?</h3>
-          <p class="text-xs opacity-60 mb-3">Правила платформы и принципы Trust Score.</p>
+          <p class="text-xs opacity-60 mb-3">Вес голоса, уровни Trust Score и остальные правила.</p>
           <a href="{% url 'core:rules' %}" class="btn btn-sm btn-primary btn-block">
             <i class="ti ti-file-text"></i> Правила платформы
           </a>
@@ -103,15 +103,15 @@
             <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0"><i class="ti ti-scale text-primary"></i></div>
             Голоса весят по-разному
           </h2>
-          <p class="opacity-70 text-sm md:text-base mb-4">Итоговый балл не равен простому среднему из всех голосов. У каждого голоса есть вес, и считается он автоматически. Точные формулы не публикуем: это часть защиты системы. Вот из чего вес складывается:</p>
+          <p class="opacity-70 text-sm md:text-base mb-4">Итоговый балл считается с учётом веса каждого голоса. Составляющие веса и их размер описаны в правилах. Пороги, по которым срабатывают проверки, мы не публикуем, иначе их было бы проще обойти.</p>
           <div class="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-3">
             <div class="p-3 bg-base-200 rounded-lg text-center">
               <div class="flex justify-center mb-1"><i class="ti ti-circle-dot text-lg opacity-60"></i></div>
-              <div class="text-xs opacity-60 mt-1">Старт одинаковый для всех</div>
+              <div class="text-xs opacity-60 mt-1">У всех старт 1.0</div>
             </div>
             <div class="p-3 bg-base-200 rounded-lg text-center">
               <div class="flex justify-center mb-1"><i class="ti ti-arrow-up text-lg text-success"></i></div>
-              <div class="text-xs opacity-60 mt-1">Плюс за полный просмотр матча</div>
+              <div class="text-xs opacity-60 mt-1">Плюс за полный матч и стадион</div>
             </div>
             <div class="p-3 bg-base-200 rounded-lg text-center">
               <div class="flex justify-center mb-1"><i class="ti ti-arrow-up text-lg text-success"></i></div>
@@ -124,9 +124,9 @@
           </div>
           <div class="mt-4 p-3 bg-base-200/60 rounded-lg text-xs md:text-sm opacity-70 flex gap-2">
             <i class="ti ti-bulb text-warning flex-shrink-0 mt-0.5"></i>
-            <span>Систематическая предвзятость снижает вес голоса всегда, даже если проявляется постепенно и без резких оценок.</span>
+            <span>Предвзятость снижает вес, даже если человек ставит умеренные оценки, но из матча в матч тянет свою команду вверх.</span>
           </div>
-          <p class="text-xs opacity-50 mt-4">Полная таблица уровней Trust Score на <a href="{% url 'core:rules' %}#trust" class="link link-primary">странице правил</a>.</p>
+          <p class="text-xs opacity-50 mt-4">Таблица уровней Trust Score и точные цифры веса есть на <a href="{% url 'core:rules' %}#trust" class="link link-primary">странице правил</a>.</p>
         </div>
       </div>
     </section>
@@ -139,33 +139,33 @@
             <div class="w-10 h-10 rounded-lg bg-info/10 flex items-center justify-center flex-shrink-0"><i class="ti ti-chart-histogram text-info"></i></div>
             Как понять, можно ли доверять рейтингу
           </h2>
-          <p class="opacity-70 text-sm md:text-base mb-4">Рядом с числом рейтинга на странице игрока, матча или команды всегда стоит один из трёх бейджей:</p>
+          <p class="opacity-70 text-sm md:text-base mb-4">Рядом с рейтингом игрока, матча или команды стоит одна из трёх отметок:</p>
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-3 mb-4">
             <div class="p-3 md:p-4 bg-base-200 rounded-lg">
               <span class="badge badge-ghost badge-sm mb-2">Мало оценок</span>
-              <p class="text-xs opacity-60">Голосов пока мало. Рейтинг не показывается: мнение одного-двух зрителей не должно выглядеть как общее.</p>
+              <p class="text-xs opacity-60">Голосов меньше порога. Рейтинг в топы и сравнения не попадает: мнение пары зрителей не должно выглядеть как общее.</p>
             </div>
             <div class="p-3 md:p-4 bg-base-200 rounded-lg">
               <span class="badge badge-info badge-outline badge-sm mb-2">Оценок хватает</span>
-              <p class="text-xs opacity-60">Оценок уже достаточно для показа, но выборка пока небольшая.</p>
+              <p class="text-xs opacity-60">Голосов достаточно для показа, но выборка ещё небольшая.</p>
             </div>
             <div class="p-3 md:p-4 bg-base-200 rounded-lg">
               <span class="badge badge-success badge-outline badge-sm mb-2">Оценок много</span>
-              <p class="text-xs opacity-60">Голосов достаточно, чтобы случайный выброс почти не влиял на итог.</p>
+              <p class="text-xs opacity-60">Голосов столько, что один случайный голос почти ничего не меняет.</p>
             </div>
           </div>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <p class="opacity-70 text-sm md:text-base mb-2">При наведении на бейдж видно три вещи:</p>
+              <p class="opacity-70 text-sm md:text-base mb-2">Если навести на отметку, будет видно:</p>
               <ul class="text-sm opacity-70 space-y-1.5 pl-4" style="list-style: disc;">
-                <li><strong>Насколько сходятся мнения.</strong> Сильный разброс оценок означает, что итоговое число сглаживает реальные разногласия.</li>
-                <li><strong>Кто голосовал.</strong> Отдельные средние для фанатов игрока, фанатов соперника и нейтральных зрителей.</li>
-                <li><strong>Штраф за необъективность.</strong> Растёт постепенно, а не только на самых крайних оценках.</li>
+                <li><strong>Сколько было голосов.</strong></li>
+                <li><strong>Насколько сходятся мнения.</strong> При большом разбросе среднее прячет настоящий спор.</li>
+                <li><strong>Кто голосовал.</strong> Средние отдельно у болельщиков клуба, болельщиков соперника и нейтральных зрителей.</li>
               </ul>
             </div>
             <div class="p-4 bg-base-200/60 rounded-lg text-sm opacity-70 flex items-start gap-2">
               <i class="ti ti-refresh text-info flex-shrink-0 mt-0.5"></i>
-              <span>Есть и вторая проверка, которая работает постоянно. После закрытия голосования Trust Score подстраивается под то, насколько ваши самостоятельные оценки (поставленные до публикации рейтинга) совпали с итоговым мнением сообщества. Оцениваете похоже на других: доверие растёт. Систематически расходитесь с большинством: снижается. Со временем Trust Score активных пользователей плавно возвращается к нейтральному уровню: старые ошибки не тянутся за вами вечно.</span>
+              <span>После закрытия голосования мы сравниваем ваши оценки, поставленные до публикации рейтинга, с итоговым результатом. Если они совпадают, Trust Score растёт, если регулярно расходятся, снижается. Раз в месяц он у активных пользователей немного сдвигается к 1.0, чтобы старые промахи не висели вечно.</span>
             </div>
           </div>
         </div>
@@ -180,37 +180,37 @@
             <div class="w-10 h-10 rounded-lg bg-error/10 flex items-center justify-center flex-shrink-0"><i class="ti ti-users-group text-error"></i></div>
             Защита от сговора
           </h2>
-          <p class="opacity-70 text-sm md:text-base mb-4">Болельщики иногда договариваются в соцсетях или чатах, чтобы массово занизить или завысить чью-то оценку. Это не бот-ферма: здесь стоят реальные люди с разных устройств, и обычная защита от ботов тут не спасает. Против этого у нас пять независимых механизмов.</p>
+          <p class="opacity-70 text-sm md:text-base mb-4">Бывает, что болельщики договариваются в чатах и дружно занижают или завышают чью-то оценку. Это живые люди с разных устройств, поэтому защита от ботов тут не поможет. На такой случай работают пять проверок.</p>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
             <div class="p-4 bg-base-200 rounded-lg">
               <div class="w-9 h-9 rounded-full bg-error text-error-content flex items-center justify-center font-bold mb-3"><i class="ti ti-crop text-sm"></i></div>
               <h3 class="font-semibold text-sm mb-1.5">Крайние оценки не решают исход</h3>
-              <p class="text-xs opacity-60">Самые крайние оценки не могут в одиночку или малой группой утащить итог в сторону. Честное мнение большинства, даже резко негативное после провальной игры, это не трогает.</p>
+              <p class="text-xs opacity-60">Небольшая группа с оценками «1» или «10» не сдвинет итог. Если после провальной игры резко недовольно большинство, это мнение учитывается как есть.</p>
             </div>
             <div class="p-4 bg-base-200 rounded-lg">
               <div class="w-9 h-9 rounded-full bg-error text-error-content flex items-center justify-center font-bold mb-3"><i class="ti ti-chart-dots text-sm"></i></div>
               <h3 class="font-semibold text-sm mb-1.5">Всплески видны на фоне матча</h3>
-              <p class="text-xs opacity-60">Мы сравниваем всплески оценок с общей картиной того же матча, а оценки судье — с тем, как обычно оценивают судей в лиге. Если кто-то резко выбивается, сигнал уходит на проверку модератору.</p>
+              <p class="text-xs opacity-60">Всплеск оценок сравниваем с остальными голосами за тот же матч, а оценки судьи с тем, как обычно оценивают судей в лиге. Если что-то сильно выбивается, модератор получает сигнал.</p>
             </div>
             <div class="p-4 bg-base-200 rounded-lg">
               <div class="w-9 h-9 rounded-full bg-error text-error-content flex items-center justify-center font-bold mb-3"><i class="ti ti-arrow-bar-to-down text-sm"></i></div>
               <h3 class="font-semibold text-sm mb-1.5">Штраф растёт постепенно</h3>
-              <p class="text-xs opacity-60">Систематическая предвзятость снижает вес голоса даже при умеренных оценках. Действовать «аккуратнее» не помогает это обойти.</p>
+              <p class="text-xs opacity-60">Вес снижается и при умеренных, но однобоких оценках. Осторожная накрутка тоже заметна.</p>
             </div>
             <div class="p-4 bg-base-200 rounded-lg">
               <div class="w-9 h-9 rounded-full bg-error text-error-content flex items-center justify-center font-bold mb-3"><i class="ti ti-anchor text-sm"></i></div>
               <h3 class="font-semibold text-sm mb-1.5">Якорь на нейтральных зрителей</h3>
-              <p class="text-xs opacity-60">Если среди голосующих много болельщиков двух команд, итоговый рейтинг подтягивается к мнению нейтральных зрителей с историей оценок. Болельщик, который не отметил команду, но раньше болел за неё, нейтральным не считается. Это работает, даже если обе фан-базы пытаются накрутить оценку одновременно.</p>
+              <p class="text-xs opacity-60">Когда голосуют в основном болельщики двух команд, итог подтягивается к мнению нейтральных зрителей с историей оценок. Если человек не отметил, за кого болеет, но раньше всегда болел за один из клубов, нейтральным мы его не считаем.</p>
             </div>
             <div class="p-4 bg-base-200 rounded-lg md:col-span-2">
               <div class="w-9 h-9 rounded-full bg-error text-error-content flex items-center justify-center font-bold mb-3"><i class="ti ti-chart-bar text-sm"></i></div>
               <h3 class="font-semibold text-sm mb-1.5">Сверка со статистикой матча</h3>
-              <p class="text-xs opacity-60">Оценки игроков и команд за последние матчи сравниваются с тем, как они сыграли по статистике: голы, передачи, отборы, удары, опасные атаки. Если оценки систематически идут в одну сторону, а игра — в другую, к рейтингу новых матчей добавляется небольшая поправка (не больше ±0.4). Она видна на странице с пометкой «защита от накрутки», сама уходит, когда расхождение пропадает, и её проверяет модератор. Для тренеров и судей такие сигналы только уходят на проверку, рейтинг автоматически не меняется.</p>
+              <p class="text-xs opacity-60">Оценки игроков и команд за последние матчи сверяем со статистикой: голы, передачи, отборы, удары, опасные атаки. Если оценки упорно расходятся с игрой, к рейтингу новых матчей добавляется поправка до ±0.4. На странице она отмечена значком «защита от накрутки» и исчезает, когда расхождение уходит. Поправку проверяет модератор. По тренерам и судьям рейтинг сам не меняется, модератор только получает сигнал.</p>
             </div>
           </div>
           <div class="mt-4 p-3 bg-base-200/60 rounded-lg text-xs md:text-sm opacity-70 flex gap-2">
             <i class="ti ti-bulb text-warning flex-shrink-0 mt-0.5"></i>
-            <span>Все пять механизмов работают автоматически, ещё до того, как сигнал доходит до модератора. Средний рейтинг за сезон считается с учётом числа голосов в каждом матче: матч с парой оценок не перевешивает матч, который оценили сотни зрителей.</span>
+            <span>Всё это работает автоматически, модератор подключается после. Средний рейтинг за сезон учитывает, сколько голосов было в каждом матче, поэтому матч с парой оценок не перевесит матч, который оценили сотни зрителей.</span>
           </div>
         </div>
       </div>
@@ -225,21 +225,26 @@
             Как ловим накрутку
           </h2>
 
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 mb-4 md:mb-6">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 mb-4 md:mb-6">
             <div class="p-4 bg-base-200 rounded-lg">
               <div class="w-9 h-9 rounded-full bg-primary text-primary-content flex items-center justify-center font-bold mb-3"><i class="ti ti-gauge text-sm"></i></div>
               <h3 class="font-semibold text-sm mb-1.5">Слишком быстрое прохождение</h3>
-              <p class="text-xs opacity-60">Оценка матча состоит из нескольких шагов: контекст, команды, игроки, тренеры, судья, впечатления. Живой человек не пройдёт это за пару секунд. Такие оценки засчитываются, но уходят на проверку.</p>
+              <p class="text-xs opacity-60">В оценке несколько шагов: контекст, команды, игроки, тренеры, судья, впечатления. За пару секунд их не пройти. Такая оценка засчитывается, но попадает на проверку.</p>
+            </div>
+            <div class="p-4 bg-base-200 rounded-lg">
+              <div class="w-9 h-9 rounded-full bg-primary text-primary-content flex items-center justify-center font-bold mb-3"><i class="ti ti-trending-up text-sm"></i></div>
+              <h3 class="font-semibold text-sm mb-1.5">Много аккаунтов с одного IP</h3>
+              <p class="text-xs opacity-60">Каждые 6 часов ищем матчи, которые оценили несколько аккаунтов с одного IP-адреса. Такие группы проверяет модератор.</p>
             </div>
             <div class="p-4 bg-base-200 rounded-lg">
               <div class="w-9 h-9 rounded-full bg-primary text-primary-content flex items-center justify-center font-bold mb-3"><i class="ti ti-trending-up text-sm"></i></div>
               <h3 class="font-semibold text-sm mb-1.5">Опыт растёт медленнее без доверия</h3>
-              <p class="text-xs opacity-60">Опыт за каждую оценку умножается на коэффициент, который зависит от Trust Score. Аккаунт с низким доверием может голосовать часто, но растёт в уровне заметно медленнее обычного пользователя.</p>
+              <p class="text-xs opacity-60">XP за оценку умножается на коэффициент от Trust Score. Аккаунт с низким доверием может голосовать сколько угодно, но уровень у него растёт медленнее.</p>
             </div>
             <div class="p-4 bg-base-200 rounded-lg">
               <div class="w-9 h-9 rounded-full bg-primary text-primary-content flex items-center justify-center font-bold mb-3"><i class="ti ti-list-check text-sm"></i></div>
               <h3 class="font-semibold text-sm mb-1.5">Очередь модерации</h3>
-              <p class="text-xs opacity-60">Каждый подозрительный сигнал попадает в очередь и получает один из трёх статусов.</p>
+              <p class="text-xs opacity-60">Каждый сигнал попадает в очередь. Модератор его подтверждает или отклоняет.</p>
             </div>
           </div>
 
@@ -257,7 +262,7 @@
               <div class="text-xs opacity-60 mt-1">Отклонено: ложная тревога</div>
             </div>
           </div>
-          <p class="text-xs opacity-50 mt-3">Флаг не означает вину, это повод проверить. Часть сигналов оказывается ложной тревогой: мы намеренно перепроверяем с запасом, чтобы не пропустить настоящую накрутку.</p>
+          <p class="text-xs opacity-50 mt-3">Сигнал ещё не значит, что человек виноват. Проверки настроены с запасом, поэтому часть сигналов оказывается ложной тревогой.</p>
         </div>
       </div>
     </section>
@@ -266,8 +271,8 @@
     {# Текст primary-content. #}
     <div class="card lg:hidden" style="background-image: linear-gradient(to bottom right, var(--color-primary), color-mix(in oklab, var(--color-primary) 80%, transparent));">
       <div class="card-body p-4 md:p-6 text-center text-primary-content">
-        <h3 class="text-xl md:text-2xl font-bold mb-2">Хотите разобраться в деталях?</h3>
-        <p class="opacity-90 mb-3 md:mb-4 text-sm md:text-base">Полные правила платформы и таблица уровней Trust Score на одной странице.</p>
+        <h3 class="text-xl md:text-2xl font-bold mb-2">Подробности</h3>
+        <p class="opacity-90 mb-3 md:mb-4 text-sm md:text-base">Правила платформы, вес голоса и уровни Trust Score.</p>
         <a href="{% url 'core:rules' %}" class="btn btn-md md:btn-lg bg-primary-content text-primary border-none hover:opacity-90">
           <i class="ti ti-file-text"></i> Правила платформы
         </a>

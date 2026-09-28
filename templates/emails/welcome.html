@@ -12,13 +12,13 @@
                         <td class="dopx-px" style="padding: 32px 40px 8px 40px;">
                             <h1 style="margin: 0 0 12px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 22px; line-height: 1.35; font-weight: 700; color: #18181B;">Привет, {{ user.username }}!</h1>
                             <p style="margin: 0 0 16px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.6; color: #3F3F46;">
-                                Рады видеть вас на DOPX. Здесь рейтинг игроков и команд казахстанского футбола строится не редакцией, а мнением болельщиков — вашим в том числе.
+                                Рады видеть вас на DOPX. Рейтинг игроков и команд казахстанского футбола здесь складывается из оценок болельщиков, и ваша тоже будет в нём учтена.
                             </p>
                             <p style="margin: 0 0 28px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.6; color: #3F3F46;">
-                                Начните с ближайших матчей — оцените игроков, поставьте прогноз и посмотрите, совпадает ли ваше мнение с мнением сообщества.
+                                Начните с ближайших матчей: оцените игроков, поставьте прогноз и сравните своё мнение с остальными.
                             </p>
                             {% include "emails/partials/_button.html" with button_url=site_url|add:"/matches/" button_label="Смотреть матчи" %}
-                            <p style="margin: 32px 0 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; font-style: italic; color: #A1A1AA;">— Команда DOPX</p>
+                            <p style="margin: 32px 0 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; font-style: italic; color: #A1A1AA;">Команда DOPX</p>
                         </td>
                     </tr>
                     {% include "emails/partials/_footer.html" with show_notification_settings=True %}

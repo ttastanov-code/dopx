@@ -67,7 +67,10 @@ class StaticViewSitemap(Sitemap):
     changefreq, priority, protocol = "monthly", 0.3, "https"
 
     def items(self):
-        return ["core:home", "core:rules", "core:anti_fraud", "users:leaderboard"]
+        return [
+            "core:home", "core:rules", "core:anti_fraud", "users:leaderboard",
+            "engagement:season_pass", "round_squad:round",
+        ]
 
     def location(self, item: str) -> str:
         return reverse(item)

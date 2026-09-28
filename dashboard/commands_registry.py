@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from matches.models import Match
+from notifications.services import PUSH_PROFILES
 
 _MATCH_STATUS_CHOICES = [choice[0] for choice in Match.STATUS_CHOICES]
 
@@ -42,6 +43,9 @@ class CommandSpec:
     # Если задано — запуск режется на порции такого размера.
     auto_chunk_limit: int | None = None
 
+
+# Команды, которые требуют вписать своё имя (для остальных опасных хватает галочки apply).
+CONFIRM_TEXT_COMMANDS = {"cleanup_load_test", "reset_user_activity"}
 
 # Заголовки секций.
 CATEGORY_LABELS = {
@@ -166,6 +170,17 @@ COMMAND_REGISTRY: dict[str, CommandSpec] = {
             ArgSpec("--limit-preview", "limit_preview", "int", default=50, help="Строк в предпросмотре (0 — все)."),
         ],
     ),
+    "reset_user_activity": CommandSpec(
+        name="reset_user_activity", label="Чистый старт: удалить всю активность",
+        category="cleanup", danger="destructive", has_apply_flag=True,
+        description="Удаляет аккаунты (кроме сотрудников), все оценки, рейтинги, сборные, прогнозы, достижения, "
+                    "уведомления, аналитику и вовлечение. У сотрудников обнуляет XP и серии. Матчи, игроков, "
+                    "статистику Sportmonks и правки ФИО (Gemini) не трогает. Для применения — вписать имя команды.",
+        args=[
+            ArgSpec("--keep-user", "keep_user", "list_str", help="Логины или email, чьи аккаунты оставить, по одному на строку."),
+            ArgSpec("--delete-staff", "delete_staff", "flag", help="Удалить и сотрудников (потом createsuperuser)."),
+        ],
+    ),
     "reset_ratings_data": CommandSpec(
         name="reset_ratings_data", label="Сбросить оценки и рейтинги",
         category="cleanup", danger="destructive", has_apply_flag=True,
@@ -263,16 +278,23 @@ COMMAND_REGISTRY: dict[str, CommandSpec] = {
     "send_test_push": CommandSpec(
         name="send_test_push", label="Тестовый push",
         category="diagnose", danger="safe",
-        description="Шлёт тестовое уведомление на все устройства пользователя и показывает результат.",
+        description="Шлёт пример уведомления выбранного типа (или всех типов) на все устройства пользователя "
+                    "и показывает результат. Выключенные пользователем типы не придут — как в бою.",
         args=[
             ArgSpec("username", "username", "str", positional=True, required=True, help="Логин пользователя."),
-            ArgSpec("--kind", "kind", "choice", default="match_event",
-                    choices=[
-                        "match_event", "match_started", "lineups_available", "prediction_closing", "voting_open",
-                        "match_finished", "evaluation_reminder", "prediction_result", "achievement",
-                        "round_results", "match_changed", "default",
-                    ],
-                    help="Профиль доставки (TTL и срочность)."),
+            ArgSpec("--kind", "kind", "choice", default="match_event", choices=sorted(PUSH_PROFILES),
+                    help="Тип уведомления."),
+            ArgSpec("--all-kinds", "all_kinds", "flag", help="Отправить по одному каждого типа."),
+        ],
+    ),
+    "publish_weekly_poll": CommandSpec(
+        name="publish_weekly_poll", label="Опрос недели сейчас",
+        category="diagnose", danger="safe", has_apply_flag=True,
+        description="«Спорный момент» или «Дуэль тура» вне расписания (по расписанию — вт и ср в 12:00). "
+                    "Без «Реально применить» — покажет, какой эпизод или пара будут выбраны.",
+        args=[
+            ArgSpec("--kind", "kind", "choice", default="episode", choices=["episode", "duel"], help="Тип опроса."),
+            ArgSpec("--no-push", "no_push", "flag", help="Без push активным пользователям."),
         ],
     ),
     "diagnose_nominations": CommandSpec(

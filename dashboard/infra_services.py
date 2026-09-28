@@ -217,6 +217,9 @@ def _next_run(schedule):
 
 # Понятные названия задач расписания для дашборда; нет в словаре — первая строка docstring.
 BEAT_TASK_TITLES = {
+    "weekly-polls": "Опросы недели: спорный момент (вт) и дуэль тура (ср)",
+    "streaks-at-risk": "Push: серия дней сгорит сегодня",
+    "weekly-social-content": "Картинки и подписи для соцсетей по итогам тура",
     "sportmonks-update-live": "Счёт и события live-матчей из Sportmonks",
     "sportmonks-update-upcoming": "Составы и изменения ближайших матчей",
     "sportmonks-resync-recent-stats": "Уточнение статистики недавно завершённых матчей",

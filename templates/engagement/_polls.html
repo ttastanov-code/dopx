@@ -1,0 +1,7 @@
+{# Опросы недели на главной: «Спорный момент» и «Дуэль тура». #}
+{% load ui_extras %}
+{% if daily_polls %}
+<section id="polls" class="dx-polls" aria-label="Опросы недели">
+    {% for item in daily_polls %}{% include 'engagement/_poll_card.html' %}{% endfor %}
+</section>
+{% endif %}

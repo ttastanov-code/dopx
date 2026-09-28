@@ -113,7 +113,7 @@ def round_of_week(request, season_id=None, tour=None):
     if context is None:
         return render(request, 'round_squad/no_data.html', {
             'title': 'DOPX Лучшие тура',
-            'message': 'Пока нет ни одного завершённого тура с данными — загляните чуть позже.',
+            'message': 'Пока нет ни одного завершённого тура с оценками. Загляните позже.',
         })
     round_xi = context['round_xi']
     if round_xi.share_card_path:
@@ -121,8 +121,8 @@ def round_of_week(request, season_id=None, tour=None):
 
         context['og_image'] = request.build_absolute_uri(default_storage.url(round_xi.share_card_path))
     context['share_text'] = (
-        f"{round_xi.brand_title}: игрок тура — {round_xi.player_of_round_name or '?'}. "
-        f"Сборная тура и разбор матчей — на DOPX"
+        f"{round_xi.brand_title}: игрок тура {round_xi.player_of_round_name or '?'}. "
+        f"Сборная тура и разбор матчей на DOPX"
     )
     context['page_title'] = f"{round_xi.brand_title} — {context['season'].league.name}"
 

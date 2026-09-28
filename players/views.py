@@ -326,20 +326,32 @@ class PlayerDetailView(DetailView):
             'corrected_matches_count': PlayerMatchAggregate.objects.filter(player=player).filter(
                 Q(rating_correction_applied__gte=0.01) | Q(rating_correction_applied__lte=-0.01)
             ).count(),
-            'page_title': f'{player.first_name} {player.last_name} — DOPX',
+            'page_title': (
+                f'{player.first_name} {player.last_name}' + (f' ({team.name})' if team else '')
+                + ': рейтинг и оценки болельщиков | DOPX'
+            ),
         })
 
         # SEO: meta_description + schema.org Person.
+        rating_text = (
+            f" Средняя оценка болельщиков {stats['avg_performance']:.1f} из 10, оценённых матчей: {stats['evaluated_matches']}."
+            if stats['avg_performance'] is not None and stats['total_votes'] >= min_votes_for_display() else ""
+        )
         context['meta_description'] = (
             f"{player.first_name} {player.last_name}"
             + (f" ({team.name})" if team else "")
-            + " на DOPX: рейтинг выступлений, риск и потенциал по оценкам болельщиков КПЛ."
+            + f" на DOPX: рейтинг выступлений, риск и потенциал по оценкам болельщиков КПЛ.{rating_text}"
         )
+        photo = player.photo_display
+        if photo:
+            context['og_image'] = self.request.build_absolute_uri(photo)
         schema = {
             "@context": "https://schema.org",
             "@type": "Person",
             "name": f"{player.first_name} {player.last_name}",
             "jobTitle": "Football Player",
+            "url": self.request.build_absolute_uri(reverse('players:detail', args=[player.id])),
+            "image": context.get('og_image'),
             "affiliation": {"@type": "SportsTeam", "name": team.name} if team else None,
         }
         # Экранируем '</' — строка вставляется через |safe в <script>.

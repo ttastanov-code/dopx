@@ -20,7 +20,7 @@
 <div class="max-w-7xl mx-auto px-3 text-center mb-5">
     <h2 class="text-xl sm:text-2xl font-extrabold mb-1">Оцените игроков</h2>
     {% if mode == 'quick' %}
-    <p class="text-sm text-base-content/60">Выберите лучшего и худшего — этого достаточно. Хотите подробнее — раскройте весь состав ниже</p>
+    <p class="text-sm text-base-content/60">Хватит выбрать лучшего и худшего. Если хотите подробнее, откройте весь состав ниже</p>
     {% else %}
     <p class="text-sm text-base-content/60">Оценивайте только тех, кого хорошо запомнили</p>
     {% endif %}
@@ -28,7 +28,7 @@
 
 {# === ФОРМА === #}
 <form method="post" data-wizard-draft action="{% url 'evaluations:players' match.id %}" class="max-w-7xl mx-auto px-3" id="players-form"
-      data-wz-untouched-hint="Потяните хотя бы один ползунок — иначе этот критерий не будет учтён">
+      data-wz-untouched-hint="Потяните хотя бы один ползунок, иначе критерий не засчитается">
     {% csrf_token %}
 
     {# Счётчик выбранных #}
@@ -102,7 +102,7 @@
     <details class="mb-2">
         <summary class="cursor-pointer list-none text-sm font-bold text-info/80 mb-3 flex items-center gap-1.5">
             <i class="ti ti-chevron-right text-[13px] transition-transform"></i>
-            Оценить подробнее — весь состав
+            Оценить весь состав
         </summary>
     {% endif %}
 

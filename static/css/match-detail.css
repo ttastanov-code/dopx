@@ -342,7 +342,9 @@
 /* Прогнозы: три сегмента П1 / X / П2, исход подсвечен. */
 .dna-split { display: flex; height: 1.75rem; border-radius: .625rem; overflow: hidden; gap: 2px; font-size: .6875rem; font-weight: 700; }
 .dna-split > span {
-    display: flex; align-items: center; justify-content: center; min-width: 1.75rem; white-space: nowrap;
+    /* Ширина по доле, но не уже подписи: маленький процент не вылезает за край. */
+    flex: 1 1 0; min-width: max-content; padding: 0 .5rem;
+    display: flex; align-items: center; justify-content: center; white-space: nowrap;
     background: color-mix(in oklab, var(--color-base-content) 8%, transparent);
     color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
 }

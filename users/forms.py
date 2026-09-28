@@ -47,7 +47,7 @@ class UserRegistrationForm(UserCreationForm):
     # Город — обязательный выбор из справочника (users/kz_cities.py).
     city = forms.ChoiceField(
         # Пустой первый пункт — чтобы выбор был осознанным.
-        choices=[("", "— Выберите город —")] + KZ_CITY_CHOICES,
+        choices=[("", "Выберите город")] + KZ_CITY_CHOICES,
         required=True,
         label="Город",
         widget=forms.Select(attrs={"class": "input-dopx w-full"}),
@@ -197,7 +197,7 @@ class UserProfileForm(forms.ModelForm):
             "is_profile_public": "Публичный профиль",
         }
         help_texts = {
-            "is_profile_public": "Если выключить — ваш профиль по ссылке /u/<username>/ смогут видеть только вы сами (лидерборд и агрегаты работают как раньше).",
+            "is_profile_public": "Если выключить, страницу вашего профиля будете видеть только вы. Имя в рейтингах останется.",
         }
         widgets = {
             "email": forms.EmailInput(attrs={"class": "input input-bordered w-full"}),
@@ -238,7 +238,7 @@ class UserProfileForm(forms.ModelForm):
         if avatar.size > MAX_AVATAR_SIZE_BYTES:
             raise forms.ValidationError(
                 f"Файл слишком большой ({avatar.size / 1024 / 1024:.1f} МБ). "
-                f"Максимум — {MAX_AVATAR_SIZE_BYTES // 1024 // 1024} МБ."
+                f"Можно до {MAX_AVATAR_SIZE_BYTES // 1024 // 1024} МБ."
             )
 
         try:
@@ -348,7 +348,7 @@ class NotificationSettingsForm(forms.Form):
         required=False,
         label="Собирать письма в дайджест",
         initial=True,
-        help_text="Достижения, уровни и новости — одним письмом в час вместо отдельных. Рекомендуем.",
+        help_text="Достижения, уровни и новости придут одним письмом в час, а не по одному.",
         widget=forms.CheckboxInput(attrs={"class": "toggle toggle-primary"}),
     )
     # Retention-уведомления.
@@ -370,7 +370,7 @@ class NotificationSettingsForm(forms.Form):
         required=False,
         label="Ваш прогноз vs результат матча",
         initial=True,
-        help_text="После финального свистка — совпал ли ваш прогноз и как проголосовало сообщество.",
+        help_text="После финального свистка: угадали ли вы и как проголосовали остальные.",
         widget=forms.CheckboxInput(attrs={"class": "toggle toggle-primary"}),
     )
     # См. User.DEFAULT_NOTIFICATION_SETTINGS.
@@ -378,7 +378,7 @@ class NotificationSettingsForm(forms.Form):
         required=False,
         label="Итоги «DOPX Лучшие тура»",
         initial=True,
-        help_text="Игрок тура, сборная тура и самый драматичный матч — когда голосование по туру закрывается.",
+        help_text="Игрок тура, сборная тура и самый драматичный матч, когда голосование по туру закрыто.",
         widget=forms.CheckboxInput(attrs={"class": "toggle toggle-primary"}),
     )
 
@@ -415,7 +415,23 @@ class NotificationSettingsForm(forms.Form):
     )
     push_results = forms.BooleanField(
         required=False, label="Итоги оценок матча", initial=True,
-        help_text="Голосование закрылось — рейтинги открыты, игрок матча и ваша оценка рядом с общей.",
+        help_text="Голосование закрылось: игрок матча и ваша оценка рядом с общей.",
+        widget=forms.CheckboxInput(attrs={"class": "toggle toggle-primary"}),
+    )
+
+    push_streak = forms.BooleanField(
+        required=False, label="Серия дней под угрозой", initial=True,
+        help_text="Вечером, если сегодня вы ещё не заходили и серия может сгореть.",
+        widget=forms.CheckboxInput(attrs={"class": "toggle toggle-primary"}),
+    )
+    push_social = forms.BooleanField(
+        required=False, label="Друзья и лиги", initial=True,
+        help_text="Друг вступил в вашу лигу, приглашённый друг оценил первый матч.",
+        widget=forms.CheckboxInput(attrs={"class": "toggle toggle-primary"}),
+    )
+    push_daily = forms.BooleanField(
+        required=False, label="Спорный момент и дуэль тура", initial=True,
+        help_text="Новый опрос недели: был ли пенальти, кто сильнее сыграл в туре.",
         widget=forms.CheckboxInput(attrs={"class": "toggle toggle-primary"}),
     )
 
@@ -429,6 +445,9 @@ class NotificationSettingsForm(forms.Form):
         "push_round_results": "ti-star",
         "push_match_changes": "ti-calendar-event",
         "push_results": "ti-chart-bar",
+        "push_streak": "ti-flame",
+        "push_social": "ti-users-group",
+        "push_daily": "ti-scale",
     }
 
     # Группы email-тумблеров для шаблона: (заголовок, [(поле, иконка)]).

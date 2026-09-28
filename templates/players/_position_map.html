@@ -11,7 +11,7 @@ position_breakdown — [{code, label, count, x, y, group}] из player_position_
             Позиции на поле
         </h3>
         <p class="text-xs opacity-55 mb-3">
-            Основная — {{ position_breakdown.0.label|lower }}{% if position_breakdown|length > 1 %}, играл(а) и на других позициях{% endif %}
+            Основная позиция: {{ position_breakdown.0.label|lower }}{% if position_breakdown|length > 1 %}, играл(а) и на других позициях{% endif %}
         </p>
 
         <svg viewBox="0 0 100 130" preserveAspectRatio="none"

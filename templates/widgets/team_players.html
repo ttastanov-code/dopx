@@ -1,0 +1,41 @@
+{% load ui_extras %}
+<!DOCTYPE html>
+<html lang="ru" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ team.name }} · рейтинг игроков DOPX</title>
+    {# Embed-виджет: лучшие игроки клуба по оценкам болельщиков (~320px), без base.html. #}
+    {# Версии CDN как в base.html — обновлять синхронно. #}
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.3" integrity="sha384-aJ9rL4k6lF+91guGvUFVSkpIcge7Zd9EiI4TQDLoK9kFaFJgKHgjEXVvG/qA5COj" crossorigin="anonymous"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@5.7.17" rel="stylesheet" type="text/css" integrity="sha384-39M1LQqzp+SSirSevKD4gsadFB7kgKzMiPY7o6hVhOXuRthgtd1oohKwlosU9KHi" crossorigin="anonymous" />
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@5.7.17/themes.css" rel="stylesheet" type="text/css" integrity="sha384-HhSoSsQclUlsqy8Gyz+E2oVSebHT4dv3MJ+NdUjV9mh1twUK4UPKQgmj0dHDKe0Y" crossorigin="anonymous" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.46.0/dist/tabler-icons.min.css" integrity="sha384-ND+q1IVc0KDElX60dZaqKc7Xl9cdxd2PpU2JfVUHcurCkFVtVLFdt9vJfxtHSL3p" crossorigin="anonymous">
+    <style>html,body{margin:0;padding:0;background:transparent}</style>
+<body class="p-2">
+    <div class="rounded-2xl overflow-hidden shadow-sm border border-base-300 bg-base-100" style="width:320px">
+        <div class="p-3 flex items-center gap-2 border-b border-base-300">
+            {% if team.logo_display %}<img src="{{ team.logo_display }}" alt="" class="w-7 h-7 object-contain">{% endif %}
+            <div class="min-w-0 flex-1">
+                <div class="font-bold text-sm truncate">{{ team.name }}</div>
+                <div class="text-[10px] opacity-55">Рейтинг игроков по оценкам болельщиков</div>
+            </div>
+            <a href="{{ site_url }}teams/{{ team.pk }}/" target="_blank" rel="noopener" class="text-[10px] font-semibold opacity-50 hover:opacity-100 flex items-center gap-1"><i class="ti ti-external-link"></i>DOPX</a>
+        </div>
+        <ol class="divide-y divide-base-200">
+            {% for p in players %}
+            <li class="flex items-center gap-2.5 px-3 py-2">
+                <span class="w-4 text-[11px] font-bold opacity-40 text-right">{{ forloop.counter }}</span>
+                {% if p.photo_display %}<img src="{{ p.photo_display }}" alt="" class="w-7 h-7 rounded-full object-cover bg-base-200">{% else %}<span class="w-7 h-7 rounded-full bg-base-200 flex items-center justify-center text-[10px] font-bold">{{ p.last_name|slice:":1" }}</span>{% endif %}
+                <a href="{{ site_url }}players/{{ p.pk }}/" target="_blank" rel="noopener" class="flex-1 min-w-0 text-xs font-semibold truncate hover:underline">{{ p.first_name }} {{ p.last_name }}</a>
+                <span class="text-[10px] opacity-45">{{ p.matches }} {{ p.matches|ru_plural:"матч,матча,матчей" }}</span>
+                <b class="text-sm tabular-nums text-primary">{{ p.rating|floatformat:1 }}</b>
+            </li>
+            {% empty %}
+            <li class="px-3 py-6 text-center text-xs opacity-55">Оценок пока мало. Рейтинг появится после ближайших матчей.</li>
+            {% endfor %}
+        </ol>
+        <a href="{{ site_url }}" target="_blank" rel="noopener" class="block text-center text-[10px] font-semibold py-2 bg-base-200 hover:bg-base-300">Оцените игроков на DOPX →</a>
+    </div>
+</body>
+</html>

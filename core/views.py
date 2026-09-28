@@ -116,9 +116,11 @@ class HomeView(TemplateView):
             'nomination_min_votes': NOMINATION_MIN_VOTES,
             'nomination_min_matches': NOMINATION_MIN_MATCHES,
             'standings_widget_embed_code': standings_widget_embed_code,
-            'page_title': 'DOPX — Голос трибун измеряем',
+            'page_title': 'DOPX. Голос трибун — измеряем',
             'now': now,
         })
+        from engagement.polls import polls_for
+        context['daily_polls'] = polls_for(self.request.user)
         return context
 
 
@@ -259,6 +261,11 @@ class RulesView(TemplateView):
             ('status', 'Дерби и статусные', 'ti-crown', [
                 'derby_hunter', 'monthly_champion',
             ]),
+            ('engagement_loop', 'Сезон и друзья', 'ti-ticket', [
+                'day_streak_7', 'day_streak_30', 'day_streak_100', 'day_streak_365',
+                'came_with_friend', 'recruiter_1', 'recruiter_5', 'recruiter_20',
+                'season_pass_10', 'season_pass_20', 'season_pass_30',
+            ]),
             ('secret', 'Секретные', 'ti-lock-question', [
                 'founder',
             ]),
@@ -290,6 +297,15 @@ class RulesView(TemplateView):
         context['badge_total_count'] = len(BADGE_CATALOG)
         context['nomination_min_votes'] = NOMINATION_MIN_VOTES
         context['nomination_min_matches'] = NOMINATION_MIN_MATCHES
+        context['min_votes'] = min_votes_for_display()
+        from engagement import quests, season, streaks
+        context['engagement_rules'] = {
+            'quests_per_day': quests.QUESTS_PER_DAY, 'all_done_xp': quests.ALL_DONE_XP,
+            'freeze_every': streaks.FREEZE_EVERY, 'max_freezes': streaks.MAX_FREEZES,
+            'pass_levels': season.LEVELS, 'xp_per_level': season.XP_PER_LEVEL,
+        }
+        from engagement.referrals import REWARD_XP
+        context['engagement_rules']['referral_xp'] = REWARD_XP
         return context
 
 

@@ -201,6 +201,7 @@ class MatchDetailView(DetailView):
         # Пустой агрегат (голосов нет) — блок результатов не показываем, вместо «0,0».
         if match_agg is not None and not match_agg.total_votes:
             match_agg = None
+        no_votes = match_agg is None
 
         # Пока идёт голосование, цифры видит только тот, кто уже оценил матч.
         from aggregates.services import ratings_hidden_for
@@ -384,8 +385,31 @@ class MatchDetailView(DetailView):
         home_team_form = get_team_form(match.home_team, home_recent)
         away_team_form = get_team_form(match.away_team, away_recent)
 
+        # Мнение редакции — пока голосов мало, чтобы страница не была пустой.
+        low_votes = not match_agg or match_agg.total_votes < min_votes_for_display()
+        expert_takes = (
+            list(match.expert_takes.filter(is_published=True).select_related('key_player')[:3])
+            if low_votes and not ratings_hidden else []
+        )
+
+        # «Спорим?» — друг прислал вызов по ссылке.
+        challenger = None
+        challenge_name = self.request.GET.get('challenge')
+        if challenge_name and challenge_name != getattr(self.request.user, 'username', None):
+            from users.models import User
+            challenger = User.objects.filter(username=challenge_name, is_active=True).first()
+
+        from engagement.polls import polls_for
+        # Дуэль про два разных матча — на странице матча только спорный момент.
+        match_polls = [i for i in polls_for(self.request.user)
+                       if i['poll'].kind == 'episode' and i['poll'].match_id == match.id]
+
         context.update(action_context)
         context.update({
+            'daily_polls': match_polls,
+            'expert_takes': expert_takes,
+            'no_votes': no_votes,
+            'challenger': challenger,
             'match_aggregate': match_agg,
             'ratings_hidden': ratings_hidden,
             'match_dna': match_dna,
@@ -410,14 +434,18 @@ class MatchDetailView(DetailView):
             'standings_snapshot': standings_snapshot,
             'h2h_matches': h2h_matches,
             'h2h_summary': h2h_summary,
-            'page_title': f'{match.home_team.name} vs {match.away_team.name} — DOPX',
+            'page_title': f'{match.home_team.name} — {match.away_team.name}: оценки игроков болельщиками | DOPX',
             'now': now,
         })
 
         # SEO: meta_description и schema.org SportsEvent (через json.dumps — без XSS).
+        best = top_players[0] if top_players else None
         context['meta_description'] = (
-            f"Оценка матча {match.home_team.name} {match.get_score_display()} "
-            f"{match.away_team.name} от болельщиков DOPX. Рейтинги игроков, тренеров и судьи."
+            f"{match.home_team.name} {match.get_score_display()} {match.away_team.name}"
+            + (f", {match.tour}-й тур" if match.tour else "")
+            + ": оценки игроков, тренеров и судьи от болельщиков DOPX."
+            + (f" Лучший по мнению трибун: {best.player.first_name} {best.player.last_name} "
+               f"({best.performance_score:.1f})." if best else "")
         )
         # Абсолютный URL карточки для og:image.
         context['og_image'] = self.request.build_absolute_uri(
@@ -430,6 +458,10 @@ class MatchDetailView(DetailView):
             "startDate": match.start_time.isoformat(),
             # location — город домашней команды.
             "location": {"@type": "Place", "name": match.home_team.city or "Казахстан"},
+            "url": self.request.build_absolute_uri(reverse('matches:detail', args=[match.id])),
+            "sport": "Football",
+            "homeTeam": {"@type": "SportsTeam", "name": match.home_team.name},
+            "awayTeam": {"@type": "SportsTeam", "name": match.away_team.name},
             "competitor": [
                 {"@type": "SportsTeam", "name": match.home_team.name},
                 {"@type": "SportsTeam", "name": match.away_team.name},
@@ -472,8 +504,8 @@ def match_action_context(request, match):
         'user_has_evaluated': user_has_evaluated,
         'user_has_pulse_reactions': user_has_pulse_reactions,
         'share_text': (
-            f"{match.home_team.name} {match.get_score_display()} {match.away_team.name} — "
-            f"смотрите оценки болельщиков на DOPX"
+            f"{match.home_team.name} {match.get_score_display()} {match.away_team.name}. "
+            f"Оценки болельщиков на DOPX"
         ),
     }
 

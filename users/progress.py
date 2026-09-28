@@ -13,7 +13,13 @@ from django.db import transaction
 logger = logging.getLogger(__name__)
 
 # Достижения, которые не выводятся из оценок/прогнозов — пересчёт их не трогает.
-PRESERVED_BADGES = frozenset({"founder"})
+PRESERVED_BADGES = frozenset({
+    "founder",
+    # Вовлечение (engagement): считаются по своим данным, не по оценкам/прогнозам.
+    "day_streak_7", "day_streak_30", "day_streak_100", "day_streak_365",
+    "came_with_friend", "recruiter_1", "recruiter_5", "recruiter_20",
+    "season_pass_10", "season_pass_20", "season_pass_30",
+})
 
 
 def evaluation_xp(session, lineup_total: int, rated_players: int) -> float:

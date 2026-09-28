@@ -1,0 +1,15 @@
+{% comment %}
+«Поделиться» в один тап: url, text, image (опц., картинка-карточка), label (опц.).
+Поведение — static/js/share.js, стили — css/ui.css (dx-share).
+{% endcomment %}
+<div class="dx-share">
+    <button type="button" class="dx-share__main" data-share data-share-url="{{ url }}" data-share-text="{{ text }}"{% if image %} data-share-image="{{ image }}"{% endif %}>
+        <i class="ti ti-share-3"></i><span data-share-label>{{ label|default:"Поделиться" }}</span>
+    </button>
+    <div class="dx-share__alts">
+        <a class="dx-share__alt dx-share__alt--wa" href="https://wa.me/?text={{ text|urlencode }}%0A{{ url|urlencode }}" target="_blank" rel="noopener" aria-label="WhatsApp"><i class="ti ti-brand-whatsapp"></i></a>
+        <a class="dx-share__alt dx-share__alt--tg" href="https://t.me/share/url?url={{ url|urlencode }}&text={{ text|urlencode }}" target="_blank" rel="noopener" aria-label="Telegram"><i class="ti ti-brand-telegram"></i></a>
+        {% if image %}<a class="dx-share__alt" href="{{ image }}" download="dopx.png" aria-label="Скачать картинку для сторис"><i class="ti ti-download"></i></a>{% endif %}
+        <button type="button" class="dx-share__alt" data-copy="{{ url }}" aria-label="Скопировать ссылку"><i class="ti ti-link"></i></button>
+    </div>
+</div>

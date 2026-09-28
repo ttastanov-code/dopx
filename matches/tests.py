@@ -246,7 +246,7 @@ class DescribeControversialEpisodeTests(SimpleTestCase):
         scorer = SimpleNamespace(id=1)
         events = [_event(60, "disallowed_goal", player=scorer), _event(70, "red_card", player=scorer)]
         text = _describe_controversial_episode(events, None)
-        self.assertIn("Отменённый гол", text)
+        self.assertIn("отменённый гол", text)
         self.assertIn("60", text)
 
     def test_red_card_only_shown_with_referee_divergence(self):
@@ -256,7 +256,7 @@ class DescribeControversialEpisodeTests(SimpleTestCase):
 
         high_divergence_agg = SimpleNamespace(home_fans_avg=8.5, away_fans_avg=4.0)
         text = _describe_controversial_episode(events, high_divergence_agg)
-        self.assertIn("Красная карточка", text)
+        self.assertIn("красная карточка", text)
         self.assertIn("45", text)
 
     def test_no_signal_returns_empty(self):
@@ -319,7 +319,7 @@ class DescribeConsensusTextTests(SimpleTestCase):
         self.assertIn("единодушны", _describe_consensus_text("high"))
 
     def test_low(self):
-        self.assertIn("разошлись сильно", _describe_consensus_text("low"))
+        self.assertIn("сильно разошлись", _describe_consensus_text("low"))
 
     def test_medium(self):
         self.assertIn("умеренно", _describe_consensus_text("medium"))

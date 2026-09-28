@@ -253,7 +253,7 @@ def get_nominations(*, league=None, season=None) -> list[dict]:
         nominations.append({
             'key': 'influential_referee',
             'title': 'Главный герой матчей',
-            'subtitle': 'Сильнее всех влияет на исход матчей — хороший судья незаметен',
+            'subtitle': 'Сильнее всех влияет на исход матчей, хотя хорошего судью не замечают',
             'icon': 'ti-gavel',
             'sentiment': 'negative',
             'entity_kind': 'referee',

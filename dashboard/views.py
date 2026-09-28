@@ -750,7 +750,9 @@ def scripts_trigger(request):
         messages.error(request, f"Неизвестная команда: {command_name}")
         return redirect("dashboard:scripts")
 
-    if spec.name == "cleanup_load_test":
+    apply = request.POST.get("apply") == "on"
+    # cleanup_load_test удаляет всегда, остальные — только с apply.
+    if spec.name in commands_registry.CONFIRM_TEXT_COMMANDS and (apply or not spec.has_apply_flag):
         confirm_text = request.POST.get("confirm_text", "").strip()
         if confirm_text != spec.name:
             messages.error(
@@ -759,7 +761,6 @@ def scripts_trigger(request):
             )
             return redirect("dashboard:scripts")
 
-    apply = request.POST.get("apply") == "on"
     success, message, run = command_runner.trigger_command(request, command_name, apply=apply)
     (messages.success if success else messages.warning)(request, message)
     log_staff_action(
@@ -1847,3 +1848,16 @@ def mourning_mode(request):
         "mourning_state": state,
     }
     return render(request, "dashboard/mourning.html", context)
+
+
+@staff_member_required
+def social_content(request):
+    """Контент для соцсетей по итогам тура: картинки и готовые подписи."""
+    from engagement.social import weekly_content
+
+    force = request.method == "POST"
+    data = weekly_content(force=force)
+    if force:
+        messages.success(request, "Картинки пересобраны.")
+        return redirect("dashboard:social_content")
+    return render(request, "dashboard/social_content.html", {"active_tab": "social_content", "content": data})

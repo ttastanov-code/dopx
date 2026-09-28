@@ -1,0 +1,34 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto px-2 sm:px-0 space-y-5">
+    <section class="dx-pass-hero dx-pass-hero--invite">
+        <div class="dx-pass-hero__main">
+            <div class="dx-pass-hero__eyebrow"><i class="ti ti-user-plus"></i> Пригласить друзей</div>
+            <h1 class="dx-pass-hero__title">+{{ reward_xp }} XP вам и другу</h1>
+            <p class="dx-pass-hero__meta">Когда друг зарегистрируется по вашей ссылке и оценит первый матч, вы оба получите XP и достижения. За 5 и 20 друзей дадим редкие достижения.</p>
+            <div class="dx-invite-link">
+                <input type="text" value="{{ invite_url }}" readonly aria-label="Ваша ссылка-приглашение">
+                <button type="button" data-copy="{{ invite_url }}"><span data-share-label>Копировать</span></button>
+            </div>
+        </div>
+        <div class="dx-pass-hero__share">
+            {% include 'components/_share_sheet.html' with url=invite_url text=share_text label="Отправить другу" %}
+        </div>
+    </section>
+
+    <div class="grid grid-cols-2 gap-3">
+        <div class="dx-kpi"><span class="dx-kpi__label">Присоединились</span><span class="dx-kpi__value">{{ stats.joined }}</span></div>
+        <div class="dx-kpi"><span class="dx-kpi__label">Уже оценили матч</span><span class="dx-kpi__value">{{ stats.active }}</span></div>
+    </div>
+
+    <section class="dx-card">
+        <div class="dx-card__head"><div><h2 class="dx-card__title">Ещё способы позвать друзей</h2></div></div>
+        <ul class="dx-pass-how">
+            <li><i class="ti ti-users-group"></i><span><a class="link" href="{% url 'engagement:friend_leagues' %}">Лига с друзьями</a>: соревнуйтесь в прогнозах весь сезон</span></li>
+            <li><i class="ti ti-swords"></i><span>«Спорим?»: после прогноза на странице матча бросьте вызов другу</span></li>
+            <li><i class="ti ti-share-3"></i><span>Карточки для сторис в профиле и фан-зоне клуба</span></li>
+        </ul>
+    </section>
+</div>
+{% endblock %}

@@ -119,4 +119,14 @@
         {% elif not counts.total %}
         <p class="mt-2 sm:mt-3 text-[11px] sm:text-xs opacity-50">На этот матч прогнозов не было.</p>
         {% endif %}
+
+        {% if challenge_url %}
+        {# Вызов другу: ссылка ведёт на матч с плашкой «спорим» и засчитывает приглашение. #}
+        <div class="dx-challenge">
+            <div class="dx-challenge__text"><i class="ti ti-swords"></i><span><b>Спорим, мой прогноз точнее?</b> Бросьте вызов другу.</span></div>
+            {% with text="Спорим, мой прогноз на "|add:match.home_team.name|add:" — "|add:match.away_team.name|add:" точнее? Сделай свой на DOPX" %}
+            {% include 'components/_share_sheet.html' with url=challenge_url text=text label="Бросить вызов" %}
+            {% endwith %}
+        </div>
+        {% endif %}
 </div>

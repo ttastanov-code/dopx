@@ -1,5 +1,6 @@
 {% load static %}
 {% load notification_extras %}
+{% load engagement_extras %}
 <div class="navbar bg-base-100/95 backdrop-blur-sm border-b border-base-300 sticky top-0 z-40 w-full px-2 sm:px-4">
     {# === СЛЕВА: бургер + лого === #}
     <div class="navbar-start flex items-center gap-2 min-w-0">
@@ -61,7 +62,7 @@
         {% if user.is_authenticated %}
         <div class="dropdown dropdown-end">
             <label tabindex="0" class="btn btn-ghost btn-circle avatar flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 p-0">
-                <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-full ring ring-primary ring-offset-base-100 ring-offset-1 overflow-hidden">
+                {% with fc=user|frame_class %}<div class="w-8 h-8 sm:w-9 sm:h-9 rounded-full overflow-hidden {% if fc %}{{ fc }}{% else %}ring ring-primary ring-offset-base-100 ring-offset-1{% endif %}">{% endwith %}
                     {% if user.avatar %}
                     <img src="{{ user.avatar.url }}" alt="{{ user.username }}" />
                     {% else %}
@@ -87,6 +88,9 @@
                 </div>
                 <ul class="menu menu-sm w-full p-2">
                     <li><a href="{% url 'users:profile' %}"><i class="ti ti-user"></i> Профиль</a></li>
+                    <li><a href="{% url 'engagement:season_pass' %}"><i class="ti ti-ticket"></i> Сезонный пропуск</a></li>
+                    <li><a href="{% url 'engagement:friend_leagues' %}"><i class="ti ti-users-group"></i> Лиги с друзьями</a></li>
+                    <li><a href="{% url 'engagement:invite' %}"><i class="ti ti-user-plus"></i> Пригласить друзей</a></li>
                     <li><a href="{% url 'users:leaderboard' %}"><i class="ti ti-trophy"></i> Рейтинг</a></li>
                     <li><a href="{% url 'notifications:list' %}"><i class="ti ti-bell"></i> Уведомления {% with unread=user.notifications|unread_count %}{% if unread %}<span class="badge badge-sm badge-error ml-auto">{{ unread }}</span>{% endif %}{% endwith %}</a></li>
                     {% if user.is_staff %}
@@ -142,6 +146,9 @@
 
             {% if user.is_authenticated %}
             <nav class="dx-drawer__group dx-drawer__group--mt">
+                <a href="{% url 'engagement:season_pass' %}" class="dx-drawer__row{% if url_name == 'season_pass' %} is-active{% endif %}"><span class="dx-drawer__ico" style="--c: var(--color-warning)"><i class="ti ti-ticket"></i></span>Сезонный пропуск<i class="ti ti-chevron-right dx-drawer__chev"></i></a>
+                <a href="{% url 'engagement:friend_leagues' %}" class="dx-drawer__row{% if app == 'engagement' and url_name != 'season_pass' and url_name != 'invite' %} is-active{% endif %}"><span class="dx-drawer__ico" style="--c: var(--color-primary)"><i class="ti ti-users-group"></i></span>Лиги с друзьями<i class="ti ti-chevron-right dx-drawer__chev"></i></a>
+                <a href="{% url 'engagement:invite' %}" class="dx-drawer__row{% if url_name == 'invite' %} is-active{% endif %}"><span class="dx-drawer__ico" style="--c: var(--color-success)"><i class="ti ti-user-plus"></i></span>Пригласить друзей<span class="dx-drawer__tag">+100 XP</span><i class="ti ti-chevron-right dx-drawer__chev"></i></a>
                 <a href="{% url 'notifications:list' %}" class="dx-drawer__row{% if app == 'notifications' %} is-active{% endif %}"><span class="dx-drawer__ico" style="--c: var(--color-error)"><i class="ti ti-bell"></i></span>Уведомления{% with unread=user.unread_notifications_count %}{% if unread %}<b class="dx-drawer__count">{{ unread }}</b>{% endif %}{% endwith %}<i class="ti ti-chevron-right dx-drawer__chev"></i></a>
                 <a href="{% url 'users:notification_settings' %}" class="dx-drawer__row{% if url_name == 'notification_settings' %} is-active{% endif %}"><span class="dx-drawer__ico" style="--c: var(--color-base-content)"><i class="ti ti-settings"></i></span>Настройки уведомлений<i class="ti ti-chevron-right dx-drawer__chev"></i></a>
             </nav>

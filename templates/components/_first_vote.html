@@ -1,0 +1,12 @@
+{% comment %}
+Пустое состояние «Будьте первым, кто оценит». Параметры: text, url (опц.), cta (опц.).
+Стили — css/ui.css (dx-first-vote).
+{% endcomment %}
+<div class="dx-first-vote">
+    <span class="dx-first-vote__ico"><i class="ti ti-star"></i></span>
+    <div class="dx-first-vote__body">
+        <b>Будьте первым, кто оценит</b>
+        <span>{{ text }}</span>
+    </div>
+    {% if url %}<a href="{{ url }}" class="btn btn-primary btn-sm">{{ cta|default:"Оценить" }}</a>{% endif %}
+</div>

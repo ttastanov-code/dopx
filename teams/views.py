@@ -1,6 +1,8 @@
 # teams/views.py
 from datetime import timedelta
 
+import json
+
 from django.db.models import Avg, Count, Exists, F, OuterRef, Q, Sum
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
@@ -309,8 +311,29 @@ class TeamDetailView(DetailView):
             'team_seasons': team_seasons,
             'active_season': active_season,
             'selected_season': selected_season,
-            'page_title': f'{team.name} — DOPX',
+            'page_title': f'{team.name}: оценки болельщиков, форма и рейтинг игроков | DOPX',
         })
+
+        # SEO: описание, логотип для превью, schema.org SportsTeam.
+        context['meta_description'] = (
+            f"{team.name} на DOPX: как болельщики оценивают команду, игроков и тренера, "
+            f"настроение трибун, форма и фан-зона клуба."
+        )
+        logo = team.logo_display
+        if logo:
+            context['og_image'] = self.request.build_absolute_uri(logo)
+        schema = {
+            "@context": "https://schema.org",
+            "@type": "SportsTeam",
+            "name": team.name,
+            "sport": "Football",
+            "url": self.request.build_absolute_uri(reverse('teams:detail', args=[team.id])),
+            "logo": context.get('og_image'),
+            "location": {"@type": "Place", "name": team.city} if team.city else None,
+        }
+        context['schema_json'] = json.dumps(
+            {k: v for k, v in schema.items() if v is not None}, ensure_ascii=False
+        ).replace('</', '<\\/')
 
         # Активная поправка рейтинга — значок «скорректировано».
         rating_correction = getattr(team, 'rating_correction', None)
@@ -325,12 +348,35 @@ class TeamDetailView(DetailView):
         from users.city_stats import team_fan_geography
         context['fan_geography'] = team_fan_geography(team)
 
+        # Фан-зона: рейтинг болельщиков за месяц, главный фанат, соперник.
+        from engagement.fanzone import fan_zone
+        context['fan_zone'] = fan_zone(team, self.request.user)
+        if self.request.user.is_authenticated and is_following:
+            from engagement.quests import track
+            track(self.request.user, 'fan_zone')
+        me = context['fan_zone']['me']
+        if me and me['top_percent'] and me['top_percent'] <= 50 and self.request.user.is_profile_public:
+            context['fan_brag_image'] = self.request.build_absolute_uri(reverse(
+                'engagement:brag_card', args=[self.request.user.username, f'fan_top-{team.id}']
+            ))
+            context['fan_brag_url'] = self.request.build_absolute_uri(f"{reverse('teams:detail', args=[team.id])}#fan-zone")
+            context['fan_brag_text'] = f"Я в топ-{me['top_percent']}% болельщиков {team.name} на DOPX. А ты?"
+
         # Embed-код виджета.
         widget_url = self.request.build_absolute_uri(reverse('teams:widget', args=[team.id]))
         context['widget_embed_code'] = (
             f'<iframe src="{widget_url}" width="320" height="180" '
             f'style="border:none;border-radius:12px;overflow:hidden" '
             f'title="Рейтинг {team.name} на DOPX"></iframe>'
+        )
+        players_widget_url = self.request.build_absolute_uri(
+            reverse('engagement:team_players_widget', args=[team.id])
+        )
+        context['players_widget_url'] = players_widget_url
+        context['players_widget_embed_code'] = (
+            f'<iframe src="{players_widget_url}" width="340" height="460" '
+            f'style="border:none;border-radius:12px;overflow:hidden" '
+            f'title="Рейтинг игроков {team.name} на DOPX"></iframe>'
         )
         return context
 

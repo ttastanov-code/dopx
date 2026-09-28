@@ -62,7 +62,7 @@
             onclick="if(window.dopxTrack){dopxTrack('share_clicked', {channel: 'native', context: 'season_recap', player_id: '{{ player.id }}'})}; navigator.share ? navigator.share({title: 'Итоги сезона {{ season.year }}: {{ player.first_name }} {{ player.last_name }}', url: window.location.href}) : window.open('{{ recap_card_url }}', '_blank')">
       <i class="ti ti-share"></i> Поделиться
     </button>
-    <a href="https://t.me/share/url?url={{ request.build_absolute_uri|urlencode }}&text={{ player.first_name|urlencode }}%20{{ player.last_name|urlencode }}%20-%20итоги%20сезона%20на%20DOPX"
+    <a href="https://t.me/share/url?url={{ request.scheme }}%3A%2F%2F{{ request.get_host|urlencode }}{{ request.path|urlencode }}&text={{ player.first_name|urlencode }}%20{{ player.last_name|urlencode }}%20-%20итоги%20сезона%20на%20DOPX"
        target="_blank" rel="noopener" class="btn btn-outline btn-sm"
        onclick="if(window.dopxTrack){dopxTrack('share_clicked', {channel: 'telegram', context: 'season_recap', player_id: '{{ player.id }}'})}">
       <i class="ti ti-brand-telegram"></i> Telegram

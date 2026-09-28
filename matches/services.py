@@ -186,7 +186,7 @@ def _describe_consensus_text(consensus_level: str | None) -> str:
     if consensus_level == "high":
         return "Болельщики почти единодушны в оценке этого матча."
     if consensus_level == "low":
-        return "Мнения о матче разошлись сильно — единого впечатления нет."
+        return "Мнения о матче сильно разошлись."
     if consensus_level == "medium":
         return "Мнения о матче разошлись умеренно."
     return ""
@@ -224,7 +224,7 @@ def _describe_controversial_episode(events: list, referee_aggregate) -> str:
     if disallowed:
         event = disallowed[0]
         who = f" ({event.player})" if event.player_id else ""
-        return f"Отменённый гол на {event.display_minute}'{who} — главный спорный эпизод матча."
+        return f"Главный спорный эпизод: отменённый гол на {event.display_minute}'{who}."
 
     if referee_aggregate is not None:
         home_avg, away_avg = referee_aggregate.home_fans_avg, referee_aggregate.away_fans_avg
@@ -235,8 +235,8 @@ def _describe_controversial_episode(events: list, referee_aggregate) -> str:
                 who = f" ({event.player})" if event.player_id else ""
                 gap = abs(home_avg - away_avg)
                 return (
-                    f"Красная карточка на {event.display_minute}'{who} — вероятно, "
-                    f"самый спорный момент матча (мнения о судействе разошлись на {gap:.1f} балла)."
+                    f"Спорный момент: красная карточка на {event.display_minute}'{who}. "
+                    f"Болельщики двух команд оценили судейство с разницей {gap:.1f} балла."
                 )
     return ""
 
@@ -256,12 +256,12 @@ def _describe_xg(match, home_stats, away_stats) -> dict | None:
     home, away = match.home_team.name, match.away_team.name
     if abs(gap) < XG_CLEAR_GAP:
         verdict = "equal"
-        text = "По моментам команды шли на равных." if score_gap == 0 else "По моментам почти поровну — счёт решили детали."
+        text = "По моментам команды шли на равных." if score_gap == 0 else "По моментам почти поровну, счёт решили детали."
     else:
         leader = home if gap > 0 else away
         won_by_leader = (score_gap > 0 and gap > 0) or (score_gap < 0 and gap < 0)
         if won_by_leader:
-            verdict, text = "deserved", f"Победа {leader} заслуженная — моментов было заметно больше."
+            verdict, text = "deserved", f"Победа {leader} заслуженная: моментов было заметно больше."
         else:
             verdict, text = "unfair", f"Счёт несправедлив к {leader}: моментов у них было больше."
     return {"home": home_xg, "away": away_xg, "verdict": verdict, "text": text}
@@ -304,10 +304,10 @@ def _describe_archetype(match, drama_level: str, expectations: dict | None, xg: 
                 "text": "Большинство болельщиков назвали его лучшим матчем тура."}
     if margin >= 3:
         return {"title": "Разгром", "icon": "ti-hammer", "tone": "primary",
-                "text": f"Победа с разницей +{margin} — убедительнее не бывает."}
+                "text": f"Победа с разницей в {margin} мяча."}
     if drama_level == "low":
         title = "Тактическая ничья" if margin == 0 else "Спокойный матч"
-        return {"title": title, "icon": "ti-chess", "tone": "neutral", "text": "Без больших эмоций — матч на контроле."}
+        return {"title": title, "icon": "ti-chess", "tone": "neutral", "text": "Спокойная игра без больших эмоций."}
     if margin == 0:
         return {"title": "Боевая ничья", "icon": "ti-swords", "tone": "info", "text": "Равная борьба без победителя."}
     if xg and xg["verdict"] == "deserved":

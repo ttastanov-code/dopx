@@ -30,6 +30,9 @@ PUSH_PROFILES = {
     'match_changed': {'ttl': 12 * 60 * 60, 'urgency': 'normal'},
     'voting_closing': {'ttl': 60 * 60, 'urgency': 'high'},
     'ratings_published': {'ttl': 24 * 60 * 60, 'urgency': 'normal'},
+    'streak': {'ttl': 4 * 60 * 60, 'urgency': 'normal'},
+    'social': {'ttl': 24 * 60 * 60, 'urgency': 'normal'},
+    'daily_poll': {'ttl': 24 * 60 * 60, 'urgency': 'normal'},
     'default': {'ttl': 6 * 60 * 60, 'urgency': 'normal'},
 }
 
@@ -48,6 +51,9 @@ PUSH_KIND_SETTING = {
     'match_changed': 'push_match_changes',
     'voting_closing': 'push_voting',
     'ratings_published': 'push_results',
+    'streak': 'push_streak',
+    'social': 'push_social',
+    'daily_poll': 'push_daily',
 }
 
 

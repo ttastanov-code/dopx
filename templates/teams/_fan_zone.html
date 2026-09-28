@@ -1,0 +1,78 @@
+{% comment %}
+Фан-зона клуба (engagement/fanzone.py): главный фанат месяца, топ, моё место, соперник.
+Стили — css/ui.css (dx-fanzone).
+{% endcomment %}
+{% load ui_extras engagement_extras %}
+<section id="fan-zone" class="dx-fanzone" aria-labelledby="fan-zone-title">
+    <header class="dx-fanzone__head">
+        <div>
+            <div class="dx-fanzone__eyebrow"><i class="ti ti-flag"></i> Фан-зона · {{ fan_zone.month|date:"F"|lower }}</div>
+            <h3 id="fan-zone-title" class="dx-fanzone__title">Болельщики {{ team.name }}</h3>
+        </div>
+        <div class="dx-fanzone__kpi"><b>{{ fan_zone.active }}</b><span>{{ fan_zone.active|ru_plural:"активный,активных,активных" }} из {{ fan_zone.fans }}</span></div>
+    </header>
+
+    {% if fan_zone.leader %}
+    <a href="{% url 'users:public_profile' fan_zone.leader.user.username %}" class="dx-fanzone__leader">
+        <span class="dx-fanzone__crown"><i class="ti ti-crown"></i></span>
+        <span class="dx-fanzone__leader-body">
+            <small>Главный фанат месяца</small>
+            <b class="{{ fan_zone.leader.user|name_class }}">{{ fan_zone.leader.user.username }}</b>
+        </span>
+        <span class="dx-fanzone__pts">{{ fan_zone.leader.points }}<small>очк.</small></span>
+    </a>
+
+    {% if fan_zone.top|length > 1 %}
+    <ol class="dx-rank dx-rank--compact">
+        {% for row in fan_zone.top|slice:"1:" %}
+        <li class="dx-rank__row{% if row.user == user %} is-me{% endif %}">
+            <span class="dx-rank__place">{{ row.place }}</span>
+            <a href="{% url 'users:public_profile' row.user.username %}" class="dx-rank__name {{ row.user|name_class }}">{{ row.user.username }}</a>
+            <span class="dx-rank__value">{{ row.points }}</span>
+        </li>
+        {% endfor %}
+    </ol>
+    {% endif %}
+    {% else %}
+    <div class="dx-fanzone__empty">
+        <i class="ti ti-crown"></i>
+        <p><b>Место главного фаната свободно.</b> Оцените матч {{ team.name }} или угадайте исход, и оно ваше.</p>
+    </div>
+    {% endif %}
+
+    {% if fan_zone.me %}
+    <div class="dx-fanzone__me">
+        <div>
+            <small>Вы</small>
+            {% if fan_zone.me.place %}
+            <b>{{ fan_zone.me.place }}-е место · {{ fan_zone.me.points }} очк.</b>
+            {% if fan_zone.me.top_percent %}<span>топ-{{ fan_zone.me.top_percent }}% болельщиков клуба</span>{% endif %}
+            {% else %}
+            <b>Пока без очков в этом месяце</b>
+            {% endif %}
+        </div>
+        {% if fan_brag_image %}
+        {% include 'components/_share_sheet.html' with url=fan_brag_url text=fan_brag_text image=fan_brag_image label="Похвастаться" %}
+        {% endif %}
+    </div>
+    {% elif not user.is_authenticated %}
+    <p class="dx-fanzone__hint"><a href="{% url 'users:register' %}">Зарегистрируйтесь</a> и подпишитесь на клуб, чтобы попасть в рейтинг.</p>
+    {% else %}
+    <p class="dx-fanzone__hint">Подпишитесь на клуб или укажите его своим при оценке, чтобы попасть в рейтинг.</p>
+    {% endif %}
+
+    {% if fan_zone.rival %}
+    {# Сравнение активности с соперником по дерби. #}
+    <div class="dx-fanzone__rival">
+        <div class="dx-fanzone__rival-head"><i class="ti ti-swords"></i> Против болельщиков {{ fan_zone.rival.team.name }}</div>
+        {% with ours=fan_zone.points theirs=fan_zone.rival.points %}
+        <div class="dx-fanzone__vs">
+            <span><b>{{ ours }}</b> {{ team.name }}</span>
+            <span>{{ fan_zone.rival.team.name }} <b>{{ theirs }}</b></span>
+        </div>
+        <div class="dx-fanzone__vsbar"><i style="width: {% if ours or theirs %}{% widthratio ours ours|add:theirs 100 %}{% else %}50{% endif %}%"></i></div>
+        <p class="dx-fanzone__hint">Очки месяца: 10 за оценку матча, 5 за угаданный исход. Активных: {{ fan_zone.active }} против {{ fan_zone.rival.active }}.</p>
+        {% endwith %}
+    </div>
+    {% endif %}
+</section>

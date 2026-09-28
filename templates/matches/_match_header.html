@@ -78,7 +78,7 @@
         {% elif match.was_rescheduled and match.tour %}
         <div class="alert alert-warning text-sm mb-5 sm:mb-8 rounded-xl">
             <i class="ti ti-calendar-exclamation"></i>
-            <span>Матч был перенесён — изначально относится к {{ match.tour }}-му туру, но играется отдельно от остальных его матчей.</span>
+            <span>Перенесённый матч {{ match.tour }}-го тура. Играется отдельно от остальных матчей тура.</span>
         </div>
         {% endif %}
 
@@ -263,12 +263,12 @@
 
         {# Telegram/WhatsApp — второй уровень (btn-xs). #}
         <div class="flex flex-wrap justify-center gap-2 mt-2.5">
-            <a href="https://t.me/share/url?url={{ request.build_absolute_uri|urlencode }}&text={{ share_text|urlencode }}"
+            <a href="https://t.me/share/url?url={{ request.scheme }}%3A%2F%2F{{ request.get_host|urlencode }}{{ request.path|urlencode }}&text={{ share_text|urlencode }}"
                target="_blank" rel="noopener" class="btn btn-xs btn-outline"
                onclick="if(window.dopxTrack){dopxTrack('share_clicked', {channel: 'telegram', match_id: '{{ match.id }}'})}">
                 <i class="ti ti-brand-telegram"></i> Telegram
             </a>
-            <a href="https://wa.me/?text={{ share_text|urlencode }}%20{{ request.build_absolute_uri|urlencode }}"
+            <a href="https://wa.me/?text={{ share_text|urlencode }}%20{{ request.scheme }}%3A%2F%2F{{ request.get_host|urlencode }}{{ request.path|urlencode }}"
                target="_blank" rel="noopener" class="btn btn-xs btn-outline"
                onclick="if(window.dopxTrack){dopxTrack('share_clicked', {channel: 'whatsapp', match_id: '{{ match.id }}'})}">
                 <i class="ti ti-brand-whatsapp"></i> WhatsApp

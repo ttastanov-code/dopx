@@ -67,12 +67,12 @@ BADGE_RARITY_META = {
 }
 # Цитаты в нижней панели карточки — по редкости, не по конкретному достижению.
 BADGE_RARITY_QUOTES = {
-    "bronze": "Каждая легенда начинается с одной оценки.",
-    "silver": "Постоянство — это тоже мастерство.",
-    "gold": "Точность рождается из внимания к деталям.",
-    "platinum": "Дисциплина побеждает случайность.",
-    "secret": "Не всё раскрывается сразу.",
-    "legendary": "Прогноз — это искусство видеть невидимое.",
+    "bronze": "Первый шаг сделан.",
+    "silver": "Не пропускаю туры.",
+    "gold": "Смотрю матчи внимательно.",
+    "platinum": "Таких немного.",
+    "secret": "Условия держим в секрете.",
+    "legendary": "Таких единицы.",
 }
 
 
@@ -490,7 +490,7 @@ def build_match_share_card(
     draw.text((60 * S, 190 * S), f"{home_team} {home_score}:{away_score} {away_team}", font=font_bold, fill="#ffffff")
     # Без emoji — в шрифте их нет.
     draw.text((60 * S, 290 * S), f"Лучший на поле: {top_player_name} — {top_player_score:.1f}/10", font=font_regular, fill="#60a5fa")
-    draw.text((60 * S, _CARD_RENDER_SIZE[1] - 50 * S), "Голос трибун измеряем — dopx.kz", font=font_small, fill="#737373")
+    draw.text((60 * S, _CARD_RENDER_SIZE[1] - 50 * S), "Голос трибун — измеряем · dopx.kz", font=font_small, fill="#737373")
 
     # Уменьшаем до финального размера (сглаживание).
     img = img.resize(CARD_SIZE, Image.LANCZOS)
@@ -670,7 +670,40 @@ def build_streak_share_card(*, username: str, streak_type: str, streak_count: in
     # mtime фона и версия дизайна — в ключе кэша.
     bg_marker = f"custom-{custom_bg[1]}" if custom_bg else "flat"
     key = _cache_key(username, streak_type, str(streak_count), "v2", bg_marker)
-    relative_path = f"share-cards/streak_{key}.png"
+    return _render_stat_card(
+        relative_path=f"share-cards/streak_{key}.png", username=username, eyebrow=eyebrow,
+        number_text=str(streak_count), label_line1=label_line1, label_line2=label_line2,
+        accent=accent, background=custom_bg[0] if custom_bg else None,
+    )
+
+
+def build_brag_share_card(*, username: str, kind: str, number_text: str, label_line1: str,
+                          label_line2: str, eyebrow: str) -> str:
+    """Карточка «похвастаться» (engagement): топ-% болельщиков клуба, уровень сезона, серия дней."""
+    accents = {"fan_top": (52, 211, 153), "season": (251, 191, 36), "day_streak": (251, 146, 60),
+               "predictions": (96, 165, 250)}
+    key = _cache_key(username, kind, number_text, label_line1, label_line2, "v1")
+    return _render_stat_card(
+        relative_path=f"share-cards/brag_{key}.png", username=username, eyebrow=eyebrow,
+        number_text=number_text, label_line1=label_line1, label_line2=label_line2,
+        accent=accents.get(kind, (167, 139, 250)), background=None,
+    )
+
+
+def build_social_card(*, kind: str, eyebrow: str, number_text: str, label_line1: str, label_line2: str) -> str:
+    """Картинка для соцсетей DOPX (игрок тура, спорный судья)."""
+    accents = {"player_of_round": (52, 211, 153), "referee": (248, 113, 113), "drama": (251, 146, 60)}
+    key = _cache_key(kind, eyebrow, number_text, label_line1, label_line2, "v1")
+    return _render_stat_card(
+        relative_path=f"share-cards/social_{key}.png", username="dopx", eyebrow=eyebrow,
+        number_text=number_text, label_line1=label_line1, label_line2=label_line2,
+        accent=accents.get(kind, (167, 139, 250)), background=None,
+    )
+
+
+def _render_stat_card(*, relative_path: str, username: str, eyebrow: str, number_text: str,
+                      label_line1: str, label_line2: str, accent: tuple, background) -> str:
+    """Общая вёрстка карточки «большое число + подпись» (OG 1200×630). Кэш — по пути в MEDIA."""
     if default_storage.exists(relative_path):
         return relative_path
 
@@ -678,8 +711,8 @@ def build_streak_share_card(*, username: str, streak_type: str, streak_count: in
     W, H = _CARD_RENDER_SIZE
     MARGIN = 64 * S
 
-    if custom_bg is not None:
-        img = custom_bg[0]
+    if background is not None:
+        img = background
     else:
         img = Image.new("RGB", _CARD_RENDER_SIZE, (10, 10, 10))
 
@@ -721,11 +754,10 @@ def build_streak_share_card(*, username: str, streak_type: str, streak_count: in
     _shadow_tracked_text(draw, (MARGIN, ey_y), eyebrow, font_eyebrow, accent + (255,), tracking=4 * S)
     draw.line([(MARGIN + 2 * S, ey_y + 34 * S), (MARGIN + 94 * S, ey_y + 34 * S)], fill=accent + (255,), width=3 * S)
 
-    # Число серии: кегль уменьшается с числом цифр, подпись под числом.
-    digits = len(str(streak_count))
+    # Крупное число: кегль уменьшается с длиной, подпись под числом.
+    digits = len(number_text)
     number_size = {1: 240, 2: 240, 3: 200}.get(digits, 160)
     font_number = _badge_font("bold", number_size)
-    number_text = str(streak_count)
     num_y = 222 * S
     _shadow_text(draw, (MARGIN, num_y), number_text, font_number, accent + (255,), shadow_alpha=190, offset=(0, 6 * S))
     num_bottom = draw.textbbox((MARGIN, num_y), number_text, font=font_number)[3]
@@ -752,6 +784,8 @@ def build_streak_share_card(*, username: str, streak_type: str, streak_count: in
     buffer.seek(0)
     default_storage.save(relative_path, buffer)
     return relative_path
+
+
 
 
 def build_round_squad_share_card(
@@ -788,7 +822,7 @@ def build_round_squad_share_card(
         draw.text((60 * S, 440 * S), "Самый драматичный матч тура", font=font_label, fill="#a78bfa")
         draw.text((60 * S, 475 * S), dramatic_match_label, font=font_name, fill="#ffffff")
 
-    draw.text((60 * S, _CARD_RENDER_SIZE[1] - 50 * S), "Голос трибун измеряем — dopx.kz", font=font_small, fill="#737373")
+    draw.text((60 * S, _CARD_RENDER_SIZE[1] - 50 * S), "Голос трибун — измеряем · dopx.kz", font=font_small, fill="#737373")
 
     img = img.resize(CARD_SIZE, Image.LANCZOS)
     buffer = BytesIO()
@@ -833,7 +867,7 @@ def build_player_season_recap_card(
         draw.text((x, 320 * S), value, font=font_stat, fill="#60a5fa")
         draw.text((x, 400 * S), label, font=font_label, fill="#a3a3a3")
 
-    draw.text((60 * S, _CARD_RENDER_SIZE[1] - 50 * S), "Голос трибун измеряем — dopx.kz", font=font_label, fill="#737373")
+    draw.text((60 * S, _CARD_RENDER_SIZE[1] - 50 * S), "Голос трибун — измеряем · dopx.kz", font=font_label, fill="#737373")
 
     img = img.resize(CARD_SIZE, Image.LANCZOS)
     buffer = BytesIO()

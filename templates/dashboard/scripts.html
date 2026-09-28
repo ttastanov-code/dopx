@@ -86,12 +86,12 @@
                         </label>
                         {% endif %}
 
-                        {% if spec.name == 'cleanup_load_test' %}
+                        {% if spec.name == 'cleanup_load_test' or spec.name == 'reset_user_activity' %}
                         <div class="bg-error/10 rounded px-2 py-2">
                             <p class="text-xs font-medium text-error whitespace-normal break-words mb-1.5">
-                                Удаляет сразу, без пробного прогона. Для подтверждения впишите <span class="font-mono break-all">cleanup_load_test</span>:
+                                {% if spec.has_apply_flag %}Необратимо. Для применения впишите{% else %}Удаляет сразу, без пробного прогона. Для подтверждения впишите{% endif %} <span class="font-mono break-all">{{ spec.name }}</span>:
                             </p>
-                            <input type="text" name="confirm_text" placeholder="cleanup_load_test" class="input input-xs input-bordered w-full font-mono">
+                            <input type="text" name="confirm_text" placeholder="{{ spec.name }}" class="input input-xs input-bordered w-full font-mono">
                         </div>
                         {% endif %}
 

@@ -1,0 +1,122 @@
+{% extends 'base.html' %}
+{% load ui_extras engagement_extras %}
+
+{% block content %}
+{# Сезонный пропуск: engagement/season.py. Стили — css/ui.css (dx-pass). #}
+<div class="max-w-5xl mx-auto px-2 sm:px-0 space-y-5">
+    {% if not overview %}
+    <div class="dx-card text-center py-10"><p class="opacity-60">Сезон ещё не начался. Пропуск откроется с первым туром.</p></div>
+    {% else %}
+    <section class="dx-pass-hero">
+        <div class="dx-pass-hero__main">
+            <div class="dx-pass-hero__eyebrow"><i class="ti ti-ticket"></i> Сезонный пропуск {{ overview.season.year }}</div>
+            <h1 class="dx-pass-hero__title">
+                {% if user.is_authenticated %}Уровень {{ overview.level }}<span> из {{ overview.max_level }}</span>{% else %}30 уровней, каждый сезон заново{% endif %}
+            </h1>
+            {% if user.is_authenticated %}
+            <div class="dx-pass-hero__bar"><span style="width: {{ overview.level_progress }}%"></span></div>
+            <p class="dx-pass-hero__meta">
+                {% if overview.is_max %}Пропуск пройден полностью{% else %}ещё {{ overview.to_next }} XP до уровня {{ overview.level|add:1 }}{% endif %}
+                · {{ overview.xp }} XP за сезон{% if my_place %} · {{ my_place }}-е место{% endif %}
+            </p>
+            {% else %}
+            <p class="dx-pass-hero__meta">У всех равные шансы: уровни, рамки аватара, золотой ник и легендарные достижения.</p>
+            <a href="{% url 'users:register' %}" class="dx-pass-hero__cta">Начать сезон</a>
+            {% endif %}
+        </div>
+        {% if share_url %}
+        <div class="dx-pass-hero__share">
+            {% url 'engagement:brag_card' user.username 'season' as card_url %}
+            {% include 'components/_share_sheet.html' with url=share_url text=share_text image=card_url label="Похвастаться" %}
+        </div>
+        {% endif %}
+    </section>
+
+    <section class="dx-card">
+        <div class="dx-card__head"><div><h2 class="dx-card__title">Путь сезона</h2><p class="dx-card__subtitle">{{ xp_per_level }} XP на уровень · награды каждые 5 уровней</p></div></div>
+        <div class="dx-pass-track" aria-label="Уровни сезонного пропуска">
+            {% for cell in levels %}
+            <div class="dx-pass-cell{% if cell.reached %} is-reached{% endif %}{% if cell.level == overview.level and user.is_authenticated %} is-current{% endif %}{% if cell.reward %} has-reward{% endif %}"
+                 {% if cell.reward %}title="Уровень {{ cell.level }}: {{ cell.reward.title }}"{% endif %}>
+                <span class="dx-pass-cell__num">{{ cell.level }}</span>
+                {% if cell.reward %}<i class="ti {{ cell.reward.icon }}"></i>{% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        <div class="dx-pass-rewards">
+            {% for cell in levels %}{% if cell.reward %}
+            <div class="dx-pass-reward{% if cell.claimed %} is-claimed{% endif %}">
+                <span class="dx-pass-reward__lvl">{{ cell.level }}</span>
+                <span class="dx-pass-reward__ico"><i class="ti {{ cell.reward.icon }}"></i></span>
+                <span class="dx-pass-reward__title">{{ cell.reward.title }}</span>
+                {% if cell.claimed %}<i class="ti ti-circle-check dx-pass-reward__ok"></i>{% else %}<i class="ti ti-lock dx-pass-reward__lock"></i>{% endif %}
+            </div>
+            {% endif %}{% endfor %}
+        </div>
+    </section>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+        <div class="space-y-5">
+            {% if user.is_authenticated %}
+            <section class="dx-card">
+                <div class="dx-card__head"><div><h2 class="dx-card__title">Ваш сезон</h2><p class="dx-card__subtitle">Участников: {{ participants }}</p></div></div>
+                <div class="dx-season-me">
+                    <div><b>{% if my_place %}{{ my_place }}{% else %}–{% endif %}</b><small>место</small></div>
+                    <div><b>{{ overview.xp }}</b><small>XP за сезон</small></div>
+                    <div><b>{{ overview.level }}</b><small>уровень</small></div>
+                </div>
+                {% if next_reward %}
+                <div class="dx-pass-reward dx-season-next">
+                    <span class="dx-pass-reward__ico"><i class="ti {{ next_reward.icon }}"></i></span>
+                    <span class="dx-pass-reward__title">{{ next_reward.title }}<small>на {{ next_reward.level }}-м уровне, осталось {{ next_reward.xp_left }} XP</small></span>
+                </div>
+                {% elif overview.is_max %}
+                <p class="text-sm opacity-60 mt-3">Все награды сезона получены.</p>
+                {% endif %}
+            </section>
+            {% else %}
+            <section class="dx-card">
+                <div class="dx-card__head"><div><h2 class="dx-card__title">Ваш сезон</h2><p class="dx-card__subtitle">Участников: {{ participants }}</p></div></div>
+                <p class="text-sm opacity-70">Зарегистрируйтесь, и весь XP за оценки, прогнозы и задания пойдёт в пропуск. Первая награда, бронзовая рамка аватара, ждёт на 5-м уровне.</p>
+                <a href="{% url 'users:register' %}" class="btn btn-primary btn-sm mt-3">Начать сезон</a>
+            </section>
+            {% endif %}
+            <section class="dx-card">
+                <div class="dx-card__head"><div><h2 class="dx-card__title">Как получать XP</h2></div></div>
+                <ul class="dx-pass-how">
+                    <li><i class="ti ti-star"></i><span>Оценка матча</span><b>до 10 XP</b></li>
+                    <li><i class="ti ti-checklist"></i><span>Задания дня</span><b>5–20 XP</b></li>
+                    <li><i class="ti ti-sparkles"></i><span>Все задания дня</span><b>+{{ xp_rules.quests_bonus }} XP</b></li>
+                    <li><i class="ti ti-flame"></i><span>Серия дней: 3, 7, 14, 30…</span><b>до {{ xp_rules.max_streak }} XP</b></li>
+                    <li><i class="ti ti-user-plus"></i><span>Друг оценил первый матч</span><b>+{{ xp_rules.referral }} XP</b></li>
+                </ul>
+            </section>
+        </div>
+        <section class="dx-card">
+            <div class="dx-card__head"><div><h2 class="dx-card__title">Рейтинг сезона</h2><p class="dx-card__subtitle">Топ-10 по XP за сезон</p></div></div>
+            {% if top %}
+            <ol class="dx-rank">
+                {% for row in top %}
+                <li class="dx-rank__row{% if row.user == user %} is-me{% endif %}">
+                    <span class="dx-rank__place{% if row.place <= 3 %} is-top{% endif %}">{{ row.place }}</span>
+                    <a href="{% url 'users:public_profile' row.user.username %}" class="dx-rank__name {{ row.user|name_class }}">{{ row.user.username }}</a>
+                    <span class="dx-rank__meta">ур. {{ row.level }}</span>
+                    <b class="dx-rank__value">{{ row.xp }} XP</b>
+                </li>
+                {% endfor %}
+                {% if my_outside_top %}
+                <li class="dx-rank__gap" aria-hidden="true">···</li>
+                <li class="dx-rank__row is-me">
+                    <span class="dx-rank__place">{{ my_place }}</span>
+                    <span class="dx-rank__name {{ user|name_class }}">{{ user.username }}</span>
+                    <span class="dx-rank__meta">ур. {{ overview.level }}</span>
+                    <b class="dx-rank__value">{{ overview.xp }} XP</b>
+                </li>
+                {% endif %}
+            </ol>
+            {% else %}<p class="text-sm opacity-60">Сезон только начался, рейтинг пока пуст.</p>{% endif %}
+        </section>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

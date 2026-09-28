@@ -86,7 +86,7 @@
                     {% if not player.is_active %}
                         {# player.team — последняя известная команда, поэтому бейдж «Покинул клуб». #}
                         <span class="badge badge-lg badge-warning badge-outline"
-                              title="Больше не найден в текущем составе — сменил клуб или покинул КПЛ">
+                              title="Нет в текущем составе: сменил клуб или ушёл из КПЛ">
                             <i class="ti ti-door-exit"></i>
                             Покинул клуб
                         </span>
@@ -246,15 +246,8 @@
                     </table>
                 </div>
                 {% else %}
-                <div class="text-center py-8 opacity-60">
-                    <i class="ti ti-history-off text-3xl mb-2"></i>
-                    <p class="text-sm">Пока никто не оценил выступления этого игрока</p>
-                    {% if votable_match %}
-                    <a href="{% url 'evaluations:context' votable_match.id %}" class="btn btn-primary btn-xs mt-3">
-                        Оценить последний матч
-                    </a>
-                    {% endif %}
-                </div>
+                {% if votable_match %}{% url 'evaluations:context' votable_match.id as first_vote_url %}{% endif %}
+                {% include 'components/_first_vote.html' with text="Оценки болельщиков появятся здесь после первых голосов за матчи игрока." url=first_vote_url cta="Оценить матч" %}
                 {% endif %}
             </div>
         </div>

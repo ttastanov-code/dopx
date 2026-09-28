@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% load ui_extras engagement_extras %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto px-2 sm:px-0 space-y-5">
+    <section class="dx-pass-hero dx-pass-hero--leagues">
+        <div class="dx-pass-hero__main">
+            <div class="dx-pass-hero__eyebrow"><i class="ti ti-trophy"></i> Лига прогнозистов · сезон {{ league.season.year }}</div>
+            <h1 class="dx-pass-hero__title">{{ league.name }}</h1>
+            <p class="dx-pass-hero__meta">{{ rows|length }} {{ rows|length|ru_plural:"участник,участника,участников" }} · создал {{ league.owner.username }} · очко за каждый угаданный исход с {{ league.created_at|date:"d.m.Y" }}</p>
+            {% if not is_member %}
+                {% if user.is_authenticated %}
+                <form method="post" action="{% url 'engagement:friend_league_join' league.invite_code %}">{% csrf_token %}
+                    <button type="submit" class="dx-pass-hero__cta">Вступить в лигу</button>
+                </form>
+                {% else %}
+                <a href="{% url 'users:register' %}" class="dx-pass-hero__cta">Зарегистрироваться и вступить</a>
+                <a href="{% url 'users:login' %}?next={{ request.path|urlencode }}" class="dx-pass-hero__link">У меня уже есть аккаунт</a>
+                {% endif %}
+            {% endif %}
+        </div>
+        {% if is_member %}
+        <div class="dx-pass-hero__share">
+            <div class="dx-pass-hero__hint">Пригласите друзей в лигу</div>
+            {% include 'components/_share_sheet.html' with url=invite_url text=share_text label="Пригласить" %}
+        </div>
+        {% endif %}
+    </section>
+
+    <section class="dx-card">
+        <div class="dx-card__head"><div><h2 class="dx-card__title">Таблица</h2><p class="dx-card__subtitle">Прогноз ставится на странице матча до стартового свистка</p></div>
+            <a href="{% url 'matches:list' %}?status=scheduled" class="dx-noms__more">К прогнозам <i class="ti ti-chevron-right"></i></a></div>
+        <ol class="dx-rank">
+            {% for row in rows %}
+            <li class="dx-rank__row{% if row.user == user %} is-me{% endif %}">
+                <span class="dx-rank__place{% if row.place <= 3 and row.points %} is-top{% endif %}">{{ row.place }}</span>
+                <span class="dx-rank__name {{ row.user|name_class }}">{{ row.user.username }}</span>
+                <span class="dx-rank__meta">{% if row.total %}{{ row.accuracy }}% точность · {{ row.total }} {{ row.total|ru_plural:"прогноз,прогноза,прогнозов" }}{% else %}ещё нет решённых прогнозов{% endif %}</span>
+                <b class="dx-rank__value">{{ row.points }}</b>
+            </li>
+            {% endfor %}
+        </ol>
+        {% if is_member and league.owner != user %}
+        <form method="post" action="{% url 'engagement:friend_league_leave' league.invite_code %}" class="mt-4 text-right" onsubmit="return confirm('Выйти из лиги?')">{% csrf_token %}
+            <button type="submit" class="text-xs opacity-50 hover:opacity-100">Выйти из лиги</button>
+        </form>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

@@ -1885,3 +1885,324 @@ html.dx-drawer-lock, html.dx-drawer-lock body { overflow: hidden; }
 @media (max-width: 767px) { .dx-burger:not(.dx-burger--always) { display: none; } }
 /* «Ещё» в нижней панели — кнопка, без стандартного вида. */
 button.dx-tabbar__item { background: none; border: 0; font-family: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+
+/* ===== Вовлечение (engagement) ===== */
+:root { --dx-line: color-mix(in oklab, var(--color-base-content) 8%, transparent); --dx-soft: color-mix(in oklab, var(--color-base-content) 5%, transparent); }
+
+/* Чипы в приветствии: серия дней, сезон, лиги. */
+.dx-hello__chips { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .6rem; }
+.dx-chip-stat {
+    display: inline-flex; align-items: center; gap: .35rem;
+    padding: .3rem .65rem; border-radius: 999px; font-size: .78rem; font-weight: 600;
+    background: var(--dx-soft); border: 1px solid var(--dx-line); white-space: nowrap;
+    transition: background .15s ease, transform .15s ease;
+}
+a.dx-chip-stat:hover { background: color-mix(in oklab, var(--color-base-content) 9%, transparent); }
+a.dx-chip-stat:active { transform: scale(.97); }
+.dx-chip-stat .ti { font-size: .95rem; }
+.dx-chip-stat--flame { color: #ea580c; background: color-mix(in oklab, #fb923c 14%, transparent); border-color: color-mix(in oklab, #fb923c 30%, transparent); }
+.dx-chip-stat--flame.is-cold { color: inherit; opacity: .75; background: var(--dx-soft); border-color: var(--dx-line); }
+.dx-chip-stat--flame.is-cold .ti-flame { color: #fb923c; }
+.dx-chip-stat--season { color: #b45309; background: color-mix(in oklab, #fbbf24 16%, transparent); border-color: color-mix(in oklab, #fbbf24 34%, transparent); }
+[data-theme="dark"] .dx-chip-stat--season { color: #fcd34d; }
+[data-theme="dark"] .dx-chip-stat--flame:not(.is-cold) { color: #fdba74; }
+.dx-chip-stat__freeze { display: inline-flex; align-items: center; gap: .1rem; margin-left: .15rem; color: #0ea5e9; font-weight: 700; }
+
+/* Задания дня. */
+.dx-quests { margin-top: .9rem; min-width: 0; max-width: 100%; }
+.dx-quests__head { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; flex-wrap: wrap; margin-bottom: .5rem; }
+.dx-quests__title { font-weight: 700; font-size: .9rem; display: inline-flex; align-items: center; gap: .35rem; }
+.dx-quests__meta { font-size: .75rem; opacity: .6; }
+.dx-quests__list { display: grid; gap: .45rem; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 768px) { .dx-quests__list { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.dx-quest {
+    display: flex; align-items: center; gap: .65rem; padding: .6rem .7rem; min-width: 0;
+    border-radius: .9rem; background: var(--color-base-100); border: 1px solid var(--dx-line);
+    transition: border-color .15s ease, transform .15s ease;
+}
+.dx-quest:hover { border-color: color-mix(in oklab, var(--color-primary) 40%, transparent); }
+.dx-quest:active { transform: scale(.98); }
+.dx-quest__ico {
+    flex-shrink: 0; width: 2rem; height: 2rem; border-radius: .6rem; display: inline-flex; align-items: center; justify-content: center;
+    color: var(--color-primary); background: color-mix(in oklab, var(--color-primary) 12%, transparent); font-size: 1.05rem;
+}
+.dx-quest__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .35rem; }
+.dx-quest__title { font-size: .82rem; font-weight: 600; line-height: 1.25; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.dx-quest__bar { height: 4px; border-radius: 999px; background: var(--dx-soft); overflow: hidden; }
+.dx-quest__bar > span { display: block; height: 100%; border-radius: inherit; background: var(--color-primary); transition: width .5s cubic-bezier(.2, .8, .2, 1); }
+.dx-quest__xp { flex-shrink: 0; font-size: .8rem; font-weight: 800; color: var(--color-primary); display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; }
+.dx-quest__xp small { font-size: .68rem; font-weight: 600; opacity: .55; color: var(--color-base-content); }
+.dx-quest.is-done { opacity: .6; }
+.dx-quest.is-done .dx-quest__ico { color: var(--color-success); background: color-mix(in oklab, var(--color-success) 14%, transparent); }
+.dx-quest.is-done .dx-quest__bar > span { background: var(--color-success); }
+.dx-quest.is-done .dx-quest__title { text-decoration: line-through; text-decoration-color: color-mix(in oklab, var(--color-base-content) 35%, transparent); }
+
+/* Герой страниц пропуска/лиг/приглашений. */
+.dx-pass-hero {
+    position: relative; overflow: hidden; border-radius: 1.5rem; padding: 1.5rem 1.25rem;
+    color: #fff; display: flex; flex-direction: column; gap: 1.25rem;
+    background: radial-gradient(120% 140% at 100% 0%, #f59e0b 0%, transparent 55%), linear-gradient(135deg, #1e1b4b 0%, #312e81 55%, #4c1d95 100%);
+    box-shadow: 0 20px 40px -24px rgba(49, 46, 129, .6);
+}
+.dx-pass-hero--leagues { background: radial-gradient(120% 140% at 100% 0%, #22d3ee 0%, transparent 55%), linear-gradient(135deg, #0c4a6e 0%, #075985 50%, #1e3a8a 100%); }
+.dx-pass-hero--invite { background: radial-gradient(120% 140% at 100% 0%, #34d399 0%, transparent 55%), linear-gradient(135deg, #064e3b 0%, #065f46 50%, #134e4a 100%); }
+@media (min-width: 768px) { .dx-pass-hero { padding: 2rem 2.25rem; flex-direction: row; align-items: flex-end; justify-content: space-between; } }
+.dx-pass-hero__main { min-width: 0; flex: 1; max-width: 36rem; }
+.dx-pass-hero__eyebrow { display: inline-flex; align-items: center; gap: .35rem; font-size: .72rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; opacity: .8; }
+.dx-pass-hero__title { margin-top: .4rem; font-size: 1.75rem; line-height: 1.1; font-weight: 800; letter-spacing: -.02em; }
+.dx-pass-hero__title span { font-weight: 600; opacity: .6; font-size: .6em; }
+@media (min-width: 768px) { .dx-pass-hero__title { font-size: 2.25rem; } }
+.dx-pass-hero__bar { margin-top: .9rem; height: 10px; border-radius: 999px; background: rgba(255, 255, 255, .16); overflow: hidden; }
+.dx-pass-hero__bar > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #fde68a, #f59e0b); box-shadow: 0 0 16px rgba(251, 191, 36, .6); }
+.dx-pass-hero__meta { margin-top: .6rem; font-size: .85rem; opacity: .82; line-height: 1.45; }
+.dx-pass-hero__hint { margin-top: .5rem; font-size: .75rem; opacity: .65; }
+.dx-pass-hero__cta, .dx-pass-hero__link {
+    display: inline-flex; align-items: center; gap: .4rem; margin-top: 1rem; padding: .6rem 1.1rem;
+    border-radius: 999px; font-weight: 700; font-size: .875rem; background: #fff; color: #111827;
+    transition: transform .15s ease;
+}
+.dx-pass-hero__link { background: rgba(255, 255, 255, .14); color: #fff; }
+.dx-pass-hero__cta:active, .dx-pass-hero__link:active { transform: scale(.97); }
+.dx-pass-hero__share { flex-shrink: 0; }
+.dx-pass-hero .dx-share__main { background: #fff; color: #111827; }
+.dx-pass-hero .dx-share__alt { background: rgba(255, 255, 255, .14); color: #fff; border-color: transparent; }
+
+/* Трек уровней. */
+.dx-pass-track { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: .35rem; margin-top: 1rem; }
+@media (max-width: 480px) { .dx-pass-track { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+@media (min-width: 768px) { .dx-pass-track .dx-pass-cell { aspect-ratio: 1.5; } }
+.dx-pass-cell {
+    position: relative; aspect-ratio: 1; border-radius: .7rem; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: var(--dx-soft); border: 1px solid var(--dx-line); font-size: .75rem; font-weight: 700; color: color-mix(in oklab, var(--color-base-content) 45%, transparent);
+}
+.dx-pass-cell .ti { font-size: .9rem; margin-top: .05rem; }
+.dx-pass-cell.has-reward { border-style: dashed; border-color: color-mix(in oklab, #f59e0b 50%, transparent); color: #d97706; }
+.dx-pass-cell.is-reached { background: color-mix(in oklab, var(--color-primary) 14%, transparent); border-color: transparent; color: var(--color-primary); }
+.dx-pass-cell.is-reached.has-reward { background: linear-gradient(135deg, #fde68a, #f59e0b); color: #78350f; }
+.dx-pass-cell.is-current { box-shadow: 0 0 0 2px var(--color-primary); animation: dx-pass-pulse 2.4s ease-in-out infinite; }
+@keyframes dx-pass-pulse { 50% { box-shadow: 0 0 0 5px color-mix(in oklab, var(--color-primary) 25%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .dx-pass-cell.is-current { animation: none; } }
+
+.dx-pass-rewards { display: grid; grid-template-columns: 1fr; gap: .45rem; margin-top: 1.1rem; }
+@media (min-width: 640px) { .dx-pass-rewards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.dx-pass-reward { display: flex; align-items: center; gap: .6rem; padding: .55rem .7rem; border-radius: .85rem; background: var(--dx-soft); }
+.dx-pass-reward__lvl { flex-shrink: 0; min-width: 1.9rem; font-size: .72rem; font-weight: 800; opacity: .55; }
+.dx-pass-reward__ico { flex-shrink: 0; width: 2rem; height: 2rem; border-radius: .6rem; display: inline-flex; align-items: center; justify-content: center; color: #d97706; background: color-mix(in oklab, #f59e0b 16%, transparent); }
+.dx-pass-reward__title { flex: 1; min-width: 0; font-size: .85rem; font-weight: 600; }
+.dx-pass-reward__ok { color: var(--color-success); font-size: 1.15rem; }
+.dx-pass-reward__lock { opacity: .3; }
+.dx-pass-reward:not(.is-claimed) .dx-pass-reward__ico { filter: grayscale(.6); opacity: .7; }
+
+.dx-pass-how { display: flex; flex-direction: column; margin-top: .5rem; }
+.dx-pass-how li { display: flex; align-items: center; gap: .65rem; padding: .6rem 0; font-size: .875rem; }
+.dx-pass-how li + li { border-top: 1px solid var(--dx-line); }
+.dx-pass-how li .ti { color: var(--color-primary); font-size: 1.1rem; }
+.dx-pass-how li span { flex: 1; }
+.dx-pass-how li b { font-size: .8rem; white-space: nowrap; }
+
+/* Рейтинги (сезон, лиги, фан-зона). */
+.dx-rank { display: flex; flex-direction: column; margin-top: .5rem; }
+.dx-rank__row { display: flex; align-items: center; gap: .65rem; padding: .55rem .4rem; border-radius: .7rem; font-size: .875rem; }
+.dx-rank__row + .dx-rank__row { border-top: 1px solid var(--dx-line); }
+.dx-rank__row.is-me { background: color-mix(in oklab, var(--color-primary) 9%, transparent); border-top-color: transparent; }
+.dx-rank__row.is-me + .dx-rank__row { border-top-color: transparent; }
+.dx-rank__place {
+    flex-shrink: 0; width: 1.7rem; height: 1.7rem; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+    font-size: .75rem; font-weight: 800; background: var(--dx-soft);
+}
+.dx-rank__place.is-top { background: linear-gradient(135deg, #fde68a, #f59e0b); color: #78350f; }
+.dx-rank__name { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+a.dx-rank__name:hover { color: var(--color-primary); }
+.dx-rank__meta { flex-shrink: 0; font-size: .75rem; opacity: .55; }
+.dx-rank__value { flex-shrink: 0; font-weight: 800; font-variant-numeric: tabular-nums; }
+.dx-rank--compact .dx-rank__row { padding: .4rem .3rem; font-size: .82rem; }
+
+/* Лиги с друзьями. */
+.dx-league-create { display: flex; gap: .4rem; margin-top: 1rem; padding: .3rem; border-radius: 999px; background: rgba(255, 255, 255, .14); }
+.dx-league-create input { flex: 1; min-width: 0; background: transparent; border: 0; outline: 0; color: #fff; padding: .45rem .75rem; font-size: 1rem; text-overflow: ellipsis; }
+.dx-league-create input::placeholder { color: rgba(255, 255, 255, .6); }
+.dx-league-create button { flex-shrink: 0; display: inline-flex; align-items: center; gap: .3rem; padding: .5rem 1rem; border-radius: 999px; background: #fff; color: #0c4a6e; font-weight: 700; font-size: .85rem; }
+.dx-league-row {
+    display: flex; align-items: center; gap: .75rem; padding: .85rem 1rem; border-radius: 1.1rem;
+    background: var(--color-base-100); border: 1px solid var(--dx-line); transition: border-color .15s ease, transform .15s ease;
+}
+.dx-league-row:hover { border-color: color-mix(in oklab, var(--color-primary) 40%, transparent); }
+.dx-league-row:active { transform: scale(.99); }
+.dx-league-row__ico { flex-shrink: 0; width: 2.5rem; height: 2.5rem; border-radius: .8rem; display: inline-flex; align-items: center; justify-content: center; font-size: 1.2rem; color: #0284c7; background: color-mix(in oklab, #0ea5e9 14%, transparent); }
+.dx-league-row__body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.dx-league-row__name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dx-league-row__meta { font-size: .75rem; opacity: .6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dx-league-row__place { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; line-height: 1; }
+.dx-league-row__place b { font-size: 1.15rem; font-weight: 800; }
+.dx-league-row__place small { font-size: .62rem; opacity: .55; margin-top: .15rem; }
+
+/* Ссылка-приглашение. */
+.dx-invite-link { display: flex; gap: .4rem; margin-top: 1rem; padding: .3rem; border-radius: 999px; background: rgba(255, 255, 255, .14); }
+.dx-invite-link input { flex: 1; min-width: 0; background: transparent; border: 0; outline: 0; color: #fff; padding: .45rem .75rem; font-size: .85rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.dx-invite-link button { flex-shrink: 0; padding: .5rem 1rem; border-radius: 999px; background: #fff; color: #065f46; font-weight: 700; font-size: .85rem; }
+
+/* Поделиться. */
+.dx-share { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+.dx-share__main {
+    display: inline-flex; align-items: center; gap: .4rem; padding: .55rem 1rem; border-radius: 999px;
+    background: var(--color-primary); color: var(--color-primary-content); font-weight: 700; font-size: .85rem; font-family: inherit;
+    transition: transform .15s ease, filter .15s ease;
+}
+.dx-share__main:hover { filter: brightness(1.05); }
+.dx-share__main:active { transform: scale(.97); }
+.dx-share__alts { display: inline-flex; gap: .3rem; }
+.dx-share__alt {
+    width: 2.25rem; height: 2.25rem; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+    font-size: 1.05rem; background: var(--dx-soft); border: 1px solid var(--dx-line); color: inherit; font-family: inherit;
+    transition: transform .15s ease, background .15s ease;
+}
+.dx-share__alt:active { transform: scale(.93); }
+.dx-share .dx-share__alt.is-copied { color: #fff; background: var(--color-success); border-color: transparent; }
+.dx-share__alt--wa { color: #16a34a; }
+.dx-share__alt--tg { color: #0284c7; }
+
+/* «Спорим?» в виджете прогноза и плашка вызова. */
+.dx-challenge { margin-top: .9rem; padding: .75rem; border-radius: 1rem; display: flex; flex-direction: column; gap: .6rem; background: color-mix(in oklab, var(--color-primary) 7%, transparent); }
+@media (min-width: 640px) { .dx-challenge { flex-direction: row; align-items: center; justify-content: space-between; } }
+.dx-challenge__text { display: flex; align-items: center; gap: .5rem; font-size: .82rem; }
+.dx-challenge__text .ti { font-size: 1.2rem; color: var(--color-primary); }
+.dx-challenge-banner {
+    display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; margin-bottom: 1rem; padding: .85rem 1rem; border-radius: 1.1rem;
+    background: linear-gradient(135deg, color-mix(in oklab, var(--color-primary) 14%, transparent), color-mix(in oklab, var(--color-secondary) 12%, transparent));
+    border: 1px solid color-mix(in oklab, var(--color-primary) 25%, transparent);
+    animation: dx-live-enter .5s ease both;
+}
+.dx-challenge-banner__ico { flex-shrink: 0; width: 2.5rem; height: 2.5rem; border-radius: .8rem; display: inline-flex; align-items: center; justify-content: center; font-size: 1.3rem; color: var(--color-primary-content); background: var(--color-primary); }
+.dx-challenge-banner__body { flex: 1; min-width: 12rem; display: flex; flex-direction: column; font-size: .85rem; }
+.dx-challenge-banner__body span { opacity: .7; font-size: .8rem; }
+
+/* Пустое состояние: «Будьте первым, кто оценит». */
+.dx-first-vote {
+    display: flex; align-items: center; gap: .85rem; flex-wrap: wrap; padding: 1rem 1.1rem; border-radius: 1.25rem;
+    background: var(--color-base-100); border: 1px dashed color-mix(in oklab, var(--color-primary) 40%, transparent);
+}
+.dx-first-vote__ico { flex-shrink: 0; width: 2.75rem; height: 2.75rem; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 1.35rem; color: #d97706; background: color-mix(in oklab, #f59e0b 15%, transparent); }
+.dx-first-vote__body { flex: 1; min-width: 12rem; display: flex; flex-direction: column; gap: .15rem; font-size: .9rem; }
+.dx-first-vote__body span { font-size: .8rem; opacity: .65; }
+.dx-expert-take blockquote { position: relative; padding-left: 1rem; font-size: .9rem; line-height: 1.55; border-left: 3px solid var(--color-primary); }
+.dx-expert-take figcaption { display: flex; flex-wrap: wrap; gap: .4rem .9rem; margin-top: .45rem; padding-left: 1rem; font-size: .75rem; opacity: .65; }
+.dx-expert-take figcaption a { display: inline-flex; align-items: center; gap: .2rem; font-weight: 600; }
+.dx-expert-take figcaption a:hover { color: var(--color-primary); }
+
+/* Фан-зона клуба. */
+.dx-fanzone { padding: 1rem; border-radius: 1.25rem; background: var(--color-base-100); border: 1px solid var(--dx-line); display: flex; flex-direction: column; gap: .8rem; }
+.dx-fanzone__head { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; }
+.dx-fanzone__eyebrow { display: inline-flex; align-items: center; gap: .3rem; font-size: .7rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; opacity: .55; }
+.dx-fanzone__title { font-weight: 800; font-size: 1.05rem; margin-top: .15rem; }
+.dx-fanzone__kpi { flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; }
+.dx-fanzone__kpi b { font-size: 1.25rem; font-weight: 800; }
+.dx-fanzone__kpi span { font-size: .68rem; opacity: .55; }
+.dx-fanzone__leader {
+    display: flex; align-items: center; gap: .75rem; padding: .75rem .85rem; border-radius: 1rem;
+    background: linear-gradient(135deg, color-mix(in oklab, #fbbf24 22%, transparent), color-mix(in oklab, #f59e0b 8%, transparent));
+    border: 1px solid color-mix(in oklab, #f59e0b 30%, transparent); transition: transform .15s ease;
+}
+.dx-fanzone__leader:active { transform: scale(.98); }
+.dx-fanzone__crown { flex-shrink: 0; width: 2.4rem; height: 2.4rem; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 1.25rem; color: #78350f; background: linear-gradient(135deg, #fde68a, #f59e0b); box-shadow: 0 6px 16px -6px rgba(245, 158, 11, .7); }
+.dx-fanzone__leader-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.dx-fanzone__leader-body small { font-size: .7rem; opacity: .65; }
+.dx-fanzone__leader-body b { font-size: .95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dx-fanzone__pts { flex-shrink: 0; font-size: 1.2rem; font-weight: 800; display: flex; flex-direction: column; align-items: flex-end; line-height: 1; }
+.dx-fanzone__pts small { font-size: .62rem; font-weight: 600; opacity: .55; margin-top: .15rem; }
+.dx-fanzone__empty { display: flex; gap: .65rem; align-items: flex-start; padding: .75rem; border-radius: 1rem; background: var(--dx-soft); font-size: .82rem; }
+.dx-fanzone__empty .ti { font-size: 1.3rem; color: #d97706; }
+.dx-fanzone__me { display: flex; align-items: center; justify-content: space-between; gap: .6rem; flex-wrap: wrap; padding: .7rem .8rem; border-radius: 1rem; background: color-mix(in oklab, var(--color-primary) 8%, transparent); }
+.dx-fanzone__me > div:first-child { display: flex; flex-direction: column; font-size: .85rem; }
+.dx-fanzone__me small { font-size: .68rem; opacity: .6; }
+.dx-fanzone__me span { font-size: .75rem; color: var(--color-primary); font-weight: 600; }
+.dx-fanzone__hint { font-size: .75rem; opacity: .6; line-height: 1.45; }
+.dx-fanzone__hint a { color: var(--color-primary); font-weight: 600; }
+.dx-fanzone__rival { padding-top: .8rem; border-top: 1px solid var(--dx-line); display: flex; flex-direction: column; gap: .45rem; }
+.dx-fanzone__rival-head { display: flex; align-items: center; gap: .35rem; font-size: .8rem; font-weight: 700; }
+.dx-fanzone__vs { display: flex; justify-content: space-between; gap: .5rem; font-size: .78rem; }
+.dx-fanzone__vs b { font-size: .95rem; }
+.dx-fanzone__vsbar { height: 8px; border-radius: 999px; overflow: hidden; background: var(--color-secondary); }
+.dx-fanzone__vsbar > i { display: block; height: 100%; background: var(--color-primary); border-right: 2px solid var(--color-base-100); transition: width .6s cubic-bezier(.2, .8, .2, 1); }
+
+/* Карточки «похвастаться» в профиле. */
+.dx-brags { display: grid; grid-template-columns: 1fr; gap: .6rem; }
+@media (min-width: 640px) { .dx-brags { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.dx-brag { --c: #a78bfa; padding: 1rem; border-radius: 1.1rem; color: #fff; display: flex; flex-direction: column; gap: .15rem; background: radial-gradient(120% 120% at 100% 0%, color-mix(in oklab, var(--c) 70%, transparent), transparent 60%), #111827; }
+.dx-brag--predictions { --c: #60a5fa; }
+.dx-brag--day_streak { --c: #fb923c; }
+.dx-brag--season { --c: #fbbf24; }
+.dx-brag__num { font-size: 2rem; font-weight: 800; line-height: 1; color: var(--c); }
+.dx-brag__title { font-size: .8rem; opacity: .75; margin-bottom: .6rem; }
+.dx-brag .dx-share__main { background: #fff; color: #111827; padding: .45rem .85rem; font-size: .8rem; }
+.dx-brag .dx-share__alt { background: rgba(255, 255, 255, .12); border-color: transparent; color: #fff; width: 2rem; height: 2rem; font-size: .95rem; }
+
+/* Метка в шторке. */
+.dx-drawer__tag { margin-left: auto; padding: .12rem .45rem; border-radius: 999px; font-size: .68rem; font-weight: 700; color: var(--color-success); background: color-mix(in oklab, var(--color-success) 14%, transparent); }
+.dx-drawer__tag + .dx-drawer__chev { margin-left: .4rem; }
+
+/* Косметика сезонного пропуска. */
+.dx-frame { border-radius: 50%; box-shadow: 0 0 0 2px var(--color-base-100), 0 0 0 4px var(--dx-frame); }
+.dx-frame--bronze { --dx-frame: #c2773a; }
+.dx-frame--silver { --dx-frame: #b8c2cc; }
+.dx-frame--gold { --dx-frame: #f5b400; box-shadow: 0 0 0 2px var(--color-base-100), 0 0 0 4px var(--dx-frame), 0 0 14px 2px rgba(245, 180, 0, .45); }
+.dx-golden-name {
+    background: linear-gradient(90deg, #b45309, #f59e0b, #fde68a, #f59e0b, #b45309); background-size: 200% auto;
+    -webkit-background-clip: text; background-clip: text; color: transparent; font-weight: 800;
+    animation: dx-gold-shine 4s linear infinite;
+}
+@keyframes dx-gold-shine { to { background-position: 200% center; } }
+@media (prefers-reduced-motion: reduce) { .dx-golden-name { animation: none; } }
+
+/* Опросы недели: спорный момент и дуэль тура. */
+.dx-polls { display: grid; grid-template-columns: minmax(0, 1fr); gap: .75rem; }
+@media (min-width: 768px) { .dx-polls:has(> :nth-child(2)) { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.dx-poll {
+    min-width: 0; display: flex; flex-direction: column; gap: .55rem; padding: 1rem 1.05rem; border-radius: 1.25rem;
+    background: var(--color-base-100); border: 1px solid var(--dx-line);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .03), 0 8px 24px -18px rgba(0, 0, 0, .18);
+}
+.dx-poll--episode { background: linear-gradient(160deg, color-mix(in oklab, #f59e0b 9%, var(--color-base-100)), var(--color-base-100) 55%); }
+.dx-poll--duel { background: linear-gradient(160deg, color-mix(in oklab, var(--color-primary) 9%, var(--color-base-100)), var(--color-base-100) 55%); }
+.dx-poll__eyebrow { display: flex; align-items: center; gap: .35rem; font-size: .7rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; opacity: .6; }
+.dx-poll__total { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 600; }
+.dx-poll__q { font-size: 1.05rem; font-weight: 800; line-height: 1.25; }
+.dx-poll__ctx { font-size: .78rem; opacity: .65; line-height: 1.4; }
+a.dx-poll__ctx:hover { opacity: 1; color: var(--color-primary); }
+.dx-poll__opts { display: grid; grid-template-columns: minmax(0, 1fr); gap: .45rem; margin-top: .15rem; }
+.dx-poll__opt {
+    position: relative; overflow: hidden; display: flex; align-items: center; gap: .6rem; min-height: 2.9rem;
+    padding: .55rem .8rem; border-radius: .9rem; text-align: left; font: inherit; color: inherit;
+    background: var(--color-base-100); border: 1.5px solid color-mix(in oklab, var(--color-base-content) 12%, transparent);
+    transition: border-color .15s ease, transform .15s ease, background .15s ease;
+}
+button.dx-poll__opt:hover, a.dx-poll__opt:hover { border-color: var(--color-primary); background: color-mix(in oklab, var(--color-primary) 5%, var(--color-base-100)); }
+button.dx-poll__opt:active, a.dx-poll__opt:active { transform: scale(.98); }
+.dx-poll__opt.htmx-request { opacity: .6; }
+.dx-poll__ava { flex-shrink: 0; width: 2rem; height: 2rem; border-radius: 50%; object-fit: cover; background: var(--dx-soft); }
+.dx-poll__label { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: .88rem; font-weight: 700; line-height: 1.2; }
+.dx-poll__mine {
+    position: relative; flex-shrink: 0; width: 1.25rem; height: 1.25rem; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: .8rem; color: var(--color-primary-content); background: var(--color-primary);
+}
+.dx-poll__ava { position: relative; }
+.dx-poll__label small { font-size: .7rem; font-weight: 500; opacity: .6; margin-top: .1rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dx-poll__opt.is-result { border-color: transparent; background: var(--dx-soft); }
+.dx-poll__fill { position: absolute; inset: 0 auto 0 0; background: color-mix(in oklab, var(--color-base-content) 9%, transparent); animation: dx-poll-grow .7s cubic-bezier(.2, .8, .2, 1) both; }
+.dx-poll__opt.is-mine .dx-poll__fill { background: color-mix(in oklab, var(--color-primary) 22%, transparent); }
+.dx-poll__opt.is-mine { box-shadow: inset 0 0 0 1.5px var(--color-primary); }
+.dx-poll__pct { position: relative; flex-shrink: 0; font-size: .95rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+@keyframes dx-poll-grow { from { width: 0; } }
+@media (prefers-reduced-motion: reduce) { .dx-poll__fill { animation: none; } }
+.dx-poll__hint { font-size: .72rem; opacity: .6; }
+.dx-poll__hint a { color: var(--color-primary); font-weight: 600; }
+
+/* Сезонный пропуск: карточка «Ваш сезон». */
+.dx-season-me { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; margin-top: .75rem; }
+.dx-season-me > div { display: flex; flex-direction: column; align-items: center; padding: .7rem .4rem; border-radius: .9rem; background: var(--dx-soft); }
+.dx-season-me b { font-size: 1.35rem; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.dx-season-me small { font-size: .7rem; opacity: .6; margin-top: .15rem; }
+.dx-season-next { margin-top: .6rem; }
+.dx-season-next .dx-pass-reward__title { display: flex; flex-direction: column; }
+.dx-season-next .dx-pass-reward__title small { font-size: .72rem; font-weight: 500; opacity: .6; }
+.dx-rank__gap { text-align: center; font-size: .8rem; letter-spacing: .2em; opacity: .35; padding: .1rem 0; }

@@ -24,6 +24,20 @@
     {# === ШАПКА (live-поллинг — _match_header.html) === #}
     {% include 'matches/_match_header.html' %}
 
+    {% if challenger %}
+    {# Друг бросил вызов по ссылке «Спорим?». #}
+    <div class="dx-challenge-banner">
+        <span class="dx-challenge-banner__ico"><i class="ti ti-swords"></i></span>
+        <div class="dx-challenge-banner__body">
+            <b>{{ challenger.username }} бросает вам вызов</b>
+            <span>Спорим, его прогноз на этот матч точнее? Сделайте свой, сравним после финального свистка.</span>
+        </div>
+        {% if not user.is_authenticated %}
+        <a href="{% url 'users:register' %}?next={{ request.path|urlencode }}" class="btn btn-primary btn-sm">Принять вызов</a>
+        {% endif %}
+    </div>
+    {% endif %}
+
     {% comment %}
     === ДВЕ КОЛОНКИ (min-w-0 обязательно) ===
     Независимые колонки. «ДНК матча» включена дважды — по копии на мобильный и десктоп.
@@ -58,7 +72,21 @@
                     </div>
                 </div>
             </div>
-            {% elif ratings_hidden %}
+            {% elif no_votes and match.status == 'finished' %}
+            {# Голосов пока нет — не показываем пустоту, зовём оценить первым. #}
+            <div class="dx-first-vote">
+                <span class="dx-first-vote__ico"><i class="ti ti-star"></i></span>
+                <div class="dx-first-vote__body">
+                    <b>Будьте первым, кто оценит</b>
+                    <span>{% if voting_open %}Рейтинги игроков, тренеров и судьи появятся после первых оценок болельщиков.{% else %}Этот матч болельщики не оценивали.{% endif %}</span>
+                </div>
+                {% if voting_open and user.is_authenticated and not user_has_evaluated %}
+                <a href="{% url 'evaluations:context' match.id %}" class="btn btn-primary btn-sm">Оценить</a>
+                {% elif voting_open and not user.is_authenticated %}
+                <a href="{% url 'users:login' %}?next={{ request.path|urlencode }}" class="btn btn-primary btn-sm">Войти и оценить</a>
+                {% endif %}
+            </div>
+            {% elif ratings_hidden and match.status == 'finished' %}
             {# Пока идёт голосование, цифры видит только тот, кто уже оценил матч — чтобы не подстраиваться. #}
             <div class="md-side-card">
                 <div class="md-side-card__head flex items-center gap-2">
@@ -66,12 +94,34 @@
                     <h3 class="font-extrabold text-base md:text-lg">Рейтинги скрыты до вашей оценки</h3>
                 </div>
                 <div class="p-4 sm:p-5">
-                    <p class="text-sm opacity-70 leading-relaxed">Пока идёт голосование, оценки игроков, команд, тренеров и судьи видны только тем, кто уже оценил матч, — так никто не подстраивается под чужое мнение. После закрытия голосования рейтинги откроются всем.</p>
+                    <p class="text-sm opacity-70 leading-relaxed">Пока идёт голосование, оценки игроков, команд, тренеров и судьи видны только тем, кто уже оценил матч. Так никто не подстраивается под чужие цифры. После закрытия голосования рейтинги откроются всем.</p>
                     {% if voting_open and user.is_authenticated %}
                     <a href="{% url 'evaluations:context' match.id %}" class="btn btn-primary btn-sm mt-3 w-full sm:w-auto"><i class="ti ti-star"></i> Оценить матч</a>
                     {% elif voting_open %}
                     <a href="{% url 'users:login' %}?next={{ request.path|urlencode }}" class="btn btn-primary btn-sm mt-3 w-full sm:w-auto"><i class="ti ti-login"></i> Войти и оценить</a>
                     {% endif %}
+                </div>
+            </div>
+            {% endif %}
+
+            {% include 'engagement/_polls.html' %}
+
+            {% if expert_takes %}
+            <div class="md-side-card">
+                <div class="md-side-card__head flex items-center gap-2">
+                    <i class="ti ti-microphone"></i>
+                    <h3 class="font-extrabold text-base md:text-lg">Мнение экспертов DOPX</h3>
+                </div>
+                <div class="p-4 sm:p-5 space-y-4">
+                    {% for take in expert_takes %}
+                    <figure class="dx-expert-take">
+                        <blockquote>{{ take.text|linebreaksbr }}</blockquote>
+                        <figcaption>
+                            <span>{{ take.author_title }}</span>
+                            {% if take.key_player %}<a href="{% url 'players:detail' take.key_player.id %}"><i class="ti ti-star"></i> {{ take.key_player.full_name }}</a>{% endif %}
+                        </figcaption>
+                    </figure>
+                    {% endfor %}
                 </div>
             </div>
             {% endif %}
