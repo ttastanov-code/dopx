@@ -1914,7 +1914,9 @@ a.dx-chip-stat:active { transform: scale(.97); }
 .dx-quests__title { font-weight: 700; font-size: .9rem; display: inline-flex; align-items: center; gap: .35rem; }
 .dx-quests__meta { font-size: .75rem; opacity: .6; }
 .dx-quests__list { display: grid; gap: .45rem; grid-template-columns: minmax(0, 1fr); }
-@media (min-width: 768px) { .dx-quests__list { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+/* 4 задания: 2×2 на планшете, в ряд на широком экране. */
+@media (min-width: 640px) { .dx-quests__list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1200px) { .dx-quests__list { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 .dx-quest {
     display: flex; align-items: center; gap: .65rem; padding: .6rem .7rem; min-width: 0;
     border-radius: .9rem; background: var(--color-base-100); border: 1px solid var(--dx-line);
