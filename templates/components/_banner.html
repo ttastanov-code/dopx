@@ -1,19 +1,44 @@
 {% comment %}
-Баннер для {% render_banner "zone" %}. Клик через partners:banner_click (учёт).
-rel="sponsored noopener".
+Рекламное место для {% render_banner "zone" %}. Показ засчитывает static/js/ads.js, когда баннер
+виден на экране; клик — через partners:banner_click. data-live-ignore: живое обновление не меняет баннер.
+Стили — css/ui.css (dx-ad).
 {% endcomment %}
 {% if show %}
-<div class="relative">
-    <span class="absolute top-1 left-1 z-10 badge badge-xs bg-base-100/80 text-[10px] opacity-70 border-none">Реклама</span>
-    {# max-height + object-fit:contain — картинка с чужими пропорциями не ломает вёрстку. #}
-    <a href="{% url 'partners:banner_click' banner.pk %}"
-       target="_blank" rel="sponsored noopener"
-       class="block rounded-lg overflow-hidden border border-base-300 hover:opacity-90 transition-opacity bg-base-200">
-        <img src="{{ banner.image.url }}" alt="{{ banner.title }}" class="w-full h-auto object-contain mx-auto" style="max-height:400px;" loading="lazy">
+{% with b=banner spec=banner.spec %}
+<aside class="dx-ad dx-ad--{{ b.format }}{% if preview %} is-preview{% endif %}" data-live-ignore aria-label="Реклама"
+       {% if not preview %}data-ad-view="{% url 'partners:banner_view' b.pk %}"{% endif %}>
+    <div class="dx-ad__label">
+        <span>Реклама{% if b.advertiser_label %} · {{ b.advertiser_label }}{% endif %}</span>
+        {% if b.requires_age_disclaimer %}<b class="dx-ad__age">18+</b>{% endif %}
+        {% if preview %}<em class="dx-ad__preview">предпросмотр, не учитывается</em>{% endif %}
+    </div>
+    <a href="{% if preview %}{{ b.target_url }}{% else %}{% url 'partners:banner_click' b.pk %}{% endif %}"
+       target="_blank" rel="sponsored noopener" class="dx-ad__link">
+        {% if b.format == 'native' %}
+        <span class="dx-ad__native">
+            {% if b.logo %}<img class="dx-ad__logo" src="{{ b.logo.url }}" alt="" loading="lazy">{% endif %}
+            <span class="dx-ad__text">
+                <b class="dx-ad__headline">{{ b.headline }}</b>
+                {% if b.body %}<span class="dx-ad__body">{{ b.body }}</span>{% endif %}
+            </span>
+            <span class="dx-ad__cta">{{ b.cta_label|default:"Подробнее" }} <i class="ti ti-arrow-up-right"></i></span>
+        </span>
+        {% elif b.image %}
+        <picture class="dx-ad__media{% if b.image_mobile %} has-mobile{% endif %}"
+                 style="--ar: {{ spec.desktop.0 }} / {{ spec.desktop.1 }}; --ar-m: {{ spec.mobile.0 }} / {{ spec.mobile.1 }}">
+            {% if b.image_mobile %}<source media="(max-width: 767px)" srcset="{{ b.image_mobile.url }}">{% endif %}
+            <img src="{{ b.image.url }}" alt="{{ b.title }}" loading="lazy" decoding="async">
+        </picture>
+        {% elif placeholder %}
+        {# Демо для проверки вида: рамка нужных пропорций с размерами. #}
+        <span class="dx-ad__media dx-ad__placeholder" style="--ar: {{ spec.desktop.0 }} / {{ spec.desktop.1 }}; --ar-m: {{ spec.mobile.0 }} / {{ spec.mobile.1 }}">
+            <b>Ваша картинка</b>
+            <small class="dx-ad__ph-desktop">{{ spec.desktop.0 }} × {{ spec.desktop.1 }}</small>
+            <small class="dx-ad__ph-mobile">{{ spec.mobile.0 }} × {{ spec.mobile.1 }}</small>
+        </span>
+        {% endif %}
     </a>
-    {% if banner.requires_age_disclaimer %}
-    {# Нейтральный текст 18+. #}
-    <p class="text-[10px] opacity-50 mt-1 text-center">18+. Материал только для совершеннолетних.</p>
-    {% endif %}
-</div>
+    {% if b.requires_age_disclaimer %}<p class="dx-ad__disclaimer">Материал для лиц старше 18 лет.</p>{% endif %}
+</aside>
+{% endwith %}
 {% endif %}

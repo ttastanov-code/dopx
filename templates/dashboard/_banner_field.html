@@ -1,0 +1,7 @@
+{# Поле формы баннера: подпись, виджет, подсказка, ошибки. #}
+<div class="flex flex-col gap-1 min-w-0">
+    <label for="{{ field.id_for_label }}" class="text-[10px] uppercase tracking-wide opacity-50 font-semibold">{{ field.label }}{% if field.field.required %} *{% endif %}</label>
+    {{ field }}
+    {% if field.help_text %}<span class="text-[11px] opacity-50 leading-snug">{{ field.help_text }}</span>{% endif %}
+    {% for error in field.errors %}<span class="text-[11px] text-error">{{ error }}</span>{% endfor %}
+</div>

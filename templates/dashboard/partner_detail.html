@@ -67,7 +67,7 @@
             <div class="card-body p-4">
                 <div class="flex items-center justify-between">
                     <div class="dopx-section-eyebrow"><i class="ti ti-photo"></i>Баннеры этого партнёра ({{ banners|length }})</div>
-                    <a href="{% url 'dashboard:banners_list' %}?partner_id={{ partner.id }}" class="text-xs opacity-60 hover:opacity-100">Все баннеры →</a>
+                    <a href="{% url 'dashboard:banner_create' %}?partner={{ partner.id }}" class="btn btn-xs btn-primary"><i class="ti ti-plus"></i> Новый баннер</a>
                 </div>
                 {% if banners %}
                 <div class="space-y-2 mt-2">
@@ -75,8 +75,8 @@
                     <a href="{% url 'dashboard:banner_detail' b.id %}" class="flex items-center justify-between gap-2 rounded-lg border border-base-300 p-2.5 text-xs hover:bg-base-200/50">
                         <span class="font-medium">{{ b.title }}</span>
                         <span class="opacity-50">{{ b.get_zone_display }}</span>
-                        {% if b.is_currently_active %}<span class="badge badge-sm badge-success">показывается</span>
-                        {% else %}<span class="badge badge-sm badge-ghost">не показывается</span>{% endif %}
+                        <span class="opacity-60 tabular-nums">{{ b.stats_30d.impressions }} / {{ b.stats_30d.clicks }}</span>
+                        <span class="badge badge-sm {{ b.status_class }}">{{ b.status_label }}</span>
                     </a>
                     {% endfor %}
                 </div>
@@ -89,9 +89,15 @@
 
     <div class="card bg-base-100 border border-base-300 h-fit">
         <div class="card-body p-4">
+            <div class="dopx-section-eyebrow"><i class="ti ti-report-analytics"></i>Отчёт для партнёра</div>
+            <p class="text-xs opacity-60 mb-2">Закрытая ссылка: партнёр сам видит показы, клики и CTR своих баннеров. Не публикуйте её.</p>
+            <div class="flex gap-2 mb-5">
+                <input type="text" readonly value="{{ report_url }}" class="input input-xs input-bordered flex-1 font-mono" onclick="this.select()">
+                <button type="button" class="btn btn-xs" data-copy="{{ report_url }}"><span data-share-label>Копировать</span></button>
+            </div>
             <div class="dopx-section-eyebrow"><i class="ti ti-shield"></i>Опасная зона</div>
             <div class="dopx-section-title mb-3">Удаление</div>
-            <p class="text-xs opacity-60 mb-3">Баннеры этого партнёра НЕ удалятся — просто потеряют привязку к партнёру (partner.on_delete=SET_NULL).</p>
+            <p class="text-xs opacity-60 mb-3">Баннеры партнёра останутся, но станут собственным промо DOPX.</p>
             <form method="post" action="{% url 'dashboard:partner_delete' partner.id %}"
                   onsubmit="return confirm('Удалить партнёра «' + '{{ partner.name }}' + '»? Действие необратимо.');">
                 {% csrf_token %}

@@ -9,7 +9,9 @@ app_name = "partners"
 urlpatterns = [
     path("go/<slug:slug>/", views.PartnerReferralRedirectView.as_view(), name="referral_redirect"),
     path("ad/<uuid:pk>/click/", views.BannerClickRedirectView.as_view(), name="banner_click"),
+    path("ad/<uuid:pk>/view/", views.BannerViewBeaconView.as_view(), name="banner_view"),
     path("partners/<slug:slug>/feed/<uuid:token>/", views.PartnerContentFeedView.as_view(), name="content_feed"),
+    path("partners/<slug:slug>/report/<uuid:token>/", views.PartnerReportView.as_view(), name="report"),
     path(
         "partners/<slug:slug>/feed/<uuid:token>/mood/<uuid:team_id>/",
         views.PartnerMoodIndexFeedView.as_view(), name="mood_index_feed",

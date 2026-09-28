@@ -1,0 +1,155 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+{# Проверка вида рекламы: одна зона на компьютере, планшете и телефоне. Статистика не пишется. #}
+<div class="flex flex-wrap items-end justify-between gap-3 mb-4">
+    <div>
+        <a href="{% url 'dashboard:banners_list' %}" class="text-xs opacity-60 hover:opacity-100"><i class="ti ti-arrow-left"></i> Все баннеры</a>
+        <div class="dopx-section-title mt-1">Проверка вида рекламы</div>
+        <p class="text-xs opacity-55 mt-0.5">Баннер в своей зоне на трёх экранах. Показы и клики здесь не считаются.</p>
+    </div>
+    <div class="dx-actions">
+        {% if selected %}<a href="{% url 'dashboard:banner_detail' selected.id %}" class="btn btn-sm btn-ghost"><i class="ti ti-pencil"></i> Редактировать</a>{% endif %}
+        {% if site_preview_url %}<a href="{{ site_preview_url }}" target="_blank" class="btn btn-sm btn-outline"><i class="ti ti-external-link"></i> Открыть на живой странице</a>{% endif %}
+    </div>
+</div>
+
+<form method="get" class="card bg-base-100 border border-base-300 mb-4">
+    <div class="card-body p-3 flex-row flex-wrap items-end gap-3">
+        <label class="flex flex-col gap-1 min-w-0 basis-full sm:basis-64 flex-1">
+            <span class="text-[10px] uppercase tracking-wide opacity-50 font-semibold">Баннер</span>
+            <select name="banner" class="select select-sm select-bordered w-full" onchange="this.form.submit()">
+                {% for b in banners %}<option value="{{ b.id }}" {% if key == b.id|stringformat:"s" %}selected{% endif %}>{{ b.title }} · {{ b.get_zone_display }}</option>{% endfor %}
+                <optgroup label="Без своих баннеров">
+                    {% for dk, demo in demos.items %}<option value="{{ dk }}" {% if key == dk %}selected{% endif %}>{{ demo.label }}</option>{% endfor %}
+                </optgroup>
+            </select>
+        </label>
+        {% if not selected %}
+        <label class="flex flex-col gap-1 min-w-0 basis-full sm:basis-auto sm:flex-none">
+            <span class="text-[10px] uppercase tracking-wide opacity-50 font-semibold">Зона</span>
+            <select name="zone" class="select select-sm select-bordered w-full" onchange="this.form.submit()">
+                {% for value, label in zone_choices %}<option value="{{ value }}" {% if zone == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>
+        </label>
+        {% endif %}
+        <div class="flex flex-col gap-1">
+            <span class="text-[10px] uppercase tracking-wide opacity-50 font-semibold">Тема</span>
+            <div class="dx-seg">
+                <button name="theme" value="light" class="dx-seg__btn{% if theme == 'light' %} is-active{% endif %}"><i class="ti ti-sun"></i> Светлая</button>
+                <button name="theme" value="dark" class="dx-seg__btn{% if theme == 'dark' %} is-active{% endif %}"><i class="ti ti-moon"></i> Тёмная</button>
+            </div>
+        </div>
+    </div>
+</form>
+
+{# Сцена: все экраны в едином масштабе или один экран на всю высоту окна. #}
+{# data-live-ignore: живое обновление не трогает рамки, иначе сбрасывает их размер. #}
+<section class="card bg-base-100 border border-base-300" data-live-ignore>
+    <div class="card-body p-3 gap-3">
+        <div class="flex flex-wrap items-center justify-between gap-2"{% if selected %} data-sbx-version="{% url 'dashboard:banner_version' selected.id %}"{% endif %}>
+            <div class="dx-seg sbx-modes" role="tablist">
+                <button type="button" class="dx-seg__btn sbx-all" data-sbx-mode="all"><i class="ti ti-devices"></i> Все экраны</button>
+                {% for f in frames %}<button type="button" class="dx-seg__btn" data-sbx-mode="{{ f.key }}"><i class="ti {{ f.icon }}"></i> {{ f.label }}</button>{% endfor %}
+            </div>
+            <span class="text-xs opacity-55" data-sbx-scale></span>
+        </div>
+        <div class="sbx-stage" data-sbx-stage>
+            {% for f in frames %}
+            <figure class="sbx-device sbx-device--{{ f.key }}" data-sbx-device="{{ f.key }}" data-w="{{ f.width }}" data-h="{{ f.height }}">
+                <div class="sbx-shell">
+                    {% if f.key == 'desktop' %}<div class="sbx-chrome"><i></i><i></i><i></i><span>dopx.kz</span></div>{% endif %}
+                    <div class="sbx-screen"><iframe src="{{ f.src }}" width="{{ f.width }}" height="{{ f.height }}" title="{{ f.label }}"></iframe></div>
+                </div>
+                <figcaption><i class="ti {{ f.icon }}"></i> {{ f.label }} · {{ f.width }} px</figcaption>
+            </figure>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+<div class="card bg-base-100 border border-base-300 mt-4"><div class="card-body p-4 text-sm gap-2">
+    <div class="dopx-section-eyebrow"><i class="ti ti-device-mobile-check"></i>Проверить на настоящем телефоне</div>
+    <p class="opacity-70">«Открыть на живой странице» показывает баннер на сайте только вам, как сотруднику, даже если он на паузе или ещё не начался. Эту же ссылку можно открыть на телефоне, войдя под своим аккаунтом. Статистика при этом не пишется.</p>
+</div></div>
+
+<style>
+    .sbx-stage { display: flex; align-items: flex-end; justify-content: center; gap: 28px; min-height: 320px; padding: 8px 0 4px; }
+    .sbx-device { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+    .sbx-device[hidden] { display: none; }
+    .sbx-device figcaption { font-size: 12px; font-weight: 600; opacity: .6; display: flex; align-items: center; gap: 4px; }
+    .sbx-shell { overflow: hidden; background: #0b0b0f; box-shadow: 0 18px 40px -22px rgba(0,0,0,.55); }
+    .sbx-device--desktop .sbx-shell { border-radius: 10px; padding: 0 1px 1px; background: #d4d4d8; }
+    .sbx-device--tablet .sbx-shell { border-radius: 22px; padding: 12px; }
+    .sbx-device--phone .sbx-shell { border-radius: 34px; padding: 9px; }
+    .sbx-chrome { height: 26px; display: flex; align-items: center; gap: 5px; padding: 0 10px; }
+    .sbx-chrome i { width: 9px; height: 9px; border-radius: 50%; background: #a1a1aa; }
+    .sbx-chrome span { margin-left: 12px; flex: 0 1 220px; height: 16px; border-radius: 6px; background: #f4f4f5; font-size: 10px; line-height: 16px; padding: 0 8px; color: #71717a; }
+    .sbx-screen { position: relative; overflow: hidden; background: #fff; }
+    .sbx-device--tablet .sbx-screen { border-radius: 10px; }
+    .sbx-device--phone .sbx-screen { border-radius: 26px; }
+    .sbx-screen iframe { position: absolute; top: 0; left: 0; border: 0; transform-origin: 0 0; }
+</style>
+<script>
+(function () {
+    const stage = document.querySelector('[data-sbx-stage]');
+    const devices = [...stage.querySelectorAll('[data-sbx-device]')];
+    const buttons = [...document.querySelectorAll('[data-sbx-mode]')];
+    let mode = 'all';
+    try { mode = localStorage.getItem('dopx-sbx-mode') || 'all'; } catch (e) {}
+
+    // Сколько места у сцены: ширина карточки и высота окна под ней.
+    function room() {
+        const top = stage.getBoundingClientRect().top + window.scrollY;
+        const height = Math.max(320, window.innerHeight - Math.min(top, 260) - 70);
+        return { w: stage.clientWidth, h: height };
+    }
+
+    function fit() {
+        // На телефоне три устройства в ряд нечитаемы — показываем по одному.
+        if (mode === 'all' && window.innerWidth < 768) mode = 'phone';
+        const shown = devices.filter((d) => mode === 'all' || d.dataset.sbxDevice === mode);
+        devices.forEach((d) => { d.hidden = !shown.includes(d); });
+        buttons.forEach((b) => b.classList.toggle('is-active', b.dataset.sbxMode === mode));
+        const { w, h } = room();
+        const gaps = 28 * (shown.length - 1) + 40 * shown.length;
+        const sumW = shown.reduce((acc, d) => acc + +d.dataset.w, 0);
+        const maxH = Math.max(...shown.map((d) => +d.dataset.h + 60));
+        // Один масштаб для всех: сравниваем экраны в реальных пропорциях.
+        const scale = Math.min(1, (w - gaps) / sumW, h / maxH);
+        shown.forEach((d) => {
+            const screen = d.querySelector('.sbx-screen');
+            screen.style.width = Math.round(+d.dataset.w * scale) + 'px';
+            screen.style.height = Math.round(+d.dataset.h * scale) + 'px';
+            d.querySelector('iframe').style.transform = 'scale(' + scale + ')';
+        });
+        document.querySelector('[data-sbx-scale]').textContent = 'Масштаб ' + Math.round(scale * 100) + '%';
+    }
+
+    buttons.forEach((b) => b.addEventListener('click', () => {
+        mode = b.dataset.sbxMode;
+        try { localStorage.setItem('dopx-sbx-mode', mode); } catch (e) {}
+        fit();
+    }));
+    window.addEventListener('resize', fit);
+    document.addEventListener('dopx:live-updated', fit);
+
+    // Баннер изменили в другой вкладке — перезагружаем рамки.
+    const versionUrl = document.querySelector('[data-sbx-version]')?.dataset.sbxVersion;
+    if (versionUrl) {
+        let known = null;
+        setInterval(async () => {
+            if (document.visibilityState !== 'visible') return;
+            try {
+                const { version } = await (await fetch(versionUrl, { credentials: 'same-origin' })).json();
+                if (known && version !== known) stage.querySelectorAll('iframe').forEach((f) => { f.src = f.src; });
+                known = version;
+            } catch (e) { /* сеть — попробуем в следующий раз */ }
+        }, 5000);
+    }
+    fit();
+})();
+</script>
+{% endblock %}

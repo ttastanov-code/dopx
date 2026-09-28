@@ -24,9 +24,10 @@ def fan_ids(team) -> set:
     from evaluations.models import ContextEvaluation
     from users.models import Follow
 
-    followers = set(Follow.objects.filter(team=team).values_list("user_id", flat=True))
+    followers = set(Follow.objects.filter(team=team, user__is_superuser=False).values_list("user_id", flat=True))
     supporters = set(
-        completed_only(ContextEvaluation.objects.filter(supported_team=team)).values_list("user_id", flat=True).distinct()
+        completed_only(ContextEvaluation.objects.filter(supported_team=team, user__is_superuser=False))
+        .values_list("user_id", flat=True).distinct()
     )
     return followers | supporters
 

@@ -25,6 +25,8 @@ def award_badge(user, badge_type: str) -> bool:
     from users.badges import get_badge_definition
     from users.models import UserBadge
 
+    if user.is_superuser:  # служебный аккаунт — без достижений
+        return False
     badge, created = UserBadge.objects.get_or_create(user=user, badge_type=badge_type)
     if created:
         definition = get_badge_definition(badge_type)

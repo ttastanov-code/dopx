@@ -133,6 +133,17 @@ def synthetic_users_q(prefix: str = ""):
     return q & Q(**{f"{prefix}is_staff": False}) & Q(**{f"{prefix}is_superuser": False})
 
 
+def service_accounts_q(prefix: str = ""):
+    """Q суперпользователей: они тестируют сайт и в публичных рейтингах, подсчётах и наградах не участвуют."""
+    from django.db.models import Q
+
+    return Q(**{f"{prefix}is_superuser": True})
+
+
+def is_service_account(user) -> bool:
+    return bool(getattr(user, "is_superuser", False))
+
+
 def is_rate_limited(key: str, limit: int, window_seconds: int) -> bool:
     """Rate-limiter fixed window на Django cache.
 

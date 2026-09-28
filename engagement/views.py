@@ -25,7 +25,9 @@ def season_pass(request):
     overview = season.overview(request.user)
     top, my_place = [], None
     if overview:
-        passes = SeasonPass.objects.filter(season=overview["season"], xp__gt=0, user__is_active=True).select_related("user")
+        passes = SeasonPass.objects.filter(
+            season=overview["season"], xp__gt=0, user__is_active=True, user__is_superuser=False,
+        ).select_related("user")
         top = [{"place": i, "user": p.user, "xp": p.xp, "level": season.level_for(p.xp)}
                for i, p in enumerate(passes.order_by("-xp", "created_at")[:SEASON_TOP_SIZE], start=1)]
         if request.user.is_authenticated and overview["xp"]:

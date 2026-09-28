@@ -217,7 +217,7 @@ def active_polls() -> list:
 
 
 def results(poll) -> dict:
-    counts = dict(poll.votes.values("choice").annotate(n=Count("id")).values_list("choice", "n"))
+    counts = dict(poll.votes.filter(user__is_superuser=False).values("choice").annotate(n=Count("id")).values_list("choice", "n"))
     a, b = counts.get("a", 0), counts.get("b", 0)
     total = a + b
     pct_a = round(a * 100 / total) if total else 50

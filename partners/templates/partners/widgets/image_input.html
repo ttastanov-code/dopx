@@ -1,0 +1,17 @@
+{# Поле картинки: миниатюра текущего файла, замена, удаление. #}
+<div class="flex items-center gap-3">
+    {% if widget.is_initial %}
+    <a href="{{ widget.value.url }}" target="_blank" class="w-14 h-14 shrink-0 rounded-lg overflow-hidden border border-base-300 bg-base-200">
+        <img src="{{ widget.value.url }}" alt="" class="w-full h-full object-cover">
+    </a>
+    {% endif %}
+    <div class="flex-1 min-w-0 flex flex-col gap-1.5">
+        <input type="{{ widget.type }}" name="{{ widget.name }}"{% include "django/forms/widgets/attrs.html" %}>
+        {% if widget.is_initial and not widget.required %}
+        <label class="flex items-center gap-1.5 text-[11px] opacity-70 cursor-pointer w-fit">
+            <input type="checkbox" name="{{ widget.checkbox_name }}" id="{{ widget.checkbox_id }}" class="checkbox checkbox-xs"{% if widget.attrs.disabled %} disabled{% endif %}>
+            Удалить текущую
+        </label>
+        {% endif %}
+    </div>
+</div>

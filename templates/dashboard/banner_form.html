@@ -1,0 +1,166 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+{# Создание и редактирование баннера. Предпросмотр справа обновляется на лету (скрипт внизу). #}
+<div class="mb-4 flex flex-wrap items-end justify-between gap-3">
+    <div>
+        <a href="{% url 'dashboard:banners_list' %}" class="text-xs opacity-60 hover:opacity-100"><i class="ti ti-arrow-left"></i> Все баннеры</a>
+        <div class="dopx-section-title mt-1 flex items-center gap-2">
+            {% if banner %}{{ banner.title }} <span class="badge {{ status_class }}">{{ status_label }}</span>{% else %}Новый баннер{% endif %}
+        </div>
+    </div>
+    {% if banner %}
+    <div class="dx-actions">
+        <a href="{% url 'dashboard:banner_sandbox' %}?banner={{ banner.id }}" class="btn btn-sm btn-outline"><i class="ti ti-devices"></i> Компьютер и телефон</a>
+        {% if preview_url %}<a href="{{ preview_url }}" target="_blank" class="btn btn-sm btn-outline"><i class="ti ti-external-link"></i> Открыть на сайте</a>{% endif %}
+    </div>
+    {% endif %}
+</div>
+
+<form method="post" enctype="multipart/form-data" id="banner-form" class="grid grid-cols-1 lg:grid-cols-5 gap-4">
+    {% csrf_token %}
+    <div class="lg:col-span-3 space-y-4">
+        {% if form.non_field_errors %}<div class="alert alert-error text-sm">{{ form.non_field_errors }}</div>{% endif %}
+
+        <section class="card bg-base-100 border border-base-300"><div class="card-body p-4 gap-3">
+            <div class="dopx-section-eyebrow"><i class="ti ti-info-circle"></i>Основное</div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {% include 'dashboard/_banner_field.html' with field=form.title %}
+                {% include 'dashboard/_banner_field.html' with field=form.partner %}
+                {% include 'dashboard/_banner_field.html' with field=form.advertiser %}
+                {% include 'dashboard/_banner_field.html' with field=form.target_url %}
+                {% include 'dashboard/_banner_field.html' with field=form.zone %}
+                {% include 'dashboard/_banner_field.html' with field=form.format %}
+            </div>
+            <div class="text-xs opacity-60 bg-base-200/60 rounded-lg p-2.5" data-zone-hint data-live-ignore></div>
+        </div></section>
+
+        <section class="card bg-base-100 border border-base-300"><div class="card-body p-4 gap-3">
+            <div class="dopx-section-eyebrow"><i class="ti ti-photo"></i>Материалы</div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3" data-format-block="image">
+                {% include 'dashboard/_banner_field.html' with field=form.image %}
+                {% include 'dashboard/_banner_field.html' with field=form.image_mobile %}
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3" data-format-block="native">
+                {% include 'dashboard/_banner_field.html' with field=form.headline %}
+                {% include 'dashboard/_banner_field.html' with field=form.cta_label %}
+                <div class="sm:col-span-2">{% include 'dashboard/_banner_field.html' with field=form.body %}</div>
+                {% include 'dashboard/_banner_field.html' with field=form.logo %}
+            </div>
+        </div></section>
+
+        <section class="card bg-base-100 border border-base-300"><div class="card-body p-4 gap-3">
+            <div class="dopx-section-eyebrow"><i class="ti ti-calendar-time"></i>Когда и кому показывать</div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {% include 'dashboard/_banner_field.html' with field=form.starts_at %}
+                {% include 'dashboard/_banner_field.html' with field=form.ends_at %}
+                {% include 'dashboard/_banner_field.html' with field=form.priority %}
+                {% include 'dashboard/_banner_field.html' with field=form.audience %}
+                {% include 'dashboard/_banner_field.html' with field=form.max_impressions %}
+                {% include 'dashboard/_banner_field.html' with field=form.max_clicks %}
+                {% include 'dashboard/_banner_field.html' with field=form.daily_cap_per_visitor %}
+            </div>
+            <div class="flex flex-wrap gap-5 pt-1">
+                <label class="flex items-center gap-2 cursor-pointer text-sm">{{ form.is_active }} <span>Включён</span></label>
+                <label class="flex items-center gap-2 cursor-pointer text-sm">{{ form.requires_age_disclaimer }} <span>Пометка 18+</span></label>
+            </div>
+        </div></section>
+
+        <div class="flex justify-end gap-2">
+            <a href="{% url 'dashboard:banners_list' %}" class="btn btn-sm btn-ghost">Отмена</a>
+            <button type="submit" class="btn btn-sm btn-primary"><i class="ti ti-device-floppy"></i> {% if banner %}Сохранить{% else %}Создать{% endif %}</button>
+        </div>
+    </div>
+
+    <div class="lg:col-span-2 space-y-4">
+        <section class="card bg-base-100 border border-base-300"><div class="card-body p-4 gap-3">
+            <div class="dopx-section-eyebrow"><i class="ti ti-eye"></i>Как увидят посетители</div>
+            <div class="rounded-xl bg-base-200/50 p-3" data-preview-box data-live-ignore>
+                <aside class="dx-ad" data-preview>
+                    <div class="dx-ad__label"><span data-p-label>Реклама</span><b class="dx-ad__age" data-p-age hidden>18+</b></div>
+                    <a class="dx-ad__link" href="#" onclick="return false">
+                        <span class="dx-ad__native" data-p-native>
+                            <img class="dx-ad__logo" data-p-logo alt="" {% if banner.logo %}src="{{ banner.logo.url }}"{% else %}hidden{% endif %}>
+                            <span class="dx-ad__text"><b class="dx-ad__headline" data-p-headline></b><span class="dx-ad__body" data-p-body></span></span>
+                            <span class="dx-ad__cta"><span data-p-cta></span> <i class="ti ti-arrow-up-right"></i></span>
+                        </span>
+                        <picture class="dx-ad__media" data-p-media>
+                            <img data-p-image alt="" {% if banner.image %}src="{{ banner.image.url }}"{% endif %}>
+                        </picture>
+                    </a>
+                    <p class="dx-ad__disclaimer" data-p-disclaimer hidden>Материал для лиц старше 18 лет.</p>
+                </aside>
+            </div>
+            <p class="text-xs opacity-55">Ширина рамки здесь как у правой колонки. Как баннер выглядит на компьютере и телефоне в своей зоне, смотрите в «Проверить вид».</p>
+        </div></section>
+
+        {% if banner %}
+        {# Статистика обновляется сама раз в 10 секунд, пока вкладка открыта. #}
+        <div id="banner-stats" data-background-poll hx-get="{% url 'dashboard:banner_stats_partial' banner.id %}"
+             hx-trigger="every 10s [document.visibilityState === 'visible']" hx-swap="innerHTML">
+            {% include 'dashboard/_banner_stats.html' %}
+        </div>
+
+        <section class="card bg-base-100 border border-base-300"><div class="card-body p-4 gap-2">
+            <button type="submit" form="duplicate-form" class="btn btn-sm btn-ghost justify-start"><i class="ti ti-copy"></i> Сделать копию</button>
+            {% if banner.partner %}<a href="{% url 'dashboard:partner_detail' banner.partner.id %}" class="btn btn-sm btn-ghost justify-start"><i class="ti ti-building-store"></i> Карточка партнёра</a>{% endif %}
+            <button type="submit" form="delete-form" class="btn btn-sm btn-ghost text-error justify-start"><i class="ti ti-trash"></i> Удалить баннер</button>
+        </div></section>
+        {% endif %}
+    </div>
+</form>
+
+{% if banner %}
+<form id="duplicate-form" method="post" action="{% url 'dashboard:banner_duplicate' banner.id %}">{% csrf_token %}</form>
+<form id="delete-form" method="post" action="{% url 'dashboard:banner_delete' banner.id %}" onsubmit="return confirm('Удалить баннер вместе со статистикой? Это необратимо.')">{% csrf_token %}</form>
+{% endif %}
+
+{{ zone_specs|json_script:"zone-specs" }}
+<script>
+(function () {
+    const form = document.getElementById('banner-form');
+    const specs = JSON.parse(document.getElementById('zone-specs').textContent);
+    const $ = (sel) => form.querySelector(sel);
+    const f = (name) => form.elements[name];
+    const pick = (attr) => document.querySelector('[' + attr + ']');
+    const partnerNames = {};
+    [...f('partner').options].forEach((o) => { if (o.value) partnerNames[o.value] = o.textContent; });
+
+    function fileUrl(input, img) {
+        input.addEventListener('change', () => {
+            if (input.files && input.files[0]) { img.src = URL.createObjectURL(input.files[0]); img.hidden = false; update(); }
+        });
+    }
+
+    function update() {
+        const fmt = f('format').value;
+        const spec = specs.find((s) => s.value === f('zone').value) || specs[0];
+        document.querySelectorAll('[data-format-block]').forEach((el) => { el.hidden = el.dataset.formatBlock !== fmt; });
+        pick('data-zone-hint').innerHTML = '<b>' + spec.label + '.</b> ' + spec.where +
+            ' Картинка для компьютера ' + spec.desktop[0] + '×' + spec.desktop[1] +
+            ', для телефона ' + spec.mobile[0] + '×' + spec.mobile[1] + '. JPG, PNG или WebP до 2 МБ.';
+        const advertiser = f('advertiser').value.trim() || partnerNames[f('partner').value] || '';
+        pick('data-p-label').textContent = 'Реклама' + (advertiser ? ' · ' + advertiser : '');
+        const age = f('requires_age_disclaimer').checked;
+        pick('data-p-age').hidden = !age;
+        pick('data-p-disclaimer').hidden = !age;
+        pick('data-p-native').hidden = fmt !== 'native';
+        pick('data-p-media').hidden = fmt !== 'image';
+        pick('data-p-media').style.aspectRatio = spec.desktop[0] + ' / ' + spec.desktop[1];
+        pick('data-p-headline').textContent = f('headline').value || 'Заголовок карточки';
+        pick('data-p-body').textContent = f('body').value;
+        pick('data-p-cta').textContent = f('cta_label').value || 'Подробнее';
+    }
+
+    fileUrl(f('image'), pick('data-p-image'));
+    fileUrl(f('logo'), pick('data-p-logo'));
+    form.addEventListener('input', update);
+    form.addEventListener('change', update);
+    // Живое обновление сбрасывает hidden у блоков полей — применяем снова.
+    document.addEventListener('dopx:live-updated', update);
+    update();
+})();
+</script>
+{% endblock %}

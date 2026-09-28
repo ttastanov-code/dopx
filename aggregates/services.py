@@ -122,7 +122,7 @@ def ratings_hidden_for(user, match) -> bool:
 def excluded_voters_q(match_id) -> Q:
     """Q для исключения голосов, которые не должны влиять на рейтинг матча:
     заблокированные аккаунты, подтверждённая накрутка (по матчу или глобально),
-    синтетические аккаунты в проде.
+    суперпользователи, синтетические аккаунты в проде.
     """
     from users.models import SuspiciousActivityFlag
 
@@ -130,7 +130,9 @@ def excluded_voters_q(match_id) -> Q:
         status="confirmed", user__isnull=False, source__in=USER_FLAG_SOURCES,
     ).filter(Q(match_id=match_id) | Q(match__isnull=True)).values("user_id")
 
-    q = Q(user__is_active=False) | Q(user_id__in=confirmed_user_ids)
+    from core.utils import service_accounts_q
+
+    q = Q(user__is_active=False) | Q(user_id__in=confirmed_user_ids) | service_accounts_q("user__")
     if not getattr(settings, "COUNT_SYNTHETIC_VOTES", True):
         from core.utils import synthetic_users_q
 

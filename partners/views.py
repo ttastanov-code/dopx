@@ -6,7 +6,9 @@ from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
+from django.utils.decorators import method_decorator
 from django.views import View
+from django.views.decorators.csrf import csrf_exempt
 
 from core.utils import get_client_ip, is_rate_limited
 
@@ -17,7 +19,8 @@ from .services import (
     build_click_redirect_url,
     build_content_feed,
     build_mood_index_feed,
-    track_banner_click,
+    record_click,
+    record_impression,
     track_partner_feed_access,
     track_partner_referral_visit,
 )
@@ -77,8 +80,22 @@ class BannerClickRedirectView(View):
             f'banner_click:{banner.pk}:{client_ip}',
             PARTNER_STATS_RATE_LIMIT, PARTNER_STATS_RATE_LIMIT_WINDOW_SECONDS,
         ):
-            track_banner_click(banner, request)
+            record_click(banner, request)
         return redirect(build_click_redirect_url(banner))
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class BannerViewBeaconView(View):
+    """/ad/<uuid>/view/ — sendBeacon из ads.js: баннер был виден на экране. Без CSRF: только счётчик."""
+
+    def post(self, request: HttpRequest, pk) -> HttpResponse:
+        banner = get_object_or_404(Banner, pk=pk)
+        client_ip = get_client_ip(request)
+        if client_ip and not is_rate_limited(
+            f'banner_view:{banner.pk}:{client_ip}', PARTNER_STATS_RATE_LIMIT, PARTNER_STATS_RATE_LIMIT_WINDOW_SECONDS,
+        ):
+            record_impression(banner, request)
+        return HttpResponse(status=204)
 
 
 class PartnerContentFeedView(View):
@@ -120,4 +137,41 @@ class PartnerMoodIndexFeedView(View):
         data = build_mood_index_feed(partner, team, season)
         response = JsonResponse({"partner": partner.name, **data})
         response["Cache-Control"] = "no-store"
+        return response
+
+
+class PartnerReportView(View):
+    """/partners/<slug>/report/<token>/ — отчёт рекламодателя по его баннерам. Доступ по feed_token."""
+
+    def get(self, request: HttpRequest, slug: str, token: str) -> HttpResponse:
+        from django.shortcuts import render
+
+        from .selectors import banner_daily_series, stats_by_banner
+
+        partner = get_object_or_404(Partner, slug=slug)
+        if str(partner.feed_token) != str(token):
+            raise Http404()
+        try:
+            days = min(max(int(request.GET.get("days", 30)), 7), 180)
+        except ValueError:
+            days = 30
+        banners = list(partner.banners.all().order_by("-created_at"))
+        period, total = stats_by_banner(days=days), stats_by_banner(days=None)
+        empty = {"impressions": 0, "clicks": 0, "ctr_percent": 0.0}
+        for b in banners:
+            b.period = period.get(b.pk, empty)
+            b.total = total.get(b.pk, empty)
+        series = banner_daily_series([b.pk for b in banners], days=days)
+        peak = max((d["impressions"] for d in series), default=0) or 1
+        for d in series:
+            d["pct"] = round(d["impressions"] * 100 / peak)
+        impressions = sum(b.period["impressions"] for b in banners)
+        clicks = sum(b.period["clicks"] for b in banners)
+        response = render(request, "partners/report.html", {
+            "partner": partner, "banners": banners, "series": series, "days": days,
+            "impressions": impressions, "clicks": clicks,
+            "ctr": round(clicks / impressions * 100, 2) if impressions else 0.0,
+        })
+        response["Cache-Control"] = "no-store"
+        response["X-Robots-Tag"] = "noindex"
         return response

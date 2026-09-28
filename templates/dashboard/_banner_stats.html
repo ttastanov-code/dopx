@@ -1,0 +1,13 @@
+{# Статистика баннера: показы, клики, CTR, график за 30 дней. Поллинг — banner_stats_partial. #}
+        <section class="card bg-base-100 border border-base-300"><div class="card-body p-4 gap-3">
+    <div class="dopx-section-eyebrow justify-between w-full"><span><i class="ti ti-chart-bar"></i>Статистика</span><span class="dx-live-dot" title="Обновляется сама раз в 10 секунд">онлайн</span></div>
+    <div class="grid grid-cols-3 gap-2 text-center">
+        <div class="bg-base-200/60 rounded-lg p-2"><div class="text-lg font-bold tabular-nums">{{ stats_30d.impressions }}</div><div class="text-[11px] opacity-55">показов за 30 дней</div></div>
+        <div class="bg-base-200/60 rounded-lg p-2"><div class="text-lg font-bold tabular-nums">{{ stats_30d.clicks }}</div><div class="text-[11px] opacity-55">кликов</div></div>
+        <div class="bg-base-200/60 rounded-lg p-2"><div class="text-lg font-bold tabular-nums">{{ stats_30d.ctr_percent }}%</div><div class="text-[11px] opacity-55">CTR</div></div>
+    </div>
+    <div class="flex items-end gap-[2px] h-20" aria-label="Показы по дням за 30 дней">
+        {% for d in series %}<div class="flex-1 rounded-t bg-primary/70 min-h-[2px]" style="height: {{ d.pct }}%" title="{{ d.date|date:'d.m' }}: {{ d.impressions }} показов, {{ d.clicks }} кликов"></div>{% endfor %}
+    </div>
+    <p class="text-xs opacity-55">За всё время: {{ stats_all.impressions }} показов, {{ stats_all.clicks }} кликов{% if banner.max_impressions %}, лимит показов {{ banner.max_impressions }}{% endif %}{% if banner.max_clicks %}, лимит кликов {{ banner.max_clicks }}{% endif %}.</p>
+</div></section>

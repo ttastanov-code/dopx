@@ -1,0 +1,53 @@
+{# Таблица баннеров со статистикой — для страницы и поллинга (banners_list?partial=1). #}
+<p class="text-xs opacity-55 mb-2 flex items-center gap-2"><span class="dx-live-dot">онлайн</span> За 30 дней: {{ totals_30d.impressions }} показов · {{ totals_30d.clicks }} кликов · CTR {{ totals_30d.ctr_percent }}%</p>
+{% if banners %}
+<div class="card bg-base-100 border border-base-300 overflow-hidden">
+    <div class="overflow-x-auto">
+        <table class="table table-sm">
+            <thead><tr><th>Баннер</th><th>Зона</th><th>Статус</th><th>Период</th><th class="text-right">30 дней</th><th class="text-right">Всего</th><th></th></tr></thead>
+            <tbody>
+            {% for b in banners %}
+            <tr class="hover">
+                <td>
+                    <a href="{% url 'dashboard:banner_detail' b.id %}" class="flex items-center gap-3 min-w-[14rem]">
+                        <span class="w-16 h-10 rounded-md overflow-hidden bg-base-200 flex items-center justify-center shrink-0 border border-base-300">
+                            {% if b.format == 'native' %}{% if b.logo %}<img src="{{ b.logo.url }}" alt="" class="max-h-8 max-w-12 object-contain">{% else %}<i class="ti ti-layout-cards opacity-50"></i>{% endif %}
+                            {% elif b.image %}<img src="{{ b.image.url }}" alt="" class="w-full h-full object-cover">{% else %}<i class="ti ti-photo-off opacity-40"></i>{% endif %}
+                        </span>
+                        <span class="min-w-0">
+                            <span class="font-semibold block truncate">{{ b.title }}</span>
+                            <span class="text-xs opacity-55 block truncate">{{ b.advertiser_label|default:"Промо DOPX" }} · {{ b.get_format_display }}</span>
+                        </span>
+                    </a>
+                </td>
+                <td class="text-xs whitespace-nowrap">{{ b.get_zone_display }}</td>
+                <td>
+                    <span class="badge badge-sm {{ b.status_class }} whitespace-nowrap">{{ b.status_label }}</span>
+                    {% if b.limit_pct is not None %}<div class="w-20 h-1 bg-base-200 rounded-full mt-1.5 overflow-hidden" title="Израсходовано лимита: {{ b.limit_pct }}%"><div class="h-full bg-warning" style="width: {% if b.limit_pct > 100 %}100{% else %}{{ b.limit_pct }}{% endif %}%"></div></div>{% endif %}
+                </td>
+                <td class="text-xs whitespace-nowrap opacity-70">
+                    {% if b.starts_at or b.ends_at %}{{ b.starts_at|date:"d.m"|default:"…" }} – {{ b.ends_at|date:"d.m.y"|default:"без конца" }}{% else %}без срока{% endif %}
+                </td>
+                <td class="text-right text-xs whitespace-nowrap tabular-nums">{{ b.stats_30d.impressions }} / {{ b.stats_30d.clicks }}<div class="opacity-50">CTR {{ b.stats_30d.ctr_percent }}%</div></td>
+                <td class="text-right text-xs whitespace-nowrap tabular-nums opacity-70">{{ b.stats_all.impressions }} / {{ b.stats_all.clicks }}</td>
+                <td class="text-right whitespace-nowrap">
+                    <form method="post" action="{% url 'dashboard:banner_toggle' b.id %}" class="inline">
+                        {% csrf_token %}<input type="hidden" name="next" value="{% url 'dashboard:banners_list' %}{% if zone_filter or status_filter %}?{% if zone_filter %}zone={{ zone_filter }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% endif %}">
+                        <button type="submit" class="btn btn-ghost btn-xs" title="{% if b.is_active %}Поставить на паузу{% else %}Включить{% endif %}"><i class="ti {% if b.is_active %}ti-player-pause{% else %}ti-player-play{% endif %}"></i></button>
+                    </form>
+                    <a href="{% url 'dashboard:banner_sandbox' %}?banner={{ b.id }}" class="btn btn-ghost btn-xs" title="Проверить вид"><i class="ti ti-devices"></i></a>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+<p class="text-xs opacity-50 mt-2">Показ засчитывается, когда баннер хотя бы наполовину виден на экране больше секунды. Показы и клики ботов без браузера не считаются.</p>
+{% else %}
+<div class="card bg-base-100 border border-base-300"><div class="card-body p-8 text-center">
+    <i class="ti ti-ad-2 text-4xl opacity-30"></i>
+    <p class="text-sm opacity-60 mt-2">{% if zone_filter or status_filter %}Под фильтр ничего не попало.{% else %}Баннеров пока нет. Пока их нет, на сайте на этих местах ничего не показывается.{% endif %}</p>
+    <a href="{% url 'dashboard:banner_create' %}" class="btn btn-primary btn-sm mt-3 mx-auto"><i class="ti ti-plus"></i> Создать первый баннер</a>
+</div></div>
+{% endif %}

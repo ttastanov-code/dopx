@@ -262,16 +262,17 @@ class MatchDetailView(DetailView):
             top_players, worst_players, coach_aggregates = [], [], []
             home_team_evals = away_team_evals = _team_evals_dict(None)
         
-        total_match_evals = MatchEvaluation.objects.filter(match=match).count()
-        total_player_evals = PlayerEvaluation.objects.filter(match=match).count()
-        total_context_evals = ContextEvaluation.objects.filter(match=match).count()
+        # Счётчики и «за кого болели» — без суперпользователей, как и рейтинги.
+        total_match_evals = MatchEvaluation.objects.filter(match=match, user__is_superuser=False).count()
+        total_player_evals = PlayerEvaluation.objects.filter(match=match, user__is_superuser=False).count()
+        total_context_evals = ContextEvaluation.objects.filter(match=match, user__is_superuser=False).count()
         
         # Составы: хозяева сначала.
         lineups = lineups_with_side_order(match)
         
         # За кого болели — список нужен и шаблону, и build_match_dna.
         fan_support = list(ContextEvaluation.objects.filter(
-            match=match
+            match=match, user__is_superuser=False
         ).exclude(
             supported_team__isnull=True
         ).values(

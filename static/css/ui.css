@@ -424,41 +424,6 @@
 .dx-hello__grid > * { flex: 1 1 15rem; min-width: 0; }
 @media (min-width: 768px) { .dx-hello__grid { gap: .75rem; } }
 
-/* Кольцо уровня: прогресс XP через conic-gradient (--p — проценты). */
-.dx-level {
-    display: inline-flex;
-    align-items: center;
-    gap: .7rem;
-    padding: .4rem .9rem .4rem .4rem;
-    border-radius: 9999px;
-    background: color-mix(in oklab, var(--color-base-content) 4%, transparent);
-    transition: background .2s ease;
-}
-.dx-level:hover { background: color-mix(in oklab, var(--color-primary) 10%, transparent); }
-.dx-level__ring {
-    --p: 0;
-    display: inline-grid;
-    place-items: center;
-    width: 2.6rem;
-    height: 2.6rem;
-    border-radius: 9999px;
-    background: conic-gradient(var(--color-primary) calc(var(--p) * 1%), color-mix(in oklab, var(--color-base-content) 10%, transparent) 0);
-}
-.dx-level__ring > span {
-    display: inline-grid;
-    place-items: center;
-    width: 2.05rem;
-    height: 2.05rem;
-    border-radius: 9999px;
-    background: var(--color-base-100);
-    font-size: .875rem;
-    font-weight: 800;
-    font-variant-numeric: tabular-nums;
-}
-.dx-level__text { display: flex; flex-direction: column; line-height: 1.25; }
-.dx-level__label { font-size: .8125rem; font-weight: 700; }
-.dx-level__meta { font-size: .75rem; color: color-mix(in oklab, var(--color-base-content) 55%, transparent); }
-
 /* Карточка действия. */
 .dx-action {
     display: flex;
@@ -541,7 +506,7 @@
 .dx-action--primary .dx-action__chevron { opacity: .7; }
 
 @media (prefers-reduced-motion: reduce) {
-    .dx-action, .dx-action__chevron, .dx-level { transition: none; }
+    .dx-action, .dx-action__chevron, .dx-hstat { transition: none; }
     .dx-action:hover { transform: none; }
 }
 
@@ -1889,25 +1854,6 @@ button.dx-tabbar__item { background: none; border: 0; font-family: inherit; curs
 /* ===== Вовлечение (engagement) ===== */
 :root { --dx-line: color-mix(in oklab, var(--color-base-content) 8%, transparent); --dx-soft: color-mix(in oklab, var(--color-base-content) 5%, transparent); }
 
-/* Чипы в приветствии: серия дней, сезон, лиги. */
-.dx-hello__chips { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .6rem; }
-.dx-chip-stat {
-    display: inline-flex; align-items: center; gap: .35rem;
-    padding: .3rem .65rem; border-radius: 999px; font-size: .78rem; font-weight: 600;
-    background: var(--dx-soft); border: 1px solid var(--dx-line); white-space: nowrap;
-    transition: background .15s ease, transform .15s ease;
-}
-a.dx-chip-stat:hover { background: color-mix(in oklab, var(--color-base-content) 9%, transparent); }
-a.dx-chip-stat:active { transform: scale(.97); }
-.dx-chip-stat .ti { font-size: .95rem; }
-.dx-chip-stat--flame { color: #ea580c; background: color-mix(in oklab, #fb923c 14%, transparent); border-color: color-mix(in oklab, #fb923c 30%, transparent); }
-.dx-chip-stat--flame.is-cold { color: inherit; opacity: .75; background: var(--dx-soft); border-color: var(--dx-line); }
-.dx-chip-stat--flame.is-cold .ti-flame { color: #fb923c; }
-.dx-chip-stat--season { color: #b45309; background: color-mix(in oklab, #fbbf24 16%, transparent); border-color: color-mix(in oklab, #fbbf24 34%, transparent); }
-[data-theme="dark"] .dx-chip-stat--season { color: #fcd34d; }
-[data-theme="dark"] .dx-chip-stat--flame:not(.is-cold) { color: #fdba74; }
-.dx-chip-stat__freeze { display: inline-flex; align-items: center; gap: .1rem; margin-left: .15rem; color: #0ea5e9; font-weight: 700; }
-
 /* Задания дня. */
 .dx-quests { margin-top: .9rem; min-width: 0; max-width: 100%; }
 .dx-quests__head { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; flex-wrap: wrap; margin-bottom: .5rem; }
@@ -2208,3 +2154,128 @@ button.dx-poll__opt:active, a.dx-poll__opt:active { transform: scale(.98); }
 .dx-season-next .dx-pass-reward__title { display: flex; flex-direction: column; }
 .dx-season-next .dx-pass-reward__title small { font-size: .72rem; font-weight: 500; opacity: .6; }
 .dx-rank__gap { text-align: center; font-size: .8rem; letter-spacing: .2em; opacity: .35; padding: .1rem 0; }
+
+/* Панель «Ваш день»: плитки прогресса (уровень, серия, сезон). */
+.dx-hstats { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: .5rem; width: 100%; }
+@media (min-width: 900px) { .dx-hstats { width: auto; grid-auto-columns: minmax(9.5rem, auto); } }
+.dx-hstat {
+    --c: var(--color-primary);
+    min-width: 0; display: flex; flex-direction: column; align-items: center; gap: .4rem;
+    padding: .7rem .5rem .65rem; border-radius: 1.1rem; text-align: center;
+    background: color-mix(in oklab, var(--color-base-100) 72%, transparent);
+    border: 1px solid color-mix(in oklab, var(--color-base-content) 7%, transparent);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .03);
+    backdrop-filter: blur(6px);
+    transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+.dx-hstat:hover { border-color: color-mix(in oklab, var(--c) 35%, transparent); box-shadow: 0 6px 18px -12px color-mix(in oklab, var(--c) 60%, transparent); }
+.dx-hstat:active { transform: scale(.97); }
+@media (min-width: 900px) {
+    .dx-hstat { flex-direction: row; text-align: left; gap: .65rem; padding: .55rem .9rem .55rem .55rem; }
+}
+.dx-hstat__ico, .dx-hstat__ring { flex-shrink: 0; width: 2.4rem; height: 2.4rem; border-radius: 50%; display: inline-grid; place-items: center; }
+.dx-hstat__ico { font-size: 1.2rem; color: var(--c); background: color-mix(in oklab, var(--c) 13%, transparent); }
+.dx-hstat__ring { --p: 0; background: conic-gradient(var(--c) calc(var(--p) * 1%), color-mix(in oklab, var(--color-base-content) 10%, transparent) 0); }
+.dx-hstat__ring > span {
+    width: 1.9rem; height: 1.9rem; border-radius: 50%; display: inline-grid; place-items: center;
+    background: var(--color-base-100); font-size: .85rem; font-weight: 800; font-variant-numeric: tabular-nums;
+}
+.dx-hstat__body { min-width: 0; width: 100%; display: flex; flex-direction: column; gap: .15rem; line-height: 1.2; }
+.dx-hstat__value { font-size: .82rem; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dx-hstat__meta { font-size: .7rem; color: color-mix(in oklab, var(--color-base-content) 55%, transparent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dx-hstat__meta .ti { color: #0ea5e9; }
+.dx-hstat__bar { display: block; height: 5px; margin-top: .2rem; border-radius: 999px; overflow: hidden; background: color-mix(in oklab, var(--color-base-content) 9%, transparent); }
+.dx-hstat__bar > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #fbbf24, #f59e0b); }
+@media (min-width: 900px) { .dx-hstat__body { width: auto; } .dx-hstat__bar { width: 5.5rem; } }
+.dx-hstat--flame { --c: #f97316; }
+.dx-hstat--flame:not(.is-cold) .dx-hstat__ico { color: #fff; background: linear-gradient(135deg, #fb923c, #ea580c); box-shadow: 0 4px 12px -4px rgba(234, 88, 12, .6); }
+.dx-hstat--season { --c: #d97706; }
+
+/* ===== Реклама (components/_banner.html) ===== */
+.dx-ad { container-type: inline-size; display: flex; flex-direction: column; gap: .35rem; min-width: 0; }
+.dx-ad__label {
+    display: flex; align-items: center; gap: .4rem; min-width: 0;
+    font-size: .66rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+    color: color-mix(in oklab, var(--color-base-content) 42%, transparent);
+}
+.dx-ad__label > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dx-ad__age { flex-shrink: 0; padding: 0 .35rem; border-radius: .35rem; font-size: .62rem; color: var(--color-error); border: 1px solid color-mix(in oklab, var(--color-error) 45%, transparent); }
+.dx-ad__preview { margin-left: auto; flex-shrink: 0; font-style: normal; text-transform: none; letter-spacing: 0; color: var(--color-warning); }
+.dx-ad.is-preview .dx-ad__link { outline: 2px dashed color-mix(in oklab, var(--color-warning) 70%, transparent); outline-offset: 3px; }
+.dx-ad__link { display: block; border-radius: 1.1rem; overflow: hidden; transition: transform .2s ease, box-shadow .2s ease; }
+.dx-ad__link:hover { box-shadow: 0 10px 28px -18px rgba(0, 0, 0, .45); }
+.dx-ad__link:active { transform: scale(.995); }
+
+/* Картинка: рамка держит пропорции зоны, лишнее обрезается, вёрстка не прыгает. */
+.dx-ad__media { display: block; aspect-ratio: var(--ar); background: color-mix(in oklab, var(--color-base-content) 5%, transparent); }
+.dx-ad__media img { display: block; width: 100%; height: 100%; object-fit: cover; }
+@media (max-width: 767px) { .dx-ad__media.has-mobile { aspect-ratio: var(--ar-m); } }
+
+/* Карточка: в узкой колонке — столбиком, в широкой — в строку. */
+.dx-ad__native {
+    display: flex; flex-direction: column; align-items: flex-start; gap: .75rem; padding: 1rem;
+    background:
+        radial-gradient(120% 140% at 100% 0%, color-mix(in oklab, var(--color-primary) 10%, transparent), transparent 60%),
+        var(--color-base-100);
+    border: 1px solid color-mix(in oklab, var(--color-base-content) 9%, transparent);
+    border-radius: inherit;
+}
+@container (min-width: 520px) {
+    .dx-ad__native { flex-direction: row; align-items: center; gap: 1rem; padding: 1rem 1.15rem; }
+}
+.dx-ad__logo { flex-shrink: 0; width: 3rem; height: 3rem; border-radius: .8rem; object-fit: contain; background: var(--color-base-100); border: 1px solid color-mix(in oklab, var(--color-base-content) 8%, transparent); }
+.dx-ad__text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .2rem; }
+.dx-ad__headline { font-size: 1rem; font-weight: 800; line-height: 1.25; letter-spacing: -.01em; }
+.dx-ad__body { font-size: .82rem; line-height: 1.4; color: color-mix(in oklab, var(--color-base-content) 65%, transparent); }
+.dx-ad__cta {
+    flex-shrink: 0; display: inline-flex; align-items: center; gap: .3rem; padding: .55rem 1rem; border-radius: 999px;
+    font-size: .82rem; font-weight: 700; color: var(--color-primary-content); background: var(--color-primary);
+}
+@container (max-width: 519px) { .dx-ad__cta { align-self: stretch; justify-content: center; } }
+.dx-ad__disclaimer { font-size: .66rem; color: color-mix(in oklab, var(--color-base-content) 45%, transparent); }
+.dx-ad__placeholder {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .2rem; color: #fff;
+    background: linear-gradient(135deg, color-mix(in oklab, var(--color-primary) 85%, #000), var(--color-secondary));
+}
+.dx-ad__placeholder b { font-size: 1.1rem; }
+.dx-ad__placeholder small { font-size: .75rem; opacity: .8; font-family: ui-monospace, monospace; }
+.dx-ad__ph-mobile { display: none; }
+@media (max-width: 767px) {
+    .dx-ad__placeholder { aspect-ratio: var(--ar-m); }
+    .dx-ad__ph-desktop { display: none; }
+    .dx-ad__ph-mobile { display: inline; }
+}
+
+/* Сегментированный переключатель: общая подложка, выбранный пункт — белая «таблетка». */
+.dx-seg {
+    display: inline-flex; gap: .2rem; padding: .22rem; max-width: 100%; overflow-x: auto; scrollbar-width: none;
+    border-radius: .85rem; background: color-mix(in oklab, var(--color-base-content) 7%, transparent);
+}
+.dx-seg::-webkit-scrollbar { display: none; }
+.dx-seg__btn {
+    display: inline-flex; align-items: center; gap: .35rem; flex-shrink: 0;
+    padding: .4rem .8rem; border-radius: .65rem; border: 0; background: transparent;
+    font: inherit; font-size: .8rem; font-weight: 600; white-space: nowrap; cursor: pointer;
+    color: color-mix(in oklab, var(--color-base-content) 62%, transparent);
+    transition: background .15s ease, color .15s ease, box-shadow .15s ease;
+}
+.dx-seg__btn:hover { color: var(--color-base-content); }
+.dx-seg__btn.is-active { color: var(--color-base-content); background: var(--color-base-100); box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }
+@media (max-width: 767px) { .sbx-all { display: none; } }
+
+/* Кнопки действий в шапке раздела: в ряд с переносом, на телефоне — сеткой на всю ширину. */
+.dx-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+@media (max-width: 639px) {
+    .dx-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); width: 100%; }
+    .dx-actions > .btn { justify-content: center; }
+}
+@media (max-width: 767px) {
+    .sbx-modes { display: flex; width: 100%; }
+    .sbx-modes .dx-seg__btn { flex: 1; justify-content: center; padding: .4rem .45rem; font-size: .75rem; }
+}
+
+/* Метка «онлайн»: блок обновляется сам. */
+.dx-live-dot { display: inline-flex; align-items: center; gap: .3rem; font-size: .65rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--color-success); }
+.dx-live-dot::before { content: ""; width: .45rem; height: .45rem; border-radius: 50%; background: currentColor; animation: dx-live-blink 2s ease-in-out infinite; }
+@keyframes dx-live-blink { 50% { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { .dx-live-dot::before { animation: none; } }

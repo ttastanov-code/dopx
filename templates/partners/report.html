@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{# Отчёт рекламодателя: доступ по закрытой ссылке, данные только по его баннерам. #}
+<div class="max-w-4xl mx-auto px-2 sm:px-0 space-y-4">
+    <div class="flex flex-wrap items-end justify-between gap-3">
+        <div>
+            <div class="text-xs uppercase tracking-wide opacity-50 font-semibold">Отчёт о размещении на DOPX</div>
+            <h1 class="text-2xl font-extrabold mt-1">{{ partner.name }}</h1>
+        </div>
+        <div class="dx-seg">
+            <a href="?days=7" class="dx-seg__btn{% if days == 7 %} is-active{% endif %}">7 дней</a>
+            <a href="?days=30" class="dx-seg__btn{% if days == 30 %} is-active{% endif %}">30 дней</a>
+            <a href="?days=90" class="dx-seg__btn{% if days == 90 %} is-active{% endif %}">90 дней</a>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-3 gap-3">
+        <div class="dx-card text-center"><div class="text-2xl font-extrabold tabular-nums">{{ impressions }}</div><div class="text-xs opacity-60">показов</div></div>
+        <div class="dx-card text-center"><div class="text-2xl font-extrabold tabular-nums">{{ clicks }}</div><div class="text-xs opacity-60">кликов</div></div>
+        <div class="dx-card text-center"><div class="text-2xl font-extrabold tabular-nums">{{ ctr }}%</div><div class="text-xs opacity-60">CTR</div></div>
+    </div>
+
+    <section class="dx-card">
+        <div class="text-sm font-bold mb-3">Показы по дням</div>
+        <div class="flex items-end gap-[2px] h-32">
+            {% for d in series %}<div class="flex-1 rounded-t bg-primary/70 min-h-[2px]" style="height: {{ d.pct }}%" title="{{ d.date|date:'d.m' }}: {{ d.impressions }} показов, {{ d.clicks }} кликов"></div>{% endfor %}
+        </div>
+        <div class="flex justify-between text-[11px] opacity-50 mt-1"><span>{{ series.0.date|date:"d.m" }}</span><span>сегодня</span></div>
+    </section>
+
+    <section class="dx-card overflow-x-auto">
+        <div class="text-sm font-bold mb-2">Баннеры</div>
+        {% if banners %}
+        <table class="table table-sm">
+            <thead><tr><th>Баннер</th><th>Место</th><th class="text-right">Показы</th><th class="text-right">Клики</th><th class="text-right">CTR</th><th class="text-right">Всего показов</th></tr></thead>
+            <tbody>
+            {% for b in banners %}
+            <tr><td class="font-medium">{{ b.title }}</td><td class="text-xs opacity-70">{{ b.get_zone_display }}</td>
+                <td class="text-right tabular-nums">{{ b.period.impressions }}</td><td class="text-right tabular-nums">{{ b.period.clicks }}</td>
+                <td class="text-right tabular-nums">{{ b.period.ctr_percent }}%</td><td class="text-right tabular-nums opacity-60">{{ b.total.impressions }}</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}<p class="text-sm opacity-60">Размещений пока нет.</p>{% endif %}
+    </section>
+
+    <p class="text-xs opacity-50">Показ засчитывается, когда баннер хотя бы наполовину виден на экране не меньше секунды. Повторные клики с одного устройства в течение минуты не учитываются, как и визиты без браузера.</p>
+</div>
+{% endblock %}

@@ -14,11 +14,11 @@ PLATFORM_STATS_TTL = 120
 
 
 def real_users():
-    """Активные аккаунты; синтетические — только если их голоса считаются (COUNT_SYNTHETIC_VOTES)."""
-    from core.utils import synthetic_users_q
+    """Активные аккаунты без суперпользователей; синтетические — только если их голоса считаются."""
+    from core.utils import service_accounts_q, synthetic_users_q
     from users.models import User
 
-    users = User.objects.filter(is_active=True)
+    users = User.objects.filter(is_active=True).exclude(service_accounts_q())
     if not getattr(settings, 'COUNT_SYNTHETIC_VOTES', True):
         users = users.exclude(synthetic_users_q())
     return users

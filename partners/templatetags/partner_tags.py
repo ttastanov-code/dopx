@@ -1,26 +1,30 @@
-# partners/templatetags/partner_tags.py
 from __future__ import annotations
 
 from django import template
 
-from partners.services import get_active_banner_for_zone, track_banner_impression
+from partners.services import pick_banner
 
 register = template.Library()
 
 
 @register.inclusion_tag("components/_banner.html", takes_context=True)
 def render_banner(context, zone: str):
-    """{% render_banner "sidebar" %} — активный баннер зоны + учёт показа."""
+    """{% render_banner "sidebar" %}. Показ засчитывает ads.js, когда баннер виден на экране.
+    ?ad_preview=<id> — сотрудник видит любой баннер этой зоны без учёта статистики."""
     request = context.get("request")
-    # В режим траура реклама не показывается.
     mourning = context.get("mourning")
     if mourning and mourning.get("hide_ads"):
         return {"show": False}
-    banner = get_active_banner_for_zone(zone)
+
+    preview_id = request.GET.get("ad_preview") if request is not None else None
+    if preview_id and getattr(request.user, "is_staff", False):
+        from partners.models import Banner
+
+        banner = Banner.objects.filter(pk=preview_id, zone=zone).select_related("partner").first()
+        if banner is not None:
+            return {"show": True, "banner": banner, "preview": True}
+
+    banner = pick_banner(zone, request)
     if banner is None:
         return {"show": False}
-
-    if request is not None:
-        track_banner_impression(banner, request)
-
-    return {"show": True, "banner": banner}
+    return {"show": True, "banner": banner, "preview": False}

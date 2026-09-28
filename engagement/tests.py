@@ -448,3 +448,37 @@ class ResetUserActivityTests(EngagementTestCase):
         self.assertTrue(Match.objects.filter(pk=match.pk).exists())
         self.assertEqual(Player.objects.count(), 1)
         self.assertEqual(Team.objects.count(), 2)
+
+
+class ServiceAccountTests(EngagementTestCase):
+    """Суперпользователь тестирует сайт: не влияет на рейтинги, подсчёты и не получает наград."""
+
+    def test_excluded_from_votes_counts_and_badges(self):
+        from aggregates.services import excluded_voters_q
+        from engagement.rewards import award_badge
+        from predictions.services import prediction_counts
+        from users.services import check_and_award_badges
+
+        boss = User.objects.create_superuser(username="boss", email="boss@test.local", password="x")
+        fan = self.make_user()
+        match = self.make_match(status="scheduled", home_score=None, away_score=None,
+                                start=timezone.now() + timedelta(days=1))
+        MatchPrediction.objects.create(user=boss, match=match, choice="2")
+        MatchPrediction.objects.create(user=fan, match=match, choice="1")
+        self.assertEqual(prediction_counts(match)["home_pct"], 100)
+
+        self.assertEqual(MatchPrediction.objects.filter(user=boss).exclude(excluded_voters_q(match.id)).count(), 0)
+        self.assertEqual(MatchPrediction.objects.filter(user=fan).exclude(excluded_voters_q(match.id)).count(), 1)
+
+        boss.total_evaluations = 10
+        self.assertEqual(check_and_award_badges(boss), [])
+        self.assertFalse(award_badge(boss, "day_streak_7"))
+
+    def test_not_in_leaderboards(self):
+        from core.stats import real_users
+        boss = User.objects.create_superuser(username="boss", email="boss@test.local", password="x")
+        self.assertNotIn(boss, real_users())
+        season.add_season_xp(boss.pk, 500)
+        self.client.force_login(boss)
+        response = self.client.get(reverse('engagement:season_pass'))
+        self.assertEqual(response.context["top"], [])

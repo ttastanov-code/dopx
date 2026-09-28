@@ -38,7 +38,7 @@ def team_fan_geo_min_fans() -> int:
 
 
 def _real_users():
-    return User.objects.filter(is_active=True, is_verified=True).exclude(city="")
+    return User.objects.filter(is_active=True, is_verified=True, is_superuser=False).exclude(city="")
 
 
 def _final_result_expr():
@@ -78,7 +78,7 @@ def city_battle(period: str = "month") -> list[dict]:
         return []
 
     sessions = EvaluationSession.objects.filter(
-        status="completed", user__city__in=cities, user__is_active=True, user__is_verified=True,
+        status="completed", user__city__in=cities, user__is_active=True, user__is_verified=True, user__is_superuser=False,
     )
     if since:
         sessions = sessions.filter(completed_at__gte=since)
@@ -90,7 +90,7 @@ def city_battle(period: str = "month") -> list[dict]:
     }
 
     preds = MatchPrediction.objects.filter(
-        user__city__in=cities, user__is_active=True, user__is_verified=True,
+        user__city__in=cities, user__is_active=True, user__is_verified=True, user__is_superuser=False,
         match__status="finished", match__home_score__isnull=False, match__away_score__isnull=False,
     )
     if since:

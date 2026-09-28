@@ -55,6 +55,8 @@ def check_and_award_badges(user) -> list[UserBadge]:
     Вызывать только из Celery-задачи.
     """
     awarded: list[UserBadge] = []
+    if user.is_superuser:  # служебный аккаунт — без достижений
+        return awarded
     total = user.total_evaluations
     streak = user.evaluation_streak
 

@@ -12,9 +12,10 @@
                 <i class="ti ti-info-circle opacity-50 mt-0.5 shrink-0"></i>
                 Баннеры показываются на сайте, виджеты партнёры размещают у себя, реферальные ссылки учитывают приведённую аудиторию. Ниже: коды виджетов и статистика за 30 дней.
             </p>
-            <div class="flex gap-2 shrink-0">
+            <div class="dx-actions">
                 <a href="{% url 'dashboard:partners_list' %}" class="btn btn-sm btn-outline"><i class="ti ti-building-store"></i> Партнёры</a>
                 <a href="{% url 'dashboard:banners_list' %}" class="btn btn-sm btn-outline"><i class="ti ti-photo"></i> Баннеры</a>
+                <a href="{% url 'dashboard:banner_sandbox' %}" class="btn btn-sm btn-outline"><i class="ti ti-devices"></i> Проверить вид</a>
             </div>
         </div>
     </div>

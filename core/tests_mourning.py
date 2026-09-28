@@ -63,6 +63,6 @@ class MourningDashboardAndSiteTests(TestCase):
     def test_ads_hidden(self):
         from django.template import Context, Template
         MourningMode.objects.create(pk=1, is_enabled=True, hide_ads=True)
-        with patch("partners.templatetags.partner_tags.get_active_banner_for_zone") as get_banner:
+        with patch("partners.templatetags.partner_tags.pick_banner") as get_banner:
             Template('{% load partner_tags %}{% render_banner "sidebar" %}').render(Context({"mourning": current_mourning()}))
         get_banner.assert_not_called()

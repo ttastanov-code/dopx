@@ -5,7 +5,6 @@ import uuid
 from django.contrib import admin
 from django.conf import settings
 from django.db.models import Count
-from django.templatetags.static import static
 from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
@@ -15,70 +14,6 @@ from core.admin_actions import export_as_csv
 
 from .models import Banner, Partner
 from .selectors import banner_stats, partner_referral_visits
-
-
-# Зоны баннеров: размер, пояснение, демо-картинка (static/img/banner-examples/<slug>.png).
-# Новую зону добавлять сюда вручную.
-BANNER_ZONE_GUIDE = [
-    (
-        "home_hero", "Главная — верх", "1200 × 300 px",
-        "Растягивается на всю ширину страницы (десктоп ~1200 px, на мобильном — по ширине экрана). "
-        "Широкий формат вроде билборда, картинка не должна быть перегружена мелким текстом.",
-    ),
-    (
-        "sidebar", "Боковая колонка", "300 × 600 px",
-        "Узкая правая колонка на главной (~380–400 px на десктопе). Высокий вертикальный формат "
-        "смотрится в ней лучше, чем широкий.",
-    ),
-    (
-        "match_detail", "Страница матча", "300 × 250 px",
-        "Такая же узкая правая колонка (~380–400 px), но на странице конкретного матча.",
-    ),
-    (
-        "leaderboard", "Лидерборд", "728 × 90 px",
-        "Во всю ширину контента над таблицей рейтинга (той же ширины, что и сама таблица) — короткий "
-        "широкий формат, классический IAB «leaderboard».",
-    ),
-]
-
-
-def _zone_guide_html() -> str:
-    # object-fit:contain — картинка видна целиком.
-    cards = [
-        format_html(
-            '<div style="border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;background:#fff;">'
-            '<img src="{}" alt="Пример баннера: {}" style="width:100%;height:130px;object-fit:contain;'
-            'background:#f3f4f6;display:block;">'
-            '<div style="padding:10px 12px;">'
-            '<div style="font-weight:600;font-size:13px;">{}</div>'
-            '<div style="font-size:12px;opacity:.65;margin:2px 0 6px;font-family:monospace;">{}</div>'
-            '<div style="font-size:11px;opacity:.55;line-height:1.4;">{}</div>'
-            '</div></div>',
-            static(f"img/banner-examples/{slug}.png"), title, title, size, note,
-        )
-        for slug, title, size, note in BANNER_ZONE_GUIDE
-    ]
-    grid = format_html(
-        '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-bottom:14px;">{}</div>',
-        mark_safe("".join(cards)),
-    )
-    # Статичный HTML — mark_safe (format_html без аргументов падает).
-    rules = mark_safe(
-        '<div style="font-size:12px;opacity:.7;line-height:1.6;">'
-        '<b>Формат файла:</b> jpg/png/webp, без жёстких требований — картинка растягивается по ширине '
-        'контейнера с сохранением пропорций (чем ближе к рекомендованному размеру, тем меньше искажений).<br>'
-        '<b>Плашка «Реклама»</b> добавляется автоматически поверх любого баннера — убрать нельзя, это '
-        'маркировка рекламного размещения.<br>'
-        '<b>Клик</b> всегда идёт через редирект <code>/ad/&lt;id&gt;/click/</code>, а не напрямую на ссылку '
-        'партнёра — так считаются клики в статистике ниже.<br>'
-        '<b>Контент 18+:</b> для любого возрастного контента (букмекеры/гэмблинг, алкоголь, табак и т.п.) '
-        'включите «Требует пометки 18+» в блоке «Комплаенс» — под баннером автоматически появится '
-        'нейтральный дисклеймер о возрастном ограничении.<br>'
-        '<b>Ротация:</b> если в одной зоне несколько активных баннеров, показывается случайный с весом по '
-        'полю «Приоритет» — выше число, чаще показ.'
-        '</div>'
-    )
-    return grid + rules
 
 
 def _copyable(url: str) -> str:
@@ -98,7 +33,7 @@ class BannerInline(TabularInline):
     """Баннеры инлайном на странице партнёра."""
     model = Banner
     extra = 0
-    fields = ('zone', 'title', 'image_preview_inline', 'is_active', 'priority', 'requires_age_disclaimer')
+    fields = ('zone', 'format', 'title', 'image_preview_inline', 'is_active', 'priority', 'requires_age_disclaimer')
     readonly_fields = ('image_preview_inline',)
     show_change_link = True
 
@@ -181,7 +116,7 @@ class PartnerAdmin(ModelAdmin):
 
 
 class ActivelyShowingFilter(admin.SimpleListFilter):
-    """Фильтр «показывается сейчас»: is_active + окно starts_at/ends_at."""
+    """Фильтр «показывается сейчас» по Banner.status()."""
     title = 'Показывается сейчас'
     parameter_name = 'showing_now'
 
@@ -189,7 +124,7 @@ class ActivelyShowingFilter(admin.SimpleListFilter):
         return (('yes', 'Да'), ('no', 'Нет'))
 
     def queryset(self, request, queryset):
-        ids_showing = [b.id for b in queryset if b.is_currently_active()]
+        ids_showing = [b.id for b in queryset.select_related('partner') if b.is_currently_active()]
         if self.value() == 'yes':
             return queryset.filter(id__in=ids_showing)
         if self.value() == 'no':
@@ -201,29 +136,24 @@ class ActivelyShowingFilter(admin.SimpleListFilter):
 class BannerAdmin(ModelAdmin):
     list_before_template = "admin/partners/banner/list_before.html"
     list_display = (
-        'image_preview', 'title', 'zone', 'partner', 'is_currently_active_badge',
-        'priority', 'requires_age_disclaimer', 'stats_30d',
+        'image_preview', 'title', 'zone', 'format', 'partner', 'is_currently_active_badge', 'priority', 'stats_30d',
     )
-    list_filter = ('zone', ActivelyShowingFilter, 'is_active', 'requires_age_disclaimer', 'partner')
-    search_fields = ('title', 'target_url', 'partner__name')
+    list_filter = ('zone', 'format', ActivelyShowingFilter, 'is_active', 'requires_age_disclaimer', 'partner')
+    search_fields = ('title', 'advertiser', 'target_url', 'partner__name')
     autocomplete_fields = ('partner',)
-    readonly_fields = ('zone_guide', 'created_at', 'updated_at', 'image_preview', 'target_url_link', 'stats_30d_display')
+    readonly_fields = ('created_at', 'updated_at', 'image_preview', 'stats_30d_display')
     actions = [export_as_csv]
     fieldsets = (
-        ('Инструкция: размеры и как это будет выглядеть', {'fields': ('zone_guide',)}),
-        ('Размещение', {'fields': ('partner', 'zone', 'title', 'image', 'image_preview', 'target_url', 'target_url_link')}),
-        ('Активность', {'fields': ('is_active', 'starts_at', 'ends_at', 'priority')}),
-        ('Комплаенс', {
-            'fields': ('requires_age_disclaimer',),
-            'description': 'Включите для любого контента 18+ (букмекеры/гэмблинг, алкоголь, табак и т.п.) — под баннером покажется пометка 18+.',
-        }),
+        ('Размещение', {'fields': ('partner', 'advertiser', 'zone', 'format', 'title', 'target_url')}),
+        ('Картинка', {'fields': ('image', 'image_mobile', 'image_preview')}),
+        ('Карточка', {'fields': ('logo', 'headline', 'body', 'cta_label')}),
+        ('Когда и кому', {'fields': (
+            'is_active', 'starts_at', 'ends_at', 'priority', 'audience',
+            'max_impressions', 'max_clicks', 'daily_cap_per_visitor', 'requires_age_disclaimer',
+        )}),
         ('Статистика', {'fields': ('stats_30d_display',)}),
         ('Мета', {'fields': ('created_at', 'updated_at'), 'classes': ('collapse',)}),
     )
-
-    def zone_guide(self, obj=None):
-        return _zone_guide_html()
-    zone_guide.short_description = ''
 
     def image_preview(self, obj):
         if obj and obj.image:
@@ -235,26 +165,16 @@ class BannerAdmin(ModelAdmin):
         return '—'
     image_preview.short_description = 'Превью'
 
-    def target_url_link(self, obj):
-        if not obj.target_url:
-            return '—'
-        return format_html('<a href="{}" target="_blank" rel="noopener">{}</a>', obj.target_url, obj.target_url)
-    target_url_link.short_description = 'Открыть ссылку перехода'
-
     def is_currently_active_badge(self, obj):
-        if obj.is_currently_active():
-            return mark_safe('<span style="color:#10b981;">● Показывается</span>')
-        if obj.is_active:
-            return mark_safe('<span style="color:#f59e0b;">● Вне окна показа</span>')
-        return mark_safe('<span style="color:#6b7280;">○ Выключен</span>')
+        status = obj.status()
+        colors = {'running': '#10b981', 'scheduled': '#3b82f6', 'paused': '#6b7280', 'finished': '#6b7280', 'draft': '#f59e0b'}
+        labels = {'running': 'Показывается', 'scheduled': 'Запланирован', 'paused': 'На паузе', 'finished': 'Завершён', 'draft': 'Черновик'}
+        return format_html('<span style="color:{};">● {}</span>', colors.get(status, '#6b7280'), labels.get(status, status))
     is_currently_active_badge.short_description = 'Показ'
 
     def stats_30d(self, obj):
         stats = banner_stats(obj.id, days=30)
-        return format_html(
-            '{} показов / {} кликов ({}% CTR)',
-            stats['impressions'], stats['clicks'], stats['ctr_percent'],
-        )
+        return format_html('{} показов / {} кликов ({}% CTR)', stats['impressions'], stats['clicks'], stats['ctr_percent'])
     stats_30d.short_description = 'За 30 дней'
 
     def stats_30d_display(self, obj):

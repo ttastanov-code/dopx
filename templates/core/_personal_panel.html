@@ -15,26 +15,38 @@
                 Все доступные матчи оценены
                 {% endif %}
             </p>
-            <div class="dx-hello__chips">
-                {% if personal.day_streak and personal.day_streak.current %}
-                <span class="dx-chip-stat dx-chip-stat--flame{% if not personal.day_streak.done_today %} is-cold{% endif %}" title="Серия дней. Заходите каждый день. Рекорд: {{ personal.day_streak.best }}">
-                    <i class="ti ti-flame"></i>{{ personal.day_streak.current }} {{ personal.day_streak.current|ru_plural:"день,дня,дней" }}
-                    {% if personal.day_streak.freezes %}<span class="dx-chip-stat__freeze" title="Заморозки: закроют пропущенный день"><i class="ti ti-snowflake"></i>{{ personal.day_streak.freezes }}</span>{% endif %}
-                </span>
-                {% endif %}
-                {% if personal.season_pass %}
-                <a href="{% url 'engagement:season_pass' %}" class="dx-chip-stat dx-chip-stat--season"><i class="ti ti-ticket"></i>Сезон · ур. {{ personal.season_pass.level }}</a>
-                {% endif %}
-                <a href="{% url 'engagement:friend_leagues' %}" class="dx-chip-stat"><i class="ti ti-users-group"></i>Лиги с друзьями</a>
-            </div>
         </div>
-        <a href="{% url 'users:profile' %}" class="dx-level" title="Ваш уровень и опыт">
-            <span class="dx-level__ring" style="--p: {{ personal.xp_progress }}"><span>{{ personal.level }}</span></span>
-            <span class="dx-level__text">
-                <span class="dx-level__label">Уровень {{ personal.level }}</span>
-                <span class="dx-level__meta">ещё {{ personal.xp_to_next }} XP{% if personal.streak %} · серия {{ personal.streak }} {{ personal.streak|ru_plural:"тур,тура,туров" }}{% endif %}</span>
-            </span>
-        </a>
+        {# Прогресс: уровень, серия дней, сезон — три одинаковые плитки. Стили — css/ui.css (dx-hstat). #}
+        <div class="dx-hstats">
+            <a href="{% url 'users:profile' %}" class="dx-hstat" title="Уровень и опыт">
+                <span class="dx-hstat__ring" style="--p: {{ personal.xp_progress }}"><span>{{ personal.level }}</span></span>
+                <span class="dx-hstat__body">
+                    <span class="dx-hstat__value">Уровень {{ personal.level }}</span>
+                    <span class="dx-hstat__meta">ещё {{ personal.xp_to_next }} XP</span>
+                </span>
+            </a>
+            {% with ds=personal.day_streak %}
+            <a href="{% url 'core:rules' %}#season" class="dx-hstat dx-hstat--flame{% if not ds or not ds.done_today %} is-cold{% endif %}"
+               title="Серия дней: заходите каждый день.{% if ds %} Рекорд: {{ ds.best }}.{% endif %}">
+                <span class="dx-hstat__ico"><i class="ti ti-flame"></i></span>
+                <span class="dx-hstat__body">
+                    <span class="dx-hstat__value">{{ ds.current|default:0 }} {{ ds.current|default:0|ru_plural:"день,дня,дней" }}</span>
+                    <span class="dx-hstat__meta">{% if ds.freezes %}<i class="ti ti-snowflake"></i> {{ ds.freezes }} {{ ds.freezes|ru_plural:"заморозка,заморозки,заморозок" }}{% elif ds and ds.done_today %}серия идёт{% else %}зайдите сегодня{% endif %}</span>
+                </span>
+            </a>
+            {% endwith %}
+            {% if personal.season_pass %}
+            {% with sp=personal.season_pass %}
+            <a href="{% url 'engagement:season_pass' %}" class="dx-hstat dx-hstat--season" title="Сезонный пропуск">
+                <span class="dx-hstat__ico"><i class="ti ti-ticket"></i></span>
+                <span class="dx-hstat__body">
+                    <span class="dx-hstat__value">Сезон · {{ sp.level }}</span>
+                    <span class="dx-hstat__bar"><span style="width: {{ sp.level_progress }}%"></span></span>
+                </span>
+            </a>
+            {% endwith %}
+            {% endif %}
+        </div>
     </div>
 
     <div class="dx-hello__grid">

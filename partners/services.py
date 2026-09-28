@@ -17,18 +17,91 @@ REFERRAL_COOKIE_NAME = "dopx_ref"
 REFERRAL_COOKIE_MAX_AGE = 60 * 60 * 24 * 30  # 30 дней
 
 
-def get_active_banner_for_zone(zone: str) -> Banner | None:
-    """Взвешенный случайный выбор активного баннера зоны (вес = priority + 1)."""
-    candidates = list(
-        Banner.objects.filter(zone=zone, is_active=True).select_related("partner")
-    )
-    candidates = [b for b in candidates if b.is_currently_active()]
+TOTALS_CACHE_TTL = 60
+FREQ_SESSION_KEY = "ad_views"
+
+
+def banner_totals_cached(banner_id) -> dict:
+    """Показы и клики за всё время (для лимитов), кэш на минуту."""
+    from django.core.cache import cache
+    from django.db.models import Sum
+
+    from .models import BannerDailyStat
+
+    key = f"ad:totals:{banner_id}"
+    totals = cache.get(key)
+    if totals is None:
+        row = BannerDailyStat.objects.filter(banner_id=banner_id).aggregate(i=Sum("impressions"), c=Sum("clicks"))
+        totals = {"impressions": row["i"] or 0, "clicks": row["c"] or 0}
+        cache.set(key, totals, TOTALS_CACHE_TTL)
+    return totals
+
+
+def _views_today(request) -> dict:
+    """{banner_id: показов сегодня} этому посетителю — из сессии."""
+    from django.utils import timezone
+
+    if request is None or not hasattr(request, "session"):
+        return {}
+    data = request.session.get(FREQ_SESSION_KEY) or {}
+    if data.get("date") != timezone.localdate().isoformat():
+        return {}
+    return data.get("views", {})
+
+
+def pick_banner(zone: str, request=None) -> Banner | None:
+    """Баннер для зоны: запущен, подходит по аудитории, не упёрся в лимиты. Ротация по весу."""
+    user = getattr(request, "user", None)
+    is_user = bool(user and user.is_authenticated)
+    views = _views_today(request)
+    candidates = []
+    for banner in Banner.objects.filter(zone=zone, is_active=True).select_related("partner"):
+        if banner.audience == "guests" and is_user or banner.audience == "users" and not is_user:
+            continue
+        needs_totals = banner.max_impressions or banner.max_clicks
+        if banner.status(banner_totals_cached(banner.pk) if needs_totals else None) != "running":
+            continue
+        if banner.daily_cap_per_visitor and views.get(str(banner.pk), 0) >= banner.daily_cap_per_visitor:
+            continue
+        candidates.append(banner)
     if not candidates:
         return None
-    if len(candidates) == 1:
-        return candidates[0]
-    weights = [b.priority + 1 for b in candidates]
-    return random.choices(candidates, weights=weights, k=1)[0]
+    return random.choices(candidates, weights=[max(b.priority, 1) for b in candidates], k=1)[0]
+
+
+def _bump(banner_id, field: str) -> None:
+    from django.core.cache import cache
+    from django.db.models import F
+    from django.utils import timezone
+
+    from .models import BannerDailyStat
+
+    today = timezone.localdate()
+    updated = BannerDailyStat.objects.filter(banner_id=banner_id, date=today).update(**{field: F(field) + 1})
+    if not updated:
+        stat, created = BannerDailyStat.objects.get_or_create(banner_id=banner_id, date=today, defaults={field: 1})
+        if not created:
+            BannerDailyStat.objects.filter(pk=stat.pk).update(**{field: F(field) + 1})
+    cache.delete(f"ad:totals:{banner_id}")
+
+
+def record_impression(banner: Banner, request) -> None:
+    """Баннер был виден на экране: +1 показ и счётчик частоты посетителя."""
+    from django.utils import timezone
+
+    _bump(banner.pk, "impressions")
+    if hasattr(request, "session"):
+        today = timezone.localdate().isoformat()
+        data = request.session.get(FREQ_SESSION_KEY) or {}
+        if data.get("date") != today:
+            data = {"date": today, "views": {}}
+        data["views"][str(banner.pk)] = data["views"].get(str(banner.pk), 0) + 1
+        request.session[FREQ_SESSION_KEY] = data
+
+
+def record_click(banner: Banner, request) -> None:
+    _bump(banner.pk, "clicks")
+    track_event(EventName.BANNER_CLICK, request=request, properties=_banner_properties(banner))
 
 
 def _banner_properties(banner: Banner) -> dict:
@@ -37,14 +110,6 @@ def _banner_properties(banner: Banner) -> dict:
         "zone": banner.zone,
         "partner_slug": banner.partner.slug if banner.partner_id else None,
     }
-
-
-def track_banner_impression(banner: Banner, request: HttpRequest) -> None:
-    track_event(EventName.BANNER_IMPRESSION, request=request, properties=_banner_properties(banner))
-
-
-def track_banner_click(banner: Banner, request: HttpRequest) -> None:
-    track_event(EventName.BANNER_CLICK, request=request, properties=_banner_properties(banner))
 
 
 def build_click_redirect_url(banner: Banner) -> str:
@@ -134,10 +199,26 @@ def build_mood_index_feed(partner: Partner, team, season) -> dict:
     }
 
 
+def is_external_embed(request: HttpRequest) -> bool:
+    """Виджет открыт на чужом сайте: Referer есть и его домен не наш.
+    Превью на наших страницах (карточка игрока, дашборд) встраиванием не считаются."""
+    from django.conf import settings
+
+    referrer = request.META.get("HTTP_REFERER", "")
+    host = (urlparse(referrer).hostname or "").lower()
+    if not host:
+        return False
+    own = {(request.get_host() or "").split(":")[0].lower(), "localhost", "127.0.0.1"}
+    site_host = urlparse(getattr(settings, "SITE_URL", "") or "").hostname
+    if site_host:
+        own.add(site_host.lower())
+    return host not in own
+
+
 def track_widget_embed_view(*, widget_type: str, entity_id: str, request: HttpRequest) -> None:
-    """Трекинг открытия embed-виджета. widget_type — 'player'/'team'/'standings',
-    HTTP_REFERER — страница, где встроен виджет.
-    """
+    """Встраивание виджета на чужом сайте. widget_type — 'player'/'team'/'standings'/..."""
+    if not is_external_embed(request):
+        return
     track_event(
         EventName.WIDGET_EMBED_VIEWED,
         request=request,

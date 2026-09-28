@@ -1,0 +1,56 @@
+{% load static asset_extras %}<!DOCTYPE html>
+{# Рамка проверки рекламы: макет страницы сайта с баннером в своей зоне. Открывается в iframe. #}
+<html lang="ru" data-theme="{{ theme }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex">
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.3" crossorigin="anonymous"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@5.7.17" rel="stylesheet" crossorigin="anonymous">
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@5.7.17/themes.css" rel="stylesheet" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.46.0/dist/tabler-icons.min.css" crossorigin="anonymous">
+    <link rel="stylesheet" href="{% static_v 'css/ui.css' %}">
+    <style>
+        body { background: var(--color-base-200); }
+        .sk { background: color-mix(in oklab, var(--color-base-content) 7%, transparent); border-radius: 1rem; }
+        .sk-line { height: .6rem; border-radius: 99px; background: color-mix(in oklab, var(--color-base-content) 9%, transparent); }
+    </style>
+</head>
+<body class="min-h-screen">
+    <div class="h-12 bg-base-100 border-b border-base-300 flex items-center px-4 gap-2 font-bold"><span class="w-6 h-6 rounded-md bg-primary"></span>DOPX</div>
+    <main class="max-w-7xl mx-auto p-3 sm:p-4 space-y-4">
+        {% with b=banner %}
+        {% if not b %}
+        <div class="sk p-8 text-center text-sm opacity-60">Баннер не найден.</div>
+        {% elif zone == 'home_hero' %}
+        <div class="sk h-28"></div>
+        {% include 'components/_banner.html' with show=True banner=b preview=True placeholder=is_demo %}
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4"><div class="lg:col-span-2 sk h-64"></div><div class="sk h-64"></div></div>
+        {% elif zone == 'leaderboard' %}
+        <div class="sk-line w-48"></div>
+        {% include 'components/_banner.html' with show=True banner=b preview=True placeholder=is_demo %}
+        <div class="sk p-4 space-y-3">{% for i in "123456" %}<div class="sk-line"></div>{% endfor %}</div>
+        {% else %}
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div class="lg:col-span-2 space-y-4"><div class="sk h-40"></div><div class="sk h-56"></div></div>
+            <div class="space-y-4">
+                {% include 'components/_banner.html' with show=True banner=b preview=True placeholder=is_demo %}
+                <div class="sk h-48"></div>
+            </div>
+        </div>
+        {% endif %}
+        {% endwith %}
+        {# Запас снизу: макет можно прокрутить так, чтобы баннер встал по центру. #}
+        <div class="sk h-[60vh] opacity-60"></div>
+    </main>
+    <script>
+        // Сразу показываем баннер: прокручиваем макет так, чтобы он был по центру экрана.
+        // Повторяем: Tailwind из CDN достраивает вёрстку уже после load.
+        function centerAd() {
+            const ad = document.querySelector('.dx-ad');
+            if (ad) window.scrollTo(0, Math.max(0, ad.getBoundingClientRect().top + scrollY - (innerHeight - ad.offsetHeight) / 2));
+        }
+        window.addEventListener('load', () => [0, 300, 900].forEach((ms) => setTimeout(centerAd, ms)));
+    </script>
+</body>
+</html>

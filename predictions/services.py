@@ -36,7 +36,7 @@ def submit_prediction(*, user, match, choice: str) -> tuple[MatchPrediction, boo
 
 def prediction_counts(match) -> dict:
     """Доли голосов по трём исходам одним запросом, проценты округлены в Python."""
-    row = MatchPrediction.objects.filter(match=match).aggregate(
+    row = MatchPrediction.objects.filter(match=match, user__is_superuser=False).aggregate(
         home=Count('id', filter=Q(choice=MatchPrediction.CHOICE_HOME)),
         draw=Count('id', filter=Q(choice=MatchPrediction.CHOICE_DRAW)),
         away=Count('id', filter=Q(choice=MatchPrediction.CHOICE_AWAY)),
@@ -74,7 +74,7 @@ def bulk_prediction_data(matches, user) -> dict:
         for m_id in match_ids
     }
     rows = (
-        MatchPrediction.objects.filter(match_id__in=match_ids)
+        MatchPrediction.objects.filter(match_id__in=match_ids, user__is_superuser=False)
         .values('match_id', 'choice')
         .annotate(n=Count('id'))
     )
@@ -119,7 +119,7 @@ def bulk_final_prediction_counts(match_ids) -> dict:
 
     counts_by_match: dict = {}
     rows = (
-        MatchPrediction.objects.filter(match_id__in=match_ids)
+        MatchPrediction.objects.filter(match_id__in=match_ids, user__is_superuser=False)
         .values('match_id', 'choice')
         .annotate(n=Count('id'))
     )

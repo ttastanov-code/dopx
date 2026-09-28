@@ -33,7 +33,7 @@ from django.views.decorators.http import require_POST
 
 from analytics.models import EventName
 from analytics.services import track_event
-from core.utils import get_auth_panel_stats, get_client_ip, is_rate_limited
+from core.utils import get_auth_panel_stats, get_client_ip, is_rate_limited, service_accounts_q
 from core.models import get_setting
 from users.badges import BADGE_CATALOG, RARITY_ORDER
 from users.models import Follow, User, UserBadge, UserXP
@@ -639,7 +639,7 @@ class UserLeaderboardView(ListView):
     def _base_queryset(self):
         # select_related('xp') — уровень выводится в каждой строке.
         # Оценка = завершённая сессия вайзарда; брошенные на середине не считаются.
-        qs = User.objects.filter(is_active=True, is_verified=True).select_related('xp').annotate(
+        qs = User.objects.filter(is_active=True, is_verified=True).exclude(service_accounts_q()).select_related('xp').annotate(
             eval_count=Count('evaluation_sessions', filter=Q(evaluation_sessions__status='completed'), distinct=True)
         ).filter(eval_count__gte=1)
         # ?city= — точное совпадение (значение из выпадающего списка).
@@ -660,7 +660,7 @@ class UserLeaderboardView(ListView):
         context['selected_sort'] = self._sort_key()
         # Только города, которые реально есть у пользователей.
         context['available_cities'] = (
-            User.objects.filter(is_active=True, is_verified=True)
+            User.objects.filter(is_active=True, is_verified=True).exclude(service_accounts_q())
             .exclude(city='').values_list('city', flat=True).distinct().order_by('city')
         )
 

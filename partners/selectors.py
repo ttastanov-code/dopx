@@ -24,21 +24,43 @@ def partner_referral_visits(partner_slug: str, *, days: int = DEFAULT_WINDOW_DAY
     ).count()
 
 
-def banner_stats(banner_id: str, *, days: int = DEFAULT_WINDOW_DAYS) -> dict:
-    """{'impressions', 'clicks', 'ctr_percent'} за days дней."""
-    since = _since(days)
-    impressions = AnalyticsEvent.objects.filter(
-        event_name=EventName.BANNER_IMPRESSION,
-        properties__banner_id=str(banner_id),
-        created_at__gte=since,
-    ).count()
-    clicks = AnalyticsEvent.objects.filter(
-        event_name=EventName.BANNER_CLICK,
-        properties__banner_id=str(banner_id),
-        created_at__gte=since,
-    ).count()
-    ctr = round(clicks / impressions * 100, 2) if impressions else 0.0
-    return {"impressions": impressions, "clicks": clicks, "ctr_percent": ctr}
+def _ctr(clicks: int, impressions: int) -> float:
+    return round(clicks / impressions * 100, 2) if impressions else 0.0
+
+
+def banner_stats(banner_id, *, days: int | None = DEFAULT_WINDOW_DAYS) -> dict:
+    """{'impressions', 'clicks', 'ctr_percent'} за days дней (None — за всё время)."""
+    from django.db.models import Sum
+
+    from .models import BannerDailyStat
+
+    qs = BannerDailyStat.objects.filter(banner_id=banner_id)
+    if days:
+        qs = qs.filter(date__gte=_since(days).date())
+    row = qs.aggregate(i=Sum("impressions"), c=Sum("clicks"))
+    impressions, clicks = row["i"] or 0, row["c"] or 0
+    return {"impressions": impressions, "clicks": clicks, "ctr_percent": _ctr(clicks, impressions)}
+
+
+def banner_daily_series(banner_ids, *, days: int = DEFAULT_WINDOW_DAYS) -> list[dict]:
+    """[{date, impressions, clicks}] по дням за период, пропуски — нулями."""
+    from django.db.models import Sum
+    from django.utils import timezone
+
+    from .models import BannerDailyStat
+
+    today = timezone.localdate()
+    start = today - timedelta(days=days - 1)
+    rows = {
+        r["date"]: r for r in BannerDailyStat.objects.filter(banner_id__in=list(banner_ids), date__gte=start)
+        .values("date").annotate(impressions=Sum("impressions"), clicks=Sum("clicks"))
+    }
+    series = []
+    for i in range(days):
+        d = start + timedelta(days=i)
+        r = rows.get(d, {})
+        series.append({"date": d, "impressions": r.get("impressions", 0), "clicks": r.get("clicks", 0)})
+    return series
 
 
 def widget_embed_views(widget_type: str, entity_id: str, *, days: int = DEFAULT_WINDOW_DAYS) -> int:
@@ -93,48 +115,35 @@ def widget_embed_totals(*, days: int = DEFAULT_WINDOW_DAYS) -> dict:
 
 def banner_totals(*, days: int = DEFAULT_WINDOW_DAYS) -> dict:
     """Сумма показов/кликов/CTR по всем баннерам."""
-    since = _since(days)
-    impressions = AnalyticsEvent.objects.filter(event_name=EventName.BANNER_IMPRESSION, created_at__gte=since).count()
-    clicks = AnalyticsEvent.objects.filter(event_name=EventName.BANNER_CLICK, created_at__gte=since).count()
-    ctr = round(clicks / impressions * 100, 2) if impressions else 0.0
-    return {"impressions": impressions, "clicks": clicks, "ctr_percent": ctr}
+    from django.db.models import Sum
+
+    from .models import BannerDailyStat
+
+    row = BannerDailyStat.objects.filter(date__gte=_since(days).date()).aggregate(i=Sum("impressions"), c=Sum("clicks"))
+    impressions, clicks = row["i"] or 0, row["c"] or 0
+    return {"impressions": impressions, "clicks": clicks, "ctr_percent": _ctr(clicks, impressions)}
+
+
+def stats_by_banner(*, days: int | None = DEFAULT_WINDOW_DAYS) -> dict:
+    """{banner_id: {'impressions', 'clicks', 'ctr_percent'}} одним запросом."""
+    from django.db.models import Sum
+
+    from .models import BannerDailyStat
+
+    qs = BannerDailyStat.objects.all()
+    if days:
+        qs = qs.filter(date__gte=_since(days).date())
+    return {
+        r["banner_id"]: {"impressions": r["i"], "clicks": r["c"], "ctr_percent": _ctr(r["c"], r["i"])}
+        for r in qs.values("banner_id").annotate(i=Sum("impressions"), c=Sum("clicks"))
+    }
 
 
 def top_banners(*, days: int = DEFAULT_WINDOW_DAYS, limit: int = 10) -> list[dict]:
-    """Топ баннеров по показам; клики — вторым запросом.
-    [{'banner_id', 'impressions', 'clicks', 'ctr_percent'}, ...].
-    """
-    since = _since(days)
-    impression_rows = (
-        AnalyticsEvent.objects.filter(event_name=EventName.BANNER_IMPRESSION, created_at__gte=since)
-        .values("properties__banner_id")
-        .annotate(impressions=Count("id"))
-        .order_by("-impressions")[:limit]
-    )
-    banner_ids = [row["properties__banner_id"] for row in impression_rows if row["properties__banner_id"]]
-    click_counts = dict(
-        AnalyticsEvent.objects.filter(
-            event_name=EventName.BANNER_CLICK, created_at__gte=since,
-            properties__banner_id__in=banner_ids,
-        )
-        .values("properties__banner_id")
-        .annotate(clicks=Count("id"))
-        .values_list("properties__banner_id", "clicks")
-    )
-    result = []
-    for row in impression_rows:
-        banner_id = row["properties__banner_id"]
-        if not banner_id:
-            continue
-        impressions = row["impressions"]
-        clicks = click_counts.get(banner_id, 0)
-        result.append({
-            "banner_id": banner_id,
-            "impressions": impressions,
-            "clicks": clicks,
-            "ctr_percent": round(clicks / impressions * 100, 2) if impressions else 0.0,
-        })
-    return result
+    """Топ баннеров по показам: [{'banner_id', 'impressions', 'clicks', 'ctr_percent'}, ...]."""
+    stats = stats_by_banner(days=days)
+    ranked = sorted(stats.items(), key=lambda kv: -kv[1]["impressions"])[:limit]
+    return [{"banner_id": str(bid), **row} for bid, row in ranked]
 
 
 def partner_referral_totals(*, days: int = DEFAULT_WINDOW_DAYS) -> int:

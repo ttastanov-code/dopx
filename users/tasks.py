@@ -181,7 +181,9 @@ def award_founder_badge_if_eligible(self, user_id: str, founder_threshold: int =
     except User.DoesNotExist:
         return False
 
-    registration_rank = User.objects.filter(date_joined__lte=user.date_joined).count()
+    if user.is_superuser:
+        return False
+    registration_rank = User.objects.filter(date_joined__lte=user.date_joined, is_superuser=False).count()
     if registration_rank > founder_threshold:
         return False
 
@@ -341,6 +343,7 @@ def award_monthly_champion_badge() -> bool:
             status="completed",
             completed_at__gte=first_of_prev_month,
             completed_at__lt=first_of_this_month,
+            user__is_superuser=False,
         )
         .values("user_id")
         .annotate(cnt=Count("id"))
