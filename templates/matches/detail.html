@@ -75,7 +75,7 @@
             {% elif no_votes and match.status == 'finished' %}
             {# Голосов пока нет — не показываем пустоту, зовём оценить первым. #}
             <div class="dx-first-vote">
-                <span class="dx-first-vote__ico"><i class="ti ti-star"></i></span>
+                <span class="dx-first-vote__ico"><i class="ti ti-dopx-rate"></i></span>
                 <div class="dx-first-vote__body">
                     <b>Будьте первым, кто оценит</b>
                     <span>{% if voting_open %}Рейтинги игроков, тренеров и судьи появятся после первых оценок болельщиков.{% else %}Этот матч болельщики не оценивали.{% endif %}</span>
@@ -96,7 +96,7 @@
                 <div class="p-4 sm:p-5">
                     <p class="text-sm opacity-70 leading-relaxed">Пока идёт голосование, оценки игроков, команд, тренеров и судьи видны только тем, кто уже оценил матч. Так никто не подстраивается под чужие цифры. После закрытия голосования рейтинги откроются всем.</p>
                     {% if voting_open and user.is_authenticated %}
-                    <a href="{% url 'evaluations:context' match.id %}" class="btn btn-primary btn-sm mt-3 w-full sm:w-auto"><i class="ti ti-star"></i> Оценить матч</a>
+                    <a href="{% url 'evaluations:context' match.id %}" class="btn btn-primary btn-sm mt-3 w-full sm:w-auto"><i class="ti ti-dopx-rate"></i> Оценить матч</a>
                     {% elif voting_open %}
                     <a href="{% url 'users:login' %}?next={{ request.path|urlencode }}" class="btn btn-primary btn-sm mt-3 w-full sm:w-auto"><i class="ti ti-login"></i> Войти и оценить</a>
                     {% endif %}
@@ -441,7 +441,7 @@
         <span class="dx-sticky-cta__meta"><span data-countdown="{{ match.voting_open_until|date:'c' }}" data-countdown-prefix="Голосование закроется через " data-countdown-done="Голосование закрывается">Голосование закроется через {{ match.voting_open_until|timeuntil }}</span></span>
     </div>
     {% if user.is_authenticated %}
-    <a href="{% url 'evaluations:context' match.id %}" class="dx-sticky-cta__button"><i class="ti ti-star"></i> Оценить</a>
+    <a href="{% url 'evaluations:context' match.id %}" class="dx-sticky-cta__button"><i class="ti ti-dopx-rate"></i> Оценить</a>
     {% else %}
     <a href="{% url 'users:login' %}?next={{ request.path|urlencode }}" class="dx-sticky-cta__button"><i class="ti ti-login"></i> Войти</a>
     {% endif %}

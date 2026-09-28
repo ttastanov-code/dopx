@@ -78,7 +78,7 @@
         {% if personal.next_other %}
         {% with m=personal.next_other %}
         <a href="{% url 'evaluations:context' m.id %}" class="dx-action">
-            <span class="dx-action__icon"><i class="ti ti-star"></i></span>
+            <span class="dx-action__icon"><i class="ti ti-dopx-rate"></i></span>
             <span class="dx-action__body">
                 <span class="dx-action__eyebrow">Дальше в очереди</span>
                 <span class="dx-action__title">{{ m.home_team.name }} {{ m.get_score_display }} {{ m.away_team.name }}</span>
@@ -91,7 +91,7 @@
         {% elif personal.next_match %}
         {% with m=personal.next_match %}
         <a href="{% url 'evaluations:context' m.id %}" class="dx-action dx-action--primary">
-            <span class="dx-action__icon"><i class="ti ti-star"></i></span>
+            <span class="dx-action__icon"><i class="ti ti-dopx-rate"></i></span>
             <span class="dx-action__body">
                 <span class="dx-action__eyebrow">Оценить матч</span>
                 <span class="dx-action__title">{{ m.home_team.name }} {{ m.get_score_display }} {{ m.away_team.name }}</span>

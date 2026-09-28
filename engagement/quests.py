@@ -76,7 +76,7 @@ def _followed_players(user) -> int:
 # Приоритетные (двигают рейтинги и свежий контент) идут первыми, остальные — случайно.
 PRIORITY_KEYS = ("evaluate", "episode_vote", "duel_vote")
 POOL = (
-    QuestDef("evaluate", "Оцените матч", "ti-star", 20, lambda u: min(1, _votable_count(u)), "matches:list"),
+    QuestDef("evaluate", "Оцените матч", "ti-dopx-rate", 20, lambda u: min(1, _votable_count(u)), "matches:list"),
     QuestDef("predict", "Сделайте прогнозы на матчи", "ti-crystal-ball", 15, _predictable_count, "matches:list"),
     QuestDef("react", "Поставьте реакцию на матчи", "ti-mood-happy", 10, _react_count, "matches:list"),
     QuestDef("league", "Проверьте таблицу своей лиги с друзьями", "ti-users-group", 5, lambda u: int(_has_league(u)), "engagement:friend_leagues"),

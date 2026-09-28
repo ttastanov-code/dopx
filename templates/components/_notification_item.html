@@ -35,7 +35,7 @@
         {% elif 'ticket' in notification.notification_type or notification.notification_type == 'admin_reply' %}bg-primary/10 text-primary
         {% else %}bg-base-200 text-base-content{% endif %}">
         <i class="ti {% if notification.notification_type == 'match_finished' %}ti-check
-            {% elif notification.notification_type == 'voting_open' %}ti-star
+            {% elif notification.notification_type == 'voting_open' %}ti-dopx-rate
             {% elif notification.notification_type == 'voting_closing' or notification.notification_type == 'prediction_closing' %}ti-clock
             {% elif notification.notification_type == 'top_performance' %}ti-medal
             {% elif notification.notification_type == 'match_event' %}ti-ball-football

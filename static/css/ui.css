@@ -2279,3 +2279,17 @@ button.dx-poll__opt:active, a.dx-poll__opt:active { transform: scale(.98); }
 .dx-live-dot::before { content: ""; width: .45rem; height: .45rem; border-radius: 50%; background: currentColor; animation: dx-live-blink 2s ease-in-out infinite; }
 @keyframes dx-live-blink { 50% { opacity: .3; } }
 @media (prefers-reduced-motion: reduce) { .dx-live-dot::before { animation: none; } }
+
+/* Фирменный знак «Оценить» (Мяч-шкала): <i class="ti ti-dopx-rate"></i> — как иконка Tabler,
+   берёт цвет и размер текста. Рисунок — static/img/dopx-mark.svg (scripts/build_brand_assets.py). */
+.ti-dopx-rate::before {
+    content: ""; display: inline-block; width: 1.08em; height: 1.08em; vertical-align: -0.16em;
+    background-color: currentColor;
+    -webkit-mask: url("../img/dopx-mark.svg") center / contain no-repeat;
+    mask: url("../img/dopx-mark.svg") center / contain no-repeat;
+}
+/* Нажатие на «Оценить»: шкала знака чуть «проворачивается». */
+.ti-dopx-rate::before { transition: transform .35s cubic-bezier(.3, 1.6, .5, 1); }
+a:active > .ti-dopx-rate::before, button:active > .ti-dopx-rate::before,
+.dx-tabbar__item--center:active .ti-dopx-rate::before { transform: rotate(-28deg) scale(1.06); }
+@media (prefers-reduced-motion: reduce) { .ti-dopx-rate::before { transition: none; } }

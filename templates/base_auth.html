@@ -12,8 +12,8 @@
     <title>{% block title %}{{ page_title|default:'DOPX' }}{% endblock %}</title>
     
     {# Favicon #}
-    <link rel="icon" type="image/png" href="{% static 'favicons/favicon-32x32.png' %}" sizes="32x32">
-    <link rel="icon" type="image/png" href="{% static 'favicons/favicon-16x16.png' %}" sizes="16x16">
+    <link rel="icon" type="image/png" href="{% static_v 'favicons/favicon-32x32.png' %}" sizes="32x32">
+    <link rel="icon" type="image/png" href="{% static_v 'favicons/favicon-16x16.png' %}" sizes="16x16">
     
     {# Те же версии Tailwind/DaisyUI/HTMX/Alpine, что в base.html. #}
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.3" integrity="sha384-aJ9rL4k6lF+91guGvUFVSkpIcge7Zd9EiI4TQDLoK9kFaFJgKHgjEXVvG/qA5COj" crossorigin="anonymous"></script>
