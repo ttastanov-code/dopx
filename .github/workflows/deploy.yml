@@ -1,8 +1,13 @@
 # .github/workflows/deploy.yml
 #
 # На push в main/dev и PR: сборка образа, тесты на Postgres/Redis, deploy-чеклист.
-# Если всё прошло и это push в main — деплой по SSH.
+# Если всё прошло и это push в main — на сервере по SSH запускается scripts/deploy.sh <коммит>
+# (сборка, бэкап БД, миграции, перезапуск, проверка /healthz/, откат при сбое). См. docs/DEPLOYMENT.md.
 # Без секретов DEPLOY_HOST/DEPLOY_USER/DEPLOY_SSH_KEY/DEPLOY_PATH деплой пропускается.
+# TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID (необязательно) — уведомление, если упали тесты.
+#
+# Версии: первый деплой — v1.0.0, дальше каждый деплой +0.0.1. «[minor]» в сообщении коммита — +0.1.0,
+# «[major]» — +1.0.0. После успешного деплоя создаются тег vX.Y.Z и GitHub Release со списком изменений.
 
 name: Build check & deploy
 
@@ -126,6 +131,8 @@ jobs:
       CELERY_BROKER_URL: redis://localhost:6379/0
       CELERY_RESULT_BACKEND: redis://localhost:6379/0
       SECURE_SSL_REDIRECT: "True"
+      SITE_URL: https://dopx.kz
+      CSRF_TRUSTED_ORIGINS: https://dopx.kz,https://www.dopx.kz
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -147,10 +154,48 @@ jobs:
     needs: [build-check, test, production-settings-check]
     runs-on: ubuntu-latest
     # Деплой только из main.
-    if: github.ref == 'refs/heads/main'
-    # Таймаут на весь job — на случай недоступного сервера.
-    timeout-minutes: 10
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    # Деплои идут строго по очереди, новый не отменяет начатый.
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+    environment:
+      name: production
+      url: ${{ vars.SITE_URL || 'https://dopx.kz' }}
+    timeout-minutes: 25
+    # Создание тега и релиза.
+    permissions:
+      contents: write
     steps:
+      - name: Checkout (вся история и теги — для номера версии)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Следующая версия
+        id: version
+        run: |
+          # Коммит уже помечен (повторный запуск) — берём его версию.
+          existing=$(git tag --points-at HEAD --list 'v[0-9]*' | head -1)
+          last=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || true)
+          if [ -n "$existing" ]; then
+            next="${existing#v}"
+          elif [ -z "$last" ]; then
+            next="1.0.0"
+          else
+            IFS=. read -r major minor patch <<< "${last#v}"
+            messages=$(git log "$last..HEAD" --format=%B)
+            if echo "$messages" | grep -qi '\[major\]'; then
+              next="$((major + 1)).0.0"
+            elif echo "$messages" | grep -qi '\[minor\]'; then
+              next="$major.$((minor + 1)).0"
+            else
+              next="$major.$minor.$((patch + 1))"
+            fi
+          fi
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+          echo "Версия этого деплоя: $next (предыдущая: ${last:-нет})"
+
       - name: Проверить, настроены ли секреты деплоя
         id: check
         run: |
@@ -164,42 +209,64 @@ jobs:
         if: steps.check.outputs.configured == 'false'
         run: |
           echo "DEPLOY_HOST не задан в секретах репозитория — деплой пропущен."
-          echo "Это ожидаемо, пока нет сервера. См. docs/DEPLOYMENT.md, раздел про CI/CD."
+          echo "Это ожидаемо, пока нет сервера. См. docs/DEPLOYMENT.md, раздел «GitHub»."
 
-      - name: Деплой по SSH
+      - name: Деплой по SSH (scripts/deploy.sh)
         if: steps.check.outputs.configured == 'true'
         uses: appleboy/ssh-action@v1.0.3
         # DEPLOY_PATH через envs — секрет не попадает в текст команды.
         env:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DEPLOY_SHA: ${{ github.sha }}
+          DEPLOY_VERSION: ${{ steps.version.outputs.version }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT || 22 }}
-          envs: DEPLOY_PATH
+          envs: DEPLOY_PATH,DEPLOY_SHA,DEPLOY_VERSION
+          command_timeout: 20m
           script: |
             set -e
             cd "$DEPLOY_PATH"
-            git pull origin main
+            # Скрипт берём из нового коммита: так изменения самого деплоя применяются сразу.
+            git fetch --quiet origin main
+            git show "$DEPLOY_SHA:scripts/deploy.sh" > /tmp/dopx-deploy.sh
+            DEPLOY_ROOT="$DEPLOY_PATH" DEPLOY_VERSION="$DEPLOY_VERSION" bash /tmp/dopx-deploy.sh "$DEPLOY_SHA"
 
-            # Сборка отдельно от запуска — при ошибке сайт остаётся на старом образе.
-            docker compose build web celery_worker celery_realtime celery_beat
+      - name: Тег и релиз vX.Y.Z
+        # Только после успешного деплоя: откаченная версия номер не получает.
+        if: steps.check.outputs.configured == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "Релиз v$VERSION уже есть."
+          else
+            gh release create "v$VERSION" --target "$GITHUB_SHA" --title "v$VERSION" --generate-notes
+          fi
 
-            # Миграции отдельным шагом до перезапуска web; при ошибке set -e останавливает деплой.
-            docker compose run --rm web python manage.py migrate --noinput
+      - name: Итог в GitHub
+        if: always() && steps.check.outputs.configured == 'true'
+        run: |
+          {
+            echo "### Версия ${{ steps.version.outputs.version }} (${GITHUB_SHA::7}): ${{ job.status == 'success' && '✅ на проде' || '❌ не выкачена' }}"
+            echo "Подробный лог на сервере: logs/deploy/, журнал — дашборд → Системный статус."
+          } >> "$GITHUB_STEP_SUMMARY"
 
-            docker compose up -d --build
-            docker image prune -f
-
-            # Смоук-тест: сайт реально отвечает. Ретраи — время на холодный старт.
-            for i in 1 2 3 4 5; do
-              if curl -fsS -o /dev/null "http://localhost:8000/admin/login/"; then
-                echo "Смоук-тест пройден"
-                exit 0
-              fi
-              echo "Смоук-тест: попытка $i не удалась, жду 5с..."
-              sleep 5
-            done
-            echo "Смоук-тест не пройден после 5 попыток — сайт не отвечает на новом коде"
-            exit 1
+  notify-failure:
+    name: Уведомление о сбое проверок
+    needs: [build-check, test, production-settings-check]
+    if: failure() && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Telegram
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          [ -n "$TG_TOKEN" ] && [ -n "$TG_CHAT" ] || exit 0
+          curl -fsS "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TG_CHAT}" \
+            --data-urlencode "text=🧪 DOPX: проверки коммита ${GITHUB_SHA::7} не прошли, деплой не запускался. ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

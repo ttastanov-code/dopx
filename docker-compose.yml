@@ -3,6 +3,22 @@
 # Прод-стек: docker compose up -d --build. Сервисы в сети dopx_net видят друг друга по именам.
 # Наружу — только nginx на 127.0.0.1:8080 (публично проксирует aaPanel).
 # Без aaPanel: порт nginx "80:80" и TRUSTED_PROXY_COUNT=1 в .env.
+# Обновление — scripts/deploy.sh (его вызывает GitHub Actions после пуша в main).
+
+# Логи контейнеров: не больше 5 файлов по 20 МБ на сервис, иначе со временем забьют диск.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+# Образ приложения: один для web и всех celery-процессов. Тег — хеш коммита.
+x-app-build: &app-build
+  context: .
+  dockerfile: Dockerfile
+  args:
+    GIT_SHA: ${GIT_SHA:-dev}
+    APP_VERSION: ${APP_VERSION:-dev}
 
 services:
   # ==========================================================================
@@ -11,6 +27,7 @@ services:
   db:
     image: postgres:16-alpine
     restart: unless-stopped
+    logging: *logging
     environment:
       POSTGRES_DB: ${DB_NAME}
       POSTGRES_USER: ${DB_USER}
@@ -32,6 +49,7 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    logging: *logging
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
@@ -48,10 +66,10 @@ services:
   # Django + gunicorn — сам сайт
   # ==========================================================================
   web:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: *app-build
+    image: dopx-app:${GIT_SHA:-dev}
     restart: unless-stopped
+    logging: *logging
     env_file:
       - .env
     environment:
@@ -74,8 +92,8 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      # Healthcheck через /admin/login/ — nginx ждёт, пока web не прогонит миграции/collectstatic.
-      test: ["CMD", "curl", "-f", "http://localhost:8000/admin/login/"]
+      # /healthz/ проверяет базу и Redis. Host — первый домен из ALLOWED_HOSTS, X-Forwarded-Proto — без редиректа на https.
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null -H \"Host: $${ALLOWED_HOSTS%%,*}\" -H 'X-Forwarded-Proto: https' http://localhost:8000/healthz/"]
       interval: 10s
       timeout: 5s
       retries: 6
@@ -88,10 +106,10 @@ services:
   # Celery worker — фоновые задачи (синк Sportmonks, агрегаты, уведомления)
   # ==========================================================================
   celery_worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: *app-build
+    image: dopx-app:${GIT_SHA:-dev}
     restart: unless-stopped
+    logging: *logging
     # Слушает обе очереди; realtime дополнительно обслуживает celery_realtime.
     command: celery -A dopx worker -l info --concurrency=4 -Q realtime,celery
     env_file:
@@ -129,10 +147,10 @@ services:
   # Celery realtime — live-опрос Sportmonks и пуш-уведомления
   # ==========================================================================
   celery_realtime:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: *app-build
+    image: dopx-app:${GIT_SHA:-dev}
     restart: unless-stopped
+    logging: *logging
     # Только live-опрос и пуши — не ждут за долгими задачами.
     command: celery -A dopx worker -l info --concurrency=2 -Q realtime -n realtime@%h
     env_file:
@@ -168,10 +186,10 @@ services:
   # Celery beat — ставит задачи по CELERY_BEAT_SCHEDULE. Только один экземпляр.
   # ==========================================================================
   celery_beat:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: *app-build
+    image: dopx-app:${GIT_SHA:-dev}
     restart: unless-stopped
+    logging: *logging
     command: celery -A dopx beat -l info --schedule=/app/celerybeat/celerybeat-schedule
     env_file:
       - .env
@@ -202,6 +220,7 @@ services:
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped
+    logging: *logging
     ports:
       # Только 127.0.0.1 — публично отдаёт aaPanel (Reverse Proxy -> http://127.0.0.1:8080).
       # Без aaPanel — "80:80" и "443:443".

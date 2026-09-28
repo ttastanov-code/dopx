@@ -31,8 +31,9 @@ PYEOF
 echo "[entrypoint] База данных доступна."
 
 # Миграции и collectstatic — только в web, чтобы контейнеры не гонялись за миграциями.
-case "$1" in
-    gunicorn)
+# web запускается как «sh -c 'exec gunicorn …'» — узнаём его по тексту команды.
+case "$*" in
+    *gunicorn*)
         echo "[entrypoint] Применяю миграции..."
         python manage.py migrate --noinput
 

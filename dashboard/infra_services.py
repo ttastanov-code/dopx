@@ -217,6 +217,7 @@ def _next_run(schedule):
 
 # Понятные названия задач расписания для дашборда; нет в словаре — первая строка docstring.
 BEAT_TASK_TITLES = {
+    "celery-heartbeat": "Пульс Celery для /healthz/ и Системного статуса",
     "weekly-polls": "Опросы недели: спорный момент (вт) и дуэль тура (ср)",
     "streaks-at-risk": "Push: серия дней сгорит сегодня",
     "weekly-social-content": "Картинки и подписи для соцсетей по итогам тура",
@@ -344,8 +345,47 @@ def environment_info() -> dict:
     }
 
 
+DEPLOY_STATUS_META = {
+    "success": ("Успешно", "badge-success"),
+    "rolled_back": ("Откат", "badge-warning"),
+    "failed": ("Ошибка", "badge-error"),
+}
+
+
+def deploy_history(limit: int = 15) -> list[dict]:
+    """Последние деплои из logs/deploy/history.jsonl (пишет scripts/deploy.sh), новые сверху."""
+    import json
+
+    from django.utils.dateparse import parse_datetime
+
+    path = settings.LOGS_DIR / "deploy" / "history.jsonl"
+    if not path.exists():
+        return []
+    rows = []
+    for line in path.read_text(encoding="utf-8").splitlines()[-limit:]:
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        row["started"] = parse_datetime(row.get("started_at") or "")
+        row["status_label"], row["status_class"] = DEPLOY_STATUS_META.get(row.get("status"), (row.get("status"), "badge-ghost"))
+        rows.append(row)
+    return list(reversed(rows))
+
+
+def release_info() -> dict:
+    from core.health import celery_heartbeat_age
+
+    return {
+        "version": settings.APP_VERSION, "commit": settings.APP_COMMIT,
+        "environment": settings.ENVIRONMENT, "heartbeat_age": celery_heartbeat_age(),
+    }
+
+
 def system_status_overview() -> dict:
     return {
+        "release": release_info(),
+        "deploys": deploy_history(),
         "infra": infra_health(),
         "aggregates_cache": _cache_stats("aggregates", "Кэш агрегатов"),
         "beat_schedule": beat_schedule_overview(),

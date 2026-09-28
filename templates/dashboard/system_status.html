@@ -9,6 +9,45 @@
 {% endcomment %}
 
 <div class="card bg-base-100 border border-base-300 mb-4">
+{# Версия и деплои: scripts/deploy.sh пишет журнал в logs/deploy/history.jsonl. #}
+<div class="card bg-base-100 border border-base-300 mb-4">
+    <div class="card-body p-4 gap-3">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+                <div class="dopx-section-eyebrow"><i class="ti ti-rocket"></i>Версия и обновления</div>
+                <div class="dopx-section-title">Сейчас работает версия <span class="font-mono">{{ status.release.version }}</span>{% if status.release.commit %} <span class="text-sm opacity-50 font-mono">({{ status.release.commit }})</span>{% endif %}</div>
+                <p class="text-xs opacity-60 mt-0.5">Режим: {{ status.release.environment }} ·
+                    {% if status.release.heartbeat_age is None %}<span class="text-warning">Celery ещё не отправлял пульс</span>
+                    {% elif status.release.heartbeat_age < 180 %}Celery живой, пульс {{ status.release.heartbeat_age }} с назад
+                    {% else %}<span class="text-error">Celery молчит {{ status.release.heartbeat_age }} с: фоновые задачи стоят</span>{% endif %}</p>
+            </div>
+            <a href="/healthz/" target="_blank" class="btn btn-xs btn-ghost"><i class="ti ti-heartbeat"></i> /healthz/</a>
+        </div>
+        {% if status.deploys %}
+        <div class="overflow-x-auto">
+            <table class="table table-xs">
+                <thead><tr><th>Когда</th><th>Статус</th><th>Версия</th><th>Коммиты</th><th>Сообщение</th><th class="text-right">Время</th><th>Лог</th></tr></thead>
+                <tbody>
+                {% for d in status.deploys %}
+                <tr>
+                    <td class="whitespace-nowrap">{{ d.started|date:"d.m H:i" }}</td>
+                    <td><span class="badge badge-sm {{ d.status_class }}">{{ d.status_label }}</span></td>
+                    <td class="font-mono whitespace-nowrap">{{ d.version|default:"—" }}</td>
+                    <td class="font-mono whitespace-nowrap opacity-70">{{ d.previous_sha }} → {{ d.sha }}</td>
+                    <td class="max-w-[22rem] truncate" title="{{ d.message }}">{{ d.commit_message }}</td>
+                    <td class="text-right tabular-nums">{{ d.duration_sec }} с</td>
+                    <td class="font-mono text-[11px] opacity-60">logs/deploy/{{ d.log }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-xs opacity-60">Деплоев через scripts/deploy.sh ещё не было. Журнал появится после первого обновления на сервере.</p>
+        {% endif %}
+    </div>
+</div>
+
     <div class="card-body p-4">
         <div class="dopx-section-eyebrow"><i class="ti ti-server-2"></i>Инфраструктура</div>
         <div class="dopx-section-title mb-3">Redis · Celery · PostgreSQL</div>

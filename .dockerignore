@@ -56,3 +56,8 @@ locustfile.py
 # Docker-файлы самого себя не должны триггерить пересборку контекста
 docker-compose*.yml
 Dockerfile
+
+# Бэкапы и логи сервера в образ не попадают.
+backups/
+logs/
+launch-bundle.tar.gz

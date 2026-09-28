@@ -14,8 +14,11 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Без явного ENVIRONMENT считаем окружение боевым: небезопасные дефолты только по явному development.
+# ENVIRONMENT — единственный переключатель режима: development | production.
+# Без явного значения считаем окружение боевым: небезопасные дефолты только по явному development.
 ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
+if ENVIRONMENT not in ("development", "production"):
+    raise ImproperlyConfigured(f"ENVIRONMENT={ENVIRONMENT!r}: допустимо development или production.")
 IS_PRODUCTION = ENVIRONMENT == "production"
 
 if ENVIRONMENT == "development":
@@ -30,7 +33,8 @@ else:
             "задайте SECRET_KEY в .env/переменных окружения сервера."
         )
 
-DEBUG = os.getenv("DEBUG", "False") == "True"
+# На проде DEBUG выключен всегда, что бы ни стояло в .env: иначе отключаются HTTPS-защита и secure-cookie.
+DEBUG = False if IS_PRODUCTION else os.getenv("DEBUG", "True") == "True"
 # На проде ALLOWED_HOSTS задаётся явно; «*» только для локальной отладки.
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 
@@ -38,6 +42,10 @@ ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 # Пример: CSRF_TRUSTED_ORIGINS=https://dopx.kz,https://www.dopx.kz
 _csrf_trusted = os.getenv("CSRF_TRUSTED_ORIGINS", "")
 CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in _csrf_trusted.split(",") if origin.strip()]
+
+# Версия (1.2.3) и коммит — проставляются при сборке образа (scripts/deploy.sh → Dockerfile).
+APP_VERSION = os.getenv("APP_VERSION", "dev")
+APP_COMMIT = os.getenv("APP_COMMIT", "")
 
 # Sentry инициализируется до загрузки приложений. Без SENTRY_DSN — no-op.
 SENTRY_DSN = os.getenv("SENTRY_DSN", "")
@@ -56,6 +64,7 @@ if SENTRY_DSN:
             LoggingIntegration(level=None, event_level="ERROR"),
         ],
         environment=ENVIRONMENT,
+        release=f"dopx@{APP_VERSION}",
         # 10% трейсов.
         traces_sample_rate=0.1,
         # PII не отправляем.
@@ -666,6 +675,11 @@ GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
 GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-3.8-flash')
 
 CELERY_BEAT_SCHEDULE = {
+    # Пульс: /healthz/ по нему видит, что beat ставит задачи, а воркер их выполняет.
+    'celery-heartbeat': {
+        'task': 'core.tasks.celery_heartbeat',
+        'schedule': 60.0,
+    },
     # Контент для соцсетей по итогам тура — понедельник утром.
     # Опросы недели: вт — спорный момент, ср — дуэль тура.
     'weekly-polls': {
@@ -1010,6 +1024,18 @@ CONTACT_EMAIL = os.getenv('CONTACT_EMAIL', 'admin@dopx.kz')
 ADMIN_ALERT_EMAIL = os.getenv('ADMIN_ALERT_EMAIL', CONTACT_EMAIL)
 ENABLE_SYNC_ERROR_ALERTS = os.getenv('ENABLE_SYNC_ERROR_ALERTS', 'True') == 'True'
 SITE_URL = os.getenv('SITE_URL', 'http://127.0.0.1:8000')
+
+# Прод не стартует с настройками разработки: ошибка сразу при запуске, а не у пользователей.
+if IS_PRODUCTION and os.getenv('SKIP_PRODUCTION_CHECKS') != 'True':
+    _problems = []
+    if not SITE_URL.startswith('https://'):
+        _problems.append("SITE_URL должен начинаться с https://")
+    if not CSRF_TRUSTED_ORIGINS:
+        _problems.append("CSRF_TRUSTED_ORIGINS пуст: не будут работать формы")
+    if any(h in ('*', 'localhost', '127.0.0.1') for h in ALLOWED_HOSTS):
+        _problems.append("ALLOWED_HOSTS должен содержать только домены сайта")
+    if _problems:
+        raise ImproperlyConfigured("ENVIRONMENT=production, но: " + "; ".join(_problems) + ".")
 
 # === Admin Alert Settings ===
 ADMIN_ALERT_EMAIL = os.getenv('ADMIN_ALERT_EMAIL', CONTACT_EMAIL)

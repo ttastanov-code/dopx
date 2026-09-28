@@ -53,10 +53,16 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 ########################################
 FROM python:3.12-slim AS runtime
 
+# Версия и коммит — scripts/deploy.sh передаёт их при сборке. Видны в /healthz/, дашборде и Sentry.
+ARG APP_VERSION=dev
+ARG GIT_SHA=dev
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/opt/venv/bin:$PATH" \
-    DJANGO_SETTINGS_MODULE=dopx.settings
+    DJANGO_SETTINGS_MODULE=dopx.settings \
+    APP_VERSION=$APP_VERSION \
+    APP_COMMIT=$GIT_SHA
 
 # Runtime-библиотеки без -dev. curl — для healthcheck.
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -95,4 +101,5 @@ EXPOSE 8000
 
 ENTRYPOINT ["/entrypoint.sh"]
 # По умолчанию — веб-процесс; celery переопределяет command в docker-compose.yml.
-CMD ["gunicorn", "dopx.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3", "--timeout", "60", "--access-logfile", "-", "--error-logfile", "-"]
+# Число воркеров — GUNICORN_WORKERS в .env (обычно 2 × ядер + 1).
+CMD ["sh", "-c", "exec gunicorn dopx.wsgi:application --bind 0.0.0.0:8000 --workers ${GUNICORN_WORKERS:-3} --timeout 60 --graceful-timeout 30 --access-logfile - --error-logfile -"]

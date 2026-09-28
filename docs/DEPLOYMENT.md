@@ -1,0 +1,229 @@
+# Деплой DOPX
+
+После запуска обновление сайта — это просто `git push` в ветку `main`. GitHub прогоняет тесты,
+заходит на сервер, обновляет сайт, присваивает номер версии и присылает сообщение в Telegram.
+Если новая версия не поднялась, сервер сам возвращает предыдущую.
+
+```
+ваш компьютер ──git push main──► GitHub: тесты ──SSH──► сервер: scripts/deploy.sh ──► сайт vX.Y.Z
+                                                                               └─► Telegram, дашборд
+```
+
+---
+
+## День запуска — по шагам
+
+### 0. Заранее (за несколько дней)
+
+| Что | Где взять |
+|---|---|
+| Сервер Linux: Ubuntu 22.04/24.04, от 2 vCPU и 4 ГБ памяти, 40 ГБ SSD | Хостинг **в Казахстане**: по закону РК персональные данные граждан хранятся в стране. Уточните у юриста |
+| Домен `dopx.kz`, A-записи `dopx.kz` и `www.dopx.kz` на IP сервера | У регистратора домена. DNS обновляется до суток, сделайте заранее |
+| Почта для писем сайта (SMTP-логин и пароль) | Почтовый сервис (Google Workspace, Яндекс 360, Mailgun и т.п.) |
+| Токен Sportmonks | Ваш аккаунт Sportmonks |
+| Sentry (отслеживание ошибок) | sentry.io → новый проект Django → DSN |
+| Telegram-бот для уведомлений о деплое | @BotFather → токен. chat_id: напишите боту, затем откройте `https://api.telegram.org/bot<токен>/getUpdates` |
+
+### 1. На своём компьютере
+
+1. Все изменения закоммичены и запушены в `main`. В GitHub → Actions последний прогон зелёный.
+2. Дашборд → Скрипты → **«Чистый старт: удалить всю активность»** (с галочкой «Реально применить»
+   и подтверждением). Останутся только данные Sportmonks, правки ФИО и ваш аккаунт.
+3. Соберите пакет с данными:
+   ```bash
+   scripts/launch-export.sh
+   ```
+   Появится `launch-bundle.tar.gz`: база и папка `media/` (фото, логотипы).
+4. Отправьте его на сервер:
+   ```bash
+   scp launch-bundle.tar.gz root@<IP-сервера>:/root/
+   ```
+
+**Что переносится, а что нет:**
+
+| Переносим (в пакете) | Не переносим |
+|---|---|
+| База: команды, игроки, матчи, события, статистика Sportmonks, правки ФИО от Gemini, ваш аккаунт сотрудника с 2FA | Локальный `.env`: на сервере создаётся свой, с новыми паролями |
+| `media/`: фото игроков, логотипы, баннеры | Код: сервер сам берёт его из GitHub |
+| | `app_venv`, `node_modules`: всё собирается в Docker на сервере |
+
+### 2. aaPanel на сервере
+
+1. Установите aaPanel (инструкция на aapanel.com), войдите в панель.
+2. App Store → **Docker** → установить.
+3. Website → Add site → `dopx.kz` и `www.dopx.kz`, PHP не нужен.
+4. Сайт → **SSL** → Let's Encrypt → выпустить, включить Force HTTPS.
+5. Сайт → **Reverse proxy** → Add: Target URL `http://127.0.0.1:8080`, Send domain `$host`.
+6. У правила прокси откройте «Conf» и проверьте, что в `location /` есть строки
+   (без `X-Forwarded-Proto` сайт уйдёт в бесконечный редирект):
+   ```nginx
+   proxy_set_header Host $host;
+   proxy_set_header X-Real-IP $remote_addr;
+   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+   proxy_set_header X-Forwarded-Proto $scheme;
+   client_max_body_size 20m;
+   ```
+7. Security → открыты только 22, 80, 443 и порт панели.
+
+### 3. Настройка сервера (терминал aaPanel или SSH)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ttastanov-code/dopx/main/scripts/server-setup.sh -o setup.sh
+sudo bash setup.sh git@github.com:ttastanov-code/dopx.git dopx.kz
+```
+
+Скрипт покажет SSH-ключ сервера и остановится. Добавьте ключ в GitHub → репозиторий → Settings →
+**Deploy keys** (галочку записи не ставить), нажмите Enter. Дальше скрипт сам склонирует код
+в `/www/dopx`, создаст `.env` со случайными паролями и настроит ежедневный бэкап.
+
+Заполните `.env`:
+
+```bash
+cd /www/dopx
+nano .env
+```
+
+Нужно вписать: `EMAIL_HOST`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `SPORTMONKS_API_TOKEN`,
+`SENTRY_DSN`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`. `SECRET_KEY`, пароль базы, домены и
+`ENVIRONMENT=production` уже заполнены.
+
+Загрузите данные (база и фото из пакета):
+
+```bash
+scripts/launch-import.sh /root/launch-bundle.tar.gz
+rm /root/launch-bundle.tar.gz
+```
+
+### 4. GitHub: подключить сервер
+
+На своём компьютере создайте ключ, которым GitHub будет заходить на сервер:
+
+```bash
+ssh-keygen -t ed25519 -f dopx_deploy -N "" -C "github-actions"
+ssh-copy-id -i dopx_deploy.pub root@<IP-сервера>
+```
+
+GitHub → репозиторий → Settings → Secrets and variables → Actions → **New repository secret**:
+
+| Секрет | Значение |
+|---|---|
+| `DEPLOY_HOST` | IP сервера |
+| `DEPLOY_USER` | `root` (или пользователь, под которым запускали setup) |
+| `DEPLOY_SSH_KEY` | содержимое файла `dopx_deploy` целиком |
+| `DEPLOY_PATH` | `/www/dopx` |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | те же, что в `.env` (сообщение, если упадут тесты) |
+
+Файлы `dopx_deploy*` после этого удалите.
+
+### 5. Запуск: версия 1.0.0
+
+GitHub → **Actions** → «Build check & deploy» → **Run workflow** → ветка `main` → Run.
+
+GitHub прогонит тесты (~5 минут), зайдёт на сервер и соберёт сайт (первая сборка 5–10 минут).
+Придёт сообщение в Telegram «✅ DOPX обновлён до версии 1.0.0», в GitHub → Releases появится `v1.0.0`.
+
+Проверка: `https://dopx.kz/healthz/` отвечает `"status": "ok", "version": "1.0.0"`
+(первую минуту — `degraded`, пока Celery не отметился). Войдите в `https://dopx.kz/staff/dashboard/`
+своим аккаунтом: в «Системном статусе» версия 1.0.0 и зелёный Celery.
+
+Если что-то пошло не так, полный лог — на сервере в `/www/dopx/logs/deploy/`, а запустить
+деплой вручную можно там же: `scripts/deploy.sh`.
+
+### 6. Перед тем как объявлять запуск
+
+- [ ] Регистрация и сброс пароля: письма приходят.
+- [ ] Push: Скрипты → «Тестовый push» → «Отправить по одному каждого типа».
+- [ ] Sentry получил тестовую ошибку.
+- [ ] Системный статус: Celery живой, версия 1.0.0.
+- [ ] Бэкап: `scripts/backup.sh` создал файл в `backups/`. Настройте копирование папки в облако.
+
+---
+
+## Версии
+
+Формат `X.Y.Z`. Номера ставит GitHub при каждом деплое, вручную ничего вести не нужно.
+
+| Что в сообщениях коммитов с прошлого релиза | Было | Станет |
+|---|---|---|
+| обычные коммиты | 1.0.3 | **1.0.4** |
+| есть `[minor]` — заметная новая функция | 1.0.4 | **1.1.0** |
+| есть `[major]` — большой перелом (новый сезон, крупная переделка) | 1.4.2 | **2.0.0** |
+
+Пример: `git commit -m "Казахская версия сайта [minor]"`.
+
+- Номер присваивается **только после успешного деплоя**. Откаченная версия номер не получает.
+- Для каждой версии GitHub создаёт тег `vX.Y.Z` и страницу **Releases** со списком изменений.
+- Текущая версия видна в дашборде (Системный статус), в `/healthz/` и в Sentry.
+- Ручной деплой на сервере (`scripts/deploy.sh` без GitHub) берёт номер из тегов:
+  у помеченного коммита — сам тег, иначе вида `1.0.4-2-gabc123`.
+
+---
+
+## Обычная работа после запуска
+
+1. Правите код у себя, проверяете локально.
+2. `git push` в `main` (или merge из `dev`).
+3. Ждёте сообщение в Telegram: ✅ обновлено до версии X / ⚠️ откатились / ❌ упало / 🧪 не прошли тесты.
+
+Как проходит обновление (`scripts/deploy.sh`):
+
+1. Блокировка: второй деплой не начнётся, пока идёт первый.
+2. Код переключается на коммит.
+3. Собирается образ. **Сайт в это время работает на старой версии.**
+4. Бэкап базы в `backups/pre-deploy_*.sql.gz` (хранятся последние 10).
+5. Миграции.
+6. Перезапуск контейнеров.
+7. Ожидание `/healthz/` с новой версией (до 3 минут).
+8. Ошибка на любом шаге → откат на предыдущий коммит. Миграции при откате не отменяются:
+   если новая миграция уже прошла, смотрите лог.
+
+Где смотреть:
+
+- **Telegram** — итог каждого деплоя.
+- **Дашборд → Системный статус** — версия, пульс Celery, журнал деплоев.
+- **GitHub → Actions** — ход проверок; **Releases** — история версий.
+- **Сервер:** `logs/deploy/*.log` — полный лог каждого деплоя.
+
+### Режим окружения
+
+Всё переключает `ENVIRONMENT` в `.env`:
+
+| | `development` (ваш компьютер) | `production` (сервер) |
+|---|---|---|
+| DEBUG | из `.env` | всегда выключен |
+| Проверки при старте | нет | нужны https-`SITE_URL`, `CSRF_TRUSTED_ORIGINS`, домены в `ALLOWED_HOSTS` |
+| Сид-команды и голоса ботов | включены | выключены |
+
+Если на проде не хватает обязательной настройки, контейнер не запустится, а в логе будет причина:
+`ENVIRONMENT=production, но: …`.
+
+## Команды на сервере
+
+```bash
+cd /www/dopx
+scripts/deploy.sh                  # обновить до последнего main вручную
+scripts/deploy.sh 5d05c97          # выкатить или вернуть конкретный коммит
+docker compose ps                  # что запущено и здоровье
+docker compose logs -f web         # живой лог сайта (celery_worker, celery_beat, nginx — так же)
+tail -f logs/errors.log            # ошибки Django
+docker compose restart web         # перезапуск без пересборки
+docker compose exec web python manage.py shell
+```
+
+Логи контейнеров ограничены: 5 файлов по 20 МБ на сервис.
+
+## Бэкапы и восстановление
+
+`scripts/backup.sh` работает каждый день в 04:30 (виден в aaPanel → Cron): база хранится 14 дней,
+медиа — архив по воскресеньям, 4 последних. Копируйте `backups/` за пределы сервера.
+
+Восстановить базу:
+
+```bash
+docker compose stop web celery_worker celery_realtime celery_beat
+docker compose exec db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "drop schema public cascade; create schema public;"'
+gunzip -c backups/db_20261001-043000.sql.gz | docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+docker compose up -d
+```
+
+Медиа: `tar -xzf backups/media_*.tar.gz` в папке проекта.

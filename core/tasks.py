@@ -19,3 +19,15 @@ def cleanup_expired_captchas() -> int:
     if deleted:
         logger.info("Удалено %d просроченных captcha-записей.", deleted)
     return deleted
+
+
+HEARTBEAT_CACHE_KEY = "celery:heartbeat"
+
+
+@shared_task(ignore_result=True)
+def celery_heartbeat():
+    """Раз в минуту: отметка «beat и воркер живы» для /healthz/ и дашборда."""
+    from django.core.cache import cache
+    from django.utils import timezone
+
+    cache.set(HEARTBEAT_CACHE_KEY, timezone.now().isoformat(), 60 * 60)

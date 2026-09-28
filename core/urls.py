@@ -9,8 +9,11 @@ from .views import (
 
 app_name = 'core'
 
+from .health import healthz
+
 urlpatterns = [
     path('', HomeView.as_view(), name='home'),
+    path('healthz/', healthz, name='healthz'),
     path('sw.js', service_worker, name='service_worker'),  # не /static/sw.js — см. docstring view
     path('rules/', RulesView.as_view(), name='rules'),
     path('privacy/', PrivacyPolicyView.as_view(), name='privacy'),
