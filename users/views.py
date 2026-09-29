@@ -303,25 +303,28 @@ class ProfileView(LoginRequiredMixin, TemplateView):
         ).select_related('match').order_by('-created_at')[:5]
 
         from engagement import season, streaks
+        from core.templatetags.ui_extras import ru_plural
         from predictions.services import correct_predictions_count
 
+        profile_url = self.request.build_absolute_uri(reverse('users:public_profile', args=[user.username]))
         brags = []
         if user.is_profile_public:
             def _brag(kind, number, title, text):
                 brags.append({
                     'kind': kind, 'number': number, 'title': title, 'text': text,
                     'image': self.request.build_absolute_uri(reverse('engagement:brag_card', args=[user.username, kind])),
+                    # ?card= — превью ссылки с этой карточкой и подсветка плитки в профиле.
+                    'url': f"{profile_url}?card={kind}",
                 })
             hits = correct_predictions_count(user)
             if hits:
-                _brag('predictions', hits, 'прогноз сбылся', f'Мой прогноз сбылся уже {hits} раз на DOPX. Сможешь лучше?')
+                _brag('predictions', hits, ru_plural(hits, 'прогноз сбылся,прогноза сбылись,прогнозов сбылись'), f'Мой прогноз сбылся уже {hits} раз на DOPX. Сможешь лучше?')
             day = streaks.state(user)
             if day and day['current'] >= 2:
-                _brag('day_streak', day['current'], 'дней подряд', f'{day["current"]} дней подряд на DOPX без пропусков!')
+                _brag('day_streak', day['current'], ru_plural(day['current'], 'день подряд,дня подряд,дней подряд'), f'{day["current"]} {ru_plural(day["current"], "день,дня,дней")} подряд на DOPX без пропусков!')
             pass_data = season.overview(user)
             if pass_data and pass_data['xp'] > 0:
-                _brag('season', pass_data['level'], 'уровень сезона', f'Уровень {pass_data["level"]} сезонного пропуска DOPX')
-        profile_url = self.request.build_absolute_uri(reverse('users:public_profile', args=[user.username]))
+                _brag('season', pass_data['level'], 'уровень сезонного пропуска', f'Уровень {pass_data["level"]} сезонного пропуска DOPX')
 
         context.update({
             'brags': brags,
@@ -380,6 +383,24 @@ class BadgeCatalogView(LoginRequiredMixin, TemplateView):
         return context
 
 
+def public_progress(user) -> dict:
+    """Серия дней, сезонный пропуск и прогнозы для публичного профиля; cards — для каких есть brag-карточка."""
+    from engagement import season, streaks
+    from predictions.services import correct_predictions_count
+
+    day = streaks.state(user)
+    pass_data = season.overview(user)
+    hits = correct_predictions_count(user)
+    cards = set()
+    if day and day['current'] >= 2:
+        cards.add('day_streak')
+    if pass_data and pass_data['xp'] > 0:
+        cards.add('season')
+    if hits:
+        cards.add('predictions')
+    return {'day': day, 'season': pass_data, 'hits': hits, 'cards': cards}
+
+
 class PublicProfileView(TemplateView):
     """Публичный профиль любого пользователя (без приватных данных)."""
     template_name = 'users/public_profile.html'
@@ -421,7 +442,20 @@ class PublicProfileView(TemplateView):
             status='completed'
         ).select_related('match__home_team', 'match__away_team', 'match__league').order_by('-completed_at')[:10]
 
+        progress = public_progress(profile_user)
+        card = self.request.GET.get('card', '')
+        if card in progress['cards']:
+            context['og_image'] = self.request.build_absolute_uri(
+                reverse('engagement:brag_card', args=[profile_user.username, card]))
+            context['meta_description'] = {
+                'day_streak': lambda: f"{progress['day']['current']} дн. подряд на DOPX",
+                'season': lambda: f"Уровень {progress['season']['level']} сезонного пропуска DOPX",
+                'predictions': lambda: f"Прогноз сбылся {progress['hits']} раз на DOPX",
+            }[card]()
+
         context.update({
+            'progress': progress,
+            'highlight_card': card,
             'profile_user': profile_user,
             'stats': stats,
             'badges': badges,

@@ -43,3 +43,24 @@ def data_version() -> int:
 def versioned(key: str) -> str:
     """Ключ кэша, который сбрасывается при изменении данных."""
     return f"{key}:v{data_version()}"
+
+
+def _user_key(user_id) -> str:
+    return f"live:user:{user_id}"
+
+
+def bump_user_version(user_id) -> None:
+    """Изменился личный прогресс (серия, XP, сезон, задания): вкладки этого пользователя обновятся."""
+    key = _user_key(user_id)
+    try:
+        cache.incr(key)
+    except ValueError:
+        cache.set(key, 2, 60 * 60 * 24 * 7)
+
+
+def version_for(user) -> str:
+    """Общая версия данных + личная версия прогресса."""
+    base = str(data_version())
+    if not getattr(user, "is_authenticated", False):
+        return base
+    return f"{base}.{cache.get(_user_key(user.pk)) or 1}"

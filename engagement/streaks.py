@@ -31,7 +31,8 @@ def touch(user):
     cache.set(key, 1, 60 * 60 * 26)
     if advanced:
         _reward_milestone(user, streak.current)
-    return streak
+        _notify_day(user, streak)
+    return streak if advanced else None
 
 
 def apply_day(streak, today) -> bool:
@@ -39,18 +40,24 @@ def apply_day(streak, today) -> bool:
     last = streak.last_active_date
     if last == today:
         return False
+    # Что случилось сегодня — для уведомлений (_notify_day).
+    streak.lost = streak.frozen = 0
+    streak.freeze_earned = False
     if last == today - timedelta(days=1):
         streak.current += 1
     elif last and (today - last).days - 1 <= streak.freezes:
         missed = (today - last).days - 1
         streak.freezes -= missed
         streak.freezes_used += missed
+        streak.frozen = missed
         streak.current += 1
     else:
+        streak.lost = streak.current if last else 0
         streak.current = 1
     streak.last_active_date = today
     if streak.current % FREEZE_EVERY == 0 and streak.freezes < MAX_FREEZES:
         streak.freezes += 1
+        streak.freeze_earned = True
     streak.best = max(streak.best, streak.current)
     return True
 
@@ -62,6 +69,41 @@ def _reward_milestone(user, day: int) -> None:
         award_xp(user, MILESTONE_XP[day], f"серия {day} дней")
     if day in MILESTONE_BADGES:
         award_badge(user, MILESTONE_BADGES[day])
+
+
+def _notify_day(user, streak) -> None:
+    """Колокольчик на сайте: вехи, заморозки, сгоревшая серия. Без push — человек и так на сайте."""
+    from engagement.notify import notify
+
+    day, events = streak.current, []
+    if day in MILESTONE_XP:
+        events.append((f"🔥 {day} {_days(day)} подряд", f"Серия растёт: +{MILESTONE_XP[day]} XP в сезонный пропуск."))
+    if getattr(streak, "frozen", 0):
+        events.append(("❄️ Заморозка спасла серию",
+                       f"Пропущенный день закрыт заморозкой, серия продолжается: {day} {_days(day)}."))
+    if getattr(streak, "freeze_earned", False):
+        events.append(("❄️ Новая заморозка", f"{day} {_days(day)} подряд. Заморозка закроет один пропущенный день."))
+    if getattr(streak, "lost", 0) >= 3:
+        events.append(("Серия прервалась", f"Было {streak.lost} {_days(streak.lost)} подряд, рекорд {streak.best}. "
+                                            "Сегодня первый день новой серии."))
+    for title, body in events:
+        notify([user], title=title, body=body, url="/#personal-panel", kind="streak", push=False)
+
+
+def toast(streak) -> str:
+    """Короткое сообщение при первом заходе дня."""
+    day = streak.current
+    if getattr(streak, "lost", 0) >= 3:
+        return f"Серия в {streak.lost} {_days(streak.lost)} прервалась. Начинаем заново: день 1."
+    if day < 2:
+        return ""
+    return f"🔥 {day} {_days(day)} подряд. Загляните завтра, чтобы продолжить серию."
+
+
+def _days(n: int) -> str:
+    from core.templatetags.ui_extras import ru_plural
+
+    return ru_plural(n, "день,дня,дней")
 
 
 def state(user) -> dict | None:

@@ -28,7 +28,31 @@
   // pagehide, а не unload — unload отключает bfcache.
   window.addEventListener('pagehide', saveScroll);
 
-  function restoreScroll() {
+  // Как открыта страница: navigate (ссылка, адрес), reload, back_forward.
+  function navigationType(event) {
+    if (event && event.persisted) return 'back_forward';
+    var entry = window.performance && performance.getEntriesByType && performance.getEntriesByType('navigation')[0];
+    return entry ? entry.type : 'navigate';
+  }
+
+  // Переход по ссылке с #якорем: дотягиваемся до блока, пока страница догружается.
+  function scrollToHash() {
+    var el;
+    try { el = location.hash && document.getElementById(decodeURIComponent(location.hash.slice(1))); } catch (e) { return; }
+    if (!el) return;
+    el.scrollIntoView();
+    requestAnimationFrame(function () {
+      el.scrollIntoView();
+      setTimeout(function () { el.scrollIntoView(); }, 400);
+    });
+  }
+
+  function restoreScroll(event) {
+    // Позицию возвращаем только для «Назад/Вперёд» и перезагрузки, новый переход — с начала или к якорю.
+    if (navigationType(event) === 'navigate') {
+      scrollToHash();
+      return;
+    }
     var y = 0;
     try {
       var raw = sessionStorage.getItem(storageKey());

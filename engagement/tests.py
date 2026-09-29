@@ -482,3 +482,66 @@ class ServiceAccountTests(EngagementTestCase):
         self.client.force_login(boss)
         response = self.client.get(reverse('engagement:season_pass'))
         self.assertEqual(response.context["top"], [])
+
+
+class StreakLiveTests(EngagementTestCase):
+    def yesterday_streak(self, user, current):
+        return DailyStreak.objects.create(user=user, current=current, best=current,
+                                          last_active_date=timezone.localdate() - timedelta(days=1))
+
+    def test_first_page_of_day_shows_new_streak_and_toast(self):
+        user = self.make_user()
+        self.yesterday_streak(user, 4)
+        self.client.force_login(user)
+        response = self.client.get(reverse("core:home"))
+        self.assertContains(response, "5 дней")
+        self.assertContains(response, "5 дней подряд. Загляните завтра")
+        # Второй заход за день — без тоста.
+        self.assertNotContains(self.client.get(reverse("core:home")), "Загляните завтра")
+
+    def test_panel_poll_counts_day(self):
+        user = self.make_user()
+        self.yesterday_streak(user, 2)
+        self.client.force_login(user)
+        response = self.client.get(reverse("core:personal_panel"), HTTP_HX_REQUEST="true")
+        self.assertContains(response, "3 дня")
+
+    def test_milestone_and_lost_streak_notifications(self):
+        from notifications.models import Notification
+
+        user = self.make_user()
+        self.yesterday_streak(user, 6)
+        streaks.touch(user)
+        self.assertTrue(Notification.objects.filter(user=user, title__startswith="🔥 7 дней").exists())
+        self.assertTrue(Notification.objects.filter(user=user, title="❄️ Новая заморозка").exists())
+
+        other = self.make_user()
+        DailyStreak.objects.create(user=other, current=9, best=9, last_active_date=timezone.localdate() - timedelta(days=5))
+        streak = streaks.touch(other)
+        self.assertEqual(streak.lost, 9)
+        self.assertIn("прервалась", streaks.toast(streak))
+        self.assertTrue(Notification.objects.filter(user=other, title="Серия прервалась").exists())
+
+    def test_live_version_changes_with_personal_progress(self):
+        user = self.make_user()
+        self.client.force_login(user)
+        url = reverse("core:live_version")
+        before = self.client.get(url).json()["v"]
+        self.assertEqual(before, self.client.get(url).json()["v"])
+        with self.captureOnCommitCallbacks(execute=True):
+            UserXP.objects.get_or_create(user=user)[0].add_xp(5)
+        self.assertNotEqual(before, self.client.get(url).json()["v"])
+
+    def test_public_profile_shows_progress_and_card_preview(self):
+        user = self.make_user(is_profile_public=True)
+        self.yesterday_streak(user, 5)
+        streaks.touch(user)
+        SeasonPass.objects.create(user=user, season=self.season, xp=250)
+        url = reverse("users:public_profile", args=[user.username])
+        response = self.client.get(url + "?card=season")
+        self.assertContains(response, "дней подряд · рекорд 6")
+        self.assertContains(response, "уровень пропуска")
+        self.assertContains(response, reverse("engagement:brag_card", args=[user.username, "season"]))
+        self.assertContains(response, "dx-brag--season is-highlight")
+        # Карточки нет — обычное превью.
+        self.assertNotContains(self.client.get(url + "?card=predictions"), "share/brag/")

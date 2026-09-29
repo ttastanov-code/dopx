@@ -9,7 +9,21 @@ from django.dispatch import receiver
 from evaluations.models import EvaluationSession
 from matches.models import MatchReaction
 from predictions.models import MatchPrediction
-from users.models import Follow
+from users.models import Follow, UserXP
+
+from .models import DailyQuest, DailyStreak, SeasonPass
+
+
+def _bump_progress(sender, instance, **kwargs):
+    from core.live import bump_user_version
+
+    user_id = instance.user_id
+    transaction.on_commit(lambda: bump_user_version(user_id))
+
+
+# Личный прогресс изменился — открытые вкладки пользователя обновятся по пингу версии.
+for _model in (DailyStreak, DailyQuest, SeasonPass, UserXP):
+    post_save.connect(_bump_progress, sender=_model, dispatch_uid=f"live-progress-{_model.__name__}")
 
 
 @receiver(post_save, sender=MatchPrediction)

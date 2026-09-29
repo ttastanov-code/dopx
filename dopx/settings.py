@@ -419,7 +419,6 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'engagement.middleware.DailyStreakMiddleware',
     # axes — после AuthenticationMiddleware.
     'axes.middleware.AxesMiddleware',
     # django-otp — после AuthenticationMiddleware.
@@ -430,6 +429,8 @@ MIDDLEWARE = [
     'dashboard.middleware.DashboardSectionAccessMiddleware',
     'dopx.middleware.StaffSessionSecurityMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
+    # После messages: тост о серии дней.
+    'engagement.middleware.DailyStreakMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 

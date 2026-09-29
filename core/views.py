@@ -728,6 +728,9 @@ def personal_panel(request):
 
     if not request.user.is_authenticated:
         return HttpResponse(status=204)
+    # Вкладка открыта через полночь: опрос панели тоже засчитывает день.
+    from engagement.streaks import touch
+    touch(request.user)
     return render(request, 'core/_personal_panel.html', {'personal': personal_summary(request.user)})
 
 
@@ -735,8 +738,8 @@ def live_version(request):
     """Текущая версия данных: вкладки пингуют раз в несколько секунд и мягко обновляются при смене."""
     from django.http import JsonResponse
 
-    from core.live import data_version
+    from core.live import version_for
 
-    response = JsonResponse({'v': data_version()})
+    response = JsonResponse({'v': version_for(request.user)})
     response['Cache-Control'] = 'no-store'
     return response

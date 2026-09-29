@@ -128,7 +128,7 @@
             <div class="dx-brag dx-brag--{{ b.kind }}">
                 <div class="dx-brag__num">{{ b.number }}</div>
                 <div class="dx-brag__title">{{ b.title }}</div>
-                {% include 'components/_share_sheet.html' with url=profile_share_url text=b.text image=b.image label="Похвастаться" %}
+                {% include 'components/_share_sheet.html' with url=b.url text=b.text image=b.image label="Похвастаться" %}
             </div>
             {% endfor %}
         </div>

@@ -1,6 +1,11 @@
 # engagement/middleware.py
-"""Отмечает день серии и задания «загляните на страницу» при обычном заходе (не фоновые запросы и не HTMX)."""
+"""Отмечает день серии и задания «загляните на страницу» при обычном заходе (не фоновые запросы и не HTMX).
+День серии — до рендера, чтобы страница сразу показала новое значение."""
 from __future__ import annotations
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 # url_name -> задание дня за визит.
 VISIT_QUESTS = {
@@ -16,26 +21,37 @@ class DailyStreakMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        response = self.get_response(request)
         user = getattr(request, "user", None)
-        if (
+        tracked = (
             request.method == "GET" and user is not None and user.is_authenticated
-            and response.status_code == 200 and not request.headers.get("HX-Request")
-            and not request.headers.get("X-Live-Refresh")
+            and not request.headers.get("HX-Request") and not request.headers.get("X-Live-Refresh")
             and not request.path.startswith(("/static/", "/media/", "/api/", "/admin/"))
-        ):
-            try:
-                from engagement.streaks import touch
-
-                touch(user)
-                match = getattr(request, "resolver_match", None)
-                quest = VISIT_QUESTS.get(match.view_name) if match else None
-                if quest:
+        )
+        if tracked:
+            self._touch(request, user)
+        response = self.get_response(request)
+        if tracked and response.status_code == 200:
+            match = getattr(request, "resolver_match", None)
+            quest = VISIT_QUESTS.get(match.view_name) if match else None
+            if quest:
+                try:
                     from engagement.quests import track
 
                     track(user, quest)
-            except Exception:  # серия не должна ломать страницу
-                import logging
-
-                logging.getLogger(__name__).exception("engagement visit tracking failed")
+                except Exception:
+                    logger.exception("engagement visit quest failed")
         return response
+
+    @staticmethod
+    def _touch(request, user):
+        try:
+            from django.contrib import messages
+
+            from engagement.streaks import toast, touch
+
+            streak = touch(user)
+            text = toast(streak) if streak else ""
+            if text:
+                messages.info(request, text)
+        except Exception:  # серия не должна ломать страницу
+            logger.exception("engagement streak touch failed")

@@ -2,6 +2,7 @@
 {% load static %}
 {% load tooltip_tags %}
 {% load engagement_extras %}
+{% load ui_extras %}
 {% block content %}
 {# Публичный профиль (только чтение). Без email и ссылок на настройки; секретные бейджи отфильтрованы во вьюхе. #}
 <div class="mb-6">
@@ -63,6 +64,30 @@
             </div>
         </div>
 
+        {# Прогресс для «Похвастаться»: ?card= подсвечивает плитку, по которой пришли. #}
+        {% if progress.cards %}
+        <div class="dx-brags dx-brags--compact">
+            {% if 'day_streak' in progress.cards %}
+            <div class="dx-brag dx-brag--day_streak{% if highlight_card == 'day_streak' %} is-highlight{% endif %}">
+                <div class="dx-brag__num"><i class="ti ti-flame"></i> {{ progress.day.current }}</div>
+                <div class="dx-brag__title">{{ progress.day.current|ru_plural:"день,дня,дней" }} подряд · рекорд {{ progress.day.best }}</div>
+            </div>
+            {% endif %}
+            {% if 'season' in progress.cards %}
+            <a href="{% url 'engagement:season_pass' %}" class="dx-brag dx-brag--season{% if highlight_card == 'season' %} is-highlight{% endif %}">
+                <div class="dx-brag__num"><i class="ti ti-ticket"></i> {{ progress.season.level }}</div>
+                <div class="dx-brag__title">уровень пропуска · {{ progress.season.xp }} XP за сезон</div>
+            </a>
+            {% endif %}
+            {% if 'predictions' in progress.cards %}
+            <div class="dx-brag dx-brag--predictions{% if highlight_card == 'predictions' %} is-highlight{% endif %}">
+                <div class="dx-brag__num"><i class="ti ti-target-arrow"></i> {{ progress.hits }}</div>
+                <div class="dx-brag__title">{{ progress.hits|ru_plural:"прогноз сбылся,прогноза сбылись,прогнозов сбылись" }}</div>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
         {# Плитки статистики; иконка в углу карточки (absolute). #}
         <div class="grid grid-cols-2 gap-4">
             <div class="stat relative bg-base-100 border border-base-300 p-4">
@@ -82,7 +107,7 @@
             </div>
             <div class="stat relative bg-base-100 border border-base-300 p-4">
                 <div class="absolute top-2 right-2 z-10">{% include 'components/_tooltip_icon.html' with text="Сколько туров подряд оценён хотя бы один матч. Пропуск тура обнуляет серию" %}</div>
-                <div class="stat-title text-xs whitespace-normal leading-snug pr-4">Серия</div>
+                <div class="stat-title text-xs whitespace-normal leading-snug pr-4">Серия туров</div>
                 <div class="stat-value text-2xl text-accent">{{ stats.evaluation_streak }}</div>
             </div>
         </div>

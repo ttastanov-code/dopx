@@ -14,7 +14,8 @@ logger = logging.getLogger(__name__)
 ACTIVE_DAYS = 21
 
 
-def notify(users, *, title: str, body: str, url: str, kind: str, tag: str | None = None, in_app: bool = True) -> None:
+def notify(users, *, title: str, body: str, url: str, kind: str, tag: str | None = None,
+           in_app: bool = True, push: bool = True) -> None:
     """Запись в колокольчик + push после коммита."""
     from notifications.models import Notification
     from notifications.tasks import send_push_task
@@ -26,6 +27,8 @@ def notify(users, *, title: str, body: str, url: str, kind: str, tag: str | None
         Notification.objects.bulk_create([
             Notification(user=u, notification_type="system", title=title, message=body, action_url=url) for u in users
         ])
+    if not push:
+        return
     ids = [str(u.pk) for u in users]
     transaction.on_commit(lambda: send_push_task.delay(ids, title, body, url, kind, tag))
 

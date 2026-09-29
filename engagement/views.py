@@ -166,6 +166,7 @@ def challenge(request, code, match_id):
 def brag_card(request, username, kind):
     """PNG «похвастаться». Числа берём из БД, а не из URL."""
     from core.services.share_cards import build_brag_share_card
+    from core.templatetags.ui_extras import ru_plural
     from engagement.fanzone import fan_zone
     from engagement.streaks import state as streak_state
     from teams.models import Team
@@ -183,13 +184,15 @@ def brag_card(request, username, kind):
         hits = correct_predictions_count(user)
         if hits < 1:
             raise Http404
-        params = dict(number_text=str(hits), label_line1="раз прогноз сбылся",
+        params = dict(number_text=str(hits),
+                      label_line1=f'{ru_plural(hits, "раз,раза,раз")} прогноз сбылся',
                       label_line2="прогнозы 1X2 на DOPX", eyebrow="ПРОГНОЗИСТ DOPX")
     elif kind == "day_streak":
         data = streak_state(user)
         if not data or data["current"] < 2:
             raise Http404
-        params = dict(number_text=str(data["current"]), label_line1="дней подряд", label_line2="с DOPX", eyebrow="СЕРИЯ ДНЕЙ")
+        params = dict(number_text=str(data["current"]),
+                      label_line1=f'{ru_plural(data["current"], "день,дня,дней")} подряд', label_line2="с DOPX", eyebrow="СЕРИЯ ДНЕЙ")
     elif kind.startswith("fan_top-"):
         try:
             team_id = uuid.UUID(kind.split("-", 1)[1])

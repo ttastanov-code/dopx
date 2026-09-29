@@ -118,9 +118,9 @@ def mobile_tabbar(request):
 
 def live_version(request):
     """Версия данных на момент рендера — стартовая точка для пинга live-refresh.js."""
-    from core.live import data_version
+    from core.live import version_for
 
-    return {'live_version': data_version()}
+    return {'live_version': version_for(getattr(request, 'user', None))}
 
 
 def mourning(request):
