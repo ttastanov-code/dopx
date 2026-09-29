@@ -60,10 +60,10 @@
             <div class="dopx-section-eyebrow"><i class="ti ti-refresh"></i>Агрегаты</div>
             <div class="dopx-section-title mb-2">Пересчёт</div>
             <p class="text-xs opacity-55 mb-3">Пересчитывает рейтинги игроков/тренеров/команд/судьи по этому матчу и зависящие от него агрегаты (таблица, стрики). Запускается в фоне через Celery.</p>
-            <form method="post" action="{% url 'dashboard:match_trigger_recalc' match.id %}">
+            {% if perms.matches.change_match %}<form method="post" action="{% url 'dashboard:match_trigger_recalc' match.id %}">
                 {% csrf_token %}
                 <button type="submit" class="btn btn-sm btn-outline btn-warning w-full"><i class="ti ti-refresh"></i> Пересчитать агрегаты</button>
-            </form>
+            </form>{% endif %}
 
             <div class="divider my-3"></div>
 

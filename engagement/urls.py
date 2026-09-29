@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views
+from . import views, views_experts
 
 app_name = "engagement"
 
@@ -19,5 +19,8 @@ urlpatterns = [
     path("api/share-done/", views.share_done, name="share_done"),
     path("polls/<uuid:poll_id>/vote/", views.poll_vote, name="poll_vote"),
     path("share/brag/<str:username>/<str:kind>.png", views.brag_card, name="brag_card"),
+    path("expert/<str:token>/", views_experts.expert_write, name="expert_write"),
+    path("expert/<str:token>/players/", views_experts.expert_write_players, name="expert_write_players"),
+    path("expert/<str:token>/<path:tail>", views.clean_link_token, {"name": "engagement:expert_write"}),
     path("widget/team/<uuid:team_id>/players/", views.team_players_widget, name="team_players_widget"),
 ]

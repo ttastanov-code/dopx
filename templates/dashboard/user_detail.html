@@ -82,7 +82,7 @@
             <div class="dopx-section-eyebrow"><i class="ti ti-shield"></i>Модерация</div>
             <div class="dopx-section-title mb-3">Действия</div>
 
-            <form method="post" action="{% url 'dashboard:user_toggle_ban' user_obj.id %}"
+            {% if perms.users.change_user %}<form method="post" action="{% url 'dashboard:user_toggle_ban' user_obj.id %}"
                   onsubmit="return confirm('{% if user_obj.is_active %}Заблокировать{% else %}Разблокировать{% endif %} «' + '{{ user_obj.username }}' + '»?');" class="mb-2">
                 {% csrf_token %}
                 {% if user_obj.is_active %}
@@ -90,13 +90,13 @@
                 {% else %}
                 <button type="submit" class="btn btn-sm btn-outline btn-success w-full"><i class="ti ti-lock-open"></i> Разблокировать</button>
                 {% endif %}
-            </form>
+            </form>{% endif %}
 
-            <form method="post" action="{% url 'dashboard:user_reset_trust_score' user_obj.id %}"
+            {% if perms.users.change_user %}<form method="post" action="{% url 'dashboard:user_reset_trust_score' user_obj.id %}"
                   onsubmit="return confirm('Сбросить оценку доверия на 1.0 (нейтральное значение)?');">
                 {% csrf_token %}
                 <button type="submit" class="btn btn-sm btn-outline w-full"><i class="ti ti-refresh"></i> Сбросить доверие на 1.0</button>
-            </form>
+            </form>{% endif %}
 
             <div class="divider my-3"></div>
 

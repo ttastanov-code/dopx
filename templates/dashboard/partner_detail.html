@@ -67,7 +67,7 @@
             <div class="card-body p-4">
                 <div class="flex items-center justify-between">
                     <div class="dopx-section-eyebrow"><i class="ti ti-photo"></i>Баннеры этого партнёра ({{ banners|length }})</div>
-                    <a href="{% url 'dashboard:banner_create' %}?partner={{ partner.id }}" class="btn btn-xs btn-primary"><i class="ti ti-plus"></i> Новый баннер</a>
+                    {% if perms.partners.add_banner %}<a href="{% url 'dashboard:banner_create' %}?partner={{ partner.id }}" class="btn btn-xs btn-primary"><i class="ti ti-plus"></i> Новый баннер</a>{% endif %}
                 </div>
                 {% if banners %}
                 <div class="space-y-2 mt-2">
@@ -98,11 +98,11 @@
             <div class="dopx-section-eyebrow"><i class="ti ti-shield"></i>Опасная зона</div>
             <div class="dopx-section-title mb-3">Удаление</div>
             <p class="text-xs opacity-60 mb-3">Баннеры партнёра останутся, но станут собственным промо DOPX.</p>
-            <form method="post" action="{% url 'dashboard:partner_delete' partner.id %}"
+            {% if perms.partners.delete_partner %}<form method="post" action="{% url 'dashboard:partner_delete' partner.id %}"
                   onsubmit="return confirm('Удалить партнёра «' + '{{ partner.name }}' + '»? Действие необратимо.');">
                 {% csrf_token %}
                 <button type="submit" class="btn btn-sm btn-outline btn-error w-full"><i class="ti ti-trash"></i> Удалить партнёра</button>
-            </form>
+            </form>{% endif %}
         </div>
     </div>
 </div>

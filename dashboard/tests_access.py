@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, Permission
-from django.test import RequestFactory, TestCase
+from django.test import RequestFactory, TestCase, override_settings
+from django.urls import reverse
 
 from dopx.admin_nav import admin_perm, dashboard_perm
 
 from .admin_access import permission_matrix, set_group_permissions
 from .models import StaffAccessGrant
-from .nav import SINGLE_ROW_MAX_ITEMS, build_nav, first_allowed_url
+from .nav import build_nav, first_allowed_url
 
 User = get_user_model()
 
@@ -24,32 +25,44 @@ def _staff(name: str, sections: list[str] | None = None):
 
 class DashboardNavTests(TestCase):
     def _keys(self, nav) -> list[str]:
-        return [i["key"] for row in nav["rows"] for g in row for i in g]
+        return [i["key"] for g in nav["groups"] for i in g["items"]]
 
-    def test_limited_user_gets_single_row_without_empty_groups(self):
-        nav = build_nav(_staff("lim", ["overview", "matches", "scripts"]))
+    def test_limited_user_sees_only_allowed_pages_without_empty_groups(self):
+        nav = build_nav(_staff("lim", ["overview", "matches", "scripts"]), "matches")
 
-        self.assertEqual(len(nav["rows"]), 1)
-        self.assertEqual(self._keys(nav), ["overview", "matches"])
-        self.assertTrue(all(nav["rows"][0]))
+        self.assertEqual(self._keys(nav), ["overview", "matches", "scripts"])
+        self.assertEqual([g["key"] for g in nav["groups"]], ["home", "data", "system"])
+        self.assertEqual(nav["current"]["key"], "data")
         self.assertTrue(nav["show_scripts"])
 
-    def test_full_access_uses_two_rows(self):
+    def test_full_access_groups_and_active_page(self):
         from .models import DASHBOARD_SECTION_KEYS
 
-        nav = build_nav(_staff("full", list(DASHBOARD_SECTION_KEYS)))
-        self.assertGreater(nav["total"], SINGLE_ROW_MAX_ITEMS)
-        self.assertEqual(len(nav["rows"]), 2)
+        user = _staff("full", list(DASHBOARD_SECTION_KEYS))
+        user.user_permissions.set(Permission.objects.all())
+        nav = build_nav(User.objects.get(pk=user.pk), "experts")
+        self.assertEqual(len(nav["groups"]), 5)
+        self.assertNotIn("access_roles", self._keys(nav))  # только суперпользователю
+        content = next(g for g in nav["groups"] if g["key"] == "content")
+        self.assertTrue(content["active"])
+        self.assertEqual(nav["current"], content)
+
+    def test_every_section_is_in_menu(self):
+        from .models import DASHBOARD_SECTION_KEYS
+        from .nav import NAV_GROUPS
+
+        in_menu = {i.key for g in NAV_GROUPS for i in g.items}
+        self.assertTrue(set(DASHBOARD_SECTION_KEYS) <= in_menu)
 
     def test_staff_without_grant_has_no_sections(self):
         # Нет StaffAccessGrant — доступа нет (разделы выдаются явно).
         nav = build_nav(_staff("nogrant"))
-        self.assertEqual(nav["rows"], [])
+        self.assertEqual(nav["groups"], [])
         self.assertFalse(nav["show_scripts"])
 
-    def test_no_sections_no_rows(self):
+    def test_no_sections_no_groups(self):
         nav = build_nav(_staff("none", []))
-        self.assertEqual(nav["rows"], [])
+        self.assertEqual(nav["groups"], [])
         self.assertFalse(nav["show_scripts"])
         self.assertFalse(nav["show_admin"])
 
@@ -92,7 +105,10 @@ class AdminGroupPermissionTests(TestCase):
 class AccessExitsTests(TestCase):
     def test_first_allowed_url_skips_closed_sections(self):
         user = _staff("two", ["antifraud", "audit"])
-        self.assertEqual(first_allowed_url(user), "/staff/dashboard/antifraud/")
+        # Без права на просмотр флагов антифрод не открыть — первым будет аудит.
+        self.assertEqual(first_allowed_url(user), "/staff/dashboard/audit/")
+        user.user_permissions.add(Permission.objects.get(codename="view_suspiciousactivityflag"))
+        self.assertEqual(first_allowed_url(User.objects.get(pk=user.pk)), "/staff/dashboard/antifraud/")
         self.assertIsNone(first_allowed_url(_staff("zero", [])))
 
 
@@ -175,3 +191,63 @@ class AdminConsistencyTests(TestCase):
 
         request.user = User.objects.create_superuser("boss", "boss@t.local", "x")
         self.assertNotIn("is_superuser", model_admin.get_readonly_fields(request))
+
+
+@override_settings(STAFF_2FA_ENFORCED=False)
+class ModelPermissionTests(TestCase):
+    """Галочки «просмотр/создание/изменение/удаление» из «Доступов» работают в дашборде."""
+
+    def setUp(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from engagement.models import ExpertTake
+        from leagues.models import League
+        from matches.models import Match
+        from seasons.models import Season
+        from teams.models import Team
+
+        league = League.objects.create(name="КПЛ", country="KZ")
+        season = Season.objects.create(league=league, year="2026", is_active=True)
+        start = timezone.now() - timedelta(hours=3)
+        self.match = Match.objects.create(league=league, season=season, home_team=Team.objects.create(name="А"),
+                                          away_team=Team.objects.create(name="Б"), status="finished", start_time=start,
+                                          voting_open_until=start + timedelta(days=2))
+        self.take = ExpertTake.objects.create(match=self.match, text="Мнение")
+        self.user = _staff("editor", ["experts"])
+        self.client.force_login(self.user)
+
+    def grant(self, *codenames):
+        self.user.user_permissions.add(*Permission.objects.filter(codename__in=codenames))
+        self.user = User.objects.get(pk=self.user.pk)  # сброс кэша прав
+        self.client.force_login(self.user)
+
+    def test_every_dashboard_url_has_permission_rule(self):
+        from django.urls import get_resolver
+
+        from .permissions import SECTION_ONLY, VIEW_PERMS
+
+        dashboard = {p.name for p in get_resolver("dashboard.urls").url_patterns if p.name}
+        self.assertFalse(dashboard - set(VIEW_PERMS) - SECTION_ONLY, "добавьте права в dashboard/permissions.py")
+        self.assertFalse(set(VIEW_PERMS) - dashboard, "лишние имена в VIEW_PERMS")
+
+    def test_view_only_can_open_but_not_change(self):
+        from .nav import build_nav
+
+        self.assertEqual(self.client.get(reverse("dashboard:experts")).status_code, 403)
+        self.assertNotIn("experts", [i["key"] for g in build_nav(self.user)["groups"] for i in g["items"]])
+
+        self.grant("view_experttake")
+        page = self.client.get(reverse("dashboard:experts"))
+        self.assertEqual(page.status_code, 200)
+        self.assertNotContains(page, reverse("dashboard:expert_take_toggle", args=[self.take.pk]))
+        denied = self.client.post(reverse("dashboard:expert_take_toggle", args=[self.take.pk]))
+        self.assertEqual(denied.status_code, 403)
+        self.assertContains(denied, "изменение", status_code=403)
+        self.assertEqual(self.client.post(reverse("dashboard:expert_take_delete", args=[self.take.pk])).status_code, 403)
+
+        self.grant("change_experttake")
+        self.assertEqual(self.client.post(reverse("dashboard:expert_take_toggle", args=[self.take.pk])).status_code, 302)
+        self.take.refresh_from_db()
+        self.assertFalse(self.take.is_published)

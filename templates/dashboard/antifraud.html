@@ -101,21 +101,21 @@
                     <div class="text-xs opacity-40 mt-1">{{ flag.created_at|ago }}</div>
                 </div>
                 <div class="flex gap-2 shrink-0">
-                    <form method="post" action="{% url 'dashboard:antifraud_flag_action' flag.id %}">
+                    {% if perms.users.change_suspiciousactivityflag %}<form method="post" action="{% url 'dashboard:antifraud_flag_action' flag.id %}">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="dismiss">
                         <button type="submit" class="btn btn-ghost btn-outline btn-sm">
                             <i class="ti ti-x"></i> Отклонить
                         </button>
-                    </form>
-                    <form method="post" action="{% url 'dashboard:antifraud_flag_action' flag.id %}">
+                    </form>{% endif %}
+                    {% if perms.users.change_suspiciousactivityflag %}<form method="post" action="{% url 'dashboard:antifraud_flag_action' flag.id %}">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="confirm">
                         {# btn-outline — в стиле остальных кнопок. #}
                         <button type="submit" class="btn btn-error btn-outline btn-sm">
                             <i class="ti ti-check"></i> Подтвердить
                         </button>
-                    </form>
+                    </form>{% endif %}
                 </div>
             </div>
             {% endfor %}

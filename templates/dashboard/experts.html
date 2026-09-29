@@ -1,0 +1,123 @@
+{% extends 'base.html' %}
+{% load ui_extras %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+{# Мнения экспертов о матчах: на странице матча блок «Мнение экспертов». #}
+<div class="flex flex-wrap items-end justify-between gap-3 mb-4">
+    <div>
+        <div class="dopx-section-eyebrow"><i class="ti ti-microphone"></i>Эксперты</div>
+        <div class="dopx-section-title">Мнения о матчах</div>
+        <p class="text-xs opacity-55 mt-1">Пока идёт голосование, мнение видят только те, кто уже оценил матч: так оно не влияет на оценки.</p>
+    </div>
+    <div class="dx-actions">
+        {% if perms.engagement.add_expertinvite %}<a href="{% url 'dashboard:expert_invite_create' %}" class="btn btn-sm btn-outline"><i class="ti ti-link"></i> Ссылка для эксперта</a>{% endif %}
+        {% if perms.engagement.add_experttake %}<a href="{% url 'dashboard:expert_take_create' %}" class="btn btn-sm btn-primary"><i class="ti ti-plus"></i> Новое мнение</a>{% endif %}
+    </div>
+</div>
+
+<div class="flex flex-wrap items-center gap-1.5 mb-3">
+    <a href="?{% if query %}q={{ query|urlencode }}{% endif %}" class="btn btn-xs {% if not status %}btn-neutral{% else %}btn-ghost{% endif %}">Все <span class="opacity-60">{{ counts.all }}</span></a>
+    <a href="?status=published{% if query %}&q={{ query|urlencode }}{% endif %}" class="btn btn-xs {% if status == 'published' %}btn-neutral{% else %}btn-ghost{% endif %}">На сайте <span class="opacity-60">{{ counts.published }}</span></a>
+    {% if counts.review %}<a href="?status=review{% if query %}&q={{ query|urlencode }}{% endif %}" class="btn btn-xs {% if status == 'review' %}btn-warning{% else %}btn-ghost text-warning{% endif %}">Ждут проверки <span class="opacity-70">{{ counts.review }}</span></a>{% endif %}
+    <a href="?status=draft{% if query %}&q={{ query|urlencode }}{% endif %}" class="btn btn-xs {% if status == 'draft' %}btn-neutral{% else %}btn-ghost{% endif %}">Черновики <span class="opacity-60">{{ counts.draft }}</span></a>
+    <form method="get" class="ml-auto flex gap-1.5">
+        {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
+        <input type="search" name="q" value="{{ query }}" placeholder="Команда, эксперт…" class="input input-xs input-bordered w-44">
+    </form>
+</div>
+
+<div class="space-y-2 mb-8">
+    {% for take in page %}
+    <div class="dx-take-row{% if not take.is_published %} is-draft{% endif %}">
+        <div class="dx-take-row__avatar">{% if take.expert.photo %}<img src="{{ take.expert.photo.url }}" alt="">{% else %}{{ take.initials }}{% endif %}</div>
+        <div class="min-w-0 flex-1">
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs opacity-70">
+                <a href="{% url 'matches:detail' take.match_id %}#expert-takes" target="_blank" class="font-semibold hover:text-primary">{{ take.match.home_team.name }} {% if take.match.status != 'scheduled' %}{{ take.match.home_score }}:{{ take.match.away_score }}{% else %}–{% endif %} {{ take.match.away_team.name }}</a>
+                <span>{{ take.match.start_time|date:"d.m.Y" }}</span>
+                {% if not take.is_published and take.invite_id %}<span class="badge badge-xs badge-warning">ждёт проверки</span>{% elif not take.is_published %}<span class="badge badge-xs badge-ghost">черновик</span>{% endif %}
+                {% if take.invite_id %}<span title="Прислал сам по ссылке"><i class="ti ti-link"></i></span>{% endif %}
+            </div>
+            <div class="font-semibold text-sm truncate">{{ take.display_name }}{% if take.headline %}: {{ take.headline }}{% endif %}</div>
+            <div class="text-xs opacity-60 truncate">{{ take.text|truncatechars:140 }}</div>
+        </div>
+        <div class="dx-actions shrink-0">
+            <a href="{% url 'dashboard:expert_take_edit' take.pk %}" class="btn btn-xs btn-outline"><i class="ti ti-pencil"></i> Править</a>
+            {% if perms.engagement.change_experttake %}<form method="post" action="{% url 'dashboard:expert_take_toggle' take.pk %}">{% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <button class="btn btn-xs btn-ghost" title="{% if take.is_published %}Снять с сайта{% else %}Опубликовать{% endif %}"><i class="ti {% if take.is_published %}ti-eye-off{% else %}ti-eye{% endif %}"></i></button>
+            </form>{% endif %}
+        </div>
+    </div>
+    {% empty %}
+    <div class="card bg-base-100 border border-base-300"><div class="card-body p-6 text-center text-sm opacity-60">
+        Мнений пока нет. Нажмите «Новое мнение» или кнопку «Добавить мнение» на странице матча.
+    </div></div>
+    {% endfor %}
+</div>
+{% if page.has_other_pages %}
+<div class="join mb-8">
+    {% if page.has_previous %}<a class="join-item btn btn-sm" href="?page={{ page.previous_page_number }}{% if status %}&status={{ status }}{% endif %}{% if query %}&q={{ query|urlencode }}{% endif %}">«</a>{% endif %}
+    <span class="join-item btn btn-sm btn-disabled">{{ page.number }} из {{ page.paginator.num_pages }}</span>
+    {% if page.has_next %}<a class="join-item btn btn-sm" href="?page={{ page.next_page_number }}{% if status %}&status={{ status }}{% endif %}{% if query %}&q={{ query|urlencode }}{% endif %}">»</a>{% endif %}
+</div>
+{% endif %}
+
+<div id="invites" class="flex flex-wrap items-end justify-between gap-2 mb-2 scroll-mt-24">
+    <div>
+        <div class="dopx-section-eyebrow"><i class="ti ti-link"></i>Ссылки для экспертов</div>
+        <p class="text-xs opacity-55">Эксперт пишет сам, без регистрации. Ссылка живёт ограниченное время, её можно отключить или продлить.</p>
+    </div>
+    {% if perms.engagement.add_expertinvite %}<a href="{% url 'dashboard:expert_invite_create' %}" class="btn btn-xs btn-outline"><i class="ti ti-plus"></i> Новая ссылка</a>{% endif %}
+</div>
+<div class="space-y-2 mb-8">
+    {% for row in invites %}
+    {% with inv=row.invite %}
+    <div class="dx-take-row flex-wrap{% if row.status == 'expired' or row.status == 'revoked' %} is-draft{% endif %}{% if new_invite == inv.pk|stringformat:'s' %} ring-2 ring-primary{% endif %}">
+        <div class="min-w-0 flex-1">
+            <div class="flex flex-wrap items-center gap-2 text-sm">
+                <b>{{ inv.expert.name|default:"Новый эксперт" }}</b>
+                <span class="badge badge-xs {{ row.css }}">{{ row.label }}</span>
+                {% if inv.auto_publish %}<span class="badge badge-xs badge-outline">без проверки</span>{% endif %}
+                {% if inv.note %}<span class="text-xs opacity-60">{{ inv.note }}</span>{% endif %}
+            </div>
+            <div class="text-xs opacity-60">
+                {% if inv.match %}{{ inv.match.home_team.name }} – {{ inv.match.away_team.name }}{% else %}матч на выбор{% endif %}
+                · написано {{ inv.used }} из {{ inv.max_takes }}
+                · {% if row.status == 'active' %}до {{ inv.expires_at|date:"d.m H:i" }}{% else %}до {{ inv.expires_at|date:"d.m" }}{% endif %}
+                {% if inv.last_used_at %}· заходил {{ inv.last_used_at|date:"d.m H:i" }}{% endif %}
+            </div>
+        </div>
+        <div class="dx-actions shrink-0">
+            {% if row.status == 'active' %}
+            {% include 'components/_share_sheet.html' with url=row.url text=row.text label="Отправить" %}
+            {% if perms.engagement.change_expertinvite %}<form method="post" action="{% url 'dashboard:expert_invite_action' inv.pk 'revoke' %}">{% csrf_token %}<button class="btn btn-xs btn-ghost" title="Отключить ссылку"><i class="ti ti-link-off"></i></button></form>{% endif %}
+            {% else %}
+            {% if perms.engagement.change_expertinvite %}<form method="post" action="{% url 'dashboard:expert_invite_action' inv.pk 'extend' %}">{% csrf_token %}<button class="btn btn-xs btn-outline"><i class="ti ti-clock-plus"></i> Продлить на 7 дней</button></form>{% endif %}
+            {% endif %}
+        </div>
+    </div>
+    {% endwith %}
+    {% empty %}
+    <div class="text-sm opacity-60">Ссылок пока нет.</div>
+    {% endfor %}
+</div>
+
+<div id="experts" class="dopx-section-eyebrow"><i class="ti ti-users"></i>Эксперты</div>
+<p class="text-xs opacity-55 mb-3">Имя, роль и фото заполняются один раз, дальше эксперт выбирается в мнении из списка.</p>
+<div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
+    {% for expert in experts %}
+    <a href="{% url 'dashboard:expert_edit' expert.pk %}" class="dx-take-row hover:border-primary{% if not expert.is_active %} is-draft{% endif %}">
+        <div class="dx-take-row__avatar">{% if expert.photo %}<img src="{{ expert.photo.url }}" alt="">{% else %}{{ expert.initials }}{% endif %}</div>
+        <div class="min-w-0 flex-1">
+            <div class="font-semibold text-sm truncate">{{ expert.name }}{% if not expert.is_active %} <span class="badge badge-xs badge-ghost">скрыт</span>{% endif %}</div>
+            <div class="text-xs opacity-60 truncate">{{ expert.title|default:"роль не указана" }} · {{ expert.takes_count }} {{ expert.takes_count|ru_plural:"мнение,мнения,мнений" }}</div>
+        </div>
+        <i class="ti ti-chevron-right opacity-40"></i>
+    </a>
+    {% empty %}
+    <div class="text-sm opacity-60">Экспертов пока нет. Без эксперта мнение подписывается «Редакция DOPX».</div>
+    {% endfor %}
+</div>
+{% endblock %}

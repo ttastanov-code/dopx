@@ -1,0 +1,97 @@
+{% extends 'base.html' %}
+{% load ui_extras %}
+
+{% block head_extra %}<meta name="robots" content="noindex, nofollow"><meta name="referrer" content="same-origin">{% endblock %}
+
+{% block content %}
+{# Страница эксперта по ссылке-приглашению: engagement/views_experts.py. #}
+<div class="max-w-2xl mx-auto space-y-4">
+    <section class="dx-card">
+        <div class="text-xs font-semibold uppercase tracking-wide text-primary flex items-center gap-1"><i class="ti ti-microphone"></i> Мнение эксперта для DOPX</div>
+        <h1 class="text-2xl font-extrabold mt-1">{% if invite.expert %}Здравствуйте, {{ invite.expert.name }}!{% else %}Здравствуйте!{% endif %}</h1>
+        <p class="text-sm opacity-70 mt-2 leading-relaxed">
+            {% if invite.match and invite.match.status == 'scheduled' %}Поделитесь с болельщиками ожиданиями от матча <b>{{ invite.match.home_team.name }} – {{ invite.match.away_team.name }}</b> ({{ invite.match.start_time|date:"j E, H:i" }}): на что смотреть, кто решит игру.
+            {% elif invite.match %}Расскажите болельщикам, как вы видите матч <b>{{ invite.match.home_team.name }} – {{ invite.match.away_team.name }}</b> ({{ invite.match.home_score }}:{{ invite.match.away_score }}).
+            {% else %}Выберите матч: ближайший тур (превью), прошедший тур или перенесённые игры, и расскажите болельщикам, как вы его видите.{% endif %}
+            Мнение появится на странице матча в блоке «Мнение эксперта»{% if not invite.auto_publish %} после проверки редакцией{% endif %}. Регистрация не нужна.
+        </p>
+        {% if status == 'active' %}
+        <p class="text-xs opacity-55 mt-2"><i class="ti ti-clock"></i> Ссылка действует до {{ invite.expires_at|date:"j E, H:i" }}{% if invite.max_takes > 1 %} · можно написать ещё {{ left }}{% endif %}</p>
+        {% endif %}
+    </section>
+
+    {% if sent %}
+    <div class="alert {% if sent.is_published %}alert-success{% else %}alert-info{% endif %} text-sm">
+        <i class="ti ti-circle-check"></i>
+        <span>
+            {% if sent.is_published %}Спасибо! Мнение опубликовано. <a href="{% url 'matches:detail' sent.match_id %}#expert-takes" class="link font-semibold">Посмотреть на странице матча</a>
+            {% else %}Спасибо! Мнение у редакции на проверке, обычно публикуем в течение дня. Пока его не опубликовали, его можно поправить по этой же ссылке.{% endif %}
+        </span>
+    </div>
+    {% endif %}
+
+    {% if form %}
+    <form method="post" enctype="multipart/form-data" class="dx-card space-y-4" id="expert-form">
+        {% csrf_token %}
+        {% if take %}<div class="text-sm font-semibold"><i class="ti ti-pencil"></i> Правка мнения о матче {{ take.match.home_team.name }} – {{ take.match.away_team.name }} · <a href="?" class="link opacity-70 font-normal">написать новое</a></div>{% endif %}
+        {% if form.non_field_errors %}<div class="alert alert-error text-sm">{{ form.non_field_errors }}</div>{% endif %}
+        {% if form.name %}
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {% include 'dashboard/_banner_field.html' with field=form.name %}
+            {% include 'dashboard/_banner_field.html' with field=form.title %}
+        </div>
+        {% endif %}
+        {% if form.match %}{% include 'dashboard/_banner_field.html' with field=form.match %}{% endif %}
+        {% include 'dashboard/_banner_field.html' with field=form.headline %}
+        {% include 'dashboard/_banner_field.html' with field=form.text %}
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {% include 'dashboard/_banner_field.html' with field=form.key_player %}
+            {% include 'dashboard/_banner_field.html' with field=form.photo %}
+        </div>
+        <div style="position:absolute;left:-9999px" aria-hidden="true">{{ form.website }}</div>
+        <button type="submit" class="btn btn-primary w-full sm:w-auto"><i class="ti ti-send"></i> {% if take %}Сохранить правку{% else %}Отправить мнение{% endif %}</button>
+    </form>
+    {% elif status == 'expired' %}
+    <div class="dx-card text-sm opacity-80"><i class="ti ti-clock-off"></i> Срок ссылки истёк. Напишите редакции DOPX, мы пришлём новую.</div>
+    {% elif status == 'revoked' %}
+    <div class="dx-card text-sm opacity-80"><i class="ti ti-link-off"></i> Ссылка отключена редакцией.</div>
+    {% elif status == 'used' %}
+    <div class="dx-card text-sm opacity-80"><i class="ti ti-circle-check"></i> Спасибо! По этой ссылке уже отправлено всё, что планировали.</div>
+    {% endif %}
+
+    {% if takes %}
+    <section class="dx-card">
+        <div class="text-xs font-semibold uppercase tracking-wide opacity-60 flex items-center gap-1"><i class="ti ti-list"></i> Ваши мнения</div>
+        <div class="space-y-2 mt-2">
+            {% for t in takes %}
+            <div class="flex items-center gap-3 text-sm">
+                <div class="min-w-0 flex-1">
+                    <div class="font-semibold truncate">{{ t.match.home_team.name }} – {{ t.match.away_team.name }}</div>
+                    <div class="text-xs opacity-60 truncate">{{ t.headline|default:t.text|truncatechars:80 }}</div>
+                </div>
+                {% if t.is_published %}
+                <a href="{% url 'matches:detail' t.match_id %}#expert-takes" class="badge badge-success badge-sm">опубликовано</a>
+                {% else %}
+                <span class="badge badge-ghost badge-sm">на проверке</span>
+                {% if status == 'active' or status == 'used' %}<a href="?take={{ t.pk }}" class="btn btn-xs btn-ghost"><i class="ti ti-pencil"></i></a>{% endif %}
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+</div>
+
+{% if form and form.match %}
+<script>
+(function () {
+    const match = document.querySelector('#expert-form [name=match]');
+    const player = document.querySelector('#expert-form [name=key_player]');
+    match.addEventListener('change', async () => {
+        const r = await fetch(`{% url 'engagement:expert_write_players' invite.token %}?match=${encodeURIComponent(match.value)}`, { credentials: 'same-origin' });
+        if (r.ok) player.innerHTML = await r.text();
+    });
+})();
+</script>
+{% endif %}
+{% endblock %}

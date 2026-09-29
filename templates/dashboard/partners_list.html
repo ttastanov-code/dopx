@@ -12,7 +12,7 @@
 <div class="card bg-base-100 border border-base-300 mb-4">
     <div class="card-body p-4">
         <div class="dopx-section-eyebrow"><i class="ti ti-building-store-plus"></i>Новый партнёр</div>
-        <form method="post" action="{% url 'dashboard:partner_create' %}" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-2">
+        {% if perms.partners.add_partner %}<form method="post" action="{% url 'dashboard:partner_create' %}" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-2">
             {% csrf_token %}
             <div class="flex flex-col gap-1">
                 <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Название</label>
@@ -37,7 +37,7 @@
                 </label>
                 <button type="submit" class="btn btn-sm btn-primary ml-auto"><i class="ti ti-plus"></i> Создать</button>
             </div>
-        </form>
+        </form>{% endif %}
     </div>
 </div>
 

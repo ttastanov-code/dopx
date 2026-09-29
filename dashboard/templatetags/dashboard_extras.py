@@ -26,10 +26,10 @@ def can_access_section(user, section_key: str) -> bool:
 
 
 @register.simple_tag
-def dashboard_nav(user) -> dict:
-    """{% dashboard_nav user as nav %} — видимые вкладки меню по рядам и группам."""
+def dashboard_nav(user, active_tab="") -> dict:
+    """{% dashboard_nav user active_tab as nav %} — видимые разделы и страницы меню."""
     from ..nav import build_nav
-    return build_nav(user)
+    return build_nav(user, active_tab or "")
 
 
 @register.simple_tag

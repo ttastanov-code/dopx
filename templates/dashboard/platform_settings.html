@@ -132,7 +132,7 @@
 <div class="card bg-base-100 border border-base-300 mb-4">
     <div class="card-body p-4">
         <div class="dopx-section-eyebrow"><i class="ti ti-plus"></i>Новая настройка</div>
-        <form method="post" action="{% url 'dashboard:platform_settings_create' %}" class="grid grid-cols-1 sm:grid-cols-5 gap-2 mt-2">
+        {% if perms.core.add_platformsetting %}<form method="post" action="{% url 'dashboard:platform_settings_create' %}" class="grid grid-cols-1 sm:grid-cols-5 gap-2 mt-2">
             {% csrf_token %}
             <input type="text" name="key" placeholder="ключ (snake_case)" class="input input-sm input-bordered font-mono" required>
             <input type="text" name="value" placeholder="значение" class="input input-sm input-bordered">
@@ -143,7 +143,7 @@
             </select>
             <input type="text" name="description" placeholder="описание (необязательно)" class="input input-sm input-bordered sm:col-span-2">
             <button type="submit" class="btn btn-sm btn-primary sm:col-span-5 sm:w-fit"><i class="ti ti-plus"></i> Добавить</button>
-        </form>
+        </form>{% endif %}
     </div>
 </div>
 
@@ -156,7 +156,7 @@
         <div class="space-y-2">
             {% for setting in settings_list %}
             <div class="rounded-lg border border-base-300 p-3">
-                <form method="post" action="{% url 'dashboard:platform_settings_update' setting.key %}" class="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+                {% if perms.core.change_platformsetting %}<form method="post" action="{% url 'dashboard:platform_settings_update' setting.key %}" class="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
                     {% csrf_token %}
                     <div class="sm:col-span-3 font-mono text-xs font-semibold break-all">{{ setting.key }}</div>
                     <input type="text" name="value" value="{{ setting.value }}" class="input input-sm input-bordered sm:col-span-2 font-mono">
@@ -169,16 +169,16 @@
                     <div class="sm:col-span-2 flex gap-1.5 justify-end">
                         <button type="submit" class="btn btn-xs btn-primary"><i class="ti ti-device-floppy"></i></button>
                     </div>
-                </form>
+                </form>{% endif %}
                 <div class="flex items-center justify-between mt-1.5">
                     <span class="text-[10px] opacity-40">
                         {% if setting.updated_by %}изменено {{ setting.updated_by.username }} · {% endif %}{{ setting.updated_at|ago }}
                     </span>
-                    <form method="post" action="{% url 'dashboard:platform_settings_delete' setting.key %}"
+                    {% if perms.core.delete_platformsetting %}<form method="post" action="{% url 'dashboard:platform_settings_delete' setting.key %}"
                           onsubmit="return confirm('Удалить настройку «' + '{{ setting.key }}' + '»? Код, читающий её через get_setting(), молча откатится на default-значение.');">
                         {% csrf_token %}
                         <button type="submit" class="btn btn-ghost btn-xs text-error"><i class="ti ti-trash"></i></button>
-                    </form>
+                    </form>{% endif %}
                 </div>
             </div>
             {% endfor %}

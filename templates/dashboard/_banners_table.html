@@ -31,10 +31,10 @@
                 <td class="text-right text-xs whitespace-nowrap tabular-nums">{{ b.stats_30d.impressions }} / {{ b.stats_30d.clicks }}<div class="opacity-50">CTR {{ b.stats_30d.ctr_percent }}%</div></td>
                 <td class="text-right text-xs whitespace-nowrap tabular-nums opacity-70">{{ b.stats_all.impressions }} / {{ b.stats_all.clicks }}</td>
                 <td class="text-right whitespace-nowrap">
-                    <form method="post" action="{% url 'dashboard:banner_toggle' b.id %}" class="inline">
+                    {% if perms.partners.change_banner %}<form method="post" action="{% url 'dashboard:banner_toggle' b.id %}" class="inline">
                         {% csrf_token %}<input type="hidden" name="next" value="{% url 'dashboard:banners_list' %}{% if zone_filter or status_filter %}?{% if zone_filter %}zone={{ zone_filter }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% endif %}">
                         <button type="submit" class="btn btn-ghost btn-xs" title="{% if b.is_active %}Поставить на паузу{% else %}Включить{% endif %}"><i class="ti {% if b.is_active %}ti-player-pause{% else %}ti-player-play{% endif %}"></i></button>
-                    </form>
+                    </form>{% endif %}
                     <a href="{% url 'dashboard:banner_sandbox' %}?banner={{ b.id }}" class="btn btn-ghost btn-xs" title="Проверить вид"><i class="ti ti-devices"></i></a>
                 </td>
             </tr>
@@ -48,6 +48,6 @@
 <div class="card bg-base-100 border border-base-300"><div class="card-body p-8 text-center">
     <i class="ti ti-ad-2 text-4xl opacity-30"></i>
     <p class="text-sm opacity-60 mt-2">{% if zone_filter or status_filter %}Под фильтр ничего не попало.{% else %}Баннеров пока нет. Пока их нет, на сайте на этих местах ничего не показывается.{% endif %}</p>
-    <a href="{% url 'dashboard:banner_create' %}" class="btn btn-primary btn-sm mt-3 mx-auto"><i class="ti ti-plus"></i> Создать первый баннер</a>
+    {% if perms.partners.add_banner %}<a href="{% url 'dashboard:banner_create' %}" class="btn btn-primary btn-sm mt-3 mx-auto"><i class="ti ti-plus"></i> Создать первый баннер</a>{% endif %}
 </div></div>
 {% endif %}

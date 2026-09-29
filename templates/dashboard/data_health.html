@@ -14,11 +14,11 @@
         <div class="dopx-section-eyebrow"><i class="ti ti-refresh-dot"></i>Вручную</div>
         <div class="dopx-section-title">Ресинк матча по ID</div>
         <p class="dopx-section-desc mb-3">UUID проблемного матча — из ошибки ниже или Django admin. Полный ресинк прямо здесь, не дожидаясь цикла celery.</p>
-        <form method="post" action="{% url 'dashboard:data_health_resync_match' '00000000-0000-0000-0000-000000000000' %}" onsubmit="this.action = this.action.replace('00000000-0000-0000-0000-000000000000', this.match_id.value); return !!this.match_id.value;" class="flex flex-wrap gap-2 items-center">
+        {% if perms.matches.change_match %}<form method="post" action="{% url 'dashboard:data_health_resync_match' '00000000-0000-0000-0000-000000000000' %}" onsubmit="this.action = this.action.replace('00000000-0000-0000-0000-000000000000', this.match_id.value); return !!this.match_id.value;" class="flex flex-wrap gap-2 items-center">
             {% csrf_token %}
             <input type="text" name="match_id" placeholder="UUID матча" class="input input-sm input-bordered w-72 max-w-full font-mono text-xs" required>
             <button type="submit" class="btn btn-sm btn-primary">Ресинк</button>
-        </form>
+        </form>{% endif %}
     </div>
 </div>
 {% endblock %}

@@ -1,0 +1,32 @@
+{% load ui_extras dashboard_extras %}
+{# Мнения экспертов на странице матча. Пока голосование открыто, послематчевые — только оценившим, превью — всем. #}
+{% with can_edit=user|can_access_section:"experts" %}
+{% if expert_takes or expert_takes_hidden or can_edit %}
+<section id="expert-takes" class="md-side-card scroll-mt-24">
+    <div class="md-side-card__head flex items-center gap-2">
+        <i class="ti ti-microphone"></i>
+        {% with total=expert_takes|length|add:expert_takes_hidden %}<h3 class="font-extrabold text-base md:text-lg">Мнение {% if total > 1 %}экспертов{% else %}эксперта{% endif %}</h3>{% endwith %}
+        {% if expert_takes|length > 1 %}<span class="badge badge-sm badge-ghost">{{ expert_takes|length }}</span>{% endif %}
+        {% if can_edit %}
+        <span class="ml-auto flex gap-1">
+            {% if perms.engagement.add_expertinvite %}<a href="{% url 'dashboard:expert_invite_create' %}?match={{ match.id }}" class="btn btn-xs btn-ghost" title="Ссылка, по которой эксперт напишет сам"><i class="ti ti-link"></i> Пригласить</a>{% endif %}
+            {% if perms.engagement.add_experttake %}<a href="{% url 'dashboard:expert_take_create' %}?match={{ match.id }}&next={{ request.path|urlencode }}%23expert-takes" class="btn btn-xs btn-ghost"><i class="ti ti-plus"></i> Добавить</a>{% endif %}
+        </span>
+        {% endif %}
+    </div>
+    <div class="dx-takes">
+        {% for take in expert_takes %}
+        {% include 'engagement/_expert_take.html' %}
+        {% endfor %}
+        {% if expert_takes_hidden %}
+        <div class="dx-takes__locked">
+            <i class="ti ti-lock"></i>
+            <p>{% if expert_takes %}Ещё {% endif %}{{ expert_takes_hidden }} {{ expert_takes_hidden|ru_plural:"мнение эксперта откроется,мнения экспертов откроются,мнений экспертов откроются" }} после вашей оценки. Так чужой взгляд не влияет на вашу оценку.</p>
+        </div>
+        {% elif not expert_takes %}
+        <p class="text-sm opacity-60">Мнений к этому матчу пока нет. Пустой блок видят только те, кому открыт раздел «Эксперты».</p>
+        {% endif %}
+    </div>
+</section>
+{% endif %}
+{% endwith %}

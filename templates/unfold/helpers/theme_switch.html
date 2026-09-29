@@ -1,0 +1,24 @@
+{% load i18n %}
+{# Переключатель темы Unfold: русские подписи длиннее английских — иконка над подписью, три равные кнопки. #}
+{% if not theme %}
+    <div class="border-b border-base-200 mb-1 pb-1 px-2 dark:border-base-700" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.25rem">
+        <a class="cursor-pointer rounded-default hover:bg-base-100 hover:text-base-700 dark:hover:bg-base-700 dark:hover:text-base-200"
+           style="display:flex;flex-direction:column;align-items:center;gap:.2rem;padding:.4rem .2rem;font-size:.72rem;line-height:1"
+           x-on:click="switchTheme('light')" title="Светлая тема"
+           x-bind:class="adminTheme == 'light' && 'text-primary-600 dark:text-primary-500'">
+            <span class="material-symbols-outlined">light_mode</span><span>Светлая</span>
+        </a>
+        <a class="cursor-pointer rounded-default hover:bg-base-100 hover:text-base-700 dark:hover:bg-base-700 dark:hover:text-base-200"
+           style="display:flex;flex-direction:column;align-items:center;gap:.2rem;padding:.4rem .2rem;font-size:.72rem;line-height:1"
+           x-on:click="switchTheme('dark')" title="Тёмная тема"
+           x-bind:class="adminTheme == 'dark' && 'text-primary-600 dark:text-primary-500'">
+            <span class="material-symbols-outlined">dark_mode</span><span>Тёмная</span>
+        </a>
+        <a class="cursor-pointer rounded-default hover:bg-base-100 hover:text-base-700 dark:hover:bg-base-700 dark:hover:text-base-200"
+           style="display:flex;flex-direction:column;align-items:center;gap:.2rem;padding:.4rem .2rem;font-size:.72rem;line-height:1"
+           x-on:click="switchTheme('auto')" title="Как в системе"
+           x-bind:class="adminTheme == 'auto' && 'text-primary-600 dark:text-primary-500'">
+            <span class="material-symbols-outlined">computer</span><span>Системная</span>
+        </a>
+    </div>
+{% endif %}

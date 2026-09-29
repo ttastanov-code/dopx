@@ -128,23 +128,128 @@ class FriendLeagueMember(BaseModel):
         constraints = [models.UniqueConstraint(fields=["league", "user"], name="unique_friend_league_member")]
 
 
+class Expert(BaseModel):
+    """Эксперт DOPX: имя, роль и фото вводятся один раз и подставляются в мнения."""
+
+    name = models.CharField(_("Имя"), max_length=80)
+    title = models.CharField(_("Кто это"), max_length=120, blank=True,
+                             help_text=_("Коротко: «экс-игрок сборной Казахстана», «тренер UEFA A»"))
+    photo = models.ImageField(_("Фото"), upload_to="experts/", blank=True)
+    is_active = models.BooleanField(_("Активен"), default=True)
+
+    class Meta:
+        verbose_name = _("Эксперт")
+        verbose_name_plural = _("Эксперты")
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def initials(self) -> str:
+        return "".join(part[0] for part in self.name.split()[:2]).upper()
+
+
+def _invite_token() -> str:
+    import secrets
+
+    return secrets.token_urlsafe(24)
+
+
+class ExpertInvite(BaseModel):
+    """Ссылка для эксперта: пишет мнение без регистрации, пока ссылка жива."""
+
+    token = models.CharField(max_length=64, unique=True, default=_invite_token, editable=False)
+    # Пусто — эксперт представится сам, при первом мнении создастся карточка.
+    expert = models.ForeignKey(Expert, on_delete=models.SET_NULL, null=True, blank=True, related_name="invites",
+                               verbose_name=_("Эксперт"))
+    # Пусто — эксперт сам выберет недавний матч.
+    match = models.ForeignKey("matches.Match", on_delete=models.CASCADE, null=True, blank=True,
+                              related_name="expert_invites", verbose_name=_("Матч"))
+    expires_at = models.DateTimeField(_("Действует до"))
+    max_takes = models.PositiveSmallIntegerField(_("Сколько мнений можно написать"), default=1)
+    auto_publish = models.BooleanField(_("Публиковать без проверки"), default=False)
+    note = models.CharField(_("Заметка для себя"), max_length=120, blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+")
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = _("Ссылка для эксперта")
+        verbose_name_plural = _("Ссылки для экспертов")
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.expert.name if self.expert else (self.note or "Ссылка для эксперта")
+
+    def takes_used(self) -> int:
+        return self.takes.count()
+
+    def status(self) -> str:
+        """active / expired / revoked / used."""
+        from django.utils import timezone
+
+        if self.revoked_at:
+            return "revoked"
+        if self.expires_at <= timezone.now():
+            return "expired"
+        if self.takes_used() >= self.max_takes:
+            return "used"
+        return "active"
+
+
 class ExpertTake(BaseModel):
-    """Мнение экспертов DOPX о матче — показывается, пока голосов болельщиков мало."""
+    """Мнение эксперта о матче. Пока идёт голосование — только тем, кто уже оценил матч."""
 
     match = models.ForeignKey("matches.Match", on_delete=models.CASCADE, related_name="expert_takes")
+    expert = models.ForeignKey(Expert, on_delete=models.SET_NULL, null=True, blank=True, related_name="takes",
+                               verbose_name=_("Эксперт"))
     author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+")
+    # Подпись, если эксперт не выбран.
     author_title = models.CharField(_("Подпись автора"), max_length=80, default="Редакция DOPX")
-    text = models.TextField(_("Мнение"), max_length=600)
+    headline = models.CharField(_("Главная мысль"), max_length=140, blank=True,
+                                help_text=_("Одна фраза крупно над текстом"))
+    text = models.TextField(_("Мнение"), max_length=3000)
     key_player = models.ForeignKey(
         "players.Player", on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
         verbose_name=_("Ключевой игрок"),
     )
     is_published = models.BooleanField(_("Опубликовано"), default=True)
+    invite = models.ForeignKey(ExpertInvite, on_delete=models.SET_NULL, null=True, blank=True, related_name="takes",
+                               verbose_name=_("Прислано по ссылке"))
 
     class Meta:
         verbose_name = _("Мнение эксперта")
         verbose_name_plural = _("Мнения экспертов")
-        ordering = ["-created_at"]
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{self.display_name}: {self.match}"
+
+    @property
+    def display_name(self) -> str:
+        return self.expert.name if self.expert else self.author_title
+
+    @property
+    def display_title(self) -> str:
+        return self.expert.title if self.expert else ""
+
+    @property
+    def initials(self) -> str:
+        return self.expert.initials if self.expert else "D"
+
+    @property
+    def is_preview(self) -> bool:
+        """Написано до начала матча."""
+        return bool(self.created_at) and self.created_at < self.match.start_time
+
+    @property
+    def is_long(self) -> bool:
+        return len(self.text) > LONG_TAKE_CHARS
+
+
+# Длиннее — текст свёрнут, «Читать полностью».
+LONG_TAKE_CHARS = 420
 
 
 class DailyPoll(BaseModel):

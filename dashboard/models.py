@@ -55,6 +55,11 @@ class AuditAction(models.TextChoices):
     BANNER_CREATED = "banner_created", _("Баннер создан")
     BANNER_UPDATED = "banner_updated", _("Баннер изменён")
     BANNER_DELETED = "banner_deleted", _("Баннер удалён")
+    EXPERT_TAKE_SAVED = "expert_take_saved", _("Мнение эксперта сохранено")
+    EXPERT_TAKE_DELETED = "expert_take_deleted", _("Мнение эксперта удалено")
+    EXPERT_SAVED = "expert_saved", _("Эксперт сохранён")
+    EXPERT_INVITE_CREATED = "expert_invite_created", _("Создана ссылка для эксперта")
+    EXPERT_INVITE_CHANGED = "expert_invite_changed", _("Ссылка для эксперта изменена")
     # Роли доступа.
     ACCESS_GRANT_UPDATED = "access_grant_updated", _("Права доступа сотрудника изменены")
     # Вкл/выкл синка Sportmonks.
@@ -156,6 +161,7 @@ DASHBOARD_SECTIONS = [
     ("announcements", _("Объявления")),
     ("mourning", _("Режим траура")),
     ("social_content", _("Контент для соцсетей")),
+    ("experts", _("Мнения экспертов")),
     ("platform_settings", _("Настройки платформы")),
     ("system_status", _("Системный статус")),
     ("scripts", _("Скрипты и команды")),

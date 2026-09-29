@@ -155,6 +155,11 @@ def clean_link(request, code, tail, name):
     return redirect(name, code=code.strip())
 
 
+def clean_link_token(request, token, tail, name):
+    """То же для ссылок с token."""
+    return redirect(name, token=token.strip())
+
+
 def challenge(request, code, match_id):
     """«Спорим, мой прогноз точнее?» — ведёт на матч с плашкой вызова."""
     ref = get_object_or_404(ReferralCode.objects.select_related("user"), code=code)

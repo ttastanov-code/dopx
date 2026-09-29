@@ -11,7 +11,7 @@
     </div>
     <div class="dx-actions">
         <a href="{% url 'dashboard:banner_sandbox' %}" class="btn btn-sm btn-outline"><i class="ti ti-device-desktop-analytics"></i> Проверить вид</a>
-        <a href="{% url 'dashboard:banner_create' %}" class="btn btn-sm btn-primary"><i class="ti ti-plus"></i> Новый баннер</a>
+        {% if perms.partners.add_banner %}<a href="{% url 'dashboard:banner_create' %}" class="btn btn-sm btn-primary"><i class="ti ti-plus"></i> Новый баннер</a>{% endif %}
     </div>
 </div>
 

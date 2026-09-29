@@ -40,7 +40,7 @@ keep_value ('existing'/'new'), flag_id.
     </div>
 
     {# Только hx-confirm, без onsubmit — иначе два диалога. #}
-    <form
+    {% if perms.players.change_player and perms.players.delete_player and perms.players.change_potentialduplicateplayer %}<form
         class="mt-auto pt-1"
         hx-post="{% url 'dashboard:duplicate_players_merge' flag_id %}"
         hx-target="#dup-pair-{{ flag_id }}" hx-swap="outerHTML"
@@ -51,5 +51,5 @@ keep_value ('existing'/'new'), flag_id.
         <button type="submit" class="btn btn-primary btn-outline btn-xs w-full">
             <i class="ti ti-check"></i> Оставить эту запись
         </button>
-    </form>
+    </form>{% endif %}
 </div>

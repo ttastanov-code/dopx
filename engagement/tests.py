@@ -545,3 +545,224 @@ class StreakLiveTests(EngagementTestCase):
         self.assertContains(response, "dx-brag--season is-highlight")
         # Карточки нет — обычное превью.
         self.assertNotContains(self.client.get(url + "?card=predictions"), "share/brag/")
+
+
+@override_settings(STAFF_2FA_ENFORCED=False)
+class ExpertTakeTests(EngagementTestCase):
+    def setUp(self):
+        super().setUp()
+        from engagement.models import Expert
+        from players.models import Player
+
+        self.match = self.make_match()
+        self.player = Player.objects.create(first_name="Иван", last_name="Петров", team=self.home)
+        self.expert = Expert.objects.create(name="Кайрат Иванов", title="экс-игрок сборной")
+        self.staff = User.objects.create_superuser(username="boss", email="boss@test.local", password="x")
+
+    def test_voting_open_hides_takes_until_user_voted(self):
+        from engagement.models import ExpertTake
+
+        ExpertTake.objects.create(match=self.match, expert=self.expert, headline="Прессинг решил", text="Текст")
+        url = reverse("matches:detail", args=[self.match.pk])
+        response = self.client.get(url)
+        self.assertContains(response, "откроется после вашей оценки")
+        self.assertNotContains(response, "Прессинг решил")
+
+    def test_closed_voting_shows_all_takes_with_long_text_fold(self):
+        from engagement.models import LONG_TAKE_CHARS, ExpertTake
+
+        self.match.voting_open_until = timezone.now() - timedelta(hours=1)
+        self.match.save(update_fields=["voting_open_until"])
+        ExpertTake.objects.create(match=self.match, expert=self.expert, text="а" * (LONG_TAKE_CHARS + 10),
+                                  key_player=self.player)
+        ExpertTake.objects.create(match=self.match, text="Коротко", author_title="Редакция DOPX")
+        ExpertTake.objects.create(match=self.match, text="Черновик", is_published=False)
+        response = self.client.get(reverse("matches:detail", args=[self.match.pk]))
+        self.assertContains(response, "Мнение экспертов")
+        self.assertContains(response, "экс-игрок сборной")
+        self.assertContains(response, "dx-take__toggle")
+        self.assertContains(response, "Иван Петров")
+        self.assertNotContains(response, "Черновик")
+
+    def test_dashboard_create_edit_toggle_delete(self):
+        from engagement.models import ExpertTake
+
+        self.client.force_login(self.staff)
+        form_page = self.client.get(reverse("dashboard:expert_take_create") + f"?match={self.match.pk}")
+        self.assertContains(form_page, "Иван Петров")
+        self.assertEqual(self.client.get(reverse("dashboard:experts")).status_code, 200)
+        players = self.client.get(reverse("dashboard:expert_take_players") + f"?match={self.match.pk}")
+        self.assertContains(players, "optgroup")
+
+        response = self.client.post(reverse("dashboard:expert_take_create"), {
+            "match": self.match.pk, "expert": self.expert.pk, "headline": "Главное", "text": "Мнение",
+            "key_player": self.player.pk, "is_published": "on", "then": "match",
+        })
+        take = ExpertTake.objects.get()
+        self.assertRedirects(response, reverse("matches:detail", args=[self.match.pk]) + "#expert-takes",
+                             fetch_redirect_response=False)
+        self.assertEqual(take.author, self.staff)
+
+        self.client.post(reverse("dashboard:expert_take_toggle", args=[take.pk]))
+        take.refresh_from_db()
+        self.assertFalse(take.is_published)
+        self.assertEqual(self.client.get(reverse("dashboard:expert_take_edit", args=[take.pk])).status_code, 200)
+        self.client.post(reverse("dashboard:expert_take_delete", args=[take.pk]))
+        self.assertFalse(ExpertTake.objects.exists())
+
+    def test_form_rejects_player_from_other_team(self):
+        from engagement.forms import ExpertTakeForm
+        from players.models import Player
+
+        stranger = Player.objects.create(first_name="Чужой", last_name="Игрок", team=Team.objects.create(name="Тобол"))
+        form = ExpertTakeForm({"match": self.match.pk, "text": "x", "key_player": stranger.pk, "is_published": "on"})
+        self.assertFalse(form.is_valid())
+
+    def test_expert_create(self):
+        from engagement.models import Expert
+
+        self.client.force_login(self.staff)
+        self.client.post(reverse("dashboard:expert_create"), {"name": "Новый", "title": "тренер", "is_active": "on"})
+        self.assertTrue(Expert.objects.filter(name="Новый").exists())
+
+
+@override_settings(STAFF_2FA_ENFORCED=False)
+class ExpertInviteTests(EngagementTestCase):
+    def setUp(self):
+        super().setUp()
+        from engagement.models import Expert, ExpertInvite
+        from players.models import Player
+
+        self.match = self.make_match()
+        self.player = Player.objects.create(first_name="Иван", last_name="Петров", team=self.home)
+        self.staff = User.objects.create_superuser(username="boss", email="boss@test.local", password="x")
+        self.invite = ExpertInvite.objects.create(match=self.match, expires_at=timezone.now() + timedelta(days=3))
+        self.url = reverse("engagement:expert_write", args=[self.invite.token])
+        self.Expert = Expert
+
+    def post(self, **extra):
+        data = {"name": "Кайрат", "title": "тренер", "headline": "Главное", "text": "Мнение эксперта о матче. " * 3,
+                "key_player": self.player.pk, "website": ""}
+        data.update(extra)
+        return self.client.post(self.url, data)
+
+    def test_new_expert_submits_without_account_and_staff_notified(self):
+        from engagement.models import ExpertTake
+        from notifications.models import Notification
+
+        page = self.client.get(self.url)
+        self.assertContains(page, "Ваше имя")
+        self.assertEqual(page["Referrer-Policy"], "same-origin")
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.post()
+        take = ExpertTake.objects.get()
+        self.assertRedirects(response, f"{self.url}?sent={take.pk}", fetch_redirect_response=False)
+        self.assertFalse(take.is_published)  # ждёт проверки
+        self.assertEqual(take.expert.name, "Кайрат")
+        self.invite.refresh_from_db()
+        self.assertEqual(self.invite.expert, take.expert)
+        self.assertTrue(Notification.objects.filter(user=self.staff, title__contains="мнение эксперта").exists())
+        # Лимит 1 мнение: ссылка «использована», но черновик ещё можно поправить.
+        self.assertEqual(self.invite.status(), "used")
+        self.assertContains(self.client.get(self.url), "уже отправлено")
+        self.client.post(f"{self.url}?take={take.pk}", {"headline": "Новое", "text": "Правка мнения эксперта, длинная. " * 2})
+        take.refresh_from_db()
+        self.assertEqual(take.headline, "Новое")
+
+    def test_expired_revoked_and_unknown_links(self):
+        self.assertEqual(self.client.get(reverse("engagement:expert_write", args=["nope"])).status_code, 404)
+        self.invite.expires_at = timezone.now() - timedelta(minutes=1)
+        self.invite.save()
+        self.assertContains(self.client.get(self.url), "Срок ссылки истёк")
+        self.post()
+        self.assertFalse(self.invite.takes.exists())
+
+    def test_honeypot_and_auto_publish(self):
+        self.post(website="http://spam")
+        self.assertFalse(self.invite.takes.exists())
+        self.invite.auto_publish = True
+        self.invite.save()
+        self.post()
+        self.assertTrue(self.invite.takes.get().is_published)
+
+    def test_open_invite_lets_expert_pick_match(self):
+        from engagement.models import ExpertInvite
+
+        invite = ExpertInvite.objects.create(expires_at=timezone.now() + timedelta(days=1), max_takes=2)
+        url = reverse("engagement:expert_write", args=[invite.token])
+        self.assertContains(self.client.get(url), "Матч")
+        players = self.client.get(reverse("engagement:expert_write_players", args=[invite.token]) + f"?match={self.match.pk}")
+        self.assertContains(players, "Иван Петров")
+        self.client.post(url, {"match": self.match.pk, "name": "Эксперт", "text": "Достаточно длинное мнение о матче тура, больше сорока."})
+        self.assertEqual(invite.takes.get().match, self.match)
+
+    def test_dashboard_create_revoke_extend(self):
+        from engagement.models import ExpertInvite
+
+        self.client.force_login(self.staff)
+        self.assertEqual(self.client.get(reverse("dashboard:expert_invite_create") + f"?match={self.match.pk}").status_code, 200)
+        self.client.post(reverse("dashboard:expert_invite_create"),
+                         {"match": self.match.pk, "days": 7, "max_takes": 1, "note": "для Кайрата"})
+        invite = ExpertInvite.objects.get(note="для Кайрата")
+        self.assertEqual(invite.created_by, self.staff)
+        self.assertContains(self.client.get(reverse("dashboard:experts")), invite.token)
+        self.client.post(reverse("dashboard:expert_invite_action", args=[invite.pk, "revoke"]))
+        invite.refresh_from_db()
+        self.assertEqual(invite.status(), "revoked")
+        self.client.post(reverse("dashboard:expert_invite_action", args=[invite.pk, "extend"]))
+        invite.refresh_from_db()
+        self.assertEqual(invite.status(), "active")
+        self.assertEqual(self.client.get(reverse("admin:engagement_expertinvite_changelist")).status_code, 200)
+
+
+class ExpertMatchGroupsTests(EngagementTestCase):
+    def tour_match(self, tour, days, status="finished"):
+        start = timezone.now() + timedelta(days=days)
+        m = self.make_match(status=status, start=start)
+        m.tour = tour
+        m.save(update_fields=["tour"])
+        return m
+
+    def test_next_round_last_round_and_rescheduled(self):
+        from engagement.expert_invites import match_groups
+
+        played = [self.tour_match(26, -2), self.tour_match(26, -1)]
+        midweek = self.tour_match(20, -4)             # перенесённый, сыгран в среду
+        moved = self.tour_match(26, 5, "scheduled")    # тур 26, перенесён вперёд
+        upcoming = [self.tour_match(27, 3, "scheduled"), self.tour_match(27, 4, "scheduled")]
+        old = self.tour_match(19, -30)                 # давно, не показываем
+        groups = {label: [m.pk for m in matches] for label, matches, _ in match_groups()}
+        self.assertEqual(groups["27-й тур · впереди, превью"], [m.pk for m in upcoming])
+        self.assertEqual(groups["26-й тур · сыгран"], [m.pk for m in played])
+        self.assertEqual(groups["Перенесённые матчи"], [midweek.pk, moved.pk])
+        self.assertNotIn(old.pk, [pk for pks in groups.values() for pk in pks])
+
+    def test_preview_visible_while_voting_open(self):
+        from engagement.models import ExpertTake
+
+        match = self.make_match(status="scheduled", start=timezone.now() + timedelta(days=2))
+        ExpertTake.objects.create(match=match, text="Превью матча")
+        response = self.client.get(reverse("matches:detail", args=[match.pk]))
+        self.assertContains(response, "Превью матча")
+        self.assertContains(response, "Перед матчем")
+
+
+class ExpertButtonsAccessTests(EngagementTestCase):
+    def test_buttons_only_for_experts_section(self):
+        from dashboard.models import StaffAccessGrant
+
+        match = self.make_match()
+        url = reverse("matches:detail", args=[match.pk])
+        staff = self.make_user("staff", is_staff=True)
+        StaffAccessGrant.objects.create(user=staff, allowed_sections=["matches"])
+        self.client.force_login(staff)
+        invite_url = reverse("dashboard:expert_invite_create")
+        self.assertNotContains(self.client.get(url), invite_url)
+        staff.dashboard_access_grant.allowed_sections = ["experts"]
+        staff.dashboard_access_grant.save()
+        # Раздел открыт, но без права «создание» у ссылок кнопки нет.
+        self.assertNotContains(self.client.get(url), invite_url)
+        from django.contrib.auth.models import Permission
+        staff.user_permissions.add(Permission.objects.get(codename="add_expertinvite"))
+        self.client.force_login(User.objects.get(pk=staff.pk))
+        self.assertContains(self.client.get(url), invite_url)

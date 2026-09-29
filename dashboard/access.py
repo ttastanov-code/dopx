@@ -28,6 +28,7 @@ SECTION_PATH_MAP: list[tuple[str, str]] = [
     ("/staff/dashboard/announcements/", "announcements"),
     ("/staff/dashboard/mourning/", "mourning"),
     ("/staff/dashboard/social/", "social_content"),
+    ("/staff/dashboard/experts/", "experts"),
     ("/staff/dashboard/settings/", "platform_settings"),
     ("/staff/dashboard/system-status/", "system_status"),
     ("/staff/dashboard/scripts/", "scripts"),
@@ -50,6 +51,8 @@ def resolve_section_for_path(path: str) -> str | None:
 def user_can_access_section(user, section_key: str) -> bool:
     if not section_key:
         return True
+    if not getattr(user, "is_authenticated", False):
+        return False
     if getattr(user, "is_superuser", False):
         return True
     if section_key in SUPERUSER_ONLY_SECTIONS:

@@ -16,7 +16,7 @@ id dup-pair-<flag.id> — цель hx-swap формы слияния/откло�
             {% include 'dashboard/_duplicate_player_side.html' with entry=pair.new keep_value='new' flag_id=pair.flag.id %}
         </div>
         <div class="flex justify-end mt-3 pt-3 border-t border-base-200">
-            <form
+            {% if perms.players.change_potentialduplicateplayer %}<form
                 hx-post="{% url 'dashboard:duplicate_players_dismiss' pair.flag.id %}"
                 hx-target="#dup-pair-{{ pair.flag.id }}" hx-swap="outerHTML"
                 method="post" action="{% url 'dashboard:duplicate_players_dismiss' pair.flag.id %}">
@@ -24,7 +24,7 @@ id dup-pair-<flag.id> — цель hx-swap формы слияния/откло�
                 <button type="submit" class="btn btn-ghost btn-outline btn-xs">
                     <i class="ti ti-users"></i> Это разные люди — отклонить флаг
                 </button>
-            </form>
+            </form>{% endif %}
         </div>
     </div>
 </div>

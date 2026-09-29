@@ -24,6 +24,7 @@
     {# Canonical без query: ?challenge=, ?page= и т.п. не плодят дубли. #}
     <link rel="canonical" href="{{ request.scheme }}://{{ request.get_host }}{{ request.path }}">
     {% block schema %}{% endblock %}
+    {% block head_extra %}{% endblock %}
     {# Service worker регистрируется с /sw.js (core/views.py::service_worker). #}
     <link rel="manifest" href="{% static 'manifest.json' %}">
     <meta name="mobile-web-app-capable" content="yes">

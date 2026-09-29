@@ -137,11 +137,11 @@
             <div class="dopx-section-eyebrow"><i class="ti ti-shield"></i>Модерация</div>
             <div class="dopx-section-title mb-3">Действия</div>
 
-            <form method="post" action="{% url 'dashboard:evaluation_session_delete' session.id %}"
+            {% if perms.evaluations.delete_evaluationsession %}<form method="post" action="{% url 'dashboard:evaluation_session_delete' session.id %}"
                   onsubmit="return confirm('Удалить сессию «' + '{{ session.user.username }} — {{ session.match.home_team.name }} vs {{ session.match.away_team.name }}' + '» вместе со всеми под-оценками? Действие необратимо, агрегаты матча будут пересчитаны.');">
                 {% csrf_token %}
                 <button type="submit" class="btn btn-sm btn-outline btn-error w-full"><i class="ti ti-trash"></i> Удалить сессию</button>
-            </form>
+            </form>{% endif %}
 
             <a href="{% url 'dashboard:user_detail' session.user.id %}" class="btn btn-sm btn-ghost w-full mt-2"><i class="ti ti-user"></i> Профиль пользователя</a>
             <a href="{% url 'dashboard:match_detail' session.match.id %}" class="btn btn-sm btn-ghost w-full mt-2"><i class="ti ti-ball-football"></i> Карточка матча</a>

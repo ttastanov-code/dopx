@@ -1,0 +1,2 @@
+<option value="">Без ключевого игрока</option>
+{% regroup players by team as teams %}{% for group in teams %}<optgroup label="{{ group.grouper.name }}">{% for p in group.list %}<option value="{{ p.pk }}">{{ p.full_name }}</option>{% endfor %}</optgroup>{% endfor %}

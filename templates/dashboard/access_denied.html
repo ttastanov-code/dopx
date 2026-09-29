@@ -5,7 +5,13 @@
 <div class="max-w-md mx-auto mt-16 text-center">
     <div class="text-5xl mb-4"><i class="ti ti-lock text-error"></i></div>
     <h1 class="text-xl font-bold mb-2">Доступ запрещён</h1>
-    <p class="text-sm opacity-60 mb-6">У вашей учётной записи нет доступа к этому разделу дашборда. Если это ошибка — обратитесь к администратору, чтобы он выдал доступ в разделе «Роли доступа».</p>
+    {% if missing_perms %}
+    <p class="text-sm opacity-60 mb-3">Раздел вам открыт, но для этого действия не хватает прав:</p>
+    <ul class="text-sm mb-4 space-y-1">{% for label in missing_perms %}<li class="badge badge-ghost">{{ label }}</li>{% endfor %}</ul>
+    <p class="text-xs opacity-50 mb-6">Права выдаёт администратор: Система → Доступы, группа сотрудника.</p>
+    {% else %}
+    <p class="text-sm opacity-60 mb-6">У вашей учётной записи нет доступа к этому разделу дашборда. Если это ошибка, попросите администратора выдать доступ: Система → Доступы.</p>
+    {% endif %}
     {% include 'errors/_access_exits.html' %}
 </div>
 {% endblock %}

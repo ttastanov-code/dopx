@@ -75,14 +75,14 @@
                         <i class="ti ti-message-2"></i> Ответить
                     </a>
                     {% if report.status == 'new' or report.status == 'in_progress' %}
-                    <form method="post" action="{% url 'dashboard:data_trust_resolve_report' report.id %}">
+                    {% if perms.notifications.change_contactsubmission %}<form method="post" action="{% url 'dashboard:data_trust_resolve_report' report.id %}">
                         {% csrf_token %}
                         <input type="hidden" name="status" value="resolved">
                         <input type="hidden" name="return_status" value="{{ trust.report_status_filter }}">
                         <button type="submit" class="btn btn-outline btn-sm">
                             <i class="ti ti-check"></i> Закрыть
                         </button>
-                    </form>
+                    </form>{% endif %}
                     {% endif %}
                 </div>
             </div>
@@ -128,12 +128,12 @@
                     <a href="{% url 'admin:parsers_parserdiscrepancy_change' d.id %}" class="btn btn-ghost btn-sm">
                         <i class="ti ti-note"></i> Заметка
                     </a>
-                    <form method="post" action="{% url 'dashboard:data_trust_review_discrepancy' d.id %}">
+                    {% if perms.parsers.change_parserdiscrepancy %}<form method="post" action="{% url 'dashboard:data_trust_review_discrepancy' d.id %}">
                         {% csrf_token %}
                         <button type="submit" class="btn btn-outline btn-sm">
                             <i class="ti ti-check"></i> Разобрано
                         </button>
-                    </form>
+                    </form>{% endif %}
                 </div>
             </div>
             {% endfor %}

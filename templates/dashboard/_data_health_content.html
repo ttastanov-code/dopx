@@ -70,12 +70,12 @@
                         <td><span class="badge badge-sm {% if match.status == 'live' %}badge-error{% else %}badge-ghost{% endif %}">{{ match.get_status_display }}</span></td>
                         <td><span class="badge badge-warning badge-sm badge-outline">нет составов</span></td>
                         <td>
-                            <form method="post" action="{% url 'dashboard:data_health_resync_match' match.id %}" class="inline">
+                            {% if perms.matches.change_match %}<form method="post" action="{% url 'dashboard:data_health_resync_match' match.id %}" class="inline">
                                 {% csrf_token %}
                                 <button type="submit" class="btn btn-xs btn-outline">
                                     <i class="ti ti-refresh"></i> Ресинк
                                 </button>
-                            </form>
+                            </form>{% endif %}
                         </td>
                     </tr>
                     {% endfor %}
@@ -88,12 +88,12 @@
                         <td><span class="badge badge-sm {% if match.status == 'live' %}badge-error{% else %}badge-ghost{% endif %}">{{ match.get_status_display }}</span></td>
                         <td><span class="badge badge-warning badge-sm badge-outline">нет событий</span></td>
                         <td>
-                            <form method="post" action="{% url 'dashboard:data_health_resync_match' match.id %}" class="inline">
+                            {% if perms.matches.change_match %}<form method="post" action="{% url 'dashboard:data_health_resync_match' match.id %}" class="inline">
                                 {% csrf_token %}
                                 <button type="submit" class="btn btn-xs btn-outline">
                                     <i class="ti ti-refresh"></i> Ресинк
                                 </button>
-                            </form>
+                            </form>{% endif %}
                         </td>
                     </tr>
                     {% endfor %}
@@ -205,12 +205,12 @@
                         <td><span class="badge badge-error badge-sm">{{ err.error_type }}</span></td>
                         <td class="text-xs opacity-70 max-w-md truncate" title="{{ err.error }}">{{ err.error }}</td>
                         <td>
-                            <form method="post" action="{% url 'dashboard:data_health_resync_match' err.match_id %}" class="inline">
+                            {% if perms.matches.change_match %}<form method="post" action="{% url 'dashboard:data_health_resync_match' err.match_id %}" class="inline">
                                 {% csrf_token %}
                                 <button type="submit" class="btn btn-xs btn-outline">
                                     <i class="ti ti-refresh"></i> Ресинк
                                 </button>
-                            </form>
+                            </form>{% endif %}
                         </td>
                     </tr>
                     {% endfor %}

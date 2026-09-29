@@ -320,6 +320,8 @@ UNFOLD = {
                     {"title": _("Оценки судей"), "icon": "gavel", "link": reverse_lazy("admin:evaluations_refereeevaluation_changelist"), "permission": admin_perm("evaluations_refereeevaluation")},
                     {"title": _("Оценки матча"), "icon": "reviews", "link": reverse_lazy("admin:evaluations_matchevaluation_changelist"), "permission": admin_perm("evaluations_matchevaluation")},
                     {"title": _("Мнения экспертов"), "icon": "record_voice_over", "link": reverse_lazy("admin:engagement_experttake_changelist"), "permission": admin_perm("engagement_experttake")},
+                    {"title": _("Эксперты"), "icon": "person_pin", "link": reverse_lazy("admin:engagement_expert_changelist"), "permission": admin_perm("engagement_expert")},
+                    {"title": _("Ссылки для экспертов"), "icon": "link", "link": reverse_lazy("admin:engagement_expertinvite_changelist"), "permission": admin_perm("engagement_expertinvite")},
                     {"title": _("Лиги с друзьями"), "icon": "groups", "link": reverse_lazy("admin:engagement_friendleague_changelist"), "permission": admin_perm("engagement_friendleague")},
                     {"title": _("Приглашения"), "icon": "person_add", "link": reverse_lazy("admin:engagement_referral_changelist"), "permission": admin_perm("engagement_referral")},
                     {"title": _("Серии дней"), "icon": "local_fire_department", "link": reverse_lazy("admin:engagement_dailystreak_changelist"), "permission": admin_perm("engagement_dailystreak")},

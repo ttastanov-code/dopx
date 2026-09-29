@@ -104,17 +104,17 @@
         </div>
 
         <section class="card bg-base-100 border border-base-300"><div class="card-body p-4 gap-2">
-            <button type="submit" form="duplicate-form" class="btn btn-sm btn-ghost justify-start"><i class="ti ti-copy"></i> Сделать копию</button>
+            {% if perms.partners.add_banner %}<button type="submit" form="duplicate-form" class="btn btn-sm btn-ghost justify-start"><i class="ti ti-copy"></i> Сделать копию</button>{% endif %}
             {% if banner.partner %}<a href="{% url 'dashboard:partner_detail' banner.partner.id %}" class="btn btn-sm btn-ghost justify-start"><i class="ti ti-building-store"></i> Карточка партнёра</a>{% endif %}
-            <button type="submit" form="delete-form" class="btn btn-sm btn-ghost text-error justify-start"><i class="ti ti-trash"></i> Удалить баннер</button>
+            {% if perms.partners.delete_banner %}<button type="submit" form="delete-form" class="btn btn-sm btn-ghost text-error justify-start"><i class="ti ti-trash"></i> Удалить баннер</button>{% endif %}
         </div></section>
         {% endif %}
     </div>
 </form>
 
 {% if banner %}
-<form id="duplicate-form" method="post" action="{% url 'dashboard:banner_duplicate' banner.id %}">{% csrf_token %}</form>
-<form id="delete-form" method="post" action="{% url 'dashboard:banner_delete' banner.id %}" onsubmit="return confirm('Удалить баннер вместе со статистикой? Это необратимо.')">{% csrf_token %}</form>
+{% if perms.partners.add_banner %}<form id="duplicate-form" method="post" action="{% url 'dashboard:banner_duplicate' banner.id %}">{% csrf_token %}</form>{% endif %}
+{% if perms.partners.delete_banner %}<form id="delete-form" method="post" action="{% url 'dashboard:banner_delete' banner.id %}" onsubmit="return confirm('Удалить баннер вместе со статистикой? Это необратимо.')">{% csrf_token %}</form>{% endif %}
 {% endif %}
 
 {{ zone_specs|json_script:"zone-specs" }}

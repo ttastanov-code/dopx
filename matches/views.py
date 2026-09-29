@@ -386,12 +386,11 @@ class MatchDetailView(DetailView):
         home_team_form = get_team_form(match.home_team, home_recent)
         away_team_form = get_team_form(match.away_team, away_recent)
 
-        # Мнение редакции — пока голосов мало, чтобы страница не была пустой.
-        low_votes = not match_agg or match_agg.total_votes < min_votes_for_display()
-        expert_takes = (
-            list(match.expert_takes.filter(is_published=True).select_related('key_player')[:3])
-            if low_votes and not ratings_hidden else []
-        )
+        # Мнения экспертов. Пока оценки скрыты, послематчевые мнения — только числом, чтобы не влиять
+        # на голос; превью, написанные до матча, видны всем.
+        published_takes = list(match.expert_takes.filter(is_published=True).select_related('expert', 'key_player'))
+        expert_takes = [t for t in published_takes if not ratings_hidden or t.is_preview]
+        expert_takes_hidden = len(published_takes) - len(expert_takes)
 
         # «Спорим?» — друг прислал вызов по ссылке.
         challenger = None
@@ -409,6 +408,7 @@ class MatchDetailView(DetailView):
         context.update({
             'daily_polls': match_polls,
             'expert_takes': expert_takes,
+            'expert_takes_hidden': expert_takes_hidden,
             'no_votes': no_votes,
             'challenger': challenger,
             'match_aggregate': match_agg,

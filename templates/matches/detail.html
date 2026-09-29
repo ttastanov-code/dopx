@@ -106,25 +106,7 @@
 
             {% include 'engagement/_polls.html' %}
 
-            {% if expert_takes %}
-            <div class="md-side-card">
-                <div class="md-side-card__head flex items-center gap-2">
-                    <i class="ti ti-microphone"></i>
-                    <h3 class="font-extrabold text-base md:text-lg">Мнение экспертов DOPX</h3>
-                </div>
-                <div class="p-4 sm:p-5 space-y-4">
-                    {% for take in expert_takes %}
-                    <figure class="dx-expert-take">
-                        <blockquote>{{ take.text|linebreaksbr }}</blockquote>
-                        <figcaption>
-                            <span>{{ take.author_title }}</span>
-                            {% if take.key_player %}<a href="{% url 'players:detail' take.key_player.id %}"><i class="ti ti-star"></i> {{ take.key_player.full_name }}</a>{% endif %}
-                        </figcaption>
-                    </figure>
-                    {% endfor %}
-                </div>
-            </div>
-            {% endif %}
+            {% include 'engagement/_expert_takes.html' %}
 
             {% comment %}
             === ТУРНИРНАЯ ТАБЛИЦА ПЕРЕД МАТЧЕМ ===

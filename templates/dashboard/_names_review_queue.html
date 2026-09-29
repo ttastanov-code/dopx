@@ -11,13 +11,13 @@
             </div>
             {% if matches_count > 0 %}
             {# «Подтвердить все» — только для карточек, где имя уже верное (matches_current=True). #}
-            <form method="post" action="{% url 'dashboard:names_review_bulk_confirm_matches' %}" class="ml-auto"
+            {% if perms.parsers.change_nameverificationsuggestion and perms.parsers.add_confirmednamecorrection %}<form method="post" action="{% url 'dashboard:names_review_bulk_confirm_matches' %}" class="ml-auto"
                   onsubmit="return confirm('Подтвердить все {{ matches_count }} карточки, где Gemini написал «текущее написание верно»? Реальные предложения изменить ФИО это не затронет.');">
                 {% csrf_token %}
                 <button type="submit" class="btn btn-success btn-outline btn-xs">
                     <i class="ti ti-checks"></i> Подтвердить все совпадающие ({{ matches_count }})
                 </button>
-            </form>
+            </form>{% endif %}
             {% endif %}
         </div>
 
@@ -39,7 +39,7 @@
                 {% if s.reasoning %}
                 <p class="text-xs opacity-60 mb-3 leading-snug">{{ s.reasoning }}</p>
                 {% endif %}
-                <form method="post" action="{% url 'dashboard:names_review_action' s.id %}" class="space-y-2">
+                {% if perms.parsers.change_nameverificationsuggestion and perms.parsers.add_confirmednamecorrection %}<form method="post" action="{% url 'dashboard:names_review_action' s.id %}" class="space-y-2">
                     {% csrf_token %}
                     <div class="flex gap-2">
                         <input type="text" name="first_name" value="{{ s.suggested_first_name }}" class="input input-sm input-bordered flex-1" placeholder="Имя">
@@ -53,7 +53,7 @@
                             <i class="ti ti-x"></i> Отклонить
                         </button>
                     </div>
-                </form>
+                </form>{% endif %}
             </div>
             {% endfor %}
         </div>
@@ -85,10 +85,10 @@
                     <span class="font-medium">{{ s.current_first_name }} {{ s.current_last_name }}</span>
                     <span class="opacity-60 block mt-0.5">{{ s.error_message }}</span>
                 </div>
-                <form method="post" action="{% url 'dashboard:names_review_action' s.id %}">
+                {% if perms.parsers.change_nameverificationsuggestion and perms.parsers.add_confirmednamecorrection %}<form method="post" action="{% url 'dashboard:names_review_action' s.id %}">
                     {% csrf_token %}
                     <button type="submit" name="action" value="reject" class="btn btn-xs btn-ghost">Скрыть</button>
-                </form>
+                </form>{% endif %}
             </div>
             {% endfor %}
         </div>

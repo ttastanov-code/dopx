@@ -1,0 +1,25 @@
+{# Одно мнение эксперта. Длинный текст свёрнут: чекбокс + label, без JS. Стили — css/ui.css (dx-take). #}
+<article class="dx-take">
+    <header class="dx-take__head">
+        <span class="dx-take__avatar">{% if take.expert.photo %}<img src="{{ take.expert.photo.url }}" alt="" loading="lazy">{% else %}{{ take.initials }}{% endif %}</span>
+        <span class="dx-take__who">
+            <b>{{ take.display_name }}</b>
+            {% if take.display_title %}<small>{{ take.display_title }}</small>{% endif %}
+        </span>
+        {% if take.pk and take.is_preview %}<span class="dx-take__tag" title="Написано до начала матча"><i class="ti ti-clock"></i> Перед матчем</span>{% endif %}
+        {% if can_edit and take.pk and perms.engagement.change_experttake %}
+        <a href="{% url 'dashboard:expert_take_edit' take.pk %}?next={{ request.path|urlencode }}%23expert-takes" class="dx-take__edit" title="Править в дашборде"><i class="ti ti-pencil"></i></a>
+        {% endif %}
+    </header>
+    {% if take.headline %}<p class="dx-take__headline">{{ take.headline }}</p>{% endif %}
+    {% if take.is_long %}<input type="checkbox" id="take-more-{{ take.pk|default:'preview' }}" class="dx-take__toggle" hidden>{% endif %}
+    <div class="dx-take__text{% if take.is_long %} is-long{% endif %}">{{ take.text|linebreaks }}</div>
+    {% if take.is_long %}<label for="take-more-{{ take.pk|default:'preview' }}" class="dx-take__more"></label>{% endif %}
+    {% if take.key_player %}
+    <a href="{% url 'players:detail' take.key_player.id %}" class="dx-take__player">
+        {% if take.key_player.photo_display %}<img src="{{ take.key_player.photo_display }}" alt="" loading="lazy">{% else %}<i class="ti ti-user"></i>{% endif %}
+        <span><small>Ключевой игрок</small>{{ take.key_player.full_name }}</span>
+        <i class="ti ti-chevron-right"></i>
+    </a>
+    {% endif %}
+</article>

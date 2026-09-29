@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+<div class="mb-4">
+    <a href="{% url 'dashboard:experts' %}#experts" class="text-xs opacity-60 hover:opacity-100"><i class="ti ti-arrow-left"></i> Эксперты</a>
+    <div class="dopx-section-title mt-1">{% if expert %}{{ expert.name }}{% else %}Новый эксперт{% endif %}</div>
+</div>
+
+<form method="post" enctype="multipart/form-data" class="max-w-xl space-y-4">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ next }}">
+    <section class="card bg-base-100 border border-base-300"><div class="card-body p-4 gap-3">
+        {% include 'dashboard/_banner_field.html' with field=form.name %}
+        {% include 'dashboard/_banner_field.html' with field=form.title %}
+        {% include 'dashboard/_banner_field.html' with field=form.photo %}
+        <label class="flex items-center gap-2 cursor-pointer text-sm">{{ form.is_active }} <span>Показывать в списке при добавлении мнения</span></label>
+    </div></section>
+    <div class="flex justify-end gap-2">
+        <a href="{% url 'dashboard:experts' %}#experts" class="btn btn-sm btn-ghost">Отмена</a>
+        <button type="submit" class="btn btn-sm btn-primary"><i class="ti ti-device-floppy"></i> Сохранить</button>
+    </div>
+</form>
+{% endblock %}

@@ -1,7 +1,7 @@
 # dashboard/urls.py
 from django.urls import path
 
-from . import access_views, views, views_2fa
+from . import access_views, views, views_2fa, views_experts
 
 app_name = "dashboard"
 
@@ -22,6 +22,17 @@ urlpatterns = [
     path("system-status/", views.system_status, name="system_status"),
     path("mourning/", views.mourning_mode, name="mourning"),
     path("social/", views.social_content, name="social_content"),
+    path("experts/", views_experts.experts, name="experts"),
+    path("experts/takes/new/", views_experts.expert_take_create, name="expert_take_create"),
+    path("experts/takes/players/", views_experts.expert_take_players, name="expert_take_players"),
+    path("experts/takes/<uuid:take_id>/", views_experts.expert_take_edit, name="expert_take_edit"),
+    path("experts/takes/<uuid:take_id>/toggle/", views_experts.expert_take_toggle, name="expert_take_toggle"),
+    path("experts/takes/<uuid:take_id>/delete/", views_experts.expert_take_delete, name="expert_take_delete"),
+    path("experts/new/", views_experts.expert_edit, name="expert_create"),
+    path("experts/invites/new/", views_experts.expert_invite_create, name="expert_invite_create"),
+    path("experts/invites/<uuid:invite_id>/<str:action>/", views_experts.expert_invite_action,
+         name="expert_invite_action"),
+    path("experts/<uuid:expert_id>/", views_experts.expert_edit, name="expert_edit"),
     path("evaluations/", views.evaluation_sessions_list, name="evaluation_sessions_list"),
     path("evaluations/<uuid:session_id>/", views.evaluation_session_detail, name="evaluation_session_detail"),
     path("evaluations/<uuid:session_id>/delete/", views.evaluation_session_delete, name="evaluation_session_delete"),

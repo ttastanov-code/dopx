@@ -117,7 +117,7 @@ class DashboardSectionAccessMiddleware:
     def _enforce(self, request):
         section = resolve_section_for_path(request.path)
         if user_can_access_section(request.user, section):
-            return None
+            return self._enforce_model_perms(request)
         logger.warning(
             f"DASHBOARD ACCESS DENIED: user={request.user.username} "
             f"path={request.path} section={section}"
@@ -125,5 +125,28 @@ class DashboardSectionAccessMiddleware:
         return render(
             request, "dashboard/access_denied.html",
             {"section_label": section, "page_title": "Доступ запрещён — DOPX Staff"},
+            status=403,
+        )
+
+    def _enforce_model_perms(self, request):
+        """Права на модели (dashboard/permissions.py): те же галочки, что в /admin/."""
+        from django.urls import Resolver404, resolve
+
+        from .permissions import missing_perms, perm_label
+
+        try:
+            match = resolve(request.path_info)
+        except Resolver404:
+            return None
+        missing = missing_perms(request.user, match.url_name or "", request.method)
+        if not missing:
+            return None
+        logger.warning(
+            f"DASHBOARD PERMISSION DENIED: user={request.user.username} "
+            f"path={request.path} method={request.method} missing={missing}"
+        )
+        return render(
+            request, "dashboard/access_denied.html",
+            {"missing_perms": [perm_label(p) for p in missing], "page_title": "Доступ запрещён — DOPX Staff"},
             status=403,
         )

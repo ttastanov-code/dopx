@@ -1,0 +1,131 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+{# Мнение эксперта о матче. Предпросмотр справа — та же разметка, что на странице матча. #}
+<div class="mb-4 flex flex-wrap items-end justify-between gap-3">
+    <div>
+        <a href="{% url 'dashboard:experts' %}" class="text-xs opacity-60 hover:opacity-100"><i class="ti ti-arrow-left"></i> Все мнения</a>
+        <div class="dopx-section-title mt-1">{% if take %}Правка мнения{% else %}Новое мнение{% endif %}</div>
+    </div>
+    {% if match %}
+    <a href="{% url 'matches:detail' match.id %}#expert-takes" target="_blank" class="btn btn-sm btn-outline"><i class="ti ti-external-link"></i> Страница матча</a>
+    {% endif %}
+</div>
+
+<form method="post" id="take-form" class="grid grid-cols-1 lg:grid-cols-5 gap-4">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ next }}">
+    <div class="lg:col-span-3 space-y-4">
+        {% if form.non_field_errors %}<div class="alert alert-error text-sm">{{ form.non_field_errors }}</div>{% endif %}
+
+        <section class="card bg-base-100 border border-base-300"><div class="card-body p-4 gap-3">
+            <div class="dopx-section-eyebrow"><i class="ti ti-ball-football"></i>Матч и автор</div>
+            {% include 'dashboard/_banner_field.html' with field=form.match %}
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div class="flex flex-col gap-1">
+                    {% include 'dashboard/_banner_field.html' with field=form.expert %}
+                    {% if perms.engagement.add_expert %}<a href="{% url 'dashboard:expert_create' %}?next={{ request.get_full_path|urlencode }}" class="text-[11px] text-primary hover:underline"><i class="ti ti-user-plus"></i> Добавить эксперта</a>{% endif %}
+                </div>
+                <div data-author-title>{% include 'dashboard/_banner_field.html' with field=form.author_title %}</div>
+            </div>
+        </div></section>
+
+        <section class="card bg-base-100 border border-base-300"><div class="card-body p-4 gap-3">
+            <div class="dopx-section-eyebrow"><i class="ti ti-message-2"></i>Мнение</div>
+            {% include 'dashboard/_banner_field.html' with field=form.headline %}
+            {% include 'dashboard/_banner_field.html' with field=form.text %}
+            <div class="text-[11px] opacity-50 -mt-1" data-counter></div>
+            {% include 'dashboard/_banner_field.html' with field=form.key_player %}
+            <label class="flex items-center gap-2 cursor-pointer text-sm">{{ form.is_published }} <span>Опубликовано (снимите, чтобы сохранить черновик)</span></label>
+        </div></section>
+
+        <div class="flex flex-wrap justify-end gap-2">
+            {% if take %}
+            {% if perms.engagement.delete_experttake %}<button type="submit" form="take-delete" class="btn btn-sm btn-ghost text-error mr-auto"><i class="ti ti-trash"></i> Удалить</button>{% endif %}
+            {% endif %}
+            <a href="{{ next|default:'/staff/dashboard/experts/' }}" class="btn btn-sm btn-ghost">Отмена</a>
+            {% if not take or perms.engagement.change_experttake %}
+            <button type="submit" name="then" value="list" class="btn btn-sm btn-outline"><i class="ti ti-device-floppy"></i> Сохранить</button>
+            <button type="submit" name="then" value="match" class="btn btn-sm btn-primary"><i class="ti ti-eye"></i> Сохранить и открыть матч</button>
+            {% else %}<span class="text-xs opacity-60 self-center">Только просмотр: нет права на изменение</span>{% endif %}
+        </div>
+    </div>
+
+    <div class="lg:col-span-2 space-y-4">
+        <section class="card bg-base-100 border border-base-300 lg:sticky lg:top-20"><div class="card-body p-4 gap-3">
+            <div class="dopx-section-eyebrow"><i class="ti ti-eye"></i>Как увидят на странице матча</div>
+            <div class="md-side-card" data-live-ignore>
+                <div class="md-side-card__head flex items-center gap-2"><i class="ti ti-microphone"></i><h3 class="font-extrabold text-base">Мнение эксперта</h3></div>
+                <div class="dx-takes" data-preview>
+                    <article class="dx-take">
+                        <header class="dx-take__head">
+                            <span class="dx-take__avatar" data-p-avatar>D</span>
+                            <span class="dx-take__who"><b data-p-name>Редакция DOPX</b><small data-p-title></small></span>
+                        </header>
+                        <p class="dx-take__headline" data-p-headline></p>
+                        <div class="dx-take__text" data-p-text></div>
+                        <div class="dx-take__player" data-p-player><i class="ti ti-user"></i><span><small>Ключевой игрок</small><em data-p-player-name class="not-italic"></em></span><i class="ti ti-chevron-right"></i></div>
+                    </article>
+                </div>
+            </div>
+            {% if other_takes %}
+            <div class="text-xs opacity-60">К этому матчу уже есть: {% for t in other_takes %}{{ t.display_name }}{% if not t.is_published %} (черновик){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}. Все мнения показываются друг под другом.</div>
+            {% endif %}
+        </div></section>
+    </div>
+</form>
+{% if take %}
+{% if perms.engagement.delete_experttake %}<form method="post" id="take-delete" action="{% url 'dashboard:expert_take_delete' take.pk %}" onsubmit="return confirm('Удалить мнение насовсем?')">{% csrf_token %}<input type="hidden" name="next" value="{% url 'dashboard:experts' %}"></form>{% endif %}
+{% endif %}
+
+{{ experts_json|json_script:"experts-data" }}
+<script>
+(function () {
+    const form = document.getElementById('take-form');
+    const $ = (sel) => form.querySelector(sel);
+    const experts = JSON.parse(document.getElementById('experts-data').textContent || '{}');
+    const f = { match: $('[name=match]'), expert: $('[name=expert]'), author: $('[name=author_title]'), headline: $('[name=headline]'), text: $('[name=text]'), player: $('[name=key_player]') };
+    const p = { avatar: $('[data-p-avatar]'), name: $('[data-p-name]'), title: $('[data-p-title]'), headline: $('[data-p-headline]'), text: $('[data-p-text]'), player: $('[data-p-player]'), playerName: $('[data-p-player-name]') };
+
+    function paragraphs(text) {
+        const box = document.createDocumentFragment();
+        text.trim().split(/\n\s*\n/).forEach((chunk) => {
+            if (!chunk.trim()) return;
+            const el = document.createElement('p');
+            chunk.split('\n').forEach((line, i) => { if (i) el.appendChild(document.createElement('br')); el.appendChild(document.createTextNode(line)); });
+            box.appendChild(el);
+        });
+        return box;
+    }
+
+    function render() {
+        const ex = experts[f.expert.value];
+        $('[data-author-title]').hidden = !!ex;
+        p.name.textContent = ex ? ex.name : (f.author.value.trim() || 'Редакция DOPX');
+        p.title.textContent = ex ? ex.title : '';
+        p.avatar.textContent = '';
+        if (ex && ex.photo) { const img = document.createElement('img'); img.src = ex.photo; p.avatar.appendChild(img); }
+        else p.avatar.textContent = ex ? ex.initials : 'D';
+        p.headline.textContent = f.headline.value;
+        p.headline.hidden = !f.headline.value.trim();
+        p.text.replaceChildren(paragraphs(f.text.value || 'Текст мнения появится здесь.'));
+        const opt = f.player.selectedOptions[0];
+        p.player.hidden = !f.player.value;
+        p.playerName.textContent = opt ? opt.textContent : '';
+        const n = f.text.value.length;
+        $('[data-counter]').textContent = `${n} / 3000 символов` + (n > {{ long_chars }} ? ' · на сайте свернётся после ~7 строк' : '');
+    }
+
+    // Смена матча — список игроков этого матча.
+    f.match.addEventListener('change', async () => {
+        const r = await fetch(`{% url 'dashboard:expert_take_players' %}?match=${encodeURIComponent(f.match.value)}`, { credentials: 'same-origin' });
+        if (r.ok) { f.player.innerHTML = await r.text(); render(); }
+    });
+    form.addEventListener('input', render);
+    form.addEventListener('change', render);
+    render();
+})();
+</script>
+{% endblock %}

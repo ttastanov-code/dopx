@@ -1,8 +1,8 @@
 {% load dashboard_extras %}
 {% comment %}
-Меню staff-дашборда: горизонтальные вкладки.
-Состав — dashboard/nav.py: недоступные вкладки и пустые группы не рендерятся,
-при малом числе вкладок — один ряд. Реальная проверка доступа — в middleware.
+Меню staff-дашборда: разделы (верхний ряд) и страницы текущего раздела (второй ряд).
+На компьютере у раздела при наведении выпадает список страниц. Состав — dashboard/nav.py.
+Реальная проверка доступа — в middleware.
 {% endcomment %}
 
 {% if page_title %}
@@ -12,22 +12,39 @@
 </div>
 {% endif %}
 
-{% dashboard_nav user as nav %}
+{% dashboard_nav user active_tab as nav %}
 <div class="dopx-toolbar">
-    <nav class="dopx-tabs">
-        {% for row in nav.rows %}
-        <div class="dopx-tabs-row">
-            {% for group in row %}
-            {% if not forloop.first %}<span class="dopx-tabs__divider"></span>{% endif %}
-            {% for item in group %}
-            <a href="{{ item.url }}" class="dopx-tab {% if active_tab == item.key %}dopx-tab--active{% endif %}"><i class="ti {{ item.icon }}"></i>{{ item.label }}</a>
+    <nav class="dnav" aria-label="Разделы дашборда">
+        <div class="dnav__cats">
+            {% for group in nav.groups %}
+            <div class="dnav__cat{% if group.active %} is-active{% endif %}">
+                <a href="{{ group.url }}" class="dnav__cat-link"{% if group.active %} aria-current="true"{% endif %}>
+                    <i class="ti {{ group.icon }}"></i><span>{{ group.label }}</span>
+                    {% if group.items|length > 1 %}<i class="ti ti-chevron-down dnav__chev"></i>{% endif %}
+                </a>
+                {% if group.items|length > 1 %}
+                <div class="dnav__pop" role="menu">
+                    {% for item in group.items %}
+                    <a href="{{ item.url }}" class="dnav__pop-item{% if item.active %} is-active{% endif %}{% if item.warn %} is-warn{% endif %}" role="menuitem">
+                        <i class="ti {{ item.icon }}"></i>
+                        <span><b>{{ item.label }}</b>{% if item.hint %}<small>{{ item.hint }}</small>{% endif %}</span>
+                    </a>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
             {% endfor %}
-            {% endfor %}
-            {% if forloop.last %}{% include 'dashboard/_nav_tail.html' %}{% endif %}
+            <span class="dnav__spacer"></span>
+            <a href="{% url 'core:home' %}" class="dnav__icon" title="Открыть сайт"><i class="ti ti-external-link"></i></a>
+            {% if nav.show_admin %}<a href="{% url 'admin:index' %}" class="dnav__icon" title="Django admin"><i class="ti ti-settings"></i></a>{% endif %}
         </div>
-        {% empty %}
-        <div class="dopx-tabs-row">{% include 'dashboard/_nav_tail.html' %}</div>
-        {% endfor %}
+        {% if nav.current and nav.current.items|length > 1 %}
+        <div class="dnav__pages">
+            {% for item in nav.current.items %}
+            <a href="{{ item.url }}" class="dopx-tab{% if item.active %}{% if item.warn %} dopx-tab--active-warn{% else %} dopx-tab--active{% endif %}{% elif item.warn %} dopx-tab--warn{% endif %}"><i class="ti {{ item.icon }}"></i>{{ item.label }}</a>
+            {% endfor %}
+        </div>
+        {% endif %}
     </nav>
 </div>
 
@@ -40,50 +57,73 @@
 .dopx-page-header { margin-bottom: 0.875rem; display: flex; align-items: center; gap: 0.625rem; }
 .dopx-page-header h1 { font-size: 1.375rem; font-weight: 700; letter-spacing: -0.01em; line-height: 1.2; }
 
-/* --- Панель вкладок ---
-   Узкие экраны: одна лента с горизонтальным скроллом.
-   От 1024px: два ряда (разбивка вручную в HTML); меньше — первый ряд не помещается.
-   overflow-x на ряду — на случай нестандартного масштаба. */
+/* --- Меню: разделы + страницы раздела. Узкие экраны — горизонтальная прокрутка рядов. --- */
 .dopx-toolbar {
-    margin-bottom: 1.5rem;
-    max-width: 100%;
-    padding: 0.25rem;
-    border-radius: 0.75rem;
-    background: color-mix(in oklab, var(--color-base-content) 5%, transparent);
-    border: 1px solid color-mix(in oklab, var(--color-base-content) 6%, transparent);
+    margin-bottom: 1.5rem; max-width: 100%; padding: 0.3rem;
+    border-radius: 0.9rem;
+    background: color-mix(in oklab, var(--color-base-content) 4%, transparent);
+    border: 1px solid color-mix(in oklab, var(--color-base-content) 7%, transparent);
 }
-.dopx-tabs {
-    display: flex; flex-wrap: nowrap; align-items: center; gap: 0.125rem;
-    overflow-x: auto;
-    scrollbar-width: none;
+.dnav__cats, .dnav__pages { display: flex; align-items: center; gap: 0.2rem; overflow-x: auto; scrollbar-width: none; }
+.dnav__cats::-webkit-scrollbar, .dnav__pages::-webkit-scrollbar { display: none; }
+.dnav__pages {
+    margin-top: 0.3rem; padding: 0.3rem; border-radius: 0.65rem;
+    background: var(--color-base-100);
+    box-shadow: 0 1px 2px color-mix(in oklab, var(--color-base-content) 6%, transparent);
 }
-.dopx-tabs::-webkit-scrollbar { display: none; }
-/* Мобильный режим: обёртки рядов растворяются, все пункты в одной ленте. */
-.dopx-tabs-row { display: contents; }
+.dnav__cat { position: relative; flex-shrink: 0; }
+.dnav__cat-link {
+    display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.5rem 0.8rem; border-radius: 0.6rem;
+    font-size: 0.85rem; font-weight: 600; white-space: nowrap;
+    color: color-mix(in oklab, var(--color-base-content) 65%, transparent);
+    transition: background-color .12s ease, color .12s ease;
+}
+.dnav__cat-link > .ti:first-child { font-size: 1rem; }
+.dnav__chev { font-size: 0.75rem; opacity: .45; margin-left: -0.1rem; transition: transform .15s ease; }
+.dnav__cat-link:hover { color: var(--color-base-content); background: color-mix(in oklab, var(--color-base-content) 7%, transparent); }
+.dnav__cat.is-active .dnav__cat-link { color: var(--color-primary-content); background: var(--color-primary); box-shadow: 0 1px 3px color-mix(in oklab, var(--color-primary) 35%, transparent); }
+.dnav__cat.is-active .dnav__chev { opacity: .7; }
+.dnav__spacer { flex: 1 1 auto; min-width: 0.5rem; }
+.dnav__icon { flex-shrink: 0; width: 2.1rem; height: 2.1rem; display: grid; place-items: center; border-radius: 0.6rem; color: color-mix(in oklab, var(--color-base-content) 55%, transparent); }
+.dnav__icon:hover { color: var(--color-base-content); background: color-mix(in oklab, var(--color-base-content) 7%, transparent); }
 
-@media (min-width: 1024px) {
-    /* Десктоп: два ряда, все пункты видны сразу. */
-    .dopx-tabs {
-        flex-wrap: nowrap;
-        flex-direction: column;
-        align-items: stretch;
-        gap: 0.1875rem;
-        overflow: visible;
-    }
-    .dopx-tabs-row {
-        display: flex; flex-wrap: nowrap; align-items: center; gap: 0.125rem;
-        overflow-x: auto;
-        scrollbar-width: none;
-    }
-    .dopx-tabs-row::-webkit-scrollbar { display: none; }
+/* Телефон: пять разделов равными кнопками, иконка над подписью. */
+@media (max-width: 639px) {
+    .dnav__cats { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); overflow: visible; }
+    .dnav__cat-link { width: 100%; flex-direction: column; gap: 0.2rem; padding: 0.45rem 0.2rem; font-size: 0.72rem; }
+    .dnav__cat-link > .ti:first-child { font-size: 1.15rem; }
+    .dnav__chev, .dnav__spacer, .dnav__icon { display: none; }
 }
 
-.dopx-tabs__divider {
-    width: 1px; align-self: stretch; margin: 0.25rem 0.375rem;
-    background: color-mix(in oklab, var(--color-base-content) 13%, transparent);
-    flex-shrink: 0;
+/* Выпадающий список раздела — только там, где есть наведение (компьютер). */
+.dnav__pop { display: none; }
+@media (hover: hover) and (min-width: 1024px) {
+    .dnav__cats { overflow: visible; }
+    .dnav__pop {
+        position: absolute; top: calc(100% + 0.35rem); left: 0; z-index: 60; min-width: 16rem;
+        display: grid; gap: 0.1rem; padding: 0.35rem; border-radius: 0.9rem;
+        background: var(--color-base-100);
+        border: 1px solid color-mix(in oklab, var(--color-base-content) 8%, transparent);
+        box-shadow: 0 12px 32px -8px color-mix(in oklab, var(--color-base-content) 25%, transparent);
+        opacity: 0; visibility: hidden; transform: translateY(-4px);
+        transition: opacity .12s ease, transform .12s ease, visibility 0s linear .12s;
+    }
+    /* Мостик над зазором, чтобы список не закрывался по пути курсора. */
+    .dnav__pop::before { content: ""; position: absolute; left: 0; right: 0; top: -0.45rem; height: 0.45rem; }
+    .dnav__cat:hover .dnav__pop, .dnav__cat:focus-within .dnav__pop {
+        opacity: 1; visibility: visible; transform: none; transition-delay: 0s, 0s, 0s;
+    }
+    .dnav__cat:hover .dnav__chev { transform: rotate(180deg); }
 }
-.dopx-tabs__spacer { flex: 1 1 auto; min-width: 0.75rem; }
+.dnav__pop-item { display: flex; align-items: center; gap: 0.65rem; padding: 0.5rem 0.6rem; border-radius: 0.6rem; }
+.dnav__pop-item > .ti { width: 2rem; height: 2rem; flex: none; display: grid; place-items: center; border-radius: 0.55rem; font-size: 1rem; color: var(--color-primary); background: color-mix(in oklab, var(--color-primary) 10%, transparent); }
+.dnav__pop-item span { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
+.dnav__pop-item b { font-size: 0.85rem; font-weight: 600; }
+.dnav__pop-item small { font-size: 0.72rem; opacity: .55; white-space: nowrap; }
+.dnav__pop-item:hover { background: color-mix(in oklab, var(--color-base-content) 5%, transparent); }
+.dnav__pop-item.is-active { background: color-mix(in oklab, var(--color-primary) 10%, transparent); }
+.dnav__pop-item.is-active b { color: var(--color-primary); }
+.dnav__pop-item.is-warn > .ti { color: var(--color-warning); background: color-mix(in oklab, var(--color-warning) 14%, transparent); }
 
 .dopx-tab {
     display: inline-flex; align-items: center; gap: 0.375rem;
@@ -104,8 +144,6 @@
     box-shadow: 0 1px 3px color-mix(in oklab, var(--color-primary) 35%, transparent);
 }
 .dopx-tab--active:hover { background: var(--color-primary); }
-.dopx-tab--icon-only { padding-left: 0.5625rem; padding-right: 0.5625rem; }
-.dopx-tab--icon-only i { font-size: 1rem; margin: 0; opacity: 0.8; }
 .dopx-tab--warn { color: color-mix(in oklab, var(--color-warning) 75%, var(--color-base-content) 40%); }
 .dopx-tab--warn:hover { color: var(--color-warning); background: color-mix(in oklab, var(--color-warning) 12%, transparent); }
 .dopx-tab--active-warn {
@@ -206,7 +244,9 @@ body:has(.dopx-toolbar) .table tbody tr:hover { background: color-mix(in oklab, 
 <script>
 (function () {
     function scrollActiveIntoView() {
-        var active = document.querySelector('.dopx-tab--active, .dopx-tab--active-warn');
+        var active = document.querySelector('.dnav__pages .dopx-tab--active, .dnav__pages .dopx-tab--active-warn');
+        var cat = document.querySelector('.dnav__cat.is-active');
+        if (cat) cat.scrollIntoView({ behavior: 'instant', block: 'nearest', inline: 'nearest' });
         if (active) {
             active.scrollIntoView({ behavior: 'instant', block: 'nearest', inline: 'center' });
         }
