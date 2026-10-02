@@ -35,7 +35,7 @@
             <a href="{% url 'dashboard:channel_post' p.pk %}" class="flex items-start gap-3 px-4 py-3 border-b border-base-200 last:border-0 hover:bg-base-200/50">
                 <span class="badge badge-sm shrink-0 mt-0.5 {% if p.status == 'failed' %}badge-error{% elif p.status == 'scheduled' %}badge-primary badge-outline{% else %}badge-ghost{% endif %}">{{ p.get_status_display }}</span>
                 <span class="min-w-0 flex-1">
-                    <span class="text-xs opacity-60">{{ p.get_kind_display }}{% if p.scheduled_at and p.status == 'scheduled' %} · {{ p.scheduled_at|date:"d.m H:i" }}{% endif %}{% if p.image or p.tg_file_id %} · 📷{% endif %}</span>
+                    <span class="text-xs opacity-60">{{ p.get_kind_display }}{% if p.scheduled_at and p.status == 'scheduled' %} · {{ p.scheduled_at|date:"d.m H:i" }}{% endif %}{% if p.image or p.tg_file_id %} · 📷{% endif %}{% if p.images %} · альбом{% endif %}{% if p.poll %} · опрос{% endif %}{% if p.by_ai %} · ✍️ Claude{% endif %}</span>
                     <span class="block text-sm truncate">{{ p.text|striptags|truncatechars:140 }}</span>
                     {% if p.error %}<span class="block text-xs text-error">{{ p.error }}</span>{% endif %}
                 </span>

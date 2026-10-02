@@ -206,7 +206,7 @@ def post_view(user, pk):
     p = ChannelPost.objects.filter(pk=pk).first()
     if not p:
         return header() + "Пост не найден.", back(("← Канал", cb("chan")))
-    meta = f"{p.get_kind_display()} · {p.get_status_display()}"
+    meta = f"{p.get_kind_display()} · {p.get_status_display()}" + (" · ✍️ Claude" if p.by_ai else "")
     if p.scheduled_at and p.status == "scheduled":
         meta += f" на {timezone.localtime(p.scheduled_at):%d.%m %H:%M}"
     if p.error:
@@ -230,7 +230,8 @@ def chan_modes_view(user, arg=""):
     lines = [header() + "⚙️ <b>Автопостинг в канал</b>", "",
              "🟢 Сразу — бот публикует сам", "🟡 С одобрением — черновик сначала приходит вам", "⚪️ Не готовить — выключено", "",
              "Нажмите на тип поста, чтобы поменять режим."]
-    rows = [[(f"{MODE_ICON[cfg.mode(k)]} {labels[k]} — {dict(MODES)[cfg.mode(k)]}", cb("chan_kind", k))] for k in KIND_HINTS]
+    short = {"controversy": "Спорный момент"}
+    rows = [[(f"{MODE_ICON[cfg.mode(k)]} {short.get(k, labels[k])} — {dict(MODES)[cfg.mode(k)]}", cb("chan_kind", k))] for k in KIND_HINTS]
     if can(user, "channel", "adminbot.delete_channelpost"):
         rows.append([("🌙 Ночью не публиковать: " + ("да" if cfg.quiet_hours else "нет"), cb("chan_mode", "quiet:toggle"))])
     else:
@@ -328,14 +329,13 @@ def act_chan_round(user, arg=""):
 
 
 def act_chan_samples(user, arg=""):
-    from . import channel
+    from .tasks import make_samples
 
-    posts = channel.sample_posts()
-    audit(user, f"Пробные посты канала: {len(posts)}", {})
-    if not posts:
-        return "Не из чего собрать: нет матчей, оценок и мнений."
-    return (f"🧪 Готово {len(posts)} пробных черновиков — по одному каждого типа, из настоящих данных. "
-            "Откройте «Черновики», посмотрите тексты; любой можно опубликовать, чтобы увидеть, как он выглядит в канале.")
+    link = BotLink.objects.filter(user=user).first()
+    make_samples.delay(link.telegram_id if link else None)
+    audit(user, "Пробные посты канала", {})
+    return ("🧪 Готовлю по черновику каждого формата из настоящих данных — пришлю сообщение, когда будут готовы "
+            "(с Claude это минута-две). В канал ничего не уйдёт без вашего нажатия.")
 
 
 def act_chan_mode(user, arg):
@@ -632,6 +632,75 @@ def _toggle_topic(user, key):
     return topics_view(user)
 
 
+# ---------------- Общие настройки «ИИ и оповещения»
+# Кнопка настройки: иконка, короткое имя, короткие подписи вкл/выкл для да/нет.
+SETTING_BUTTONS = {
+    "bot_ai_posts": ("🤖", "Посты в канал", "ИИ", "шаблон, без ИИ"),
+    "posts_ai_provider": ("✍️", "ИИ для постов", "", ""),
+    "names_ai_provider": ("🔎", "ИИ для ФИО", "", ""),
+    "bot_ai_chat": ("💬", "Вопросы боту", "включены", "выключены"),
+    "bot_alerts": ("🚨", "Сбои сервера", "", ""),
+}
+
+
+def _setting_value(f) -> str:
+    icon, name, on, off = SETTING_BUTTONS[f["key"]]
+    return (on if f["value"] else off) if f["kind"] == "bool" else f["value_label"]
+
+
+def bot_settings_view(user, arg=""):
+    from . import flags
+
+    from . import writer
+
+    lines = [header() + "🎛 <b>Настройки: ИИ и оповещения</b>",
+             f"Сейчас: {esc(writer.status()['summary'])}",
+             "Действуют сразу для всего проекта. Нажмите на настройку, чтобы изменить."]
+    rows = []
+    for f in flags.overview():
+        icon, name, _on, _off = SETTING_BUTTONS[f["key"]]
+        rows.append([(f"{icon} {name}: {_setting_value(f)}", cb("setting", f["key"]))])
+    return "\n\n".join(lines), rows + back()
+
+
+def setting_view(user, key):
+    from . import flags
+
+    f = next((x for x in flags.overview() if x["key"] == key), None)
+    if not f:
+        return bot_settings_view(user)
+    icon, name, on, off = SETTING_BUTTONS[key]
+    text = (header() + f"{icon} <b>{esc(f['label'])}</b>\n\n{esc(f['description'])}\n\n"
+            f"Сейчас: <b>{esc(_setting_value(f))}</b>")
+    rows = []
+    if can(user, "platform_settings", "core.change_platformsetting"):
+        for value, title in f["options"]:
+            arg = f"{key}:{'1' if value is True else '0' if value is False else value}"
+            rows.append([(("✓ " if f["value"] == value else "") + title, cb("flag", arg))])
+    else:
+        text += "\n\n<i>Менять может сотрудник с правом на настройки платформы.</i>"
+    return text, rows + back(("← Настройки", cb("bot_settings")))
+
+
+def act_flag(user, arg):
+    from . import flags
+
+    key, _, value = arg.partition(":")
+    if key not in flags.FLAGS:
+        return "Неизвестная настройка."
+    label, _description, _default, options = flags.FLAGS[key]
+    if options is None:
+        new = (value == "1") if value in ("0", "1") else not flags.get(key)
+        shown = flags.BOOL_LABELS[key][0 if new else 1]
+    elif value in dict(options):
+        new, shown = value, dict(options)[value]
+    else:
+        return "Неизвестное значение."
+    flags.set_flag(key, new, user)
+    audit(user, f"Настройка «ИИ и оповещения»: {key} → {new}", {"key": key, "value": new})
+    return f"✅ {label}: {shown}."
+
+
 # ---------------- Пользователи
 def act_staff_off(user, pk):
     from dashboard.models import AuditAction
@@ -676,6 +745,8 @@ VIEWS = {
     "duty_off": (_perm("system_status", None), lambda u, a: _duty(u, "duty_off")),
     "duty_clear": (_super, lambda u, a: _duty(u, "duty_clear")),
     "topics": (lambda u, a=None: True, topics_view),
+    "bot_settings": (_perm("platform_settings", None), bot_settings_view),
+    "setting": (_perm("platform_settings", None), setting_view),
     "topic": (lambda u, a=None: True, _toggle_topic),
 }
 # Экраны, которым нужен чат (шлют файл).
@@ -704,6 +775,7 @@ WRITE = {
     "mourn_on": (_perm("mourning", "core.change_mourningmode"), lambda u, a: _mourning(u, True), "mourn"),
     "mourn_off": (_perm("mourning", "core.change_mourningmode"), lambda u, a: _mourning(u, False), "mourn"),
     "staff_off": (_super, act_staff_off, None),
+    "flag": (_perm("platform_settings", "core.change_platformsetting"), act_flag, "bot_settings"),
 }
 # Действия, которым нужен текст сотрудника: после подтверждения бот просит написать его.
 TEXT_PROMPTS = {

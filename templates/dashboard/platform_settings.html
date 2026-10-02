@@ -6,6 +6,38 @@
 
 {# Настройки платформы (PlatformSetting). Каждая строка — своя форма сохранения. #}
 
+{# ИИ и оповещения: переключатели проекта, действуют сразу (adminbot/flags.py). #}
+<section class="card bg-base-100 border border-base-300 mb-4"><div class="card-body p-4 gap-3">
+    <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="dopx-section-eyebrow"><i class="ti ti-sparkles"></i>ИИ и оповещения</div>
+        <span class="text-xs opacity-70">{{ ai.summary }}</span>
+    </div>
+    <form method="post" action="{% url 'dashboard:platform_flags_save' %}" class="space-y-1">{% csrf_token %}
+        <fieldset {% if not perms.core.change_platformsetting %}disabled{% endif %}>
+        {% for f in flags %}
+        <div class="flex flex-col sm:flex-row sm:items-center gap-2 py-2 border-b border-base-200 last:border-0">
+            <div class="min-w-0 flex-1">
+                <div class="text-sm font-semibold">{{ f.label }}</div>
+                <div class="text-xs opacity-60">{{ f.description }}</div>
+            </div>
+            <select name="{{ f.key }}" class="select select-sm select-bordered sm:w-56">
+                {% for value, title in f.options %}
+                <option value="{% if f.kind == 'bool' %}{% if value %}on{% endif %}{% else %}{{ value }}{% endif %}" {% if value == f.value %}selected{% endif %}>{{ title }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        {% endfor %}
+        </fieldset>
+        {% for name, reason in ai.paused.items %}<p class="text-xs text-warning">{{ name }} временно не используется: {{ reason }}</p>{% endfor %}
+        {% if perms.core.change_platformsetting %}
+        <div class="flex flex-wrap items-center gap-3 pt-2">
+            <button class="btn btn-sm btn-primary">Сохранить</button>
+            <span class="text-xs opacity-60">Действует сразу. То же — в Telegram-боте: меню → «🎛 Настройки».</span>
+        </div>
+        {% endif %}
+    </form>
+</div></section>
+
 <div class="card bg-base-100 border border-base-300 mb-4">
     <div class="card-body p-4">
         <p class="text-xs opacity-55 flex items-start gap-2">

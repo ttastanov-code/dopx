@@ -33,6 +33,14 @@ def dashboard_nav(user, active_tab="") -> dict:
 
 
 @register.simple_tag
+def safe_mode() -> dict:
+    """{% safe_mode as sm %} — безопасный режим ноутбука и что в нём выключено."""
+    from core.safe_mode import active, overview
+
+    return {"active": active(), "off": [k["label"] for k in overview() if not k["allowed"]]}
+
+
+@register.simple_tag
 def staff_exits(user) -> dict:
     """{% staff_exits user as exits %} — куда вести сотрудника со страницы 403."""
     from ..nav import build_nav, first_allowed_url

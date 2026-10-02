@@ -9,7 +9,7 @@
 # Порядок: блокировка → код → сборка образа (старый сайт работает) → бэкап БД → миграции →
 # перезапуск → ожидание /healthz/ с новой версией. Не поднялось — откат на прошлый коммит.
 # Лог: logs/deploy/<время>_<sha>.log, журнал для дашборда: logs/deploy/history.jsonl.
-# Уведомление в Telegram, если в .env заданы TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID.
+# Уведомление в Telegram, если в .env задан TELEGRAM_CHAT_ID (токен — TELEGRAM_BOT_TOKEN или ADMIN_BOT_TOKEN).
 set -Eeuo pipefail
 
 # DEPLOY_ROOT — когда скрипт запущен не из папки проекта (GitHub Actions берёт его из нового коммита).
@@ -38,9 +38,11 @@ else
     trap 'rmdir "$LOG_DIR/.lock.d" 2>/dev/null || true' EXIT
 fi
 
-env_value() { grep -E "^$1=" .env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"' || true; }
+# Понимает и «КЛЮЧ=значение», и «КЛЮЧ = значение».
+env_value() { grep -E "^[[:space:]]*$1[[:space:]]*=" .env 2>/dev/null | tail -1 | cut -d= -f2- | sed -E 's/^[[:space:]]+|[[:space:]]+$//g' | tr -d '"' || true; }
 HOST_HEADER="$(env_value ALLOWED_HOSTS | cut -d, -f1)"
 TG_TOKEN="$(env_value TELEGRAM_BOT_TOKEN)"
+[ -n "$TG_TOKEN" ] || TG_TOKEN="$(env_value ADMIN_BOT_TOKEN)"
 TG_CHAT="$(env_value TELEGRAM_CHAT_ID)"
 
 step() { echo; echo "==> [$(date +%H:%M:%S)] $*"; }

@@ -32,6 +32,13 @@ class Command(BaseCommand):
         parser.add_argument("--role", choices=["auto", "listener", "agent"], default="auto")
 
     def handle(self, *args, role="auto", **opts):
+        try:
+            self.run(role)
+        except KeyboardInterrupt:
+            # Ctrl+C — обычная остановка, без простыни трейсбека.
+            self.stdout.write("\nБот остановлен.")
+
+    def run(self, role: str):
         if not tg.enabled():
             self.stdout.write("Бот выключен: нет ADMIN_BOT_TOKEN или ADMIN_BOT_ENABLED=False. Жду.")
             while True:   # не выходим, чтобы Docker не перезапускал контейнер по кругу
@@ -56,7 +63,7 @@ class Command(BaseCommand):
                     logger.exception("adminbot: Telegram error")
                     time.sleep(3)
             except requests.RequestException as e:
-                logger.warning("adminbot: сеть: %s", e)
+                logger.warning("adminbot: сеть: %s", tg.redact(e))
                 time.sleep(5)
             except Exception:
                 logger.exception("adminbot: сбой цикла")

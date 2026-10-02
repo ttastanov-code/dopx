@@ -44,8 +44,9 @@ UPCOMING_WINDOW = timedelta(hours=3)
 def _sync_enabled() -> bool:
     """Включён ли синк (кэш настроек 60 с)."""
     from core.models import get_setting
+    from core.safe_mode import allowed
 
-    return bool(get_setting("sportmonks_sync_enabled", True))
+    return allowed("sportmonks") and bool(get_setting("sportmonks_sync_enabled", True))
 
 
 def _record_sync_run(task_name: str, started_at, total: int = 0, updated: int = 0, unchanged: int = 0, errors: int = 0) -> None:

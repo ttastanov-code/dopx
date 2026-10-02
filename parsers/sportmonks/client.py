@@ -79,6 +79,10 @@ class SportmonksClient:
     # -- низкоуровневый запрос -------------------------------------------------
 
     def _get(self, path: str, params: Optional[dict] = None) -> dict:
+        from core.safe_mode import allowed
+
+        if not allowed("sportmonks"):
+            raise SportmonksAPIError("Безопасный режим ноутбука: запросы к Sportmonks выключены (DEV_SAFE_ALLOW=sportmonks)")
         if not self.api_token:
             raise SportmonksAPIError("SPORTMONKS_API_TOKEN не задан в настройках/окружении")
 

@@ -12,7 +12,7 @@ from django.views.decorators.http import require_GET, require_POST
 
 from core.utils import get_client_ip, is_rate_limited
 
-from . import debug, relay
+from . import debug, relay, writer
 from . import telegram as tg
 from .models import BotLink, BotLinkCode
 
@@ -76,6 +76,11 @@ def _debug_action(request, action: str) -> None:
     elif action == "clear_log":
         debug.clear_log()
         messages.success(request, "Журнал очищен.")
+    elif action == "ai_reset":
+        from core import llm
+        for provider, _label in llm.PROVIDERS:
+            cache.delete(writer._breaker(provider))
+        messages.success(request, "Снова пробую писать тексты через ИИ.")
     elif action == "reset_offset":
         cache.delete("adminbot:offset")
         messages.success(request, "Позиция чтения сброшена: бот заново заберёт непрочитанные апдейты.")
@@ -109,6 +114,7 @@ def _debug_context() -> dict:
         "channel_ready": channel.configured(),
         "watch_scripts": len(cache.get(f"adminbot:watch:{env}") or []),
         "watch_deploys": len(cache.get(f"adminbot:deploy_watch:{env}") or []),
+        "ai": writer.status(),
     }
 
 
@@ -229,11 +235,15 @@ def channel_page(request):
     from .models import ChannelConfig, ChannelPost
 
     if request.method == "POST" and request.POST.get("action") == "samples":
-        posts = channel.sample_posts()
         from dashboard.audit import log_staff_action
         from dashboard.models import AuditAction
-        log_staff_action(request, AuditAction.CHANNEL_POST, target=f"Пробные посты: {len(posts)}", details={})
-        messages.success(request, f"Готово пробных черновиков: {len(posts)}. Они в очереди ниже — откройте любой, чтобы посмотреть или опубликовать.")
+
+        from .tasks import make_samples
+
+        link = BotLink.objects.filter(user=request.user).first()
+        make_samples.delay(link.telegram_id if link else None)
+        log_staff_action(request, AuditAction.CHANNEL_POST, target="Пробные посты", details={})
+        messages.success(request, "Готовлю пробные черновики всех форматов — через минуту-две обновите страницу, они появятся в очереди.")
         return redirect("dashboard:channel")
     if request.method == "POST":
         text = channel.clean_html(request.POST.get("text", "")).strip()

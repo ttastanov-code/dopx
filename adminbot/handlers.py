@@ -42,7 +42,9 @@ def esc(s) -> str:
 
 
 def header() -> str:
-    return f"<b>{ENV_LABEL[ENV]}</b>\n"
+    from core.safe_mode import active
+
+    return f"<b>{ENV_LABEL[ENV]}</b>" + (" · 🛡 безопасный режим" if active() else "") + "\n"
 
 
 def back(*extra) -> list:
@@ -171,6 +173,8 @@ def menu_rows(user) -> list:
     tools = [(label, cb(action)) for label, action, section in MENU_TOOLS if can(user, section)]
     if user.is_superuser:
         tools.append(("🚀 Деплой", cb("deploy")))
+    if can(user, "platform_settings"):
+        tools.append(("🎛 Настройки", cb("bot_settings")))
     rows += _pairs(tools)
     link = BotLink.objects.filter(user=user).first()
     rows.append([("🔔 Уведомления" if link and link.notify else "🔕 Уведомления", cb("topics")),
@@ -874,7 +878,7 @@ def _run_write(tid, user, action, arg, text=None, photo=None):
             result = fn(user, arg)
     except Exception as e:
         logger.exception("adminbot: action %s failed", action)
-        result = f"⚠️ Не получилось: {esc(str(e)[:300]) or type(e).__name__}"
+        result = f"⚠️ Не получилось: {esc(tg.redact(e)[:300]) or type(e).__name__}"
     if after:
         text, rows = VIEWS[after][1](user, "")
         return tg.send(tid, header() + result + "\n\n" + text.removeprefix(header()), rows)

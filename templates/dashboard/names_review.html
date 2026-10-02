@@ -14,15 +14,15 @@
     <div class="card-body p-4">
         <p class="text-xs opacity-55 flex items-start gap-2">
             <i class="ti ti-info-circle opacity-50 mt-0.5 shrink-0"></i>
-            Механическая транслитерация иногда угадывает ФИО неверно. Команда «Проверить ФИО через Gemini» находит такие записи и ищет реальное написание в вебе — ничего не применяется без вашего подтверждения здесь.
+            Механическая транслитерация иногда угадывает ФИО неверно. Команда «Проверить ФИО через ИИ» (сейчас проверяет {{ names_ai }}) находит такие записи и ищет реальное написание в вебе — ничего не применяется без вашего подтверждения здесь.
         </p>
         {% if not gemini_configured %}
         {# Весь текст в одном <span> — иначе flex разбивает его на куски. #}
         <div class="alert alert-warning mt-3 text-xs">
             <i class="ti ti-alert-triangle"></i>
             <span>
-                GEMINI_API_KEY не задан на сервере — новые проверки запускать нельзя (уже накопленные предложения ниже можно разбирать как обычно).
-                Получите бесплатный ключ на <span class="font-mono">aistudio.google.com</span> и задайте переменную окружения <span class="font-mono">GEMINI_API_KEY</span>.
+                ИИ-проверка сейчас не подключена — новые проверки не запустятся. Уже накопленные предложения ниже можно разбирать как обычно.
+                {% if user.is_superuser %}Нужен <span class="font-mono">GEMINI_API_KEY</span> или <span class="font-mono">ANTHROPIC_API_KEY</span> в .env.{% endif %}
             </span>
         </div>
         {% endif %}

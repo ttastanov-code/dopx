@@ -15,6 +15,7 @@ urlpatterns = [
     path("matches/<uuid:match_id>/recalc/", views.match_trigger_recalc, name="match_trigger_recalc"),
     path("settings/", views.platform_settings, name="platform_settings"),
     path("settings/create/", views.platform_settings_create, name="platform_settings_create"),
+    path("settings/ai/", views.platform_flags_save, name="platform_flags_save"),
     path("settings/<str:key>/update/", views.platform_settings_update, name="platform_settings_update"),
     path("settings/<str:key>/delete/", views.platform_settings_delete, name="platform_settings_delete"),
     path("users/", views.users_list, name="users_list"),

@@ -115,10 +115,13 @@ class ChannelPost(models.Model):
     """Пост в Telegram-канал проекта: черновик → (одобрение) → публикация."""
 
     KIND_CHOICES = [
-        ("preview", _("Анонс тура")),
+        ("preview", _("Превью тура")),
         ("result", _("Финал матча")),
-        ("ratings", _("Оценки болельщиков")),
+        ("ratings", _("Разбор матча")),
         ("round", _("Итоги тура")),
+        ("poll", _("Опрос")),
+        ("controversy", _("Спорный момент недели")),
+        ("number", _("Цифра недели")),
         ("expert", _("Мнение эксперта")),
         ("changes", _("Переносы и отмены")),
         ("manual", _("Свой пост")),
@@ -136,6 +139,10 @@ class ChannelPost(models.Model):
     text = models.TextField(_("Текст"), max_length=4000)
     image = models.CharField(_("Картинка (путь в хранилище)"), max_length=300, blank=True)
     tg_file_id = models.CharField(max_length=200, blank=True)
+    images = models.JSONField(_("Ещё картинки (альбом)"), default=list, blank=True)
+    # {"question": ..., "options": [...]} — пост-опрос Telegram.
+    poll = models.JSONField(_("Опрос"), null=True, blank=True)
+    by_ai = models.BooleanField(_("Текст написал Claude"), default=False)
     buttons = models.JSONField(_("Кнопки-ссылки"), default=list, blank=True)
     status = models.CharField(_("Статус"), max_length=12, choices=STATUS_CHOICES, default="draft", db_index=True)
     scheduled_at = models.DateTimeField(_("Опубликовать в"), null=True, blank=True)

@@ -38,7 +38,7 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
         NavItem("data_health", "dashboard:data_health", "ti-activity-heartbeat", "Здоровье данных", "Пропуски составов и событий"),
         NavItem("data_trust", "dashboard:data_trust", "ti-shield-check", "Доверие к данным", "Расхождения источников"),
         NavItem("duplicate_players", "dashboard:duplicate_players_review", "ti-users-group", "Дубли игроков", "Слияние одинаковых игроков"),
-        NavItem("names_review", "dashboard:names_review", "ti-sparkles", "Проверка ФИО", "Правки имён от Gemini"),
+        NavItem("names_review", "dashboard:names_review", "ti-sparkles", "Проверка ФИО", "Правки имён от ИИ"),
         NavItem("parser_tools", "dashboard:parser_tools", "ti-server-cog", "Парсер", "Sportmonks и синхронизация"),
     )),
     NavGroup("people", "ti-users", "Люди", (

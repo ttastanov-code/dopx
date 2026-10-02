@@ -5,6 +5,10 @@
 Реальная проверка доступа — в middleware.
 {% endcomment %}
 
+{% if user.is_superuser %}{% safe_mode as sm %}{% if sm.active %}
+{# Только суперпользователю: что выключено на ноутбуке. #}
+<div class="alert alert-info text-xs py-2 mb-3"><i class="ti ti-shield-check"></i><span><b>Безопасный режим ноутбука.</b> Выключено: {{ sm.off|join:", "|default:"ничего" }}.</span></div>
+{% endif %}{% endif %}
 {% if page_title %}
 <div class="dopx-page-header">
     <h1>{{ page_title|cut:" — DOPX Staff" }}</h1>

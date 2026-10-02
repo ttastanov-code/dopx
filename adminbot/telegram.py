@@ -3,12 +3,26 @@
 from __future__ import annotations
 
 import logging
+import re
 
 import requests
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
 API = "https://api.telegram.org/bot{token}/{method}"
+
+
+_TOKEN_RE = re.compile(r"bot\d+:[A-Za-z0-9_-]{20,}")
+
+
+def redact(text) -> str:
+    """Убирает токен бота из текста ошибки: он есть в URL запросов к Telegram."""
+    return _TOKEN_RE.sub("bot<токен>", str(text))
+
+
+def _clean(e: requests.RequestException) -> requests.RequestException:
+    """Та же ошибка сети, но без токена в тексте (он есть в URL)."""
+    return type(e)(redact(e)) if not isinstance(e, requests.HTTPError) else requests.RequestException(redact(e))
 
 
 class TelegramError(Exception):
@@ -25,7 +39,10 @@ def enabled() -> bool:
 def call(method: str, http_timeout: float = 15, **params):
     """Вызов метода; ошибка Telegram — TelegramError (409 — бота уже слушает другой процесс).
     http_timeout — таймаут запроса; у getUpdates есть свой параметр timeout (долгий опрос)."""
-    resp = requests.post(API.format(token=settings.ADMIN_BOT_TOKEN, method=method), json=params, timeout=http_timeout)
+    try:
+        resp = requests.post(API.format(token=settings.ADMIN_BOT_TOKEN, method=method), json=params, timeout=http_timeout)
+    except requests.RequestException as e:
+        raise _clean(e) from None
     data = resp.json()
     if not data.get("ok"):
         raise TelegramError(data.get("error_code", resp.status_code), data.get("description", ""))
@@ -37,8 +54,11 @@ def call_files(method: str, files: dict, http_timeout: float = 60, **params):
     import json
 
     data = {k: (json.dumps(v) if isinstance(v, (dict, list)) else v) for k, v in params.items() if v is not None}
-    resp = requests.post(API.format(token=settings.ADMIN_BOT_TOKEN, method=method), data=data, files=files,
-                         timeout=http_timeout)
+    try:
+        resp = requests.post(API.format(token=settings.ADMIN_BOT_TOKEN, method=method), data=data, files=files,
+                             timeout=http_timeout)
+    except requests.RequestException as e:
+        raise _clean(e) from None
     out = resp.json()
     if not out.get("ok"):
         raise TelegramError(out.get("error_code", resp.status_code), out.get("description", ""))
@@ -95,7 +115,7 @@ def send(chat_id: int, text: str, rows=None, silent: bool = False) -> dict | Non
     try:
         return call("sendMessage", **params)
     except (TelegramError, requests.RequestException) as e:
-        logger.warning("adminbot: sendMessage failed: %s", e)
+        logger.warning("adminbot: sendMessage failed: %s", redact(e))
         return None
 
 
@@ -106,9 +126,9 @@ def edit(chat_id: int, message_id: int, text: str, rows=None) -> None:
         call("editMessageText", **params)
     except TelegramError as e:
         if "not modified" not in e.description:
-            logger.warning("adminbot: editMessageText failed: %s", e)
+            logger.warning("adminbot: editMessageText failed: %s", redact(e))
     except requests.RequestException as e:
-        logger.warning("adminbot: editMessageText failed: %s", e)
+        logger.warning("adminbot: editMessageText failed: %s", redact(e))
 
 
 def answer(callback_id: str, text: str = "", alert: bool = False) -> None:
@@ -149,7 +169,7 @@ def send_document(chat_id, content: bytes, filename: str, caption: str = "", row
     try:
         return call_files("sendDocument", {"document": (filename, content)}, **params)
     except (TelegramError, requests.RequestException) as e:
-        logger.warning("adminbot: sendDocument failed: %s", e)
+        logger.warning("adminbot: sendDocument failed: %s", redact(e))
         return None
 
 
@@ -168,7 +188,7 @@ def channel_status(chat_id) -> dict:
         me = call("getMe")
         member = call("getChatMember", chat_id=chat_id, user_id=me["id"])
     except (TelegramError, requests.RequestException) as e:
-        return {"ok": False, "error": str(e)[:200]}
+        return {"ok": False, "error": redact(e)[:200]}
     can_post = member.get("status") == "creator" or (member.get("status") == "administrator" and member.get("can_post_messages", True))
     return {"ok": can_post, "title": chat.get("title", ""), "username": chat.get("username", ""),
             "error": "" if can_post else "Бот не админ канала или без права публиковать"}

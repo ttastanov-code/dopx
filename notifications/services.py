@@ -70,6 +70,11 @@ def _users_allowing(user_ids: list, kind: str) -> list:
 
 
 def _push_ready() -> bool:
+    from core.safe_mode import allowed
+
+    if not allowed("push"):
+        logger.debug("push: безопасный режим ноутбука, пропуск")
+        return False
     if not settings.VAPID_PRIVATE_KEY or not settings.VAPID_PUBLIC_KEY:
         logger.debug("push: VAPID-ключи не настроены, пропуск")
         return False

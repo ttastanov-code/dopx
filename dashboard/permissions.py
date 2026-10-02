@@ -21,6 +21,7 @@ VIEW_PERMS: dict[str, dict[str, tuple[str, ...]]] = {
     # Настройки платформы
     "platform_settings": _p("core.view_platformsetting"),
     "platform_settings_create": _p("core.add_platformsetting"),
+    "platform_flags_save": _p("core.change_platformsetting"),
     "platform_settings_update": _p("core.change_platformsetting"),
     "platform_settings_delete": _p("core.delete_platformsetting"),
     "sportmonks_sync_toggle": _p("core.change_platformsetting"),

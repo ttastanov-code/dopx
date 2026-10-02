@@ -2,7 +2,7 @@
 """manage.py verify_names_with_ai [--all] [--entity player|referee|coach]
                                [--limit N] [--delay SECONDS] [--recheck] [--dry-run]
 
-Проверяет ФИО через Gemini (parsers/name_ai.py) и создаёт NameVerificationSuggestion
+Проверяет ФИО через ИИ — Gemini или Claude, выбор в «Настройках бота» (parsers/name_ai.py) и создаёт NameVerificationSuggestion
 для ручного подтверждения в дашборде.
 По умолчанию — только name_source='guessed_transliteration'; --all — все с sportmonks_id.
 Записи с уже имеющимся предложением пропускаются (кроме check_failed); --recheck — проверить заново.
@@ -31,7 +31,7 @@ _ENTITY_CONFIG = {
 
 
 class Command(BaseCommand):
-    help = "Проверяет ФИО игроков/судей/тренеров через Gemini API (веб-поиск) и кладёт предложения в очередь на подтверждение staff"
+    help = "Проверяет ФИО игроков/судей/тренеров через ИИ с веб-поиском (Gemini или Claude) и кладёт предложения в очередь на подтверждение staff"
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -42,16 +42,16 @@ class Command(BaseCommand):
             "--entity", choices=["player", "referee", "coach"], default=None,
             help="Ограничиться одним типом сущности. По умолчанию — все три.",
         )
-        parser.add_argument("--limit", type=int, default=20, help="Максимум вызовов Gemini за один запуск (по умолчанию 20 — бережём бесплатный лимит). 0 — без ограничения (для разового прогона по всей базе через --all).")
-        parser.add_argument("--delay", type=float, default=4.0, help="Пауза в секундах между вызовами Gemini (по умолчанию 4с).")
+        parser.add_argument("--limit", type=int, default=20, help="Максимум вызовов ИИ за один запуск (по умолчанию 20 — бережём бесплатный лимит). 0 — без ограничения (для разового прогона по всей базе через --all).")
+        parser.add_argument("--delay", type=float, default=4.0, help="Пауза в секундах между вызовами ИИ (по умолчанию 4с).")
         parser.add_argument("--recheck", action="store_true", help="Не пропускать записи, у которых уже есть предложение (любого статуса).")
-        parser.add_argument("--dry-run", action="store_true", help="Только показать, кого бы проверили, не тратя вызовы Gemini.")
+        parser.add_argument("--dry-run", action="store_true", help="Только показать, кого бы проверили, не тратя вызовы ИИ.")
 
     def handle(self, *args, **options):
         if not name_ai.is_configured() and not options["dry_run"]:
             self.stderr.write(self.style.ERROR(
-                "GEMINI_API_KEY не задан (dopx/settings.py) — задайте переменную окружения GEMINI_API_KEY "
-                "(ключ с aistudio.google.com) или запустите с --dry-run, чтобы только посмотреть список кандидатов."
+                "Нет ключа ИИ: задайте GEMINI_API_KEY (aistudio.google.com) или ANTHROPIC_API_KEY (platform.claude.com), "
+                "или запустите с --dry-run, чтобы только посмотреть список кандидатов."
             ))
             return
 

@@ -279,20 +279,26 @@ class SettingsScreensTests(BotTestCase):
         handlers.handle(press("d|duty_clear|"))
         self.assertIn("Нет доступа", self.last_text())
 
-    def test_free_text_goes_to_claude_with_scoped_tools(self):
+    def test_free_text_goes_to_claude_only_when_chat_enabled(self):
+        from types import SimpleNamespace as NS
+
         from . import ask
 
         self.link()
         replies = [
-            {"stop_reason": "tool_use", "content": [{"type": "tool_use", "id": "t1", "name": "site_stats", "input": {}}]},
-            {"stop_reason": "end_turn", "content": [{"type": "text", "text": "Регистраций 5"}]},
+            NS(stop_reason="tool_use", content=[NS(type="tool_use", id="t1", name="site_stats", input={})]),
+            NS(stop_reason="end_turn", content=[NS(type="text", text="Регистраций 5")]),
         ]
-        with override_settings(ANTHROPIC_API_KEY="k"), mock.patch.object(ask, "_call", side_effect=replies) as call, \
-                mock.patch("threading.Thread") as thread:
+        with override_settings(ANTHROPIC_API_KEY="k", ADMIN_BOT_AI_CHAT=False):
+            handlers.handle(msg("сколько регистраций за неделю?"))
+        self.assertIn("Привет", self.last_text())                 # чат выключен — просто меню
+        with override_settings(ANTHROPIC_API_KEY="k", ADMIN_BOT_AI_CHAT=True), \
+                mock.patch("anthropic.Anthropic") as client, mock.patch("threading.Thread") as thread:
+            client.return_value.beta.messages.create.side_effect = replies
             handlers.handle(msg("сколько регистраций за неделю?"))
             thread.call_args.kwargs["target"]()
         self.assertIn("Регистраций 5", self.last_text())
-        tools = {t["name"] for t in call.call_args_list[0].args[0]["tools"]}
+        tools = {t["name"] for t in client.return_value.beta.messages.create.call_args_list[0].kwargs["tools"]}
         self.assertIn("site_stats", tools)          # у сотрудника есть «Обзор»
         StaffAccessGrant.objects.filter(user=self.staff).update(allowed_sections=["admin_bot"])
         self.assertNotIn("site_stats", ask._tools_for(User.objects.get(pk=self.staff.pk)))
@@ -389,7 +395,7 @@ class ChannelModesScreenTests(BotTestCase):
         self.link()
         self.staff.user_permissions.add(Permission.objects.get(codename="delete_channelpost"))
         handlers.handle(press("d|chan_modes|"))
-        self.assertIn(("🟡 Анонс тура — С одобрением", "d|chan_kind|preview"), [b for row in self.sent[-1][2] for b in row])
+        self.assertIn(("🟡 Превью тура — С одобрением", "d|chan_kind|preview"), [b for row in self.sent[-1][2] for b in row])
         handlers.handle(press("d|chan_kind|preview"))
         labels = [t for row in self.sent[-1][2] for t, _ in row]
         self.assertIn("✓ 🟡 С одобрением", labels)
@@ -397,8 +403,8 @@ class ChannelModesScreenTests(BotTestCase):
         with mock.patch.object(handlers, "has_2fa", return_value=True):
             handlers.handle(press("d|chan_mode|preview:auto"))
         self.assertEqual(ChannelConfig.get().mode("preview"), "auto")
-        self.assertIn("Анонс тура: 🟢 Сразу", self.last_text())
-        self.assertIn(("🟢 Анонс тура — Сразу", "d|chan_kind|preview"), [b for row in self.sent[-1][2] for b in row])
+        self.assertIn("Превью тура: 🟢 Сразу", self.last_text())
+        self.assertIn(("🟢 Превью тура — Сразу", "d|chan_kind|preview"), [b for row in self.sent[-1][2] for b in row])
 
 
 class GitHubDispatchTests(TestCase):
@@ -540,3 +546,250 @@ class ReadableButtonsTests(BotTestCase):
                 for label, _data in row:
                     self.assertFalse(label.endswith("…"), f"{screen}: обрезано «{label}»")
                     self.assertLessEqual(text_width(label), ROW_FIT[len(row)] + 4, f"{screen}: не влезает «{label}»")
+
+
+class WriterAndFormatsTests(TestCase):
+    def _response(self, text):
+        from types import SimpleNamespace as NS
+
+        return NS(stop_reason="end_turn", content=[NS(type="text", text=text)])
+
+    @override_settings(ANTHROPIC_API_KEY="k", ADMIN_BOT_AI_POSTS=True)
+    def test_claude_text_used_when_numbers_are_from_facts(self):
+        from . import writer
+
+        cache.clear()
+        facts = {"счёт": "2:1", "минута": "89"}
+        with mock.patch("anthropic.Anthropic") as client:
+            client.return_value.beta.messages.create.return_value = self._response("<b>Гол на 89-й</b> — 2:1")
+            self.assertEqual(writer.write("review", facts, lambda: "шаблон"), ("<b>Гол на 89-й</b> — 2:1", True))
+            client.return_value.beta.messages.create.return_value = self._response("Победа 2:1, 15 ударов")
+            self.assertEqual(writer.write("review", facts, lambda: "шаблон"), ("шаблон", False))   # 15 — выдумка
+
+    @override_settings(ANTHROPIC_API_KEY="k", ADMIN_BOT_AI_POSTS=True)
+    def test_no_balance_switches_to_templates_for_hours(self):
+        import anthropic
+        import httpx2
+
+        from . import writer
+
+        cache.clear()
+        request = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+        error = anthropic.BadRequestError("Your credit balance is too low", response=httpx2.Response(400, request=request), body=None)
+        with mock.patch("anthropic.Anthropic") as client:
+            client.return_value.beta.messages.create.side_effect = error
+            self.assertEqual(writer.write("review", {}, lambda: "шаблон"), ("шаблон", False))
+            self.assertFalse(writer.ai_enabled())
+            writer.write("review", {}, lambda: "шаблон")
+        self.assertEqual(client.return_value.beta.messages.create.call_count, 1)    # второй раз API не дёргали
+        self.assertIn("баланс", writer.status()["paused"]["Claude"])
+
+    @override_settings(ADMIN_BOT_CHANNEL_ID="@dopx_test", ADMIN_BOT_TOKEN="t", ADMIN_BOT_ENABLED=True, ANTHROPIC_API_KEY="")
+    def test_review_preview_poll_and_album_publish(self):
+        from events.models import MatchEvent
+
+        m = make_match()
+        MatchEvent.objects.create(match=m, minute=89, event_type="goal", team_side="home", score_after="2-1")
+        cfg = ChannelConfig.get()
+        cfg.modes = {"ratings": "auto", "preview": "auto", "poll": "auto"}
+        cfg.quiet_hours = False
+        cfg.save()
+        review = channel.review_post(m)
+        self.assertIn("2:1", review.text)
+        self.assertFalse(review.by_ai)
+        nxt = make_match(status="scheduled", start_time=timezone.now() + timedelta(hours=20), tour=7)
+        channel.preview_post(7, [nxt])
+        poll = ChannelPost.objects.get(kind="poll")
+        self.assertEqual(poll.poll["options"][1], "Ничья")
+        with mock.patch("adminbot.telegram.call", return_value={"message_id": 9}) as call, \
+                mock.patch("adminbot.telegram.post", return_value={"message_id": 8}):
+            ok, _ = channel.publish(poll)
+        self.assertTrue(ok)
+        self.assertEqual(call.call_args.args[0], "sendPoll")
+        album = ChannelPost.objects.create(text="Итоги", image="a.png", images=["b.png"])
+        with mock.patch("adminbot.channel._read", return_value=b"img"), \
+                mock.patch("adminbot.telegram.call_files", return_value=[{"message_id": 5}]) as files:
+            ok, _ = channel.publish(album)
+        self.assertTrue(ok)
+        self.assertEqual(files.call_args.args[0], "sendMediaGroup")
+        self.assertEqual(len(files.call_args.kwargs["media"]), 2)
+
+
+class TokenRedactionTests(TestCase):
+    def test_token_never_reaches_log_or_journal(self):
+        import logging
+
+        from . import debug
+
+        cache.clear()
+        token = "123456789:AAfakeTESTtokenTESTtokenTESTtoken"
+        logging.getLogger("adminbot.handlers").error("сеть: Max retries exceeded with url: /bot%s/getUpdates", token)
+        text = debug.recent_log()[0]["text"]
+        self.assertNotIn("AAfake", text)
+        self.assertIn("bot<токен>", text)
+
+    @override_settings(ADMIN_BOT_CHANNEL_ID="@dopx_test", ADMIN_BOT_TOKEN="t", ADMIN_BOT_ENABLED=True)
+    def test_unpublish_post_already_deleted_in_channel(self):
+        from .telegram import TelegramError
+
+        post = ChannelPost.objects.create(text="x", status="published", message_id=7)
+        with mock.patch("adminbot.telegram.call", side_effect=TelegramError(400, "Bad Request: message to delete not found")):
+            ok, message = channel.unpublish(post)
+        post.refresh_from_db()
+        self.assertTrue(ok)
+        self.assertIn("уже нет", message)
+        self.assertEqual(post.status, "cancelled")
+        old = ChannelPost.objects.create(text="y", status="published")
+        self.assertTrue(channel.unpublish(old)[0])
+
+    @override_settings(ADMIN_BOT_TOKEN="123456789:AAfakeTESTtokenTESTtokenTESTtoken")
+    def test_network_error_has_no_token(self):
+        import requests
+
+        from . import telegram as tg
+
+        with mock.patch("requests.post", side_effect=requests.ConnectionError(
+                "Max retries exceeded with url: /bot123456789:AAfakeTESTtokenTESTtokenTESTtoken/getUpdates")):
+            with self.assertRaises(requests.ConnectionError) as ctx:
+                tg.call("getUpdates")
+        self.assertNotIn("AAfake", str(ctx.exception))
+
+
+class BotFlagsTests(BotTestCase):
+    def test_flags_switch_without_restart(self):
+        from . import alerts, ask, flags, writer
+
+        self.staff.is_superuser = True
+        self.staff.save()
+        self.link()
+        with override_settings(ANTHROPIC_API_KEY="k", ADMIN_BOT_AI_POSTS=True, ADMIN_BOT_AI_CHAT=False, ADMIN_BOT_ALERTS="auto"):
+            self.assertTrue(writer.ai_enabled())
+            self.assertFalse(ask.enabled())
+            cache.set(f"adminbot:elev:dev:{self.staff.pk}", 1, 600)
+            with mock.patch.object(handlers, "has_2fa", return_value=True):
+                handlers.handle(press("d|flag|bot_ai_posts"))
+                handlers.handle(press("d|flag|bot_ai_chat"))
+                handlers.handle(press("d|flag|bot_alerts:on"))
+            self.assertIn("Сообщения о сбоях сервера: Включены везде", self.last_text())
+            self.assertFalse(writer.ai_enabled())          # выключили — сразу шаблоны
+            self.assertTrue(ask.enabled())
+            self.assertTrue(alerts.enabled())              # dev, но «on»
+        changed = {"bot_ai_posts", "bot_ai_chat", "bot_alerts"}
+        self.assertFalse(any(f["from_env"] for f in flags.overview() if f["key"] in changed))
+
+    @override_settings(STAFF_2FA_ENFORCED=False)
+    def test_dashboard_form_on_platform_settings_needs_permission(self):
+        from . import flags
+
+        StaffAccessGrant.objects.filter(user=self.staff).update(allowed_sections=["platform_settings"])
+        self.client.force_login(self.staff)
+        self.assertEqual(self.client.post(reverse("dashboard:platform_flags_save"), {"bot_ai_chat": "on"}).status_code, 403)
+        self.assertFalse(flags.get("bot_ai_chat"))
+        self.staff.user_permissions.add(*Permission.objects.filter(codename__in=["view_platformsetting", "change_platformsetting"]))
+        self.client.force_login(User.objects.get(pk=self.staff.pk))
+        self.client.post(reverse("dashboard:platform_flags_save"), {"bot_ai_chat": "on", "bot_alerts": "off", "names_ai_provider": "claude"})
+        page = self.client.get(reverse("dashboard:platform_settings"))
+        self.assertContains(page, "ИИ и оповещения")
+        self.assertNotContains(page, "bot_ai_chat</")          # не дублируется в общей таблице
+        self.assertTrue(flags.get("bot_ai_chat"))
+        self.assertFalse(flags.get("bot_ai_posts"))
+        self.assertEqual((flags.get("bot_alerts"), flags.get("names_ai_provider")), ("off", "claude"))
+
+
+class ProviderSwitchTests(BotTestCase):
+    @override_settings(ANTHROPIC_API_KEY="a", GEMINI_API_KEY="g", ADMIN_BOT_AI_POSTS=True, POSTS_AI_PROVIDER="claude")
+    def test_articles_fall_back_to_second_provider_then_template(self):
+        from core import llm
+
+        from . import flags, writer
+
+        cache.clear()
+        calls = []
+
+        def fake(provider, system, prompt, **kw):
+            calls.append(provider)
+            if provider == "claude":
+                raise llm.LLMError("billing", "credit balance is too low")
+            return "<b>Счёт 2:1</b>"
+        with mock.patch("core.llm.generate", side_effect=fake):
+            self.assertEqual(writer.write("review", {"счёт": "2:1"}, lambda: "шаблон"), ("<b>Счёт 2:1</b>", True))
+            self.assertEqual(calls, ["claude", "gemini"])
+            self.assertEqual(writer.providers(), ["gemini"])           # Claude на паузе после баланса
+            flags.set_flag("posts_ai_provider", "gemini", None)
+            calls.clear()
+            writer.write("review", {"счёт": "2:1"}, lambda: "шаблон")
+            self.assertEqual(calls, ["gemini"])
+        with mock.patch("core.llm.generate", side_effect=llm.LLMError("temporary", "down")):
+            self.assertEqual(writer.write("review", {}, lambda: "шаблон"), ("шаблон", False))
+
+    @override_settings(ANTHROPIC_API_KEY="a", GEMINI_API_KEY="g", NAMES_AI_PROVIDER="gemini")
+    def test_names_use_selected_provider_with_failover(self):
+        from core import llm
+        from parsers import name_ai
+
+        from . import flags
+
+        cache.clear()
+        answer = '{"first_name": "Темирлан", "last_name": "Ерланов", "confidence": "high", "matches_current": true, "reasoning": "КПЛ"}'
+        with mock.patch("core.llm.generate", side_effect=[llm.LLMError("temporary", "503"), "Нашёл: " + answer]) as gen:
+            result = name_ai.verify_name("игрока", "Темирлан", "Ерланов")
+        self.assertTrue(result.ok)
+        self.assertEqual(result.provider, "claude")
+        self.assertEqual([c.args[0] for c in gen.call_args_list], ["gemini", "claude"])
+        self.assertTrue(gen.call_args.kwargs["web_search"])
+        flags.set_flag("names_ai_provider", "claude", None)
+        self.assertEqual(name_ai.provider_label(), "Claude")
+
+    def test_bot_settings_screen_switches_provider(self):
+        from . import flags
+
+        self.staff.is_superuser = True
+        self.staff.save()
+        self.link()
+        handlers.handle(press("d|bot_settings|"))
+        self.assertIn(("🔎 ИИ для ФИО: Gemini", "d|setting|names_ai_provider"), [b for r in self.sent[-1][2] for b in r])
+        handlers.handle(press("d|setting|names_ai_provider"))
+        self.assertIn("Какой ИИ проверяет ФИО", self.last_text())
+        cache.set(f"adminbot:elev:dev:{self.staff.pk}", 1, 600)
+        with mock.patch.object(handlers, "has_2fa", return_value=True):
+            handlers.handle(press("d|flag|names_ai_provider:claude"))
+        self.assertEqual(flags.get("names_ai_provider"), "claude")
+        self.assertIn("Какой ИИ проверяет ФИО: Claude", self.last_text())
+        self.assertIn(("🔎 ИИ для ФИО: Claude", "d|setting|names_ai_provider"), [b for r in self.sent[-1][2] for b in r])
+
+
+class SafeModeTests(BotTestCase):
+    @override_settings(DEV_SAFE_MODE=True, DEV_SAFE_ALLOW={"channel"}, ANTHROPIC_API_KEY="a", GEMINI_API_KEY="g",
+                       ADMIN_BOT_CHANNEL_ID="@dopx_test", ADMIN_BOT_AI_POSTS=True, ADMIN_BOT_AI_CHAT=True)
+    def test_everything_external_off_except_allowed(self):
+        from core import llm
+        from core.safe_mode import overview
+        from parsers import name_ai
+        from parsers.sportmonks.client import SportmonksAPIError, SportmonksClient
+        from parsers.sportmonks.tasks import _sync_enabled
+        from notifications.services import _push_ready
+
+        from . import ask, writer
+
+        self.assertFalse(_sync_enabled())
+        with mock.patch("requests.Session.get") as get, self.assertRaises(SportmonksAPIError):
+            SportmonksClient(api_token="t").get_league(1)
+        get.assert_not_called()
+        with mock.patch("anthropic.Anthropic") as client:
+            self.assertEqual(writer.write("review", {}, lambda: "шаблон"), ("шаблон", False))
+            self.assertFalse(name_ai.verify_name("игрока", "А", "Б").ok)
+            with self.assertRaises(llm.LLMError):
+                llm.generate("claude", "s", "p")
+        client.assert_not_called()
+        self.assertFalse(ask.enabled())
+        self.assertTrue(channel.configured())           # канал разрешён в DEV_SAFE_ALLOW
+        self.assertFalse(_push_ready())
+        self.assertIn("безопасный режим", handlers.header())
+        self.assertEqual({k["key"] for k in overview() if k["allowed"]}, {"channel"})
+
+    @override_settings(DEV_SAFE_MODE=False, ANTHROPIC_API_KEY="a")
+    def test_off_by_default_changes_nothing(self):
+        from core import llm
+
+        self.assertTrue(llm.configured("claude"))
+        self.assertNotIn("безопасный", handlers.header())

@@ -719,6 +719,10 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'adminbot.tasks.minute_tick',
         'schedule': 60.0,
     },
+    'adminbot-channel-rubric': {
+        'task': 'adminbot.tasks.channel_rubric',
+        'schedule': crontab(hour=12, minute=0, day_of_week='2,3'),
+    },
     'adminbot-experts-reminder': {
         'task': 'adminbot.tasks.experts_reminder',
         'schedule': crontab(hour=12, minute=0, day_of_week=3),
@@ -1066,6 +1070,12 @@ EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
 EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
+
+# Безопасный режим ноутбука (core/safe_mode.py): без трат лимитов и писем людям. На проде не действует.
+DEV_SAFE_MODE = os.getenv('DEV_SAFE_MODE', 'False') == 'True' and not IS_PRODUCTION
+DEV_SAFE_ALLOW = {x.strip() for x in os.getenv('DEV_SAFE_ALLOW', '').split(',') if x.strip()}
+if DEV_SAFE_MODE and 'email' not in DEV_SAFE_ALLOW:
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@dopx.kz')
 CONTACT_EMAIL = os.getenv('CONTACT_EMAIL', 'admin@dopx.kz')
 ADMIN_ALERT_EMAIL = os.getenv('ADMIN_ALERT_EMAIL', CONTACT_EMAIL)
@@ -1094,9 +1104,18 @@ ADMIN_BOT_CHANNEL_ID = os.getenv('ADMIN_BOT_CHANNEL_ID', '')
 ADMIN_BOT_ALLOWED_CHATS = os.getenv('ADMIN_BOT_ALLOWED_CHATS', '')
 # Адрес сайта в постах канала: канал публичный, ссылки всегда на боевой домен (с ноутбука тоже).
 ADMIN_BOT_PUBLIC_URL = os.getenv('ADMIN_BOT_PUBLIC_URL', 'https://dopx.kz')
-# Вопросы боту свободным текстом — через Claude API. Без ключа функция выключена.
+# Claude API: тексты постов канала (без ключа или при ошибке — шаблоны) и, по желанию, вопросы боту.
 ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
-ADMIN_BOT_AI_MODEL = os.getenv('ADMIN_BOT_AI_MODEL', 'claude-sonnet-5-5')
+ADMIN_BOT_AI_MODEL = os.getenv('ADMIN_BOT_AI_MODEL', 'claude-opus-5-5')
+ADMIN_BOT_AI_POSTS = os.getenv('ADMIN_BOT_AI_POSTS', 'True') == 'True'
+# Вопросы боту текстом тратят баланс — по умолчанию выключено.
+ADMIN_BOT_AI_CHAT = os.getenv('ADMIN_BOT_AI_CHAT', 'False') == 'True'
+# Кто по умолчанию пишет статьи и проверяет ФИО: claude или gemini (меняется в дашборде без перезапуска).
+POSTS_AI_PROVIDER = os.getenv('POSTS_AI_PROVIDER', 'claude')
+NAMES_AI_PROVIDER = os.getenv('NAMES_AI_PROVIDER', 'gemini')
+if 'test' in sys.argv or 'pytest' in sys.modules:
+    ANTHROPIC_API_KEY = ''  # тесты не тратят баланс API
+    GEMINI_API_KEY = ''
 
 # Прод не стартует с настройками разработки: ошибка сразу при запуске, а не у пользователей.
 if IS_PRODUCTION and os.getenv('SKIP_PRODUCTION_CHECKS') != 'True':

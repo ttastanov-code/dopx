@@ -175,7 +175,7 @@ COMMAND_REGISTRY: dict[str, CommandSpec] = {
         category="cleanup", danger="destructive", has_apply_flag=True,
         description="Удаляет аккаунты (кроме сотрудников), все оценки, рейтинги, сборные, прогнозы, достижения, "
                     "уведомления, аналитику и вовлечение. У сотрудников обнуляет XP и серии. Матчи, игроков, "
-                    "статистику Sportmonks и правки ФИО (Gemini) не трогает. Для применения — вписать имя команды.",
+                    "статистику Sportmonks и правки ФИО (ИИ) не трогает. Для применения — вписать имя команды.",
         args=[
             ArgSpec("--keep-user", "keep_user", "list_str", help="Логины или email, чьи аккаунты оставить, по одному на строку."),
             ArgSpec("--delete-staff", "delete_staff", "flag", help="Удалить и сотрудников (потом createsuperuser)."),
@@ -247,7 +247,7 @@ COMMAND_REGISTRY: dict[str, CommandSpec] = {
     # ПРОВЕРКА ФИО (ИИ)
     # ============================================================
     "verify_names_with_ai": CommandSpec(
-        name="verify_names_with_ai", label="Проверить ФИО через Gemini",
+        name="verify_names_with_ai", label="Проверить ФИО через ИИ",
         category="ai_names", danger="safe",
         description="Ищет реальное написание ФИО через веб-поиск. Не меняет ничего напрямую — кладёт предложения в очередь на подтверждение. Нужен GEMINI_API_KEY.",
         # Порции по 40 кандидатов — долгие прогоны падали по OOM.
@@ -256,9 +256,9 @@ COMMAND_REGISTRY: dict[str, CommandSpec] = {
             ArgSpec("--all", "all", "flag", help="Прогон по всем записям, не только угаданным."),
             ArgSpec("--entity", "entity", "choice", choices=["player", "referee", "coach"], help="Один тип (пусто — все три)."),
             ArgSpec("--limit", "limit", "int", default=20, help="Не действует из дашборда — прогон всегда режется на порции по 40."),
-            ArgSpec("--delay", "delay", "float", default=4.0, help="Пауза между вызовами Gemini, сек."),
+            ArgSpec("--delay", "delay", "float", default=4.0, help="Пауза между вызовами ИИ, сек."),
             ArgSpec("--recheck", "recheck", "flag", help="Проверить и уже разобранные записи."),
-            ArgSpec("--dry-run", "dry_run", "flag", help="Только список кандидатов, без вызовов Gemini."),
+            ArgSpec("--dry-run", "dry_run", "flag", help="Только список кандидатов, без вызовов ИИ."),
         ],
     ),
 

@@ -197,13 +197,40 @@ def match_trigger_recalc(request, match_id):
 
 @staff_member_required
 def platform_settings(request):
+    from adminbot import flags, writer
+
     context = {
         "page_title": "Настройки платформы — DOPX Staff",
         "active_tab": "platform_settings",
-        "settings_list": PlatformSetting.objects.select_related("updated_by").order_by("key"),
+        # Переключатели «ИИ и оповещения» — своим блоком, в общей таблице не дублируем.
+        "settings_list": PlatformSetting.objects.select_related("updated_by").exclude(key__in=flags.FLAGS).order_by("key"),
         "type_choices": PlatformSetting.TYPE_CHOICES,
+        "flags": flags.overview(),
+        "ai": writer.status(),
     }
     return render(request, "dashboard/platform_settings.html", context)
+
+
+@staff_member_required
+@require_POST
+def platform_flags_save(request):
+    """Блок «ИИ и оповещения»: действует сразу, без перезапуска."""
+    from adminbot import flags
+
+    changed = {}
+    for row in flags.overview():
+        if row["kind"] == "bool":
+            new = request.POST.get(row["key"]) == "on"
+        else:
+            new = request.POST.get(row["key"], row["value"])
+            if new not in dict(row["options"]):
+                continue
+        if new != row["value"] or row["from_env"]:
+            flags.set_flag(row["key"], new, request.user)
+            changed[row["key"]] = new
+    log_staff_action(request, AuditAction.PLATFORM_SETTING_CHANGED, target="ИИ и оповещения", details={"changed": changed})
+    messages.success(request, "Сохранено — действует сразу.")
+    return redirect("dashboard:platform_settings")
 
 
 @staff_member_required
@@ -803,15 +830,15 @@ def scripts_revoke_run(request, run_id):
 
 
 # ============================================================
-# Проверка ФИО (ИИ): ручное подтверждение предложений Gemini.
+# Проверка ФИО (ИИ): ручное подтверждение предложений Gemini или Claude.
 # ============================================================
 
 def _names_review_queue_context() -> dict:
-    """Живая часть очереди (ждут проверки / ошибки Gemini) для страницы и HTMX-поллинга.
+    """Живая часть очереди (ждут проверки / ошибки ИИ) для страницы и HTMX-поллинга.
     «Недавно разобранные» с пагинацией сюда не входят.
     """
     pending = NameVerificationSuggestion.objects.filter(status="pending_review").order_by("-created_at")
-    # Для массового подтверждения — только где Gemini согласен с текущим написанием.
+    # Для массового подтверждения — только где ИИ согласен с текущим написанием.
     matches_count = pending.filter(matches_current=True).count()
     # Честный общий счётчик ошибок до среза [:20].
     failed_qs = NameVerificationSuggestion.objects.filter(status="check_failed").order_by("-created_at")
@@ -822,6 +849,7 @@ def _names_review_queue_context() -> dict:
         "failed_suggestions": failed,
         "failed_count": failed_count,
         "matches_count": matches_count,
+        "names_ai": name_ai.provider_label(),
     }
 
 

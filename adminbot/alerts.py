@@ -41,7 +41,9 @@ class Problem:
 
 
 def enabled() -> bool:
-    mode = settings.ADMIN_BOT_ALERTS
+    from .flags import get
+
+    mode = get("bot_alerts")
     return mode == "on" or (mode == "auto" and settings.ADMIN_BOT_ENV == "prod")
 
 

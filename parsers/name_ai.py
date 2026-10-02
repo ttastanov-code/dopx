@@ -1,8 +1,6 @@
 # parsers/name_ai.py
-"""Проверка кириллического ФИО через Gemini API (REST через requests, с веб-поиском).
-Результат только предлагается — применяется после подтверждения staff в дашборде.
-Если Gemini ругается на инструмент поиска — поправить GOOGLE_SEARCH_TOOL.
-"""
+"""Проверка кириллического ФИО через ИИ с веб-поиском: Gemini или Claude (выбор — в «Настройках бота»).
+Результат только предлагается — применяется после подтверждения staff в дашборде."""
 from __future__ import annotations
 
 import json
@@ -10,22 +8,15 @@ import logging
 import re
 from dataclasses import dataclass
 
-import requests
-from django.conf import settings
-
 logger = logging.getLogger(__name__)
 
-GEMINI_ENDPOINT_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-REQUEST_TIMEOUT_SECONDS = 30
-
-# Имя инструмента веб-поиска Gemini.
-GOOGLE_SEARCH_TOOL = {"google_search": {}}
+SYSTEM = "Ты проверяешь написание имён для спортивного сайта и отвечаешь строго одним JSON-объектом."
 
 
 @dataclass
 class NameVerificationResult:
     """Результат проверки. ok=False — техническая ошибка вызова;
-    ok=True с confidence="low" — Gemini не уверен.
+    ok=True с confidence="low" — ИИ не уверен.
     """
 
     ok: bool
@@ -35,48 +26,55 @@ class NameVerificationResult:
     reasoning: str = ""
     matches_current: bool = False
     error: str = ""
+    provider: str = ""
+
+
+def _order() -> list[str]:
+    from adminbot.flags import get
+    from core import llm
+
+    first = get("names_ai_provider")
+    return [p for p in (first, llm.other(first)) if llm.configured(p)]
 
 
 def is_configured() -> bool:
-    return bool(getattr(settings, "GEMINI_API_KEY", ""))
+    return bool(_order())
+
+
+def provider_label() -> str:
+    """Кто сейчас проверяет ФИО — для подписей в дашборде."""
+    from core import llm
+
+    order = _order()
+    return llm.label(order[0]) if order else "ИИ"
 
 
 def verify_name(
     entity_label: str, first_name: str, last_name: str,
     *, team_name: str = "", extra_context: str = "",
 ) -> NameVerificationResult:
-    """entity_label — «игрока»/«судьи»/«тренера». team_name/extra_context — для отличия тёзок."""
-    if not is_configured():
-        return NameVerificationResult(ok=False, error="GEMINI_API_KEY не задан в настройках (см. dopx/settings.py)")
+    """entity_label — «игрока»/«судьи»/«тренера». team_name/extra_context — для отличия тёзок.
+    Выбранный провайдер не ответил технически — пробуем второй."""
+    from core import llm
 
+    order = _order()
+    if not order:
+        return NameVerificationResult(ok=False, error="Нет ключа ни для Gemini, ни для Claude (GEMINI_API_KEY / ANTHROPIC_API_KEY)")
     prompt = _build_prompt(entity_label, first_name, last_name, team_name, extra_context)
-    url = GEMINI_ENDPOINT_TEMPLATE.format(model=settings.GEMINI_MODEL)
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "tools": [GOOGLE_SEARCH_TOOL],
-        "generationConfig": {"temperature": 0.0},
-    }
-
-    try:
-        response = requests.post(url, params={"key": settings.GEMINI_API_KEY}, json=payload, timeout=REQUEST_TIMEOUT_SECONDS)
-        response.raise_for_status()
-        data = response.json()
-    except requests.RequestException as exc:
-        logger.error("Gemini: запрос не удался (%s %r %r): %s", entity_label, first_name, last_name, exc)
-        # Тело ответа при ошибке — там видно, какой лимит упёрся (минута/сутки).
-        detail = ""
-        response = getattr(exc, "response", None)
-        if response is not None:
-            try:
-                detail = f" | body: {response.text[:500]}"
-            except Exception:
-                pass
-        return NameVerificationResult(ok=False, error=f"{type(exc).__name__}: {exc}{detail}")
-    except ValueError as exc:  # невалидный JSON
-        logger.error("Gemini: невалидный JSON в HTTP-ответе (%s %r %r): %s", entity_label, first_name, last_name, exc)
-        return NameVerificationResult(ok=False, error=f"невалидный JSON HTTP-ответа: {exc}")
-
-    return _parse_response(data, entity_label, first_name, last_name)
+    errors = []
+    for provider in order:
+        try:
+            text = llm.generate(provider, SYSTEM, prompt, web_search=True, max_tokens=8000)
+        except llm.LLMError as exc:
+            logger.error("%s: проверка ФИО не удалась (%s %r %r): %s", llm.label(provider), entity_label, first_name, last_name, exc)
+            errors.append(f"{llm.label(provider)}: {exc}"[:400])
+            continue
+        result = _parse_text(text, entity_label, first_name, last_name)
+        result.provider = provider
+        if result.ok:
+            return result
+        errors.append(f"{llm.label(provider)}: {result.error}")
+    return NameVerificationResult(ok=False, error=" | ".join(errors))
 
 
 def _build_prompt(entity_label: str, first_name: str, last_name: str, team_name: str, extra_context: str) -> str:
@@ -101,37 +99,19 @@ def _build_prompt(entity_label: str, first_name: str, last_name: str, team_name:
     )
 
 
-def _parse_response(data: dict, entity_label: str, first_name: str, last_name: str) -> NameVerificationResult:
-    try:
-        candidates = data.get("candidates") or []
-    except AttributeError:
-        return NameVerificationResult(ok=False, error=f"неожиданный формат ответа Gemini: {data!r:.500}")
-
-    if not candidates:
-        block_reason = ((data.get("promptFeedback") or {}).get("blockReason")) if isinstance(data, dict) else None
-        suffix = f", blockReason={block_reason}" if block_reason else ""
-        return NameVerificationResult(ok=False, error=f"пустой ответ от Gemini (candidates=[]){suffix}")
-
-    try:
-        parts = (candidates[0].get("content") or {}).get("parts") or []
-        text = "".join(p.get("text", "") for p in parts).strip()
-    except (AttributeError, TypeError, IndexError) as exc:
-        return NameVerificationResult(ok=False, error=f"неожиданная структура candidates[0] у Gemini: {exc}")
-
-    if not text:
-        finish_reason = candidates[0].get("finishReason") if candidates else None
-        suffix = f" (finishReason={finish_reason})" if finish_reason else ""
-        return NameVerificationResult(ok=False, error=f"Gemini вернул пустой текст{suffix}")
-
-    # Модель иногда оборачивает JSON в ```json ... ```.
+def _parse_text(text: str, entity_label: str, first_name: str, last_name: str) -> NameVerificationResult:
+    # Модель иногда оборачивает JSON в ```json ... ``` или добавляет текст вокруг.
     cleaned = text.strip()
     if cleaned.startswith("```"):
         cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", cleaned, flags=re.MULTILINE).strip()
+    if not cleaned.startswith("{"):
+        match = re.search(r"\{.*\}", cleaned, flags=re.DOTALL)
+        cleaned = match.group(0) if match else cleaned
 
     try:
         parsed = json.loads(cleaned)
     except json.JSONDecodeError as exc:
-        logger.warning("Gemini: не удалось распарсить JSON-ответ (%s %r %r): текст=%r", entity_label, first_name, last_name, text)
+        logger.warning("ИИ: не удалось распарсить JSON-ответ (%s %r %r): текст=%r", entity_label, first_name, last_name, text[:500])
         return NameVerificationResult(ok=False, error=f"не удалось распарсить ответ как JSON: {exc}")
 
     if not isinstance(parsed, dict):
@@ -146,7 +126,7 @@ def _parse_response(data: dict, entity_label: str, first_name: str, last_name: s
     matches_current = bool(parsed.get("matches_current"))
 
     if not result_first and not result_last:
-        return NameVerificationResult(ok=False, error="Gemini не вернул ни имени, ни фамилии")
+        return NameVerificationResult(ok=False, error="ИИ не вернул ни имени, ни фамилии")
 
     return NameVerificationResult(
         ok=True, first_name=result_first, last_name=result_last,

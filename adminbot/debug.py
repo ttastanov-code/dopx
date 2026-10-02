@@ -73,9 +73,12 @@ class CacheLogHandler(logging.Handler):
             return
         record._adminbot_cached = True
         try:
+            from .telegram import redact
+
             text = record.getMessage()
             if record.exc_info:
                 text += "\n" + "".join(traceback.format_exception(*record.exc_info))[-1500:]
+            text = redact(text)
             if record.levelno >= logging.ERROR:
                 STATS["errors"] += 1
             key = f"adminbot:log:{_env()}"
@@ -87,8 +90,26 @@ class CacheLogHandler(logging.Handler):
             pass  # журнал не должен ронять бота
 
 
+class RedactTokenFilter(logging.Filter):
+    """Вырезает токен бота из любой записи логгеров adminbot.* — до файлов, журнала и Sentry."""
+
+    def filter(self, record):
+        from .telegram import redact
+
+        msg = record.getMessage()
+        clean = redact(msg)
+        if clean != msg:
+            record.msg, record.args = clean, ()
+        return True
+
+
 def install() -> None:
     log = logging.getLogger("adminbot")
+    # Фильтр логгера не видит записи дочерних логгеров — ставим и на все обработчики.
+    loggers = [logging.getLogger()] + [l for l in logging.Logger.manager.loggerDict.values() if isinstance(l, logging.Logger)]
+    for target in [log] + [h for l in loggers for h in l.handlers]:
+        if not any(isinstance(f, RedactTokenFilter) for f in target.filters):
+            target.addFilter(RedactTokenFilter())
     if not any(isinstance(h, CacheLogHandler) for h in log.handlers):
         handler = CacheLogHandler(level=logging.WARNING)
         log.addHandler(handler)

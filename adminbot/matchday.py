@@ -267,7 +267,7 @@ def on_round_final(rnd) -> None:
                      + (f" — {rnd.player_of_round_score:.1f}" if rnd.player_of_round_score is not None else ""))
     if rnd.most_dramatic_match_id:
         lines.append(f"🔥 Самый драматичный матч: {esc(_label(rnd.most_dramatic_match))}")
-    posts = channel.round_posts()
+    posts = channel.round_posts(rnd=rnd)
     if posts:
         lines.append(f"\n📣 Для канала готово постов: {len(posts)}")
     push("\n".join(lines), [[("📣 Канал", cb("chan"))]] if posts else None, "overview", topic="matchday")

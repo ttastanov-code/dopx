@@ -12,7 +12,7 @@
             {% if matches_count > 0 %}
             {# «Подтвердить все» — только для карточек, где имя уже верное (matches_current=True). #}
             {% if perms.parsers.change_nameverificationsuggestion and perms.parsers.add_confirmednamecorrection %}<form method="post" action="{% url 'dashboard:names_review_bulk_confirm_matches' %}" class="ml-auto"
-                  onsubmit="return confirm('Подтвердить все {{ matches_count }} карточки, где Gemini написал «текущее написание верно»? Реальные предложения изменить ФИО это не затронет.');">
+                  onsubmit="return confirm('Подтвердить все {{ matches_count }} карточки, где {{ names_ai|default:'ИИ' }} написал «текущее написание верно»? Реальные предложения изменить ФИО это не затронет.');">
                 {% csrf_token %}
                 <button type="submit" class="btn btn-success btn-outline btn-xs">
                     <i class="ti ti-checks"></i> Подтвердить все совпадающие ({{ matches_count }})
@@ -30,7 +30,7 @@
                     {% if s.confidence == 'high' %}<span class="badge badge-success badge-sm">Уверенность: высокая</span>
                     {% elif s.confidence == 'medium' %}<span class="badge badge-warning badge-sm">Уверенность: средняя</span>
                     {% else %}<span class="badge badge-error badge-outline badge-sm">Уверенность: низкая</span>{% endif %}
-                    {% if s.matches_current %}<span class="badge badge-info badge-sm">Gemini: текущее написание верно</span>{% endif %}
+                    {% if s.matches_current %}<span class="badge badge-info badge-sm">{{ names_ai|default:'ИИ' }}: текущее написание верно</span>{% endif %}
                 </div>
                 <div class="text-sm mb-2">
                     <span class="opacity-60">Сейчас:</span> <span class="font-medium">{{ s.current_first_name }} {{ s.current_last_name }}</span>
@@ -68,12 +68,12 @@
     <div class="card-body p-4">
         <div class="dopx-section-eyebrow" style="color: var(--color-error)"><i class="ti ti-alert-triangle"></i>Ошибки</div>
         <div class="dopx-section-title mb-3">
-            Запросы к Gemini
+            Запросы к ИИ
             {# failed_count — полный .count(), не длина среза. #}
             <span class="badge badge-error badge-sm align-middle">{{ failed_count }}</span>
         </div>
         <p class="text-xs opacity-60 mb-3">
-            Технический сбой вызова (не путать с "Gemini не нашёл человека" — это отдельный, честный результат с низкой уверенностью в очереди выше).
+            Технический сбой вызова (не путать с "ИИ не нашёл человека" — это отдельный, честный результат с низкой уверенностью в очереди выше).
             {% if failed_count > failed_suggestions|length %}Показаны последние {{ failed_suggestions|length }} из {{ failed_count }} — скрывайте по очереди, остальные появятся.{% endif %}
             «Скрыть» удаляет запись об ошибке — сущность сама попадёт под проверку при следующем ОБЫЧНОМ прогоне, <span class="font-mono">--recheck</span> для этого не нужен (он заново тратит вызовы и на уже одобренные/отклонённые записи).
         </p>

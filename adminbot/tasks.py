@@ -84,3 +84,29 @@ def weekly_staff_report() -> int:
         return 0
     text, rows = weekly_staff_text()
     return send_task(ids, text, rows or None)
+
+
+@shared_task(ignore_result=True)
+def channel_rubric() -> int:
+    """12:00: вторник — спорный момент тура, среда — цифра недели."""
+    if not tg.enabled():
+        return 0
+    from .channel import weekly_rubric
+
+    return len(weekly_rubric())
+
+
+@shared_task(ignore_result=True)
+def make_samples(chat_id: int | None = None) -> int:
+    """Пробные посты всех форматов (Claude пишет тексты — это может занять минуту-две)."""
+    from .channel import sample_posts
+
+    posts = sample_posts()
+    if chat_id:
+        from .handlers import cb, header
+
+        ai = sum(p.by_ai for p in posts)
+        tg.send(chat_id, header() + f"🧪 Готово пробных черновиков: {len(posts)}"
+                + (f", тексты Claude: {ai}" if ai else ", тексты по шаблонам") + ". Откройте «Черновики».",
+                [[("📝 Черновики", cb("chan_list", "draft"))]])
+    return len(posts)

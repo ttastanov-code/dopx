@@ -7,7 +7,6 @@ import json
 import logging
 from datetime import date, timedelta
 
-import requests
 from django.conf import settings
 from django.db.models import Avg, Count, Q, Sum
 from django.utils import timezone
@@ -25,7 +24,12 @@ SYSTEM = (
 
 
 def enabled() -> bool:
-    return bool(settings.ANTHROPIC_API_KEY)
+    """Вопросы текстом тратят баланс API — включаются отдельно (переключатель «Вопросы боту текстом»)."""
+    from .flags import get
+
+    from core.safe_mode import allowed
+
+    return bool(settings.ANTHROPIC_API_KEY and get("bot_ai_chat") and allowed("ai"))
 
 
 def _season():
@@ -168,42 +172,39 @@ def _tools_for(user):
     return {name: spec for name, spec in TOOLS.items() if spec[1] is None or can(user, spec[1])}
 
 
-def _call(payload: dict) -> dict:
-    resp = requests.post(API, json=payload, timeout=60, headers={
-        "x-api-key": settings.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json"})
-    resp.raise_for_status()
-    return resp.json()
-
-
 def answer(user, question: str) -> str:
+    import anthropic
+
     tools = _tools_for(user)
-    payload = {
-        "model": settings.ADMIN_BOT_AI_MODEL, "max_tokens": 1024,
+    client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY, timeout=60.0, max_retries=2)
+    request = {
+        "model": settings.ADMIN_BOT_AI_MODEL, "max_tokens": 4000, "output_config": {"effort": "low"},
+        "betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default",
         "system": SYSTEM.format(today=timezone.localdate().isoformat()),
         "tools": [{"name": n, "description": s[2], "input_schema": {"type": "object", "properties": s[3], "required": s[4]}}
                   for n, s in tools.items()],
-        "messages": [{"role": "user", "content": question[:1000]}],
     }
+    messages = [{"role": "user", "content": question[:1000]}]
     try:
         for _ in range(MAX_STEPS):
-            data = _call(payload)
-            content = data.get("content", [])
-            if data.get("stop_reason") != "tool_use":
-                return "\n".join(b.get("text", "") for b in content if b.get("type") == "text").strip() or "Не нашёл ответа."
-            payload["messages"].append({"role": "assistant", "content": content})
+            response = client.beta.messages.create(messages=messages, **request)
+            if response.stop_reason != "tool_use":
+                text = "\n".join(b.text for b in response.content if b.type == "text").strip()
+                return text or "Не нашёл ответа."
+            messages.append({"role": "assistant", "content": response.content})
             results = []
-            for block in content:
-                if block.get("type") != "tool_use":
+            for block in response.content:
+                if block.type != "tool_use":
                     continue
-                spec = tools.get(block["name"])
+                spec = tools.get(block.name)
                 try:
-                    out = spec[0](**block.get("input", {})) if spec else {"error": "нет такого инструмента"}
+                    out = spec[0](**(block.input or {})) if spec else {"error": "нет такого инструмента"}
                 except Exception as e:   # неверные аргументы — сообщаем модели, а не падаем
                     out = {"error": str(e)[:200]}
-                results.append({"type": "tool_result", "tool_use_id": block["id"],
+                results.append({"type": "tool_result", "tool_use_id": block.id,
                                 "content": json.dumps(out, ensure_ascii=False, default=str)[:12000]})
-            payload["messages"].append({"role": "user", "content": results})
-    except requests.RequestException as e:
+            messages.append({"role": "user", "content": results})
+    except anthropic.APIError as e:
         logger.warning("adminbot ask: Claude API: %s", e)
-        return "Claude сейчас недоступен, попробуйте позже."
+        return "Claude сейчас недоступен (ключ, баланс или сеть), попробуйте позже."
     return "Вопрос оказался слишком сложным — уточните, пожалуйста."

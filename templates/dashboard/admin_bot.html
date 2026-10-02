@@ -79,6 +79,9 @@
             <div class="opacity-70">Открытых инцидентов: {{ incidents|length }}</div>
             <div class="opacity-70">Канал: {% if channel_ready %}в очереди {{ channel_queue }}{% if channel_failed %}, <span class="text-error">с ошибкой {{ channel_failed }}</span>{% endif %}{% else %}не подключён{% endif %}</div>
             <div class="opacity-70">Жду итога: скриптов {{ watch_scripts }}, деплоев {{ watch_deploys }}</div>
+            <div class="opacity-70">{{ ai.summary }}</div>
+            {% for name, reason in ai.paused.items %}<div class="text-xs text-warning">{{ name }} на паузе: {{ reason }}</div>{% endfor %}
+            <div class="opacity-70">Вопросы боту текстом: {% if ai.key and ai.chat %}включены{% else %}выключены{% endif %}</div>
         </div>
     </div>
     {% if incidents %}
@@ -92,6 +95,7 @@
         <button name="action" value="dbg_check_channel" class="btn btn-sm btn-outline"><i class="ti ti-brand-telegram"></i> Перепроверить канал</button>
         <button name="action" value="dbg_reset_offset" class="btn btn-sm btn-ghost" onclick="return confirm('Бот заново заберёт все непрочитанные сообщения. Продолжить?')"><i class="ti ti-rotate"></i> Сбросить позицию чтения</button>
         {% if tg.webhook %}<button name="action" value="dbg_delete_webhook" class="btn btn-sm btn-error btn-outline"><i class="ti ti-plug-off"></i> Снять вебхук</button>{% endif %}
+        {% if ai.paused %}<button name="action" value="dbg_ai_reset" class="btn btn-sm btn-outline"><i class="ti ti-sparkles"></i> Снова пробовать ИИ</button>{% endif %}
         {% if log %}<button name="action" value="dbg_clear_log" class="btn btn-sm btn-ghost"><i class="ti ti-eraser"></i> Очистить журнал</button>{% endif %}
     </form>
 
