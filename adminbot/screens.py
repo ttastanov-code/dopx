@@ -208,27 +208,39 @@ def post_view(user, pk):
     return text, rows + back(("← Канал", cb("chan")))
 
 
+MODE_ICON = {"auto": "🟢", "approve": "🟡", "off": "⚪️"}
+MODE_HINT = {"auto": "бот публикует сам", "approve": "черновик сначала приходит вам", "off": "такие посты не готовятся"}
+
+
 def chan_modes_view(user, arg=""):
     from .channel import KIND_HINTS, MODES
 
     cfg = ChannelConfig.get()
     labels = dict(ChannelPost.KIND_CHOICES)
     lines = [header() + "⚙️ <b>Автопостинг в канал</b>", "",
-             "<b>Сразу</b> — бот публикует сам; <b>С одобрением</b> — присылает черновик; <b>Не готовить</b> — выключено.",
-             "Ночью (23:00–09:00) автопосты ждут утра." if cfg.quiet_hours else "Тихие часы выключены.", ""]
-    rows = []
-    editable = can(user, "channel", "adminbot.delete_channelpost")
-    for kind, hint in KIND_HINTS.items():
-        mode = cfg.mode(kind)
-        lines.append(f"<b>{esc(labels[kind])}</b> — {dict(MODES)[mode]}\n<i>{esc(hint)}</i>")
-        if editable:
-            rows.append([((("● " if m == mode else "") + f"{labels[kind][:14]}: {label}"), cb("chan_mode", f"{kind}:{m}"))
-                         for m, label in MODES if m != mode][:2])
-    if editable:
-        rows.append([("🌙 Тихие часы: " + ("вкл" if cfg.quiet_hours else "выкл"), cb("chan_mode", "quiet:toggle"))])
+             "🟢 Сразу — бот публикует сам", "🟡 С одобрением — черновик сначала приходит вам", "⚪️ Не готовить — выключено", "",
+             "Нажмите на тип поста, чтобы поменять режим."]
+    rows = [[(f"{MODE_ICON[cfg.mode(k)]} {labels[k]} — {dict(MODES)[cfg.mode(k)]}", cb("chan_kind", k))] for k in KIND_HINTS]
+    if can(user, "channel", "adminbot.delete_channelpost"):
+        rows.append([("🌙 Ночью не публиковать: " + ("да" if cfg.quiet_hours else "нет"), cb("chan_mode", "quiet:toggle"))])
     else:
         lines.append("\n<i>Менять режимы может сотрудник с полным доступом к каналу.</i>")
     return "\n".join(lines), rows + back(("← Канал", cb("chan")))
+
+
+def chan_kind_view(user, kind):
+    from .channel import KIND_HINTS, MODES
+
+    if kind not in KIND_HINTS:
+        return chan_modes_view(user)
+    current = ChannelConfig.get().mode(kind)
+    label = dict(ChannelPost.KIND_CHOICES)[kind]
+    text = (header() + f"⚙️ <b>{esc(label)}</b>\n<i>Когда: {esc(KIND_HINTS[kind])}</i>\n\n"
+            f"Сейчас: {MODE_ICON[current]} <b>{dict(MODES)[current]}</b> — {MODE_HINT[current]}")
+    rows = []
+    if can(user, "channel", "adminbot.delete_channelpost"):
+        rows = [[(("✓ " if m == current else "") + f"{MODE_ICON[m]} {title}", cb("chan_mode", f"{kind}:{m}"))] for m, title in MODES]
+    return text, rows + back(("← Все типы", cb("chan_modes")))
 
 
 def _post(pk):
@@ -306,7 +318,9 @@ def act_chan_mode(user, arg):
         return "Неизвестный режим."
     cfg.save()
     audit(user, f"Автопостинг: {kind} → {mode or cfg.quiet_hours}", {"modes": cfg.modes, "quiet": cfg.quiet_hours})
-    return "⚙️ Сохранено."
+    if kind == "quiet":
+        return "🌙 Ночью не публиковать: " + ("да" if cfg.quiet_hours else "нет") + "."
+    return f"✅ {dict(ChannelPost.KIND_CHOICES)[kind]}: {MODE_ICON[mode]} {dict(MODES)[mode]}."
 
 
 # ---------------- Эксперты
@@ -612,6 +626,7 @@ VIEWS = {
     "chan_list": (_perm(CHANNEL, None), chan_list_view),
     "post": (_perm(CHANNEL, None), post_view),
     "chan_modes": (_perm(CHANNEL, None), chan_modes_view),
+    "chan_kind": (_perm(CHANNEL, None), chan_kind_view),
     "exp": (_perm("experts", None), experts_view),
     "inv_new": (_perm("experts", "engagement.add_expertinvite"), inv_new_view),
     "inv_exp": (_perm("experts", "engagement.add_expertinvite"), inv_exp_view),

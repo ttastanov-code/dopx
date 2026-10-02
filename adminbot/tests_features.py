@@ -381,3 +381,21 @@ class GuardTests(BotTestCase):
             router.route(self._added({"id": -1003, "type": "group", "title": "Группа"}))
             call.assert_called_once()
         self.assertIn("ADMIN_BOT_CHANNEL_ID", self.sent[0][1])
+
+
+class ChannelModesScreenTests(BotTestCase):
+    def test_list_shows_current_mode_and_kind_screen_switches_it(self):
+        StaffAccessGrant.objects.filter(user=self.staff).update(allowed_sections=["admin_bot", "channel"])
+        self.link()
+        self.staff.user_permissions.add(Permission.objects.get(codename="delete_channelpost"))
+        handlers.handle(press("d|chan_modes|"))
+        self.assertIn(("🟡 Анонс тура — С одобрением", "d|chan_kind|preview"), [b for row in self.sent[-1][2] for b in row])
+        handlers.handle(press("d|chan_kind|preview"))
+        labels = [t for row in self.sent[-1][2] for t, _ in row]
+        self.assertIn("✓ 🟡 С одобрением", labels)
+        cache.set(f"adminbot:elev:dev:{self.staff.pk}", 1, 600)
+        with mock.patch.object(handlers, "has_2fa", return_value=True):
+            handlers.handle(press("d|chan_mode|preview:auto"))
+        self.assertEqual(ChannelConfig.get().mode("preview"), "auto")
+        self.assertIn("Анонс тура: 🟢 Сразу", self.last_text())
+        self.assertIn(("🟢 Анонс тура — Сразу", "d|chan_kind|preview"), [b for row in self.sent[-1][2] for b in row])
