@@ -13,10 +13,13 @@
             <li class="flex justify-between gap-3"><span class="opacity-70">Слушает Telegram</span>{% if status.listener %}<span class="badge badge-success badge-sm">здесь ({{ status.listener }})</span>{% else %}<span class="badge badge-ghost badge-sm">не здесь / не запущен</span>{% endif %}</li>
             <li class="flex justify-between gap-3"><span class="opacity-70">{% if status.env == 'prod' %}Ноутбук (DEV) подключён{% else %}Прод подключён{% endif %}</span>{% if status.other_online %}<span class="badge badge-success badge-sm">да</span>{% else %}<span class="badge badge-ghost badge-sm">нет</span>{% endif %}</li>
             {% if status.env == 'dev' %}
-            <li class="flex justify-between gap-3"><span class="opacity-70">Адрес прода (ADMIN_BOT_HUB_URL)</span><span class="font-mono text-xs">{{ status.hub|default:"не задан" }}</span></li>
+            <li class="flex justify-between gap-3"><span class="opacity-70">Связь с продом (ADMIN_BOT_HUB_URL)</span>{% if status.hub %}<span class="font-mono text-xs">{{ status.hub }}</span>{% else %}<span class="badge badge-ghost badge-sm">после запуска прода</span>{% endif %}</li>
             {% endif %}
-            <li class="flex justify-between gap-3"><span class="opacity-70">Ключ ретранслятора</span>{% if status.relay_secret %}<span class="badge badge-success badge-sm">задан</span>{% else %}<span class="badge badge-warning badge-sm">не задан</span>{% endif %}</li>
+            <li class="flex justify-between gap-3"><span class="opacity-70">Ключ связи dev ↔ прод</span>{% if status.relay_secret %}<span class="badge badge-success badge-sm">задан</span>{% elif status.env == 'dev' and not status.hub %}<span class="badge badge-ghost badge-sm">после запуска прода</span>{% else %}<span class="badge badge-warning badge-sm">не задан</span>{% endif %}</li>
         </ul>
+        {% if status.env == 'dev' and not status.hub %}
+        <p class="text-xs opacity-60 leading-relaxed">Пока прода нет, бот целиком работает с ноутбука — это нормально. Эти две настройки понадобятся после запуска сервера: тогда Telegram будет слушать прод, а ноутбук подключится к нему, и в боте появится переключатель «🟢 PROD / 🧪 DEV». Как настроить — docs/DEPLOYMENT.md, раздел «Telegram-бот».</p>
+        {% endif %}
         {% if not status.enabled %}
         <div class="text-xs opacity-70 bg-base-200/60 rounded-lg p-3 leading-relaxed">
             Создайте бота в @BotFather, впишите токен в <code>.env</code> как <code>ADMIN_BOT_TOKEN</code> и запустите <code>python manage.py runbot</code>.

@@ -604,3 +604,18 @@ class AttachCardExtrasIntegrationTests(CardServicesTestCase):
     def test_empty_list_is_a_noop(self):
         # Пустой список — не падает.
         attach_card_extras([], self._request())
+
+
+class FormOnlyForNearestMatchTests(CardServicesTestCase):
+    def test_form_shown_only_on_teams_next_match(self):
+        from matches.card_services import _attach_intrigue_and_pre_match
+
+        now = timezone.now()
+        team_c = Team.objects.create(name="Каспий")
+        for days in (20, 13):  # два поражения Алатау
+            self.make_match(status='finished', start_time=now - timedelta(days=days), home_score=0, away_score=1)
+        nearest = self.make_match(start_time=now + timedelta(days=2))
+        later = self.make_match(start_time=now + timedelta(days=9), away_team=team_c)
+        _attach_intrigue_and_pre_match([nearest, later])
+        self.assertTrue(nearest.card_home_form_text)
+        self.assertIsNone(later.card_home_form_text)      # до этого матча Алатау ещё сыграет

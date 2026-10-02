@@ -9,6 +9,7 @@ attach_card_extras(matches, request) вызывается один раз на �
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import timedelta
 
 from django.db.models import Count, Q
 from django.utils import timezone
@@ -124,10 +125,15 @@ def _attach_intrigue_and_pre_match(pre_match) -> None:
 
     positions = _bulk_current_positions(season_ids, team_ids)
     total_teams_by_season = _bulk_total_teams(season_ids)
+    next_match = _next_match_by_team(team_ids)
 
     for match in pre_match:
-        home_pos = positions.get((match.season_id, match.home_team_id))
-        away_pos = positions.get((match.season_id, match.away_team_id))
+        # Форма и места в таблице меняются после каждого тура — пишем о них только у ближайшего матча команды.
+        home_next = next_match.get(match.home_team_id) == match.pk
+        away_next = next_match.get(match.away_team_id) == match.pk
+        both_next = home_next and away_next
+        home_pos = positions.get((match.season_id, match.home_team_id)) if both_next else None
+        away_pos = positions.get((match.season_id, match.away_team_id)) if both_next else None
         total_teams = total_teams_by_season.get(match.season_id)
 
         recent_meetings = _recent_meetings(match)  # один запрос для интриги и H2H
@@ -138,21 +144,33 @@ def _attach_intrigue_and_pre_match(pre_match) -> None:
         )
         match.card_h2h = _summarize_h2h(match, last_meeting_and_more=recent_meetings)
 
-        # Серия — по всем матчам текущего сезона команды, без среза.
-        home_season_matches = list(
-            Match.objects.filter(
-                Q(home_team=match.home_team) | Q(away_team=match.home_team),
-                season=match.season, status='finished', start_time__lt=match.start_time,
-            ).select_related('home_team', 'away_team').order_by('-start_time')
-        )
-        away_season_matches = list(
-            Match.objects.filter(
-                Q(home_team=match.away_team) | Q(away_team=match.away_team),
-                season=match.season, status='finished', start_time__lt=match.start_time,
-            ).select_related('home_team', 'away_team').order_by('-start_time')
-        )
-        match.card_home_form_text = describe_season_form_streak(match.home_team, home_season_matches)
-        match.card_away_form_text = describe_season_form_streak(match.away_team, away_season_matches)
+        match.card_home_form_text = _season_form_text(match, match.home_team) if home_next else None
+        match.card_away_form_text = _season_form_text(match, match.away_team) if away_next else None
+
+
+def _season_form_text(match, team) -> str | None:
+    """Серия — по всем матчам текущего сезона команды, без среза."""
+    season_matches = list(
+        Match.objects.filter(
+            Q(home_team=team) | Q(away_team=team),
+            season=match.season, status='finished', start_time__lt=match.start_time,
+        ).select_related('home_team', 'away_team').order_by('-start_time')
+    )
+    return describe_season_form_streak(team, season_matches)
+
+
+def _next_match_by_team(team_ids) -> dict:
+    """{team_id: id ближайшего матча (идёт или впереди)}."""
+    rows = (
+        Match.objects.filter(Q(home_team_id__in=team_ids) | Q(away_team_id__in=team_ids), status__in=['live', 'scheduled'],
+                             start_time__gte=timezone.now() - timedelta(days=1))  # зависшие старые не в счёт
+        .order_by('start_time').values_list('id', 'home_team_id', 'away_team_id')
+    )
+    out: dict = {}
+    for match_id, home_id, away_id in rows:
+        out.setdefault(home_id, match_id)
+        out.setdefault(away_id, match_id)
+    return out
 
 
 def _bulk_current_positions(season_ids, team_ids) -> dict:
