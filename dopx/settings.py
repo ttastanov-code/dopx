@@ -49,6 +49,9 @@ APP_COMMIT = os.getenv("APP_COMMIT", "")
 
 # Sentry инициализируется до загрузки приложений. Без SENTRY_DSN — no-op.
 SENTRY_DSN = os.getenv("SENTRY_DSN", "")
+# В тестах не шлём: они нарочно имитируют сбои, в Sentry это выглядело бы как настоящие ошибки.
+if 'test' in sys.argv or 'pytest' in sys.modules:
+    SENTRY_DSN = ""
 if SENTRY_DSN:
     import sentry_sdk
     from sentry_sdk.integrations.celery import CeleryIntegration

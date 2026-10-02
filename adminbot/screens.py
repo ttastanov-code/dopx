@@ -12,6 +12,7 @@ from django.core.cache import cache
 from django.utils import timezone
 
 from . import telegram as tg
+from . import handlers as _handlers
 from .handlers import ENV, _pairs, _perm, audit, back, can, cb, esc, header
 from .models import TOPICS, BotLink, ChannelConfig, ChannelPost
 
@@ -784,3 +785,9 @@ TEXT_PROMPTS = {
     "take_return": "↩️ Напишите комментарий эксперту: что поправить.",
     "contact_reply": "💬 Напишите ответ болельщику — он придёт ему на сайт и на почту.",
 }
+
+# Экраны и действия — в общие реестры handlers.
+_handlers.VIEWS.update(VIEWS)
+_handlers.WRITE.update(WRITE)
+_handlers.TEXT_PROMPTS.update(TEXT_PROMPTS)
+_handlers.VIEWS_WITH_CHAT.update(VIEWS_WITH_CHAT)

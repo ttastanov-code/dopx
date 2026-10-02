@@ -66,7 +66,8 @@ def verify_name(
         try:
             text = llm.generate(provider, SYSTEM, prompt, web_search=True, max_tokens=8000)
         except llm.LLMError as exc:
-            logger.error("%s: проверка ФИО не удалась (%s %r %r): %s", llm.label(provider), entity_label, first_name, last_name, exc)
+            # Предупреждение: дальше пробуем второй провайдер; ошибка — только если не ответил никто.
+            logger.warning("%s: проверка ФИО не удалась (%s %r %r): %s", llm.label(provider), entity_label, first_name, last_name, exc)
             errors.append(f"{llm.label(provider)}: {exc}"[:400])
             continue
         result = _parse_text(text, entity_label, first_name, last_name)
@@ -74,6 +75,7 @@ def verify_name(
         if result.ok:
             return result
         errors.append(f"{llm.label(provider)}: {result.error}")
+    logger.error("ИИ: проверка ФИО не удалась ни у одного провайдера (%s %r %r): %s", entity_label, first_name, last_name, " | ".join(errors))
     return NameVerificationResult(ok=False, error=" | ".join(errors))
 
 

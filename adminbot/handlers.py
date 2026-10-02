@@ -933,10 +933,7 @@ def _on_callback(tid, q, link):
         return _run_write(tid, user, action, arg)
 
 
-# Экраны и действия из screens.py — в общие реестры.
-from .screens import TEXT_PROMPTS, VIEWS_WITH_CHAT  # noqa: E402
-from .screens import VIEWS as _MORE_VIEWS  # noqa: E402
-from .screens import WRITE as _MORE_WRITE  # noqa: E402
-
-VIEWS.update(_MORE_VIEWS)
-WRITE.update(_MORE_WRITE)
+# Заполняет screens.py при загрузке (порядок импорта модулей не важен).
+TEXT_PROMPTS: dict = {}
+VIEWS_WITH_CHAT: dict = {}
+from . import screens  # noqa: E402,F401
