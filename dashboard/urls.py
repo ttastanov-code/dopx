@@ -1,6 +1,8 @@
 # dashboard/urls.py
 from django.urls import path
 
+from adminbot import views as adminbot_views
+
 from . import access_views, views, views_2fa, views_experts
 
 app_name = "dashboard"
@@ -22,6 +24,8 @@ urlpatterns = [
     path("system-status/", views.system_status, name="system_status"),
     path("mourning/", views.mourning_mode, name="mourning"),
     path("social/", views.social_content, name="social_content"),
+    path("bot/", adminbot_views.dashboard_page, name="admin_bot"),
+    path("bot/unlink/", adminbot_views.dashboard_unlink, name="admin_bot_unlink"),
     path("experts/", views_experts.experts, name="experts"),
     path("experts/takes/new/", views_experts.expert_take_create, name="expert_take_create"),
     path("experts/takes/players/", views_experts.expert_take_players, name="expert_take_players"),
@@ -50,13 +54,12 @@ urlpatterns = [
     path("banners/<uuid:banner_id>/stats/", views.banner_stats_partial, name="banner_stats_partial"),
     path("banners/<uuid:banner_id>/version/", views.banner_version, name="banner_version"),
     path("banners/<uuid:banner_id>/duplicate/", views.banner_duplicate, name="banner_duplicate"),
-    path("access/", views.access_roles_list, name="access_roles_list"),
-    path("access/<uuid:user_id>/", views.access_roles_detail, name="access_roles_detail"),
-    path("access/<uuid:user_id>/admin-groups/", access_views.access_user_admin_groups, name="access_user_admin_groups"),
+    path("access/", access_views.access_home, name="access_roles_list"),
+    path("access/<uuid:user_id>/", access_views.access_user, name="access_roles_detail"),
     path("access/<uuid:user_id>/revoke-staff/", access_views.access_revoke_staff, name="access_revoke_staff"),
     path("access/grant-staff/", access_views.access_grant_staff, name="access_grant_staff"),
     path("access/groups/", access_views.admin_groups_list, name="admin_groups_list"),
-    path("access/groups/<int:group_id>/", access_views.admin_group_detail, name="admin_group_detail"),
+    path("access/groups/<int:group_id>/", access_views.role_detail, name="admin_group_detail"),
     path("data-health/", views.data_health, name="data_health"),
     path("data-health/partial/", views.data_health_partial, name="data_health_partial"),
     # Не <uuid:...> — сюда приходят и старые числовые id матчей.

@@ -1,6 +1,7 @@
 # dopx/urls.py
 from django.contrib import admin
 from django.contrib.sitemaps.views import sitemap
+from adminbot import views as adminbot_views
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
@@ -49,6 +50,8 @@ urlpatterns = [
     path('', include('partners.urls')),
     # Staff-дашборд (доступ проверяется во вьюхах).
     path('staff/dashboard/', include('dashboard.urls')),
+    # Ретранслятор Telegram-бота для агента (ноутбука); доступ по секретному ключу.
+    path('bot/relay/', adminbot_views.relay_view, name='adminbot_relay'),
     path('', include('engagement.urls')),
     # sitemap кэшируется на 12 ч.
     path('sitemap.xml', cache_page(60 * 60 * 12)(sitemap), {'sitemaps': sitemaps}, name='sitemap'),

@@ -57,7 +57,8 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
         NavItem("system_status", "dashboard:system_status", "ti-heart-rate-monitor", "Статус", "Сервисы, версия, деплои"),
         NavItem("platform_settings", "dashboard:platform_settings", "ti-adjustments", "Настройки", "Параметры платформы"),
         NavItem("scripts", "dashboard:scripts", "ti-terminal-2", "Скрипты", "Команды обслуживания", warn=True),
-        NavItem("access_roles", "dashboard:access_roles_list", "ti-user-shield", "Доступы", "Кому какие разделы"),
+        NavItem("admin_bot", "dashboard:admin_bot", "ti-brand-telegram", "Telegram-бот", "Привязка и состояние бота"),
+        NavItem("access_roles", "dashboard:access_roles_list", "ti-user-shield", "Доступы", "Сотрудники и роли"),
     )),
 )
 

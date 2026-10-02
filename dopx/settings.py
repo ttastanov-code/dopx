@@ -113,6 +113,7 @@ INSTALLED_APPS = [
     # Сборная и игрок тура.
     'round_squad',
     'engagement',
+    'adminbot',
     # Партнёры и баннеры.
     'partners',
     # axes — защита от перебора паролей, django_otp — 2FA.
@@ -267,6 +268,12 @@ UNFOLD = {
                         "icon": "admin_panel_settings",
                         "link": reverse_lazy("dashboard:access_roles_list"),
                         "permission": lambda request: request.user.is_superuser,
+                    },
+                    {
+                        "title": _("Привязки к Telegram-боту"),
+                        "icon": "smart_toy",
+                        "link": reverse_lazy("admin:adminbot_botlink_changelist"),
+                        "permission": admin_perm("adminbot_botlink"),
                     },
                     {
                         "title": _("На сайт"),
@@ -683,6 +690,11 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'core.tasks.celery_heartbeat',
         'schedule': 60.0,
     },
+    # Утренняя сводка в Telegram-бот.
+    'adminbot-daily-digest': {
+        'task': 'adminbot.tasks.daily_digest',
+        'schedule': crontab(hour=9, minute=0),
+    },
     # Контент для соцсетей по итогам тура — понедельник утром.
     # Опросы недели: вт — спорный момент, ср — дуэль тура.
     'weekly-polls': {
@@ -1027,6 +1039,23 @@ CONTACT_EMAIL = os.getenv('CONTACT_EMAIL', 'admin@dopx.kz')
 ADMIN_ALERT_EMAIL = os.getenv('ADMIN_ALERT_EMAIL', CONTACT_EMAIL)
 ENABLE_SYNC_ERROR_ALERTS = os.getenv('ENABLE_SYNC_ERROR_ALERTS', 'True') == 'True'
 SITE_URL = os.getenv('SITE_URL', 'http://127.0.0.1:8000')
+
+# =============================================================================
+# Telegram-бот администрирования (adminbot). Один бот на dev и prod: слушает прод,
+# ноутбук подключается к нему агентом через ADMIN_BOT_HUB_URL + ADMIN_BOT_RELAY_SECRET.
+# =============================================================================
+ADMIN_BOT_TOKEN = os.getenv('ADMIN_BOT_TOKEN') or os.getenv('TELEGRAM_BOT_TOKEN', '')
+ADMIN_BOT_ENABLED = os.getenv('ADMIN_BOT_ENABLED', 'True') == 'True'
+ADMIN_BOT_ENV = 'prod' if IS_PRODUCTION else 'dev'
+ADMIN_BOT_HUB_URL = os.getenv('ADMIN_BOT_HUB_URL', '')
+ADMIN_BOT_RELAY_SECRET = os.getenv('ADMIN_BOT_RELAY_SECRET', '')
+# Деплой и откат кнопкой: fine-grained токен GitHub (Actions: read/write) и репозиторий.
+ADMIN_BOT_GITHUB_TOKEN = os.getenv('ADMIN_BOT_GITHUB_TOKEN', '')
+ADMIN_BOT_GITHUB_REPO = os.getenv('ADMIN_BOT_GITHUB_REPO', '')
+# Алерты: auto — только на проде, on/off — принудительно.
+ADMIN_BOT_ALERTS = os.getenv('ADMIN_BOT_ALERTS', 'auto')
+# Куда стучаться проверке «сайт живой» (в Docker — nginx внутри сети).
+ADMIN_BOT_HEALTH_URL = os.getenv('ADMIN_BOT_HEALTH_URL', 'http://nginx/healthz/' if IS_PRODUCTION else '')
 
 # Прод не стартует с настройками разработки: ошибка сразу при запуске, а не у пользователей.
 if IS_PRODUCTION and os.getenv('SKIP_PRODUCTION_CHECKS') != 'True':

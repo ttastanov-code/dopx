@@ -28,7 +28,6 @@ from parsers import name_ai
 from parsers.models import ConfirmedNameCorrection, NameVerificationSuggestion, ParserDiscrepancy
 from parsers.sportmonks.client import get_request_counts
 from players.models import Player, PotentialDuplicatePlayer
-from players.services import merge_players
 from seasons.models import Season
 from users.models import SuspiciousActivityFlag
 from users.city_stats import dashboard_city_breakdown
@@ -914,93 +913,22 @@ def names_review_bulk_confirm_matches(request):
 def names_review_action(request, suggestion_id):
     """approve — пишет ConfirmedNameCorrection и сразу обновляет сущность.
     reject/скрыть ошибку — только очередь, данные сайта не трогает.
-    Имя берём из формы: staff мог поправить предложение Gemini.
+    Имя берём из формы: staff мог поправить предложение Gemini. Логика — review_actions.
     """
+    from . import review_actions
+
     suggestion = get_object_or_404(NameVerificationSuggestion, id=suggestion_id)
     action = request.POST.get("action")
-
     if action not in ("approve", "reject"):
         messages.error(request, f"Неизвестное действие: {action}")
         return redirect("dashboard:names_review")
-
-    if suggestion.status not in ("pending_review", "check_failed"):
-        messages.warning(request, "Это предложение уже разобрано.")
-        return redirect("dashboard:names_review")
-
     if action == "reject":
-        # «Скрыть» у технической ошибки Gemini удаляет запись, чтобы следующий
-        # обычный прогон проверил сущность заново.
-        if suggestion.status == "check_failed":
-            target = f"{suggestion.entity_label}:{suggestion.object_id}"
-            details = {
-                "current": f"{suggestion.current_first_name} {suggestion.current_last_name}",
-                "dismissed_error": suggestion.error_message,
-            }
-            suggestion.delete()
-            log_staff_action(request, AuditAction.NAME_SUGGESTION_REJECTED, target=target, details=details)
-            messages.success(request, "Ошибка скрыта — запись сама попадёт под проверку в следующем обычном прогоне (без --recheck).")
-            return redirect("dashboard:names_review")
-
-        suggestion.status = "rejected"
-        suggestion.reviewed_by = request.user
-        suggestion.reviewed_at = timezone.now()
-        suggestion.save(update_fields=["status", "reviewed_by", "reviewed_at", "updated_at"])
-        log_staff_action(
-            request, AuditAction.NAME_SUGGESTION_REJECTED,
-            target=f"{suggestion.entity_label}:{suggestion.object_id}",
-            details={"current": f"{suggestion.current_first_name} {suggestion.current_last_name}"},
-        )
-        messages.success(request, "Предложение отклонено.")
-        return redirect("dashboard:names_review")
-
-    final_first = (request.POST.get("first_name") or suggestion.suggested_first_name or "").strip()
-    final_last = (request.POST.get("last_name") or suggestion.suggested_last_name or "").strip()
-    if not final_first and not final_last:
-        messages.error(request, "Пустое имя и фамилия — нечего подтверждать.")
-        return redirect("dashboard:names_review")
-
-    entity = suggestion.content_object
-    if entity is None:
-        messages.error(request, "Сущность (игрок/судья/тренер) больше не существует — подтвердить нечего.")
-        suggestion.status = "rejected"
-        suggestion.reviewed_by = request.user
-        suggestion.reviewed_at = timezone.now()
-        suggestion.save(update_fields=["status", "reviewed_by", "reviewed_at", "updated_at"])
-        return redirect("dashboard:names_review")
-
-    old_first, old_last = entity.first_name, entity.last_name
-    update_fields = []
-    if final_first and final_first != entity.first_name:
-        ConfirmedNameCorrection.objects.update_or_create(
-            wrong_text=entity.first_name.strip().lower(),
-            defaults={"correct_text": final_first, "source_suggestion": suggestion, "created_by": request.user},
-        )
-        entity.first_name = final_first
-        update_fields.append("first_name")
-    if final_last and final_last != entity.last_name:
-        ConfirmedNameCorrection.objects.update_or_create(
-            wrong_text=entity.last_name.strip().lower(),
-            defaults={"correct_text": final_last, "source_suggestion": suggestion, "created_by": request.user},
-        )
-        entity.last_name = final_last
-        update_fields.append("last_name")
-
-    if update_fields:
-        entity.name_source = NAME_SOURCE_AI_VERIFIED
-        update_fields.append("name_source")
-        entity.save(update_fields=update_fields + ["updated_at"])
-
-    suggestion.status = "approved"
-    suggestion.reviewed_by = request.user
-    suggestion.reviewed_at = timezone.now()
-    suggestion.save(update_fields=["status", "reviewed_by", "reviewed_at", "updated_at"])
-
-    log_staff_action(
-        request, AuditAction.NAME_SUGGESTION_APPROVED,
-        target=f"{suggestion.entity_label}:{suggestion.object_id}",
-        details={"was": f"{old_first} {old_last}", "now": f"{final_first} {final_last}"},
-    )
-    messages.success(request, f"Подтверждено: {old_first} {old_last} → {final_first} {final_last}")
+        result = review_actions.reject_name(suggestion, request.user)
+    else:
+        result = review_actions.approve_name(suggestion, request.user, request.POST.get("first_name"), request.POST.get("last_name"))
+    if result.action:
+        log_staff_action(request, result.action, target=result.target, details=result.details)
+    (messages.success if result.ok else messages.warning)(request, result.message)
     return redirect("dashboard:names_review")
 
 
@@ -1047,60 +975,29 @@ def duplicate_players_merge(request, flag_id):
     """keep=existing|new — какую запись оставить, вторая сливается и удаляется.
     HTMX получает пустой партиал на место карточки, обычный POST — редирект.
     """
+    from . import review_actions
+
     flag = get_object_or_404(PotentialDuplicatePlayer, id=flag_id)
-    keep_side = request.POST.get("keep")
-    if keep_side not in ("existing", "new"):
-        messages.error(request, f"Неизвестное значение keep: {keep_side}")
-        return redirect("dashboard:duplicate_players_review")
-
-    if flag.reviewed:
-        messages.warning(request, "Этот флаг уже разобран.")
-        return redirect("dashboard:duplicate_players_review")
-
-    keep, merge = (flag.existing_player, flag.new_player) if keep_side == "existing" else (flag.new_player, flag.existing_player)
-    keep_name, keep_id = keep.full_name, keep.id
-    merge_name, merge_id = merge.full_name, merge.id
-
-    report = merge_players(keep, merge, apply=True)
-    log_staff_action(
-        request, AuditAction.DUPLICATE_PLAYERS_MERGED,
-        target=f"player:{keep_id}",
-        details={"kept": f"{keep_name} ({keep_id})", "merged": f"{merge_name} ({merge_id})", "report": report.lines},
-    )
-
-    if request.headers.get("HX-Request"):
-        return render(request, "dashboard/_duplicate_players_resolved.html", {
-            "message": f"Объединено: {merge_name} → {keep_name}",
-        })
-    messages.success(request, f"Объединено: {merge_name} → {keep_name}")
-    return redirect("dashboard:duplicate_players_review")
+    result = review_actions.merge_duplicate(flag, request.POST.get("keep"), request.user)
+    return _duplicate_result(request, result)
 
 
 @staff_member_required
 @require_POST
 def duplicate_players_dismiss(request, flag_id):
     """Не дубль (разные люди) — просто отмечаем флаг разобранным."""
+    from . import review_actions
+
     flag = get_object_or_404(PotentialDuplicatePlayer, id=flag_id)
-    if flag.reviewed:
-        messages.warning(request, "Этот флаг уже разобран.")
-        return redirect("dashboard:duplicate_players_review")
+    return _duplicate_result(request, review_actions.dismiss_duplicate(flag, request.user))
 
-    flag.reviewed = True
-    flag.reviewed_by = request.user
-    flag.reviewed_at = timezone.now()
-    flag.note = "Отклонено вручную: разные люди."
-    flag.save(update_fields=["reviewed", "reviewed_by", "reviewed_at", "note", "updated_at"])
-    log_staff_action(
-        request, AuditAction.DUPLICATE_PLAYER_FLAG_DISMISSED,
-        target=f"player:{flag.existing_player_id}",
-        details={"existing": str(flag.existing_player_id), "new": str(flag.new_player_id)},
-    )
 
-    if request.headers.get("HX-Request"):
-        return render(request, "dashboard/_duplicate_players_resolved.html", {
-            "message": "Отклонено — это разные люди.",
-        })
-    messages.success(request, "Отклонено — это разные люди.")
+def _duplicate_result(request, result):
+    if result.action:
+        log_staff_action(request, result.action, target=result.target, details=result.details)
+    if result.ok and request.headers.get("HX-Request"):
+        return render(request, "dashboard/_duplicate_players_resolved.html", {"message": result.message})
+    (messages.success if result.ok else messages.warning)(request, result.message)
     return redirect("dashboard:duplicate_players_review")
 
 
@@ -1879,103 +1776,6 @@ def banner_delete(request, banner_id):
         target=title, details={"banner_id": str(banner_id)},
     )
     return redirect("dashboard:banners_list")
-
-
-# ============================================================
-# Роли доступа staff по разделам. Проверяем is_superuser напрямую:
-# раздел выдачи прав не управляется той же системой прав.
-# ============================================================
-
-@staff_member_required
-def access_roles_list(request):
-    if not request.user.is_superuser:
-        from django.core.exceptions import PermissionDenied
-        raise PermissionDenied("Управление правами доступа — только для суперпользователей.")
-
-    from django.contrib.auth.models import Group
-
-    from .models import DASHBOARD_SECTIONS, StaffAccessGrant
-
-    User = get_user_model()
-    staff_users = (
-        User.objects.filter(is_staff=True, is_superuser=False)
-        .select_related("dashboard_access_grant")
-        .prefetch_related("groups")
-        .order_by("username")
-    )
-    context = {
-        "page_title": "Роли доступа — DOPX Staff",
-        "active_tab": "access_roles",
-        "staff_users": staff_users,
-        "section_count": len(DASHBOARD_SECTIONS),
-        "group_count": Group.objects.count(),
-    }
-    return render(request, "dashboard/access_roles_list.html", context)
-
-
-@staff_member_required
-def access_roles_detail(request, user_id):
-    if not request.user.is_superuser:
-        from django.core.exceptions import PermissionDenied
-        raise PermissionDenied("Управление правами доступа — только для суперпользователей.")
-
-    from .models import DASHBOARD_SECTIONS, StaffAccessGrant
-
-    User = get_user_model()
-    target_user = get_object_or_404(User, id=user_id, is_staff=True)
-    grant = StaffAccessGrant.objects.filter(user=target_user).first()
-
-    if request.method == "POST":
-        if request.POST.get("action") == "full_access":
-            all_sections = [key for key, _label in DASHBOARD_SECTIONS]
-            StaffAccessGrant.objects.update_or_create(
-                user=target_user, defaults={"allowed_sections": all_sections, "updated_by": request.user},
-            )
-            messages.success(request, f"«{target_user.username}»: ограничения сняты, полный доступ ко всем разделам.")
-            log_staff_action(
-                request, AuditAction.ACCESS_GRANT_UPDATED,
-                target=target_user.username,
-                details={"user_id": str(target_user.id), "mode": "full_access_restored"},
-            )
-        else:
-            selected = [key for key, _label in DASHBOARD_SECTIONS if request.POST.get(f"section_{key}") in ("on", "1", "true")]
-            if grant:
-                grant.allowed_sections = selected
-                grant.updated_by = request.user
-                grant.save(update_fields=["allowed_sections", "updated_by", "updated_at"])
-            else:
-                grant = StaffAccessGrant.objects.create(
-                    user=target_user, allowed_sections=selected, updated_by=request.user,
-                )
-            messages.success(request, f"«{target_user.username}»: сохранено {len(selected)} из {len(DASHBOARD_SECTIONS)} разделов.")
-            log_staff_action(
-                request, AuditAction.ACCESS_GRANT_UPDATED,
-                target=target_user.username,
-                details={"user_id": str(target_user.id), "allowed_sections": selected},
-            )
-        return redirect("dashboard:access_roles_detail", user_id=target_user.id)
-
-    from .admin_access import groups_with_counts
-
-    allowed = set(grant.allowed_sections) if grant else set()
-    user_group_ids = set(target_user.groups.values_list("id", flat=True))
-    context = {
-        "page_title": f"Доступ: {target_user.username} — DOPX Staff",
-        "active_tab": "access_roles",
-        "target_user": target_user,
-        "grant": grant,
-        "sections": [
-            {"key": key, "label": label, "checked": key in allowed}
-            for key, label in DASHBOARD_SECTIONS
-        ],
-        "has_restrictions": len(allowed) < len(DASHBOARD_SECTIONS),
-        "admin_groups": [
-            {"id": g.id, "name": g.name, "perm_count": g.perm_count, "checked": g.id in user_group_ids}
-            for g in groups_with_counts()
-        ],
-        "direct_perm_count": target_user.user_permissions.count(),
-    }
-    return render(request, "dashboard/access_roles_detail.html", context)
 
 
 @staff_member_required

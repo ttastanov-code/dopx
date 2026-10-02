@@ -215,6 +215,33 @@ services:
       - dopx_net
 
   # ==========================================================================
+  # Telegram-бот администрирования. Без ADMIN_BOT_TOKEN просто ждёт.
+  # ==========================================================================
+  bot:
+    build: *app-build
+    image: dopx-app:${GIT_SHA:-dev}
+    restart: unless-stopped
+    logging: *logging
+    command: python manage.py runbot
+    env_file:
+      - .env
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      REDIS_URL: redis://redis:6379/1
+      REDIS_AGGREGATES_URL: redis://redis:6379/2
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    volumes:
+      - ./logs:/app/logs
+      - ./backups:/app/backups:ro
+    depends_on:
+      web:
+        condition: service_healthy
+    networks:
+      - dopx_net
+
+  # ==========================================================================
   # nginx — точка входа: статика/медиа с диска, остальное в gunicorn.
   # ==========================================================================
   nginx:

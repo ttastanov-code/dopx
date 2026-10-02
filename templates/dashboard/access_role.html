@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+{# Редактор роли: уровень по каждому разделу. Права группы на данные выставляются сами (dashboard/roles.py). #}
+<div class="mb-4">
+    <a href="{% url 'dashboard:access_roles_list' %}?tab=roles" class="text-xs opacity-60 hover:opacity-100"><i class="ti ti-arrow-left"></i> Все роли</a>
+</div>
+
+<form method="post" class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+    {% csrf_token %}
+    <div class="lg:col-span-2 space-y-4">
+        <section class="card bg-base-100 border border-base-300"><div class="card-body p-4 gap-3">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide opacity-50 font-semibold">Название роли</span><input name="name" value="{{ group.name }}" class="input input-sm input-bordered w-full"></label>
+                <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide opacity-50 font-semibold">Для кого</span><input name="description" value="{{ role.description|default:'' }}" maxlength="200" class="input input-sm input-bordered w-full" placeholder="Чем занимается сотрудник"></label>
+            </div>
+        </section>
+
+        {% for group_label, rows in layout %}
+        <section class="card bg-base-100 border border-base-300"><div class="card-body p-4 gap-1">
+            <div class="dopx-section-eyebrow mb-1">{{ group_label }}</div>
+            {% for r in rows %}
+            <div class="flex flex-col sm:flex-row sm:items-center gap-2 py-2 border-b border-base-200 last:border-0">
+                <div class="min-w-0 flex-1">
+                    <div class="font-semibold text-sm">{{ r.label }}{% if r.sensitive %} <i class="ti ti-alert-triangle text-warning" title="Серьёзное право — выдавайте осознанно"></i>{% endif %}</div>
+                    <div class="text-xs opacity-55">{{ r.hint }}</div>
+                </div>
+                <div class="dx-seg dx-seg--levels shrink-0" role="radiogroup" aria-label="{{ r.label }}">
+                    {% for value, label in r.choices %}
+                    <label class="dx-seg__btn lv-{{ value }}"><input type="radio" name="level_{{ r.key }}" value="{{ value }}" {% if r.level == value %}checked{% endif %}>{{ label }}</label>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        </div></section>
+        {% endfor %}
+    </div>
+
+    <div class="space-y-4">
+        <section class="card bg-base-100 border border-base-300 lg:sticky lg:top-20"><div class="card-body p-4 gap-3">
+            <div class="dopx-section-eyebrow"><i class="ti ti-info-circle"></i>Уровни</div>
+            <ul class="text-xs space-y-1.5 opacity-80">
+                <li><b>Нет</b> — раздела не видно ни в дашборде, ни в боте.</li>
+                <li><b>Просмотр</b> — смотрит списки и карточки, кнопок действий нет.</li>
+                <li><b>Работа</b> — разбирает очереди, создаёт и правит. Удалять нельзя.</li>
+                <li><b>Полный</b> — всё, включая удаление.</li>
+                <li><b>Открыт</b> — для страниц-отчётов без своих данных.</li>
+            </ul>
+            <p class="text-xs opacity-60">Деплой, откат, разрушительные скрипты и сами «Доступы» — только суперпользователю, ролью не выдаются. Изменения начинают действовать сразу.</p>
+            <button class="btn btn-sm btn-primary w-full"><i class="ti ti-device-floppy"></i> Сохранить роль</button>
+            <div class="text-xs opacity-60">{% if members %}Сотрудники с этой ролью: {% for m in members %}<a href="{% url 'dashboard:access_roles_detail' m.id %}" class="link">{{ m.username }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}{% else %}Роль пока никому не выдана.{% endif %}</div>
+            <button type="submit" form="role-delete" class="btn btn-xs btn-ghost text-error"><i class="ti ti-trash"></i> Удалить роль</button>
+        </div></section>
+    </div>
+</form>
+<form id="role-delete" method="post" onsubmit="return confirm('Удалить роль «{{ group.name|escapejs }}»? У её сотрудников пропадут эти разделы и права.')">{% csrf_token %}<input type="hidden" name="action" value="delete"></form>
+{% endblock %}

@@ -56,16 +56,19 @@ if [ ! -f .env ]; then
     cp .env.example .env
     secret="$(python3 -c 'import secrets; print(secrets.token_urlsafe(50))')"
     dbpass="$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')"
+    relay="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
     sed -i \
         -e "s|^SECRET_KEY=.*|SECRET_KEY=${secret}|" \
         -e "s|^DB_PASSWORD=.*|DB_PASSWORD=${dbpass}|" \
         -e "s|^ALLOWED_HOSTS=.*|ALLOWED_HOSTS=${DOMAIN},www.${DOMAIN}|" \
         -e "s|^CSRF_TRUSTED_ORIGINS=.*|CSRF_TRUSTED_ORIGINS=https://${DOMAIN},https://www.${DOMAIN}|" \
         -e "s|^SITE_URL=.*|SITE_URL=https://${DOMAIN}|" \
+        -e "s|^ADMIN_BOT_RELAY_SECRET=.*|ADMIN_BOT_RELAY_SECRET=${relay}|" \
         .env
     chmod 600 .env
     chown "$APP_USER" .env
     echo "Создан .env с новым SECRET_KEY и паролем базы. Допишите почту, Sportmonks, Sentry и Telegram."
+    echo "Ключ ретранслятора бота (впишите на ноутбуке в ADMIN_BOT_RELAY_SECRET): ${relay}"
 else
     echo ".env уже есть — не трогаю."
 fi

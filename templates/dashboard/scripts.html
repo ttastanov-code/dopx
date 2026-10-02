@@ -95,9 +95,13 @@
                         </div>
                         {% endif %}
 
+                        {% if spec.danger == 'destructive' and not request.user.is_superuser %}
+                        <p class="text-xs opacity-60"><i class="ti ti-lock"></i> Необратимая команда — запускает только суперпользователь.</p>
+                        {% else %}
                         <button type="submit" class="btn btn-xs {% if spec.danger == 'destructive' %}btn-error btn-outline{% else %}btn-primary btn-outline{% endif %}">
                             <i class="ti ti-player-play"></i> Запустить
                         </button>
+                        {% endif %}
                     </form>
                 </div>
             </details>

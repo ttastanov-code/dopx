@@ -1,0 +1,69 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+{# Telegram-бот: состояние, привязка аккаунта, список привязок. Логика — adminbot/. #}
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <section class="card bg-base-100 border border-base-300"><div class="card-body p-5 gap-3">
+        <div class="dopx-section-eyebrow"><i class="ti ti-brand-telegram"></i>Состояние</div>
+        <ul class="space-y-2 text-sm">
+            <li class="flex justify-between gap-3"><span class="opacity-70">Бот</span>{% if status.enabled %}<span class="badge badge-success badge-sm">включён</span>{% else %}<span class="badge badge-ghost badge-sm">нет токена</span>{% endif %}</li>
+            <li class="flex justify-between gap-3"><span class="opacity-70">Это окружение</span><b>{% if status.env == 'prod' %}🟢 PROD{% else %}🧪 DEV · ноутбук{% endif %}</b></li>
+            <li class="flex justify-between gap-3"><span class="opacity-70">Слушает Telegram</span>{% if status.listener %}<span class="badge badge-success badge-sm">здесь ({{ status.listener }})</span>{% else %}<span class="badge badge-ghost badge-sm">не здесь / не запущен</span>{% endif %}</li>
+            <li class="flex justify-between gap-3"><span class="opacity-70">{% if status.env == 'prod' %}Ноутбук (DEV) подключён{% else %}Прод подключён{% endif %}</span>{% if status.other_online %}<span class="badge badge-success badge-sm">да</span>{% else %}<span class="badge badge-ghost badge-sm">нет</span>{% endif %}</li>
+            {% if status.env == 'dev' %}
+            <li class="flex justify-between gap-3"><span class="opacity-70">Адрес прода (ADMIN_BOT_HUB_URL)</span><span class="font-mono text-xs">{{ status.hub|default:"не задан" }}</span></li>
+            {% endif %}
+            <li class="flex justify-between gap-3"><span class="opacity-70">Ключ ретранслятора</span>{% if status.relay_secret %}<span class="badge badge-success badge-sm">задан</span>{% else %}<span class="badge badge-warning badge-sm">не задан</span>{% endif %}</li>
+        </ul>
+        {% if not status.enabled %}
+        <div class="text-xs opacity-70 bg-base-200/60 rounded-lg p-3 leading-relaxed">
+            Создайте бота в @BotFather, впишите токен в <code>.env</code> как <code>ADMIN_BOT_TOKEN</code> и запустите <code>python manage.py runbot</code>.
+        </div>
+        {% endif %}
+    </div></section>
+
+    <section class="card bg-base-100 border border-base-300"><div class="card-body p-5 gap-3">
+        <div class="dopx-section-eyebrow"><i class="ti ti-link"></i>Мой аккаунт</div>
+        {% if my_link %}
+        <p class="text-sm">Привязан к Telegram <b>{{ my_link.telegram_name|default:my_link.telegram_id }}</b> с {{ my_link.linked_at|date:"d.m.Y" }}.</p>
+        <p class="text-xs opacity-60">Ваш Telegram ID: <code>{{ my_link.telegram_id }}</code> — впишите его в <code>TELEGRAM_CHAT_ID</code> на сервере, чтобы итоги деплоя приходили в этот же чат.</p>
+        <form method="post" action="{% url 'dashboard:admin_bot_unlink' %}">{% csrf_token %}<input type="hidden" name="link" value="{{ my_link.pk }}"><button class="btn btn-sm btn-outline">Отвязать</button></form>
+        {% elif code %}
+        <p class="text-sm">Отправьте боту эту команду в течение 10 минут:</p>
+        <div class="flex items-center gap-2">
+            <code class="text-2xl font-bold tracking-widest bg-base-200 rounded-lg px-4 py-2">/link {{ code.code }}</code>
+            <button type="button" class="btn btn-sm btn-ghost" data-copy="/link {{ code.code }}"><i class="ti ti-copy"></i></button>
+        </div>
+        {% else %}
+        <p class="text-sm opacity-70">Получите одноразовый код и отправьте его боту командой <code>/link</code>. Привязка — по Telegram ID, а действия, меняющие данные, бот подтверждает кодом 2FA.</p>
+        <p class="text-xs opacity-60">В боте действуют те же разделы и права, что здесь. Доступ к самому боту выдаётся отдельно: раздел «Telegram-бот» в «Доступах».</p>
+        <form method="post">{% csrf_token %}<input type="hidden" name="action" value="code"><button class="btn btn-sm btn-primary"><i class="ti ti-key"></i> Получить код</button></form>
+        {% endif %}
+    </div></section>
+</div>
+
+{% if user.is_superuser %}
+<section class="card bg-base-100 border border-base-300 mt-4"><div class="card-body p-5 gap-3">
+    <div class="flex items-center justify-between gap-3">
+        <div class="dopx-section-eyebrow"><i class="ti ti-users"></i>Привязанные сотрудники</div>
+        {% if links %}<form method="post" action="{% url 'dashboard:admin_bot_unlink' %}" onsubmit="return confirm('Отвязать всех от бота?')">{% csrf_token %}<input type="hidden" name="link" value="all"><button class="btn btn-xs btn-error btn-outline"><i class="ti ti-plug-off"></i> Отвязать всех</button></form>{% endif %}
+    </div>
+    <table class="table table-sm">
+        <thead><tr><th>Сотрудник</th><th>Telegram</th><th>Уведомления</th><th>Последнее действие</th><th></th></tr></thead>
+        <tbody>
+            {% for l in links %}
+            <tr>
+                <td>{{ l.user.username }}</td><td>{{ l.telegram_name|default:l.telegram_id }}</td>
+                <td>{% if l.notify %}вкл{% else %}выкл{% endif %}</td><td>{{ l.last_seen|date:"d.m H:i"|default:"—" }}</td>
+                <td class="text-right"><form method="post" action="{% url 'dashboard:admin_bot_unlink' %}">{% csrf_token %}<input type="hidden" name="link" value="{{ l.pk }}"><button class="btn btn-xs btn-ghost">Отвязать</button></form></td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5" class="opacity-60">Пока никто не привязан.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div></section>
+{% endif %}
+{% endblock %}

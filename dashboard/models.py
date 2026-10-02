@@ -60,6 +60,7 @@ class AuditAction(models.TextChoices):
     EXPERT_SAVED = "expert_saved", _("Эксперт сохранён")
     EXPERT_INVITE_CREATED = "expert_invite_created", _("Создана ссылка для эксперта")
     EXPERT_INVITE_CHANGED = "expert_invite_changed", _("Ссылка для эксперта изменена")
+    BOT_ACTION = "bot_action", _("Действие через Telegram-бот")
     # Роли доступа.
     ACCESS_GRANT_UPDATED = "access_grant_updated", _("Права доступа сотрудника изменены")
     # Вкл/выкл синка Sportmonks.
@@ -162,6 +163,7 @@ DASHBOARD_SECTIONS = [
     ("mourning", _("Режим траура")),
     ("social_content", _("Контент для соцсетей")),
     ("experts", _("Мнения экспертов")),
+    ("admin_bot", _("Telegram-бот")),
     ("platform_settings", _("Настройки платформы")),
     ("system_status", _("Системный статус")),
     ("scripts", _("Скрипты и команды")),
@@ -198,3 +200,20 @@ class StaffAccessGrant(models.Model):
 
     def has_section(self, section_key: str) -> bool:
         return section_key in self.allowed_sections
+
+
+class StaffRole(models.Model):
+    """Роль сотрудника: группа Django + уровни доступа по разделам (dashboard/roles.py).
+    Права группы на модели выставляются из уровней автоматически."""
+
+    group = models.OneToOneField("auth.Group", on_delete=models.CASCADE, related_name="staff_role", verbose_name=_("Группа"))
+    description = models.CharField(_("Описание"), max_length=200, blank=True)
+    levels = models.JSONField(_("Уровни по разделам"), default=dict, blank=True)
+    updated_at = models.DateTimeField(_("Изменено"), auto_now=True)
+
+    class Meta:
+        verbose_name = _("Роль сотрудника")
+        verbose_name_plural = _("Роли сотрудников")
+
+    def __str__(self):
+        return self.group.name

@@ -21,7 +21,13 @@ on:
     branches:
       - main
       - dev
-  workflow_dispatch: {}
+  # Ручной запуск (кнопка в GitHub или Telegram-бот). ref — тег vX.Y.Z для отката; пусто — последний main.
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Тег vX.Y.Z для отката (пусто — выкатить последний main)"
+        required: false
+        default: ""
 
 jobs:
   build-check:
@@ -153,8 +159,12 @@ jobs:
     name: Деплой на сервер
     needs: [build-check, test, production-settings-check]
     runs-on: ubuntu-latest
-    # Деплой только из main.
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    # Деплой только из main. Откат на тег (inputs.ref) не ждёт зелёных проверок main:
+    # он нужен как раз тогда, когда в main что-то сломано.
+    if: >-
+      ${{ !cancelled() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' &&
+      ((github.event_name == 'workflow_dispatch' && inputs.ref != '') ||
+      (needs.build-check.result == 'success' && needs.test.result == 'success' && needs.production-settings-check.result == 'success')) }}
     # Деплои идут строго по очереди, новый не отменяет начатый.
     concurrency:
       group: production-deploy
@@ -172,19 +182,38 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Что выкатываем
+        id: target
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          if [ -n "$REF" ]; then
+            # Только тег версии или хеш коммита — никаких произвольных строк.
+            if ! echo "$REF" | grep -Eq '^(v[0-9]+\.[0-9]+\.[0-9]+|[0-9a-f]{7,40})$'; then
+              echo "Недопустимый ref: $REF"; exit 1
+            fi
+            sha=$(git rev-parse "$REF^{commit}")
+          else
+            sha="$GITHUB_SHA"
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Выкатываем $sha${REF:+ (откат на $REF)}"
+
       - name: Следующая версия
         id: version
+        env:
+          TARGET: ${{ steps.target.outputs.sha }}
         run: |
-          # Коммит уже помечен (повторный запуск) — берём его версию.
-          existing=$(git tag --points-at HEAD --list 'v[0-9]*' | head -1)
-          last=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || true)
+          # Коммит уже помечен (повторный запуск или откат на тег) — берём его версию.
+          existing=$(git tag --points-at "$TARGET" --list 'v[0-9]*' | head -1)
+          last=$(git describe --tags --abbrev=0 --match 'v[0-9]*' "$TARGET" 2>/dev/null || true)
           if [ -n "$existing" ]; then
             next="${existing#v}"
           elif [ -z "$last" ]; then
             next="1.0.0"
           else
             IFS=. read -r major minor patch <<< "${last#v}"
-            messages=$(git log "$last..HEAD" --format=%B)
+            messages=$(git log "$last..$TARGET" --format=%B)
             if echo "$messages" | grep -qi '\[major\]'; then
               next="$((major + 1)).0.0"
             elif echo "$messages" | grep -qi '\[minor\]'; then
@@ -217,7 +246,7 @@ jobs:
         # DEPLOY_PATH через envs — секрет не попадает в текст команды.
         env:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
-          DEPLOY_SHA: ${{ github.sha }}
+          DEPLOY_SHA: ${{ steps.target.outputs.sha }}
           DEPLOY_VERSION: ${{ steps.version.outputs.version }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
@@ -240,25 +269,28 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
+          TARGET: ${{ steps.target.outputs.sha }}
         run: |
           if gh release view "v$VERSION" >/dev/null 2>&1; then
             echo "Релиз v$VERSION уже есть."
           else
-            gh release create "v$VERSION" --target "$GITHUB_SHA" --title "v$VERSION" --generate-notes
+            gh release create "v$VERSION" --target "$TARGET" --title "v$VERSION" --generate-notes
           fi
 
       - name: Итог в GitHub
         if: always() && steps.check.outputs.configured == 'true'
+        env:
+          TARGET: ${{ steps.target.outputs.sha }}
         run: |
           {
-            echo "### Версия ${{ steps.version.outputs.version }} (${GITHUB_SHA::7}): ${{ job.status == 'success' && '✅ на проде' || '❌ не выкачена' }}"
+            echo "### Версия ${{ steps.version.outputs.version }} (${TARGET::7}): ${{ job.status == 'success' && '✅ на проде' || '❌ не выкачена' }}"
             echo "Подробный лог на сервере: logs/deploy/, журнал — дашборд → Системный статус."
           } >> "$GITHUB_STEP_SUMMARY"
 
   notify-failure:
     name: Уведомление о сбое проверок
     needs: [build-check, test, production-settings-check]
-    if: failure() && github.ref == 'refs/heads/main'
+    if: failure() && github.ref == 'refs/heads/main' && !(github.event_name == 'workflow_dispatch' && inputs.ref != '')
     runs-on: ubuntu-latest
     steps:
       - name: Telegram

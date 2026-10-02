@@ -2301,6 +2301,13 @@ button.dx-poll__opt:active, a.dx-poll__opt:active { transform: scale(.98); }
 }
 .dx-seg__btn:hover { color: var(--color-base-content); }
 .dx-seg__btn.is-active { color: var(--color-base-content); background: var(--color-base-100); box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }
+/* Переключатель на радиокнопках (уровни доступа в роли): выбранный — «таблетка», цвет по уровню. */
+.dx-seg__btn input { position: absolute; opacity: 0; pointer-events: none; }
+.dx-seg__btn:has(input:checked) { color: var(--color-base-content); background: var(--color-base-100); box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }
+.dx-seg__btn:has(input:focus-visible) { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+.dx-seg--levels .lv-view:has(input:checked), .dx-seg--levels .lv-work:has(input:checked), .dx-seg--levels .lv-on:has(input:checked) { color: var(--color-primary); }
+.dx-seg--levels .lv-full:has(input:checked) { color: var(--color-error); }
+@media (max-width: 639px) { .dx-seg--levels { width: 100%; } .dx-seg--levels .dx-seg__btn { flex: 1; justify-content: center; padding: .4rem .3rem; } }
 @media (max-width: 767px) { .sbx-all { display: none; } }
 
 /* Кнопки действий в шапке раздела: в ряд с переносом, на телефоне — сеткой на всю ширину. */

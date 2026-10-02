@@ -1,10 +1,6 @@
 # dashboard/permissions.py
-"""Права Django на модели в дашборде: те же галочки «просмотр/создание/изменение/удаление»,
-что в /admin/ (группы в «Доступах»). Раздел (StaffAccessGrant) решает, видна ли страница;
-права модели — что можно делать с данными. Суперпользователю можно всё.
-
-Каждое имя URL дашборда должно быть в VIEW_PERMS или SECTION_ONLY (проверяет тест).
-"""
+"""Права на модели по URL дашборда: раздел решает, видна ли страница, права — что можно менять.
+Каждый URL должен быть в VIEW_PERMS или SECTION_ONLY (проверяет тест)."""
 from __future__ import annotations
 
 
@@ -19,6 +15,7 @@ def _p(get=(), post=None):
 
 VIEW_PERMS: dict[str, dict[str, tuple[str, ...]]] = {
     # Матчи
+    "match_detail": _p(post="matches.change_match"),
     "match_trigger_recalc": _p("matches.change_match"),
     "data_health_resync_match": _p("matches.change_match"),
     # Настройки платформы
@@ -84,13 +81,14 @@ VIEW_PERMS: dict[str, dict[str, tuple[str, ...]]] = {
 # Страницы без своей модели (отчёты, задачи, 2FA): достаточно раздела.
 # Роли доступа — только суперпользователь, проверка во вьюхах.
 SECTION_ONLY = {
-    "overview", "traffic", "matches_list", "match_detail", "system_status", "social_content",
+    "overview", "traffic", "matches_list", "system_status", "social_content",
     "data_health", "data_health_partial", "data_trust", "ads", "ads_stats_partial", "audit_log",
     "parser_tools", "parser_tasks_partial", "parser_trigger_task", "parser_sportmonks_health_check",
     "parser_revoke_task", "scripts", "scripts_runs_partial", "scripts_trigger", "scripts_revoke_run",
-    "access_roles_list", "access_roles_detail", "access_user_admin_groups", "access_revoke_staff",
+    "access_roles_list", "access_roles_detail", "access_revoke_staff",
     "access_grant_staff", "admin_groups_list", "admin_group_detail",
     "two_factor_setup", "two_factor_backup_codes", "two_factor_challenge",
+    "admin_bot", "admin_bot_unlink",
 }
 
 
@@ -102,10 +100,10 @@ def required_perms(url_name: str, method: str) -> tuple[str, ...]:
 
 
 def missing_perms(user, url_name: str, method: str) -> list[str]:
-    """Каких прав не хватает пользователю для этой страницы и метода."""
+    """Каких прав не хватает. Смотреть данные открытого раздела можно и без права view_ (раздел уже проверен)."""
     if getattr(user, "is_superuser", False):
         return []
-    return [p for p in required_perms(url_name, method) if not user.has_perm(p)]
+    return [p for p in required_perms(url_name, method) if ".view_" not in p and not user.has_perm(p)]
 
 
 def perm_label(perm: str) -> str:

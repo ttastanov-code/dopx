@@ -29,6 +29,7 @@ SECTION_PATH_MAP: list[tuple[str, str]] = [
     ("/staff/dashboard/mourning/", "mourning"),
     ("/staff/dashboard/social/", "social_content"),
     ("/staff/dashboard/experts/", "experts"),
+    ("/staff/dashboard/bot/", "admin_bot"),
     ("/staff/dashboard/settings/", "platform_settings"),
     ("/staff/dashboard/system-status/", "system_status"),
     ("/staff/dashboard/scripts/", "scripts"),
@@ -57,9 +58,23 @@ def user_can_access_section(user, section_key: str) -> bool:
         return True
     if section_key in SUPERUSER_ONLY_SECTIONS:
         return False
+    return section_key in user_sections(user)
+
+
+def user_sections(user) -> set[str]:
+    """Разделы сотрудника: из ролей + индивидуально выданные. Считается раз на объект пользователя (запрос)."""
+    cached = getattr(user, "_dopx_sections", None)
+    if cached is not None:
+        return cached
+    from .roles import role_sections
+
     try:
-        grant = user.dashboard_access_grant
+        personal = set(user.dashboard_access_grant.allowed_sections or [])
     except StaffAccessGrant.DoesNotExist:
-        # Нет записи — доступа нет: разделы выдаёт суперпользователь явно.
-        return False
-    return grant.has_section(section_key)
+        personal = set()
+    sections = personal | role_sections(user)
+    try:
+        user._dopx_sections = sections
+    except AttributeError:
+        pass
+    return sections

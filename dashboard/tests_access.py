@@ -105,10 +105,9 @@ class AdminGroupPermissionTests(TestCase):
 class AccessExitsTests(TestCase):
     def test_first_allowed_url_skips_closed_sections(self):
         user = _staff("two", ["antifraud", "audit"])
-        # Без права на просмотр флагов антифрод не открыть — первым будет аудит.
-        self.assertEqual(first_allowed_url(user), "/staff/dashboard/audit/")
-        user.user_permissions.add(Permission.objects.get(codename="view_suspiciousactivityflag"))
-        self.assertEqual(first_allowed_url(User.objects.get(pk=user.pk)), "/staff/dashboard/antifraud/")
+        # Открытый раздел виден и без права view_ — первым будет антифрод.
+        self.assertEqual(first_allowed_url(user), "/staff/dashboard/antifraud/")
+        self.assertEqual(first_allowed_url(_staff("one", ["audit"])), "/staff/dashboard/audit/")
         self.assertIsNone(first_allowed_url(_staff("zero", [])))
 
 
@@ -235,10 +234,8 @@ class ModelPermissionTests(TestCase):
     def test_view_only_can_open_but_not_change(self):
         from .nav import build_nav
 
-        self.assertEqual(self.client.get(reverse("dashboard:experts")).status_code, 403)
-        self.assertNotIn("experts", [i["key"] for g in build_nav(self.user)["groups"] for i in g["items"]])
-
-        self.grant("view_experttake")
+        # Раздел открыт — смотреть можно и без права view_, менять — нет.
+        self.assertIn("experts", [i["key"] for g in build_nav(self.user)["groups"] for i in g["items"]])
         page = self.client.get(reverse("dashboard:experts"))
         self.assertEqual(page.status_code, 200)
         self.assertNotContains(page, reverse("dashboard:expert_take_toggle", args=[self.take.pk]))
@@ -251,3 +248,84 @@ class ModelPermissionTests(TestCase):
         self.assertEqual(self.client.post(reverse("dashboard:expert_take_toggle", args=[self.take.pk])).status_code, 302)
         self.take.refresh_from_db()
         self.assertFalse(self.take.is_published)
+
+
+@override_settings(STAFF_2FA_ENFORCED=False)
+class MatchEditPermissionTests(TestCase):
+    def test_match_edit_needs_change_permission(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from leagues.models import League
+        from matches.models import Match
+        from seasons.models import Season
+        from teams.models import Team
+
+        league = League.objects.create(name="КПЛ", country="KZ")
+        season = Season.objects.create(league=league, year="2026", is_active=True)
+        start = timezone.now() - timedelta(hours=3)
+        match = Match.objects.create(league=league, season=season, home_team=Team.objects.create(name="А"),
+                                     away_team=Team.objects.create(name="Б"), status="finished", home_score=1, away_score=0,
+                                     start_time=start, voting_open_until=start + timedelta(days=2))
+        user = _staff("viewer", ["matches"])
+        self.client.force_login(user)
+        url = reverse("dashboard:match_detail", args=[match.pk])
+        page = self.client.get(url)
+        self.assertContains(page, "Только просмотр")
+        self.assertEqual(self.client.post(url, {"status": "finished", "home_score": "5", "away_score": "0"}).status_code, 403)
+        match.refresh_from_db()
+        self.assertEqual(match.home_score, 1)
+        user.user_permissions.add(Permission.objects.get(codename="change_match"))
+        self.client.force_login(User.objects.get(pk=user.pk))
+        self.assertEqual(self.client.post(url, {"status": "finished", "home_score": "5", "away_score": "0"}).status_code, 302)
+        match.refresh_from_db()
+        self.assertEqual(match.home_score, 5)
+
+
+@override_settings(STAFF_2FA_ENFORCED=False)
+class PrivilegeEscalationTests(TestCase):
+    """Сотрудник с максимумом прав, выдаваемых ролью, не может добраться до суперпользователя."""
+
+    def setUp(self):
+        self.boss = User.objects.create_superuser(username="boss", email="boss@t.local", password="x")
+        self.mod = _staff("mod", ["users", "scripts", "admin_bot"])
+        codes = ["view_user", "add_user", "change_user", "delete_user", "change_group", "view_group",
+                 "view_totpdevice", "change_totpdevice", "view_botlink", "change_botlink", "add_botlink"]
+        self.mod.user_permissions.set(Permission.objects.filter(codename__in=codes))
+        self.client.force_login(self.mod)
+
+    def test_admin_cannot_touch_staff_accounts(self):
+        url = reverse("admin:users_user_change", args=[self.boss.pk])
+        self.client.post(url, {"username": "boss", "email": "evil@t.local"})
+        self.boss.refresh_from_db()
+        self.assertEqual(self.boss.email, "boss@t.local")
+        self.assertNotIn('name="email"', self.client.get(url).content.decode())
+        self.client.post(reverse("admin:users_user_delete", args=[self.boss.pk]), {"post": "yes"})
+        self.assertTrue(User.objects.filter(pk=self.boss.pk).exists())
+        resp = self.client.post(reverse("admin:users_user_changelist"),
+                                {"action": "delete_selected", "_selected_action": [self.boss.pk], "post": "yes"})
+        self.assertTrue(User.objects.filter(pk=self.boss.pk).exists(), resp.status_code)
+
+    def test_admin_groups_devices_botlinks_superuser_only(self):
+        for name in ("auth_group_changelist", "otp_totp_totpdevice_changelist", "adminbot_botlink_changelist",
+                     "otp_static_staticdevice_changelist", "axes_accessattempt_changelist"):
+            self.assertEqual(self.client.get(reverse(f"admin:{name}")).status_code, 403, name)
+        self.assertEqual(self.client.get(reverse("admin:auth_group_add")).status_code, 403)
+
+    def test_destructive_script_superuser_only(self):
+        from dashboard.models import ManagementCommandRun
+
+        self.client.post(reverse("dashboard:scripts_trigger"), {
+            "command_name": "reset_user_activity", "apply": "on", "delete_staff": "on", "confirm_text": "reset_user_activity"})
+        self.assertFalse(ManagementCommandRun.objects.exists())
+        self.assertContains(self.client.get(reverse("dashboard:scripts")), "запускает только суперпользователь")
+
+    def test_dashboard_cannot_ban_or_manage_access(self):
+        self.client.post(reverse("dashboard:user_toggle_ban", args=[self.boss.pk]))
+        self.boss.refresh_from_db()
+        self.assertTrue(self.boss.is_active)
+        self.assertEqual(self.client.get(reverse("dashboard:access_roles_list")).status_code, 403)
+        self.client.post(reverse("dashboard:access_grant_staff"), {"user": "someone"})
+        self.client.post(reverse("dashboard:access_roles_detail", args=[self.mod.pk]), {"action": "personal", "section_access_roles": "on"})
+        self.assertNotIn("access_roles", StaffAccessGrant.objects.get(user=self.mod).allowed_sections)

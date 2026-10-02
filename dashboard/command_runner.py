@@ -110,6 +110,11 @@ def run_command_sync(spec: CommandSpec, positional: list, kwargs: dict) -> tuple
     return success, out.getvalue(), err.getvalue()
 
 
+def can_run(user, spec) -> bool:
+    """Необратимые команды — только суперпользователю (иначе, например, удаление сотрудников)."""
+    return spec.danger != "destructive" or bool(getattr(user, "is_superuser", False))
+
+
 def trigger_command(request, command_name: str, apply: bool = False) -> tuple[bool, str, "ManagementCommandRun | None"]:  # noqa: F821
     """Точка входа из scripts_trigger: валидирует, создаёт ManagementCommandRun (PENDING),
     запускает сразу (readonly) или ставит в очередь.
@@ -119,6 +124,8 @@ def trigger_command(request, command_name: str, apply: bool = False) -> tuple[bo
     spec = get_command(command_name)
     if spec is None:
         return False, f"Неизвестная команда: {command_name}", None
+    if not can_run(request.user, spec):
+        return False, f"«{spec.label}» — необратимая команда, запускает только суперпользователь.", None
 
     try:
         positional, kwargs = build_command_args(spec, request.POST, apply=apply)

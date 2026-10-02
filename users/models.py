@@ -160,6 +160,11 @@ class User(AbstractUser, BaseModel):
             kwargs["update_fields"] = {*update_fields, "email_canonical"}
         super().save(*args, **kwargs)
 
+    def refresh_from_db(self, *args, **kwargs):
+        # Кэш разделов дашборда (dashboard.access.user_sections) устаревает вместе с объектом.
+        self.__dict__.pop("_dopx_sections", None)
+        return super().refresh_from_db(*args, **kwargs)
+
     def refresh_verification_token(self) -> None:
         """Новый токен подтверждения почты со свежим сроком жизни."""
         from django.utils import timezone

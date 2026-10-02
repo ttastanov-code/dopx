@@ -1,0 +1,80 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+{# «Доступы»: сотрудник получает роли, роль задаёт разделы и права сразу. Логика — dashboard/roles.py. #}
+<div class="flex flex-wrap items-end justify-between gap-3 mb-4">
+    <div class="dopx-segment">
+        <a href="?tab=staff" class="dopx-segment__item {% if tab != 'roles' %}dopx-segment__item--active{% endif %}"><i class="ti ti-users"></i> Сотрудники</a>
+        <a href="?tab=roles" class="dopx-segment__item {% if tab == 'roles' %}dopx-segment__item--active{% endif %}"><i class="ti ti-id-badge-2"></i> Роли</a>
+    </div>
+    <p class="text-xs opacity-60 max-w-xl">Как устроено: <b>роль</b> говорит, какие разделы открыты и что в них можно делать. Сотруднику выбираете роли — и всё. Суперпользователю можно всё.</p>
+</div>
+
+{% if tab == 'roles' %}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+    <div class="lg:col-span-2 space-y-3">
+        {% for r in roles %}
+        <a href="{% url 'dashboard:admin_group_detail' r.group.id %}" class="card bg-base-100 border border-base-300 hover:border-primary transition-colors">
+            <div class="card-body p-4 gap-2">
+                <div class="flex items-center justify-between gap-3">
+                    <div class="font-bold">{{ r.group.name }}{% if r.legacy %} <span class="badge badge-warning badge-sm">старая группа — откройте и сохраните</span>{% endif %}</div>
+                    <span class="text-xs opacity-60 shrink-0">{{ r.members }} сотр.</span>
+                </div>
+                {% if r.description %}<div class="text-sm opacity-70">{{ r.description }}</div>{% endif %}
+                <div class="flex flex-wrap gap-1.5">
+                    {% for label, hint, level in r.chips %}
+                    <span class="badge badge-sm {% if level == 'full' %}badge-error badge-outline{% elif level == 'work' %}badge-primary badge-outline{% else %}badge-ghost{% endif %}" title="{{ hint }}">{{ label }}{% if level == 'view' %} · смотреть{% elif level == 'work' %} · работа{% elif level == 'full' %} · полный{% endif %}</span>
+                    {% empty %}
+                    <span class="text-xs opacity-50">Разделов пока нет.</span>
+                    {% endfor %}
+                </div>
+            </div>
+        </a>
+        {% empty %}
+        <div class="card bg-base-100 border border-base-300"><div class="card-body p-6 text-sm opacity-60 text-center">Ролей пока нет. Создайте из шаблона справа — это быстрее всего.</div></div>
+        {% endfor %}
+    </div>
+    <div class="space-y-4">
+        <section class="card bg-base-100 border border-base-300"><div class="card-body p-4 gap-2">
+            <div class="dopx-section-eyebrow"><i class="ti ti-sparkles"></i>Роль из шаблона</div>
+            {% for key, name, desc in presets %}
+            <form method="post">{% csrf_token %}<input type="hidden" name="preset" value="{{ key }}">
+                <button class="w-full text-left rounded-xl border border-base-300 hover:border-primary px-3 py-2"><div class="font-semibold text-sm">{{ name }}</div><div class="text-xs opacity-60">{{ desc }}</div></button>
+            </form>
+            {% endfor %}
+        </div></section>
+        <section class="card bg-base-100 border border-base-300"><div class="card-body p-4 gap-2">
+            <div class="dopx-section-eyebrow"><i class="ti ti-plus"></i>Пустая роль</div>
+            <form method="post" class="flex gap-2">{% csrf_token %}<input name="name" class="input input-sm input-bordered w-full" placeholder="Например: Поддержка"><button class="btn btn-sm btn-primary">Создать</button></form>
+        </div></section>
+    </div>
+</div>
+
+{% else %}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+    <section class="lg:col-span-2 card bg-base-100 border border-base-300"><div class="card-body p-0">
+        {% for s in staff %}
+        <a href="{% if s.user.is_superuser %}#{% else %}{% url 'dashboard:access_roles_detail' s.user.id %}{% endif %}" class="flex items-center gap-3 px-4 py-3 border-b border-base-200 last:border-0 {% if not s.user.is_superuser %}hover:bg-base-200/50{% endif %}">
+            <div class="min-w-0 flex-1">
+                <div class="font-semibold">{{ s.user.username }} <span class="text-xs opacity-50 font-normal">{{ s.user.email }}</span></div>
+                <div class="flex flex-wrap gap-1 mt-1">
+                    {% if s.user.is_superuser %}<span class="badge badge-sm badge-primary">суперпользователь — всё</span>
+                    {% else %}
+                    {% for g in s.roles %}<span class="badge badge-sm badge-outline">{{ g.name }}</span>{% empty %}<span class="badge badge-sm badge-warning">нет ролей — ничего не видит</span>{% endfor %}
+                    {% endif %}
+                </div>
+            </div>
+            {% if s.sections is not None %}<span class="text-xs opacity-60 shrink-0">{{ s.sections }} разд.</span><i class="ti ti-chevron-right opacity-40"></i>{% endif %}
+        </a>
+        {% endfor %}
+    </div></section>
+    <section class="card bg-base-100 border border-base-300 h-fit"><div class="card-body p-4 gap-2">
+        <div class="dopx-section-eyebrow"><i class="ti ti-user-plus"></i>Новый сотрудник</div>
+        <p class="text-xs opacity-60">Логин или email зарегистрированного пользователя. Потом выберете ему роль.</p>
+        <form method="post" action="{% url 'dashboard:access_grant_staff' %}" class="flex gap-2">{% csrf_token %}<input name="user" class="input input-sm input-bordered w-full" placeholder="логин или email"><button class="btn btn-sm btn-primary">Добавить</button></form>
+    </div></section>
+</div>
+{% endif %}
+{% endblock %}

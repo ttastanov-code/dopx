@@ -38,6 +38,22 @@ class UserAdmin(ModelAdmin):
             return fields
         return (*fields, *self.PRIVILEGE_FIELDS)
 
+    def _protected(self, request, obj) -> bool:
+        # Аккаунты сотрудников правит только суперпользователь: смена email = захват через сброс пароля.
+        return obj is not None and not request.user.is_superuser and (obj.is_staff or obj.is_superuser)
+
+    def has_change_permission(self, request, obj=None):
+        return not self._protected(request, obj) and super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        return not self._protected(request, obj) and super().has_delete_permission(request, obj)
+
+    def get_actions(self, request):
+        actions = super().get_actions(request)
+        if not request.user.is_superuser:
+            actions.pop("delete_selected", None)  # массовое удаление не проверяет объекты
+        return actions
+
     @admin.action(description="Отметить как верифицированных")
     def verify_selected(self, request, queryset):
         updated = queryset.update(is_verified=True)

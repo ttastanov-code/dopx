@@ -62,7 +62,7 @@ node_modules/
 sportmonks_samples/
 
 # Промо-ролики /brag
-brag-output/
+brag-output*/
 
 # Бэкапы на сервере (scripts/backup.sh, scripts/deploy.sh)
 backups/

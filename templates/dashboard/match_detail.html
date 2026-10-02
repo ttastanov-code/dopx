@@ -15,8 +15,10 @@
             <div class="dopx-section-eyebrow"><i class="ti ti-edit"></i>Ручная правка</div>
             <div class="dopx-section-title mb-3">{{ match.home_team.name }} — {{ match.away_team.name }}</div>
 
+            {# Без права «изменение матчей» — только просмотр. #}
             <form method="post" class="space-y-3">
                 {% csrf_token %}
+                <fieldset class="space-y-3" {% if not perms.matches.change_match %}disabled{% endif %}>
                 <div class="grid grid-cols-2 gap-3">
                     <div class="flex flex-col gap-1">
                         <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold">Статус</label>
@@ -50,7 +52,9 @@
                     <span class="label-text text-xs font-medium min-w-0 whitespace-normal">Статус/дата правлены вручную — не давать автосинку затирать</span>
                 </label>
 
-                <button type="submit" class="btn btn-sm btn-primary"><i class="ti ti-device-floppy"></i> Сохранить</button>
+                {% if perms.matches.change_match %}<button type="submit" class="btn btn-sm btn-primary"><i class="ti ti-device-floppy"></i> Сохранить</button>
+                {% else %}<p class="text-xs opacity-60"><i class="ti ti-lock"></i> Только просмотр: нет права на изменение матчей.</p>{% endif %}
+                </fieldset>
             </form>
         </div>
     </div>
