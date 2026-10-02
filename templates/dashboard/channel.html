@@ -1,0 +1,105 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+{# Канал: состояние, новый пост, очередь, опубликованные, режимы автопостинга. Логика — adminbot/channel.py. #}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+    <div class="lg:col-span-2 space-y-4">
+        {% if perms.adminbot.add_channelpost %}
+        <section class="card bg-base-100 border border-base-300"><div class="card-body p-4 gap-3">
+            <div class="dopx-section-eyebrow"><i class="ti ti-pencil"></i>Новый пост</div>
+            <form method="post" enctype="multipart/form-data" class="space-y-3">{% csrf_token %}
+                <textarea name="text" rows="6" maxlength="4000" required class="textarea textarea-bordered w-full text-sm" placeholder="Текст поста. Можно <b>жирный</b>, <i>курсив</i>, <a href=&quot;https://…&quot;>ссылку</a>."></textarea>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide opacity-50 font-semibold">Картинка (необязательно)</span><input type="file" name="image" accept="image/*" class="file-input file-input-sm file-input-bordered w-full"></label>
+                    <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide opacity-50 font-semibold">Кнопки: «Текст | https://…», по строке</span><textarea name="buttons" rows="2" class="textarea textarea-bordered textarea-sm w-full font-mono text-xs" placeholder="Оценить матч | https://dopx.kz/matches/"></textarea></label>
+                </div>
+                <div class="flex flex-wrap items-end gap-2">
+                    <button name="action" value="draft" class="btn btn-sm btn-outline"><i class="ti ti-device-floppy"></i> В черновики</button>
+                    {% if perms.adminbot.change_channelpost %}
+                    <button name="action" value="publish" class="btn btn-sm btn-primary" {% if not status.ok %}disabled title="Канал не настроен"{% endif %} onclick="return confirm('Опубликовать в канале сейчас?')"><i class="ti ti-send"></i> Опубликовать</button>
+                    <span class="flex items-end gap-1"><input type="datetime-local" name="scheduled_at" class="input input-sm input-bordered"><button name="action" value="schedule" class="btn btn-sm btn-ghost"><i class="ti ti-clock"></i> Запланировать</button></span>
+                    {% endif %}
+                </div>
+            </form>
+        </div></section>
+        {% endif %}
+
+        <section class="card bg-base-100 border border-base-300"><div class="card-body p-0">
+            <div class="dopx-section-eyebrow px-4 pt-4"><i class="ti ti-list"></i>Очередь</div>
+            {% for p in queue %}
+            <a href="{% url 'dashboard:channel_post' p.pk %}" class="flex items-start gap-3 px-4 py-3 border-b border-base-200 last:border-0 hover:bg-base-200/50">
+                <span class="badge badge-sm shrink-0 mt-0.5 {% if p.status == 'failed' %}badge-error{% elif p.status == 'scheduled' %}badge-primary badge-outline{% else %}badge-ghost{% endif %}">{{ p.get_status_display }}</span>
+                <span class="min-w-0 flex-1">
+                    <span class="text-xs opacity-60">{{ p.get_kind_display }}{% if p.scheduled_at and p.status == 'scheduled' %} · {{ p.scheduled_at|date:"d.m H:i" }}{% endif %}{% if p.image or p.tg_file_id %} · 📷{% endif %}</span>
+                    <span class="block text-sm truncate">{{ p.text|striptags|truncatechars:140 }}</span>
+                    {% if p.error %}<span class="block text-xs text-error">{{ p.error }}</span>{% endif %}
+                </span>
+                <i class="ti ti-chevron-right opacity-40 mt-1"></i>
+            </a>
+            {% empty %}
+            <p class="px-4 pb-4 text-sm opacity-60">Очередь пуста. Бот сам подготовит посты из событий: анонс тура, финалы, оценки, итоги тура, мнения экспертов.</p>
+            {% endfor %}
+        </div></section>
+
+        <section class="card bg-base-100 border border-base-300"><div class="card-body p-0">
+            <div class="dopx-section-eyebrow px-4 pt-4"><i class="ti ti-history"></i>Опубликовано</div>
+            {% for p in published %}
+            <div class="px-4 py-2.5 border-b border-base-200 last:border-0">
+                <div class="text-xs opacity-60">{{ p.published_at|date:"d.m.Y H:i" }} · {{ p.get_kind_display }}{% if p.published_by %} · {{ p.published_by.username }}{% else %} · автопостинг{% endif %}</div>
+                <div class="text-sm truncate">{{ p.text|striptags|truncatechars:160 }}</div>
+            </div>
+            {% empty %}
+            <p class="px-4 pb-4 text-sm opacity-60">Пока ничего не опубликовано.</p>
+            {% endfor %}
+            {% if published.has_other_pages %}
+            <div class="flex justify-between px-4 py-2 text-xs">
+                {% if published.has_previous %}<a class="link" href="?page={{ published.previous_page_number }}">← Новее</a>{% else %}<span></span>{% endif %}
+                {% if published.has_next %}<a class="link" href="?page={{ published.next_page_number }}">Старше →</a>{% endif %}
+            </div>
+            {% endif %}
+        </div></section>
+    </div>
+
+    <div class="space-y-4">
+        <section class="card bg-base-100 border border-base-300"><div class="card-body p-4 gap-2">
+            <div class="dopx-section-eyebrow"><i class="ti ti-brand-telegram"></i>Канал</div>
+            {% if not status.configured %}
+            <p class="text-sm">Канал не подключён.</p>
+            <ol class="text-xs opacity-70 list-decimal pl-4 space-y-1">
+                <li>Добавьте бота в канал администратором с правом «Публикация сообщений».</li>
+                <li>Впишите в <code>.env</code> <code>ADMIN_BOT_CHANNEL_ID=@имя_канала</code> и перезапустите сайт, Celery и бота.</li>
+                <li>На ноутбуке используйте тестовый канал, иначе dev опубликует в настоящий.</li>
+            </ol>
+            {% elif status.ok %}
+            <p class="text-sm"><span class="badge badge-success badge-sm">подключён</span> <b>{{ status.title }}</b>{% if status.username %} · <a class="link" href="https://t.me/{{ status.username }}" target="_blank" rel="noopener">@{{ status.username }}</a>{% endif %}</p>
+            {% else %}
+            <p class="text-sm"><span class="badge badge-warning badge-sm">нет доступа</span> {{ status.id }}</p>
+            <p class="text-xs text-warning">{{ status.error }}</p>
+            {% endif %}
+        </div></section>
+
+        <section class="card bg-base-100 border border-base-300"><div class="card-body p-4 gap-3">
+            <div class="dopx-section-eyebrow"><i class="ti ti-robot"></i>Автопостинг</div>
+            <form method="post" action="{% url 'dashboard:channel_modes' %}" class="space-y-3">{% csrf_token %}
+                <fieldset {% if not perms.adminbot.delete_channelpost %}disabled{% endif %} class="space-y-3">
+                {% for key, label, hint, mode in modes %}
+                <div>
+                    <div class="text-sm font-semibold">{{ label }}</div>
+                    <div class="text-xs opacity-55 mb-1">{{ hint }}</div>
+                    <select name="mode_{{ key }}" class="select select-sm select-bordered w-full">
+                        {% for value, title in mode_choices %}<option value="{{ value }}" {% if value == mode %}selected{% endif %}>{{ title }}</option>{% endfor %}
+                    </select>
+                </div>
+                {% endfor %}
+                <label class="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" name="quiet_hours" class="checkbox checkbox-sm" {% if quiet_hours %}checked{% endif %}> Не публиковать ночью (23:00–09:00)</label>
+                </fieldset>
+                {% if perms.adminbot.delete_channelpost %}<button class="btn btn-sm btn-primary w-full">Сохранить режимы</button>
+                {% else %}<p class="text-xs opacity-60">Режимы меняет сотрудник с полным доступом к каналу.</p>{% endif %}
+            </form>
+            <p class="text-xs opacity-60">«С одобрением» — черновик приходит в Telegram-бот с кнопками «В канал», «Утром», «Изменить», «Удалить».</p>
+        </div></section>
+    </div>
+</div>
+{% endblock %}

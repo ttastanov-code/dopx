@@ -61,6 +61,7 @@ class AuditAction(models.TextChoices):
     EXPERT_INVITE_CREATED = "expert_invite_created", _("Создана ссылка для эксперта")
     EXPERT_INVITE_CHANGED = "expert_invite_changed", _("Ссылка для эксперта изменена")
     BOT_ACTION = "bot_action", _("Действие через Telegram-бот")
+    CHANNEL_POST = "channel_post", _("Пост в Telegram-канал")
     # Роли доступа.
     ACCESS_GRANT_UPDATED = "access_grant_updated", _("Права доступа сотрудника изменены")
     # Вкл/выкл синка Sportmonks.
@@ -163,6 +164,7 @@ DASHBOARD_SECTIONS = [
     ("mourning", _("Режим траура")),
     ("social_content", _("Контент для соцсетей")),
     ("experts", _("Мнения экспертов")),
+    ("channel", _("Telegram-канал")),
     ("admin_bot", _("Telegram-бот")),
     ("platform_settings", _("Настройки платформы")),
     ("system_status", _("Системный статус")),

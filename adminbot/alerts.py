@@ -27,6 +27,8 @@ QUEUE_MAX = 300
 ERRORS_PER_10MIN = 25
 SYNC_STALE_HOURS = 12
 BACKUP_MAX_AGE_HOURS = 30
+LATENCY_P95_MAX = 2.0
+LATENCY_MIN_REQUESTS = 50
 _LOG_TS = re.compile(r"^ERROR\s+(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
 
 
@@ -170,7 +172,34 @@ def check_backup():
     return Problem("backup", "Бэкап базы устарел", f"Последний {age:.0f} ч назад") if age > BACKUP_MAX_AGE_HOURS else None
 
 
-CHECKS = [check_site, check_db, check_cache, check_celery, check_queue, check_disk, check_memory, check_load,
+def check_latency():
+    from .latency import p95
+
+    value, total = p95(5)
+    if value is not None and total >= LATENCY_MIN_REQUESTS and value > LATENCY_P95_MAX:
+        shown = "больше 10" if value == float("inf") else f"до {value:g}"
+        return Problem("latency", "Сайт тормозит", f"p95 {shown} с за 5 минут · запросов {total}")
+    return None
+
+
+def recent_errors(limit: int = 8) -> list[str]:
+    """Последние строки ERROR из errors.log."""
+    path = settings.LOGS_DIR / "errors.log"
+    if not path.exists():
+        return []
+    try:
+        size = path.stat().st_size
+        with open(path, "r", errors="replace") as fh:
+            if size > 100_000:
+                fh.seek(size - 100_000)
+                fh.readline()
+            lines = [l for l in fh.read().splitlines() if l.startswith("ERROR")]
+    except OSError:
+        return []
+    return lines[-limit:]
+
+
+CHECKS = [check_site, check_latency, check_db, check_cache, check_celery, check_queue, check_disk, check_memory, check_load,
           check_errors, check_sync, check_backup]
 
 
@@ -206,23 +235,42 @@ def active() -> list[dict]:
     return [st for st in STATE.values() if st.get("sent")]
 
 
-def run_checks(send=None) -> list[str]:
-    """Одна проверка: обновить состояние, разослать новые алерты, напоминания и восстановления."""
+def _buttons(key: str) -> list:
+    from .handlers import ENV, cb
+
+    rows = [[("🩺 Сервер", cb("status")), ("📜 Ошибки", cb("errors"))]]
+    if key in ("celery", "queue") and ENV == "prod":
+        rows.append([("🔄 Перезапустить воркеры", cb("celery_restart"))])
+    rows.append([("🔕 На 1 час", cb("mute", key))])
+    return rows
+
+
+def _fallback_send(text, rows):
+    """Отправка без базы: последним известным получателям."""
     from . import telegram as tg
-    from .handlers import cb, esc, header
+
+    for chat_id in LAST_RECIPIENTS:
+        tg.send(chat_id, text, rows)
+
+
+def _remember_recipients():
+    global LAST_RECIPIENTS
     from .notify import recipients
 
-    def default_send(text, rows):
-        # База может лежать — тогда шлём последним известным получателям.
-        global LAST_RECIPIENTS
-        try:
-            LAST_RECIPIENTS = recipients("system_status")
-        except Exception:
-            pass
-        for chat_id in LAST_RECIPIENTS:
-            tg.send(chat_id, text, rows)
+    try:
+        LAST_RECIPIENTS = recipients("system_status", topic="incidents")
+    except Exception:
+        pass
 
-    send = send or default_send
+
+def run_checks(send=None) -> list[str]:
+    """Одна проверка: обновить состояние, разослать новые алерты, напоминания и восстановления.
+    Без send — через инциденты (дежурный, «Беру»); если база лежит — напрямую."""
+    from . import incidents
+    from .handlers import esc, header
+
+    if send is None:
+        _remember_recipients()
     now = time.time()
     problems = {p.key: p for p in current_problems()}
     events = []
@@ -235,8 +283,18 @@ def run_checks(send=None) -> list[str]:
             icon = "🔴" if p.critical else "🟠"
             again = " (всё ещё)" if st["sent"] else ""
             since = datetime.fromtimestamp(st["since"], tz=timezone.get_current_timezone())
-            send(header() + f"{icon} <b>{esc(p.title)}</b>{again}\n{esc(p.detail)}\nС {since:%H:%M}",
-                 [[("🩺 Сервер", cb("status")), ("🔕 На 1 час", cb("mute", key))]])
+            text = header() + f"{icon} <b>{esc(p.title)}</b>{again}\n{esc(p.detail)}\nС {since:%H:%M}"
+            if send:
+                send(text, _buttons(key))
+            else:
+                try:
+                    if not st["sent"]:
+                        incidents.open_incident(f"alert:{key}", p.title, text, _buttons(key))
+                    elif not incidents.acked(f"alert:{key}"):
+                        _fallback_send(text, _buttons(key))
+                except Exception:
+                    logger.warning("adminbot alerts: инциденты недоступны, шлю напрямую", exc_info=True)
+                    _fallback_send(text, _buttons(key))
             st["sent"] = now
             events.append(f"alert:{key}")
 
@@ -244,6 +302,15 @@ def run_checks(send=None) -> list[str]:
         st = STATE.pop(key)
         if st.get("sent"):
             minutes = max(1, int((now - st["since"]) / 60))
-            send(header() + f"✅ <b>Восстановлено:</b> {esc(st.get('title', key))}\nДлилось ~{minutes} мин.", None)
+            text = header() + f"✅ <b>Восстановлено:</b> {esc(st.get('title', key))}\nДлилось ~{minutes} мин."
+            if send:
+                send(text, None)
+            else:
+                try:
+                    from . import telegram as tg
+                    for chat in incidents.resolve(f"alert:{key}", "✅ Восстановлено") or LAST_RECIPIENTS:
+                        tg.send(chat, text)
+                except Exception:
+                    _fallback_send(text, None)
             events.append(f"ok:{key}")
     return events

@@ -44,6 +44,21 @@
     </div></section>
 </div>
 
+<section class="card bg-base-100 border border-base-300 mt-4"><div class="card-body p-5 gap-2">
+    <div class="dopx-section-eyebrow"><i class="ti ti-sparkles"></i>Что умеет бот</div>
+    <ul class="text-sm grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1.5 opacity-80">
+        <li>⚽ <b>Матчдень</b>: брифинг за 2 часа, финалы, отчёт после матча, кнопки «+1 ч голосования», «Заморозить», «Ресинк», «Перенос».</li>
+        <li>🚨 <b>Инциденты</b>: всплески оценок, матч не начался, сервер; дежурный, эскалация через 10 минут, «Беру в работу».</li>
+        <li>📣 <b>Канал</b>: анонс тура, финалы, оценки, итоги тура, мнения экспертов; одобрение кнопкой или автопостинг.</li>
+        <li>🎙 <b>Эксперты</b>: ссылка-приглашение за два нажатия, «На правку» с комментарием, напоминание по средам.</li>
+        <li>💬 <b>Обращения</b>: ответ болельщику прямо из Telegram (на сайт и на почту).</li>
+        <li>📊 <b>Цифры</b>: утренняя сводка с трендами, вопросы текстом (Claude), PDF-отчёт партнёру.</li>
+        <li>🗂 <b>Команда</b>: недельный отчёт суперпользователю, кто давно не заходил.</li>
+        <li>🔔 Темы уведомлений и дежурство — в боте: «Уведомления», «Дежурство».</li>
+    </ul>
+    <p class="text-xs opacity-60 mt-1"><i class="ti ti-shield-lock"></i> Бот работает только в личке с сотрудниками и в канале проекта: из чужих каналов и групп выходит сам и сообщает суперпользователю. Дополнительно в @BotFather: <code>/setjoingroups</code> → Disable.</p>
+</div></section>
+
 {% if user.is_superuser %}
 <section class="card bg-base-100 border border-base-300 mt-4"><div class="card-body p-5 gap-3">
     <div class="flex items-center justify-between gap-3">
@@ -51,16 +66,16 @@
         {% if links %}<form method="post" action="{% url 'dashboard:admin_bot_unlink' %}" onsubmit="return confirm('Отвязать всех от бота?')">{% csrf_token %}<input type="hidden" name="link" value="all"><button class="btn btn-xs btn-error btn-outline"><i class="ti ti-plug-off"></i> Отвязать всех</button></form>{% endif %}
     </div>
     <table class="table table-sm">
-        <thead><tr><th>Сотрудник</th><th>Telegram</th><th>Уведомления</th><th>Последнее действие</th><th></th></tr></thead>
+        <thead><tr><th>Сотрудник</th><th>Telegram</th><th>Уведомления</th><th>Дежурство</th><th>Последнее действие</th><th></th></tr></thead>
         <tbody>
             {% for l in links %}
             <tr>
                 <td>{{ l.user.username }}</td><td>{{ l.telegram_name|default:l.telegram_id }}</td>
-                <td>{% if l.notify %}вкл{% else %}выкл{% endif %}</td><td>{{ l.last_seen|date:"d.m H:i"|default:"—" }}</td>
+                <td>{% if l.notify %}вкл{% else %}выкл{% endif %}</td><td>{% if l.duty_order %}№{{ l.duty_order }}{% else %}—{% endif %}</td><td>{{ l.last_seen|date:"d.m H:i"|default:"—" }}</td>
                 <td class="text-right"><form method="post" action="{% url 'dashboard:admin_bot_unlink' %}">{% csrf_token %}<input type="hidden" name="link" value="{{ l.pk }}"><button class="btn btn-xs btn-ghost">Отвязать</button></form></td>
             </tr>
             {% empty %}
-            <tr><td colspan="5" class="opacity-60">Пока никто не привязан.</td></tr>
+            <tr><td colspan="6" class="opacity-60">Пока никто не привязан.</td></tr>
             {% endfor %}
         </tbody>
     </table>

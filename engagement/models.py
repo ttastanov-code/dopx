@@ -215,6 +215,7 @@ class ExpertTake(BaseModel):
         verbose_name=_("Ключевой игрок"),
     )
     is_published = models.BooleanField(_("Опубликовано"), default=True)
+    review_note = models.CharField(_("Комментарий редакции"), max_length=500, blank=True)
     invite = models.ForeignKey(ExpertInvite, on_delete=models.SET_NULL, null=True, blank=True, related_name="takes",
                                verbose_name=_("Прислано по ссылке"))
 

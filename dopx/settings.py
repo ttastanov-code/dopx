@@ -276,6 +276,18 @@ UNFOLD = {
                         "permission": admin_perm("adminbot_botlink"),
                     },
                     {
+                        "title": _("Посты в Telegram-канал"),
+                        "icon": "campaign",
+                        "link": reverse_lazy("admin:adminbot_channelpost_changelist"),
+                        "permission": admin_perm("adminbot_channelpost"),
+                    },
+                    {
+                        "title": _("Инциденты бота"),
+                        "icon": "emergency",
+                        "link": reverse_lazy("admin:adminbot_incident_changelist"),
+                        "permission": admin_perm("adminbot_incident"),
+                    },
+                    {
                         "title": _("На сайт"),
                         "icon": "open_in_new",
                         "link": reverse_lazy("core:home"),
@@ -421,6 +433,8 @@ UNFOLD = {
 }
 
 MIDDLEWARE = [
+    # Время ответа для алерта «сайт тормозит».
+    'adminbot.latency.LatencyMiddleware',
     'django.middleware.security.SecurityMiddleware',
     # CSP-заголовок.
     'dopx.middleware.ContentSecurityPolicyMiddleware',
@@ -694,6 +708,24 @@ CELERY_BEAT_SCHEDULE = {
     'adminbot-daily-digest': {
         'task': 'adminbot.tasks.daily_digest',
         'schedule': crontab(hour=9, minute=0),
+    },
+    # Матчдень: брифинг, отчёты, всплески оценок, анонсы в канал.
+    'adminbot-matchday-tick': {
+        'task': 'adminbot.tasks.matchday_tick',
+        'schedule': 300.0,
+    },
+    # Каждую минуту: запланированные посты канала и эскалация инцидентов.
+    'adminbot-minute-tick': {
+        'task': 'adminbot.tasks.minute_tick',
+        'schedule': 60.0,
+    },
+    'adminbot-experts-reminder': {
+        'task': 'adminbot.tasks.experts_reminder',
+        'schedule': crontab(hour=12, minute=0, day_of_week=3),
+    },
+    'adminbot-weekly-staff-report': {
+        'task': 'adminbot.tasks.weekly_staff_report',
+        'schedule': crontab(hour=10, minute=0, day_of_week=1),
     },
     # Контент для соцсетей по итогам тура — понедельник утром.
     # Опросы недели: вт — спорный момент, ср — дуэль тура.
@@ -1056,6 +1088,13 @@ ADMIN_BOT_GITHUB_REPO = os.getenv('ADMIN_BOT_GITHUB_REPO', '')
 ADMIN_BOT_ALERTS = os.getenv('ADMIN_BOT_ALERTS', 'auto')
 # Куда стучаться проверке «сайт живой» (в Docker — nginx внутри сети).
 ADMIN_BOT_HEALTH_URL = os.getenv('ADMIN_BOT_HEALTH_URL', 'http://nginx/healthz/' if IS_PRODUCTION else '')
+# Канал проекта (@username или -100…): бот должен быть его админом. В dev — тестовый канал или пусто.
+ADMIN_BOT_CHANNEL_ID = os.getenv('ADMIN_BOT_CHANNEL_ID', '')
+# Другие чаты, где боту можно быть (через запятую): например, прод-канал в .env ноутбука. Из остальных он выходит.
+ADMIN_BOT_ALLOWED_CHATS = os.getenv('ADMIN_BOT_ALLOWED_CHATS', '')
+# Вопросы боту свободным текстом — через Claude API. Без ключа функция выключена.
+ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
+ADMIN_BOT_AI_MODEL = os.getenv('ADMIN_BOT_AI_MODEL', 'claude-sonnet-5-5')
 
 # Прод не стартует с настройками разработки: ошибка сразу при запуске, а не у пользователей.
 if IS_PRODUCTION and os.getenv('SKIP_PRODUCTION_CHECKS') != 'True':

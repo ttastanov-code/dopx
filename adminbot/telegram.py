@@ -32,6 +32,19 @@ def call(method: str, http_timeout: float = 15, **params):
     return data["result"]
 
 
+def call_files(method: str, files: dict, http_timeout: float = 60, **params):
+    """Вызов с загрузкой файла (multipart): вложенные параметры — JSON-строкой."""
+    import json
+
+    data = {k: (json.dumps(v) if isinstance(v, (dict, list)) else v) for k, v in params.items() if v is not None}
+    resp = requests.post(API.format(token=settings.ADMIN_BOT_TOKEN, method=method), data=data, files=files,
+                         timeout=http_timeout)
+    out = resp.json()
+    if not out.get("ok"):
+        raise TelegramError(out.get("error_code", resp.status_code), out.get("description", ""))
+    return out["result"]
+
+
 def _public_url(url: str) -> bool:
     # Telegram отклоняет всё сообщение, если в кнопке ссылка на localhost/IP — такие кнопки пропускаем.
     host = url.split("//", 1)[-1].split("/", 1)[0].split(":", 1)[0]
@@ -93,7 +106,49 @@ def delete(chat_id: int, message_id: int) -> None:
 
 
 def get_updates(offset: int | None, timeout: int = 25) -> list[dict]:
-    params = {"timeout": timeout, "allowed_updates": ["message", "callback_query"]}
+    params = {"timeout": timeout, "allowed_updates": ["message", "callback_query", "my_chat_member"]}
     if offset is not None:
         params["offset"] = offset
     return call("getUpdates", http_timeout=timeout + 10, **params)
+
+
+def send_photo(chat_id, photo, caption: str = "", rows=None, filename: str = "image.png") -> dict:
+    """photo — file_id/URL (str) или байты. Ошибки — TelegramError, чтобы канал записал причину."""
+    params = {"chat_id": chat_id, "caption": caption[:1024], "parse_mode": "HTML"}
+    if rows:
+        params["reply_markup"] = keyboard(rows)
+    if isinstance(photo, (bytes, bytearray)):
+        return call_files("sendPhoto", {"photo": (filename, photo)}, **params)
+    return call("sendPhoto", photo=photo, **params)
+
+
+def send_document(chat_id, content: bytes, filename: str, caption: str = "", rows=None) -> dict | None:
+    params = {"chat_id": chat_id, "caption": caption[:1024], "parse_mode": "HTML"}
+    if rows:
+        params["reply_markup"] = keyboard(rows)
+    try:
+        return call_files("sendDocument", {"document": (filename, content)}, **params)
+    except (TelegramError, requests.RequestException) as e:
+        logger.warning("adminbot: sendDocument failed: %s", e)
+        return None
+
+
+def post(chat_id, text: str, rows=None) -> dict:
+    """Сообщение в канал: ошибки не глотаем — их показывает очередь постов."""
+    params = {"chat_id": chat_id, "text": text[:4000], "parse_mode": "HTML", "disable_web_page_preview": True}
+    if rows:
+        params["reply_markup"] = keyboard(rows)
+    return call("sendMessage", **params)
+
+
+def channel_status(chat_id) -> dict:
+    """Видит ли бот канал и может ли в нём публиковать."""
+    try:
+        chat = call("getChat", chat_id=chat_id)
+        me = call("getMe")
+        member = call("getChatMember", chat_id=chat_id, user_id=me["id"])
+    except (TelegramError, requests.RequestException) as e:
+        return {"ok": False, "error": str(e)[:200]}
+    can_post = member.get("status") == "creator" or (member.get("status") == "administrator" and member.get("can_post_messages", True))
+    return {"ok": can_post, "title": chat.get("title", ""), "username": chat.get("username", ""),
+            "error": "" if can_post else "Бот не админ канала или без права публиковать"}

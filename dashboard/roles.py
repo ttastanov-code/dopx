@@ -20,6 +20,8 @@ SECTION_MODELS: dict[str, list[str]] = {
     "announcements": ["notifications.notification"],
     "mourning": ["core.mourningmode"],
     "experts": ["engagement.expert", "engagement.experttake", "engagement.expertinvite"],
+    # «Полный» — ещё и режимы автопостинга.
+    "channel": ["adminbot.channelpost"],
     "platform_settings": ["core.platformsetting"],
     # Переключатель синхронизации Sportmonks хранится в настройках платформы.
     "parser_tools": ["core.platformsetting"],
@@ -35,15 +37,15 @@ LEVEL_HINTS = {
     "full": "всё, включая удаление",
 }
 # Разделы, где даже «Открыт» — серьёзное право: подсвечиваем в редакторе.
-SENSITIVE = {"scripts", "users", "platform_settings", "announcements", "mourning", "audit", "admin_bot"}
+SENSITIVE = {"scripts", "users", "platform_settings", "announcements", "mourning", "audit", "admin_bot", "channel"}
 
 # Готовые шаблоны ролей.
 PRESETS = {
     "moderator": ("Модератор", "Разбирает накрутки, спорные оценки, обращения болельщиков", {
         "overview": "on", "antifraud": "work", "evaluation_sessions": "view", "data_trust": "work", "users": "view",
         "admin_bot": "on"}),
-    "editor": ("Редактор контента", "Мнения экспертов, соцсети, объявления", {
-        "overview": "on", "experts": "full", "social_content": "on", "announcements": "work", "matches": "view",
+    "editor": ("Редактор контента", "Мнения экспертов, Telegram-канал, соцсети, объявления", {
+        "overview": "on", "experts": "full", "channel": "full", "social_content": "on", "announcements": "work", "matches": "view",
         "admin_bot": "on"}),
     "data": ("Данные и парсер", "Матчи, ФИО, дубли игроков, здоровье и доверие к данным", {
         "overview": "on", "matches": "work", "data_health": "work", "data_trust": "work", "names_review": "work",

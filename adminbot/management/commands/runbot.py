@@ -14,7 +14,7 @@ import requests
 from django.core.cache import cache
 from django.core.management.base import BaseCommand
 
-from adminbot import alerts, handlers, relay, router
+from adminbot import alerts, handlers, incidents, relay, router
 from adminbot import telegram as tg
 
 logger = logging.getLogger("adminbot")
@@ -40,6 +40,7 @@ class Command(BaseCommand):
         self.stdout.write(f"Бот запущен: {handlers.ENV_LABEL[handlers.ENV]}, роль — {self.role}.")
         last_check = time.monotonic()
         self.last_alerts = 0.0
+        self.last_escalation = 0.0
         if alerts.enabled():
             self.stdout.write("Алерты включены: проверка раз в минуту.")
         while True:
@@ -62,6 +63,13 @@ class Command(BaseCommand):
                 handlers.check_runs()
             except Exception:
                 logger.exception("adminbot: проверка запущенных скриптов упала")
+            if time.monotonic() - self.last_escalation > ALERTS_EVERY:
+                # Дублирует minute_tick Celery: инциденты эскалируются, даже когда Celery стоит.
+                self.last_escalation = time.monotonic()
+                try:
+                    incidents.escalate_due()
+                except Exception:
+                    logger.exception("adminbot: эскалация инцидентов упала")
             if alerts.enabled() and time.monotonic() - self.last_alerts > ALERTS_EVERY:
                 self.last_alerts = time.monotonic()
                 try:

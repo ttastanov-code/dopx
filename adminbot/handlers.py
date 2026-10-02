@@ -142,12 +142,25 @@ def health_line() -> str:
 
 
 def menu_text(user) -> str:
+    from . import ask
+
     c = counts()
     lines = [header() + f"Привет, <b>{esc(user.username)}</b> · версия {esc(settings.APP_VERSION)}", health_line()]
     queue = [f"{icon} {c[key]}" for key, icon, _label, section, perm in QUEUES if can(user, section, perm)]
     if queue:
         lines.append("Ждут разбора: " + "  ".join(queue))
+    if ask.enabled():
+        lines.append("\n<i>💬 Можно спросить текстом: «кто лучший игрок 12 тура?»</i>")
     return "\n".join(lines)
+
+
+# Кнопки разделов меню: (текст, действие, раздел).
+MENU_TOOLS = [
+    ("⚽ Матчдень", "md", "matches"), ("📣 Канал", "chan", "channel"),
+    ("🎙 Эксперты", "exp", "experts"), ("🕯 Траур", "mourn", "mourning"),
+    ("💼 Партнёры", "partners", "ads"), ("🧑‍🚒 Дежурство", "duty", "system_status"),
+    ("⚙️ Скрипты", "scripts", "scripts"),
+]
 
 
 def menu_rows(user) -> list:
@@ -155,14 +168,12 @@ def menu_rows(user) -> list:
     rows = [[("📊 Сводка", cb("sum")), ("🩺 Сервер", cb("status"))]]
     queue = [(f"{icon} {label} · {c[key]}", cb(key)) for key, icon, label, section, perm in QUEUES if can(user, section, perm)]
     rows += _pairs(queue)
-    tools = []
-    if can(user, "scripts"):
-        tools.append(("⚙️ Скрипты", cb("scripts")))
+    tools = [(label, cb(action)) for label, action, section in MENU_TOOLS if can(user, section)]
     if user.is_superuser:
         tools.append(("🚀 Деплой", cb("deploy")))
     rows += _pairs(tools)
     link = BotLink.objects.filter(user=user).first()
-    rows.append([("🔔 Уведомления" if link and link.notify else "🔕 Уведомления", cb("notify")),
+    rows.append([("🔔 Уведомления" if link and link.notify else "🔕 Уведомления", cb("topics")),
                  ("🌐 Дашборд", settings.SITE_URL.rstrip("/") + "/staff/dashboard/")])
     rows.append(env_row())
     return rows
@@ -269,7 +280,9 @@ def takes_view(user):
             + (f"<b>«{esc(t.headline)}»</b>\n" if t.headline else "") + esc(t.text[:1500]))
     rows = []
     if can(user, "experts", "engagement.change_experttake"):
-        rows.append([("✅ Опубликовать", cb("take_pub", str(t.pk))), ("🗑 Удалить", cb("take_del", str(t.pk)))])
+        rows.append([("✅ Опубликовать", cb("take_pub", str(t.pk))), ("↩️ На правку", cb("take_return", str(t.pk)))])
+    if can(user, "experts", "engagement.delete_experttake"):
+        rows.append([("🗑 Удалить", cb("take_del", str(t.pk)))])
     rows.append([("Открыть в дашборде", settings.SITE_URL.rstrip("/") + f"/staff/dashboard/experts/takes/{t.pk}/")])
     return text, rows + back()
 
@@ -348,7 +361,11 @@ def contacts_view(user):
     who = c.user.username if c.user else (c.guest_email or "гость")
     text = (header() + f"✉️ <b>Обращение</b> · 1 из {qs.count()}\n\n"
             f"От: {esc(who)} · {esc(c.get_category_display())}\n<b>{esc(c.subject)}</b>\n\n{esc(c.message[:1500])}")
-    rows = [[("✅ Решено", cb("contact_done", str(c.pk)))]] if can(user, "data_trust", "notifications.change_contactsubmission") else []
+    rows = []
+    if can(user, "data_trust", "notifications.change_contactsubmission"):
+        rows.append([("💬 Ответить", cb("contact_reply", str(c.pk))), ("✅ Решено", cb("contact_done", str(c.pk)))])
+    if c.related_match_id and can(user, "matches"):
+        rows.append([("⚽ Матч", cb("m", str(c.related_match_id)))])
     return text, rows + back()
 
 
@@ -451,7 +468,8 @@ def act_take_pub(user, pk):
     if not t:
         return "Мнение уже удалено."
     t.is_published = True
-    t.save(update_fields=["is_published", "updated_at"])
+    t.review_note = ""
+    t.save(update_fields=["is_published", "review_note", "updated_at"])
     audit(user, f"Мнение опубликовано: {t}", {"take_id": str(t.pk)})
     return "✅ Мнение опубликовано."
 
@@ -494,6 +512,8 @@ def act_contact_done(user, pk):
         return "Обращение не найдено."
     c.status = "resolved"
     c.save(update_fields=["status", "updated_at"])
+    from notifications.tasks import notify_contact_resolved
+    notify_contact_resolved(c)
     audit(user, f"Обращение решено: {c.subject}", {"contact_id": str(c.pk)})
     return "✅ Отмечено решённым."
 
@@ -657,12 +677,13 @@ def handle(update: dict) -> None:
         return
     link = BotLink.objects.select_related("user").filter(telegram_id=tid).first()
     if msg:
-        text = (msg.get("text") or "").strip()
+        text = (msg.get("text") or msg.get("caption") or "").strip()
+        photo = msg["photo"][-1]["file_id"] if msg.get("photo") else None
         if text.startswith("/link"):
             return _link(tid, who, text)
         if not _allowed(tid, link):
             return
-        _on_message(tid, text, link)
+        _on_message(tid, text, link, photo)
     elif q:
         if not _allowed(tid, link, q):
             return
@@ -685,15 +706,59 @@ def _allowed(tid, link, q=None) -> bool:
     return True
 
 
-def _on_message(tid, text, link):
+def _await_key(tid) -> str:
+    return f"adminbot:await:{ENV}:{tid}"
+
+
+def _on_message(tid, text, link, photo=None):
+    from . import ask
+
     user = link.user
-    if CODE_RE.match(text):
+    if text in ("/cancel", "отмена", "Отмена"):
+        cache.delete(_await_key(tid))
+        cache.delete(f"adminbot:pending:{ENV}:{tid}")
+        return tg.send(tid, menu_text(user), menu_rows(user))
+    waiting = cache.get(_await_key(tid))
+    if CODE_RE.match(text) and not waiting:
         return _on_code(tid, user, text)
+    if waiting and (text or photo):
+        cache.delete(_await_key(tid))
+        if not elevated(user):
+            return tg.send(tid, header() + "🔐 Подтверждение истекло — начните действие заново.", back())
+        return _run_write(tid, user, waiting["action"], waiting["arg"], text=text, photo=photo)
     if text == "/unlink":
         link.delete()
         audit(user, "Отвязан Telegram", {"telegram_id": tid})
         return tg.send(tid, header() + "Аккаунт отвязан от бота.")
+    if ask.enabled() and text and not text.startswith("/") and len(text) > 3:
+        return _ask(tid, user, text)
     tg.send(tid, menu_text(user), menu_rows(user))
+
+
+def _ask(tid, user, question):
+    """Ответ Claude в отдельном потоке: долгий запрос не держит цикл бота."""
+    import threading
+
+    from django.db import close_old_connections
+
+    from . import ask
+
+    if is_rate_limited(f"adminbot:ask:{user.pk}", 20, 3600):
+        return tg.send(tid, header() + "Лимит вопросов — 20 в час. Попробуйте позже.")
+    tg.send(tid, "🤔 Смотрю данные…")
+
+    def work():
+        try:
+            reply = ask.answer(user, question)
+            tg.send(tid, header() + esc(reply), back())
+        except Exception:
+            logger.exception("adminbot: ask failed")
+            tg.send(tid, header() + "Не получилось ответить, подробности в логах.")
+        finally:
+            if threading.current_thread() is not threading.main_thread():
+                close_old_connections()
+
+    threading.Thread(target=work, daemon=True).start()
 
 
 def _link(tid, who, text):
@@ -725,15 +790,27 @@ def _on_code(tid, user, code):
         return tg.send(tid, header() + "❌ Код неверный. Пришлите код ещё раз.")
     cache.set(f"adminbot:elev:{ENV}:{user.pk}", 1, ELEVATION_TTL)
     cache.delete(f"adminbot:pending:{ENV}:{tid}")
+    if pending["action"] in TEXT_PROMPTS:
+        return _ask_text(tid, pending["action"], pending["arg"])
     _run_write(tid, user, pending["action"], pending["arg"])
 
 
-def _run_write(tid, user, action, arg):
+def _ask_text(tid, action, arg):
+    cache.set(_await_key(tid), {"action": action, "arg": arg}, PENDING_TTL * 3)
+    tg.send(tid, header() + TEXT_PROMPTS[action] + "\n\n<i>Отмена — /cancel</i>")
+
+
+def _run_write(tid, user, action, arg, text=None, photo=None):
     check, fn, after = WRITE[action]
     if not check(user, arg):
         return tg.send(tid, header() + "Нет прав на это действие.")
     try:
-        result = act_script(user, arg, tid) if action == "scr_run" else fn(user, arg)
+        if action == "scr_run":
+            result = act_script(user, arg, tid)
+        elif action in TEXT_PROMPTS:
+            result = fn(user, arg, text or "", photo)
+        else:
+            result = fn(user, arg)
     except Exception:
         logger.exception("adminbot: action %s failed", action)
         result = "⚠️ Не получилось, подробности в логах."
@@ -754,8 +831,17 @@ def _on_callback(tid, q, link):
     if action == "notify":
         link.notify = not link.notify
         link.save(update_fields=["notify"])
-        return tg.edit(tid, mid, menu_text(user) + ("\n\n🔔 Уведомления включены." if link.notify else "\n\n🔕 Уведомления выключены."),
-                       menu_rows(user))
+        text, rows = VIEWS["topics"][1](user, "")
+        return tg.edit(tid, mid, text, rows)
+    if action == "inc_ack":
+        from . import incidents
+        return tg.answer(q["id"], incidents.ack(arg, user), alert=True)
+    if action in VIEWS_WITH_CHAT:
+        check, view = VIEWS_WITH_CHAT[action]
+        if not check(user, arg):
+            return tg.send(tid, header() + "Нет доступа к этому разделу.")
+        text, rows = view(user, arg, tid)
+        return tg.send(tid, text, rows)
     if action == "mute":
         from . import alerts
         if can(user, "system_status"):
@@ -777,4 +863,15 @@ def _on_callback(tid, q, link):
         if not elevated(user):
             cache.set(f"adminbot:pending:{ENV}:{tid}", {"action": action, "arg": arg}, PENDING_TTL)
             return tg.send(tid, header() + "🔐 Подтвердите действие: пришлите код из приложения 2FA (6 цифр).")
+        if action in TEXT_PROMPTS:
+            return _ask_text(tid, action, arg)
         return _run_write(tid, user, action, arg)
+
+
+# Экраны и действия из screens.py — в общие реестры.
+from .screens import TEXT_PROMPTS, VIEWS_WITH_CHAT  # noqa: E402
+from .screens import VIEWS as _MORE_VIEWS  # noqa: E402
+from .screens import WRITE as _MORE_WRITE  # noqa: E402
+
+VIEWS.update(_MORE_VIEWS)
+WRITE.update(_MORE_WRITE)

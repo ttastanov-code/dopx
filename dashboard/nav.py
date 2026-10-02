@@ -48,6 +48,7 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
     )),
     NavGroup("content", "ti-speakerphone", "Контент", (
         NavItem("experts", "dashboard:experts", "ti-microphone", "Эксперты", "Мнения о матчах"),
+        NavItem("channel", "dashboard:channel", "ti-brand-telegram", "Telegram-канал", "Посты, автопостинг, очередь"),
         NavItem("social_content", "dashboard:social_content", "ti-photo-share", "Соцсети", "Готовые посты тура"),
         NavItem("announcements", "dashboard:announcements", "ti-speakerphone", "Объявления", "Рассылка всем пользователям"),
         NavItem("ads", "dashboard:ads", "ti-ad-2", "Реклама", "Партнёры, баннеры, виджеты"),

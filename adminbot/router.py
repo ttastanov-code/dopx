@@ -30,6 +30,10 @@ def available(env: str) -> bool:
 
 def route(update: dict) -> str | None:
     """Обработать или переслать апдейт; возвращает окружение-получатель (для тестов и логов)."""
+    if "my_chat_member" in update:
+        from . import guard
+        guard.on_membership(update)
+        return None
     tid, chat_type = _tid_chat(update)
     if not tid or chat_type != "private":
         return None
@@ -46,6 +50,7 @@ def route(update: dict) -> str | None:
             tg.answer(q["id"], f"{handlers.ENV_LABEL[target]} сейчас не в сети", alert=True)
             return None
         cache.set(f"adminbot:sel:{tid}", target, SELECT_TTL)
+        cache.set(f"adminbot:last:{tid}", target, LAST_TTL)
         tg.answer(q["id"], f"Окружение: {handlers.ENV_LABEL[target]}")
         # Меню нужного окружения: как будто пользователь написал /menu.
         menu_update = {"update_id": update.get("update_id"), "message": {
@@ -60,9 +65,9 @@ def route(update: dict) -> str | None:
             return None
         cache.set(f"adminbot:last:{tid}", target, LAST_TTL)
     else:
-        text = (msg.get("text") or "").strip()
+        # Код 2FA и текст после кнопки (ответ, пост) — туда, где нажали кнопку.
         last = cache.get(f"adminbot:last:{tid}")
-        target = last if (handlers.CODE_RE.match(text) and last) else _selected(tid)
+        target = last or _selected(tid)
     return _dispatch(target, update, tid)
 
 

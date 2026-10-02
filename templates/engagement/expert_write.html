@@ -33,7 +33,8 @@
     {% if form %}
     <form method="post" enctype="multipart/form-data" class="dx-card space-y-4" id="expert-form">
         {% csrf_token %}
-        {% if take %}<div class="text-sm font-semibold"><i class="ti ti-pencil"></i> Правка мнения о матче {{ take.match.home_team.name }} – {{ take.match.away_team.name }} · <a href="?" class="link opacity-70 font-normal">написать новое</a></div>{% endif %}
+        {% if take %}<div class="text-sm font-semibold"><i class="ti ti-pencil"></i> Правка мнения о матче {{ take.match.home_team.name }} – {{ take.match.away_team.name }} · <a href="?" class="link opacity-70 font-normal">написать новое</a></div>
+        {% if take.review_note %}<div class="alert alert-warning text-sm"><i class="ti ti-message-2"></i><span><b>Комментарий редакции:</b> {{ take.review_note }}</span></div>{% endif %}{% endif %}
         {% if form.non_field_errors %}<div class="alert alert-error text-sm">{{ form.non_field_errors }}</div>{% endif %}
         {% if form.name %}
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -72,7 +73,7 @@
                 {% if t.is_published %}
                 <a href="{% url 'matches:detail' t.match_id %}#expert-takes" class="badge badge-success badge-sm">опубликовано</a>
                 {% else %}
-                <span class="badge badge-ghost badge-sm">на проверке</span>
+                <span class="badge {% if t.review_note %}badge-warning{% else %}badge-ghost{% endif %} badge-sm">{% if t.review_note %}нужна правка{% else %}на проверке{% endif %}</span>
                 {% if status == 'active' or status == 'used' %}<a href="?take={{ t.pk }}" class="btn btn-xs btn-ghost"><i class="ti ti-pencil"></i></a>{% endif %}
                 {% endif %}
             </div>

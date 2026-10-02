@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+{# Пост канала: правка текста, картинки, кнопок; публикация или план. #}
+<div class="mb-4">
+    <a href="{% url 'dashboard:channel' %}" class="text-xs opacity-60 hover:opacity-100"><i class="ti ti-arrow-left"></i> Telegram-канал</a>
+    <div class="dopx-section-title mt-1">{{ post.get_kind_display }} <span class="badge badge-sm badge-ghost align-middle">{{ post.get_status_display }}</span></div>
+    {% if post.error %}<p class="text-xs text-error mt-1">{{ post.error }}</p>{% endif %}
+</div>
+
+<form method="post" enctype="multipart/form-data" class="grid grid-cols-1 lg:grid-cols-3 gap-4">{% csrf_token %}
+    <section class="lg:col-span-2 card bg-base-100 border border-base-300"><div class="card-body p-4 gap-3">
+        <fieldset {% if not editable or not perms.adminbot.change_channelpost %}disabled{% endif %} class="space-y-3">
+            <textarea name="text" rows="10" maxlength="4000" class="textarea textarea-bordered w-full text-sm font-mono">{{ post.text }}</textarea>
+            <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide opacity-50 font-semibold">Кнопки: «Текст | https://…», по строке</span><textarea name="buttons" rows="2" class="textarea textarea-bordered textarea-sm w-full font-mono text-xs">{{ buttons_text }}</textarea></label>
+            <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide opacity-50 font-semibold">Заменить картинку</span><input type="file" name="image" accept="image/*" class="file-input file-input-sm file-input-bordered w-full"></label>
+            {% if image_url or post.tg_file_id %}<label class="flex items-center gap-2 text-sm"><input type="checkbox" name="drop_image" class="checkbox checkbox-xs"> Убрать картинку</label>{% endif %}
+        </fieldset>
+        {% if editable and perms.adminbot.change_channelpost %}
+        <div class="flex flex-wrap items-end gap-2">
+            <button name="action" value="draft" class="btn btn-sm btn-outline"><i class="ti ti-device-floppy"></i> Сохранить черновик</button>
+            <button name="action" value="publish" class="btn btn-sm btn-primary" onclick="return confirm('Опубликовать в канале сейчас?')"><i class="ti ti-send"></i> Сохранить и опубликовать</button>
+            <span class="flex items-end gap-1"><input type="datetime-local" name="scheduled_at" value="{{ post.scheduled_at|date:'Y-m-d\TH:i' }}" class="input input-sm input-bordered"><button name="action" value="schedule" class="btn btn-sm btn-ghost"><i class="ti ti-clock"></i> Запланировать</button></span>
+        </div>
+        {% endif %}
+    </div></section>
+    <section class="card bg-base-100 border border-base-300 h-fit"><div class="card-body p-4 gap-2">
+        <div class="dopx-section-eyebrow"><i class="ti ti-eye"></i>Картинка</div>
+        {% if image_url %}<img src="{{ image_url }}" alt="" class="rounded-lg border border-base-300">
+        {% elif post.tg_file_id %}<p class="text-sm opacity-60">Фото прислано через бота — видно в Telegram.</p>
+        {% else %}<p class="text-sm opacity-60">Без картинки.</p>{% endif %}
+        <p class="text-xs opacity-55">Создан {{ post.created_at|date:"d.m.Y H:i" }}{% if post.created_by %} · {{ post.created_by.username }}{% endif %}</p>
+    </div></section>
+</form>
+{% if editable and perms.adminbot.delete_channelpost %}
+<form method="post" action="{% url 'dashboard:channel_post_delete' post.pk %}" class="mt-4" onsubmit="return confirm('Удалить пост из очереди?')">{% csrf_token %}
+    <button class="btn btn-sm btn-ghost text-error"><i class="ti ti-trash"></i> Удалить</button>
+</form>
+{% endif %}
+{% endblock %}

@@ -219,6 +219,10 @@ def _next_run(schedule):
 BEAT_TASK_TITLES = {
     "celery-heartbeat": "Пульс Celery для /healthz/ и Системного статуса",
     "adminbot-daily-digest": "Утренняя сводка в Telegram-бот",
+    "adminbot-matchday-tick": "Матчдень: брифинг, отчёты, всплески оценок, анонсы в канал",
+    "adminbot-minute-tick": "Посты канала по расписанию и эскалация инцидентов",
+    "adminbot-experts-reminder": "Напоминание о мнениях экспертов на тур",
+    "adminbot-weekly-staff-report": "Недельный отчёт по команде суперпользователям",
     "weekly-polls": "Опросы недели: спорный момент (вт) и дуэль тура (ср)",
     "streaks-at-risk": "Push: серия дней сгорит сегодня",
     "weekly-social-content": "Картинки и подписи для соцсетей по итогам тура",
