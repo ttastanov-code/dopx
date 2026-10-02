@@ -428,7 +428,11 @@ def deploy_view(user):
 
     from . import github
 
-    lines = [header() + "🚀 <b>Деплой на прод</b>", "", f"Сейчас здесь: версия <b>{esc(settings.APP_VERSION)}</b>"]
+    lines = [header() + "🚀 <b>Деплой на прод</b>", "",
+             "«Выкатить main» — GitHub Actions берёт последний код из ветки main, прогоняет тесты и, если всё зелёное, "
+             "обновляет сайт на сервере (5–10 минут). «↩️ vX.Y.Z» — вернуть сайт на прошлую версию.",
+             "<i>Пока сервер не подключён (секреты DEPLOY_* в GitHub), шаг деплоя пропускается — пройдут только проверки.</i>",
+             "", f"Сейчас здесь: версия <b>{esc(settings.APP_VERSION)}</b>"]
     for d in deploy_history(3):
         lines.append(f"• {esc(d.get('version') or d.get('sha', ''))} — {esc(d.get('status_label', d.get('status')))}"
                      + (f", {d['started']:%d.%m %H:%M}" if d.get("started") else ""))
@@ -811,9 +815,9 @@ def _run_write(tid, user, action, arg, text=None, photo=None):
             result = fn(user, arg, text or "", photo)
         else:
             result = fn(user, arg)
-    except Exception:
+    except Exception as e:
         logger.exception("adminbot: action %s failed", action)
-        result = "⚠️ Не получилось, подробности в логах."
+        result = f"⚠️ Не получилось: {esc(str(e)[:300]) or type(e).__name__}"
     if after:
         text, rows = VIEWS[after][1](user, "")
         return tg.send(tid, header() + result + "\n\n" + text.removeprefix(header()), rows)

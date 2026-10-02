@@ -24,8 +24,21 @@ def _req(method: str, path: str, **kw):
         "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28",
     }, **kw)
     if resp.status_code >= 400:
-        raise GitHubError(f"{resp.status_code}: {resp.text[:200]}")
+        raise GitHubError(_explain(resp.status_code, resp.text))
     return resp.json() if resp.content else {}
+
+
+def _explain(code: int, body: str) -> str:
+    """Ошибка GitHub — понятным текстом для сообщения в боте."""
+    if code == 401:
+        return "GitHub не принял токен: он истёк или неверный (ADMIN_BOT_GITHUB_TOKEN)."
+    if code == 403:
+        return "У токена нет прав: нужны Actions — Read and write и Contents — Read."
+    if code == 404:
+        return "Не найден репозиторий или deploy.yml в main (проверьте ADMIN_BOT_GITHUB_REPO и доступ токена)."
+    if code == 422 and "Unexpected inputs" in body:
+        return "UNEXPECTED_INPUTS"
+    return f"GitHub ответил {code}: {body[:150]}"
 
 
 def releases(limit: int = 5) -> list[dict]:
@@ -43,4 +56,12 @@ def runs(limit: int = 3) -> list[dict]:
 
 def dispatch(ref: str = "") -> None:
     """Запустить деплой: пусто — последний main (с тестами), тег vX.Y.Z — откат на эту версию."""
-    _req("POST", f"/actions/workflows/{WORKFLOW}/dispatches", json={"ref": "main", "inputs": {"ref": ref}})
+    try:
+        _req("POST", f"/actions/workflows/{WORKFLOW}/dispatches", json={"ref": "main", "inputs": {"ref": ref}})
+    except GitHubError as e:
+        if str(e) != "UNEXPECTED_INPUTS":
+            raise
+        # В main старый deploy.yml без параметра ref: обычный деплой запускаем без него, откат — нельзя.
+        if ref:
+            raise GitHubError("Откат пока недоступен: в main старая версия deploy.yml. Слейте dev в main — и кнопка заработает.") from None
+        _req("POST", f"/actions/workflows/{WORKFLOW}/dispatches", json={"ref": "main"})

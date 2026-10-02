@@ -399,3 +399,23 @@ class ChannelModesScreenTests(BotTestCase):
         self.assertEqual(ChannelConfig.get().mode("preview"), "auto")
         self.assertIn("Анонс тура: 🟢 Сразу", self.last_text())
         self.assertIn(("🟢 Анонс тура — Сразу", "d|chan_kind|preview"), [b for row in self.sent[-1][2] for b in row])
+
+
+class GitHubDispatchTests(TestCase):
+    def _resp(self, code, text=""):
+        r = mock.Mock(status_code=code, text=text, content=text.encode())
+        r.json.return_value = {}
+        return r
+
+    @override_settings(ADMIN_BOT_GITHUB_TOKEN="t", ADMIN_BOT_GITHUB_REPO="o/r")
+    def test_old_workflow_without_inputs(self):
+        from . import github
+
+        old = self._resp(422, '{"message":"Unexpected inputs provided: [\\"ref\\"]"}')
+        with mock.patch("requests.request", side_effect=[old, self._resp(204)]) as req:
+            github.dispatch("")
+        self.assertNotIn("inputs", req.call_args.kwargs["json"])
+        with mock.patch("requests.request", return_value=old), self.assertRaisesMessage(github.GitHubError, "Слейте dev в main"):
+            github.dispatch("v1.2.3")
+        with mock.patch("requests.request", return_value=self._resp(403)), self.assertRaisesMessage(github.GitHubError, "нет прав"):
+            github.dispatch("")
