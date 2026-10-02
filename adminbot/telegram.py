@@ -51,10 +51,30 @@ def _public_url(url: str) -> bool:
     return url.startswith("https://") and host not in ("localhost", "127.0.0.1") and not host.replace(".", "").isdigit()
 
 
+# Сколько знаков помещается на кнопке телефона при 1, 2, 3 кнопках в ряд (эмодзи — за два).
+ROW_FIT = {1: 34, 2: 16, 3: 10}
+
+
+def text_width(text: str) -> int:
+    return sum(2 if ord(c) >= 0x1F000 or 0x2600 <= ord(c) <= 0x27BF else 1 for c in text if not 0xFE00 <= ord(c) <= 0xFE0F)
+
+
+def fit_rows(rows) -> list:
+    """Ряд, где надпись не помещается, раскладываем по одной кнопке; слишком длинную — обрезаем в конце, а не в середине."""
+    out = []
+    for row in rows:
+        row = [(t if text_width(t) <= ROW_FIT[1] + 4 else t[:ROW_FIT[1]].rstrip() + "…", d) for t, d in row]
+        if len(row) > 1 and max(text_width(t) for t, _ in row) > ROW_FIT.get(len(row), 8):
+            out += [[b] for b in row]
+        else:
+            out.append(row)
+    return out
+
+
 def keyboard(rows) -> dict:
     """[[(текст, callback_data), ...], ...] -> inline_keyboard. URL-кнопка — callback_data, начинающийся с http."""
     out = []
-    for row in rows:
+    for row in fit_rows(rows):
         buttons = []
         for text, data in row:
             if data.startswith("http"):

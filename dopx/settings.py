@@ -1092,6 +1092,8 @@ ADMIN_BOT_HEALTH_URL = os.getenv('ADMIN_BOT_HEALTH_URL', 'http://nginx/healthz/'
 ADMIN_BOT_CHANNEL_ID = os.getenv('ADMIN_BOT_CHANNEL_ID', '')
 # Другие чаты, где боту можно быть (через запятую): например, прод-канал в .env ноутбука. Из остальных он выходит.
 ADMIN_BOT_ALLOWED_CHATS = os.getenv('ADMIN_BOT_ALLOWED_CHATS', '')
+# Адрес сайта в постах канала: канал публичный, ссылки всегда на боевой домен (с ноутбука тоже).
+ADMIN_BOT_PUBLIC_URL = os.getenv('ADMIN_BOT_PUBLIC_URL', 'https://dopx.kz')
 # Вопросы боту свободным текстом — через Claude API. Без ключа функция выключена.
 ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
 ADMIN_BOT_AI_MODEL = os.getenv('ADMIN_BOT_AI_MODEL', 'claude-sonnet-5-5')

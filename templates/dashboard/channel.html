@@ -27,7 +27,10 @@
         {% endif %}
 
         <section class="card bg-base-100 border border-base-300"><div class="card-body p-0">
-            <div class="dopx-section-eyebrow px-4 pt-4"><i class="ti ti-list"></i>Очередь</div>
+            <div class="flex items-center justify-between gap-2 px-4 pt-4">
+                <div class="dopx-section-eyebrow"><i class="ti ti-list"></i>Очередь</div>
+                {% if perms.adminbot.add_channelpost %}<form method="post">{% csrf_token %}<button name="action" value="samples" class="btn btn-xs btn-ghost" title="По черновику каждого типа из настоящих данных, без публикации"><i class="ti ti-flask"></i> Пробные посты</button></form>{% endif %}
+            </div>
             {% for p in queue %}
             <a href="{% url 'dashboard:channel_post' p.pk %}" class="flex items-start gap-3 px-4 py-3 border-b border-base-200 last:border-0 hover:bg-base-200/50">
                 <span class="badge badge-sm shrink-0 mt-0.5 {% if p.status == 'failed' %}badge-error{% elif p.status == 'scheduled' %}badge-primary badge-outline{% else %}badge-ghost{% endif %}">{{ p.get_status_display }}</span>
@@ -46,9 +49,12 @@
         <section class="card bg-base-100 border border-base-300"><div class="card-body p-0">
             <div class="dopx-section-eyebrow px-4 pt-4"><i class="ti ti-history"></i>Опубликовано</div>
             {% for p in published %}
-            <div class="px-4 py-2.5 border-b border-base-200 last:border-0">
-                <div class="text-xs opacity-60">{{ p.published_at|date:"d.m.Y H:i" }} · {{ p.get_kind_display }}{% if p.published_by %} · {{ p.published_by.username }}{% else %} · автопостинг{% endif %}</div>
-                <div class="text-sm truncate">{{ p.text|striptags|truncatechars:160 }}</div>
+            <div class="flex items-center gap-3 px-4 py-2.5 border-b border-base-200 last:border-0">
+                <div class="min-w-0 flex-1">
+                    <div class="text-xs opacity-60">{{ p.published_at|date:"d.m.Y H:i" }} · {{ p.get_kind_display }}{% if p.published_by %} · {{ p.published_by.username }}{% else %} · автопостинг{% endif %}</div>
+                    <div class="text-sm truncate">{{ p.text|striptags|truncatechars:160 }}</div>
+                </div>
+                {% if perms.adminbot.delete_channelpost %}<form method="post" action="{% url 'dashboard:channel_post_delete' p.pk %}" onsubmit="return confirm('Удалить этот пост из канала?')">{% csrf_token %}<button class="btn btn-xs btn-ghost text-error" title="Удалить из канала"><i class="ti ti-trash"></i></button></form>{% endif %}
             </div>
             {% empty %}
             <p class="px-4 pb-4 text-sm opacity-60">Пока ничего не опубликовано.</p>
@@ -66,17 +72,13 @@
         <section class="card bg-base-100 border border-base-300"><div class="card-body p-4 gap-2">
             <div class="dopx-section-eyebrow"><i class="ti ti-brand-telegram"></i>Канал</div>
             {% if not status.configured %}
-            <p class="text-sm">Канал не подключён.</p>
-            <ol class="text-xs opacity-70 list-decimal pl-4 space-y-1">
-                <li>Добавьте бота в канал администратором с правом «Публикация сообщений».</li>
-                <li>Впишите в <code>.env</code> <code>ADMIN_BOT_CHANNEL_ID=@имя_канала</code> и перезапустите сайт, Celery и бота.</li>
-                <li>На ноутбуке используйте тестовый канал, иначе dev опубликует в настоящий.</li>
-            </ol>
+            <p class="text-sm">Канал пока не подключён — посты сохраняются, но не публикуются.</p>
+            {% if user.is_superuser %}<p class="text-xs opacity-60"><code>ADMIN_BOT_CHANNEL_ID</code> в .env, бот — админ канала.</p>{% endif %}
             {% elif status.ok %}
             <p class="text-sm"><span class="badge badge-success badge-sm">подключён</span> <b>{{ status.title }}</b>{% if status.username %} · <a class="link" href="https://t.me/{{ status.username }}" target="_blank" rel="noopener">@{{ status.username }}</a>{% endif %}</p>
             {% else %}
-            <p class="text-sm"><span class="badge badge-warning badge-sm">нет доступа</span> {{ status.id }}</p>
-            <p class="text-xs text-warning">{{ status.error }}</p>
+            <p class="text-sm"><span class="badge badge-warning badge-sm">нет доступа</span> бот не может публиковать в канале.</p>
+            {% if user.is_superuser %}<p class="text-xs text-warning">{{ status.id }}: {{ status.error }}</p>{% endif %}
             {% endif %}
         </div></section>
 

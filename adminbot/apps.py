@@ -8,3 +8,6 @@ class AdminbotConfig(AppConfig):
 
     def ready(self):
         import adminbot.signals  # noqa: F401
+        from adminbot.debug import install
+
+        install()

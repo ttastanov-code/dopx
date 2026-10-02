@@ -605,14 +605,69 @@ def check_runs() -> int:
     return sent
 
 
-def act_deploy(user, ref):
+DEPLOY_WATCH_TTL = 2 * 3600
+DEPLOY_GIVE_UP = 90 * 60
+JOB_ICON = {"success": "✅", "failure": "❌", "cancelled": "⏹", "skipped": "⏭"}
+
+
+def act_deploy(user, ref, tid=None):
     from . import github
 
     if ref != "main" and not re.match(r"^v\d+\.\d+\.\d+$", ref):
         return "Неверная версия."
+    since = timezone.now().replace(microsecond=0) - timedelta(seconds=30)
     github.dispatch("" if ref == "main" else ref)
     audit(user, f"Деплой: {ref}", {"ref": ref})
-    return ("🚀 Деплой запущен" if ref == "main" else f"↩️ Откат на {ref} запущен") + ". Итог придёт сообщением."
+    if tid:
+        key = f"adminbot:deploy_watch:{ENV}"
+        watch = cache.get(key) or []
+        cache.set(key, watch + [{"chat": tid, "ref": ref, "since": since.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                                 "started": timezone.now().timestamp()}], DEPLOY_WATCH_TTL)
+    return (("🚀 Деплой запущен" if ref == "main" else f"↩️ Откат на {ref} запущен")
+            + ". Слежу за запуском в GitHub — итог пришлю сюда (обычно 5–10 минут).")
+
+
+def deploy_result_text(ref, report) -> str:
+    title = "Деплой main" if ref == "main" else f"Откат на {ref}"
+    ok = report["conclusion"] == "success"
+    lines = [header() + ("✅" if ok else "❌") + f" <b>{esc(title)}</b>: " + ("готово" if ok else "не прошёл"), ""]
+    for name, state in report["jobs"]:
+        lines.append(f"{JOB_ICON.get(state, '•')} {esc(name)}")
+    if report["deploy_skipped"]:
+        lines += ["", "⏭ Сайт не обновлялся: сервер ещё не подключён (секреты DEPLOY_* в GitHub). Проверки кода пройдены."
+                  if ok else "⏭ До сервера не дошло: он ещё не подключён."]
+    elif ok:
+        lines += ["", "Сайт обновлён."]
+    return "\n".join(lines)
+
+
+def check_deploys() -> int:
+    """Запуски деплоя из бота: найти запуск в GitHub, дождаться конца, прислать итог."""
+    from . import github
+
+    key = f"adminbot:deploy_watch:{ENV}"
+    watch = cache.get(key) or []
+    if not watch or not github.configured():
+        return 0
+    left, sent = [], 0
+    for w in watch:
+        try:
+            run = w.get("run") or (github.find_dispatched(w["since"]) or {}).get("id")
+            report = github.run_report(run) if run else None
+        except Exception as e:
+            logger.warning("adminbot: GitHub недоступен при проверке деплоя: %s", e)
+            left.append(w)
+            continue
+        if report and report["status"] == "completed":
+            tg.send(w["chat"], deploy_result_text(w["ref"], report), [[("Открыть в GitHub", report["url"])], [("← Меню", cb("menu"))]])
+            sent += 1
+        elif timezone.now().timestamp() - w["started"] > DEPLOY_GIVE_UP:
+            tg.send(w["chat"], header() + "⏳ Деплой идёт дольше полутора часов — проверьте в GitHub Actions.",
+                    [[("Открыть в GitHub", report["url"])]] if report else None)
+        else:
+            left.append({**w, "run": run} if run else w)
+    cache.set(key, left, DEPLOY_WATCH_TTL)
+    return sent
 
 
 def _is_superuser(user, arg=None):
@@ -811,6 +866,8 @@ def _run_write(tid, user, action, arg, text=None, photo=None):
     try:
         if action == "scr_run":
             result = act_script(user, arg, tid)
+        elif action == "deploy_go":
+            result = act_deploy(user, arg, tid)
         elif action in TEXT_PROMPTS:
             result = fn(user, arg, text or "", photo)
         else:

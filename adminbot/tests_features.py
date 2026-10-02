@@ -419,3 +419,124 @@ class GitHubDispatchTests(TestCase):
             github.dispatch("v1.2.3")
         with mock.patch("requests.request", return_value=self._resp(403)), self.assertRaisesMessage(github.GitHubError, "нет прав"):
             github.dispatch("")
+
+
+@override_settings(ADMIN_BOT_GITHUB_TOKEN="t", ADMIN_BOT_GITHUB_REPO="o/r")
+class DeployWatchTests(BotTestCase):
+    def test_bot_reports_run_result_with_skipped_deploy(self):
+        self.staff.is_superuser = True
+        self.staff.save()
+        self.link()
+        cache.set(f"adminbot:elev:dev:{self.staff.pk}", 1, 600)
+        with mock.patch.object(handlers, "has_2fa", return_value=True), mock.patch("adminbot.github.dispatch"):
+            handlers.handle(press("d|deploy_go|main"))
+        self.assertIn("Слежу за запуском", self.last_text())
+        running = {"status": "in_progress", "conclusion": None, "url": "https://github.com/o/r/actions/runs/1", "jobs": [], "deploy_skipped": False}
+        done = {"status": "completed", "conclusion": "success", "url": "https://github.com/o/r/actions/runs/1",
+                "jobs": [("Тесты", "success"), ("Деплой на прод", "success")], "deploy_skipped": True}
+        with mock.patch("adminbot.github.find_dispatched", return_value={"id": 1}) as find, \
+                mock.patch("adminbot.github.run_report", side_effect=[running, done]):
+            self.assertEqual(handlers.check_deploys(), 0)
+            self.assertEqual(handlers.check_deploys(), 1)
+        self.assertEqual(find.call_count, 1)               # id запуска запомнили
+        self.assertIn("сервер ещё не подключён", self.last_text())
+        self.assertEqual(handlers.check_deploys(), 0)
+
+
+@override_settings(STAFF_2FA_ENFORCED=False, ADMIN_BOT_TOKEN="t", ADMIN_BOT_ENABLED=True)
+class BotDebugPageTests(TestCase):
+    def test_staff_sees_plain_page_superuser_sees_debug(self):
+        import logging
+
+        from . import debug
+
+        staff = User.objects.create_user(username="mod", email="m@t.local", password="x", is_staff=True)
+        StaffAccessGrant.objects.create(user=staff, allowed_sections=["admin_bot"])
+        info = {"ok": True, "username": "dopx_bot", "webhook": "", "pending": 0, "last_error": ""}
+        with mock.patch("adminbot.debug.telegram_info", return_value=info):
+            self.client.force_login(staff)
+            page = self.client.get(reverse("dashboard:admin_bot")).content.decode()
+            for word in ("ADMIN_BOT", ".env", "runbot", "Журнал", "прод"):
+                self.assertNotIn(word, page)
+            self.assertIn("Привязать Telegram", page)
+            logging.getLogger("adminbot.handlers").error("Тестовая ошибка бота")
+            boss = User.objects.create_superuser(username="root", email="r@t.local", password="x")
+            self.client.force_login(boss)
+            page = self.client.get(reverse("dashboard:admin_bot"))
+        self.assertContains(page, "Журнал ошибок бота")
+        self.assertContains(page, "Тестовая ошибка бота")
+        debug.beat("listener")
+        self.assertTrue(debug.heartbeat()["alive"])
+        with mock.patch("adminbot.telegram.send", return_value={"message_id": 1}) as send:
+            BotLink.objects.create(user=boss, telegram_id=1)
+            self.client.post(reverse("dashboard:admin_bot"), {"action": "dbg_test_message"})
+        send.assert_called_once()
+
+
+class SamplePostsTests(TestCase):
+    def test_samples_are_drafts_from_real_data(self):
+        m = make_match()
+        make_match(status="scheduled", start_time=timezone.now() + timedelta(days=1), tour=5)
+        posts = channel.sample_posts()
+        kinds = {p.kind for p in posts}
+        self.assertTrue({"preview", "result"} <= kinds)
+        self.assertTrue(all(p.status == "draft" for p in posts))
+        self.assertTrue(any("Кайрат 2:1 Астана" in p.text for p in posts if p.kind == "result"))
+        self.assertEqual(len(channel.sample_posts()), len(posts))   # повторно — новые черновики, без конфликта ключей
+
+
+@override_settings(ADMIN_BOT_CHANNEL_ID="@dopx_test", ADMIN_BOT_TOKEN="t", ADMIN_BOT_ENABLED=True)
+class KickoffAndUnpublishTests(TestCase):
+    def test_placeholder_time_and_unpublish(self):
+        from datetime import timezone as dt_tz
+
+        m = make_match(status="scheduled", start_time=timezone.datetime(2026, 10, 10, tzinfo=dt_tz.utc))
+        self.assertEqual(channel.kickoff(m), "10.10 (время уточняется)")
+        m.start_time = timezone.datetime(2026, 10, 10, 13, 0, tzinfo=dt_tz.utc)
+        self.assertEqual(channel.kickoff(m), "10.10 18:00")
+        self.assertFalse(any(p.kind == "changes" for p in channel.sample_posts()))   # переносов нет — пробного не будет
+        post = ChannelPost.objects.create(text="x", status="published", message_id=42)
+        with mock.patch("adminbot.telegram.call") as call:
+            ok, _ = channel.unpublish(post)
+        call.assert_called_once_with("deleteMessage", chat_id="@dopx_test", message_id=42)
+        post.refresh_from_db()
+        self.assertTrue(ok)
+        self.assertEqual(post.status, "cancelled")
+
+
+class ChannelLinkTests(TestCase):
+    @override_settings(ADMIN_BOT_PUBLIC_URL="https://dopx.kz")
+    def test_links_point_to_public_site_and_appear_in_text(self):
+        m = make_match()
+        post = channel.result_post(m, sample=True)
+        url = f"https://dopx.kz/matches/{m.pk}/"
+        self.assertEqual(post.buttons, [["⭐ Оценить матч", url]])
+        self.assertIn(f'👉 <a href="{url}">⭐ Оценить матч</a>\n\n#DOPX', post.text)   # ссылка перед хештегами
+
+
+class ReadableButtonsTests(BotTestCase):
+    def test_fit_rows(self):
+        from .telegram import fit_rows
+
+        rows = fit_rows([[("Иртыш – Кызыл-Жар", "a"), ("Женис – Атырау", "b")], [("Да", "c"), ("Нет", "d")],
+                         [("Очень длинная надпись на кнопке, которая не влезет никуда вообще", "e")]])
+        self.assertEqual(rows[0], [("Иртыш – Кызыл-Жар", "a")])     # не влезло вдвоём — по одной
+        self.assertEqual(rows[2], [("Да", "c"), ("Нет", "d")])      # короткие остаются рядом
+        self.assertTrue(rows[3][0][0].endswith("…"))
+
+    def test_no_screen_has_cut_labels(self):
+        from .telegram import ROW_FIT, fit_rows, text_width
+
+        self.staff.is_superuser = True
+        self.staff.save()
+        self.link()
+        make_match(status="scheduled", start_time=timezone.now() + timedelta(hours=5))
+        screens = ["menu", "md", "sum", "status", "chan", "chan_modes", "chan_kind|preview", "exp", "inv_new", "mourn",
+                   "partners", "duty", "topics", "scripts", "takes", "flags", "names", "dups", "contacts"]
+        for screen in screens:
+            action, _, arg = screen.partition("|")
+            handlers.handle(press(f"d|{action}|{arg}"))
+            for row in fit_rows(self.sent[-1][2] or []):
+                for label, _data in row:
+                    self.assertFalse(label.endswith("…"), f"{screen}: обрезано «{label}»")
+                    self.assertLessEqual(text_width(label), ROW_FIT[len(row)] + 4, f"{screen}: не влезает «{label}»")

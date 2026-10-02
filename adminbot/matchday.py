@@ -91,9 +91,8 @@ def briefing_text(day) -> str | None:
     last_sync = ParserSyncRun.objects.filter(source="sportmonks").order_by("-started_at").first()
     lines = [header() + f"📋 <b>Брифинг матчдня · {day:%d.%m}</b>", ""]
     for m in matches:
-        t = timezone.localtime(m.start_time)
         lineup = "✅ составы" if m.has_lineup else "⏳ составов нет"
-        lines.append(f"{t:%H:%M} {esc(_label(m))} · {lineup}")
+        lines.append(f"{channel.kickoff(m, '%H:%M').replace(' (время уточняется)', '')} {esc(_label(m))} · {lineup}")
     published = takes.filter(is_published=True).count()
     pending = takes.filter(is_published=False).count()
     lines += [

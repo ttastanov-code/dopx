@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import timedelta
 
 from django.conf import settings
@@ -45,13 +46,16 @@ def matchday_view(user, arg=""):
     lines = [header() + f"⚽ <b>Матчдень · {title}</b>", ""]
     rows = []
     for m in matches[:8]:
-        t = timezone.localtime(m.start_time)
+        from .channel import kickoff
+
         score = f" {m.home_score}:{m.away_score}" if m.status in ("live", "finished") else ""
-        lines.append(f"{STATUS_ICON.get(m.status, '•')} {t:%d.%m %H:%M} {esc(_label(m))}{score}")
-        rows.append((f"{STATUS_ICON.get(m.status, '')} {m.home_team.name[:12]}–{m.away_team.name[:12]}", cb("m", str(m.pk))))
+        lines.append(f"{STATUS_ICON.get(m.status, '•')} {kickoff(m)} {esc(_label(m))}{score}")
+        rows.append([(f"{m.home_team.name} – {m.away_team.name}", cb("m", str(m.pk)))])
     if not matches:
         lines.append("Матчей в ближайшее время нет.")
-    out = _pairs(rows)
+    else:
+        lines.append("\nНажмите на матч — голосование, ресинк, перенос.")
+    out = rows
     if can(user, "overview"):
         out.append([("📋 Брифинг", cb("brief"))])
     return "\n".join(lines), out + back()
@@ -162,7 +166,8 @@ def chan_view(user, arg=""):
     last = ChannelPost.objects.filter(status="published").order_by("-published_at").first()
     lines = [header() + "📣 <b>Telegram-канал</b>", ""]
     if not channel.configured():
-        lines.append("⚠️ Канал не настроен: задайте <code>ADMIN_BOT_CHANNEL_ID</code> в .env и сделайте бота админом канала.")
+        lines.append("⚠️ Канал пока не подключён — посты сохраняются, но не публикуются."
+                     + (" (ADMIN_BOT_CHANNEL_ID в .env)" if user.is_superuser else ""))
     lines += [f"📝 Черновики: {counts['draft']} · 🗓 Запланировано: {counts['scheduled']}"
               + (f" · ⚠️ Ошибки: {counts['failed']}" if counts["failed"] else "")]
     if last:
@@ -170,23 +175,26 @@ def chan_view(user, arg=""):
     rows = [[(f"📝 Черновики · {counts['draft']}", cb("chan_list", "draft")), (f"🗓 План · {counts['scheduled']}", cb("chan_list", "scheduled"))]]
     if counts["failed"]:
         rows.append([(f"⚠️ С ошибкой · {counts['failed']}", cb("chan_list", "failed"))])
+    rows.append([("📤 Опубликованные", cb("chan_list", "published"))])
     tools = []
     if can(user, "channel", "adminbot.add_channelpost"):
-        tools += [("✍️ Новый пост", cb("post_new")), ("🏆 Итоги тура", cb("chan_round"))]
+        tools += [("✍️ Новый пост", cb("post_new")), ("🏆 Итоги тура", cb("chan_round")), ("🧪 Пробные посты", cb("chan_samples"))]
     tools.append(("⚙️ Автопостинг", cb("chan_modes")))
     rows += _pairs(tools)
     return "\n".join(lines), rows + back()
 
 
 def chan_list_view(user, status):
-    posts = list(ChannelPost.objects.filter(status=status).order_by("scheduled_at", "-created_at")[:10])
+    order = ("-published_at",) if status == "published" else ("scheduled_at", "-created_at")
+    posts = list(ChannelPost.objects.filter(status=status).order_by(*order)[:10])
     title = dict(ChannelPost.STATUS_CHOICES).get(status, status)
     lines = [header() + f"📣 <b>{esc(title)}</b>", ""]
     rows = []
     for p in posts:
         when = f"{timezone.localtime(p.scheduled_at):%d.%m %H:%M} · " if p.scheduled_at else ""
-        lines.append(f"• {when}{esc(p.get_kind_display())}: {esc(p.text[:70])}")
-        rows.append([(f"{p.get_kind_display()}: {p.text[:30]}", cb("post", str(p.pk)))])
+        plain = re.sub(r"<[^>]+>", "", p.text).replace("\n", " ")
+        lines.append(f"<b>#{p.pk}</b> · {when}{esc(p.get_kind_display())}\n{esc(plain[:90])}")
+        rows.append([(f"#{p.pk} · {p.get_kind_display()}", cb("post", str(p.pk)))])
     if not posts:
         lines.append("Пусто.")
     return "\n".join(lines), rows + back(("← Канал", cb("chan")))
@@ -205,6 +213,8 @@ def post_view(user, pk):
         meta += f"\n⚠️ {esc(p.error)}"
     text = header() + f"📣 <b>Пост</b> · {meta}" + ("\n📷 с картинкой" if p.image or p.tg_file_id else "") + "\n\n" + p.text
     rows = channel.draft_rows(p, cb) if p.status in ("draft", "scheduled", "failed") and can(user, "channel", "adminbot.change_channelpost") else []
+    if p.status == "published" and can(user, "channel", "adminbot.delete_channelpost"):
+        rows.append([("🗑 Удалить из канала", cb("post_unpub", str(p.pk)))])
     return text, rows + back(("← Канал", cb("chan")))
 
 
@@ -281,6 +291,18 @@ def act_post_del(user, pk):
     return "🗑 Пост удалён из очереди."
 
 
+def act_post_unpub(user, pk):
+    from . import channel
+
+    p = _post(pk)
+    if not p:
+        return "Пост не найден."
+    ok, message = channel.unpublish(p)
+    if ok:
+        audit(user, f"Пост удалён из канала: {p.text[:80]}", {"post_id": p.pk})
+    return message
+
+
 def act_post_edit(user, pk, text, photo=None):
     p = _post(pk)
     if not p or p.status not in ("draft", "scheduled", "failed"):
@@ -303,6 +325,17 @@ def act_chan_round(user, arg=""):
 
     posts = channel.round_posts()
     return f"🏆 Подготовлено постов: {len(posts)}." if posts else "Новых постов по итогам тура нет (или канал не настроен)."
+
+
+def act_chan_samples(user, arg=""):
+    from . import channel
+
+    posts = channel.sample_posts()
+    audit(user, f"Пробные посты канала: {len(posts)}", {})
+    if not posts:
+        return "Не из чего собрать: нет матчей, оценок и мнений."
+    return (f"🧪 Готово {len(posts)} пробных черновиков — по одному каждого типа, из настоящих данных. "
+            "Откройте «Черновики», посмотрите тексты; любой можно опубликовать, чтобы увидеть, как он выглядит в канале.")
 
 
 def act_chan_mode(user, arg):
@@ -345,7 +378,7 @@ def inv_new_view(user, arg=""):
     from engagement.models import Expert
 
     experts = list(Expert.objects.filter(is_active=True).order_by("-updated_at")[:10])
-    rows = _pairs([(e.name[:28], cb("inv_exp", str(e.pk))) for e in experts])
+    rows = _pairs([(e.name, cb("inv_exp", str(e.pk))) for e in experts])
     rows.append([("🆕 Новый эксперт (заполнит сам)", cb("inv_exp", "new"))])
     return header() + "➕ <b>Кого приглашаем?</b>", rows + back(("← Эксперты", cb("exp")))
 
@@ -359,7 +392,7 @@ def inv_exp_view(user, arg):
     lines = [header() + "➕ <b>О каком матче?</b>", ""]
     for label, matches, _with_tour in groups[:2]:
         lines.append(f"<b>{esc(label)}</b>")
-        rows += _pairs([(f"{m.home_team.name[:11]}–{m.away_team.name[:11]}", cb("inv_go", str(m.pk))) for m in matches[:8]])
+        rows += [[(f"{m.home_team.name} – {m.away_team.name}", cb("inv_go", str(m.pk)))] for m in matches[:8]]
     return "\n".join(lines), rows + back(("← Назад", cb("inv_new")))
 
 
@@ -500,7 +533,7 @@ def partners_view(user, arg=""):
     from partners.models import Partner
 
     partners = list(Partner.objects.filter(is_active=True).order_by("name")[:12])
-    rows = _pairs([(p.name[:28], cb("partner", str(p.pk))) for p in partners])
+    rows = _pairs([(p.name, cb("partner", str(p.pk))) for p in partners])
     text = header() + "💼 <b>Отчёт для партнёра</b>\n\nВыберите партнёра — пришлю PDF с показами и кликами, его можно сразу переслать."
     return text if partners else header() + "Активных партнёров нет.", rows + back()
 
@@ -571,14 +604,19 @@ def _duty(user, action: str):
     return duty_view(user)
 
 
+TOPIC_SHORT = {"matchday": "Матчдень", "live": "Live", "incidents": "Инциденты", "queues": "Очереди",
+               "channel": "Канал", "digest": "Сводка", "weekly": "Отчёт недели"}
+
+
 def topics_view(user, arg=""):
     from .models import DEFAULT_TOPICS
 
     link = BotLink.objects.filter(user=user).first()
     current = DEFAULT_TOPICS if link is None or link.topics is None else link.topics
-    lines = [header() + "🔔 <b>Уведомления</b>", "", "Все: " + ("включены" if link and link.notify else "выключены"),
-             "Выберите, о чём писать. Приходит только то, к чему у вас есть доступ."]
-    rows = [[(("✅ " if k in current else "▫️ ") + label, cb("topic", k))] for k, label in TOPICS.items()]
+    lines = [header() + "🔔 <b>Уведомления</b>", "", "Сейчас: " + ("<b>включены</b>" if link and link.notify else "<b>выключены</b>"), ""]
+    lines += [("✅ " if k in current else "▫️ ") + f"<b>{TOPIC_SHORT[k]}</b> — {esc(label)}" for k, label in TOPICS.items()]
+    lines += ["", "Нажмите на тему, чтобы включить или выключить. Приходит только то, к чему у вас есть доступ."]
+    rows = _pairs([(("✅ " if k in current else "▫️ ") + TOPIC_SHORT[k], cb("topic", k)) for k in TOPICS])
     rows.append([("🔕 Выключить все" if link and link.notify else "🔔 Включить все", cb("notify"))])
     return "\n".join(lines), rows + back()
 
@@ -651,9 +689,11 @@ WRITE = {
     "post_pub": (_perm(CHANNEL, "adminbot.change_channelpost"), act_post_pub, "chan"),
     "post_morning": (_perm(CHANNEL, "adminbot.change_channelpost"), act_post_morning, "chan"),
     "post_del": (_perm(CHANNEL, "adminbot.delete_channelpost"), act_post_del, "chan"),
+    "post_unpub": (_perm(CHANNEL, "adminbot.delete_channelpost"), act_post_unpub, "chan"),
     "post_edit": (_perm(CHANNEL, "adminbot.change_channelpost"), act_post_edit, None),
     "post_new": (_perm(CHANNEL, "adminbot.add_channelpost"), act_post_new, None),
     "chan_round": (_perm(CHANNEL, "adminbot.add_channelpost"), act_chan_round, "chan"),
+    "chan_samples": (_perm(CHANNEL, "adminbot.add_channelpost"), act_chan_samples, "chan"),
     "chan_mode": (_perm(CHANNEL, "adminbot.delete_channelpost"), act_chan_mode, "chan_modes"),
     "inv_go": (_perm("experts", "engagement.add_expertinvite"), act_inv_go, None),
     "inv_missing": (_perm("experts", "engagement.add_expertinvite"), act_inv_missing, None),

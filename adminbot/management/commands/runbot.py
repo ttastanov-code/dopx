@@ -14,7 +14,7 @@ import requests
 from django.core.cache import cache
 from django.core.management.base import BaseCommand
 
-from adminbot import alerts, handlers, incidents, relay, router
+from adminbot import alerts, debug, handlers, incidents, relay, router
 from adminbot import telegram as tg
 
 logger = logging.getLogger("adminbot")
@@ -22,6 +22,7 @@ RECHECK = 60
 # Долгий опрос Telegram; заодно шаг проверки запущенных скриптов.
 POLL_SECONDS = 8
 ALERTS_EVERY = 60
+DEPLOYS_EVERY = 30
 
 
 class Command(BaseCommand):
@@ -41,6 +42,7 @@ class Command(BaseCommand):
         last_check = time.monotonic()
         self.last_alerts = 0.0
         self.last_escalation = 0.0
+        self.last_deploys = 0.0
         if alerts.enabled():
             self.stdout.write("Алерты включены: проверка раз в минуту.")
         while True:
@@ -60,9 +62,19 @@ class Command(BaseCommand):
                 logger.exception("adminbot: сбой цикла")
                 time.sleep(3)
             try:
+                debug.beat(self.role, [p.get("title") for p in alerts.active()])
+            except Exception:
+                pass
+            try:
                 handlers.check_runs()
             except Exception:
                 logger.exception("adminbot: проверка запущенных скриптов упала")
+            if time.monotonic() - self.last_deploys > DEPLOYS_EVERY:
+                self.last_deploys = time.monotonic()
+                try:
+                    handlers.check_deploys()
+                except Exception:
+                    logger.exception("adminbot: проверка деплоя упала")
             if time.monotonic() - self.last_escalation > ALERTS_EVERY:
                 # Дублирует minute_tick Celery: инциденты эскалируются, даже когда Celery стоит.
                 self.last_escalation = time.monotonic()
@@ -96,6 +108,7 @@ class Command(BaseCommand):
         offset = cache.get("adminbot:offset")
         for update in tg.get_updates(offset, timeout=POLL_SECONDS):
             cache.set("adminbot:offset", update["update_id"] + 1, None)
+            debug.got_update()
             try:
                 router.route(update)
             except Exception:
@@ -104,6 +117,7 @@ class Command(BaseCommand):
 
     def agent_once(self):
         for update in relay.fetch(handlers.ENV):
+            debug.got_update()
             try:
                 handlers.handle(update)
             except Exception:

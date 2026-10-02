@@ -12,7 +12,7 @@ from django.views.decorators.http import require_GET, require_POST
 
 from core.utils import get_client_ip, is_rate_limited
 
-from . import relay
+from . import debug, relay
 from . import telegram as tg
 from .models import BotLink, BotLinkCode
 
@@ -48,12 +48,79 @@ def _bot_status() -> dict:
     }
 
 
+def _debug_action(request, action: str) -> None:
+    """Кнопки отладки (только суперпользователь)."""
+    from django.core.cache import cache
+
+    from dashboard.audit import log_staff_action
+    from dashboard.models import AuditAction
+
+    from . import debug
+
+    if action == "test_message":
+        link = BotLink.objects.filter(user=request.user).first()
+        if not link:
+            messages.error(request, "Ваш аккаунт не привязан к боту.")
+            return
+        ok = tg.send(link.telegram_id, f"🧪 Тестовое сообщение из дашборда ({settings.ADMIN_BOT_ENV}). Бот может вам писать.")
+        (messages.success if ok else messages.error)(request, "Сообщение отправлено." if ok else "Telegram не принял сообщение — см. журнал ниже.")
+    elif action == "check_channel":
+        cache.delete("adminbot:channel_status")
+        messages.info(request, "Статус канала обновлён.")
+    elif action == "delete_webhook":
+        try:
+            tg.call("deleteWebhook")
+            messages.success(request, "Вебхук снят — бот снова получает сообщения опросом.")
+        except Exception as e:
+            messages.error(request, f"Не получилось: {e}")
+    elif action == "clear_log":
+        debug.clear_log()
+        messages.success(request, "Журнал очищен.")
+    elif action == "reset_offset":
+        cache.delete("adminbot:offset")
+        messages.success(request, "Позиция чтения сброшена: бот заново заберёт непрочитанные апдейты.")
+    log_staff_action(request, AuditAction.BOT_ACTION, target=f"Отладка бота: {action}", details={})
+
+
+def _tg_info() -> dict:
+    from django.core.cache import cache
+
+    info = cache.get("adminbot:tg_info")
+    if info is None:
+        info = debug.telegram_info()
+        cache.set("adminbot:tg_info", info, 60)
+    return info
+
+
+def _debug_context() -> dict:
+    from django.core.cache import cache
+
+    from . import channel
+    from .models import ChannelPost, Incident
+
+    env = settings.ADMIN_BOT_ENV
+    return {
+        "hb": debug.heartbeat(),
+        "tg": _tg_info(),
+        "log": debug.recent_log()[:40],
+        "incidents": Incident.objects.filter(resolved_at__isnull=True).select_related("acked_by")[:10],
+        "channel_queue": ChannelPost.objects.filter(status__in=["draft", "scheduled", "failed"]).count(),
+        "channel_failed": ChannelPost.objects.filter(status="failed").count(),
+        "channel_ready": channel.configured(),
+        "watch_scripts": len(cache.get(f"adminbot:watch:{env}") or []),
+        "watch_deploys": len(cache.get(f"adminbot:deploy_watch:{env}") or []),
+    }
+
+
 @staff_member_required
 def dashboard_page(request):
     code = None
     if request.method == "POST" and request.POST.get("action") == "code":
         BotLinkCode.objects.filter(user=request.user, used_at__isnull=True).delete()
         code = BotLinkCode.objects.create(user=request.user)
+    elif request.method == "POST" and request.user.is_superuser and request.POST.get("action", "").startswith("dbg_"):
+        _debug_action(request, request.POST["action"][4:])
+        return redirect("dashboard:admin_bot")
     links = BotLink.objects.select_related("user").order_by("-linked_at") if request.user.is_superuser \
         else BotLink.objects.filter(user=request.user)
     return render(request, "dashboard/admin_bot.html", {
@@ -63,6 +130,9 @@ def dashboard_page(request):
         "code": code,
         "links": links,
         "my_link": BotLink.objects.filter(user=request.user).first(),
+        "bot_alive": bool((debug.heartbeat() or {}).get("alive")),
+        "bot_username": _tg_info().get("username", ""),
+        **(_debug_context() if request.user.is_superuser else {}),
     })
 
 
@@ -158,6 +228,13 @@ def channel_page(request):
     from . import channel
     from .models import ChannelConfig, ChannelPost
 
+    if request.method == "POST" and request.POST.get("action") == "samples":
+        posts = channel.sample_posts()
+        from dashboard.audit import log_staff_action
+        from dashboard.models import AuditAction
+        log_staff_action(request, AuditAction.CHANNEL_POST, target=f"Пробные посты: {len(posts)}", details={})
+        messages.success(request, f"Готово пробных черновиков: {len(posts)}. Они в очереди ниже — откройте любой, чтобы посмотреть или опубликовать.")
+        return redirect("dashboard:channel")
     if request.method == "POST":
         text = channel.clean_html(request.POST.get("text", "")).strip()
         upload, error = _image(request)
@@ -226,9 +303,16 @@ def channel_post(request, post_id: int):
 @staff_member_required
 @require_POST
 def channel_post_delete(request, post_id: int):
+    from . import channel
     from .models import ChannelPost
 
-    post = ChannelPost.objects.filter(pk=post_id).exclude(status="published").first()
+    post = ChannelPost.objects.filter(pk=post_id).first()
+    if post and post.status == "published":
+        ok, message = channel.unpublish(post)
+        (messages.success if ok else messages.error)(request, message)
+        if ok:
+            _audit(request, post, "Удалён из канала")
+        return redirect("dashboard:channel")
     if post:
         post.status = "cancelled"
         post.save(update_fields=["status", "updated_at"])

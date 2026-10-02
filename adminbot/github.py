@@ -65,3 +65,20 @@ def dispatch(ref: str = "") -> None:
         if ref:
             raise GitHubError("Откат пока недоступен: в main старая версия deploy.yml. Слейте dev в main — и кнопка заработает.") from None
         _req("POST", f"/actions/workflows/{WORKFLOW}/dispatches", json={"ref": "main"})
+
+
+def find_dispatched(since_iso: str) -> dict | None:
+    """Запуск, созданный кнопкой (workflow_dispatch) не раньше since_iso."""
+    data = _req("GET", f"/actions/workflows/{WORKFLOW}/runs?event=workflow_dispatch&per_page=5")
+    runs = [r for r in data.get("workflow_runs", []) if r.get("created_at", "") >= since_iso]
+    return min(runs, key=lambda r: r["created_at"]) if runs else None
+
+
+def run_report(run_id) -> dict:
+    """Статус запуска и его джобов; deploy_skipped — сервер не подключён, шаг деплоя пропущен."""
+    run = _req("GET", f"/actions/runs/{run_id}")
+    jobs = _req("GET", f"/actions/runs/{run_id}/jobs").get("jobs", [])
+    skipped = any(s.get("name", "").startswith("Пропуск") and s.get("conclusion") == "success"
+                  for j in jobs for s in j.get("steps", []))
+    return {"status": run["status"], "conclusion": run.get("conclusion"), "url": run["html_url"],
+            "jobs": [(j["name"], j.get("conclusion") or j["status"]) for j in jobs], "deploy_skipped": skipped}

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, time, timedelta
+from datetime import timezone as dt_timezone
 
 import requests
 from django.conf import settings
@@ -38,7 +39,7 @@ def configured() -> bool:
 
 
 def site(path: str) -> str:
-    return settings.SITE_URL.rstrip("/") + path
+    return settings.ADMIN_BOT_PUBLIC_URL.rstrip("/") + path
 
 
 def match_url(match) -> str:
@@ -68,8 +69,13 @@ def morning(now: datetime | None = None) -> datetime:
 
 
 # ---------------- Подготовка
-def prepare(kind: str, key: str, text: str, image: str = "", buttons=None) -> ChannelPost | None:
-    """Пост из события. Ключ не даёт продублировать; режим типа решает: сразу, на одобрение или никак."""
+def prepare(kind: str, key: str, text: str, image: str = "", buttons=None, sample: bool = False) -> ChannelPost | None:
+    """Пост из события. Ключ не даёт продублировать; режим типа решает: сразу, на одобрение или никак.
+    sample — пробный черновик: без режимов, уведомлений и проверки канала."""
+    text = with_link(text, buttons)
+    if sample:
+        return ChannelPost.objects.create(kind=kind, key=f"sample:{timezone.now().timestamp()}:{key}"[:120], text=text,
+                                          image=image, buttons=buttons or [])
     if not configured():
         return None
     cfg = ChannelConfig.get()
@@ -84,6 +90,19 @@ def prepare(kind: str, key: str, text: str, image: str = "", buttons=None) -> Ch
     if mode == "approve":
         transaction.on_commit(lambda: notify_draft(post.pk))
     return post
+
+
+def with_link(text: str, buttons) -> str:
+    """Ссылка из первой кнопки — ещё и в тексте: её видно в превью и при пересылке."""
+    if not buttons or "<a href" in text:
+        return text
+    label, url = buttons[0]
+    line = f'👉 <a href="{esc(url)}">{esc(label)}</a>'
+    body, sep, tags = text.rpartition("\n\n")
+    # Хештеги оставляем последней строкой.
+    if sep and tags.startswith("#"):
+        return f"{body}\n\n{line}\n\n{tags}"
+    return f"{text}\n\n{line}"
 
 
 def notify_draft(post_id) -> None:
@@ -128,7 +147,7 @@ def _button_rows(post) -> list:
 def publish(post: ChannelPost, user=None) -> tuple[bool, str]:
     """Опубликовать сейчас. Длинный текст к картинке уходит отдельным сообщением (лимит подписи 1024)."""
     if not configured():
-        return False, "Канал не настроен: задайте ADMIN_BOT_CHANNEL_ID."
+        return False, "Канал пока не подключён — пост сохранён, опубликовать можно позже."
     claimed = ChannelPost.objects.filter(pk=post.pk, status__in=["draft", "scheduled", "failed"]).update(status="published")
     if not claimed:
         return False, "Пост уже опубликован или удалён."
@@ -161,55 +180,64 @@ def publish_due() -> int:
 
 
 # ---------------- Тексты постов
+def kickoff(m, fmt: str = "%d.%m %H:%M") -> str:
+    """Время начала; полночь по UTC — заглушка поставщика (время ещё не назначено), показываем только дату."""
+    utc = m.start_time.astimezone(dt_timezone.utc)
+    local = timezone.localtime(m.start_time)
+    if utc.hour == 0 and utc.minute == 0:
+        return local.strftime(fmt.split(" ")[0]) + " (время уточняется)"
+    return local.strftime(fmt)
+
+
 def _score(m) -> str:
     return f"{m.home_team.name} {m.home_score}:{m.away_score} {m.away_team.name}"
 
 
-def result_post(match) -> ChannelPost | None:
+def result_post(match, sample: bool = False) -> ChannelPost | None:
     until = timezone.localtime(match.voting_open_until)
     text = (f"🏁 <b>Финал. {esc(_score(match))}</b>\n\n"
             f"Как сыграли игроки, тренеры и судья? Оценки болельщиков открыты до {until:%d.%m %H:%M}.\n\n{HASHTAGS}")
-    return prepare("result", f"result:{match.pk}", text, buttons=[["⭐ Оценить матч", match_url(match)]])
+    return prepare("result", f"result:{match.pk}", text, buttons=[["⭐ Оценить матч", match_url(match)]], sample=sample)
 
 
-def ratings_post(match, best: list, worst, votes: int) -> ChannelPost | None:
+def ratings_post(match, best: list, worst, votes: int, sample: bool = False) -> ChannelPost | None:
     medals = ["🥇", "🥈", "🥉"]
     lines = [f"📊 <b>{esc(_score(match))}: оценки болельщиков</b>", f"Голосов: {votes}", ""]
     lines += [f"{medals[i]} {esc(a.player.full_name)} — {a.performance_score:.1f}" for i, a in enumerate(best[:3])]
     if worst is not None:
         lines += ["", f"🥶 Антигерой: {esc(worst.player.full_name)} — {worst.performance_score:.1f}"]
     lines += ["", "Согласны? Ваш голос меняет рейтинг.", HASHTAGS]
-    return prepare("ratings", f"ratings:{match.pk}", "\n".join(lines), buttons=[["Все оценки матча", match_url(match)]])
+    return prepare("ratings", f"ratings:{match.pk}", "\n".join(lines), buttons=[["Все оценки матча", match_url(match)]], sample=sample)
 
 
-def preview_post(tour, matches: list) -> ChannelPost | None:
+def preview_post(tour, matches: list, sample: bool = False) -> ChannelPost | None:
     days = {0: "Пн", 1: "Вт", 2: "Ср", 3: "Чт", 4: "Пт", 5: "Сб", 6: "Вс"}
     lines = [f"🗓 <b>{tour}-й тур КПЛ</b>" if tour else "🗓 <b>Ближайшие матчи КПЛ</b>", ""]
     for m in matches:
         t = timezone.localtime(m.start_time)
-        lines.append(f"{days[t.weekday()]} {t:%d.%m %H:%M} · {esc(m.home_team.name)} – {esc(m.away_team.name)}")
+        lines.append(f"{days[t.weekday()]} {kickoff(m)} · {esc(m.home_team.name)} – {esc(m.away_team.name)}")
     lines += ["", "После финального свистка оценивайте игроков, тренеров и судей на DOPX.", HASHTAGS]
     key = f"preview:{matches[0].season_id}:{tour}" if tour else f"preview:{matches[0].pk}"
-    return prepare("preview", key, "\n".join(lines), buttons=[["Календарь и прогнозы", site(reverse("matches:list"))]])
+    return prepare("preview", key, "\n".join(lines), buttons=[["Календарь и прогнозы", site(reverse("matches:list"))]], sample=sample)
 
 
-def change_post(match, kind: str) -> ChannelPost | None:
+def change_post(match, kind: str, sample: bool = False) -> ChannelPost | None:
     what = {"postponed": "перенесён", "cancelled": "отменён"}.get(kind, "перенесён")
     text = f"⚠️ Матч {esc(match.home_team.name)} – {esc(match.away_team.name)} {what}.\n\nСледите за новой датой на DOPX."
-    return prepare("changes", f"change:{match.pk}:{kind}", text, buttons=[["Матч на DOPX", match_url(match)]])
+    return prepare("changes", f"change:{match.pk}:{kind}", text, buttons=[["Матч на DOPX", match_url(match)]], sample=sample)
 
 
-def expert_post(take) -> ChannelPost | None:
+def expert_post(take, sample: bool = False) -> ChannelPost | None:
     m = take.match
     quote = take.headline or take.text[:200]
     body = take.text if len(take.text) <= 600 else take.text[:600].rsplit(" ", 1)[0] + "…"
     title = f", {esc(take.display_title)}" if take.display_title else ""
     text = (f"🎙 <b>Мнение эксперта · {esc(m.home_team.name)} – {esc(m.away_team.name)}</b>\n\n"
             f"<b>«{esc(quote)}»</b>\n\n{esc(body) if take.headline else ''}\n\n— {esc(take.display_name)}{title}\n\n{HASHTAGS}")
-    return prepare("expert", f"expert:{take.pk}", text.replace("\n\n\n\n", "\n\n"), buttons=[["Читать на DOPX", match_url(m)]])
+    return prepare("expert", f"expert:{take.pk}", text.replace("\n\n\n\n", "\n\n"), buttons=[["Читать на DOPX", match_url(m)]], sample=sample)
 
 
-def round_posts() -> list[ChannelPost]:
+def round_posts(sample: bool = False) -> list[ChannelPost]:
     """Карточки итогов последнего тура (те же, что в «Соцсетях»)."""
     from django.core.files.storage import default_storage
 
@@ -223,7 +251,7 @@ def round_posts() -> list[ChannelPost]:
     for p in data["posts"]:
         path = p["image"][len(base):] if p["image"].startswith(base) else ""
         post = prepare("round", f"round:{data['title']}:{p['key']}", esc(p["caption"]), image=path,
-                       buttons=[["Лучшие тура на DOPX", site("/")]])
+                       buttons=[["Лучшие тура на DOPX", site("/")]], sample=sample)
         if post:
             out.append(post)
     return out
@@ -298,3 +326,50 @@ def save_upload(upload) -> str:
 
     ext = (upload.name.rsplit(".", 1)[-1] if "." in upload.name else "jpg").lower()[:5]
     return default_storage.save(f"channel/{uuid.uuid4().hex}.{ext}", upload)
+
+
+def sample_posts() -> list[ChannelPost]:
+    """По посту каждого типа из настоящих данных — черновиками, чтобы посмотреть, как выглядят."""
+    from aggregates.models import PlayerMatchAggregate
+    from engagement.models import ExpertTake
+    from matches.models import Match
+
+    out = []
+    upcoming = list(Match.objects.filter(status="scheduled", start_time__gt=timezone.now())
+                    .select_related("home_team", "away_team").order_by("start_time")[:8])
+    if upcoming:
+        first = upcoming[0]
+        matches = [m for m in upcoming if m.tour == first.tour and m.season_id == first.season_id] if first.tour else upcoming[:5]
+        out.append(preview_post(first.tour, matches, sample=True))
+    last = Match.objects.filter(status="finished").select_related("home_team", "away_team").order_by("-start_time").first()
+    if last:
+        out.append(result_post(last, sample=True))
+    # Перенос — только на настоящем перенесённом матче: иначе пробный пост был бы неправдой.
+    moved = Match.objects.filter(status__in=["postponed", "cancelled"]).select_related("home_team", "away_team").order_by("-start_time").first()
+    if moved:
+        out.append(change_post(moved, moved.status, sample=True))
+    rated = (PlayerMatchAggregate.objects.filter(total_votes__gt=0, match__status="finished")
+             .order_by("-match__start_time").values_list("match_id", flat=True).first())
+    if rated:
+        m = Match.objects.select_related("home_team", "away_team").get(pk=rated)
+        aggs = list(PlayerMatchAggregate.objects.filter(match=m, total_votes__gt=0).select_related("player").order_by("-performance_score"))
+        from evaluations.models import EvaluationSession
+        votes = EvaluationSession.objects.filter(match=m, status="completed").count()
+        out.append(ratings_post(m, aggs[:3], aggs[-1] if len(aggs) > 3 else None, votes, sample=True))
+    take = ExpertTake.objects.filter(is_published=True).select_related("match__home_team", "match__away_team", "expert").order_by("-created_at").first()
+    if take:
+        out.append(expert_post(take, sample=True))
+    out += round_posts(sample=True)[:2]
+    return [p for p in out if p]
+
+
+def unpublish(post: ChannelPost) -> tuple[bool, str]:
+    """Удалить опубликованный пост из канала (бот — админ с правом удалять)."""
+    if post.status != "published" or not post.message_id:
+        return False, "Пост не опубликован ботом — удалите его в канале вручную."
+    try:
+        tg.call("deleteMessage", chat_id=channel_id(), message_id=post.message_id)
+    except (tg.TelegramError, requests.RequestException) as e:
+        return False, f"Telegram не удалил пост: {str(e)[:150]}. Удалите его в канале вручную."
+    ChannelPost.objects.filter(pk=post.pk).update(status="cancelled", error="удалён из канала")
+    return True, "🗑 Пост удалён из канала."

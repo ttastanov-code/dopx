@@ -3,71 +3,116 @@
 {% block content %}
 {% include 'dashboard/_nav.html' %}
 
-{# Telegram-бот: состояние, привязка аккаунта, список привязок. Логика — adminbot/. #}
+{# Telegram-бот. Сотрудникам — привязка и возможности; техническое состояние и отладка — только суперпользователю. #}
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
     <section class="card bg-base-100 border border-base-300"><div class="card-body p-5 gap-3">
-        <div class="dopx-section-eyebrow"><i class="ti ti-brand-telegram"></i>Состояние</div>
-        <ul class="space-y-2 text-sm">
-            <li class="flex justify-between gap-3"><span class="opacity-70">Бот</span>{% if status.enabled %}<span class="badge badge-success badge-sm">включён</span>{% else %}<span class="badge badge-ghost badge-sm">нет токена</span>{% endif %}</li>
-            <li class="flex justify-between gap-3"><span class="opacity-70">Это окружение</span><b>{% if status.env == 'prod' %}🟢 PROD{% else %}🧪 DEV · ноутбук{% endif %}</b></li>
-            <li class="flex justify-between gap-3"><span class="opacity-70">Слушает Telegram</span>{% if status.listener %}<span class="badge badge-success badge-sm">здесь ({{ status.listener }})</span>{% else %}<span class="badge badge-ghost badge-sm">не здесь / не запущен</span>{% endif %}</li>
-            <li class="flex justify-between gap-3"><span class="opacity-70">{% if status.env == 'prod' %}Ноутбук (DEV) подключён{% else %}Прод подключён{% endif %}</span>{% if status.other_online %}<span class="badge badge-success badge-sm">да</span>{% else %}<span class="badge badge-ghost badge-sm">нет</span>{% endif %}</li>
-            {% if status.env == 'dev' %}
-            <li class="flex justify-between gap-3"><span class="opacity-70">Связь с продом (ADMIN_BOT_HUB_URL)</span>{% if status.hub %}<span class="font-mono text-xs">{{ status.hub }}</span>{% else %}<span class="badge badge-ghost badge-sm">после запуска прода</span>{% endif %}</li>
-            {% endif %}
-            <li class="flex justify-between gap-3"><span class="opacity-70">Ключ связи dev ↔ прод</span>{% if status.relay_secret %}<span class="badge badge-success badge-sm">задан</span>{% elif status.env == 'dev' and not status.hub %}<span class="badge badge-ghost badge-sm">после запуска прода</span>{% else %}<span class="badge badge-warning badge-sm">не задан</span>{% endif %}</li>
-        </ul>
-        {% if status.env == 'dev' and not status.hub %}
-        <p class="text-xs opacity-60 leading-relaxed">Пока прода нет, бот целиком работает с ноутбука — это нормально. Эти две настройки понадобятся после запуска сервера: тогда Telegram будет слушать прод, а ноутбук подключится к нему, и в боте появится переключатель «🟢 PROD / 🧪 DEV». Как настроить — docs/DEPLOYMENT.md, раздел «Telegram-бот».</p>
-        {% endif %}
-        {% if not status.enabled %}
-        <div class="text-xs opacity-70 bg-base-200/60 rounded-lg p-3 leading-relaxed">
-            Создайте бота в @BotFather, впишите токен в <code>.env</code> как <code>ADMIN_BOT_TOKEN</code> и запустите <code>python manage.py runbot</code>.
+        <div class="flex items-center justify-between gap-2">
+            <div class="dopx-section-eyebrow"><i class="ti ti-link"></i>Мой Telegram</div>
+            {% if bot_alive %}<span class="badge badge-success badge-sm">бот работает</span>{% else %}<span class="badge badge-ghost badge-sm">бот временно не отвечает</span>{% endif %}
         </div>
-        {% endif %}
-    </div></section>
-
-    <section class="card bg-base-100 border border-base-300"><div class="card-body p-5 gap-3">
-        <div class="dopx-section-eyebrow"><i class="ti ti-link"></i>Мой аккаунт</div>
         {% if my_link %}
-        <p class="text-sm">Привязан к Telegram <b>{{ my_link.telegram_name|default:my_link.telegram_id }}</b> с {{ my_link.linked_at|date:"d.m.Y" }}.</p>
-        <p class="text-xs opacity-60">Ваш Telegram ID: <code>{{ my_link.telegram_id }}</code> — впишите его в <code>TELEGRAM_CHAT_ID</code> на сервере, чтобы итоги деплоя приходили в этот же чат.</p>
+        <p class="text-sm">Аккаунт привязан к Telegram <b>{{ my_link.telegram_name|default:my_link.telegram_id }}</b> с {{ my_link.linked_at|date:"d.m.Y" }}.</p>
         <form method="post" action="{% url 'dashboard:admin_bot_unlink' %}">{% csrf_token %}<input type="hidden" name="link" value="{{ my_link.pk }}"><button class="btn btn-sm btn-outline">Отвязать</button></form>
         {% elif code %}
-        <p class="text-sm">Отправьте боту эту команду в течение 10 минут:</p>
+        <p class="text-sm">Отправьте боту{% if bot_username %} <a class="link" href="https://t.me/{{ bot_username }}" target="_blank" rel="noopener">@{{ bot_username }}</a>{% endif %} эту команду в течение 10 минут:</p>
         <div class="flex items-center gap-2">
             <code class="text-2xl font-bold tracking-widest bg-base-200 rounded-lg px-4 py-2">/link {{ code.code }}</code>
             <button type="button" class="btn btn-sm btn-ghost" data-copy="/link {{ code.code }}"><i class="ti ti-copy"></i></button>
         </div>
         {% else %}
-        <p class="text-sm opacity-70">Получите одноразовый код и отправьте его боту командой <code>/link</code>. Привязка — по Telegram ID, а действия, меняющие данные, бот подтверждает кодом 2FA.</p>
-        <p class="text-xs opacity-60">В боте действуют те же разделы и права, что здесь. Доступ к самому боту выдаётся отдельно: раздел «Telegram-бот» в «Доступах».</p>
-        <form method="post">{% csrf_token %}<input type="hidden" name="action" value="code"><button class="btn btn-sm btn-primary"><i class="ti ti-key"></i> Получить код</button></form>
+        <p class="text-sm opacity-70">Привяжите Telegram, чтобы получать уведомления и разбирать задачи прямо из мессенджера. В боте вам доступно то же, что здесь.</p>
+        <form method="post">{% csrf_token %}<input type="hidden" name="action" value="code"><button class="btn btn-sm btn-primary"><i class="ti ti-key"></i> Привязать Telegram</button></form>
         {% endif %}
+    </div></section>
+
+    <section class="card bg-base-100 border border-base-300"><div class="card-body p-5 gap-2">
+        <div class="dopx-section-eyebrow"><i class="ti ti-sparkles"></i>Что умеет бот</div>
+        <ul class="text-sm space-y-1.5 opacity-80">
+            <li>⚽ Матчи: напоминание перед игровым днём, итоги и отчёт после матча.</li>
+            <li>🎙 Мнения экспертов: проверка, публикация, ссылки-приглашения.</li>
+            <li>📣 Посты в Telegram-канал проекта: просмотр и публикация.</li>
+            <li>💬 Обращения болельщиков: ответ прямо из Telegram.</li>
+            <li>🛡 Подозрения на накрутку, правки ФИО, дубли игроков.</li>
+            <li>🔔 Что присылать, выбирается в боте кнопкой «Уведомления».</li>
+        </ul>
+        <p class="text-xs opacity-55">Кнопки, которые меняют данные, бот подтверждает кодом из приложения двухфакторной защиты.</p>
     </div></section>
 </div>
 
-<section class="card bg-base-100 border border-base-300 mt-4"><div class="card-body p-5 gap-2">
-    <div class="dopx-section-eyebrow"><i class="ti ti-sparkles"></i>Что умеет бот</div>
-    <ul class="text-sm grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1.5 opacity-80">
-        <li>⚽ <b>Матчдень</b>: брифинг за 2 часа, финалы, отчёт после матча, кнопки «+1 ч голосования», «Заморозить», «Ресинк», «Перенос».</li>
-        <li>🚨 <b>Инциденты</b>: всплески оценок, матч не начался, сервер; дежурный, эскалация через 10 минут, «Беру в работу».</li>
-        <li>📣 <b>Канал</b>: анонс тура, финалы, оценки, итоги тура, мнения экспертов; одобрение кнопкой или автопостинг.</li>
-        <li>🎙 <b>Эксперты</b>: ссылка-приглашение за два нажатия, «На правку» с комментарием, напоминание по средам.</li>
-        <li>💬 <b>Обращения</b>: ответ болельщику прямо из Telegram (на сайт и на почту).</li>
-        <li>📊 <b>Цифры</b>: утренняя сводка с трендами, вопросы текстом (Claude), PDF-отчёт партнёру.</li>
-        <li>🗂 <b>Команда</b>: недельный отчёт суперпользователю, кто давно не заходил.</li>
-        <li>🔔 Темы уведомлений и дежурство — в боте: «Уведомления», «Дежурство».</li>
-    </ul>
-    <p class="text-xs opacity-60 mt-1"><i class="ti ti-shield-lock"></i> Бот работает только в личке с сотрудниками и в канале проекта: из чужих каналов и групп выходит сам и сообщает суперпользователю. Дополнительно в @BotFather: <code>/setjoingroups</code> → Disable.</p>
+{% if user.is_superuser %}
+<section class="card bg-base-100 border border-base-300 mt-4"><div class="card-body p-5 gap-3">
+    <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="dopx-section-eyebrow"><i class="ti ti-activity-heartbeat"></i>Состояние · только для суперпользователя</div>
+        <a href="" class="btn btn-xs btn-ghost"><i class="ti ti-refresh"></i> Обновить</a>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+        <div class="space-y-1.5">
+            <div class="text-[10px] uppercase tracking-wide opacity-50 font-semibold">Процесс бота · {% if status.env == 'prod' %}прод{% else %}ноутбук{% endif %}</div>
+            {% if hb and hb.alive %}
+            <div><span class="badge badge-success badge-sm">работает</span> <span class="opacity-70">{% if hb.role == 'listener' %}принимает сообщения{% else %}через прод{% endif %}</span></div>
+            <div class="opacity-70">С {{ hb.started_at|date:"d.m H:i" }} ({{ hb.uptime_h }} ч) · v{{ hb.version }}</div>
+            <div class="opacity-70">Сообщений: {{ hb.updates }}{% if hb.last_update_at %} · последнее {{ hb.last_update_at|date:"H:i" }}{% endif %}</div>
+            <div class="{% if hb.errors %}text-error{% else %}opacity-70{% endif %}">Ошибок: {{ hb.errors }}</div>
+            {% else %}
+            <div><span class="badge badge-error badge-sm">{% if hb %}остановлен {{ hb.age }} с назад{% else %}не запущен{% endif %}</span></div>
+            <div class="text-xs opacity-70">{% if status.env == 'prod' %}Контейнер <code>bot</code>{% else %}<code>manage.py runbot</code>{% endif %}</div>
+            {% endif %}
+            {% if hb.alerts %}<div class="text-warning text-xs">Алерты: {{ hb.alerts|join:"; " }}</div>{% endif %}
+        </div>
+        <div class="space-y-1.5">
+            <div class="text-[10px] uppercase tracking-wide opacity-50 font-semibold">Telegram</div>
+            {% if tg.ok %}
+            <div><span class="badge badge-success badge-sm">на связи</span> @{{ tg.username }}</div>
+            <div class="opacity-70">Не забрано сообщений: {{ tg.pending }}</div>
+            {% if tg.webhook %}<div class="text-error text-xs">Мешает вебхук — снимите кнопкой ниже.</div>{% endif %}
+            {% if tg.last_error %}<div class="text-xs text-warning">{{ tg.last_error }}</div>{% endif %}
+            {% else %}
+            <div><span class="badge badge-error badge-sm">ошибка</span></div>
+            <div class="text-xs text-error">{{ tg.error }}</div>
+            {% endif %}
+            {% if status.hub or status.env == 'prod' %}
+            <div class="opacity-70">{% if status.env == 'prod' %}Ноутбук{% else %}Прод{% endif %}: {% if status.other_online %}подключён{% else %}не подключён{% endif %}</div>
+            {% endif %}
+        </div>
+        <div class="space-y-1.5">
+            <div class="text-[10px] uppercase tracking-wide opacity-50 font-semibold">В работе</div>
+            <div class="opacity-70">Открытых инцидентов: {{ incidents|length }}</div>
+            <div class="opacity-70">Канал: {% if channel_ready %}в очереди {{ channel_queue }}{% if channel_failed %}, <span class="text-error">с ошибкой {{ channel_failed }}</span>{% endif %}{% else %}не подключён{% endif %}</div>
+            <div class="opacity-70">Жду итога: скриптов {{ watch_scripts }}, деплоев {{ watch_deploys }}</div>
+        </div>
+    </div>
+    {% if incidents %}
+    <div class="text-xs space-y-1 border-t border-base-200 pt-2">
+        {% for i in incidents %}<div>🚨 {{ i.created_at|date:"d.m H:i" }} · {{ i.title }} · {% if i.acked_by %}взял {{ i.acked_by.username }}{% else %}никто не взял{% endif %}</div>{% endfor %}
+    </div>
+    {% endif %}
+
+    <form method="post" class="flex flex-wrap gap-2 border-t border-base-200 pt-3">{% csrf_token %}
+        <button name="action" value="dbg_test_message" class="btn btn-sm btn-outline"><i class="ti ti-send"></i> Тестовое сообщение мне</button>
+        <button name="action" value="dbg_check_channel" class="btn btn-sm btn-outline"><i class="ti ti-brand-telegram"></i> Перепроверить канал</button>
+        <button name="action" value="dbg_reset_offset" class="btn btn-sm btn-ghost" onclick="return confirm('Бот заново заберёт все непрочитанные сообщения. Продолжить?')"><i class="ti ti-rotate"></i> Сбросить позицию чтения</button>
+        {% if tg.webhook %}<button name="action" value="dbg_delete_webhook" class="btn btn-sm btn-error btn-outline"><i class="ti ti-plug-off"></i> Снять вебхук</button>{% endif %}
+        {% if log %}<button name="action" value="dbg_clear_log" class="btn btn-sm btn-ghost"><i class="ti ti-eraser"></i> Очистить журнал</button>{% endif %}
+    </form>
+
+    <div class="text-[10px] uppercase tracking-wide opacity-50 font-semibold">Журнал ошибок бота</div>
+    {% for r in log %}
+    <details class="rounded-lg border border-base-200 px-3 py-1.5 text-xs">
+        <summary class="cursor-pointer flex gap-2 items-baseline"><span class="badge badge-xs {% if r.level == 'ERROR' or r.level == 'CRITICAL' %}badge-error{% else %}badge-warning{% endif %}">{{ r.level }}</span><span class="opacity-60 shrink-0">{{ r.at|date:"d.m H:i:s" }} · {{ r.process }}</span><span class="truncate">{{ r.text|truncatechars:140 }}</span></summary>
+        <pre class="whitespace-pre-wrap break-words mt-2 opacity-80">{{ r.logger }}
+{{ r.text }}</pre>
+    </details>
+    {% empty %}
+    <p class="text-sm opacity-60">Ошибок нет.</p>
+    {% endfor %}
 </div></section>
 
-{% if user.is_superuser %}
 <section class="card bg-base-100 border border-base-300 mt-4"><div class="card-body p-5 gap-3">
     <div class="flex items-center justify-between gap-3">
         <div class="dopx-section-eyebrow"><i class="ti ti-users"></i>Привязанные сотрудники</div>
         {% if links %}<form method="post" action="{% url 'dashboard:admin_bot_unlink' %}" onsubmit="return confirm('Отвязать всех от бота?')">{% csrf_token %}<input type="hidden" name="link" value="all"><button class="btn btn-xs btn-error btn-outline"><i class="ti ti-plug-off"></i> Отвязать всех</button></form>{% endif %}
     </div>
+    <div class="overflow-x-auto">
     <table class="table table-sm">
         <thead><tr><th>Сотрудник</th><th>Telegram</th><th>Уведомления</th><th>Дежурство</th><th>Последнее действие</th><th></th></tr></thead>
         <tbody>
@@ -82,6 +127,7 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
 </div></section>
 {% endif %}
 {% endblock %}
