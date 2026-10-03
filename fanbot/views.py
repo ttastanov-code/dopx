@@ -87,6 +87,14 @@ def miniapp_auth(request):
     return JsonResponse({"ok": True, "next": nxt, "enter_url": enter})
 
 
+@login_required
+@require_POST
+def miniapp_allow(request):
+    """Пользователь разрешил боту писать (WebApp.requestWriteAccess) — уведомления могут уходить."""
+    TelegramAccount.objects.filter(user=request.user).update(can_message=True, notify=True)
+    return JsonResponse({"ok": True})
+
+
 def miniapp_enter(request):
     """Одноразовый вход по ссылке из Mini App (Telegram Web): живёт минуту, второй раз не пускает."""
     from django.contrib.auth import login

@@ -157,7 +157,7 @@ class NoNewAppTests(TestCase):
         from adminbot.models import ChannelPost
 
         rows = _button_rows(ChannelPost(text="x", buttons=[["DOPX", "https://dopx.kz"]]))
-        self.assertEqual(rows[-1], [("🔔 Уведомления о матчах", "https://t.me/dopx_kz_bot?start=channel")])
+        self.assertEqual(rows[-1], [("📱 DOPX в Telegram: оценки и прогнозы", "https://t.me/dopx_kz_bot?start=channel")])
         with override_settings(FAN_BOT_TOKEN=""):
             self.assertEqual(len(_button_rows(ChannelPost(text="x", buttons=[]))), 0)
 
@@ -300,3 +300,43 @@ class ProfileTelegramBlockTests(TestCase):
         ok, _ = services.link_by_code(code.code, {"id": 902, "username": "new_tg", "first_name": "N"})
         self.assertTrue(ok)
         self.assertEqual(TelegramAccount.objects.get(user=user).telegram_id, 902)
+
+
+@override_settings(FAN_BOT_TOKEN=TOKEN, FAN_BOT_USERNAME="dopx_kz_bot", ADMIN_BOT_CHANNEL_ID="@dopx_kz", SITE_URL="https://dopx.kz")
+class ChannelLinkTests(TestCase):
+    def test_welcome_has_channel_button(self):
+        with mock.patch("fanbot.services.call") as call:
+            bot.handle({"message": {"chat": {"id": 5, "type": "private"}, "from": {"id": 5}, "text": "/start channel"}})
+        urls = [b.get("url") for row in call.call_args.kwargs["reply_markup"]["inline_keyboard"] for b in row]
+        self.assertIn("https://t.me/dopx_kz", urls)
+
+    def test_intro_post_line_and_pin(self):
+        from adminbot import channel
+        from adminbot.models import ChannelPost
+
+        post = channel.bot_intro_post()
+        self.assertIn("@dopx_kz_bot", post.text)
+        self.assertEqual(post.buttons[0][1], "https://t.me/dopx_kz_bot?start=intro")
+        # Кнопка бота уже есть в посте — вторую «уведомления» не добавляем.
+        self.assertEqual(len(channel._button_rows(post)), 1)
+        self.assertIn("@dopx_kz_bot", channel.bot_line())
+        self.assertFalse(channel.pin(post)[0])  # не опубликован
+        post.status, post.message_id = "published", 77
+        with mock.patch("adminbot.telegram.call") as call:
+            self.assertTrue(channel.pin(post)[0])
+        call.assert_called_once_with("pinChatMessage", chat_id="@dopx_kz", message_id=77, disable_notification=True)
+
+
+@override_settings(FAN_BOT_TOKEN=TOKEN, FAN_BOT_USERNAME="dopx_kz_bot", FAN_BOT_APP_NAME="app")
+class DirectLinkTests(TestCase):
+    def test_channel_button_opens_mini_app_and_allow_enables_notifications(self):
+        from adminbot import channel
+        from adminbot.models import ChannelPost
+
+        self.assertEqual(channel._button_rows(ChannelPost(text="x", buttons=[]))[-1][0][1],
+                         "https://t.me/dopx_kz_bot/app?startapp=channel")
+        user = services.account_for({"id": 991, "username": "z", "first_name": "Z"}).user
+        TelegramAccount.objects.filter(user=user).update(can_message=False)
+        self.client.force_login(user)
+        self.assertEqual(self.client.post(reverse("fanbot:miniapp_allow")).status_code, 200)
+        self.assertTrue(TelegramAccount.objects.get(user=user).can_message)

@@ -54,6 +54,50 @@ def match_url(match) -> str:
     return miniapp_link(f"m_{match.pk}") or site(reverse("matches:detail", args=[match.pk]))
 
 
+def fan_bot_url(start: str = "channel") -> str:
+    """DOPX в Telegram: сразу Mini App (Direct Link, FAN_BOT_APP_NAME), иначе чат бота. Пусто — бот не настроен."""
+    from fanbot.services import bot_username, enabled, miniapp_link
+    if not (enabled() and bot_username()):
+        return ""
+    return miniapp_link(start) or f"https://t.me/{bot_username()}?start={start}"
+
+
+def bot_line() -> str:
+    """Строка про DOPX в Telegram в анонсе и итогах тура."""
+    from fanbot.services import bot_username
+    if not fan_bot_url():
+        return ""
+    return (f"\n\n📱 Оценки и прогнозы прямо в Telegram, без регистрации: @{bot_username()}. "
+            "Там же напоминания о матчах вашего клуба.")
+
+
+def bot_intro_post(user=None) -> ChannelPost:
+    """Черновик «знакомство с ботом болельщиков» для канала; публикуют и закрепляют из дашборда."""
+    from fanbot.services import bot_username
+
+    text = ("📱 <b>DOPX теперь прямо в Telegram</b>\n\n"
+            "Весь сайт открывается внутри Telegram: оценивайте игроков, тренеров и судей после матча, "
+            "делайте прогнозы, смотрите рейтинги и таблицы. Регистрация не нужна, вход по Telegram в одно касание.\n\n"
+            f"Бот @{bot_username()} ещё и напомнит лично вам:\n"
+            "• когда начинается матч вашего клуба\n"
+            "• когда пора оценить игроков после финального свистка\n"
+            "• чем закончились ваши прогнозы\n\n"
+            "Нажмите кнопку ниже.")
+    return ChannelPost.objects.create(kind="manual", text=text, buttons=[["📱 Открыть DOPX в Telegram", fan_bot_url("intro")]],
+                                      created_by=user)
+
+
+def pin(post: ChannelPost) -> tuple[bool, str]:
+    """Закрепить опубликованный пост в канале (бот должен быть админом с правом редактирования)."""
+    if post.status != "published" or not post.message_id:
+        return False, "Закрепить можно только опубликованный пост."
+    try:
+        tg.call("pinChatMessage", chat_id=channel_id(), message_id=post.message_id, disable_notification=True)
+    except tg.TelegramError as e:
+        return False, f"Telegram не дал закрепить: {e.description}. Проверьте, что у бота есть право закреплять сообщения."
+    return True, "Пост закреплён в канале."
+
+
 def esc(s) -> str:
     import html
 
@@ -167,10 +211,11 @@ def _image_bytes(post) -> bytes:
 
 def _button_rows(post) -> list:
     rows = [[(b[0], b[1])] for b in post.buttons if len(b) == 2 and str(b[1]).startswith("http")]
-    # Под каждым постом — подписка на бота болельщиков: из канала в личные уведомления.
-    from fanbot.services import bot_username, enabled
-    if enabled() and bot_username():
-        rows.append([("🔔 Уведомления о матчах", f"https://t.me/{bot_username()}?start=channel")])
+    # Под каждым постом кнопка DOPX внутри Telegram (Mini App или чат бота).
+    from fanbot.services import bot_username
+    url = fan_bot_url("channel")
+    if url and not any("t.me/" + bot_username() in str(b[1]) for r in rows for b in r):
+        rows.append([("📱 DOPX в Telegram: оценки и прогнозы", url)])
     return rows
 
 
@@ -288,7 +333,7 @@ def preview_post(tour, matches: list, sample: bool = False) -> ChannelPost | Non
 
     def text():
         body, by_ai = writer.write("preview", facts, lambda: stories.preview_template(facts))
-        return f"{body}\n\n{HASHTAGS}", by_ai
+        return f"{body}{bot_line()}\n\n{HASHTAGS}", by_ai
     post = prepare("preview", key, text, buttons=[["🔮 Сделать прогноз", site(reverse("matches:list"))]], sample=sample)
     if post and main:
         prepare("poll", f"poll:{key}", f"Опрос: кто выиграет {main.home_team.name} – {main.away_team.name}?",
@@ -333,7 +378,7 @@ def round_posts(sample: bool = False, rnd=None) -> list[ChannelPost]:
 
     def text():
         body, by_ai = writer.write("round", facts, lambda: stories.round_template(facts))
-        return f"{body}\n\n{HASHTAGS}", by_ai
+        return f"{body}{bot_line()}\n\n{HASHTAGS}", by_ai
     key = f"round:{rnd.season_id}:{rnd.tour}"
     post = prepare("round", key, text, image=paths[0] if paths else "", images=paths[1:],
                    buttons=[["🏆 Лучшие тура на DOPX", site("/")]], sample=sample)

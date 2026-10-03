@@ -26,28 +26,36 @@
     (function () {
         var tg = window.Telegram && window.Telegram.WebApp;
         var status = document.getElementById('status'), hint = document.getElementById('hint');
-        if (!tg || !tg.initData) {
-            status.textContent = 'Откройте эту страницу из Telegram.';
-            hint.innerHTML = '<a href="/">Перейти на сайт DOPX</a>';
-            return;
-        }
+        var fail = function (text) { status.textContent = text; hint.innerHTML = '<a href="/">Перейти на сайт DOPX</a>'; };
+        if (!tg || !tg.initData) { fail('Откройте эту страницу из Telegram.'); return; }
         tg.ready(); tg.expand();
+
+        // Переход на сайт; в Telegram Web (Mini App во фрейме) — новая вкладка по одноразовой ссылке.
+        function finish(d) {
+            if (window.top !== window.self && d.enter_url) {
+                tg.openLink(location.origin + d.enter_url);
+                status.textContent = 'DOPX открыт в новой вкладке.';
+                return;
+            }
+            window.location.replace(d.next || '/');
+        }
+
         var body = new URLSearchParams({ init_data: tg.initData, start: new URLSearchParams(location.search).get('start') || '' });
         fetch('{% url "fanbot:miniapp_auth" %}', { method: 'POST', body: body, credentials: 'same-origin' })
             .then(function (r) { return r.json(); })
             .then(function (d) {
-                if (d.ok) {
-                    // Telegram Web: Mini App во фрейме — сайт открываем в новой вкладке.
-                    if (window.top !== window.self && d.enter_url) {
-                        tg.openLink(location.origin + d.enter_url);
-                        status.textContent = 'DOPX открыт в новой вкладке.';
-                        return;
-                    }
-                    window.location.replace(d.next || '/');
+                if (!d.ok) { fail(d.error === 'blocked' ? 'Аккаунт заблокирован.' : 'Не удалось войти через Telegram.'); return; }
+                var u = tg.initDataUnsafe && tg.initDataUnsafe.user;
+                // Открыли из канала, минуя чат бота: просим разрешение писать, иначе уведомления не дойдут.
+                if (u && !u.allows_write_to_pm && tg.requestWriteAccess) {
+                    tg.requestWriteAccess(function (granted) {
+                        if (!granted) { finish(d); return; }
+                        fetch('{% url "fanbot:miniapp_allow" %}', { method: 'POST', credentials: 'same-origin',
+                            headers: { 'X-CSRFToken': '{{ csrf_token }}' } }).then(function () { finish(d); }, function () { finish(d); });
+                    });
                     return;
                 }
-                status.textContent = d.error === 'blocked' ? 'Аккаунт заблокирован.' : 'Не удалось войти через Telegram.';
-                hint.innerHTML = '<a href="/">Перейти на сайт DOPX</a>';
+                finish(d);
             })
             .catch(function () { status.textContent = 'Нет связи с сайтом. Попробуйте ещё раз.'; });
     })();

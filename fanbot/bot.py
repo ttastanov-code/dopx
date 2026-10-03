@@ -33,6 +33,14 @@ def _app_button(start: str = "", label: str = "⚽ Открыть DOPX") -> list
     return [[{"text": label, "url": link}]] if link.startswith("https://") else None
 
 
+def _with_channel(rows: list | None) -> list | None:
+    """Добавить кнопку канала проекта (если он задан как @имя)."""
+    channel = settings.ADMIN_BOT_CHANNEL_ID
+    if not str(channel).startswith("@"):
+        return rows
+    return (rows or []) + [[{"text": "📣 Канал DOPX: новости и разборы матчей", "url": f"https://t.me/{channel[1:]}"}]]
+
+
 def _no_app_hint() -> str:
     """Без https нет Mini App и кнопки — объясняем, как привязать аккаунт через сайт. Адрес — из SITE_URL."""
     site = settings.SITE_URL.rstrip("/")
@@ -86,9 +94,9 @@ def handle(update: dict) -> None:
         if acc:
             TelegramAccount.objects.filter(pk=acc.pk).update(can_message=True)
             return reply(tid, f"С возвращением, <b>{html.escape(acc.user.username)}</b>! Уведомления будут приходить сюда.\n"
-                              "/notify включает и выключает уведомления, /stop выключает.", _app_button())
+                              "/notify включает и выключает уведомления, /stop выключает.", _with_channel(_app_button()))
         hint = WELCOME_APP if services.app_url() else _no_app_hint()
-        return reply(tid, WELCOME + hint, _app_button())
+        return reply(tid, WELCOME + hint, _with_channel(_app_button()))
     if text == "/stop":
         if acc:
             TelegramAccount.objects.filter(pk=acc.pk).update(notify=False)
@@ -101,4 +109,4 @@ def handle(update: dict) -> None:
         new = not acc.notify
         TelegramAccount.objects.filter(pk=acc.pk).update(notify=new, can_message=True)
         return reply(tid, "🔔 Уведомления включены." if new else "🔕 Уведомления выключены.")
-    reply(tid, WELCOME, _app_button())
+    reply(tid, WELCOME, _with_channel(_app_button()))

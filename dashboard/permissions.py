@@ -83,6 +83,7 @@ VIEW_PERMS: dict[str, dict[str, tuple[str, ...]]] = {
     "channel": _p("adminbot.view_channelpost", post="adminbot.add_channelpost"),
     "channel_post": _p("adminbot.view_channelpost", post="adminbot.change_channelpost"),
     "channel_post_delete": _p("adminbot.delete_channelpost"),
+    "channel_post_pin": _p("adminbot.change_channelpost"),
     "channel_modes": _p("adminbot.delete_channelpost"),
 }
 

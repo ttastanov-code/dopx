@@ -34,6 +34,7 @@ urlpatterns = [
     path("channel/modes/", adminbot_views.channel_modes, name="channel_modes"),
     path("channel/<int:post_id>/", adminbot_views.channel_post, name="channel_post"),
     path("channel/<int:post_id>/delete/", adminbot_views.channel_post_delete, name="channel_post_delete"),
+    path("channel/<int:post_id>/pin/", adminbot_views.channel_post_pin, name="channel_post_pin"),
     path("experts/", views_experts.experts, name="experts"),
     path("experts/takes/new/", views_experts.expert_take_create, name="expert_take_create"),
     path("experts/takes/players/", views_experts.expert_take_players, name="expert_take_players"),

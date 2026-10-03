@@ -275,6 +275,14 @@ def channel_page(request):
     from . import channel
     from .models import ChannelConfig, ChannelPost
 
+    if request.method == "POST" and request.POST.get("action") == "bot_intro":
+        if not channel.fan_bot_url():
+            messages.error(request, "Бот болельщиков не настроен: нет FAN_BOT_TOKEN.")
+            return redirect("dashboard:channel")
+        post = channel.bot_intro_post(request.user)
+        _audit(request, post, "Создан черновик про бота болельщиков")
+        messages.success(request, "Черновик готов. Проверьте текст, опубликуйте и закрепите кнопкой 📌 в списке опубликованных.")
+        return redirect("dashboard:channel_post", post_id=post.pk)
     if request.method == "POST" and request.POST.get("action") == "samples":
         from dashboard.audit import log_staff_action
         from dashboard.models import AuditAction
@@ -313,6 +321,22 @@ def channel_page(request):
         "mode_choices": channel.MODES,
         "quiet_hours": cfg.quiet_hours,
     })
+
+
+@staff_member_required
+@require_POST
+def channel_post_pin(request, post_id: int):
+    from django.shortcuts import get_object_or_404
+
+    from . import channel
+    from .models import ChannelPost
+
+    post = get_object_or_404(ChannelPost, pk=post_id)
+    ok, message = channel.pin(post)
+    (messages.success if ok else messages.error)(request, message)
+    if ok:
+        _audit(request, post, "Закреплён в канале")
+    return redirect("dashboard:channel")
 
 
 @staff_member_required

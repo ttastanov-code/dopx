@@ -40,7 +40,7 @@
         <section class="card bg-base-100 border border-base-300"><div class="card-body p-0">
             <div class="flex items-center justify-between gap-2 px-4 pt-4">
                 <div class="dopx-section-eyebrow"><i class="ti ti-list"></i>Очередь</div>
-                {% if perms.adminbot.add_channelpost %}<form method="post">{% csrf_token %}<button name="action" value="samples" class="btn btn-xs btn-ghost" title="По черновику каждого типа из настоящих данных, без публикации"><i class="ti ti-flask"></i> Пробные посты</button></form>{% endif %}
+                {% if perms.adminbot.add_channelpost %}<form method="post" class="flex gap-1">{% csrf_token %}<button name="action" value="bot_intro" class="btn btn-xs btn-ghost" title="Черновик поста про бота болельщиков с кнопкой подписки"><i class="ti ti-bell-ringing"></i> Пост про бота</button><button name="action" value="samples" class="btn btn-xs btn-ghost" title="По черновику каждого типа из настоящих данных, без публикации"><i class="ti ti-flask"></i> Пробные посты</button></form>{% endif %}
             </div>
             {% for p in queue %}
             <a href="{% url 'dashboard:channel_post' p.pk %}" class="flex items-start gap-3 px-4 py-3 border-b border-base-200 last:border-0 hover:bg-base-200/50">
@@ -65,6 +65,7 @@
                     <div class="text-xs opacity-60">{{ p.published_at|date:"d.m.Y H:i" }} · {{ p.get_kind_display }}{% if p.published_by %} · {{ p.published_by.username }}{% else %} · автопостинг{% endif %}</div>
                     <div class="text-sm truncate">{{ p.text|striptags|truncatechars:160 }}</div>
                 </div>
+                {% if perms.adminbot.change_channelpost %}<form method="post" action="{% url 'dashboard:channel_post_pin' p.pk %}">{% csrf_token %}<button class="btn btn-xs btn-ghost" title="Закрепить в канале"><i class="ti ti-pin"></i></button></form>{% endif %}
                 {% if perms.adminbot.delete_channelpost %}<form method="post" action="{% url 'dashboard:channel_post_delete' p.pk %}" onsubmit="return confirm('Удалить этот пост из канала?')">{% csrf_token %}<button class="btn btn-xs btn-ghost text-error" title="Удалить из канала"><i class="ti ti-trash"></i></button></form>{% endif %}
             </div>
             {% empty %}
