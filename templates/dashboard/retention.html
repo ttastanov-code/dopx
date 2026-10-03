@@ -1,0 +1,81 @@
+{% extends 'base.html' %}
+{% load ui_extras %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+<div class="flex flex-wrap justify-between gap-2 mb-3">
+    {% include 'dashboard/_traffic_tabs.html' with current='retention' %}
+    <div class="dopx-segment">
+        {% for preset in day_presets %}
+        <a href="?days={{ preset }}" class="dopx-segment__item {% if preset == selected_days %}dopx-segment__item--active{% endif %}">{{ preset }}д</a>
+        {% endfor %}
+    </div>
+</div>
+
+<div class="card bg-base-100 border border-base-300 mb-6">
+    <div class="card-body p-4">
+        <div class="dopx-section-eyebrow"><i class="ti ti-filter"></i>Воронка</div>
+        <div class="dopx-section-title">Путь болельщика за {{ selected_days }} {{ selected_days|ru_plural:"день,дня,дней" }}</div>
+        <div class="dopx-section-desc mb-4">Регистрации считаются от визитов, остальные шаги от тех, кто зарегистрировался за этот период. Сотрудники не учитываются.</div>
+        <div class="space-y-3">
+            {% for s in funnel.steps %}
+            <div>
+                <div class="flex justify-between text-sm mb-1">
+                    <span>{{ s.label }}</span>
+                    <span class="font-semibold">{{ s.value }}{% if not forloop.first %} <span class="opacity-60 font-normal">· {{ s.percent }}%</span>{% endif %}</span>
+                </div>
+                <div class="h-2 rounded-full bg-base-200 overflow-hidden">
+                    <div class="h-full rounded-full bg-primary" style="width: {% if forloop.first %}100{% else %}{{ s.percent }}{% endif %}%"></div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<div class="dopx-stat-grid mb-6" style="grid-template-columns: repeat(2, 1fr);">
+    <div class="dopx-stat">
+        <div class="dopx-stat-label"><i class="ti ti-repeat"></i>{{ funnel.returned.label }}</div>
+        <div class="dopx-stat-value" style="color: var(--color-success)">{{ funnel.returned.percent }}%</div>
+        <div class="dopx-stat-delta">{{ funnel.returned.value }} из {{ funnel.mature }}, зарегистрированных неделю назад и раньше</div>
+    </div>
+    <div class="dopx-stat">
+        <div class="dopx-stat-label"><i class="ti ti-user-plus"></i>Регистраций за период</div>
+        <div class="dopx-stat-value">{{ funnel.steps.1.value }}</div>
+        <div class="dopx-stat-delta">конверсия из визита {{ funnel.steps.1.percent }}%</div>
+    </div>
+</div>
+
+<div class="card bg-base-100 border border-base-300 mb-6">
+    <div class="card-body p-4">
+        <div class="dopx-section-eyebrow"><i class="ti ti-table"></i>Удержание</div>
+        <div class="dopx-section-title">Когорты по неделе регистрации</div>
+        <div class="dopx-section-desc mb-3">Доля новичков недели, которые заходили, оценивали или прогнозировали через N недель. «Нед. 0» означает неделю регистрации.</div>
+        <div class="overflow-x-auto">
+            <table class="table table-sm">
+                <thead>
+                    <tr>
+                        <th>Неделя с</th><th class="text-right">Новичков</th>
+                        {% for w in week_numbers %}<th class="text-center">Нед. {{ w }}</th>{% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in cohorts %}
+                    <tr>
+                        <td class="whitespace-nowrap">{{ row.start|date:"d.m" }}</td>
+                        <td class="text-right">{{ row.size }}</td>
+                        {% for c in row.cells %}
+                        {% if c == "" %}<td></td>
+                        {% elif c is None %}<td class="text-center opacity-30">—</td>
+                        {% else %}<td class="text-center" style="background: color-mix(in oklab, var(--color-success) {{ c }}%, transparent)">{{ c }}%</td>
+                        {% endif %}
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -86,6 +86,18 @@ def check_celery():
     return None
 
 
+def check_services():
+    """Боты и воркер realtime: молчат по пульсу (core.heartbeat). Сайт — в check_site, Celery-воркер — в check_celery."""
+    from core import heartbeat
+
+    bad = [r for r in heartbeat.overview()
+           if r["name"] in ("fan_bot", "celery_realtime") and r["status"] in ("down", "stale")]
+    if not bad:
+        return None
+    names = ", ".join(r["label"] for r in bad)
+    return Problem("services", f"Не отвечает: {names}", "Docker перезапустит контейнер сам. Если не поможет, откройте Дашборд → Системный статус.")
+
+
 def check_queue():
     from dashboard.infra_services import _redis_stats
 
@@ -201,8 +213,8 @@ def recent_errors(limit: int = 8) -> list[str]:
     return lines[-limit:]
 
 
-CHECKS = [check_site, check_latency, check_db, check_cache, check_celery, check_queue, check_disk, check_memory, check_load,
-          check_errors, check_sync, check_backup]
+CHECKS = [check_site, check_latency, check_db, check_cache, check_celery, check_services, check_queue, check_disk, check_memory,
+          check_load, check_errors, check_sync, check_backup]
 
 
 def current_problems() -> list[Problem]:

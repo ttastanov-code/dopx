@@ -6,7 +6,7 @@
 """
 from __future__ import annotations
 
-from django.http import JsonResponse, HttpResponse
+from django.http import Http404, JsonResponse, HttpResponse
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import login, logout, authenticate, update_session_auth_hash
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -171,6 +171,8 @@ class VerifyEmailView(View):
 
             user.is_verified = True
             user.save(update_fields=['is_verified', 'updated_at'])
+            from users.emails import mark_confirmed
+            mark_confirmed(user)
 
             # Вход без authenticate(), поэтому backend указываем явно (их два).
             login(request, user, backend='django.contrib.auth.backends.ModelBackend')
@@ -313,6 +315,7 @@ class ProfileView(LoginRequiredMixin, TemplateView):
                 brags.append({
                     'kind': kind, 'number': number, 'title': title, 'text': text,
                     'image': self.request.build_absolute_uri(reverse('engagement:brag_card', args=[user.username, kind])),
+                    'story': reverse('engagement:story_card', args=[user.username, kind]),
                     # ?card= — превью ссылки с этой карточкой и подсветка плитки в профиле.
                     'url': f"{profile_url}?card={kind}",
                 })
@@ -327,6 +330,8 @@ class ProfileView(LoginRequiredMixin, TemplateView):
                 _brag('season', pass_data['level'], 'уровень сезонного пропуска', f'Уровень {pass_data["level"]} сезонного пропуска DOPX')
 
         context.update({
+            'telegram_enabled': bool(settings.FAN_BOT_TOKEN and settings.FAN_BOT_USERNAME),
+            'telegram_bot': settings.FAN_BOT_USERNAME.lstrip('@'),
             'brags': brags,
             'profile_share_url': profile_url,
             'user': user,
@@ -516,30 +521,23 @@ class ProfileEditView(LoginRequiredMixin, UpdateView):
         return User.objects.get(pk=self.request.user.pk)
 
     def form_valid(self, form):
-        # Смена email сбрасывает is_verified. Старый email берём из БД — форма уже
-        # перезаписала self.object.email.
+        # Новая почта не применяется сразу: ждёт подтверждения по ссылке (users/emails.py), старая работает.
         old_email = User.objects.get(pk=self.object.pk).email
         new_email = form.cleaned_data.get('email')
-        email_changed = new_email and new_email != old_email
+        email_changed = bool(new_email) and new_email.lower() != old_email.lower()
+        if email_changed:
+            form.instance.email = old_email
 
         if form.cleaned_data.get('delete_avatar') and self.object.avatar:
             self.object.avatar.delete(save=False)
             self.object.avatar = None
 
-        if email_changed:
-            self.object.is_verified = False
-
         response = super().form_valid(form)
 
         if email_changed:
-            self.object.refresh_verification_token()
-            try:
-                from notifications.tasks import send_email_verification
-                send_email_verification.delay(str(self.object.id), str(self.object.verification_token))
-                logger.info(f"Re-verification email queued for {self.object.email} (email changed)")
-            except Exception as e:
-                logger.error(f"Failed to queue re-verification email after email change: {e}")
-            messages.success(self.request, 'Профиль обновлён. Чтобы подтвердить новый email, перейдите по ссылке из письма, которое мы отправили.')
+            from users.emails import request_change
+            request_change(self.object, new_email)
+            messages.success(self.request, f'Профиль обновлён. Почта сменится после подтверждения: мы отправили ссылку на {new_email}.')
         else:
             messages.success(self.request, 'Профиль обновлён.')
         return response
@@ -638,6 +636,11 @@ class NotificationSettingsView(LoginRequiredMixin, FormView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Настройки уведомлений — DOPX'
+        from django.conf import settings as dj_settings
+        from fanbot.models import TelegramAccount
+        context['telegram_account'] = TelegramAccount.objects.filter(user=self.request.user).first()
+        context['telegram_enabled'] = bool(dj_settings.FAN_BOT_TOKEN and dj_settings.FAN_BOT_USERNAME)
+        context['telegram_bot'] = dj_settings.FAN_BOT_USERNAME.lstrip('@')
         # Есть ли активная push-подписка хоть на одном устройстве.
         push_subscriptions = self.request.user.push_subscriptions.order_by('-created_at')
         context['has_push_subscription'] = push_subscriptions.exists()
@@ -901,3 +904,102 @@ def push_revoke_device(request, subscription_id):
     if deleted:
         messages.success(request, 'Устройство отключено от push-уведомлений.')
     return redirect('users:notification_settings')
+
+@login_required
+@require_POST
+def report(request, kind, key):
+    """Жалоба на профиль (kind=user, key=ник) или лигу друзей (kind=league, key=код приглашения)."""
+    from engagement.models import FriendLeague
+    from users import reports
+
+    if kind == "user":
+        target = {"target_user": get_object_or_404(User, username=key, is_active=True)}
+    elif kind == "league":
+        target = {"league": get_object_or_404(FriendLeague, invite_code=key)}
+    else:
+        raise Http404
+    try:
+        reports.create(request.user, reason=request.POST.get("reason", ""), comment=request.POST.get("comment", ""), **target)
+        messages.success(request, "Спасибо! Модераторы посмотрят жалобу.")
+    except reports.ReportError as e:
+        messages.error(request, str(e))
+    back = request.POST.get("next", "")
+    if not url_has_allowed_host_and_scheme(back, allowed_hosts={request.get_host()}):
+        back = "/"
+    return redirect(back)
+
+
+@login_required
+def complete_profile(request):
+    """Город и подтверждённая почта (без них оценки и прогнозы закрыты); для пустого аккаунта из Telegram —
+    объединение с уже существующим аккаунтом по логину и паролю."""
+    from fanbot import services as tg_services
+    from fanbot.views import WELCOME_SKIP_KEY
+    from users import emails
+    from users.forms import UserLoginForm
+    from users.forms_profile import CompleteProfileForm
+
+    nxt = request.POST.get("next") or request.GET.get("next", "")
+    if not url_has_allowed_host_and_scheme(nxt, allowed_hosts={request.get_host()}):
+        nxt = reverse("users:profile")
+    # Свежий объект: OTPMiddleware подменяет request.user.is_verified функцией, такой save() падает.
+    user = User.objects.get(pk=request.user.pk)
+    can_merge = hasattr(user, "telegram") and tg_services._empty_telegram_only(user)
+    form = CompleteProfileForm(user=user)
+    merge_form = UserLoginForm(request)
+    action = request.POST.get("action")
+
+    if request.method == "POST" and action == "skip":
+        request.session[WELCOME_SKIP_KEY] = True
+        return redirect(nxt)
+    if request.method == "POST" and action == "resend" and user.pending_email:
+        emails.request_change(user, user.pending_email)
+        messages.success(request, f"Письмо отправлено ещё раз на {user.pending_email}.")
+        return redirect(f"{reverse('users:complete_profile')}?next={nxt}")
+    if request.method == "POST" and action == "merge" and can_merge:
+        merge_form = UserLoginForm(request, data=request.POST)
+        if merge_form.is_valid():
+            target = merge_form.get_user()
+            error = tg_services.merge_into(request, target)
+            if not error:
+                messages.success(request, f"Готово: аккаунты объединены. Теперь вход через Telegram открывает {target.username}.")
+                return redirect(nxt)
+            messages.error(request, error)
+    if request.method == "POST" and action == "profile":
+        form = CompleteProfileForm(request.POST, user=user)
+        if form.is_valid():
+            user.city = form.cleaned_data["city"]
+            user.save(update_fields=["city", "updated_at"])
+            email = form.cleaned_data["email"]
+            if email.lower() != user.email.lower():
+                emails.request_change(user, email)
+                messages.success(request, f"Город сохранён. Мы отправили письмо на {email}, перейдите по ссылке, чтобы подтвердить почту.")
+                return redirect(f"{reverse('users:complete_profile')}?next={nxt}")
+            if user.email_verified_at is None:
+                emails.request_change(user, email)  # та же почта, но не подтверждена — шлём ссылку
+                messages.success(request, f"Город сохранён. Подтвердите почту по ссылке из письма на {email}.")
+                return redirect(f"{reverse('users:complete_profile')}?next={nxt}")
+            messages.success(request, "Профиль заполнен. Спасибо!")
+            return redirect(nxt)
+
+    return render(request, "users/complete_profile.html", {
+        "page_title": "Заполните профиль — DOPX", "form": form, "merge_form": merge_form, "can_merge": can_merge,
+        "next": nxt, "show_merge": action == "merge" or "email" in form.errors,
+        "missing": emails.missing_fields(user), "complete": emails.profile_complete(user),
+    })
+
+
+def confirm_email_change(request, token):
+    """Ссылка из письма: новая почта подтверждена и становится основной."""
+    from users import emails
+
+    client_ip = get_client_ip(request)
+    if client_ip and is_rate_limited(f'confirm_email:{client_ip}', VERIFY_EMAIL_RATE_LIMIT, VERIFY_EMAIL_RATE_LIMIT_WINDOW_SECONDS):
+        messages.error(request, 'Слишком много попыток. Попробуйте позже.')
+        return redirect('core:home')
+    user, error = emails.confirm_change(token)
+    if error:
+        messages.error(request, error)
+        return redirect('users:complete_profile' if request.user.is_authenticated else 'users:login')
+    messages.success(request, f"Почта {user.email} подтверждена.")
+    return redirect('users:profile' if request.user.is_authenticated else 'users:login')

@@ -1,0 +1,56 @@
+<!doctype html>
+{% load static %}
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>DOPX</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+               font-family: -apple-system, system-ui, sans-serif; background: var(--tg-theme-bg-color, #0b0b10);
+               color: var(--tg-theme-text-color, #fff); text-align: center; padding: 24px; }
+        .logo { width: 64px; height: 64px; margin: 0 auto 16px; }
+        .muted { opacity: .6; font-size: 14px; }
+        a { color: var(--tg-theme-link-color, #8b5cf6); }
+    </style>
+</head>
+<body>
+    {# Вход по initData и переход на нужную страницу сайта внутри Telegram. #}
+    <div>
+        <img class="logo" src="{% static 'img/dopx-logo-icon.png' %}" alt="DOPX">
+        <div id="status">Открываем DOPX…</div>
+        <p class="muted" id="hint"></p>
+    </div>
+    <script>
+    (function () {
+        var tg = window.Telegram && window.Telegram.WebApp;
+        var status = document.getElementById('status'), hint = document.getElementById('hint');
+        if (!tg || !tg.initData) {
+            status.textContent = 'Откройте эту страницу из Telegram.';
+            hint.innerHTML = '<a href="/">Перейти на сайт DOPX</a>';
+            return;
+        }
+        tg.ready(); tg.expand();
+        var body = new URLSearchParams({ init_data: tg.initData, start: new URLSearchParams(location.search).get('start') || '' });
+        fetch('{% url "fanbot:miniapp_auth" %}', { method: 'POST', body: body, credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                if (d.ok) {
+                    // Telegram Web: Mini App во фрейме — сайт открываем в новой вкладке.
+                    if (window.top !== window.self && d.enter_url) {
+                        tg.openLink(location.origin + d.enter_url);
+                        status.textContent = 'DOPX открыт в новой вкладке.';
+                        return;
+                    }
+                    window.location.replace(d.next || '/');
+                    return;
+                }
+                status.textContent = d.error === 'blocked' ? 'Аккаунт заблокирован.' : 'Не удалось войти через Telegram.';
+                hint.innerHTML = '<a href="/">Перейти на сайт DOPX</a>';
+            })
+            .catch(function () { status.textContent = 'Нет связи с сайтом. Попробуйте ещё раз.'; });
+    })();
+    </script>
+</body>
+</html>

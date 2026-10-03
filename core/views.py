@@ -484,8 +484,10 @@ class ContactsView(TemplateView):
 
     def send_user_confirmation(self, submission):
         """Подтверждение получения на submission.contact_email (пользователь или гость)."""
+        from core.utils import is_placeholder_email
+
         recipient = submission.contact_email
-        if not recipient:
+        if not recipient or is_placeholder_email(recipient):
             return
 
         from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@dopx.kz')

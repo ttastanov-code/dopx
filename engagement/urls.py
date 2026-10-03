@@ -19,6 +19,7 @@ urlpatterns = [
     path("api/share-done/", views.share_done, name="share_done"),
     path("polls/<uuid:poll_id>/vote/", views.poll_vote, name="poll_vote"),
     path("share/brag/<str:username>/<str:kind>.png", views.brag_card, name="brag_card"),
+    path("share/story/<str:username>/<str:kind>.png", views.story_card, name="story_card"),
     path("expert/<str:token>/", views_experts.expert_write, name="expert_write"),
     path("expert/<str:token>/players/", views_experts.expert_write_players, name="expert_write_players"),
     path("expert/<str:token>/<path:tail>", views.clean_link_token, {"name": "engagement:expert_write"}),

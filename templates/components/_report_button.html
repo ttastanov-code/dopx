@@ -1,0 +1,15 @@
+{# Жалоба: раскрывающаяся форма с причиной и комментарием. #}
+{% if show %}
+<details class="dx-report">
+    <summary class="dx-report__toggle"><i class="ti ti-flag"></i> Пожаловаться</summary>
+    <form method="post" action="{{ action }}" class="dx-report__form">{% csrf_token %}
+        <input type="hidden" name="next" value="{{ next }}">
+        <select name="reason" required class="select select-sm select-bordered w-full">
+            <option value="" disabled selected>Что не так?</option>
+            {% for value, label in reasons %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+        </select>
+        <textarea name="comment" rows="2" maxlength="300" class="textarea textarea-sm textarea-bordered w-full" placeholder="Комментарий (необязательно)"></textarea>
+        <button type="submit" class="btn btn-sm btn-outline w-full">Отправить модераторам</button>
+    </form>
+</details>
+{% endif %}

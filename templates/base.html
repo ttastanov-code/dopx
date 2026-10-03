@@ -34,12 +34,7 @@
     <link rel="icon" type="image/png" href="{% static_v 'favicons/favicon-32x32.png' %}" sizes="32x32">
     <link rel="icon" type="image/png" href="{% static_v 'favicons/favicon-16x16.png' %}" sizes="16x16">
     <link rel="apple-touch-icon" href="{% static_v 'favicons/apple-touch-icon.png' %}">
-    {# Tailwind CSS #}
-    {# Версии CDN закреплены точно. integrity временно нет — посчитать через scripts/generate_sri.sh. #}
-    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.3" integrity="sha384-aJ9rL4k6lF+91guGvUFVSkpIcge7Zd9EiI4TQDLoK9kFaFJgKHgjEXVvG/qA5COj" crossorigin="anonymous"></script>
-    {# DaisyUI #}
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@5.7.17" rel="stylesheet" type="text/css" integrity="sha384-39M1LQqzp+SSirSevKD4gsadFB7kgKzMiPY7o6hVhOXuRthgtd1oohKwlosU9KHi" crossorigin="anonymous" />
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@5.7.17/themes.css" rel="stylesheet" type="text/css" integrity="sha384-HhSoSsQclUlsqy8Gyz+E2oVSebHT4dv3MJ+NdUjV9mh1twUK4UPKQgmj0dHDKe0Y" crossorigin="anonymous" />
+    {% tailwind_assets %}
     {# Tabler Icons #}
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.46.0/dist/tabler-icons.min.css" integrity="sha384-ND+q1IVc0KDElX60dZaqKc7Xl9cdxd2PpU2JfVUHcurCkFVtVLFdt9vJfxtHSL3p" crossorigin="anonymous">
     {# Карточка матча #}
@@ -439,6 +434,7 @@
     {% endif %}
     {# Main Content #}
     <main class="container mx-auto px-3 sm:px-4 py-4 sm:py-6 w-full">
+        {% include 'components/_profile_nudge.html' %}
         {% if mourning %}{% include 'components/_mourning_banner.html' %}{% endif %}
         {% block content %}{% endblock %}
     </main>

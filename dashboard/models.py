@@ -21,6 +21,7 @@ class AuditAction(models.TextChoices):
     MATCH_RESYNC = "match_resync", _("Ручной ресинк матча")
     CELERY_TASK_TRIGGERED = "celery_task_triggered", _("Запуск celery-задачи вручную")
     CELERY_TASK_REVOKED = "celery_task_revoked", _("Отзыв/остановка celery-задачи")
+    SERVICE_RESTART = "service_restart", _("Перезапуск сервиса (бот, воркер)")
     SPORTMONKS_HEALTH_CHECK = "sportmonks_health_check", _("Проверка доступности Sportmonks API")
     SYSTEM_ANNOUNCEMENT_SENT = "system_announcement_sent", _("Отправлено системное объявление")
     MOURNING_CHANGED = "mourning_changed", _("Изменён режим траура")
@@ -46,6 +47,7 @@ class AuditAction(models.TextChoices):
     USER_BANNED = "user_banned", _("Пользователь заблокирован")
     USER_UNBANNED = "user_unbanned", _("Пользователь разблокирован")
     USER_TRUST_SCORE_RESET = "user_trust_score_reset", _("Оценка доверия пользователя сброшена")
+    USER_REPORT_HANDLED = "user_report_handled", _("Жалоба пользователя разобрана")
     # Модерация оценок. Удаление сессии удаляет и все её под-оценки.
     EVALUATION_SESSION_DELETED = "evaluation_session_deleted", _("Сессия оценки удалена (модерация)")
     # Партнёры и баннеры.
@@ -157,6 +159,7 @@ DASHBOARD_SECTIONS = [
     ("evaluation_sessions", _("Модерация оценок")),
     ("users", _("Пользователи")),
     ("antifraud", _("Антифрод")),
+    ("reports", _("Жалобы пользователей")),
     ("parser_tools", _("Парсер")),
     ("ads", _("Реклама (+ партнёры/баннеры)")),
     ("audit", _("Аудит")),

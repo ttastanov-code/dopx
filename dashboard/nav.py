@@ -44,6 +44,7 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
     NavGroup("people", "ti-users", "Люди", (
         NavItem("users", "dashboard:users_list", "ti-users", "Пользователи", "Аккаунты и активность"),
         NavItem("antifraud", "dashboard:antifraud", "ti-shield-exclamation", "Антифрод", "Подозрительные голоса"),
+        NavItem("reports", "dashboard:reports", "ti-flag", "Жалобы", "Ники, аватары, лиги"),
         NavItem("audit", "dashboard:audit_log", "ti-history", "Аудит", "Действия сотрудников"),
     )),
     NavGroup("content", "ti-speakerphone", "Контент", (

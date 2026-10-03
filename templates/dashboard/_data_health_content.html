@@ -129,9 +129,8 @@
                     Celery
                 </div>
                 {% if infra.celery.ok %}
-                <div class="text-sm">Воркеров онлайн: <b class="{% if not infra.celery.workers_online %}text-warning{% endif %}">{{ infra.celery.workers_online }}</b></div>
-                <div class="text-sm">Выполняется сейчас: <b>{{ infra.celery.active_tasks }}</b></div>
-                <div class="text-sm">Взято в работу: <b>{{ infra.celery.reserved_tasks|default:0 }}</b> · отложено: <b>{{ infra.celery.scheduled_tasks|default:0 }}</b></div>
+                <div class="text-sm">Воркеров на связи: <b class="{% if infra.celery.workers_online < infra.celery.workers_total %}text-warning{% endif %}">{{ infra.celery.workers_online }} из {{ infra.celery.workers_total }}</b></div>
+                <div class="text-sm">В очереди: <b>{{ infra.celery.queue_celery }}</b> фоновых · <b>{{ infra.celery.queue_realtime }}</b> live</div>
                 {% if infra.celery.worker_names %}
                 <div class="text-xs opacity-50 mt-1 truncate">{{ infra.celery.worker_names|join:", " }}</div>
                 {% endif %}

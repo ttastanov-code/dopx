@@ -85,7 +85,8 @@ class ContentSecurityPolicyMiddleware:
 
     POLICY = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://telegram.org; "
+        "frame-src 'self' https://oauth.telegram.org; "
         "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
         "font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com; "
         "img-src 'self' data: https:; "
@@ -94,7 +95,8 @@ class ContentSecurityPolicyMiddleware:
         "manifest-src 'self'; "
         "object-src 'none'; "
         "base-uri 'self'; "
-        "form-action 'self'; "
+        # t.me: «Привязать Telegram» — форма отвечает редиректом в бота, без этого браузер его блокирует.
+        "form-action 'self' https://t.me; "
         "frame-ancestors 'self';"
     )
 
@@ -114,6 +116,7 @@ class ContentSecurityPolicyMiddleware:
         "frame-ancestors 'self';"
     )
     ADMIN_PATH_PREFIX = '/admin/'
+    MINIAPP_PATH = '/tg/app/'
 
     # Для embed-виджетов — разрешаем встраивание в чужие iframe.
     WIDGET_POLICY_BASE = (
@@ -156,6 +159,9 @@ class ContentSecurityPolicyMiddleware:
             policy = self.ADMIN_POLICY
         elif self.WIDGET_PATH_PATTERN.match(request.path):
             policy = self._widget_policy()
+        elif request.path == self.MINIAPP_PATH:
+            # Telegram Web открывает Mini App во фрейме — разрешаем только для точки входа.
+            policy = self.POLICY.replace("frame-ancestors 'self';", "frame-ancestors 'self' https://web.telegram.org;")
         else:
             policy = self.POLICY
         response[header] = policy
@@ -220,4 +226,84 @@ class StaffSessionSecurityMiddleware:
 
             request.session[self.SESSION_KEY] = now.isoformat()
 
+        return self.get_response(request)
+
+class GuestPageCacheMiddleware:
+    """Кэш публичных страниц для гостей на GUEST_PAGE_CACHE_SECONDS: в пик после матча страницы не рендерятся заново.
+    CSRF-токен в HTML заменяется маркером и подставляется свой каждому посетителю."""
+
+    PATHS = re.compile(
+        r"^/(|matches/|matches/[0-9a-f-]{36}/|teams/|teams/[0-9a-f-]{36}/|players/|players/[0-9a-f-]{36}/"
+        r"|users/leaderboard/|users/players/leaderboard/)$"
+    )
+    TOKEN = re.compile(r"""((?:X-CSRFToken['"]\]?\s*[:=]\s*|name="csrfmiddlewaretoken" value=)['"])[A-Za-z0-9]{64}""")
+    MARKER = "\x00csrf\x00"
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def _cacheable(self, request) -> bool:
+        if request.method != "GET" or getattr(request, "user", None) is None or request.user.is_authenticated:
+            return False
+        if len(request.META.get("QUERY_STRING", "")) > 200 or not self.PATHS.match(request.path):
+            return False
+        # Ожидающие сообщения (тосты) — личные, такую страницу не кэшируем и не отдаём из кэша.
+        return "messages" not in request.COOKIES and not request.session.get("_messages")
+
+    def __call__(self, request):
+        seconds = getattr(settings, "GUEST_PAGE_CACHE_SECONDS", 0)
+        if not seconds or not self._cacheable(request):
+            return self.get_response(request)
+        from hashlib import sha256
+
+        from django.middleware.csrf import get_token
+
+        key = "guestpage:" + sha256(request.get_full_path().encode()).hexdigest()
+        cached = cache.get(key)
+        if cached:
+            body, content_type = cached
+            response = HttpResponse(body.replace(self.MARKER, get_token(request)), content_type=content_type)
+            response["X-Guest-Cache"] = "hit"
+            return response
+        response = self.get_response(request)
+        cookies = set(response.cookies) - {settings.CSRF_COOKIE_NAME}
+        if (response.status_code == 200 and not response.streaming and not cookies
+                and "text/html" in response.get("Content-Type", "")):
+            body = self.TOKEN.sub(lambda m: m.group(1) + self.MARKER, response.content.decode())
+            cache.set(key, (body, response["Content-Type"]), seconds)
+        return response
+
+
+class SessionRefreshMiddleware:
+    """Продлевает сессию вошедшего не чаще раза в SESSION_REFRESH_SECONDS (вместо SESSION_SAVE_EVERY_REQUEST)."""
+
+    KEY = "_refreshed"
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        user = getattr(request, "user", None)
+        if user is not None and user.is_authenticated:
+            now = int(time.time())
+            if now - request.session.get(self.KEY, 0) >= settings.SESSION_REFRESH_SECONDS:
+                request.session[self.KEY] = now  # изменение -> сохранение и новый срок cookie
+        return self.get_response(request)
+
+
+class HeartbeatMiddleware:
+    """Пульс веб-процесса для страницы «Сервисы»: не чаще раза в минуту, без запроса к Redis на каждый хит."""
+
+    EVERY = 60
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+        self.last = 0.0
+
+    def __call__(self, request):
+        now = time.time()
+        if now - self.last > self.EVERY:
+            self.last = now
+            from core.heartbeat import beat
+            beat("web")
         return self.get_response(request)

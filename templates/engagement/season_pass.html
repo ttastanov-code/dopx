@@ -27,7 +27,8 @@
         {% if share_url %}
         <div class="dx-pass-hero__share">
             {% url 'engagement:brag_card' user.username 'season' as card_url %}
-            {% include 'components/_share_sheet.html' with url=share_url text=share_text image=card_url label="Похвастаться" %}
+            {% if user.is_profile_public %}{% url 'engagement:story_card' user.username 'season' as story_url %}{% endif %}
+            {% include 'components/_share_sheet.html' with url=share_url text=share_text image=card_url story=story_url label="Похвастаться" %}
         </div>
         {% endif %}
     </section>

@@ -14,9 +14,8 @@ FROM node:22-slim AS frontend-builder
 WORKDIR /build
 COPY package.json package-lock.json ./
 RUN npm ci
-COPY static_src ./static_src
-COPY templates ./templates
-COPY static/js ./static/js
+# Весь код: классы ищутся в шаблонах, JS и Python (templatetags, вьюхи). node_modules в контекст не попадает.
+COPY . .
 RUN npm run build:css
 
 ########################################
@@ -101,5 +100,6 @@ EXPOSE 8000
 
 ENTRYPOINT ["/entrypoint.sh"]
 # По умолчанию — веб-процесс; celery переопределяет command в docker-compose.yml.
-# Число воркеров — GUNICORN_WORKERS в .env (обычно 2 × ядер + 1).
-CMD ["sh", "-c", "exec gunicorn dopx.wsgi:application --bind 0.0.0.0:8000 --workers ${GUNICORN_WORKERS:-3} --timeout 60 --graceful-timeout 30 --access-logfile - --error-logfile -"]
+# Воркеры — GUNICORN_WORKERS в .env; пусто — 2 × ядер + 1. По 2 потока: пока один ждёт базу/Redis, второй отвечает
+# (live-опрос). max-requests — плановый перезапуск воркера, чтобы память не росла.
+CMD ["sh", "-c", "exec gunicorn dopx.wsgi:application --bind 0.0.0.0:8000 --workers ${GUNICORN_WORKERS:-$((2 * $(nproc) + 1))} --worker-class gthread --threads ${GUNICORN_THREADS:-2} --max-requests 2000 --max-requests-jitter 200 --timeout 60 --graceful-timeout 30 --access-logfile - --error-logfile -"]

@@ -3,15 +3,16 @@
 
 attach_card_extras(matches, request) вызывается один раз на страницу и навешивает
 на объекты Match атрибуты card_*, list_prediction_counts, user_has_evaluated.
-Большинство сигналов — bulk-запросы; H2H, форма и влияние на таблицу —
-по запросу на матч.
+Большинство сигналов — bulk-запросы; H2H, форма и влияние на таблицу считаются по матчу
+и кэшируются до следующего изменения любого завершённого матча (_results_stamp).
 """
 from __future__ import annotations
 
 from collections import defaultdict
 from datetime import timedelta
 
-from django.db.models import Count, Q
+from django.core.cache import cache
+from django.db.models import Count, Max, Q
 from django.utils import timezone
 
 from aggregates.models import PlayerMatchAggregate
@@ -34,6 +35,24 @@ from teams.models import TeamSeasonStats
 from teams.services import compute_match_table_impact_positions, describe_season_form_streak
 
 
+CARD_CACHE_SECONDS = 3600
+
+
+def _results_stamp() -> str:
+    """Отметка последнего изменения завершённых матчей: сменилась — кэш карточек устарел."""
+    last = Match.objects.filter(status='finished').aggregate(t=Max('updated_at'))['t']
+    return last.isoformat() if last else '0'
+
+
+def _cached(key: str, compute):
+    """cache.get/set, где None — тоже ответ (обёрнут в кортеж)."""
+    hit = cache.get(key)
+    if hit is None:
+        hit = (compute(),)
+        cache.set(key, hit, CARD_CACHE_SECONDS)
+    return hit[0]
+
+
 def attach_card_extras(matches, request) -> None:
     """Навешивает атрибуты на matches, ничего не возвращает."""
     matches = list(matches)
@@ -46,9 +65,10 @@ def attach_card_extras(matches, request) -> None:
 
     _attach_evaluated_flag(matches, user)
     _attach_prediction_widget(matches, user)  # общая логика для всех вьюх
-    _attach_intrigue_and_pre_match(pre_match)
+    stamp = _results_stamp() if (pre_match or finished) else ''
+    _attach_intrigue_and_pre_match(pre_match, stamp)
     _attach_personalization(matches, user)
-    _attach_finished_extras(finished, user)
+    _attach_finished_extras(finished, user, stamp)
 
 
 def _attach_evaluated_flag(matches, user) -> None:
@@ -112,7 +132,7 @@ def _attach_personalization(matches, user) -> None:
         match.card_followed_teams = names
 
 
-def _attach_intrigue_and_pre_match(pre_match) -> None:
+def _attach_intrigue_and_pre_match(pre_match, stamp: str = "") -> None:
     """Интрига, H2H, форма — для scheduled/live."""
     if not pre_match:
         return
@@ -136,7 +156,7 @@ def _attach_intrigue_and_pre_match(pre_match) -> None:
         away_pos = positions.get((match.season_id, match.away_team_id)) if both_next else None
         total_teams = total_teams_by_season.get(match.season_id)
 
-        recent_meetings = _recent_meetings(match)  # один запрос для интриги и H2H
+        recent_meetings = _cached(f'card:h2h:{match.pk}:{stamp}', lambda: _recent_meetings(match))
         last_meeting = recent_meetings[0] if recent_meetings else None
         match.card_intrigue = describe_intrigue(
             match, home_position=home_pos, away_position=away_pos,
@@ -144,8 +164,10 @@ def _attach_intrigue_and_pre_match(pre_match) -> None:
         )
         match.card_h2h = _summarize_h2h(match, last_meeting_and_more=recent_meetings)
 
-        match.card_home_form_text = _season_form_text(match, match.home_team) if home_next else None
-        match.card_away_form_text = _season_form_text(match, match.away_team) if away_next else None
+        match.card_home_form_text = (_cached(f'card:form:{match.pk}:h:{stamp}', lambda: _season_form_text(match, match.home_team))
+                                     if home_next else None)
+        match.card_away_form_text = (_cached(f'card:form:{match.pk}:a:{stamp}', lambda: _season_form_text(match, match.away_team))
+                                     if away_next else None)
 
 
 def _season_form_text(match, team) -> str | None:
@@ -230,7 +252,7 @@ def _summarize_h2h(match, last_meeting_and_more: list) -> dict | None:
     }
 
 
-def _attach_finished_extras(finished, user) -> None:
+def _attach_finished_extras(finished, user, stamp: str = "") -> None:
     """Блоки завершённого матча."""
     if not finished:
         return
@@ -297,7 +319,10 @@ def _attach_finished_extras(finished, user) -> None:
             match, sensation_counts.get(match.id), match.card_reaction_counts,
         )
 
-        standings_before, standings_after = compute_match_table_impact_positions(match)
+        # Списки пар, а не dict с UUID-ключами: так значение сериализуется где угодно (в т.ч. debug toolbar).
+        before_items, after_items = _cached(f'card:table:{match.pk}:{stamp}', lambda: tuple(
+            list(d.items()) for d in compute_match_table_impact_positions(match)))
+        standings_before, standings_after = dict(before_items), dict(after_items)
         before_home = standings_before.get(match.home_team_id)
         before_away = standings_before.get(match.away_team_id)
         after_home = standings_after.get(match.home_team_id)

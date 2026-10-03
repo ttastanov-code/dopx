@@ -12,3 +12,8 @@
 /* Явные @source — сканирование не зависит от места запуска сборки. */
 @source "../templates/**/*.html";
 @source "../static/js/**/*.js";
+/* Классы, которые склеиваются в шаблонах из переменной. */
+@source inline("alert-{info,success,warning,error,debug}");
+@source inline("loading-{xs,sm,md,lg,xl}");
+/* Классы, которые собирает Python (templatetags, вьюхи, сервисы карточек). */
+@source "../{core,users,engagement,matches,teams,players,coaches,referees,dashboard,adminbot,fanbot,predictions,evaluations,notifications,partners,round_squad,season_squad,aggregates,events,leagues,seasons}/**/*.py";

@@ -473,17 +473,26 @@ class MatchDetailView(DetailView):
         context['schema_json'] = json.dumps(schema, ensure_ascii=False).replace('</', '<\\/')
         return context
 
+EVENTS_CACHE_SECONDS = 5
+
+
 @require_http_methods(["GET"])
 def match_events_partial(request, match_id):
-    """HTMX-партиал событий матча."""
-    match = get_object_or_404(Match, id=match_id)
-    events = match.events.select_related(
-        'player', 'assist_player', 'player_out'
-    ).order_by('minute', 'added_time', 'id')
-    return render(request, 'matches/_match_events.html', {
-        'match': match,
-        'events': events,
-    })
+    """HTMX-партиал событий матча. Личного в нём нет — в live все зрители получают один HTML из кэша на 5 с."""
+    from django.core.cache import cache
+    from django.http import HttpResponse
+    from django.template.loader import render_to_string
+
+    key = f'match:events:{match_id}'
+    html = cache.get(key)
+    if html is None:
+        match = get_object_or_404(Match, id=match_id)
+        events = match.events.select_related(
+            'player', 'assist_player', 'player_out', 'match__home_team', 'match__away_team'
+        ).order_by('minute', 'added_time', 'id')
+        html = render_to_string('matches/_match_events.html', {'match': match, 'events': events}, request)
+        cache.set(key, html, EVENTS_CACHE_SECONDS)
+    return HttpResponse(html)
 
 
 def match_action_context(request, match):

@@ -37,10 +37,27 @@
         }).catch(() => {});
     }
 
+    // Сторис: только картинка, без текста — так Instagram сразу открывает её как историю.
+    async function shareStory(btn) {
+        const url = btn.dataset.story;
+        const touch = window.matchMedia('(pointer: coarse)').matches;
+        if (touch && navigator.share && navigator.canShare) {
+            try {
+                const blob = await (await fetch(url, { credentials: 'same-origin' })).blob();
+                const file = new File([blob], 'dopx-story.png', { type: blob.type || 'image/png' });
+                if (navigator.canShare({ files: [file] })) { await navigator.share({ files: [file] }); return; }
+            } catch (e) { if (e.name === 'AbortError') return; }
+        }
+        window.open(url, '_blank', 'noopener');
+    }
+
     document.addEventListener('click', async (event) => {
         if (event.target.closest('.dx-share')) reportShare();
         const copyBtn = event.target.closest('[data-copy]');
         if (copyBtn) { event.preventDefault(); copy(copyBtn.dataset.copy, copyBtn); return; }
+
+        const storyBtn = event.target.closest('[data-story]');
+        if (storyBtn) { event.preventDefault(); shareStory(storyBtn); return; }
 
         const btn = event.target.closest('[data-share]');
         if (!btn) return;

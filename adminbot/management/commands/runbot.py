@@ -16,6 +16,7 @@ from django.core.management.base import BaseCommand
 
 from adminbot import alerts, debug, handlers, incidents, relay, router
 from adminbot import telegram as tg
+from core import heartbeat
 
 logger = logging.getLogger("adminbot")
 RECHECK = 60
@@ -41,8 +42,9 @@ class Command(BaseCommand):
     def run(self, role: str):
         if not tg.enabled():
             self.stdout.write("Бот выключен: нет ADMIN_BOT_TOKEN или ADMIN_BOT_ENABLED=False. Жду.")
-            while True:   # не выходим, чтобы Docker не перезапускал контейнер по кругу
-                time.sleep(3600)
+            while True:   # не выходим и отмечаемся — иначе Docker решит, что контейнер завис
+                heartbeat.ALIVE_FILE.touch()
+                time.sleep(60)
         self.fixed = role != "auto"
         self.role = role if self.fixed else self.decide()
         self.stdout.write(f"Бот запущен: {handlers.ENV_LABEL[handlers.ENV]}, роль — {self.role}.")
@@ -70,8 +72,12 @@ class Command(BaseCommand):
                 time.sleep(3)
             try:
                 debug.beat(self.role, [p.get("title") for p in alerts.active()])
+                heartbeat.beat("admin_bot", role=self.role, updates=debug.STATS["updates"], errors=debug.STATS["errors"])
             except Exception:
                 pass
+            if heartbeat.restart_requested("admin_bot"):
+                self.stdout.write("Перезапуск по кнопке из дашборда.")
+                return
             try:
                 handlers.check_runs()
             except Exception:

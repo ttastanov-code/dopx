@@ -1,0 +1,26 @@
+{# Привязка Telegram в карточке профиля: плашка аккаунта, действия — в меню «⋯». #}
+{% if telegram_enabled %}
+<div class="dx-linked{% if user.telegram %} is-on{% endif %}">
+    <span class="dx-linked__icon"><i class="ti ti-brand-telegram"></i></span>
+    <span class="dx-linked__text">
+        {% if user.telegram %}
+        <b>{% if user.telegram.username %}@{{ user.telegram.username }}{% else %}{{ user.telegram.first_name|default:"Telegram" }}{% endif %}</b>
+        <small>{% if user.telegram.can_message %}<i class="ti ti-circle-check-filled"></i> Telegram привязан{% else %}<a href="https://t.me/{{ telegram_bot }}" target="_blank" rel="noopener">Нажмите «Запустить» в боте</a>{% endif %}</small>
+        {% else %}
+        <b>Telegram</b>
+        <small>Вход в один тап и уведомления</small>
+        {% endif %}
+    </span>
+    {% if user.telegram %}
+    <details class="dx-linked__menu">
+        <summary aria-label="Действия с Telegram"><i class="ti ti-dots"></i></summary>
+        <div class="dx-linked__dropdown">
+            <form method="post" action="{% url 'fanbot:link' %}">{% csrf_token %}<button><i class="ti ti-refresh"></i> Перепривязать</button></form>
+            <form method="post" action="{% url 'fanbot:unlink' %}" onsubmit="return confirm('Отвязать Telegram? Уведомления туда перестанут приходить.')">{% csrf_token %}<input type="hidden" name="next" value="{{ request.path }}"><button class="is-danger"><i class="ti ti-unlink"></i> Отвязать</button></form>
+        </div>
+    </details>
+    {% else %}
+    <form method="post" action="{% url 'fanbot:link' %}">{% csrf_token %}<button class="dx-linked__cta">Привязать</button></form>
+    {% endif %}
+</div>
+{% endif %}

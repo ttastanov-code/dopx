@@ -121,8 +121,11 @@ class UserRegistrationForm(UserCreationForm):
 
     def clean_email(self):
         # Один ящик — один аккаунт: регистр, «+метки» и точки Gmail не делают адрес новым.
+        from users.emails import email_taken
+
         email = (self.cleaned_data.get("email") or "").strip()
-        if User.objects.filter(Q(email__iexact=email) | Q(email_canonical=canonical_email(email))).exists():
+        # Занят сейчас или был подтверждён другим аккаунтом раньше (сменил почту — старую не переиспользовать).
+        if email_taken(email):
             raise forms.ValidationError("Этот email уже зарегистрирован")
         return email
 
@@ -219,13 +222,24 @@ class UserProfileForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         if not self.instance.avatar:
             self.fields["delete_avatar"].widget = forms.HiddenInput()
+        if self.instance.pk and self.instance.pending_email:
+            self.fields["email"].help_text = (f"Ждёт подтверждения: {self.instance.pending_email}. "
+                                              "Почта сменится, когда вы перейдёте по ссылке из письма.")
+        else:
+            self.fields["email"].help_text = "Новая почта начнёт действовать после подтверждения по ссылке из письма."
+        # Аккаунт из Telegram: заглушку не показываем, почту можно добавить, а можно оставить пустой.
+        if self.instance.pk and not self.instance.has_real_email:
+            self.initial["email"] = ""
+            self.fields["email"].required = False
+            self.fields["email"].help_text = "Необязательно: для писем и восстановления пароля."
 
     def clean_email(self):
         email = (self.cleaned_data.get("email") or "").strip()
-        taken = User.objects.filter(
-            Q(email__iexact=email) | Q(email_canonical=canonical_email(email))
-        ).exclude(pk=self.instance.pk)
-        if taken.exists():
+        from users.emails import email_taken
+
+        if not email and self.instance.pk and not self.instance.has_real_email:
+            return self.instance.email
+        if email_taken(email, exclude_user=self.instance):
             raise forms.ValidationError("Этот email уже используется другим аккаунтом")
         return email
 

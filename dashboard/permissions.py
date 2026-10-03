@@ -35,6 +35,8 @@ VIEW_PERMS: dict[str, dict[str, tuple[str, ...]]] = {
     "antifraud_export_csv": _p("users.view_suspiciousactivityflag"),
     "antifraud_flag_action": _p("users.change_suspiciousactivityflag"),
     "announcements": _p(post="notifications.add_notification"),
+    "reports": _p("users.view_userreport"),
+    "report_action": _p("users.change_userreport"),
     # Оценки
     "evaluation_sessions_list": _p("evaluations.view_evaluationsession"),
     "evaluation_session_detail": _p("evaluations.view_evaluationsession"),
@@ -87,14 +89,14 @@ VIEW_PERMS: dict[str, dict[str, tuple[str, ...]]] = {
 # Страницы без своей модели (отчёты, задачи, 2FA): достаточно раздела.
 # Роли доступа — только суперпользователь, проверка во вьюхах.
 SECTION_ONLY = {
-    "overview", "traffic", "matches_list", "system_status", "social_content",
+    "overview", "traffic", "retention", "matches_list", "system_status", "social_content",
     "data_health", "data_health_partial", "data_trust", "ads", "ads_stats_partial", "audit_log",
     "parser_tools", "parser_tasks_partial", "parser_trigger_task", "parser_sportmonks_health_check",
     "parser_revoke_task", "scripts", "scripts_runs_partial", "scripts_trigger", "scripts_revoke_run",
     "access_roles_list", "access_roles_detail", "access_revoke_staff",
     "access_grant_staff", "admin_groups_list", "admin_group_detail",
     "two_factor_setup", "two_factor_backup_codes", "two_factor_challenge",
-    "admin_bot", "admin_bot_unlink",
+    "admin_bot", "admin_bot_unlink", "service_restart", "system_status_services",
 }
 
 

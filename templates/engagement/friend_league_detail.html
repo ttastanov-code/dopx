@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% load ui_extras engagement_extras %}
+{% load ui_extras engagement_extras report_tags %}
 
 {% block content %}
 <div class="max-w-3xl mx-auto px-2 sm:px-0 space-y-5">
@@ -40,6 +40,7 @@
             </li>
             {% endfor %}
         </ol>
+        {% if league.owner != user %}{% report_button 'league' league.invite_code %}{% endif %}
         {% if is_member and league.owner != user %}
         <form method="post" action="{% url 'engagement:friend_league_leave' league.invite_code %}" class="mt-4 text-right" onsubmit="return confirm('Выйти из лиги?')">{% csrf_token %}
             <button type="submit" class="text-xs opacity-50 hover:opacity-100">Выйти из лиги</button>

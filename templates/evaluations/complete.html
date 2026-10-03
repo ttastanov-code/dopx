@@ -86,6 +86,12 @@
         </div>
         {% endif %}
 
+        {% if story_url %}
+        <div class="mb-3">
+            {% include 'components/_share_sheet.html' with url=story_share_url text="Мой герой матча на DOPX. А ты кого бы выбрал?" story=story_url label="Поделиться оценкой" %}
+        </div>
+        {% endif %}
+
         <!-- Action Buttons -->
         <div class="space-y-2">
             <a href="{% url 'matches:list' %}?status=votable" class="btn btn-primary btn-sm w-full">

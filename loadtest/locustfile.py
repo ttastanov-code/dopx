@@ -106,6 +106,24 @@ class DopxUser(HttpUser):
         )
 
 
+class GuestUser(HttpUser):
+    """Гость по ссылке из канала, без входа: страницы отдаются из кэша (GUEST_PAGE_CACHE_SECONDS)."""
+    weight = 6
+    wait_time = between(2, 6)
+
+    @task(5)
+    def match_page(self):
+        self.client.get(f"/matches/{LOAD_TEST_MATCH_ID}/", name="/matches/<id>/ [guest]")
+
+    @task(3)
+    def home(self):
+        self.client.get("/", name="/ (home) [guest]")
+
+    @task(2)
+    def matches_list(self):
+        self.client.get("/matches/", name="/matches/ [guest]")
+
+
 class HumanWizardUser(DopxUser):
     """Проходит вайзард с человеческими паузами."""
     weight = 5

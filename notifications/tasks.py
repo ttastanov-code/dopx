@@ -78,22 +78,30 @@ def _send_email_to_user(
     notification_type: str | None = None,
     force: bool = False,
     raise_on_transient: bool = False,
+    to_email: str | None = None,
 ) -> bool:
     """Отправка письма пользователю.
 
     :param notification_type: тип для проверки настроек (NOTIFICATION_TYPE_TO_SETTINGS_KEY).
     :param force: игнорировать настройки (верификация, сброс пароля).
     :param raise_on_transient: при сетевом сбое поднять TransientEmailError вместо False.
+    :param to_email: другой адрес (подтверждение новой почты), иначе user.email.
     """
-    if not user or not user.email:
+    recipient = to_email or (user.email if user else "")
+    if not user or not recipient:
         logger.warning("⚠️ Cannot send email: user or email is missing")
         return False
 
     # Тестовым ботам не отправляем.
     from core.utils import is_synthetic_test_email
 
-    if is_synthetic_test_email(user.email):
-        logger.debug(f"_send_email_to_user: пропуск синтетического тестового аккаунта {user.email}")
+    if is_synthetic_test_email(recipient):
+        logger.debug(f"_send_email_to_user: пропуск синтетического тестового аккаунта {recipient}")
+        return False
+
+    from core.utils import is_placeholder_email
+
+    if is_placeholder_email(recipient):
         return False
 
     if not force:
@@ -109,7 +117,7 @@ def _send_email_to_user(
     host_user = getattr(settings, 'EMAIL_HOST_USER', None)
 
     if backend.endswith('console.EmailBackend') or not host_user:
-        logger.info(f"[EMAIL CONSOLE] To: {user.email} | Subject: {subject}")
+        logger.info(f"[EMAIL CONSOLE] To: {recipient} | Subject: {subject}")
         return True
 
     try:
@@ -125,24 +133,24 @@ def _send_email_to_user(
             subject=subject,
             body=strip_tags(html_message),
             from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@dopx.kz'),
-            to=[user.email],
+            to=[recipient],
         )
         email.attach_alternative(html_message, "text/html")
         email.send(fail_silently=False)
 
-        logger.info(f"✅ Email sent successfully to {user.email}: {subject}")
+        logger.info(f"✅ Email sent successfully to {recipient}: {subject}")
         return True
     except TRANSIENT_EMAIL_ERRORS as e:
         # warning, а не error — сбой временный.
         logger.warning(
-            f"⚠️ Временный сбой при отправке письма {user.email} (сеть/SMTP, "
+            f"⚠️ Временный сбой при отправке письма {recipient} (сеть/SMTP, "
             f"похоже на обрыв соединения, а не ошибку в коде): {type(e).__name__}: {e}"
         )
         if raise_on_transient:
             raise TransientEmailError(str(e)) from e
         return False
     except Exception as e:
-        logger.error(f"❌ Failed to send email to {user.email}: {type(e).__name__}: {e}")
+        logger.error(f"❌ Failed to send email to {recipient}: {type(e).__name__}: {e}")
         return False
 
 
@@ -202,6 +210,26 @@ def send_email_verification(self, user_id: str, token: str):
         return True
     except Exception as e:
         logger.error(f"❌ Error in send_email_verification: {e}", exc_info=True)
+        raise self.retry(exc=e, countdown=60 * (2 ** self.request.retries))
+
+
+@shared_task(bind=True, max_retries=3)
+def send_email_change_confirmation(self, user_id: str, token: str):
+    """Ссылка подтверждения на новый адрес (pending_email); почта сменится только после перехода."""
+    try:
+        from users.models import User
+        user = User.objects.get(id=user_id)
+        if not user.pending_email:
+            return False
+        site_url = getattr(settings, 'SITE_URL', 'https://dopx.kz')
+        _send_email_to_user(
+            user, 'Подтвердите почту на DOPX', 'emails/verify_email.html',
+            {'verify_url': f"{site_url}/users/confirm-email/{token}/"},
+            force=True, raise_on_transient=True, to_email=user.pending_email,
+        )
+        return True
+    except Exception as e:
+        logger.error(f"❌ Error in send_email_change_confirmation: {e}", exc_info=True)
         raise self.retry(exc=e, countdown=60 * (2 ** self.request.retries))
 
 

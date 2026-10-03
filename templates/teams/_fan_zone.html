@@ -52,7 +52,7 @@
             {% endif %}
         </div>
         {% if fan_brag_image %}
-        {% include 'components/_share_sheet.html' with url=fan_brag_url text=fan_brag_text image=fan_brag_image label="Похвастаться" %}
+        {% include 'components/_share_sheet.html' with url=fan_brag_url text=fan_brag_text image=fan_brag_image story=fan_brag_story label="Похвастаться" %}
         {% endif %}
     </div>
     {% elif not user.is_authenticated %}

@@ -71,3 +71,22 @@ class AnalyticsEvent(models.Model):
 
     def __str__(self) -> str:
         return f"{self.event_name} @ {self.created_at:%Y-%m-%d %H:%M}"
+
+
+class AnalyticsDailyStat(models.Model):
+    """Итоги дня по событию. Остаются после удаления сырых событий (analytics.tasks.analytics_maintenance)."""
+
+    date = models.DateField(_("День"))
+    event_name = models.CharField(_("Событие"), max_length=50, choices=EventName.choices)
+    events = models.PositiveIntegerField(_("Событий"), default=0)
+    visitors = models.PositiveIntegerField(_("Уникальных визитов"), default=0)
+    users = models.PositiveIntegerField(_("Пользователей"), default=0)
+
+    class Meta:
+        verbose_name = _("Итоги дня (аналитика)")
+        verbose_name_plural = _("Итоги дней (аналитика)")
+        constraints = [models.UniqueConstraint(fields=["date", "event_name"], name="analytics_daily_unique")]
+        ordering = ["-date", "event_name"]
+
+    def __str__(self) -> str:
+        return f"{self.date} {self.event_name}: {self.events}"

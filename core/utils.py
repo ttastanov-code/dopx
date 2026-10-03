@@ -56,6 +56,11 @@ def get_client_ip(request: HttpRequest) -> str | None:
 TEST_EMAIL_DOMAIN_SUFFIX = ".dopx.local"
 
 
+def is_placeholder_email(email: str | None) -> bool:
+    """Адрес-заглушка аккаунта, созданного через Telegram: писем на него не шлём."""
+    return (email or "").strip().lower().endswith("@telegram.invalid")
+
+
 def is_synthetic_test_email(email: str | None) -> bool:
     """True для email тестовых/сид-аккаунтов."""
     email = (email or "").strip().lower()

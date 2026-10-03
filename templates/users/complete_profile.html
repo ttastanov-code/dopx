@@ -1,0 +1,71 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{# Город и подтверждённая почта; для пустого аккаунта из Telegram — объединение с существующим аккаунтом. #}
+<div class="max-w-lg mx-auto space-y-4">
+    <div class="text-center">
+        <h1 class="text-2xl font-extrabold">{% if can_merge %}Добро пожаловать, {{ user.first_name|default:user.username }}!{% else %}Заполните профиль{% endif %}</h1>
+        <p class="text-sm opacity-70 mt-1">Город и подтверждённая почта нужны, чтобы оценивать матчи и делать прогнозы. Так голоса остаются честными.</p>
+    </div>
+
+    {% if user.pending_email %}
+    <div class="rounded-2xl border border-info/40 bg-info/10 p-4 text-sm space-y-2">
+        <div><i class="ti ti-mail-check text-info"></i> Письмо со ссылкой отправлено на <b class="break-all">{{ user.pending_email }}</b>. Перейдите по ней, и почта подтвердится.</div>
+        <form method="post" class="flex flex-wrap gap-2">{% csrf_token %}
+            <input type="hidden" name="action" value="resend"><input type="hidden" name="next" value="{{ next }}">
+            <button class="btn btn-xs btn-outline">Отправить ещё раз</button>
+            <span class="text-xs opacity-60 self-center">Если письма нет, проверьте папку «Спам» или укажите другую почту ниже.</span>
+        </form>
+    </div>
+    {% elif complete %}
+    <div class="rounded-2xl border border-success/40 bg-success/10 p-4 text-sm"><i class="ti ti-circle-check text-success"></i> Профиль заполнен, почта подтверждена.</div>
+    {% endif %}
+
+    <section class="card bg-base-100 border border-base-300"><div class="card-body p-4 sm:p-5 gap-3">
+        <h2 class="font-bold flex items-center gap-2"><i class="ti ti-user-check text-primary"></i> Город и почта</h2>
+        <form method="post" class="space-y-3">{% csrf_token %}
+            <input type="hidden" name="action" value="profile">
+            <input type="hidden" name="next" value="{{ next }}">
+            {% for field in form %}
+            <label class="flex flex-col gap-1">
+                <span class="text-sm font-medium">{{ field.label }}</span>
+                {{ field }}
+                {% for e in field.errors %}<span class="text-xs text-error">{{ e }}</span>{% endfor %}
+            </label>
+            {% endfor %}
+            <button class="btn btn-primary w-full">Сохранить</button>
+        </form>
+        {% if not complete %}
+        <form method="post" class="text-center">{% csrf_token %}
+            <input type="hidden" name="action" value="skip">
+            <input type="hidden" name="next" value="{{ next }}">
+            <button class="text-xs opacity-60 hover:opacity-100 underline">Заполню позже</button>
+        </form>
+        {% endif %}
+    </div></section>
+
+    {% if can_merge %}
+    <details class="card bg-base-100 border border-base-300"{% if show_merge %} open{% endif %}>
+        <summary class="card-body p-4 sm:p-5 cursor-pointer list-none flex-row items-center gap-2">
+            <i class="ti ti-arrows-join text-secondary"></i>
+            <span class="font-bold flex-1">Уже есть аккаунт DOPX?</span>
+            <i class="ti ti-chevron-down opacity-50"></i>
+        </summary>
+        <div class="px-4 sm:px-5 pb-5 space-y-3">
+            <p class="text-sm opacity-70">Войдите в него, и мы объединим аккаунты. После этого «Войти через Telegram» будет открывать его со всеми оценками и прогнозами.</p>
+            <form method="post" class="space-y-3">{% csrf_token %}
+                <input type="hidden" name="action" value="merge">
+                <input type="hidden" name="next" value="{{ next }}">
+                {% for e in merge_form.non_field_errors %}<div class="text-sm text-error">{{ e }}</div>{% endfor %}
+                <label class="flex flex-col gap-1"><span class="text-sm font-medium">Логин или почта</span>
+                    <input name="username" class="input input-bordered w-full" autocomplete="username" value="{{ merge_form.username.value|default:'' }}" required></label>
+                <label class="flex flex-col gap-1"><span class="text-sm font-medium">Пароль</span>
+                    <input name="password" type="password" class="input input-bordered w-full" autocomplete="current-password" required></label>
+                <button class="btn btn-outline w-full"><i class="ti ti-arrows-join"></i> Объединить аккаунты</button>
+                <p class="text-xs opacity-60 text-center"><a href="{% url 'users:password_reset' %}" class="link">Забыли пароль?</a></p>
+            </form>
+        </div>
+    </details>
+    {% endif %}
+</div>
+{% endblock %}

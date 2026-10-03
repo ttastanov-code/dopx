@@ -117,6 +117,7 @@ INSTALLED_APPS = [
     'round_squad',
     'engagement',
     'adminbot',
+    'fanbot',
     # Партнёры и баннеры.
     'partners',
     # axes — защита от перебора паролей, django_otp — 2FA.
@@ -224,6 +225,12 @@ UNFOLD = {
                         "permission": dashboard_perm("antifraud"),
                     },
                     {
+                        "title": _("Жалобы"),
+                        "icon": "flag",
+                        "link": reverse_lazy("dashboard:reports"),
+                        "permission": dashboard_perm("reports"),
+                    },
+                    {
                         "title": _("Парсер KFF"),
                         "icon": "cable",
                         "link": reverse_lazy("dashboard:parser_tools"),
@@ -277,6 +284,12 @@ UNFOLD = {
                         "icon": "smart_toy",
                         "link": reverse_lazy("admin:adminbot_botlink_changelist"),
                         "permission": admin_perm("adminbot_botlink"),
+                    },
+                    {
+                        "title": _("Telegram болельщиков"),
+                        "icon": "send",
+                        "link": reverse_lazy("admin:fanbot_telegramaccount_changelist"),
+                        "permission": admin_perm("fanbot_telegramaccount"),
                     },
                     {
                         "title": _("Посты в Telegram-канал"),
@@ -380,6 +393,7 @@ UNFOLD = {
                 "items": [
                     {"title": _("Подозрительная активность"), "icon": "warning", "link": reverse_lazy("admin:users_suspiciousactivityflag_changelist"), "permission": admin_perm("users_suspiciousactivityflag")},
                     {"title": _("Пороги антифрода"), "icon": "rule", "link": reverse_lazy("admin:users_antifraudthreshold_changelist"), "permission": admin_perm("users_antifraudthreshold")},
+                    {"title": _("Жалобы пользователей"), "icon": "flag", "link": reverse_lazy("admin:users_userreport_changelist"), "permission": admin_perm("users_userreport")},
                     {"title": _("Обращения"), "icon": "mail", "link": reverse_lazy("admin:notifications_contactsubmission_changelist"), "permission": admin_perm("notifications_contactsubmission")},
                     {"title": _("Уведомления"), "icon": "notifications", "link": reverse_lazy("admin:notifications_notification_changelist"), "permission": admin_perm("notifications_notification")},
                 ],
@@ -438,6 +452,7 @@ UNFOLD = {
 MIDDLEWARE = [
     # Время ответа для алерта «сайт тормозит».
     'adminbot.latency.LatencyMiddleware',
+    'dopx.middleware.HeartbeatMiddleware',
     'django.middleware.security.SecurityMiddleware',
     # CSP-заголовок.
     'dopx.middleware.ContentSecurityPolicyMiddleware',
@@ -445,6 +460,8 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    # Скользящий срок сессии без записи на каждый запрос.
+    'dopx.middleware.SessionRefreshMiddleware',
     # axes — после AuthenticationMiddleware.
     'axes.middleware.AxesMiddleware',
     # django-otp — после AuthenticationMiddleware.
@@ -458,7 +475,18 @@ MIDDLEWARE = [
     # После messages: тост о серии дней.
     'engagement.middleware.DailyStreakMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    # Последним: на попадании в кэш внешние middleware (заголовки, CSP) всё равно отрабатывают.
+    'dopx.middleware.GuestPageCacheMiddleware',
 ]
+
+# Оценки и прогнозы — только с городом и подтверждённой почтой (users/emails.py). False — открыто всем вошедшим.
+PROFILE_REQUIRED = os.getenv('PROFILE_REQUIRED', 'True') == 'True'
+
+# Стили: на проде готовый static/css/app.css (собирается в Docker из шаблонов), на ноутбуке — Tailwind в браузере.
+TAILWIND_CDN = os.getenv('TAILWIND_CDN', str(DEBUG)) == 'True'
+
+# Сколько секунд гости видят страницу из кэша (главная, матчи, клубы, игроки). 0 — выключено; на ноутбуке по умолчанию выключено.
+GUEST_PAGE_CACHE_SECONDS = int(os.getenv('GUEST_PAGE_CACHE_SECONDS', 0 if DEBUG else 45))
 
 if DEBUG:
     MIDDLEWARE += [
@@ -501,6 +529,8 @@ DATABASES = {
         "PORT": os.getenv("DB_PORT", "5432"),
         "CONN_MAX_AGE": 600,
         "CONN_HEALTH_CHECKS": True,
+        # Через pgbouncer (transaction pooling) серверные курсоры не работают.
+        "DISABLE_SERVER_SIDE_CURSORS": os.getenv("DB_HOST", "") == "pgbouncer",
         "OPTIONS": {
             "connect_timeout": 10,
             "options": "-c statement_timeout=30000"
@@ -600,9 +630,16 @@ SESSION_COOKIE_SAMESITE = 'Lax'
 CSRF_COOKIE_SAMESITE = 'Lax'
 # Обычная сессия — 2 недели. Для staff отдельный idle-таймаут (dopx/middleware.py).
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 14
-SESSION_SAVE_EVERY_REQUEST = True
+# Сессии читаются из Redis, база — запасная копия. Срок продлевает SessionRefreshMiddleware раз в час,
+# а не каждый запрос: live-опрос страницы матча больше не пишет в базу.
+SESSION_ENGINE = 'django.contrib.sessions.backends.cached_db'
+SESSION_SAVE_EVERY_REQUEST = False
+SESSION_REFRESH_SECONDS = 3600
 
 X_FRAME_OPTIONS = 'DENY'
+# allow-popups: окно входа Telegram (oauth.telegram.org) должно вернуть данные открывшей его странице.
+# С 'same-origin' связь рвётся, и вход через Telegram молча не завершается.
+SECURE_CROSS_ORIGIN_OPENER_POLICY = 'same-origin-allow-popups'
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = 'same-origin'
 
@@ -621,7 +658,9 @@ if not DEBUG:
     SECURE_HSTS_SECONDS = 31536000
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
-    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+# https за прокси (nginx на проде, ngrok на ноутбуке) — иначе ссылки строятся как http://.
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 # IP клиента берётся с конца X-Forwarded-For. См. docs/adr/0018-trusted-proxy-xff-parsing.md.
 # За aaPanel -> nginx прокси два (docker-compose.yml задаёт 2).
@@ -666,6 +705,8 @@ CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 # чтобы долгие пересчёты не задерживали уведомления.
 CELERY_TASK_ROUTES = {
     'parsers.sportmonks.tasks.sportmonks_update_live': {'queue': 'realtime'},
+    # Своя очередь: realtime слушает и основной воркер, а пульс должен отбивать именно воркер realtime.
+    'core.tasks.realtime_heartbeat': {'queue': 'realtime_hb'},
     'notifications.tasks.notify_followers_match_event': {'queue': 'realtime'},
     'notifications.tasks.notify_followers_match_started': {'queue': 'realtime'},
     'notifications.tasks.notify_followers_lineups_available': {'queue': 'realtime'},
@@ -706,6 +747,14 @@ CELERY_BEAT_SCHEDULE = {
     'celery-heartbeat': {
         'task': 'core.tasks.celery_heartbeat',
         'schedule': 60.0,
+    },
+    'celery-realtime-heartbeat': {
+        'task': 'core.tasks.realtime_heartbeat',
+        'schedule': 60.0,
+    },
+    'watch-admin-bot': {
+        'task': 'adminbot.tasks.watch_admin_bot',
+        'schedule': 120.0,
     },
     # Утренняя сводка в Telegram-бот.
     'adminbot-daily-digest': {
@@ -778,6 +827,10 @@ CELERY_BEAT_SCHEDULE = {
         'schedule': crontab(minute='*/15'),
     },
     # === Очистка старых данных (каждый день в 03:00) ===
+    'analytics-maintenance-daily': {
+        'task': 'analytics.tasks.analytics_maintenance',
+        'schedule': crontab(hour=3, minute=30),
+    },
     'cleanup-old-notifications-daily': {
         'task': 'notifications.tasks.cleanup_old_notifications',
         'schedule': crontab(hour=4, minute=0),
@@ -976,6 +1029,10 @@ CACHES = {
 
 # Тесты — свой кэш в памяти: не чистят и не засоряют Redis dev-сервера.
 if 'test' in sys.argv or 'pytest' in sys.modules:
+    # Кэш гостевых страниц мешал бы тестам видеть свежие данные; его проверяет свой тест.
+    GUEST_PAGE_CACHE_SECONDS = 0
+    # Тестовые пользователи без города и почты; ограничение проверяет users/tests_email_flow.py.
+    PROFILE_REQUIRED = False
     CACHES = {
         'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache', 'LOCATION': 'tests-default'},
         'aggregates': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache', 'LOCATION': 'tests-aggregates'},
@@ -1107,6 +1164,16 @@ ADMIN_BOT_CHANNEL_ID = os.getenv('ADMIN_BOT_CHANNEL_ID', '')
 ADMIN_BOT_ALLOWED_CHATS = os.getenv('ADMIN_BOT_ALLOWED_CHATS', '')
 # Адрес сайта в постах канала: канал публичный, ссылки всегда на боевой домен (с ноутбука тоже).
 ADMIN_BOT_PUBLIC_URL = os.getenv('ADMIN_BOT_PUBLIC_URL', 'https://dopx.kz')
+# Публичный бот для болельщиков (отдельный от служебного): вход через Telegram, уведомления, Mini App.
+# Сырые массовые события аналитики (просмотры, показы) храним ANALYTICS_RAW_DAYS, итоги дня — навсегда.
+# Остальные события — ANALYTICS_KEEP_DAYS; 0 — не удалять никогда.
+ANALYTICS_RAW_DAYS = int(os.getenv('ANALYTICS_RAW_DAYS', 120))
+ANALYTICS_KEEP_DAYS = int(os.getenv('ANALYTICS_KEEP_DAYS', 0))
+
+FAN_BOT_TOKEN = os.getenv('FAN_BOT_TOKEN', '')
+FAN_BOT_USERNAME = os.getenv('FAN_BOT_USERNAME') or 'dopx_kz_bot'
+# Короткое имя Mini App из @BotFather (/newapp): ссылки вида t.me/<бот>/<имя>.
+FAN_BOT_APP_NAME = os.getenv('FAN_BOT_APP_NAME', '')
 # Claude API: тексты постов канала (без ключа или при ошибке — шаблоны) и, по желанию, вопросы боту.
 ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
 ADMIN_BOT_AI_MODEL = os.getenv('ADMIN_BOT_AI_MODEL', 'claude-opus-5-5')
@@ -1118,6 +1185,7 @@ POSTS_AI_PROVIDER = os.getenv('POSTS_AI_PROVIDER', 'claude')
 NAMES_AI_PROVIDER = os.getenv('NAMES_AI_PROVIDER', 'gemini')
 if 'test' in sys.argv or 'pytest' in sys.modules:
     ANTHROPIC_API_KEY = ''  # тесты не тратят баланс API
+    FAN_BOT_TOKEN = ''
     GEMINI_API_KEY = ''
 
 # Прод не стартует с настройками разработки: ошибка сразу при запуске, а не у пользователей.

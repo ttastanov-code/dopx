@@ -1,0 +1,9 @@
+{# Вместо виджета прогноза, пока профиль не заполнен (город, подтверждённая почта). #}
+<div id="prediction-widget-{{ match.id }}" class="{% if compact %}py-2 text-center{% else %}card bg-base-100 border border-base-300 mt-3 sm:mt-6{% endif %}">
+    <div class="{% if not compact %}card-body p-3 sm:p-4 {% endif %}flex flex-col items-center text-center gap-2">
+        <p class="text-xs sm:text-sm opacity-80">Чтобы прогнозировать, укажите город и подтвердите почту</p>
+        <a href="{% url 'users:complete_profile' %}?next={% url 'matches:detail' match.id %}" class="btn btn-primary btn-xs sm:btn-sm">
+            <i class="ti ti-user-check"></i> Заполнить профиль
+        </a>
+    </div>
+</div>

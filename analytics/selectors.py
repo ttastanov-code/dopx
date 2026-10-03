@@ -2,7 +2,7 @@
 """Селекторы для аналитики дашборда. Кэш — на стороне вьюхи."""
 from __future__ import annotations
 
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import timedelta
 from typing import TypedDict
 
@@ -171,3 +171,80 @@ def traffic_overview(days: int = 14) -> dict:
         "devices": device_stats["devices"],
         "top_browsers": device_stats["top_browsers"],
     }
+
+
+def funnel_overview(days: int = 30) -> dict:
+    """Воронка за период: визиты → регистрации → первая оценка/прогноз → вернулись через 7+ дней.
+    Шаги после регистрации считаем по тем, кто зарегистрировался в периоде (staff не в счёт)."""
+    from django.contrib.auth import get_user_model
+
+    from evaluations.models import EvaluationSession
+    from predictions.models import MatchPrediction
+
+    now = timezone.now()
+    since = now - timedelta(days=days)
+    visitors = (AnalyticsEvent.objects.filter(event_name=EventName.PAGE_VIEW, created_at__gte=since, anonymous_id__isnull=False)
+                .exclude(Q(url_path__startswith="/staff/") | Q(url_path__startswith="/admin/"))
+                .values("anonymous_id").distinct().count())
+    users = get_user_model().objects.filter(date_joined__gte=since, is_staff=False)
+    joined = dict(users.values_list("id", "date_joined"))
+    evaluated = set(EvaluationSession.objects.filter(user_id__in=joined, status="completed").values_list("user_id", flat=True))
+    predicted = set(MatchPrediction.objects.filter(user_id__in=joined).values_list("user_id", flat=True))
+    # «Вернулся» — активность через 7+ дней после регистрации; моложе 7 дней в знаменатель не берём.
+    mature = {uid for uid, at in joined.items() if at <= now - timedelta(days=7)}
+    returned = {uid for uid, at in _activity(mature) if at - joined[uid] >= timedelta(days=7)}
+
+    def step(label, value, base):
+        return {"label": label, "value": value, "percent": round(100 * value / base) if base else 0}
+
+    regs = len(joined)
+    return {
+        "steps": [
+            step("Уникальные визиты", visitors, visitors),
+            step("Регистрации", regs, visitors),
+            step("Оценили матч", len(evaluated), regs),
+            step("Сделали прогноз", len(predicted), regs),
+            step("Активны в оценке или прогнозе", len(evaluated | predicted), regs),
+        ],
+        "returned": step("Вернулись через 7+ дней", len(returned), len(mature)),
+        "mature": len(mature),
+    }
+
+
+def _activity(user_ids) -> list[tuple]:
+    """(user_id, момент) — события аналитики, завершённые оценки и прогнозы."""
+    from evaluations.models import EvaluationSession
+    from predictions.models import MatchPrediction
+
+    if not user_ids:
+        return []
+    rows = list(AnalyticsEvent.objects.filter(user_id__in=user_ids).values_list("user_id", "created_at"))
+    rows += EvaluationSession.objects.filter(user_id__in=user_ids).values_list("user_id", "created_at")
+    rows += MatchPrediction.objects.filter(user_id__in=user_ids).values_list("user_id", "created_at")
+    return rows
+
+
+def retention_cohorts(weeks: int = 8) -> list[dict]:
+    """Недельные когорты по дате регистрации: доля активных на неделе 0..weeks-1 после регистрации."""
+    from django.contrib.auth import get_user_model
+
+    now = timezone.now()
+    this_monday = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    start = this_monday - timedelta(weeks=weeks - 1)
+    joined = dict(get_user_model().objects.filter(date_joined__gte=start, is_staff=False).values_list("id", "date_joined"))
+    active = defaultdict(set)  # (когорта, неделя) -> пользователи
+    for uid, at in _activity(set(joined)):
+        cohort = (joined[uid] - start).days // 7
+        week = (at - start).days // 7 - cohort
+        if week >= 0:
+            active[(cohort, week)].add(uid)
+    sizes = defaultdict(int)
+    for at in joined.values():
+        sizes[(at - start).days // 7] += 1
+    rows = []
+    for cohort in range(weeks):
+        size = sizes[cohort]
+        visible = weeks - cohort  # сколько недель когорта уже прожила
+        cells = [round(100 * len(active[(cohort, w)]) / size) if size else None for w in range(visible)]
+        rows.append({"start": start + timedelta(weeks=cohort), "size": size, "cells": cells + [""] * (weeks - visible)})
+    return rows

@@ -8,7 +8,7 @@ from .views import (
     PasswordResetViewCustom, PasswordResetDoneViewCustom,
     PasswordResetConfirmViewCustom, PasswordResetCompleteViewCustom,
     NotificationSettingsView, VerifyEmailView, VerifyEmailSentView, VerifyEmailInvalidView,
-    toggle_follow, push_subscribe, push_unsubscribe, push_revoke_device, push_devices_partial,
+    toggle_follow, report, complete_profile, confirm_email_change, push_subscribe, push_unsubscribe, push_revoke_device, push_devices_partial,
 )
 
 app_name = 'users'
@@ -26,6 +26,8 @@ urlpatterns = [
     path('verify-email-sent/', VerifyEmailSentView.as_view(), name='verify_email_sent'),
     path('verify-email/invalid/', VerifyEmailInvalidView.as_view(), name='verify_email_invalid'),
     path('verify-email/<uuid:token>/', VerifyEmailView.as_view(), name='verify_email'),
+    path('confirm-email/<uuid:token>/', confirm_email_change, name='confirm_email_change'),
+    path('profile/complete/', complete_profile, name='complete_profile'),
     
     # Сброс пароля
     path('password-reset/', PasswordResetViewCustom.as_view(), name='password_reset'),
@@ -48,6 +50,7 @@ urlpatterns = [
 
     # Публичный профиль: префикс u/, чтобы не пересекаться с profile/edit/ и т.п.
     path('u/<str:username>/', PublicProfileView.as_view(), name='public_profile'),
+    path('report/<str:kind>/<str:key>/', report, name='report'),
 
     # PNG-карточка достижения.
     path('u/<str:username>/badges/<str:code>/card.png', BadgeShareCardView.as_view(), name='badge_share_card'),

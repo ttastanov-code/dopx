@@ -37,7 +37,7 @@ services:
       context: .
       dockerfile: Dockerfile
     # Только live-опрос и пуши — не ждут за долгими задачами.
-    command: celery -A dopx worker -l info --concurrency=2 -Q realtime -n realtime@%h
+    command: celery -A dopx worker -l info --concurrency=2 -Q realtime,realtime_hb -n realtime@%h
     env_file:
       - .env
     environment:

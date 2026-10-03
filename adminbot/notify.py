@@ -54,6 +54,15 @@ def antifraud_flag(flag) -> None:
     push(text, rows, "antifraud", "users.view_suspiciousactivityflag", topic="queues")
 
 
+def user_report(report) -> None:
+    from .handlers import cb, esc, header
+
+    text = (header() + f"🚩 <b>Новая жалоба</b> · {esc(report.get_reason_display())}\n"
+            f"На: <b>{esc(report.target_label)}</b>" + (f"\n«{esc(report.comment)}»" if report.comment else ""))
+    rows = [[("Разобрать", cb("reports"))]]
+    push(text, rows, "reports", "users.view_userreport", topic="queues")
+
+
 def contact(sub) -> None:
     from .handlers import cb, esc, header
 

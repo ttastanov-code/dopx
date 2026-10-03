@@ -2,7 +2,7 @@
 {% load static %}
 {% load tooltip_tags %}
 {% load engagement_extras %}
-{% load ui_extras %}
+{% load ui_extras report_tags %}
 {% block content %}
 {# Публичный профиль (только чтение). Без email и ссылок на настройки; секретные бейджи отфильтрованы во вьюхе. #}
 <div class="mb-6">
@@ -41,6 +41,7 @@
                 {% if profile_user.bio %}
                 <p class="text-sm opacity-70 mt-3">{{ profile_user.bio }}</p>
                 {% endif %}
+                {% if not is_own_profile %}<div class="flex justify-center">{% report_button 'user' profile_user.username %}</div>{% endif %}
                 <div class="mt-4">
                     <div class="text-sm opacity-60 mb-1">Trust Score</div>
                     <div class="text-3xl font-bold {% if stats.trust_score >= 1.5 %}text-success{% elif stats.trust_score >= 1.2 %}text-warning{% else %}text-base-content{% endif %}">

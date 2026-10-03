@@ -8,7 +8,7 @@ from django.utils import timezone
 
 from core.admin_actions import export_as_csv
 
-from .models import AntiFraudThreshold, Follow, PushSubscription, SuspiciousActivityFlag, User, UserBadge, UserXP
+from .models import AntiFraudThreshold, Follow, PushSubscription, SuspiciousActivityFlag, User, UserBadge, UserReport, UserXP
 
 
 @admin.register(User)
@@ -177,3 +177,11 @@ class PushSubscriptionAdmin(ModelAdmin):
     autocomplete_fields = ("user",)
     readonly_fields = ("endpoint", "p256dh", "auth")
     actions = [export_as_csv]
+
+@admin.register(UserReport)
+class UserReportAdmin(ModelAdmin):
+    # Разбор — в дашборде «Жалобы»; здесь только история.
+    list_display = ("created_at", "reason", "target_name", "reporter", "status", "action", "handled_by")
+    list_filter = ("status", "reason")
+    search_fields = ("target_name", "reporter__username", "comment")
+    raw_id_fields = ("reporter", "target_user", "friend_league", "handled_by")

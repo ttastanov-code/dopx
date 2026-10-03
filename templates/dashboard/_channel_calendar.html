@@ -1,0 +1,30 @@
+{# Календарь канала: что вышло и что запланировано по дням месяца. #}
+<section class="card bg-base-100 border border-base-300" id="calendar"><div class="card-body p-4 gap-3">
+    <div class="flex items-center justify-between gap-2">
+        <div class="dopx-section-eyebrow"><i class="ti ti-calendar"></i>Календарь</div>
+        <div class="flex items-center gap-1">
+            <a class="btn btn-xs btn-ghost" href="?month={{ calendar.prev }}#calendar" aria-label="Предыдущий месяц"><i class="ti ti-chevron-left"></i></a>
+            <span class="text-sm font-semibold min-w-[8rem] text-center">{{ calendar.title }}</span>
+            <a class="btn btn-xs btn-ghost" href="?month={{ calendar.next }}#calendar" aria-label="Следующий месяц"><i class="ti ti-chevron-right"></i></a>
+        </div>
+    </div>
+    <div class="dx-cal">
+        {% for d in calendar.weekdays %}<div class="dx-cal__head">{{ d }}</div>{% endfor %}
+        {% for week in calendar.weeks %}{% for day in week %}
+        <div class="dx-cal__day{% if not day.in_month %} is-out{% endif %}{% if day.today %} is-today{% endif %}">
+            <div class="dx-cal__num">{{ day.date.day }}</div>
+            {% for i in day.items|slice:":3" %}
+            <a href="{% url 'dashboard:channel_post' i.post.pk %}" class="dx-cal__post {% if i.post.status == 'scheduled' %}is-scheduled{% endif %}" title="{{ i.time }} · {{ i.post.get_kind_display }} · {{ i.post.get_status_display }}">
+                <span class="dx-cal__time">{{ i.time }}</span><span class="dx-cal__kind">{{ i.post.get_kind_display }}</span>
+            </a>
+            {% endfor %}
+            {% if day.items|length > 3 %}<div class="dx-cal__more">ещё {{ day.items|length|add:"-3" }}</div>{% endif %}
+        </div>
+        {% endfor %}{% endfor %}
+    </div>
+    <div class="flex flex-wrap gap-3 text-xs opacity-70">
+        <span><span class="dx-cal__dot"></span> опубликован</span>
+        <span><span class="dx-cal__dot is-scheduled"></span> запланирован</span>
+        {% if not calendar.total %}<span>· в этом месяце постов нет</span>{% endif %}
+    </div>
+</div></section>

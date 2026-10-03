@@ -37,24 +37,22 @@ def _redis_stats() -> dict:
 
 
 def _celery_stats() -> dict:
-    from dopx.celery import app
+    """Воркеры по пульсу (core.heartbeat) и длины очередей в Redis — без inspect: тот ждёт ответа каждого воркера секундами."""
+    import redis
+
+    from core import heartbeat
 
     try:
-        # Короткий timeout — зависший воркер не должен подвесить страницу.
-        inspector = app.control.inspect(timeout=1.5)
-        active = inspector.active() or {}
-        reserved = inspector.reserved() or {}
-        scheduled = inspector.scheduled() or {}
-        stats = inspector.stats() or {}
-        worker_names = list(stats.keys())
+        rows = [r for r in heartbeat.overview() if r["name"] in ("celery_worker", "celery_realtime")]
+        online = [r for r in rows if r["status"] == "ok"]
+        client = redis.Redis.from_url(settings.CELERY_BROKER_URL, socket_connect_timeout=2, socket_timeout=2)
         return {
             "ok": True,
-            "workers_online": len(worker_names),
-            "worker_names": worker_names,
-            "active_tasks": sum(len(tasks) for tasks in active.values()),
-            # Взяты воркером, ждут свободного потока / отложены до времени (countdown).
-            "reserved_tasks": sum(len(tasks) for tasks in reserved.values()),
-            "scheduled_tasks": sum(len(tasks) for tasks in scheduled.values()),
+            "workers_online": len(online),
+            "workers_total": len(rows),
+            "worker_names": [r["hb"].get("node") or r["label"] for r in online],
+            "queue_celery": client.llen("celery"),
+            "queue_realtime": client.llen("realtime"),
         }
     except Exception as e:
         logger.warning(f"infra_services._celery_stats: {e}")
@@ -249,7 +247,10 @@ BEAT_TASK_TITLES = {
     "notification-digest-hourly": "Дайджест уведомлений на почту",
     "weekly-summary": "Персональная сводка недели пользователям",
     "staff-antifraud-digest": "Сводка антифрода для команды",
+    "analytics-maintenance-daily": "Итоги дня по аналитике и удаление старых событий",
     "cleanup-old-notifications-daily": "Удаление старых прочитанных уведомлений",
+    "celery-realtime-heartbeat": "Пульс воркера live-матчей и пушей",
+    "watch-admin-bot": "Проверка, что бот команды на связи",
     "cleanup-expired-captchas": "Удаление просроченных капч",
     "detect-referee-vote-spikes": "Антифрод: всплески оценок судей",
     "detect-vote-velocity-anomalies": "Антифрод: резкие всплески крайних оценок",
@@ -388,11 +389,57 @@ def release_info() -> dict:
     }
 
 
+def services_overview(infra: dict | None = None) -> dict:
+    """Процессы (по пульсу core.heartbeat) + подробности по каждому и проверки инфраструктуры."""
+    import shutil
+
+    from core import heartbeat
+
+    rows = heartbeat.overview()
+    details = {}
+    infra = infra or infra_health()
+    celery = infra["celery"]
+    if celery.get("ok"):
+        details["celery_worker"] = f"в очереди {celery['queue_celery']}"
+        details["celery_realtime"] = f"в очереди {celery['queue_realtime']}"
+    try:
+        from fanbot.models import TelegramAccount
+        linked = TelegramAccount.objects.count()
+        reachable = TelegramAccount.objects.filter(can_message=True, notify=True).count()
+        details["fan_bot"] = f"привязано {linked}, получают уведомления {reachable}"
+    except Exception:
+        pass
+    for row in rows:
+        hb = row["hb"]
+        extra = [details.get(row["name"], "")]
+        if hb.get("updates") is not None:
+            extra.append(f"апдейтов {hb['updates']}, ошибок {hb.get('errors', 0)}")
+        if hb.get("role"):
+            extra.append(f"роль {hb['role']}")
+        row["details"] = " · ".join(x for x in extra if x)
+        row["last_error"] = hb.get("last_error", "")
+    infra = infra or infra_health()
+    disk = shutil.disk_usage(settings.BASE_DIR)
+    checks = [
+        ("PostgreSQL", infra["db"]["ok"], f"{infra['db'].get('size_mb')} МБ, соединений {infra['db'].get('active_connections')}"
+         if infra["db"]["ok"] else infra["db"].get("error", "")),
+        ("Redis", infra["redis"]["ok"], f"память {infra['redis'].get('used_memory_human')}, клиентов {infra['redis'].get('connected_clients')}"
+         if infra["redis"]["ok"] else infra["redis"].get("error", "")),
+        ("pgbouncer", infra["db"]["ok"], "сайт ходит в базу через пул" if settings.DATABASES["default"]["HOST"] == "pgbouncer"
+         else "не используется (прямое подключение — ноутбук)"),
+        ("Диск", disk.free / disk.total > 0.1, f"свободно {disk.free // 2**30} из {disk.total // 2**30} ГБ"),
+    ]
+    problems = sum(r["status"] in ("down", "stale") for r in rows) + sum(not ok for _n, ok, _d in checks)
+    return {"rows": rows, "checks": checks, "problems": problems}
+
+
 def system_status_overview() -> dict:
+    infra = infra_health()
     return {
+        "services": services_overview(infra),
         "release": release_info(),
         "deploys": deploy_history(),
-        "infra": infra_health(),
+        "infra": infra,
         "aggregates_cache": _cache_stats("aggregates", "Кэш агрегатов"),
         "beat_schedule": beat_schedule_overview(),
         "error_log": recent_error_log_entries(),

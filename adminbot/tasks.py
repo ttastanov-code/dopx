@@ -110,3 +110,28 @@ def make_samples(chat_id: int | None = None) -> int:
                 + (f", тексты Claude: {ai}" if ai else ", тексты по шаблонам") + ". Откройте «Черновики».",
                 [[("📝 Черновики", cb("chan_list", "draft"))]])
     return len(posts)
+
+
+
+@shared_task(ignore_result=True)
+def watch_admin_bot():
+    """Сторож сторожа: алерты шлёт бот команды, поэтому его самого проверяет Celery и пишет в Telegram напрямую."""
+    from django.core.cache import cache
+
+    from core import heartbeat
+
+    from . import alerts
+    from . import telegram as tg
+    from .notify import recipients
+
+    row = next(r for r in heartbeat.overview() if r["name"] == "admin_bot")
+    if row["status"] != "down" or not alerts.enabled() or not cache.add("adminbot:watch:sent", 1, 30 * 60):
+        return
+    text = ("🔴 <b>Бот команды не отвечает</b>\n"
+            + (f"Последний пульс {row['age'] // 60} мин назад." if row["age"] else "Пульса не было.")
+            + "\nDocker перезапускает контейнер сам; если не поднимется — Дашборд → Системный статус.")
+    for chat_id in recipients("system_status", topic="incidents"):
+        try:
+            tg.send(chat_id, text)
+        except Exception:
+            pass

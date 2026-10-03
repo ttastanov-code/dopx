@@ -66,6 +66,10 @@ class User(AbstractUser, BaseModel):
     rating_power = models.FloatField(_("Сила рейтинга"), default=1.0)
     trust_score = models.FloatField(_("Оценка доверия"), default=1.0)
     is_verified = models.BooleanField(_("Верифицирован"), default=False)
+    # Когда подтверждена текущая почта (для аккаунтов из Telegram is_verified ставит сам Telegram, а почта — отдельно).
+    email_verified_at = models.DateTimeField(_("Почта подтверждена"), null=True, blank=True)
+    # Новый адрес, ждущий подтверждения: email меняется только после перехода по ссылке из письма.
+    pending_email = models.EmailField(_("Новая почта (ждёт подтверждения)"), blank=True)
     is_profile_public = models.BooleanField(
         _("Публичный профиль"), default=True,
         help_text=_("Если выключено — /u/<username>/ отдаёт 404 для всех, кроме вас самих"),
@@ -232,8 +236,27 @@ class User(AbstractUser, BaseModel):
         return round(0.8 + (clamped - 0.5) / 1.5 * 0.4, 3)
 
     @property
+    def has_real_email(self) -> bool:
+        """False у аккаунта из Telegram с адресом-заглушкой tg<id>@telegram.invalid."""
+        from core.utils import is_placeholder_email
+        return bool(self.email) and not is_placeholder_email(self.email)
+
+    @property
+    def profile_complete(self) -> bool:
+        from users.emails import profile_complete
+        return profile_complete(self)
+
+    @property
+    def profile_missing(self) -> str:
+        from users.emails import missing_fields
+        return ", ".join(missing_fields(self))
+
+    @property
     def unread_notifications_count(self) -> int:
-        return self.notifications.filter(is_read=False).count()
+        # Шапка спрашивает счётчик несколько раз за страницу — считаем один раз на объект (он живёт один запрос).
+        if "_unread_count" not in self.__dict__:
+            self.__dict__["_unread_count"] = self.notifications.filter(is_read=False).count()
+        return self.__dict__["_unread_count"]
 
     class Meta:
         verbose_name = _("Пользователь")
@@ -883,3 +906,67 @@ class PushSubscription(BaseModel):
         elif ua.is_tablet:
             label += ' (планшет)'
         return label
+
+class UserReport(BaseModel):
+    """Жалоба болельщика на профиль или лигу друзей. Разбирается в дашборде «Жалобы»."""
+
+    REASON_CHOICES = [
+        ("name", _("Оскорбительный ник или название")),
+        ("avatar", _("Неприемлемый аватар")),
+        ("bio", _("Оскорбления в описании")),
+        ("spam", _("Спам или реклама")),
+        ("impersonation", _("Выдаёт себя за другого")),
+        ("other", _("Другое")),
+    ]
+    STATUS_CHOICES = [
+        ("new", _("Новая")),
+        ("resolved", _("Приняты меры")),
+        ("rejected", _("Отклонена")),
+    ]
+
+    reporter = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+                                 related_name="reports_sent", verbose_name=_("Кто пожаловался"))
+    target_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True,
+                                    related_name="reports_received", verbose_name=_("На кого"))
+    # SET_NULL: удалённая по жалобе лига остаётся в истории под именем target_name.
+    friend_league = models.ForeignKey("engagement.FriendLeague", on_delete=models.SET_NULL, null=True, blank=True,
+                                      related_name="reports", verbose_name=_("Лига друзей"))
+    target_name = models.CharField(_("Ник или название на момент жалобы"), max_length=150, blank=True)
+    reason = models.CharField(_("Причина"), max_length=20, choices=REASON_CHOICES)
+    comment = models.CharField(_("Комментарий"), max_length=300, blank=True)
+    status = models.CharField(_("Статус"), max_length=10, choices=STATUS_CHOICES, default="new", db_index=True)
+    # Что сделали: clear_avatar, ban, rename_league… — для истории и ответа.
+    action = models.CharField(_("Принятые меры"), max_length=30, blank=True)
+    handled_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name="+", verbose_name=_("Кто разобрал"))
+    handled_at = models.DateTimeField(_("Когда разобрано"), null=True, blank=True)
+
+    class Meta:
+        verbose_name = _("Жалоба пользователя")
+        verbose_name_plural = _("Жалобы пользователей")
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.get_reason_display()} → {self.target_label}"
+
+    @property
+    def target_label(self) -> str:
+        if self.target_user_id:
+            return self.target_user.username
+        return f"лига «{self.friend_league.name if self.friend_league_id else self.target_name}»"
+
+
+class UsedEmail(models.Model):
+    """Каждая подтверждённая почта закреплена за аккаунтом навсегда: сменил адрес — новый аккаунт на старый не завести."""
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="used_emails")
+    email_canonical = models.CharField(max_length=254, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _("Использованная почта")
+        verbose_name_plural = _("Использованные почты")
+        constraints = [models.UniqueConstraint(fields=["user", "email_canonical"], name="used_email_unique")]
+
+    def __str__(self) -> str:
+        return self.email_canonical

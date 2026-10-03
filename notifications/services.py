@@ -100,16 +100,8 @@ def send_push_to_users(
     kind — ключ PUSH_PROFILES (TTL и срочность) и PUSH_KIND_SETTING (выключенные
     пользователем типы отсекаются). tag — одинаковый tag заменяет
     предыдущее уведомление на устройстве вместо новой строки.
-    Возвращает число успешных отправок.
+    Возвращает число успешных push; Telegram-копии — fanbot.services.notify_users.
     """
-    if not _push_ready():
-        return 0
-
-    import requests
-    from pywebpush import WebPushException, webpush
-
-    from users.models import PushSubscription
-
     from core.mourning import push_allowed
 
     if not push_allowed(kind):
@@ -118,6 +110,21 @@ def send_push_to_users(
     allowed_ids = _users_allowing(list(user_ids), kind)
     if not allowed_ids:
         return 0
+    # Те же уведомления — в Telegram тем, кто привязал бота болельщиков (не зависит от push-подписки).
+    try:
+        from fanbot.services import notify_users
+
+        notify_users(allowed_ids, title, body, url)
+    except Exception as exc:
+        logger.warning(f"telegram fan-out ({kind}) пропущен: {exc}")
+    if not _push_ready():
+        return 0
+
+    import requests
+    from pywebpush import WebPushException, webpush
+
+    from users.models import PushSubscription
+
     subscriptions = list(PushSubscription.objects.filter(user_id__in=allowed_ids))
     if not subscriptions:
         return 0

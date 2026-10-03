@@ -6,7 +6,8 @@
 {% block content %}
 {% include 'dashboard/_nav.html' %}
 
-<div class="flex justify-end mb-3">
+<div class="flex flex-wrap justify-between gap-2 mb-3">
+    {% include 'dashboard/_traffic_tabs.html' with current='traffic' %}
     <div class="dopx-segment">
         {% for preset in day_presets %}
         <a href="?days={{ preset }}" class="dopx-segment__item {% if preset == selected_days %}dopx-segment__item--active{% endif %}">{{ preset }}д</a>

@@ -41,6 +41,27 @@
     {# Поля разнесены по секциям и привязаны к форме атрибутом form. #}
     <form id="{{ form.FORM_ID }}" method="post">{% csrf_token %}</form>
 
+    {# Telegram: те же типы уведомлений, что и push, приходят ботом DOPX. #}
+    {% if telegram_enabled %}
+    <section id="telegram" class="scroll-mt-24 mb-8">
+        <div class="card bg-base-100 border border-base-300"><div class="card-body p-4 sm:p-6 gap-3">
+            <div class="flex items-center gap-2"><i class="ti ti-brand-telegram text-xl text-info"></i><h2 class="font-semibold">Уведомления в Telegram</h2></div>
+            {% if telegram_account %}
+            <p class="text-sm opacity-70">Привязан Telegram{% if telegram_account.username %} @{{ telegram_account.username }}{% endif %}. Уведомления приходят от бота @{{ telegram_bot }}, те же типы, что выбраны для push ниже.</p>
+            {% if not telegram_account.can_message %}<p class="text-xs text-warning">Бот пока не может вам писать: откройте <a class="link" href="https://t.me/{{ telegram_bot }}" target="_blank" rel="noopener">@{{ telegram_bot }}</a> и нажмите «Запустить».</p>{% endif %}
+            <div class="flex flex-wrap gap-2">
+                <form method="post" action="{% url 'fanbot:link' %}">{% csrf_token %}<button class="btn btn-sm btn-outline"><i class="ti ti-refresh"></i> Перепривязать</button></form>
+                <form method="post" action="{% url 'fanbot:toggle_notify' %}">{% csrf_token %}<button class="btn btn-sm {% if telegram_account.notify %}btn-outline{% else %}btn-primary{% endif %}">{% if telegram_account.notify %}<i class="ti ti-bell-off"></i> Выключить{% else %}<i class="ti ti-bell"></i> Включить{% endif %}</button></form>
+                <form method="post" action="{% url 'fanbot:unlink' %}" onsubmit="return confirm('Отвязать Telegram?')">{% csrf_token %}<button class="btn btn-sm btn-ghost">Отвязать</button></form>
+            </div>
+            {% else %}
+            <p class="text-sm opacity-70">Получайте уведомления в Telegram: матч вашего клуба, «оцените игроков», итоги прогнозов. Работает на любом телефоне, без установки сайта.</p>
+            <form method="post" action="{% url 'fanbot:link' %}">{% csrf_token %}<button class="btn btn-sm btn-primary"><i class="ti ti-brand-telegram"></i> Привязать Telegram</button></form>
+            {% endif %}
+        </div></div>
+    </section>
+    {% endif %}
+
     {# ============ 1. PUSH ============ #}
     <section id="push" class="scroll-mt-24 mb-10">
         <div class="flex items-baseline gap-2 mb-3">
@@ -114,7 +135,11 @@
             <span class="text-xs font-bold uppercase tracking-wider text-primary">2</span>
             <h2 class="text-xl font-bold">Письма на почту</h2>
         </div>
+        {% if user.has_real_email %}
         <p class="text-sm opacity-60 mb-4 break-all">Приходят на {{ user.email }}.</p>
+        {% else %}
+        <p class="text-sm opacity-60 mb-4">Почта не указана, поэтому письма не приходят. <a href="{% url 'users:profile_edit' %}" class="link">Добавить почту</a></p>
+        {% endif %}
 
         <div class="card bg-base-100 border border-base-300 mb-4">
             <div class="card-body p-3 sm:p-4">

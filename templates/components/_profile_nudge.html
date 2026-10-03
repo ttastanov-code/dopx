@@ -1,0 +1,11 @@
+{# Напоминание заполнить профиль: без города и подтверждённой почты оценки и прогнозы закрыты. #}
+{% if user.is_authenticated and not user.profile_complete and request.resolver_match.url_name != 'complete_profile' %}
+<a href="{% url 'users:complete_profile' %}?next={{ request.get_full_path|urlencode }}" class="dx-nudge">
+    <i class="ti ti-user-exclamation dx-nudge__icon"></i>
+    <span class="dx-nudge__text">
+        <b>Заполните профиль, чтобы оценивать и прогнозировать</b>
+        <span class="dx-nudge__sub">{% if user.pending_email %}Подтвердите почту по ссылке из письма на {{ user.pending_email }}{% else %}Не хватает: {{ user.profile_missing }}{% endif %}</span>
+    </span>
+    <i class="ti ti-chevron-right dx-nudge__chev"></i>
+</a>
+{% endif %}

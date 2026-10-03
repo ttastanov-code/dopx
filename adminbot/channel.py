@@ -48,7 +48,10 @@ def site(path: str) -> str:
 
 
 def match_url(match) -> str:
-    return site(reverse("matches:detail", args=[match.pk]))
+    """Матч: в Mini App бота болельщиков (оценка внутри Telegram), если оно настроено, иначе на сайте."""
+    from fanbot.services import miniapp_link
+
+    return miniapp_link(f"m_{match.pk}") or site(reverse("matches:detail", args=[match.pk]))
 
 
 def esc(s) -> str:
@@ -163,7 +166,12 @@ def _image_bytes(post) -> bytes:
 
 
 def _button_rows(post) -> list:
-    return [[(b[0], b[1])] for b in post.buttons if len(b) == 2 and str(b[1]).startswith("http")]
+    rows = [[(b[0], b[1])] for b in post.buttons if len(b) == 2 and str(b[1]).startswith("http")]
+    # Под каждым постом — подписка на бота болельщиков: из канала в личные уведомления.
+    from fanbot.services import bot_username, enabled
+    if enabled() and bot_username():
+        rows.append([("🔔 Уведомления о матчах", f"https://t.me/{bot_username()}?start=channel")])
+    return rows
 
 
 def _send(post) -> dict:

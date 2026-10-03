@@ -16,6 +16,7 @@ SECTION_MODELS: dict[str, list[str]] = {
     "evaluation_sessions": ["evaluations.evaluationsession"],
     "users": ["users.user"],
     "antifraud": ["users.suspiciousactivityflag"],
+    "reports": ["users.userreport"],
     "ads": ["partners.partner", "partners.banner"],
     "announcements": ["notifications.notification"],
     "mourning": ["core.mourningmode"],
@@ -42,7 +43,7 @@ SENSITIVE = {"scripts", "users", "platform_settings", "announcements", "mourning
 # Готовые шаблоны ролей.
 PRESETS = {
     "moderator": ("Модератор", "Разбирает накрутки, спорные оценки, обращения болельщиков", {
-        "overview": "on", "antifraud": "work", "evaluation_sessions": "view", "data_trust": "work", "users": "view",
+        "overview": "on", "antifraud": "work", "reports": "work", "evaluation_sessions": "view", "data_trust": "work", "users": "view",
         "admin_bot": "on"}),
     "editor": ("Редактор контента", "Мнения экспертов, Telegram-канал, соцсети, объявления", {
         "overview": "on", "experts": "full", "channel": "full", "social_content": "on", "announcements": "work", "matches": "view",

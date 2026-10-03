@@ -99,6 +99,7 @@ def audit(user, target: str, details: dict, action=None) -> None:
 QUEUES = [  # ключ, иконка, подпись, раздел, право
     ("takes", "🎙", "Мнения", "experts", "engagement.view_experttake"),
     ("flags", "🛡", "Антифрод", "antifraud", "users.view_suspiciousactivityflag"),
+    ("reports", "🚩", "Жалобы", "reports", "users.view_userreport"),
     ("names", "✍️", "ФИО", "names_review", "parsers.view_nameverificationsuggestion"),
     ("dups", "👥", "Дубли", "duplicate_players", "players.view_potentialduplicateplayer"),
     ("contacts", "✉️", "Обращения", "data_trust", "notifications.view_contactsubmission"),
@@ -110,9 +111,10 @@ def counts() -> dict:
     from notifications.models import ContactSubmission
     from parsers.models import NameVerificationSuggestion
     from players.models import PotentialDuplicatePlayer
-    from users.models import SuspiciousActivityFlag
+    from users.models import SuspiciousActivityFlag, UserReport
 
     return {
+        "reports": UserReport.objects.filter(status="new").count(),
         "takes": ExpertTake.objects.filter(is_published=False, invite__isnull=False).count(),
         "flags": SuspiciousActivityFlag.objects.filter(status="pending").count(),
         "names": NameVerificationSuggestion.objects.filter(status__in=["pending_review", "check_failed"]).count(),
@@ -306,6 +308,47 @@ def flags_view(user):
     if can(user, "antifraud", "users.change_suspiciousactivityflag"):
         rows.append([("⛔ Накрутка", cb("flag_ok", str(f.pk))), ("👌 Ложный", cb("flag_no", str(f.pk)))])
     return text, rows + back()
+
+
+def reports_view(user):
+    from users.models import UserReport
+    from users.reports import allowed_actions
+
+    qs = UserReport.objects.filter(status="new").select_related("reporter", "target_user", "friend_league")
+    r = qs.order_by("created_at").first()
+    if not r:
+        return _empty("🚩 Новых жалоб нет.")
+    target = (f"профиль <b>{esc(r.target_user.username)}</b>" if r.target_user_id else f"{esc(r.target_label)}")
+    text = (header() + f"🚩 <b>Жалоба</b> · 1 из {qs.count()}\n\n{esc(r.get_reason_display())}: {target}"
+            + (f"\n«{esc(r.comment)}»" if r.comment else "")
+            + (f"\nО себе: {esc(r.target_user.bio[:200])}" if r.target_user_id and r.target_user.bio else "")
+            + f"\nОт: {esc(r.reporter.username if r.reporter_id else '—')}")
+    rows = []
+    if can(user, "reports", "users.change_userreport"):
+        # В боте — быстрые меры; бан и удаление лиги — только в дашборде, где видно больше.
+        quick = {"reject": "👌 Отклонить", "clear_avatar": "🖼 Убрать аватар", "clear_bio": "🧹 Очистить «О себе»",
+                 "reset_username": "✏️ Сбросить ник", "rename_league": "✏️ Сбросить название"}
+        buttons = [(quick[k], cb("rep_" + k, str(r.pk))) for k, _l in allowed_actions(r, user) if k in quick]
+        rows += _pairs(buttons)
+    rows.append([("Открыть в дашборде", settings.SITE_URL.rstrip("/") + "/staff/dashboard/reports/")])
+    return text, rows + back()
+
+
+def act_report(user, arg, action):
+    from users import reports
+    from users.models import UserReport
+
+    r = UserReport.objects.filter(pk=arg).select_related("target_user", "friend_league__owner").first()
+    if not r:
+        return "Жалоба не найдена."
+    target = r.target_label
+    try:
+        message = reports.apply(r, action, user)
+    except reports.ReportError as e:
+        return str(e)
+    from dashboard.models import AuditAction
+    audit(user, target, {"report_id": str(r.pk), "action": action}, action=AuditAction.USER_REPORT_HANDLED)
+    return message
 
 
 def names_view(user):
@@ -700,6 +743,8 @@ WRITE = {
     "flag_ok": (_perm("antifraud", "users.change_suspiciousactivityflag"), lambda u, a: _flag(u, a, True), "flags"),
     "flag_no": (_perm("antifraud", "users.change_suspiciousactivityflag"), lambda u, a: _flag(u, a, False), "flags"),
     "contact_done": (_perm("data_trust", "notifications.change_contactsubmission"), act_contact_done, "contacts"),
+    **{f"rep_{k}": (_perm("reports", "users.change_userreport"), (lambda k: lambda u, a: act_report(u, a, k))(k), "reports")
+       for k in ("reject", "clear_avatar", "clear_bio", "reset_username", "rename_league")},
     "name_ok": (_perm("names_review", "parsers.change_nameverificationsuggestion"), lambda u, a: act_name(u, a, True), "names"),
     "name_no": (_perm("names_review", "parsers.change_nameverificationsuggestion"), lambda u, a: act_name(u, a, False), "names"),
     "dup_keep": (_can_merge, act_dup_keep, "dups"),
@@ -713,6 +758,7 @@ VIEWS = {
     "status": (_perm("system_status", None), lambda u, a: (status_text(), back(("↻ Обновить", cb("status"))))),
     "takes": (_perm("experts", "engagement.view_experttake"), lambda u, a: takes_view(u)),
     "flags": (_perm("antifraud", "users.view_suspiciousactivityflag"), lambda u, a: flags_view(u)),
+    "reports": (_perm("reports", "users.view_userreport"), lambda u, a: reports_view(u)),
     "names": (_perm("names_review", "parsers.view_nameverificationsuggestion"), lambda u, a: names_view(u)),
     "dups": (_perm("duplicate_players", "players.view_potentialduplicateplayer"), lambda u, a: dups_view(u)),
     "contacts": (_perm("data_trust", "notifications.view_contactsubmission"), lambda u, a: contacts_view(u)),

@@ -359,6 +359,7 @@ class TeamDetailView(DetailView):
             context['fan_brag_image'] = self.request.build_absolute_uri(reverse(
                 'engagement:brag_card', args=[self.request.user.username, f'fan_top-{team.id}']
             ))
+            context['fan_brag_story'] = reverse('engagement:story_card', args=[self.request.user.username, f'fan_top-{team.id}'])
             context['fan_brag_url'] = self.request.build_absolute_uri(f"{reverse('teams:detail', args=[team.id])}#fan-zone")
             context['fan_brag_text'] = f"Я в топ-{me['top_percent']}% болельщиков {team.name} на DOPX. А ты?"
 

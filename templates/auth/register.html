@@ -1,5 +1,6 @@
 {% extends 'base_auth.html' %}
 {% load static %}
+{% load fanbot_tags %}
 {% block title %}Регистрация · DOPX{% endblock %}
 
 {% block extra_style %}
@@ -193,6 +194,8 @@ body {
             Зарегистрироваться
         </button>
     </form>
+
+    {% telegram_login %}
 
     <p class="text-center text-sm text-base-content/55 mt-8">
         Уже с нами?

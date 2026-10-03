@@ -161,3 +161,38 @@ class ResolveMatchForResyncTests(DataHealthFixtureMixin, TestCase):
         self.assertIsNone(_resolve_match_for_resync("19681947"))
         self.assertIsNone(_resolve_match_for_resync("00000000-0000-0000-0000-000000000000"))
         self.assertIsNone(_resolve_match_for_resync("not-a-valid-anything"))
+
+
+class RetentionTests(DataHealthFixtureMixin, TestCase):
+    def test_funnel_and_cohorts(self):
+        from django.contrib.auth import get_user_model
+        from django.test import override_settings
+        from django.urls import reverse
+
+        from analytics.models import AnalyticsEvent, EventName
+        from analytics.selectors import funnel_overview, retention_cohorts
+        from predictions.models import MatchPrediction
+
+        User = get_user_model()
+        old = User.objects.create_user(username="old", email="old@test.local", password="x")
+        User.objects.filter(pk=old.pk).update(date_joined=timezone.now() - timedelta(days=10))
+        User.objects.create_user(username="new", email="new@test.local", password="x")
+        MatchPrediction.objects.create(user=old, match=self._make_match(status="scheduled"), choice="1")
+        AnalyticsEvent.objects.create(event_name=EventName.PAGE_VIEW, user=old, url_path="/")
+
+        funnel = funnel_overview(days=30)
+        self.assertEqual(funnel["steps"][1]["value"], 2)
+        self.assertEqual(funnel["steps"][3]["value"], 1)
+        # «old» зарегистрирован 10 дней назад и активен сегодня — вернулся; «new» ещё не в знаменателе.
+        self.assertEqual((funnel["returned"]["value"], funnel["mature"]), (1, 1))
+        rows = retention_cohorts(weeks=8)
+        self.assertEqual(sum(r["size"] for r in rows), 2)
+        # Когорта «old» активна на текущей неделе — 100%; у «new» активности нет.
+        self.assertTrue(any(100 in r["cells"] for r in rows))
+        self.assertEqual(rows[-1]["cells"][0], 0 if rows[-1]["size"] == 1 else 50)
+
+        admin = User.objects.create_superuser(username="boss", email="boss@test.local", password="x")
+        self.client.force_login(admin)
+        with override_settings(STAFF_2FA_ENFORCED=False):
+            response = self.client.get(reverse("dashboard:retention"))
+        self.assertContains(response, "Когорты по неделе регистрации")

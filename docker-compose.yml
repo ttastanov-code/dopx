@@ -28,6 +28,14 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     logging: *logging
+    # Таймаут запроса на стороне сервера: через pgbouncer параметр подключения options не доходит.
+    # Память под небольшой сервер (8 ГБ на весь стек); на большом поднять PG_SHARED_BUFFERS/PG_CACHE в .env.
+    # random_page_cost=1.1 — диски SSD/NVMe: планировщик охотнее берёт индексы.
+    command: >
+      postgres -c statement_timeout=30000 -c max_connections=200
+      -c shared_buffers=${PG_SHARED_BUFFERS:-1GB} -c effective_cache_size=${PG_CACHE:-3GB}
+      -c work_mem=16MB -c maintenance_work_mem=256MB -c random_page_cost=1.1
+      -c effective_io_concurrency=200 -c max_wal_size=2GB -c checkpoint_completion_target=0.9
     environment:
       POSTGRES_DB: ${DB_NAME}
       POSTGRES_USER: ${DB_USER}
@@ -44,13 +52,45 @@ services:
       - dopx_net
 
   # ==========================================================================
+  # pgbouncer — пул соединений: сотни воркеров держат десятки соединений к PostgreSQL.
+  # ==========================================================================
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.26.0-p0
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+      AUTH_TYPE: scram-sha-256
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "1000"
+      DEFAULT_POOL_SIZE: ${PGBOUNCER_POOL_SIZE:-40}
+      RESERVE_POOL_SIZE: "10"
+      # psycopg шлёт options (statement_timeout) — таймаут задан на сервере, см. db.command.
+      IGNORE_STARTUP_PARAMETERS: extra_float_digits,options
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - dopx_net
+
+  # ==========================================================================
   # Redis: Celery broker (db 0), Django cache (db 1), кэш агрегатов (db 2).
   # ==========================================================================
   redis:
     image: redis:7-alpine
     restart: unless-stopped
     logging: *logging
-    command: redis-server --appendonly yes
+    # volatile-lru: при нехватке памяти вытесняются только ключи со сроком (кэш, сессии), очередь Celery — никогда.
+    command: redis-server --appendonly yes --maxmemory ${REDIS_MAXMEMORY:-512mb} --maxmemory-policy volatile-lru
     volumes:
       - redis_data:/data
     healthcheck:
@@ -74,7 +114,8 @@ services:
       - .env
     environment:
       # Хосты БД/Redis — имена сервисов этого файла.
-      DB_HOST: db
+      # Через pgbouncer; напрямую к базе — APP_DB_HOST=db в .env.
+      DB_HOST: ${APP_DB_HOST:-pgbouncer}
       DB_PORT: "5432"
       REDIS_URL: redis://redis:6379/1
       REDIS_AGGREGATES_URL: redis://redis:6379/2
@@ -89,8 +130,12 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
       redis:
         condition: service_healthy
+    labels:
+      autoheal: "true"
     healthcheck:
       # /healthz/ проверяет базу и Redis. Host — первый домен из ALLOWED_HOSTS, X-Forwarded-Proto — без редиректа на https.
       test: ["CMD-SHELL", "curl -fsS -o /dev/null -H \"Host: $${ALLOWED_HOSTS%%,*}\" -H 'X-Forwarded-Proto: https' http://localhost:8000/healthz/"]
@@ -111,11 +156,13 @@ services:
     restart: unless-stopped
     logging: *logging
     # Слушает обе очереди; realtime дополнительно обслуживает celery_realtime.
-    command: celery -A dopx worker -l info --concurrency=4 -Q realtime,celery
+    # autoscale: в простое 2 процесса (меньше памяти), под нагрузкой до 6; перезапуск процесса каждые 200 задач — без утечек памяти.
+    command: celery -A dopx worker -l info --autoscale=${CELERY_MAX_PROCS:-6},2 --max-tasks-per-child=200 -Q realtime,celery -n celery@%h
     env_file:
       - .env
     environment:
-      DB_HOST: db
+      # Через pgbouncer; напрямую к базе — APP_DB_HOST=db в .env.
+      DB_HOST: ${APP_DB_HOST:-pgbouncer}
       DB_PORT: "5432"
       REDIS_URL: redis://redis:6379/1
       REDIS_AGGREGATES_URL: redis://redis:6379/2
@@ -132,9 +179,11 @@ services:
       # Ждём здоровый web — чтобы миграции уже были накатаны.
       web:
         condition: service_healthy
+    labels:
+      autoheal: "true"
     healthcheck:
-      # Проверяем, что отвечает хоть один воркер контейнера.
-      test: ["CMD-SHELL", "celery -A dopx inspect ping | grep -q OK"]
+      # Отвечает именно воркер этого контейнера (а не любой в общей очереди).
+      test: ["CMD-SHELL", "celery -A dopx inspect ping -d celery@$$HOSTNAME | grep -q OK"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -152,11 +201,12 @@ services:
     restart: unless-stopped
     logging: *logging
     # Только live-опрос и пуши — не ждут за долгими задачами.
-    command: celery -A dopx worker -l info --concurrency=2 -Q realtime -n realtime@%h
+    command: celery -A dopx worker -l info --concurrency=${CELERY_REALTIME_PROCS:-2} --max-tasks-per-child=500 -Q realtime,realtime_hb -n realtime@%h
     env_file:
       - .env
     environment:
-      DB_HOST: db
+      # Через pgbouncer; напрямую к базе — APP_DB_HOST=db в .env.
+      DB_HOST: ${APP_DB_HOST:-pgbouncer}
       DB_PORT: "5432"
       REDIS_URL: redis://redis:6379/1
       REDIS_AGGREGATES_URL: redis://redis:6379/2
@@ -173,9 +223,11 @@ services:
       # Ждём здоровый web — чтобы миграции уже были накатаны.
       web:
         condition: service_healthy
+    labels:
+      autoheal: "true"
     healthcheck:
-      # Проверяем, что отвечает хоть один воркер контейнера.
-      test: ["CMD-SHELL", "celery -A dopx inspect ping | grep -q OK"]
+      # Отвечает именно воркер этого контейнера (а не любой в общей очереди).
+      test: ["CMD-SHELL", "celery -A dopx inspect ping -d realtime@$$HOSTNAME | grep -q OK"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -194,7 +246,8 @@ services:
     env_file:
       - .env
     environment:
-      DB_HOST: db
+      # Через pgbouncer; напрямую к базе — APP_DB_HOST=db в .env.
+      DB_HOST: ${APP_DB_HOST:-pgbouncer}
       DB_PORT: "5432"
       REDIS_URL: redis://redis:6379/1
       REDIS_AGGREGATES_URL: redis://redis:6379/2
@@ -203,6 +256,15 @@ services:
     volumes:
       - celerybeat_data:/app/celerybeat
       - ./logs:/app/logs
+    labels:
+      autoheal: "true"
+    healthcheck:
+      # beat сохраняет расписание каждые несколько минут — файл старше 10 минут значит, что он завис.
+      test: ["CMD-SHELL", "find /app/celerybeat -name 'celerybeat-schedule*' -mmin -10 | grep -q ."]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
     depends_on:
       db:
         condition: service_healthy
@@ -226,7 +288,8 @@ services:
     env_file:
       - .env
     environment:
-      DB_HOST: db
+      # Через pgbouncer; напрямую к базе — APP_DB_HOST=db в .env.
+      DB_HOST: ${APP_DB_HOST:-pgbouncer}
       DB_PORT: "5432"
       REDIS_URL: redis://redis:6379/1
       REDIS_AGGREGATES_URL: redis://redis:6379/2
@@ -235,11 +298,67 @@ services:
     volumes:
       - ./logs:/app/logs
       - ./backups:/app/backups:ro
+    labels:
+      autoheal: "true"
+    healthcheck:
+      # Цикл бота отмечается в /tmp/dopx-alive (core/heartbeat.py): нет отметки 5 минут — завис.
+      test: ["CMD-SHELL", "find /tmp/dopx-alive -mmin -5 | grep -q ."]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
     depends_on:
       web:
         condition: service_healthy
     networks:
       - dopx_net
+
+  # Бот для болельщиков: /start, привязка аккаунта (уведомления шлют сайт и Celery напрямую).
+  fanbot:
+    build: *app-build
+    image: dopx-app:${GIT_SHA:-dev}
+    restart: unless-stopped
+    logging: *logging
+    command: python manage.py runfanbot
+    labels:
+      autoheal: "true"
+    healthcheck:
+      # Цикл бота отмечается в /tmp/dopx-alive (core/heartbeat.py): нет отметки 5 минут — завис.
+      test: ["CMD-SHELL", "find /tmp/dopx-alive -mmin -5 | grep -q ."]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    env_file:
+      - .env
+    environment:
+      # Через pgbouncer; напрямую к базе — APP_DB_HOST=db в .env.
+      DB_HOST: ${APP_DB_HOST:-pgbouncer}
+      DB_PORT: "5432"
+      REDIS_URL: redis://redis:6379/1
+      REDIS_AGGREGATES_URL: redis://redis:6379/2
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    depends_on:
+      web:
+        condition: service_healthy
+    networks:
+      - dopx_net
+
+  # ==========================================================================
+  # autoheal — перезапускает контейнеры с меткой autoheal, у которых healthcheck «unhealthy»
+  # (Docker сам перезапускает только упавшие процессы, а зависшие — нет).
+  # ==========================================================================
+  autoheal:
+    image: willfarrell/autoheal:1.2.0
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      AUTOHEAL_CONTAINER_LABEL: autoheal
+      AUTOHEAL_INTERVAL: "30"
+      AUTOHEAL_START_PERIOD: "180"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
 
   # ==========================================================================
   # nginx — точка входа: статика/медиа с диска, остальное в gunicorn.

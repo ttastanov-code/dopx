@@ -8,6 +8,12 @@
 хвост errors.log, версии окружения.
 {% endcomment %}
 
+{# Блок «Сервисы» перезагружается сам каждые 10 с, пока вкладка открыта. #}
+<div id="services-block" data-background-poll hx-get="{% url 'dashboard:system_status_services' %}"
+     hx-trigger="every 10s [document.visibilityState === 'visible']" hx-swap="innerHTML">
+    {% include 'dashboard/_services_block.html' with services=status.services %}
+</div>
+
 <div class="card bg-base-100 border border-base-300 mb-4">
 {# Версия и деплои: scripts/deploy.sh пишет журнал в logs/deploy/history.jsonl. #}
 <div class="card bg-base-100 border border-base-300 mb-4">
@@ -88,9 +94,8 @@
                     Celery
                 </div>
                 {% if status.infra.celery.ok %}
-                <div class="text-sm">Воркеров онлайн: <b class="{% if not status.infra.celery.workers_online %}text-warning{% endif %}">{{ status.infra.celery.workers_online }}</b></div>
-                <div class="text-sm">Выполняется сейчас: <b>{{ status.infra.celery.active_tasks }}</b></div>
-                <div class="text-sm">Взято в работу: <b>{{ status.infra.celery.reserved_tasks|default:0 }}</b> · отложено: <b>{{ status.infra.celery.scheduled_tasks|default:0 }}</b></div>
+                <div class="text-sm">Воркеров на связи: <b class="{% if status.infra.celery.workers_online < status.infra.celery.workers_total %}text-warning{% endif %}">{{ status.infra.celery.workers_online }} из {{ status.infra.celery.workers_total }}</b></div>
+                <div class="text-sm">В очереди: <b>{{ status.infra.celery.queue_celery }}</b> фоновых · <b>{{ status.infra.celery.queue_realtime }}</b> live</div>
                 {% if status.infra.celery.worker_names %}
                 <div class="text-xs opacity-50 mt-1 truncate">{{ status.infra.celery.worker_names|join:", " }}</div>
                 {% endif %}

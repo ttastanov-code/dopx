@@ -8,7 +8,7 @@ from matches.models import Match
 from notifications.models import ContactSubmission
 from parsers.models import ParserDiscrepancy
 from round_squad.models import RoundBestXI
-from users.models import SuspiciousActivityFlag
+from users.models import SuspiciousActivityFlag, UserReport
 
 from .tasks import FLAG_NOTIFY_SCORE
 
@@ -46,6 +46,13 @@ def on_flag(sender, instance, created, **kwargs):
     if created and instance.status == "pending" and instance.score >= FLAG_NOTIFY_SCORE:
         from .notify import antifraud_flag
         _safe(antifraud_flag, instance)
+
+
+@receiver(post_save, sender=UserReport, dispatch_uid="adminbot-user-report")
+def on_user_report(sender, instance, created, **kwargs):
+    if created:
+        from .notify import user_report
+        _safe(user_report, instance)
 
 
 @receiver(post_save, sender=ContactSubmission, dispatch_uid="adminbot-contact")

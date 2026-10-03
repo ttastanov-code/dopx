@@ -168,16 +168,13 @@ def challenge(request, code, match_id):
     return redirect(f"{reverse('matches:detail', args=[match_id])}?challenge={ref.user.username}")
 
 
-def brag_card(request, username, kind):
-    """PNG «похвастаться». Числа берём из БД, а не из URL."""
-    from core.services.share_cards import build_brag_share_card
+def _brag_params(user, kind: str) -> tuple[str, dict]:
+    """(вид, параметры карточки) по данным из БД; нечем хвастаться — Http404. Общее для карточки и сторис."""
     from core.templatetags.ui_extras import ru_plural
     from engagement.fanzone import fan_zone
     from engagement.streaks import state as streak_state
     from teams.models import Team
-    from users.models import User
 
-    user = get_object_or_404(User, username=username, is_profile_public=True)
     if kind == "season":
         data = season.overview(user)
         if not data or data["xp"] <= 0:
@@ -212,7 +209,62 @@ def brag_card(request, username, kind):
         kind = "fan_top"
     else:
         raise Http404
+    return kind, params
+
+
+def brag_card(request, username, kind):
+    """PNG «похвастаться». Числа берём из БД, а не из URL."""
+    from core.services.share_cards import build_brag_share_card
+    from users.models import User
+
+    user = get_object_or_404(User, username=username, is_profile_public=True)
+    kind, params = _brag_params(user, kind)
     path = build_brag_share_card(username=user.username, kind=kind, **params)
+    return redirect(default_storage.url(path))
+
+
+def _match_story_params(user, kind: str) -> tuple[str, dict, str]:
+    """«Моя оценка матча» (match-<id>) и «мой прогноз сбылся» (prediction-<id>)."""
+    from evaluations.models import PlayerEvaluation
+    from matches.models import Match
+    from predictions.models import MatchPrediction
+
+    prefix, _, raw = kind.partition("-")
+    try:
+        match_id = uuid.UUID(raw)
+    except ValueError:
+        raise Http404
+    match = get_object_or_404(Match.objects.select_related("home_team", "away_team"), pk=match_id)
+    score = f"{match.home_team.name} {match.get_score_display()} {match.away_team.name}"
+    if prefix == "match":
+        top = (PlayerEvaluation.objects.filter(user=user, match=match).select_related("player")
+               .order_by("-contribution").first())
+        if not top:
+            raise Http404
+        return "match", dict(eyebrow="мой герой матча", number_text=f"{top.contribution}/10",
+                             label_line1=top.player.full_name, label_line2=score), "А ты кого бы выбрал?"
+    if prefix == "prediction":
+        hit = MatchPrediction.objects.filter(user=user, match=match, choice=match.final_result).exists() if match.final_result else False
+        if not hit:
+            raise Http404
+        return "prediction_hit", dict(eyebrow="мой прогноз сбылся", number_text=match.get_score_display().replace(" ", ""),
+                                      label_line1=score.replace(f" {match.get_score_display()} ", " – "),
+                                      label_line2="прогноз 1X2 на DOPX"), "Сможешь угадать следующий?"
+    raise Http404
+
+
+def story_card(request, username, kind):
+    """Вертикальная карточка 1080×1920 для сторис: те же «похвастаться» + оценка и прогноз матча."""
+    from core.services.story_cards import build_story_card
+    from users.models import User
+
+    user = get_object_or_404(User, username=username, is_profile_public=True)
+    note = ""
+    if kind.startswith(("match-", "prediction-")):
+        kind, params, note = _match_story_params(user, kind)
+    else:
+        kind, params = _brag_params(user, kind)
+    path = build_story_card(kind=kind, footer_note=note or f"@{user.username} на DOPX", **params)
     return redirect(default_storage.url(path))
 
 

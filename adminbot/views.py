@@ -227,6 +227,47 @@ def _apply_action(request, post, action: str) -> None:
     messages.success(request, "Сохранено.")
 
 
+def _channel_calendar(month: str) -> dict:
+    """Сетка месяца (?month=YYYY-MM): запланированные — по scheduled_at, опубликованные — по published_at."""
+    import calendar
+    from datetime import date, datetime, time, timedelta
+
+    from django.db.models import Q
+    from django.utils import timezone
+
+    from .models import ChannelPost
+
+    today = timezone.localdate()
+    try:
+        first = datetime.strptime(month, "%Y-%m").date().replace(day=1)
+    except ValueError:
+        first = today.replace(day=1)
+    weeks = calendar.Calendar(firstweekday=0).monthdatescalendar(first.year, first.month)
+    start = timezone.make_aware(datetime.combine(weeks[0][0], time.min))
+    end = timezone.make_aware(datetime.combine(weeks[-1][-1] + timedelta(days=1), time.min))
+    posts = ChannelPost.objects.filter(
+        Q(status="scheduled", scheduled_at__gte=start, scheduled_at__lt=end)
+        | Q(status="published", published_at__gte=start, published_at__lt=end)
+    ).only("id", "kind", "status", "scheduled_at", "published_at", "by_ai")
+    by_day: dict[date, list] = {}
+    for p in posts:
+        when = timezone.localtime(p.published_at if p.status == "published" else p.scheduled_at)
+        by_day.setdefault(when.date(), []).append({"post": p, "time": when.strftime("%H:%M")})
+    for items in by_day.values():
+        items.sort(key=lambda i: i["time"])
+    prev_month = (first - timedelta(days=1)).replace(day=1)
+    next_month = (first + timedelta(days=32)).replace(day=1)
+    months = ["", "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
+    return {
+        "title": f"{months[first.month]} {first.year}",
+        "prev": f"{prev_month:%Y-%m}", "next": f"{next_month:%Y-%m}",
+        "weekdays": ("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"),
+        "weeks": [[{"date": d, "in_month": d.month == first.month, "today": d == today,
+                    "items": by_day.get(d, [])} for d in week] for week in weeks],
+        "total": sum(len(v) for v in by_day.values()),
+    }
+
+
 @staff_member_required
 def channel_page(request):
     from django.core.paginator import Paginator
@@ -262,6 +303,7 @@ def channel_page(request):
     cfg = ChannelConfig.get()
     labels = dict(ChannelPost.KIND_CHOICES)
     return render(request, "dashboard/channel.html", {
+        "calendar": _channel_calendar(request.GET.get("month", "")),
         "page_title": "Telegram-канал — DOPX Staff",
         "active_tab": "channel",
         "status": _channel_status(),

@@ -52,6 +52,7 @@ urlpatterns = [
     path('staff/dashboard/', include('dashboard.urls')),
     # Ретранслятор Telegram-бота для агента (ноутбука); доступ по секретному ключу.
     path('bot/relay/', adminbot_views.relay_view, name='adminbot_relay'),
+    path('tg/', include('fanbot.urls')),
     path('', include('engagement.urls')),
     # sitemap кэшируется на 12 ч.
     path('sitemap.xml', cache_page(60 * 60 * 12)(sitemap), {'sitemaps': sitemaps}, name='sitemap'),

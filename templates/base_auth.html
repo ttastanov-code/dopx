@@ -15,11 +15,7 @@
     <link rel="icon" type="image/png" href="{% static_v 'favicons/favicon-32x32.png' %}" sizes="32x32">
     <link rel="icon" type="image/png" href="{% static_v 'favicons/favicon-16x16.png' %}" sizes="16x16">
     
-    {# Те же версии Tailwind/DaisyUI/HTMX/Alpine, что в base.html. #}
-    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.3" integrity="sha384-aJ9rL4k6lF+91guGvUFVSkpIcge7Zd9EiI4TQDLoK9kFaFJgKHgjEXVvG/qA5COj" crossorigin="anonymous"></script>
-    {# DaisyUI #}
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@5.7.17" rel="stylesheet" type="text/css" integrity="sha384-39M1LQqzp+SSirSevKD4gsadFB7kgKzMiPY7o6hVhOXuRthgtd1oohKwlosU9KHi" crossorigin="anonymous" />
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@5.7.17/themes.css" rel="stylesheet" type="text/css" integrity="sha384-HhSoSsQclUlsqy8Gyz+E2oVSebHT4dv3MJ+NdUjV9mh1twUK4UPKQgmj0dHDKe0Y" crossorigin="anonymous" />
+    {% tailwind_assets %}
 
     {# HTMX #}
     <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.8/dist/htmx.min.js" integrity="sha256-Iig+9oy3VFkU8KiKG97cclanA9HVgMHSVSF9ClDTExM=" crossorigin="anonymous"></script>

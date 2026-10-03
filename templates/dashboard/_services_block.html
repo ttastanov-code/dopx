@@ -1,0 +1,53 @@
+{# Сервисы: пульс каждого процесса (core/heartbeat.py) и проверки инфраструктуры. #}
+<div class="card bg-base-100 border border-base-300 mb-4">
+    <div class="card-body p-4 gap-3">
+        <div class="flex flex-wrap items-start justify-between gap-2">
+            <div>
+                <div class="dopx-section-eyebrow"><i class="ti ti-server-2"></i>Сервисы</div>
+                <div class="dopx-section-title">{% if services.problems %}<span class="text-error">Проблем: {{ services.problems }}</span>{% else %}Всё работает{% endif %}</div>
+                <p class="text-xs opacity-60 mt-0.5">Каждый процесс отмечается раз в минуту. На проде Docker сам перезапускает упавший или зависший контейнер.</p>
+            </div>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="table table-sm">
+                <thead><tr><th>Сервис</th><th>Состояние</th><th class="hidden sm:table-cell">Подробности</th><th class="hidden md:table-cell">Версия</th><th></th></tr></thead>
+                <tbody>
+                {% for s in services.rows %}
+                <tr>
+                    <td class="font-medium whitespace-nowrap">{{ s.label }}</td>
+                    <td class="whitespace-nowrap">
+                        {% if s.status == "ok" %}<span class="badge badge-success badge-sm">работает</span>
+                        {% elif s.status == "stale" %}<span class="badge badge-warning badge-sm">молчит</span>
+                        {% elif s.status == "off" %}<span class="badge badge-ghost badge-sm">выключен</span>
+                        {% else %}<span class="badge badge-error badge-sm">не отвечает</span>{% endif %}
+                        <span class="text-xs opacity-60">{% if s.age is not None %}{% if s.age < 120 %}{{ s.age }} с назад{% elif s.age < 7200 %}{% widthratio s.age 60 1 %} мин назад{% else %}{% widthratio s.age 3600 1 %} ч назад{% endif %}{% elif s.status != "off" %}нет данных{% endif %}</span>
+                        {% if s.uptime %}<div class="text-[11px] opacity-50">работает {% if s.uptime > 86400 %}{% widthratio s.uptime 86400 1 %} д{% elif s.uptime > 3600 %}{% widthratio s.uptime 3600 1 %} ч{% else %}{% widthratio s.uptime 60 1 %} мин{% endif %}</div>{% endif %}
+                    </td>
+                    <td class="hidden sm:table-cell text-xs">
+                        {{ s.details|default:"—" }}
+                        {% if s.last_error %}<div class="text-error mt-0.5 break-all">{{ s.last_error }}</div>{% endif %}
+                    </td>
+                    <td class="hidden md:table-cell text-xs font-mono">{{ s.hb.version|default:"—" }}{% if s.outdated %} <span class="badge badge-warning badge-xs" title="Процесс не перезапустился после деплоя и работает на старой версии">старая</span>{% endif %}</td>
+                    <td class="text-right">
+                        {% if user.is_superuser and s.restartable and s.status != "off" %}
+                        <form method="post" action="{% url 'dashboard:service_restart' s.name %}" onsubmit="return confirm('Перезапустить «{{ s.label }}»?')">{% csrf_token %}
+                            <button class="btn btn-xs btn-ghost" title="Перезапустить"><i class="ti ti-reload"></i></button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+            {% for name, ok, detail in services.checks %}
+            <div class="rounded-xl border {% if ok %}border-base-300{% else %}border-error/50 bg-error/5{% endif %} p-2.5">
+                <div class="text-sm font-medium flex items-center gap-1.5"><i class="ti {% if ok %}ti-circle-check text-success{% else %}ti-alert-triangle text-error{% endif %}"></i>{{ name }}</div>
+                <div class="text-xs opacity-70 mt-0.5">{{ detail }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+

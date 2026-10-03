@@ -352,6 +352,17 @@ class ChannelDashboardTests(TestCase):
         page = self.client.get(reverse("dashboard:channel_post", args=[post.pk]))
         self.assertContains(page, "Привет")
 
+    def test_calendar(self):
+        when = timezone.make_aware(timezone.datetime(2026, 11, 14, 18, 30))
+        ChannelPost.objects.create(kind="preview", text="Анонс", status="scheduled", scheduled_at=when)
+        ChannelPost.objects.create(kind="manual", text="Черновик", status="draft", scheduled_at=when)
+        page = self.client.get(reverse("dashboard:channel") + "?month=2026-11")
+        self.assertContains(page, "Ноябрь 2026")
+        self.assertContains(page, "18:30 · Превью тура")
+        self.assertNotContains(page, "Свой пост · ")
+        # Мусор в ?month= — текущий месяц, без ошибки.
+        self.assertEqual(self.client.get(reverse("dashboard:channel") + "?month=zzz").status_code, 200)
+
 
 @override_settings(ADMIN_BOT_CHANNEL_ID="@dopx_kz", ADMIN_BOT_ALLOWED_CHATS="-1009")
 class GuardTests(BotTestCase):

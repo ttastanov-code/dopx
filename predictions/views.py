@@ -63,6 +63,12 @@ def predict(request, match_id):
         # 200, не 401 — HTMX свапает только 2xx.
         return render(request, login_template, {'match': match}, status=200)
 
+    from django.conf import settings
+
+    from users.emails import profile_complete
+    if settings.PROFILE_REQUIRED and not profile_complete(request.user):
+        return render(request, 'predictions/_prediction_profile_prompt.html', {'match': match, 'compact': compact})
+
     if is_rate_limited(
         f'predict:{request.user.id}', PREDICT_RATE_LIMIT, PREDICT_RATE_LIMIT_WINDOW_SECONDS
     ):

@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from unittest import mock
 
+from django.conf import settings
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -292,6 +293,33 @@ class PagesTests(EngagementTestCase):
         self.assertEqual(self.client.get(url).status_code, 302)
         bad = reverse('engagement:brag_card', args=[user.username, 'fan_top-nope'])
         self.assertEqual(self.client.get(bad).status_code, 404)
+
+    def test_story_card(self):
+        from django.core.files.storage import default_storage
+        from PIL import Image
+        from evaluations.models import PlayerEvaluation
+        from players.models import Player
+
+        user = self.make_user()
+        match = self.make_match(home_score=2, away_score=1)
+        story = lambda kind: reverse('engagement:story_card', args=[user.username, kind])
+        self.assertEqual(self.client.get(story(f'match-{match.id}')).status_code, 404)
+        self.assertEqual(self.client.get(story(f'prediction-{match.id}')).status_code, 404)
+        self.assertEqual(self.client.get(story('match-nope')).status_code, 404)
+
+        player = Player.objects.create(first_name="Иван", last_name="Петров", team=self.home)
+        PlayerEvaluation.objects.create(user=user, match=match, player=player, contribution=9, risk=3, potential=5)
+        MatchPrediction.objects.create(user=user, match=match, choice="1")
+        for kind in (f'match-{match.id}', f'prediction-{match.id}', 'predictions'):
+            response = self.client.get(story(kind))
+            self.assertEqual(response.status_code, 302, kind)
+        path = response.url.split(settings.MEDIA_URL, 1)[1]
+        with default_storage.open(path) as fh:
+            self.assertEqual(Image.open(fh).size, (1080, 1920))
+        # Закрытый профиль — карточек нет.
+        user.is_profile_public = False
+        user.save(update_fields=['is_profile_public'])
+        self.assertEqual(self.client.get(story('predictions')).status_code, 404)
 
     def test_team_players_widget(self):
         response = self.client.get(reverse('engagement:team_players_widget', args=[self.home.id]))

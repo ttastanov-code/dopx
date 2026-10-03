@@ -1,0 +1,70 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+{# Жалобы болельщиков на профили и лиги. Меры — users/reports.py. #}
+<div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+    <div class="dopx-segment">
+        <a href="?" class="dopx-segment__item {% if not done %}dopx-segment__item--active{% endif %}">Новые{% if new_count %} · {{ new_count }}{% endif %}</a>
+        <a href="?status=done" class="dopx-segment__item {% if done %}dopx-segment__item--active{% endif %}">Разобранные</a>
+    </div>
+    <p class="text-xs opacity-60">Мера закрывает все открытые жалобы на ту же цель. К сотрудникам применяется только «Отклонить».</p>
+</div>
+
+<section class="card bg-base-100 border border-base-300"><div class="card-body p-0">
+    {% for row in rows %}{% with r=row.report %}
+    <div class="px-4 py-3 border-b border-base-200 last:border-0 space-y-2">
+        <div class="flex flex-wrap items-start gap-3">
+            {% if r.target_user and r.target_user.avatar %}
+            <img src="{{ r.target_user.avatar.url }}" alt="" class="w-10 h-10 rounded-full object-cover shrink-0">
+            {% else %}
+            <span class="w-10 h-10 rounded-full bg-base-200 flex items-center justify-center shrink-0"><i class="ti {% if r.target_user %}ti-user{% else %}ti-trophy{% endif %} opacity-60"></i></span>
+            {% endif %}
+            <div class="min-w-0 flex-1">
+                <div class="text-sm">
+                    {% if r.target_user %}
+                    <a class="link font-semibold" href="{% url 'users:public_profile' r.target_user.username %}" target="_blank" rel="noopener">{{ r.target_user.username }}</a>
+                    {% if not r.target_user.is_active %}<span class="badge badge-error badge-xs">заблокирован</span>{% endif %}
+                    {% if r.target_user.is_staff %}<span class="badge badge-ghost badge-xs">сотрудник</span>{% endif %}
+                    {% elif r.friend_league %}
+                    лига <a class="link font-semibold" href="{% url 'engagement:friend_league' r.friend_league.invite_code %}" target="_blank" rel="noopener">«{{ r.friend_league.name }}»</a>
+                    <span class="opacity-60">· владелец {{ r.friend_league.owner.username }}</span>
+                    {% else %}
+                    {{ r.target_label }} <span class="opacity-60">(удалена)</span>
+                    {% endif %}
+                </div>
+                <div class="text-xs opacity-60">
+                    <span class="badge badge-warning badge-xs">{{ r.get_reason_display }}</span>
+                    · {{ r.created_at|date:"d.m H:i" }} · от {{ r.reporter.username|default:"удалённого аккаунта" }}
+                    {% if r.target_name and r.target_user and r.target_name != r.target_user.username %}· на момент жалобы: {{ r.target_name }}{% endif %}
+                </div>
+                {% if r.comment %}<p class="text-sm mt-1">«{{ r.comment }}»</p>{% endif %}
+                {% if r.target_user and r.target_user.bio %}<p class="text-xs opacity-70 mt-1"><b>О себе:</b> {{ r.target_user.bio|truncatechars:200 }}</p>{% endif %}
+                {% if done %}
+                <p class="text-xs mt-1"><span class="badge badge-xs {% if r.status == 'resolved' %}badge-success{% else %}badge-ghost{% endif %}">{{ r.get_status_display }}</span>
+                    {% if row.action_label %}{{ row.action_label }} · {% endif %}{{ r.handled_by.username|default:"—" }}, {{ r.handled_at|date:"d.m H:i" }}</p>
+                {% endif %}
+            </div>
+        </div>
+        {% if row.actions %}
+        <div class="flex flex-wrap gap-2 pl-0 sm:pl-13">
+            {% for key, label in row.actions %}
+            <form method="post" action="{% url 'dashboard:report_action' r.pk %}" {% if key == 'ban' or key == 'delete_league' %}onsubmit="return confirm('{{ label }}?')"{% endif %}>{% csrf_token %}
+                <button name="action" value="{{ key }}" class="btn btn-xs {% if key == 'reject' %}btn-ghost{% elif key == 'ban' or key == 'delete_league' %}btn-error btn-outline{% else %}btn-outline{% endif %}">{{ label }}</button>
+            </form>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+    {% endwith %}{% empty %}
+    <p class="px-4 py-6 text-sm opacity-60">{% if done %}Разобранных жалоб пока нет.{% else %}Новых жалоб нет.{% endif %}</p>
+    {% endfor %}
+    {% if page.has_other_pages %}
+    <div class="flex justify-between px-4 py-2 text-xs">
+        {% if page.has_previous %}<a class="link" href="?{% if done %}status=done&{% endif %}page={{ page.previous_page_number }}">← Назад</a>{% else %}<span></span>{% endif %}
+        {% if page.has_next %}<a class="link" href="?{% if done %}status=done&{% endif %}page={{ page.next_page_number }}">Дальше →</a>{% endif %}
+    </div>
+    {% endif %}
+</div></section>
+{% endblock %}

@@ -161,6 +161,12 @@ class EvaluationWizardMixin:
         if not is_email_verified(request.user):
             messages.warning(request, 'Подтвердите почту по ссылке из письма, чтобы оценивать матчи.')
             return redirect('matches:detail', pk=request.resolver_match.kwargs['match_id'])
+        from django.conf import settings
+
+        from users.emails import profile_complete
+        if settings.PROFILE_REQUIRED and not profile_complete(request.user):
+            messages.warning(request, 'Укажите город и подтвердите почту, после этого можно оценивать матчи.')
+            return redirect(f"{reverse('users:complete_profile')}?next={request.get_full_path()}")
         return None
 
     def prepare_step(self, request, match_id, required_step: str | None):
@@ -762,6 +768,12 @@ class EvaluationCompleteView(LoginRequiredMixin, TemplateView):
         user_xp = getattr(self.request.user, 'xp', None)
         context['xp_progress_percent'] = user_xp.progress_percent if user_xp else 0
         context['user_level'] = user_xp.level if user_xp else 1
+
+        # Сторис «мой герой матча» — только при публичном профиле (карточка отдаётся публично).
+        if match_id and self.request.user.is_profile_public and PlayerEvaluation.objects.filter(
+                user=self.request.user, match_id=match_id).exists():
+            context['story_url'] = reverse('engagement:story_card', args=[self.request.user.username, f'match-{match_id}'])
+            context['story_share_url'] = self.request.build_absolute_uri(reverse('matches:detail', args=[match_id]))
 
         context['page_title'] = 'Спасибо! — DOPX'
         return context

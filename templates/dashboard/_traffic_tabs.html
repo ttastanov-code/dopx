@@ -1,0 +1,5 @@
+{# Переключатель «Посещаемость / Воронка и удержание» — обе страницы в разделе «Трафик». #}
+<div class="dopx-segment">
+    <a href="{% url 'dashboard:traffic' %}" class="dopx-segment__item {% if current == 'traffic' %}dopx-segment__item--active{% endif %}"><i class="ti ti-world"></i> Посещаемость</a>
+    <a href="{% url 'dashboard:retention' %}" class="dopx-segment__item {% if current == 'retention' %}dopx-segment__item--active{% endif %}"><i class="ti ti-filter"></i> Воронка и удержание</a>
+</div>

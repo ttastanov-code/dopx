@@ -1,5 +1,5 @@
 {% comment %}
-«Поделиться» в один тап: url, text, image (опц., картинка-карточка), label (опц.).
+«Поделиться» в один тап: url, text, image (опц., картинка-карточка), story (опц., вертикальная для сторис), label (опц.).
 Поведение — static/js/share.js, стили — css/ui.css (dx-share).
 {% endcomment %}
 <div class="dx-share">
@@ -7,6 +7,7 @@
         <i class="ti ti-share-3"></i><span data-share-label>{{ label|default:"Поделиться" }}</span>
     </button>
     <div class="dx-share__alts">
+        {% if story %}<button type="button" class="dx-share__alt dx-share__alt--story" data-story="{{ story }}" aria-label="В сторис" title="В сторис"><i class="ti ti-brand-instagram"></i></button>{% endif %}
         <a class="dx-share__alt dx-share__alt--wa" href="https://wa.me/?text={{ text|urlencode }}%0A{{ url|urlencode }}" target="_blank" rel="noopener" aria-label="WhatsApp"><i class="ti ti-brand-whatsapp"></i></a>
         <a class="dx-share__alt dx-share__alt--tg" href="https://t.me/share/url?url={{ url|urlencode }}&text={{ text|urlencode }}" target="_blank" rel="noopener" aria-label="Telegram"><i class="ti ti-brand-telegram"></i></a>
         {% if image %}<a class="dx-share__alt" href="{{ image }}" download="dopx.png" aria-label="Скачать картинку для сторис"><i class="ti ti-download"></i></a>{% endif %}

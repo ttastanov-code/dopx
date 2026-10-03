@@ -78,6 +78,27 @@ def traffic(request):
     return render(request, "dashboard/traffic.html", context)
 
 
+@staff_member_required
+def retention(request):
+    """Воронка «визит → регистрация → действие» и недельные когорты удержания."""
+    from analytics.selectors import funnel_overview, retention_cohorts
+
+    try:
+        days = int(request.GET.get("days", 30))
+    except (TypeError, ValueError):
+        days = 30
+    days = days if days in (7, 14, 30, 90) else 30
+    return render(request, "dashboard/retention.html", {
+        "page_title": "Воронка и удержание — DOPX Staff",
+        "active_tab": "traffic",
+        "funnel": funnel_overview(days=days),
+        "cohorts": retention_cohorts(weeks=8),
+        "week_numbers": range(8),
+        "selected_days": days,
+        "day_presets": (7, 14, 30, 90),
+    })
+
+
 # ============================================================
 # Матчи: ручная правка и пересчёт агрегатов
 # ============================================================
@@ -441,6 +462,51 @@ def data_health_resync_match(request, match_id):
         target=str(match), details={"match_id": str(match.id), "success": success, "message": message},
     )
     return redirect("dashboard:data_health")
+
+
+@staff_member_required
+def reports(request):
+    """Очередь жалоб болельщиков; ?status=done — разобранные."""
+    from users import reports as user_reports
+    from users.models import UserReport
+
+    done = request.GET.get("status") == "done"
+    qs = (UserReport.objects.filter(status__in=["resolved", "rejected"] if done else ["new"])
+          .select_related("reporter", "target_user", "friend_league__owner", "handled_by")
+          .order_by("-handled_at" if done else "created_at"))
+    page = Paginator(qs, 30).get_page(request.GET.get("page"))
+    can_act = request.user.is_superuser or request.user.has_perm("users.change_userreport")
+    labels = {k: v[0] for k, v in user_reports.ACTIONS.items()}
+    rows = [{"report": r, "action_label": labels.get(r.action, r.action),
+             "actions": user_reports.allowed_actions(r, request.user) if can_act and not done else []} for r in page]
+    return render(request, "dashboard/reports.html", {
+        "page_title": "Жалобы — DOPX Staff",
+        "active_tab": "reports",
+        "rows": rows,
+        "page": page,
+        "done": done,
+        "new_count": UserReport.objects.filter(status="new").count(),
+    })
+
+
+@staff_member_required
+@require_POST
+def report_action(request, report_id):
+    from users import reports as user_reports
+    from users.models import UserReport
+
+    report = get_object_or_404(UserReport.objects.select_related("target_user", "friend_league__owner"), pk=report_id)
+    action = request.POST.get("action", "")
+    target = report.target_label
+    try:
+        message = user_reports.apply(report, action, request.user)
+    except user_reports.ReportError as e:
+        messages.error(request, str(e))
+        return redirect("dashboard:reports")
+    log_staff_action(request, AuditAction.USER_REPORT_HANDLED, target=target,
+                     details={"report_id": str(report.pk), "action": action, "reason": report.reason})
+    messages.success(request, message)
+    return redirect("dashboard:reports")
 
 
 @staff_member_required
@@ -1343,6 +1409,32 @@ def evaluation_session_delete(request, session_id):
         details={"user": username, "match_id": match_id, **counts},
     )
     return redirect("dashboard:evaluation_sessions_list")
+
+
+@staff_member_required
+@require_POST
+def service_restart(request, name):
+    """Перезапуск процесса по кнопке: флаг в Redis, процесс сам завершается, Docker поднимает заново."""
+    from core import heartbeat
+
+    if not request.user.is_superuser:
+        messages.error(request, "Перезапуск сервисов — только для суперпользователя.")
+        return redirect("dashboard:system_status")
+    row = next((r for r in heartbeat.overview() if r["name"] == name and r["restartable"]), None)
+    if row is None:
+        messages.error(request, "Этот сервис так не перезапускается.")
+        return redirect("dashboard:system_status")
+    heartbeat.request_restart(name)
+    log_staff_action(request, AuditAction.SERVICE_RESTART, target=f"Перезапуск: {row['label']}", details={"service": name})
+    messages.success(request, f"«{row['label']}» перезапустится в течение минуты. На проде Docker поднимет его сам, а "
+                              "на ноутбуке процесс просто остановится, запустите его заново.")
+    return redirect("dashboard:system_status")
+
+
+@staff_member_required
+def system_status_services(request):
+    """HTMX-партиал блока «Сервисы» для автообновления."""
+    return render(request, "dashboard/_services_block.html", {"services": infra_services.services_overview()})
 
 
 @staff_member_required

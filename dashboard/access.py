@@ -19,6 +19,7 @@ SECTION_PATH_MAP: list[tuple[str, str]] = [
     ("/staff/dashboard/evaluations/", "evaluation_sessions"),
     ("/staff/dashboard/users/", "users"),
     ("/staff/dashboard/antifraud/", "antifraud"),
+    ("/staff/dashboard/reports/", "reports"),
     ("/staff/dashboard/parser/", "parser_tools"),
     # partners/banners — подраздел «Реклама»
     ("/staff/dashboard/partners/", "ads"),

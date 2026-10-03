@@ -408,7 +408,7 @@ def attention_items(user) -> list[dict]:
 
     from parsers.models import NameVerificationSuggestion, ParserDiscrepancy
     from players.models import PotentialDuplicatePlayer
-    from users.models import SuspiciousActivityFlag
+    from users.models import SuspiciousActivityFlag, UserReport
 
     from .access import user_can_access_section
     from .models import ManagementCommandRun
@@ -422,6 +422,9 @@ def attention_items(user) -> list[dict]:
          "Право на ответ — отвечаем в первую очередь",
          lambda: ContactSubmission.objects.filter(category="dispute", status__in=open_statuses).count(),
          "dashboard:antifraud"),
+        ("reports", "ti-flag", "error", "Жалобы болельщиков",
+         "Ники, аватары и лиги — разобрать",
+         lambda: UserReport.objects.filter(status="new").count(), "dashboard:reports"),
         ("data_trust", "ti-flag", "warning", "Жалобы на данные матчей",
          "Проверить первоисточник и поправить",
          lambda: ContactSubmission.objects.filter(category="data_error", status__in=open_statuses).count(),

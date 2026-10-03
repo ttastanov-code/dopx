@@ -1,5 +1,6 @@
 {% extends 'base_auth.html' %}
 {% load static %}
+{% load fanbot_tags %}
 {% block title %}Вход · DOPX{% endblock %}
 
 {% block extra_style %}
@@ -107,6 +108,8 @@ body {
             Войти
         </button>
     </form>
+
+    {% telegram_login request.GET.next %}
 
     <p class="text-center text-sm text-base-content/55 mt-8">
         Впервые на DOPX?

@@ -32,13 +32,18 @@
                     </div>
                 </div>
                 <h2 class="text-2xl font-bold break-all">{{ user.username }}</h2>
+                {% if user.has_real_email %}
                 <p class="opacity-60 text-sm break-all">{{ user.email }}</p>
+                {% else %}
+                <p class="opacity-60 text-sm"><i class="ti ti-brand-telegram"></i> Вход через Telegram · <a href="{% url 'users:complete_profile' %}?next={{ request.path|urlencode }}" class="link">добавить почту</a></p>
+                {% endif %}
                 {% if user.city %}
                 <div class="flex items-center justify-center gap-1 mt-2 text-sm opacity-60">
                     <i class="ti ti-map-pin"></i>
                     <span>{{ user.city }}</span>
                 </div>
                 {% endif %}
+                {% include 'users/_telegram_link.html' %}
                 {# Trust Score #}
                 <div class="mt-4">
                     <div class="text-sm opacity-60 mb-1">Trust Score</div>
@@ -128,7 +133,7 @@
             <div class="dx-brag dx-brag--{{ b.kind }}">
                 <div class="dx-brag__num">{{ b.number }}</div>
                 <div class="dx-brag__title">{{ b.title }}</div>
-                {% include 'components/_share_sheet.html' with url=b.url text=b.text image=b.image label="Похвастаться" %}
+                {% include 'components/_share_sheet.html' with url=b.url text=b.text image=b.image story=b.story label="Похвастаться" %}
             </div>
             {% endfor %}
         </div>

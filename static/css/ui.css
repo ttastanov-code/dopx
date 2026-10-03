@@ -2113,8 +2113,9 @@ a.dx-rank__name:hover { color: var(--color-primary); }
 .dx-brag__num { font-size: 2rem; font-weight: 800; line-height: 1; color: var(--c); font-variant-numeric: tabular-nums; }
 .dx-brag__title { font-size: .85rem; line-height: 1.3; opacity: .8; }
 /* Кнопки — вторая строка на всю ширину: «Похвастаться» тянется, иконки справа. */
-.dx-brag .dx-share { grid-column: 1 / -1; flex-wrap: nowrap; }
-.dx-brag .dx-share__main { flex: 1 1 auto; min-width: 0; justify-content: center; background: #fff; color: #111827; padding: .5rem .85rem; font-size: .85rem; white-space: nowrap; }
+/* Не влезает в строку (узкий телефон) — иконки уходят под кнопку, а не сжимают её. */
+.dx-brag .dx-share { grid-column: 1 / -1; flex-wrap: wrap; row-gap: .5rem; }
+.dx-brag .dx-share__main { flex: 1 1 9rem; min-width: 0; justify-content: center; background: #fff; color: #111827; padding: .5rem .85rem; font-size: .85rem; white-space: nowrap; }
 /* Публичный профиль: три плитки в ряд даже в узкой колонке. */
 .dx-brags--compact { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: .5rem; }
 .dx-brags--compact .dx-brag { display: flex; flex-direction: column; align-items: stretch; padding: .8rem .75rem; text-decoration: none; }
@@ -2344,3 +2345,67 @@ a:active > .ti-dopx-rate::before, button:active > .ti-dopx-rate::before,
 /* Поле даты и времени: в Safari на iPhone пустое поле сжимается в квадрат — задаём высоту и ширину. */
 input[type="datetime-local"].dx-datetime { min-height: 2.25rem; min-width: 0; -webkit-appearance: none; appearance: none; display: block; }
 input[type="datetime-local"].dx-datetime::-webkit-date-and-time-value { text-align: left; }
+
+/* Кнопка «В сторис» — круглая, как остальные, с градиентом Instagram (перекрывает цвета контекстов). */
+.dx-share .dx-share__alt.dx-share__alt--story { color: #fff; border-color: transparent;
+  background: linear-gradient(135deg, #f58529, #dd2a7b 50%, #8134af); }
+
+/* Календарь канала в дашборде: 7 колонок, на телефоне — только время. */
+.dx-cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
+.dx-cal__head { font-size: .65rem; text-transform: uppercase; opacity: .5; text-align: center; padding-bottom: .25rem; font-weight: 600; }
+.dx-cal__day { min-height: 4.5rem; padding: .25rem; border-radius: .5rem; background: color-mix(in oklab, var(--color-base-200) 60%, transparent); display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dx-cal__day.is-out { opacity: .35; }
+.dx-cal__day.is-today { outline: 2px solid var(--color-primary); }
+.dx-cal__num { font-size: .7rem; font-weight: 600; opacity: .7; }
+.dx-cal__post { display: flex; gap: .25rem; font-size: .65rem; line-height: 1.2; padding: 1px 4px; border-radius: .3rem; min-width: 0;
+  background: color-mix(in oklab, var(--color-success) 22%, transparent); }
+.dx-cal__post.is-scheduled { background: color-mix(in oklab, var(--color-primary) 22%, transparent); }
+.dx-cal__time { font-weight: 600; flex-shrink: 0; }
+.dx-cal__kind { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dx-cal__more { font-size: .6rem; opacity: .6; }
+.dx-cal__dot { display: inline-block; width: .6rem; height: .6rem; border-radius: 999px; vertical-align: middle; background: color-mix(in oklab, var(--color-success) 60%, transparent); }
+.dx-cal__dot.is-scheduled { background: color-mix(in oklab, var(--color-primary) 60%, transparent); }
+@media (max-width: 640px) {
+  .dx-cal__kind { display: none; }
+  .dx-cal__day { min-height: 3.5rem; padding: 2px; }
+  .dx-cal__post { padding: 1px 2px; font-size: .6rem; }
+}
+
+/* Кнопка «Пожаловаться»: тихая ссылка, форма раскрывается по клику. */
+.dx-report { margin-top: .75rem; text-align: left; }
+.dx-report__toggle { list-style: none; cursor: pointer; font-size: .75rem; opacity: .5; display: inline-flex; align-items: center; gap: .25rem; }
+.dx-report__toggle::-webkit-details-marker { display: none; }
+.dx-report__toggle:hover, .dx-report[open] .dx-report__toggle { opacity: .9; }
+.dx-report__form { display: grid; gap: .5rem; margin-top: .5rem; max-width: 22rem; }
+
+/* Напоминание «Заполните профиль» — первым блоком внутри <main>, по ширине контента. */
+.dx-nudge { display: flex; align-items: center; gap: .75rem; margin-bottom: 1rem; padding: .7rem .9rem; border-radius: 1rem;
+  border: 1px solid color-mix(in oklab, var(--color-warning) 45%, transparent);
+  background: color-mix(in oklab, var(--color-warning) 10%, var(--color-base-100)); color: inherit; text-decoration: none; }
+.dx-nudge:hover { background: color-mix(in oklab, var(--color-warning) 16%, var(--color-base-100)); }
+.dx-nudge__icon { font-size: 1.35rem; color: var(--color-warning); flex: none; }
+.dx-nudge__text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .1rem; font-size: .875rem; line-height: 1.3; }
+.dx-nudge__sub { font-size: .78rem; opacity: .7; overflow-wrap: anywhere; }
+.dx-nudge__chev { opacity: .45; flex: none; }
+
+/* Плашка привязанного аккаунта (Telegram) в карточке профиля. */
+.dx-linked { position: relative; display: flex; align-items: center; gap: .65rem; margin-top: 1rem; padding: .55rem .6rem .55rem .55rem;
+  border-radius: 1rem; background: var(--color-base-200); text-align: left; }
+.dx-linked__icon { width: 2.25rem; height: 2.25rem; flex: none; border-radius: 999px; display: grid; place-items: center;
+  font-size: 1.15rem; color: #fff; background: #94a3b8; }
+.dx-linked.is-on .dx-linked__icon { background: #229ed9; }
+.dx-linked__text { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
+.dx-linked__text b { font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dx-linked__text small { font-size: .75rem; opacity: .65; }
+.dx-linked__text small .ti { color: var(--color-success); }
+.dx-linked__text small a { text-decoration: underline; color: var(--color-warning); opacity: 1; }
+.dx-linked__cta { padding: .35rem .8rem; border-radius: 999px; font-size: .8rem; font-weight: 600; color: #fff; background: #229ed9; }
+.dx-linked__cta:active { transform: scale(.97); }
+.dx-linked__menu > summary { list-style: none; cursor: pointer; width: 2rem; height: 2rem; border-radius: 999px; display: grid; place-items: center; opacity: .6; }
+.dx-linked__menu > summary::-webkit-details-marker { display: none; }
+.dx-linked__menu > summary:hover, .dx-linked__menu[open] > summary { opacity: 1; background: color-mix(in oklab, var(--color-base-content) 8%, transparent); }
+.dx-linked__dropdown { position: absolute; right: .4rem; top: calc(100% + .3rem); z-index: 20; min-width: 11rem; padding: .3rem;
+  border-radius: .8rem; background: var(--color-base-100); border: 1px solid var(--color-base-300); box-shadow: 0 10px 30px -10px rgb(0 0 0 / .25); }
+.dx-linked__dropdown button { display: flex; align-items: center; gap: .5rem; width: 100%; padding: .5rem .6rem; border-radius: .55rem; font-size: .85rem; text-align: left; }
+.dx-linked__dropdown button:hover { background: var(--color-base-200); }
+.dx-linked__dropdown button.is-danger { color: var(--color-error); }
