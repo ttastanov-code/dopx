@@ -15,7 +15,8 @@ logger = logging.getLogger(__name__)
 # После ошибки ключа/баланса не дёргаем API столько секунд — сразу шаблоны.
 BREAKER_TTL = 6 * 3600
 BREAKER_KEY = "adminbot:ai_breaker"
-ALWAYS_OK_NUMBERS = {"0", "1", "2", "3"}
+# Мелкие числа и шкалы оценок (из 10) и драмы (из 100).
+ALWAYS_OK_NUMBERS = {"0", "1", "2", "3", "10", "100"}
 
 SYSTEM = (
     "Ты пишешь посты для Telegram-канала DOPX — независимого рейтинга казахстанского футбола (КПЛ) "
@@ -28,15 +29,17 @@ SYSTEM = (
     "3. Первая строка — заголовок в <b>, с одним подходящим эмодзи в начале.\n"
     "4. Абзацы короткие, 2–5 абзацев, эмодзи — в начале абзацев, не больше одного на абзац.\n"
     "5. Длина — {length}.\n"
-    "6. Выведи только текст поста, без пояснений."
+    "6. Выведи только текст поста. Никогда не упоминай JSON, «факты», «данные» и чего в них нет — "
+    "просто не пиши об этом. Никаких заметок, оговорок и пояснений от себя."
 )
 
 GUIDES = {
     "review": "Разбор матча. Сначала история (камбэк, поздний гол, сенсация по прогнозам, разгром — что есть в фактах), "
               "затем ход матча с минутами голов, цифры статистики, герой и антигерой по оценкам болельщиков, "
               "как разошлись фанаты двух команд, что изменилось в таблице, цитата эксперта если есть.",
-    "preview": "Превью тура. Что на кону в главных матчах: места в таблице, форма, очные встречи, за кого голосуют "
-               "болельщики в прогнозах, цитаты экспертов если есть. Закончи призывом сделать прогноз.",
+    "preview": "Превью тура. Что на кону в главных матчах: места в таблице, форма, очные встречи. Прогнозы болельщиков "
+               "и цитаты экспертов — только если они есть в фактах; если нет, вообще не упоминай их. "
+               "Закончи призывом сделать прогноз.",
     "round": "Итоги тура: игрок тура, сборная, самый спорный судья, самый драматичный матч, главная сенсация, "
              "сколько болельщиков оценило тур.",
     "controversy": "Спорный момент недели: почему трибуны разошлись в оценке судьи, цифры разрыва. "
@@ -74,8 +77,17 @@ def _numbers(text: str) -> set[str]:
     return {_norm(n) for n in re.findall(r"\d+(?:[.,]\d+)?", text)}
 
 
+# Признаки служебного текста модели в посте («в JSON нет…», «Заметка: …»).
+META_MARKERS = ("json", "в фактах", "нет данных", "данных нет", "заметка", "не придумыва", "у нас нет",
+                "отсутству", "не располага", "нет информации")
+
+
 def facts_ok(text: str, facts: dict) -> bool:
     """Нет ли в тексте чисел, которых нет в фактах (защита от выдумок)."""
+    lowered = text.lower()
+    if any(m in lowered for m in META_MARKERS):
+        logger.warning("adminbot writer: в тексте служебные пометки модели — беру шаблон")
+        return False
     allowed = _numbers(json.dumps(facts, ensure_ascii=False)) | ALWAYS_OK_NUMBERS
     extra = _numbers(re.sub(r"<[^>]+>", "", text)) - allowed
     if extra:
@@ -89,6 +101,12 @@ def _trip(provider: str, reason: str) -> None:
     if not cache.get(_breaker(provider)):
         logger.warning("adminbot writer: %s недоступен (%s) — %d ч не используем", llm.label(provider), reason, BREAKER_TTL // 3600)
     cache.set(_breaker(provider), reason, BREAKER_TTL)
+
+
+def _bold_title(text: str) -> str:
+    """Первая строка — заголовок: если ИИ не выделил его, выделяем сами."""
+    title, sep, rest = text.partition("\n")
+    return text if "<b>" in title or not title else f"<b>{title}</b>{sep}{rest}"
 
 
 def ask_ai(kind: str, facts: dict, length: str) -> tuple[str, str] | None:
@@ -109,7 +127,7 @@ def ask_ai(kind: str, facts: dict, length: str) -> tuple[str, str] | None:
             else:
                 logger.warning("adminbot writer: %s не ответил: %s", llm.label(provider), str(e)[:200])
             continue
-        text = clean_html(text.strip())
+        text = _bold_title(clean_html(text.strip()))
         if text and facts_ok(text, facts):
             return text, provider
     return None

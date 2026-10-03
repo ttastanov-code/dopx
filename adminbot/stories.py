@@ -20,6 +20,11 @@ def _r(x):
     return int(x) if x == int(x) else x
 
 
+def _score1(x) -> str:
+    """Оценка с одной цифрой после запятой: 3 → «3.0»."""
+    return f"{float(x):.1f}"
+
+
 def _rng(key) -> random.Random:
     return random.Random(str(key))
 
@@ -123,7 +128,7 @@ def match_facts(match) -> dict:
             facts["сенсация"] = f"{upset}% болельщиков ждали другого исхода"
     agg = MatchAggregate.objects.filter(match=match).first()
     if agg and agg.total_votes:
-        facts["индекс_драмы_из_10"] = _r(agg.drama_index)
+        facts["индекс_драмы_из_100"] = _r(agg.drama_index)
     try:
         before, after = compute_match_table_impact_positions(match)
         table = {}
@@ -180,10 +185,10 @@ def review_template(match, facts: dict) -> str:
     fans = []
     if facts.get("лучшие"):
         hero = facts["лучшие"][0]
-        fans.append(f"герой — {_esc(hero['игрок'])}, {hero['оценка']}")
+        fans.append(f"герой — {_esc(hero['игрок'])}, {_score1(hero['оценка'])}")
     if facts.get("антигерой"):
         anti = facts["антигерой"]
-        fans.append(f"антигерой — {_esc(anti['игрок'])}, {anti['оценка']}")
+        fans.append(f"антигерой — {_esc(anti['игрок'])}, {_score1(anti['оценка'])}")
     if fans:
         parts.append(f"⭐ <b>Болельщики ({facts['оценок_болельщиков']} оценок):</b> " + "; ".join(fans) + ".")
     if facts.get("раскол_трибун"):
@@ -301,7 +306,7 @@ def round_facts(rnd) -> dict:
     if rnd.most_dramatic_match_id:
         m = rnd.most_dramatic_match
         facts["самый_драматичный"] = {"матч": f"{m.home_team.name} {m.home_score}:{m.away_score} {m.away_team.name}",
-                                      "индекс_драмы": _r(rnd.most_dramatic_match_score)}
+                                      "индекс_драмы_из_100": _r(rnd.most_dramatic_match_score)}
     ref, gap = controversial_referee(rnd.season, rnd.tour)
     if ref and gap is not None:
         facts["спорный_судья"] = {"имя": ref.referee.full_name, "матч": f"{ref.match.home_team.name} – {ref.match.away_team.name}",
@@ -345,6 +350,9 @@ def round_template(facts: dict) -> str:
         p = facts["игрок_тура"]
         parts.append(f"⭐ <b>Игрок тура</b> — {_esc(p['имя'])}" + (f" ({_esc(p['команда'])})" if p["команда"] else "")
                      + (f": {p['оценка']} из 10" if p["оценка"] is not None else "") + ".")
+    elif facts.get("лидеры_оценок"):
+        leaders = facts["лидеры_оценок"][:3]
+        parts.append("⭐ <b>Лучшие оценки тура:</b> " + _esc(", ".join(f"{l['игрок']} {_score1(l['оценка'])}" for l in leaders)) + ".")
     if facts.get("сборная_тура"):
         parts.append("🧩 <b>Сборная тура:</b> " + _esc(", ".join(facts["сборная_тура"])) + ".")
     if facts.get("сенсация_тура"):
@@ -352,7 +360,7 @@ def round_template(facts: dict) -> str:
         parts.append(f"😱 <b>Сенсация:</b> {_esc(s['матч'])} — {s['ждали_другого_%']}% болельщиков ждали другого.")
     if facts.get("самый_драматичный"):
         d = facts["самый_драматичный"]
-        parts.append(f"🔥 <b>Драма тура:</b> {_esc(d['матч'])}" + (f", индекс {d['индекс_драмы']}" if d["индекс_драмы"] else "") + ".")
+        parts.append(f"🔥 <b>Драма тура:</b> {_esc(d['матч'])}" + (f", индекс драмы {d['индекс_драмы_из_100']} из 100" if d["индекс_драмы_из_100"] else "") + ".")
     if facts.get("спорный_судья"):
         r = facts["спорный_судья"]
         parts.append(f"🟨 <b>Спорный судья:</b> {_esc(r['имя'])} ({_esc(r['матч'])}) — фанаты поставили {r['фанаты_хозяев']} и {r['фанаты_гостей']}.")
