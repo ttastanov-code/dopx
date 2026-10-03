@@ -19,9 +19,18 @@
                     <button name="action" value="draft" class="btn btn-sm btn-outline"><i class="ti ti-device-floppy"></i> В черновики</button>
                     {% if perms.adminbot.change_channelpost %}
                     <button name="action" value="publish" class="btn btn-sm btn-primary" {% if not status.ok %}disabled title="Канал не настроен"{% endif %} onclick="return confirm('Опубликовать в канале сейчас?')"><i class="ti ti-send"></i> Опубликовать</button>
-                    <span class="flex items-end gap-1"><input type="datetime-local" name="scheduled_at" class="input input-sm input-bordered"><button name="action" value="schedule" class="btn btn-sm btn-ghost"><i class="ti ti-clock"></i> Запланировать</button></span>
                     {% endif %}
                 </div>
+                {% if perms.adminbot.change_channelpost %}
+                {# Отдельный блок с подписью: на iPhone пустое поле даты иначе выглядит как пустой квадрат. #}
+                <div class="rounded-xl border border-base-300 p-3 space-y-2">
+                    <label class="flex flex-col gap-1">
+                        <span class="text-[10px] uppercase tracking-wide opacity-50 font-semibold">По расписанию: дата и время</span>
+                        <input type="datetime-local" name="scheduled_at" class="input input-sm input-bordered w-full sm:w-64 dx-datetime">
+                    </label>
+                    <button name="action" value="schedule" class="btn btn-sm btn-outline w-full sm:w-auto"><i class="ti ti-clock"></i> Запланировать</button>
+                </div>
+                {% endif %}
             </form>
         </div></section>
         {% endif %}

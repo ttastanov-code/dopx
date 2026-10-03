@@ -76,9 +76,8 @@ def morning(now: datetime | None = None) -> datetime:
 # ---------------- Подготовка
 def prepare(kind: str, key: str, text, image: str = "", buttons=None, sample: bool = False,
             images=None, poll=None, delay: int = 0) -> ChannelPost | None:
-    """Пост из события. Ключ не даёт продублировать; режим типа решает: сразу, на одобрение или никак.
-    text — строка или функция → (текст, by_ai): вызывается, только если пост нужен (Claude не тратим зря).
-    sample — пробный черновик: без режимов, уведомлений и проверки канала; delay — сдвиг публикации, сек."""
+    """Пост из события: ключ от дублей, режим типа — сразу, на одобрение или никак.
+    text может быть функцией → (текст, by_ai): ИИ зовём, только если пост нужен; sample — пробный черновик."""
     if not sample:
         if not configured():
             return None

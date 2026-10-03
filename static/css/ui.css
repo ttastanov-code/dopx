@@ -2340,3 +2340,7 @@ button.dx-poll__opt:active, a.dx-poll__opt:active { transform: scale(.98); }
 a:active > .ti-dopx-rate::before, button:active > .ti-dopx-rate::before,
 .dx-tabbar__item--center:active .ti-dopx-rate::before { transform: rotate(-28deg) scale(1.06); }
 @media (prefers-reduced-motion: reduce) { .ti-dopx-rate::before { transition: none; } }
+
+/* Поле даты и времени: в Safari на iPhone пустое поле сжимается в квадрат — задаём высоту и ширину. */
+input[type="datetime-local"].dx-datetime { min-height: 2.25rem; min-width: 0; -webkit-appearance: none; appearance: none; display: block; }
+input[type="datetime-local"].dx-datetime::-webkit-date-and-time-value { text-align: left; }
