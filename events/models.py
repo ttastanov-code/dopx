@@ -119,8 +119,11 @@ class MatchEvent(BaseModel):
         indexes = [
             # Индекс для выборки событий матча по минуте.
             models.Index(fields=['match', 'minute'], name='match_event_match_minute_idx'),
-            # Уникальность sportmonks_id — в пределах матча.
             models.Index(fields=['match', 'sportmonks_id'], name='match_event_sportmonks_id_idx'),
+        ]
+        constraints = [
+            # Одно событие поставщика — одна запись: иначе правка гола в автогол даёт лишний гол в ленте.
+            models.UniqueConstraint(fields=['match', 'sportmonks_id'], name='unique_match_event_sportmonks_id'),
         ]
     
     def __str__(self):

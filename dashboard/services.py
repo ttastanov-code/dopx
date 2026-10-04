@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
-from django.db.models import Count, Q
+from django.db.models import Count, F, Q
 from django.db.models.functions import TruncDate
 from django.utils import timezone
 
@@ -174,6 +174,8 @@ def data_health_summary(recent_runs: int = 20) -> dict:
     # Расхождения импорта (ParserDiscrepancy).
     unreviewed_discrepancies = ParserDiscrepancy.objects.filter(reviewed=False)
 
+    score_mismatch = score_mismatch_matches()
+
     # Зависшие: давно начались, а статус всё ещё live/scheduled — синк их не обновил.
     stale_before = timezone.now() - STALE_MATCH_AFTER
     stale_matches = Match.objects.filter(status__in=["live", "scheduled"], start_time__lt=stale_before)
@@ -189,7 +191,26 @@ def data_health_summary(recent_runs: int = 20) -> dict:
         "recent_error_samples": (last_run.error_samples if last_run else [])[:10],
         "unreviewed_discrepancies_count": unreviewed_discrepancies.count(),
         "unreviewed_discrepancies_list": list(unreviewed_discrepancies.select_related("match")[:20]),
+        "score_mismatch": score_mismatch.count(),
+        "score_mismatch_list": list(score_mismatch.select_related("home_team", "away_team").order_by("-start_time")[:20]),
     }
+
+
+# Голы в ленте событий; team_side — команда, которой засчитан гол (и у автогола).
+GOAL_EVENT_TYPES = ("goal", "penalty", "own_goal")
+
+
+def score_mismatch_matches():
+    """Завершённые матчи, где голы в событиях не сходятся со счётом (дубль или пропуск события)."""
+    goals = Q(events__event_type__in=GOAL_EVENT_TYPES)
+    return (
+        Match.objects.filter(status="finished", decided_administratively=False,
+                             home_score__isnull=False, away_score__isnull=False, events__isnull=False)
+        .annotate(ev_home=Count("events", filter=goals & Q(events__team_side="home"), distinct=True),
+                  ev_away=Count("events", filter=goals & Q(events__team_side="away"), distinct=True))
+        .exclude(ev_home=F("home_score"), ev_away=F("away_score"))
+        .distinct()
+    )
 
 
 # ============================================================

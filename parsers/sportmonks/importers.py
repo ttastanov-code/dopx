@@ -939,6 +939,12 @@ def import_lineups(match: Match, lineups_data: List[Dict], formations_data: Opti
 
 
 @transaction.atomic
+def _dedupe_by_id(events_data: List[Dict]) -> List[Dict]:
+    """Одно событие поставщика может прийти дважды (гол и его правка в автогол) — берём последнюю версию."""
+    last_index = {str(e.get("id")): i for i, e in enumerate(events_data) if e.get("id")}
+    return [e for i, e in enumerate(events_data) if not e.get("id") or last_index[str(e.get("id"))] == i]
+
+
 def import_events(match: Match, events_data: List[Dict]) -> bool:
     """Импорт событий матча. Возвращает новые события (и переклассифицированные
     в push-достойный тип) — по ним вызывающий код шлёт пуши.
@@ -970,7 +976,7 @@ def import_events(match: Match, events_data: List[Dict]) -> bool:
     # Возвращаем и события, сменившие тип на push-достойный (жёлтая → красная).
     push_candidate_events: List[MatchEvent] = []
 
-    for evt in events_data:
+    for evt in _dedupe_by_id(events_data):
         dev_name = (evt.get("type") or {}).get("developer_name") or ""
         event_type = EVENT_DEV_NAME_MAP.get(dev_name)
         if event_type is None:
@@ -1080,27 +1086,53 @@ def import_events(match: Match, events_data: List[Dict]) -> bool:
                 if event_type in PUSH_WORTHY_EVENT_TYPES:
                     push_candidate_events.append(matched_existing)
         else:
-            new_event = MatchEvent.objects.create(
-                match=match,
-                player=player,
-                minute=minute,
-                added_time=added_time,
-                event_type=event_type,
-                team_side=team_side,
-                assist_player=assist_player,
-                score_after=score_after,
-                player_out=player_out,
-                extra_data=evt,
-                sportmonks_id=evt_sm_id,
-            )
-            created_count += 1
-            push_candidate_events.append(new_event)
+            fields = dict(player=player, minute=minute, added_time=added_time, event_type=event_type,
+                          team_side=team_side, assist_player=assist_player, score_after=score_after,
+                          player_out=player_out, extra_data=evt)
+            if evt_sm_id:
+                # update_or_create по уникальному (match, sportmonks_id): параллельный импорт не создаст дубль.
+                new_event, created = MatchEvent.objects.update_or_create(
+                    match=match, sportmonks_id=evt_sm_id, defaults=fields)
+            else:
+                new_event, created = MatchEvent.objects.create(match=match, **fields), True
+            if created:
+                created_count += 1
+                push_candidate_events.append(new_event)
+            else:
+                updated_count += 1
 
+    removed_count = _drop_withdrawn_events(match, events_data)
     logger.info(
-        "Sportmonks: события матча %s — %s новых, %s обновлено (из них %s переклассифицировано), %s пропущено (неизв. тип)",
-        match.id, created_count, updated_count, reclassified_count, skipped_count,
+        "Sportmonks: события матча %s — %s новых, %s обновлено (из них %s переклассифицировано), "
+        "%s пропущено (неизв. тип), %s снято поставщиком",
+        match.id, created_count, updated_count, reclassified_count, skipped_count, removed_count,
     )
     return push_candidate_events
+
+
+# Больше стольких пропавших событий разом — похоже на обрезанный ответ, а не на отмену: не удаляем.
+WITHDRAWN_MAX_ABS = 3
+WITHDRAWN_MAX_SHARE = 0.2
+
+
+def _drop_withdrawn_events(match: Match, events_data: List[Dict]) -> int:
+    """Событие, которого больше нет в полной ленте поставщика (отменённый гол), удаляем — иначе счёт по событиям врёт."""
+    incoming = {str(e["id"]) for e in events_data if e.get("id")}
+    if not incoming:
+        return 0
+    stored = match.events.exclude(sportmonks_id__isnull=True)
+    stale = list(stored.exclude(sportmonks_id__in=incoming))
+    if not stale:
+        return 0
+    if len(stale) > max(WITHDRAWN_MAX_ABS, WITHDRAWN_MAX_SHARE * stored.count()):
+        logger.warning("Sportmonks: у матча %s пропало %s событий разом — не удаляю, похоже на неполный ответ",
+                       match.id, len(stale))
+        return 0
+    for event in stale:
+        logger.info("Sportmonks: событие %s (%s %s', sportmonks_id=%s) матча %s снято поставщиком — удаляю",
+                    event.id, event.event_type, event.minute, event.sportmonks_id, match.id)
+    MatchEvent.objects.filter(id__in=[e.id for e in stale]).delete()
+    return len(stale)
 
 
 @transaction.atomic

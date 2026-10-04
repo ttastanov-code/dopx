@@ -196,64 +196,41 @@
                     История выступлений
                 </h3>
                 {% if aggregates %}
-                <div class="overflow-x-auto">
-                    <table class="table table-zebra">
-                        <thead>
-                            <tr>
-                                <th>Матч</th>
-                                <th>Дата</th>
-                                <th class="text-center"><span class="inline-flex items-center gap-1 justify-center">Рейтинг выступления{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.aggregate.performance_score %}</span></th>
-                                <th class="text-center"><span class="inline-flex items-center gap-1 justify-center">По статистике{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.player.stat_rating %}</span></th>
-                                <th class="text-center"><span class="inline-flex items-center gap-1 justify-center">Вклад{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.player.avg_contribution %}</span></th>
-                                <th class="text-center"><span class="inline-flex items-center gap-1 justify-center">Риск{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.aggregate.risk_index %}</span></th>
-                                <th class="text-center"><span class="inline-flex items-center gap-1 justify-center">Клатч{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.aggregate.clutch_index %}</span></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for agg in aggregates %}
-                            <tr>
-                                <td>
-                                    <a href="{% url 'matches:detail' agg.match.id %}"
-                                       class="hover:text-primary transition-colors">
-                                        {{ agg.match.home_team.name }} vs {{ agg.match.away_team.name }}
-                                    </a>
-                                    <div class="text-xs opacity-60">{{ agg.match.league.name }}</div>
-                                </td>
-                                <td class="font-mono text-sm">{{ agg.match.start_time|date:"d.m.Y" }}</td>
-                                <td class="text-center">
-                                    <div class="flex items-center justify-center gap-1.5 flex-wrap">
-                                        {% if agg.total_votes|has_enough_votes %}
-                                        <span class="font-bold {% if agg.performance_score >= 7 %}text-success{% elif agg.performance_score >= 5 %}text-warning{% else %}text-error{% endif %}">
-                                            {{ agg.performance_score|floatformat:1 }}
-                                        </span>
-                                        {% else %}
-                                        <span class="badge badge-ghost badge-xs whitespace-nowrap">н/д</span>
-                                        {% endif %}
-                                        {% if agg.delta %}
-                                        {# Изменение к прошлому оценённому матчу. #}
-                                        <span class="md-delta {% if agg.delta > 0 %}md-delta--up{% else %}md-delta--down{% endif %}" title="К прошлому матчу">
-                                            <i class="ti {% if agg.delta > 0 %}ti-arrow-up-right{% else %}ti-arrow-down-right{% endif %}"></i>{{ agg.delta|floatformat:1|cut:"-" }}
-                                        </span>
-                                        {% endif %}
-                                        {% confidence_badge agg %}
-                                    </div>
-                                </td>
-                                <td class="text-center">
-                                    {% if agg.stat_rating %}
-                                    <span class="font-semibold {% if agg.stat_rating >= 7 %}text-success{% elif agg.stat_rating >= 6 %}text-warning{% else %}text-error{% endif %}">{{ agg.stat_rating|floatformat:1 }}</span>
-                                    {% else %}<span class="opacity-40">—</span>{% endif %}
-                                </td>
-                                <td class="text-center">{{ agg.avg_contribution|floatformat:1 }}</td>
-                                <td class="text-center">{{ agg.risk_index|floatformat:1 }}</td>
-                                <td class="text-center">{{ agg.clutch_index|floatformat:1 }}</td>
-                            </tr>
-                            {% if agg.why.has_details and agg.total_votes|has_enough_votes %}
-                            {# Причины — отдельной строкой: в ячейке «Матч» список слишком узкий. #}
-                            <tr class="md-why-tr"><td colspan="7">{% include "matches/_rating_why.html" with why=agg.why flush=True %}</td></tr>
-                            {% endif %}
-                            {% endfor %}
-                        </tbody>
-                    </table>
+                {# Карточками, а не таблицей: на телефоне таблица уезжала вбок вместе с блоком «Откуда». #}
+                <div class="pm-list">
+                    {% for agg in aggregates %}
+                    <div class="pm-row">
+                        <div class="pm-row__top">
+                            <div class="min-w-0">
+                                <div class="pm-row__meta">{{ agg.match.start_time|date:"d.m.Y" }} · {{ agg.match.league.name }}</div>
+                                <a href="{% url 'matches:detail' agg.match.id %}" class="pm-row__title">{{ agg.match.home_team.name }} — {{ agg.match.away_team.name }}</a>
+                            </div>
+                            <div class="pm-row__score">
+                                {% if agg.total_votes|has_enough_votes %}
+                                <span class="pm-row__value {% if agg.performance_score >= 7 %}text-success{% elif agg.performance_score >= 5 %}text-warning{% else %}text-error{% endif %}" title="Рейтинг выступления">{{ agg.performance_score|floatformat:1 }}</span>
+                                {% else %}
+                                <span class="badge badge-ghost badge-xs whitespace-nowrap">н/д</span>
+                                {% endif %}
+                                {% if agg.delta %}
+                                {# Изменение к прошлому оценённому матчу. #}
+                                <span class="md-delta {% if agg.delta > 0 %}md-delta--up{% else %}md-delta--down{% endif %}" title="К прошлому матчу">
+                                    <i class="ti {% if agg.delta > 0 %}ti-arrow-up-right{% else %}ti-arrow-down-right{% endif %}"></i>{{ agg.delta|floatformat:1|cut:"-" }}
+                                </span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="pm-row__chips">
+                            {% if agg.stat_rating %}<span class="pm-chip" title="{{ INDICATOR_TOOLTIPS.player.stat_rating }}">По статистике <b>{{ agg.stat_rating|floatformat:1 }}</b></span>{% endif %}
+                            <span class="pm-chip" title="{{ INDICATOR_TOOLTIPS.player.avg_contribution }}">Вклад <b>{{ agg.avg_contribution|floatformat:1 }}</b></span>
+                            <span class="pm-chip" title="{{ INDICATOR_TOOLTIPS.aggregate.risk_index }}">Риск <b>{{ agg.risk_index|floatformat:1 }}</b></span>
+                            <span class="pm-chip" title="{{ INDICATOR_TOOLTIPS.aggregate.clutch_index }}">Клатч <b>{{ agg.clutch_index|floatformat:1 }}</b></span>
+                            {% confidence_badge agg %}
+                        </div>
+                        {% if agg.why.has_details and agg.total_votes|has_enough_votes %}
+                        {% include "matches/_rating_why.html" with why=agg.why flush=True %}
+                        {% endif %}
+                    </div>
+                    {% endfor %}
                 </div>
                 {% else %}
                 {% if votable_match %}{% url 'evaluations:context' votable_match.id as first_vote_url %}{% endif %}

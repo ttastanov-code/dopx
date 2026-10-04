@@ -537,6 +537,55 @@ class ImportFullFixtureNotificationWiringTests(TestCase):
         self.assertEqual(event.player_id, scorer.id, "пустой повтор не должен стирать уже известного игрока")
         self.assertEqual(event.minute, 44, "пустой повтор не должен сдвигать минуту настоящего события")
 
+    def test_goal_corrected_to_own_goal_stays_one_event(self):
+        """Правка гола в автогол с тем же id — одна запись, и в одном пакете, и в следующем."""
+        from events.models import MatchEvent
+        from parsers.sportmonks.importers import import_events
+
+        fixture = _fixture(sm_id=777003778, dev_name="FT")
+        match = import_match_core(fixture, self.league, self.season)
+        home = fixture["participants"][0]["id"]
+
+        def goal(dev_name):
+            return {"id": 157943803, "type": {"developer_name": dev_name}, "minute": 23, "participant_id": home,
+                    "player_id": None, "player_name": "X", "related_player_id": None, "result": "1-0",
+                    "extra_minute": None}
+
+        import_events(match, [goal("GOAL")])
+        import_events(match, [goal("GOAL"), goal("OWNGOAL")])  # поставщик прислал обе версии
+        self.assertEqual(list(MatchEvent.objects.filter(match=match).values_list("event_type", flat=True)),
+                         ["own_goal"])
+
+    def test_withdrawn_goal_removed_but_not_on_truncated_payload(self):
+        from events.models import MatchEvent
+        from parsers.sportmonks.importers import import_events
+
+        fixture = _fixture(sm_id=777003780, dev_name="FT")
+        match = import_match_core(fixture, self.league, self.season)
+        away = fixture["participants"][1]["id"]
+
+        def goal(sm_id, minute):
+            return {"id": sm_id, "type": {"developer_name": "GOAL"}, "minute": minute, "participant_id": away,
+                    "player_id": None, "player_name": "X", "related_player_id": None, "result": "0-1",
+                    "extra_minute": None}
+
+        events = [goal(i, 10 + i) for i in range(1, 11)]
+        import_events(match, events)
+        import_events(match, events[1:])  # поставщик снял первый гол
+        self.assertEqual(MatchEvent.objects.filter(match=match).count(), 9)
+        import_events(match, events[1:3])  # обрезанный ответ: пропало 7 из 9 — не трогаем
+        self.assertEqual(MatchEvent.objects.filter(match=match).count(), 9)
+
+    def test_duplicate_event_rejected_by_db(self):
+        from django.db import IntegrityError, transaction
+
+        from events.models import MatchEvent
+
+        match = import_match_core(_fixture(sm_id=777003779, dev_name="FT"), self.league, self.season)
+        MatchEvent.objects.create(match=match, minute=1, event_type="goal", team_side="home", sportmonks_id="1")
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            MatchEvent.objects.create(match=match, minute=2, event_type="goal", team_side="home", sportmonks_id="1")
+
     def test_substitute_inherits_zone_from_outgoing_player(self):
         """Вышедший на замену наследует зону (L/C/R) заменённого игрока."""
         from lineups.models import MatchLineup, MatchLineupPlayer

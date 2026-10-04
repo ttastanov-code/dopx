@@ -41,6 +41,13 @@
         <div class="dopx-stat-delta">счёт/статус после завершения</div>
     </div>
     <div class="dopx-stat">
+        <div class="dopx-stat-label"><i class="ti ti-scoreboard"></i>Счёт ≠ события</div>
+        <div class="dopx-stat-value" style="{% if health.score_mismatch %}color: var(--color-error){% else %}color: var(--color-success){% endif %}">
+            {{ health.score_mismatch }}
+        </div>
+        <div class="dopx-stat-delta">голы в ленте не сходятся со счётом</div>
+    </div>
+    <div class="dopx-stat">
         <div class="dopx-stat-label"><i class="ti ti-clock-exclamation"></i>Зависшие</div>
         <div class="dopx-stat-value" style="{% if health.stale_matches %}color: var(--color-error){% else %}color: var(--color-success){% endif %}">
             {{ health.stale_matches }}
@@ -49,7 +56,7 @@
     </div>
 </div>
 
-{% if health.matches_missing_lineups_list or health.matches_missing_events_list %}
+{% if health.matches_missing_lineups_list or health.matches_missing_events_list or health.score_mismatch_list %}
 <div class="card bg-base-100 border border-warning/30 mb-6">
     <div class="card-body p-4">
         <div class="dopx-section-eyebrow"><i class="ti ti-alert-triangle"></i>Требуют внимания</div>
@@ -87,6 +94,24 @@
                         <td class="text-xs opacity-70 whitespace-nowrap">{{ match.start_time|date:"d.m H:i" }}</td>
                         <td><span class="badge badge-sm {% if match.status == 'live' %}badge-error{% else %}badge-ghost{% endif %}">{{ match.get_status_display }}</span></td>
                         <td><span class="badge badge-warning badge-sm badge-outline">нет событий</span></td>
+                        <td>
+                            {% if perms.matches.change_match %}<form method="post" action="{% url 'dashboard:data_health_resync_match' match.id %}" class="inline">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-xs btn-outline">
+                                    <i class="ti ti-refresh"></i> Ресинк
+                                </button>
+                            </form>{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% for match in health.score_mismatch_list %}
+                    <tr>
+                        <td class="whitespace-nowrap">
+                            <a href="{% url 'admin:matches_match_change' match.id %}" class="link link-hover" target="_blank">{{ match.home_team }} - {{ match.away_team }}</a>
+                        </td>
+                        <td class="text-xs opacity-70 whitespace-nowrap">{{ match.start_time|date:"d.m H:i" }}</td>
+                        <td><span class="badge badge-sm {% if match.status == 'live' %}badge-error{% else %}badge-ghost{% endif %}">{{ match.get_status_display }}</span></td>
+                        <td><span class="badge badge-error badge-sm badge-outline">счёт {{ match.home_score }}:{{ match.away_score }}, в событиях {{ match.ev_home }}:{{ match.ev_away }}</span></td>
                         <td>
                             {% if perms.matches.change_match %}<form method="post" action="{% url 'dashboard:data_health_resync_match' match.id %}" class="inline">
                                 {% csrf_token %}
