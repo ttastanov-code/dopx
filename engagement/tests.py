@@ -1,5 +1,5 @@
 # engagement/tests.py
-"""Тесты вовлечения: серия дней, сезонный пропуск, задания, приглашения, лиги, фан-зона, вьюхи."""
+"""Тесты вовлечения: серия дней, абонемент, задания, приглашения, лиги, фан-зона, вьюхи."""
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -568,7 +568,7 @@ class StreakLiveTests(EngagementTestCase):
         url = reverse("users:public_profile", args=[user.username])
         response = self.client.get(url + "?card=season")
         self.assertContains(response, "дней подряд · рекорд 6")
-        self.assertContains(response, "уровень пропуска")
+        self.assertContains(response, "уровень абонемента")
         self.assertContains(response, reverse("engagement:brag_card", args=[user.username, "season"]))
         self.assertContains(response, "dx-brag--season is-highlight")
         # Карточки нет — обычное превью.

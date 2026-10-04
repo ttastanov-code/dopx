@@ -1,5 +1,5 @@
 # engagement/views.py
-"""Страницы вовлечения: сезонный пропуск, лиги с друзьями, приглашения, карточки, виджет."""
+"""Страницы вовлечения: абонемент, лиги с друзьями, приглашения, карточки, виджет."""
 from __future__ import annotations
 
 import uuid
@@ -21,7 +21,7 @@ SEASON_TOP_SIZE = 10
 
 
 def season_pass(request):
-    """Сезонный пропуск: 30 уровней, награды, сезонный рейтинг болельщиков."""
+    """Абонемент: 30 уровней, награды, сезонный рейтинг болельщиков."""
     overview = season.overview(request.user)
     top, my_place = [], None
     if overview:
@@ -52,10 +52,10 @@ def season_pass(request):
     if overview and request.user.is_authenticated and overview["xp"]:
         # Ссылка-приглашение: друг, пришедший по ней, приносит обоим XP.
         share_url = request.build_absolute_uri(reverse("engagement:referral", args=[referrals.code_for(request.user)]) + "?to=season")
-        share_text = (f"У меня {overview['level']}-й уровень сезонного пропуска DOPX "
+        share_text = (f"У меня {overview['level']}-й уровень абонемента DOPX "
                       f"({overview['xp']} XP за сезон). Догонишь?")
     return render(request, "engagement/season_pass.html", {
-        "page_title": "Сезонный пропуск — DOPX", "overview": overview, "levels": track_rewards,
+        "page_title": "Абонемент — DOPX", "overview": overview, "levels": track_rewards,
         "top": top, "my_place": my_place, "xp_per_level": season.XP_PER_LEVEL,
         "share_url": share_url, "share_text": share_text,
         "next_reward": next_reward, "participants": participants,
@@ -179,7 +179,7 @@ def _brag_params(user, kind: str) -> tuple[str, dict]:
         data = season.overview(user)
         if not data or data["xp"] <= 0:
             raise Http404
-        params = dict(number_text=str(data["level"]), label_line1="уровень сезонного пропуска",
+        params = dict(number_text=str(data["level"]), label_line1="уровень абонемента",
                       label_line2=f"сезон {data['season'].year}", eyebrow="СЕЗОН DOPX")
     elif kind == "predictions":
         from predictions.services import correct_predictions_count

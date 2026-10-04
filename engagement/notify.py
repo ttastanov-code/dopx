@@ -48,7 +48,7 @@ def referral_rewarded(inviter, friend, xp: int) -> None:
 
 
 def season_reward(user, level: int, title: str) -> None:
-    notify([user], title=f"🎟️ Уровень {level} сезонного пропуска",
+    notify([user], title=f"🎟️ Уровень {level} абонемента",
            body=f"Новая награда: {title}.", url="/season/", kind="achievement", tag="season-pass")
 
 

@@ -361,7 +361,7 @@ UNFOLD = {
                     {"title": _("Приглашения"), "icon": "person_add", "link": reverse_lazy("admin:engagement_referral_changelist"), "permission": admin_perm("engagement_referral")},
                     {"title": _("Серии дней"), "icon": "local_fire_department", "link": reverse_lazy("admin:engagement_dailystreak_changelist"), "permission": admin_perm("engagement_dailystreak")},
                     {"title": _("Опросы недели"), "icon": "how_to_vote", "link": reverse_lazy("admin:engagement_dailypoll_changelist"), "permission": admin_perm("engagement_dailypoll")},
-                    {"title": _("Сезонный пропуск"), "icon": "confirmation_number", "link": reverse_lazy("admin:engagement_seasonpass_changelist"), "permission": admin_perm("engagement_seasonpass")},
+                    {"title": _("Абонемент"), "icon": "confirmation_number", "link": reverse_lazy("admin:engagement_seasonpass_changelist"), "permission": admin_perm("engagement_seasonpass")},
                 ],
             },
             {

@@ -2,21 +2,21 @@
 {% load ui_extras engagement_extras %}
 
 {% block content %}
-{# Сезонный пропуск: engagement/season.py. Стили — css/ui.css (dx-pass). #}
+{# Абонемент: engagement/season.py. Стили — css/ui.css (dx-pass). #}
 <div class="max-w-5xl mx-auto px-2 sm:px-0 space-y-5">
     {% if not overview %}
-    <div class="dx-card text-center py-10"><p class="opacity-60">Сезон ещё не начался. Пропуск откроется с первым туром.</p></div>
+    <div class="dx-card text-center py-10"><p class="opacity-60">Сезон ещё не начался. Абонемент откроется с первым туром.</p></div>
     {% else %}
     <section class="dx-pass-hero">
         <div class="dx-pass-hero__main">
-            <div class="dx-pass-hero__eyebrow"><i class="ti ti-ticket"></i> Сезонный пропуск {{ overview.season.year }}</div>
+            <div class="dx-pass-hero__eyebrow"><i class="ti ti-ticket"></i> Абонемент {{ overview.season.year }}</div>
             <h1 class="dx-pass-hero__title">
                 {% if user.is_authenticated %}Уровень {{ overview.level }}<span> из {{ overview.max_level }}</span>{% else %}30 уровней, каждый сезон заново{% endif %}
             </h1>
             {% if user.is_authenticated %}
             <div class="dx-pass-hero__bar"><span style="width: {{ overview.level_progress }}%"></span></div>
             <p class="dx-pass-hero__meta">
-                {% if overview.is_max %}Пропуск пройден полностью{% else %}ещё {{ overview.to_next }} XP до уровня {{ overview.level|add:1 }}{% endif %}
+                {% if overview.is_max %}Абонемент пройден полностью{% else %}ещё {{ overview.to_next }} XP до уровня {{ overview.level|add:1 }}{% endif %}
                 · {{ overview.xp }} XP за сезон{% if my_place %} · {{ my_place }}-е место{% endif %}
             </p>
             {% else %}
@@ -35,7 +35,7 @@
 
     <section class="dx-card">
         <div class="dx-card__head"><div><h2 class="dx-card__title">Путь сезона</h2><p class="dx-card__subtitle">{{ xp_per_level }} XP на уровень · награды каждые 5 уровней</p></div></div>
-        <div class="dx-pass-track" aria-label="Уровни сезонного пропуска">
+        <div class="dx-pass-track" aria-label="Уровни абонемента">
             {% for cell in levels %}
             <div class="dx-pass-cell{% if cell.reached %} is-reached{% endif %}{% if cell.level == overview.level and user.is_authenticated %} is-current{% endif %}{% if cell.reward %} has-reward{% endif %}"
                  {% if cell.reward %}title="Уровень {{ cell.level }}: {{ cell.reward.title }}"{% endif %}>
@@ -78,7 +78,7 @@
             {% else %}
             <section class="dx-card">
                 <div class="dx-card__head"><div><h2 class="dx-card__title">Ваш сезон</h2><p class="dx-card__subtitle">Участников: {{ participants }}</p></div></div>
-                <p class="text-sm opacity-70">Зарегистрируйтесь, и весь XP за оценки, прогнозы и задания пойдёт в пропуск. Первая награда, бронзовая рамка аватара, ждёт на 5-м уровне.</p>
+                <p class="text-sm opacity-70">Зарегистрируйтесь, и весь XP за оценки, прогнозы и задания пойдёт в абонемент. Первая награда, бронзовая рамка аватара, ждёт на 5-м уровне.</p>
                 <a href="{% url 'users:register' %}" class="btn btn-primary btn-sm mt-3">Начать сезон</a>
             </section>
             {% endif %}

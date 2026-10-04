@@ -1,5 +1,5 @@
 # engagement/templatetags/engagement_extras.py
-"""Косметика сезонного пропуска в шаблонах: рамка аватара и золотой ник."""
+"""Косметика абонемента в шаблонах: рамка аватара и золотой ник."""
 from django import template
 
 register = template.Library()
@@ -18,7 +18,7 @@ def frame_class(user) -> str:
 
 @register.filter
 def name_class(user) -> str:
-    """Золотой ник за полный сезонный пропуск."""
+    """Золотой ник за полностью пройденный абонемент."""
     from engagement.season import cosmetics
 
     if not getattr(user, "pk", None):

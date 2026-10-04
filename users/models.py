@@ -371,7 +371,7 @@ class UserXP(BaseModel):
         self.level = locked.level
         self.xp_remainder = locked.xp_remainder
 
-        # Любой заработанный XP идёт и в сезонный пропуск (engagement/season.py).
+        # Любой заработанный XP идёт и в абонемент (engagement/season.py).
         gained = locked.total_xp - old_total_xp
         if gained > 0:
             from engagement.season import add_season_xp

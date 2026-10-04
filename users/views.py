@@ -327,7 +327,7 @@ class ProfileView(LoginRequiredMixin, TemplateView):
                 _brag('day_streak', day['current'], ru_plural(day['current'], 'день подряд,дня подряд,дней подряд'), f'{day["current"]} {ru_plural(day["current"], "день,дня,дней")} подряд на DOPX без пропусков!')
             pass_data = season.overview(user)
             if pass_data and pass_data['xp'] > 0:
-                _brag('season', pass_data['level'], 'уровень сезонного пропуска', f'Уровень {pass_data["level"]} сезонного пропуска DOPX')
+                _brag('season', pass_data['level'], 'уровень абонемента', f'Уровень {pass_data["level"]} абонемента DOPX')
 
         context.update({
             'telegram_enabled': bool(settings.FAN_BOT_TOKEN and settings.FAN_BOT_USERNAME),
@@ -389,7 +389,7 @@ class BadgeCatalogView(LoginRequiredMixin, TemplateView):
 
 
 def public_progress(user) -> dict:
-    """Серия дней, сезонный пропуск и прогнозы для публичного профиля; cards — для каких есть brag-карточка."""
+    """Серия дней, абонемент и прогнозы для публичного профиля; cards — для каких есть brag-карточка."""
     from engagement import season, streaks
     from predictions.services import correct_predictions_count
 
@@ -454,7 +454,7 @@ class PublicProfileView(TemplateView):
                 reverse('engagement:brag_card', args=[profile_user.username, card]))
             context['meta_description'] = {
                 'day_streak': lambda: f"{progress['day']['current']} дн. подряд на DOPX",
-                'season': lambda: f"Уровень {progress['season']['level']} сезонного пропуска DOPX",
+                'season': lambda: f"Уровень {progress['season']['level']} абонемента DOPX",
                 'predictions': lambda: f"Прогноз сбылся {progress['hits']} раз на DOPX",
             }[card]()
 

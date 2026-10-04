@@ -77,7 +77,7 @@ def _notify_day(user, streak) -> None:
 
     day, events = streak.current, []
     if day in MILESTONE_XP:
-        events.append((f"🔥 {day} {_days(day)} подряд", f"Серия растёт: +{MILESTONE_XP[day]} XP в сезонный пропуск."))
+        events.append((f"🔥 {day} {_days(day)} подряд", f"Серия растёт: +{MILESTONE_XP[day]} XP в абонемент."))
     if getattr(streak, "frozen", 0):
         events.append(("❄️ Заморозка спасла серию",
                        f"Пропущенный день закрыт заморозкой, серия продолжается: {day} {_days(day)}."))

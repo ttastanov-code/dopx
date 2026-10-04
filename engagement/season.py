@@ -1,5 +1,5 @@
 # engagement/season.py
-"""Сезонный пропуск: 30 уровней по XP_PER_LEVEL, каждый сезон — с нуля.
+"""Абонемент (сезонная шкала): 30 уровней по XP_PER_LEVEL, каждый сезон — с нуля.
 Награды — рамки аватара, достижения и «золотой ник» (навсегда)."""
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ def current_season():
 
 
 def add_season_xp(user_id, amount: int) -> None:
-    """XP в пропуск активного сезона + выдача наград за новые уровни."""
+    """XP в абонемент активного сезона + выдача наград за новые уровни."""
     from engagement.models import SeasonPass
     from users.models import User
 
@@ -66,7 +66,7 @@ def add_season_xp(user_id, amount: int) -> None:
 
 
 def overview(user) -> dict | None:
-    """Прогресс пропуска для страниц и панели."""
+    """Прогресс абонемента для страниц и панели."""
     from engagement.models import SeasonPass
 
     season = current_season()

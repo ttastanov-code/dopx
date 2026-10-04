@@ -88,7 +88,7 @@ POOL = (
     QuestDef("share", "Поделитесь карточкой или ссылкой с другом", "ti-share-3", 10, lambda u: 1, "engagement:invite"),
     QuestDef("follow_player", "Подпишитесь на игрока", "ti-user-plus", 5, lambda u: int(_followed_players(u) < 5), "players:list"),
     QuestDef("leaderboard", "Проверьте своё место в рейтинге болельщиков", "ti-chart-bar", 5, lambda u: 1, "users:leaderboard"),
-    QuestDef("season_pass", "Загляните в сезонный пропуск", "ti-ticket", 5, lambda u: 1, "engagement:season_pass"),
+    QuestDef("season_pass", "Загляните в абонемент", "ti-ticket", 5, lambda u: 1, "engagement:season_pass"),
     QuestDef("player_page", "Изучите профиль игрока", "ti-id", 5, lambda u: 1, "players:list"),
 )
 POOL_BY_KEY = {q.key: q for q in POOL}

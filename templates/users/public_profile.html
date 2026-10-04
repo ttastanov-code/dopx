@@ -77,7 +77,7 @@
             {% if 'season' in progress.cards %}
             <a href="{% url 'engagement:season_pass' %}" class="dx-brag dx-brag--season{% if highlight_card == 'season' %} is-highlight{% endif %}">
                 <div class="dx-brag__num"><i class="ti ti-ticket"></i> {{ progress.season.level }}</div>
-                <div class="dx-brag__title">уровень пропуска · {{ progress.season.xp }} XP за сезон</div>
+                <div class="dx-brag__title">уровень абонемента · {{ progress.season.xp }} XP за сезон</div>
             </a>
             {% endif %}
             {% if 'predictions' in progress.cards %}

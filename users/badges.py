@@ -254,15 +254,15 @@ BADGE_CATALOG: dict[str, BadgeDefinition] = {
     "recruiter_20": BadgeDefinition(
         code="recruiter_20", name="Капо фанатов", description="Двадцать приглашённых друзей оценили матчи.", rarity="legendary",
     ),
-    # --- Сезонный пропуск (engagement/season.py) ---
+    # --- Абонемент (engagement/season.py) ---
     "season_pass_10": BadgeDefinition(
-        code="season_pass_10", name="Болельщик сезона", description="Достигли 10 уровня сезонного пропуска.", rarity="silver",
+        code="season_pass_10", name="Болельщик сезона", description="Достигли 10 уровня абонемента.", rarity="silver",
     ),
     "season_pass_20": BadgeDefinition(
-        code="season_pass_20", name="Опора трибун", description="Достигли 20 уровня сезонного пропуска.", rarity="gold",
+        code="season_pass_20", name="Опора трибун", description="Достигли 20 уровня абонемента.", rarity="gold",
     ),
     "season_pass_30": BadgeDefinition(
-        code="season_pass_30", name="Легенда сезона", description="Прошли все 30 уровней сезонного пропуска.", rarity="legendary",
+        code="season_pass_30", name="Легенда сезона", description="Прошли все 30 уровней абонемента.", rarity="legendary",
     ),
 }
 

@@ -88,7 +88,7 @@
                 </div>
                 <ul class="menu menu-sm w-full p-2">
                     <li><a href="{% url 'users:profile' %}"><i class="ti ti-user"></i> Профиль</a></li>
-                    <li><a href="{% url 'engagement:season_pass' %}"><i class="ti ti-ticket"></i> Сезонный пропуск</a></li>
+                    <li><a href="{% url 'engagement:season_pass' %}"><i class="ti ti-ticket"></i> Абонемент</a></li>
                     <li><a href="{% url 'engagement:friend_leagues' %}"><i class="ti ti-users-group"></i> Лиги с друзьями</a></li>
                     <li><a href="{% url 'engagement:invite' %}"><i class="ti ti-user-plus"></i> Пригласить друзей</a></li>
                     <li><a href="{% url 'users:leaderboard' %}"><i class="ti ti-trophy"></i> Рейтинг</a></li>
@@ -146,7 +146,7 @@
 
             {% if user.is_authenticated %}
             <nav class="dx-drawer__group dx-drawer__group--mt">
-                <a href="{% url 'engagement:season_pass' %}" class="dx-drawer__row{% if url_name == 'season_pass' %} is-active{% endif %}"><span class="dx-drawer__ico" style="--c: var(--color-warning)"><i class="ti ti-ticket"></i></span>Сезонный пропуск<i class="ti ti-chevron-right dx-drawer__chev"></i></a>
+                <a href="{% url 'engagement:season_pass' %}" class="dx-drawer__row{% if url_name == 'season_pass' %} is-active{% endif %}"><span class="dx-drawer__ico" style="--c: var(--color-warning)"><i class="ti ti-ticket"></i></span>Абонемент<i class="ti ti-chevron-right dx-drawer__chev"></i></a>
                 <a href="{% url 'engagement:friend_leagues' %}" class="dx-drawer__row{% if app == 'engagement' and url_name != 'season_pass' and url_name != 'invite' %} is-active{% endif %}"><span class="dx-drawer__ico" style="--c: var(--color-primary)"><i class="ti ti-users-group"></i></span>Лиги с друзьями<i class="ti ti-chevron-right dx-drawer__chev"></i></a>
                 <a href="{% url 'engagement:invite' %}" class="dx-drawer__row{% if url_name == 'invite' %} is-active{% endif %}"><span class="dx-drawer__ico" style="--c: var(--color-success)"><i class="ti ti-user-plus"></i></span>Пригласить друзей<span class="dx-drawer__tag">+100 XP</span><i class="ti ti-chevron-right dx-drawer__chev"></i></a>
                 <a href="{% url 'notifications:list' %}" class="dx-drawer__row{% if app == 'notifications' %} is-active{% endif %}"><span class="dx-drawer__ico" style="--c: var(--color-error)"><i class="ti ti-bell"></i></span>Уведомления{% with unread=user.unread_notifications_count %}{% if unread %}<b class="dx-drawer__count">{{ unread }}</b>{% endif %}{% endwith %}<i class="ti ti-chevron-right dx-drawer__chev"></i></a>

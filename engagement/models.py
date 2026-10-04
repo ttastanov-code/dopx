@@ -1,5 +1,5 @@
 # engagement/models.py
-"""Механики удержания и роста: серия дней, ежедневные задания, сезонный пропуск,
+"""Механики удержания и роста: серия дней, ежедневные задания, абонемент сезона,
 приглашения, лиги прогнозистов с друзьями, мнения экспертов DOPX."""
 from __future__ import annotations
 
@@ -62,8 +62,8 @@ class SeasonPass(BaseModel):
     claimed_levels = models.JSONField(_("Выданные награды (уровни)"), default=list, blank=True)
 
     class Meta:
-        verbose_name = _("Сезонный пропуск")
-        verbose_name_plural = _("Сезонные пропуски")
+        verbose_name = _("Абонемент")
+        verbose_name_plural = _("Абонементы")
         constraints = [models.UniqueConstraint(fields=["user", "season"], name="unique_season_pass")]
         indexes = [models.Index(fields=["season", "-xp"])]
 
