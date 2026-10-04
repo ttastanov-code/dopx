@@ -250,6 +250,7 @@ BEAT_TASK_TITLES = {
     "analytics-maintenance-daily": "Итоги дня по аналитике и удаление старых событий",
     "cleanup-old-notifications-daily": "Удаление старых прочитанных уведомлений",
     "celery-realtime-heartbeat": "Пульс воркера live-матчей и пушей",
+    "sportmonks-sync-squads": "Текущие составы клубов из Sportmonks",
     "watch-admin-bot": "Проверка, что бот команды на связи",
     "cleanup-expired-captchas": "Удаление просроченных капч",
     "detect-referee-vote-spikes": "Антифрод: всплески оценок судей",

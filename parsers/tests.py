@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+from datetime import timedelta
+
 from django.test import TestCase
+from django.utils import timezone
 
 from leagues.models import League
 from matches.models import Match
@@ -641,7 +644,7 @@ class DecidedAdministrativelyTests(TestCase):
     def test_alert_excludes_walkover_matches_without_lineup(self, mock_alert):
         """6 технических матчей без состава — алерта нет."""
         for i in range(6):
-            match = import_match_core(_fixture(sm_id=800000000 + i, dev_name="WO"), self.league, self.season)
+            match = import_match_core(_fixture(sm_id=800000000 + i, dev_name="WO", starting_at=_hours_ago(4)), self.league, self.season)
             self.assertFalse(match.has_lineup)
 
         result = check_sync_errors_and_alert()
@@ -652,11 +655,26 @@ class DecidedAdministrativelyTests(TestCase):
     def test_alert_still_fires_for_genuine_missing_lineups(self, mock_alert):
         """Контроль: обычные матчи без состава — алерт есть."""
         for i in range(6):
-            import_match_core(_fixture(sm_id=810000000 + i, dev_name="FT"), self.league, self.season)
+            import_match_core(_fixture(sm_id=810000000 + i, dev_name="FT", starting_at=_hours_ago(4)), self.league, self.season)
 
         result = check_sync_errors_and_alert()
         self.assertEqual(result["status"], "alert_sent")
         mock_alert.assert_called_once()
+
+    @patch("parsers.tasks._send_sync_error_alert")
+    def test_alert_counts_by_match_time_not_record_time(self, mock_alert):
+        """Старые матчи из бэкафилла и только что сыгранные (поставщик ещё дозаливает) — без алерта."""
+        for i in range(3):
+            import_match_core(_fixture(sm_id=820000000 + i, dev_name="FT", starting_at="2025-05-01 14:00:00"), self.league, self.season)
+            import_match_core(_fixture(sm_id=830000000 + i, dev_name="FT", starting_at=_hours_ago(1)), self.league, self.season)
+        self.assertEqual(check_sync_errors_and_alert(), {"status": "ok"})
+        mock_alert.assert_not_called()
+
+
+def _hours_ago(hours: int) -> str:
+    """Время начала матча в формате Sportmonks (UTC), hours часов назад."""
+    from datetime import datetime, timedelta, timezone as dt_tz
+    return (datetime.now(dt_tz.utc) - timedelta(hours=hours)).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _sportmonks_player(
@@ -729,3 +747,52 @@ class SportmonksPhotoTests(TestCase):
         referee = get_or_create_referee({**data, "image_path": self.PHOTO})
         referee.refresh_from_db()
         self.assertEqual(referee.photo_url, self.PHOTO)
+
+
+class CurrentSquadTests(TestCase):
+    """Текущий состав из Sportmonks: применяется только свежий, переход виден до первого матча, старый матч не откатывает."""
+
+    def setUp(self):
+        from teams.models import Team
+
+        self.old = Team.objects.create(name="Старый клуб", sportmonks_id="1")
+        self.new = Team.objects.create(name="Новый клуб", sportmonks_id="2")
+
+    def _rows(self, n, end="2030-06-30", first_id=500):
+        return [{"player_id": first_id + i, "start": "2025-01-01", "end": end, "jersey_number": 10 + i,
+                 "player": {"id": first_id + i, "display_name": f"Игрок {i}", "firstname": "Игрок", "lastname": f"Номер{i}"}}
+                for i in range(n)]
+
+    def test_fresh_squad_moves_player_and_stale_is_ignored(self):
+        from unittest import mock
+        from parsers.sportmonks.importers import sync_current_squad
+        from players.models import Player
+
+        moved = Player.objects.create(first_name="Игрок", last_name="Номер0", sportmonks_id="500", team=self.old,
+                                      last_match_at=timezone.now() - timedelta(days=30))
+        client = mock.Mock()
+        client.get_team_squad.return_value = self._rows(3, end="2024-12-31")
+        self.assertFalse(sync_current_squad(client, self.new)[0])  # устаревший — не трогаем
+        moved.refresh_from_db()
+        self.assertEqual(moved.team, self.old)
+
+        client.get_team_squad.return_value = self._rows(12)
+        ok, confirmed, _ = sync_current_squad(client, self.new)
+        self.assertTrue(ok)
+        self.assertEqual(confirmed, 12)
+        moved.refresh_from_db()
+        self.assertEqual((moved.team, moved.number), (self.new, 10))
+        self.new.refresh_from_db()
+        self.assertIsNotNone(self.new.squad_synced_at)
+
+        # Переимпорт старого матча за прошлый клуб не возвращает игрока назад.
+        from parsers.sportmonks.importers import get_or_create_player
+        get_or_create_player({"id": 500, "display_name": "Игрок 0"}, team=self.old,
+                             match_start_time=timezone.now() - timedelta(days=10))
+        moved.refresh_from_db()
+        self.assertEqual(moved.team, self.new)
+        # А новый матч — обновляет как обычно.
+        get_or_create_player({"id": 500, "display_name": "Игрок 0"}, team=self.old,
+                             match_start_time=timezone.now() + timedelta(minutes=5))
+        moved.refresh_from_db()
+        self.assertEqual(moved.team, self.old)

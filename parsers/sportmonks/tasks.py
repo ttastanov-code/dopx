@@ -33,7 +33,9 @@ FIXTURE_SYNC_LOCK_TIMEOUT_SECONDS = 120
 # Лок на всю live-задачу: при тике раз в 15 с медленный ответ API не должен
 # приводить к наложению запусков.
 LIVE_POLL_OVERLAP_LOCK_KEY = "sportmonks:update_live:running"
-LIVE_POLL_OVERLAP_LOCK_TIMEOUT_SECONDS = 30
+# Один запрос с ретраями клиента — до ~55 с; лок дольше жёсткого лимита задачи, чтобы два тика не шли параллельно.
+LIVE_POLL_OVERLAP_LOCK_TIMEOUT_SECONDS = 90
+LIVE_POLL_SOFT_LIMIT, LIVE_POLL_HARD_LIMIT = 75, 85
 
 # За сколько часов до матча начинаем тянуть составы.
 UPCOMING_WINDOW = timedelta(hours=3)
@@ -222,7 +224,7 @@ def _sportmonks_update_live_impl(self):
     )
 
 
-@shared_task(bind=True, max_retries=2)
+@shared_task(bind=True, max_retries=2, soft_time_limit=LIVE_POLL_SOFT_LIMIT, time_limit=LIVE_POLL_HARD_LIMIT)
 def sportmonks_update_live(self):
     """Обёртка с Redis-локом от наложения тиков; логика — в _sportmonks_update_live_impl."""
     if not cache.add(
@@ -284,6 +286,38 @@ def sportmonks_resync_recent_stats(self):
         "sportmonks_resync_recent_stats", started_at,
         total=len(recent_finished), updated=synced, errors=errors,
     )
+
+
+@shared_task(bind=True, max_retries=1)
+def sportmonks_sync_squads(self):
+    """Раз в сутки: текущие составы клубов активного сезона (переходы видны до первого матча за новый клуб)."""
+    from parsers.sportmonks.importers import sync_current_squad
+    from teams.models import TeamSeason
+
+    if not _sync_enabled():
+        logger.info("Sportmonks: синк выключен флагом sportmonks_sync_enabled — sportmonks_sync_squads пропущен")
+        return
+    league, season = _get_league_and_season()
+    if league is None or season is None:
+        return
+    started_at = timezone.now()
+    client = SportmonksClient()
+    teams = [ts.team for ts in TeamSeason.objects.filter(season=season).select_related("team")
+             if ts.team.sportmonks_id]
+    applied = errors = 0
+    for team in teams:
+        try:
+            ok, confirmed, reason = sync_current_squad(client, team)
+        except Exception:
+            logger.exception("Sportmonks: состав %s не сверен", team.name)
+            errors += 1
+            continue
+        if ok:
+            applied += 1
+            logger.info("Sportmonks: состав %s — подтверждено %d игроков", team.name, confirmed)
+        else:
+            logger.info("Sportmonks: состав %s не применён: %s", team.name, reason)
+    _record_sync_run("sportmonks_sync_squads", started_at, total=len(teams), updated=applied, errors=errors)
 
 
 @shared_task(bind=True, max_retries=2)

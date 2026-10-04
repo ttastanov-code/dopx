@@ -152,6 +152,7 @@ class TeamDetailView(DetailView):
         logger.info(f"📊 Team {team.name} stats (season {current_season.year if current_season else 'N/A'}): "
                    f"Matches={total_matches}, Wins={wins}, Scored={goals_scored}, Conceded={goals_conceded}")
         
+        season_left = Player.objects.none()
         # Состав команды за выбранный сезон.
         if current_season and not current_season.is_active:
             # Прошлый сезон — кто реально играл за команду в этом сезоне.
@@ -160,21 +161,21 @@ class TeamDetailView(DetailView):
                 matchlineupplayer__lineup__match__season=current_season,
             ).distinct().order_by('number')
         else:
-            # Текущий сезон: игравшие за команду в этом сезоне
-            # + игроки команды без единой записи в составах (новички).
-            # Список полный, без среза.
-            never_played_ids = Player.objects.filter(
-                team=team, is_active=True, matchlineupplayer__isnull=True,
-            ).values_list('id', flat=True)
-            played_this_season_ids = []
+            # Текущий сезон: «состав на сегодня» — кто в клубе сейчас (последний матч или свежий состав Sportmonks);
+            # ушедшие, но игравшие за клуб в этом сезоне, — отдельным списком «также выходили».
+            # В составе: в клубе сейчас И (играл за него в этом сезоне, ещё нигде не играл или подтверждён свежим
+            # составом Sportmonks). Игравший только в прошлых сезонах не попадает.
+            current = Q(matchlineupplayer__isnull=True)
             if current_season:
-                played_this_season_ids = Player.objects.filter(
+                current |= Q(matchlineupplayer__lineup__team=team, matchlineupplayer__lineup__match__season=current_season)
+            if team.squad_synced_at:
+                current |= Q(squad_confirmed_at__gte=team.squad_synced_at - timedelta(hours=1))
+            players = Player.objects.filter(current, team=team, is_active=True).distinct().order_by('number')
+            if current_season:
+                season_left = (Player.objects.filter(
                     matchlineupplayer__lineup__team=team,
                     matchlineupplayer__lineup__match__season=current_season,
-                ).values_list('id', flat=True)
-            players = Player.objects.filter(
-                Q(id__in=never_played_ids) | Q(id__in=played_this_season_ids)
-            ).distinct().order_by('number')
+                ).exclude(team=team).select_related('team').distinct().order_by('last_name'))
         
         # Топ-5 игроков: матч засчитывается команде, за которую сыгран.
         played_for_this_team = MatchLineupPlayer.objects.filter(
@@ -300,6 +301,8 @@ class TeamDetailView(DetailView):
             'goals_scored': goals_scored,
             'goals_conceded': goals_conceded,
             'players': players,
+            'season_left_players': season_left,
+            'squad_synced_at': team.squad_synced_at,
             'top_players': top_players,
             'team_evals': team_evals,
             'recent_matches': recent_matches,

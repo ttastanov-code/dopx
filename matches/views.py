@@ -392,6 +392,21 @@ class MatchDetailView(DetailView):
         expert_takes = [t for t in published_takes if not ratings_hidden or t.is_preview]
         expert_takes_hidden = len(published_takes) - len(expert_takes)
 
+        # Объяснение рейтинга: причины у топ/антитоп игроков и «как трибуны прожили матч».
+        from aggregates.explain import explain_players, match_story
+
+        explain_players(match, top_players + worst_players, events=all_events,
+                        stat_ratings=stat_ratings, expert_takes=expert_takes)
+        if match_dna:
+            if match_dna.get('hero') and top_players:
+                match_dna['hero']['why'] = top_players[0].why
+            if match_dna.get('antihero') and worst_players:
+                match_dna['antihero']['why'] = worst_players[0].why
+        rating_story = None
+        if match.status == 'finished' and not ratings_hidden:
+            rating_story = match_story(match, all_events,
+                                       turning_points=getattr(match_agg, 'turning_points', None) or [])
+
         # «Спорим?» — друг прислал вызов по ссылке.
         challenger = None
         challenge_name = self.request.GET.get('challenge')
@@ -414,6 +429,7 @@ class MatchDetailView(DetailView):
             'match_aggregate': match_agg,
             'ratings_hidden': ratings_hidden,
             'match_dna': match_dna,
+            'rating_story': rating_story,
             'match_dna_share_url': match_dna_share_url,
             'top_players': top_players,
             'worst_players': worst_players,

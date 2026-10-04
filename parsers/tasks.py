@@ -17,46 +17,34 @@ from django.utils.html import strip_tags
 logger = logging.getLogger(__name__)
 
 
+MONITOR_WINDOW = timedelta(hours=24)
+SUPPLIER_GRACE = timedelta(hours=2)
+# Одна лига — 6–8 матчей в тур: два проблемных матча уже повод смотреть.
+ALERT_THRESHOLD = 2
+
+
 @shared_task
 def check_sync_errors_and_alert():
-    """Ошибки синка за 24 часа и алерт при необходимости."""
+    """Матчи за сутки без составов или событий (по времени матча) и алерт при необходимости."""
     from matches.models import Match
 
     now = timezone.now()
-    cutoff = now - timedelta(hours=24)
-
-    # Технические результаты (decided_administratively) без составов — не ошибка.
-    matches_without_lineups = Match.objects.filter(
+    # По времени матча, а не по дате записи: бэкафилл и давно созданный календарь иначе дают ложные алерты.
+    # Поставщику даём SUPPLIER_GRACE после старта, чтобы он дозалил составы и события.
+    recent = Match.objects.filter(
         status="finished",
-        created_at__gte=cutoff,
-        has_lineup=False,
-        decided_administratively=False,
-    ).count()
-
-    from events.models import MatchEvent
-
-    matches_without_events = (
-        Match.objects.filter(
-            status="finished", created_at__gte=cutoff, decided_administratively=False
-        )
-        .exclude(
-            id__in=MatchEvent.objects.filter(created_at__gte=cutoff).values_list(
-                "match_id", flat=True
-            )
-        )
-        .count()
+        decided_administratively=False,  # технический результат — без состава и событий законно
+        start_time__gte=now - MONITOR_WINDOW - SUPPLIER_GRACE,
+        start_time__lte=now - SUPPLIER_GRACE,
     )
-
-    threshold_lineups = 5
-    threshold_events = 10
+    matches_without_lineups = recent.filter(has_lineup=False).count()
+    matches_without_events = recent.filter(events__isnull=True).count()
 
     alerts = []
-
-    if matches_without_lineups > threshold_lineups:
-        alerts.append(f"⚠️ {matches_without_lineups} матчей без составов за 24ч")
-
-    if matches_without_events > threshold_events:
-        alerts.append(f"⚠️ {matches_without_events} матчей без событий за 24ч")
+    if matches_without_lineups >= ALERT_THRESHOLD:
+        alerts.append(f"⚠️ {matches_without_lineups} матчей без составов за сутки")
+    if matches_without_events >= ALERT_THRESHOLD:
+        alerts.append(f"⚠️ {matches_without_events} матчей без событий за сутки")
 
     if alerts:
         error_msg = "Проблемы с синхронизацией:\n" + "\n".join(alerts)

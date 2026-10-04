@@ -403,3 +403,72 @@
         animation: none !important;
     }
 }
+
+/* ============================================================
+   ОБЪЯСНЕНИЕ РЕЙТИНГА (_rating_why.html, _rating_story.html)
+   ============================================================ */
+.md-why-row { border-radius: .75rem; }
+.md-why { margin: 0 .5rem .25rem 2.75rem; }
+.md-why__summary {
+    display: flex; align-items: center; gap: .375rem; cursor: pointer; list-style: none;
+    font-size: .75rem; font-weight: 600; color: var(--color-primary); padding: .125rem 0;
+}
+.md-why__summary::-webkit-details-marker { display: none; }
+.md-why__hint {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-weight: 500; color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+}
+.md-why__chev { margin-left: auto; transition: transform .2s; }
+.md-why[open] .md-why__chev { transform: rotate(180deg); }
+.md-why[open] .md-why__hint { display: none; }
+.md-why__list { margin-top: .5rem; display: grid; gap: .375rem; }
+.md-why__item {
+    display: flex; gap: .5rem; align-items: flex-start; font-size: .8125rem; line-height: 1.35;
+    padding: .5rem .625rem; border-radius: .625rem;
+    background: color-mix(in oklab, var(--color-base-content) 4%, transparent);
+}
+.md-why__item .ti { margin-top: .1rem; flex-shrink: 0; opacity: .7; }
+.md-why__item--up .ti { color: var(--color-success); opacity: 1; }
+.md-why__item--down .ti { color: var(--color-error); opacity: 1; }
+
+.md-story__summary {
+    display: grid; gap: .25rem; font-size: .875rem; line-height: 1.45; margin-bottom: .875rem;
+    padding: .75rem .875rem; border-radius: .875rem;
+    background: color-mix(in oklab, var(--color-primary) 7%, transparent);
+}
+.md-story { position: relative; display: grid; gap: .75rem; }
+.md-story::before {
+    content: ""; position: absolute; left: 3.05rem; top: .5rem; bottom: .5rem; width: 2px;
+    background: var(--color-base-300);
+}
+.md-story__item { position: relative; display: grid; grid-template-columns: 2.25rem 1.6rem 1fr; gap: .5rem; align-items: start; }
+.md-story__min { font-size: .75rem; font-weight: 700; text-align: right; padding-top: .2rem; opacity: .6; font-variant-numeric: tabular-nums; }
+.md-story__dot {
+    position: relative; z-index: 1; width: 1.6rem; height: 1.6rem; border-radius: 9999px;
+    display: grid; place-items: center; font-size: .875rem;
+    background: var(--color-base-100); border: 2px solid var(--color-primary); color: var(--color-primary);
+}
+.md-story__item--away .md-story__dot { border-color: var(--color-secondary); color: var(--color-secondary); }
+.md-story__item.is-loudest .md-story__dot { background: var(--color-primary); color: var(--color-primary-content); }
+.md-story__item--away.is-loudest .md-story__dot { background: var(--color-secondary); color: var(--color-secondary-content); }
+.md-story__title { font-size: .875rem; font-weight: 600; line-height: 1.3; padding-top: .15rem; }
+.md-story__tag {
+    display: inline-block; margin-left: .25rem; font-size: .625rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .04em; padding: .1rem .4rem; border-radius: 9999px;
+    background: color-mix(in oklab, var(--color-warning) 22%, transparent);
+}
+.md-story__bar {
+    width: max(var(--vol), 12%); height: .375rem; border-radius: 9999px; margin-top: .4rem; overflow: hidden;
+    background: color-mix(in oklab, var(--color-error) 55%, transparent);
+}
+.md-story__like { display: block; height: 100%; background: var(--color-success); }
+.md-story__meta { font-size: .6875rem; opacity: .55; margin-top: .2rem; }
+/* В таблице со скроллом: держим блок у левого края видимой области. */
+.md-why--flush { margin: 0; position: sticky; left: 0; max-width: min(36rem, calc(100vw - 4rem)); }
+.md-why-tr > td { padding-top: 0; white-space: normal; }
+.md-delta {
+    display: inline-flex; align-items: center; gap: .1rem; font-size: .6875rem; font-weight: 700;
+    padding: .05rem .35rem; border-radius: 9999px; white-space: nowrap;
+}
+.md-delta--up { color: var(--color-success); background: color-mix(in oklab, var(--color-success) 12%, transparent); }
+.md-delta--down { color: var(--color-error); background: color-mix(in oklab, var(--color-error) 12%, transparent); }

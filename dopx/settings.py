@@ -58,6 +58,8 @@ if SENTRY_DSN:
     from sentry_sdk.integrations.django import DjangoIntegration
     from sentry_sdk.integrations.logging import LoggingIntegration
 
+    from core.redact import scrub_event
+
     sentry_sdk.init(
         dsn=SENTRY_DSN,
         integrations=[
@@ -72,6 +74,9 @@ if SENTRY_DSN:
         traces_sample_rate=0.1,
         # PII не отправляем.
         send_default_pii=False,
+        # Токены и ключи из URL запросов (Sportmonks, Telegram, ИИ) — вырезаем до отправки.
+        before_send=scrub_event,
+        before_breadcrumb=scrub_event,
     )
 
 # Application definition
@@ -958,6 +963,10 @@ CELERY_BEAT_SCHEDULE = {
         'options': {'expires': 14},
     },
     # === Подтяжка составов для матчей в ближайшие 3 часа. ===
+    'sportmonks-sync-squads': {
+        'task': 'parsers.sportmonks.tasks.sportmonks_sync_squads',
+        'schedule': crontab(hour=5, minute=10),
+    },
     'sportmonks-update-upcoming': {
         'task': 'parsers.sportmonks.tasks.sportmonks_update_upcoming',
         'schedule': crontab(minute='*/30'),
@@ -1054,11 +1063,14 @@ LOGGING = {
             'style': '{',
         },
     },
+    # Секреты (токены в URL запросов) не попадают ни в один файл и консоль.
+    'filters': {'secrets': {'()': 'core.redact.SecretsFilter'}},
     'handlers': {
         'celery_file': {
             'level': 'INFO',
             'class': 'logging.handlers.RotatingFileHandler',
             'filename': LOGS_DIR / 'celery.log',
+            'filters': ['secrets'],
             'maxBytes': 10 * 1024 * 1024,  # 10 МБ
             'backupCount': 5,
             'formatter': 'verbose',
@@ -1066,16 +1078,20 @@ LOGGING = {
         'console': {
             'class': 'logging.StreamHandler',
             'formatter': 'verbose',
+            'filters': ['secrets'],
         },
         'error_file': {
             'level': 'ERROR',
             'class': 'logging.handlers.RotatingFileHandler',
             'filename': LOGS_DIR / 'errors.log',
+            'filters': ['secrets'],
             'maxBytes': 10 * 1024 * 1024,  # 10 МБ
             'backupCount': 3,
             'formatter': 'verbose',
         },
     },
+    # Остальные логгеры (без своих настроек) — предупреждения и ошибки в консоль и errors.log, тоже через фильтр.
+    'root': {'handlers': ['console', 'error_file'], 'level': 'WARNING'},
     'loggers': {
         'celery': {
             'handlers': ['celery_file', 'console'],
@@ -1184,6 +1200,8 @@ ADMIN_BOT_AI_CHAT = os.getenv('ADMIN_BOT_AI_CHAT', 'False') == 'True'
 POSTS_AI_PROVIDER = os.getenv('POSTS_AI_PROVIDER', 'claude')
 NAMES_AI_PROVIDER = os.getenv('NAMES_AI_PROVIDER', 'gemini')
 if 'test' in sys.argv or 'pytest' in sys.modules:
+    # Тесты не пишут в logs/*.log и не засоряют вывод; assertLogs работает со своим обработчиком.
+    LOGGING['handlers'] = {name: {'class': 'logging.NullHandler'} for name in LOGGING['handlers']}
     ANTHROPIC_API_KEY = ''  # тесты не тратят баланс API
     FAN_BOT_TOKEN = ''
     FAN_BOT_APP_NAME = ''

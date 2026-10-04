@@ -57,6 +57,8 @@ class Player(BaseModel):
         null=True, blank=True,
         help_text=_('Start_time самой свежей фикстуры, из которой обновлялись team/number/position — используется как защита от отката этих полей при бэкафилле не по хронологии.'),
     )
+    # Когда текущий состав Sportmonks подтвердил игрока в клубе team (sync_current_squads).
+    squad_confirmed_at = models.DateTimeField(_('Подтверждён в составе'), null=True, blank=True)
 
     class Meta:
         verbose_name = _('Игрок')

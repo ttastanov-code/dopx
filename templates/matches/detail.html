@@ -104,6 +104,8 @@
             </div>
             {% endif %}
 
+            {% if rating_story %}{% include 'matches/_rating_story.html' with story=rating_story %}{% endif %}
+
             {% include 'engagement/_polls.html' %}
 
             {% include 'engagement/_expert_takes.html' %}
@@ -181,7 +183,6 @@
                             <span class="badge badge-error badge-xs animate-pulse"></span>
                             <span>Live-пульс</span>
                         </h3>
-                        <span class="text-xs opacity-60">Обновляется автоматически</span>
                     </div>
                     <p class="text-xs opacity-60 mb-3">Реагируйте на моменты матча прямо сейчас. Полную оценку составов дайте после финального свистка.</p>
                     <div id="live-pulse-container" data-background-poll
@@ -236,6 +237,7 @@
                 </div>
                 <div class="p-3 sm:p-4 space-y-2">
                     {% for agg in top_players %}
+                    <div class="md-why-row">
                     {# Растянутая ссылка — внутри уже есть <a>/<button>. #}
                     <div class="relative flex items-center gap-2 md:gap-4 p-2 md:p-3 rounded-xl hover:bg-base-200 transition-all">
                         <a href="{% url 'players:detail' agg.player.id %}" class="absolute inset-0 rounded-xl"
@@ -260,6 +262,8 @@
                             {% endif %}
                             <div class="mt-0.5">{% confidence_badge agg %}</div>
                         </div>
+                    </div>
+                    {% if agg.why.reasons %}{% include 'matches/_rating_why.html' with why=agg.why score=agg.performance_score %}{% endif %}
                     </div>
                     {% endfor %}
                 </div>

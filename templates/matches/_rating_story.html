@@ -1,0 +1,35 @@
+{# Как трибуны прожили матч: ключевые события с live-реакцией и перелом по версии болельщиков (aggregates/explain.py). #}
+<div class="md-side-card">
+    <div class="md-side-card__head flex items-center gap-2">
+        <i class="ti ti-activity-heartbeat"></i>
+        <h3 class="font-extrabold text-base md:text-lg">Как трибуны прожили матч</h3>
+    </div>
+    <div class="p-3 sm:p-4">
+        {% if story.summary %}
+        <div class="md-story__summary">
+            {% for line in story.summary %}<p>{{ line }}</p>{% endfor %}
+        </div>
+        {% endif %}
+        <ol class="md-story">
+            {% for m in story.moments %}
+            <li class="md-story__item md-story__item--{{ m.side }}{% if m.event.id == story.loudest_id %} is-loudest{% endif %}">
+                <span class="md-story__min">{{ m.event.display_minute }}'</span>
+                <span class="md-story__dot"><i class="ti {{ m.icon }}"></i></span>
+                <div class="md-story__body min-w-0">
+                    <div class="md-story__title">
+                        {{ m.event.get_event_type_display }}{% if m.event.player_display_name %} · {{ m.event.player_display_name }}{% endif %}
+                        {% if m.event.id == story.loudest_id %}<span class="md-story__tag">громче всего</span>{% endif %}
+                    </div>
+                    {% if m.stats %}
+                    {# Длина полосы — громкость относительно самого обсуждаемого момента, цвет — доля 👍. #}
+                    <div class="md-story__bar" style="--vol: {{ m.volume }}%;">
+                        <span class="md-story__like" style="width: {{ m.stats.like_pct }}%;"></span>
+                    </div>
+                    <div class="md-story__meta">👍 {{ m.stats.likes }} · 👎 {{ m.stats.dislikes }}</div>
+                    {% endif %}
+                </div>
+            </li>
+            {% endfor %}
+        </ol>
+    </div>
+</div>

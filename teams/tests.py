@@ -383,7 +383,7 @@ class TeamDetailViewRosterTests(TestCase):
         self.assertIn(played, self._get_players())
 
     def test_player_who_transferred_away_after_playing_this_season_still_shown(self):
-        """Ушёл по ходу сезона — остаётся в составе прежнего клуба за этот сезон."""
+        """Ушёл по ходу сезона — не в «составе на сегодня», а в «также выходили в сезоне»."""
         from lineups.models import MatchLineup, MatchLineupPlayer
 
         other_team = Team.objects.create(name="Новый клуб")
@@ -400,7 +400,10 @@ class TeamDetailViewRosterTests(TestCase):
         lineup = MatchLineup.objects.create(match=match, team=self.team, side='home')
         MatchLineupPlayer.objects.create(lineup=lineup, player=transferred, is_starting=True)
 
-        self.assertIn(transferred, self._get_players())
+        self.assertNotIn(transferred, self._get_players())
+        response = self.client.get(reverse('teams:detail', args=[self.team.id]))
+        self.assertIn(transferred, list(response.context['season_left_players']))
+        self.assertContains(response, "сейчас в «Новый клуб»")
 
     def test_large_squad_not_truncated_to_25(self):
         """Состав не режется до 25 игроков."""

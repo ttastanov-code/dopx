@@ -263,12 +263,16 @@
   <div class="order-2 lg:order-1 lg:col-span-2 space-y-4 md:space-y-6 min-w-0">
     
     {# === СОСТАВ КОМАНДЫ === #}
-    {% if players %}
+    {% if players or season_left_players %}
     <div class="card bg-base-100 border border-base-300">
       <div class="card-body p-3 md:p-4">
-        <h3 class="font-bold text-base md:text-lg mb-3 md:mb-4">
-          <i class="ti ti-users mr-2"></i>Состав команды
-        </h3>
+        <div class="mb-3 md:mb-4">
+          <h3 class="font-bold text-base md:text-lg">
+            <i class="ti ti-users mr-2"></i>{% if selected_season and not selected_season.is_active %}Игроки сезона {{ selected_season.year }}{% else %}Состав на сегодня{% endif %}
+          </h3>
+          <p class="text-xs opacity-60 mt-0.5">{% if selected_season and not selected_season.is_active %}Выходили на поле за клуб в этом сезоне{% elif squad_synced_at %}Сверен с данными поставщика {{ squad_synced_at|date:"d.m.Y" }}{% else %}По последним матчам игроков{% endif %}</p>
+        </div>
+        {% if players %}
         <div class="overflow-x-auto -mx-2 px-2 sm:mx-0 sm:px-0">
           <table class="table table-zebra min-w-[400px]">
             <thead>
@@ -304,6 +308,20 @@
             </tbody>
           </table>
         </div>
+        {% endif %}
+        {% if season_left_players %}
+        <details class="mt-3">
+          <summary class="cursor-pointer text-sm opacity-70 hover:opacity-100">Также выходили в сезоне{% if selected_season %} {{ selected_season.year }}{% endif %}: {{ season_left_players|length }}</summary>
+          <ul class="mt-2 space-y-1.5 text-sm">
+            {% for p in season_left_players %}
+            <li class="flex flex-wrap items-center gap-x-2">
+              <a href="{% url 'players:detail' p.id %}" class="hover:text-primary">{{ p.first_name }} {{ p.last_name }}</a>
+              <span class="text-xs opacity-50">{% if p.team %}сейчас в «{{ p.team.name }}»{% else %}ушёл из клуба{% endif %}</span>
+            </li>
+            {% endfor %}
+          </ul>
+        </details>
+        {% endif %}
       </div>
     </div>
     {% endif %}

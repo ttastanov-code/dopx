@@ -143,6 +143,7 @@
                     <span class="block text-[11px] opacity-55">Герой</span>
                     <span class="dna-person__name block">{{ match_dna.hero.player }}</span>
                     {% if match_dna.hero.stat_rating %}<span class="dna-person__vs block">по статистике {{ match_dna.hero.stat_rating|floatformat:1 }}</span>{% endif %}
+                    {% if match_dna.hero.why.headline %}<span class="dna-person__vs block">{{ match_dna.hero.why.headline }}</span>{% endif %}
                 </span>
                 <span class="dna-person__score" title="Оценка болельщиков">{{ match_dna.hero.score|floatformat:1 }}</span>
             </a>
@@ -155,6 +156,7 @@
                     <span class="block text-[11px] opacity-55">Антигерой</span>
                     <span class="dna-person__name block">{{ match_dna.antihero.player }}</span>
                     {% if match_dna.antihero.stat_rating %}<span class="dna-person__vs block">по статистике {{ match_dna.antihero.stat_rating|floatformat:1 }}</span>{% endif %}
+                    {% if match_dna.antihero.why.headline %}<span class="dna-person__vs block">{{ match_dna.antihero.why.headline }}</span>{% endif %}
                 </span>
                 <span class="dna-person__score" title="Оценка болельщиков">{{ match_dna.antihero.score|floatformat:1 }}</span>
             </a>

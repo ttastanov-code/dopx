@@ -208,6 +208,11 @@ class PlayerDetailView(DetailView):
         for agg in aggregates:
             agg.stat_rating = per_match_stat.get(agg.match_id)
 
+        # Почему такая оценка и насколько изменилась к прошлому матчу.
+        from aggregates.explain import explain_history
+
+        explain_history(player, aggregates, stat_ratings=per_match_stat)
+
         # «Форма по матчам»: соперник — по заявке того матча (после трансфера подписи верные).
         from core.form_chart import build_form_points
         team_by_match = dict(

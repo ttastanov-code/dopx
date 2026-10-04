@@ -23,6 +23,8 @@ class Team(BaseModel):
             'источника устарел/неверен.'
         ),
     )
+    # Последняя успешная сверка текущего состава с Sportmonks: подпись «Состав на сегодня · обновлён …».
+    squad_synced_at = models.DateTimeField(_('Состав сверен'), null=True, blank=True)
     logo_url = models.URLField(
         blank=True,
         null=True,

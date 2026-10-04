@@ -447,6 +447,41 @@ def get_or_create_coach(coach_data: Optional[Dict], team: Optional[Team] = None)
     return coach
 
 
+# Меньше игроков с действующим контрактом — состав у поставщика считаем устаревшим и не применяем.
+SQUAD_MIN_PLAYERS = 11
+
+
+def sync_current_squad(client, team: Team, today=None) -> tuple[bool, int, str]:
+    """Текущий состав клуба из Sportmonks → player.team и squad_confirmed_at.
+    Применяем только свежий состав (SQUAD_MIN_PLAYERS с действующим контрактом), иначе клуб определяется по последнему матчу.
+    Возвращает (применён, сколько игроков подтверждено, причина)."""
+    today = today or timezone.localdate()
+    rows = client.get_team_squad(int(team.sportmonks_id), include="player")
+
+    def active(row) -> bool:
+        start, end = (row.get("start") or "")[:10], (row.get("end") or "")[:10]
+        return (not start or start <= today.isoformat()) and (not end or end >= today.isoformat())
+
+    current = [r for r in rows if r.get("player") and active(r)]
+    if len(current) < SQUAD_MIN_PLAYERS:
+        return False, 0, f"у поставщика {len(current)} игроков с действующим контрактом — состав устарел"
+    now = timezone.now()
+    confirmed = 0
+    with transaction.atomic():
+        for row in current:
+            # Состав свежий: игрок в этом клубе сейчас, даже если последний матч сыграл за прошлый.
+            player = get_or_create_player(row["player"], team=None)
+            if player is None:
+                continue
+            fields = {"team": team, "squad_confirmed_at": now, "is_active": True}
+            if row.get("jersey_number"):
+                fields["number"] = row["jersey_number"]
+            Player.objects.filter(pk=player.pk).update(**fields)
+            confirmed += 1
+        Team.objects.filter(pk=team.pk).update(squad_synced_at=now)
+    return True, confirmed, ""
+
+
 def get_or_create_player(
     player_data: Optional[Dict], team: Optional[Team] = None, number: Optional[int] = None,
     match_start_time=None,
@@ -464,7 +499,7 @@ def get_or_create_player(
         return None
 
     first_name, last_name, name_source = _resolve_cyrillic_name(player_data, "игрока")
-    existing = Player.objects.filter(sportmonks_id=str(sm_id)).only("id", "last_match_at").first()
+    existing = Player.objects.filter(sportmonks_id=str(sm_id)).only("id", "last_match_at", "squad_confirmed_at").first()
 
     is_more_recent = (
         match_start_time is None
@@ -472,6 +507,10 @@ def get_or_create_player(
         or existing.last_match_at is None
         or match_start_time >= existing.last_match_at
     )
+    # Матч до подтверждения в текущем составе не возвращает игрока в прошлый клуб.
+    if (is_more_recent and existing is not None and match_start_time is not None
+            and existing.squad_confirmed_at and match_start_time < existing.squad_confirmed_at):
+        is_more_recent = False
 
     defaults = {
         "first_name": first_name,

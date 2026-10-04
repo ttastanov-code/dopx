@@ -13,6 +13,8 @@ from django.conf import settings
 from django.core.cache import cache
 from django.utils import timezone
 
+from core.redact import redact
+
 logger = logging.getLogger(__name__)
 
 # Свой счётчик запросов в Redis (час/сутки) — API не отдаёт общий расход.
@@ -48,6 +50,14 @@ def get_request_counts() -> dict:
         "hour": cache.get(hour_key, 0),
         "day": cache.get(day_key, 0),
     }
+
+
+def _retry_delay(response, attempt: int) -> float:
+    """Пауза перед повтором: Retry-After от поставщика (не больше 10 с), иначе нарастающая."""
+    try:
+        return min(float(response.headers.get("Retry-After", "")), 10.0)
+    except ValueError:
+        return RETRY_BACKOFF_SECONDS * attempt
 
 
 class SportmonksAPIError(Exception):
@@ -96,8 +106,8 @@ class SportmonksClient:
             try:
                 response = self.session.get(url, params=request_params, timeout=15)
             except requests.RequestException as exc:
-                last_error = exc
-                logger.warning("Sportmonks: сетевая ошибка на %s (попытка %s/%s): %s", path, attempt, MAX_RETRIES, exc)
+                last_error = redact(exc)  # в тексте ошибки URL с api_token
+                logger.warning("Sportmonks: сетевая ошибка на %s (попытка %s/%s): %s", path, attempt, MAX_RETRIES, last_error)
                 time.sleep(RETRY_BACKOFF_SECONDS * attempt)
                 continue
 
@@ -110,18 +120,18 @@ class SportmonksClient:
                     "Sportmonks: %s на %s (попытка %s/%s), ретраим",
                     response.status_code, path, attempt, MAX_RETRIES,
                 )
-                time.sleep(RETRY_BACKOFF_SECONDS * attempt)
+                time.sleep(_retry_delay(response, attempt))
                 continue
 
             if response.status_code >= 400:
                 # 4xx — сразу ошибка с телом ответа.
-                raise SportmonksAPIError(f"HTTP {response.status_code} на {path}: {response.text[:500]}")
+                raise SportmonksAPIError(redact(f"HTTP {response.status_code} на {path}: {response.text[:500]}"))
 
             payload = response.json()
             self._log_rate_limit_if_low(path, payload)
             return payload
 
-        raise SportmonksAPIError(f"Не удалось получить {path} после {MAX_RETRIES} попыток: {last_error}")
+        raise SportmonksAPIError(redact(f"Не удалось получить {path} после {MAX_RETRIES} попыток: {last_error}"))
 
     def _get_data(self, path: str, params: Optional[dict] = None) -> dict:
         """_get() для одиночной сущности. Нет 'data' в ответе — SportmonksAPIError с телом."""
@@ -234,6 +244,10 @@ class SportmonksClient:
     def get_squad(self, season_id: int, team_id: int, include: str = 'player') -> list:
         # Ростер может быть больше одной страницы.
         return self._get_all_pages(f"/squads/seasons/{season_id}/teams/{team_id}", {'include': include})
+
+    def get_team_squad(self, team_id: int, include: str = 'player') -> list:
+        """Текущий состав клуба (контракты start/end). Для части клубов КПЛ у поставщика устаревший."""
+        return self._get_all_pages(f"/squads/teams/{team_id}", {'include': include})
 
     def get_sidelined(self, team_id: int) -> list:
         """Травмы и дисквалификации игроков команды."""

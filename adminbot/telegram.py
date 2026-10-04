@@ -16,8 +16,9 @@ _TOKEN_RE = re.compile(r"bot\d+:[A-Za-z0-9_-]{20,}")
 
 
 def redact(text) -> str:
-    """Убирает токен бота из текста ошибки: он есть в URL запросов к Telegram."""
-    return _TOKEN_RE.sub("bot<токен>", str(text))
+    """Убирает токен бота (и другие секреты) из текста ошибки: токен есть в URL запросов к Telegram."""
+    from core.redact import redact as _redact
+    return _redact(text)
 
 
 def _clean(e: requests.RequestException) -> requests.RequestException:

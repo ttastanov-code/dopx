@@ -229,6 +229,12 @@
                                         {% else %}
                                         <span class="badge badge-ghost badge-xs whitespace-nowrap">н/д</span>
                                         {% endif %}
+                                        {% if agg.delta %}
+                                        {# Изменение к прошлому оценённому матчу. #}
+                                        <span class="md-delta {% if agg.delta > 0 %}md-delta--up{% else %}md-delta--down{% endif %}" title="К прошлому матчу">
+                                            <i class="ti {% if agg.delta > 0 %}ti-arrow-up-right{% else %}ti-arrow-down-right{% endif %}"></i>{{ agg.delta|floatformat:1|cut:"-" }}
+                                        </span>
+                                        {% endif %}
                                         {% confidence_badge agg %}
                                     </div>
                                 </td>
@@ -241,6 +247,10 @@
                                 <td class="text-center">{{ agg.risk_index|floatformat:1 }}</td>
                                 <td class="text-center">{{ agg.clutch_index|floatformat:1 }}</td>
                             </tr>
+                            {% if agg.why.reasons and agg.total_votes|has_enough_votes %}
+                            {# Причины — отдельной строкой: в ячейке «Матч» список слишком узкий. #}
+                            <tr class="md-why-tr"><td colspan="7">{% include 'matches/_rating_why.html' with why=agg.why score=agg.performance_score flush=True %}</td></tr>
+                            {% endif %}
                             {% endfor %}
                         </tbody>
                     </table>
