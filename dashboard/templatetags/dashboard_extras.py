@@ -292,3 +292,11 @@ def _render_line(line: str, ansi_class: str | None = None) -> str:
 
     # Обычная строка без стиля.
     return format_html('<div class="text-xs font-mono py-0.5 whitespace-pre-wrap">{}</div>', line)
+
+
+@register.simple_tag
+def run_denied(user, spec):
+    """Почему нельзя запустить скрипт (пусто — можно)."""
+    from dashboard.command_runner import run_denied_reason
+
+    return run_denied_reason(user, spec)

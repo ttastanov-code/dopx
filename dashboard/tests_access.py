@@ -329,3 +329,37 @@ class PrivilegeEscalationTests(TestCase):
         self.client.post(reverse("dashboard:access_grant_staff"), {"user": "someone"})
         self.client.post(reverse("dashboard:access_roles_detail", args=[self.mod.pk]), {"action": "personal", "section_access_roles": "on"})
         self.assertNotIn("access_roles", StaffAccessGrant.objects.get(user=self.mod).allowed_sections)
+
+
+@override_settings(STAFF_2FA_ENFORCED=False)
+class ScriptPermsTests(TestCase):
+    """Каждый скрипт требует права на данные, которые меняет; раздел «Скрипты» сам по себе их не даёт."""
+
+    def setUp(self):
+        self.staff = _staff("ops", ["scripts"])
+        self.client.force_login(self.staff)
+
+    def test_needs_data_perm(self):
+        from dashboard.command_runner import run_denied_reason
+        from dashboard.commands_registry import get_command
+
+        recalc = get_command("recalculate_aggregates")
+        self.assertEqual(run_denied_reason(self.staff, recalc), "Нужен доступ к данным: правка: Матч.")
+        self.assertEqual(run_denied_reason(self.staff, get_command("diagnose_team_roster")), "")
+        self.staff.user_permissions.add(Permission.objects.get(codename="change_match"))
+        self.staff = User.objects.get(pk=self.staff.pk)  # сброс кэша прав
+        self.assertEqual(run_denied_reason(self.staff, recalc), "")
+        self.assertIn("суперпользователь", run_denied_reason(self.staff, get_command("cleanup_test_users")))
+
+    def test_trigger_refused_and_page_shows_lock(self):
+        from dashboard.models import ManagementCommandRun
+
+        self.client.post(reverse("dashboard:scripts_trigger"), {"command_name": "simulate_match_timing"})
+        self.assertFalse(ManagementCommandRun.objects.exists())
+        self.assertContains(self.client.get(reverse("dashboard:scripts")), "Нужен доступ к данным: правка: Матч.")
+
+    def test_every_changing_script_declares_perms(self):
+        from dashboard.commands_registry import COMMAND_REGISTRY
+
+        missing = [s.name for s in COMMAND_REGISTRY.values() if s.danger == "safe" and not s.perms]
+        self.assertEqual(missing, [])

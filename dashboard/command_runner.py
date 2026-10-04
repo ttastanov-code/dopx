@@ -110,9 +110,40 @@ def run_command_sync(spec: CommandSpec, positional: list, kwargs: dict) -> tuple
     return success, out.getvalue(), err.getvalue()
 
 
+PERM_ACTIONS = {"add": "создание", "change": "правка", "delete": "удаление", "view": "просмотр"}
+
+
+def perm_label(perm: str) -> str:
+    """«matches.change_match» -> «правка: Матч»."""
+    from django.apps import apps
+
+    app_label, codename = perm.split(".", 1)
+    action, _, model_name = codename.partition("_")
+    try:
+        model = apps.get_model(app_label, model_name)
+        name = str(model._meta.verbose_name)
+        name = name[:1].upper() + name[1:]
+    except LookupError:
+        name = model_name
+    return f"{PERM_ACTIONS.get(action, action)}: {name}"
+
+
+def run_denied_reason(user, spec) -> str:
+    """Почему сотруднику нельзя запустить скрипт; пусто — можно. Раздел «Скрипты» проверяется отдельно."""
+    if getattr(user, "is_superuser", False):
+        return ""
+    if spec.danger == "destructive":
+        return "Необратимая команда — запускает только суперпользователь."
+    if spec.danger == "readonly":
+        return ""
+    missing = [p for p in spec.perms if not user.has_perm(p)]
+    if missing:
+        return "Нужен доступ к данным: " + ", ".join(perm_label(p) for p in missing) + "."
+    return ""
+
+
 def can_run(user, spec) -> bool:
-    """Необратимые команды — только суперпользователю (иначе, например, удаление сотрудников)."""
-    return spec.danger != "destructive" or bool(getattr(user, "is_superuser", False))
+    return not run_denied_reason(user, spec)
 
 
 def trigger_command(request, command_name: str, apply: bool = False) -> tuple[bool, str, "ManagementCommandRun | None"]:  # noqa: F821
@@ -124,8 +155,9 @@ def trigger_command(request, command_name: str, apply: bool = False) -> tuple[bo
     spec = get_command(command_name)
     if spec is None:
         return False, f"Неизвестная команда: {command_name}", None
-    if not can_run(request.user, spec):
-        return False, f"«{spec.label}» — необратимая команда, запускает только суперпользователь.", None
+    reason = run_denied_reason(request.user, spec)
+    if reason:
+        return False, f"«{spec.label}»: {reason}", None
 
     try:
         positional, kwargs = build_command_args(spec, request.POST, apply=apply)

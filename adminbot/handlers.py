@@ -459,7 +459,9 @@ def script_view(user, name):
         else:
             rows.append([("▶️ Запустить", cb("scr_run", f"{name}:run"))])
     else:
-        text += "\n\n<i>Опасная команда — запуск только суперпользователю.</i>"
+        from dashboard.command_runner import run_denied_reason
+
+        text += f"\n\n<i>🔒 {esc(run_denied_reason(user, spec) or 'Нет доступа к разделу «Скрипты».')}</i>"
     return text, rows + back(("← Назад", cb("scr_cat", spec.category)))
 
 

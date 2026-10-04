@@ -42,6 +42,8 @@ class CommandSpec:
     has_apply_flag: bool = False  # есть свой --apply (dry-run по умолчанию)
     # Если задано — запуск режется на порции такого размера.
     auto_chunk_limit: int | None = None
+    # Права на данные, которые скрипт меняет (кроме readonly); без них запуск закрыт даже с разделом «Скрипты».
+    perms: tuple[str, ...] = ()
 
 
 # Команды, которые требуют вписать своё имя (для остальных опасных хватает галочки apply).
@@ -62,6 +64,7 @@ COMMAND_REGISTRY: dict[str, CommandSpec] = {
     # ============================================================
     "seed_full_history": CommandSpec(
         name="seed_full_history", label="Полная история сезона",
+        perms=('users.add_user', 'evaluations.change_evaluationsession'),
         category="seed", danger="safe", has_apply_flag=False,
         description="Оценки, прогнозы, XP, бейджи и сборные тура/сезона по тестовым ботам. Повтор не плодит дубли.",
         args=[
@@ -76,6 +79,7 @@ COMMAND_REGISTRY: dict[str, CommandSpec] = {
     ),
     "seed_match_votes": CommandSpec(
         name="seed_match_votes", label="Голоса за матчи",
+        perms=('users.add_user', 'evaluations.change_evaluationsession'),
         category="seed", danger="safe",
         description="Точечное голосование ботов за выбранные матчи.",
         args=[
@@ -92,6 +96,7 @@ COMMAND_REGISTRY: dict[str, CommandSpec] = {
     ),
     "simulate_evaluations": CommandSpec(
         name="simulate_evaluations", label="Оценки пользователей",
+        perms=('users.add_user', 'evaluations.change_evaluationsession'),
         category="seed", danger="safe",
         description="Симулирует оценки от нескольких пользователей сразу по матчам.",
         args=[
@@ -103,6 +108,7 @@ COMMAND_REGISTRY: dict[str, CommandSpec] = {
     ),
     "create_test_evaluations": CommandSpec(
         name="create_test_evaluations", label="Тестовые оценки для матча",
+        perms=('users.add_user', 'evaluations.change_evaluationsession'),
         category="seed", danger="safe",
         description="Создаёт оценки для одного матча.",
         args=[
@@ -112,6 +118,7 @@ COMMAND_REGISTRY: dict[str, CommandSpec] = {
     ),
     "create_test_users": CommandSpec(
         name="create_test_users", label="Тестовые пользователи",
+        perms=('users.add_user',),
         category="seed", danger="safe",
         description="Создаёт тестовые аккаунты.",
         args=[
@@ -122,6 +129,7 @@ COMMAND_REGISTRY: dict[str, CommandSpec] = {
     ),
     "setup_load_test": CommandSpec(
         name="setup_load_test", label="Подготовить нагрузочный тест",
+        perms=('users.add_user', 'matches.change_match'),
         category="seed", danger="safe",
         description="Тестовые пользователи и синтетический матч для Locust.",
         args=[
@@ -130,6 +138,7 @@ COMMAND_REGISTRY: dict[str, CommandSpec] = {
     ),
     "open_voting_for_past_matches": CommandSpec(
         name="open_voting_for_past_matches", label="Открыть голосование задним числом",
+        perms=('matches.change_match',),
         category="seed", danger="safe",
         description="Открывает окно голосования для прошедших матчей.",
         args=[
@@ -140,6 +149,7 @@ COMMAND_REGISTRY: dict[str, CommandSpec] = {
     ),
     "simulate_match_timing": CommandSpec(
         name="simulate_match_timing", label="Сдвинуть время/статус матча",
+        perms=('matches.change_match',),
         category="seed", danger="safe",
         description="Меняет время или статус существующего матча — для теста напоминаний без ожидания крона.",
         args=[
@@ -207,6 +217,7 @@ COMMAND_REGISTRY: dict[str, CommandSpec] = {
     # ============================================================
     "recalculate_aggregates": CommandSpec(
         name="recalculate_aggregates", label="Пересчитать агрегаты матчей",
+        perms=('matches.change_match',),
         category="recalc", danger="safe",
         description="Пересчитывает рейтинги — для одного матча или всех активных.",
         args=[
@@ -217,6 +228,7 @@ COMMAND_REGISTRY: dict[str, CommandSpec] = {
     ),
     "recompute_closed_rounds": CommandSpec(
         name="recompute_closed_rounds", label="Пересчитать закрытые туры",
+        perms=('matches.change_match',),
         category="recalc", danger="safe",
         description="Пересчёт состава уже закрытых туров без повторной рассылки писем.",
         args=[
@@ -226,18 +238,21 @@ COMMAND_REGISTRY: dict[str, CommandSpec] = {
     ),
     "refresh_coach_activity": CommandSpec(
         name="refresh_coach_activity", label="Пересчитать активность тренеров",
+        perms=('matches.change_match',),
         category="recalc", danger="safe",
         description="Обновляет «активен» по последнему матчу команды. Без обращения к внешнему API.",
         args=[],
     ),
     "recompute_user_progress": CommandSpec(
         name="recompute_user_progress", label="Пересчитать XP, серии и достижения",
+        perms=('users.change_user',),
         category="recalc", danger="safe", has_apply_flag=True,
         description="Из фактических данных: завершённые оценки и прогнозы. Нужно после удаления сессий/прогнозов вручную.",
         args=[ArgSpec("--user", "user", "str", help="username; пусто — все пользователи")],
     ),
     "sync_sportmonks_photos": CommandSpec(
         name="sync_sportmonks_photos", label="Догрузить фото из Sportmonks",
+        perms=('players.change_player',),
         category="recalc", danger="safe", has_apply_flag=True,
         description="Фото игроков (по составам сезона), судей и тренеров. Заглушки пропускает. Обращается к API Sportmonks.",
         args=[ArgSpec("--entity", "entity", "choice", default="all", choices=["all", "players", "referees", "coaches"])],
@@ -248,6 +263,7 @@ COMMAND_REGISTRY: dict[str, CommandSpec] = {
     # ============================================================
     "verify_names_with_ai": CommandSpec(
         name="verify_names_with_ai", label="Проверить ФИО через ИИ",
+        perms=('parsers.change_nameverificationsuggestion',),
         category="ai_names", danger="safe",
         description="Ищет реальное написание ФИО через веб-поиск. Не меняет ничего напрямую — кладёт предложения в очередь на подтверждение. Нужен GEMINI_API_KEY.",
         # Порции по 40 кандидатов — долгие прогоны падали по OOM.
@@ -277,6 +293,7 @@ COMMAND_REGISTRY: dict[str, CommandSpec] = {
     ),
     "send_test_push": CommandSpec(
         name="send_test_push", label="Тестовый push",
+        perms=('notifications.add_notification',),
         category="diagnose", danger="safe",
         description="Шлёт пример уведомления выбранного типа (или всех типов) на все устройства пользователя "
                     "и показывает результат. Выключенные пользователем типы не придут — как в бою.",
@@ -289,6 +306,7 @@ COMMAND_REGISTRY: dict[str, CommandSpec] = {
     ),
     "publish_weekly_poll": CommandSpec(
         name="publish_weekly_poll", label="Опрос недели сейчас",
+        perms=('notifications.add_notification',),
         category="diagnose", danger="safe", has_apply_flag=True,
         description="«Спорный момент» или «Дуэль тура» вне расписания (по расписанию — вт и ср в 12:00). "
                     "Без «Реально применить» — покажет, какой эпизод или пара будут выбраны.",
@@ -340,6 +358,7 @@ COMMAND_REGISTRY: dict[str, CommandSpec] = {
     # ============================================================
     "sportmonks_backfill_stats": CommandSpec(
         name="sportmonks_backfill_stats", label="Догрузить полную статистику прошлых матчей",
+        perms=('matches.change_match',),
         category="recalc", danger="safe",
         description="Для уже сыгранных матчей подтягивает всю статистику игроков и команд (оценка по статистике, отборы, перехваты и т.д.). 1 запрос к API на матч, счёт и составы не трогает.",
         args=[
@@ -355,6 +374,7 @@ COMMAND_REGISTRY: dict[str, CommandSpec] = {
     ),
     "calibrate_player_objective_weights": CommandSpec(
         name="calibrate_player_objective_weights", label="Подобрать веса формулы «по статистике»",
+        perms=('core.change_platformsetting',),
         category="recalc", danger="safe",
         description="Подбирает по данным веса запасной формулы оценки игры (когда у матча нет готовой оценки по статистике) и показывает точность. С флагом «сохранить» — записывает в «Настройки платформы».",
         args=[
