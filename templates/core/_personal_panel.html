@@ -37,10 +37,11 @@
             {% endwith %}
             {% if personal.season_pass %}
             {% with sp=personal.season_pass %}
-            <a href="{% url 'engagement:season_pass' %}" class="dx-hstat dx-hstat--season" title="Сезонный пропуск">
+            <a href="{% url 'engagement:season_pass' %}" class="dx-hstat dx-hstat--season" title="Сезонный пропуск: уровень {{ sp.level }}">
                 <span class="dx-hstat__ico"><i class="ti ti-ticket"></i></span>
                 <span class="dx-hstat__body">
-                    <span class="dx-hstat__value">Сезон · {{ sp.level }}</span>
+                    <span class="dx-hstat__value">Ур. {{ sp.level }}</span>
+                    <span class="dx-hstat__meta">пропуск сезона</span>
                     <span class="dx-hstat__bar"><span style="width: {{ sp.level_progress }}%"></span></span>
                 </span>
             </a>
