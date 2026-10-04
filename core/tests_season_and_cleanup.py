@@ -8,7 +8,7 @@ from io import StringIO
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.core.management import call_command
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -160,3 +160,31 @@ class ResetCorrectionsTests(TestCase):
         self.assertEqual(
             set(SuspiciousActivityFlag.objects.values_list("id", flat=True)), {kept_reviewed.id, kept_user.id}
         )
+
+
+@override_settings(ALLOW_SEED_COMMANDS=True)
+class SeedReactionsTests(_SeasonBase):
+    """Наполнение истории даёт live-реакции и перелом; очистка снимает только реакции ботов."""
+
+    def test_seed_reactions_story_and_cleanup_keeps_real(self):
+        from events.models import EventReaction, MatchEvent
+
+        match = self.match(self.new, timezone.now() - timedelta(hours=1), tour=1, home_score=1, away_score=1)
+        goal = MatchEvent.objects.create(match=match, minute=20, event_type="goal", team_side="home")
+        MatchEvent.objects.create(match=match, minute=80, event_type="goal", team_side="away")
+        real = User.objects.create_user(username="fan", email="fan@example.com", password="x")
+        EventReaction.objects.create(match_event=goal, user=real, reaction="like")
+
+        call_command("seed_full_history", "--season-id", str(self.new.id), "--pool-size", "40", "--seed", "1",
+                     "--no-badges", stdout=StringIO())
+        bot_reactions = EventReaction.objects.filter(synthetic_users_q("user__"))
+        self.assertGreater(bot_reactions.count(), 20)
+        self.assertTrue(match.aggregate.turning_points)
+        self.assertContains(self.client.get(reverse("matches:detail", args=[match.id])), "Как трибуны прожили матч")
+
+        call_command("seed_full_history", "--season-id", str(self.new.id), "--pool-size", "40", "--no-badges",
+                     stdout=StringIO())  # повтор не дублирует
+        self.assertEqual(EventReaction.objects.filter(synthetic_users_q("user__")).count(), bot_reactions.count())
+
+        call_command("cleanup_test_users", "--apply", stdout=StringIO())
+        self.assertEqual(list(EventReaction.objects.values_list("user_id", flat=True)), [real.id])

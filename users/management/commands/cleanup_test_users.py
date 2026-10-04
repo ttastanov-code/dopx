@@ -32,6 +32,7 @@ from evaluations.models import (
     RefereeEvaluation,
     TeamEvaluation,
 )
+from events.models import EventReaction
 from predictions.models import MatchPrediction
 
 User = get_user_model()
@@ -143,6 +144,9 @@ class Command(BaseCommand):
                 for model in BULK_MODELS:
                     qs = model.objects.filter(user_id__in=batch)
                     qs._raw_delete(qs.db)
+                # Реакции только ботов из пачки — реакции живых болельщиков не трогаем.
+                reactions_qs = EventReaction.objects.filter(user_id__in=batch)
+                reactions_qs._raw_delete(reactions_qs.db)
                 # SET_NULL оставил бы «анонимные» события ботов в воронках — удаляем явно.
                 analytics_qs = AnalyticsEvent.objects.filter(user_id__in=batch)
                 analytics_qs._raw_delete(analytics_qs.db)

@@ -8,7 +8,8 @@
   3. прогнозы на завершённые матчи + update_prediction_stats;
   4. синхронный пересчёт агрегатов матча;
   5. сборная тура; 6. сборная сезона и таблица;
-  7. check_and_award_badges напрямую (без уведомлений).
+  7. check_and_award_badges напрямую (без уведомлений);
+  8. live-реакции 👍/👎 на ключевые события — по тому, за кого болеет бот; перелом матча — конкретное событие.
 Работает в тихом режиме (core.bulk): сигналы не ставят задачи в Celery, итоги туров не рассылаются.
 
 Пул ботов общий с seed_match_votes (test_user_bot_NNNN@test.dopx.local).
@@ -35,6 +36,7 @@ from evaluations.models import (
     RefereeEvaluation,
     TeamEvaluation,
 )
+from events.models import EventReaction
 from matches.models import Match
 from players.models import Player
 from predictions.models import MatchPrediction
@@ -59,6 +61,13 @@ PREDICTION_ACCURACY_MAX = 0.72
 
 # При промахе ничья выбирается реже.
 WRONG_CHOICE_WEIGHTS = {"1": 1.0, "X": 0.5, "2": 1.0}
+
+# Live-реакции: на какие события и с какой вероятностью бот вообще жмёт кнопку.
+REACTION_EVENT_TYPES = ("goal", "own_goal", "penalty", "red_card", "disallowed_goal", "var_check", "yellow_card")
+REACTION_SHARE = {"goal": 0.75, "penalty": 0.7, "own_goal": 0.6, "red_card": 0.6, "disallowed_goal": 0.6,
+                  "var_check": 0.45, "yellow_card": 0.2}
+# Перелом матча называют среди этих событий.
+TURNING_EVENT_TYPES = ("goal", "own_goal", "penalty", "red_card", "disallowed_goal", "var_check")
 
 class Command(BaseCommand):
     help = (
@@ -233,6 +242,7 @@ class Command(BaseCommand):
         touched: set[str] = set()
         n_voters = self._seed_evaluations(match, pool, touched)
         n_predictions = self._seed_predictions(match, pool, touched)
+        self._seed_reactions(match, pool)
         return n_voters, n_predictions, touched
 
     def _seed_evaluations(self, match: Match, pool: list, touched: set[str]) -> int:
@@ -240,6 +250,9 @@ class Command(BaseCommand):
             Player.objects.filter(matchlineupplayer__lineup__match=match).distinct()
         )
         player_quality = {p.id: random.uniform(3.0, 9.0) for p in lineup_players}
+        # Поздние события чаще называют переломом.
+        turning_events = list(match.events.filter(event_type__in=TURNING_EVENT_TYPES).order_by("minute"))
+        turning_weights = [1 + e.minute / 30 for e in turning_events]
         coverage = random.uniform(0.5, 0.85)  # разный охват игроков от матча к матчу
 
         n_created = 0
@@ -275,13 +288,19 @@ class Command(BaseCommand):
                         "supported_team": supported_team,
                     },
                 )
+                turning = random.random() < 0.35
+                turning_event = (random.choices(turning_events, weights=turning_weights)[0]
+                                 if turning and turning_events and random.random() < 0.8 else None)
                 MatchEvaluation.objects.update_or_create(
                     user=voter, match=match,
                     defaults={
                         "entertainment": _clamp(round(random.gauss(6.5, 2.0)), 1, 10),
                         "tension": _clamp(round(random.gauss(6.0, 2.0)), 1, 10),
                         "fairness": _clamp(round(random.gauss(6.5, 2.0)), 1, 10),
-                        "turning_point": random.random() < 0.25,
+                        "turning_point": turning,
+                        "turning_point_event": turning_event,
+                        "turning_point_kind": "" if turning_event or not turning else random.choice(
+                            ["referee_decision", "substitution", "tactics", "save", "missed_chance", "momentum"]),
                     },
                 )
                 if match.referee_id:
@@ -371,6 +390,32 @@ class Command(BaseCommand):
                 n_created += 1
         return n_created
 
+    def _seed_reactions(self, match: Match, pool: list) -> int:
+        """👍/👎 на ключевые события: свой гол — лайк, чужой — чаще дизлайк, нейтральные — в основном лайк.
+        bulk_create без сигналов (квесты ботам не нужны); повторный запуск не дублирует — уникальный ключ."""
+        events = list(match.events.filter(event_type__in=REACTION_EVENT_TYPES))
+        if not events:
+            return 0
+        sides = {}
+        for user_id, team_id in ContextEvaluation.objects.filter(match=match, user__in=pool).values_list(
+                "user_id", "supported_team_id"):
+            sides[user_id] = ("home" if team_id == match.home_team_id else "away" if team_id == match.away_team_id
+                              else None)
+
+        rows = []
+        for voter in pool:
+            engagement, _accuracy = self._bot_traits(voter)
+            if voter.id not in sides and random.random() >= 0.3 + engagement * 0.5:
+                continue  # не оценивал матч и не смотрел live
+            side = sides.get(voter.id)
+            for event in events:
+                if random.random() >= REACTION_SHARE[event.event_type] * (0.8 + engagement * 0.4):
+                    continue
+                rows.append(EventReaction(match_event=event, user=voter,
+                                          reaction="like" if random.random() < _like_chance(event, side) else "dislike"))
+        EventReaction.objects.bulk_create(rows, ignore_conflicts=True, batch_size=1000)
+        return len(rows)
+
     def _recalculate_match_synchronously(self, match_id: str) -> None:
         from aggregates.tasks import (
             recalculate_coach_aggregates,
@@ -420,6 +465,16 @@ class Command(BaseCommand):
             awarded = check_and_award_badges(user)
             awarded_total += len(awarded)
         return awarded_total
+
+
+def _like_chance(event, side: str | None) -> float:
+    """Вероятность 👍: событие «за» свою команду радует, «против» — нет; карточки и отмены — наоборот."""
+    good_for_side = event.team_side  # чья команда выиграла от гола
+    if event.event_type in ("red_card", "yellow_card", "disallowed_goal"):
+        good_for_side = "away" if event.team_side == "home" else "home"  # штраф или отмена бьют по своей стороне
+    if side is None:
+        return 0.55 if event.event_type in ("red_card", "yellow_card", "var_check") else 0.75
+    return 0.9 if side == good_for_side else 0.2
 
 
 def _clamp(value: int, lo: int, hi: int) -> int:
