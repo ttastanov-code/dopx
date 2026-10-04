@@ -104,6 +104,11 @@ class StaffActionLog(models.Model):
 
 # Пометка в stderr при ручной остановке — такой запуск не считается упавшим.
 MANUAL_STOP_NOTE = "Остановлено вручную staff (terminate)."
+# Запуск без признаков жизни: воркер перезапустили или он упал посреди команды.
+INTERRUPTED_NOTE = "Прервано: воркер перезапустился или упал. Запустите ещё раз — команда продолжит с того места."
+# Пока команда идёт, alive_at обновляется раз в ALIVE_EVERY; тишина дольше ALIVE_TIMEOUT — запуск оборван.
+ALIVE_EVERY_SECONDS = 20
+ALIVE_TIMEOUT_SECONDS = 180
 
 
 class ManagementCommandRun(models.Model):
@@ -134,6 +139,7 @@ class ManagementCommandRun(models.Model):
     started_at = models.DateTimeField(_("Начата"), null=True, blank=True)
     finished_at = models.DateTimeField(_("Завершена"), null=True, blank=True)
     celery_task_id = models.CharField(_("ID celery-задачи"), max_length=255, blank=True)
+    alive_at = models.DateTimeField(_("Последний признак жизни"), null=True, blank=True)
 
     class Meta:
         verbose_name = _("Запуск management-команды")
@@ -145,6 +151,26 @@ class ManagementCommandRun(models.Model):
 
     def __str__(self) -> str:
         return f"{self.command_name} · {self.get_status_display()} · {self.created_at:%Y-%m-%d %H:%M}"
+
+    @classmethod
+    def mark_interrupted(cls) -> int:
+        """«Выполняется» без признаков жизни дольше ALIVE_TIMEOUT -> «Ошибка» с пометкой «Прервано»."""
+        from datetime import timedelta
+
+        from django.db.models import Q
+        from django.utils import timezone
+
+        cutoff = timezone.now() - timedelta(seconds=ALIVE_TIMEOUT_SECONDS)
+        stale = cls.objects.filter(status=cls.Status.RUNNING).filter(
+            Q(alive_at__lt=cutoff) | Q(alive_at__isnull=True, started_at__lt=cutoff))
+        n = 0
+        for run in stale:
+            run.status = cls.Status.FAILED
+            run.stderr = (run.stderr + "\n" if run.stderr else "") + INTERRUPTED_NOTE
+            run.finished_at = timezone.now()
+            run.save(update_fields=["status", "stderr", "finished_at"])
+            n += 1
+        return n
 
 
 # =============================================================================

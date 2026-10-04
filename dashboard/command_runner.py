@@ -92,11 +92,14 @@ def build_command_args(spec: CommandSpec, post_data, apply: bool = False) -> tup
     return positional, kwargs
 
 
-def run_command_sync(spec: CommandSpec, positional: list, kwargs: dict) -> tuple[bool, str, str]:
+def run_command_sync(spec: CommandSpec, positional: list, kwargs: dict, run_id=None,
+                     out_prefix: str = "") -> tuple[bool, str, str]:
     """call_command() в текущем процессе. Возвращает (success, stdout, stderr); исключения — в stderr.
     force_color=True — сохраняем ANSI-стили команд для разметки вывода.
+    run_id — пока команда идёт, раз в ALIVE_EVERY секунд пишем в запуск признак жизни и текущий вывод.
     """
     out, err = io.StringIO(), io.StringIO()
+    ticker = _start_alive_ticker(run_id, out, out_prefix) if run_id else None
     try:
         call_command(spec.name, *positional, stdout=out, stderr=err, force_color=True, **kwargs)
         success = True
@@ -107,7 +110,40 @@ def run_command_sync(spec: CommandSpec, positional: list, kwargs: dict) -> tuple
         logger.error("run_command_sync(%s): %s", spec.name, e, exc_info=True)
         err.write(f"\n{type(e).__name__}: {e}")
         success = False
+    finally:
+        if ticker:
+            stop, thread = ticker
+            stop.set()
+            thread.join(timeout=10)  # последний тик не должен затереть итоговый вывод
     return success, out.getvalue(), err.getvalue()
+
+
+def _start_alive_ticker(run_id, out, out_prefix: str):
+    """Фоновый поток: alive_at и вывод «на ходу» — видно прогресс, а оборванный запуск отличим от долгого."""
+    import threading
+
+    from django.db import connection
+    from django.utils import timezone
+
+    from .models import ALIVE_EVERY_SECONDS, ManagementCommandRun
+
+    stop = threading.Event()
+
+    def tick():
+        try:
+            while True:
+                ManagementCommandRun.objects.filter(id=run_id).update(
+                    alive_at=timezone.now(), stdout=out_prefix + out.getvalue())
+                if stop.wait(ALIVE_EVERY_SECONDS):
+                    break
+        except Exception:
+            logger.warning("alive-ticker %s остановлен", run_id, exc_info=True)
+        finally:
+            connection.close()
+
+    thread = threading.Thread(target=tick, daemon=True, name=f"alive-{run_id}")
+    thread.start()
+    return stop, thread
 
 
 PERM_ACTIONS = {"add": "создание", "change": "правка", "delete": "удаление", "view": "просмотр"}

@@ -411,7 +411,7 @@ def attention_items(user) -> list[dict]:
     from users.models import SuspiciousActivityFlag, UserReport
 
     from .access import user_can_access_section
-    from .models import MANUAL_STOP_NOTE, ManagementCommandRun
+    from .models import INTERRUPTED_NOTE, MANUAL_STOP_NOTE, ManagementCommandRun
 
     open_statuses = ("new", "in_progress")
     candidates = [
@@ -442,7 +442,8 @@ def attention_items(user) -> list[dict]:
          "Посмотреть вывод и перезапустить",
          lambda: ManagementCommandRun.objects.filter(
              status=ManagementCommandRun.Status.FAILED, created_at__gte=timezone.now() - timedelta(days=1),
-         ).exclude(stderr__endswith=MANUAL_STOP_NOTE).count(), "dashboard:scripts"),
+         ).exclude(stderr__endswith=MANUAL_STOP_NOTE).exclude(stderr__endswith=INTERRUPTED_NOTE).count(),
+         "dashboard:scripts"),
     ]
     items = []
     for section, icon, tone, title, hint, count_fn, url_name in candidates:

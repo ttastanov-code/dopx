@@ -36,6 +36,7 @@ def _scripts_runs_page(request):
 @staff_member_required
 def scripts_view(request):
     """Раздел «Скрипты и команды»: команды по категориям + история запусков."""
+    ManagementCommandRun.mark_interrupted()
     context = {
         "page_title": "Скрипты и команды — DOPX Staff",
         "active_tab": "scripts",

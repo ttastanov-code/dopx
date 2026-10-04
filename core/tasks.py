@@ -44,6 +44,10 @@ def celery_heartbeat(self):
     cache.set(HEARTBEAT_CACHE_KEY, timezone.now().isoformat(), 60 * 60)
     _worker_beat(self, "celery_worker")
 
+    from dashboard.models import ManagementCommandRun
+
+    ManagementCommandRun.mark_interrupted()  # оборванные перезапуском скрипты не висят «Выполняется» вечно
+
 
 @shared_task(bind=True, ignore_result=True)
 def realtime_heartbeat(self):

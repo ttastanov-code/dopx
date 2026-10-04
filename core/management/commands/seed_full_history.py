@@ -246,149 +246,138 @@ class Command(BaseCommand):
         return n_voters, n_predictions, touched
 
     def _seed_evaluations(self, match: Match, pool: list, touched: set[str]) -> int:
+        """Голоса ботов за матч: строки собираются в памяти и пишутся пачками (bulk_create),
+        а не по одной — иначе тысячи запросов на матч."""
         lineup_players = list(
             Player.objects.filter(matchlineupplayer__lineup__match=match).distinct()
         )
         player_quality = {p.id: random.uniform(3.0, 9.0) for p in lineup_players}
+        coverage = random.uniform(0.5, 0.85)  # разный охват игроков от матча к матчу
         # Поздние события чаще называют переломом.
         turning_events = list(match.events.filter(event_type__in=TURNING_EVENT_TYPES).order_by("minute"))
         turning_weights = [1 + e.minute / 30 for e in turning_events]
-        coverage = random.uniform(0.5, 0.85)  # разный охват игроков от матча к матчу
+        # Сессия уже есть — матч для бота обработан, пропускаем (иначе счётчики удвоятся).
+        done = set(EvaluationSession.objects.filter(match=match, user__in=pool).values_list("user_id", flat=True))
+        now = timezone.now()
 
-        n_created = 0
-        with transaction.atomic():
-            for voter in pool:
-                engagement, _accuracy = self._bot_traits(voter)
-                if random.random() >= engagement:
-                    continue  # бот пропустил матч
-
-                # Сессия уже completed — матч обработан, пропускаем (иначе счётчики удвоятся).
-                session, session_created = EvaluationSession.objects.get_or_create(
-                    user=voter, match=match,
-                    defaults={
-                        "mode": random.choice(["quick", "quick", "full"]),
-                        "status": "completed",
-                        "completed_steps": ["context", "teams", "players", "coaches", "referee", "match_eval"],
-                        "current_step": "complete",
-                        "completed_at": timezone.now(),
-                    },
-                )
-                if not session_created:
-                    touched.add(str(voter.id))
-                    continue
-
-                supported_team = random.choices(
-                    [match.home_team, match.away_team, None], weights=[0.4, 0.4, 0.2]
-                )[0]
-                ContextEvaluation.objects.update_or_create(
-                    user=voter, match=match,
-                    defaults={
-                        "watched_type": random.choice(WATCHED_TYPES),
-                        "attended_stadium": random.random() < 0.15,
-                        "supported_team": supported_team,
-                    },
-                )
-                turning = random.random() < 0.35
-                turning_event = (random.choices(turning_events, weights=turning_weights)[0]
-                                 if turning and turning_events and random.random() < 0.8 else None)
-                MatchEvaluation.objects.update_or_create(
-                    user=voter, match=match,
-                    defaults={
-                        "entertainment": _clamp(round(random.gauss(6.5, 2.0)), 1, 10),
-                        "tension": _clamp(round(random.gauss(6.0, 2.0)), 1, 10),
-                        "fairness": _clamp(round(random.gauss(6.5, 2.0)), 1, 10),
-                        "turning_point": turning,
-                        "turning_point_event": turning_event,
-                        "turning_point_kind": "" if turning_event or not turning else random.choice(
-                            ["referee_decision", "substitution", "tactics", "save", "missed_chance", "momentum"]),
-                    },
-                )
-                if match.referee_id:
-                    RefereeEvaluation.objects.update_or_create(
-                        user=voter, match=match,
-                        defaults={
-                            "influence_score": _clamp(round(random.gauss(35, 20)), 0, 100),
-                            "decision_quality": _clamp(round(random.gauss(6.5, 2.0)), 1, 10),
-                        },
-                    )
-                for team in (match.home_team, match.away_team):
-                    TeamEvaluation.objects.update_or_create(
-                        user=voter, match=match, team=team,
-                        defaults={
-                            "tactics": _clamp(round(random.gauss(6.5, 1.8)), 1, 10),
-                            "effort": _clamp(round(random.gauss(6.8, 1.8)), 1, 10),
-                            "organization": _clamp(round(random.gauss(6.5, 1.8)), 1, 10),
-                            "mentality": _clamp(round(random.gauss(6.5, 1.8)), 1, 10),
-                        },
-                    )
-                for coach in (match.home_coach, match.away_coach):
-                    if coach is None:
-                        continue
-                    CoachEvaluation.objects.update_or_create(
-                        user=voter, match=match, coach=coach,
-                        defaults={
-                            "tactics": _clamp(round(random.gauss(6.5, 1.8)), 1, 10),
-                            "substitutions": _clamp(round(random.gauss(6.0, 1.8)), 1, 10),
-                            "game_management": _clamp(round(random.gauss(6.5, 1.8)), 1, 10),
-                            "impact": _clamp(round(random.gauss(6.5, 1.8)), 1, 10),
-                        },
-                    )
-                for player in lineup_players:
-                    if random.random() > coverage:
-                        continue
-                    quality = player_quality[player.id]
-                    PlayerEvaluation.objects.update_or_create(
-                        user=voter, match=match, player=player,
-                        defaults={
-                            "contribution": _clamp(round(random.gauss(quality, 1.5)), 1, 10),
-                            "risk": _clamp(round(random.gauss(10 - quality, 1.5)), 1, 10),
-                            "potential": _clamp(round(random.gauss(quality, 1.5)), 1, 10),
-                        },
-                    )
-
-                # Как на последнем шаге реального вайзарда.
-                voter.update_evaluation_stats(match)
-                voter.refresh_from_db()
-                xp, _ = UserXP.objects.get_or_create(user=voter)
-                xp.add_xp(round(EVALUATION_XP_PER_MATCH * voter.xp_multiplier()))
-
+        rows: dict[type, list] = {model: [] for model in (
+            EvaluationSession, ContextEvaluation, MatchEvaluation, RefereeEvaluation,
+            TeamEvaluation, CoachEvaluation, PlayerEvaluation)}
+        voters = []
+        for voter in pool:
+            engagement, _accuracy = self._bot_traits(voter)
+            if random.random() >= engagement:
+                continue  # бот пропустил матч
+            if voter.id in done:
                 touched.add(str(voter.id))
-                n_created += 1
-        return n_created
+                continue
+            voters.append(voter)
+            rows[EvaluationSession].append(EvaluationSession(
+                user=voter, match=match, mode=random.choice(["quick", "quick", "full"]), status="completed",
+                completed_steps=["context", "teams", "players", "coaches", "referee", "match_eval"],
+                current_step="complete", completed_at=now,
+            ))
+            rows[ContextEvaluation].append(ContextEvaluation(
+                user=voter, match=match, watched_type=random.choice(WATCHED_TYPES),
+                attended_stadium=random.random() < 0.15,
+                supported_team=random.choices([match.home_team, match.away_team, None], weights=[0.4, 0.4, 0.2])[0],
+            ))
+            turning = random.random() < 0.35
+            turning_event = (random.choices(turning_events, weights=turning_weights)[0]
+                             if turning and turning_events and random.random() < 0.8 else None)
+            rows[MatchEvaluation].append(MatchEvaluation(
+                user=voter, match=match,
+                entertainment=_clamp(round(random.gauss(6.5, 2.0)), 1, 10),
+                tension=_clamp(round(random.gauss(6.0, 2.0)), 1, 10),
+                fairness=_clamp(round(random.gauss(6.5, 2.0)), 1, 10),
+                turning_point=turning, turning_point_event=turning_event,
+                turning_point_kind="" if turning_event or not turning else random.choice(
+                    ["referee_decision", "substitution", "tactics", "save", "missed_chance", "momentum"]),
+            ))
+            if match.referee_id:
+                rows[RefereeEvaluation].append(RefereeEvaluation(
+                    user=voter, match=match,
+                    influence_score=_clamp(round(random.gauss(35, 20)), 0, 100),
+                    decision_quality=_clamp(round(random.gauss(6.5, 2.0)), 1, 10),
+                ))
+            for team in (match.home_team, match.away_team):
+                rows[TeamEvaluation].append(TeamEvaluation(
+                    user=voter, match=match, team=team,
+                    tactics=_clamp(round(random.gauss(6.5, 1.8)), 1, 10),
+                    effort=_clamp(round(random.gauss(6.8, 1.8)), 1, 10),
+                    organization=_clamp(round(random.gauss(6.5, 1.8)), 1, 10),
+                    mentality=_clamp(round(random.gauss(6.5, 1.8)), 1, 10),
+                ))
+            for coach in (match.home_coach, match.away_coach):
+                if coach is not None:
+                    rows[CoachEvaluation].append(CoachEvaluation(
+                        user=voter, match=match, coach=coach,
+                        tactics=_clamp(round(random.gauss(6.5, 1.8)), 1, 10),
+                        substitutions=_clamp(round(random.gauss(6.0, 1.8)), 1, 10),
+                        game_management=_clamp(round(random.gauss(6.5, 1.8)), 1, 10),
+                        impact=_clamp(round(random.gauss(6.5, 1.8)), 1, 10),
+                    ))
+            for player in lineup_players:
+                if random.random() > coverage:
+                    continue
+                quality = player_quality[player.id]
+                rows[PlayerEvaluation].append(PlayerEvaluation(
+                    user=voter, match=match, player=player,
+                    contribution=_clamp(round(random.gauss(quality, 1.5)), 1, 10),
+                    risk=_clamp(round(random.gauss(10 - quality, 1.5)), 1, 10),
+                    potential=_clamp(round(random.gauss(quality, 1.5)), 1, 10),
+                ))
+
+        if not voters:
+            return 0
+        with transaction.atomic():
+            # ignore_conflicts — остатки прерванного прогона (оценка без сессии) не роняют повтор.
+            for model, objs in rows.items():
+                model.objects.bulk_create(objs, ignore_conflicts=True, batch_size=1000)
+            for voter in voters:
+                voter.apply_evaluation_to_streak(match)
+                voter.updated_at = now
+            User.objects.bulk_update(voters, ["total_evaluations", "evaluation_streak", "last_evaluation_season_id",
+                                              "last_evaluation_tour", "updated_at"], batch_size=500)
+            xp_by_user = {xp.user_id: xp for xp in UserXP.objects.filter(user__in=voters)}
+            for voter in voters:
+                xp = xp_by_user.get(voter.id) or UserXP.objects.create(user=voter)
+                xp.add_xp(round(EVALUATION_XP_PER_MATCH * voter.xp_multiplier()))
+                touched.add(str(voter.id))
+        return len(voters)
 
     def _seed_predictions(self, match: Match, pool: list, touched: set[str]) -> int:
         final_result = match.final_result
         if final_result is None:
             return 0  # прогнозы только на матчи с известным исходом
 
-        n_created = 0
-        # Для серии важен только порядок матчей, не пользователей.
-        with transaction.atomic():
-            for predictor in pool:
-                engagement, accuracy = self._bot_traits(predictor)
-                if random.random() >= engagement:
-                    continue
-
-                if MatchPrediction.objects.filter(user=predictor, match=match).exists():
-                    touched.add(str(predictor.id))
-                    continue  # уже есть прогноз — не трогаем, иначе серия удвоится
-
-                if random.random() < accuracy:
-                    choice = final_result
-                else:
-                    others = [c for c in ("1", "X", "2") if c != final_result]
-                    weights = [WRONG_CHOICE_WEIGHTS[c] for c in others]
-                    choice = random.choices(others, weights=weights)[0]
-
-                MatchPrediction.objects.create(user=predictor, match=match, choice=choice)
-                is_correct = choice == final_result
-
-                # См. User.update_prediction_stats.
-                predictor.update_prediction_stats(is_correct)
-
+        # Уже есть прогноз — не трогаем, иначе серия удвоится.
+        done = set(MatchPrediction.objects.filter(match=match, user__in=pool).values_list("user_id", flat=True))
+        predictions, predictors = [], []
+        for predictor in pool:
+            engagement, accuracy = self._bot_traits(predictor)
+            if random.random() >= engagement:
+                continue
+            if predictor.id in done:
                 touched.add(str(predictor.id))
-                n_created += 1
-        return n_created
+                continue
+            if random.random() < accuracy:
+                choice = final_result
+            else:
+                others = [c for c in ("1", "X", "2") if c != final_result]
+                choice = random.choices(others, weights=[WRONG_CHOICE_WEIGHTS[c] for c in others])[0]
+            predictions.append(MatchPrediction(user=predictor, match=match, choice=choice))
+            # Как User.update_prediction_stats, но без сохранения по одному.
+            predictor.prediction_streak = predictor.prediction_streak + 1 if choice == final_result else 0
+            predictor.updated_at = timezone.now()
+            predictors.append(predictor)
+            touched.add(str(predictor.id))
+
+        # Матчи идут по порядку, поэтому серия по ним складывается правильно.
+        with transaction.atomic():
+            MatchPrediction.objects.bulk_create(predictions, ignore_conflicts=True, batch_size=1000)
+            User.objects.bulk_update(predictors, ["prediction_streak", "updated_at"], batch_size=500)
+        return len(predictions)
 
     def _seed_reactions(self, match: Match, pool: list) -> int:
         """👍/👎 на ключевые события: свой гол — лайк, чужой — чаще дизлайк, нейтральные — в основном лайк.

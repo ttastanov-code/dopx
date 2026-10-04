@@ -54,7 +54,8 @@ def run_management_command(self, run_id: str) -> None:
     run.celery_task_id = self.request.id or run.celery_task_id
     run.save(update_fields=["status", "started_at", "celery_task_id"])
 
-    success, out, err = run_command_sync(spec, positional, kwargs)
+    success, out, err = run_command_sync(spec, positional, kwargs, run_id=run.id,
+                                         out_prefix=(run.stdout or "") if chunked else "")
 
     chunk_index = run.args.get("_chunk_index", 0) + 1
     if chunked:
