@@ -31,40 +31,47 @@ def _event(**kw):
 
 
 class ExplainPlayerTests(SimpleTestCase):
-    def test_goal_with_reaction_leads(self):
-        why = explain_player(_agg(), events=[_event()], reactions={10: {"total": 20, "like_pct": 85}})
-        self.assertEqual(why["reasons"][0]["text"], "Гол на 67' · 20 реакций трибун")
-        self.assertEqual(why["headline"], "Гол на 67'")
+    def test_votes_distribution_and_headline(self):
+        why = explain_player(_agg(performance_score=8.0), votes=[10, 9, 8, 8, 7, 5, 3])
+        self.assertEqual(why["headline"], "7 болельщиков, 4 из них поставили 8 и выше")
+        self.assertEqual(why["short"], "4 из 7 поставили 8 и выше")
+        self.assertEqual([b["count"] for b in why["distribution"]], [2, 3, 1, 1])
+        self.assertEqual(why["distribution"][1]["width"], 100)
 
-    def test_few_reactions_hidden(self):
-        why = explain_player(_agg(), events=[_event()], reactions={10: {"total": 2, "like_pct": 100}})
-        self.assertEqual(why["reasons"][0]["text"], "Гол на 67'")
+    def test_smoothing_explained_when_far_from_plain_mean(self):
+        why = explain_player(_agg(performance_score=7.0, own_fans_avg=9.0), votes=[9, 9, 9, 6])
+        self.assertTrue(why["smoothing"].startswith("Простое среднее голосов — 8,2. Итог 7,0"))
+        self.assertEqual(explain_player(_agg(performance_score=8.2), votes=[9, 9, 9, 6])["smoothing"], "")
 
-    def test_assist_and_foreign_event(self):
-        events = [_event(player_id=2, assist_player_id=1), _event(id=11, player_id=3)]
-        texts = [r["text"] for r in explain_player(_agg(), events=events)["reasons"]]
-        self.assertEqual(texts, ["Голевая передача на 67'"])
+    def test_sides(self):
+        why = explain_player(_agg(own_fans_avg=8.4, rival_fans_avg=6.0, neutral_avg=7.1))
+        self.assertEqual([(s["label"], s["value"]) for s in why["sides"]],
+                         [("Болельщики его команды", 8.4), ("Болельщики соперника", 6.0), ("Нейтральные", 7.1)])
 
-    def test_form_delta(self):
-        why = explain_player(_agg(performance_score=8.0), form=(6.5, 4))
-        self.assertIn("На 1,5 выше обычного", why["reasons"][0]["text"])
-        self.assertEqual(why["reasons"][0]["tone"], "up")
+    def test_events_with_reactions_and_order(self):
+        events = [_event(id=1, event_type="yellow_card", display_minute="20"), _event(id=2, display_minute="90+5"),
+                  _event(id=3, player_id=2, assist_player_id=1, display_minute="30"), _event(id=4, player_id=3)]
+        why = explain_player(_agg(), events=events, reactions={2: {"total": 20}, 3: {"total": 2}})
+        self.assertEqual([f["text"] for f in why["factors"]], [
+            "Забил гол на 90+5' — трибуны отреагировали 20 раз",
+            "Отдал голевую передачу на 30'",
+            "Жёлтая карточка на 20'",
+        ])
 
-    def test_form_needs_matches(self):
-        self.assertEqual(explain_player(_agg(), form=(5.0, 1))["reasons"], [])
+    def test_compare_form_and_stats(self):
+        why = explain_player(_agg(performance_score=8.0), form=(6.5, 4), stat_rating=6.8)
+        self.assertEqual(why["compare"], ["Обычно в этом сезоне — 6,5. Этот матч лучше на 1,5.",
+                                          "По статистике матча — 6,8."])
+        self.assertEqual(explain_player(_agg(), form=(5.0, 1))["compare"], [])
 
-    def test_fans_split_and_stats(self):
-        why = explain_player(_agg(own_fans_avg=8.4, rival_fans_avg=6.0), stat_rating=6.2)
-        texts = [r["text"] for r in why["reasons"]]
-        self.assertIn("Трибуны разошлись: 8,4 от своих против 6,0 от соперников", texts)
-        self.assertIn("Статистика скромнее трибун: 6,2", texts)
+    def test_expert(self):
+        take = SimpleNamespace(display_name="Иван Петров", headline="Тащил вторую половину")
+        why = explain_player(_agg(), expert_take=take)
+        self.assertEqual(why["factors"][0]["text"],
+                         "Ключевой игрок матча по мнению эксперта (Иван Петров): «Тащил вторую половину»")
 
-    def test_drift_and_expert(self):
-        take = SimpleNamespace(display_name="Иван Петров", headline="Тащил всю вторую половину")
-        why = explain_player(_agg(), drift=(6.0, 8.0), expert_take=take)
-        texts = [r["text"] for r in why["reasons"]]
-        self.assertIn("Оценка росла по ходу голосования: с 6,0 у первых до 8,0 у поздних", texts)
-        self.assertIn("Ключевой игрок по мнению эксперта (Иван Петров): «Тащил всю вторую половину»", texts)
+    def test_empty(self):
+        self.assertFalse(explain_player(_agg())["has_details"])
 
 
 class ExplainDbTests(TestCase):
@@ -92,11 +99,10 @@ class ExplainDbTests(TestCase):
                                             contribution=6 if i < 3 else 9, risk=3, potential=7)
 
         explain_players(self.match, [self.agg], events=[self.goal])
-        texts = [r["text"] for r in self.agg.why["reasons"]]
-        self.assertEqual(texts[0], "Гол на 67' · 9 реакций трибун")
-        self.assertIn("На 1,7 выше обычного: в сезоне в среднем 6,5", texts)
-        self.assertIn("Свои и соперники сошлись: 8,5 и 8,0", texts)
-        self.assertIn("Оценка росла по ходу голосования: с 6,0 у первых до 9,0 у поздних", texts)
+        why = self.agg.why
+        self.assertEqual(why["factors"][0]["text"], "Забил гол на 67' — трибуны отреагировали 9 раз")
+        self.assertEqual(why["compare"][0], "Обычно в этом сезоне — 6,5. Этот матч лучше на 1,7.")
+        self.assertEqual(why["headline"], "9 болельщиков, 6 из них поставили 8 и выше")
 
     def test_match_story_loudest_and_divisive(self):
         card = MatchEvent.objects.create(match=self.match, minute=80, event_type="red_card", team_side="away")
@@ -117,8 +123,8 @@ class ExplainDbTests(TestCase):
 
     def test_detail_page_shows_explanation(self):
         response = self.client.get(reverse("matches:detail", args=[self.match.id]))
-        self.assertContains(response, "Почему 8,2")
-        self.assertContains(response, "Гол на 67&#x27; · 9 реакций трибун")
+        self.assertContains(response, "Откуда 8,2")
+        self.assertContains(response, "Забил гол на 67&#x27; — трибуны отреагировали 9 раз")
         self.assertContains(response, "Как трибуны прожили матч")
 
 
@@ -140,11 +146,5 @@ class ExplainHistoryTests(TestCase):
         rows = {a.match_id: a for a in response.context["aggregates"]}
         self.assertEqual(rows[second.id].delta, 1.4)
         self.assertFalse(hasattr(rows[first.id], "delta"))
-        self.assertEqual(rows[second.id].why["headline"], "Гол на 12'")
+        self.assertEqual(rows[second.id].why["factors"][0]["text"], "Забил гол на 12'")
         self.assertContains(response, "md-delta--up")
-
-
-class EventPriorityTests(SimpleTestCase):
-    def test_goal_before_yellow(self):
-        events = [_event(id=1, event_type="yellow_card", display_minute="20"), _event(id=2, display_minute="90+5")]
-        self.assertEqual(explain_player(_agg(), events=events)["headline"], "Гол на 90+5'")

@@ -408,7 +408,8 @@
    ОБЪЯСНЕНИЕ РЕЙТИНГА (_rating_why.html, _rating_story.html)
    ============================================================ */
 .md-why-row { border-radius: .75rem; }
-.md-why { margin: 0 .5rem .25rem 2.75rem; }
+.md-why { margin: 0 .25rem .25rem; }
+@media (min-width: 640px) { .md-why { margin-left: 2.75rem; } }
 .md-why__summary {
     display: flex; align-items: center; gap: .375rem; cursor: pointer; list-style: none;
     font-size: .75rem; font-weight: 600; color: var(--color-primary); padding: .125rem 0;
@@ -421,12 +422,25 @@
 .md-why__chev { margin-left: auto; transition: transform .2s; }
 .md-why[open] .md-why__chev { transform: rotate(180deg); }
 .md-why[open] .md-why__hint { display: none; }
-.md-why__list { margin-top: .5rem; display: grid; gap: .375rem; }
-.md-why__item {
-    display: flex; gap: .5rem; align-items: flex-start; font-size: .8125rem; line-height: 1.35;
-    padding: .5rem .625rem; border-radius: .625rem;
+.md-why__body { margin-top: .5rem; display: grid; gap: .5rem; }
+.md-why__sec {
+    padding: .625rem .75rem; border-radius: .75rem;
     background: color-mix(in oklab, var(--color-base-content) 4%, transparent);
 }
+.md-why__title { font-size: .6875rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; opacity: .5; margin-bottom: .375rem; }
+.md-why__text { font-size: .8125rem; line-height: 1.45; }
+.md-why__text + .md-why__text { margin-top: .25rem; }
+.md-why__text + .md-why__bar { margin-top: .5rem; }
+.md-why__bar { display: grid; grid-template-columns: 2.5rem 1fr 2rem; align-items: center; gap: .5rem; font-size: .8125rem; }
+.md-why__bar + .md-why__bar { margin-top: .25rem; }
+.md-why__bar:has(.md-why__lbl--wide) { grid-template-columns: minmax(8.5rem, auto) 1fr 2rem; }
+.md-why__lbl { opacity: .7; white-space: nowrap; }
+.md-why__track { height: .5rem; border-radius: 9999px; overflow: hidden; background: color-mix(in oklab, var(--color-base-content) 8%, transparent); }
+.md-why__track > span { display: block; height: 100%; border-radius: inherit; background: var(--color-primary); }
+.md-why__track--side > span { background: var(--color-secondary); }
+.md-why__num { font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+.md-why__item { display: flex; gap: .5rem; align-items: flex-start; font-size: .8125rem; line-height: 1.4; }
+.md-why__item + .md-why__item { margin-top: .25rem; }
 .md-why__item .ti { margin-top: .1rem; flex-shrink: 0; opacity: .7; }
 .md-why__item--up .ti { color: var(--color-success); opacity: 1; }
 .md-why__item--down .ti { color: var(--color-error); opacity: 1; }

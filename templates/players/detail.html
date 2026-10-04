@@ -247,9 +247,9 @@
                                 <td class="text-center">{{ agg.risk_index|floatformat:1 }}</td>
                                 <td class="text-center">{{ agg.clutch_index|floatformat:1 }}</td>
                             </tr>
-                            {% if agg.why.reasons and agg.total_votes|has_enough_votes %}
+                            {% if agg.why.has_details and agg.total_votes|has_enough_votes %}
                             {# Причины — отдельной строкой: в ячейке «Матч» список слишком узкий. #}
-                            <tr class="md-why-tr"><td colspan="7">{% include 'matches/_rating_why.html' with why=agg.why score=agg.performance_score flush=True %}</td></tr>
+                            <tr class="md-why-tr"><td colspan="7">{% include "matches/_rating_why.html" with why=agg.why flush=True %}</td></tr>
                             {% endif %}
                             {% endfor %}
                         </tbody>

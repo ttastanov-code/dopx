@@ -1,14 +1,47 @@
-{# Причины оценки игрока (aggregates/explain.py): события, форма, трибуны, статистика, эксперт. #}
+{# Откуда оценка (aggregates/explain.py): голоса, свои/чужие/нейтральные, сглаживание, события, сравнение. #}
 <details class="md-why{% if flush %} md-why--flush{% endif %}">
     <summary class="md-why__summary">
         <i class="ti ti-help-circle"></i>
-        <span>Почему {{ score|floatformat:1 }}</span>
-        <span class="md-why__hint">{{ why.headline }}</span>
+        <span>Откуда {{ why.score|floatformat:1 }}</span>
+        {% if why.headline %}<span class="md-why__hint">{{ why.headline }}</span>{% endif %}
         <i class="ti ti-chevron-down md-why__chev"></i>
     </summary>
-    <ul class="md-why__list">
-        {% for r in why.reasons %}
-        <li class="md-why__item md-why__item--{{ r.tone }}"><i class="ti {{ r.icon }}"></i><span>{{ r.text }}</span></li>
-        {% endfor %}
-    </ul>
+    <div class="md-why__body">
+        {% if why.distribution %}
+        <div class="md-why__sec">
+            <div class="md-why__title">Как голосовали</div>
+            <p class="md-why__text">{{ why.headline|capfirst }}. Оценивали вклад в игру по шкале от 1 до 10.</p>
+            {% for b in why.distribution %}
+            <div class="md-why__bar"><span class="md-why__lbl">{{ b.label }}</span><span class="md-why__track"><span style="width: {{ b.width }}%;"></span></span><span class="md-why__num">{{ b.count }}</span></div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if why.sides %}
+        <div class="md-why__sec">
+            <div class="md-why__title">Кто сколько поставил в среднем</div>
+            {% for s in why.sides %}
+            <div class="md-why__bar"><span class="md-why__lbl md-why__lbl--wide">{{ s.label }}</span><span class="md-why__track md-why__track--side"><span style="width: {{ s.width }}%;"></span></span><span class="md-why__num">{{ s.value|floatformat:1 }}</span></div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if why.smoothing %}
+        <div class="md-why__sec"><div class="md-why__title">Почему не простое среднее</div><p class="md-why__text">{{ why.smoothing }}</p></div>
+        {% endif %}
+
+        {% if why.factors %}
+        <div class="md-why__sec">
+            <div class="md-why__title">Что было в матче</div>
+            {% for f in why.factors %}<div class="md-why__item md-why__item--{{ f.tone }}"><i class="ti {{ f.icon }}"></i><span>{{ f.text }}</span></div>{% endfor %}
+        </div>
+        {% endif %}
+
+        {% if why.compare %}
+        <div class="md-why__sec">
+            <div class="md-why__title">Для сравнения</div>
+            {% for line in why.compare %}<p class="md-why__text">{{ line }}</p>{% endfor %}
+        </div>
+        {% endif %}
+    </div>
 </details>

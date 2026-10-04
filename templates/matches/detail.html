@@ -263,7 +263,7 @@
                             <div class="mt-0.5">{% confidence_badge agg %}</div>
                         </div>
                     </div>
-                    {% if agg.why.reasons %}{% include 'matches/_rating_why.html' with why=agg.why score=agg.performance_score %}{% endif %}
+                    {% if agg.why.has_details %}{% include "matches/_rating_why.html" with why=agg.why %}{% endif %}
                     </div>
                     {% endfor %}
                 </div>

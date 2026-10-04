@@ -1,6 +1,5 @@
 # aggregates/explain.py
-"""Объяснение рейтинга: почему у игрока такая оценка и как трибуны прожили матч.
-Сводит оценки болельщиков, статистику, события с live-реакциями и мнение эксперта в короткие причины."""
+"""Объяснение рейтинга: из чего сложилась оценка игрока и как трибуны прожили матч."""
 from __future__ import annotations
 
 from collections import defaultdict
@@ -8,34 +7,36 @@ from statistics import mean
 
 from django.db.models import Avg, Count, Q
 
-# Меньше — доля лайков случайна, не показываем.
+# Меньше — реакции не показываем.
 MIN_REACTIONS = 5
 # Отличие от средней за сезон, заметное глазу.
-FORM_DELTA = 0.5
+FORM_DELTA = 0.3
 FORM_MIN_MATCHES = 2
-# Свои и соперники: разошлись / сошлись.
-SPLIT_GAP = 1.5
-AGREE_GAP = 0.7
-# Расхождение со статистикой Sportmonks.
-STAT_GAP = 1.0
-# Дрейф мнения: первые и последние трети голосов.
-DRIFT_MIN_VOTES = 9
-DRIFT_GAP = 0.7
+# Итог отличается от простого среднего голосов — объясняем почему.
+SMOOTHING_GAP = 0.2
+# Корзины распределения голосов (шкала 1-10).
+BUCKETS = (('9–10', 9, 10), ('7–8', 7, 8), ('5–6', 5, 6), ('1–4', 1, 4))
 
 KEY_EVENT_TYPES = ('goal', 'own_goal', 'penalty', 'red_card', 'disallowed_goal', 'var_check')
 PLAYER_EVENT_TEXT = {
-    'goal': ('ti-ball-football', 'Гол', 'up'),
-    'penalty': ('ti-target-arrow', 'Гол с пенальти', 'up'),
+    'goal': ('ti-ball-football', 'Забил гол', 'up'),
+    'penalty': ('ti-target-arrow', 'Забил с пенальти', 'up'),
     'own_goal': ('ti-ball-football', 'Автогол', 'down'),
     'red_card': ('ti-rectangle-vertical', 'Красная карточка', 'down'),
     'yellow_card': ('ti-rectangle-vertical', 'Жёлтая карточка', 'down'),
-    'disallowed_goal': ('ti-ban', 'Отменённый гол', 'neutral'),
+    'disallowed_goal': ('ti-ban', 'Гол отменили', 'neutral'),
 }
 
 
 def _fmt(value: float) -> str:
     """Запятая, как floatformat в шаблонах (ru)."""
     return f"{value:.1f}".replace(".", ",")
+
+
+def _plural(n: int, forms: str) -> str:
+    from core.templatetags.ui_extras import ru_plural
+
+    return f"{n} {ru_plural(n, forms)}"
 
 
 def reaction_stats(events) -> dict:
@@ -57,15 +58,6 @@ def reaction_stats(events) -> dict:
     return result
 
 
-def _reaction_note(stats: dict | None) -> str:
-    """Громкость, а не доля 👍: за гол соперника чужие трибуны ставят 👎, процент вводит в заблуждение."""
-    from core.templatetags.ui_extras import ru_plural
-
-    if not stats or stats['total'] < MIN_REACTIONS:
-        return ''
-    return f"{stats['total']} {ru_plural(stats['total'], 'реакция,реакции,реакций')} трибун"
-
-
 def _season_form(match, player_ids) -> dict:
     """{player_id: (средний рейтинг, матчей)} за сезон без этого матча."""
     from aggregates.models import PlayerMatchAggregate
@@ -85,89 +77,89 @@ def _season_form(match, player_ids) -> dict:
     return {r['player_id']: (r['avg'], r['n']) for r in rows}
 
 
-def _vote_drift(match, player_ids) -> dict:
-    """{player_id: (ранние, поздние)} — средний «вклад» первой и последней трети засчитанных голосов."""
+def vote_values(match_ids, player_ids) -> dict:
+    """{(match_id, player_id): [оценки вклада]} — только засчитанные голоса, один запрос на матч."""
     from aggregates.services import countable_evaluations
     from evaluations.models import PlayerEvaluation
 
-    by_player = defaultdict(list)
-    qs = countable_evaluations(PlayerEvaluation.objects.filter(match=match, player_id__in=player_ids), match.id)
-    for player_id, value in qs.order_by('created_at').values_list('player_id', 'contribution'):
-        by_player[player_id].append(value)
-    result = {}
-    for player_id, values in by_player.items():
-        if len(values) < DRIFT_MIN_VOTES:
-            continue
-        third = len(values) // 3
-        result[player_id] = (mean(values[:third]), mean(values[-third:]))
+    result = defaultdict(list)
+    for match_id in match_ids:
+        qs = countable_evaluations(PlayerEvaluation.objects.filter(match_id=match_id, player_id__in=player_ids), match_id)
+        for player_id, value in qs.values_list('player_id', 'contribution'):
+            result[(match_id, player_id)].append(value)
     return result
 
 
-def explain_player(agg, *, events=(), reactions=None, form=None, drift=None, stat_rating=None, expert_take=None) -> dict:
-    """{'headline', 'reasons': [{'icon', 'text', 'tone'}]} — tone: up / down / neutral."""
-    reactions = reactions or {}
-    reasons = []
+def _distribution(values: list[int]) -> list[dict]:
+    peak = max((sum(lo <= v <= hi for v in values) for _l, lo, hi in BUCKETS), default=0)
+    rows = []
+    for label, lo, hi in BUCKETS:
+        count = sum(lo <= v <= hi for v in values)
+        rows.append({'label': label, 'count': count, 'width': round(count * 100 / peak) if peak else 0})
+    return rows
 
-    # События матча: гол, ассист, карточки — с реакцией трибун; значимые раньше жёлтых.
-    event_reasons = []
+
+def explain_player(agg, *, votes=(), events=(), reactions=None, form=None, stat_rating=None, expert_take=None) -> dict:
+    """Раскладка оценки: голоса и их разброс, свои/чужие/нейтральные, сглаживание, события, сравнение."""
+    reactions = reactions or {}
+    score = agg.performance_score
+    votes = list(votes)
+    why = {'score': score, 'headline': '', 'short': '', 'votes_n': len(votes), 'distribution': [], 'sides': [],
+           'smoothing': '', 'factors': [], 'compare': []}
+
+    if votes:
+        high = sum(v >= 8 for v in votes)
+        why['distribution'] = _distribution(votes)
+        why['short'] = f"{high} из {len(votes)} поставили 8 и выше"
+        why['headline'] = f"{_plural(len(votes), 'болельщик,болельщика,болельщиков')}, {high} из них поставили 8 и выше"
+        plain = mean(votes)
+        if abs(plain - score) >= SMOOTHING_GAP:
+            why['smoothing'] = (
+                f"Простое среднее голосов — {_fmt(plain)}. Итог {_fmt(score)}: "
+                + ("голос фаната одной команды весит меньше, а мнение нейтральных — больше, "
+                   "чтобы болельщики не задирали своих и не топили чужих."
+                   if agg.own_fans_avg is not None or agg.rival_fans_avg is not None else
+                   "голоса новичков и подозрительных аккаунтов весят меньше.")
+            )
+
+    for label, value in (('Болельщики его команды', agg.own_fans_avg), ('Болельщики соперника', agg.rival_fans_avg),
+                         ('Нейтральные', getattr(agg, 'neutral_avg', None))):
+        if value is not None:
+            why['sides'].append({'label': label, 'value': value, 'width': round(value * 10)})
+
+    # События: значимые раньше жёлтых.
+    factors = []
     for event in events:
         if event.player_id == agg.player_id and event.event_type in PLAYER_EVENT_TEXT:
             icon, label, tone = PLAYER_EVENT_TEXT[event.event_type]
         elif event.assist_player_id == agg.player_id and event.event_type in ('goal', 'penalty'):
-            icon, label, tone = 'ti-shoe', 'Голевая передача', 'up'
+            icon, label, tone = 'ti-shoe', 'Отдал голевую передачу', 'up'
         else:
             continue
-        note = _reaction_note(reactions.get(event.id))
-        event_reasons.append((event.event_type == 'yellow_card', {
-            'icon': icon, 'tone': tone, 'text': f"{label} на {event.display_minute}'" + (f" · {note}" if note else ''),
-        }))
-    reasons += [r for _minor, r in sorted(event_reasons, key=lambda pair: pair[0])]
-
-    if form and form[1] >= FORM_MIN_MATCHES:
-        delta = agg.performance_score - form[0]
-        if abs(delta) >= FORM_DELTA:
-            word = 'выше' if delta > 0 else 'ниже'
-            reasons.append({'icon': 'ti-trending-up' if delta > 0 else 'ti-trending-down',
-                            'tone': 'up' if delta > 0 else 'down',
-                            'text': f"На {_fmt(abs(delta))} {word} обычного: в сезоне в среднем {_fmt(form[0])}"})
-        else:
-            reasons.append({'icon': 'ti-equal', 'tone': 'neutral',
-                            'text': f"Свой обычный уровень: в сезоне в среднем {_fmt(form[0])}"})
-
-    own, rival = agg.own_fans_avg, agg.rival_fans_avg
-    if own is not None and rival is not None:
-        gap = own - rival
-        if abs(gap) >= SPLIT_GAP:
-            reasons.append({'icon': 'ti-arrows-split', 'tone': 'neutral',
-                            'text': f"Трибуны разошлись: {_fmt(own)} от своих против {_fmt(rival)} от соперников"})
-        elif abs(gap) <= AGREE_GAP:
-            reasons.append({'icon': 'ti-users-group', 'tone': 'up' if own >= 7 else 'neutral',
-                            'text': f"Свои и соперники сошлись: {_fmt(own)} и {_fmt(rival)}"})
-
-    if stat_rating:
-        diff = stat_rating - agg.performance_score
-        if diff >= STAT_GAP:
-            text = f"Статистика ценит выше трибун: {_fmt(stat_rating)}"
-        elif diff <= -STAT_GAP:
-            text = f"Статистика скромнее трибун: {_fmt(stat_rating)}"
-        else:
-            text = f"Статистика согласна с трибунами: {_fmt(stat_rating)}"
-        reasons.append({'icon': 'ti-chart-bar', 'tone': 'neutral', 'text': text})
-
-    if drift:
-        early, late = drift
-        if abs(late - early) >= DRIFT_GAP:
-            word = 'росла' if late > early else 'падала'
-            reasons.append({'icon': 'ti-timeline', 'tone': 'up' if late > early else 'down',
-                            'text': f"Оценка {word} по ходу голосования: с {_fmt(early)} у первых до {_fmt(late)} у поздних"})
-
+        text = f"{label} на {event.display_minute}'"
+        stats = reactions.get(event.id)
+        if stats and stats['total'] >= MIN_REACTIONS:
+            text += f" — трибуны отреагировали {stats['total']} раз"
+        factors.append((event.event_type == 'yellow_card', {'icon': icon, 'tone': tone, 'text': text}))
+    why['factors'] = [f for _minor, f in sorted(factors, key=lambda pair: pair[0])]
     if expert_take:
-        text = f"Ключевой игрок по мнению эксперта ({expert_take.display_name})"
+        text = f"Ключевой игрок матча по мнению эксперта ({expert_take.display_name})"
         if expert_take.headline:
             text += f": «{expert_take.headline}»"
-        reasons.append({'icon': 'ti-microphone', 'tone': 'neutral', 'text': text})
+        why['factors'].append({'icon': 'ti-microphone', 'tone': 'neutral', 'text': text})
 
-    return {'headline': reasons[0]['text'].split(' · ')[0] if reasons else '', 'reasons': reasons}
+    if form and form[1] >= FORM_MIN_MATCHES:
+        delta = score - form[0]
+        if abs(delta) >= FORM_DELTA:
+            text = f"Обычно в этом сезоне — {_fmt(form[0])}. Этот матч {'лучше' if delta > 0 else 'хуже'} на {_fmt(abs(delta))}."
+        else:
+            text = f"Обычно в этом сезоне — {_fmt(form[0])}. Матч на его привычном уровне."
+        why['compare'].append(text)
+    if stat_rating:
+        why['compare'].append(f"По статистике матча — {_fmt(stat_rating)}.")
+
+    why['has_details'] = bool(why['distribution'] or why['sides'] or why['factors'] or why['compare'])
+    return why
 
 
 def explain_players(match, aggs, *, events, stat_ratings=None, expert_takes=()) -> None:
@@ -178,13 +170,13 @@ def explain_players(match, aggs, *, events, stat_ratings=None, expert_takes=()) 
     ids = [a.player_id for a in aggs]
     reactions = reaction_stats(events)
     form = _season_form(match, ids)
-    drift = _vote_drift(match, ids)
+    votes = vote_values([match.id], ids)
     takes = {t.key_player_id: t for t in expert_takes if t.key_player_id}
     stat_ratings = stat_ratings or {}
     for agg in aggs:
         agg.why = explain_player(
-            agg, events=events, reactions=reactions, form=form.get(agg.player_id),
-            drift=drift.get(agg.player_id), stat_rating=stat_ratings.get(agg.player_id),
+            agg, votes=votes.get((match.id, agg.player_id), ()), events=events, reactions=reactions,
+            form=form.get(agg.player_id), stat_rating=stat_ratings.get(agg.player_id),
             expert_take=takes.get(agg.player_id),
         )
 
@@ -239,8 +231,10 @@ def match_story(match, events, *, turning_points=()) -> dict | None:
     }
 
 
+
+
 def explain_history(player, aggs, *, stat_ratings=None) -> None:
-    """История игрока: agg.why и agg.delta (к прошлому оценённому матчу). Запросов — константа."""
+    """История игрока: agg.why и agg.delta (к прошлому оценённому матчу). Запросов — на матч, не на причину."""
     from aggregates.models import PlayerMatchAggregate
     from aggregates.services import min_votes_for_display, published_q
     from engagement.models import ExpertTake
@@ -271,13 +265,15 @@ def explain_history(player, aggs, *, stat_ratings=None) -> None:
         t.match_id: t for t in ExpertTake.objects.filter(is_published=True, key_player=player, match_id__in=match_ids)
         .select_related('expert')
     }
+    rated_ids = [a.match_id for a in aggs if a.total_votes >= min_votes]
+    votes = vote_values(rated_ids, [player.id])
     stat_ratings = stat_ratings or {}
 
     for agg in aggs:
         others = [s for m, s in season_rows.get(agg.match.season_id, []) if m != agg.match_id]
-        form = (mean(others), len(others)) if others else None
         agg.why = explain_player(
-            agg, events=events_by_match.get(agg.match_id, []), reactions=reactions, form=form,
+            agg, votes=votes.get((agg.match_id, player.id), ()), events=events_by_match.get(agg.match_id, []),
+            reactions=reactions, form=(mean(others), len(others)) if others else None,
             stat_rating=stat_ratings.get(agg.match_id), expert_take=takes.get(agg.match_id),
         )
 
