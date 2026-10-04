@@ -196,3 +196,16 @@ class RetentionTests(DataHealthFixtureMixin, TestCase):
         with override_settings(STAFF_2FA_ENFORCED=False):
             response = self.client.get(reverse("dashboard:retention"))
         self.assertContains(response, "Когорты по неделе регистрации")
+
+
+class FailedScriptsAttentionTests(TestCase):
+    def test_manual_stop_not_counted(self):
+        from dashboard.models import MANUAL_STOP_NOTE, ManagementCommandRun
+        from dashboard.services import attention_items
+        from users.models import User
+
+        admin = User.objects.create_superuser(username="boss", email="boss@ex.com", password="x")
+        ManagementCommandRun.objects.create(command_name="seed_full_history", status="failed", stderr=MANUAL_STOP_NOTE)
+        self.assertFalse([i for i in attention_items(admin) if i["title"] == "Упавшие скрипты за сутки"])
+        ManagementCommandRun.objects.create(command_name="x", status="failed", stderr="Traceback")
+        self.assertEqual([i["count"] for i in attention_items(admin) if i["title"] == "Упавшие скрипты за сутки"], [1])

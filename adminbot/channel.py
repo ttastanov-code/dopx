@@ -261,6 +261,16 @@ def publish(post: ChannelPost, user=None) -> tuple[bool, str]:
     return True, "📣 Опубликовано в канале."
 
 
+# Пробные черновики («Пробные посты») живут сутки.
+SAMPLE_TTL = timedelta(days=1)
+
+
+def drop_old_samples() -> int:
+    return ChannelPost.objects.filter(
+        key__startswith="sample:", status="draft", created_at__lt=timezone.now() - SAMPLE_TTL,
+    ).delete()[0]
+
+
 def publish_due() -> int:
     n = 0
     for post in ChannelPost.objects.filter(status="scheduled", scheduled_at__lte=timezone.now()).order_by("scheduled_at", "pk"):

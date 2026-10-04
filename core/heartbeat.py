@@ -38,6 +38,31 @@ def beat(name: str, **info) -> None:
         pass
 
 
+# Пульс по выполненным задачам — не чаще раза в столько секунд на процесс.
+TASK_BEAT_EVERY = 30
+_last_task_beat = 0.0
+
+
+def task_done(hostname: str) -> None:
+    """Воркер закончил задачу — значит жив, даже если задача-пульс застряла в длинной очереди."""
+    global _last_task_beat
+    now = time.time()
+    if now - _last_task_beat < TASK_BEAT_EVERY:
+        return
+    _last_task_beat = now
+    name = "celery_realtime" if hostname.startswith("realtime@") else "celery_worker"
+    beat(name, node=hostname)
+    if name == "celery_worker":
+        from django.utils import timezone
+
+        from core.tasks import HEARTBEAT_CACHE_KEY
+
+        try:
+            cache.set(HEARTBEAT_CACHE_KEY, timezone.now().isoformat(), 60 * 60)
+        except Exception:
+            pass
+
+
 def request_restart(name: str) -> None:
     """Кнопка «Перезапустить»: процесс увидит флаг в своём цикле и завершится, Docker поднимет его заново."""
     cache.set(f"hb:restart:{name}", time.time(), 3600)

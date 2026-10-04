@@ -26,6 +26,20 @@ class HeartbeatTests(TestCase):
         with override_settings(FAN_BOT_TOKEN=""):
             self.assertEqual({r["name"]: r for r in heartbeat.overview()}["fan_bot"]["status"], "off")
 
+    def test_task_done_marks_worker_alive_and_throttles(self):
+        from core.health import celery_heartbeat_age
+
+        heartbeat._last_task_beat = 0.0
+        heartbeat.task_done("celery@box")
+        heartbeat.task_done("realtime@box")  # в пределах 30 с — пропуск
+        rows = {r["name"]: r for r in heartbeat.overview()}
+        self.assertEqual(rows["celery_worker"]["status"], "ok")
+        self.assertEqual(rows["celery_realtime"]["status"], "down")
+        self.assertEqual(celery_heartbeat_age(), 0)
+        heartbeat._last_task_beat = 0.0
+        heartbeat.task_done("realtime@box")
+        self.assertEqual({r["name"]: r for r in heartbeat.overview()}["celery_realtime"]["status"], "ok")
+
     def test_restart_flag_only_for_older_process(self):
         self.assertFalse(heartbeat.restart_requested("fan_bot"))
         heartbeat.request_restart("fan_bot")

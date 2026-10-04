@@ -387,6 +387,7 @@ def release_info() -> dict:
     return {
         "version": settings.APP_VERSION, "commit": settings.APP_COMMIT,
         "environment": settings.ENVIRONMENT, "heartbeat_age": celery_heartbeat_age(),
+        "queue_celery": (_redis_stats().get("queue_depth") or 0),
     }
 
 

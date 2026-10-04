@@ -102,6 +102,10 @@ class StaffActionLog(models.Model):
         return f"{self.actor_username or 'system'} · {self.action} · {self.created_at:%Y-%m-%d %H:%M}"
 
 
+# Пометка в stderr при ручной остановке — такой запуск не считается упавшим.
+MANUAL_STOP_NOTE = "Остановлено вручную staff (terminate)."
+
+
 class ManagementCommandRun(models.Model):
     """Запуск management-команды из «Скриптов и команд».
     Выполняется в Celery (dashboard/tasks.py::run_management_command), страница поллит статус.

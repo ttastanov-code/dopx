@@ -978,6 +978,7 @@ def notify_prediction_results(self):
         from notifications.models import Notification
         from predictions.models import MatchPrediction
         from predictions.services import prediction_counts
+        from core.utils import synthetic_users_q
         from users.tasks import check_and_award_badges_task
 
         now = timezone.now()
@@ -1010,6 +1011,7 @@ def notify_prediction_results(self):
             predictions = list(
                 MatchPrediction.objects.filter(match=match)
                 .exclude(user_id__in=already_emailed)
+                .exclude(synthetic_users_q("user__"))  # ботам серию считает сам скрипт наполнения, писем им не шлём
                 .select_related('user')
             )
             if not predictions:

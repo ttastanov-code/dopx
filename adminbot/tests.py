@@ -434,3 +434,17 @@ class AlertsTests(BotTestCase):
         with mock.patch("dashboard.infra_services._redis_stats", return_value={"ok": True, "queue_depth": 0}):
             problems = alerts.current_problems()
         self.assertTrue(all(isinstance(p, alerts.Problem) for p in problems))
+
+
+class CleanupTests(TestCase):
+    def test_old_sample_drafts_dropped_fresh_kept(self):
+        from .channel import drop_old_samples
+        from .models import ChannelPost
+
+        old = ChannelPost.objects.create(key="sample:1:x", kind="poll", text="a", status="draft")
+        ChannelPost.objects.filter(pk=old.pk).update(created_at=timezone.now() - timedelta(days=2))
+        fresh = ChannelPost.objects.create(key="sample:2:x", kind="poll", text="b", status="draft")
+        real = ChannelPost.objects.create(key="poll:3", kind="poll", text="c", status="draft")
+        ChannelPost.objects.filter(pk=real.pk).update(created_at=timezone.now() - timedelta(days=2))
+        self.assertEqual(drop_old_samples(), 1)
+        self.assertEqual(set(ChannelPost.objects.values_list("pk", flat=True)), {fresh.pk, real.pk})

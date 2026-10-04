@@ -9,6 +9,7 @@
   4. синхронный пересчёт агрегатов матча;
   5. сборная тура; 6. сборная сезона и таблица;
   7. check_and_award_badges напрямую (без уведомлений).
+Работает в тихом режиме (core.bulk): сигналы не ставят задачи в Celery, итоги туров не рассылаются.
 
 Пул ботов общий с seed_match_votes (test_user_bot_NNNN@test.dopx.local).
 Трейты бота (вовлечённость, меткость) детерминированы от username.
@@ -99,6 +100,13 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         ensure_seed_allowed()
+        from core.bulk import quiet
+
+        # Скрипт пересчитывает агрегаты, туры и бейджи сам — фоновые задачи от сигналов не нужны.
+        with quiet():
+            self._run(options)
+
+    def _run(self, options):
         if options["seed"] is not None:
             random.seed(options["seed"])
 

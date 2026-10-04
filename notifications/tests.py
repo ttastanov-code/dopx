@@ -508,3 +508,12 @@ class NotifyPredictionResultsLockTests(TestCase):
         self.assertEqual(
             Notification.objects.filter(notification_type="prediction_result").count(), 1,
         )
+
+    def test_bots_skipped(self):
+        bot = User.objects.create_user(username="test_user_bot_0001", email="test_user_bot_0001@test.dopx.local",
+                                       password="x")
+        MatchPrediction.objects.create(match=self.match, user=bot, choice="1")
+        self.assertEqual(notify_prediction_results()["notified"], 1)
+        self.assertFalse(Notification.objects.filter(user=bot).exists())
+        bot.refresh_from_db()
+        self.assertEqual(bot.prediction_streak, 0)

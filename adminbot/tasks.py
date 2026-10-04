@@ -45,12 +45,13 @@ def matchday_tick() -> dict:
 
 @shared_task(ignore_result=True)
 def minute_tick() -> dict:
-    """Запланированные посты канала и эскалация инцидентов."""
+    """Запланированные посты канала, эскалация инцидентов, уборка старых пробных черновиков."""
     if not tg.enabled():
         return {}
     from . import channel, incidents
 
-    return {"published": channel.publish_due(), "escalated": incidents.escalate_due()}
+    return {"published": channel.publish_due(), "escalated": incidents.escalate_due(),
+            "samples_dropped": channel.drop_old_samples()}
 
 
 @shared_task(ignore_result=True)

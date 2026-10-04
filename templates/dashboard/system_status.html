@@ -25,6 +25,7 @@
                 <p class="text-xs opacity-60 mt-0.5">Режим: {{ status.release.environment }} ·
                     {% if status.release.heartbeat_age is None %}<span class="text-warning">Celery ещё не отправлял пульс</span>
                     {% elif status.release.heartbeat_age < 180 %}Celery живой, пульс {{ status.release.heartbeat_age }} с назад
+                    {% elif status.release.queue_celery >= 20 %}<span class="text-warning">Celery занят: в очереди {{ status.release.queue_celery }} задач, пульс {{ status.release.heartbeat_age }} с назад</span>
                     {% else %}<span class="text-error">Celery молчит {{ status.release.heartbeat_age }} с: фоновые задачи стоят</span>{% endif %}</p>
             </div>
             <a href="/healthz/" target="_blank" class="btn btn-xs btn-ghost"><i class="ti ti-heartbeat"></i> /healthz/</a>

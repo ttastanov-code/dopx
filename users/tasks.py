@@ -646,6 +646,10 @@ PROGRESS_RECOMPUTE_DELAY = 10
 def schedule_progress_recompute(user_id: str) -> None:
     from django.core.cache import cache
 
+    from core.bulk import is_quiet
+
+    if is_quiet():
+        return
     if cache.add(f"users:progress_recompute:{user_id}", 1, PROGRESS_RECOMPUTE_DELAY):
         recompute_user_progress_task.apply_async(args=[user_id], countdown=PROGRESS_RECOMPUTE_DELAY)
 

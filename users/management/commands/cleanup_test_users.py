@@ -65,6 +65,15 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        from core.bulk import quiet
+
+        if options["no_recalc"]:
+            return self._run(options)  # пересчёт потом — пусть сигналы поставят его сами
+        # Пересчитываем сами в конце — фоновые задачи на каждый удалённый голос не нужны.
+        with quiet():
+            return self._run(options)
+
+    def _run(self, options):
         # Служебная команда на сотни тысяч строк: снимаем statement_timeout только для этого соединения.
         with connection.cursor() as cursor:
             cursor.execute("SET statement_timeout = 0")

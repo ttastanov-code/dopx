@@ -569,7 +569,9 @@ def recompute_round(season, tour: int, *, force: bool = False) -> RoundBestXI:
     round_best_xi.last_computed_at = now
     round_best_xi.save()
 
-    if just_finalized:
+    from core.bulk import is_quiet
+
+    if just_finalized and not is_quiet():  # наполнение истории не рассылает итоги прошлых туров
         # Ставим после save(), чтобы воркер прочитал уже сохранённые данные.
         try:
             from round_squad.tasks import send_round_results_notification

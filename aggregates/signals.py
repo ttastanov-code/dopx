@@ -22,6 +22,10 @@ def _schedule_recalculation(match_id: str, countdown: int) -> None:
     """Ставит пересчёт агрегатов матча не чаще раза в countdown секунд.
     cache.add() как атомарный SETNX — без дублей задач в очереди.
     """
+    from core.bulk import is_quiet
+
+    if is_quiet():
+        return  # массовый скрипт пересчитает сам
     debounce_key = f"aggregates:recalc_pending:{match_id}"
     if not cache.add(debounce_key, "1", timeout=countdown):
         return

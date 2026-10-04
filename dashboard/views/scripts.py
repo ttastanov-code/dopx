@@ -11,7 +11,7 @@ from django.views.decorators.http import require_POST
 
 from .. import command_runner, commands_registry, parser_tools
 from ..audit import log_staff_action
-from ..models import AuditAction, ManagementCommandRun
+from ..models import AuditAction, ManagementCommandRun, MANUAL_STOP_NOTE
 
 
 # ============================================================
@@ -104,7 +104,7 @@ def scripts_revoke_run(request, run_id):
     success, message = parser_tools.revoke_celery_task(run.celery_task_id, terminate=True)
     if success:
         run.status = ManagementCommandRun.Status.FAILED
-        run.stderr = (run.stderr + "\n" if run.stderr else "") + "Остановлено вручную staff (terminate)."
+        run.stderr = (run.stderr + "\n" if run.stderr else "") + MANUAL_STOP_NOTE
         run.finished_at = timezone.now()
         run.save(update_fields=["status", "stderr", "finished_at"])
     (messages.success if success else messages.error)(request, message)
