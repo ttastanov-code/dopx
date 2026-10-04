@@ -556,6 +556,7 @@ def recompute_round(season, tour: int, *, force: bool = False) -> RoundBestXI:
                 tour=tour,
                 player_of_round_name=round_best_xi.player_of_round_name or "—",
                 player_of_round_score=round_best_xi.player_of_round_score,
+                player_photo=round_best_xi.player_of_round_photo_url,
                 dramatic_match_label=(
                     f"{dramatic_match.home_team.name} {dramatic_match.home_score}:{dramatic_match.away_score} "
                     f"{dramatic_match.away_team.name}" if dramatic_match else ""

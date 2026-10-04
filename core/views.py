@@ -599,6 +599,7 @@ class MatchShareCardView(View):
     """/share/match/<id>/card.png — редирект на закэшированную карточку матча (og:image, шеринг)."""
 
     def get(self, request, match_id):
+        from core import cards
         from core.services.share_cards import build_match_share_card
 
         match = get_object_or_404(Match.objects.select_related("home_team", "away_team"), pk=match_id)
@@ -614,6 +615,8 @@ class MatchShareCardView(View):
             home_score=match.home_score or 0, away_score=match.away_score or 0,
             top_player_name=f"{top.player.first_name} {top.player.last_name}" if top else "—",
             top_player_score=top.performance_score if top else 0.0,
+            home_logo=cards.team_logo(match.home_team), away_logo=cards.team_logo(match.away_team),
+            top_player_photo=cards.player_photo(top.player) if top else "",
         )
         return redirect(default_storage.url(path))
 
@@ -627,6 +630,7 @@ class MatchDNAShareCardView(View):
         from django.db.models import Count
         from evaluations.models import ContextEvaluation, MatchEvaluation
         from matches.services import build_match_dna
+        from core import cards
         from core.services.share_cards import build_match_dna_share_card
 
         match = get_object_or_404(
@@ -689,6 +693,7 @@ class MatchDNAShareCardView(View):
             fan_mood_text=match_dna["fan_mood_text"],
             consensus_text=match_dna["consensus_text"],
             headline=headline,
+            home_logo=cards.team_logo(match.home_team), away_logo=cards.team_logo(match.away_team),
         )
         return redirect(default_storage.url(path))
 

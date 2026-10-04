@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="{{ w }}" height="{{ h }}" viewBox="0 0 {{ w }} {{ h }}">
+{% include "cards/_bg.svg" %}
+{% include "cards/_logo.svg" with x=498 y=150 s="1.75" %}
+<text x="540" y="300" text-anchor="middle" font-family="Inter Display" font-weight="700" font-size="44" fill="#FFFFFF" letter-spacing="-0.5">DOPX</text>
+<rect x="{{ chip_x }}" y="430" width="{{ chip_w }}" height="64" rx="32" fill="url(#glass)" stroke="url(#glassEdge)" stroke-width="1.5"/>
+<circle cx="{{ chip_dot }}" cy="462" r="7" fill="{{ accent }}"/>
+<text x="{{ chip_text_x }}" y="471" font-family="Inter" font-weight="600" font-size="27" fill="#FFFFFF" fill-opacity=".9">{{ chip }}</text>
+<g transform="translate(540 870)">
+  <circle r="320" fill="none" stroke="#FFFFFF" stroke-opacity=".05"/>
+  <circle r="270" fill="none" stroke="#FFFFFF" stroke-opacity=".08" stroke-width="22"/>
+  <circle r="270" fill="none" stroke="url(#ringGrad)" stroke-width="22" stroke-linecap="round" stroke-dasharray="{{ arc }} 1697" transform="rotate(-90)" filter="url(#glow)" opacity=".75"/>
+  <circle r="270" fill="none" stroke="url(#ringGrad)" stroke-width="22" stroke-linecap="round" stroke-dasharray="{{ arc }} 1697" transform="rotate(-90)"/>
+  {% if image %}<g filter="url(#shadow)"><circle r="214" fill="url(#glass)" stroke="url(#glassEdge)" stroke-width="2"/></g>
+  <clipPath id="sClip"><circle r="210"/></clipPath><image href="{{ image }}" x="-210" y="-210" width="420" height="420" clip-path="url(#sClip)" preserveAspectRatio="xMidYMid slice"/>{% endif %}
+</g>
+<text x="540" y="{{ number_y }}" text-anchor="middle" font-family="Inter Display" font-weight="800" font-size="{{ number_size }}" fill="url(#accentText)" letter-spacing="{{ number_tracking }}">{{ number }}</text>
+{% for line in label_lines %}<text x="540" y="{{ line.y }}" text-anchor="middle" font-family="Inter Display" font-weight="700" font-size="60" fill="#FFFFFF" letter-spacing="-1">{{ line.text }}</text>{% endfor %}
+{% for line in sub_lines %}<text x="540" y="{{ line.y }}" text-anchor="middle" font-family="Inter" font-weight="600" font-size="38" fill="#FFFFFF" fill-opacity=".55">{{ line.text }}</text>{% endfor %}
+{% if footer_note %}<text x="540" y="1652" text-anchor="middle" font-family="Inter" font-weight="600" font-size="34" fill="#FFFFFF" fill-opacity=".6">{{ footer_note }}</text>{% endif %}
+<rect x="360" y="1712" width="360" height="88" rx="44" fill="#FFFFFF"/>
+<text x="540" y="1768" text-anchor="middle" font-family="Inter Display" font-weight="800" font-size="36" fill="#07070C" letter-spacing="-0.5">dopx.kz</text>
+</svg>

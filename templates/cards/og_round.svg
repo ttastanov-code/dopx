@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="{{ w }}" height="{{ h }}" viewBox="0 0 {{ w }} {{ h }}">
+{% include "cards/_bg.svg" %}
+{% include "cards/_header.svg" %}
+<text x="64" y="196" font-family="Inter" font-weight="600" font-size="21" fill="#FFFFFF" fill-opacity=".6">Игрок тура по оценкам болельщиков</text>
+{% for line in name_lines %}<text x="60" y="{{ line.y }}" font-family="Inter Display" font-weight="800" font-size="{{ name_size }}" fill="url(#accentText)" letter-spacing="-2">{{ line.text }}</text>{% endfor %}
+<rect x="64" y="{{ badge_y }}" width="150" height="60" rx="30" fill="url(#ringGrad)"/>
+<text x="139" y="{{ badge_text_y }}" text-anchor="middle" font-family="Inter Display" font-weight="800" font-size="30" fill="#FFFFFF" letter-spacing="-0.5">{{ score }}</text>
+{% if drama %}
+<g filter="url(#shadow)"><rect x="64" y="440" width="620" height="84" rx="28" fill="url(#glass)" stroke="url(#glassEdge)" stroke-width="1.5"/></g>
+<text x="96" y="474" font-family="Inter" font-weight="600" font-size="17" fill="#FFFFFF" fill-opacity=".55">Самый драматичный матч</text>
+<text x="96" y="505" font-family="Inter Display" font-weight="700" font-size="25" fill="#FFFFFF" letter-spacing="-0.3">{{ drama }}</text>
+{% endif %}
+<g transform="translate(940 330)">
+  <circle r="190" fill="none" stroke="#FFFFFF" stroke-opacity=".06"/>
+  <circle r="156" fill="none" stroke="url(#ringGrad)" stroke-width="3" opacity=".8"/>
+  <g filter="url(#shadow)"><circle r="134" fill="url(#glass)" stroke="url(#glassEdge)" stroke-width="1.5"/></g>
+  {% if photo %}<clipPath id="pClip"><circle r="130"/></clipPath><image href="{{ photo }}" x="-130" y="-130" width="260" height="260" clip-path="url(#pClip)" preserveAspectRatio="xMidYMid slice"/>
+  {% else %}{% include "cards/_logo.svg" with x="-60" y="-60" s="2.5" %}{% endif %}
+  <rect x="-62" y="128" width="124" height="46" rx="23" fill="#07070C" stroke="url(#glassEdge)" stroke-width="1.5"/>
+  <text y="158" text-anchor="middle" font-family="Inter Display" font-weight="700" font-size="20" fill="#FFFFFF">Тур {{ tour }}</text>
+</g>
+{% include "cards/_footer.svg" %}
+</svg>

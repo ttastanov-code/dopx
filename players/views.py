@@ -477,6 +477,7 @@ def player_season_recap_card(request, pk, season_id):
         player_name=f"{player.first_name} {player.last_name}",
         team_name=player.team.name if player.team else "Без команды",
         season_label=season.year,
+        photo_url=player.photo_display or "", team_logo=(player.team.logo_display or "") if player.team else "",
         matches_played=matches_played,
         avg_performance=round(stats['avg_performance'], 2) if (has_enough_votes and stats['avg_performance'] is not None) else None,
         goals=goals,

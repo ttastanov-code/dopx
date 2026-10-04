@@ -1,0 +1,7 @@
+{# Клуб: стеклянный диск с логотипом (или инициалами) и название под ним. #}
+<g transform="translate({{ t.cx }} {{ t.cy }})">
+  <g filter="url(#shadow)"><circle r="{{ t.r }}" fill="url(#glass)" stroke="url(#glassEdge)" stroke-width="1.5"/></g>
+  {% if t.logo %}<image href="{{ t.logo }}" x="-{{ t.img }}" y="-{{ t.img }}" width="{{ t.img2 }}" height="{{ t.img2 }}" preserveAspectRatio="xMidYMid meet"/>
+  {% else %}<text y="{{ t.ini_y }}" text-anchor="middle" font-family="Inter Display" font-weight="800" font-size="{{ t.ini_size }}" fill="#FFFFFF">{{ t.initials }}</text>{% endif %}
+  {% for line in t.name_lines %}<text y="{{ line.y }}" text-anchor="middle" font-family="Inter Display" font-weight="700" font-size="{{ t.name_size }}" fill="#FFFFFF" letter-spacing="-0.3">{{ line.text }}</text>{% endfor %}
+</g>

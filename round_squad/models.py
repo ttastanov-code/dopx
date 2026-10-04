@@ -72,6 +72,26 @@ class RoundBestXI(BaseModel):
         state = 'зафиксирован' if self.is_final else 'живой'
         return f"{self.brand_title} ({state})"
 
+    def current_share_card(self) -> str:
+        """Путь к карточке по текущему дизайну: после правки шаблонов перерисуется сама при первом показе."""
+        if not self.is_final:
+            return ""
+        from core.services.share_cards import build_round_squad_share_card
+
+        m = self.most_dramatic_match
+        try:
+            path = build_round_squad_share_card(
+                season_year=self.season.year, tour=self.tour, player_of_round_name=self.player_of_round_name or "—",
+                player_of_round_score=self.player_of_round_score, player_photo=self.player_of_round_photo_url,
+                dramatic_match_label=f"{m.home_team.name} {m.home_score}:{m.away_score} {m.away_team.name}" if m else "",
+            )
+        except Exception:
+            return self.share_card_path  # карточка не критична — отдаём прежнюю
+        if path != self.share_card_path:
+            type(self).objects.filter(pk=self.pk).update(share_card_path=path)
+            self.share_card_path = path
+        return path
+
     @property
     def brand_title(self) -> str:
         """Название для страницы, виджета, карточки, письма и админки."""

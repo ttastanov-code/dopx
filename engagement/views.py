@@ -205,7 +205,7 @@ def _brag_params(user, kind: str) -> tuple[str, dict]:
         if not me or not me["top_percent"]:
             raise Http404
         params = dict(number_text=f"{me['top_percent']}%", label_line1="лучших болельщиков",
-                      label_line2=team.name, eyebrow="ФАН-ЗОНА КЛУБА")
+                      label_line2=team.name, eyebrow="ФАН-ЗОНА КЛУБА", image_url=team.logo_display or "")
         kind = "fan_top"
     else:
         raise Http404
@@ -221,6 +221,12 @@ def brag_card(request, username, kind):
     kind, params = _brag_params(user, kind)
     path = build_brag_share_card(username=user.username, kind=kind, **params)
     return redirect(default_storage.url(path))
+
+
+def _winner_logo(match) -> str:
+    """Логотип победителя (для ничьей — хозяев) для сторис «прогноз сбылся»."""
+    team = match.away_team if match.final_result == "2" else match.home_team
+    return team.logo_display or ""
 
 
 def _match_story_params(user, kind: str) -> tuple[str, dict, str]:
@@ -242,14 +248,16 @@ def _match_story_params(user, kind: str) -> tuple[str, dict, str]:
         if not top:
             raise Http404
         return "match", dict(eyebrow="мой герой матча", number_text=f"{top.contribution}/10",
-                             label_line1=top.player.full_name, label_line2=score), "А ты кого бы выбрал?"
+                             label_line1=top.player.full_name, label_line2=score,
+                             image_url=top.player.photo_display or ""), "А ты кого бы выбрал?"
     if prefix == "prediction":
         hit = MatchPrediction.objects.filter(user=user, match=match, choice=match.final_result).exists() if match.final_result else False
         if not hit:
             raise Http404
         return "prediction_hit", dict(eyebrow="мой прогноз сбылся", number_text=match.get_score_display().replace(" ", ""),
                                       label_line1=score.replace(f" {match.get_score_display()} ", " – "),
-                                      label_line2="прогноз 1X2 на DOPX"), "Сможешь угадать следующий?"
+                                      label_line2="прогноз 1X2 на DOPX",
+                                      image_url=_winner_logo(match)), "Сможешь угадать следующий?"
     raise Http404
 
 

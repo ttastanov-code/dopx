@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="{{ w }}" height="{{ h }}" viewBox="0 0 {{ w }} {{ h }}">
+{% include "cards/_bg.svg" %}
+{% include "cards/_header.svg" %}
+{% if home.logo %}<image href="{{ home.logo }}" x="64" y="150" width="46" height="46" preserveAspectRatio="xMidYMid meet"/>{% endif %}
+<text x="{{ score_x }}" y="183" font-family="Inter Display" font-weight="700" font-size="28" fill="#FFFFFF" fill-opacity=".85" letter-spacing="-0.3">{{ score_line }}</text>
+{% if away.logo %}<image href="{{ away.logo }}" x="{{ away_logo_x }}" y="150" width="46" height="46" preserveAspectRatio="xMidYMid meet"/>{% endif %}
+{% for line in headline_lines %}<text x="62" y="{{ line.y }}" font-family="Inter Display" font-weight="800" font-size="{{ headline_size }}" fill="#FFFFFF" letter-spacing="-1.2">{{ line.text }}</text>{% endfor %}
+<text x="64" y="368" font-family="Inter" font-weight="600" font-size="19" fill="#FFFFFF" fill-opacity=".6">{{ drama_label }}</text>
+<text x="700" y="368" text-anchor="end" font-family="Inter Display" font-weight="800" font-size="22" fill="#FFFFFF">{{ drama_value }}</text>
+<rect x="64" y="384" width="636" height="10" rx="5" fill="#FFFFFF" fill-opacity=".08"/>
+<rect x="64" y="384" width="{{ drama_w }}" height="10" rx="5" fill="url(#ringGrad)"/>
+{% for row in side %}<text x="64" y="{{ row.y }}" font-family="Inter" font-weight="600" font-size="21" fill="#FFFFFF" fill-opacity=".55">{{ row.text }}</text>{% endfor %}
+{% for p in people %}
+<g filter="url(#shadow)"><rect x="760" y="{{ p.y }}" width="376" height="140" rx="28" fill="url(#glass)" stroke="url(#glassEdge)" stroke-width="1.5"/></g>
+<circle cx="790" cy="{{ p.y_dot }}" r="5" fill="{{ p.color }}"/>
+<text x="804" y="{{ p.y_label }}" font-family="Inter" font-weight="600" font-size="17" fill="#FFFFFF" fill-opacity=".6">{{ p.label }}</text>
+{% for line in p.name_lines %}<text x="786" y="{{ line.y }}" font-family="Inter Display" font-weight="700" font-size="25" fill="#FFFFFF" letter-spacing="-0.3">{{ line.text }}</text>{% endfor %}
+<text x="1108" y="{{ p.y_score }}" text-anchor="end" font-family="Inter Display" font-weight="800" font-size="34" fill="{{ p.color }}" letter-spacing="-0.8">{{ p.score }}</text>
+{% endfor %}
+{% include "cards/_footer.svg" %}
+</svg>

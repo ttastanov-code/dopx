@@ -102,6 +102,7 @@ class RoundBestXIAdmin(ModelAdmin):
                         tour=round_xi.tour,
                         player_of_round_name=round_xi.player_of_round_name or "—",
                         player_of_round_score=round_xi.player_of_round_score,
+                        player_photo=round_xi.player_of_round_photo_url,
                         dramatic_match_label=(
                             f"{dramatic.home_team.name} {dramatic.home_score}:{dramatic.away_score} "
                             f"{dramatic.away_team.name}" if dramatic else ""

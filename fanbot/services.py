@@ -34,7 +34,7 @@ def bot_username() -> str:
 
 def miniapp_link(start: str = "") -> str:
     """Ссылка, открывающая Mini App в Telegram; без настроенного приложения — пусто."""
-    if not (bot_username() and settings.FAN_BOT_APP_NAME):
+    if not (enabled() and bot_username() and settings.FAN_BOT_APP_NAME):
         return ""
     return f"https://t.me/{bot_username()}/{settings.FAN_BOT_APP_NAME}" + (f"?startapp={start}" if start else "")
 

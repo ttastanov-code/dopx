@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="{{ w }}" height="{{ h }}" viewBox="0 0 {{ w }} {{ h }}">
+{% include "cards/_bg.svg" %}
+<defs>
+  <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="{{ top }}"/><stop offset=".55" stop-color="{{ bot }}"/><stop offset="1" stop-color="{{ top }}" stop-opacity=".85"/></linearGradient>
+  <radialGradient id="face" cx=".35" cy=".28" r=".85"><stop offset="0" stop-color="{{ top }}"/><stop offset=".6" stop-color="{{ bot }}"/><stop offset="1" stop-color="{{ deep }}"/></radialGradient>
+  <radialGradient id="shine" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#FFFFFF" stop-opacity=".65"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></radialGradient>
+  <radialGradient id="medalGlow" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="{{ top }}" stop-opacity=".55"/><stop offset="1" stop-color="{{ top }}" stop-opacity="0"/></radialGradient>
+  <filter id="emboss" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#000" flood-opacity=".35"/></filter>
+  <filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="18"/></filter>
+  <clipPath id="faceClip"><circle cx="540" cy="540" r="196"/></clipPath>
+</defs>
+{% include "cards/_logo.svg" with x=72 y=76 s="0.92" %}
+<text x="126" y="110" font-family="Inter Display" font-weight="700" font-size="27" fill="#FFFFFF" letter-spacing="-0.3">DOPX</text>
+<text x="1008" y="110" text-anchor="end" font-family="Inter" font-weight="600" font-size="22" fill="#FFFFFF" fill-opacity=".55">Достижение</text>
+{# Медаль: свечение, металлический ободок, лицевая сторона с бликом и выдавленным знаком. #}
+<circle cx="540" cy="540" r="380" fill="url(#medalGlow)"/>
+{% if dots %}<g fill="{{ top }}">{% for d in dots %}<circle cx="{{ d.x }}" cy="{{ d.y }}" r="{{ d.r }}" fill-opacity="{{ d.o }}"/>{% endfor %}</g>{% endif %}
+<g filter="url(#shadow)"><circle cx="540" cy="540" r="232" fill="url(#rim)"/></g>
+<circle cx="540" cy="540" r="232" fill="none" stroke="#FFFFFF" stroke-opacity=".45" stroke-width="2"/>
+<circle cx="540" cy="540" r="200" fill="url(#face)" stroke="#000" stroke-opacity=".25" stroke-width="3"/>
+<g clip-path="url(#faceClip)">
+  <circle cx="540" cy="540" r="168" fill="none" stroke="#FFFFFF" stroke-opacity=".18" stroke-width="2"/>
+  <ellipse cx="470" cy="420" rx="170" ry="110" fill="url(#shine)" filter="url(#soft)" transform="rotate(-25 470 420)"/>
+</g>
+<g filter="url(#emboss)" opacity=".95">
+  {% if secret %}<text x="540" y="588" text-anchor="middle" font-family="Inter Display" font-weight="800" font-size="150" fill="#FFFFFF">?</text>
+  {% else %}<g transform="translate(540 540) scale(3.4) translate(-24 -24)"><g transform="translate(4.8 4.8) scale(0.8)">
+    <circle cx="24" cy="24" r="17" fill="none" stroke="#fff" stroke-width="3" opacity=".45"/>
+    <path d="M11.98 36.02 A17 17 0 1 1 37.02 13.07" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+    <circle cx="37.02" cy="13.07" r="5.2" fill="#fff"/>
+    <path d="M24 17.5 L30.2 22 L27.8 29.3 L20.2 29.3 L17.8 22 Z" fill="#fff"/></g></g>{% endif %}
+</g>
+{% for s in sparkles %}<path d="M{{ s.x }} {{ s.y1 }} Q{{ s.x }} {{ s.y }} {{ s.x2 }} {{ s.y }} Q{{ s.x }} {{ s.y }} {{ s.x }} {{ s.y2 }} Q{{ s.x }} {{ s.y }} {{ s.x1 }} {{ s.y }} Q{{ s.x }} {{ s.y }} {{ s.x }} {{ s.y1 }} Z" fill="#FFFFFF" fill-opacity=".9"/>{% endfor %}
+<text x="540" y="{{ rarity_y }}" text-anchor="middle" font-family="Inter" font-weight="600" font-size="24" fill="{{ top }}">{{ rarity_label }}</text>
+{% for line in name_lines %}<text x="540" y="{{ line.y }}" text-anchor="middle" font-family="Inter Display" font-weight="800" font-size="{{ name_size }}" fill="#FFFFFF" letter-spacing="-1.8">{{ line.text }}</text>{% endfor %}
+{% for line in desc_lines %}<text x="540" y="{{ line.y }}" text-anchor="middle" font-family="Inter" font-weight="500" font-size="30" fill="#FFFFFF" fill-opacity=".6">{{ line.text }}</text>{% endfor %}
+<text x="72" y="1290" font-family="Inter" font-weight="600" font-size="24" fill="#FFFFFF" fill-opacity=".5">{{ footer_note }}</text>
+<text x="1008" y="1290" text-anchor="end" font-family="Inter Display" font-weight="700" font-size="24" fill="#FFFFFF" fill-opacity=".85">dopx.kz</text>
+</svg>

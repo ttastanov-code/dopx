@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="{{ w }}" height="{{ h }}" viewBox="0 0 {{ w }} {{ h }}">
+{% include "cards/_bg.svg" %}
+{% include "cards/_header.svg" %}
+<text x="58" y="{{ number_y }}" font-family="Inter Display" font-weight="800" font-size="{{ number_size }}" fill="url(#accentText)" letter-spacing="{{ number_tracking }}">{{ number }}</text>
+{% for line in label_lines %}<text x="64" y="{{ line.y }}" font-family="Inter Display" font-weight="700" font-size="42" fill="#FFFFFF" letter-spacing="-0.6">{{ line.text }}</text>{% endfor %}
+{% for line in sub_lines %}<text x="64" y="{{ line.y }}" font-family="Inter" font-weight="600" font-size="25" fill="#FFFFFF" fill-opacity=".55">{{ line.text }}</text>{% endfor %}
+{# Кольцо: тонкая градиентная дуга со свечением, внутри стеклянный диск с фото, логотипом клуба или знаком. #}
+<g transform="translate(940 340)">
+  <circle r="190" fill="none" stroke="#FFFFFF" stroke-opacity=".06"/>
+  <circle r="150" fill="none" stroke="#FFFFFF" stroke-opacity=".08" stroke-width="14"/>
+  <circle r="150" fill="none" stroke="url(#ringGrad)" stroke-width="14" stroke-linecap="round" stroke-dasharray="{{ arc }} 943" transform="rotate(-90)" filter="url(#glow)" opacity=".7"/>
+  <circle r="150" fill="none" stroke="url(#ringGrad)" stroke-width="14" stroke-linecap="round" stroke-dasharray="{{ arc }} 943" transform="rotate(-90)"/>
+  <g filter="url(#shadow)"><circle r="116" fill="url(#glass)" stroke="url(#glassEdge)" stroke-width="1.5"/></g>
+  {% if image %}
+  <clipPath id="ringClip"><circle r="112"/></clipPath>
+  <image href="{{ image }}" x="{{ image_off }}" y="{{ image_off }}" width="{{ image_size }}" height="{{ image_size }}" clip-path="url(#ringClip)" preserveAspectRatio="xMidYMid {{ image_fit }}"/>
+  {% else %}
+  {% include "cards/_logo.svg" with x="-52" y="-52" s="2.1667" %}
+  {% endif %}
+</g>
+{% include "cards/_footer.svg" %}
+</svg>

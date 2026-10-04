@@ -1,0 +1,8 @@
+{# Шапка: небольшой знак и слово DOPX слева, рубрика в стеклянной капсуле справа. #}
+{% include "cards/_logo.svg" with x=64 y=56 s="0.875" %}
+<text x="114" y="88" font-family="Inter Display" font-weight="700" font-size="25" fill="#FFFFFF" letter-spacing="-0.3">DOPX</text>
+{% if chip %}
+<rect x="{{ chip_x }}" y="56" width="{{ chip_w }}" height="44" rx="22" fill="url(#glass)" stroke="url(#glassEdge)"/>
+<circle cx="{{ chip_dot }}" cy="78" r="5" fill="{{ accent }}"/>
+<text x="{{ chip_text_x }}" y="85" font-family="Inter" font-weight="600" font-size="19" fill="#FFFFFF" fill-opacity=".9">{{ chip }}</text>
+{% endif %}

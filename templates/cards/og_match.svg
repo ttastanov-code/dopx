@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="{{ w }}" height="{{ h }}" viewBox="0 0 {{ w }} {{ h }}">
+{% include "cards/_bg.svg" %}
+{% include "cards/_header.svg" %}
+{% include "cards/_team.svg" with t=home %}
+{% include "cards/_team.svg" with t=away %}
+<text x="600" y="{{ score_y }}" text-anchor="middle" font-family="Inter Display" font-weight="800" font-size="{{ score_size }}" fill="url(#accentText)" letter-spacing="-6">{{ score }}</text>
+{% if hero %}
+<g filter="url(#shadow)"><rect x="290" y="420" width="620" height="92" rx="46" fill="url(#glass)" stroke="url(#glassEdge)" stroke-width="1.5"/></g>
+{% if hero.photo %}<clipPath id="heroClip"><circle cx="338" cy="466" r="34"/></clipPath>
+<circle cx="338" cy="466" r="35" fill="#FFFFFF" fill-opacity=".1"/>
+<image href="{{ hero.photo }}" x="304" y="432" width="68" height="68" clip-path="url(#heroClip)" preserveAspectRatio="xMidYMid slice"/>{% endif %}
+<text x="{{ hero.text_x }}" y="456" font-family="Inter" font-weight="600" font-size="17" fill="#FFFFFF" fill-opacity=".55">Лучший на поле</text>
+<text x="{{ hero.text_x }}" y="487" font-family="Inter Display" font-weight="700" font-size="27" fill="#FFFFFF" letter-spacing="-0.3">{{ hero.name }}</text>
+<rect x="772" y="438" width="120" height="56" rx="28" fill="url(#ringGrad)"/>
+<text x="832" y="476" text-anchor="middle" font-family="Inter Display" font-weight="800" font-size="27" fill="#FFFFFF" letter-spacing="-0.5">{{ hero.score }}</text>
+{% else %}
+<text x="600" y="474" text-anchor="middle" font-family="Inter" font-weight="600" font-size="24" fill="#FFFFFF" fill-opacity=".55">Оцените игроков матча на DOPX</text>
+{% endif %}
+{% include "cards/_footer.svg" %}
+</svg>

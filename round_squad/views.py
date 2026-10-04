@@ -116,10 +116,11 @@ def round_of_week(request, season_id=None, tour=None):
             'message': 'Пока нет ни одного завершённого тура с оценками. Загляните позже.',
         })
     round_xi = context['round_xi']
-    if round_xi.share_card_path:
+    card = round_xi.current_share_card()
+    if card:
         from django.core.files.storage import default_storage
 
-        context['og_image'] = request.build_absolute_uri(default_storage.url(round_xi.share_card_path))
+        context['og_image'] = request.build_absolute_uri(default_storage.url(card))
     context['share_text'] = (
         f"{round_xi.brand_title}: игрок тура {round_xi.player_of_round_name or '?'}. "
         f"Сборная тура и разбор матчей на DOPX"

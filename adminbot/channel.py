@@ -308,9 +308,15 @@ def review_post(match, sample: bool = False) -> ChannelPost | None:
     if facts.get("лучшие"):
         hero = facts["лучшие"][0]
         try:
+            from aggregates.models import PlayerMatchAggregate
+            from core.cards import player_photo
+
+            # Фото героя — не в facts: их читает ИИ, ссылка ему не нужна.
+            top = PlayerMatchAggregate.objects.filter(match=match).select_related("player").order_by("-performance_score").first()
             image = build_social_card(kind="player_of_round", eyebrow="ГЕРОЙ МАТЧА ПО МНЕНИЮ БОЛЕЛЬЩИКОВ",
                                       number_text=f"{hero['оценка']:.1f}", label_line1=hero["игрок"],
-                                      label_line2=f"{match.home_team.name} {match.home_score}:{match.away_score} {match.away_team.name}")
+                                      label_line2=f"{match.home_team.name} {match.home_score}:{match.away_score} {match.away_team.name}",
+                                      image_url=player_photo(top.player) if top and top.player.full_name == hero["игрок"] else "")
         except Exception:
             logger.warning("adminbot: карточка героя не собралась", exc_info=True)
 

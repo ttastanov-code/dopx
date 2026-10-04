@@ -1186,6 +1186,7 @@ NAMES_AI_PROVIDER = os.getenv('NAMES_AI_PROVIDER', 'gemini')
 if 'test' in sys.argv or 'pytest' in sys.modules:
     ANTHROPIC_API_KEY = ''  # тесты не тратят баланс API
     FAN_BOT_TOKEN = ''
+    FAN_BOT_APP_NAME = ''
     GEMINI_API_KEY = ''
 
 # Прод не стартует с настройками разработки: ошибка сразу при запуске, а не у пользователей.

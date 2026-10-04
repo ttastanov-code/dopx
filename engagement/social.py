@@ -57,6 +57,7 @@ def weekly_content(force: bool = False) -> dict | None:
             kind="player_of_round", eyebrow="ИГРОК ТУРА ПО МНЕНИЮ БОЛЕЛЬЩИКОВ",
             number_text=f"{rnd.player_of_round_score:.1f}", label_line1=rnd.player_of_round_name,
             label_line2=f"{rnd.player_of_round_team_name} · {rnd.tour}-й тур".strip(" ·"),
+            image_url=rnd.player_of_round_photo_url,
         )
         posts.append({
             "key": "player_of_round", "icon": "ti-star", "title": "Игрок тура по мнению болельщиков",
@@ -106,10 +107,11 @@ def weekly_content(force: bool = False) -> dict | None:
             ),
         })
 
-    if rnd.share_card_path and default_storage.exists(rnd.share_card_path):
+    card = rnd.current_share_card()
+    if card and default_storage.exists(card):
         posts.append({
             "key": "round_squad", "icon": "ti-shirt", "title": rnd.brand_title,
-            "image": default_storage.url(rnd.share_card_path),
+            "image": default_storage.url(card),
             "caption": f"🏆 {rnd.brand_title}: сборная тура по оценкам болельщиков.\n{HASHTAGS}",
         })
 
