@@ -226,6 +226,7 @@ BEAT_TASK_TITLES = {
     "streaks-at-risk": "Push: серия дней сгорит сегодня",
     "weekly-social-content": "Картинки и подписи для соцсетей по итогам тура",
     "sportmonks-update-live": "Счёт и события live-матчей из Sportmonks",
+    "sportmonks-refresh-schedule": "Календарь на 2 недели: время начала и переносы",
     "sportmonks-update-upcoming": "Составы и изменения ближайших матчей",
     "sportmonks-resync-recent-stats": "Уточнение статистики недавно завершённых матчей",
     "sportmonks-sync-season": "Сверка календаря сезона со Sportmonks",

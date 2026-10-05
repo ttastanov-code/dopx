@@ -114,7 +114,9 @@ def run_briefing(now=None) -> bool:
 
     cb, _esc, _header = _h()
     now = now or timezone.now()
-    first = (Match.objects.filter(start_time__gt=now, start_time__lte=now + BRIEF_BEFORE, status="scheduled")
+    from matches.models import with_known_kickoff
+
+    first = (with_known_kickoff(Match.objects.filter(start_time__gt=now, start_time__lte=now + BRIEF_BEFORE, status="scheduled"))
              .order_by("start_time").first())
     if not first:
         return False

@@ -7,95 +7,38 @@
 Классы корня совпадают со скелетоном в _match_header.html.
 {% endcomment %}
 {% load ui_extras %}
-<div id="prediction-widget-{{ match.id }}" class="mt-5 sm:mt-8 pt-5 sm:pt-8 border-t border-base-300">
-        <div class="flex items-center justify-between mb-2 sm:mb-3">
-            <h3 class="font-bold text-sm sm:text-base flex items-center gap-2">
-                <i class="ti ti-chart-bar text-primary"></i>
-                <span>Прогноз сообщества</span>
-            </h3>
-            {% if counts.total %}
-            <span class="text-[10px] sm:text-xs opacity-50">{{ counts.total }} {{ counts.total|ru_plural:"прогноз,прогноза,прогнозов" }}</span>
-            {% endif %}
+{% if not counts.total and not match.is_prediction_open and not match.prediction_window_not_yet_open %}
+{# Прогнозов не было и уже не будет — блок не показываем; id остаётся для HTMX. #}
+<div id="prediction-widget-{{ match.id }}" hidden></div>
+{% else %}
+<div id="prediction-widget-{{ match.id }}" class="mh__section">
+        <div class="pw__head">
+            <span class="pw__title">Прогноз болельщиков</span>
+            {% if counts.total %}<span class="pw__total">{{ counts.total }} {{ counts.total|ru_plural:"прогноз,прогноза,прогнозов" }}</span>{% endif %}
         </div>
 
-        <div class="grid grid-cols-3 gap-1.5 sm:gap-2">
-            {# Три блока явно — у каждого свои подписи. #}
-
-            {# П1: победа хозяев #}
+        {# П1 / Х / П2: кнопки, пока окно открыто; после — итог с отметкой исхода. #}
+        <div class="pw__options">
+            {% for code, label, pct in pw_options %}
             <button type="button"
                     {% if match.is_prediction_open %}
                     hx-post="{% url 'predictions:predict' match.id %}"
-                    hx-vals='{"choice": "1"}'
+                    hx-vals='{"choice": "{{ code }}"}'
                     hx-target="#prediction-widget-{{ match.id }}"
                     hx-swap="outerHTML"
-                    {% else %}
-                    disabled
-                    {% endif %}
-                    class="flex flex-col items-center gap-1 p-2 sm:p-3 rounded-xl border-2 transition-all
-                           {% if match.final_result == '1' %}border-success bg-success/10
-                           {% elif my_prediction.choice == '1' %}border-primary bg-primary/5
-                           {% else %}border-base-200{% endif %}
-                           {% if not match.is_prediction_open %}cursor-default{% endif %}">
-                <span class="text-[10px] sm:text-xs font-semibold opacity-70 truncate max-w-full">{{ match.home_team.name }}</span>
-                <span class="text-base sm:text-lg font-bold">{{ counts.home_pct }}%</span>
-                <div class="w-full h-1.5 bg-base-200 rounded-full overflow-hidden">
-                    <div class="h-full bg-primary rounded-full" style="width: {{ counts.home_pct }}%"></div>
-                </div>
-                {% if match.final_result == '1' %}
-                <i class="ti ti-check text-success text-xs"></i>
-                {% endif %}
+                    {% else %}disabled{% endif %}
+                    class="pw__opt{% if my_prediction.choice == code %} is-mine{% endif %}{% if match.final_result == code %} is-result{% endif %}">
+                <span class="pw__label">{{ label }}</span>
+                <span class="pw__pct">{{ pct }}%</span>
+                {% if match.final_result == code %}<i class="ti ti-circle-check pw__mark"></i>{% elif my_prediction.choice == code %}<i class="ti ti-check pw__mark"></i>{% endif %}
             </button>
-
-            {# Х: ничья #}
-            <button type="button"
-                    {% if match.is_prediction_open %}
-                    hx-post="{% url 'predictions:predict' match.id %}"
-                    hx-vals='{"choice": "X"}'
-                    hx-target="#prediction-widget-{{ match.id }}"
-                    hx-swap="outerHTML"
-                    {% else %}
-                    disabled
-                    {% endif %}
-                    class="flex flex-col items-center gap-1 p-2 sm:p-3 rounded-xl border-2 transition-all
-                           {% if match.final_result == 'X' %}border-success bg-success/10
-                           {% elif my_prediction.choice == 'X' %}border-primary bg-primary/5
-                           {% else %}border-base-200{% endif %}
-                           {% if not match.is_prediction_open %}cursor-default{% endif %}">
-                <span class="text-[10px] sm:text-xs font-semibold opacity-70">Ничья</span>
-                <span class="text-base sm:text-lg font-bold">{{ counts.draw_pct }}%</span>
-                <div class="w-full h-1.5 bg-base-200 rounded-full overflow-hidden">
-                    <div class="h-full bg-neutral rounded-full" style="width: {{ counts.draw_pct }}%"></div>
-                </div>
-                {% if match.final_result == 'X' %}
-                <i class="ti ti-check text-success text-xs"></i>
-                {% endif %}
-            </button>
-
-            {# П2: победа гостей #}
-            <button type="button"
-                    {% if match.is_prediction_open %}
-                    hx-post="{% url 'predictions:predict' match.id %}"
-                    hx-vals='{"choice": "2"}'
-                    hx-target="#prediction-widget-{{ match.id }}"
-                    hx-swap="outerHTML"
-                    {% else %}
-                    disabled
-                    {% endif %}
-                    class="flex flex-col items-center gap-1 p-2 sm:p-3 rounded-xl border-2 transition-all
-                           {% if match.final_result == '2' %}border-success bg-success/10
-                           {% elif my_prediction.choice == '2' %}border-primary bg-primary/5
-                           {% else %}border-base-200{% endif %}
-                           {% if not match.is_prediction_open %}cursor-default{% endif %}">
-                <span class="text-[10px] sm:text-xs font-semibold opacity-70 truncate max-w-full">{{ match.away_team.name }}</span>
-                <span class="text-base sm:text-lg font-bold">{{ counts.away_pct }}%</span>
-                <div class="w-full h-1.5 bg-base-200 rounded-full overflow-hidden">
-                    <div class="h-full bg-secondary rounded-full" style="width: {{ counts.away_pct }}%"></div>
-                </div>
-                {% if match.final_result == '2' %}
-                <i class="ti ti-check text-success text-xs"></i>
-                {% endif %}
-            </button>
+            {% endfor %}
         </div>
+        {% if counts.total %}
+        <div class="pw__bar" aria-hidden="true">
+            <span class="pw__bar-home" style="width: {{ counts.home_pct }}%"></span><span class="pw__bar-draw" style="width: {{ counts.draw_pct }}%"></span><span class="pw__bar-away" style="width: {{ counts.away_pct }}%"></span>
+        </div>
+        {% endif %}
 
         {% if match.final_result and my_prediction %}
         <div class="mt-2 sm:mt-3 text-[11px] sm:text-xs flex items-center gap-1.5 {% if my_prediction.choice == match.final_result %}text-success{% else %}text-error{% endif %}">
@@ -107,9 +50,12 @@
             {% endif %}
         </div>
         {% elif match.prediction_window_not_yet_open %}
+        {# Прогноз уже есть (окно сдвинулось после объявления времени) — подпись «откроются» не показываем. #}
+        {% if not my_prediction %}
         <p class="mt-2 sm:mt-3 text-[11px] sm:text-xs opacity-50 flex items-center gap-1.5">
             <i class="ti ti-hourglass-empty"></i> Прогнозы откроются {{ match.prediction_opens_at|date:"d.m в H:i" }}.
         </p>
+        {% endif %}
         {% elif not match.is_prediction_open and not match.final_result %}
         <p class="mt-2 sm:mt-3 text-[11px] sm:text-xs opacity-50 flex items-center gap-1.5">
             <i class="ti ti-lock"></i> Прогнозы закрыты: матч уже начался.
@@ -122,11 +68,13 @@
 
         {% if challenge_url %}
         {# Вызов другу: ссылка ведёт на матч с плашкой «спорим» и засчитывает приглашение. #}
-        <div class="dx-challenge">
-            <div class="dx-challenge__text"><i class="ti ti-swords"></i><span><b>Спорим, мой прогноз точнее?</b> Бросьте вызов другу.</span></div>
-            {% with text="Спорим, мой прогноз на "|add:match.home_team.name|add:" — "|add:match.away_team.name|add:" точнее? Сделай свой на DOPX" %}
-            {% include 'components/_share_sheet.html' with url=challenge_url text=text label="Бросить вызов" %}
-            {% endwith %}
+        {# Одна строка: на телефоне кнопка открывает системное меню (WhatsApp, Telegram…), на компьютере копирует ссылку. #}
+        <div class="pw__challenge">
+            <span class="pw__challenge-text"><i class="ti ti-swords"></i> Спорим, мой прогноз точнее?</span>
+            <button type="button" class="pw__challenge-btn" data-share data-share-url="{{ challenge_url }}"
+                    data-share-text="Спорим, мой прогноз на {{ match.home_team.name }} — {{ match.away_team.name }} точнее? Сделай свой на DOPX">
+                <i class="ti ti-send"></i><span data-share-label>Бросить вызов</span>
+            </button>
         </div>
         {% endif %}
 
@@ -140,3 +88,4 @@
         </a>
         {% endif %}
 </div>
+{% endif %}

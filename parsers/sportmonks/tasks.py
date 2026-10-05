@@ -160,7 +160,7 @@ def _sportmonks_update_live_impl(self):
                 away_score = score_obj.get("goals")
 
         existing = Match.objects.filter(sportmonks_id=str(sm_id)).only(
-            "id", "status", "home_score", "away_score"
+            "id", "status", "home_score", "away_score", "start_time"
         ).first()
 
         changed = (
@@ -168,6 +168,7 @@ def _sportmonks_update_live_impl(self):
             or existing.status != mapped_status
             or existing.home_score != home_score
             or existing.away_score != away_score
+            or _kickoff_changed(existing, fx)  # перенос даты или объявленное время
         )
 
         # Сравниваем подпись событий (id, developer_name): ловим новые карточки/замены,
@@ -305,7 +306,10 @@ def sportmonks_sync_squads(self):
     teams = [ts.team for ts in TeamSeason.objects.filter(season=season).select_related("team")
              if ts.team.sportmonks_id]
     applied = errors = 0
+    from teams.colors import refresh_brand_color
+
     for team in teams:
+        refresh_brand_color(team)  # только если цвета ещё нет (новый клуб или сменили герб)
         try:
             ok, confirmed, reason = sync_current_squad(client, team)
         except Exception:
@@ -352,6 +356,44 @@ def sportmonks_update_upcoming(self):
 
     if synced:
         logger.info("Sportmonks: sportmonks_update_upcoming — подтянуты составы для %d матчей", synced)
+
+
+SCHEDULE_HORIZON_DAYS = 14
+
+
+def _kickoff_changed(match, fx: dict) -> bool:
+    start = importers._parse_starting_at(fx.get("starting_at"))
+    return bool(start) and match.start_time != start
+
+
+@shared_task(bind=True, max_retries=1)
+def sportmonks_refresh_schedule(self):
+    """Календарь на SCHEDULE_HORIZON_DAYS вперёд, одним запросом: объявленное время и переносы.
+    Тяжёлый синк — только по матчам, у которых время изменилось."""
+    if not _sync_enabled():
+        return
+    league, season = _get_league_and_season()
+    if league is None or season is None:
+        return
+    today = timezone.localdate()
+    client = SportmonksClient()
+    try:
+        fixtures = client.get_fixtures_between(
+            today.isoformat(), (today + timedelta(days=SCHEDULE_HORIZON_DAYS)).isoformat())
+    except SportmonksAPIError as exc:
+        logger.error("Sportmonks: sportmonks_refresh_schedule — ошибка календаря: %s", exc)
+        return
+    stored = {m.sportmonks_id: m for m in Match.objects.filter(
+        sportmonks_id__in=[str(fx["id"]) for fx in fixtures]).only("id", "sportmonks_id", "start_time")}
+    updated = 0
+    for fx in fixtures:
+        match = stored.get(str(fx["id"]))
+        if match is None or _kickoff_changed(match, fx):
+            if _heavy_sync_fixture(client, league, season, fx["id"]):
+                updated += 1
+    if updated:
+        logger.info("Sportmonks: sportmonks_refresh_schedule — обновлено время/дата у %d матчей", updated)
+    return updated
 
 
 @shared_task(bind=True, max_retries=1)

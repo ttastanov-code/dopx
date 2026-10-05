@@ -890,3 +890,32 @@ class CurrentSquadTests(TestCase):
                              match_start_time=timezone.now() + timedelta(minutes=5))
         moved.refresh_from_db()
         self.assertEqual(moved.team, self.old)
+
+
+class RefreshScheduleTests(TestCase):
+    """Объявленное время и переносы подтягиваются из календаря на две недели вперёд."""
+
+    def test_changed_kickoff_resynced(self):
+        from datetime import datetime, timezone as dt_timezone
+        from unittest import mock
+
+        from evaluations.tests import _make_match
+        from parsers.sportmonks import tasks
+
+        match = _make_match(status="scheduled")
+        match.sportmonks_id = "555"
+        match.start_time = datetime(2026, 10, 10, 0, 0, tzinfo=dt_timezone.utc)
+        match.save()
+        fixtures = [{"id": 555, "starting_at": "2026-10-10 14:00:00"}]
+        with mock.patch.object(tasks, "_sync_enabled", return_value=True), \
+                mock.patch.object(tasks, "_get_league_and_season", return_value=(match.league, match.season)), \
+                mock.patch.object(tasks, "SportmonksClient") as client, \
+                mock.patch.object(tasks, "_heavy_sync_fixture", return_value=True) as heavy:
+            client.return_value.get_fixtures_between.return_value = fixtures
+            self.assertEqual(tasks.sportmonks_refresh_schedule.run(), 1)
+            heavy.assert_called_once()
+            match.start_time = datetime(2026, 10, 10, 14, 0, tzinfo=dt_timezone.utc)
+            match.save()
+            heavy.reset_mock()
+            self.assertEqual(tasks.sportmonks_refresh_schedule.run(), 0)
+            heavy.assert_not_called()

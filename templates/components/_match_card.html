@@ -24,7 +24,7 @@ data-background-poll — без глобального лоадера.
           {% elif match.status == 'postponed' %}mrow--postponed
           {% elif match.status == 'cancelled' %}mrow--cancelled
           {% else %}mrow--scheduled{% endif %}"
-   {% if match.status == 'scheduled' %}x-data="matchCountdown" data-kickoff="{{ match.start_time|date:'c' }}"{% endif %}
+   {% if match.status == 'scheduled' and match.kickoff_known %}x-data="matchCountdown" data-kickoff="{{ match.start_time|date:'c' }}"{% endif %}
 {% with poll=match.live_poll_seconds %}{% if poll %}
      data-background-poll
      hx-get="{% url 'matches:card' match.id %}"
@@ -62,7 +62,11 @@ data-background-poll — без глобального лоадера.
             <i class="ti ti-ban"></i> Отменён
             {% else %}
             {# Обратный отсчёт; дата внутри — fallback без JS. #}
+            {% if match.kickoff_known %}
             <i class="ti ti-clock"></i> <span x-text="countdownText">{{ match.start_time|date:"d.m" }} · {{ match.start_time|time:"H:i" }}</span>
+            {% else %}
+            <i class="ti ti-calendar"></i> {{ match.start_time|date:"d.m" }} · время уточняется
+            {% endif %}
             {% endif %}
         </span>
     </div>

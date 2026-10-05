@@ -141,6 +141,14 @@ class Match(BaseModel):
         return f"{home} : {away}"
 
     @property
+    def kickoff_known(self) -> bool:
+        """Время начала объявлено. Пока его нет, поставщик ставит полночь UTC (05:00 по Алматы) — её не показываем."""
+        from datetime import timezone as dt_timezone
+
+        utc = self.start_time.astimezone(dt_timezone.utc)
+        return not (utc.hour == 0 and utc.minute == 0)
+
+    @property
     def is_derby(self) -> bool:
         """Матч между соперниками (Team.rivals). Нужен prefetch home_team__rivals."""
         if not self.home_team_id or not self.away_team_id:
@@ -350,3 +358,13 @@ class MatchPlayerStatistics(BaseModel):
 
     def __str__(self):
         return f"{self.player} — статистика ({self.match})"
+
+def with_known_kickoff(qs):
+    """Только матчи с объявленным временем (не полночь UTC — заглушка поставщика): для напоминаний «за час до матча»."""
+    from datetime import timezone as dt_timezone
+
+    from django.db.models.functions import ExtractHour, ExtractMinute
+
+    return (qs.annotate(_ko_h=ExtractHour("start_time", tzinfo=dt_timezone.utc),
+                        _ko_m=ExtractMinute("start_time", tzinfo=dt_timezone.utc))
+            .exclude(_ko_h=0, _ko_m=0))

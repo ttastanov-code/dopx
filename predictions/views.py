@@ -25,7 +25,7 @@ def _widget_context(request, match, just_predicted: bool = False):
     my_prediction = user_prediction(request.user, match)
     challenge_url = ''
     next_match, left = None, 0
-    if my_prediction and match.is_prediction_open:
+    if my_prediction and match.is_prediction_open():
         from django.urls import reverse
 
         from engagement.referrals import code_for
@@ -37,9 +37,13 @@ def _widget_context(request, match, just_predicted: bool = False):
         # Сделал прогноз — сразу следующий матч без прогноза.
         rest = unpredicted_matches(request.user)
         next_match, left = rest.first(), rest.count()
+    counts = prediction_counts(match)
     return {
         'match': match,
-        'counts': prediction_counts(match),
+        'counts': counts,
+        # П1 / Х / П2 для разметки виджета одним циклом.
+        'pw_options': [('1', match.home_team.name, counts['home_pct']), ('X', 'Ничья', counts['draw_pct']),
+                       ('2', match.away_team.name, counts['away_pct'])],
         'my_prediction': my_prediction,
         'challenge_url': challenge_url,
         'next_match': next_match,

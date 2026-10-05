@@ -1,0 +1,23 @@
+{# Команда в табло шапки: герб, название, форма, авторы голов. side — home/away (выравнивание). #}
+<div class="mh__team mh__team--{{ side }}">
+    <a href="{% url 'teams:detail' team.id %}" class="mh__team-link">
+        <span class="mh__medal">
+            {% if team.logo_display %}
+            <img src="{{ team.logo_display }}" alt="" class="mh__crest" width="64" height="64" decoding="async">
+            {% else %}
+            <span class="mh__crest mh__crest--empty">{{ team.name|first|upper }}</span>
+            {% endif %}
+        </span>
+        <span class="mh__name">{{ team.name }}</span>
+    </a>
+    {% if form %}
+    <div class="mh__form" aria-label="Форма: последние матчи">
+        {% for item in form %}<span class="mh__form-dot mh__form-dot--{{ item.result|lower }}">{% if item.result == 'W' %}В{% elif item.result == 'L' %}П{% else %}Н{% endif %}</span>{% endfor %}
+    </div>
+    {% endif %}
+    {% if goals %}
+    <ul class="mh__goals">
+        {% for g in goals %}<li>{{ g }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+</div>

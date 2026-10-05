@@ -360,7 +360,7 @@
               <span class="badge badge-error badge-xs sm:badge-sm animate-pulse">LIVE</span>
               <span class="font-bold font-mono text-lg">{% render_score match.home_score match.away_score %}</span>
               {% else %}
-              <span class="text-sm font-mono opacity-70">{{ match.start_time|time:"H:i" }}</span>
+              <span class="text-sm font-mono opacity-70">{% if match.kickoff_known %}{{ match.start_time|time:"H:i" }}{% else %}—:—{% endif %}</span>
               <span class="badge badge-ghost badge-xs sm:badge-sm"><i class="ti ti-clock"></i></span>
               {% endif %}
             </div>
@@ -394,7 +394,7 @@
               </span>
             </div>
             <div class="flex items-center justify-between sm:justify-end gap-2 sm:gap-3 w-full sm:w-auto mt-1 sm:mt-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-base-300/50">
-              <span class="text-sm font-mono opacity-70">{{ match.start_time|time:"H:i" }}</span>
+              <span class="text-sm font-mono opacity-70">{% if match.kickoff_known %}{{ match.start_time|time:"H:i" }}{% else %}—:—{% endif %}</span>
               <span class="badge badge-ghost badge-xs sm:badge-sm"><i class="ti ti-clock"></i></span>
             </div>
           </a>

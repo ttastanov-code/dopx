@@ -972,6 +972,11 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'core.tasks.data_integrity_audit',
         'schedule': crontab(hour=5, minute=40),
     },
+    # === Календарь на 2 недели: объявленное время начала и переносы (дешёвый запрос раз в 30 мин). ===
+    'sportmonks-refresh-schedule': {
+        'task': 'parsers.sportmonks.tasks.sportmonks_refresh_schedule',
+        'schedule': crontab(minute='5,35'),
+    },
     'sportmonks-update-upcoming': {
         'task': 'parsers.sportmonks.tasks.sportmonks_update_upcoming',
         'schedule': crontab(minute='*/30'),

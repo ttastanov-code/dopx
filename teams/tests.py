@@ -529,3 +529,31 @@ class GetPreMatchStandingsSnapshotTests(TestCase):
         self.assertEqual(snapshot['away']['points'], 3)
         self.assertEqual(snapshot['away']['goal_diff'], 1)
         self.assertEqual(snapshot['away']['position'], 2)
+
+
+class BrandColorTests(TestCase):
+    def test_dominant_color_skips_white_and_black(self):
+        import io
+
+        from PIL import Image
+
+        from teams.colors import dominant_color
+
+        img = Image.new("RGB", (40, 40), "white")
+        for x in range(10, 30):
+            for y in range(10, 30):
+                img.putpixel((x, y), (220, 20, 30))
+        img.putpixel((0, 0), (0, 0, 0))
+        buf = io.BytesIO()
+        img.save(buf, "PNG")
+        color = dominant_color(buf.getvalue())
+        self.assertTrue(color.startswith("#d") or color.startswith("#e"), color)
+
+    def test_logo_change_resets_color(self):
+        from teams.models import Team
+
+        team = Team.objects.create(name="Клуб", logo_url="https://x/1.png", brand_color="#112233")
+        team.logo_url = "https://x/2.png"
+        team.save()
+        team.refresh_from_db()
+        self.assertEqual(team.brand_color, "")

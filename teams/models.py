@@ -77,6 +77,17 @@ class Team(BaseModel):
     def __str__(self):
         return self.name
     
+    # Фирменный цвет из герба (teams/colors.py) — подсветка шапки матча.
+    brand_color = models.CharField(_('Цвет клуба'), max_length=7, blank=True, default='')
+
+    def save(self, *args, **kwargs):
+        # Сменили герб — цвет клуба пересчитается при следующей синхронизации составов.
+        if self.pk:
+            old = type(self).objects.filter(pk=self.pk).values("logo", "logo_url").first()
+            if old and (old["logo"] != (self.logo.name if self.logo else "") or old["logo_url"] != self.logo_url):
+                self.brand_color = ""
+        super().save(*args, **kwargs)
+
     @property
     def logo_display(self):
         """Логотип: загруженный файл (logo) в приоритете над logo_url из синка."""

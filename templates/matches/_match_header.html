@@ -1,15 +1,10 @@
 {% load match_extras %}
 {% comment %}
-Шапка матча (счёт/статус/CTA). hx-атрибуты есть только при status=live —
-после финального свистка поллинг прекращается сам.
+Шапка матча — компактное табло: гербы, счёт, авторы голов, мета, прогноз и действия. Стили — .mh-* в css/match-detail.css.
+hx-атрибуты есть только при live (или перед стартом) — после финального свистка поллинг прекращается сам.
 {% endcomment %}
 <div id="match-header"
-     class="md-hero mb-4 sm:mb-6
-            {% if match.status == 'live' %}md-hero--live
-            {% elif match.status == 'finished' %}md-hero--finished
-            {% elif match.status == 'postponed' %}md-hero--postponed
-            {% elif match.status == 'cancelled' %}md-hero--cancelled
-            {% else %}md-hero--scheduled{% endif %}"
+     class="mh mb-4 sm:mb-6 mh--{{ match.status }}"
 {% with poll=match.live_poll_seconds %}{% if poll %}
      data-background-poll
      hx-get="{% url 'matches:header' match.id %}"
@@ -22,265 +17,120 @@
      hx-swap="outerHTML"
      data-wake-at="{{ match.poll_wake_at|date:'c' }}"
      {% endif %}{% endwith %}>
-    {# Одно едва заметное световое пятно. #}
-    <div class="md-hero__glow md-hero__glow--a"></div>
 
-    <div class="md-hero__content p-4 sm:p-8">
-        {# Лига и статус #}
-        <div class="flex items-center justify-between mb-5 sm:mb-8 flex-wrap gap-2">
-            <div class="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-medium opacity-70 truncate min-w-0">
-                <i class="ti ti-trophy flex-shrink-0"></i>
-                <span class="truncate">{{ match.league.name }}</span>
-                <span class="hidden sm:inline">·</span>
-                <span class="hidden sm:inline">Сезон {{ match.season.year }}</span>
-                {% if match.tour %}
-                <span class="hidden sm:inline">·</span>
-                <span class="flex-shrink-0">{{ match.tour }}-й тур</span>
-                {% endif %}
-                {% if match.is_derby %}
-                <span class="md-hero__pill" style="--mh-accent: var(--color-error);">
-                    <i class="ti ti-flame"></i> Дерби
-                </span>
-                {% endif %}
-                {# Бейдж переноса (was_rescheduled) — только у старых матчей, если статус не 'postponed'. #}
-                {% if match.was_rescheduled and match.status != 'postponed' %}
-                <span class="md-hero__pill" style="--mh-accent: var(--color-warning);"
-                      title="Дата матча перенесена относительно остальных матчей этого тура">
-                    <i class="ti ti-calendar-exclamation"></i> Перенос
-                </span>
-                {% endif %}
-            </div>
-            <span class="md-hero__pill">
-                {% if match.status == 'scheduled' %}
-                <i class="ti ti-calendar"></i> Запланирован
-                {% elif match.status == 'live' %}
-                <span class="md-hero__live-dot"></span> LIVE
-                {% elif match.status == 'postponed' %}
-                <i class="ti ti-calendar-off"></i> Перенесён
-                {% elif match.status == 'cancelled' %}
-                <i class="ti ti-ban"></i> Отменён
-                {% else %}
-                <i class="ti ti-check"></i> Завершён
-                {% endif %}
-            </span>
+    {# Сцена: тёмная полоса с подсветкой в цветах клубов (Team.brand_color, teams/colors.py). #}
+    <div class="mh__stage{% if animate_header %} mh--enter{% endif %}"
+         style="--home: {{ match.home_team.brand_color|default:'#4f46e5' }}; --away: {{ match.away_team.brand_color|default:'#db2777' }};">
+    <div class="mh__top">
+        <div class="mh__league">
+            <span class="truncate">{{ match.league.name }}</span>
+            {% if match.tour %}<span class="mh__dot">·</span><span class="whitespace-nowrap">{{ match.tour }}-й тур</span>{% endif %}
+            {% if match.is_derby %}<span class="mh__tag mh__tag--derby"><i class="ti ti-flame"></i>Дерби</span>{% endif %}
+            {% if match.was_rescheduled and match.status != 'postponed' %}<span class="mh__tag" title="Дата перенесена относительно остальных матчей тура">Перенос</span>{% endif %}
+        </div>
+        <span class="mh__status">
+            {% if match.status == 'live' %}<span class="mh__live-dot"></span>Live
+            {% elif match.status == 'finished' %}Завершён
+            {% elif match.status == 'postponed' %}Перенесён
+            {% elif match.status == 'cancelled' %}Отменён
+            {% else %}{{ match.start_time|date:"j E" }}{% endif %}
+        </span>
+    </div>
+
+
+    {# Табло: хозяева — счёт — гости #}
+    <div class="mh__board">
+        {% include "matches/_match_header_team.html" with side="home" team=match.home_team form=home_team_form goals=header_goals.home %}
+
+        <div class="mh__center">
+            {% if match.status == 'finished' or match.status == 'live' %}
+            <div class="mh__score">{{ match.home_score|default:0 }}<span class="mh__colon">:</span>{{ match.away_score|default:0 }}</div>
+            {% if match.status == 'live' %}
+            <div class="mh__sub mh__sub--live">в эфире</div>
+            {% else %}
+            <div class="mh__sub">{{ match.start_time|date:"j E, H:i" }}</div>
+            {% endif %}
+            {% elif match.status == 'scheduled' and match.kickoff_known %}
+            <div class="mh__time">{{ match.start_time|time:"H:i" }}</div>
+            <div class="mh__sub" data-countdown="{{ match.start_time|date:'c' }}" data-countdown-prefix="через " data-countdown-done="скоро начало">через {{ match.start_time|timeuntil }}</div>
+            {% elif match.status == 'scheduled' %}
+            <div class="mh__time mh__time--date">{{ match.start_time|date:"j M" }}</div>
+            <div class="mh__sub">время уточняется</div>
+            {% else %}
+            <div class="mh__time mh__time--muted">—</div>
+            <div class="mh__sub">{% if match.status == 'postponed' %}дата уточняется{% else %}не состоится{% endif %}</div>
+            {% endif %}
         </div>
 
-        {% if match.status == 'postponed' %}
-        <div class="alert alert-warning text-sm mb-5 sm:mb-8 rounded-xl">
-            <i class="ti ti-calendar-off"></i>
-            <span>Дата и время проведения матча перенесены. Новая дата появится здесь, как только КФФ её объявит.</span>
-        </div>
-        {% elif match.status == 'cancelled' %}
-        <div class="alert text-sm mb-5 sm:mb-8 rounded-xl">
-            <i class="ti ti-ban"></i>
-            <span>Матч отменён.</span>
-        </div>
-        {% elif match.was_rescheduled and match.tour %}
-        <div class="alert alert-warning text-sm mb-5 sm:mb-8 rounded-xl">
-            <i class="ti ti-calendar-exclamation"></i>
-            <span>Перенесённый матч {{ match.tour }}-го тура. Играется отдельно от остальных матчей тура.</span>
-        </div>
+        {% include "matches/_match_header_team.html" with side="away" team=match.away_team form=away_team_form goals=header_goals.away %}
+    </div>
+    </div>{# /mh__stage #}
+
+    <div class="mh__body">
+    {% if match.status == 'postponed' %}
+    <p class="mh__note"><i class="ti ti-calendar-off"></i> Матч перенесён. Новая дата появится здесь, как только её объявят.</p>
+    {% elif match.status == 'cancelled' %}
+    <p class="mh__note"><i class="ti ti-ban"></i> Матч отменён.</p>
+    {% elif match.was_rescheduled and match.tour %}
+    <p class="mh__note"><i class="ti ti-calendar-exclamation"></i> Перенесённый матч {{ match.tour }}-го тура, играется отдельно от остальных.</p>
+    {% endif %}
+
+    {# Тренеры и судья — одной строкой #}
+    {% if match.home_coach or match.away_coach or match.referee %}
+    <div class="mh__meta">
+        {% if match.home_coach or match.away_coach %}
+        <span><i class="ti ti-clipboard"></i> {{ match.home_coach|default:"—" }} · {{ match.away_coach|default:"—" }}</span>
         {% endif %}
-
-        {# Команды и счёт #}
-        <div class="flex flex-col md:flex-row items-center justify-between gap-4 sm:gap-6">
-            {# Домашняя команда #}
-            <div class="flex flex-col items-center flex-1 text-center md:text-left w-full min-w-0">
-                {# Герб + название — ссылка на клуб; тренер отдельно. #}
-                <a href="{% url 'teams:detail' match.home_team.id %}" class="group flex flex-col items-center w-full min-w-0">
-                    {% if match.home_team.logo_url %}
-                    <img src="{{ match.home_team.logo_url }}" alt="{{ match.home_team.name }}" class="md-hero__crest w-20 h-20 md:w-28 md:h-28 object-contain mb-2 md:mb-3 transition-transform group-hover:scale-105">
-                    {% else %}
-                    <div class="md-hero__crest w-20 h-20 md:w-28 md:h-28 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-2xl md:text-3xl mb-2 md:mb-3 transition-transform group-hover:scale-105">
-                        {{ match.home_team.name|first|upper }}
-                    </div>
-                    {% endif %}
-                    <h2 class="text-lg md:text-2xl font-extrabold truncate w-full group-hover:text-primary">{{ match.home_team.name }}</h2>
-                </a>
-                {% if match.home_coach %}
-                <p class="text-xs md:text-sm opacity-55 truncate w-full mt-0.5">Тренер: {{ match.home_coach }}</p>
-                {% endif %}
-                {% if home_team_form %}
-                {# Форма перед матчем — только на детальной странице. #}
-                <div class="flex items-center gap-1 mt-1.5">
-                    {% for item in home_team_form %}
-                    {# leading-none — буква по центру круга. #}
-                    <span class="w-4 h-4 md:w-5 md:h-5 rounded-full flex items-center justify-center leading-none text-[9px] md:text-[10px] font-bold text-white
-                                 {% if item.result == 'W' %}bg-success{% elif item.result == 'L' %}bg-error{% else %}bg-base-content/30{% endif %}">{{ item.result }}</span>
-                    {% endfor %}
-                </div>
-                {% endif %}
-            </div>
-
-            {# Счёт #}
-            {# Порядок DOM: хозяева — счёт — гости, без order-классов. #}
-            <div class="text-center w-full md:w-auto mb-1 md:mb-0 shrink-0 px-2">
-                {% if match.status == 'finished' %}
-                <div class="md-hero__score text-5xl md:text-7xl mb-2" data-live-pop>
-                    {% render_score match.home_score match.away_score %}
-                </div>
-                <div class="text-xs md:text-sm opacity-55 flex items-center justify-center gap-1">
-                    <i class="ti ti-clock flex-shrink-0"></i>
-                    <span class="truncate">{{ match.start_time|date:"d.m.Y" }} в {{ match.start_time|time:"H:i" }}</span>
-                </div>
-                {% elif match.status == 'live' %}
-                <div class="md-hero__score text-5xl md:text-7xl mb-2" data-live-pop>
-                    {% render_score match.home_score match.away_score %}
-                </div>
-                <div class="text-sm md:text-base font-bold text-error flex items-center justify-center gap-1.5">
-                    <span class="md-hero__live-dot"></span> в прямом эфире
-                </div>
-                {% elif match.status == 'postponed' %}
-                <div class="text-2xl md:text-3xl font-mono mb-2 opacity-40">VS</div>
-                <div class="text-sm opacity-55 line-through">
-                    <i class="ti ti-calendar flex-shrink-0"></i>
-                    <span class="truncate">{{ match.start_time|date:"d.m.Y H:i" }}</span>
-                </div>
-                <div class="text-xs md:text-sm text-warning font-semibold mt-1">дата уточняется</div>
-                {% elif match.status == 'cancelled' %}
-                <div class="text-2xl md:text-3xl font-mono mb-2 opacity-30">—</div>
-                <div class="text-xs md:text-sm opacity-55">не состоится</div>
-                {% else %}
-                <div class="text-2xl md:text-3xl font-mono mb-2 opacity-40">VS</div>
-                <div class="text-sm font-semibold">
-                    <i class="ti ti-calendar flex-shrink-0"></i>
-                    <span class="truncate">{{ match.start_time|date:"d.m.Y" }}</span>
-                </div>
-                <div class="text-xs md:text-sm opacity-55">
-                    {{ match.start_time|time:"H:i" }}
-                </div>
-                {% endif %}
-            </div>
-
-            {# Гостевая команда #}
-            <div class="flex flex-col items-center flex-1 text-center md:text-right w-full min-w-0">
-                <a href="{% url 'teams:detail' match.away_team.id %}" class="group flex flex-col items-center w-full min-w-0">
-                    {% if match.away_team.logo_url %}
-                    <img src="{{ match.away_team.logo_url }}" alt="{{ match.away_team.name }}" class="md-hero__crest w-20 h-20 md:w-28 md:h-28 object-contain mb-2 md:mb-3 transition-transform group-hover:scale-105">
-                    {% else %}
-                    <div class="md-hero__crest w-20 h-20 md:w-28 md:h-28 rounded-full bg-secondary/10 flex items-center justify-center font-bold text-secondary text-2xl md:text-3xl mb-2 md:mb-3 transition-transform group-hover:scale-105">
-                        {{ match.away_team.name|first|upper }}
-                    </div>
-                    {% endif %}
-                    <h2 class="text-lg md:text-2xl font-extrabold truncate w-full group-hover:text-secondary">{{ match.away_team.name }}</h2>
-                </a>
-                {% if match.away_coach %}
-                <p class="text-xs md:text-sm opacity-55 truncate w-full mt-0.5">Тренер: {{ match.away_coach }}</p>
-                {% endif %}
-                {% if away_team_form %}
-                <div class="flex items-center gap-1 mt-1.5 md:justify-end">
-                    {% for item in away_team_form %}
-                    {# leading-none — буква по центру круга. #}
-                    <span class="w-4 h-4 md:w-5 md:h-5 rounded-full flex items-center justify-center leading-none text-[9px] md:text-[10px] font-bold text-white
-                                 {% if item.result == 'W' %}bg-success{% elif item.result == 'L' %}bg-error{% else %}bg-base-content/30{% endif %}">{{ item.result }}</span>
-                    {% endfor %}
-                </div>
-                {% endif %}
-            </div>
-        </div>
-
-        {% if match.status != 'cancelled' %}
-        {# Прогноз 1X2 — ленивая HTMX-подгрузка, кроме отменённых матчей. #}
-        {# Блок с разделителем, не отдельная карточка. #}
-        {# hx-preserve: при фоновом обновлении шапки до старта уже загруженный виджет не перерисовывается. #}
-        <div id="prediction-widget-{{ match.id }}"
-             class="mt-5 sm:mt-8 pt-5 sm:pt-8 border-t border-base-300 animate-pulse"
-             data-background-poll
-             {% if match.status == 'scheduled' %}hx-preserve="true"{% endif %}
-             hx-get="{% url 'predictions:widget' match.id %}"
-             hx-trigger="load"
-             hx-swap="outerHTML">
-            <div class="h-4 w-32 bg-base-200 rounded mb-3"></div>
-            <div class="h-16 bg-base-200 rounded"></div>
-        </div>
-        {% endif %}
-
-        {# Судья — если есть. #}
         {% if match.referee %}
-        <div class="flex flex-wrap justify-center gap-2 sm:gap-6 mt-5 sm:mt-8 pt-4 sm:pt-6 border-t border-base-300/70 text-xs sm:text-sm">
-            <div class="flex items-center gap-1 md:gap-2 opacity-60">
-                <i class="ti ti-gavel flex-shrink-0"></i>
-                <span class="truncate">Судья: {{ match.referee }}</span>
-            </div>
-        </div>
+        <span><i class="ti ti-gavel"></i> {{ match.referee }}</span>
         {% endif %}
-
-        {# Судейская бригада (referee_crew), свёрнута по умолчанию. #}
         {% if match.referee_crew.assistant_1 or match.referee_crew.assistant_2 or match.referee_crew.fourth_official %}
-        <details class="mt-2 text-xs sm:text-sm text-center opacity-60">
-            <summary class="cursor-pointer select-none hover:opacity-100 transition-opacity inline-flex items-center gap-1">
-                <i class="ti ti-users-group"></i> Бригада судей
-            </summary>
-            <div class="mt-2 flex flex-col items-center gap-1">
-                {% if match.referee_crew.assistant_1 %}
-                <span>1-й ассистент: {{ match.referee_crew.assistant_1 }}</span>
-                {% endif %}
-                {% if match.referee_crew.assistant_2 %}
-                <span>2-й ассистент: {{ match.referee_crew.assistant_2 }}</span>
-                {% endif %}
-                {% if match.referee_crew.fourth_official %}
-                <span>4-й судья: {{ match.referee_crew.fourth_official }}</span>
-                {% endif %}
-            </div>
+        <details class="mh__crew">
+            <summary>бригада</summary>
+            <span>{% if match.referee_crew.assistant_1 %}Ассистенты: {{ match.referee_crew.assistant_1 }}{% if match.referee_crew.assistant_2 %}, {{ match.referee_crew.assistant_2 }}{% endif %}.{% endif %}
+                {% if match.referee_crew.fourth_official %} 4-й судья: {{ match.referee_crew.fourth_official }}.{% endif %}</span>
         </details>
         {% endif %}
-
-        {# Кнопки действий #}
-        <div class="flex flex-wrap justify-center gap-2 sm:gap-4 mt-4 sm:mt-6">
-            {% if match.status == 'finished' %}
-                {% if voting_open and not user_has_evaluated and user_has_pulse_reactions %}
-                <div class="w-full sm:w-auto flex flex-col items-center gap-1.5">
-                    <a href="{% url 'evaluations:context' match.id %}" class="btn btn-primary btn-sm md:btn-lg w-full sm:w-auto">
-                        <i class="ti ti-flame"></i>
-                        Вы уже реагировали в live. Завершите оценку
-                    </a>
-                    <span class="text-xs opacity-60">Вы тапали реакции во время матча. Полная оценка займёт ~2 минуты</span>
-                </div>
-                {% elif voting_open and not user_has_evaluated %}
-                <a href="{% url 'evaluations:context' match.id %}" class="btn btn-primary btn-sm md:btn-lg w-full sm:w-auto">
-                    <i class="ti ti-dopx-rate"></i>
-                    Оценить матч
-                </a>
-                {% elif user_has_evaluated %}
-                <div class="alert alert-success alert-sm py-2 w-full sm:w-auto rounded-xl">
-                    <i class="ti ti-check-circle"></i>
-                    <span class="text-sm">Вы уже оценили этот матч</span>
-                </div>
-                {% else %}
-                <div class="alert alert-ghost alert-sm py-2 w-full sm:w-auto rounded-xl">
-                    <i class="ti ti-clock-off"></i>
-                    <span class="text-sm">Голосование закрыто</span>
-                </div>
-                {% endif %}
-            {% endif %}
-            {# «Поделиться» — единственное secondary-действие в основном ряду. #}
-            <button class="btn btn-ghost btn-sm w-full sm:w-auto"
-                    onclick="if(window.dopxTrack){dopxTrack('share_clicked', {channel: 'native', match_id: '{{ match.id }}'})}; navigator.share({title: '{{ match.home_team }} vs {{ match.away_team }}', url: window.location.href})">
-                <i class="ti ti-share"></i>
-                <span class="hidden sm:inline">Поделиться</span>
-            </button>
-        </div>
-
-        {# Telegram/WhatsApp — второй уровень (btn-xs). #}
-        <div class="flex flex-wrap justify-center gap-2 mt-2.5">
-            <a href="https://t.me/share/url?url={{ request.scheme }}%3A%2F%2F{{ request.get_host|urlencode }}{{ request.path|urlencode }}&text={{ share_text|urlencode }}"
-               target="_blank" rel="noopener" class="btn btn-xs btn-outline"
-               onclick="if(window.dopxTrack){dopxTrack('share_clicked', {channel: 'telegram', match_id: '{{ match.id }}'})}">
-                <i class="ti ti-brand-telegram"></i> Telegram
-            </a>
-            <a href="https://wa.me/?text={{ share_text|urlencode }}%20{{ request.scheme }}%3A%2F%2F{{ request.get_host|urlencode }}{{ request.path|urlencode }}"
-               target="_blank" rel="noopener" class="btn btn-xs btn-outline"
-               onclick="if(window.dopxTrack){dopxTrack('share_clicked', {channel: 'whatsapp', match_id: '{{ match.id }}'})}">
-                <i class="ti ti-brand-whatsapp"></i> WhatsApp
-            </a>
-        </div>
-
-        {# «Сообщить об ошибке в данных» — на core:contacts с категорией и id матча. #}
-        <div class="text-center mt-3">
-            <a href="{% url 'core:contacts' %}?category=data_error&match={{ match.id }}"
-               class="text-xs opacity-45 hover:opacity-80 transition-opacity inline-flex items-center gap-1">
-                <i class="ti ti-flag-3"></i> Сообщить об ошибке в данных
-            </a>
-        </div>
     </div>
+    {% endif %}
+
+    {% if match.status != 'cancelled' %}
+    {# Прогноз 1X2 — ленивая подгрузка; hx-preserve: до старта фоновое обновление шапки его не перерисовывает. #}
+    <div id="prediction-widget-{{ match.id }}"
+         class="mh__section animate-pulse"
+         data-background-poll
+         {% if match.status == 'scheduled' %}hx-preserve="true"{% endif %}
+         hx-get="{% url 'predictions:widget' match.id %}"
+         hx-trigger="load"
+         hx-swap="outerHTML">
+        <div class="h-4 w-32 bg-base-200 rounded mb-3"></div>
+        <div class="h-14 bg-base-200 rounded-xl"></div>
+    </div>
+    {% endif %}
+
+    {# Действия: главное — оценить; поделиться — одной кнопкой #}
+    <div class="mh__actions">
+        {% if match.status == 'finished' %}
+            {% if voting_open and not user_has_evaluated %}
+            <a href="{% url 'evaluations:context' match.id %}" class="btn btn-primary mh__cta">
+                <i class="ti ti-dopx-rate"></i>
+                {% if user_has_pulse_reactions %}Завершить оценку{% else %}Оценить матч{% endif %}
+            </a>
+            {% elif user_has_evaluated %}
+            <span class="mh__state mh__state--ok"><i class="ti ti-circle-check"></i> Вы оценили матч</span>
+            {% else %}
+            <span class="mh__state"><i class="ti ti-lock"></i> Голосование закрыто</span>
+            {% endif %}
+        {% endif %}
+        <button type="button" class="mh__share" data-share data-share-url="{{ share_url }}" data-share-text="{{ share_text }}"
+                aria-label="Поделиться матчем" title="Поделиться"><i class="ti ti-share-3"></i></button>
+    </div>
+    {% if voting_open and not user_has_evaluated and user_has_pulse_reactions %}
+    <p class="mh__hint">Вы реагировали на моменты во время матча. Полная оценка займёт около 2 минут.</p>
+    {% endif %}
+
+    <a href="{% url 'core:contacts' %}?category=data_error&match={{ match.id }}" class="mh__report">
+        <i class="ti ti-flag-3"></i> Сообщить об ошибке в данных
+    </a>
+    </div>{# /mh__body #}
 </div>

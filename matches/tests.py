@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, TestCase
+from django.urls import reverse
 
 from matches.services import (
     _consensus_level,
@@ -352,3 +353,27 @@ class BuildMatchDnaPhase3Tests(SimpleTestCase):
         self.assertEqual(result["antihero"]["score"], 3.2)
         self.assertIn("Кайрат", result["fan_mood_text"])
         self.assertIn("80%", result["fan_mood_text"])
+
+
+class KickoffKnownTests(TestCase):
+    """Полночь UTC — заглушка поставщика: время не показываем и «за час до матча» не напоминаем."""
+
+    def test_placeholder_time_hidden(self):
+        from datetime import datetime, timezone as dt_timezone
+
+        from evaluations.tests import _make_match
+        from matches.models import Match, with_known_kickoff
+
+        match = _make_match(status="scheduled")
+        match.start_time = datetime(2026, 10, 10, 0, 0, tzinfo=dt_timezone.utc)
+        match.save(update_fields=["start_time"])
+        self.assertFalse(match.kickoff_known)
+        self.assertFalse(with_known_kickoff(Match.objects.filter(pk=match.pk)).exists())
+        response = self.client.get(reverse("matches:detail", args=[match.id]))
+        self.assertContains(response, "время уточняется")
+        self.assertNotContains(response, ">05:00<")
+
+        match.start_time = datetime(2026, 10, 10, 13, 0, tzinfo=dt_timezone.utc)
+        match.save(update_fields=["start_time"])
+        self.assertTrue(match.kickoff_known)
+        self.assertContains(self.client.get(reverse("matches:detail", args=[match.id])), "18:00")

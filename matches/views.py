@@ -408,6 +408,14 @@ class MatchDetailView(DetailView):
         if match.status == 'finished' and not ratings_hidden:
             rating_story = match_story(match, all_events,
                                        turning_points=getattr(match_agg, 'turning_points', None) or [])
+        # Визиты для заданий дня: «как трибуны прожили матч» и «мнение эксперта».
+        if self.request.user.is_authenticated:
+            from engagement.quests import track
+
+            if rating_story:
+                track(self.request.user, 'match_story')
+            if expert_takes:
+                track(self.request.user, 'expert_read')
 
         # «Спорим?» — друг прислал вызов по ссылке.
         challenger = None
@@ -432,6 +440,7 @@ class MatchDetailView(DetailView):
             'ratings_hidden': ratings_hidden,
             'match_dna': match_dna,
             'rating_story': rating_story,
+            'animate_header': True,  # анимация появления — только при открытии страницы, не на фоновых обновлениях
             'match_dna_share_url': match_dna_share_url,
             'top_players': top_players,
             'worst_players': worst_players,
@@ -513,6 +522,28 @@ def match_events_partial(request, match_id):
     return HttpResponse(html)
 
 
+def header_goals(match) -> dict:
+    """Авторы голов для шапки: {'home': [...], 'away': [...]}; сторона — кому засчитан гол."""
+    if match.status not in ('live', 'finished'):
+        return {'home': [], 'away': []}
+    goals = {'home': [], 'away': []}
+    for e in match.events.filter(event_type__in=('goal', 'penalty', 'own_goal')).select_related('player'):
+        name = e.player.last_name if e.player_id and e.player.last_name else (e.player_display_name or '—')
+        mark = ' (пен.)' if e.event_type == 'penalty' else ' (авт.)' if e.event_type == 'own_goal' else ''
+        goals.setdefault(e.team_side, []).append(f"{name}{mark} {e.display_minute}'")
+    return goals
+
+
+def _share_url(request, match) -> str:
+    """Ссылка на матч; у вошедшего — с его кодом (?from=), чтобы открытие другом засчиталось в задание дня."""
+    url = request.build_absolute_uri(reverse('matches:detail', args=[match.id]))
+    if request.user.is_authenticated:
+        from engagement.referrals import code_for
+
+        url += f"?from={code_for(request.user)}"
+    return url
+
+
 def match_action_context(request, match):
     """CTA-флаги матча (голосование/оценка/пульс)."""
     voting_open = match.voting_open_until > timezone.now() and match.status == 'finished'
@@ -531,6 +562,8 @@ def match_action_context(request, match):
         'voting_open': voting_open,
         'user_has_evaluated': user_has_evaluated,
         'user_has_pulse_reactions': user_has_pulse_reactions,
+        'header_goals': header_goals(match),
+        'share_url': _share_url(request, match),
         'share_text': (
             f"{match.home_team.name} {match.get_score_display()} {match.away_team.name}. "
             f"Оценки болельщиков на DOPX"

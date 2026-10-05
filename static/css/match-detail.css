@@ -1,79 +1,190 @@
 /* static/css/match-detail.css
 
    Страница матча (matches/detail.html, _match_header.html, _match_events.html):
-   .md-hero — шапка со счётом; .md-timeline — события (хозяева слева, гости справа);
+   .mh — шапка-табло со счётом; .md-timeline — события (хозяева слева, гости справа);
    .md-metric — карточки метрик; .md-lineup — составы; .md-side-card — правая колонка;
    .md-rank — медали топ-3 игроков. */
 
 /* ============================================================
    HERO
    ============================================================ */
-.md-hero {
-    position: relative;
-    border-radius: 1.75rem;
-    overflow: hidden;
-    /* Плоская поверхность. */
-    background: var(--color-base-100);
-    border: 1px solid var(--color-base-300);
-}
-.md-hero__glow {
-    position: absolute;
-    width: 420px;
-    height: 420px;
-    border-radius: 9999px;
-    filter: blur(110px);
-    /* Одно едва заметное пятно по цвету статуса. */
-    opacity: .08;
-    pointer-events: none;
-    background: var(--mh-accent, var(--color-primary));
-}
-.md-hero__glow--a { top: -160px; left: -120px; }
-.md-hero__content { position: relative; z-index: 1; }
-
-/* Шапка красится только по статусу матча (--mh-accent), без гербов на фоне. */
-
-.md-hero--live      { --mh-accent: var(--color-error); }
-.md-hero--finished    { --mh-accent: var(--color-success); }
-.md-hero--scheduled  { --mh-accent: var(--color-primary); }
-.md-hero--postponed  { --mh-accent: var(--color-warning); }
-.md-hero--cancelled  { --mh-accent: var(--color-base-300); }
-
-.md-hero__pill {
-    display: inline-flex;
-    align-items: center;
-    gap: .35rem;
-    font-size: .75rem;
-    font-weight: 800;
-    letter-spacing: .02em;
-    padding: .3rem .75rem;
-    border-radius: 9999px;
-    background: color-mix(in oklab, var(--mh-accent, var(--color-base-300)) 16%, transparent);
-    color: var(--mh-accent, var(--color-base-content));
-}
-.md-hero__live-dot {
-    width: 8px; height: 8px;
-    border-radius: 9999px;
-    background: var(--color-error);
-    animation: md-pulse 1.4s ease-in-out infinite;
+/* ============================================================
+   ШАПКА МАТЧА (_match_header.html): тёмная сцена в цветах клубов + светлое тело
+   ============================================================ */
+.mh {
+    --mh-accent: #fff;
+    border-radius: 1.6rem; overflow: hidden;
+    background: var(--color-base-100); border: 1px solid var(--color-base-300);
+    box-shadow: 0 24px 48px -32px rgba(15, 23, 42, .35);
 }
 
-.md-hero__crest {
-    filter: drop-shadow(0 8px 20px rgba(0,0,0,.15));
-    transition: transform .4s cubic-bezier(.16,1,.3,1);
+/* Сцена: почти чёрный фон, слева свет цвета хозяев, справа — гостей. */
+.mh__stage {
+    position: relative; isolation: isolate; color: #fff; padding: 1rem 1rem 1.4rem;
+    background:
+        radial-gradient(90% 120% at 0% 0%, color-mix(in oklab, var(--home) 75%, transparent) 0%, transparent 60%),
+        radial-gradient(90% 120% at 100% 0%, color-mix(in oklab, var(--away) 75%, transparent) 0%, transparent 60%),
+        radial-gradient(60% 80% at 50% 120%, rgba(255,255,255,.08), transparent 70%),
+        linear-gradient(180deg, #141720 0%, #0b0d12 100%);
 }
-.md-hero__crest:hover { transform: scale(1.05) rotate(-2deg); }
+/* Тонкая «сетка поля» поверх света — фактура без картинок. */
+.mh__stage::before {
+    content: ""; position: absolute; inset: 0; z-index: -1; opacity: .07; pointer-events: none;
+    background-image: linear-gradient(rgba(255,255,255,.6) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.6) 1px, transparent 1px);
+    background-size: 28px 28px;
+    mask-image: radial-gradient(80% 90% at 50% 40%, #000 20%, transparent 75%);
+}
+@media (min-width: 640px) { .mh__stage { padding: 1.4rem 2rem 2rem; } }
 
-.md-hero__score {
-    /* Счёт — сплошной цвет. */
-    font-weight: 800;
-    letter-spacing: -0.04em;
-    line-height: 1;
-    font-variant-numeric: tabular-nums;
-    color: var(--color-base-content);
+.mh__top { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+.mh__league { display: flex; align-items: center; gap: .35rem; min-width: 0; font-size: .78rem; font-weight: 500; color: rgba(255,255,255,.72); }
+.mh__dot { opacity: .5; }
+.mh__tag {
+    display: inline-flex; align-items: center; gap: .2rem; font-size: .68rem; font-weight: 600; padding: .12rem .5rem;
+    border-radius: 9999px; background: rgba(255,255,255,.14); color: #fff;
 }
-.md-hero--live .md-hero__score {
-    color: var(--color-error);
+.mh__tag--derby { background: rgba(239, 68, 68, .35); }
+.mh__status {
+    flex-shrink: 0; display: inline-flex; align-items: center; gap: .4rem; font-size: .72rem; font-weight: 600;
+    padding: .25rem .7rem; border-radius: 9999px; color: #fff;
+    background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.14); backdrop-filter: blur(8px);
 }
+.mh--live .mh__status { background: rgba(239, 68, 68, .9); border-color: transparent; }
+.mh__live-dot { width: 6px; height: 6px; border-radius: 9999px; background: #fff; animation: md-pulse 1.6s ease-in-out infinite; }
+
+/* Табло: три колонки на любом экране. */
+.mh__board {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: start;
+    gap: .5rem; margin-top: 1.2rem;
+}
+@media (min-width: 640px) { .mh__board { gap: 1.5rem; margin-top: 1.6rem; } }
+.mh__team { display: flex; flex-direction: column; align-items: center; text-align: center; min-width: 0; }
+.mh__team-link { display: flex; flex-direction: column; align-items: center; gap: .6rem; min-width: 0; max-width: 100%; color: #fff; }
+/* Медальон: белый круг — герб читается на любом цвете и одинаково аккуратен у всех клубов. */
+.mh__medal {
+    width: 64px; height: 64px; border-radius: 9999px; display: grid; place-items: center; background: #fff;
+    box-shadow: 0 12px 28px -10px rgba(0,0,0,.6), 0 0 0 4px rgba(255,255,255,.08);
+    transition: transform .3s cubic-bezier(.16,1,.3,1);
+}
+@media (min-width: 640px) { .mh__medal { width: 92px; height: 92px; } }
+.mh__team-link:hover .mh__medal { transform: translateY(-2px); }
+.mh__crest { width: 44px; height: 44px; object-fit: contain; }
+@media (min-width: 640px) { .mh__crest { width: 62px; height: 62px; } }
+.mh__crest--empty { display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.3rem; color: #111; }
+.mh__name {
+    font-size: .9rem; font-weight: 700; line-height: 1.2; letter-spacing: -.01em;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+@media (min-width: 640px) { .mh__name { font-size: 1.15rem; } }
+.mh__form { display: flex; gap: 3px; margin-top: .45rem; }
+.mh__form-dot {
+    width: 15px; height: 15px; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center;
+    font-size: 8.5px; font-weight: 700; line-height: 1; color: #fff; background: rgba(255,255,255,.22);
+}
+.mh__form-dot--w { background: #16a34a; }
+.mh__form-dot--l { background: #dc2626; }
+.mh__goals { margin-top: .5rem; font-size: .72rem; line-height: 1.5; color: rgba(255,255,255,.75); }
+@media (min-width: 640px) { .mh__goals { font-size: .8rem; } }
+
+.mh__center { display: flex; flex-direction: column; align-items: center; padding-top: .7rem; min-width: 5.5rem; }
+@media (min-width: 640px) { .mh__center { padding-top: 1.1rem; min-width: 9rem; } }
+.mh__score {
+    font-size: 2.6rem; font-weight: 800; line-height: 1; letter-spacing: -.035em; font-variant-numeric: tabular-nums;
+    white-space: nowrap; color: #fff; text-shadow: 0 6px 30px rgba(0,0,0,.45);
+}
+@media (min-width: 640px) { .mh__score { font-size: 4.2rem; } }
+.mh__colon { margin: 0 .1em; opacity: .4; font-weight: 500; position: relative; top: -.06em; }
+.mh__time { font-size: 1.8rem; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: #fff; }
+@media (min-width: 640px) { .mh__time { font-size: 2.6rem; } }
+.mh__time--muted { opacity: .4; }
+.mh__time--date { font-size: 1.4rem; }
+@media (min-width: 640px) { .mh__time--date { font-size: 1.9rem; } }
+.mh__sub {
+    margin-top: .45rem; font-size: .7rem; white-space: nowrap; color: rgba(255,255,255,.75);
+    padding: .15rem .55rem; border-radius: 9999px; background: rgba(255,255,255,.08);
+}
+.mh__sub--live { background: rgba(239, 68, 68, .25); color: #fff; font-weight: 600; }
+
+/* Появление при открытии страницы: гербы с боков, счёт снизу. На фоновых обновлениях не играет. */
+.mh--enter .mh__team--home .mh__medal { animation: mh-in-left .7s cubic-bezier(.16,1,.3,1) both; }
+.mh--enter .mh__team--away .mh__medal { animation: mh-in-right .7s cubic-bezier(.16,1,.3,1) both; }
+.mh--enter .mh__center { animation: mh-in-up .6s .12s cubic-bezier(.16,1,.3,1) both; }
+@keyframes mh-in-left { from { opacity: 0; transform: translateX(-18px) scale(.94); } }
+@keyframes mh-in-right { from { opacity: 0; transform: translateX(18px) scale(.94); } }
+@keyframes mh-in-up { from { opacity: 0; transform: translateY(10px); } }
+@media (prefers-reduced-motion: reduce) { .mh--enter .mh__medal, .mh--enter .mh__center { animation: none; } }
+
+/* Светлое тело: заметки, мета, прогноз, действия. */
+.mh__body { padding: .2rem 1rem 1.1rem; }
+@media (min-width: 640px) { .mh__body { padding: .4rem 2rem 1.5rem; } }
+.mh__note {
+    margin-top: .9rem; font-size: .8rem; display: flex; gap: .4rem; align-items: flex-start;
+    padding: .55rem .75rem; border-radius: .75rem; background: color-mix(in oklab, var(--color-warning) 12%, transparent);
+}
+.mh__meta {
+    display: flex; flex-wrap: wrap; justify-content: center; gap: .35rem 1rem; padding-top: .9rem;
+    font-size: .75rem; color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+}
+.mh__meta > span { display: inline-flex; align-items: center; gap: .3rem; }
+.mh__crew summary { cursor: pointer; text-decoration: underline dotted; list-style: none; }
+.mh__crew summary::-webkit-details-marker { display: none; }
+.mh__crew[open] { flex-basis: 100%; text-align: center; }
+
+.mh__section { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--color-base-300); }
+.mh__actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: .6rem; margin-top: 1rem; }
+.mh__cta { border-radius: 9999px; padding-inline: 1.4rem; }
+/* «Поделиться» — круглая иконка рядом с главным действием. */
+.mh__share {
+    width: 2.6rem; height: 2.6rem; border-radius: 9999px; display: inline-grid; place-items: center; font-size: 1.15rem;
+    background: var(--color-base-200); color: var(--color-base-content); transition: background .15s;
+}
+.mh__share:hover, .mh__share.is-copied { background: color-mix(in oklab, var(--color-primary) 14%, transparent); color: var(--color-primary); }
+.mh__state {
+    display: inline-flex; align-items: center; gap: .35rem; font-size: .82rem; font-weight: 500; padding: .45rem .9rem;
+    border-radius: 9999px; background: var(--color-base-200);
+}
+.mh__state--ok { background: color-mix(in oklab, var(--color-success) 12%, transparent); color: var(--color-success); }
+.mh__hint { margin-top: .5rem; text-align: center; font-size: .75rem; opacity: .6; }
+.mh__report { display: flex; justify-content: center; align-items: center; gap: .3rem; margin-top: .9rem; font-size: .7rem; opacity: .45; }
+.mh__report:hover { opacity: .8; }
+
+/* Виджет прогноза (_prediction_widget.html) внутри шапки. */
+.pw__head { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; margin-bottom: .6rem; }
+.pw__title { font-size: .82rem; font-weight: 650; }
+.pw__total { font-size: .72rem; color: color-mix(in oklab, var(--color-base-content) 50%, transparent); }
+.pw__options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .4rem; }
+.pw__opt {
+    position: relative; display: flex; flex-direction: column; align-items: center; gap: .15rem; min-width: 0;
+    padding: .55rem .4rem; border-radius: .9rem; border: 1px solid var(--color-base-300); background: var(--color-base-100);
+    transition: border-color .15s, background .15s;
+}
+.pw__opt:not(:disabled):hover { border-color: var(--color-primary); }
+.pw__opt:disabled { cursor: default; }
+.pw__opt.is-mine { border-color: var(--color-primary); background: color-mix(in oklab, var(--color-primary) 6%, transparent); }
+.pw__opt.is-result { border-color: var(--color-success); background: color-mix(in oklab, var(--color-success) 8%, transparent); }
+.pw__label { font-size: .72rem; font-weight: 500; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+             color: color-mix(in oklab, var(--color-base-content) 65%, transparent); }
+.pw__pct { font-size: 1rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.pw__mark { position: absolute; top: .35rem; right: .4rem; font-size: .8rem; color: var(--color-primary); }
+.pw__opt.is-result .pw__mark { color: var(--color-success); }
+.pw__challenge {
+    display: flex; align-items: center; justify-content: space-between; gap: .6rem; margin-top: .8rem;
+    padding: .5rem .5rem .5rem .8rem; border-radius: 9999px; background: var(--color-base-200);
+}
+.pw__challenge-text { font-size: .8rem; font-weight: 500; display: inline-flex; align-items: center; gap: .35rem; min-width: 0; }
+.pw__challenge-text .ti { color: var(--color-primary); }
+.pw__challenge-btn {
+    flex-shrink: 0; display: inline-flex; align-items: center; gap: .3rem; font-size: .78rem; font-weight: 600;
+    padding: .35rem .8rem; border-radius: 9999px; background: var(--color-base-100); color: var(--color-primary);
+    border: 1px solid color-mix(in oklab, var(--color-primary) 30%, transparent);
+}
+.pw__challenge-btn:hover, .pw__challenge-btn.is-copied { background: var(--color-primary); color: var(--color-primary-content); }
+.pw__bar { display: flex; height: 4px; border-radius: 9999px; overflow: hidden; margin-top: .55rem; background: var(--color-base-200); gap: 2px; }
+.pw__bar-home { background: var(--color-primary); }
+.pw__bar-draw { background: color-mix(in oklab, var(--color-base-content) 30%, transparent); }
+.pw__bar-away { background: var(--color-secondary); }
+
+
 
 @keyframes md-pulse {
     0%, 100% { opacity: 1; transform: scale(1); }
@@ -398,7 +509,7 @@
 .md-rank--other { background: var(--color-base-200); color: color-mix(in oklab, var(--color-base-content) 55%, transparent); }
 
 @media (prefers-reduced-motion: reduce) {
-    .md-hero__crest, .md-hero__live-dot, .md-timeline__card, .md-metric {
+    .mh__live-dot, .md-timeline__card, .md-metric {
         transition: none !important;
         animation: none !important;
     }

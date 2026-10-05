@@ -890,11 +890,14 @@ def notify_prediction_closing_soon(self):
     now = timezone.now()
     closing_threshold = now + timedelta(hours=1)
 
-    matches = Match.objects.filter(
+    from matches.models import with_known_kickoff
+
+    # Время не объявлено (заглушка 05:00) — не напоминаем «за час» посреди ночи.
+    matches = with_known_kickoff(Match.objects.filter(
         status='scheduled',
         start_time__gte=now,
         start_time__lte=closing_threshold,
-    ).select_related('home_team', 'away_team')
+    )).select_related('home_team', 'away_team')
 
     if not matches.exists():
         logger.info(f"✅ No matches kicking off in the next hour (now={now}).")
