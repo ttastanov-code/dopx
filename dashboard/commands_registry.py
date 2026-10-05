@@ -381,6 +381,11 @@ COMMAND_REGISTRY: dict[str, CommandSpec] = {
             ArgSpec("--save", "save", "flag", help="Сохранить веса в «Настройки платформы»."),
         ],
     ),
+    "audit_data": CommandSpec(
+        name="audit_data", label="Проверка целостности данных",
+        category="diagnose", danger="readonly",
+        description="Сверяет счёт с событиями, таблицу с результатами, голоса в рейтингах с засчитанными, уровни, серии, составы и сборные. Ничего не меняет.",
+    ),
     "sportmonks_inspect_stats": CommandSpec(
         name="sportmonks_inspect_stats", label="Какая статистика приходит от поставщика данных",
         category="diagnose", danger="readonly",

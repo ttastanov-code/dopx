@@ -27,6 +27,7 @@ from .moderation import (  # noqa: F401
     data_health,
     data_health_partial,
     _resolve_match_for_resync,
+    data_health_integrity_run,
     data_health_resync_match,
     reports,
     report_action,

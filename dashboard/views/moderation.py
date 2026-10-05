@@ -144,6 +144,17 @@ def _resolve_match_for_resync(match_id: str) -> Match | None:
 
 @staff_member_required
 @require_POST
+def data_health_integrity_run(request):
+    """Прогнать проверки целостности сейчас (только чтение, ~секунды)."""
+    from core.integrity import run_and_store
+
+    report = run_and_store()
+    messages.success(request, f"Проверка целостности: ошибок {report['errors']}, предупреждений {report['warnings']}.")
+    return redirect("dashboard:data_health")
+
+
+@staff_member_required
+@require_POST
 def data_health_resync_match(request, match_id):
     """Синхронный полный ресинк одного матча из data-health.
     match_id — UUID или sportmonks_id (старые записи в error_samples).

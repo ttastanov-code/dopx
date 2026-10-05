@@ -37,7 +37,7 @@ class DescribeTopMatchesTests(TestCase):
             league=self.league, season=self.season,
             home_team=self.team, away_team=opponent,
             start_time=timezone.now() - timedelta(days=days_ago),
-            voting_open_until=timezone.now() + timedelta(days=1),
+            voting_open_until=timezone.now() - timedelta(hours=1),  # подсказка — только по опубликованным матчам
             status="finished",
         )
         lineup = MatchLineup.objects.create(match=match, team=self.team, side="home")
@@ -58,6 +58,12 @@ class DescribeTopMatchesTests(TestCase):
         # Ищем «6.0 —», а не «6.0» — иначе совпадает с датой «06.09».
         self.assertNotIn("6.0 —", text)
         self.assertIn("Opponent2", text)
+
+    def test_open_voting_match_not_revealed(self):
+        match = self._make_match(self.opponent2, days_ago=1, score=9.7)
+        match.voting_open_until = timezone.now() + timedelta(days=1)
+        match.save(update_fields=["voting_open_until"])
+        self.assertNotIn("9.7", _describe_top_matches(str(self.player.id), self.season))
 
     def test_notable_event_included(self):
         match = self._make_match(self.opponent1, days_ago=1, score=9.0)

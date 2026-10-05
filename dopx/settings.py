@@ -962,10 +962,15 @@ CELERY_BEAT_SCHEDULE = {
         # Не выполненный вовремя тик выбрасываем, чтобы не копились.
         'options': {'expires': 14},
     },
-    # === Подтяжка составов для матчей в ближайшие 3 часа. ===
+    # === Текущие составы клубов (раз в сутки). ===
     'sportmonks-sync-squads': {
         'task': 'parsers.sportmonks.tasks.sportmonks_sync_squads',
         'schedule': crontab(hour=5, minute=10),
+    },
+    # === Целостность данных: счёт и события, таблица, голоса в рейтингах, прогресс (core/integrity.py). ===
+    'data-integrity-audit': {
+        'task': 'core.tasks.data_integrity_audit',
+        'schedule': crontab(hour=5, minute=40),
     },
     'sportmonks-update-upcoming': {
         'task': 'parsers.sportmonks.tasks.sportmonks_update_upcoming',

@@ -654,17 +654,18 @@ class MatchDNAShareCardView(View):
             PlayerMatchAggregate.objects.filter(match=match, total_votes__gte=min_votes_for_display())
             .select_related("player").order_by("performance_score")[:1]
         )
-        from evaluations.completed import completed_only
+        from aggregates.services import countable_evaluations
 
-        fan_support = list(completed_only(ContextEvaluation.objects.filter(
+        # Те же засчитанные голоса, что на странице матча.
+        fan_support = list(countable_evaluations(ContextEvaluation.objects.filter(
             match=match
-        )).exclude(
+        ), match.id).exclude(
             supported_team__isnull=True
         ).values(
             "supported_team__id", "supported_team__name"
         ).annotate(count=Count("id")).order_by("-count")[:2])
         match_evaluations = list(
-            completed_only(MatchEvaluation.objects.filter(match=match)).only("entertainment", "tension", "fairness")
+            countable_evaluations(MatchEvaluation.objects.filter(match=match), match.id).only("entertainment", "tension", "fairness")
         )
         match_dna = build_match_dna(
             match, match_agg, events, referee_agg,

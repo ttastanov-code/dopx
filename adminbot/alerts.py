@@ -213,8 +213,20 @@ def recent_errors(limit: int = 8) -> list[str]:
     return lines[-limit:]
 
 
+def check_integrity():
+    """Итог ежедневной проверки целостности данных (сама проверка тяжёлая — тут только чтение из кэша)."""
+    from core.integrity import last_report
+
+    report = last_report()
+    if not report or not report["errors"]:
+        return None
+    worst = [f for f in report["findings"] if f["severity"] == "error" and f["count"]]
+    detail = "; ".join(f"{f['title']}: {f['count']}" for f in worst[:3])
+    return Problem("integrity", "Данные на сайте не сходятся", detail + ". Дашборд → Здоровье данных.")
+
+
 CHECKS = [check_site, check_latency, check_db, check_cache, check_celery, check_services, check_queue, check_disk, check_memory,
-          check_load, check_errors, check_sync, check_backup]
+          check_load, check_errors, check_sync, check_backup, check_integrity]
 
 
 def current_problems() -> list[Problem]:

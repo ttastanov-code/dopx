@@ -326,7 +326,7 @@ def _describe_top_matches(player_id: str, season, limit: int = TOP_MATCHES_FOR_E
     """Лучшие матчи игрока в сезоне для тултипа (дата, соперник, события)."""
     top = list(
         PlayerMatchAggregate.objects
-        .filter(player_id=player_id, match__season=season)
+        .filter(published_q(), player_id=player_id, match__season=season)
         .select_related("match", "match__home_team", "match__away_team")
         .order_by("-performance_score")[:limit]
     )

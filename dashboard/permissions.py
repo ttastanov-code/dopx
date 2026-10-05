@@ -91,7 +91,7 @@ VIEW_PERMS: dict[str, dict[str, tuple[str, ...]]] = {
 # Роли доступа — только суперпользователь, проверка во вьюхах.
 SECTION_ONLY = {
     "overview", "traffic", "retention", "matches_list", "system_status", "social_content",
-    "data_health", "data_health_partial", "data_trust", "ads", "ads_stats_partial", "audit_log",
+    "data_health", "data_health_partial", "data_health_integrity_run", "data_trust", "ads", "ads_stats_partial", "audit_log",
     "parser_tools", "parser_tasks_partial", "parser_trigger_task", "parser_sportmonks_health_check",
     "parser_revoke_task", "scripts", "scripts_runs_partial", "scripts_trigger", "scripts_revoke_run",
     "access_roles_list", "access_roles_detail", "access_revoke_staff",

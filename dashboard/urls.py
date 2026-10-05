@@ -71,6 +71,7 @@ urlpatterns = [
     path("access/groups/<int:group_id>/", access_views.role_detail, name="admin_group_detail"),
     path("data-health/", views.data_health, name="data_health"),
     path("data-health/partial/", views.data_health_partial, name="data_health_partial"),
+    path("data-health/integrity/run/", views.data_health_integrity_run, name="data_health_integrity_run"),
     # Не <uuid:...> — сюда приходят и старые числовые id матчей.
     path("data-health/matches/<str:match_id>/resync/", views.data_health_resync_match, name="data_health_resync_match"),
     path("ads/", views.ads, name="ads"),

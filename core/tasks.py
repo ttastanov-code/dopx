@@ -53,3 +53,14 @@ def celery_heartbeat(self):
 def realtime_heartbeat(self):
     """То же для воркера очереди realtime (live-матчи и пуши)."""
     _worker_beat(self, "celery_realtime")
+
+
+@shared_task(ignore_result=True)
+def data_integrity_audit():
+    """Ежедневная проверка целостности данных (core/integrity.py); ошибки видит бот и «Здоровье данных»."""
+    from core.integrity import run_and_store
+
+    report = run_and_store()
+    if report["errors"]:
+        logger.warning("Целостность данных: ошибок %s, предупреждений %s", report["errors"], report["warnings"])
+    return {"errors": report["errors"], "warnings": report["warnings"]}

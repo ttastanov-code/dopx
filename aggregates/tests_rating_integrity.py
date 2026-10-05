@@ -292,6 +292,7 @@ class RefereeVoteSpikeTests(_Fixture):
         for idx, match in enumerate(matches):
             quality = 1 if idx == 0 else 6  # первый матч — «завалить судью»
             for u in users:
+                EvaluationSession.objects.create(user=u, match=match, status="completed")  # в счёт идут только завершённые
                 RefereeEvaluation.objects.create(user=u, match=match, influence_score=50, decision_quality=quality)
 
         self.assertEqual(agg_tasks.detect_referee_vote_spikes_task(), 1)

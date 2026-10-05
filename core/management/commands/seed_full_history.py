@@ -429,7 +429,7 @@ class Command(BaseCommand):
         from round_squad.services import recompute_round
 
         try:
-            recompute_round(season, tour)
+            recompute_round(season, tour, force=True)  # тур мог зафиксироваться пустым до заливки голосов
         except Exception as exc:  # noqa: BLE001 — не прерываем весь бэкфилл из-за одного тура
             self.stdout.write(self.style.WARNING(f"  Пересчёт сборной тура {tour}: {exc}"))
 

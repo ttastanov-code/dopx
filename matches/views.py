@@ -262,18 +262,19 @@ class MatchDetailView(DetailView):
             top_players, worst_players, coach_aggregates = [], [], []
             home_team_evals = away_team_evals = _team_evals_dict(None)
         
-        # Счётчики и «за кого болели» — без суперпользователей, как и рейтинги.
-        total_match_evals = MatchEvaluation.objects.filter(match=match, user__is_superuser=False).count()
-        total_player_evals = PlayerEvaluation.objects.filter(match=match, user__is_superuser=False).count()
-        total_context_evals = ContextEvaluation.objects.filter(match=match, user__is_superuser=False).count()
+        # Счётчики и «за кого болели» — по тем же засчитанным голосам, что и рейтинги рядом
+        # (без брошенных оценок, банов и подтверждённой накрутки).
+        from aggregates.services import countable_evaluations
+
+        total_match_evals = countable_evaluations(MatchEvaluation.objects.filter(match=match), match.id).count()
+        total_player_evals = countable_evaluations(PlayerEvaluation.objects.filter(match=match), match.id).count()
+        total_context_evals = countable_evaluations(ContextEvaluation.objects.filter(match=match), match.id).count()
         
         # Составы: хозяева сначала.
         lineups = lineups_with_side_order(match)
         
         # За кого болели — список нужен и шаблону, и build_match_dna.
-        fan_support = list(ContextEvaluation.objects.filter(
-            match=match, user__is_superuser=False
-        ).exclude(
+        fan_support = list(countable_evaluations(ContextEvaluation.objects.filter(match=match), match.id).exclude(
             supported_team__isnull=True
         ).values(
             'supported_team__id',
@@ -297,7 +298,8 @@ class MatchDetailView(DetailView):
 
         referee_agg = None if ratings_hidden else match.referee_aggregates.first()
         # Для консенсуса нужны сырые голоса MatchEvaluation.
-        match_evaluations = list(MatchEvaluation.objects.filter(match=match).only('entertainment', 'tension', 'fairness'))
+        match_evaluations = list(countable_evaluations(MatchEvaluation.objects.filter(match=match), match.id)
+                                 .only('entertainment', 'tension', 'fairness'))
         # Ход матча — по всем событиям, а не по обрезанной ленте.
         all_events = list(match.events.select_related('player').order_by('minute'))
         dna_team_stats = {stat.team_id: stat for stat in match.team_statistics.all()}

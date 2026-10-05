@@ -1617,7 +1617,9 @@ def detect_referee_vote_spikes_task() -> int:
         .order_by("-start_time").values_list("id", flat=True)[:REFEREE_SPIKE_BASELINE_MATCHES]
     )
     votes_by_match: dict = defaultdict(list)
-    for match_id, value in RefereeEvaluation.objects.filter(match_id__in=recent_match_ids).values_list(
+    from evaluations.completed import completed_only
+
+    for match_id, value in completed_only(RefereeEvaluation.objects.filter(match_id__in=recent_match_ids)).values_list(
         "match_id", "decision_quality"
     ):
         votes_by_match[match_id].append(value)

@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 BRIEF_BEFORE = timedelta(hours=2)
 REPORT_AFTER = timedelta(hours=4)       # от начала матча: финал + время на оценки
+REVIEW_WINDOW = timedelta(days=1)       # разбор в канал — в течение суток после закрытия голосования
 PREVIEW_BEFORE = timedelta(hours=24)
 NOT_STARTED_AFTER = timedelta(minutes=20)
 SURGE_WINDOW = timedelta(minutes=5)
@@ -171,9 +172,28 @@ def run_reports(now=None) -> int:
         if not BotEvent.once(f"report:{match.pk}"):
             continue
         text, rows, best, worst, votes = match_report(match)
-        push(text, rows or None, "overview", topic="matchday")
-        if best:
-            channel.ratings_post(match, best, worst, votes)
+        push(text, rows or None, "overview", topic="matchday")  # команде — сразу, это внутренний отчёт
+        done += 1
+    return done
+
+
+def run_reviews(now=None) -> int:
+    """Разбор матча с рейтингами в канал — только после закрытия голосования, как и на сайте:
+    иначе болельщики видят цифры раньше, чем оценили сами, и подстраиваются."""
+    from aggregates.models import PlayerMatchAggregate
+    from aggregates.services import min_votes_for_display
+    from matches.models import Match
+
+    now = now or timezone.now()
+    done = 0
+    for match in (Match.objects.filter(status="finished", voting_open_until__lte=now,
+                                       voting_open_until__gte=now - REVIEW_WINDOW)
+                  .select_related("home_team", "away_team")):
+        if not PlayerMatchAggregate.objects.filter(match=match, total_votes__gte=min_votes_for_display()).exists():
+            continue
+        if not BotEvent.once(f"review:{match.pk}"):
+            continue
+        channel.review_post(match)
         done += 1
     return done
 
@@ -275,7 +295,7 @@ def on_round_final(rnd) -> None:
 
 def tick(now=None) -> dict:
     out = {}
-    for name, fn in (("briefing", run_briefing), ("reports", run_reports), ("surges", run_surges),
+    for name, fn in (("briefing", run_briefing), ("reports", run_reports), ("reviews", run_reviews), ("surges", run_surges),
                      ("not_started", run_not_started), ("preview", run_preview)):
         try:
             out[name] = fn(now)

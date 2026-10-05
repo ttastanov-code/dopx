@@ -381,7 +381,7 @@ class ImportFullFixtureNotificationWiringTests(TestCase):
     @patch("notifications.tasks.notify_followers_lineups_available.delay")
     def test_lineups_becoming_available_queues_notification(self, mock_delay, mock_import_lineups):
         """has_lineup False -> True ставит пуш «составы объявлены»."""
-        def _fake_import_lineups(match, lineups_data, formations_data=None):
+        def _fake_import_lineups(match, lineups_data, formations_data=None, events_data=None):
             match.has_lineup = True
             match.save(update_fields=["has_lineup", "updated_at"])
             return True
@@ -399,7 +399,7 @@ class ImportFullFixtureNotificationWiringTests(TestCase):
     @patch("parsers.sportmonks.importers.import_lineups")
     @patch("notifications.tasks.notify_followers_lineups_available.delay")
     def test_reimporting_with_lineups_already_present_does_not_requeue(self, mock_delay, mock_import_lineups):
-        def _fake_import_lineups(match, lineups_data, formations_data=None):
+        def _fake_import_lineups(match, lineups_data, formations_data=None, events_data=None):
             match.has_lineup = True
             match.save(update_fields=["has_lineup", "updated_at"])
             return True
@@ -419,7 +419,7 @@ class ImportFullFixtureNotificationWiringTests(TestCase):
     @patch("notifications.tasks.notify_followers_lineups_available.delay")
     def test_lineups_available_not_fired_for_already_finished_match(self, mock_delay, mock_import_lineups):
         """Составы вместе с завершённым матчем — пуша нет."""
-        def _fake_import_lineups(match, lineups_data, formations_data=None):
+        def _fake_import_lineups(match, lineups_data, formations_data=None, events_data=None):
             match.has_lineup = True
             match.save(update_fields=["has_lineup", "updated_at"])
             return True
@@ -575,6 +575,51 @@ class ImportFullFixtureNotificationWiringTests(TestCase):
         self.assertEqual(MatchEvent.objects.filter(match=match).count(), 9)
         import_events(match, events[1:3])  # обрезанный ответ: пропало 7 из 9 — не трогаем
         self.assertEqual(MatchEvent.objects.filter(match=match).count(), 9)
+
+    def test_lineup_rows_without_player_id_are_kept(self):
+        """Строка состава без id: по id из событий, иначе по имени; повтор не плодит дублей."""
+        from lineups.models import MatchLineupPlayer
+        from parsers.sportmonks.importers import import_lineups
+        from players.models import Player
+
+        fixture = _fixture(sm_id=777003781, dev_name="FT")
+        match = import_match_core(fixture, self.league, self.season)
+        home = fixture["participants"][0]["id"]
+        rows = [{"id": 1, "team_id": home, "type_id": 11, "player_id": None, "player": None,
+                 "player_name": "Justice Kenesbek", "jersey_number": 5},
+                {"id": 2, "team_id": home, "type_id": 11, "player_id": None, "player": None,
+                 "player_name": "Everton Moraes", "jersey_number": 9}]
+        events = [{"player_id": 37548181, "player_name": "Everton Moraes"}]
+        import_lineups(match, rows, events_data=events)
+        import_lineups(match, rows, events_data=events)  # повторный синк
+        self.assertEqual(MatchLineupPlayer.objects.filter(lineup__match=match, is_starting=True).count(), 2)
+        self.assertTrue(Player.objects.filter(sportmonks_id="37548181").exists())
+        self.assertEqual(Player.objects.filter(sportmonks_id__isnull=True, team=match.home_team).count(), 1)
+
+    def test_unlinked_player_gets_id_later_without_duplicate(self):
+        from parsers.sportmonks.importers import get_or_create_player, get_or_create_unlinked_player
+        from players.models import Player
+
+        match = import_match_core(_fixture(sm_id=777003782, dev_name="FT"), self.league, self.season)
+        placeholder = get_or_create_unlinked_player("Иван Петров", match.home_team)
+        linked = get_or_create_player({"id": 555, "firstname": "Иван", "lastname": "Петров"}, team=match.home_team)
+        self.assertEqual(linked.pk, placeholder.pk)
+        self.assertEqual(Player.objects.filter(last_name="Петров").count(), 1)
+
+    def test_card_side_taken_from_lineup(self):
+        from lineups.models import MatchLineup, MatchLineupPlayer
+        from parsers.sportmonks.importers import import_events
+        from players.models import Player
+
+        fixture = _fixture(sm_id=777003783, dev_name="FT")
+        match = import_match_core(fixture, self.league, self.season)
+        player = Player.objects.create(first_name="Лев", last_name="Кургин", team=match.away_team, sportmonks_id="9001")
+        lineup = MatchLineup.objects.create(match=match, team=match.away_team, side="away")
+        MatchLineupPlayer.objects.create(lineup=lineup, player=player, is_starting=True)
+        card = {"id": 1, "type": {"developer_name": "YELLOWCARD"}, "minute": 31, "player_id": 9001,
+                "participant_id": fixture["participants"][0]["id"], "extra_minute": None}  # поставщик: хозяева
+        import_events(match, [card])
+        self.assertEqual(match.events.get().team_side, "away")
 
     def test_duplicate_event_rejected_by_db(self):
         from django.db import IntegrityError, transaction

@@ -529,6 +529,12 @@ def get_or_create_player(
         if match_start_time is not None:
             defaults["last_match_at"] = match_start_time
 
+    if existing is None:
+        # Игрок раньше приходил без id (только имя) — привязываем ту запись, а не плодим дубль.
+        placeholder = _find_unlinked_player(first_name, last_name, team)
+        if placeholder is not None:
+            Player.objects.filter(pk=placeholder.pk).update(sportmonks_id=str(sm_id))
+            logger.info("Sportmonks: игрок %s без id получил sportmonks_id=%s", placeholder.full_name, sm_id)
     player, created = Player.objects.update_or_create(sportmonks_id=str(sm_id), defaults=defaults)
     if created:
         logger.info("Sportmonks: создан игрок %s (sportmonks_id=%s)", player.full_name, sm_id)
@@ -540,6 +546,44 @@ def get_or_create_player(
             "по хронологии)",
             player.full_name, sm_id, match_start_time,
         )
+    return player
+
+
+def _find_unlinked_player(first_name: str, last_name: str, team: Optional[Team]) -> Optional[Player]:
+    """Игрок команды без sportmonks_id с тем же ФИО (сохранён по имени, когда поставщик не дал id)."""
+    if team is None or not last_name:
+        return None
+    key = (normalize_kz(first_name.strip()), normalize_kz(last_name.strip()))
+    for candidate in Player.objects.filter(team=team, sportmonks_id__isnull=True).only("id", "first_name", "last_name"):
+        if (normalize_kz(candidate.first_name.strip()), normalize_kz(candidate.last_name.strip())) == key:
+            return candidate
+    return None
+
+
+def _find_team_player_by_name(first_name: str, last_name: str, team: Team) -> Optional[Player]:
+    """Известный игрок команды с тем же именем и фамилией (фамилия может быть короче: «Эвертон Мораес»
+    = «Эвертон Маседо Мораес»). Только если кандидат один — иначе лучше новая запись, чем чужой человек."""
+    first, last = normalize_kz(first_name.strip()), normalize_kz(last_name.strip())
+    if not first or not last:
+        return None
+    found = [p for p in Player.objects.filter(team=team).only("id", "first_name", "last_name")
+             if normalize_kz(p.first_name.strip()) == first
+             and normalize_kz(p.last_name.strip()).split()[-1:] == last.split()[-1:]]
+    return found[0] if len(found) == 1 else None
+
+
+def get_or_create_unlinked_player(name: str, team: Optional[Team], number: Optional[int] = None,
+                                  match_start_time=None) -> Optional[Player]:
+    """Строка состава или события без id игрока, но с именем: без неё в старте 10 человек, а гол без автора."""
+    name = (name or "").strip()
+    if not name or team is None:
+        return None
+    first_name, last_name, name_source = _resolve_cyrillic_name({"name": name, "display_name": name}, "игрока")
+    player = _find_unlinked_player(first_name, last_name, team) or _find_team_player_by_name(first_name, last_name, team)
+    if player is None:
+        player = Player.objects.create(first_name=first_name, last_name=last_name, name_source=name_source,
+                                       team=team, number=number, is_active=True, last_match_at=match_start_time)
+        logger.warning("Sportmonks: игрок «%s» пришёл без id — сохранён по имени в «%s»", name, team.name)
     return player
 
 
@@ -851,9 +895,17 @@ def import_coaches(match: Match, coaches_data: List[Dict]) -> bool:
 
 
 @transaction.atomic
-def import_lineups(match: Match, lineups_data: List[Dict], formations_data: Optional[List[Dict]] = None) -> bool:
+def import_lineups(match: Match, lineups_data: List[Dict], formations_data: Optional[List[Dict]] = None,
+                   events_data: Optional[List[Dict]] = None) -> bool:
     if not lineups_data:
         return False
+
+    # Поставщик бывает непоследователен: в составе игрок без id, а в событиях — с id. Имя -> id из событий.
+    id_by_name: Dict[str, int] = {}
+    for evt in events_data or []:
+        for name_key, id_key in (("player_name", "player_id"), ("related_player_name", "related_player_id")):
+            if evt.get(name_key) and evt.get(id_key):
+                id_by_name[evt[name_key].strip().lower()] = evt[id_key]
 
     home_sm_id = str(match.home_team.sportmonks_id or "")
     away_sm_id = str(match.away_team.sportmonks_id or "")
@@ -893,10 +945,19 @@ def import_lineups(match: Match, lineups_data: List[Dict], formations_data: Opti
         )
 
         def _save_entry(entry: Dict, is_starting: bool) -> None:
-            player = get_or_create_player(
-                entry.get("player"), team=team, number=entry.get("jersey_number"),
-                match_start_time=match.start_time,
-            )
+            if (entry.get("player") or {}).get("id") or entry.get("player_id"):
+                player = get_or_create_player(
+                    entry.get("player") or {"id": entry.get("player_id"), "name": entry.get("player_name")},
+                    team=team, number=entry.get("jersey_number"), match_start_time=match.start_time,
+                )
+            elif (entry.get("player_name") or "").strip().lower() in id_by_name:
+                player = get_or_create_player(
+                    {"id": id_by_name[entry["player_name"].strip().lower()], "name": entry["player_name"]},
+                    team=team, number=entry.get("jersey_number"), match_start_time=match.start_time,
+                )
+            else:
+                player = get_or_create_unlinked_player(entry.get("player_name"), team,
+                                                       entry.get("jersey_number"), match.start_time)
             if not player:
                 return
             # Детальная позиция в приоритете, грубая — fallback.
@@ -972,6 +1033,9 @@ def import_events(match: Match, events_data: List[Dict]) -> bool:
             key = (ev.minute, ev.event_type, ev.team_side)
             existing_pool.setdefault(key, []).append(ev)
 
+    # Сторона игрока по заявке: у поставщика бывает перепутан participant_id у карточек.
+    lineup_side = dict(MatchLineupPlayer.objects.filter(lineup__match=match).values_list("player_id", "lineup__side"))
+
     created_count = updated_count = reclassified_count = skipped_count = 0
     # Возвращаем и события, сменившие тип на push-достойный (жёлтая → красная).
     push_candidate_events: List[MatchEvent] = []
@@ -1036,8 +1100,17 @@ def import_events(match: Match, events_data: List[Dict]) -> bool:
         else:
             if player_sm_id:
                 player = Player.objects.filter(sportmonks_id=str(player_sm_id)).first()
+            elif evt.get("player_name") and event_type != "own_goal":
+                side_team = match.home_team if team_side == "home" else match.away_team
+                first, last, _src = _resolve_cyrillic_name({"name": evt["player_name"]}, "игрока")
+                player = _find_unlinked_player(first, last, side_team)
             if event_type in ("goal", "penalty", "own_goal") and related_sm_id:
                 assist_player = Player.objects.filter(sportmonks_id=str(related_sm_id)).first()
+            # Автогол — игрок соперника, там сторона = кому засчитан; остальным сторона по заявке.
+            if player and event_type != "own_goal" and lineup_side.get(player.id) not in (None, team_side):
+                logger.warning("Sportmonks: событие %s матча %s — сторона %s по поставщику, %s по заявке; беру заявку",
+                               evt.get("id"), match.id, team_side, lineup_side[player.id])
+                team_side = lineup_side[player.id]
 
         evt_sm_id = str(evt.get("id") or "") or None
 
@@ -1329,7 +1402,8 @@ def import_full_fixture(fixture_data: Dict, league: League, season: Season) -> M
 
     match = import_match_core(fixture_data, league=league, season=season)
     import_coaches(match, fixture_data.get("coaches") or [])
-    import_lineups(match, fixture_data.get("lineups") or [], fixture_data.get("formations") or [])
+    import_lineups(match, fixture_data.get("lineups") or [], fixture_data.get("formations") or [],
+                   events_data=fixture_data.get("events") or [])
     # Новые события и события, переклассифицированные в push-достойный тип.
     push_worthy_events = import_events(match, fixture_data.get("events") or [])
     import_statistics(match, fixture_data.get("statistics") or [])

@@ -212,6 +212,31 @@ class MatchdayTests(BotTestCase):
         self.assertIn(f"d|vote_freeze|{self.match.pk}", self.buttons())
 
 
+class ReviewTimingTests(BotTestCase):
+    def setUp(self):
+        super().setUp()
+        self.match = make_match()
+
+    def test_review_waits_for_voting_close(self):
+        from aggregates.models import PlayerMatchAggregate
+        from players.models import Player
+
+        from .matchday import run_reviews
+
+        now = timezone.now()
+        player = Player.objects.create(first_name="А", last_name="Б", team=self.match.home_team)
+        PlayerMatchAggregate.objects.create(player=player, match=self.match, performance_score=8, total_votes=50)
+        self.match.voting_open_until = now + timedelta(hours=10)
+        self.match.save()
+        with mock.patch("adminbot.channel.review_post") as review:
+            self.assertEqual(run_reviews(now), 0)
+            self.match.voting_open_until = now - timedelta(minutes=5)
+            self.match.save()
+            self.assertEqual(run_reviews(now), 1)
+            self.assertEqual(run_reviews(now), 0)
+        review.assert_called_once()
+
+
 class ExpertsAndContactsTests(BotTestCase):
     def setUp(self):
         super().setUp()
