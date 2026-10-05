@@ -130,16 +130,17 @@ class SeasonPassTests(EngagementTestCase):
 
 
 class DailyQuestTests(EngagementTestCase):
-    def test_track_completes_and_all_done_bonus(self):
+    def test_record_completes_and_all_done_bonus(self):
         user = self.make_user()
         today = timezone.localdate()
-        DailyQuest.objects.create(user=user, date=today, key="predict", target=2, xp_reward=15)
+        DailyQuest.objects.create(user=user, date=today, key="predict_3", target=2, xp_reward=15)
         DailyQuest.objects.create(user=user, date=today, key="round", target=1, xp_reward=5)
-        quests.track(user, "predict")
-        self.assertFalse(DailyQuest.objects.get(user=user, key="predict").is_done)
-        quests.track(user, "predict")
+        quests.record(user, "prediction", "m1")
+        quests.record(user, "prediction", "m1")  # тот же матч второй раз не считается
+        self.assertFalse(DailyQuest.objects.get(user=user, key="predict_3").is_done)
+        quests.record(user, "prediction", "m2")
         quests.track(user, "round")
-        quests.track(user, "round")  # повтор не даёт XP
+        quests.track(user, "round")  # повтор визита не даёт XP
         self.assertTrue(DailyQuest.objects.filter(user=user, key=quests.ALL_DONE_KEY).exists())
         self.assertEqual(UserXP.objects.get(user=user).total_xp, 15 + 5 + quests.ALL_DONE_XP)
 
@@ -420,12 +421,87 @@ class QuestPoolTests(EngagementTestCase):
         self.client.get(reverse('users:leaderboard'))
         self.assertTrue(DailyQuest.objects.get(user=user, key="leaderboard").is_done)
 
-    def test_share_endpoint(self):
+    def test_share_counts_only_when_friend_opens(self):
+        from django.test import Client
+
         user = self.make_user()
-        DailyQuest.objects.create(user=user, date=timezone.localdate(), key="share", target=1, xp_reward=10)
+        DailyQuest.objects.create(user=user, date=timezone.localdate(), key="share_open", target=1, xp_reward=15)
+        code = referrals.code_for(user)
+        match = self.make_match()
+        url = reverse("matches:detail", args=[match.id]) + f"?from={code}"
         self.client.force_login(user)
-        self.assertEqual(self.client.post(reverse('engagement:share_done')).status_code, 204)
-        self.assertTrue(DailyQuest.objects.get(user=user, key="share").is_done)
+        self.client.get(url)  # сам открыл свою ссылку
+        self.assertFalse(DailyQuest.objects.get(user=user, key="share_open").is_done)
+        Client(REMOTE_ADDR="10.9.9.9").get(url)  # открыл друг
+        self.assertTrue(DailyQuest.objects.get(user=user, key="share_open").is_done)
+
+    def test_own_link_from_same_address_not_counted(self):
+        from django.test import Client
+
+        user = self.make_user()
+        DailyQuest.objects.create(user=user, date=timezone.localdate(), key="share_open", target=1, xp_reward=15)
+        self.client.force_login(user)
+        self.client.get(reverse("core:home"), REMOTE_ADDR="10.1.1.1")  # запомнили адрес автора
+        match = self.make_match()
+        Client(REMOTE_ADDR="10.1.1.1").get(reverse("matches:detail", args=[match.id]) + f"?from={referrals.code_for(user)}")
+        self.assertFalse(DailyQuest.objects.get(user=user, key="share_open").is_done)
+
+
+class QuestAntiAbuseTests(EngagementTestCase):
+    """Отмена действия забирает опыт; повторное действие с тем же объектом не засчитывается."""
+
+    def test_follow_unfollow_revokes_and_refollow_not_counted(self):
+        from players.models import Player
+
+        user = self.make_user()
+        today = timezone.localdate()
+        DailyQuest.objects.create(user=user, date=today, key="follow_player", target=1, xp_reward=5)
+        player = Player.objects.create(first_name="И", last_name="П", team=self.home)
+        with self.captureOnCommitCallbacks(execute=True):
+            follow = Follow.objects.create(user=user, player=player)
+        self.assertTrue(DailyQuest.objects.get(user=user, key="follow_player").is_done)
+        self.assertEqual(UserXP.objects.get(user=user).total_xp, 5 + quests.ALL_DONE_XP)
+        with self.captureOnCommitCallbacks(execute=True):
+            follow.delete()
+        self.assertFalse(DailyQuest.objects.get(user=user, key="follow_player").is_done)
+        self.assertEqual(UserXP.objects.get(user=user).total_xp, 0)
+        with self.captureOnCommitCallbacks(execute=True):
+            Follow.objects.create(user=user, player=player)
+        quest = DailyQuest.objects.get(user=user, key="follow_player")
+        self.assertFalse(quest.is_done)  # снова тот же игрок — не считается
+        self.assertEqual(quest.progress, 0)
+
+    def test_revoke_takes_back_all_done_bonus(self):
+        user = self.make_user()
+        today = timezone.localdate()
+        DailyQuest.objects.create(user=user, date=today, key="push", target=1, xp_reward=10)
+        quests.record(user, "push_enabled", "push")
+        self.assertTrue(DailyQuest.objects.filter(user=user, key=quests.ALL_DONE_KEY).exists())
+        quests.revoke(user, "push_enabled", "push")
+        self.assertFalse(DailyQuest.objects.filter(user=user, key=quests.ALL_DONE_KEY).exists())
+        self.assertEqual(UserXP.objects.get(user=user).total_xp, 0)
+
+    def test_round_prediction_counts_only_that_tour(self):
+        user = self.make_user()
+        DailyQuest.objects.create(user=user, date=timezone.localdate(), key="predict_round", target=1,
+                                  xp_reward=45, param="7")
+        quests.record(user, "prediction", "a", tour=6)
+        self.assertFalse(DailyQuest.objects.get(user=user, key="predict_round").is_done)
+        quests.record(user, "prediction", "b", tour=7)
+        self.assertTrue(DailyQuest.objects.get(user=user, key="predict_round").is_done)
+
+    def test_one_time_quest_not_assigned_again(self):
+        user = self.make_user()
+        DailyQuest.objects.create(user=user, date=timezone.localdate() - timedelta(days=3), key="avatar",
+                                  target=1, xp_reward=10, completed_at=timezone.now())
+        keys = {q.key for q in quests._choose(user, timezone.localdate() + timedelta(days=1))}
+        self.assertNotIn("avatar", keys)
+
+    def test_urgent_evaluation_goes_first(self):
+        user = self.make_user()
+        self.make_match(start=timezone.now() - timedelta(hours=40))  # голосование закроется через ~8 ч
+        chosen = quests._choose(user, timezone.localdate())
+        self.assertTrue(chosen[0].key.startswith("evaluate"))
 
 
 class EngagementPushTests(EngagementTestCase):

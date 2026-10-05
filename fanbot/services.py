@@ -168,6 +168,9 @@ def save_phone(user, contact: dict, telegram_id: int) -> tuple[bool, str]:
     if User.objects.filter(phone=phone).exclude(pk=user.pk).exists():
         return False, "Этот номер уже подтверждён в другом аккаунте DOPX. Если это ваш второй аккаунт, напишите нам."
     User.objects.filter(pk=user.pk).update(phone=phone, phone_verified_at=timezone.now())
+    from engagement.quests import record
+
+    record(user, "phone_verified", "phone")
     return True, f"Номер {phone} подтверждён и привязан к аккаунту {user.username}."
 
 

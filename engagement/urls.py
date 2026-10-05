@@ -16,7 +16,6 @@ urlpatterns = [
     path("r/<str:code>/", views.referral, name="referral"),
     path("r/<str:code>/m/<uuid:match_id>/", views.challenge, name="challenge"),
     path("r/<str:code>/<path:tail>", views.clean_link, {"name": "engagement:referral"}),
-    path("api/share-done/", views.share_done, name="share_done"),
     path("polls/<uuid:poll_id>/vote/", views.poll_vote, name="poll_vote"),
     path("share/brag/<str:username>/<str:kind>.png", views.brag_card, name="brag_card"),
     path("share/story/<str:username>/<str:kind>.png", views.story_card, name="story_card"),

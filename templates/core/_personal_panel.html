@@ -120,7 +120,11 @@
             <span class="dx-action__body">
                 <span class="dx-action__eyebrow">{{ personal.predictions_count }} {{ personal.predictions_count|ru_plural:"матч ждёт,матча ждут,матчей ждут" }} прогноза</span>
                 <span class="dx-action__title">{{ m.home_team.name }} — {{ m.away_team.name }}</span>
+                {% if m.kickoff_known %}
                 <span class="dx-action__meta"><span data-countdown="{{ m.start_time|date:'c' }}" data-countdown-prefix="Старт через " data-countdown-done="Матч начинается">Старт через {{ m.start_time|timeuntil }}</span></span>
+                {% else %}
+                <span class="dx-action__meta">{{ m.start_time|date:"j E" }}, время уточняется</span>
+                {% endif %}
             </span>
             <i class="ti ti-chevron-right dx-action__chevron"></i>
         </a>
@@ -150,6 +154,7 @@
                 <span class="dx-quest__ico"><i class="ti {% if q.done %}ti-check{% else %}{{ q.icon }}{% endif %}"></i></span>
                 <span class="dx-quest__body">
                     <span class="dx-quest__title">{{ q.title }}</span>
+                    {% if q.hint and not q.done %}<span class="dx-quest__hint">{{ q.hint }}</span>{% endif %}
                     <span class="dx-quest__bar"><span style="width: {{ q.percent }}%"></span></span>
                 </span>
                 <span class="dx-quest__xp">{% if q.target > 1 %}<small>{{ q.progress }}/{{ q.target }}</small>{% endif %}+{{ q.xp }}</span>

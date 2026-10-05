@@ -29,6 +29,15 @@ class DailyStreakMiddleware:
         )
         if tracked:
             self._touch(request, user)
+        # Ссылка «поделиться» с кодом автора (?from=): засчитать автору, если открыл другой человек.
+        code = request.GET.get("from") if request.method == "GET" else None
+        if code and len(code) <= 32 and not request.headers.get("HX-Request"):
+            try:
+                from engagement.quests import credit_share_open
+
+                credit_share_open(request, code)
+            except Exception:
+                logger.exception("engagement share credit failed")
         response = self.get_response(request)
         if tracked and response.status_code == 200:
             match = getattr(request, "resolver_match", None)
@@ -44,6 +53,9 @@ class DailyStreakMiddleware:
 
     @staticmethod
     def _touch(request, user):
+        from engagement.quests import remember_ip
+
+        remember_ip(request, user)  # чтобы свою же ссылку, открытую с того же адреса, не засчитать
         try:
             from django.contrib import messages
 

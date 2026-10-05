@@ -28,15 +28,6 @@
         catch (e) { window.prompt('Скопируйте ссылку', text); }
     }
 
-    // Засчитать задание дня «Поделитесь» (гостю сервер ответит 204 без действий).
-    function reportShare() {
-        const m = document.cookie.match(/(?:^|; )csrftoken=([^;]+)/);
-        fetch('/api/share-done/', {
-            method: 'POST', credentials: 'same-origin', keepalive: true,
-            headers: { 'X-CSRFToken': m ? decodeURIComponent(m[1]) : '' },
-        }).catch(() => {});
-    }
-
     // Сторис: только картинка, без текста — так Instagram сразу открывает её как историю.
     async function shareStory(btn) {
         const url = btn.dataset.story;
@@ -52,7 +43,6 @@
     }
 
     document.addEventListener('click', async (event) => {
-        if (event.target.closest('.dx-share')) reportShare();
         const copyBtn = event.target.closest('[data-copy]');
         if (copyBtn) { event.preventDefault(); copy(copyBtn.dataset.copy, copyBtn); return; }
 

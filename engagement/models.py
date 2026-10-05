@@ -41,6 +41,8 @@ class DailyQuest(BaseModel):
     progress = models.PositiveSmallIntegerField(_("Прогресс"), default=0)
     xp_reward = models.PositiveSmallIntegerField(_("Награда XP"), default=10)
     completed_at = models.DateTimeField(_("Выполнено"), null=True, blank=True)
+    # Уточнение задания: например, номер тура для «Спрогнозируйте весь тур».
+    param = models.CharField(_("Параметр"), max_length=40, blank=True, default="")
 
     class Meta:
         verbose_name = _("Задание дня")
@@ -51,6 +53,23 @@ class DailyQuest(BaseModel):
     @property
     def is_done(self) -> bool:
         return self.completed_at is not None
+
+
+class QuestCredit(BaseModel):
+    """Что засчитано в задание: каждый объект (матч, игрок, лига, опрос…) — один раз навсегда.
+    Подписался-отписался-подписался — второй раз не засчитывается; отмена действия снимает кредит и опыт."""
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="quest_credits")
+    quest = models.ForeignKey(DailyQuest, on_delete=models.CASCADE, related_name="credits")
+    key = models.CharField(_("Задание"), max_length=40)
+    ref = models.CharField(_("Объект"), max_length=64)
+    # Действие отменили: опыт забран, но запись остаётся — тот же объект второй раз не засчитается.
+    revoked_at = models.DateTimeField(_("Отменено"), null=True, blank=True)
+
+    class Meta:
+        verbose_name = _("Засчитанное действие")
+        verbose_name_plural = _("Засчитанные действия")
+        constraints = [models.UniqueConstraint(fields=["user", "key", "ref"], name="unique_quest_credit")]
 
 
 class SeasonPass(BaseModel):

@@ -238,7 +238,6 @@ def polls_for(user) -> list[dict]:
 def vote(user, poll, choice: str) -> bool:
     """True — голос засчитан впервые (задание дня +)."""
     from engagement.models import DailyPollVote
-    from engagement.quests import track
 
     if choice not in ("a", "b") or poll.closes_at <= timezone.now():
         return False
@@ -247,5 +246,7 @@ def vote(user, poll, choice: str) -> bool:
             DailyPollVote.objects.create(poll=poll, user=user, choice=choice)
     except IntegrityError:
         return False
-    track(user, "episode_vote" if poll.kind == poll.KIND_EPISODE else "duel_vote")
+    from engagement.quests import record
+
+    record(user, "poll_vote", poll.pk, kind=poll.kind)
     return True

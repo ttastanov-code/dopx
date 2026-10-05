@@ -533,6 +533,10 @@ class ProfileEditView(LoginRequiredMixin, UpdateView):
             self.object.avatar = None
 
         response = super().form_valid(form)
+        if self.object.avatar:
+            from engagement.quests import record
+
+            record(self.object, "avatar_set", "avatar")
 
         if email_changed:
             from users.emails import request_change

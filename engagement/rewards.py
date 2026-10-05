@@ -18,6 +18,25 @@ def award_xp(user, amount: int, reason: str) -> None:
     logger.info("engagement: +%s XP %s (%s)", amount, user.pk, reason)
 
 
+def revoke_xp(user, amount: int, reason: str) -> None:
+    """Забрать выданный за задание опыт (действие отменили): из уровня и из абонемента сезона."""
+    from django.db.models import F, Value
+    from django.db.models.functions import Greatest
+
+    from engagement.models import SeasonPass
+    from engagement.season import current_season
+    from users.models import UserXP
+
+    if amount <= 0:
+        return
+    xp, _ = UserXP.objects.get_or_create(user=user)
+    xp.add_xp(-amount)
+    season = current_season()
+    if season is not None:
+        SeasonPass.objects.filter(user=user, season=season).update(xp=Greatest(F("xp") - amount, Value(0)))
+    logger.info("engagement: -%s XP %s (%s)", amount, user.pk, reason)
+
+
 def award_badge(user, badge_type: str) -> bool:
     """Выдать достижение один раз; True — выдано сейчас (с in-app уведомлением и push)."""
     from notifications.models import Notification

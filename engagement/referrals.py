@@ -36,6 +36,9 @@ def attach(request, user) -> None:
     if ref is None or ref.user_id == user.pk or Referral.objects.filter(invited=user).exists():
         return
     Referral.objects.create(inviter=ref.user, invited=user, source=source)
+    from engagement.quests import record
+
+    record(ref.user, "friend_registered", user.pk)
 
 
 def reward_if_due(user) -> None:

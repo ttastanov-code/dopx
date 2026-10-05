@@ -74,7 +74,6 @@ def friend_leagues_view(request):
         except friend_leagues.LeagueError as e:
             messages.error(request, str(e))
             return redirect("engagement:friend_leagues")
-        track(request.user, "create_league")
         messages.success(request, "Лига создана. Отправьте ссылку друзьям.")
         return redirect("engagement:friend_league", code=league.invite_code)
     leagues = []
@@ -142,6 +141,9 @@ def invite(request):
 def referral(request, code):
     """Вход по ссылке-приглашению."""
     get_object_or_404(ReferralCode, code=code)
+    from engagement.quests import credit_share_open
+
+    credit_share_open(request, code)
     # ?to= — куда вести уже зарегистрированного (только из белого списка).
     target = {"season": "engagement:season_pass"}.get(request.GET.get("to"), "core:home")
     if request.user.is_authenticated:
@@ -163,6 +165,9 @@ def clean_link_token(request, token, tail, name):
 def challenge(request, code, match_id):
     """«Спорим, мой прогноз точнее?» — ведёт на матч с плашкой вызова."""
     ref = get_object_or_404(ReferralCode.objects.select_related("user"), code=code)
+    from engagement.quests import credit_share_open
+
+    credit_share_open(request, code)
     if not request.user.is_authenticated:
         referrals.remember(request, code, Referral.SOURCE_CHALLENGE)
     return redirect(f"{reverse('matches:detail', args=[match_id])}?challenge={ref.user.username}")
@@ -314,11 +319,3 @@ def poll_vote(request, poll_id):
     return render(request, "engagement/_poll_card.html", {"item": item})
 
 
-@require_POST
-def share_done(request):
-    """share.js сообщает о нажатии «Поделиться» — засчитываем задание дня."""
-    from django.http import HttpResponse
-
-    if request.user.is_authenticated:
-        track(request.user, "share")
-    return HttpResponse(status=204)
