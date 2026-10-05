@@ -130,6 +130,20 @@ def link_start(request):
 
 @login_required
 @require_POST
+def phone_start(request):
+    """«Подтвердить номер через Telegram»: бот просит «Поделиться номером»; без привязки — привязка той же ссылкой."""
+    if not services.enabled() or not services.bot_username():
+        messages.error(request, "Telegram пока не подключён.")
+        return redirect("users:profile_edit")
+    if TelegramAccount.objects.filter(user=request.user).exists():
+        return redirect(f"https://t.me/{services.bot_username()}?start=phone")
+    TelegramLinkCode.objects.filter(user=request.user, used_at__isnull=True).delete()
+    code = TelegramLinkCode.objects.create(user=request.user)
+    return redirect(f"https://t.me/{services.bot_username()}?start=phone_{code.code}")
+
+
+@login_required
+@require_POST
 def unlink(request):
     back = _safe_next(request, request.POST.get("next", ""), default=reverse("users:notification_settings"))
     # Без пароля Telegram — единственный способ входа: отвязка заперла бы аккаунт.

@@ -21,21 +21,30 @@ PREDICT_RATE_LIMIT = 20
 PREDICT_RATE_LIMIT_WINDOW_SECONDS = 60
 
 
-def _widget_context(request, match):
+def _widget_context(request, match, just_predicted: bool = False):
     my_prediction = user_prediction(request.user, match)
     challenge_url = ''
+    next_match, left = None, 0
     if my_prediction and match.is_prediction_open:
         from django.urls import reverse
 
         from engagement.referrals import code_for
+        from predictions.services import unpredicted_matches
+
         challenge_url = request.build_absolute_uri(
             reverse('engagement:challenge', args=[code_for(request.user), match.id])
         )
+        # Сделал прогноз — сразу следующий матч без прогноза.
+        rest = unpredicted_matches(request.user)
+        next_match, left = rest.first(), rest.count()
     return {
         'match': match,
         'counts': prediction_counts(match),
         'my_prediction': my_prediction,
         'challenge_url': challenge_url,
+        'next_match': next_match,
+        'left_count': left,
+        'just_predicted': just_predicted,
     }
 
 
@@ -91,4 +100,7 @@ def predict(request, match_id):
             )
     # None — окно закрылось между загрузкой и кликом.
 
-    return render(request, widget_template, _widget_context(request, match))
+    response = render(request, widget_template, _widget_context(request, match, just_predicted=prediction is not None))
+    if prediction is not None:
+        response['HX-Trigger'] = 'dopx:predicted'  # панель «Ваш день» на главной пересчитывает счётчик
+    return response

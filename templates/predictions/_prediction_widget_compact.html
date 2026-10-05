@@ -1,6 +1,6 @@
 {% comment %}
 Компактный виджет прогноза для карточки в списке матчей (POST с compact=1).
-Контекст: match, counts, my_prediction. Клик не всплывает к ссылке карточки.
+Контекст: match, counts, my_prediction (+ just_predicted, challenge_url, next_match после клика). Клик не всплывает к ссылке карточки.
 {% endcomment %}
 <div id="prediction-widget-{{ match.id }}"
      class="grid grid-cols-3 gap-1 sm:gap-1.5 mt-2 pt-2 border-t border-base-300"
@@ -53,4 +53,21 @@
         <span class="text-[9px] font-semibold opacity-60 truncate max-w-full">П2</span>
         <span class="text-xs font-bold">{{ counts.away_pct }}%</span>
     </button>
+    {% if just_predicted %}
+    {# Только что сделан прогноз: вызов другу и переход к следующему матчу без прогноза. #}
+    <div class="col-span-3 dx-predicted-row">
+        <span class="dx-predicted-row__ok"><i class="ti ti-check"></i> Принято</span>
+        {% if challenge_url %}
+        <button type="button" class="dx-predicted-row__btn" data-share data-share-url="{{ challenge_url }}"
+                data-share-text="Спорим, мой прогноз на {{ match.home_team.name }} — {{ match.away_team.name }} точнее? Сделай свой на DOPX">
+            <i class="ti ti-swords"></i><span data-share-label>Вызов</span>
+        </button>
+        {% endif %}
+        {% if next_match %}
+        <a href="{% url 'matches:detail' next_match.id %}" class="dx-predicted-row__btn dx-predicted-row__btn--next">
+            Следующий ({{ left_count }}) <i class="ti ti-arrow-right"></i>
+        </a>
+        {% endif %}
+    </div>
+    {% endif %}
 </div>

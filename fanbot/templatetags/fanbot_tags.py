@@ -16,3 +16,10 @@ def telegram_login(context, next_url=""):
         return {"enabled": False}
     url = reverse("fanbot:login") + ("?" + urlencode({"next": next_url}) if next_url else "")
     return {"enabled": True, "bot": username, "auth_url": request.build_absolute_uri(url) if request else url}
+
+
+@register.simple_tag
+def fanbot_enabled() -> bool:
+    from fanbot import services
+
+    return services.enabled() and bool(services.bot_username())

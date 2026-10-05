@@ -2,15 +2,12 @@
 """Личная сводка пользователя: что ему сейчас стоит сделать (главная, нижняя панель)."""
 from __future__ import annotations
 
-from datetime import timedelta
-
 from django.core.cache import cache
 from django.db.models import Exists, OuterRef
 from django.utils import timezone
 
 from evaluations.models import EvaluationSession
 from matches.models import Match
-from predictions.models import MatchPrediction
 
 # Кэш счётчика для нижней панели (запрос на каждую страницу).
 PENDING_COUNT_CACHE_SECONDS = 60
@@ -65,16 +62,9 @@ def personal_summary(user) -> dict:
         .first()
     )
 
-    predicted = MatchPrediction.objects.filter(user=user, match=OuterRef('pk'))
-    predictable = (
-        Match.objects.filter(
-            status='scheduled', start_time__gt=now,
-            start_time__lte=now + timedelta(days=Match.PREDICTION_WINDOW_DAYS),
-        )
-        .exclude(Exists(predicted))
-        .select_related('home_team', 'away_team')
-        .order_by('start_time')
-    )
+    from predictions.services import unpredicted_matches
+
+    predictable = unpredicted_matches(user)
 
     from engagement import quests, season, streaks
 

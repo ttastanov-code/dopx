@@ -2014,6 +2014,23 @@ a.dx-rank__name:hover { color: var(--color-primary); }
 @media (min-width: 640px) { .dx-challenge { flex-direction: row; align-items: center; justify-content: space-between; } }
 .dx-challenge__text { display: flex; align-items: center; gap: .5rem; font-size: .82rem; }
 .dx-challenge__text .ti { font-size: 1.2rem; color: var(--color-primary); }
+/* После прогноза: следующий матч без прогноза (виджет на странице матча). */
+.dx-next-predict {
+    margin-top: .6rem; display: flex; align-items: center; justify-content: space-between; gap: .75rem;
+    padding: .7rem .85rem; border-radius: 1rem; border: 1px solid var(--color-base-300); transition: border-color .15s, background .15s;
+}
+.dx-next-predict:hover { border-color: var(--color-primary); background: color-mix(in oklab, var(--color-primary) 5%, transparent); }
+.dx-next-predict__eyebrow { display: block; font-size: .72rem; opacity: .6; }
+.dx-next-predict__title { display: block; font-weight: 600; font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dx-next-predict .ti { color: var(--color-primary); flex-shrink: 0; }
+/* То же в компактной карточке матча: строка под кнопками П1/Х/П2. */
+.dx-predicted-row { display: flex; align-items: center; gap: .35rem; flex-wrap: wrap; margin-top: .15rem; animation: dx-live-enter .35s ease both; }
+.dx-predicted-row__ok { font-size: .72rem; font-weight: 600; color: var(--color-success); margin-right: auto; display: inline-flex; align-items: center; gap: .2rem; }
+.dx-predicted-row__btn {
+    display: inline-flex; align-items: center; gap: .25rem; font-size: .72rem; font-weight: 600; padding: .2rem .55rem;
+    border-radius: 9999px; background: color-mix(in oklab, var(--color-primary) 10%, transparent); color: var(--color-primary);
+}
+.dx-predicted-row__btn--next { background: var(--color-primary); color: var(--color-primary-content); }
 .dx-challenge-banner {
     display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; margin-bottom: 1rem; padding: .85rem 1rem; border-radius: 1.1rem;
     background: linear-gradient(135deg, color-mix(in oklab, var(--color-primary) 14%, transparent), color-mix(in oklab, var(--color-secondary) 12%, transparent));

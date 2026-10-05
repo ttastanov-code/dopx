@@ -21,10 +21,10 @@ class UserAdmin(ModelAdmin):
         "is_verified",
         "registration_ip",
     )
-    search_fields = ("username", "email", "registration_ip")
+    search_fields = ("username", "email", "registration_ip", "phone")
     list_filter = ("is_verified",)
-    # trust_score только для чтения — считается автоматически.
-    readonly_fields = ("trust_score",)
+    # trust_score считается автоматически; телефон — только подтверждённый через Telegram, руками не вписывается.
+    readonly_fields = ("trust_score", "phone", "phone_verified_at")
     # Хэш пароля не редактируем: смена — через сброс пароля.
     exclude = ("password",)
     actions = [export_as_csv, "verify_selected", "deactivate_selected"]

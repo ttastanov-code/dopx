@@ -1,9 +1,9 @@
 {% load ui_extras %}
-{# «Ваш день»: фоновое обновление раз в минуту и по dopx:wake (истёк отсчёт, вернулись на вкладку). #}
+{# «Ваш день»: фоновое обновление раз в минуту, по dopx:wake (истёк отсчёт, вернулись на вкладку) и сразу после прогноза. #}
 <section id="personal-panel" class="dx-hello mb-6 md:mb-8" aria-labelledby="hello-title"
          data-background-poll
          hx-get="{% url 'core:personal_panel' %}"
-         hx-trigger="every 60s [document.visibilityState === 'visible'], dopx:wake"
+         hx-trigger="every 60s [document.visibilityState === 'visible'], dopx:wake, dopx:predicted from:body"
          hx-swap="outerHTML">
     <div class="dx-hello__top">
         <div class="min-w-0">

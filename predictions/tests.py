@@ -331,3 +331,28 @@ class PredictWidgetViewTests(PredictionsTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context['counts']['home'], 1)
         self.assertEqual(response.context['counts']['total'], 1)
+
+
+@override_settings(PROFILE_REQUIRED=False)
+class AfterPredictionTests(PredictionsTestCase):
+    """После прогноза: панель на главной обновляется, виджет ведёт к следующему матчу и даёт вызов."""
+
+    def test_compact_widget_offers_next_and_challenge(self):
+        first = self.make_match(start_time=timezone.now() + timedelta(days=1))
+        second = self.make_match(start_time=timezone.now() + timedelta(days=2))
+        self.client.force_login(self.make_user())
+
+        response = self.client.post(reverse('predictions:predict', args=[first.id]),
+                                    {'choice': MatchPrediction.CHOICE_HOME, 'compact': '1'})
+        self.assertEqual(response['HX-Trigger'], 'dopx:predicted')
+        self.assertContains(response, 'Принято')
+        self.assertContains(response, 'Следующий (1)')
+        self.assertContains(response, reverse('matches:detail', args=[second.id]))
+        self.assertContains(response, 'data-share-url')
+
+    def test_no_next_when_all_predicted(self):
+        match = self.make_match()
+        self.client.force_login(self.make_user())
+        response = self.client.post(reverse('predictions:predict', args=[match.id]), {'choice': 'X'})
+        self.assertNotContains(response, 'Следующий без прогноза')
+        self.assertContains(response, 'Бросить вызов')

@@ -147,6 +147,30 @@ def link_by_code(code: str, tg: dict) -> tuple[bool, str]:
     return True, f"Готово: Telegram привязан к аккаунту {acc.user.username}. Сюда будут приходить уведомления."
 
 
+# ---------------- Телефон
+def normalize_phone(raw: str) -> str:
+    """«8 700 123 45 67» / «77001234567» / «+7 (700)…» -> «+77001234567»; неверный — пусто."""
+    digits = re.sub(r"\D", "", raw or "")
+    if len(digits) == 11 and digits.startswith("8"):
+        digits = "7" + digits[1:]
+    return f"+{digits}" if 10 <= len(digits) <= 15 else ""
+
+
+def save_phone(user, contact: dict, telegram_id: int) -> tuple[bool, str]:
+    """Номер из «Поделиться номером»: принимаем только контакт самого отправителя — его проверил Telegram."""
+    from users.models import User
+
+    if contact.get("user_id") != telegram_id:
+        return False, "Это чужой контакт. Нажмите кнопку «Поделиться номером» — она отправит ваш номер."
+    phone = normalize_phone(contact.get("phone_number", ""))
+    if not phone:
+        return False, "Не получилось распознать номер. Попробуйте ещё раз кнопкой ниже."
+    if User.objects.filter(phone=phone).exclude(pk=user.pk).exists():
+        return False, "Этот номер уже подтверждён в другом аккаунте DOPX. Если это ваш второй аккаунт, напишите нам."
+    User.objects.filter(pk=user.pk).update(phone=phone, phone_verified_at=timezone.now())
+    return True, f"Номер {phone} подтверждён и привязан к аккаунту {user.username}."
+
+
 # ---------------- Отправка от бота болельщиков
 def call(method: str, **params):
     from adminbot.telegram import TelegramError, redact

@@ -340,3 +340,60 @@ class DirectLinkTests(TestCase):
         self.client.force_login(user)
         self.assertEqual(self.client.post(reverse("fanbot:miniapp_allow")).status_code, 200)
         self.assertTrue(TelegramAccount.objects.get(user=user).can_message)
+
+
+@override_settings(FAN_BOT_TOKEN="1:x", FAN_BOT_USERNAME="dopx_kz_bot")
+class PhoneTests(TestCase):
+    """Телефон принимается только из «Поделиться номером» самого владельца Telegram."""
+
+    def setUp(self):
+        from fanbot.models import TelegramAccount
+        from users.models import User
+
+        self.user = User.objects.create_user(username="fan", email="fan@ex.com", password="x")
+        TelegramAccount.objects.create(user=self.user, telegram_id=777)
+
+    def _contact(self, user_id=777, phone="8 700 123 45 67", from_id=777):
+        with mock.patch("fanbot.services.call") as call:
+            bot.handle({"message": {"chat": {"id": from_id, "type": "private"}, "from": {"id": from_id},
+                                    "contact": {"phone_number": phone, "user_id": user_id}}})
+        return call.call_args.kwargs["text"]
+
+    def test_normalize(self):
+        from fanbot.services import normalize_phone
+
+        self.assertEqual(normalize_phone("8 (700) 123-45-67"), "+77001234567")
+        self.assertEqual(normalize_phone("+7 700 123 45 67"), "+77001234567")
+        self.assertEqual(normalize_phone("123"), "")
+
+    def test_own_contact_saved(self):
+        self.assertIn("подтверждён", self._contact())
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.phone, "+77001234567")
+        self.assertIsNotNone(self.user.phone_verified_at)
+
+    def test_foreign_contact_rejected(self):
+        self.assertIn("чужой контакт", self._contact(user_id=555))
+        self.user.refresh_from_db()
+        self.assertIsNone(self.user.phone)
+
+    def test_phone_taken_by_other_account(self):
+        from users.models import User
+
+        User.objects.create_user(username="other", email="o@ex.com", password="x", phone="+77001234567")
+        self.assertIn("другом аккаунте", self._contact())
+
+    def test_profile_button_links_and_asks(self):
+        from fanbot.models import TelegramAccount, TelegramLinkCode
+        from users.models import User
+
+        newbie = User.objects.create_user(username="newbie", email="n@ex.com", password="x")
+        self.client.force_login(newbie)
+        response = self.client.post(reverse("fanbot:phone"))
+        code = TelegramLinkCode.objects.get(user=newbie).code
+        self.assertEqual(response.url, f"https://t.me/dopx_kz_bot?start=phone_{code}")
+        with mock.patch("fanbot.services.call") as call:
+            bot.handle({"message": {"chat": {"id": 888, "type": "private"}, "from": {"id": 888},
+                                    "text": f"/start phone_{code}"}})
+        self.assertTrue(TelegramAccount.objects.filter(user=newbie, telegram_id=888).exists())
+        self.assertTrue(call.call_args.kwargs["reply_markup"]["keyboard"][0][0]["request_contact"])

@@ -1,5 +1,6 @@
 # fanbot/bot.py
-"""Ответы бота болельщиков: /start (приветствие, привязка по коду), /stop и /notify — уведомления."""
+"""Ответы бота болельщиков: /start (приветствие, привязка по коду), /stop и /notify — уведомления,
+/phone и «Поделиться номером» — подтверждение телефона."""
 from __future__ import annotations
 
 import html
@@ -48,10 +49,19 @@ def _no_app_hint() -> str:
             "3. Вернитесь сюда и нажмите «Запустить». После этого начнут приходить уведомления.")
 
 
-def reply(chat_id: int, text: str, keyboard=None) -> None:
+# Кнопка под полем ввода: Telegram сам отправляет номер владельца аккаунта.
+PHONE_KEYBOARD = {"keyboard": [[{"text": "📱 Поделиться номером", "request_contact": True}]],
+                  "resize_keyboard": True, "one_time_keyboard": True}
+PHONE_ASK = ("Подтвердите номер телефона: нажмите кнопку «📱 Поделиться номером» внизу.\n"
+             "Номер не увидят другие болельщики. Он защищает рейтинг от накрутки: один номер — один аккаунт.")
+
+
+def reply(chat_id: int, text: str, keyboard=None, markup: dict | None = None) -> None:
     params = {"chat_id": chat_id, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True}
     if keyboard:
         params["reply_markup"] = {"inline_keyboard": keyboard}
+    elif markup:
+        params["reply_markup"] = markup
     try:
         services.call("sendMessage", **params)
     except Exception as e:
@@ -84,8 +94,24 @@ def handle(update: dict) -> None:
     tg = {"id": tid, "username": who.get("username", ""), "first_name": who.get("first_name", ""),
           "last_name": who.get("last_name", "")}
     acc = TelegramAccount.objects.select_related("user").filter(telegram_id=tid).first()
+    if msg.get("contact"):
+        if not acc:
+            return reply(tid, "Сначала привяжите Telegram к аккаунту DOPX: профиль → «Подтвердить номер».",
+                         markup={"remove_keyboard": True})
+        ok, message = services.save_phone(acc.user, msg["contact"], tid)
+        return reply(tid, ("✅ " if ok else "⚠️ ") + html.escape(message),
+                     markup={"remove_keyboard": True} if ok else PHONE_KEYBOARD)
     if text.startswith("/start"):
         payload = text.split(maxsplit=1)[1] if " " in text else ""
+        if payload == "phone" or payload.startswith("phone_"):
+            if payload.startswith("phone_"):
+                ok, message = services.link_by_code(payload[6:], tg)
+                if not ok:
+                    return reply(tid, "⚠️ " + html.escape(message))
+                acc = TelegramAccount.objects.select_related("user").filter(telegram_id=tid).first()
+            if not acc:
+                return reply(tid, "Аккаунт DOPX ещё не привязан." + _no_app_hint(), _app_button())
+            return reply(tid, PHONE_ASK, markup=PHONE_KEYBOARD)
         if payload.startswith("m_"):
             return reply(tid, "Матч на DOPX: оценки игроков и прогнозы.", _app_button(payload, "⚽ Открыть матч"))
         if payload.startswith("link_"):
@@ -93,10 +119,16 @@ def handle(update: dict) -> None:
             return reply(tid, ("✅ " if ok else "⚠️ ") + html.escape(message), _app_button())
         if acc:
             TelegramAccount.objects.filter(pk=acc.pk).update(can_message=True)
+            phone_hint = "" if acc.user.phone else "\n/phone — подтвердить номер телефона."
             return reply(tid, f"С возвращением, <b>{html.escape(acc.user.username)}</b>! Уведомления будут приходить сюда.\n"
-                              "/notify включает и выключает уведомления, /stop выключает.", _with_channel(_app_button()))
+                              "/notify включает и выключает уведомления, /stop выключает." + phone_hint,
+                         _with_channel(_app_button()))
         hint = WELCOME_APP if services.app_url() else _no_app_hint()
         return reply(tid, WELCOME + hint, _with_channel(_app_button()))
+    if text == "/phone":
+        if not acc:
+            return reply(tid, "Аккаунт DOPX ещё не привязан." + _no_app_hint(), _app_button())
+        return reply(tid, PHONE_ASK, markup=PHONE_KEYBOARD)
     if text == "/stop":
         if acc:
             TelegramAccount.objects.filter(pk=acc.pk).update(notify=False)

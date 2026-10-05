@@ -84,5 +84,26 @@
             </form>
         </div>
     </div>
+
+    {# Телефон: только подтверждённый через Telegram («Поделиться номером»), вручную не вводится. #}
+    {% load fanbot_tags %}{% fanbot_enabled as tg_on %}
+    <div class="card bg-base-100 border border-base-300 mt-4">
+        <div class="card-body p-6">
+            <h2 class="font-bold text-lg flex items-center gap-2"><i class="ti ti-phone"></i> Телефон</h2>
+            {% if user.phone %}
+            <p class="text-sm"><b>{{ user.phone }}</b> <span class="badge badge-success badge-sm ml-1"><i class="ti ti-check"></i> подтверждён</span></p>
+            <p class="text-xs opacity-60">Номер видите только вы. Сменить — подтвердите новый через Telegram.</p>
+            {% else %}
+            <p class="text-sm opacity-70">Подтвердите номер через Telegram: бот попросит нажать «Поделиться номером», и Telegram сам передаст ваш номер. Его не увидят другие болельщики, он защищает рейтинг от накрутки: один номер — один аккаунт.</p>
+            {% endif %}
+            {% if tg_on %}
+            <form method="post" action="{% url 'fanbot:phone' %}" class="mt-2">{% csrf_token %}
+                <button type="submit" class="btn btn-outline btn-sm"><i class="ti ti-brand-telegram"></i> {% if user.phone %}Сменить номер{% else %}Подтвердить через Telegram{% endif %}</button>
+            </form>
+            {% else %}
+            <p class="text-xs opacity-60 mt-2">Подтверждение номера появится, когда подключим Telegram-бота.</p>
+            {% endif %}
+        </div>
+    </div>
 </div>
 {% endblock %}

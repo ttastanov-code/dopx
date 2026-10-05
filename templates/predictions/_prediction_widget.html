@@ -129,4 +129,14 @@
             {% endwith %}
         </div>
         {% endif %}
+
+        {% if next_match %}
+        <a href="{% url 'matches:detail' next_match.id %}" class="dx-next-predict">
+            <span class="min-w-0">
+                <span class="dx-next-predict__eyebrow">Следующий без прогноза · ещё {{ left_count }}</span>
+                <span class="dx-next-predict__title">{{ next_match.home_team.name }} — {{ next_match.away_team.name }}</span>
+            </span>
+            <i class="ti ti-arrow-right"></i>
+        </a>
+        {% endif %}
 </div>

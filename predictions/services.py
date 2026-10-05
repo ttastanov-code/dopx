@@ -20,6 +20,24 @@ def correct_predictions_count(user) -> int:
     return MatchPrediction.objects.filter(user=user, match__status="finished").filter(correct_prediction_q()).count()
 
 
+def unpredicted_matches(user):
+    """Ближайшие матчи с открытым окном прогноза, где у пользователя ещё нет прогноза."""
+    from datetime import timedelta
+
+    from django.db.models import Exists, OuterRef
+    from django.utils import timezone
+
+    from matches.models import Match
+
+    now = timezone.now()
+    predicted = MatchPrediction.objects.filter(user=user, match=OuterRef('pk'))
+    return (
+        Match.objects.filter(status='scheduled', start_time__gt=now,
+                             start_time__lte=now + timedelta(days=Match.PREDICTION_WINDOW_DAYS))
+        .exclude(Exists(predicted)).select_related('home_team', 'away_team').order_by('start_time')
+    )
+
+
 def submit_prediction(*, user, match, choice: str) -> tuple[MatchPrediction, bool] | tuple[None, bool]:
     """Ставит или меняет прогноз. Снять прогноз нельзя, повторный выбор — no-op.
     Окно проверяется здесь (POST можно отправить в обход UI).

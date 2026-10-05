@@ -11,6 +11,7 @@ urlpatterns = [
     path("app/enter/", views.miniapp_enter, name="miniapp_enter"),
     path("app/allow/", views.miniapp_allow, name="miniapp_allow"),
     path("link/", views.link_start, name="link"),
+    path("phone/", views.phone_start, name="phone"),
     path("unlink/", views.unlink, name="unlink"),
     path("notify/", views.toggle_notify, name="toggle_notify"),
 ]

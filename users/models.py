@@ -63,6 +63,9 @@ class User(AbstractUser, BaseModel):
     # Город — из справочника users/kz_cities.py. blank=True оставлен ради старых
     # записей; обязателен только в форме регистрации.
     city = models.CharField(_("Город"), max_length=120, blank=True, choices=KZ_CITY_CHOICES)
+    # Только подтверждённый через Telegram («Поделиться номером»), в формате +77001234567. Другим не виден.
+    phone = models.CharField(_("Телефон"), max_length=16, unique=True, null=True, blank=True)
+    phone_verified_at = models.DateTimeField(_("Телефон подтверждён"), null=True, blank=True)
     rating_power = models.FloatField(_("Сила рейтинга"), default=1.0)
     trust_score = models.FloatField(_("Оценка доверия"), default=1.0)
     is_verified = models.BooleanField(_("Верифицирован"), default=False)
