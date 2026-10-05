@@ -2,7 +2,7 @@
 """Тесты players/positions.py (без БД)."""
 from __future__ import annotations
 
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, TestCase
 
 from players.positions import player_position_breakdown, player_position_display_code
 
@@ -57,3 +57,31 @@ class PlayerPositionBreakdownSideAwarenessTests(SimpleTestCase):
         self.assertIn("RM", codes)
         self.assertEqual(codes["RM"]["label"], "Правый полузащитник")
         self.assertEqual(codes["RM"]["count"], 3)
+
+
+class PlayerListRatingTests(TestCase):
+    """В списке — средняя за сезон по опубликованным матчам, а не лучший матч."""
+
+    def test_average_not_best_match(self):
+        from datetime import timedelta
+
+        from django.urls import reverse
+        from django.utils import timezone
+
+        from aggregates.models import PlayerMatchAggregate
+        from evaluations.tests import _make_match
+        from players.models import Player
+
+        closed = timezone.now() - timedelta(hours=1)
+        first = _make_match(voting_open_until=closed)
+        first.season.is_active = True
+        first.season.save()
+        second = _make_match(voting_open_until=closed)
+        second.season = first.season
+        second.save()
+        player = Player.objects.create(first_name="Иван", last_name="Средний", team=first.home_team)
+        for match, score in ((first, 9.0), (second, 5.0)):
+            PlayerMatchAggregate.objects.create(player=player, match=match, performance_score=score, total_votes=10)
+        rows = self.client.get(reverse("players:list") + "?season=all").context["rows"]
+        row = next(r for r in rows if r["title"] == "Иван Средний")
+        self.assertEqual(row["value"], "7,0")

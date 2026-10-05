@@ -29,17 +29,7 @@ class RefereeListView(ListView):
         queryset = Referee.objects.filter(
             is_active=True
         ).annotate(
-            # Имя аннотации совпадает с шаблоном
             total_matches=Count('match', filter=season_q, distinct=True),
-            # Только матчи с закрытым голосованием.
-            avg_influence=vote_weighted_avg(
-                'match_aggregates__avg_influence', 'match_aggregates__total_votes',
-                filter=published_q('match_aggregates__match__'),
-            ),
-            avg_decision_quality=vote_weighted_avg(
-                'match_aggregates__avg_decision_quality', 'match_aggregates__total_votes',
-                filter=published_q('match_aggregates__match__'),
-            ),
         )
 
         # Поиск.
@@ -52,11 +42,27 @@ class RefereeListView(ListView):
             ]
             queryset = queryset.filter(id__in=matching_ids)
 
-        return queryset.order_by('last_name')
+        # Сначала те, кто судил больше матчей в сезоне.
+        return queryset.order_by('-total_matches', 'last_name')
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Все судьи — DOPX'
+        # Средние — за тот же сезон и с тем же порогом голосов, что у остальных списков.
+        from aggregates.models import RefereeMatchAggregate
+        from aggregates.services import entity_ratings
+        from core.list_rows import referee_row
+
+        page = list(context['referees'])
+        season = None if self.show_all else self.active_season
+        ids = [r.id for r in page]
+        quality = entity_ratings(RefereeMatchAggregate, 'referee_id', ids, fields=('avg_decision_quality',), season=season)
+        influence = entity_ratings(RefereeMatchAggregate, 'referee_id', ids, fields=('avg_influence',), season=season)
+        for r in page:
+            r.avg_decision_quality = (quality.get(r.id) or {}).get('rating')
+            r.avg_influence = (influence.get(r.id) or {}).get('rating')
+        context['referees'] = page
+        context['rows'] = [referee_row(r) for r in page]
         context['search_query'] = self.request.GET.get('q', '')
         context['active_season'] = self.active_season
         context['show_all'] = self.show_all

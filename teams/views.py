@@ -75,6 +75,25 @@ class TeamListView(ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Все команды — DOPX'
+        from aggregates.models import TeamMatchAggregate
+        from aggregates.services import entity_ratings
+        from teams.models import TeamSeasonStats
+
+        page = list(context['teams'])
+        ids = [t.id for t in page]
+        season = None if self.show_all else self.active_season
+        ratings = entity_ratings(TeamMatchAggregate, 'team_id', ids, season=season)
+        standings = ({s.team_id: s for s in TeamSeasonStats.objects.filter(season=season, team_id__in=ids)}
+                     if season else {})
+        from core.list_rows import team_row
+
+        for t in page:
+            t.rating = ratings.get(t.id)
+            t.standing = standings.get(t.id)
+        context['teams'] = page
+        # В сезоне — по месту в таблице, иначе по алфавиту.
+        page.sort(key=lambda t: (t.standing.position if t.standing and t.standing.position else 999, t.name))
+        context['rows'] = [team_row(t) for t in page]
         context['search_query'] = self.request.GET.get('q', '')
         context['active_season'] = self.active_season
         context['show_all'] = self.show_all

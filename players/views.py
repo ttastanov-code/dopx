@@ -23,7 +23,6 @@ from players.positions import (
 )
 from seasons.models import Season
 import logging
-import django.db.models as models
 
 logger = logging.getLogger(__name__)
 
@@ -50,16 +49,7 @@ class PlayerListView(ListView):
         )
 
         # is_active не фильтрует рейтинг — только бейдж «покинул клуб».
-        queryset = Player.objects.select_related('team').prefetch_related(
-            # Prefetch с [:1] — только лучший агрегат на игрока.
-            models.Prefetch(
-                'match_aggregates',
-                queryset=PlayerMatchAggregate.objects.filter(published_q()).order_by('-performance_score').only(
-                    'id', 'performance_score', 'player_id', 'total_votes'
-                )[:1],
-                to_attr='best_aggregate'
-            )
-        ).annotate(
+        queryset = Player.objects.select_related('team').annotate(
             # Матчи через составы: в старте или вышел на замену.
             total_matches=Count(
                 'matchlineupplayer__lineup__match',
@@ -113,6 +103,18 @@ class PlayerListView(ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Все игроки — DOPX'
+        # Рейтинг в списке — средняя за сезон (взвешенная по голосам), а не лучший матч; отдельным запросом по странице.
+        from aggregates.services import entity_ratings
+
+        page = list(context['players'])
+        ratings = entity_ratings(PlayerMatchAggregate, 'player_id', [p.id for p in page],
+                                 season=None if self.show_all else self.active_season)
+        from core.list_rows import player_row
+
+        for p in page:
+            p.rating = ratings.get(p.id)
+        context['players'] = page
+        context['rows'] = [player_row(p) for p in page]
         context['search_query'] = self.request.GET.get('q', '')
         context['active_season'] = self.active_season
         context['show_all'] = self.show_all

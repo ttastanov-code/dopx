@@ -1,116 +1,25 @@
 {% extends 'base.html' %}
 {% load static %}
 {% block content %}
-{# === ШАПКА === #}
-<div class="mb-6 md:mb-8 px-2 sm:px-0">
-    <h1 class="text-2xl md:text-3xl font-bold mb-2 flex items-center gap-2">
-        <i class="ti ti-gavel mr-2"></i>
-        Судьи
-    </h1>
-    <p class="opacity-60 text-sm md:text-base">Все судьи платформы с оценками работы</p>
-</div>
+{% include 'components/_page_head.html' with icon="ti-gavel" title="Судьи" sub="Качество решений и влияние на матчи по оценкам болельщиков" %}
 
 {% include 'components/_season_scope_toggle.html' %}
 
-{# === ФИЛЬТРЫ === #}
-<div class="card bg-base-100 border border-base-300 mb-4 md:mb-6 px-2 sm:px-0">
-    <div class="card-body p-3 md:p-4">
-        <form method="get" class="flex flex-wrap gap-2 sm:gap-4">
-            <div class="form-control flex-1 min-w-[150px] sm:min-w-[200px]">
-                <input type="text" name="q" value="{{ request.GET.q|default:'' }}" placeholder="Поиск судьи..." class="input input-bordered input-sm w-full">
-            </div>
-            <button type="submit" class="btn btn-primary btn-sm">
-                <i class="ti ti-search"></i>
-                <span class="hidden sm:inline">Найти</span>
-            </button>
-        </form>
-    </div>
-</div>
+{% include 'components/_list_toolbar.html' with placeholder="Поиск судьи" q=search_query teams=False positions=False %}
 
-{# === СПИСОК СУДЕЙ === #}
-{# Таблица в .card (много числовых колонок). #}
-<div class="card bg-base-100 border border-base-300">
-    <div class="card-body p-0">
-        <div class="overflow-x-auto">
-          <table class="table table-zebra min-w-[640px]">
-                <thead>
-                    <tr>
-                        <th>Судья</th>
-                        <th class="text-center">Матчей</th>
-                        <th class="text-center"><span class="inline-flex items-center gap-1 justify-center">Влияние{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.referee.influence_score %}</span></th>
-                        <th class="text-center"><span class="inline-flex items-center gap-1 justify-center">Качество{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.referee.decision_quality %}</span></th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for referee in referees %}
-                    <tr class="hover">
-                        <td>
-                            <a href="{% url 'referees:detail' referee.id %}" class="flex items-center gap-2 md:gap-3 hover:text-primary transition-colors group">
-                                <div class="entity-avatar-ring flex-shrink-0">
-                                    <div class="w-8 h-8 md:w-9 md:h-9 rounded-full bg-neutral/10 flex items-center justify-center font-bold text-neutral text-xs md:text-sm">
-                                        {{ referee.first_name|first|upper }}{{ referee.last_name|first|upper }}
-                                    </div>
-                                </div>
-                                <span class="font-medium text-sm md:text-base group-hover:text-primary transition-colors">{{ referee.first_name }} {{ referee.last_name }}</span>
-                            </a>
-                        </td>
-                        <td class="text-center">
-                            <span class="font-mono text-xs md:text-sm opacity-70">{{ referee.total_matches|default:0 }}</span>
-                        </td>
-                        <td class="text-center">
-                            <span class="badge badge-sm {% if referee.avg_influence > 70 %}badge-error{% elif referee.avg_influence < 40 %}badge-success{% else %}badge-warning{% endif %}">
-                                {{ referee.avg_influence|floatformat:0|default:"—" }}
-                            </span>
-                        </td>
-                        <td class="text-center">
-                            <span class="badge badge-sm {% if referee.avg_decision_quality >= 7 %}badge-success{% elif referee.avg_decision_quality >= 5 %}badge-warning{% else %}badge-error{% endif %}">
-                                {{ referee.avg_decision_quality|floatformat:1|default:"—" }}
-                            </span>
-                        </td>
-                        <td class="text-right">
-                            <a href="{% url 'referees:detail' referee.id %}" class="btn btn-ghost btn-xs">
-                                <i class="ti ti-chevron-right"></i>
-                            </a>
-                        </td>
-                    </tr>
-                    {% empty %}
-                    <tr>
-                        <td colspan="5" class="text-center py-12 md:py-16 opacity-60">
-                            <i class="ti ti-gavel-off text-4xl md:text-6xl mb-3 md:mb-4"></i>
-                            <h3 class="text-lg md:text-xl font-semibold mb-2">Судьи не найдены</h3>
-                            <p class="text-sm">Попробуйте изменить параметры поиска</p>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
+{% if rows %}
+<div class="el">
+    {% for row in rows %}
+    {% include 'components/_entity_row.html' %}
+    {% endfor %}
 </div>
-
-{# === ПАГИНАЦИЯ === #}
-{% if is_paginated %}
-<div class="flex justify-center mt-6 md:mt-8 px-2">
-    <div class="join">
-        {% if page_obj.has_previous %}
-        <a href="?page={{ page_obj.previous_page_number }}{% if request.GET.q %}&q={{ request.GET.q }}{% endif %}" class="join-item btn btn-sm">
-            <i class="ti ti-chevron-left"></i>
-        </a>
-        {% endif %}
-        {% for num in page_obj.paginator.page_range %}
-            {% if page_obj.number == num %}
-            <button class="join-item btn btn-sm btn-active">{{ num }}</button>
-            {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
-            <a href="?page={{ num }}{% if request.GET.q %}&q={{ request.GET.q }}{% endif %}" class="join-item btn btn-sm">{{ num }}</a>
-            {% endif %}
-        {% endfor %}
-        {% if page_obj.has_next %}
-        <a href="?page={{ page_obj.next_page_number }}{% if request.GET.q %}&q={{ request.GET.q }}{% endif %}" class="join-item btn btn-sm">
-            <i class="ti ti-chevron-right"></i>
-        </a>
-        {% endif %}
-    </div>
+{% else %}
+<div class="el-empty">
+    <i class="ti ti-gavel"></i>
+    <h3 class="text-lg font-semibold mt-2">Судьи не найдены</h3>
+    <p class="text-sm">Попробуйте изменить поиск</p>
 </div>
 {% endif %}
+
+{% include 'components/_pagination.html' %}
 {% endblock %}

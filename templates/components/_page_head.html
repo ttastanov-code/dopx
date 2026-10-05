@@ -1,0 +1,8 @@
+{# Заголовок страницы-списка: иконка, название, подпись. Параметры: icon, title, sub. #}
+<header class="ph">
+    <span class="ph__icon"><i class="ti {{ icon }}"></i></span>
+    <div class="min-w-0">
+        <h1 class="ph__title">{{ title }}</h1>
+        {% if sub %}<p class="ph__sub">{{ sub }}</p>{% endif %}
+    </div>
+</header>

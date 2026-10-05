@@ -86,6 +86,26 @@ TRUST_MIN_COMMUNITY_VOTES = 3
 USER_FLAG_SOURCES = ("fast_wizard", "ip_cluster", "extreme_bias", "manual")
 
 
+def entity_ratings(model, entity_field: str, ids, fields=("performance_score",), season=None) -> dict:
+    """Средние оценки для списка (игроки, тренеры, команды): {id: {"rating", "votes", "matches"}}.
+    Только опубликованные матчи с достаточным числом голосов, среднее взвешено по голосам — как на странице сущности.
+    Несколько полей (у тренера четыре критерия) — среднее их средних."""
+    ids = list(ids)
+    if not ids:
+        return {}
+    qs = model.objects.filter(published_q(), total_votes__gte=min_votes_for_display(), **{f"{entity_field}__in": ids})
+    if season is not None:
+        qs = qs.filter(match__season=season)
+    annotations = {f"avg_{i}": vote_weighted_avg(f) for i, f in enumerate(fields)}
+    rows = qs.values(entity_field).annotate(**annotations, votes=Sum("total_votes"), matches=Count("id"))
+    result = {}
+    for row in rows:
+        values = [row[f"avg_{i}"] for i in range(len(fields)) if row[f"avg_{i}"] is not None]
+        result[row[entity_field]] = {"rating": sum(values) / len(values) if values else None,
+                                     "votes": row["votes"], "matches": row["matches"]}
+    return result
+
+
 def min_votes_for_display() -> int:
     """Порог показа рейтинга: настройка платформы или MIN_VOTES_FOR_DISPLAY."""
     from core.models import get_setting

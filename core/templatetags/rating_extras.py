@@ -136,3 +136,13 @@ def confidence_badge(aggregate):
         "badge_class": meta["badge_class"],
         "tooltip_text": " ".join(tooltip_parts),
     }
+
+
+@register.filter
+def rating_tone(value) -> str:
+    """Цвет значения рейтинга в списках: good ≥ 7, mid ≥ 5, иначе low."""
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return "mid"
+    return "good" if value >= 7 else "mid" if value >= 5 else "low"

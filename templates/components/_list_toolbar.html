@@ -1,0 +1,39 @@
+{% comment %}
+Поиск и фильтры списков (игроки, тренеры, судьи, команды): строка поиска с иконкой и чипсы-фильтры.
+Фильтры применяются сразу при выборе, поиск — по Enter. Параметры: placeholder, q, teams (опц.), positions (опц.).
+season=all сохраняется, чтобы фильтр не сбрасывал «Все сезоны».
+{% endcomment %}
+<form method="get" class="lt" role="search">
+    {% if request.GET.season %}<input type="hidden" name="season" value="{{ request.GET.season }}">{% endif %}
+    <label class="lt__search">
+        <i class="ti ti-search"></i>
+        <input type="search" name="q" value="{{ q }}" placeholder="{{ placeholder }}" autocomplete="off" enterkeyhint="search">
+    </label>
+    {% if teams or positions %}
+    <div class="lt__chips">
+        {% if teams %}
+        <span class="lt__chip{% if request.GET.team %} is-on{% endif %}">
+            <i class="ti ti-shield"></i>
+            <select name="team" onchange="this.form.requestSubmit()" aria-label="Команда">
+                <option value="">Все команды</option>
+                {% for team in teams %}<option value="{{ team.id }}" {% if request.GET.team == team.id|stringformat:"s" %}selected{% endif %}>{{ team.name }}</option>{% endfor %}
+            </select>
+            <i class="ti ti-chevron-down lt__caret"></i>
+        </span>
+        {% endif %}
+        {% if positions %}
+        <span class="lt__chip{% if request.GET.position %} is-on{% endif %}">
+            <i class="ti ti-run"></i>
+            <select name="position" onchange="this.form.requestSubmit()" aria-label="Позиция">
+                <option value="">Все позиции</option>
+                {% for pos in positions %}<option value="{{ pos }}" {% if request.GET.position == pos %}selected{% endif %}>{{ pos }}</option>{% endfor %}
+            </select>
+            <i class="ti ti-chevron-down lt__caret"></i>
+        </span>
+        {% endif %}
+        {% if request.GET.team or request.GET.position or q %}
+        <a href="?{% if request.GET.season %}season={{ request.GET.season }}{% endif %}" class="lt__reset"><i class="ti ti-x"></i> Сбросить</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</form>

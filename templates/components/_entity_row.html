@@ -1,0 +1,21 @@
+{% comment %}
+Строка списка сущностей. row — словарь из core/list_rows.py: url, img, initials, crest, title, sub, tag,
+value, tone (good/mid/low), value_label, meta.
+{% endcomment %}
+<a href="{{ row.url }}" class="er">
+    <span class="er__avatar{% if row.crest %} er__avatar--crest{% endif %}">
+        {% if row.img %}<img src="{{ row.img }}" alt="" loading="lazy" decoding="async">{% else %}{{ row.initials }}{% endif %}
+    </span>
+    <span class="er__body">
+        <span class="er__title">{{ row.title }}</span>
+        <span class="er__sub">{{ row.sub }}{% if row.tag %} · <span class="er__tag">{{ row.tag }}</span>{% endif %}</span>
+    </span>
+    <span class="er__side">
+        {% if row.value %}
+        <span class="er__value er__value--{{ row.tone }}" title="{{ row.value_label }}">{{ row.value }}</span>
+        {% else %}
+        <span class="er__value er__value--none" title="Пока мало оценок">—</span>
+        {% endif %}
+        {% if row.meta %}<span class="er__meta">{{ row.meta }}</span>{% endif %}
+    </span>
+</a>

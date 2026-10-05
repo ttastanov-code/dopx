@@ -1,6 +1,6 @@
 # coaches/views.py
 from django.views.generic import ListView, DetailView
-from django.db.models import Count, Avg, Q, Prefetch, Sum
+from django.db.models import Count, Avg, Q, Sum
 from core.utils import normalize_kz
 from core.models import get_setting
 from coaches.models import Coach
@@ -27,20 +27,7 @@ class CoachListView(ListView):
         self.show_all = self.request.GET.get('season') == 'all'
 
         # Prefetch последнего агрегата — без N+1.
-        queryset = Coach.objects.filter(
-            is_active=True
-        ).prefetch_related(
-            Prefetch(
-                'match_aggregates',
-                queryset=CoachMatchAggregate.objects.filter(published_q()).select_related('match').only(
-                    'id', 'avg_tactics', 'coach_id', 'match_id', 'match__start_time'
-                )
-            )
-        ).annotate(
-            # Число матчей тренера не показываем — источник не хранит историю смен тренеров.
-            # evaluations_count — достоверная метрика.
-            evaluations_count=Count('coach_evaluations', distinct=True)
-        )
+        queryset = Coach.objects.filter(is_active=True).select_related('team')
 
         if self.active_season and not self.show_all:
             queryset = queryset.filter(team__teamseason__season=self.active_season)
@@ -63,6 +50,19 @@ class CoachListView(ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['page_title'] = 'Все тренеры — DOPX'
+        # Оценка тренера — среднее четырёх критериев по опубликованным матчам (а не один случайный матч).
+        from aggregates.services import entity_ratings
+
+        page = list(context['coaches'])
+        ratings = entity_ratings(CoachMatchAggregate, 'coach_id', [c.id for c in page],
+                                 fields=('avg_tactics', 'avg_substitutions', 'avg_management', 'avg_impact'),
+                                 season=None if self.show_all else self.active_season)
+        from core.list_rows import coach_row
+
+        for c in page:
+            c.rating = ratings.get(c.id)
+        context['coaches'] = page
+        context['rows'] = [coach_row(c) for c in page]
         context['search_query'] = self.request.GET.get('q', '')
         context['active_season'] = self.active_season
         context['show_all'] = self.show_all
