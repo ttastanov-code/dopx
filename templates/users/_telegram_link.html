@@ -5,7 +5,7 @@
     <span class="dx-linked__text">
         {% if user.telegram %}
         <b>{% if user.telegram.username %}@{{ user.telegram.username }}{% else %}{{ user.telegram.first_name|default:"Telegram" }}{% endif %}</b>
-        <small>{% if user.telegram.can_message %}<i class="ti ti-circle-check-filled"></i> Telegram привязан{% else %}<a href="https://t.me/{{ telegram_bot }}" target="_blank" rel="noopener">Нажмите «Запустить» в боте</a>{% endif %}</small>
+        <small>{% if user.telegram.can_message %}<i class="ti ti-circle-check"></i> Telegram привязан{% else %}<a href="https://t.me/{{ telegram_bot }}" target="_blank" rel="noopener">Нажмите «Запустить» в боте</a>{% endif %}</small>
         {% else %}
         <b>Telegram</b>
         <small>Вход в один тап и уведомления</small>

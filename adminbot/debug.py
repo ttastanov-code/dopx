@@ -41,6 +41,10 @@ def heartbeat() -> dict | None:
         hb["started_at"] = _dt(hb["started"])
         hb["last_update_at"] = _dt(hb["last_update"]) if hb.get("last_update") else None
         hb["uptime_h"] = round((time.time() - hb["started"]) / 3600, 1)
+        # Ошибки — по журналу с запуска процесса, а не счётчиком в памяти бота:
+        # иначе после «Очистить журнал» цифра остаётся, а журнал пуст.
+        hb["errors"] = sum(1 for r in cache.get(f"adminbot:log:{_env()}") or []
+                           if r["level"] in ("ERROR", "CRITICAL") and r["ts"] >= hb["started"])
     return hb
 
 

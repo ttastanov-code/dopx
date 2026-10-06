@@ -6,7 +6,7 @@
         hx-target="#follow-btn-{{ target_type }}-{{ target_id }}"
         hx-swap="outerHTML"
         class="btn btn-sm {% if following %}btn-primary{% else %}btn-outline{% endif %}">
-    <i class="ti {% if following %}ti-bell-filled{% else %}ti-bell-plus{% endif %}"></i>
+    <i class="ti {% if following %}ti-bell-ringing{% else %}ti-bell-plus{% endif %}"></i>
     {% if following %}Вы подписаны{% else %}Подписаться{% endif %}
 </button>
 {% else %}

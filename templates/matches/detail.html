@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load engagement_extras %}
 {% load static rating_extras %}
 {% load ui_extras %}
 {% load match_extras %}
@@ -29,7 +30,7 @@
     <div class="dx-challenge-banner">
         <span class="dx-challenge-banner__ico"><i class="ti ti-swords"></i></span>
         <div class="dx-challenge-banner__body">
-            <b>{{ challenger.username }} бросает вам вызов</b>
+            <b><span class="{{ challenger|name_class }}">{{ challenger.username }}</span> бросает вам вызов</b>
             <span>Спорим, его прогноз на этот матч точнее? Сделайте свой, сравним после финального свистка.</span>
         </div>
         {% if not user.is_authenticated %}
@@ -214,8 +215,8 @@
                         <i class="ti ti-refresh"></i>
                     </button>
                 </div>
-                {# Контейнер событий (скролл внутри) #}
-                <div class="p-3 sm:p-5 overflow-x-auto">
+                {# Контейнер событий #}
+                <div class="p-3 sm:p-5">
                     <div id="events-container" data-background-poll hx-get="{% url 'matches:events' match.id %}" hx-trigger="load" hx-swap="outerHTML">
                         <div class="dx-skel" aria-busy="true" aria-label="Загрузка событий">
                         <span class="dx-skel__row"></span>

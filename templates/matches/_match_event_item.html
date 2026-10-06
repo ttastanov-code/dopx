@@ -1,0 +1,35 @@
+{# Одно событие ленты: значок, игрок, пояснение; у гола — счёт после него. Контекст: row, e. #}
+<div class="evi">
+    {% include "matches/_match_event_icon.html" with mod=row.mod %}
+    <div class="evi__body">
+        {% if row.mod == 'sub' %}
+            <div class="evi__name evi__name--in">
+                {% if e.player %}<a href="{% url 'players:detail' e.player.id %}">{{ e.player }}</a>{% else %}{{ e.player_display_name|default:"Игрок не указан" }}{% endif %}
+            </div>
+            <div class="evi__sub evi__sub--out">
+                {% if e.player_out %}<a href="{% url 'players:detail' e.player_out.id %}">{{ e.player_out }}</a>{% else %}{{ e.player_out_display_name|default:"игрок не указан" }}{% endif %}
+            </div>
+        {% elif row.mod == 'var' %}
+            <div class="evi__name">{{ e.var_decision|default:"Проверка VAR" }}</div>
+            <div class="evi__sub">Видеопросмотр</div>
+        {% else %}
+            <div class="evi__name">
+                {% if e.player %}<a href="{% url 'players:detail' e.player.id %}">{{ e.player }}</a>{% else %}{{ e.player_display_name|default:"Игрок не указан" }}{% endif %}
+            </div>
+            <div class="evi__sub">
+                {% if row.mod == 'goal' and e.event_type == 'goal' %}
+                    {% if e.assist_player %}пас: <a href="{% url 'players:detail' e.assist_player.id %}">{{ e.assist_player }}</a>{% elif e.assist_display_name %}пас: {{ e.assist_display_name }}{% else %}Гол{% endif %}
+                {% elif row.mod == 'yellow' or row.mod == 'red' %}
+                    {{ row.reason|default:row.label }}
+                {% elif row.mod == 'void' and e.var_decision %}
+                    {{ row.label }} · {{ e.var_decision }}
+                {% else %}
+                    {{ row.label }}
+                {% endif %}
+            </div>
+        {% endif %}
+    </div>
+    {# Герб — только на телефоне, где обе команды в одной колонке. #}
+    {% if team.logo_display %}<img src="{{ team.logo_display }}" alt="{{ team.name }}" title="{{ team.name }}" class="evi__crest" width="20" height="20" loading="lazy" decoding="async">{% endif %}
+    {% if row.score %}<span class="evi__score">{{ row.score }}</span>{% endif %}
+</div>

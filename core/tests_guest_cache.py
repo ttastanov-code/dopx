@@ -44,6 +44,15 @@ class GuestPageCacheTests(TestCase):
         self.assertNotEqual(first.content, second.content)
         self.assertIn("CSRF_COOKIE", req2.META)
 
+    def test_data_change_drops_cached_page(self):
+        from core.live import bump_data_version
+
+        self._get()
+        bump_data_version()  # например, гол в live
+        _, fresh = self._get()
+        self.assertEqual(self.calls, 2)
+        self.assertNotIn("X-Guest-Cache", fresh)
+
     def test_not_cached_for_users_toasts_and_other_paths(self):
         from users.models import User
 

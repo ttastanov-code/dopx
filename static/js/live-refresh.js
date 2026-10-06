@@ -268,12 +268,16 @@
             if (!response.ok || response.redirected) return;
             const version = String((await response.json()).v);
             if (knownVersion === null) knownVersion = version;
-            else if (version !== knownVersion) { knownVersion = version; pendingVersion = true; }
+            else if (version !== knownVersion) {
+                knownVersion = version;
+                pendingVersion = true;
+                // Live-блоки (счёт, события) — сразу и даже во время скролла: их опрос сливает узлы мягко.
+                if (window.dopxWakeAll) window.dopxWakeAll(true);
+            }
         } catch (e) { return; }
         if (!pendingVersion || shouldSkip()) return;
         const applied = await refresh();
         await refreshLiveSources();
-        if (window.dopxWakeAll) window.dopxWakeAll(true); // блоки со своим опросом — сразу
         if (applied) pendingVersion = false;
     }
 

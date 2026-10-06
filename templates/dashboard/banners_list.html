@@ -31,7 +31,7 @@
 
 {# Таблица обновляется сама раз в 10 секунд, пока вкладка открыта. #}
 <div id="banners-table" data-background-poll hx-get="{% url 'dashboard:banners_list' %}?{% if zone_filter %}zone={{ zone_filter }}&{% endif %}{% if status_filter %}status={{ status_filter }}&{% endif %}partial=1"
-     hx-trigger="every 10s [document.visibilityState === 'visible']" hx-swap="innerHTML">
+     hx-trigger="every 10s" hx-swap="innerHTML">
     {% include 'dashboard/_banners_table.html' %}
 </div>
 {% endblock %}

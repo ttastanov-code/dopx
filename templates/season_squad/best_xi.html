@@ -96,7 +96,7 @@
     <section id="xi" class="scroll-mt-24">
       <div id="best-xi-content" data-background-poll
            hx-get="{% if season %}{% url 'season_squad:best_xi_partial' season.id %}{% endif %}"
-           hx-trigger="every 60s [document.visibilityState === 'visible'], dopx:wake" hx-swap="innerHTML">
+           hx-trigger="every 60s, dopx:wake" hx-swap="innerHTML">
         {% include 'season_squad/_best_xi_content.html' %}
       </div>
     </section>

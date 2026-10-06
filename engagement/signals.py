@@ -142,3 +142,11 @@ def on_league_left(sender, instance, **kwargs):
         return
     if instance.user_id != owner.pk:
         _revoke(owner, "league_joined", instance.user_id)
+
+
+@receiver(post_save, sender=SeasonPass)
+def on_season_pass_saved(sender, instance, **kwargs):
+    """Уровень подняли не начислением XP (например, в админке) — награды всё равно положены."""
+    from engagement.season import claim_due_rewards
+
+    transaction.on_commit(lambda: claim_due_rewards(instance))

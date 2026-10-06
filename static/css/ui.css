@@ -854,9 +854,10 @@ body.has-tabbar .dx-sticky-cta { bottom: calc(4.9rem + env(safe-area-inset-botto
 .dx-form {
     display: grid;
     grid-auto-flow: column;
-    grid-auto-columns: minmax(2.6rem, 1fr);
-    gap: .35rem;
-    overflow-x: auto;
+    /* minmax(0, 1fr): все матчи помещаются в ширину экрана, без прокрутки вбок. */
+    grid-auto-columns: minmax(0, 1fr);
+    gap: .25rem;
+    overflow-x: visible;
     padding-bottom: .25rem;
     scrollbar-width: none;
 }
@@ -2456,7 +2457,7 @@ input[type="datetime-local"].dx-datetime::-webkit-date-and-time-value { text-ali
 .lt__reset:hover { opacity: 1; }
 
 .el { display: grid; gap: .5rem; }
-@media (min-width: 1024px) { .el { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem .9rem; } }
+@media (min-width: 1024px) { .el:not(.el--single) { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem .9rem; } }
 .er {
     display: flex; align-items: center; gap: .8rem; padding: .7rem .85rem; border-radius: 1.1rem; min-width: 0;
     background: var(--color-base-100); border: 1px solid var(--color-base-300); transition: border-color .15s, transform .15s;
@@ -2497,3 +2498,107 @@ input[type="datetime-local"].dx-datetime::-webkit-date-and-time-value { text-ali
 .ph__title { font-size: 1.5rem; font-weight: 800; letter-spacing: -.02em; line-height: 1.15; }
 @media (min-width: 768px) { .ph__title { font-size: 1.85rem; } }
 .ph__sub { font-size: .82rem; margin-top: .1rem; color: color-mix(in oklab, var(--color-base-content) 58%, transparent); }
+
+
+/* Бейджи и плашки статуса не переносят текст по словам («в / очереди»). */
+.badge, [class*="__pill"], [class*="__status"], [class*="-pill"] { white-space: nowrap; }
+
+/* ============================================================
+   ТАБЛИЦЫ НА ТЕЛЕФОНЕ — КАРТОЧКАМИ (js/responsive-tables.js: .rt, data-label, rt-rank/title/wide/action)
+   Сверху — место и заголовок, ниже — компактные плашки «подпись значение», длинный текст — блоком.
+   ============================================================ */
+@media (max-width: 639px) {
+    .overflow-x-auto:has(table.rt) { overflow-x: visible; margin-inline: 0 !important; padding-inline: 0 !important; }
+    /* display: block — иначе таблица растягивается под самую длинную строку и даёт прокрутку вбок. */
+    table.rt { display: block; min-width: 0 !important; width: 100%; max-width: 100%; }
+    table.rt tbody { width: 100%; }
+    table.rt tr { width: 100%; min-width: 0; }
+    table.rt thead { display: none; }
+    table.rt tbody { display: grid; gap: .5rem; }
+    table.rt tr {
+        display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .4rem; padding: .7rem .8rem; border-radius: 1rem;
+        background: var(--color-base-100) !important; border: 1px solid var(--color-base-300);
+    }
+    table.rt td { padding: 0 !important; border: 0 !important; min-width: 0; white-space: normal; text-align: left !important; }
+    /* Место — значок слева от заголовка. */
+    table.rt td.rt-rank {
+        flex: 0 0 auto; min-width: 1.9rem; height: 1.9rem; display: inline-grid; place-items: center; border-radius: .6rem;
+        font-weight: 750; font-size: .85rem; background: var(--color-base-200);
+    }
+    /* Заголовок карточки занимает строку целиком (плашки уходят ниже). */
+    table.rt td.rt-title { flex: 1 1 calc(100% - 2.6rem); font-weight: 650; font-size: .95rem; }
+    table.rt td.rt-title:first-child { flex-basis: 100%; }
+    table.rt td.rt-title * { white-space: normal; max-width: none !important; }
+    /* Остальное — плашки «подпись значение». */
+    table.rt td:not(.rt-rank):not(.rt-title):not(.rt-wide):not(.rt-full):not(.rt-action) {
+        flex: 0 0 auto; display: inline-flex; align-items: center; gap: .35rem; max-width: 100%;
+        padding: .22rem .55rem !important; border-radius: 9999px; font-size: .8rem; background: var(--color-base-200);
+    }
+    table.rt td:not(.rt-rank):not(.rt-title):not(.rt-full):not(.rt-action)::before {
+        content: attr(data-label); font-size: .7rem; font-weight: 500; white-space: nowrap;
+        color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+    }
+    table.rt td[data-label=""]::before { content: none !important; }
+    table.rt td > div, table.rt td > span { min-width: 0; }
+    /* Длинный текст — блоком на всю ширину, подпись сверху. */
+    table.rt td.rt-wide { flex: 1 1 100%; display: block; font-size: .82rem; line-height: 1.4; }
+    table.rt td.rt-wide::before { display: block; margin-bottom: .1rem; }
+    table.rt td.rt-full { flex: 1 1 100%; }
+    table.rt td.rt-action { margin-left: auto; }
+}
+
+
+/* Рейтинги на телефоне — компактные строки (rt--list). На широком экране .rt-sub не показываем: там таблица. */
+.rt-sub { display: none; }
+@media (max-width: 639px) {
+    table.rt--list tbody { gap: .35rem; }
+    table.rt--list tr { flex-wrap: nowrap; gap: .6rem; padding: .55rem .7rem; }
+    table.rt--list td.rt-hide { display: none !important; }
+    table.rt--list td.rt-title { flex: 1 1 auto; min-width: 0; font-size: .9rem; }
+    table.rt--list td.rt-title a, table.rt--list td.rt-title > div { min-width: 0; }
+    table.rt--list td.rt-title .rt-sub {
+        display: block; max-width: 100%; margin-top: .1rem; font-size: .72rem; font-weight: 500; line-height: 1.3;
+        /* До двух строк целиком, без многоточия. */
+        white-space: normal !important; overflow-wrap: anywhere;
+        color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+    }
+    table.rt--list td.rt-title * { min-width: 0; }
+    table.rt--list td.rt-value {
+        flex: 0 0 auto; background: none !important; padding: 0 !important; font-weight: 750; font-size: 1rem;
+    }
+    table.rt--list td.rt-value::before { content: none !important; }
+    table.rt--list td.rt-rank { min-width: 1.7rem; height: 1.7rem; font-size: .8rem; }
+}
+
+
+/* Двусторонняя шкала (зрелость −10…+10): ноль в центре, минус влево, плюс вправо. */
+.bibar { position: relative; height: .5rem; border-radius: 9999px; background: var(--color-base-200); overflow: hidden; }
+.bibar::after { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 2px; margin-left: -1px;
+                background: color-mix(in oklab, var(--color-base-content) 35%, transparent); }
+.bibar__fill { position: absolute; top: 0; bottom: 0; }
+.bibar__fill--pos { left: 50%; background: var(--color-info); border-radius: 0 9999px 9999px 0; }
+.bibar__fill--neg { right: 50%; background: var(--color-error); border-radius: 9999px 0 0 9999px; }
+
+@media (max-width: 639px) { .dx-form__value { font-size: .68rem; } }
+/* Вывод скриптов в дашборде: длинные идентификаторы и адреса переносятся в любом месте. */
+[data-out-id], [data-out-id] * { overflow-wrap: anywhere; min-width: 0; max-width: 100%; }
+
+/* Карточки «подпись — значение» (статус бота и т. п.). */
+.kv-summary { display: flex; align-items: flex-start; gap: .5rem; padding: .7rem .9rem; border-radius: 1rem; font-weight: 600; font-size: .9rem; }
+.kv-summary.is-ok { background: color-mix(in oklab, var(--color-success) 12%, transparent); color: var(--color-success); }
+.kv-summary.is-bad { background: color-mix(in oklab, var(--color-error) 10%, transparent); color: var(--color-error); }
+.kv-summary .ti { font-size: 1.15rem; margin-top: .05rem; }
+.kv { border-radius: 1rem; border: 1px solid var(--color-base-300); padding: .4rem .85rem .6rem; background: var(--color-base-100); }
+.kv__head { display: flex; align-items: center; gap: .4rem; font-weight: 700; font-size: .9rem; padding: .45rem 0 .5rem; border-bottom: 1px solid var(--color-base-200); }
+.kv__note { margin-left: auto; font-size: .7rem; font-weight: 600; padding: .1rem .5rem; border-radius: 9999px; background: var(--color-base-200); }
+.kv__row { display: flex; justify-content: space-between; align-items: baseline; gap: .75rem; padding: .45rem 0; font-size: .84rem; border-bottom: 1px solid var(--color-base-200); }
+.kv__row:last-child { border-bottom: 0; }
+.kv__row > span { color: color-mix(in oklab, var(--color-base-content) 55%, transparent); }
+.kv__row > b { font-weight: 600; text-align: right; overflow-wrap: anywhere; }
+.kv__ok { color: var(--color-success); }
+.kv__bad { color: var(--color-error); }
+.kv__warnv { color: var(--color-warning); }
+.kv__warn { font-size: .78rem; margin-top: .4rem; padding: .4rem .55rem; border-radius: .6rem; background: color-mix(in oklab, var(--color-warning) 14%, transparent); }
+
+/* Cookie-плашка: появление на CSS, без x-transition. */
+.cookie-banner { animation: dx-rise .3s ease-out both; }

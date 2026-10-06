@@ -6,7 +6,7 @@ Live-пульс: крупные события с реакциями 👍/👎. 
 {% with poll=match.live_poll_seconds %}{% if poll %}
      data-background-poll
      hx-get="{% url 'events:pulse' match.id %}"
-     hx-trigger="every {{ poll }}s [document.visibilityState === 'visible'], dopx:wake"
+     hx-trigger="every {{ poll }}s, dopx:wake"
      hx-swap="outerHTML"
      {% endif %}{% endwith %}>
     {% for event in events %}

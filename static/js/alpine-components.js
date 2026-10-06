@@ -70,11 +70,16 @@ document.addEventListener('alpine:init', () => {
         show: false,
         ackKey: 'dopx_cookie_notice_ack_v1',
         init() {
-            this.show = !localStorage.getItem(this.ackKey);
+            let acked = false;
+            try { acked = !!localStorage.getItem(this.ackKey); } catch (e) {}
+            if (acked) { this.$el.remove(); return; }
+            this.show = true;
         },
         accept() {
-            localStorage.setItem(this.ackKey, '1');
+            try { localStorage.setItem(this.ackKey, '1'); } catch (e) {}
             this.show = false;
+            // Скрываем напрямую — не зависим от реактивности x-show.
+            this.$el.style.display = 'none';
         },
     }));
 

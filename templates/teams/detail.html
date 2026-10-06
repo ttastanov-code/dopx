@@ -273,40 +273,8 @@
           <p class="text-xs opacity-60 mt-0.5">{% if selected_season and not selected_season.is_active %}Выходили на поле за клуб в этом сезоне{% elif squad_synced_at %}Сверен с данными поставщика {{ squad_synced_at|date:"d.m.Y" }}{% else %}По последним матчам игроков{% endif %}</p>
         </div>
         {% if players %}
-        <div class="overflow-x-auto -mx-2 px-2 sm:mx-0 sm:px-0">
-          <table class="table table-zebra min-w-[400px]">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Игрок</th>
-                <th>Позиция</th>
-                <th class="text-right">Рейтинг</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for player in players %}
-              <tr>
-                <td class="font-mono">{{ player.number|default:"-" }}</td>
-                <td>
-                  {# Имя переносится по словам; узкий max-w только на мобильном. #}
-                  <a href="{% url 'players:detail' player.id %}" class="hover:text-primary transition-colors block max-w-[110px] sm:max-w-[160px] md:max-w-none whitespace-normal break-words leading-tight">
-                    {{ player.first_name }} {{ player.last_name }}
-                  </a>
-                </td>
-                <td class="opacity-60">{{ player.position|position_label|default:"—" }}</td>
-                <td class="text-right">
-                  {% with player_agg=player.match_aggregates.first %}
-                  {% if player_agg %}
-                  <span class="font-bold text-success">{{ player_agg.performance_score|floatformat:1 }}</span>
-                  {% else %}
-                  <span class="opacity-40">-</span>
-                  {% endif %}
-                  {% endwith %}
-                </td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+        <div class="el el--single">
+          {% for row in squad_rows %}{% include 'components/_entity_row.html' %}{% endfor %}
         </div>
         {% endif %}
         {% if season_left_players %}

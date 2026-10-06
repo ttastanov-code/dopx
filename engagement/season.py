@@ -37,7 +37,6 @@ def current_season():
 def add_season_xp(user_id, amount: int) -> None:
     """XP в абонемент активного сезона + выдача наград за новые уровни."""
     from engagement.models import SeasonPass
-    from users.models import User
 
     season = current_season()
     if season is None or amount <= 0:
@@ -45,24 +44,31 @@ def add_season_xp(user_id, amount: int) -> None:
     season_pass, _ = SeasonPass.objects.get_or_create(user_id=user_id, season=season)
     SeasonPass.objects.filter(pk=season_pass.pk).update(xp=F("xp") + amount)
     season_pass.refresh_from_db()
-    level = level_for(season_pass.xp)
-    new = [lvl for lvl in REWARDS if lvl <= level and lvl not in season_pass.claimed_levels]
-    if not new:
-        return
-    user = User.objects.get(pk=user_id)
-    from engagement.rewards import award_badge
+    claim_due_rewards(season_pass)
 
+
+def claim_due_rewards(season_pass) -> list:
+    """Выдать награды за все достигнутые и ещё не полученные уровни. Вызывается и при начислении XP,
+    и при любом сохранении абонемента (например, уровень подняли в админке)."""
     from engagement.notify import season_reward
+    from engagement.rewards import award_badge
+    from users.models import User
 
+    level = level_for(season_pass.xp)
+    new = [lvl for lvl in REWARDS if lvl <= level and lvl not in (season_pass.claimed_levels or [])]
+    if not new:
+        return []
+    user = User.objects.get(pk=season_pass.user_id)
     for lvl in sorted(new):
         reward = REWARDS[lvl]
         if reward["kind"] in ("badge", "golden_name"):
             award_badge(user, reward["value"])
         if reward["kind"] in ("frame", "golden_name"):
             season_reward(user, lvl, reward["title"])
-    season_pass.claimed_levels = sorted(set(season_pass.claimed_levels) | set(new))
-    season_pass.save(update_fields=["claimed_levels", "updated_at"])
-    cache.delete(f"cosmetics:{user_id}")
+    season_pass.claimed_levels = sorted(set(season_pass.claimed_levels or []) | set(new))
+    type(season_pass).objects.filter(pk=season_pass.pk).update(claimed_levels=season_pass.claimed_levels)
+    cache.delete(f"cosmetics:{season_pass.user_id}")
+    return new
 
 
 def overview(user) -> dict | None:

@@ -61,6 +61,9 @@ class Command(BaseCommand):
                 if e.code == 409:
                     logger.warning("adminbot: бота слушает другой процесс, жду")
                     time.sleep(5)
+                elif e.transient:
+                    logger.warning("adminbot: Telegram временно недоступен (%s), повтор", e)
+                    time.sleep(min(e.retry_after or 5, 60))
                 else:
                     logger.exception("adminbot: Telegram error")
                     time.sleep(3)

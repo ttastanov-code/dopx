@@ -1,7 +1,7 @@
 /* static/css/match-detail.css
 
    Страница матча (matches/detail.html, _match_header.html, _match_events.html):
-   .mh — шапка-табло со счётом; .md-timeline — события (хозяева слева, гости справа);
+   .mh — шапка-табло со счётом; .ev/.evt — события матча;
    .md-metric — карточки метрик; .md-lineup — составы; .md-side-card — правая колонка;
    .md-rank — медали топ-3 игроков. */
 
@@ -192,98 +192,173 @@
 }
 
 /* ============================================================
-   TIMELINE (события матча)
+   СОБЫТИЯ МАТЧА: .ev-sum — сводка, .evt — лента (минута по центру), .evi — событие.
    ============================================================ */
-.md-timeline {
-    position: relative;
+.ev { --ev-muted: color-mix(in oklab, var(--color-base-content) 55%, transparent); }
+.ev--goal   { --ev-c: var(--color-success); }
+.ev--own    { --ev-c: var(--color-error); }
+.ev--miss   { --ev-c: var(--color-error); }
+.ev--void   { --ev-c: color-mix(in oklab, var(--color-base-content) 50%, transparent); }
+.ev--var    { --ev-c: #8b5cf6; }
+.ev--yellow { --ev-c: #f5b400; }
+.ev--red    { --ev-c: #e5383b; }
+.ev--sub    { --ev-c: var(--color-info); }
+.ev--other  { --ev-c: var(--color-base-content); }
+
+/* Значок */
+.ev-ico {
+    flex: none; width: 1.75rem; height: 1.75rem; border-radius: .6rem; display: grid; place-items: center;
+    font-size: .95rem; color: var(--ev-c);
+    background: color-mix(in oklab, var(--ev-c) 13%, var(--color-base-100));
 }
-.md-timeline::before {
-    content: '';
-    position: absolute;
-    left: 50%;
-    top: 0;
-    bottom: 0;
-    width: 2px;
-    background: linear-gradient(to bottom,
-        transparent,
-        var(--color-base-300) 4%,
-        var(--color-base-300) 96%,
-        transparent);
-    transform: translateX(-50%);
+.ev-ico__card {
+    width: .62rem; height: .86rem; border-radius: 2px; background: var(--ev-c);
+    box-shadow: 0 1px 2px rgb(0 0 0 / .25); transform: rotate(8deg);
 }
-@media (max-width: 639px) {
-    .md-timeline::before { left: 20px; }
+.ev--goal .ev-ico, .ev--own .ev-ico { background: var(--ev-c); color: #fff; }
+
+/* Сводка */
+.ev-sum {
+    border-radius: 1rem; padding: .75rem .85rem .55rem; margin-bottom: 1rem;
+    background: color-mix(in oklab, var(--color-base-content) 3.5%, var(--color-base-100));
+    border: 1px solid var(--color-base-300);
+}
+.ev-sum__teams { display: flex; justify-content: space-between; gap: 1rem; margin-bottom: .45rem; }
+.ev-sum__team {
+    min-width: 0; font-size: .74rem; font-weight: 750; letter-spacing: .01em;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center; gap: .35rem;
+}
+.ev-sum__team img { flex: none; width: 18px; height: 18px; object-fit: contain; }
+.ev-sum__team::after { content: ''; flex: none; width: .45rem; height: .45rem; border-radius: 9999px; order: -1; }
+.ev-sum__team--home::after { background: var(--home); }
+.ev-sum__team--away { flex-direction: row-reverse; }
+.ev-sum__team--away::after { background: var(--away); }
+.ev-sum__row {
+    display: grid; grid-template-columns: 1.6rem minmax(0, 1fr) auto minmax(0, 1fr) 1.6rem;
+    align-items: center; gap: .5rem; padding: .28rem 0;
+}
+.ev-sum__row + .ev-sum__row { border-top: 1px dashed color-mix(in oklab, var(--color-base-content) 9%, transparent); }
+.ev-sum__n { font-weight: 650; font-variant-numeric: tabular-nums; text-align: center; color: var(--ev-muted); }
+.ev-sum__n.is-lead { color: var(--color-base-content); font-weight: 850; }
+.ev-sum__bar { height: 5px; border-radius: 9999px; background: var(--color-base-200); display: flex; overflow: hidden; }
+.ev-sum__bar i { display: block; height: 100%; border-radius: inherit; transition: width .5s cubic-bezier(.16,1,.3,1); }
+.ev-sum__bar--home { justify-content: flex-end; }
+.ev-sum__bar--home i { background: var(--home); }
+.ev-sum__bar--away i { background: var(--away); }
+.ev-sum__title {
+    display: inline-flex; align-items: center; gap: .4rem; font-size: .78rem; font-weight: 600; white-space: nowrap;
+    min-width: 6.4rem;
+}
+.ev-sum__title .ev-ico { width: 1.35rem; height: 1.35rem; font-size: .75rem; border-radius: .45rem; }
+.ev-sum__title .ev-ico__card { width: .5rem; height: .7rem; }
+
+.ev-note {
+    display: flex; gap: .5rem; align-items: flex-start; font-size: .8rem; line-height: 1.4; margin: -.4rem 0 1rem;
+    padding: .55rem .7rem; border-radius: .75rem; color: var(--ev-muted);
+    background: color-mix(in oklab, var(--color-warning) 9%, var(--color-base-100));
+}
+.ev-note i { color: var(--color-warning); margin-top: .1rem; }
+
+/* Лента: [хозяева | минута | гости], ось по центру. */
+.evt { position: relative; list-style: none; margin: 0; padding: 0; }
+.evt::before {
+    content: ''; position: absolute; left: 50%; top: .6rem; bottom: .6rem; width: 2px; transform: translateX(-50%);
+    background: var(--color-base-300); border-radius: 2px;
+}
+.evt__row {
+    position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 2.9rem minmax(0, 1fr);
+    align-items: center; padding: .2rem 0;
+}
+.evt__min {
+    position: relative; z-index: 1; justify-self: center; min-width: 2.35rem; height: 1.6rem; padding: 0 .35rem;
+    display: inline-flex; align-items: center; justify-content: center; border-radius: 9999px;
+    font-size: .74rem; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1;
+    background: var(--color-base-100); border: 1.5px solid var(--color-base-300);
+}
+.evt__min sup { font-size: .6rem; font-weight: 700; top: -.3em; margin-left: 1px; color: var(--ev-muted); }
+.evt__min small { font-size: .7rem; opacity: .5; }
+.evt__row--goal .evt__min { background: var(--ev-c); border-color: var(--ev-c); color: #fff; }
+.evt__row--goal .evt__min sup, .evt__row--goal .evt__min small { color: inherit; opacity: .8; }
+.evt__cell { min-width: 0; }
+.evt__cell--home { padding-right: .4rem; }
+.evt__cell--away { padding-left: .4rem; }
+
+/* Событие */
+.evi {
+    display: flex; align-items: center; gap: .55rem; min-width: 0;
+    padding: .45rem .55rem; border-radius: .9rem; border: 1px solid transparent;
+    transition: background-color .2s ease, border-color .2s ease;
+}
+.evi:hover { background: color-mix(in oklab, var(--color-base-content) 4%, transparent); }
+.evt__cell--home .evi { flex-direction: row-reverse; text-align: right; }
+.evi__body { min-width: 0; flex: 1; }
+.evi__name {
+    font-size: .86rem; font-weight: 700; line-height: 1.25; overflow-wrap: anywhere;
+}
+.evi__name a:hover, .evi__sub a:hover { color: var(--color-primary); }
+.evi__sub { font-size: .74rem; line-height: 1.3; margin-top: .1rem; color: var(--ev-muted); overflow-wrap: anywhere; }
+.evi__name--in::before, .evi__sub--out::before {
+    font-weight: 900; margin-right: .25rem; font-size: .8em;
+}
+.evi__name--in::before { content: '↑'; color: var(--color-success); }
+.evi__sub--out::before { content: '↓'; color: var(--color-error); }
+.evt__cell--home .evi__name--in::before, .evt__cell--home .evi__sub--out::before { margin: 0 0 0 .25rem; }
+.evt__cell--home .evi__name--in, .evt__cell--home .evi__sub--out { display: flex; flex-direction: row-reverse; justify-content: flex-start; }
+.ev--void .evi__name, .ev--miss .evi__name { text-decoration: line-through; text-decoration-color: color-mix(in oklab, var(--ev-c) 70%, transparent); color: var(--ev-muted); }
+
+/* Гол — главное событие: подсветка в цвете клуба и счёт после него. */
+.evt__row--goal .evi {
+    border-color: color-mix(in oklab, var(--ev-c) 35%, var(--color-base-300));
+    background: linear-gradient(var(--evi-dir, 90deg), color-mix(in oklab, var(--side) 16%, color-mix(in oklab, var(--ev-c) 8%, var(--color-base-100))), color-mix(in oklab, var(--ev-c) 4%, var(--color-base-100)));
+    box-shadow: 0 6px 18px -12px color-mix(in oklab, var(--side) 70%, transparent);
+}
+.evt__row--home { --side: var(--home); }
+.evt__row--away { --side: var(--away); }
+.evt__row--goal .evt__cell--home .evi { --evi-dir: 270deg; }
+.evt__row--goal .evi__name { font-size: .92rem; font-weight: 800; }
+.evi__score {
+    flex: none; font-size: .8rem; font-weight: 850; font-variant-numeric: tabular-nums; letter-spacing: .02em;
+    padding: .2rem .45rem; border-radius: .5rem; background: var(--color-base-content); color: var(--color-base-100);
 }
 
-.md-timeline__row {
-    position: relative;
-    display: grid;
-    grid-template-columns: 1fr 48px 1fr;
-    align-items: start;
-    gap: 0;
-    margin-bottom: .5rem;
+.evi__crest { display: none; flex: none; width: 20px; height: 20px; object-fit: contain; }
+
+/* Разделители таймов */
+.evt__div { position: relative; z-index: 1; display: flex; justify-content: center; padding: .55rem 0; }
+.evt__div span {
+    display: inline-flex; align-items: center; gap: .4rem; padding: .28rem .8rem; border-radius: 9999px;
+    font-size: .7rem; font-weight: 750; text-transform: uppercase; letter-spacing: .06em; color: var(--ev-muted);
+    background: var(--color-base-200); border: 1px solid var(--color-base-300);
 }
-@media (max-width: 639px) {
-    .md-timeline__row { grid-template-columns: 40px 1fr; margin-bottom: .4rem; }
+.evt__div b { color: var(--color-base-content); font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+.evt__div--final span { background: var(--color-base-content); color: var(--color-base-100); border-color: transparent; }
+.evt__div--final b { color: inherit; }
+.evt__div:first-child { padding-top: 0; }
+.evt__div:last-child { padding-bottom: 0; }
+
+/* Телефон: одна колонка [минута | событие], сторона — герб клуба справа. */
+@media (max-width: 559px) {
+    .evt::before { left: 1.3rem; }
+    .evt__row { grid-template-columns: 2.6rem minmax(0, 1fr); padding: .18rem 0; }
+    .evt__min { grid-column: 1; grid-row: 1; }
+    .evt__cell { grid-column: 2; grid-row: 1; padding: 0 0 0 .4rem; }
+    .evt__cell:empty { display: none; }
+    .evt__cell--home .evi { flex-direction: row; text-align: left; }
+    .evt__cell--home .evi__name--in, .evt__cell--home .evi__sub--out { display: block; }
+    .evt__cell--home .evi__name--in::before, .evt__cell--home .evi__sub--out::before { margin: 0 .25rem 0 0; }
+    .evi { gap: .5rem; padding: .4rem .55rem; }
+    .evt__row--goal .evt__cell--home .evi { --evi-dir: 90deg; }
+    .evi__name { overflow-wrap: break-word; }
+    .evi__crest { display: block; }
+    .evt__div { justify-content: flex-start; padding-left: 0; }
+    .ev-sum__title { min-width: 5.6rem; }
 }
 
-.md-timeline__node {
-    grid-column: 2;
-    width: 34px;
-    height: 34px;
-    border-radius: 9999px;
-    background: var(--color-base-100);
-    border: 2px solid var(--tl-accent, var(--color-base-300));
-    color: var(--tl-accent, var(--color-base-content));
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: .9rem;
-    justify-self: center;
-    z-index: 1;
-    box-shadow: 0 2px 8px rgba(0,0,0,.08);
+.ev-empty { text-align: center; padding: 2.5rem 1rem; }
+.ev-empty__icon {
+    width: 3.5rem; height: 3.5rem; border-radius: 1.1rem; display: grid; place-items: center; margin: 0 auto .8rem;
+    font-size: 1.6rem; background: var(--color-base-200); color: var(--ev-muted);
 }
-@media (max-width: 639px) {
-    .md-timeline__node { grid-column: 1; width: 28px; height: 28px; font-size: .75rem; }
-}
-
-.md-timeline__card {
-    border-radius: .875rem;
-    border: 1px solid color-mix(in oklab, var(--tl-accent, var(--color-base-300)) 25%, var(--color-base-300));
-    background: color-mix(in oklab, var(--tl-accent, var(--color-base-300)) 5%, var(--color-base-100));
-    padding: .5rem .75rem;
-    transition: border-color .25s ease, transform .25s cubic-bezier(.16,1,.3,1);
-}
-.md-timeline__card:hover {
-    border-color: color-mix(in oklab, var(--tl-accent, var(--color-primary)) 45%, var(--color-base-300));
-}
-.md-timeline__row--home .md-timeline__card { grid-column: 1; justify-self: end; text-align: right; }
-.md-timeline__row--away .md-timeline__card { grid-column: 3; justify-self: start; text-align: left; }
-@media (max-width: 639px) {
-    .md-timeline__row--home .md-timeline__card,
-    .md-timeline__row--away .md-timeline__card { grid-column: 2; justify-self: stretch; text-align: left; }
-}
-.md-timeline__row--home .md-timeline__card .md-timeline__meta { justify-content: flex-end; }
-@media (max-width: 639px) {
-    .md-timeline__row--home .md-timeline__card .md-timeline__meta { justify-content: flex-start; }
-}
-.md-timeline__meta { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
-.md-timeline__minute {
-    font-weight: 800;
-    font-variant-numeric: tabular-nums;
-    color: var(--tl-accent, var(--color-base-content));
-}
-
-/* Цветовые акценты по типу события */
-.md-tl-goal            { --tl-accent: var(--color-success); }
-.md-tl-penalty         { --tl-accent: var(--color-warning); }
-.md-tl-missed-penalty  { --tl-accent: var(--color-error); }
-.md-tl-disallowed      { --tl-accent: var(--color-neutral); }
-.md-tl-own-goal        { --tl-accent: var(--color-info); }
-.md-tl-sub             { --tl-accent: var(--color-info); }
-.md-tl-yellow          { --tl-accent: #f59e0b; }
-.md-tl-red             { --tl-accent: #ef4444; }
-.md-tl-var             { --tl-accent: #a855f7; }
 
 /* ============================================================
    МЕТРИКИ (замена daisyUI .stat)
@@ -509,7 +584,7 @@
 .md-rank--other { background: var(--color-base-200); color: color-mix(in oklab, var(--color-base-content) 55%, transparent); }
 
 @media (prefers-reduced-motion: reduce) {
-    .mh__live-dot, .md-timeline__card, .md-metric {
+    .mh__live-dot, .evi, .md-metric {
         transition: none !important;
         animation: none !important;
     }

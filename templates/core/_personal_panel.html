@@ -1,13 +1,14 @@
+{% load engagement_extras %}
 {% load ui_extras %}
 {# «Ваш день»: фоновое обновление раз в минуту, по dopx:wake (истёк отсчёт, вернулись на вкладку) и сразу после прогноза. #}
 <section id="personal-panel" class="dx-hello mb-6 md:mb-8" aria-labelledby="hello-title"
          data-background-poll
          hx-get="{% url 'core:personal_panel' %}"
-         hx-trigger="every 60s [document.visibilityState === 'visible'], dopx:wake, dopx:predicted from:body"
+         hx-trigger="every 60s, dopx:wake, dopx:predicted from:body"
          hx-swap="outerHTML">
     <div class="dx-hello__top">
         <div class="min-w-0">
-            <h1 id="hello-title" class="dx-hello__title">Привет, {{ user.username }}</h1>
+            <h1 id="hello-title" class="dx-hello__title">Привет, {% with nc=user|name_class %}{% if nc %}<span class="{{ nc }}">{{ user.username }}</span>{% else %}{{ user.username }}{% endif %}{% endwith %}</h1>
             <p class="dx-hello__subtitle">
                 {% if personal.pending_count %}
                 {{ personal.pending_count }} {{ personal.pending_count|ru_plural:"матч ждёт,матча ждут,матчей ждут" }} вашей оценки

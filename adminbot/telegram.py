@@ -27,10 +27,16 @@ def _clean(e: requests.RequestException) -> requests.RequestException:
 
 
 class TelegramError(Exception):
-    def __init__(self, code: int, description: str):
+    def __init__(self, code: int, description: str, retry_after: int | None = None):
         super().__init__(f"{code}: {description}")
         self.code = code
         self.description = description
+        self.retry_after = retry_after
+
+    @property
+    def transient(self) -> bool:
+        """Сбой на стороне Telegram (5xx) или лимит (429) — проходит сам, повторяем позже."""
+        return self.code == 429 or self.code >= 500
 
 
 def enabled() -> bool:
@@ -44,9 +50,13 @@ def call(method: str, http_timeout: float = 15, **params):
         resp = requests.post(API.format(token=settings.ADMIN_BOT_TOKEN, method=method), json=params, timeout=http_timeout)
     except requests.RequestException as e:
         raise _clean(e) from None
-    data = resp.json()
+    try:
+        data = resp.json()
+    except ValueError:  # 502 от прокси Telegram бывает HTML-страницей
+        raise TelegramError(resp.status_code, resp.reason or "non-JSON response") from None
     if not data.get("ok"):
-        raise TelegramError(data.get("error_code", resp.status_code), data.get("description", ""))
+        raise TelegramError(data.get("error_code", resp.status_code), data.get("description", ""),
+                            (data.get("parameters") or {}).get("retry_after"))
     return data["result"]
 
 

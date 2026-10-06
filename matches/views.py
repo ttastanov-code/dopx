@@ -510,14 +510,20 @@ def match_events_partial(request, match_id):
     from django.http import HttpResponse
     from django.template.loader import render_to_string
 
-    key = f'match:events:{match_id}'
+    from core.live import versioned
+
+    # Ключ с версией данных: новое событие сразу сбрасывает кэш, а не ждёт 5 с.
+    key = versioned(f'match:events:{match_id}')
     html = cache.get(key)
     if html is None:
-        match = get_object_or_404(Match, id=match_id)
+        match = get_object_or_404(Match.objects.select_related('home_team', 'away_team'), id=match_id)
         events = match.events.select_related(
-            'player', 'assist_player', 'player_out', 'match__home_team', 'match__away_team'
+            'player', 'assist_player', 'player_out'
         ).order_by('minute', 'added_time', 'id')
-        html = render_to_string('matches/_match_events.html', {'match': match, 'events': events}, request)
+        from .timeline import build_timeline
+
+        html = render_to_string('matches/_match_events.html',
+                                {'match': match, 'timeline': build_timeline(match, events)}, request)
         cache.set(key, html, EVENTS_CACHE_SECONDS)
     return HttpResponse(html)
 

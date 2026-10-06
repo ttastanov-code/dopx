@@ -357,15 +357,15 @@
                         </div>
                     </div>
 
-                    {# Зрелость — от -9 до +9, полоса через bipolar_bar_pct. #}
+                    {# Зрелость — от -10 до +10: полоса от центра, минус влево, плюс вправо. #}
                     <div>
                         <div class="flex justify-between text-sm mb-1">
                             <span>Зрелость</span>
                             <span class="font-bold {% if stats.avg_maturity < 0 %}text-error{% endif %}">{{ stats.avg_maturity }}</span>
                         </div>
-                        <div class="w-full bg-base-200 rounded-full h-2">
-                            <div class="{% if stats.avg_maturity < 0 %}bg-error{% else %}bg-info{% endif %} h-2 rounded-full"
-                                 style="width: {{ stats.avg_maturity|bipolar_bar_pct:10 }}%"></div>
+                        <div class="bibar" title="Ноль — в центре">
+                            <span class="bibar__fill {% if stats.avg_maturity < 0 %}bibar__fill--neg{% else %}bibar__fill--pos{% endif %}"
+                                  style="width: {{ stats.avg_maturity|bipolar_half_pct:10 }}%"></span>
                         </div>
                     </div>
 

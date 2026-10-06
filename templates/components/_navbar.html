@@ -75,7 +75,7 @@
             {# Шапка вне ul.menu: стили пунктов menu ломают обрезку длинного email. #}
             <div tabindex="0" class="dropdown-content mt-2 z-[100] w-64 max-w-[calc(100vw-1rem)] shadow-2xl bg-base-100 rounded-box border border-base-300 overflow-hidden">
                 <div class="px-4 py-3 border-b border-base-300 min-w-0">
-                    <div class="font-semibold truncate" title="{{ user.username }}">{{ user.username }}</div>
+                    <div class="font-semibold truncate {{ user|name_class }}" title="{{ user.username }}">{{ user.username }}</div>
                     <div class="text-xs opacity-60 truncate"{% if user.has_real_email %} title="{{ user.email }}"{% endif %}>{% if user.has_real_email %}{{ user.email }}{% else %}вход через Telegram{% endif %}</div>
                     {% if user.trust_score %}
                     <div class="mt-2 flex items-center gap-2">
@@ -127,7 +127,7 @@
             <a href="{% url 'users:profile' %}" class="dx-drawer__me">
                 {% if user.avatar %}{% include 'components/_avatar.html' with photo_url=user.avatar.url name=user.username size_classes='w-12 h-12 text-lg' %}{% else %}{% include 'components/_avatar.html' with name=user.username size_classes='w-12 h-12 text-lg' %}{% endif %}
                 <span class="dx-drawer__me-body">
-                    <span class="dx-drawer__me-name">{{ user.username }}</span>
+                    <span class="dx-drawer__me-name {{ user|name_class }}">{{ user.username }}</span>
                     <span class="dx-drawer__me-meta">Уровень {{ user.xp.level|default:1 }}{% if user.evaluation_streak %} · серия {{ user.evaluation_streak }}{% endif %}</span>
                     <span class="dx-drawer__xp"><span style="width: {{ user.xp.progress_percent|default:0 }}%"></span></span>
                 </span>

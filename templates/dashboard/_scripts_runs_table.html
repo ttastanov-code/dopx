@@ -38,13 +38,13 @@
         {% if run.stdout %}
         <div class="border-t border-base-300">
             <div class="px-3 py-1 text-[10px] font-mono uppercase tracking-wide opacity-40 bg-base-100">stdout</div>
-            <div data-out-id="{{ run.id }}-out" class="px-3 pb-3 pt-1 max-h-72 overflow-auto bg-base-100 font-mono">{{ run.stdout|format_command_output }}</div>
+            <div data-out-id="{{ run.id }}-out" class="px-3 pb-3 pt-1 max-h-72 overflow-y-auto bg-base-100 font-mono whitespace-pre-wrap break-words">{{ run.stdout|format_command_output }}</div>
         </div>
         {% endif %}
         {% if run.stderr %}
         <div class="border-t border-error/20">
             <div class="px-3 py-1 text-[10px] font-mono uppercase tracking-wide text-error/70 bg-error/5">stderr</div>
-            <div data-out-id="{{ run.id }}-err" class="px-3 pb-3 pt-1 max-h-72 overflow-auto bg-error/5 font-mono">{{ run.stderr|format_command_output }}</div>
+            <div data-out-id="{{ run.id }}-err" class="px-3 pb-3 pt-1 max-h-72 overflow-y-auto bg-error/5 font-mono whitespace-pre-wrap break-words">{{ run.stderr|format_command_output }}</div>
         </div>
         {% endif %}
     </div>

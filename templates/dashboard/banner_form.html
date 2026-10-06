@@ -99,7 +99,7 @@
         {% if banner %}
         {# Статистика обновляется сама раз в 10 секунд, пока вкладка открыта. #}
         <div id="banner-stats" data-background-poll hx-get="{% url 'dashboard:banner_stats_partial' banner.id %}"
-             hx-trigger="every 10s [document.visibilityState === 'visible']" hx-swap="innerHTML">
+             hx-trigger="every 10s" hx-swap="innerHTML">
             {% include 'dashboard/_banner_stats.html' %}
         </div>
 

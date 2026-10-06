@@ -90,7 +90,7 @@
 {% if my_rank_neighbors %}
 <div class="card bg-primary/5 border border-primary/30 mb-6">
     <div class="card-body p-4">
-        <div class="dopx-section-eyebrow"><i class="ti ti-map-pin-filled"></i>Твоя позиция</div>
+        <div class="dopx-section-eyebrow"><i class="ti ti-map-pin"></i>Твоя позиция</div>
         <div class="overflow-x-auto mt-2">
             <table class="table table-sm">
                 <tbody>
@@ -108,7 +108,7 @@
                                         {% endif %}
                                     </div>
                                 </div>
-                                {{ row_user.username }}{% if is_me %} <span class="opacity-60 font-normal">(это ты)</span>{% endif %}
+                                <span class="{{ row_user|name_class }}">{{ row_user.username }}</span>{% if is_me %} <span class="opacity-60 font-normal">(это ты)</span>{% endif %}
                             </a>
                         </td>
                         <td class="text-right font-mono">{{ row_user.trust_score|floatformat:2 }}</td>
@@ -169,7 +169,7 @@
                                     </div>
                                 </div>
                                 <div>
-                                    <div class="font-medium">{{ user.username }}</div>
+                                    <div class="font-medium {{ user|name_class }}">{{ user.username }}</div>
                                     {% if user.city %}
                                     <div class="text-xs opacity-60">
                                         <i class="ti ti-map-pin"></i>

@@ -38,7 +38,7 @@
                        class="badge badge-md md:badge-lg {% if season.is_active %}badge-warning{% else %}badge-ghost{% endif %} {% if season == selected_season %}outline outline-2 outline-offset-1 outline-primary{% endif %}">
                         {{ season.year }}
                         {% if season.is_active %}
-                        <i class="ti ti-circle-filled text-xs ml-1"></i>
+                        <i class="ti ti-circle-dot text-xs ml-1"></i>
                         {% endif %}
                     </a>
                     {% endfor %}
@@ -181,17 +181,18 @@
                 </div>
                 
                 <div class="overflow-x-auto -mx-2 px-2 sm:mx-0 sm:px-0">
-                    <table class="table table-zebra min-w-[500px]">
+                    {# На телефоне — таблицей, без В/Н/П/ГЗ/ГП: место, команда, игры, разница, очки. #}
+                    <table class="table table-zebra" data-table-keep>
                         <thead>
                             <tr>
                                 <th class="w-12">#</th>
                                 <th>Команда</th>
                                 <th class="text-center w-12" title="Игры">И</th>
-                                <th class="text-center w-12" title="Победы">В</th>
-                                <th class="text-center w-12" title="Ничьи">Н</th>
-                                <th class="text-center w-12" title="Поражения">П</th>
-                                <th class="text-center w-12" title="Голы забиты">ГЗ</th>
-                                <th class="text-center w-12" title="Голы пропущены">ГП</th>
+                                <th class="text-center w-12 hidden sm:table-cell" title="Победы">В</th>
+                                <th class="text-center w-12 hidden sm:table-cell" title="Ничьи">Н</th>
+                                <th class="text-center w-12 hidden sm:table-cell" title="Поражения">П</th>
+                                <th class="text-center w-12 hidden sm:table-cell" title="Голы забиты">ГЗ</th>
+                                <th class="text-center w-12 hidden sm:table-cell" title="Голы пропущены">ГП</th>
                                 <th class="text-center w-12" title="Разница">РМ</th>
                                 <th class="text-center w-12 font-bold" title="Очки">О</th>
                             </tr>
@@ -223,11 +224,11 @@
                                     </a>
                                 </td>
                                 <td class="text-center opacity-70">{{ row.played }}</td>
-                                <td class="text-center text-success">{{ row.wins }}</td>
-                                <td class="text-center opacity-60">{{ row.draws }}</td>
-                                <td class="text-center text-error">{{ row.losses }}</td>
-                                <td class="text-center">{{ row.goals_scored }}</td>
-                                <td class="text-center">{{ row.goals_conceded }}</td>
+                                <td class="text-center text-success hidden sm:table-cell">{{ row.wins }}</td>
+                                <td class="text-center opacity-60 hidden sm:table-cell">{{ row.draws }}</td>
+                                <td class="text-center text-error hidden sm:table-cell">{{ row.losses }}</td>
+                                <td class="text-center hidden sm:table-cell">{{ row.goals_scored }}</td>
+                                <td class="text-center hidden sm:table-cell">{{ row.goals_conceded }}</td>
                                 <td class="text-center {% if row.goal_diff > 0 %}text-success{% elif row.goal_diff < 0 %}text-error{% else %}opacity-60{% endif %}">
                                     {% if row.goal_diff > 0 %}+{% endif %}{{ row.goal_diff }}
                                 </td>

@@ -10,7 +10,7 @@
 
 {# Блок «Сервисы» перезагружается сам каждые 10 с, пока вкладка открыта. #}
 <div id="services-block" data-background-poll hx-get="{% url 'dashboard:system_status_services' %}"
-     hx-trigger="every 10s [document.visibilityState === 'visible']" hx-swap="innerHTML">
+     hx-trigger="every 10s" hx-swap="innerHTML">
     {% include 'dashboard/_services_block.html' with services=status.services %}
 </div>
 

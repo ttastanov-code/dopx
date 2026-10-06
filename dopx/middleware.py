@@ -258,7 +258,10 @@ class GuestPageCacheMiddleware:
 
         from django.middleware.csrf import get_token
 
-        key = "guestpage:" + sha256(request.get_full_path().encode()).hexdigest()
+        from core.live import versioned
+
+        # С версией данных: гол в live сбрасывает кэш сразу, а не через 45 с.
+        key = versioned("guestpage:" + sha256(request.get_full_path().encode()).hexdigest())
         cached = cache.get(key)
         if cached:
             body, content_type = cached

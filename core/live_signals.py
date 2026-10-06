@@ -31,8 +31,15 @@ def _on_change(sender, **kwargs):
     bump_data_version()
 
 
-def _on_task_done(sender=None, task=None, **kwargs):
+# Частые опросы: версию поднимаем, только если задача вернула число изменений > 0,
+# иначе каждые 15 с все открытые вкладки перезапрашивают страницу впустую.
+POLL_TASKS = frozenset({"parsers.sportmonks.tasks.sportmonks_update_live"})
+
+
+def _on_task_done(sender=None, task=None, retval=None, **kwargs):
     name = getattr(task, "name", "") or ""
+    if name in POLL_TASKS and not retval:
+        return
     if name.startswith(LIVE_TASK_PREFIXES):
         bump_data_version()
 

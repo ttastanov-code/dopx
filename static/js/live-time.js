@@ -94,5 +94,12 @@
             .some((el) => Date.parse(el.dataset.countdown) - Date.now() < 90000);
         if (soon) tickCountdowns();
     }, 1000);
+    // Фоновый опрос (hx-trigger "every Ns") в скрытой вкладке не нужен. Фильтр [..] в hx-trigger
+    // htmx вычисляет через eval — под нашей CSP это ошибка, поэтому проверка здесь.
+    document.addEventListener('htmx:beforeRequest', (evt) => {
+        if (!document.hidden) return;
+        const trigger = evt.detail.elt && evt.detail.elt.getAttribute('hx-trigger');
+        if (trigger && /(^|,)\s*every\s/.test(trigger)) evt.preventDefault();
+    });
     window.dopxWakeAll = wakeAll;
 })();

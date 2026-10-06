@@ -7,7 +7,7 @@
         <div class="dx-pass-hero__main">
             <div class="dx-pass-hero__eyebrow"><i class="ti ti-trophy"></i> Лига прогнозистов · сезон {{ league.season.year }}</div>
             <h1 class="dx-pass-hero__title">{{ league.name }}</h1>
-            <p class="dx-pass-hero__meta">{{ rows|length }} {{ rows|length|ru_plural:"участник,участника,участников" }} · создал {{ league.owner.username }} · очко за каждый угаданный исход с {{ league.created_at|date:"d.m.Y" }}</p>
+            <p class="dx-pass-hero__meta">{{ rows|length }} {{ rows|length|ru_plural:"участник,участника,участников" }} · создал <span class="{{ league.owner|name_class }}">{{ league.owner.username }}</span> · очко за каждый угаданный исход с {{ league.created_at|date:"d.m.Y" }}</p>
             {% if not is_member %}
                 {% if user.is_authenticated %}
                 <form method="post" action="{% url 'engagement:friend_league_join' league.invite_code %}">{% csrf_token %}

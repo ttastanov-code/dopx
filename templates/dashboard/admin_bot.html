@@ -45,43 +45,56 @@
         <div class="dopx-section-eyebrow"><i class="ti ti-activity-heartbeat"></i>Состояние · только для суперпользователя</div>
         <a href="" class="btn btn-xs btn-ghost"><i class="ti ti-refresh"></i> Обновить</a>
     </div>
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-        <div class="space-y-1.5">
-            <div class="text-[10px] uppercase tracking-wide opacity-50 font-semibold">Процесс бота · {% if status.env == 'prod' %}прод{% else %}ноутбук{% endif %}</div>
+    {# Итог одной строкой, ниже — карточки «подпись — значение». Стили — .kv в css/ui.css. #}
+    {% with bot_ok=hb.alive tg_ok=tg.ok %}
+    <div class="kv-summary {% if bot_ok and tg_ok and not hb.errors and not incidents and not channel_failed %}is-ok{% else %}is-bad{% endif %}">
+        <i class="ti {% if bot_ok and tg_ok and not hb.errors and not incidents and not channel_failed %}ti-circle-check{% else %}ti-alert-triangle{% endif %}"></i>
+        {% if bot_ok and tg_ok and not hb.errors and not incidents and not channel_failed %}Всё работает{% else %}Есть проблемы:
+            {% if not bot_ok %}бот не запущен{% elif not tg_ok %}нет связи с Telegram{% elif incidents %}открытых инцидентов {{ incidents|length }}{% elif channel_failed %}посты с ошибкой {{ channel_failed }}{% elif hb.errors %}ошибок {{ hb.errors }} — смотрите журнал ниже{% endif %}
+        {% endif %}
+    </div>
+    {% endwith %}
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div class="kv">
+            <div class="kv__head"><i class="ti ti-robot"></i> Бот <span class="kv__note">{% if status.env == 'prod' %}прод{% else %}ноутбук{% endif %}</span></div>
             {% if hb and hb.alive %}
-            <div><span class="badge badge-success badge-sm">работает</span> <span class="opacity-70">{% if hb.role == 'listener' %}принимает сообщения{% else %}через прод{% endif %}</span></div>
-            <div class="opacity-70">С {{ hb.started_at|date:"d.m H:i" }} ({{ hb.uptime_h }} ч) · v{{ hb.version }}</div>
-            <div class="opacity-70">Сообщений: {{ hb.updates }}{% if hb.last_update_at %} · последнее {{ hb.last_update_at|date:"H:i" }}{% endif %}</div>
-            <div class="{% if hb.errors %}text-error{% else %}opacity-70{% endif %}">Ошибок: {{ hb.errors }}</div>
+            <div class="kv__row"><span>Состояние</span><b class="kv__ok">работает</b></div>
+            <div class="kv__row"><span>Режим</span><b>{% if hb.role == 'listener' %}сам принимает сообщения{% else %}через прод{% endif %}</b></div>
+            <div class="kv__row"><span>Запущен</span><b>{{ hb.started_at|date:"d.m H:i" }} · {{ hb.uptime_h }} ч</b></div>
+            <div class="kv__row"><span>Версия</span><b>{{ hb.version }}</b></div>
+            <div class="kv__row"><span>Обработано сообщений</span><b>{{ hb.updates }}{% if hb.last_update_at %} · последнее в {{ hb.last_update_at|date:"H:i" }}{% endif %}</b></div>
+            <div class="kv__row"><span>Ошибок</span><b class="{% if hb.errors %}kv__bad{% endif %}">{{ hb.errors }}</b></div>
             {% else %}
-            <div><span class="badge badge-error badge-sm">{% if hb %}остановлен {{ hb.age }} с назад{% else %}не запущен{% endif %}</span></div>
-            <div class="text-xs opacity-70">{% if status.env == 'prod' %}Контейнер <code>bot</code>{% else %}<code>manage.py runbot</code>{% endif %}</div>
+            <div class="kv__row"><span>Состояние</span><b class="kv__bad">{% if hb %}остановлен {{ hb.age }} с назад{% else %}не запущен{% endif %}</b></div>
+            <div class="kv__row"><span>Запуск</span><b>{% if status.env == 'prod' %}контейнер <code>bot</code>{% else %}<code>manage.py runbot</code>{% endif %}</b></div>
             {% endif %}
-            {% if hb.alerts %}<div class="text-warning text-xs">Алерты: {{ hb.alerts|join:"; " }}</div>{% endif %}
+            {% if hb.alerts %}<div class="kv__warn">Алерты: {{ hb.alerts|join:"; " }}</div>{% endif %}
         </div>
-        <div class="space-y-1.5">
-            <div class="text-[10px] uppercase tracking-wide opacity-50 font-semibold">Telegram</div>
+        <div class="kv">
+            <div class="kv__head"><i class="ti ti-brand-telegram"></i> Telegram</div>
             {% if tg.ok %}
-            <div><span class="badge badge-success badge-sm">на связи</span> @{{ tg.username }}</div>
-            <div class="opacity-70">Не забрано сообщений: {{ tg.pending }}</div>
-            {% if tg.webhook %}<div class="text-error text-xs">Мешает вебхук — снимите кнопкой ниже.</div>{% endif %}
-            {% if tg.last_error %}<div class="text-xs text-warning">{{ tg.last_error }}</div>{% endif %}
+            <div class="kv__row"><span>Связь</span><b class="kv__ok">есть</b></div>
+            <div class="kv__row"><span>Бот</span><b>@{{ tg.username }}</b></div>
+            <div class="kv__row"><span>Ждут обработки</span><b class="{% if tg.pending %}kv__warnv{% endif %}">{{ tg.pending }}</b></div>
+            {% if tg.webhook %}<div class="kv__warn">Мешает вебхук — снимите кнопкой ниже.</div>{% endif %}
+            {% if tg.last_error %}<div class="kv__warn">{{ tg.last_error }}</div>{% endif %}
             {% else %}
-            <div><span class="badge badge-error badge-sm">ошибка</span></div>
-            <div class="text-xs text-error">{{ tg.error }}</div>
+            <div class="kv__row"><span>Связь</span><b class="kv__bad">нет</b></div>
+            <div class="kv__warn">{{ tg.error }}</div>
             {% endif %}
             {% if status.hub or status.env == 'prod' %}
-            <div class="opacity-70">{% if status.env == 'prod' %}Ноутбук{% else %}Прод{% endif %}: {% if status.other_online %}подключён{% else %}не подключён{% endif %}</div>
+            <div class="kv__row"><span>{% if status.env == 'prod' %}Ноутбук{% else %}Прод{% endif %}</span><b>{% if status.other_online %}подключён{% else %}не подключён{% endif %}</b></div>
             {% endif %}
         </div>
-        <div class="space-y-1.5">
-            <div class="text-[10px] uppercase tracking-wide opacity-50 font-semibold">В работе</div>
-            <div class="opacity-70">Открытых инцидентов: {{ incidents|length }}</div>
-            <div class="opacity-70">Канал: {% if channel_ready %}в очереди {{ channel_queue }}{% if channel_failed %}, <span class="text-error">с ошибкой {{ channel_failed }}</span>{% endif %}{% else %}не подключён{% endif %}</div>
-            <div class="opacity-70">Жду итога: скриптов {{ watch_scripts }}, деплоев {{ watch_deploys }}</div>
-            <div class="opacity-70">{{ ai.summary }}</div>
-            {% for name, reason in ai.paused.items %}<div class="text-xs text-warning">{{ name }} на паузе: {{ reason }}</div>{% endfor %}
-            <div class="opacity-70">Вопросы боту текстом: {% if ai.key and ai.chat %}включены{% else %}выключены{% endif %}</div>
+        <div class="kv">
+            <div class="kv__head"><i class="ti ti-list-check"></i> Очереди и ИИ</div>
+            <div class="kv__row"><span>Открытые инциденты</span><b class="{% if incidents %}kv__bad{% endif %}">{{ incidents|length }}</b></div>
+            <div class="kv__row"><span>Посты канала в очереди</span><b>{% if channel_ready %}{{ channel_queue }}{% if channel_failed %} · <span class="kv__bad">ошибка {{ channel_failed }}</span>{% endif %}{% else %}канал не подключён{% endif %}</b></div>
+            <div class="kv__row"><span>Скрипты в работе</span><b>{{ watch_scripts }}</b></div>
+            <div class="kv__row"><span>Деплои в работе</span><b>{{ watch_deploys }}</b></div>
+            <div class="kv__row"><span>Тексты постов</span><b>{{ ai.summary }}</b></div>
+            <div class="kv__row"><span>Вопросы боту текстом</span><b>{% if ai.key and ai.chat %}включены{% else %}выключены{% endif %}</b></div>
+            {% for name, reason in ai.paused.items %}<div class="kv__warn">{{ name }} на паузе: {{ reason }}</div>{% endfor %}
         </div>
     </div>
     {% if incidents %}

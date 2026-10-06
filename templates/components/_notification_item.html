@@ -53,7 +53,7 @@
             {% elif notification.notification_type == 'system' or notification.notification_type == 'verification_required' %}ti-info-circle
             {% elif notification.notification_type == 'new_ticket' %}ti-ticket
             {% elif notification.notification_type == 'admin_reply' %}ti-message
-            {% elif notification.notification_type == 'ticket_resolved' %}ti-check-circle
+            {% elif notification.notification_type == 'ticket_resolved' %}ti-circle-check
             {% elif notification.notification_type == 'ticket_closed' %}ti-lock
             {% else %}ti-bell{% endif %} {% if compact %}text-base{% else %}text-lg md:text-xl{% endif %}"></i>
     </div>

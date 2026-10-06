@@ -377,3 +377,39 @@ class KickoffKnownTests(TestCase):
         match.save(update_fields=["start_time"])
         self.assertTrue(match.kickoff_known)
         self.assertContains(self.client.get(reverse("matches:detail", args=[match.id])), "18:00")
+
+
+class BuildTimelineTests(SimpleTestCase):
+    """Лента событий: периоды, счёт после голов, сверка с итогом."""
+
+    def _ev(self, minute, kind, side, added=0, reason=None):
+        return SimpleNamespace(minute=minute, added_time=added, event_type=kind, team_side=side,
+                               card_reason=reason, get_event_type_display=lambda: kind)
+
+    def _match(self, status='finished', home=1, away=2):
+        return SimpleNamespace(status=status, home_score=home, away_score=away)
+
+    def test_periods_and_running_score(self):
+        from matches.timeline import build_timeline
+
+        events = [self._ev(17, 'goal', 'home'), self._ev(45, 'yellow_card', 'away', added=2, reason='dissent'),
+                  self._ev(60, 'own_goal', 'away'), self._ev(88, 'penalty', 'away')]
+        tl = build_timeline(self._match(home=1, away=2), events)
+        dividers = [(r['divider'], r.get('score')) for r in tl['rows'] if 'divider' in r]
+        self.assertEqual(dividers, [('Начало матча', None), ('Перерыв', '1:0'), ('Финальный свисток', '1:2')])
+        self.assertEqual([r['score'] for r in tl['rows'] if r.get('score') and 'event' in r], ['1:0', '1:1', '1:2'])
+        self.assertFalse(tl['mismatch'])
+        card = next(r for r in tl['rows'] if r.get('mod') == 'yellow')
+        self.assertEqual(card['reason'], 'Пререкания с судьёй')
+
+    def test_mismatch_when_goals_missing(self):
+        from matches.timeline import build_timeline
+
+        tl = build_timeline(self._match(home=2, away=0), [self._ev(10, 'goal', 'home')])
+        self.assertTrue(tl['mismatch'])
+
+    def test_halftime_added_even_without_second_half_events(self):
+        from matches.timeline import build_timeline
+
+        tl = build_timeline(self._match(home=0, away=0), [self._ev(30, 'yellow_card', 'home')])
+        self.assertIn('Перерыв', [r.get('divider') for r in tl['rows']])

@@ -270,6 +270,32 @@ class TelegramClientTests(TestCase):
             with self.assertRaises(tg.TelegramError) as ctx:
                 tg.get_updates(None)
         self.assertEqual(ctx.exception.code, 409)
+        self.assertFalse(ctx.exception.transient)
+
+    @override_settings(ADMIN_BOT_TOKEN="t")
+    def test_rate_limit_is_transient_with_retry_after(self):
+        from . import telegram as tg
+
+        with mock.patch("adminbot.telegram.requests.post") as post:
+            post.return_value.json.return_value = {"ok": False, "error_code": 429, "description": "Too Many Requests",
+                                                   "parameters": {"retry_after": 7}}
+            with self.assertRaises(tg.TelegramError) as ctx:
+                tg.get_updates(None)
+        self.assertTrue(ctx.exception.transient)
+        self.assertEqual(ctx.exception.retry_after, 7)
+
+    @override_settings(ADMIN_BOT_TOKEN="t")
+    def test_html_bad_gateway_is_transient(self):
+        from . import telegram as tg
+
+        with mock.patch("adminbot.telegram.requests.post") as post:
+            post.return_value.json.side_effect = ValueError("not json")
+            post.return_value.status_code = 502
+            post.return_value.reason = "Bad Gateway"
+            with self.assertRaises(tg.TelegramError) as ctx:
+                tg.get_updates(None)
+        self.assertEqual(ctx.exception.code, 502)
+        self.assertTrue(ctx.exception.transient)
 
 
 class KeyboardTests(TestCase):
@@ -448,3 +474,24 @@ class CleanupTests(TestCase):
         ChannelPost.objects.filter(pk=real.pk).update(created_at=timezone.now() - timedelta(days=2))
         self.assertEqual(drop_old_samples(), 1)
         self.assertEqual(set(ChannelPost.objects.values_list("pk", flat=True)), {fresh.pk, real.pk})
+
+
+class BotErrorCountTests(TestCase):
+    """Число ошибок на странице бота совпадает с журналом: очистили журнал — счётчик ноль."""
+
+    def test_errors_follow_journal(self):
+        import time as _time
+
+        from . import debug
+
+        cache.clear()
+        started = _time.time() - 60
+        cache.set(f"adminbot:hb:{debug._env()}", {"ts": _time.time(), "started": started, "errors": 3,
+                                                  "updates": 0, "last_update": None, "role": "listener"})
+        self.assertEqual(debug.heartbeat()["errors"], 0)
+        cache.set(f"adminbot:log:{debug._env()}", [
+            {"ts": started - 10, "level": "ERROR", "logger": "x", "process": "бот", "text": "старый запуск"},
+            {"ts": started + 5, "level": "ERROR", "logger": "x", "process": "бот", "text": "этот запуск"},
+            {"ts": started + 6, "level": "WARNING", "logger": "x", "process": "бот", "text": "предупреждение"},
+        ])
+        self.assertEqual(debug.heartbeat()["errors"], 1)

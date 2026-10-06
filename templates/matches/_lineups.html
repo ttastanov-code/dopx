@@ -6,7 +6,7 @@
      {% if not lineups and match.live_poll_seconds %}
      data-background-poll
      hx-get="{% url 'matches:lineups' match.id %}"
-     hx-trigger="every {{ match.PRE_MATCH_POLL_SECONDS }}s [document.visibilityState === 'visible'], dopx:wake"
+     hx-trigger="every {{ match.PRE_MATCH_POLL_SECONDS }}s, dopx:wake"
      hx-swap="outerHTML"
      {% elif not lineups and match.poll_wake_at %}
      data-background-poll
@@ -38,7 +38,7 @@
                             {# Стартовый состав #}
                             <div class="mb-3">
                                 <div class="text-[10px] font-bold uppercase tracking-wider opacity-50 mb-1.5 flex items-center gap-1">
-                                    <i class="ti ti-circle-filled text-[6px] flex-shrink-0"></i>
+                                    <i class="ti ti-circle-dot text-[6px] flex-shrink-0"></i>
                                     Стартовый состав
                                 </div>
                                 <div>

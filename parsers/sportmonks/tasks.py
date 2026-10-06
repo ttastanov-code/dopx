@@ -223,6 +223,7 @@ def _sportmonks_update_live_impl(self):
         total=len(live_fixtures) + reconciled, updated=synced + reconciled, errors=errors,
         unchanged=max(len(live_fixtures) - synced - errors, 0),
     )
+    return synced + reconciled  # 0 — данные не менялись (core/live_signals.POLL_TASKS)
 
 
 @shared_task(bind=True, max_retries=2, soft_time_limit=LIVE_POLL_SOFT_LIMIT, time_limit=LIVE_POLL_HARD_LIMIT)

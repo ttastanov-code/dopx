@@ -309,7 +309,22 @@ class TeamDetailView(DetailView):
             find_season_controversial_matches(team, current_season) if current_season else []
         )
 
+        # Состав строками, как список игроков: рейтинг — средняя за выбранный сезон (не случайный матч).
+        from aggregates.services import entity_ratings
+        from core.list_rows import player_row
+
+        players = list(players)
+        squad_ratings = entity_ratings(PlayerMatchAggregate, 'player_id', [p.id for p in players], season=current_season)
+        squad_rows = []
+        for p in players:
+            p.rating = squad_ratings.get(p.id)
+            row = player_row(p)
+            row['sub'] = row['sub'].split(' · ', 1)[1] if ' · ' in row['sub'] else row['sub']  # клуб и так понятен
+            row['meta'] = ''
+            squad_rows.append(row)
+
         context.update({
+            'squad_rows': squad_rows,
             'is_following': is_following,
             'mood_trend': mood_trend,
             'mood_chart': mood_chart,

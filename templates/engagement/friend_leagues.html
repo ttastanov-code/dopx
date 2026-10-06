@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load engagement_extras %}
 {% load ui_extras %}
 
 {% block content %}
@@ -25,7 +26,7 @@
             <span class="dx-league-row__ico"><i class="ti ti-trophy"></i></span>
             <span class="dx-league-row__body">
                 <span class="dx-league-row__name">{{ item.league.name }}</span>
-                <span class="dx-league-row__meta">{{ item.members }} {{ item.members|ru_plural:"участник,участника,участников" }}{% if item.leader and item.leader.points %} · лидер {{ item.leader.user.username }} ({{ item.leader.points }}){% endif %}</span>
+                <span class="dx-league-row__meta">{{ item.members }} {{ item.members|ru_plural:"участник,участника,участников" }}{% if item.leader and item.leader.points %} · лидер <span class="{{ item.leader.user|name_class }}">{{ item.leader.user.username }}</span> ({{ item.leader.points }}){% endif %}</span>
             </span>
             {% if item.my_place %}<span class="dx-league-row__place"><b>{{ item.my_place }}</b><small>место</small></span>{% endif %}
             <i class="ti ti-chevron-right opacity-30"></i>

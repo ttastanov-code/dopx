@@ -46,3 +46,13 @@ def bipolar_bar_pct(value, scale=10):
         return 0
     pct = (value + scale) / (2 * scale) * 100
     return max(0, min(100, round(pct)))
+
+@register.filter
+def bipolar_half_pct(value, scale=10):
+    """Длина полосы от центра для шкалы [-scale, +scale]: доля половины дорожки, 0..50 (%)."""
+    try:
+        value, scale = abs(float(value)), float(scale)
+    except (ValueError, TypeError):
+        return 0
+    # Строкой с точкой: число в шаблоне локализуется в «7,1», а такую ширину CSS отбрасывает.
+    return "0" if scale <= 0 else f"{min(value, scale) / scale * 50:.1f}"

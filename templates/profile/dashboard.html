@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load engagement_extras %}
 {% load static %}
 {% load math_extras %}
 {% load tooltip_tags %}
@@ -21,7 +22,7 @@
             <div class="card-body p-6 text-center">
                 {# Аватар #}
                 <div class="avatar mb-4 flex justify-center">
-                    <div class="w-24 h-24 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2 overflow-hidden">
+                    {% with fc=user|frame_class %}<div class="w-24 h-24 rounded-full overflow-hidden {% if fc %}{{ fc }}{% else %}ring ring-primary ring-offset-base-100 ring-offset-2{% endif %}">{% endwith %}
                         {% if user.avatar %}
                             <img src="{{ user.avatar.url }}" alt="{{ user.username }}" class="object-cover w-full h-full" />
                         {% else %}
@@ -31,7 +32,7 @@
                         {% endif %}
                     </div>
                 </div>
-                <h2 class="text-2xl font-bold break-all">{{ user.username }}</h2>
+                <h2 class="text-2xl font-bold break-all {{ user|name_class }}">{{ user.username }}</h2>
                 {% if user.has_real_email %}
                 <p class="opacity-60 text-sm break-all">{{ user.email }}</p>
                 {% else %}
@@ -257,7 +258,7 @@
                             {% empty %}
                             <tr>
                                 <td colspan="4" class="text-center opacity-60 py-8">
-                                    <i class="ti ti-evaluation-off text-3xl mb-2"></i>
+                                    <i class="ti ti-star-off text-3xl mb-2"></i>
                                     <p>Пока нет оценок</p>
                                     <a href="{% url 'matches:list' %}?status=finished" class="btn btn-sm btn-ghost mt-2">
                                         Оценить матч
