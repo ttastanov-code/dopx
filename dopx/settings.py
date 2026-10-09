@@ -587,6 +587,8 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+# Архив сырых ответов API (parsers/sportmonks/archive.py): не публичный, не в git.
+API_ARCHIVE_DIR = BASE_DIR / 'data' / 'api_archive'
 
 # Лимиты загрузки файлов. См. docs/adr/0017-upload-size-limits.md.
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
@@ -1050,6 +1052,9 @@ CACHES = {
 if 'test' in sys.argv or 'pytest' in sys.modules:
     # Кэш гостевых страниц мешал бы тестам видеть свежие данные; его проверяет свой тест.
     GUEST_PAGE_CACHE_SECONDS = 0
+    # Тесты не пишут в настоящий архив ответов API.
+    import tempfile
+    API_ARCHIVE_DIR = Path(tempfile.gettempdir()) / 'dopx-test-api-archive'
     # Тестовые пользователи без города и почты; ограничение проверяет users/tests_email_flow.py.
     PROFILE_REQUIRED = False
     CACHES = {

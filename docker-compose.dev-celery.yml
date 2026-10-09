@@ -31,6 +31,7 @@ services:
     volumes:
       - ./media:/app/media
       - ./logs:/app/logs
+      - ./data:/app/data
 
   celery_realtime_dev:
     build:
@@ -54,6 +55,7 @@ services:
     volumes:
       - ./media:/app/media
       - ./logs:/app/logs
+      - ./data:/app/data
 
   celery_beat_dev:
     build:

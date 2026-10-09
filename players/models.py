@@ -102,6 +102,8 @@ class PlayerSidelined(BaseModel):
     category = models.CharField(_('Категория'), max_length=20, choices=CATEGORY_CHOICES, default="other")
     start_date = models.DateField(_('С'), null=True, blank=True)
     end_date = models.DateField(_('По'), null=True, blank=True)
+    reason = models.CharField(_('Причина'), max_length=120, blank=True, default='')
+    games_missed = models.PositiveSmallIntegerField(_('Пропущено матчей'), null=True, blank=True)
     sportmonks_id = models.CharField(
         _('Sportmonks ID'),
         max_length=100, blank=True, null=True, unique=True,
@@ -119,6 +121,9 @@ class PlayerSidelined(BaseModel):
     def __str__(self):
         return f"{self.player} — {self.get_category_display()} ({self.start_date}–{self.end_date or '…'})"
 
+    # Без даты окончания запись считаем протухшей через столько дней (у поставщика висят травмы 2023 года).
+    STALE_OPEN_DAYS = {"injury": 270, "suspended": 60, "other": 120}
+
     @property
     def is_current(self) -> bool:
         """Действует ли ограничение сейчас."""
@@ -128,7 +133,15 @@ class PlayerSidelined(BaseModel):
             return False
         if self.end_date and self.end_date < today:
             return False
+        if not self.end_date and self.start_date:
+            if (today - self.start_date).days > self.STALE_OPEN_DAYS.get(self.category, 120):
+                return False
         return True
+
+    @property
+    def label(self) -> str:
+        """Причина для показа: тип от поставщика или категория."""
+        return self.reason or self.get_category_display()
 
 
 class PotentialDuplicatePlayer(BaseModel):

@@ -315,16 +315,33 @@ class TeamDetailView(DetailView):
 
         players = list(players)
         squad_ratings = entity_ratings(PlayerMatchAggregate, 'player_id', [p.id for p in players], season=current_season)
+        # Травмы и дисквалификации — только для текущего состава, не для прошлых сезонов.
+        unavailable = []
+        if not (selected_season and not selected_season.is_active):
+            from players.models import PlayerSidelined
+
+            periods = (PlayerSidelined.objects.filter(player__team=team, player__is_active=True)
+                       .select_related('player').order_by('category', 'end_date', '-start_date'))
+            seen = set()
+            for s in periods:
+                if s.is_current and s.player_id not in seen:
+                    seen.add(s.player_id)
+                    unavailable.append(s)
+        out_by_player = {s.player_id: s for s in unavailable}
         squad_rows = []
         for p in players:
             p.rating = squad_ratings.get(p.id)
             row = player_row(p)
             row['sub'] = row['sub'].split(' · ', 1)[1] if ' · ' in row['sub'] else row['sub']  # клуб и так понятен
             row['meta'] = ''
+            if p.id in out_by_player:
+                out = out_by_player[p.id]
+                row['flag'], row['flag_kind'] = out.get_category_display(), out.category
             squad_rows.append(row)
 
         context.update({
             'squad_rows': squad_rows,
+            'unavailable': unavailable,
             'is_following': is_following,
             'mood_trend': mood_trend,
             'mood_chart': mood_chart,

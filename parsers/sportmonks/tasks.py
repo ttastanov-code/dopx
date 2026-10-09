@@ -20,7 +20,7 @@ from datetime import timedelta
 from leagues.models import League
 from matches.models import Match
 from parsers.models import ParserSyncRun
-from parsers.sportmonks import importers
+from parsers.sportmonks import archive, importers
 from parsers.sportmonks.client import SportmonksAPIError, SportmonksClient
 from seasons.models import Season
 from teams.models import Team
@@ -85,6 +85,7 @@ def _heavy_sync_fixture(client: SportmonksClient, league, season, sportmonks_fix
         return False
     try:
         full = client.get_fixture(sportmonks_fixture_id, include=importers.HEAVY_FIXTURE_INCLUDE)
+        archive.record_fixture(full)
         importers.import_full_fixture(full, league=league, season=season)
         return True
     except SportmonksAPIError as exc:
@@ -126,6 +127,7 @@ def _sportmonks_update_live_impl(self):
         _record_sync_run("sportmonks_update_live", started_at, total=0, errors=1)
         return
 
+    archive.record_live(live_fixtures)
     live_sm_ids_from_api = {str(fx.get("id")) for fx in live_fixtures if fx.get("id") is not None}
 
     synced = 0
@@ -323,6 +325,14 @@ def sportmonks_sync_squads(self):
         else:
             logger.info("Sportmonks: состав %s не применён: %s", team.name, reason)
     _record_sync_run("sportmonks_sync_squads", started_at, total=len(teams), updated=applied, errors=errors)
+    # Новые фото и гербы — сразу к себе (заглушки отсеиваются).
+    from parsers import media
+
+    for name in ("players", "coaches", "referees", "teams"):
+        try:
+            media.localize(name)
+        except Exception:
+            logger.exception("Медиа %s не скачаны", name)
 
 
 @shared_task(bind=True, max_retries=2)

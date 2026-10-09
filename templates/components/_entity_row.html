@@ -1,6 +1,6 @@
 {% comment %}
 Строка списка сущностей. row — словарь из core/list_rows.py: url, img, initials, crest, title, sub, tag,
-value, tone (good/mid/low), value_label, meta.
+value, tone (good/mid/low), value_label, meta; flag/flag_kind — плашка «Травма»/«Дисквалификация».
 {% endcomment %}
 <a href="{{ row.url }}" class="er">
     <span class="er__avatar{% if row.crest %} er__avatar--crest{% endif %}">
@@ -8,7 +8,7 @@ value, tone (good/mid/low), value_label, meta.
     </span>
     <span class="er__body">
         <span class="er__title">{{ row.title }}</span>
-        <span class="er__sub">{{ row.sub }}{% if row.tag %} · <span class="er__tag">{{ row.tag }}</span>{% endif %}</span>
+        <span class="er__sub">{% if row.flag %}<span class="er__flag er__flag--{{ row.flag_kind }}">{{ row.flag }}</span> {% endif %}{{ row.sub }}{% if row.tag %} · <span class="er__tag">{{ row.tag }}</span>{% endif %}</span>
     </span>
     <span class="er__side">
         {% if row.value %}

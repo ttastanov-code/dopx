@@ -23,6 +23,7 @@ from leagues.models import League
 from lineups.models import MatchLineup, MatchLineupPlayer
 from matches.models import Match, MatchPlayerStatistics, MatchTeamStatistics
 from players.models import Player, PlayerSidelined, PotentialDuplicatePlayer
+from core.bulk import is_quiet
 from core.utils import normalize_kz
 from core.models import (
     NAME_SOURCE_AI_VERIFIED,
@@ -847,7 +848,7 @@ def import_match_core(fixture_data: Dict, league: League, season: Season) -> Mat
         _record_discrepancies(match, existing, defaults)
 
     change = _detect_match_change(existing, match) if existing and not existing.manual_override else None
-    if change:
+    if change and not is_quiet():
         from notifications.tasks import notify_followers_match_changed
         old_start = existing.start_time.isoformat() if existing.start_time else None
         transaction.on_commit(
@@ -1322,6 +1323,24 @@ def _parse_date_only(raw) -> Optional[object]:
         return None
 
 
+# Машинный перевод типов у поставщика -> нормальный русский; «неизвестная травма» = просто «Травма».
+SIDELINED_REASON_FIXES = {
+    "аннулирование за жёлтую карточку": "Перебор жёлтых карточек",
+    "аннулирование за желтую карточку": "Перебор жёлтых карточек",
+    "yellow card suspension": "Перебор жёлтых карточек",
+    "дисквалификация по красной карточке": "Красная карточка",
+    "red card suspension": "Красная карточка",
+    "неизвестная травма": "",
+    "unknown injury": "",
+}
+
+
+def sidelined_reason(name) -> str:
+    name = (name or "").strip()
+    fixed = SIDELINED_REASON_FIXES.get(name.lower())
+    return fixed if fixed is not None else name[:120]
+
+
 @transaction.atomic
 def import_sidelined(team: Team, sidelined_data: List[Dict]) -> int:
     """Травмы/дисквалификации игроков одной команды.
@@ -1349,6 +1368,9 @@ def import_sidelined(team: Team, sidelined_data: List[Dict]) -> int:
             )
             continue
 
+        if entry.get("completed") is True:
+            continue  # травма прошла, дисквалификация отбыта
+
         category_raw = str(entry.get("category") or sideline.get("category") or "").lower()
         category = SIDELINED_CATEGORY_MAP.get(category_raw, "other")
         if category == "other" and category_raw:
@@ -1368,6 +1390,8 @@ def import_sidelined(team: Team, sidelined_data: List[Dict]) -> int:
                 "category": category,
                 "start_date": start_date,
                 "end_date": end_date,
+                "reason": sidelined_reason((entry.get("type") or {}).get("name")),
+                "games_missed": entry.get("games_missed"),
             },
         )
         seen_sm_ids.add(str(sm_id))
@@ -1411,6 +1435,9 @@ def import_full_fixture(fixture_data: Dict, league: League, season: Season) -> M
 
     # Приглашение оценить — только пока голосование открыто (бэкафилл старых матчей не спамит).
     voting_open = bool(match.voting_open_until and match.voting_open_until > timezone.now())
+    # Тихий режим (переимпорт из архива, проигрывание) — без рассылок.
+    if is_quiet():
+        return match
     if match.status == "finished" and not was_finished_before and voting_open:
         from notifications.tasks import notify_followers_match_activity
         transaction.on_commit(lambda: notify_followers_match_activity.delay(str(match.id)))

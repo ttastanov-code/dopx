@@ -286,6 +286,20 @@ class ImportFullFixtureNotificationWiringTests(TestCase):
         mock_delay.assert_not_called()
 
     @patch("notifications.tasks.notify_followers_match_event.delay")
+    @patch("notifications.tasks.notify_followers_match_activity.delay")
+    def test_quiet_import_sends_nothing(self, mock_activity, mock_event):
+        """Переимпорт и проигрывание из архива (quiet) — без рассылок."""
+        from core.bulk import quiet
+
+        fixture = _fixture(sm_id=777009003, dev_name="INPLAY_2ND_HALF", starting_at=_recent_start())
+        fixture["events"] = [_goal_event(minute=87, participant_id=fixture["participants"][0]["id"])]
+        with quiet(), self.captureOnCommitCallbacks(execute=True):
+            import_full_fixture(fixture, self.league, self.season)
+            import_full_fixture(_fixture(sm_id=777009003, dev_name="FT", starting_at=_recent_start()), self.league, self.season)
+        mock_event.assert_not_called()
+        mock_activity.assert_not_called()
+
+    @patch("notifications.tasks.notify_followers_match_event.delay")
     def test_new_goal_event_queues_push_worthy_notification(self, mock_delay):
         # Матч ещё идёт — чтобы не сработало activity-уведомление о завершении.
         fixture = _fixture(sm_id=777000333, dev_name="INPLAY_2ND_HALF")

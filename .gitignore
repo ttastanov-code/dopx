@@ -67,3 +67,6 @@ brag-output*/
 # Бэкапы на сервере (scripts/backup.sh, scripts/deploy.sh)
 backups/
 launch-bundle.tar.gz
+
+# Архив сырых ответов API и рабочие выгрузки — не в git, архив хранить копией отдельно.
+data/

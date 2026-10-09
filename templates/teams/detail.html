@@ -262,6 +262,29 @@
   {# === ЛЕВАЯ КОЛОНКА (2/3) === #}
   <div class="order-2 lg:order-1 lg:col-span-2 space-y-4 md:space-y-6 min-w-0">
     
+    {# === НЕ СЫГРАЮТ: травмы и дисквалификации (PlayerSidelined.is_current) === #}
+    {% if unavailable %}
+    <div class="card bg-base-100 border border-base-300">
+      <div class="card-body p-3 md:p-4">
+        <h3 class="font-bold text-base md:text-lg mb-2"><i class="ti ti-first-aid-kit mr-2"></i>Не сыграют</h3>
+        <ul class="out-list">
+          {% for s in unavailable %}
+          <li>
+            <a href="{% url 'players:detail' s.player.id %}" class="out-row out-row--{{ s.category }}">
+              <span class="out-row__icon" aria-hidden="true">{% if s.category == 'suspended' %}<span class="out-row__card"></span>{% else %}<i class="ti ti-first-aid-kit"></i>{% endif %}</span>
+              <span class="out-row__body">
+                <span class="out-row__name">{{ s.player.first_name }} {{ s.player.last_name }}</span>
+                <span class="out-row__why">{{ s.label }}{% if s.games_missed %} · пропустил {{ s.games_missed }} {{ s.games_missed|ru_plural:"матч,матча,матчей" }}{% endif %}</span>
+              </span>
+              <span class="out-row__when">{% if s.end_date %}до {{ s.end_date|date:"j E" }}{% elif s.start_date %}с {{ s.start_date|date:"j E" }}{% endif %}</span>
+            </a>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+    {% endif %}
+
     {# === СОСТАВ КОМАНДЫ === #}
     {% if players or season_left_players %}
     <div class="card bg-base-100 border border-base-300">
@@ -270,7 +293,7 @@
           <h3 class="font-bold text-base md:text-lg">
             <i class="ti ti-users mr-2"></i>{% if selected_season and not selected_season.is_active %}Игроки сезона {{ selected_season.year }}{% else %}Состав на сегодня{% endif %}
           </h3>
-          <p class="text-xs opacity-60 mt-0.5">{% if selected_season and not selected_season.is_active %}Выходили на поле за клуб в этом сезоне{% elif squad_synced_at %}Сверен с данными поставщика {{ squad_synced_at|date:"d.m.Y" }}{% else %}По последним матчам игроков{% endif %}</p>
+          <p class="text-xs opacity-60 mt-0.5">{% if selected_season and not selected_season.is_active %}Выходили на поле за клуб в этом сезоне{% elif squad_synced_at %}Обновлён {{ squad_synced_at|date:"d.m.Y" }}{% else %}По последним матчам игроков{% endif %}</p>
         </div>
         {% if players %}
         <div class="el el--single">

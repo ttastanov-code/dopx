@@ -251,7 +251,7 @@ class SportmonksClient:
 
     def get_sidelined(self, team_id: int) -> list:
         """Травмы и дисквалификации игроков команды."""
-        return self.get_team(team_id, include='sidelined.player').get('sidelined', [])
+        return self.get_team(team_id, include='sidelined.player;sidelined.type').get('sidelined', [])
 
     # -- судьи/тренеры (одиночная сущность) ------------------------------------
     # Для точечного перезапроса имени по sportmonks_id.

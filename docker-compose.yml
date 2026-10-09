@@ -127,6 +127,7 @@ services:
       - static_volume:/app/staticfiles
       - ./media:/app/media
       - ./logs:/app/logs
+      - ./data:/app/data
     depends_on:
       db:
         condition: service_healthy
@@ -171,6 +172,7 @@ services:
     volumes:
       - ./media:/app/media
       - ./logs:/app/logs
+      - ./data:/app/data
     depends_on:
       db:
         condition: service_healthy
@@ -215,6 +217,7 @@ services:
     volumes:
       - ./media:/app/media
       - ./logs:/app/logs
+      - ./data:/app/data
     depends_on:
       db:
         condition: service_healthy
