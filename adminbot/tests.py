@@ -462,6 +462,29 @@ class AlertsTests(BotTestCase):
         self.assertTrue(all(isinstance(p, alerts.Problem) for p in problems))
 
 
+class OpsAlertsTests(TestCase):
+    """Синк выключен — не тревожим; провал проверки восстановления бэкапа — тревога."""
+
+    def test_sync_alert_silent_when_sync_disabled(self):
+        from . import alerts
+
+        with mock.patch("parsers.sportmonks.tasks._sync_enabled", return_value=False):
+            self.assertIsNone(alerts.check_sync())
+
+    def test_failed_restore_check_is_reported(self):
+        import tempfile
+        from pathlib import Path
+
+        from . import alerts
+
+        with tempfile.TemporaryDirectory() as tmp, override_settings(LOGS_DIR=Path(tmp)):
+            log = Path(tmp) / "backup.log"
+            log.write_text("Бэкап годный.\n...\nБЭКАП НЕ ГОДИТСЯ\n")
+            self.assertEqual(alerts.backup_restore_problem().key, "backup")
+            log.write_text("БЭКАП НЕ ГОДИТСЯ\nБэкап годный.\n")
+            self.assertIsNone(alerts.backup_restore_problem())
+
+
 class CleanupTests(TestCase):
     def test_old_sample_drafts_dropped_fresh_kept(self):
         from .channel import drop_old_samples

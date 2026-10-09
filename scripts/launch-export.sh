@@ -4,7 +4,7 @@
 #   scripts/launch-export.sh           → launch-bundle.tar.gz в папке проекта
 #
 # Что внутри: база (команды, игроки, матчи, статистика Sportmonks, правки ФИО от Gemini, ваш
-# аккаунт сотрудника) и media/ (фото, логотипы, баннеры). Перед выгрузкой сделайте
+# аккаунт сотрудника), media/ (фото, логотипы, баннеры) и data/ (архив сырых ответов API — переимпорт без доступа к API). Перед выгрузкой сделайте
 # «Чистый старт» в дашборде (Скрипты → reset_user_activity), чтобы не везти тестовую активность.
 # .env и ключи сюда не входят: на сервере свой .env.
 set -Eeuo pipefail
@@ -26,6 +26,10 @@ gzip -t "$TMP/db.sql.gz"
 
 echo "Упаковываю media…"
 tar -czf "$TMP/media.tar.gz" media
+if [ -d data ]; then
+    echo "Упаковываю архив данных API…"
+    tar -czf "$TMP/data.tar.gz" data
+fi
 
 git rev-parse --short HEAD > "$TMP/COMMIT"
 date -u +%Y-%m-%dT%H:%M:%SZ > "$TMP/CREATED"

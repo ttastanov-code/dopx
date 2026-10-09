@@ -483,6 +483,10 @@ def sync_current_squad(client, team: Team, today=None) -> tuple[bool, int, str]:
     return True, confirmed, ""
 
 
+# Поля полного объекта игрока: по ним имя надёжно (словарь исправлений, проверенные правки ФИО).
+FULL_NAME_KEYS = ("firstname", "lastname", "display_name", "common_name")
+
+
 def get_or_create_player(
     player_data: Optional[Dict], team: Optional[Team] = None, number: Optional[int] = None,
     match_start_time=None,
@@ -519,10 +523,15 @@ def get_or_create_player(
         "name_source": name_source,
         "is_active": True,
     }
+    # Только короткое имя (из события или состава без объекта игрока) — известное имя не портим.
+    if existing is not None and not any(player_data.get(k) for k in FULL_NAME_KEYS):
+        for key in ("first_name", "last_name", "name_source"):
+            defaults.pop(key)
     if sportmonks_photo_url(player_data):
         defaults["photo_url"] = sportmonks_photo_url(player_data)
-    if is_more_recent:
+    if is_more_recent and "position_id" in player_data:
         defaults["position"] = POSITION_ID_MAP.get(player_data.get("position_id"), "")
+    if is_more_recent:
         if team is not None:
             defaults["team"] = team
         if number is not None:
@@ -895,6 +904,31 @@ def import_coaches(match: Match, coaches_data: List[Dict]) -> bool:
     return bool(update_fields)
 
 
+# События, участник которых точно был на поле за свою команду (автогол не берём: участник там — пострадавшая сторона).
+FIELD_EVENT_TYPES = {"GOAL", "PENALTY", "MISSED_PENALTY", "SUBSTITUTION", "YELLOWCARD", "REDCARD", "YELLOWREDCARD"}
+
+
+def _add_players_from_events(match: Match, match_lineup, team, team_sm_id: str, events_data, saved_players: set) -> None:
+    """У поставщика бывают дыры в заявке: игрок вышел на замену или забил, а в составе его нет.
+    Дописываем его запасным, который выходил, — иначе болельщики не смогут его оценить."""
+    for evt in events_data or []:
+        dev_name = ((evt.get("type") or {}).get("developer_name") or "").upper()
+        if dev_name not in FIELD_EVENT_TYPES or str(evt.get("participant_id") or "") != team_sm_id:
+            continue
+        if not evt.get("player_id"):
+            continue
+        player = get_or_create_player({"id": evt["player_id"], "name": evt.get("player_name")}, team=team,
+                                      number=None, match_start_time=match.start_time)
+        if not player or player.id in saved_players:
+            continue
+        saved_players.add(player.id)
+        MatchLineupPlayer.objects.create(
+            lineup=match_lineup, player=player, is_starting=False,
+            minute_in=evt.get("minute") if dev_name == "SUBSTITUTION" else None,
+        )
+        logger.info("Sportmonks: %s нет в заявке матча %s, добавлен по событию %s", player, match.id, dev_name)
+
+
 @transaction.atomic
 def import_lineups(match: Match, lineups_data: List[Dict], formations_data: Optional[List[Dict]] = None,
                    events_data: Optional[List[Dict]] = None) -> bool:
@@ -961,6 +995,7 @@ def import_lineups(match: Match, lineups_data: List[Dict], formations_data: Opti
                                                        entry.get("jersey_number"), match.start_time)
             if not player:
                 return
+            saved_players.add(player.id)
             # Детальная позиция в приоритете, грубая — fallback.
             # Ключ читаем в обоих регистрах на всякий случай.
             detailed = entry.get("detailedPosition") or entry.get("detailedposition") or {}
@@ -987,10 +1022,12 @@ def import_lineups(match: Match, lineups_data: List[Dict], formations_data: Opti
                 minute_out=None,
             )
 
+        saved_players: set = set()
         for entry in starters:
             _save_entry(entry, True)
         for entry in substitutes:
             _save_entry(entry, False)
+        _add_players_from_events(match, match_lineup, team, team_sm_id, events_data, saved_players)
 
         any_saved = True
 
@@ -1000,13 +1037,13 @@ def import_lineups(match: Match, lineups_data: List[Dict], formations_data: Opti
     return any_saved
 
 
-@transaction.atomic
 def _dedupe_by_id(events_data: List[Dict]) -> List[Dict]:
     """Одно событие поставщика может прийти дважды (гол и его правка в автогол) — берём последнюю версию."""
     last_index = {str(e.get("id")): i for i, e in enumerate(events_data) if e.get("id")}
     return [e for i, e in enumerate(events_data) if not e.get("id") or last_index[str(e.get("id"))] == i]
 
 
+@transaction.atomic
 def import_events(match: Match, events_data: List[Dict]) -> bool:
     """Импорт событий матча. Возвращает новые события (и переклассифицированные
     в push-достойный тип) — по ним вызывающий код шлёт пуши.

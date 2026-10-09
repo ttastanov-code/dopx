@@ -933,3 +933,36 @@ class RefreshScheduleTests(TestCase):
             heavy.reset_mock()
             self.assertEqual(tasks.sportmonks_refresh_schedule.run(), 0)
             heavy.assert_not_called()
+
+
+class LineupGapsFromEventsTests(TestCase):
+    """Дыры в заявке у поставщика: автор гола и вышедший на замену дописываются; короткое имя не портит известное."""
+
+    def setUp(self):
+        self.league = _make_league()
+        self.season = _make_season(self.league)
+
+    def test_short_name_keeps_verified_name(self):
+        get_or_create_player({"id": 555, "firstname": "Luka", "lastname": "Čermelj", "display_name": "Лука Чермель"})
+        Player.objects.filter(sportmonks_id="555").update(first_name="Лука", last_name="Чермель", name_source="ai_verified")
+        get_or_create_player({"id": 555, "name": "L. Kermelj"})
+        p = Player.objects.get(sportmonks_id="555")
+        self.assertEqual((p.first_name, p.last_name, p.name_source), ("Лука", "Чермель", "ai_verified"))
+
+    def test_scorer_missing_from_lineup_is_added(self):
+        from lineups.models import MatchLineupPlayer
+
+        fixture = _fixture(sm_id=777010001, home_goals=1, away_goals=0)
+        fixture["lineups"] = [{"id": 1, "team_id": 1001, "type_id": 11, "player_id": 901,
+                               "player": {"id": 901, "display_name": "Иван Иванов"}, "jersey_number": 9}]
+        fixture["events"] = [
+            {"id": 50, "participant_id": 1001, "player_id": 902, "player_name": "P. Petrov", "minute": 70,
+             "type": {"developer_name": "GOAL"}},
+            {"id": 51, "participant_id": 1001, "player_id": 903, "player_name": "S. Sidorov", "minute": 60,
+             "related_player_id": 901, "type": {"developer_name": "SUBSTITUTION"}},
+        ]
+        match = import_full_fixture(fixture, self.league, self.season)
+        rows = {r.player.sportmonks_id: r for r in MatchLineupPlayer.objects.filter(lineup__match=match).select_related("player")}
+        self.assertEqual(set(rows), {"901", "902", "903"})
+        self.assertFalse(rows["902"].is_starting)
+        self.assertEqual(rows["903"].minute_in, 60)

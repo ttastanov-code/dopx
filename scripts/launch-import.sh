@@ -30,6 +30,11 @@ gunzip -c "$TMP/db.sql.gz" | docker compose exec -T db sh -c 'psql -q -v ON_ERRO
 
 echo "Распаковываю media…"
 tar -xzf "$TMP/media.tar.gz"
+if [ -f "$TMP/data.tar.gz" ]; then
+    echo "Распаковываю архив данных API…"
+    tar -xzf "$TMP/data.tar.gz"
+    chown -R 1000:1000 data 2>/dev/null || true
+fi
 # Приложение в контейнерах пишет в media от UID 1000.
 chown -R 1000:1000 media 2>/dev/null || echo "Не хватило прав на chown. Выполните: sudo chown -R 1000:1000 media"
 

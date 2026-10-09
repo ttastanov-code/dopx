@@ -163,7 +163,10 @@ def check_errors():
 
 def check_sync():
     from parsers.models import ParserSyncRun
+    from parsers.sportmonks.tasks import _sync_enabled
 
+    if not _sync_enabled():
+        return None  # межсезонье или нет подписки: синк выключен намеренно
     runs = list(ParserSyncRun.objects.filter(source="sportmonks").order_by("-started_at")[:3])
     if not runs:
         return None
@@ -183,7 +186,24 @@ def check_backup():
     if not files:
         return Problem("backup", "Нет ежедневных бэкапов базы", "В папке backups/ нет файлов db_*.sql.gz")
     age = (time.time() - max(f.stat().st_mtime for f in files)) / 3600
-    return Problem("backup", "Бэкап базы устарел", f"Последний {age:.0f} ч назад") if age > BACKUP_MAX_AGE_HOURS else None
+    if age > BACKUP_MAX_AGE_HOURS:
+        return Problem("backup", "Бэкап базы устарел", f"Последний {age:.0f} ч назад")
+    return backup_restore_problem()
+
+
+def backup_restore_problem():
+    """Итог еженедельной проверки восстановления (scripts/verify_backup.sh пишет в logs/backup.log)."""
+    path = settings.LOGS_DIR / "backup.log"
+    try:
+        with open(path, "r", errors="replace") as fh:
+            fh.seek(max(0, path.stat().st_size - 20_000))
+            tail = fh.read()
+    except OSError:
+        return None
+    bad, good = tail.rfind("БЭКАП НЕ ГОДИТСЯ"), tail.rfind("Бэкап годный.")
+    if bad > good:
+        return Problem("backup", "Бэкап не восстанавливается", "Еженедельная проверка провалилась — см. logs/backup.log")
+    return None
 
 
 def check_latency():
