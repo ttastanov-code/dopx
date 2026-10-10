@@ -56,7 +56,8 @@ self.addEventListener('push', (event) => {
     // Одинаковый tag заменяет прошлое уведомление (например, новый гол — прошлый счёт).
     if (payload.tag) {
         options.tag = payload.tag;
-        options.renotify = true;
+        // quiet — уточнение уже показанного (автор гола пришёл позже): заменяем без повторного звука.
+        options.renotify = !payload.quiet;
     }
 
     event.waitUntil(self.registration.showNotification(title, options));

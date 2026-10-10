@@ -1252,6 +1252,7 @@ def import_events(match: Match, events_data: List[Dict]) -> bool:
                 continue
 
             previous_type = matched_existing.event_type
+            author_arrived = matched_existing.player_id is None and player is not None
             matched_existing.player = player
             matched_existing.minute = minute
             matched_existing.added_time = added_time
@@ -1264,6 +1265,12 @@ def import_events(match: Match, events_data: List[Dict]) -> bool:
             matched_existing.sportmonks_id = evt_sm_id
             matched_existing.save()
             updated_count += 1
+            if (author_arrived and previous_type == event_type and event_type in PUSH_WORTHY_EVENT_TYPES
+                    and match.status == "live" and not is_quiet()):
+                # Автор пришёл позже события — дописываем его в уже отправленное уведомление.
+                from notifications.tasks import notify_match_event_author
+                transaction.on_commit(lambda m=str(match.id), e=str(matched_existing.id):
+                                      notify_match_event_author.delay(m, e))
             if previous_type != event_type:
                 reclassified_count += 1
                 logger.info(

@@ -94,8 +94,11 @@ def send_push_to_users(
     url: str = '/',
     kind: str = 'default',
     tag: str | None = None,
+    quiet: bool = False,
+    telegram: bool = True,
 ) -> int:
     """Push всем подпискам указанных пользователей. Исключения наружу не бросает.
+    quiet — заменить уведомление с тем же tag без повторного звука; telegram=False — без копии в Telegram.
 
     kind — ключ PUSH_PROFILES (TTL и срочность) и PUSH_KIND_SETTING (выключенные
     пользователем типы отсекаются). tag — одинаковый tag заменяет
@@ -111,12 +114,13 @@ def send_push_to_users(
     if not allowed_ids:
         return 0
     # Те же уведомления — в Telegram тем, кто привязал бота болельщиков (не зависит от push-подписки).
-    try:
-        from fanbot.services import notify_users
+    if telegram:
+        try:
+            from fanbot.services import notify_users
 
-        notify_users(allowed_ids, title, body, url)
-    except Exception as exc:
-        logger.warning(f"telegram fan-out ({kind}) пропущен: {exc}")
+            notify_users(allowed_ids, title, body, url)
+        except Exception as exc:
+            logger.warning(f"telegram fan-out ({kind}) пропущен: {exc}")
     if not _push_ready():
         return 0
 
@@ -130,7 +134,7 @@ def send_push_to_users(
         return 0
 
     profile = PUSH_PROFILES.get(kind, PUSH_PROFILES['default'])
-    payload = json.dumps({'title': title, 'body': body, 'url': url, 'tag': tag})
+    payload = json.dumps({'title': title, 'body': body, 'url': url, 'tag': tag, 'quiet': quiet})
     headers = {'Urgency': profile['urgency']}
     sent = 0
     stale_ids = []

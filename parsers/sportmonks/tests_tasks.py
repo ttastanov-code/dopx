@@ -124,11 +124,12 @@ class SportmonksUpdateLiveEventSignatureTests(TestCase):
         from events.models import MatchEvent
         self.existing_event = MatchEvent.objects.create(
             match=self.match, minute=9, event_type="yellow_card", team_side="home",
-            sportmonks_id="1", extra_data={"type": {"developer_name": "YELLOWCARD"}},
+            sportmonks_id="1", extra_data={"id": 1, "type_id": 19, "player_id": 500, "type": {"developer_name": "YELLOWCARD"}},
         )
 
-    def _api_fixture(self, event_dev_name: str) -> dict:
-        """Счёт/статус совпадают с базой — меняется только developer_name события."""
+    def _api_fixture(self, type_id: int, player_id=500) -> dict:
+        """Как реальный лёгкий ответ livescores: у события type_id и player_id, вложенного type нет.
+        Счёт/статус совпадают с базой."""
         return {
             "id": 850000001,
             "league_id": 393,
@@ -137,14 +138,14 @@ class SportmonksUpdateLiveEventSignatureTests(TestCase):
                 {"description": "CURRENT", "score": {"goals": 1, "participant": "home"}},
                 {"description": "CURRENT", "score": {"goals": 0, "participant": "away"}},
             ],
-            "events": [{"id": 1, "type": {"developer_name": event_dev_name}}],
+            "events": [{"id": 1, "type_id": type_id, "player_id": player_id}],
         }
 
     @patch("parsers.sportmonks.tasks.SportmonksClient")
     def test_var_type_change_on_same_event_id_triggers_heavy_sync(self, mock_client_cls):
         """Тот же id, YELLOWCARD -> REDCARD — heavy sync вызывается."""
         mock_client = MagicMock()
-        mock_client.get_livescores.return_value = [self._api_fixture("REDCARD")]
+        mock_client.get_livescores.return_value = [self._api_fixture(20)]
         mock_client.get_fixture.return_value = _fixture(
             sm_id=850000001, dev_name="INPLAY_2ND_HALF", home_goals=1, away_goals=0,
         )
@@ -158,7 +159,7 @@ class SportmonksUpdateLiveEventSignatureTests(TestCase):
     def test_identical_events_do_not_trigger_heavy_sync(self, mock_client_cls):
         """Ничего не изменилось — heavy sync не вызывается."""
         mock_client = MagicMock()
-        mock_client.get_livescores.return_value = [self._api_fixture("YELLOWCARD")]
+        mock_client.get_livescores.return_value = [self._api_fixture(19)]
         mock_client_cls.return_value = mock_client
 
         sportmonks_update_live()
@@ -168,10 +169,28 @@ class SportmonksUpdateLiveEventSignatureTests(TestCase):
     @patch("parsers.sportmonks.tasks.SportmonksClient")
     def test_new_event_id_triggers_heavy_sync(self, mock_client_cls):
         """Новое событие (новый id) — heavy sync вызывается."""
-        fx = self._api_fixture("YELLOWCARD")
-        fx["events"].append({"id": 2, "type": {"developer_name": "SUBSTITUTION"}})
+        fx = self._api_fixture(19)
+        fx["events"].append({"id": 2, "type_id": 18, "player_id": 501})
         mock_client = MagicMock()
         mock_client.get_livescores.return_value = [fx]
+        mock_client.get_fixture.return_value = _fixture(
+            sm_id=850000001, dev_name="INPLAY_2ND_HALF", home_goals=1, away_goals=0,
+        )
+        mock_client_cls.return_value = mock_client
+
+        sportmonks_update_live()
+
+        mock_client.get_fixture.assert_called_once()
+
+
+    @patch("parsers.sportmonks.tasks.SportmonksClient")
+    def test_author_added_later_triggers_heavy_sync(self, mock_client_cls):
+        """Гол пришёл без автора, поставщик дописал его позже — подтягиваем, иначе имени не будет."""
+        from events.models import MatchEvent
+        MatchEvent.objects.filter(id=self.existing_event.id).update(
+            extra_data={"id": 1, "type_id": 19, "player_id": None})
+        mock_client = MagicMock()
+        mock_client.get_livescores.return_value = [self._api_fixture(19, player_id=500)]
         mock_client.get_fixture.return_value = _fixture(
             sm_id=850000001, dev_name="INPLAY_2ND_HALF", home_goals=1, away_goals=0,
         )

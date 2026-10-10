@@ -119,6 +119,52 @@ class MatchEventPushFreshnessTests(TestCase):
         self.assertTrue(Notification.objects.filter(user=self.fan, notification_type="match_event").exists())
 
 
+class GoalPushAudienceTests(TestCase):
+    """Гол без автора не уходит подписчикам чужих команд; сделавший прогноз получает пуш о голе."""
+
+    @patch("notifications.services.send_push_to_users", return_value=1)
+    def test_audience(self, mocked):
+        from predictions.models import MatchPrediction
+        from teams.models import Team
+
+        match, home, _ = _setup_match()
+        stranger = _user("stranger")
+        Follow.objects.create(user=stranger, team=Team.objects.create(name="Чужая команда"))
+        predictor = _user("predictor")
+        MatchPrediction.objects.create(user=predictor, match=match, choice="1")
+        goal = MatchEvent.objects.create(match=match, minute=15, event_type="goal", team_side="home")  # без автора
+        notify_followers_match_event(str(match.id), str(goal.id))
+        recipients = set(Notification.objects.filter(notification_type="match_event").values_list("user_id", flat=True))
+        self.assertIn(predictor.id, recipients)
+        self.assertNotIn(stranger.id, recipients)
+
+
+class GoalAuthorLaterTests(TestCase):
+    """Гол без автора, автор пришёл позже — то же уведомление обновляется, пуш — тихая замена без Telegram."""
+
+    @patch("notifications.services.send_push_to_users", return_value=1)
+    def test_author_update(self, mocked):
+        from notifications.tasks import notify_match_event_author
+        from players.models import Player
+
+        match, home, _ = _setup_match()
+        Follow.objects.create(user=_user("fan3"), team=home)
+        goal = MatchEvent.objects.create(match=match, minute=15, event_type="goal", team_side="home", score_after="1-0")
+        notify_followers_match_event(str(match.id), str(goal.id))
+        n = Notification.objects.get(notification_type="match_event")
+        self.assertNotIn("Ерланов", n.message)
+
+        goal.player = Player.objects.create(first_name="Темирлан", last_name="Ерланов", team=home)
+        goal.save()
+        notify_match_event_author(str(match.id), str(goal.id))
+        n.refresh_from_db()
+        self.assertIn("Темирлан Ерланов, 15'", n.message)
+        self.assertEqual(Notification.objects.filter(notification_type="match_event").count(), 1)  # не новое, а то же
+        kwargs = mocked.call_args.kwargs
+        self.assertTrue(kwargs["quiet"])
+        self.assertFalse(kwargs["telegram"])
+
+
 class GoalPushScoreTests(TestCase):
     """В пуше — счёт сразу после гола, а не текущий счёт матча."""
 
@@ -129,7 +175,10 @@ class GoalPushScoreTests(TestCase):
         Follow.objects.create(user=_user("fan2"), team=home)
         first = MatchEvent.objects.create(match=match, minute=10, event_type="goal", team_side="home", score_after="1-0")
         notify_followers_match_event(str(match.id), str(first.id))
-        self.assertIn("1:0", mocked.call_args.kwargs["title"])
+        n = Notification.objects.filter(notification_type="match_event").latest("created_at")
+        self.assertIn("Забивает", n.title)                       # видно, какая команда забила
+        self.assertIn(match.home_team.name, n.title)
+        self.assertIn("1:0", n.message)
 
 
 @override_settings(CELERY_TASK_ALWAYS_EAGER=False)

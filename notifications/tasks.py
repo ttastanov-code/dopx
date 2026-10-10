@@ -787,6 +787,62 @@ def notify_followers_match_changed(self, match_id: str, change: str, old_start_i
     return {'notified': len(audience)}
 
 
+def match_event_texts(event, match, player_name):
+    """(заголовок, текст) live-пуша по событию; None — тип не для пуша.
+    Как на SofaScore: в заголовке — какая команда, в тексте — счёт, автор и минута."""
+    # Счёт сразу после этого гола (поставщик: «1-0»), а не текущий — два гола в одной синхронизации иначе оба «2:0».
+    score = (event.score_after or "").replace("-", ":") if re.fullmatch(r"\d+-\d+", event.score_after or "") \
+        else match.get_score_display()
+    home, away = match.home_team.name, match.away_team.name
+    # У автогола team_side — команда, которой засчитан гол.
+    team = home if event.team_side == 'home' else away
+    line = f"{home} {score} {away}"
+    who = f" · {player_name}, {event.display_minute}'" if player_name else f" · {event.display_minute}'"
+    if event.event_type == 'goal':
+        return f"⚽ Гол! Забивает {team}", line + who
+    if event.event_type == 'own_goal':
+        return f"⚽ Автогол в пользу {team}", line + (f" · автогол: {player_name}, {event.display_minute}'" if player_name else who)
+    if event.event_type == 'penalty':
+        return f"🎯 Гол с пенальти! Забивает {team}", line + who
+    if event.event_type == 'disallowed_goal':
+        return f"❌ Гол отменён (VAR) · {team}", f"{line} · {event.display_minute}'"
+    if event.event_type == 'red_card':
+        return f"🟥 Удаление · {team}", (f"{player_name}, {event.display_minute}'" if player_name
+                                        else f"{event.display_minute}'") + f" · {line}"
+    return None
+
+
+@shared_task(bind=True, max_retries=2)
+def notify_match_event_author(self, match_id: str, event_id: str):
+    """Автор события пришёл позже самого события: обновляем уведомление без автора (в списке и на телефоне —
+    тихая замена по тому же tag, без повторного звука). В Telegram повторно не шлём."""
+    from django.urls import reverse
+
+    from events.models import MatchEvent
+    from notifications.models import Notification
+
+    event = MatchEvent.objects.select_related('match__home_team', 'match__away_team', 'player').filter(
+        id=event_id, match_id=match_id).first()
+    if event is None or not event.player_display_name:
+        return {'updated': 0}
+    match = event.match
+    old, new = match_event_texts(event, match, None), match_event_texts(event, match, event.player_display_name)
+    if old is None or old == new:
+        return {'updated': 0}
+    rows = Notification.objects.filter(related_match=match, notification_type='match_event', message=old[1])
+    user_ids = list(rows.values_list('user_id', flat=True))
+    updated = rows.update(title=new[0], message=new[1])
+    if user_ids and timezone.now() - event.updated_at <= MATCH_EVENT_PUSH_MAX_AGE:
+        try:
+            from notifications.services import send_push_to_users
+
+            send_push_to_users(user_ids, title=new[0], body=new[1], url=reverse('matches:detail', args=[match.id]),
+                               kind='match_event', tag=f'live-{match.id}', quiet=True, telegram=False)
+        except Exception as exc:
+            logger.warning(f"notify_match_event_author: push пропущен: {exc}")
+    return {'updated': updated}
+
+
 # События матча, по которым шлём live-push.
 PUSH_WORTHY_EVENT_TYPES = frozenset({'goal', 'own_goal', 'penalty', 'disallowed_goal', 'red_card'})
 
@@ -794,16 +850,14 @@ PUSH_WORTHY_EVENT_TYPES = frozenset({'goal', 'own_goal', 'penalty', 'disallowed_
 @shared_task(bind=True, max_retries=2)
 def notify_followers_match_event(self, match_id: str, event_id: str):
     """Live-push по событию матча (гол, автогол, пенальти, отменённый гол, красная)
-    подписчикам команд или игрока. Только push + in-app, без email.
+    подписчикам команд и игроков матча и сделавшим прогноз. Только push + in-app, без email.
     Ставится из импорта для новых событий.
     """
-    from django.db.models import Q
     from django.urls import reverse
 
     from events.models import MatchEvent
     from matches.models import Match
     from notifications.models import Notification
-    from users.models import Follow
 
     event = MatchEvent.objects.select_related('match__home_team', 'match__away_team', 'player').filter(
         id=event_id
@@ -818,41 +872,18 @@ def notify_followers_match_event(self, match_id: str, event_id: str):
         logger.error(f"notify_followers_match_event: event {event_id} belongs to match {match.id}, not {match_id}")
         return {'notified': 0}
 
-    follower_user_ids = set(
-        Follow.objects.filter(
-            Q(team_id__in=[match.home_team_id, match.away_team_id]) | Q(player_id=event.player_id)
-        ).values_list('user_id', flat=True)
-    )
+    # Та же аудитория, что у «матч начался»/«составы»/«финал»: подписчики команд и игроков заявки + сделавшие прогноз.
+    # (Раньше Q(player_id=None) у гола без автора совпадал со всеми подписками на любые команды.)
+    follower_user_ids = _match_notification_audience(match)
     if not follower_user_ids:
         return {'notified': 0}
 
-    # Счёт сразу после этого гола (поставщик: «1-0»), а не текущий — два гола в одной синхронизации иначе оба «2:0».
-    score = (event.score_after or "").replace("-", ":") if re.fullmatch(r"\d+-\d+", event.score_after or "") \
-        else match.get_score_display()
-    home = match.home_team.name
-    away = match.away_team.name
-    # Если игрок не найден локально — имя берём из extra_data события.
-    player_name = event.player_display_name
-
-    if event.event_type == 'goal':
-        title = f"⚽ Гол! {home} {score} {away}"
-        message = f"{player_name} забивает на {event.display_minute}-й минуте." if player_name else f"Гол на {event.display_minute}-й минуте."
-    elif event.event_type == 'own_goal':
-        title = f"⚽ Автогол! {home} {score} {away}"
-        message = f"Автогол: {player_name}, {event.display_minute}-я минута." if player_name else f"Автогол на {event.display_minute}-й минуте."
-    elif event.event_type == 'penalty':
-        title = f"🎯 Пенальти! {home} {score} {away}"
-        message = f"{player_name} с пенальти на {event.display_minute}-й минуте." if player_name else f"Пенальти на {event.display_minute}-й минуте."
-    elif event.event_type == 'disallowed_goal':
-        title = f"❌ Гол отменён (VAR). {home} {score} {away}"
-        message = f"Гол на {event.display_minute}-й минуте отменён после проверки VAR."
-    elif event.event_type == 'red_card':
-        title = f"🟥 Красная карточка. {home} {score} {away}"
-        message = f"{player_name} получает красную карточку на {event.display_minute}-й минуте." if player_name else f"Красная карточка на {event.display_minute}-й минуте."
-    else:
+    texts = match_event_texts(event, match, event.player_display_name)
+    if texts is None:
         # Неподходящий тип — тихо выходим.
         logger.warning(f"notify_followers_match_event: неожиданный event_type={event.event_type!r} для события {event.id}, пропуск")
         return {'notified': 0}
+    title, message = texts
 
     action_url = reverse('matches:detail', args=[match.id])
 

@@ -1040,6 +1040,27 @@ class PlayerAliasTests(TestCase):
         self.assertEqual(match.events.get().player_id, alias.player_id)   # гол засчитан тому же игроку
 
 
+class AuthorArrivesLaterImportTests(TestCase):
+    """Гол без автора, затем тот же гол с автором — импорт ставит обновление уведомления."""
+
+    @patch("notifications.tasks.notify_match_event_author.delay")
+    @patch("notifications.tasks.notify_followers_match_event.delay")
+    def test_author_update_queued(self, mock_event, mock_author):
+        league = _make_league()
+        season = _make_season(league)
+        fixture = _fixture(sm_id=777060001, dev_name="INPLAY_1ST_HALF", home_goals=1, away_goals=0)
+        fixture["events"] = [{"id": 80, "participant_id": 1001, "minute": 15, "type": {"developer_name": "GOAL"}}]
+        with self.captureOnCommitCallbacks(execute=True):
+            import_full_fixture(fixture, league, season)
+        fixture["events"] = [{"id": 80, "participant_id": 1001, "minute": 15, "player_id": 901,
+                              "player_name": "Темирлан Ерланов", "type": {"developer_name": "GOAL"}}]
+        fixture["lineups"] = [{"id": 1, "team_id": 1001, "type_id": 11, "player_id": 901,
+                               "player": {"id": 901, "display_name": "Темирлан Ерланов"}}]
+        with self.captureOnCommitCallbacks(execute=True):
+            import_full_fixture(fixture, league, season)
+        mock_author.assert_called_once()
+
+
 class FixtureStateTests(TestCase):
     """Неизвестный статус не сбрасывает матч; прерванный матч не даёт результата; техрезультат без голосования."""
 

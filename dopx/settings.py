@@ -715,6 +715,7 @@ CELERY_TASK_ROUTES = {
     # Своя очередь: realtime слушает и основной воркер, а пульс должен отбивать именно воркер realtime.
     'core.tasks.realtime_heartbeat': {'queue': 'realtime_hb'},
     'notifications.tasks.notify_followers_match_event': {'queue': 'realtime'},
+    'notifications.tasks.notify_match_event_author': {'queue': 'realtime'},
     'notifications.tasks.notify_followers_match_started': {'queue': 'realtime'},
     'notifications.tasks.notify_followers_lineups_available': {'queue': 'realtime'},
     'notifications.tasks.notify_followers_match_activity': {'queue': 'realtime'},

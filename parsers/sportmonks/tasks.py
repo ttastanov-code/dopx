@@ -173,15 +173,16 @@ def _sportmonks_update_live_impl(self):
             or _kickoff_changed(existing, fx)  # перенос даты или объявленное время
         )
 
-        # Сравниваем подпись событий (id, developer_name): ловим новые карточки/замены,
-        # отменённые голы и VAR-замену жёлтой на красную.
+        # Подпись событий (id, type_id, player_id): новые карточки/замены, отменённые голы, VAR-замена
+        # жёлтой на красную и дописанный позже автор гола. type_id, а не developer_name: в лёгком ответе
+        # типа нет, и подписи не совпадали никогда — каждый тик был полной перезагрузкой.
         if not changed and existing is not None:
             api_signature = {
-                (str(e["id"]), (e.get("type") or {}).get("developer_name") or "")
+                (str(e["id"]), e.get("type_id"), e.get("player_id"))
                 for e in (fx.get("events") or []) if e.get("id") is not None
             }
             local_signature = {
-                (ev.sportmonks_id, (ev.extra_data or {}).get("type", {}).get("developer_name") or "")
+                (ev.sportmonks_id, (ev.extra_data or {}).get("type_id"), (ev.extra_data or {}).get("player_id"))
                 for ev in existing.events.exclude(sportmonks_id__isnull=True).only(
                     "sportmonks_id", "extra_data"
                 )
