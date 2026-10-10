@@ -77,7 +77,23 @@
         });
     }
 
+    // Минута live-матча (components/_live_clock.html): та же формула, что Match.live_clock.
+    function tickLiveClocks() {
+        document.querySelectorAll('[data-live-clock]').forEach((el) => {
+            const elapsed = parseInt(el.dataset.elapsed, 10);
+            const from = parseInt(el.dataset.from, 10), cap = parseInt(el.dataset.cap, 10);
+            if (Number.isNaN(elapsed) || Number.isNaN(from) || Number.isNaN(cap)) return;
+            // Отсчёт от момента, когда сервер прислал elapsed (новая отрисовка — новый отсчёт).
+            if (el._clockBase !== el.dataset.elapsed) { el._clockBase = el.dataset.elapsed; el._clockT0 = Date.now(); }
+            const seconds = elapsed + (Date.now() - el._clockT0) / 1000;
+            const minute = from + Math.floor(seconds / 60) + 1;
+            const label = minute > cap ? `${cap}+${minute - cap}'` : `${Math.max(minute, 1)}'`;
+            if (el.textContent !== label) el.textContent = label;
+        });
+    }
+
     function refresh() {
+        tickLiveClocks();
         tickCountdowns();
         scheduleWakes();
     }
@@ -89,6 +105,7 @@
         if (document.visibilityState === 'visible') refresh();
     });
     setInterval(tickCountdowns, TICK_MS);
+    setInterval(tickLiveClocks, 5000);
     setInterval(() => {
         const soon = Array.from(document.querySelectorAll('[data-countdown]:not([data-countdown-expired])'))
             .some((el) => Date.parse(el.dataset.countdown) - Date.now() < 90000);

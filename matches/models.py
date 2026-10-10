@@ -59,6 +59,12 @@ class Match(BaseModel):
     )
     start_time = models.DateTimeField(_('Время начала'))
     end_time = models.DateTimeField(_('Время окончания'), null=True, blank=True)
+    # Состояние live из опроса поставщика: тайм, начало текущего периода и с какой минуты он считается —
+    # по ним минута матча идёт в браузере сама (live_clock). Вне live — пусто.
+    live_state = models.CharField(_('Состояние live'), max_length=30, blank=True, default='')
+    live_period_started = models.DateTimeField(_('Начало текущего периода'), null=True, blank=True)
+    live_counts_from = models.PositiveSmallIntegerField(_('Период считается с минуты'), null=True, blank=True)
+    live_ticking = models.BooleanField(_('Часы идут'), default=False)
     status = models.CharField(
         _('Статус'),
         max_length=20,
@@ -141,6 +147,34 @@ class Match(BaseModel):
         away = self.away_score if self.away_score is not None else '-'
         return f"{home} : {away}"
 
+    # Состояние live -> подпись без часов; ключ «clock» — идёт минута.
+    LIVE_STATE_LABELS = {
+        "HT": "Перерыв", "BREAK": "Перерыв", "EXTRA_TIME_BREAK": "Перерыв", "PEN_BREAK": "Перерыв",
+        "INPLAY_PENALTIES": "Пенальти", "SUSPENDED": "Прерван", "INTERRUPTED": "Прерван",
+    }
+    LIVE_CLOCK_STATES = {"INPLAY_1ST_HALF", "INPLAY_2ND_HALF", "INPLAY_ET"}
+
+    def live_clock(self) -> dict | None:
+        """Минута live-матча для шапки и карточек: {'label', 'ticking', 'started', 'counts_from', 'cap'}.
+        Минута = с какой считается период + прошедшие полные минуты + 1 (как на табло: 0:30 — 1');
+        за пределом тайма — «45+2'». None — не live или данных нет."""
+        from django.utils import timezone
+
+        if self.status != "live":
+            return None
+        if self.live_state in self.LIVE_STATE_LABELS:
+            return {"label": self.LIVE_STATE_LABELS[self.live_state], "ticking": False}
+        if self.live_state not in self.LIVE_CLOCK_STATES or not self.live_period_started or self.live_counts_from is None:
+            return None
+        # Тайм — 45 минут, тайм овертайма — 15.
+        cap = self.live_counts_from + (15 if self.live_state == "INPLAY_ET" else 45)
+        elapsed = int((timezone.now() - self.live_period_started).total_seconds())
+        minute = self.live_counts_from + elapsed // 60 + 1
+        label = f"{cap}+{minute - cap}'" if minute > cap else f"{max(minute, 1)}'"
+        # elapsed — секунды периода на момент отрисовки: браузер досчитывает от загрузки, часы устройства не важны.
+        return {"label": label, "ticking": self.live_ticking, "elapsed": max(elapsed, 0),
+                "counts_from": self.live_counts_from, "cap": cap}
+
     def kickoff_text(self, date_fmt: str = "%d.%m", sep: str = " в ") -> str:
         """Дата и время начала для текстов; без объявленного времени — только дата и «время уточняется»."""
         local = timezone_localtime(self.start_time)
@@ -166,7 +200,7 @@ class Match(BaseModel):
     # Живое обновление начинается заранее и держится после расчётного конца — статус приходит с задержкой.
     LIVE_POLL_BEFORE_KICKOFF_HOURS = 2
     LIVE_POLL_AFTER_KICKOFF_HOURS = 3
-    LIVE_POLL_SECONDS = 15
+    LIVE_POLL_SECONDS = 10
     PRE_MATCH_POLL_SECONDS = 60
 
     @property

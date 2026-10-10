@@ -53,7 +53,7 @@ data-background-poll — без глобального лоадера.
         </span>
         <span class="mrow__badge">
             {% if match.status == 'live' %}
-            <span class="mrow__live-dot"></span> LIVE
+            <span class="mrow__live-dot"></span> LIVE{% if match.live_clock %} · {% include 'components/_live_clock.html' with match=match %}{% endif %}
             {% elif match.status == 'finished' %}
             <i class="ti ti-check"></i> {{ match.start_time|date:"d.m.Y" }}
             {% elif match.status == 'postponed' %}

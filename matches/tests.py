@@ -413,3 +413,50 @@ class BuildTimelineTests(SimpleTestCase):
 
         tl = build_timeline(self._match(home=0, away=0), [self._ev(30, 'yellow_card', 'home')])
         self.assertIn('Перерыв', [r.get('divider') for r in tl['rows']])
+
+
+class LiveClockTests(SimpleTestCase):
+    """Минута live-матча: обычное время, компенсация, перерыв, нет данных."""
+
+    def _m(self, state, counts_from=0, seconds_ago=0, ticking=True):
+        from datetime import timedelta as td
+        from django.utils import timezone as tz
+        from matches.models import Match
+        return Match(status="live", live_state=state, live_counts_from=counts_from, live_ticking=ticking,
+                     live_period_started=tz.now() - td(seconds=seconds_ago))
+
+    def test_minutes(self):
+        self.assertEqual(self._m("INPLAY_1ST_HALF", 0, 30).live_clock()["label"], "1'")
+        self.assertEqual(self._m("INPLAY_1ST_HALF", 0, 22 * 60 + 5).live_clock()["label"], "23'")
+        self.assertEqual(self._m("INPLAY_1ST_HALF", 0, 46 * 60 + 10).live_clock()["label"], "45+2'")
+        self.assertEqual(self._m("INPLAY_2ND_HALF", 45, 21 * 60).live_clock()["label"], "67'")
+        self.assertEqual(self._m("INPLAY_2ND_HALF", 45, 50 * 60).live_clock()["label"], "90+6'")
+        self.assertEqual(self._m("INPLAY_ET", 90, 5 * 60).live_clock()["label"], "96'")
+
+    def test_breaks_and_missing_data(self):
+        self.assertEqual(self._m("HT").live_clock()["label"], "Перерыв")
+        self.assertFalse(self._m("HT").live_clock()["ticking"])
+        self.assertIsNone(self._m("").live_clock())
+
+
+class LiveClockSyncTests(TestCase):
+    def test_periods_from_poll_update_match(self):
+        from datetime import datetime, timezone as dt_tz
+        from parsers.sportmonks.tasks import _sync_live_clock
+        from leagues.models import League
+        from seasons.models import Season
+        from teams.models import Team
+        from django.utils import timezone as tz
+        from matches.models import Match
+
+        league = League.objects.create(name="L", country="KZ")
+        season = Season.objects.create(league=league, year="2026")
+        m = Match.objects.create(league=league, season=season, home_team=Team.objects.create(name="A"),
+                                 away_team=Team.objects.create(name="B"), status="live", start_time=tz.now(),
+                                 voting_open_until=tz.now(), sportmonks_id="555")
+        _sync_live_clock({"id": 555, "state": {"developer_name": "INPLAY_2ND_HALF"},
+                          "periods": [{"sort_order": 1, "started": 1791633727, "counts_from": 0, "ticking": False},
+                                      {"sort_order": 2, "started": 1791637445, "counts_from": 45, "ticking": True}]})
+        m.refresh_from_db()
+        self.assertEqual((m.live_state, m.live_counts_from, m.live_ticking), ("INPLAY_2ND_HALF", 45, True))
+        self.assertEqual(m.live_period_started, datetime.fromtimestamp(1791637445, tz=dt_tz.utc))

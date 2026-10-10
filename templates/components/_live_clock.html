@@ -1,0 +1,4 @@
+{% comment %}
+Минута live-матча (Match.live_clock): «23'», «45+2'», «Перерыв». Пока часы идут — тикает в браузере (live-time.js).
+Параметры: match, fallback — текст, если данных о минуте ещё нет.
+{% endcomment %}{% with c=match.live_clock %}{% if c %}<span class="live-clock"{% if c.ticking %} data-live-clock data-elapsed="{{ c.elapsed }}" data-from="{{ c.counts_from }}" data-cap="{{ c.cap }}"{% endif %}>{{ c.label }}</span>{% else %}{{ fallback|default:"в эфире" }}{% endif %}{% endwith %}

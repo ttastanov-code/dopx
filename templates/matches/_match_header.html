@@ -46,7 +46,7 @@ hx-атрибуты есть только при live (или перед ста�
             {% if match.status == 'finished' or match.status == 'live' %}
             <div class="mh__score">{{ match.home_score|default:0 }}<span class="mh__colon">:</span>{{ match.away_score|default:0 }}</div>
             {% if match.status == 'live' %}
-            <div class="mh__sub mh__sub--live">в эфире</div>
+            <div class="mh__sub mh__sub--live">{% include 'components/_live_clock.html' with match=match %}</div>
             {% else %}
             <div class="mh__sub">{{ match.start_time|date:"j E, H:i" }}</div>
             {% endif %}

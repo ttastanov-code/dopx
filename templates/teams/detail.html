@@ -351,7 +351,7 @@
                     title="{% if r == 'В' %}Победа{% elif r == 'П' %}Поражение{% else %}Ничья{% endif %}">{{ r }}</span>
               {% endwith %}
               {% elif match.status == 'live' %}
-              <span class="badge badge-error badge-xs sm:badge-sm animate-pulse">LIVE</span>
+              <span class="badge badge-error badge-xs sm:badge-sm animate-pulse">LIVE{% if match.live_clock %} · {% include 'components/_live_clock.html' with match=match %}{% endif %}</span>
               <span class="font-bold font-mono text-lg">{% render_score match.home_score match.away_score %}</span>
               {% else %}
               <span class="text-sm font-mono opacity-70">{% if match.kickoff_known %}{{ match.start_time|time:"H:i" }}{% else %}—:—{% endif %}</span>

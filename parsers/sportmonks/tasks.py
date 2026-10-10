@@ -98,6 +98,22 @@ def _heavy_sync_fixture(client: SportmonksClient, league, season, sportmonks_fix
         cache.delete(lock_key)
 
 
+def _sync_live_clock(fx: dict) -> None:
+    """Тайм и начало текущего периода (Match.live_clock) — каждый тик, без полной перезагрузки матча.
+    update() без сигналов: минута тикает в браузере сама, версию данных ради неё не поднимаем."""
+    from datetime import datetime, timezone as dt_tz
+
+    periods = [p for p in fx.get("periods") or [] if p.get("started")]
+    current = max(periods, key=lambda p: p.get("sort_order") or 0) if periods else None
+    fields = {
+        "live_state": ((fx.get("state") or {}).get("developer_name") or "")[:30],
+        "live_period_started": datetime.fromtimestamp(current["started"], tz=dt_tz.utc) if current else None,
+        "live_counts_from": current.get("counts_from") if current else None,
+        "live_ticking": bool(current and current.get("ticking")),
+    }
+    Match.objects.filter(sportmonks_id=str(fx.get("id"))).exclude(**fields).update(**fields)
+
+
 def _sportmonks_update_live_impl(self):
     """Лёгкий live-опрос: один bulk-вызов на лигу (включая events).
 
@@ -120,7 +136,7 @@ def _sportmonks_update_live_impl(self):
     try:
         # events нужны для детекции карточек/замен/VAR — лимит не увеличивают.
         live_fixtures = client.get_livescores(
-            include="state;participants;scores;events", league_id=league_sm_id
+            include="state;participants;scores;events;periods", league_id=league_sm_id
         )
     except SportmonksAPIError as exc:
         logger.error("Sportmonks: get_livescores() не удался: %s", exc)
@@ -128,6 +144,8 @@ def _sportmonks_update_live_impl(self):
         return
 
     archive.record_live(live_fixtures)
+    for fx in live_fixtures:
+        _sync_live_clock(fx)
     live_sm_ids_from_api = {str(fx.get("id")) for fx in live_fixtures if fx.get("id") is not None}
 
     synced = 0
