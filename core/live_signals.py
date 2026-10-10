@@ -44,8 +44,19 @@ def _on_task_done(sender=None, task=None, retval=None, **kwargs):
         bump_data_version()
 
 
+def _on_notification(sender, instance, **kwargs):
+    """Новое или прочитанное уведомление — открытые вкладки пользователя обновят колокольчик за секунды."""
+    from core.live import bump_user_version
+
+    bump_user_version(instance.user_id)
+
+
 def connect() -> None:
     from django.apps import apps
+
+    notification = apps.get_model("notifications.Notification")
+    post_save.connect(_on_notification, sender=notification, dispatch_uid="live-notification-save")
+    post_delete.connect(_on_notification, sender=notification, dispatch_uid="live-notification-delete")
 
     for label in LIVE_MODELS:
         model = apps.get_model(label)

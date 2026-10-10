@@ -14,7 +14,7 @@
             <div class="evi__sub">Видеопросмотр</div>
         {% else %}
             <div class="evi__name">
-                {% if e.player %}<a href="{% url 'players:detail' e.player.id %}">{{ e.player }}</a>{% else %}{{ e.player_display_name|default:"Игрок не указан" }}{% endif %}
+                {% if e.player %}<a href="{% url 'players:detail' e.player.id %}">{{ e.player }}</a>{% elif e.player_display_name %}{{ e.player_display_name }}{% elif match.status == 'live' %}Автор уточняется{% else %}Игрок не указан{% endif %}
             </div>
             <div class="evi__sub">
                 {% if row.mod == 'goal' and e.event_type == 'goal' %}

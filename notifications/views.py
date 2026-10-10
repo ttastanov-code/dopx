@@ -169,6 +169,16 @@ class UnreadCountBadgeView(LoginRequiredMixin, View):
         return HttpResponse(html)
 
 
+class NotificationPanelView(LoginRequiredMixin, View):
+    """Панель колокольчика (число непрочитанных + последние 5) — при открытии и смене данных."""
+    def get(self, request):
+        html = render_to_string('components/_notification_panel.html', {
+            'count': request.user.notifications.filter(is_read=False).count(),
+            'notifications': request.user.notifications.all()[:5],
+        }, request=request)
+        return HttpResponse(html)
+
+
 class NotificationBadgePartialView(LoginRequiredMixin, View):
     def get(self, request):
         unread_count = request.user.notifications.filter(is_read=False).count()

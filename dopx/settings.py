@@ -979,9 +979,10 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'parsers.sportmonks.tasks.sportmonks_refresh_schedule',
         'schedule': crontab(minute='5,35'),
     },
+    # Составы выходят примерно за час до старта, а в окне 3 ч обычно 1–4 матча — проверяем часто.
     'sportmonks-update-upcoming': {
         'task': 'parsers.sportmonks.tasks.sportmonks_update_upcoming',
-        'schedule': crontab(minute='*/30'),
+        'schedule': crontab(minute='*/10'),
     },
     # === Досинк статистики недавно завершившихся матчей ===
     'sportmonks-resync-recent-stats': {

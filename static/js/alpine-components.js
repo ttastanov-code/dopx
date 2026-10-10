@@ -101,6 +101,11 @@ document.addEventListener('alpine:init', () => {
     // === Колокольчик уведомлений (components/_notification_badge.html) ===
     Alpine.data('notificationDropdown', () => ({
         open: false,
+        // При открытии список перезапрашивается: новые уведомления видны без перезагрузки страницы.
+        toggle() {
+            this.open = !this.open;
+            if (this.open && window.htmx) htmx.trigger('#notif-panel', 'notif:open');
+        },
     }));
 
     // === Подсказка-пузырь (components/_tooltip_icon.html, tooltip_tags.py) ===

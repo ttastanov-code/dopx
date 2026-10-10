@@ -7,6 +7,28 @@ from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 from core.models import BaseModel
 
+class NotificationQuerySet(models.QuerySet):
+    """Массовые вставка и пометка «прочитано» тоже будят открытые вкладки получателей (bulk_create/update без сигналов)."""
+
+    @staticmethod
+    def _bump(user_ids):
+        from core.live import bump_user_version
+
+        for user_id in set(user_ids):
+            bump_user_version(user_id)
+
+    def bulk_create(self, objs, *args, **kwargs):
+        created = super().bulk_create(objs, *args, **kwargs)
+        self._bump(n.user_id for n in created)
+        return created
+
+    def update(self, **kwargs):
+        user_ids = list(self.values_list("user_id", flat=True).distinct())
+        rows = super().update(**kwargs)
+        self._bump(user_ids)
+        return rows
+
+
 class Notification(BaseModel):
     """Уведомление пользователя."""
     NOTIFICATION_TYPES = [
@@ -52,6 +74,8 @@ class Notification(BaseModel):
     )
     # См. докстринг модуля.
     email_sent_at = models.DateTimeField(_('Email отправлен'), null=True, blank=True)
+
+    objects = NotificationQuerySet.as_manager()
 
     class Meta:
         verbose_name = _('Уведомление')

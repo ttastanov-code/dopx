@@ -3,7 +3,7 @@ from .views import (
     NotificationListView,
     MarkAsReadView,
     MarkAllAsReadView,
-    NotificationBadgePartialView,
+    NotificationBadgePartialView, NotificationPanelView,
     UnreadCountBadgeView,
     contact_attachment_download,
 )
@@ -15,6 +15,7 @@ urlpatterns = [
     path('<uuid:pk>/read/', MarkAsReadView.as_view(), name='read'),
     path('read-all/', MarkAllAsReadView.as_view(), name='read-all'),
     path('badge-partial/', NotificationBadgePartialView.as_view(), name='badge_partial'),
+    path('panel/', NotificationPanelView.as_view(), name='panel'),
     # Счётчик непрочитанных (UnreadCountBadgeView).
     path('unread-count/', UnreadCountBadgeView.as_view(), name='unread_count_partial'),
     path('contact-attachment/<uuid:pk>/', contact_attachment_download, name='contact_attachment'),

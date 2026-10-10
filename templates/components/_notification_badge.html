@@ -5,7 +5,7 @@
 <div class="dropdown dropdown-end relative" id="notification-wrapper" x-data="notificationDropdown" @click.outside="open = false">
 
     {# === ТРИГГЕР === #}
-    <div @click="open = !open"
+    <div @click="toggle()"
          class="btn btn-ghost btn-circle relative flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 cursor-pointer"
          :class="open ? 'bg-base-200' : ''">
         <i class="ti ti-bell text-lg sm:text-xl leading-none {% if count > 0 %}text-primary{% endif %}"></i>
@@ -35,33 +35,6 @@
          class="z-[100] bg-base-100 border border-base-300 shadow-2xl rounded-box overflow-hidden
                 fixed inset-x-4 top-[60px] w-auto max-h-[70vh] sm:absolute sm:inset-auto sm:top-full sm:right-0 sm:mt-2 sm:w-80 sm:max-h-[80vh]">
 
-        {# Заголовок #}
-        <div class="p-3 border-b border-base-300 flex items-center justify-between sticky top-0 bg-base-100 z-10">
-            <div>
-                <div class="font-semibold text-sm">Уведомления</div>
-                <div class="text-xs opacity-60" id="notif-count-text">{{ count|default:0 }} непрочитанных</div>
-            </div>
-            {# Ссылка «Все уведомления» — только внизу списка. #}
-            <div class="flex items-center gap-1">
-                {% if count > 0 %}
-                {# Текст кнопки виден всегда (на тач-устройствах нет title). #}
-                <button type="button"
-                        title="Прочитать все"
-                        class="btn btn-outline btn-xs"
-                        hx-post="{% url 'notifications:read-all' %}"
-                        hx-swap="outerHTML"
-                        hx-target="#notif-list-items">
-                    <i class="ti ti-checks"></i>
-                    <span>Прочитать все</span>
-                </button>
-                {% endif %}
-                <button @click="open = false" class="btn btn-ghost btn-xs btn-circle sm:hidden">
-                    <i class="ti ti-x"></i>
-                </button>
-            </div>
-        </div>
-
-        {# Список #}
-        {% include 'components/_notification_dropdown_items.html' with notifications=user.notifications.all|slice:":5" count=count %}
+        {% include 'components/_notification_panel.html' with notifications=user.notifications.all|slice:":5" %}
     </div>
 </div>
