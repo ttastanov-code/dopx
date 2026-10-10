@@ -177,7 +177,7 @@ class TeamEvaluationForm(forms.Form):
 
 
 class PlayerEvaluationForm(forms.Form):
-    """Шаг 3: оценка игроков — поля для всех игроков состава."""
+    """Шаг 3: оценка игроков — поля для всех, кто был на поле."""
     def __init__(self, *args, **kwargs):
         self.match = kwargs.pop('match', None)
         super().__init__(*args, **kwargs)
@@ -186,7 +186,7 @@ class PlayerEvaluationForm(forms.Form):
             # Игроки из состава
             lineup_players = MatchLineupPlayer.objects.filter(
                 lineup__match=self.match
-            ).select_related('player__team').order_by('is_starting', 'shirt_number')
+            ).played().select_related('player__team').order_by('is_starting', 'shirt_number')
             
             for lp in lineup_players:
                 player = lp.player

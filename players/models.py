@@ -144,6 +144,31 @@ class PlayerSidelined(BaseModel):
         return self.reason or self.get_category_display()
 
 
+class PlayerSportmonksAlias(BaseModel):
+    """Ещё один id поставщика того же игрока: у поставщика один человек бывает заведён несколько раз.
+    Пишется при слиянии дублей — импорт по этому id находит нашего игрока, а не плодит дубль."""
+
+    sportmonks_id = models.CharField(_('Sportmonks ID'), max_length=100, unique=True)
+    player = models.ForeignKey(Player, on_delete=models.CASCADE, related_name='sportmonks_aliases',
+                               verbose_name=_('Игрок'))
+
+    class Meta:
+        verbose_name = _('Дополнительный id игрока у поставщика')
+        verbose_name_plural = _('Дополнительные id игроков у поставщика')
+
+    def __str__(self):
+        return f"{self.sportmonks_id} → {self.player}"
+
+
+def player_by_sportmonks_id(sm_id):
+    """Игрок по id поставщика — основному или дополнительному (после слияния дублей)."""
+    if sm_id is None:
+        return None
+    sm_id = str(sm_id)
+    return (Player.objects.filter(sportmonks_id=sm_id).first()
+            or Player.objects.filter(sportmonks_aliases__sportmonks_id=sm_id).first())
+
+
 class PotentialDuplicatePlayer(BaseModel):
     """Возможный дубль игрока: в той же команде уже есть игрок с тем же ФИО,
     но другим sportmonks_id. Автоматически не сливается — разбор в дашборде.

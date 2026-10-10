@@ -53,8 +53,8 @@ class DescribeTopMatchesTests(TestCase):
         self._make_match(self.opponent2, days_ago=5, score=9.5)
         self._make_match(self.opponent1, days_ago=1, score=8.0)
         text = _describe_top_matches(str(self.player.id), self.season)
-        self.assertIn("9.5", text)
-        self.assertIn("8.0", text)
+        self.assertIn("9,5", text)
+        self.assertIn("8,0", text)
         # Ищем «6.0 —», а не «6.0» — иначе совпадает с датой «06.09».
         self.assertNotIn("6.0 —", text)
         self.assertIn("Opponent2", text)
@@ -90,8 +90,8 @@ class DescribeNearestCompetitorTests(SimpleTestCase):
     def test_positive_gap_returns_sentence(self):
         text = _describe_nearest_competitor(8.5, (_candidate("Иванов"), 7.9))
         self.assertIn("Иванов", text)
-        self.assertIn("0.60", text)
-        self.assertIn("7.90", text)
+        self.assertIn("0,60", text)
+        self.assertIn("7,90", text)
 
     def test_zero_or_negative_gap_returns_empty(self):
         """gap <= 0 — фразу не показываем."""

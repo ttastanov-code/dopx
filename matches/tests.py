@@ -169,7 +169,7 @@ class DescribeRefereeDivergenceTests(SimpleTestCase):
         text = _describe_referee_divergence(self._match(), agg)
         self.assertIn("Кайрат", text)
         self.assertIn("Актобе", text)
-        self.assertIn("4.5", text)
+        self.assertIn("4,5", text)
 
 
 class BuildMatchDnaTests(SimpleTestCase):
@@ -310,7 +310,7 @@ class DescribeFanMoodTests(SimpleTestCase):
             {"supported_team__name": "Актобе", "count": 2},
         ]
         text = _describe_fan_mood(self._agg(7.5), fan_support)
-        self.assertIn("7.5", text)
+        self.assertIn("7,5", text)
         self.assertIn("80%", text)
         self.assertIn("Кайрат", text)
 

@@ -60,14 +60,15 @@
             <div class="group flex flex-col items-center text-center w-full max-w-[110px] md:max-w-[130px]">
                 {# Подпись слота не показываем — сторона определяется приблизительно. #}
 
-                {# Карточка: в круге — фото или рейтинг, полное имя без обрезки, клуб + инфо-иконка в одну строку. #}
-                {% include 'components/_avatar.html' with photo_url=card.occupant_photo_url name=card.occupant_name size_classes='w-14 h-14 md:w-16 md:h-16 text-sm md:text-base' ring_style=card.ring_style fallback_text=card.season_score|floatformat:1 %}
+                {# Карточка: фото или инициалы, имя, клуб, оценка и инфо-иконка — одинаково для всех. #}
+                {% include 'components/_avatar.html' with photo_url=card.occupant_photo_url name=card.occupant_name size_classes='w-14 h-14 md:w-16 md:h-16 text-sm md:text-base' ring_style=card.ring_style %}
 
                 {% if card.filled %}
                 <a href="{{ card.occupant_profile_url }}"
                    class="mt-1.5 block w-full max-w-full text-center font-medium text-[11px] md:text-sm leading-snug text-white/90 hover:opacity-70 transition-opacity">{{ card.occupant_name }}</a>
                 <div class="flex items-center justify-center gap-1 mt-0.5 max-w-full">
                     <span class="text-[9px] md:text-[11px] text-white/45 truncate">{{ card.occupant_team_name|default:"—" }}</span>
+                    {% if card.season_score is not None %}<span class="xi-score">{{ card.season_score|floatformat:1 }}</span>{% endif %}
                     {# text-white/70 — иконка видна на тёмном фоне поля. #}
                     {% if card.explanation %}<span class="text-white/70">{% include 'components/_tooltip_icon.html' with text=card.explanation %}</span>{% endif %}
                 </div>

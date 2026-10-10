@@ -1,6 +1,7 @@
 # matches/models.py
 from django.conf import settings
 from django.db import models
+from django.utils.timezone import localtime as timezone_localtime
 from django.utils.translation import gettext_lazy as _
 from core.models import BaseModel
 from leagues.models import League
@@ -139,6 +140,13 @@ class Match(BaseModel):
         home = self.home_score if self.home_score is not None else '-'
         away = self.away_score if self.away_score is not None else '-'
         return f"{home} : {away}"
+
+    def kickoff_text(self, date_fmt: str = "%d.%m", sep: str = " в ") -> str:
+        """Дата и время начала для текстов; без объявленного времени — только дата и «время уточняется»."""
+        local = timezone_localtime(self.start_time)
+        if not self.kickoff_known:
+            return f"{local.strftime(date_fmt)}, время уточняется"
+        return f"{local.strftime(date_fmt)}{sep}{local:%H:%M}"
 
     @property
     def kickoff_known(self) -> bool:

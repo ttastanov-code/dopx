@@ -21,6 +21,7 @@ trust_score не пересчитывается по формуле — толь
 from __future__ import annotations
 
 import random
+from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
@@ -37,6 +38,7 @@ from evaluations.models import (
     TeamEvaluation,
 )
 from events.models import EventReaction
+from lineups.models import MatchLineupPlayer
 from matches.models import Match
 from players.models import Player
 from predictions.models import MatchPrediction
@@ -249,7 +251,8 @@ class Command(BaseCommand):
         """Голоса ботов за матч: строки собираются в памяти и пишутся пачками (bulk_create),
         а не по одной — иначе тысячи запросов на матч."""
         lineup_players = list(
-            Player.objects.filter(matchlineupplayer__lineup__match=match).distinct()
+            Player.objects.filter(matchlineupplayer__in=MatchLineupPlayer.objects.filter(lineup__match=match).played())
+            .distinct()
         )
         player_quality = {p.id: random.uniform(3.0, 9.0) for p in lineup_players}
         coverage = random.uniform(0.5, 0.85)  # разный охват игроков от матча к матчу
@@ -275,7 +278,9 @@ class Command(BaseCommand):
             rows[EvaluationSession].append(EvaluationSession(
                 user=voter, match=match, mode=random.choice(["quick", "quick", "full"]), status="completed",
                 completed_steps=["context", "teams", "players", "coaches", "referee", "match_eval"],
-                current_step="complete", completed_at=now,
+                # Внутри окна голосования (иначе audit_data видит «оценку вне окна»): 2–40 ч после старта.
+                current_step="complete",
+                completed_at=min(now, match.start_time + timedelta(hours=random.uniform(2, 40))),
             ))
             rows[ContextEvaluation].append(ContextEvaluation(
                 user=voter, match=match, watched_type=random.choice(WATCHED_TYPES),

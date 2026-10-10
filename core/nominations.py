@@ -439,8 +439,9 @@ def get_nominations(*, league=None, season=None) -> list[dict]:
 
     nominations += _extra_nominations(league, season)
 
-    # Число и шкала отдельно («8.4/10» -> 8.4, 10) — для крупной цифры в карточке.
+    # Число и шкала отдельно («8.4/10» -> 8,4 и 10) — для крупной цифры в карточке; по-русски, с запятой.
     for nom in nominations:
+        nom['value_label'] = nom['value_label'].replace('.', ',')
         nom['value'], _, nom['scale'] = nom['value_label'].partition('/')
         nom['initials'] = ''.join(word[0] for word in nom['entity_name'].split()[:2] if word[:1].isalnum()).upper()
     _attach_images(nominations)

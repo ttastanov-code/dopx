@@ -79,7 +79,7 @@ class DescribeNearestCompetitorRoundTests(SimpleTestCase):
     def test_positive_gap_returns_sentence(self):
         text = _describe_nearest_competitor_round(8.5, (_round_candidate("Петров"), 7.0))
         self.assertIn("Петров", text)
-        self.assertIn("1.50", text)
+        self.assertIn("1,50", text)
 
     def test_non_positive_gap_returns_empty(self):
         self.assertEqual(_describe_nearest_competitor_round(8.0, (_round_candidate(), 8.0)), "")

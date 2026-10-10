@@ -176,10 +176,18 @@ def _countable_counts(model, entity_field: str, match_ids) -> dict:
 
     result = {}
     for match_id in match_ids:
-        rows = (countable_evaluations(model.objects.filter(match_id=match_id), match_id)
-                .values(entity_field).annotate(n=Count("id")))
+        # У оценки судьи нет поля судьи — он берётся из матча.
+        field = "match__referee_id" if entity_field == "referee_id" else entity_field
+        qs = model.objects.filter(match_id=match_id)
+        if entity_field == "player_id":
+            from lineups.models import MatchLineupPlayer
+
+            # Голоса за невышедших запасных в рейтинг не идут (aggregates.tasks).
+            qs = qs.exclude(player_id__in=MatchLineupPlayer.objects.filter(lineup__match_id=match_id).unused()
+                            .values("player_id"))
+        rows = countable_evaluations(qs, match_id).values(field).annotate(n=Count("id"))
         for row in rows:
-            result[(match_id, row[entity_field])] = row["n"]
+            result[(match_id, row[field])] = row["n"]
     return result
 
 
@@ -266,6 +274,19 @@ def check_votes_for_players_outside_lineup() -> Finding:
                    [f"игрок {e.player_id} матч {e.match_id}" for e in qs[:SAMPLES]])
 
 
+def check_rating_for_unused_substitute() -> Finding:
+    """Рейтинг за матч у игрока, который не выходил на поле (запасной без замены)."""
+    from aggregates.models import PlayerMatchAggregate
+    from lineups.models import MatchLineupPlayer
+
+    unused = MatchLineupPlayer.objects.filter(lineup__match_id=OuterRef("match_id"),
+                                              player_id=OuterRef("player_id")).unused()
+    qs = PlayerMatchAggregate.objects.filter(Exists(unused)).select_related("player", "match__home_team", "match__away_team")
+    return Finding("rating_unused_sub", "Рейтинг у игрока, который не выходил на поле", "error", qs.count(),
+                   [f"{a.player} — {_match_label(a.match)}" for a in qs[:SAMPLES]],
+                   "Пересчитать агрегаты матча: голоса за невышедших в рейтинг не идут.")
+
+
 # ---------------------------------------------------------------------------
 # Пользователи и прогресс
 # ---------------------------------------------------------------------------
@@ -318,7 +339,9 @@ def check_round_squads() -> Finding:
     rated = PlayerMatchAggregate.objects.filter(match__season_id=OuterRef("season_id"), match__tour=OuterRef("tour"),
                                                 total_votes__gte=min_votes_for_display())
     qs = (RoundBestXI.objects.filter(is_final=True).filter(Exists(rated))
-          .annotate(filled=Count("slots", filter=Q(slots__object_id__isnull=False))).exclude(filled=11))
+          # 11 игроков; слот тренера (COACH) не считаем.
+          .annotate(filled=Count("slots", filter=Q(slots__object_id__isnull=False) & ~Q(slots__slot_code="COACH")))
+          .exclude(filled=11))
     return Finding("round_squads", "Сборная тура неполная, хотя рейтинги есть", "error", qs.count(),
                    [f"{r.season} тур {r.tour}: {r.filled} из 11" for r in qs[:SAMPLES]],
                    "Скрипт «Пересчитать закрытые туры».")
@@ -328,7 +351,7 @@ CHECKS = (
     check_score_vs_events, check_finished_without_score, check_event_player_side, check_event_player_not_in_lineup,
     check_event_minutes, check_lineup_flag, check_lineup_starters, check_standings, check_aggregate_votes,
     check_match_aggregate_votes, check_score_ranges, check_votes_outside_window,
-    check_votes_for_players_outside_lineup, check_user_evaluation_counter, check_user_levels,
+    check_votes_for_players_outside_lineup, check_rating_for_unused_substitute, check_user_evaluation_counter, check_user_levels,
     check_prediction_streaks, check_round_squads,
 )
 

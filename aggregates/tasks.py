@@ -154,8 +154,13 @@ def recalculate_player_aggregates(self, match_id: str, apply_correction: bool = 
 
     logger.info("Starting player aggregate recalculation for match %s", match_id)
 
+    from lineups.models import MatchLineupPlayer
+
+    # Голос за невышедшего запасного в рейтинг не идёт.
+    unused_ids = MatchLineupPlayer.objects.filter(lineup__match_id=match_uuid).unused().values("player_id")
     evaluations = list(
-        countable_evaluations(PlayerEvaluation.objects.filter(match_id=match_uuid), match_uuid)
+        countable_evaluations(PlayerEvaluation.objects.filter(match_id=match_uuid).exclude(player_id__in=unused_ids),
+                              match_uuid)
         .select_related("user", "player")
         .only("user_id", "player_id", "contribution", "risk", "potential", "player__team_id", "user__trust_score")
     )

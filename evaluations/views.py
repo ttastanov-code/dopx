@@ -358,7 +358,7 @@ class EvaluatePlayersView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
             return self.render_to_response(self.get_context_data(form=form))
 
         session = self.get_or_create_session()
-        lineup_players = MatchLineupPlayer.objects.filter(lineup__match=self.match).select_related('player')
+        lineup_players = MatchLineupPlayer.objects.filter(lineup__match=self.match).played().select_related('player')
         lineup_total = lineup_players.count()
         count = 0
         with transaction.atomic():
@@ -438,7 +438,7 @@ class EvaluatePlayersView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
         context = super().get_context_data(**kwargs)
         session = self.get_or_create_session()
         lineup_players = list(
-            MatchLineupPlayer.objects.filter(lineup__match=self.match)
+            MatchLineupPlayer.objects.filter(lineup__match=self.match).played()
             .select_related('player__team')
             .order_by('is_starting', 'shirt_number')
         )

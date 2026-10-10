@@ -115,8 +115,8 @@ class BiasSegmentTextTests(SimpleTestCase):
 
     def test_all_three_segments_present(self):
         text = bias_segment_text(self._agg(own=8.0, rival=7.0, neutral=7.0))
-        self.assertIn("8.0", text)
-        self.assertIn("7.0", text)
+        self.assertIn("8,0", text)
+        self.assertIn("7,0", text)
 
     def test_fewer_than_two_segments_returns_empty(self):
         """Один сегмент — пустая строка."""
@@ -165,7 +165,7 @@ class ConfidenceBadgeTooltipTests(SimpleTestCase):
     def test_tooltip_merges_stability_and_segments_into_one_sentence(self):
         result = confidence_badge(self._agg())
         tooltip = result["tooltip_text"]
-        self.assertIn("Мнения расходятся: свои болельщики 8.0", tooltip)
+        self.assertIn("Мнения расходятся: свои болельщики 8,0", tooltip)
         self.assertNotIn("фанаты игрока", tooltip)
         # Без задвоения «мнения».
         self.assertNotIn("мнения мнения", tooltip.lower())

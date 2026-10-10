@@ -369,3 +369,35 @@ class BiasProfileWithHistoryTests(_Base):
         self.assertEqual(profile["considered"], 3)
         self.assertAlmostEqual(profile["mean_diff"], 6.0)
         self.assertEqual(profile["extreme_ratio"], 1.0)
+
+
+class UnusedSubstituteTests(_Base):
+    """Запасной, который не выходил на поле, не оценивается и не получает рейтинг."""
+
+    def _lineup(self, match):
+        lineup = MatchLineup.objects.create(match=match, team=self.home, side="home")
+        self.bench = Player.objects.create(first_name="Пётр", last_name="Скамейкин", team=self.home)
+        self.sub = Player.objects.create(first_name="Сергей", last_name="Вышедший", team=self.home)
+        MatchLineupPlayer.objects.create(lineup=lineup, player=self.player, is_starting=True)
+        MatchLineupPlayer.objects.create(lineup=lineup, player=self.bench, is_starting=False)
+        MatchLineupPlayer.objects.create(lineup=lineup, player=self.sub, is_starting=False, minute_in=70)
+
+    def test_wizard_form_offers_only_players_who_played(self):
+        from evaluations.forms import PlayerEvaluationForm
+
+        match = self.make_match(has_lineup=True)
+        self._lineup(match)
+        fields = PlayerEvaluationForm(match=match).fields
+        self.assertIn(f"player_{self.sub.id}_evaluate", fields)
+        self.assertNotIn(f"player_{self.bench.id}_evaluate", fields)
+
+    def test_vote_for_unused_sub_does_not_make_rating(self):
+        match = self.make_match()
+        self._lineup(match)
+        for i in range(3):
+            user = self.make_user(f"u{i}")
+            self.vote(user, match, 9, player=self.bench)
+            self.vote(user, match, 7, player=self.sub)
+        agg_tasks.recalculate_player_aggregates(str(match.id))
+        self.assertFalse(PlayerMatchAggregate.objects.filter(match=match, player=self.bench).exists())
+        self.assertTrue(PlayerMatchAggregate.objects.filter(match=match, player=self.sub).exists())

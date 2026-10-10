@@ -59,9 +59,13 @@
 {# === СПИСОК МАТЧЕЙ ПО ДНЯМ === #}
 {# Группировка по дню (Сегодня/Завтра/Вчера/дата), по локальной дате. #}
 {% regroup matches by start_time|date:"d.m.Y" as date_groups %}
+{% if first_upcoming_day %}
+{# Открыли список без страницы — сразу к ближайшим матчам. #}
+<script>document.addEventListener('DOMContentLoaded', () => { if (!location.hash) document.getElementById('upcoming')?.scrollIntoView(); });</script>
+{% endif %}
 <div class="space-y-4 md:space-y-6 px-2 sm:px-0">
     {% for group in date_groups %}
-    <div>
+    <div{% if first_upcoming_day and group.grouper == first_upcoming_day %} id="upcoming" class="scroll-mt-20"{% endif %}>
         {# Липкий заголовок дня: «Сегодня · 13 сентября». #}
         <div class="dx-dayhead">
             <h3 class="dx-dayhead__label">{{ group.list.0.start_time|matchday_label }}</h3>

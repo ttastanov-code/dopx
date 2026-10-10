@@ -11,7 +11,7 @@ from evaluations.models import PlayerEvaluation
 from events.models import MatchEvent
 from lineups.models import MatchLineupPlayer
 from matches.models import MatchPlayerStatistics
-from players.models import Player, PlayerSidelined, PotentialDuplicatePlayer
+from players.models import Player, PlayerSidelined, PlayerSportmonksAlias, PotentialDuplicatePlayer
 from users.models import Follow
 
 
@@ -35,6 +35,12 @@ def merge_players(keep: Player, merge: Player, *, apply: bool) -> MergeReport:
     report.add(f"Сливаем: {merge.full_name} (id={merge.id}, sportmonks_id={merge.sportmonks_id})")
 
     with transaction.atomic():
+        # Матч, где в заявке оба (второй дописан по событию под другим id), — лишняя строка удаляется.
+        keep_matches = MatchLineupPlayer.objects.filter(player=keep).values("lineup__match_id")
+        twin_rows = MatchLineupPlayer.objects.filter(player=merge, lineup__match_id__in=keep_matches)
+        report.add(f"Двойные строки в одной заявке: {twin_rows.count()}")
+        if apply:
+            twin_rows.delete()
         safe_relations = [
             ("Составы на матч", MatchLineupPlayer.objects.filter(player=merge), {"player": keep}),
             ("События (голы/карточки)", MatchEvent.objects.filter(player=merge), {"player": keep}),
@@ -102,8 +108,22 @@ def merge_players(keep: Player, merge: Player, *, apply: bool) -> MergeReport:
             PotentialDuplicatePlayer.objects.filter(
                 existing_player__in=[keep, merge], new_player__in=[keep, merge],
             ).update(reviewed=True, note="Объединено через players.services.merge_players().")
+            # id поставщика сливаемой записи — алиасом к keep: импорт по нему не создаст дубль снова.
+            PlayerSportmonksAlias.objects.filter(player=merge).update(player=keep)
+            merge_sm_id = merge.sportmonks_id
             merge_full_name, merge_id = merge.full_name, merge.id
+            affected_matches = set(PlayerEvaluation.objects.filter(player=keep).values_list("match_id", flat=True))
             merge.delete()
+            if merge_sm_id:
+                if keep.sportmonks_id:
+                    PlayerSportmonksAlias.objects.update_or_create(sportmonks_id=merge_sm_id, defaults={"player": keep})
+                else:
+                    Player.objects.filter(pk=keep.pk).update(sportmonks_id=merge_sm_id)
+                report.add(f"id поставщика {merge_sm_id} теперь ведёт на {keep.full_name}")
+            # Оценки переехали — рейтинги этих матчей пересчитываем.
+            from aggregates.tasks import trigger_aggregate_recalculation
+            for match_id in affected_matches:
+                transaction.on_commit(lambda m=str(match_id): trigger_aggregate_recalculation.delay(m))
             report.add(f"Готово: {merge_full_name} (id={merge_id}) удалён.")
         else:
             report.add("Dry-run — ничего не изменено.")

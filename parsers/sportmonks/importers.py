@@ -22,7 +22,9 @@ from events.models import MatchEvent
 from leagues.models import League
 from lineups.models import MatchLineup, MatchLineupPlayer
 from matches.models import Match, MatchPlayerStatistics, MatchTeamStatistics
-from players.models import Player, PlayerSidelined, PotentialDuplicatePlayer
+from players.models import (
+    Player, PlayerSidelined, PlayerSportmonksAlias, PotentialDuplicatePlayer, player_by_sportmonks_id,
+)
 from core.bulk import is_quiet
 from core.utils import normalize_kz
 from core.models import (
@@ -85,15 +87,21 @@ STATE_MAP = {
     "INPLAY_PENALTIES": "live",
     "BREAK": "live",
     "SUSPENDED": "live",
+    "INTERRUPTED": "live",
+    "PEN_BREAK": "live",
+    "PENDING": "scheduled",
     "FT": "finished",
     "AET": "finished",
     "FT_PEN": "finished",
     "AWARDED": "finished",
     "WO": "finished",
-    "ABANDONED": "finished",
+    # Прерван насовсем: по регламенту переигрывают или присуждают техпобеду (придёт AWARDED) — результата пока нет.
+    "ABANDONED": "postponed",
     "POSTPONED": "postponed",
     "CANCELLED": "cancelled",
+    "DELETED": "cancelled",
 }
+# AWAITING_UPDATES и любые неизвестные состояния не меняют статус уже известного матча.
 
 # --- бригада судей ---
 REFEREE_TYPE_MAIN = 6
@@ -504,7 +512,7 @@ def get_or_create_player(
         return None
 
     first_name, last_name, name_source = _resolve_cyrillic_name(player_data, "игрока")
-    existing = Player.objects.filter(sportmonks_id=str(sm_id)).only("id", "last_match_at", "squad_confirmed_at").first()
+    existing = player_by_sportmonks_id(sm_id)
 
     is_more_recent = (
         match_start_time is None
@@ -545,7 +553,12 @@ def get_or_create_player(
         if placeholder is not None:
             Player.objects.filter(pk=placeholder.pk).update(sportmonks_id=str(sm_id))
             logger.info("Sportmonks: игрок %s без id получил sportmonks_id=%s", placeholder.full_name, sm_id)
-    player, created = Player.objects.update_or_create(sportmonks_id=str(sm_id), defaults=defaults)
+    if existing is not None:
+        # По основному или дополнительному id (алиас после слияния) — обновляем нашу запись, id не трогаем.
+        Player.objects.filter(pk=existing.pk).update(**defaults, updated_at=timezone.now())
+        player, created = Player.objects.get(pk=existing.pk), False
+    else:
+        player, created = Player.objects.update_or_create(sportmonks_id=str(sm_id), defaults=defaults)
     if created:
         logger.info("Sportmonks: создан игрок %s (sportmonks_id=%s)", player.full_name, sm_id)
         _flag_potential_duplicate_player(player, team)
@@ -582,6 +595,16 @@ def _find_team_player_by_name(first_name: str, last_name: str, team: Team) -> Op
     return found[0] if len(found) == 1 else None
 
 
+def _find_unique_player_by_full_name(first_name: str, last_name: str) -> Optional[Player]:
+    """Точное ФИО во всей базе, если такой игрок один: в старом матче он мог играть за прошлый клуб."""
+    key = (normalize_kz(first_name.strip()), normalize_kz(last_name.strip()))
+    if not all(key):
+        return None
+    found = [p for p in Player.objects.filter(last_name__iexact=last_name.strip()).only("id", "first_name", "last_name")
+             if (normalize_kz(p.first_name.strip()), normalize_kz(p.last_name.strip())) == key]
+    return found[0] if len(found) == 1 else None
+
+
 def get_or_create_unlinked_player(name: str, team: Optional[Team], number: Optional[int] = None,
                                   match_start_time=None) -> Optional[Player]:
     """Строка состава или события без id игрока, но с именем: без неё в старте 10 человек, а гол без автора."""
@@ -589,7 +612,8 @@ def get_or_create_unlinked_player(name: str, team: Optional[Team], number: Optio
     if not name or team is None:
         return None
     first_name, last_name, name_source = _resolve_cyrillic_name({"name": name, "display_name": name}, "игрока")
-    player = _find_unlinked_player(first_name, last_name, team) or _find_team_player_by_name(first_name, last_name, team)
+    player = (_find_unlinked_player(first_name, last_name, team) or _find_team_player_by_name(first_name, last_name, team)
+              or _find_unique_player_by_full_name(first_name, last_name))
     if player is None:
         player = Player.objects.create(first_name=first_name, last_name=last_name, name_source=name_source,
                                        team=team, number=number, is_active=True, last_match_at=match_start_time)
@@ -737,6 +761,17 @@ def _record_discrepancies(match: Match, before: Match, new_values: Dict) -> None
         logger.warning("Sportmonks: расхождение у завершённого матча %s: %s %s -> %s", match.id, field, old, new)
 
 
+def is_placeholder_kickoff(dt) -> bool:
+    """Полночь UTC — у поставщика это «время не объявлено» (05:00 по Алматы), а не настоящее время."""
+    if dt is None:
+        return False
+    utc = dt.astimezone(dt_timezone.utc)
+    return utc.hour == 0 and utc.minute == 0
+
+
+# Матчи КПЛ не начинаются ночью: «перенос» на такое время — ошибка данных, подписчиков не тревожим.
+PLAUSIBLE_KICKOFF_HOURS = range(9, 24)
+
 # Сдвиг времени начала, о котором сообщаем подписчикам, и горизонт «ближайших» матчей.
 KICKOFF_SHIFT_NOTIFY_MIN = timedelta(minutes=60)
 KICKOFF_SHIFT_NOTIFY_HORIZON = timedelta(days=14)
@@ -752,6 +787,14 @@ def _detect_match_change(before: Match, match: Match) -> str | None:
             return None
         if match.start_time - now > KICKOFF_SHIFT_NOTIFY_HORIZON and before.start_time - now > KICKOFF_SHIFT_NOTIFY_HORIZON:
             return None
+        if before.status == "scheduled":
+            old_local, new_local = timezone.localtime(before.start_time), timezone.localtime(match.start_time)
+            # Время объявили или убрали в тот же день — это не перенос.
+            if ((is_placeholder_kickoff(before.start_time) or is_placeholder_kickoff(match.start_time))
+                    and old_local.date() == new_local.date()):
+                return None
+            if not is_placeholder_kickoff(match.start_time) and new_local.hour not in PLAUSIBLE_KICKOFF_HOURS:
+                return None
         if before.status == "postponed" or abs(match.start_time - before.start_time) >= KICKOFF_SHIFT_NOTIFY_MIN:
             return "rescheduled"
     return None
@@ -773,6 +816,14 @@ def import_match_core(fixture_data: Dict, league: League, season: Season) -> Mat
             f"лигой (sportmonks_id={league.sportmonks_id}) — импорт отклонён"
         )
 
+    # Сезон — по самому матчу: календарь следующего сезона приходит, пока активен прошлый.
+    fixture_season_id = fixture_data.get("season_id")
+    if fixture_season_id is not None and str(fixture_season_id) != str(season.sportmonks_id):
+        own_season = Season.objects.filter(sportmonks_id=str(fixture_season_id)).first()
+        if own_season is None:
+            raise ValueError(f"Fixture {sm_id}: сезон {fixture_season_id} ещё не заведён — импорт отложен до sync_season")
+        season = own_season
+
     participants = fixture_data.get("participants") or []
     home_data = next((p for p in participants if (p.get("meta") or {}).get("location") == "home"), None)
     away_data = next((p for p in participants if (p.get("meta") or {}).get("location") == "away"), None)
@@ -785,13 +836,8 @@ def import_match_core(fixture_data: Dict, league: League, season: Season) -> Mat
     state = fixture_data.get("state") or {}
     dev_name = state.get("developer_name") or "NS"
     status = STATE_MAP.get(dev_name)
-    if status is None:
-        logger.warning(
-            "Sportmonks: fixture %s — неизвестный state.developer_name=%r, "
-            "не найден в STATE_MAP (parsers/sportmonks/importers.py), считаю 'scheduled'",
-            sm_id, dev_name,
-        )
-        status = "scheduled"
+    if status is None and dev_name != "AWAITING_UPDATES":
+        logger.warning("Sportmonks: fixture %s — неизвестный state.developer_name=%r, статус не меняю", sm_id, dev_name)
 
     start_time = _parse_starting_at(fixture_data.get("starting_at"))
 
@@ -810,12 +856,14 @@ def import_match_core(fixture_data: Dict, league: League, season: Season) -> Mat
     tour = _extract_tour(fixture_data.get("round"))
     main_referee, referee_crew = _build_referee_crew(fixture_data.get("referees") or [])
     # Технический результат: составов и событий у такого матча не будет.
-    decided_administratively = dev_name in ("AWARDED", "WO", "ABANDONED")
+    decided_administratively = dev_name in ("AWARDED", "WO")
 
     existing = Match.objects.filter(sportmonks_id=sm_id).only(
         "id", "manual_override", "status", "start_time", "end_time", "voting_open_until",
         "home_score", "away_score",
     ).first()
+    if status is None:
+        status = existing.status if existing else "scheduled"
 
     defaults = {
         "league": league,
@@ -844,6 +892,9 @@ def import_match_core(fixture_data: Dict, league: League, season: Season) -> Mat
             defaults["voting_open_until"] = (
                 defaults["start_time"] + timedelta(hours=48) if defaults["start_time"] else timezone.now() + timedelta(hours=48)
             )
+            if decided_administratively:
+                # Техрезультат: игры не было — окно голосования сразу закрыто (все проверки смотрят на него).
+                defaults["voting_open_until"] = defaults["start_time"]
         elif existing:
             defaults["end_time"] = existing.end_time
             defaults["voting_open_until"] = existing.voting_open_until
@@ -908,6 +959,19 @@ def import_coaches(match: Match, coaches_data: List[Dict]) -> bool:
 FIELD_EVENT_TYPES = {"GOAL", "PENALTY", "MISSED_PENALTY", "SUBSTITUTION", "YELLOWCARD", "REDCARD", "YELLOWREDCARD"}
 
 
+def _lineup_twin(match_lineup, event_name):
+    """Игрок заявки этой команды с той же фамилией и первым инициалом, что в имени из события («A. Petrov»)."""
+    first, last, _src = _resolve_cyrillic_name({"name": event_name or "", "display_name": event_name or ""}, "игрока")
+    words = normalize_kz(f"{first} {last}".replace(".", " ")).split()
+    if len(words) < 2:
+        return None
+    initial, surname = words[0][:1], words[-1]
+    found = [lp.player for lp in MatchLineupPlayer.objects.filter(lineup=match_lineup).select_related("player")
+             if normalize_kz(lp.player.last_name).split()[-1:] == [surname]
+             and normalize_kz(lp.player.first_name)[:1] == initial]
+    return found[0] if len(found) == 1 else None
+
+
 def _add_players_from_events(match: Match, match_lineup, team, team_sm_id: str, events_data, saved_players: set) -> None:
     """У поставщика бывают дыры в заявке: игрок вышел на замену или забил, а в составе его нет.
     Дописываем его запасным, который выходил, — иначе болельщики не смогут его оценить."""
@@ -916,6 +980,13 @@ def _add_players_from_events(match: Match, match_lineup, team, team_sm_id: str, 
         if dev_name not in FIELD_EVENT_TYPES or str(evt.get("participant_id") or "") != team_sm_id:
             continue
         if not evt.get("player_id"):
+            continue
+        twin = None if player_by_sportmonks_id(evt["player_id"]) else _lineup_twin(match_lineup, evt.get("player_name"))
+        if twin is not None:
+            # Тот же человек под другим id поставщика — запоминаем id, в заявку не дописываем.
+            PlayerSportmonksAlias.objects.get_or_create(sportmonks_id=str(evt["player_id"]), defaults={"player": twin})
+            logger.info("Sportmonks: id %s («%s») — тот же игрок, что %s; записан алиас",
+                        evt["player_id"], evt.get("player_name"), twin)
             continue
         player = get_or_create_player({"id": evt["player_id"], "name": evt.get("player_name")}, team=team,
                                       number=None, match_start_time=match.start_time)
@@ -959,6 +1030,8 @@ def import_lineups(match: Match, lineups_data: List[Dict], formations_data: Opti
     MatchLineup.objects.filter(match=match).delete()
 
     any_saved = False
+    saved_players: set = set()  # все игроки обеих заявок
+    lineups_by_team: Dict[str, tuple] = {}
     for team_sm_id, entries in by_team.items():
         if team_sm_id == home_sm_id:
             side, team = "home", match.home_team
@@ -1022,14 +1095,18 @@ def import_lineups(match: Match, lineups_data: List[Dict], formations_data: Opti
                 minute_out=None,
             )
 
-        saved_players: set = set()
         for entry in starters:
             _save_entry(entry, True)
         for entry in substitutes:
             _save_entry(entry, False)
-        _add_players_from_events(match, match_lineup, team, team_sm_id, events_data, saved_players)
+        lineups_by_team[team_sm_id] = (match_lineup, team)
 
         any_saved = True
+
+    # Добор по событиям — после обеих заявок: у поставщика бывает перепутана команда события,
+    # и игрок соперника не должен попасть в чужую заявку.
+    for team_sm_id, (match_lineup, team) in lineups_by_team.items():
+        _add_players_from_events(match, match_lineup, team, team_sm_id, events_data, saved_players)
 
     if any_saved and not match.has_lineup:
         match.has_lineup = True
@@ -1115,9 +1192,9 @@ def import_events(match: Match, events_data: List[Dict]) -> bool:
         if event_type == "substitution":
             # player_id — вошёл, related_player_id — ушёл.
             if player_sm_id:
-                player = Player.objects.filter(sportmonks_id=str(player_sm_id)).first()
+                player = player_by_sportmonks_id(player_sm_id)
             if related_sm_id:
-                player_out = Player.objects.filter(sportmonks_id=str(related_sm_id)).first()
+                player_out = player_by_sportmonks_id(related_sm_id)
             if player:
                 MatchLineupPlayer.objects.filter(lineup__match=match, player=player).update(
                     minute_in=minute, is_starting=False
@@ -1137,13 +1214,13 @@ def import_events(match: Match, events_data: List[Dict]) -> bool:
                         ).update(field_position=outgoing_row.field_position)
         else:
             if player_sm_id:
-                player = Player.objects.filter(sportmonks_id=str(player_sm_id)).first()
+                player = player_by_sportmonks_id(player_sm_id)
             elif evt.get("player_name") and event_type != "own_goal":
                 side_team = match.home_team if team_side == "home" else match.away_team
                 first, last, _src = _resolve_cyrillic_name({"name": evt["player_name"]}, "игрока")
                 player = _find_unlinked_player(first, last, side_team)
             if event_type in ("goal", "penalty", "own_goal") and related_sm_id:
-                assist_player = Player.objects.filter(sportmonks_id=str(related_sm_id)).first()
+                assist_player = player_by_sportmonks_id(related_sm_id)
             # Автогол — игрок соперника, там сторона = кому засчитан; остальным сторона по заявке.
             if player and event_type != "own_goal" and lineup_side.get(player.id) not in (None, team_side):
                 logger.warning("Sportmonks: событие %s матча %s — сторона %s по поставщику, %s по заявке; беру заявку",
@@ -1300,7 +1377,7 @@ def import_player_statistics(match: Match, lineups_data: List[Dict]) -> bool:
         player_sm_id = entry.get("player_id")
         if player_sm_id is None:
             continue
-        player = Player.objects.filter(sportmonks_id=str(player_sm_id)).first()
+        player = player_by_sportmonks_id(player_sm_id)
         if player is None:
             continue
 
@@ -1397,7 +1474,7 @@ def import_sidelined(team: Team, sidelined_data: List[Dict]) -> int:
         if player_sm_id is None:
             continue
 
-        player = Player.objects.filter(sportmonks_id=str(player_sm_id)).first()
+        player = player_by_sportmonks_id(player_sm_id)
         if player is None:
             logger.info(
                 "Sportmonks: sidelined id=%s -> player sportmonks_id=%s не найден в базе, пропуск",

@@ -64,3 +64,19 @@ def render_score_short(home_score, away_score):
 def score_value(score):
     """Отдельное значение счёта."""
     return score if score is not None else 0
+
+
+@register.filter
+def kickoff(match, date_fmt: str = "%d.%m"):
+    """{{ match|kickoff }} — «10.10 в 16:00» или «10.10, время уточняется» (заглушку 05:00 не показываем)."""
+    return match.kickoff_text(date_fmt) if match else ""
+
+
+@register.filter
+def team_result(match, team):
+    """Исход матча для команды: «В», «Н», «П» или '' (счёта нет)."""
+    if match is None or team is None or match.home_score is None or match.away_score is None:
+        return ""
+    own, other = ((match.home_score, match.away_score) if match.home_team_id == team.id
+                  else (match.away_score, match.home_score))
+    return "В" if own > other else "П" if own < other else "Н"

@@ -59,7 +59,8 @@
 
 {# Подиум топ-3 — только на первой странице. #}
 {% if page_obj.number == 1 and users|length >= 3 %}
-<div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+{# Подиум — только с планшета: на телефоне те же трое первыми в списке с медалями. #}
+<div class="hidden sm:grid sm:grid-cols-3 gap-4 mb-6">
     {% for user in users|slice:":3" %}
     <div class="card border {% if forloop.counter == 1 %}border-warning bg-warning/5 sm:order-2 sm:-mt-3{% elif forloop.counter == 2 %}border-base-300 bg-base-100 sm:order-1{% else %}border-base-300 bg-base-100 sm:order-3{% endif %}">
         <div class="card-body items-center text-center py-6">

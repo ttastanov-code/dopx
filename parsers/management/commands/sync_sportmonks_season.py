@@ -33,10 +33,16 @@ def _chunk_date_range(date_from: str, date_to: str, max_days: int = MAX_DATE_RAN
         cursor = chunk_end + timedelta(days=1)
 
 
-def _resolve_current_season_id(all_seasons_data: list):
-    """Текущий сезон — тот, в чьи даты попадает сегодня (is_active), независимо от --year."""
-    today = date.today()
+# В межсезонье следующий сезон становится текущим за столько дней до старта: календарь и прогнозы на 1-й тур.
+PRESEASON_DAYS = 45
+
+
+def _resolve_current_season_id(all_seasons_data: list, today: date | None = None):
+    """Текущий сезон — тот, в чьи даты попадает сегодня; в межсезонье — ближайший, если до старта ≤ PRESEASON_DAYS,
+    иначе последний прошедший. Независимо от --year."""
+    today = today or date.today()
     fallback: tuple | None = None
+    upcoming: tuple | None = None
     for s in all_seasons_data:
         start_raw, end_raw = s.get("starting_at"), s.get("ending_at")
         if not start_raw or not end_raw:
@@ -47,6 +53,10 @@ def _resolve_current_season_id(all_seasons_data: list):
             return s["id"]
         if start_d <= today and (fallback is None or start_d > fallback[0]):
             fallback = (start_d, s["id"])
+        if today < start_d and (start_d - today).days <= PRESEASON_DAYS and (upcoming is None or start_d < upcoming[0]):
+            upcoming = (start_d, s["id"])
+    if upcoming:
+        return upcoming[1]
     if fallback:
         return fallback[1]
     return all_seasons_data[-1]["id"] if all_seasons_data else None

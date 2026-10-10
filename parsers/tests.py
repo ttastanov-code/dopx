@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from datetime import timedelta
 
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
 from django.utils import timezone
 
 from leagues.models import League
@@ -740,9 +740,11 @@ class DecidedAdministrativelyTests(TestCase):
         match = import_match_core(_fixture(dev_name="WO"), self.league, self.season)
         self.assertTrue(match.decided_administratively)
 
-    def test_abandoned_state_sets_flag(self):
+    def test_abandoned_is_not_a_result(self):
+        # Прерванный матч переигрывают или присуждают позже (AWARDED) — пока это не результат.
         match = import_match_core(_fixture(dev_name="ABANDONED"), self.league, self.season)
-        self.assertTrue(match.decided_administratively)
+        self.assertFalse(match.decided_administratively)
+        self.assertEqual(match.status, "postponed")
 
     def test_normal_finished_match_does_not_set_flag(self):
         match = import_match_core(_fixture(dev_name="FT"), self.league, self.season)
@@ -966,3 +968,126 @@ class LineupGapsFromEventsTests(TestCase):
         self.assertEqual(set(rows), {"901", "902", "903"})
         self.assertFalse(rows["902"].is_starting)
         self.assertEqual(rows["903"].minute_in, 60)
+
+
+class KickoffChangeNoiseTests(SimpleTestCase):
+    """Перенос сообщаем, только если он настоящий: заглушка «время не объявлено» и ночное время — не перенос."""
+
+    def _pair(self, old, new):
+        from types import SimpleNamespace
+        return SimpleNamespace(status="scheduled", start_time=old), SimpleNamespace(status="scheduled", start_time=new)
+
+    def _at(self, days, hour_utc):
+        from datetime import datetime, timezone as dt_tz
+        base = (timezone.now() + timedelta(days=days)).astimezone(dt_tz.utc)
+        return datetime(base.year, base.month, base.day, hour_utc, 0, tzinfo=dt_tz.utc)
+
+    def test_time_announced_same_day_is_silent(self):
+        from parsers.sportmonks.importers import _detect_match_change
+        self.assertIsNone(_detect_match_change(*self._pair(self._at(3, 0), self._at(3, 13))))
+        self.assertIsNone(_detect_match_change(*self._pair(self._at(3, 13), self._at(3, 0))))
+
+    def test_night_kickoff_is_silent(self):
+        from parsers.sportmonks.importers import _detect_match_change
+        self.assertIsNone(_detect_match_change(*self._pair(self._at(3, 12), self._at(3, 22))))  # 03:00 по Алматы
+
+    def test_real_shift_is_reported(self):
+        from parsers.sportmonks.importers import _detect_match_change
+        self.assertEqual(_detect_match_change(*self._pair(self._at(3, 12), self._at(3, 11))), "rescheduled")
+
+    def test_placeholder_formats_without_fake_time(self):
+        from notifications.tasks import _fmt_kickoff
+        self.assertIn("время не объявлено", _fmt_kickoff(self._at(3, 0)))
+
+
+class EventTeamMixupTests(TestCase):
+    """Команда события перепутана у поставщика — игрок не попадает в заявку соперника."""
+
+    def test_player_of_other_team_not_added_to_wrong_lineup(self):
+        from lineups.models import MatchLineupPlayer
+
+        league = _make_league()
+        season = _make_season(league)
+        fixture = _fixture(sm_id=777040001, home_goals=0, away_goals=0)
+        fixture["lineups"] = [{"id": 1, "team_id": 1001, "type_id": 11, "player_id": 901,
+                               "player": {"id": 901, "display_name": "Милош Николич"}}]
+        fixture["events"] = [{"id": 60, "participant_id": 1002, "player_id": 901, "player_name": "M. Nikolic",
+                              "minute": 19, "type": {"developer_name": "YELLOWCARD"}}]
+        match = import_full_fixture(fixture, league, season)
+        sides = list(MatchLineupPlayer.objects.filter(lineup__match=match, player__sportmonks_id="901")
+                     .values_list("lineup__side", flat=True))
+        self.assertEqual(sides, ["home"])
+
+
+class PlayerAliasTests(TestCase):
+    """Один игрок под двумя id поставщика: событие под вторым id не плодит дубль, а пишет алиас."""
+
+    def test_event_under_second_id_becomes_alias(self):
+        from lineups.models import MatchLineupPlayer
+        from players.models import PlayerSportmonksAlias
+
+        league = _make_league()
+        season = _make_season(league)
+        fixture = _fixture(sm_id=777050001, home_goals=1, away_goals=0)
+        fixture["lineups"] = [{"id": 1, "team_id": 1001, "type_id": 11, "player_id": 901,
+                               "player": {"id": 901, "display_name": "Захар Гультяев"}}]
+        fixture["events"] = [{"id": 70, "participant_id": 1001, "player_id": 999, "player_name": "Захар Гультяев",
+                              "minute": 50, "type": {"developer_name": "GOAL"}}]
+        match = import_full_fixture(fixture, league, season)
+        self.assertEqual(MatchLineupPlayer.objects.filter(lineup__match=match).count(), 1)
+        alias = PlayerSportmonksAlias.objects.get(sportmonks_id="999")
+        self.assertEqual(alias.player.sportmonks_id, "901")
+        self.assertEqual(match.events.get().player_id, alias.player_id)   # гол засчитан тому же игроку
+
+
+class FixtureStateTests(TestCase):
+    """Неизвестный статус не сбрасывает матч; прерванный матч не даёт результата; техрезультат без голосования."""
+
+    def setUp(self):
+        self.league = _make_league()
+        self.season = _make_season(self.league)
+
+    def test_unknown_state_keeps_status(self):
+        match = import_full_fixture(_fixture(sm_id=777020001, dev_name="FT"), self.league, self.season)
+        self.assertEqual(match.status, "finished")
+        match = import_full_fixture(_fixture(sm_id=777020001, dev_name="AWAITING_UPDATES"), self.league, self.season)
+        self.assertEqual(match.status, "finished")
+
+    def test_interrupted_is_live_and_abandoned_has_no_result(self):
+        self.assertEqual(import_full_fixture(_fixture(sm_id=777020002, dev_name="INTERRUPTED"), self.league, self.season).status, "live")
+        self.assertEqual(import_full_fixture(_fixture(sm_id=777020003, dev_name="ABANDONED"), self.league, self.season).status, "postponed")
+
+    def test_awarded_match_voting_closed(self):
+        match = import_full_fixture(_fixture(sm_id=777020004, dev_name="AWARDED", starting_at=_recent_start()), self.league, self.season)
+        self.assertTrue(match.decided_administratively)
+        self.assertFalse(match.is_voting_open())
+
+
+class SeasonRolloverTests(TestCase):
+    """Календарь следующего сезона не пишется в текущий; в межсезонье новый сезон активируется заранее."""
+
+    def setUp(self):
+        self.league = _make_league()
+        self.season = _make_season(self.league)
+
+    def test_fixture_of_unknown_next_season_is_not_imported_into_current(self):
+        fixture = _fixture(sm_id=777030001, dev_name="NS")
+        fixture["season_id"] = 99999
+        with self.assertRaises(ValueError):
+            import_match_core(fixture, self.league, self.season)
+        self.assertFalse(Match.objects.filter(sportmonks_id="777030001").exists())
+
+    def test_fixture_goes_to_its_own_season(self):
+        nxt = _make_season(self.league, year="2027", sportmonks_id="30000")
+        fixture = _fixture(sm_id=777030002, dev_name="NS")
+        fixture["season_id"] = 30000
+        self.assertEqual(import_match_core(fixture, self.league, self.season).season, nxt)
+
+    def test_preseason_resolution(self):
+        from datetime import date
+        from parsers.management.commands.sync_sportmonks_season import _resolve_current_season_id
+        seasons = [{"id": 1, "starting_at": "2026-03-01", "ending_at": "2026-11-10"},
+                   {"id": 2, "starting_at": "2027-03-06", "ending_at": "2027-11-10"}]
+        self.assertEqual(_resolve_current_season_id(seasons, date(2026, 10, 10)), 1)
+        self.assertEqual(_resolve_current_season_id(seasons, date(2026, 12, 15)), 1)   # до старта далеко
+        self.assertEqual(_resolve_current_season_id(seasons, date(2027, 2, 1)), 2)     # за 33 дня — уже новый

@@ -53,7 +53,7 @@ position_breakdown — [{code, label, count, x, y, group}] из player_position_
             <span class="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full border border-base-300"
                   style="{% if forloop.first %}background: color-mix(in oklab, {% if pos.group == 'def' %}var(--color-info){% elif pos.group == 'mid' %}var(--color-success){% elif pos.group == 'fwd' %}var(--color-error){% else %}var(--color-neutral){% endif %} 12%, transparent); border-color: transparent;{% endif %}">
                 <span class="w-1.5 h-1.5 rounded-full" style="background: {% if pos.group == 'def' %}var(--color-info){% elif pos.group == 'mid' %}var(--color-success){% elif pos.group == 'fwd' %}var(--color-error){% else %}var(--color-neutral){% endif %};"></span>
-                {{ pos.label }}{% if pos.count > 1 %} · {{ pos.count }}{% endif %}
+                {{ pos.label }} · {{ pos.count }}
             </span>
             {% endfor %}
         </div>

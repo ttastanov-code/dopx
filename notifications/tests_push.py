@@ -119,6 +119,19 @@ class MatchEventPushFreshnessTests(TestCase):
         self.assertTrue(Notification.objects.filter(user=self.fan, notification_type="match_event").exists())
 
 
+class GoalPushScoreTests(TestCase):
+    """В пуше — счёт сразу после гола, а не текущий счёт матча."""
+
+    @patch("notifications.services.send_push_to_users", return_value=1)
+    def test_score_after_goal(self, mocked):
+        match, home, _ = _setup_match()
+        Match.objects.filter(id=match.id).update(home_score=2, away_score=0)
+        Follow.objects.create(user=_user("fan2"), team=home)
+        first = MatchEvent.objects.create(match=match, minute=10, event_type="goal", team_side="home", score_after="1-0")
+        notify_followers_match_event(str(match.id), str(first.id))
+        self.assertIn("1:0", mocked.call_args.kwargs["title"])
+
+
 @override_settings(CELERY_TASK_ALWAYS_EAGER=False)
 class PredictionClosingSoonTests(TestCase):
     def setUp(self):

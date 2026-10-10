@@ -30,10 +30,12 @@ from players.positions import (
     BEST_XI_SLOT_DISPLAY_ORDER,
     BEST_XI_SLOT_LABELS,
     SLOT_PROCESSING_ORDER,
+    assign_slots,
     resolve_lineup_codes,
 )
 from referees.models import Referee
 from season_squad.models import SeasonBestXI, SeasonBestXISlot, SeasonPositionRanking
+from core.utils import ru_num
 
 logger = logging.getLogger(__name__)
 
@@ -283,7 +285,7 @@ def _describe_nearest_competitor(score: float, runner_up: tuple[Candidate, float
     gap = round(score - competitor_score, 2)
     if gap <= 0:
         return ""
-    return f"Обошёл ближайшего конкурента: {competitor.name} ({competitor_score:.2f}), разница {gap:.2f}."
+    return f"Обошёл ближайшего конкурента: {competitor.name} ({ru_num(competitor_score, 2)}), разница {ru_num(gap, 2)}."
 
 
 def _build_explanation(
@@ -300,7 +302,7 @@ def _build_explanation(
     """
     label = BEST_XI_SLOT_LABELS.get(slot_code, slot_code)
     lines = [
-        f"Рейтинг {score:.2f} на позиции «{label}»: среднее за сезон "
+        f"Рейтинг {ru_num(score, 2)} на позиции «{label}»: среднее за сезон "
         f"({candidate.matches} матчей, {candidate.votes} голосов)."
     ]
 
@@ -354,7 +356,7 @@ def _describe_top_matches(player_id: str, season, limit: int = TOP_MATCHES_FOR_E
         match = pma.match
         own_team_id = own_team_by_match.get(match.id)
         opponent = match.away_team if own_team_id == match.home_team_id else match.home_team
-        piece = f"· {pma.performance_score:.1f} ({match.start_time:%d.%m}, {opponent.name if opponent else '?'}"
+        piece = f"· {ru_num(pma.performance_score, 1)} ({match.start_time:%d.%m}, {opponent.name if opponent else '?'}"
         events = events_by_match.get(match.id, [])
         if events:
             ev_text = ", ".join(
@@ -495,28 +497,17 @@ def recompute_best_xi(season, *, force: bool = False) -> SeasonBestXI:
         ).values("slot_code", "content_type_id", "object_id", "rank"):
             previous_ranks[(row["slot_code"], row["content_type_id"], str(row["object_id"]))] = row["rank"]
 
-    assigned: set[tuple[int, str]] = set()
     ranking_buffer: list[SeasonPositionRanking] = []
     # 4-й элемент — runner_up для _build_explanation.
     slot_results: list[tuple[str, Candidate | None, float | None, tuple[Candidate, float] | None]] = []
 
-    # ---- 11 слотов 4-3-3 — жадное распределение ----
-    for slot_code, raw_codes in SLOT_PROCESSING_ORDER:
-        candidates: list[Candidate] = []
-        seen: set[tuple[int, str]] = set()
-        for code in raw_codes:
-            for cand in player_pool.get(code, []):
-                key = (cand.content_type_id, cand.object_id)
-                if key in assigned or key in seen:
-                    continue
-                seen.add(key)
-                candidates.append(cand)
-
-        ranked = _rank_pool(candidates)
+    # ---- 11 слотов 4-3-3 (players.positions.assign_slots) ----
+    by_slot = assign_slots(player_pool, _rank_pool, lambda c: (c.content_type_id, c.object_id))
+    for slot_code, _codes in SLOT_PROCESSING_ORDER:
+        ranked = by_slot[slot_code]
         _store_ranking_batch(ranking_buffer, best_xi, slot_code, ranked, now)
         if ranked:
             top_candidate, top_score = ranked[0]
-            assigned.add((top_candidate.content_type_id, top_candidate.object_id))
             runner_up = ranked[1] if len(ranked) > 1 else None
             slot_results.append((slot_code, top_candidate, top_score, runner_up))
         else:

@@ -46,6 +46,16 @@ class MatchLineup(BaseModel):
         return f"{self.match} — {self.team} ({self.side})"
 
 
+class LineupPlayerQuerySet(models.QuerySet):
+    def played(self):
+        """Был на поле: в старте или вышел на замену. Невышедший запасной в оценки и рейтинги не идёт."""
+        return self.filter(models.Q(is_starting=True) | models.Q(minute_in__isnull=False))
+
+    def unused(self):
+        """Запасной, который так и не вышел на поле."""
+        return self.filter(is_starting=False, minute_in__isnull=True)
+
+
 class MatchLineupPlayer(BaseModel):
     """Игрок в составе на матч"""
     lineup = models.ForeignKey(
@@ -86,6 +96,8 @@ class MatchLineupPlayer(BaseModel):
         null=True,
         blank=True
     )
+
+    objects = LineupPlayerQuerySet.as_manager()
 
     class Meta:
         verbose_name = _('Игрок в составе')

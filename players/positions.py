@@ -104,17 +104,28 @@ def player_position_display_code(amplua: str | None, field_position: str | None)
     if not code:
         return ""
     zone = _FIELD_POSITION_ZONE.get(clean_position_code(field_position), "")
-    if zone in ("L", "R"):
+    # Детальную позицию (CB, CM, AM, CF…) зона из угадывания по расстановке не меняет — только грубую (D/M/F).
+    if zone in ("L", "R") and code in _COARSE_CODES:
         side_map = _ZONE_SIDE_EQUIVALENT.get(code)
         if side_map and zone in side_map:
             return side_map[zone]
     return code
 
 
+# Грубые коды старых записей (без детальной позиции).
+_COARSE_CODES = {"D", "DF", "M", "MF", "F", "FW", "W"}
+
+
 def player_position_breakdown(counts: dict[str, int]) -> list[dict]:
-    """Точки для мини-схемы из {код: матчей}, по убыванию частоты.
-    Коды без координат пропускаем.
-    """
+    """Точки для мини-схемы из {код: матчей}, по убыванию частоты. Коды без координат пропускаем.
+    Грубый код («Полузащитник») вливается в самую частую детальную позицию той же линии, если она есть."""
+    counts = {clean_position_code(k): v for k, v in counts.items() if v}
+    for coarse in [c for c in counts if c in _COARSE_CODES]:
+        group = _POSITION_GROUP.get(coarse)
+        detailed = [c for c in counts if c not in _COARSE_CODES and _POSITION_GROUP.get(c) == group]
+        if detailed:
+            top = max(detailed, key=lambda c: counts[c])
+            counts[top] += counts.pop(coarse)
     rows = []
     for raw_code, count in counts.items():
         if not count:
@@ -152,6 +163,46 @@ SLOT_PROCESSING_ORDER: list[tuple[str, list[str]]] = [
     ("ST", ["F:C", "ST", "CF", "F", "FW"]),
 ]
 
+# Запасные коды слота — только если по основным нет ни одного кандидата (иначе в сборной дырка).
+SLOT_FALLBACK_CODES: dict[str, list[str]] = {
+    "CB1": ["DM:C"], "CB2": ["DM:C"],
+    "RB": ["D:C", "M:R"], "LB": ["D:C", "M:L"],
+    "RW": ["F:C", "AM:C"], "LW": ["F:C", "AM:C"],
+    "DM": ["M:C", "AM:C"],
+    "CM1": ["M:L", "M:R", "DM:C"], "CM2": ["M:L", "M:R", "DM:C"],
+    "ST": ["F:L", "F:R", "AM:C"],
+}
+
+
+def assign_slots(pool_by_code: dict, rank, key) -> dict:
+    """{слот: ранжированный пул} для 11 слотов. Первый проход — основные коды по SLOT_PROCESSING_ORDER;
+    второй — запасные только для пустых слотов, из оставшихся: запасной код не отбирает игрока у «своего» слота."""
+    assigned: set = set()
+    result: dict = {}
+
+    def ranked_for(codes):
+        candidates, seen = [], set()
+        for code in codes:
+            for cand in pool_by_code.get(code, []):
+                k = key(cand)
+                if k in assigned or k in seen:
+                    continue
+                seen.add(k)
+                candidates.append(cand)
+        return rank(candidates)
+
+    for slot_code, codes in SLOT_PROCESSING_ORDER:
+        result[slot_code] = ranked_for(codes)
+        if result[slot_code]:
+            assigned.add(key(result[slot_code][0][0]))
+    for slot_code, _codes in SLOT_PROCESSING_ORDER:
+        if not result[slot_code] and slot_code in SLOT_FALLBACK_CODES:
+            result[slot_code] = ranked_for(SLOT_FALLBACK_CODES[slot_code])
+            if result[slot_code]:
+                assigned.add(key(result[slot_code][0][0]))
+    return result
+
+
 # L/R как есть, C/LC/RC -> C.
 _FIELD_POSITION_ZONE: dict[str, str] = {
     "L": "L",
@@ -162,11 +213,25 @@ _FIELD_POSITION_ZONE: dict[str, str] = {
 }
 
 
+# Детальная позиция сама задаёт сторону — зону из угадывания по расстановке для неё не берём
+# (иначе «левый защитник справа»). Коды — те, что принимают слоты SLOT_PROCESSING_ORDER.
+_DETAILED_SLOT_CODE: dict[str, str] = {
+    "GK": "GK:C",
+    "CB": "D:C", "LB": "D:L", "RB": "D:R", "LWB": "D:L", "RWB": "D:R",
+    "DM": "DM:C", "CM": "M:C", "AM": "AM:C",
+    "LM": "M:L", "RM": "M:R", "LW": "AM:L", "RW": "AM:R",
+    "CF": "F:C", "ST": "F:C",
+}
+
+
 def resolve_lineup_codes(amplua: str | None, field_position: str | None) -> list[str]:
-    """Код для pool_by_code: ['AMPLUA:ZONE'] или ['AMPLUA'], пустой список для неизвестного амплуа."""
+    """Код для pool_by_code: детальная позиция -> код слота; грубая -> ['AMPLUA:ZONE'] или ['AMPLUA'];
+    пустой список для неизвестного амплуа."""
     amplua_code = clean_position_code(amplua)
     if not amplua_code:
         return []
+    if amplua_code in _DETAILED_SLOT_CODE:
+        return [_DETAILED_SLOT_CODE[amplua_code]]
     zone = _FIELD_POSITION_ZONE.get(clean_position_code(field_position), "")
     if zone:
         return [f"{amplua_code}:{zone}"]

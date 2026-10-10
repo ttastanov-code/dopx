@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 
 from core import cards
+from core.utils import ru_num
 
 CARD_SIZE = cards.OG
 
@@ -15,7 +16,7 @@ def _cache_key(*parts: str) -> str:
 
 
 def _rating(value: float | None) -> str:
-    return f"{value:.1f}" if value is not None else "—"
+    return f"{ru_num(value, 1)}" if value is not None else "—"
 
 
 def build_match_share_card(*, home_team: str, away_team: str, home_score: int, away_score: int,

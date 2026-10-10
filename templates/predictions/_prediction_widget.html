@@ -29,7 +29,7 @@
                     {% else %}disabled{% endif %}
                     class="pw__opt{% if my_prediction.choice == code %} is-mine{% endif %}{% if match.final_result == code %} is-result{% endif %}">
                 <span class="pw__label">{{ label }}</span>
-                <span class="pw__pct">{{ pct }}%</span>
+                <span class="pw__pct">{% if counts.total %}{{ pct }}%{% else %}—{% endif %}</span>
                 {% if match.final_result == code %}<i class="ti ti-circle-check pw__mark"></i>{% elif my_prediction.choice == code %}<i class="ti ti-check pw__mark"></i>{% endif %}
             </button>
             {% endfor %}
@@ -60,6 +60,8 @@
         <p class="mt-2 sm:mt-3 text-[11px] sm:text-xs opacity-50 flex items-center gap-1.5">
             <i class="ti ti-lock"></i> Прогнозы закрыты: матч уже начался.
         </p>
+        {% elif not counts.total and match.is_prediction_open and my_prediction %}
+        <p class="mt-2 sm:mt-3 text-[11px] sm:text-xs opacity-50">Прогноз принят. Доли появятся, когда проголосуют другие.</p>
         {% elif not counts.total and match.is_prediction_open %}
         <p class="mt-2 sm:mt-3 text-[11px] sm:text-xs opacity-50">Сделайте первый прогноз на этот матч.</p>
         {% elif not counts.total %}

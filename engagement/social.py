@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from django.core.cache import cache
 from django.core.files.storage import default_storage
+from core.utils import ru_num
 
 CACHE_TTL = 60 * 60
 HASHTAGS = "#DOPX #КПЛ #футболКазахстана"
@@ -55,7 +56,7 @@ def weekly_content(force: bool = False) -> dict | None:
     if rnd.player_of_round_name and rnd.player_of_round_score is not None:
         path = build_social_card(
             kind="player_of_round", eyebrow="ИГРОК ТУРА ПО МНЕНИЮ БОЛЕЛЬЩИКОВ",
-            number_text=f"{rnd.player_of_round_score:.1f}", label_line1=rnd.player_of_round_name,
+            number_text=f"{ru_num(rnd.player_of_round_score, 1)}", label_line1=rnd.player_of_round_name,
             label_line2=f"{rnd.player_of_round_team_name} · {rnd.tour}-й тур".strip(" ·"),
             image_url=rnd.player_of_round_photo_url,
         )
@@ -65,7 +66,7 @@ def weekly_content(force: bool = False) -> dict | None:
             "caption": (
                 f"⭐ Игрок {rnd.tour}-го тура по мнению болельщиков: {rnd.player_of_round_name}"
                 f"{f' ({rnd.player_of_round_team_name})' if rnd.player_of_round_team_name else ''}: "
-                f"{rnd.player_of_round_score:.1f} из 10 по {rnd.player_of_round_votes} голосам.\n"
+                f"{ru_num(rnd.player_of_round_score, 1)} из 10 по {rnd.player_of_round_votes} голосам.\n"
                 f"Согласны? Оцените матчи тура на DOPX.\n{HASHTAGS}"
             ),
         })
@@ -75,12 +76,12 @@ def weekly_content(force: bool = False) -> dict | None:
         match = ref_agg.match
         match_label = f"{match.home_team.name} — {match.away_team.name}"
         if gap is not None:
-            number, line2 = f"{gap:.1f}", f"разрыв оценок фанатов · {match_label}"
-            detail = (f"фанаты {match.home_team.name} поставили {ref_agg.home_fans_avg:.1f}, "
-                      f"фанаты {match.away_team.name} {ref_agg.away_fans_avg:.1f}")
+            number, line2 = f"{ru_num(gap, 1)}", f"разрыв оценок фанатов · {match_label}"
+            detail = (f"фанаты {match.home_team.name} поставили {ru_num(ref_agg.home_fans_avg, 1)}, "
+                      f"фанаты {match.away_team.name} {ru_num(ref_agg.away_fans_avg, 1)}")
         else:
-            number, line2 = f"{ref_agg.performance_score:.1f}", f"оценка болельщиков · {match_label}"
-            detail = f"средняя оценка судейства {ref_agg.performance_score:.1f} из 10"
+            number, line2 = f"{ru_num(ref_agg.performance_score, 1)}", f"оценка болельщиков · {match_label}"
+            detail = f"средняя оценка судейства {ru_num(ref_agg.performance_score, 1)} из 10"
         path = build_social_card(kind="referee", eyebrow="САМЫЙ СПОРНЫЙ СУДЬЯ ТУРА", number_text=number,
                                  label_line1=ref_agg.referee.full_name, label_line2=line2)
         posts.append({
@@ -95,7 +96,7 @@ def weekly_content(force: bool = False) -> dict | None:
     if rnd.most_dramatic_match_id and rnd.most_dramatic_match_score is not None:
         m = rnd.most_dramatic_match
         path = build_social_card(
-            kind="drama", eyebrow="САМЫЙ ДРАМАТИЧНЫЙ МАТЧ ТУРА", number_text=f"{rnd.most_dramatic_match_score:.1f}",
+            kind="drama", eyebrow="САМЫЙ ДРАМАТИЧНЫЙ МАТЧ ТУРА", number_text=f"{ru_num(rnd.most_dramatic_match_score, 1)}",
             label_line1=f"{m.home_team.name} {m.get_score_display()} {m.away_team.name}", label_line2="индекс драмы по оценкам болельщиков",
         )
         posts.append({
@@ -103,7 +104,7 @@ def weekly_content(force: bool = False) -> dict | None:
             "image": default_storage.url(path),
             "caption": (
                 f"🔥 Самый драматичный матч {rnd.tour}-го тура: {m.home_team.name} {m.get_score_display()} "
-                f"{m.away_team.name}. Индекс драмы {rnd.most_dramatic_match_score:.1f}.\n{HASHTAGS}"
+                f"{m.away_team.name}. Индекс драмы {ru_num(rnd.most_dramatic_match_score, 1)}.\n{HASHTAGS}"
             ),
         })
 

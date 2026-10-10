@@ -6,6 +6,7 @@ from django import template
 
 from aggregates.services import CONFIDENT_VOTES_THRESHOLD, min_votes_for_display
 from core.models import get_setting
+from core.utils import ru_num
 
 register = template.Library()
 
@@ -53,11 +54,11 @@ def bias_segment_text(aggregate) -> str:
         return ""
     parts = []
     if aggregate.own_fans_avg is not None:
-        parts.append(f"свои болельщики {aggregate.own_fans_avg:.1f}")
+        parts.append(f"свои болельщики {ru_num(aggregate.own_fans_avg, 1)}")
     if aggregate.rival_fans_avg is not None:
-        parts.append(f"болельщики соперника {aggregate.rival_fans_avg:.1f}")
+        parts.append(f"болельщики соперника {ru_num(aggregate.rival_fans_avg, 1)}")
     if aggregate.neutral_avg is not None:
-        parts.append(f"нейтральные зрители {aggregate.neutral_avg:.1f}")
+        parts.append(f"нейтральные зрители {ru_num(aggregate.neutral_avg, 1)}")
     if len(parts) < 2:
         # Меньше 2 сегментов — сравнивать не с чем.
         return ""

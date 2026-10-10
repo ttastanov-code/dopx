@@ -15,7 +15,9 @@ class PlayerPositionDisplayCodeTests(SimpleTestCase):
         self.assertEqual(player_position_display_code("M", "L"), "LM")
         self.assertEqual(player_position_display_code("D", "R"), "RB")
         self.assertEqual(player_position_display_code("D", "L"), "LB")
-        self.assertEqual(player_position_display_code("AM", "R"), "RW")
+        # AM — детальная позиция (центральный атакующий): правый вингер у поставщика отдельный (RW).
+        self.assertEqual(player_position_display_code("AM", "R"), "AM")
+        self.assertEqual(player_position_display_code("CB", "L"), "CB")
         self.assertEqual(player_position_display_code("F", "L"), "LW")
 
     def test_center_zone_keeps_bare_code(self):

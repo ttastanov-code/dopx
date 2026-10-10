@@ -82,7 +82,7 @@ def match_view(user, pk):
     voting = "открыто" if m.voting_open_until > timezone.now() and m.status == "finished" else "закрыто"
     lines = [header() + f"{STATUS_ICON.get(m.status, '')} <b>{esc(_label(m))}</b>",
              f"{m.get_status_display()} · {m.get_score_display()}" + (f" · тур {m.tour}" if m.tour else ""),
-             f"Начало: {timezone.localtime(m.start_time):%d.%m %H:%M}",
+             f"Начало: {m.kickoff_text(sep=' ')}",
              f"Голосование {voting} до {until:%d.%m %H:%M} · оценок {votes}",
              "Составы: " + ("есть" if m.has_lineup else "нет")]
     if flags:

@@ -14,6 +14,7 @@ from datetime import timedelta
 from django.db import IntegrityError, transaction
 from django.db.models import Count
 from django.utils import timezone
+from core.utils import ru_num
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +130,7 @@ def _duel_candidates(matches):
     if len(aggs) >= 2:
         return [
             (a.player, a.player.team.name if a.player.team else "", a.performance_score,
-             f"оценка болельщиков {a.performance_score:.1f}", a.match)
+             f"оценка болельщиков {ru_num(a.performance_score, 1)}", a.match)
             for a in aggs
         ]
     # Голосов мало — по оценке «по статистике».
@@ -142,7 +143,7 @@ def _duel_candidates(matches):
     rated = rated[:DUEL_POOL]
     players = Player.objects.in_bulk([pid for _, pid, _ in rated])
     return [
-        (players[pid], players[pid].team.name if players[pid].team else "", rating, f"оценка по статистике {rating:.1f}", match)
+        (players[pid], players[pid].team.name if players[pid].team else "", rating, f"оценка по статистике {ru_num(rating, 1)}", match)
         for rating, pid, match in rated if pid in players
     ]
 

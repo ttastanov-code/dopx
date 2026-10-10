@@ -192,10 +192,10 @@ class PlayerDetailView(DetailView):
         if rating_correction is not None and abs(rating_correction.correction) < 0.01:
             rating_correction = None
         stats = {
-            'avg_performance': round(stats_raw['avg_performance'], 2) if stats_raw['avg_performance'] is not None else None,
-            'avg_risk': round(stats_raw['avg_risk'], 2) if stats_raw['avg_risk'] is not None else None,
-            'avg_maturity': round(stats_raw['avg_maturity'], 2) if stats_raw['avg_maturity'] is not None else None,
-            'avg_potential': round(stats_raw['avg_potential'], 2) if stats_raw['avg_potential'] is not None else None,
+            'avg_performance': round(stats_raw['avg_performance'], 1) if stats_raw['avg_performance'] is not None else None,
+            'avg_risk': round(stats_raw['avg_risk'], 1) if stats_raw['avg_risk'] is not None else None,
+            'avg_maturity': round(stats_raw['avg_maturity'], 1) if stats_raw['avg_maturity'] is not None else None,
+            'avg_potential': round(stats_raw['avg_potential'], 1) if stats_raw['avg_potential'] is not None else None,
             'total_matches': actual_matches_count,  # сыгранные матчи (по составу)
             'evaluated_matches': stats_raw['evaluated_matches'] or 0,  # из них оценено болельщиками
             'total_votes': stats_raw['total_votes'] or 0,
@@ -433,7 +433,7 @@ class PlayerSeasonRecapView(DetailView):
             player=player, event_type__in=['goal', 'penalty'], match__season=season
         ).count()
 
-        avg_performance = round(stats['avg_performance'], 2) if stats['avg_performance'] is not None else None
+        avg_performance = round(stats['avg_performance'], 1) if stats['avg_performance'] is not None else None
 
         context.update({
             'season': season,
@@ -486,7 +486,7 @@ def player_season_recap_card(request, pk, season_id):
         season_label=season.year,
         photo_url=player.photo_display or "", team_logo=(player.team.logo_display or "") if player.team else "",
         matches_played=matches_played,
-        avg_performance=round(stats['avg_performance'], 2) if (has_enough_votes and stats['avg_performance'] is not None) else None,
+        avg_performance=round(stats['avg_performance'], 1) if (has_enough_votes and stats['avg_performance'] is not None) else None,
         goals=goals,
     )
     return HttpResponseRedirect(default_storage.url(relative_path))

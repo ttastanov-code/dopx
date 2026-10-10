@@ -19,6 +19,7 @@ from core.utils import is_rate_limited
 from core.models import get_setting
 import logging
 from django.views.decorators.http import require_http_methods, require_POST
+from core.utils import ru_num
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +119,11 @@ class MatchListView(ListView):
             'evaluated': 'Оценённые мной матчи — DOPX',
         }.get(current_status, 'Все матчи — DOPX')
         context['current_status'] = current_status
+        # День первого несыгранного матча на странице — к нему прокручиваем, а не к результатам месячной давности.
+        if not current_status and not self.request.GET.get(self.page_kwarg):
+            now = timezone.now()
+            first = next((m for m in context['object_list'] if m.start_time >= now), None)
+            context['first_upcoming_day'] = timezone.localtime(first.start_time).strftime('%d.%m.%Y') if first else ''
         context['current_league'] = self.request.GET.get('league', '')
         context['current_season'] = self.request.GET.get('season', '')
         context['current_tour'] = self.request.GET.get('tour', '')
@@ -473,7 +479,7 @@ class MatchDetailView(DetailView):
             + (f", {match.tour}-й тур" if match.tour else "")
             + ": оценки игроков, тренеров и судьи от болельщиков DOPX."
             + (f" Лучший по мнению трибун: {best.player.first_name} {best.player.last_name} "
-               f"({best.performance_score:.1f})." if best else "")
+               f"({ru_num(best.performance_score, 1)})." if best else "")
         )
         # Абсолютный URL карточки для og:image.
         context['og_image'] = self.request.build_absolute_uri(

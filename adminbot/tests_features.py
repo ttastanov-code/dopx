@@ -533,7 +533,7 @@ class KickoffAndUnpublishTests(TestCase):
         from datetime import timezone as dt_tz
 
         m = make_match(status="scheduled", start_time=timezone.datetime(2026, 10, 10, tzinfo=dt_tz.utc))
-        self.assertEqual(channel.kickoff(m), "10.10 (время уточняется)")
+        self.assertEqual(channel.kickoff(m), "10.10, время уточняется")
         m.start_time = timezone.datetime(2026, 10, 10, 13, 0, tzinfo=dt_tz.utc)
         self.assertEqual(channel.kickoff(m), "10.10 18:00")
         self.assertFalse(any(p.kind == "changes" for p in channel.sample_posts()))   # переносов нет — пробного не будет

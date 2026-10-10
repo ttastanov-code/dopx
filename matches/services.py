@@ -12,6 +12,7 @@ from collections import defaultdict
 from django.db.models import Count, Q
 
 from matches.models import Match, MatchReaction
+from core.utils import ru_num
 
 MOMENTUM_WINDOW_MINUTES = 15
 # Меньше двух событий в окне — не «момент».
@@ -128,7 +129,7 @@ def _describe_referee_divergence(match, referee_agg) -> str:
         return ""
     return (
         f"Болельщики {match.home_team.name} и {match.away_team.name} разошлись "
-        f"во мнениях о судействе на {gap:.1f} балла."
+        f"во мнениях о судействе на {ru_num(gap, 1)} балла."
     )
 
 
@@ -167,7 +168,7 @@ def _describe_fan_mood(match_aggregate, fan_support: list) -> str:
     dominant = fan_support[0]
     pct = round(dominant["count"] / total * 100)
     return (
-        f"Зрелищность матча болельщики оценили на {match_aggregate.avg_entertainment:.1f}/10, "
+        f"Зрелищность матча болельщики оценили на {ru_num(match_aggregate.avg_entertainment, 1)}/10, "
         f"{pct}% из проголосовавших за команду поддерживали {dominant['supported_team__name']}."
     )
 
@@ -236,7 +237,7 @@ def _describe_controversial_episode(events: list, referee_aggregate) -> str:
                 gap = abs(home_avg - away_avg)
                 return (
                     f"Спорный момент: красная карточка на {event.display_minute}'{who}. "
-                    f"Болельщики двух команд оценили судейство с разницей {gap:.1f} балла."
+                    f"Болельщики двух команд оценили судейство с разницей {ru_num(gap, 1)} балла."
                 )
     return ""
 

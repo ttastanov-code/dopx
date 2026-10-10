@@ -9,6 +9,7 @@ email_digest_mode письма о бейджах/уровнях собирают
 from __future__ import annotations
 
 import logging
+import re
 import smtplib
 import socket
 from datetime import timedelta
@@ -20,6 +21,7 @@ from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 from django.utils import timezone
 from django.utils.html import strip_tags
+from core.utils import ru_num
 
 logger = logging.getLogger(__name__)
 
@@ -728,6 +730,11 @@ def notify_followers_lineups_available(self, match_id: str):
 
 
 def _fmt_kickoff(dt) -> str:
+    from parsers.sportmonks.importers import is_placeholder_kickoff
+
+    # Заглушка «время не объявлено» — только дата, без «05:00».
+    if is_placeholder_kickoff(dt):
+        return timezone.localtime(dt).strftime('%d.%m (время не объявлено)')
     return timezone.localtime(dt).strftime('%d.%m в %H:%M')
 
 
@@ -819,7 +826,9 @@ def notify_followers_match_event(self, match_id: str, event_id: str):
     if not follower_user_ids:
         return {'notified': 0}
 
-    score = match.get_score_display()
+    # Счёт сразу после этого гола (поставщик: «1-0»), а не текущий — два гола в одной синхронизации иначе оба «2:0».
+    score = (event.score_after or "").replace("-", ":") if re.fullmatch(r"\d+-\d+", event.score_after or "") \
+        else match.get_score_display()
     home = match.home_team.name
     away = match.away_team.name
     # Если игрок не найден локально — имя берём из extra_data события.
@@ -1280,7 +1289,7 @@ def notify_ratings_published(self):
             )
             title = f"📊 Итоги оценок: {match.home_team.name} {match.get_score_display()} {match.away_team.name}"
             message = (
-                f"Игрок матча: {mvp.player.full_name} ({mvp.performance_score:.1f}). Сравните со своими оценками."
+                f"Игрок матча: {mvp.player.full_name} ({ru_num(mvp.performance_score, 1)}). Сравните со своими оценками."
                 if mvp else "Голосование закрыто, рейтинги игроков открыты."
             )
             action_url = reverse('matches:detail', args=[match.id])

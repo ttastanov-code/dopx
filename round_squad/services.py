@@ -28,9 +28,11 @@ from players.positions import (
     BEST_XI_SLOT_DISPLAY_ORDER,
     BEST_XI_SLOT_LABELS,
     SLOT_PROCESSING_ORDER,
+    assign_slots,
     resolve_lineup_codes,
 )
 from round_squad.models import RoundBestXI, RoundBestXISlot, RoundPositionRanking
+from core.utils import ru_num
 
 logger = logging.getLogger(__name__)
 
@@ -288,7 +290,7 @@ def _describe_nearest_competitor_round(score: float, runner_up: tuple[RoundCandi
     gap = round(score - competitor_score, 2)
     if gap <= 0:
         return ""
-    return f"Обошёл ближайшего конкурента: {competitor.name} ({competitor_score:.2f}), разница {gap:.2f}."
+    return f"Обошёл ближайшего конкурента: {competitor.name} ({ru_num(competitor_score, 2)}), разница {ru_num(gap, 2)}."
 
 
 def _describe_round_rank_change(rank_change: str, rank_change_delta: int | None) -> str:
@@ -308,7 +310,7 @@ def _build_round_explanation(
 ) -> str:
     """Объяснение для слота — список фактов, по одному на строку."""
     lines = [
-        f"Рейтинг {score:.2f} на позиции «{label}» в этом туре: среднее по "
+        f"Рейтинг {ru_num(score, 2)} на позиции «{label}» в этом туре: среднее по "
         f"{candidate.votes} голосам с поправкой на их число."
     ]
     if is_confident:
@@ -451,23 +453,13 @@ def recompute_round(season, tour: int, *, force: bool = False) -> RoundBestXI:
     RoundPositionRanking.objects.filter(round_best_xi=round_best_xi).delete()
     ranking_buffer: list[RoundPositionRanking] = []
 
-    # ---- 11 слотов 4-3-3: жадное заполнение по SLOT_PROCESSING_ORDER ----
-    assigned: set[str] = set()
-    for slot_code, raw_codes in SLOT_PROCESSING_ORDER:
-        candidates: list[RoundCandidate] = []
-        seen: set[str] = set()
-        for code in raw_codes:
-            for cand in pool_by_code.get(code, []):
-                if cand.object_id in assigned or cand.object_id in seen:
-                    continue
-                seen.add(cand.object_id)
-                candidates.append(cand)
-
-        ranked = _rank_round_pool(candidates)
+    # ---- 11 слотов 4-3-3 (players.positions.assign_slots) ----
+    by_slot = assign_slots(pool_by_code, _rank_round_pool, lambda c: c.object_id)
+    for slot_code, _codes in SLOT_PROCESSING_ORDER:
+        ranked = by_slot[slot_code]
         _store_round_ranking_batch(ranking_buffer, round_best_xi, slot_code, ranked)
         if ranked:
             top_candidate, top_score = ranked[0]
-            assigned.add(top_candidate.object_id)
             runner_up = ranked[1] if len(ranked) > 1 else None
             _apply_round_slot(round_best_xi, slot_code, top_candidate, top_score, season, tour, previous_ranks, runner_up)
         else:
@@ -500,7 +492,7 @@ def recompute_round(season, tour: int, *, force: bool = False) -> RoundBestXI:
         round_best_xi.player_of_round_votes = top_player.votes
         # Объяснение — список строк.
         player_of_round_lines = [
-            f"Лучший результат тура среди всех позиций: {player_score:.2f} "
+            f"Лучший результат тура среди всех позиций: {ru_num(player_score, 2)} "
             f"по {top_player.votes} голосам."
         ]
         player_of_round_lines.append(
@@ -534,8 +526,8 @@ def recompute_round(season, tour: int, *, force: bool = False) -> RoundBestXI:
     if dramatic_match:
         round_best_xi.most_dramatic_match_explanation = (
             f"{dramatic_match.home_team.name} {dramatic_match.home_score}:{dramatic_match.away_score} "
-            f"{dramatic_match.away_team.name}: самый высокий индекс зрелищности тура "
-            f"({drama_score:.1f}, по {drama_votes} оценкам матча)."
+            f"{dramatic_match.away_team.name}: самый высокий индекс драмы тура "
+            f"({drama_score:.0f} из 100, по {drama_votes} оценкам матча)."
         )
     else:
         round_best_xi.most_dramatic_match_explanation = ""
@@ -583,7 +575,7 @@ def recompute_round(season, tour: int, *, force: bool = False) -> RoundBestXI:
 
     logger.info(
         "Тур %s сезона %s пересчитан (is_final=%s), игроков в составе: %d",
-        tour, season, round_best_xi.is_final, len(assigned),
+        tour, season, round_best_xi.is_final, sum(1 for r in by_slot.values() if r),
     )
     return round_best_xi
 

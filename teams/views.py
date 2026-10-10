@@ -208,7 +208,7 @@ class TeamDetailView(DetailView):
             published_q(), played_for_this_team=True, total_votes__gte=min_votes_for_display()
         ).select_related(
             'player',
-            'match'
+            'match__home_team', 'match__away_team',
         ).order_by('-performance_score')[:5]
         
         # Средние оценки команды по TeamMatchAggregate (взвешенные), total — сумма голосов.

@@ -19,7 +19,7 @@
                    {% elif my_prediction.choice == '1' %}border-primary bg-primary/5
                    {% else %}border-base-300{% endif %}">
         <span class="text-[9px] font-semibold opacity-60 truncate max-w-full">П1</span>
-        <span class="text-xs font-bold">{{ counts.home_pct }}%</span>
+        <span class="text-xs font-bold">{% if counts.total %}{{ counts.home_pct }}%{% else %}—{% endif %}</span>
     </button>
     <button type="button"
             {% if match.is_prediction_open %}
@@ -35,7 +35,7 @@
                    {% elif my_prediction.choice == 'X' %}border-primary bg-primary/5
                    {% else %}border-base-300{% endif %}">
         <span class="text-[9px] font-semibold opacity-60">Х</span>
-        <span class="text-xs font-bold">{{ counts.draw_pct }}%</span>
+        <span class="text-xs font-bold">{% if counts.total %}{{ counts.draw_pct }}%{% else %}—{% endif %}</span>
     </button>
     <button type="button"
             {% if match.is_prediction_open %}
@@ -51,7 +51,7 @@
                    {% elif my_prediction.choice == '2' %}border-primary bg-primary/5
                    {% else %}border-base-300{% endif %}">
         <span class="text-[9px] font-semibold opacity-60 truncate max-w-full">П2</span>
-        <span class="text-xs font-bold">{{ counts.away_pct }}%</span>
+        <span class="text-xs font-bold">{% if counts.total %}{{ counts.away_pct }}%{% else %}—{% endif %}</span>
     </button>
     {% if just_predicted %}
     {# Только что сделан прогноз: вызов другу и переход к следующему матчу без прогноза. #}

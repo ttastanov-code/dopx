@@ -1,4 +1,4 @@
-{# Приглашение сделать прогноз перед матчем. Контекст: match. #}
+{% load match_extras %}{# Приглашение сделать прогноз перед матчем. Контекст: match. #}
 <!DOCTYPE html>
 <html lang="ru">
 {% include "emails/partials/_head.html" %}
@@ -19,7 +19,7 @@
                                 <tr>
                                     <td align="center" style="padding: 20px;">
                                         <p style="margin: 0 0 4px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 17px; font-weight: 700; color: #18181B;">{{ match.home_team.name }} vs {{ match.away_team.name }}</p>
-                                        <p style="margin: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #92400E;">{{ match.start_time|date:"d.m.Y в H:i" }}</p>
+                                        <p style="margin: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #92400E;">{{ match|kickoff:"%d.%m.%Y" }}</p>
                                     </td>
                                 </tr>
                             </table>

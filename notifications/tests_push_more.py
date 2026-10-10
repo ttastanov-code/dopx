@@ -82,7 +82,7 @@ class RatingsPublishedTests(TestCase):
         notify_ratings_published()
         note = Notification.objects.get(notification_type="ratings_published")
         self.assertEqual(note.user_id, self.rater.id)
-        self.assertIn("Иван Лучший (8.7)", note.message)
+        self.assertIn("Иван Лучший (8,7)", note.message)
         self.assertEqual(push.call_count, 1)
 
     @patch("notifications.services.send_push_to_users", return_value=1)

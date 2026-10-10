@@ -169,7 +169,8 @@ class MatchChangeDetectionTests(TestCase):
         self.assertEqual(_detect_match_change(self._m("scheduled", start), self._m("cancelled", start)), "cancelled")
 
     def test_kickoff_shift(self):
-        start = timezone.now() + timedelta(days=2)
+        # Дневное время по Алматы: ночные «переносы» считаются ошибкой данных и не сообщаются.
+        start = timezone.localtime(timezone.now() + timedelta(days=2)).replace(hour=14, minute=0, second=0, microsecond=0)
         before = self._m("scheduled", start)
         self.assertIsNone(_detect_match_change(before, self._m("scheduled", start + timedelta(minutes=30))))
         self.assertEqual(_detect_match_change(before, self._m("scheduled", start + timedelta(hours=2))), "rescheduled")

@@ -281,12 +281,9 @@ def publish_due() -> int:
 
 # ---------------- Тексты постов
 def kickoff(m, fmt: str = "%d.%m %H:%M") -> str:
-    """Время начала; полночь по UTC — заглушка поставщика (время ещё не назначено), показываем только дату."""
-    utc = m.start_time.astimezone(dt_timezone.utc)
-    local = timezone.localtime(m.start_time)
-    if utc.hour == 0 and utc.minute == 0:
-        return local.strftime(fmt.split(" ")[0]) + " (время уточняется)"
-    return local.strftime(fmt)
+    """Время начала для постов (Match.kickoff_text): без объявленного времени — только дата."""
+    date_fmt, _, time_fmt = fmt.partition(" ")
+    return m.kickoff_text(date_fmt, sep=" ") if time_fmt else timezone.localtime(m.start_time).strftime(fmt)
 
 
 def _score(m) -> str:

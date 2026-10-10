@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% load ui_extras %}
+{% load ui_extras match_extras %}
 
 {% block head_extra %}<meta name="robots" content="noindex, nofollow"><meta name="referrer" content="same-origin">{% endblock %}
 
@@ -10,7 +10,7 @@
         <div class="text-xs font-semibold uppercase tracking-wide text-primary flex items-center gap-1"><i class="ti ti-microphone"></i> Мнение эксперта для DOPX</div>
         <h1 class="text-2xl font-extrabold mt-1">{% if invite.expert %}Здравствуйте, {{ invite.expert.name }}!{% else %}Здравствуйте!{% endif %}</h1>
         <p class="text-sm opacity-70 mt-2 leading-relaxed">
-            {% if invite.match and invite.match.status == 'scheduled' %}Поделитесь с болельщиками ожиданиями от матча <b>{{ invite.match.home_team.name }} – {{ invite.match.away_team.name }}</b> ({{ invite.match.start_time|date:"j E, H:i" }}): на что смотреть, кто решит игру.
+            {% if invite.match and invite.match.status == 'scheduled' %}Поделитесь с болельщиками ожиданиями от матча <b>{{ invite.match.home_team.name }} – {{ invite.match.away_team.name }}</b> ({{ invite.match|kickoff }}): на что смотреть, кто решит игру.
             {% elif invite.match %}Расскажите болельщикам, как вы видите матч <b>{{ invite.match.home_team.name }} – {{ invite.match.away_team.name }}</b> ({{ invite.match.home_score }}:{{ invite.match.away_score }}).
             {% else %}Выберите матч: ближайший тур (превью), прошедший тур или перенесённые игры, и расскажите болельщикам, как вы его видите.{% endif %}
             Мнение появится на странице матча в блоке «Мнение эксперта»{% if not invite.auto_publish %} после проверки редакцией{% endif %}. Регистрация не нужна.

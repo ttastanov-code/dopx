@@ -46,7 +46,7 @@ def _short_label(match, with_tour: bool) -> str:
     start = timezone.localtime(match.start_time)
     score = "–" if match.status in ("scheduled", "live") else f"{match.home_score}:{match.away_score}"
     tour = f" · из {match.tour}-го тура" if with_tour and match.tour else ""
-    return f"{WEEKDAYS[start.weekday()]} {start:%d.%m %H:%M} · {match.home_team.name} {score} {match.away_team.name}{tour}"
+    return f"{WEEKDAYS[start.weekday()]} {match.kickoff_text(sep=' ')} · {match.home_team.name} {score} {match.away_team.name}{tour}"
 
 
 def group_match_choices(field, extra_back_days: int = 0, keep=None, empty_label=None):

@@ -94,7 +94,7 @@
                             <td class="text-center">
                                 {% if player.total_votes|has_enough_votes %}
                                     <span class="font-bold text-lg text-success">
-                                        {{ player.avg_performance|floatformat:2 }}
+                                        {{ player.avg_performance|floatformat:1 }}
                                     </span>
                                 {% else %}
                                     <span class="badge badge-ghost badge-sm whitespace-nowrap" title="Мало оценок: рейтинг пока не показателен">

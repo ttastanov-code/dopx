@@ -170,3 +170,7 @@ def is_rate_limited(key: str, limit: int, window_seconds: int) -> bool:
         current = cache.incr(cache_key)
     # Первый вызов даёт 1, поэтому сравнение строго «больше».
     return current > limit
+
+def ru_num(value, digits: int = 1) -> str:
+    """Число для текста по-русски: запятая вместо точки (8,5)."""
+    return f"{value:.{digits}f}".replace(".", ",")
