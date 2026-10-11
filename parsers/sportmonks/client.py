@@ -65,6 +65,10 @@ class SportmonksAPIError(Exception):
     pass
 
 
+class SportmonksNetworkError(SportmonksAPIError):
+    """Ответа не было вовсе (DNS, обрыв, таймаут) — временно; тревогу поднимает проверка синхронизации, а не каждый тик."""
+
+
 # Ретраим 429 и 5xx. 4xx не ретраим — ответ не изменится.
 RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 MAX_RETRIES = 3
@@ -78,7 +82,10 @@ class SportmonksClient:
         data = client.get_fixture(19681993, include="participants;events.player")
     """
 
-    def __init__(self, api_token: Optional[str] = None, base_url: Optional[str] = None):
+    def __init__(self, api_token: Optional[str] = None, base_url: Optional[str] = None,
+                 retries: int = MAX_RETRIES, timeout: float = 15):
+        # retries/timeout меньше — для live-опроса: через 10 с всё равно будет следующий тик.
+        self.retries, self.timeout = retries, timeout
         self.api_token = api_token or settings.SPORTMONKS_API_TOKEN
         self.base_url = (base_url or settings.SPORTMONKS_BASE_URL).rstrip('/')
         self.locale = getattr(settings, 'SPORTMONKS_LOCALE', 'ru')
@@ -102,14 +109,17 @@ class SportmonksClient:
             request_params.update(params)
 
         last_error: Optional[Exception] = None
-        for attempt in range(1, MAX_RETRIES + 1):
+        got_response = False
+        for attempt in range(1, self.retries + 1):
             try:
-                response = self.session.get(url, params=request_params, timeout=15)
+                response = self.session.get(url, params=request_params, timeout=self.timeout)
             except requests.RequestException as exc:
                 last_error = redact(exc)  # в тексте ошибки URL с api_token
-                logger.warning("Sportmonks: сетевая ошибка на %s (попытка %s/%s): %s", path, attempt, MAX_RETRIES, last_error)
-                time.sleep(RETRY_BACKOFF_SECONDS * attempt)
+                logger.warning("Sportmonks: сетевая ошибка на %s (попытка %s/%s): %s", path, attempt, self.retries, last_error)
+                if attempt < self.retries:
+                    time.sleep(RETRY_BACKOFF_SECONDS * attempt)
                 continue
+            got_response = True
 
             # Считаем каждый запрос, получивший HTTP-ответ.
             _track_request()
@@ -118,7 +128,7 @@ class SportmonksClient:
                 last_error = SportmonksAPIError(f"HTTP {response.status_code} на {path}")
                 logger.warning(
                     "Sportmonks: %s на %s (попытка %s/%s), ретраим",
-                    response.status_code, path, attempt, MAX_RETRIES,
+                    response.status_code, path, attempt, self.retries,
                 )
                 time.sleep(_retry_delay(response, attempt))
                 continue
@@ -131,7 +141,8 @@ class SportmonksClient:
             self._log_rate_limit_if_low(path, payload)
             return payload
 
-        raise SportmonksAPIError(redact(f"Не удалось получить {path} после {MAX_RETRIES} попыток: {last_error}"))
+        error_class = SportmonksAPIError if got_response else SportmonksNetworkError
+        raise error_class(redact(f"Не удалось получить {path} после {self.retries} попыток: {last_error}"))
 
     def _get_data(self, path: str, params: Optional[dict] = None) -> dict:
         """_get() для одиночной сущности. Нет 'data' в ответе — SportmonksAPIError с телом."""

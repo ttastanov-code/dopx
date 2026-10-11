@@ -165,6 +165,28 @@ class GoalAuthorLaterTests(TestCase):
         self.assertFalse(kwargs["telegram"])
 
 
+class ConfirmGoalPushTests(TestCase):
+    """Пуш о голе — только когда официальный счёт его засчитал."""
+
+    @patch("notifications.tasks.notify_followers_match_event.delay")
+    @patch("notifications.tasks.confirm_goal_push.apply_async")
+    def test_waits_then_sends_or_drops(self, mock_retry, mock_send):
+        from notifications.tasks import GOAL_CONFIRM_ATTEMPTS, confirm_goal_push
+
+        match, home, _ = _setup_match()
+        Match.objects.filter(id=match.id).update(status="live", home_score=0, away_score=0)
+        goal = MatchEvent.objects.create(match=match, minute=14, event_type="goal", team_side="home", score_after="1-0")
+
+        self.assertEqual(confirm_goal_push(str(match.id), str(goal.id)), "waiting")
+        mock_send.assert_not_called()
+        mock_retry.assert_called_once()
+        self.assertEqual(confirm_goal_push(str(match.id), str(goal.id), GOAL_CONFIRM_ATTEMPTS), "unconfirmed")
+
+        Match.objects.filter(id=match.id).update(home_score=1)
+        self.assertEqual(confirm_goal_push(str(match.id), str(goal.id)), "sent")
+        mock_send.assert_called_once()
+
+
 class GoalPushScoreTests(TestCase):
     """В пуше — счёт сразу после гола, а не текущий счёт матча."""
 

@@ -10,6 +10,8 @@ from datetime import timedelta
 
 from django.utils import timezone
 
+from matches.models import Match
+
 from parsers.sportmonks import importers as importers_module
 from parsers.sportmonks.importers import import_match_core
 from parsers.sportmonks.tasks import sportmonks_resync_recent_stats, sportmonks_update_live
@@ -212,7 +214,8 @@ class SportmonksResyncRecentStatsTests(TestCase):
         fixture = _fixture(sm_id=sm_id, dev_name="FT", home_goals=2, away_goals=1)
         match = import_match_core(fixture, self.league, self.season)
         match.start_time = timezone.now() - timedelta(hours=hours_ago)
-        match.save(update_fields=["start_time"])
+        match.end_time = match.start_time + timedelta(hours=2)
+        match.save(update_fields=["start_time", "end_time"])
         return match
 
     @patch("parsers.sportmonks.tasks.SportmonksClient")
@@ -234,14 +237,36 @@ class SportmonksResyncRecentStatsTests(TestCase):
 
     @patch("parsers.sportmonks.tasks.SportmonksClient")
     def test_match_older_than_window_is_not_touched(self, mock_client_cls):
-        """Матч завершился 4 ч назад (окно 3 ч) — не трогаем."""
-        self._make_finished_match(sm_id=700000222, hours_ago=4)
+        """Матч завершился 4 ч назад (окно 3 ч от финального свистка) — не трогаем."""
+        self._make_finished_match(sm_id=700000222, hours_ago=6)
         mock_client = MagicMock()
         mock_client_cls.return_value = mock_client
 
         sportmonks_resync_recent_stats()
 
         mock_client.get_fixture.assert_not_called()
+
+    @patch("parsers.sportmonks.tasks.SportmonksClient")
+    def test_window_counts_from_final_whistle(self, mock_client_cls):
+        """Начался 4 ч назад, закончился 2 ч назад — ещё в окне (раньше окно считалось от начала)."""
+        self._make_finished_match(sm_id=700000444, hours_ago=4)
+        mock_client = MagicMock()
+        mock_client.get_fixture.return_value = _fixture(sm_id=700000444, dev_name="FT", home_goals=2, away_goals=1)
+        mock_client_cls.return_value = mock_client
+        sportmonks_resync_recent_stats()
+        mock_client.get_fixture.assert_called_once()
+
+    @patch("parsers.sportmonks.tasks.SportmonksClient")
+    def test_event_without_author_resynced_for_days(self, mock_client_cls):
+        """Событие без автора — догружаем и через сутки: поставщик дописывает авторов с опозданием."""
+        from events.models import MatchEvent
+        match = self._make_finished_match(sm_id=700000555, hours_ago=30)
+        MatchEvent.objects.create(match=match, minute=96, event_type="yellow_card", team_side="home")
+        mock_client = MagicMock()
+        mock_client.get_fixture.return_value = _fixture(sm_id=700000555, dev_name="FT", home_goals=2, away_goals=1)
+        mock_client_cls.return_value = mock_client
+        sportmonks_resync_recent_stats()
+        mock_client.get_fixture.assert_called_once()
 
     @patch("parsers.sportmonks.tasks.SportmonksClient")
     def test_scheduled_match_is_not_touched(self, mock_client_cls):
@@ -255,3 +280,32 @@ class SportmonksResyncRecentStatsTests(TestCase):
         sportmonks_resync_recent_stats()
 
         mock_client.get_fixture.assert_not_called()
+
+
+class SportmonksFinishedTailTests(TestCase):
+    """Поздние правки поставщика: завершённые матчи 30 дней перезагружаются сами с затухающей частотой."""
+
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
+        self.league = _make_league()
+        self.season = _make_season(self.league)
+
+    def _finished(self, sm_id, days_ago):
+        match = import_match_core(_fixture(sm_id=sm_id, dev_name="FT"), self.league, self.season)
+        Match.objects.filter(pk=match.pk).update(start_time=timezone.now() - timedelta(days=days_ago))
+        return match
+
+    @patch("parsers.sportmonks.tasks.SportmonksClient")
+    def test_tail_resync_once_per_interval(self, mock_client_cls):
+        from parsers.sportmonks.tasks import sportmonks_resync_finished_tail
+        self._finished(700100001, days_ago=2)
+        self._finished(700100002, days_ago=40)
+        mock_client = MagicMock()
+        mock_client.get_fixture.return_value = _fixture(sm_id=700100001, dev_name="FT")
+        mock_client_cls.return_value = mock_client
+
+        sportmonks_resync_finished_tail()
+        sportmonks_resync_finished_tail()   # повтор в пределах 6 ч — не трогает
+
+        mock_client.get_fixture.assert_called_once_with("700100001", include=importers_module.HEAVY_FIXTURE_INCLUDE)

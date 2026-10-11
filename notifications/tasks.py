@@ -843,6 +843,39 @@ def notify_match_event_author(self, match_id: str, event_id: str):
     return {'updated': updated}
 
 
+GOAL_EVENT_TYPES = ('goal', 'penalty', 'own_goal')
+GOAL_CONFIRM_ATTEMPTS = 10   # по минуте: дольше официальный счёт не подтвердил — гол, видимо, отменён
+
+
+def goal_confirmed(event) -> bool:
+    """Гол засчитан официальным счётом: его номер среди голов матча не больше суммы счёта (как в ленте, matches/timeline)."""
+    match = event.match
+    goal_ids = list(match.events.filter(event_type__in=GOAL_EVENT_TYPES)
+                    .order_by('minute', 'added_time', 'id').values_list('id', flat=True))
+    if event.id not in goal_ids:
+        return False
+    return goal_ids.index(event.id) + 1 <= (match.home_score or 0) + (match.away_score or 0)
+
+
+@shared_task(bind=True, max_retries=0)
+def confirm_goal_push(self, match_id: str, event_id: str, attempt: int = 1):
+    """Пуш о голе — только когда официальный счёт его засчитал; иначе перепроверяем раз в минуту,
+    GOAL_CONFIRM_ATTEMPTS раз. Так не уходят «Гол!» по голам, которые источник не засчитал (VAR)."""
+    from events.models import MatchEvent
+
+    event = MatchEvent.objects.select_related('match').filter(id=event_id, match_id=match_id).first()
+    if event is None or event.event_type not in GOAL_EVENT_TYPES:
+        return 'dropped'
+    if goal_confirmed(event):
+        notify_followers_match_event.delay(match_id, event_id)
+        return 'sent'
+    if attempt >= GOAL_CONFIRM_ATTEMPTS:
+        logger.info(f"confirm_goal_push: гол {event_id} так и не засчитан счётом матча {match_id} — пуш не отправлен")
+        return 'unconfirmed'
+    confirm_goal_push.apply_async(args=[match_id, event_id, attempt + 1], countdown=60)
+    return 'waiting'
+
+
 # События матча, по которым шлём live-push.
 PUSH_WORTHY_EVENT_TYPES = frozenset({'goal', 'own_goal', 'penalty', 'disallowed_goal', 'red_card'})
 

@@ -61,6 +61,12 @@ def build_timeline(match, events) -> dict:
         elif to == 3:
             rows.append({'divider': 'Дополнительное время', 'score': f'{home}:{away}'})
 
+    # В live голы сверх официального счёта — «на проверке» (VAR, источник ещё не засчитал): в счёт не идут.
+    goal_events = [e for e in events if e.event_type in GOAL_TYPES]
+    official = (match.home_score or 0) + (match.away_score or 0)
+    pending = ({id(e) for e in goal_events[official:]}
+               if match.status == 'live' and len(goal_events) > official else set())
+
     for e in events:
         p = _period(e)
         while period < p:
@@ -68,7 +74,9 @@ def build_timeline(match, events) -> dict:
             cross(period)
         label, mod = KINDS.get(e.event_type, (e.get_event_type_display(), 'other'))
         score = None
-        if e.event_type in GOAL_TYPES:
+        if id(e) in pending:
+            label, mod = 'Гол на проверке', 'pending'
+        elif e.event_type in GOAL_TYPES:
             if e.team_side == 'home':
                 home += 1
             else:
@@ -85,9 +93,10 @@ def build_timeline(match, events) -> dict:
         rows.append({'divider': 'Финальный свисток', 'score': f'{real[0]}:{real[1]}', 'final': True})
 
     summary = []
+    counted = [e for e in events if id(e) not in pending]
     for key, title, mod, types in SUMMARY_ROWS:
-        h = sum(1 for e in events if e.event_type in types and e.team_side == 'home')
-        a = sum(1 for e in events if e.event_type in types and e.team_side == 'away')
+        h = sum(1 for e in counted if e.event_type in types and e.team_side == 'home')
+        a = sum(1 for e in counted if e.event_type in types and e.team_side == 'away')
         if h or a or key == 'goals':
             total = h + a or 1
             summary.append({'title': title, 'mod': mod, 'home': h, 'away': a,

@@ -460,3 +460,18 @@ class LiveClockSyncTests(TestCase):
         m.refresh_from_db()
         self.assertEqual((m.live_state, m.live_counts_from, m.live_ticking), ("INPLAY_2ND_HALF", 45, True))
         self.assertEqual(m.live_period_started, datetime.fromtimestamp(1791637445, tz=dt_tz.utc))
+
+
+class PendingGoalTimelineTests(SimpleTestCase):
+    """Гол в событиях, которого нет в официальном счёте live-матча, — «на проверке», в счёт не идёт."""
+
+    def test_unconfirmed_goal_is_pending(self):
+        from matches.timeline import build_timeline
+        goal = SimpleNamespace(minute=14, added_time=0, event_type="goal", team_side="home", card_reason=None,
+                               get_event_type_display=lambda: "goal")
+        tl = build_timeline(SimpleNamespace(status="live", home_score=0, away_score=0), [goal])
+        row = next(r for r in tl["rows"] if "event" in r)
+        self.assertEqual((row["mod"], row["score"]), ("pending", None))
+        self.assertEqual(tl["summary"][0]["home"], 0)
+        tl = build_timeline(SimpleNamespace(status="live", home_score=1, away_score=0), [goal])
+        self.assertEqual(next(r for r in tl["rows"] if "event" in r)["score"], "1:0")

@@ -659,6 +659,21 @@ def _flag_potential_duplicate_player(new_player: Player, team: Optional[Team]) -
 # Вспомогательные функции матча
 # ============================================================================
 
+def fixture_score(fixture_data: Dict) -> Tuple[Optional[int], Optional[int]]:
+    """Официальный счёт матча (CURRENT поставщика). Голу в событиях раньше счёта не верим:
+    так бывает при отмене гола (VAR) — источник и федерация держат 0:0, пока гол не подтверждён."""
+    home = away = None
+    for score in fixture_data.get("scores") or []:
+        if score.get("description") != "CURRENT":
+            continue
+        obj = score.get("score") or {}
+        if obj.get("participant") == "home":
+            home = obj.get("goals")
+        elif obj.get("participant") == "away":
+            away = obj.get("goals")
+    return home, away
+
+
 def _parse_starting_at(value: Optional[str]):
     """starting_at от Sportmonks — строка в UTC."""
     if not value:
@@ -841,17 +856,7 @@ def import_match_core(fixture_data: Dict, league: League, season: Season) -> Mat
 
     start_time = _parse_starting_at(fixture_data.get("starting_at"))
 
-    home_score = away_score = None
-    for score in fixture_data.get("scores") or []:
-        if score.get("description") != "CURRENT":
-            continue
-        score_obj = score.get("score") or {}
-        goals = score_obj.get("goals")
-        participant = score_obj.get("participant")
-        if participant == "home":
-            home_score = goals
-        elif participant == "away":
-            away_score = goals
+    home_score, away_score = fixture_score(fixture_data)
 
     tour = _extract_tour(fixture_data.get("round"))
     main_referee, referee_crew = _build_referee_crew(fixture_data.get("referees") or [])
@@ -1576,13 +1581,16 @@ def import_full_fixture(fixture_data: Dict, league: League, season: Season) -> M
     # Live-пуши о событиях — только пока матч идёт. Досинк завершённого матча
     # (сервер лежал, бэкафилл) не должен присылать пачку старых голов.
     if push_worthy_events and match.status == "live":
-        from notifications.tasks import PUSH_WORTHY_EVENT_TYPES, notify_followers_match_event
+        from notifications.tasks import (
+            GOAL_EVENT_TYPES, PUSH_WORTHY_EVENT_TYPES, confirm_goal_push, notify_followers_match_event,
+        )
         for event in push_worthy_events:
-            if event.event_type in PUSH_WORTHY_EVENT_TYPES:
-                transaction.on_commit(
-                    lambda match_id=str(match.id), event_id=str(event.id): (
-                        notify_followers_match_event.delay(match_id, event_id)
-                    )
-                )
+            if event.event_type not in PUSH_WORTHY_EVENT_TYPES:
+                continue
+            # Гол — только после подтверждения официальным счётом (сразу, если он уже засчитан).
+            task = confirm_goal_push if event.event_type in GOAL_EVENT_TYPES else notify_followers_match_event
+            transaction.on_commit(
+                lambda t=task, match_id=str(match.id), event_id=str(event.id): t.delay(match_id, event_id)
+            )
 
     return match

@@ -36,7 +36,7 @@
     <link rel="apple-touch-icon" href="{% static_v 'favicons/apple-touch-icon.png' %}">
     {% tailwind_assets %}
     {# Tabler Icons #}
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.46.0/dist/tabler-icons.min.css" integrity="sha384-ND+q1IVc0KDElX60dZaqKc7Xl9cdxd2PpU2JfVUHcurCkFVtVLFdt9vJfxtHSL3p" crossorigin="anonymous">
+    <link rel="stylesheet" href="{% static_v 'vendor/tabler-icons/tabler-icons.min.css' %}">
     {# Карточка матча #}
     <link rel="stylesheet" href="{% static_v 'css/match-card.css' %}">
     {# Вайзард оценки #}
@@ -52,15 +52,15 @@
     {# Alpine.js #}
     {# Collapse — до ядра Alpine, иначе x-collapse не работает. #}
     {# Мягкое обновление страницы (Idiomorph) — раньше Alpine: снимок исходной разметки компонентов. #}
-    <script defer src="https://cdn.jsdelivr.net/npm/idiomorph@0.7.4/dist/idiomorph.min.js" integrity="sha384-YWh9vmu1Q6BptPp1emqfsNatFASVLolFKP/5f4LWR6eGMLEhBDh1zcwU2OzfVCe9" crossorigin="anonymous"></script>
+    <script defer src="{% static_v 'vendor/idiomorph/idiomorph.min.js' %}"></script>
     <script defer src="{% static_v 'js/live-refresh.js' %}"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/collapse@3.15.8/dist/cdn.min.js" integrity="sha384-NArNwzWsUSF+kY2lgW4YriEkjLqi+J+za6HrENUn/3nZqkBnWbxV22kCJEK5Uu6n" crossorigin="anonymous"></script>
+    <script defer src="{% static_v 'vendor/alpine/alpine-collapse.min.js' %}"></script>
     {# alpine-components.js — до ядра Alpine, иначе компоненты не успеют зарегистрироваться. #}
     <script defer src="{% static_v 'js/alpine-components.js' %}"></script>
     {# @alpinejs/csp — без 'unsafe-eval'; x-data только через компоненты из alpine-components.js. #}
-    <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/csp@3.15.8/dist/cdn.min.js" integrity="sha256-h9+HB497OogOke73+whm9Qht5S+SibyWUDYIMRgQp/w=" crossorigin="anonymous"></script>
+    <script defer src="{% static_v 'vendor/alpine/alpine-csp.min.js' %}"></script>
     {# HTMX #}
-    <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.8/dist/htmx.min.js" integrity="sha256-Iig+9oy3VFkU8KiKG97cclanA9HVgMHSVSF9ClDTExM=" crossorigin="anonymous"></script>
+    <script src="{% static_v 'vendor/htmx/htmx.min.js' %}"></script>
     {# Счётчик непрочитанных в заголовке вкладки. #}
     <script defer src="{% static_v 'js/notifications.js' %}"></script>
     {# Tailwind v4 — без JS-конфига, цвета из тем DaisyUI. #}

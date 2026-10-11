@@ -204,6 +204,10 @@
 .ev--red    { --ev-c: #e5383b; }
 .ev--sub    { --ev-c: var(--color-info); }
 .ev--other  { --ev-c: var(--color-base-content); }
+/* Гол на проверке: в событиях есть, официальный счёт его ещё не засчитал (VAR и т.п.). */
+.ev--pending { --ev-c: color-mix(in oklab, var(--color-base-content) 45%, transparent); }
+.ev--pending .evi { border: 1px dashed color-mix(in oklab, var(--color-base-content) 25%, transparent); }
+.ev--pending .evi__name { color: color-mix(in oklab, var(--color-base-content) 70%, transparent); }
 
 /* Значок */
 .ev-ico {

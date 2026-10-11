@@ -30,9 +30,6 @@
         {% endfor %}
     </div>
 
-    {% if timeline.mismatch %}
-    <p class="ev-note"><i class="ti ti-info-circle"></i> В ленте пока не все голы — события ещё уточняются. Счёт матча в шапке верный.</p>
-    {% endif %}
 
     <ol class="evt">
         {% for row in timeline.rows %}

@@ -13,7 +13,7 @@
 {{ block.super }}
 {% if request.user.is_authenticated %}
 <script>window.DOPX_LIVE = { interval: 30, target: '#content' };</script>
-<script defer src="https://cdn.jsdelivr.net/npm/idiomorph@0.7.4/dist/idiomorph.min.js" integrity="sha384-YWh9vmu1Q6BptPp1emqfsNatFASVLolFKP/5f4LWR6eGMLEhBDh1zcwU2OzfVCe9" crossorigin="anonymous"></script>
+<script defer src="{% static_v 'vendor/idiomorph/idiomorph.min.js' %}"></script>
 <script defer src="{% static_v 'js/live-refresh.js' %}"></script>
 {% endif %}
 {% endblock %}

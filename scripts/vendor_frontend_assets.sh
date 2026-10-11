@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # scripts/vendor_frontend_assets.sh
 #
-# Скачивает Alpine CSP, Alpine Collapse, HTMX и Tabler Icons в static/vendor/.
+# Скачивает Alpine CSP, Alpine Collapse, HTMX, Idiomorph, Chart.js и Tabler Icons в static/vendor/:
+# сайт не зависит от внешнего CDN (сбой сети/DNS на CDN ломал весь JS).
 # Файлы same-origin — SRI не нужен.
 #
 # Использование: bash scripts/vendor_frontend_assets.sh
@@ -23,6 +24,13 @@ curl -sfL "https://cdn.jsdelivr.net/npm/@alpinejs/collapse@3.15.8/dist/cdn.min.j
 echo "Скачиваю HTMX..."
 curl -sfL "https://cdn.jsdelivr.net/npm/htmx.org@2.0.8/dist/htmx.min.js" \
     -o "$VENDOR_DIR/htmx/htmx.min.js"
+
+echo "Скачиваю Idiomorph и Chart.js..."
+mkdir -p "$VENDOR_DIR/idiomorph" "$VENDOR_DIR/chartjs"
+curl -sfL "https://cdn.jsdelivr.net/npm/idiomorph@0.7.4/dist/idiomorph.min.js" \
+    -o "$VENDOR_DIR/idiomorph/idiomorph.min.js"
+curl -sfL "https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.js" \
+    -o "$VENDOR_DIR/chartjs/chart.umd.js"
 
 echo "Скачиваю Tabler Icons webfont (CSS + шрифты)..."
 curl -sfL "https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.46.0/dist/tabler-icons.min.css" \

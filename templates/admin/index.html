@@ -103,7 +103,7 @@ extends сам на себя — Django берёт следующий шабло
 {{ dopx_evaluations_by_day|json_script:"dopx-eval-data" }}
 {{ dopx_rating_distribution|json_script:"dopx-rating-data" }}
 {# dist/chart.umd.js — реальный файл пакета (уже минифицирован), integrity — sha256 jsDelivr. #}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.js" integrity="sha256-/tanOfjQ8GhxdN5s0UdF/A/HgJFEqxE9IpCKJr8Nf+o=" crossorigin="anonymous"></script>
+<script src="{% static_v 'vendor/chartjs/chart.umd.js' %}"></script>
 <script src="{% static_v 'js/charts.js' %}"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {

@@ -229,6 +229,7 @@ BEAT_TASK_TITLES = {
     "sportmonks-refresh-schedule": "Календарь на 2 недели: время начала и переносы",
     "sportmonks-update-upcoming": "Составы и изменения ближайших матчей",
     "sportmonks-resync-recent-stats": "Уточнение статистики недавно завершённых матчей",
+    "sportmonks-resync-finished-tail": "Поздние правки поставщика: перезагрузка матчей за 30 дней",
     "sportmonks-sync-season": "Сверка календаря сезона со Sportmonks",
     "sportmonks-sync-sidelined": "Травмы и дисквалификации игроков",
     "sportmonks-sync-coach-activity": "Кто из тренеров сейчас активен",

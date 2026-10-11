@@ -14,13 +14,14 @@
             <div class="evi__sub">Видеопросмотр</div>
         {% else %}
             <div class="evi__name">
-                {% if e.player %}<a href="{% url 'players:detail' e.player.id %}">{{ e.player }}</a>{% elif e.player_display_name %}{{ e.player_display_name }}{% elif match.status == 'live' %}Автор уточняется{% else %}Игрок не указан{% endif %}
+                {# Автора нет и у поставщика: в live — ждём, после матча — честно показываем команду. #}
+                {% if e.player %}<a href="{% url 'players:detail' e.player.id %}">{{ e.player }}</a>{% elif e.player_display_name %}{{ e.player_display_name }}{% elif match.status == 'live' %}Автор уточняется{% else %}{{ team.name }}{% endif %}
             </div>
             <div class="evi__sub">
                 {% if row.mod == 'goal' and e.event_type == 'goal' %}
-                    {% if e.assist_player %}пас: <a href="{% url 'players:detail' e.assist_player.id %}">{{ e.assist_player }}</a>{% elif e.assist_display_name %}пас: {{ e.assist_display_name }}{% else %}Гол{% endif %}
+                    {% if e.assist_player %}пас: <a href="{% url 'players:detail' e.assist_player.id %}">{{ e.assist_player }}</a>{% elif e.assist_display_name %}пас: {{ e.assist_display_name }}{% else %}Гол{% if not e.player and not e.player_display_name and match.status != 'live' %} · автор не указан{% endif %}{% endif %}
                 {% elif row.mod == 'yellow' or row.mod == 'red' %}
-                    {{ row.reason|default:row.label }}
+                    {{ row.reason|default:row.label }}{% if not e.player and not e.player_display_name and match.status != 'live' %} · автор не указан{% endif %}
                 {% elif row.mod == 'void' and e.var_decision %}
                     {{ row.label }} · {{ e.var_decision }}
                 {% else %}

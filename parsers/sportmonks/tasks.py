@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 
 from celery import shared_task
+from celery.exceptions import SoftTimeLimitExceeded
 from django.core.cache import cache
 from django.utils import timezone
 from datetime import timedelta
@@ -21,7 +22,7 @@ from leagues.models import League
 from matches.models import Match
 from parsers.models import ParserSyncRun
 from parsers.sportmonks import archive, importers
-from parsers.sportmonks.client import SportmonksAPIError, SportmonksClient
+from parsers.sportmonks.client import SportmonksAPIError, SportmonksClient, SportmonksNetworkError
 from seasons.models import Season
 from teams.models import Team
 
@@ -43,6 +44,11 @@ UPCOMING_WINDOW = timedelta(hours=3)
 
 # Рубильник синка (PlatformSetting sportmonks_sync_enabled). Проверяется в начале
 # каждой задачи — Beat тикает, но задача сразу выходит. Кнопка — на странице «Парсер».
+def _api_log(exc):
+    """Сетевой сбой — warning (временно, затяжной ловит проверка синхронизации), ошибка API — error."""
+    return logger.warning if isinstance(exc, SportmonksNetworkError) else logger.error
+
+
 def _sync_enabled() -> bool:
     """Включён ли синк (кэш настроек 60 с)."""
     from core.models import get_setting
@@ -88,6 +94,10 @@ def _heavy_sync_fixture(client: SportmonksClient, league, season, sportmonks_fix
         archive.record_fixture(full)
         importers.import_full_fixture(full, league=league, season=season)
         return True
+    except SportmonksNetworkError as exc:
+        # Сеть моргнула — повторим в следующий раз; затяжной сбой ловит проверка синхронизации.
+        logger.warning("Sportmonks: догрузка fixture %s отложена, нет связи: %s", sportmonks_fixture_id, exc)
+        return False
     except SportmonksAPIError as exc:
         logger.error("Sportmonks: тяжёлая догрузка fixture %s не удалась: %s", sportmonks_fixture_id, exc)
         return False
@@ -131,7 +141,8 @@ def _sportmonks_update_live_impl(self):
         logger.debug("Sportmonks: нет активной лиги/сезона — sportmonks_update_live пропущен")
         return
 
-    client = SportmonksClient()
+    # Короткие таймаут и ретраи: тик каждые 10 с, долгое ожидание упиралось в лимит времени задачи.
+    client = SportmonksClient(retries=2, timeout=8)
     league_sm_id = int(league.sportmonks_id)
     try:
         # events нужны для детекции карточек/замен/VAR — лимит не увеличивают.
@@ -139,7 +150,7 @@ def _sportmonks_update_live_impl(self):
             include="state;participants;scores;events;periods", league_id=league_sm_id
         )
     except SportmonksAPIError as exc:
-        logger.error("Sportmonks: get_livescores() не удался: %s", exc)
+        _api_log(exc)("Sportmonks: get_livescores() не удался: %s", exc)
         _record_sync_run("sportmonks_update_live", started_at, total=0, errors=1)
         return
 
@@ -169,15 +180,7 @@ def _sportmonks_update_live_impl(self):
         state = (fx.get("state") or {}).get("developer_name") or ""
         mapped_status = importers.STATE_MAP.get(state, "live")
 
-        home_score = away_score = None
-        for score in fx.get("scores") or []:
-            if score.get("description") != "CURRENT":
-                continue
-            score_obj = score.get("score") or {}
-            if score_obj.get("participant") == "home":
-                home_score = score_obj.get("goals")
-            elif score_obj.get("participant") == "away":
-                away_score = score_obj.get("goals")
+        home_score, away_score = importers.fixture_score(fx)
 
         existing = Match.objects.filter(sportmonks_id=str(sm_id)).only(
             "id", "status", "home_score", "away_score", "start_time"
@@ -260,6 +263,10 @@ def sportmonks_update_live(self):
         return
     try:
         return _sportmonks_update_live_impl(self)
+    except SoftTimeLimitExceeded:
+        # Тик не уложился (сеть тормозит) — следующий через 10 с подхватит.
+        logger.warning("Sportmonks: sportmonks_update_live не уложился в лимит времени, тик пропущен")
+        return None
     finally:
         cache.delete(LIVE_POLL_OVERLAP_LOCK_KEY)
 
@@ -268,11 +275,49 @@ def sportmonks_update_live(self):
 # поставщик часто дозаполняет её с задержкой, а лёгкий опрос после
 # совпадения счёта и статуса матч больше не трогает.
 STATS_RESYNC_WINDOW = timedelta(hours=3)
+AUTHOR_RESYNC_DAYS = 3
+
+
+# «Хвост» после матча: поставщик правит счёт, события, составы и статистику и через дни.
+# (дней после финального свистка, как часто перезагружать матч целиком)
+FINISHED_TAIL = ((7, timedelta(hours=6)), (30, timedelta(hours=24)))
+
+
+@shared_task(bind=True, max_retries=1)
+def sportmonks_resync_finished_tail(self):
+    """Раз в час: завершённые матчи последних 30 дней перезагружаются целиком с затухающей частотой
+    (неделя — раз в 6 ч, до 30 дней — раз в сутки), чтобы поздние правки поставщика доезжали сами."""
+    if not _sync_enabled():
+        return
+    league, season = _get_league_and_season()
+    if league is None:
+        return
+    now = timezone.now()
+    longest = max(days for days, _ in FINISHED_TAIL)
+    matches = Match.objects.filter(
+        league=league, status="finished", sportmonks_id__isnull=False,
+        start_time__gte=now - timedelta(days=longest), start_time__lte=now - STATS_RESYNC_WINDOW,
+    ).only("id", "sportmonks_id", "start_time", "season_id")
+    client = None
+    synced = 0
+    for match in matches:
+        age = now - match.start_time
+        interval = next(every for days, every in FINISHED_TAIL if age <= timedelta(days=days))
+        # cache.add — атомарный «раз в interval» на матч, без новых полей в базе.
+        if not cache.add(f"sportmonks:tail:{match.sportmonks_id}", "1", timeout=int(interval.total_seconds())):
+            continue
+        client = client or SportmonksClient()
+        if _heavy_sync_fixture(client, league, match.season, match.sportmonks_id):
+            synced += 1
+    if synced:
+        logger.info("Sportmonks: sportmonks_resync_finished_tail — перезагружено завершённых матчей: %d", synced)
+    return synced
 
 
 @shared_task(bind=True, max_retries=2)
 def sportmonks_resync_recent_stats(self):
-    """Каждые 15 минут — безусловная тяжёлая догрузка матчей, завершившихся в пределах STATS_RESYNC_WINDOW."""
+    """Каждые 15 минут — тяжёлая догрузка матчей, завершившихся в пределах STATS_RESYNC_WINDOW,
+    и матчей последних AUTHOR_RESYNC_DAYS дней с событиями без автора."""
     if not _sync_enabled():
         logger.info("Sportmonks: синк выключен флагом sportmonks_sync_enabled — sportmonks_resync_recent_stats пропущен")
         return
@@ -281,11 +326,21 @@ def sportmonks_resync_recent_stats(self):
         logger.debug("Sportmonks: нет активной лиги/сезона — sportmonks_resync_recent_stats пропущен")
         return
 
+    from django.db.models import Exists, OuterRef, Q
+
+    from events.models import MatchEvent
+
     started_at = timezone.now()
     cutoff = started_at - STATS_RESYNC_WINDOW
-    recent_finished = list(Match.objects.filter(
-        league=league, season=season, status="finished",
-        sportmonks_id__isnull=False, start_time__gte=cutoff,
+    finished = Match.objects.filter(league=league, season=season, status="finished", sportmonks_id__isnull=False)
+    # Окно — от финального свистка (end_time), а не от начала: иначе догрузка кончалась через час после матча.
+    just_ended = Q(end_time__gte=cutoff) | Q(end_time__isnull=True, start_time__gte=cutoff - timedelta(hours=2))
+    # Автора события поставщик бывает дописывает через часы — такие матчи догружаем ещё AUTHOR_RESYNC_DAYS.
+    missing_author = MatchEvent.objects.filter(
+        match=OuterRef("pk"), player__isnull=True,
+        event_type__in=("goal", "penalty", "own_goal", "yellow_card", "red_card", "substitution"))
+    recent_finished = list(finished.filter(
+        just_ended | (Q(start_time__gte=started_at - timedelta(days=AUTHOR_RESYNC_DAYS)) & Exists(missing_author))
     ).only("id", "sportmonks_id"))
 
     if not recent_finished:
@@ -411,7 +466,7 @@ def sportmonks_refresh_schedule(self):
         fixtures = client.get_fixtures_between(
             today.isoformat(), (today + timedelta(days=SCHEDULE_HORIZON_DAYS)).isoformat())
     except SportmonksAPIError as exc:
-        logger.error("Sportmonks: sportmonks_refresh_schedule — ошибка календаря: %s", exc)
+        _api_log(exc)("Sportmonks: sportmonks_refresh_schedule — ошибка календаря: %s", exc)
         return
     stored = {m.sportmonks_id: m for m in Match.objects.filter(
         sportmonks_id__in=[str(fx["id"]) for fx in fixtures]).only("id", "sportmonks_id", "start_time")}
@@ -443,7 +498,7 @@ def sportmonks_sync_season(self):
     try:
         league_data = client.get_league(include="seasons")
     except SportmonksAPIError as exc:
-        logger.error("Sportmonks: sportmonks_sync_season — не удалось получить лигу: %s", exc)
+        _api_log(exc)("Sportmonks: sportmonks_sync_season — не удалось получить лигу: %s", exc)
         return
 
     from parsers.management.commands.sync_sportmonks_season import (
@@ -484,7 +539,7 @@ def sportmonks_sync_season(self):
                 chunk_from, chunk_to, include="state;scores"
             )
         except SportmonksAPIError as exc:
-            logger.error("Sportmonks: sportmonks_sync_season — ошибка календаря %s..%s: %s", chunk_from, chunk_to, exc)
+            _api_log(exc)("Sportmonks: sportmonks_sync_season — ошибка календаря %s..%s: %s", chunk_from, chunk_to, exc)
             continue
         for fx in chunk_fixtures:
             fixtures_by_id[fx["id"]] = fx
@@ -553,7 +608,7 @@ def sportmonks_sync_sidelined(self):
         try:
             sidelined_data = client.get_sidelined(int(team.sportmonks_id))
         except (SportmonksAPIError, ValueError) as exc:
-            logger.error("Sportmonks: sportmonks_sync_sidelined — команда %s: %s", team, exc)
+            _api_log(exc)("Sportmonks: sportmonks_sync_sidelined — команда %s: %s", team, exc)
             errors += 1
             continue
         total_saved += importers.import_sidelined(team, sidelined_data)
@@ -590,4 +645,4 @@ def sportmonks_health_check(self):
         league_data = client.get_league()
         logger.info("Sportmonks: health check OK — лига %s (id=%s)", league_data.get("name"), league_data.get("id"))
     except SportmonksAPIError as exc:
-        logger.error("Sportmonks: health check FAILED — %s", exc)
+        _api_log(exc)("Sportmonks: health check FAILED — %s", exc)

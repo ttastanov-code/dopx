@@ -38,3 +38,42 @@ class GetDataMissingKeyTests(TestCase):
         with patch.object(client.session, "get", return_value=_fake_response(200, {"data": {"id": 1, "name": "Test"}})):
             result = client.get_player(1)
             self.assertEqual(result, {"id": 1, "name": "Test"})
+
+
+class NetworkErrorTests(TestCase):
+    """Нет ответа вовсе — SportmonksNetworkError (временно); ответ с ошибкой — обычная SportmonksAPIError."""
+
+    @override_settings(SPORTMONKS_API_TOKEN="t")
+    def test_dns_failure_is_network_error_with_given_retries(self):
+        import requests
+        from parsers.sportmonks.client import SportmonksClient, SportmonksNetworkError
+
+        client = SportmonksClient(retries=2, timeout=8)
+        with patch.object(client.session, "get", side_effect=requests.ConnectionError("Failed to resolve")) as get, \
+                patch("parsers.sportmonks.client.time.sleep"):
+            with self.assertRaises(SportmonksNetworkError):
+                client.get_fixture(1)
+        self.assertEqual(get.call_count, 2)
+        self.assertEqual(get.call_args.kwargs["timeout"], 8)
+
+    @override_settings(SPORTMONKS_API_TOKEN="t")
+    def test_http_500_is_api_error_not_network(self):
+        from parsers.sportmonks.client import SportmonksAPIError, SportmonksClient, SportmonksNetworkError
+
+        client = SportmonksClient(retries=1)
+        resp = MagicMock(status_code=500, headers={})
+        with patch.object(client.session, "get", return_value=resp), patch("parsers.sportmonks.client.time.sleep"):
+            with self.assertRaises(SportmonksAPIError) as ctx:
+                client.get_fixture(1)
+        self.assertNotIsInstance(ctx.exception, SportmonksNetworkError)
+
+
+class LivePollTimeLimitTests(TestCase):
+    def test_soft_time_limit_is_swallowed_and_lock_released(self):
+        from celery.exceptions import SoftTimeLimitExceeded
+        from django.core.cache import cache
+        from parsers.sportmonks import tasks
+
+        with patch.object(tasks, "_sportmonks_update_live_impl", side_effect=SoftTimeLimitExceeded()):
+            self.assertIsNone(tasks.sportmonks_update_live())
+        self.assertIsNone(cache.get(tasks.LIVE_POLL_OVERLAP_LOCK_KEY))

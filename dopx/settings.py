@@ -716,6 +716,7 @@ CELERY_TASK_ROUTES = {
     'core.tasks.realtime_heartbeat': {'queue': 'realtime_hb'},
     'notifications.tasks.notify_followers_match_event': {'queue': 'realtime'},
     'notifications.tasks.notify_match_event_author': {'queue': 'realtime'},
+    'notifications.tasks.confirm_goal_push': {'queue': 'realtime'},
     'notifications.tasks.notify_followers_match_started': {'queue': 'realtime'},
     'notifications.tasks.notify_followers_lineups_available': {'queue': 'realtime'},
     'notifications.tasks.notify_followers_match_activity': {'queue': 'realtime'},
@@ -990,6 +991,11 @@ CELERY_BEAT_SCHEDULE = {
     'sportmonks-resync-recent-stats': {
         'task': 'parsers.sportmonks.tasks.sportmonks_resync_recent_stats',
         'schedule': crontab(minute='*/15'),
+    },
+    # === Поздние правки поставщика: завершённые матчи 30 дней (неделя — раз в 6 ч, дальше — раз в сутки) ===
+    'sportmonks-resync-finished-tail': {
+        'task': 'parsers.sportmonks.tasks.sportmonks_resync_finished_tail',
+        'schedule': crontab(minute=20),
     },
     # === Сверка календаря сезона (ночью) ===
     'sportmonks-sync-season': {
