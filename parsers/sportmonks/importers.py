@@ -815,6 +815,50 @@ def _detect_match_change(before: Match, match: Match) -> str | None:
     return None
 
 
+# Матч дальше стольких дней от медианы своего тура — перенесён (Match.was_rescheduled).
+RESCHEDULE_TOUR_GAP_DAYS = 3
+
+
+def _tour_median(season_id, tour, exclude_pk=None):
+    dates = sorted(Match.objects.filter(season_id=season_id, tour=tour)
+                   .exclude(pk=exclude_pk).values_list("start_time", flat=True))
+    return dates[len(dates) // 2] if len(dates) >= 2 else None
+
+
+def _off_tour(season_id, tour, start, exclude_pk=None) -> bool:
+    """Далеко от своего тура (перенесли один матч) или позже следующего тура (перенесли весь тур)."""
+    if not tour or not start:
+        return False
+    gap = timedelta(days=RESCHEDULE_TOUR_GAP_DAYS)
+    own = _tour_median(season_id, tour, exclude_pk)
+    later_tour = _tour_median(season_id, tour + 1)
+    return bool((own and abs(start - own) > gap) or (later_tour and start > later_tour + gap))
+
+
+def _real_kickoff(start) -> bool:
+    return bool(start and start > timezone.now() and not is_placeholder_kickoff(start)
+                and timezone.localtime(start).hour in PLAUSIBLE_KICKOFF_HOURS)
+
+
+def _postponed_has_new_date(existing, season_id, tour, start) -> bool:
+    """POSTPONED у поставщика, но новая дата уже назначена: дата сменилась на реальную (хоть на день)
+    или матч вне сроков своего тура. Поставщик держит у таких матчей POSTPONED."""
+    if not _real_kickoff(start):
+        return False
+    if existing and existing.confirmed_kickoff == start:
+        return True
+    if existing and existing.start_time != start:
+        return True
+    return _off_tour(season_id, tour, start, existing.pk if existing else None)
+
+
+def _apply_tour_reschedule(match: Match) -> None:
+    """Липкий флаг переноса относительно тура."""
+    if not match.was_rescheduled and _off_tour(match.season_id, match.tour, match.start_time, match.pk):
+        Match.objects.filter(pk=match.pk).update(was_rescheduled=True)
+        match.was_rescheduled = True
+
+
 @transaction.atomic
 def import_match_core(fixture_data: Dict, league: League, season: Season) -> Match:
     """Создаёт/обновляет Match по sportmonks_id.
@@ -865,7 +909,7 @@ def import_match_core(fixture_data: Dict, league: League, season: Season) -> Mat
 
     existing = Match.objects.filter(sportmonks_id=sm_id).only(
         "id", "manual_override", "status", "start_time", "end_time", "voting_open_until",
-        "home_score", "away_score",
+        "home_score", "away_score", "confirmed_kickoff",
     ).first()
     if status is None:
         status = existing.status if existing else "scheduled"
@@ -890,6 +934,9 @@ def import_match_core(fixture_data: Dict, league: League, season: Season) -> Mat
         defaults["end_time"] = existing.end_time
         defaults["voting_open_until"] = existing.voting_open_until
     else:
+        if status == "postponed" and _postponed_has_new_date(existing, season.pk, tour, start_time):
+            status = "scheduled"
+            defaults["confirmed_kickoff"] = start_time
         defaults["status"] = status
         defaults["start_time"] = start_time or (existing.start_time if existing else timezone.now())
         if status == "finished":
@@ -908,6 +955,7 @@ def import_match_core(fixture_data: Dict, league: League, season: Season) -> Mat
             defaults["voting_open_until"] = placeholder_start + timedelta(hours=48)
 
     match, created = Match.objects.update_or_create(sportmonks_id=sm_id, defaults=defaults)
+    _apply_tour_reschedule(match)
 
     if existing and existing.status == "finished":
         _record_discrepancies(match, existing, defaults)

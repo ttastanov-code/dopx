@@ -762,7 +762,9 @@ def notify_followers_match_changed(self, match_id: str, change: str, old_start_i
     else:
         old = _fmt_kickoff(datetime.fromisoformat(old_start_iso)) if old_start_iso else None
         title = f"🕒 Новое время матча: {teams}"
-        message = f"Теперь {_fmt_kickoff(match.start_time)}" + (f" (было {old})." if old else ".")
+        new = _fmt_kickoff(match.start_time)
+        # Дата назначена после переноса и уже стояла у нас — без «было» с той же датой.
+        message = f"Теперь {new} (было {old})." if old and old != new else f"Матч состоится {new}."
 
     audience = _match_notification_audience(match)
     audience -= set(

@@ -72,7 +72,7 @@ hx-атрибуты есть только при live (или перед ста�
     {% elif match.status == 'cancelled' %}
     <p class="mh__note"><i class="ti ti-ban"></i> Матч отменён.</p>
     {% elif match.was_rescheduled and match.tour %}
-    <p class="mh__note"><i class="ti ti-calendar-exclamation"></i> Перенесённый матч {{ match.tour }}-го тура, играется отдельно от остальных.</p>
+    <p class="mh__note"><i class="ti ti-calendar-exclamation"></i> Перенесённый матч {{ match.tour }}-го тура: играется не в сроки тура по календарю.</p>
     {% endif %}
 
     {# Тренеры и судья — одной строкой #}

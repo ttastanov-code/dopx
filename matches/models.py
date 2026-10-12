@@ -117,6 +117,9 @@ class Match(BaseModel):
     # Номер тура от источника — устойчив к переносам дат.
     tour = models.PositiveSmallIntegerField(_('Тур'), null=True, blank=True)
 
+    # Новая дата, принятая при POSTPONED у поставщика: пока она не сменилась, матч считаем назначенным.
+    confirmed_kickoff = models.DateTimeField(_('Подтверждённая дата после переноса'), null=True, blank=True, editable=False)
+
     # Матч перенесён относительно своего тура. Флаг липкий, автосинк его не снимает.
     was_rescheduled = models.BooleanField(
         _('Перенесён относительно своего тура'),

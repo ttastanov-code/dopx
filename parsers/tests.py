@@ -1112,3 +1112,63 @@ class SeasonRolloverTests(TestCase):
         self.assertEqual(_resolve_current_season_id(seasons, date(2026, 10, 10)), 1)
         self.assertEqual(_resolve_current_season_id(seasons, date(2026, 12, 15)), 1)   # до старта далеко
         self.assertEqual(_resolve_current_season_id(seasons, date(2027, 2, 1)), 2)     # за 33 дня — уже новый
+
+
+class TourRescheduleTests(TestCase):
+    """POSTPONED с новой известной датой — матч назначен: один матч вне своего тура или весь тур после следующего."""
+
+    def setUp(self):
+        self.league = _make_league()
+        self.season = _make_season(self.league)
+        self.sm_id = 777030000
+
+    def _import(self, days: int, tour: str, state: str = "NS"):
+        from datetime import datetime, timezone as dt_tz
+        self.sm_id += 1
+        start = (datetime.now(dt_tz.utc) + timedelta(days=days)).replace(hour=13, minute=0, second=0)
+        return import_match_core(_fixture(
+            sm_id=self.sm_id, home_id=self.sm_id * 10, away_id=self.sm_id * 10 + 1,
+            home_name=f"Хозяева {self.sm_id}", away_name=f"Гости {self.sm_id}", dev_name=state,
+            starting_at=start.strftime("%Y-%m-%d %H:%M:%S"), round_name=tour,
+        ), self.league, self.season)
+
+    def test_single_match_moved_from_its_tour(self):
+        for _ in range(3):
+            self._import(-20, "14")
+        match = self._import(10, "14", state="POSTPONED")
+        self.assertEqual(match.status, "scheduled")
+        self.assertTrue(match.was_rescheduled)
+
+    def test_whole_tour_moved_after_next_tour(self):
+        for _ in range(3):
+            self._import(-10, "24")
+        for _ in range(3):
+            match = self._import(7, "23", state="POSTPONED")
+        self.assertEqual(match.status, "scheduled")
+        self.assertTrue(match.was_rescheduled)
+
+    def test_postponed_in_place_stays_postponed(self):
+        for _ in range(3):
+            self._import(7, "23")
+        match = self._import(7, "23", state="POSTPONED")
+        self.assertEqual(match.status, "postponed")
+
+    def test_one_day_shift_while_postponed_is_scheduled(self):
+        for _ in range(3):
+            self._import(5, "20")
+        match = self._import(5, "20")
+        sm_id = self.sm_id
+        self.sm_id = sm_id - 1
+        match = self._import(6, "20", state="POSTPONED")
+        self.assertEqual(match.status, "scheduled")
+        self.assertIsNotNone(match.confirmed_kickoff)
+        # Повторный синк с той же датой и POSTPONED — дата уже принята, матч остаётся назначенным.
+        self.sm_id = sm_id - 1
+        self.assertEqual(self._import(6, "20", state="POSTPONED").status, "scheduled")
+
+    def test_postponed_with_same_date_waits_for_new_date(self):
+        for _ in range(3):
+            self._import(5, "20")
+        self._import(5, "20")
+        self.sm_id -= 1
+        self.assertEqual(self._import(5, "20", state="POSTPONED").status, "postponed")
