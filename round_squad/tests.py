@@ -286,3 +286,23 @@ class SideSlotRequiresSideEvidenceTests(TestCase):
             "слот RW должен достаться игроку с подтверждённой правой стороной, а не более рейтинговому "
             "игроку без данных о стороне",
         )
+
+
+class FormationPagesTests(TestCase):
+    """Поле и подпись строятся по схеме сборной, а не по 4-3-3."""
+
+    def test_round_and_season_pages_render_chosen_formation(self):
+        from django.urls import reverse
+
+        from season_squad.models import SeasonBestXI
+
+        league = League.objects.create(name="League", country="KZ", is_primary=True)
+        season = Season.objects.create(league=league, year="2026", is_active=True)
+        RoundBestXI.objects.create(season=season, tour=5, formation="3-5-2", formation_note="Почему 3-5-2")
+        SeasonBestXI.objects.create(season=season, formation="4-2-3-1")
+        round_page = self.client.get(reverse("round_squad:round", args=[season.id, 5]))
+        self.assertEqual(round_page.status_code, 200)
+        self.assertEqual([len(r["slots"]) for r in round_page.context["pitch_rows"]], [2, 5, 3, 1])
+        season_page = self.client.get(reverse("season_squad:best_xi", args=[season.id]))
+        self.assertEqual([len(r["slots"]) for r in season_page.context["pitch_rows"]], [1, 3, 2, 4, 1])
+        self.assertEqual(season_page.status_code, 200)

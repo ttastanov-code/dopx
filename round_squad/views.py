@@ -4,7 +4,7 @@ from django.urls import reverse
 from django.views.decorators.clickjacking import xframe_options_exempt
 
 from matches.models import Match
-from players.positions import BEST_XI_SLOT_LABELS
+from players.formations import pitch_rows as formation_pitch_rows, slot_label
 from round_squad.models import RoundBestXI
 from round_squad.services import (
     ROUND_CONFIDENT_VOTES_THRESHOLD,
@@ -13,9 +13,8 @@ from round_squad.services import (
     resolve_current_tour,
     resolve_default_round,
 )
-# Раскладка поля и стиль кольца — из season_squad.views.
+# Стиль кольца — из season_squad.views.
 from season_squad.views import (
-    PITCH_ROWS,
     _RING_STYLE_CONFIDENT,
     _RING_STYLE_EMPTY,
     _RING_STYLE_LOW_CONFIDENCE,
@@ -37,7 +36,7 @@ def _resolve_latest_tour(season):
 
 def _slot_to_card(slot, slot_code):
     """Слот -> плоский dict для рендера."""
-    label = BEST_XI_SLOT_LABELS.get(slot_code, slot_code)
+    label = slot_label(slot_code)
     if slot is None or not slot.content_type_id:
         return {
             'slot_code': slot_code, 'label': label, 'filled': False,
@@ -71,7 +70,7 @@ def _round_context(season_id, tour):
 
     pitch_rows = [
         {'name': name, 'slots': [_slot_to_card(slots_by_code.get(code), code) for code in codes]}
-        for name, codes in PITCH_ROWS
+        for name, codes in formation_pitch_rows(round_xi.formation)
     ]
 
     player_of_round_card = None
@@ -166,7 +165,7 @@ def round_widget(request, season_id=None, tour=None):
         slots_by_code = {s.slot_code: s for s in round_xi.slots.all()}
         pitch_rows = [
             {'name': name, 'slots': [_slot_to_card(slots_by_code.get(code), code) for code in codes]}
-            for name, codes in PITCH_ROWS
+            for name, codes in formation_pitch_rows(round_xi.formation)
         ]
 
     from partners.services import track_widget_embed_view

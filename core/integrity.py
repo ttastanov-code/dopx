@@ -287,6 +287,23 @@ def check_rating_for_unused_substitute() -> Finding:
                    "Пересчитать агрегаты матча: голоса за невышедших в рейтинг не идут.")
 
 
+def check_unlinked_player_twins() -> Finding:
+    """Игрок без id поставщика с той же фамилией и номером, что у игрока клуба с id: транслит имени разошёлся."""
+    from core.utils import normalize_kz
+    from players.models import Player
+
+    def key(p):
+        return p.team_id, p.number, tuple(normalize_kz(p.last_name.strip()).split()[-1:])
+
+    linked = {key(p): p for p in Player.objects.filter(sportmonks_id__isnull=False, team__isnull=False,
+                                                       number__isnull=False)}
+    twins = [(p, linked[key(p)]) for p in Player.objects.filter(sportmonks_id__isnull=True, team__isnull=False,
+                                                                number__isnull=False) if key(p) in linked]
+    return Finding("unlinked_player_twins", "Возможный дубль игрока (без id, та же фамилия и номер)", "warning",
+                   len(twins), [f"{a} ~ {b} (№{a.number}, {a.team})" for a, b in twins[:SAMPLES]],
+                   "Разобрать в очереди «Дубли игроков» (импорт ставит туда флаг).")
+
+
 # ---------------------------------------------------------------------------
 # Пользователи и прогресс
 # ---------------------------------------------------------------------------
@@ -352,7 +369,7 @@ CHECKS = (
     check_event_minutes, check_lineup_flag, check_lineup_starters, check_standings, check_aggregate_votes,
     check_match_aggregate_votes, check_score_ranges, check_votes_outside_window,
     check_votes_for_players_outside_lineup, check_rating_for_unused_substitute, check_user_evaluation_counter, check_user_levels,
-    check_prediction_streaks, check_round_squads,
+    check_prediction_streaks, check_round_squads, check_unlinked_player_twins,
 )
 
 

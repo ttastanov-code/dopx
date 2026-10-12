@@ -87,3 +87,61 @@ class PlayerListRatingTests(TestCase):
         rows = self.client.get(reverse("players:list") + "?season=all").context["rows"]
         row = next(r for r in rows if r["title"] == "Иван Средний")
         self.assertEqual(row["value"], "7,0")
+
+
+class FormationChoiceTests(SimpleTestCase):
+    """Схема сборной подбирается по составу из сыгранных командами."""
+
+    @staticmethod
+    def _rank(cands):
+        return sorted(((c, c["score"]) for c in cands), key=lambda p: -p[1])
+
+    def _pool(self, extra=None):
+        pool = {"GK:C": [{"id": "gk", "score": 7}],
+                "D:C": [{"id": f"cb{i}", "score": 7} for i in range(3)],
+                "D:L": [{"id": "lb", "score": 7}], "D:R": [{"id": "rb", "score": 7}],
+                "M:C": [{"id": f"cm{i}", "score": 7} for i in range(3)],
+                "DM:C": [{"id": "dm", "score": 7}],
+                "M:L": [{"id": "lm", "score": 7}], "M:R": [{"id": "rm", "score": 7}],
+                "F:C": [{"id": "st1", "score": 7}],
+                "AM:L": [{"id": "lw", "score": 7}], "AM:R": [{"id": "rw", "score": 7}]}
+        for code, cands in (extra or {}).items():
+            pool.setdefault(code, []).extend(cands)
+        return pool
+
+    def test_two_strong_strikers_pick_two_forward_formation(self):
+        from collections import Counter
+
+        from players.formations import choose_formation
+        pool = self._pool({"F:C": [{"id": "st2", "score": 9.5}]})
+        pool["F:C"][0]["score"] = 9
+        choice = choose_formation(pool, self._rank, lambda c: c["id"], Counter({"4-3-3": 5, "4-4-2": 4}))
+        self.assertEqual(choice.name, "4-4-2")
+        self.assertEqual({choice.by_slot["ST1"][0][0]["id"], choice.by_slot["ST2"][0][0]["id"]}, {"st1", "st2"})
+
+    def test_popularity_breaks_near_tie(self):
+        from collections import Counter
+
+        from players.formations import choose_formation
+        choice = choose_formation(self._pool(), self._rank, lambda c: c["id"], Counter({"4-3-3": 1, "4-1-4-1": 9}))
+        self.assertEqual(choice.name, "4-1-4-1")
+
+    def test_optimal_assignment_keeps_best_players(self):
+        """Жадность отдала бы универсала первому слоту; оптимум ставит обоих сильных."""
+        from collections import Counter
+
+        from players.formations import choose_formation
+        pool = {"GK:C": [{"id": "gk", "score": 7}], "D:C": [{"id": "cb", "score": 9}],
+                "DM:C": [{"id": "dm", "score": 9}]}
+        choice = choose_formation(pool, self._rank, lambda c: c["id"], Counter({"4-3-3": 1}))
+        picked = {ranked[0][0]["id"] for ranked in choice.by_slot.values() if ranked}
+        self.assertEqual(picked, {"gk", "cb", "dm"})
+
+    def test_unknown_or_missing_formations_fall_back(self):
+        from collections import Counter
+
+        from players.formations import DEFAULT_FORMATION, choose_formation, pitch_rows
+        self.assertEqual(choose_formation({}, self._rank, lambda c: c["id"], Counter()).name, DEFAULT_FORMATION)
+        rows = pitch_rows("3-5-2")
+        self.assertEqual([len(codes) for _label, codes in rows], [2, 5, 3, 1])
+        self.assertEqual(sum(len(c) for _l, c in pitch_rows("4-2-3-1")), 11)

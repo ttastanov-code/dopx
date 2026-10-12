@@ -280,13 +280,13 @@ AUTHOR_RESYNC_DAYS = 3
 
 # «Хвост» после матча: поставщик правит счёт, события, составы и статистику и через дни.
 # (дней после финального свистка, как часто перезагружать матч целиком)
-FINISHED_TAIL = ((7, timedelta(hours=6)), (30, timedelta(hours=24)))
+FINISHED_TAIL = ((3, timedelta(hours=2)), (7, timedelta(hours=6)), (30, timedelta(hours=24)))
 
 
 @shared_task(bind=True, max_retries=1)
 def sportmonks_resync_finished_tail(self):
     """Раз в час: завершённые матчи последних 30 дней перезагружаются целиком с затухающей частотой
-    (неделя — раз в 6 ч, до 30 дней — раз в сутки), чтобы поздние правки поставщика доезжали сами."""
+    (3 дня — раз в 2 ч, неделя — раз в 6 ч, до 30 дней — раз в сутки), чтобы поздние правки поставщика доезжали сами."""
     if not _sync_enabled():
         return
     league, season = _get_league_and_season()

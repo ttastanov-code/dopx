@@ -1,5 +1,5 @@
 # season_squad/models.py
-"""«Живая сборная сезона» (4-3-3 + тренер + судья), пересчёт — services.recompute_best_xi.
+"""«Живая сборная сезона» (подобранная схема + тренер + судья), пересчёт — services.recompute_best_xi.
 
 SeasonBestXI — контейнер на сезон; is_final=True — зафиксирован, пересчёт не трогает.
 SeasonBestXISlot — денормализованная карточка слота (occupant — Player/Coach/Referee).
@@ -24,6 +24,8 @@ class SeasonBestXI(BaseModel):
         verbose_name=_('Сезон'),
     )
     formation = models.CharField(_('Формация'), max_length=20, default='4-3-3')
+    # Почему эта схема (players.formations.choose_formation) — подсказка на странице.
+    formation_note = models.TextField(_('Почему эта схема'), blank=True)
     is_final = models.BooleanField(
         _('Зафиксирована как итоговая'),
         default=False,

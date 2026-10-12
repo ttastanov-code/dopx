@@ -1,5 +1,5 @@
 # round_squad/services.py
-"""«Тур недели»: лучший состав 4-3-3, тренер, игрок тура и самый драматичный матч.
+"""«Тур недели»: лучший состав (схема подбирается — players.formations), тренер, игрок тура и самый драматичный матч.
 
 Сглаживание по голосам:
     round_score = (v / (v + C)) * raw_avg + (C / (v + C)) * pool_avg
@@ -24,13 +24,8 @@ from events.models import MatchEvent
 from lineups.models import MatchLineupPlayer
 from matches.models import Match
 from players.models import Player
-from players.positions import (
-    BEST_XI_SLOT_DISPLAY_ORDER,
-    BEST_XI_SLOT_LABELS,
-    SLOT_PROCESSING_ORDER,
-    assign_slots,
-    resolve_lineup_codes,
-)
+from players.formations import choose_formation, formations_used, slot_label
+from players.positions import resolve_lineup_codes
 from round_squad.models import RoundBestXI, RoundBestXISlot, RoundPositionRanking
 from core.utils import ru_num
 
@@ -376,9 +371,9 @@ def _apply_round_slot(
     season=None, tour: int | None = None,
     previous_ranks: dict[tuple[str, int, str], int] | None = None,
     runner_up: tuple[RoundCandidate, float] | None = None,
+    order: int = 99,
 ) -> None:
-    order = BEST_XI_SLOT_DISPLAY_ORDER.get(slot_code, 99)
-    label = BEST_XI_SLOT_LABELS.get(slot_code, slot_code)
+    label = slot_label(slot_code)
 
     if candidate is None:
         RoundBestXISlot.objects.update_or_create(
@@ -453,17 +448,23 @@ def recompute_round(season, tour: int, *, force: bool = False) -> RoundBestXI:
     RoundPositionRanking.objects.filter(round_best_xi=round_best_xi).delete()
     ranking_buffer: list[RoundPositionRanking] = []
 
-    # ---- 11 слотов 4-3-3 (players.positions.assign_slots) ----
-    by_slot = assign_slots(pool_by_code, _rank_round_pool, lambda c: c.object_id)
-    for slot_code, _codes in SLOT_PROCESSING_ORDER:
+    # ---- 11 слотов: схема — лучшая из сыгранных в туре (players.formations) ----
+    season_top = [name for name, _n in formations_used(season=season).most_common(3)]
+    choice = choose_formation(pool_by_code, _rank_round_pool, lambda c: c.object_id,
+                              formations_used(season=season, tour=tour), extra=season_top)
+    round_best_xi.formation = choice.name
+    round_best_xi.formation_note = choice.note
+    # Слоты прошлой схемы убираем, иначе на поле останутся лишние позиции.
+    RoundBestXISlot.objects.filter(round_best_xi=round_best_xi).exclude(
+        slot_code__in=[code for code, _r, _o in choice.slots] + ["COACH"]).delete()
+    by_slot = choice.by_slot
+    for slot_code, _role, order in choice.slots:
         ranked = by_slot[slot_code]
         _store_round_ranking_batch(ranking_buffer, round_best_xi, slot_code, ranked)
-        if ranked:
-            top_candidate, top_score = ranked[0]
-            runner_up = ranked[1] if len(ranked) > 1 else None
-            _apply_round_slot(round_best_xi, slot_code, top_candidate, top_score, season, tour, previous_ranks, runner_up)
-        else:
-            _apply_round_slot(round_best_xi, slot_code, None, None, season, tour, previous_ranks, None)
+        top_candidate, top_score = ranked[0] if ranked else (None, None)
+        runner_up = ranked[1] if len(ranked) > 1 else None
+        _apply_round_slot(round_best_xi, slot_code, top_candidate, top_score, season, tour, previous_ranks,
+                          runner_up, order=order)
 
     # ---- Тренер тура ----
     coach_ranked = _rank_round_pool(coach_pool)
@@ -471,9 +472,10 @@ def recompute_round(season, tour: int, *, force: bool = False) -> RoundBestXI:
     if coach_ranked:
         top_coach, coach_score = coach_ranked[0]
         coach_runner_up = coach_ranked[1] if len(coach_ranked) > 1 else None
-        _apply_round_slot(round_best_xi, "COACH", top_coach, coach_score, season, tour, previous_ranks, coach_runner_up)
+        _apply_round_slot(round_best_xi, "COACH", top_coach, coach_score, season, tour, previous_ranks, coach_runner_up,
+                          order=12)
     else:
-        _apply_round_slot(round_best_xi, "COACH", None, None, season, tour, previous_ranks, None)
+        _apply_round_slot(round_best_xi, "COACH", None, None, season, tour, previous_ranks, None, order=12)
 
     RoundPositionRanking.objects.bulk_create(ranking_buffer, batch_size=200)
 

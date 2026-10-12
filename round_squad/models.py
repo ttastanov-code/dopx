@@ -23,6 +23,8 @@ class RoundBestXI(BaseModel):
     )
     tour = models.PositiveSmallIntegerField(_('Тур'))
     formation = models.CharField(_('Формация'), max_length=20, default='4-3-3')
+    # Почему эта схема (players.formations.choose_formation) — подсказка на странице.
+    formation_note = models.TextField(_('Почему эта схема'), blank=True)
 
     is_final = models.BooleanField(
         _('Зафиксирован'),

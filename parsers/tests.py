@@ -1172,3 +1172,23 @@ class TourRescheduleTests(TestCase):
         self._import(5, "20")
         self.sm_id -= 1
         self.assertEqual(self._import(5, "20", state="POSTPONED").status, "postponed")
+
+
+class UnlinkedPlayerTranslitTests(TestCase):
+    """Игрок без id с другим транслитом имени не плодит дубль: клуб + фамилия + номер."""
+
+    def setUp(self):
+        self.team = Team.objects.create(name="Каспий", sportmonks_id="7722")
+
+    def test_same_surname_and_number_reuses_player(self):
+        from parsers.sportmonks.importers import get_or_create_unlinked_player
+        known = Player.objects.create(first_name="Ян", last_name="Андрин", team=self.team, number=49, sportmonks_id="37596646")
+        self.assertEqual(get_or_create_unlinked_player("Jan Andrin", self.team, 49), known)
+
+    def test_different_number_creates_and_flags(self):
+        from parsers.sportmonks.importers import get_or_create_unlinked_player
+        from players.models import PotentialDuplicatePlayer
+        known = Player.objects.create(first_name="Аян", last_name="Абдухалык", team=self.team, number=24, sportmonks_id="1")
+        new = get_or_create_unlinked_player("Aian Abdukhalyk", self.team, 35)
+        self.assertNotEqual(new, known)
+        self.assertTrue(PotentialDuplicatePlayer.objects.filter(existing_player=known, new_player=new).exists())

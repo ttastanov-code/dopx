@@ -4,19 +4,10 @@ from django.urls import reverse
 from django.views.decorators.clickjacking import xframe_options_exempt
 
 from aggregates.services import CONFIDENT_VOTES_THRESHOLD, min_votes_for_display
-from players.positions import BEST_XI_SLOT_LABELS
+from players.formations import pitch_rows as formation_pitch_rows, slot_label
 from season_squad.models import SeasonBestXI
 from season_squad.services import MIN_MATCHES_FOR_CANDIDATE, SHRINKAGE_C
 from seasons.models import Season
-
-# Ряды на поле сверху вниз (атака -> защита -> вратарь).
-PITCH_ROWS = [
-    ('attack', ['LW', 'ST', 'RW']),
-    ('midfield', ['CM2', 'DM', 'CM1']),
-    ('defense', ['LB', 'CB1', 'CB2', 'RB']),
-    ('goalkeeper', ['GK']),
-]
-
 
 def _resolve_season(season_id):
     """Сезон из URL (404 для неверного id) или активный. None — данных нет, не ошибка."""
@@ -33,7 +24,7 @@ _RING_STYLE_LOW_CONFIDENCE = 'outline: 2px solid var(--color-warning); outline-o
 
 def _slot_to_card(slot, slot_code):
     """Слот (или его отсутствие) -> плоский dict для шаблона."""
-    label = BEST_XI_SLOT_LABELS.get(slot_code, slot_code)
+    label = slot_label(slot_code)
     if slot is None or not slot.content_type_id:
         return {
             'slot_code': slot_code, 'label': label, 'filled': False,
@@ -64,7 +55,7 @@ def _best_xi_context(season_id):
 
     pitch_rows = [
         {'name': name, 'slots': [_slot_to_card(slots_by_code.get(code), code) for code in codes]}
-        for name, codes in PITCH_ROWS
+        for name, codes in formation_pitch_rows(best_xi.formation)
     ]
 
     # Другие сезоны со сборной — для переключателя и архива.
@@ -137,7 +128,7 @@ def best_xi_widget(request, season_id=None):
         slots_by_code = {s.slot_code: s for s in best_xi.slots.all()}
         pitch_rows = [
             {'name': name, 'slots': [_slot_to_card(slots_by_code.get(code), code) for code in codes]}
-            for name, codes in PITCH_ROWS
+            for name, codes in formation_pitch_rows(best_xi.formation)
         ]
 
     from partners.services import track_widget_embed_view

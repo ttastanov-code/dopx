@@ -18,14 +18,6 @@ from core.live import versioned
 
 logger = logging.getLogger(__name__)
 
-# Линии сборной сезона на странице лиги: от атаки к вратарю, штаб отдельно.
-SEASON_XI_LINES = (
-    ('Атака', ('LW', 'ST', 'RW')),
-    ('Полузащита', ('CM2', 'DM', 'CM1')),
-    ('Защита', ('LB', 'CB1', 'CB2', 'RB')),
-    ('Вратарь', ('GK',)),
-    ('Штаб', ('COACH', 'REFEREE')),
-)
 
 
 class LeagueListView(ListView):
@@ -211,7 +203,7 @@ class LeagueDetailView(DetailView):
         # === СБОРНАЯ СЕЗОНА И ЛУЧШИЕ ТУРОВ (в том числе прошлых сезонов) ===
         season_best_xi, season_xi_lines, season_rounds = None, [], []
         if selected_season:
-            from players.positions import BEST_XI_SLOT_LABELS
+            from players.formations import pitch_rows, slot_label
             from round_squad.models import RoundBestXI
             from season_squad.models import SeasonBestXI
 
@@ -221,9 +213,11 @@ class LeagueDetailView(DetailView):
                     slot.slot_code: slot
                     for slot in season_best_xi.slots.exclude(content_type__isnull=True)
                 }
-                for line_label, codes in SEASON_XI_LINES:
+                # Линии от атаки к вратарю по схеме сборной, штаб отдельно.
+                lines = pitch_rows(season_best_xi.formation) + [('Штаб', ['COACH', 'REFEREE'])]
+                for line_label, codes in lines:
                     cards = [
-                        {'code': code, 'label': BEST_XI_SLOT_LABELS.get(code, code), 'slot': slots[code]}
+                        {'code': code, 'label': slot_label(code), 'slot': slots[code]}
                         for code in codes if code in slots
                     ]
                     if cards:

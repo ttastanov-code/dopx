@@ -1,12 +1,11 @@
 # season_squad/services.py
-"""«Живая сборная сезона»: 4-3-3 + тренер + судья по оценкам пользователей.
+"""«Живая сборная сезона»: состав (схема подбирается — players.formations) + тренер + судья по оценкам пользователей.
 
 Байесовское сглаживание (как weighted rating у IMDB):
     season_score = (m / (m + C)) * raw_avg + (C / (m + C)) * pool_avg
 m — оценённых матчей у кандидата, pool_avg — среднее по его пулу (взвешенное по матчам).
 
-Слоты заполняются жадно в порядке SLOT_PROCESSING_ORDER (от узких амплуа к широким),
-назначенный игрок выбывает из остальных пулов.
+Слоты заполняются оптимальной расстановкой под выбранную схему (players.formations.choose_formation).
 """
 from __future__ import annotations
 
@@ -26,13 +25,8 @@ from events.models import MatchEvent
 from lineups.models import MatchLineupPlayer
 from matches.models import Match
 from players.models import Player
-from players.positions import (
-    BEST_XI_SLOT_DISPLAY_ORDER,
-    BEST_XI_SLOT_LABELS,
-    SLOT_PROCESSING_ORDER,
-    assign_slots,
-    resolve_lineup_codes,
-)
+from players.formations import choose_formation, formations_used, slot_label
+from players.positions import resolve_lineup_codes
 from referees.models import Referee
 from season_squad.models import SeasonBestXI, SeasonBestXISlot, SeasonPositionRanking
 from core.utils import ru_num
@@ -66,6 +60,9 @@ NOTABLE_EVENT_LABELS = {
     "disallowed_goal": "отменённый гол",
 }
 TOP_MATCHES_FOR_EXPLANATION = 2
+
+# Схема-кандидат сборной сезона — та, которой выходили хотя бы в такой доле составов.
+SEASON_FORMATION_MIN_SHARE = 0.03
 
 
 @dataclass
@@ -300,7 +297,7 @@ def _build_explanation(
     """Текст тултипа карточки: уверенность, rank_change и т.д.
     Каждый факт — отдельная строка.
     """
-    label = BEST_XI_SLOT_LABELS.get(slot_code, slot_code)
+    label = slot_label(slot_code)
     lines = [
         f"Рейтинг {ru_num(score, 2)} на позиции «{label}»: среднее за сезон "
         f"({candidate.matches} матчей, {candidate.votes} голосов)."
@@ -398,11 +395,11 @@ def _apply_slot(
     previous_ranks: dict[tuple[str, int, str], int],
     season,
     runner_up: tuple[Candidate, float] | None = None,
+    order: int = 99,
 ) -> None:
     """Записывает карточку слота.
     rank_change: SAME / UP (delta=N-1) / NEW. DOWN для occupant недостижим.
     """
-    order = BEST_XI_SLOT_DISPLAY_ORDER.get(slot_code, 99)
 
     if candidate is None:
         SeasonBestXISlot.objects.update_or_create(
@@ -501,10 +498,19 @@ def recompute_best_xi(season, *, force: bool = False) -> SeasonBestXI:
     # 4-й элемент — runner_up для _build_explanation.
     slot_results: list[tuple[str, Candidate | None, float | None, tuple[Candidate, float] | None]] = []
 
-    # ---- 11 слотов 4-3-3 (players.positions.assign_slots) ----
-    by_slot = assign_slots(player_pool, _rank_pool, lambda c: (c.content_type_id, c.object_id))
-    for slot_code, _codes in SLOT_PROCESSING_ORDER:
-        ranked = by_slot[slot_code]
+    # ---- 11 слотов: схема — лучшая из сыгранных в сезоне (players.formations) ----
+    used = formations_used(season=season)
+    min_count = sum(used.values()) * SEASON_FORMATION_MIN_SHARE
+    used = Counter({name: n for name, n in used.items() if n >= min_count})
+    choice = choose_formation(player_pool, _rank_pool, lambda c: (c.content_type_id, c.object_id), used)
+    best_xi.formation = choice.name
+    best_xi.formation_note = choice.note
+    SeasonBestXISlot.objects.filter(best_xi=best_xi).exclude(
+        slot_code__in=[code for code, _r, _o in choice.slots] + ["COACH", "REFEREE"]).delete()
+    slot_orders = {code: order for code, _r, order in choice.slots}
+    slot_orders.update(COACH=12, REFEREE=13)
+    for slot_code, _role, _order in choice.slots:
+        ranked = choice.by_slot[slot_code]
         _store_ranking_batch(ranking_buffer, best_xi, slot_code, ranked, now)
         if ranked:
             top_candidate, top_score = ranked[0]
@@ -527,12 +533,12 @@ def recompute_best_xi(season, *, force: bool = False) -> SeasonBestXI:
     SeasonPositionRanking.objects.bulk_create(ranking_buffer, batch_size=200)
 
     for slot_code, candidate, score, runner_up in slot_results:
-        _apply_slot(best_xi, slot_code, candidate, score, previous_ranks, season, runner_up)
+        _apply_slot(best_xi, slot_code, candidate, score, previous_ranks, season, runner_up, order=slot_orders[slot_code])
 
     _prune_old_rankings(best_xi)
 
     best_xi.last_computed_at = now
-    best_xi.save(update_fields=["last_computed_at"])
+    best_xi.save(update_fields=["last_computed_at", "formation", "formation_note"])
     # Считаем реально заполненные слоты (тренер/судья могут быть пустыми).
     filled_slots = sum(1 for _, candidate, _, _ in slot_results if candidate is not None)
     logger.info("Живая сборная сезона %s пересчитана: %d слотов заполнено", season, filled_slots)

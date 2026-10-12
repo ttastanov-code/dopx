@@ -1,5 +1,5 @@
 # players/positions.py
-"""Нормализация позиций игроков и схемы слотов для сборных.
+"""Нормализация позиций игроков; схемы сборных — players.formations.
 
 clean_position_code() — при записи: только регистр/пробелы, данные не теряем.
 position_label() — при отображении: None для неизвестного кода (шаблон покажет «—»).
@@ -144,65 +144,6 @@ def player_position_breakdown(counts: dict[str, int]) -> list[dict]:
     return rows
 
 
-# ---------------------------------------------------------------------------
-# Слоты 4-3-3 -> допустимые коды позиций (season_squad, round_squad).
-# Код = амплуа + зона (напр. 'M:R'), голый код — фолбэк для старых записей.
-# Боковые слоты (RB/LB/RW/LW) голые коды не принимают — лучше пусто, чем не та сторона.
-# RW/LW обрабатываются раньше CM1/CM2, чтобы те не забрали кандидатов с M:R/M:L.
-SLOT_PROCESSING_ORDER: list[tuple[str, list[str]]] = [
-    ("GK", ["GK:C", "GK"]),
-    ("CB1", ["D:C", "CB", "DF", "D"]),
-    ("CB2", ["D:C", "CB", "DF", "D"]),
-    ("RB", ["D:R", "RB", "RWB"]),
-    ("LB", ["D:L", "LB", "LWB"]),
-    ("RW", ["AM:R", "M:R", "F:R", "RW", "W", "RM"]),
-    ("LW", ["AM:L", "M:L", "F:L", "LW", "W", "LM"]),
-    ("DM", ["DM:C", "DM", "CM", "M", "MF"]),
-    ("CM1", ["DM:L", "M:C", "M:L", "AM:C", "CM", "M", "MF"]),
-    ("CM2", ["DM:R", "M:C", "M:R", "AM:C", "CM", "M", "MF"]),
-    ("ST", ["F:C", "ST", "CF", "F", "FW"]),
-]
-
-# Запасные коды слота — только если по основным нет ни одного кандидата (иначе в сборной дырка).
-SLOT_FALLBACK_CODES: dict[str, list[str]] = {
-    "CB1": ["DM:C"], "CB2": ["DM:C"],
-    "RB": ["D:C", "M:R"], "LB": ["D:C", "M:L"],
-    "RW": ["F:C", "AM:C"], "LW": ["F:C", "AM:C"],
-    "DM": ["M:C", "AM:C"],
-    "CM1": ["M:L", "M:R", "DM:C"], "CM2": ["M:L", "M:R", "DM:C"],
-    "ST": ["F:L", "F:R", "AM:C"],
-}
-
-
-def assign_slots(pool_by_code: dict, rank, key) -> dict:
-    """{слот: ранжированный пул} для 11 слотов. Первый проход — основные коды по SLOT_PROCESSING_ORDER;
-    второй — запасные только для пустых слотов, из оставшихся: запасной код не отбирает игрока у «своего» слота."""
-    assigned: set = set()
-    result: dict = {}
-
-    def ranked_for(codes):
-        candidates, seen = [], set()
-        for code in codes:
-            for cand in pool_by_code.get(code, []):
-                k = key(cand)
-                if k in assigned or k in seen:
-                    continue
-                seen.add(k)
-                candidates.append(cand)
-        return rank(candidates)
-
-    for slot_code, codes in SLOT_PROCESSING_ORDER:
-        result[slot_code] = ranked_for(codes)
-        if result[slot_code]:
-            assigned.add(key(result[slot_code][0][0]))
-    for slot_code, _codes in SLOT_PROCESSING_ORDER:
-        if not result[slot_code] and slot_code in SLOT_FALLBACK_CODES:
-            result[slot_code] = ranked_for(SLOT_FALLBACK_CODES[slot_code])
-            if result[slot_code]:
-                assigned.add(key(result[slot_code][0][0]))
-    return result
-
-
 # L/R как есть, C/LC/RC -> C.
 _FIELD_POSITION_ZONE: dict[str, str] = {
     "L": "L",
@@ -214,7 +155,7 @@ _FIELD_POSITION_ZONE: dict[str, str] = {
 
 
 # Детальная позиция сама задаёт сторону — зону из угадывания по расстановке для неё не берём
-# (иначе «левый защитник справа»). Коды — те, что принимают слоты SLOT_PROCESSING_ORDER.
+# (иначе «левый защитник справа»). Коды — те, что принимают амплуа players.formations.ROLE_CODES.
 _DETAILED_SLOT_CODE: dict[str, str] = {
     "GK": "GK:C",
     "CB": "D:C", "LB": "D:L", "RB": "D:R", "LWB": "D:L", "RWB": "D:R",
@@ -236,37 +177,3 @@ def resolve_lineup_codes(amplua: str | None, field_position: str | None) -> list
     if zone:
         return [f"{amplua_code}:{zone}"]
     return [amplua_code]
-
-# Подписи слотов состава.
-BEST_XI_SLOT_LABELS: dict[str, str] = {
-    "GK": "Вратарь",
-    "RB": "Правый защитник",
-    "CB1": "Центральный защитник",
-    "CB2": "Центральный защитник",
-    "LB": "Левый защитник",
-    "DM": "Опорный полузащитник",
-    "CM1": "Центральный полузащитник",
-    "CM2": "Центральный полузащитник",
-    "RW": "Правый вингер",
-    "ST": "Нападающий",
-    "LW": "Левый вингер",
-    "COACH": "Главный тренер",
-    "REFEREE": "Судья",
-}
-
-# Порядок отображения на поле (от вратаря к атаке), тренер и судья — отдельно.
-BEST_XI_SLOT_DISPLAY_ORDER: dict[str, int] = {
-    "GK": 1,
-    "LB": 2,
-    "CB1": 3,
-    "CB2": 4,
-    "RB": 5,
-    "DM": 6,
-    "CM1": 7,
-    "CM2": 8,
-    "LW": 9,
-    "ST": 10,
-    "RW": 11,
-    "COACH": 12,
-    "REFEREE": 13,
-}

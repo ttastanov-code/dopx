@@ -595,6 +595,16 @@ def _find_team_player_by_name(first_name: str, last_name: str, team: Team) -> Op
     return found[0] if len(found) == 1 else None
 
 
+def _find_team_player_by_number(last_name: str, team: Team, number: Optional[int]) -> Optional[Player]:
+    """Игрок команды с той же фамилией и номером: транслит имени без id расходится («Йан» / «Ян»)."""
+    last = normalize_kz(last_name.strip())
+    if not last or number is None:
+        return None
+    found = [p for p in Player.objects.filter(team=team, number=number).only("id", "last_name")
+             if normalize_kz(p.last_name.strip()).split()[-1:] == last.split()[-1:]]
+    return found[0] if len(found) == 1 else None
+
+
 def _find_unique_player_by_full_name(first_name: str, last_name: str) -> Optional[Player]:
     """Точное ФИО во всей базе, если такой игрок один: в старом матче он мог играть за прошлый клуб."""
     key = (normalize_kz(first_name.strip()), normalize_kz(last_name.strip()))
@@ -613,12 +623,24 @@ def get_or_create_unlinked_player(name: str, team: Optional[Team], number: Optio
         return None
     first_name, last_name, name_source = _resolve_cyrillic_name({"name": name, "display_name": name}, "игрока")
     player = (_find_unlinked_player(first_name, last_name, team) or _find_team_player_by_name(first_name, last_name, team)
+              or _find_team_player_by_number(last_name, team, number)
               or _find_unique_player_by_full_name(first_name, last_name))
     if player is None:
         player = Player.objects.create(first_name=first_name, last_name=last_name, name_source=name_source,
                                        team=team, number=number, is_active=True, last_match_at=match_start_time)
         logger.warning("Sportmonks: игрок «%s» пришёл без id — сохранён по имени в «%s»", name, team.name)
+        _flag_surname_twin(player, team)
     return player
+
+
+def _flag_surname_twin(new_player: Player, team: Team) -> None:
+    """Однофамилец с id в том же клубе — в очередь «Дубли игроков»: имя без id транслитерируется иначе."""
+    last = normalize_kz(new_player.last_name.strip()).split()[-1:]
+    twins = [p for p in Player.objects.filter(team=team, sportmonks_id__isnull=False).only("id", "last_name")
+             if normalize_kz(p.last_name.strip()).split()[-1:] == last]
+    if len(twins) == 1:
+        PotentialDuplicatePlayer.objects.get_or_create(existing_player=twins[0], new_player=new_player,
+                                                       defaults={"team_label": team.name})
 
 
 def _flag_potential_duplicate_player(new_player: Player, team: Optional[Team]) -> None:

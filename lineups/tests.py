@@ -128,25 +128,10 @@ class PositionNormalizationTests(TestCase):
 
 
 class DetailedPositionSlotTests(SimpleTestCase):
-    """Детальная позиция идёт в свой слот по самой позиции; запасные коды — только для пустых слотов."""
+    """Детальная позиция идёт в свой код слота по самой позиции."""
 
     def test_detailed_codes_map_to_slot_codes(self):
         self.assertEqual(resolve_lineup_codes("CB", "L"), ["D:C"])
         self.assertEqual(resolve_lineup_codes("LB", "R"), ["D:L"])   # сторона из расстановки не ломает позицию
         self.assertEqual(resolve_lineup_codes("RW", ""), ["AM:R"])
         self.assertEqual(resolve_lineup_codes("CM", "C"), ["M:C"])
-
-    def test_every_detailed_code_fits_some_slot(self):
-        from players.positions import _DETAILED_SLOT_CODE, SLOT_PROCESSING_ORDER
-        accepted = {c for _, codes in SLOT_PROCESSING_ORDER for c in codes}
-        self.assertTrue(set(_DETAILED_SLOT_CODE.values()) <= accepted)
-
-    def test_fallback_fills_empty_slot_without_stealing(self):
-        from players.positions import assign_slots
-
-        rank = lambda cands: [(c, c["score"]) for c in sorted(cands, key=lambda c: -c["score"])]
-        pool = {"M:R": [{"id": "winger", "score": 9}], "M:C": [{"id": "cm1", "score": 8}, {"id": "cm2", "score": 7},
-                                                               {"id": "cm3", "score": 6}]}
-        result = assign_slots(pool, rank, key=lambda c: c["id"])
-        self.assertEqual(result["RW"][0][0]["id"], "winger")      # RB со своим запасным M:R вингера не забрал
-        self.assertTrue(result["DM"])                             # опорника нет — взят центральный
