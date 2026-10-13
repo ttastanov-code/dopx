@@ -363,8 +363,9 @@ def change_post(match, kind: str, sample: bool = False) -> ChannelPost | None:
 
 def expert_post(take, sample: bool = False) -> ChannelPost | None:
     m = take.match
-    quote = take.headline or take.text[:200]
-    body = take.text if len(take.text) <= 600 else take.text[:600].rsplit(" ", 1)[0] + "…"
+    # Мнение целиком: обрезанная цитата искажает мысль эксперта. Лимит сообщения Telegram — 4096.
+    quote = take.headline or take.text
+    body = take.text
     title = f", {esc(take.display_title)}" if take.display_title else ""
     text = (f"🎙 <b>Мнение эксперта · {esc(m.home_team.name)} – {esc(m.away_team.name)}</b>\n\n"
             f"<b>«{esc(quote)}»</b>\n\n{esc(body) if take.headline else ''}\n\n— {esc(take.display_name)}{title}\n\n{HASHTAGS}")

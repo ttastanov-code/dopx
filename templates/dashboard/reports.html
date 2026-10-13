@@ -40,7 +40,7 @@
                     {% if r.target_name and r.target_user and r.target_name != r.target_user.username %}· на момент жалобы: {{ r.target_name }}{% endif %}
                 </div>
                 {% if r.comment %}<p class="text-sm mt-1">«{{ r.comment }}»</p>{% endif %}
-                {% if r.target_user and r.target_user.bio %}<p class="text-xs opacity-70 mt-1"><b>О себе:</b> {{ r.target_user.bio|truncatechars:200 }}</p>{% endif %}
+                {% if r.target_user and r.target_user.bio %}<p class="text-xs opacity-70 mt-1"><b>О себе:</b> {{ r.target_user.bio }}</p>{% endif %}
                 {% if done %}
                 <p class="text-xs mt-1"><span class="badge badge-xs {% if r.status == 'resolved' %}badge-success{% else %}badge-ghost{% endif %}">{{ r.get_status_display }}</span>
                     {% if row.action_label %}{{ row.action_label }} · {% endif %}{{ r.handled_by.username|default:"—" }}, {{ r.handled_at|date:"d.m H:i" }}</p>

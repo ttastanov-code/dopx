@@ -10,7 +10,7 @@
   {% if team_logo %}<g filter="url(#shadow)"><circle cx="98" cy="98" r="40" fill="#0D0D16" stroke="url(#glassEdge)" stroke-width="1.5"/></g><image href="{{ team_logo }}" x="72" y="72" width="52" height="52" preserveAspectRatio="xMidYMid meet"/>{% endif %}
 </g>
 <text x="432" y="190" font-family="Inter" font-weight="600" font-size="21" fill="#FFFFFF" fill-opacity=".6">Итоги сезона {{ season }}</text>
-{% for line in name_lines %}<text x="428" y="{{ line.y }}" font-family="Inter Display" font-weight="800" font-size="{{ name_size }}" fill="#FFFFFF" letter-spacing="-1.6">{{ line.text }}</text>{% endfor %}
+{% for line in name_lines %}<text x="428" y="{{ line.y }}" font-family="Inter Display" font-weight="800" font-size="{{ name_size }}" fill="#FFFFFF" letter-spacing="-1.6"{% if line.text.length %} textLength="{{ line.text.length }}" lengthAdjust="spacingAndGlyphs"{% endif %}>{{ line.text }}</text>{% endfor %}
 <text x="432" y="{{ team_y }}" font-family="Inter" font-weight="600" font-size="24" fill="#FFFFFF" fill-opacity=".55">{{ team }}</text>
 {% for s in stats %}
 <g filter="url(#shadow)"><rect x="{{ s.x }}" y="388" width="216" height="132" rx="28" fill="url(#glass)" stroke="url(#glassEdge)" stroke-width="1.5"/></g>

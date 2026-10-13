@@ -1,0 +1,172 @@
+{% extends 'base.html' %}
+{% load ui_extras %}
+{% comment %}
+Раздел «Сервер» (только суперпользователь): всё, ради чего раньше заходили на сервер по SSH.
+Действия — POST на dashboard:server_action, каждое пишется в аудит. Логика — dashboard/server_tools.py.
+{% endcomment %}
+{% block content %}
+{% include 'dashboard/_nav.html' %}
+
+<div class="dopx-segment mb-4" role="tablist">
+    {% for key, label, icon in tabs %}
+    <a href="?tab={{ key }}" class="dopx-segment__item{% if tab == key %} dopx-segment__item--active{% endif %}" role="tab"><i class="ti {{ icon }}"></i> {{ label }}</a>
+    {% endfor %}
+</div>
+
+{% if tab == "overview" %}
+{# --- Сайт и режим обслуживания --- #}
+<div class="grid gap-4 lg:grid-cols-2 mb-4">
+    <div class="card bg-base-100 border border-base-300"><div class="card-body p-4 gap-3">
+        <div>
+            <div class="dopx-section-eyebrow"><i class="ti ti-world"></i>Сайт</div>
+            <div class="dopx-section-title">Версия {{ release.version|default:"—" }}{% if release.commit %} <span class="font-mono text-xs opacity-60">{{ release.commit|slice:":8" }}</span>{% endif %}</div>
+            <p class="dopx-section-desc">Плавная перезагрузка: воркеры сайта сменяются по одному, посетители не замечают. Помогает, если сайт «залип» или после правки настроек окружения.</p>
+        </div>
+        <form method="post" action="{% url 'dashboard:server_action' %}" onsubmit="return confirm('Перезагрузить воркеры сайта?');">{% csrf_token %}
+            <input type="hidden" name="action" value="reload_web">
+            <button class="btn btn-sm btn-primary"><i class="ti ti-refresh"></i> Перезагрузить сайт</button>
+        </form>
+    </div></div>
+
+    <div class="card bg-base-100 border {% if maintenance %}border-warning{% else %}border-base-300{% endif %}"><div class="card-body p-4 gap-3">
+        <div>
+            <div class="dopx-section-eyebrow"><i class="ti ti-tools"></i>Обслуживание</div>
+            <div class="dopx-section-title">{% if maintenance %}<span class="text-warning">Включено — посетители видят заглушку</span>{% else %}Выключено — сайт открыт{% endif %}</div>
+            <p class="dopx-section-desc">Для работ с базой или срочных правок: посетители получают страницу «Идут технические работы» (код 503), сотрудники, дашборд, админка и вход работают как обычно.</p>
+        </div>
+        <form method="post" action="{% url 'dashboard:server_action' %}" onsubmit="return confirm('{% if maintenance %}Открыть сайт для всех?{% else %}Закрыть сайт для посетителей?{% endif %}');">{% csrf_token %}
+            <input type="hidden" name="action" value="maintenance"><input type="hidden" name="on" value="{% if maintenance %}0{% else %}1{% endif %}">
+            <button class="btn btn-sm {% if maintenance %}btn-success{% else %}btn-warning{% endif %}"><i class="ti {% if maintenance %}ti-lock-open{% else %}ti-lock{% endif %}"></i> {% if maintenance %}Открыть сайт{% else %}Включить режим обслуживания{% endif %}</button>
+        </form>
+    </div></div>
+</div>
+
+{# --- Процессы (пульс) с перезапуском --- #}
+{% include 'dashboard/_services_block.html' with services=services %}
+
+{# --- Кэш и очереди --- #}
+<div class="grid gap-4 lg:grid-cols-2 mb-4">
+    <div class="card bg-base-100 border border-base-300"><div class="card-body p-4 gap-3">
+        <div>
+            <div class="dopx-section-eyebrow"><i class="ti ti-bolt"></i>Кэш (Redis)</div>
+            {% if cache.ok %}
+            <div class="dopx-section-title">Память {{ cache.memory }} · ключей {{ cache.keys }}</div>
+            <p class="dopx-section-desc">Пик памяти {{ cache.peak }}, Redis работает {{ cache.uptime_days|floatformat:1 }} дн. Сбросьте кэш, если на сайте видны старые данные после ручной правки.</p>
+            {% else %}
+            <div class="dopx-section-title text-error">Redis недоступен</div><p class="dopx-section-desc">{{ cache.error }}</p>
+            {% endif %}
+        </div>
+        <div class="flex flex-wrap gap-2">
+            <form method="post" action="{% url 'dashboard:server_action' %}">{% csrf_token %}<input type="hidden" name="action" value="clear_cache"><input type="hidden" name="kind" value="pages"><button class="btn btn-sm btn-outline" title="Страницы и live-блоки пересоберутся"><i class="ti ti-file-refresh"></i> Страницы</button></form>
+            <form method="post" action="{% url 'dashboard:server_action' %}">{% csrf_token %}<input type="hidden" name="action" value="clear_cache"><input type="hidden" name="kind" value="aggregates"><button class="btn btn-sm btn-outline" title="Рейтинги игроков и матчей"><i class="ti ti-chart-bar"></i> Рейтинги</button></form>
+            <form method="post" action="{% url 'dashboard:server_action' %}" onsubmit="return confirm('Очистить весь кэш? Лимиты и блокировки задач обнулятся, первые открытия страниц будут медленнее.');">{% csrf_token %}<input type="hidden" name="action" value="clear_cache"><input type="hidden" name="kind" value="all"><button class="btn btn-sm btn-outline btn-error"><i class="ti ti-trash"></i> Весь кэш</button></form>
+        </div>
+    </div></div>
+
+    <div class="card bg-base-100 border border-base-300"><div class="card-body p-4 gap-3">
+        <div>
+            <div class="dopx-section-eyebrow"><i class="ti ti-list-check"></i>Очереди задач</div>
+            <div class="dopx-section-title">Celery</div>
+            <p class="dopx-section-desc">Сколько задач ждёт исполнения. Растёт и не уменьшается — воркер завис или не справляется: перезапустите его в блоке «Сервисы». Очистка удаляет только ждущие задачи.</p>
+        </div>
+        <table class="table table-sm"><thead><tr><th>Очередь</th><th>Ждут</th><th></th></tr></thead><tbody>
+        {% for q in cache.queues %}
+        <tr><td class="font-mono">{{ q.name }}</td><td class="{% if q.count > 100 %}text-error font-bold{% endif %}">{{ q.count }}</td>
+            <td class="text-right">{% if q.count %}<form method="post" action="{% url 'dashboard:server_action' %}" onsubmit="return confirm('Удалить {{ q.count }} ждущих задач из очереди {{ q.name }}?');">{% csrf_token %}<input type="hidden" name="action" value="purge_queue"><input type="hidden" name="queue" value="{{ q.name }}"><button class="btn btn-xs btn-ghost text-error"><i class="ti ti-trash"></i> Очистить</button></form>{% endif %}</td></tr>
+        {% empty %}<tr><td colspan="3" class="opacity-60">Брокер очередей недоступен</td></tr>{% endfor %}
+        </tbody></table>
+    </div></div>
+</div>
+
+{# --- Бэкапы --- #}
+<div class="card bg-base-100 border {% if backups.ok and backups.stale %}border-warning{% else %}border-base-300{% endif %} mb-4"><div class="card-body p-4 gap-3">
+    <div>
+        <div class="dopx-section-eyebrow"><i class="ti ti-database-export"></i>Бэкапы</div>
+        {% if not backups.ok %}
+        <div class="dopx-section-title">Нет доступа к папке бэкапов</div><p class="dopx-section-desc">{{ backups.error }}. На проде папка backups/ подключается к контейнеру сайта только для чтения.</p>
+        {% elif backups.latest %}
+        <div class="dopx-section-title{% if backups.stale %} text-warning{% endif %}">Последний бэкап базы: {{ backups.latest.modified|date:"d.m.Y H:i" }}{% if backups.stale %} — старше суток{% endif %}</div>
+        <p class="dopx-section-desc">{{ backups.latest.name }}, {{ backups.latest.size|filesizeformat }}. Бэкап делает cron на сервере каждую ночь (scripts/backup.sh), раз в неделю дамп проверяется восстановлением.</p>
+        {% else %}
+        <div class="dopx-section-title text-warning">Бэкапов базы пока нет</div>
+        {% endif %}
+    </div>
+    {% if backups.files %}
+    <div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th>Файл</th><th>Размер</th><th>Создан</th></tr></thead><tbody>
+    {% for f in backups.files|slice:":10" %}<tr><td class="font-mono text-xs break-all">{{ f.name }}</td><td class="whitespace-nowrap">{{ f.size|filesizeformat }}</td><td class="whitespace-nowrap">{{ f.modified|date:"d.m H:i" }}</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% endif %}
+    {% if backups.log %}
+    <details><summary class="cursor-pointer text-sm opacity-70">Журнал последних прогонов бэкапа</summary>
+        <pre class="mt-2 text-xs bg-base-200 rounded-lg p-3 whitespace-pre-wrap break-all">{% for l in backups.log %}{{ l.text }}
+{% endfor %}</pre></details>
+    {% endif %}
+</div></div>
+
+{# --- Обслуживание данных --- #}
+<div class="card bg-base-100 border border-base-300 mb-4"><div class="card-body p-4 gap-3">
+    <div>
+        <div class="dopx-section-eyebrow"><i class="ti ti-broom"></i>Уборка</div>
+        <div class="dopx-section-title">Сессии и служебные записи</div>
+        <p class="dopx-section-desc">Журнал синхронизации чистится сам каждую ночь. Остальные команды обслуживания — в разделе «Скрипты».</p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+        <form method="post" action="{% url 'dashboard:server_action' %}">{% csrf_token %}<input type="hidden" name="action" value="clear_sessions"><button class="btn btn-sm btn-outline"><i class="ti ti-user-x"></i> Удалить просроченные сессии</button></form>
+        <a href="{% url 'dashboard:scripts' %}" class="btn btn-sm btn-ghost"><i class="ti ti-terminal-2"></i> Скрипты</a>
+        <a href="?tab=db" class="btn btn-sm btn-ghost"><i class="ti ti-database"></i> База данных</a>
+    </div>
+</div></div>
+
+{% elif tab == "logs" %}
+<div class="card bg-base-100 border border-base-300"><div class="card-body p-4 gap-3">
+    <form method="get" class="flex flex-wrap items-end gap-2">
+        <input type="hidden" name="tab" value="logs">
+        <label class="form-control"><span class="text-xs opacity-60 mb-1">Файл</span>
+            <select name="log" class="select select-sm select-bordered">{% for f in logs %}<option value="{{ f.name }}"{% if f.name == log_name %} selected{% endif %}>{{ f.name }} · {{ f.size|filesizeformat }} · {{ f.modified|date:"d.m H:i" }}</option>{% endfor %}</select></label>
+        <label class="form-control"><span class="text-xs opacity-60 mb-1">Уровень</span>
+            <select name="level" class="select select-sm select-bordered"><option value="">Все</option>{% for l in levels %}<option value="{{ l }}"{% if l == log_level %} selected{% endif %}>{{ l }}</option>{% endfor %}</select></label>
+        <label class="form-control grow min-w-[10rem]"><span class="text-xs opacity-60 mb-1">Поиск</span>
+            <input type="search" name="q" value="{{ log_query }}" class="input input-sm input-bordered" placeholder="Текст, id матча, имя задачи"></label>
+        <label class="form-control"><span class="text-xs opacity-60 mb-1">Строк</span>
+            <select name="lines" class="select select-sm select-bordered">{% for n in line_options %}<option{% if n == log_lines %} selected{% endif %}>{{ n }}</option>{% endfor %}</select></label>
+        <button class="btn btn-sm btn-primary"><i class="ti ti-search"></i> Показать</button>
+        {% if log_name %}<a class="btn btn-sm btn-ghost" href="{% url 'dashboard:server_log_download' %}?log={{ log_name|urlencode }}"><i class="ti ti-download"></i> Скачать</a>{% endif %}
+    </form>
+    {% if log and log.ok %}
+    <p class="text-xs opacity-60">Показано {{ log.lines|length }} из {{ log.total }} подходящих строк (конец файла, самые свежие внизу).</p>
+    <div class="dsh-log">{% for l in log.lines %}<div class="dsh-log__line{% if l.level %} is-{{ l.level }}{% endif %}">{{ l.text }}</div>{% empty %}<div class="opacity-60">Подходящих строк нет.</div>{% endfor %}</div>
+    {% elif log %}<div class="alert alert-warning text-sm">{{ log.error }}</div>
+    {% else %}<p class="opacity-60 text-sm">Файлов логов нет.</p>{% endif %}
+</div></div>
+
+{% else %}
+<div class="dopx-stat-grid mb-4">
+    <div class="dopx-stat"><div class="dopx-stat-label"><i class="ti ti-database"></i>Размер базы</div><div class="dopx-stat-value">{{ db.size }}</div></div>
+    <div class="dopx-stat"><div class="dopx-stat-label"><i class="ti ti-plug-connected"></i>Соединений</div><div class="dopx-stat-value">{{ db.connections }}</div></div>
+    <div class="dopx-stat"><div class="dopx-stat-label"><i class="ti ti-hourglass-high"></i>Долгих запросов</div><div class="dopx-stat-value{% if db.slow %} text-warning{% endif %}">{{ db.slow|length }}</div><div class="dopx-stat-delta">дольше 5 секунд</div></div>
+    <div class="dopx-stat"><div class="dopx-stat-label"><i class="ti ti-alert-triangle"></i>Раздутых таблиц</div><div class="dopx-stat-value">{{ db.bloated_count|default:0 }}</div><div class="dopx-stat-delta">много мёртвых строк</div></div>
+</div>
+
+<div class="card bg-base-100 border border-base-300 mb-4"><div class="card-body p-4 gap-3">
+    <div><div class="dopx-section-eyebrow"><i class="ti ti-hourglass-high"></i>Сейчас</div><div class="dopx-section-title">Долгие запросы</div>
+        <p class="dopx-section-desc">Запрос висит минутами и тормозит сайт — прервите его. Прерывается только сам запрос, соединение и данные не страдают.</p></div>
+    {% if db.slow %}
+    <div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th>Идёт</th><th>Состояние</th><th>Запрос</th><th></th></tr></thead><tbody>
+    {% for q in db.slow %}<tr><td class="whitespace-nowrap">{{ q.duration }}</td><td>{{ q.state }}</td><td class="font-mono text-xs break-all">{{ q.query }}</td>
+        <td><form method="post" action="{% url 'dashboard:server_action' %}" onsubmit="return confirm('Прервать запрос {{ q.pid }}?');">{% csrf_token %}<input type="hidden" name="action" value="cancel_query"><input type="hidden" name="pid" value="{{ q.pid }}"><button class="btn btn-xs btn-error btn-outline">Прервать</button></form></td></tr>{% endfor %}
+    </tbody></table></div>
+    {% else %}<p class="text-sm opacity-60">Долгих запросов нет.</p>{% endif %}
+</div></div>
+
+<div class="card bg-base-100 border border-base-300"><div class="card-body p-4 gap-3">
+    <div><div class="dopx-section-eyebrow"><i class="ti ti-table"></i>Таблицы</div><div class="dopx-section-title">Самые большие таблицы</div>
+        <p class="dopx-section-desc">«Мёртвые» строки остаются после правок и удалений; PostgreSQL чистит их сам, но кнопка «Очистить» делает это сразу (таблица остаётся доступной).</p></div>
+    <div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th>Таблица</th><th>Строк</th><th>Мёртвых</th><th>Размер</th><th class="hidden md:table-cell">Чистилась</th><th></th></tr></thead><tbody>
+    {% for t in db.tables %}<tr>
+        <td class="font-mono text-xs break-all">{{ t.name }}</td><td>{{ t.rows }}</td><td class="{% if t.bloated %}text-warning font-bold{% endif %}">{{ t.dead }}</td><td class="whitespace-nowrap">{{ t.size }}</td>
+        <td class="hidden md:table-cell text-xs whitespace-nowrap">{{ t.vacuumed|date:"d.m H:i"|default:"—" }}</td>
+        <td><form method="post" action="{% url 'dashboard:server_action' %}">{% csrf_token %}<input type="hidden" name="action" value="vacuum"><input type="hidden" name="table" value="{{ t.name }}"><button class="btn btn-xs btn-ghost"><i class="ti ti-broom"></i> Очистить</button></form></td></tr>{% endfor %}
+    </tbody></table></div>
+</div></div>
+{% endif %}
+{% endblock %}

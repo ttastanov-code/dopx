@@ -46,10 +46,10 @@
                     {% for s in recent_decided %}
                     <tr>
                         <td>{{ s.get_entity_label_display }}</td>
-                        <td class="whitespace-nowrap">{{ s.current_first_name }} {{ s.current_last_name }}</td>
-                        <td class="whitespace-nowrap">
+                        <td>{{ s.current_first_name }} {{ s.current_last_name }}</td>
+                        <td>
                             {% if s.status == 'approved' %}
-                            <span class="badge badge-success badge-xs">{{ s.suggested_first_name }} {{ s.suggested_last_name }}</span>
+                            <span class="inline-block text-xs font-medium text-success leading-snug break-words"><i class="ti ti-check"></i> {{ s.suggested_first_name }} {{ s.suggested_last_name }}</span>
                             {% else %}
                             <span class="badge badge-ghost badge-xs">отклонено</span>
                             {% endif %}

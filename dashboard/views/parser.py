@@ -47,7 +47,6 @@ def parser_tools_view(request):
         "search_total_count": search["total_count"],
         "search_year": search["year"],
         "search_available_years": parser_tools.available_search_years(),
-        "celery_tasks": parser_tools.list_active_celery_tasks(),
         "sportmonks_health": parser_tools.get_cached_sportmonks_health(),
         # Счётчик запросов к API читаем напрямую из кэша при каждой загрузке.
         "sportmonks_request_counts": get_request_counts(),

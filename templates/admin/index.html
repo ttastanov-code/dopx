@@ -1,121 +1,37 @@
 {% extends "admin/index.html" %}
-{% load ui_extras %}
-{% load static %}
-{% load asset_extras %}
 {% comment %}
-Главная /admin/: KPI-карточки из dashboard_callback (dopx_kpi, dopx_last_sync).
-extends сам на себя — Django берёт следующий шаблон в цепочке (Unfold).
-Список приложений не выводим — есть сайдбар; «Recent actions» — include.
+Главная /admin/: вход к данным — основные таблицы с числом записей (dashboard/admin_callback.py) и история правок.
+Мониторинг, модерация и инструменты — в staff-дашборде. extends сам на себя — следующий шаблон в цепочке (Unfold).
 {% endcomment %}
 
 {% block content %}
-{% if dopx_kpi %}
-<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-    {% for card in dopx_kpi %}
-    <div class="rounded-default border border-base-200 bg-white dark:bg-base-900 dark:border-base-700 p-4">
-        <div class="text-font-subtle-light dark:text-font-subtle-dark text-xs uppercase tracking-wide">{{ card.title }}</div>
-        <div class="text-2xl font-semibold text-font-important-light dark:text-font-important-dark mt-1">{{ card.metric }}</div>
-        <div class="text-xs text-font-subtle-light dark:text-font-subtle-dark mt-1">{{ card.footer }}</div>
+<div class="rounded-default border border-primary-200 dark:border-primary-800 bg-primary-50 dark:bg-primary-950/40 p-4 mb-6 flex flex-wrap items-center justify-between gap-3">
+    <div class="min-w-0">
+        <div class="font-semibold text-font-important-light dark:text-font-important-dark">Админка — прямое редактирование данных</div>
+        <div class="text-sm text-font-subtle-light dark:text-font-subtle-dark mt-0.5">Мониторинг, модерация, парсер, сервер и все инструменты — в дашборде. Поиск по всем таблицам — ⌘K.</div>
     </div>
+    <a href="{% url 'dashboard:overview' %}" class="inline-flex items-center gap-2 rounded-default bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium px-4 py-2 transition-colors">
+        <span class="material-symbols-outlined text-base">space_dashboard</span> Открыть дашборд
+    </a>
+</div>
+
+{% for section in dopx_sections %}
+<h2 class="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-font-subtle-light dark:text-font-subtle-dark mb-3">
+    <span class="material-symbols-outlined text-base">{{ section.icon }}</span>{{ section.title }}
+</h2>
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 mb-6">
+    {% for item in section.items %}
+    <a href="{{ item.url }}" class="rounded-default border border-base-200 dark:border-base-700 bg-white dark:bg-base-900 p-4 hover:border-primary-400 transition-colors">
+        <span class="material-symbols-outlined text-primary-600">{{ item.icon }}</span>
+        <div class="text-2xl font-semibold text-font-important-light dark:text-font-important-dark mt-1">{{ item.count }}</div>
+        <div class="text-sm text-font-subtle-light dark:text-font-subtle-dark">{{ item.title }}</div>
+    </a>
     {% endfor %}
 </div>
-<div class="mb-6 flex flex-wrap gap-3">
-    <a href="{% url 'dashboard:overview' %}" class="inline-flex items-center gap-2 rounded-default bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium px-4 py-2 transition-colors">
-        <span class="material-symbols-outlined text-base">dashboard</span> Полный дашборд
-    </a>
-    <a href="{% url 'dashboard:data_health' %}" class="inline-flex items-center gap-2 rounded-default border border-base-200 dark:border-base-700 text-sm font-medium px-4 py-2 hover:bg-base-50 dark:hover:bg-base-800 transition-colors">
-        <span class="material-symbols-outlined text-base">monitor_heart</span>
-        {% if dopx_last_sync %}Синхронизация {{ dopx_last_sync.created_at|ago }}{% else %}Здоровье данных{% endif %}
-    </a>
-    <a href="{% url 'dashboard:antifraud' %}" class="inline-flex items-center gap-2 rounded-default border border-base-200 dark:border-base-700 text-sm font-medium px-4 py-2 hover:bg-base-50 dark:hover:bg-base-800 transition-colors">
-        <span class="material-symbols-outlined text-base">shield_moon</span> Антифрод-очередь
-    </a>
-</div>
+{% endfor %}
 
-{# Графики — данные из dashboard_callback #}
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-    <div class="rounded-default border border-base-200 dark:border-base-700 bg-white dark:bg-base-900 p-4">
-        <h3 class="text-sm font-semibold text-font-important-light dark:text-font-important-dark mb-2">Активные пользователи по дням (DAU)</h3>
-        <canvas id="dopxDauChart" height="110"></canvas>
-    </div>
-    <div class="rounded-default border border-base-200 dark:border-base-700 bg-white dark:bg-base-900 p-4">
-        <h3 class="text-sm font-semibold text-font-important-light dark:text-font-important-dark mb-2">Активные пользователи по неделям (WAU)</h3>
-        <canvas id="dopxWauChart" height="110"></canvas>
-    </div>
-    <div class="rounded-default border border-base-200 dark:border-base-700 bg-white dark:bg-base-900 p-4">
-        <h3 class="text-sm font-semibold text-font-important-light dark:text-font-important-dark mb-2">Регистрации по дням</h3>
-        <canvas id="dopxRegChart" height="110"></canvas>
-    </div>
-    <div class="rounded-default border border-base-200 dark:border-base-700 bg-white dark:bg-base-900 p-4">
-        <h3 class="text-sm font-semibold text-font-important-light dark:text-font-important-dark mb-2">Оценки по дням</h3>
-        <canvas id="dopxEvalChart" height="110"></canvas>
-    </div>
-</div>
-
-{# Контентные метрики #}
-<div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-    <div class="rounded-default border border-base-200 dark:border-base-700 bg-white dark:bg-base-900 p-4">
-        <h3 class="text-sm font-semibold text-font-important-light dark:text-font-important-dark mb-3">Топ матчей по числу оценок</h3>
-        {% if dopx_top_matches %}
-        <ol class="text-sm space-y-1.5">
-            {% for row in dopx_top_matches %}
-            <li class="flex justify-between gap-2">
-                <span class="truncate">{{ forloop.counter }}. {{ row.label }}</span>
-                <span class="font-semibold shrink-0">{{ row.evals }}</span>
-            </li>
-            {% endfor %}
-        </ol>
-        {% else %}
-        <p class="text-xs opacity-50">Нет данных</p>
-        {% endif %}
-    </div>
-    <div class="rounded-default border border-base-200 dark:border-base-700 bg-white dark:bg-base-900 p-4">
-        <h3 class="text-sm font-semibold text-font-important-light dark:text-font-important-dark mb-3">Топ игроков по числу оценок</h3>
-        {% if dopx_top_players %}
-        <ol class="text-sm space-y-1.5">
-            {% for row in dopx_top_players %}
-            <li class="flex justify-between gap-2">
-                <span class="truncate">{{ forloop.counter }}. {{ row.label }}</span>
-                <span class="font-semibold shrink-0">{{ row.evals }}</span>
-            </li>
-            {% endfor %}
-        </ol>
-        {% else %}
-        <p class="text-xs opacity-50">Нет данных</p>
-        {% endif %}
-    </div>
-    <div class="rounded-default border border-base-200 dark:border-base-700 bg-white dark:bg-base-900 p-4">
-        <h3 class="text-sm font-semibold text-font-important-light dark:text-font-important-dark mb-2">Распределение оценок игроков</h3>
-        <canvas id="dopxRatingChart" height="140"></canvas>
-        <p class="text-xs opacity-50 mt-2">Матчей без единой оценки: <b>{{ dopx_matches_without_evaluations }}</b></p>
-    </div>
-</div>
-{% endif %}
+{% if dopx_has_history %}
+<h2 class="text-sm font-semibold uppercase tracking-wide text-font-subtle-light dark:text-font-subtle-dark mb-3">Последние правки в админке</h2>
 {% include "unfold/helpers/history.html" %}
-{% endblock %}
-
-{% block extrahead %}
-{{ block.super }}
-{% if dopx_kpi %}
-{{ dopx_dau|json_script:"dopx-dau-data" }}
-{{ dopx_wau|json_script:"dopx-wau-data" }}
-{{ dopx_registrations_by_day|json_script:"dopx-reg-data" }}
-{{ dopx_evaluations_by_day|json_script:"dopx-eval-data" }}
-{{ dopx_rating_distribution|json_script:"dopx-rating-data" }}
-{# dist/chart.umd.js — реальный файл пакета (уже минифицирован), integrity — sha256 jsDelivr. #}
-<script src="{% static_v 'vendor/chartjs/chart.umd.js' %}"></script>
-<script src="{% static_v 'js/charts.js' %}"></script>
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-    if (!window.dopxCharts) return;
-    const data = (id) => JSON.parse(document.getElementById(id).textContent);
-    dopxCharts.line('dopxDauChart', data('dopx-dau-data'), {label: 'DAU', color: '#6366f1'});
-    dopxCharts.line('dopxWauChart', data('dopx-wau-data'), {label: 'WAU', color: '#8b5cf6'});
-    dopxCharts.line('dopxRegChart', data('dopx-reg-data'), {label: 'Регистрации', color: '#10b981'});
-    dopxCharts.line('dopxEvalChart', data('dopx-eval-data'), {label: 'Оценки', color: '#f59e0b'});
-    const distribution = data('dopx-rating-data');
-    dopxCharts.bar('dopxRatingChart', Object.keys(distribution), Object.values(distribution), {label: 'Оценок', color: '#6366f1'});
-});
-</script>
 {% endif %}
 {% endblock %}

@@ -39,8 +39,8 @@
                 {% if not take.is_published and take.invite_id %}<span class="badge badge-xs badge-warning">ждёт проверки</span>{% elif not take.is_published %}<span class="badge badge-xs badge-ghost">черновик</span>{% endif %}
                 {% if take.invite_id %}<span title="Прислал сам по ссылке"><i class="ti ti-link"></i></span>{% endif %}
             </div>
-            <div class="font-semibold text-sm truncate">{{ take.display_name }}{% if take.headline %}: {{ take.headline }}{% endif %}</div>
-            <div class="text-xs opacity-60 truncate">{{ take.text|truncatechars:140 }}</div>
+            <div class="font-semibold text-sm break-words">{{ take.display_name }}{% if take.headline %}: {{ take.headline }}{% endif %}</div>
+            <div class="text-xs opacity-60 break-words">{{ take.text }}</div>
         </div>
         <div class="dx-actions shrink-0">
             <a href="{% url 'dashboard:expert_take_edit' take.pk %}" class="btn btn-xs btn-outline"><i class="ti ti-pencil"></i> Править</a>
@@ -111,8 +111,8 @@
     <a href="{% url 'dashboard:expert_edit' expert.pk %}" class="dx-take-row hover:border-primary{% if not expert.is_active %} is-draft{% endif %}">
         <div class="dx-take-row__avatar">{% if expert.photo %}<img src="{{ expert.photo.url }}" alt="">{% else %}{{ expert.initials }}{% endif %}</div>
         <div class="min-w-0 flex-1">
-            <div class="font-semibold text-sm truncate">{{ expert.name }}{% if not expert.is_active %} <span class="badge badge-xs badge-ghost">скрыт</span>{% endif %}</div>
-            <div class="text-xs opacity-60 truncate">{{ expert.title|default:"роль не указана" }} · {{ expert.takes_count }} {{ expert.takes_count|ru_plural:"мнение,мнения,мнений" }}</div>
+            <div class="font-semibold text-sm break-words">{{ expert.name }}{% if not expert.is_active %} <span class="badge badge-xs badge-ghost">скрыт</span>{% endif %}</div>
+            <div class="text-xs opacity-60 break-words">{{ expert.title|default:"роль не указана" }} · {{ expert.takes_count }} {{ expert.takes_count|ru_plural:"мнение,мнения,мнений" }}</div>
         </div>
         <i class="ti ti-chevron-right opacity-40"></i>
     </a>

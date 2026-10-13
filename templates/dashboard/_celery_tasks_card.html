@@ -21,7 +21,7 @@
                     <tr>
                         <td><span class="badge badge-error badge-sm">выполняется</span></td>
                         <td class="font-mono text-xs">{{ t.name }}</td>
-                        <td class="font-mono text-xs opacity-70 max-w-xs truncate">{{ t.args }}</td>
+                        <td class="font-mono text-xs opacity-70 max-w-xs break-words">{{ t.args }}</td>
                         <td class="text-xs opacity-70">{{ t.worker }}</td>
                         <td class="font-mono text-xs opacity-60">{{ t.task_id }}</td>
                         <td>
@@ -36,7 +36,7 @@
                     <tr>
                         <td><span class="badge badge-ghost badge-sm">в очереди</span></td>
                         <td class="font-mono text-xs">{{ t.name }}</td>
-                        <td class="font-mono text-xs opacity-70 max-w-xs truncate">{{ t.args }}</td>
+                        <td class="font-mono text-xs opacity-70 max-w-xs break-words">{{ t.args }}</td>
                         <td class="text-xs opacity-70">{{ t.worker }}</td>
                         <td class="font-mono text-xs opacity-60">{{ t.task_id }}</td>
                         <td>

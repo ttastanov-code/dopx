@@ -47,7 +47,7 @@
     <a href="?sort={{ key }}{% if selected_city %}&city={{ selected_city }}{% endif %}"
        class="px-1.5 sm:px-3 py-2 sm:py-1.5 rounded-md font-medium transition-colors flex items-center justify-center gap-1 sm:gap-1.5 whitespace-nowrap min-w-0 {% if key == selected_sort %}bg-primary text-primary-content shadow-sm{% else %}opacity-60 hover:opacity-100{% endif %}">
         <i class="ti {{ opt.icon }} shrink-0"></i>
-        <span class="truncate">{{ opt.label }}</span>
+        <span class="break-words">{{ opt.label }}</span>
     </a>
     {% endfor %}
 </div>

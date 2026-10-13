@@ -34,11 +34,12 @@ SECTION_PATH_MAP: list[tuple[str, str]] = [
     ("/staff/dashboard/channel/", "channel"),
     ("/staff/dashboard/settings/", "platform_settings"),
     ("/staff/dashboard/system-status/", "system_status"),
+    ("/staff/dashboard/server/", "server"),
     ("/staff/dashboard/scripts/", "scripts"),
 ]
 
 # access_roles — только суперпользователь.
-SUPERUSER_ONLY_SECTIONS = {"access_roles"}
+SUPERUSER_ONLY_SECTIONS = {"access_roles", "server"}
 
 
 def resolve_section_for_path(path: str) -> str | None:

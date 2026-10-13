@@ -90,7 +90,7 @@
                                  :class="supportedTeam === '' && 'wz-select-card--active'">
                                 <span class="wz-select-card__check"><i class="ti ti-check"></i></span>
                                 <i class="ti ti-hand-off text-xl text-base-content/50"></i>
-                                <div class="text-xs font-semibold mt-1.5">Не болею</div>
+                                <div class="text-[11px] sm:text-xs font-semibold mt-1.5 hyphens-auto break-words">Не болею</div>
                             </div>
                         </label>
                         <label class="cursor-pointer">
@@ -101,7 +101,7 @@
                                  :class="supportedTeam === '{{ match.home_team.id }}' && 'wz-select-card--active'">
                                 <span class="wz-select-card__check"><i class="ti ti-check"></i></span>
                                 <i class="ti ti-home text-xl text-primary"></i>
-                                <div class="text-xs font-semibold truncate mt-1.5">{{ match.home_team.name|truncatechars:12 }}</div>
+                                <div class="text-xs font-semibold break-words mt-1.5">{{ match.home_team.name }}</div>
                             </div>
                         </label>
                         <label class="cursor-pointer">
@@ -112,7 +112,7 @@
                                  :class="supportedTeam === '{{ match.away_team.id }}' && 'wz-select-card--active'">
                                 <span class="wz-select-card__check"><i class="ti ti-check"></i></span>
                                 <i class="ti ti-plane text-xl text-secondary"></i>
-                                <div class="text-xs font-semibold truncate mt-1.5">{{ match.away_team.name|truncatechars:12 }}</div>
+                                <div class="text-xs font-semibold break-words mt-1.5">{{ match.away_team.name }}</div>
                             </div>
                         </label>
                     </div>
@@ -138,7 +138,7 @@
                                 <div class="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center mx-auto">
                                     <i class="ti ti-player-play text-primary"></i>
                                 </div>
-                                <div class="text-xs font-semibold mt-1.5">Полный</div>
+                                <div class="text-[11px] sm:text-xs font-semibold mt-1.5 hyphens-auto break-words">Полный</div>
                             </div>
                         </label>
                         <label class="cursor-pointer" x-show="!attendedStadium">
@@ -151,7 +151,7 @@
                                 <div class="w-8 h-8 rounded-xl bg-secondary/10 flex items-center justify-center mx-auto">
                                     <i class="ti ti-stars text-secondary"></i>
                                 </div>
-                                <div class="text-xs font-semibold mt-1.5">Голы</div>
+                                <div class="text-[11px] sm:text-xs font-semibold mt-1.5 hyphens-auto break-words">Голы</div>
                             </div>
                         </label>
                         <label class="cursor-pointer">
@@ -164,7 +164,7 @@
                                 <div class="w-8 h-8 rounded-xl bg-accent/10 flex items-center justify-center mx-auto">
                                     <i class="ti ti-clock-pause text-accent"></i>
                                 </div>
-                                <div class="text-xs font-semibold mt-1.5">Фрагменты</div>
+                                <div class="text-[11px] sm:text-xs font-semibold mt-1.5 hyphens-auto break-words">Фрагменты</div>
                             </div>
                         </label>
                     </div>

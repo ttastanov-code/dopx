@@ -98,6 +98,7 @@ SECTION_ONLY = {
     "access_grant_staff", "admin_groups_list", "admin_group_detail",
     "two_factor_setup", "two_factor_backup_codes", "two_factor_challenge",
     "admin_bot", "admin_bot_unlink", "service_restart", "system_status_services",
+    "server", "server_action", "server_log_download",
 }
 
 

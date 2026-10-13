@@ -231,8 +231,8 @@
                             {{ forloop.counter }}
                         </div>
                         <div class="flex-1 min-w-0">
-                            <div class="font-medium text-sm truncate">{{ agg.player.first_name }} {{ agg.player.last_name }}</div>
-                            <div class="text-[10px] md:text-xs opacity-60 truncate">{{ agg.player.team.name|default:"Без команды" }}</div>
+                            <div class="font-medium text-sm break-words">{{ agg.player.first_name }} {{ agg.player.last_name }}</div>
+                            <div class="text-[10px] md:text-xs opacity-60 break-words">{{ agg.player.team.name|default:"Без команды" }}</div>
                         </div>
                         <div class="text-right flex-shrink-0">
                             <div class="font-bold text-primary text-sm md:text-base">{{ agg.performance_score|floatformat:1 }}</div>
@@ -299,7 +299,7 @@
                     {% for team in top_teams %}
                     <a href="{% url 'teams:detail' team.id %}"
                        class="flex items-center justify-between p-2 rounded-lg hover:bg-base-200">
-                        <span class="font-medium text-sm truncate flex-1">{{ team.name }}</span>
+                        <span class="font-medium text-sm break-words flex-1">{{ team.name }}</span>
                         <span class="badge badge-sm md:badge-md badge-primary ml-2 shrink-0">{{ team.avg_rating|floatformat:1 }}</span>
                     </a>
                     {% empty %}

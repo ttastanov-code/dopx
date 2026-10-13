@@ -81,7 +81,7 @@
                 <span class="w-6 h-6 md:w-7 md:h-7 rounded-md flex items-center justify-center flex-shrink-0" :class="'bg-' + selectedCategory.color + '/10'">
                   <i class="ti text-sm md:text-base" :class="[selectedCategory.icon, 'text-' + selectedCategory.color]"></i>
                 </span>
-                <span class="truncate text-left flex-1" x-text="selectedCategory.label"></span>
+                <span class="break-words text-left flex-1" x-text="selectedCategory.label"></span>
                 <i class="ti ti-chevron-down opacity-50 transition-transform flex-shrink-0" :class="{'rotate-180': categoryOpen}"></i>
               </button>
               <ul

@@ -23,7 +23,7 @@ hx-атрибуты есть только при live (или перед ста�
          style="--home: {{ match.home_team.brand_color|default:'#4f46e5' }}; --away: {{ match.away_team.brand_color|default:'#db2777' }};">
     <div class="mh__top">
         <div class="mh__league">
-            <span class="truncate">{{ match.league.name }}</span>
+            <span class="break-words">{{ match.league.name }}</span>
             {% if match.tour %}<span class="mh__dot">·</span><span class="whitespace-nowrap">{{ match.tour }}-й тур</span>{% endif %}
             {% if match.is_derby %}<span class="mh__tag mh__tag--derby"><i class="ti ti-flame"></i>Дерби</span>{% endif %}
             {% if match.was_rescheduled and match.status != 'postponed' %}<span class="mh__tag" title="Дата перенесена относительно остальных матчей тура">Перенос</span>{% endif %}

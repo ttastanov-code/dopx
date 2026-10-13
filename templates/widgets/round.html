@@ -13,7 +13,7 @@
 <body class="p-2">
     <div class="rounded-2xl overflow-hidden shadow-sm border border-base-300" style="width:320px">
         <div class="p-2 flex items-center justify-between bg-base-100">
-            <span class="font-bold text-xs flex items-center gap-1.5 truncate">
+            <span class="font-bold text-xs flex items-center gap-1.5 break-words">
                 <i class="ti ti-calendar-star text-info"></i>
                 Сборная DOPX{% if tour %} {{ tour }}-го{% endif %} тура
             </span>
@@ -28,7 +28,7 @@
         <div class="px-2 py-1.5 bg-base-200/60 flex items-center gap-1.5 text-[9px]">
             <i class="ti ti-award text-warning"></i>
             <span class="opacity-60">Игрок тура:</span>
-            <span class="font-semibold truncate">{{ round_xi.player_of_round_name|surname }}</span>
+            <span class="font-semibold break-words">{{ round_xi.player_of_round_name|surname }}</span>
         </div>
         {% endif %}
 
@@ -46,7 +46,7 @@
                     <div class="flex flex-col items-center text-center w-full min-w-0">
                         {% include 'components/_avatar.html' with photo_url=card.occupant_photo_url name=card.occupant_name size_classes='w-7 h-7 text-[9px]' %}
                         {% if card.filled %}
-                        <div class="text-[9px] text-white/90 font-medium leading-tight mt-0.5 truncate w-full px-0.5" title="{{ card.occupant_name }}">{{ card.occupant_name|surname }}</div>
+                        <div class="text-[9px] text-white/90 font-medium leading-tight mt-0.5 break-words w-full px-0.5" title="{{ card.occupant_name }}">{{ card.occupant_name|surname }}</div>
                         <div class="text-[8px] text-white/60 font-semibold">{{ card.round_score|floatformat:1 }}</div>
                         {% else %}
                         <div class="text-[7px] text-white/35 mt-0.5">&mdash;</div>

@@ -18,11 +18,11 @@ class="wz-card card bg-base-100 border-2 shadow-sm"
 
                 {# Инфо #}
                 <div class="min-w-0 flex-1">
-                    <div class="font-bold text-sm truncate">
+                    <div class="font-bold text-sm break-words">
                         {{ lp.player.first_name }} {{ lp.player.last_name }}
                     </div>
                     <div class="flex flex-wrap items-center gap-1.5 text-xs text-base-content/55 mt-0.5">
-                        <span class="truncate max-w-[100px]">{{ lp.player.team.name }}</span>
+                        <span class="break-words max-w-[100px]">{{ lp.player.team.name }}</span>
                         {% if lp.is_starting %}
                         <span class="text-success font-semibold flex items-center gap-0.5">
                             <i class="ti ti-circle-dot text-[5px]"></i> Старт

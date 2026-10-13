@@ -137,7 +137,7 @@
             <a href="{% url 'admin:notifications_contactsubmission_change' ticket.id %}"
                class="flex items-center gap-3 p-3 rounded-lg bg-base-200/60 hover:bg-base-200 transition-colors">
                 <div class="flex-1 min-w-0">
-                    <div class="font-medium truncate">{{ ticket.subject }}</div>
+                    <div class="font-medium break-words">{{ ticket.subject }}</div>
                     <div class="text-xs opacity-60">{{ ticket.contact_email }} · {{ ticket.created_at|ago }}</div>
                 </div>
                 <span class="badge badge-sm {% if ticket.status == 'new' %}badge-info{% else %}badge-warning{% endif %}">

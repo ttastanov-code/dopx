@@ -37,7 +37,8 @@
 @media (min-width: 640px) { .mh__stage { padding: 1.4rem 2rem 2rem; } }
 
 .mh__top { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
-.mh__league { display: flex; align-items: center; gap: .35rem; min-width: 0; font-size: .78rem; font-weight: 500; color: rgba(255,255,255,.72); }
+/* Плашки (перенос, дерби) переносятся на вторую строку, название лиги не режется до «Премь…». */
+.mh__league { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .35rem; min-width: 0; font-size: .78rem; font-weight: 500; color: rgba(255,255,255,.72); }
 .mh__dot { opacity: .5; }
 .mh__tag {
     display: inline-flex; align-items: center; gap: .2rem; font-size: .68rem; font-weight: 600; padding: .12rem .5rem;
@@ -73,7 +74,7 @@
 .mh__crest--empty { display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.3rem; color: #111; }
 .mh__name {
     font-size: .9rem; font-weight: 700; line-height: 1.2; letter-spacing: -.01em;
-    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    overflow-wrap: anywhere;
 }
 @media (min-width: 640px) { .mh__name { font-size: 1.15rem; } }
 .mh__form { display: flex; gap: 3px; margin-top: .45rem; }
@@ -162,8 +163,10 @@
 .pw__opt:disabled { cursor: default; }
 .pw__opt.is-mine { border-color: var(--color-primary); background: color-mix(in oklab, var(--color-primary) 6%, transparent); }
 .pw__opt.is-result { border-color: var(--color-success); background: color-mix(in oklab, var(--color-success) 8%, transparent); }
-.pw__label { font-size: .72rem; font-weight: 500; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-             color: color-mix(in oklab, var(--color-base-content) 65%, transparent); }
+.pw__label { font-size: .72rem; font-weight: 500; max-width: 100%;
+             color: color-mix(in oklab, var(--color-base-content) 65%, transparent);
+    overflow-wrap: anywhere;
+}
 .pw__pct { font-size: 1rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .pw__mark { position: absolute; top: .35rem; right: .4rem; font-size: .8rem; color: var(--color-primary); }
 .pw__opt.is-result .pw__mark { color: var(--color-success); }
@@ -229,8 +232,8 @@
 }
 .ev-sum__teams { display: flex; justify-content: space-between; gap: 1rem; margin-bottom: .45rem; }
 .ev-sum__team {
-    min-width: 0; font-size: .74rem; font-weight: 750; letter-spacing: .01em;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center; gap: .35rem;
+    min-width: 0; font-size: .74rem; font-weight: 750; letter-spacing: .01em; display: flex; align-items: center; gap: .35rem;
+    overflow-wrap: anywhere;
 }
 .ev-sum__team img { flex: none; width: 18px; height: 18px; object-fit: contain; }
 .ev-sum__team::after { content: ''; flex: none; width: .45rem; height: .45rem; border-radius: 9999px; order: -1; }
@@ -477,7 +480,7 @@
 }
 .dna-stat__label { font-size: .6875rem; opacity: .55; display: flex; align-items: center; gap: .25rem; }
 .dna-stat__value { font-size: 1.25rem; font-weight: 800; line-height: 1.2; margin-top: .125rem; }
-.dna-stat__sub { font-size: .6875rem; opacity: .55; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dna-stat__sub { font-size: .6875rem; opacity: .55; overflow-wrap: anywhere; }
 .dna-bar { height: .25rem; border-radius: 9999px; margin-top: .375rem; background: color-mix(in oklab, var(--color-base-content) 10%, transparent); overflow: hidden; }
 .dna-bar > span { display: block; height: 100%; border-radius: inherit; background: var(--dna-bar, var(--color-primary)); }
 
@@ -602,12 +605,14 @@
 @media (min-width: 640px) { .md-why { margin-left: 2.75rem; } }
 .md-why__summary {
     display: flex; align-items: center; gap: .375rem; cursor: pointer; list-style: none;
-    font-size: .75rem; font-weight: 600; color: var(--color-primary); padding: .125rem 0; white-space: nowrap;
+    font-size: .75rem; font-weight: 600; color: var(--color-primary); padding: .125rem 0;
 }
+.md-why__summary > :not(.md-why__hint) { white-space: nowrap; flex-shrink: 0; }
 .md-why__summary::-webkit-details-marker { display: none; }
 .md-why__hint {
-    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    flex: 1; min-width: 0;
     font-weight: 500; color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+    overflow-wrap: anywhere;
 }
 .md-why__chev { margin-left: auto; transition: transform .2s; }
 .md-why[open] .md-why__chev { transform: rotate(180deg); }

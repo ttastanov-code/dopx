@@ -5,8 +5,13 @@
 
 {# Карточка пользователя: бан/разбан (is_active) и сброс доверия на 1.0. #}
 
-<div class="mb-4">
+<div class="mb-4 flex flex-wrap items-center justify-between gap-2">
     <a href="{% url 'dashboard:users_list' %}" class="text-xs opacity-60 hover:opacity-100"><i class="ti ti-arrow-left"></i> К списку пользователей</a>
+    {# Та же запись на сайте и в админке (все поля). #}
+    <span class="flex flex-wrap gap-2">
+        <a href="{% url 'users:public_profile' user_obj.username %}" class="btn btn-xs btn-ghost" target="_blank" rel="noopener"><i class="ti ti-external-link"></i> На сайте</a>
+        {% if perms.users.view_user or perms.users.change_user %}<a href="{% url 'admin:users_user_change' user_obj.pk %}" class="btn btn-xs btn-ghost"><i class="ti ti-table"></i> В админке</a>{% endif %}
+    </span>
 </div>
 
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">

@@ -49,8 +49,13 @@ def fit(text: str, kind: str, start: int, max_width: float, min_size: int = 20) 
     return size
 
 
-def wrap(text: str, size: int, max_width: float, kind: str = "bold", max_lines: int = 2) -> list[str]:
-    """Перенос по словам; не влезло — последняя строка с многоточием."""
+class Line(str):
+    """Строка подписи; length — ширина для SVG textLength, если строку пришлось сжать (иначе None)."""
+    length = None
+
+
+def wrap(text: str, size: int, max_width: float, kind: str = "bold", max_lines: int = 2) -> list[Line]:
+    """Перенос по словам. Не влезло в max_lines — остаток в последней строке, она сжимается (textLength), без многоточия."""
     words, lines, line = (text or "").split(), [], ""
     for word in words:
         trial = f"{line} {word}".strip()
@@ -62,12 +67,14 @@ def wrap(text: str, size: int, max_width: float, kind: str = "bold", max_lines: 
     if line:
         lines.append(line)
     if len(lines) > max_lines:
-        lines = lines[:max_lines]
-        last = lines[-1]
-        while last and measure(last + "…", size, kind) > max_width:
-            last = last[:-1]
-        lines[-1] = last.rstrip() + "…"
-    return lines
+        lines = lines[:max_lines - 1] + [" ".join(lines[max_lines - 1:])]
+    out = []
+    for text_line in lines:
+        item = Line(text_line)
+        if measure(text_line, size, kind) > max_width:
+            item.length = int(max_width)
+        out.append(item)
+    return out
 
 
 def image_data(url: str, size: int = 320) -> str:

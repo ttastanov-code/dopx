@@ -17,7 +17,7 @@
         </div>
         <div class="flex items-baseline gap-2 mt-0.5">
             <span class="font-semibold text-sm opacity-80">{{ card.season_score|floatformat:1 }}</span>
-            <span class="text-xs opacity-45 truncate">{{ card.occupant_team_name|default:"—" }}</span>
+            <span class="text-xs opacity-45 break-words">{{ card.occupant_team_name|default:"—" }}</span>
         </div>
         {% else %}
         <div class="text-xs opacity-40 mt-0.5">Пока недостаточно оценённых матчей</div>

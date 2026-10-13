@@ -42,6 +42,9 @@ class ParserSyncRun(BaseModel):
         ordering = ['-created_at']
         indexes = [
             models.Index(fields=['task_name', '-created_at'], name='parser_run_task_time_idx'),
+            # Лента запусков на дашборде и последние прогоны для алертов.
+            models.Index(fields=['-created_at'], name='parser_run_time_idx'),
+            models.Index(fields=['source', '-started_at'], name='parser_run_source_start_idx'),
         ]
 
     def __str__(self):

@@ -249,17 +249,31 @@ def sportmonks_api_health_check() -> dict:
 # Очередь celery — что выполняется/ждёт сейчас
 # ============================================================
 
+CELERY_TASKS_CACHE_KEY = "dashboard:celery_tasks"
+CELERY_WORKERS_CACHE_KEY = "dashboard:celery_workers"
+
+
 def list_active_celery_tasks() -> dict:
-    """active() — уже выполняются, reserved() — взяты воркером, но ещё не стартовали."""
+    """active() — уже выполняются, reserved() — взяты воркером, но ещё не стартовали.
+    Кэш 5 с: страницу и поллинг открывают несколько сотрудников сразу."""
+    cached = cache.get(CELERY_TASKS_CACHE_KEY)
+    if cached is not None:
+        return cached
     from dopx.celery import app
 
     try:
-        inspector = app.control.inspect(timeout=1.5)
+        # limit = сколько воркеров ответило в прошлый раз: не ждём весь тайм-аут, когда ответили все.
+        inspector = app.control.inspect(timeout=1.5, limit=cache.get(CELERY_WORKERS_CACHE_KEY))
         active = inspector.active() or {}
         reserved = inspector.reserved() or {}
     except Exception as e:
         logger.warning(f"list_active_celery_tasks: {e}")
         return {"ok": False, "error": str(e), "active": [], "reserved": []}
+    workers = len(set(active) | set(reserved))
+    if workers:
+        cache.set(CELERY_WORKERS_CACHE_KEY, workers, timeout=86400)
+    else:
+        cache.delete(CELERY_WORKERS_CACHE_KEY)
 
     def _flatten(by_worker: dict, state: str) -> list:
         rows = []
@@ -274,7 +288,9 @@ def list_active_celery_tasks() -> dict:
                 })
         return rows
 
-    return {"ok": True, "active": _flatten(active, "active"), "reserved": _flatten(reserved, "reserved")}
+    result = {"ok": True, "active": _flatten(active, "active"), "reserved": _flatten(reserved, "reserved")}
+    cache.set(CELERY_TASKS_CACHE_KEY, result, timeout=5)
+    return result
 
 
 def revoke_celery_task(task_id: str, terminate: bool = False) -> tuple[bool, str]:
@@ -283,6 +299,7 @@ def revoke_celery_task(task_id: str, terminate: bool = False) -> tuple[bool, str
 
     if not task_id:
         return False, "Не указан task_id"
+    cache.delete(CELERY_TASKS_CACHE_KEY)
 
     try:
         app.control.revoke(task_id, terminate=terminate)

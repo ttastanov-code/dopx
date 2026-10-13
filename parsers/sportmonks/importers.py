@@ -725,6 +725,15 @@ def _extract_tour(round_data: Optional[Dict]) -> Optional[int]:
         return int(match.group(1)) if match else None
 
 
+def _crew_member_name(ref_obj: Dict) -> str:
+    """Ассистент/4-й судья: имя как у судьи в базе (с ручной правкой), иначе кириллица по общим правилам."""
+    known = Referee.objects.filter(sportmonks_id=str(ref_obj.get("id"))).first() if ref_obj.get("id") else None
+    if known is not None and known.full_name.strip():
+        return known.full_name
+    first_name, last_name, _source = _resolve_cyrillic_name(ref_obj, "судьи")
+    return f"{first_name} {last_name}".strip() or (ref_obj.get("name") or "")
+
+
 def _build_referee_crew(referees_data: List[Dict]) -> Tuple[Optional[Referee], Optional[Dict]]:
     main_referee = None
     crew: Dict[str, str] = {}
@@ -738,7 +747,7 @@ def _build_referee_crew(referees_data: List[Dict]) -> Tuple[Optional[Referee], O
         else:
             label = REFEREE_CREW_LABELS.get(type_id)
             if label:
-                crew[label] = ref_obj.get("name")
+                crew[label] = _crew_member_name(ref_obj)
             else:
                 logger.info(
                     "Sportmonks: неизвестный type_id=%s в бригаде судей, пропущен", type_id
@@ -1328,16 +1337,17 @@ def import_events(match: Match, events_data: List[Dict]) -> bool:
 
             previous_type = matched_existing.event_type
             author_arrived = matched_existing.player_id is None and player is not None
-            matched_existing.player = player
-            matched_existing.minute = minute
-            matched_existing.added_time = added_time
-            matched_existing.event_type = event_type
-            matched_existing.team_side = team_side
-            matched_existing.assist_player = assist_player
-            matched_existing.score_after = score_after
-            matched_existing.player_out = player_out
-            matched_existing.extra_data = evt
-            matched_existing.sportmonks_id = evt_sm_id
+            incoming = {
+                "player_id": player.id if player else None, "minute": minute, "added_time": added_time,
+                "event_type": event_type, "team_side": team_side,
+                "assist_player_id": assist_player.id if assist_player else None, "score_after": score_after,
+                "player_out_id": player_out.id if player_out else None, "extra_data": evt, "sportmonks_id": evt_sm_id,
+            }
+            # Без изменений не пишем: каждая запись — сигнал «данные обновились» для live-страниц.
+            if all(getattr(matched_existing, f) == v for f, v in incoming.items()):
+                continue
+            for f, v in incoming.items():
+                setattr(matched_existing, f, v)
             matched_existing.save()
             updated_count += 1
             if (author_arrived and previous_type == event_type and event_type in PUSH_WORTHY_EVENT_TYPES
@@ -1436,11 +1446,29 @@ def import_statistics(match: Match, fixture_statistics: List[Dict]) -> bool:
             continue
         defaults = dict(fields)
         defaults["raw"] = raw_by_team.get(participant_id, {})
-        MatchTeamStatistics.objects.update_or_create(match=match, team=team, defaults=defaults)
+        _upsert_if_changed(MatchTeamStatistics, {"match": match, "team": team}, defaults)
         saved += 1
 
     logger.info("Sportmonks: командная статистика матча %s — %s команд(ы)", match.id, saved)
     return bool(saved)
+
+
+def _upsert_if_changed(model, lookup: Dict, defaults: Dict):
+    """update_or_create без записи, если ничего не изменилось: полный синк повторяется каждые несколько минут."""
+    obj = model.objects.filter(**lookup).first()
+    if obj is None:
+        return model.objects.create(**lookup, **defaults)
+    def current(f, v):
+        field = model._meta.get_field(f)
+        # FK сравниваем по id: getattr(obj, "team") — лишний запрос на каждую строку.
+        return (getattr(obj, field.attname), getattr(v, "pk", v)) if field.is_relation else (getattr(obj, f), v)
+
+    changed = [f for f, v in defaults.items() if current(f, v)[0] != current(f, v)[1]]
+    if changed:
+        for f in changed:
+            setattr(obj, f, defaults[f])
+        obj.save(update_fields=changed + (["updated_at"] if hasattr(obj, "updated_at") else []))
+    return obj
 
 
 @transaction.atomic
@@ -1487,7 +1515,7 @@ def import_player_statistics(match: Match, lineups_data: List[Dict]) -> bool:
         defaults = dict(fields)
         defaults["team"] = team
         defaults["raw"] = raw
-        MatchPlayerStatistics.objects.update_or_create(match=match, player=player, defaults=defaults)
+        _upsert_if_changed(MatchPlayerStatistics, {"match": match, "player": player}, defaults)
         saved += 1
 
     logger.info("Sportmonks: игровая статистика матча %s — %s игрок(ов)", match.id, saved)

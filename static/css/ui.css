@@ -166,23 +166,17 @@
     letter-spacing: .04em;
     text-transform: uppercase;
     color: color-mix(in oklab, var(--color-base-content) 45%, transparent);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    overflow-wrap: anywhere;
 }
 .dx-person__name {
     font-size: .875rem;
     font-weight: 700;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    overflow-wrap: anywhere;
 }
 .dx-person__meta {
     font-size: .75rem;
     color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    overflow-wrap: anywhere;
 }
 .dx-person__score {
     flex-shrink: 0;
@@ -347,9 +341,7 @@
     font-size: .6875rem;
     font-weight: 600;
     color: color-mix(in oklab, var(--color-base-content) 70%, transparent);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    overflow-wrap: anywhere;
 }
 .dx-tour--latest {
     color: var(--color-primary-content);
@@ -464,29 +456,21 @@
     letter-spacing: .03em;
     text-transform: uppercase;
     color: color-mix(in oklab, var(--color-base-content) 50%, transparent);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    overflow-wrap: anywhere;
 }
 .dx-action__title {
     margin-top: .1rem;
     font-size: .9375rem;
     font-weight: 700;
     /* Две строки вместо многоточия — на телефоне подпись читается целиком. */
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
+    overflow-wrap: anywhere;
 }
 .dx-action__meta {
     margin-top: .1rem;
     font-size: .8125rem;
     color: color-mix(in oklab, var(--color-base-content) 58%, transparent);
     /* Две строки вместо многоточия — на телефоне подпись читается целиком. */
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
+    overflow-wrap: anywhere;
 }
 .dx-action__chevron { flex-shrink: 0; opacity: .35; transition: transform .25s cubic-bezier(.16, 1, .3, 1), opacity .2s ease; }
 .dx-action:hover .dx-action__chevron { opacity: .8; transform: translateX(2px); }
@@ -606,9 +590,7 @@ body.has-tabbar .dx-sticky-cta { bottom: calc(4.9rem + env(safe-area-inset-botto
 .dx-sticky-cta__meta {
     font-size: .6875rem;
     color: color-mix(in oklab, var(--color-base-content) 58%, transparent);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    overflow-wrap: anywhere;
 }
 .dx-sticky-cta__button {
     display: inline-flex;
@@ -671,9 +653,7 @@ body.has-tabbar .dx-sticky-cta { bottom: calc(4.9rem + env(safe-area-inset-botto
 .dx-attention__hint {
     font-size: .75rem;
     color: color-mix(in oklab, var(--color-base-content) 58%, transparent);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    overflow-wrap: anywhere;
 }
 .dx-attention__count {
     flex-shrink: 0;
@@ -814,7 +794,7 @@ body.has-tabbar .dx-sticky-cta { bottom: calc(4.9rem + env(safe-area-inset-botto
         text-align: center;
         background: linear-gradient(0deg, color-mix(in oklab, var(--tone) 14%, transparent) var(--fill), transparent var(--fill));
     }
-    .dx-react .dx-react__btn span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dx-react .dx-react__btn span { max-width: 100%; overflow-wrap: anywhere; }
     .dx-react .dx-react__btn i { font-size: 1rem; }
 }
 .dx-react__btn {
@@ -909,13 +889,15 @@ body.has-tabbar .dx-sticky-cta { bottom: calc(4.9rem + env(safe-area-inset-botto
     background: var(--color-base-content);
     box-shadow: 0 0 0 2px var(--color-base-100);
 }
+/* Соперник полностью: в узкой колонке переносится по слогам. */
 .dx-form__label {
     max-width: 100%;
     font-size: .625rem;
     font-weight: 600;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    line-height: 1.15;
+    text-align: center;
+    hyphens: auto;
+    overflow-wrap: break-word;
 }
 .dx-form__date { font-size: .625rem; color: color-mix(in oklab, var(--color-base-content) 50%, transparent); }
 .dx-form__legend {
@@ -1044,7 +1026,7 @@ body.has-tabbar .dx-sticky-cta { bottom: calc(4.9rem + env(safe-area-inset-botto
     transition: background .2s ease, color .2s ease, box-shadow .2s ease;
 }
 .dx-noms__tab i { font-size: 1.1rem; }
-.dx-noms__tab span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dx-noms__tab span { max-width: 100%; overflow-wrap: anywhere; }
 .dx-noms__tab:hover { color: var(--color-base-content); background: color-mix(in oklab, var(--color-base-100) 55%, transparent); }
 .dx-noms__panel { display: none; animation: dx-noms-in .22s ease; }
 @keyframes dx-noms-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
@@ -1103,11 +1085,14 @@ body.has-tabbar .dx-sticky-cta { bottom: calc(4.9rem + env(safe-area-inset-botto
     background: var(--color-base-100);
     box-shadow: 0 0 0 2px var(--color-base-100), 0 0 0 4px color-mix(in oklab, var(--gold) 70%, transparent);
 }
-.dx-noms__hero-ava.dx-nom__ava--pair img { width: 2.4rem; height: 2.4rem; object-fit: contain; }
+/* Матч — два герба рядом с небольшим нахлёстом, оба целиком видны. */
+.dx-noms__hero-ava.dx-nom__ava--pair { width: auto; height: auto; align-items: center; }
+.dx-noms__hero-ava.dx-nom__ava--pair img { position: static; width: 2.4rem; height: 2.4rem; object-fit: contain; padding: .15rem; }
+.dx-noms__hero-ava.dx-nom__ava--pair img + img { margin-left: -.55rem; }
 .dx-noms__hero-text { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 .dx-noms__hero-award {
     display: inline-flex;
-    align-items: center;
+    align-items: flex-start;
     gap: .25rem;
     font-size: .6875rem;
     font-weight: 700;
@@ -1115,8 +1100,8 @@ body.has-tabbar .dx-sticky-cta { bottom: calc(4.9rem + env(safe-area-inset-botto
     text-transform: uppercase;
     color: color-mix(in oklab, var(--gold) 85%, var(--color-base-content));
 }
-.dx-noms__hero-name { font-size: 1.0625rem; font-weight: 800; letter-spacing: -.01em; line-height: 1.25; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.dx-noms__hero-why { margin-top: .1rem; font-size: .75rem; color: color-mix(in oklab, var(--color-base-content) 55%, transparent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dx-noms__hero-name { font-size: 1.0625rem; font-weight: 800; letter-spacing: -.01em; line-height: 1.25; overflow-wrap: anywhere; }
+.dx-noms__hero-why { margin-top: .1rem; font-size: .75rem; color: color-mix(in oklab, var(--color-base-content) 55%, transparent); overflow-wrap: anywhere; }
 .dx-noms__hero-score { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: baseline; flex-shrink: 0; max-width: 5.5rem; text-align: right; font-variant-numeric: tabular-nums; }
 .dx-noms__hero-score b { font-size: 1.6rem; font-weight: 800; letter-spacing: -.03em; line-height: 1; }
 .dx-noms__hero-score small { font-size: .75rem; color: color-mix(in oklab, var(--color-base-content) 45%, transparent); }
@@ -1129,9 +1114,17 @@ body.has-tabbar .dx-sticky-cta { bottom: calc(4.9rem + env(safe-area-inset-botto
     .dx-noms__tab { font-size: .6rem; letter-spacing: -.02em; }
     .dx-noms__hero { gap: .75rem; padding: .8rem; }
     .dx-noms__hero-ava { width: 3rem; height: 3rem; }
-    .dx-noms__hero-award { white-space: nowrap; }
+    .dx-noms__hero-award { font-size: .625rem; letter-spacing: .04em; line-height: 1.25; }
+    .dx-noms__hero-ava.dx-nom__ava--pair img { width: 2rem; height: 2rem; }
     .dx-noms__hero-score { max-width: 4.5rem; }
     .dx-noms__hero-score b { font-size: 1.35rem; }
+}
+
+/* Совсем узко (320 px) — оценка уходит под название, иначе от матча остаётся «Кайрат —…». */
+@container (max-width: 20rem) {
+    .dx-noms__hero { flex-wrap: wrap; row-gap: .45rem; }
+    .dx-noms__hero-score { order: 3; flex-basis: 100%; max-width: none; justify-content: flex-start; }
+    .dx-noms__hero-score span { flex-basis: auto; margin: 0 0 0 .5rem; }
 }
 
 /* Широкий контейнер (страница лиги) — строки в две колонки. */
@@ -1214,18 +1207,14 @@ body.has-tabbar .dx-sticky-cta { bottom: calc(4.9rem + env(safe-area-inset-botto
 .dx-nom__award {
     font-size: .75rem;
     font-weight: 600;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
     color: color-mix(in oklab, var(--tone) 80%, var(--color-base-content));
+    overflow-wrap: anywhere;
 }
 .dx-nom__name {
     font-size: .9375rem;
     font-weight: 700;
     line-height: 1.3;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    overflow-wrap: anywhere;
 }
 .dx-nom__score {
     display: flex;
@@ -1244,7 +1233,7 @@ body.has-tabbar .dx-sticky-cta { bottom: calc(4.9rem + env(safe-area-inset-botto
 @media (max-width: 767px) {
     .dx-nom { gap: .7rem; padding: .55rem .6rem; }
     .dx-nom__votes { display: none; }
-    .dx-nom__name { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    .dx-nom__name { white-space: normal; overflow-wrap: anywhere; }
 }
 
 /* Нижняя панель и липкая кнопка — только на телефоне (ui.css грузится после Tailwind и перебивал md:hidden). */
@@ -1423,7 +1412,7 @@ body.has-tabbar .dx-sticky-cta { bottom: calc(4.9rem + env(safe-area-inset-botto
 /* Ожидания перед матчем — горизонтальные полоски. */
 .dx-expect { display: flex; flex-direction: column; gap: .45rem; margin-top: .75rem; }
 .dx-expect__row { display: grid; grid-template-columns: minmax(0, 9rem) 1fr 2.5rem; align-items: center; gap: .6rem; }
-.dx-expect__name { font-size: .75rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dx-expect__name { font-size: .75rem; font-weight: 600; overflow-wrap: anywhere; }
 .dx-expect__name small { font-weight: 500; color: color-mix(in oklab, var(--color-base-content) 50%, transparent); }
 .dx-expect__track { height: .5rem; border-radius: 9999px; background: color-mix(in oklab, var(--color-base-content) 7%, transparent); overflow: hidden; }
 .dx-expect__fill { display: block; height: 100%; border-radius: 9999px; background: var(--color-secondary); }
@@ -1441,7 +1430,7 @@ body.has-tabbar .dx-sticky-cta { bottom: calc(4.9rem + env(safe-area-inset-botto
     transition: background .2s ease;
 }
 .dx-list__item:hover { background: color-mix(in oklab, var(--color-base-content) 7%, transparent); }
-.dx-list__title { flex: 1; min-width: 0; font-size: .875rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dx-list__title { flex: 1; min-width: 0; font-size: .875rem; font-weight: 600; overflow-wrap: anywhere; }
 .dx-list__meta { font-size: .75rem; color: color-mix(in oklab, var(--color-base-content) 50%, transparent); }
 .dx-list__badge {
     padding: .1rem .5rem;
@@ -1494,8 +1483,8 @@ body.has-tabbar .dx-sticky-cta { bottom: calc(4.9rem + env(safe-area-inset-botto
     font-variant-numeric: tabular-nums;
     background: color-mix(in oklab, var(--color-base-content) 6%, transparent);
 }
-.dx-tp__text { flex: 1; min-width: 0; font-size: .8125rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dx-tp__side { flex-shrink: 0; max-width: 35%; font-size: .6875rem; color: color-mix(in oklab, var(--color-base-content) 50%, transparent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dx-tp__text { flex: 1; min-width: 0; font-size: .8125rem; overflow-wrap: anywhere; }
+.dx-tp__side { flex-shrink: 0; max-width: 35%; font-size: .6875rem; color: color-mix(in oklab, var(--color-base-content) 50%, transparent); overflow-wrap: anywhere; }
 .dx-tp__chips { display: flex; flex-wrap: wrap; gap: .35rem; }
 .dx-tp__chip {
     position: relative;
@@ -1526,7 +1515,7 @@ body.has-tabbar .dx-sticky-cta { bottom: calc(4.9rem + env(safe-area-inset-botto
 .dx-tp-result { display: flex; flex-direction: column; gap: .4rem; }
 .dx-tp-result__row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: .6rem; font-size: .8125rem; }
 .dx-tp-result__row i { color: var(--color-error); }
-.dx-tp-result__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.dx-tp-result__label { font-weight: 600; overflow-wrap: anywhere; }
 .dx-tp-result__bar { grid-column: 2 / 4; height: .35rem; border-radius: 9999px; background: color-mix(in oklab, var(--color-base-content) 7%, transparent); overflow: hidden; }
 .dx-tp-result__bar span { display: block; height: 100%; border-radius: inherit; background: var(--color-error); }
 .dx-tp-result__pct { font-weight: 800; font-variant-numeric: tabular-nums; }
@@ -1589,7 +1578,7 @@ body.has-tabbar .dx-sticky-cta { bottom: calc(4.9rem + env(safe-area-inset-botto
 .dx-resume__dot { width: .45rem; height: .45rem; border-radius: 9999px; background: #fbbf24; box-shadow: 0 0 0 3px rgb(251 191 36 / .3); animation: dx-resume-pulse 1.8s ease-in-out infinite; }
 @keyframes dx-resume-pulse { 50% { box-shadow: 0 0 0 6px rgb(251 191 36 / 0); } }
 @media (prefers-reduced-motion: reduce) { .dx-resume__dot { animation: none; } }
-.dx-resume__title { font-size: 1.0625rem; font-weight: 800; letter-spacing: -.01em; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dx-resume__title { font-size: 1.0625rem; font-weight: 800; letter-spacing: -.01em; line-height: 1.25; overflow-wrap: anywhere; }
 .dx-resume__title b { padding: 0 .15rem; font-variant-numeric: tabular-nums; }
 .dx-resume__progress { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: .25rem; margin-top: .2rem; max-width: 18rem; }
 .dx-resume__progress span { height: .3rem; border-radius: 9999px; background: rgb(255 255 255 / .22); }
@@ -1771,7 +1760,7 @@ html.dx-drawer-lock, html.dx-drawer-lock body { overflow: hidden; }
     background: color-mix(in oklab, var(--color-base-content) 4.5%, transparent);
 }
 .dx-drawer__me-body { display: flex; flex-direction: column; flex: 1; min-width: 0; gap: .15rem; }
-.dx-drawer__me-name { font-size: 1rem; font-weight: 800; letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dx-drawer__me-name { font-size: 1rem; font-weight: 800; letter-spacing: -.01em; overflow-wrap: anywhere; }
 .dx-drawer__me-meta { font-size: .75rem; color: color-mix(in oklab, var(--color-base-content) 55%, transparent); }
 .dx-drawer__xp { display: block; height: .3rem; margin-top: .3rem; border-radius: 9999px; overflow: hidden; background: color-mix(in oklab, var(--color-base-content) 9%, transparent); }
 .dx-drawer__xp span { display: block; height: 100%; border-radius: inherit; background: var(--color-primary); }
@@ -1876,7 +1865,7 @@ button.dx-tabbar__item { background: none; border: 0; font-family: inherit; curs
     color: var(--color-primary); background: color-mix(in oklab, var(--color-primary) 12%, transparent); font-size: 1.05rem;
 }
 .dx-quest__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .35rem; }
-.dx-quest__title { font-size: .82rem; font-weight: 600; line-height: 1.25; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.dx-quest__title { font-size: .82rem; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
 .dx-quest__bar { height: 4px; border-radius: 999px; background: var(--dx-soft); overflow: hidden; }
 .dx-quest__bar > span { display: block; height: 100%; border-radius: inherit; background: var(--color-primary); transition: width .5s cubic-bezier(.2, .8, .2, 1); }
 .dx-quest__xp { flex-shrink: 0; font-size: .8rem; font-weight: 800; color: var(--color-primary); display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; }
@@ -1961,7 +1950,7 @@ button.dx-tabbar__item { background: none; border: 0; font-family: inherit; curs
     font-size: .75rem; font-weight: 800; background: var(--dx-soft);
 }
 .dx-rank__place.is-top { background: linear-gradient(135deg, #fde68a, #f59e0b); color: #78350f; }
-.dx-rank__name { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dx-rank__name { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
 a.dx-rank__name:hover { color: var(--color-primary); }
 .dx-rank__meta { flex-shrink: 0; font-size: .75rem; opacity: .55; }
 .dx-rank__value { flex-shrink: 0; font-weight: 800; font-variant-numeric: tabular-nums; }
@@ -1969,7 +1958,7 @@ a.dx-rank__name:hover { color: var(--color-primary); }
 
 /* Лиги с друзьями. */
 .dx-league-create { display: flex; gap: .4rem; margin-top: 1rem; padding: .3rem; border-radius: 999px; background: rgba(255, 255, 255, .14); }
-.dx-league-create input { flex: 1; min-width: 0; background: transparent; border: 0; outline: 0; color: #fff; padding: .45rem .75rem; font-size: 1rem; text-overflow: ellipsis; }
+.dx-league-create input { flex: 1; min-width: 0; background: transparent; border: 0; outline: 0; color: #fff; padding: .45rem .75rem; font-size: 1rem; overflow-wrap: anywhere; }
 .dx-league-create input::placeholder { color: rgba(255, 255, 255, .6); }
 .dx-league-create button { flex-shrink: 0; display: inline-flex; align-items: center; gap: .3rem; padding: .5rem 1rem; border-radius: 999px; background: #fff; color: #0c4a6e; font-weight: 700; font-size: .85rem; }
 .dx-league-row {
@@ -1980,8 +1969,8 @@ a.dx-rank__name:hover { color: var(--color-primary); }
 .dx-league-row:active { transform: scale(.99); }
 .dx-league-row__ico { flex-shrink: 0; width: 2.5rem; height: 2.5rem; border-radius: .8rem; display: inline-flex; align-items: center; justify-content: center; font-size: 1.2rem; color: #0284c7; background: color-mix(in oklab, #0ea5e9 14%, transparent); }
 .dx-league-row__body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.dx-league-row__name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dx-league-row__meta { font-size: .75rem; opacity: .6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dx-league-row__name { font-weight: 700; overflow-wrap: anywhere; }
+.dx-league-row__meta { font-size: .75rem; opacity: .6; overflow-wrap: anywhere; }
 .dx-league-row__place { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; line-height: 1; }
 .dx-league-row__place b { font-size: 1.15rem; font-weight: 800; }
 .dx-league-row__place small { font-size: .62rem; opacity: .55; margin-top: .15rem; }
@@ -2023,7 +2012,7 @@ a.dx-rank__name:hover { color: var(--color-primary); }
 }
 .dx-next-predict:hover { border-color: var(--color-primary); background: color-mix(in oklab, var(--color-primary) 5%, transparent); }
 .dx-next-predict__eyebrow { display: block; font-size: .72rem; opacity: .6; }
-.dx-next-predict__title { display: block; font-weight: 600; font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dx-next-predict__title { display: block; font-weight: 600; font-size: .9rem; overflow-wrap: anywhere; }
 .dx-next-predict .ti { color: var(--color-primary); flex-shrink: 0; }
 /* То же в компактной карточке матча: строка под кнопками П1/Х/П2. */
 .dx-predicted-row { display: flex; align-items: center; gap: .35rem; flex-wrap: wrap; margin-top: .15rem; animation: dx-live-enter .35s ease both; }
@@ -2105,7 +2094,7 @@ a.dx-rank__name:hover { color: var(--color-primary); }
 .dx-fanzone__crown { flex-shrink: 0; width: 2.4rem; height: 2.4rem; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 1.25rem; color: #78350f; background: linear-gradient(135deg, #fde68a, #f59e0b); box-shadow: 0 6px 16px -6px rgba(245, 158, 11, .7); }
 .dx-fanzone__leader-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .dx-fanzone__leader-body small { font-size: .7rem; opacity: .65; }
-.dx-fanzone__leader-body b { font-size: .95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dx-fanzone__leader-body b { font-size: .95rem; overflow-wrap: anywhere; }
 .dx-fanzone__pts { flex-shrink: 0; font-size: 1.2rem; font-weight: 800; display: flex; flex-direction: column; align-items: flex-end; line-height: 1; }
 .dx-fanzone__pts small { font-size: .62rem; font-weight: 600; opacity: .55; margin-top: .15rem; }
 .dx-fanzone__empty { display: flex; gap: .65rem; align-items: flex-start; padding: .75rem; border-radius: 1rem; background: var(--dx-soft); font-size: .82rem; }
@@ -2194,7 +2183,7 @@ button.dx-poll__opt:active, a.dx-poll__opt:active { transform: scale(.98); }
     font-size: .8rem; color: var(--color-primary-content); background: var(--color-primary);
 }
 .dx-poll__ava { position: relative; }
-.dx-poll__label small { font-size: .7rem; font-weight: 500; opacity: .6; margin-top: .1rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dx-poll__label small { font-size: .7rem; font-weight: 500; opacity: .6; margin-top: .1rem; overflow-wrap: anywhere; }
 .dx-poll__opt.is-result { border-color: transparent; background: var(--dx-soft); }
 .dx-poll__fill { position: absolute; inset: 0 auto 0 0; background: color-mix(in oklab, var(--color-base-content) 9%, transparent); animation: dx-poll-grow .7s cubic-bezier(.2, .8, .2, 1) both; }
 .dx-poll__opt.is-mine .dx-poll__fill { background: color-mix(in oklab, var(--color-primary) 22%, transparent); }
@@ -2241,8 +2230,8 @@ button.dx-poll__opt:active, a.dx-poll__opt:active { transform: scale(.98); }
     background: var(--color-base-100); font-size: .85rem; font-weight: 800; font-variant-numeric: tabular-nums;
 }
 .dx-hstat__body { min-width: 0; width: 100%; display: flex; flex-direction: column; gap: .15rem; line-height: 1.2; }
-.dx-hstat__value { font-size: .82rem; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.dx-hstat__meta { font-size: .7rem; color: color-mix(in oklab, var(--color-base-content) 55%, transparent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dx-hstat__value { font-size: .82rem; font-weight: 800; overflow-wrap: anywhere; }
+.dx-hstat__meta { font-size: .7rem; color: color-mix(in oklab, var(--color-base-content) 55%, transparent); overflow-wrap: anywhere; }
 .dx-hstat__meta .ti { color: #0ea5e9; }
 .dx-hstat__bar { display: block; height: 5px; margin-top: .2rem; border-radius: 999px; overflow: hidden; background: color-mix(in oklab, var(--color-base-content) 9%, transparent); }
 .dx-hstat__bar > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #fbbf24, #f59e0b); }
@@ -2258,7 +2247,7 @@ button.dx-poll__opt:active, a.dx-poll__opt:active { transform: scale(.98); }
     font-size: .66rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
     color: color-mix(in oklab, var(--color-base-content) 42%, transparent);
 }
-.dx-ad__label > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dx-ad__label > span { overflow-wrap: anywhere; }
 .dx-ad__age { flex-shrink: 0; padding: 0 .35rem; border-radius: .35rem; font-size: .62rem; color: var(--color-error); border: 1px solid color-mix(in oklab, var(--color-error) 45%, transparent); }
 .dx-ad__preview { margin-left: auto; flex-shrink: 0; font-style: normal; text-transform: none; letter-spacing: 0; color: var(--color-warning); }
 .dx-ad.is-preview .dx-ad__link { outline: 2px dashed color-mix(in oklab, var(--color-warning) 70%, transparent); outline-offset: 3px; }
@@ -2380,7 +2369,7 @@ input[type="datetime-local"].dx-datetime::-webkit-date-and-time-value { text-ali
   background: color-mix(in oklab, var(--color-success) 22%, transparent); }
 .dx-cal__post.is-scheduled { background: color-mix(in oklab, var(--color-primary) 22%, transparent); }
 .dx-cal__time { font-weight: 600; flex-shrink: 0; }
-.dx-cal__kind { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dx-cal__kind { overflow-wrap: anywhere; }
 .dx-cal__more { font-size: .6rem; opacity: .6; }
 .dx-cal__dot { display: inline-block; width: .6rem; height: .6rem; border-radius: 999px; vertical-align: middle; background: color-mix(in oklab, var(--color-success) 60%, transparent); }
 .dx-cal__dot.is-scheduled { background: color-mix(in oklab, var(--color-primary) 60%, transparent); }
@@ -2414,7 +2403,7 @@ input[type="datetime-local"].dx-datetime::-webkit-date-and-time-value { text-ali
   font-size: 1.15rem; color: #fff; background: #94a3b8; }
 .dx-linked.is-on .dx-linked__icon { background: #229ed9; }
 .dx-linked__text { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
-.dx-linked__text b { font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dx-linked__text b { font-size: .9rem; overflow-wrap: anywhere; }
 .dx-linked__text small { font-size: .75rem; opacity: .65; }
 .dx-linked__text small .ti { color: var(--color-success); }
 .dx-linked__text small a { text-decoration: underline; color: var(--color-warning); opacity: 1; }
@@ -2472,9 +2461,13 @@ input[type="datetime-local"].dx-datetime::-webkit-date-and-time-value { text-ali
 .er__avatar--crest { background: #fff; box-shadow: inset 0 0 0 1px var(--color-base-300); }
 .er__avatar--crest img { width: 72%; height: 72%; object-fit: contain; }
 .er__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .1rem; }
-.er__title { font-weight: 650; font-size: .95rem; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.er__sub { font-size: .78rem; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-           color: color-mix(in oklab, var(--color-base-content) 58%, transparent); }
+/* Длинное имя («Жорже Габриель Да Коста Монтейро») — до двух строк, а не «Жорже Габриель Д…». */
+.er__title { font-weight: 650; font-size: .95rem; line-height: 1.25; overflow-wrap: anywhere;
+}
+.er__sub { font-size: .78rem; line-height: 1.3;
+           color: color-mix(in oklab, var(--color-base-content) 58%, transparent);
+    overflow-wrap: anywhere;
+}
 .er__tag { font-weight: 600; color: var(--color-warning); }
 .er__side { flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: .15rem; }
 .er__value {
@@ -2554,7 +2547,8 @@ input[type="datetime-local"].dx-datetime::-webkit-date-and-time-value { text-ali
     table.rt--list tbody { gap: .35rem; }
     table.rt--list tr { flex-wrap: nowrap; gap: .6rem; padding: .55rem .7rem; }
     table.rt--list td.rt-hide { display: none !important; }
-    table.rt--list td.rt-title { flex: 1 1 auto; min-width: 0; font-size: .9rem; }
+    /* Длинный логин без пробелов переносится, а не вылезает на значение. */
+    table.rt--list td.rt-title { flex: 1 1 auto; min-width: 0; font-size: .9rem; overflow-wrap: anywhere; }
     table.rt--list td.rt-title a, table.rt--list td.rt-title > div { min-width: 0; }
     table.rt--list td.rt-title .rt-sub {
         display: block; max-width: 100%; margin-top: .1rem; font-size: .72rem; font-weight: 500; line-height: 1.3;

@@ -2,13 +2,13 @@
 {% include "cards/_bg.svg" %}
 {% include "cards/_header.svg" %}
 <text x="64" y="196" font-family="Inter" font-weight="600" font-size="21" fill="#FFFFFF" fill-opacity=".6">Игрок тура по оценкам болельщиков</text>
-{% for line in name_lines %}<text x="60" y="{{ line.y }}" font-family="Inter Display" font-weight="800" font-size="{{ name_size }}" fill="url(#accentText)" letter-spacing="-2">{{ line.text }}</text>{% endfor %}
+{% for line in name_lines %}<text x="60" y="{{ line.y }}" font-family="Inter Display" font-weight="800" font-size="{{ name_size }}" fill="url(#accentText)" letter-spacing="-2"{% if line.text.length %} textLength="{{ line.text.length }}" lengthAdjust="spacingAndGlyphs"{% endif %}>{{ line.text }}</text>{% endfor %}
 <rect x="64" y="{{ badge_y }}" width="150" height="60" rx="30" fill="url(#ringGrad)"/>
 <text x="139" y="{{ badge_text_y }}" text-anchor="middle" font-family="Inter Display" font-weight="800" font-size="30" fill="#FFFFFF" letter-spacing="-0.5">{{ score }}</text>
 {% if drama %}
 <g filter="url(#shadow)"><rect x="64" y="440" width="620" height="84" rx="28" fill="url(#glass)" stroke="url(#glassEdge)" stroke-width="1.5"/></g>
 <text x="96" y="474" font-family="Inter" font-weight="600" font-size="17" fill="#FFFFFF" fill-opacity=".55">Самый драматичный матч</text>
-<text x="96" y="505" font-family="Inter Display" font-weight="700" font-size="25" fill="#FFFFFF" letter-spacing="-0.3">{{ drama }}</text>
+<text x="96" y="505" font-family="Inter Display" font-weight="700" font-size="25" fill="#FFFFFF" letter-spacing="-0.3"{% if drama.length %} textLength="{{ drama.length }}" lengthAdjust="spacingAndGlyphs"{% endif %}>{{ drama }}</text>
 {% endif %}
 <g transform="translate(940 330)">
   <circle r="190" fill="none" stroke="#FFFFFF" stroke-opacity=".06"/>

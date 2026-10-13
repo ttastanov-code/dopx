@@ -46,7 +46,7 @@
                     <thead><tr><th>Страница</th><th class="text-right">Просмотров</th></tr></thead>
                     <tbody>
                         {% for row in traffic.top_pages %}
-                        <tr><td class="text-xs font-mono truncate max-w-xs">{{ row.url_path }}</td><td class="text-right">{{ row.views }}</td></tr>
+                        <tr><td class="text-xs font-mono break-words max-w-xs">{{ row.url_path }}</td><td class="text-right">{{ row.views }}</td></tr>
                         {% empty %}
                         <tr><td colspan="2" class="text-center opacity-50 py-4">Нет данных</td></tr>
                         {% endfor %}
@@ -65,7 +65,7 @@
                     <thead><tr><th>Источник</th><th class="text-right">Переходов</th></tr></thead>
                     <tbody>
                         {% for row in traffic.top_referrers %}
-                        <tr><td class="text-xs font-mono truncate max-w-xs">{{ row.referrer }}</td><td class="text-right">{{ row.count }}</td></tr>
+                        <tr><td class="text-xs font-mono break-words max-w-xs">{{ row.referrer }}</td><td class="text-right">{{ row.count }}</td></tr>
                         {% empty %}
                         <tr><td colspan="2" class="text-center opacity-50 py-4">Прямые заходы / нет рефереров</td></tr>
                         {% endfor %}

@@ -29,7 +29,12 @@ def can_access_section(user, section_key: str) -> bool:
 def dashboard_nav(user, active_tab="") -> dict:
     """{% dashboard_nav user active_tab as nav %} — видимые разделы и страницы меню."""
     from ..nav import build_nav
-    return build_nav(user, active_tab or "")
+
+    # Каркас и заголовок страницы зовут тег дважды — считаем права один раз за запрос.
+    cache = user.__dict__.setdefault("_dashboard_nav", {})
+    if active_tab not in cache:
+        cache[active_tab] = build_nav(user, active_tab or "")
+    return cache[active_tab]
 
 
 @register.simple_tag
@@ -141,13 +146,14 @@ def format_command_output(text: str):
 def _render_line(line: str, ansi_class: str | None = None) -> str:
     if ansi_class == "__heading__":
         # MIGRATE_HEADING — как заголовок раздела.
-        return format_html('<div class="divider text-xs font-semibold text-info my-2">{}</div>', line)
+        # Заголовок блока вывода — обычной строкой с переносом: divider daisyUI не переносит текст.
+        return format_html('<div class="text-xs font-semibold text-info my-2 pb-1 border-b border-base-300 break-words">{}</div>', line)
 
     m = _CHUNK_RE.match(line)
     if m:
         idx, limit, ts = m.groups()
         return format_html(
-            '<div class="divider text-[10px] opacity-50 my-2">Чанк {}{}порция ≤{}{}{}</div>',
+            '<div class="text-[10px] opacity-50 my-2 pb-1 border-b border-base-300 break-words">Чанк {}{}порция ≤{}{}{}</div>',
             idx, _DOT_SEP, limit, _DOT_SEP, ts,
         )
 

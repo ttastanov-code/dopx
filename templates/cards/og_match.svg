@@ -10,7 +10,7 @@
 <circle cx="338" cy="466" r="35" fill="#FFFFFF" fill-opacity=".1"/>
 <image href="{{ hero.photo }}" x="304" y="432" width="68" height="68" clip-path="url(#heroClip)" preserveAspectRatio="xMidYMid slice"/>{% endif %}
 <text x="{{ hero.text_x }}" y="456" font-family="Inter" font-weight="600" font-size="17" fill="#FFFFFF" fill-opacity=".55">Лучший на поле</text>
-<text x="{{ hero.text_x }}" y="487" font-family="Inter Display" font-weight="700" font-size="27" fill="#FFFFFF" letter-spacing="-0.3">{{ hero.name }}</text>
+<text x="{{ hero.text_x }}" y="487" font-family="Inter Display" font-weight="700" font-size="27" fill="#FFFFFF" letter-spacing="-0.3"{% if hero.name.length %} textLength="{{ hero.name.length }}" lengthAdjust="spacingAndGlyphs"{% endif %}>{{ hero.name }}</text>
 <rect x="772" y="438" width="120" height="56" rx="28" fill="url(#ringGrad)"/>
 <text x="832" y="476" text-anchor="middle" font-family="Inter Display" font-weight="800" font-size="27" fill="#FFFFFF" letter-spacing="-0.5">{{ hero.score }}</text>
 {% else %}

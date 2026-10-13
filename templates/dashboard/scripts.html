@@ -17,9 +17,16 @@
     </div>
 </div>
 
+{# Поиск по командам: прячет несовпавшие карточки и пустые категории. #}
+<label class="input input-bordered input-sm flex items-center gap-2 mb-3 max-w-md">
+    <i class="ti ti-search opacity-50"></i>
+    <input type="search" id="cmd-filter" class="grow" placeholder="Найти команду: «фото», «пересчитать», «дубль»…" autocomplete="off">
+</label>
+<p id="cmd-filter-empty" class="text-sm opacity-60 mb-3" hidden>Команд по такому запросу нет.</p>
+
 {# Цветная полоска категории: зелёный — seed, красный — cleanup, жёлтый — recalc, синий — diagnose. #}
 {% for cat_key, cat_label, specs in command_categories %}
-<div class="card bg-base-100 border border-base-300 mb-3 overflow-hidden" style="border-left: 3px solid {% if cat_key == 'seed' %}var(--color-success){% elif cat_key == 'cleanup' %}var(--color-error){% elif cat_key == 'recalc' %}var(--color-warning){% else %}var(--color-info){% endif %};">
+<div class="card bg-base-100 border border-base-300 mb-3 overflow-hidden" data-cmd-cat style="border-left: 3px solid {% if cat_key == 'seed' %}var(--color-success){% elif cat_key == 'cleanup' %}var(--color-error){% elif cat_key == 'recalc' %}var(--color-warning){% else %}var(--color-info){% endif %};">
     <div class="card-body p-3 md:p-4">
         <div class="dopx-section-eyebrow">
             {% if cat_key == 'seed' %}<i class="ti ti-seeding"></i>
@@ -30,7 +37,7 @@
         </div>
         <div class="grid grid-cols-1 xl:grid-cols-2 gap-2 mt-2">
             {% for spec in specs %}
-            <details class="group border border-base-300 rounded-lg bg-base-100 open:bg-base-200/30">
+            <details class="group border border-base-300 rounded-lg bg-base-100 open:bg-base-200/30" data-cmd>
                 {# На узких экранах описание уходит на отдельную строку. #}
                 <summary class="dopx-cmd-summary cursor-pointer select-none px-3 py-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
                     {# Описание всегда на своей строке и переносится целиком. Бейдж «необратимо» для destructive. #}
@@ -58,7 +65,7 @@
                         <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
                             {% for arg in spec.args %}{% if arg.kind != 'flag' %}
                             <div class="flex flex-col gap-0.5 min-w-0">
-                                <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold truncate" title="{{ arg.help }}">
+                                <label class="text-[10px] uppercase tracking-wide opacity-45 font-semibold break-words" title="{{ arg.help }}">
                                     {{ arg.flag }}{% if arg.required %} <span class="text-error">*</span>{% endif %}
                                 </label>
                                 {% if arg.kind == 'choice' %}
@@ -181,6 +188,28 @@ window.addEventListener('load', function () {
             if (!s) return;
             el.scrollTop = s.atBottom && s.top > 0 ? el.scrollHeight : s.top;
         });
+    });
+})();
+</script>
+<script>
+(function () {
+    const input = document.getElementById('cmd-filter');
+    if (!input) return;
+    const norm = (t) => t.toLowerCase().replace(/ё/g, 'е');
+    input.addEventListener('input', () => {
+        const q = norm(input.value.trim());
+        let shown = 0;
+        document.querySelectorAll('[data-cmd-cat]').forEach((cat) => {
+            let any = false;
+            cat.querySelectorAll('[data-cmd]').forEach((cmd) => {
+                const hit = !q || norm(cmd.querySelector('summary').textContent).includes(q);
+                cmd.hidden = !hit;
+                any = any || hit;
+            });
+            cat.hidden = !any;
+            shown += any ? 1 : 0;
+        });
+        document.getElementById('cmd-filter-empty').hidden = shown > 0;
     });
 })();
 </script>

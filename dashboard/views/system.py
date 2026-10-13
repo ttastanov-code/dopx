@@ -9,7 +9,6 @@ from django.db import transaction
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
-from core.models import get_setting
 from evaluations.models import EvaluationSession
 
 from .. import infra_services, services
@@ -19,14 +18,26 @@ from ..models import AuditAction, StaffActionLog
 
 @staff_member_required
 def audit_log(request):
-    """Журнал кастомных staff-действий (StaffActionLog). CRUD из админки — в django_admin_log."""
-    # Размер журнала — из настроек платформы.
-    entries_limit = get_setting("audit_log_entries_limit", 200)
-    entries = list(StaffActionLog.objects.select_related("actor")[:entries_limit])
+    """Журнал staff-действий (StaffActionLog) с фильтрами и постраничным выводом. CRUD из админки — в django_admin_log."""
+    qs = StaffActionLog.objects.all()
+    action, actor, q = request.GET.get("action", ""), request.GET.get("actor", ""), request.GET.get("q", "").strip()
+    if action in AuditAction.values:
+        qs = qs.filter(action=action)
+    if actor:
+        qs = qs.filter(actor_username=actor)
+    if q:
+        qs = qs.filter(target__icontains=q)
+    page = Paginator(qs, 50).get_page(request.GET.get("page"))
     context = {
         "page_title": "Аудит — DOPX Staff",
         "active_tab": "audit",
-        "entries": entries,
+        "entries": page,
+        "page_obj": page,
+        "is_paginated": page.has_other_pages(),
+        "actions": AuditAction.choices,
+        "actors": StaffActionLog.objects.exclude(actor_username="").values_list("actor_username", flat=True).distinct().order_by("actor_username"),
+        "f_action": action, "f_actor": actor, "f_q": q,
+        "filter_qs": "&".join(f"{k}={v}" for k, v in (("action", action), ("actor", actor), ("q", q)) if v),
     }
     return render(request, "dashboard/audit_log.html", context)
 

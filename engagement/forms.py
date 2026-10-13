@@ -222,12 +222,13 @@ class ExpertInviteForm(forms.ModelForm):
         current = self.data.get("match") or match_id
         keep = match_or_none(current)
         group_match_choices(self.fields["match"], MATCH_WINDOW_BACK, keep,
-                            empty_label="Эксперт выберет сам: ближайший тур, прошедший и перенесённые")
+                            empty_label="Эксперт выберет сам")
         self.fields["expert"].queryset = Expert.objects.filter(is_active=True)
         self.fields["expert"].empty_label = "Новый эксперт: представится сам"
         self.fields["days"].choices = EXPIRY_CHOICES
         self.fields["max_takes"].widget.attrs.update({"min": 1, "max": 20})
         self.fields["max_takes"].help_text = "Для одного матча хватит 1. Для «выберет сам» — по числу матчей."
+        self.fields["match"].help_text = "«Эксперт выберет сам» — ему откроются ближайший тур, прошедший и перенесённые матчи."
         self.fields["auto_publish"].help_text = "Только для проверенных экспертов. Иначе мнение ждёт вашей проверки."
         if not self.is_bound:
             self.initial.update({k: v for k, v in (("match", match_id), ("expert", expert_id)) if v})

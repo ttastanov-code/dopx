@@ -67,8 +67,8 @@
             {% for t in takes %}
             <div class="flex items-center gap-3 text-sm">
                 <div class="min-w-0 flex-1">
-                    <div class="font-semibold truncate">{{ t.match.home_team.name }} – {{ t.match.away_team.name }}</div>
-                    <div class="text-xs opacity-60 truncate">{{ t.headline|default:t.text|truncatechars:80 }}</div>
+                    <div class="font-semibold break-words">{{ t.match.home_team.name }} – {{ t.match.away_team.name }}</div>
+                    <div class="text-xs opacity-60 break-words">{{ t.headline|default:t.text }}</div>
                 </div>
                 {% if t.is_published %}
                 <a href="{% url 'matches:detail' t.match_id %}#expert-takes" class="badge badge-success badge-sm">опубликовано</a>

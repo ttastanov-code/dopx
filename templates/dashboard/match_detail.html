@@ -5,8 +5,13 @@
 
 {# Карточка матча: правка статуса/счёта/даты/тура/manual_override и отдельная кнопка пересчёта. #}
 
-<div class="mb-4">
+<div class="mb-4 flex flex-wrap items-center justify-between gap-2">
     <a href="{% url 'dashboard:matches_list' %}" class="text-xs opacity-60 hover:opacity-100"><i class="ti ti-arrow-left"></i> К списку матчей</a>
+    {# Та же запись на сайте и в админке (все поля). #}
+    <span class="flex flex-wrap gap-2">
+        <a href="{% url 'matches:detail' match.pk %}" class="btn btn-xs btn-ghost" target="_blank" rel="noopener"><i class="ti ti-external-link"></i> На сайте</a>
+        {% if perms.matches.view_match or perms.matches.change_match %}<a href="{% url 'admin:matches_match_change' match.pk %}" class="btn btn-xs btn-ghost"><i class="ti ti-table"></i> В админке</a>{% endif %}
+    </span>
 </div>
 
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">

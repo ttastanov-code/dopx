@@ -265,8 +265,10 @@
         if (!intervalSeconds() || document.visibilityState !== 'visible') return;
         try {
             const response = await fetch('/api/live-version/', { credentials: 'same-origin', cache: 'no-store', headers: { 'X-Live-Refresh': '1' } });
-            if (!response.ok || response.redirected) return;
+            if (!response.ok || response.redirected) { document.dispatchEvent(new CustomEvent('dopx:live-status', { detail: { ok: false } })); return; }
             const version = String((await response.json()).v);
+            // Связь с сервером есть — индикатор «Живые данные» в дашборде (dashboard-shell.js).
+            document.dispatchEvent(new CustomEvent('dopx:live-status', { detail: { ok: true, changed: knownVersion !== null && version !== knownVersion } }));
             if (knownVersion === null) knownVersion = version;
             else if (version !== knownVersion) {
                 knownVersion = version;
@@ -274,7 +276,7 @@
                 // Live-блоки (счёт, события) — сразу и даже во время скролла: их опрос сливает узлы мягко.
                 if (window.dopxWakeAll) window.dopxWakeAll(true);
             }
-        } catch (e) { return; }
+        } catch (e) { document.dispatchEvent(new CustomEvent('dopx:live-status', { detail: { ok: false } })); return; }
         if (!pendingVersion || shouldSkip()) return;
         const applied = await refresh();
         await refreshLiveSources();

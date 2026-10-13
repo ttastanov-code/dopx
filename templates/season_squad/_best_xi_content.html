@@ -76,7 +76,7 @@
                 <a href="{{ card.occupant_profile_url }}"
                    class="mt-1.5 block w-full max-w-full text-center font-medium {% if row.slots|length >= 5 %}text-[10px] break-words hyphens-auto{% else %}text-[11px]{% endif %} md:text-sm leading-snug text-white/90 hover:opacity-70 transition-opacity">{{ card.occupant_name }}</a>
                 <div class="flex items-center justify-center gap-1 mt-0.5 max-w-full">
-                    <span class="text-[9px] md:text-[11px] text-white/45 truncate{% if row.slots|length >= 5 %} hidden md:inline{% endif %}">{{ card.occupant_team_name|default:"—" }}</span>
+                    <span class="text-[9px] md:text-[11px] text-white/45 break-words{% if row.slots|length >= 5 %} hidden md:inline{% endif %}">{{ card.occupant_team_name|default:"—" }}</span>
                     {% if card.season_score is not None %}<span class="xi-score">{{ card.season_score|floatformat:1 }}</span>{% endif %}
                     {# text-white/70 — иконка видна на тёмном фоне поля. #}
                     {% if card.explanation %}<span class="text-white/70">{% include 'components/_tooltip_icon.html' with text=card.explanation %}</span>{% endif %}

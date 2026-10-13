@@ -15,8 +15,8 @@
                             {% elif b.image %}<img src="{{ b.image.url }}" alt="" class="w-full h-full object-cover">{% else %}<i class="ti ti-photo-off opacity-40"></i>{% endif %}
                         </span>
                         <span class="min-w-0">
-                            <span class="font-semibold block truncate">{{ b.title }}</span>
-                            <span class="text-xs opacity-55 block truncate">{{ b.advertiser_label|default:"Промо DOPX" }} · {{ b.get_format_display }}</span>
+                            <span class="font-semibold block break-words">{{ b.title }}</span>
+                            <span class="text-xs opacity-55 block break-words">{{ b.advertiser_label|default:"Промо DOPX" }} · {{ b.get_format_display }}</span>
                         </span>
                     </a>
                 </td>

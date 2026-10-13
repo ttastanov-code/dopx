@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from django.contrib import admin
+from django.shortcuts import redirect
 from unfold.admin import ModelAdmin
+from unfold.decorators import action
 from django.utils import timezone
 
 from core.admin_actions import export_as_csv
@@ -13,6 +15,13 @@ from .models import AntiFraudThreshold, Follow, PushSubscription, SuspiciousActi
 
 @admin.register(User)
 class UserAdmin(ModelAdmin):
+    # Кнопка на карточке записи: та же запись в staff-дашборде (действия, история, проверки).
+    actions_detail = ["open_in_dashboard"]
+
+    @action(description="Открыть в дашборде", url_path="open-in-dashboard", icon="space_dashboard")
+    def open_in_dashboard(self, request, object_id):
+        return redirect("dashboard:user_detail", user_id=object_id)
+
     list_display = (
         "username",
         "email",

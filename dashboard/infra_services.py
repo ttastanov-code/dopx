@@ -216,6 +216,7 @@ def _next_run(schedule):
 # Понятные названия задач расписания для дашборда; нет в словаре — первая строка docstring.
 BEAT_TASK_TITLES = {
     "celery-heartbeat": "Пульс Celery для /healthz/ и Системного статуса",
+    "cleanup-old-sync-runs": "Очистка журнала синхронизации: успешные запуски старше 14 дней, с ошибками — 60",
     "adminbot-daily-digest": "Утренняя сводка в Telegram-бот",
     "adminbot-matchday-tick": "Матчдень: брифинг, отчёты, всплески оценок, анонсы в канал",
     "adminbot-minute-tick": "Посты канала по расписанию и эскалация инцидентов",

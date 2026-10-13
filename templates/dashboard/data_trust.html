@@ -56,13 +56,13 @@
             {% for report in trust.data_error_reports %}
             <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 p-3 rounded-lg bg-base-200/60">
                 <div class="flex-1 min-w-0">
-                    <div class="font-medium truncate">{{ report.subject }}</div>
+                    <div class="font-medium break-words">{{ report.subject }}</div>
                     {% if report.related_match %}
                     <a href="{% url 'matches:detail' report.related_match.id %}" target="_blank" class="text-xs link link-hover">
                         <i class="ti ti-external-link"></i> {{ report.related_match.home_team }} — {{ report.related_match.away_team }}
                     </a>
                     {% endif %}
-                    <div class="text-sm mt-1.5 leading-snug opacity-80">{{ report.message|truncatewords:40 }}</div>
+                    <div class="text-sm mt-1.5 leading-snug opacity-80">{{ report.message }}</div>
                     <div class="text-xs opacity-50 mt-1">
                         {{ report.contact_email }} · {{ report.created_at|ago }}
                         <span class="badge badge-xs {% if report.status == 'new' %}badge-info{% elif report.status == 'in_progress' %}badge-warning{% elif report.status == 'resolved' %}badge-success{% else %}badge-ghost{% endif %} ml-1">
@@ -109,7 +109,7 @@
             {% for d in trust.unreviewed_discrepancies %}
             <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 p-3 rounded-lg bg-base-200/60">
                 <div class="flex-1 min-w-0">
-                    <div class="font-medium truncate">
+                    <div class="font-medium break-words">
                         {% if d.match %}
                         <a href="{% url 'matches:detail' d.match.id %}" target="_blank" class="link link-hover">{{ d.match_label }}</a>
                         {% else %}
@@ -166,7 +166,7 @@
                         <td class="text-xs">{{ entry.actor_username|default:"—" }}</td>
                         {# Действие без переноса — таблица скроллится по горизонтали. #}
                         <td><span class="badge badge-sm badge-ghost whitespace-nowrap">{{ entry.get_action_display }}</span></td>
-                        <td class="text-xs truncate max-w-[240px]">{{ entry.target|default:"—" }}</td>
+                        <td class="text-xs break-words max-w-[240px]">{{ entry.target|default:"—" }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>

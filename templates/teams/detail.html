@@ -62,7 +62,7 @@
       {% endif %}
       <div class="flex-1 text-center md:text-left w-full min-w-0">
         <div class="flex flex-wrap items-center justify-center md:justify-start gap-2 mb-2">
-          <h1 class="text-xl md:text-3xl font-bold truncate">{{ team.name }}</h1>
+          <h1 class="text-xl md:text-3xl font-bold break-words">{{ team.name }}</h1>
           {% include 'users/_follow_button.html' with target_type='team' target_id=team.id following=is_following %}
           {% if mood_trend %}
           {# Тренд настроения клуба (↑/↓/→ по последним матчам). #}
@@ -79,7 +79,7 @@
           {% endif %}
         </div>
         {% if team.city %}
-        <p class="text-sm md:text-lg opacity-60 mb-3 md:mb-4 truncate">
+        <p class="text-sm md:text-lg opacity-60 mb-3 md:mb-4 break-words">
           <i class="ti ti-map-pin"></i> {{ team.city }}
         </p>
         {% endif %}
@@ -338,7 +338,7 @@
             </div>
             {# Команды #}
             <div class="flex-1 min-w-0">
-              <span class="font-medium text-sm sm:text-base truncate block group-hover:text-primary transition-colors">
+              <span class="font-medium text-sm sm:text-base break-words block group-hover:text-primary transition-colors">
                 {{ match.home_team.name }} vs {{ match.away_team.name }}
               </span>
             </div>
@@ -383,7 +383,7 @@
               </span>
             </div>
             <div class="flex-1 min-w-0">
-              <span class="font-medium text-sm sm:text-base truncate block group-hover:text-primary transition-colors">
+              <span class="font-medium text-sm sm:text-base break-words block group-hover:text-primary transition-colors">
                 {{ match.home_team.name }} vs {{ match.away_team.name }}
               </span>
             </div>
@@ -559,10 +559,12 @@
             <div class="relative flex-1 min-w-0 pointer-events-none">
               <div class="font-medium text-sm leading-tight">{{ agg.player.first_name }} {{ agg.player.last_name }}</div>
               <div class="text-xs opacity-60">vs {% if agg.match.home_team_id == team.id %}{{ agg.match.away_team.name }}{% else %}{{ agg.match.home_team.name }}{% endif %}, {{ agg.match.start_time|date:"d.m" }} · {{ agg.total_votes }} {{ agg.total_votes|default:0|ru_plural:"оценка,оценки,оценок" }}</div>
+              {# На телефоне плашка под именем: справа она сжимала имя до четырёх строк. #}
+              <div class="mt-1 sm:hidden pointer-events-auto">{% confidence_badge agg %}</div>
             </div>
             <div class="relative text-right flex-shrink-0">
               <div class="font-bold text-success text-sm md:text-base pointer-events-none">{{ agg.performance_score|floatformat:1 }}</div>
-              <div class="mt-0.5">{% confidence_badge agg %}</div>
+              <div class="mt-0.5 hidden sm:block">{% confidence_badge agg %}</div>
             </div>
           </div>
           {% endfor %}

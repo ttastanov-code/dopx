@@ -21,6 +21,30 @@ def cleanup_expired_captchas() -> int:
     return deleted
 
 
+# Журнал запусков синхронизации: live-опрос пишет запись каждые 10 с.
+SYNC_RUN_KEEP_DAYS = 14
+SYNC_RUN_KEEP_DAYS_WITH_ERRORS = 60
+
+
+@shared_task
+def cleanup_old_sync_runs() -> int:
+    """Удаляет старые ParserSyncRun: успешные — через 14 дней, с ошибками — через 60."""
+    from datetime import timedelta
+
+    from django.db.models import Q
+
+    from parsers.models import ParserSyncRun
+
+    now = timezone.now()
+    deleted, _ = ParserSyncRun.objects.filter(
+        Q(created_at__lt=now - timedelta(days=SYNC_RUN_KEEP_DAYS), errors=0)
+        | Q(created_at__lt=now - timedelta(days=SYNC_RUN_KEEP_DAYS_WITH_ERRORS))
+    ).delete()
+    if deleted:
+        logger.info("Удалено %d старых записей журнала синхронизации.", deleted)
+    return deleted
+
+
 HEARTBEAT_CACHE_KEY = "celery:heartbeat"
 
 

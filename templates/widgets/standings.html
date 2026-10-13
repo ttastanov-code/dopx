@@ -30,7 +30,7 @@
                     {% for row in standings %}
                     <tr>
                         <td class="font-mono text-xs">{{ forloop.counter }}</td>
-                        <td class="text-xs truncate max-w-[140px]">{{ row.team_name }}</td>
+                        <td class="text-xs break-words max-w-[140px]">{{ row.team_name }}</td>
                         <td class="text-center text-xs">{{ row.played }}</td>
                         <td class="text-center text-xs font-bold">{{ row.points }}</td>
                     </tr>

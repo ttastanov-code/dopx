@@ -49,7 +49,7 @@
     color: color-mix(in oklab, var(--color-base-content) 52%, transparent);
     min-width: 0;
 }
-.mrow__meta span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mrow__meta span { overflow-wrap: anywhere; }
 .mrow__badge {
     display: inline-flex;
     align-items: center;
@@ -110,10 +110,8 @@
     font-weight: 600;
     color: var(--color-base-content);
     letter-spacing: -0.005em;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     min-width: 0;
+    overflow-wrap: anywhere;
 }
 .mrow__team-name--winner { font-weight: 800; }
 
@@ -295,9 +293,7 @@
     font-size: .75rem;
     font-weight: 700;
     color: var(--color-base-content);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
 }
 
 /* Мини-ДНК: чипы-трейты. */

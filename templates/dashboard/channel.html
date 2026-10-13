@@ -47,7 +47,7 @@
                 <span class="badge badge-sm shrink-0 mt-0.5 {% if p.status == 'failed' %}badge-error{% elif p.status == 'scheduled' %}badge-primary badge-outline{% else %}badge-ghost{% endif %}">{{ p.get_status_display }}</span>
                 <span class="min-w-0 flex-1">
                     <span class="text-xs opacity-60">{{ p.get_kind_display }}{% if p.scheduled_at and p.status == 'scheduled' %} · {{ p.scheduled_at|date:"d.m H:i" }}{% endif %}{% if p.image or p.tg_file_id %} · 📷{% endif %}{% if p.images %} · альбом{% endif %}{% if p.poll %} · опрос{% endif %}{% if p.by_ai %} · ✍️ Claude{% endif %}</span>
-                    <span class="block text-sm truncate">{{ p.text|striptags|truncatechars:140 }}</span>
+                    <span class="block text-sm break-words">{{ p.text|striptags }}</span>
                     {% if p.error %}<span class="block text-xs text-error">{{ p.error }}</span>{% endif %}
                 </span>
                 <i class="ti ti-chevron-right opacity-40 mt-1"></i>
@@ -63,7 +63,7 @@
             <div class="flex items-center gap-3 px-4 py-2.5 border-b border-base-200 last:border-0">
                 <div class="min-w-0 flex-1">
                     <div class="text-xs opacity-60">{{ p.published_at|date:"d.m.Y H:i" }} · {{ p.get_kind_display }}{% if p.published_by %} · {{ p.published_by.username }}{% else %} · автопостинг{% endif %}</div>
-                    <div class="text-sm truncate">{{ p.text|striptags|truncatechars:160 }}</div>
+                    <div class="text-sm break-words">{{ p.text|striptags }}</div>
                 </div>
                 {% if perms.adminbot.change_channelpost %}<form method="post" action="{% url 'dashboard:channel_post_pin' p.pk %}">{% csrf_token %}<button class="btn btn-xs btn-ghost" title="Закрепить в канале"><i class="ti ti-pin"></i></button></form>{% endif %}
                 {% if perms.adminbot.delete_channelpost %}<form method="post" action="{% url 'dashboard:channel_post_delete' p.pk %}" onsubmit="return confirm('Удалить этот пост из канала?')">{% csrf_token %}<button class="btn btn-xs btn-ghost text-error" title="Удалить из канала"><i class="ti ti-trash"></i></button></form>{% endif %}

@@ -8,9 +8,6 @@ from django.urls import reverse
 FORM_CHART_MATCHES = 10
 
 
-def _short(name: str) -> str:
-    """Короткое имя соперника для подписи под столбиком."""
-    return name if len(name) <= 9 else name[:8] + "…"
 
 
 def build_form_points(aggregates, team_id, min_votes: int, limit: int = FORM_CHART_MATCHES) -> list[dict]:
@@ -36,7 +33,7 @@ def build_form_points(aggregates, team_id, min_votes: int, limit: int = FORM_CHA
             "tone": ("good" if score >= 7 else "mid" if score >= 5 else "low") if score is not None else "none",
             "stat": stat,
             "stat_pos": round(max(0.0, min(10.0, stat)) * 10) if stat else None,
-            "opponent": _short(opponent),
+            "opponent": opponent,
             "opponent_full": opponent,
             "date": match.start_time,
             "votes": agg.total_votes or 0,

@@ -310,3 +310,24 @@ class HeartbeatMiddleware:
             from core.heartbeat import beat
             beat("web")
         return self.get_response(request)
+
+
+class MaintenanceMiddleware:
+    """Режим обслуживания (раздел «Сервер» дашборда): посетителям — заглушка 503, сотрудники работают как обычно."""
+
+    OPEN_PREFIXES = ("/staff/", "/admin/", "/healthz/", "/static/", "/media/", "/users/login/", "/api/live-version/")
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if not request.path.startswith(self.OPEN_PREFIXES) and not getattr(request.user, "is_staff", False):
+            from dashboard.server_tools import maintenance_enabled
+
+            if maintenance_enabled():
+                from django.shortcuts import render
+
+                response = render(request, "errors/maintenance.html", {"page_title": "Технические работы — DOPX"}, status=503)
+                response["Retry-After"] = "600"
+                return response
+        return self.get_response(request)

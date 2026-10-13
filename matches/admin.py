@@ -1,5 +1,7 @@
 from django.contrib import admin
+from django.shortcuts import redirect
 from unfold.admin import ModelAdmin, TabularInline
+from unfold.decorators import action
 
 from core.admin_actions import export_as_csv
 from events.models import MatchEvent
@@ -34,16 +36,30 @@ class MatchTeamStatisticsInline(TabularInline):
 
 @admin.register(Match)
 class MatchAdmin(ModelAdmin):
+    # Кнопка на карточке записи: та же запись в staff-дашборде (действия, история, проверки).
+    actions_detail = ["open_in_dashboard"]
 
-    list_display = (
-        "home_team",
-        "away_team",
-        "start_time",
-        "status",
-        "manual_override",
-        "home_score",
-        "away_score",
-    )
+    @action(description="Открыть в дашборде", url_path="open-in-dashboard", icon="space_dashboard")
+    def open_in_dashboard(self, request, object_id):
+        return redirect("dashboard:match_detail", match_id=object_id)
+
+
+    list_display = ("match_title", "tour", "start_time", "status", "score", "manual_flag")
+    list_display_links = ("match_title",)
+    list_select_related = ("home_team", "away_team")
+
+    @admin.display(description="Матч", ordering="home_team__name")
+    def match_title(self, obj):
+        return f"{obj.home_team} — {obj.away_team}"
+
+    @admin.display(description="Счёт")
+    def score(self, obj):
+        return f"{obj.home_score}:{obj.away_score}" if obj.status in ("live", "finished") else "—"
+
+    # Отметка только у матчей с ручным режимом: «нет» в каждой строке — шум.
+    @admin.display(description="Вручную", ordering="manual_override")
+    def manual_flag(self, obj):
+        return "✋ вручную" if obj.manual_override else ""
 
     list_filter = (
         "league",

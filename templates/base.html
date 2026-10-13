@@ -47,6 +47,7 @@
     <link rel="stylesheet" href="{% static_v 'css/badges.css' %}">
     {# Общие компоненты интерфейса (dx-*). #}
     <link rel="stylesheet" href="{% static_v 'css/ui.css' %}">
+    {% if request.path|slice:':17' == '/staff/dashboard/' and '/2fa/' not in request.path %}<link rel="stylesheet" href="{% static_v 'css/dashboard.css' %}"><script defer src="{% static_v 'js/dashboard-shell.js' %}"></script>{% endif %}
     {# static_v — добавляет ?v=<mtime> для сброса кэша. #}
 
     {# Alpine.js #}
@@ -397,7 +398,7 @@
     </style>
 </head>
 <body
-    class="bg-base-100 text-base-content antialiased{% if show_tabbar %} has-tabbar{% endif %}"
+    class="bg-base-100 text-base-content antialiased{% if show_tabbar %} has-tabbar{% endif %}{% if request.path|slice:':17' == '/staff/dashboard/' and '/2fa/' not in request.path %} is-staff{% endif %}"
     hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
     data-vapid-public-key="{{ VAPID_PUBLIC_KEY|default:'' }}"
     data-live-version="{{ live_version }}"
@@ -409,8 +410,8 @@
     <meta name="original-title" content="{{ page_title|default:'DOPX' }}">
 
     {% block body_content %}
-    {# Navbar #}
-    {% include 'components/_navbar.html' %}
+    {# Navbar; в staff-дашборде — свой каркас с боковым меню. #}
+    {% if request.path|slice:':17' == '/staff/dashboard/' and '/2fa/' not in request.path %}{% include 'dashboard/_shell.html' %}{% else %}{% include 'components/_navbar.html' %}{% endif %}
     {# Messages #}
     {% if messages %}
     {# left-4 + right-4 — ширина между краями, влезает на 375px. #}
@@ -433,8 +434,8 @@
     </div>
     {% endif %}
     {# Main Content #}
-    <main class="container mx-auto px-3 sm:px-4 py-4 sm:py-6 w-full">
-        {% include 'components/_profile_nudge.html' %}
+    <main class="{% if request.path|slice:':17' == '/staff/dashboard/' and '/2fa/' not in request.path %}dash-main{% else %}container mx-auto px-3 sm:px-4 py-4 sm:py-6 w-full{% endif %}">
+        {% if not request.path|slice:':17' == '/staff/dashboard/' %}{% include 'components/_profile_nudge.html' %}{% endif %}
         {% if mourning %}{% include 'components/_mourning_banner.html' %}{% endif %}
         {% block content %}{% endblock %}
     </main>

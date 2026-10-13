@@ -22,6 +22,7 @@ class AuditAction(models.TextChoices):
     CELERY_TASK_TRIGGERED = "celery_task_triggered", _("Запуск celery-задачи вручную")
     CELERY_TASK_REVOKED = "celery_task_revoked", _("Отзыв/остановка celery-задачи")
     SERVICE_RESTART = "service_restart", _("Перезапуск сервиса (бот, воркер)")
+    SERVER_ACTION = "server_action", _("Действие на сервере (сайт, кэш, очереди, база, обслуживание)")
     SPORTMONKS_HEALTH_CHECK = "sportmonks_health_check", _("Проверка доступности Sportmonks API")
     SYSTEM_ANNOUNCEMENT_SENT = "system_announcement_sent", _("Отправлено системное объявление")
     MOURNING_CHANGED = "mourning_changed", _("Изменён режим траура")

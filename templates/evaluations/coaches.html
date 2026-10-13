@@ -36,8 +36,8 @@
                         <i class="ti ti-clipboard-list text-accent text-lg"></i>
                     </div>
                     <div class="flex-1 min-w-0">
-                        <h3 class="font-extrabold text-base truncate">{{ coach.first_name }} {{ coach.last_name }}</h3>
-                        <p class="text-xs text-accent/70 font-semibold truncate">
+                        <h3 class="font-extrabold text-base break-words">{{ coach.first_name }} {{ coach.last_name }}</h3>
+                        <p class="text-xs text-accent/70 font-semibold break-words">
                             {% if coach == match.home_coach %}{{ match.home_team.name }}{% else %}{{ match.away_team.name }}{% endif %}
                         </p>
                     </div>

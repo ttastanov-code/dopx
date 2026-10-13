@@ -8,7 +8,7 @@
             <div class="flex items-center gap-3 min-w-0">
                 <i class="ti {% if 'телефон' in sub.friendly_label %}ti-device-mobile{% else %}ti-device-desktop{% endif %} opacity-60 flex-shrink-0"></i>
                 <div class="min-w-0">
-                    <div class="font-medium text-sm truncate">
+                    <div class="font-medium text-sm break-words">
                         {{ sub.friendly_label }}
                         <span class="hidden badge badge-xs badge-primary ml-1 align-middle" data-push-current>это устройство</span>
                     </div>

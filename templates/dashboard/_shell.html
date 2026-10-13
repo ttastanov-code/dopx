@@ -1,0 +1,63 @@
+{% load dashboard_extras %}
+{% comment %}
+Каркас staff-дашборда вместо шапки сайта: боковое меню (ПК), верхняя панель и выезжающее меню (телефон),
+палитра команд ⌘K / Ctrl+K. Состав меню — dashboard/nav.py, проверка доступа — в middleware.
+{% endcomment %}
+{% dashboard_nav user active_tab as nav %}
+<aside class="dsh-side" id="dsh-side" aria-label="Меню дашборда">
+    <div class="dsh-side__head">
+        <a href="{% url 'dashboard:overview' %}" class="dsh-brand">
+            <span class="dsh-brand__logo"><i class="ti ti-chart-dots-3"></i></span>
+            <span class="dsh-brand__name">DOPX <small>Staff</small></span>
+        </a>
+        <button type="button" class="dsh-iconbtn dsh-only-mobile" data-dsh-close aria-label="Закрыть меню"><i class="ti ti-x"></i></button>
+    </div>
+    <button type="button" class="dsh-search" data-dsh-palette>
+        <i class="ti ti-search"></i><span>Поиск и команды</span><kbd>⌘K</kbd>
+    </button>
+    <nav class="dsh-nav">
+        {% for group in nav.groups %}
+        <div class="dsh-nav__group{% if group.active %} is-active{% endif %}">
+            <div class="dsh-nav__label"><i class="ti {{ group.icon }}"></i>{{ group.label }}</div>
+            {% for item in group.items %}
+            <a href="{{ item.url }}" class="dsh-nav__item{% if item.active %} is-active{% endif %}{% if item.warn %} is-warn{% endif %}"{% if item.active %} aria-current="page"{% endif %} title="{{ item.hint }}">
+                <i class="ti {{ item.icon }}"></i><span>{{ item.label }}</span>
+            </a>
+            {% endfor %}
+        </div>
+        {% endfor %}
+    </nav>
+    <div class="dsh-side__foot">
+        <a href="{% url 'core:home' %}" class="dsh-nav__item" target="_blank" rel="noopener"><i class="ti ti-external-link"></i><span>Открыть сайт</span></a>
+        {% if nav.show_admin %}<a href="{% url 'admin:index' %}" class="dsh-nav__item"><i class="ti ti-settings"></i><span>Django admin</span></a>{% endif %}
+        <div class="dsh-user">
+            <span class="dsh-user__ava">{{ user.username|first|upper }}</span>
+            <span class="dsh-user__name">{{ user.username }}<small>{% if user.is_superuser %}суперпользователь{% else %}сотрудник{% endif %}</small></span>
+            <button type="button" class="dsh-iconbtn" @click="toggleTheme()" aria-label="Сменить тему" title="Сменить тему"><i class="ti ti-moon" x-show="isLight"></i><i class="ti ti-sun" x-show="isDark" x-cloak></i></button>
+        </div>
+    </div>
+</aside>
+<div class="dsh-scrim" data-dsh-close></div>
+
+<header class="dsh-top">
+    <button type="button" class="dsh-iconbtn dsh-only-mobile" data-dsh-open aria-label="Меню"><i class="ti ti-menu-2"></i></button>
+    <div class="dsh-crumbs">
+        {% if nav.current and nav.current.label != nav.current_item.label %}<span class="dsh-crumbs__group">{{ nav.current.label }}</span><i class="ti ti-chevron-right"></i>{% endif %}
+        <span class="dsh-crumbs__page">{{ page_title|cut:" — DOPX Staff"|default:"Дашборд" }}</span>
+    </div>
+    <span class="dsh-top__spacer"></span>
+    {# Состояние связи по опросу /api/live-version/ (live-refresh.js → dashboard-shell.js). #}
+    <span class="dsh-live" id="dsh-live" title="Связь с сервером"><span class="dsh-live__dot"></span><span class="dsh-live__text dsh-only-desktop">Живые данные</span></span>
+    <button type="button" class="dsh-iconbtn" data-dsh-palette aria-label="Поиск и команды" title="Поиск и команды (⌘K)"><i class="ti ti-search"></i></button>
+    <a href="{% url 'core:home' %}" class="dsh-iconbtn dsh-only-desktop" title="Открыть сайт" target="_blank" rel="noopener"><i class="ti ti-world"></i></a>
+</header>
+
+{# Палитра команд: разделы, поиск матча и пользователя. #}
+<div class="dsh-palette" id="dsh-palette" hidden role="dialog" aria-modal="true" aria-label="Поиск и команды">
+    <div class="dsh-palette__box">
+        <div class="dsh-palette__input"><i class="ti ti-search"></i><input type="text" placeholder="Раздел, матч или пользователь…" autocomplete="off" spellcheck="false"><kbd>Esc</kbd></div>
+        <div class="dsh-palette__list" role="listbox"></div>
+        <div class="dsh-palette__hint"><span><kbd>↑</kbd><kbd>↓</kbd> выбор</span><span><kbd>Enter</kbd> открыть</span></div>
+    </div>
+</div>
+{{ nav.palette|json_script:"dsh-palette-data" }}

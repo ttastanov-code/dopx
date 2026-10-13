@@ -22,7 +22,7 @@
       </div>
       {% endif %}
       <div class="flex-1 text-center md:text-left w-full min-w-0">
-        <h1 class="text-xl md:text-3xl font-bold mb-2 truncate">{{ coach.first_name }} {{ coach.last_name }}</h1>
+        <h1 class="text-xl md:text-3xl font-bold mb-2 break-words">{{ coach.first_name }} {{ coach.last_name }}</h1>
         {% if coach.team %}
         <a href="{% url 'teams:detail' coach.team.id %}" class="badge badge-lg badge-accent hover:bg-accent hover:text-accent-content transition-colors mb-3 md:mb-4">
           <i class="ti ti-users"></i> {{ coach.team.name }}
@@ -78,7 +78,7 @@
               </span>
             </div>
             <div class="flex-1 min-w-0">
-              <span class="font-medium text-sm sm:text-base truncate block group-hover:text-accent transition-colors">
+              <span class="font-medium text-sm sm:text-base break-words block group-hover:text-accent transition-colors">
                 {{ match.home_team.name }} vs {{ match.away_team.name }}
               </span>
             </div>
@@ -121,7 +121,7 @@
               {% for agg in aggregates %}
               <tr>
                 <td>
-                  <a href="{% url 'matches:detail' agg.match.id %}" class="hover:text-accent transition-colors truncate block max-w-[150px]">
+                  <a href="{% url 'matches:detail' agg.match.id %}" class="hover:text-accent transition-colors break-words block max-w-[150px]">
                     {{ agg.match.home_team.name }} vs {{ agg.match.away_team.name }}
                   </a>
                 </td>

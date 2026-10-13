@@ -8,7 +8,7 @@ from celery.schedules import crontab
 from django.core.exceptions import ImproperlyConfigured
 from django.urls import reverse_lazy
 from django.utils.translation import gettext_lazy as _
-from dopx.admin_nav import admin_perm, dashboard_perm
+from dopx.admin_nav import admin_perm, dashboard_perm, dashboard_sidebar
 
 load_dotenv()
 
@@ -165,154 +165,24 @@ UNFOLD = {
         "show_all_applications": False,
         "navigation": [
             {
-                "title": _("Staff-инструменты"),
-                "separator": True,
-                # Разделы staff-дашборда — в том же порядке, что в templates/dashboard/_nav.html.
+                "title": _("DOPX"),
                 "items": [
-                    {
-                        "title": _("Дашборд — обзор"),
-                        "icon": "dashboard",
-                        "link": reverse_lazy("dashboard:overview"),
-                        "permission": dashboard_perm("overview"),
-                    },
-                    {
-                        "title": _("Трафик"),
-                        "icon": "language",
-                        "link": reverse_lazy("dashboard:traffic"),
-                        "permission": dashboard_perm("traffic"),
-                    },
-                    {
-                        "title": _("Матчи"),
-                        "icon": "sports_soccer",
-                        "link": reverse_lazy("dashboard:matches_list"),
-                        "permission": dashboard_perm("matches"),
-                    },
-                    {
-                        "title": _("Здоровье данных"),
-                        "icon": "monitor_heart",
-                        "link": reverse_lazy("dashboard:data_health"),
-                        "permission": dashboard_perm("data_health"),
-                    },
-                    {
-                        "title": _("Доверие к данным"),
-                        "icon": "verified",
-                        "link": reverse_lazy("dashboard:data_trust"),
-                        "permission": dashboard_perm("data_trust"),
-                    },
-                    {
-                        "title": _("Дубли игроков"),
-                        "icon": "groups",
-                        "link": reverse_lazy("dashboard:duplicate_players_review"),
-                        "permission": dashboard_perm("duplicate_players"),
-                    },
-                    {
-                        "title": _("Проверка ФИО"),
-                        "icon": "auto_awesome",
-                        "link": reverse_lazy("dashboard:names_review"),
-                        "permission": dashboard_perm("names_review"),
-                    },
-                    {
-                        "title": _("Оценки"),
-                        "icon": "checklist",
-                        "link": reverse_lazy("dashboard:evaluation_sessions_list"),
-                        "permission": dashboard_perm("evaluation_sessions"),
-                    },
-                    {
-                        "title": _("Пользователи"),
-                        "icon": "group",
-                        "link": reverse_lazy("dashboard:users_list"),
-                        "permission": dashboard_perm("users"),
-                    },
-                    {
-                        "title": _("Антифрод"),
-                        "icon": "shield_moon",
-                        "link": reverse_lazy("dashboard:antifraud"),
-                        "permission": dashboard_perm("antifraud"),
-                    },
-                    {
-                        "title": _("Жалобы"),
-                        "icon": "flag",
-                        "link": reverse_lazy("dashboard:reports"),
-                        "permission": dashboard_perm("reports"),
-                    },
-                    {
-                        "title": _("Парсер KFF"),
-                        "icon": "cable",
-                        "link": reverse_lazy("dashboard:parser_tools"),
-                        "permission": dashboard_perm("parser_tools"),
-                    },
-                    {
-                        "title": _("Реклама и виджеты"),
-                        "icon": "code",
-                        "link": reverse_lazy("dashboard:ads"),
-                        "permission": dashboard_perm("ads"),
-                    },
-                    {
-                        "title": _("Аудит-лог"),
-                        "icon": "history",
-                        "link": reverse_lazy("dashboard:audit_log"),
-                        "permission": dashboard_perm("audit"),
-                    },
-                    {
-                        "title": _("Объявления"),
-                        "icon": "campaign",
-                        "link": reverse_lazy("dashboard:announcements"),
-                        "permission": dashboard_perm("announcements"),
-                    },
-                    {
-                        "title": _("Настройки платформы"),
-                        "icon": "tune",
-                        "link": reverse_lazy("dashboard:platform_settings"),
-                        "permission": dashboard_perm("platform_settings"),
-                    },
-                    {
-                        "title": _("Системный статус"),
-                        "icon": "monitor_heart",
-                        "link": reverse_lazy("dashboard:system_status"),
-                        "permission": dashboard_perm("system_status"),
-                    },
-                    {
-                        "title": _("Скрипты"),
-                        "icon": "terminal",
-                        "link": reverse_lazy("dashboard:scripts"),
-                        "permission": dashboard_perm("scripts"),
-                    },
-                    # Роли доступа — только для суперпользователей.
-                    {
-                        "title": _("Роли доступа"),
-                        "icon": "admin_panel_settings",
-                        "link": reverse_lazy("dashboard:access_roles_list"),
-                        "permission": lambda request: request.user.is_superuser,
-                    },
-                    {
-                        "title": _("Привязки к Telegram-боту"),
-                        "icon": "smart_toy",
-                        "link": reverse_lazy("admin:adminbot_botlink_changelist"),
-                        "permission": admin_perm("adminbot_botlink"),
-                    },
-                    {
-                        "title": _("Telegram болельщиков"),
-                        "icon": "send",
-                        "link": reverse_lazy("admin:fanbot_telegramaccount_changelist"),
-                        "permission": admin_perm("fanbot_telegramaccount"),
-                    },
-                    {
-                        "title": _("Посты в Telegram-канал"),
-                        "icon": "campaign",
-                        "link": reverse_lazy("admin:adminbot_channelpost_changelist"),
-                        "permission": admin_perm("adminbot_channelpost"),
-                    },
-                    {
-                        "title": _("Инциденты бота"),
-                        "icon": "emergency",
-                        "link": reverse_lazy("admin:adminbot_incident_changelist"),
-                        "permission": admin_perm("adminbot_incident"),
-                    },
-                    {
-                        "title": _("На сайт"),
-                        "icon": "open_in_new",
-                        "link": reverse_lazy("core:home"),
-                    },
+                    {"title": _("Открыть дашборд"), "icon": "space_dashboard", "link": reverse_lazy("dashboard:overview"),
+                     "permission": lambda request: request.user.is_staff},
+                    {"title": _("Открыть сайт"), "icon": "open_in_new", "link": reverse_lazy("core:home")},
+                ],
+            },
+            # Разделы дашборда — из dashboard/nav_data.py, порядок и состав всегда как в самом дашборде.
+            *dashboard_sidebar(_("Дашборд")),
+            {
+                "title": _("Telegram"),
+                "icon": "send",
+                "collapsible": True,
+                "items": [
+                    {"title": _("Привязки к админ-боту"), "icon": "smart_toy", "link": reverse_lazy("admin:adminbot_botlink_changelist"), "permission": admin_perm("adminbot_botlink")},
+                    {"title": _("Аккаунты болельщиков"), "icon": "send", "link": reverse_lazy("admin:fanbot_telegramaccount_changelist"), "permission": admin_perm("fanbot_telegramaccount")},
+                    {"title": _("Посты в канал"), "icon": "campaign", "link": reverse_lazy("admin:adminbot_channelpost_changelist"), "permission": admin_perm("adminbot_channelpost")},
+                    {"title": _("Инциденты бота"), "icon": "emergency", "link": reverse_lazy("admin:adminbot_incident_changelist"), "permission": admin_perm("adminbot_incident")},
                 ],
             },
             # ------------------------------------------------------------
@@ -477,6 +347,8 @@ MIDDLEWARE = [
     'dashboard.middleware.DashboardSectionAccessMiddleware',
     'dopx.middleware.StaffSessionSecurityMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
+    # Режим обслуживания: после auth (сотрудников пропускаем).
+    'dopx.middleware.MaintenanceMiddleware',
     # После messages: тост о серии дней.
     'engagement.middleware.DailyStreakMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
@@ -858,6 +730,11 @@ CELERY_BEAT_SCHEDULE = {
     'verify-names-with-ai-monthly': {
         'task': 'parsers.tasks.verify_names_with_ai_monthly',
         'schedule': crontab(day_of_month=1, hour=3, minute=0),
+    },
+    # === Очистка журнала синхронизации (раз в сутки ночью) ===
+    'cleanup-old-sync-runs': {
+        'task': 'core.tasks.cleanup_old_sync_runs',
+        'schedule': crontab(hour=4, minute=10),
     },
     # === Очистка просроченных CAPTCHA (раз в час) ===
     'cleanup-expired-captchas': {

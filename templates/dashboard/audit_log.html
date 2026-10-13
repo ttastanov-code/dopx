@@ -13,6 +13,15 @@
             <a href="{% url 'admin:index' %}" class="link">истории объекта</a> там же.</span>
         </p>
 
+        <form method="get" class="flex flex-wrap items-end gap-2 mb-3">
+            <select name="action" class="select select-sm select-bordered max-w-full"><option value="">Все действия</option>{% for value, label in actions %}<option value="{{ value }}"{% if value == f_action %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+            <select name="actor" class="select select-sm select-bordered"><option value="">Все сотрудники</option>{% for a in actors %}<option{% if a == f_actor %} selected{% endif %}>{{ a }}</option>{% endfor %}</select>
+            <input type="search" name="q" value="{{ f_q }}" placeholder="Объект: матч, логин, задача" class="input input-sm input-bordered grow min-w-[10rem]">
+            <button class="btn btn-sm btn-primary"><i class="ti ti-filter"></i> Показать</button>
+            {% if filter_qs %}<a href="?" class="btn btn-sm btn-ghost">Сбросить</a>{% endif %}
+        </form>
+        <p class="text-xs opacity-55 mb-2">Найдено записей: {{ page_obj.paginator.count }}</p>
+
         {# На мобильном — карточки вместо таблицы. #}
         <div class="hidden md:block overflow-x-auto">
             <table class="table table-sm">
@@ -26,7 +35,8 @@
                         <td class="whitespace-nowrap">{{ entry.actor_username|default:"—" }}</td>
                         {# Действие — обычный текст, не .badge (длинное). #}
                         <td class="text-xs font-medium whitespace-nowrap">{{ entry.get_action_display }}</td>
-                        <td class="text-xs opacity-70 max-w-xs truncate" title="{{ entry.target }}">{{ entry.target|default:"—" }}</td>
+                        <td class="text-xs max-w-md break-words"><span class="opacity-70">{{ entry.target|default:"—" }}</span>
+                            {% if entry.details %}<details class="mt-1"><summary class="cursor-pointer opacity-55">Подробности</summary><pre class="mt-1 text-[11px] bg-base-200 rounded p-2 whitespace-pre-wrap break-all">{{ entry.details|pprint }}</pre></details>{% endif %}</td>
                         <td class="text-xs opacity-50 font-mono">{{ entry.ip_address|default:"—" }}</td>
                     </tr>
                     {% empty %}
@@ -45,13 +55,15 @@
                     <span>{{ entry.actor_username|default:"—" }}</span>
                     <span class="whitespace-nowrap">{{ entry.created_at|date:"d.m H:i:s" }}</span>
                 </div>
-                <div class="text-xs opacity-70 truncate" title="{{ entry.target }}">{{ entry.target|default:"—" }}</div>
+                <div class="text-xs opacity-70 break-words">{{ entry.target|default:"—" }}</div>
+                {% if entry.details %}<details><summary class="text-[11px] cursor-pointer opacity-55">Подробности</summary><pre class="mt-1 text-[11px] bg-base-200 rounded p-2 whitespace-pre-wrap break-all">{{ entry.details|pprint }}</pre></details>{% endif %}
                 {% if entry.ip_address %}<div class="text-[11px] opacity-40 font-mono">{{ entry.ip_address }}</div>{% endif %}
             </div>
             {% empty %}
             <p class="text-center opacity-50 py-6 text-sm">Пока нет ни одной записи</p>
             {% endfor %}
         </div>
+        {% include 'components/_pagination.html' with page_obj=page_obj %}
     </div>
 </div>
 {% endblock %}

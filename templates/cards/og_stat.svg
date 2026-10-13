@@ -2,8 +2,8 @@
 {% include "cards/_bg.svg" %}
 {% include "cards/_header.svg" %}
 <text x="58" y="{{ number_y }}" font-family="Inter Display" font-weight="800" font-size="{{ number_size }}" fill="url(#accentText)" letter-spacing="{{ number_tracking }}">{{ number }}</text>
-{% for line in label_lines %}<text x="64" y="{{ line.y }}" font-family="Inter Display" font-weight="700" font-size="42" fill="#FFFFFF" letter-spacing="-0.6">{{ line.text }}</text>{% endfor %}
-{% for line in sub_lines %}<text x="64" y="{{ line.y }}" font-family="Inter" font-weight="600" font-size="25" fill="#FFFFFF" fill-opacity=".55">{{ line.text }}</text>{% endfor %}
+{% for line in label_lines %}<text x="64" y="{{ line.y }}" font-family="Inter Display" font-weight="700" font-size="42" fill="#FFFFFF" letter-spacing="-0.6"{% if line.text.length %} textLength="{{ line.text.length }}" lengthAdjust="spacingAndGlyphs"{% endif %}>{{ line.text }}</text>{% endfor %}
+{% for line in sub_lines %}<text x="64" y="{{ line.y }}" font-family="Inter" font-weight="600" font-size="25" fill="#FFFFFF" fill-opacity=".55"{% if line.text.length %} textLength="{{ line.text.length }}" lengthAdjust="spacingAndGlyphs"{% endif %}>{{ line.text }}</text>{% endfor %}
 {# Кольцо: тонкая градиентная дуга со свечением, внутри стеклянный диск с фото, логотипом клуба или знаком. #}
 <g transform="translate(940 340)">
   <circle r="190" fill="none" stroke="#FFFFFF" stroke-opacity=".06"/>

@@ -26,8 +26,8 @@
             
             {# Информация #}
             <div class="flex-1 text-center md:text-left w-full min-w-0">
-                <h1 class="text-xl md:text-3xl font-bold mb-2 truncate">{{ league.name }}</h1>
-                <p class="text-sm md:text-lg opacity-60 mb-3 md:mb-4 truncate">
+                <h1 class="text-xl md:text-3xl font-bold mb-2 break-words">{{ league.name }}</h1>
+                <p class="text-sm md:text-lg opacity-60 mb-3 md:mb-4 break-words">
                     <i class="ti ti-flag"></i>
                     {{ league.country }}
                 </p>
@@ -220,7 +220,7 @@
                                             {{ row.team_name|first|upper }}
                                         </div>
                                         {% endif %}
-                                        <span class="truncate font-medium">{{ row.team_name }}</span>
+                                        <span class="break-words font-medium">{{ row.team_name }}</span>
                                     </a>
                                 </td>
                                 <td class="text-center opacity-70">{{ row.played }}</td>
@@ -302,7 +302,7 @@
 
                         {# Команды #}
                         <div class="flex-1 min-w-0">
-                            <span class="font-medium text-sm sm:text-base truncate block group-hover:text-primary transition-colors">
+                            <span class="font-medium text-sm sm:text-base break-words block group-hover:text-primary transition-colors">
                                 {{ match.home_team.name }} vs {{ match.away_team.name }}
                             </span>
                         </div>
@@ -342,7 +342,7 @@
                     {% for season in seasons %}
                     <a href="?season={{ season.year }}"
                        class="flex items-center justify-between p-2 rounded-lg hover:bg-base-200 transition-colors {% if season == selected_season %}bg-base-200{% endif %}">
-                        <span class="font-medium text-sm md:text-base truncate {% if season == selected_season %}text-primary{% endif %}">{{ season.year }}</span>
+                        <span class="font-medium text-sm md:text-base break-words {% if season == selected_season %}text-primary{% endif %}">{{ season.year }}</span>
                         {% if season.is_active %}
                         <span class="badge badge-xs md:badge-sm badge-warning">Активен</span>
                         {% else %}
@@ -406,9 +406,9 @@
                         </div>
                         {% endif %}
                         <div class="flex-1 min-w-0">
-                            <div class="text-sm font-medium truncate">{{ player.full_name }}</div>
+                            <div class="text-sm font-medium break-words">{{ player.full_name }}</div>
                             {% if player.team %}
-                            <div class="text-xs opacity-50 truncate">{{ player.team.name }}</div>
+                            <div class="text-xs opacity-50 break-words">{{ player.team.name }}</div>
                             {% endif %}
                         </div>
                         <span class="badge badge-sm badge-outline font-bold flex-shrink-0">
@@ -432,10 +432,11 @@
                 </h3>
                 <div class="space-y-2">
                     {% if best_attack %}
-                    <a href="{% url 'teams:detail' best_attack.team_id %}" class="flex items-center justify-between p-2 rounded-lg hover:bg-base-200 transition-colors">
+                    <a href="{% url 'teams:detail' best_attack.team_id %}" class="flex items-center justify-between gap-2 p-2 rounded-lg hover:bg-base-200 transition-colors">
                         <span class="flex items-center gap-2 min-w-0">
                             <i class="ti ti-flame text-error flex-shrink-0"></i>
-                            <span class="text-sm truncate">
+                            {# Подпись и клуб — в две строки на узком экране, без «Ордаба…». #}
+                            <span class="text-sm min-w-0 leading-tight">
                                 <span class="opacity-60">Лучшая атака:</span>
                                 <span class="font-medium">{{ best_attack.team_name }}</span>
                             </span>
@@ -444,10 +445,11 @@
                     </a>
                     {% endif %}
                     {% if best_defense %}
-                    <a href="{% url 'teams:detail' best_defense.team_id %}" class="flex items-center justify-between p-2 rounded-lg hover:bg-base-200 transition-colors">
+                    <a href="{% url 'teams:detail' best_defense.team_id %}" class="flex items-center justify-between gap-2 p-2 rounded-lg hover:bg-base-200 transition-colors">
                         <span class="flex items-center gap-2 min-w-0">
                             <i class="ti ti-shield-check text-success flex-shrink-0"></i>
-                            <span class="text-sm truncate">
+                            {# Подпись и клуб — в две строки на узком экране, без «Ордаба…». #}
+                            <span class="text-sm min-w-0 leading-tight">
                                 <span class="opacity-60">Лучшая защита:</span>
                                 <span class="font-medium">{{ best_defense.team_name }}</span>
                             </span>
@@ -484,11 +486,12 @@
                 </div>
                 {% if most_dramatic_match %}
                 <a href="{% url 'matches:detail' most_dramatic_match.match.id %}" class="flex items-center justify-between p-2 rounded-lg bg-base-200 hover:bg-base-300 transition-colors text-sm">
-                    <span class="truncate min-w-0">
-                        <i class="ti ti-bolt text-warning mr-1"></i>
-                        {{ most_dramatic_match.match.home_team.name }} vs {{ most_dramatic_match.match.away_team.name }}
+                    {# Подпись над матчем: рядом с названием на телефоне не помещается. #}
+                    <span class="min-w-0">
+                        <span class="block text-[10px] font-semibold uppercase tracking-wide text-warning"><i class="ti ti-bolt mr-0.5"></i>Самый драматичный матч</span>
+                        <span class="block leading-tight">{{ most_dramatic_match.match.home_team.name }} — {{ most_dramatic_match.match.away_team.name }}</span>
                     </span>
-                    <span class="badge badge-xs badge-warning flex-shrink-0 ml-2">самый драматичный</span>
+                    <i class="ti ti-chevron-right opacity-40 flex-shrink-0 ml-2"></i>
                 </a>
                 {% endif %}
             </div>

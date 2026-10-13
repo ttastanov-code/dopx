@@ -15,7 +15,7 @@
         <div>
             <div class="flex items-center justify-between text-xs sm:text-sm mb-1">
                 <span class="font-semibold w-10 text-left">{{ row.home|default_if_none:"—" }}{{ row.suffix }}</span>
-                <span class="opacity-55 text-center flex-1 px-1 truncate">{{ row.label }}</span>
+                <span class="opacity-55 text-center flex-1 px-1 break-words">{{ row.label }}</span>
                 <span class="font-semibold w-10 text-right">{{ row.away|default_if_none:"—" }}{{ row.suffix }}</span>
             </div>
             {% if row.home != None and row.away != None and row.home|add:row.away > 0 %}

@@ -22,7 +22,7 @@
             </div>
             {% endif %}
             <div class="flex-1 text-center md:text-left w-full min-w-0">
-                <h1 class="text-xl md:text-3xl font-bold mb-2 truncate">{{ referee.first_name }} {{ referee.last_name }}</h1>
+                <h1 class="text-xl md:text-3xl font-bold mb-2 break-words">{{ referee.first_name }} {{ referee.last_name }}</h1>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
                     <div class="stat bg-base-200 rounded-lg p-2 md:p-3">
                         <div class="stat-title text-xs">Матчей</div>
@@ -80,7 +80,7 @@
                             </span>
                         </div>
                         <div class="flex-1 min-w-0">
-                            <span class="font-medium text-sm sm:text-base truncate block group-hover:text-primary transition-colors">
+                            <span class="font-medium text-sm sm:text-base break-words block group-hover:text-primary transition-colors">
                                 {{ match.home_team.name }} vs {{ match.away_team.name }}
                             </span>
                         </div>
@@ -129,7 +129,7 @@
                             {% for eval in evaluations %}
                             <tr>
                                 <td>
-                                    <a href="{% url 'matches:detail' eval.match.id %}" class="hover:text-primary transition-colors truncate block max-w-[150px]">
+                                    <a href="{% url 'matches:detail' eval.match.id %}" class="hover:text-primary transition-colors break-words block max-w-[150px]">
                                         {{ eval.match.home_team.name }} vs {{ eval.match.away_team.name }}
                                     </a>
                                 </td>

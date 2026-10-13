@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
-from django.db.models import Count, Q
+from django.db.models import Count, Q, Sum
 from django.db.models.functions import TruncDate
 from django.utils import timezone
 
@@ -145,8 +145,12 @@ STALE_MATCH_AFTER = timedelta(hours=3)
 
 
 def data_health_summary(recent_runs: int = 20) -> dict:
-    runs = list(ParserSyncRun.objects.all()[:recent_runs])
-    last_run = runs[0] if runs else None
+    last_run = ParserSyncRun.objects.first()
+    # В журнале — только запуски, где что-то произошло: пустые live-опросы раз в 10 с забивают таблицу.
+    runs = list(ParserSyncRun.objects.filter(Q(total__gt=0) | Q(errors__gt=0) | Q(updated__gt=0) | Q(new_events__gt=0))
+                .defer("error_samples")[:recent_runs])
+    hour = ParserSyncRun.objects.filter(created_at__gte=timezone.now() - timedelta(hours=1)).aggregate(
+        runs=Count("id"), errors=Sum("errors"), updated=Sum("updated"), events=Sum("new_events"))
 
     # Матчи без составов: has_lineup=True, но строк MatchLineup нет.
     # Отдаём и count, и топ-N для ссылок и ресинка.
@@ -184,6 +188,7 @@ def data_health_summary(recent_runs: int = 20) -> dict:
         "stale_matches": stale_matches.count(),
         "last_run": last_run,
         "recent_runs": runs,
+        "last_hour": hour,
         "matches_missing_lineups": matches_missing_lineups_count,
         "matches_missing_lineups_list": matches_missing_lineups_list,
         "matches_missing_events": matches_missing_events_count,

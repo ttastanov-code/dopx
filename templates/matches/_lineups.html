@@ -25,7 +25,7 @@
                     {% for lineup in lineups %}
                     <div class="md-lineup {% if lineup.side == 'home' %}md-lineup--home{% else %}md-lineup--away{% endif %}">
                         <div class="md-lineup__head flex items-center justify-between">
-                            <a href="{% url 'teams:detail' lineup.team.id %}" class="font-bold text-sm md:text-base truncate hover:underline hover:text-primary">{{ lineup.team.name }}</a>
+                            <a href="{% url 'teams:detail' lineup.team.id %}" class="font-bold text-sm md:text-base break-words hover:underline hover:text-primary">{{ lineup.team.name }}</a>
                             <span class="text-xs opacity-60 font-medium flex items-center gap-1.5">
                                 {# Формация (Sportmonks formations). #}
                                 {% if lineup.formation %}
@@ -47,7 +47,7 @@
                                         <a href="{% url 'players:detail' lp.player.id %}"
                                            class="md-lineup__row md-lineup__row--starting flex text-sm hover:text-primary transition-colors group">
                                             <span class="md-lineup__num">{{ lp.shirt_number|default:"-" }}</span>
-                                            <span class="truncate ml-2">{{ lp.player }}</span>
+                                            <span class="break-words ml-2">{{ lp.player }}</span>
                                             {% with lp_position=lp.position|position_label %}
                                             {% if lp_position %}
                                             <span class="text-[9px] opacity-40 bg-base-200 px-1.5 py-0.5 rounded ml-auto flex-shrink-0 hidden sm:inline">{{ lp_position }}</span>
@@ -70,7 +70,7 @@
                                         <a href="{% url 'players:detail' lp.player.id %}"
                                            class="md-lineup__row flex text-sm hover:text-primary transition-colors group opacity-65 hover:opacity-100">
                                             <span class="md-lineup__num">{{ lp.shirt_number|default:"-" }}</span>
-                                            <span class="truncate ml-2">{{ lp.player }}</span>
+                                            <span class="break-words ml-2">{{ lp.player }}</span>
                                         </a>
                                         {% endif %}
                                     {% endfor %}

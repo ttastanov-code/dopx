@@ -115,7 +115,7 @@
     <div class="text-[10px] uppercase tracking-wide opacity-50 font-semibold">Журнал ошибок бота</div>
     {% for r in log %}
     <details class="rounded-lg border border-base-200 px-3 py-1.5 text-xs">
-        <summary class="cursor-pointer flex gap-2 items-baseline"><span class="badge badge-xs {% if r.level == 'ERROR' or r.level == 'CRITICAL' %}badge-error{% else %}badge-warning{% endif %}">{{ r.level }}</span><span class="opacity-60 shrink-0">{{ r.at|date:"d.m H:i:s" }} · {{ r.process }}</span><span class="truncate">{{ r.text|truncatechars:140 }}</span></summary>
+        <summary class="cursor-pointer flex gap-2 items-baseline"><span class="badge badge-xs {% if r.level == 'ERROR' or r.level == 'CRITICAL' %}badge-error{% else %}badge-warning{% endif %}">{{ r.level }}</span><span class="opacity-60 shrink-0">{{ r.at|date:"d.m H:i:s" }} · {{ r.process }}</span><span class="break-words">{{ r.text }}</span></summary>
         <pre class="whitespace-pre-wrap break-words mt-2 opacity-80">{{ r.logger }}
 {{ r.text }}</pre>
     </details>

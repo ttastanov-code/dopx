@@ -24,35 +24,35 @@
         <div class="dopx-stat-value" style="{% if health.matches_missing_lineups %}color: var(--color-warning){% endif %}">
             {{ health.matches_missing_lineups }}
         </div>
-        <div class="dopx-stat-delta">live/finished, has_lineup=True</div>
+        <div class="dopx-stat-delta">идущие и сыгранные матчи: составы обещаны, но не загружены</div>
     </div>
     <div class="dopx-stat">
         <div class="dopx-stat-label"><i class="ti ti-list-details"></i>Без событий</div>
         <div class="dopx-stat-value" style="{% if health.matches_missing_events %}color: var(--color-warning){% endif %}">
             {{ health.matches_missing_events }}
         </div>
-        <div class="dopx-stat-delta">live/finished, ни одного MatchEvent</div>
+        <div class="dopx-stat-delta">идущие и сыгранные матчи без единого события</div>
     </div>
     <div class="dopx-stat">
         <div class="dopx-stat-label"><i class="ti ti-git-compare"></i>Расхождения</div>
         <div class="dopx-stat-value" style="{% if health.unreviewed_discrepancies_count %}color: var(--color-warning){% else %}color: var(--color-success){% endif %}">
             {{ health.unreviewed_discrepancies_count }}
         </div>
-        <div class="dopx-stat-delta">счёт/статус после завершения</div>
+        <div class="dopx-stat-delta">счёт или статус сыгранного матча поменялся при синхронизации — нужно проверить</div>
     </div>
     <div class="dopx-stat">
         <div class="dopx-stat-label"><i class="ti ti-scoreboard"></i>Счёт ≠ события</div>
         <div class="dopx-stat-value" style="{% if health.score_mismatch %}color: var(--color-error){% else %}color: var(--color-success){% endif %}">
             {{ health.score_mismatch }}
         </div>
-        <div class="dopx-stat-delta">голы в ленте не сходятся со счётом</div>
+        <div class="dopx-stat-delta">голы в ленте событий не сходятся со счётом</div>
     </div>
     <div class="dopx-stat">
         <div class="dopx-stat-label"><i class="ti ti-clock-exclamation"></i>Зависшие</div>
         <div class="dopx-stat-value" style="{% if health.stale_matches %}color: var(--color-error){% else %}color: var(--color-success){% endif %}">
             {{ health.stale_matches }}
         </div>
-        <div class="dopx-stat-delta">live/scheduled спустя 3 ч после старта</div>
+        <div class="dopx-stat-delta">прошло 3 часа после начала, а матч всё ещё не завершён</div>
     </div>
 </div>
 
@@ -189,7 +189,7 @@
                 <div class="text-sm">Воркеров на связи: <b class="{% if infra.celery.workers_online < infra.celery.workers_total %}text-warning{% endif %}">{{ infra.celery.workers_online }} из {{ infra.celery.workers_total }}</b></div>
                 <div class="text-sm">В очереди: <b>{{ infra.celery.queue_celery }}</b> фоновых · <b>{{ infra.celery.queue_realtime }}</b> live</div>
                 {% if infra.celery.worker_names %}
-                <div class="text-xs opacity-50 mt-1 truncate">{{ infra.celery.worker_names|join:", " }}</div>
+                <div class="text-xs opacity-50 mt-1 break-words">{{ infra.celery.worker_names|join:", " }}</div>
                 {% endif %}
                 {% else %}
                 <div class="text-xs text-error">{{ infra.celery.error }}</div>
@@ -259,7 +259,7 @@
                     <tr>
                         <td class="whitespace-nowrap">{{ err.match|default:err.match_id }}</td>
                         <td><span class="badge badge-error badge-sm">{{ err.error_type }}</span></td>
-                        <td class="text-xs opacity-70 max-w-md truncate" title="{{ err.error }}">{{ err.error }}</td>
+                        <td class="text-xs opacity-70 max-w-md break-words" title="{{ err.error }}">{{ err.error }}</td>
                         <td>
                             {% if perms.matches.change_match %}<form method="post" action="{% url 'dashboard:data_health_resync_match' err.match_id %}" class="inline">
                                 {% csrf_token %}
@@ -280,12 +280,15 @@
 <div class="card bg-base-100 border border-base-300">
     <div class="card-body p-4">
         <div class="dopx-section-eyebrow"><i class="ti ti-history"></i>Журнал</div>
-        <div class="dopx-section-title mb-3">История запусков</div>
+        <div class="dopx-section-title">История запусков</div>
+        {% with h=health.last_hour %}
+        <p class="dopx-section-desc mb-3">За последний час: {{ h.runs }} {{ h.runs|ru_plural:"запуск,запуска,запусков" }} синхронизации, обновлено матчей — {{ h.updated|default:0 }}, новых событий — {{ h.events|default:0 }}, ошибок — <b class="{% if h.errors %}text-error{% else %}text-success{% endif %}">{{ h.errors|default:0 }}</b>. Ниже — только запуски, в которых что-то изменилось или была ошибка.</p>
+        {% endwith %}
         <div class="overflow-x-auto">
             <table class="table table-sm">
                 <thead>
                     <tr>
-                        <th>Когда</th><th>Матчей</th><th>Обновлено</th><th>Новых событий</th>
+                        <th>Когда</th><th>Задача</th><th>Матчей</th><th>Обновлено</th><th>Новых событий</th>
                         <th>Пропущено (заблокировано)</th><th>Ошибок</th><th>Длительность</th>
                     </tr>
                 </thead>
@@ -293,6 +296,7 @@
                     {% for run in health.recent_runs %}
                     <tr>
                         <td class="whitespace-nowrap text-xs">{{ run.created_at|date:"d.m H:i" }}</td>
+                        <td class="text-xs font-mono break-all">{{ run.task_name }}</td>
                         <td>{{ run.total }}</td>
                         <td>{{ run.updated }}</td>
                         <td>{{ run.new_events }}</td>
@@ -301,7 +305,7 @@
                         <td class="text-xs opacity-60">{{ run.duration_seconds|floatformat:1 }}с</td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="7" class="text-center opacity-50 py-6">Запусков пока не было. Появятся после первого выполнения задачи sportmonks_update_live</td></tr>
+                    <tr><td colspan="8" class="text-center opacity-50 py-6">Запусков с изменениями пока не было.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>

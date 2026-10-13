@@ -59,8 +59,8 @@
                             {{ match.home_team.name|first|upper }}
                         </div>
                         {% endif %}
-                        <span class="text-[9px] text-center truncate w-full max-w-[70px]">
-                            {{ match.home_team.name|truncatechars:10 }}
+                        <span class="text-[9px] text-center break-words w-full max-w-[70px]">
+                            {{ match.home_team.name }}
                         </span>
                     </div>
 
@@ -70,8 +70,8 @@
                     </div>
 
                     <div class="flex flex-col items-center gap-0.5 flex-1 min-w-0">
-                        <span class="text-[9px] text-center truncate w-full max-w-[70px] order-2">
-                            {{ match.away_team.name|truncatechars:10 }}
+                        <span class="text-[9px] text-center break-words w-full max-w-[70px] order-2">
+                            {{ match.away_team.name }}
                         </span>
                         {% if match.away_team.logo_url %}
                         <img src="{{ match.away_team.logo_url }}" alt="{{ match.away_team.name }}" class="w-7 h-7 object-contain order-1">

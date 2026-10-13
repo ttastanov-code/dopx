@@ -14,7 +14,7 @@
         <div class="p-3 flex items-center gap-2 border-b border-base-300">
             {% if team.logo_display %}<img src="{{ team.logo_display }}" alt="" class="w-7 h-7 object-contain">{% endif %}
             <div class="min-w-0 flex-1">
-                <div class="font-bold text-sm truncate">{{ team.name }}</div>
+                <div class="font-bold text-sm break-words">{{ team.name }}</div>
                 <div class="text-[10px] opacity-55">Рейтинг игроков по оценкам болельщиков</div>
             </div>
             <a href="{{ site_url }}teams/{{ team.pk }}/" target="_blank" rel="noopener" class="text-[10px] font-semibold opacity-50 hover:opacity-100 flex items-center gap-1"><i class="ti ti-external-link"></i>DOPX</a>
@@ -24,7 +24,7 @@
             <li class="flex items-center gap-2.5 px-3 py-2">
                 <span class="w-4 text-[11px] font-bold opacity-40 text-right">{{ forloop.counter }}</span>
                 {% if p.photo_display %}<img src="{{ p.photo_display }}" alt="" class="w-7 h-7 rounded-full object-cover bg-base-200">{% else %}<span class="w-7 h-7 rounded-full bg-base-200 flex items-center justify-center text-[10px] font-bold">{{ p.last_name|slice:":1" }}</span>{% endif %}
-                <a href="{{ site_url }}players/{{ p.pk }}/" target="_blank" rel="noopener" class="flex-1 min-w-0 text-xs font-semibold truncate hover:underline">{{ p.first_name }} {{ p.last_name }}</a>
+                <a href="{{ site_url }}players/{{ p.pk }}/" target="_blank" rel="noopener" class="flex-1 min-w-0 text-xs font-semibold break-words hover:underline">{{ p.first_name }} {{ p.last_name }}</a>
                 <span class="text-[10px] opacity-45">{{ p.matches }} {{ p.matches|ru_plural:"матч,матча,матчей" }}</span>
                 <b class="text-sm tabular-nums text-primary">{{ p.rating|floatformat:1 }}</b>
             </li>
