@@ -1,7 +1,7 @@
 {% load ui_extras %}
 {# Содержимое «Здоровья данных» #}
 {# Рендерится при загрузке и при поллинге (data_health_partial), без base.html. #}
-<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 md:gap-4 mb-6">
+<div class="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6">
     <div class="dopx-stat">
         <div class="dopx-stat-label"><i class="ti ti-refresh"></i>Синхронизация</div>
         {% if health.last_run %}
@@ -54,6 +54,14 @@
         </div>
         <div class="dopx-stat-delta">прошло 3 часа после начала, а матч всё ещё не завершён</div>
     </div>
+    {# Матчи, где автосинк не трогает статус и дату: правка вручную может устареть. #}
+    <a href="{% url 'admin:matches_match_changelist' %}?manual_override__exact=1" class="dopx-stat hover:border-primary/40 transition-colors">
+        <div class="dopx-stat-label"><i class="ti ti-hand-stop"></i>Ручные правки</div>
+        <div class="dopx-stat-value" style="{% if health.manual_override_count %}color: var(--color-warning){% else %}color: var(--color-success){% endif %}">
+            {{ health.manual_override_count }}
+        </div>
+        <div class="dopx-stat-delta">матчи, где статус и дату правили вручную: синхронизация их не обновляет</div>
+    </a>
 </div>
 
 {% if health.matches_missing_lineups_list or health.matches_missing_events_list or health.score_mismatch_list %}

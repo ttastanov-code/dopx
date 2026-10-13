@@ -11,7 +11,7 @@
 <div class="dopx-stat-grid mb-6">
     <div class="dopx-stat">
         <div class="dopx-stat-label"><i class="ti ti-flag-3"></i>Открытых жалоб</div>
-        <div class="dopx-stat-value" style="color: var(--color-error)">{{ trust.data_error_reports_count }}</div>
+        <div class="dopx-stat-value" style="color: var(--color-{% if trust.data_error_reports_count %}error{% else %}success{% endif %})">{{ trust.data_error_reports_count }}</div>
     </div>
     <div class="dopx-stat">
         <div class="dopx-stat-label"><i class="ti ti-checklist"></i>Решено / всего</div>
@@ -19,13 +19,12 @@
     </div>
     <div class="dopx-stat">
         <div class="dopx-stat-label"><i class="ti ti-git-compare"></i>Расхождения</div>
-        <div class="dopx-stat-value" style="color: var(--color-warning)">{{ trust.unreviewed_discrepancies_count }}</div>
+        <div class="dopx-stat-value" style="color: var(--color-{% if trust.unreviewed_discrepancies_count %}warning{% else %}success{% endif %})">{{ trust.unreviewed_discrepancies_count }}</div>
     </div>
     <div class="dopx-stat">
-        <div class="dopx-stat-label"><i class="ti ti-heartbeat"></i>Синк матчей</div>
-        <div class="dopx-stat-value" style="font-size: 1rem;">
-            <a href="{% url 'dashboard:data_health' %}" class="link link-hover">Здоровье данных →</a>
-        </div>
+        <div class="dopx-stat-label"><i class="ti ti-tool"></i>Исправлений</div>
+        <div class="dopx-stat-value" style="color: var(--color-success)">{{ trust.corrections_30d }}</div>
+        <div class="dopx-stat-delta">за 30 дней</div>
     </div>
 </div>
 

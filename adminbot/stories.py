@@ -21,8 +21,28 @@ def _r(x):
 
 
 def _score1(x) -> str:
-    """Оценка с одной цифрой после запятой: 3 → «3.0»."""
-    return f"{float(x):.1f}"
+    """Оценка по-русски с одной цифрой после запятой: 3 → «3,0»."""
+    from core.utils import ru_num
+
+    return ru_num(float(x), 1)
+
+
+def _num(x) -> str:
+    """Число для текста: целое как есть, дробное — через запятую."""
+    x = _r(x)
+    return str(x).replace(".", ",")
+
+
+def _points(x) -> str:
+    """«1,8 балла», «2 балла», «5 баллов»: у дробных всегда «балла»."""
+    x = _r(x)
+    return _plural(x, "балл,балла,баллов") if isinstance(x, int) else f"{_num(x)} балла"
+
+
+def _plural(n, forms: str) -> str:
+    from core.templatetags.ui_extras import ru_plural
+
+    return f"{n} {ru_plural(n, forms)}"
 
 
 def _rng(key) -> random.Random:
@@ -170,37 +190,47 @@ def review_template(match, facts: dict) -> str:
         title = rng.choice([f"⚽ {winner} побеждает: {line}", f"⚽ Три очка — {winner}: {line}", f"⚽ {line}"])
     parts = [f"<b>{_esc(title)}</b>"]
     if facts.get("голы"):
-        goals = ", ".join(f"{g['счёт_после'] or ''} — {g['автор'] or g['команда']} ({g['минута']}')".strip(" —")
+        goals = "\n".join(f"{g['минута']}' {g['автор'] or g['команда']}" + (f" — {g['счёт_после']}" if g["счёт_после"] else "")
                           for g in facts["голы"])
-        parts.append(f"⚽ {_esc(goals)}")
+        parts.append(f"⚽ <b>Голы</b>\n{_esc(goals)}")
     if facts.get("главный_момент"):
-        parts.append(f"⏱ {_esc(facts['главный_момент'])}.")
+        moment = facts["главный_момент"]
+        parts.append(f"⏱ <b>Ключевой момент:</b> {_esc(moment[:1].lower() + moment[1:])}.")
     st = facts.get("статистика_хозяева_гости") or {}
     bits = []
     if "xG" in st:
-        bits.append(f"xG {st['xG'][0]} – {st['xG'][1]}")
+        bits.append(f"xG: {_num(st['xG'][0])} — {_num(st['xG'][1])}")
     if "владение_%" in st:
-        bits.append(f"владение {st['владение_%'][0]}% – {st['владение_%'][1]}%")
+        bits.append(f"Владение: {st['владение_%'][0]}% — {st['владение_%'][1]}%")
     if "удары_в_створ" in st:
-        bits.append(f"в створ {st['удары_в_створ'][0]} – {st['удары_в_створ'][1]}")
+        bits.append(f"Удары в створ: {st['удары_в_створ'][0]} — {st['удары_в_створ'][1]}")
     if bits:
-        parts.append("📊 " + ", ".join(bits) + ".")
+        parts.append(f"📊 <b>Статистика</b> ({_esc(h)} — {_esc(a)})\n" + "\n".join(bits))
+    def who(p):
+        return _esc(p["игрок"]) + (f" ({_esc(p['команда'])})" if p.get("команда") else "")
+
     fans = []
     if facts.get("лучшие"):
         hero = facts["лучшие"][0]
-        fans.append(f"герой — {_esc(hero['игрок'])}, {_score1(hero['оценка'])}")
+        fans.append(f"Герой матча — {who(hero)}: {_score1(hero['оценка'])}")
     if facts.get("антигерой"):
         anti = facts["антигерой"]
-        fans.append(f"антигерой — {_esc(anti['игрок'])}, {_score1(anti['оценка'])}")
+        fans.append(f"Антигерой — {who(anti)}: {_score1(anti['оценка'])}")
     if fans:
         n = facts.get("оценок_болельщиков")
-        parts.append(f"⭐ <b>Болельщики{f' ({n} оценок)' if n else ''}:</b> " + "; ".join(fans) + ".")
+        head = "⭐ <b>Оценки болельщиков</b>" + (f" ({_plural(n, 'оценка,оценки,оценок')})" if n else "")
+        parts.append(head + "\n" + "\n".join(fans))
     if facts.get("раскол_трибун"):
         s = facts["раскол_трибун"]
-        parts.append(f"⚖️ {_esc(s['игрок'])} расколол трибуны: свои фанаты — {s['свои_фанаты']}, чужие — {s['фанаты_соперника']}.")
+        own = s.get("команда")
+        rival = (a if own == h else h) if own in (h, a) else ""
+        parts.append(f"⚖️ {_esc(s['игрок'])} расколол трибуны: болельщики его клуба{f' ({_esc(own)})' if own else ''} "
+                     f"поставили {_score1(s['свои_фанаты'])}, болельщики соперника{f' ({_esc(rival)})' if rival else ''} — "
+                     f"{_score1(s['фанаты_соперника'])}.")
     ref = facts.get("судья") or {}
     if ref.get("разрыв") and ref["разрыв"] >= 1.5:
-        parts.append(f"🟨 Судья {_esc(ref['имя'])} разделил трибуны: болельщики хозяев поставили {ref['фанаты_хозяев']}, гостей — {ref['фанаты_гостей']}.")
+        parts.append(f"🟨 Судья {_esc(ref['имя'])} разделил трибуны: болельщики хозяев ({_esc(match.home_team.name)}) "
+                     f"поставили {_score1(ref['фанаты_хозяев'])}, гостей ({_esc(match.away_team.name)}) — {_score1(ref['фанаты_гостей'])}.")
     for team, pos in (facts.get("таблица") or {}).items():
         verb = "поднялся" if pos["стало_место"] < pos["было_место"] else "опустился"
         parts.append(f"📈 {_esc(team)} {verb} на {pos['стало_место']}-е место.")
@@ -220,7 +250,6 @@ def preview_facts(tour, matches: list) -> tuple[dict, object]:
     from teams.models import TeamSeasonStats
     from teams.services import describe_season_form_streak
 
-    from .channel import kickoff
 
     out = {"тур": tour, "матчи": []}
     main, main_score = None, -1
@@ -230,7 +259,7 @@ def preview_facts(tour, matches: list) -> tuple[dict, object]:
         recent = _recent_meetings(m)
         intrigue = describe_intrigue(m, home_position=pos.get(m.home_team_id), away_position=pos.get(m.away_team_id),
                                      last_meeting=recent[0] if recent else None)
-        row = {"хозяева": m.home_team.name, "гости": m.away_team.name, "когда": kickoff(m)}
+        row = {"хозяева": m.home_team.name, "гости": m.away_team.name, "когда": m.kickoff_text("%d.%m")}
         if pos.get(m.home_team_id) and pos.get(m.away_team_id):
             row["места_в_таблице"] = [pos[m.home_team_id], pos[m.away_team_id]]
         for side, team in (("форма_хозяев", m.home_team), ("форма_гостей", m.away_team)):
@@ -266,12 +295,12 @@ def preview_template(facts: dict) -> str:
     parts = [f"<b>{_esc(title)}</b>"]
     lines = []
     for r in facts["матчи"]:
-        line = f"• <b>{_esc(r['хозяева'])} – {_esc(r['гости'])}</b>, {_esc(r['когда'])}"
+        line = f"• <b>{_esc(r['хозяева'])} — {_esc(r['гости'])}</b>, {_esc(r['когда'])}"
         extra = []
         if r.get("интрига"):
             extra.append(r["интрига"])
         if r.get("места_в_таблице"):
-            extra.append(f"{r['места_в_таблице'][0]}-е против {r['места_в_таблице'][1]}-го")
+            extra.append(f"{r['места_в_таблице'][0]}-е место против {r['места_в_таблице'][1]}-го")
         if r.get("прогнозы_%"):
             fav = max(r["прогнозы_%"], key=r["прогнозы_%"].get)
             if fav != "ничья":
@@ -305,16 +334,18 @@ def round_facts(rnd) -> dict:
     if rnd.player_of_round_name:
         facts["игрок_тура"] = {"имя": rnd.player_of_round_name, "команда": rnd.player_of_round_team_name,
                                "оценка": _r(rnd.player_of_round_score), "голосов": rnd.player_of_round_votes}
-    squad = [s.occupant_name for s in rnd.slots.order_by("order") if s.occupant_name]
+    squad = round_squad_lines(rnd)
     if squad:
         facts["сборная_тура"] = squad
     if rnd.most_dramatic_match_id:
         m = rnd.most_dramatic_match
+        drama = rnd.most_dramatic_match_score
         facts["самый_драматичный"] = {"матч": f"{m.home_team.name} {m.home_score}:{m.away_score} {m.away_team.name}",
-                                      "индекс_драмы_из_100": _r(rnd.most_dramatic_match_score)}
+                                      "индекс_драмы_из_100": round(drama) if drama is not None else None}
     ref, gap = controversial_referee(rnd.season, rnd.tour)
     if ref and gap is not None:
-        facts["спорный_судья"] = {"имя": ref.referee.full_name, "матч": f"{ref.match.home_team.name} – {ref.match.away_team.name}",
+        facts["спорный_судья"] = {"имя": ref.referee.full_name, "матч": f"{ref.match.home_team.name} — {ref.match.away_team.name}",
+                                  "хозяева": ref.match.home_team.name, "гости": ref.match.away_team.name,
                                   "фанаты_хозяев": _r(ref.home_fans_avg), "фанаты_гостей": _r(ref.away_fans_avg), "разрыв": _r(gap)}
     best_upset = None
     for m in matches:
@@ -340,6 +371,49 @@ def round_facts(rnd) -> dict:
     return facts
 
 
+def _with_team(slot) -> str:
+    return f"{slot.occupant_name} ({slot.occupant_team_name})" if slot.occupant_team_name else slot.occupant_name
+
+
+def round_squad_lines(rnd) -> dict | None:
+    """Сборная тура по линиям от вратаря к атаке, у каждого — клуб; тренер и судья отдельно."""
+    from players.formations import pitch_rows
+
+    slots = {s.slot_code: s for s in rnd.slots.all() if s.occupant_name}
+    lines = []
+    for label, codes in reversed(pitch_rows(rnd.formation)):
+        players = [_with_team(slots[c]) for c in codes if c in slots]
+        if players:
+            lines.append({"линия": label, "игроки": players})
+    if not lines:
+        return None
+    out = {"схема": rnd.formation, "линии": lines}
+    if "COACH" in slots:
+        out["тренер"] = _with_team(slots["COACH"])
+    if "REFEREE" in slots:
+        out["судья"] = slots["REFEREE"].occupant_name
+    return out
+
+
+LINE_ICONS = {"Вратарь": "🧤", "Защита": "🛡", "Атака": "⚡"}
+
+
+def squad_block(squad: dict) -> str:
+    """Сборная для поста: заголовок линии и игроки по одному в строке."""
+    blocks = [f"🧩 <b>Сборная тура</b> · схема {_esc(squad['схема'])}"]
+    for line in squad["линии"]:
+        icon = LINE_ICONS.get(line["линия"], "⚙️")
+        blocks.append(f"{icon} <b>{_esc(line['линия'])}</b>\n" + "\n".join(_esc(p) for p in line["игроки"]))
+    staff = []
+    if squad.get("тренер"):
+        staff.append(f"📋 <b>Тренер тура:</b> {_esc(squad['тренер'])}")
+    if squad.get("судья"):
+        staff.append(f"🟨 <b>Судья тура:</b> {_esc(squad['судья'])}")
+    if staff:
+        blocks.append("\n".join(staff))
+    return "\n\n".join(blocks)
+
+
 def round_has_story(facts: dict) -> bool:
     return any(facts.get(k) for k in ("игрок_тура", "лидеры_оценок", "спорный_судья", "сенсация_тура"))
 
@@ -350,25 +424,31 @@ def round_template(facts: dict) -> str:
                         f"🏆 Как болельщики оценили {facts['тур']}-й тур"])
     parts = [f"<b>{_esc(title)}</b>"]
     if facts["оценок_болельщиков"]:
-        parts.append(f"📊 {facts['матчей']} матчей, {facts['оценок_болельщиков']} оценок болельщиков.")
+        parts.append(f"📊 За тур — {_plural(facts['матчей'], 'матч,матча,матчей')} и "
+                     f"{_plural(facts['оценок_болельщиков'], 'оценка,оценки,оценок')} болельщиков.")
     if facts.get("игрок_тура"):
         p = facts["игрок_тура"]
-        parts.append(f"⭐ <b>Игрок тура</b> — {_esc(p['имя'])}" + (f" ({_esc(p['команда'])})" if p["команда"] else "")
-                     + (f": {p['оценка']} из 10" if p["оценка"] is not None else "") + ".")
+        line = f"⭐ <b>Игрок тура:</b> {_esc(p['имя'])}" + (f" ({_esc(p['команда'])})" if p["команда"] else "")
+        parts.append(line + (f" — {_score1(p['оценка'])} из 10." if p["оценка"] is not None else "."))
     elif facts.get("лидеры_оценок"):
         leaders = facts["лидеры_оценок"][:3]
-        parts.append("⭐ <b>Лучшие оценки тура:</b> " + _esc(", ".join(f"{l['игрок']} {_score1(l['оценка'])}" for l in leaders)) + ".")
+        parts.append("⭐ <b>Лучшие оценки тура</b>\n" + "\n".join(
+            f"{_esc(l['игрок'])}" + (f" ({_esc(l['команда'])})" if l["команда"] else "") + f" — {_score1(l['оценка'])}"
+            for l in leaders))
     if facts.get("сборная_тура"):
-        parts.append("🧩 <b>Сборная тура:</b> " + _esc(", ".join(facts["сборная_тура"])) + ".")
+        parts.append(squad_block(facts["сборная_тура"]))
     if facts.get("сенсация_тура"):
         s = facts["сенсация_тура"]
-        parts.append(f"😱 <b>Сенсация:</b> {_esc(s['матч'])} — {s['ждали_другого_%']}% болельщиков ждали другого.")
+        parts.append(f"😱 <b>Сенсация тура:</b> {_esc(s['матч'])}. Другого исхода ждали {s['ждали_другого_%']}% болельщиков.")
     if facts.get("самый_драматичный"):
         d = facts["самый_драматичный"]
-        parts.append(f"🔥 <b>Драма тура:</b> {_esc(d['матч'])}" + (f", индекс драмы {d['индекс_драмы_из_100']} из 100" if d["индекс_драмы_из_100"] else "") + ".")
+        parts.append(f"🔥 <b>Самый драматичный матч:</b> {_esc(d['матч'])}"
+                     + (f" — индекс драмы {d['индекс_драмы_из_100']} из 100." if d["индекс_драмы_из_100"] else "."))
     if facts.get("спорный_судья"):
         r = facts["спорный_судья"]
-        parts.append(f"🟨 <b>Спорный судья:</b> {_esc(r['имя'])} ({_esc(r['матч'])}) — фанаты поставили {r['фанаты_хозяев']} и {r['фанаты_гостей']}.")
+        parts.append(f"⚖️ <b>Спорное судейство:</b> {_esc(r['имя'])}, матч {_esc(r['матч'])}. "
+                     f"Болельщики хозяев ({_esc(r['хозяева'])}) оценили работу судьи на {_score1(r['фанаты_хозяев'])}, "
+                     f"гостей ({_esc(r['гости'])}) — на {_score1(r['фанаты_гостей'])}.")
     return "\n\n".join(parts)
 
 
@@ -399,13 +479,14 @@ def controversy_template(f: dict) -> str:
     return "\n\n".join([
         f"<b>🟨 Спорный момент {f['тур']}-го тура: судья {_esc(f['судья'])}</b>",
         f"Матч {_esc(f['матч'])} развёл трибуны по разные стороны: болельщики хозяев ({_esc(f['хозяева'])}) оценили "
-        f"судейство на {f['фанаты_хозяев']}, гостей ({_esc(f['гости'])}) — на {f['фанаты_гостей']}. Разрыв — {f['разрыв']}.",
+        f"судейство на {_score1(f['фанаты_хозяев'])}, гостей ({_esc(f['гости'])}) — на {_score1(f['фанаты_гостей'])}. "
+        f"Разрыв — {_points(f['разрыв'])}.",
         "А как считаете вы? Голосуйте ниже 👇",
     ])
 
 
 def controversy_poll(f: dict) -> dict:
-    return {"question": f"Как отсудил {f['судья']} матч {f['хозяева']} – {f['гости']}?",
+    return {"question": f"Как отсудил {f['судья']} матч {f['хозяева']} — {f['гости']}?",
             "options": ["Справедливо", f"Ошибался в пользу хозяев ({f['хозяева']})", f"Ошибался в пользу гостей ({f['гости']})"]}
 
 
@@ -426,11 +507,11 @@ def number_facts(rnd) -> dict | None:
         options.append({"тема": "раскол трибун", "цифра": _r(abs(split.own_fans_avg - split.rival_fans_avg)),
                         "игрок": split.player.full_name, "свои_фанаты": _r(split.own_fans_avg),
                         "фанаты_соперника": _r(split.rival_fans_avg),
-                        "матч": f"{split.match.home_team.name} – {split.match.away_team.name}"})
+                        "матч": f"{split.match.home_team.name} — {split.match.away_team.name}"})
     if aggs:
         best = max(aggs, key=lambda a: a.performance_score)
         options.append({"тема": "лучшая оценка тура", "цифра": _r(best.performance_score), "игрок": best.player.full_name,
-                        "матч": f"{best.match.home_team.name} – {best.match.away_team.name}", "голосов": best.total_votes})
+                        "матч": f"{best.match.home_team.name} — {best.match.away_team.name}", "голосов": best.total_votes})
     votes = EvaluationSession.objects.filter(match__in=matches, status="completed").count()
     if votes:
         options.append({"тема": "оценок за тур", "цифра": votes, "матчей": len(matches)})
@@ -442,13 +523,14 @@ def number_facts(rnd) -> dict | None:
 
 def number_template(f: dict) -> str:
     if f["тема"] == "раскол трибун":
-        body = (f"На столько разошлись трибуны в оценке одного игрока. {_esc(f['игрок'])}, матч {_esc(f['матч'])}: "
-                f"свои болельщики поставили {f['свои_фанаты']}, соперники — {f['фанаты_соперника']}.")
+        body = (f"На столько баллов разошлись трибуны в оценке одного игрока. {_esc(f['игрок'])}, матч {_esc(f['матч'])}: "
+                f"свои болельщики поставили {_score1(f['свои_фанаты'])}, болельщики соперника — {_score1(f['фанаты_соперника'])}.")
     elif f["тема"] == "лучшая оценка тура":
-        body = f"Лучшая оценка {f['тур']}-го тура. {_esc(f['игрок'])}, матч {_esc(f['матч'])} — {f['голосов']} голосов болельщиков."
+        body = (f"Лучшая оценка {f['тур']}-го тура. {_esc(f['игрок'])}, матч {_esc(f['матч'])}: "
+                f"{_plural(f['голосов'], 'голос,голоса,голосов')} болельщиков.")
     else:
-        body = f"Столько оценок болельщики поставили игрокам, тренерам и судьям за {f['матчей']} матчей {f['тур']}-го тура."
-    return f"<b>🔢 Цифра недели: {f['цифра']}</b>\n\n{body}\n\nА вы оценили свой матч?"
+        body = f"Столько раз болельщики оценили {_plural(f['матчей'], 'матч,матча,матчей')} {f['тур']}-го тура."
+    return f"<b>🔢 Цифра недели: {_num(f['цифра'])}</b>\n\n{body}\n\nА вы оценили свой матч?"
 
 
 def latest_final_round():

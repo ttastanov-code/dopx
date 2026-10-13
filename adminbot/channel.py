@@ -349,15 +349,15 @@ def preview_post(tour, matches: list, sample: bool = False) -> ChannelPost | Non
         return f"{body}{bot_line()}\n\n{HASHTAGS}", by_ai
     post = prepare("preview", key, text, buttons=[["🔮 Сделать прогноз", site(reverse("matches:list"))]], sample=sample)
     if post and main:
-        prepare("poll", f"poll:{key}", f"Опрос: кто выиграет {main.home_team.name} – {main.away_team.name}?",
-                poll={"question": f"Кто выиграет: {main.home_team.name} – {main.away_team.name}?",
+        prepare("poll", f"poll:{key}", f"Опрос: кто выиграет {main.home_team.name} — {main.away_team.name}?",
+                poll={"question": f"Кто выиграет: {main.home_team.name} — {main.away_team.name}?",
                       "options": [main.home_team.name, "Ничья", main.away_team.name]}, sample=sample, delay=60)
     return post
 
 
 def change_post(match, kind: str, sample: bool = False) -> ChannelPost | None:
     what = {"postponed": "перенесён", "cancelled": "отменён"}.get(kind, "перенесён")
-    text = f"⚠️ Матч {esc(match.home_team.name)} – {esc(match.away_team.name)} {what}.\n\nСледите за новой датой на DOPX."
+    text = f"⚠️ Матч {esc(match.home_team.name)} — {esc(match.away_team.name)} {what}.\n\nСледите за новой датой на DOPX."
     return prepare("changes", f"change:{match.pk}:{kind}", text, buttons=[["Матч на DOPX", match_url(match)]], sample=sample)
 
 
@@ -367,7 +367,7 @@ def expert_post(take, sample: bool = False) -> ChannelPost | None:
     quote = take.headline or take.text
     body = take.text
     title = f", {esc(take.display_title)}" if take.display_title else ""
-    text = (f"🎙 <b>Мнение эксперта · {esc(m.home_team.name)} – {esc(m.away_team.name)}</b>\n\n"
+    text = (f"🎙 <b>Мнение эксперта · {esc(m.home_team.name)} — {esc(m.away_team.name)}</b>\n\n"
             f"<b>«{esc(quote)}»</b>\n\n{esc(body) if take.headline else ''}\n\n— {esc(take.display_name)}{title}\n\n{HASHTAGS}")
     return prepare("expert", f"expert:{take.pk}", text.replace("\n\n\n\n", "\n\n"), buttons=[["Читать на DOPX", match_url(m)]], sample=sample)
 
@@ -391,7 +391,7 @@ def round_posts(sample: bool = False, rnd=None) -> list[ChannelPost]:
         return []
 
     def text():
-        body, by_ai = writer.write("round", facts, lambda: stories.round_template(facts))
+        body, by_ai = writer.write("round", facts, lambda: stories.round_template(facts), "900–1600 знаков")
         return f"{body}{bot_line()}\n\n{HASHTAGS}", by_ai
     key = f"round:{rnd.season_id}:{rnd.tour}"
     post = prepare("round", key, text, image=paths[0] if paths else "", images=paths[1:],

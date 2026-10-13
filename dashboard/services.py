@@ -186,6 +186,7 @@ def data_health_summary(recent_runs: int = 20) -> dict:
 
     return {
         "stale_matches": stale_matches.count(),
+        "manual_override_count": Match.objects.filter(manual_override=True).count(),
         "last_run": last_run,
         "recent_runs": runs,
         "last_hour": hour,
@@ -262,6 +263,9 @@ def data_trust_summary(limit: int = 25, report_status: str = "open") -> dict:
         "unreviewed_discrepancies_count": unreviewed_discrepancies.count(),
         "unreviewed_discrepancies": list(unreviewed_discrepancies.order_by("-created_at")[:limit]),
         "recent_corrections": recent_corrections,
+        "corrections_30d": StaffActionLog.objects.filter(
+            action__in=DATA_TRUST_HISTORY_ACTIONS, created_at__gte=timezone.now() - timedelta(days=30),
+        ).count(),
     }
 
 

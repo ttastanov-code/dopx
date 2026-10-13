@@ -10,9 +10,10 @@
         <div class="dopx-section-eyebrow"><i class="ti ti-search"></i>Поиск</div>
         <div class="dopx-section-title">Поиск матча</div>
         <p class="dopx-section-desc mb-3">По названию команды (можно обе через пробел, год — ниже) или по sportmonks_id — он ищется по всей базе. Казахские буквы можно печатать похожими русскими.</p>
+        {# На телефоне: поле во всю ширину, ниже год и кнопка — края совпадают. #}
         <form method="get" action="{% url 'dashboard:parser_tools' %}" class="flex flex-wrap gap-2 items-center mb-3">
-            <input type="text" name="q" value="{{ search_query }}" placeholder="Команда, обе команды или sportmonks_id" class="input input-sm input-bordered w-72 max-w-full" autofocus>
-            <select name="year" class="select select-sm select-bordered">
+            <input type="text" name="q" value="{{ search_query }}" placeholder="Команда, обе команды или sportmonks_id" class="input input-sm input-bordered basis-full sm:basis-auto sm:w-80 min-w-0">
+            <select name="year" class="select select-sm select-bordered flex-1 sm:flex-none sm:w-28 min-w-0">
                 {% for y in search_available_years %}
                 <option value="{{ y }}" {% if y == search_year %}selected{% endif %}>{{ y }}</option>
                 {% endfor %}

@@ -1,10 +1,11 @@
 # core/management/commands/check_mobile_layout.py
-"""manage.py check_mobile_layout [--base-url URL] [--widths 375,320] [--only /path/ ...] [--dashboard]
+"""manage.py check_mobile_layout [--base-url URL] [--widths 375,320] [--only /path/ ...] [--dashboard] [--screenshots DIR]
 
 Мобильная вёрстка основных страниц в Chrome (Playwright): наложения текстов, текст за пределами
 блока и за краем экрана, обрезка многоточием (запрещена), горизонтальная прокрутка. Нужен запущенный сервер (по умолчанию dev).
 Страницы — из URL-резолвера с примерами объектов; вкладки номинаций проверяются каждая.
 --dashboard — страницы staff-дашборда (сессия суперпользователя с пройденной 2FA), ширины 375 и 1440.
+--screenshots DIR — сохранить снимки страниц во всю высоту, чтобы посмотреть глазами.
 Код выхода 1, если есть проблемы. Запускать перед релизом (docs/DEPLOYMENT.md).
 """
 from __future__ import annotations
@@ -123,6 +124,7 @@ class Command(BaseCommand):
         parser.add_argument("--widths", default="375,320", help="Ширины экрана через запятую.")
         parser.add_argument("--only", nargs="*", help="Проверить только эти пути.")
         parser.add_argument("--dashboard", action="store_true", help="Проверить страницы staff-дашборда.")
+        parser.add_argument("--screenshots", default=None, help="Папка для снимков страниц во всю высоту.")
         parser.add_argument("--user", default=None, help="Логин для проверки как вошедший (по умолчанию временный служебный аккаунт).")
 
     def handle(self, *args, **opts):
@@ -150,7 +152,7 @@ class Command(BaseCommand):
         try:
             # ORM — только до и после: внутри sync_playwright свой цикл событий.
             problems = self._scan(sync_playwright, opts["base_url"].rstrip("/"), urls, widths, session_key,
-                                  guests=not dashboard)
+                                  guests=not dashboard, shots=opts["screenshots"])
         finally:
             if session_key:
                 from django.contrib.sessions.models import Session
@@ -196,8 +198,10 @@ class Command(BaseCommand):
         store.create()
         return store.session_key
 
-    def _scan(self, sync_playwright, base, urls, widths, session_key, guests: bool = True) -> dict:
+    def _scan(self, sync_playwright, base, urls, widths, session_key, guests: bool = True, shots: str | None = None) -> dict:
         js = SCAN_JS.read_text(encoding="utf-8")
+        if shots:
+            Path(shots).mkdir(parents=True, exist_ok=True)
         host = re.sub(r"^https?://", "", base).split("/")[0].split(":")[0]
         problems: dict = defaultdict(list)
         with sync_playwright() as pw:
@@ -226,6 +230,9 @@ class Command(BaseCommand):
                             page.wait_for_timeout(500)
                             page.evaluate("document.getElementById('djDebug')?.remove()")
                             found = self._findings(page.evaluate(js))
+                            if shots:
+                                name = re.sub(r"[^a-z0-9]+", "_", url.lower()).strip("_") or "home"
+                                page.screenshot(path=str(Path(shots) / f"{width}{'' if logged else '_guest'}_{name}.png"), full_page=True)
                             for radio in page.eval_on_selector_all(".dx-noms__radio", "els => els.map(e => e.id)"):
                                 page.evaluate("id => { const r = document.getElementById(id); r.checked = true; }", radio)
                                 page.wait_for_timeout(150)
