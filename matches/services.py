@@ -204,7 +204,9 @@ def _describe_turning_point(match_aggregate) -> str:
 
 def _consensus_level(match_evaluations: list) -> str | None:
     """Уровень консенсуса по разбросу оценок матча голосующими. None при < 2 голосах."""
-    composites = [(e.entertainment + e.tension + e.fairness) / 3 for e in match_evaluations]
+    # По тронутым шкалам: пустые (пропущенный ползунок) в среднее не идут.
+    composites = [sum(v) / len(v) for v in ([x for x in (e.entertainment, e.tension, e.fairness) if x is not None]
+                                            for e in match_evaluations) if v]
     if len(composites) < 2:
         return None
     stdev = statistics.pstdev(composites)
@@ -381,6 +383,9 @@ CARD_DNA_MIN_VOTES = 3
 
 # Минимум прогнозов для индекса сенсации.
 SENSATION_MIN_PREDICTIONS = 5
+# Сенсация — проигрыш явного фаворита: у него большинство прогнозов и заметный отрыв от второго исхода.
+SENSATION_MIN_FAVORITE_PCT = 55
+SENSATION_MIN_FAVORITE_MARGIN = 10
 
 # С какой минуты гол считается поздним.
 LATE_GOAL_MINUTE_THRESHOLD = 75
@@ -529,7 +534,7 @@ def describe_card_dna_traits(aggregate) -> list[str]:
 
 
 def compute_sensation_index(match, counts: dict | None, reaction_counts: dict | None = None) -> int | None:
-    """Индекс сенсации 0-100: насколько уверенно сообщество ошиблось с фаворитом.
+    """Индекс сенсации 0-100: доля прогнозов за явного фаворита, который не победил.
 
     Основной источник — прогнозы до матча, запасной — реакция «Неожиданно» после.
     None, если данных мало или фаворит победил.
@@ -548,7 +553,12 @@ def compute_sensation_index(match, counts: dict | None, reaction_counts: dict | 
         return None
 
     pct_by_choice = {'1': counts['home_pct'], 'X': counts['draw_pct'], '2': counts['away_pct']}
-    favorite_choice = max(pct_by_choice, key=pct_by_choice.get)
+    ranked = sorted(pct_by_choice, key=pct_by_choice.get, reverse=True)
+    favorite_choice = ranked[0]
+    # Без явного фаворита (40/20/40) неожиданного исхода нет.
+    if (pct_by_choice[favorite_choice] < SENSATION_MIN_FAVORITE_PCT
+            or pct_by_choice[favorite_choice] - pct_by_choice[ranked[1]] < SENSATION_MIN_FAVORITE_MARGIN):
+        return None
     if favorite_choice == final_result:
         return None  # фаворит победил
 

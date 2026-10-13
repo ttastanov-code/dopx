@@ -84,7 +84,8 @@ def vote_values(match_ids, player_ids) -> dict:
 
     result = defaultdict(list)
     for match_id in match_ids:
-        qs = countable_evaluations(PlayerEvaluation.objects.filter(match_id=match_id, player_id__in=player_ids), match_id)
+        qs = countable_evaluations(PlayerEvaluation.objects.filter(
+            match_id=match_id, player_id__in=player_ids, contribution__isnull=False), match_id)
         for player_id, value in qs.values_list('player_id', 'contribution'):
             result[(match_id, player_id)].append(value)
     return result

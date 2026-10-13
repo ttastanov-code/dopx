@@ -139,7 +139,9 @@ class MatchListView(ListView):
             except ValueError:
                 tours_season = None
         else:
-            tours_season = Season.objects.filter(is_active=True).first()
+            tours_season = Season.get_display_season(
+                has_data=lambda s: Match.objects.filter(season=s, tour__isnull=False).exists()
+            )
         tours_qs = Match.objects.exclude(tour__isnull=True)
         if tours_season:
             tours_qs = tours_qs.filter(season=tours_season)
@@ -598,9 +600,17 @@ def match_header_partial(request, match_id):
     return render(request, 'matches/_match_header.html', context)
 
 
+# Отметки у игрока в составе: событие -> (иконка, подпись).
+LINEUP_EVENT_MARKS = {
+    "goal": ("ti-ball-football", "Гол"), "penalty": ("ti-ball-football", "Гол с пенальти"),
+    "own_goal": ("ti-ball-football", "Автогол"), "yellow_card": ("ti-square-filled", "Жёлтая карточка"),
+    "red_card": ("ti-square-filled", "Красная карточка"),
+}
+
+
 def lineups_with_side_order(match):
-    """Составы матча, хозяева первыми."""
-    return MatchLineup.objects.filter(
+    """Составы матча, хозяева первыми; у игроков — отметки замен, голов и карточек (lp.marks)."""
+    lineups = list(MatchLineup.objects.filter(
         match=match
     ).prefetch_related(
         'players__player',
@@ -612,7 +622,25 @@ def lineups_with_side_order(match):
             default=Value(2),
             output_field=IntegerField(),
         )
-    ).order_by('side_order')
+    ).order_by('side_order'))
+    if not lineups:
+        return lineups
+    events_by_player = {}
+    for event in match.events.filter(event_type__in=LINEUP_EVENT_MARKS, player__isnull=False).order_by("minute", "added_time"):
+        events_by_player.setdefault(event.player_id, []).append(event)
+    for lineup in lineups:
+        for lp in lineup.players.all():
+            marks = []
+            if not lp.is_starting and lp.minute_in is not None:
+                marks.append({"kind": "in", "icon": "ti-arrow-up", "text": f"{lp.minute_in}'", "title": "Вышел на замену"})
+            for event in events_by_player.get(lp.player_id, []):
+                icon, title = LINEUP_EVENT_MARKS[event.event_type]
+                marks.append({"kind": event.event_type, "icon": icon, "text": f"{event.display_minute}'", "title": title})
+            if lp.minute_out is not None:
+                marks.append({"kind": "out", "icon": "ti-arrow-down", "text": f"{lp.minute_out}'", "title": "Заменён"})
+            lp.marks = marks
+            lp.unused = not lp.is_starting and lp.minute_in is None
+    return lineups
 
 
 @require_http_methods(["GET"])

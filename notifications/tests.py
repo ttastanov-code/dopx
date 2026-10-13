@@ -330,12 +330,16 @@ class NotifyVotingBothDirectionsRegressionTests(TestCase):
             start_time=now - timedelta(hours=50), end_time=now - timedelta(hours=48), status="finished",
             home_score=1, away_score=0, voting_open_until=now + timedelta(minutes=30),
         )
-        # notify_voting_closing_soon — всем верифицированным, подписка не нужна.
+        # Только аудитории матча: подписчик получает, посторонний — нет.
+        Follow.objects.create(user=self.user, team=self.home)
+        stranger = User.objects.create_user(username="stranger", email="s@example.com", password="pass12345", is_verified=True)
 
         notify_voting_closing_soon()
 
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn(self.user.email, mail.outbox[0].to)
+        self.assertNotIn(stranger.email, mail.outbox[0].to)
+        self.assertFalse(Notification.objects.filter(user=stranger, notification_type="voting_closing").exists())
         self.assertTrue(
             Notification.objects.filter(
                 user=self.user, notification_type="voting_closing", related_match=match,
@@ -360,6 +364,7 @@ class NotifyVotingClosingSoonDedupTests(TestCase):
         self.user = User.objects.create_user(
             username="fan", email="fan@example.com", password="pass12345", is_verified=True,
         )
+        Follow.objects.create(user=self.user, team=self.home)
 
     def test_second_run_on_same_match_does_not_duplicate(self):
         first_result = notify_voting_closing_soon()
@@ -509,6 +514,17 @@ class NotifyPredictionResultsLockTests(TestCase):
             Notification.objects.filter(notification_type="prediction_result").count(), 1,
         )
 
+    def test_no_score_no_result_yet(self):
+        Match.objects.filter(id=self.match.id).update(home_score=None, away_score=None)
+        self.assertEqual(notify_prediction_results()["notified"], 0)
+        self.assertEqual(len(mail.outbox), 0)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.prediction_streak, 0)
+
+    def test_thin_community_stats_hidden(self):
+        notify_prediction_results()
+        self.assertNotIn("Как проголосовало сообщество", mail.outbox[0].alternatives[0][0])
+
     def test_bots_skipped(self):
         bot = User.objects.create_user(username="test_user_bot_0001", email="test_user_bot_0001@test.dopx.local",
                                        password="x")
@@ -517,3 +533,27 @@ class NotifyPredictionResultsLockTests(TestCase):
         self.assertFalse(Notification.objects.filter(user=bot).exists())
         bot.refresh_from_db()
         self.assertEqual(bot.prediction_streak, 0)
+
+
+class NotifyRatingsPublishedEmptyTests(TestCase):
+    """Без набравших порог оценок «итоги оценок» не шлём."""
+
+    def setUp(self):
+        cache.clear()
+        self.league, self.season, self.home, self.away = _make_league_season_teams()
+        now = timezone.now()
+        self.match = Match.objects.create(
+            league=self.league, season=self.season, home_team=self.home, away_team=self.away,
+            start_time=now - timedelta(days=3), end_time=now - timedelta(days=3), status="finished",
+            home_score=1, away_score=0, voting_open_until=now - timedelta(hours=1),
+        )
+        self.user = User.objects.create_user(
+            username="fan", email="fan@example.com", password="pass12345", is_verified=True,
+        )
+        Follow.objects.create(user=self.user, team=self.home)
+
+    def test_no_ratings_no_notification(self):
+        from .tasks import notify_ratings_published
+
+        self.assertEqual(notify_ratings_published()["notified"], 0)
+        self.assertFalse(Notification.objects.filter(notification_type="ratings_published").exists())

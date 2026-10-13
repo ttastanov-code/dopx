@@ -28,7 +28,10 @@ ENTER_SALT = "fanbot.miniapp-enter"
 
 
 def _safe_next(request, value: str, default: str = "/") -> str:
-    return value if value and url_has_allowed_host_and_scheme(value, allowed_hosts={request.get_host()}) else default
+    from core.utils import is_page_next
+
+    ok = value and is_page_next(value) and url_has_allowed_host_and_scheme(value, allowed_hosts={request.get_host()})
+    return value if ok else default
 
 
 WELCOME_SKIP_KEY = "tg_welcome_skipped"

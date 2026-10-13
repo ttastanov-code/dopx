@@ -7,13 +7,14 @@ from aggregates.services import CONFIDENT_VOTES_THRESHOLD, min_votes_for_display
 from players.formations import pitch_rows as formation_pitch_rows, slot_label
 from season_squad.models import SeasonBestXI
 from season_squad.services import MIN_MATCHES_FOR_CANDIDATE, SHRINKAGE_C
+from core.stats import season_has_ratings
 from seasons.models import Season
 
 def _resolve_season(season_id):
     """Сезон из URL (404 для неверного id) или активный. None — данных нет, не ошибка."""
     if season_id:
         return get_object_or_404(Season.objects.select_related('league'), pk=season_id)
-    return Season.get_primary_active()
+    return Season.get_display_season(has_data=season_has_ratings)
 
 
 # ring_style — сырой CSS через var(--color-*): Tailwind runtime не знает цвета daisyUI.
@@ -119,7 +120,7 @@ def best_xi_widget(request, season_id=None):
     if season_id:
         season = get_object_or_404(Season.objects.select_related('league'), pk=season_id)
     else:
-        season = Season.get_primary_active()
+        season = Season.get_display_season(has_data=season_has_ratings)
 
     pitch_rows = []
     best_xi = None

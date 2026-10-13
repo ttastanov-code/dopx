@@ -38,8 +38,8 @@ class PlayerListView(ListView):
         return get_setting("players_list_page_size", self.paginate_by)
 
     def get_queryset(self):
-        # По умолчанию — игроки команд текущего сезона. ?season=all снимает фильтр.
-        self.active_season = Season.get_primary_active()
+        # По умолчанию — игроки команд текущего сезона (до старта нового — прошлого). ?season=all снимает фильтр.
+        self.active_season = Season.get_roster_season()
         self.show_all = self.request.GET.get('season') == 'all'
 
         # «Матчей» — за текущий сезон.
@@ -98,7 +98,18 @@ class PlayerListView(ListView):
                 code_filter |= Q(position__iexact=code)
             queryset = queryset.filter(code_filter)
 
-        return queryset.order_by('last_name', 'first_name')
+        # По умолчанию — по рейтингу болельщиков (как в entity_ratings), без оценок — в конце, по сыгранным матчам.
+        self.sort = 'name' if self.request.GET.get('sort') == 'name' else 'rating'
+        if self.sort == 'name':
+            return queryset.order_by('last_name', 'first_name')
+        from django.db.models import F, OuterRef, Subquery
+        rated = PlayerMatchAggregate.objects.filter(
+            published_q(), total_votes__gte=min_votes_for_display(), player=OuterRef('pk'))
+        if self.active_season and not self.show_all:
+            rated = rated.filter(match__season=self.active_season)
+        rating_sq = rated.values('player').annotate(r=vote_weighted_avg('performance_score')).values('r')[:1]
+        return queryset.annotate(sort_rating=Subquery(rating_sq)).order_by(
+            F('sort_rating').desc(nulls_last=True), '-total_matches', 'last_name', 'first_name')
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -116,6 +127,7 @@ class PlayerListView(ListView):
         context['players'] = page
         context['rows'] = [player_row(p) for p in page]
         context['search_query'] = self.request.GET.get('q', '')
+        context['sort'] = self.sort
         context['active_season'] = self.active_season
         context['show_all'] = self.show_all
         # Команды выбранного сезона.
@@ -204,8 +216,10 @@ class PlayerDetailView(DetailView):
         # Средняя оценка «по статистике» (matches/stat_ratings.py).
         from matches.stat_ratings import average_stat_rating, stat_ratings_for_player
 
-        stats['avg_stat_rating'], stats['stat_rating_matches'] = average_stat_rating(player)
         aggregates = list(aggregates)
+        # По тем же матчам, что и оценка болельщиков, иначе сравнение 1 матча со средним за сезон.
+        rated_ids = list(PlayerMatchAggregate.objects.filter(published_q(), player=player).values_list("match_id", flat=True))
+        stats['avg_stat_rating'], stats['stat_rating_matches'] = average_stat_rating(player, rated_ids or None)
         per_match_stat = stat_ratings_for_player(player, [a.match_id for a in aggregates])
         for agg in aggregates:
             agg.stat_rating = per_match_stat.get(agg.match_id)
@@ -397,8 +411,8 @@ class PlayerSeasonRecapView(DetailView):
         if season_id:
             season = get_object_or_404(Season, id=season_id)
         else:
-            # Без season_id — активный сезон.
-            season = Season.objects.filter(is_active=True).select_related('league').first()
+            # Без season_id — активный сезон, до первых матчей — предыдущий.
+            season = Season.get_display_season()
 
         if not season:
             context.update({'season': None})

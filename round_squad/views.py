@@ -96,6 +96,7 @@ def _round_context(season_id, tour):
         'pitch_rows': pitch_rows,
         'has_filled_slots': any(slot.content_type_id for slot in slots_by_code.values()),
         'coach_card': _slot_to_card(slots_by_code.get('COACH'), 'COACH'),
+        'referee_card': _slot_to_card(slots_by_code.get('REFEREE'), 'REFEREE'),
         'player_of_round_card': player_of_round_card,
         'dramatic_match': round_xi.most_dramatic_match,
         'dramatic_match_explanation': round_xi.most_dramatic_match_explanation,

@@ -306,3 +306,22 @@ class FormationPagesTests(TestCase):
         season_page = self.client.get(reverse("season_squad:best_xi", args=[season.id]))
         self.assertEqual([len(r["slots"]) for r in season_page.context["pitch_rows"]], [1, 3, 2, 4, 1])
         self.assertEqual(season_page.status_code, 200)
+
+
+class SendRoundResultsEmptyTests(TestCase):
+    """Пустая сборная тура — письмо «Лучшие тура готовы» не шлём."""
+
+    def test_empty_round_skipped(self):
+        from django.core import mail
+
+        from round_squad.models import RoundBestXI
+        from round_squad.tasks import send_round_results_notification
+        from users.models import User
+
+        league = League.objects.create(name="League", country="KZ")
+        season = Season.objects.create(league=league, year="2026")
+        rnd = RoundBestXI.objects.create(season=season, tour=3, is_final=True)
+        User.objects.create_user(username="fan", email="fan@example.com", password="x", is_verified=True)
+        result = send_round_results_notification(str(rnd.id))
+        self.assertTrue(result.get("skipped_empty"))
+        self.assertEqual(len(mail.outbox), 0)

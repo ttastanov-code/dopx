@@ -244,8 +244,10 @@ class LoginView(AuthLoginView):
 
     def get_success_url(self):
         # Только свой хост — иначе ?next= уводит на чужой сайт после входа.
+        from core.utils import is_page_next
+
         next_url = self.request.POST.get('next') or self.request.GET.get('next')
-        if next_url and url_has_allowed_host_and_scheme(
+        if next_url and is_page_next(next_url) and url_has_allowed_host_and_scheme(
             next_url, allowed_hosts={self.request.get_host()}, require_https=self.request.is_secure(),
         ):
             return next_url

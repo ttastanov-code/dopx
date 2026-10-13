@@ -14,9 +14,9 @@
             <h1 class="text-2xl font-bold mb-1">Матч оценён!</h1>
             {% if total_rated %}
             <p class="text-xs text-base-content/60">
-                Вы вошли в <span class="font-bold text-base-content/80">{{ total_rated }}</span> оценок этого матча:
                 {% with p=rated_counts.players t=rated_counts.teams c=rated_counts.coaches r=rated_counts.referee %}
-                {% if p %}игроков: {{ p }}{% endif %}{% if p and t %}, {% endif %}{% if t %}команд: {{ t }}{% endif %}{% if c %}{% if p or t %}, {% endif %}тренеров: {{ c }}{% endif %}{% if r %}{% if p or t or c %}, {% endif %}судья{% endif %}
+                Ваш голос учтён в <span class="font-bold text-base-content/80">{{ total_rated }}</span> {{ total_rated|ru_plural:"оценке,оценках,оценках" }}:
+                {% if p %}{{ p }} {{ p|ru_plural:"игрок,игрока,игроков" }}{% endif %}{% if p and t %}, {% endif %}{% if t %}{{ t }} {{ t|ru_plural:"команда,команды,команд" }}{% endif %}{% if c %}{% if p or t %}, {% endif %}{{ c }} {{ c|ru_plural:"тренер,тренера,тренеров" }}{% endif %}{% if r %}{% if p or t or c %} и {% endif %}судья{% endif %}.
                 {% endwith %}
             </p>
             {% else %}
@@ -40,7 +40,7 @@
                         <span class="font-bold text-xl text-secondary">
                             <i class="ti ti-hourglass"></i>
                         </span>
-                        <span class="text-[9px] text-base-content/50 text-center">Trust Score обновится после голосования</span>
+                        <span class="text-[9px] text-base-content/50 text-center">Доверие к голосу (Trust Score) обновится после закрытия голосования</span>
                     </div>
                 </div>
             </div>
@@ -52,8 +52,8 @@
             <div class="card-body p-3">
                 <div class="flex items-center justify-between gap-1">
                     <div class="flex flex-col items-center gap-0.5 flex-1 min-w-0">
-                        {% if match.home_team.logo_url %}
-                        <img src="{{ match.home_team.logo_url }}" alt="{{ match.home_team.name }}" class="w-7 h-7 object-contain">
+                        {% if match.home_team.logo_display %}
+                        <img src="{{ match.home_team.logo_display }}" alt="{{ match.home_team.name }}" class="w-7 h-7 object-contain">
                         {% else %}
                         <div class="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-xs">
                             {{ match.home_team.name|first|upper }}
@@ -73,8 +73,8 @@
                         <span class="text-[9px] text-center break-words w-full max-w-[70px] order-2">
                             {{ match.away_team.name }}
                         </span>
-                        {% if match.away_team.logo_url %}
-                        <img src="{{ match.away_team.logo_url }}" alt="{{ match.away_team.name }}" class="w-7 h-7 object-contain order-1">
+                        {% if match.away_team.logo_display %}
+                        <img src="{{ match.away_team.logo_display }}" alt="{{ match.away_team.name }}" class="w-7 h-7 object-contain order-1">
                         {% else %}
                         <div class="w-7 h-7 rounded-full bg-secondary/10 flex items-center justify-center font-bold text-secondary text-xs order-1">
                             {{ match.away_team.name|first|upper }}

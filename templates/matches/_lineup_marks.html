@@ -1,0 +1,6 @@
+{# Отметки игрока в составе: замена ↑/↓ с минутой, голы, карточки (matches.views.lineups_with_side_order). #}
+{% if lp.marks %}
+<span class="md-lineup__marks">
+    {% for m in lp.marks %}<span class="md-lineup__mark md-lineup__mark--{{ m.kind }}" title="{{ m.title }} на {{ m.text }}">{% if m.kind == 'yellow_card' or m.kind == 'red_card' %}<span class="md-lineup__card"></span>{% else %}<i class="ti {{ m.icon }}"></i>{% endif %}{{ m.text }}</span>{% endfor %}
+</span>
+{% endif %}

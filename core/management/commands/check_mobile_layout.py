@@ -29,6 +29,7 @@ SKIP_PARTS = (
 # Страницы только для вошедших — гостем не проверяем.
 AUTH_ONLY = ("/users/profile", "/notifications", "/friends", "/invite", "/users/achievements", "/evaluations/")
 COOKIE_NOTICE_ACK = "dopx_cookie_notice_ack_v1"
+TEMP_USERNAME = "layout_check_bot"
 
 
 def _walk(resolver, prefix=""):
@@ -122,7 +123,7 @@ class Command(BaseCommand):
         parser.add_argument("--widths", default="375,320", help="Ширины экрана через запятую.")
         parser.add_argument("--only", nargs="*", help="Проверить только эти пути.")
         parser.add_argument("--dashboard", action="store_true", help="Проверить страницы staff-дашборда.")
-        parser.add_argument("--user", default=None, help="Логин для проверки как вошедший (по умолчанию первый суперпользователь).")
+        parser.add_argument("--user", default=None, help="Логин для проверки как вошедший (по умолчанию временный служебный аккаунт).")
 
     def handle(self, *args, **opts):
         try:
@@ -133,9 +134,13 @@ class Command(BaseCommand):
         from django.contrib.auth import get_user_model
 
         User = get_user_model()
-        user = (User.objects.filter(username=opts["user"]).first() if opts["user"]
-                else User.objects.filter(is_superuser=True, is_active=True).order_by("date_joined").first())
         dashboard = opts["dashboard"]
+        # Временный служебный пользователь: открытие страниц меняет аккаунт (серия дней, задания) — живых не трогаем.
+        temp_user = None
+        if opts["user"]:
+            user = User.objects.filter(username=opts["user"]).first()
+        else:
+            user = temp_user = self._temp_user(User, staff=dashboard)
         if dashboard and (not user or not user.is_staff):
             raise CommandError("Для --dashboard нужен сотрудник: --user <логин>")
         urls = opts["only"] or collect_urls(user.username if user else None, dashboard=dashboard)
@@ -150,9 +155,27 @@ class Command(BaseCommand):
             if session_key:
                 from django.contrib.sessions.models import Session
                 Session.objects.filter(session_key=session_key).delete()
+            if temp_user is not None:
+                temp_user.delete()
         self._report(problems)
         if problems:
             raise SystemExit(1)
+
+    @staticmethod
+    def _temp_user(User, staff: bool):
+        """Служебный аккаунт на время прогона (профиль заполнен; для дашборда — суперпользователь с 2FA)."""
+        from django.utils import timezone
+
+        User.objects.filter(username=TEMP_USERNAME).delete()
+        user = User.objects.create(username=TEMP_USERNAME, email="layout-check@dopx-check.kz", is_verified=True,
+                                   email_verified_at=timezone.now(), city="Алматы",
+                                   is_staff=staff, is_superuser=staff)
+        user.set_unusable_password()
+        user.save(update_fields=["password"])
+        if staff:
+            from django_otp.plugins.otp_totp.models import TOTPDevice
+            TOTPDevice.objects.create(user=user, name="layout-check", confirmed=True)
+        return user
 
     @staticmethod
     def _login_session(user, otp: bool = False) -> str:

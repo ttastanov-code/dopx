@@ -17,8 +17,8 @@
         <div class="card-body p-3 gap-2">
             <div class="flex items-center gap-3">
                 <div class="w-11 h-11 rounded-full bg-primary/10 flex items-center justify-center text-primary flex-shrink-0 overflow-hidden">
-                    {% if team.logo_url %}
-                    <img src="{{ team.logo_url }}" alt="{{ team.name }}" class="w-full h-full object-contain">
+                    {% if team.logo_display %}
+                    <img src="{{ team.logo_display }}" alt="{{ team.name }}" class="w-full h-full object-contain">
                     {% else %}
                     <i class="ti ti-shield text-xl"></i>
                     {% endif %}

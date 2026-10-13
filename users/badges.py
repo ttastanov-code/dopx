@@ -10,6 +10,12 @@ from typing import Literal
 
 Rarity = Literal["bronze", "silver", "gold", "platinum", "secret", "legendary"]
 
+# Подписи редкости для пользователей.
+RARITY_LABELS: dict[Rarity, str] = {
+    "bronze": "Бронза", "silver": "Серебро", "gold": "Золото", "platinum": "Платина",
+    "secret": "Секретное", "legendary": "Легендарное",
+}
+
 RARITY_ORDER: dict[Rarity, int] = {
     "bronze": 1,
     "silver": 2,

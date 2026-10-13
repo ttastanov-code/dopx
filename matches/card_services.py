@@ -23,6 +23,7 @@ from matches.models import Match
 from matches.services import (
     bulk_reaction_data,
     compute_sensation_index,
+    SENSATION_MIN_PREDICTIONS,
     describe_card_dna_traits,
     describe_finished_cta,
     describe_intrigue,
@@ -317,6 +318,11 @@ def _attach_finished_extras(finished, user, stamp: str = "") -> None:
         # Реакции — запасной источник сенсации при малом числе прогнозов.
         match.card_sensation = compute_sensation_index(
             match, sensation_counts.get(match.id), match.card_reaction_counts,
+        )
+        counts = sensation_counts.get(match.id)
+        # Откуда цифра: прогнозы до матча или реакция «Неожиданно» после — от этого зависит подпись.
+        match.card_sensation_source = (
+            'predictions' if counts and counts.get('total', 0) >= SENSATION_MIN_PREDICTIONS else 'reactions'
         )
 
         # Списки пар, а не dict с UUID-ключами: так значение сериализуется где угодно (в т.ч. debug toolbar).

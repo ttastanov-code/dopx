@@ -20,16 +20,17 @@ class PlayerMatchAggregate(BaseModel):
     
     # Базовые метрики
     avg_contribution = models.FloatField(_('Средний вклад'), default=0.0)
-    avg_risk = models.FloatField(_('Средний риск'), default=0.0)
-    avg_potential = models.FloatField(_('Средний потенциал'), default=0.0)
+    # Риск и потенциал ставят не все: нет ни одного голоса — пусто, а не выдуманная пятёрка.
+    avg_risk = models.FloatField(_('Средний риск'), null=True, blank=True)
+    avg_potential = models.FloatField(_('Средний потенциал'), null=True, blank=True)
     total_votes = models.IntegerField(_('Всего голосов'), default=0)
     
     # Вычисляемые индексы
     performance_score = models.FloatField(_('Рейтинг выступления'), default=0.0)
     # Вшитая в performance_score поправка — детектор сравнивает чистую оценку.
     rating_correction_applied = models.FloatField(_('Вшитая авто-поправка'), default=0.0)
-    risk_index = models.FloatField(_('Индекс риска'), default=0.0)
-    maturity_score = models.FloatField(_('Индекс зрелости'), default=0.0)
+    risk_index = models.FloatField(_('Индекс риска'), null=True, blank=True)
+    maturity_score = models.FloatField(_('Индекс зрелости'), null=True, blank=True)
     stability_index = models.FloatField(_('Индекс стабильности'), default=0.0)
     clutch_index = models.FloatField(_('Индекс решающих моментов'), default=0.0)
 

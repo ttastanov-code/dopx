@@ -331,3 +331,30 @@ class MaintenanceMiddleware:
                 response["Retry-After"] = "600"
                 return response
         return self.get_response(request)
+
+
+class HtmxLoginRedirectMiddleware:
+    """Фоновый htmx-запрос без входа (сессия истекла) не вставляет страницу логина в кусок страницы:
+    GET-обновления — пустой ответ, действия пользователя — переход на вход с возвратом на текущую страницу."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        if request.headers.get("HX-Request") != "true" or response.status_code not in (301, 302):
+            return response
+        from urllib.parse import urlencode, urlparse
+
+        from django.conf import settings
+        from django.http import HttpResponse
+        from django.shortcuts import resolve_url
+
+        login_path = resolve_url(settings.LOGIN_URL)
+        if not urlparse(response.get("Location", "")).path.startswith(login_path):
+            return response
+        quiet = HttpResponse(status=204)
+        if request.method != "GET":
+            page = urlparse(request.headers.get("HX-Current-URL", "")).path or "/"
+            quiet["HX-Redirect"] = f"{login_path}?{urlencode({'next': page})}"
+        return quiet

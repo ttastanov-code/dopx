@@ -248,7 +248,7 @@ def _match_story_params(user, kind: str) -> tuple[str, dict, str]:
     match = get_object_or_404(Match.objects.select_related("home_team", "away_team"), pk=match_id)
     score = f"{match.home_team.name} {match.get_score_display()} {match.away_team.name}"
     if prefix == "match":
-        top = (PlayerEvaluation.objects.filter(user=user, match=match).select_related("player")
+        top = (PlayerEvaluation.objects.filter(user=user, match=match, contribution__isnull=False).select_related("player")
                .order_by("-contribution").first())
         if not top:
             raise Http404

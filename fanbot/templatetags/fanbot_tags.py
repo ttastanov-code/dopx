@@ -14,6 +14,9 @@ def telegram_login(context, next_url=""):
     # Виджет Telegram работает только на домене из /setdomain — на localhost не показываем.
     if not (settings.FAN_BOT_TOKEN and username) or (request and request.get_host().split(":")[0] in ("localhost", "127.0.0.1")):
         return {"enabled": False}
+    from core.utils import is_page_next
+
+    next_url = next_url if is_page_next(next_url or "") else ""
     url = reverse("fanbot:login") + ("?" + urlencode({"next": next_url}) if next_url else "")
     return {"enabled": True, "bot": username, "auth_url": request.build_absolute_uri(url) if request else url}
 

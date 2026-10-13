@@ -159,9 +159,11 @@ class MarkAllAsReadView(LoginRequiredMixin, View):
         return redirect('notifications:list')
 
 
-class UnreadCountBadgeView(LoginRequiredMixin, View):
-    """Партиал счётчика на колокольчике (поллинг каждые 30 с)."""
+class UnreadCountBadgeView(View):
+    """Партиал счётчика на колокольчике (поллинг каждые 30 с). Гость (сессия истекла) — пусто, без редиректа на вход."""
     def get(self, request):
+        if not request.user.is_authenticated:
+            return HttpResponse("")
         unread_count = request.user.notifications.filter(is_read=False).count()
         html = render_to_string('components/_notification_unread_badge.html', {
             'count': unread_count,
@@ -169,9 +171,11 @@ class UnreadCountBadgeView(LoginRequiredMixin, View):
         return HttpResponse(html)
 
 
-class NotificationPanelView(LoginRequiredMixin, View):
+class NotificationPanelView(View):
     """Панель колокольчика (число непрочитанных + последние 5) — при открытии и смене данных."""
     def get(self, request):
+        if not request.user.is_authenticated:
+            return HttpResponse("")
         html = render_to_string('components/_notification_panel.html', {
             'count': request.user.notifications.filter(is_read=False).count(),
             'notifications': request.user.notifications.all()[:5],
@@ -179,8 +183,10 @@ class NotificationPanelView(LoginRequiredMixin, View):
         return HttpResponse(html)
 
 
-class NotificationBadgePartialView(LoginRequiredMixin, View):
+class NotificationBadgePartialView(View):
     def get(self, request):
+        if not request.user.is_authenticated:
+            return HttpResponse("")
         unread_count = request.user.notifications.filter(is_read=False).count()
         html = render_to_string('components/_notification_badge.html', {
             'count': unread_count,

@@ -698,3 +698,15 @@
 }
 .md-delta--up { color: var(--color-success); background: color-mix(in oklab, var(--color-success) 12%, transparent); }
 .md-delta--down { color: var(--color-error); background: color-mix(in oklab, var(--color-error) 12%, transparent); }
+
+/* Отметки в составах: замены, голы, карточки. */
+.md-lineup__marks { display: inline-flex; flex-wrap: wrap; gap: .2rem .45rem; margin-left: .5rem; align-items: center; }
+.md-lineup__mark { display: inline-flex; align-items: center; gap: .1rem; font-size: .7rem; font-weight: 600; font-variant-numeric: tabular-nums;
+    color: color-mix(in oklab, var(--color-base-content) 60%, transparent); white-space: nowrap; }
+.md-lineup__mark .ti { font-size: .8rem; }
+.md-lineup__mark--in .ti { color: var(--color-success); }
+.md-lineup__mark--out .ti { color: var(--color-error); }
+.md-lineup__mark--goal .ti, .md-lineup__mark--penalty .ti { color: var(--color-base-content); }
+.md-lineup__mark--own_goal .ti { color: var(--color-error); }
+.md-lineup__card { width: .5rem; height: .7rem; border-radius: .12rem; margin-right: .1rem; background: #facc15; }
+.md-lineup__mark--red_card .md-lineup__card { background: #ef4444; }

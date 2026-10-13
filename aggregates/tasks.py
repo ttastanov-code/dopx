@@ -39,6 +39,7 @@ from aggregates.services import (
     calculate_weighted_average,
     coach_team_for_match,
     countable_evaluations,
+    fill_missing_criteria,
     min_votes_for_display,
     player_team_map_for_match,
     segment_evaluations_by_side,
@@ -125,6 +126,10 @@ MATCH_RECALC_ONLY_FIELDS = (
 )
 
 
+def _round_or_none(value, digits: int = 2):
+    return None if value is None else round(value, digits)
+
+
 def _load_match(match_id: str, task_name: str):
     """(match_uuid, match) или (None, None), если id невалиден или матча нет."""
     try:
@@ -165,13 +170,13 @@ def recalculate_player_aggregates(self, match_id: str, apply_correction: bool = 
         .only("user_id", "player_id", "contribution", "risk", "potential", "player__team_id", "user__trust_score")
     )
 
+    # Рейтинг игрока — по «вкладу»: голоса без него (тронут только риск/потенциал) рейтинг не создают.
+    rated_player_ids = {e.player_id for e in evaluations if e.contribution is not None}
     # Сущности без допустимых голосов — агрегат устарел.
-    stale_qs = PlayerMatchAggregate.objects.filter(match_id=match_uuid).exclude(
-        player_id__in={e.player_id for e in evaluations}
-    )
+    stale_qs = PlayerMatchAggregate.objects.filter(match_id=match_uuid).exclude(player_id__in=rated_player_ids)
     stale_qs.delete()
 
-    if not evaluations:
+    if not rated_player_ids:
         cache.delete(f"match_player_aggregates_{match_id}")
         logger.info("No countable player evaluations for match %s", match_id)
         return True
@@ -183,7 +188,8 @@ def recalculate_player_aggregates(self, match_id: str, apply_correction: bool = 
     # Группируем оценки по игроку одним проходом по списку.
     player_eval_map: dict[uuid.UUID, list[PlayerEvaluation]] = {}
     for eval_obj in evaluations:
-        player_eval_map.setdefault(eval_obj.player_id, []).append(eval_obj)
+        if eval_obj.player_id in rated_player_ids:
+            player_eval_map.setdefault(eval_obj.player_id, []).append(eval_obj)
 
     drama_index = _get_match_drama_index(match_id, match_uuid)  # вес считаем один раз на матч
     corrections = (
@@ -196,11 +202,13 @@ def recalculate_player_aggregates(self, match_id: str, apply_correction: bool = 
 
     for player_id, player_evals in player_eval_map.items():
         avg_contribution = calculate_weighted_average(player_evals, "contribution", weight_map)
+        # Риск и потенциал — только по тем, кто их ставил; никто — None.
         avg_risk = calculate_weighted_average(player_evals, "risk", weight_map)
         avg_potential = calculate_weighted_average(player_evals, "potential", weight_map)
+        contribution_votes = [e.contribution for e in player_evals if e.contribution is not None]
 
         # Разброс — по сырым голосам, без винзоризации.
-        stability_index = stability_index_for([e.contribution for e in player_evals])
+        stability_index = stability_index_for(contribution_votes)
 
         # Команда игрока в этом матче (заявка), а не текущий клуб.
         player_team_id = team_by_player.get(player_id) or player_evals[0].player.team_id
@@ -214,7 +222,7 @@ def recalculate_player_aggregates(self, match_id: str, apply_correction: bool = 
         performance_score = apply_neutral_anchor(
             avg_contribution, neutral_avg, own_n, rival_n, neutral_n
         )
-        risk_index_value = apply_neutral_anchor(
+        risk_index_value = None if avg_risk is None else apply_neutral_anchor(
             avg_risk, neutral_risk_avg, risk_own_n, risk_rival_n, risk_neutral_n
         )
 
@@ -235,13 +243,13 @@ def recalculate_player_aggregates(self, match_id: str, apply_correction: bool = 
                 player_id=player_id,
                 match_id=match_uuid,
                 avg_contribution=round(avg_contribution, 2),
-                avg_risk=round(avg_risk, 2),
-                avg_potential=round(avg_potential, 2),
-                total_votes=len(player_evals),
+                avg_risk=_round_or_none(avg_risk),
+                avg_potential=_round_or_none(avg_potential),
+                total_votes=len(contribution_votes),
                 performance_score=round(performance_score, 2),
                 rating_correction_applied=round(player_correction_applied, 3),
-                risk_index=round(risk_index_value, 2),
-                maturity_score=round(performance_score - risk_index_value, 2),
+                risk_index=_round_or_none(risk_index_value),
+                maturity_score=None if risk_index_value is None else round(performance_score - risk_index_value, 2),
                 stability_index=round(stability_index, 2),
                 clutch_index=round(clutch_index, 2),
                 own_fans_avg=round(own_fans_avg, 2) if own_fans_avg is not None else None,
@@ -342,10 +350,14 @@ def recalculate_coach_aggregates(self, match_id: str) -> bool:
                 pooled_value, field_neutral_avg, field_own_n, field_rival_n, field_neutral_n
             )
 
-        avg_tactics = _anchor(pooled_tactics, "tactics")
-        avg_substitutions = _anchor(pooled_substitutions, "substitutions")
-        avg_management = _anchor(pooled_management, "game_management")
-        avg_impact = _anchor(pooled_impact, "impact")
+        # Критерий, который не поставил никто, — средним остальных (не пятёркой).
+        anchored = fill_missing_criteria({
+            field: (None if pooled is None else _anchor(pooled, field))
+            for field, pooled in (("tactics", pooled_tactics), ("substitutions", pooled_substitutions),
+                                  ("game_management", pooled_management), ("impact", pooled_impact))
+        })
+        avg_tactics, avg_substitutions = anchored["tactics"], anchored["substitutions"]
+        avg_management, avg_impact = anchored["game_management"], anchored["impact"]
 
         aggregates_to_upsert.append(
             CoachMatchAggregate(
@@ -419,10 +431,13 @@ def recalculate_team_aggregates(self, match_id: str, apply_correction: bool = Tr
     aggregates_to_upsert: list[TeamMatchAggregate] = []
 
     for team_id, team_evals in team_eval_map.items():
-        avg_tactics = calculate_weighted_average(team_evals, "tactics", weight_map)
-        avg_effort = calculate_weighted_average(team_evals, "effort", weight_map)
-        avg_organization = calculate_weighted_average(team_evals, "organization", weight_map)
-        avg_mentality = calculate_weighted_average(team_evals, "mentality", weight_map)
+        # Критерий, который не поставил никто, — средним остальных (не пятёркой).
+        team_avgs = fill_missing_criteria({
+            field: calculate_weighted_average(team_evals, field, weight_map)
+            for field in ("tactics", "effort", "organization", "mentality")
+        })
+        avg_tactics, avg_effort = team_avgs["tactics"], team_avgs["effort"]
+        avg_organization, avg_mentality = team_avgs["organization"], team_avgs["mentality"]
         # Итог — среднее уже защищённых полей.
         pooled_performance_score = (avg_tactics + avg_effort + avg_organization + avg_mentality) / 4
 
@@ -529,21 +544,23 @@ def recalculate_referee_aggregates(self, match_id: str) -> bool:
         _, _, neutral_value, home_n, away_n, neutral_n = segment
         return apply_neutral_anchor(pooled_value, neutral_value, home_n, away_n, neutral_n)
 
-    avg_influence = _anchor(
-        calculate_weighted_average(referee_evals, "influence_score", weight_map), ref_segments["influence_score"]
-    )
-    avg_decision_quality = _anchor(
-        calculate_weighted_average(referee_evals, "decision_quality", weight_map), ref_segments["decision_quality"]
-    )
+    pooled_influence = calculate_weighted_average(referee_evals, "influence_score", weight_map)
+    pooled_decisions = calculate_weighted_average(referee_evals, "decision_quality", weight_map)
+    if pooled_decisions is None:
+        # Качество решений не поставил никто — рейтинга судьи нет (одно «влияние» — не оценка работы).
+        RefereeMatchAggregate.objects.filter(match_id=match_uuid).delete()
+        return True
+    avg_decision_quality = _anchor(pooled_decisions, ref_segments["decision_quality"])
+    # Влияние (10% формулы) никто не отметил — середина шкалы, итог держится на решениях и справедливости.
+    avg_influence = 50.0 if pooled_influence is None else _anchor(pooled_influence, ref_segments["influence_score"])
 
     if match_evals:
         fairness_weight_map = build_user_weight_map(match_evals, match)
         fairness_segment = segment_evaluations_by_side(
             match_evals, "fairness", match.home_team_id, match, allegiance
         )
-        avg_fairness = _anchor(
-            calculate_weighted_average(match_evals, "fairness", fairness_weight_map), fairness_segment
-        )
+        pooled_fairness = calculate_weighted_average(match_evals, "fairness", fairness_weight_map)
+        avg_fairness = avg_decision_quality if pooled_fairness is None else _anchor(pooled_fairness, fairness_segment)
     else:
         # Нет оценок fairness — подставляем decision_quality.
         avg_fairness = avg_decision_quality
@@ -607,9 +624,12 @@ def recalculate_match_aggregate(self, match_id: str) -> bool:
 
     weight_map = build_user_weight_map(evaluations, match)
 
-    avg_entertainment = calculate_weighted_average(evaluations, "entertainment", weight_map)
-    avg_tension = calculate_weighted_average(evaluations, "tension", weight_map)
-    avg_fairness = calculate_weighted_average(evaluations, "fairness", weight_map)
+    # Шкалы матча — только по тронутым ползункам; шкалу без голосов — средним остальных.
+    scales = {field: calculate_weighted_average(evaluations, field, weight_map)
+              for field in ("entertainment", "tension", "fairness")}
+    scored = [e for e in evaluations if any(getattr(e, f) is not None for f in scales)]
+    scales = fill_missing_criteria(scales)
+    avg_entertainment, avg_tension, avg_fairness = (scales[f] or 0.0 for f in ("entertainment", "tension", "fairness"))
     # turning_point — булево, считаем простой долей.
     turning_point_ratio = sum(1 for e in evaluations if e.turning_point) / len(evaluations)
     drama_index = avg_entertainment * avg_tension
@@ -622,7 +642,8 @@ def recalculate_match_aggregate(self, match_id: str) -> bool:
             "avg_fairness": round(avg_fairness, 2),
             "turning_point_ratio": round(turning_point_ratio, 2),
             "turning_points": top_turning_points(evaluations),
-            "total_votes": len(evaluations),
+            # Голоса за шкалы матча: прошёл финал, не тронув ни одного ползунка, — в число оценок не идёт.
+            "total_votes": len(scored),
             "drama_index": round(drama_index, 2),
         },
     )
@@ -930,9 +951,8 @@ def _detect_spikes_for_match(match_id, window_start, SuspiciousActivityFlag, mad
     )
 
     for model, id_field, value_field, entity_model, model_name in entity_specs:
-        rows = model.objects.filter(match_id=match_id, created_at__gte=window_start).values_list(
-            id_field, value_field
-        )
+        rows = model.objects.filter(match_id=match_id, created_at__gte=window_start,
+                                    **{f"{value_field}__isnull": False}).values_list(id_field, value_field)
         by_entity: dict = defaultdict(list)
         for entity_id, value in rows:
             by_entity[entity_id].append(value)
@@ -1624,9 +1644,8 @@ def detect_referee_vote_spikes_task() -> int:
     votes_by_match: dict = defaultdict(list)
     from evaluations.completed import completed_only
 
-    for match_id, value in completed_only(RefereeEvaluation.objects.filter(match_id__in=recent_match_ids)).values_list(
-        "match_id", "decision_quality"
-    ):
+    for match_id, value in completed_only(RefereeEvaluation.objects.filter(
+            match_id__in=recent_match_ids, decision_quality__isnull=False)).values_list("match_id", "decision_quality"):
         votes_by_match[match_id].append(value)
     eligible = {mid: vals for mid, vals in votes_by_match.items() if len(vals) >= REFEREE_SPIKE_MIN_VOTES}
     if len(eligible) < VOTE_SPIKE_MIN_SIBLINGS:
@@ -1674,7 +1693,8 @@ def strip_applied_corrections(model, entity_field: str, entity_ids) -> int:
         agg.performance_score = round(old_score - applied, 2)
         fields = ["performance_score", "rating_correction_applied", "updated_at"]
         if model is PlayerMatchAggregate:
-            agg.maturity_score = round(agg.maturity_score - applied, 2)
+            if agg.maturity_score is not None:
+                agg.maturity_score = round(agg.maturity_score - applied, 2)
             # clutch пропорционален performance_score.
             if old_score:
                 agg.clutch_index = round(agg.clutch_index * agg.performance_score / old_score, 2)

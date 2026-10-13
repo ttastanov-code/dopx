@@ -9,7 +9,7 @@
 
 {% include 'components/_season_scope_toggle.html' %}
 
-{% include 'components/_list_toolbar.html' with placeholder="Поиск игрока" q=search_query teams=teams positions=positions %}
+{% include 'components/_list_toolbar.html' with placeholder="Поиск игрока" q=search_query teams=teams positions=positions sort=sort %}
 
 {# Список: на телефоне — строки, на широком экране — две колонки. Рейтинг — средняя за сезон. #}
 {% if players %}

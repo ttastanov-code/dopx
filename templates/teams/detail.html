@@ -53,8 +53,8 @@
 <div class="card bg-base-100 border border-base-300 mb-4 md:mb-6 mx-2 sm:mx-0">
   <div class="card-body p-4 md:p-6">
     <div class="flex flex-col md:flex-row items-center gap-4 md:gap-6">
-      {% if team.logo_url %}
-      <img src="{{ team.logo_url }}" alt="{{ team.name }}" class="w-20 h-20 md:w-32 md:h-32 object-contain flex-shrink-0">
+      {% if team.logo_display %}
+      <img src="{{ team.logo_display }}" alt="{{ team.name }}" class="w-20 h-20 md:w-32 md:h-32 object-contain flex-shrink-0">
       {% else %}
       <div class="w-20 h-20 md:w-32 md:h-32 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-3xl md:text-5xl flex-shrink-0">
         {{ team.name|first|upper }}

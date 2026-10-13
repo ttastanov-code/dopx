@@ -130,7 +130,7 @@
                             <tr>
                                 <td>
                                     <a href="{% url 'matches:detail' eval.match.id %}" class="hover:text-primary transition-colors break-words block max-w-[150px]">
-                                        {{ eval.match.home_team.name }} vs {{ eval.match.away_team.name }}
+                                        {{ eval.match.home_team.name }} — {{ eval.match.away_team.name }}
                                     </a>
                                 </td>
                                 <td class="font-mono text-sm">{{ eval.match.start_time|date:"d.m.Y" }}</td>

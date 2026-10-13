@@ -142,6 +142,15 @@ def _touched_fields(post_data, field_names: list) -> list:
     return [name for name in field_names if post_data.get(f'{name}__touched') == '1']
 
 
+def _criteria_values(post_data, cleaned_data, pairs: list[tuple[str, str]]) -> dict | None:
+    """{поле модели: значение} — нетронутые критерии пустые (в среднее не идут), а не 5 по умолчанию.
+    pairs — (поле модели, поле формы). None — не тронут ни один критерий."""
+    touched = set(_touched_fields(post_data, [form_field for _f, form_field in pairs]))
+    if not touched:
+        return None
+    return {field: (cleaned_data.get(form_field) if form_field in touched else None) for field, form_field in pairs}
+
+
 # Шаг -> имя URL, куда вернуть, если он не пройден.
 STEP_URL_NAMES = {
     'context': 'context', 'teams': 'teams', 'players': 'players',
@@ -191,6 +200,11 @@ class EvaluationWizardMixin:
         return None
 
     def get_or_create_session(self):
+        """Просмотр шага (GET) сессию не создаёт: открыл и передумал — это не «начатая оценка»
+        с напоминаниями. Сессия появляется с первой отправкой формы."""
+        if self.request.method in ('GET', 'HEAD'):
+            existing = EvaluationSession.objects.filter(user=self.request.user, match=self.match).first()
+            return existing or EvaluationSession(user=self.request.user, match=self.match, status='started')
         session, created = EvaluationSession.objects.get_or_create(
             user=self.request.user, match=self.match, defaults={'status': 'started'}
         )
@@ -293,18 +307,13 @@ class EvaluateTeamsView(LoginRequiredMixin, TemplateView, EvaluationWizardMixin)
             rated_teams = 0
             for team in [self.match.home_team, self.match.away_team]:
                 prefix = f'team_{team.id}'
-                criteria = [f'{prefix}_tactics', f'{prefix}_effort', f'{prefix}_organization', f'{prefix}_mentality']
+                values = _criteria_values(request.POST, form.cleaned_data, [
+                    (field, f'{prefix}_{field}') for field in ('tactics', 'effort', 'organization', 'mentality')])
                 # Ни один ползунок не тронут — оценку команды не создаём.
-                if not _touched_fields(request.POST, criteria):
+                if values is None:
                     continue
                 TeamEvaluation.objects.update_or_create(
-                    user=request.user, match=self.match, team=team,
-                    defaults={
-                        'tactics': form.cleaned_data[f'{prefix}_tactics'],
-                        'effort': form.cleaned_data[f'{prefix}_effort'],
-                        'organization': form.cleaned_data[f'{prefix}_organization'],
-                        'mentality': form.cleaned_data[f'{prefix}_mentality'],
-                    }
+                    user=request.user, match=self.match, team=team, defaults=values,
                 )
                 rated_teams += 1
             self.update_session(session, 'teams')
@@ -369,23 +378,15 @@ class EvaluatePlayersView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
                 player = lp.player
                 prefix = f'player_{player.id}'
                 if form.cleaned_data.get(f'{prefix}_evaluate'):
-                    contribution = form.cleaned_data.get(f'{prefix}_contribution')
-                    risk = form.cleaned_data.get(f'{prefix}_risk')
-                    potential = form.cleaned_data.get(f'{prefix}_potential')
+                    values = _criteria_values(request.POST, form.cleaned_data, [
+                        (field, f'{prefix}_{field}') for field in ('contribution', 'risk', 'potential')])
                     # Включён тумблер, но ползунки не тронуты — оценку не сохраняем.
-                    criteria = [f'{prefix}_contribution', f'{prefix}_risk', f'{prefix}_potential']
-                    if not _touched_fields(request.POST, criteria):
+                    if values is None:
                         continue
-                    if contribution is not None and risk is not None and potential is not None:
-                        PlayerEvaluation.objects.update_or_create(
-                            user=request.user, match=self.match, player=player,
-                            defaults={
-                                'contribution': contribution,
-                                'risk': risk,
-                                'potential': potential,
-                            }
-                        )
-                        count += 1
+                    PlayerEvaluation.objects.update_or_create(
+                        user=request.user, match=self.match, player=player, defaults=values,
+                    )
+                    count += 1
             self.update_session(session, 'players')
             if is_new_step and lineup_total:
                 # XP пропорционален доле оценённых игроков состава.
@@ -497,21 +498,15 @@ class EvaluateCoachesView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
                 if coach:
                     total_coaches += 1
                     prefix = f'coach_{coach.id}'
-                    criteria = [
-                        f'{prefix}_tactics', f'{prefix}_substitutions',
-                        f'{prefix}_management', f'{prefix}_impact',
-                    ]
+                    values = _criteria_values(request.POST, form.cleaned_data, [
+                        ('tactics', f'{prefix}_tactics'), ('substitutions', f'{prefix}_substitutions'),
+                        ('game_management', f'{prefix}_management'), ('impact', f'{prefix}_impact'),
+                    ])
                     # Ползунки не тронуты — не сохраняем.
-                    if not _touched_fields(request.POST, criteria):
+                    if values is None:
                         continue
                     CoachEvaluation.objects.update_or_create(
-                        user=request.user, match=self.match, coach=coach,
-                        defaults={
-                            'tactics': form.cleaned_data[f'{prefix}_tactics'],
-                            'substitutions': form.cleaned_data[f'{prefix}_substitutions'],
-                            'game_management': form.cleaned_data[f'{prefix}_management'],
-                            'impact': form.cleaned_data[f'{prefix}_impact'],
-                        }
+                        user=request.user, match=self.match, coach=coach, defaults=values,
                     )
                     rated_coaches += 1
             self.update_session(session, 'coaches')
@@ -551,18 +546,16 @@ class EvaluateRefereeView(LoginRequiredMixin, FormView, EvaluationWizardMixin):
     def form_valid(self, form):
         session = self.get_or_create_session()
         # Ползунки не тронуты — не сохраняем.
-        touched = _touched_fields(self.request.POST, ['influence_score', 'decision_quality'])
+        values = _criteria_values(self.request.POST, form.cleaned_data,
+                                  [('influence_score', 'influence_score'), ('decision_quality', 'decision_quality')])
+        touched = values is not None
         with transaction.atomic():
             # Блокировка сессии от двойного POST.
             session = EvaluationSession.objects.select_for_update().get(pk=session.pk)
             is_new_step = 'referee' not in session.completed_steps
             if touched:
                 RefereeEvaluation.objects.update_or_create(
-                    user=self.request.user, match=self.match,
-                    defaults={
-                        'influence_score': form.cleaned_data.get('influence_score', 50),
-                        'decision_quality': form.cleaned_data.get('decision_quality', 5)
-                    }
+                    user=self.request.user, match=self.match, defaults=values,
                 )
             self.update_session(session, 'referee')
             if is_new_step:
@@ -612,15 +605,17 @@ class EvaluateMatchFinalView(LoginRequiredMixin, FormView, EvaluationWizardMixin
                 resolve_turning_point(self.request.POST.get('turning_point_choice'), self.match)
                 if turning_point else (None, '')
             )
+            # Нетронутые ползунки — пустые: «зрелищность 5» за пропущенный вопрос искажала драму и номинации.
+            scores = _criteria_values(self.request.POST, form.cleaned_data, [
+                ('entertainment', 'entertainment'), ('tension', 'tension'), ('fairness', 'fairness')]) or {
+                'entertainment': None, 'tension': None, 'fairness': None}
             MatchEvaluation.objects.update_or_create(
                 user=user, match=self.match,
                 defaults={
-                    'entertainment': form.cleaned_data.get('entertainment', 5),
-                    'tension': form.cleaned_data.get('tension', 5),
+                    **scores,
                     'turning_point': turning_point,
                     'turning_point_event': tp_event,
                     'turning_point_kind': tp_kind,
-                    'fairness': form.cleaned_data.get('fairness', 5),
                 }
             )
             self.complete_session(session)

@@ -55,3 +55,41 @@ def platform_stats() -> dict:
     }
     cache.set(cache_key, stats, PLATFORM_STATS_TTL)
     return stats
+
+
+def season_has_ratings(season) -> bool:
+    """В сезоне есть опубликованные оценки матчей."""
+    from aggregates.models import MatchAggregate
+    from aggregates.services import min_votes_for_display, published_q
+
+    return MatchAggregate.objects.filter(
+        published_q(), match__season=season, total_votes__gte=min_votes_for_display(),
+    ).exists()
+
+
+def season_stats(season) -> dict:
+    """Средние зрелищность/драма и активность по матчам сезона."""
+    from core.live import versioned
+
+    cache_key = versioned(f'season_stats_{season.id}')
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    from aggregates.models import MatchAggregate
+    from aggregates.services import published_q
+    from evaluations.models import EvaluationSession
+
+    now = timezone.now()
+    sessions = EvaluationSession.objects.filter(status='completed', user__in=real_users(), match__season=season)
+    published = MatchAggregate.objects.filter(published_q(), match__season=season, total_votes__gt=0).aggregate(
+        drama=Avg('drama_index'), entertainment=Avg('avg_entertainment'),
+    )
+    stats = {
+        'total_evaluations': sessions.count(),
+        'active_users': sessions.filter(completed_at__gte=now - timedelta(days=7)).values('user_id').distinct().count(),
+        'avg_drama': round(published['drama']) if published['drama'] is not None else None,
+        'avg_entertainment': round(published['entertainment'], 1) if published['entertainment'] is not None else None,
+    }
+    cache.set(cache_key, stats, PLATFORM_STATS_TTL)
+    return stats

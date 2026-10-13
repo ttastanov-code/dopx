@@ -189,12 +189,13 @@ class TrustTests(_Base):
         self._others(m, [7, 7, 7])
         self.assertEqual(calculate_user_trust_adjustment(me, m), 0.05)
 
-    def test_vote_after_rating_became_public_gives_nothing(self):
+    def test_late_voter_still_counts_for_trust(self):
+        """Рейтинг скрыт до завершения своей оценки — поздний голос тоже независим и влияет на доверие."""
         m = self.make_match()
         self._others(m, [7, 7, 7, 7, 7, 7])
         me = self.make_user("me")
         self.vote(me, m, 7)
-        self.assertEqual(calculate_user_trust_adjustment(me, m), 0.0)
+        self.assertGreater(calculate_user_trust_adjustment(me, m), 0.0)
 
     def test_settlement_waits_for_voting_close(self):
         from users.tasks import settle_trust_scores_task
@@ -401,3 +402,39 @@ class UnusedSubstituteTests(_Base):
         agg_tasks.recalculate_player_aggregates(str(match.id))
         self.assertFalse(PlayerMatchAggregate.objects.filter(match=match, player=self.bench).exists())
         self.assertTrue(PlayerMatchAggregate.objects.filter(match=match, player=self.sub).exists())
+
+
+
+class UntouchedCriteriaTests(_Base):
+    """Пустой критерий (ползунок не тронут) в среднее не идёт и не превращается в пятёрку."""
+
+    def test_vote_without_contribution_creates_no_rating(self):
+        from evaluations.models import PlayerEvaluation
+
+        m = self.make_match()
+        self.vote(self.make_user("a"), m, 8)
+        PlayerEvaluation.objects.filter(match=m).update(contribution=None, risk=3)
+        agg_tasks.recalculate_player_aggregates(str(m.id), apply_correction=False)
+        self.assertFalse(PlayerMatchAggregate.objects.filter(player=self.player, match=m).exists())
+
+    def test_missing_risk_is_empty_not_default(self):
+        from evaluations.models import PlayerEvaluation
+
+        m = self.make_match()
+        for name, value in (("a", 8), ("b", 6)):
+            self.vote(self.make_user(name), m, value)
+        PlayerEvaluation.objects.filter(match=m).update(risk=None, potential=None)
+        agg_tasks.recalculate_player_aggregates(str(m.id), apply_correction=False)
+        agg = PlayerMatchAggregate.objects.get(player=self.player, match=m)
+        self.assertIsNone(agg.risk_index)
+        self.assertIsNone(agg.maturity_score)
+        self.assertEqual(agg.total_votes, 2)
+
+    def test_weighted_avg_ignores_empty_rows_in_denominator(self):
+        from aggregates.services import vote_weighted_avg
+
+        m1, m2 = self.make_match(), self.make_match()
+        PlayerMatchAggregate.objects.create(player=self.player, match=m1, performance_score=8, avg_risk=4, total_votes=10)
+        PlayerMatchAggregate.objects.create(player=self.player, match=m2, performance_score=6, avg_risk=None, total_votes=30)
+        row = PlayerMatchAggregate.objects.filter(player=self.player).aggregate(r=vote_weighted_avg("avg_risk"))
+        self.assertAlmostEqual(row["r"], 4.0)

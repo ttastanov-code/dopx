@@ -35,7 +35,7 @@
     <div class="sticky top-16 z-30 mb-5 bg-base-100/95 backdrop-blur border border-base-300 rounded-2xl px-4 py-3 flex items-center justify-between shadow-sm">
         <span class="text-sm font-bold flex items-center gap-2">
             <i class="ti ti-checklist text-primary"></i>
-            Выбрано: <span class="text-primary" id="counter-value">0</span>
+            Оценено: <span class="text-primary" id="counter-value">0</span>
         </span>
         <span class="text-xs opacity-50 font-medium">из {{ lineup_players|length }} игроков</span>
     </div>
@@ -110,9 +110,9 @@
         {# Хозяева #}
         <div class="space-y-4">
             <h2 class="font-extrabold text-lg flex items-center gap-2.5 pb-3 border-b-2 border-primary/20">
-                {% if match.home_team.logo_url %}
+                {% if match.home_team.logo_display %}
                 {# alt="" — герб декоративный. #}
-                <img src="{{ match.home_team.logo_url }}" alt="" class="w-6 h-6 object-contain">
+                <img src="{{ match.home_team.logo_display }}" alt="" class="w-6 h-6 object-contain">
                 {% endif %}
                 <span class="break-words">{{ match.home_team.name }}</span>
             </h2>
@@ -149,9 +149,9 @@
         {# Гости #}
         <div class="space-y-4">
             <h2 class="font-extrabold text-lg flex items-center gap-2.5 pb-3 border-b-2 border-secondary/20">
-                {% if match.away_team.logo_url %}
+                {% if match.away_team.logo_display %}
                 {# alt="" — герб декоративный. #}
-                <img src="{{ match.away_team.logo_url }}" alt="" class="w-6 h-6 object-contain">
+                <img src="{{ match.away_team.logo_display }}" alt="" class="w-6 h-6 object-contain">
                 {% endif %}
                 <span class="break-words">{{ match.away_team.name }}</span>
             </h2>
@@ -203,10 +203,15 @@
 
 <script>
 (function() {
+    // Считаем только игроков, чья оценка уйдёт в рейтинг: включён и хотя бы один ползунок тронут.
     function updateCounter() {
-        const checked = document.querySelectorAll('input[type="checkbox"][name$="_evaluate"]:checked');
+        let n = 0;
+        document.querySelectorAll('input[type="checkbox"][name$="_evaluate"]:checked').forEach(function (toggle) {
+            const prefix = toggle.name.replace(/_evaluate$/, '_');
+            if (document.querySelector('input[type="hidden"][name^="' + prefix + '"][name$="__touched"][value="1"]')) n += 1;
+        });
         const counter = document.getElementById('counter-value');
-        if (counter) counter.textContent = checked.length;
+        if (counter) counter.textContent = n;
     }
     document.addEventListener('DOMContentLoaded', function() {
         updateCounter();
@@ -214,6 +219,10 @@
         if (form) {
             form.addEventListener('change', function(e) {
                 if (e.target.type === 'checkbox' && e.target.name.endsWith('_evaluate')) updateCounter();
+            });
+            // Ползунок тронут — игрок засчитывается (hidden __touched ставит wizard-sliders.js).
+            form.addEventListener('input', function (e) {
+                if (e.target.type === 'range') setTimeout(updateCounter, 0);
             });
         }
 

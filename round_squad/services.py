@@ -1,5 +1,5 @@
 # round_squad/services.py
-"""«Тур недели»: лучший состав (схема подбирается — players.formations), тренер, игрок тура и самый драматичный матч.
+"""«Тур недели»: лучший состав (схема подбирается — players.formations), тренер, судья, игрок тура и самый драматичный матч.
 
 Сглаживание по голосам:
     round_score = (v / (v + C)) * raw_avg + (C / (v + C)) * pool_avg
@@ -17,9 +17,10 @@ from django.db.models import Avg, Count, Q, Sum
 from django.urls import reverse
 from django.utils import timezone
 
-from aggregates.models import CoachMatchAggregate, MatchAggregate, PlayerMatchAggregate
+from aggregates.models import CoachMatchAggregate, MatchAggregate, PlayerMatchAggregate, RefereeMatchAggregate
 from aggregates.services import published_q
 from coaches.models import Coach
+from referees.models import Referee
 from events.models import MatchEvent
 from lineups.models import MatchLineupPlayer
 from matches.models import Match
@@ -67,16 +68,21 @@ def resolve_current_tour(season) -> int | None:
     """Какой тур показывать по умолчанию (шапка, /round/, виджет): последний
     зафиксированный, а если таких нет — практически сыгранный.
     """
-    tour = (
+    final_tour = (
         RoundBestXI.objects
         .filter(season=season, is_final=True)
         .order_by('-tour')
         .values_list('tour', flat=True)
         .first()
     )
-    if tour is not None:
-        return tour
-    return resolve_practically_closed_tour(season)
+    played_tour = resolve_practically_closed_tour(season)
+    # Сыгранный тур новее зафиксированного и по нему уже есть оценки — показываем его, а не прошлый пустой.
+    if played_tour is not None and (final_tour is None or played_tour > final_tour):
+        has_ratings = PlayerMatchAggregate.objects.filter(
+            published_q(), match__season=season, match__tour=played_tour).exists()
+        if has_ratings or final_tour is None:
+            return played_tour
+    return final_tour
 
 
 def resolve_default_round():
@@ -90,11 +96,15 @@ def resolve_default_round():
         tour = resolve_current_tour(season)
         if tour is not None:
             return season, tour
+    # Новый сезон без туров — текущий тур предыдущего сезона.
+    prev = season.previous() if season is not None else None
+    if prev is not None:
+        tour = resolve_current_tour(prev)
+        if tour is not None:
+            return prev, tour
     last_final = (
-        RoundBestXI.objects.filter(is_final=True)
-        .select_related('season__league')
-        .order_by('-finalized_at', '-tour')
-        .first()
+        RoundBestXI.objects.filter(is_final=True).select_related('season__league')
+        .order_by('-season__year', '-tour').first()
     )
     if last_final is None:
         return None, None
@@ -260,6 +270,27 @@ def _build_round_coach_pool(season, tour: int) -> list[RoundCandidate]:
     return pool
 
 
+def _build_round_referee_pool(season, tour: int) -> list[RoundCandidate]:
+    """Судьи тура — по готовому RefereeMatchAggregate (решения, справедливость, влияние)."""
+    referee_ct = ContentType.objects.get_for_model(Referee)
+    rows = (RefereeMatchAggregate.objects
+            .filter(published_q(), match__season=season, match__tour=tour)
+            .values("referee_id").annotate(score=Avg("performance_score"), votes=Sum("total_votes")))
+    referees = {str(r.id): r for r in Referee.objects.filter(id__in=[row["referee_id"] for row in rows])}
+    pool = []
+    for row in rows:
+        referee = referees.get(str(row["referee_id"]))
+        if not referee or not row["votes"]:
+            continue
+        pool.append(RoundCandidate(
+            content_type_id=referee_ct.id, object_id=str(referee.id), name=referee.full_name, team_name="",
+            photo_url=referee.photo.url if referee.photo else "",
+            profile_url=reverse("referees:detail", args=[referee.id]),
+            raw_avg=row["score"] or 0.0, votes=row["votes"],
+        ))
+    return pool
+
+
 def _find_most_dramatic_match(season, tour: int):
     """Самый драматичный матч тура: (match, drama_score, votes) по drama_index агрегата
     (entertainment * tension), с минимумом голосов.
@@ -399,7 +430,7 @@ def _apply_round_slot(
 
     is_confident = candidate.votes >= ROUND_CONFIDENT_VOTES_THRESHOLD
     explanation = _build_round_explanation(label, candidate, score, is_confident, rank_change, delta, runner_up)
-    if slot_code != "COACH" and season is not None and tour is not None:
+    if slot_code not in ("COACH", "REFEREE") and season is not None and tour is not None:
         events_text = _describe_notable_events_in_round(candidate.object_id, season, tour)
         if events_text:
             explanation = f"{explanation}\n{events_text}"
@@ -456,7 +487,7 @@ def recompute_round(season, tour: int, *, force: bool = False) -> RoundBestXI:
     round_best_xi.formation_note = choice.note
     # Слоты прошлой схемы убираем, иначе на поле останутся лишние позиции.
     RoundBestXISlot.objects.filter(round_best_xi=round_best_xi).exclude(
-        slot_code__in=[code for code, _r, _o in choice.slots] + ["COACH"]).delete()
+        slot_code__in=[code for code, _r, _o in choice.slots] + ["COACH", "REFEREE"]).delete()
     by_slot = choice.by_slot
     for slot_code, _role, order in choice.slots:
         ranked = by_slot[slot_code]
@@ -476,6 +507,16 @@ def recompute_round(season, tour: int, *, force: bool = False) -> RoundBestXI:
                           order=12)
     else:
         _apply_round_slot(round_best_xi, "COACH", None, None, season, tour, previous_ranks, None, order=12)
+
+    # ---- Судья тура ----
+    referee_ranked = _rank_round_pool(_build_round_referee_pool(season, tour))
+    _store_round_ranking_batch(ranking_buffer, round_best_xi, "REFEREE", referee_ranked)
+    if referee_ranked:
+        top_referee, referee_score = referee_ranked[0]
+        _apply_round_slot(round_best_xi, "REFEREE", top_referee, referee_score, season, tour, previous_ranks,
+                          referee_ranked[1] if len(referee_ranked) > 1 else None, order=13)
+    else:
+        _apply_round_slot(round_best_xi, "REFEREE", None, None, season, tour, previous_ranks, None, order=13)
 
     RoundPositionRanking.objects.bulk_create(ranking_buffer, batch_size=200)
 

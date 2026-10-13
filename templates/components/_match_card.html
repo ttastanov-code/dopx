@@ -95,8 +95,8 @@ data-background-poll — без глобального лоадера.
     {# === ГЛАВНАЯ СТРОКА: герб — имя — VS/счёт — имя — герб — стрелка === #}
     <div class="mrow__main">
         <div class="mrow__team mrow__team--home">
-            {% if match.home_team.logo_url %}
-            <img src="{{ match.home_team.logo_url }}" alt="" class="mrow__crest">
+            {% if match.home_team.logo_display %}
+            <img src="{{ match.home_team.logo_display }}" alt="" class="mrow__crest">
             {% else %}
             <div class="mrow__crest-fallback">{{ match.home_team.name|first|upper }}</div>
             {% endif %}
@@ -118,8 +118,8 @@ data-background-poll — без глобального лоадера.
         </div>
 
         <div class="mrow__team mrow__team--away">
-            {% if match.away_team.logo_url %}
-            <img src="{{ match.away_team.logo_url }}" alt="" class="mrow__crest">
+            {% if match.away_team.logo_display %}
+            <img src="{{ match.away_team.logo_display }}" alt="" class="mrow__crest">
             {% else %}
             <div class="mrow__crest-fallback">{{ match.away_team.name|first|upper }}</div>
             {% endif %}
@@ -200,7 +200,7 @@ data-background-poll — без глобального лоадера.
     {# Пояснение к индексу сенсации в тексте. #}
     <div class="mrow__sensation" title="Насколько результат удивил болельщиков. Считаем по прогнозам до матча или по голосованию после него">
         <i class="ti ti-alert-triangle flex-shrink-0"></i>
-        <span>Сенсация {{ match.card_sensation }}/100: такого исхода мало кто ждал</span>
+        <span>{% if match.card_sensation_source == 'predictions' %}Сенсация: {{ match.card_sensation }}% прогнозов было за другой исход{% else %}Сенсация: {{ match.card_sensation }}% болельщиков отметили «Неожиданно»{% endif %}</span>
     </div>
     {% endif %}
 

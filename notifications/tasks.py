@@ -356,9 +356,11 @@ def notify_voting_closing_soon(self):
         rated = {str(uid) for uid in sessions.filter(status='completed').values_list('user_id', flat=True)}
         # Начавшим оценку отдельно напоминает notify_unfinished_evaluations.
         started = {str(uid) for uid in sessions.filter(status__in=('started', 'in_progress')).values_list('user_id', flat=True)}
-        user_ids = [uid for uid in verified_ids if uid not in rated]
+        # Только аудитории матча (подписчики, прогнозисты): письмо всем по каждому матчу тура — спам.
+        audience = {str(uid) for uid in _match_notification_audience(match)}
+        user_ids = [uid for uid in verified_ids if uid in audience and uid not in rated and uid not in started]
 
-        subject = f'Голосование за матч {match.home_team.name} vs {match.away_team.name} скоро закроется'
+        subject = f'Голосование за матч {match.home_team.name} — {match.away_team.name} скоро закроется'
         for chunk in _chunked(user_ids, chunk_size):
             _send_match_email_chunk.delay(chunk, str(match.id), subject, 'emails/voting_closing.html', 'voting_closing')
             queued += 1
@@ -374,7 +376,7 @@ def notify_voting_closing_soon(self):
             for uid in user_ids
         ])
 
-        push_ids = {str(uid) for uid in _match_notification_audience(match)} - rated - started
+        push_ids = audience - rated - started
         if push_ids:
             pushed += _push_fan_out(
                 push_ids, f"⏳ Последний час: {match.home_team.name} — {match.away_team.name}",
@@ -669,7 +671,7 @@ def notify_followers_match_started(self, match_id: str):
         return {'notified': 0}
 
     title = f"⚽️ Матч начался: {match.home_team.name} — {match.away_team.name}"
-    message = "Матч начался. Счёт и события обновляются на сайте в прямом эфире."
+    message = "Счёт и события — на сайте в прямом эфире."
     action_url = reverse('matches:detail', args=[match.id])
 
     Notification.objects.bulk_create([
@@ -1003,7 +1005,7 @@ def notify_prediction_closing_soon(self):
             _send_match_email_chunk.delay(chunk, str(match.id), subject, 'emails/prediction_closing.html', 'prediction_closing')
             queued += 1
 
-        title = f'{match.home_team.name} vs {match.away_team.name}: кто победит?'
+        title = f'{match.home_team.name} — {match.away_team.name}: кто победит?'
         message = 'Матч начинается через час. Успейте поставить прогноз на исход, пока приём открыт.'
         action_url = reverse('matches:detail', args=[match.id])
 
@@ -1056,6 +1058,7 @@ def notify_prediction_results(self):
         from notifications.models import Notification
         from predictions.models import MatchPrediction
         from predictions.services import prediction_counts
+        from aggregates.services import min_votes_for_display
         from core.utils import synthetic_users_q
         from users.tasks import check_and_award_badges_task
 
@@ -1082,6 +1085,9 @@ def notify_prediction_results(self):
         notified = 0
 
         for match in matches:
+            # Без счёта итог неизвестен — пришлём, когда счёт появится.
+            if match.final_result is None:
+                continue
             # Дедуп по успешной отправке (email_sent_at). См. docs/adr/0020-prediction-result-email-dedup.md.
             already_emailed = Notification.objects.filter(
                 notification_type='prediction_result', related_match=match, email_sent_at__isnull=False,
@@ -1165,11 +1171,12 @@ def notify_prediction_results(self):
             for pred in predictions:
                 sent_ok = _send_email_to_user(
                     pred.user,
-                    f'{"Прогноз сбылся" if pred.is_correct else "Итог матча"}: {match.home_team.name} vs {match.away_team.name}',
+                    f'{"Прогноз сбылся" if pred.is_correct else "Итог матча"}: {match.home_team.name} — {match.away_team.name}',
                     'emails/prediction_result.html',
                     {
                         'match': match,
                         'counts': counts,
+                        'show_community': counts['total'] >= min_votes_for_display(),
                         'is_correct': pred.is_correct,
                         'your_choice_label': your_choice_labels.get(pred.choice, pred.choice),
                     },
@@ -1207,7 +1214,7 @@ def send_weekly_summary(self):
     top_match = (
         Match.objects.filter(
             status='finished', end_time__gte=week_ago, end_time__lte=now,
-            aggregate__isnull=False,
+            aggregate__avg_entertainment__isnull=False, aggregate__total_votes__gt=0,
         )
         .select_related('home_team', 'away_team', 'aggregate')
         .order_by('-aggregate__avg_entertainment')
@@ -1349,24 +1356,31 @@ def notify_ratings_published(self):
             if not audience:
                 continue
 
+            # NULL в Postgres при DESC идёт первым — исключаем явно.
             mvp = (
-                PlayerMatchAggregate.objects.filter(match=match, total_votes__gte=min_votes_for_display())
-                .select_related('player').order_by('-performance_score').first()
+                PlayerMatchAggregate.objects.filter(
+                    match=match, total_votes__gte=min_votes_for_display(), performance_score__isnull=False,
+                ).select_related('player').order_by('-performance_score').first()
             )
+            # Оценок не набралось — показывать нечего, не шлём.
+            if mvp is None:
+                continue
             title = f"📊 Итоги оценок: {match.home_team.name} {match.get_score_display()} {match.away_team.name}"
-            message = (
-                f"Игрок матча: {mvp.player.full_name} ({ru_num(mvp.performance_score, 1)}). Сравните со своими оценками."
-                if mvp else "Голосование закрыто, рейтинги игроков открыты."
-            )
             action_url = reverse('matches:detail', args=[match.id])
-            Notification.objects.bulk_create([
-                Notification(
-                    user_id=uid, notification_type='ratings_published', title=title,
-                    message=message, action_url=action_url, related_match=match,
-                )
-                for uid in audience
-            ])
-            _push_fan_out(audience, title, message, action_url, kind='ratings_published', tag=f'ratings-{match.id}')
+            # «Сравните со своими» — только тем, кто оценивал; подписчикам — приглашение посмотреть.
+            for group, tail in ((audience & raters, "Сравните со своими оценками."),
+                                (audience - raters, "Посмотрите, как болельщики оценили игроков.")):
+                if not group:
+                    continue
+                message = f"Игрок матча: {mvp.player.full_name} ({ru_num(mvp.performance_score, 1)}). {tail}"
+                Notification.objects.bulk_create([
+                    Notification(
+                        user_id=uid, notification_type='ratings_published', title=title,
+                        message=message, action_url=action_url, related_match=match,
+                    )
+                    for uid in group
+                ])
+                _push_fan_out(group, title, message, action_url, kind='ratings_published', tag=f'ratings-{match.id}')
             notified += len(audience)
 
         logger.info(f"notify_ratings_published: {notified} получателей")

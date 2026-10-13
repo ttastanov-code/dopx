@@ -202,8 +202,7 @@
                         <div>
                             <div class="font-medium">{{ session.match.home_team.name }} vs {{ session.match.away_team.name }}</div>
                             <div class="text-xs opacity-60">
-                                Шаг {{ session.completed_steps|length }} из 6 •
-                                {{ session.get_status_display }}
+                                Пройдено шагов: {{ session.completed_steps|length }} из 6
                             </div>
                         </div>
                         <a href="{% url 'evaluations:context' session.match.id %}" class="btn btn-sm btn-primary">

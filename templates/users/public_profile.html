@@ -170,7 +170,7 @@
                             <tr>
                                 <td>
                                     <a href="{% url 'matches:detail' session.match.id %}" class="font-medium hover:text-primary transition-colors">
-                                        {{ session.match.home_team.name }} vs {{ session.match.away_team.name }}
+                                        {{ session.match.home_team.name }} — {{ session.match.away_team.name }}
                                     </a>
                                 </td>
                                 <td class="opacity-60">{{ session.match.league.name }}</td>

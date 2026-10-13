@@ -383,16 +383,23 @@ document.addEventListener('alpine:init', () => {
                 setTimeout(() => { if (el.isConnected && window.htmx) htmx.trigger(el, 'dopx:wake'); }, 20000);
                 return;
             }
+            // Время матча видно всегда (по Алматы, как на сайте), отсчёт — дополнение в день игры.
+            const tz = 'Asia/Almaty';
+            const kickoff = new Date(kickoffMs);
+            const dayKey = (d) => d.toLocaleDateString('ru-RU', { timeZone: tz });
+            const time = kickoff.toLocaleTimeString('ru-RU', { timeZone: tz, hour: '2-digit', minute: '2-digit' });
+            const tomorrow = new Date(Date.now() + 86400000);
             const totalMinutes = Math.floor(diffMs / 60000);
-            const days = Math.floor(totalMinutes / 1440);
-            const hours = Math.floor((totalMinutes % 1440) / 60);
+            const hours = Math.floor(totalMinutes / 60);
             const minutes = totalMinutes % 60;
-            if (days >= 1) {
-                this.countdownText = `Через ${days} дн ${hours} ч`;
-            } else if (hours >= 1) {
-                this.countdownText = `Через ${hours} ч ${minutes} мин`;
+            if (dayKey(kickoff) === dayKey(new Date())) {
+                const left = hours >= 1 ? `${hours} ч ${minutes} мин` : `${minutes} мин`;
+                this.countdownText = `Сегодня в ${time} · через ${left}`;
+            } else if (dayKey(kickoff) === dayKey(tomorrow)) {
+                this.countdownText = `Завтра в ${time}`;
             } else {
-                this.countdownText = `Через ${minutes} мин`;
+                const day = kickoff.toLocaleDateString('ru-RU', { timeZone: tz, weekday: 'short', day: '2-digit', month: '2-digit' });
+                this.countdownText = `${day.charAt(0).toUpperCase()}${day.slice(1)} в ${time}`;
             }
         },
     }));

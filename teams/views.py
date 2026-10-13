@@ -41,7 +41,8 @@ class TeamListView(ListView):
         queryset = Team.objects.all()
 
         # По умолчанию — команды текущего сезона (TeamSeason). ?season=all — все.
-        self.active_season = Season.get_primary_active()
+        # Пока у нового сезона нет состава лиги — команды предыдущего.
+        self.active_season = Season.get_roster_season()
         self.show_all = self.request.GET.get('season') == 'all'
         if self.active_season and not self.show_all:
             queryset = queryset.filter(teamseason__season=self.active_season)
@@ -122,7 +123,9 @@ class TeamDetailView(DetailView):
         season_param = self.request.GET.get('season', '').strip()
         selected_season = team_seasons.filter(year=season_param).first() if season_param else None
         if selected_season is None:
-            selected_season = active_season
+            # Команды нет в активном сезоне (ещё не заявлена или выбыла) — её последний сезон.
+            selected_season = active_season if team_seasons.filter(pk=getattr(active_season, 'pk', None)).exists() else team_seasons.first()
+            selected_season = selected_season or active_season
         current_season = selected_season  # дальше по коду называется current_season
 
         # Матчи выбранного сезона, только завершённые

@@ -37,9 +37,12 @@ def vote_weighted_avg(field: str, votes_field: str = "total_votes", filter: Q | 
     filter — какие строки агрегатов учитывать. Нет голосов — None. Не объявляйте в том же
     запросе алиас total_votes раньше этого выражения — Django примет его за агрегат и упадёт.
     """
+    # В знаменателе — только строки, где значение есть: пустой «риск» не должен занижать среднее.
+    present = Q(**{f"{field}__isnull": False})
+    denominator_filter = present if filter is None else (filter & present)
     return ExpressionWrapper(
         Sum(F(field) * F(votes_field), output_field=FloatField(), filter=filter)
-        / NullIf(Sum(votes_field, filter=filter), 0),
+        / NullIf(Sum(votes_field, filter=denominator_filter), 0),
         output_field=FloatField(),
     )
 
@@ -497,16 +500,18 @@ def calculate_weighted_average(
     weight_map: dict[uuid.UUID, float],
     winsorize: bool = True,
     winsorize_pct: float = 0.1,
-) -> float:
-    """Взвешенное среднее по полю (по умолчанию с винзоризацией).
+) -> float | None:
+    """Взвешенное среднее по полю (по умолчанию с винзоризацией); None — критерий не ставил никто.
 
     :param evaluations: список, не queryset.
     :param weight_map: см. build_user_weight_map.
     """
+    # Нетронутый критерий хранится пустым и в среднее не идёт; ни одного значения — None.
+    evaluations = [e for e in evaluations if getattr(e, field_name, None) is not None]
     if not evaluations:
-        return 0.0
+        return None
 
-    raw_values = [getattr(e, field_name, 0) or 0 for e in evaluations]
+    raw_values = [getattr(e, field_name) for e in evaluations]
     values = winsorize_values(raw_values, pct=winsorize_pct) if winsorize else raw_values
 
     weighted_sum = 0.0
@@ -516,7 +521,7 @@ def calculate_weighted_average(
         weighted_sum += value * weight
         total_weight += weight
 
-    return weighted_sum / total_weight if total_weight > 0 else 0.0
+    return weighted_sum / total_weight if total_weight > 0 else None
 
 
 def calculate_std_dev(values: Iterable[float]) -> float:
@@ -644,12 +649,10 @@ def recalculate_player_aggregate(player, match):
 def calculate_user_trust_adjustment(user, match) -> float:
     """Корректировка trust_score после закрытия голосования.
 
-    RMSE по «независимым» оценкам игроков: только тем, что пользователь поставил, пока
-    рейтинг игрока ещё не был публичным (чужих голосов меньше порога показа). Консенсус —
-    среднее допустимых чужих голосов. Подсмотренные цифры доверия не приносят.
+    RMSE оценок игроков пользователя против среднего допустимых чужих голосов.
     """
     user_evals = list(
-        PlayerEvaluation.objects.filter(user=user, match=match).values(
+        PlayerEvaluation.objects.filter(user=user, match=match, contribution__isnull=False).values(
             "player_id", "contribution", "updated_at"
         )
     )
@@ -658,7 +661,7 @@ def calculate_user_trust_adjustment(user, match) -> float:
 
     player_ids = [e["player_id"] for e in user_evals]
     others = countable_evaluations(
-        PlayerEvaluation.objects.filter(match=match, player_id__in=player_ids).exclude(user=user),
+        PlayerEvaluation.objects.filter(match=match, player_id__in=player_ids, contribution__isnull=False).exclude(user=user),
         match.id,
     ).values_list("player_id", "contribution", "created_at")
 
@@ -666,15 +669,13 @@ def calculate_user_trust_adjustment(user, match) -> float:
     for player_id, contribution, created_at in others:
         by_player[player_id].append((contribution, created_at))
 
-    visible_threshold = min_votes_for_display()
+    # Каждый засчитанный голос независим: рейтинги матча скрыты, пока своя оценка не завершена,
+    # а завершённую не изменить (ratings_hidden_for, EvaluationWizardMixin.prepare_step).
     squared_errors = []
     for row in user_evals:
         votes = by_player.get(row["player_id"], [])
         if len(votes) < TRUST_MIN_COMMUNITY_VOTES:
             continue
-        seen_before = sum(1 for _c, created_at in votes if created_at < row["updated_at"])
-        if seen_before >= visible_threshold:
-            continue  # рейтинг уже был виден — оценка не независимая
         community_avg = sum(c for c, _t in votes) / len(votes)
         squared_errors.append((row["contribution"] - community_avg) ** 2)
 
@@ -691,3 +692,12 @@ def calculate_user_trust_adjustment(user, match) -> float:
     if normalized_deviation < 0.6:
         return 0.0
     return -0.05  # систематически расходится
+
+
+def fill_missing_criteria(values: dict) -> dict:
+    """Критерий, который не поставил никто, — средним остальных критериев той же сущности, а не пятёркой."""
+    present = [v for v in values.values() if v is not None]
+    if not present:
+        return values
+    mean = sum(present) / len(present)
+    return {k: (mean if v is None else v) for k, v in values.items()}

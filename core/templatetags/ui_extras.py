@@ -51,3 +51,10 @@ def nomination_highlights(nominations) -> list:
     """Лучший в каждой категории — вкладка «Главное»."""
     from core.nominations import nomination_highlights as highlights
     return highlights(nominations)
+
+
+@register.filter
+def rarity_label(rarity: str) -> str:
+    """{{ badge.rarity|rarity_label }} — «Золото», «Легендарное» вместо gold/legendary."""
+    from users.badges import RARITY_LABELS
+    return RARITY_LABELS.get(rarity, rarity)

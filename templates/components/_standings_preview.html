@@ -3,6 +3,10 @@
 {# Компактная таблица для правой колонки: позиция, команда, игры, разница, очки. #}
 
 <div class="overflow-hidden">
+    {% if season_is_previous %}
+    {# Новый сезон без игр — показываем итог прошлого с подписью. #}
+    <p class="text-xs opacity-60 mb-2">Итоговая таблица сезона {{ season.year }}. Новый сезон появится после первых матчей.</p>
+    {% endif %}
     <table class="table table-xs w-full">
         <thead>
             <tr class="text-[10px] uppercase tracking-wide opacity-40">

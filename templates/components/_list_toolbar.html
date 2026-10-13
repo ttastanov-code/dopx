@@ -1,6 +1,6 @@
 {% comment %}
 Поиск и фильтры списков (игроки, тренеры, судьи, команды): строка поиска с иконкой и чипсы-фильтры.
-Фильтры применяются сразу при выборе, поиск — по Enter. Параметры: placeholder, q, teams (опц.), positions (опц.).
+Фильтры применяются сразу при выборе, поиск — по Enter. Параметры: placeholder, q, teams (опц.), positions (опц.), sort (опц., только игроки).
 season=all сохраняется, чтобы фильтр не сбрасывал «Все сезоны».
 {% endcomment %}
 <form method="get" class="lt" role="search">
@@ -27,6 +27,17 @@ season=all сохраняется, чтобы фильтр не сбрасыва
             <select name="position" onchange="this.form.requestSubmit()" aria-label="Позиция">
                 <option value="">Все позиции</option>
                 {% for pos in positions %}<option value="{{ pos }}" {% if request.GET.position == pos %}selected{% endif %}>{{ pos }}</option>{% endfor %}
+            </select>
+            <i class="ti ti-chevron-down lt__caret"></i>
+        </span>
+        {% endif %}
+        {% if sort %}
+        {# Порядок: по рейтингу болельщиков (по умолчанию) или по алфавиту. #}
+        <span class="lt__chip{% if sort == 'name' %} is-on{% endif %}">
+            <i class="ti ti-arrows-sort"></i>
+            <select name="sort" onchange="this.form.requestSubmit()" aria-label="Порядок">
+                <option value="">По рейтингу</option>
+                <option value="name" {% if sort == 'name' %}selected{% endif %}>По алфавиту</option>
             </select>
             <i class="ti ti-chevron-down lt__caret"></i>
         </span>

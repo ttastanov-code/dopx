@@ -90,6 +90,15 @@ class VotingAccessGateTests(TestCase):
         response = self.client.get(reverse("evaluations:context", args=[match.id]))
         self.assertEqual(response.status_code, 200)
 
+    def test_opening_wizard_does_not_start_evaluation(self):
+        """Открыл и передумал — не «начатая оценка»: без сессии, напоминаний и строки в профиле."""
+        match = _make_match()
+        self.client.get(reverse("evaluations:context", args=[match.id]))
+        self.client.get(reverse("evaluations:teams", args=[match.id]))
+        self.assertFalse(EvaluationSession.objects.filter(user=self.user, match=match).exists())
+        self.client.post(reverse("evaluations:context", args=[match.id]), {"watched_type": "full"})
+        self.assertTrue(EvaluationSession.objects.filter(user=self.user, match=match).exists())
+
     def test_already_completed_evaluation_redirects_away(self):
         match = _make_match()
         EvaluationSession.objects.create(user=self.user, match=match, status="completed")
@@ -550,6 +559,21 @@ class AntiNoiseTouchedTrackingTests(TestCase):
         self.assertFalse(
             TeamEvaluation.objects.filter(user=self.user, match=self.match, team_id=self.match.away_team_id).exists()
         )
+
+    def test_untouched_criteria_are_empty_not_five(self):
+        """Тронута только тактика — остальные критерии пустые и в среднее не идут (на экране: «иначе не засчитается»)."""
+        from evaluations.models import TeamEvaluation
+
+        home_prefix = f"team_{self.match.home_team_id}"
+        away_prefix = f"team_{self.match.away_team_id}"
+        data = self._team_post_data(**{f"{home_prefix}_tactics": "9"})
+        for criterion in ("tactics", "effort", "organization", "mentality"):
+            data[f"{home_prefix}_{criterion}__touched"] = "1" if criterion == "tactics" else "0"
+            data[f"{away_prefix}_{criterion}__touched"] = "0"
+        self.client.post(reverse("evaluations:teams", args=[self.match.id]), data)
+        ev = TeamEvaluation.objects.get(user=self.user, match=self.match, team_id=self.match.home_team_id)
+        self.assertEqual((ev.tactics, ev.effort, ev.organization, ev.mentality), (9, None, None, None))
+        self.assertEqual(ev.average_score, 9)
 
     def test_no_javascript_fallback_still_saves_both_teams(self):
         """Нет __touched вообще (JS не сработал) — сохраняются обе."""

@@ -345,6 +345,12 @@ class ComputeSensationIndexTests(CardServicesTestCase):
         counts = {'total': 20, 'home_pct': 65, 'draw_pct': 15, 'away_pct': 20}
         self.assertEqual(compute_sensation_index(match, counts), 65)
 
+    def test_none_without_clear_favorite(self):
+        """40/20/40 — фаворита нет, победа любой стороны не сенсация."""
+        match = self.make_match(status='finished', home_score=1, away_score=4)
+        counts = {'total': 30, 'home_pct': 40, 'draw_pct': 20, 'away_pct': 40}
+        self.assertIsNone(compute_sensation_index(match, counts))
+
     def test_none_for_unfinished_match(self):
         match = self.make_match(status='scheduled')
         counts = {'total': 20, 'home_pct': 65, 'draw_pct': 15, 'away_pct': 20}

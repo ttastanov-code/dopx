@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% load static rating_extras %}
-{% load math_extras %}
+{% load math_extras ui_extras %}
 {% load position_extras %}
 {% load tooltip_tags %}
 {% block schema %}
@@ -147,7 +147,7 @@
                         <div class="mt-1">
                             {% tooltip_wrap INDICATOR_TOOLTIPS.player.stat_rating %}
                             <span class="text-xs opacity-70 whitespace-nowrap">
-                                <i class="ti ti-chart-bar"></i> по статистике <b>{{ stats.avg_stat_rating|floatformat:1 }}</b>
+                                <i class="ti ti-chart-bar"></i> по статистике <b>{{ stats.avg_stat_rating|floatformat:1 }}</b> · за {{ stats.stat_rating_matches }} {{ stats.stat_rating_matches|ru_plural:"матч,матча,матчей" }}
                             </span>
                             {% endtooltip_wrap %}
                         </div>
@@ -222,7 +222,7 @@
                         <div class="pm-row__chips">
                             {% if agg.stat_rating %}<span class="pm-chip" title="{{ INDICATOR_TOOLTIPS.player.stat_rating }}">По статистике <b>{{ agg.stat_rating|floatformat:1 }}</b></span>{% endif %}
                             <span class="pm-chip" title="{{ INDICATOR_TOOLTIPS.player.avg_contribution }}">Вклад <b>{{ agg.avg_contribution|floatformat:1 }}</b></span>
-                            <span class="pm-chip" title="{{ INDICATOR_TOOLTIPS.aggregate.risk_index }}">Риск <b>{{ agg.risk_index|floatformat:1 }}</b></span>
+                            {% if agg.risk_index is not None %}<span class="pm-chip" title="{{ INDICATOR_TOOLTIPS.aggregate.risk_index }}">Риск <b>{{ agg.risk_index|floatformat:1 }}</b></span>{% endif %}
                             <span class="pm-chip" title="{{ INDICATOR_TOOLTIPS.aggregate.clutch_index }}">Клатч <b>{{ agg.clutch_index|floatformat:1 }}</b></span>
                             {% confidence_badge agg %}
                         </div>
@@ -349,7 +349,7 @@
                     <div>
                         <div class="flex justify-between text-sm mb-1">
                             <span>Риск</span>
-                            <span class="font-bold">{{ stats.avg_risk }}</span>
+                            <span class="font-bold">{{ stats.avg_risk|default_if_none:"—" }}</span>
                         </div>
                         <div class="w-full bg-base-200 rounded-full h-2">
                             <div class="bg-error h-2 rounded-full"
@@ -361,7 +361,7 @@
                     <div>
                         <div class="flex justify-between text-sm mb-1">
                             <span>Зрелость</span>
-                            <span class="font-bold {% if stats.avg_maturity < 0 %}text-error{% endif %}">{{ stats.avg_maturity }}</span>
+                            <span class="font-bold {% if stats.avg_maturity is not None and stats.avg_maturity < 0 %}text-error{% endif %}">{{ stats.avg_maturity|default_if_none:"—" }}</span>
                         </div>
                         <div class="bibar" title="Ноль — в центре">
                             <span class="bibar__fill {% if stats.avg_maturity < 0 %}bibar__fill--neg{% else %}bibar__fill--pos{% endif %}"
@@ -373,7 +373,7 @@
                     <div>
                         <div class="flex justify-between text-sm mb-1">
                             <span>Потенциал</span>
-                            <span class="font-bold">{{ stats.avg_potential }}</span>
+                            <span class="font-bold">{{ stats.avg_potential|default_if_none:"—" }}</span>
                         </div>
                         <div class="w-full bg-base-200 rounded-full h-2">
                             <div class="bg-warning h-2 rounded-full"

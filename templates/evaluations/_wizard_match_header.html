@@ -5,8 +5,8 @@
 {% endcomment %}
 <div class="wz-hero flex items-center justify-between gap-2 sm:gap-4">
     <div class="flex-1 min-w-0 flex flex-col items-center gap-1.5 text-center">
-        {% if match.home_team.logo_url %}
-        <img src="{{ match.home_team.logo_url }}" alt="{{ match.home_team.name }}" class="w-11 h-11 sm:w-14 sm:h-14 object-contain">
+        {% if match.home_team.logo_display %}
+        <img src="{{ match.home_team.logo_display }}" alt="{{ match.home_team.name }}" class="w-11 h-11 sm:w-14 sm:h-14 object-contain">
         {% else %}
         <div class="w-11 h-11 sm:w-14 sm:h-14 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-sm sm:text-lg">
             {{ match.home_team.name|first|upper }}
@@ -21,8 +21,8 @@
     </div>
 
     <div class="flex-1 min-w-0 flex flex-col items-center gap-1.5 text-center">
-        {% if match.away_team.logo_url %}
-        <img src="{{ match.away_team.logo_url }}" alt="{{ match.away_team.name }}" class="w-11 h-11 sm:w-14 sm:h-14 object-contain">
+        {% if match.away_team.logo_display %}
+        <img src="{{ match.away_team.logo_display }}" alt="{{ match.away_team.name }}" class="w-11 h-11 sm:w-14 sm:h-14 object-contain">
         {% else %}
         <div class="w-11 h-11 sm:w-14 sm:h-14 rounded-full bg-secondary/10 flex items-center justify-center font-bold text-secondary text-sm sm:text-lg">
             {{ match.away_team.name|first|upper }}

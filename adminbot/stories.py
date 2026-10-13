@@ -102,7 +102,10 @@ def match_facts(match) -> dict:
     stats = _stats(match)
     if stats:
         facts["статистика_хозяева_гости"] = stats
-    facts["оценок_болельщиков"] = EvaluationSession.objects.filter(match=match, status="completed").count()
+    # Маленькое число оценок в публичный текст не выносим.
+    rated = EvaluationSession.objects.filter(match=match, status="completed").count()
+    if rated >= min_votes_for_display():
+        facts["оценок_болельщиков"] = rated
     aggs = list(PlayerMatchAggregate.objects.filter(match=match, total_votes__gte=min_votes_for_display())
                 .select_related("player").order_by("-performance_score"))
     if aggs:
@@ -190,7 +193,8 @@ def review_template(match, facts: dict) -> str:
         anti = facts["антигерой"]
         fans.append(f"антигерой — {_esc(anti['игрок'])}, {_score1(anti['оценка'])}")
     if fans:
-        parts.append(f"⭐ <b>Болельщики ({facts['оценок_болельщиков']} оценок):</b> " + "; ".join(fans) + ".")
+        n = facts.get("оценок_болельщиков")
+        parts.append(f"⭐ <b>Болельщики{f' ({n} оценок)' if n else ''}:</b> " + "; ".join(fans) + ".")
     if facts.get("раскол_трибун"):
         s = facts["раскол_трибун"]
         parts.append(f"⚖️ {_esc(s['игрок'])} расколол трибуны: свои фанаты — {s['свои_фанаты']}, чужие — {s['фанаты_соперника']}.")
@@ -295,8 +299,9 @@ def round_facts(rnd) -> dict:
     from predictions.services import prediction_counts
 
     matches = list(Match.objects.filter(season=rnd.season, tour=rnd.tour, status="finished").select_related("home_team", "away_team"))
+    rated = EvaluationSession.objects.filter(match__in=matches, status="completed").count()
     facts: dict = {"тур": rnd.tour, "матчей": len(matches),
-                   "оценок_болельщиков": EvaluationSession.objects.filter(match__in=matches, status="completed").count()}
+                   "оценок_болельщиков": rated if rated >= min_votes_for_display() else 0}
     if rnd.player_of_round_name:
         facts["игрок_тура"] = {"имя": rnd.player_of_round_name, "команда": rnd.player_of_round_team_name,
                                "оценка": _r(rnd.player_of_round_score), "голосов": rnd.player_of_round_votes}

@@ -58,3 +58,35 @@ class Season(BaseModel):
         if season:
             return season
         return cls.objects.filter(is_active=True).select_related('league').first()
+
+    def previous(self):
+        """Предыдущий сезон той же лиги."""
+        return (
+            Season.objects.filter(league_id=self.league_id, year__lt=self.year)
+            .select_related('league').order_by('-year').first()
+        )
+
+    @classmethod
+    def get_display_season(cls, has_data=None):
+        """Сезон для итоговых блоков: активный, а пока в нём нет данных — предыдущий.
+        has_data(season) -> bool; по умолчанию — есть завершённые матчи.
+        """
+        season = cls.get_primary_active()
+        if season is None:
+            return None
+        if has_data is None:
+            from matches.models import Match
+
+            def has_data(s):
+                return Match.objects.filter(season=s, status='finished').exists()
+        if has_data(season):
+            return season
+        prev = season.previous()
+        return prev if prev is not None and has_data(prev) else season
+
+    @classmethod
+    def get_roster_season(cls):
+        """Сезон для списков команд/игроков: активный, пока без состава лиги — предыдущий."""
+        from teams.models import TeamSeason
+
+        return cls.get_display_season(has_data=lambda s: TeamSeason.objects.filter(season=s).exists())

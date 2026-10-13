@@ -67,6 +67,11 @@ class LeagueDetailView(DetailView):
             selected_season = seasons.filter(year=season_param).first()
         if selected_season is None:
             selected_season = active_season
+            # Новый сезон без таблицы — итоги предыдущего.
+            if active_season and not TeamSeasonStats.objects.filter(season=active_season).exists():
+                prev = active_season.previous()
+                if prev and TeamSeasonStats.objects.filter(season=prev).exists():
+                    selected_season = prev
 
         # === 3. Турнирная таблица ===
         # Из TeamSeasonStats. Для старых сезонов без строк — досчитываем один раз.
@@ -85,7 +90,7 @@ class LeagueDetailView(DetailView):
                 {
                     'team_id': str(row.team_id),
                     'team_name': row.team.name,
-                    'team_logo_url': row.team.logo_url,
+                    'team_logo_url': row.team.logo_display,
                     'played': row.played,
                     'wins': row.wins,
                     'draws': row.draws,

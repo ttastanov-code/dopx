@@ -34,9 +34,9 @@
             <div class="wz-card card bg-base-100 border border-primary/20 shadow-sm">
                 <div class="card-body p-4 sm:p-5">
                     <div class="flex items-center gap-3 mb-4 pb-3 border-b border-base-200">
-                        {% if match.home_team.logo_url %}
+                        {% if match.home_team.logo_display %}
                         {# alt="" — герб декоративный, название есть в h3. #}
-                        <img src="{{ match.home_team.logo_url }}" alt="" class="w-10 h-10 object-contain flex-shrink-0">
+                        <img src="{{ match.home_team.logo_display }}" alt="" class="w-10 h-10 object-contain flex-shrink-0">
                         {% else %}
                         <div class="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center font-bold text-primary text-base flex-shrink-0">
                             {{ match.home_team.name|first|upper }}
@@ -77,9 +77,9 @@
             <div class="wz-card card bg-base-100 border border-secondary/20 shadow-sm">
                 <div class="card-body p-4 sm:p-5">
                     <div class="flex items-center gap-3 mb-4 pb-3 border-b border-base-200">
-                        {% if match.away_team.logo_url %}
+                        {% if match.away_team.logo_display %}
                         {# alt="" — та же причина, что у домашней команды выше. #}
-                        <img src="{{ match.away_team.logo_url }}" alt="" class="w-10 h-10 object-contain flex-shrink-0">
+                        <img src="{{ match.away_team.logo_display }}" alt="" class="w-10 h-10 object-contain flex-shrink-0">
                         {% else %}
                         <div class="w-10 h-10 rounded-xl bg-secondary/10 flex items-center justify-center font-bold text-secondary text-base flex-shrink-0">
                             {{ match.away_team.name|first|upper }}

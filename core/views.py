@@ -65,20 +65,28 @@ class HomeView(TemplateView):
 
         attach_card_extras(recent_matches + upcoming_matches + live_matches, self.request)
 
+        from core.stats import platform_stats, season_has_ratings, season_stats
+
+        # Итоговые блоки — по сезону; в начале нового сезона, пока нет оценок, — итоги прошлого.
+        active_season = Season.get_primary_active()
+        display_season = Season.get_display_season(has_data=season_has_ratings)
+        season_q = Q(match__season=display_season) if display_season else Q()
+
         # Только игроки с достаточным числом голосов.
         top_players = PlayerMatchAggregate.objects.select_related(
             'player', 'player__team'
-        ).filter(published_q(), total_votes__gte=min_votes_for_display()).order_by('-performance_score')[:5]
-
-        from core.stats import platform_stats
+        ).filter(season_q, published_q(), total_votes__gte=min_votes_for_display()).order_by('-performance_score')[:5]
 
         stats = platform_stats()
-        metrics = {'avg_entertainment': stats['avg_entertainment'], 'avg_drama': stats['avg_drama']}
+        season_numbers = season_stats(display_season) if display_season else stats
+        metrics = {'avg_entertainment': season_numbers['avg_entertainment'], 'avg_drama': season_numbers['avg_drama']}
 
         # Топ команд — по защищённым агрегатам закрытых матчей (вес по голосам), не по сырым оценкам.
         counted_team_aggs = published_q('match_aggregates__match__') & Q(
             match_aggregates__total_votes__gte=min_votes_for_display()
         )
+        if display_season:
+            counted_team_aggs &= Q(match_aggregates__match__season=display_season)
         top_teams = Team.objects.filter(is_active=True).annotate(
             avg_rating=vote_weighted_avg(
                 'match_aggregates__performance_score', 'match_aggregates__total_votes', filter=counted_team_aggs,
@@ -93,7 +101,10 @@ class HomeView(TemplateView):
             personal = personal_summary(self.request.user)
 
         # Номинации сезона (core/nominations.py).
-        nominations = get_nominations()
+        nominations = (
+            get_nominations(league=display_season.league, season=display_season)
+            if display_season else get_nominations()
+        )
 
         # Embed-код турнирной таблицы.
         widget_url = self.request.build_absolute_uri(reverse('core:standings_widget'))
@@ -111,6 +122,11 @@ class HomeView(TemplateView):
             'top_teams': top_teams,
             'stats': stats,
             'metrics': metrics,
+            'season_numbers': season_numbers,
+            'display_season': display_season,
+            'display_season_is_previous': bool(
+                display_season and active_season and display_season.pk != active_season.pk
+            ),
             'personal': personal,
             'nominations': nominations,
             'nomination_min_votes': NOMINATION_MIN_VOTES,
@@ -124,10 +140,14 @@ class HomeView(TemplateView):
         return context
 
 
+def standings_season():
+    """Сезон для таблицы: активный, а пока в нём нет строк таблицы — предыдущий."""
+    return Season.get_display_season(has_data=lambda s: TeamSeasonStats.objects.filter(season=s).exists())
+
+
 def standings_preview(request):
     """HTMX-превью турнирной таблицы из готовой TeamSeasonStats."""
-    # Активный сезон основной лиги (Season.get_primary_active).
-    season = Season.get_primary_active()
+    season = standings_season()
     if not season:
         return HttpResponse('''
         <div class="text-center py-8 opacity-60">
@@ -152,7 +172,7 @@ def standings_preview(request):
         {
             'team_id': str(row.team_id),
             'team_name': row.team.name,
-            'team_logo_url': row.team.logo_url,
+            'team_logo_url': row.team.logo_display,
             'played': row.played,
             'wins': row.wins,
             'draws': row.draws,
@@ -165,9 +185,11 @@ def standings_preview(request):
         for row in stats_rows
     ]
 
+    active = Season.get_primary_active()
     html = render_to_string('components/_standings_preview.html', {
         'standings': standings_list,
         'season': season,
+        'season_is_previous': active is not None and active.pk != season.pk,
     })
 
     cache.set(cache_key, html, 300)
@@ -178,7 +200,7 @@ def standings_preview(request):
 @xframe_options_exempt
 def standings_widget(request):
     """Embed-виджет турнирной таблицы для чужого <iframe>."""
-    season = Season.get_primary_active()
+    season = standings_season()
     standings_list = []
     if season:
         stats_rows = (
@@ -189,7 +211,7 @@ def standings_widget(request):
         standings_list = [
             {
                 'team_name': row.team.name,
-                'team_logo_url': row.team.logo_url,
+                'team_logo_url': row.team.logo_display,
                 'played': row.played,
                 'points': row.points,
             }

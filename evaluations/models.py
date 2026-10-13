@@ -7,6 +7,12 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from core.models import BaseModel
 
+
+def _mean_of(*values):
+    """Среднее по поставленным критериям: нетронутый ползунок хранится пустым и в среднее не идёт."""
+    present = [v for v in values if v is not None]
+    return sum(present) / len(present) if present else None
+
 class ContextEvaluation(BaseModel):
     """Контекст просмотра матча."""
     WATCHED_TYPE_CHOICES = [
@@ -75,10 +81,10 @@ class TeamEvaluation(BaseModel):
         related_name='team_evaluations',
         verbose_name=_('Команда')
     )
-    tactics = models.IntegerField(_('Тактика'), validators=[MinValueValidator(1), MaxValueValidator(10)])
-    effort = models.IntegerField(_('Самоотдача'), validators=[MinValueValidator(1), MaxValueValidator(10)])
-    organization = models.IntegerField(_('Организация'), validators=[MinValueValidator(1), MaxValueValidator(10)])
-    mentality = models.IntegerField(_('Менталитет'), validators=[MinValueValidator(1), MaxValueValidator(10)])
+    tactics = models.IntegerField(_('Тактика'), validators=[MinValueValidator(1), MaxValueValidator(10)], null=True, blank=True)
+    effort = models.IntegerField(_('Самоотдача'), validators=[MinValueValidator(1), MaxValueValidator(10)], null=True, blank=True)
+    organization = models.IntegerField(_('Организация'), validators=[MinValueValidator(1), MaxValueValidator(10)], null=True, blank=True)
+    mentality = models.IntegerField(_('Менталитет'), validators=[MinValueValidator(1), MaxValueValidator(10)], null=True, blank=True)
 
     class Meta:
         verbose_name = _('Оценка команды')
@@ -93,7 +99,7 @@ class TeamEvaluation(BaseModel):
 
     @property
     def average_score(self):
-        return (self.tactics + self.effort + self.organization + self.mentality) / 4
+        return _mean_of(self.tactics, self.effort, self.organization, self.mentality)
 
 
 class PlayerEvaluation(BaseModel):
@@ -119,17 +125,20 @@ class PlayerEvaluation(BaseModel):
     contribution = models.IntegerField(
         _('Вклад'),
         validators=[MinValueValidator(1), MaxValueValidator(10)],
-        help_text=_("Вклад в игру (1-10)")
+        help_text=_("Вклад в игру (1-10)"),
+        null=True, blank=True,
     )
     risk = models.IntegerField(
         _('Риск'),
         validators=[MinValueValidator(1), MaxValueValidator(10)],
-        help_text=_("Риск/ошибки (1-10)")
+        help_text=_("Риск/ошибки (1-10)"),
+        null=True, blank=True,
     )
     potential = models.IntegerField(
         _('Потенциал'),
         validators=[MinValueValidator(1), MaxValueValidator(10)],
-        help_text=_("Потенциал (1-10)")
+        help_text=_("Потенциал (1-10)"),
+        null=True, blank=True,
     )
 
     class Meta:
@@ -150,6 +159,8 @@ class PlayerEvaluation(BaseModel):
 
     @property
     def maturity_score(self):
+        if self.contribution is None or self.risk is None:
+            return None
         return self.contribution - self.risk
 
 
@@ -173,10 +184,10 @@ class CoachEvaluation(BaseModel):
         related_name='coach_evaluations',
         verbose_name=_('Тренер')
     )
-    tactics = models.IntegerField(_('Тактика'), validators=[MinValueValidator(1), MaxValueValidator(10)])
-    substitutions = models.IntegerField(_('Замены'), validators=[MinValueValidator(1), MaxValueValidator(10)])
-    game_management = models.IntegerField(_('Управление'), validators=[MinValueValidator(1), MaxValueValidator(10)])
-    impact = models.IntegerField(_('Влияние'), validators=[MinValueValidator(1), MaxValueValidator(10)])
+    tactics = models.IntegerField(_('Тактика'), validators=[MinValueValidator(1), MaxValueValidator(10)], null=True, blank=True)
+    substitutions = models.IntegerField(_('Замены'), validators=[MinValueValidator(1), MaxValueValidator(10)], null=True, blank=True)
+    game_management = models.IntegerField(_('Управление'), validators=[MinValueValidator(1), MaxValueValidator(10)], null=True, blank=True)
+    impact = models.IntegerField(_('Влияние'), validators=[MinValueValidator(1), MaxValueValidator(10)], null=True, blank=True)
 
     class Meta:
         verbose_name = _('Оценка тренера')
@@ -191,7 +202,7 @@ class CoachEvaluation(BaseModel):
 
     @property
     def average_score(self):
-        return (self.tactics + self.substitutions + self.game_management + self.impact) / 4
+        return _mean_of(self.tactics, self.substitutions, self.game_management, self.impact)
 
 
 class RefereeEvaluation(BaseModel):
@@ -214,12 +225,14 @@ class RefereeEvaluation(BaseModel):
     influence_score = models.IntegerField(
         _('Влияние на матч'),
         validators=[MinValueValidator(0), MaxValueValidator(100)],
-        help_text=_("Влияние на матч (0-100)")
+        help_text=_("Влияние на матч (0-100)"),
+        null=True, blank=True,
     )
     decision_quality = models.IntegerField(
         _('Качество решений'),
         validators=[MinValueValidator(1), MaxValueValidator(10)],
-        help_text=_("Качество решений (1-10)")
+        help_text=_("Качество решений (1-10)"),
+        null=True, blank=True,
     )
 
     class Meta:
@@ -248,8 +261,8 @@ class MatchEvaluation(BaseModel):
         related_name='match_evaluations',
         verbose_name=_('Матч')
     )
-    entertainment = models.IntegerField(_('Зрелищность'), validators=[MinValueValidator(1), MaxValueValidator(10)])
-    tension = models.IntegerField(_('Напряжение'), validators=[MinValueValidator(1), MaxValueValidator(10)])
+    entertainment = models.IntegerField(_('Зрелищность'), validators=[MinValueValidator(1), MaxValueValidator(10)], null=True, blank=True)
+    tension = models.IntegerField(_('Напряжение'), validators=[MinValueValidator(1), MaxValueValidator(10)], null=True, blank=True)
     turning_point = models.BooleanField(_('Переломный момент'), default=False)
     # Что именно стало переломом: событие матча или универсальный вариант (evaluations/turning_points.py).
     turning_point_event = models.ForeignKey(
@@ -257,7 +270,7 @@ class MatchEvaluation(BaseModel):
         related_name='turning_point_votes', verbose_name=_('Переломное событие'),
     )
     turning_point_kind = models.CharField(_('Тип перелома'), max_length=20, blank=True, default='')
-    fairness = models.IntegerField(_('Справедливость'), validators=[MinValueValidator(1), MaxValueValidator(10)])
+    fairness = models.IntegerField(_('Справедливость'), validators=[MinValueValidator(1), MaxValueValidator(10)], null=True, blank=True)
 
     class Meta:
         verbose_name = _('Оценка матча')
@@ -272,6 +285,8 @@ class MatchEvaluation(BaseModel):
 
     @property
     def drama_index(self):
+        if self.entertainment is None or self.tension is None:
+            return None
         return self.entertainment * self.tension
 
 

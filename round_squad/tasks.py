@@ -203,6 +203,11 @@ def send_round_results_notification(self, round_best_xi_id: str) -> dict:
             logger.error("send_round_results_notification: RoundBestXI %s не найден", round_best_xi_id)
             return {'queued_chunks': 0, 'total_users': 0}
 
+        # Сборная не набралась — показывать нечего, не шлём.
+        if not round_xi.slots.filter(object_id__isnull=False).exists():
+            logger.info("send_round_results_notification: %s пустой — рассылки нет", round_xi.brand_title)
+            return {'queued_chunks': 0, 'total_users': 0, 'skipped_empty': True}
+
         subject = f'{round_xi.brand_title} готовы'
         user_ids = [
             str(uid) for uid in User.objects.filter(is_verified=True, email__isnull=False).values_list('id', flat=True)

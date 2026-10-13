@@ -20,7 +20,7 @@
                 Голос трибун — <span class="text-primary">измеряем в цифрах.</span>
             </h1>
             <p class="text-sm md:text-lg opacity-80 mb-6 md:mb-8 px-2">
-                Оценивай матчи вместе с сообществом, получай опыт и поднимайся в рейтинге.
+                Оценивайте матчи вместе с сообществом, получайте опыт и поднимайтесь в рейтинге.
             </p>
             <div class="flex flex-wrap gap-2 md:gap-4 justify-center">
                 {% if user.is_authenticated %}
@@ -57,7 +57,7 @@
                 <div class="stat bg-base-100 rounded-lg md:rounded-xl p-2 md:p-4">
                     <div class="stat-title text-[10px] md:text-xs">Средняя драма</div>
                     {# None -> «—», а не 0. #}
-                    <div class="stat-value text-lg md:text-2xl text-warning">{{ metrics.avg_drama|floatformat:1|default:"—" }}</div>
+                    <div class="stat-value text-lg md:text-2xl text-warning">{{ metrics.avg_drama|floatformat:0|default:"—" }}</div>
                 </div>
                 <div class="stat bg-base-100 rounded-lg md:rounded-xl p-2 md:p-4">
                     <div class="stat-title text-[10px] md:text-xs">Зрелищность</div>
@@ -217,7 +217,7 @@
                 <div class="flex items-center justify-between mb-3 md:mb-4">
                     <h3 class="font-bold text-base md:text-lg flex items-center gap-2">
                         <i class="ti ti-user-star"></i>
-                        <span>Топ игроков</span>
+                        <span>Топ игроков{% if display_season_is_previous %} сезона {{ display_season.year }}{% endif %}</span>
                     </h3>
                     <a href="{% url 'players:leaderboard' %}" class="btn btn-ghost btn-xs">
                         Весь рейтинг
@@ -257,7 +257,7 @@
             <div class="card-body p-3 md:p-4">
                 <h3 class="font-bold text-base md:text-lg mb-3 md:mb-4 flex items-center gap-2">
                     <i class="ti ti-chart-line"></i>
-                    <span>Статистика сезона</span>
+                    <span>{% if display_season_is_previous %}Итоги сезона {{ display_season.year }}{% else %}Статистика сезона{% if display_season %} {{ display_season.year }}{% endif %}{% endif %}</span>
                 </h3>
                 <div class="grid grid-cols-2 gap-2 md:gap-4">
                     <div class="stat bg-base-200 rounded-lg p-2 md:p-3">
@@ -275,13 +275,13 @@
                     <div class="stat bg-base-200 rounded-lg p-2 md:p-3">
                         <div class="stat-title text-[10px] md:text-xs">Всего оценок</div>
                         <div class="stat-value text-base md:text-xl">
-                            {{ stats.total_evaluations|default:0 }}
+                            {{ season_numbers.total_evaluations|default:0 }}
                         </div>
                     </div>
                     <div class="stat bg-base-200 rounded-lg p-2 md:p-3">
                         <div class="stat-title text-[10px] md:text-xs">Оценивали за неделю</div>
                         <div class="stat-value text-base md:text-xl text-success">
-                            {{ stats.active_users|default:0 }}
+                            {{ season_numbers.active_users|default:0 }}
                         </div>
                     </div>
                 </div>
@@ -293,7 +293,7 @@
             <div class="card-body p-3 md:p-4">
                 <h3 class="font-bold text-base md:text-lg mb-3 md:mb-4 flex items-center gap-2">
                     <i class="ti ti-users"></i>
-                    <span>Топ команд по оценкам</span>
+                    <span>Топ команд по оценкам{% if display_season_is_previous %} · {{ display_season.year }}{% endif %}</span>
                 </h3>
                 <div class="space-y-1 md:space-y-2">
                     {% for team in top_teams %}
@@ -319,7 +319,7 @@
         <section class="dx-sticky-lg">
             {% if nominations %}
             {% url 'leagues:list' as leagues_url %}
-            {% include 'components/_nominations.html' with nom_more_url=leagues_url %}
+            {% include 'components/_nominations.html' with nom_more_url=leagues_url nom_season=display_season.year %}
             {% else %}
             <h2 class="text-lg md:text-2xl font-bold flex items-center gap-2 min-w-0 mb-3 md:mb-4">
                 <i class="ti ti-award"></i>

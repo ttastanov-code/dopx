@@ -8,8 +8,8 @@
         <div class="flex items-center gap-4">
             <!-- Логотип в медальоне -->
             <div class="entity-avatar-ring flex-shrink-0">
-                {% if team.logo_url %}
-                <img src="{{ team.logo_url }}" alt="{{ team.name }}" class="w-12 h-12 object-contain">
+                {% if team.logo_display %}
+                <img src="{{ team.logo_display }}" alt="{{ team.name }}" class="w-12 h-12 object-contain">
                 {% else %}
                 <div class="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-xl">
                     {{ team.name|first|upper }}

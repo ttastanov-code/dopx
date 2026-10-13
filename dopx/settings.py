@@ -349,6 +349,8 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     # Режим обслуживания: после auth (сотрудников пропускаем).
     'dopx.middleware.MaintenanceMiddleware',
+    # htmx без входа: не вставлять страницу логина во фрагмент.
+    'dopx.middleware.HtmxLoginRedirectMiddleware',
     # После messages: тост о серии дней.
     'engagement.middleware.DailyStreakMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',

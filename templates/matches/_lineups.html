@@ -48,6 +48,7 @@
                                            class="md-lineup__row md-lineup__row--starting flex text-sm hover:text-primary transition-colors group">
                                             <span class="md-lineup__num">{{ lp.shirt_number|default:"-" }}</span>
                                             <span class="break-words ml-2">{{ lp.player }}</span>
+                                            {% include 'matches/_lineup_marks.html' %}
                                             {% with lp_position=lp.position|position_label %}
                                             {% if lp_position %}
                                             <span class="text-[9px] opacity-40 bg-base-200 px-1.5 py-0.5 rounded ml-auto flex-shrink-0 hidden sm:inline">{{ lp_position }}</span>
@@ -67,10 +68,12 @@
                                 <div>
                                     {% for lp in lineup.players.all|dictsort:"shirt_number" %}
                                         {% if not lp.is_starting %}
+                                        {# Не выходил на поле — приглушён; вышел — с минутой замены. #}
                                         <a href="{% url 'players:detail' lp.player.id %}"
-                                           class="md-lineup__row flex text-sm hover:text-primary transition-colors group opacity-65 hover:opacity-100">
+                                           class="md-lineup__row flex text-sm hover:text-primary transition-colors group {% if lp.unused and match.status == 'finished' %}opacity-45{% else %}opacity-90{% endif %} hover:opacity-100">
                                             <span class="md-lineup__num">{{ lp.shirt_number|default:"-" }}</span>
                                             <span class="break-words ml-2">{{ lp.player }}</span>
+                                            {% include 'matches/_lineup_marks.html' %}
                                         </a>
                                         {% endif %}
                                     {% endfor %}
@@ -80,6 +83,15 @@
                     </div>
                     {% endfor %}
                 </div>
+            </div>
+{% elif match.status == 'scheduled' or match.status == 'live' %}
+            {# Пока составов нет: когда ждать. Блок сам подгрузит их после публикации. #}
+            <div class="md-side-card">
+                <div class="md-side-card__head flex items-center gap-2">
+                    <i class="ti ti-users"></i>
+                    <h3 class="font-extrabold text-base md:text-lg">Составы команд</h3>
+                </div>
+                <p class="p-4 text-sm opacity-60">Составы публикуют примерно за час до начала — они появятся здесь сами, обновлять страницу не нужно.</p>
             </div>
 {% endif %}
 </div>

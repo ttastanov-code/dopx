@@ -1635,6 +1635,13 @@ def import_sidelined(team: Team, sidelined_data: List[Dict]) -> int:
     return saved
 
 
+def _played_player_ids(match) -> set:
+    """Кто реально выходил на поле: от этого зависит, чьи голоса идут в рейтинг."""
+    if match is None:
+        return set()
+    return set(MatchLineupPlayer.objects.filter(lineup__match=match).played().values_list("player_id", flat=True))
+
+
 def import_full_fixture(fixture_data: Dict, league: League, season: Season) -> Match:
     """Тяжёлый импорт одного матча (ответ get_fixture с HEAVY_FIXTURE_INCLUDE).
 
@@ -1647,6 +1654,7 @@ def import_full_fixture(fixture_data: Dict, league: League, season: Season) -> M
     was_finished_before = existing_before is not None and existing_before.status == "finished"
     was_scheduled_before = existing_before is not None and existing_before.status == "scheduled"
     had_lineup_before = existing_before is not None and existing_before.has_lineup
+    played_before = _played_player_ids(existing_before)
 
     match = import_match_core(fixture_data, league=league, season=season)
     import_coaches(match, fixture_data.get("coaches") or [])
@@ -1656,6 +1664,13 @@ def import_full_fixture(fixture_data: Dict, league: League, season: Season) -> M
     push_worthy_events = import_events(match, fixture_data.get("events") or [])
     import_statistics(match, fixture_data.get("statistics") or [])
     import_player_statistics(match, fixture_data.get("lineups") or [])
+
+    # Поставщик поправил замены: голоса за невышедших не считаются — у оценённого матча пересчитываем рейтинги.
+    if existing_before is not None and not is_quiet() and _played_player_ids(match) != played_before:
+        from evaluations.models import PlayerEvaluation
+        if PlayerEvaluation.objects.filter(match=match).exists():
+            from aggregates.tasks import trigger_aggregate_recalculation
+            transaction.on_commit(lambda: trigger_aggregate_recalculation.delay(str(match.id)))
 
     # Приглашение оценить — только пока голосование открыто (бэкафилл старых матчей не спамит).
     voting_open = bool(match.voting_open_until and match.voting_open_until > timezone.now())

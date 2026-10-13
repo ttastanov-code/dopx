@@ -174,3 +174,12 @@ def is_rate_limited(key: str, limit: int, window_seconds: int) -> bool:
 def ru_num(value, digits: int = 1) -> str:
     """Число для текста по-русски: запятая вместо точки (8,5)."""
     return f"{value:.{digits}f}".replace(".", ",")
+
+
+# Служебные адреса (фоновые запросы страниц) — не страница, куда возвращать после входа.
+_SERVICE_PATH_RE = __import__("re").compile(r"/(partial|unread-count|badge|panel|live-version|widget|api|predict|react)/")
+
+
+def is_page_next(url: str) -> bool:
+    """next ведёт на страницу сайта, а не на фоновый адрес вроде /notifications/unread-count/."""
+    return bool(url) and not _SERVICE_PATH_RE.search(url.split("?")[0])
