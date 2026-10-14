@@ -2826,74 +2826,103 @@ button.nf-item__hit:hover { background: color-mix(in oklab, var(--color-base-con
 
 
 /* ============================================================
-   ЖИДКОЕ СТЕКЛО (в стиле iOS 26): размытие с повышенной насыщенностью, блестящая кромка по краю, мягкий блик.
+   ЖИДКОЕ СТЕКЛО (как в iOS 26): почти нет заливки — стекло видно по краям. Лёгкое размытие, подъём насыщенности и яркости,
+   блики по кромке (сверху-слева ярче, снизу-справа слабее), внутреннее свечение и тонкая тень по контуру.
    Только для панелей, плавающих над страницей: шапка, нижняя панель, шторки, выпадающие меню, липкая кнопка.
    ============================================================ */
 :root {
-  --lg-edge: rgb(255 255 255 / .8);
-  --lg-edge2: rgb(255 255 255 / .24);
-  --lg-sheen: rgb(255 255 255 / .42);
-  --lg-shadow: 0 16px 40px -14px rgb(30 34 80 / .30), 0 2px 8px -2px rgb(30 34 80 / .10);
+  --lg-spec1: rgb(255 255 255 / .95);
+  --lg-spec2: rgb(255 255 255 / .6);
+  --lg-rim: rgb(255 255 255 / .42);
+  --lg-glow: rgb(255 255 255 / .30);
+  --lg-ring: rgb(20 30 70 / .10);
+  --lg-shade: rgb(20 30 70 / .10);
+  --lg-drop: 0 14px 34px -12px rgb(20 30 80 / .34);
+  --lg-blur: blur(14px) saturate(210%) brightness(1.07);
+  --lg-sheen1: rgb(255 255 255 / .55);
+  --lg-sheen2: rgb(255 255 255 / .26);
 }
 :root[data-theme="dark"] {
-  --lg-edge: rgb(255 255 255 / .24);
-  --lg-edge2: rgb(255 255 255 / .07);
-  --lg-sheen: rgb(255 255 255 / .12);
-  --lg-shadow: 0 16px 44px -14px rgb(0 0 0 / .65), 0 2px 8px -2px rgb(0 0 0 / .3);
+  --lg-spec1: rgb(255 255 255 / .50);
+  --lg-spec2: rgb(255 255 255 / .22);
+  --lg-rim: rgb(255 255 255 / .18);
+  --lg-glow: rgb(255 255 255 / .10);
+  --lg-ring: rgb(255 255 255 / .10);
+  --lg-shade: rgb(0 0 0 / .4);
+  --lg-drop: 0 16px 40px -12px rgb(0 0 0 / .75);
+  --lg-blur: blur(16px) saturate(180%) brightness(1.14);
+  --lg-sheen1: rgb(255 255 255 / .2);
+  --lg-sheen2: rgb(255 255 255 / .08);
 }
 
-/* Шапка: тонкая стеклянная лента, блик сверху вниз, кромка снизу. */
-.dx-glass-nav::before {
-  content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
-  background-color: color-mix(in oklab, var(--color-base-100) 50%, transparent);
-  background-image: linear-gradient(to bottom, var(--lg-sheen), transparent 85%);
-  -webkit-backdrop-filter: blur(22px) saturate(185%); backdrop-filter: blur(22px) saturate(185%);
-  box-shadow: inset 0 -1px 0 var(--lg-edge2), 0 8px 26px -16px rgb(30 34 80 / .35);
-  transition: background-color .25s ease, box-shadow .25s ease;
-}
-@media (max-width: 1023px) {
-  .dx-glass-nav::before { background-color: color-mix(in oklab, var(--color-base-100) 58%, transparent); -webkit-backdrop-filter: blur(26px) saturate(185%); backdrop-filter: blur(26px) saturate(185%); }
-}
-
-/* Плавающие панели: общий материал. Подложка плотнее там, где много текста (шторки, меню). */
+/* Общая рамка стекла: кромка-блик, свечение внутри, контур, тень. */
 :is(.dx-tabbar, .dx-drawer__panel, .nf-pop, .dx-sticky-cta, .dx-glass-nav .dropdown-content, .dx-glass-nav details > ul) {
-  --lg-tint: 62%;
+  --lg-tint: 28%;
   isolation: isolate;
   background: color-mix(in oklab, var(--color-base-100) var(--lg-tint), transparent);
-  -webkit-backdrop-filter: blur(26px) saturate(190%); backdrop-filter: blur(26px) saturate(190%);
+  -webkit-backdrop-filter: var(--lg-blur); backdrop-filter: var(--lg-blur);
   border: 0;
-  box-shadow: inset 0 1px 0 var(--lg-edge), inset 0 0 0 1px var(--lg-edge2), var(--lg-shadow);
+  box-shadow:
+    inset 2px 2px 1px -1px var(--lg-spec1),
+    inset -2px -2px 1px -1px var(--lg-spec2),
+    inset 0 0 0 1px var(--lg-rim),
+    inset 0 0 26px 2px var(--lg-glow),
+    inset -1px -1px 3px var(--lg-shade),
+    0 0 0 1px var(--lg-ring),
+    var(--lg-drop);
 }
+/* Блик: яркий в левом верхнем углу, слабый — в правом нижнем. */
 :is(.dx-tabbar, .dx-drawer__panel, .nf-pop, .dx-sticky-cta, .dx-glass-nav .dropdown-content, .dx-glass-nav details > ul)::before {
   content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
-  background: linear-gradient(158deg, var(--lg-sheen) 0%, transparent 40%, transparent 68%, color-mix(in oklab, var(--lg-sheen) 55%, transparent) 100%);
+  background:
+    radial-gradient(130% 110% at 0% 0%, var(--lg-sheen1), transparent 48%),
+    radial-gradient(120% 90% at 100% 100%, var(--lg-sheen2), transparent 52%);
 }
-:is(.dx-drawer__panel, .nf-pop, .dx-glass-nav .dropdown-content, .dx-glass-nav details > ul) { --lg-tint: 82%; }
-:root[data-theme="dark"] :is(.dx-drawer__panel, .nf-pop, .dx-glass-nav .dropdown-content, .dx-glass-nav details > ul) { --lg-tint: 74%; }
-:root[data-theme="dark"] :is(.dx-tabbar, .dx-sticky-cta) { --lg-tint: 52%; }
-/* Шторки снизу — тень вверх. */
-.dx-drawer__panel { box-shadow: inset 0 1px 0 var(--lg-edge), inset 0 0 0 1px var(--lg-edge2), 0 -18px 50px -18px rgb(0 0 0 / .35); }
-@media (min-width: 640px) { .nf-pop { box-shadow: inset 0 1px 0 var(--lg-edge), inset 0 0 0 1px var(--lg-edge2), var(--lg-shadow); } }
-@media (max-width: 639px) { .nf-pop { box-shadow: inset 0 1px 0 var(--lg-edge), inset 0 0 0 1px var(--lg-edge2), 0 -18px 50px -18px rgb(0 0 0 / .35); } }
+/* Больше текста — чуть плотнее подложка, чтобы читалось; стекло по-прежнему прозрачное. */
+:is(.dx-drawer__panel, .nf-pop) { --lg-tint: 66%; }
+:is(.dx-glass-nav .dropdown-content, .dx-glass-nav details > ul) { --lg-tint: 74%; }
+:root[data-theme="dark"] :is(.dx-drawer__panel, .nf-pop) { --lg-tint: 58%; }
+:root[data-theme="dark"] :is(.dx-glass-nav .dropdown-content, .dx-glass-nav details > ul) { --lg-tint: 62%; }
+.dx-tabbar { --lg-tint: 46%; }
+.dx-sticky-cta { --lg-tint: 62%; }
+:root[data-theme="dark"] :is(.dx-tabbar, .dx-sticky-cta) { --lg-tint: 44%; }
+/* Тёмный текст на стекле чуть приподнят светлой кромкой — читается и над тёмным фоном. */
+:root:not([data-theme="dark"]) :is(.dx-tabbar__item span, .dx-sticky-cta__text, .dx-glass-nav .dropdown-content, .dx-glass-nav details > ul) { text-shadow: 0 1px 0 rgb(255 255 255 / .45); }
+/* Шторки снизу — тень вверх вместо вниз. */
+.dx-drawer__panel { --lg-drop: 0 -16px 46px -14px rgb(20 30 80 / .38); }
+@media (max-width: 639px) { .nf-pop { --lg-drop: 0 -16px 46px -14px rgb(20 30 80 / .38); } }
+:root[data-theme="dark"] .dx-drawer__panel { --lg-drop: 0 -16px 46px -14px rgb(0 0 0 / .8); }
 
-/* Нижняя панель телефона — плавающая стеклянная капсула, активный раздел — мягкая «таблетка». */
+/* Шапка: прозрачная лента, стекло — на подложке ::before (чтобы меню внутри тоже размывали страницу). */
+.dx-glass-nav::before {
+  content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background-color: color-mix(in oklab, var(--color-base-100) 24%, transparent);
+  background-image: linear-gradient(to bottom, var(--lg-sheen1), transparent 70%);
+  -webkit-backdrop-filter: var(--lg-blur); backdrop-filter: var(--lg-blur);
+  box-shadow: inset 0 -1px 0 var(--lg-rim), inset 0 1px 0 var(--lg-spec1), inset 0 -10px 18px -12px var(--lg-glow), 0 1px 0 var(--lg-ring), 0 10px 28px -16px rgb(20 30 80 / .35);
+  transition: background-color .25s ease, box-shadow .25s ease;
+}
+@media (max-width: 1023px) { .dx-glass-nav::before { background-color: color-mix(in oklab, var(--color-base-100) 30%, transparent); } }
+.dx-glass-nav.dx-nav--on-dark::before { background-color: rgba(12, 16, 28, .34); box-shadow: inset 0 -1px 0 rgb(255 255 255 / .24), inset 0 1px 0 rgb(255 255 255 / .35), 0 10px 28px -16px rgb(0 0 0 / .6); }
+
+/* Нижняя панель телефона — плавающая стеклянная капсула; активный раздел — стеклянная «таблетка». */
 .dx-tabbar {
   left: 0; right: 0; margin-inline: auto; max-width: 30rem;
   width: calc(100% - 1.5rem);
   bottom: calc(.55rem + env(safe-area-inset-bottom, 0px));
   border-radius: 1.9rem; padding: .3rem .35rem;
 }
-.dx-tabbar__item { position: relative; isolation: isolate; }
+.dx-tabbar__item { position: relative; isolation: isolate; color: color-mix(in oklab, var(--color-base-content) 72%, transparent); }
 .dx-tabbar__item.is-active:not(.dx-tabbar__item--center)::before {
   content: ""; position: absolute; inset: .05rem .1rem; z-index: -1; border-radius: 1.4rem; pointer-events: none;
-  background: color-mix(in oklab, var(--color-base-content) 8%, transparent);
-  box-shadow: inset 0 1px 0 var(--lg-edge2), inset 0 0 0 1px var(--lg-edge2);
+  background: color-mix(in oklab, var(--color-base-100) 40%, transparent);
+  box-shadow: inset 1px 1px 1px -.5px var(--lg-spec1), inset 0 0 0 1px var(--lg-rim), inset 0 0 14px var(--lg-glow), 0 2px 8px -2px rgb(20 30 80 / .22);
 }
 .dx-sticky-cta { border-radius: 1.4rem; }
 
-/* Меню в шапке на ПК — стеклянные панели с кромкой. */
-.dx-glass-nav .dropdown-content, .dx-glass-nav details > ul { border-radius: 1.1rem; }
-.dx-glass-nav .menu :is(a, summary):hover { background: color-mix(in oklab, var(--color-base-content) 7%, transparent); }
+/* Меню в шапке на ПК. */
+.dx-glass-nav .dropdown-content, .dx-glass-nav details > ul { border-radius: 1.2rem; }
+.dx-glass-nav .menu :is(a, summary):hover { background: color-mix(in oklab, var(--color-base-100) 45%, transparent); }
 
 /* Без стекла: если пользователь просит меньше прозрачности или браузер не умеет размытие — плотные панели. */
 @media (prefers-reduced-transparency: reduce) {
@@ -2904,3 +2933,5 @@ button.nf-item__hit:hover { background: color-mix(in oklab, var(--color-base-con
   :is(.dx-tabbar, .dx-drawer__panel, .nf-pop, .dx-sticky-cta, .dx-glass-nav .dropdown-content, .dx-glass-nav details > ul) { --lg-tint: 96%; }
   .dx-glass-nav::before { background-color: color-mix(in oklab, var(--color-base-100) 94%, transparent); }
 }
+/* Мелкий текст в липкой кнопке — темнее, чтобы читался и над тёмным фоном. */
+.dx-sticky-cta .dx-sticky-cta__meta { color: color-mix(in oklab, var(--color-base-content) 84%, transparent); }
