@@ -1,116 +1,61 @@
+{% load ui_extras %}
 {% comment %}
-Карточка игрока для оценки.
+Строка игрока в списке состава (мастер, шаг «Игроки»): номер, имя, сводка матча, тумблер; ползунки раскрываются в строке.
 {% include 'evaluations/_player_card.html' with lp=lp prefix="player" %}
-Из контекста: mode, key_player_ids (режим «Быстро»).
+Из контекста: mode, key_player_ids (режим «Быстро»). Стили — css/wizard.css (wz-player).
 {% endcomment %}
-<div x-data="playerEvaluationCard({% if mode == 'quick' and lp.player.id in key_player_ids %}true{% else %}false{% endif %})"
-class="wz-card card bg-base-100 border-2 shadow-sm"
-:class="evaluate ? 'border-primary bg-primary/5' : 'border-base-200'">
-    <div class="card-body p-3.5">
-        {# Шапка: игрок + переключатель #}
-        <label class="flex items-center justify-between gap-2 cursor-pointer select-none -m-1 p-1 rounded-xl">
-            <div class="flex items-center gap-3 flex-1 min-w-0">
-                {# Номер #}
-                <div class="w-11 h-11 rounded-full bg-base-200 flex items-center justify-center font-extrabold text-base shrink-0 transition-colors"
-                     :class="evaluate && 'bg-primary/15 text-primary'">
-                    {{ lp.shirt_number|default:"?" }}
-                </div>
+{% with line=lp.match_line %}
+{# Ползунки раскрываются только по тумблеру: заметные в матче игроки помечены, но не раскрыты. #}
+<div x-data="playerEvaluationCard(false)"
+     class="wz-player" :class="evaluate && 'is-on'">
+    <label class="wz-player__head">
+        <span class="wz-player__num">{{ lp.shirt_number|default:"–" }}</span>
+        <span class="wz-player__info">
+            <span class="wz-player__name">{{ lp.player.first_name }} {{ lp.player.last_name }}</span>
+            {# Под именем — только время и события; подробная статистика раскрывается вместе с оценкой. #}
+            <span class="wz-player__line">
+                <span title="{{ line.minutes_hint }}">{{ line.minutes }}</span>
+                {% if line.goals %}<span class="wz-player__ev" title="Голы"><i class="ti ti-ball-football"></i>{% if line.goals > 1 %}{{ line.goals }}{% endif %}</span>{% endif %}
+                {% if line.assists %}<span class="wz-player__ev" title="Передачи">пас{% if line.assists > 1 %} {{ line.assists }}{% endif %}</span>{% endif %}
+                {% if line.own_goals %}<span class="wz-player__ev">автогол</span>{% endif %}
+                {% if line.yellow %}<span class="wz-player__card wz-player__card--y" title="Жёлтая карточка"></span>{% endif %}
+                {% if line.red %}<span class="wz-player__card wz-player__card--r" title="Красная карточка"></span>{% endif %}
+                {% if mode == 'quick' and lp.player.id in key_player_ids %}<span class="wz-player__tag">заметен</span>{% endif %}
+            </span>
+        </span>
+        <span class="wz-player__score" title="Оценка по статистике матча">{% if line.rating %}{{ line.rating|floatformat:1 }}{% endif %}</span>
+        <input type="checkbox" name="{{ prefix }}_{{ lp.player.id }}_evaluate" value="on"
+               class="toggle toggle-primary wz-player__toggle" x-model="evaluate" @click.stop
+               aria-label="Оценить: {{ lp.player.first_name }} {{ lp.player.last_name }}">
+    </label>
 
-                {# Инфо #}
-                <div class="min-w-0 flex-1">
-                    <div class="font-bold text-sm break-words">
-                        {{ lp.player.first_name }} {{ lp.player.last_name }}
-                    </div>
-                    <div class="flex flex-wrap items-center gap-1.5 text-xs text-base-content/55 mt-0.5">
-                        <span class="break-words max-w-[100px]">{{ lp.player.team.name }}</span>
-                        {% if lp.is_starting %}
-                        <span class="text-success font-semibold flex items-center gap-0.5">
-                            <i class="ti ti-circle-dot text-[5px]"></i> Старт
-                        </span>
-                        {% else %}
-                        <span class="text-info font-semibold flex items-center gap-0.5">
-                            <i class="ti ti-clock text-[11px]"></i> Запас
-                        </span>
-                        {% endif %}
-                        {% if mode == 'quick' and lp.player.id in key_player_ids %}
-                        <span class="text-warning font-semibold flex items-center gap-0.5">
-                            <i class="ti ti-star text-[11px]"></i> Рекомендуем
-                        </span>
-                        {% endif %}
-                    </div>
-                    {# Статистика игрока за матч — только справка, ничего не заполняет. #}
-                    {% if lp.stats_badges %}
-                    <div class="flex flex-wrap items-center gap-1.5 mt-1">
-                        {% for badge in lp.stats_badges %}
-                        <span class="badge badge-ghost badge-xs">{{ badge }}</span>
-                        {% endfor %}
-                    </div>
-                    {% endif %}
-                </div>
+    {# Ползунки. x-cloak — без мигания до Alpine. #}
+    <div x-show="evaluate" x-cloak x-collapse class="wz-player__sliders">
+        {% if lp.stats_badges %}<p class="wz-player__stats">{{ lp.stats_badges|join:" · " }}</p>{% endif %}
+        <div class="wz-slider-card">
+            <div class="flex justify-between items-center">
+                <label class="flex items-center gap-1.5">Вклад в игру{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.player.contribution %}</label>
+                <span class="wz-slider-card__value">5</span>
             </div>
-
-            {# Переключатель, тач-таргет 44px #}
-            <div class="w-11 h-11 flex items-center justify-center shrink-0 -m-2">
-                <input type="checkbox"
-                       name="{{ prefix }}_{{ lp.player.id }}_evaluate"
-                       value="on"
-                       class="toggle toggle-primary"
-                       x-model="evaluate"
-                       @click.stop>
+            <input type="range" name="{{ prefix }}_{{ lp.player.id }}_contribution" min="1" max="10" value="5" step="1"
+                   class="wizard-slider">
+        </div>
+        <div class="wz-slider-card">
+            <div class="flex justify-between items-center">
+                <label class="flex items-center gap-1.5">Риск ошибок{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.player.risk %}</label>
+                <span class="wz-slider-card__value">5</span>
             </div>
-        </label>
-
-        {# x-cloak — без мигания раскрытых слайдеров. #}
-        {# Слайдеры #}
-        <div x-show="evaluate"
-             x-cloak
-             x-collapse
-             class="mt-3.5 pt-3.5 border-t border-base-200 space-y-3">
-
-            {# Вклад #}
-            <div class="wz-accent-warning wz-slider-card">
-                <div class="flex justify-between items-center mb-2">
-                    <label class="text-sm font-semibold text-warning flex items-center gap-1.5">
-                        <i class="ti ti-star"></i> Вклад
-                    </label>
-                    <span class="wz-slider-card__value" x-text="contribution">5</span>
-                </div>
-                <input type="range"
-                       name="{{ prefix }}_{{ lp.player.id }}_contribution"
-                       min="1" max="10" value="5"
-                       class="wizard-slider"
-                       x-model.number="contribution" step="1">
+            <input type="range" name="{{ prefix }}_{{ lp.player.id }}_risk" min="1" max="10" value="5" step="1"
+                   class="wizard-slider">
+        </div>
+        <div class="wz-slider-card">
+            <div class="flex justify-between items-center">
+                <label class="flex items-center gap-1.5">Потенциал{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.player.potential %}</label>
+                <span class="wz-slider-card__value">5</span>
             </div>
-
-            {# Риск #}
-            <div class="wz-accent-error wz-slider-card">
-                <div class="flex justify-between items-center mb-2">
-                    <label class="text-sm font-semibold text-error flex items-center gap-1.5">
-                        <i class="ti ti-alert-triangle"></i> Риск
-                    </label>
-                    <span class="wz-slider-card__value" x-text="risk">5</span>
-                </div>
-                <input type="range"
-                       name="{{ prefix }}_{{ lp.player.id }}_risk"
-                       min="1" max="10" value="5"
-                       class="wizard-slider"
-                       x-model.number="risk" step="1">
-            </div>
-
-            {# Потенциал #}
-            <div class="wz-accent-success wz-slider-card">
-                <div class="flex justify-between items-center mb-2">
-                    <label class="text-sm font-semibold text-success flex items-center gap-1.5">
-                        <i class="ti ti-trending-up"></i> Потенциал
-                    </label>
-                    <span class="wz-slider-card__value" x-text="potential">5</span>
-                </div>
-                <input type="range"
-                       name="{{ prefix }}_{{ lp.player.id }}_potential"
-                       min="1" max="10" value="5"
-                       class="wizard-slider"
-                       x-model.number="potential" step="1">
-            </div>
+            <input type="range" name="{{ prefix }}_{{ lp.player.id }}_potential" min="1" max="10" value="5" step="1"
+                   class="wizard-slider">
         </div>
     </div>
 </div>
+{% endwith %}

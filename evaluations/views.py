@@ -99,6 +99,44 @@ def _player_stats_badges(stats: "MatchPlayerStatistics") -> list[str]:
     return badges
 
 
+def _player_match_events(match) -> dict:
+    """{player_id: {goals, assists, yellow, red, own_goals}} по событиям матча — одним запросом."""
+    from events.models import MatchEvent
+
+    out: dict = {}
+    for kind, scorer, assist in MatchEvent.objects.filter(match=match).values_list('event_type', 'player_id', 'assist_player_id'):
+        if kind in ('goal', 'penalty'):
+            if scorer:
+                out.setdefault(scorer, {}).setdefault('goals', 0)
+                out[scorer]['goals'] += 1
+            if assist:
+                out.setdefault(assist, {}).setdefault('assists', 0)
+                out[assist]['assists'] += 1
+        elif kind in ('yellow_card', 'red_card', 'own_goal') and scorer:
+            key = {'yellow_card': 'yellow', 'red_card': 'red', 'own_goal': 'own_goals'}[kind]
+            out.setdefault(scorer, {}).setdefault(key, 0)
+            out[scorer][key] += 1
+    return out
+
+
+def _player_match_line(lp, stats, events: dict) -> dict:
+    """Сводка игрока за матч для мастера: минуты, события, оценка по статистике."""
+    from matches.stat_ratings import _to_rating
+
+    if lp.is_starting:
+        minutes = f"до {lp.minute_out}'" if lp.minute_out else "90'"
+        minutes_hint = f"ушёл на {lp.minute_out}'" if lp.minute_out else "весь матч"
+    else:
+        minutes = f"с {lp.minute_in}'" if lp.minute_in else "вышел на замену"
+        minutes_hint = f"вышел на {lp.minute_in}'" if lp.minute_in else ""
+    rating = _to_rating(stats.raw) if stats else None
+    return {
+        'minutes': minutes, 'minutes_hint': minutes_hint, 'rating': rating,
+        'goals': events.get('goals', 0), 'assists': events.get('assists', 0),
+        'yellow': events.get('yellow', 0), 'red': events.get('red', 0), 'own_goals': events.get('own_goals', 0),
+    }
+
+
 def _wizard_xp_key(request) -> str:
     # Ключ по матчу: брошенный вайзард другого матча не попадает в сводку.
     return f"wizard_xp_earned:{request.resolver_match.kwargs['match_id']}"
@@ -435,7 +473,7 @@ class EvaluatePlayersView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
         lineup_players = list(
             MatchLineupPlayer.objects.filter(lineup__match=self.match).played()
             .select_related('player__team')
-            .order_by('is_starting', 'shirt_number')
+            .order_by('-is_starting', 'shirt_number')
         )
 
         # Статистика игроков за матч — для выбора ключевых и справки на карточке.
@@ -443,10 +481,12 @@ class EvaluatePlayersView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
             stat.player_id: stat
             for stat in MatchPlayerStatistics.objects.filter(match=self.match)
         }
+        events_by_player = _player_match_events(self.match)
         for lp in lineup_players:
             stats = player_stats_by_id.get(lp.player_id)
             lp.match_stats = stats
             lp.stats_badges = _player_stats_badges(stats) if stats else []
+            lp.match_line = _player_match_line(lp, stats, events_by_player.get(lp.player_id, {}))
 
         key_player_ids = (
             self._compute_key_player_ids(lineup_players, player_stats_by_id)
@@ -457,6 +497,7 @@ class EvaluatePlayersView(LoginRequiredMixin, TemplateView, EvaluationWizardMixi
             'lineup_players': lineup_players,
             'mode': session.mode,
             'key_player_ids': key_player_ids,
+            'sides': [('home', self.match.home_team), ('away', self.match.away_team)],
             'home_bench_count': sum(1 for lp in lineup_players if not lp.is_starting and lp.lineup.side == 'home'),
             'away_bench_count': sum(1 for lp in lineup_players if not lp.is_starting and lp.lineup.side == 'away'),
             'page_title': 'Шаг 3: Игроки — DOPX', 'step': 3, 'total_steps': 6,

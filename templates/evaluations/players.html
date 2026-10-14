@@ -20,7 +20,7 @@
 <div class="max-w-5xl mx-auto px-3 text-center mb-5">
     <h2 class="text-xl sm:text-2xl font-extrabold mb-1">Оцените игроков</h2>
     {% if mode == 'quick' %}
-    <p class="text-sm text-base-content/60">Хватит выбрать лучшего и худшего. Если хотите подробнее, откройте весь состав ниже</p>
+    <p class="text-sm text-base-content/60">Достаточно выбрать лучшего и худшего. Если хотите подробнее, откройте весь состав ниже</p>
     {% else %}
     <p class="text-sm text-base-content/60">Оценивайте только тех, кого хорошо запомнили</p>
     {% endif %}
@@ -45,17 +45,36 @@
     === ЛУЧШИЙ / ХУДШИЙ ИГРОК ===
     Быстрый режим: выбор двух игроков заполняет скрытые поля карточек пресетами.
     {% endcomment %}
-    <div class="card wz-card mb-5">
-        <div class="card-body p-4 sm:p-5">
-            <h3 class="font-extrabold text-base sm:text-lg mb-3.5 flex items-center gap-2">
-                <i class="ti ti-arrows-diff text-primary"></i> Лучший и худший игрок матча
-            </h3>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                <div>
-                    <label class="text-xs font-bold uppercase tracking-wider text-success/80 mb-1.5 flex items-center gap-1.5">
-                        <i class="ti ti-trophy text-[13px]"></i> Лучший
-                    </label>
-                    <select id="best-player-select" class="select select-bordered w-full">
+    {# Выбор строками и листом со списком состава; скрытые select — источник значений для скрипта ниже. #}
+    <div class="wz-list mb-5">
+        <button type="button" class="wz-pick" data-pick="best">
+            <span class="wz-pick__icon wz-pick__icon--best"><i class="ti ti-trophy"></i></span>
+            <span class="wz-pick__body"><span class="wz-pick__label">Лучший игрок матча</span><span class="wz-pick__value" data-pick-value>Выбрать</span></span>
+            <i class="ti ti-chevron-right wz-pick__chev"></i>
+        </button>
+        <button type="button" class="wz-pick" data-pick="worst">
+            <span class="wz-pick__icon wz-pick__icon--worst"><i class="ti ti-thumb-down"></i></span>
+            <span class="wz-pick__body"><span class="wz-pick__label">Худший игрок матча</span><span class="wz-pick__value" data-pick-value>Выбрать</span></span>
+            <i class="ti ti-chevron-right wz-pick__chev"></i>
+        </button>
+    </div>
+    <select id="best-player-select" class="hidden" aria-hidden="true" tabindex="-1">
+                        <option value="">Выберите игрока…</option>
+                        <optgroup label="{{ match.home_team.name }}">
+                            {% for lp in lineup_players %}
+                            {% if lp.lineup.side == 'home' %}
+                            <option value="{{ lp.player.id }}">{{ lp.shirt_number|default:"?" }} — {{ lp.player.first_name }} {{ lp.player.last_name }}</option>
+                            {% endif %}
+                            {% endfor %}
+                        </optgroup>
+                        <optgroup label="{{ match.away_team.name }}">
+                            {% for lp in lineup_players %}
+                            {% if lp.lineup.side == 'away' %}
+                            <option value="{{ lp.player.id }}">{{ lp.shirt_number|default:"?" }} — {{ lp.player.first_name }} {{ lp.player.last_name }}</option>
+                            {% endif %}
+                            {% endfor %}
+                        </optgroup>
+                    </select><select id="worst-player-select" class="hidden" aria-hidden="true" tabindex="-1">
                         <option value="">Выберите игрока…</option>
                         <optgroup label="{{ match.home_team.name }}">
                             {% for lp in lineup_players %}
@@ -72,31 +91,44 @@
                             {% endfor %}
                         </optgroup>
                     </select>
+
+    {# Лист выбора игрока. #}
+    <div id="wz-pick-sheet" class="dx-drawer" aria-hidden="true">
+        <div class="dx-drawer__backdrop" data-pick-close></div>
+        <aside class="dx-drawer__panel" role="dialog" aria-modal="true" aria-labelledby="wz-pick-title">
+            <span class="dx-drawer__grabber" aria-hidden="true"></span>
+            <header class="dx-drawer__head">
+                <span class="dx-drawer__heading" id="wz-pick-title">Лучший игрок матча</span>
+                <button type="button" class="dx-drawer__close" data-pick-close aria-label="Закрыть"><i class="ti ti-x"></i></button>
+            </header>
+            <div class="dx-drawer__scroll">
+                {% for side, team in sides %}
+                <div class="wz-pick-team">
+                    {% if team.logo_display %}<img src="{{ team.logo_display }}" alt="">{% endif %}<span>{{ team.name }}</span>
+                    {% if forloop.first %}<span class="wz-pick-team__hint inline-flex items-center gap-1">По статистике{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.player.stat_rating %}</span>{% endif %}
                 </div>
-                <div>
-                    <label class="text-xs font-bold uppercase tracking-wider text-error/80 mb-1.5 flex items-center gap-1.5">
-                        <i class="ti ti-thumb-down text-[13px]"></i> Худший
-                    </label>
-                    <select id="worst-player-select" class="select select-bordered w-full">
-                        <option value="">Выберите игрока…</option>
-                        <optgroup label="{{ match.home_team.name }}">
-                            {% for lp in lineup_players %}
-                            {% if lp.lineup.side == 'home' %}
-                            <option value="{{ lp.player.id }}">{{ lp.shirt_number|default:"?" }} — {{ lp.player.first_name }} {{ lp.player.last_name }}</option>
-                            {% endif %}
-                            {% endfor %}
-                        </optgroup>
-                        <optgroup label="{{ match.away_team.name }}">
-                            {% for lp in lineup_players %}
-                            {% if lp.lineup.side == 'away' %}
-                            <option value="{{ lp.player.id }}">{{ lp.shirt_number|default:"?" }} — {{ lp.player.first_name }} {{ lp.player.last_name }}</option>
-                            {% endif %}
-                            {% endfor %}
-                        </optgroup>
-                    </select>
+                <div class="wz-list">
+                    {% for lp in lineup_players %}{% if lp.lineup.side == side %}
+                    <button type="button" class="wz-pick-row" data-player-id="{{ lp.player.id }}"
+                            data-label="{{ lp.shirt_number|default:'–' }} · {{ lp.player.first_name }} {{ lp.player.last_name }}">
+                        <span class="wz-player__num">{{ lp.shirt_number|default:"–" }}</span>
+                        <span class="wz-player__info">
+                            <span class="wz-player__name">{{ lp.player.first_name }} {{ lp.player.last_name }}</span>
+                            <span class="wz-player__line">
+                                <span>{{ lp.match_line.minutes }}</span>
+                                {% if lp.match_line.goals %}<span class="wz-player__ev"><i class="ti ti-ball-football"></i>{% if lp.match_line.goals > 1 %}×{{ lp.match_line.goals }}{% endif %}</span>{% endif %}
+                                {% if lp.match_line.yellow %}<span class="wz-player__card wz-player__card--y"></span>{% endif %}
+                                {% if lp.match_line.red %}<span class="wz-player__card wz-player__card--r"></span>{% endif %}
+                            </span>
+                        </span>
+                        <span class="wz-player__score">{% if lp.match_line.rating %}{{ lp.match_line.rating|floatformat:1 }}{% endif %}</span>
+                        <i class="ti ti-check wz-pick-row__check"></i>
+                    </button>
+                    {% endif %}{% endfor %}
                 </div>
+                {% endfor %}
             </div>
-        </div>
+        </aside>
     </div>
 
     <details class="mb-2">
@@ -106,10 +138,19 @@
         </summary>
     {% endif %}
 
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    {# Телефон и планшет: одна команда за раз (переключатель); на ПК — обе рядом. #}
+    <div class="wz-seg lg:hidden" role="tablist" aria-label="Команда">
+        {% for side, team in sides %}
+        <button type="button" role="tab" data-team-tab="{{ side }}" class="{% if forloop.first %}is-active{% endif %}" aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
+            {% if team.logo_display %}<img src="{{ team.logo_display }}" alt="">{% endif %}<span>{{ team.name }}</span>
+        </button>
+        {% endfor %}
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
         {# Хозяева #}
-        <div class="space-y-4">
-            <h2 class="font-extrabold text-lg flex items-center gap-2.5 pb-3 border-b-2 border-primary/20">
+        <div class="space-y-4 wz-team is-active" data-team="home">
+            <h2 class="wz-team-title">
                 {% if match.home_team.logo_display %}
                 {# alt="" — герб декоративный. #}
                 <img src="{{ match.home_team.logo_display }}" alt="" class="w-6 h-6 object-contain">
@@ -119,10 +160,8 @@
 
             {# Старт #}
             <div>
-                <h3 class="text-xs font-bold uppercase tracking-wider text-success/80 mb-2.5 flex items-center gap-1.5">
-                    <i class="ti ti-circle-dot text-[7px]"></i> Стартовый состав
-                </h3>
-                <div class="space-y-2.5">
+                <h3 class="wz-list-title"><span>Стартовый состав</span><span class="inline-flex items-center gap-1">По статистике{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.player.stat_rating %}</span></h3>
+                <div class="wz-list">
                     {% for lp in lineup_players %}
                     {% if lp.is_starting and lp.lineup.side == 'home' %}
                     {% include 'evaluations/_player_card.html' with lp=lp prefix="player" %}
@@ -133,10 +172,8 @@
 
             {# Запас #}
             <div>
-                <h3 class="text-xs font-bold uppercase tracking-wider text-info/80 mb-2.5 flex items-center gap-1.5">
-                    <i class="ti ti-clock text-[11px]"></i> Запасные
-                </h3>
-                <div class="space-y-2.5">
+                <h3 class="wz-list-title"><span>Вышли на замену</span></h3>
+                <div class="wz-list">
                     {% for lp in lineup_players %}
                     {% if not lp.is_starting and lp.lineup.side == 'home' %}
                     {% include 'evaluations/_player_card.html' with lp=lp prefix="player" %}
@@ -147,8 +184,8 @@
         </div>
 
         {# Гости #}
-        <div class="space-y-4">
-            <h2 class="font-extrabold text-lg flex items-center gap-2.5 pb-3 border-b-2 border-secondary/20">
+        <div class="space-y-4 wz-team" data-team="away">
+            <h2 class="wz-team-title">
                 {% if match.away_team.logo_display %}
                 {# alt="" — герб декоративный. #}
                 <img src="{{ match.away_team.logo_display }}" alt="" class="w-6 h-6 object-contain">
@@ -158,10 +195,8 @@
 
             {# Старт #}
             <div>
-                <h3 class="text-xs font-bold uppercase tracking-wider text-success/80 mb-2.5 flex items-center gap-1.5">
-                    <i class="ti ti-circle-dot text-[7px]"></i> Стартовый состав
-                </h3>
-                <div class="space-y-2.5">
+                <h3 class="wz-list-title"><span>Стартовый состав</span><span class="inline-flex items-center gap-1">По статистике{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.player.stat_rating %}</span></h3>
+                <div class="wz-list">
                     {% for lp in lineup_players %}
                     {% if lp.is_starting and lp.lineup.side == 'away' %}
                     {% include 'evaluations/_player_card.html' with lp=lp prefix="player" %}
@@ -172,10 +207,8 @@
 
             {# Запас #}
             <div>
-                <h3 class="text-xs font-bold uppercase tracking-wider text-info/80 mb-2.5 flex items-center gap-1.5">
-                    <i class="ti ti-clock text-[11px]"></i> Запасные
-                </h3>
-                <div class="space-y-2.5">
+                <h3 class="wz-list-title"><span>Вышли на замену</span></h3>
+                <div class="wz-list">
                     {% for lp in lineup_players %}
                     {% if not lp.is_starting and lp.lineup.side == 'away' %}
                     {% include 'evaluations/_player_card.html' with lp=lp prefix="player" %}
@@ -225,6 +258,20 @@
                 if (e.target.type === 'range') setTimeout(updateCounter, 0);
             });
         }
+
+        // Переключатель команд (телефон и планшет).
+        document.querySelectorAll('[data-team-tab]').forEach(function (tab) {
+            tab.addEventListener('click', function () {
+                document.querySelectorAll('[data-team-tab]').forEach(function (t) {
+                    const on = t === tab;
+                    t.classList.toggle('is-active', on);
+                    t.setAttribute('aria-selected', on ? 'true' : 'false');
+                });
+                document.querySelectorAll('.wz-team').forEach(function (team) {
+                    team.classList.toggle('is-active', team.dataset.team === tab.dataset.teamTab);
+                });
+            });
+        });
 
         // === Лучший/худший игрок ===
         // Заполняем поля обычной карточки игрока значениями пресета и включаем тумблер.
@@ -279,6 +326,52 @@
             if (lastBest) applyPreset(lastBest, BEST_PRESET);
             syncDisabledOptions();
         });
+        // Лист выбора: строка «Лучший/Худший» открывает список состава, выбор пишет в скрытый select.
+        const sheet = document.getElementById('wz-pick-sheet');
+        const sheetTitle = document.getElementById('wz-pick-title');
+        let pickKind = null;
+        const selectFor = (kind) => (kind === 'best' ? bestSelect : worstSelect);
+        function renderPickButtons() {
+            document.querySelectorAll('[data-pick]').forEach(function (btn) {
+                const sel = selectFor(btn.dataset.pick);
+                const row = sel.value && sheet.querySelector('[data-player-id="' + sel.value + '"]');
+                const value = btn.querySelector('[data-pick-value]');
+                value.textContent = row ? row.dataset.label : 'Выбрать';
+                btn.classList.toggle('is-set', !!row);
+            });
+        }
+        function openPick(kind) {
+            pickKind = kind;
+            sheetTitle.textContent = kind === 'best' ? 'Лучший игрок матча' : 'Худший игрок матча';
+            const own = selectFor(kind).value;
+            const other = selectFor(kind === 'best' ? 'worst' : 'best').value;
+            sheet.querySelectorAll('[data-player-id]').forEach(function (row) {
+                row.classList.toggle('is-selected', row.dataset.playerId === own);
+                row.disabled = !!other && row.dataset.playerId === other;
+            });
+            sheet.classList.add('is-open');
+            sheet.setAttribute('aria-hidden', 'false');
+        }
+        function closePick() {
+            sheet.classList.remove('is-open');
+            sheet.setAttribute('aria-hidden', 'true');
+        }
+        document.querySelectorAll('[data-pick]').forEach(function (btn) {
+            btn.addEventListener('click', function () { openPick(btn.dataset.pick); });
+        });
+        sheet.querySelectorAll('[data-pick-close]').forEach(function (el) { el.addEventListener('click', closePick); });
+        document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && sheet.classList.contains('is-open')) closePick(); });
+        sheet.querySelectorAll('[data-player-id]').forEach(function (row) {
+            row.addEventListener('click', function () {
+                const sel = selectFor(pickKind);
+                // Повторное нажатие на выбранного — снять выбор.
+                sel.value = sel.value === row.dataset.playerId ? '' : row.dataset.playerId;
+                sel.dispatchEvent(new Event('change', { bubbles: true }));
+                renderPickButtons();
+                closePick();
+            });
+        });
+
         worstSelect.addEventListener('change', function () {
             resetPlayer(lastWorst);
             lastWorst = worstSelect.value;

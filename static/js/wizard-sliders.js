@@ -40,13 +40,12 @@
         }
         addFormNote(el);
 
-        el.addEventListener('input', function markTouched() {
+        el.addEventListener('input', function () {
             hidden.value = '1';
             card.classList.remove('wz-slider-card--untouched');
             if (value) {
                 value.textContent = el.value;
             }
-            el.removeEventListener('input', markTouched);
         });
     }
 
@@ -85,6 +84,22 @@
     // Пресеты режима «Быстро»: data-wz-preset-value — процент (0-100) шкалы каждого слайдера
     // в [data-wz-preset-scope]. data-wz-invert="true" — слайдер двигается в обратную сторону.
     // Шлём настоящее 'input', чтобы сработали все обработчики.
+    // Ручное движение ползунка после быстрой кнопки — это уже своя оценка: подсветку кнопки снимаем.
+    let applyingPreset = false;
+    document.addEventListener('input', function (e) {
+        if (applyingPreset || !e.target.classList || !e.target.classList.contains('wizard-slider')) {
+            return;
+        }
+        const scope = e.target.closest('[data-wz-preset-scope]');
+        if (!scope) {
+            return;
+        }
+        scope.querySelectorAll('[data-wz-preset-value].btn-primary').forEach(function (b) {
+            b.classList.remove('btn-primary');
+            b.classList.add('btn-outline');
+        });
+    });
+
     document.addEventListener('click', function (e) {
         const btn = e.target.closest('[data-wz-preset-value]');
         if (!btn) {
@@ -95,6 +110,7 @@
             return;
         }
         const pct = parseFloat(btn.dataset.wzPresetValue);
+        applyingPreset = true;
         scope.querySelectorAll('.wizard-slider').forEach(function (slider) {
             const min = parseFloat(slider.min || '0');
             const max = parseFloat(slider.max || '100');
@@ -105,6 +121,7 @@
             slider.value = Math.min(max, Math.max(min, raw));
             slider.dispatchEvent(new Event('input', { bubbles: true }));
         });
+        applyingPreset = false;
         scope.querySelectorAll('[data-wz-preset-value]').forEach(function (b) {
             b.classList.toggle('btn-primary', b === btn);
             b.classList.toggle('btn-outline', b !== btn);
