@@ -1706,8 +1706,8 @@ html[data-mourning] { filter: grayscale(1); }
 .dx-drawer__backdrop {
     position: absolute;
     inset: 0;
-    background: rgb(0 0 0 / .42);
-    backdrop-filter: blur(3px);
+    /* Лёгкое затемнение без размытия: страница под окном остаётся читаемой. */
+    background: color-mix(in oklab, var(--color-base-content) 20%, transparent);
     opacity: 0;
     transition: opacity .3s ease;
 }
@@ -1739,9 +1739,16 @@ html[data-mourning] { filter: grayscale(1); }
     background: color-mix(in oklab, var(--color-base-content) 18%, transparent);
 }
 .dx-drawer.is-open .dx-drawer__panel { transform: none; }
-/* Без overflow: hidden на странице (на iPhone она от этого прыгает): фон не принимает касания, прокрутка листа не уходит странице. */
+/* Окно открыто: страница под ним зафиксирована на месте (static/js/sheets.js запоминает и возвращает прокрутку). */
+html.dx-scroll-lock body { position: fixed; left: 0; right: 0; width: 100%; overflow: hidden; }
 .dx-drawer__backdrop, .nf-backdrop { touch-action: none; overscroll-behavior: contain; }
 .dx-drawer__scroll, .nf-panel__list { overscroll-behavior: contain; }
+/* Шапка и ручка окна — зона свайпа вниз: браузер на них ничего не прокручивает. */
+.dx-drawer__grabber, .dx-drawer__head, .nf-panel__grabber, .nf-panel__head { touch-action: none; }
+/* Окно уходит вниз вслед за пальцем без задержки переходов. */
+.dx-drawer__panel, .nf-pop { will-change: transform; }
+/* Модалки на телефоне: то же лёгкое затемнение. */
+.modal.modal-open { background-color: color-mix(in oklab, var(--color-base-content) 22%, transparent); }
 @media (prefers-reduced-motion: reduce) { .dx-drawer__panel, .dx-drawer__backdrop { transition: none; } }
 
 .dx-drawer__head { display: flex; align-items: center; justify-content: space-between; padding: .35rem .85rem .5rem 1rem; }
@@ -2745,7 +2752,7 @@ button.nf-item__hit:hover { background: color-mix(in oklab, var(--color-base-con
 .nf-pop-enter, .nf-pop-leave { transition: opacity .18s ease, transform .22s cubic-bezier(.16, 1, .3, 1); }
 .nf-pop-from { opacity: 0; transform: translateY(-4px) scale(.98); }
 .nf-pop-to { opacity: 1; transform: none; }
-.nf-backdrop { position: fixed; inset: 0; z-index: 95; background: rgb(0 0 0 / .42); }
+.nf-backdrop { position: fixed; inset: 0; z-index: 95; background: color-mix(in oklab, var(--color-base-content) 20%, transparent); }
 @media (max-width: 639px) {
   .nf-pop { position: fixed; top: auto; left: 0; right: 0; bottom: 0; width: auto; max-height: 86vh; border-radius: 1.6rem 1.6rem 0 0; border: 0;
             padding-bottom: env(safe-area-inset-bottom); display: flex; flex-direction: column; transform-origin: bottom center; }

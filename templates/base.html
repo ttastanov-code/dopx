@@ -56,6 +56,7 @@
     <script defer src="{% static_v 'vendor/idiomorph/idiomorph.min.js' %}"></script>
     <script defer src="{% static_v 'js/live-refresh.js' %}"></script>
     <script defer src="{% static_v 'js/nav-contrast.js' %}"></script>
+    <script defer src="{% static_v 'js/sheets.js' %}"></script>
     <script defer src="{% static_v 'vendor/alpine/alpine-collapse.min.js' %}"></script>
     {# alpine-components.js — до ядра Alpine, иначе компоненты не успеют зарегистрироваться. #}
     <script defer src="{% static_v 'js/alpine-components.js' %}"></script>
@@ -396,11 +397,14 @@
             body.dopx-loading #global-loader { animation: none; background-size: 100% 100%; }
         }
         #global-loader-logo {
-            position: fixed; top: 5.25rem; left: 50%; z-index: 100; padding: .45rem; border-radius: 1rem; pointer-events: none;
-            background: color-mix(in oklab, var(--color-base-100) 92%, transparent); box-shadow: 0 12px 32px -12px rgb(0 0 0 / .35);
-            opacity: 0; transform: translate(-50%, -6px) scale(.92); transition: opacity .2s ease, transform .25s cubic-bezier(.16, 1, .3, 1);
+            position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; pointer-events: none;
+            background: color-mix(in oklab, var(--color-base-100) 28%, transparent);
+            -webkit-backdrop-filter: blur(2.5px); backdrop-filter: blur(2.5px);
+            opacity: 0; visibility: hidden; transition: opacity .25s ease, visibility 0s linear .25s;
         }
-        body.dopx-loading-slow #global-loader-logo { opacity: 1; transform: translate(-50%, 0) scale(1); }
+        body.dopx-loading-slow #global-loader-logo { opacity: 1; visibility: visible; transition: opacity .25s ease; }
+        #global-loader-logo .dx-logo-spin { transform: scale(.9); transition: transform .3s cubic-bezier(.16, 1, .3, 1); }
+        body.dopx-loading-slow #global-loader-logo .dx-logo-spin { transform: none; }
         {% block extra_style %}{% endblock %}
     </style>
 </head>
@@ -457,8 +461,8 @@
     {% include 'components/_cookie_banner.html' %}
     {# Индикатор загрузки: тонкая полоса сверху, только если запрос дольше LOADER_DELAY_MS. #}
     <div id="global-loader" aria-hidden="true"></div>
-    {# Долгая загрузка (дольше SLOW_LOADER_MS): анимированный знак DOPX под шапкой. #}
-    <div id="global-loader-logo" aria-hidden="true">{% include 'components/_brand_loader.html' with size=34 uid='global' %}</div>
+    {# Долгая загрузка (дольше SLOW_LOADER_MS): фон слегка размывается, знак DOPX крутится по центру экрана. #}
+    <div id="global-loader-logo" aria-hidden="true">{% include 'components/_brand_loader.html' with size=64 uid='global' %}</div>
     {% endblock %}
     {# tooltipTrigger — в alpine-components.js. #}
     {# Скрипты #}
@@ -513,7 +517,7 @@
             if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || !el.href) return;
             e.preventDefault();
             const wait = Math.max(0, SPIN_MIN_MS - (performance.now() - Number(el.dataset.spinAt || 0)));
-            setTimeout(() => { window.location.href = el.href; }, wait);
+            setTimeout(() => { startSlow(); window.location.href = el.href; }, wait);
         });
         let pendingRequests = 0;
         function isBackgroundPoll(event) {

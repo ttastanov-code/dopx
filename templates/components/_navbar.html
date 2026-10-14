@@ -232,26 +232,8 @@ document.addEventListener('DOMContentLoaded', function () {
         if (current === menu) close(menu); else open(menu);
     }));
     sheets.forEach((menu) => {
-        const panel = menu.querySelector('.dx-drawer__panel');
-        const scroller = menu.querySelector('.dx-drawer__scroll');
         menu.querySelectorAll('[data-drawer-close], a').forEach((el) => el.addEventListener('click', () => close(menu)));
-        // Свайп вниз — закрыть (если список прокручен в самый верх); лист следует за пальцем.
-        let startY = null, dy = 0;
-        panel.addEventListener('touchstart', (e) => {
-            if (scroller.scrollTop > 0 && scroller.contains(e.target)) return;
-            startY = e.touches[0].clientY; dy = 0; panel.style.transition = 'none';
-        }, { passive: true });
-        panel.addEventListener('touchmove', (e) => {
-            if (startY === null) return;
-            dy = Math.max(0, e.touches[0].clientY - startY);
-            panel.style.transform = `translateY(${dy}px)`;
-        }, { passive: true });
-        panel.addEventListener('touchend', () => {
-            if (startY === null) return;
-            panel.style.transition = '';
-            if (dy > 90) close(menu); else panel.style.transform = '';
-            startY = null;
-        });
+        // Закрытие свайпом вниз — static/js/sheets.js.
     });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && current) close(); });
 });
