@@ -42,10 +42,9 @@
                         </div>
                     </div>
                     {# Итоговый рейтинг судьи с тултипом формулы. #}
-                    <div class="stat relative bg-base-200 rounded-lg p-2 md:p-3">
-                        <div class="absolute top-2 right-2 z-10">{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.referee.performance_score %}</div>
-                        <div class="stat-title text-xs pr-4">Итоговый рейтинг</div>
-                        <div class="stat-value text-lg md:text-xl text-info">
+                    <div class="pl-stat bg-base-200">
+                        <div class="pl-stat__head"><span>Итоговый рейтинг</span>{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.referee.performance_score %}</div>
+                        <div class="pl-stat__value text-info">
                             {% if stats.avg_performance_score %}{{ stats.avg_performance_score|floatformat:1 }}{% else %}-{% endif %}
                         </div>
                     </div>

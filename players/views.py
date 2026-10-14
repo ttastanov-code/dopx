@@ -18,7 +18,7 @@ from core.models import get_setting
 from evaluations.models import PlayerEvaluation
 from lineups.models import MatchLineupPlayer
 from players.positions import (
-    position_label, clean_position_code, LABEL_TO_CODES,
+    position_label, clean_position_code, LABEL_TO_CODES, POSITION_GROUPS,
     player_position_breakdown, player_position_display_code,
 )
 from seasons.models import Season
@@ -89,9 +89,9 @@ class PlayerListView(ListView):
         if team_id:
             queryset = queryset.filter(team_id=team_id)
         
-        # Фильтр по позиции: подпись -> все её коды (LABEL_TO_CODES).
+        # Фильтр по линии (POSITION_GROUPS); старые ссылки с точной подписью — через LABEL_TO_CODES.
         position_label_selected = self.request.GET.get('position')
-        codes = LABEL_TO_CODES.get(position_label_selected, [])
+        codes = dict(POSITION_GROUPS).get(position_label_selected) or LABEL_TO_CODES.get(position_label_selected, [])
         if codes:
             code_filter = Q()
             for code in codes:
@@ -137,16 +137,17 @@ class PlayerListView(ListView):
             ).distinct().order_by('name')
         else:
             context['teams'] = Team.objects.all().order_by('name')
-        # Уникальные подписи позиций, только реально встречающиеся.
+        # Линии, в которых есть игроки, — в футбольном порядке.
         existing_codes = {
             clean_position_code(p)
             for p in Player.objects.exclude(position='').values_list('position', flat=True).distinct()
         }
-        context['positions'] = sorted(
-            label for label, codes in LABEL_TO_CODES.items()
-            if existing_codes & set(codes)
-        )
+        context['positions'] = [label for label, codes in POSITION_GROUPS if existing_codes & set(codes)]
         return context
+
+
+# Доля голов сезона с указанным ассистентом, при которой передачам можно доверять.
+ASSIST_COVERAGE_MIN = 0.6
 
 
 class PlayerDetailView(DetailView):
@@ -275,24 +276,63 @@ class PlayerDetailView(DetailView):
                     'season': season,
                     'team': entry.lineup.team,
                     'matches_played': 0,
+                    'starts': 0,
+                    'minutes': 0,
                     'goals': 0,
+                    'assists': 0,
+                    'yellow': 0,
+                    'red': 0,
+                    'rating': None,
                     'latest_match_at': match.start_time,
                 }
                 match_ids_by_stint[key] = []
-            stints[key]['matches_played'] += 1
+            st = stints[key]
+            st['matches_played'] += 1
+            st['starts'] += 1 if entry.is_starting else 0
+            # Минуты по составу: без добавленного времени.
+            came_in = 0 if entry.is_starting else (entry.minute_in or 0)
+            st['minutes'] += max(0, min(entry.minute_out or 90, 90) - min(came_in, 90))
             match_ids_by_stint[key].append(match.id)
 
         if stints:
             from events.models import MatchEvent
-            goals_by_match = dict(
-                MatchEvent.objects.filter(
-                    player=player,
-                    event_type__in=['goal', 'penalty'],
-                    match_id__in=[mid for ids in match_ids_by_stint.values() for mid in ids],
-                ).values('match_id').annotate(c=Count('id')).values_list('match_id', 'c')
-            )
+
+            all_ids = [mid for ids in match_ids_by_stint.values() for mid in ids]
+            events = MatchEvent.objects.filter(match_id__in=all_ids).filter(Q(player=player) | Q(assist_player=player))
+            per_match: dict = {}
+            for match_id, kind, scorer_id, assist_id in events.values_list('match_id', 'event_type', 'player_id', 'assist_player_id'):
+                row = per_match.setdefault(match_id, {'goals': 0, 'assists': 0, 'yellow': 0, 'red': 0})
+                if kind in ('goal', 'penalty') and scorer_id == player.id:
+                    row['goals'] += 1
+                elif kind in ('goal', 'penalty') and assist_id == player.id:
+                    row['assists'] += 1
+                elif kind == 'yellow_card' and scorer_id == player.id:
+                    row['yellow'] += 1
+                elif kind == 'red_card' and scorer_id == player.id:
+                    row['red'] += 1
+            rated = PlayerMatchAggregate.objects.filter(
+                published_q(), player=player, match_id__in=all_ids, total_votes__gte=min_votes_for_display(),
+            ).values_list('match_id', 'performance_score', 'total_votes')
+            rating_by_match = {mid: (score, votes) for mid, score, votes in rated}
+            # Передачи — только за сезоны, где поставщик указывал ассистентов у большинства голов.
+            season_ids = {key[0] for key in stints}
+            coverage = {
+                row['match__season_id']: (row['total'], row['with_assist'])
+                for row in MatchEvent.objects.filter(match__season_id__in=season_ids, event_type='goal')
+                .values('match__season_id')
+                .annotate(total=Count('id'), with_assist=Count('id', filter=Q(assist_player__isnull=False)))
+            }
             for key, match_ids in match_ids_by_stint.items():
-                stints[key]['goals'] = sum(goals_by_match.get(mid, 0) for mid in match_ids)
+                total, with_assist = coverage.get(key[0], (0, 0))
+                stints[key]['assists_known'] = bool(total) and with_assist / total >= ASSIST_COVERAGE_MIN
+                for field in ('goals', 'assists', 'yellow', 'red'):
+                    stints[key][field] = sum(per_match.get(mid, {}).get(field, 0) for mid in match_ids)
+                # Рейтинг за сезон в клубе — средний с весом по голосам.
+                pairs = [rating_by_match[mid] for mid in match_ids if mid in rating_by_match]
+                votes = sum(v for _s, v in pairs)
+                if votes:
+                    stints[key]['rating'] = round(sum(sc * v for sc, v in pairs) / votes, 1)
+                    stints[key]['rated_matches'] = len(pairs)
 
         # Внутри сезона — по дате последнего матча, текущий клуб первым.
         career_by_season = sorted(

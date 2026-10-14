@@ -1,6 +1,4 @@
 # notifications/views.py
-from datetime import timedelta
-
 from django.shortcuts import redirect, get_object_or_404
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.views.generic import ListView, View
@@ -10,103 +8,118 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.contrib.admin.views.decorators import staff_member_required
 from django.http import FileResponse, Http404, HttpResponse
 from django.template.loader import render_to_string
-from django.db.models import Q
-from urllib.parse import urlencode
 from core.models import get_setting
 from .models import Notification
 
 
+MONTHS_NOM = ["", "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь",
+              "Октябрь", "Ноябрь", "Декабрь"]
+
+
+def _day_group(created_at, today) -> str:
+    """Подпись группы ленты: Сегодня, Вчера, На этой неделе, затем месяцы."""
+    day = timezone.localtime(created_at).date()
+    delta = (today - day).days
+    if delta <= 0:
+        return "Сегодня"
+    if delta == 1:
+        return "Вчера"
+    if delta < 7:
+        return "На этой неделе"
+    label = MONTHS_NOM[day.month]
+    return label if day.year == today.year else f"{label} {day.year}"
+
+
+def _filtered(user, key: str):
+    from .styles import SECTIONS, TYPE_STYLE, types_in
+
+    qs = Notification.objects.filter(user=user)
+    if key == "unread":
+        return qs.filter(is_read=False)
+    if key == "service":
+        # «Сервис» — всё, что не попало в другие разделы, включая неизвестные типы.
+        known_other = [t for t, (_i, _c, sec) in TYPE_STYLE.items() if sec != "service"]
+        return qs.exclude(notification_type__in=known_other)
+    if key in dict(SECTIONS):
+        return qs.filter(notification_type__in=types_in(key))
+    return qs
+
+
 class NotificationListView(LoginRequiredMixin, ListView):
+    """Лента уведомлений: вкладки по разделам, группы по дням, «Показать ещё» без перезагрузки."""
     model = Notification
     template_name = 'notifications/list.html'
     context_object_name = 'notifications'
     paginate_by = 20
 
     def get_paginate_by(self, queryset):
-        # Размер страницы — из настроек платформы.
         return get_setting("user_notifications_page_size", self.paginate_by)
 
+    def get_template_names(self):
+        # «Показать ещё» — только следующая порция ленты.
+        if self.request.headers.get('HX-Request') and self.request.GET.get('page'):
+            return ['notifications/_feed_page.html']
+        return [self.template_name]
+
+    def current_filter(self) -> str:
+        from .styles import SECTIONS
+
+        key = self.request.GET.get('f', '')
+        # Старые ссылки ?status=unread.
+        if not key and self.request.GET.get('status') == 'unread':
+            key = 'unread'
+        return key if key in {'unread', *dict(SECTIONS)} else ''
+
     def get_queryset(self):
-        queryset = Notification.objects.filter(
-            user=self.request.user
-        ).select_related(
-            'related_match__home_team',
-            'related_match__away_team'
-        )
-        
-        # === ФИЛЬТР ПО ТИПУ ===
-        notification_type = self.request.GET.get('type')
-        if notification_type:
-            type_map = {
-                'match': ['match_finished', 'voting_open', 'voting_closing', 'aggregate_updated', 'top_performance', 'match_event'],
-                'voting': ['voting_open', 'voting_closing'],
-                'badge': ['new_badge', 'level_up'],
-                'system': ['system', 'verification_required'],
-            }
-            if notification_type in type_map:
-                queryset = queryset.filter(notification_type__in=type_map[notification_type])
-        
-        # === ФИЛЬТР ПО СТАТУСУ ПРОЧТЕНИЯ ===
-        status = self.request.GET.get('status')
-        if status == 'unread':
-            queryset = queryset.filter(is_read=False)
-        elif status == 'read':
-            queryset = queryset.filter(is_read=True)
-        
-        return queryset.order_by('-created_at')
+        return _filtered(self.request.user, self.current_filter()).select_related(
+            'related_match__home_team', 'related_match__away_team'
+        ).order_by('-created_at')
 
     def get_context_data(self, **kwargs):
+        from .styles import SECTIONS
+
         context = super().get_context_data(**kwargs)
-        
-        # Параметры фильтров для пагинации
-        query_params = self.request.GET.copy()
-        if 'page' in query_params:
-            del query_params['page']
-        context['query_params'] = f"&{query_params.urlencode()}" if query_params else ''
-        
-        context['unread_count'] = Notification.objects.filter(
-            user=self.request.user,
-            is_read=False
-        ).count()
+        user = self.request.user
+        today = timezone.localdate()
 
-        # Общее число — из context['paginator'].
-        total_count = context['paginator'].count if context.get('paginator') else context['notifications'].count()
-        context['total_count'] = total_count
-        context['read_count'] = max(total_count - context['unread_count'], 0)
+        # Группы по дням; группа, продолжающая прошлую порцию, — без заголовка.
+        groups = []
+        for n in context['notifications']:
+            label = _day_group(n.created_at, today)
+            if groups and groups[-1]['label'] == label:
+                groups[-1]['items'].append(n)
+            else:
+                groups.append({'label': label, 'items': [n]})
+        if groups and groups[0]['label'] == self.request.GET.get('g', ''):
+            groups[0]['continued'] = True
+        context['groups'] = groups
 
-        # Не |length — это только текущая страница.
-        context['week_count'] = Notification.objects.filter(
-            user=self.request.user,
-            created_at__gte=timezone.now() - timedelta(days=7)
-        ).count()
-
-        context['page_title'] = 'Уведомления — DOPX'
-        context['current_type'] = self.request.GET.get('type', '')
-        context['current_status'] = self.request.GET.get('status', '')
+        unread = Notification.objects.filter(user=user, is_read=False).count()
+        tabs = [{'key': '', 'label': 'Все', 'count': None},
+                {'key': 'unread', 'label': 'Непрочитанные', 'count': unread}]
+        # Разделы — только те, где есть уведомления.
+        for sec_key, sec_label in SECTIONS:
+            if _filtered(user, sec_key).exists():
+                tabs.append({'key': sec_key, 'label': sec_label, 'count': None})
+        context.update({
+            'tabs': tabs,
+            'current_filter': self.current_filter(),
+            'unread_count': unread,
+            'has_any': Notification.objects.filter(user=user).exists(),
+            'page_title': 'Уведомления — DOPX',
+        })
         return context
 
 
 def _oob_counters_html(user) -> str:
-    """OOB-фрагменты счётчиков после отметки прочитанным:
-    #notif-unread-badge, #notif-count-text, #stat-unread-count / #stat-read-count.
+    """OOB-счётчики после отметки прочитанным: колокольчик, шапка панели, подзаголовок и вкладка страницы.
     Отсутствующий на странице id просто игнорируется.
     """
     unread_count = user.notifications.filter(is_read=False).count()
-    total_count = user.notifications.count()
-    read_count = max(total_count - unread_count, 0)
-
     badge_html = render_to_string('components/_notification_unread_badge.html', {
         'count': unread_count, 'oob': True,
     })
-    count_text_html = (
-        f'<div class="text-xs opacity-60" id="notif-count-text" hx-swap-oob="true">'
-        f'{unread_count} непрочитанных</div>'
-    )
-    stat_cards_html = (
-        f'<div id="stat-unread-count" hx-swap-oob="true" class="text-base md:text-xl font-bold text-warning">{unread_count}</div>'
-        f'<div id="stat-read-count" hx-swap-oob="true" class="text-base md:text-xl font-bold text-success">{read_count}</div>'
-    )
-    return badge_html + count_text_html + stat_cards_html
+    return badge_html + render_to_string('notifications/_counters_oob.html', {'unread_count': unread_count})
 
 
 class MarkAsReadView(LoginRequiredMixin, View):
@@ -150,7 +163,7 @@ class MarkAllAsReadView(LoginRequiredMixin, View):
 
         if request.headers.get('HX-Request'):
             items_html = render_to_string('components/_notification_dropdown_items.html', {
-                'notifications': request.user.notifications.all()[:5],
+                'notifications': request.user.notifications.all()[:8],
                 'count': request.user.notifications.filter(is_read=False).count(),
             }, request=request)
             return HttpResponse(items_html + _oob_counters_html(request.user))
@@ -178,7 +191,7 @@ class NotificationPanelView(View):
             return HttpResponse("")
         html = render_to_string('components/_notification_panel.html', {
             'count': request.user.notifications.filter(is_read=False).count(),
-            'notifications': request.user.notifications.all()[:5],
+            'notifications': request.user.notifications.all()[:8],
         }, request=request)
         return HttpResponse(html)
 

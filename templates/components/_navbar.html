@@ -1,14 +1,16 @@
 {% load static %}
 {% load notification_extras %}
 {% load engagement_extras %}
-<div class="navbar bg-base-100/95 backdrop-blur-sm border-b border-base-300 sticky top-0 z-40 w-full px-2 sm:px-4">
+{# Стеклянное меню; цвет текста под фон — static/js/nav-contrast.js. #}
+<div class="navbar dx-glass-nav border-b border-base-300 sticky top-0 z-40 w-full px-2 sm:px-4" data-glass-nav>
     {# === СЛЕВА: бургер + лого === #}
     <div class="navbar-start flex items-center gap-2 min-w-0">
-        {# Меню (мобильные) #}
-        {# На телефоне меню открывается из нижней панели («Ещё»); бургер — на планшете и там, где панели нет. #}
-        <button id="mobile-menu-btn" class="btn btn-ghost btn-sm p-2 lg:hidden dx-burger{% if not show_tabbar %} dx-burger--always{% endif %}" aria-label="Открыть меню" data-drawer-open>
+        {# До lg навигация — в нижней панели; бургер только на страницах без неё (мастер оценки). #}
+        {% if not show_tabbar %}
+        <button id="mobile-menu-btn" class="btn btn-ghost btn-sm p-2 lg:hidden" aria-label="Открыть меню" data-drawer-open="sheet-profile">
             <i class="ti ti-menu-2 text-xl"></i>
         </button>
+        {% endif %}
         {# Логотип #}
         <a href="{% url 'core:home' %}" class="btn btn-ghost normal-case flex items-center p-1 sm:p-2 min-w-0" aria-label="DOPX: на главную">
             {% include 'components/_brand.html' with variant='nav' %}
@@ -51,16 +53,15 @@
             {% include 'components/_notification_badge.html' with count=user.unread_notifications_count %}
         {% endif %}
 
-        {# Переключатель темы #}
-        {# x-cloak — без мигания обеих иконок. #}
-        <button class="btn btn-ghost btn-circle btn-sm flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10" @click="toggleTheme()">
+        {# Переключатель темы — на ПК; на телефоне и планшете он в шторке меню. x-cloak — без мигания обеих иконок. #}
+        <button class="btn btn-ghost btn-circle btn-sm hidden lg:flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10" @click="toggleTheme()" aria-label="Сменить тему">
             <i x-show="theme === 'light'" x-cloak class="ti ti-moon text-lg sm:text-xl leading-none"></i>
             <i x-show="theme === 'dark'" x-cloak class="ti ti-sun text-lg sm:text-xl leading-none"></i>
         </button>
 
         {# Вход/регистрация #}
         {% if user.is_authenticated %}
-        <div class="dropdown dropdown-end">
+        <div class="dropdown dropdown-end hidden lg:block">
             <label tabindex="0" class="btn btn-ghost btn-circle avatar flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 p-0">
                 {% with fc=user|frame_class %}<div class="w-8 h-8 sm:w-9 sm:h-9 rounded-full overflow-hidden {% if fc %}{{ fc }}{% else %}ring ring-primary ring-offset-base-100 ring-offset-1{% endif %}">{% endwith %}
                     {% if user.avatar %}
@@ -105,23 +106,51 @@
             </div>
         </div>
         {% else %}
-        <a href="{% url 'users:login' %}" class="btn btn-ghost btn-xs sm:btn-sm hidden sm:inline-flex"><i class="ti ti-login"></i> Войти</a>
-        <a href="{% url 'users:register' %}" class="btn btn-primary btn-xs sm:btn-sm"><i class="ti ti-user-plus"></i> <span class="hidden sm:inline">Регистрация</span></a>
+        {# Телефон: одна понятная кнопка «Войти»; регистрация — на странице входа и в шторке. #}
+        <a href="{% url 'users:login' %}" class="btn btn-primary btn-sm sm:hidden"><i class="ti ti-login"></i> Войти</a>
+        <a href="{% url 'users:login' %}" class="btn btn-ghost btn-sm hidden sm:inline-flex"><i class="ti ti-login"></i> Войти</a>
+        <a href="{% url 'users:register' %}" class="btn btn-primary btn-sm hidden sm:inline-flex"><i class="ti ti-user-plus"></i> Регистрация</a>
         {% endif %}
     </div>
 </div>
 
-{# === МОБИЛЬНОЕ МЕНЮ: шторка снизу («Ещё» в нижней панели); стили — css/ui.css (dx-drawer). === #}
+{# === МОБИЛЬНАЯ НАВИГАЦИЯ: листы «Рейтинги» и «Профиль» из нижней панели (до lg). Стили — css/ui.css (dx-drawer, dx-tiles). === #}
 {% with app=request.resolver_match.app_name url_name=request.resolver_match.url_name %}
-<div id="mobile-menu" class="dx-drawer lg:hidden" aria-hidden="true">
+<div id="sheet-ratings" class="dx-drawer lg:hidden" aria-hidden="true">
     <div class="dx-drawer__backdrop" data-drawer-close></div>
-    <aside class="dx-drawer__panel" role="dialog" aria-modal="true" aria-label="Меню">
+    <aside class="dx-drawer__panel" role="dialog" aria-modal="true" aria-label="Рейтинги и статистика">
         <span class="dx-drawer__grabber" aria-hidden="true"></span>
         <header class="dx-drawer__head">
-            <a href="{% url 'core:home' %}" class="dx-drawer__brand" aria-label="DOPX: на главную">{% include 'components/_brand.html' with variant='nav' %}</a>
-            <button type="button" class="dx-drawer__close" data-drawer-close aria-label="Закрыть меню"><i class="ti ti-x"></i></button>
+            <span class="dx-drawer__heading">Рейтинги и статистика</span>
+            <button type="button" class="dx-drawer__close" data-drawer-close aria-label="Закрыть"><i class="ti ti-x"></i></button>
         </header>
+        <div class="dx-drawer__scroll">
+            <nav class="dx-tiles">
+                {% if nav_current_round %}
+                <a href="{% url 'round_squad:round' season_id=nav_current_round.season_id tour=nav_current_round.tour %}" class="dx-tile{% if app == 'round_squad' %} is-active{% endif %}" style="--c: var(--color-info)"><i class="ti ti-calendar-star"></i><b>Лучшие {{ nav_current_round.tour }}-го тура</b><span>Игрок и состав тура</span></a>
+                {% else %}
+                <a href="{% url 'round_squad:round' %}" class="dx-tile{% if app == 'round_squad' %} is-active{% endif %}" style="--c: var(--color-info)"><i class="ti ti-calendar-star"></i><b>Лучшие тура</b><span>Игрок и состав тура</span></a>
+                {% endif %}
+                <a href="{% url 'season_squad:best_xi' %}" class="dx-tile{% if app == 'season_squad' %} is-active{% endif %}" style="--c: var(--color-warning)"><i class="ti ti-shirt"></i><b>Сборная DOPX</b><span>Лучший состав сезона</span></a>
+                <a href="{% url 'leagues:list' %}" class="dx-tile{% if app == 'leagues' %} is-active{% endif %}" style="--c: var(--color-success)"><i class="ti ti-table"></i><b>Таблица</b><span>Лиги и номинации</span></a>
+                <a href="{% url 'users:leaderboard' %}" class="dx-tile{% if url_name == 'leaderboard' or url_name == 'city_leaderboard' %} is-active{% endif %}" style="--c: var(--color-error)"><i class="ti ti-users-group"></i><b>Болельщики</b><span>Рейтинг и битва городов</span></a>
+                <a href="{% url 'players:list' %}" class="dx-tile{% if app == 'players' or url_name == 'player_leaderboard' %} is-active{% endif %}" style="--c: var(--color-secondary)"><i class="ti ti-play-football"></i><b>Игроки</b><span>Оценки и статистика</span></a>
+                <a href="{% url 'teams:list' %}" class="dx-tile{% if app == 'teams' %} is-active{% endif %}" style="--c: var(--color-primary)"><i class="ti ti-shirt-sport"></i><b>Команды</b><span>Рейтинг и форма</span></a>
+                <a href="{% url 'coaches:list' %}" class="dx-tile{% if app == 'coaches' %} is-active{% endif %}" style="--c: var(--color-accent)"><i class="ti ti-clipboard-list"></i><b>Тренеры</b><span>Тактика и замены</span></a>
+                <a href="{% url 'referees:list' %}" class="dx-tile{% if app == 'referees' %} is-active{% endif %}" style="--c: var(--color-info)"><i class="ti ti-gavel"></i><b>Судьи</b><span>Качество решений</span></a>
+            </nav>
+        </div>
+    </aside>
+</div>
 
+<div id="sheet-profile" class="dx-drawer lg:hidden" aria-hidden="true">
+    <div class="dx-drawer__backdrop" data-drawer-close></div>
+    <aside class="dx-drawer__panel" role="dialog" aria-modal="true" aria-label="{% if user.is_authenticated %}Профиль{% else %}Вход{% endif %}">
+        <span class="dx-drawer__grabber" aria-hidden="true"></span>
+        <header class="dx-drawer__head">
+            <span class="dx-drawer__heading">{% if user.is_authenticated %}Профиль{% else %}DOPX{% endif %}</span>
+            <button type="button" class="dx-drawer__close" data-drawer-close aria-label="Закрыть"><i class="ti ti-x"></i></button>
+        </header>
         <div class="dx-drawer__scroll">
             {% if user.is_authenticated %}
             <a href="{% url 'users:profile' %}" class="dx-drawer__me">
@@ -133,6 +162,15 @@
                 </span>
                 <i class="ti ti-chevron-right dx-drawer__chev"></i>
             </a>
+            <nav class="dx-drawer__group dx-drawer__group--mt">
+                <a href="{% url 'engagement:season_pass' %}" class="dx-drawer__row{% if url_name == 'season_pass' %} is-active{% endif %}"><span class="dx-drawer__ico" style="--c: var(--color-warning)"><i class="ti ti-ticket"></i></span>Абонемент<i class="ti ti-chevron-right dx-drawer__chev"></i></a>
+                <a href="{% url 'engagement:friend_leagues' %}" class="dx-drawer__row{% if app == 'engagement' and url_name != 'season_pass' and url_name != 'invite' %} is-active{% endif %}"><span class="dx-drawer__ico" style="--c: var(--color-primary)"><i class="ti ti-users-group"></i></span>Лиги с друзьями<i class="ti ti-chevron-right dx-drawer__chev"></i></a>
+                <a href="{% url 'engagement:invite' %}" class="dx-drawer__row{% if url_name == 'invite' %} is-active{% endif %}"><span class="dx-drawer__ico" style="--c: var(--color-success)"><i class="ti ti-user-plus"></i></span>Пригласить друзей<i class="ti ti-chevron-right dx-drawer__chev"></i></a>
+                <a href="{% url 'users:notification_settings' %}" class="dx-drawer__row{% if url_name == 'notification_settings' %} is-active{% endif %}"><span class="dx-drawer__ico" style="--c: var(--color-base-content)"><i class="ti ti-bell-cog"></i></span>Настройки уведомлений<i class="ti ti-chevron-right dx-drawer__chev"></i></a>
+                {% if user.is_staff %}
+                <a href="{% url 'dashboard:overview' %}" class="dx-drawer__row"><span class="dx-drawer__ico" style="--c: var(--color-info)"><i class="ti ti-layout-dashboard"></i></span>Дашборд<i class="ti ti-chevron-right dx-drawer__chev"></i></a>
+                {% endif %}
+            </nav>
             {% else %}
             <div class="dx-drawer__guest">
                 <div class="dx-drawer__guest-title">Голос трибун — измеряем в цифрах</div>
@@ -143,36 +181,13 @@
                 </div>
             </div>
             {% endif %}
-
-            {% if user.is_authenticated %}
-            <nav class="dx-drawer__group dx-drawer__group--mt">
-                <a href="{% url 'engagement:season_pass' %}" class="dx-drawer__row{% if url_name == 'season_pass' %} is-active{% endif %}"><span class="dx-drawer__ico" style="--c: var(--color-warning)"><i class="ti ti-ticket"></i></span>Абонемент<i class="ti ti-chevron-right dx-drawer__chev"></i></a>
-                <a href="{% url 'engagement:friend_leagues' %}" class="dx-drawer__row{% if app == 'engagement' and url_name != 'season_pass' and url_name != 'invite' %} is-active{% endif %}"><span class="dx-drawer__ico" style="--c: var(--color-primary)"><i class="ti ti-users-group"></i></span>Лиги с друзьями<i class="ti ti-chevron-right dx-drawer__chev"></i></a>
-                <a href="{% url 'engagement:invite' %}" class="dx-drawer__row{% if url_name == 'invite' %} is-active{% endif %}"><span class="dx-drawer__ico" style="--c: var(--color-success)"><i class="ti ti-user-plus"></i></span>Пригласить друзей<span class="dx-drawer__tag">+100 XP</span><i class="ti ti-chevron-right dx-drawer__chev"></i></a>
-                <a href="{% url 'notifications:list' %}" class="dx-drawer__row{% if app == 'notifications' %} is-active{% endif %}"><span class="dx-drawer__ico" style="--c: var(--color-error)"><i class="ti ti-bell"></i></span>Уведомления{% with unread=user.unread_notifications_count %}{% if unread %}<b class="dx-drawer__count">{{ unread }}</b>{% endif %}{% endwith %}<i class="ti ti-chevron-right dx-drawer__chev"></i></a>
-                <a href="{% url 'users:notification_settings' %}" class="dx-drawer__row{% if url_name == 'notification_settings' %} is-active{% endif %}"><span class="dx-drawer__ico" style="--c: var(--color-base-content)"><i class="ti ti-settings"></i></span>Настройки уведомлений<i class="ti ti-chevron-right dx-drawer__chev"></i></a>
-            </nav>
-            {% endif %}
-
-            <div class="dx-drawer__group-title">Статистика</div>
-            <nav class="dx-drawer__group">
-                <a href="{% url 'leagues:list' %}" class="dx-drawer__row{% if app == 'leagues' %} is-active{% endif %}"><span class="dx-drawer__ico" style="--c: var(--color-warning)"><i class="ti ti-trophy"></i></span>Лиги и таблицы<i class="ti ti-chevron-right dx-drawer__chev"></i></a>
-                <a href="{% url 'teams:list' %}" class="dx-drawer__row{% if app == 'teams' %} is-active{% endif %}"><span class="dx-drawer__ico" style="--c: var(--color-primary)"><i class="ti ti-shirt-sport"></i></span>Команды<i class="ti ti-chevron-right dx-drawer__chev"></i></a>
-                <a href="{% url 'players:list' %}" class="dx-drawer__row{% if app == 'players' %} is-active{% endif %}"><span class="dx-drawer__ico" style="--c: var(--color-secondary)"><i class="ti ti-play-football"></i></span>Игроки<i class="ti ti-chevron-right dx-drawer__chev"></i></a>
-                <a href="{% url 'coaches:list' %}" class="dx-drawer__row{% if app == 'coaches' %} is-active{% endif %}"><span class="dx-drawer__ico" style="--c: var(--color-accent)"><i class="ti ti-clipboard-list"></i></span>Тренеры<i class="ti ti-chevron-right dx-drawer__chev"></i></a>
-                <a href="{% url 'referees:list' %}" class="dx-drawer__row{% if app == 'referees' %} is-active{% endif %}"><span class="dx-drawer__ico" style="--c: var(--color-info)"><i class="ti ti-cards"></i></span>Судьи<i class="ti ti-chevron-right dx-drawer__chev"></i></a>
-                <a href="{% url 'season_squad:best_xi' %}" class="dx-drawer__row{% if app == 'season_squad' %} is-active{% endif %}"><span class="dx-drawer__ico" style="--c: var(--color-warning)"><i class="ti ti-shirt"></i></span>Сборная DOPX сезона<i class="ti ti-chevron-right dx-drawer__chev"></i></a>
-                <a href="{% url 'users:leaderboard' %}" class="dx-drawer__row{% if url_name == 'leaderboard' or url_name == 'city_leaderboard' %} is-active{% endif %}"><span class="dx-drawer__ico" style="--c: var(--color-success)"><i class="ti ti-users-group"></i></span>Рейтинг болельщиков<i class="ti ti-chevron-right dx-drawer__chev"></i></a>
-            </nav>
-
             <div class="dx-drawer__group-title">О DOPX</div>
             <nav class="dx-drawer__group">
-                <a href="{% url 'core:rules' %}" class="dx-drawer__row{% if url_name == 'rules' %} is-active{% endif %}"><span class="dx-drawer__ico" style="--c: var(--color-base-content)"><i class="ti ti-file-text"></i></span>Правила<i class="ti ti-chevron-right dx-drawer__chev"></i></a>
-                <a href="{% url 'core:anti_fraud' %}" class="dx-drawer__row{% if url_name == 'anti_fraud' %} is-active{% endif %}"><span class="dx-drawer__ico" style="--c: var(--color-error)"><i class="ti ti-shield-check"></i></span>Как мы боремся с накруткой<i class="ti ti-chevron-right dx-drawer__chev"></i></a>
-                <a href="{% url 'core:contacts' %}" class="dx-drawer__row{% if url_name == 'contacts' %} is-active{% endif %}"><span class="dx-drawer__ico" style="--c: var(--color-primary)"><i class="ti ti-message-circle"></i></span>Связаться с нами<i class="ti ti-chevron-right dx-drawer__chev"></i></a>
+                <a href="{% url 'core:rules' %}" class="dx-drawer__row{% if url_name == 'rules' %} is-active{% endif %}"><span class="dx-drawer__ico" style="--c: var(--color-base-content)"><i class="ti ti-file-text"></i></span>Правила и как считаем<i class="ti ti-chevron-right dx-drawer__chev"></i></a>
+                <a href="{% url 'core:anti_fraud' %}" class="dx-drawer__row{% if url_name == 'anti_fraud' %} is-active{% endif %}"><span class="dx-drawer__ico" style="--c: var(--color-error)"><i class="ti ti-shield-check"></i></span>Защита от накрутки<i class="ti ti-chevron-right dx-drawer__chev"></i></a>
+                <a href="{% url 'core:contacts' %}" class="dx-drawer__row{% if url_name == 'contacts' %} is-active{% endif %}"><span class="dx-drawer__ico" style="--c: var(--color-primary)"><i class="ti ti-message-circle"></i></span>Контакты<i class="ti ti-chevron-right dx-drawer__chev"></i></a>
             </nav>
         </div>
-
         <footer class="dx-drawer__foot">
             <div class="dx-drawer__seg" role="radiogroup" aria-label="Тема">
                 <button type="button" role="radio" @click="setLight()" :class="isLight && 'is-on'" :aria-checked="isLight"><i class="ti ti-sun"></i>Светлая</button>
@@ -187,49 +202,57 @@
     </aside>
 </div>
 {% endwith %}
-
-{# === Мобильное меню: открытие ([data-drawer-open]), закрытие (фон, Escape, ссылка, свайп вниз). === #}
+{# === Листы: открытие [data-drawer-open="id"], закрытие (фон, Escape, ссылка, свайп вниз). === #}
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    const menu = document.getElementById('mobile-menu');
-    if (!menu) return;
-    const panel = menu.querySelector('.dx-drawer__panel');
-    const scroller = menu.querySelector('.dx-drawer__scroll');
-
-    function open(event) {
-        if (event) event.preventDefault();
-        menu.classList.add('is-open');
-        menu.setAttribute('aria-hidden', 'false');
-        document.documentElement.classList.add('dx-drawer-lock');
-        setTimeout(() => menu.querySelector('.dx-drawer__close').focus({ preventScroll: true }), 300);
-    }
-    function close() {
+    const sheets = document.querySelectorAll('.dx-drawer');
+    let current = null;
+    function close(menu) {
+        menu = menu || current;
+        if (!menu) return;
         menu.classList.remove('is-open');
         menu.setAttribute('aria-hidden', 'true');
-        document.documentElement.classList.remove('dx-drawer-lock');
-        panel.style.transform = '';
+        menu.querySelector('.dx-drawer__panel').style.transform = '';
+        document.querySelectorAll('[data-drawer-open="' + menu.id + '"]').forEach((b) => b.setAttribute('aria-expanded', 'false'));
+        current = null;
     }
-
-    document.querySelectorAll('[data-drawer-open]').forEach((el) => el.addEventListener('click', open));
-    menu.querySelectorAll('[data-drawer-close], a').forEach((el) => el.addEventListener('click', close));
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && menu.classList.contains('is-open')) close(); });
-
-    // Свайп вниз — закрыть (если список прокручен в самый верх); шторка следует за пальцем.
-    let startY = null, dy = 0;
-    panel.addEventListener('touchstart', (e) => {
-        if (scroller.scrollTop > 0 && scroller.contains(e.target)) return;
-        startY = e.touches[0].clientY; dy = 0; panel.style.transition = 'none';
-    }, { passive: true });
-    panel.addEventListener('touchmove', (e) => {
-        if (startY === null) return;
-        dy = Math.max(0, e.touches[0].clientY - startY);
-        panel.style.transform = `translateY(${dy}px)`;
-    }, { passive: true });
-    panel.addEventListener('touchend', () => {
-        if (startY === null) return;
-        panel.style.transition = '';
-        if (dy > 90) close(); else panel.style.transform = '';
-        startY = null;
+    function open(menu) {
+        if (current && current !== menu) close(current);
+        menu.classList.add('is-open');
+        menu.setAttribute('aria-hidden', 'false');
+        document.querySelectorAll('[data-drawer-open="' + menu.id + '"]').forEach((b) => b.setAttribute('aria-expanded', 'true'));
+        current = menu;
+        setTimeout(() => menu.querySelector('.dx-drawer__close').focus({ preventScroll: true }), 300);
+    }
+    document.querySelectorAll('[data-drawer-open]').forEach((btn) => btn.addEventListener('click', (e) => {
+        const menu = document.getElementById(btn.dataset.drawerOpen);
+        if (!menu) return;
+        e.preventDefault();
+        // Повторное нажатие на ту же вкладку закрывает лист.
+        if (current === menu) close(menu); else open(menu);
+    }));
+    sheets.forEach((menu) => {
+        const panel = menu.querySelector('.dx-drawer__panel');
+        const scroller = menu.querySelector('.dx-drawer__scroll');
+        menu.querySelectorAll('[data-drawer-close], a').forEach((el) => el.addEventListener('click', () => close(menu)));
+        // Свайп вниз — закрыть (если список прокручен в самый верх); лист следует за пальцем.
+        let startY = null, dy = 0;
+        panel.addEventListener('touchstart', (e) => {
+            if (scroller.scrollTop > 0 && scroller.contains(e.target)) return;
+            startY = e.touches[0].clientY; dy = 0; panel.style.transition = 'none';
+        }, { passive: true });
+        panel.addEventListener('touchmove', (e) => {
+            if (startY === null) return;
+            dy = Math.max(0, e.touches[0].clientY - startY);
+            panel.style.transform = `translateY(${dy}px)`;
+        }, { passive: true });
+        panel.addEventListener('touchend', () => {
+            if (startY === null) return;
+            panel.style.transition = '';
+            if (dy > 90) close(menu); else panel.style.transform = '';
+            startY = null;
+        });
     });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && current) close(); });
 });
 </script>

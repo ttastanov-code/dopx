@@ -1,199 +1,54 @@
-{# Страница уведомлений. #}
 {% extends 'base.html' %}
-{% load static %}
+{% load ui_extras %}
+{# Лента уведомлений: вкладки разделов, группы по дням, «Показать ещё». #}
 {% block content %}
-{% load math_extras %}
-{# === ЗАГОЛОВОК === #}
-<div class="mb-4 md:mb-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 md:gap-4 px-2 sm:px-0">
-  <div>
-    <h1 class="text-2xl md:text-3xl font-bold flex items-center gap-2">
-      <i class="ti ti-bell text-primary"></i>
-      Уведомления
-    </h1>
-    <p class="text-xs md:text-sm opacity-60 mt-1">
-      {{ unread_count }} непрочитанных • {{ total_count|default:0 }} всего
-    </p>
-  </div>
-  {# Массовые действия — btn-outline (видны без hover). #}
-  <div class="flex gap-2 w-full md:w-auto">
-    <form method="post" action="{% url 'notifications:read-all' %}" class="inline flex-1 md:flex-initial">
-      {% csrf_token %}
-      {# Текст кнопки виден и на мобильном. #}
-      <button type="submit" class="btn btn-outline btn-sm w-full md:w-auto">
-        <i class="ti ti-checks"></i>
-        <span>Прочитать все</span>
-      </button>
-    </form>
-    <button class="btn btn-outline btn-sm" onclick="window.location.reload()" title="Обновить">
-      <i class="ti ti-refresh"></i>
-    </button>
-  </div>
-</div>
+<div class="nf-page">
+    <header class="nf-head">
+        <div class="min-w-0">
+            <h1 class="nf-head__title">Уведомления</h1>
+            <p id="notif-page-count" class="nf-head__sub">{% if unread_count %}{{ unread_count }} {{ unread_count|ru_plural:"непрочитанное,непрочитанных,непрочитанных" }}{% else %}Всё прочитано{% endif %}</p>
+        </div>
+        <div class="nf-head__actions">
+            {% if unread_count %}
+            <form method="post" action="{% url 'notifications:read-all' %}">
+                {% csrf_token %}
+                <button type="submit" class="nf-btn"><i class="ti ti-checks"></i> Прочитать все</button>
+            </form>
+            {% endif %}
+            <a href="{% url 'users:notification_settings' %}" class="nf-btn nf-btn--icon" title="Настройки уведомлений" aria-label="Настройки уведомлений"><i class="ti ti-settings"></i></a>
+        </div>
+    </header>
 
-{# === СТАТИСТИКА === #}
-<div class="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4 mb-4 md:mb-6 px-2 sm:px-0">
-  {# Все #}
-  <div class="card bg-base-100 border border-base-300">
-    <div class="card-body p-3 md:p-4">
-      <div class="flex items-center gap-2 md:gap-3">
-        <div class="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-          <i class="ti ti-bell text-primary text-sm md:text-base"></i>
-        </div>
-        <div>
-          <div class="text-[10px] md:text-xs opacity-60">Всего</div>
-          <div class="text-base md:text-xl font-bold">{{ total_count|default:0 }}</div>
-        </div>
-      </div>
-    </div>
-  </div>
-  {# Непрочитанные #}
-  <div class="card bg-base-100 border border-base-300">
-    <div class="card-body p-3 md:p-4">
-      <div class="flex items-center gap-2 md:gap-3">
-        <div class="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-warning/10 flex items-center justify-center">
-          <i class="ti ti-circle text-warning text-sm md:text-base"></i>
-        </div>
-        <div>
-          <div class="text-[10px] md:text-xs opacity-60">Непрочитанные</div>
-          <div class="text-base md:text-xl font-bold text-warning" id="stat-unread-count">{{ unread_count }}</div>
-        </div>
-      </div>
-    </div>
-  </div>
-  {# Прочитанные #}
-  <div class="card bg-base-100 border border-base-300">
-    <div class="card-body p-3 md:p-4">
-      <div class="flex items-center gap-2 md:gap-3">
-        <div class="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-success/10 flex items-center justify-center">
-          <i class="ti ti-check text-success text-sm md:text-base"></i>
-        </div>
-        <div>
-          <div class="text-[10px] md:text-xs opacity-60">Прочитанные</div>
-          <div class="text-base md:text-xl font-bold text-success" id="stat-read-count">
-            {{ read_count|default:0 }}
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-  {# За неделю #}
-  <div class="card bg-base-100 border border-base-300">
-    <div class="card-body p-3 md:p-4">
-      <div class="flex items-center gap-2 md:gap-3">
-        <div class="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-info/10 flex items-center justify-center">
-          <i class="ti ti-clock text-info text-sm md:text-base"></i>
-        </div>
-        <div>
-          <div class="text-[10px] md:text-xs opacity-60">За неделю</div>
-          <div class="text-base md:text-xl font-bold text-info">
-            {{ week_count|default:0 }}
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
+    {% if has_any %}
+    {# Вкладки прокручиваются по горизонтали на узком экране. #}
+    <nav class="nf-tabs" aria-label="Разделы уведомлений">
+        {% for tab in tabs %}
+        <a href="{% url 'notifications:list' %}{% if tab.key %}?f={{ tab.key }}{% endif %}" class="nf-tab{% if tab.key == current_filter %} is-active{% endif %}"{% if tab.key == current_filter %} aria-current="page"{% endif %}>
+            {{ tab.label }}{% if tab.key == 'unread' %}<span id="notif-tab-unread" class="nf-tab__count">{% if tab.count %}{{ tab.count }}{% endif %}</span>{% endif %}
+        </a>
+        {% endfor %}
+    </nav>
+    {% endif %}
 
-{# === ФИЛЬТРЫ === #}
-<div class="card bg-base-100 border border-base-300 mb-4 md:mb-6 px-2 sm:px-0">
-  <div class="card-body p-3 md:p-4">
-    <div class="flex flex-wrap gap-2">
-      {# Все #}
-      <a href="?" class="btn btn-sm {% if not request.GET.type %}btn-primary{% else %}btn-ghost{% endif %}">
-        <i class="ti ti-list"></i>
-        <span class="hidden sm:inline">Все</span>
-      </a>
-      {# Матчи #}
-      <a href="?type=match" class="btn btn-sm {% if request.GET.type == 'match' %}btn-primary{% else %}btn-ghost{% endif %}">
-        <i class="ti ti-trophy"></i>
-        <span class="hidden sm:inline">Матчи</span>
-      </a>
-      {# Голосование #}
-      <a href="?type=voting" class="btn btn-sm {% if request.GET.type == 'voting' %}btn-primary{% else %}btn-ghost{% endif %}">
-        <i class="ti ti-dopx-rate"></i>
-        <span class="hidden sm:inline">Голосование</span>
-      </a>
-      {# Достижения #}
-      <a href="?type=badge" class="btn btn-sm {% if request.GET.type == 'badge' %}btn-primary{% else %}btn-ghost{% endif %}">
-        <i class="ti ti-medal"></i>
-        <span class="hidden sm:inline">Достижения</span>
-      </a>
-      {# Разделитель #}
-      <div class="divider divider-horizontal mx-1 hidden sm:block"></div>
-      {# Непрочитанные #}
-      <a href="?status=unread" class="btn btn-sm {% if request.GET.status == 'unread' %}btn-primary{% else %}btn-ghost{% endif %}">
-        <i class="ti ti-circle"></i>
-        <span class="hidden sm:inline">Непрочитанные</span>
-      </a>
-      {# Прочитанные #}
-      <a href="?status=read" class="btn btn-sm {% if request.GET.status == 'read' %}btn-primary{% else %}btn-ghost{% endif %}">
-        <i class="ti ti-check"></i>
-        <span class="hidden sm:inline">Прочитанные</span>
-      </a>
-    </div>
-  </div>
-</div>
-
-{# === СПИСОК === #}
-{# Карточка — _notification_item.html (compact=False). #}
-<div class="space-y-2 md:space-y-3 px-2 sm:px-0">
-  {% for notification in notifications %}
-    {% include 'components/_notification_item.html' with notification=notification compact=False %}
-  {% empty %}
-  {# Пусто #}
-  <div class="card bg-base-100 border border-base-300">
-    <div class="card-body p-8 md:p-12 text-center">
-      <div class="w-16 h-16 md:w-20 md:h-20 rounded-full bg-base-200 flex items-center justify-center mx-auto mb-4">
-        <i class="ti ti-bell-off text-3xl md:text-4xl opacity-40"></i>
-      </div>
-      <h3 class="text-lg md:text-xl font-bold mb-2">Нет уведомлений</h3>
-      <p class="opacity-60 mb-4 text-sm md:text-base">
-        {% if request.GET.status or request.GET.type %}
-        Измените фильтры или сбросьте их.
+    <div id="notif-feed" class="nf-feed">
+        {% if groups %}
+        {% include 'notifications/_feed_page.html' %}
         {% else %}
-        Новые уведомления появятся здесь.
+        <div class="nf-empty">
+            <span class="nf-empty__icon"><i class="ti {% if current_filter == 'unread' %}ti-checks{% else %}ti-bell{% endif %}"></i></span>
+            {% if current_filter == 'unread' %}
+            <p class="nf-empty__title">Всё прочитано</p>
+            <p class="nf-empty__text">Новые уведомления появятся здесь.</p>
+            {% elif current_filter %}
+            <p class="nf-empty__title">В этом разделе пока пусто</p>
+            <a href="{% url 'notifications:list' %}" class="nf-btn">Все уведомления</a>
+            {% else %}
+            <p class="nf-empty__title">Уведомлений пока нет</p>
+            <p class="nf-empty__text">Здесь будут старт матчей ваших клубов, напоминания оценить игроков и итоги прогнозов. Что присылать, можно выбрать в настройках.</p>
+            <a href="{% url 'users:notification_settings' %}" class="nf-btn"><i class="ti ti-settings"></i> Настройки</a>
+            {% endif %}
+        </div>
         {% endif %}
-      </p>
-      {% if request.GET.status or request.GET.type %}
-      <a href="?" class="btn btn-ghost btn-sm">
-        <i class="ti ti-x"></i>
-        Сбросить фильтры
-      </a>
-      {% endif %}
     </div>
-  </div>
-  {% endfor %}
 </div>
-
-{# === ПАГИНАЦИЯ === #}
-{% if is_paginated %}
-<div class="flex justify-center mt-6 md:mt-8 px-2">
-  <div class="join">
-    {% if page_obj.has_previous %}
-    <a href="?page={{ page_obj.previous_page_number }}{{ query_params }}" class="join-item btn btn-sm">
-      <i class="ti ti-chevron-left"></i>
-    </a>
-    {% endif %}
-    {% for num in page_obj.paginator.page_range %}
-    {% if page_obj.number == num %}
-    <button class="join-item btn btn-sm btn-active">{{ num }}</button>
-    {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
-    <a href="?page={{ num }}{{ query_params }}" class="join-item btn btn-sm">{{ num }}</a>
-    {% endif %}
-    {% endfor %}
-    {% if page_obj.has_next %}
-    <a href="?page={{ page_obj.next_page_number }}{{ query_params }}" class="join-item btn btn-sm">
-      <i class="ti ti-chevron-right"></i>
-    </a>
-    {% endif %}
-  </div>
-</div>
-{# Инфо о странице #}
-<div class="text-center text-xs md:text-sm opacity-60 mt-2 md:mt-3">
-  Страница {{ page_obj.number }} из {{ page_obj.paginator.num_pages }}
-  · всего {{ page_obj.paginator.count }}
-</div>
-{% endif %}
-
-{# Счётчик поллится в _notification_unread_badge.html, заголовок вкладки — notifications.js. #}
 {% endblock %}

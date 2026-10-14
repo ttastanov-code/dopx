@@ -55,6 +55,7 @@
     {# Мягкое обновление страницы (Idiomorph) — раньше Alpine: снимок исходной разметки компонентов. #}
     <script defer src="{% static_v 'vendor/idiomorph/idiomorph.min.js' %}"></script>
     <script defer src="{% static_v 'js/live-refresh.js' %}"></script>
+    <script defer src="{% static_v 'js/nav-contrast.js' %}"></script>
     <script defer src="{% static_v 'vendor/alpine/alpine-collapse.min.js' %}"></script>
     {# alpine-components.js — до ядра Alpine, иначе компоненты не успеют зарегистрироваться. #}
     <script defer src="{% static_v 'js/alpine-components.js' %}"></script>
@@ -394,6 +395,12 @@
         @media (prefers-reduced-motion: reduce) {
             body.dopx-loading #global-loader { animation: none; background-size: 100% 100%; }
         }
+        #global-loader-logo {
+            position: fixed; top: 5.25rem; left: 50%; z-index: 100; padding: .45rem; border-radius: 1rem; pointer-events: none;
+            background: color-mix(in oklab, var(--color-base-100) 92%, transparent); box-shadow: 0 12px 32px -12px rgb(0 0 0 / .35);
+            opacity: 0; transform: translate(-50%, -6px) scale(.92); transition: opacity .2s ease, transform .25s cubic-bezier(.16, 1, .3, 1);
+        }
+        body.dopx-loading-slow #global-loader-logo { opacity: 1; transform: translate(-50%, 0) scale(1); }
         {% block extra_style %}{% endblock %}
     </style>
 </head>
@@ -447,6 +454,8 @@
     {% include 'components/_cookie_banner.html' %}
     {# Индикатор загрузки: тонкая полоса сверху, только если запрос дольше LOADER_DELAY_MS. #}
     <div id="global-loader" aria-hidden="true"></div>
+    {# Долгая загрузка (дольше SLOW_LOADER_MS): анимированный знак DOPX под шапкой. #}
+    <div id="global-loader-logo" aria-hidden="true">{% include 'components/_brand_loader.html' with size=34 uid='global' %}</div>
     {% endblock %}
     {# tooltipTrigger — в alpine-components.js. #}
     {# Скрипты #}
@@ -458,7 +467,51 @@
         // Фоновые обновления (data-background-poll) индикатор не показывают — только действия пользователя.
         // Быстрые ответы (< LOADER_DELAY_MS) тоже без индикатора, чтобы не мигало.
         const LOADER_DELAY_MS = 350;
+        const SLOW_LOADER_MS = 600;
         let loaderTimer = null;
+        let slowTimer = null;
+        function startSlow() {
+            if (!slowTimer) slowTimer = setTimeout(() => document.body.classList.add('dopx-loading-slow'), SLOW_LOADER_MS);
+        }
+        function stopSlow() {
+            clearTimeout(slowTimer);
+            slowTimer = null;
+            document.body.classList.remove('dopx-loading-slow');
+        }
+        // Переход по обычной ссылке сайта: если сервер отвечает долго — показываем знак.
+        document.addEventListener('click', (e) => {
+            const a = e.target.closest('a[href]');
+            if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+            if ((a.target && a.target !== '_self') || a.hasAttribute('data-spin-on-tap')) return;
+            if (a.hasAttribute('download') || a.origin !== location.origin || (a.pathname === location.pathname && a.hash)) return;
+            startSlow();
+        });
+        window.addEventListener('pageshow', (e) => {
+            stopSlow();
+            // Вернулись назад из кэша — знак на кнопке останавливаем.
+            document.querySelectorAll('[data-spin-on-tap].is-spinning').forEach((el) => el.classList.remove('is-spinning'));
+        });
+        // Кнопка со знаком DOPX: шкала крутится с момента касания; переход — когда вращение успело стать видно.
+        const SPIN_MIN_MS = 450;
+        const spinStart = (el) => { if (!el.classList.contains('is-spinning')) { el.classList.add('is-spinning'); el.dataset.spinAt = String(performance.now()); } };
+        document.addEventListener('pointerdown', (e) => {
+            const el = e.target.closest('[data-spin-on-tap]');
+            if (el && e.button === 0) spinStart(el);
+        }, { passive: true });
+        // Палец увёл в прокрутку — нажатия не было, останавливаем.
+        document.addEventListener('pointercancel', (e) => {
+            const el = e.target.closest('[data-spin-on-tap]');
+            if (el) el.classList.remove('is-spinning');
+        });
+        document.addEventListener('click', (e) => {
+            const el = e.target.closest('[data-spin-on-tap]');
+            if (!el) return;
+            spinStart(el);
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || !el.href) return;
+            e.preventDefault();
+            const wait = Math.max(0, SPIN_MIN_MS - (performance.now() - Number(el.dataset.spinAt || 0)));
+            setTimeout(() => { window.location.href = el.href; }, wait);
+        });
         let pendingRequests = 0;
         function isBackgroundPoll(event) {
             return !!event.detail.elt.closest('[data-background-poll]');
@@ -469,6 +522,7 @@
             if (!loaderTimer) {
                 loaderTimer = setTimeout(() => document.body.classList.add('dopx-loading'), LOADER_DELAY_MS);
             }
+            startSlow();
         }
         function requestFinished(event) {
             if (isBackgroundPoll(event)) return;
@@ -477,6 +531,7 @@
                 clearTimeout(loaderTimer);
                 loaderTimer = null;
                 document.body.classList.remove('dopx-loading');
+                stopSlow();
             }
         }
         document.body.addEventListener('htmx:beforeRequest', requestStarted);

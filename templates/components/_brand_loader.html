@@ -1,0 +1,22 @@
+{% comment %}
+Знак DOPX для загрузок. Основа (плитка, кольцо, мяч) неподвижна; шкала с мячом — отдельный слой:
+полный оборот и остановка точно в положении логотипа. Стили — css/ui.css (dx-logo-spin).
+Параметры: size (px, по умолчанию 64), uid (уникальный id градиента).
+{% endcomment %}
+<span class="dx-logo-spin" style="width: {{ size|default:64 }}px; height: {{ size|default:64 }}px" role="img" aria-label="Загружаем">
+    <svg viewBox="0 0 48 48" aria-hidden="true">
+        <defs><linearGradient id="dopxSpin-{{ uid|default:'a' }}" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#4F6BFF"/><stop offset="1" stop-color="#9333EA"/></linearGradient></defs>
+        <rect width="48" height="48" rx="13" fill="url(#dopxSpin-{{ uid|default:'a' }})"/>
+        <g transform="translate(4.8 4.8) scale(0.8)">
+            <circle cx="24" cy="24" r="17" fill="none" stroke="#fff" stroke-width="3" opacity=".35"/>
+            <path d="M24 17.5 L30.2 22 L27.8 29.3 L20.2 29.3 L17.8 22 Z" fill="#fff"/>
+        </g>
+    </svg>
+    <svg viewBox="0 0 48 48" class="dx-logo-spin__arc" aria-hidden="true">
+        <defs><linearGradient id="dopxSpinB-{{ uid|default:'a' }}" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#4F6BFF"/><stop offset="1" stop-color="#9333EA"/></linearGradient></defs>
+        <g transform="translate(4.8 4.8) scale(0.8)">
+            <path d="M11.98 36.02 A17 17 0 1 1 37.02 13.07" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+            <circle cx="37.02" cy="13.07" r="5.2" fill="url(#dopxSpinB-{{ uid|default:'a' }})" stroke="#fff" stroke-width="3.2"/>
+        </g>
+    </svg>
+</span>

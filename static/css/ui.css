@@ -558,7 +558,7 @@
     background: var(--color-error);
     border: 2px solid var(--color-base-100);
 }
-@media (max-width: 767px) {
+@media (max-width: 1023px) {
     /* Контент и кнопка «наверх» не прячутся под панелью. */
     body.has-tabbar { padding-bottom: calc(4.4rem + env(safe-area-inset-bottom)); }
     body.has-tabbar #scroll-to-top { bottom: calc(5.2rem + env(safe-area-inset-bottom)); }
@@ -1739,7 +1739,9 @@ html[data-mourning] { filter: grayscale(1); }
     background: color-mix(in oklab, var(--color-base-content) 18%, transparent);
 }
 .dx-drawer.is-open .dx-drawer__panel { transform: none; }
-html.dx-drawer-lock, html.dx-drawer-lock body { overflow: hidden; }
+/* Без overflow: hidden на странице (на iPhone она от этого прыгает): фон не принимает касания, прокрутка листа не уходит странице. */
+.dx-drawer__backdrop, .nf-backdrop { touch-action: none; overscroll-behavior: contain; }
+.dx-drawer__scroll, .nf-panel__list { overscroll-behavior: contain; }
 @media (prefers-reduced-motion: reduce) { .dx-drawer__panel, .dx-drawer__backdrop { transition: none; } }
 
 .dx-drawer__head { display: flex; align-items: center; justify-content: space-between; padding: .35rem .85rem .5rem 1rem; }
@@ -1836,9 +1838,7 @@ html.dx-drawer-lock, html.dx-drawer-lock body { overflow: hidden; }
     color: var(--color-error); background: color-mix(in oklab, var(--color-error) 10%, transparent);
 }
 
-/* Бургер в шапке: на телефоне меню — в «Ещё» нижней панели; бургер там, где панели нет. */
-@media (max-width: 767px) { .dx-burger:not(.dx-burger--always) { display: none; } }
-/* «Ещё» в нижней панели — кнопка, без стандартного вида. */
+/* Кнопки нижней панели (листы) — без стандартного вида. */
 button.dx-tabbar__item { background: none; border: 0; font-family: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 
 /* ===== Вовлечение (engagement) ===== */
@@ -2643,3 +2643,175 @@ input[type="datetime-local"].dx-datetime::-webkit-date-and-time-value { text-ali
   .xi-row--stagger .xi-name { font-size: clamp(10px, 2.95vw, 11px); }
 }
 @media (min-width: 768px) { .xi-row { gap: 1rem; } }
+
+/* Карточки показателей игрока: подпись и иконка в строку, всё переносится внутри карточки. */
+.pl-stat { min-width: 0; display: flex; flex-direction: column; gap: .25rem; padding: .75rem; border-radius: .75rem; }
+.pl-stat__head { display: flex; align-items: flex-start; justify-content: space-between; gap: .375rem; font-size: .75rem; line-height: 1.3; color: color-mix(in oklab, var(--color-base-content) 62%, transparent); }
+.pl-stat__head > span:first-child { min-width: 0; overflow-wrap: break-word; }
+.pl-stat__value { font-size: 1.375rem; font-weight: 800; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.pl-stat__note { display: block; font-size: .7rem; line-height: 1.35; color: color-mix(in oklab, var(--color-base-content) 68%, transparent); overflow-wrap: break-word; }
+.pl-stat__note b { color: var(--color-base-content); }
+
+/* История игрока по сезонам: шапка (клуб, сезон) и сетка показателей 3×2. */
+.pl-season { border: 1px solid var(--color-base-300); border-radius: .875rem; padding: .875rem; }
+.pl-season__head { display: flex; flex-wrap: wrap; align-items: center; gap: .375rem .5rem; margin-bottom: .75rem; }
+.pl-season__logo { width: 1.5rem; height: 1.5rem; object-fit: contain; flex: none; }
+.pl-season__team { font-weight: 700; font-size: 1rem; line-height: 1.25; }
+.pl-season__team:hover { color: var(--color-primary); }
+.pl-season__year { font-size: .8rem; color: color-mix(in oklab, var(--color-base-content) 60%, transparent); }
+.pl-season__now { font-size: .7rem; font-weight: 700; padding: .1rem .5rem; border-radius: 999px; color: var(--color-primary); background: color-mix(in oklab, var(--color-primary) 12%, transparent); }
+.pl-season__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; }
+.pl-season__cell { min-width: 0; display: flex; flex-direction: column; gap: .125rem; padding: .5rem .625rem; border-radius: .625rem; background: var(--color-base-200); }
+.pl-season__cell b { display: flex; align-items: center; gap: .25rem; font-size: 1.125rem; font-weight: 800; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.pl-season__cell > span { font-size: .7rem; line-height: 1.3; color: color-mix(in oklab, var(--color-base-content) 62%, transparent); overflow-wrap: break-word; }
+.pl-card { display: inline-block; width: .55rem; height: .75rem; border-radius: 2px; flex: none; }
+.pl-card--y { background: #facc15; }
+.pl-card--r { background: #ef4444; }
+@media (min-width: 768px) { .pl-season__grid { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+.pl-season__meta { margin-top: .625rem; font-size: .75rem; line-height: 1.4; color: color-mix(in oklab, var(--color-base-content) 60%, transparent); }
+
+/* Одиночные карточки .stat (группы .stats на сайте нет): без пунктирного разделителя daisyUI. */
+.stat { border-inline-end: 0; }
+
+/* Верхнее меню — стекло: прозрачный фон и размытие того, что под ним. */
+.dx-glass-nav { background: transparent; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); transition: background-color .25s ease, border-color .25s ease; }
+.dx-glass-nav :is(a, button, summary, span, i) { transition: color .25s ease; }
+/* Над тёмным фоном — всё меню разом: затемнённое стекло и светлый текст (кнопки с заливкой и выпадающие панели не трогаем). */
+.dx-glass-nav.dx-nav--on-dark { background: rgba(12, 16, 28, .62); border-bottom-color: rgba(255, 255, 255, .12); }
+.dx-glass-nav.dx-nav--on-dark :is(a, button, summary, span, i):not(.btn-primary, .btn-primary *, details ul *, .dropdown-content *, [class*="badge"], [class*="badge"] *, .avatar *, #notification-wrapper [x-show] *) { color: #fff; }
+.dx-glass-nav.dx-nav--on-dark .menu :is(a, summary).active { background: rgba(255, 255, 255, .16); }
+
+/* ---------- Уведомления: страница, строка, окно колокольчика ---------- */
+.nf-page { max-width: 44rem; margin: 0 auto; padding: 0 .25rem; }
+.nf-head { display: flex; align-items: flex-end; justify-content: space-between; gap: .75rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.nf-head__title { font-size: 1.75rem; font-weight: 800; line-height: 1.15; letter-spacing: -.02em; }
+.nf-head__sub { margin-top: .2rem; font-size: .875rem; color: color-mix(in oklab, var(--color-base-content) 58%, transparent); }
+.nf-head__actions { display: flex; align-items: center; gap: .5rem; }
+.nf-btn { display: inline-flex; align-items: center; gap: .4rem; height: 2.25rem; padding: 0 .9rem; border-radius: 999px; font-size: .8125rem; font-weight: 600;
+          border: 1px solid var(--color-base-300); background: var(--color-base-100); transition: border-color .15s, background .15s; }
+.nf-btn:hover { border-color: color-mix(in oklab, var(--color-primary) 45%, var(--color-base-300)); }
+.nf-btn--icon { width: 2.25rem; padding: 0; justify-content: center; font-size: 1.05rem; }
+.nf-tabs { display: flex; gap: .4rem; overflow-x: auto; scrollbar-width: none; margin: 0 -.25rem 1rem; padding: 0 .25rem .1rem; }
+.nf-tabs::-webkit-scrollbar { display: none; }
+.nf-tab { flex: none; display: inline-flex; align-items: center; gap: .4rem; height: 2.125rem; padding: 0 .9rem; border-radius: 999px; font-size: .8125rem; font-weight: 600;
+          background: var(--color-base-200); color: color-mix(in oklab, var(--color-base-content) 75%, transparent); white-space: nowrap; }
+.nf-tab.is-active { background: var(--color-base-content); color: var(--color-base-100); }
+.nf-tab__count:empty { display: none; }
+.nf-tab__count { min-width: 1.25rem; height: 1.25rem; padding: 0 .35rem; border-radius: 999px; display: inline-grid; place-items: center; font-size: .6875rem; font-weight: 800; color: #fff; background: var(--color-error); }
+.nf-group + .nf-group { margin-top: 1.25rem; }
+.nf-group__title { font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; margin: 0 0 .5rem .25rem; color: color-mix(in oklab, var(--color-base-content) 48%, transparent); }
+.nf-group__list { border: 1px solid var(--color-base-300); border-radius: 1rem; background: var(--color-base-100); overflow: hidden; }
+
+/* Строка: иконка типа, заголовок и время в одной строке, текст ниже. */
+.nf-item { position: relative; display: flex; align-items: flex-start; }
+.nf-item + .nf-item { border-top: 1px solid color-mix(in oklab, var(--color-base-content) 7%, transparent); }
+.nf-item__main { flex: 1; min-width: 0; }
+.nf-item__hit { display: flex; align-items: flex-start; gap: .75rem; width: 100%; padding: .85rem 1rem; text-align: left; transition: background .15s; }
+button.nf-item__hit:hover { background: color-mix(in oklab, var(--color-base-content) 3.5%, transparent); }
+.nf-item__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .15rem; }
+.nf-item__top { display: flex; align-items: baseline; gap: .5rem; }
+.nf-item__title { flex: 1; min-width: 0; font-size: .875rem; font-weight: 600; line-height: 1.35; overflow-wrap: break-word; }
+.nf-item__time { flex: none; font-size: .75rem; font-variant-numeric: tabular-nums; color: color-mix(in oklab, var(--color-base-content) 45%, transparent); }
+.nf-item__text { font-size: .8125rem; line-height: 1.4; color: color-mix(in oklab, var(--color-base-content) 64%, transparent); overflow-wrap: break-word; }
+.nf-item.is-unread .nf-item__title { font-weight: 700; }
+.nf-item.is-unread .nf-item__time { color: var(--color-primary); font-weight: 700; }
+.nf-item.is-unread .nf-ico::after { content: ""; position: absolute; top: -.15rem; right: -.15rem; width: .6rem; height: .6rem; border-radius: 999px;
+                                    background: var(--color-primary); box-shadow: 0 0 0 2px var(--color-base-100); }
+.nf-item__read { flex: none; display: grid; place-items: center; width: 2.25rem; height: 2.25rem; margin: .65rem .6rem 0 -.4rem; border-radius: 999px; font-size: 1rem;
+                 color: color-mix(in oklab, var(--color-base-content) 50%, transparent); transition: background .15s, color .15s; }
+.nf-item__read:hover { background: color-mix(in oklab, var(--color-success) 14%, transparent); color: var(--color-success); }
+.nf-ico { position: relative; flex: none; display: grid; place-items: center; width: 2.25rem; height: 2.25rem; border-radius: .75rem; font-size: 1.05rem; }
+.nf-ico--primary { color: var(--color-primary); background: color-mix(in oklab, var(--color-primary) 12%, transparent); }
+.nf-ico--success { color: var(--color-success); background: color-mix(in oklab, var(--color-success) 13%, transparent); }
+.nf-ico--warning { color: var(--color-warning); background: color-mix(in oklab, var(--color-warning) 15%, transparent); }
+.nf-ico--error { color: var(--color-error); background: color-mix(in oklab, var(--color-error) 12%, transparent); }
+.nf-ico--accent { color: var(--color-accent); background: color-mix(in oklab, var(--color-accent) 13%, transparent); }
+.nf-ico--info { color: var(--color-info); background: color-mix(in oklab, var(--color-info) 13%, transparent); }
+.nf-ico--neutral { color: var(--color-base-content); background: var(--color-base-200); }
+.nf-item--compact + .nf-item--compact { border-top: 0; }
+.nf-item--compact .nf-item__hit { padding: .6rem .75rem; border-radius: .85rem; }
+.nf-more { display: flex; justify-content: center; margin-top: 1rem; }
+.nf-more__btn { height: 2.5rem; padding: 0 1.4rem; border-radius: 999px; font-size: .875rem; font-weight: 600; border: 1px solid var(--color-base-300); background: var(--color-base-100); }
+.nf-more__btn.htmx-request { opacity: .6; }
+.nf-empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: .5rem; padding: 3rem 1.25rem; border: 1px solid var(--color-base-300); border-radius: 1rem; background: var(--color-base-100); }
+.nf-empty__icon { display: grid; place-items: center; width: 3.5rem; height: 3.5rem; border-radius: 999px; font-size: 1.5rem; background: var(--color-base-200); margin-bottom: .25rem; }
+.nf-empty__title { font-weight: 700; }
+.nf-empty__text { max-width: 26rem; font-size: .875rem; color: color-mix(in oklab, var(--color-base-content) 60%, transparent); margin-bottom: .5rem; }
+
+/* Окно колокольчика: ПК — выпадающий список, телефон — нижний лист поверх панели вкладок. */
+.nf-pop { position: absolute; top: calc(100% + .5rem); right: 0; z-index: 100; width: 24rem; border-radius: 1.1rem; overflow: hidden;
+          background: var(--color-base-100); border: 1px solid color-mix(in oklab, var(--color-base-content) 9%, transparent);
+          box-shadow: 0 24px 60px -20px rgb(0 0 0 / .35), 0 2px 8px -2px rgb(0 0 0 / .08); transform-origin: top right; }
+.nf-pop-enter, .nf-pop-leave { transition: opacity .18s ease, transform .22s cubic-bezier(.16, 1, .3, 1); }
+.nf-pop-from { opacity: 0; transform: translateY(-4px) scale(.98); }
+.nf-pop-to { opacity: 1; transform: none; }
+.nf-backdrop { position: fixed; inset: 0; z-index: 95; background: rgb(0 0 0 / .42); }
+@media (max-width: 639px) {
+  .nf-pop { position: fixed; top: auto; left: 0; right: 0; bottom: 0; width: auto; max-height: 86vh; border-radius: 1.6rem 1.6rem 0 0; border: 0;
+            padding-bottom: env(safe-area-inset-bottom); display: flex; flex-direction: column; transform-origin: bottom center; }
+  .nf-pop-from { opacity: 1; transform: translateY(100%); }
+  .nf-pop-enter, .nf-pop-leave { transition: transform .36s cubic-bezier(.16, 1, .3, 1); }
+  /* Шапка с колокольчиком поднимается над панелью вкладок, страница не прокручивается. */
+  html.nf-sheet-open .dx-glass-nav { z-index: 70; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .nf-pop .nf-panel { display: flex; flex-direction: column; min-height: 0; max-height: 86vh; }
+  .nf-pop .nf-panel__list { max-height: none; flex: 1; }
+}
+@media (min-width: 640px) { .nf-panel__grabber, .nf-panel__close-m { display: none !important; } }
+.nf-panel__grabber { display: block; width: 2.4rem; height: .3rem; margin: .55rem auto 0; border-radius: 999px; background: color-mix(in oklab, var(--color-base-content) 18%, transparent); }
+.nf-panel__head { display: flex; align-items: center; gap: .25rem; padding: .75rem .75rem .5rem 1rem; }
+.nf-panel__title { flex: 1; font-size: 1.0625rem; font-weight: 800; letter-spacing: -.01em; }
+.nf-link { font-size: .8125rem; font-weight: 600; color: var(--color-primary); padding: .4rem .55rem; border-radius: .6rem; }
+.nf-link:hover { background: color-mix(in oklab, var(--color-primary) 10%, transparent); }
+.nf-panel__icon { display: grid; place-items: center; width: 2.1rem; height: 2.1rem; border-radius: 999px; font-size: 1.05rem;
+                  color: color-mix(in oklab, var(--color-base-content) 70%, transparent); }
+.nf-panel__icon:hover { background: color-mix(in oklab, var(--color-base-content) 7%, transparent); }
+.nf-panel__list { max-height: min(60vh, 30rem); overflow-y: auto; overscroll-behavior: contain; padding: 0 .4rem .4rem; }
+.nf-panel__section { padding: .6rem .75rem .3rem; font-size: .6875rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+                     color: color-mix(in oklab, var(--color-base-content) 45%, transparent); }
+.nf-panel__empty { display: flex; flex-direction: column; align-items: center; gap: .6rem; padding: 2rem 1.5rem 2.25rem; text-align: center; font-size: .8125rem; line-height: 1.45;
+                   color: color-mix(in oklab, var(--color-base-content) 60%, transparent); }
+.nf-panel__empty-icon { display: grid; place-items: center; width: 3rem; height: 3rem; border-radius: 999px; font-size: 1.35rem; background: var(--color-base-200); color: var(--color-base-content); }
+.nf-panel__all { display: flex; align-items: center; justify-content: center; height: 2.85rem; font-size: .875rem; font-weight: 700; color: var(--color-primary);
+                 border-top: 1px solid color-mix(in oklab, var(--color-base-content) 8%, transparent); }
+.nf-panel__all:hover { background: color-mix(in oklab, var(--color-primary) 6%, transparent); }
+@media (max-width: 639px) { .nf-head__title { font-size: 1.5rem; } }
+
+/* Нижняя панель: аватар во вкладке «Профиль», на планшете — по центру с ограничением ширины. */
+.dx-tabbar__avatar { display: inline-grid; place-items: center; width: 1.45rem; height: 1.45rem; border-radius: 999px; overflow: hidden; font-size: .7rem; font-weight: 800;
+                     color: var(--color-primary-content); background: var(--color-primary); box-shadow: 0 0 0 2px var(--color-base-100), 0 0 0 3.5px currentColor; }
+.dx-tabbar__avatar img { width: 100%; height: 100%; object-fit: cover; }
+@media (min-width: 768px) { .dx-tabbar { padding-left: calc(50% - 18rem); padding-right: calc(50% - 18rem); } }
+/* Лист «Рейтинги»: плитки разделов 2 в ряд. */
+.dx-drawer__heading { font-size: 1.0625rem; font-weight: 800; letter-spacing: -.01em; }
+.dx-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
+.dx-tile { display: flex; flex-direction: column; gap: .15rem; min-width: 0; padding: .8rem .85rem; border-radius: 1rem;
+           background: color-mix(in oklab, var(--color-base-content) 4.5%, transparent); transition: background .15s; }
+.dx-tile:active { background: color-mix(in oklab, var(--color-base-content) 9%, transparent); }
+.dx-tile i { display: inline-grid; place-items: center; width: 2.1rem; height: 2.1rem; margin-bottom: .35rem; border-radius: .7rem; font-size: 1.15rem;
+             color: var(--c); background: color-mix(in oklab, var(--c) 14%, transparent); }
+.dx-tile b { font-size: .9375rem; font-weight: 700; line-height: 1.25; overflow-wrap: break-word; }
+.dx-tile span { font-size: .75rem; line-height: 1.3; color: color-mix(in oklab, var(--color-base-content) 58%, transparent); overflow-wrap: break-word; }
+.dx-tile.is-active { box-shadow: inset 0 0 0 2px var(--color-primary); }
+/* Счётчик на колокольчике: плотная красная метка с обводкой цветом фона. */
+.nf-bell-badge { position: absolute; top: .1rem; right: .05rem; min-width: 1.1rem; height: 1.1rem; padding: 0 .3rem; border-radius: 999px; pointer-events: none;
+                 display: inline-grid; place-items: center; font-size: .625rem; font-weight: 800; line-height: 1; color: #fff; background: var(--color-error);
+                 box-shadow: 0 0 0 2px var(--color-base-100); }
+.nf-bell-badge.hidden { display: none; }
+
+/* Знак DOPX при загрузке: шкала — отдельный слой, полный оборот и остановка в положении логотипа. */
+.dx-logo-spin { position: relative; display: block; flex: none; filter: drop-shadow(0 10px 22px rgb(79 70 229 / .35)); }
+.dx-logo-spin > svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.dx-logo-spin__arc { transform-origin: 50% 50%; will-change: transform; animation: dx-arc-turn 1.5s infinite; }
+@keyframes dx-arc-turn {
+  0% { transform: rotate(0deg); animation-timing-function: cubic-bezier(.65, 0, .35, 1); }
+  70%, 100% { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) { .dx-logo-spin__arc { animation-duration: 3s; } }
+/* Центрированный экран загрузки со знаком. */
+.dx-loader { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .9rem; padding: 2rem 1rem; text-align: center; }
+.dx-loader__text { font-size: .875rem; color: color-mix(in oklab, var(--color-base-content) 60%, transparent); }
+/* Знак на «Оценить»: по нажатию шкала крутится, пока открывается страница. */
+.dx-tabbar__mark { position: relative; display: block; width: 1.6rem; height: 1.6rem; color: #fff; }
+.dx-tabbar__mark > svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.dx-tabbar__mark .dx-tabbar__arc { transform-origin: 50% 50%; will-change: transform; }
+.is-spinning .dx-tabbar__arc { animation: dx-arc-turn 1.1s infinite; }

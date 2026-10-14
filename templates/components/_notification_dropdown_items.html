@@ -1,22 +1,19 @@
 {% comment %}
-Последние 5 уведомлений в дропдауне. Также ответ на «Прочитать все» из дропдауна.
-Контекст: notifications ([:5]), count (непрочитанные).
+Список окна колокольчика: «Новые» (непрочитанные) и «Ранее». Также ответ на «Прочитать все».
+Контекст: notifications, count.
 {% endcomment %}
-<div class="overflow-y-auto max-h-[60vh] sm:max-h-80" id="notif-list-items">
+<div class="nf-panel__list" id="notif-list-items">
     {% if notifications %}
-        {% for notification in notifications %}
-            {% include 'components/_notification_item.html' with notification=notification compact=True %}
-        {% endfor %}
-
-        <div class="p-2 sticky bottom-0 bg-base-100 border-t border-base-300">
-            <a href="{% url 'notifications:list' %}" @click="open = false" class="btn btn-sm btn-ghost w-full">
-                <i class="ti ti-list"></i> Все уведомления
-            </a>
-        </div>
+    {% if count %}
+    <div class="nf-panel__section">Новые</div>
+    {% for notification in notifications %}{% if not notification.is_read %}{% include 'components/_notification_item.html' with compact=True %}{% endif %}{% endfor %}
+    <div class="nf-panel__section">Ранее</div>
+    {% endif %}
+    {% for notification in notifications %}{% if notification.is_read %}{% include 'components/_notification_item.html' with compact=True %}{% endif %}{% endfor %}
     {% else %}
-        <div class="p-8 text-center opacity-60">
-            <i class="ti ti-bell-off text-4xl mb-3"></i>
-            <div class="text-sm">Пока нет уведомлений</div>
-        </div>
+    <div class="nf-panel__empty">
+        <span class="nf-panel__empty-icon"><i class="ti ti-bell"></i></span>
+        <p>Здесь будут старт матчей ваших клубов, напоминания оценить игроков и итоги прогнозов.</p>
+    </div>
     {% endif %}
 </div>

@@ -1,9 +1,8 @@
 {% comment %}
-Спиннер загрузки для HTMX запросов
+Загрузка (HTMX и др.): анимированный знак DOPX.
 Использование: {% include 'components/_loading_spinner.html' with size="md" %}
 {% endcomment %}
-
-<div class="flex items-center justify-center py-8">
-    <span class="loading loading-spinner loading-{{ size|default:'md' }} text-primary"></span>
-    <span class="ml-3 opacity-60">Загрузка...</span>
+<div class="dx-loader" role="status">
+    {% if size == 'sm' %}{% include 'components/_brand_loader.html' with size=36 uid='spinner-sm' %}{% elif size == 'lg' %}{% include 'components/_brand_loader.html' with size=72 uid='spinner-lg' %}{% else %}{% include 'components/_brand_loader.html' with size=52 uid='spinner' %}{% endif %}
+    <span class="dx-loader__text">Загружаем</span>
 </div>

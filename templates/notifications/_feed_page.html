@@ -1,0 +1,25 @@
+{% comment %}
+Порция ленты: группы по дням и кнопка «Показать ещё» (заменяет себя следующей порцией).
+Контекст: groups, page_obj, current_filter.
+{% endcomment %}
+{% for group in groups %}
+<section class="nf-group">
+    {% if not group.continued %}<h2 class="nf-group__title">{{ group.label }}</h2>{% endif %}
+    <div class="nf-group__list">
+        {% for notification in group.items %}
+        {% include 'components/_notification_item.html' with compact=False %}
+        {% endfor %}
+    </div>
+</section>
+{% endfor %}
+{% if page_obj.has_next %}
+{% with last=groups|last %}
+<div class="nf-more">
+    <button type="button" class="nf-more__btn"
+            hx-get="{% url 'notifications:list' %}?page={{ page_obj.next_page_number }}{% if current_filter %}&f={{ current_filter }}{% endif %}&g={{ last.label|urlencode }}"
+            hx-target="closest .nf-more" hx-swap="outerHTML">
+        Показать ещё
+    </button>
+</div>
+{% endwith %}
+{% endif %}

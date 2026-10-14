@@ -107,61 +107,42 @@
                     {% endif %}
                 </div>
                 
-                {# Общая статистика #}
-                {# Иконка в углу карточки (absolute), заголовок переносится свободно; pr-4 — чтобы не залезал под иконку. #}
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div class="stat bg-base-200 rounded-lg p-3">
-                        <div class="stat-title text-xs">Матчей</div>
-                        <div class="stat-value text-xl">{{ stats.total_matches }}</div>
+                {# Общая статистика: подпись и иконка в одной строке, текст переносится внутри карточки. #}
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-left">
+                    <div class="pl-stat bg-base-200">
+                        <div class="pl-stat__head"><span>Матчей</span></div>
+                        <div class="pl-stat__value">{{ stats.total_matches }}</div>
                     </div>
-                    <div class="stat relative bg-base-200 rounded-lg p-3">
-                        <div class="absolute top-2 right-2 z-10">{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.player.performance_score %}</div>
-                        <div class="stat-title text-xs whitespace-normal leading-snug pr-4">Рейтинг выступления</div>
-                        <div class="stat-value text-xl text-success">
+                    <div class="pl-stat bg-base-200">
+                        <div class="pl-stat__head"><span>Рейтинг выступления</span>{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.player.performance_score %}</div>
+                        <div class="pl-stat__value text-success">
                             {% if stats.total_votes|has_enough_votes %}{{ stats.avg_performance|default_if_none:"—" }}{% else %}н/д{% endif %}
                         </div>
                         {# Значок активной авто-поправки рейтинга. #}
                         {% if rating_correction %}
-                        <div class="mt-1">
-                            {# Пояснение поправки в тултипе (работает и на телефоне). #}
-                            {% tooltip_wrap rating_correction.public_explanation %}
-                            <span class="badge badge-xs badge-ghost gap-1">
-                                <i class="ti ti-shield-check text-[10px]"></i>
-                                защита от накрутки {% if rating_correction.correction > 0 %}+{% endif %}{{ rating_correction.correction|floatformat:2 }}
-                                <i class="ti ti-info-circle text-[10px] opacity-60"></i>
-                            </span>
-                            {% endtooltip_wrap %}
-                        </div>
+                        {# Пояснение поправки в тултипе (работает и на телефоне). #}
+                        {% tooltip_wrap rating_correction.public_explanation %}
+                        <span class="pl-stat__note"><i class="ti ti-shield-check"></i> Защита от накрутки: {% if rating_correction.correction > 0 %}+{% endif %}{{ rating_correction.correction|floatformat:2 }}</span>
+                        {% endtooltip_wrap %}
                         {% elif corrected_matches_count %}
-                        <div class="mt-1">
-                            {% tooltip_wrap "Автоматическая защита от накрутки сейчас не действует, но в этих матчах рейтинг был скорректирован (до ±0.4), пока она работала. Модератор может снять поправку, если сочтёт её ошибочной." %}
-                            <span class="badge badge-xs badge-ghost gap-1">
-                                <i class="ti ti-shield-check text-[10px]"></i>
-                                поправка в {{ corrected_matches_count }} матч{{ corrected_matches_count|pluralize:"е,ах" }}
-                            </span>
-                            {% endtooltip_wrap %}
-                        </div>
+                        {% tooltip_wrap "Автоматическая защита от накрутки сейчас не действует, но в этих матчах рейтинг был скорректирован (до ±0,4), пока она работала. Модератор может снять поправку, если сочтёт её ошибочной." %}
+                        <span class="pl-stat__note"><i class="ti ti-shield-check"></i> Поправка в {{ corrected_matches_count }} матч{{ corrected_matches_count|pluralize:"е,ах" }}</span>
+                        {% endtooltip_wrap %}
                         {% endif %}
                         {% if stats.avg_stat_rating %}
                         {# Оценка по статистике рядом с оценкой болельщиков. #}
-                        <div class="mt-1">
-                            {% tooltip_wrap INDICATOR_TOOLTIPS.player.stat_rating %}
-                            <span class="text-xs opacity-70 whitespace-nowrap">
-                                <i class="ti ti-chart-bar"></i> по статистике <b>{{ stats.avg_stat_rating|floatformat:1 }}</b> · за {{ stats.stat_rating_matches }} {{ stats.stat_rating_matches|ru_plural:"матч,матча,матчей" }}
-                            </span>
-                            {% endtooltip_wrap %}
-                        </div>
+                        {% tooltip_wrap INDICATOR_TOOLTIPS.player.stat_rating %}
+                        <span class="pl-stat__note"><i class="ti ti-chart-bar"></i> По статистике <b>{{ stats.avg_stat_rating|floatformat:1 }}</b> за {{ stats.stat_rating_matches }} {{ stats.stat_rating_matches|ru_plural:"матч,матча,матчей" }}</span>
+                        {% endtooltip_wrap %}
                         {% endif %}
                     </div>
-                    <div class="stat relative bg-base-200 rounded-lg p-3">
-                        <div class="absolute top-2 right-2 z-10">{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.player.risk %}</div>
-                        <div class="stat-title text-xs whitespace-normal leading-snug pr-4">Индекс риска</div>
-                        <div class="stat-value text-xl text-error">{{ stats.avg_risk|default_if_none:"—" }}</div>
+                    <div class="pl-stat bg-base-200">
+                        <div class="pl-stat__head"><span>Индекс риска</span>{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.player.risk %}</div>
+                        <div class="pl-stat__value text-error">{{ stats.avg_risk|default_if_none:"—" }}</div>
                     </div>
-                    <div class="stat relative bg-base-200 rounded-lg p-3">
-                        <div class="absolute top-2 right-2 z-10">{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.player.maturity_score %}</div>
-                        <div class="stat-title text-xs whitespace-normal leading-snug pr-4">Индекс зрелости</div>
-                        <div class="stat-value text-xl text-info">{{ stats.avg_maturity|default_if_none:"—" }}</div>
+                    <div class="pl-stat bg-base-200">
+                        <div class="pl-stat__head"><span>Индекс зрелости</span>{% include 'components/_tooltip_icon.html' with text=INDICATOR_TOOLTIPS.player.maturity_score %}</div>
+                        <div class="pl-stat__value text-info">{{ stats.avg_maturity|default_if_none:"—" }}</div>
                     </div>
                 </div>
             </div>
@@ -248,37 +229,44 @@
                     <i class="ti ti-calendar-stats mr-2"></i>
                     По сезонам
                 </h3>
-                <div class="overflow-x-auto">
-                    <table class="table table-zebra">
-                        <thead>
-                            <tr>
-                                <th>Сезон</th>
-                                <th>Команда</th>
-                                <th class="text-center">Матчей</th>
-                                <th class="text-center">Голов</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for stint in career_by_season %}
-                            <tr>
-                                <td class="font-mono text-sm">{{ stint.season.year }}</td>
-                                <td>
-                                    {% if stint.team %}
-                                    <a href="{% url 'teams:detail' stint.team.id %}" class="hover:text-primary transition-colors">{{ stint.team.name }}</a>
-                                    {# Хронология: свежий клуб первым. «Текущая» — только если сезон строки активный. #}
-                                    {% if forloop.first and active_season and stint.season.id == active_season.id %}
-                                    <span class="badge badge-primary badge-xs ml-1">Текущая</span>
-                                    {% endif %}
-                                    {% else %}
-                                    <span class="opacity-40">—</span>
-                                    {% endif %}
-                                </td>
-                                <td class="text-center font-mono">{{ stint.matches_played }}</td>
-                                <td class="text-center font-mono">{{ stint.goals|default:0 }}</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+                <div class="space-y-3">
+                    {% for stint in career_by_season %}
+                    <div class="pl-season">
+                        <div class="pl-season__head">
+                            {% if stint.team %}
+                            {% if stint.team.logo_display %}<img src="{{ stint.team.logo_display }}" alt="" class="pl-season__logo" loading="lazy">{% endif %}
+                            <a href="{% url 'teams:detail' stint.team.id %}" class="pl-season__team">{{ stint.team.name }}</a>
+                            {% else %}
+                            <span class="pl-season__team opacity-50">Без клуба</span>
+                            {% endif %}
+                            <span class="pl-season__year">Сезон {{ stint.season.year }}</span>
+                            {# Хронология: свежий клуб первым. «Текущий» — только для активного сезона. #}
+                            {% if forloop.first and active_season and stint.season.id == active_season.id %}<span class="pl-season__now">Текущий</span>{% endif %}
+                        </div>
+                        <div class="pl-season__grid">
+                            <div class="pl-season__cell">
+                                <b>{{ stint.matches_played }}</b>
+                                <span>{{ stint.matches_played|ru_plural:"матч,матча,матчей" }}</span>
+                            </div>
+                            <div class="pl-season__cell"><b>{{ stint.minutes }}</b><span>{{ stint.minutes|ru_plural:"минута,минуты,минут" }}</span></div>
+                            <div class="pl-season__cell">
+                                <b class="{% if stint.rating >= 7 %}text-success{% elif stint.rating >= 5 %}text-warning{% elif stint.rating %}text-error{% endif %}">{% if stint.rating %}{{ stint.rating|floatformat:1 }}{% else %}—{% endif %}</b>
+                                <span>рейтинг</span>
+                            </div>
+                            <div class="pl-season__cell"><b>{{ stint.goals }}</b><span>{{ stint.goals|ru_plural:"гол,гола,голов" }}</span></div>
+                            {# Передачи — только если поставщик указывал ассистентов в этом сезоне. #}
+                            <div class="pl-season__cell">{% if stint.assists_known %}<b>{{ stint.assists }}</b><span>{{ stint.assists|ru_plural:"передача,передачи,передач" }}</span>{% else %}<b>—</b><span>передачи не учитывались</span>{% endif %}</div>
+                            <div class="pl-season__cell">
+                                <b><span class="pl-card pl-card--y"></span>{{ stint.yellow }}{% if stint.red %} <span class="pl-card pl-card--r"></span>{{ stint.red }}{% endif %}</b>
+                                <span>{% if stint.red %}карточки{% else %}{{ stint.yellow|ru_plural:"жёлтая,жёлтые,жёлтых" }}{% endif %}</span>
+                            </div>
+                        </div>
+                        <p class="pl-season__meta">
+                            В старте {{ stint.starts }} из {{ stint.matches_played }}
+                            · {% if stint.rating %}рейтинг по {{ stint.rated_matches }} {{ stint.rated_matches|ru_plural:"оценённому матчу,оценённым матчам,оценённым матчам" }}{% else %}оценок болельщиков пока мало{% endif %}
+                        </p>
+                    </div>
+                    {% endfor %}
                 </div>
             </div>
         </div>

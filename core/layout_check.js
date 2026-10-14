@@ -3,7 +3,20 @@
 // блока и за краем экрана, обрезка многоточием, горизонтальная прокрутка страницы.
 (() => {
   const vw = window.innerWidth;
-  const out = { hscroll: document.documentElement.scrollWidth > vw + 1 ? document.documentElement.scrollWidth : 0, overlaps: [], spills: [], offscreen: [], truncated: [] };
+  const out = { hscroll: document.documentElement.scrollWidth > vw + 1 ? document.documentElement.scrollWidth : 0, overlaps: [], spills: [], offscreen: [], truncated: [], outbox: [], iconHits: [] };
+  // Настоящая прокрутка (auto/scroll), а не обрезка hidden/clip: обрезанный текст — тоже ошибка.
+  const inScroller = (el) => { for (let e = el.parentElement; e && e !== document.body; e = e.parentElement) { const ox = getComputedStyle(e).overflowX; if (ox === 'auto' || ox === 'scroll') return true; } return false; };
+  // Ближайший «блок-карточка»: фон, рамка или скругление.
+  const boxOf = (el) => {
+    for (let e = el.parentElement; e && e !== document.body; e = e.parentElement) {
+      const cs = getComputedStyle(e);
+      if (cs.display === 'inline' || cs.display === 'contents') continue;
+      const bg = cs.backgroundColor && cs.backgroundColor !== 'rgba(0, 0, 0, 0)' && cs.backgroundColor !== 'transparent';
+      const border = parseFloat(cs.borderTopWidth) > 0 && parseFloat(cs.borderLeftWidth) > 0;
+      if (bg || border || parseFloat(cs.borderTopLeftRadius) > 4) return e;
+    }
+    return null;
+  };
   const fixedCache = new Map();
   const inFixed = (el) => {
     for (let e = el; e && e !== document.body; e = e.parentElement) {
@@ -66,8 +79,36 @@
     if (!rs.length) continue;
     boxes.push({ el, rs, text: el.textContent.trim().slice(0, 40) });
     // Текст за правым краем экрана.
-    const scroller = (() => { for (let e = el.parentElement; e && e !== document.body; e = e.parentElement) { const ox = getComputedStyle(e).overflowX; if (ox !== 'visible') return true; } return false; })();
-    if (!scroller) for (const q of rs) if ((q.r > vw + 2 || q.l < -2) && q.l > -500) { out.offscreen.push({ sel: sel(el), text: el.textContent.trim().slice(0, 40), right: Math.round(q.r) }); break; }
+    const scroller = inScroller(el);
+    const raw = rects.map(q => ({ l: q.left + sx, r: q.right + sx }));
+    if (!scroller) for (const q of raw) if ((q.r > vw + 2 || q.l < -2) && q.l > -500) { out.offscreen.push({ sel: sel(el), text: el.textContent.trim().slice(0, 40), right: Math.round(q.r) }); break; }
+    // Текст выходит за свою карточку.
+    if (!scroller) {
+      const box = boxOf(el);
+      // Скрытые за экраном поля-ловушки (left: -9999px) не считаем.
+      if (box && Math.min(...rects.map(q => q.left)) > -1000) {
+        const b = box.getBoundingClientRect();
+        const over = Math.max(...rects.map(q => Math.max(q.right - b.right, b.left - q.left)));
+        if (over > 1.5) out.outbox.push({ sel: sel(el), text: el.textContent.trim().slice(0, 40), box: sel(box), over: Math.round(over) });
+      }
+    }
+  }
+  // Иконки (Tabler, svg) поверх чужого текста.
+  const icons = [...document.querySelectorAll('i[class*="ti-"], svg')].filter(e => {
+    if (e.closest('#djDebug') || !visible(e) || inFixed(e)) return false;
+    const r = e.getBoundingClientRect(); return r.width > 4 && r.width < 48 && r.height > 4 && r.height < 48;
+  });
+  for (const ic of icons) {
+    const r = ic.getBoundingClientRect(), sy = window.scrollY, sx = window.scrollX;
+    const q = { l: r.left + sx + 1, r: r.right + sx - 1, t: r.top + sy + 1, b: r.bottom + sy - 1 };
+    for (const B of boxes) {
+      if (B.el.contains(ic) || ic.contains(B.el)) continue;
+      if (B.el.parentElement && B.el.parentElement.contains(ic) && getComputedStyle(ic).position !== 'absolute' && !ic.closest('[class*="absolute"]')) continue;
+      if (B.rs.some(p => Math.min(p.r, q.r) - Math.max(p.l, q.l) > 2 && Math.min(p.b, q.b) - Math.max(p.t, q.t) > 2)) {
+        out.iconHits.push({ sel: sel(ic), text: B.text }); break;
+      }
+    }
+    if (out.iconHits.length >= 15) break;
   }
   // Наложение текстов разных элементов (не предок/потомок).
   boxes.sort((a, b) => a.rs[0].t - b.rs[0].t);
@@ -110,6 +151,7 @@
       out.truncated.push({ sel: sel(el), text: el.textContent.trim().slice(0, 50) });
     }
   }
+  out.outbox = out.outbox.slice(0, 15);
   out.spills = out.spills.slice(0, 15); out.offscreen = out.offscreen.slice(0, 15); out.truncated = out.truncated.slice(0, 15);
   return out;
 })()

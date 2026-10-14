@@ -10,7 +10,13 @@
         body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
                font-family: -apple-system, system-ui, sans-serif; background: var(--tg-theme-bg-color, #0b0b10);
                color: var(--tg-theme-text-color, #fff); text-align: center; padding: 24px; }
-        .logo { width: 64px; height: 64px; margin: 0 auto 16px; }
+        .logo { margin: 0 auto 20px; width: 72px; }
+        /* Знак DOPX: шкала — полный оборот и остановка в положении логотипа (как dx-logo-spin в ui.css). */
+        .dx-logo-spin { position: relative; display: block; margin: 0 auto; filter: drop-shadow(0 12px 26px rgba(79, 70, 229, .45)); }
+        .dx-logo-spin > svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+        .dx-logo-spin__arc { transform-origin: 50% 50%; will-change: transform; animation: t 1.5s infinite; }
+        @keyframes t { 0% { transform: rotate(0deg); animation-timing-function: cubic-bezier(.65, 0, .35, 1); } 70%, 100% { transform: rotate(360deg); } }
+        #status { font-weight: 600; }
         .muted { opacity: .6; font-size: 14px; }
         a { color: var(--tg-theme-link-color, #8b5cf6); }
     </style>
@@ -18,8 +24,8 @@
 <body>
     {# Вход по initData и переход на нужную страницу сайта внутри Telegram. #}
     <div>
-        <img class="logo" src="{% static 'img/dopx-logo-icon.png' %}" alt="DOPX">
-        <div id="status">Открываем DOPX…</div>
+        <div class="logo">{% include 'components/_brand_loader.html' with size=72 uid='miniapp' %}</div>
+        <div id="status">Открываем DOPX</div>
         <p class="muted" id="hint"></p>
     </div>
     <script>

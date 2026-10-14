@@ -1,38 +1,24 @@
+{% load ui_extras %}
 {% comment %}
-Панель колокольчика: число непрочитанных и последние 5. Перезапрашивается при каждом открытии (notif:open)
-и при смене данных (dopx:wake) — без перезагрузки страницы. Контекст: count, notifications.
+Окно колокольчика: «Новые» и «Ранее», последние 8. Перезапрашивается при открытии (notif:open)
+и при смене данных (dopx:wake). Контекст: count, notifications.
 {% endcomment %}
-<div id="notif-panel"
+<div id="notif-panel" class="nf-panel"
      data-background-poll
      hx-get="{% url 'notifications:panel' %}"
      hx-trigger="notif:open, dopx:wake"
      hx-swap="outerHTML">
-        {# Заголовок #}
-        <div class="p-3 border-b border-base-300 flex items-center justify-between sticky top-0 bg-base-100 z-10">
-            <div>
-                <div class="font-semibold text-sm">Уведомления</div>
-                <div class="text-xs opacity-60" id="notif-count-text">{{ count|default:0 }} непрочитанных</div>
-            </div>
-            {# Ссылка «Все уведомления» — только внизу списка. #}
-            <div class="flex items-center gap-1">
-                {% if count > 0 %}
-                {# Текст кнопки виден всегда (на тач-устройствах нет title). #}
-                <button type="button"
-                        title="Прочитать все"
-                        class="btn btn-outline btn-xs"
-                        hx-post="{% url 'notifications:read-all' %}"
-                        hx-swap="outerHTML"
-                        hx-target="#notif-list-items">
-                    <i class="ti ti-checks"></i>
-                    <span>Прочитать все</span>
-                </button>
-                {% endif %}
-                <button @click="open = false" class="btn btn-ghost btn-xs btn-circle sm:hidden">
-                    <i class="ti ti-x"></i>
-                </button>
-            </div>
-        </div>
-
-        {# Список #}
-        {% include 'components/_notification_dropdown_items.html' with notifications=notifications count=count %}
+    <span class="nf-panel__grabber" aria-hidden="true"></span>
+    <div class="nf-panel__head">
+        <div class="nf-panel__title">Уведомления</div>
+        {% if count %}
+        <button type="button" class="nf-link"
+                hx-post="{% url 'notifications:read-all' %}" hx-target="#notif-list-items" hx-swap="outerHTML"
+                hx-on::after-request="this.remove()">Прочитать все</button>
+        {% endif %}
+        <a href="{% url 'users:notification_settings' %}" @click="close()" class="nf-panel__icon" title="Настройки уведомлений" aria-label="Настройки уведомлений"><i class="ti ti-settings"></i></a>
+        <button type="button" @click="close()" class="nf-panel__icon nf-panel__close-m" aria-label="Закрыть"><i class="ti ti-x"></i></button>
+    </div>
+    {% include 'components/_notification_dropdown_items.html' with notifications=notifications count=count %}
+    <a href="{% url 'notifications:list' %}" @click="close()" class="nf-panel__all">Все уведомления</a>
 </div>

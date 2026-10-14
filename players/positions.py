@@ -40,6 +40,14 @@ LABEL_TO_CODES: dict[str, list[str]] = {}
 for _code, _label in POSITION_LABELS.items():
     LABEL_TO_CODES.setdefault(_label, []).append(_code)
 
+# Фильтр списка игроков — по линиям, в футбольном порядке. Вингеры — в атаке.
+POSITION_GROUPS: list[tuple[str, list[str]]] = [
+    ("Вратарь", ["GK"]),
+    ("Защитник", ["D", "DF", "CB", "LB", "RB", "LWB", "RWB"]),
+    ("Полузащитник", ["M", "MF", "DM", "CM", "AM", "LM", "RM", "WM"]),
+    ("Нападающий", ["F", "FW", "ST", "CF", "W", "LW", "RW"]),
+]
+
 
 def clean_position_code(raw: str | None) -> str:
     """Нормализация регистра/пробелов. Неизвестные коды сохраняем как есть."""

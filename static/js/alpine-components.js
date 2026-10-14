@@ -101,10 +101,23 @@ document.addEventListener('alpine:init', () => {
     // === Колокольчик уведомлений (components/_notification_badge.html) ===
     Alpine.data('notificationDropdown', () => ({
         open: false,
+        init() {
+            // На телефоне окно — нижний лист поверх панели вкладок: поднимаем шапку и блокируем прокрутку.
+            // Класс снимаем после анимации закрытия: иначе лист на полпути начинает позиционироваться от шапки и прыгает.
+            let timer = null;
+            this.$watch('open', (value) => {
+                clearTimeout(timer);
+                if (value) document.documentElement.classList.add('nf-sheet-open');
+                else timer = setTimeout(() => document.documentElement.classList.remove('nf-sheet-open'), 420);
+            });
+        },
         // При открытии список перезапрашивается: новые уведомления видны без перезагрузки страницы.
         toggle() {
             this.open = !this.open;
             if (this.open && window.htmx) htmx.trigger('#notif-panel', 'notif:open');
+        },
+        close() {
+            this.open = false;
         },
     }));
 

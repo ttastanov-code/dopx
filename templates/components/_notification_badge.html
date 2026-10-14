@@ -12,29 +12,13 @@
         {% include 'components/_notification_unread_badge.html' with count=count %}
     </div>
 
-    {# x-cloak — без мигания до инициализации Alpine. #}
-    {# === ФОН (мобильные) === #}
-    {# Затемнение на мобильном, на десктопе скрыт #}
-    <div x-show="open"
-         x-cloak
-         x-transition.opacity
-         class="fixed inset-0 bg-black/30 z-[90] sm:hidden"
-         @click="open = false"></div>
-
-    {# === ДРОПДАУН === #}
-    {# Мобильные — fixed по центру, десктоп — absolute справа #}
-    <div x-show="open"
-         x-cloak
-         x-transition:enter="transition ease-out duration-200"
-         x-transition:enter-start="opacity-0 scale-95 translate-y-2"
-         x-transition:enter-end="opacity-100 scale-100 translate-y-0"
-         x-transition:leave="transition ease-in duration-150"
-         x-transition:leave-start="opacity-100 scale-100"
-         x-transition:leave-end="opacity-0 scale-95"
-
-         class="z-[100] bg-base-100 border border-base-300 shadow-2xl rounded-box overflow-hidden
-                fixed inset-x-4 top-[60px] w-auto max-h-[70vh] sm:absolute sm:inset-auto sm:top-full sm:right-0 sm:mt-2 sm:w-80 sm:max-h-[80vh]">
-
-        {% include 'components/_notification_panel.html' with notifications=user.notifications.all|slice:":5" %}
+    {# Телефон: нижний лист с затемнением; ПК: выпадающий список под колокольчиком. x-cloak — без мигания до Alpine. #}
+    <div x-show="open" x-cloak x-transition.opacity class="nf-backdrop sm:hidden" @click="close()"></div>
+    <div x-show="open" x-cloak
+         x-transition:enter="nf-pop-enter" x-transition:enter-start="nf-pop-from" x-transition:enter-end="nf-pop-to"
+         x-transition:leave="nf-pop-leave" x-transition:leave-start="nf-pop-to" x-transition:leave-end="nf-pop-from"
+         @keydown.escape.window="close()"
+         class="nf-pop" role="dialog" aria-label="Уведомления">
+        {% include 'components/_notification_panel.html' with notifications=user.notifications.all|slice:":8" count=count %}
     </div>
 </div>

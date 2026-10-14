@@ -156,7 +156,7 @@
 .pw__options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .4rem; }
 .pw__opt {
     position: relative; display: flex; flex-direction: column; align-items: center; gap: .15rem; min-width: 0;
-    padding: .55rem .4rem; border-radius: .9rem; border: 1px solid var(--color-base-300); background: var(--color-base-100);
+    padding: .55rem 1.1rem; border-radius: .9rem; border: 1px solid var(--color-base-300); background: var(--color-base-100);
     transition: border-color .15s, background .15s;
 }
 .pw__opt:not(:disabled):hover { border-color: var(--color-primary); }

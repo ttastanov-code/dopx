@@ -4,6 +4,7 @@
 hx-атрибуты есть только при live (или перед стартом) — после финального свистка поллинг прекращается сам.
 {% endcomment %}
 <div id="match-header"
+     data-nav-tone="dark"
      class="mh mb-4 sm:mb-6 mh--{{ match.status }}"
 {% with poll=match.live_poll_seconds %}{% if poll %}
      data-background-poll

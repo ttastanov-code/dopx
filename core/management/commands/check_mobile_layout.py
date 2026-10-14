@@ -21,6 +21,38 @@ from django.urls import URLResolver, get_resolver
 
 SCAN_JS = Path(__file__).resolve().parents[2] / "layout_check.js"
 
+BLOCK_TAGS = {"div", "section", "article", "main", "aside", "nav", "ul", "ol", "table", "form", "header", "footer"}
+
+
+def unbalanced_blocks(html: str) -> list[str]:
+    """Лишние или незакрытые блочные теги: браузер их молча чинит, а раскладка ломается."""
+    from html.parser import HTMLParser
+
+    problems: list[str] = []
+    stack: list[tuple[str, int]] = []
+
+    class P(HTMLParser):
+        def handle_starttag(self, tag, attrs):
+            if tag in BLOCK_TAGS:
+                stack.append((tag, self.getpos()[0]))
+
+        def handle_endtag(self, tag):
+            if tag not in BLOCK_TAGS:
+                return
+            if stack and stack[-1][0] == tag:
+                stack.pop()
+            elif any(t == tag for t, _l in stack):
+                while stack and stack[-1][0] != tag:
+                    t, line = stack.pop()
+                    problems.append(f"незакрытый <{t}> (строка {line})")
+                stack.pop()
+            else:
+                problems.append(f"лишний </{tag}> (строка {self.getpos()[0]})")
+
+    P(convert_charrefs=True).feed(html)
+    problems += [f"незакрытый <{t}> (строка {line})" for t, line in stack]
+    return problems[:5]
+
 # Служебные, частичные и нестраничные адреса.
 SKIP_PARTS = (
     "admin/", "api/", "staff/", "__debug__", "captcha", "bot/", "tg/", "partial", "sitemap", "robots",
@@ -223,13 +255,20 @@ class Command(BaseCommand):
                         page = ctx.new_page()
                         try:
                             resp = self._open(page, base + url)
+                            # Ошибка сервера — тоже проблема, а не пропуск.
+                            if resp and resp.status >= 400:
+                                problems[label] = [f"страница отвечает ошибкой HTTP {resp.status}"]
+                                self.stdout.write(f"  ✗ {label}")
+                                page.close()
+                                continue
                             if (not resp or resp.status != 200 or "text/html" not in resp.headers.get("content-type", "")
                                     or resp.request.redirected_from):
                                 page.close()
                                 continue
                             page.wait_for_timeout(500)
                             page.evaluate("document.getElementById('djDebug')?.remove()")
-                            found = self._findings(page.evaluate(js))
+                            found = [f"разметка: {m}" for m in unbalanced_blocks(resp.text())]
+                            found += self._findings(page.evaluate(js))
                             if shots:
                                 name = re.sub(r"[^a-z0-9]+", "_", url.lower()).strip("_") or "home"
                                 page.screenshot(path=str(Path(shots) / f"{width}{'' if logged else '_guest'}_{name}.png"), full_page=True)
@@ -265,6 +304,8 @@ class Command(BaseCommand):
             out.append(f"горизонтальная прокрутка: ширина страницы {res['hscroll']}px")
         out += [f"наложение: «{o['at']}» ({o['a']}) ⟂ «{o['bt']}» ({o['b']}), {o['w']}×{o['h']}px" for o in res["overlaps"]]
         out += [f"вылезает из блока на {o['over']}px: «{o['text']}» ({o['sel']})" for o in res["spills"]]
+        out += [f"текст за краем карточки на {o['over']}px: «{o['text']}» ({o['sel']})" for o in res.get("outbox", [])]
+        out += [f"иконка поверх текста: «{o['text']}» ({o['sel']})" for o in res.get("iconHits", [])]
         out += [f"за краем экрана: «{o['text']}» ({o['sel']})" for o in res["offscreen"]]
         out += [f"обрезан многоточием: «{o['text']}» ({o['sel']})" for o in res.get("truncated", [])]
         return out

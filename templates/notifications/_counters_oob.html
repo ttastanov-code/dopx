@@ -1,0 +1,5 @@
+{% load ui_extras %}
+{# Счётчики после «прочитано» (hx-swap-oob): шапка панели, подзаголовок страницы, вкладка «Непрочитанные». #}
+<span id="notif-count-text" hx-swap-oob="true" class="nf-panel__count">{% if unread_count %}{{ unread_count }} {{ unread_count|ru_plural:"непрочитанное,непрочитанных,непрочитанных" }}{% else %}Всё прочитано{% endif %}</span>
+<p id="notif-page-count" hx-swap-oob="true" class="nf-head__sub">{% if unread_count %}{{ unread_count }} {{ unread_count|ru_plural:"непрочитанное,непрочитанных,непрочитанных" }}{% else %}Всё прочитано{% endif %}</p>
+<span id="notif-tab-unread" hx-swap-oob="true" class="nf-tab__count">{% if unread_count %}{{ unread_count }}{% endif %}</span>

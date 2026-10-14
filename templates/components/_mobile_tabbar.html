@@ -1,8 +1,8 @@
 {% comment %}
-Нижняя панель вкладок (только телефон, < md). Стили — css/ui.css (dx-tabbar).
+Нижняя панель вкладок (телефон и планшет, < lg). Стили — css/ui.css (dx-tabbar).
 Контекст — core.context_processors.mobile_tabbar.
 {% endcomment %}
-<nav class="dx-tabbar md:hidden" aria-label="Основные разделы">
+<nav class="dx-tabbar lg:hidden" aria-label="Основные разделы">
     <a href="{% url 'core:home' %}" class="dx-tabbar__item{% if tabbar_section == 'core' and tabbar_url_name == 'home' %} is-active{% endif %}"
        {% if tabbar_section == 'core' and tabbar_url_name == 'home' %}aria-current="page"{% endif %}>
         <i class="ti ti-home"></i><span>Главная</span>
@@ -10,18 +10,37 @@
     <a href="{% url 'matches:list' %}" class="dx-tabbar__item{% if tabbar_section == 'matches' and request.GET.status != 'votable' %} is-active{% endif %}">
         <i class="ti ti-ball-football"></i><span>Матчи</span>
     </a>
-    <a href="{% url 'matches:list' %}?status=votable" class="dx-tabbar__item dx-tabbar__item--center{% if tabbar_section == 'matches' and request.GET.status == 'votable' %} is-active{% endif %}">
+    <a href="{% url 'matches:list' %}?status=votable" data-spin-on-tap class="dx-tabbar__item dx-tabbar__item--center{% if tabbar_section == 'matches' and request.GET.status == 'votable' %} is-active{% endif %}">
         <span class="dx-tabbar__fab">
-            <i class="ti ti-dopx-rate"></i>
-            {% if tabbar_pending_count %}<span class="dx-tabbar__badge">{{ tabbar_pending_count|truncatechars:3 }}</span>{% endif %}
+            {# Знак DOPX: по нажатию шкала крутится, пока открывается страница (base.html, data-spin-on-tap). #}
+            <span class="dx-tabbar__mark" aria-hidden="true">
+                <svg viewBox="0 0 48 48"><g transform="translate(4.8 4.8) scale(0.8)">
+                    <circle cx="24" cy="24" r="17" fill="none" stroke="currentColor" stroke-width="3.4" opacity=".4"/>
+                    <path d="M24 17.5 L30.2 22 L27.8 29.3 L20.2 29.3 L17.8 22 Z" fill="currentColor"/>
+                </g></svg>
+                <svg viewBox="0 0 48 48" class="dx-tabbar__arc"><g transform="translate(4.8 4.8) scale(0.8)">
+                    <path d="M11.98 36.02 A17 17 0 1 1 37.02 13.07" fill="none" stroke="currentColor" stroke-width="5.4" stroke-linecap="round"/>
+                    <circle cx="37.02" cy="13.07" r="5.2" fill="var(--color-primary)" stroke="currentColor" stroke-width="3.4"/>
+                </g></svg>
+            </span>
+            {% if tabbar_pending_count %}<span class="dx-tabbar__badge">{% if tabbar_pending_count > 99 %}99+{% else %}{{ tabbar_pending_count }}{% endif %}</span>{% endif %}
         </span>
         <span>Оценить</span>
     </a>
-    <a href="{% url 'round_squad:round' %}" class="dx-tabbar__item{% if tabbar_section == 'round_squad' or tabbar_section == 'season_squad' %} is-active{% endif %}">
-        <i class="ti ti-shirt"></i><span>Лучшие</span>
-    </a>
-    {# Всё остальное — в шторке «Ещё» (components/_navbar.html, #mobile-menu). #}
-    <button type="button" class="dx-tabbar__item{% if tabbar_section == 'users' or tabbar_section == 'notifications' or tabbar_section == 'teams' or tabbar_section == 'players' or tabbar_section == 'coaches' or tabbar_section == 'referees' or tabbar_section == 'leagues' %} is-active{% endif %}" data-drawer-open aria-controls="mobile-menu">
-        <i class="ti ti-layout-grid"></i><span>Ещё</span>
+    {# Рейтинги: все разделы статистики в листе (#sheet-ratings в _navbar.html). #}
+    {% with rated=tabbar_section %}
+    <button type="button" data-drawer-open="sheet-ratings" aria-expanded="false" aria-controls="sheet-ratings"
+            class="dx-tabbar__item{% if rated == 'round_squad' or rated == 'season_squad' or rated == 'leagues' or rated == 'teams' or rated == 'players' or rated == 'coaches' or rated == 'referees' or tabbar_url_name == 'leaderboard' or tabbar_url_name == 'city_leaderboard' or tabbar_url_name == 'player_leaderboard' %} is-active{% endif %}">
+        <i class="ti ti-chart-bar"></i><span>Рейтинги</span>
+    </button>
+    {% endwith %}
+    {# Профиль: личное, настройки, о проекте (#sheet-profile). У гостя — вход. #}
+    <button type="button" data-drawer-open="sheet-profile" aria-expanded="false" aria-controls="sheet-profile"
+            class="dx-tabbar__item{% if tabbar_section == 'engagement' or tabbar_section == 'notifications' or tabbar_section == 'users' and tabbar_url_name != 'leaderboard' and tabbar_url_name != 'city_leaderboard' and tabbar_url_name != 'player_leaderboard' %} is-active{% endif %}">
+        {% if user.is_authenticated %}
+        <span class="dx-tabbar__avatar">{% if user.avatar %}<img src="{{ user.avatar.url }}" alt="">{% else %}{{ user.username|first|upper }}{% endif %}</span><span>Профиль</span>
+        {% else %}
+        <i class="ti ti-user-circle"></i><span>Войти</span>
+        {% endif %}
     </button>
 </nav>
